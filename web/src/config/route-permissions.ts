@@ -177,15 +177,7 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     permission: Permission.AssetsRead,
     module: Module.BusinessUnits,
   },
-  '/business-units/**': {
-    permission: Permission.AssetsRead,
-    module: Module.BusinessUnits,
-  },
   '/crown-jewels': {
-    permission: Permission.AssetsRead,
-    module: Module.CrownJewels,
-  },
-  '/crown-jewels/**': {
     permission: Permission.AssetsRead,
     module: Module.CrownJewels,
   },
@@ -225,10 +217,6 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     permission: Permission.BusinessServicesRead,
     module: Module.BusinessServices,
   },
-  '/business-services/**': {
-    permission: Permission.BusinessServicesRead,
-    module: Module.BusinessServices,
-  },
   '/cycles': {
     permission: Permission.CTEMCyclesRead,
     module: Module.CTEMCycles,
@@ -241,15 +229,7 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     permission: Permission.AttackerProfilesRead,
     module: Module.AttackerProfiles,
   },
-  '/attacker-profiles/**': {
-    permission: Permission.AttackerProfilesRead,
-    module: Module.AttackerProfiles,
-  },
   '/threat-model': {
-    permission: Permission.AssetsRead,
-    module: Module.ThreatModel,
-  },
-  '/threat-model/**': {
     permission: Permission.AssetsRead,
     module: Module.ThreatModel,
   },
@@ -335,10 +315,6 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     permission: Permission.CredentialsRead,
     module: Module.Credentials,
   },
-  '/credentials/**': {
-    permission: Permission.CredentialsRead,
-    module: Module.Credentials,
-  },
 
   // ========================================
   // Discovery Phase - Components (Module: components)
@@ -393,10 +369,6 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
   },
   // A CTEM working object in Prioritization (was /settings/priority-rules).
   '/priority-rules': {
-    permission: Permission.PriorityRulesRead,
-    module: Module.PriorityRules,
-  },
-  '/priority-rules/**': {
     permission: Permission.PriorityRulesRead,
     module: Module.PriorityRules,
   },
@@ -467,10 +439,6 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     permission: Permission.CompensatingControlsRead,
     module: Module.CompensatingControls,
   },
-  '/controls/**': {
-    permission: Permission.CompensatingControlsRead,
-    module: Module.CompensatingControls,
-  },
 
   // ========================================
   // Mobilization Phase (Module: remediation)
@@ -487,19 +455,11 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     permission: Permission.AutomationsRead,
     module: Module.Workflows,
   },
-  '/automations/**': {
-    permission: Permission.AutomationsRead,
-    module: Module.Workflows,
-  },
   '/sla': {
     permission: Permission.SLARead,
     module: Module.Sla,
   },
   '/exceptions': {
-    permission: Permission.SuppressionsRead,
-    module: Module.Suppressions,
-  },
-  '/exceptions/**': {
     permission: Permission.SuppressionsRead,
     module: Module.Suppressions,
   },
@@ -538,10 +498,6 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     permission: Permission.ReportsRead,
     module: Module.Reports,
   },
-  '/reports/**': {
-    permission: Permission.ReportsRead,
-    module: Module.Reports,
-  },
 
   // ========================================
   // Compliance (Module: compliance)
@@ -549,10 +505,6 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
   // is not enough since users can navigate via URL.
   // ========================================
   '/compliance': {
-    permission: Permission.ComplianceFrameworksRead,
-    module: Module.Compliance,
-  },
-  '/compliance/**': {
     permission: Permission.ComplianceFrameworksRead,
     module: Module.Compliance,
   },
@@ -622,23 +574,11 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     permission: Permission.ScanProfilesRead,
     module: Module.Scans,
   },
-  '/settings/scanning/profiles/**': {
-    permission: Permission.ScanProfilesRead,
-    module: Module.Scans,
-  },
   '/settings/scanning/tools': {
     permission: Permission.ToolsRead,
     module: Module.Scans,
   },
-  '/settings/scanning/tools/**': {
-    permission: Permission.ToolsRead,
-    module: Module.Scans,
-  },
   '/settings/scanning/capabilities': {
-    permission: Permission.ToolsRead,
-    module: Module.Scans,
-  },
-  '/settings/scanning/capabilities/**': {
     permission: Permission.ToolsRead,
     module: Module.Scans,
   },
@@ -743,13 +683,7 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
   '/settings/members': {
     permission: Permission.MembersRead,
   },
-  '/settings/members/**': {
-    permission: Permission.MembersRead,
-  },
   '/settings/roles': {
-    permission: Permission.RolesRead,
-  },
-  '/settings/roles/**': {
     permission: Permission.RolesRead,
   },
   // Access control is three distinct resources with distinct API permissions —
@@ -759,19 +693,12 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
   '/settings/teams': {
     permission: Permission.GroupsRead,
   },
-  '/settings/teams/**': {
-    permission: Permission.GroupsRead,
-  },
 
   // ========================================
   // Settings - Audit Log (Admin/Owner only, no module required)
   // Audit is a core feature, controlled by RBAC only
   // ========================================
   '/settings/audit-log': {
-    permission: Permission.AuditRead,
-    message: 'Audit logs require admin or owner privileges.',
-  },
-  '/settings/audit-log/**': {
     permission: Permission.AuditRead,
     message: 'Audit logs require admin or owner privileges.',
   },
@@ -840,17 +767,9 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     permission: Permission.ScannerTemplatesRead,
     module: Module.ScannerTemplates,
   },
-  '/settings/scanning/templates/**': {
-    permission: Permission.ScannerTemplatesRead,
-    module: Module.ScannerTemplates,
-  },
 
   // Risk scoring config — its own module
   '/settings/risk-scoring': {
-    permission: Permission.TeamUpdate,
-    module: Module.RiskScoring,
-  },
-  '/settings/risk-scoring/**': {
     permission: Permission.TeamUpdate,
     module: Module.RiskScoring,
   },
@@ -858,9 +777,6 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
   // Asset lifecycle settings — no dedicated module, gated purely on
   // team:update because the worker can transition asset status.
   '/settings/asset-lifecycle': {
-    permission: Permission.TeamUpdate,
-  },
-  '/settings/asset-lifecycle/**': {
     permission: Permission.TeamUpdate,
   },
 
