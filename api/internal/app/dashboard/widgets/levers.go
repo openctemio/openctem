@@ -168,7 +168,7 @@ func (s *Service) levers(ctx context.Context, scope dashboard.ReadScope) (*Lever
 	if uncovered := disc.Tracked - disc.Covered; disc.Tracked > 0 && uncovered > 0 {
 		if cov := pct(disc.Covered, disc.Tracked); cov < blindSpotBelowPct {
 			blind = &Lever{Kind: LeverBlindSpot, Count: uncovered,
-				Effect: LeverEffect{Metric: "coverage.discovery", Before: cov, After: 100, Unit: UnitPercent},
+				Effect: LeverEffect{Metric: metricDiscoveryCoverage, Before: cov, After: 100, Unit: UnitPercent},
 				Drill:  drillUncovered}
 		}
 	}
