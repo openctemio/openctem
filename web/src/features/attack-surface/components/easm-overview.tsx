@@ -7,6 +7,7 @@
  * GET /api/v1/easm/summary; nothing is computed from a page of rows.
  */
 
+import { useSettleSignal } from '@/features/shared/components/settle-group'
 import { useState } from 'react'
 import Link from '@/components/link'
 import { Label } from '@/components/ui/label'
@@ -84,6 +85,7 @@ export function EASMOverview() {
   // discovered assets too (research/124): discovery noise never inflates them.
   const [includeDiscovered, setIncludeDiscovered] = useState(false)
   const { summary, isLoading, error, mutate } = useEASMSummary(includeDiscovered)
+  useSettleSignal(isLoading)
 
   if (error) {
     return (
