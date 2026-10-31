@@ -77,6 +77,7 @@ export const AUTH_ERROR_CODES = [
   'OAUTH_USERINFO_FAILED',
   'OAUTH_ACCOUNT_EXISTS',
   'OAUTH_NO_EMAIL',
+  'OAUTH_USE_ORG_SSO',
   'IDENTITY_LINKED_ELSEWHERE',
   'PROVIDER_ALREADY_LINKED',
   'LAST_SIGN_IN_METHOD',
@@ -158,6 +159,7 @@ const LOGIN_CODE_FOR_API_CODE: Readonly<Record<string, LoginErrorCode>> = {
   ORGANIZATION_ACCESS_DENIED: 'not_member',
   EMAIL_NOT_VERIFIED: 'email_not_verified',
   OAUTH_ACCOUNT_EXISTS: 'account_exists',
+  OAUTH_USE_ORG_SSO: 'use_org_sso',
   EMAIL_NOT_AUTHORITATIVE: 'link_required',
 }
 
