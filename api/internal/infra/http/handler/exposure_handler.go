@@ -46,23 +46,33 @@ type ExposureResponse struct {
 	// critical exposure that waits for a second approver.
 	PendingDisposition *exposuresvc.PendingDispositionView `json:"pending_disposition,omitempty"`
 
-	AssetID         string         `json:"asset_id,omitempty"`
-	EventType       string         `json:"event_type"`
-	Severity        string         `json:"severity"`
-	State           string         `json:"state"`
-	Title           string         `json:"title"`
-	Description     string         `json:"description,omitempty"`
-	Details         map[string]any `json:"details,omitempty"`
-	CTEMID          string         `json:"ctem_id,omitempty"`
-	Fingerprint     string         `json:"fingerprint"`
-	Source          string         `json:"source"`
-	FirstSeenAt     time.Time      `json:"first_seen_at"`
-	LastSeenAt      time.Time      `json:"last_seen_at"`
-	ResolvedAt      *time.Time     `json:"resolved_at,omitempty"`
-	ResolvedBy      string         `json:"resolved_by,omitempty"`
-	ResolutionNotes string         `json:"resolution_notes,omitempty"`
-	CreatedAt       time.Time      `json:"created_at"`
-	UpdatedAt       time.Time      `json:"updated_at"`
+	AssetID   string `json:"asset_id,omitempty"`
+	EventType string `json:"event_type"`
+	// DisplayCategory is the fixed presentation group of the event type.
+	DisplayCategory string `json:"display_category"`
+	// Summary is the one-line description rendered from the details: an
+	// English sentence plus the values it was built from, so a client can
+	// render it in its own language. Scan output: render as text.
+	Summary ExposureSummaryResponse `json:"summary"`
+	// Severity is the effective severity (an analyst override when one
+	// stands).
+	Severity string `json:"severity"`
+	// SeverityOverride is present while an analyst override stands.
+	SeverityOverride *ExposureSeverityOverrideResponse `json:"severity_override,omitempty"`
+	State            string                            `json:"state"`
+	Title            string                            `json:"title"`
+	Description      string                            `json:"description,omitempty"`
+	Details          map[string]any                    `json:"details,omitempty"`
+	CTEMID           string                            `json:"ctem_id,omitempty"`
+	Fingerprint      string                            `json:"fingerprint"`
+	Source           string                            `json:"source"`
+	FirstSeenAt      time.Time                         `json:"first_seen_at"`
+	LastSeenAt       time.Time                         `json:"last_seen_at"`
+	ResolvedAt       *time.Time                        `json:"resolved_at,omitempty"`
+	ResolvedBy       string                            `json:"resolved_by,omitempty"`
+	ResolutionNotes  string                            `json:"resolution_notes,omitempty"`
+	CreatedAt        time.Time                         `json:"created_at"`
+	UpdatedAt        time.Time                         `json:"updated_at"`
 
 	// CTEM enrichment (read-time, additive). Present only when an enricher is
 	// wired and the exposure has a linked asset (criticality/reachability) or a
@@ -75,6 +85,29 @@ type ExposureResponse struct {
 	EPSSPercentile       *float64   `json:"epss_percentile,omitempty"`
 	IsInKEV              *bool      `json:"is_in_kev,omitempty"`
 	KEVDueDate           *time.Time `json:"kev_due_date,omitempty"`
+}
+
+// ExposureSummaryResponse is the one-line description of an exposure.
+type ExposureSummaryResponse struct {
+	Text    string            `json:"text"`
+	Variant string            `json:"variant,omitempty"`
+	Args    map[string]string `json:"args,omitempty"`
+}
+
+// ExposureSeverityOverrideResponse is a standing analyst severity override.
+type ExposureSeverityOverrideResponse struct {
+	// ReportedSeverity is what the producer reported (and keeps reporting).
+	ReportedSeverity string     `json:"reported_severity"`
+	Reason           string     `json:"reason"`
+	OverriddenBy     string     `json:"overridden_by,omitempty"`
+	OverriddenAt     *time.Time `json:"overridden_at,omitempty"`
+}
+
+// ChangeExposureSeverityRequest sets (severity) or removes (empty severity)
+// the analyst override of an exposure's severity.
+type ChangeExposureSeverityRequest struct {
+	Severity string `json:"severity" validate:"omitempty,oneof=critical high medium low info"`
+	Reason   string `json:"reason" validate:"required,max=1000"`
 }
 
 // applyEnrichment copies read-time CTEM enrichment onto an exposure response.
@@ -157,27 +190,43 @@ func toExposureResponse(e *exposure.ExposureEvent) ExposureResponse {
 		resolvedBy = e.ResolvedBy().String()
 	}
 	// A leaked credential's secret (sealed or legacy plaintext) never leaves
-	// through the exposure endpoints; see credential.RedactDetails.
+	// through the exposure endpoints; see credential.RedactDetails. The
+	// summary is rendered from the redacted details too.
+	details := credential.RedactDetails(e.Details())
+	sum := exposure.SummaryOf(e.EventType(), e.Title(), details)
+	var override *ExposureSeverityOverrideResponse
+	if e.HasSeverityOverride() {
+		p := e.SeverityProvenance()
+		override = &ExposureSeverityOverrideResponse{
+			ReportedSeverity: e.SourceSeverity().String(), Reason: p.OverrideReason, OverriddenAt: p.OverriddenAt,
+		}
+		if p.OverriddenBy != nil {
+			override.OverriddenBy = p.OverriddenBy.String()
+		}
+	}
 	return ExposureResponse{
 		ID: e.ID().String(),
 
-		AssetID:         assetID,
-		EventType:       e.EventType().String(),
-		Severity:        e.Severity().String(),
-		State:           e.State().String(),
-		Title:           e.Title(),
-		Description:     e.Description(),
-		Details:         credential.RedactDetails(e.Details()),
-		CTEMID:          e.CTEMID(),
-		Fingerprint:     e.Fingerprint(),
-		Source:          e.Source(),
-		FirstSeenAt:     e.FirstSeenAt(),
-		LastSeenAt:      e.LastSeenAt(),
-		ResolvedAt:      e.ResolvedAt(),
-		ResolvedBy:      resolvedBy,
-		ResolutionNotes: e.ResolutionNotes(),
-		CreatedAt:       e.CreatedAt(),
-		UpdatedAt:       e.UpdatedAt(),
+		AssetID:          assetID,
+		EventType:        e.EventType().String(),
+		DisplayCategory:  string(e.EventType().Category()),
+		Summary:          ExposureSummaryResponse{Text: sum.Text, Variant: sum.Variant, Args: sum.Args},
+		Severity:         e.Severity().String(),
+		SeverityOverride: override,
+		State:            e.State().String(),
+		Title:            e.Title(),
+		Description:      e.Description(),
+		Details:          details,
+		CTEMID:           e.CTEMID(),
+		Fingerprint:      e.Fingerprint(),
+		Source:           e.Source(),
+		FirstSeenAt:      e.FirstSeenAt(),
+		LastSeenAt:       e.LastSeenAt(),
+		ResolvedAt:       e.ResolvedAt(),
+		ResolvedBy:       resolvedBy,
+		ResolutionNotes:  e.ResolutionNotes(),
+		CreatedAt:        e.CreatedAt(),
+		UpdatedAt:        e.UpdatedAt(),
 	}
 }
 
@@ -375,7 +424,8 @@ func (h *ExposureHandler) Delete(w http.ResponseWriter, r *http.Request) {
 // @Param        asset_id    query     string  false  "Filter by asset ID"
 // @Param        event_type  query     []string false "Filter by event types"
 // @Param        severity    query     []string false "Filter by severities"
-// @Param        state       query     []string false "Filter by states"
+// @Param        state       query     []string false "Filter by states (active, in_progress, resolved, accepted, false_positive)"
+// @Param        category    query     []string false "Filter by display categories (exposed_ports, web_interfaces, exposed_apis, ai_services, web_application, ssl_tls, certificates, hijackable_subdomains, email_security, cloud_storage, code_repositories, credentials_data, dns, lookalike_domains, identity, other)"
 // @Param        search      query     string  false  "Search term"
 // @Param        page        query     int     false  "Page number" default(1)
 // @Param        per_page    query     int     false  "Items per page" default(20)
@@ -418,6 +468,9 @@ func (h *ExposureHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 	if sources := query["source"]; len(sources) > 0 {
 		input.Sources = sources
+	}
+	if cats := query["category"]; len(cats) > 0 {
+		input.Categories = cats
 	}
 
 	result, err := h.service.ListExposures(r.Context(), input)
@@ -682,6 +735,70 @@ func (h *ExposureHandler) Reactivate(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(toExposureResponse(event))
+}
+
+// StartProgress handles POST /api/v1/exposures/{id}/start-progress
+// @Summary      Start work on an exposure
+// @Description  Mark an open exposure as in progress (it stays open). Reactivate moves it back to active.
+// @Tags         Exposures
+// @Accept       json
+// @Produce      json
+// @Param        id       path      string              true   "Exposure ID"
+// @Param        request  body      ChangeStateRequest  false  "Optional note"
+// @Success      200  {object}  ExposureResponse
+// @Failure      400  {object}  apierror.Error
+// @Failure      404  {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /exposures/{id}/start-progress [post]
+func (h *ExposureHandler) StartProgress(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+	var req ChangeStateRequest
+	_ = json.NewDecoder(r.Body).Decode(&req) // Optional body
+	if err := h.validator.Validate(req); err != nil {
+		h.handleValidationError(w, err)
+		return
+	}
+	event, err := h.service.StartProgress(r.Context(), tenantID, chi.URLParam(r, "id"), middleware.GetUserID(r.Context()), req.Reason)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, toExposureResponse(event))
+}
+
+// ChangeSeverity handles PATCH /api/v1/exposures/{id}/severity
+// @Summary      Override an exposure's severity
+// @Description  Set the effective severity of an exposure as an analyst decision, or remove the override with an empty severity. A reason is required and the change is audited. The reported severity is kept; the four-eyes rule on accepting or dismissing still reads the highest reported severity.
+// @Tags         Exposures
+// @Accept       json
+// @Produce      json
+// @Param        id       path      string                         true  "Exposure ID"
+// @Param        request  body      ChangeExposureSeverityRequest  true  "Severity and reason"
+// @Success      200  {object}  ExposureResponse
+// @Failure      400  {object}  apierror.Error
+// @Failure      404  {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /exposures/{id}/severity [patch]
+func (h *ExposureHandler) ChangeSeverity(w http.ResponseWriter, r *http.Request) {
+	var req ChangeExposureSeverityRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		apierror.BadRequest("Invalid request body").WriteJSON(w)
+		return
+	}
+	if err := h.validator.Validate(req); err != nil {
+		h.handleValidationError(w, err)
+		return
+	}
+	event, err := h.service.ChangeSeverity(r.Context(), exposuresvc.SeverityChangeCall{
+		TenantID: middleware.MustGetTenantID(r.Context()), ExposureID: chi.URLParam(r, "id"),
+		UserID: middleware.GetUserID(r.Context()), Severity: req.Severity, Reason: req.Reason,
+		Audit: configAuditContext(r),
+	})
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, toExposureResponse(event))
 }
 
 // GetHistory handles GET /api/v1/exposures/{id}/history
