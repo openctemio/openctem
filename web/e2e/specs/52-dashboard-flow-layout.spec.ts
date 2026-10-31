@@ -4,12 +4,15 @@ import { test, expect } from '../fixtures/authenticated-page'
 /**
  * The exposure flow and the intake panel follow their own card width (api
  * docs/architecture/dashboards.md, "Exposure flow and intake", layout bands):
- * at each card width the columns never overlap, the ring stays inside its
+ * at each card width the columns fill the card (no empty side gutters from 960 px up), never overlap, the ring stays inside its
  * column, the card never scrolls sideways, and a wire starts right after the
  * row it leaves (no long gap between a source and its curve on a wide card).
  */
 
-const WIDTHS = [480, 720, 960, 1200, 1440, 1600] as const
+const WIDTHS = [480, 720, 960, 1200, 1440, 1600, 1920] as const
+
+/** Largest empty gutter (px) between the card's content box and the composition. */
+const MAX_GUTTER = 32
 
 const widget = (id: string, metric: string, viz: string) => ({
   widget_type: 'metric',
@@ -81,7 +84,17 @@ async function measure(page: Page, index: number) {
       const s = starts.find(([, y]) => y >= lb.t - 12 && y <= lb.b + 12)
       return s ? [Math.round(s[0] - lb.r)] : []
     })
+    // Empty space between the card's content box and the first/last column: a
+    // composition that fills its card leaves only the padding.
+    const cs = getComputedStyle(frame)
+    const fb = box(frame)
+    const innerL = fb.l + parseFloat(cs.paddingLeft) + parseFloat(cs.borderLeftWidth)
+    const innerR = fb.r - parseFloat(cs.paddingRight) - parseFloat(cs.borderRightWidth)
+    const first = kids.length ? box(kids[0]) : null
+    const last = kids.length ? box(kids[kids.length - 1]) : null
     return {
+      leftGutter: first ? Math.round(first.l - innerL) : 0,
+      rightGutter: last ? Math.round(innerR - last.r) : 0,
       band: root.getAttribute('data-band'),
       overflow: frame.scrollWidth - frame.clientWidth,
       overlaps,
@@ -131,6 +144,14 @@ test(
           expect(m.overflow, `${at}: sideways scroll`).toBeLessThanOrEqual(0)
           expect(m.overlaps, `${at}: columns overlap`).toEqual([])
           expect(m.ringInside, `${at}: ring outside its column`).toBe(true)
+          if (m.band !== 'narrow' && w >= 960) {
+            expect(m.leftGutter, `${at}: empty gutter before the sources`).toBeLessThanOrEqual(
+              MAX_GUTTER
+            )
+            expect(m.rightGutter, `${at}: empty gutter after the summary`).toBeLessThanOrEqual(
+              MAX_GUTTER
+            )
+          }
           if (m.band === 'narrow') expect(m.wires, `${at}: wires on one column`).toBe(0)
           for (const g of m.gaps)
             expect(g, `${at}: a wire starts far from its source`).toBeLessThanOrEqual(80)
