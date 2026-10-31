@@ -701,6 +701,30 @@ func registerWordlistRoutes(
 	}, tenantMiddlewares...)
 }
 
+// registerContentRuleRoutes registers an organization's own detection
+// rules (docs/architecture/rule-packs.md): web fingerprint and
+// sensitive-information rules evaluated on its ingested web content.
+// Reading needs scans:content:read; changing and testing a rule
+// scans:content:write (a test runs a draft on a pasted sample and stores
+// nothing). The tenant comes from the token.
+func registerContentRuleRoutes(
+	router Router,
+	h *handler.ContentRuleHandler,
+	authMiddleware Middleware,
+	userSyncMiddleware Middleware,
+) {
+	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
+	router.Group("/api/v1/content-rules", func(r Router) {
+		r.GET("/", h.List, middleware.Require(permission.ContentPacksRead))
+		r.GET("/{id}", h.Get, middleware.Require(permission.ContentPacksRead))
+		r.POST("/", h.Create, middleware.Require(permission.ContentPacksWrite))
+		// Before /{id} so chi does not read "test" as an id.
+		r.POST("/test", h.Test, middleware.Require(permission.ContentPacksWrite))
+		r.PATCH("/{id}", h.Update, middleware.Require(permission.ContentPacksWrite))
+		r.DELETE("/{id}", h.Delete, middleware.Require(permission.ContentPacksWrite))
+	}, tenantMiddlewares...)
+}
+
 // registerPlatformContentPackRoutes registers the read-only view every
 // organization has of the platform content packs and channels (RFC-061).
 // The platform administrators manage them under /api/v1/admin/content-packs.
