@@ -58,6 +58,29 @@ pending ──reveal──▶ pending (sas set) ──approve──▶ approved 
 Reverse mode starts as an `expecting` row with a tenant and a code but no
 key; the sensor's start request fills in the key and turns it `pending`.
 
+**Refusals reach the waiting step.** When a start that carries the code of
+an open expectation is refused after its signature verified with the key in
+its body, the expectation records the attempt (`last_refusal`,
+`last_refusal_at`, `last_refusal_details`; migration `20261031121231`):
+`clock_skew` (with the offset), `rate_limited` (its budget ran out),
+`code_taken` (another key already holds the code; stored as `key_busy` when
+the key is the holder's own or no key holds the request yet), `key_busy` and
+`key_registered` (set by the start when the key is refused). The write is
+one indexed update, at most once every 5 seconds per expectation
+(`RecordRefusalUnscoped`), and a code that matches no open expectation
+writes nothing, so the sensor's answer and the uniform answers of §4.4 are
+unchanged. `GET /api/v1/sensor-pairings/expectations/{id}` returns it as
+`last_refusal` to the expectation's organization only; the console's
+waiting step (`PairingRefusalNotice`) says what happened and what to do.
+
+**Unconfirmed approvals leave no sensor.** An approval creates the sensor
+before the sensor confirms. When the confirmation window closes first, the
+sweep revokes the pending key (`pairing_not_confirmed`) and then removes the
+sensor if it never had another key, never called in and holds no command
+(`RemoveUnconfirmedSensors`; audited `sensor.deleted`, low). A re-pair's
+registration is never removed. The sweep also runs on expectation reads, so
+stale rows do not wait for the next sensor start.
+
 The review names the organization the approval binds the sensor to (the
 session's) and the approval must send the same `organization_id`, or it is
 refused `409 ORGANIZATION_MISMATCH` before step-up. The review also shows the
