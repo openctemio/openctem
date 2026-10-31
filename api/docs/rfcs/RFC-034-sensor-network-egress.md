@@ -8,6 +8,10 @@
 > proxy in sensor#102). Proxy pools (§0) are built: organization pools,
 > per-sensor assignment, encrypted write-only credentials, health score and
 > quarantine (architecture: [sensor-proxies.md](../architecture/sensor-proxies.md)).
+> Scanner addresses (amended 2026-10-31): each endpoint's exit address as the
+> platform's test echo saw it, the sensors' observed addresses and the shared
+> sensors' published egress, listed for allowlisting at a WAF
+> (`GET /api/v1/proxy-pools/scanner-addresses`).
 > Not built: zone pools, tool rules, scan override, instance pools, the
 > manifest `egress.control` field, `dns=proxy`.
 > Scope: api + sdk-go + sensor (`openctemio/sensor`) + ui.

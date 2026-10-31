@@ -1041,7 +1041,7 @@
   "scans.failure.AUTH_CHANGED.text": "Endpoint hiện yêu cầu xác thực nên phép kiểm tra không chạy được.",
   "scans.failure.BATCH_FAILED.fix": "Mở nhật ký các tác vụ để xem lỗi của từng phần.",
   "scans.failure.BATCH_FAILED.text": "Mọi phần của bước đều thất bại.",
-  "scans.failure.BLOCKED.fix": "Cho phép địa chỉ của sensor, rồi kiểm tra lại.",
+  "scans.failure.BLOCKED.fix": "Đưa địa chỉ máy quét vào danh sách cho phép (Cài đặt, Quét, Proxy, Địa chỉ máy quét), rồi kiểm tra lại.",
   "scans.failure.BLOCKED.text": "Endpoint từ chối yêu cầu kiểm tra lại (bộ lọc hoặc tường lửa đã phản hồi).",
   "scans.failure.CANCELED.fix": "Chạy lại lượt quét khi cần.",
   "scans.failure.CANCELED.text": "Một người dùng hoặc hạn của lần chạy đã dừng bước.",
