@@ -8,7 +8,8 @@
  * verified token. Shown on the CI/CD integration page, under Runs.
  */
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
+import type { ColumnDef } from '@tanstack/react-table'
 import Link from '@/components/link'
 import {
   ExternalLink,
@@ -19,7 +20,17 @@ import {
   ShieldCheck,
   Workflow,
 } from 'lucide-react'
-import { PageHeader, PageStack, EmptyState, ErrorState, RelativeTime } from '@/features/shared'
+import {
+  DataTable,
+  EmptyState,
+  ErrorState,
+  FilterSelect,
+  PageHeader,
+  PageStack,
+  RelativeTime,
+  StackedCell,
+} from '@/features/shared'
+import { ProviderIcon } from '@/features/scm-connections'
 import { dateFnsLocaleFor } from '@/features/shared/components/activity-timeline'
 import { useListParams } from '@/hooks/use-list-params'
 import { useUrlFilter } from '@/hooks/use-url-param'
@@ -30,15 +41,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { SafeExternalLink } from '@/components/safe-external-link'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import {
   Sheet,
   SheetContent,
@@ -47,17 +50,10 @@ import {
   SheetTitle,
   SheetBody,
 } from '@/components/ui/sheet'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
 import { useCIRun, useCIRuns } from '../api/use-ci'
 import { baselineCounts, missingCodeHost, runAttempts } from '../lib/gate-settings'
 import { INFO_REASON_CODES, PROVIDER_LABEL, REASON_LABEL, shortSHA } from '../lib/ci'
+import { repositoryPath } from '../lib/pipeline'
 import type { CIGateReason, CIRun, CIVerdictFilter } from '../types'
 import { useTranslation } from '@/context/i18n-provider'
 import { CIOverrideDialog } from './ci-override-dialog'
@@ -146,6 +142,8 @@ function RefCell({ run, attempt }: { run: CIRun; attempt?: { attempt: number; of
   )
 }
 
+type TFn = ReturnType<typeof useTranslation>['t']
+
 export interface CIRunsViewProps {
   /** Inside another page (the Sensors page): no page header of its own. */
   embedded?: boolean
@@ -160,22 +158,100 @@ function asVerdict(raw: string): CIVerdictFilter {
   return VERDICTS.includes(raw as CIVerdictFilter) ? (raw as CIVerdictFilter) : ''
 }
 
+export function runColumns(
+  t: TFn,
+  locale: string,
+  attempts: Map<string, { attempt: number; of: number }>
+): ColumnDef<CIRun>[] {
+  return [
+    {
+      id: 'repository',
+      header: t('scans.ci.col.repository', 'Repository'),
+      cell: ({ row }) => {
+        const run = row.original
+        return (
+          <div className="flex min-w-0 items-center gap-2">
+            <span
+              className="shrink-0 text-muted-foreground"
+              title={PROVIDER_LABEL[run.provider ?? '']}
+            >
+              <ProviderIcon provider={run.provider ?? ''} />
+              <span className="sr-only">{PROVIDER_LABEL[run.provider ?? ''] ?? run.provider}</span>
+            </span>
+            <StackedCell
+              truncate
+              primary={repositoryPath(run.repository)}
+              secondary={
+                [run.workflow, run.fork ? t('scans.ci.fork', 'fork') : '']
+                  .filter(Boolean)
+                  .join(', ') || undefined
+              }
+            />
+          </div>
+        )
+      },
+    },
+    {
+      id: 'verdict',
+      header: t('scans.ci.col.verdict', 'Verdict'),
+      cell: ({ row }) => (
+        <VerdictBadge
+          verdict={row.original.verdict}
+          wouldFail={row.original.would_fail}
+          status={row.original.status}
+        />
+      ),
+    },
+    {
+      id: 'ref',
+      header: t('scans.ci.col.ref', 'Ref'),
+      cell: ({ row }) => (
+        <RefCell run={row.original} attempt={attempts.get(row.original.id ?? '')} />
+      ),
+    },
+    {
+      id: 'findings',
+      header: t('scans.ci.col.findings', 'Findings'),
+      cell: ({ row }) => <span className="tabular-nums">{row.original.findings_count ?? 0}</span>,
+    },
+    {
+      id: 'actor',
+      header: t('scans.ci.col.actor', 'Actor'),
+      cell: ({ row }) => <span className="truncate text-sm">{row.original.actor}</span>,
+    },
+    {
+      id: 'started',
+      header: t('scans.ci.col.started', 'Started'),
+      cell: ({ row }) => (
+        <RelativeTime
+          date={row.original.created_at}
+          locale={dateFnsLocaleFor(locale)}
+          className="text-sm text-muted-foreground"
+        />
+      ),
+    },
+  ]
+}
+
 export function CIRunsView({ embedded = false, toolbarStart }: CIRunsViewProps) {
   const { t, locale } = useTranslation()
-  const list = useListParams({ filters: { verdict: '' } })
-  const { page, setPage } = list
+  const list = useListParams({ filters: { verdict: '' }, defaultPageSize: 25 })
   const verdict = asVerdict(list.filters.verdict)
   // The open run lives in the URL (?run=), so a run can be linked and shared
   // (verdict links from the API land here).
   const [runParam, setRunParam] = useUrlFilter('run', '')
   const selected = runParam || null
   const setSelected = (id: string | null) => setRunParam(id ?? '')
-  const { data, error, isLoading, mutate } = useCIRuns({ verdict, page })
+  const { data, error, isLoading, mutate } = useCIRuns({
+    verdict,
+    page: list.page,
+    perPage: list.perPage,
+  })
   const { can } = usePermissions()
   const canWrite = can(Permission.CIWrite)
-  const runs = data?.data ?? []
-  const attempts = runAttempts(runs)
-  const totalPages = data?.total_pages ?? 1
+  const runs = useMemo(() => data?.data ?? [], [data])
+  const columns = useMemo(() => runColumns(t, locale, runAttempts(runs)), [t, locale, runs])
+  const noneYet = !isLoading && !error && runs.length === 0 && !verdict
 
   return (
     <PageStack>
@@ -193,144 +269,72 @@ export function CIRunsView({ embedded = false, toolbarStart }: CIRunsViewProps) 
         </PageHeader>
       )}
 
-      <div className="flex flex-wrap items-center gap-2">
-        {toolbarStart}
-        <Select
-          value={verdict || 'all'}
-          onValueChange={(v) => {
-            list.setFilter('verdict', v === 'all' ? '' : asVerdict(v))
-          }}
-        >
-          <SelectTrigger className="w-44" aria-label={t('scans.ci.col.verdict', 'Verdict')}>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">{t('scans.ci.verdict.all', 'All verdicts')}</SelectItem>
-            <SelectItem value="fail">{t('scans.ci.verdict.failed', 'Failed')}</SelectItem>
-            <SelectItem value="pass">{t('scans.ci.verdict.passed', 'Passed')}</SelectItem>
-            <SelectItem value="none">{t('scans.ci.verdict.none', 'No verdict')}</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
-
-      {error ? (
-        <ErrorState
-          title={t('scans.ci.runsTitle', 'CI runs')}
-          error={error}
-          onRetry={() => mutate()}
-        />
-      ) : isLoading ? (
-        <Card>
-          <CardContent className="space-y-2 p-4">
-            {[0, 1, 2].map((i) => (
-              <Skeleton key={i} className="h-10 w-full" />
-            ))}
-          </CardContent>
-        </Card>
-      ) : runs.length === 0 && verdict ? (
-        <EmptyState
-          icon={Workflow}
-          title={t('scans.ci.noRunsFilteredTitle', 'No runs with this verdict')}
-          description={t(
+      {noneYet ? (
+        canWrite ? (
+          <EmptyState
+            icon={Workflow}
+            title={t('scans.ci.noRunsTitle', 'No CI runs yet')}
+            description={t(
+              'scans.ci.noRuns',
+              'Add a CI trust configuration, then add the {product} CI scan to a pipeline.'
+            )}
+            action={<CISetupEntry canWrite />}
+          />
+        ) : (
+          <EmptyState
+            icon={Workflow}
+            title={t('scans.ci.noRunsScopedTitle', 'No CI runs you can see')}
+            description={t(
+              'scans.ci.noRunsScoped',
+              'You see the runs of repositories you have access to. If a pull request check links here, ask an administrator for access to its repository.'
+            )}
+          />
+        )
+      ) : (
+        <DataTable
+          columns={columns}
+          data={runs}
+          isLoading={isLoading}
+          errorState={
+            error ? (
+              <ErrorState
+                title={t('scans.ci.runsTitle', 'CI runs')}
+                error={error}
+                onRetry={() => mutate()}
+              />
+            ) : undefined
+          }
+          manualPagination
+          pageCount={data?.total_pages ?? 1}
+          rowCount={data?.total ?? 0}
+          pagination={list.pagination}
+          onPaginationChange={list.setPagination}
+          getRowId={(r) => r.id ?? ''}
+          onRowClick={(r) => setSelected(r.id ?? null)}
+          showSearch={false}
+          paginationNoun={t('scans.ci.noun.runs', 'runs')}
+          emptyMessage={t('scans.ci.noRunsFilteredTitle', 'No runs with this verdict')}
+          emptyDescription={t(
             'scans.ci.noRunsFiltered',
             'Choose another verdict, or all verdicts, to see the other runs.'
           )}
+          toolbarStart={
+            <>
+              {toolbarStart}
+              <FilterSelect<Exclude<CIVerdictFilter, ''>>
+                label={t('scans.ci.col.verdict', 'Verdict')}
+                value={verdict}
+                allLabel={t('scans.ci.verdict.all', 'All verdicts')}
+                options={[
+                  { value: 'fail', label: t('scans.ci.verdict.failed', 'Failed') },
+                  { value: 'pass', label: t('scans.ci.verdict.passed', 'Passed') },
+                  { value: 'none', label: t('scans.ci.verdict.none', 'No verdict') },
+                ]}
+                onChange={(v) => list.setFilter('verdict', asVerdict(v))}
+              />
+            </>
+          }
         />
-      ) : runs.length === 0 && !canWrite ? (
-        <EmptyState
-          icon={Workflow}
-          title={t('scans.ci.noRunsScopedTitle', 'No CI runs you can see')}
-          description={t(
-            'scans.ci.noRunsScoped',
-            'You see the runs of repositories you have access to. If a pull request check links here, ask an administrator for access to its repository.'
-          )}
-        />
-      ) : runs.length === 0 ? (
-        <EmptyState
-          icon={Workflow}
-          title={t('scans.ci.noRunsTitle', 'No CI runs yet')}
-          description={t(
-            'scans.ci.noRuns',
-            'Add a CI trust configuration, then add the {product} CI scan to a pipeline.'
-          )}
-          action={<CISetupEntry canWrite={canWrite} />}
-        />
-      ) : (
-        <Card>
-          <CardContent className="p-0">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>{t('scans.ci.col.repository', 'Repository')}</TableHead>
-                  <TableHead>{t('scans.ci.col.verdict', 'Verdict')}</TableHead>
-                  <TableHead>{t('scans.ci.col.ref', 'Ref')}</TableHead>
-                  <TableHead>{t('scans.ci.col.findings', 'Findings')}</TableHead>
-                  <TableHead>{t('scans.ci.col.actor', 'Actor')}</TableHead>
-                  <TableHead>{t('scans.ci.col.started', 'Started')}</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {runs.map((run) => (
-                  <TableRow
-                    key={run.id}
-                    className="cursor-pointer"
-                    onClick={() => setSelected(run.id ?? null)}
-                    data-testid="ci-run-row"
-                  >
-                    <TableCell className="max-w-64">
-                      <div className="flex flex-col">
-                        <span className="truncate font-medium">{run.repository}</span>
-                        <span className="text-xs text-muted-foreground">
-                          {PROVIDER_LABEL[run.provider ?? ''] ?? run.provider}
-                          {run.fork ? `, ${t('scans.ci.fork', 'fork')}` : ''}
-                        </span>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <VerdictBadge
-                        verdict={run.verdict}
-                        wouldFail={run.would_fail}
-                        status={run.status}
-                      />
-                    </TableCell>
-                    <TableCell className="max-w-56">
-                      <RefCell run={run} attempt={attempts.get(run.id ?? '')} />
-                    </TableCell>
-                    <TableCell>{run.findings_count ?? 0}</TableCell>
-                    <TableCell className="text-sm">{run.actor}</TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
-                      <RelativeTime date={run.created_at} locale={dateFnsLocaleFor(locale)} />
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-      )}
-
-      {totalPages > 1 && (
-        <div className="flex items-center justify-end gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={page <= 1}
-            onClick={() => setPage(page - 1)}
-          >
-            {t('components.pager.previous', 'Previous')}
-          </Button>
-          <span className="text-sm text-muted-foreground">
-            {t('scans.ci.pageOf', 'Page {page} of {pages}', { page, pages: totalPages })}
-          </span>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={page >= totalPages}
-            onClick={() => setPage(page + 1)}
-          >
-            {t('components.pager.next', 'Next')}
-          </Button>
-        </div>
       )}
 
       <CIRunSheet id={selected} onClose={() => setSelected(null)} />
@@ -432,7 +436,9 @@ export function CIRunSheet({ id, onClose }: { id: string | null; onClose: () => 
           <SheetDescription>
             {run
               ? t('scans.ci.refAtCommit', '{ref} at {commit}', {
-                  ref: run.branch || run.ref || '',
+                  ref:
+                    (run.branch || run.ref || '') +
+                    (run.pull_request ? ` #${run.pull_request}` : ''),
                   commit: shortSHA(run.commit_sha),
                 })
               : ''}
@@ -491,6 +497,31 @@ export function CIRunSheet({ id, onClose }: { id: string | null; onClose: () => 
                 )}
               </div>
 
+              {v?.summary && (
+                <p className="text-muted-foreground">
+                  {t(
+                    'scans.ci.verdictSummary',
+                    '{evaluated} findings judged: {new} new, {pre} already on {branch}, {accepted} accepted, {blocking} blocking.',
+                    {
+                      evaluated: v.summary.evaluated ?? 0,
+                      new: v.summary.new ?? 0,
+                      pre: v.summary.pre_existing ?? 0,
+                      branch:
+                        v.baseline?.branch || t('scans.ci.theDefaultBranch', 'the default branch'),
+                      accepted: v.summary.accepted ?? 0,
+                      blocking: v.summary.blocking ?? 0,
+                    }
+                  )}
+                  {(v.summary.monitored ?? 0) > 0 &&
+                    ' ' +
+                      t(
+                        'scans.ci.runDetail.monitored',
+                        '{count} more in monitor mode (recorded, not listed).',
+                        { count: v.summary.monitored ?? 0 }
+                      )}
+                </p>
+              )}
+
               {override && (
                 <Alert data-testid="ci-run-override">
                   <ShieldAlert className="size-4" aria-hidden />
@@ -515,90 +546,6 @@ export function CIRunSheet({ id, onClose }: { id: string | null; onClose: () => 
                   </AlertDescription>
                 </Alert>
               )}
-
-              <dl className="grid grid-cols-[minmax(6rem,8rem)_1fr] gap-x-3 gap-y-1">
-                <Row label={t('scans.ci.col.provider', 'Provider')}>
-                  {PROVIDER_LABEL[run.provider ?? ''] ?? run.provider}
-                </Row>
-                <Row label={t('scans.ci.col.event', 'Event')}>{run.event}</Row>
-                <Row label={t('scans.ci.col.actor', 'Actor')}>{run.actor}</Row>
-                <Row label={t('scans.ci.col.defaultBranch', 'Default branch')}>
-                  {run.default_branch}
-                </Row>
-                {run.environment && (
-                  <Row label={t('scans.ci.col.environment', 'Environment')}>{run.environment}</Row>
-                )}
-                <Row label={t('scans.ci.runDetail.commit', 'Commit')}>
-                  <span className="font-mono">{shortSHA(run.commit_sha)}</span>{' '}
-                  <span className="text-muted-foreground">
-                    {run.commit_verified
-                      ? t('scans.ci.runDetail.commitVerified', '(signed by the CI provider)')
-                      : t('scans.ci.runDetail.commitReported', '(reported by the job)')}
-                  </span>
-                </Row>
-                <Row label={t('scans.ci.col.reports', 'Reports')}>{run.reports_count ?? 0}</Row>
-                {tools && <Row label={t('scans.ci.runDetail.tools', 'Tools')}>{tools}</Row>}
-                {run.scan_failures != null && (
-                  <Row label={t('scans.ci.runDetail.scanFailures', 'Scan failures')}>
-                    <span className={run.scan_failures > 0 ? 'text-destructive' : undefined}>
-                      {run.scan_failures}
-                    </span>
-                  </Row>
-                )}
-                {v?.repo_file && (
-                  <Row label={t('scans.ci.runDetail.repoFile', '.openctem.yml')}>
-                    {v.repo_file === 'applied'
-                      ? t('scans.ci.runDetail.repoFileApplied', 'Applied (tightened the policy)')
-                      : t('scans.ci.runDetail.repoFileIgnored', 'Ignored (not allowed by policy)')}
-                  </Row>
-                )}
-                {run.evaluated_at && (
-                  <Row label={t('scans.ci.runDetail.evaluated', 'Judged')}>
-                    <RelativeTime date={run.evaluated_at} locale={dfLocale} />
-                  </Row>
-                )}
-                {run.decoration_state && (
-                  <Row label={t('scans.ci.runDetail.decoration', 'Check and comment')}>
-                    <span data-testid="ci-run-decoration">
-                      <Badge
-                        variant={run.decoration_state === 'failed' ? 'destructive' : 'outline'}
-                      >
-                        {t(
-                          `scans.ci.decoration.${run.decoration_state}`,
-                          DECORATION_LABEL[run.decoration_state] ?? run.decoration_state
-                        )}
-                      </Badge>
-                      {run.decoration_detail && (
-                        <span className="ml-2 text-muted-foreground">{run.decoration_detail}</span>
-                      )}
-                      {codeHost && canConnect && (
-                        <Button
-                          asChild
-                          size="sm"
-                          variant="outline"
-                          className="mt-1.5 flex w-fit"
-                          data-testid="ci-run-connect-host"
-                        >
-                          <Link href="/ci-cd?tab=setup&section=feedback">
-                            <Plug className="size-3.5" aria-hidden />
-                            {codeHost === 'gitlab'
-                              ? t('scans.ci.runDetail.connectGitLab', 'Connect GitLab')
-                              : t('scans.ci.runDetail.installGitHub', 'Install the GitHub App')}
-                          </Link>
-                        </Button>
-                      )}
-                      {codeHost && !canConnect && (
-                        <span className="mt-1 block text-xs text-muted-foreground">
-                          {t(
-                            'scans.ci.runDetail.askConnect',
-                            'An administrator can connect the code host under CI/CD Settings, Pull request feedback.'
-                          )}
-                        </span>
-                      )}
-                    </span>
-                  </Row>
-                )}
-              </dl>
 
               {v?.baseline?.established && (
                 <Alert data-testid="ci-run-baseline-established">
@@ -636,31 +583,6 @@ export function CIRunSheet({ id, onClose }: { id: string | null; onClose: () => 
                       })}
                     </span>
                   )}
-                </p>
-              )}
-
-              {v?.summary && (
-                <p className="text-muted-foreground">
-                  {t(
-                    'scans.ci.verdictSummary',
-                    '{evaluated} findings judged: {new} new, {pre} already on {branch}, {accepted} accepted, {blocking} blocking.',
-                    {
-                      evaluated: v.summary.evaluated ?? 0,
-                      new: v.summary.new ?? 0,
-                      pre: v.summary.pre_existing ?? 0,
-                      branch:
-                        v.baseline?.branch || t('scans.ci.theDefaultBranch', 'the default branch'),
-                      accepted: v.summary.accepted ?? 0,
-                      blocking: v.summary.blocking ?? 0,
-                    }
-                  )}
-                  {(v.summary.monitored ?? 0) > 0 &&
-                    ' ' +
-                      t(
-                        'scans.ci.runDetail.monitored',
-                        '{count} more in monitor mode (recorded, not listed).',
-                        { count: v.summary.monitored ?? 0 }
-                      )}
                 </p>
               )}
 
@@ -703,6 +625,102 @@ export function CIRunSheet({ id, onClose }: { id: string | null; onClose: () => 
                   {t('scans.ci.runDetail.breakGlass', 'Break-glass this commit')}
                 </Button>
               )}
+
+              <section className="space-y-2" aria-labelledby="ci-run-details">
+                <h3 id="ci-run-details" className="font-medium">
+                  {t('scans.ci.runDetail.details', 'Details')}
+                </h3>
+                <dl className="grid grid-cols-[minmax(6rem,8rem)_1fr] gap-x-3 gap-y-1">
+                  <Row label={t('scans.ci.col.provider', 'Provider')}>
+                    {PROVIDER_LABEL[run.provider ?? ''] ?? run.provider}
+                  </Row>
+                  <Row label={t('scans.ci.col.event', 'Event')}>{run.event}</Row>
+                  <Row label={t('scans.ci.col.actor', 'Actor')}>{run.actor}</Row>
+                  <Row label={t('scans.ci.col.defaultBranch', 'Default branch')}>
+                    {run.default_branch}
+                  </Row>
+                  {run.environment && (
+                    <Row label={t('scans.ci.col.environment', 'Environment')}>
+                      {run.environment}
+                    </Row>
+                  )}
+                  <Row label={t('scans.ci.runDetail.commit', 'Commit')}>
+                    <span className="font-mono">{shortSHA(run.commit_sha)}</span>{' '}
+                    <span className="text-muted-foreground">
+                      {run.commit_verified
+                        ? t('scans.ci.runDetail.commitVerified', '(signed by the CI provider)')
+                        : t('scans.ci.runDetail.commitReported', '(reported by the job)')}
+                    </span>
+                  </Row>
+                  <Row label={t('scans.ci.col.reports', 'Reports')}>{run.reports_count ?? 0}</Row>
+                  {tools && <Row label={t('scans.ci.runDetail.tools', 'Tools')}>{tools}</Row>}
+                  {run.scan_failures != null && (
+                    <Row label={t('scans.ci.runDetail.scanFailures', 'Scan failures')}>
+                      <span className={run.scan_failures > 0 ? 'text-destructive' : undefined}>
+                        {run.scan_failures}
+                      </span>
+                    </Row>
+                  )}
+                  {v?.repo_file && (
+                    <Row label={t('scans.ci.runDetail.repoFile', '.openctem.yml')}>
+                      {v.repo_file === 'applied'
+                        ? t('scans.ci.runDetail.repoFileApplied', 'Applied (tightened the policy)')
+                        : t(
+                            'scans.ci.runDetail.repoFileIgnored',
+                            'Ignored (not allowed by policy)'
+                          )}
+                    </Row>
+                  )}
+                  {run.evaluated_at && (
+                    <Row label={t('scans.ci.runDetail.evaluated', 'Judged')}>
+                      <RelativeTime date={run.evaluated_at} locale={dfLocale} />
+                    </Row>
+                  )}
+                  {run.decoration_state && (
+                    <Row label={t('scans.ci.runDetail.decoration', 'Check and comment')}>
+                      <span data-testid="ci-run-decoration">
+                        <Badge
+                          variant={run.decoration_state === 'failed' ? 'destructive' : 'outline'}
+                        >
+                          {t(
+                            `scans.ci.decoration.${run.decoration_state}`,
+                            DECORATION_LABEL[run.decoration_state] ?? run.decoration_state
+                          )}
+                        </Badge>
+                        {run.decoration_detail && (
+                          <span className="ml-2 text-muted-foreground">
+                            {run.decoration_detail}
+                          </span>
+                        )}
+                        {codeHost && canConnect && (
+                          <Button
+                            asChild
+                            size="sm"
+                            variant="outline"
+                            className="mt-1.5 flex w-fit"
+                            data-testid="ci-run-connect-host"
+                          >
+                            <Link href="/ci-cd?tab=setup&section=feedback">
+                              <Plug className="size-3.5" aria-hidden />
+                              {codeHost === 'gitlab'
+                                ? t('scans.ci.runDetail.connectGitLab', 'Connect GitLab')
+                                : t('scans.ci.runDetail.installGitHub', 'Install the GitHub App')}
+                            </Link>
+                          </Button>
+                        )}
+                        {codeHost && !canConnect && (
+                          <span className="mt-1 block text-xs text-muted-foreground">
+                            {t(
+                              'scans.ci.runDetail.askConnect',
+                              'An administrator can connect the code host under CI/CD Settings, Pull request feedback.'
+                            )}
+                          </span>
+                        )}
+                      </span>
+                    </Row>
+                  )}
+                </dl>
+              </section>
             </div>
           )}
         </SheetBody>

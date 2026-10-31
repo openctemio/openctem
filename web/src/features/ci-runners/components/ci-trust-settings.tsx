@@ -108,7 +108,7 @@ type TFn = ReturnType<typeof useTranslation>['t']
  * Trust, gate policy and break-glass. `embedded` drops the page header (the
  * CI/CD integration page shows these as its Settings tab).
  */
-const SETUP_SECTIONS = ['trust', 'gate', 'break-glass', 'feedback'] as const
+const SETUP_SECTIONS = ['trust', 'refused', 'gate', 'break-glass', 'feedback'] as const
 type SetupSection = (typeof SETUP_SECTIONS)[number]
 
 /** The setup section a URL asks for; anything unknown is Trust. */

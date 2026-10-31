@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { CIRunsView } from '../components/ci-runs-view'
 import { ApiClientError } from '@/lib/api/error-handler'
 import { CITrustSettings } from '../components/ci-trust-settings'
+import { CIRefusalNotice, recentRefusals } from '../components/ci-refusals'
 import { ciRunsURL } from '../api/use-ci'
 import {
   PROVIDER_TRAITS,
@@ -115,6 +116,11 @@ const failingRun = {
   findings_count: 3,
   actor: 'octocat',
   created_at: '2026-10-05T10:00:00Z',
+}
+
+/** The list's body rows (DataTable), without the header row. */
+function runRows(): HTMLElement[] {
+  return screen.getAllByRole('row').filter((r) => within(r).queryAllByRole('cell').length > 0)
 }
 
 describe('lib', () => {
@@ -366,8 +372,9 @@ describe('CIRunsView', () => {
       },
     }
     render(<CIRunsView />)
-    const row = screen.getByTestId('ci-run-row')
-    expect(within(row).getByText('github.com/acme/api')).toBeInTheDocument()
+    const [row] = runRows()
+    // The code host is dropped from the path; the provider is the icon.
+    expect(within(row).getByText('acme/api')).toBeInTheDocument()
     expect(within(row).getByText('Fail')).toBeInTheDocument()
     expect(within(row).getByText('#17')).toBeInTheDocument()
     await userEvent.click(row)
@@ -385,7 +392,7 @@ describe('CIRunsView', () => {
 
   it('filters by verdict from page one', () => {
     render(<CIRunsView />)
-    expect(lastRunFilters).toEqual({ verdict: '', page: 1 })
+    expect(lastRunFilters).toEqual({ verdict: '', page: 1, perPage: 25 })
   })
 
   const judgedRun = {
@@ -480,7 +487,7 @@ describe('CIRunsView', () => {
       { ...failingRun, id: 'b', verdict: 'pass', would_fail: true, status: 'evaluated' },
     ]
     render(<CIRunsView />)
-    const rows = screen.getAllByTestId('ci-run-row')
+    const rows = runRows()
     expect(within(rows[0]).getByText('Running')).toBeInTheDocument()
     expect(within(rows[1]).getByText('Pass (override or warn)')).toBeInTheDocument()
   })
@@ -505,12 +512,68 @@ describe('CIRunsView', () => {
     ).toContain('break-words')
   })
 
+  it('puts why the run failed before its details', async () => {
+    runDetail = judgedRun
+    window.history.replaceState({}, '', '/ci-cd?view=runs&run=r2')
+    render(<CIRunsView />)
+    const blocking = await screen.findByRole('list', { name: 'Blocking' })
+    const details = screen.getByRole('heading', { name: 'Details' })
+    // Blocking comes first in the document (a developer opens the run to see why).
+    expect(
+      blocking.compareDocumentPosition(details) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy()
+    const summary = screen.getByText(/2 findings judged/)
+    expect(
+      summary.compareDocumentPosition(blocking) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy()
+  })
+
   it('keeps the open run in the URL', async () => {
     runs = [failingRun]
     runDetail = { ...failingRun }
     render(<CIRunsView />)
-    await userEvent.click(screen.getByTestId('ci-run-row'))
+    await userEvent.click(runRows()[0])
     expect(window.location.search).toContain('run=r1')
+  })
+})
+
+describe('Refused pipelines notice (Pipelines tab)', () => {
+  const day = 86_400_000
+  const at = (daysAgo: number) => new Date(Date.now() - daysAgo * day).toISOString()
+
+  it('counts refusals of the last seven days only', () => {
+    const now = Date.parse('2026-10-31T00:00:00Z')
+    const list = [
+      { at: '2026-10-30T00:00:00Z' },
+      { at: '2026-10-24T00:00:00Z' },
+      { at: '2026-10-23T23:59:00Z' },
+      { at: undefined },
+    ]
+    expect(recentRefusals(list, now)).toHaveLength(2)
+  })
+
+  it('tells a CI writer how many pipelines were refused and links to why', () => {
+    refusals = [{ at: at(1) }, { at: at(2) }, { at: at(30) }]
+    render(<CIRefusalNotice canWrite />)
+    expect(screen.getByTestId('ci-refusal-notice')).toHaveTextContent(
+      '2 pipelines were refused in the last 7 days.'
+    )
+    expect(screen.getByRole('link', { name: /see why/i })).toHaveAttribute(
+      'href',
+      '/ci-cd?tab=setup&section=refused'
+    )
+    refusals = []
+  })
+
+  it('says nothing to a reader, or when nothing was refused lately', () => {
+    refusals = [{ at: at(1) }]
+    const { container, unmount } = render(<CIRefusalNotice canWrite={false} />)
+    expect(container).toBeEmptyDOMElement()
+    unmount()
+    refusals = [{ at: at(40) }]
+    const second = render(<CIRefusalNotice canWrite />)
+    expect(second.container).toBeEmptyDOMElement()
+    refusals = []
   })
 })
 
