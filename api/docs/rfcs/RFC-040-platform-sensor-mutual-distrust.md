@@ -344,6 +344,55 @@ bearer-key sunset, §7).
 > `/api/v1/sensors/quarantined-results` (list, get, approve, reject). Details:
 > [architecture/sensor-result-binding.md](../architecture/sensor-result-binding.md).
 
+#### 5.3.1 Amendment (2026-10-31): bound results stay inside the job's targets
+
+**Why.** The flow audit of 2026-10-31 (sensor and platform workflow, gaps
+"hostname-scoped results" and "a sensor labels its findings' channel")
+found two places where a bound report still decided more than its command
+allowed. Only address-chunk scans dropped assets outside their targets; a
+report of a job given a host name could create assets and findings for any
+host. And the channel a finding is filed under (`findings.ingest_channel`:
+scanner, collector, integration, manual) came from the report's
+`metadata.source_type`, so a sensor could file its findings as a person's
+or an integration's, which retest and closure treat differently.
+
+**Decision.**
+
+- *Location binding.* The output contract (research/27 G12) already bounds
+  the asset **types** a stage may report. A report bound to a `scan` or
+  `retest` command whose targets name at least one host (and is not an
+  address chunk) may create or change a **located** asset (domain,
+  subdomain, address, host, service, web application) only at or under one
+  of the command's target names, at a target address or inside a target
+  range, or at an address that an in-bound asset of the same report states
+  it resolves to or is served from (A and AAAA records, `resolved_ips`,
+  address properties, an address asset whose host name is in bounds). This
+  is the expected expansion of each stage: discovery adds names under the
+  target root, resolution and port scans add the target names' addresses
+  and their services, probes add services on target hosts. A vouched
+  address never vouches for anything else, so a report cannot chain its way
+  out. Everything else is dropped with its findings (receipt reason
+  `outside_job_targets`), counted (`sensor_results_outside_job_total{kind}`)
+  and audited (`sensor.results_outside_job`, severity high); it never
+  creates an asset, whatever the tenant's result policy mode. Assets that
+  name no host (certificates, repositories, cloud resources) keep the other
+  checks. This replaces the "candidates" bullet above for bound reports: a
+  name outside the target roots is not a candidate the job could have been
+  asked to find.
+- *Channel from the principal.* A sensor's report, bound or not, and a
+  quarantined sensor report a person accepted, is filed `collector` when
+  the sensor's role is collector and `scanner` otherwise; its
+  `metadata.source_type` is ignored. Server-side ingests without a sensor
+  (imports, uploads, program feeds) and CI runs keep their producer's value.
+  `findings.source` (the technique) was already derived on the server from
+  the bound capability or the tool and cannot name `manual`, `pentest`,
+  `bug_bounty` or `red_team`.
+
+**Residual risk.** The platform does not resolve names itself: a sensor may
+state that a target name resolves to any address, and that address is then
+accepted. It cannot add a name outside the target roots, and the address is
+attributed to the sensor and the command.
+
 ### 5.4 Hostile-results pipeline
 
 **Threat.** Results are produced by scanners from attacker-controllable
