@@ -96,10 +96,17 @@ function Viz({
       return <BarViz result={r} unit={unit} drill={drill} stacked={viz === 'donut'} />
     case 'time_series':
       if (viz === 'table') return <TimeSeriesTable result={r} unit={unit} drill={drill} />
-      if (viz === 'diverging') return <DivergingViz result={r} drill={drill} />
-      if (viz === 'column') return <ColumnViz result={r} unit={unit} drill={drill} />
+      if (viz === 'diverging') return <DivergingViz result={r} drill={drill} polarity={polarity} />
+      if (viz === 'column')
+        return <ColumnViz result={r} unit={unit} drill={drill} polarity={polarity} />
       return (
-        <AreaLineViz result={r} unit={unit} drill={drill} mode={viz === 'line' ? 'line' : 'area'} />
+        <AreaLineViz
+          result={r}
+          unit={unit}
+          drill={drill}
+          polarity={polarity}
+          mode={viz === 'line' ? 'line' : 'area'}
+        />
       )
     case 'matrix':
       if (viz === 'table') return <MatrixTable result={r} drill={drill} />

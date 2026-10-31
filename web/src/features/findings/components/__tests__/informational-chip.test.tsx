@@ -67,7 +67,9 @@ describe('InformationalChip', () => {
       />
     )
     expect(countState.enabled).toBe(false)
-    expect(screen.getByTestId('informational-chip')).toHaveTextContent('Informational hidden')
+    // Not drawn before the count is known: it would be withdrawn again when the
+    // count is zero, moving the list.
+    expect(screen.queryByTestId('informational-chip')).toBeNull()
   })
 
   it('shows nothing when nothing is left out', () => {
