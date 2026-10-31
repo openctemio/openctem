@@ -133,6 +133,14 @@ type Handlers struct {
 	SCIMToken     *handler.SCIMTokenHandler  // nil if not initialized - SCIM token admin
 	SCIMAuth      Middleware                 // SCIM bearer-token auth middleware (nil if SCIM disabled)
 	ModuleGate    *middleware.ModuleGate     // per-tenant module route gating (nil-safe: fail-open)
+	// IPAllowlistGate is the organization IP allowlist gate, built by the
+	// caller so a cross-replica invalidation bus can drop its cache
+	// (NewIPAllowlistGate). Nil: Register builds one, invalidated locally only.
+	IPAllowlistGate *middleware.IPAllowlistGate
+	// IPAllowlistInvalidate drops an organization's cached allowlist after a
+	// settings change (the bus when Redis is configured). Nil: the gate's own
+	// Invalidate.
+	IPAllowlistInvalidate func(tenantID string)
 	// DataScope enforces the Layer 2 (group) data scope on every by-id asset
 	// and finding route of the token-tenant chain (DataScopeGuard). nil
 	// disables the guard (tests with a minimal handler set).
@@ -590,10 +598,17 @@ func Register(
 	// and to the /tenants/{tenant} chain (URL organization). Settings changes
 	// invalidate the cached policy through the tenant handler.
 	if tenantRepo != nil {
-		ipGate := middleware.NewIPAllowlistGate(tenantSecurityPolicyAdapter{repo: tenantRepo}, 30*time.Second, log)
+		ipGate := h.IPAllowlistGate
+		if ipGate == nil {
+			ipGate = NewIPAllowlistGate(tenantRepo, log)
+		}
 		ipAllowlistMiddleware = ipGate.Enforce
 		if h.Tenant != nil {
-			h.Tenant.SetSecurityPolicyInvalidator(ipGate.Invalidate)
+			invalidate := h.IPAllowlistInvalidate
+			if invalidate == nil {
+				invalidate = ipGate.Invalidate
+			}
+			h.Tenant.SetSecurityPolicyInvalidator(invalidate)
 		}
 	}
 
@@ -1448,6 +1463,12 @@ func requireStepUpWhenConfirming() Middleware {
 			gated.ServeHTTP(w, r)
 		})
 	}
+}
+
+// NewIPAllowlistGate builds the organization IP allowlist gate (policies
+// cached 30s per replica; the cache invalidation bus drops entries early).
+func NewIPAllowlistGate(tenantRepo tenant.Repository, log *logger.Logger) *middleware.IPAllowlistGate {
+	return middleware.NewIPAllowlistGate(tenantSecurityPolicyAdapter{repo: tenantRepo}, 30*time.Second, log)
 }
 
 // tenantSecurityPolicyAdapter adapts tenant.Repository to
