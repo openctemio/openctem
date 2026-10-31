@@ -504,8 +504,8 @@ export const EXPOSURE_STATE_CONFIG: Record<
   },
   in_progress: {
     label: 'In progress',
-    color: 'text-blue-600',
-    bgColor: 'bg-blue-100 dark:bg-blue-900/30',
+    color: 'text-blue-600', // palette-ok: distinct state accent, matches its siblings
+    bgColor: 'bg-blue-100 dark:bg-blue-900/30', // palette-ok: distinct state accent
   },
   resolved: {
     label: 'Resolved',
