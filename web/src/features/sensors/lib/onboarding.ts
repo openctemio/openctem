@@ -10,13 +10,13 @@ import { pairingSettled } from '@/lib/api/sensor-pairing-hooks'
 import type { SensorTemplates } from '../components/sensor-install-snippets'
 
 /** Where the sensor runs: one tab each. */
-export type OnboardingPlatform = 'docker' | 'compose' | 'kubernetes' | 'linux'
+export type OnboardingPlatform = 'docker' | 'compose' | 'kubernetes' | 'linux' | 'multi'
 
 export interface OnboardingPlatformOption {
   key: OnboardingPlatform
   labelKey: string
   /** The field of the install-templates answer that holds this platform's commands. */
-  field: keyof Pick<SensorTemplates, 'docker' | 'compose' | 'kubernetes' | 'cli'>
+  field: keyof Pick<SensorTemplates, 'docker' | 'compose' | 'kubernetes' | 'cli' | 'multi'>
   /** File name offered for download, when the snippet is a file. */
   file?: string
 }
@@ -36,6 +36,7 @@ export const ONBOARDING_PLATFORMS: OnboardingPlatformOption[] = [
     file: 'openctem-sensor.yaml',
   },
   { key: 'linux', labelKey: 'sensors.onboard.platform.linux', field: 'cli' },
+  { key: 'multi', labelKey: 'sensors.onboard.platform.multi', field: 'multi' },
 ]
 
 /**

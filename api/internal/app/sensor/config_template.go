@@ -108,9 +108,15 @@ type SensorTemplateData struct {
 	// signature use it + "@refs/tags/" + ImageTag. Empty: no check shown.
 	ReleaseIdentity string
 	// CACert is the PEM of the platform's certificate authority when it uses
-	// a private one (SENSOR_CA_CERT_FILE); empty for a publicly trusted
+	// a private one (PLATFORM_CA_CERT_FILE); empty for a publicly trusted
 	// certificate. The snippets install it and point SSL_CERT_DIR at it.
-	CACert      string
+	CACert string
+	// CAPins is the SENSOR_CA_SHA256 value the snippets pass with CACert:
+	// the lower-case hex SHA-256 of the CA's roots, comma separated. With it
+	// a sensor that does not trust the platform's chain (the CA file is
+	// gone, or the root was rotated) fetches the platform's CA bundle and
+	// trusts only a certificate that matches. Hex digits and commas only.
+	CAPins      string
 	GeneratedAt string // RFC3339 timestamp
 
 	// SeccompURL is where the install commands download the sensor's
@@ -313,6 +319,9 @@ func (s *SensorConfigTemplateService) Render(data SensorTemplateData) (*Rendered
 	if data.SeccompSHA256 == "" {
 		data.SeccompSHA256 = SeccompProfileSHA256
 	}
+	if data.CAPins != "" && !caPinsRE.MatchString(data.CAPins) {
+		return nil, fmt.Errorf("render sensor templates: CAPins is not a list of SHA-256 hex digests")
+	}
 	if data.CACert != "" && !strings.HasSuffix(data.CACert, "\n") {
 		data.CACert += "\n"
 	}
@@ -474,4 +483,20 @@ func imageTag(image string) string {
 		return image[i+1:]
 	}
 	return ""
+}
+
+// caPinsRE is the only shape CAPins may have in a snippet.
+var caPinsRE = regexp.MustCompile(`^[0-9a-f]{64}(,[0-9a-f]{64})*$`)
+
+// SetPlatformCA fills CACert and CAPins from the platform's CA (nil clears
+// both).
+func (d *SensorTemplateData) SetPlatformCA(ca *PlatformCA, now time.Time) {
+	d.CACert, d.CAPins = "", ""
+	if ca == nil {
+		return
+	}
+	d.CACert = ca.PEM
+	if pins := ca.Pins(now); caPinsRE.MatchString(pins) {
+		d.CAPins = pins
+	}
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io/fs"
 	"net"
 	"net/http"
 	"regexp"
@@ -43,9 +44,10 @@ type SensorHandler struct {
 	sdkLatestSource func() string
 	// collectorImage is the image a collector's install snippets run.
 	collectorImage string
-	// caCertFile is the platform CA the snippets install (SENSOR_CA_CERT_FILE);
-	// empty when the platform certificate is publicly trusted.
-	caCertFile string
+	// platformCA is the platform's private CA (PLATFORM_CA_CERT_FILE) the
+	// snippets install and pin; nil or unset when the platform certificate
+	// is publicly trusted.
+	platformCA *sensorapp.PlatformCASource
 	// healthPolicy holds the thresholds and the products' release lines the
 	// computed state, health reasons and version status use.
 	healthPolicy sensor.HealthPolicy
@@ -158,11 +160,45 @@ func (h *SensorHandler) SetPublicAPIURL(url string) {
 // install snippets run.
 func (h *SensorHandler) SetCollectorImage(image string) { h.collectorImage = image }
 
-// SetCACertificateFile sets the platform CA file the install snippets embed
-// (SENSOR_CA_CERT_FILE). It is read on each request, so a CA the gateway
-// exports after the API started is picked up.
-func (h *SensorHandler) SetCACertificateFile(path string) {
-	h.caCertFile = path
+// SetPlatformCA sets the platform's private CA (PLATFORM_CA_CERT_FILE) the
+// install snippets embed and pin. The source re-reads the file when it
+// changes, so a CA the gateway exports after the API started is picked up.
+func (h *SensorHandler) SetPlatformCA(src *sensorapp.PlatformCASource) {
+	h.platformCA = src
+}
+
+// loadPlatformCA returns the platform CA for the snippets: nil when none is
+// configured or the file is not usable (logged; the snippets then assume a
+// publicly trusted certificate).
+func (h *SensorHandler) loadPlatformCA() *sensorapp.PlatformCA {
+	ca, err := h.platformCA.Get()
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		h.logger.Warn("platform CA certificate not usable; install snippets omit it",
+			"path", logger.SanitizeValue(h.platformCA.Path()), "error", logger.SanitizeError(err))
+		return nil
+	}
+	return ca
+}
+
+// PlatformCAInfo describes the platform's private CA for the console: what
+// the install commands pin and where a sensor (or a person) downloads it.
+type PlatformCAInfo struct {
+	// Certificates are the CA certificates of the bundle, roots first as
+	// listed in the file.
+	Certificates []sensorapp.PlatformCACert `json:"certificates"`
+	// Pin is the SENSOR_CA_SHA256 value the install commands carry: the
+	// lower-case hex SHA-256 of every unexpired root, comma separated.
+	Pin string `json:"pin"`
+	// DownloadPath is the public endpoint that serves the PEM bundle.
+	DownloadPath string `json:"download_path"`
+}
+
+// platformCAInfo builds the console view of ca (nil for nil).
+func platformCAInfo(ca *sensorapp.PlatformCA) *PlatformCAInfo {
+	if ca == nil {
+		return nil
+	}
+	return &PlatformCAInfo{Certificates: ca.Certs, Pin: ca.Pins(time.Now()), DownloadPath: sensorapp.PlatformCAPath}
 }
 
 // CreateSensorRequest represents the request body for creating a sensor.
@@ -1498,10 +1534,16 @@ type SensorConfigTemplatesResponse struct {
 	// X-Sensor-API-Key; otherwise they read it from OPENCTEM_API_KEY.
 	APIKeyIncluded bool `json:"api_key_included"`
 	// CACertificate is the PEM of the platform's private CA the snippets
-	// install (SENSOR_CA_CERT_FILE); "" when none is configured.
+	// install (PLATFORM_CA_CERT_FILE); "" when none is configured.
 	CACertificate string `json:"ca_certificate"`
-	// CAFingerprintSHA256 is the SHA-256 fingerprint of that CA, colon hex.
+	// CAFingerprintSHA256 is the SHA-256 fingerprint of that CA's root, colon hex.
 	CAFingerprintSHA256 string `json:"ca_fingerprint_sha256"`
+	// PlatformCA describes that CA (names, fingerprints, the pin the
+	// commands carry, the public download); absent when none is configured.
+	PlatformCA *PlatformCAInfo `json:"platform_ca,omitempty"`
+	// Multi is the multi-sensor kit's command (sensors.sh add) for this
+	// platform; only in the answer for a new sensor that pairs.
+	Multi string `json:"multi,omitempty"`
 }
 
 // sensorAPIKeyHeaderRegexp is the shape of a sensor API key. The header value
@@ -1515,7 +1557,7 @@ var sensorAPIKeyHeaderRegexp = regexp.MustCompile(`^[A-Za-z0-9_-]{8,256}$`)
 // and can be edited without rebuilding the frontend.
 //
 // @Summary Get sensor configuration templates
-// @Description Returns the install and configuration snippets for a sensor: docker run, Compose, Kubernetes, Helm, YAML, env and CLI, for the chosen sensor product (default: the product the sensor reports, else the scanning sensor), pinned to that product's latest release in the built-in version manifest, pointed at the public platform URL, and installing the platform's private CA when SENSOR_CA_CERT_FILE is set.
+// @Description Returns the install and configuration snippets for a sensor: docker run, Compose, Kubernetes, Helm, YAML, env and CLI, for the chosen sensor product (default: the product the sensor reports, else the scanning sensor), pinned to that product's latest release in the built-in version manifest, pointed at the public platform URL, and installing and pinning (SENSOR_CA_SHA256) the platform's private CA when PLATFORM_CA_CERT_FILE is set.
 // @Tags Sensors
 // @Produce json
 // @Param id path string true "Sensor ID"
@@ -1577,23 +1619,18 @@ func (h *SensorHandler) GetConfigTemplates(w http.ResponseWriter, r *http.Reques
 		image = product.Image
 	}
 
-	caPEM, caFingerprint, caErr := sensorapp.LoadCACertificate(h.caCertFile)
-	if caErr != nil {
-		// Not fatal: the snippets then assume a publicly trusted certificate.
-		h.logger.Warn("sensor CA certificate not usable; install snippets omit it",
-			"path", h.caCertFile, "error", caErr)
-	}
+	ca := h.loadPlatformCA()
 
 	data := sensorapp.SensorTemplateData{
 		Sensor:  a,
 		APIKey:  apiKey,
 		BaseURL: baseURL,
 		Image:   image,
-		CACert:  caPEM,
 		Install: product.Install,
 
 		ReleaseIdentity: product.ReleaseIdentity,
 	}
+	data.SetPlatformCA(ca, time.Now())
 	if a.TenantID != nil {
 		// Best effort: with nothing to prefill the template asks for targets.
 		data.Policy = h.policyPrefill.For(r.Context(), *a.TenantID, a.ID)
@@ -1618,8 +1655,9 @@ func (h *SensorHandler) GetConfigTemplates(w http.ResponseWriter, r *http.Reques
 		Product:             product.ID,
 		APIURL:              baseURL,
 		APIKeyIncluded:      apiKey != "",
-		CACertificate:       caPEM,
-		CAFingerprintSHA256: caFingerprint,
+		CACertificate:       data.CACert,
+		CAFingerprintSHA256: ca.Fingerprint(),
+		PlatformCA:          platformCAInfo(ca),
 	}
 	// The response can carry a freshly issued key: never cache it.
 	w.Header().Set("Cache-Control", "no-store")

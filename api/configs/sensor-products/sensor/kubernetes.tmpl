@@ -161,6 +161,10 @@ spec:
             - name: SSL_CERT_DIR
               value: /etc/openctem/certs
 {{- end}}
+{{- if .CAPins}}
+            - name: SENSOR_CA_SHA256
+              value: "{{.CAPins}}"
+{{- end}}
           volumeMounts:
             - name: data
               mountPath: /var/lib/openctem
@@ -229,6 +233,10 @@ spec:
 {{- if .CACert}}
             - name: SSL_CERT_DIR
               value: /etc/openctem/certs
+{{- end}}
+{{- if .CAPins}}
+            - name: SENSOR_CA_SHA256
+              value: "{{.CAPins}}"
 {{- end}}
           volumeMounts:
             - name: scan

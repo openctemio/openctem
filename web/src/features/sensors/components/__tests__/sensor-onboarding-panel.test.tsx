@@ -17,6 +17,7 @@ const api = vi.hoisted(() => ({
   expectation: { data: undefined as unknown },
   templateCodes: [] as (string | null)[],
   sensor: undefined as unknown,
+  extra: {} as Record<string, unknown>,
 }))
 
 vi.mock('@/context/tenant-provider', () => ({
@@ -57,6 +58,7 @@ vi.mock('@/lib/api/sensor-pairing-hooks', () => ({
         cli: 'sudo systemctl enable --now openctem-sensor',
         policy: 'apiVersion: openctem.io/sensor-policy/v1',
         api_url: 'https://ctem.example.test',
+        ...api.extra,
       },
       mutate: vi.fn(),
     }
@@ -76,6 +78,7 @@ describe('SensorOnboardingPanel', () => {
     api.expectation = { data: undefined }
     api.templateCodes = []
     api.sensor = undefined
+    api.extra = {}
   })
 
   it('opens on one command whose code finds the sensor, with no choice of flow', async () => {
@@ -158,6 +161,58 @@ describe('SensorOnboardingPanel', () => {
     await user.click(screen.getByRole('radio', { name: 'Kubernetes' }))
     expect(screen.getByText('kind: Deployment')).toBeInTheDocument()
     expect(api.expect).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows the private CA every command pins, and the multi-sensor kit command', async () => {
+    const root = 'ab'.repeat(32)
+    api.extra = {
+      multi: `./sensors.sh add 'openctem-sensor' --api-url 'https://ctem.example.test' --ca-sha256 ${root}`,
+      platform_ca: {
+        pin: root,
+        download_path: '/api/v1/sensors/platform-ca',
+        certificates: [
+          {
+            common_name: 'OpenCTEM Internal CA - ECC Intermediate',
+            sha256: 'CD:'.repeat(31) + 'CD',
+            sha256_hex: 'cd'.repeat(32),
+            root: false,
+            not_after: '2036-08-09T14:58:23Z',
+          },
+          {
+            common_name: 'OpenCTEM Internal CA - 2026 ECC Root',
+            sha256: 'AB:'.repeat(31) + 'AB',
+            sha256_hex: root,
+            root: true,
+            not_after: '2036-08-09T14:58:23Z',
+          },
+        ],
+      },
+    }
+    api.expect.mockResolvedValue({
+      id: 'e1',
+      status: 'expecting',
+      code: 'K7QM4ZTD',
+      expires_at: future(),
+    })
+    const user = userEvent.setup()
+    render(<SensorOnboardingPanel />)
+    await screen.findByText(/docker run/)
+    const panel = screen.getByTestId('platform-ca')
+    expect(panel).toHaveTextContent('OpenCTEM Internal CA - 2026 ECC Root')
+    expect(panel).toHaveTextContent('OpenCTEM Internal CA - ECC Intermediate')
+    expect(panel).toHaveTextContent('AB:'.repeat(31) + 'AB')
+    expect(panel).toHaveTextContent(/SENSOR_CA_SHA256/)
+    expect(screen.getAllByTestId('platform-ca-cert')).toHaveLength(2)
+    // Only the root is pinned.
+    expect(screen.getAllByText('Pinned')).toHaveLength(1)
+    expect(screen.getByRole('link', { name: 'Download CA certificates' })).toHaveAttribute(
+      'href',
+      '/api/v1/sensors/platform-ca'
+    )
+    expect(screen.queryByTestId('onboarding-ca-fingerprint')).toBeNull()
+
+    await user.click(screen.getByRole('radio', { name: 'Several on one host' }))
+    expect(screen.getByText(new RegExp(`--ca-sha256 ${root}`))).toBeInTheDocument()
   })
 
   it('offers the narrowing policy as optional and links the approve page', async () => {
