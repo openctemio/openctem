@@ -140,9 +140,12 @@ type Entry struct {
 	LastAttemptAt *time.Time `json:"last_attempt_at,omitempty"`
 	LastSuccessAt *time.Time `json:"last_success_at,omitempty"`
 	LastOutcome   string     `json:"last_outcome,omitempty"`
-	LastError     string     `json:"last_error,omitempty"`
-	LastTool      string     `json:"last_tool,omitempty"`
-	FailStreak    int        `json:"fail_streak,omitempty"`
+	// LastEdgeVendor names the edge protection behind an edge_blocked or
+	// edge_challenged outcome (a token shown as text), when known.
+	LastEdgeVendor string `json:"last_edge_vendor,omitempty"`
+	LastError      string `json:"last_error,omitempty"`
+	LastTool       string `json:"last_tool,omitempty"`
+	FailStreak     int    `json:"fail_streak,omitempty"`
 	// UnreachedFrom names the organization's own scan zone or sensor whose
 	// tasks found the target silent, for a pair paused for that (never a
 	// platform sensor: "" then, and for any other pair).
@@ -229,6 +232,7 @@ func fill(e *Entry, row *Row) {
 	e.State, e.Reason = row.State, row.Reason
 	e.NextDueAt, e.LastAttemptAt, e.LastSuccessAt = row.NextDueAt, row.LastAttemptAt, row.LastSuccessAt
 	e.LastOutcome, e.LastError, e.LastTool, e.FailStreak = row.LastOutcome, row.LastError, row.LastTool, row.FailStreak
+	e.LastEdgeVendor = row.LastEdgeVendor
 	e.PlatformSide = row.State == StateFailed && IsPlatformSide(row.LastOutcome)
 	if row.State == StatePaused && IsTargetSide(row.Reason) {
 		e.UnreachedFrom = row.UnreachedFromName
@@ -325,6 +329,9 @@ type FailedPair struct {
 	Error   string
 	// Observer is who saw a target-side outcome (ObserverKey); "" unknown.
 	Observer string
+	// Vendor is the edge protection that answered (a token), for an
+	// edge_blocked or edge_challenged outcome; "" otherwise.
+	Vendor string
 }
 
 // Planner is the ledger as the planner needs it. Every method is scoped to
