@@ -6,6 +6,7 @@ import {
   loadDictionary,
   loadedDictionary,
   translate,
+  type Dictionary,
   defaultLocale,
   type TranslateVars,
 } from '@/lib/i18n'
@@ -49,14 +50,46 @@ if (typeof document !== 'undefined') {
 export function I18nProvider({ locale, children }: { locale: string; children: React.ReactNode }) {
   return (
     <Suspense fallback={null}>
-      <LoadedI18nProvider locale={locale}>{children}</LoadedI18nProvider>
+      <CatalogGate locale={locale}>
+        {(dict) => (
+          <LoadedI18nProvider locale={locale} dict={dict}>
+            {children}
+          </LoadedI18nProvider>
+        )}
+      </CatalogGate>
     </Suspense>
   )
 }
 
-function LoadedI18nProvider({ locale, children }: { locale: string; children: React.ReactNode }) {
+/**
+ * Waits for the catalog and hands it down. It is its own component, with no
+ * other hook, on purpose: when the catalog arrives while React is rendering,
+ * React replays a component that suspended in `use()`, and a replay of one
+ * that also calls hooks (useCallback, useMemo, useContext) after `use` fails
+ * with React error 467 ("Update hook called on initial render") on a first
+ * render, about one cold page load in a few. A component whose only call is
+ * `use` replays safely.
+ */
+function CatalogGate({
+  locale,
+  children,
+}: {
+  locale: string
+  children: (dict: Dictionary) => React.ReactNode
+}) {
   // `use` may be called conditionally; skip it once the catalog is in memory.
-  const dict = loadedDictionary(locale) ?? use(loadDictionary(locale))
+  return children(loadedDictionary(locale) ?? use(loadDictionary(locale)))
+}
+
+function LoadedI18nProvider({
+  locale,
+  dict,
+  children,
+}: {
+  locale: string
+  dict: Dictionary
+  children: React.ReactNode
+}) {
   const brand = useBrand()
   const t = useCallback<TranslateFn>(
     (key, fallback, vars) => translate(dict, key, fallback, brandVars(brand, vars)),
