@@ -9,6 +9,7 @@ import type { ClosureEvidence as Evidence } from '../types'
 
 const METHOD_LABEL: Record<string, string> = {
   covered_scan: 'Covered scan',
+  ci_default_branch: 'Default-branch scan',
   retest: 'Retest',
   source_reported: 'Reported fixed by its source',
   obsolete_asset: 'Asset gone',

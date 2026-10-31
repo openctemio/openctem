@@ -72,10 +72,11 @@ type PlannerStore interface {
 	// EventsAfter returns up to limit events with an id above id, in id
 	// order.
 	EventsAfter(ctx context.Context, id int64, limit int) ([]vulnevent.Event, error)
-	// TenantsAffectedBy lists the organizations with an open finding for
-	// the vulnerability or a possibly affected asset (product known,
-	// version unknown).
-	TenantsAffectedBy(ctx context.Context, vulnID string) ([]shared.ID, error)
+	// TenantsAffectedBy maps each of the vulnerabilities to the
+	// organizations with an open finding for it or a possibly affected asset
+	// (product known, version unknown). One call answers a whole page of
+	// events; a vulnerability that affects nobody has no key.
+	TenantsAffectedBy(ctx context.Context, vulnIDs []string) (map[string][]shared.ID, error)
 	Enqueue(ctx context.Context, items []QueueItem) error
 	// Dequeue removes and returns up to limit queued items (oldest first).
 	Dequeue(ctx context.Context, limit int) ([]QueueItem, error)

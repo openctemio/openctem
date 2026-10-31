@@ -80,6 +80,8 @@ func newRegRig(t *testing.T) *regRig {
 		restarter := sla.NewRegressionRestarter(fixedSLA{}, postgres.NewFindingSLARestartRepository(db), logger.NewNop())
 		announcer := retest.NewChangeAnnouncer(postgres.NewFindingRepository(db), nil, notes, logger.NewNop())
 		svc.SetRegressionHandler(retest.NewScanRegressions(restarter, announcer, logger.NewNop()))
+		// Closing mode auto: these tests are about what a covered run closes.
+		svc.SetClosureSettings(autoClosing{})
 	})
 	return &regRig{crossToolRig: &crossToolRig{r: r, tn: r.newTenant("trivy", "grype")}, notes: notes}
 }

@@ -1729,6 +1729,7 @@ func newIngestReceiptHandler(cfg *config.Config, repos *Repositories, svc *Servi
 // enforcer when the upload is imported.
 func newFindingImportService(cfg *config.Config, repos *Repositories, svc *Services, log *logger.Logger) *findingimport.Service {
 	imp := findingimport.NewService(svc.Ingest, repos.Finding, repos.IngestReceipt, ingest.ParseVEXMode(cfg.Ingest.VEX), log)
+	imp.SetClosureSettings(svc.Tenant) // A full-coverage upload closes under the organization's closing mode
 	var audit findingimport.Auditor
 	if svc.Audit != nil {
 		audit = svc.Audit
@@ -2107,6 +2108,13 @@ func (g findingAccessGuard) AssertFinding(ctx context.Context, tenantID, finding
 // finding (middleware.TaskWorkAsserter).
 func (g findingAccessGuard) AssertFindingForFixWork(ctx context.Context, tenantID, findingID shared.ID) (bool, error) {
 	return g.findings.AssertFindingForFixWork(ctx, tenantID, findingID)
+}
+
+// WithRequestMemo installs the data-scope request memo, so the guard's
+// check and the same checks the services repeat cost their queries once per
+// request (middleware.RequestMemoInstaller).
+func (g findingAccessGuard) WithRequestMemo(ctx context.Context) context.Context {
+	return datascope.WithRequestMemo(ctx)
 }
 
 // byIDGuardAsserter is the asserter of the by-id data-scope guard (nil

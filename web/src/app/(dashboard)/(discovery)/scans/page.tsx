@@ -79,7 +79,11 @@ import type {
   ScanType as ApiScanType,
   ScheduleType,
 } from '@/lib/api/scan-types'
-import { CloneScanDialog, EditScanDialog } from '@/features/scans/components'
+import {
+  LazyCloneScanDialog,
+  LazyEditScanDialog,
+  LazyRunDetailSheet,
+} from '@/features/scans/components/lazy-dialogs'
 import {
   ScanCreateActions,
   ScansPageHeader,
@@ -92,7 +96,6 @@ import { RunHistory } from '@/features/scans/components/run-history'
 import { ScanMobileCard } from '@/features/scans/components/scan-mobile-card'
 import { ScheduleCell } from '@/features/scans/components/schedule-cell'
 import { isManagedScan, lastRunOf, scanTypeLabel } from '@/features/scans/lib/scan-status'
-import { RunDetailSheet } from '@/features/scans/components/run-detail-sheet'
 import { useScanTrigger } from '@/features/scans/hooks/use-scan-trigger'
 import {
   DEFAULT_SCAN_CONFIG_SORT,
@@ -1142,17 +1145,17 @@ function ConfigurationsTab() {
       />
 
       {triggerDialog}
-      <RunDetailSheet runId={openRunId} onOpenChange={(o) => !o && setOpenRunId(null)} />
+      <LazyRunDetailSheet runId={openRunId} onOpenChange={(o) => !o && setOpenRunId(null)} />
 
       {/* Clone Scan Dialog */}
-      <CloneScanDialog
+      <LazyCloneScanDialog
         scan={configToClone}
         open={cloneDialogOpen}
         onOpenChange={setCloneDialogOpen}
       />
 
       {/* Edit Scan Dialog */}
-      <EditScanDialog
+      <LazyEditScanDialog
         scanConfig={configToEdit}
         open={editDialogOpen}
         onOpenChange={setEditDialogOpen}

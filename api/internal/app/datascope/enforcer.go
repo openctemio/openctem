@@ -214,11 +214,31 @@ func (e *Enforcer) ResolveForStrict(ctx context.Context, tenantID shared.ID, c C
 	return e.ResolveFor(ctx, tenantID, c)
 }
 
-// ResolveFor is Resolve for an explicit caller.
+// ResolveFor is Resolve for an explicit caller. Within a request that
+// carries the request memo (WithRequestMemo) the answer is computed once per
+// tenant and caller.
 func (e *Enforcer) ResolveFor(ctx context.Context, tenantID shared.ID, c Caller) (*shared.DataScope, error) {
 	if e == nil || e.repo == nil {
 		return nil, nil
 	}
+	m := memoOf(ctx)
+	if m == nil {
+		return e.resolveFor(ctx, tenantID, c)
+	}
+	k := scopeKey{tenant: tenantID, caller: c}
+	if s, ok := m.scope(k); ok {
+		return s, nil
+	}
+	s, err := e.resolveFor(ctx, tenantID, c)
+	if err != nil {
+		return nil, err
+	}
+	m.putScope(k, s)
+	return s, nil
+}
+
+// resolveFor decides the scope of an explicit caller (no memo).
+func (e *Enforcer) resolveFor(ctx context.Context, tenantID shared.ID, c Caller) (*shared.DataScope, error) {
 	// An API key with no user (a legacy organization key) is not an internal
 	// call: it resolves to a scope with no rows, so it reads nothing scoped.
 	// Only a context with neither a user nor an API key is trusted as
@@ -322,11 +342,22 @@ func (e *Enforcer) InScope(ctx context.Context, scope *shared.DataScope, assetID
 	if e == nil || e.repo == nil {
 		return false, nil
 	}
+	m := memoOf(ctx)
+	k := inScopeKey{tenant: scope.TenantID, user: scope.UserID, unrestricted: scope.Unrestricted, asset: assetID}
+	if m != nil && m.isInScope(k) {
+		return true, nil
+	}
 	ids, err := e.assetIDsIn(ctx, scope, []shared.ID{assetID})
 	if err != nil {
 		return false, err
 	}
-	return len(ids) == 1, nil
+	if len(ids) != 1 {
+		return false, nil
+	}
+	if m != nil {
+		m.putInScope(k)
+	}
+	return true, nil
 }
 
 // assetIDsIn is the subset of assetIDs inside a non-nil scope: not hidden
@@ -341,12 +372,14 @@ func (e *Enforcer) assetIDsIn(ctx context.Context, scope *shared.DataScope, asse
 // AssertAsset returns shared.ErrNotFound unless the request's caller may see
 // the asset. Any error while checking also denies (fail closed).
 func (e *Enforcer) AssertAsset(ctx context.Context, tenantID, assetID shared.ID) error {
-	scope, err := e.Resolve(ctx, tenantID)
-	if err != nil {
-		e.logger.Warn("data scope check failed", "error", err)
-		return shared.ErrNotFound
-	}
-	return e.assertIn(ctx, scope, assetID)
+	return e.memoVerdict(ctx, verdictAsset, tenantID, assetID, func() error {
+		scope, err := e.Resolve(ctx, tenantID)
+		if err != nil {
+			e.logger.Warn("data scope check failed", "error", err)
+			return shared.ErrNotFound
+		}
+		return e.assertIn(ctx, scope, assetID)
+	})
 }
 
 // AssertAssetRef is the check for an asset id a caller supplies to be
@@ -403,12 +436,14 @@ func (e *Enforcer) FilterAssetRefs(ctx context.Context, tenantID shared.ID, asse
 // AssertFinding is AssertAsset for the asset a finding belongs to. A finding
 // that does not exist in the tenant is also ErrNotFound.
 func (e *Enforcer) AssertFinding(ctx context.Context, tenantID, findingID shared.ID) error {
-	scope, err := e.Resolve(ctx, tenantID)
-	if err != nil {
-		e.logger.Warn("data scope check failed", "error", err)
-		return shared.ErrNotFound
-	}
-	return e.assertFindingIn(ctx, scope, tenantID, findingID)
+	return e.memoVerdict(ctx, verdictFinding, tenantID, findingID, func() error {
+		scope, err := e.Resolve(ctx, tenantID)
+		if err != nil {
+			e.logger.Warn("data scope check failed", "error", err)
+			return shared.ErrNotFound
+		}
+		return e.assertFindingIn(ctx, scope, tenantID, findingID)
+	})
 }
 
 // AssertFindingForUser is AssertFinding for a user outside a request.
