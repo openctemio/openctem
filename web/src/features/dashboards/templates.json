@@ -165,6 +165,47 @@
       },
       {
         "widget_type": "metric",
+        "w": 6,
+        "h": 2,
+        "config": {
+          "v": 2,
+          "id": "w_ct40",
+          "data": {
+            "kind": "metric",
+            "metric": "surface.new_assets",
+            "filter": {},
+            "time": {
+              "range": "7d",
+              "compare": "previous_period"
+            }
+          },
+          "viz": {
+            "type": "bar",
+            "options": {}
+          }
+        }
+      },
+      {
+        "widget_type": "metric",
+        "w": 6,
+        "h": 2,
+        "config": {
+          "v": 2,
+          "id": "w_ct41",
+          "data": {
+            "kind": "metric",
+            "metric": "certificates.expiry",
+            "filter": {},
+            "time": {}
+          },
+          "viz": {
+            "type": "bar",
+            "options": {}
+          }
+        }
+      },
+      {
+        "widget_type": "metric",
         "w": 12,
         "h": 4,
         "config": {
@@ -369,6 +410,47 @@
       },
       {
         "widget_type": "metric",
+        "w": 6,
+        "h": 2,
+        "config": {
+          "v": 2,
+          "id": "w_ov40",
+          "data": {
+            "kind": "metric",
+            "metric": "surface.new_assets",
+            "filter": {},
+            "time": {
+              "range": "7d",
+              "compare": "previous_period"
+            }
+          },
+          "viz": {
+            "type": "bar",
+            "options": {}
+          }
+        }
+      },
+      {
+        "widget_type": "metric",
+        "w": 6,
+        "h": 2,
+        "config": {
+          "v": 2,
+          "id": "w_ov41",
+          "data": {
+            "kind": "metric",
+            "metric": "certificates.expiry",
+            "filter": {},
+            "time": {}
+          },
+          "viz": {
+            "type": "bar",
+            "options": {}
+          }
+        }
+      },
+      {
+        "widget_type": "metric",
         "w": 12,
         "h": 4,
         "config": {
@@ -513,6 +595,47 @@
           },
           "viz": {
             "type": "diverging",
+            "options": {}
+          }
+        }
+      },
+      {
+        "widget_type": "metric",
+        "w": 6,
+        "h": 2,
+        "config": {
+          "v": 2,
+          "id": "w_ex40",
+          "data": {
+            "kind": "metric",
+            "metric": "surface.new_assets",
+            "filter": {},
+            "time": {
+              "range": "30d",
+              "compare": "previous_period"
+            }
+          },
+          "viz": {
+            "type": "bar",
+            "options": {}
+          }
+        }
+      },
+      {
+        "widget_type": "metric",
+        "w": 6,
+        "h": 2,
+        "config": {
+          "v": 2,
+          "id": "w_ex41",
+          "data": {
+            "kind": "metric",
+            "metric": "exceptions.expiring",
+            "filter": {},
+            "time": {}
+          },
+          "viz": {
+            "type": "bar",
             "options": {}
           }
         }
@@ -688,6 +811,25 @@
           },
           "viz": {
             "type": "heatmap",
+            "options": {}
+          }
+        }
+      },
+      {
+        "widget_type": "metric",
+        "w": 6,
+        "h": 2,
+        "config": {
+          "v": 2,
+          "id": "w_pg40",
+          "data": {
+            "kind": "metric",
+            "metric": "exceptions.expiring",
+            "filter": {},
+            "time": {}
+          },
+          "viz": {
+            "type": "bar",
             "options": {}
           }
         }

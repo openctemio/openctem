@@ -164,6 +164,7 @@ tests that cover the console's most user-visible flows.
 | `44-scan-targets-step.spec.ts`              | Targets step at 390/1440px: one footer row, Next gated with its reason, ranked fixes     |
 | `44-sidebar-phone-drawer.spec.ts`           | Phone sidebar drawer: one scroller, one filled row, rows hold still, footer never clips  |
 | `50-finding-detail-no-shift.spec.ts`        | Finding page: no layout shift while its bands and side panels load (390px, 1440px)       |
+| `50-shell-banner-no-shift.spec.ts`           | A platform notice does not push the page down on reload (390px)                          |
 
 Each spec is designed to:
 
