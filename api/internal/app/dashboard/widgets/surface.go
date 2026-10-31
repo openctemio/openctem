@@ -44,6 +44,8 @@ func (s *Service) breakdown(ctx context.Context, v *WidgetValue, m dashboard.Met
 		return s.certificateExpiry(ctx, v, scope)
 	case "exceptions.expiring":
 		return s.acceptanceExpiry(ctx, v, scope)
+	case metricEmergingThreats:
+		return s.emergingThreats(ctx, v, scope)
 	}
 	return errUnknownBreakdown
 }

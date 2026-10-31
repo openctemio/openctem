@@ -2857,7 +2857,7 @@ report all read it.
 | Binding is a grant | `POST/DELETE /api/v1/groups/{groupId}/roles` need `team:roles:assign` and `team:groups:write`; the actor must hold every permission of the role (and full data if it has it) and, without full data access, every asset of the team (D13) |
 | Membership of a team that carries roles is a grant | adding, extending or removing someone needs the same ceiling for each bound role; nobody but the owner adds themselves |
 | Privileged roles are the owner's | a role with full data access or a permission in `permission.PrivilegedPermissions` (member, team, role, API key, secret store or settings administration) is bound, unbound, its team's membership changed, or an existing bound role made privileged, by the owner only, with a recent sign-in |
-| External members | never hold a full-data role through a team (refused on add and on bind, `ErrExternalTeamFullData`) |
+| External members | never hold a full-data role through a team (refused on add and on bind, `ErrExternalTeamFullData`); the refusal names the outside members (`details.outside_members`) only to a caller holding `groups:read`, and the team detail (`groups:read`) lists them (`outside_members`, `carries_full_data`) so the web turns full-data choices off before the request |
 | Limits | at most 10 roles per team; a bound role cannot be deleted (409 `ROLE_IN_USE`) |
 | Freshness | every bind, unbind, add, remove, end-date change, expiry and role edit invalidates the affected members' cached permissions (role edits fan out to direct and team holders) |
 | Audit | `role.assigned` / `role.unassigned` on the team (metadata `binding=team`, the role, `privileged`, member count), High, Critical when privileged |

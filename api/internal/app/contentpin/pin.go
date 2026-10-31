@@ -243,7 +243,7 @@ func (p *Planner) packFor(ctx context.Context, slot, dir, class string) (*protov
 	if err != nil {
 		return nil, fmt.Errorf("resolve %s: %w", name, err)
 	}
-	if pack.Kind != "wordlist" {
+	if pack.Kind != kindWordlist {
 		return nil, refuse("pack %s is not a wordlist pack", name)
 	}
 	idx, err := p.delivery.Index(ctx, contentpackapp.InstanceScope, pack.Digest)
@@ -309,6 +309,12 @@ func (p *Planner) dnsLabels(ctx context.Context, tenantID shared.ID, slot string
 	labels := LearnedLabels(names)
 	if len(labels) == 0 {
 		return nil, nil
+	}
+	// The learned labels rank first; their permutations follow, so a cut by
+	// the byte cap drops permutations before any learned label.
+	labels = append(labels, Permutations(labels)...)
+	if len(labels) > maxLabelLines {
+		labels = labels[:maxLabelLines]
 	}
 	return encodeInput(slot, PurposeDNSLabels, labels)
 }

@@ -1,6 +1,7 @@
 {
   "account.activity.description": "View your recent account activity and security events",
   "account.activity.empty": "No activity found",
+  "account.activity.loadFailed": "your activity",
   "account.activity.next": "Next page",
   "account.activity.pageOf": "Page {page} of {total}",
   "account.activity.prev": "Previous page",
@@ -22,9 +23,6 @@
   "account.notifications.min.low": "Low and above",
   "account.notifications.min.medium": "Medium and above",
   "account.notifications.minSeverity": "Minimum severity",
-  "account.notifications.minSeverityHint": "Lower severities are left out",
-  "account.notifications.off": "Off",
-  "account.notifications.on": "On",
   "account.notifications.save": "Save changes",
   "account.notifications.saveFailed": "Could not save notification settings",
   "account.notifications.saved": "Notification settings saved",

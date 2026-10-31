@@ -52,7 +52,7 @@ func TestPin_EnumerationJobGetsPackAndLearnedLabels(t *testing.T) {
 		t.Fatalf("%d inputs, want the learned list", len(inputs))
 	}
 	lines := strings.Split(strings.TrimSpace(string(gunzip(t, inputs[0].Data))), "\n")
-	for _, want := range []string{"charts-uat", "charts", "uat", "hocviendgo", "dchart"} {
+	for _, want := range []string{"charts-uat", "charts", "uat", "hocviendgo", "dchart", "charts-uat2"} {
 		if !slices.Contains(lines, want) {
 			t.Errorf("%q missing from the learned labels %v", want, lines)
 		}
