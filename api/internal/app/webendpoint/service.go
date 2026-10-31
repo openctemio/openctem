@@ -8,7 +8,6 @@ package webendpoint
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -22,12 +21,7 @@ import (
 )
 
 // Caller is the request's caller.
-type Caller struct {
-	TenantID string
-	UserID   string
-	IsAdmin  bool
-	APIKey   bool
-}
+type Caller = datascope.ListCaller
 
 // Store is the storage the service reads (*postgres.WebEndpointRepository).
 type Store interface {
@@ -48,34 +42,7 @@ func NewService(repo Store, dataScope *datascope.Enforcer) *Service {
 }
 
 func (s *Service) actor(ctx context.Context, c Caller) (filterspec.Actor, shared.ID, error) {
-	tenantID, err := shared.IDFromString(c.TenantID)
-	if err != nil {
-		return filterspec.Actor{}, tenantID, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
-	}
-	var userID shared.ID
-	if c.UserID != "" {
-		if userID, err = shared.IDFromString(c.UserID); err != nil {
-			return filterspec.Actor{}, tenantID, fmt.Errorf("%w: invalid acting user", shared.ErrValidation)
-		}
-	}
-	var scope *shared.DataScope
-	switch {
-	case !c.IsAdmin && c.UserID != "":
-		if s.dataScope == nil {
-			return filterspec.Actor{}, tenantID, errors.New("data scope enforcer not configured")
-		}
-		scope, err = s.dataScope.ResolveFor(ctx, tenantID, datascope.Caller{UserID: c.UserID, APIKey: c.APIKey})
-	case c.UserID != "" && s.dataScope != nil:
-		// Private program assets stay hidden from administrators who are
-		// neither owners nor members (RFC-065 §15.3).
-		scope, err = s.dataScope.ResolveFor(ctx, tenantID, datascope.Caller{UserID: c.UserID, IsAdmin: true,
-			IsOwner: s.dataScope.CallerOf(ctx).IsOwner, APIKey: c.APIKey})
-	}
-	if err != nil {
-		return filterspec.Actor{}, tenantID, fmt.Errorf("resolve data scope: %w", err)
-	}
-	a, err := filterspec.UserActor(filterspec.UserActorInput{TenantID: tenantID, UserID: userID, IsAdmin: c.IsAdmin, Scope: scope})
-	return a, tenantID, err
+	return datascope.ListActor(ctx, s.dataScope, c)
 }
 
 // List lists endpoints for a decoded filter, as the caller.

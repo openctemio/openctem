@@ -159,6 +159,11 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     permission: Permission.AssetsRead,
     module: Module.Assets,
   },
+  // Technologies read the assets module's asset technologies (research/333 D4).
+  '/attack-surface/technologies': {
+    permission: Permission.AssetsRead,
+    module: Module.Assets,
+  },
   // Certificates read the assets module's certificate assets (research/333 D5).
   '/attack-surface/certificates': {
     permission: Permission.AssetsRead,
