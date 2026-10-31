@@ -163,6 +163,7 @@ tests that cover the console's most user-visible flows.
 | `43-new-scan-review-coverage.spec.ts`       | New Scan review: skipped targets by reason, neutral, searchable, 1440/390px, axe         |
 | `44-scan-targets-step.spec.ts`              | Targets step at 390/1440px: one footer row, Next gated with its reason, ranked fixes     |
 | `44-sidebar-phone-drawer.spec.ts`           | Phone sidebar drawer: one scroller, one filled row, rows hold still, footer never clips  |
+| `51-dashboard-editor-actions.spec.ts`       | Dashboard + editor toolbars fit at 390/1440px, sticky editor bar, added widget focused   |
 | `51-sidebar-footer-pinned.spec.ts`          | Settings and Help stay at the sidebar bottom while the nav scrolls (desktop, phone)      |
 | `50-shell-banner-no-shift.spec.ts`           | A platform notice does not push the page down on reload (390px)                          |
 | `50-shell-banner-no-shift.spec.ts`          | A platform notice does not push the page down on reload (390px)                          |
