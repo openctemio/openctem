@@ -135,7 +135,11 @@ export function MetricStrip({
             </span>
             <span data-slot="metric-value" className="mt-0.5 block">
               {loading ? (
-                <Skeleton className="h-6 w-12 sm:h-7 sm:w-14" />
+                // The value's own line height (text-lg 28px, text-kpi 32px), so
+                // the tile keeps its height when the number arrives.
+                <span className="flex h-7 items-center sm:h-8">
+                  <Skeleton className="h-6 w-12 sm:h-7 sm:w-14" />
+                </span>
               ) : error ? (
                 <span
                   className="text-lg font-semibold tabular-nums tracking-tight text-muted-foreground sm:text-kpi"
@@ -163,13 +167,20 @@ export function MetricStrip({
                 </span>
               ) : null}
             </span>
-            {item.detail && !loading && !error ? (
-              <span
-                data-slot="metric-detail"
-                className="mt-1 block min-w-0 text-xs text-muted-foreground"
-              >
-                {item.detail}
-              </span>
+            {item.detail && !error ? (
+              loading ? (
+                // Holds the detail line's place (12px text, 16px line).
+                <span data-slot="metric-detail" className="mt-1 flex h-4 items-center">
+                  <Skeleton className="h-3 w-24" />
+                </span>
+              ) : (
+                <span
+                  data-slot="metric-detail"
+                  className="mt-1 block min-w-0 text-xs text-muted-foreground"
+                >
+                  {item.detail}
+                </span>
+              )
             ) : null}
           </>
         )
