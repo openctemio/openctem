@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { render, screen, within } from '@testing-library/react'
+import { cleanup, render, screen, within } from '@testing-library/react'
+import fs from 'node:fs'
+import path from 'node:path'
+import type { Polarity } from '../types'
 import { buildSeriesTooltip, SeriesTooltip, type SeriesTooltipMeta } from '../series-tooltip'
 import { formatBucketRange } from '@/lib/format-metric'
 
@@ -108,5 +111,125 @@ describe('SeriesTooltip', () => {
       <SeriesTooltip active={false} label="x" rows={rows} meta={PRIO} mode="stack" bucket="week" />
     )
     expect(container).toBeEmptyDOMElement()
+  })
+})
+
+describe('SeriesTooltip change tones', () => {
+  const tip = (polarity?: Polarity, mode: 'stack' | 'flow' = 'stack', r = rows, m = PRIO) =>
+    render(
+      <SeriesTooltip
+        active
+        label="2026-10-20T00:00:00Z"
+        rows={r}
+        meta={m}
+        mode={mode}
+        bucket="week"
+        polarity={polarity}
+      />
+    )
+  /** The delta cell (column 4) of a row, or its value cell (column 3) for the net row. */
+  const cell = (name: string, col = 3) =>
+    (screen.getByText(name).closest('tr')!.cells as HTMLCollectionOf<HTMLTableCellElement>)[col]
+
+  it('lower is better: a rise is red, a drop green, with words for screen readers', () => {
+    tip('down_good')
+    const rise = cell('P0')
+    expect(rise).toHaveClass('text-destructive')
+    expect(rise.textContent).toContain('(worse)')
+    const drop = cell('P1')
+    expect(drop).toHaveClass('text-success')
+    expect(drop.textContent).toContain('(better)')
+    expect(cell('Total')).toHaveClass('text-success')
+  })
+
+  it('higher is better flips the colours and keeps the sign', () => {
+    tip('up_good')
+    expect(cell('P0')).toHaveClass('text-success')
+    expect(cell('P1')).toHaveClass('text-destructive')
+  })
+
+  it('neutral or no polarity stays muted with no verdict words', () => {
+    tip('neutral')
+    const c = cell('P1')
+    expect(c).toHaveClass('text-muted-foreground')
+    expect(c.textContent).toBe('−2')
+    cleanup()
+    tip(undefined)
+    expect(cell('P1')).toHaveClass('text-muted-foreground')
+  })
+
+  it('zero change is muted "unchanged"; a missing previous bucket shows nothing', () => {
+    const r = [
+      { t: 'a', P0: 2, P1: 5 },
+      { t: 'b', P0: 2, P1: 5 },
+    ]
+    render(
+      <SeriesTooltip
+        active
+        label="b"
+        rows={r}
+        meta={PRIO}
+        mode="stack"
+        bucket="week"
+        polarity="down_good"
+      />
+    )
+    const z = cell('P0')
+    expect(z).toHaveClass('text-muted-foreground')
+    expect(z.textContent).toContain('(unchanged)')
+    cleanup()
+    render(
+      <SeriesTooltip
+        active
+        label="a"
+        rows={r}
+        meta={PRIO}
+        mode="stack"
+        bucket="week"
+        polarity="down_good"
+      />
+    )
+    expect(screen.queryByText(/better|worse|unchanged/)).toBeNull()
+  })
+
+  it('a flow colours opened by the polarity, fixed by its opposite, and the net row', () => {
+    const flow = [
+      { t: 'a', opened: 5, fixed: -4 },
+      { t: 'b', opened: 9, fixed: -10 },
+    ]
+    const m = [
+      { key: 'opened', label: 'Opened', swatch: 'red' },
+      { key: 'fixed', label: 'Fixed', swatch: 'green' },
+    ]
+    render(
+      <SeriesTooltip
+        active
+        label="b"
+        rows={flow}
+        meta={m}
+        mode="flow"
+        bucket="week"
+        polarity="down_good"
+      />
+    )
+    expect(cell('Opened')).toHaveClass('text-destructive')
+    expect(cell('Fixed')).toHaveClass('text-success')
+    expect(cell('Net change', 2)).toHaveClass('text-success')
+    expect(cell('Net change', 2).textContent).toContain('−1')
+  })
+
+  it('every chart passes a polarity to the tooltip', () => {
+    const dir = path.resolve(__dirname, '..')
+    const viz = fs.readFileSync(path.join(dir, 'series-viz.tsx'), 'utf8')
+    const calls = viz.match(/\.\.\.tooltipProps\([^)]*\)/g) ?? []
+    expect(calls).toHaveLength(3)
+    for (const c of calls) expect(c).toMatch(/polarity\s*\)$/)
+    const view = fs.readFileSync(
+      path.resolve(dir, '../../features/dashboards/components/widget-view.tsx'),
+      'utf8'
+    )
+    for (const tag of ['DivergingViz', 'ColumnViz', 'AreaLineViz']) {
+      expect(view).toMatch(new RegExp(`<${tag}[^>]*polarity=`))
+    }
   })
 })

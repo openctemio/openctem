@@ -71,8 +71,11 @@ export function InformationalChip({
   }
 
   if (hidden) {
-    // Nothing is left out: nothing to say.
-    if (count === 0) return null
+    // Nothing is left out: nothing to say. And nothing until the count is
+    // known: a chip drawn first and withdrawn when the count turns out to be
+    // zero (the usual case) pushed the list up by a chip row on a phone, where
+    // it wraps the row's other controls onto a second line.
+    if (count === undefined || count === 0) return null
     return (
       <LockedChip
         data-testid="informational-chip"
@@ -81,9 +84,7 @@ export function InformationalChip({
         actionLabel={t('findings.informational.show', 'Show')}
         onAction={() => onChange(false)}
       >
-        {count === undefined
-          ? t('findings.informational.hidden', 'Informational hidden')
-          : t('findings.informational.hiddenCount', 'Informational hidden ({count})', { count })}
+        {t('findings.informational.hiddenCount', 'Informational hidden ({count})', { count })}
       </LockedChip>
     )
   }
