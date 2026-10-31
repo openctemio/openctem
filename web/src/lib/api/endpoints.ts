@@ -1520,6 +1520,8 @@ export const proxyPoolEndpoints = {
     `${API_BASE.PROXY_POOLS}/${poolId}/endpoints/${endpointId}`,
   assignments: () => `${API_BASE.PROXY_POOLS}/assignments`,
   assignment: (sensorId: string) => `${API_BASE.PROXY_POOLS}/assignments/${sensorId}`,
+  /** GET: the addresses scans leave from, to allowlist at a WAF (only addresses the platform observed). */
+  scannerAddresses: () => `${API_BASE.PROXY_POOLS}/scanner-addresses`,
   /** POST: ask sensors to test a pool's endpoints (the platform never connects to a proxy). */
   test: (poolId: string) => `${API_BASE.PROXY_POOLS}/${poolId}/test`,
   /** GET: the results of those tests, by command id. */
