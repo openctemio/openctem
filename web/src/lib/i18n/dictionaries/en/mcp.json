@@ -44,6 +44,7 @@
   "mcp.connections.limit": "Limit to own data",
   "mcp.connections.limitFailed": "Could not limit the application",
   "mcp.connections.limited": "{name} now reads only the data scope of its person",
+  "mcp.connections.loadFailed": "connected applications",
   "mcp.connections.neverUsed": "never used",
   "mcp.connections.orgDescription": "Every AI application a member connected. Disconnecting one ends its access at once.",
   "mcp.connections.orgEmpty": "When a member connects an AI assistant, it appears here.",

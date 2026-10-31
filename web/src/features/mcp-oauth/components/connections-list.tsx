@@ -7,7 +7,7 @@ import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import { EmptyState } from '@/features/shared'
+import { EmptyState, ErrorState } from '@/features/shared'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { formatDateSafe, formatRelative } from '@/lib/format-date'
 
@@ -19,6 +19,9 @@ import { useTranslation } from '@/context/i18n-provider'
 interface ConnectionsListProps {
   connections: McpConnection[] | undefined
   isLoading: boolean
+  /** The list failed to load: shown as an error with Retry, never as empty. */
+  error?: unknown
+  onRetry?: () => void
   /** Show whose connection each row is (organization view). */
   showUser?: boolean
   onRevoke: (id: string) => Promise<void>
@@ -37,6 +40,8 @@ interface ConnectionsListProps {
 export function ConnectionsList({
   connections,
   isLoading,
+  error,
+  onRetry,
   showUser = false,
   onRevoke,
   onScope,
@@ -55,6 +60,15 @@ export function ConnectionsList({
         <Skeleton className="h-16 w-full" />
         <Skeleton className="h-16 w-full" />
       </div>
+    )
+  }
+  if (error && !connections) {
+    return (
+      <ErrorState
+        title={t('mcp.connections.loadFailed', 'connected applications')}
+        error={error}
+        onRetry={onRetry}
+      />
     )
   }
   if (!connections || connections.length === 0) {
