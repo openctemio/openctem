@@ -540,7 +540,10 @@ the read's context) and applies to the counts, ratios (SLA), durations,
 series, ranked lists, crown jewels exposed and accepted risks ending. The
 exposure flow is not measured only when the scope has no finding and, on an
 organization read, no source sent anything; the KPI strip marks its four
-findings tiles `no_findings` and keeps the coverage tile. Asset, coverage,
+findings tiles `no_findings` and keeps the coverage tile (with no tile
+measured, the whole strip is `no_findings`); the levers with no lever and
+the brief with no lever sentence are `no_findings` too, never "nothing
+stands out". Asset, coverage,
 certificate and attack path figures never read findings and are unaffected.
 Code: `internal/app/dashboard/widgets/empty.go`.
 
