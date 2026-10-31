@@ -67,3 +67,15 @@ var _ = registerActions("easm", map[Action]Severity{
 	ActionEASMNetworkSeedDeleted:  SeverityMedium,
 	ActionEASMNetworkSeedExpanded: SeverityLow,
 })
+
+// Attack surface posture (docs/architecture/easm-posture.md): Recalculate
+// now and the refresh schedule.
+const (
+	ActionEASMPostureRecalculated    Action = "easm_posture.recalculated"
+	ActionEASMPostureScheduleChanged Action = "easm_posture.schedule_changed"
+)
+
+var _ = registerActions("easm", map[Action]Severity{
+	ActionEASMPostureRecalculated:    SeverityLow,
+	ActionEASMPostureScheduleChanged: SeverityMedium,
+})

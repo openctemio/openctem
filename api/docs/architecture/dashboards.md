@@ -247,6 +247,7 @@ widget has `widget_type` `metric` or `note` and a `config` of this form
   | `ingest.intake` | intake (receipts per source, noise, health) | none | `ingest_receipts`, see "Exposure flow and intake" |
   | `surface.new_assets` | category: assets added in the window by asset type, with the previous window | none | `assets`, see "Attack surface and accepted risk" |
   | `certificates.expiry` | category: certificates expired, or expiring within 7, 8-30 and 31-90 days | none | `assets` |
+  | `surface.posture` | posture: grade A to F, score, the six category deductions, the next grade and how many fix-plan steps reach it; building until the first computation, not measured with no surface asset; module `attack_surface`, `assets:read` on a personal read; opens `/attack-surface/posture` | none | `easm_posture_assets`, see [easm-posture.md](easm-posture.md) |
   | `exceptions.expiring` | category: accepted findings whose acceptance ends within 7, 8-30 days or later | none | `findings` |
   | `intel.emerging_threats` | category: open emerging-threat alerts affecting the scope, by level (immediate, digest, listed); module `threat_intel` | none | `threat_alerts` + `threat_alert_assets`, see "Emerging threats" |
 
@@ -254,7 +255,7 @@ widget has `widget_type` `metric` or `note` and a `config` of this form
   stat; duration: stat; category: bar, column, table, donut, stat; time
   series: area, line, column, table (a flow: diverging, column, table, never
   an area); matrix: heatmap, table, column; items: list, table; stages: loop, table;
-  paths: paths, table; flow: flow, table; intake: intake, table. The first is
+  paths: paths, table; flow: flow, table; intake: intake, table; posture: posture, table. The first is
   the default; a widget without `viz.type` gets it.
 - **Validation** (`ParseWidgetSpec`, on every create, update and copy of a
   personal or organization dashboard): the config is decoded with unknown
