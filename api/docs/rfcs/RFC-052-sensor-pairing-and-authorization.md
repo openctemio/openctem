@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Accepted (decisions SA-1..SA-6 and the secure defaults D-1..D-7, 2026-10-05); SP1 and SP2 implemented; self-binding of bearer-key sensors (§4.8, owner 2026-10-11) implemented; approval context and organization binding (§4.5, threats 22-25) implemented |
+| Status | Accepted (decisions SA-1..SA-6 and the secure defaults D-1..D-7, 2026-10-05); SP1 and SP2 implemented; self-binding of bearer-key sensors (§4.8, owner 2026-10-11) implemented; approval context and organization binding (§4.5, threats 22-25) implemented; one install path, the approval link and the fingerprint pick (§4.9, threats 30-33) implemented |
 | Scope | api, web, sdk-go (`pkg/sensorsig`, `pkg/sensorproto/pairing`, `pkg/sensorkit`, `pkg/httpsec`), sensor |
 | Builds on | [RFC-032](RFC-032-sensor-enrollment-and-identity.md) (sensor-held Ed25519 key, RFC 9421 signatures, enrollment, `octs_`/`octe_`), [RFC-040](RFC-040-platform-sensor-mutual-distrust.md) (result binding, signed jobs, local ceiling), [RFC-023](RFC-023-scan-zones-and-scanners.md) (zones), [RFC-046](RFC-046-scans-redesign.md) and the stage catalog (tiers T0/T1/T2) |
 | Architecture | [sensor-pairing.md](../architecture/sensor-pairing.md), [sensor-platform-trust.md](../architecture/sensor-platform-trust.md), [authorization-matrix.md](../architecture/authorization-matrix.md) |
@@ -48,7 +48,7 @@ keeps today's behaviour and is flagged in the console until someone narrows it.
         Fingerprint 821 · melon · basil · bagel                             ▼
                                                      lookup code ◀── sensors:pair: shows SAS, host facts, IP
                                                      approve     ◀── sensors:approve + step-up +
-                                                                     "fingerprint matches" + zone/role/profile
+                                                                     fingerprint pick (1 of 3) + zone/role/profile
  GET /pairing/{id} (signed) ◀────── approved: sensor id, tenant, key id
  POST /pairing/{id}/confirm (signed identity statement) ──▶ key active, audit, timeline, admins notified
  every later request: RFC 9421 signature, keyid = thumbprint
@@ -72,7 +72,7 @@ Secure defaults (decided 2026-10-05):
 | # | Default |
 |---|---|
 | D-1 | **No automatic promotion.** A New sensor stays New until an administrator promotes it. A later tenant opt-in may auto-promote after N healthy hours for T0/T1 only; T2 and credentials always need an explicit administrator action. |
-| D-2 | **Approval needs step-up re-authentication** (TOTP when the administrator has it, else the password, else a sign-in younger than 10 minutes for SSO-only accounts) and shows the fingerprint, host facts and source address. The approve button stays disabled until the administrator ticks "the fingerprint matches"; the API refuses an approval without `fingerprint_confirmed: true`. |
+| D-2 | **Approval needs step-up re-authentication** (TOTP when the administrator has it, else the password, else a sign-in younger than 10 minutes for SSO-only accounts) and shows the fingerprint, host facts and source address. The administrator picks the fingerprint the host shows out of three (§4.9); the API refuses an approval without a pick and closes the request on a wrong one. |
 | D-3 | **Pairing codes**: 10-minute expiry, single use, 40 bits, per-address and global rate limits, a cap on open requests, uniform responses. |
 | D-4 | **New organizations require key-bound identity**: no bearer (`octs_`) sensor key can be created in them. Existing organizations keep the option (migration sets it), existing bearer-key sensors keep working and are flagged "legacy key". |
 | D-5 | **Profiles default to the narrowest**: no credentials, no push ingest, T2 off, remote actions only pause and drain. Widening needs `sensors:grant:widen`, is audited at high severity and notifies every administrator. Two-person approval of widening is SP4; the grant service has the hook (`WideningApprover`) and today approves with the single actor. |
@@ -124,7 +124,7 @@ User plane (tenant from the session, as every user route):
 | `POST /api/v1/sensor-pairings/lookup` | `sensors:pair` | Find an open pairing by code: SAS, key fingerprint, host facts, source address, expiry. Uniform `404` for unknown, expired, used or foreign codes. |
 | `POST /api/v1/sensor-pairings/expectations` | `sensors:pair` | Reverse mode ("Create a pairing code first" in the console): returns a code for `openctemio-sensor pair <CODE>`. |
 | `GET /api/v1/sensor-pairings/expectations/{id}` | `sensors:pair` | Poll an expectation: once the sensor connected, the SAS and host facts to compare. |
-| `POST /api/v1/sensor-pairings/{id}/approve` | `sensors:approve` + step-up | Bind the key to a new sensor (or to the registration being re-paired) with the chosen name, type, zones, grant profile. Requires `fingerprint_confirmed: true`. |
+| `POST /api/v1/sensor-pairings/{id}/approve` | `sensors:approve` + step-up | Bind the key to a new sensor (or to the registration being re-paired) with the chosen name, type, zones, grant profile. Requires `fingerprint`, the one of the review's `fingerprint_choices` the host shows (§4.9). |
 | `POST /api/v1/sensor-pairings/{id}/deny` | `sensors:pair` | Refuse a pairing (audited). |
 | `GET/PUT /api/v1/sensors/identity-policy` | read: `sensors:read`; write: `sensors:grant:narrow` to require key-bound identity, `sensors:grant:widen` and step-up to allow bearer keys again | D-4 switch. |
 
@@ -260,7 +260,7 @@ Uniformity:
 
 ```json
 {
-  "fingerprint_confirmed": true,
+  "fingerprint": "821 · melon · basil · bagel", // picked from fingerprint_choices
   "organization_id": "…",                   // the organization the review showed
   "step_up": { "totp": "123456" },          // or { "password": "…" }
   "name": "dmz-scanner-01",
@@ -277,9 +277,10 @@ Uniformity:
   request's address with its class (`source_network`: `private` or `public`;
   `source_provider` when the address classifier knows the edge or hosting
   provider), the approver's own address (`approver_ip`), the product and SDK
-  version the sensor reported, and when the request was made. The console
-  warns on the path where the sensor showed the code: approve only a sensor
-  you or your team started, never a code someone sent you.
+  version the sensor reported, when the request was made, and
+  `fingerprint_choices` (§4.9). The console warns on the path where the
+  sensor showed the code: approve only a sensor you or your team started,
+  never a link or a code someone sent you.
 - `organization_id` must equal the session's organization, else
   `409 ORGANIZATION_MISMATCH`, checked before step-up so no second factor is
   spent, and audited (`sensor.pairing_approved`, failure, medium). It only
@@ -389,6 +390,50 @@ loudly), and the administrator sees the bind in the audit log and on the
 timeline, revokes the key and re-pairs; an organization that wants every key
 approved turns self-binding off.
 
+### 4.9 One install path
+
+A person installs a sensor with one command and one approval (research
+356). The Add sensor panel offers one path, not a choice between "the
+console shows a code" and "the sensor shows a code":
+
+- **One code everywhere.** A start that carries a code uses it as the
+  request's own: it attaches to the organization's open expectation with
+  that code; otherwise rows of that code past their expiry are closed and
+  the request opens under the same code, bound to no organization; a code
+  another open request holds gives a new code. Every start without a token
+  answers `user_code`. The console's command, the sensor's output and the
+  link show the same code, and a command run after its code expired still
+  pairs (through the link) instead of silently changing code.
+- **The link.** `StartResponse` carries `verification_uri`
+  (`<APP_URL>/activate`) and `verification_uri_complete`
+  (`…/activate?code=K7QM-4ZTD`) when `APP_URL` is an absolute http(s)
+  origin. The code is an index, never a credential (§4.4): the link only
+  saves typing. The page reads the code once, removes it from the address
+  bar, looks it up (`POST /lookup`, the same budgets and lockout) and shows
+  the review; it never approves on load.
+- **The Add sensor panel finds the sensor by itself**: its command carries
+  an expectation's code (one per opened dialog), so the panel polls the
+  expectation. A sensor started any other way is approved from its link.
+- **The fingerprint pick.** The review carries `fingerprint_choices`: the
+  SAS and two decoys that differ from it in the number and every word,
+  derived from a key that derives from the platform pairing key and the
+  pairing id (stable across reloads, different per request) and ordered by
+  a keyed hash. The approval sends `fingerprint`; the server compares it with
+  the SAS in constant time after step-up and the request checks. A wrong pick
+  denies the request (audited `sensor.pairing_denied`, failure, high, reason
+  `fingerprint_mismatch`; every administrator notified): a coached approver
+  gets one try per request. A pick needs the host's screen, which is also
+  the proof typing the code gave before the code arrived in a link.
+- **No local policy at install.** The commands write no policy file and set
+  no `SENSOR_LOCAL_POLICY`; `/etc/openctem` stays mounted read-only for an
+  optional narrowing `sensor-policy.yaml` (read when present) and the kill
+  switch (`SENSOR_KILL_SWITCH_FILE=/etc/openctem/STOP`). The sensor follows
+  the organization's signed scope ([RFC-040](RFC-040-platform-sensor-mutual-distrust.md)).
+- **The command finishes the job.** The Docker and Linux commands end with a
+  watch of the sensor's output that stops by itself on `Paired:`.
+- Code-first stays for automation (`POST /expectations`,
+  `SENSOR_PAIRING_CODE`) and enrollment tokens for fleets.
+
 ## 5. Grants (SP2)
 
 ### 5.1 Model
@@ -475,7 +520,7 @@ Each line is a test in the implementation PRs.
 | # | Threat | Control | Test |
 |---|---|---|---|
 | 1 | Install snippet leaks | It holds only the URL and fingerprints; a code is useless without the key | start without a key cannot approve/confirm |
-| 2 | Attacker runs a sensor and talks an admin into approving it | Fingerprint + host facts + source address on the approval screen, `fingerprint_confirmed` required, step-up, trust New (T0, no credentials, no push), all admins notified | approve without the flag `400`; New sensor refused a T1 claim and a credential job |
+| 2 | Attacker runs a sensor and talks an admin into approving it | Fingerprint + host facts + source address on the approval screen, the fingerprint picked out of three (§4.9), step-up, trust New (T0, no credentials, no push), all admins notified | approve without a pick `400`, with a decoy `409` and the request closed; New sensor refused a T1 claim and a credential job |
 | 3 | MITM or fake platform at first contact | CA pin from the snippet; the SAS covers both keys and nonces; commitment | vectors: changing any input changes the SAS; tampered platform signature refused by the SDK; pinned-CA mismatch refused |
 | 4 | Code brute force, spam | 40-bit codes, 10 min, single use, per-address + global caps, open-request cap, per-admin lookup limit and lockout | rate-limit tests; used code `404` |
 | 5 | Tenant enumeration | Pending requests have no tenant; uniform `201`/`404` | invalid reverse code gets the same shape; foreign re-pair `404` |
@@ -501,8 +546,12 @@ Each line is a test in the implementation PRs.
 | 25 | Code guessing goes unnoticed | The lookup lock is audited at high severity, once per lock | audited exactly once after the limit |
 | 26 | A sensor restarted before approval cannot pair again with the key it kept (the old request holds the key) | A start by the same key closes the key's unapproved requests (audited) and opens a new one; only the key's holder can do it (the start is signed by the key) | same key, new code: new request, old one `expired` and not approvable; same key, same code: re-armed; codeless restart: new code, old code `404`; `201` over HTTP, never `500` |
 | 27 | An approved key is reused to pair into another sensor or organization | A key ever registered in `sensor_keys` is refused `409 pairing-key-registered`, before any code is looked at; no request is changed | approved and completed keys refused with a code of their own and another organization's; that organization's code stays open |
-| 28 | A start with a code another sensor holds displaces that sensor (code hijack) | A code matches only an `expecting` row or the same key's own request; another key gets the uniform answer of an unknown code | second key with a held code gets a request no code reaches; the first sensor's request is unchanged and approvable |
+| 28 | A start with a code another sensor holds displaces that sensor (code hijack) | A code matches only an `expecting` row or the same key's own request; another key gets a request of its own under a new code (§4.9) | second key with a held code gets a new code; the first sensor's request is unchanged and approvable |
 | 29 | Holding keys to block pairings (denial of service) | Only the key's own requests are closed by its start; requests are bounded by the open-request cap and the start budgets; a key never blocks a code it does not hold | — |
+| 30 | Device-code phishing through the printed link (an attacker starts a sensor and sends an administrator its link) | The link opens the full review (organization, host, the request's address next to the approver's, age, warning) and never approves on load; the administrator must pick the host's fingerprint out of three, and a wrong pick closes the request, is audited high and notifies every administrator; step-up; trust New | wrong pick: `409 FINGERPRINT_MISMATCH`, request `denied`, audit high; right pick approves |
+| 31 | Blind approval (a tick clicked without looking at the host) | The approval carries the picked fingerprint; the server compares it with the SAS in constant time | no pick `400` before step-up; a wrong pick with a failed step-up closes nothing |
+| 32 | A start with a code as an oracle for open codes | Every start without a token answers `user_code`; a code is the request's own whether or not it was expected, so expected and unexpected codes answer alike; budgets unchanged | unexpected code: `user_code` equal to it, a tenantless request reachable only by that code |
+| 33 | The attached request of one organization reached by another through the link | Lookup of an attached request is scoped to the session's organization; tenantless requests only by code | another organization's lookup and approval of an attached code `404` |
 | — | Cross-tenant access | Every query tenant-scoped; approval binds to the approver's tenant; grants and pairings of another tenant answer `404` | cross-tenant grant read/update `404`; re-pair of another tenant's sensor `404` |
 
 ## 7. Data and migrations

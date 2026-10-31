@@ -2,22 +2,25 @@
 
 /**
  * "Add sensor": the one place a sensor is added (api
- * docs/architecture/sensor-pairing.md, "Onboarding"; research/280). Shown
- * inline on the empty Sensors page and in the Add sensor dialog.
+ * docs/architecture/sensor-pairing.md, "Onboarding"; research/280, 356).
+ * Shown in the Add sensor dialog and inline on the empty Sensors page.
  *
+ * One path:
  * 1. Where it runs: Docker, Docker Compose, Kubernetes or Linux. The API
- *    renders the commands from the same hardened templates as every install
- *    (read-only root, no capabilities, the checked seccomp profile, the local
- *    policy, this instance's URL, the current release).
- * 2. How it joins: create a pairing code first (the command carries it, the
- *    panel waits for the sensor live), or start the sensor and enter the code
- *    it prints. Both end in the fingerprint compare and the step-up approval;
- *    no secret is ever copied.
- * 3. Troubleshooting keyed by what the sensor prints.
+ *    renders the commands from the hardened templates of every install
+ *    (read-only root, no capabilities, the checked seccomp profile, this
+ *    instance's URL, the current release). No local policy is needed: the
+ *    sensor follows the organization's scope; the host owner may narrow it.
+ * 2. Run one command. It carries a single-use code, so this panel finds the
+ *    sensor by itself; the sensor prints the same code, the link to approve
+ *    it on and its fingerprint, and the command ends once it is paired.
+ * 3. Approve: pick the fingerprint the host shows, re-authenticate.
+ * A sensor started any other way prints its own link (/activate).
  */
 
-import { useId, useMemo, useState } from 'react'
-import { Check, ChevronDown, KeyRound, Loader2, RefreshCw } from 'lucide-react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
+import { Check, ChevronDown, ExternalLink, KeyRound, Loader2, RefreshCw } from 'lucide-react'
+import Link from 'next/link'
 
 import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
@@ -42,7 +45,6 @@ import {
   healthCheckCommand,
   onboardingStage,
   stageIndex,
-  type JoinMethod,
   type OnboardingPlatform,
   type OnboardingStage,
 } from '../lib/onboarding'
@@ -54,7 +56,10 @@ import {
 } from '../lib/pairing'
 import { FIRST_HEARTBEAT_POLL_MS } from './sensor-install-flow'
 import { Snippet, type SensorTemplates } from './sensor-install-snippets'
-import { EnterCodePanel, PairingReview } from './sensor-pairing-steps'
+import { PairingReview } from './sensor-pairing-steps'
+
+/** The console page a sensor's printed link opens. */
+export const ACTIVATE_PATH = '/activate'
 
 export interface SensorOnboardingPanelProps {
   /** The organization still allows API-key sensors and the viewer may create one. */
@@ -64,6 +69,12 @@ export interface SensorOnboardingPanelProps {
   onOpenSensor?: (sensor: Sensor) => void
   /** Close the surrounding dialog (nothing in the inline variant). */
   onDone?: () => void
+  /**
+   * Make the command's code at once (the dialog: the person asked to add a
+   * sensor). The inline empty state waits for a click instead, so a page
+   * view never creates a code.
+   */
+  autoStart?: boolean
   className?: string
 }
 
@@ -72,12 +83,12 @@ export function SensorOnboardingPanel({
   onInstallWithKey,
   onOpenSensor,
   onDone,
+  autoStart = true,
   className,
 }: SensorOnboardingPanelProps) {
   const { t } = useTranslation()
-  const ids = { where: useId(), how: useId(), run: useId() }
+  const ids = { where: useId(), run: useId() }
   const [platform, setPlatform] = useState<OnboardingPlatform>('docker')
-  const [method, setMethod] = useState<JoinMethod>('code')
 
   return (
     <div className={cn('space-y-6', className)} data-testid="sensor-onboarding">
@@ -93,7 +104,7 @@ export function SensorOnboardingPanel({
               key={p.key}
               htmlFor={`${ids.where}-${p.key}`}
               className={cn(
-                'flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-colors',
+                'flex min-h-11 cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-colors',
                 platform === p.key ? 'border-primary bg-primary/5' : 'hover:bg-muted/40'
               )}
             >
@@ -104,50 +115,31 @@ export function SensorOnboardingPanel({
         </RadioGroup>
       </PanelStep>
 
-      <PanelStep n={2} id={ids.how} title={t('sensors.onboard.how.title')}>
-        <RadioGroup
-          value={method}
-          onValueChange={(v) => setMethod(v as JoinMethod)}
-          aria-labelledby={ids.how}
-          className="grid gap-3 sm:grid-cols-2"
-        >
-          {(['code', 'interactive'] as const).map((m) => (
-            <label
-              key={m}
-              htmlFor={`${ids.how}-${m}`}
-              className={cn(
-                'flex cursor-pointer gap-3 rounded-lg border p-3 text-sm transition-colors',
-                method === m ? 'border-primary bg-primary/5' : 'hover:bg-muted/40'
-              )}
-            >
-              <RadioGroupItem id={`${ids.how}-${m}`} value={m} className="mt-0.5" />
-              <span className="min-w-0">
-                <span className="block font-medium">{t(`sensors.onboard.how.${m}.title`)}</span>
-                <span className="block text-muted-foreground">
-                  {t(`sensors.onboard.how.${m}.text`)}
-                </span>
-              </span>
-            </label>
-          ))}
-        </RadioGroup>
-      </PanelStep>
-
-      <PanelStep n={3} id={ids.run} title={t('sensors.onboard.run.title')}>
-        {method === 'code' ? (
-          <CodeFirst platform={platform} onOpenSensor={onOpenSensor} onDone={onDone} />
-        ) : (
-          <Interactive platform={platform} onDone={onDone} />
-        )}
+      <PanelStep n={2} id={ids.run} title={t('sensors.onboard.run.title')}>
+        <InstallSession
+          platform={platform}
+          autoStart={autoStart}
+          onOpenSensor={onOpenSensor}
+          onDone={onDone}
+        />
       </PanelStep>
 
       <div className="flex flex-col gap-3 border-t pt-4 text-sm sm:flex-row sm:items-center sm:justify-between">
-        {canInstallWithKey && onInstallWithKey ? (
-          <Button variant="link" className="h-auto p-0" onClick={onInstallWithKey}>
+        <span className="text-muted-foreground">
+          {t('sensors.onboard.otherWay')}{' '}
+          <Link
+            href={ACTIVATE_PATH}
+            className="inline-flex items-center gap-1 font-medium text-foreground underline-offset-4 hover:underline"
+          >
+            {t('sensors.onboard.enterCode')}
+            <ExternalLink className="h-3.5 w-3.5" aria-hidden />
+          </Link>
+        </span>
+        {canInstallWithKey && onInstallWithKey && (
+          <Button variant="link" className="h-auto justify-start p-0" onClick={onInstallWithKey}>
             <KeyRound className="h-4 w-4" />
             {t('sensors.onboard.withKey')}
           </Button>
-        ) : (
-          <span className="text-muted-foreground">{t('sensors.onboard.noSecret')}</span>
         )}
       </div>
 
@@ -186,10 +178,10 @@ function PanelStep({
 }
 
 // ---------------------------------------------------------------------------
-// The commands
+// The command
 // ---------------------------------------------------------------------------
 
-function InstallCommands({
+export function InstallCommands({
   platform,
   code,
 }: {
@@ -222,21 +214,28 @@ function InstallCommands({
       {platform === 'kubernetes' && (
         <p className="text-xs text-muted-foreground">{t('sensors.onboard.k8sOneSensor')}</p>
       )}
+      {data.ca_fingerprint_sha256 && (
+        <p className="text-xs text-muted-foreground" data-testid="onboarding-ca-fingerprint">
+          {t('sensors.onboard.caFingerprint')}{' '}
+          <code className="font-mono break-all">{data.ca_fingerprint_sha256}</code>
+        </p>
+      )}
       {data.policy && (
         <Collapsible className="rounded-lg border">
           <CollapsibleTrigger className="flex w-full items-center justify-between gap-2 px-3 py-2 text-start text-sm font-medium">
             <span className="min-w-0">
-              <span className="block">{t('sensors.onboard.policy.title')}</span>
+              <span className="block">{t('sensors.onboard.narrow.title')}</span>
               <span className="block text-xs font-normal text-muted-foreground">
-                {t('sensors.onboard.policy.text')}
+                {t('sensors.onboard.narrow.text')}
               </span>
             </span>
             <ChevronDown className="h-4 w-4 shrink-0" aria-hidden />
           </CollapsibleTrigger>
-          <CollapsibleContent className="border-t p-3">
+          <CollapsibleContent className="space-y-2 border-t p-3">
+            <p className="text-xs text-muted-foreground">{t('sensors.onboard.narrow.how')}</p>
             <Snippet
               text={data.policy}
-              label={t('sensors.onboard.policy.title')}
+              label={t('sensors.onboard.narrow.title')}
               file="sensor-policy.yaml"
             />
           </CollapsibleContent>
@@ -247,15 +246,26 @@ function InstallCommands({
 }
 
 // ---------------------------------------------------------------------------
-// Create a pairing code first
+// One install session: the command's code, the wait, the approval
 // ---------------------------------------------------------------------------
 
-function CodeFirst({
+/**
+ * Poll the approved sensor until its first heartbeat. Module scope: SWR
+ * restarts its timer whenever `refreshInterval` changes identity, and this
+ * panel re-renders every second (the code's countdown).
+ */
+function sensorSeenInterval(s?: Sensor): number {
+  return s?.last_seen_at ? 0 : FIRST_HEARTBEAT_POLL_MS
+}
+
+function InstallSession({
   platform,
+  autoStart,
   onOpenSensor,
   onDone,
 }: {
   platform: OnboardingPlatform
+  autoStart: boolean
   onOpenSensor?: (s: Sensor) => void
   onDone?: () => void
 }) {
@@ -264,13 +274,16 @@ function CodeFirst({
   const [approved, setApproved] = useState<SensorPairingView | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const { data: polled } = usePairingExpectation(approved ? null : (created?.id ?? null))
+  const {
+    data: polled,
+    error: pollError,
+    isValidating: checking,
+    mutate: checkNow,
+  } = usePairingExpectation(approved ? null : (created?.id ?? null))
   const view = polled ?? created
   const now = useNow(1000)
   const sensorId = approved?.sensor_id ?? null
-  const { data: sensor } = useSensor(sensorId, {
-    refreshInterval: (s?: Sensor) => (s?.last_seen_at ? 0 : FIRST_HEARTBEAT_POLL_MS),
-  })
+  const { data: sensor } = useSensor(sensorId, { refreshInterval: sensorSeenInterval })
   const stage = onboardingStage(view, {
     approvedSensorId: sensorId,
     sensorSeen: !!sensor?.last_seen_at,
@@ -290,19 +303,33 @@ function CodeFirst({
     }
   }
 
+  // One code per opened dialog (a ref, so a re-render or a strict-mode
+  // double effect never makes a second one).
+  const started = useRef(false)
+  useEffect(() => {
+    if (!autoStart || started.current) return
+    started.current = true
+    void create()
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per mounted session
+  }, [autoStart])
+
   if (!created) {
     return (
       <div className="space-y-3">
-        <p className="text-sm text-muted-foreground">{t('sensors.onboard.code.intro')}</p>
-        {error && (
+        {error ? (
           <p role="alert" className="text-sm text-destructive">
             {error}
           </p>
+        ) : (
+          <p className="text-sm text-muted-foreground">{t('sensors.onboard.run.intro')}</p>
         )}
-        <Button onClick={() => void create()} disabled={busy}>
-          {busy && <Loader2 className="h-4 w-4 animate-spin" />}
-          {t('sensors.onboard.code.create')}
-        </Button>
+        {busy ? (
+          <Skeleton className="h-40 w-full" />
+        ) : (
+          <Button onClick={() => void create()}>
+            {error ? t('sensors.onboard.retry') : t('sensors.onboard.run.show')}
+          </Button>
+        )}
       </div>
     )
   }
@@ -312,8 +339,10 @@ function CodeFirst({
 
   return (
     <div className="space-y-4">
-      {stage === 'waiting' || stage === 'ended' ? (
+      {(stage === 'waiting' || stage === 'ended') && (
         <>
+          <p className="text-sm text-muted-foreground">{t('sensors.onboard.run.what')}</p>
+          <InstallCommands platform={platform} code={code} />
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
             <span>
               {t('sensors.onboard.code.label')}{' '}
@@ -325,11 +354,34 @@ function CodeFirst({
               </span>
             )}
           </div>
-          <InstallCommands platform={platform} code={code} />
         </>
-      ) : null}
+      )}
 
       <OnboardingStatus stage={stage} />
+
+      {stage === 'waiting' && (
+        <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
+          <span
+            role={pollError ? 'alert' : undefined}
+            aria-live="polite"
+            className={cn(pollError ? 'text-destructive' : 'text-muted-foreground')}
+          >
+            {pollError
+              ? pairingErrorMessage(pollError, t('sensors.onboard.code.pollFailed'), t)
+              : t('sensors.onboard.code.waiting')}
+          </span>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => void checkNow()}
+            disabled={checking}
+            aria-busy={checking}
+          >
+            <RefreshCw className={cn('h-4 w-4', checking && 'animate-spin')} />
+            {t('sensors.onboard.code.checkNow')}
+          </Button>
+        </div>
+      )}
 
       {stage === 'compare' && view && (
         <PairingReview view={view} onApproved={setApproved} onDone={() => onDone?.()} />
@@ -339,11 +391,11 @@ function CodeFirst({
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3 text-sm">
           <span role="alert">
             {view?.status === 'denied'
-              ? t('sensors.pair.rejected')
+              ? t('sensors.onboard.code.closed')
               : t('sensors.onboard.code.ended')}
           </span>
           <Button variant="outline" size="sm" onClick={() => void create()} disabled={busy}>
-            {t('sensors.pair.getNewCode')}
+            {t('sensors.onboard.code.newCommand')}
           </Button>
         </div>
       )}
@@ -413,37 +465,6 @@ export function OnboardingStatus({ stage }: { stage: OnboardingStage }) {
         )
       })}
     </ol>
-  )
-}
-
-// ---------------------------------------------------------------------------
-// Pair interactively
-// ---------------------------------------------------------------------------
-
-function Interactive({ platform, onDone }: { platform: OnboardingPlatform; onDone?: () => void }) {
-  const { t } = useTranslation()
-  const [approved, setApproved] = useState<SensorPairingView | null>(null)
-  if (approved) {
-    return (
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3 text-sm">
-        <span aria-live="polite">{t('sensors.onboard.approvedWaiting')}</span>
-        {onDone && (
-          <Button size="sm" onClick={onDone}>
-            {t('sensors.pair.done')}
-          </Button>
-        )}
-      </div>
-    )
-  }
-  return (
-    <div className="space-y-4">
-      <p className="text-sm text-muted-foreground">{t('sensors.onboard.interactive.intro')}</p>
-      <InstallCommands platform={platform} code={null} />
-      <div className="space-y-2">
-        <h4 className="text-sm font-medium">{t('sensors.onboard.interactive.enter')}</h4>
-        <EnterCodePanel onApproved={setApproved} onClose={() => onDone?.()} />
-      </div>
-    </div>
   )
 }
 

@@ -547,6 +547,13 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     permission: Permission.SensorsRead,
     module: Module.Sensors,
   },
+  // The page a sensor's printed link opens (/activate?code=...): looking a
+  // code up needs sensors:pair; approving needs sensors:approve and step-up
+  // (enforced by the API).
+  '/activate': {
+    permission: Permission.SensorsPair,
+    module: Module.Sensors,
+  },
   // Scope policy (RFC-054 §6.3): readable with scope:read; saving needs
   // scope:approve and step-up, enforced by the API.
   '/settings/scope': {
