@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { CIRunsView } from '../components/ci-runs-view'
 import { ApiClientError } from '@/lib/api/error-handler'
 import { CITrustSettings } from '../components/ci-trust-settings'
+import { CIRefusalNotice, recentRefusals } from '../components/ci-refusals'
 import { ciRunsURL } from '../api/use-ci'
 import {
   PROVIDER_TRAITS,
@@ -40,6 +41,7 @@ let perms: string[] = []
 let lastRunFilters: unknown
 let gatePolicies: unknown[] = []
 let overrides: unknown[] = []
+let refusals: unknown[] = []
 const mockDeletePolicy = vi.fn()
 const mockDeleteTrust = vi.fn()
 const mockSavePolicy = vi.fn()
@@ -80,6 +82,8 @@ vi.mock('../api/use-ci', async (importOriginal) => ({
   useGateOverrides: () => ({ data: { data: overrides }, isLoading: false, mutate: vi.fn() }),
   useCreateGateOverride: () => ({ trigger: vi.fn(), isMutating: false }),
   useRevokeGateOverride: () => ({ trigger: mockRevokeOverride, isMutating: false }),
+  useTrustRefusals: () => ({ data: { data: refusals }, isLoading: false, mutate: vi.fn() }),
+  useSCMApps: () => ({ data: { data: [], gitlab: [] }, isLoading: false, mutate: vi.fn() }),
 }))
 
 vi.mock('@/context/tenant-provider', () => ({
@@ -114,10 +118,9 @@ const failingRun = {
   created_at: '2026-10-05T10:00:00Z',
 }
 
-/** Picks a CI setup section from its filter token (one tab row per page). */
-async function pickSection(name: string | RegExp) {
-  await userEvent.click(screen.getByRole('button', { name: /^Section:/ }))
-  await userEvent.click(await screen.findByRole('menuitemradio', { name }))
+/** The list's body rows (DataTable), without the header row. */
+function runRows(): HTMLElement[] {
+  return screen.getAllByRole('row').filter((r) => within(r).queryAllByRole('cell').length > 0)
 }
 
 describe('lib', () => {
@@ -369,8 +372,9 @@ describe('CIRunsView', () => {
       },
     }
     render(<CIRunsView />)
-    const row = screen.getByTestId('ci-run-row')
-    expect(within(row).getByText('github.com/acme/api')).toBeInTheDocument()
+    const [row] = runRows()
+    // The code host is dropped from the path; the provider is the icon.
+    expect(within(row).getByText('acme/api')).toBeInTheDocument()
     expect(within(row).getByText('Fail')).toBeInTheDocument()
     expect(within(row).getByText('#17')).toBeInTheDocument()
     await userEvent.click(row)
@@ -388,7 +392,7 @@ describe('CIRunsView', () => {
 
   it('filters by verdict from page one', () => {
     render(<CIRunsView />)
-    expect(lastRunFilters).toEqual({ verdict: '', page: 1 })
+    expect(lastRunFilters).toEqual({ verdict: '', page: 1, perPage: 25 })
   })
 
   const judgedRun = {
@@ -483,7 +487,7 @@ describe('CIRunsView', () => {
       { ...failingRun, id: 'b', verdict: 'pass', would_fail: true, status: 'evaluated' },
     ]
     render(<CIRunsView />)
-    const rows = screen.getAllByTestId('ci-run-row')
+    const rows = runRows()
     expect(within(rows[0]).getByText('Running')).toBeInTheDocument()
     expect(within(rows[1]).getByText('Pass (override or warn)')).toBeInTheDocument()
   })
@@ -508,25 +512,122 @@ describe('CIRunsView', () => {
     ).toContain('break-words')
   })
 
+  it('puts why the run failed before its details', async () => {
+    runDetail = judgedRun
+    window.history.replaceState({}, '', '/ci-cd?view=runs&run=r2')
+    render(<CIRunsView />)
+    const blocking = await screen.findByRole('list', { name: 'Blocking' })
+    const details = screen.getByRole('heading', { name: 'Details' })
+    // Blocking comes first in the document (a developer opens the run to see why).
+    expect(
+      blocking.compareDocumentPosition(details) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy()
+    const summary = screen.getByText(/2 findings judged/)
+    expect(
+      summary.compareDocumentPosition(blocking) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy()
+  })
+
   it('keeps the open run in the URL', async () => {
     runs = [failingRun]
     runDetail = { ...failingRun }
     render(<CIRunsView />)
-    await userEvent.click(screen.getByTestId('ci-run-row'))
+    await userEvent.click(runRows()[0])
     expect(window.location.search).toContain('run=r1')
   })
 })
 
+describe('Refused pipelines notice (Pipelines tab)', () => {
+  const day = 86_400_000
+  const at = (daysAgo: number) => new Date(Date.now() - daysAgo * day).toISOString()
+
+  it('counts refusals of the last seven days only', () => {
+    const now = Date.parse('2026-10-31T00:00:00Z')
+    const list = [
+      { at: '2026-10-30T00:00:00Z' },
+      { at: '2026-10-24T00:00:00Z' },
+      { at: '2026-10-23T23:59:00Z' },
+      { at: undefined },
+    ]
+    expect(recentRefusals(list, now)).toHaveLength(2)
+  })
+
+  it('tells a CI writer how many pipelines were refused and links to why', () => {
+    refusals = [{ at: at(1) }, { at: at(2) }, { at: at(30) }]
+    render(<CIRefusalNotice canWrite />)
+    expect(screen.getByTestId('ci-refusal-notice')).toHaveTextContent(
+      '2 pipelines were refused in the last 7 days.'
+    )
+    expect(screen.getByRole('link', { name: /see why/i })).toHaveAttribute(
+      'href',
+      '/ci-cd?tab=setup&section=refused'
+    )
+    refusals = []
+  })
+
+  it('says nothing to a reader, or when nothing was refused lately', () => {
+    refusals = [{ at: at(1) }]
+    const { container, unmount } = render(<CIRefusalNotice canWrite={false} />)
+    expect(container).toBeEmptyDOMElement()
+    unmount()
+    refusals = [{ at: at(40) }]
+    const second = render(<CIRefusalNotice canWrite />)
+    expect(second.container).toBeEmptyDOMElement()
+    refusals = []
+  })
+})
+
 describe('CITrustSettings sections', () => {
-  it('opens the section the URL names and keeps the chosen one in the URL', async () => {
-    window.history.replaceState({}, '', '/?section=gate')
+  it('shows every section on one page, in setup order, with no section picker', () => {
+    window.history.replaceState({}, '', '/')
     render(<CITrustSettings />)
-    // The section is a token in a toolbar, not a second row of tabs.
     expect(screen.queryByRole('tablist')).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Section: Gate policy' })).toBeInTheDocument()
-    await pickSection('Pull request feedback')
-    expect(window.location.search).toContain('section=feedback')
-    window.history.replaceState({}, '', '/?section=bogus')
+    expect(screen.queryByRole('button', { name: /^Section:/ })).not.toBeInTheDocument()
+    expect(screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent)).toEqual([
+      'Trusted pipelines',
+      'Gate policy',
+      'Pull request feedback',
+      'Break-glass',
+    ])
+  })
+
+  it('scrolls to the section a link names (?section=)', () => {
+    const scrolled: string[] = []
+    const spy = vi.spyOn(Element.prototype, 'scrollIntoView').mockImplementation(function (
+      this: Element
+    ) {
+      scrolled.push(this.id)
+    })
+    window.history.replaceState({}, '', '/?section=feedback')
+    render(<CITrustSettings />)
+    expect(scrolled).toEqual(['ci-setup-feedback'])
+    spy.mockRestore()
+    window.history.replaceState({}, '', '/')
+  })
+
+  it('shows the latest three refused pipelines to a CI writer, the rest on request', async () => {
+    perms = ['scans:ci:read', 'scans:ci:write']
+    refusals = Array.from({ length: 5 }, (_, i) => ({
+      at: `2026-10-0${i + 1}T00:00:00Z`,
+      repository: `acme/r${i}`,
+      provider: 'github',
+      reasons: ['owner_not_allowed'],
+    }))
+    render(<CITrustSettings />)
+    expect(screen.getAllByTestId('ci-refusal')).toHaveLength(3)
+    await userEvent.click(screen.getByRole('button', { name: 'Show all 5' }))
+    expect(screen.getAllByTestId('ci-refusal')).toHaveLength(5)
+    refusals = []
+    perms = []
+  })
+
+  it('shows the OIDC requirement as one quiet line while it is on', () => {
+    ciSettings = { require_oidc: true }
+    render(<CITrustSettings />)
+    expect(screen.getByTestId('ci-require-oidc-on')).toHaveTextContent(
+      'CI jobs must use their OIDC identity'
+    )
+    expect(screen.queryByTestId('ci-require-oidc-banner')).not.toBeInTheDocument()
   })
 })
 
@@ -557,7 +658,6 @@ describe('CITrustSettings', () => {
     mockSavePolicy.mockReset()
     mockSavePolicy.mockResolvedValue(undefined)
     render(<CITrustSettings />)
-    await pickSection(/gate policy/i)
     expect(
       screen.getByText('Vulnerabilities without a fix: listed, not blocking (KEV still fails)')
     ).toBeInTheDocument()
@@ -587,7 +687,6 @@ describe('CITrustSettings', () => {
     gatePolicies = [{ id: 'gp1', scope_type: 'repository', scope_id: 'repo-9', mode: 'enforce' }]
     mockDeletePolicy.mockResolvedValue(undefined)
     render(<CITrustSettings />)
-    await pickSection(/gate policy/i)
     await userEvent.click(
       screen.getByRole('button', { name: 'Delete the policy for Repository repo-9' })
     )
@@ -644,7 +743,6 @@ describe('CITrustSettings', () => {
     ]
     mockRevokeOverride.mockResolvedValue(undefined)
     render(<CITrustSettings />)
-    await pickSection(/break-glass/i)
     await userEvent.click(screen.getByRole('button', { name: 'Revoke' }))
     expect(mockRevokeOverride).not.toHaveBeenCalled()
     const dialog = await screen.findByRole('alertdialog')
@@ -681,12 +779,7 @@ describe('CITrustSettings', () => {
     perms = ['scans:ci:read']
     render(<CITrustSettings />)
     expect(screen.getByRole('button', { name: /add trust/i })).toBeDisabled()
-    await pickSection(/break-glass/i)
-    // The section token reads "Section: Break-glass" too; the action is the other button.
-    const action = screen
-      .getAllByRole('button', { name: /break-glass/i })
-      .find((b) => !/^Section:/.test(b.getAttribute('aria-label') ?? ''))
-    expect(action).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Override a commit' })).toBeDisabled()
   })
 
   it('refuses a configuration that names no owner or repository', async () => {
