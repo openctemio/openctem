@@ -81,6 +81,7 @@ type Handlers struct {
 	// Note: Real-time updates moved to WebSocket (see WebSocket field below)
 	AITriage      *handler.AITriageHandler      // Always initialized - handles nil service gracefully
 	AIAnalysis    *handler.AIAnalysisHandler    // AI agents and runs; nil = not wired
+	AIKnowledge   *handler.AIKnowledgeHandler   // knowledge for AI agents; nil = not wired
 	Dashboard     *handler.DashboardHandler     // nil if not initialized (no database)
 	UserDashboard *handler.UserDashboardHandler // nil if not initialized - per-user customizable dashboards (RFC-021)
 	// DashboardFacts serves "Rebuild dashboard data" (organization and
@@ -810,6 +811,8 @@ func Register(
 		h.ModuleGate.RequireModule(moduledom.ModuleAITriage))
 	registerAIAnalysisRoutes(router, h.AIAnalysis, authMiddleware, userSync,
 		h.ModuleGate.RequireModule(moduledom.ModuleAITriage), aiTriageRateLimiter)
+	registerAIKnowledgeRoutes(router, h.AIKnowledge, authMiddleware, userSync,
+		h.ModuleGate.RequireModule(moduledom.ModuleAITriage))
 
 	// Dashboard routes (global and tenant from JWT token)
 	if h.Dashboard != nil {
