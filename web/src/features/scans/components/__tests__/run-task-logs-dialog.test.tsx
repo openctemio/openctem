@@ -1,12 +1,14 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, within } from '@testing-library/react'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { act, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { SWRConfig } from 'swr'
 import type { RunTaskLogLine } from '@/lib/api/generated'
 
 import {
+  LIVE_LOG_REFRESH_MS,
   RunTaskLogsDialog,
   attemptBoundaries,
+  isTaskLive,
   logLevelTone,
   logsEmptyState,
 } from '../run-task-logs-dialog'
@@ -101,7 +103,8 @@ describe('RunTaskLogsDialog', () => {
     // A queued task handed back by its sensor is waiting, not refused.
     expect(
       logsEmptyState({ status: 'queued', error_message: 'released by sensor: no free slot' }).title
-    ).toBe('No logs from this task')
+    ).toBe('No lines yet')
+    expect(logsEmptyState({ status: 'running', error_message: '' }).title).toBe('No lines yet')
     // Sensor-supplied text: hidden characters are shown as escapes.
     expect(
       logsEmptyState({ status: 'failed', error_message: 'refused by local policy: x\u202ey' })
@@ -183,5 +186,114 @@ describe('RunTasksTable logs action', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Logs of the httpx task' }))
     expect(await screen.findByText('hello')).toBeInTheDocument()
     expect(getMock).toHaveBeenCalledWith('/api/v1/scan-runs/r1/tasks/t9/logs')
+  })
+})
+
+describe('live task logs', () => {
+  beforeEach(() => {
+    getMock.mockReset()
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+  })
+  afterEach(() => vi.useRealTimers())
+
+  const tick = () => act(() => vi.advanceTimersByTimeAsync(LIVE_LOG_REFRESH_MS + 50))
+  const line = (msg: string): RunTaskLogLine => ({ ts: '2026-10-31T10:00:00Z', level: 'info', msg })
+
+  it('knows which tasks can still log', () => {
+    expect(isTaskLive('queued')).toBe(true)
+    expect(isTaskLive('running')).toBe(true)
+    for (const s of ['completed', 'failed', 'canceled', undefined])
+      expect(isTaskLive(s)).toBe(false)
+  })
+
+  it('re-reads a running task, shows new lines and says it is live', async () => {
+    getMock.mockResolvedValueOnce({ lines: [line('one')] })
+    getMock.mockResolvedValue({ lines: [line('one'), line('two')] })
+    fresh(
+      <RunTaskLogsDialog
+        runId="r1"
+        taskId="t1"
+        task={{ status: 'running' }}
+        open
+        onOpenChange={() => {}}
+      />
+    )
+    expect(await screen.findByText('one')).toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent(/Live/)
+    await tick()
+    expect(await screen.findByText('two')).toBeInTheDocument()
+    expect(getMock.mock.calls.length).toBeGreaterThanOrEqual(2)
+  })
+
+  it('says a live task with no lines yet is waiting, not empty', async () => {
+    getMock.mockResolvedValue({ lines: [] })
+    fresh(
+      <RunTaskLogsDialog
+        runId="r1"
+        taskId="t1"
+        task={{ status: 'queued' }}
+        open
+        onOpenChange={() => {}}
+      />
+    )
+    expect(await screen.findByText('No lines yet')).toBeInTheDocument()
+  })
+
+  it('reads a finished task once and never polls it', async () => {
+    getMock.mockResolvedValue({ lines: [line('done')] })
+    fresh(
+      <RunTaskLogsDialog
+        runId="r1"
+        taskId="t1"
+        task={{ status: 'completed' }}
+        open
+        onOpenChange={() => {}}
+      />
+    )
+    expect(await screen.findByText('done')).toBeInTheDocument()
+    await tick()
+    await tick()
+    expect(getMock).toHaveBeenCalledTimes(1)
+    expect(screen.queryByTestId('logs-live')).toBeNull()
+  })
+
+  it('reads once more when the task settles, then stops', async () => {
+    getMock.mockResolvedValueOnce({ lines: [line('start')] })
+    getMock.mockResolvedValue({ lines: [line('start'), line('last line')] })
+    const ui = (status: string) => (
+      <RunTaskLogsDialog runId="r1" taskId="t1" task={{ status }} open onOpenChange={() => {}} />
+    )
+    const { rerender } = fresh(ui('running'))
+    expect(await screen.findByText('start')).toBeInTheDocument()
+    rerender(
+      <SWRConfig value={{ provider: () => new Map(), dedupingInterval: 0 }}>
+        {ui('completed')}
+      </SWRConfig>
+    )
+    expect(await screen.findByText('last line')).toBeInTheDocument()
+    expect(screen.queryByTestId('logs-live')).toBeNull()
+    const calls = getMock.mock.calls.length
+    await tick()
+    await tick()
+    expect(getMock).toHaveBeenCalledTimes(calls)
+  })
+
+  it('the table hands the dialog the refreshed task, so it stops being live', async () => {
+    getMock.mockResolvedValue({ lines: [line('x')] })
+    const table = (status: string) => (
+      <SWRConfig value={{ provider: () => new Map(), dedupingInterval: 0 }}>
+        <RunTasksTable
+          runId="r1"
+          total={1}
+          tasks={[{ id: 't5', status, tool: 'httpx', targets: 1 }]}
+        />
+      </SWRConfig>
+    )
+    const { rerender } = render(table('running'))
+    await userEvent.click(screen.getByRole('button', { name: 'Logs of the httpx task' }))
+    expect(await screen.findByTestId('logs-live')).toBeInTheDocument()
+    rerender(table('completed'))
+    await act(async () => {})
+    expect(screen.queryByTestId('logs-live')).toBeNull()
   })
 })

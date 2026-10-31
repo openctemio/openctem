@@ -136,7 +136,9 @@ func (r *SensorPairingRepository) CreateForward(ctx context.Context, p *sensordo
 // AttachToExpectationUnscoped fills the open expectation with this code.
 // The expectation keeps its id, tenant, requested settings and re-pair
 // target: an ordinary code never becomes a re-pair because the sensor says
-// so, and a re-pair code never loses its target.
+// so, and a re-pair code never loses its target. The same key starting again
+// with the same code (a restarted sensor) re-arms its own request with the
+// new nonces; a code another key already holds matches nothing.
 func (r *SensorPairingRepository) AttachToExpectationUnscoped(ctx context.Context, codeHash string, p *sensordom.Pairing, now time.Time) (bool, error) {
 	facts, err := json.Marshal(p.HostFacts)
 	if err != nil {
@@ -146,8 +148,10 @@ func (r *SensorPairingRepository) AttachToExpectationUnscoped(ctx context.Contex
 	var tenant, repair sql.NullString
 	err = r.db.QueryRowContext(ctx, `UPDATE sensor_pairings
 		SET status = 'pending', public_key = $2, thumbprint = $3, commitment = $4, platform_nonce = $5,
-		    host_facts = $6, source_ip = $7::inet
-		WHERE code_hash = $1 AND status = 'expecting' AND mode = 'reverse' AND expires_at > $8
+		    host_facts = $6, source_ip = $7::inet,
+		    sensor_nonce = NULL, sas = NULL
+		WHERE code_hash = $1 AND mode = 'reverse' AND expires_at > $8
+		  AND (status = 'expecting' OR (status = 'pending' AND thumbprint = $3))
 		RETURNING id, tenant_id, repair_sensor_id`,
 		codeHash, p.PublicKey, p.Thumbprint, p.Commitment, p.PlatformNonce, facts, heartbeatIP(p.SourceIP),
 		now).Scan(&id, &tenant, &repair)
@@ -167,6 +171,47 @@ func (r *SensorPairingRepository) AttachToExpectationUnscoped(ctx context.Contex
 	// sensor id the sensor named is not used (RFC-052 §4.6).
 	p.Mode, p.Status, p.TenantID, p.RepairSensorID = sensordom.PairingReverse, sensordom.PairingPending, optionalID(tenant), optionalID(repair)
 	return true, nil
+}
+
+// KeyRegisteredUnscoped reports whether a key with this thumbprint was ever
+// registered to a sensor (an approval inserts it; a thumbprint is never
+// reused, whatever the key's status or tenant).
+func (r *SensorPairingRepository) KeyRegisteredUnscoped(ctx context.Context, thumbprint string) (bool, error) {
+	var ok bool
+	if err := r.db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM sensor_keys WHERE thumbprint = $1)`,
+		thumbprint).Scan(&ok); err != nil {
+		return false, fmt.Errorf("check sensor key: %w", err)
+	}
+	return ok, nil
+}
+
+// SupersedeForKeyUnscoped closes the open, unapproved requests of the key
+// with thumbprint (status pending, whatever their deadline) so the key can
+// start a new one, and returns them. The key's own reverse-mode request
+// under keepCodeHash that is still within its deadline is kept: the start
+// re-arms it. Approved and finished requests are never touched.
+func (r *SensorPairingRepository) SupersedeForKeyUnscoped(ctx context.Context, thumbprint, keepCodeHash string, now time.Time) ([]*sensordom.Pairing, error) {
+	rows, err := r.db.QueryContext(ctx, `UPDATE sensor_pairings
+		SET status = 'expired', expires_at = LEAST(expires_at, $3)
+		WHERE thumbprint = $1 AND status = 'pending'
+		  AND NOT ($2 <> '' AND mode = 'reverse' AND code_hash = $2 AND expires_at > $3)
+		RETURNING `+sensorPairingColumns, thumbprint, keepCodeHash, now)
+	if err != nil {
+		return nil, fmt.Errorf("supersede pairings: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []*sensordom.Pairing
+	for rows.Next() {
+		p, err := scanPairing(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, p)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("supersede pairings: %w", err)
+	}
+	return out, nil
 }
 
 // GetForKeyUnscoped returns the request id bound to the key with

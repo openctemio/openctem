@@ -63,6 +63,7 @@ import type { Sensor, SensorCommand } from '@/lib/api/sensor-types'
 import { sensorRoleOf } from '@/lib/api/sensor-types'
 import { Permission, useHasPermission } from '@/lib/permissions'
 import { sensorActions } from '../lib/sensor-actions'
+import { useSensorActionPerms } from '../lib/use-sensor-action-perms'
 import { redactUrlQueries } from '@/lib/redact-url'
 import { cn } from '@/lib/utils'
 import { useToolAvailability } from '@/lib/api/tool-hooks'
@@ -1018,8 +1019,7 @@ export function SensorDetailSheet({
   const router = useRouter()
   const { t } = useTranslation()
   const canWrite = useHasPermission(Permission.SensorsWrite)
-  const canDelete = useHasPermission(Permission.SensorsDelete)
-  const canRevoke = useHasPermission(Permission.SensorsRevoke)
+  const actionPerms = useSensorActionPerms()
   const canReadZones = useHasPermission(Permission.ScanZonesRead)
   // Re-pair needs a code (sensors:pair); approving it needs sensors:approve,
   // which the review step checks.
@@ -1064,7 +1064,7 @@ export function SensorDetailSheet({
     }
   }
 
-  const can = sensorActions(sensor, { write: canWrite, revoke: canRevoke, delete: canDelete })
+  const can = sensorActions(sensor, actionPerms)
   const oneShot = isOneShotSensor(sensor)
   const role =
     sensorRoleOf(sensor.type) === 'collector'
