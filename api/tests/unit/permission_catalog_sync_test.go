@@ -51,6 +51,7 @@ var permSeedMigrations = []string{
 	"automations_permissions",                 // automations:publish (RFC-125)
 	"content_sources",                         // scans:sources:approve
 	"vulnerability_list_actions",              // findings:views:share
+	"ai_knowledge",                            // ai_knowledge:read, ai_knowledge:manage (RFC-139)
 }
 
 // permRenameMigrations rename permission ids in place (old id → new id) with

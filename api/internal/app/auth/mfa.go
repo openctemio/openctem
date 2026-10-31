@@ -148,6 +148,12 @@ type MFAStatus struct {
 	// are gated at sign-in. They can set up 2FA now; creating credentials
 	// already needs it.
 	GraceDueAt *time.Time `json:"grace_due_at,omitempty"`
+	// RequiredBy names who requires the factor (organizations by name, the
+	// platform floor), in force or still in its grace period.
+	RequiredBy MFAPolicyHolders `json:"required_by"`
+	// CanTurnOff is false while anybody requires the factor or that could not
+	// be read: POST /users/me/2fa/disable would refuse.
+	CanTurnOff bool `json:"can_turn_off"`
 }
 
 // MFASetup is a freshly generated secret awaiting confirmation.
@@ -430,6 +436,14 @@ func (s *AuthService) GetMFAStatus(ctx context.Context, userID string) (*MFAStat
 	if !required && !graceDue.IsZero() {
 		st.GraceDueAt = &graceDue
 	}
+	if holders, herr := s.mfaPolicyHolders(ctx, u.ID()); herr != nil {
+		// Unknown: the page offers no "Turn off" (the API would refuse too).
+		s.logger.Warn("mfa status: failed to read who requires 2FA", "user_id", u.ID().String(), "error", herr)
+		st.CanTurnOff = false
+	} else {
+		st.RequiredBy = holders
+		st.CanTurnOff = !holders.Any()
+	}
 	f, err := s.mfaRepo.GetFactor(ctx, u.ID())
 	if err != nil && !errors.Is(err, mfa.ErrFactorNotFound) {
 		return nil, err
@@ -506,7 +520,10 @@ func (s *AuthService) EnableMFA(ctx context.Context, actx auditapp.AuditContext,
 
 // DisableMFA turns 2FA off. It needs the current password and a valid code
 // (TOTP or an unused recovery code), so a hijacked session alone cannot
-// strip the second factor.
+// strip the second factor. It is refused with an *MFARequiredError while an
+// organization or the platform floor requires the factor (the person replaces
+// their authenticator instead, BeginMFAReplacement). Turning it off signs out
+// every other session of the user.
 func (s *AuthService) DisableMFA(ctx context.Context, actx auditapp.AuditContext, userID, currentPassword, code string) error {
 	u, err := s.mfaUser(ctx, userID)
 	if err != nil {
@@ -529,6 +546,15 @@ func (s *AuthService) DisableMFA(ctx context.Context, actx auditapp.AuditContext
 	if err != nil || !f.Enabled {
 		return ErrMFANotEnabled
 	}
+	// Decided before the code is checked, so a refusal never spends a
+	// recovery code. An unreadable policy refuses (fail closed).
+	holders, err := s.mfaPolicyHolders(ctx, u.ID())
+	if err != nil {
+		return err
+	}
+	if holders.Any() {
+		return s.refuseMFADisableByPolicy(ctx, actx, u.ID(), u.Email(), holders)
+	}
 	ok, err := s.checkTOTPOrRecovery(ctx, f, code)
 	if err != nil {
 		return err
@@ -539,9 +565,14 @@ func (s *AuthService) DisableMFA(ctx context.Context, actx auditapp.AuditContext
 	if err := s.mfaRepo.Disable(ctx, u.ID()); err != nil {
 		return err
 	}
+	// The account is weaker from now on: a session opened elsewhere (perhaps
+	// by whoever learned the password) must not carry on.
+	except, _ := shared.IDFromString(actx.SessionID)
+	s.revokeUserSessions(ctx, u.ID(), except)
 	s.audit(ctx, actx, auditapp.NewSuccessEvent(auditdom.ActionAuthMFADisabled, auditdom.ResourceTypeUser, u.ID().String()).
 		WithResourceName(u.Email()).
-		WithMessage("Two-factor authentication disabled"))
+		WithMessage("Two-factor authentication disabled; other sessions signed out").
+		WithMetadata("other_sessions_ended", true))
 	if s.securityNotifier != nil {
 		s.securityNotifier.NotifyMFADisabled(ctx, u.Email(), u.Name(), actx.ActorIP)
 	}
@@ -676,22 +707,8 @@ func (s *AuthService) tenantNeedsSecondFactor(ctx context.Context, t *tenantdom.
 		}
 		due = req.DueAt
 	}
-	m, merr := s.tenantRepo.GetMembership(ctx, userID, tid)
-	if merr != nil && !errors.Is(merr, shared.ErrNotFound) {
-		s.logger.Warn("mfa policy: failed to load membership", "user_id", userID.String(), "tenant_id", tid.String(), "error", merr)
-		return true, time.Time{}
-	}
-	if merr != nil || m == nil {
-		return false, due // no membership: the mint refuses it elsewhere, as for the personal and outside policies
-	}
-	if tenantdom.IsPersonalMember(m) && sec.PersonalAccounts.Effective() == tenantdom.PersonalAccountsAllowedWithMFA {
-		return true, time.Time{}
-	}
-	if m.IsExternal() {
-		privileged, perr := s.outsideMemberPrivileged(ctx, m, tid, userID)
-		if perr != nil || privileged {
-			return true, time.Time{}
-		}
+	if needs, _ := s.memberPolicyNeedsSecondFactor(ctx, tid, userID, sec); needs {
+		return true, time.Time{} // a lookup error also answers "needed"
 	}
 	return false, due
 }

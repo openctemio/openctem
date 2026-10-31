@@ -44,3 +44,24 @@ type Repository interface {
 	RevokeByUser(ctx context.Context, userID, revokedBy ID, now time.Time) (int, error)
 	CountActiveByUser(ctx context.Context, userID ID, now time.Time) (int, error)
 }
+
+// ExpiringKey is an active key that expires soon and whose holder was not
+// told yet (the expiry notice sweep).
+type ExpiringKey struct {
+	ID        ID
+	TenantID  ID
+	Name      string
+	Prefix    string
+	ExpiresAt time.Time
+	UserID    *ID
+	CreatedBy *ID
+}
+
+// ExpiryNoticeRepository finds keys that expire soon and records the notice.
+type ExpiryNoticeRepository interface {
+	// ListExpiringUnnoticed reads across organizations (a system sweep).
+	ListExpiringUnnoticed(ctx context.Context, before time.Time, limit int) ([]ExpiringKey, error)
+	// MarkExpiryNoticed is tenant-scoped and reports false when the notice
+	// was already recorded.
+	MarkExpiryNoticed(ctx context.Context, tenantID, id ID) (bool, error)
+}

@@ -39,15 +39,22 @@ passwords. The counter is reset only after the second step succeeds. The
 
 | Method | Path | Body | Notes |
 |---|---|---|---|
-| GET | `/2fa` | | `{supported, enabled, enabled_at, recovery_codes_remaining, required_by_organization}` |
+| GET | `/2fa` | | `{supported, enabled, enabled_at, recovery_codes_remaining, required_by_organization, grace_due_at, required_by:{organizations, platform}, can_turn_off}`. `required_by` names who requires the factor (in force or in grace); `can_turn_off` is false while anybody does or that could not be read. |
 | POST | `/2fa/setup` | | New pending secret `{secret, otpauth_uri}`. 409 if already enabled. Changes nothing until enable. |
 | POST | `/2fa/enable` | `{password, code}` | Needs the current password (a stolen session alone cannot bind an authenticator and lock the user out). Confirms the pending secret, returns 10 recovery codes, **signs out every other session**. |
-| POST | `/2fa/disable` | `{password, code}` | `code` = TOTP or unused recovery code. E-mails the user. |
+| POST | `/2fa/disable` | `{password, code}` | `code` = TOTP or unused recovery code. **Refused** with 409 `MFA_REQUIRED_BY_POLICY` (details `{organizations, platform}`) while any organization the user belongs to, or the platform floor (also during its grace period), requires the factor; the policy is checked before the code, so a refusal never spends a recovery code, and an unreadable policy refuses. When allowed: **signs out every other session**, e-mails the user, answers `{message, other_sessions_ended: true}`. |
 | POST | `/2fa/recovery-codes` | `{code}` | TOTP only. Replaces all codes, returns the new ones. |
 | POST | `/change-password` | `{current_password, new_password}` | Keeps the current session, revokes the others immediately, e-mails the user. Password rate limiter; a wrong current password counts against the account lockout (as do wrong passwords on 2FA enable/disable), and a locked account takes no guesses. |
 | GET | `/sessions` | | `{sessions:[{id, ip_address, user_agent, created_at, last_activity_at, is_current}]}` |
 | DELETE | `/sessions/{id}` | | Revoke one session (immediate). |
 | DELETE | `/sessions` | | Revoke all except the current one (immediate). |
+
+Moving the factor to a new authenticator lives under `/api/v1/me/2fa/replacement`:
+
+| Method | Path | Body | Notes |
+|---|---|---|---|
+| POST | `/start` | `{password, code}` | `code` = current TOTP or unused recovery code (a lost phone). Returns a new pending secret `{secret, otpauth_uri}`; the current authenticator keeps working. The way to change devices while the factor is required. |
+| POST | `/complete` | `{code}` | A code from the new authenticator within 15 minutes of the start. Swaps the secret and replaces every recovery code in one transaction, returns `{recovery_codes, other_sessions_ended: true}`, **signs out every other session**. |
 
 The mutating 2FA routes carry the CSRF check and an auth rate limiter (`setup`/`enable`:
 5/min, `disable`/`recovery-codes`: 3/min per IP). Responses that contain secrets or
@@ -163,7 +170,9 @@ integration credentials are.
 | Event | Audit action | E-mail (system SMTP) |
 |---|---|---|
 | 2FA turned on (self-service or forced enrollment) | `auth.mfa_enabled` (metadata `via`) | |
-| 2FA turned off | `auth.mfa_disabled` | yes |
+| 2FA turned off | `auth.mfa_disabled` (metadata `other_sessions_ended`) | yes |
+| Turning 2FA off refused by policy | `auth.mfa_disabled`, result failure (metadata `required_by_organizations`, `required_by_platform`) | |
+| Authenticator replaced | `auth.mfa_replaced` (metadata `other_sessions_ended`) | |
 | 2FA reset by an organization owner/admin | `auth.mfa_reset` (high; actor, target user, metadata `membership_id`, `target_role`; in the caller's organization) | yes (same "turned off" notice) |
 | Wrong second factor at login | `auth.mfa_failed` | |
 | Recovery code used to sign in | `auth.mfa_recovery_code_used` (metadata `recovery_codes_remaining`) | yes |
@@ -173,8 +182,19 @@ integration credentials are.
 
 ## Recovery
 
-A user who lost their authenticator signs in with a recovery code, then disables and
-re-enables 2FA, or regenerates codes after setting up a new device.
+A user who lost their authenticator signs in with a recovery code, then replaces the
+authenticator (**My account > Security > Replace authenticator**: password plus a
+recovery code, then a code from the new app). Turning 2FA off and on again works only
+when nobody requires the factor.
+
+### Why turning off is refused while required
+
+If an organization or the platform floor requires the factor, turning it off would leave
+the account on password only until its open sessions expire (the requirement is checked
+when a token is minted, not on every request). So the API refuses and names who
+requires it, and the replacement flow covers the one legitimate need (a new device)
+without a moment of being unprotected. Every change of factor (on, off, replace) signs
+out the user's other sessions: a session opened before the change must not outlive it.
 
 If the recovery codes are also lost, an owner or administrator of their organization
 resets it: **Settings > Members**, row menu **Reset 2FA**

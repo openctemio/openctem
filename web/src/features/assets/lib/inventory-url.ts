@@ -327,6 +327,7 @@ export const DISCOVERED_BY_VALUES = [
   'tenant_scanned',
   'tenant_scan_discovered',
   'matches_scope_target',
+  'certificate_san',
 ] as const
 
 /** What the inventory asks the API for when no attribution is selected. */

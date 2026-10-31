@@ -44,6 +44,10 @@ const (
 	// CodeReauthRequired is a 403 when an action needs a recent password
 	// sign-in (starting two-factor enrollment from an old session).
 	CodeReauthRequired Code = "REAUTH_REQUIRED"
+	// CodeMFARequiredByPolicy is a 409 when a person tries to turn off their
+	// own two-factor authentication while an organization or the platform
+	// requires it. Details name who requires it (organizations, platform).
+	CodeMFARequiredByPolicy Code = "MFA_REQUIRED_BY_POLICY"
 	// CodeApprovalRequired is a 403 for a change that only an approver may
 	// make (e.g. marking a finding false positive). Distinct from
 	// CodeForbidden so the UI can explain the approval workflow instead of
