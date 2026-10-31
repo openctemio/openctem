@@ -12,6 +12,10 @@
 > other, current gaps): [sensor-platform-trust.md](sensor-platform-trust.md),
 > [RFC-040](../rfcs/RFC-040-platform-sensor-mutual-distrust.md) (proposed).
 
+The end-to-end flow (install to decommission, with every failure path) is in
+[sensor and platform workflow](sensor-platform-workflow.md); this page is the
+reference for each part.
+
 ## Glossary
 
 | Term | Meaning |
@@ -1015,6 +1019,16 @@ no lines but has a refusal or failure reason, the Logs dialog shows "This task
 was refused before it ran" (or "failed before it sent any logs") with the
 reason, instead of the generic empty state.
 
+While a task is queued or running, the Logs dialog follows it live: it re-reads
+the task's log every 3 seconds (the sensor flushes a batch at least every 3
+seconds, and its outbox sends new batches at once), scrolls to the newest line
+while the reader is at the bottom (scrolling up stops following), and reads once
+more when the task settles so its last lines show. A live task with no lines yet
+says it is waiting for its first lines. The re-read uses the same route,
+permission and tenant-scoped query as the first read, and stops when the dialog
+closes, the browser tab is hidden or the task finishes
+(`web/src/features/scans/components/run-task-logs-dialog.tsx`).
+
 ## Install snippets
 
 `GET /api/v1/sensors/{id}/config-templates` renders the snippets the Sensors
@@ -1176,8 +1190,17 @@ replaces bearer keys.
   (critical), one `identity_cloned` event and one `sensor.identity_cloned`
   audit entry (severity high). Steady-state heartbeats cost nothing (the
   instance is compared with the row already read); a change is applied under
-  a row lock. Regenerating the key clears the flag. The sensor is not
-  quarantined automatically in Phase 0.
+  a row lock. Regenerating a bearer key or re-pairing the sensor clears the
+  flag.
+- **A cloned identity gets no new work.** The platform cannot tell which host
+  is the real one, so while `identity_cloned_at` is set every path that grants
+  a lease (the poll, claim-N, claim by id, the shared claim) and the heartbeat
+  doorbell withhold new work from the sensor
+  (`postgres/command_cloned_identity.go`, `identityNotClonedPredicate`).
+  Work it already holds runs to its end; its lease epoch fences the results.
+  The placement explainer names the reason `identity_cloned`, so a waiting
+  task says why. Shared sensors are not observed for clones (they have no
+  tenant), so the shared claim's check is a guard only.
 - **Key-hash pepper.** Keys are stored as HMAC-SHA256 under
   `SENSOR_KEY_PEPPER`, or, when unset, a pepper derived from
   `APP_ENCRYPTION_KEY` with HKDF-SHA256 (label
@@ -1638,6 +1661,12 @@ It is registered once and again on change. Heartbeats keep carrying the load.
 - The heartbeat's optional `manifest_digest`: when it is not the current one,
   the answer adds the action `send_manifest`. This goes only to sensors that
   send a digest; deployed sensors ignore unknown actions anyway.
+- When the platform starts, the sensors whose current manifest (sent by the
+  sensor) lists an ignored `unknown-tool` or `unknown-capability` are asked
+  once, at their next heartbeat, to send it again
+  (`SensorService.LoadManifestRechecks`, `TakeManifestRecheck`). A release
+  that adds a tool to the catalog (a migration) then keeps a tool a sensor
+  already reported, without waiting for the sensor to restart.
 
 **Processing** (`SensorService.RegisterManifest`):
 
@@ -1646,7 +1675,10 @@ It is registered once and again on change. Heartbeats keep carrying the load.
    - flat capabilities = installed tools' names + their capabilities +
      sensor-wide ones, the SDK registry's rule
    - sanitize it with the heartbeat's catalog lookup
-3. An unchanged digest only touches the version's `last_seen_at`.
+3. An unchanged digest only touches the version's `last_seen_at`, unless
+   its ignored items are no longer the stored ones (the catalog now knows a
+   tool or capability it dropped): then it is stored again as in step 4,
+   under the same digest, and the projection carries the item.
 4. A new one is stored in one transaction:
    - a `sensor_manifests` row; a sensor going back to an earlier manifest
      makes that row current again

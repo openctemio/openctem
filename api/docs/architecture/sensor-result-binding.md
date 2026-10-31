@@ -1,5 +1,7 @@
 # Sensor result binding and the results quarantine
 
+Part of the [sensor and platform workflow](sensor-platform-workflow.md).
+
 > RFC: RFC-040 §5.3 and §6.1 group (C) (mutual distrust between the platform
 > and sensors; decision Q6 (a)). Protocols:
 > [RFC-026](../rfcs/RFC-026-sensor-results-ingest.md) (v2 results),
@@ -74,6 +76,26 @@ inventory a collector owns:
 - Assets collectors created before the migration have no rows, so no
   collector changes or marks them until it creates them again.
 
+**Hostname-scoped jobs** (RFC-040 §5.3.1). A report bound to a `scan` or
+`retest` command whose targets name a host creates or changes a located
+asset (domain, subdomain, address, host, service, web application) only
+inside the job: at or under a target name, at a target address or range, or
+at an address an in-bound asset of the same report states (its A or AAAA
+records, `resolved_ips`, address properties, or an address asset whose host
+name is in bounds). Anything else is dropped with its findings, never
+created, in every result-policy mode: the response counts
+`assets_outside_job` and `findings_outside_job`, the receipt names
+`outside_job_targets`, `sensor_results_outside_job_total{kind}` counts it,
+and `sensor.results_outside_job` is audited. Commands whose targets are all
+addresses and ranges keep the address-chunk rule; assets that name no host
+are left to the output contract.
+
+**Channel.** The channel a sensor's findings are filed under
+(`findings.ingest_channel`) is `collector` for a collector sensor and
+`scanner` for any other, bound or not, also after a person accepts a
+quarantined report; the report's `metadata.source_type` is ignored. Only
+server-side ingests without a sensor and CI runs keep their own value.
+
 **Coverage.** A command covers an existing asset when one of its payload
 targets (`targets`, `target`) names the asset's host (or one of its IPs), a
 parent domain of it, a CIDR containing its IP, or, for assets with a path
@@ -123,6 +145,28 @@ The same rule holds below the handler:
 An organization sensor never posts results for a shared job, even one of its
 own tenant (`OpenCommand` refuses `is_platform_job`), and never receives one
 (the tenant claim predicate).
+
+## Late results
+
+A run the platform took back (lease expired, released, stalled, re-routed)
+and handed out again is a new run with a new lease epoch. Results of the old
+run never bind to the new one, for organization and shared sensors alike:
+
+- **At accept.** An organization sensor that sends `X-OpenCTEM-Lease-Epoch`
+  must send the command's current `lease_epoch`; an old epoch is
+  `404 command-not-found` and nothing is stored (`OpenCommand`). A shared
+  sensor must always send it (above). Older SDKs that send no epoch are
+  checked at processing only.
+- **At processing.** Each report records the lease epoch of its command when
+  it was accepted (`ingest_reports.command_lease_epoch`, migration
+  `ingest_reports_command_lease_epoch`). The ingest worker processes a queued
+  report only while the command still exists in the tenant, the sensor still
+  holds it, and its epoch is the recorded one (`QueuedWorkSensor`,
+  `heldRun`); a finished command keeps its holder, so a report of a run that
+  completed is still applied. Otherwise the report fails (the sensor sees it)
+  and the drop is audited (`ingest.failed`, denied, with the reason). Reports
+  accepted before the migration have no recorded epoch: only the holder is
+  checked.
 
 ## How a report names its command
 
@@ -175,6 +219,8 @@ pending items are never purged. `SENSOR_RESULT_QUARANTINE_RETENTION` (default
 | What | Where |
 |---|---|
 | Binding, coverage, roles | `api/internal/app/ingest/binding.go` |
+| Hostname-scoped jobs (location binding) | `api/internal/app/ingest/job_bound.go` |
+| Channel of a sensor's findings | `api/internal/app/ingest/channel.go` |
 | Gate, quarantine, review, `OpenCommand` and `OpenSharedCommand` (shared with the v2 receiver) | `api/internal/app/ingest/quarantine.go` |
 | Shared-sensor binding of v2 writes (`bind`) | `api/internal/app/ingest/v2_receiver.go` |
 | Limited asset merge | `api/internal/app/ingest/processor_assets.go` (`mergeInto`) |
@@ -190,8 +236,7 @@ pending items are never purged. `SENSOR_RESULT_QUARANTINE_RETENTION` (default
 
 - A review page in the console (the API above is complete).
 - sdk-go: send `X-OpenCTEM-Command-ID` on its v1 fallback.
-- Discovered assets outside the command's targets become RFC-036 candidates
-  instead of assets (RFC-040 §5.3); today a bound report may still create
-  them.
+- A target name's addresses are taken as the sensor states them; the
+  platform does not resolve the name itself (RFC-040 §5.3.1).
 - `simulation_run_id` and `target.asset_id` on validation evidence, telemetry
   `correlation_id` and credential ingest are not yet bound (RFC-040 S3e, S3f).

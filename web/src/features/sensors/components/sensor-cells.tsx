@@ -165,7 +165,8 @@ export function SensorNameCell({ sensor, grant }: { sensor: Sensor; grant?: Sens
         <ProtocolTag sensor={sensor} />
         <ConfigHealthTag health={sensor.config_health} />
         <SensorPostureTag sensor={sensor} />
-        <SensorGrantTags grant={grant} />
+        {/* A revoked sensor's grant no longer matters. */}
+        {sensor.status !== 'revoked' && <SensorGrantTags grant={grant} />}
       </span>
       {host && (
         <span
@@ -206,8 +207,9 @@ export function SensorGrantTags({ grant }: { grant?: SensorGrantSummary }) {
         </SensorTag>
       )}
       {grant.trust_level === 'new' && (
+        // What New means, not its name: a newcomer reads "New" as "just added".
         <SensorTag tone="info" title={t('sensors.cells.newTitle')}>
-          {t('sensors.grantSection.new')}
+          {t('sensors.cells.passiveOnly')}
         </SensorTag>
       )}
     </>
@@ -633,6 +635,32 @@ const TOOL_STATUS: Record<
 }
 
 /**
+ * Why an installed tool gets no scans, in plain words. The API's detail names
+ * the grant field that refuses it; the one most sensors hit is the tier
+ * ceiling, which a sensor at trust level New holds at passive work (T0).
+ */
+function ToolExclusionTag({ excluded }: { excluded: NonNullable<SensorToolRow['excluded']> }) {
+  const { t } = useTranslation()
+  const tier = excluded.reason === 'grant' && /tier_ceiling/.test(excluded.detail ?? '')
+  const label = tier
+    ? t('sensors.cells.aboveTier')
+    : excluded.reason === 'grant'
+      ? t('sensors.cells.notInGrant')
+      : t('sensors.cells.policyRefuses')
+  const help = tier
+    ? t('sensors.cells.aboveTierHelp')
+    : excluded.reason === 'grant'
+      ? t('sensors.cells.notInGrantHelp')
+      : t('sensors.cells.policyRefusesHelp')
+  return (
+    <span title={help}>
+      <SensorTag tone="warning">{label}</SensorTag>
+      <span className="sr-only">{help}</span>
+    </span>
+  )
+}
+
+/**
  * A sensor's tools for the drawer: one chip per tool with its version and
  * whether it is installed (an icon, and a tag when it is not usable).
  */
@@ -671,13 +699,7 @@ export function SensorToolList({ rows }: { rows: SensorToolRow[] }) {
             r.status === 'not_installed' ? (
               <SensorTag tone="warning">{t('sensors.cells.toolNotInstalled')}</SensorTag>
             ) : r.excluded ? (
-              <span title={r.excluded.detail}>
-                <SensorTag tone="warning">
-                  {r.excluded.reason === 'grant'
-                    ? t('sensors.cells.notInGrant')
-                    : t('sensors.cells.policyRefuses')}
-                </SensorTag>
-              </span>
+              <ToolExclusionTag excluded={r.excluded} />
             ) : undefined,
         }
       })}

@@ -41,23 +41,43 @@ test.describe('Findings asset-id filter', { tag: ['@findings'] }, () => {
     )
     await page.goto('/assets')
     const assets = ((await (await assetsRes).json()) as { data?: Asset[] }).data ?? []
-    const asset = assets.find((a) => (a.finding_count ?? 0) > 0)
-    test.skip(!asset, 'No asset with findings — seed findings to enable this test')
-    const assetId = asset!.id
+    // The asset list counts open findings at read time; other specs in the
+    // run close or resolve findings concurrently, so the first candidate can
+    // be empty by the time its list is read. Try each candidate (most
+    // findings first) and use the first whose filtered list is non-empty.
+    const candidates = assets
+      .filter((a) => (a.finding_count ?? 0) > 0)
+      .sort((x, y) => (y.finding_count ?? 0) - (x.finding_count ?? 0))
+      .slice(0, 5)
+    test.skip(candidates.length === 0, 'No asset with findings — seed findings to enable this test')
 
     // Step 2: open findings with the asset filter; the list request must
     // carry it to the API.
-    const findingsRes = page.waitForResponse(
-      (r) => {
-        const u = new URL(r.url())
-        return u.pathname === '/api/v1/findings' && u.searchParams.get('asset_id') === assetId
-      },
-      { timeout: 30_000 }
-    )
-    await page.goto(`/findings?assetId=${assetId}`)
-    const res = await findingsRes
-    expect(res.ok()).toBeTruthy()
-    const findings = ((await res.json()) as { data?: Array<{ asset_id: string }> }).data ?? []
+    let assetId = ''
+    let findings: Array<{ asset_id: string }> = []
+    for (const candidate of candidates) {
+      const findingsRes = page.waitForResponse(
+        (r) => {
+          const u = new URL(r.url())
+          return (
+            u.pathname === '/api/v1/findings' && u.searchParams.get('asset_id') === candidate.id
+          )
+        },
+        { timeout: 30_000 }
+      )
+      await page.goto(`/findings?assetId=${candidate.id}`)
+      const res = await findingsRes
+      expect(res.ok()).toBeTruthy()
+      const rows = ((await res.json()) as { data?: Array<{ asset_id: string }> }).data ?? []
+      // Whatever comes back must belong to the asset, even when it is empty.
+      expect(rows.every((f) => f.asset_id === candidate.id)).toBeTruthy()
+      if (rows.length > 0) {
+        assetId = candidate.id
+        findings = rows
+        break
+      }
+    }
+    expect(assetId, 'no candidate asset returned findings from the filtered list').not.toBe('')
 
     // Step 3: the URL must still carry the filter. The page rewrites the old
     // `assetId` link parameter to the canonical `asset_id`, so a shared old
