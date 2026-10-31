@@ -10,6 +10,7 @@ import (
 	scanapp "github.com/openctemio/openctem/api/internal/app/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	covdom "github.com/openctemio/openctem/api/pkg/domain/coverage"
+	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/stage"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -408,7 +409,8 @@ func (s *Service) plan(ctx context.Context, tenantID shared.ID) (int, error) {
 		if len(due) == 0 || !s.batchReady(capability, due, min(s.cfg.Batch, left)) {
 			continue
 		}
-		n, err := s.startBatch(ctx, tenantID, capability, due)
+		batch, depth := onboardingBatch(capability, due)
+		n, err := s.startBatch(ctx, tenantID, capability, batch, depth)
 		total += n
 		left -= n
 		if err != nil {
@@ -492,9 +494,9 @@ func (s *Service) blockNeverOpens(ctx context.Context, tenantID shared.ID, capab
 	return rest, true, nil
 }
 
-// startBatch starts one capability on a due batch and records the outcome
-// on its pairs. It returns how many pairs were queued.
-func (s *Service) startBatch(ctx context.Context, tenantID shared.ID, capability string, due []covdom.DueTarget) (int, error) {
+// startBatch starts one capability on a due batch at a depth and records
+// the outcome on its pairs. It returns how many pairs were queued.
+func (s *Service) startBatch(ctx context.Context, tenantID shared.ID, capability string, due []covdom.DueTarget, depth scanworkflow.Depth) (int, error) {
 	byTarget := make(map[string][]shared.ID, len(due))
 	targets := make([]string, 0, len(due))
 	for _, d := range due {
@@ -505,7 +507,7 @@ func (s *Service) startBatch(ctx context.Context, tenantID shared.ID, capability
 		}
 		byTarget[key] = append(byTarget[key], d.AssetID)
 	}
-	res, err := s.starter.StartCoverage(ctx, scanapp.CoverageInput{TenantID: tenantID, Capability: capability, Targets: targets})
+	res, err := s.starter.StartCoverage(ctx, scanapp.CoverageInput{TenantID: tenantID, Capability: capability, Targets: targets, Depth: string(depth)})
 	if errors.Is(err, scanapp.ErrCoverageBusy) {
 		return 0, nil // the previous batch is still running: back-pressure
 	}
@@ -528,7 +530,7 @@ func (s *Service) startBatch(ctx context.Context, tenantID shared.ID, capability
 			if len(rest) == 0 {
 				return 0, nil
 			}
-			return s.startBatch(ctx, tenantID, capability, rest)
+			return s.startBatch(ctx, tenantID, capability, rest, depth)
 		}
 		// Any other refusal of the whole batch (about its targets) blocks
 		// the batch's pairs with the code and rechecks them later; retrying
@@ -566,6 +568,10 @@ func (s *Service) startBatch(ctx context.Context, tenantID shared.ID, capability
 	}
 	if res.RunID == nil {
 		return 0, nil
+	}
+	if depth == scanworkflow.DepthDeep {
+		s.logger.Info("coverage: deep onboarding pass of new roots started", "tenant_id", tenantID.String(),
+			"capability", capability, "roots", len(res.Kept), "depth", res.Depth)
 	}
 	kept := make([]shared.ID, 0, len(res.Kept))
 	for _, t := range res.Kept {

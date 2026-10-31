@@ -22,6 +22,7 @@ import (
 	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/stage"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // CoverageTag marks continuous coverage scans.
@@ -43,12 +44,20 @@ type CoverageInput struct {
 	TenantID   shared.ID
 	Capability string
 	Targets    []string
+	// Depth is the run's depth: empty or standard (steady coverage), or
+	// deep for the onboarding pass of new roots, which only a capability
+	// whose tool reads a platform wordlist takes (enumerate.subdomains: the
+	// medium pack instead of the small one). Passive is refused.
+	Depth string
 }
 
 // CoverageResult is what was started. RunID is nil when nothing was left.
 type CoverageResult struct {
 	RunID *shared.ID
 	Tool  string
+	// Depth is the depth the run was started at: deep only when asked and
+	// the platform holds the deep lists, else standard.
+	Depth string
 	Kept  []string
 	// Refused are the targets the gate refused, with its code.
 	Refused []RefusedTarget
@@ -80,6 +89,10 @@ func (s *Service) StartCoverage(ctx context.Context, in CoverageInput) (*Coverag
 	tool := st.DefaultTool()
 	if tool == "" {
 		return nil, fmt.Errorf("%w: %s has no tool", shared.ErrValidation, in.Capability)
+	}
+	depth, err := coverageDepth(in.Depth, tool)
+	if err != nil {
+		return nil, err
 	}
 	tier, intensity, passive := scopedom.TierActive, scan.IntensityActive, st.Tier == stage.TierPassive
 	if passive {
@@ -118,7 +131,7 @@ func (s *Service) StartCoverage(ctx context.Context, in CoverageInput) (*Coverag
 	if err != nil {
 		return nil, fmt.Errorf("coverage targets not checked, nothing dispatched: %w", err)
 	}
-	res := &CoverageResult{Tool: tool, Refused: gated.Refused, Deferred: deferred}
+	res := &CoverageResult{Tool: tool, Refused: gated.Refused, Deferred: deferred, Depth: string(scanworkflow.DepthStandard)}
 	allowed := make(map[string]bool, len(gated.Allowed))
 	for _, t := range gated.Allowed {
 		allowed[strings.ToLower(t)] = true
@@ -152,11 +165,15 @@ func (s *Service) StartCoverage(ctx context.Context, in CoverageInput) (*Coverag
 	if err := sc.SetSingleScanner(tool, coverageScannerConfig(st, res.Kept), perJob); err != nil {
 		return nil, fmt.Errorf("failed to set scanner: %w", err)
 	}
-	// Standard depth: it picks the small wordlist pack for a tool that reads
-	// one (enumerate.subdomains), never the larger lists a deep scan may.
-	if err := sc.SetDepth(string(scanworkflow.DepthStandard)); err != nil {
+	// Standard depth picks the small wordlist pack for a tool that reads one
+	// (enumerate.subdomains); the onboarding pass of new roots asks for deep
+	// (the medium pack). Deep falls back to standard when the platform has
+	// no deep list, so a missing pack never stalls the first pass of a root.
+	depth = s.coverageDeepContent(ctx, in.TenantID, tool, depth)
+	if err := sc.SetDepth(string(depth)); err != nil {
 		return nil, err
 	}
+	res.Depth = string(depth)
 	if err := s.applyIntensity(ctx, sc, string(intensity)); err != nil {
 		return nil, err
 	}
@@ -183,6 +200,50 @@ func (s *Service) StartCoverage(ctx context.Context, in CoverageInput) (*Coverag
 	}
 	res.RunID = &run.ID
 	return res, nil
+}
+
+// coverageDepth reads the depth a coverage run is asked for. Deep is taken
+// only by a tool that reads a platform wordlist: for any other tool it would
+// change nothing but the record, and coverage never widens what a run does
+// without a reason. Passive is never a coverage depth (the tier decides).
+func coverageDepth(raw, tool string) (scanworkflow.Depth, error) {
+	d, err := scanworkflow.ParseDepth(raw)
+	if err != nil {
+		return "", err
+	}
+	switch d {
+	case scanworkflow.DepthStandard:
+		return d, nil
+	case scanworkflow.DepthDeep:
+		if len(stage.ToolWordlists(tool)) == 0 {
+			return "", fmt.Errorf("%w: a deep coverage run needs a tool that reads a wordlist", shared.ErrValidation)
+		}
+		return d, nil
+	}
+	return "", fmt.Errorf("%w: coverage runs at standard or deep depth", shared.ErrValidation)
+}
+
+// coverageDeepContent returns depth, or standard when depth is deep and the
+// platform cannot supply the tool's lists at that depth (the medium pack
+// revoked and none imported). An unreadable answer keeps deep: the
+// claim-time pin still refuses the job, and the failed pass falls back on
+// the planner's attempt bound.
+func (s *Service) coverageDeepContent(ctx context.Context, tenantID shared.ID, tool string, depth scanworkflow.Depth) scanworkflow.Depth {
+	if depth != scanworkflow.DepthDeep || s.coverageContent == nil {
+		return depth
+	}
+	ok, err := s.coverageContent.CoverageContentReady(ctx, scanworkflow.DepthDeep, stage.ToolWordlists(tool))
+	if err != nil {
+		s.logger.Warn("coverage: deep lists unreadable; the run stays deep and is checked again at claim",
+			"tenant_id", tenantID.String(), "tool", tool, "error", logger.SanitizeError(err))
+		return depth
+	}
+	if !ok {
+		s.logger.Info("coverage: no deep wordlist pack on the platform; the onboarding pass runs at standard depth",
+			"tenant_id", tenantID.String(), "tool", tool)
+		return scanworkflow.DepthStandard
+	}
+	return depth
 }
 
 // coverageScan returns the tenant's coverage scan of a capability, creating

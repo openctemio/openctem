@@ -472,10 +472,19 @@ keeps only the names that resolve, after wildcard filtering. Found names
 enter the inventory as `subdomain` assets with attribution like any other
 discovered name. They never widen scope by themselves.
 
+A new root (a `domain` asset whose enumeration never succeeded, for example
+one added by a new scope entry or an acquisition) is first enumerated once
+at deep depth: the medium label pack (`wordlists-m`) with the same learned
+labels and permutations. After that pass it returns to the weekly standard
+pass. A deep pass that fails three times in a row falls back to standard.
+Details in [asset-coverage.md](asset-coverage.md) ("Deep onboarding of new
+roots").
+
 Wiring, gates and the `content_missing` pause are described in
 [asset-coverage.md](asset-coverage.md) ("Subdomain enumeration"); the packs
-in [wordlists.md](wordlists.md). Until an instance administrator imports the
-`wordlists-s` release asset, enumeration coverage stays paused.
+in [wordlists.md](wordlists.md). The API installs built-in `wordlists-s` and
+`wordlists-m` packs on start; enumeration coverage pauses only when no stable
+`wordlists-s` is left (revoked and none imported).
 
 ## 4n. Technologies view (built)
 
