@@ -36,6 +36,7 @@
 > once and pastes it into a docker / compose / Kubernetes / Helm command.
 > The platform cannot know which tools a third-party sensor has; only the
 > sensor can say. What is the most modern and most secure option?
+> End-to-end flow as implemented today: [sensor-platform-workflow.md](../architecture/sensor-platform-workflow.md).
 
 ## 1. Answer in short
 

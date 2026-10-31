@@ -82,6 +82,7 @@ export const PLACEMENT_FIX: Record<string, FixTarget | null> = {
   sensor_hosts_busy: null,
   inactive: 'sensors',
   offline: 'sensors',
+  identity_cloned: 'sensors',
   pinned_elsewhere: null,
   refused_earlier: 'sensors',
   failed_here_earlier: 'sensors',
