@@ -454,6 +454,15 @@ func (s *Service) Claim(ctx context.Context, input ClaimInput) ([]*commanddom.Co
 		return nil, err
 	}
 	s.extendRunDeadlines(ctx, tenantID, sensorID, claimed)
+	// From here on a failure is the platform's, not the sensor's: every
+	// claimed command is handed back at once (as an unsigned claim is),
+	// never left to expire as if the sensor had gone offline.
+	handBack := func(err error) ([]*commanddom.Command, error) {
+		for _, id := range claimed {
+			s.unclaim(ctx, tenantID, id, input.SensorID, pinned[id])
+		}
+		return nil, err
+	}
 	won := make(map[shared.ID]bool, len(claimed))
 	for _, id := range claimed {
 		won[id] = true
@@ -466,7 +475,7 @@ func (s *Service) Claim(ctx context.Context, input ClaimInput) ([]*commanddom.Co
 		// Re-read: the claim set the sensor, the lease and its epoch.
 		cmd, err := s.repo.GetByTenantAndID(ctx, tenantID, c.ID)
 		if err != nil {
-			return nil, err
+			return handBack(err)
 		}
 		out = append(out, cmd)
 	}
@@ -475,13 +484,13 @@ func (s *Service) Claim(ctx context.Context, input ClaimInput) ([]*commanddom.Co
 	// The proxy pool, the organization's HTTP policy and the template
 	// signatures go into the payload first, so the job signature covers them.
 	if out, err = eg.stamp(out); err != nil {
-		return nil, err
+		return handBack(err)
 	}
-	s.recordEgress(ctx, out)
 	delivered, err := s.deliver(ctx, input.SensorID, out, rules, layers)
 	if err != nil {
-		return nil, err
+		return handBack(err)
 	}
+	s.recordEgress(ctx, out)
 	return s.signClaimed(ctx, tenantID, input.SensorID, delivered, pinned), nil
 }
 
@@ -517,7 +526,7 @@ func freeScanSlots(maxJobs, held int, reportedFree *int) int {
 // on every scan command, the bug-bounty program rules over it, then the
 // custom template signatures. All work on copies; the stored commands are
 // never changed. A tenant policy that cannot be read fails the delivery (the
-// claimed commands go back when their lease ends): a job never leaves
+// caller hands the claimed commands back at once): a job never leaves
 // without the organization's layer.
 func (s *Service) deliver(ctx context.Context, sensorID string, cmds []*commanddom.Command, rules map[shared.ID]*bp.JobRules,
 	layers map[shared.ID]settingsLayers,
