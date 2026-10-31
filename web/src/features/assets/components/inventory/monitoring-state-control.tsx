@@ -25,6 +25,7 @@ import { useDecideAttribution } from '../../hooks/use-asset-attribution'
 import type { AttributionDecision } from '../../lib/attribution'
 import { decisionHint, decisionLabel } from '../asset-attribution-section'
 import { MonitoringStateChip } from './monitoring-state-chip'
+import { MONITORING_STATE_FALLBACK, isMonitoringState } from '../../lib/monitoring-state'
 
 /** The decisions offered for a row: every decision but the one in force. */
 export function monitoringDecisions(attributionState: string | undefined): AttributionDecision[] {
@@ -54,6 +55,10 @@ export function MonitoringStateControl({
   const { t } = useTranslation()
   const { decide, saving } = useDecideAttribution(assetId)
   const [open, setOpen] = useState(false)
+  // The visible chip text leads the accessible name (label in name).
+  const stateLabel = isMonitoringState(state)
+    ? t(`assets.monitoring.state.${state}`, MONITORING_STATE_FALLBACK[state])
+    : ''
   if (!canWrite || !state) return <MonitoringStateChip state={state} />
 
   const onPick = async (d: AttributionDecision) => {
@@ -80,7 +85,8 @@ export function MonitoringStateControl({
           size="sm"
           className="h-auto gap-1 px-1 py-0.5"
           disabled={saving}
-          aria-label={t('assets.monitoring.control.open', 'Change monitoring of {name}', {
+          aria-label={t('assets.monitoring.control.open', '{state}, change monitoring of {name}', {
+            state: stateLabel,
             name: assetName,
           })}
           onClick={(e) => e.stopPropagation()}
