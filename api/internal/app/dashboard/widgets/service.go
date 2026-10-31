@@ -77,6 +77,7 @@ type Service struct {
 	facts     dashboard.FactReader
 	limiter   *limiter
 	paths     AttackPathReader
+	posture   PostureReader
 	previews  *previewLimiter
 	logger    *logger.Logger
 	now       func() time.Time
@@ -161,6 +162,7 @@ type WidgetValue struct {
 	Levers   *LeversValue   `json:"levers,omitempty"`
 	Brief    *BriefValue    `json:"brief,omitempty"`
 	KPIs     *KPIsValue     `json:"kpis,omitempty"`
+	Posture  *PostureValue  `json:"posture,omitempty"`
 }
 
 // ScalarValue is one count, with the previous period and a sparkline when
@@ -471,7 +473,7 @@ func (s *Service) widget(ctx context.Context, i int, w dashboard.Widget, factsRe
 		v.State, v.Reason = StateError, reason
 		v.Scalar, v.Ratio, v.Duration, v.Category, v.Series, v.Matrix, v.Items = nil, nil, nil, nil, nil, nil, nil
 		v.Stages, v.Paths, v.Flow, v.Intake = nil, nil, nil, nil
-		v.Levers, v.Brief, v.KPIs = nil, nil, nil
+		v.Levers, v.Brief, v.KPIs, v.Posture = nil, nil, nil, nil
 	}
 	return v
 }
@@ -582,6 +584,8 @@ func (s *Service) metric(ctx context.Context, v *WidgetValue, m dashboard.Metric
 		return s.kpisMetric(ctx, v, win, compare, agg)
 	case dashboard.MetricKindBreakdown:
 		return s.breakdown(ctx, v, m, win, compare, agg)
+	case dashboard.MetricKindPosture:
+		return s.postureMetric(ctx, v, agg)
 	}
 	return fmt.Errorf("unknown metric kind %q", m.Kind)
 }

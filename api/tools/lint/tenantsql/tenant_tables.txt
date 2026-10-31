@@ -121,6 +121,8 @@ easm_evidence
 easm_lookalike_candidates
 easm_lookalike_watches
 easm_network_seeds
+easm_posture_assets
+easm_posture_state
 easm_tombstones
 easm_weekly_digests
 exposure_disposition_requests
