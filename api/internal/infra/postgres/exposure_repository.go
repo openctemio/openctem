@@ -335,7 +335,12 @@ func (r *ExposureRepository) Upsert(ctx context.Context, event *exposure.Exposur
 			-- can re-escalate an exposure (info -> critical) or reword it, and
 			-- previously only the timestamps moved so the stored severity froze
 			-- at its first-seen value.
-			severity = EXCLUDED.severity,
+			-- While an analyst override stands the reported severity goes to
+			-- source_severity and the effective one is kept.
+			severity = CASE WHEN exposure_events.severity_overridden_at IS NULL
+			                THEN EXCLUDED.severity ELSE exposure_events.severity END,
+			source_severity = CASE WHEN exposure_events.severity_overridden_at IS NULL
+			                       THEN NULL ELSE EXCLUDED.severity END,
 			-- The peak only goes up: the two-approver rule reads it, so a
 			-- re-ingest that lowers severity cannot lift the rule.
 			peak_severity = ` + peakSeveritySQL + `,
@@ -555,7 +560,12 @@ func exposureUpsertSQL(rows []exposureBatchRow) (string, []any, error) {
 			-- can re-escalate an exposure (info -> critical) or reword it, and
 			-- previously only the timestamps moved so the stored severity froze
 			-- at its first-seen value.
-			severity = EXCLUDED.severity,
+			-- While an analyst override stands the reported severity goes to
+			-- source_severity and the effective one is kept.
+			severity = CASE WHEN exposure_events.severity_overridden_at IS NULL
+			                THEN EXCLUDED.severity ELSE exposure_events.severity END,
+			source_severity = CASE WHEN exposure_events.severity_overridden_at IS NULL
+			                       THEN NULL ELSE EXCLUDED.severity END,
 			-- The peak only goes up: the two-approver rule reads it, so a
 			-- re-ingest that lowers severity cannot lift the rule.
 			peak_severity = `+peakSeveritySQL+`,
@@ -631,7 +641,8 @@ func (r *ExposureRepository) selectQuery() string {
 		SELECT id, tenant_id, asset_id, event_type, severity,
 		       state, title, description, details, fingerprint, source,
 		       first_seen_at, last_seen_at, resolved_at, resolved_by, resolution_notes,
-		       created_at, updated_at, peak_severity
+		       created_at, updated_at, peak_severity,
+		       source_severity, severity_override_reason, severity_overridden_by, severity_overridden_at
 		FROM exposure_events
 	`
 }
@@ -672,6 +683,10 @@ func (r *ExposureRepository) doScan(scan func(dest ...any) error) (*exposure.Exp
 		createdAt       time.Time
 		updatedAt       time.Time
 		peakSeverity    sql.NullString
+		sourceSeverity  sql.NullString
+		overrideReason  sql.NullString
+		overriddenBy    sql.NullString
+		overriddenAt    sql.NullTime
 	)
 
 	err := scan(
@@ -679,6 +694,7 @@ func (r *ExposureRepository) doScan(scan func(dest ...any) error) (*exposure.Exp
 		&state, &title, &description, &details, &fingerprint, &source,
 		&firstSeenAt, &lastSeenAt, &resolvedAt, &resolvedByStr, &resolutionNotes,
 		&createdAt, &updatedAt, &peakSeverity,
+		&sourceSeverity, &overrideReason, &overriddenBy, &overriddenAt,
 	)
 	if err != nil {
 		return nil, err
@@ -729,7 +745,43 @@ func (r *ExposureRepository) doScan(scan func(dest ...any) error) (*exposure.Exp
 		nullStringValue(resolutionNotes),
 		createdAt,
 		updatedAt,
-	).WithPeakSeverity(exposure.Severity(peakSeverity.String)), nil
+	).WithPeakSeverity(exposure.Severity(peakSeverity.String)).
+		RestoreSeverityProvenance(exposure.SeverityProvenance{
+			Source:         exposure.Severity(sourceSeverity.String),
+			OverrideReason: overrideReason.String,
+			OverriddenBy:   parseNullID(overriddenBy),
+			OverriddenAt:   nullTimeValue(overriddenAt),
+		}), nil
+}
+
+// SaveSeverity stores an exposure's effective severity and its override
+// provenance, tenant-scoped. The peak (read by the four-eyes rule) is only
+// ever raised: to the highest of the stored peak, the severity before the
+// change and the reported severity, so an override can never lower it.
+func (r *ExposureRepository) SaveSeverity(ctx context.Context, event *exposure.ExposureEvent) error {
+	p := event.SeverityProvenance()
+	var source, reason any
+	if p.OverriddenAt != nil {
+		source, reason = p.Source.String(), p.OverrideReason
+	}
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE exposure_events
+		   SET severity = $3, source_severity = $4, severity_override_reason = $5,
+		       severity_overridden_by = $6, severity_overridden_at = $7, updated_at = $8,
+		       peak_severity = `+peakSeverityOf("COALESCE(exposure_events.peak_severity, exposure_events.severity)", "$9::varchar")+`
+		 WHERE tenant_id = $1 AND id = $2`,
+		event.TenantID().String(), event.ID().String(), event.Severity().String(),
+		source, reason, nullIDPtr(p.OverriddenBy), nullTime(p.OverriddenAt), event.UpdatedAt(),
+		event.PeakSeverity().String())
+	if err != nil {
+		return fmt.Errorf("failed to save exposure severity: %w", err)
+	}
+	if n, err := res.RowsAffected(); err != nil {
+		return fmt.Errorf("failed to get rows affected: %w", err)
+	} else if n == 0 {
+		return exposure.NewExposureEventNotFoundError(event.ID().String())
+	}
+	return nil
 }
 
 func (r *ExposureRepository) buildWhereClause(filter exposure.Filter) (string, []any) {

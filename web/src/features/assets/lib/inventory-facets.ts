@@ -16,6 +16,7 @@ import {
   type InventoryFilters,
 } from './inventory-url'
 import { ASSET_SCOPE_LABELS, EXPOSURE_LEVEL_LABELS } from '../types/asset.types'
+import { MONITORING_STATES, MONITORING_STATE_FALLBACK } from './monitoring-state'
 import { ASSET_CRITICALITY_LEVELS, CRITICALITY_LABELS } from '@/lib/criticality'
 
 /** Data classification levels (mirrors the api CHECK constraint on assets). */
@@ -77,6 +78,7 @@ export interface MultiFacetDef {
     | 'businessUnitIds'
     | 'attribution'
     | 'scopeStatus'
+    | 'monitoringState'
     | 'discoveredBy'
   >
   label: string
@@ -137,6 +139,19 @@ export function scopingFacetGroup(t: FacetT = englishT): FacetGroup {
         values: [...SCOPE_STATUS_VALUES],
         labelFor: (v) => t(`assets.triage.scopeStatus.${v}`, SCOPE_STATUS_FALLBACK[v] ?? v),
         // The stats endpoint has no scope status breakdown.
+        counts: () => ({}),
+      },
+      {
+        kind: 'multi',
+        filterKey: 'monitoringState',
+        label: t('assets.monitoring.facet', 'Monitoring'),
+        source: 'static',
+        values: [...MONITORING_STATES],
+        labelFor: (v) =>
+          t(
+            `assets.monitoring.state.${v}`,
+            MONITORING_STATE_FALLBACK[v as keyof typeof MONITORING_STATE_FALLBACK] ?? v
+          ),
         counts: () => ({}),
       },
       {
