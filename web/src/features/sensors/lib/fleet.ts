@@ -58,7 +58,26 @@ export type AttentionKind =
   | 'content'
   | 'preflight'
   | 'posture'
+  | 'storage'
+  | 'other'
   | 'error'
+
+/** The catalog key of each attention kind's word ("storage full"). */
+export const ATTENTION_WORDS: Record<AttentionKind, string> = {
+  offline: 'sensors.health.attention.offline',
+  backlog: 'sensors.health.attention.backlog',
+  key: 'sensors.health.attention.key',
+  version: 'sensors.health.attention.version',
+  sdk: 'sensors.health.attention.sdk',
+  heartbeat: 'sensors.health.attention.heartbeat',
+  tools: 'sensors.health.attention.tools',
+  content: 'sensors.health.attention.content',
+  preflight: 'sensors.health.attention.preflight',
+  posture: 'sensors.health.attention.posture',
+  storage: 'sensors.health.attention.storage',
+  error: 'sensors.health.attention.error',
+  other: 'sensors.health.attention.other',
+}
 
 /**
  * The states of an enabled sensor that is not connected: it stopped
@@ -75,7 +94,7 @@ function attentionKindsOf(
   const kinds: AttentionKind[] = []
   if (NOT_CONNECTED_STATES.includes(state)) kinds.push('offline')
   for (const r of sensor.health_reasons ?? []) {
-    const kind: AttentionKind | null = r.code.startsWith('outbox_')
+    const kind: AttentionKind = r.code.startsWith('outbox_')
       ? 'backlog'
       : r.code.startsWith('key_') || r.code === 'identity_cloned'
         ? 'key'
@@ -93,8 +112,12 @@ function attentionKindsOf(
                     ? 'preflight'
                     : r.code === 'error_reported'
                       ? 'error'
-                      : null
-    if (kind && !kinds.includes(kind)) kinds.push(kind)
+                      : r.code === 'stopped_claiming'
+                        ? 'storage'
+                        : // A reason this page has no word for still counts: the
+                          // API calls the sensor degraded, so it needs attention.
+                          'other'
+    if (!kinds.includes(kind)) kinds.push(kind)
   }
   // The sensor's own setup checks and its security posture count too: the
   // drawer lists them as issues, so the fleet must not call the sensor fine.
@@ -110,6 +133,15 @@ function attentionKindsOf(
     }
   }
   return kinds
+}
+
+/** What needs attention on one sensor (the words of the "Needs attention" caption). */
+export function sensorAttentionKinds(
+  sensor: Sensor,
+  channel: ReleaseChannel,
+  state: SensorState
+): AttentionKind[] {
+  return isEnabled(state) ? attentionKindsOf(sensor, channel, state) : []
 }
 
 function isEnabled(state: SensorState): boolean {

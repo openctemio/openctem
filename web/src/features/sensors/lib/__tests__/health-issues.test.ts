@@ -62,6 +62,59 @@ function issuesOf(s: Sensor) {
 }
 
 describe('sensorHealthIssues', () => {
+  it('says a sensor that stopped claiming takes no new jobs, why, and what to do', () => {
+    const issues = issuesOf({
+      ...base,
+      state: 'degraded',
+      health_reasons: [
+        {
+          code: 'stopped_claiming',
+          severity: 'critical',
+          message: 'The sensor stopped claiming new jobs because its local storage is full.',
+        },
+      ],
+      local_store: {
+        level: 'high',
+        stop_claiming: true,
+        reason: '9 % of the volume free, below 15 %',
+        total_bytes: 0,
+        disk_level: 'ok',
+        reported_at: null,
+      },
+    })
+    expect(issues[0]).toMatchObject({
+      key: 'storage',
+      severity: 'critical',
+      title: 'Not taking new jobs: storage full',
+    })
+    expect(issues[0].text).toContain('9 % of the volume free, below 15 %')
+    expect(issues[0].text).toContain('Free disk space on the sensor host')
+    // The checklist covers it: no generic "Needs attention" fallback.
+    expect(issues.some((i) => i.key.startsWith('reason:'))).toBe(false)
+  })
+
+  it('names the disk when the disk under the data directory is low', () => {
+    const issues = issuesOf({
+      ...base,
+      state: 'degraded',
+      local_store: {
+        ...{
+          level: 'high',
+          stop_claiming: true,
+          reason: '9 % of the volume free, below 15 %',
+          total_bytes: 0,
+          disk_level: 'ok',
+          reported_at: null,
+        },
+        disk_level: 'low',
+        reason: '',
+      },
+    })
+    expect(issues[0].text).toBe(
+      'Takes no new jobs: the disk under its data directory is almost full. Free disk space on the sensor host; it resumes on its own.'
+    )
+  })
+
   it('is empty for a healthy sensor', () => {
     expect(issuesOf(base)).toEqual([])
     expect(worstIssueSeverity([])).toBeNull()
