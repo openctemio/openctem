@@ -173,7 +173,10 @@ describe('Findings toolbar layout', () => {
 
   it('the table toolbar is a size container, so labels follow the list width', () => {
     renderAt()
-    expect(screen.getByTestId('data-table-toolbar').className).toMatch(/@container\/toolbar/)
+    // The toolbar, or with a chips row the region around it (same width).
+    const bar = screen.getByTestId('data-table-toolbar')
+    const container = bar.closest('[data-slot="list-toolbar-region"]') ?? bar
+    expect(container.className).toMatch(/@container\/toolbar/)
     expect(screen.getByTestId('findings-toolbar-primary').className).toMatch(/@container\/actions/)
   })
 

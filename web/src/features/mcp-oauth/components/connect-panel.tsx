@@ -37,8 +37,8 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { useTranslation } from '@/context/i18n-provider'
-import { useCreateApiKey } from '@/features/api-keys/api/use-api-keys'
-import { API_KEY_EXPIRY_OPTIONS, DEFAULT_API_KEY_EXPIRY_DAYS } from '@/features/api-keys/lib/expiry'
+import { useApiKeyPolicy, useCreateApiKey } from '@/features/api-keys/api/use-api-keys'
+import { expiryOptionsFor } from '@/features/api-keys/lib/expiry'
 import type { CreateAPIKeyResponse } from '@/features/api-keys/types/api-key.types'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { copyToClipboard } from '@/lib/clipboard'
@@ -107,7 +107,15 @@ export function ConnectPanel({
       : t('mcp.key.defaultName.pentest', 'Pentest report writer')
   const [preset, setPreset] = useState<PresetId>('general')
   const [name, setName] = useState(() => defaultName('general'))
-  const [expiry, setExpiry] = useState<string>(DEFAULT_API_KEY_EXPIRY_DAYS)
+  const policy = useApiKeyPolicy(canWriteKeys)
+  const { options: expiryOptions, defaultValue: defaultExpiry } = expiryOptionsFor(
+    policy.data?.max_lifetime_days
+  )
+  const [expiry, setExpiry] = useState<string>(defaultExpiry)
+  // Never keep a choice above the organization's maximum once it is known.
+  useEffect(() => {
+    if (!expiryOptions.some((o) => o.value === expiry)) setExpiry(defaultExpiry)
+  }, [expiryOptions, expiry, defaultExpiry])
   const [created, setCreated] = useState<CreateAPIKeyResponse | null>(null)
   const [guideOpen, setGuideOpen] = useState(false)
   const { trigger, isMutating } = useCreateApiKey()
@@ -368,9 +376,9 @@ export function ConnectPanel({
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {API_KEY_EXPIRY_OPTIONS.map((o) => (
+                    {expiryOptions.map((o) => (
                       <SelectItem key={o.value} value={o.value}>
-                        {t(`mcp.key.expiry.${o.value}`, o.label)}
+                        {t(o.labelKey, o.label, { days: o.days ?? Number(o.value) })}
                       </SelectItem>
                     ))}
                   </SelectContent>
