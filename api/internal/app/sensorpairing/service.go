@@ -334,6 +334,9 @@ func (s *Service) Start(ctx context.Context, in StartInput) (*pairing.StartRespo
 			return nil, err
 		}
 		if !ok {
+			// The console that made the code learns why no sensor arrived:
+			// another key holds it, or this key holds another request.
+			s.RecordRefusal(ctx, Refusal{Code: code, PublicKey: p.PublicKey, SourceIP: p.SourceIP, Reason: sensordom.RefusalCodeTaken})
 			// Same answer as a match: a request no code can ever reach.
 			p.CodeHash = ""
 			if err := s.repo.CreateForward(ctx, p); err != nil {
@@ -603,8 +606,11 @@ type View struct {
 	// id, so a switch of organization after the review is refused.
 	OrganizationID   string `json:"organization_id"`
 	OrganizationName string `json:"organization_name,omitempty"`
-	RepairSensorID   string `json:"repair_sensor_id,omitempty"`
-	RepairSensor     string `json:"repair_sensor_name,omitempty"`
+	// LastRefusal is the last refused attempt of a sensor on this code
+	// (an open expectation of the organization): why no sensor arrived.
+	LastRefusal    *RefusalView `json:"last_refusal,omitempty"`
+	RepairSensorID string       `json:"repair_sensor_id,omitempty"`
+	RepairSensor   string       `json:"repair_sensor_name,omitempty"`
 	// RepairReason is why the console started the re-pair ("lost_identity",
 	// "host_moved", "key_compromised", "install_method").
 	RepairReason string `json:"repair_reason,omitempty"`
@@ -644,6 +650,32 @@ func repairBefore(sen *sensordom.Sensor) *RepairBefore {
 		b.IPAddress = sen.IPAddress.String()
 	}
 	return b
+}
+
+// RefusalView is a refused attempt as the console shows it.
+type RefusalView struct {
+	// Reason: clock_skew, rate_limited, code_taken, key_busy or key_registered.
+	Reason             string    `json:"reason"`
+	At                 time.Time `json:"at"`
+	KeyFingerprint     string    `json:"key_fingerprint,omitempty"`
+	SourceIP           string    `json:"source_ip,omitempty"`
+	ClockOffsetSeconds *int64    `json:"clock_offset_seconds,omitempty"`
+	RetryAfterSeconds  *int64    `json:"retry_after_seconds,omitempty"`
+}
+
+func refusalView(r *sensordom.PairingRefusal) *RefusalView {
+	v := &RefusalView{Reason: r.Reason, At: r.At}
+	v.KeyFingerprint, _ = r.Details["key_fingerprint"].(string)
+	v.SourceIP, _ = r.Details["source_ip"].(string)
+	if f, ok := r.Details["clock_offset_seconds"].(float64); ok {
+		n := int64(f)
+		v.ClockOffsetSeconds = &n
+	}
+	if f, ok := r.Details["retry_after_seconds"].(float64); ok {
+		n := int64(f)
+		v.RetryAfterSeconds = &n
+	}
+	return v
 }
 
 // ContentKeySource gives the content-signing public keys the platform signs
@@ -716,6 +748,10 @@ func (s *Service) view(ctx context.Context, actor Actor, p *sensordom.Pairing) *
 			v.RepairSensorID, v.RepairSensor = sen.ID.String(), sen.Name
 			v.RepairReason, v.RepairBefore = p.RepairReason, repairBefore(sen)
 		}
+	}
+	if p.LastRefusal != nil && p.Mode == sensordom.PairingReverse &&
+		(p.Status == sensordom.PairingExpecting || p.Status == sensordom.PairingPending) {
+		v.LastRefusal = refusalView(p.LastRefusal)
 	}
 	if (p.Status == sensordom.PairingPending || p.Status == sensordom.PairingExpecting) && !s.now().Before(p.ExpiresAt) {
 		v.Status = string(sensordom.PairingExpired)
@@ -1139,6 +1175,60 @@ func (s *Service) sweep(ctx context.Context) {
 	s.sweepMu.Unlock()
 	if _, err := s.repo.ExpireForPlatform(ctx, now, now.Add(-PurgeAfter)); err != nil {
 		s.log.Warn("sensor pairing sweep failed", "error", err)
+		return
+	}
+	removed, err := s.repo.RemoveUnconfirmedSensors(ctx)
+	if err != nil {
+		s.log.Warn("sensor pairing sweep: remove unconfirmed sensors", "error", err)
+		return
+	}
+	for _, r := range removed {
+		s.log.Info("removed a sensor whose pairing was approved but never confirmed",
+			"sensor_id", r.ID.String(), "tenant_id", r.TenantID.String())
+		s.logAudit(ctx, auditapp.AuditContext{TenantID: r.TenantID.String(), ActorEmail: actorSensor},
+			auditapp.NewSuccessEvent(auditdom.ActionSensorDeleted, auditdom.ResourceTypeSensor, r.ID.String()).
+				WithResourceName(r.Name).
+				WithMessage("Removed sensor "+r.Name+": its pairing was approved but the sensor never confirmed it within 10 minutes, so it never had a working key").
+				WithSeverity(auditdom.SeverityLow).WithMetadata("reason", "pairing_not_confirmed"))
+	}
+}
+
+// Refusal is a refused start that carried a code.
+type Refusal struct {
+	Code       string
+	PublicKey  []byte
+	SourceIP   net.IP
+	Reason     string
+	ClockSkew  time.Duration
+	RetryAfter time.Duration
+}
+
+// RecordRefusal notes a refused start on its code's open expectation, so
+// the console's waiting step can say why no sensor arrived. Only the
+// expectation's organization reads it; the sensor's answer is unchanged.
+// Call it only for a start whose signature verified with the key in its
+// body. Best effort: a failure is logged, never returned.
+func (s *Service) RecordRefusal(ctx context.Context, r Refusal) {
+	if s == nil {
+		return
+	}
+	norm, err := pairing.NormalizeCode(r.Code)
+	if err != nil {
+		return
+	}
+	thumb := sensorsig.Thumbprint(r.PublicKey)
+	details := map[string]any{"key_fingerprint": pairing.KeyFingerprint(thumb)}
+	if r.SourceIP != nil {
+		details["source_ip"] = r.SourceIP.String()
+	}
+	if r.Reason == sensordom.RefusalClockSkew {
+		details["clock_offset_seconds"] = int64(r.ClockSkew / time.Second)
+	}
+	if r.RetryAfter > 0 {
+		details["retry_after_seconds"] = int64(r.RetryAfter / time.Second)
+	}
+	if err := s.repo.RecordRefusalUnscoped(ctx, s.codeHash(norm), thumb, r.Reason, details, s.now()); err != nil {
+		s.log.Warn("record sensor pairing refusal", "error", logger.SanitizeError(err))
 	}
 }
 

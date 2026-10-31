@@ -213,12 +213,19 @@ type Output struct {
 	// AssetsOutsideChunk counts report assets dropped because they name
 	// only addresses outside the addresses and ranges their command was
 	// given (RFC-088 output binding). Their findings are skipped.
-	AssetsOutsideChunk   int `json:"assets_outside_chunk,omitempty"`
-	FindingsCreated      int `json:"findings_created"`
-	FindingsUpdated      int `json:"findings_updated"`
-	FindingsSkipped      int `json:"findings_skipped"`
-	FindingsAutoResolved int `json:"findings_auto_resolved,omitempty"`
-	FindingsAutoReopened int `json:"findings_auto_reopened,omitempty"`
+	AssetsOutsideChunk int `json:"assets_outside_chunk,omitempty"`
+	// AssetsOutsideJob counts report assets dropped because they lie outside
+	// the targets of the hostname-scoped command the report is bound to
+	// (job_bound.go); FindingsOutsideJob counts the findings dropped with
+	// them. OutsideJobAssetRefs are their report refs.
+	AssetsOutsideJob     int             `json:"assets_outside_job,omitempty"`
+	FindingsOutsideJob   int             `json:"findings_outside_job,omitempty"`
+	OutsideJobAssetRefs  map[string]bool `json:"-"`
+	FindingsCreated      int             `json:"findings_created"`
+	FindingsUpdated      int             `json:"findings_updated"`
+	FindingsSkipped      int             `json:"findings_skipped"`
+	FindingsAutoResolved int             `json:"findings_auto_resolved,omitempty"`
+	FindingsAutoReopened int             `json:"findings_auto_reopened,omitempty"`
 	// FindingsSourceResolved counts open findings resolved because their
 	// source reported them mitigated (Tenable.sc, RFC-047); in dry_run mode
 	// FindingsSourceWouldResolve counts them instead.

@@ -18,6 +18,7 @@ import type {
   ProxyAssignmentList,
   ProxyPool,
   ProxyPoolList,
+  ScannerAddressList,
   SetProxyAssignmentRequest,
   UpdateProxyEndpointRequest,
   UpdateProxyPoolRequest,
@@ -45,6 +46,16 @@ export function useProxyAssignments(enabled = true) {
   return useSWR<ProxyAssignmentList>(
     currentTenant && enabled ? proxyPoolEndpoints.assignments() : null,
     (url: string) => get<ProxyAssignmentList>(url),
+    defaultConfig
+  )
+}
+
+/** The addresses the organization's scans leave from (sensors:egress:read). */
+export function useScannerAddresses(enabled = true) {
+  const { currentTenant } = useTenant()
+  return useSWR<ScannerAddressList>(
+    currentTenant && enabled ? proxyPoolEndpoints.scannerAddresses() : null,
+    (url: string) => get<ScannerAddressList>(url),
     defaultConfig
   )
 }

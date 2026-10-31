@@ -38,6 +38,8 @@ import { worstContentState } from '../lib/content'
 import { normalizeSensorVersion } from '../lib/sensor-version'
 import { sensorState, SENSOR_STATES, type FleetThresholds } from '../lib/sensor-state'
 import { sensorPolicyOf, type ReleaseChannel } from '../lib/fleet'
+import { sensorFacts, sensorReason, VERSION_FACT_KEYS } from '../lib/sensor-facts'
+import { cn } from '@/lib/utils'
 import { SensorLocalPolicyBadge } from './sensor-local-policy-section'
 
 interface SensorTableProps {
@@ -84,11 +86,23 @@ function UsageCell({ percent }: { percent: number }) {
 }
 
 /**
- * Off by default, available under Columns: metrics most sensors do not report
- * yet (CPU, memory, region; showing 0% and an invented "local" for every
- * sensor said nothing) and the role, which the Role filter and grouping carry.
+ * Off by default, available under Display: the outbox, key, local policy and
+ * content columns (most rows read "not reported" or "never expires"; a
+ * problem in any of them is the row's reason under Status instead), metrics
+ * most sensors do not report yet (CPU, memory, region) and the role, which
+ * the Role filter and grouping carry. Five columns fit 1440px without a
+ * sideways scroll.
  */
-const HIDDEN_BY_DEFAULT = { type: false, cpuUsage: false, memoryUsage: false, region: false }
+const HIDDEN_BY_DEFAULT = {
+  outbox: false,
+  key: false,
+  policy: false,
+  content: false,
+  type: false,
+  cpuUsage: false,
+  memoryUsage: false,
+  region: false,
+}
 
 const STATE_RANK = new Map(SENSOR_STATES.map((s, i) => [s, i]))
 
@@ -117,10 +131,11 @@ export function SensorTable({
 }: SensorTableProps) {
   const { t } = useTranslation()
   const actionPerms = useSensorActionPerms()
-  const canDelete = actionPerms.delete
+  // Rows are selectable for the bulk actions: Disable (sensors:write) and Delete.
+  const canSelect = actionPerms.delete || actionPerms.write
   const columns = useMemo<ColumnDef<Sensor>[]>(
     () => [
-      ...(canDelete
+      ...(canSelect
         ? ([
             {
               id: 'select',
@@ -169,14 +184,35 @@ export function SensorTable({
         ),
         cell: ({ row }) => {
           const reasons = row.original.health_reasons ?? []
+          // The reason in plain words, under the state: the same facts the
+          // phone card lists (outbox, key, policy, version, content) so the
+          // columns that hold them can stay hidden until they matter.
+          const reason = sensorReason(
+            sensorFacts(row.original, { now, thresholds, channel }, t),
+            VERSION_FACT_KEYS
+          )
           return (
-            <span title={reasons.length ? reasons.map((r) => r.message).join('\n') : undefined}>
+            <span
+              className="flex min-w-0 flex-col items-start gap-0.5"
+              title={reasons.length ? reasons.map((r) => r.message).join('\n') : undefined}
+            >
               <SensorStateBadge
                 sensor={row.original}
                 now={now}
                 thresholds={thresholds}
                 withLastSeen
               />
+              {reason && (
+                <span
+                  data-slot="sensor-reason"
+                  className={cn(
+                    'line-clamp-2 max-w-56 text-xs',
+                    reason.tone === 'destructive' ? 'text-destructive' : 'text-warning'
+                  )}
+                >
+                  {reason.text}
+                </span>
+              )}
             </span>
           )
         },
@@ -367,7 +403,7 @@ export function SensorTable({
       onRegenerateKey,
       onRevokeSensor,
       actionPerms,
-      canDelete,
+      canSelect,
       thresholds,
       now,
       channel,
