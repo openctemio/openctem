@@ -161,3 +161,20 @@ func TestCoverageCauses_FullyCoveredReadsNoCauses(t *testing.T) {
 		t.Fatalf("causes %+v reads %d", v.Ratio, len(facts.scopes))
 	}
 }
+
+// Levers, brief and KPI strip decide after computing: with no finding and
+// nothing else to say they are not measured, never "nothing stands out".
+func TestNoFindings_StoryWidgetsAreNotMeasured(t *testing.T) {
+	for _, tc := range []struct{ metric, viz string }{
+		{"exposure.levers", "levers"},
+		{"brief.weekly", "brief"},
+		{"exposure.kpis", "kpi"},
+	} {
+		facts := &ctemFacts{noFindings: true}
+		s := NewService(nil, nil, facts, nil)
+		v := s.widget(context.Background(), 0, ctemWidget(tc.metric, tc.viz, 0), true, restrictedScope())
+		if v.State != StateNotMeasured || v.Reason != ReasonNoFindings || v.Levers != nil || v.Brief != nil || v.KPIs != nil {
+			t.Errorf("%s: %s %s %+v", tc.metric, v.State, v.Reason, v)
+		}
+	}
+}

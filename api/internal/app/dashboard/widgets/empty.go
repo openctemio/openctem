@@ -68,3 +68,29 @@ func countsFindings(m dashboard.Metric) bool {
 	}
 	return false
 }
+
+// nothingToCount marks v not measured (no_findings) when the scope holds no
+// finding, for the widgets that decide after computing (the levers, the
+// brief, the KPI strip).
+func (s *Service) nothingToCount(ctx context.Context, v *WidgetValue, scope dashboard.ReadScope) (bool, error) {
+	has, err := s.hasFindings(ctx, scope)
+	if err != nil {
+		return false, err
+	}
+	if !has {
+		v.State, v.Reason = StateNotMeasured, ReasonNoFindings
+	}
+	return !has, nil
+}
+
+func hasLeverItem(b *BriefValue) bool {
+	if b == nil {
+		return false
+	}
+	for _, it := range b.Items {
+		if it.Lever != nil {
+			return true
+		}
+	}
+	return false
+}

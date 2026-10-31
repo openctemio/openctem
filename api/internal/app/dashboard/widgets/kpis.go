@@ -131,6 +131,18 @@ func (s *Service) kpisMetric(ctx context.Context, v *WidgetValue, win Window, co
 	if err != nil {
 		return err
 	}
+	// Not one tile measured and no finding in scope: the strip is the
+	// compact empty state, not five "not measured" figures.
+	measured := false
+	for _, t := range k.Tiles {
+		measured = measured || t.State == StateReady
+	}
+	if !measured {
+		empty, err := s.nothingToCount(ctx, v, scope)
+		if err != nil || empty {
+			return err
+		}
+	}
 	v.KPIs = k
 	return nil
 }

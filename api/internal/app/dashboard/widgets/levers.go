@@ -194,6 +194,14 @@ func (s *Service) leversMetric(ctx context.Context, v *WidgetValue, scope dashbo
 	if err != nil {
 		return err
 	}
+	// No lever and no finding in scope: "nothing stands out" would read as
+	// all clear; nothing has been measured.
+	if len(lv.Levers) == 0 {
+		empty, err := s.nothingToCount(ctx, v, scope)
+		if err != nil || empty {
+			return err
+		}
+	}
 	v.Levers = lv
 	return nil
 }
