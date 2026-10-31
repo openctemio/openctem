@@ -116,8 +116,24 @@ export function pairingSettled(status?: string): boolean {
 }
 
 /**
+ * The next poll of an expectation: none once the SAS is known or the request
+ * settled, EXPECTATION_POLL_MS before that.
+ *
+ * Module scope on purpose. SWR restarts its polling timer whenever the
+ * `refreshInterval` it is given changes identity, so an inline arrow
+ * re-created on every render resets the timer each render: a page that
+ * re-renders faster than the interval (a 1 s countdown) never polls at all.
+ */
+export function expectationRefreshInterval(latest?: SensorPairingView): number {
+  return latest && (latest.sas || pairingSettled(latest.status)) ? 0 : EXPECTATION_POLL_MS
+}
+
+/**
  * An expectation of this organization, polled until the sensor connected and
  * revealed its nonce (the SAS is then known) or the request settled.
+ *
+ * A failed poll is not retried on its own (SWR then stops polling until the
+ * error clears): the caller shows `error` and offers `mutate` as "Check now".
  */
 export function usePairingExpectation(id: string | null, config?: SWRConfiguration) {
   const { currentTenant } = useTenant()
@@ -127,8 +143,7 @@ export function usePairingExpectation(id: string | null, config?: SWRConfigurati
     {
       revalidateOnFocus: false,
       shouldRetryOnError: false,
-      refreshInterval: (latest) =>
-        latest && (latest.sas || pairingSettled(latest.status)) ? 0 : EXPECTATION_POLL_MS,
+      refreshInterval: expectationRefreshInterval,
       ...config,
     }
   )

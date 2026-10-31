@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { StrictMode } from 'react'
 import { render, screen, waitFor } from '@testing-library/react'
 
 const perms = vi.hoisted(() => ({ granted: new Set<string>() }))
@@ -42,6 +43,17 @@ describe('ActivateSensor', () => {
     expect(await screen.findByTestId('enter-code')).toHaveTextContent('K7QM-4ZTD')
     await waitFor(() => expect(window.location.search).toBe(''))
     expect(window.location.pathname).toBe('/activate')
+  })
+
+  it('keeps the code when effects run twice (strict mode)', async () => {
+    render(
+      <StrictMode>
+        <ActivateSensor />
+      </StrictMode>
+    )
+    expect(await screen.findByTestId('enter-code')).toHaveTextContent('K7QM-4ZTD')
+    await waitFor(() => expect(window.location.search).toBe(''))
+    expect(screen.getByTestId('enter-code')).toHaveTextContent('K7QM-4ZTD')
   })
 
   it('asks for the code when the link carried none', async () => {

@@ -123,7 +123,7 @@ describe('SensorOnboardingPanel', () => {
     expect(screen.queryByText(/docker run/)).toBeNull()
     expect(
       screen.getByTestId('onboarding-status').querySelector('[aria-current="step"]')
-    ).toHaveTextContent('Compare fingerprint')
+    ).toHaveTextContent('Pick fingerprint')
     expect(api.expect).toHaveBeenCalledTimes(1)
   })
 

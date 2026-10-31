@@ -12,7 +12,7 @@
  * for the one the sensor printed.
  */
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { CheckCircle2, Loader2 } from 'lucide-react'
@@ -53,12 +53,18 @@ export function ActivateSensor() {
   const [code, setCode] = useState<string | undefined>(undefined)
   const [approved, setApproved] = useState<SensorPairingView | null>(null)
 
+  // Read once per mounted page: a second effect run (React's development
+  // double run, or a re-render) must not read the address it already cleaned.
+  const taken = useRef<string | undefined>(undefined)
   useEffect(() => {
-    const { code: c, rest } = takeCodeFromLocation(window.location.search)
-    if (window.location.search) {
-      window.history.replaceState(window.history.state, '', window.location.pathname + rest)
+    if (taken.current === undefined) {
+      const { code: c, rest } = takeCodeFromLocation(window.location.search)
+      taken.current = c
+      if (window.location.search) {
+        window.history.replaceState(window.history.state, '', window.location.pathname + rest)
+      }
     }
-    setCode(c)
+    setCode(taken.current)
   }, [])
 
   return (
@@ -67,7 +73,7 @@ export function ActivateSensor() {
         title={t('sensors.activate.title')}
         description={t('sensors.activate.description')}
       />
-      <Card className="w-full max-w-2xl" data-testid="activate-sensor">
+      <Card className="w-full max-w-2xl gap-0 py-0" data-testid="activate-sensor">
         <CardContent className="p-4 sm:p-6">
           {!canPair ? (
             <p className="text-sm text-muted-foreground">{t('sensors.activate.needsPermission')}</p>
