@@ -42,7 +42,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { ScopeCheckBadge, useScopeCheck } from '@/features/scope'
 import { ScopeTriageBadge } from './scope-triage-badge'
-import { MonitoringStateChip } from './monitoring-state-chip'
+import { MonitoringStateControl } from './monitoring-state-control'
 import { useTranslation } from '@/context/i18n-provider'
 import { assetDetailHref } from '@/features/findings/lib/asset-link'
 import type { TypeView } from '@/features/asset-types/lib/type-view'
@@ -98,6 +98,8 @@ const COLUMN_ROOM = {
   exposure: 1255,
   owner: 1355,
   last_seen: 1475,
+  // The monitoring state joins last (a chip with its menu, about 150px).
+  monitoring_state: 1630,
 } as const
 
 /** A one-type list shows "Service facts" only when its own columns do not already. */
@@ -372,13 +374,23 @@ export function InventoryTable({
         // The one derived lifecycle state (monitored, pending decision, ...).
         id: 'monitoring_state',
         enableSorting: false,
+        meta: { hideBelow: COLUMN_ROOM.monitoring_state },
         header: ({ column }) => (
           <DataTableColumnHeader
             column={column}
             title={t('assets.monitoring.column', 'Monitoring')}
           />
         ),
-        cell: ({ row }) => <MonitoringStateChip state={row.original.monitoringState} />,
+        cell: ({ row }) => (
+          <MonitoringStateControl
+            assetId={row.original.id}
+            assetName={row.original.name}
+            state={row.original.monitoringState}
+            attributionState={row.original.triage?.attributionState}
+            canWrite={canWriteAssets}
+            onChanged={onAssetUpdated}
+          />
+        ),
       },
       {
         // External-surface facts (status, IP, technologies, TLS …) for the
@@ -626,6 +638,7 @@ export function InventoryTable({
     locale,
     filterTags,
     onToggleTagFilter,
+    onAssetUpdated,
   ])
 
   return (
