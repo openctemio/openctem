@@ -112,6 +112,7 @@ type AssetService struct {
 	coverage  covdom.Repository
 	// The open ports of the addresses a name resolves to. Optional.
 	resolvedPorts assetdom.ResolvedPortReader
+	lineage       assetdom.LineageReader
 	enrichReqs    freshdom.RequestRepository
 	resolution    assetresolution.Store
 	// createdHook requests enrichment of assets a person created.

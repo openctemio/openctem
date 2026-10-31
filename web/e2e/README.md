@@ -171,6 +171,7 @@ tests that cover the console's most user-visible flows.
 | `51-cicd-settings.spec.ts`                  | CI/CD Settings: every section on one page, `?section=` scrolls, 1440/390px, axe, budget  |
 | `52-cicd-lists.spec.ts`                     | CI/CD Pipelines and Runs at 1440/390px: no sideways scroll, axe, request budget          |
 | `52-team-outside-members.spec.ts`          | A team with outside members turns full-data roles off up front and names them (390px too) |
+| `53-asset-discovery-lineage.spec.ts`       | Asset page: how a subdomain was found (chain, link to its domain), 1280/390px, no sideways scroll |
 
 Each spec is designed to:
 

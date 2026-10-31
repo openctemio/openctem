@@ -73,6 +73,9 @@ func registerAssetRoutes(
 		r.GET("/{id}/coverage", h.GetCoverage, middleware.Require(permission.AssetsRead))
 		// Open ports of the addresses a domain or subdomain resolves to.
 		r.GET("/{id}/resolved-ports", h.GetResolvedPorts, middleware.Require(permission.AssetsRead))
+		// How the asset was found: its ancestor chain, each ancestor data-scope
+		// checked (docs/architecture/easm.md, Discovery lineage).
+		r.GET("/{id}/lineage", h.GetLineage, middleware.Require(permission.AssetsRead))
 		// Why the risk score is what it is (docs/architecture/asset-risk-score.md).
 		r.GET("/{id}/risk", h.GetRisk, middleware.Require(permission.AssetsRead))
 		// Lowering exposure, criticality or the crown-jewel flag: the impact on
