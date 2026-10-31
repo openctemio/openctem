@@ -19,6 +19,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/command"
 	"github.com/openctemio/openctem/api/pkg/domain/coverage"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/safetext"
 )
 
 func coverageIDStrings(ids []shared.ID) []string {
@@ -317,7 +318,7 @@ const expectsHTTPServiceSQL = `EXISTS (
 var settleCoveredSQL = `
 	UPDATE asset_coverage c SET state = 'covered', reason = '',
 	       last_outcome = CASE WHEN $5 AND NOT ` + expectsHTTPServiceSQL + ` THEN '` + coverage.OutcomeNoOutput + `' ELSE '` + coverage.OutcomeOK + `' END,
-	       last_error = '', last_success_at = now(), fail_streak = 0, platform_fail_streak = 0, unreached_from = '',
+	       last_error = '', last_edge_vendor = NULL, last_success_at = now(), fail_streak = 0, platform_fail_streak = 0, unreached_from = '',
 	       next_due_at = ` + jitteredIntervalSQL("$4") + `, updated_at = now()
 	FROM assets a
 	WHERE c.tenant_id = $1 AND c.last_run_id = $2 AND c.capability = $3 AND c.vantage = '' AND c.state = 'queued'
@@ -361,7 +362,9 @@ func (r *AssetCoverageRepository) SettleFailed(ctx context.Context, tenantID, ru
 	outcomes := make([]string, len(failed))
 	errs := make([]string, len(failed))
 	platform := make([]bool, len(failed))
+	vendors := make([]string, len(failed))
 	for i, f := range failed {
+		vendors[i] = safetext.VendorToken(f.Vendor)
 		ids[i] = f.AssetID.String()
 		outcomes[i] = coverage.Clip(f.Outcome, coverage.MaxCodeLen)
 		errs[i] = coverage.Clip(f.Error, coverage.MaxErrorLen)
@@ -369,17 +372,17 @@ func (r *AssetCoverageRepository) SettleFailed(ctx context.Context, tenantID, ru
 	}
 	res, err := r.db.ExecContext(ctx, `
 		UPDATE asset_coverage c SET state = 'failed', reason = '',
-		       last_outcome = w.outcome, last_error = w.err,
+		       last_outcome = w.outcome, last_error = w.err, last_edge_vendor = NULLIF(w.vendor, ''),
 		       fail_streak = CASE WHEN w.platform THEN c.fail_streak ELSE least(c.fail_streak + 1, 32767) END,
 		       platform_fail_streak = CASE WHEN w.platform THEN least(c.platform_fail_streak + 1, 32767) ELSE 0 END,
 		       unreached_from = CASE WHEN w.platform THEN c.unreached_from ELSE '' END,
 		       next_due_at = now() + least(make_interval(secs => $7), make_interval(secs => 3600 * power(2,
 		           least(CASE WHEN w.platform THEN c.platform_fail_streak ELSE c.fail_streak END, 5)))),
 		       updated_at = now()
-		FROM unnest($4::uuid[], $5::text[], $6::text[], $8::bool[]) AS w(asset_id, outcome, err, platform)
+		FROM unnest($4::uuid[], $5::text[], $6::text[], $8::bool[], $9::text[]) AS w(asset_id, outcome, err, platform, vendor)
 		WHERE c.tenant_id = $1 AND c.last_run_id = $2 AND c.capability = $3 AND c.vantage = '' AND c.state = 'queued'
 		  AND c.asset_id = w.asset_id`,
-		tenantID.String(), runID.String(), capability, pq.Array(ids), pq.Array(outcomes), pq.Array(errs), every.Seconds(), pq.Array(platform))
+		tenantID.String(), runID.String(), capability, pq.Array(ids), pq.Array(outcomes), pq.Array(errs), every.Seconds(), pq.Array(platform), pq.Array(vendors))
 	if err != nil {
 		return 0, fmt.Errorf("settle failed coverage: %w", err)
 	}
@@ -426,7 +429,7 @@ func (r *AssetCoverageRepository) SettleTargetSide(ctx context.Context, tenantID
 	// entry min(n, len) (1-based).
 	res, err := r.db.ExecContext(ctx, `
 		UPDATE asset_coverage c SET state = 'paused', reason = w.outcome,
-		       last_outcome = w.outcome, last_error = w.err, fail_streak = `+targetSideStreakSQL+`,
+		       last_outcome = w.outcome, last_error = w.err, last_edge_vendor = NULL, fail_streak = `+targetSideStreakSQL+`,
 		       next_due_at = `+jitteredIntervalSQL(`($7::float8[])[least(`+targetSideStreakSQL+`, cardinality($7::float8[]))]`)+`,
 		       unreached_from = COALESCE(NULLIF(w.observer, ''), c.unreached_from), platform_fail_streak = 0,
 		       updated_at = now()
@@ -471,7 +474,7 @@ func (r *AssetCoverageRepository) SettleNoAnswer(ctx context.Context, tenantID, 
 	streak := sameOutcomeStreakSQL(`'` + coverage.OutcomeNoAnswer + `'`)
 	res, err := r.db.ExecContext(ctx, `
 		UPDATE asset_coverage c SET state = 'covered', reason = '',
-		       last_outcome = '`+coverage.OutcomeNoAnswer+`', last_error = '', last_success_at = now(),
+		       last_outcome = '`+coverage.OutcomeNoAnswer+`', last_error = '', last_edge_vendor = NULL, last_success_at = now(),
 		       fail_streak = `+streak+`, platform_fail_streak = 0, unreached_from = '',
 		       next_due_at = `+jitteredIntervalSQL(`($5::float8[])[least(`+streak+`, cardinality($5::float8[]))]`)+`,
 		       updated_at = now()
@@ -505,7 +508,7 @@ func (r *AssetCoverageRepository) SettleUnresolved(ctx context.Context, tenantID
 	streak := sameOutcomeStreakSQL(`w.reason`)
 	res, err := r.db.ExecContext(ctx, `
 		UPDATE asset_coverage c SET state = 'blocked', reason = w.reason,
-		       last_outcome = w.reason, last_error = w.err, fail_streak = `+streak+`, platform_fail_streak = 0, unreached_from = '',
+		       last_outcome = w.reason, last_error = w.err, last_edge_vendor = NULL, fail_streak = `+streak+`, platform_fail_streak = 0, unreached_from = '',
 		       next_due_at = `+jitteredIntervalSQL(`($7::float8[])[least(`+streak+`, cardinality($7::float8[]))]`)+`,
 		       updated_at = now()
 		FROM unnest($4::uuid[], $5::text[], $6::text[]) AS w(asset_id, reason, err)

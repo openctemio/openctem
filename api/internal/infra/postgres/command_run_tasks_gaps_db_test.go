@@ -27,6 +27,10 @@ func TestListRunTasks_CoverageGaps(t *testing.T) {
 		{"host":"b.example.com","reason":"made-up"},{"host":"c.example.com","reason":"blocked"}]}}`)
 	bogus := f.command(t, f.tenant, run.ID, &s1, "completed", map[string]any{"scanner": "nuclei", "targets": []string{"d.example.com"}})
 	setResult(bogus, `{"metadata":{"coverage_gaps":"nope","coverage_gaps_total":"9"}}`)
+	edge := f.command(t, f.tenant, run.ID, &s1, "completed", map[string]any{"scanner": "nuclei", "targets": []string{"e.example.com"}})
+	setResult(edge, `{"metadata":{"coverage_gaps_total":2,"coverage_gaps":[
+		{"host":"e.example.com","reason":"blocked","edge":"challenged","vendor":"DataDome"},
+		{"host":"f.example.com","reason":"rate_floor","edge":"blocked","vendor":"datadome"}]}}`)
 	stranger, _ := seedCounterScan(f.ctx, t, f.db)
 
 	tasks, _, err := f.cmds.ListRunTasks(f.ctx, f.tenant, run.ID, 0)
@@ -38,6 +42,9 @@ func TestListRunTasks_CoverageGaps(t *testing.T) {
 		byID[task.ID] = task
 	}
 	g := byID[gapped]
+	if e := byID[edge].CoverageGaps; len(e) != 2 || e[0].Edge != scanrun.EdgeChallenged || e[0].Vendor != "datadome" || e[1].Edge != "" || e[1].Vendor != "" {
+		t.Fatalf("edge gaps = %+v", e)
+	}
 	if g.CoverageGapsTotal != 3 || len(g.CoverageGaps) != 2 || g.CoverageGaps[0].Host != "a.example.com" ||
 		g.CoverageGaps[0].Reason != scanrun.GapReasonBreakerOpen || g.CoverageGaps[1].Reason != scanrun.GapReasonBlocked {
 		t.Fatalf("gaps = %+v (total %d)", g.CoverageGaps, g.CoverageGapsTotal)
@@ -46,7 +53,7 @@ func TestListRunTasks_CoverageGaps(t *testing.T) {
 		t.Fatalf("malformed metadata read as %+v", byID[bogus])
 	}
 	page, err := f.cmds.ListRunTasksAfter(f.ctx, f.tenant, run.ID, nil, 10)
-	if err != nil || len(page) != 2 || page[0].CoverageGapsTotal != 3 {
+	if err != nil || len(page) != 3 || page[0].CoverageGapsTotal != 3 {
 		t.Fatalf("page %+v, err %v", page, err)
 	}
 	// SECURITY: another tenant reads no task (and no gap) of this run.
