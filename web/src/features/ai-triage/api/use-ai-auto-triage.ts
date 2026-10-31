@@ -10,16 +10,11 @@
 import useSWR from 'swr'
 
 import { get, put } from '@/lib/api/client'
+import { SEVERITY_LEVELS, type SeverityLevel } from '@/lib/severity'
 
-export type AutoTriageSeverity = 'critical' | 'high' | 'medium' | 'low' | 'info'
+export type AutoTriageSeverity = SeverityLevel
 
-export const AUTO_TRIAGE_SEVERITIES: AutoTriageSeverity[] = [
-  'critical',
-  'high',
-  'medium',
-  'low',
-  'info',
-]
+export const AUTO_TRIAGE_SEVERITIES: AutoTriageSeverity[] = [...SEVERITY_LEVELS]
 
 /** The longest wait before a new finding is triaged, in seconds. */
 export const MAX_AUTO_TRIAGE_DELAY_SECONDS = 3600
