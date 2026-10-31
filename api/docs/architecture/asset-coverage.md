@@ -333,6 +333,16 @@ raises the usual `readiness` alert ("Coverage paused: resolve.dns ... no
 sensor took its last runs") with a link to the sensors, and the asset's
 coverage shows the pair paused with that reason.
 
+### Run by hand (discovery management)
+
+Attack surface > Discovery groups the planned capabilities into four stages
+and can run one stage, all of them, or cancel every active coverage run of the
+organization. Run only moves the due time of the stage's covered, due and
+failed pairs back by the batch wait; the next pass plans them as any due pair
+(readiness, holds, budget, batch size, dispatch gate). Abort all cancels the
+runs through the run cancel and the next pass settles them. Details and gates:
+[EASM, section 4o](easm.md#4o-discovery-management-built).
+
 ## Gap detection
 
 After planning (tenants with automatic coverage on), at most every 15

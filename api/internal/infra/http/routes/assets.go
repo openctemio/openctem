@@ -490,6 +490,28 @@ func registerEASMSettingsRoutes(
 	}, tenantMiddlewares...)
 }
 
+// registerEASMDiscoveryRoutes registers discovery management: the
+// organization's coverage work by stage (read: scans:read), Run per stage
+// and Run all (the scan trigger's scans:write + scans:execute) and Abort all
+// (the run cancel's scans:write), behind the attack_surface module. The
+// handler also requires an unrestricted data scope.
+func registerEASMDiscoveryRoutes(
+	router Router,
+	h *handler.EASMDiscoveryHandler,
+	authMiddleware Middleware,
+	userSyncMiddleware Middleware,
+	moduleGate Middleware,
+) {
+	tenantMiddlewares := append(buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware), moduleGate)
+	router.Group("/api/v1/attack-surface/discovery", func(r Router) {
+		r.GET("/", h.Overview, middleware.Require(permission.ScansRead))
+		r.GET("/export", h.Export, middleware.Require(permission.ScansRead))
+		r.POST("/stages/{stage}/run", h.RunStage, middleware.RequireAll(permission.ScansWrite, permission.ScansExecute))
+		r.POST("/run", h.RunAll, middleware.RequireAll(permission.ScansWrite, permission.ScansExecute))
+		r.POST("/cancel", h.AbortAll, middleware.Require(permission.ScansWrite))
+	}, tenantMiddlewares...)
+}
+
 // registerBranchRoutes registers branch management endpoints.
 // Branches are repository-scoped, tenant from JWT token.
 func registerBranchRoutes(

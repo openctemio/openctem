@@ -71,11 +71,16 @@ var registry = map[Code]Spec{
 	CodeReleaseFeedTooLarge:       {http.StatusRequestEntityTooLarge, "The file is larger than the release feed limit."},
 
 	// Step-up re-authentication and the team membership refusals.
-	CodeStepUpRequired:          {http.StatusForbidden, "Confirm your identity to continue."},
-	CodeStepUpUnavailable:       {http.StatusForbidden, "This action needs a signed-in user session that can re-authenticate."},
-	CodeTeamPrivilegedOwnerOnly: {http.StatusForbidden, "Only the organization owner can change the members of a team that carries a privileged role."},
-	CodeTeamExternalFullData:    {http.StatusForbidden, "Someone outside your organization gets full data access only through a role given to them directly, never through a team."},
-	CodeTeamSelfJoin:            {http.StatusForbidden, "You cannot add yourself to a team that carries roles. Ask the organization owner."},
+	CodeStepUpRequired:            {http.StatusForbidden, "Confirm your identity to continue."},
+	CodeStepUpUnavailable:         {http.StatusForbidden, "This action needs a signed-in user session that can re-authenticate."},
+	CodeTeamPrivilegedOwnerOnly:   {http.StatusForbidden, "Only the organization owner can change the members of a team that carries a privileged role."},
+	CodeTeamExternalFullData:      {http.StatusForbidden, "Someone outside your organization gets full data access only through a role given to them directly, never through a team."},
+	CodeTeamSelfJoin:              {http.StatusForbidden, "You cannot add yourself to a team that carries roles. Ask the organization owner."},
+	CodeDiscoveryFullDataRequired: {http.StatusForbidden, "Discovery management needs access to all of the organization's assets."},
+	CodeDiscoveryLoopOff:          {http.StatusConflict, "Automatic coverage does not run on this server. Ask the instance administrator."},
+	CodeDiscoveryCoverageOff:      {http.StatusConflict, "Automatic coverage is off for your organization. Turn it on in the scope settings first."},
+	CodeDiscoveryBudgetSpent:      {http.StatusConflict, "Today's coverage budget is used up. Try again tomorrow."},
+	CodeDiscoveryRunTooSoon:       {http.StatusTooManyRequests, "This stage was run less than a minute ago. Try again shortly."},
 	// Retest of a finding (docs/architecture/finding-retest-strategy.md);
 	// details.reason carries the retest reason code.
 	CodeRetestNotAvailable:     {http.StatusUnprocessableEntity, "This finding cannot be retested automatically. The retest panel says why."},
@@ -127,6 +132,14 @@ const (
 	CodeTeamExternalFullData Code = "TEAM_EXTERNAL_FULL_DATA"
 	// CodeTeamSelfJoin: someone added themselves to a team that carries roles.
 	CodeTeamSelfJoin Code = "TEAM_SELF_JOIN"
+	// Discovery management (attack surface): the caller is not unrestricted,
+	// the coverage loop or the organization's automatic coverage is off, the
+	// daily budget is spent, or the stage was run less than a minute ago.
+	CodeDiscoveryFullDataRequired Code = "DISCOVERY_FULL_DATA_REQUIRED"
+	CodeDiscoveryLoopOff          Code = "DISCOVERY_LOOP_OFF"
+	CodeDiscoveryCoverageOff      Code = "DISCOVERY_COVERAGE_OFF"
+	CodeDiscoveryBudgetSpent      Code = "DISCOVERY_BUDGET_SPENT"
+	CodeDiscoveryRunTooSoon       Code = "DISCOVERY_RUN_TOO_SOON"
 )
 
 // statusMessages is the fallback when a code is not registered.
