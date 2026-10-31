@@ -17,6 +17,7 @@ import (
 
 	tooldom "github.com/openctemio/openctem/api/internal/app/tool"
 	covdom "github.com/openctemio/openctem/api/pkg/domain/coverage"
+	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/stage"
@@ -107,7 +108,7 @@ func (s *Service) contentReadiness(ctx context.Context, tenantID shared.ID, tool
 	if len(reqs) == 0 || s.coverageContent == nil {
 		return ""
 	}
-	ok, err := s.coverageContent.CoverageContentReady(ctx, reqs)
+	ok, err := s.coverageContent.CoverageContentReady(ctx, scanworkflow.DepthStandard, reqs)
 	if err != nil {
 		s.logger.Warn("coverage readiness: platform content unreadable; checked again at claim",
 			"tenant_id", tenantID.String(), "tool", tool, "error", err)

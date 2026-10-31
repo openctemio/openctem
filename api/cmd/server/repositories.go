@@ -63,6 +63,7 @@ type Repositories struct {
 	TenantAISettings *postgres.TenantAISettingsRepository      // Organizations' AI settings (consent, source, own provider)
 	AIAnalysis       *postgres.AIAnalysisRepository            // AI agents, their owners and runs
 	AIMaskMaps       *postgres.AIMaskMapRepository             // Per AI run masking maps (encrypted, expiring)
+	AIKnowledge      *postgres.AIKnowledgeRepository           // Knowledge sources for AI agents and what runs retrieved
 	DataFlow         *postgres.DataFlowRepository              // Data flow traces for taint tracking
 	FindingSource    *postgres.FindingSourceRepository         // Finding source configuration
 	FindingSourceCat *postgres.FindingSourceCategoryRepository // Finding source categories
@@ -450,6 +451,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		TenantAISettings: postgres.NewTenantAISettingsRepository(db),
 		AIAnalysis:       postgres.NewAIAnalysisRepository(db),
 		AIMaskMaps:       postgres.NewAIMaskMapRepository(db),
+		AIKnowledge:      postgres.NewAIKnowledgeRepository(db),
 		DataFlow:         postgres.NewDataFlowRepository(db),              // Data flow traces
 		FindingSource:    postgres.NewFindingSourceRepository(db),         // Finding source configuration
 		FindingSourceCat: postgres.NewFindingSourceCategoryRepository(db), // Finding source categories
