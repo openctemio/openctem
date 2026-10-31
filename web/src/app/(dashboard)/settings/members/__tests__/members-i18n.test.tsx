@@ -98,10 +98,11 @@ describe('Members page (vi)', () => {
     expect(screen.getByText('Thêm người dùng')).toBeInTheDocument()
     expect(screen.getByText('Hoạt động gần nhất')).toBeInTheDocument()
     expect(screen.getByText(/trên 1 thành viên/)).toBeInTheDocument()
-    expect(screen.getByRole('combobox', { name: 'Lọc theo trạng thái' })).toBeInTheDocument()
+    // The filters are filter tokens: "Status: Current members", whole.
     expect(
-      screen.getByRole('combobox', { name: 'Lọc theo vai trò thành viên' })
+      screen.getByRole('button', { name: 'Trạng thái: Thành viên hiện tại' })
     ).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Vai trò: Tất cả vai trò' })).toBeInTheDocument()
     expect(screen.getByRole('searchbox', { name: 'Tìm thành viên' })).toBeInTheDocument()
     expect(screen.queryByText('Invite user')).toBeNull()
     expect(screen.queryByText('Last active')).toBeNull()
