@@ -186,7 +186,9 @@ type DurationValue struct {
 // CategoryRow is one key of a category result. For a duration grouped by a
 // key, Value is the median hours and P90/N are set.
 type CategoryRow struct {
-	Key      string   `json:"key"`
+	Key string `json:"key"`
+	// Label is a name shown as is (a campaign, a tool), not translated.
+	Label    string   `json:"label,omitempty"`
 	Value    float64  `json:"value"`
 	Previous *float64 `json:"previous,omitempty"`
 	P90      *float64 `json:"p90,omitempty"`

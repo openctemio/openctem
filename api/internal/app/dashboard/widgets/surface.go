@@ -44,6 +44,14 @@ func (s *Service) breakdown(ctx context.Context, v *WidgetValue, m dashboard.Met
 		return s.certificateExpiry(ctx, v, scope)
 	case "exceptions.expiring":
 		return s.acceptanceExpiry(ctx, v, scope)
+	case "findings.closure_quality":
+		v.Window = &win
+		return s.closureQuality(ctx, v, win, compare, scope)
+	case "remediation.campaign_progress":
+		return s.campaignProgress(ctx, v, scope)
+	case "detection.fp_rate_by_tool":
+		v.Window = &win
+		return s.fpRateByTool(ctx, v, win, scope)
 	}
 	return errUnknownBreakdown
 }

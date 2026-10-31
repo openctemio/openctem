@@ -98,6 +98,10 @@ const REASONS = [
   'empty',
   'pending',
   'failed',
+  'organization_only',
+  'no_closures',
+  'no_active_campaigns',
+  'too_few_closed',
 ]
 
 function dynamicKeys(): string[] {
