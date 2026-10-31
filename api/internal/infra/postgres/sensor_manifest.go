@@ -16,7 +16,10 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
-var _ sensor.ManifestStore = (*SensorRepository)(nil)
+var (
+	_ sensor.ManifestStore         = (*SensorRepository)(nil)
+	_ sensor.ManifestRecheckSource = (*SensorRepository)(nil)
+)
 
 // SaveManifest implements sensor.ManifestStore.
 func (r *SensorRepository) SaveManifest(ctx context.Context, v sensor.ManifestVersion, report *sensor.CapabilityReport, at time.Time) (bool, error) {
@@ -107,6 +110,39 @@ func (r *SensorRepository) SaveManifest(ctx context.Context, v sensor.ManifestVe
 		return false, fmt.Errorf("failed to commit sensor manifest: %w", err)
 	}
 	return true, nil
+}
+
+// SensorsWithUnknownManifestItems implements sensor.ManifestRecheckSource.
+// A platform maintenance read across tenants: it returns sensor ids only.
+func (r *SensorRepository) SensorsWithUnknownManifestItems(ctx context.Context, limit int) ([]shared.ID, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT s.id
+		FROM sensors s
+		JOIN sensor_manifests m ON m.sensor_id = s.id AND m.digest = s.manifest_digest
+		WHERE s.status = 'active'
+		  AND s.manifest_source = $1
+		  AND EXISTS (SELECT 1 FROM jsonb_array_elements(m.ignored) e
+		              WHERE e->>'reason' IN ($2, $3))
+		ORDER BY s.id
+		LIMIT $4
+	`, sensor.ManifestSourceSensor, sensor.IgnoredUnknownTool, sensor.IgnoredUnknownCapability, limit)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list sensors with unknown manifest items: %w", err)
+	}
+	defer rows.Close()
+	var out []shared.ID
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("failed to scan sensor id: %w", err)
+		}
+		sid, err := shared.IDFromString(id)
+		if err != nil {
+			return nil, fmt.Errorf("invalid sensor id: %w", err)
+		}
+		out = append(out, sid)
+	}
+	return out, rows.Err()
 }
 
 // TouchManifest implements sensor.ManifestStore.

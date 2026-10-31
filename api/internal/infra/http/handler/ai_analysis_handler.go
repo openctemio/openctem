@@ -4,9 +4,11 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/app/aianalysis"
+	"github.com/openctemio/openctem/api/internal/app/aiknowledge"
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
@@ -20,13 +22,17 @@ import (
 // person, with accountable owners) and their runs
 // (docs/architecture/ai-analysis.md).
 type AIAnalysisHandler struct {
-	svc      *aianalysis.Service
-	executor *aianalysis.BuiltinExecutor
-	logger   *logger.Logger
+	svc       *aianalysis.Service
+	executor  *aianalysis.BuiltinExecutor
+	knowledge *aiknowledge.Service
+	logger    *logger.Logger
 }
 
 // SetExecutor wires the built-in executor (nil: analysis answers 503).
 func (h *AIAnalysisHandler) SetExecutor(e *aianalysis.BuiltinExecutor) { h.executor = e }
+
+// SetKnowledge wires the run citations (nil: runs show none).
+func (h *AIAnalysisHandler) SetKnowledge(k *aiknowledge.Service) { h.knowledge = k }
 
 // NewAIAnalysisHandler creates the handler.
 func NewAIAnalysisHandler(svc *aianalysis.Service, log *logger.Logger) *AIAnalysisHandler {
@@ -103,6 +109,27 @@ type AIRunResponse struct {
 	LegacyOutput         map[string]any    `json:"legacy_output,omitempty"`
 	CreatedAt            time.Time         `json:"created_at"`
 	CompletedAt          *time.Time        `json:"completed_at,omitempty"`
+	// RetrievalMode is how the run retrieved knowledge (none, lexical, ...);
+	// Knowledge the excerpts it saw (run detail only).
+	RetrievalMode string                   `json:"retrieval_mode,omitempty"`
+	Knowledge     []AIRunKnowledgeResponse `json:"knowledge,omitempty"`
+}
+
+// AIRunKnowledgeResponse is one knowledge excerpt a run saw. Names are
+// withheld (restricted) from a viewer who may not see a team source, and
+// gone (deleted) once the document was deleted; the digest always stays.
+type AIRunKnowledgeResponse struct {
+	Ref           string  `json:"ref"`
+	Cited         bool    `json:"cited"`
+	DocumentID    string  `json:"document_id,omitempty"`
+	SourceID      string  `json:"source_id,omitempty"`
+	SourceName    string  `json:"source_name,omitempty"`
+	DocumentTitle string  `json:"document_title,omitempty"`
+	Section       string  `json:"section,omitempty"`
+	VersionDigest string  `json:"version_digest"`
+	Score         float64 `json:"score"`
+	Restricted    bool    `json:"restricted"`
+	Deleted       bool    `json:"deleted"`
 }
 
 // AIRunListResponse lists runs.
@@ -509,7 +536,25 @@ func (h *AIAnalysisHandler) GetRun(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, err)
 		return
 	}
-	writeAIJSON(w, http.StatusOK, toAIRun(run))
+	out := toAIRun(run)
+	if h.knowledge != nil {
+		// The run's subject is in the viewer's scope (checked above); team
+		// document names follow the viewer's own teams.
+		all := middleware.HasPermission(r.Context(), string(permission.AIKnowledgeManage))
+		cites, mode, err := h.knowledge.Citations(r.Context(), tenantID, run.ID, viewer, all)
+		if err != nil {
+			h.fail(w, err)
+			return
+		}
+		out.RetrievalMode = string(mode)
+		for _, c := range cites {
+			out.Knowledge = append(out.Knowledge, AIRunKnowledgeResponse{Ref: "kb:" + strconv.Itoa(c.Ordinal), Cited: c.Cited,
+				DocumentID: idStr(c.DocumentID), SourceID: idStr(c.SourceID), SourceName: c.SourceName,
+				DocumentTitle: c.DocumentTitle, Section: c.ChunkTitle, VersionDigest: c.VersionDigest, Score: c.Score,
+				Restricted: c.Restricted, Deleted: c.Deleted})
+		}
+	}
+	writeAIJSON(w, http.StatusOK, out)
 }
 
 // ListFindingRuns handles GET /api/v1/findings/{id}/ai/runs.

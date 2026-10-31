@@ -486,6 +486,14 @@ const (
 	// AI Triage permissions (ai_triage:*)
 	AITriageRead    Permission = "ai_triage:read"
 	AITriageTrigger Permission = "ai_triage:trigger"
+
+	// AIKnowledgeRead views the knowledge sources AI agents may retrieve
+	// (names, state, counts; never the text).
+	AIKnowledgeRead Permission = "ai_knowledge:read"
+	// AIKnowledgeManage adds, approves, rejects, disables and deletes
+	// knowledge, and previews what an AI agent would retrieve. AI agents
+	// never hold it.
+	AIKnowledgeManage Permission = "ai_knowledge:manage"
 )
 
 // AllPermissions returns all defined permissions.
@@ -580,6 +588,7 @@ func AllPermissions() []Permission {
 
 		// AI Triage module
 		AITriageRead, AITriageTrigger,
+		AIKnowledgeRead, AIKnowledgeManage,
 
 		// CTEM module (RFC-004 + RFC-005)
 		CTEMCyclesRead, CTEMCyclesWrite,
