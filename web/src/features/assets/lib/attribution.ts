@@ -175,13 +175,24 @@ export function describeEvidence(t: AttributionT, e: AttributionEvidence): strin
         'Found by a scan your organization ran (not one of its targets)'
       )
       break
+    case 'certificate_san':
+      what = root
+        ? t(
+            'assets.attribution.evidence.certificateSan',
+            'Named in a TLS certificate, under {root}',
+            { root }
+          )
+        : t('assets.attribution.evidence.certificateSanAny', 'Named in a TLS certificate')
+      break
     default:
       what = e.rule.replace(/_/g, ' ')
   }
   const technique =
     e.technique === 'cert_transparency'
       ? t('assets.attribution.technique.certTransparency', 'Certificate Transparency')
-      : e.technique.replace(/_/g, ' ')
+      : e.technique === 'certificate'
+        ? t('assets.attribution.technique.certificate', 'a TLS certificate')
+        : e.technique.replace(/_/g, ' ')
   const source = evidenceSourceText(t, e)
   const first = typeof e.observed?.first_seen === 'string' ? e.observed.first_seen : ''
   if (first) {
@@ -212,6 +223,8 @@ export function evidenceSourceText(
   if (e.source.startsWith('sensor:'))
     return t('assets.attribution.source.removedSensor', 'a removed sensor')
   if (e.source === 'certspotter') return t('assets.attribution.source.certSpotter', 'Cert Spotter')
+  if (e.source === 'certificate_san')
+    return t('assets.attribution.source.certificateSan', 'subject alternative name')
   return e.source
 }
 

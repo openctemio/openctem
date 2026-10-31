@@ -17,7 +17,8 @@ import { test, expect } from '../fixtures/authenticated-page'
  * - tab icons: all tabs of a strip have one or none does, 16px; no tab label
  *   cut at the strip's edge (a strip that does not fit moves tabs to More);
  * - a metric strip: at most five tiles, each a link or a filter toggle, no
- *   sideways scroll, at most two rows on a phone;
+ *   sideways scroll, at most two rows on a phone (three for five tiles with
+ *   detail lines, which never sit in thirds);
  * - chips never wrap onto a second line and hold no " · ";
  * - an empty list shows no pagination ("Showing 0 - 0 of 0", "Page 1 of 0");
  * - a table's name column keeps a readable width at 1440px;
@@ -83,7 +84,13 @@ type Probe = {
   pairs: { from: string; to: string; gap: number }[]
   tabRows: number
   rowFilterSegmented: string[]
-  strips: { tiles: number; interactive: number; overflowX: boolean; rows: number }[]
+  strips: {
+    tiles: number
+    interactive: number
+    overflowX: boolean
+    maxPhoneRows: number
+    rows: number
+  }[]
   tabStrips: { icons: number; count: number; iconSizes: number[]; clipped: string[] }[]
   wrappedChips: string[]
   middotChips: string[]
@@ -174,6 +181,8 @@ async function probe(page: Page): Promise<Probe> {
           tiles: figures.length,
           interactive: figures.filter((t) => t.matches('a[href], button')).length,
           overflowX: dl.scrollWidth > dl.clientWidth + 1,
+          // A detailed strip of five (or an odd count) takes three phone rows.
+          maxPhoneRows: dl.hasAttribute('data-detailed') && tiles.length === 5 ? 3 : 2,
           rows: new Set(tiles.map((t) => Math.round(t.getBoundingClientRect().top))).size,
         }
       })
@@ -257,7 +266,7 @@ async function checkAt(page: Page, route: string, width: number) {
     expect.soft(s.interactive, `${at}: every tile is a link or a filter toggle`).toBe(s.tiles)
     expect.soft(s.overflowX, `${at}: the strip never scrolls sideways`).toBe(false)
     if (width < 640)
-      expect.soft(s.rows, `${at}: at most two rows on a phone`).toBeLessThanOrEqual(2)
+      expect.soft(s.rows, `${at}: at most two rows on a phone`).toBeLessThanOrEqual(s.maxPhoneRows)
   }
   expect.soft(r.wrappedChips, `${at}: chips stay on one line`).toEqual([])
   expect.soft(r.middotChips, `${at}: no " · " inside a chip`).toEqual([])
@@ -327,4 +336,36 @@ for (const { route, list } of DETAIL_ROUTES) {
     await expect(page.locator('main h1').first()).toBeVisible({ timeout: 30_000 })
     for (const width of [1440, 390]) await checkAt(page, url, width)
   })
+}
+
+/**
+ * A list toolbar with a chips row takes at most two rows on a phone: the
+ * search, then Add filter and the chips with the end group (views, group,
+ * display) and the count. Before, the end group had a line of its own (three
+ * rows before the data on /findings). A list whose locked chip takes a line of
+ * its own on a phone (/assets with names hidden) has one more.
+ */
+for (const route of ['/findings']) {
+  test(
+    `list toolbar keeps two rows on a phone on ${route}`,
+    { tag: ['@shell'] },
+    async ({ page }) => {
+      await page.setViewportSize({ width: 390, height: 844 })
+      await page.goto(route)
+      const region = page.locator('[data-slot="list-toolbar-region"]').first()
+      await expect(region).toBeVisible({ timeout: 30_000 })
+      await expect(region.locator('[data-slot="list-search-input"]').first()).toBeVisible()
+      const rows = await region.evaluate((el) => {
+        const centers: number[] = []
+        for (const c of el.querySelectorAll<HTMLElement>('button, input, a')) {
+          const r = c.getBoundingClientRect()
+          if (r.width > 0 && r.height > 0) centers.push(r.top + r.height / 2)
+        }
+        centers.sort((a, b) => a - b)
+        // A new row starts where a control's middle is more than 16px lower.
+        return centers.filter((c, i) => i === 0 || c - centers[i - 1] > 16).length
+      })
+      expect(rows, `${route}: toolbar rows at 390px`).toBeLessThanOrEqual(2)
+    }
+  )
 }

@@ -109,6 +109,8 @@ type BuiltinExecutor struct {
 	bundles  BundleBuilder
 	maps     MaskMaps
 	budget   TokenBudget
+	// knowledge retrieves the organization's knowledge (nil: none).
+	knowledge KnowledgeSource
 	// ownProviderAllowed is the platform policy on organizations' own
 	// providers (nil: allowed).
 	ownProviderAllowed func(context.Context) bool
@@ -308,6 +310,7 @@ func (e *BuiltinExecutor) execute(ctx context.Context, p *Principal, run *aidom.
 	if err != nil {
 		return nil, err
 	}
+	ret := e.retrieve(ctx, p, run, finding, &in)
 	bundle, err := e.bundles.Build(ctx, in)
 	switch {
 	case errors.Is(err, aipolicy.ErrRestricted):
@@ -330,6 +333,9 @@ func (e *BuiltinExecutor) execute(ctx context.Context, p *Principal, run *aidom.
 	if err := e.maps.Save(ctx, run.TenantID, run.ID, key, bundle.Masker.Snapshot()); err != nil {
 		return nil, err
 	}
+	// What the model will see is recorded before the call, so a failed call
+	// still shows it; the cited flags follow once the output is read.
+	e.record(ctx, run, ret, bundle, nil)
 
 	if e.budget != nil {
 		estimate := (len(tpl.Text)+len(bundle.Text))/4 + e.cfg.MaxTokens
@@ -359,7 +365,7 @@ func (e *BuiltinExecutor) execute(ctx context.Context, p *Principal, run *aidom.
 		}
 	}
 
-	actions, err := e.act(ctx, p, run, finding, kind, bundle, resp.Content)
+	actions, err := e.act(ctx, p, run, finding, kind, bundle, ret, resp.Content)
 	if err != nil {
 		return actions, err
 	}
@@ -420,7 +426,7 @@ func unmaskPayload(u *aimask.Unmasker, raw json.RawMessage) (json.RawMessage, bo
 // AI agent never overwrites a later decision), and every command carries the
 // row version it expects.
 func (e *BuiltinExecutor) act(ctx context.Context, p *Principal, run *aidom.Run, finding *vulnerability.Finding,
-	kind analyze.Kind, bundle *aibundle.Bundle, content string,
+	kind analyze.Kind, bundle *aibundle.Bundle, ret *retrieval, content string,
 ) ([]Action, error) {
 	out, err := analyze.ParseOutput(kind.Name, []byte(strings.TrimSpace(content)))
 	if err != nil {
@@ -435,6 +441,10 @@ func (e *BuiltinExecutor) act(ctx context.Context, p *Principal, run *aidom.Run,
 	for _, f := range run.FieldsSent {
 		known["bundle:"+f] = true
 	}
+	for _, ref := range bundle.KnowledgeRefs {
+		known[ref] = true
+	}
+	cited := map[string]bool{}
 
 	actx := aidom.WithProvenance(ctx, p.Provenance(run))
 	ac := &actor{e: e, p: p, run: run, finding: finding.ID(), version: finding.RowVersion(), versioned: finding.HasRowVersion()}
@@ -461,7 +471,14 @@ func (e *BuiltinExecutor) act(ctx context.Context, p *Principal, run *aidom.Run,
 			unknown = unknown || len(u) > 0
 			ev = append(ev, aidom.Evidence{Ref: x.Ref, Quote: q})
 		}
-		_, reasons := aidom.CheckEvidence(ev, known)
+		clean, reasons := aidom.CheckEvidence(ev, known)
+		if knowledgeOnly(clean) {
+			reasons = append(reasons, ReviewKnowledgeOnly)
+		}
+		for _, x := range clean {
+			cited[x.Ref] = true
+		}
+		ac.suffix = sourcesLine(clean, ret)
 		if unknown {
 			reasons = append(reasons, aidom.ReviewUnknownPlaceholder)
 		}
@@ -471,6 +488,9 @@ func (e *BuiltinExecutor) act(ctx context.Context, p *Principal, run *aidom.Run,
 		actions = append(actions, ac.do(actx, k, norm, sg.Confidence, reasons))
 	}
 	run.Actions = ac.done
+	if len(bundle.KnowledgeRefs) > 0 {
+		e.record(ctx, run, ret, bundle, cited)
+	}
 	return actions, nil
 }
 
@@ -488,6 +508,8 @@ type actor struct {
 	versioned bool
 	conflict  bool
 	done      int
+	// suffix names the knowledge the current suggestion cited.
+	suffix string
 }
 
 func (a *actor) do(ctx context.Context, k aidom.Kind, payload json.RawMessage, confidence float64, reasons []string) Action {
@@ -603,6 +625,7 @@ func (a *actor) comment(ctx context.Context, k aidom.Kind, text, reason string) 
 	if r := []rune(text); len(r) > 9000 {
 		text = string(r[:9000])
 	}
+	text += a.suffix
 	// A comment may move the finding's row version; the AI agent keeps track
 	// of its own writes so they never read as someone else's change.
 	unchanged := a.unchangedSinceSeen(ctx)

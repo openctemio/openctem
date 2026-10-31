@@ -10,6 +10,7 @@
  * detail surface (the detail sheet and /assets/{id}).
  */
 
+import { useSettleSignal } from '@/features/shared/components/settle-group'
 import { useState } from 'react'
 import Link from '@/components/link'
 import { Info, Loader2, ShieldCheck } from 'lucide-react'
@@ -98,6 +99,7 @@ export function AssetAttributionSection({
 }) {
   const { t } = useTranslation()
   const { attribution, isLoading, error, mutate } = useAssetAttribution(assetId)
+  useSettleSignal(isLoading)
   const { decide, saving } = useDecideAttribution(assetId)
   const { can } = usePermissions()
   const [draft, setDraft] = useState<ScopeEntryDraft | null>(null)

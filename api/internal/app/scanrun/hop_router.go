@@ -69,6 +69,10 @@ var (
 	errStageDeferred = errors.New("stage waits for its predecessors' results to be ingested")
 	// errStageAlreadyPlanned: another planner planned this stage of the run.
 	errStageAlreadyPlanned = errors.New("stage already planned")
+	// errStreamWaiting: a streamed stage's first wave had nothing to
+	// dispatch; the step stays pending and a later wave dispatches it
+	// (or the closing wave settles it).
+	errStreamWaiting = errors.New("streamed stage waits for its predecessor's results")
 )
 
 // noInputsError: the stage was planned and nothing passed; the step is
@@ -87,11 +91,15 @@ const outputReadLimit = 2 * stage.RunFanoutCap
 // planStage decides the targets of one step and records the decision. seeds
 // are the run's targets after the type gate. With delta (the workflow's
 // delta gating) a heavy stage keeps only the derived targets that are new,
-// changed or due since the previous run of the scan. It returns the step's
-// targets, or errStageDeferred, errStageAlreadyPlanned, *noInputsError or a
-// failure.
+// changed or due since the previous run of the scan. With stream the step
+// starts while its feeding predecessor still runs (RFC-137): the plan is
+// recorded as an open stream (later waves add targets, stream.go), and a
+// first wave with nothing to dispatch leaves the step waiting
+// (errStreamWaiting) instead of settling it. It returns the step's targets,
+// or errStageDeferred, errStageAlreadyPlanned, errStreamWaiting,
+// *noInputsError or a failure.
 func (s *Service) planStage(ctx context.Context, run *scanrun.Run, step *scanworkflow.Step, resolved scanapp.StepTool,
-	preds []*scanworkflow.Step, seeds *scanapp.StepTargets, delta bool,
+	preds []*scanworkflow.Step, seeds *scanapp.StepTargets, delta, stream bool,
 ) (*scanapp.StepTargets, error) {
 	if s.hops == nil || !resolved.HasStage {
 		return seeds, nil
@@ -119,7 +127,7 @@ func (s *Service) planStage(ctx context.Context, run *scanrun.Run, step *scanwor
 		plan.Skipped["incompatible_type"] = seeds.Refused
 	}
 
-	feeding := feedingPredecessors(run, st, preds)
+	feeding := feedingPredecessors(run, st, preds, stream)
 	if len(feeding) == 0 {
 		return s.savePlan(ctx, plan, rows, seeds)
 	}
@@ -129,90 +137,17 @@ func (s *Service) planStage(ctx context.Context, run *scanrun.Run, step *scanwor
 			shared.ErrValidation)
 	}
 	plan.Chained = true
+	plan.Streamed = stream
 
-	predRuns := make([]shared.ID, 0, len(feeding))
-	predKeys := make([]string, 0, len(feeding))
-	for _, p := range feeding {
-		predRuns = append(predRuns, p.run)
-		predKeys = append(predKeys, p.key)
-	}
-	pending, err := s.hops.PendingStepIngest(ctx, run.TenantID, predRuns)
+	d, err := s.deriveStage(ctx, run, step, st, feeding, seen, nil, seedList, delta, plan.Skipped, false)
 	if err != nil {
 		return nil, err
 	}
-	if pending {
-		return nil, errStageDeferred
-	}
-	outputs, total, err := s.hops.ListStepOutputs(ctx, run.TenantID, run.ID, predRuns, outputReadLimit)
-	if err != nil {
-		return nil, err
-	}
-	parents, err := s.hops.PlannedTargets(ctx, run.TenantID, run.ID, predKeys)
-	if err != nil {
-		return nil, err
-	}
-	stageOf := make(map[shared.ID]string, len(feeding))
-	for _, p := range feeding {
-		stageOf[p.run] = p.key
-	}
-
-	outputs = canonicalWebInputs(st, outputs, plan.Skipped)
-	outputs = s.namedPortOutputs(ctx, run.TenantID, st, outputs, parents)
-	cands, inputs := deriveCandidates(st, outputs, parents, stageOf, seen, plan.Skipped, len(seedList), stepTargetCap(run, step))
-	if cands, err = s.expandEndpoints(ctx, run, st, step, cands, plan.Skipped); err != nil {
-		return nil, err
-	}
-	if total > len(outputs) {
-		plan.Skipped[scanrun.ReasonOverCap] += total - len(outputs)
-		inputs += total - len(outputs)
-		s.logger.Warn("chained stage: more outputs than one plan reads; the rest are over the cap",
-			"run_id", run.ID.String(), "step_key", step.StepKey, "outputs", total, "read", len(outputs))
-	}
-	plan.Inputs += inputs
-
-	planned, skipped, err := s.gateCandidates(ctx, run, st, cands)
-	if err != nil {
-		return nil, err
-	}
-	if delta && stage.Heavy(st.Key) {
-		var unchanged []hopCandidate
-		planned, unchanged = s.deltaGate(ctx, run, step, st, planned)
-		for _, c := range unchanged {
-			rows = append(rows, c.row(scanrun.TargetSkipped, scanrun.ReasonUnchanged))
-			plan.Skipped[scanrun.ReasonUnchanged]++
-		}
-	}
-	targets := append([]string{}, seedList...)
-	inRange := seedRanges(seedList)
-	for _, c := range planned {
-		if coveredByRange(inRange, c.key) {
-			// The step scans the range this address is in already (a range
-			// swept and also found live): once is enough.
-			rows = append(rows, c.row(scanrun.TargetSkipped, reasonCoveredByRange))
-			plan.Skipped[reasonCoveredByRange]++
-			continue
-		}
-		targets = append(targets, c.key)
-		rows = append(rows, c.row(scanrun.TargetPlanned, plannedReason(st)))
-		plan.MaxHop = max(plan.MaxHop, c.hop)
-	}
-	for _, c := range skipped {
-		rows = append(rows, c.row(scanrun.TargetSkipped, c.reason))
-		plan.Skipped[c.reason]++
-	}
-	for _, c := range cands.dropped {
-		rows = append(rows, c.row(scanrun.TargetSkipped, c.reason))
-	}
+	plan.Inputs += d.inputs
+	rows = append(rows, d.rows...)
+	targets := append(append([]string{}, seedList...), d.targets...)
+	plan.MaxHop = d.maxHop
 	plan.Planned = len(targets)
-	for _, reason := range []string{scanrun.ReasonOverCap, scanrun.ReasonHopLimit} {
-		if n := plan.Skipped[reason]; n > 0 {
-			metrics.ScanStageTargetsSkipped.WithLabelValues(reason).Add(float64(n))
-		}
-	}
-	if over := plan.Skipped[scanrun.ReasonOverCap]; over > 0 {
-		s.logger.Warn("chained stage fan-out capped",
-			"run_id", run.ID.String(), "step_key", step.StepKey, "planned", len(planned), "over_cap", over)
-	}
 
 	out := &scanapp.StepTargets{Targets: targets}
 	if seeds != nil {
@@ -222,12 +157,139 @@ func (s *Service) planStage(ctx context.Context, run *scanrun.Run, step *scanwor
 		return nil, err
 	}
 	if len(targets) == 0 {
+		if stream {
+			return nil, errStreamWaiting
+		}
 		if n := plan.Skipped[scanrun.ReasonUnchanged]; n > 0 {
 			return nil, &noInputsError{summary: fmt.Sprintf("nothing new since the last run: %d unchanged", n)}
 		}
 		return nil, &noInputsError{summary: skipSummary(plan.Skipped)}
 	}
 	return out, nil
+}
+
+// derivedPlan is what one planning derived from the predecessors' outputs:
+// the targets to dispatch, every decision as a row, how many outputs were
+// inputs of the stage, and the furthest hop planned.
+type derivedPlan struct {
+	targets []string
+	rows    []scanrun.RunTarget
+	inputs  int
+	maxHop  int
+}
+
+// deriveStage reads what the feeding predecessors produced and passes it
+// through every gate of a hop: the type contract, the strict parse, the hop
+// limit and fan-out caps, the one target gate and the zone, delta gating
+// and the step's range seeds. seen holds the keys already taken (the seeds,
+// and in a later wave every key the stage decided); prior holds the
+// stage's earlier decisions (nil for a first planning): a prior key is never
+// decided again, and its earlier decision counts against the caps. skipped
+// gets the counts by reason. A predecessor report still being ingested
+// defers the planning (errStageDeferred); wave plans the outputs it reads
+// without the over-the-read-limit count (the closing wave counts it).
+func (s *Service) deriveStage(ctx context.Context, run *scanrun.Run, step *scanworkflow.Step, st stage.Stage,
+	feeding []feedingPred, seen map[string]bool, prior map[string]scanrun.RunTarget, seedList []string, delta bool,
+	skipped map[string]int, wave bool,
+) (derivedPlan, error) {
+	var d derivedPlan
+	predRuns := make([]shared.ID, 0, len(feeding))
+	predKeys := make([]string, 0, len(feeding))
+	for _, p := range feeding {
+		predRuns = append(predRuns, p.run)
+		predKeys = append(predKeys, p.key)
+	}
+	pending, err := s.hops.PendingStepIngest(ctx, run.TenantID, predRuns)
+	if err != nil {
+		return d, err
+	}
+	if pending {
+		return d, errStageDeferred
+	}
+	outputs, total, err := s.hops.ListStepOutputs(ctx, run.TenantID, run.ID, predRuns, outputReadLimit)
+	if err != nil {
+		return d, err
+	}
+	parents, err := s.hops.PlannedTargets(ctx, run.TenantID, run.ID, predKeys)
+	if err != nil {
+		return d, err
+	}
+	stageOf := make(map[shared.ID]string, len(feeding))
+	for _, p := range feeding {
+		stageOf[p.run] = p.key
+	}
+
+	outputs = canonicalWebInputs(st, outputs, skipped)
+	outputs = s.namedPortOutputs(ctx, run.TenantID, st, outputs, parents)
+	cands, inputs := deriveCandidatesPrior(st, outputs, parents, stageOf, seen, prior, skipped, len(seedList), stepTargetCap(run, step))
+	if cands, err = s.expandEndpoints(ctx, run, st, step, cands, skipped); err != nil {
+		return d, err
+	}
+	if total > len(outputs) && !wave {
+		skipped[scanrun.ReasonOverCap] += total - len(outputs)
+		inputs += total - len(outputs)
+		s.logger.Warn("chained stage: more outputs than one plan reads; the rest are over the cap",
+			"run_id", run.ID.String(), "step_key", step.StepKey, "outputs", total, "read", len(outputs))
+	}
+	d.inputs = inputs
+
+	planned, refused, err := s.gateCandidates(ctx, run, st, cands)
+	if err != nil {
+		return d, err
+	}
+	if delta && stage.Heavy(st.Key) {
+		var unchanged []hopCandidate
+		planned, unchanged = s.deltaGate(ctx, run, step, st, planned)
+		for _, c := range unchanged {
+			d.rows = append(d.rows, c.row(scanrun.TargetSkipped, scanrun.ReasonUnchanged))
+			skipped[scanrun.ReasonUnchanged]++
+		}
+	}
+	inRange := seedRanges(seedList)
+	for _, c := range planned {
+		if coveredByRange(inRange, c.key) {
+			// The step scans the range this address is in already (a range
+			// swept and also found live): once is enough.
+			d.rows = append(d.rows, c.row(scanrun.TargetSkipped, reasonCoveredByRange))
+			skipped[reasonCoveredByRange]++
+			continue
+		}
+		d.targets = append(d.targets, c.key)
+		d.rows = append(d.rows, c.row(scanrun.TargetPlanned, plannedReason(st)))
+		d.maxHop = max(d.maxHop, c.hop)
+	}
+	for _, c := range refused {
+		d.rows = append(d.rows, c.row(scanrun.TargetSkipped, c.reason))
+		skipped[c.reason]++
+	}
+	for _, c := range cands.dropped {
+		d.rows = append(d.rows, c.row(scanrun.TargetSkipped, c.reason))
+	}
+	var hopLimited, overCap int
+	for _, c := range cands.dropped {
+		switch c.reason {
+		case scanrun.ReasonHopLimit:
+			hopLimited++
+		case scanrun.ReasonOverCap:
+			overCap++
+		}
+	}
+	if n := overCap + max(total-len(outputs), 0)*boolInt(!wave); n > 0 {
+		metrics.ScanStageTargetsSkipped.WithLabelValues(scanrun.ReasonOverCap).Add(float64(n))
+		s.logger.Warn("chained stage fan-out capped",
+			"run_id", run.ID.String(), "step_key", step.StepKey, "planned", len(planned), "over_cap", n)
+	}
+	if hopLimited > 0 {
+		metrics.ScanStageTargetsSkipped.WithLabelValues(scanrun.ReasonHopLimit).Add(float64(hopLimited))
+	}
+	return d, nil
+}
+
+func boolInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
 }
 
 // deltaGate splits a heavy stage's planned candidates into those it runs on
@@ -346,8 +408,10 @@ type feedingPred struct {
 
 // feedingPredecessors are the step's direct predecessors that produced
 // results (completed or partial: a partial predecessor still feeds) and
-// whose stage produces a type this stage takes.
-func feedingPredecessors(run *scanrun.Run, st stage.Stage, preds []*scanworkflow.Step) []feedingPred {
+// whose stage produces a type this stage takes. With active, a predecessor
+// that is still queued or running feeds too (a streamed stage takes what
+// its finished tasks produced).
+func feedingPredecessors(run *scanrun.Run, st stage.Stage, preds []*scanworkflow.Step, active bool) []feedingPred {
 	out := make([]feedingPred, 0, len(preds))
 	for _, p := range preds {
 		ps, ok := stage.ForStep(p.Tool, p.Capabilities)
@@ -355,7 +419,7 @@ func feedingPredecessors(run *scanrun.Run, st stage.Stage, preds []*scanworkflow
 			continue
 		}
 		sr := run.GetStepRun(p.StepKey)
-		if sr == nil || !sr.Status.ProducedResults() {
+		if sr == nil || !(sr.Status.ProducedResults() || (active && (sr.IsQueued() || sr.IsRunning()))) {
 			continue
 		}
 		out = append(out, feedingPred{key: p.StepKey, run: sr.ID})
@@ -400,9 +464,20 @@ type candidates struct {
 func deriveCandidates(st stage.Stage, outputs []scanrun.StepOutput, parents []scanrun.RunTarget,
 	stageOf map[shared.ID]string, seen map[string]bool, skipped map[string]int, seedCount, stepCap int,
 ) (candidates, int) {
+	return deriveCandidatesPrior(st, outputs, parents, stageOf, seen, nil, skipped, seedCount, stepCap)
+}
+
+// deriveCandidatesPrior is deriveCandidates for a later wave of a streamed
+// stage: a key in prior was decided by an earlier wave. It is not decided
+// again and not counted as an input or a duplicate; when it reached the
+// gate then, it still counts against the per-parent and per-stage caps.
+func deriveCandidatesPrior(st stage.Stage, outputs []scanrun.StepOutput, parents []scanrun.RunTarget,
+	stageOf map[shared.ID]string, seen map[string]bool, prior map[string]scanrun.RunTarget, skipped map[string]int, seedCount, stepCap int,
+) (candidates, int) {
 	var out candidates
 	inputs := 0
 	perParent := map[string]int{}
+	gated := 0 // prior keys that reached the gate
 	budget := min(st.MaxFanout, stage.RunFanoutCap)
 	if stepCap > 0 && stepCap < budget {
 		// The step's own cap at the run's depth: lower-only.
@@ -423,6 +498,17 @@ func deriveCandidates(st stage.Stage, outputs []scanrun.StepOutput, parents []sc
 			skipped[scanrun.ReasonInvalid]++ // not recorded: the name is not safe to store as a key
 			continue
 		}
+		if p, decided := prior[key]; decided && !seen[key] {
+			seen[key] = true
+			inputs--
+			if p.Reason != scanrun.ReasonHopLimit && p.Reason != scanrun.ReasonOverCap {
+				gated++
+				if parent, _, _ := traceParent(key, parents); parent != nil {
+					perParent[parent.TargetKey]++
+				}
+			}
+			continue
+		}
 		if seen[key] {
 			skipped[scanrun.ReasonDuplicate]++
 			continue
@@ -440,7 +526,7 @@ func deriveCandidates(st stage.Stage, outputs []scanrun.StepOutput, parents []sc
 			c.reason = scanrun.ReasonHopLimit
 		case parent != nil && perParent[parent.TargetKey] >= st.PerParentCap():
 			c.reason = scanrun.ReasonOverCap
-		case len(out.gate) >= budget:
+		case len(out.gate)+gated >= budget:
 			c.reason = scanrun.ReasonOverCap
 		}
 		if c.reason != "" {

@@ -122,8 +122,10 @@ describe('legacy route redirects', () => {
     expect(redirectOnce('/pentest/findings/new')).toBeNull()
     expect(redirectOnce('/pentest/findings/f7/edit')).toBeNull()
     expect(redirectOnce('/settings/notifications')).toBe('/account/notifications')
-    expect(redirectOnce('/settings/users')).toBe('/settings/members')
-    expect(redirectOnce('/settings/access-control/groups/abc')).toBe('/settings/teams/abc')
+    // Renamed pages have no redirect; these three led to pages that do not exist.
+    expect(redirectOnce('/settings/users')).toBeNull()
+    expect(redirectOnce('/settings/access-control/groups/abc')).toBeNull()
+    expect(redirectOnce('/scanner-templates/abc')).toBeNull()
     expect(redirectOnce('/settings/access-control/assignment-rules')).toBe(
       '/settings/teams?tab=assignment-rules'
     )

@@ -271,15 +271,26 @@ func (p *Planner) packFor(ctx context.Context, slot, dir, class string) (*protov
 }
 
 // CoverageContentReady implements scan.CoverageContent: whether every
-// request resolves to a list of the small platform pack (coverage runs at
-// standard depth). A missing pack is false, not an error.
-func (p *Planner) CoverageContentReady(ctx context.Context, requests []stage.WordlistRequest) (bool, error) {
+// request resolves to a list of the platform pack of the depth's class
+// (standard: small, the steady coverage; deep: medium, the onboarding pass
+// of a new root). A missing pack is false, not an error; so is a depth that
+// uses no list.
+func (p *Planner) CoverageContentReady(ctx context.Context, depth scanworkflow.Depth, requests []stage.WordlistRequest) (bool, error) {
+	var class string
+	switch depth {
+	case scanworkflow.DepthStandard:
+		class = classSmall
+	case scanworkflow.DepthDeep:
+		class = classMedium
+	default:
+		return false, nil
+	}
 	for _, r := range requests {
 		dir, ok := purposeDir[r.Purpose]
 		if !ok {
 			return false, nil
 		}
-		if _, err := p.packFor(ctx, r.Slot, dir, classSmall); err != nil {
+		if _, err := p.packFor(ctx, r.Slot, dir, class); err != nil {
 			if errors.Is(err, command.ErrContentRefused) {
 				return false, nil
 			}

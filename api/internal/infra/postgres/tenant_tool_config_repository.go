@@ -79,10 +79,11 @@ func (r *TenantToolConfigRepository) Create(ctx context.Context, c *tool.TenantT
 	return nil
 }
 
-// GetByID retrieves a tenant tool config by its ID.
-func (r *TenantToolConfigRepository) GetByID(ctx context.Context, id shared.ID) (*tool.TenantToolConfig, error) {
-	query := r.selectQuery() + " WHERE id = $1"
-	row := r.db.QueryRowContext(ctx, query, id.String())
+// GetByID retrieves a tenant tool config by its ID within the tenant; another
+// tenant's config is not found.
+func (r *TenantToolConfigRepository) GetByID(ctx context.Context, tenantID, id shared.ID) (*tool.TenantToolConfig, error) {
+	query := r.selectQuery() + " WHERE id = $1 AND tenant_id = $2"
+	row := r.db.QueryRowContext(ctx, query, id.String(), tenantID.String())
 	return r.scanConfig(row)
 }
 
@@ -164,7 +165,7 @@ func (r *TenantToolConfigRepository) Update(ctx context.Context, c *tool.TenantT
 		UPDATE tenant_tool_configs
 		SET config = $2, custom_templates = $3, custom_patterns = $4,
 		    is_enabled = $5, updated_by = $6, updated_at = $7
-		WHERE id = $1
+		WHERE id = $1 AND tenant_id = $8
 	`
 
 	result, err := r.db.ExecContext(ctx, query,
@@ -175,6 +176,7 @@ func (r *TenantToolConfigRepository) Update(ctx context.Context, c *tool.TenantT
 		c.IsEnabled,
 		updatedBy,
 		c.UpdatedAt,
+		c.TenantID.String(),
 	)
 
 	if err != nil {
@@ -189,10 +191,10 @@ func (r *TenantToolConfigRepository) Update(ctx context.Context, c *tool.TenantT
 	return nil
 }
 
-// Delete deletes a tenant tool config.
-func (r *TenantToolConfigRepository) Delete(ctx context.Context, id shared.ID) error {
-	query := "DELETE FROM tenant_tool_configs WHERE id = $1"
-	result, err := r.db.ExecContext(ctx, query, id.String())
+// Delete deletes a tenant tool config of the tenant.
+func (r *TenantToolConfigRepository) Delete(ctx context.Context, tenantID, id shared.ID) error {
+	query := "DELETE FROM tenant_tool_configs WHERE id = $1 AND tenant_id = $2"
+	result, err := r.db.ExecContext(ctx, query, id.String(), tenantID.String())
 	if err != nil {
 		return fmt.Errorf("failed to delete tenant tool config: %w", err)
 	}

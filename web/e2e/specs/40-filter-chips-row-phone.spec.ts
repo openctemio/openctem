@@ -104,8 +104,15 @@ for (const width of [390, 375] as const) {
         expect(defects).toEqual([])
 
         // The search box and its joined filter trigger fill the toolbar's first line.
+        // On a phone with a chips row the toolbar lends its controls to the
+        // region around it (`display: contents`, no box of its own): measure
+        // the region.
         const toolbar = page.locator('main [data-slot="list-toolbar"]').first()
-        const tb = (await toolbar.boundingBox())!
+        const toolbarBox = page
+          .locator('main [data-slot="list-toolbar-region"], main [data-slot="list-toolbar"]')
+          .first()
+        await expect(toolbarBox).toBeVisible()
+        const tb = (await toolbarBox.boundingBox())!
         const search = (await toolbar.locator('[data-slot="list-search"]').boundingBox())!
         expect(search.width).toBeGreaterThanOrEqual(tb.width - 1)
       }

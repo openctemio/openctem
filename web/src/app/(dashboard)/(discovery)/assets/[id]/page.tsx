@@ -48,6 +48,7 @@ import { OriginWebSection, isWebOriginType } from '@/features/web-surface'
 import { useTranslation } from '@/context/i18n-provider'
 import { useTenant } from '@/context/tenant-provider'
 import { usePermissions, Permission } from '@/lib/permissions'
+import { SettleGroup } from '@/features/shared/components/settle-group'
 import { RepositoryWorkspace } from '@/features/repositories/components/repository-workspace'
 
 export default function AssetDetailPage() {
@@ -214,54 +215,70 @@ export default function AssetDetailPage() {
           </CardContent>
         </Card>
 
-        <Card id="asset-identity">
-          <CardHeader>
-            <CardTitle>{t('assetDetail.identity', 'Identity')}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <DetailSections>
-              <AssetAttributionSection
-                assetId={asset.id}
-                assetName={asset.name}
-                assetType={asset.type}
-              />
-              <AssetAttributeSourcesSection assetId={asset.id} />
-              <AssetFreshnessSection assetId={asset.id} />
-              <AssetCoverageSection assetId={asset.id} />
-              <AssetIdentitySections
-                assetId={asset.id}
-                assetName={asset.name}
-                properties={asset.metadata}
-              />
-            </DetailSections>
-          </CardContent>
-        </Card>
+        {/* The panels below read their own data (served from the page view a
+            moment after the asset) and some hide when empty: show them
+            together so none pushes the page after it painted. */}
+        <SettleGroup
+          fallback={
+            <div className="space-y-4" aria-busy data-testid="asset-detail-panels-skeleton">
+              <Skeleton className="h-96 w-full rounded-lg" />
+              <Skeleton className="h-64 w-full rounded-lg" />
+            </div>
+          }
+        >
+          <Card id="asset-identity">
+            <CardHeader>
+              <CardTitle>{t('assetDetail.identity', 'Identity')}</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <DetailSections>
+                <AssetAttributionSection
+                  assetId={asset.id}
+                  assetName={asset.name}
+                  assetType={asset.type}
+                />
+                <AssetAttributeSourcesSection assetId={asset.id} />
+                <AssetFreshnessSection assetId={asset.id} />
+                <AssetCoverageSection assetId={asset.id} />
+                <AssetIdentitySections
+                  assetId={asset.id}
+                  assetName={asset.name}
+                  properties={asset.metadata}
+                />
+              </DetailSections>
+            </CardContent>
+          </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>{t('assetTimeline.tab', 'Timeline')}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <AssetTimeline
+          <Card>
+            <CardHeader>
+              <CardTitle>{t('assetTimeline.tab', 'Timeline')}</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <AssetTimeline
+                assetId={asset.id}
+                onWhy={() =>
+                  document
+                    .getElementById('asset-identity')
+                    ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                }
+              />
+            </CardContent>
+          </Card>
+          {/* Open ports of the addresses a domain or subdomain resolves to. */}
+          {hasResolvedPorts(asset.type) && <ResolvedPortsSection assetId={asset.id} />}
+          {/* What a sensor saw when it fetched the asset (RFC-081); hidden when none. */}
+          <AssetWebEvidenceCard assetId={asset.id} />
+          {/* Header posture, endpoints, parameters and changes of a web origin (research/292). */}
+          {isWebOriginType(asset.type) && (
+            <OriginWebSection
               assetId={asset.id}
-              onWhy={() =>
-                document
-                  .getElementById('asset-identity')
-                  ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-              }
+              assetName={asset.name}
+              properties={asset.metadata}
             />
-          </CardContent>
-        </Card>
-        {/* Open ports of the addresses a domain or subdomain resolves to. */}
-        {hasResolvedPorts(asset.type) && <ResolvedPortsSection assetId={asset.id} />}
-        {/* What a sensor saw when it fetched the asset (RFC-081); hidden when none. */}
-        <AssetWebEvidenceCard assetId={asset.id} />
-        {/* Header posture, endpoints, parameters and changes of a web origin (research/292). */}
-        {isWebOriginType(asset.type) && (
-          <OriginWebSection assetId={asset.id} assetName={asset.name} properties={asset.metadata} />
-        )}
-        {/* When active scans of this asset may run (RFC-067); hidden when no window applies. */}
-        <AssetScanWindowCard assetId={asset.id} />
+          )}
+          {/* When active scans of this asset may run (RFC-067); hidden when no window applies. */}
+          <AssetScanWindowCard assetId={asset.id} />
+        </SettleGroup>
 
         {/* The inventory filtered to this type */}
         <Card className="bg-muted/30">
