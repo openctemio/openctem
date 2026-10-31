@@ -30,7 +30,7 @@ import { safeInternalHref } from '@/lib/safe-href'
 import { SeriesTooltip, type SeriesTooltipMode } from './series-tooltip'
 import { TimeSeriesTable } from './table-viz'
 import { ChartOrTable, Legend, useLabel, usePrefersReducedMotion } from './viz-parts'
-import type { DrillFn, TimeSeriesResult } from './types'
+import type { DrillFn, Polarity, TimeSeriesResult } from './types'
 
 const AXIS_TICK = { fill: 'var(--muted-foreground)', fontSize: 12 }
 /** Column charts shade the hovered bucket; line and area charts draw a rule. */
@@ -85,7 +85,8 @@ function tooltipProps(
   mode: SeriesTooltipMode,
   bucket: TimeSeriesResult['bucket'],
   unit: MetricUnit,
-  cursor: object
+  cursor: object,
+  polarity: Polarity
 ) {
   const swatches = meta.map((m) => ({ key: m.key, label: m.label, swatch: m.swatch }))
   return {
@@ -101,6 +102,7 @@ function tooltipProps(
         mode={mode}
         bucket={bucket}
         unit={unit}
+        polarity={polarity}
       />
     ),
   }
@@ -155,12 +157,15 @@ interface SeriesVizProps {
   result: TimeSeriesResult
   unit?: MetricUnit
   drill?: DrillFn
+  /** Which way is good for the plotted figure; colours the tooltip's changes. */
+  polarity?: Polarity
 }
 
 export function ColumnViz({
   result,
   unit = 'count',
   drill,
+  polarity = 'neutral',
   stacked = true,
 }: SeriesVizProps & { stacked?: boolean }) {
   const { locale } = useTranslation()
@@ -201,7 +206,8 @@ export function ColumnViz({
                     stacked ? 'stack' : 'lines',
                     result.bucket,
                     unit,
-                    BAR_CURSOR
+                    BAR_CURSOR,
+                    polarity
                   )}
                 />
                 {meta.map((m, i) => (
@@ -236,6 +242,7 @@ export function AreaLineViz({
   result,
   unit = 'count',
   drill,
+  polarity = 'neutral',
   mode = 'area',
 }: SeriesVizProps & { mode?: 'area' | 'line' }) {
   const { locale } = useTranslation()
@@ -276,7 +283,8 @@ export function AreaLineViz({
           mode === 'area' ? 'stack' : 'lines',
           result.bucket,
           unit,
-          LINE_CURSOR
+          LINE_CURSOR,
+          polarity
         )}
       />
       {(result.markers ?? []).map((mk) => (
@@ -356,7 +364,16 @@ export function netOf(result: TimeSeriesResult): number {
   return sum('opened') - sum('fixed')
 }
 
-export function DivergingViz({ result, drill }: { result: TimeSeriesResult; drill?: DrillFn }) {
+export function DivergingViz({
+  result,
+  drill,
+  polarity = 'neutral',
+}: {
+  result: TimeSeriesResult
+  drill?: DrillFn
+  /** Polarity of the open count (opened up is worse under down_good). */
+  polarity?: Polarity
+}) {
   const { t, locale } = useTranslation()
   const reduced = usePrefersReducedMotion()
   const { meta, hatchId } = useSeriesMeta(result)
@@ -410,7 +427,15 @@ export function DivergingViz({ result, drill }: { result: TimeSeriesResult; dril
                 />
                 <ReferenceLine y={0} stroke="var(--border)" />
                 <Tooltip
-                  {...tooltipProps(rows, meta, 'flow', result.bucket, 'count', BAR_CURSOR)}
+                  {...tooltipProps(
+                    rows,
+                    meta,
+                    'flow',
+                    result.bucket,
+                    'count',
+                    BAR_CURSOR,
+                    polarity
+                  )}
                 />
                 {meta.map((m) => (
                   <Bar
