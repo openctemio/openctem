@@ -333,11 +333,6 @@ export interface Sensor {
   legacy_key?: boolean
   /** The last authenticated request with any of the sensor's keys; null until recorded. */
   key_last_used_at?: string | null
-  /**
-   * How the sensor authenticates: an API key, or its own signing key
-   * (GET /sensors/{id}/keys). Older APIs leave it out.
-   */
-  auth_kind?: 'bearer' | 'key_bound'
   /** When two live processes were seen using this sensor's identity (a copied volume). */
   identity_cloned_at?: string | null
   /** Process start, from the uptime the heartbeat reports. */
