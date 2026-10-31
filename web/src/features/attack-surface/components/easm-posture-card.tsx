@@ -9,7 +9,7 @@
 import Link from '@/components/link'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
-import { PostureCategoryList, PostureGrade } from '@/components/dashboard-kit'
+import { PostureCategoryList, PostureHeadline } from '@/components/dashboard-kit'
 import { RelativeTime } from '@/features/shared'
 import { useTranslation } from '@/context/i18n-provider'
 import { usePosture } from '../hooks/use-posture'
@@ -80,24 +80,19 @@ export function EASMPostureCard() {
     const top = topDeductions(posture.score.categories)
     body = (
       <div className="flex flex-col gap-3">
-        <div className="flex items-center gap-3">
-          <PostureGrade grade={posture.score.grade} score={posture.score.score} />
-          <div className="flex min-w-0 flex-col">
-            <span className="text-2xl font-semibold tabular-nums" data-testid="posture-score">
-              {posture.score.score}
-              <span className="text-sm font-normal text-muted-foreground">/100</span>
-            </span>
-            {delta != null && delta !== 0 && (
-              <span className="text-xs text-muted-foreground">
-                {delta > 0
-                  ? t('attackSurface.posture.up', 'Up {n} since the last computation', { n: delta })
-                  : t('attackSurface.posture.down', 'Down {n} since the last computation', {
-                      n: -delta,
-                    })}
-              </span>
-            )}
-          </div>
-        </div>
+        <PostureHeadline
+          grade={posture.score.grade}
+          score={posture.score.score}
+          caption={
+            delta != null && delta !== 0
+              ? delta > 0
+                ? t('attackSurface.posture.up', 'Up {n} since the last computation', { n: delta })
+                : t('attackSurface.posture.down', 'Down {n} since the last computation', {
+                    n: -delta,
+                  })
+              : undefined
+          }
+        />
         <p className="text-sm">{next(posture)}</p>
         {top.length > 0 ? (
           <PostureCategoryList categories={top} />

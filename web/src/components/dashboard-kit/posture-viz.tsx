@@ -141,6 +141,29 @@ export function PostureCategoryList({
   )
 }
 
+export interface PostureHeadlineProps {
+  grade?: string
+  score: number
+  /** A muted line under the score (surface size, change since last time). */
+  caption?: React.ReactNode
+}
+
+/** The grade badge with the score out of 100: the one headline of a posture. */
+export function PostureHeadline({ grade, score, caption }: PostureHeadlineProps) {
+  return (
+    <div className="flex items-center gap-3">
+      <PostureGrade grade={grade} score={score} />
+      <div className="flex min-w-0 flex-col">
+        <span className="text-2xl font-semibold tabular-nums" data-testid="posture-score">
+          {score}
+          <span className="text-sm font-normal text-muted-foreground">/100</span>
+        </span>
+        {caption && <span className="text-xs text-muted-foreground">{caption}</span>}
+      </div>
+    </div>
+  )
+}
+
 /** The dashboard widget: grade, score, next grade and the category deductions. */
 export function PostureViz({ result, href }: { result: PostureResult; href?: string | null }) {
   const { t } = useTranslation()
@@ -158,18 +181,13 @@ export function PostureViz({ result, href }: { result: PostureResult; href?: str
     : t('dashboardKit.posture.top', 'Top grade')
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex items-center gap-3">
-        <PostureGrade grade={result.grade} score={result.score} />
-        <div className="flex min-w-0 flex-col">
-          <span className="text-2xl font-semibold tabular-nums">
-            {result.score}
-            <span className="text-sm font-normal text-muted-foreground">/100</span>
-          </span>
-          <span className="text-xs text-muted-foreground">
-            {t('dashboardKit.posture.assets', '{count} surface assets', { count: result.assets })}
-          </span>
-        </div>
-      </div>
+      <PostureHeadline
+        grade={result.grade}
+        score={result.score}
+        caption={t('dashboardKit.posture.assets', '{count} surface assets', {
+          count: result.assets,
+        })}
+      />
       {href ? (
         <Link href={href} className="text-sm text-primary hover:underline">
           {next}
