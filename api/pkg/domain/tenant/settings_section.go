@@ -69,6 +69,7 @@ func settingsSectionTargets(s *Settings) map[string]any {
 		SectionDashboards:          &s.Dashboards,
 		SectionEmergingThreats:     &s.EmergingThreats,
 		SectionFindingViews:        &s.FindingViews,
+		SectionAPIKeys:             &s.APIKeys,
 	}
 }
 

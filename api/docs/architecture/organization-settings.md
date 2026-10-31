@@ -121,6 +121,24 @@ Consequences:
   is never overwritten with defaults. Writes to other sections still work.
   An operator fixes the stored JSON.
 
+## IP allowlist cache and cross-replica invalidation
+
+Every API replica caches each organization's IP allowlist for 30 seconds in
+the IP allowlist gate. After a change to the `security` section (the owner's
+PATCH), the replica that served it drops its entry at once and publishes the
+tenant id on the Redis channel `ip_allowlist:changed`; every other replica
+drops its entry on receipt, so a removed address is refused everywhere at
+once. It is the same bus as module toggles (`CacheInvalidationBus`,
+`modules:changed`).
+
+- The message carries only the origin replica and the tenant id (no tenant
+  data), is size-capped and the id must be a UUID. Redis is a hint: a message
+  can only drop a cache entry, and the next request re-reads the database, so
+  a forged message cannot grant access.
+- The 30 second TTL stays as the bound when a message is lost, Redis is down
+  or the subscription has not started; without Redis the behaviour is local
+  invalidation plus the TTL.
+
 ## Audit: every change carries a diff
 
 Configuration changes are written to the tenant audit log with a field-level

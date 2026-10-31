@@ -19,6 +19,10 @@ const api = vi.hoisted(() => ({
   sensor: undefined as unknown,
 }))
 
+vi.mock('@/context/tenant-provider', () => ({
+  useTenant: () => ({ currentTenant: { id: 'org-1', slug: 'acme', name: 'Acme', role: 'owner' } }),
+}))
+
 vi.mock('@/lib/permissions', () => ({
   Permission: {
     SensorsPair: 'sensors:pair',

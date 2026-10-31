@@ -44,7 +44,10 @@ const (
 	VulnTemplates       Key = "vuln.templates"
 	// CheckTakeover finds names whose alias points at an unclaimed
 	// third-party resource (nuclei's takeover templates).
-	CheckTakeover      Key = "check.takeover"
+	CheckTakeover Key = "check.takeover"
+	// MonitorWebContent fetches listed URLs and reports the response so a
+	// change in a page or script can be detected (RFC-138).
+	MonitorWebContent  Key = "monitor.web_content"
 	DASTWeb            Key = "dast.web"
 	SecretsCode        Key = "secrets.code"
 	SASTCode           Key = "sast.code"
@@ -343,6 +346,21 @@ var catalog = []Stage{
 		// capability runs vulnerability templates.
 		Implementations: []Implementation{
 			{Tool: "nuclei", Default: true, ByCapability: true},
+		},
+		MaxFanout: RunFanoutCap, MaxPerParent: DefaultPerParent,
+	},
+	{
+		// Active (T1): one GET per listed URL, nothing executed. The result
+		// is the web_content property of the web asset the URL belongs to, so
+		// the stage has no output port of its own. httpx runs it only for a step or
+		// job that names the capability (a step that pins httpx alone still
+		// runs the HTTP probe).
+		Key: MonitorWebContent, Name: "Web content monitoring",
+		Description: "Fetch listed web pages and scripts and report the response so changes can be detected.",
+		Inputs:      []asset.TypeRef{tHTTPService, tDiscoveredURL, tWebsite},
+		Tier:        TierActive,
+		Implementations: []Implementation{
+			{Tool: "httpx", Default: true, ByCapability: true},
 		},
 		MaxFanout: RunFanoutCap, MaxPerParent: DefaultPerParent,
 	},
