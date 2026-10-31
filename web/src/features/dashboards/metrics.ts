@@ -81,6 +81,14 @@ export const METRICS: readonly MetricMeta[] = [
     keyPrefix: 'dashboards.band',
     ordinal: true,
   },
+  {
+    id: 'intel.emerging_threats',
+    group: 'threat_intel',
+    unit: 'count',
+    defaultGroupBy: [],
+    keyPrefix: 'emergingThreats.level',
+    ordinal: true,
+  },
 ]
 
 export const METRIC_GROUPS: readonly MetricGroup[] = [
