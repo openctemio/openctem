@@ -108,7 +108,7 @@ var Features = []Feature{
 		Stages:      []string{StageDiscovery, StageValidation},
 		Registers: []string{
 			"registerScanRoutes", "registerScanGovernanceRoutes", "registerScanApprovalRoutes", "registerScanWorkflowRoutes", "registerScanProfileRoutes", "registerScanWindowRoutes",
-			"registerScannerTemplateRoutes", "registerContentSourceRoutes", "registerContentSourceWebhookRoute", "registerContentPackRoutes", "registerPlatformContentPackRoutes", "registerContentCatalogRoutes", "registerWordlistRoutes",
+			"registerScannerTemplateRoutes", "registerContentSourceRoutes", "registerContentSourceWebhookRoute", "registerContentPackRoutes", "registerPlatformContentPackRoutes", "registerContentCatalogRoutes", "registerWordlistRoutes", "registerContentRuleRoutes",
 			"registerToolRoutes", "registerToolCategoryRoutes", "registerCapabilityRoutes", "registerSecretStoreRoutes",
 			"registerPlatformScanningRoutes", "registerCommandRoutes",
 		},
