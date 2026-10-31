@@ -1453,6 +1453,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Exposure.SetDataScope(s.DataScope)
 	// Analyst severity override: stored on the exposure, audited.
 	s.Exposure.SetSeverityStore(repos.Exposure)
+	s.Exposure.SetItemReader(repos.Exposure)
 	s.Exposure.SetAuditService(s.Audit)
 	// Four-eyes on accepting or dismissing a high or critical exposure or
 	// leaked credential (one gate for both routes).

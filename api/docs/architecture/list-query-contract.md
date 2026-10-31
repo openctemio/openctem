@@ -115,6 +115,20 @@ counts the same filtered set by status. Both need `assets:read`. Subjects and
 issuers are chosen by whoever issued the certificate: clients render them as
 text.
 
+## Exposure items (`GET /attack-surface/exposures`)
+
+The Exposure Items view reads `exposure_events` joined to its live asset
+through the `exposure_items` registry (`pkg/domain/exposure/items.go`). The
+filter is compiled from placeholder `$2`: `$1` is the tenant's
+unclassified-scans mode, an input of the asset's monitoring state
+(`asset_monitoring_state`, a lateral join added only when a filter or sort
+reads it). The data scope applies to the exposure's asset; an exposure with no
+asset is visible to unrestricted callers only. `category` filters by the
+display category through a CASE over the event type built from the same map
+as the row label. `/stats` (counts by severity, category and state) and
+`/assets` (one row per asset) read the same WHERE. Details in
+`exposure-taxonomy.md`, "Exposure Items view".
+
 ## Technologies (`GET /attack-surface/technologies`)
 
 The Technologies view reads `asset_technologies` through the `technologies`

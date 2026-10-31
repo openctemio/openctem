@@ -925,6 +925,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		// Triage fields on list rows: the dispatcher's own gate (research/124).
 		handlers.Asset.SetTriage(svc.ActiveGate, repos.Attribution, svc.Scope)
 		handlers.Asset.SetMonitoring(svc.ActiveGate, repos.Asset)
+		handlers.Exposure.SetItemsView(svc.ActiveGate)
 	}
 	handlers.Scope.SetHiddenPrograms(svc.BountyProgram)
 	if svc.Scan != nil && svc.ActiveGate != nil {
