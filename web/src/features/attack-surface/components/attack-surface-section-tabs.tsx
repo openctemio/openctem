@@ -1,11 +1,11 @@
 'use client'
 
 import { useMemo } from 'react'
-import { GatedSectionTabs } from '@/features/shared'
 import { ATTACK_SURFACE_SECTION_TABS } from '@/config/section-tabs'
 import { useTranslation } from '@/context/i18n-provider'
 import { useVisibleSectionTabs } from '@/lib/permissions'
 import { useEASMSuggestionCount } from '../hooks/use-easm-suggestions'
+import { AttackSurfaceNav } from './attack-surface-nav'
 
 const REVIEW_HREF = '/attack-surface/review'
 const LOOKALIKES_HREF = '/attack-surface/lookalikes'
@@ -46,7 +46,7 @@ export function AttackSurfaceSectionTabs() {
     [t]
   )
   return (
-    <GatedSectionTabs
+    <AttackSurfaceNav
       tabs={tabs}
       label={t('attackSurface.tab.label', 'Attack surface sections')}
       counts={{ [REVIEW_HREF]: waiting }}
