@@ -948,6 +948,8 @@ type Services struct {
 	// ModuleChangeBus fans module toggles out to every replica's route-gate
 	// cache; nil without Redis. Started with the WebSocket bridge.
 	ModuleChangeBus *redis.ModuleChangeBus
+	// IPAllowlistBus fans IP allowlist changes out to every replica's gate.
+	IPAllowlistBus *redis.CacheInvalidationBus
 	// F-8: Single-use ticket service used by WS upgrade auth.
 	// SessionRevocations rejects access tokens of signed-out sessions
 	// immediately (nil without Redis).
