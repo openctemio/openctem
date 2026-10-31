@@ -71,8 +71,14 @@ var (
 	// ErrOrganizationMismatch: the approval names another organization than
 	// the session's (the approver switched organization after the review).
 	ErrOrganizationMismatch = errors.New("the approval names another organization")
-	ErrStepUpRequired       = authapp.ErrStepUpRequired
-	ErrStepUpFailed         = authapp.ErrStepUpFailed
+	// ErrKeyRegistered: the key was already registered to a sensor (an
+	// approval bound it, whatever happened next); a key never pairs twice.
+	ErrKeyRegistered = errors.New("the sensor key is already registered")
+	// ErrKeyBusy: another open request holds the key (a concurrent start,
+	// or one started with an enrollment token).
+	ErrKeyBusy        = errors.New("the sensor key has another open pairing request")
+	ErrStepUpRequired = authapp.ErrStepUpRequired
+	ErrStepUpFailed   = authapp.ErrStepUpFailed
 )
 
 // StepUpVerifier re-authenticates the approving user (auth.AuthService).
@@ -280,6 +286,11 @@ func (s *Service) Start(ctx context.Context, in StartInput) (*pairing.StartRespo
 		PlatformNonce: nonce, HostFacts: sanitizeHostFacts(req.Host), SourceIP: in.SourceIP,
 		RepairSensorID: repair, CreatedAt: now, ExpiresAt: now.Add(pairing.TTL).Truncate(time.Second),
 	}
+	if req.EnrollmentToken == "" {
+		if err := s.releaseKey(ctx, p, code, now); err != nil {
+			return nil, err
+		}
+	}
 	userCode := ""
 	switch {
 	case req.EnrollmentToken != "":
@@ -305,12 +316,12 @@ func (s *Service) Start(ctx context.Context, in StartInput) (*pairing.StartRespo
 			// Same answer as a match: a request no code can ever reach.
 			p.CodeHash = ""
 			if err := s.repo.CreateForward(ctx, p); err != nil {
-				return nil, err
+				return nil, keyConflict(err)
 			}
 		}
 	default:
 		if userCode, err = s.createWithCode(ctx, p); err != nil {
-			return nil, err
+			return nil, keyConflict(err)
 		}
 	}
 	pub := s.PlatformPublicKey()
@@ -323,6 +334,58 @@ func (s *Service) Start(ctx context.Context, in StartInput) (*pairing.StartRespo
 		resp.UserCode = pairing.FormatCode(userCode)
 	}
 	return resp, nil
+}
+
+// releaseKey lets a key that was never approved start again: a sensor
+// stopped before its request was approved, or restarted with a new code,
+// keeps the key it generated. The key's open requests that nobody approved
+// are closed (and audited for their organization); a key that was ever
+// registered to a sensor is refused, so an approved key never moves to
+// another code, sensor or organization. Only the holder of the private key
+// reaches this (the handler verified the request signature with it), so
+// nobody can close another sensor's request.
+func (s *Service) releaseKey(ctx context.Context, p *sensordom.Pairing, code string, now time.Time) error {
+	registered, err := s.repo.KeyRegisteredUnscoped(ctx, p.Thumbprint)
+	if err != nil {
+		return err
+	}
+	if registered {
+		s.log.Info("sensor pairing refused: key already registered",
+			"key_fingerprint", pairing.KeyFingerprint(p.Thumbprint), "source_ip", ipString(p))
+		return ErrKeyRegistered
+	}
+	keep := ""
+	if code != "" {
+		keep = s.codeHash(code)
+	}
+	closed, err := s.repo.SupersedeForKeyUnscoped(ctx, p.Thumbprint, keep, now)
+	if err != nil {
+		return err
+	}
+	for _, old := range closed {
+		s.log.Info("sensor pairing superseded by a new start of the same key", "pairing_id", old.ID.String(),
+			"new_pairing_id", p.ID.String(), "key_fingerprint", pairing.KeyFingerprint(p.Thumbprint))
+		if old.TenantID == nil {
+			continue // a default-mode request nobody claimed: no organization to tell
+		}
+		s.logAudit(ctx, auditapp.AuditContext{TenantID: old.TenantID.String(), ActorEmail: actorSensor, ActorIP: ipString(p)},
+			auditapp.NewSuccessEvent(auditdom.ActionSensorPairingSuperseded, auditdom.ResourceTypeSensor, old.ID.String()).
+				WithMessage("A sensor started pairing again with the same key; its earlier request, never approved, was closed").
+				WithSeverity(auditdom.SeverityLow).
+				WithMetadata("key_fingerprint", pairing.KeyFingerprint(p.Thumbprint)).
+				WithMetadata("source_ip", ipString(p)).
+				WithMetadata("new_pairing_id", p.ID.String()))
+	}
+	return nil
+}
+
+// keyConflict maps the key's uniqueness conflict (another open request won
+// a race for it) to ErrKeyBusy; a code collision never reaches here.
+func keyConflict(err error) error {
+	if errors.Is(err, shared.ErrConflict) {
+		return ErrKeyBusy
+	}
+	return err
 }
 
 // createWithCode inserts a default-mode request under a fresh code,
@@ -688,6 +751,7 @@ func (s *Service) Expect(ctx context.Context, actor Actor, in ExpectInput) (*Vie
 	if in.Profile != "" && s.hook != nil && !s.hook.ValidProfile(in.Profile) {
 		return nil, ErrInvalid
 	}
+	s.sweep(ctx)
 	now := s.now()
 	tid, uid := actor.TenantID, actor.UserID
 	p := &sensordom.Pairing{ID: shared.NewID(), Mode: sensordom.PairingReverse, Status: sensordom.PairingExpecting,
@@ -715,7 +779,7 @@ func (s *Service) Expect(ctx context.Context, actor Actor, in ExpectInput) (*Vie
 		return nil, ErrCapacity
 	}
 	s.logAudit(ctx, s.auditContext(actor), auditapp.NewSuccessEvent(auditdom.ActionSensorPairingExpected, auditdom.ResourceTypeSensor, p.ID.String()).
-		WithMessage("Created a code to pair a sensor (expect a sensor)").WithSeverity(auditdom.SeverityLow))
+		WithMessage("Created a pairing code for a new sensor").WithSeverity(auditdom.SeverityLow))
 	v := s.view(ctx, actor, p)
 	v.Code = pairing.FormatCode(code)
 	return v, nil
