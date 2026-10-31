@@ -10,6 +10,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/command"
 	contentpackapp "github.com/openctemio/openctem/api/internal/app/contentpack"
 	scanapp "github.com/openctemio/openctem/api/internal/app/scan"
+	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/stage"
 )
@@ -77,18 +78,77 @@ func TestPin_EnumerationJobGetsPackAndLearnedLabels(t *testing.T) {
 func TestCoverageContentReady(t *testing.T) {
 	ctx := context.Background()
 	reqs := stage.ToolWordlists("dnsx-enum")
-	if ok, err := New(newDelivery(), nil, quiet()).CoverageContentReady(ctx, reqs); !ok || err != nil {
+	if ok, err := New(newDelivery(), nil, quiet()).CoverageContentReady(ctx, scanworkflow.DepthStandard, reqs); !ok || err != nil {
 		t.Fatalf("with the pack: %v %v", ok, err)
 	}
-	if ok, err := New(&fakeDelivery{}, nil, quiet()).CoverageContentReady(ctx, reqs); ok || err != nil {
+	if ok, err := New(&fakeDelivery{}, nil, quiet()).CoverageContentReady(ctx, scanworkflow.DepthStandard, reqs); ok || err != nil {
 		t.Fatalf("without a pack: %v %v", ok, err)
 	}
 	noDNS := newDelivery()
 	noDNS.index[digS] = []contentpackapp.IndexEntry{{Path: "paths/common.txt"}}
-	if ok, err := New(noDNS, nil, quiet()).CoverageContentReady(ctx, reqs); ok || err != nil {
+	if ok, err := New(noDNS, nil, quiet()).CoverageContentReady(ctx, scanworkflow.DepthStandard, reqs); ok || err != nil {
 		t.Fatalf("pack without DNS lists: %v %v", ok, err)
 	}
-	if ok, _ := New(newDelivery(), nil, quiet()).CoverageContentReady(ctx, []stage.WordlistRequest{{Slot: "x", Purpose: "nope"}}); ok {
+	if ok, _ := New(newDelivery(), nil, quiet()).CoverageContentReady(ctx, scanworkflow.DepthStandard, []stage.WordlistRequest{{Slot: "x", Purpose: "nope"}}); ok {
 		t.Fatal("an unknown purpose is ready")
+	}
+}
+
+// The onboarding pass of a new root runs at deep depth: it is ready only
+// when the medium pack holds the lists, whatever the small pack has. A
+// passive depth uses no list, so it is never ready.
+func TestCoverageContentReady_Deep(t *testing.T) {
+	ctx := context.Background()
+	reqs := stage.ToolWordlists("dnsx-enum")
+	if ok, err := New(newDelivery(), nil, quiet()).CoverageContentReady(ctx, scanworkflow.DepthDeep, reqs); !ok || err != nil {
+		t.Fatalf("with the medium pack: %v %v", ok, err)
+	}
+	noM := newDelivery()
+	delete(noM.packs, "wordlists-m")
+	if ok, err := New(noM, nil, quiet()).CoverageContentReady(ctx, scanworkflow.DepthDeep, reqs); ok || err != nil {
+		t.Fatalf("deep without the medium pack: %v %v", ok, err)
+	}
+	if ok, err := New(noM, nil, quiet()).CoverageContentReady(ctx, scanworkflow.DepthStandard, reqs); !ok || err != nil {
+		t.Fatalf("standard needs only the small pack: %v %v", ok, err)
+	}
+	if ok, _ := New(newDelivery(), nil, quiet()).CoverageContentReady(ctx, scanworkflow.DepthPassive, reqs); ok {
+		t.Fatal("a passive depth reads no list")
+	}
+}
+
+// The onboarding pass of a new root (a coverage run at deep depth) pins the
+// medium platform pack with its line cap, plus the same learned list with
+// its permutations; the steady pass after it (standard) pins the small one.
+func TestPin_DeepOnboardingJobGetsMediumPackAndPermutations(t *testing.T) {
+	a := shared.NewID()
+	names := namesByTenant{a.String(): {"charts-uat.example.vn", "hocviendgo5.example.vn", "www.example.vn"}}
+	p := New(newDelivery(), names, quiet())
+	for depth, want := range map[string]struct {
+		pack     string
+		maxLines int
+	}{"deep": {"wordlists-m", maxLinesMedium}, "standard": {"wordlists-s", maxLinesSmall}} {
+		raw, err := json.Marshal(map[string]any{
+			"scanner": "dnsx-enum", "targets": []string{"example.vn"},
+			"context": map[string]any{"depth": depth}, PayloadKeyWordlists: stage.ToolWordlists("dnsx-enum"),
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		content, inputs, err := p.PinJobContent(context.Background(), command.PinRequest{TenantID: a, Payload: raw})
+		if err != nil {
+			t.Fatalf("%s: %v", depth, err)
+		}
+		if len(content) != 1 || content[0].Pack != want.pack || content[0].MaxLines != want.maxLines {
+			t.Fatalf("%s: content %+v, want %s capped at %d", depth, content, want.pack, want.maxLines)
+		}
+		if len(inputs) != 1 {
+			t.Fatalf("%s: %d inputs, want the learned list", depth, len(inputs))
+		}
+		lines := strings.Split(strings.TrimSpace(string(gunzip(t, inputs[0].Data))), "\n")
+		for _, perm := range []string{"charts-uat1", "hocviendgo6", "uat-charts"} {
+			if !slices.Contains(lines, perm) {
+				t.Errorf("%s: permutation %q missing from %v", depth, perm, lines)
+			}
+		}
 	}
 }
