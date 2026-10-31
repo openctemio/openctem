@@ -9,6 +9,21 @@ import "encoding/json"
 type ContentPins struct {
 	Packs  []PinnedPack  `json:"packs,omitempty"`
 	Inputs []PinnedInput `json:"inputs,omitempty"`
+	// Rules are the detection rule sets the platform matched the task's
+	// report with (docs/architecture/rule-packs.md), written at ingest.
+	Rules []PinnedRules `json:"rules,omitempty"`
+}
+
+// PinnedRules is one detection rule set a report was matched with: a
+// platform pack (name, version, digest) or the organization's own rules
+// (the sha256 of their ids and versions).
+type PinnedRules struct {
+	Kind    string `json:"kind"`
+	Scope   string `json:"scope"`
+	Pack    string `json:"pack,omitempty"`
+	Version string `json:"version,omitempty"`
+	Digest  string `json:"digest"`
+	Rules   int    `json:"rules"`
 }
 
 // PinnedPack is a pack a job pinned.
@@ -54,6 +69,8 @@ const (
 	maxPinnedPacks  = 8
 	maxPinnedInputs = 8
 	maxPinnedLists  = 20
+	// MaxPinnedRules bounds the rule sets one record names.
+	MaxPinnedRules = 16
 )
 
 // ParseContentPins decodes a stored record; nil when there is none or it
@@ -68,10 +85,11 @@ func ParseContentPins(raw []byte) *ContentPins {
 	}
 	p.Packs = p.Packs[:min(len(p.Packs), maxPinnedPacks)]
 	p.Inputs = p.Inputs[:min(len(p.Inputs), maxPinnedInputs)]
+	p.Rules = p.Rules[:min(len(p.Rules), MaxPinnedRules)]
 	for i := range p.Inputs {
 		p.Inputs[i].Lists = p.Inputs[i].Lists[:min(len(p.Inputs[i].Lists), maxPinnedLists)]
 	}
-	if len(p.Packs) == 0 && len(p.Inputs) == 0 {
+	if len(p.Packs) == 0 && len(p.Inputs) == 0 && len(p.Rules) == 0 {
 		return nil
 	}
 	return &p

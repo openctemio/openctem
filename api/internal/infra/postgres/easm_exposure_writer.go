@@ -62,7 +62,7 @@ func (w *EASMExposureWriter) BulkUpsert(ctx context.Context, events []*exposure.
 	for _, u := range written {
 		if !u.Inserted {
 			p, ok := prior[sightingKey{u.TenantID, u.Fingerprint}]
-			if !ok || p.state != "active" {
+			if !ok || !exposure.State(p.state).IsOpen() {
 				continue
 			}
 			win, ok := windows[u.TenantID]
