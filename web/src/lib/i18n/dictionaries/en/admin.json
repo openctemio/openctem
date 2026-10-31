@@ -864,6 +864,7 @@
   "admin.mfaFloor.errorTitle": "the two-factor floor",
   "admin.mfaFloor.everyone": "Everyone",
   "admin.mfaFloor.everyoneHint": "Every member of every organization.",
+  "admin.mfaFloor.everyoneNote": "Your call on a self-managed install. Members need an authenticator app: organization passkeys are not available yet.",
   "admin.mfaFloor.grace": "Days to set it up",
   "admin.mfaFloor.graceExisting": "Current members",
   "admin.mfaFloor.graceInvalid": "Enter a whole number of days from 0 to 90.",
