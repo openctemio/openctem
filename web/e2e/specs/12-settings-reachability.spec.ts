@@ -98,7 +98,10 @@ for (const vp of [
       for (const label of ['My account', 'Organization', 'Access & security', 'Scanning']) {
         await expect(nav.getByText(label, { exact: true }), label).toBeVisible()
       }
-      await expect(nav.getByText('Security', { exact: true })).toHaveCount(0)
+      // The old "Security" group heading is gone. The My account row named
+      // "Security" is a link, so only a "Security" that is not a link counts.
+      const securityLinks = await nav.getByRole('link', { name: 'Security', exact: true }).count()
+      await expect(nav.getByText('Security', { exact: true })).toHaveCount(securityLinks)
       for (const sub of ['Sign-in', 'Oversight', 'Tools']) {
         await expect(nav.getByText(sub, { exact: true }), sub).toBeVisible()
       }
