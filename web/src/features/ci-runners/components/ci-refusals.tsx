@@ -7,7 +7,8 @@
  */
 
 import { useState } from 'react'
-import { ShieldX } from 'lucide-react'
+import { ArrowRight, ShieldX } from 'lucide-react'
+import Link from '@/components/link'
 import { ErrorState, RelativeTime } from '@/features/shared'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -84,6 +85,58 @@ export const REFUSALS_SHOWN = 3
 
 /** The heading id of the refused pipelines block, the target of the Pipelines tab's notice. */
 export const REFUSALS_ID = 'ci-setup-refused'
+
+/** The window the Pipelines tab's notice counts refusals over. */
+export const REFUSAL_NOTICE_DAYS = 7
+
+/** Refusals at or after `now - days`. */
+export function recentRefusals(
+  list: CITokenRefusal[],
+  now: number,
+  days = REFUSAL_NOTICE_DAYS
+): CITokenRefusal[] {
+  const since = now - days * 86_400_000
+  return list.filter((r) => !!r.at && Date.parse(r.at) >= since)
+}
+
+/**
+ * One line above the pipelines for a CI writer: pipelines were refused
+ * lately, and where to see why. A refused pipeline never appears in the
+ * list, so without this line a wrong trust rule looks like silence.
+ */
+export function CIRefusalNotice({ canWrite }: { canWrite: boolean }) {
+  const { t } = useTranslation()
+  const { data } = useTrustRefusals({ enabled: canWrite })
+  // The clock is read once per mount; a render must not change the answer.
+  const [now] = useState(() => Date.now())
+  if (!canWrite) return null
+  const n = recentRefusals(data?.data ?? [], now).length
+  if (n === 0) return null
+  return (
+    <p
+      className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm"
+      data-testid="ci-refusal-notice"
+    >
+      <ShieldX className="size-4 shrink-0 text-warning" aria-hidden />
+      <span>
+        {t(
+          n === 1 ? 'scans.ci.refusals.notice.one' : 'scans.ci.refusals.notice.other',
+          n === 1
+            ? '1 pipeline was refused in the last {days} days.'
+            : '{count} pipelines were refused in the last {days} days.',
+          { count: n, days: REFUSAL_NOTICE_DAYS }
+        )}
+      </span>
+      <Link
+        href="/ci-cd?tab=setup&section=refused"
+        className="inline-flex items-center gap-1 rounded-sm font-medium text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        {t('scans.ci.refusals.noticeLink', 'See why')}
+        <ArrowRight className="size-3.5" aria-hidden />
+      </Link>
+    </p>
+  )
+}
 
 /**
  * Recent refused pipelines under Trusted pipelines (CI write only): the
