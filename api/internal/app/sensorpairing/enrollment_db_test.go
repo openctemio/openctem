@@ -268,10 +268,10 @@ func TestEnrollmentToken_TenantIsolation_DB(t *testing.T) {
 		t.Fatalf("another tenant sees the pending request: %+v", other)
 	}
 	pid, _ := shared.IDFromString(s.resp.PairingID)
-	if _, err := f.svc.Approve(ctx, b, pid, approve("")); !errors.Is(err, sensorpairing.ErrNotFound) {
+	if _, err := f.svc.Approve(ctx, b, pid, approve(b, "")); !errors.Is(err, sensorpairing.ErrNotFound) {
 		t.Fatalf("another tenant approved the request: %v", err)
 	}
-	if _, err := f.svc.Approve(ctx, a, pid, approve("")); err != nil {
+	if _, err := f.svc.Approve(ctx, a, pid, approve(a, "")); err != nil {
 		t.Fatalf("the token's tenant approves: %v", err)
 	}
 	if st := f.status(s); st.Status != pairing.StatusApproved || st.Identity.TenantID != a.TenantID.String() {
