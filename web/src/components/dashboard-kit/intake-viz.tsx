@@ -9,8 +9,10 @@
  * positives of the period; and the same figures per source as a table.
  *
  * Every figure opens the receipt list with the same source and period,
- * whose totals are the same sums. On a phone the panel is a stacked list
- * without wires, the summary first.
+ * whose totals are the same sums. The layout follows the widget's own width
+ * (container queries, `flowBand`): from 660 px the sources and the summary
+ * sit side by side in bounded columns, centred, the wires short; below, a
+ * stacked list without wires.
  */
 
 import { useRef } from 'react'
@@ -25,6 +27,8 @@ import {
   FlowTip,
   tCount,
   dimClass,
+  flowBand,
+  useElementWidth,
   useFlowFocus,
   useWireAnchors,
   wirePath,
@@ -75,9 +79,9 @@ function IntakePanel({ data }: { data: IntakeData }) {
   const { t, locale } = useTranslation()
   const n = (v: number) => formatCount(v, locale)
   return (
-    <div className="flex flex-col gap-4">
+    <div className="@container flex flex-col gap-4">
       <ConnectorPanel data={data} />
-      <div className="grid gap-4 xl:grid-cols-2">
+      <div className="grid gap-4 @min-[1100px]:grid-cols-2">
         <NoiseReduction data={data} />
         <section className="min-w-0 rounded-lg border p-3" aria-labelledby="intake-per-source">
           <h3 id="intake-per-source" className="mb-2 text-sm font-semibold">
@@ -108,7 +112,8 @@ function ConnectorPanel({ data }: { data: IntakeData }) {
   const ref = useRef<HTMLDivElement>(null)
   const reduced = usePrefersReducedMotion()
   const { active, anchor, tipId, bind, containerProps } = useFlowFocus(ref)
-  const layout = useWireAnchors(ref, data.sources.length)
+  const band = flowBand(useElementWidth(ref))
+  const layout = useWireAnchors(ref, `${band}:${data.sources.length}`)
   const max = Math.max(1, ...data.sources.map((s) => s.received))
   const lit = (k: string) => !!active && (k === active || k === 'summary' || k === `w:${active}`)
   const activeSource = data.sources.find((s) => `s:${s.id}` === active)
@@ -155,196 +160,197 @@ function ConnectorPanel({ data }: { data: IntakeData }) {
           </span>
         </h3>
       </header>
-      <div
-        ref={ref}
-        className="relative grid gap-4 p-3 lg:grid-cols-[minmax(0,1fr)_minmax(14rem,18rem)] lg:gap-x-24"
-        {...containerProps}
-      >
-        {layout && (
-          <svg
-            aria-hidden
-            className="pointer-events-none absolute inset-0 hidden h-full w-full overflow-visible lg:block"
-            width={layout.width}
-            height={layout.height}
-          >
-            {data.sources.map((s) => {
-              const from = layout.out[`s:${s.id}`]
-              const to = layout.in.summary
-              if (!from || !to) return null
-              const k = `w:s:${s.id}`
-              const w = wireStroke(s.health)
-              const path = wirePath(from.x + 8, from.y, to.x, to.y)
-              return (
-                <g key={k} className={dimClass(active, lit(k))} data-wire={s.health}>
-                  <path
-                    d={path}
-                    fill="none"
-                    stroke={lit(k) ? 'var(--signal)' : w.stroke}
-                    strokeWidth={wireWidth(s.received, max)}
-                    strokeDasharray={w.dash}
-                    strokeLinecap="round"
-                  />
-                  {s.health === 'ok' && !reduced && (
+      <div className="@container">
+        <div
+          ref={ref}
+          className={cn(
+            'relative grid gap-4 p-3',
+            // Side by side from 660 px: bounded columns, centred, so a source's
+            // count and its wire stay next to its name on any card width.
+            '@min-[660px]:grid-cols-[minmax(15rem,19rem)_minmax(14rem,18rem)] @min-[660px]:justify-center @min-[660px]:gap-x-[clamp(3rem,10cqi,8rem)]'
+          )}
+          data-band={band}
+          {...containerProps}
+        >
+          {layout && band !== 'narrow' && (
+            <svg
+              aria-hidden
+              className="pointer-events-none absolute inset-0 h-full w-full overflow-visible"
+              width={layout.width}
+              height={layout.height}
+            >
+              {data.sources.map((s) => {
+                const from = layout.out[`s:${s.id}`]
+                const to = layout.in.summary
+                if (!from || !to) return null
+                const k = `w:s:${s.id}`
+                const w = wireStroke(s.health)
+                const path = wirePath(from.x + 8, from.y, to.x, to.y)
+                return (
+                  <g key={k} className={dimClass(active, lit(k))} data-wire={s.health}>
                     <path
                       d={path}
                       fill="none"
-                      stroke="var(--card, #fff)"
-                      strokeOpacity={0.55}
-                      strokeWidth={Math.max(1, wireWidth(s.received, max) - 0.5)}
-                      strokeDasharray="3 7"
-                      className="animate-flow-dash"
+                      stroke={lit(k) ? 'var(--signal)' : w.stroke}
+                      strokeWidth={wireWidth(s.received, max)}
+                      strokeDasharray={w.dash}
+                      strokeLinecap="round"
                     />
-                  )}
-                </g>
+                    {s.health === 'ok' && !reduced && (
+                      <path
+                        d={path}
+                        fill="none"
+                        stroke="var(--card, #fff)"
+                        strokeOpacity={0.55}
+                        strokeWidth={Math.max(1, wireWidth(s.received, max) - 0.5)}
+                        strokeDasharray="3 7"
+                        className="animate-flow-dash"
+                      />
+                    )}
+                  </g>
+                )
+              })}
+            </svg>
+          )}
+
+          <ul className="grid content-start gap-1">
+            {data.sources.map((s) => {
+              const k = `s:${s.id}`
+              const note = healthNote(t, s, locale)
+              const name = sourceName(t, s)
+              return (
+                <li key={s.id}>
+                  <FlowLink
+                    to={s.drill}
+                    className={cn(
+                      'grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-md px-2 py-1.5 hover:bg-muted/60 focus-visible:bg-muted/60',
+                      dimClass(active, lit(k))
+                    )}
+                    {...bind(k)}
+                  >
+                    <span
+                      className={cn(
+                        'grid size-8 place-items-center rounded-md border text-muted-foreground',
+                        s.health === 'stale' && 'border-warning text-warning',
+                        s.health === 'failed' && 'border-destructive text-destructive'
+                      )}
+                      aria-hidden
+                    >
+                      {ORIGIN_ICON[s.origin] ?? ORIGIN_ICON.sensor}
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block truncate text-sm font-semibold">{name}</span>{' '}
+                      <span className="block truncate text-xs text-muted-foreground">
+                        {originLabel(t, s.origin)}{' '}
+                        <span className="ms-1.5">
+                          {tCount(
+                            t,
+                            'dashboardKit.intake.receiptsCount',
+                            '{count} receipts',
+                            '{count} receipt',
+                            s.receipts,
+                            { count: n(s.receipts) }
+                          )}
+                        </span>
+                      </span>
+                      {note && (
+                        <span
+                          className={cn(
+                            'block truncate text-xs',
+                            s.health === 'stale' ? 'text-warning' : 'text-destructive'
+                          )}
+                        >
+                          {note}
+                        </span>
+                      )}
+                    </span>{' '}
+                    <span
+                      className="text-right text-base font-semibold tabular-nums"
+                      data-wire-out={k}
+                    >
+                      {n(s.received)}
+                    </span>
+                  </FlowLink>
+                </li>
               )
             })}
-          </svg>
-        )}
-
-        {/* The summary comes first on a phone. */}
-        <div className="order-first lg:order-last lg:self-center">
-          <div
-            className={cn(
-              'relative rounded-lg border bg-muted/40 p-3',
-              dimClass(active, lit('summary'))
-            )}
-            data-k="summary"
-          >
-            <span
-              className="absolute -left-px top-1/2 size-px"
-              data-wire-in="summary"
-              aria-hidden
-            />
-            <p className="text-xs text-muted-foreground">
-              {activeSource
-                ? sourceName(t, activeSource)
-                : t('dashboardKit.intake.allFindings', 'All findings')}
-            </p>
-            <FlowLink
-              to={activeSource ? activeSource.drill : data.drill}
-              label={t('dashboardKit.intake.receivedAria', '{count} findings received', {
-                count: n(shown.received),
-              })}
-              className="block w-fit text-3xl font-semibold leading-tight tabular-nums hover:underline"
+          </ul>
+          {/* The summary: beside the sources from 660 px, below them on a phone. */}
+          <div className="@min-[660px]:self-center">
+            <div
+              className={cn(
+                'relative rounded-lg border bg-muted/40 p-3',
+                dimClass(active, lit('summary'))
+              )}
+              data-k="summary"
             >
-              {n(shown.received)}
-            </FlowLink>
-            <p className="mb-2 text-xs text-muted-foreground">
-              {activeSource
-                ? tCount(
-                    t,
-                    'dashboardKit.intake.fromReceipts',
-                    'from {count} receipts',
-                    'from {count} receipt',
-                    activeSource.receipts,
-                    { count: n(activeSource.receipts) }
-                  )
-                : tCount(
-                    t,
-                    'dashboardKit.intake.fromSources',
-                    'received from {count} sources',
-                    'received from {count} source',
-                    data.sources.length,
-                    { count: data.sources.length }
-                  )}
-            </p>
-            <KeyValueList
-              items={[
-                {
-                  key: 'new',
-                  label: t('dashboardKit.intake.outcome.new', 'New'),
-                  value: <span className="tabular-nums text-success">+{n(shown.created)}</span>,
-                },
-                {
-                  key: 'still',
-                  label: t('dashboardKit.intake.outcome.still', 'Still detected'),
-                  value: <span className="tabular-nums">{n(shown.still_detected)}</span>,
-                },
-                {
-                  key: 'reopened',
-                  label: t('dashboardKit.intake.outcome.reopened', 'Reopened'),
-                  value: <span className="tabular-nums">{n(shown.reopened)}</span>,
-                },
-                {
-                  key: 'closed',
-                  label: t('dashboardKit.intake.outcome.closed', 'Resolved by source'),
-                  value: <span className="tabular-nums">{n(shown.closed)}</span>,
-                },
-              ]}
-            />
+              <span
+                className="absolute -left-px top-1/2 size-px"
+                data-wire-in="summary"
+                aria-hidden
+              />
+              <p className="text-xs text-muted-foreground">
+                {activeSource
+                  ? sourceName(t, activeSource)
+                  : t('dashboardKit.intake.allFindings', 'All findings')}
+              </p>
+              <FlowLink
+                to={activeSource ? activeSource.drill : data.drill}
+                label={t('dashboardKit.intake.receivedAria', '{count} findings received', {
+                  count: n(shown.received),
+                })}
+                className="block w-fit text-3xl font-semibold leading-tight tabular-nums hover:underline"
+              >
+                {n(shown.received)}
+              </FlowLink>
+              <p className="mb-2 text-xs text-muted-foreground">
+                {activeSource
+                  ? tCount(
+                      t,
+                      'dashboardKit.intake.fromReceipts',
+                      'from {count} receipts',
+                      'from {count} receipt',
+                      activeSource.receipts,
+                      { count: n(activeSource.receipts) }
+                    )
+                  : tCount(
+                      t,
+                      'dashboardKit.intake.fromSources',
+                      'received from {count} sources',
+                      'received from {count} source',
+                      data.sources.length,
+                      { count: data.sources.length }
+                    )}
+              </p>
+              <KeyValueList
+                items={[
+                  {
+                    key: 'new',
+                    label: t('dashboardKit.intake.outcome.new', 'New'),
+                    value: <span className="tabular-nums text-success">+{n(shown.created)}</span>,
+                  },
+                  {
+                    key: 'still',
+                    label: t('dashboardKit.intake.outcome.still', 'Still detected'),
+                    value: <span className="tabular-nums">{n(shown.still_detected)}</span>,
+                  },
+                  {
+                    key: 'reopened',
+                    label: t('dashboardKit.intake.outcome.reopened', 'Reopened'),
+                    value: <span className="tabular-nums">{n(shown.reopened)}</span>,
+                  },
+                  {
+                    key: 'closed',
+                    label: t('dashboardKit.intake.outcome.closed', 'Resolved by source'),
+                    value: <span className="tabular-nums">{n(shown.closed)}</span>,
+                  },
+                ]}
+              />
+            </div>
           </div>
-        </div>
 
-        <ul className="grid content-start gap-1">
-          {data.sources.map((s) => {
-            const k = `s:${s.id}`
-            const note = healthNote(t, s, locale)
-            const name = sourceName(t, s)
-            return (
-              <li key={s.id}>
-                <FlowLink
-                  to={s.drill}
-                  className={cn(
-                    'grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-md px-2 py-1.5 hover:bg-muted/60 focus-visible:bg-muted/60',
-                    dimClass(active, lit(k))
-                  )}
-                  {...bind(k)}
-                >
-                  <span
-                    className={cn(
-                      'grid size-8 place-items-center rounded-md border text-muted-foreground',
-                      s.health === 'stale' && 'border-warning text-warning',
-                      s.health === 'failed' && 'border-destructive text-destructive'
-                    )}
-                    aria-hidden
-                  >
-                    {ORIGIN_ICON[s.origin] ?? ORIGIN_ICON.sensor}
-                  </span>
-                  <span className="min-w-0">
-                    <span className="block truncate text-sm font-semibold">{name}</span>{' '}
-                    <span className="block truncate text-xs text-muted-foreground">
-                      {originLabel(t, s.origin)}{' '}
-                      <span className="ms-1.5">
-                        {tCount(
-                          t,
-                          'dashboardKit.intake.receiptsCount',
-                          '{count} receipts',
-                          '{count} receipt',
-                          s.receipts,
-                          { count: n(s.receipts) }
-                        )}
-                      </span>
-                    </span>
-                    {note && (
-                      <span
-                        className={cn(
-                          'block truncate text-xs sm:hidden',
-                          s.health === 'stale' ? 'text-warning' : 'text-destructive'
-                        )}
-                      >
-                        {note}
-                      </span>
-                    )}
-                  </span>{' '}
-                  <span className="flex items-center gap-2 text-right" data-wire-out={k}>
-                    {note && (
-                      <span
-                        className={cn(
-                          'hidden text-xs sm:inline',
-                          s.health === 'stale' ? 'text-warning' : 'text-destructive'
-                        )}
-                      >
-                        {note}
-                      </span>
-                    )}{' '}
-                    <span className="text-base font-semibold tabular-nums">{n(s.received)}</span>
-                  </span>
-                </FlowLink>
-              </li>
-            )
-          })}
-        </ul>
-        <FlowTip id={tipId} content={tip} anchor={anchor} />
+          <FlowTip id={tipId} content={tip} anchor={anchor} />
+        </div>
       </div>
       <footer className="flex flex-wrap justify-between gap-x-4 gap-y-1 border-t px-3 py-2 text-xs text-muted-foreground">
         <span>

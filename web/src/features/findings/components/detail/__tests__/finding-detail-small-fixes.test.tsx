@@ -141,6 +141,26 @@ describe('assignee picker', () => {
     render(<FindingProperties finding={finding()} triage={triage} />)
     expect(screen.getByTestId('assignee')).toBeEnabled()
   })
+
+  it('keeps every term and value directly in a description list', () => {
+    // A dt/dd sits in a dl, or in one div that is a child of a dl (WCAG 1.3.1,
+    // axe definition-list and dlitem); the people block is its own list.
+    const { container } = render(<FindingProperties finding={finding()} triage={triage} />)
+    const items = container.querySelectorAll('dt, dd')
+    expect(items.length).toBeGreaterThan(4)
+    for (const item of items) {
+      const parent = item.parentElement as HTMLElement
+      const list = parent.tagName === 'DL' ? parent : parent.parentElement
+      expect(list?.tagName, item.textContent ?? '').toBe('DL')
+    }
+    for (const dl of container.querySelectorAll('dl')) {
+      for (const child of dl.children) {
+        expect(['DT', 'DD', 'DIV', 'SCRIPT', 'TEMPLATE']).toContain(child.tagName)
+        if (child.tagName === 'DIV')
+          for (const c of child.children) expect(['DT', 'DD']).toContain(c.tagName)
+      }
+    }
+  })
 })
 
 describe('locale dates', () => {

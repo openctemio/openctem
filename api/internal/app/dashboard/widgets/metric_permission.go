@@ -17,6 +17,9 @@ func metricPermission(m dashboard.Metric) permission.Permission {
 		return permission.AssetsRead
 	case m.ID == "remediation.campaign_progress":
 		return permission.RemediationRead
+	case m.ID == metricEmergingThreats:
+		// The emerging-threat alert list's own permission.
+		return permission.VulnerabilitiesRead
 	default:
 		return permission.FindingsRead
 	}

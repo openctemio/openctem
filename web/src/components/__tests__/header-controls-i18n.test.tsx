@@ -13,6 +13,15 @@ describe('header controls', () => {
     expect(screen.getByRole('button', { name: 'Search or go to' })).toBeInTheDocument()
   })
 
+  it('keeps the shortcut hint out of the name and states the shortcut instead', () => {
+    // The visible label must be inside the accessible name (WCAG 2.5.3): the
+    // kbd hint is hidden from it, the shortcut is announced as a shortcut.
+    render(<Search />)
+    const button = screen.getByRole('button', { name: 'Search or go to' })
+    expect(button.getAttribute('aria-keyshortcuts')).toMatch(/^(Control|Meta)\+K$/)
+    expect(button.querySelector('kbd')?.getAttribute('aria-hidden')).toBe('true')
+  })
+
   it('speaks the reader language', () => {
     render(
       <I18nProvider locale="vi">

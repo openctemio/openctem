@@ -44,6 +44,7 @@
   "mcp.connections.limit": "Giới hạn theo dữ liệu của người dùng",
   "mcp.connections.limitFailed": "Không thể giới hạn ứng dụng",
   "mcp.connections.limited": "{name} hiện chỉ đọc phạm vi dữ liệu của chính người dùng",
+  "mcp.connections.loadFailed": "ứng dụng đã kết nối",
   "mcp.connections.neverUsed": "chưa từng dùng",
   "mcp.connections.orgDescription": "Mọi ứng dụng AI mà thành viên đã kết nối. Ngắt kết nối một ứng dụng sẽ chấm dứt quyền truy cập của nó ngay lập tức.",
   "mcp.connections.orgEmpty": "Khi một thành viên kết nối trợ lý AI, ứng dụng đó sẽ xuất hiện ở đây.",

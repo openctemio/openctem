@@ -52,6 +52,8 @@ func (s *Service) breakdown(ctx context.Context, v *WidgetValue, m dashboard.Met
 	case "detection.fp_rate_by_tool":
 		v.Window = &win
 		return s.fpRateByTool(ctx, v, win, scope)
+	case metricEmergingThreats:
+		return s.emergingThreats(ctx, v, scope)
 	}
 	return errUnknownBreakdown
 }

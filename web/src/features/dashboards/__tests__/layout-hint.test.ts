@@ -14,7 +14,7 @@ const w = (id: string, metric: string): DashboardWidget => ({
 
 describe('layout hint', () => {
   it('a current copy of each offered template has nothing missing', () => {
-    for (const key of ['overview', 'ctem'] as const) {
+    for (const key of ['overview', 'ctem', 'executive', 'program', 'triage'] as const) {
       const layout = templateLayout(templateByKey(key))
       expect(layoutHintFor({ layout, kind: 'personal' })).toBeNull()
     }
@@ -41,11 +41,11 @@ describe('layout hint', () => {
     const hint = layoutHintFor({ layout, kind: 'personal' })
     expect(hint?.template).toBe('ctem')
     expect(hint?.missing).toEqual([
-      'exposure.levers',
       'exposure.kpis',
-      'brief.weekly',
+      'exposure.levers',
       'surface.new_assets',
       'certificates.expiry',
+      'brief.weekly',
     ])
     const next = withTemplateWidgets(layout, templateByKey('ctem'), hint!.missing)
     const metrics = next.map((x) => (x.config as { data: { metric: string } }).data.metric)
@@ -53,11 +53,12 @@ describe('layout hint', () => {
     expect(new Set(metrics).size).toBe(metrics.length)
     expect(metrics).toContain('crown_jewels.exposed')
     expect(metrics.length).toBe(layout.length + 5)
-    // The levers lead, the strip follows the flow, the brief sits beside the paths.
-    expect(metrics.slice(0, 3)).toEqual(['exposure.levers', 'exposure.flow', 'exposure.kpis'])
-    expect(metrics.indexOf('brief.weekly')).toBe(
-      metrics.indexOf('attack_paths.to_crown_jewels') - 1
-    )
+    // The key figures and the levers lead, then the flow; the brief sits
+    // beside the attack paths.
+    expect(metrics.slice(0, 3)).toEqual(['exposure.kpis', 'exposure.levers', 'exposure.flow'])
+    expect(
+      Math.abs(metrics.indexOf('brief.weekly') - metrics.indexOf('attack_paths.to_crown_jewels'))
+    ).toBe(1)
     expect(next.map((x) => x.y)).toEqual(next.map((_, i) => i))
   })
 
@@ -78,5 +79,27 @@ describe('layout hint', () => {
     const tpl = templateLayout(templateByKey('overview')).slice(0, 4)
     expect(layoutHintFor({ layout: tpl, kind: 'organization' })).toBeNull()
     expect(layoutHintFor({ layout: [w('a', 'findings.open')], kind: 'personal' })).toBeNull()
+  })
+
+  it('a full copy in the earlier order or sizes is offered the new arrangement, nothing to add', () => {
+    for (const key of ['ctem', 'executive', 'program', 'triage'] as const) {
+      const tpl = templateLayout(templateByKey(key))
+      const moved = [tpl[2], ...tpl.slice(0, 2), ...tpl.slice(3)]
+      expect(layoutHintFor({ layout: moved, kind: 'personal' })).toMatchObject({
+        template: key,
+        missing: [],
+        rearranged: true,
+      })
+      const resized = tpl.map((x, i) => (i === 0 ? { ...x, h: x.h + 1 } : x))
+      expect(layoutHintFor({ layout: resized, kind: 'personal' })?.rearranged).toBe(true)
+    }
+  })
+
+  it("a widget of the person's own between template widgets is not a rearrangement", () => {
+    const tpl = templateLayout(templateByKey('ctem'))
+    const own = w('mine1', 'crown_jewels.exposed')
+    expect(
+      layoutHintFor({ layout: [...tpl.slice(0, 2), own, ...tpl.slice(2)], kind: 'personal' })
+    ).toBeNull()
   })
 })

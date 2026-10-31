@@ -33,7 +33,10 @@ import {
   firstProblem,
   isRunnable,
   readinessFixHref,
+  problemText,
   readinessLabel,
+  stepFix,
+  stepReason,
   type WorkflowReadiness,
 } from '@/features/scan-workflows/lib/readiness'
 import { Radar, GitBranch, Layers, ChevronRight, RefreshCw } from 'lucide-react'
@@ -298,9 +301,9 @@ export function BasicInfoStep({ data, onChange, lockMode = false }: BasicInfoSte
                         {t('scans.basic.system')}
                       </Badge>
                     )}
-                    {readinessLabel(workflow.readiness) && (
+                    {readinessLabel(workflow.readiness, t) && (
                       <span className="text-[10px] text-warning">
-                        {readinessLabel(workflow.readiness)}
+                        {readinessLabel(workflow.readiness, t)}
                       </span>
                     )}
                   </div>
@@ -338,13 +341,13 @@ export function BasicInfoStep({ data, onChange, lockMode = false }: BasicInfoSte
                       key={workflow.id}
                       value={workflow.id}
                       disabled
-                      title={firstProblem(workflow.readiness)?.reason}
+                      title={problemText(workflow.readiness, t)}
                     >
                       <div className="flex items-center gap-2">
                         <span>{workflow.name}</span>
                         <span className="text-[10px] text-muted-foreground">
-                          {firstProblem(workflow.readiness)?.reason ??
-                            readinessLabel(workflow.readiness)}
+                          {problemText(workflow.readiness, t) ??
+                            readinessLabel(workflow.readiness, t)}
                         </span>
                       </div>
                     </SelectItem>
@@ -417,9 +420,11 @@ function ChoiceCard({
   const { t } = useTranslation()
   const id = `run-choice-${value}`
   const off = !isRunnable(readiness) || !!aboveCeiling
-  const label = aboveCeiling ?? readinessLabel(readiness)
+  const label = aboveCeiling ?? readinessLabel(readiness, t)
   const problem = aboveCeiling ? undefined : firstProblem(readiness)
   const fixHref = readinessFixHref(readiness)
+  const problemReason = problem ? stepReason(problem, t) : undefined
+  const problemFix = problem ? stepFix(problem, t) : undefined
   return (
     <Label
       htmlFor={id}
@@ -447,12 +452,12 @@ function ChoiceCard({
             id={`${id}-readiness`}
             className={cn('block text-[11px]', off ? 'text-muted-foreground' : 'text-warning')}
           >
-            {problem?.reason ?? label}
-            {problem?.fix && fixHref && (
+            {problemReason ?? label}
+            {problemFix && fixHref && (
               <>
                 {' '}
                 <Link href={safeHref(fixHref) ?? '#'} className="underline">
-                  {problem.fix}
+                  {problemFix}
                 </Link>
               </>
             )}

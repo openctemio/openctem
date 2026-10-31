@@ -189,6 +189,7 @@ var requiredFields = map[Key][]string{
 	ProbeHTTP:           []string{"url", "status_code", "title"},
 	CrawlWeb:            []string{"url", "parent_url"},
 	VulnTemplates:       []string{"rule_id", "severity", "location", "evidence"},
+	CheckTakeover:       []string{"host", "provider", "evidence"},
 	DASTWeb:             []string{"rule_id", "severity", "url", "evidence"},
 	SecretsCode:         []string{"rule_id", "file", "line", "masked_value"},
 	SASTCode:            []string{"rule_id", "file", "line", "severity"},
@@ -212,6 +213,7 @@ var chunkSizes = map[Key]int{
 	ProbeHTTP:           200,
 	CrawlWeb:            10,
 	VulnTemplates:       25,
+	CheckTakeover:       100,
 	DASTWeb:             10,
 }
 
@@ -355,7 +357,43 @@ func ToolWordlists(tool string) []WordlistRequest {
 // and runs capability jobs on the sensor.
 func TakesCapabilityJobs(s Stage, tool string) bool {
 	tool = normalizeTool(tool)
-	return capabilityJobTools[tool] && s.Implements(tool)
+	return capabilityJobTools[tool] && s.Implements(tool) && !stageToolConfig[s.Key][tool].asToolJob
+}
+
+// stageToolConfig is the tool config an implementation always runs a stage
+// with, set over the step's own config at dispatch so a step cannot widen
+// it. asToolJob: the job does not name the capability (the sensor's
+// descriptor of the tool does not declare it yet); the tool runs its own
+// default capability with this config, which every sensor version accepts.
+var stageToolConfig = map[Key]map[string]stageConfig{
+	// nuclei with only its takeover templates (the "takeover" tag); the
+	// sensor checks the tags again and refuses intrusive ones.
+	CheckTakeover: {"nuclei": {config: map[string]any{"tags": []string{"takeover"}}, asToolJob: true}},
+}
+
+type stageConfig struct {
+	config    map[string]any
+	asToolJob bool
+}
+
+// WithStageToolConfig returns config with the settings tool always runs
+// the stage with set over it (a copy); config itself when there are none.
+func (s Stage) WithStageToolConfig(tool string, config map[string]any) map[string]any {
+	fixed := stageToolConfig[s.Key][normalizeTool(tool)].config
+	if len(fixed) == 0 {
+		return config
+	}
+	out := make(map[string]any, len(config)+len(fixed))
+	for k, v := range config {
+		out[k] = v
+	}
+	for k, v := range fixed {
+		if list, ok := v.([]string); ok {
+			v = slices.Clone(list)
+		}
+		out[k] = v
+	}
+	return out
 }
 
 // ContractVersion is the major version of every capability contract of
@@ -453,7 +491,6 @@ var plannedFields = []struct {
 	required []string
 }{
 	{"intel.passive", []string{"discovery_method", "source"}},
-	{"check.takeover", []string{"host", "provider", "evidence"}},
 	{"detect.services", []string{"port", "protocol", "service_name"}},
 	{"fingerprint.tech", []string{"technologies"}},
 	{"check.tls", []string{"fingerprint", "not_after", "issuer"}},

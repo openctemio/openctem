@@ -32,6 +32,15 @@ export function defaultSize(shape: ResultShape | undefined): { w: number; h: num
       return { w: 3, h: 1 }
     case 'items':
       return { w: 6, h: 3 }
+    // Story widgets read across the whole row (three levers, five figures,
+    // the flow diagram, intake per source); at half width they are cramped.
+    case 'kpis':
+    case 'levers':
+      return { w: 12, h: 1 }
+    case 'flow':
+      return { w: 12, h: 4 }
+    case 'intake':
+      return { w: 12, h: 3 }
     default:
       return { w: 6, h: 2 }
   }

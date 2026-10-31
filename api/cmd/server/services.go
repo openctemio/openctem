@@ -135,6 +135,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/versioncheck"
 	vexapp "github.com/openctemio/openctem/api/internal/app/vex"
 	"github.com/openctemio/openctem/api/internal/app/vulnmatch"
+	wordlistapp "github.com/openctemio/openctem/api/internal/app/wordlist"
 	"github.com/openctemio/openctem/api/internal/config"
 	"github.com/openctemio/openctem/api/internal/infra/bountysource"
 	"github.com/openctemio/openctem/api/internal/infra/controller"
@@ -800,6 +801,10 @@ type Services struct {
 	// ContentDelivery serves packs to sensors and answers which digests an
 	// organization's jobs may pin (RFC-061 §3.7).
 	ContentDelivery *contentpackapp.Delivery
+	// Wordlists manages organization wordlists; ContentPlanner plans the
+	// content of jobs and previews an enumeration job's label list.
+	Wordlists      *wordlistapp.Service
+	ContentPlanner *contentpin.Planner
 	// ContentCatalog is the content catalog (RFC-099).
 	ContentCatalog *catalogapp.Service
 
@@ -2339,12 +2344,33 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.ProxyPool.EnableTest(repos.Sensor, repos.Command, proxypoolapp.TestConfig{
 		EchoBase: cfg.ProxyTestEchoBase(), AltPort: cfg.SensorConfig.ProxyTestAltPort})
 	contentPlanner := contentpin.New(s.ContentDelivery, postgres.NewKnownNamesRepository(&postgres.DB{DB: deps.DB}), nil)
+	// The organization's own wordlists join its DNS label jobs inline, and
+	// the preview counts what a job would carry (docs/architecture/wordlists.md).
+	wordlistRepo := postgres.NewTenantWordlistRepository(&postgres.DB{DB: deps.DB})
+	s.ContentPlanner = contentPlanner
+	s.ContentPlanner.SetOrganizationLists(wordlistRepo)
+	s.Wordlists = wordlistapp.NewService(wordlistRepo, s.Audit, log)
+	if contentSigner != nil {
+		// The curated wordlist packs embedded in this build become the
+		// stable lists of a platform that has none (a fresh install), so
+		// subdomain enumeration needs no import. An existing stable channel
+		// is never moved (docs/architecture/wordlists.md).
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+			defer cancel()
+			if _, err := contentpin.InstallBuiltin(ctx, s.PlatformContentPacks, log.Logger); err != nil {
+				log.Error("built-in wordlist packs not installed; subdomain enumeration waits for an imported pack", "error", err)
+			}
+		}()
+	}
 	cmdOpts := []command.Option{command.WithSensorLookup(repos.Sensor),
 		// Each scan and retest job carries the claiming sensor's proxy pool.
 		command.WithEgress(s.ProxyPool),
 		// RFC-061 §3.7: each scan job pins the content it reads by digest;
 		// the planner also checks every digest before the signer is asked.
 		command.WithContent(contentPlanner, contentPlanner),
+		// Each signed job records what it pinned, for the run page.
+		command.WithContentRecorder(postgres.NewCommandContentPinsRepository(&postgres.DB{DB: deps.DB})),
 		// RFC-040 §5.7: jobs a sensor refused under its local policy reach its
 		// timeline and the audit log (A11); a tenant can keep private targets
 		// from sensors without a policy.

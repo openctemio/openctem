@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/openctemio/openctem/api/internal/app/orgrelay"
+	"github.com/openctemio/openctem/api/internal/app/platformmfa"
 	"github.com/openctemio/openctem/api/internal/config"
 	"github.com/openctemio/openctem/api/pkg/domain/admin"
 	"github.com/openctemio/openctem/api/pkg/domain/platformsetting"
@@ -190,6 +192,29 @@ func TestConsoleSettingPagesAreLive(t *testing.T) {
 				found = true
 				if s.page != "/scanning/platform" {
 					t.Errorf("%s page = %s, want /scanning/platform", key, s.page)
+				}
+			}
+		}
+		if !found {
+			t.Errorf("setting %s missing", key)
+		}
+	}
+}
+
+// The two-factor floor and the organization mail relay are managed on console
+// pages, and the overview links them there with their environment default.
+func TestMFAFloorAndMailRelayAreListed(t *testing.T) {
+	want := map[string][2]string{
+		platformmfa.SettingKey: {"/system/two-factor", platformmfa.EnvVar},
+		orgrelay.SettingKey:    {"/system/email", orgrelay.EnvVar},
+	}
+	for key, w := range want {
+		found := false
+		for _, s := range consoleSettings {
+			if s.key == key {
+				found = true
+				if s.page != w[0] || s.defaultEnv != w[1] {
+					t.Errorf("%s: page %s env %s, want %s %s", key, s.page, s.defaultEnv, w[0], w[1])
 				}
 			}
 		}
