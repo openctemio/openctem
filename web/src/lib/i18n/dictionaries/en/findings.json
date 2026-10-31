@@ -887,7 +887,6 @@
   "findings.importResults.vexUnmatchable": "; {count} statements cannot be matched (no package URL)",
   "findings.importResults.vexWouldClose": ", {count} would be requested",
   "findings.informational.alwaysShow": "Always show",
-  "findings.informational.hidden": "Informational hidden",
   "findings.informational.hiddenCount": "Informational hidden ({count})",
   "findings.informational.hide": "Hide",
   "findings.informational.saveFailed": "Could not save your preference",
