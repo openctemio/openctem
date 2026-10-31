@@ -88,15 +88,14 @@ function staticPagesUnder(prefix: string): string[] {
 const isPersonal = (url: string) => url === '/account' || url.startsWith('/account/')
 
 describe('settings nav config', () => {
-  it('has the eight groups in order', () => {
+  // The six groups decided 2026-10-01 (item placement: research 346).
+  it('has the six groups in order', () => {
     expect(settingsNav.map((g) => g.id)).toEqual([
       'account',
       'organization',
-      'security',
       'access',
       'findings',
       'scanning',
-      'content',
       'integrations',
     ])
   })
@@ -109,12 +108,32 @@ describe('settings nav config', () => {
   })
 
   for (const group of settingsNav) {
-    // Scanning holds 10 (Sensor products joined its 9); keep groups scannable.
-    it(`group "${group.title}" has 2 to 10 items`, () => {
-      expect(group.items.length).toBeGreaterThanOrEqual(2)
-      expect(group.items.length).toBeLessThanOrEqual(10)
+    // Keep groups scannable: a long group is split into titled sections of 2
+    // to 10, its first section untitled, each section's items contiguous.
+    it(`group "${group.title}" has 2 to 10 items per section`, () => {
+      const chunks: { section?: string; n: number }[] = []
+      for (const item of group.items) {
+        const last = chunks.at(-1)
+        if (last && last.section === item.section) last.n++
+        else chunks.push({ section: item.section, n: 1 })
+      }
+      expect(chunks[0].section, 'the first section is untitled').toBeUndefined()
+      const ids = chunks.map((c) => c.section)
+      expect(new Set(ids).size, 'a section appears once').toBe(ids.length)
+      for (const c of chunks) {
+        expect(c.n, String(c.section)).toBeGreaterThanOrEqual(2)
+        expect(c.n, String(c.section)).toBeLessThanOrEqual(10)
+      }
     })
   }
+
+  it('section titles have en and vi strings', () => {
+    for (const item of settingsNavItems) {
+      if (!item.section) continue
+      expect((en as Record<string, string>)[`settings.section.${item.section}`]).toBeTruthy()
+      expect((vi as Record<string, string>)[`settings.section.${item.section}`]).toBeTruthy()
+    }
+  })
 
   it('titles are sentence case (acronyms allowed)', () => {
     const titles = [...settingsNav.map((g) => g.title), ...settingsNavItems.map((i) => i.title)]

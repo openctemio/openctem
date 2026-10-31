@@ -22,6 +22,11 @@ export interface GroupedNavSection {
   key: string
   /** Section heading; omitted for an untitled top section. */
   label?: string
+  /**
+   * A sub-heading inside the section above (a long settings group): smaller,
+   * no divider, and gone on the icon rail, where the rows simply continue.
+   */
+  sub?: boolean
   items: GroupedNavLink[]
 }
 
@@ -55,7 +60,16 @@ export function GroupedNav({ sections, activeUrl }: GroupedNavProps) {
       {sections.map((section) =>
         section.items.length === 0 ? null : (
           <div key={section.key} className="flex flex-col gap-1">
-            {section.label && <NavClusterLabel label={section.label} />}
+            {section.label &&
+              (section.sub ? (
+                <div className="flex h-6 items-end px-1.5 pb-0.5 group-data-[collapsible=icon]:hidden">
+                  <span className="truncate text-[11px] text-muted-foreground/80">
+                    {section.label}
+                  </span>
+                </div>
+              ) : (
+                <NavClusterLabel label={section.label} />
+              ))}
             <SidebarMenu>
               {section.items.map((item) => (
                 <SidebarMenuItem key={item.key}>
