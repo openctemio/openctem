@@ -403,11 +403,14 @@ function FlowChart({ result, scope }: { result: FlowResult; scope?: 'organizatio
       <div
         ref={ref}
         className={cn(
-          'relative grid justify-center gap-6',
-          // mid: the core beside the outcomes, the sources a row above.
-          '@min-[660px]:grid-cols-[minmax(16rem,26rem)_minmax(13rem,16rem)] @min-[660px]:gap-x-[clamp(2.5rem,7cqi,5rem)]',
-          // wide: three bounded columns, centred: short, proportional wires.
-          '@min-[960px]:grid-cols-[minmax(12rem,15rem)_minmax(20rem,34rem)_minmax(13rem,16rem)] @min-[960px]:gap-x-[clamp(2.5rem,5cqi,5.5rem)]'
+          'relative grid gap-6',
+          // mid: the core beside the outcomes (core at the left edge, outcomes at
+          // the right edge), the sources a row above.
+          '@min-[660px]:grid-cols-[clamp(16rem,46cqi,32rem)_clamp(13rem,30cqi,22rem)] @min-[660px]:justify-between @min-[660px]:gap-x-[clamp(2.5rem,7cqi,5rem)]',
+          // wide: sources at the left edge, outcomes at the right edge, the core
+          // between them; the columns grow with the card (cqi) and the wires take
+          // the space left, so a wide card has no empty side gutters.
+          '@min-[960px]:grid-cols-[clamp(12rem,20cqi,26rem)_clamp(20rem,34cqi,46rem)_clamp(13rem,20cqi,26rem)] @min-[960px]:gap-x-[clamp(2.5rem,5cqi,5.5rem)]'
         )}
         data-testid="exposure-flow"
         data-band={band}
@@ -592,7 +595,7 @@ function FlowChart({ result, scope }: { result: FlowResult; scope?: 'organizatio
             className={cn(
               // The ring scales with the widget: a phone-wide cell, then 24 %
               // of the width between 15 and 20 rem.
-              'relative size-[min(18rem,78cqi)] @min-[660px]:size-[clamp(15rem,24cqi,20rem)]',
+              'relative size-[min(18rem,78cqi)] @min-[660px]:size-[clamp(15rem,24cqi,26rem)]',
               dimClass(active, lit('ring'))
             )}
             data-k="ring"
