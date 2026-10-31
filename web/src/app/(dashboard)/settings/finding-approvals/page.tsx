@@ -40,7 +40,7 @@ export default function FindingApprovalSettingsPage() {
               canEdit={can(Permission.SettingsWrite)}
               onSaved={(next) => void mutate(next, { revalidate: false })}
             />
-            <section className="space-y-3">
+            <section id="approval-tiers" className="space-y-3">
               <div>
                 <h2 className="text-lg font-semibold">
                   {t('findingApprovals.policy.tableTitle', 'Approval tiers and approvers')}

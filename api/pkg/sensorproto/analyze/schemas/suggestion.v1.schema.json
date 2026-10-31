@@ -14,7 +14,7 @@
         "additionalProperties": false,
         "required": ["ref"],
         "properties": {
-          "ref": {"type": "string", "pattern": "^(bundle:[a-z0-9_]{1,48}(\\.[a-z0-9_]{1,48}){0,3}|tool:[0-9]{1,4})$"},
+          "ref": {"type": "string", "pattern": "^(bundle:[a-z0-9_]{1,48}(\\.[a-z0-9_]{1,48}){0,3}|tool:[0-9]{1,4}|kb:[0-9]{1,2})$"},
           "quote": {"type": "string", "maxLength": 500}
         }
       }
