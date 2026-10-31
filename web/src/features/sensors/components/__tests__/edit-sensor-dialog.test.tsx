@@ -20,6 +20,11 @@ const api = vi.hoisted(() => ({
 }))
 const perms = vi.hoisted(() => ({ granted: new Set<string>() }))
 
+// The rotate action reads the organization's identity policy.
+vi.mock('@/lib/api/sensor-pairing-hooks', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/api/sensor-pairing-hooks')>()),
+  useSensorIdentityPolicy: () => ({ data: undefined }),
+}))
 vi.mock('@/lib/permissions', () => ({
   Permission: {
     SensorsDelete: 'sensors:delete',

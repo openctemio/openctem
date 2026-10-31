@@ -36,6 +36,11 @@ type Service struct {
 	now    func() time.Time
 	// test is the proxy test (EnableTest); nil: not available.
 	test *testSetup
+	// exits records and lists scanner addresses (EnableScannerAddresses);
+	// nil: none recorded.
+	exits pooldom.ExitStore
+	// platformEgress is the shared sensors' published egress; nil: none.
+	platformEgress PlatformEgressSource
 }
 
 // NewService creates the proxy pool service. enc encrypts credentials; a

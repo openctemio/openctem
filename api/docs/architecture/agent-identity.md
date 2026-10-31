@@ -1,5 +1,7 @@
 # Sensor Identity & Credentials
 
+Part of the [sensor and platform workflow](sensor-platform-workflow.md).
+
 > Design of record: [RFC-014](../rfcs/RFC-014-agent-identity.md) and
 > [RFC-032](../rfcs/RFC-032-sensor-enrollment-and-identity.md). This document
 > tracks **what is shipped vs planned** for how sensors authenticate to the
