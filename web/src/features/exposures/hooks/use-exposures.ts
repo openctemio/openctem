@@ -1,7 +1,7 @@
 'use client'
 
 import useSWR from 'swr'
-import { get, post, del } from '@/lib/api/client'
+import { get, post, del, patch } from '@/lib/api/client'
 import { exposureEndpoints } from '@/lib/api/endpoints'
 import { usePermissions, Permission } from '@/lib/permissions'
 import type {
@@ -13,6 +13,7 @@ import type {
   BulkIngestExposuresResponse,
   ChangeExposureStateRequest,
   ExposureStateHistoryResponse,
+  ExposureSeverity,
   ExposureStats,
 } from '@/lib/api/exposure-types'
 
@@ -100,7 +101,7 @@ export function useExposureStats(tenantId: string | null) {
   const emptyStats: ExposureStats = {
     total: 0,
     by_severity: { critical: 0, high: 0, medium: 0, low: 0, info: 0 },
-    by_state: { active: 0, resolved: 0, accepted: 0, false_positive: 0 },
+    by_state: { active: 0, in_progress: 0, resolved: 0, accepted: 0, false_positive: 0 },
     by_event_type: {},
     active_count: 0,
     resolved_count: 0,
@@ -211,4 +212,25 @@ export async function rejectExposureDisposition(
  */
 export async function reactivateExposure(exposureId: string): Promise<ExposureEvent> {
   return post<ExposureEvent>(exposureEndpoints.reactivate(exposureId), {})
+}
+
+/**
+ * Mark an open exposure as in progress (it stays open)
+ */
+export async function startExposureProgress(
+  exposureId: string,
+  input?: ChangeExposureStateRequest
+): Promise<ExposureEvent> {
+  return post<ExposureEvent>(exposureEndpoints.startProgress(exposureId), input || {})
+}
+
+/**
+ * Set the analyst severity override, or remove it with an empty severity. A
+ * reason is required.
+ */
+export async function changeExposureSeverity(
+  exposureId: string,
+  input: { severity: ExposureSeverity | ''; reason: string }
+): Promise<ExposureEvent> {
+  return patch<ExposureEvent>(exposureEndpoints.severity(exposureId), input)
 }
