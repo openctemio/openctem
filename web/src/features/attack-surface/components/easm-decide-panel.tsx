@@ -18,6 +18,7 @@
  * a card that offers something is a decision (and counts in the badge).
  */
 
+import { useSettleSignal } from '@/features/shared/components/settle-group'
 import { useState } from 'react'
 import Link from '@/components/link'
 import { AlertTriangle, ChevronDown, ChevronUp, Crosshair, Globe, Network } from 'lucide-react'
@@ -128,6 +129,7 @@ export function EASMDecidePanel({ compact = false }: { compact?: boolean }) {
   const { currentTenant } = useTenant()
   const tenantId = currentTenant?.id
   const { cards, error, isLoading, mutate } = useEASMSuggestions()
+  useSettleSignal(isLoading && !cards)
   const [, setTick] = useState(0)
 
   const snooze = (c: EASMSuggestionCard) => {

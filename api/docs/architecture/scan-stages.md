@@ -600,11 +600,15 @@ what makes chained outputs trustworthy.
   the command names server-side (`commands.scan_run_step_id`, now set on every step
   command). A sensor's raw output is never read, and a sensor cannot attribute
   output to another step, run or tenant.
-- **Stage barrier (G4).** A chained stage is planned once its predecessors
-  finished **and** no v2 report of their commands is still open. A pending
-  report defers the step; the v2 commit calls `OnCommandIngested`, which
-  advances the run. (A report that expires uncommitted wakes nothing: the run
-  timeout ends such a run; P1 adds a sweep.)
+- **Stage streaming, barrier as the fallback (G4, RFC-137).** A chained stage
+  no longer waits for its whole predecessor: it takes the results of each
+  finished predecessor task as that task's report is ingested (§3.6). It
+  waits for the whole predecessor (the barrier) when the workflow sets
+  `stage_barrier`, when `SCAN_STAGE_STREAMING=false`, when it has more than
+  one unfinished dependency, and for the stages §3.6 lists. A planning never
+  reads a predecessor report that is still open: a pending report defers it,
+  and the v2 commit calls `OnCommandIngested`, which advances the run; the
+  stall repair (`stall_repair.go`) wakes a run whose wake-up was lost.
 - **One canonical input per web origin.** A stage that takes web origins
   (`vuln.templates`, `crawl.web`) gets each web service once, as the
   `http_service` the HTTP probe found: the same service is not handed again
@@ -659,3 +663,49 @@ what makes chained outputs trustworthy.
   row references the run and assets with composite tenant foreign keys, so a
   cross-tenant row is refused by the database. Asset merges move these rows to
   the kept asset.
+
+### 3.6 Stage streaming
+
+`internal/app/scanrun/stream.go`; design [RFC-137](../rfcs/RFC-137-stage-streaming.md).
+Live data showed one 72-target httpx task holding the template stage for about
+56 minutes until the run's deadline failed it, while handing a stage its next
+task costs well under a second: the cost was the barrier, not the hops.
+
+- **When a step streams.** A pending step whose dependencies all finished
+  except one, that one queued or running with at least one completed task,
+  and whose stage feeds the step's. Never: an intrusive (T2) stage, a web
+  stage that selects endpoints since the run started (`endpoint_selector`
+  other than `all`), a step with two or more unfinished dependencies, a step
+  its condition, the scan's intensity or the run's depth skips.
+- **Waves.** The first wave is the ordinary planning (seeds plus what the
+  finished tasks produced), recorded as an open stream on the stage plan
+  (`streamed`, `stream_open`). Every later ingest or task completion of the
+  source plans a wave under a per-stage advisory lock: the same hop gate
+  (§3) on the outputs it has not decided yet, then the same dispatch
+  (placement, chunking, host keys, claim-time gate, deadline admission). A
+  target is decided once per stage and run (`scan_run_targets` key): a wave
+  dispatches only the planned rows it inserted, so concurrent waves never
+  dispatch a target twice. Caps count the earlier waves' decisions.
+- **Closing.** Once every dependency of the step finished and none of its
+  reports is still open, the closing wave plans what is left, creates its
+  commands, then closes the stream. A streamed step never settles while its
+  stream is open: its commands are counted as batches whatever their number,
+  and whoever sees "stream closed" and "no command active" last (the closing
+  wave or the last command) records the outcome (`ClaimStepFinalization`).
+- **Failures.** A failed source task produces no outputs and costs nothing
+  else; the source ends `partial`. A wave that cannot be planned (gate error)
+  is retried on the next event or by the stall repair; a wave whose dispatch
+  fails, or comes too close to the run's deadline, records its targets as
+  the run's unfinished targets.
+- **Smaller source tasks.** A step a successor streams from is cut into about
+  four tasks (at least 10 targets each, never above the capability's chunk
+  size), so the successor starts on the first quarter of the hosts.
+- **Coverage.** Coverage and closing stay per command, on the command's own
+  targets and outcomes ([finding-closure.md](finding-closure.md)): a target
+  counts only through the command that ran it, never because its stage was
+  planned. A streamed step that loses a task ends `partial`, never `completed`.
+- **Visibility.** `GET /api/v1/scan-runs/{id}/stages` adds `streamed`,
+  `stream_open`, `waves`, `first_dispatch_at`. Metrics:
+  `scan_stage_stream_waves_total{kind,outcome}`,
+  `scan_stage_time_to_first_successor_seconds{mode}`,
+  `scan_stage_barrier_wait_saved_seconds`.
