@@ -138,7 +138,7 @@ export const SENSOR_STATE_META: Record<
   never_connected: {
     label: 'Never connected',
     tone: 'muted',
-    description: 'No heartbeat yet. Install the sensor with its key.',
+    description: 'No heartbeat yet. Run its install command on the host.',
   },
   disabled: { label: 'Disabled', tone: 'muted', description: 'Disabled by an admin.' },
   revoked: { label: 'Revoked', tone: 'muted', description: 'Access revoked for good.' },
