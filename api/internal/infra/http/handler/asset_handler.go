@@ -658,7 +658,7 @@ func (h *AssetHandler) handleServiceError(w http.ResponseWriter, err error) {
 // @Param        attribution           query string false "Filter by attribution (comma-separated): confirmed (includes assets with no record), discovered, needs_review, candidate, dependency, monitor_only, rejected, unknown (no record), unconfirmed (needs_review+candidate), approved (the inventory: confirmed+unknown+discovered+dependency+monitor_only), attributed (approved without discovered)"
 // @Param        covered_by            query string false "Scope entry id: the assets the scope join confirmed through it"
 // @Param        scope_status          query string false "Scope status (comma-separated): in_scope (an active entry covers it), not_covered (no entry: passive only), excluded (an exclusion matches or marked not ours), internal (governed by scan zones)"
-// @Param        discovered_by         query string false "Attribution rules behind the asset (comma-separated): fqdn_under_verified_root, fqdn_under_asserted_root, tenant_scanned, tenant_scan_discovered, matches_scope_target"
+// @Param        discovered_by         query string false "Attribution rules behind the asset (comma-separated): fqdn_under_verified_root, fqdn_under_asserted_root, tenant_scanned, tenant_scan_discovered, matches_scope_target, certificate_san"
 // @Param        discovery_technique   query string false "Discovery techniques (comma-separated, at most 10), e.g. cert_transparency or a scanner name"
 // @Param        min_confidence        query int    false "Lowest attribution confidence (0-100; no record counts as 100)"
 // @Param        max_confidence        query int    false "Highest attribution confidence (0-100)"
