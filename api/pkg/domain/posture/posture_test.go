@@ -186,7 +186,7 @@ func TestSchedules(t *testing.T) {
 
 func TestRootDomain(t *testing.T) {
 	for in, want := range map[string]string{
-		"charts-uat.vndirect.com.vn":     "vndirect.com.vn",
+		"charts-uat.example.com.vn":      "example.com.vn",
 		"https://a.b.example.com:8443/x": "example.com",
 		"api.example.co.uk:443":          "example.co.uk",
 		"*.dev.example.com":              "example.com",
