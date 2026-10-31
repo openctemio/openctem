@@ -101,6 +101,16 @@ func (m *mockTargetRepo) Count(_ context.Context, _ scopedom.TargetFilter) (int6
 	return int64(len(m.targets)), nil
 }
 
+func (m *mockTargetRepo) CountByStatus(_ context.Context, f scopedom.TargetFilter) (map[scopedom.Status]int64, error) {
+	out := map[scopedom.Status]int64{}
+	for _, t := range m.targets {
+		if f.TenantID != nil && t.TenantID().String() == *f.TenantID {
+			out[t.Status()]++
+		}
+	}
+	return out, nil
+}
+
 func (m *mockTargetRepo) FindByPattern(_ context.Context, tenantID shared.ID, targetType scopedom.TargetType, pattern string) (*scopedom.Existing, error) {
 	for _, t := range m.targets {
 		if t.TenantID() == tenantID && t.TargetType() == targetType && t.Pattern() == pattern {
@@ -177,6 +187,10 @@ func (m *mockExclusionRepo) ListActive(_ context.Context, tenantID shared.ID) ([
 		}
 	}
 	return exclusions, nil
+}
+
+func (m *mockExclusionRepo) CountByStatus(context.Context, scopedom.ExclusionFilter) (map[scopedom.Status]int64, error) {
+	return map[scopedom.Status]int64{}, nil
 }
 
 func (m *mockExclusionRepo) Count(_ context.Context, _ scopedom.ExclusionFilter) (int64, error) {

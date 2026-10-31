@@ -19,6 +19,7 @@
  * permission checks here only hide actions it would refuse.
  */
 
+import { useSettleSignal } from '@/features/shared/components/settle-group'
 import { useState } from 'react'
 import { toast } from 'sonner'
 import {
@@ -96,6 +97,7 @@ export function FindingRetestCheckSection({ finding, className }: FindingRetestC
   const { hasPermission } = usePermissions()
   const canWrite = hasPermission(Permission.FindingsRetestChecksWrite)
   const { data, error, isLoading, mutate } = useFindingRetestCheck(finding.id)
+  useSettleSignal(isLoading)
   const [editing, setEditing] = useState(false)
   const [removing, setRemoving] = useState(false)
   // Opened from the hint: a new HTTP assertion pinned to the finding's URL

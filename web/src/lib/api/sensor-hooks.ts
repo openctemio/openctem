@@ -6,7 +6,7 @@
 
 'use client'
 
-import { useMemo } from 'react'
+import { useMemo, useRef } from 'react'
 import useSWR, { type SWRConfiguration } from 'swr'
 import useSWRMutation from 'swr/mutation'
 import useSWRInfinite from 'swr/infinite'
@@ -132,19 +132,100 @@ export async function fetchAllSensorPages(
 /** Refresh interval for the live sensors view (list, stats and the open sensor). */
 export const SENSOR_REFRESH_MS = 15_000
 
+/** GET /sensors?changed_since= (poll mode): the stats and only the sensors that changed. */
+export interface SensorFleetChanges extends SensorListResponse {
+  /** Every sensor of the fleet (true) or only those changed since the cursor. */
+  full?: boolean
+  /** Sent as changed_since on the next poll; absent for a very large fleet. */
+  cursor?: string
+  stats?: TenantSensorStats
+}
+
+/** The fleet with the stats that came with it. */
+export type SensorFleet = SensorListResponse & { stats?: TenantSensorStats; cursor?: string }
+
 /**
- * The tenant's whole fleet (every page), refreshed every 15s while the tab
- * is visible.
+ * Applies a poll answer to the fleet the page holds: a full answer replaces
+ * it, a partial one replaces the sensors it carries and keeps the others in
+ * place. The fleet's membership is unchanged in a partial answer (the API
+ * answers in full when a sensor was added or removed); undefined when a
+ * partial answer arrives with no fleet to apply it to.
+ */
+export function applySensorChanges(
+  prev: SensorFleet | undefined,
+  res: SensorFleetChanges
+): SensorFleet | undefined {
+  const items = res.items ?? []
+  if (res.full !== false) {
+    return {
+      items,
+      total: res.total ?? items.length,
+      page: 1,
+      per_page: items.length,
+      stats: res.stats,
+      cursor: res.cursor,
+    }
+  }
+  if (!prev) return undefined
+  const changed = new Map(items.map((s) => [s.id, s]))
+  const merged = prev.items.map((s) => changed.get(s.id) ?? s)
+  return {
+    items: changed.size > 0 ? merged : prev.items,
+    total: res.total ?? merged.length,
+    page: 1,
+    per_page: merged.length,
+    stats: res.stats ?? prev.stats,
+    cursor: res.cursor,
+  }
+}
+
+/**
+ * Reads the fleet in poll mode: the previous answer's cursor in, the changed
+ * sensors and the stats out (one request per refresh, whatever the fleet
+ * size). Against an API without poll mode (no `full` in the answer) it reads
+ * every page as before.
+ */
+export async function fetchSensorFleet(
+  getChanges: (cursor: string) => Promise<SensorFleetChanges>,
+  getPage: (page: number) => Promise<SensorListResponse>,
+  prev: SensorFleet | undefined
+): Promise<SensorFleet> {
+  const res = await getChanges(prev?.cursor ?? '')
+  if (typeof res.full !== 'boolean') return fetchAllSensorPages(getPage)
+  const next = applySensorChanges(prev, res)
+  if (next) return next
+  // A partial answer without a fleet to apply it to: start over.
+  const snapshot = applySensorChanges(undefined, await getChanges(''))
+  return snapshot ?? fetchAllSensorPages(getPage)
+}
+
+/**
+ * The tenant's whole fleet, refreshed every 15s while the tab is visible,
+ * with the fleet stats (`data.stats`) from the same request: each refresh
+ * transfers only the sensors whose answer changed.
  */
 export function useAllSensors(config?: SWRConfiguration, enabled = true) {
   const { currentTenant } = useTenant()
   const key = currentTenant && enabled ? sensorEndpoints.list({ per_page: SENSOR_PAGE_SIZE }) : null
-  return useSWR<SensorListResponse>(
+  // The fleet the last answer built, per organization (the cursor is its own).
+  const held = useRef<{ tenant?: string; fleet?: SensorFleet }>({})
+  return useSWR<SensorFleet>(
     key,
-    () =>
-      fetchAllSensorPages((page) =>
-        get<SensorListResponse>(sensorEndpoints.list({ per_page: SENSOR_PAGE_SIZE, page }))
-      ),
+    async () => {
+      const tenant = currentTenant?.id
+      const prev = held.current.tenant === tenant ? held.current.fleet : undefined
+      const fleet = await fetchSensorFleet(
+        (cursor) =>
+          get<SensorFleetChanges>(
+            `${sensorEndpoints.list()}?changed_since=${encodeURIComponent(cursor)}`
+          ),
+        (page) =>
+          get<SensorListResponse>(sensorEndpoints.list({ per_page: SENSOR_PAGE_SIZE, page })),
+        prev
+      )
+      held.current = { tenant, fleet }
+      return fleet
+    },
     {
       ...defaultConfig,
       // Polled every 15 s: the page shows an ErrorState, never a toast per poll.
@@ -207,9 +288,13 @@ export interface TenantSensorStats {
   by_sdk_status?: Partial<Record<SensorSdkStatus, number>>
 }
 
-export function useTenantSensorStats(config?: SWRConfiguration) {
+/**
+ * GET /sensors/stats. The sensors page takes the stats from the fleet poll
+ * (`useAllSensors().data.stats`) and passes `enabled: false` once it has them.
+ */
+export function useTenantSensorStats(config?: SWRConfiguration, enabled = true) {
   const { currentTenant } = useTenant()
-  const key = currentTenant ? sensorEndpoints.tenantStats() : null
+  const key = currentTenant && enabled ? sensorEndpoints.tenantStats() : null
   return useSWR<TenantSensorStats>(key, (url: string) => get<TenantSensorStats>(url), {
     ...defaultConfig,
     onError: silentOnError,

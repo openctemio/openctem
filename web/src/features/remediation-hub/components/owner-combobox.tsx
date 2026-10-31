@@ -158,7 +158,7 @@ export function OwnerCombobox({
         {!canAssign && onRequestAccess && (
           <button
             type="button"
-            className="text-primary underline underline-offset-2"
+            className="link-inline"
             onPointerDown={(e) => e.stopPropagation()}
             onClick={(e) => {
               e.stopPropagation()
@@ -186,7 +186,7 @@ export function OwnerCombobox({
         {kind === 'empty' && list === 'teams' && canCreateTeam && (
           <>
             {' '}
-            <Link href="/settings/teams" className="text-primary underline underline-offset-2">
+            <Link href="/settings/teams" className="link-inline">
               {t('remediationHub.ownerPicker.teams.create')}
             </Link>
           </>

@@ -298,6 +298,13 @@ export const adminNav: AdminNavSection[] = [
         keywords: ['limits', 'quotas', 'self-service', 'seats'],
       },
       {
+        title: 'Two-factor',
+        i18nKey: 'admin.nav.twoFactor',
+        url: '/system/two-factor',
+        icon: ShieldCheck,
+        keywords: ['mfa', '2fa', 'two-factor', 'floor', 'totp', 'organizations'],
+      },
+      {
         title: 'CAPTCHA',
         i18nKey: 'admin.nav.captcha',
         url: '/system/captcha',

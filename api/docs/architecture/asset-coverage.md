@@ -219,7 +219,10 @@ list is read for the job's own tenant only and sealed into the signed job;
 it is never stored.
 
 The tool has no list of its own, so without a stable `wordlists-s` pack the
-job would be refused at claim. Coverage readiness checks this first: while
+job would be refused at claim. The API installs its built-in `wordlists-s`
+and `wordlists-m` on start when no stable pack of that name exists
+([wordlists.md](wordlists.md)), so this happens only when an administrator
+revoked it and imported none. Coverage readiness checks this first: while
 the platform has no such pack, the capability is paused with readiness
 reason `content_missing` and its alert asks an instance administrator to
 import the pack (see [wordlists.md](wordlists.md)). Coverage resumes on its

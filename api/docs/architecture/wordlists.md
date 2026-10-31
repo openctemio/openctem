@@ -1,6 +1,7 @@
 # Wordlists: the first-party packs
 
-Design: research/294 (decisions D1, D2 and O2). Pack store and delivery:
+Design: research/294 (decisions D1, D2 and O2) and research/344 (built-in packs, permutations,
+organization lists). Pack store and delivery:
 [content-packs.md](content-packs.md). This page describes the build that makes the curated
 public lists and the manifest the platform checks on import.
 
@@ -48,20 +49,58 @@ cd api
 go run ./cmd/wordlists-build -out dist/wordlists
 ```
 
-The lists are not committed. The workflow `.github/workflows/wordlists-release.yml` (manual, from
-`main`) publishes them as assets of the release `wordlists-<release>` with a build provenance
-attestation. `release.json` in the release carries the asset sha256 of each pack.
+The workflow `.github/workflows/wordlists-release.yml` (manual, from `main`) publishes the packs as
+assets of the release `wordlists-<release>` with a build provenance attestation. `release.json` in
+the release carries the asset sha256 of each pack.
+
+## Built-in packs
+
+The packs of the current release are also embedded in the API
+(`api/internal/app/contentpin/builtin/`: the two archives and `release.json`), so subdomain
+enumeration works on a fresh install with no import and no internet access:
+
+- At start the API installs each embedded pack whose name has **no `stable` channel**, through the
+  same canonicalisation, lint and platform signature as an upload (source `upload`, source reference
+  `builtin:<asset>`), and points `stable` at it. An existing `stable` channel is never moved: an
+  administrator's import, or a deliberate older release, stands. A release an administrator revoked
+  is not reinstated. Several replicas starting together are safe: the second finds the pack by name
+  and version.
+- The embedded files are the output of the build, and nothing else:
+  `go run ./cmd/wordlists-build -out internal/app/contentpin/builtin`. A test checks each archive
+  against `release.json` and the canonical digest, another that their release is the one
+  `sources.yaml` names (a pin change must rebuild them), and the release workflow compares the
+  published assets with the embedded bytes.
+- To adopt a newer release on a running platform, import it (below) and move `stable`; the next API
+  version also embeds it, but never moves a `stable` channel that exists.
 
 ## Import
 
 A super admin imports each asset as a platform pack of kind `wordlist` with
 `POST /api/v1/admin/content-packs/import` (https URL of the asset and its sha256; TOTP step-up,
-a reason and an audit row, as for any platform pack) and then moves `stable` to it. No
-platform code is specific to wordlists.
+a reason and an audit row, as for any platform pack) and then moves `stable` to it. An installation
+without internet access uploads the asset instead (`POST /api/v1/admin/content-packs`).
 
 Asset coverage runs `enumerate.subdomains` at standard depth, so it reads the `dns-labels` lists
-of `wordlists-s`. Until that pack is imported, the capability is paused with readiness reason
-`content_missing` ([asset-coverage.md](asset-coverage.md)).
+of `wordlists-s`. If no such pack is on `stable` (the built-in one revoked and none imported), the
+capability is paused with readiness reason `content_missing` ([asset-coverage.md](asset-coverage.md)).
+
+## The list a job reads
+
+A `dns-labels` request (the `dnsx-enum` tool's slot `labels`) is pinned at claim
+([content-packs.md](content-packs.md)): the platform pack of the run's depth (standard `wordlists-s`,
+deep `wordlists-m`) by digest, plus one list generated for the job and carried inline:
+
+1. **Learned labels**: the labels of the organization's own active names under the root, and their
+   parts split at `-` and at letter/digit boundaries, most frequent first.
+2. **Permutations** of those labels, after them: numbered neighbors of a numbered label
+   (`web09` gives `web10`, `web08`), numbered copies of a label ending in an environment word
+   (`portal-uat` gives `portal-uat1`, `portal-uat2`), and base words crossed with the environment
+   words the organization's names use (`dev`, `uat`, `staging`, ...; `dev`, `test`, `uat` and
+   `staging` when they use none). At most 20,000, every one a valid DNS label, the same for the same
+   names.
+
+The sensor composes the inline list first and the pack after it into one file, without repeats and
+within the depth's line cap.
 
 ## What the platform checks
 
@@ -76,6 +115,47 @@ On import, and on every tenant upload that carries one, the linter checks `wordl
 - `NOTICE` exists and records every source's commit, file and license.
 
 A false or incomplete manifest refuses the whole pack. It never just leaves a file out.
+
+## Organization lists
+
+An organization adds its own words (branch codes, product names, local words) as lists of DNS
+labels under Settings > Scanning > Wordlists, or with `/api/v1/wordlists`
+([authorization-matrix.md](authorization-matrix.md)). No archive, manifest or git is needed: a list
+is text, pasted or uploaded as a `.txt`.
+
+- **Reading the text.** One entry per line; blank lines and lines starting with `#` are ignored, as
+  is a trailing ` # comment`. An entry is lower-cased and kept when it is one to three dot-separated
+  DNS labels (`[a-z0-9-]`, no leading or trailing `-`, at most 63 characters each) and not all
+  digits. A line that looks like a secret (a label of 24 characters or more mixing letters and
+  digits with high entropy) is refused, since every label is sent to resolvers. Repeats are removed,
+  first occurrence first. The response reports what was kept and what was dropped, with examples.
+- **Limits.** 20 lists per organization; 50,000 labels and 1 MiB per list; 2 MiB of text per
+  request.
+- **Versions.** Each list has a `version` that rises when its labels change (not when only its name,
+  description or switch changes) and the sha256 of its labels.
+- **Use.** Every enabled list joins every subdomain enumeration job of the organization, on its own
+  sensors and on shared sensors alike: the lists are merged in creation order without repeats and
+  carried inline under the job signature, after the learned labels and before the platform pack.
+  The job's inline budget (256 KiB compressed per list) keeps the leading labels of a larger merge.
+  Nothing is stored on a sensor beyond the task directory, which is erased with the task.
+- **Preview.** `GET /api/v1/wordlists/preview?root=example.com&depth=standard` counts what a job of
+  that root would carry: the platform pack (name, version, line count), the learned labels and
+  permutations, and the organization's labels. It returns counts and list names only, and sends
+  nothing to any sensor or resolver.
+- **Audit.** `wordlist.created`, `wordlist.updated` and `wordlist.deleted`, with name, version and
+  line count, never the labels.
+
+## What a run used
+
+When the platform signs a job for a sensor it stores what the job read on the command
+(`commands.content_pins`): each pack with its slot, name, version and digest, and each inline list
+with its source (`learned` or `organization`), line count and sha256, plus the organization lists
+it holds with the version each had. The run page shows it per task. The record comes from what was
+signed, never from the sensor, and a retry of the job rewrites it.
+
+Isolation: organization lists and the learned labels are read with the job's own tenant id and
+reach a sensor only inside that organization's signed job; the record is written under the same
+tenant.
 
 ## Licenses
 
@@ -94,4 +174,7 @@ repository, and lists with no license file. The current list is in `sources.yaml
 - Tampering in transit or at rest: the import route checks the asset sha256 before parsing; the
   platform signs the pack; sensors verify digest and signature.
 - Isolation: these are platform packs, public to every organization; nothing tenant-specific is in
-  them.
+  them. The learned list and its permutations are built from the job's organization's names only,
+  travel inline under the job signature, and are never stored or cached.
+- The built-in packs never override an administrator: they install only where no `stable` channel
+  exists, and only when the ingested digest is the recorded one.

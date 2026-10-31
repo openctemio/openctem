@@ -69,10 +69,10 @@ func TestEASMReconTemplates_ValidAndRunnable(t *testing.T) {
 			if err := st.RunPolicy.Validate(); err != nil {
 				t.Fatalf("%s/%s: %v", name, st.StepKey, err)
 			}
-			if st.RunPolicy.Optional {
-				if !stage.IsPlanned(stage.Key(st.Capabilities[0])) {
-					t.Fatalf("%s/%s: optional step on a routed capability %s", name, st.StepKey, st.Capabilities[0])
-				}
+			// An optional step on a planned capability waits for a tool; one
+			// on a routed capability (the takeover check) resolves its tool
+			// like any step and is skipped only when that tool is missing.
+			if st.RunPolicy.Optional && stage.IsPlanned(stage.Key(st.Capabilities[0])) {
 				continue
 			}
 			for _, d := range scanworkflow.Depths() {

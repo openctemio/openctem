@@ -551,6 +551,41 @@ func (r *ScopeTargetRepository) Count(ctx context.Context, filter scope.TargetFi
 	return count, nil
 }
 
+// CountByStatus counts the tenant's targets per stored status, leaving out
+// the entries of filter.ExcludeProgramIDs (scope.TargetRepository).
+func (r *ScopeTargetRepository) CountByStatus(ctx context.Context, filter scope.TargetFilter) (map[scope.Status]int64, error) {
+	if filter.TenantID == nil {
+		return nil, fmt.Errorf("%w: tenant required", shared.ErrValidation)
+	}
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT status, COUNT(*) FROM scope_targets
+		WHERE tenant_id = $1
+		  AND (cardinality($2::uuid[]) = 0 OR program_id IS NULL OR NOT (program_id = ANY($2::uuid[])))
+		GROUP BY status`, *filter.TenantID, pq.StringArray(filter.ExcludeProgramIDs))
+	if err != nil {
+		return nil, fmt.Errorf("failed to count scope targets by status: %w", err)
+	}
+	return scanStatusCounts(rows)
+}
+
+// scanStatusCounts reads (status, count) rows.
+func scanStatusCounts(rows *sql.Rows) (map[scope.Status]int64, error) {
+	defer rows.Close()
+	out := map[scope.Status]int64{}
+	for rows.Next() {
+		var st string
+		var n int64
+		if err := rows.Scan(&st, &n); err != nil {
+			return nil, fmt.Errorf("failed to read status counts: %w", err)
+		}
+		out[scope.Status(st)] = n
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to read status counts: %w", err)
+	}
+	return out, nil
+}
+
 // FindByPattern returns the tenant's unlimited entry with this type and
 // pattern (an active entry past its expiry reads as expired), or nil.
 func (r *ScopeTargetRepository) FindByPattern(ctx context.Context, tenantID shared.ID, targetType scope.TargetType, pattern string) (*scope.Existing, error) {

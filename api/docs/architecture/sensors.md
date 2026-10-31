@@ -416,6 +416,22 @@ is not a reconnect (no `sensor.connected` audit row).
 idle interval stays online: interval + grace) and `offline_after_seconds`
 (`WORKER_HEARTBEAT_TIMEOUT`, the backstop above).
 
+**Poll mode** (`GET /sensors?changed_since=<cursor>`,
+`internal/infra/http/handler/sensor_list_changes.go`). The Sensors page
+refreshes every 15 s, because the state moves on with the clock. An empty
+cursor answers the whole fleet (`full: true`), the stats of `GET /sensors/stats`
+(`stats`) and a `cursor`; passing that cursor back answers only the sensors
+whose answer changed (`full: false`), with the stats. The server keeps no
+state: the cursor is a hash of the fleet's ids followed by a 4-byte digest of
+each sensor's answer in id order, so every source of change shows (a write to
+the row by any statement, the clock moving the state, the health policy, the
+product catalog, the caller's host-detail permission). A sensor added or
+removed, or an unusable cursor, answers the whole fleet again. Fleets above
+200 sensors get no cursor (it would not fit a URL) and the whole fleet on each
+refresh, in one request. The population is the paginated list's (the caller's
+organization, the same host redaction); a cursor only selects which of those
+rows are sent. Poll mode is not combined with filters or paging (400).
+
 **Health reasons** (`health_reasons[]`: `code`, `severity`, `message`), listed
 whatever the state: `outbox_backlog` (results waiting over an hour),
 `outbox_dead_letters`, `outbox_evicted`, `key_expired`, `key_expiring` (within
