@@ -160,7 +160,14 @@ func (h *SensorPairingHandler) Start(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if _, err := h.verifyWithKey(r, pub); err != nil {
-		if writeClockSkew(w, r, err, h.log) {
+		if ce := asClockSkew(err, h.log, r); ce != nil {
+			// The signature verified with the key in the body: the console
+			// that made the code may hear about the wrong clock.
+			if req.Code != "" {
+				h.svc.RecordRefusal(r.Context(), sensorpairing.Refusal{Code: req.Code, PublicKey: pub,
+					SourceIP: net.ParseIP(getClientIP(r)), Reason: sensordom.RefusalClockSkew, ClockSkew: ce.offset})
+			}
+			protov2.NewProblem(protov2.ProblemClockSkew).WithClock(ce.now, ce.offset).Write(w)
 			return
 		}
 		protov2.NewProblem(protov2.ProblemUnauthenticated).Write(w)
@@ -171,6 +178,10 @@ func (h *SensorPairingHandler) Start(w http.ResponseWriter, r *http.Request) {
 	// per-address entry budget of the route.
 	if h.budget != nil {
 		if wait, ok := h.budget.ChargeStart(r, startCredential(req)); !ok {
+			if req.Code != "" {
+				h.svc.RecordRefusal(r.Context(), sensorpairing.Refusal{Code: req.Code, PublicKey: pub,
+					SourceIP: net.ParseIP(getClientIP(r)), Reason: sensordom.RefusalRateLimited, RetryAfter: wait})
+			}
 			w.Header().Set("Retry-After", strconv.Itoa(middleware.JitteredRetryAfter(wait)))
 			protov2.NewProblem(protov2.ProblemRateLimited).Write(w)
 			return
