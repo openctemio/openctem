@@ -152,10 +152,15 @@ same templates as a sensor's own install
 (`configs/sensor-products/sensor/*.tmpl`), with `SensorTemplateData.Auth =
 pair`: no API key, the job-signing root as `SENSOR_JOB_SIGNING_ROOT`, the
 expectation's code as `SENSOR_PAIRING_CODE`, the private CA when the
-platform has one (its SHA-256 fingerprint shown under the command), no local
+platform has one (installed, and its root pinned as `SENSOR_CA_SHA256`; the
+panel names each CA certificate with its SHA-256 and links the public
+`GET /api/v1/sensors/platform-ca`,
+[how-to](../how-to/sensors-behind-a-private-ca.md)), no local
 policy file, and a closing watch of the sensor's output that ends on
 `Paired:`. The code travels in the request body, never in a URL; the route
-renders text only and neither checks nor spends it. The panel polls the
+renders text only and neither checks nor spends it. A fifth choice, several
+sensors on one host, shows the multi-sensor kit's `sensors.sh add` line
+(`multi`) with the same code and pin. The panel polls the
 expectation (waiting, pick the fingerprint, approved) and the new sensor
 (online). The inline empty state creates the expectation only on a click.
 

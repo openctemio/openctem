@@ -626,11 +626,15 @@ type SensorConfigConfig struct {
 	// collector sensor run (SENSOR_COLLECTOR_IMAGE, default
 	// DefaultCollectorImage): the asset collector, not the scanner image.
 	CollectorImage string
-	// CACertFile is the platform's private CA certificate (PEM) the install
-	// snippets install on the sensor host (SENSOR_CA_CERT_FILE). Set it when
-	// the platform uses the built-in gateway in TLS mode internal: mount the
-	// gateway's CA export directory into the API read-only and point this at
-	// openctem-root-ca.crt. Empty: the certificate is publicly trusted.
+	// CACertFile is the PEM bundle of the CA certificate(s) that sign the
+	// platform's TLS certificate when it is not publicly trusted
+	// (PLATFORM_CA_CERT_FILE; the deprecated SENSOR_CA_CERT_FILE is read
+	// when it is unset). The install commands install and pin it and GET
+	// /api/v1/sensors/platform-ca serves it. Set it when the platform uses
+	// the built-in gateway in TLS mode internal (mount the gateway's CA
+	// export directory read-only, point this at openctem-root-ca.crt) or any
+	// other private CA. Public certificates only: a file with a private key
+	// is refused. Empty: the certificate is publicly trusted.
 	CACertFile string
 
 	// CIRunnerLatestVersion is the newest CI runner release (openctemio/ci,
@@ -1623,7 +1627,7 @@ func Load() (*Config, error) {
 			HealthStartupGrace:    getEnvDuration("SENSOR_HEALTH_STARTUP_GRACE", 0),
 			Image:                 getEnv("SENSOR_IMAGE", versions.SensorImage()),
 			CollectorImage:        getEnv("SENSOR_COLLECTOR_IMAGE", DefaultCollectorImage),
-			CACertFile:            getEnv("SENSOR_CA_CERT_FILE", ""),
+			CACertFile:            platformCACertFile(),
 			CIRunnerLatestVersion: sensorVersionSetting(getEnv("CI_RUNNER_LATEST_VERSION", versions.CIRunnerLatest())),
 			CIRunnerMinVersion:    sensorVersionSetting(getEnv("CI_RUNNER_MIN_VERSION", versions.CIRunnerMin())),
 		},
@@ -1972,6 +1976,9 @@ func Load() (*Config, error) {
 		},
 	}
 
+	if getEnv("PLATFORM_CA_CERT_FILE", "") == "" && getEnv("SENSOR_CA_CERT_FILE", "") != "" {
+		envWarnings = append(envWarnings, "SENSOR_CA_CERT_FILE is deprecated on the API: rename it to PLATFORM_CA_CERT_FILE")
+	}
 	cfg.EnvWarnings = envWarnings
 
 	if cfg.Brand, err = loadBrand(); err != nil {
@@ -2773,6 +2780,16 @@ func (c *Config) IsProduction() bool {
 // (and production refuses to start with that, see validateProductionAuth).
 func defaultCookieSecure(appEnv string) bool {
 	return appEnv != "development"
+}
+
+// platformCACertFile is PLATFORM_CA_CERT_FILE, else the deprecated name the
+// API read before (SENSOR_CA_CERT_FILE, which is also the sensor's own
+// variable and so read as "the sensor's CA" by operators).
+func platformCACertFile() string {
+	if v := getEnv("PLATFORM_CA_CERT_FILE", ""); v != "" {
+		return v
+	}
+	return getEnv("SENSOR_CA_CERT_FILE", "")
 }
 
 // DefaultSensorConfigTemplatesDir is SENSOR_CONFIG_TEMPLATES_DIR when unset.

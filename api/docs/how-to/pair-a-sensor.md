@@ -14,11 +14,13 @@ for the approval, your TOTP code or your password.
 
 Open **Sensors → Add sensor** (on an organization with no sensor yet, the
 same panel is on the page). Docker is preselected; pick Docker Compose,
-Kubernetes or a Linux service if the sensor runs there. The panel shows one
+Kubernetes, a Linux service or several sensors on one host (the multi-sensor
+kit) if the sensor runs there. The panel shows one
 command for that platform: the current release, this instance's URL, the
 hardening (read-only root filesystem, no capabilities, the checked seccomp
 profile), this platform's private certificate authority when it has one
-(with its SHA-256 fingerprint under the command) and a single-use pairing
+(installed and pinned by its root's SHA-256, shown under the command; see
+[Sensors behind a private CA](sensors-behind-a-private-ca.md)) and a single-use pairing
 code. The command contains no key and asks you to edit nothing. This page is
 the single source for the install steps; the guide at
 [docs.openctem.io/install](https://docs.openctem.io/install/) links here.
@@ -128,7 +130,7 @@ being created.
 | The code is "not found" | It expired (10 minutes), was used, or was mistyped. The sensor starts a new request by itself and prints a new code and link. |
 | The panel says the command's code expired | You ran the command late: the sensor still prints that code and a link; open the link. Or click **New command**. |
 | The sensor says another fingerprint was picked | Someone picked a fingerprint the host did not show; that request was closed. Open the new link the sensor prints and pick the fingerprint on this host. |
-| `signed by an authority this host does not trust` (older sensors: `x509: certificate signed by unknown authority`) | The platform uses a private certificate authority the host does not trust. Current sensors stop retrying and print the authority's SHA-256 fingerprint: compare it with the one under the console's command, then use the console's command (it carries the authority) or `SENSOR_CA_CERT_FILE`. |
+| `signed by an authority this host does not trust` (older sensors: `x509: certificate signed by unknown authority`) | The platform uses a private certificate authority the host does not trust. Current sensors stop retrying and print the authority's SHA-256 fingerprint: compare it with the one under the console's command, then use the console's command (it pins the root, `SENSOR_CA_SHA256`), set `SENSOR_CA_SHA256` yourself, or give the file with `SENSOR_CA_CERT_FILE` ([Sensors behind a private CA](sensors-behind-a-private-ca.md)). |
 | `certificate chain does not contain the pinned CA` | `SENSOR_CA_FINGERPRINT` does not match the certificate authority your platform presents, or a TLS-inspecting proxy sits in between. |
 | `identity directory permissions` at start | Run the `chmod`/`chown` the sensor printed. |
 | The sensor was stopped before you approved it, or you made a new code | Start it again with the new code (`./sensors.sh pair NAME --pairing-code XXXX-XXXX` in the multi-sensor kit). The sensor keeps its key; the new start closes its earlier request that nobody approved, and you approve the new one. Started again with the same code, it re-uses that request: compare the fingerprint again after it reappears. |
