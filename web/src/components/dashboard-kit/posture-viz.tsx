@@ -11,6 +11,7 @@ import Link from '@/components/link'
 import { Meter, type MeterTone } from '@/features/shared/components/meter'
 import { useTranslation } from '@/context/i18n-provider'
 import { cn } from '@/lib/utils'
+import { safeHref } from '@/lib/safe-href'
 import type { PostureCategoryRow, PostureResult } from './types'
 
 export type PostureGradeLetter = 'A' | 'B' | 'C' | 'D' | 'F'
@@ -167,6 +168,7 @@ export function PostureHeadline({ grade, score, caption }: PostureHeadlineProps)
 /** The dashboard widget: grade, score, next grade and the category deductions. */
 export function PostureViz({ result, href }: { result: PostureResult; href?: string | null }) {
   const { t } = useTranslation()
+  const link = safeHref(href)
   const next = result.next_grade
     ? result.fix_steps > 0
       ? t('dashboardKit.posture.nextWithSteps', 'Fix {count} items to reach {grade} ({floor})', {
@@ -188,8 +190,8 @@ export function PostureViz({ result, href }: { result: PostureResult; href?: str
           count: result.assets,
         })}
       />
-      {href ? (
-        <Link href={href} className="text-sm text-primary hover:underline">
+      {link ? (
+        <Link href={link} className="text-sm text-primary hover:underline">
           {next}
         </Link>
       ) : (

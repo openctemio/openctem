@@ -49,6 +49,7 @@ vi.mock('@/features/attack-surface', () => ({
   AttackSurfaceSectionTabs: () => null,
   EASMDecidePanel: () => null,
   EASMOverview: () => null,
+  EASMPostureCard: () => null,
   useAttackSurfaceStats: () => ({ stats: stats.value, isLoading: false, error: undefined }),
 }))
 vi.mock('@/components/layout', () => ({
