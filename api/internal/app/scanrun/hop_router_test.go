@@ -84,7 +84,14 @@ func (m *memHops) SaveStagePlan(_ context.Context, p *scanrun.StagePlan, rows []
 	if _, dup := m.plans[k]; dup {
 		return false, nil
 	}
-	m.plans[k] = *p
+	cp := *p
+	if cp.Streamed {
+		cp.StreamOpen = true
+		if cp.Planned > 0 {
+			cp.Waves = 1
+		}
+	}
+	m.plans[k] = cp
 	for _, r := range rows {
 		r.StageKey = p.StageKey
 		m.targets = append(m.targets, r)
@@ -547,7 +554,7 @@ func TestHopRouter_PlansAStageOnce(t *testing.T) {
 	stale := f.store.rows["dns"] // both callers read the step while pending
 	for i := 0; i < 2; i++ {
 		sr := stale
-		err := f.s.queueStepForExecutionWithSettings(context.Background(), f.run, dns, &sr, f.tpl.Settings, predecessorsOf(f.tpl, dns))
+		err := f.s.queueStepForExecutionWithSettings(context.Background(), f.run, dns, &sr, f.tpl.Settings, predecessorsOf(f.tpl, dns), queueOpts{})
 		if i == 0 && err != nil {
 			t.Fatal(err)
 		}

@@ -191,12 +191,20 @@ describe('EASMMonitoringCard', () => {
     expect(await screen.findByRole('button', { name: /Run now/ })).toBeDisabled()
   })
 
-  it('offers no changes without the permissions', async () => {
+  it('offers no changes without the settings permission', async () => {
     perms.settings = false
-    perms.run = false
     wrap(<EASMMonitoringCard />)
     expect(await screen.findByRole('switch', { name: 'DNS checks' })).toBeDisabled()
-    expect(screen.queryByRole('button', { name: /Run now/ })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Run now/ })).toBeInTheDocument()
+  })
+
+  it('is not shown, and reads nothing, without scope:write (the API gate)', async () => {
+    perms.settings = false
+    perms.run = false
+    const { container } = wrap(<EASMMonitoringCard />)
+    await new Promise((r) => setTimeout(r, 50))
+    expect(container).toBeEmptyDOMElement()
+    expect(api.get).not.toHaveBeenCalled()
   })
 })
 

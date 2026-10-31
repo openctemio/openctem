@@ -247,6 +247,9 @@ type UpdateTemplateInput struct {
 	// never turns them off by saving its settings).
 	DeltaGating                *bool `json:"delta_gating"`
 	ContinueOnFailedDependency *bool `json:"continue_on_failed_dependency"`
+	// StageBarrier keeps every chained step behind its predecessors (no
+	// stage streaming); nil keeps the stored value.
+	StageBarrier *bool `json:"stage_barrier"`
 }
 
 // UpdateTemplate updates a template.
@@ -278,6 +281,10 @@ func (s *Service) UpdateTemplate(ctx context.Context, input UpdateTemplateInput)
 		prev := t.Settings
 		t.Settings = *input.Settings
 		t.Settings.DeltaGating, t.Settings.ContinueOnFailedDependency = prev.DeltaGating, prev.ContinueOnFailedDependency
+		t.Settings.StageBarrier = prev.StageBarrier
+	}
+	if input.StageBarrier != nil {
+		t.Settings.StageBarrier = *input.StageBarrier
 	}
 	if input.DeltaGating != nil {
 		t.Settings.DeltaGating = *input.DeltaGating

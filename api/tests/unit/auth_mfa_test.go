@@ -83,6 +83,23 @@ func (r *fakeMFARepo) Activate(_ context.Context, userID shared.ID, step int64, 
 	return true, nil
 }
 
+func (r *fakeMFARepo) ReplaceActive(_ context.Context, userID shared.ID, step int64, hashes []string) (bool, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	f, ok := r.factors[userID.String()]
+	if !ok || !f.Enabled || f.PendingSecretEncrypted == "" {
+		return false, nil
+	}
+	now := time.Now()
+	f.SecretEncrypted = f.PendingSecretEncrypted
+	f.PendingSecretEncrypted = ""
+	f.PendingCreatedAt = nil
+	f.EnabledAt = &now
+	f.LastUsedStep = step
+	r.replaceLocked(userID, hashes)
+	return true, nil
+}
+
 func (r *fakeMFARepo) Disable(_ context.Context, userID shared.ID) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -254,12 +271,14 @@ type capturingAuditRepo struct {
 	mockAuthAuditRepo
 	mu      sync.Mutex
 	actions []audit.Action
+	logs    []*audit.AuditLog
 }
 
 func (c *capturingAuditRepo) Create(_ context.Context, l *audit.AuditLog) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.actions = append(c.actions, l.Action())
+	c.logs = append(c.logs, l)
 	return nil
 }
 
