@@ -105,6 +105,7 @@ export interface SensorHealthReason {
     | 'config_check_failed'
     | 'config_check_warning'
     | 'config_report_stale'
+    | 'stopped_claiming'
     | (string & {})
   severity: 'warning' | 'critical'
   message: string
@@ -410,6 +411,24 @@ export interface Sensor {
    * report, absent on APIs without config reports.
    */
   config_health?: SensorConfigHealth | null
+  /**
+   * The sensor's local store as it last reported it (results, journal and
+   * workspaces on its host); null without a current report, absent on APIs
+   * without it. `stop_claiming` means it takes no new jobs until it has room.
+   */
+  local_store?: SensorLocalStore | null
+}
+
+/** A sensor's local store report (api SensorLocalStoreResponse). */
+export interface SensorLocalStore {
+  level: '' | 'ok' | 'high' | 'critical' | (string & {})
+  stop_claiming: boolean
+  /** Why, in the sensor's own words ("9 % of the volume free, below 15 %"). */
+  reason?: string
+  total_bytes: number
+  quota_bytes?: number
+  disk_level: '' | 'ok' | 'low' | 'critical' | 'unknown' | (string & {})
+  reported_at: string | null
 }
 
 /** One tool of a sensor's reported inventory. */

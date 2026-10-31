@@ -33,9 +33,9 @@ type TabId = 'connect' | 'applications' | 'connections' | 'policy'
 
 /**
  * AI assistants (MCP): how to connect (everyone), which applications the
- * organization approves and the members' requests (settings readers), every
- * connection (owners and administrators) and the policy (settings readers;
- * editing needs settings:write and a recent sign-in). The tab is in the URL.
+ * organization approves, the members' requests, every connection and the
+ * policy (owners and administrators; editing needs settings:write and a
+ * recent sign-in). The tab is in the URL.
  */
 export default function MCPSettingsPage() {
   const { t } = useTranslation()
@@ -44,7 +44,9 @@ export default function MCPSettingsPage() {
   const canWriteKeys = useHasPermission(Permission.ApiKeysWrite)
   const { currentTenant } = useTenant()
   const isOrgAdmin = currentTenant?.role === 'owner' || currentTenant?.role === 'admin'
-  const canReadPolicy = useHasPermission(Permission.SettingsRead)
+  // The policy, clients and requests are read by owners and administrators (API gate).
+  const hasSettingsRead = useHasPermission(Permission.SettingsRead)
+  const canReadPolicy = isOrgAdmin && hasSettingsRead
   const canWritePolicy = useCanMutate('PUT /api/v1/mcp-access/settings')
   const policy = useMcpPolicy(canReadPolicy)
   const requests = useAccessRequests(canReadPolicy)

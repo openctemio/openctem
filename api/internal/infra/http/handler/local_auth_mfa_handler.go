@@ -304,15 +304,16 @@ func (h *LocalAuthHandler) EnableMFA(w http.ResponseWriter, r *http.Request) {
 
 // DisableMFA turns 2FA off for the signed-in user.
 // @Summary      Disable 2FA
-// @Description  Turns 2FA off. Requires the current password and an authenticator code or unused recovery code.
+// @Description  Turns 2FA off. Requires the current password and an authenticator code or unused recovery code. Refused with 409 MFA_REQUIRED_BY_POLICY (details name the organizations and the platform floor) while anybody requires 2FA for the account; the code is not spent then. Signs out every other session.
 // @Tags         Users
 // @Accept       json
 // @Produce      json
 // @Security     BearerAuth
 // @Param        request  body      MFADisableRequest  true  "Password and code"
-// @Success      200  {object}  map[string]string
+// @Success      200  {object}  MFADisableResponse
 // @Failure      400  {object}  map[string]string
 // @Failure      401  {object}  map[string]string
+// @Failure      409  {object}  apierror.Error
 // @Router       /users/me/2fa/disable [post]
 func (h *LocalAuthHandler) DisableMFA(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.GetUserID(r.Context())
@@ -333,7 +334,98 @@ func (h *LocalAuthHandler) DisableMFA(w http.ResponseWriter, r *http.Request) {
 		h.handleSelfServiceMFAError(w, err)
 		return
 	}
-	writeNoStoreJSON(w, http.StatusOK, map[string]string{"message": "Two-factor authentication disabled"})
+	writeNoStoreJSON(w, http.StatusOK, MFADisableResponse{
+		Message:            "Two-factor authentication disabled. Your other sessions were signed out.",
+		OtherSessionsEnded: true,
+	})
+}
+
+// MFADisableResponse confirms 2FA is off. other_sessions_ended is always true:
+// every session but the caller's was signed out.
+type MFADisableResponse struct {
+	Message            string `json:"message"`
+	OtherSessionsEnded bool   `json:"other_sessions_ended"`
+}
+
+// MFAReplaceRequest starts moving 2FA to a new authenticator. code is a code
+// from the current authenticator or an unused recovery code.
+type MFAReplaceRequest struct {
+	Password string `json:"password" validate:"required,max=128"`
+	Code     string `json:"code" validate:"required,max=32"`
+}
+
+// MFAReplaceConfirmResponse carries the new recovery codes (shown once).
+type MFAReplaceConfirmResponse struct {
+	RecoveryCodes      []string `json:"recovery_codes"`
+	OtherSessionsEnded bool     `json:"other_sessions_ended"`
+}
+
+// ReplaceMFA starts replacing the signed-in user's authenticator.
+// @Summary      Start replacing the 2FA authenticator
+// @Description  Needs the current password and a code from the current authenticator or an unused recovery code. Returns a new TOTP secret; the current authenticator keeps working until POST /me/2fa/replacement/complete. This is how a person whose organization or platform requires 2FA moves to a new device.
+// @Tags         Users
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        request  body      MFAReplaceRequest  true  "Password and current code"
+// @Success      200  {object}  MFASetupResponse
+// @Failure      400  {object}  map[string]string
+// @Router       /me/2fa/replacement/start [post]
+func (h *LocalAuthHandler) ReplaceMFA(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.GetUserID(r.Context())
+	if userID == "" {
+		apierror.Unauthorized("User not authenticated").WriteJSON(w)
+		return
+	}
+	var req MFAReplaceRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		apierror.BadRequest("Invalid request body").WriteJSON(w)
+		return
+	}
+	if err := h.validator.Validate(req); err != nil {
+		apierror.ValidationFailed("Validation failed", err).WriteJSON(w)
+		return
+	}
+	setup, err := h.authService.BeginMFAReplacement(r.Context(), userID, req.Password, req.Code)
+	if err != nil {
+		h.handleSelfServiceMFAError(w, err)
+		return
+	}
+	writeNoStoreJSON(w, http.StatusOK, MFASetupResponse{Secret: setup.Secret, OTPAuthURI: setup.OTPAuthURI})
+}
+
+// ConfirmReplaceMFA makes the new authenticator the only one.
+// @Summary      Confirm the new 2FA authenticator
+// @Description  Confirms the secret from POST /me/2fa/replacement/start with a code from the new authenticator (within 15 minutes). The old authenticator and every recovery code stop working, new recovery codes are returned once, and every other session is signed out.
+// @Tags         Users
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        request  body      MFACodeRequest  true  "Code from the new authenticator"
+// @Success      200  {object}  MFAReplaceConfirmResponse
+// @Failure      400  {object}  map[string]string
+// @Router       /me/2fa/replacement/complete [post]
+func (h *LocalAuthHandler) ConfirmReplaceMFA(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.GetUserID(r.Context())
+	if userID == "" {
+		apierror.Unauthorized("User not authenticated").WriteJSON(w)
+		return
+	}
+	var req MFACodeRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		apierror.BadRequest("Invalid request body").WriteJSON(w)
+		return
+	}
+	if err := h.validator.Validate(req); err != nil {
+		apierror.ValidationFailed("Validation failed", err).WriteJSON(w)
+		return
+	}
+	codes, err := h.authService.ConfirmMFAReplacement(r.Context(), selfAuditContext(r), userID, req.Code)
+	if err != nil {
+		h.handleSelfServiceMFAError(w, err)
+		return
+	}
+	writeNoStoreJSON(w, http.StatusOK, MFAReplaceConfirmResponse{RecoveryCodes: codes, OtherSessionsEnded: true})
 }
 
 // RegenerateRecoveryCodes replaces the signed-in user's recovery codes.
@@ -378,6 +470,17 @@ func (h *LocalAuthHandler) RegenerateRecoveryCodes(w http.ResponseWriter, r *htt
 func (h *LocalAuthHandler) handleSelfServiceMFAError(w http.ResponseWriter, err error) {
 	if errors.Is(err, auth.ErrMFACodeInvalid) {
 		apierror.BadRequest("Invalid verification code").WriteJSON(w)
+		return
+	}
+	var required *auth.MFARequiredError
+	if errors.As(err, &required) {
+		apierror.FromCode(apierror.CodeMFARequiredByPolicy).
+			WithDetails(map[string]any{
+				"organizations": required.Holders.Organizations,
+				"platform":      required.Holders.Platform,
+			}).
+			WithParams(apierror.Params{"organizations": strings.Join(required.Holders.Organizations, ", ")}).
+			WriteJSON(w)
 		return
 	}
 	h.handleAuthError(w, err)
