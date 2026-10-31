@@ -131,12 +131,11 @@ describe('BarViz', () => {
   it('keeps ordinal order, prints values and links each bar to its list', () => {
     render(<BarViz result={SEVERITY} drill={({ key }) => `/findings?state=open&severity=${key}`} />)
     const links = screen.getAllByRole('link')
-    expect(links.map((l) => l.getAttribute('aria-label'))).toEqual([
-      'Critical: 22',
-      'High: 50',
-      'Medium: 24',
-      'Low: 8',
-    ])
+    // Named by the visible label and value: the accessible name contains
+    // the visible text (WCAG 2.5.3, axe label-content-name-mismatch).
+    expect(links.map((l) => l.getAttribute('aria-label'))).toEqual([null, null, null, null])
+    expect(links[0]).toHaveAccessibleName('Critical 22')
+    expect(links[1]).toHaveAccessibleName('High 50')
     expect(links[0]).toHaveAttribute('href', '/findings?state=open&severity=critical')
   })
 
