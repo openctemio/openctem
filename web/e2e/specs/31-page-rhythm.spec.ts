@@ -88,7 +88,7 @@ type Probe = {
     tiles: number
     interactive: number
     overflowX: boolean
-    detailed: boolean
+    maxPhoneRows: number
     rows: number
   }[]
   tabStrips: { icons: number; count: number; iconSizes: number[]; clipped: string[] }[]
@@ -181,7 +181,8 @@ async function probe(page: Page): Promise<Probe> {
           tiles: figures.length,
           interactive: figures.filter((t) => t.matches('a[href], button')).length,
           overflowX: dl.scrollWidth > dl.clientWidth + 1,
-          detailed: dl.hasAttribute('data-detailed'),
+          // A detailed strip of five (or an odd count) takes three phone rows.
+          maxPhoneRows: dl.hasAttribute('data-detailed') && tiles.length === 5 ? 3 : 2,
           rows: new Set(tiles.map((t) => Math.round(t.getBoundingClientRect().top))).size,
         }
       })
@@ -265,9 +266,7 @@ async function checkAt(page: Page, route: string, width: number) {
     expect.soft(s.interactive, `${at}: every tile is a link or a filter toggle`).toBe(s.tiles)
     expect.soft(s.overflowX, `${at}: the strip never scrolls sideways`).toBe(false)
     if (width < 640)
-      expect
-        .soft(s.rows, `${at}: at most two rows on a phone`)
-        .toBeLessThanOrEqual(s.detailed && s.tiles === 5 ? 3 : 2)
+      expect.soft(s.rows, `${at}: at most two rows on a phone`).toBeLessThanOrEqual(s.maxPhoneRows)
   }
   expect.soft(r.wrappedChips, `${at}: chips stay on one line`).toEqual([])
   expect.soft(r.middotChips, `${at}: no " · " inside a chip`).toEqual([])
