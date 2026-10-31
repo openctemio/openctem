@@ -37,12 +37,14 @@ export function cancelAnnouncement(id: string, reason: string) {
  */
 export function useThreatIntelFeeds(fast = false) {
   // Memoized: SWR restarts its polling timer when the interval changes identity.
-  const refreshInterval = useCallback(
+  const pollInterval = useCallback(
     (latest?: ThreatIntelFeed[]) =>
       fast || latest?.some((f) => f.state === 'running') ? 2000 : 60000,
     [fast]
   )
-  return useSWR<ThreatIntelFeed[]>('/threat-intel/sync', adminFetcher, { refreshInterval })
+  return useSWR<ThreatIntelFeed[]>('/threat-intel/sync', adminFetcher, {
+    refreshInterval: pollInterval,
+  })
 }
 
 /** What a sync request did for one feed. */
