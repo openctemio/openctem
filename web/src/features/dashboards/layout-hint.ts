@@ -1,23 +1,26 @@
 /**
- * The offer shown on a person's copy of a template (Overview or CTEM) when
- * the template has gained widgets since the copy was made: add the missing
- * widgets to it, or switch to a fresh copy of the template (the old
- * dashboard is kept). Stored dashboards are never changed on their own; the
- * person chooses. A dismissal is remembered per template version in this
- * browser (a per-viewer convenience).
+ * The offer shown on a person's copy of a template when the template has
+ * changed since the copy was made: it gained widgets (add them, or switch to
+ * a fresh copy), or its widgets were rearranged (switch to a fresh copy). The
+ * old dashboard is always kept: stored dashboards are never changed on their
+ * own; the person chooses. A dismissal is remembered per template version in
+ * this browser (a per-viewer convenience).
  */
 
 import type { Dashboard, DashboardWidget } from './api/dashboards.types'
 import { templateByKey, type DashboardTemplate, type TemplateKey } from './templates'
 
 /** Bump when a template offered here gains widgets, so the hint shows again. */
-export const LAYOUT_HINT_VERSION = '5'
+export const LAYOUT_HINT_VERSION = '6'
 export const LAYOUT_HINT_DISMISSED_KEY = 'openctem:layout-hint-dismissed'
 
 /** Templates whose copies are offered their new widgets, by widget id prefix. */
 const OFFERED: ReadonlyArray<{ key: TemplateKey; prefix: string }> = [
   { key: 'overview', prefix: 'w_ov' },
   { key: 'ctem', prefix: 'w_ct' },
+  { key: 'executive', prefix: 'w_ex' },
+  { key: 'program', prefix: 'w_pr' },
+  { key: 'triage', prefix: 'w_tr' },
 ]
 
 type Shaped = Pick<DashboardWidget, 'widget_type' | 'w' | 'h' | 'config'>
@@ -34,6 +37,27 @@ export interface LayoutHint {
   template: TemplateKey
   /** Metrics of the template's widgets the copy does not have, in template order. */
   missing: string[]
+  /**
+   * The template's widgets the copy has (same ids) are in another order or
+   * of another size than in the template: the template was rearranged.
+   */
+  rearranged: boolean
+}
+
+/**
+ * True when the copy's template widgets (matched by id) are not in the
+ * template's order, or not of the template's size.
+ */
+function isRearranged(layout: readonly Shaped[], tpl: DashboardTemplate): boolean {
+  const want = new Map(tpl.widgets.map((w, i) => [specOf(w).id, { i, w: w.w, h: w.h }]))
+  let last = -1
+  for (const w of layout) {
+    const t = want.get(specOf(w).id)
+    if (!t) continue
+    if (t.i < last || t.w !== w.w || t.h !== w.h) return true
+    last = t.i
+  }
+  return false
 }
 
 /** The hint for a personal copy of an offered template that lacks some of its widgets. */
@@ -45,10 +69,14 @@ export function layoutHintFor(
   const have = new Set(specs.map((s) => s.metric).filter(Boolean))
   for (const { key, prefix } of OFFERED) {
     if (specs.filter((s) => s.id?.startsWith(prefix)).length < 3) continue
-    const missing = templateByKey(key)
-      .widgets.map((w) => specOf(w).metric)
+    const tpl = templateByKey(key)
+    const missing = tpl.widgets
+      .map((w) => specOf(w).metric)
       .filter((m): m is string => !!m && !have.has(m))
-    return missing.length ? { template: key, missing: [...new Set(missing)] } : null
+    const rearranged = isRearranged(d.layout ?? [], tpl)
+    return missing.length || rearranged
+      ? { template: key, missing: [...new Set(missing)], rearranged }
+      : null
   }
   return null
 }
