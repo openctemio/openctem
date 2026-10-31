@@ -100,10 +100,11 @@ func (r *ExposureRepository) ListItems(ctx context.Context, w *filterspec.Where,
 	}
 	// w.SQL and w.OrderBy come from filterspec.Compile (checked above):
 	// registry constants and bound placeholders only.
+	//nolint:gosec // G201: compiled filter (checked above) and constants
 	q := fmt.Sprintf(`SELECT %s, COALESCE(a.name, ''), COALESCE(a.asset_type, ''),
 		CASE WHEN a.id IS NULL THEN false ELSE %s END,
 		CASE WHEN a.id IS NULL THEN '' ELSE %s END
-		%s WHERE %s ORDER BY %s LIMIT %d OFFSET %d`, //nolint:gosec // G201: compiled filter
+		%s WHERE %s ORDER BY %s LIMIT %d OFFSET %d`,
 		exposureItemColumns, asset.PrimarySQL("a"), assetMonitoringStateSQL("a", "p.scanned"),
 		from, w.SQL, w.OrderBy, page.Limit(), page.Offset())
 	rows, err := tx.QueryContext(ctx, q, args...)
@@ -188,6 +189,7 @@ func (r *ExposureRepository) ItemsByAsset(ctx context.Context, w *filterspec.Whe
 	if err := tx.QueryRowContext(ctx, "SELECT COUNT(DISTINCT a.id)"+from+" WHERE "+where, args...).Scan(&total); err != nil {
 		return empty, fmt.Errorf("count exposure item assets: %w", err)
 	}
+	//nolint:gosec // G201: compiled filter (checked above) and constants
 	q := fmt.Sprintf(`WITH g AS (
 		SELECT a.id, a.tenant_id, max(a.name) AS name, max(a.asset_type) AS asset_type, count(*) AS total,
 		       count(*) FILTER (WHERE e.severity = 'critical') AS critical,
@@ -202,7 +204,7 @@ func (r *ExposureRepository) ItemsByAsset(ctx context.Context, w *filterspec.Whe
 	SELECT g.id, g.name, g.asset_type, g.total, g.critical, g.high, g.medium, g.low, g.info, g.top_rank,
 	       g.first_seen, g.last_seen, %s, %s
 	FROM g JOIN assets a ON a.tenant_id = g.tenant_id AND a.id = g.id
-	ORDER BY g.top_rank DESC NULLS LAST, g.total DESC, g.id`, //nolint:gosec // G201: compiled filter and constants
+	ORDER BY g.top_rank DESC NULLS LAST, g.total DESC, g.id`,
 		exposure.SeverityRankSQL, from, where, page.Limit(), page.Offset(),
 		asset.PrimarySQL("a"), assetMonitoringStateSQL("a", "g.scanned"))
 	rows, err := tx.QueryContext(ctx, q, args...)
