@@ -25,7 +25,7 @@ import {
 } from '@/components/ui/sheet'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Textarea } from '@/components/ui/textarea'
-import { TonePill } from '@/features/shared'
+import { DetailField, DetailFieldGrid, TonePill } from '@/features/shared'
 import { useTranslation } from '@/context/i18n-provider'
 import { ApiClientError, getErrorMessage } from '@/lib/api/error-handler'
 import { formatDateSafe } from '@/lib/format-date'
@@ -92,7 +92,7 @@ export function AIKnowledgeDrawer({
   const [formError, setFormError] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
 
-  const [agentId, setAgentId] = useState('')
+  const [selectedId, setSelectedId] = useState('')
   const [query, setQuery] = useState('')
   const [hits, setHits] = useState<KnowledgeHit[] | null>(null)
   const [previewing, setPreviewing] = useState(false)
@@ -155,7 +155,7 @@ export function AIKnowledgeDrawer({
   const runPreview = async () => {
     setPreviewing(true)
     try {
-      setHits(await previewKnowledge(agentId, query.trim()))
+      setHits(await previewKnowledge(selectedId, query.trim()))
     } catch (err) {
       toast.error(getErrorMessage(err))
     } finally {
@@ -307,53 +307,42 @@ export function AIKnowledgeDrawer({
               <p className="text-sm text-destructive">{getErrorMessage(detail.error)}</p>
             ) : (
               <>
-                <dl className="grid grid-cols-2 gap-3 text-sm">
-                  <div>
-                    <dt className="text-muted-foreground">
-                      {t('settings.ai.knowledge.col.status', 'Status')}
-                    </dt>
-                    <dd className="mt-1">
-                      <SourceStatusPill
-                        status={src.status}
-                        pendingDocuments={src.pending_documents}
-                      />
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="text-muted-foreground">
-                      {t('settings.ai.knowledge.col.visibility', 'Visibility')}
-                    </dt>
-                    <dd className="mt-1">{visibilityText(t, src)}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-muted-foreground">
-                      {t('settings.ai.knowledge.col.dataClass', 'Data class')}
-                    </dt>
-                    <dd className="mt-1">{dataClassText(t, src.data_class)}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-muted-foreground">
-                      {t('settings.ai.knowledge.col.size', 'Size')}
-                    </dt>
-                    <dd className="mt-1">{formatBytes(src.bytes)}</dd>
-                  </div>
+                <DetailFieldGrid>
+                  <DetailField label={t('settings.ai.knowledge.col.status', 'Status')}>
+                    <SourceStatusPill
+                      status={src.status}
+                      pendingDocuments={src.pending_documents}
+                    />
+                  </DetailField>
+                  <DetailField label={t('settings.ai.knowledge.col.visibility', 'Visibility')}>
+                    {visibilityText(t, src)}
+                  </DetailField>
+                  <DetailField label={t('settings.ai.knowledge.col.dataClass', 'Data class')}>
+                    {dataClassText(t, src.data_class)}
+                  </DetailField>
+                  <DetailField label={t('settings.ai.knowledge.col.size', 'Size')}>
+                    {formatBytes(src.bytes)}
+                  </DetailField>
                   {src.status === 'rejected' && src.rejected_reason && (
-                    <div className="col-span-2">
-                      <dt className="text-muted-foreground">
-                        {t('settings.ai.knowledge.drawer.rejectedReason', 'Reason for rejection')}
-                      </dt>
-                      <dd className="mt-1">{toDisplayText(src.rejected_reason, 500)}</dd>
-                    </div>
-                  )}
-                  {src.self_approved && (
-                    <div className="col-span-2 text-muted-foreground">
-                      {t(
-                        'settings.ai.knowledge.drawer.selfApproved',
-                        'Approved by the organization owner who added it.'
+                    <DetailField
+                      full
+                      label={t(
+                        'settings.ai.knowledge.drawer.rejectedReason',
+                        'Reason for rejection'
                       )}
-                    </div>
+                    >
+                      {toDisplayText(src.rejected_reason, 500)}
+                    </DetailField>
                   )}
-                </dl>
+                </DetailFieldGrid>
+                {src.self_approved && (
+                  <p className="text-sm text-muted-foreground">
+                    {t(
+                      'settings.ai.knowledge.drawer.selfApproved',
+                      'Approved by the organization owner who added it.'
+                    )}
+                  </p>
+                )}
 
                 <section className="space-y-2">
                   <h3 className="text-sm font-medium">
@@ -534,14 +523,14 @@ export function AIKnowledgeDrawer({
                     </p>
                     <div className="grid gap-3 sm:grid-cols-2">
                       <div className="grid gap-2">
-                        <Label>{t('settings.ai.knowledge.preview.agent', 'AI agent')}</Label>
-                        <Select value={agentId} onValueChange={setAgentId}>
+                        <Label>{t('settings.ai.knowledge.preview.who', 'AI agent')}</Label>
+                        <Select value={selectedId} onValueChange={setSelectedId}>
                           <SelectTrigger
-                            aria-label={t('settings.ai.knowledge.preview.agent', 'AI agent')}
+                            aria-label={t('settings.ai.knowledge.preview.who', 'AI agent')}
                           >
                             <SelectValue
                               placeholder={t(
-                                'settings.ai.knowledge.preview.pickAgent',
+                                'settings.ai.knowledge.preview.choose',
                                 'Choose an AI agent'
                               )}
                             />
@@ -569,7 +558,7 @@ export function AIKnowledgeDrawer({
                     <Button
                       size="sm"
                       variant="outline"
-                      disabled={previewing || !agentId || !query.trim()}
+                      disabled={previewing || !selectedId || !query.trim()}
                       onClick={runPreview}
                     >
                       {t('settings.ai.knowledge.preview.run', 'Preview')}
