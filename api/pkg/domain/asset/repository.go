@@ -374,7 +374,12 @@ type Filter struct {
 	// (cert_transparency, a scanner name, ...). Min/MaxConfidence bound the
 	// recorded attribution confidence (assets without a record count as
 	// 100, as the attribution API reports them).
-	ScopeStatuses       []string
+	ScopeStatuses []string
+	// MonitoringStates keeps the assets whose derived monitoring state
+	// (MonitoringStateOf) is one of these; UnclassifiedScanned is the
+	// tenant's input to it (its unclassified-scans mode is not off).
+	MonitoringStates    []string
+	UnclassifiedScanned bool
 	DiscoveredBy        []string
 	DiscoveryTechniques []string
 	MinConfidence       *int
