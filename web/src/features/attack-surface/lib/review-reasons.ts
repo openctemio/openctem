@@ -12,6 +12,8 @@ export function reviewReasonLabel(t: T, reason: string): string {
       return t('easmReview.reason.scanned', 'A target your organization scanned')
     case 'tenant_scan_discovered':
       return t('easmReview.reason.scanDiscovered', 'Found by one of your scans')
+    case 'certificate_san':
+      return t('easmReview.reason.certificateSan', 'Named in a TLS certificate')
     case 'matches_scope_target':
       return t('easmReview.reason.matchesScope', 'Covered by a scope entry')
     default:
