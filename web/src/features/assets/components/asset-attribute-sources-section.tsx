@@ -9,6 +9,7 @@
  * /assets/{id}).
  */
 
+import { useSettleSignal } from '@/features/shared/components/settle-group'
 import { useState } from 'react'
 import { GitMerge, Loader2, Lock, LockOpen } from 'lucide-react'
 import { toast } from 'sonner'
@@ -226,6 +227,7 @@ function AttributeRow({
 export function AssetAttributeSourcesSection({ assetId }: { assetId: string }) {
   const { t } = useTranslation()
   const { data, error, isLoading, mutate } = useAttributeSources(assetId)
+  useSettleSignal(isLoading)
   const { lock, release, saving } = useAttributeLock(assetId)
   const { can } = usePermissions()
   const canWrite = can(Permission.AssetsWrite)

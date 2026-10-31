@@ -8,6 +8,7 @@
  * scope is 404).
  */
 
+import { useSettleSignal } from '@/features/shared/components/settle-group'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useTranslation } from '@/context/i18n-provider'
 import { Permission, usePermissions } from '@/lib/permissions'
@@ -24,7 +25,12 @@ export function AssetScanWindowCard({
 }) {
   const { t } = useTranslation()
   const { can } = usePermissions()
-  const { data } = useWindowDecisions({ asset_ids: [assetId], tier: 1 }, can(Permission.ScansRead))
+  const { data, isLoading } = useWindowDecisions(
+    { asset_ids: [assetId], tier: 1 },
+    can(Permission.ScansRead)
+  )
+  // Hidden when no window applies: report, so the page does not shift when it does.
+  useSettleSignal(isLoading)
   const decision = data?.data?.find((d) => d.asset_id === assetId) ?? data?.data?.[0]
   if (!decision?.governed) return null
   return (
