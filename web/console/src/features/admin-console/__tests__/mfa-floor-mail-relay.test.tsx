@@ -60,6 +60,12 @@ async function confirmWithReason(reason: string) {
 }
 
 describe('two-factor floor', () => {
+  it("offers Everyone with a note that it is the operator's call", () => {
+    render(<MFAFloorForm settings={floor} canEdit onSaved={() => {}} />)
+    expect(screen.getByLabelText('Everyone')).toBeEnabled()
+    expect(screen.getByTestId('mfa-floor-everyone-note')).toHaveTextContent(/self-managed install/)
+  })
+
   it('raises the floor with grace days, the version and a reason', async () => {
     render(<MFAFloorForm settings={floor} canEdit onSaved={() => {}} />)
     expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
