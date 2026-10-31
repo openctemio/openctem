@@ -758,6 +758,52 @@ and from then on the dispatch gate leaves it out of every job
     data scope: they are excluded too), and for a shared front end
     `edge {class, provider, address}` with `names_unaffected: true`.
 
+## 4o. Certificate exposures per host (built)
+
+A probe of an https service records the certificate the host served
+(`service.tls_fingerprint` and a `serves_certificate` edge). The recon
+exposure bridge (`internal/app/exposurebridge/host_certificate.go`) judges
+each service and certificate pair of an ingest batch, because the host is
+what a visitor opens and what the tenant fixes:
+
+| Problem | Exposure | Severity |
+|---|---|---|
+| past `not_after` | `certificate_expired` | high |
+| within 30 days of `not_after` | `certificate_expiring` | medium, high within 7 days |
+| before `not_before` | `ssl_issue`, issue `not_yet_valid` | medium |
+| no name of the certificate covers the host (SANs, else the subject CN; a wildcard covers one label) | `ssl_issue`, issue `name_mismatch` | medium |
+| no name shares the host's registrable domain: another party's certificate, typically a hosting platform's default one | `ssl_issue`, issue `foreign_certificate`, `takeover_candidate: true`, the host's CNAME chain | high |
+
+- The facts come from the TLS handshake, so they hold when the host resets
+  every HTTP request: the sensor reads the certificate itself for an https URL
+  that failed after the host answered and reports the service with status 0
+  (`http_answered: false` in the details). A coverage gap with the recheck's
+  cause says the same on the run (sensor-platform-workflow E29).
+- One exposure per service and problem (the title names the host, `domain` is
+  the host); the details carry the certificate served (fingerprint, names,
+  issuer, validity, `certificate_id`). Re-ingest updates `last_seen`.
+- A later scan that sees the service serve a certificate without the problem
+  resolves it automatically (resolved by nobody, note "the host now serves a
+  certificate without this problem"); seeing the problem again reopens it.
+  No probe result, no change. Accepted and false-positive exposures are left
+  alone.
+- The certificate's own expiry exposure is no longer raised when a host of
+  the batch served it, and the certificate-level one of earlier releases is
+  resolved as superseded. A certificate seen without a serving host keeps the
+  certificate-level projection; weak keys, weak signatures and self-signed
+  stay on the certificate.
+- A foreign certificate is a takeover candidate, not a confirmed takeover:
+  `subdomain_takeover` still needs the DNS check's dangling record and a
+  matching takeover template (section on takeover confirmation). A host that
+  resets every request cannot be confirmed by an HTTP template, so the
+  candidate exposure is what surfaces it.
+- Isolation: only the ingest tenant's assets are paired, certificates only
+  within the same batch, and the automatic resolution is scoped to the tenant,
+  the `recon_scan` source and the exact fingerprints computed for the pair.
+- Display: `ssl_tls` and `certificates` categories (exposure-taxonomy.md);
+  summary variants `ssl_issue.foreign_certificate`, `.name_mismatch`,
+  `.not_yet_valid`.
+
 ## 5. Data model (planned)
 
 - **Graph.** Reuse `assets` + `asset_relationships`. Add asset types `asn` and

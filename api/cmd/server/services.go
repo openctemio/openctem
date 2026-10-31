@@ -3153,8 +3153,14 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// announced through the notification outbox like the other EASM ones
 	// (research/22 P0-6 with P0-7).
 	reconDB := &postgres.DB{DB: deps.DB}
-	s.Ingest.SetAssetExposureProjector(exposurebridge.NewAssetBridge(
-		postgres.NewAnnouncingExposureRepository(reconDB, postgres.NewEASMAlerter(reconDB)), repos.ExposureStateHistory, log))
+	reconBridge := exposurebridge.NewAssetBridge(
+		postgres.NewAnnouncingExposureRepository(reconDB, postgres.NewEASMAlerter(reconDB)), repos.ExposureStateHistory, log)
+	if repos.EASMDNS != nil {
+		// Host certificate exposures resolve when a later scan sees a good
+		// certificate (tenant, source and fingerprint scoped).
+		reconBridge.SetAutoResolver(repos.EASMDNS)
+	}
+	s.Ingest.SetAssetExposureProjector(reconBridge)
 	s.RemediationGroup = remediation.NewGroupService(repos.FindingRemediationKey, s.Vulnerability, s.BulkGuard, log)
 	s.RemediationGroup.SetDataScope(s.DataScope)
 
