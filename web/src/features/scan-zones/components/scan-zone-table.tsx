@@ -36,8 +36,9 @@ interface ScanZoneTableProps {
 }
 
 function SensorsCell({ zone, sensorsById }: { zone: ScanZone; sensorsById: Map<string, Sensor> }) {
+  const { t } = useTranslation()
   if (zone.sensor_ids.length === 0) {
-    return <span className="text-xs text-warning">No sensors assigned</span>
+    return <span className="text-xs text-warning">{t('scans.zones.noSensorsAssigned')}</span>
   }
   const known = zone.sensor_ids.map((id) => sensorsById.get(id))
   const shown = known.slice(0, 2)
@@ -49,7 +50,7 @@ function SensorsCell({ zone, sensorsById }: { zone: ScanZone; sensorsById: Map<s
           <SensorHealthChip key={s.id} sensor={s} className="max-w-[10rem]" />
         ) : (
           <Badge key={zone.sensor_ids[i]} variant="outline" className="font-normal">
-            Unknown sensor
+            {t('scans.zones.unknownSensor')}
           </Badge>
         )
       )}
@@ -71,6 +72,7 @@ function CoverageCell({
   coverage?: ScanZoneCoverageZone
   sensorsById: Map<string, Sensor>
 }) {
+  const { t } = useTranslation()
   const healthy =
     coverage?.healthy_sensors ??
     zone.sensor_ids.filter((id) => {
@@ -84,7 +86,7 @@ function CoverageCell({
     <div className="space-y-0.5 text-sm">
       <p className="tabular-nums">
         {coverage ? coverage.addresses.toLocaleString() : '—'}{' '}
-        <span className="text-xs text-muted-foreground">addresses</span>
+        <span className="text-xs text-muted-foreground">{t('scans.zones.addresses')}</span>
       </p>
       <p
         className={
@@ -96,7 +98,7 @@ function CoverageCell({
         <span className="tabular-nums">
           {healthy}/{assigned}
         </span>{' '}
-        sensors online
+        {t('scans.zones.sensorsOnline')}
       </p>
     </div>
   )
@@ -122,7 +124,9 @@ export function ScanZoneTable({
         id: 'name',
         accessorFn: (z) => `${z.name} ${z.description} ${z.ranges.join(' ')}`,
         sortingFn: (a, b) => a.original.name.localeCompare(b.original.name),
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Zone" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader column={column} title={t('scans.zones.col.zone')} />
+        ),
         cell: ({ row }) => {
           const z = row.original
           return (
@@ -131,7 +135,7 @@ export function ScanZoneTable({
                 <span className="truncate font-medium">{z.name}</span>
                 {z.is_default && (
                   <Badge variant="secondary" className="shrink-0 text-xs font-normal">
-                    Default
+                    {t('scans.zones.default')}
                   </Badge>
                 )}
               </p>
@@ -145,24 +149,32 @@ export function ScanZoneTable({
       {
         id: 'ranges',
         accessorFn: (z) => z.ranges.length,
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Ranges" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader column={column} title={t('scans.zones.col.ranges')} />
+        ),
         cell: ({ row }) => (
           <RangeChips
             ranges={row.original.ranges}
-            emptyLabel={row.original.is_default ? 'Public targets' : 'No ranges'}
+            emptyLabel={
+              row.original.is_default ? t('scans.zones.publicTargets') : t('scans.zones.noRanges')
+            }
           />
         ),
       },
       {
         id: 'sensors',
         accessorFn: (z) => z.sensor_ids.length,
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Sensors" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader column={column} title={t('scans.zones.col.sensors')} />
+        ),
         cell: ({ row }) => <SensorsCell zone={row.original} sensorsById={sensorsById} />,
       },
       {
         id: 'coverage',
         accessorFn: (z) => coverageByZone.get(z.id)?.addresses ?? 0,
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Coverage" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader column={column} title={t('scans.zones.col.coverage')} />
+        ),
         cell: ({ row }) => (
           <CoverageCell
             zone={row.original}
@@ -216,7 +228,7 @@ export function ScanZoneTable({
       search={search}
       toolbarStart={toolbarStart}
       toolbarEnd={toolbarEnd}
-      emptyMessage="No zones match this search"
+      emptyMessage={t('scans.zones.noMatch')}
     />
   )
 }
