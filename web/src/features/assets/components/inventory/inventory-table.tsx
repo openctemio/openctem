@@ -42,6 +42,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { ScopeCheckBadge, useScopeCheck } from '@/features/scope'
 import { ScopeTriageBadge } from './scope-triage-badge'
+import { MonitoringStateChip } from './monitoring-state-chip'
 import { useTranslation } from '@/context/i18n-provider'
 import { assetDetailHref } from '@/features/findings/lib/asset-link'
 import type { TypeView } from '@/features/asset-types/lib/type-view'
@@ -367,6 +368,18 @@ export function InventoryTable({
             } as ColumnDef<Asset>,
           ]
         : []),
+      {
+        // The one derived lifecycle state (monitored, pending decision, ...).
+        id: 'monitoring_state',
+        enableSorting: false,
+        header: ({ column }) => (
+          <DataTableColumnHeader
+            column={column}
+            title={t('assets.monitoring.column', 'Monitoring')}
+          />
+        ),
+        cell: ({ row }) => <MonitoringStateChip state={row.original.monitoringState} />,
+      },
       {
         // External-surface facts (status, IP, technologies, TLS …) for the
         // types cellsForType lists; other types have none to show here.
