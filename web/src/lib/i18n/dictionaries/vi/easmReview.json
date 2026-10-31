@@ -9,6 +9,7 @@
   "easmReview.exposure.serviceDetected": "Dịch vụ bị lộ",
   "easmReview.exposure.subdomainDiscovered": "Tên miền con thấy trong CT",
   "easmReview.exposure.subdomainTakeover": "Chiếm quyền tên miền con",
+  "easmReview.exposure.thirdPartyScript": "Script bên thứ ba mới",
   "easmReview.hint.asn": "Mạng {value}",
   "easmReview.hint.certOrg": "Chứng chỉ cấp cho {value}",
   "easmReview.hint.discovering": "Tìm thấy từ {value}",
