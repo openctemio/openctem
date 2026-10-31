@@ -37,7 +37,7 @@ const sensorPairingColumns = `id, mode, status, tenant_id, COALESCE(code_hash, '
 	host_facts, host(source_ip), repair_sensor_id, sensor_id,
 	COALESCE(requested_name, ''), requested_zone_ids, COALESCE(requested_profile, ''),
 	created_by, approved_by, approved_at, denied_by, denied_at, confirmed_at, created_at, expires_at,
-	instance_token_id, enrollment_token_id`
+	instance_token_id, enrollment_token_id, COALESCE(repair_reason, '')`
 
 func scanPairing(row interface{ Scan(...any) error }) (*sensordom.Pairing, error) {
 	var (
@@ -56,7 +56,7 @@ func scanPairing(row interface{ Scan(...any) error }) (*sensordom.Pairing, error
 		&hostFacts, &sourceIP, &repairID, &sensorID,
 		&p.RequestedName, &zones, &p.RequestedProfile,
 		&createdBy, &approvedBy, &approvedAt, &deniedBy, &deniedAt, &confirmedAt, &p.CreatedAt, &p.ExpiresAt,
-		&instanceToken, &enrollmentToken); err != nil {
+		&instanceToken, &enrollmentToken, &p.RepairReason); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, sensordom.ErrPairingNotFound
 		}
@@ -134,22 +134,23 @@ func (r *SensorPairingRepository) CreateForward(ctx context.Context, p *sensordo
 }
 
 // AttachToExpectationUnscoped fills the open expectation with this code.
-// The expectation keeps its id, tenant and requested settings.
+// The expectation keeps its id, tenant, requested settings and re-pair
+// target: an ordinary code never becomes a re-pair because the sensor says
+// so, and a re-pair code never loses its target.
 func (r *SensorPairingRepository) AttachToExpectationUnscoped(ctx context.Context, codeHash string, p *sensordom.Pairing, now time.Time) (bool, error) {
 	facts, err := json.Marshal(p.HostFacts)
 	if err != nil {
 		return false, err
 	}
 	var id string
-	var tenant sql.NullString
+	var tenant, repair sql.NullString
 	err = r.db.QueryRowContext(ctx, `UPDATE sensor_pairings
 		SET status = 'pending', public_key = $2, thumbprint = $3, commitment = $4, platform_nonce = $5,
-		    host_facts = $6, source_ip = $7::inet,
-		    repair_sensor_id = COALESCE(repair_sensor_id, $8)
-		WHERE code_hash = $1 AND status = 'expecting' AND mode = 'reverse' AND expires_at > $9
-		RETURNING id, tenant_id`,
+		    host_facts = $6, source_ip = $7::inet
+		WHERE code_hash = $1 AND status = 'expecting' AND mode = 'reverse' AND expires_at > $8
+		RETURNING id, tenant_id, repair_sensor_id`,
 		codeHash, p.PublicKey, p.Thumbprint, p.Commitment, p.PlatformNonce, facts, heartbeatIP(p.SourceIP),
-		idOrNull(p.RepairSensorID), now).Scan(&id, &tenant)
+		now).Scan(&id, &tenant, &repair)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, nil
 	}
@@ -162,7 +163,9 @@ func (r *SensorPairingRepository) AttachToExpectationUnscoped(ctx context.Contex
 	if p.ID, err = shared.IDFromString(id); err != nil {
 		return false, err
 	}
-	p.Mode, p.Status, p.TenantID = sensordom.PairingReverse, sensordom.PairingPending, optionalID(tenant)
+	// The expectation's re-pair target is the console's decision; whatever
+	// sensor id the sensor named is not used (RFC-052 §4.6).
+	p.Mode, p.Status, p.TenantID, p.RepairSensorID = sensordom.PairingReverse, sensordom.PairingPending, optionalID(tenant), optionalID(repair)
 	return true, nil
 }
 
@@ -203,10 +206,11 @@ func (r *SensorPairingRepository) CreateExpectation(ctx context.Context, p *sens
 	}
 	_, err := r.db.ExecContext(ctx, `INSERT INTO sensor_pairings
 		(id, mode, status, tenant_id, code_hash, repair_sensor_id, requested_name, requested_zone_ids,
-		 requested_profile, created_by, created_at, expires_at)
-		VALUES ($1, 'reverse', 'expecting', $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+		 requested_profile, created_by, created_at, expires_at, repair_reason)
+		VALUES ($1, 'reverse', 'expecting', $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
 		p.ID.String(), p.TenantID.String(), p.CodeHash, idOrNull(p.RepairSensorID), nullString(p.RequestedName),
-		pq.Array(pairingIDStrings(p.RequestedZoneIDs)), nullString(p.RequestedProfile), idOrNull(p.CreatedBy), p.CreatedAt, p.ExpiresAt)
+		pq.Array(pairingIDStrings(p.RequestedZoneIDs)), nullString(p.RequestedProfile), idOrNull(p.CreatedBy), p.CreatedAt, p.ExpiresAt,
+		nullString(p.RepairReason))
 	if err != nil {
 		if isUniqueViolation(err) {
 			return shared.NewDomainError("CONFLICT", "pairing code already in use", shared.ErrConflict)
@@ -214,6 +218,19 @@ func (r *SensorPairingRepository) CreateExpectation(ctx context.Context, p *sens
 		return fmt.Errorf("create expectation: %w", err)
 	}
 	return nil
+}
+
+// CloseOpenRepairs closes the tenant's open (expecting or pending, not yet
+// approved) re-pair requests for sensorID: a new re-pair code supersedes
+// the earlier ones.
+func (r *SensorPairingRepository) CloseOpenRepairs(ctx context.Context, tenantID, sensorID shared.ID, now time.Time) (int64, error) {
+	res, err := r.db.ExecContext(ctx, `UPDATE sensor_pairings SET status = 'expired', expires_at = LEAST(expires_at, $3)
+		WHERE tenant_id = $1 AND repair_sensor_id = $2 AND status IN ('expecting', 'pending')`,
+		tenantID.String(), sensorID.String(), now)
+	if err != nil {
+		return 0, fmt.Errorf("close open re-pairs: %w", err)
+	}
+	return res.RowsAffected()
 }
 
 // GetForTenant returns a request of the tenant (expectations, and requests
