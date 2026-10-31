@@ -295,7 +295,7 @@ export function ChartOrTable({
         <Button
           variant="ghost"
           size="sm"
-          className="h-7 px-2 text-xs text-muted-foreground"
+          className="h-7 px-2 text-xs text-muted-foreground pointer-coarse:h-11"
           aria-pressed={!toTable}
           onClick={() => setView(toTable ? 'table' : 'chart')}
         >
