@@ -320,6 +320,16 @@ describe('LoginForm ?error= message', () => {
     expect(toast.error).not.toHaveBeenCalled()
   })
 
+  it('keeps the organization sign-in notice on the page', () => {
+    withParams('error=use_org_sso')
+    render(<LoginForm />)
+    const notice = screen.getByTestId('login-use-org-sso')
+    expect(notice).toHaveTextContent(
+      "This account signs in through your organization. Use your organization's sign-in."
+    )
+    expect(toast.error).not.toHaveBeenCalled()
+  })
+
   // Google sign-in to a password account linked to it: the callback sends the
   // browser here with ?mfa=verify and the code is asked like after a password.
   it('asks for the second factor after a social sign-in to a linked password account', async () => {
