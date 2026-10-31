@@ -388,11 +388,10 @@ export function FindingProperties({
           )}
           {finding.closureReason && (
             <Row label={t('findings.properties.closedAs', 'Closed as')}>
-              <span>
-                {closureReasonLabel(t, finding.closureReason)}
+              <span className="inline-flex flex-wrap gap-x-2">
+                <span>{closureReasonLabel(t, finding.closureReason)}</span>
                 {finding.verification && (
                   <span className="text-muted-foreground">
-                    {' · '}
                     {verificationLabel(t, finding.verification)}
                   </span>
                 )}
