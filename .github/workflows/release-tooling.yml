@@ -12,6 +12,13 @@ name: Release Tooling
 #                         release branches only) names an existing tag; on
 #                         release/vX.Y.Z (and on main right after it merges,
 #                         before the tag exists) it must name exactly vX.Y.Z
+#   Sensor install        the install snippet templates and the bundled
+#                         sensor match the sensor release versions.yaml pins
+#                         (sensor.latest): the seccomp profile the API serves
+#                         and the bundled Compose sensor runs is that
+#                         release's file, and every SENSOR_* setting and flag
+#                         the templates name exists in it (the sensor's own
+#                         install-guide test, run against these templates)
 #
 # Neither check is required (yet), so `paths:` is safe here: a skipped workflow
 # leaves no required check pending. Make "Version consistency" required once it
@@ -32,6 +39,10 @@ on:
       - api/deploy/docker-compose.yml
       - api/deploy/docker-compose.job-signer.yml
       - api/internal/versions/**
+      - api/configs/sensor-products/**
+      - api/internal/app/sensor/seccomp/**
+      - api/deploy/sensor/**
+      - api/deploy/docker-compose.sensor.yml
       - web/src/features/ci-runners/lib/ci.ts
       - web/package.json
   push:
@@ -49,6 +60,10 @@ on:
       - api/deploy/docker-compose.yml
       - api/deploy/docker-compose.job-signer.yml
       - api/internal/versions/**
+      - api/configs/sensor-products/**
+      - api/internal/app/sensor/seccomp/**
+      - api/deploy/sensor/**
+      - api/deploy/docker-compose.sensor.yml
       - web/src/features/ci-runners/lib/ci.ts
       - web/package.json
   workflow_dispatch:
@@ -98,3 +113,54 @@ jobs:
             args+=(--release "${BASH_REMATCH[1]}")
           fi
           bash .github/scripts/release/sync-versions.sh "${args[@]}"
+
+  sensor-install:
+    name: Sensor install
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+      - name: The sensor release versions.yaml pins
+        id: release
+        run: |
+          source .github/scripts/release/lib.sh
+          echo "tag=$(rel_yaml_get versions.yaml sensor.latest)" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: openctemio/sensor
+          ref: ${{ steps.release.outputs.tag }}
+          path: .sensor-release
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Seccomp profile is that release's file
+        env:
+          TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          for f in api/internal/app/sensor/seccomp/sensor.json api/deploy/sensor/seccomp.json; do
+            if ! cmp -s "$f" .sensor-release/docker/seccomp/sensor.json; then
+              echo "::error file=$f::differs from docker/seccomp/sensor.json of sensor $TAG: copy that file here (both copies) and update releasedSeccompSHA256 in api/internal/app/sensor/seccomp_test.go"
+              exit 1
+            fi
+          done
+          echo "seccomp profile = sensor $TAG docker/seccomp/sensor.json"
+      - name: Has the release the install-guide test
+        id: guides
+        env:
+          TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          if [ -f .sensor-release/install_guides_test.go ]; then echo "present=true" >> "$GITHUB_OUTPUT"
+          else echo "::notice::sensor $TAG has no install_guides_test.go yet; settings and flags not checked"; echo "present=false" >> "$GITHUB_OUTPUT"; fi
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        if: steps.guides.outputs.present == 'true'
+        with:
+          go-version-file: .sensor-release/go.mod
+          cache: false
+      - name: Templates name only the release's settings and flags
+        if: steps.guides.outputs.present == 'true'
+        working-directory: .sensor-release
+        env:
+          INSTALL_GUIDES_EXTRA: ${{ github.workspace }}/api/configs/sensor-products/sensor/*.tmpl
+        run: go test -count=1 -run 'TestInstallGuides' .

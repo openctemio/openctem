@@ -52,6 +52,9 @@ const (
 	DiscoverySourceManual           = "manual"
 	DiscoverySourceAPIDiscovery     = "api_discovery"
 	DiscoverySourceWebCrawl         = "web_crawl"
+	// DiscoverySourceCertificate: a name read from a TLS certificate (a SAN
+	// or the subject CN) that a report put in the inventory.
+	DiscoverySourceCertificate = "certificate"
 )
 
 // ExtractRootDomain extracts the root domain from a full domain name.
