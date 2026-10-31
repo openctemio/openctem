@@ -16,7 +16,7 @@ import Link from '@/components/link'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useTranslation } from '@/context/i18n-provider'
-import { DetailSection, ErrorState, RelativeTime } from '@/features/shared'
+import { DetailSection, ErrorState, KeyValueList, RelativeTime } from '@/features/shared'
 import { useSettleSignal } from '@/features/shared/components/settle-group'
 import { assetDetailHref } from '@/features/findings/lib/asset-link'
 import { cn } from '@/lib/utils'
@@ -130,42 +130,46 @@ export function AssetLineageSection({ assetId }: { assetId: string }) {
         />
       ) : self ? (
         <div className="space-y-4 text-sm">
-          <dl className="grid grid-cols-[6.5rem_1fr] gap-x-3 gap-y-2">
-            <dt className="text-muted-foreground">{t('assets.lineage.method', 'Method')}</dt>
-            <dd className="min-w-0">
-              {self.discovery_source || self.discovery_tool ? (
-                <MethodChips node={self} />
-              ) : (
-                <span className="text-muted-foreground">
-                  {t('assets.lineage.methodUnknown', 'Not recorded')}
-                </span>
-              )}
-            </dd>
-            {found && (
-              <>
-                <dt className="text-muted-foreground">
-                  {t('assets.lineage.firstFound', 'First found')}
-                </dt>
-                <dd className="min-w-0">
-                  <RelativeTime date={found} />
-                </dd>
-              </>
-            )}
-            {showConfidence && (
-              <>
-                <dt className="text-muted-foreground">
-                  {t('assets.lineage.confidence', 'Confidence')}
-                </dt>
-                <dd className="min-w-0 tabular-nums">
-                  <Badge variant="secondary" className="text-xs font-normal">
-                    {t('assets.attribution.confidence', '{n}% confidence', {
-                      n: attribution.confidence,
-                    })}
-                  </Badge>
-                </dd>
-              </>
-            )}
-          </dl>
+          <KeyValueList
+            items={[
+              {
+                key: 'method',
+                label: t('assets.lineage.method', 'Method'),
+                value:
+                  self.discovery_source || self.discovery_tool ? (
+                    <MethodChips node={self} />
+                  ) : (
+                    <span className="text-muted-foreground">
+                      {t('assets.lineage.methodUnknown', 'Not recorded')}
+                    </span>
+                  ),
+              },
+              ...(found
+                ? [
+                    {
+                      key: 'found',
+                      label: t('assets.lineage.firstFound', 'First found'),
+                      value: <RelativeTime date={found} />,
+                    },
+                  ]
+                : []),
+              ...(showConfidence
+                ? [
+                    {
+                      key: 'confidence',
+                      label: t('assets.lineage.confidence', 'Confidence'),
+                      value: (
+                        <Badge variant="secondary" className="text-xs font-normal tabular-nums">
+                          {t('assets.attribution.confidence', '{n}% confidence', {
+                            n: attribution.confidence,
+                          })}
+                        </Badge>
+                      ),
+                    },
+                  ]
+                : []),
+            ]}
+          />
 
           {isLineageRoot(lineage) ? (
             <p className="text-muted-foreground">
