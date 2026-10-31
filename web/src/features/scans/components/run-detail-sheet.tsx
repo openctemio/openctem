@@ -295,6 +295,7 @@ export function RunDetailSheet({ runId, onOpenChange }: RunDetailSheetProps) {
                     runId={run.id}
                     refreshInterval={runRefreshInterval(run)}
                     settled={!isRunInProgress(run)}
+                    steps={run.scan_run_steps}
                   />
                 </DetailSection>
               )}
