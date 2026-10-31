@@ -199,3 +199,57 @@ func TestMonitorTenant_ExcludedHostIsNotPromoted(t *testing.T) {
 		t.Fatal("existing excluded asset got an attribution record")
 	}
 }
+
+// A CT name whose existing asset resolves to an excluded dedicated address
+// gets no evidence and is not sent to ingest; a name behind a shared front
+// end (an excluded range that holds only provider edges) still is, and a
+// failed address lookup promotes nothing.
+func TestMonitorTenant_DedicatedAddressExclusionReachesCTNames(t *testing.T) {
+	tenant := shared.NewID()
+	srv := ctNames(t, "www", "vpn")
+	defer srv.Close()
+
+	listed := mustDomainAsset(t, tenant, "listed.com")
+	vpn, err := assetdom.NewAssetWithTenant(tenant, "vpn.listed.com", assetdom.AssetTypeSubdomain, assetdom.CriticalityMedium)
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc, inv, attr := promotionService(t, srv.URL, srv.Client(), tenant, []*assetdom.Asset{listed, vpn})
+	svc.SetExclusions(exclusionsFor([]*scopedom.Exclusion{
+		approvedExclusion(tenant, scopedom.ExclusionTypeIPAddress, "203.0.113.10"),
+	}, nil))
+	svc.SetNameAddresses(&fakeNameAddrs{byName: map[string][]string{"vpn.listed.com": {"203.0.113.10"}}})
+
+	if _, err := svc.MonitorTenant(context.Background(), tenant); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := inv.byName["www.listed.com"]; !ok {
+		t.Fatal("www.listed.com not promoted")
+	}
+	if ev := attr.evidence[vpn.ID().String()]; len(ev) != 0 {
+		t.Fatalf("a name on an excluded dedicated address got %d evidence rows", len(ev))
+	}
+	for _, names := range inv.reports {
+		for _, n := range names {
+			if n == "vpn.listed.com" {
+				t.Fatal("a name on an excluded dedicated address was sent to ingest")
+			}
+		}
+	}
+
+	// A failed address lookup promotes nothing this run (fail closed); the
+	// sweep itself still records its exposures.
+	srv2 := ctNames(t, "new", "vpn")
+	defer srv2.Close()
+	svc2, inv2, _ := promotionService(t, srv2.URL, srv2.Client(), tenant, []*assetdom.Asset{listed, vpn})
+	svc2.SetExclusions(exclusionsFor([]*scopedom.Exclusion{
+		approvedExclusion(tenant, scopedom.ExclusionTypeIPAddress, "203.0.113.10"),
+	}, nil))
+	svc2.SetNameAddresses(&fakeNameAddrs{err: errors.New("db down")})
+	if _, err := svc2.MonitorTenant(context.Background(), tenant); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := inv2.byName["new.listed.com"]; ok {
+		t.Fatal("promoted without the address check")
+	}
+}
