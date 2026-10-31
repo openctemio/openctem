@@ -83,6 +83,9 @@ import {
   ExposureStateBreakdown,
   getExposureColumns,
   ExposureActionDialog,
+  ExposureSeverityDialog,
+  useCanChangeExposureSeverity,
+  type ExposureActionType,
   ExposureBulkActions,
   ExposureSecurityContext,
   ExposuresTabs,
@@ -93,16 +96,19 @@ import {
   ExposureDetailsView,
 } from '@/features/exposures/components'
 import { runPool, summarizeBulk } from '@/features/exposures/lib/bulk'
-import type {
-  ExposureEvent,
-  ExposureListFilters,
-  ExposureSeverity,
-  ExposureState,
+import {
+  EXPOSURE_DISPLAY_CATEGORIES,
+  isExposureDisplayCategory,
+  type ExposureDisplayCategory,
+  type ExposureEvent,
+  type ExposureListFilters,
+  type ExposureSeverity,
+  type ExposureState,
 } from '@/lib/api/exposure-types'
 import { SEVERITY_LEVELS } from '@/lib/severity'
 import { SEVERITY_LABELS as SHARED_SEVERITY_LABELS } from '@/lib/severity'
 
-type ActionType = 'resolve' | 'accept' | 'false_positive' | 'reactivate'
+type ActionType = ExposureActionType
 
 // Lifecycle view — the primary filter.
 type StateTab = 'needs_attention' | 'resolved' | 'all'
@@ -123,6 +129,8 @@ const EXPOSURE_EXPORT_FIELDS: ExportFieldConfig<ExposureEvent>[] = [
   { header: 'ID', accessor: (e) => e.id },
   { header: 'Title', accessor: (e) => e.title },
   { header: 'Event Type', accessor: (e) => e.event_type.replace(/_/g, ' ') },
+  { header: 'Category', accessor: (e) => e.display_category ?? '' },
+  { header: 'Summary', accessor: (e) => e.summary?.text ?? '' },
   { header: 'Severity', accessor: (e) => e.severity },
   { header: 'State', accessor: (e) => e.state },
   { header: 'Source', accessor: (e) => e.source },
@@ -135,7 +143,7 @@ const EXPOSURE_EXPORT_FIELDS: ExportFieldConfig<ExposureEvent>[] = [
 function getStatesForTab(tab: StateTab): ExposureState[] | undefined {
   switch (tab) {
     case 'needs_attention':
-      return ['active']
+      return ['active', 'in_progress']
     case 'resolved':
       return ['resolved', 'accepted', 'false_positive']
     default:
@@ -182,6 +190,11 @@ export default function ExposuresPage() {
       ),
     [severityParam]
   )
+  const [categoryParam, setCategoryParam] = useUrlFilterList('category')
+  const selectedCategories = useMemo(
+    () => categoryParam.filter((c): c is ExposureDisplayCategory => isExposureDisplayCategory(c)),
+    [categoryParam]
+  )
   const list = useListParams({ pageSizes: PAGE_SIZES, defaultPageSize: 20 })
   const { pagination, setPagination, setPage } = list
   const resetPage = useCallback(() => setPage(1), [setPage])
@@ -200,6 +213,7 @@ export default function ExposuresPage() {
   const { t } = useTranslation()
   const [selectedExposure, setSelectedExposure] = useState<ExposureEvent | null>(null)
   const [actionType, setActionType] = useState<ActionType | null>(null)
+  const [severityExposure, setSeverityExposure] = useState<ExposureEvent | null>(null)
 
   // Detail sheet state
   const [detailExposure, setDetailExposure] = useState<ExposureEvent | null>(null)
@@ -210,9 +224,10 @@ export default function ExposuresPage() {
       per_page: pagination.pageSize,
       search: debouncedSearch || undefined,
       severities: selectedSeverities.length > 0 ? selectedSeverities : undefined,
+      categories: selectedCategories.length > 0 ? selectedCategories : undefined,
       states: getStatesForTab(activeView),
     }),
-    [pagination, debouncedSearch, selectedSeverities, activeView]
+    [pagination, debouncedSearch, selectedSeverities, selectedCategories, activeView]
   )
 
   const {
@@ -283,6 +298,16 @@ export default function ExposuresPage() {
     [setSeverityParam, resetPage]
   )
 
+  const toggleCategory = useCallback(
+    (category: ExposureDisplayCategory) => {
+      setCategoryParam((prev) =>
+        prev.includes(category) ? prev.filter((c) => c !== category) : [...prev, category]
+      )
+      resetPage()
+    },
+    [setCategoryParam, resetPage]
+  )
+
   const setView = useCallback(
     (view: StateTab) => {
       setStateParam(view)
@@ -338,15 +363,20 @@ export default function ExposuresPage() {
   const clearFilters = useCallback(() => {
     setSearchQuery('')
     setSeverityParam([])
+    setCategoryParam([])
     setStateParam('needs_attention')
     resetPage()
-  }, [setSearchQuery, setSeverityParam, setStateParam, resetPage])
+  }, [setSearchQuery, setSeverityParam, setCategoryParam, setStateParam, resetPage])
 
   const hasActiveFilters =
-    !!searchQuery || selectedSeverities.length > 0 || activeView !== 'needs_attention'
+    !!searchQuery ||
+    selectedSeverities.length > 0 ||
+    selectedCategories.length > 0 ||
+    activeView !== 'needs_attention'
 
   // Accept risk / false positive need findings:approve (api#675).
   const canApprove = useCanApproveExposures()
+  const canChangeSeverity = useCanChangeExposureSeverity()
   const columns = useMemo(
     () =>
       getExposureColumns({
@@ -354,10 +384,24 @@ export default function ExposuresPage() {
         onAccept: (e) => handleAction(e, 'accept'),
         onMarkFalsePositive: (e) => handleAction(e, 'false_positive'),
         onReactivate: (e) => handleAction(e, 'reactivate'),
+        onStartProgress: (e) => handleAction(e, 'start_progress'),
+        onChangeSeverity: canChangeSeverity ? setSeverityExposure : undefined,
         onViewDetails: setDetailExposure,
         canApprove,
+        labels: {
+          startProgress: t('exposures.quick.start', 'Start progress'),
+          stopProgress: t('exposures.quick.stop', 'Stop progress'),
+          changeSeverity: t('exposures.severity.title', 'Change severity'),
+        },
       }),
-    [handleAction, canApprove]
+    [handleAction, canApprove, canChangeSeverity, t]
+  )
+
+  // Categories the platform produces, or that have exposures; the rest stay
+  // hidden until they do.
+  const categoryOptions = EXPOSURE_DISPLAY_CATEGORIES.filter(
+    (c) =>
+      c.produced || (stats?.by_category?.[c.key] ?? 0) > 0 || selectedCategories.includes(c.key)
   )
 
   // Headline numbers double as the lifecycle quick filter.
@@ -424,6 +468,43 @@ export default function ExposuresPage() {
             <>
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={() => setSeverityParam([])}>Clear</DropdownMenuItem>
+            </>
+          )}
+        </DropdownMenuContent>
+      </DropdownMenu>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="outline" size="sm" className="h-9">
+            {t('exposures.category.filter', 'Category')}
+            {selectedCategories.length > 0 && (
+              <Badge variant="secondary" className="ms-2 px-1.5 tabular-nums">
+                {selectedCategories.length}
+              </Badge>
+            )}
+            <ChevronDown className="ms-2 h-4 w-4 text-muted-foreground" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start">
+          <DropdownMenuLabel>{t('exposures.category.filter', 'Category')}</DropdownMenuLabel>
+          {categoryOptions.map((c) => (
+            <DropdownMenuCheckboxItem
+              key={c.key}
+              checked={selectedCategories.includes(c.key)}
+              onCheckedChange={() => toggleCategory(c.key)}
+              onSelect={(e) => e.preventDefault()}
+            >
+              <span className="flex-1">{t(`exposures.category.${c.key}`, c.label)}</span>
+              <span className="ms-4 tabular-nums text-muted-foreground">
+                {(stats?.by_category?.[c.key] ?? 0).toLocaleString()}
+              </span>
+            </DropdownMenuCheckboxItem>
+          ))}
+          {selectedCategories.length > 0 && (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => setCategoryParam([])}>
+                {t('exposures.category.clear', 'Clear')}
+              </DropdownMenuItem>
             </>
           )}
         </DropdownMenuContent>
@@ -624,6 +705,15 @@ export default function ExposuresPage() {
           </TabsContent>
         </Tabs>
       </PageStack>
+
+      <ExposureSeverityDialog
+        exposure={severityExposure}
+        open={severityExposure !== null}
+        onOpenChange={(open) => {
+          if (!open) setSeverityExposure(null)
+        }}
+        onSuccess={handleActionSuccess}
+      />
 
       {/* Action Dialog */}
       <ExposureActionDialog
