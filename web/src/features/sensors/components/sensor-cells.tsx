@@ -165,7 +165,8 @@ export function SensorNameCell({ sensor, grant }: { sensor: Sensor; grant?: Sens
         <ProtocolTag sensor={sensor} />
         <ConfigHealthTag health={sensor.config_health} />
         <SensorPostureTag sensor={sensor} />
-        <SensorGrantTags grant={grant} />
+        {/* A revoked sensor's grant no longer matters. */}
+        {sensor.status !== 'revoked' && <SensorGrantTags grant={grant} />}
       </span>
       {host && (
         <span
@@ -206,8 +207,9 @@ export function SensorGrantTags({ grant }: { grant?: SensorGrantSummary }) {
         </SensorTag>
       )}
       {grant.trust_level === 'new' && (
+        // What New means, not its name: a newcomer reads "New" as "just added".
         <SensorTag tone="info" title={t('sensors.cells.newTitle')}>
-          {t('sensors.grantSection.new')}
+          {t('sensors.cells.passiveOnly')}
         </SensorTag>
       )}
     </>
