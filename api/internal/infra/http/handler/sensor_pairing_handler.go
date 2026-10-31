@@ -393,12 +393,12 @@ type PairingExpectRequest struct {
 }
 
 // Expect godoc
-// @Summary      Expect a sensor (reverse pairing)
+// @Summary      Create a pairing code for a new sensor (reverse pairing)
 // @Description  Returns a single-use code (10 minutes) to run as `openctemio-sensor pair <CODE>` on the host.
 // @Tags         sensor-pairing
 // @Accept       json
 // @Produce      json
-// @Param        body  body      PairingExpectRequest  true  "Expected sensor"
+// @Param        body  body      PairingExpectRequest  true  "Pairing code to create"
 // @Success      201   {object}  sensorpairing.View
 // @Failure      400   {object}  apierror.Error
 // @Security     BearerAuth

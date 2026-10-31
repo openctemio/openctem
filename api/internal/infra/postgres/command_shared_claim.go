@@ -21,7 +21,8 @@ import (
 )
 
 // sharedSensorGateSQL keeps a command the shared sensor bound to $1 may run:
-// the sensor is an active shared sensor (scope instance, no tenant) that
+// the sensor is an active shared sensor (scope instance, no tenant), not
+// flagged as a cloned identity (command_cloned_identity.go), that
 // reported the shared isolation profile and accepts unzoned jobs; it
 // verified the command's tool; the command names no region or the sensor's
 // region; and the sensor reported every feature the command requires.
@@ -41,6 +42,7 @@ var sharedSensorGateSQL = `EXISTS (
 func sharedSensorConditions(alias string) string {
 	return alias + `.scope = 'instance' AND ` + alias + `.tenant_id IS NULL
 			  AND ` + alias + `.status = 'active'
+			  AND ` + alias + `.identity_cloned_at IS NULL
 			  AND ` + alias + `.accepts_unzoned_jobs
 			  AND '` + command.CapabilitySharedIsolation + `' = ANY(COALESCE(` + alias + `.reported_capabilities, ARRAY[]::text[]))
 			  AND (` + commandToolSQL + ` IS NULL OR ` + commandToolSQL + ` = ANY(` + sensorDispatchTools(alias) + `))

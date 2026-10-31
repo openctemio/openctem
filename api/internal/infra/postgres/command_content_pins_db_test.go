@@ -62,3 +62,49 @@ func TestCommandContentPins_RecordAndRead(t *testing.T) {
 		}
 	}
 }
+
+// The detection rule sets a report was matched with join the command's
+// pins without dropping what signing wrote; another tenant cannot write
+// them; a command signing pinned nothing gets them too.
+func TestCommandContentPins_RulePins(t *testing.T) {
+	f := newRunTasksFixture(t)
+	run := seedCounterRun(f.ctx, t, f.runs, f.tenant, f.scan)
+	signed := f.command(t, f.tenant, run.ID, nil, "pending", map[string]any{"scanner": "dnsx-enum", "targets": []string{"example.com"}})
+	plain := f.command(t, f.tenant, run.ID, nil, "pending", map[string]any{"scanner": "httpx", "targets": []string{"example.com"}})
+	repo := NewCommandContentPinsRepository(&DB{DB: f.db})
+	if err := repo.RecordContentPins(f.ctx, f.tenant, signed, &scanrun.ContentPins{
+		Packs: []scanrun.PinnedPack{{Slot: "labels", Scope: "platform", Pack: "wordlists-s", Version: "2026.10.1", Digest: "sha256:aa"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	rules := []scanrun.PinnedRules{
+		{Kind: "web-fingerprints", Scope: "platform", Pack: "web-fingerprints-core", Version: "2026.10.1", Digest: "sha256:bb", Rules: 40},
+		{Kind: "secret-rules", Scope: "organization", Digest: "sha256:cc", Rules: 2},
+	}
+	for _, id := range []shared.ID{signed, plain} {
+		if err := repo.RecordRulePins(f.ctx, f.tenant, id, rules); err != nil {
+			t.Fatal(err)
+		}
+	}
+	other := seedTestTenant(f.ctx, t, f.db)
+	if err := repo.RecordRulePins(f.ctx, other, signed, []scanrun.PinnedRules{{Kind: "secret-rules", Pack: "forged"}}); err != nil {
+		t.Fatal(err)
+	}
+	tasks, _, err := f.cmds.ListRunTasks(f.ctx, f.tenant, run.ID, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, task := range tasks {
+		p := task.ContentPins
+		switch task.ID {
+		case signed:
+			if p == nil || len(p.Packs) != 1 || len(p.Rules) != 2 || p.Rules[0].Pack != "web-fingerprints-core" || p.Rules[1].Rules != 2 {
+				t.Fatalf("signed command pins = %+v", p)
+			}
+		case plain:
+			if p == nil || len(p.Packs) != 0 || len(p.Rules) != 2 {
+				t.Fatalf("plain command pins = %+v", p)
+			}
+		}
+	}
+}

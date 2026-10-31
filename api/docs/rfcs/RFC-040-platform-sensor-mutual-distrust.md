@@ -46,6 +46,7 @@
 > enough to exploit the other: a compromised sensor must not be able to
 > attack the platform, and a compromised platform (web, API or database) must
 > not be able to weaponize sensors.
+> End-to-end flow as implemented today: [sensor-platform-workflow.md](../architecture/sensor-platform-workflow.md).
 
 ## 1. Answer in short
 
