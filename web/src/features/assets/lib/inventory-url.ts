@@ -54,6 +54,7 @@ export type InventoryFilters = Pick<
   | 'expiresAfter'
   | 'attribution'
   | 'scopeStatus'
+  | 'monitoringState'
   | 'discoveredBy'
   | 'firstSeenAfter'
   | 'sort'
@@ -94,6 +95,7 @@ const ARRAY_PARAMS = {
   businessUnitIds: 'business_unit_ids',
   attribution: 'attribution',
   scopeStatus: 'scope_status',
+  monitoringState: 'monitoring_state',
   discoveredBy: 'discovered_by',
   technologies: 'technology',
   technologyCategories: 'technology_category',

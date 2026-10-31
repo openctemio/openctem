@@ -132,6 +132,7 @@ function toSearchFilters(f: InventoryFilters): AssetSearchFilters {
     expiresBefore: f.expiresBefore,
     attribution: attributionQuery(f),
     scopeStatus: f.scopeStatus,
+    monitoringState: f.monitoringState,
     discoveredBy: f.discoveredBy,
     firstSeenAfter: f.firstSeenAfter,
     // Each row's attribution and the scan gate's answer (the scope badge).

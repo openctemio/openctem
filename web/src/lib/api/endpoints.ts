@@ -1927,6 +1927,7 @@ export const exposureEndpoints = {
     filters.severities?.forEach((v) => sp.append('severity', v))
     filters.states?.forEach((v) => sp.append('state', v))
     filters.sources?.forEach((v) => sp.append('source', v))
+    filters.categories?.forEach((v) => sp.append('category', v))
     // The API filters by a single `asset_id`.
     const assetId = filters.canonical_asset_id || filters.native_asset_id
     if (assetId) sp.set('asset_id', assetId)
@@ -1990,6 +1991,16 @@ export const exposureEndpoints = {
    * Reactivate a resolved/accepted exposure
    */
   reactivate: (exposureId: string) => `${API_BASE.EXPOSURES}/${exposureId}/reactivate`,
+
+  /**
+   * Mark an open exposure as in progress
+   */
+  startProgress: (exposureId: string) => `${API_BASE.EXPOSURES}/${exposureId}/start-progress`,
+
+  /**
+   * Set or remove the analyst severity override
+   */
+  severity: (exposureId: string) => `${API_BASE.EXPOSURES}/${exposureId}/severity`,
 
   /**
    * Reject (or, for the requester, cancel) a pending disposition request
