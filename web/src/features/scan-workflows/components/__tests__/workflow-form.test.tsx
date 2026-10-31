@@ -198,6 +198,29 @@ describe('ScanWorkflowForm: edit', () => {
     })
   })
 
+  it('stage barrier is off for a workflow without it, saves when switched on, and survives an unrelated save', async () => {
+    const onSubmit = vi.fn()
+    render(<ScanWorkflowForm workflow={workflow} onSubmit={onSubmit} onCancel={vi.fn()} />)
+    await userEvent.click(screen.getByRole('tab', { name: /settings/i }))
+    const toggle = screen.getByRole('switch', {
+      name: /wait for each stage to finish before the next starts/i,
+    })
+    expect(toggle).not.toBeChecked()
+    await userEvent.click(toggle)
+    await userEvent.click(screen.getByRole('button', { name: /update workflow/i }))
+    expect(onSubmit.mock.calls[0][0].settings).toMatchObject({ stage_barrier: true })
+  })
+
+  it('a workflow that already waits keeps the switch on and sends it back', async () => {
+    const onSubmit = vi.fn()
+    const w = { ...workflow, settings: { ...workflow.settings, stage_barrier: true } }
+    render(<ScanWorkflowForm workflow={w} onSubmit={onSubmit} onCancel={vi.fn()} />)
+    await userEvent.click(screen.getByRole('tab', { name: /settings/i }))
+    expect(screen.getByRole('switch', { name: /wait for each stage/i })).toBeChecked()
+    await userEvent.click(screen.getByRole('button', { name: /update workflow/i }))
+    expect(onSubmit.mock.calls[0][0].settings).toMatchObject({ stage_barrier: true })
+  })
+
   it('renaming a step keeps its id, key, preferences, retries, condition, config and layout', async () => {
     const onSubmit = vi.fn()
     render(<ScanWorkflowForm workflow={workflow} onSubmit={onSubmit} onCancel={vi.fn()} />)
