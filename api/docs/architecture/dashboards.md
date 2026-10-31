@@ -1254,10 +1254,10 @@ its ends sit side by side, and the rows it joins exist before it is measured.
 | Band (visual width) | Exposure flow | Intake panel |
 |---|---|---|
 | narrow, under 660 px | one column in reading order: the first three sources and "N more", the received to actionable figures, the ring (at most 18 rem, 78 % of the width), the stages (three then two per row under 420 px, five in a row above), the outcomes; no wires | sources, then the summary; the health note under each source's name; no wires |
-| mid, 660 to 959 px | the first three sources in one row above; the core (figures, ring, stages) beside the outcomes, wires from the ring to the outcomes | sources (15 to 19 rem) and summary (14 to 18 rem) side by side, centred, wires |
-| wide, 960 px and more | three columns of bounded width (sources 12 to 15 rem, core 20 to 34 rem, outcomes 13 to 16 rem), centred with gaps of 2.5 to 5.5 rem: the composition never stretches to the card edges, so wires stay short whatever the card width | same as mid |
+| mid, 660 to 959 px | the first three sources in one row above; the core (figures, ring, stages) beside the outcomes, wires from the ring to the outcomes | sources (`clamp(15rem, 34cqi, 52rem)`) at the left edge and summary (`clamp(14rem, 30cqi, 44rem)`) at the right edge, the wires across the space between |
+| wide, 960 px and more | three columns that grow with the card (sources `clamp(12rem, 20cqi, 26rem)`, core `clamp(20rem, 34cqi, 46rem)`, outcomes `clamp(13rem, 20cqi, 26rem)`), sources at the left padding and outcomes at the right padding, the wires taking the space between: the composition fills the card, with no empty side gutters, and each wire still starts right after its row | same as mid |
 
-The ring is `clamp(15rem, 24cqi, 20rem)` from the mid band and its centre
+The ring is `clamp(15rem, 24cqi, 26rem)` from the mid band and its centre
 figure `clamp(2.25rem, 4.5cqi, 3rem)`. Wires are re-measured on every resize
 (`useWireAnchors`, a `ResizeObserver`), from a row's right edge to the
 ring's or summary's left edge, so they always meet their ends; their width
