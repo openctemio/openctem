@@ -21,8 +21,13 @@ async function shot(page: Page, info: TestInfo, name: string) {
 async function checkToolbar(page: Page, label: string) {
   const primary = page.getByTestId('findings-toolbar-primary')
   const toolbar = page.getByTestId('data-table-toolbar').first()
+  // The toolbar's box, or with a chips row the region around it: on a narrow
+  // list the toolbar lends its controls to that region and has no box itself.
+  const toolbarBox = page
+    .locator('[data-slot="list-toolbar-region"], [data-testid="data-table-toolbar"]')
+    .first()
   await expect(primary).toBeVisible()
-  await expect(toolbar).toBeVisible()
+  await expect(toolbarBox).toBeVisible()
 
   const search = toolbar.getByRole('searchbox', { name: /search findings/i })
   const filter = toolbar.locator('[data-slot="filter-button"]:visible').first()
@@ -37,7 +42,7 @@ async function checkToolbar(page: Page, label: string) {
 
   // The lens row comes first, the table toolbar under it.
   const p = await primary.boundingBox()
-  const t = await toolbar.boundingBox()
+  const t = await toolbarBox.boundingBox()
   expect(p && t && p.y < t.y, `${label}: lens row above the search row`).toBeTruthy()
 
   // The view title keeps readable room inside the primary row (at phone width
@@ -53,7 +58,7 @@ async function checkToolbar(page: Page, label: string) {
   // Nothing sticks out of either row.
   for (const [name, row] of [
     ['primary', primary],
-    ['toolbar', toolbar],
+    ['toolbar', toolbarBox],
   ] as const) {
     const overflow = await row.evaluate((el) => {
       const edge = el.getBoundingClientRect().right
