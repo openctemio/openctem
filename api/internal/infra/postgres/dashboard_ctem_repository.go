@@ -3,10 +3,12 @@ package postgres
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/lib/pq"
 
+	"github.com/openctemio/openctem/api/pkg/domain/coverage"
 	"github.com/openctemio/openctem/api/pkg/domain/dashboard"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/filterspec"
@@ -52,6 +54,99 @@ func CoverageCondition(value, sincePlaceholder string) string {
 		return coverageTrackedSQL + " AND NOT " + covered
 	}
 	return ""
+}
+
+// Coverage causes: why an uncovered asset is uncovered, one cause per asset
+// (docs/architecture/dashboards.md, "Discovery coverage by cause"). The
+// cause is read from the ledger rows of the asset that have no success in
+// the coverage window, by precedence: what the platform must fix first
+// (no eligible sensor took the check, a platform-side failure such as a
+// stalled run, a tool error or the sensor's egress, network or proxy), then
+// a paused pair, then what the organization owns (the target did not
+// answer, or an edge or rate limit answered for it), then never run, then
+// overdue (it ran before but not within the window). Rows refused by scope
+// policy ('blocked') and rows outside the requirement (per-vantage rows,
+// the platform's DNS checks) only name the cause when nothing else does.
+// The asset list filter coverage_cause uses the same expression, so a cause
+// row of the widget equals the list it opens.
+// sqlList is a list of constant strings as SQL literals (outcome names of
+// the coverage package, never input).
+func sqlList(vals []string) string {
+	out := make([]string, len(vals))
+	for i, v := range vals {
+		out[i] = pq.QuoteLiteral(v)
+	}
+	return strings.Join(out, ", ")
+}
+
+// coverageCauseExpr is the cause of one asset (alias a) with since as the
+// bound placeholder of the coverage window start.
+func coverageCauseExpr(since string) string {
+	causes := dashboard.CoverageCauses()
+	return `COALESCE((ARRAY[` + sqlList(causes) + `])[(SELECT MIN(CASE
+		WHEN acc.state = 'blocked' THEN 7
+		WHEN acc.vantage <> '' OR acc.capability LIKE 'dns.%' THEN 8
+		WHEN acc.state = 'paused' THEN 3
+		WHEN acc.last_outcome = ` + pq.QuoteLiteral(coverage.OutcomeNotDispatched) + ` THEN 1
+		WHEN acc.platform_fail_streak > 0 OR acc.last_outcome IN (` + sqlList(coverage.PlatformSideOutcomes()) + `) THEN 2
+		WHEN acc.last_outcome IN (` + sqlList(coverage.ObservedFailureOutcomes()) + `) THEN 4
+		WHEN acc.last_attempt_at IS NULL THEN 5
+		ELSE 6 END)
+		FROM asset_coverage acc WHERE acc.tenant_id = a.tenant_id AND acc.asset_id = a.id
+		AND acc.state <> 'not_applicable' AND (acc.last_success_at IS NULL OR acc.last_success_at < ` + since + `))], ` +
+		pq.QuoteLiteral(dashboard.CoverageCauseOther) + `)`
+}
+
+// CoverageCauseCondition is the asset list predicate for coverage_cause
+// (alias a): uncovered, with this cause. since and cause are bound
+// placeholders. Unknown causes give "".
+func CoverageCauseCondition(cause, since, causeArg string) string {
+	if !dashboard.IsCoverageCause(cause) {
+		return ""
+	}
+	return CoverageCondition("uncovered", since) + " AND " + coverageCauseExpr(since) + " = " + causeArg
+}
+
+// UncoveredCauses implements dashboard.FactReader: the uncovered assets in
+// scope (tracked, not covered since since) by cause.
+func (r *DashboardWidgetRepository) UncoveredCauses(ctx context.Context, scope dashboard.ReadScope, since time.Time) ([]dashboard.CauseRow, error) {
+	b := assetWhere(scope)
+	ph := b.arg(since.UTC())
+	b.add(CoverageCondition("uncovered", ph))
+	//nolint:gosec // G202: fixed SQL (constant expressions), values bound
+	q := "SELECT cause, COUNT(*) FROM (SELECT " + coverageCauseExpr(ph) + " AS cause FROM assets a WHERE " + b.sql() +
+		") c GROUP BY cause"
+	rows, cancel, err := r.query(ctx, q, b.args)
+	if err != nil {
+		return nil, fmt.Errorf("uncovered causes: %w", err)
+	}
+	defer cancel()
+	defer rows.Close()
+	out := make([]dashboard.CauseRow, 0, 8)
+	for rows.Next() {
+		var row dashboard.CauseRow
+		if err := rows.Scan(&row.Cause, &row.Count); err != nil {
+			return nil, fmt.Errorf("scan uncovered causes: %w", err)
+		}
+		out = append(out, row)
+	}
+	return out, rows.Err()
+}
+
+// HasFindings implements dashboard.FactReader: whether any published
+// finding, in any status, is in the scope (asset rule, data scope, campaign
+// rule).
+func (r *DashboardWidgetRepository) HasFindings(ctx context.Context, scope dashboard.ReadScope) (bool, error) {
+	b := findingWhere(scope)
+	//nolint:gosec // G202: fixed SQL, values bound
+	q := "SELECT EXISTS (SELECT 1 FROM findings f WHERE " + b.sql() + ")"
+	qctx, cancel := context.WithTimeout(ctx, widgetQueryTimeout)
+	defer cancel()
+	var ok bool
+	if err := r.db.QueryRowContext(qctx, q, b.args...).Scan(&ok); err != nil {
+		return false, fmt.Errorf("has findings: %w", err)
+	}
+	return ok, nil
 }
 
 // assetWhere is the asset predicate set for a query over assets (alias a).

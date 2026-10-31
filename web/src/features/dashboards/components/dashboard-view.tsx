@@ -21,6 +21,7 @@ import {
   normalizeColumns,
   widgetRowSpan,
 } from '../layout'
+import { specOf, widgetModel } from '../api/widget-adapter'
 import { WidgetView } from './widget-view'
 
 export interface DashboardViewProps {
@@ -65,6 +66,13 @@ export function DashboardView({ dashboard, data, loading, failed, onRetry }: Das
       {layout.map((w, i) => {
         const spec = w.config as { id?: string } | undefined
         const title = t('dashboards.widget.failed', 'This widget could not be shown')
+        const value = failed
+          ? { id: '', index: i, widget_type: w.widget_type, state: 'error' as const }
+          : valueAt(data, i)
+        // A widget with nothing to show yet takes one row: the compact empty
+        // state never holds a tall card of blank space.
+        const compact = !!value && widgetModel(value, specOf(w), false).state === 'no_data_yet'
+        const rows = compact ? 1 : w.h
         return (
           <div
             key={spec?.id ?? `${w.widget_type}-${i}`}
@@ -72,8 +80,8 @@ export function DashboardView({ dashboard, data, loading, failed, onRetry }: Das
               {
                 '--span': gridColumnSpan(colSpanFor(w.w, cols)),
                 '--span-sm': gridColumnSpan(Math.min(2, colSpanFor(w.w, cols))),
-                '--span-xs': phoneSpan(w.w, w.h, cols),
-                '--row-span': widgetRowSpan(w.h),
+                '--span-xs': phoneSpan(w.w, rows, cols),
+                '--row-span': widgetRowSpan(rows),
               } as React.CSSProperties
             }
             className={cn(
@@ -81,6 +89,7 @@ export function DashboardView({ dashboard, data, loading, failed, onRetry }: Das
               widgetSpanClass(cols)
             )}
             data-widget-index={i}
+            data-compact={compact || undefined}
           >
             <WidgetErrorBoundary
               fallback={(reset) => (
@@ -89,11 +98,7 @@ export function DashboardView({ dashboard, data, loading, failed, onRetry }: Das
             >
               <WidgetView
                 widget={w}
-                value={
-                  failed
-                    ? { id: '', index: i, widget_type: w.widget_type, state: 'error' }
-                    : valueAt(data, i)
-                }
+                value={value}
                 asOf={data?.computed_at}
                 pageAsOf={data?.computed_at}
                 stale={data?.stale}

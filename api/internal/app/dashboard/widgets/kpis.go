@@ -100,12 +100,28 @@ func (s *Service) kpis(ctx context.Context, scope dashboard.ReadScope, win Windo
 	if err := s.discoveryCoverage(ctx, cov, nil, false, scope); err != nil {
 		return nil, err
 	}
-	ct := KPITile{Key: KPICoverage, Metric: "coverage.discovery", State: cov.State, Reason: cov.Reason, Unit: UnitPercent,
+	ct := KPITile{Key: KPICoverage, Metric: metricDiscoveryCoverage, State: cov.State, Reason: cov.Reason, Unit: UnitPercent,
 		Polarity: dashboard.PolarityHigherBetter, Drill: cov.Drill}
 	if cov.Ratio != nil {
 		ct.Value = cov.Ratio.ValuePct
 	}
 	out.Tiles = append(out.Tiles, ct)
+
+	// No finding in scope: the findings tiles have nothing to count (a "0"
+	// would read as all clear); the coverage tile is read from the ledger.
+	has, err := s.hasFindings(ctx, scope)
+	if err != nil {
+		return nil, err
+	}
+	if !has {
+		for i := range out.Tiles {
+			if out.Tiles[i].Key != KPICoverage {
+				t := out.Tiles[i]
+				out.Tiles[i] = KPITile{Key: t.Key, Metric: t.Metric, State: StateNotMeasured, Reason: ReasonNoFindings,
+					Unit: t.Unit, Polarity: t.Polarity}
+			}
+		}
+	}
 	return out, nil
 }
 

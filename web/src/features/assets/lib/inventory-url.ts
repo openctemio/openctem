@@ -15,6 +15,7 @@ import type { SortingState } from '@tanstack/react-table'
 import { isPropertyKey } from '@/features/asset-types/lib/property-schema'
 import { ASSET_LENSES, type AssetLens } from '@/features/asset-types/registry.generated'
 import type { AssetSearchFilters } from '../hooks/use-assets'
+import { isCoverageCause } from './coverage-cause'
 import type { AssetType, Criticality, ExposureLevel, AssetScope } from '../types/asset.types'
 
 /** The subset of AssetSearchFilters the inventory page drives + syncs to the URL. */
@@ -44,6 +45,7 @@ export type InventoryFilters = Pick<
   | 'freshness'
   | 'resolution'
   | 'coverage'
+  | 'coverageCause'
   | 'technologies'
   | 'technologyCategories'
   | 'hasFindings'
@@ -71,6 +73,8 @@ const TAGS_MODE_PARAM = 'tags_mode'
 const MIN_RISK_PARAM = 'min_risk_score'
 /** coverage=covered|uncovered (the dashboard's Discovery stage opens uncovered). */
 const COVERAGE_PARAM = 'coverage'
+/** coverage_cause=<cause>: the uncovered assets of one cause (the dashboard's coverage causes). */
+const COVERAGE_CAUSE_PARAM = 'coverage_cause'
 
 function isLens(v: string): v is AssetLens {
   return ASSET_LENSES.some((l) => l.id === v)
@@ -169,6 +173,8 @@ export function parseInventoryFilters(sp: URLSearchParams): InventoryFilters {
 
   const coverage = sp.get(COVERAGE_PARAM)
   if (coverage === 'covered' || coverage === 'uncovered') out.coverage = coverage
+  const cause = sp.get(COVERAGE_CAUSE_PARAM)
+  if (isCoverageCause(cause)) out.coverageCause = cause
 
   const page = Number(sp.get('page'))
   if (Number.isFinite(page) && page > 0) out.page = page
@@ -200,6 +206,7 @@ export function serializeInventoryFilters(f: InventoryFilters): URLSearchParams 
   if (f.tagsMode === 'all' && f.tags?.length) sp.set(TAGS_MODE_PARAM, 'all')
   if (f.minRiskScore !== undefined) sp.set(MIN_RISK_PARAM, String(f.minRiskScore))
   if (f.coverage) sp.set(COVERAGE_PARAM, f.coverage)
+  if (f.coverageCause) sp.set(COVERAGE_CAUSE_PARAM, f.coverageCause)
   if (f.page && f.page > 1) sp.set('page', String(f.page))
   if (f.pageSize && f.pageSize !== DEFAULT_PAGE_SIZE) sp.set('per_page', String(f.pageSize))
 
@@ -368,6 +375,7 @@ export function countActiveFilters(f: InventoryFilters): number {
   if (f.lens) n += 1
   if (f.minRiskScore !== undefined) n += 1
   if (f.coverage) n += 1
+  if (f.coverageCause) n += 1
   for (const values of Object.values(f.propertiesFilter ?? {})) n += values.length
   if (f.lastSeenBefore || f.lastSeenAfter) n += 1
   if (f.expiresBefore || f.expiresAfter) n += 1
