@@ -19,6 +19,12 @@ type RefreshToken struct {
 	usedAt    *time.Time // When the token was used (for rotation)
 	revokedAt *time.Time // When the token was revoked
 	createdAt time.Time
+	// successorID is the token that replaced this one when it was rotated,
+	// and rotatedFingerprint a hash of the client that rotated it: the
+	// rotation grace hands that same successor to the same client presenting
+	// this token again shortly after (docs/architecture/session-refresh.md).
+	successorID        *shared.ID
+	rotatedFingerprint string
 }
 
 // NewRefreshToken creates a new refresh token.
@@ -153,6 +159,23 @@ func (rt *RefreshToken) RevokedAt() *time.Time {
 // CreatedAt returns when the token was created.
 func (rt *RefreshToken) CreatedAt() time.Time {
 	return rt.createdAt
+}
+
+// SuccessorID returns the token that replaced this one, or nil when it was
+// never rotated (or was spent by a path that issues no successor).
+func (rt *RefreshToken) SuccessorID() *shared.ID {
+	return rt.successorID
+}
+
+// RotatedFingerprint returns the hash of the client that rotated this token.
+func (rt *RefreshToken) RotatedFingerprint() string {
+	return rt.rotatedFingerprint
+}
+
+// RestoreRotation sets the rotation record read from storage.
+func (rt *RefreshToken) RestoreRotation(successorID *shared.ID, fingerprint string) {
+	rt.successorID = successorID
+	rt.rotatedFingerprint = fingerprint
 }
 
 // Domain methods
