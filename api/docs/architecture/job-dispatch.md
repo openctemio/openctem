@@ -1,5 +1,7 @@
 # Job dispatch: how a sensor receives, holds and finishes a job
 
+Part of the [sensor and platform workflow](sensor-platform-workflow.md).
+
 > One page for the whole path of a job, from the trigger that queues it to the
 > result that settles it. Details live in the linked documents; this page
 > says how they fit together, which table, log line or metric shows each
@@ -384,7 +386,7 @@ Reference: [command leases](sensors.md#command-leases-rfc-035-d6).
 ```mermaid
 flowchart TD
   T[Every 60 s: job recovery controller] --> L{Lease expired?}
-  L -- yes --> RQ[Back to pending, unpinned, zone kept,<br/>attempt + 1, event requeued<br/>'lease expired']
+  L -- yes --> RQ[Back to pending, zone kept, unpinned<br/>unless addressed to one sensor,<br/>attempt + 1, event requeued<br/>'lease expired']
   T --> ST{Running, no target finished<br/>within its stall window,<br/>or far past its budget?}
   ST -- yes --> STOP[Ask the holder to stop and hand back<br/>what it finished: stop_command_ids]
   STOP -->|no answer in time| RQ2[Re-queue, attempt + 1]
