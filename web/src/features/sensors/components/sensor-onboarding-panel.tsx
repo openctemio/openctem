@@ -20,7 +20,7 @@
 
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { Check, ChevronDown, ExternalLink, KeyRound, Loader2, RefreshCw } from 'lucide-react'
-import Link from 'next/link'
+import Link from '@/components/link'
 
 import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
