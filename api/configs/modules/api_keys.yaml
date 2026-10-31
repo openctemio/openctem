@@ -8,3 +8,5 @@
   order: 66
   core: true
   permission: "integrations:api_keys:read"
+  jobs:
+    - APIKeyExpiryNoticeController

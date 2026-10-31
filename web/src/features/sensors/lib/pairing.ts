@@ -140,6 +140,11 @@ export function pairingErrorMessage(err: unknown, fallback: string, tr?: Tr): st
         'sensors.pair.err.stepUpRequired',
         'Re-authenticate to approve: enter your authenticator code or password.'
       )
+    if (e.code === 'ORGANIZATION_MISMATCH')
+      return pick(
+        'sensors.pair.err.orgMismatch',
+        'The organization changed since you reviewed this request. Enter the code again in the organization the sensor is meant for.'
+      )
     if (e.code === 'FINGERPRINT_NOT_CONFIRMED')
       return pick(
         'sensors.pair.err.fingerprint',
@@ -164,4 +169,17 @@ export function formatCountdown(seconds: number): string {
   const m = Math.floor(seconds / 60)
   const s = seconds % 60
   return `${m}:${String(s).padStart(2, '0')}`
+}
+
+/**
+ * How long ago a pairing request was made: a request much older than the
+ * moment the operator started the sensor is a reason to stop and check.
+ */
+export function formatRequestAge(iso: string, now: number, tr: Tr): string {
+  const t = Date.parse(iso)
+  if (Number.isNaN(t)) return ''
+  const minutes = Math.max(0, Math.floor((now - t) / 60_000))
+  return minutes < 1
+    ? tr('sensors.pair.fact.justNow')
+    : tr('sensors.pair.fact.minutesAgo', undefined, { n: minutes })
 }

@@ -59,6 +59,7 @@ import { useModuleEnabled } from '@/features/integrations/api/use-tenant-modules
 import { CIPipelinesHint } from '@/features/ci-runners/components/ci-pipelines-hint'
 import { EnrollmentTokensPanel } from './enrollment-tokens-panel'
 import { SensorsEmptyState } from './sensors-empty-state'
+import { SensorStateLegend } from './sensor-state-legend'
 
 import {
   DEFAULT_FLEET_THRESHOLDS,
@@ -832,11 +833,7 @@ export function SensorsSection({
             <div className="min-w-0 flex-1">
               {body}
               {!fleetEmpty && !error && !isLoading && (
-                <p className="mt-3 text-xs text-muted-foreground">
-                  {t('sensors.list.legend', undefined, {
-                    offlineAfter: secondsLabel(offlineAfter),
-                  })}
-                </p>
+                <SensorStateLegend offlineAfter={secondsLabel(offlineAfter)} />
               )}
             </div>
           </div>

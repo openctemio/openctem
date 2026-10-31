@@ -256,6 +256,13 @@ type DueTarget struct {
 	Type       asset.AssetType
 	SubType    string
 	FailStreak int
+	// PlatformFailStreak counts platform-side failures in a row (the check
+	// did not run); FailStreak counts those of the target.
+	PlatformFailStreak int
+	// NeverCovered: the pair has never succeeded (no last success). For
+	// subdomain enumeration of a root domain it marks a root still to be
+	// onboarded with a deep pass (docs/architecture/asset-coverage.md).
+	NeverCovered bool
 	// Waited is how long the pair has been due (DueBatch; zero for a pair
 	// taken within the lookahead, very long for one never scheduled).
 	Waited time.Duration
