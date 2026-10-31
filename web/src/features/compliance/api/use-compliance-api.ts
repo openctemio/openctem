@@ -55,6 +55,8 @@ export interface ComplianceFrameworkApi {
   is_active: boolean
   created_at: string
   updated_at: string
+  /** The framework's stats, with include=stats (the frameworks list). */
+  stats?: FrameworkStatsApi
 }
 
 export interface ComplianceControlApi {
@@ -115,12 +117,14 @@ export interface FrameworkStatsApi {
 // FRAMEWORK HOOKS
 // ============================================
 
+/**
+ * The frameworks with each one's stats in the same answer (include=stats),
+ * so the framework cards send no request of their own.
+ */
+export const FRAMEWORKS_KEY = '/api/v1/compliance/frameworks?per_page=50&include=stats'
+
 export function useFrameworks() {
-  return useSWR<PaginatedResponse<ComplianceFrameworkApi>>(
-    '/api/v1/compliance/frameworks?per_page=50',
-    get,
-    defaultConfig
-  )
+  return useSWR<PaginatedResponse<ComplianceFrameworkApi>>(FRAMEWORKS_KEY, get, defaultConfig)
 }
 
 export function useFramework(id: string) {
@@ -136,14 +140,6 @@ export function useFrameworkControls(frameworkId: string, page = 1, perPage = 10
     frameworkId
       ? `/api/v1/compliance/frameworks/${frameworkId}/controls?page=${page}&per_page=${perPage}`
       : null,
-    get,
-    defaultConfig
-  )
-}
-
-export function useFrameworkStats(frameworkId: string) {
-  return useSWR<FrameworkStatsApi>(
-    frameworkId ? `/api/v1/compliance/frameworks/${frameworkId}/stats` : null,
     get,
     defaultConfig
   )

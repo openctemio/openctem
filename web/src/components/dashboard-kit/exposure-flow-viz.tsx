@@ -9,9 +9,12 @@
  * its centre, at most four arcs, each labelled with its value and focusable.
  *
  * Hover, keyboard focus or a first tap lights an element and its path, dims
- * the rest and opens a tooltip (definition, figures, the list). Below the
- * large breakpoint the columns stack and the wires are dropped; every number
- * stays a link. "Show table" gives the same figures as tables.
+ * the rest and opens a tooltip (definition, figures, the list). The layout
+ * follows the widget's own width (container queries, `flowBand`): three
+ * bounded columns centred from 960 px, the core beside the outcomes with the
+ * first three sources above from 660 px, one column without wires below.
+ * Wires are drawn between measured rows, so they always meet their ends; every
+ * number stays a link. "Show table" gives the same figures as tables.
  */
 
 import { useMemo, useRef } from 'react'
@@ -28,6 +31,8 @@ import {
   FlowTip,
   tCount,
   dimClass,
+  flowBand,
+  useElementWidth,
   useFlowFocus,
   useWireAnchors,
   wirePath,
@@ -40,6 +45,8 @@ import type { FlowFigure, FlowResult, IntakeSourceRow, Stage, StageState } from 
 
 /** The most source rows the hero lists; the rest are one link to every receipt. */
 const MAX_SOURCES = 6
+/** Source rows below the wide band (a short list above the core). */
+const MAX_SOURCES_COMPACT = 3
 
 type Translate = ReturnType<typeof useTranslation>['t']
 
@@ -191,7 +198,11 @@ function FlowChart({ result, scope }: { result: FlowResult; scope?: 'organizatio
   const { active, anchor, tipId, bind, containerProps } = useFlowFocus(ref)
   const intake = result.intake
   const sources = intake?.sources ?? []
-  const shown = sources.slice(0, MAX_SOURCES)
+  // The band comes from the visual's own width first, so the rows it shows
+  // exist before the wires measure them.
+  const band = flowBand(useElementWidth(ref))
+  const shown = sources.slice(0, band === 'wide' ? MAX_SOURCES : MAX_SOURCES_COMPACT)
+  const layout = useWireAnchors(ref, `${band}:${shown.length}:${result.open.value}`)
   const more = sources.length - shown.length
   const arcs = useMemo(() => ringArcs(result.classes), [result.classes])
   const actionableTotal = result.actionable.value
@@ -229,7 +240,6 @@ function FlowChart({ result, scope }: { result: FlowResult; scope?: 'organizatio
     },
   ]
 
-  const layout = useWireAnchors(ref, `${shown.length}:${result.open.value}`)
   const maxSource = Math.max(1, ...shown.map((s) => s.received))
   const maxOutcome = Math.max(1, ...outcomes.map((o) => o.fig.value))
 
@@ -389,22 +399,29 @@ function FlowChart({ result, scope }: { result: FlowResult; scope?: 'organizatio
   const periodLabel = t('dashboardKit.flow.period', '{days} days', { days: result.days })
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="@container flex flex-col gap-4">
       <div
         ref={ref}
-        className="relative grid gap-8 lg:grid-cols-[minmax(0,15rem)_minmax(0,1fr)_minmax(0,16rem)] lg:gap-x-14 xl:gap-x-20"
+        className={cn(
+          'relative grid justify-center gap-6',
+          // mid: the core beside the outcomes, the sources a row above.
+          '@min-[660px]:grid-cols-[minmax(16rem,26rem)_minmax(13rem,16rem)] @min-[660px]:gap-x-[clamp(2.5rem,7cqi,5rem)]',
+          // wide: three bounded columns, centred: short, proportional wires.
+          '@min-[960px]:grid-cols-[minmax(12rem,15rem)_minmax(20rem,34rem)_minmax(13rem,16rem)] @min-[960px]:gap-x-[clamp(2.5rem,5cqi,5.5rem)]'
+        )}
         data-testid="exposure-flow"
+        data-band={band}
         data-focusing={active ? '' : undefined}
         {...containerProps}
       >
-        {layout && (
+        {layout && band !== 'narrow' && (
           <svg
             aria-hidden
-            className="pointer-events-none absolute inset-0 hidden h-full w-full overflow-visible lg:block"
+            className="pointer-events-none absolute inset-0 h-full w-full overflow-visible"
             width={layout.width}
             height={layout.height}
           >
-            {shown.map((s) => {
+            {(band === 'wide' ? shown : []).map((s) => {
               const from = layout.out[`s:${s.id}`]
               const to = layout.in.ring
               if (!from || !to) return null
@@ -457,7 +474,10 @@ function FlowChart({ result, scope }: { result: FlowResult; scope?: 'organizatio
         )}
 
         {/* Sources */}
-        <section aria-labelledby={`${tipId}-src`} className="relative min-w-0">
+        <section
+          aria-labelledby={`${tipId}-src`}
+          className="relative min-w-0 @min-[660px]:col-span-2 @min-[960px]:col-span-1"
+        >
           <h3 id={`${tipId}-src`} className="mb-2 text-xs font-medium text-muted-foreground">
             {t('dashboardKit.flow.sources', 'Sources')}
             {intake && (
@@ -467,7 +487,7 @@ function FlowChart({ result, scope }: { result: FlowResult; scope?: 'organizatio
             )}
           </h3>
           {intake && shown.length > 0 ? (
-            <ul className="grid gap-0.5 rounded-lg border border-dashed border-border-strong p-1.5">
+            <ul className="grid gap-0.5 rounded-lg border border-dashed border-border-strong p-1.5 @min-[660px]:grid-cols-3 @min-[960px]:grid-cols-1">
               {shown.map((s) => {
                 const k = `s:${s.id}`
                 const note = healthNote(t, s, locale)
@@ -504,7 +524,7 @@ function FlowChart({ result, scope }: { result: FlowResult; scope?: 'organizatio
                 )
               })}
               {more > 0 && (
-                <li className="px-2.5 py-1 text-xs">
+                <li className="px-2.5 py-1 text-xs @min-[660px]:col-span-3 @min-[960px]:col-span-1">
                   <FlowLink to={intake.drill} className="text-signal-text hover:underline">
                     {tCount(
                       t,
@@ -569,7 +589,12 @@ function FlowChart({ result, scope }: { result: FlowResult; scope?: 'organizatio
           </div>
 
           <div
-            className={cn('relative size-64 sm:size-72 xl:size-80', dimClass(active, lit('ring')))}
+            className={cn(
+              // The ring scales with the widget: a phone-wide cell, then 24 %
+              // of the width between 15 and 20 rem.
+              'relative size-[min(18rem,78cqi)] @min-[660px]:size-[clamp(15rem,24cqi,20rem)]',
+              dimClass(active, lit('ring'))
+            )}
             data-k="ring"
           >
             <span className="absolute left-[12%] top-1/2 size-px" data-wire-in="ring" aria-hidden />
@@ -640,7 +665,7 @@ function FlowChart({ result, scope }: { result: FlowResult; scope?: 'organizatio
               </span>
               <span
                 className={cn(
-                  'text-5xl font-semibold leading-none tracking-tight tabular-nums',
+                  'text-[clamp(2.25rem,4.5cqi,3rem)] font-semibold leading-none tracking-tight tabular-nums',
                   activeClass && 'text-signal-text'
                 )}
                 data-testid="flow-centre"
@@ -790,7 +815,9 @@ function StageRow({ stages, focus }: { stages: Stage[]; focus: number | null }) 
   const { t, locale } = useTranslation()
   return (
     <ol
-      className="relative grid w-full max-w-[32rem] grid-cols-5 before:absolute before:inset-x-[10%] before:top-[11px] before:h-px before:bg-border"
+      // Five steps in one row from 420 px; three then two rows below (no
+      // connecting line then, it would cross the second row).
+      className="relative grid w-full max-w-[32rem] grid-cols-3 gap-y-3 before:absolute before:inset-x-[10%] before:top-[11px] before:hidden before:h-px before:bg-border @min-[420px]:grid-cols-5 @min-[420px]:before:block"
       aria-label={t('dashboardKit.flow.stagesLabel', 'CTEM stage health')}
     >
       {stages.map((s, i) => {

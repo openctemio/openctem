@@ -25,16 +25,22 @@ vi.mock('@/features/dashboards/api/use-dashboards-api', () => ({
   updateDashboard: vi.fn(),
   deleteDashboard: vi.fn(() => Promise.resolve()),
   setDefaultDashboard: vi.fn(),
+  updateOrgDashboard: vi.fn(),
+  useOrgDashboard: () => ({ data: undefined, isLoading: false }),
+  useRevalidateAllDashboards: () => vi.fn(() => Promise.resolve()),
 }))
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 
 describe('Dashboards list delete', () => {
   it('asks before deleting a dashboard and names it', async () => {
     render(<DashboardsPage />)
-    await userEvent.click(screen.getByRole('button', { name: 'Delete dashboard Ops wallboard' }))
+    await userEvent.click(screen.getByRole('button', { name: 'More actions for Ops wallboard' }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Delete' }))
     expect(deleteDashboard).not.toHaveBeenCalled()
     const dialog = await screen.findByRole('alertdialog')
     expect(dialog).toHaveTextContent('Delete dashboard "Ops wallboard"?')
+    // A personal dashboard is the viewer's own: the text never says "for everyone".
+    expect(dialog).not.toHaveTextContent(/everyone/)
     await userEvent.click(within(dialog).getByRole('button', { name: 'Delete dashboard' }))
     await waitFor(() => expect(deleteDashboard).toHaveBeenCalledWith('d1'))
   })

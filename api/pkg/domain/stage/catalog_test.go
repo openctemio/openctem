@@ -80,10 +80,14 @@ func TestCatalog_ShippedToolsHaveAStage(t *testing.T) {
 			t.Errorf("%s implements no stage", tool)
 		}
 	}
-	for _, tool := range []string{"subfinder", "dnsx", "httpx", "katana", "nuclei"} {
+	for _, tool := range []string{"subfinder", "dnsx", "httpx", "katana"} {
 		if n := len(ForTool(tool)); n != 1 {
 			t.Errorf("%s implements %d stages, want 1", tool, n)
 		}
+	}
+	// nuclei also runs the takeover check, only when a step names it.
+	if n := len(ForTool("nuclei")); n != 2 {
+		t.Errorf("nuclei implements %d stages, want 2 (vulnerability templates, takeover check)", n)
 	}
 	// naabu also runs host discovery, only when a step names it.
 	if n := len(ForTool("naabu")); n != 2 {

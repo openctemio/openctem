@@ -252,7 +252,22 @@ describe('DashboardHome', () => {
     perms.list = ['dashboards:org:view', 'dashboards:org:manage']
     renderHome()
     await userEvent.click(screen.getByRole('button', { name: 'More dashboard actions' }))
-    expect(screen.getByRole('menuitem', { name: 'Edit details' })).toBeInTheDocument()
+    // It opens this dashboard's details form, not the list of personal ones.
+    expect(screen.getByRole('menuitem', { name: 'Edit details' })).toHaveAttribute(
+      'href',
+      '/dashboards?edit=o2&kind=organization'
+    )
+  })
+
+  it('Edit details on my dashboard opens its details form', async () => {
+    api.mine = [dash('p2', 'Mine', { is_default: true })]
+    data.byKey['personal:p2'] = snapshot('personal', 3)
+    renderHome()
+    await userEvent.click(screen.getByRole('button', { name: 'More dashboard actions' }))
+    expect(screen.getByRole('menuitem', { name: 'Edit details' })).toHaveAttribute(
+      'href',
+      '/dashboards?edit=p2'
+    )
   })
 
   it('Refresh now stays enabled when the figures failed to load', () => {

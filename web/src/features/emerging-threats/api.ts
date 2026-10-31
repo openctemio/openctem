@@ -42,8 +42,13 @@ export function detailUrl(id: string): string {
   return `${EMERGING_THREATS_ENDPOINT}/${encodeURIComponent(id)}`
 }
 
-export function useEmergingThreats(filters: ListFilters, config?: SWRConfiguration) {
-  return useSWR<EmergingThreatsPage>(listUrl(filters), (url: string) => get(url), {
+/** The alert list; `enabled` false sends no request (the URL is not settled yet). */
+export function useEmergingThreats(
+  filters: ListFilters,
+  config?: SWRConfiguration,
+  enabled = true
+) {
+  return useSWR<EmergingThreatsPage>(enabled ? listUrl(filters) : null, (url: string) => get(url), {
     ...quietConfig,
     keepPreviousData: true,
     ...config,

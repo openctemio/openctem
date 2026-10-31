@@ -28,6 +28,7 @@ import { useTenant } from '@/context/tenant-provider'
 import { useBootstrapContextSafe } from '@/context/bootstrap-provider'
 import { useTranslation } from '@/context/i18n-provider'
 import { cn } from '@/lib/utils'
+import { DecorativeText } from '@/components/ui/decorative-text'
 import { SIDEBAR_CHIP_CLASS, SIDEBAR_CONTEXT_ROW_CLASS } from './sidebar-brand'
 import { toast } from 'sonner'
 import { authErrorText } from '@/features/auth/lib/auth-error-codes'
@@ -229,13 +230,20 @@ export function TeamSwitcher() {
               disabled={isTransitioning}
               data-testid="team-switcher-trigger"
             >
-              <div className={SIDEBAR_CHIP_CLASS}>
-                {isTransitioning ? (
+              {/* The initials repeat the name beside them: drawn as decorative
+                  text, so the visible label inside the accessible name is the
+                  name itself. */}
+              {isTransitioning ? (
+                <div className={SIDEBAR_CHIP_CLASS} aria-hidden>
                   <Loader2 className="size-4 animate-spin" />
-                ) : (
-                  orgInitials(currentName)
-                )}
-              </div>
+                </div>
+              ) : (
+                <DecorativeText
+                  as="div"
+                  text={orgInitials(currentName)}
+                  className={SIDEBAR_CHIP_CLASS}
+                />
+              )}
 
               <span className="min-w-0 flex-1 truncate text-start text-sm font-semibold group-data-[collapsible=icon]:hidden">
                 {currentName}

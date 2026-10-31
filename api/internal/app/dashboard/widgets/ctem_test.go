@@ -34,6 +34,8 @@ type ctemFacts struct {
 	certs        dashboard.CertificateExpiryCounts
 	accepted     dashboard.AcceptanceExpiryCounts
 	breakdownNow time.Time
+	// The emerging-threats breakdown.
+	threats dashboard.EmergingThreatCounts
 }
 
 func (f *ctemFacts) FactsBuiltAt(context.Context, shared.ID) (*time.Time, error) {
@@ -139,6 +141,11 @@ func (f *ctemFacts) AcceptanceExpiry(_ context.Context, s dashboard.ReadScope, n
 	f.scopes = append(f.scopes, s)
 	f.breakdownNow = now
 	return f.accepted, nil
+}
+
+func (f *ctemFacts) EmergingThreats(_ context.Context, s dashboard.ReadScope) (dashboard.EmergingThreatCounts, error) {
+	f.scopes = append(f.scopes, s)
+	return f.threats, nil
 }
 
 type fakePaths struct {

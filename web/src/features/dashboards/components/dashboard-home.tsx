@@ -49,7 +49,13 @@ import {
 import type { Dashboard, DashboardRefreshSchedule } from '../api/dashboards.types'
 import { dashboardDataKey, refreshDashboard, useDashboardData } from '../api/widget-data'
 import { uniqueDashboardName } from '../lib/unique-name'
-import { DEFAULT_TEMPLATE, templateByKey, templateLayout, templateNameKey } from '../templates'
+import {
+  DEFAULT_TEMPLATE,
+  templateByKey,
+  templateDescriptionKey,
+  templateLayout,
+  templateNameKey,
+} from '../templates'
 import { DASHBOARD_CHOICE_KEY, parseRef, pickLanding, refKey, type DashboardRef } from '../landing'
 import {
   layoutHintFor,
@@ -156,7 +162,12 @@ export function DashboardHome() {
     seeding.current = true
     const tpl = templateByKey(DEFAULT_TEMPLATE)
     const name = t(templateNameKey(tpl.key), tpl.key)
-    createDashboard({ name, columns: tpl.columns, layout: templateLayout(tpl) })
+    createDashboard({
+      name,
+      description: t(templateDescriptionKey(tpl.key), ''),
+      columns: tpl.columns,
+      layout: templateLayout(tpl),
+    })
       .then(async (d) => {
         setSeeded(name)
         // The new dashboard is the whole list: no second request for it.
@@ -286,6 +297,7 @@ export function DashboardHome() {
       )
       const d = await createDashboard({
         name: copyName,
+        description: t(templateDescriptionKey(tpl.key), ''),
         columns: tpl.columns,
         layout: templateLayout(tpl),
       })
@@ -460,7 +472,9 @@ export function DashboardHome() {
                   )}
                   {(!isOrg || canOrgManage) && (
                     <DropdownMenuItem className={ITEM} asChild>
-                      <Link href="/dashboards">
+                      <Link
+                        href={`/dashboards?edit=${encodeURIComponent(dashboard.id)}${isOrg ? '&kind=organization' : ''}`}
+                      >
                         <Pencil className="me-2 h-4 w-4" aria-hidden />
                         {t('dashboards.actions.edit', 'Edit details')}
                       </Link>

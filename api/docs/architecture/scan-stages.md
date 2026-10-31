@@ -26,6 +26,7 @@ platform data: a tenant, a sensor or a report cannot widen it.
 | `probe.http` | names, addresses, open_port, http_service → http_service, certificate, ip_address | T1 | httpx |
 | `crawl.web` | http_service, discovered_url, website → discovered_url | T1 | katana |
 | `vuln.templates` | web and network types → findings | T1 | nuclei |
+| `check.takeover` | domain, subdomain → findings (takeover templates; a confirmed match raises `subdomain_takeover`, see `easm-dns-checks.md`) | T1 | nuclei (only for a step that names the capability; runs only the `takeover` tag) |
 | `dast.web` | web applications → findings | T2 | zap |
 | `secrets.code` | repository → findings | T0 | betterleaks, trufflehog, gitleaks |
 | `sast.code` | repository → findings | T0 | semgrep, codeql |
@@ -113,9 +114,18 @@ tool runs it:
   (`hostname → url`: `probe.http`; `hostname → ip`: `resolve.dns`;
   `ip → service`: `scan.ports`; `cidr → ip`: `discover.hosts`; …). The editor offers it when two incompatible
   ports are wired.
-- **Taxonomy v1** lists 22 capabilities. The 13 routed stages above have
-  implementations. Nine are **planned**: they have a contract but no routed
-  implementation (`intel.passive`, `check.takeover`, `detect.services`,
+- **Fixed tool settings.** An implementation may always run a stage with
+  settings of its own, set over the step's at dispatch so a step cannot
+  widen them (`stage.WithStageToolConfig`). `check.takeover` on nuclei runs
+  with `tags: [takeover]` and its job does not name the capability: sensors
+  declare only `vuln.templates@1` on nuclei, and every sensor version runs a
+  nuclei job with that tag set (the sensor checks the tags again and refuses
+  intrusive ones). Its findings take the existing takeover path: a takeover
+  template match in a command-bound nuclei report on an asset the command
+  covered confirms an open `dangling_cname` as `subdomain_takeover`.
+- **Taxonomy v1** lists 22 capabilities. The routed stages above have
+  implementations. Eight are **planned**: they have a contract but no routed
+  implementation (`intel.passive`, `detect.services`,
   `fingerprint.tech`, `check.tls`, `capture.screenshot`, `host.credentialed`,
   `cloud.posture`, `verify.finding`). They are served with `available: false`
   and are invisible to `Lookup`, `ForTool` and `ForCapabilities`, so no step
@@ -336,6 +346,19 @@ connections. At dispatch, when no tool implements its capability
 runs <capability> is installed", never failed and never silent; the trigger
 does not refuse a run for it. A tool that exists but has no online sensor
 refuses the run like any step.
+
+Workflow readiness (`GET /scan-workflows?include=readiness`, the New Scan
+picker and the server-side refusal `WORKFLOW_NOT_RUNNABLE`) follows the
+same rule: an optional step that no installed and enabled tool implements
+is reported with step state `skipped` and its reason, and does not count
+toward the workflow's state, so the workflow stays `ready` or `waiting`. An
+optional step whose tool is installed keeps its sensor state (the run
+dispatches it). A workflow whose every step is skipped is `blocked`. Each
+step carries a stable reason `code` (`sensor_offline`, `no_sensor_yet`,
+`ci_only`, `no_tool`, `tool_disabled`, `tool_not_installed`,
+`no_sensor`) and the `tools` it names, which the web app renders in the
+reader's language; the workflow list badge opens the steps, their reasons
+and the fix link.
 
 **Run rules** (workflow settings, both off for existing workflows; omitted on
 an update means unchanged):
