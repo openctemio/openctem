@@ -58,6 +58,15 @@ pending ──reveal──▶ pending (sas set) ──approve──▶ approved 
 Reverse mode starts as an `expecting` row with a tenant and a code but no
 key; the sensor's start request fills in the key and turns it `pending`.
 
+A key holds at most one open request. A new start by the same key (a sensor
+restarted before approval, or given a new code) closes the key's `pending`
+requests as `expired` and audits `sensor.pairing_superseded` for the ones with
+an organization; with the same reverse-mode code the key's own request is
+re-armed instead. A key already in `sensor_keys` is refused
+`409 pairing-key-registered`; a lost race for the key answers
+`409 pairing-key-busy` (RFC-052 §4.4, threats 26-29). Enrollment-token starts
+keep their own rule (a busy key spends nothing and is refused).
+
 The review names the organization the approval binds the sensor to (the
 session's) and the approval must send the same `organization_id`, or it is
 refused `409 ORGANIZATION_MISMATCH` before step-up. The review also shows the
@@ -254,6 +263,7 @@ marked ✉ notify every administrator of the organization in the app.
 | `sensor.pairing_approved` ✉ | high |
 | `sensor.pairing_denied` | medium |
 | `sensor.pairing_completed` | medium |
+| `sensor.pairing_superseded` (a sensor started again with the same key; its unapproved request was closed; audit only) | low |
 | `sensor.pairing_lookup_locked` (a user hit the failed code lookup limit; audit only) | high |
 | `sensor.repaired` ✉ (a re-pair approved) | high |
 | `sensor.pairing_expected` (a code created; for a re-pair: medium, with the sensor and the reason) | low |

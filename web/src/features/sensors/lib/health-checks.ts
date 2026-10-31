@@ -169,7 +169,7 @@ export function sensorHealthChecks(
       text: msg(
         tr,
         'sensors.checks.hb.none',
-        'No heartbeat yet. Install the sensor with its key; it shows up here within a minute.'
+        'No heartbeat yet. Run its install command on the host; it shows up here within a minute of starting.'
       ),
       action: 'install',
     })
@@ -484,6 +484,19 @@ export function sensorHealthChecks(
   const scans = sensor.type !== 'collector'
   if (tools.length > 0) {
     checks.push({ key: 'tools', label: L.tools, status: 'ok', text: tools.join(', ') })
+  } else if (scans && !oneShot && !sensor.last_seen_at) {
+    // A sensor that never connected has reported nothing yet: its tools
+    // arrive with its first heartbeat, so this is not a separate problem.
+    checks.push({
+      key: 'tools',
+      label: L.tools,
+      status: 'info',
+      text: msg(
+        tr,
+        'sensors.checks.tools.afterConnect',
+        'Reported when the sensor first connects.'
+      ),
+    })
   } else if (scans && !oneShot) {
     checks.push(
       reported
