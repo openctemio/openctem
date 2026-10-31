@@ -92,8 +92,22 @@ function pendingView(over: Record<string, unknown> = {}) {
     created_at: new Date(Date.now() - 3 * 60_000).toISOString(),
     expires_at: future(),
     step_up: 'totp',
+    fingerprint_choices: [
+      '108 · apple · river · stone',
+      '512 · tiger · violet · anchor',
+      '733 · cloud · ember · north',
+    ],
     ...over,
   }
+}
+
+/** Pick the fingerprint the host shows (or another one). */
+async function pick(user: ReturnType<typeof userEvent.setup>, sas = '512, tiger, violet, anchor') {
+  await user.click(await screen.findByRole('radio', { name: sas }))
+}
+
+async function openMoreOptions(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(await screen.findByRole('button', { name: /more options/i }))
 }
 
 async function findByCode(user: ReturnType<typeof userEvent.setup>) {
@@ -110,15 +124,17 @@ describe('EnterCodePanel', () => {
     tenant.current = { id: 'org-1', slug: 'acme', name: 'Acme', role: 'owner' }
   })
 
-  it('looks up the normalised code and shows the fingerprint, host facts and source address', async () => {
+  it('looks up the normalised code and offers three fingerprints, host facts and source address', async () => {
     api.lookup.mockResolvedValue(pendingView())
     const user = userEvent.setup()
     render(panel())
     await findByCode(user)
     expect(api.lookup).toHaveBeenCalledWith('K7QM4ZTD')
-    expect(await screen.findByTestId('pairing-fingerprint')).toHaveTextContent(
-      '512, tiger, violet, anchor'
-    )
+    // The real fingerprint is never shown on its own: the approver picks
+    // the one the host shows out of three.
+    expect(await screen.findAllByRole('radio')).toHaveLength(3)
+    expect(screen.queryByTestId('pairing-fingerprint')).not.toBeInTheDocument()
+    expect(screen.getByTestId('pairing-scope-note')).toHaveTextContent(/organization's scope/i)
     expect(screen.getByText('dmz-01')).toBeInTheDocument()
     expect(screen.getByText('203.0.113.7 (public internet)')).toBeInTheDocument()
     expect(screen.getByText('198.51.100.20')).toBeInTheDocument()
@@ -151,7 +167,7 @@ describe('EnterCodePanel', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(/too many attempts/i)
   })
 
-  it('keeps Approve disabled until the fingerprint tick and the step-up code are given', async () => {
+  it('keeps Approve disabled until a fingerprint is picked and the step-up code is given', async () => {
     api.lookup.mockResolvedValue(pendingView())
     const user = userEvent.setup()
     render(panel())
@@ -160,24 +176,56 @@ describe('EnterCodePanel', () => {
     expect(approve).toBeDisabled()
     await user.type(screen.getByLabelText('Authenticator code'), '123456')
     expect(approve).toBeDisabled()
-    await user.click(screen.getByLabelText(/fingerprint shown on the sensor console matches/i))
+    await pick(user)
+    expect(screen.getByRole('radio', { name: '512, tiger, violet, anchor' })).toHaveAttribute(
+      'aria-checked',
+      'true'
+    )
     expect(approve).toBeEnabled()
   })
 
-  it('sends the confirmation, the step-up proof, the code and the default narrow profile', async () => {
+  it('closes the form after a wrong pick the API refused', async () => {
+    api.lookup.mockResolvedValue(pendingView())
+    api.approve.mockRejectedValue(new ApiClientError('closed', 'FINGERPRINT_MISMATCH', 409))
+    const user = userEvent.setup()
+    render(panel())
+    await findByCode(user)
+    await pick(user, '108, apple, river, stone')
+    await user.type(screen.getByLabelText('Authenticator code'), '123456')
+    await user.click(screen.getByRole('button', { name: /^approve into acme$/i }))
+    expect(api.approve.mock.calls[0][1].fingerprint).toBe('108 · apple · river · stone')
+    expect(await screen.findByRole('alert')).toHaveTextContent(/request was closed/i)
+    expect(screen.getByRole('button', { name: /^approve into acme$/i })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /^reject$/i })).toBeDisabled()
+  })
+
+  it('looks up the code from the link once and never approves on its own', async () => {
+    api.lookup.mockResolvedValue(pendingView())
+    const { rerender } = render(
+      <EnterCodePanel initialCode="K7QM-4ZTD" onApproved={onApproved} onClose={onClose} />
+    )
+    expect(await screen.findAllByRole('radio')).toHaveLength(3)
+    rerender(<EnterCodePanel initialCode="K7QM-4ZTD" onApproved={onApproved} onClose={onClose} />)
+    expect(api.lookup).toHaveBeenCalledTimes(1)
+    expect(api.lookup).toHaveBeenCalledWith('K7QM4ZTD')
+    expect(api.approve).not.toHaveBeenCalled()
+  })
+
+  it('sends the picked fingerprint, the step-up proof, the code and the default narrow profile', async () => {
     api.lookup.mockResolvedValue(pendingView())
     api.approve.mockResolvedValue({ ...pendingView(), status: 'approved', sensor_id: 's1' })
     const user = userEvent.setup()
     render(panel())
     await findByCode(user)
+    await openMoreOptions(user)
     await user.click(await screen.findByRole('button', { name: 'dmz' }))
-    await user.click(screen.getByLabelText(/fingerprint shown on the sensor console matches/i))
+    await pick(user)
     await user.type(screen.getByLabelText('Authenticator code'), '123456')
     await user.click(screen.getByRole('button', { name: /^approve into acme$/i }))
     await waitFor(() => expect(api.approve).toHaveBeenCalledTimes(1))
     expect(api.approve).toHaveBeenCalledWith('p1', {
       code: 'K7QM4ZTD',
-      fingerprint_confirmed: true,
+      fingerprint: '512 · tiger · violet · anchor',
       organization_id: 'org-1',
       step_up: { totp: '123456' },
       name: 'dmz-01',
@@ -196,9 +244,7 @@ describe('EnterCodePanel', () => {
     const user = userEvent.setup()
     render(panel())
     await findByCode(user)
-    await user.click(
-      await screen.findByLabelText(/fingerprint shown on the sensor console matches/i)
-    )
+    await pick(user)
     await user.type(screen.getByLabelText('Your password'), 'hunter2')
     await user.click(screen.getByRole('button', { name: /^approve into acme$/i }))
     expect(api.approve.mock.calls[0][1].step_up).toEqual({ password: 'hunter2' })
@@ -211,6 +257,7 @@ describe('EnterCodePanel', () => {
     const user = userEvent.setup()
     render(panel())
     await findByCode(user)
+    await openMoreOptions(user)
     await user.click(await screen.findByTestId('grant-profile'))
     expect(screen.queryByRole('option', { name: /legacy/i })).not.toBeInTheDocument()
     expect(screen.getAllByRole('option').length).toBe(7)
@@ -222,9 +269,7 @@ describe('EnterCodePanel', () => {
     const user = userEvent.setup()
     render(panel())
     await findByCode(user)
-    await user.click(
-      await screen.findByLabelText(/fingerprint shown on the sensor console matches/i)
-    )
+    await pick(user)
     await user.type(screen.getByLabelText('Authenticator code'), '123456')
     expect(screen.getByRole('button', { name: /^approve into acme$/i })).toBeDisabled()
     expect(screen.getByText(/permission to approve sensors/i)).toBeInTheDocument()
@@ -244,7 +289,7 @@ describe('EnterCodePanel', () => {
     const user = userEvent.setup()
     render(panel())
     expect(screen.getByTestId('pairing-phishing-warning')).toHaveTextContent(
-      /never approve a code someone sent you/i
+      /never approve a link or code someone sent you/i
     )
     await findByCode(user)
     expect(await screen.findByTestId('pairing-organization')).toHaveTextContent(
@@ -272,9 +317,7 @@ describe('EnterCodePanel', () => {
     const user = userEvent.setup()
     render(panel())
     await findByCode(user)
-    await user.click(
-      await screen.findByLabelText(/fingerprint shown on the sensor console matches/i)
-    )
+    await pick(user)
     await user.type(screen.getByLabelText('Authenticator code'), '123456')
     await user.click(screen.getByRole('button', { name: /^approve into acme$/i }))
     expect(await screen.findByRole('alert')).toHaveTextContent(/organization changed since/i)
