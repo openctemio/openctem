@@ -100,6 +100,9 @@ type Service struct {
 	// scanAttribution stamps tenant_scanned attribution evidence on the
 	// assets of command-bound reports (RFC-036 O8). Nil-safe.
 	scanAttribution ScanAttributionStamper
+	// certNames proposes certificate SANs as candidate subdomains
+	// (cert_names.go). Nil-safe.
+	certNames CertificateNamePromoter
 	// importCandidates holds the new hosts of an import for review.
 	importCandidates ImportCandidateHolder
 	// groupRules is told when a report created or updated assets, so the
@@ -613,6 +616,9 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	}
 	// What a workflow step's report wrote, for the stages chained after it.
 	s.recordStepOutputs(ctx, tenantID, binding, scope)
+	// The names in the certificates this report wrote become candidate
+	// subdomains under the tenant's roots (cert_names.go). Best-effort.
+	s.promoteCertificateNames(ctx, tenantID, binding, report, assetMap)
 
 	// Step 1b: Project recon-discovered assets (open ports, exposed services,
 	// TLS certificates) into the Exposure Register. Best-effort — a failure here
