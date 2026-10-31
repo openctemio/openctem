@@ -26,9 +26,13 @@ import (
 // reported the shared isolation profile and accepts unzoned jobs; it
 // verified the command's tool; the command names no region or the sensor's
 // region; and the sensor reported every feature the command requires.
+// The explicit ss.tenant_id IS NULL repeats a condition of
+// sharedSensorConditions so the tenantsql lint, which cannot fold a helper
+// that takes an argument, sees the sensor lookup is by a tenantless sensor.
 var sharedSensorGateSQL = `EXISTS (
 			SELECT 1 FROM sensors ss
 			WHERE ss.id = $1
+			  AND ss.tenant_id IS NULL
 			  AND ` + sharedSensorConditions("ss") + `
 		)`
 
