@@ -113,6 +113,10 @@ type Repository interface {
 	// It returns false when there was no pending secret to promote (raced with
 	// another activation or a disable).
 	Activate(ctx context.Context, userID shared.ID, step int64, codeHashes []string) (bool, error)
+	// ReplaceActive swaps the secret of an ENABLED factor for the pending one,
+	// records step as used and replaces all recovery codes, atomically. It
+	// returns false when the factor is not enabled or has no pending secret.
+	ReplaceActive(ctx context.Context, userID shared.ID, step int64, codeHashes []string) (bool, error)
 	// Disable removes the factor and every recovery code.
 	Disable(ctx context.Context, userID shared.ID) error
 	// AdvanceStep records step as used if and only if it is newer than the

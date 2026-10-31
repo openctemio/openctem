@@ -244,7 +244,7 @@ function ScimEndpointCard() {
     }
   }
   return (
-    <Card>
+    <Card id="scim-endpoint">
       <CardHeader>
         <CardTitle>{tr('settings.scim.endpoint.title', 'SCIM endpoint')}</CardTitle>
         <CardDescription>

@@ -1,7 +1,10 @@
 package sensor
 
 import (
+	"bytes"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -25,5 +28,18 @@ func TestSeccompProfile_IsTheReleasedFile(t *testing.T) {
 	b[0] = 'x'
 	if SeccompProfile()[0] == 'x' {
 		t.Fatal("SeccompProfile hands out the embedded bytes")
+	}
+}
+
+// The bundled Compose sensor runs with api/deploy/sensor/seccomp.json: the
+// same file the install commands download, so both follow one sensor release
+// (CI's "Sensor install" job compares it with that release).
+func TestSeccompProfile_BundledSensorUsesTheSameFile(t *testing.T) {
+	deployed, err := os.ReadFile(filepath.Join("..", "..", "..", "deploy", "sensor", "seccomp.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(deployed, SeccompProfile()) {
+		t.Fatal("api/deploy/sensor/seccomp.json differs from internal/app/sensor/seccomp/sensor.json: copy the sensor release's docker/seccomp/sensor.json to both")
 	}
 }

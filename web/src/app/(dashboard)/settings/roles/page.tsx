@@ -296,7 +296,7 @@ export default function RolesPage() {
             )}
           >
             <Can route="POST /api/v1/roles">
-              <Button size="sm" onClick={() => setCreateSheetOpen(true)}>
+              <Button id="create-role" size="sm" onClick={() => setCreateSheetOpen(true)}>
                 <Plus className="me-2 h-4 w-4" />
                 {t('org.rolesPage.createRole', 'Create role')}
               </Button>
