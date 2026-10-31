@@ -417,6 +417,9 @@ const (
 	// ActionSensorResultPolicyUpdated records a change of the tenant's
 	// policy for unsolicited sensor results.
 	ActionSensorResultPolicyUpdated Action = "sensor.result_policy_updated"
+	// ActionSensorResultsOutsideJob records report items a sensor sent for a
+	// command that lie outside the command's targets: dropped, not applied.
+	ActionSensorResultsOutsideJob Action = "sensor.results_outside_job"
 
 	// Pairing and key-bound identity (RFC-052). Expected: an administrator
 	// created a reverse-mode code. Approved: a key was bound to the
@@ -475,6 +478,11 @@ const (
 	ActionWordlistCreated Action = "wordlist.created"
 	ActionWordlistUpdated Action = "wordlist.updated"
 	ActionWordlistDeleted Action = "wordlist.deleted"
+
+	// Organization detection rules (docs/architecture/rule-packs.md).
+	ActionContentRuleCreated Action = "content_rule.created"
+	ActionContentRuleUpdated Action = "content_rule.updated"
+	ActionContentRuleDeleted Action = "content_rule.deleted"
 
 	ActionProxyPoolCreated            Action = "proxy_pool.created"
 	ActionProxyPoolUpdated            Action = "proxy_pool.updated"
@@ -622,6 +630,8 @@ const (
 	ActionExposureDispositionRejected     Action = "exposure.disposition_rejected"
 	// A refused own approval of a disposition, at High.
 	ActionExposureDispositionSelfApprovalRefused Action = "exposure.disposition_self_approval_refused"
+	// An analyst set or removed the severity override of an exposure.
+	ActionExposureSeverityChanged Action = "exposure.severity_changed"
 
 	// Report schedule actions: a schedule mails organization posture to its
 	// recipients (members or the allowed domains, D12).
@@ -906,7 +916,7 @@ func (a Action) IsValid() bool {
 		ActionSensorKeyRenewalRefused, ActionSensorIdentityCloned, ActionSensorJobRefusedByLocalPolicy, ActionSensorOptInChanged,
 		ActionSensorContentRefreshRequested, ActionSensorContentPolicyUpdated, ActionSensorCommandsReleased,
 		ActionSensorResultsQuarantined, ActionSensorResultsAccepted, ActionSensorResultsDiscarded,
-		ActionSensorResultPolicyUpdated,
+		ActionSensorResultPolicyUpdated, ActionSensorResultsOutsideJob,
 		ActionSensorPairingExpected, ActionSensorPairingApproved, ActionSensorPairingDenied, ActionSensorPairingCompleted, ActionSensorPairingSuperseded, ActionSensorPairingLookupLocked,
 		ActionSensorRepaired, ActionSensorKeyRevoked, ActionSensorIdentityPolicySet, ActionSensorKeyBound, ActionSensorKeyBindRefused,
 		ActionSensorEnrollmentTokenCreated, ActionSensorEnrollmentTokenRevoked, ActionSensorEnrolled, ActionSensorEnrollmentRefused,
@@ -918,6 +928,7 @@ func (a Action) IsValid() bool {
 		ActionProxyPoolCredentialsChanged, ActionProxyPoolEndpointUpdated, ActionProxyPoolEndpointQuarantine,
 		ActionProxyPoolTestRequested, ActionProxyPoolTested,
 		ActionWordlistCreated, ActionWordlistUpdated, ActionWordlistDeleted,
+		ActionContentRuleCreated, ActionContentRuleUpdated, ActionContentRuleDeleted,
 		ActionSensorNetworkPathChanged,
 		ActionAPIKeyCreated, ActionAPIKeyRevoked, ActionAPIKeyDeleted,
 		ActionCredentialCreated, ActionCredentialUpdated, ActionCredentialDeleted, ActionCredentialAccessed,
@@ -943,7 +954,7 @@ func (a Action) IsValid() bool {
 		ActionScopeExclusionApproved, ActionScopeExclusionRejected,
 		ActionScopeEffectsApplied,
 		ActionExposureDispositionRequested, ActionExposureDispositionApproved, ActionExposureDispositionSelfApproved, ActionExposureDispositionRejected,
-		ActionExposureDispositionSelfApprovalRefused,
+		ActionExposureDispositionSelfApprovalRefused, ActionExposureSeverityChanged,
 		ActionSuppressionRuleApproved, ActionSuppressionRuleSelfApproved, ActionSuppressionRuleSelfApprovalRefused,
 		ActionSuppressionRuleReviewed, ActionSuppressionRuleSigned, ActionSuppressionRuleApprovalRefused, ActionSuppressionRuleDeleted,
 		ActionReportScheduleCreated, ActionReportScheduleActivated, ActionReportScheduleDeleted, ActionReportScheduleDeactivated,
@@ -1071,6 +1082,8 @@ func (a Action) Category() string {
 		return "proxy_pool"
 	case ActionWordlistCreated, ActionWordlistUpdated, ActionWordlistDeleted:
 		return "wordlist"
+	case ActionContentRuleCreated, ActionContentRuleUpdated, ActionContentRuleDeleted:
+		return "content_rule"
 	case ActionSensorNetworkPathChanged:
 		return "sensor"
 	case ActionIntegrationSyncRequested:
@@ -1097,7 +1110,7 @@ func (a Action) Category() string {
 	case ActionSuppressionRuleReviewed, ActionSuppressionRuleSigned, ActionSuppressionRuleApprovalRefused, ActionSuppressionRuleDeleted:
 		return "suppression"
 	case ActionExposureDispositionRequested, ActionExposureDispositionApproved, ActionExposureDispositionSelfApproved, ActionExposureDispositionRejected,
-		ActionExposureDispositionSelfApprovalRefused:
+		ActionExposureDispositionSelfApprovalRefused, ActionExposureSeverityChanged:
 		return "exposure"
 	case ActionReportScheduleCreated, ActionReportScheduleActivated, ActionReportScheduleDeleted, ActionReportScheduleDeactivated:
 		return "report_schedule"
@@ -1173,6 +1186,7 @@ const (
 	ResourceTypeScanZone       ResourceType = "scan_zone"
 	ResourceTypeProxyPool      ResourceType = "proxy_pool"
 	ResourceTypeWordlist       ResourceType = "wordlist"
+	ResourceTypeContentRule    ResourceType = "content_rule"
 	ResourceTypeGroup          ResourceType = "group"
 	ResourceTypePermissionSet  ResourceType = "permission_set"
 	ResourceTypeRole           ResourceType = "role"
@@ -1237,7 +1251,7 @@ func (r ResourceType) IsValid() bool {
 		ResourceTypeInvitation, ResourceTypeRepository, ResourceTypeBranch,
 		ResourceTypeComponent, ResourceTypeVulnerability, ResourceTypeFinding,
 		ResourceTypeFindingComment, ResourceTypeSLAPolicy, ResourceTypeSavedView, ResourceTypeScan,
-		ResourceTypeAsset, ResourceTypeAssetGroup, ResourceTypeSettings, ResourceTypeToken, ResourceTypeSensor, ResourceTypeScanZone, ResourceTypeProxyPool, ResourceTypeWordlist,
+		ResourceTypeAsset, ResourceTypeAssetGroup, ResourceTypeSettings, ResourceTypeToken, ResourceTypeSensor, ResourceTypeScanZone, ResourceTypeProxyPool, ResourceTypeWordlist, ResourceTypeContentRule,
 		ResourceTypeGroup, ResourceTypePermissionSet, ResourceTypeRole,
 		ResourceTypeScanWorkflow, ResourceTypeScanWorkflowStep, ResourceTypeScanRun, ResourceTypeScanConfig,
 		ResourceTypeScanProfile, ResourceTypeCommand,
@@ -1381,7 +1395,7 @@ func SeverityForAction(a Action) Severity {
 		ActionScopeExclusionCreated, ActionScopeExclusionUpdated, ActionScopeExclusionActivated,
 		ActionScopeExclusionApproved, ActionScopeExclusionRejected,
 		ActionSuppressionRuleApproved,
-		ActionExposureDispositionApproved, ActionExposureDispositionRejected,
+		ActionExposureDispositionApproved, ActionExposureDispositionRejected, ActionExposureSeverityChanged,
 		ActionSuppressionRuleReviewed, ActionSuppressionRuleSigned, ActionSuppressionRuleApprovalRefused, ActionSuppressionRuleDeleted,
 		ActionReportScheduleCreated, ActionReportScheduleActivated, ActionReportScheduleDeleted, ActionReportScheduleDeactivated,
 		ActionEASMSeedUpdated, ActionEASMSeedDeleted,
