@@ -471,6 +471,11 @@ const (
 	ActionWordlistUpdated Action = "wordlist.updated"
 	ActionWordlistDeleted Action = "wordlist.deleted"
 
+	// Organization detection rules (docs/architecture/rule-packs.md).
+	ActionContentRuleCreated Action = "content_rule.created"
+	ActionContentRuleUpdated Action = "content_rule.updated"
+	ActionContentRuleDeleted Action = "content_rule.deleted"
+
 	ActionProxyPoolCreated            Action = "proxy_pool.created"
 	ActionProxyPoolUpdated            Action = "proxy_pool.updated"
 	ActionProxyPoolDeleted            Action = "proxy_pool.deleted"
@@ -913,6 +918,7 @@ func (a Action) IsValid() bool {
 		ActionProxyPoolCredentialsChanged, ActionProxyPoolEndpointUpdated, ActionProxyPoolEndpointQuarantine,
 		ActionProxyPoolTestRequested, ActionProxyPoolTested,
 		ActionWordlistCreated, ActionWordlistUpdated, ActionWordlistDeleted,
+		ActionContentRuleCreated, ActionContentRuleUpdated, ActionContentRuleDeleted,
 		ActionSensorNetworkPathChanged,
 		ActionAPIKeyCreated, ActionAPIKeyRevoked, ActionAPIKeyDeleted,
 		ActionCredentialCreated, ActionCredentialUpdated, ActionCredentialDeleted, ActionCredentialAccessed,
@@ -1066,6 +1072,8 @@ func (a Action) Category() string {
 		return "proxy_pool"
 	case ActionWordlistCreated, ActionWordlistUpdated, ActionWordlistDeleted:
 		return "wordlist"
+	case ActionContentRuleCreated, ActionContentRuleUpdated, ActionContentRuleDeleted:
+		return "content_rule"
 	case ActionSensorNetworkPathChanged:
 		return "sensor"
 	case ActionIntegrationSyncRequested:
@@ -1168,6 +1176,7 @@ const (
 	ResourceTypeScanZone       ResourceType = "scan_zone"
 	ResourceTypeProxyPool      ResourceType = "proxy_pool"
 	ResourceTypeWordlist       ResourceType = "wordlist"
+	ResourceTypeContentRule    ResourceType = "content_rule"
 	ResourceTypeGroup          ResourceType = "group"
 	ResourceTypePermissionSet  ResourceType = "permission_set"
 	ResourceTypeRole           ResourceType = "role"
@@ -1232,7 +1241,7 @@ func (r ResourceType) IsValid() bool {
 		ResourceTypeInvitation, ResourceTypeRepository, ResourceTypeBranch,
 		ResourceTypeComponent, ResourceTypeVulnerability, ResourceTypeFinding,
 		ResourceTypeFindingComment, ResourceTypeSLAPolicy, ResourceTypeSavedView, ResourceTypeScan,
-		ResourceTypeAsset, ResourceTypeAssetGroup, ResourceTypeSettings, ResourceTypeToken, ResourceTypeSensor, ResourceTypeScanZone, ResourceTypeProxyPool, ResourceTypeWordlist,
+		ResourceTypeAsset, ResourceTypeAssetGroup, ResourceTypeSettings, ResourceTypeToken, ResourceTypeSensor, ResourceTypeScanZone, ResourceTypeProxyPool, ResourceTypeWordlist, ResourceTypeContentRule,
 		ResourceTypeGroup, ResourceTypePermissionSet, ResourceTypeRole,
 		ResourceTypeScanWorkflow, ResourceTypeScanWorkflowStep, ResourceTypeScanRun, ResourceTypeScanConfig,
 		ResourceTypeScanProfile, ResourceTypeCommand,

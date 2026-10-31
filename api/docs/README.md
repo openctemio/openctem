@@ -60,6 +60,7 @@ or use OpenCTEM, see [docs.openctem.io](https://docs.openctem.io)
 - [Scan lifecycle](architecture/scan-lifecycle.md), [scan orchestration](architecture/scan-orchestration.md), [scan stages](architecture/scan-stages.md), [scan zones](architecture/scan-zones.md), [placement](architecture/placement.md), [job dispatch](architecture/job-dispatch.md), [scan naming](architecture/scan-naming.md)
 - [Tool contract](architecture/tool-contract.md), [tool availability](architecture/tool-availability.md), [secret scanning](architecture/secret-scanning.md)
 - [Content packs](architecture/content-packs.md), [content catalog](architecture/content-catalog.md): signed content packages, offline import, installs and revocation
+- [Detection rules](architecture/rule-packs.md): web fingerprint and sensitive-information rules, built-in packs, organization rules, masked secret exposures
 - [Rule sources](architecture/content-sources.md): git repositories the platform syncs rules from, snapshots, promotion and rollback
 - [Rule sources](architecture/rule-sources.md): a scan runs the platform's rules, the organization's templates, or both in one run
 - [Platform contracts](architecture/platform-contracts.md): the platform depends on contracts only, never on a sensor or the SDK

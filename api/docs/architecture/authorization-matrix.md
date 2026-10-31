@@ -536,6 +536,16 @@ create's target validator, exclusions, zone routing) in one call.
 > The preview returns counts and list names only, never a label. Every
 > change is audited (`wordlist.created|updated|deleted`, metadata only).
 
+| Route | Permission |
+|---|---|
+| `GET /api/v1/content-rules` · `/{id}` | `scans:content:read` |
+| `POST /api/v1/content-rules` · `/test` · `PATCH /{id}` · `DELETE /{id}` | `scans:content:write` |
+
+> An organization's own detection rules ([rule-packs.md](rule-packs.md)). Tenant from the token; every
+> query carries `tenant_id`, so another organization's rule is 404 and never joins another engine. The
+> test runs a draft on a pasted sample and returns masked matches only. Every change is audited
+> (`content_rule.created|updated|deleted`, metadata only).
+
 #### Proxy pools (`/api/v1/proxy-pools`, RFC-034)
 
 | Endpoint | Permission Required |
