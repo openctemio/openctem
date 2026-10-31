@@ -477,6 +477,49 @@ Wiring, gates and the `content_missing` pause are described in
 in [wordlists.md](wordlists.md). Until an instance administrator imports the
 `wordlists-s` release asset, enumeration coverage stays paused.
 
+## 4n. Technologies view (built)
+
+Attack surface > Technologies lists what the organization's assets run, one
+row per technology and version (`nginx 1.18.0` and `nginx 1.25.3` are two
+rows; a version no tool could tell is its own "unknown" row). Each row shows
+the vendor, the category, how many assets run it, the CVEs the corpus knows
+for that version (count, the highest scored CVE and its CVSS), a KEV or
+public-exploit badge and the open emerging-threat alerts about those CVEs.
+The asset count opens the inventory filtered to that exact version
+(`/assets?technology=<key>&technology_version=<version>`, an empty
+`technology_version` selecting the unknown version).
+
+- **API:** `GET /api/v1/attack-surface/technologies` and `/stats`, on the list
+  query contract (`technologies` registry, `pkg/domain/technology`), gated by
+  `assets:read` and the attack-surface module. Filters: `name`, `version`,
+  `version_known`, `category`, `source` (the detecting tool), `vendor`,
+  `asset_id`, `has_cves`, `kev`, `first_seen`, `last_seen`, plus search; sort
+  keys include `asset_count`, `cve_count`, `top_cvss` and `active_alerts`.
+- **Data scope:** the filter, the tenant and the caller's data scope apply to
+  each asset row before rows are grouped, so a version only appears when a
+  visible asset runs it, and its asset count, CVE figures and alert count
+  include visible assets only.
+- **CVE figures:** a technology is joined to the software version its own
+  detection was matched to (`asset_software`, source `technology`, on the same
+  asset, product named like the technology or aliased to its name). The CVEs
+  are that version's `software_version_vulns` (rejected CVEs left out); KEV
+  from the known-exploited catalog; a public exploit from the global
+  vulnerability catalog. These are the same matches the vulnerability
+  matcher turns into findings; a technology the matcher does not treat as
+  software (CDN, hosting, a security header) has none.
+- **Vendor and CPE:** `asset_technologies.vendor` and `cpe` hold what the
+  detecting tool reported in a CPE 2.3 name (migration
+  `20261030200208_asset_technologies_vendor_cpe`); without one, the matched
+  software product's vendor is shown. No backfill: rows fill as probes report.
+- **Relevance:** this is the tenant's technology profile seen from the
+  inventory side; alerts and CVE figures follow the tenant's own matches, and
+  nothing about the inventory leaves the platform.
+
+Key files: `pkg/domain/technology/`, `internal/app/technology/`,
+`internal/infra/postgres/technology_read_repository.go`,
+`internal/infra/http/handler/technology_handler.go`,
+`web/src/features/attack-surface/components/easm-technologies.tsx`.
+
 ## 4h. Port and service results (built, P0-6)
 
 A port scanner (naabu, nmap, masscan, rustscan) reports an IP address with

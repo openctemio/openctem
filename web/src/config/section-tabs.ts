@@ -35,6 +35,7 @@ import {
   UserX,
   Gauge,
   Wrench,
+  Layers,
 } from 'lucide-react'
 import type { ElementType } from 'react'
 import type { SectionTab } from '@/features/shared/components/section-tabs'
@@ -423,6 +424,16 @@ export const ATTACK_SURFACE_SECTION_TABS: readonly SectionTab[] = [
     labelKey: 'nav.tab.webSurface',
     href: '/attack-surface/web',
     icon: AppWindow,
+    module: 'assets',
+    permission: Permission.AssetsRead,
+  },
+  {
+    // The technologies of the external surface by version, with the CVEs of
+    // each version (research/333 D4). Read from the assets module's data.
+    label: 'Technologies',
+    labelKey: 'nav.tab.technologies',
+    href: '/attack-surface/technologies',
+    icon: Layers,
     module: 'assets',
     permission: Permission.AssetsRead,
   },
