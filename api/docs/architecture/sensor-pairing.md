@@ -1,5 +1,7 @@
 # Sensor pairing, key-bound identity and grants
 
+Part of the [sensor and platform workflow](sensor-platform-workflow.md).
+
 Design and decisions: [RFC-052](../rfcs/RFC-052-sensor-pairing-and-authorization.md).
 Operator steps: [how-to: pair a sensor](../how-to/pair-a-sensor.md).
 Trust boundaries and the remaining gaps: [sensor-platform-trust.md](sensor-platform-trust.md).
@@ -63,7 +65,8 @@ restarted before approval, or given a new code) closes the key's `pending`
 requests as `expired` and audits `sensor.pairing_superseded` for the ones with
 an organization; with the same reverse-mode code the key's own request is
 re-armed instead. A key already in `sensor_keys` is refused
-`409 pairing-key-registered`; a lost race for the key answers
+`409 pairing-key-registered` (deleting a sensor removes its keys, so its
+old key can pair again as a new sensor; revoke keeps them); a lost race for the key answers
 `409 pairing-key-busy` (RFC-052 §4.4, threats 26-29). Enrollment-token starts
 keep their own rule (a busy key spends nothing and is refused).
 

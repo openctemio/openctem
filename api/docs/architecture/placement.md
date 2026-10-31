@@ -1,5 +1,7 @@
 # Placement: which sensor can take a task, and why a task waits
 
+Part of the [sensor and platform workflow](sensor-platform-workflow.md).
+
 Status: **shipped** (explainer and the run task endpoint). Design:
 [RFC-030](../rfcs/RFC-030-scan-work-distribution.md) §5.13.
 
@@ -19,6 +21,7 @@ it, instead of "Waiting for a sensor".
 | Job | the sensor that last took it did not hand it back for its own per-host limit (only while the hosts look free to the platform) | `sensor_hosts_busy` |
 | Sensor | sensor active (not disabled or revoked) | `inactive` |
 | Sensor | sensor checking in (online or late) | `offline` |
+| Sensor | the sensor's identity is not in use on two hosts at once (`identity_cloned_at` unset); every claim path withholds new work from a cloned identity until it is re-paired | `identity_cloned` |
 | Claim SQL | not reserved for another sensor | `pinned_elsewhere` |
 | Claim SQL | in the task's scan zone, with the tool | `outside_zone` |
 | Claim SQL | the sensor reported the tool installed | `tool_missing` |

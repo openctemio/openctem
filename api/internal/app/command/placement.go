@@ -332,6 +332,11 @@ func (s *Service) sensorPlacement(ctx context.Context, tenantID shared.ID, cmd *
 		if !sensorReachable(sn.Health) {
 			sp.Reasons = append(sp.Reasons, commanddom.PlacementOffline)
 		}
+		// The claim SQL withholds every new job from a cloned identity
+		// (identityNotClonedPredicate); say so instead of "eligible".
+		if sn.IdentityClonedAt != nil {
+			sp.Reasons = append(sp.Reasons, commanddom.PlacementIdentityCloned)
+		}
 	}
 	sp.Reasons = append(sp.Reasons, claimReasons(c)...)
 	if !c.FeaturesOK {
