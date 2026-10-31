@@ -29,6 +29,7 @@ const (
 	MaxNameLen    = 128
 	MaxVersionLen = 64
 	MaxSourceLen  = 100
+	MaxVendorLen  = 128
 	// MaxPerAsset is the technologies one report may record for an asset.
 	MaxPerAsset = 100
 	// MaxPerReport is the technologies one report may record in all.
@@ -50,8 +51,29 @@ type Technology struct {
 	Category   Category
 	Confidence int // 0-100, 0 = the tool gave none
 	Source     string
-	FirstSeen  time.Time
-	LastSeen   time.Time
+	// Vendor and CPE are what the tool reported in a CPE 2.3 name, "" when
+	// it gave none (see WithCPE).
+	Vendor    string
+	CPE       string
+	FirstSeen time.Time
+	LastSeen  time.Time
+}
+
+// WithCPE records the vendor and CPE 2.3 name a tool reported. A value that
+// does not parse as a CPE, or that names no vendor, is ignored: the stored
+// CPE is always a valid, lower-case CPE 2.3 name.
+func (t Technology) WithCPE(raw string) Technology {
+	raw = strings.ToLower(strings.TrimSpace(raw))
+	if !strings.HasPrefix(raw, "cpe:2.3:") || cleanText(raw) != raw {
+		return t
+	}
+	cpe, err := vulnmatch.ParseCPE(raw)
+	if err != nil || cpe.Vendor == "" || cpe.Vendor == vulnmatch.Any || cpe.Vendor == vulnmatch.NA {
+		return t
+	}
+	t.CPE = raw
+	t.Vendor = clip(cleanText(cpe.Vendor), MaxVendorLen)
+	return t
 }
 
 // Repository reads asset technologies and adds what reports know about
@@ -66,7 +88,8 @@ type Repository interface {
 	// Enrich adds what a report knew about technologies the assets already
 	// show (the tool's category, confidence, source, last seen). It never
 	// adds a technology and never changes a name or version: set
-	// reconciliation decides those.
+	// reconciliation decides those. A reported vendor and CPE replace the
+	// stored ones; an empty one keeps them.
 	Enrich(ctx context.Context, tenantID shared.ID, techs []Technology) error
 }
 
