@@ -731,6 +731,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		ContentPack:         handler.NewContentPackHandler(svc.ContentPacks, log),
 		PlatformContentPack: handler.NewPlatformContentPackHandler(svc.PlatformContentPacks, adminConsoleSvc, repos.AdminAuditLog, log),
 		Wordlist:            handler.NewWordlistHandler(svc.Wordlists, svc.ContentPlanner, log),
+		ContentRule:         handler.NewContentRuleHandler(svc.ContentRules, svc.DetectionRules, log),
 		ContentCatalog:      handler.NewContentCatalogHandler(svc.ContentCatalog, log),
 		AdminContentCatalog: handler.NewAdminContentCatalogHandler(svc.ContentCatalog, adminConsoleSvc, repos.AdminAuditLog, log),
 		SensorContentV2:     handler.NewSensorContentV2Handler(svc.ContentDelivery, log),
@@ -938,6 +939,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	if svc.ActiveGate != nil {
 		// Triage fields on list rows: the dispatcher's own gate (research/124).
 		handlers.Asset.SetTriage(svc.ActiveGate, repos.Attribution, svc.Scope)
+		handlers.Asset.SetMonitoring(svc.ActiveGate, repos.Asset)
 	}
 	handlers.Scope.SetHiddenPrograms(svc.BountyProgram)
 	if svc.Scan != nil && svc.ActiveGate != nil {

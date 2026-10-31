@@ -305,6 +305,11 @@ export interface Sensor {
    * Absent from older APIs.
    */
   auth_kind?: 'bearer' | 'key_bound'
+  /**
+   * When the platform saw this sensor's identity used from two hosts at once
+   * (a copied state volume). Absent or null: never.
+   */
+  identity_cloned_at?: string | null
   version?: string
   hostname?: string
   ip_address?: string
@@ -333,8 +338,6 @@ export interface Sensor {
   legacy_key?: boolean
   /** The last authenticated request with any of the sensor's keys; null until recorded. */
   key_last_used_at?: string | null
-  /** When two live processes were seen using this sensor's identity (a copied volume). */
-  identity_cloned_at?: string | null
   /** Process start, from the uptime the heartbeat reports. */
   started_at?: string | null
   uptime_seconds?: number | null

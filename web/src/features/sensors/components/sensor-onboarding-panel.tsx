@@ -264,7 +264,9 @@ function CodeFirst({
   const [approved, setApproved] = useState<SensorPairingView | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const { data: polled } = usePairingExpectation(approved ? null : (created?.id ?? null))
+  const { data: polled, error: pollError } = usePairingExpectation(
+    approved ? null : (created?.id ?? null)
+  )
   const view = polled ?? created
   const now = useNow(1000)
   const sensorId = approved?.sensor_id ?? null
@@ -331,6 +333,13 @@ function CodeFirst({
 
       <OnboardingStatus stage={stage} />
 
+      {(stage === 'waiting' || stage === 'compare') && view && <PairingRefusalNotice view={view} />}
+      {stage === 'waiting' && pollError && (
+        <p className="text-sm text-muted-foreground" aria-live="polite">
+          {t('sensors.onboard.pollFailed')}
+        </p>
+      )}
+
       {stage === 'compare' && view && (
         <PairingReview view={view} onApproved={setApproved} onDone={() => onDone?.()} />
       )}
@@ -369,6 +378,50 @@ function CodeFirst({
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+/** A refused attempt on a code (sensorpairing.RefusalView). */
+export interface PairingRefusal {
+  reason: 'clock_skew' | 'rate_limited' | 'code_taken' | 'key_busy' | 'key_registered' | string
+  at: string
+  key_fingerprint?: string
+  source_ip?: string
+  clock_offset_seconds?: number
+  retry_after_seconds?: number
+}
+
+const REFUSAL_REASONS = ['clock_skew', 'rate_limited', 'code_taken', 'key_busy', 'key_registered']
+
+/**
+ * Why no sensor arrived on this code yet: the last attempt the platform
+ * refused, in plain words with the next step. Every refusal the sensor got
+ * reaches the waiting step here, not only the sensor's log.
+ */
+export function PairingRefusalNotice({ view }: { view: SensorPairingView }) {
+  const { t } = useTranslation()
+  const refusal = (view as SensorPairingView & { last_refusal?: PairingRefusal }).last_refusal
+  if (!refusal || !REFUSAL_REASONS.includes(refusal.reason)) return null
+  const offset = refusal.clock_offset_seconds ?? 0
+  const params = {
+    seconds: Math.abs(offset),
+    direction: t(offset >= 0 ? 'sensors.onboard.refusal.ahead' : 'sensors.onboard.refusal.behind'),
+    fingerprint: refusal.key_fingerprint ?? '',
+    address: refusal.source_ip ?? '',
+  }
+  return (
+    <div
+      role="status"
+      className="space-y-1 rounded-lg border border-warning/40 bg-warning/10 p-3 text-sm"
+      data-testid="pairing-refusal"
+    >
+      <p className="font-medium">
+        {t(`sensors.onboard.refusal.${refusal.reason}.title`, undefined, params)}
+      </p>
+      <p className="text-muted-foreground">
+        {t(`sensors.onboard.refusal.${refusal.reason}.fix`, undefined, params)}
+      </p>
     </div>
   )
 }
