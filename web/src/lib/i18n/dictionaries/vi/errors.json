@@ -34,6 +34,7 @@
   "errors.INVALID_INCLUDE": "Tham số include không hợp lệ.",
   "errors.INVALID_QUERY": "Truy vấn không hợp lệ.",
   "errors.MFA_ENROLLMENT_REQUIRED": "Tổ chức của bạn yêu cầu xác thực hai lớp. Đăng nhập lại để thiết lập.",
+  "errors.MFA_REQUIRED_BY_POLICY": "Tài khoản của bạn bắt buộc phải dùng xác thực hai lớp nên không thể tắt. Hãy thay ứng dụng xác thực để chuyển sang thiết bị mới.",
   "errors.MODULE_NOT_ENABLED": "Mô-đun này chưa được bật cho tổ chức của bạn.",
   "errors.NOT_FOUND": "Không tìm thấy. Mục này có thể đã bị xóa hoặc bạn không có quyền truy cập.",
   "errors.OPERATION_RUNNING": "Bạn đang có một thao tác chạy. Đợi thao tác đó hoàn tất.",
