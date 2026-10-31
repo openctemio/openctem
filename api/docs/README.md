@@ -56,10 +56,11 @@ or use OpenCTEM, see [docs.openctem.io](https://docs.openctem.io)
 - [EASM](architecture/easm.md), [EASM DNS checks](architecture/easm-dns-checks.md), [certificate transparency monitoring](architecture/certificate-transparency-monitoring.md), [change detection](architecture/change-detection.md)
 
 **Sensors and scanning**
-- [Sensors](architecture/sensors.md), [sensor identity](architecture/agent-identity.md), [sensor pairing](architecture/sensor-pairing.md), [sensor ↔ platform trust](architecture/sensor-platform-trust.md), [signed jobs](architecture/job-signing.md), [result binding](architecture/sensor-result-binding.md), [sensor relay](architecture/sensor-relay.md), [AI analyze contract](architecture/ai-analyze-contract.md), [AI harness](architecture/ai-harness.md)
+- [Sensor and platform workflow](architecture/sensor-platform-workflow.md) (the end-to-end flow and its failure paths), [sensors](architecture/sensors.md), [sensor identity](architecture/agent-identity.md), [sensor pairing](architecture/sensor-pairing.md), [sensor ↔ platform trust](architecture/sensor-platform-trust.md), [signed jobs](architecture/job-signing.md), [result binding](architecture/sensor-result-binding.md), [sensor relay](architecture/sensor-relay.md), [AI analyze contract](architecture/ai-analyze-contract.md), [AI harness](architecture/ai-harness.md)
 - [Scan lifecycle](architecture/scan-lifecycle.md), [scan orchestration](architecture/scan-orchestration.md), [scan stages](architecture/scan-stages.md), [scan zones](architecture/scan-zones.md), [placement](architecture/placement.md), [job dispatch](architecture/job-dispatch.md), [scan naming](architecture/scan-naming.md)
 - [Tool contract](architecture/tool-contract.md), [tool availability](architecture/tool-availability.md), [secret scanning](architecture/secret-scanning.md)
 - [Content packs](architecture/content-packs.md), [content catalog](architecture/content-catalog.md): signed content packages, offline import, installs and revocation
+- [Detection rules](architecture/rule-packs.md): web fingerprint and sensitive-information rules, built-in packs, organization rules, masked secret exposures
 - [Rule sources](architecture/content-sources.md): git repositories the platform syncs rules from, snapshots, promotion and rollback
 - [Rule sources](architecture/rule-sources.md): a scan runs the platform's rules, the organization's templates, or both in one run
 - [Platform contracts](architecture/platform-contracts.md): the platform depends on contracts only, never on a sensor or the SDK
