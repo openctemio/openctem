@@ -239,7 +239,7 @@ func (c *ExpirationChecker) refusalExpiry(ctx context.Context, cmd *commanddom.C
 		return reason
 	}
 	return expiryReason{
-		errorMessage: "No eligible sensor took the job before its wait ended: " + RefusalFailureReason(cmd.Payload, refusals),
+		errorMessage: "No eligible sensor took the job before its wait ended: " + RefusalFailureReason(cmd.Payload, refusals, cmd.IsPlatformJob),
 		code:         scanrundom.FailurePolicyRefused,
 	}
 }

@@ -87,8 +87,11 @@ func (s *Service) handleRefusal(ctx context.Context, cmd *commanddom.Command, in
 	if !okStore || !okFinder || cmd.SensorID == nil || !routedWork(cmd) {
 		return nil, false, nil
 	}
-	rec := commanddom.RefusalRecord{SensorID: input.SensorID, SensorName: s.sensorName(ctx, cmd.TenantID, input.SensorID),
-		Layer: ref.Layer, Rule: ref.Rule, Detail: ref.Detail, At: s.now()}
+	rec := commanddom.RefusalRecord{SensorID: input.SensorID, Layer: ref.Layer, Rule: ref.Rule, Detail: ref.Detail, At: s.now()}
+	if !cmd.IsPlatformJob {
+		// A shared sensor is never named to the organization.
+		rec.SensorName = s.sensorName(ctx, cmd.TenantID, input.SensorID)
+	}
 	prior, err := store.CommandRefusals(ctx, cmd.TenantID, cmd.ID)
 	if err != nil {
 		return nil, true, err
@@ -133,7 +136,7 @@ func (s *Service) handleRefusal(ctx context.Context, cmd *commanddom.Command, in
 		return requeued, true, err
 	}
 
-	cmd.Fail(truncateUTF8(RefusalFailureReason(cmd.Payload, all), MaxFailErrorMessageBytes))
+	cmd.Fail(truncateUTF8(RefusalFailureReason(cmd.Payload, all, cmd.IsPlatformJob), MaxFailErrorMessageBytes))
 	if err := s.saveSensorChange(ctx, cmd, fence); err != nil {
 		return nil, true, err
 	}
@@ -186,8 +189,10 @@ func (s *Service) anotherSensorAccepts(ctx context.Context, finder RequeueCandid
 // RefusalFailureReason is the failure reason of routed work that no
 // sensor ran because their policies refused it: the last refusal first (its
 // prefix is what older readers parse), then a plain sentence naming the
-// target, every refusing sensor and where its local policy is edited.
-func RefusalFailureReason(payload json.RawMessage, all []commanddom.RefusalRecord) string {
+// target, every refusing sensor and where its local policy is edited. For a
+// shared job (sharedFleet) the refusing sensors are shared ones: they are
+// counted, never named or identified.
+func RefusalFailureReason(payload json.RawMessage, all []commanddom.RefusalRecord, sharedFleet bool) string {
 	if len(all) == 0 {
 		return "no sensor accepted the job"
 	}
@@ -208,6 +213,10 @@ func RefusalFailureReason(payload json.RawMessage, all []commanddom.RefusalRecor
 	}
 	var b strings.Builder
 	b.WriteString(msg)
+	if sharedFleet {
+		fmt.Fprintf(&b, ". No shared sensor accepted %s (%d refused); an administrator of this instance manages the shared sensors", target, len(all))
+		return b.String()
+	}
 	switch last.Layer {
 	case sensordom.RefusalLayerScope:
 		fmt.Fprintf(&b, ". The sensor did not accept the scope the platform signed for %s; the job was not sent to another sensor. Check the organization's scope and the sensor's logs", target)

@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lib/pq"
+
 	commandapp "github.com/openctemio/openctem/api/internal/app/command"
 	"github.com/openctemio/openctem/api/pkg/domain/command"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
@@ -135,7 +137,7 @@ func TestRefusal_RequeuedToAnotherSensorThenFails(t *testing.T) {
 	if recs[0].SensorName == "" {
 		t.Fatal("the refusal does not record the sensor's name")
 	}
-	reason := commandapp.RefusalFailureReason(out.Payload, recs)
+	reason := commandapp.RefusalFailureReason(out.Payload, recs, false)
 	for _, want := range []string{sensor.LocalPolicyRefusalPrefix + "allow_interactsh", "tools.allow", "10.60.0.5", "sensor-policy.yaml", recs[0].SensorName} {
 		if !strings.Contains(reason, want) {
 			t.Fatalf("failure reason %q lacks %q", reason, want)
@@ -290,5 +292,73 @@ func TestRefusal_NoOtherSensorAcceptsWaits(t *testing.T) {
 	}
 	if f.claim(ids[1])[job] {
 		t.Fatal("a sensor whose reported policy refuses the job was offered it")
+	}
+}
+
+// A shared sensor's refusal of a shared job: the job goes to another shared
+// sensor the shared gate admits (the organization's own sensors never take
+// a shared job, so they never count as candidates); with no shared sensor
+// left it waits, even though an organization sensor is online. The reason
+// never names or identifies a shared sensor, and another organization
+// never sees the job.
+func TestRefusal_SharedJobGoesToAnotherSharedSensor(t *testing.T) {
+	f, ids := newRefusalFixture(t, 1)
+	org := ids[0]
+	db := openSensorDB(t)
+	tool := uniqueTool()
+	a := seedSharedSensor(f.ctx, t, db, sharedSensorSeed{tools: []string{tool}})
+	b := seedSharedSensor(f.ctx, t, db, sharedSensorSeed{tools: []string{tool}})
+	if _, err := db.ExecContext(f.ctx, `UPDATE sensors SET health = 'online', last_seen_at = NOW()
+		WHERE id = ANY($1::uuid[])`, pq.Array([]string{a.String(), b.String()})); err != nil {
+		t.Fatal(err)
+	}
+	job := seedSharedJob(f.ctx, t, db, f.tenant, sharedJobSeed{tool: tool, platform: true,
+		extra: `"scan_run_id":"` + shared.NewID().String() + `","targets":["198.51.100.7"]`})
+
+	if got, err := f.cmds.ClaimManyShared(f.ctx, a, nil, []shared.ID{job}, nil); err != nil || len(got) != 1 {
+		t.Fatalf("shared sensor A did not claim the job: %v %v", got, err)
+	}
+	out := f.refuse(a, job, &sensor.DispatchRefusal{Layer: "local", Rule: "targets.allow", Detail: "outside"}, "")
+	if out.Status != command.CommandStatusPending || !strings.HasPrefix(out.ErrorMessage, "re-queued") {
+		t.Fatalf("after A refused: %s %q, want re-queued to the other shared sensor", out.Status, out.ErrorMessage)
+	}
+	if got := offered(f.ctx, t, f.cmds, a, nil, job); len(got) != 0 {
+		t.Fatal("the refusing shared sensor is offered the job again")
+	}
+	if got := offered(f.ctx, t, f.cmds, b, nil, job); len(got) != 1 {
+		t.Fatal("the other shared sensor is not offered the re-queued job")
+	}
+	if f.claim(org)[job] {
+		t.Fatal("an organization sensor claimed a shared job")
+	}
+
+	if got, err := f.cmds.ClaimManyShared(f.ctx, b, nil, []shared.ID{job}, nil); err != nil || len(got) != 1 {
+		t.Fatalf("shared sensor B did not claim the job: %v %v", got, err)
+	}
+	out = f.refuse(b, job, &sensor.DispatchRefusal{Layer: "local", Rule: "targets.allow"}, "")
+	if out.Status != command.CommandStatusPending || !strings.HasPrefix(out.ErrorMessage, "waiting for an eligible sensor") {
+		t.Fatalf("after B refused: %s %q, want waiting (no shared sensor left; org sensors do not count)", out.Status, out.ErrorMessage)
+	}
+	recs, err := f.cmds.CommandRefusals(f.ctx, f.tenant, job)
+	if err != nil || len(recs) != 2 {
+		t.Fatalf("refusals %+v %v", recs, err)
+	}
+	for _, r := range recs {
+		if r.SensorName != "" {
+			t.Fatalf("a shared sensor's name was recorded on the organization's job: %+v", r)
+		}
+	}
+	reason := commandapp.RefusalFailureReason(out.Payload, recs, true)
+	if strings.Contains(reason, a.String()[:8]) || strings.Contains(reason, b.String()[:8]) {
+		t.Fatalf("reason %q identifies a shared sensor", reason)
+	}
+
+	// Another organization never reads the job's refusals or the job.
+	other := seedTestTenant(f.ctx, t, db)
+	if _, err := f.cmds.CommandRefusals(f.ctx, other, job); err == nil {
+		t.Fatal("another organization read the shared job's refusals")
+	}
+	if c, err := f.cmds.RequeueCandidates(f.ctx, other, job, nil); err != nil || len(c) != 0 {
+		t.Fatalf("another organization got re-queue candidates for the job: %d %v", len(c), err)
 	}
 }
