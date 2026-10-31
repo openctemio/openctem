@@ -1447,6 +1447,9 @@ type ListAssetsInput struct {
 	// categories (RFC-112).
 	Technologies         []string `validate:"max=20,dive,min=1,max=128"`
 	TechnologyCategories []string `validate:"max=10,dive,oneof=web_server framework language js_library cdn hosting waf analytics security_header other"`
+	// TechnologyVersion narrows Technologies to one exact version ("" =
+	// version unknown); nil = any version.
+	TechnologyVersion *string `validate:"omitempty,max=64"`
 
 	Sort    string `validate:"max=100"` // Sort field (e.g., "-created_at", "name")
 	Page    int    `validate:"min=0"`
@@ -1650,6 +1653,7 @@ func withTriageFilters(filter assetdom.Filter, input ListAssetsInput) (assetdom.
 	filter.CoverageCause = input.CoverageCause
 	filter.Technologies = input.Technologies
 	filter.TechnologyCategories = input.TechnologyCategories
+	filter.TechnologyVersion = input.TechnologyVersion
 	if len(input.DataClassifications) > 0 {
 		filter = filter.WithDataClassifications(input.DataClassifications...)
 	}

@@ -54,7 +54,7 @@ var Features = []Feature{
 			"registerAssetIdentifierRoutes", "registerAssetAttributionRoutes", "registerAssetImportRoutes",
 			"registerAssetDedupRoutes", "registerAssetRelationshipRoutes", "registerRelationshipSuggestionRoutes",
 			"registerAssetServiceRoutes", "registerAssetStateHistoryRoutes", "registerAssetSoftwareRoutes", "registerAssetTechnologyRoutes", "registerComponentRoutes", "registerVEXStatementRoutes",
-			"registerBranchRoutes", "registerAPISpecRoutes", "registerWebEndpointRoutes", "registerCertificateRoutes",
+			"registerBranchRoutes", "registerAPISpecRoutes", "registerWebEndpointRoutes", "registerCertificateRoutes", "registerTechnologyRoutes",
 		},
 	},
 	{

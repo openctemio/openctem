@@ -324,10 +324,14 @@ type Filter struct {
 	// in any of these categories.
 	Technologies         []string
 	TechnologyCategories []string
-	ParentID             *string             // Filter by parent asset ID
-	IsCrownJewel         *bool               // Filter crown jewel assets
-	SubType              *string             // Filter by sub_type
-	PropertiesFilter     map[string][]string // Filter by JSONB properties (AND across keys, OR within values)
+	// TechnologyVersion, when set, keeps assets whose matching technology
+	// (one of Technologies, or any) has exactly this version; "" is a
+	// version the tools could not tell.
+	TechnologyVersion *string
+	ParentID          *string             // Filter by parent asset ID
+	IsCrownJewel      *bool               // Filter crown jewel assets
+	SubType           *string             // Filter by sub_type
+	PropertiesFilter  map[string][]string // Filter by JSONB properties (AND across keys, OR within values)
 
 	// CTEM inventory dimensions (all optional; back-compat when unset).
 	BusinessUnitIDs []string // Filter by business_units membership (business_unit_assets)
@@ -743,6 +747,7 @@ func (f Filter) IsEmpty() bool {
 		f.Coverage == "" &&
 		len(f.Technologies) == 0 &&
 		len(f.TechnologyCategories) == 0 &&
+		f.TechnologyVersion == nil &&
 		f.ParentID == nil &&
 		f.DataScopeUserID == nil &&
 		len(f.PropertiesFilter) == 0 &&

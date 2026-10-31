@@ -6,7 +6,28 @@
       {
         "widget_type": "metric",
         "w": 12,
-        "h": 2,
+        "h": 1,
+        "config": {
+          "v": 2,
+          "id": "w_ct31",
+          "data": {
+            "kind": "metric",
+            "metric": "exposure.kpis",
+            "filter": {},
+            "time": {
+              "compare": "previous_period"
+            }
+          },
+          "viz": {
+            "type": "kpi",
+            "options": {}
+          }
+        }
+      },
+      {
+        "widget_type": "metric",
+        "w": 12,
+        "h": 1,
         "config": {
           "v": 2,
           "id": "w_ct30",
@@ -43,21 +64,22 @@
       },
       {
         "widget_type": "metric",
-        "w": 12,
-        "h": 1,
+        "w": 6,
+        "h": 2,
         "config": {
           "v": 2,
-          "id": "w_ct31",
+          "id": "w_ct40",
           "data": {
             "kind": "metric",
-            "metric": "exposure.kpis",
+            "metric": "surface.new_assets",
             "filter": {},
             "time": {
+              "range": "7d",
               "compare": "previous_period"
             }
           },
           "viz": {
-            "type": "kpi",
+            "type": "bar",
             "options": {}
           }
         }
@@ -65,7 +87,46 @@
       {
         "widget_type": "metric",
         "w": 6,
-        "h": 3,
+        "h": 2,
+        "config": {
+          "v": 2,
+          "id": "w_ct41",
+          "data": {
+            "kind": "metric",
+            "metric": "certificates.expiry",
+            "filter": {},
+            "time": {}
+          },
+          "viz": {
+            "type": "bar",
+            "options": {}
+          }
+        }
+      },
+      {
+        "widget_type": "metric",
+        "w": 6,
+        "h": 2,
+        "config": {
+          "v": 2,
+          "id": "w_ct7",
+          "data": {
+            "kind": "metric",
+            "metric": "attack_paths.to_crown_jewels",
+            "filter": {},
+            "time": {},
+            "limit": 5
+          },
+          "viz": {
+            "type": "paths",
+            "options": {}
+          }
+        }
+      },
+      {
+        "widget_type": "metric",
+        "w": 6,
+        "h": 2,
         "config": {
           "v": 2,
           "id": "w_ct32",
@@ -83,20 +144,19 @@
       },
       {
         "widget_type": "metric",
-        "w": 6,
-        "h": 3,
+        "w": 12,
+        "h": 4,
         "config": {
           "v": 2,
-          "id": "w_ct7",
+          "id": "w_ct6",
           "data": {
             "kind": "metric",
-            "metric": "attack_paths.to_crown_jewels",
+            "metric": "fix.next",
             "filter": {},
-            "time": {},
-            "limit": 5
+            "time": {}
           },
           "viz": {
-            "type": "paths",
+            "type": "table",
             "options": {}
           }
         }
@@ -165,68 +225,8 @@
       },
       {
         "widget_type": "metric",
-        "w": 6,
-        "h": 2,
-        "config": {
-          "v": 2,
-          "id": "w_ct40",
-          "data": {
-            "kind": "metric",
-            "metric": "surface.new_assets",
-            "filter": {},
-            "time": {
-              "range": "7d",
-              "compare": "previous_period"
-            }
-          },
-          "viz": {
-            "type": "bar",
-            "options": {}
-          }
-        }
-      },
-      {
-        "widget_type": "metric",
-        "w": 6,
-        "h": 2,
-        "config": {
-          "v": 2,
-          "id": "w_ct41",
-          "data": {
-            "kind": "metric",
-            "metric": "certificates.expiry",
-            "filter": {},
-            "time": {}
-          },
-          "viz": {
-            "type": "bar",
-            "options": {}
-          }
-        }
-      },
-      {
-        "widget_type": "metric",
         "w": 12,
-        "h": 4,
-        "config": {
-          "v": 2,
-          "id": "w_ct6",
-          "data": {
-            "kind": "metric",
-            "metric": "fix.next",
-            "filter": {},
-            "time": {}
-          },
-          "viz": {
-            "type": "table",
-            "options": {}
-          }
-        }
-      },
-      {
-        "widget_type": "metric",
-        "w": 12,
-        "h": 4,
+        "h": 3,
         "config": {
           "v": 2,
           "id": "w_ct21",
@@ -251,7 +251,28 @@
       {
         "widget_type": "metric",
         "w": 12,
-        "h": 2,
+        "h": 1,
+        "config": {
+          "v": 2,
+          "id": "w_ov31",
+          "data": {
+            "kind": "metric",
+            "metric": "exposure.kpis",
+            "filter": {},
+            "time": {
+              "compare": "previous_period"
+            }
+          },
+          "viz": {
+            "type": "kpi",
+            "options": {}
+          }
+        }
+      },
+      {
+        "widget_type": "metric",
+        "w": 12,
+        "h": 1,
         "config": {
           "v": 2,
           "id": "w_ov30",
@@ -288,67 +309,7 @@
       },
       {
         "widget_type": "metric",
-        "w": 12,
-        "h": 1,
-        "config": {
-          "v": 2,
-          "id": "w_ov31",
-          "data": {
-            "kind": "metric",
-            "metric": "exposure.kpis",
-            "filter": {},
-            "time": {
-              "compare": "previous_period"
-            }
-          },
-          "viz": {
-            "type": "kpi",
-            "options": {}
-          }
-        }
-      },
-      {
-        "widget_type": "metric",
         "w": 6,
-        "h": 3,
-        "config": {
-          "v": 2,
-          "id": "w_ov32",
-          "data": {
-            "kind": "metric",
-            "metric": "brief.weekly",
-            "filter": {},
-            "time": {}
-          },
-          "viz": {
-            "type": "brief",
-            "options": {}
-          }
-        }
-      },
-      {
-        "widget_type": "metric",
-        "w": 6,
-        "h": 3,
-        "config": {
-          "v": 2,
-          "id": "w_ov12",
-          "data": {
-            "kind": "metric",
-            "metric": "attack_paths.to_crown_jewels",
-            "filter": {},
-            "time": {},
-            "limit": 5
-          },
-          "viz": {
-            "type": "paths",
-            "options": {}
-          }
-        }
-      },
-      {
-        "widget_type": "metric",
-        "w": 12,
         "h": 2,
         "config": {
           "v": 2,
@@ -385,25 +346,6 @@
           },
           "viz": {
             "type": "diverging",
-            "options": {}
-          }
-        }
-      },
-      {
-        "widget_type": "metric",
-        "w": 6,
-        "h": 2,
-        "config": {
-          "v": 2,
-          "id": "w_ov9",
-          "data": {
-            "kind": "metric",
-            "metric": "findings.age_bands",
-            "filter": {},
-            "time": {}
-          },
-          "viz": {
-            "type": "heatmap",
             "options": {}
           }
         }
@@ -451,6 +393,45 @@
       },
       {
         "widget_type": "metric",
+        "w": 6,
+        "h": 2,
+        "config": {
+          "v": 2,
+          "id": "w_ov32",
+          "data": {
+            "kind": "metric",
+            "metric": "brief.weekly",
+            "filter": {},
+            "time": {}
+          },
+          "viz": {
+            "type": "brief",
+            "options": {}
+          }
+        }
+      },
+      {
+        "widget_type": "metric",
+        "w": 6,
+        "h": 2,
+        "config": {
+          "v": 2,
+          "id": "w_ov12",
+          "data": {
+            "kind": "metric",
+            "metric": "attack_paths.to_crown_jewels",
+            "filter": {},
+            "time": {},
+            "limit": 5
+          },
+          "viz": {
+            "type": "paths",
+            "options": {}
+          }
+        }
+      },
+      {
+        "widget_type": "metric",
         "w": 12,
         "h": 4,
         "config": {
@@ -477,25 +458,6 @@
       {
         "widget_type": "metric",
         "w": 12,
-        "h": 2,
-        "config": {
-          "v": 2,
-          "id": "w_ex30",
-          "data": {
-            "kind": "metric",
-            "metric": "exposure.levers",
-            "filter": {},
-            "time": {}
-          },
-          "viz": {
-            "type": "levers",
-            "options": {}
-          }
-        }
-      },
-      {
-        "widget_type": "metric",
-        "w": 12,
         "h": 1,
         "config": {
           "v": 2,
@@ -517,7 +479,7 @@
       {
         "widget_type": "metric",
         "w": 12,
-        "h": 2,
+        "h": 1,
         "config": {
           "v": 2,
           "id": "w_ex32",
@@ -561,28 +523,6 @@
         "h": 2,
         "config": {
           "v": 2,
-          "id": "w_ex6",
-          "data": {
-            "kind": "metric",
-            "metric": "fix.time_to_fix",
-            "filter": {},
-            "time": {
-              "range": "365d"
-            },
-            "group_by": ["priority_class"]
-          },
-          "viz": {
-            "type": "bar",
-            "options": {}
-          }
-        }
-      },
-      {
-        "widget_type": "metric",
-        "w": 6,
-        "h": 2,
-        "config": {
-          "v": 2,
           "id": "w_ex7",
           "data": {
             "kind": "metric",
@@ -595,6 +535,28 @@
           },
           "viz": {
             "type": "diverging",
+            "options": {}
+          }
+        }
+      },
+      {
+        "widget_type": "metric",
+        "w": 6,
+        "h": 2,
+        "config": {
+          "v": 2,
+          "id": "w_ex6",
+          "data": {
+            "kind": "metric",
+            "metric": "fix.time_to_fix",
+            "filter": {},
+            "time": {
+              "range": "365d"
+            },
+            "group_by": ["priority_class"]
+          },
+          "viz": {
+            "type": "bar",
             "options": {}
           }
         }
@@ -636,6 +598,25 @@
           },
           "viz": {
             "type": "bar",
+            "options": {}
+          }
+        }
+      },
+      {
+        "widget_type": "metric",
+        "w": 12,
+        "h": 1,
+        "config": {
+          "v": 2,
+          "id": "w_ex30",
+          "data": {
+            "kind": "metric",
+            "metric": "exposure.levers",
+            "filter": {},
+            "time": {}
+          },
+          "viz": {
+            "type": "levers",
             "options": {}
           }
         }
@@ -696,10 +677,10 @@
         "h": 1,
         "config": {
           "v": 2,
-          "id": "w_pr3",
+          "id": "w_pr9",
           "data": {
             "kind": "metric",
-            "metric": "findings.open",
+            "metric": "intel.kev_open",
             "filter": {},
             "time": {
               "compare": "previous_period"
@@ -833,6 +814,26 @@
             "options": {}
           }
         }
+      },
+      {
+        "widget_type": "metric",
+        "w": 6,
+        "h": 2,
+        "config": {
+          "v": 2,
+          "id": "w_pr10",
+          "data": {
+            "kind": "metric",
+            "metric": "findings.open",
+            "filter": {},
+            "time": {},
+            "group_by": ["sla_state"]
+          },
+          "viz": {
+            "type": "bar",
+            "options": {}
+          }
+        }
       }
     ]
   },
@@ -840,27 +841,6 @@
     "key": "triage",
     "columns": 4,
     "widgets": [
-      {
-        "widget_type": "metric",
-        "w": 3,
-        "h": 1,
-        "config": {
-          "v": 2,
-          "id": "w_tr1",
-          "data": {
-            "kind": "metric",
-            "metric": "findings.open",
-            "filter": {},
-            "time": {
-              "compare": "previous_period"
-            }
-          },
-          "viz": {
-            "type": "stat",
-            "options": {}
-          }
-        }
-      },
       {
         "widget_type": "metric",
         "w": 3,
@@ -909,16 +889,55 @@
         "h": 1,
         "config": {
           "v": 2,
-          "id": "w_tr4",
+          "id": "w_tr1",
           "data": {
             "kind": "metric",
             "metric": "findings.open",
             "filter": {},
-            "time": {},
-            "group_by": ["sla_state"]
+            "time": {
+              "compare": "previous_period"
+            }
           },
           "viz": {
-            "type": "bar",
+            "type": "stat",
+            "options": {}
+          }
+        }
+      },
+      {
+        "widget_type": "metric",
+        "w": 3,
+        "h": 1,
+        "config": {
+          "v": 2,
+          "id": "w_tr8",
+          "data": {
+            "kind": "metric",
+            "metric": "sla.within",
+            "filter": {},
+            "time": {}
+          },
+          "viz": {
+            "type": "progress",
+            "options": {}
+          }
+        }
+      },
+      {
+        "widget_type": "metric",
+        "w": 12,
+        "h": 3,
+        "config": {
+          "v": 2,
+          "id": "w_tr7",
+          "data": {
+            "kind": "metric",
+            "metric": "fix.next",
+            "filter": {},
+            "time": {}
+          },
+          "viz": {
+            "type": "list",
             "options": {}
           }
         }
@@ -951,6 +970,26 @@
         "h": 2,
         "config": {
           "v": 2,
+          "id": "w_tr4",
+          "data": {
+            "kind": "metric",
+            "metric": "findings.open",
+            "filter": {},
+            "time": {},
+            "group_by": ["sla_state"]
+          },
+          "viz": {
+            "type": "bar",
+            "options": {}
+          }
+        }
+      },
+      {
+        "widget_type": "metric",
+        "w": 12,
+        "h": 2,
+        "config": {
+          "v": 2,
           "id": "w_tr6",
           "data": {
             "kind": "metric",
@@ -963,25 +1002,6 @@
           },
           "viz": {
             "type": "column",
-            "options": {}
-          }
-        }
-      },
-      {
-        "widget_type": "metric",
-        "w": 12,
-        "h": 3,
-        "config": {
-          "v": 2,
-          "id": "w_tr7",
-          "data": {
-            "kind": "metric",
-            "metric": "fix.next",
-            "filter": {},
-            "time": {}
-          },
-          "viz": {
-            "type": "list",
             "options": {}
           }
         }

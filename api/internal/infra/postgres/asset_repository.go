@@ -1358,11 +1358,19 @@ func (r *AssetRepository) buildWhereClause(filter asset.Filter) (string, []any) 
 	// Technologies (RFC-112): assets using any of the named technologies,
 	// and assets with a technology in any of the categories. Pinned to the
 	// asset's tenant.
-	if len(filter.Technologies) > 0 {
-		conditions = append(conditions, fmt.Sprintf(`EXISTS (SELECT 1 FROM asset_technologies t
-			WHERE t.tenant_id = a.tenant_id AND t.asset_id = a.id AND t.name_key = ANY($%d::text[]))`, argIndex))
-		args = append(args, pq.Array(filter.Technologies))
-		argIndex++
+	if len(filter.Technologies) > 0 || filter.TechnologyVersion != nil {
+		cond := `EXISTS (SELECT 1 FROM asset_technologies t WHERE t.tenant_id = a.tenant_id AND t.asset_id = a.id`
+		if len(filter.Technologies) > 0 {
+			cond += fmt.Sprintf(` AND t.name_key = ANY($%d::text[])`, argIndex)
+			args = append(args, pq.Array(filter.Technologies))
+			argIndex++
+		}
+		if filter.TechnologyVersion != nil {
+			cond += fmt.Sprintf(` AND t.version = $%d`, argIndex)
+			args = append(args, *filter.TechnologyVersion)
+			argIndex++
+		}
+		conditions = append(conditions, cond+")")
 	}
 	if len(filter.TechnologyCategories) > 0 {
 		conditions = append(conditions, fmt.Sprintf(`EXISTS (SELECT 1 FROM asset_technologies t

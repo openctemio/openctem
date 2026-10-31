@@ -1014,31 +1014,56 @@ widget kit's frame, with its own error boundary.
   own, none from the organization) gets a personal copy of the CTEM
   template, created once and computed for their own access, with a hint to
   customize it or choose another template.
-- **New layout offer**: a personal copy of the Overview or CTEM template
-  (three or more of its `w_ov*` / `w_ct*` widget ids) that lacks some of the
-  template's widgets (by metric) shows a hint naming them: "Add them to this
-  dashboard" (each missing widget is inserted where the template has it: a
-  single figure after its predecessor, a larger widget before its successor;
-  every existing widget keeps its place, size and settings, and the layout is
-  saved), "Switch to the new layout" (adds a fresh copy of the template under
-  a name the person does not already use, e.g. "CTEM (new layout)", and opens
-  it; the old dashboard is kept), or dismiss. Nothing changes until the viewer
-  chooses; the dismissal is kept in the browser per layout version
+- **New layout offer**: a personal copy of a template (three or more of its
+  `w_ov*` / `w_ct*` / `w_ex*` / `w_pr*` / `w_tr*` widget ids) is offered the
+  template's changes. When it lacks some of the template's widgets (by
+  metric) the hint names them: "Add them to this dashboard" (each missing
+  widget is inserted where the template has it: a single figure after its
+  predecessor, a larger widget before its successor; every existing widget
+  keeps its place, size and settings, and the layout is saved). When it has
+  them all but the template's widgets (matched by id) are in another order or
+  of another size, the hint says the layout has a new arrangement. Both offer
+  "Switch to the new layout" (adds a fresh copy of the template under a name
+  the person does not already use, e.g. "CTEM (new layout)", and opens it;
+  the old dashboard is kept), or dismiss. A widget of the person's own
+  between template widgets is not a rearrangement. Nothing changes until the
+  viewer chooses; the dismissal is kept in the browser per layout version
   (`LAYOUT_HINT_VERSION` in `layout-hint.ts`). No request is made for the
   hint, and organization dashboards never show it.
 - **Templates** are typed widget configs in
-  `web/src/features/dashboards/templates.json`. CTEM (the first-visit
-  default) and Overview share one set: the exposure flow first (it carries
-  the five CTEM stages, so the separate loop widget is no longer in these
-  templates), then the figure row (open P0-P1, KEV open, open within SLA,
-  time to fix median with p90), discovery coverage beside priority over
-  time, new vs fixed, the severity × age heatmap, fix next and attack paths
-  to crown jewels; CTEM puts attack paths before fix next and ends with the
-  intake and noise reduction panel. Then Executive, Vulnerability program, Triage. `/dashboards` copies one into a personal
-  dashboard ("Use template"); the copy is a stored dashboard like any other.
+  `web/src/features/dashboards/templates.json`, in reading order (the grid
+  places widgets in that order without back-filling, so the order is the
+  layout). Every template opens on its headline figures, then the decision
+  widget, then the story, and ends with diagnostics:
+  - CTEM (first-visit default): key figures; levers; exposure flow (the five
+    CTEM stages); new on the attack surface (7 days) beside certificate
+    expiry; attack paths to crown jewels beside the weekly brief; fix next;
+    open exposure by priority (90 days); new vs fixed beside open by age;
+    intake and noise reduction.
+  - Overview: key figures; levers; exposure flow; open exposure by priority
+    beside new vs fixed; new on the attack surface beside certificate
+    expiry; weekly brief beside attack paths; fix next.
+  - Executive: key figures; weekly brief; open exposure by priority over 12
+    months; new vs fixed beside time to fix by priority; new on the attack
+    surface (30 days) beside accepted risks ending; levers.
+  - Vulnerability program: within SLA, P0-P1 open, KEV open and time to fix;
+    SLA at risk beside new vs fixed; time to fix by priority beside open by
+    age; accepted risks ending beside open findings by SLA state.
+  - Triage: P0-P1 open, KEV open, open findings and within SLA; fix next;
+    open findings by severity beside open findings by SLA state; new vs
+    fixed per day over 30 days.
+  `web/src/features/dashboards/__tests__/template-layouts.test.ts` checks
+  that each template fills its rows with one height per row at four columns
+  and leaves no hole at two columns or on a phone, and that each opens on a
+  one-row headline. `/dashboards` copies one into a personal dashboard ("Use
+  template"); the copy is a stored dashboard like any other.
   `api/pkg/domain/dashboard/templates_test.go` parses every template widget
   with the server's spec validation, so a template is never refused on save.
   Names and descriptions are in the `dashboards` i18n namespace.
+- **Widget titles**: a widget without a title of its own shows the metric's
+  name, followed by "by <dimension>" when it groups by something other than
+  the metric's default ("Open findings by SLA state"), so two widgets of one
+  metric are told apart.
 - **Switcher**: one menu with "Organization" (shown only with
   `dashboards:org:view` or `dashboards:org:manage`; without them the list is
   never requested) and "Mine", search above eight entries, New and Manage.
