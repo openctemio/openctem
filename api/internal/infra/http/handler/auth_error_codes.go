@@ -92,6 +92,7 @@ const (
 	codeOAuthUserInfoFailed     apierror.Code = "OAUTH_USERINFO_FAILED"
 	codeOAuthAccountExists      apierror.Code = "OAUTH_ACCOUNT_EXISTS"
 	codeOAuthNoEmail            apierror.Code = "OAUTH_NO_EMAIL"
+	codeOAuthUseOrgSSO          apierror.Code = "OAUTH_USE_ORG_SSO"
 	codeIdentityLinkedElsewhere apierror.Code = "IDENTITY_LINKED_ELSEWHERE"
 	codeProviderAlreadyLinked   apierror.Code = "PROVIDER_ALREADY_LINKED"
 	codeLastSignInMethod        apierror.Code = "LAST_SIGN_IN_METHOD"
@@ -209,6 +210,10 @@ var authErrorTable = []authErrorEntry{
 	// address, so saying the account exists tells the person nothing they
 	// could not learn by signing in with it.
 	{e(auth.ErrOAuthAccountExists), http.StatusConflict, codeOAuthAccountExists, "An account with this email already exists. Sign in with your password or the method you used before to link this provider.", "account_exists"},
+
+	// The provider identity is managed by the organization's single sign-on:
+	// the social button never signs it in (nothing written, no session).
+	{e(auth.ErrOAuthUseOrgSSO), http.StatusConflict, codeOAuthUseOrgSSO, "This account signs in through your organization. Use your organization's sign-in.", "use_org_sso"},
 
 	// Linked sign-in methods (Account > Security). The caller owns the
 	// provider account, so saying it is linked elsewhere tells them nothing
