@@ -247,6 +247,55 @@ export function taskCoverageGapNote(
   return text
 }
 
+/** The record of what a task's job read (api docs/architecture/wordlists.md). */
+interface TaskContentPins {
+  packs?: { slot?: string; pack?: string; version?: string; digest?: string }[]
+  inputs?: {
+    source?: string
+    lines?: number
+    sha256?: string
+    lists?: { name?: string; version?: number }[]
+  }[]
+}
+
+/**
+ * What a task's job read, for a discovery task: "Wordlists: wordlists-s
+ * 2026.10.1, 177 learned, 37 from your lists (branches v3)". Null when the
+ * job pinned nothing. The record is the platform's, written when it signed
+ * the job.
+ */
+export function taskContentNote(
+  task: { content_pins?: TaskContentPins | null },
+  t: Translate = enTranslate
+): string | null {
+  const pins = task.content_pins
+  if (!pins || ((pins.packs?.length ?? 0) === 0 && (pins.inputs?.length ?? 0) === 0)) return null
+  const parts: string[] = []
+  for (const p of pins.packs ?? []) {
+    parts.push(
+      p.version
+        ? t('scans.tasks.contentPack', undefined, { pack: p.pack ?? '?', version: p.version })
+        : (p.pack ?? '?')
+    )
+  }
+  for (const i of pins.inputs ?? []) {
+    const count = i.lines ?? 0
+    if (i.source === 'organization') {
+      const names = (i.lists ?? [])
+        .map((l) =>
+          t('scans.tasks.contentList', undefined, { name: l.name ?? '?', version: l.version ?? 0 })
+        )
+        .join(', ')
+      parts.push(
+        t('scans.tasks.contentOrganization', undefined, { count }) + (names ? ` (${names})` : '')
+      )
+    } else {
+      parts.push(t('scans.tasks.contentLearned', undefined, { count }))
+    }
+  }
+  return t('scans.tasks.content', undefined, { items: parts.join(', ') })
+}
+
 /** Tasks per "Load more" page. */
 export const TASK_PAGE_SIZE = 100
 
@@ -334,6 +383,7 @@ export function RunTasksTable({
               const skipped = taskSkippedNote(task, t)
               const gaps = taskCoverageGapNote(task, t)
               const prog = taskProgressNote(task, t)
+              const content = taskContentNote(task as { content_pins?: TaskContentPins | null }, t)
               return (
                 <Fragment key={task.id ?? i}>
                   <tr className="border-t align-top">
@@ -375,7 +425,16 @@ export function RunTasksTable({
                         </div>
                       )}
                     </td>
-                    <td className="px-3 py-2">{task.tool || '-'}</td>
+                    <td className="px-3 py-2">
+                      {task.tool || '-'}
+                      {content && (
+                        <TruncatedText
+                          value={content}
+                          label={t('scans.tasks.contentLabel')}
+                          className="mt-1 max-w-[260px] text-xs text-muted-foreground"
+                        />
+                      )}
+                    </td>
                     <td className="px-3 py-2 text-muted-foreground">{taskSensorLabel(task, t)}</td>
                     <td className="px-3 py-2 text-end tabular-nums">{task.targets ?? 0}</td>
                     <td className="px-3 py-2 text-end tabular-nums text-muted-foreground">

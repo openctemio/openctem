@@ -8,6 +8,7 @@
  * deciding source and why; "Why this value" opens where the value comes from.
  */
 
+import { useSettleSignal } from '@/features/shared/components/settle-group'
 import { useMemo, useState, type ReactNode } from 'react'
 import { ArrowRight, History, Loader2, Repeat } from 'lucide-react'
 import Link from '@/components/link'
@@ -217,6 +218,7 @@ function TimelineBody({
     filters
   )
   const days = useMemo(() => groupByDay(events), [events])
+  useSettleSignal(isLoading && events.length === 0)
 
   if (error) {
     return (
