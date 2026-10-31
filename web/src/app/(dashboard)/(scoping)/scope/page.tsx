@@ -30,12 +30,7 @@ import { useSearchQuery } from '@/hooks/use-search-query'
 import { useUrlFilter } from '@/hooks/use-url-param'
 import { useListParams } from '@/hooks/use-list-params'
 import { Permission, useHasPermission } from '@/lib/permissions'
-import {
-  ScopeEntryDialog,
-  useScopeExclusionsApi,
-  useScopeAddMode,
-  useScopeTargetsApi,
-} from '@/features/scope'
+import { ScopeEntryDialog, useScopeAddMode } from '@/features/scope'
 import {
   ScopeEntriesTable,
   SCOPE_PAGE_SIZES,
@@ -44,9 +39,13 @@ import { ScopeExclusionsTable } from '@/features/scope/components/scope-exclusio
 import { ScopeExclusionDialog } from '@/features/scope/components/scope-exclusion-dialog'
 import { noLongerOursPattern } from '@/features/scope/lib/exclusion-kind'
 import { entryStatus } from '@/features/scope/lib/scope-entry'
-import { setScopeTargetActive } from '@/features/scope/api/use-scope-api'
+import {
+  setScopeTargetActive,
+  sumStatusCounts,
+  useScopeStatusCounts,
+} from '@/features/scope/api/use-scope-api'
 import type { ApiScopeTarget, ScopeExclusionKind } from '@/features/scope/api/scope-api.types'
-import { ScopeApprovals, usePendingScopeChanges } from '@/features/scope/components/scope-approvals'
+import { ScopeApprovals } from '@/features/scope/components/scope-approvals'
 import { ScopeOnboarding } from '@/features/scope/components/scope-onboarding'
 import { useTranslation } from '@/context/i18n-provider'
 
@@ -128,24 +127,18 @@ export default function ScopePage() {
     setTabParam(p.get('tab') ?? 'in')
   }
 
-  // Counts for the tabs and the strip (one row each; the lists load their own).
-  const { data: activeEntries, error: activeEntriesError } = useScopeTargetsApi({
-    status: 'active',
-    per_page: 1,
-  })
-  const { data: inEntries } = useScopeTargetsApi({
-    status: 'active,pending,expired,inactive',
-    per_page: 1,
-  })
-  const { data: outRows } = useScopeExclusionsApi({
-    status: 'active,pending,inactive,expired,rejected',
-    per_page: 1,
-  })
-  const { data: activeOut, error: activeOutError } = useScopeExclusionsApi({
-    status: 'active',
-    per_page: 1,
-  })
-  const { total: pending } = usePendingScopeChanges()
+  // Counts for the tabs, the strip and the approvals: two requests (entries,
+  // exclusions), each counting every status; the lists load their own rows.
+  const counts = useScopeStatusCounts()
+  const activeEntries = counts.targets?.active ?? 0
+  const activeOut = counts.exclusions?.active ?? 0
+  const inEntries = counts.targets
+    ? sumStatusCounts(counts.targets, ['active', 'pending', 'expired', 'inactive'])
+    : undefined
+  const outRows = counts.exclusions
+    ? sumStatusCounts(counts.exclusions, ['active', 'pending', 'inactive', 'expired', 'rejected'])
+    : undefined
+  const pending = (counts.targets?.pending ?? 0) + (counts.exclusions?.pending ?? 0)
   // Without approvals in force and nothing waiting there is nothing to decide.
   const showApprovals = entriesNeedApproval || pending > 0
   const tab: ScopeTab = tabVisible(tabParam) ? (tabParam as ScopeTab) : 'in'
@@ -167,14 +160,14 @@ export default function ScopePage() {
     {
       key: 'in',
       label: t('scope.strip.entriesInEffect', 'Entries in effect'),
-      value: activeEntries?.total ?? 0,
+      value: activeEntries,
       onClick: () => openInEffect('in'),
       active: tab === 'in' && status === 'active',
     },
     {
       key: 'out',
       label: t('scope.strip.exclusionsInEffect', 'Exclusions in effect'),
-      value: activeOut?.total ?? 0,
+      value: activeOut,
       onClick: () => openInEffect('out'),
       active: tab === 'out' && status === 'active',
     },
@@ -226,8 +219,8 @@ export default function ScopePage() {
       value={tab}
       clearable={false}
       options={[
-        { value: 'in', label: t('scope.tabs.entries', 'Entries'), count: inEntries?.total },
-        { value: 'out', label: t('scope.tabs.exclusions', 'Exclusions'), count: outRows?.total },
+        { value: 'in', label: t('scope.tabs.entries', 'Entries'), count: inEntries },
+        { value: 'out', label: t('scope.tabs.exclusions', 'Exclusions'), count: outRows },
         ...(showApprovals
           ? [
               {
@@ -262,10 +255,7 @@ export default function ScopePage() {
         </PageHeader>
         <GatedSectionTabs tabs={SCOPE_SECTION_TABS} label={t('scope.sections', 'Scope sections')} />
 
-        <MetricStrip
-          loading={(!activeEntries && !activeEntriesError) || (!activeOut && !activeOutError)}
-          items={metrics}
-        />
+        <MetricStrip loading={counts.isLoading} items={metrics} />
 
         {tab === 'in' ? (
           <ScopeEntriesTable

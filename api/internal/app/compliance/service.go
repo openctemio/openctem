@@ -73,7 +73,36 @@ func (s *ComplianceService) GetFrameworkBySlug(ctx context.Context, slug string)
 func (s *ComplianceService) GetFrameworkStats(ctx context.Context, tenantID, frameworkID string) (*compliancedom.FrameworkStats, error) {
 	tid, _ := shared.IDFromString(tenantID)
 	fid, _ := shared.IDFromString(frameworkID)
+	// Only a framework the tenant may see: another organization's custom
+	// framework answers not found, never its control count.
+	if _, err := s.frameworkRepo.GetByID(ctx, tid, fid); err != nil {
+		return nil, err
+	}
 	return s.assessmentRepo.GetStatsByFramework(ctx, tid, fid)
+}
+
+// GetFrameworksStats returns the stats of each listed framework (the
+// frameworks list, include=stats). The frameworks come from ListFrameworks
+// for the same tenant; a framework without controls gets zero stats.
+func (s *ComplianceService) GetFrameworksStats(ctx context.Context, tenantID string, frameworks []*compliancedom.Framework) (map[shared.ID]*compliancedom.FrameworkStats, error) {
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
+	ids := make([]shared.ID, len(frameworks))
+	for i, f := range frameworks {
+		ids[i] = f.ID()
+	}
+	stats, err := s.assessmentRepo.GetStatsByFrameworks(ctx, tid, ids)
+	if err != nil {
+		return nil, err
+	}
+	for _, id := range ids {
+		if stats[id] == nil {
+			stats[id] = &compliancedom.FrameworkStats{}
+		}
+	}
+	return stats, nil
 }
 
 // =============================================

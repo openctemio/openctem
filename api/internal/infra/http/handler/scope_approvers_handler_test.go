@@ -39,6 +39,9 @@ func (r oneTargetRepo) ListActive(context.Context, shared.ID) ([]*scopedom.Targe
 	return nil, nil
 }
 func (r oneTargetRepo) Count(context.Context, scopedom.TargetFilter) (int64, error) { return 0, nil }
+func (r oneTargetRepo) CountByStatus(context.Context, scopedom.TargetFilter) (map[scopedom.Status]int64, error) {
+	return nil, nil
+}
 func (r oneTargetRepo) FindByPattern(context.Context, shared.ID, scopedom.TargetType, string) (*scopedom.Existing, error) {
 	return nil, nil
 }
