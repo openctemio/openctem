@@ -115,6 +115,23 @@ counts the same filtered set by status. Both need `assets:read`. Subjects and
 issuers are chosen by whoever issued the certificate: clients render them as
 text.
 
+## Technologies (`GET /attack-surface/technologies`)
+
+The Technologies view reads `asset_technologies` through the `technologies`
+registry (`pkg/domain/technology`) in two stages. The row stage is one row per
+asset and technology, joined to the software version the detection was
+matched to; the tenant predicate, the data scope (on each row's asset) and
+every filter apply there. The group stage folds the rows into one row per
+technology and version and adds the CVE figures and the open alert count.
+Filter fields are therefore row-stage columns and sort keys group-stage
+columns: `asset_count`, `cve_count`, `top_cvss` and `active_alerts` are sort
+keys only (filtering on them is `400`). A version is listed exactly when one
+visible asset runs it, and every count covers visible assets only. `GET
+/attack-surface/technologies/stats` counts the same filtered versions (all,
+with CVEs, with a known-exploited CVE, of unknown version, with open alerts).
+Both need `assets:read`. Names, versions and vendors are scan output: clients
+render them as text.
+
 ## Errors
 
 A bad filter is `400` with code `INVALID_FILTER` and `details[]` naming the

@@ -124,7 +124,18 @@ export function inventoryChips(filters: InventoryFilters, ctx: ChipContext): Inv
     chips.push({
       key: 'technologies',
       text: is(t('assets.chip.technology', 'Technology'), filters.technologies),
-      clear: without('technologies'),
+      clear: without('technologies', 'technologyVersion'),
+    })
+  }
+  if (filters.technologyVersion !== undefined && filters.technologies?.length) {
+    chips.push({
+      key: 'technologyVersion',
+      text: filters.technologyVersion
+        ? t('assets.chip.technologyVersion', 'Version is {version}', {
+            version: filters.technologyVersion,
+          })
+        : t('assets.chip.technologyVersionUnknown', 'Version unknown'),
+      clear: without('technologyVersion'),
     })
   }
   if (filters.technologyCategories?.length) {
