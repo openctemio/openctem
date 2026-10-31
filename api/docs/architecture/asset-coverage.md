@@ -229,6 +229,42 @@ import the pack (see [wordlists.md](wordlists.md)). Coverage resumes on its
 own once the pack is imported. An error reading the pack store does not
 pause it; the claim-time pin still refuses the job.
 
+**Deep onboarding of new roots.** The first enumeration of a new root runs
+once at deep depth, then the root returns to the weekly standard pass.
+
+- *A new root* is a `domain` asset whose `enumerate.subdomains` pair has
+  never succeeded (no `last_success_at`). The pair exists only while an
+  active scope entry covers the root (the rule's `requires: [scope_entry]`),
+  so this is a root added by a new scope entry, a root newly brought under
+  one, or a root (an acquired domain) added to the inventory under an
+  existing entry. Roots enumerated before this change keep the steady pass;
+  roots never enumerated get the deep pass once.
+- *Once* is recorded by the ledger itself: the pair settles `covered` (with
+  `last_success_at`) when the deep run finishes, so a restart, a second API
+  replica or a later pass never repeats it. No other table holds onboarding
+  state. Deleting and re-adding the root creates a new pair, which is
+  onboarded again.
+- *Dispatch*: one coverage run has one depth, and one run per capability is
+  active at a time. When a due batch of `enumerate.subdomains` holds roots
+  still to onboard, the planner starts only those (at most 10 per run) at
+  `depth: deep`; the other due roots stay due and go at standard depth in
+  the next pass after the deep run finishes (new roots first). The deep job
+  pins the medium pack (`wordlists-m`, up to 1,000,000 lines) plus the same
+  learned labels and permutations as a standard job.
+- *Failure*: a failed deep pass retries on the normal back-off, still deep.
+  After 3 failures in a row (`fail_streak + platform_fail_streak`) the root
+  falls back to standard, so a root is never left without enumeration; the
+  first standard success completes onboarding. When the platform has no
+  stable `wordlists-m` (revoked, none imported), the run starts at standard
+  depth instead of being refused at claim.
+- *Safety*: depth changes only the size of the label list. Which roots may
+  be enumerated is decided exactly as for the steady pass (scope entry, the
+  full dispatch gate, the claim-time re-check, domain proof on shared
+  sensors); a refused root is blocked at every depth. The load on name
+  servers is bounded by one deep run per tenant at a time, 10 roots per run,
+  the sensor's rate limit and the medium pack's line cap. Onboarding state is
+  the tenant's own ledger rows (`DueBatch` filters on the tenant).
+
 **Dead names.** A name that does not resolve is an answer, not a failure.
 A sensor reports it per target: in the result's `refused_targets` with
 reason `unresolvable` and the DNS kind (`name_gone` for NXDOMAIN or NODATA,
