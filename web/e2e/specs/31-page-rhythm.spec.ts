@@ -17,7 +17,8 @@ import { test, expect } from '../fixtures/authenticated-page'
  * - tab icons: all tabs of a strip have one or none does, 16px; no tab label
  *   cut at the strip's edge (a strip that does not fit moves tabs to More);
  * - a metric strip: at most five tiles, each a link or a filter toggle, no
- *   sideways scroll, at most two rows on a phone;
+ *   sideways scroll, at most two rows on a phone (three for five tiles with
+ *   detail lines, which never sit in thirds);
  * - chips never wrap onto a second line and hold no " · ";
  * - an empty list shows no pagination ("Showing 0 - 0 of 0", "Page 1 of 0");
  * - a table's name column keeps a readable width at 1440px;
@@ -83,7 +84,13 @@ type Probe = {
   pairs: { from: string; to: string; gap: number }[]
   tabRows: number
   rowFilterSegmented: string[]
-  strips: { tiles: number; interactive: number; overflowX: boolean; rows: number }[]
+  strips: {
+    tiles: number
+    interactive: number
+    overflowX: boolean
+    detailed: boolean
+    rows: number
+  }[]
   tabStrips: { icons: number; count: number; iconSizes: number[]; clipped: string[] }[]
   wrappedChips: string[]
   middotChips: string[]
@@ -174,6 +181,7 @@ async function probe(page: Page): Promise<Probe> {
           tiles: figures.length,
           interactive: figures.filter((t) => t.matches('a[href], button')).length,
           overflowX: dl.scrollWidth > dl.clientWidth + 1,
+          detailed: dl.hasAttribute('data-detailed'),
           rows: new Set(tiles.map((t) => Math.round(t.getBoundingClientRect().top))).size,
         }
       })
@@ -257,7 +265,9 @@ async function checkAt(page: Page, route: string, width: number) {
     expect.soft(s.interactive, `${at}: every tile is a link or a filter toggle`).toBe(s.tiles)
     expect.soft(s.overflowX, `${at}: the strip never scrolls sideways`).toBe(false)
     if (width < 640)
-      expect.soft(s.rows, `${at}: at most two rows on a phone`).toBeLessThanOrEqual(2)
+      expect
+        .soft(s.rows, `${at}: at most two rows on a phone`)
+        .toBeLessThanOrEqual(s.detailed && s.tiles === 5 ? 3 : 2)
   }
   expect.soft(r.wrappedChips, `${at}: chips stay on one line`).toEqual([])
   expect.soft(r.middotChips, `${at}: no " · " inside a chip`).toEqual([])

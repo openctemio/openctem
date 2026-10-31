@@ -141,7 +141,62 @@ function TokenList({ canRevoke }: { canRevoke: boolean }) {
   }
   return (
     <>
-      <div className="overflow-x-auto">
+      {/* A phone gets one card per token: seven columns in a sideways
+          scrolling table hid the state and the Revoke button off screen. */}
+      <ul className="divide-y sm:hidden" data-slot="enrollment-token-cards">
+        {items.map((tok) => (
+          <li key={tok.id} className="space-y-2 py-3 first:pt-0 last:pb-0">
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <span className="block truncate font-medium">{tok.name}</span>
+                <span className="block font-mono text-xs text-muted-foreground">
+                  {t('sensors.tokens.endsWith', undefined, { hint: tok.token_hint })}
+                </span>
+              </div>
+              <StatusChip domain="enrollmentToken" value={tok.state} />
+            </div>
+            <dl className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
+              <div className="min-w-0">
+                <dt className="text-muted-foreground">{t('sensors.tokens.col.uses')}</dt>
+                <dd className="tabular-nums">
+                  {t('sensors.tokens.usesOf', undefined, {
+                    used: tok.use_count,
+                    max: tok.max_uses,
+                  })}
+                </dd>
+              </div>
+              <div className="min-w-0">
+                <dt className="text-muted-foreground">{t('sensors.tokens.col.expires')}</dt>
+                <dd className="break-words" title={exactTime(tok.expires_at)}>
+                  {new Date(tok.expires_at).toLocaleString()}
+                </dd>
+              </div>
+              <div className="min-w-0">
+                <dt className="text-muted-foreground">{t('sensors.tokens.col.lastUsed')}</dt>
+                <dd className="break-words" title={exactTime(tok.last_used_at)}>
+                  {tok.last_used_at
+                    ? agoShort(tok.last_used_at, now, t)
+                    : t('sensors.tokens.never')}
+                </dd>
+              </div>
+              <div className="min-w-0">
+                <dt className="text-muted-foreground">{t('sensors.tokens.col.approval')}</dt>
+                <dd>
+                  {tok.require_approval
+                    ? t('sensors.tokens.approval.required')
+                    : t('sensors.tokens.approval.automatic')}
+                </dd>
+              </div>
+            </dl>
+            {canRevoke && tok.state !== 'revoked' && (
+              <Button variant="outline" size="sm" onClick={() => setRevoking(tok)}>
+                {t('sensors.tokens.revoke')}
+              </Button>
+            )}
+          </li>
+        ))}
+      </ul>
+      <div className="hidden overflow-x-auto sm:block">
         <Table>
           <TableHeader>
             <TableRow>

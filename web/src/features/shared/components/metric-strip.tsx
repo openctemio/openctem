@@ -59,9 +59,15 @@ export function smColumns(count: number): number {
 /**
  * Phone grid span (out of 6 tracks) of tile `index` in a strip of `count`:
  * every row is full and no tile sits alone.
+ *
+ * Number-only tiles fit thirds (about 120px on a 390px phone). A strip whose
+ * tiles carry a detail line (`detailed`) never uses thirds: a sentence in a
+ * 120px column wraps word by word and runs into the next tile. Its tiles take
+ * halves, and the first one the whole row when the count is odd.
  */
-export function phoneSpan(count: number, index: number): 2 | 3 | 6 {
+export function phoneSpan(count: number, index: number, detailed = false): 2 | 3 | 6 {
   if (count <= 1) return 6
+  if (detailed) return count % 2 === 1 && index === 0 ? 6 : 3
   if (count === 3) return 2
   if (count === 5) return index < 3 ? 2 : 3
   if (count === 2 || count === 4) return 3
@@ -80,7 +86,12 @@ const PHONE_SPAN_CLASS = { 2: 'col-span-2', 3: 'col-span-3', 6: 'col-span-6' } a
  * Phone (research/244 mobile decision M2): compact tiles on a six-track
  * grid, at most two rows: 2 and 4 tiles in halves, 3 in thirds, 5 as three
  * thirds over two halves; smaller values; a long label wraps to a second line
- * instead of being cut. Never a sideways scroll.
+ * instead of being cut. Never a sideways scroll. A strip with detail lines
+ * uses halves (the first tile full width when the count is odd) and keeps
+ * its captions, so no sentence is squeezed into a third (`phoneSpan`).
+ * Every tile starts at the top, whatever element it is: a `<button>` centres
+ * its content by default, which pushed a toggle tile's label below its
+ * neighbours'.
  * Tablet: balanced rows (`smColumns`). Desktop: one row.
  *
  * States: `loading` shows a skeleton per value; `error` shows "—" per value
@@ -104,9 +115,11 @@ export function MetricStrip({
       `MetricStrip: ${items.length} tiles; the page anatomy allows ${METRIC_STRIP_MAX}. Use quick views or filters for the rest.`
     )
   }
+  const detailed = items.some((item) => item.detail != null && item.detail !== false)
   return (
     <div
       data-slot="metric-strip"
+      data-detailed={detailed || undefined}
       className={cn(
         'grid grid-cols-6 overflow-hidden rounded-lg border bg-card',
         'sm:grid-cols-[repeat(var(--metric-cols-sm),minmax(0,1fr))] lg:grid-cols-[repeat(var(--metric-cols),minmax(0,1fr))]',
@@ -120,6 +133,7 @@ export function MetricStrip({
       }
     >
       {items.map((item, index) => {
+        const span = phoneSpan(items.length, index, detailed)
         const numeric = typeof item.value === 'number'
         const zero = numeric && item.value === 0
         const positive = numeric && (item.value as number) > 0
@@ -129,11 +143,19 @@ export function MetricStrip({
           <>
             <span
               data-slot="metric-label"
-              className="line-clamp-2 block text-xs text-muted-foreground sm:line-clamp-none sm:truncate"
+              className={cn(
+                'line-clamp-2 block text-xs text-muted-foreground sm:line-clamp-none sm:truncate',
+                // In a third, a label may wrap: every third keeps two lines
+                // so the values of a row stay on one baseline.
+                span === 2 && 'min-h-8 sm:min-h-0'
+              )}
             >
               {item.label}
             </span>
-            <span data-slot="metric-value" className="mt-0.5 block">
+            <span
+              data-slot="metric-value"
+              className="mt-0.5 flex flex-wrap items-baseline gap-x-1.5"
+            >
               {loading ? (
                 <Skeleton className="h-6 w-12 sm:h-7 sm:w-14" />
               ) : error ? (
@@ -157,8 +179,16 @@ export function MetricStrip({
               )}
               {item.hint && !loading && !error ? (
                 // A compact phone tile has no room for a caption: it moves to
-                // the tile's tooltip there.
-                <span className="ms-1.5 hidden text-xs text-muted-foreground sm:inline">
+                // the tile's tooltip there. A detailed strip's tiles are wide
+                // enough to keep it.
+                <span
+                  className={cn(
+                    // Its own flex item: a caption that does not fit beside
+                    // the value moves under it whole, never split mid-phrase.
+                    'text-xs text-muted-foreground',
+                    detailed ? 'inline' : 'hidden sm:inline'
+                  )}
+                >
                   {item.hint}
                 </span>
               ) : null}
@@ -174,8 +204,8 @@ export function MetricStrip({
           </>
         )
         const cellClass = cn(
-          'block min-w-0 -ms-px -mt-px border-s border-t px-3 py-2 text-start sm:col-span-1 sm:px-4 sm:py-2.5',
-          PHONE_SPAN_CLASS[phoneSpan(items.length, index)],
+          'flex min-w-0 flex-col items-stretch justify-start -ms-px -mt-px border-s border-t px-3 py-2 text-start sm:col-span-1 sm:px-4 sm:py-2.5',
+          PHONE_SPAN_CLASS[span],
           item.active && 'bg-accent'
         )
         const interactive =
