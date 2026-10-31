@@ -321,7 +321,8 @@ func (p *FindingProcessor) processBatch(
 	var defaultAssetID shared.ID
 	// Not when an asset of the report was skipped by a scope exclusion: its
 	// findings would land on the one asset that was kept.
-	if len(assetMap) == 1 && !strictAssets && len(output.ExcludedAssetRefs) == 0 && len(output.OutOfScopeAssetRefs) == 0 {
+	if len(assetMap) == 1 && !strictAssets && len(output.ExcludedAssetRefs) == 0 && len(output.OutOfScopeAssetRefs) == 0 &&
+		len(output.OutsideJobAssetRefs) == 0 {
 		for _, id := range assetMap {
 			defaultAssetID = id
 			break
@@ -348,6 +349,14 @@ func (p *FindingProcessor) processBatch(
 				output.FindingsSkipped++
 				addItem(output, report, &ctisFinding, ingestreceipt.DispositionOutOfScope, ingestreceipt.ReasonExcluded,
 					ingestreceipt.PolicyScopeExclusion, nil)
+				continue
+			}
+			if output.OutsideJobAssetRefs[ctisFinding.AssetRef] {
+				// Its asset lies outside the bound command's targets.
+				output.FindingsSkipped++
+				output.FindingsOutsideJob++
+				addItem(output, report, &ctisFinding, ingestreceipt.DispositionOutOfScope, ingestreceipt.ReasonOutsideJob,
+					ingestreceipt.PolicyBinding, nil)
 				continue
 			}
 			if output.OutOfScopeAssetRefs[ctisFinding.AssetRef] {

@@ -49,7 +49,12 @@ type Report struct {
 	ReportID   string
 	CommandID  *shared.ID
 	ScanZoneID *shared.ID
-	State      State
+	// CommandLeaseEpoch is the bound command's lease epoch when the report
+	// was accepted (nil without a command, or for an older row): the worker
+	// processes the report only while the sensor still holds the command
+	// under it.
+	CommandLeaseEpoch *int
+	State             State
 
 	// Provenance stamped by the server.
 	MediaType  string

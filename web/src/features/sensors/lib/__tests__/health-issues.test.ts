@@ -153,6 +153,18 @@ describe('sensorHealthIssues', () => {
     expect(issue).toMatchObject({ title: 'Not connected yet', action: 'install' })
   })
 
+  it('does not ask a never connected sensor to upgrade for its tools', () => {
+    // Its tools arrive with its first heartbeat: one problem, not two.
+    const issues = issuesOf({
+      ...base,
+      effective: undefined,
+      reported: undefined,
+      last_seen_at: undefined,
+    })
+    expect(issues.map((i) => i.title)).toEqual(['Not connected yet'])
+    expect(issues[0].text).toContain('install command')
+  })
+
   it('puts an offline sensor first, with when it went quiet', () => {
     const lastSeen = new Date(NOW - 3600 * 1000).toISOString()
     const issues = issuesOf({

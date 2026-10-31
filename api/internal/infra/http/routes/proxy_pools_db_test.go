@@ -42,6 +42,9 @@ type ppHarness struct {
 	sensorA, sensorB shared.ID
 	sharedSensor     shared.ID
 	admin            shared.ID
+	svc              *proxypoolapp.Service
+	repo             *postgres.ProxyPoolRepository
+	cmds             *postgres.CommandRepository
 }
 
 // ppCaller is who calls: a tenant and, for a member, its permissions
@@ -94,6 +97,15 @@ func newPPHarness(t *testing.T) *ppHarness {
 	})
 	svc.EnableTest(postgres.NewSensorRepository(db), postgres.NewCommandRepository(db),
 		proxypoolapp.TestConfig{EchoBase: "https://echo.example.test", AltPort: 80})
+	h.svc, h.repo, h.cmds = svc, postgres.NewProxyPoolRepository(db), postgres.NewCommandRepository(db)
+	// Shared sensors' published egress, for tenant A only (B may not use
+	// shared sensors).
+	svc.EnableScannerAddresses(h.repo, func(_ context.Context, tid shared.ID) ([]proxypoolapp.PlatformEgress, error) {
+		if tid != h.tenantA {
+			return nil, nil
+		}
+		return []proxypoolapp.PlatformEgress{{Addresses: []string{"192.0.2.0/24", "not-an-address"}}}, nil
+	})
 	registerProxyPoolRoutes(router, handler.NewProxyPoolHandler(svc, log), auth, nil)
 	registerProxyTestEchoRoute(router, handler.NewProxyTestEchoHandler(svc))
 	h.srv = httptest.NewServer(router.(interface{ Handler() http.Handler }).Handler())

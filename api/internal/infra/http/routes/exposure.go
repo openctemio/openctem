@@ -56,6 +56,11 @@ func registerExposureRoutes(
 		r.POST("/{id}/false-positive", h.MarkFalsePositive, middleware.RequireAll(permission.FindingsApprove, permission.ExposuresTriage))
 		r.POST("/{id}/disposition/reject", h.RejectDisposition, middleware.RequireAll(permission.FindingsApprove, permission.ExposuresTriage))
 		r.POST("/{id}/reactivate", h.Reactivate, middleware.RequireAll(permission.FindingsWrite, permission.ExposuresTriage))
+		r.POST("/{id}/start-progress", h.StartProgress, middleware.RequireAll(permission.FindingsWrite, permission.ExposuresTriage))
+		// Analyst severity override: the same precise permission a finding's
+		// severity change needs, plus exposure triage. Reason required,
+		// audited; the four-eyes rule keeps reading the reported peak.
+		r.PATCH("/{id}/severity", h.ChangeSeverity, middleware.RequireAll(permission.FindingsSeverity, permission.ExposuresTriage))
 
 		// CTEM-ID tag: associate a standardized exposure-catalog id with this
 		// exposure (stored on the exposure's details; no schema change).

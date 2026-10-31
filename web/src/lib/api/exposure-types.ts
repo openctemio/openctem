@@ -37,13 +37,70 @@ export type ExposureEventType =
   | 'identity_mfa_gap'
   | 'identity_stale_principal'
   | 'identity_overprivileged'
+  | 'web_interface_exposed'
+  | 'mcp_server_exposed'
+  | 'mail_server_blocklisted'
   | 'custom'
 
 // Exposure severity levels
 export type ExposureSeverity = 'critical' | 'high' | 'medium' | 'low' | 'info'
 
 // Exposure state - lifecycle management
-export type ExposureState = 'active' | 'resolved' | 'accepted' | 'false_positive'
+export type ExposureState = 'active' | 'in_progress' | 'resolved' | 'accepted' | 'false_positive'
+
+/** The states of an exposure that still needs work. */
+export const OPEN_EXPOSURE_STATES: ExposureState[] = ['active', 'in_progress']
+
+/**
+ * Display categories, one per event type, in presentation order (the API's
+ * exposure.Categories()). `produced`: the platform ships a producer for the
+ * category today; a category without one is shown only when it has
+ * exposures.
+ */
+export const EXPOSURE_DISPLAY_CATEGORIES = [
+  { key: 'exposed_ports', label: 'Exposed ports', produced: true },
+  { key: 'web_interfaces', label: 'Exposed web interfaces', produced: false },
+  { key: 'exposed_apis', label: 'Exposed APIs', produced: true },
+  { key: 'ai_services', label: 'Exposed AI services', produced: false },
+  { key: 'web_application', label: 'Web application security', produced: true },
+  { key: 'ssl_tls', label: 'SSL/TLS issues', produced: true },
+  { key: 'certificates', label: 'Certificates', produced: true },
+  { key: 'hijackable_subdomains', label: 'Hijackable subdomains', produced: true },
+  { key: 'email_security', label: 'Email security', produced: true },
+  { key: 'cloud_storage', label: 'Exposed cloud storage', produced: false },
+  { key: 'code_repositories', label: 'Public code repositories', produced: false },
+  { key: 'credentials_data', label: 'Leaked credentials and data', produced: true },
+  { key: 'dns', label: 'DNS changes', produced: true },
+  { key: 'lookalike_domains', label: 'Lookalike domains', produced: true },
+  { key: 'identity', label: 'Identity', produced: true },
+  { key: 'other', label: 'Other', produced: true },
+] as const
+
+export type ExposureDisplayCategory = (typeof EXPOSURE_DISPLAY_CATEGORIES)[number]['key']
+
+export function isExposureDisplayCategory(v: string): v is ExposureDisplayCategory {
+  return EXPOSURE_DISPLAY_CATEGORIES.some((c) => c.key === v)
+}
+
+/**
+ * One-line description of an exposure: the English sentence, the sentence
+ * form used (variant) and its values, so the web renders the same sentence
+ * in the viewer's language. Scan output: render as text.
+ */
+export interface ExposureSummary {
+  text: string
+  variant?: string
+  args?: Record<string, string>
+}
+
+/** A standing analyst override of an exposure's severity. */
+export interface ExposureSeverityOverride {
+  /** What the producer reported (and keeps reporting). */
+  reported_severity: ExposureSeverity
+  reason: string
+  overridden_by?: string
+  overridden_at?: string
+}
 
 /**
  * Exposure Event entity from API
@@ -72,7 +129,11 @@ export interface ExposureEvent {
   canonical_asset_id?: string
   native_asset_id?: string
   event_type: ExposureEventType
+  display_category?: ExposureDisplayCategory
+  summary?: ExposureSummary
+  /** The effective severity (an analyst's override when one stands). */
   severity: ExposureSeverity
+  severity_override?: ExposureSeverityOverride
   state: ExposureState
   title: string
   description?: string
@@ -144,6 +205,7 @@ export interface ExposureListFilters {
   severities?: ExposureSeverity[]
   states?: ExposureState[]
   sources?: string[]
+  categories?: ExposureDisplayCategory[]
   search?: string
   first_seen_after?: number // Unix timestamp
   first_seen_before?: number // Unix timestamp
@@ -222,7 +284,10 @@ export interface ExposureStats {
   by_severity: Record<ExposureSeverity, number>
   by_state: Record<ExposureState, number>
   by_event_type: Record<string, number>
+  by_category?: Partial<Record<ExposureDisplayCategory, number>>
+  /** Every open exposure (active or in progress). */
   active_count: number
+  in_progress_count?: number
   resolved_count: number
   mttr_hours?: number // Mean Time To Resolve
 }
@@ -374,6 +439,21 @@ export const EVENT_TYPE_CONFIG: Record<
     description: 'An identity with more rights than it uses',
     category: 'identity',
   },
+  web_interface_exposed: {
+    label: 'Web Interface Exposed',
+    description: 'A login or administration page reachable from the internet',
+    category: 'config',
+  },
+  mcp_server_exposed: {
+    label: 'MCP Server Exposed',
+    description: 'A Model Context Protocol server reachable from the internet',
+    category: 'service',
+  },
+  mail_server_blocklisted: {
+    label: 'Mail Server Blocklisted',
+    description: 'A mail server address listed on a DNS blocklist',
+    category: 'domain',
+  },
   custom: {
     label: 'Custom',
     description: 'Custom exposure event',
@@ -421,6 +501,11 @@ export const EXPOSURE_STATE_CONFIG: Record<
     label: 'Active',
     color: 'text-red-600',
     bgColor: 'bg-red-100 dark:bg-red-900/30',
+  },
+  in_progress: {
+    label: 'In progress',
+    color: 'text-blue-600', // palette-ok: distinct state accent, matches its siblings
+    bgColor: 'bg-blue-100 dark:bg-blue-900/30', // palette-ok: distinct state accent
   },
   resolved: {
     label: 'Resolved',
