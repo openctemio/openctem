@@ -1,5 +1,7 @@
 # Placement: which sensor can take a task, and why a task waits
 
+Part of the [sensor and platform workflow](sensor-platform-workflow.md).
+
 Status: **shipped** (explainer and the run task endpoint). Design:
 [RFC-030](../rfcs/RFC-030-scan-work-distribution.md) §5.13.
 

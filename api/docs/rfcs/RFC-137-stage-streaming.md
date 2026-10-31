@@ -3,6 +3,7 @@
 | | |
 |---|---|
 | Status | Accepted (2026-10-31). Streaming in the hop router shipped (on by default, `SCAN_STAGE_STREAMING`, per-workflow `stage_barrier`); the run page shows waves from the stage API; item-level pool streaming follows with the target pool |
+| Workflow | [sensor-platform-workflow.md](../architecture/sensor-platform-workflow.md) (the end-to-end sensor and platform flow as implemented today) |
 | Scope | api (scan run scheduler, hop router, stage plan store, stall repair, metrics, workflow setting), docs |
 | Architecture | [scan-stages.md §3.6](../architecture/scan-stages.md#36-stage-streaming) |
 | Related | RFC-030 (pull, chunks, leases), RFC-040 (signed jobs, sensor-local policy), RFC-046 (Scan, Run, Task; partial runs), RFC-088 (typed units, host chunks), RFC-089 (reach), [finding-closure.md](../architecture/finding-closure.md) (coverage per command) |
