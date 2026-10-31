@@ -100,6 +100,40 @@ var (
 		},
 		[]string{"reason"},
 	)
+
+	// ScanStageStreamWaves counts the plannings of streamed workflow stages
+	// (RFC-137): kind start (the first wave), wave or close; outcome
+	// dispatched, empty, deferred (a predecessor report is still being
+	// ingested), deadline (the run's deadline was too close) or error.
+	ScanStageStreamWaves = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "scan_stage_stream_waves_total",
+			Help: "Waves of streamed scan stages, by kind and outcome",
+		},
+		[]string{"kind", "outcome"},
+	)
+
+	// ScanStageTimeToFirstSuccessor is how long after a step started its
+	// streamed successor got its first targets.
+	ScanStageTimeToFirstSuccessor = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "scan_stage_time_to_first_successor_seconds",
+			Help:    "Seconds from a step's start to its streamed successor's first dispatch",
+			Buckets: []float64{1, 5, 15, 30, 60, 120, 300, 600, 1200, 1800, 3600, 7200},
+		},
+		[]string{"mode"},
+	)
+
+	// ScanStageBarrierWaitSaved is how much earlier a streamed stage got its
+	// first targets than waiting for its predecessors to finish would have
+	// handed them.
+	ScanStageBarrierWaitSaved = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "scan_stage_barrier_wait_saved_seconds",
+			Help:    "Seconds a streamed scan stage started before its predecessors finished",
+			Buckets: []float64{1, 5, 15, 30, 60, 120, 300, 600, 1200, 1800, 3600, 7200},
+		},
+	)
 )
 
 // Finding lifecycle metrics

@@ -514,6 +514,13 @@ export const settingsNav: SettingsNavGroup[] = [
           'risk acceptance',
           'backup contact',
         ],
+        anchors: [
+          {
+            id: 'approval-tiers',
+            title: 'Approval tiers and approvers',
+            keywords: ['four-eyes', 'approvers', 'decision lasts'],
+          },
+        ],
       },
       {
         id: 'risk-scoring',
@@ -524,6 +531,18 @@ export const settingsNav: SettingsNavGroup[] = [
         permission: Permission.TeamUpdate,
         module: 'risk_scoring',
         keywords: ['score', 'weights', 'presets'],
+        anchors: [
+          {
+            id: 'floor-unowned-toggle',
+            title: 'Unowned findings at P2',
+            keywords: ['owner', 'floor', 'unowned'],
+          },
+          {
+            id: 'ctem-toggle',
+            title: 'CTEM bonus points',
+            keywords: ['bonus', 'exposure', 'pii'],
+          },
+        ],
       },
       {
         id: 'sla-policies',
@@ -617,6 +636,13 @@ export const settingsNav: SettingsNavGroup[] = [
         permission: Permission.ScopeRead,
         module: 'scope_config',
         keywords: ['scope', 'approvals', 'one-off', 'exception', 'tier', 'auto-join', 'proof'],
+        anchors: [
+          {
+            id: 'scope-approval-policy',
+            title: 'Scope approval policy',
+            keywords: ['approvers', 'who widens scope', 'one-off', 'auto-join'],
+          },
+        ],
       },
       {
         id: 'scan-approval',
@@ -819,6 +845,7 @@ export const settingsNav: SettingsNavGroup[] = [
         // Organization wordlists (api docs/architecture/wordlists.md): read
         // with scans:content:read; changes need scans:content:write.
         id: 'wordlists',
+        section: 'content',
         title: 'Wordlists',
         description: 'Words subdomain discovery tries under your domains.',
         url: '/settings/scanning/wordlists',

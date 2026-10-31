@@ -73,6 +73,26 @@ describe('MetricStrip', () => {
     expect(screen.getByText('Total')).toBeInTheDocument()
     expect(screen.queryByText('93')).not.toBeInTheDocument()
   })
+
+  it('keeps the tile height while loading: value line and detail line hold their place', () => {
+    const { container } = render(
+      <MetricStrip
+        loading
+        items={[
+          { key: 't', label: 'Total', value: 93, detail: '4 new this week' },
+          { key: 'u', label: 'Other', value: 2 },
+        ]}
+      />
+    )
+    const values = container.querySelectorAll('[data-slot="metric-value"] > span')
+    // The skeleton sits in a box of the value's line height (28px, 32px from sm).
+    expect(values[0]).toHaveClass('h-7', 'sm:h-8')
+    // A tile with a detail reserves its line; one without reserves nothing.
+    const details = container.querySelectorAll('[data-slot="metric-detail"]')
+    expect(details).toHaveLength(1)
+    expect(details[0]).toHaveClass('h-4')
+    expect(screen.queryByText('4 new this week')).not.toBeInTheDocument()
+  })
 })
 
 describe('MetricStrip warning tone and detail', () => {
