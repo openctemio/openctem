@@ -52,7 +52,7 @@
 # The scanning sensor (openctemio/sensor).
 sensor:
   product: openctemio-sensor
-  latest: v0.23.2
+  latest: v0.29.1
   min: v0.9.0
   image: ghcr.io/openctemio/sensor
   install: sensor
@@ -80,7 +80,7 @@ connector-tenable:
 # advisory, separated by spaces; a sensor built with one is degraded with a
 # warning. "" = none.
 sdk:
-  latest: v0.34.0
+  latest: v0.41.0
   min: ""
   advisories: ""
 
@@ -90,5 +90,5 @@ sdk:
 # token exchange refuses an older runner and its pipeline is degraded; "" = no
 # minimum.
 ci:
-  latest: v0.3.0
+  latest: v0.3.1
   min: v0.3.0

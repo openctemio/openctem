@@ -1227,6 +1227,12 @@ vars:
     group: "Sensors"
     type: string
     description: "DNS resolver scan-zone routing resolves host names with: `system` (the platform's own resolver, which may know internal names) or `host[:port]` of a recursive resolver. Unset: a public resolver when organizations are self-service, otherwise `system`."
+  - name: SCAN_STAGE_STREAMING
+    component: api
+    group: "Sensors"
+    type: bool
+    default: "true"
+    description: "Stage streaming: a chained workflow step starts on the results of each finished task of its predecessor instead of waiting for the whole predecessor step; every target still passes the per-hop gate and reaches the sensor in a signed job with an explicit target list. `false` makes every chained step wait for its predecessors (the platform switch; a workflow can also keep its stages behind barriers with its own setting). Read at start-up."
   - name: SENSOR_MTLS_CA_CERT_FILE
     component: api
     group: "Sensors"
@@ -2303,12 +2309,6 @@ vars:
     type: string
     default: "256MB"
     description: "Largest request body the gateway accepts. The API enforces the per-route limits."
-  - name: AUTH_COOKIE_NAME
-    component: gateway
-    group: "Gateway"
-    type: string
-    default: "auth_token"
-    description: "Session cookie name used by the routing rule that sends token clients to the API."
   - name: OPENCTEM_GATEWAY_DIR
     component: gateway
     group: "Gateway"
@@ -2444,6 +2444,72 @@ vars:
     type: string
     default: "ghcr.io/openctemio/openctem-gateway"
     description: "Image repository of the gateway (Caddy with the layer4 module)."
+  - name: GATEWAY_VERSION
+    component: compose
+    group: "Docker Compose stack"
+    type: string
+    default: "OPENCTEM_VERSION"
+    description: "Tag of the gateway image. Leave unset to use the release tag."
+  - name: OPENCTEM_ADMIN_PUBLIC_URL
+    component: compose
+    group: "Docker Compose stack"
+    type: string
+    default: ""
+    description: "Public origin of the platform console (for example `https://console.example.com`), the origin security keys are registered for in the console. Empty uses the application's public URL."
+  - name: BACKUP_STATUS_DIR
+    component: compose
+    group: "Docker Compose stack"
+    type: string
+    default: "./backup-status"
+    description: "Host directory the backup script writes its status file to; the Health page reads it from there."
+  - name: PG_SHARED_BUFFERS
+    component: compose
+    group: "Docker Compose stack"
+    type: string
+    default: "1GB"
+    description: "PostgreSQL `shared_buffers` of the bundled database: about 25% of the host's RAM."
+  - name: PG_EFFECTIVE_CACHE_SIZE
+    component: compose
+    group: "Docker Compose stack"
+    type: string
+    default: "3GB"
+    description: "PostgreSQL `effective_cache_size` of the bundled database: about 70% of the host's RAM."
+  - name: PG_WORK_MEM
+    component: compose
+    group: "Docker Compose stack"
+    type: string
+    default: "16MB"
+    description: "PostgreSQL `work_mem` of the bundled database."
+  - name: PG_MAINTENANCE_WORK_MEM
+    component: compose
+    group: "Docker Compose stack"
+    type: string
+    default: "256MB"
+    description: "PostgreSQL `maintenance_work_mem` of the bundled database."
+  - name: PG_RANDOM_PAGE_COST
+    component: compose
+    group: "Docker Compose stack"
+    type: string
+    default: "1.1"
+    description: "PostgreSQL `random_page_cost` of the bundled database (1.1 for SSD, 4 for spinning disks)."
+  - name: PG_MAX_WAL_SIZE
+    component: compose
+    group: "Docker Compose stack"
+    type: string
+    default: "2GB"
+    description: "PostgreSQL `max_wal_size` of the bundled database."
+  - name: PG_SHM_SIZE
+    component: compose
+    group: "Docker Compose stack"
+    type: string
+    default: "256m"
+    description: "Size of `/dev/shm` of the bundled database container, shared by parallel queries."
+  - name: PG_TOAST_COMPRESSION
+    component: compose
+    group: "Docker Compose stack"
+    type: string
+    default: "lz4"
+    description: "Compression of large values (jsonb, text) in the bundled database: `lz4` or `pglz`."
   - name: API_VERSION
     component: compose
     group: "Docker Compose stack"

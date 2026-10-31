@@ -15,6 +15,9 @@ case "$*" in
   *"code-scanning/alerts?ref=refs/heads/develop"*) cat "$DEV_FILE" ;;
   *"code-scanning/alerts?ref=refs/heads/main"*) cat "$MAIN_FILE" ;;
   *"actions/artifacts"*) exit 1 ;;
+  *"repos/openctemio/sensor/releases/latest"*) echo "${SENSOR_PUBLISHED:-v0.2.0}" ;;
+  *"repos/openctemio/sdk-go/releases/latest"*) echo "v0.5.0" ;;
+  *"releases/latest"*) exit 1 ;;
   *) echo "unexpected gh: $*" >&2; exit 2 ;;
 esac
 GH
@@ -61,6 +64,18 @@ assert_eq "a fixable application advisory only warns" 0 "$rc"
 mig 000009 late
 out="$(pre)"; rc=$?
 assert_eq "a migration below the last release's highest blocks" 1 "$rc"
+
+# Release lines: versions.yaml latest behind the published release blocks.
+printf 'sensor:\n  product: openctemio-sensor\n  latest: v0.2.0\n  image: ghcr.io/openctemio/sensor\nsdk:\n  latest: v0.5.0\n' >"$tmp/r/versions.yaml"
+git -C "$tmp/r" rm -q --cached -r api/migrations/000009_late.up.sql api/migrations/000009_late.down.sql >/dev/null 2>&1
+rm -f "$tmp/r/api/migrations/000009_late."*
+git -C "$tmp/r" add -A; git -C "$tmp/r" commit -q -m manifest
+out="$(pre)"; rc=$?
+assert_eq "release lines current: exit 0 ($out)" 0 "$rc"
+assert_contains "the sensor line is reported" "sensor: v0.2.0 (current)" "$out"
+out="$(SENSOR_PUBLISHED=v0.3.0 pre)"; rc=$?
+assert_eq "a product behind its published release blocks" 1 "$rc"
+assert_contains "the stale line is named" "sensor.latest is v0.2.0, openctemio/sensor published v0.3.0" "$out"
 
 echo 'not json' >"$DEV_FILE"
 out="$(pre)"; rc=$?

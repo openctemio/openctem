@@ -2652,6 +2652,13 @@ func (s *TenantService) UpdateAssetLifecycleSettings(
 		// fabricated timestamp in the PUT body.
 		al.DryRunCompletedAt = before.DryRunCompletedAt
 
+		// Demoting more assets, sooner or with fewer guards hides them from
+		// monitoring: it needs a recent re-authentication.
+		if lifecycleLoosened(before, al) {
+			if err := s.requireStepUp(ctx, actx.ActorID); err != nil {
+				return err
+			}
+		}
 		return t.UpdateAssetLifecycleSettings(al)
 	})
 	if err != nil {
@@ -2676,6 +2683,11 @@ func (s *TenantService) UpdateAssetLifecycleSettings(
 		WithMetadata("grace_period_days_after", al.GracePeriodDays).
 		WithMetadata("excluded_source_types_before", before.ExcludedSourceTypes).
 		WithMetadata("excluded_source_types_after", al.ExcludedSourceTypes)
+	if lifecycleLoosened(before, t.TypedSettings().AssetLifecycle) {
+		event = event.WithSeverity(audit.SeverityHigh)
+		s.notifyPolicyLoosened(ctx, tenantID, actx, "Asset lifecycle loosened",
+			"the asset lifecycle settings (more assets can be set stale or inactive)", "/settings/asset-lifecycle")
+	}
 	s.logAudit(ctx, actx, event)
 
 	result := t.TypedSettings()
@@ -2858,6 +2870,11 @@ func (s *TenantService) UpdateCycleSettings(
 	var before tenantdom.CycleSettings
 	t, err := s.writeSettingsSection(ctx, tenantID, tenantdom.SectionCycles, func(t *tenantdom.Tenant) error {
 		before = t.TypedSettings().Cycles
+		if cycleLoosened(before, cs) {
+			if err := s.requireStepUp(ctx, actx.ActorID); err != nil {
+				return err
+			}
+		}
 		return t.UpdateCycleSettings(cs)
 	})
 	if err != nil {
@@ -2869,6 +2886,11 @@ func (s *TenantService) UpdateCycleSettings(
 		WithChanges(auditapp.DiffChanges(before, t.TypedSettings().Cycles)).
 		WithMessage("CTEM cycle policy updated").
 		WithMetadata("enforce_coverage_slo", cs.EnforceCoverageSLO)
+	if cycleLoosened(before, cs) {
+		event = event.WithSeverity(audit.SeverityHigh)
+		s.notifyPolicyLoosened(ctx, tenantID, actx, "CTEM cycle policy loosened",
+			"a cycle can now close below the coverage thresholds", "/cycles")
+	}
 	s.logAudit(ctx, actx, event)
 
 	out := t.TypedSettings().Cycles
@@ -3154,6 +3176,11 @@ func (s *TenantService) UpdateEASMSettings(
 	var before tenantdom.EASMSettings
 	t, err := s.writeSettingsSection(ctx, tenantID, tenantdom.SectionEASM, func(t *tenantdom.Tenant) error {
 		before = t.TypedSettings().EASM
+		if easmLoosened(before, es) {
+			if err := s.requireStepUp(ctx, actx.ActorID); err != nil {
+				return err
+			}
+		}
 		return t.UpdateEASMSettings(es)
 	})
 	if err != nil {
@@ -3167,6 +3194,11 @@ func (s *TenantService) UpdateEASMSettings(
 		WithMetadata("dns_checks_enabled", !es.DNSChecksDisabled).
 		WithMetadata("ct_interval_hours", es.CTIntervalHours).
 		WithMetadata("dns_interval_hours", es.DNSIntervalHours)
+	if easmLoosened(before, es) {
+		event = event.WithSeverity(audit.SeverityHigh)
+		s.notifyPolicyLoosened(ctx, tenantID, actx, "Attack-surface monitoring loosened",
+			"the attack-surface monitoring settings (less is watched, or less often)", "/attack-surface")
+	}
 	s.logAudit(ctx, actx, event)
 	out := t.TypedSettings().EASM
 	return &out, nil
