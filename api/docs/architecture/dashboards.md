@@ -237,6 +237,7 @@ widget has `widget_type` `metric` or `note` and a `config` of this form
   | `surface.new_assets` | category: assets added in the window by asset type, with the previous window | none | `assets`, see "Attack surface and accepted risk" |
   | `certificates.expiry` | category: certificates expired, or expiring within 7, 8-30 and 31-90 days | none | `assets` |
   | `exceptions.expiring` | category: accepted findings whose acceptance ends within 7, 8-30 days or later | none | `findings` |
+  | `intel.emerging_threats` | category: open emerging-threat alerts affecting the scope, by level (immediate, digest, listed); module `threat_intel` | none | `threat_alerts` + `threat_alert_assets`, see "Emerging threats" |
 
 - **Shapes and visualizations.** scalar: stat, progress; ratio: progress,
   stat; duration: stat; category: bar, column, table, donut, stat; time
@@ -528,6 +529,71 @@ it counts. Code: `internal/app/dashboard/widgets/surface.go`,
   without scope rows and an administrator: assets and findings outside the
   scope, program-only certificates and another tenant's rows never count or
   show; every band equals the asset or findings list it opens).
+
+### Emerging threats
+
+`intel.emerging_threats` ("Emerging threats affecting you", kind `breakdown`,
+shape `category`, default visualization `bar`) answers "which new threats do
+we act on now". It is computed into the snapshot like every widget. Code:
+`internal/app/dashboard/widgets/intel.go`,
+`internal/infra/postgres/dashboard_intel_repository.go`.
+
+- **Same statement as the list.** The figure is read with `alertSummary`
+  (`internal/infra/postgres/threat_alert_read.go`), the statement the alert
+  list (`GET /api/v1/emerging-threats`) uses for its summary strip: the
+  tenant first, an alert counted only when at least one of its assets is in
+  the read's data scope (`threat_alert_assets`, `filterspec.ScopeSQL`). A
+  personal read uses the owner's data scope, so a scoped member counts only
+  the alerts the list shows them; an organization read counts every alert.
+- **Rows.** `immediate`, `digest`, `listed` (in this order, ordinal): the
+  open alerts (new, acknowledged, remediating) of each level. A row opens
+  `/emerging-threats?level=<level>&state=open`, whose total equals the row;
+  an empty row has no link. The list page reads and writes its filters
+  (`level`, `state`, `tier`, `exposure`, `search`, `page`, `per_page`) in the
+  URL with the list API's names (`web/src/features/emerging-threats/url-filters.ts`).
+- **Not measured** `no_threat_alerts`: no alert in any state has ever
+  affected an asset in the scope, so "no open alert" is not shown as an
+  all-clear. Alerts seen but none open is a real empty figure. The decision
+  uses the scope's own alerts, never the organization's, so it tells a scoped
+  member nothing about alerts outside their scope.
+- **Permission** on a personal read: `vulnerabilities:read` (the alert
+  list's permission); without it `unsupported` / `forbidden`, also from a
+  stored snapshot.
+- **Module** `threat_intel` (the module the alert routes are gated on), see
+  "Module awareness".
+- Threat model: cross-tenant (every statement starts `a.tenant_id = $1`, and
+  the in-scope join repeats `taa.tenant_id = a.tenant_id`); counting oracle
+  (counts and the not-measured decision follow the read's scope); stored
+  snapshot replay after the module is turned off or the permission is lost
+  (masked on the way out); injection (the spec carries only the metric id,
+  the scope values are bound parameters, the level keys are fixed).
+- Tests: `widgets/intel_test.go` (levels, links, not measured, scope,
+  permission, module off), `routes/dashboard_intel_widget_db_test.go` (a
+  scoped member, a member without scope rows and an administrator: alerts
+  outside the scope and another tenant's alerts never count or show; every
+  level equals the alert list it opens; module off on a stored snapshot, the
+  catalog and the list).
+
+### Module awareness
+
+A catalog metric may name the tenant module it reads (`Metric.Module`). While
+that module is off for the organization (the module gate,
+`middleware.ModuleGate.IsReadable`: on, or in its read-only grace):
+
+- the widget catalog (`GET /api/v1/me/dashboards/widget-catalog`) leaves the
+  metric out, so the gallery never offers it;
+- a widget of it is not computed and reads `unsupported` with reason
+  `module_off` and no figure, never a 0. The mask also runs on the way out
+  of every read (`forViewer`, personal and organization), so a snapshot
+  stored while the module was on is not served after it is turned off; a
+  snapshot that holds a `module_off` widget whose module is on again is
+  computed afresh on the next open instead of waiting for the refresh;
+- the web dashboard does not draw the widget at all (`DashboardView`); the
+  layout keeps it, so it comes back when the module is turned on again.
+
+The module gate is a feature switch, not the security boundary: the
+permission mask and the data scope apply as for every widget. Without a gate
+(tests, tools) every module is readable.
 
 ### Scope and isolation
 

@@ -139,6 +139,16 @@ type FactReader interface {
 	// AcceptanceExpiry counts the accepted findings in scope (campaign rule
 	// applied) by how soon their risk acceptance ends, measured from now.
 	AcceptanceExpiry(ctx context.Context, scope ReadScope, now time.Time) (AcceptanceExpiryCounts, error)
+	// EmergingThreats counts the emerging-threat alerts with at least one
+	// asset in scope, with the alert list's own summary statement.
+	EmergingThreats(ctx context.Context, scope ReadScope) (EmergingThreatCounts, error)
+}
+
+// EmergingThreatCounts are the emerging-threat alerts of a scope: Seen is
+// every alert in any state; the others count the open alerts (new,
+// acknowledged, remediating) by level, as the alert list's summary does.
+type EmergingThreatCounts struct {
+	Seen, Open, Immediate, Digest, Listed int64
 }
 
 // NewAssetRow is one asset type's additions: in the window and in the
