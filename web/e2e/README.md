@@ -69,6 +69,7 @@ tests that cover the console's most user-visible flows.
 | `41-assets-service-facts.spec.ts`           | Asset service facts: whole chips and +N at 1280/1440/1920, no table side-scroll, axe     |
 | `43-new-scan-review-coverage.spec.ts`       | New Scan review: skipped targets by reason, neutral, searchable, 1440/390px, axe         |
 | `44-ctem-scope-to-inventory.spec.ts`        | Scope a domain, one asset per name, URL text never widens scope, exclusions              |
+| `45-sensor-repair-dialog.spec.ts`           | Re-pair a sensor: reason, revoke-now offer, code in the command, 1440/390px, axe         |
 | Spec file (`specs/`)                        | What it covers                                                                           |
 | ------------------------------------------- | ---------------------------------------------------------------------------------------- |
 | `01-login-and-invitation.spec.ts`           | Login form rejection, successful login, invitation preview                               |

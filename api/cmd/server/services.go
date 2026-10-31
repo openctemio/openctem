@@ -2255,6 +2255,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		s.SensorPairing.SetEnrollmentTokens(repos.SensorPairing)
 		// The approval screen names the organization the sensor joins.
 		s.SensorPairing.SetTenants(repos.Tenant)
+		// A re-pair revokes the keys the sensor's leased commands were
+		// claimed with: they are taken back at approval.
+		s.SensorPairing.SetCommandReleaser(repos.Command)
 	}
 	// Per-sensor grants (RFC-052 §5): enforced on poll, claim, results
 	// without a job and heartbeat actions; a pairing approval sets the
