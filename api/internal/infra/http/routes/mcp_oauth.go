@@ -49,7 +49,7 @@ func registerMCPOAuthRoutes(router Router, h *handler.MCPOAuthHandler, rateLimit
 func registerMCPSettingsRoutes(router Router, h *handler.MCPSettingsHandler, authMiddleware, userSyncMiddleware Middleware) {
 	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
 	router.Group("/api/v1/mcp-access/settings", func(r Router) {
-		r.GET("/", h.Get, middleware.Require(permission.SettingsRead))
+		r.GET("/", h.Get, middleware.Require(permission.SettingsRead), middleware.RequireAdmin())
 		r.PUT("/", h.Update, middleware.Require(permission.SettingsWrite), middleware.RequireAdmin(), requireStepUp())
 	}, tenantMiddlewares...)
 }
@@ -86,14 +86,14 @@ func registerMCPConnectionRoutes(router Router, h *handler.MCPConnectionsHandler
 func registerMCPClientRoutes(router Router, h *handler.MCPClientsHandler, authMiddleware, userSyncMiddleware Middleware) {
 	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
 	router.Group("/api/v1/mcp-access/clients", func(r Router) {
-		r.GET("/", h.List, middleware.Require(permission.SettingsRead))
+		r.GET("/", h.List, middleware.Require(permission.SettingsRead), middleware.RequireAdmin())
 		r.POST("/", h.Create, middleware.Require(permission.SettingsWrite), middleware.RequireAdmin(), requireStepUp())
 		r.DELETE("/{id}", h.Delete, middleware.Require(permission.SettingsWrite), middleware.RequireAdmin(), requireStepUp())
 	}, tenantMiddlewares...)
 	// Members' requests to approve a publisher: approving loosens the
 	// policy (step-up); declining does not.
 	router.Group("/api/v1/mcp-access/requests", func(r Router) {
-		r.GET("/", h.ListAccessRequests, middleware.Require(permission.SettingsRead))
+		r.GET("/", h.ListAccessRequests, middleware.Require(permission.SettingsRead), middleware.RequireAdmin())
 		r.POST("/{id}/approve", h.ApproveAccessRequest, middleware.Require(permission.SettingsWrite), middleware.RequireAdmin(), requireStepUp())
 		r.POST("/{id}/deny", h.DenyAccessRequest, middleware.Require(permission.SettingsWrite), middleware.RequireAdmin())
 	}, tenantMiddlewares...)
