@@ -425,3 +425,17 @@ type ManifestStore interface {
 	// first, at most limit.
 	ListManifests(ctx context.Context, tenantID *shared.ID, sensorID shared.ID, limit int) ([]ManifestVersion, error)
 }
+
+// MaxManifestRechecks bounds the sensors asked at one start to send their
+// manifest again.
+const MaxManifestRechecks = 10000
+
+// ManifestRecheckSource finds the sensors to ask for their manifest again
+// after the platform starts (the catalog may know more than when their
+// manifest was stored).
+type ManifestRecheckSource interface {
+	// SensorsWithUnknownManifestItems returns the active sensors (every
+	// tenant, ids only) whose current manifest, sent by the sensor, has
+	// items dropped as an unknown tool or capability; at most limit.
+	SensorsWithUnknownManifestItems(ctx context.Context, limit int) ([]shared.ID, error)
+}

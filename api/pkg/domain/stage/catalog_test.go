@@ -12,6 +12,10 @@ import (
 // Every catalog entry is well formed: a key, inputs, a tier, exactly one
 // default implementation, a fan-out cap within the run cap, and something
 // it reports (assets or findings).
+// annotatesInputs are the stages that report no asset of their own: their
+// result is a property of the asset they were given (monitor.web_content).
+var annotatesInputs = map[Key]bool{MonitorWebContent: true}
+
 func TestCatalog_EntriesAreWellFormed(t *testing.T) {
 	keys := map[Key]bool{}
 	for _, s := range All() {
@@ -25,7 +29,7 @@ func TestCatalog_EntriesAreWellFormed(t *testing.T) {
 		if len(s.Inputs) == 0 {
 			t.Errorf("%s: no inputs", s.Key)
 		}
-		if len(s.Outputs) == 0 && !s.Findings {
+		if len(s.Outputs) == 0 && !s.Findings && !annotatesInputs[s.Key] {
 			t.Errorf("%s: reports nothing", s.Key)
 		}
 		defaults := 0
@@ -80,10 +84,14 @@ func TestCatalog_ShippedToolsHaveAStage(t *testing.T) {
 			t.Errorf("%s implements no stage", tool)
 		}
 	}
-	for _, tool := range []string{"subfinder", "dnsx", "httpx", "katana"} {
+	for _, tool := range []string{"subfinder", "dnsx", "katana"} {
 		if n := len(ForTool(tool)); n != 1 {
 			t.Errorf("%s implements %d stages, want 1", tool, n)
 		}
+	}
+	// httpx also fetches web content, only when a step names it.
+	if n := len(ForTool("httpx")); n != 2 {
+		t.Errorf("httpx implements %d stages, want 2 (HTTP probe, web content monitoring)", n)
 	}
 	// nuclei also runs the takeover check, only when a step names it.
 	if n := len(ForTool("nuclei")); n != 2 {

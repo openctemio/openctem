@@ -113,6 +113,12 @@ func (s *ScanProfileService) GetScanProfile(ctx context.Context, tenantID, profi
 	return s.repo.GetByIDWithSystemFallback(ctx, tid, pid)
 }
 
+// GetOwnScanProfile reads a profile of the tenant only (a system profile is
+// not found), for the audit diff of a change to it.
+func (s *ScanProfileService) GetOwnScanProfile(ctx context.Context, tenantID, profileID string) (*scanprofile.ScanProfile, error) {
+	return s.getOwnScanProfile(ctx, tenantID, profileID)
+}
+
 // getOwnScanProfile retrieves a profile the tenant owns. Every change goes
 // through it, so a system profile can be read and cloned but never edited,
 // deleted or made a tenant's default.
