@@ -116,7 +116,7 @@ func (r *bindingRig) push(sensorName string, report *ctis.Report, commandID stri
 	agt := r.sensors[sensorName]
 	var binding ingest.Binding
 	if commandID != "" {
-		cmd, err := ingest.OpenCommand(ctx, r.cmds, agt, commandID, time.Now())
+		cmd, err := ingest.OpenCommand(ctx, r.cmds, agt, commandID, nil, time.Now())
 		if err != nil {
 			return http.StatusNotFound, map[string]any{"code": ingest.CodeCommandNotFound}
 		}
