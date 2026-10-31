@@ -190,6 +190,7 @@ var requiredFields = map[Key][]string{
 	CrawlWeb:            []string{"url", "parent_url"},
 	VulnTemplates:       []string{"rule_id", "severity", "location", "evidence"},
 	CheckTakeover:       []string{"host", "provider", "evidence"},
+	MonitorWebContent:   []string{"url", "sha256"},
 	DASTWeb:             []string{"rule_id", "severity", "url", "evidence"},
 	SecretsCode:         []string{"rule_id", "file", "line", "masked_value"},
 	SASTCode:            []string{"rule_id", "file", "line", "severity"},
@@ -214,7 +215,9 @@ var chunkSizes = map[Key]int{
 	CrawlWeb:            10,
 	VulnTemplates:       25,
 	CheckTakeover:       100,
-	DASTWeb:             10,
+	// Each capture carries a body of up to 512 KiB.
+	MonitorWebContent: 25,
+	DASTWeb:           10,
 }
 
 // chunkAddressBudgets are how many addresses one chunk of an active
