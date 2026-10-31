@@ -215,7 +215,7 @@ func (r *PageMonitorRepository) LatestSnapshot(ctx context.Context, tenantID, wa
 	var kind string
 	var scripts, urls, text []byte
 	err := r.db.QueryRowContext(ctx, `
-		SELECT id, fetched_at, status_code, content_type, final_url, size, body_sha256, content_hash, kind, truncated,
+		SELECT id, fetched_at, status_code, content_type, final_url, size, body_sha256, content_hash, kind, partial,
 			scripts, urls, text_lines, tool
 		FROM web_snapshots WHERE tenant_id = $1 AND watch_id = $2 ORDER BY fetched_at DESC, created_at DESC LIMIT 1`,
 		tenantID.String(), watchID.String()).Scan(&s.ID, &s.FetchedAt, &status, &ct, &fu, &s.Size, &bh, &s.ContentHash, &kind,
@@ -293,7 +293,7 @@ func (r *PageMonitorRepository) SaveFetch(ctx context.Context, tenantID shared.I
 		}
 		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO web_snapshots (id, tenant_id, watch_id, fetched_at, status_code, content_type, final_url, size,
-				body_sha256, content_hash, kind, truncated, scripts, urls, text_lines, tool)
+				body_sha256, content_hash, kind, partial, scripts, urls, text_lines, tool)
 			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
 			s.ID.String(), tid, wid, s.FetchedAt, s.StatusCode, pmNullStr(s.ContentType), pmNullStr(s.FinalURL), s.Size,
 			pmNullStr(s.BodySHA256), s.ContentHash, string(s.Kind), s.Truncated, scripts, urls, text, pmNullStr(s.Tool)); err != nil {

@@ -58,7 +58,7 @@ CREATE TABLE web_snapshots (
     body_sha256  CHAR(64),
     content_hash CHAR(64)      NOT NULL,
     kind         VARCHAR(8)    NOT NULL,
-    truncated    BOOLEAN       NOT NULL DEFAULT false,
+    partial      BOOLEAN       NOT NULL DEFAULT false,
     scripts      JSONB         NOT NULL DEFAULT '[]',
     urls         JSONB         NOT NULL DEFAULT '[]',
     text_lines   JSONB         NOT NULL DEFAULT '[]',
