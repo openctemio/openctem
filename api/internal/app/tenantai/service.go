@@ -83,6 +83,9 @@ type Service struct {
 	builder   ProviderBuilder
 	policy    OrgPolicy
 	log       *logger.Logger
+	stepUp    shared.RecentAuthGate
+	notifier  LooseningNotifier
+	defaults  func() tenant.AISettings
 
 	mu       sync.Mutex
 	limiters map[string]*rate.Limiter
