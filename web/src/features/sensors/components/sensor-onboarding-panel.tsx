@@ -189,7 +189,7 @@ function PanelStep({
 // The commands
 // ---------------------------------------------------------------------------
 
-function InstallCommands({
+export function InstallCommands({
   platform,
   code,
 }: {
