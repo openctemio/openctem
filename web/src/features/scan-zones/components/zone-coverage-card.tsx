@@ -5,6 +5,8 @@ import Link from '@/components/link'
 import useSWR from 'swr'
 import { ArrowUpRight, CheckCircle2 } from 'lucide-react'
 
+import { useTranslation } from '@/context/i18n-provider'
+
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -89,6 +91,7 @@ interface ZoneCoverageCardProps {
  * list is computed in the browser from the inventory (first 1,000 addresses).
  */
 export function ZoneCoverageCard({ coverage, zones }: ZoneCoverageCardProps) {
+  const { t } = useTranslation()
   const outside = coverage.outside_private + coverage.outside_public
   // Listing the addresses reads the asset inventory; without assets:read only
   // the API's counts are shown.
@@ -103,25 +106,32 @@ export function ZoneCoverageCard({ coverage, zones }: ZoneCoverageCardProps) {
   return (
     <Card data-testid="zone-coverage">
       <CardHeader>
-        <CardTitle>Coverage</CardTitle>
+        <CardTitle>{t('scans.zones.coverage.title')}</CardTitle>
         <CardDescription>
-          {coverage.inventory_addresses.toLocaleString()} inventory addresses:{' '}
-          {coverage.in_zones.toLocaleString()} inside a zone,{' '}
-          {coverage.outside_private.toLocaleString()} private outside every zone (scans skip these),{' '}
-          {coverage.outside_public.toLocaleString()} public outside every range
-          {coverage.has_default_zone ? ' (scanned through the default zone)' : ''}.
+          {t(
+            coverage.has_default_zone
+              ? 'scans.zones.coverage.descDefault'
+              : 'scans.zones.coverage.desc',
+            undefined,
+            {
+              total: coverage.inventory_addresses.toLocaleString(),
+              inside: coverage.in_zones.toLocaleString(),
+              private: coverage.outside_private.toLocaleString(),
+              public: coverage.outside_public.toLocaleString(),
+            }
+          )}
         </CardDescription>
       </CardHeader>
       <CardContent className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <section aria-labelledby="zone-outside-heading" className="min-w-0 space-y-2">
           <div className="flex items-center justify-between gap-2">
             <h3 id="zone-outside-heading" className="text-sm font-semibold">
-              Addresses outside every zone
+              {t('scans.zones.coverage.outsideHeading')}
             </h3>
             {canReadAssets && (
               <Button asChild variant="link" size="sm" className="h-auto p-0">
                 <Link href="/assets?types=ip_address">
-                  Asset inventory
+                  {t('scans.zones.coverage.assetInventory')}
                   <ArrowUpRight className="h-3.5 w-3.5" />
                 </Link>
               </Button>
@@ -130,12 +140,13 @@ export function ZoneCoverageCard({ coverage, zones }: ZoneCoverageCardProps) {
           {outside === 0 ? (
             <p className="flex items-center gap-2 text-sm text-muted-foreground">
               <CheckCircle2 className="h-4 w-4 text-success" />
-              Every inventory address is inside a zone.
+              {t('scans.zones.coverage.allInside')}
             </p>
           ) : !canReadAssets ? (
             <p className="text-sm text-muted-foreground">
-              {outside.toLocaleString()} addresses are outside every zone. Listing them needs access
-              to the asset inventory.
+              {t('scans.zones.coverage.noAssetsAccess', undefined, {
+                count: outside.toLocaleString(),
+              })}
             </p>
           ) : isLoading ? (
             <div className="space-y-1.5">
@@ -145,8 +156,7 @@ export function ZoneCoverageCard({ coverage, zones }: ZoneCoverageCardProps) {
             </div>
           ) : error ? (
             <p className="text-sm text-muted-foreground">
-              Could not list the addresses ({outside.toLocaleString()} counted). Open the asset
-              inventory to review them.
+              {t('scans.zones.coverage.listFailed', undefined, { count: outside.toLocaleString() })}
             </p>
           ) : (
             <>
@@ -164,21 +174,28 @@ export function ZoneCoverageCard({ coverage, zones }: ZoneCoverageCardProps) {
                         variant="outline"
                         className="shrink-0 text-xs font-normal text-warning"
                       >
-                        Private, not scanned
+                        {t('scans.zones.coverage.privateNotScanned')}
                       </Badge>
                     ) : (
                       <Badge variant="outline" className="shrink-0 text-xs font-normal">
-                        Public
+                        {t('scans.zones.coverage.public')}
                       </Badge>
                     )}
                   </li>
                 ))}
               </ul>
               <p className="text-xs text-muted-foreground">
-                {listed.length > MAX_LISTED ? `Showing ${MAX_LISTED} of ${listed.length}. ` : ''}
+                {listed.length > MAX_LISTED
+                  ? t('scans.zones.coverage.showing', undefined, {
+                      shown: MAX_LISTED,
+                      total: listed.length,
+                    }) + ' '
+                  : ''}
                 {data?.truncated
-                  ? `Listed from the first ${(PER_PAGE * MAX_PAGES).toLocaleString()} inventory addresses.`
-                  : 'Add their ranges to a zone to scan the private ones.'}
+                  ? t('scans.zones.coverage.truncated', undefined, {
+                      count: (PER_PAGE * MAX_PAGES).toLocaleString(),
+                    })
+                  : t('scans.zones.coverage.addRanges')}
               </p>
             </>
           )}
@@ -186,12 +203,12 @@ export function ZoneCoverageCard({ coverage, zones }: ZoneCoverageCardProps) {
 
         <section aria-labelledby="zone-unhealthy-heading" className="min-w-0 space-y-2">
           <h3 id="zone-unhealthy-heading" className="text-sm font-semibold">
-            Zones with no online sensor
+            {t('scans.zones.coverage.unhealthyHeading')}
           </h3>
           {unhealthyPrivate.length === 0 ? (
             <p className="flex items-center gap-2 text-sm text-muted-foreground">
               <CheckCircle2 className="h-4 w-4 text-success" />
-              Every private and default zone has an online sensor.
+              {t('scans.zones.coverage.allHealthy')}
             </p>
           ) : (
             <ul className="divide-y rounded-md border" data-testid="zone-unhealthy-list">
@@ -200,9 +217,15 @@ export function ZoneCoverageCard({ coverage, zones }: ZoneCoverageCardProps) {
                   <span className="min-w-0 truncate text-sm font-medium">{z.name}</span>
                   <span className="shrink-0 text-xs text-destructive">
                     {z.assigned_sensors === 0
-                      ? 'No sensors assigned'
-                      : `0 of ${z.assigned_sensors} online`}
-                    {z.addresses > 0 ? `, ${z.addresses.toLocaleString()} addresses wait` : ''}
+                      ? t('scans.zones.noSensorsAssigned')
+                      : t('scans.zones.coverage.zeroOnline', undefined, {
+                          assigned: z.assigned_sensors,
+                        })}
+                    {z.addresses > 0
+                      ? t('scans.zones.coverage.addressesWait', undefined, {
+                          count: z.addresses.toLocaleString(),
+                        })
+                      : ''}
                   </span>
                 </li>
               ))}
