@@ -1306,6 +1306,7 @@
   "findings.receipts.kindCiRun": "Lần chạy CI",
   "findings.receipts.kindCommand": "Tác vụ quét",
   "findings.receipts.kindConnector": "Đồng bộ connector",
+  "findings.receipts.kindPlatform": "Khớp phiên bản của nền tảng",
   "findings.receipts.kindScanRun": "Lần quét",
   "findings.receipts.kindSensor": "Báo cáo của sensor",
   "findings.receipts.kindUpload": "Nhập tệp",

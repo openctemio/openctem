@@ -217,6 +217,23 @@ export interface IntakeSourceRow {
   health: SourceHealth
   expected_every_seconds: number | null
   drill: string | null
+  assets?: number
+  kind?: 'discovery' | 'detection' | 'platform'
+  instances?: IntakeInstance[]
+}
+
+/** One instance that fed a source: a sensor, a CI project, a connector, or the platform. */
+export interface IntakeInstance {
+  id: string
+  kind: 'sensor' | 'ci' | 'connector' | 'platform' | 'import'
+  /** Display name (attacker-influenced text: shown through toDisplayText). */
+  name: string
+  received: number
+  assets?: number
+  health: SourceHealth
+  last_at: string | null
+  drill?: string | null
+  sensor_href?: string | null
 }
 
 /** Received split into parts that sum to it. */
