@@ -24,6 +24,7 @@ import { SheetBody, SheetFooter, SheetForm } from '@/components/ui/sheet'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
+import { Switch } from '@/components/ui/switch'
 import { Badge } from '@/components/ui/badge'
 import {
   Select,
@@ -468,6 +469,7 @@ export function ScanWorkflowForm({
   const [sensorPreference, setSensorPreference] = useState<ScanWorkflowSensorPreference>(
     workflow?.settings?.sensor_preference || 'auto'
   )
+  const [stageBarrier, setStageBarrier] = useState(workflow?.settings?.stage_barrier ?? false)
   const [errors, setErrors] = useState<Record<string, string>>({})
 
   // Sync when the workflow prop changes (the full workflow arrives after the list row).
@@ -484,6 +486,7 @@ export function ScanWorkflowForm({
       setTimeoutSeconds(workflow.settings?.timeout_seconds || 3600)
       setMaxParallelSteps(workflow.settings?.max_parallel_steps || 3)
       setSensorPreference(workflow.settings?.sensor_preference || 'auto')
+      setStageBarrier(workflow.settings?.stage_barrier ?? false)
     }
   }, [workflow])
 
@@ -556,13 +559,14 @@ export function ScanWorkflowForm({
       name,
       description: description || undefined,
       tags,
-      // settings is full-replaced by the backend; the form edits three keys,
+      // settings is full-replaced by the backend; the form edits four keys,
       // so the loaded settings (or the defaults) are spread first.
       settings: {
         ...(workflow?.settings ?? DEFAULT_SCAN_WORKFLOW_SETTINGS),
         timeout_seconds: timeoutSeconds,
         max_parallel_steps: maxParallelSteps,
         sensor_preference: sensorPreference,
+        stage_barrier: stageBarrier,
       },
     }
     const stepRequests = steps.map(toStepRequest)
@@ -943,6 +947,22 @@ export function ScanWorkflowForm({
               <p className="text-xs text-muted-foreground">
                 {t(`scans.sensorPrefRun.${sensorPreference}.description`)}
               </p>
+            </div>
+
+            <div className="flex items-start justify-between gap-4 rounded-md border p-3">
+              <div className="space-y-1">
+                <Label htmlFor="wf-stage-barrier" className="text-sm">
+                  {t('scans.workflow.stageBarrier.label')}
+                </Label>
+                <p className="text-xs text-muted-foreground">
+                  {t('scans.workflow.stageBarrier.description')}
+                </p>
+              </div>
+              <Switch
+                id="wf-stage-barrier"
+                checked={stageBarrier}
+                onCheckedChange={setStageBarrier}
+              />
             </div>
           </TabsContent>
         </Tabs>
