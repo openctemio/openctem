@@ -59,6 +59,9 @@ expect_kv() {
 
 expect_kv "merge queue is always the full tier" merge_group "" "full=true migrations=false" web/src/a.tsx
 expect_kv "migration change is flagged" merge_group "" "migrations=true api=true" api/migrations/000001_x.up.sql
+expect_kv "migration change runs the schema tests" pull_request "" "schema=true" api/migrations/000001_x.up.sql
+expect_kv "postgres repository change runs the schema tests" pull_request "" "schema=true migrations=false" api/internal/infra/postgres/a.go
+expect_kv "unrelated api change skips the schema tests" pull_request "" "schema=false" api/internal/app/a.go
 expect_kv "role script change is flagged" pull_request "" "migrations=true full=false" api/deploy/postgres/least-privilege-roles.sql
 expect_kv "plain PR is the fast tier" pull_request "" "full=false api=true" api/internal/x.go
 expect_kv "ci:full label runs the full tier" pull_request '["run-e2e","ci:full"]' "full=true" api/internal/x.go
