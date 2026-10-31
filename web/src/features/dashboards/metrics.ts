@@ -65,6 +65,7 @@ export const METRICS: readonly MetricMeta[] = [
     defaultGroupBy: [],
     keyPrefix: 'assets.typeLabel',
   },
+  { id: 'surface.posture', group: 'attack_surface', unit: 'count', defaultGroupBy: [] },
   {
     id: 'certificates.expiry',
     group: 'attack_surface',
@@ -187,6 +188,7 @@ export function skeletonFor(shape: ResultShape | undefined): SkeletonKind {
     case 'ratio':
     case 'duration':
     case 'kpis':
+    case 'posture':
       return 'stat'
     case 'levers':
     case 'brief':

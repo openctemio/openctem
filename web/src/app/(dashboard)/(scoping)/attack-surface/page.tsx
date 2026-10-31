@@ -27,6 +27,7 @@ import {
   AttackSurfaceSectionTabs,
   EASMDecidePanel,
   EASMOverview,
+  EASMPostureCard,
   useAttackSurfaceStats,
 } from '@/features/attack-surface'
 import { STATS_ATTRIBUTION } from '@/features/attack-surface/lib/external-filters'
@@ -254,6 +255,8 @@ export default function AttackSurfacePage() {
               </Link>
             </p>
           )}
+
+          <EASMPostureCard />
 
           <EASMOverview />
 

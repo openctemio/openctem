@@ -233,6 +233,17 @@ export interface WidgetValue {
   brief?: BriefValue
   /** The KPI strip (exposure.kpis). */
   kpis?: { tiles: KpiTileValue[] }
+  /** The attack surface posture (surface.posture). */
+  posture?: {
+    score: number
+    grade: string
+    assets: number
+    next_grade?: string
+    next_floor?: number
+    fix_steps?: number
+    categories: Array<{ category: string; max: number; deduction: number; issues: number }>
+    computed_at?: string
+  }
   /** Attack paths to crown jewels (attack_paths.to_crown_jewels). */
   paths?: {
     reachable: number

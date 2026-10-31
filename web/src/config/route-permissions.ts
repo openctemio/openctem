@@ -159,6 +159,11 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     permission: Permission.AssetsRead,
     module: Module.Assets,
   },
+  // The posture score of the external surface, scoped per asset by the API.
+  '/attack-surface/posture': {
+    permission: Permission.AssetsRead,
+    module: Module.AttackSurface,
+  },
   // Technologies read the assets module's asset technologies (research/333 D4).
   '/attack-surface/technologies': {
     permission: Permission.AssetsRead,
