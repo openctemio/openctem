@@ -163,6 +163,7 @@ the web dialog appears and the request is retried.
 | Adding, removing or extending a member of a team that carries a privileged role (`POST/DELETE/PATCH /api/v1/groups/{id}/members`): owner only (403 `TEAM_PRIVILEGED_OWNER_ONLY` otherwise), then step-up (403 `STEP_UP_REQUIRED`) | `GroupService.requireOwnerStepUp` |
 | Renaming the organization's slug: `PATCH /api/v1/tenants/{tenant}` with a new `slug` | `TenantService.UpdateTenant` |
 | Allowing bearer-key sensors again: `PUT /api/v1/sensors/identity-policy` with `bearer_keys_allowed: true` while the organization requires key-bound identity | `SensorService.SetBearerKeysAllowed` (requiring key-bound identity, and re-sending the current value, stay one click) |
+| Raising the organization's maximum API key lifetime: `PUT /api/v1/organization/settings/api-keys` with a longer `max_lifetime_days` (a shorter one never prompts) | `TenantService.UpdateAPIKeySettings`; high-severity audit `tenant.api_key_policy_updated` and an owner/admin notice |
 
 The gate judges only the user making the request: a grant authorized
 earlier and applied for someone else (an invitation accepted by the invitee,
