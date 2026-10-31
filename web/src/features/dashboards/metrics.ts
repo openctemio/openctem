@@ -10,7 +10,7 @@ import type { MetricUnit } from '@/lib/format-metric'
 import type { Polarity as KitPolarity, SkeletonKind } from '@/components/dashboard-kit'
 import type { Dimension, Polarity, ResultShape, WidgetSpec } from './api/widget-spec'
 
-export type MetricGroup = 'ctem' | 'exposure' | 'remediation' | 'threat_intel'
+export type MetricGroup = 'ctem' | 'exposure' | 'attack_surface' | 'remediation' | 'threat_intel'
 
 export interface MetricMeta {
   id: string
@@ -18,6 +18,13 @@ export interface MetricMeta {
   unit: MetricUnit
   /** Group-by the server applies when the widget names none. */
   defaultGroupBy: Dimension[]
+  /**
+   * Message key prefix of the keys of a breakdown (a category with no
+   * group-by): `<prefix>.<key>`. Unset: the keys are dimension values.
+   */
+  keyPrefix?: string
+  /** The breakdown's keys have a natural order (expiry bands): keep it. */
+  ordinal?: boolean
 }
 
 /** Every catalog metric, in gallery order. A test checks this against the server catalog. */
@@ -51,11 +58,35 @@ export const METRICS: readonly MetricMeta[] = [
   { id: 'exposure.levers', group: 'ctem', unit: 'count', defaultGroupBy: [] },
   { id: 'brief.weekly', group: 'ctem', unit: 'count', defaultGroupBy: [] },
   { id: 'exposure.kpis', group: 'exposure', unit: 'count', defaultGroupBy: [] },
+  {
+    id: 'surface.new_assets',
+    group: 'attack_surface',
+    unit: 'count',
+    defaultGroupBy: [],
+    keyPrefix: 'assets.typeLabel',
+  },
+  {
+    id: 'certificates.expiry',
+    group: 'attack_surface',
+    unit: 'count',
+    defaultGroupBy: [],
+    keyPrefix: 'dashboards.band',
+    ordinal: true,
+  },
+  {
+    id: 'exceptions.expiring',
+    group: 'remediation',
+    unit: 'count',
+    defaultGroupBy: [],
+    keyPrefix: 'dashboards.band',
+    ordinal: true,
+  },
 ]
 
 export const METRIC_GROUPS: readonly MetricGroup[] = [
   'ctem',
   'exposure',
+  'attack_surface',
   'remediation',
   'threat_intel',
 ]
@@ -171,7 +202,12 @@ const SCAN_ACTION: MetricEmptyAction = {
   path: '/scans',
   needs: ['scans:write'],
 }
-const SCAN_METRICS = new Set(['coverage.discovery', 'attack_paths.to_crown_jewels'])
+const SCAN_METRICS = new Set([
+  'coverage.discovery',
+  'attack_paths.to_crown_jewels',
+  'surface.new_assets',
+  'certificates.expiry',
+])
 
 export function metricEmptyAction(id: string | undefined): MetricEmptyAction | undefined {
   const meta = metricMeta(id)

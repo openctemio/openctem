@@ -566,6 +566,8 @@ func (s *Service) metric(ctx context.Context, v *WidgetValue, m dashboard.Metric
 	case dashboard.MetricKindKPIs:
 		v.Window = &win
 		return s.kpisMetric(ctx, v, win, compare, agg)
+	case dashboard.MetricKindBreakdown:
+		return s.breakdown(ctx, v, m, win, compare, agg)
 	}
 	return fmt.Errorf("unknown metric kind %q", m.Kind)
 }
