@@ -55,6 +55,10 @@ type SensorPairingHandler struct {
 	budget PairingStartBudget
 }
 
+// pairingKeyBusyRetry is the Retry-After (seconds) of a start whose key has
+// another open request.
+const pairingKeyBusyRetry = 30
+
 // SetStartBudget sets the budget verified start requests are charged to.
 func (h *SensorPairingHandler) SetStartBudget(b PairingStartBudget) { h.budget = b }
 
@@ -188,6 +192,13 @@ func (h *SensorPairingHandler) Start(w http.ResponseWriter, r *http.Request) {
 	case errors.Is(err, sensorpairing.ErrCapacity):
 		w.Header().Set("Retry-After", "60")
 		protov2.NewProblem(protov2.ProblemUnavailable).Write(w)
+	case errors.Is(err, sensorpairing.ErrKeyRegistered):
+		// Told only to the key's holder (the signature verified): a key an
+		// approval registered never pairs again, with any code.
+		protov2.NewProblem(protov2.ProblemPairingKeyRegistered).Write(w)
+	case errors.Is(err, sensorpairing.ErrKeyBusy):
+		w.Header().Set("Retry-After", strconv.Itoa(pairingKeyBusyRetry))
+		protov2.NewProblem(protov2.ProblemPairingKeyBusy).Write(w)
 	default:
 		h.log.Error("start pairing", "error", logger.SanitizeError(err))
 		protov2.NewProblem(protov2.ProblemInternal).Write(w)
@@ -382,12 +393,12 @@ type PairingExpectRequest struct {
 }
 
 // Expect godoc
-// @Summary      Expect a sensor (reverse pairing)
+// @Summary      Create a pairing code for a new sensor (reverse pairing)
 // @Description  Returns a single-use code (10 minutes) to run as `openctemio-sensor pair <CODE>` on the host.
 // @Tags         sensor-pairing
 // @Accept       json
 // @Produce      json
-// @Param        body  body      PairingExpectRequest  true  "Expected sensor"
+// @Param        body  body      PairingExpectRequest  true  "Pairing code to create"
 // @Success      201   {object}  sensorpairing.View
 // @Failure      400   {object}  apierror.Error
 // @Security     BearerAuth
