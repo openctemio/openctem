@@ -103,7 +103,9 @@ for (const vp of [
       const securityLinks = await nav.getByRole('link', { name: 'Security', exact: true }).count()
       await expect(nav.getByText('Security', { exact: true })).toHaveCount(securityLinks)
       for (const sub of ['Sign-in', 'Oversight', 'Tools']) {
-        await expect(nav.getByText(sub, { exact: true }), sub).toBeVisible()
+        // "Tools" is also the name of a rail link, so match the sub-heading
+        // by its own span, not by text alone (strict mode would see two).
+        await expect(nav.locator('span.text-xs').getByText(sub, { exact: true }), sub).toBeVisible()
       }
       // Nothing scrolls sideways.
       const overflow = await page.evaluate(
