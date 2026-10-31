@@ -1,6 +1,7 @@
 # Wordlists: the first-party packs
 
-Design: research/294 (decisions D1, D2 and O2). Pack store and delivery:
+Design: research/294 (decisions D1, D2 and O2) and research/344 (built-in packs, permutations,
+organization lists). Pack store and delivery:
 [content-packs.md](content-packs.md). This page describes the build that makes the curated
 public lists and the manifest the platform checks on import.
 
@@ -48,20 +49,58 @@ cd api
 go run ./cmd/wordlists-build -out dist/wordlists
 ```
 
-The lists are not committed. The workflow `.github/workflows/wordlists-release.yml` (manual, from
-`main`) publishes them as assets of the release `wordlists-<release>` with a build provenance
-attestation. `release.json` in the release carries the asset sha256 of each pack.
+The workflow `.github/workflows/wordlists-release.yml` (manual, from `main`) publishes the packs as
+assets of the release `wordlists-<release>` with a build provenance attestation. `release.json` in
+the release carries the asset sha256 of each pack.
+
+## Built-in packs
+
+The packs of the current release are also embedded in the API
+(`api/internal/app/contentpin/builtin/`: the two archives and `release.json`), so subdomain
+enumeration works on a fresh install with no import and no internet access:
+
+- At start the API installs each embedded pack whose name has **no `stable` channel**, through the
+  same canonicalisation, lint and platform signature as an upload (source `upload`, source reference
+  `builtin:<asset>`), and points `stable` at it. An existing `stable` channel is never moved: an
+  administrator's import, or a deliberate older release, stands. A release an administrator revoked
+  is not reinstated. Several replicas starting together are safe: the second finds the pack by name
+  and version.
+- The embedded files are the output of the build, and nothing else:
+  `go run ./cmd/wordlists-build -out internal/app/contentpin/builtin`. A test checks each archive
+  against `release.json` and the canonical digest, another that their release is the one
+  `sources.yaml` names (a pin change must rebuild them), and the release workflow compares the
+  published assets with the embedded bytes.
+- To adopt a newer release on a running platform, import it (below) and move `stable`; the next API
+  version also embeds it, but never moves a `stable` channel that exists.
 
 ## Import
 
 A super admin imports each asset as a platform pack of kind `wordlist` with
 `POST /api/v1/admin/content-packs/import` (https URL of the asset and its sha256; TOTP step-up,
-a reason and an audit row, as for any platform pack) and then moves `stable` to it. No
-platform code is specific to wordlists.
+a reason and an audit row, as for any platform pack) and then moves `stable` to it. An installation
+without internet access uploads the asset instead (`POST /api/v1/admin/content-packs`).
 
 Asset coverage runs `enumerate.subdomains` at standard depth, so it reads the `dns-labels` lists
-of `wordlists-s`. Until that pack is imported, the capability is paused with readiness reason
-`content_missing` ([asset-coverage.md](asset-coverage.md)).
+of `wordlists-s`. If no such pack is on `stable` (the built-in one revoked and none imported), the
+capability is paused with readiness reason `content_missing` ([asset-coverage.md](asset-coverage.md)).
+
+## The list a job reads
+
+A `dns-labels` request (the `dnsx-enum` tool's slot `labels`) is pinned at claim
+([content-packs.md](content-packs.md)): the platform pack of the run's depth (standard `wordlists-s`,
+deep `wordlists-m`) by digest, plus one list generated for the job and carried inline:
+
+1. **Learned labels**: the labels of the organization's own active names under the root, and their
+   parts split at `-` and at letter/digit boundaries, most frequent first.
+2. **Permutations** of those labels, after them: numbered neighbors of a numbered label
+   (`web09` gives `web10`, `web08`), numbered copies of a label ending in an environment word
+   (`portal-uat` gives `portal-uat1`, `portal-uat2`), and base words crossed with the environment
+   words the organization's names use (`dev`, `uat`, `staging`, ...; `dev`, `test`, `uat` and
+   `staging` when they use none). At most 20,000, every one a valid DNS label, the same for the same
+   names.
+
+The sensor composes the inline list first and the pack after it into one file, without repeats and
+within the depth's line cap.
 
 ## What the platform checks
 
@@ -94,4 +133,7 @@ repository, and lists with no license file. The current list is in `sources.yaml
 - Tampering in transit or at rest: the import route checks the asset sha256 before parsing; the
   platform signs the pack; sensors verify digest and signature.
 - Isolation: these are platform packs, public to every organization; nothing tenant-specific is in
-  them.
+  them. The learned list and its permutations are built from the job's organization's names only,
+  travel inline under the job signature, and are never stored or cached.
+- The built-in packs never override an administrator: they install only where no `stable` channel
+  exists, and only when the ingested digest is the recorded one.
