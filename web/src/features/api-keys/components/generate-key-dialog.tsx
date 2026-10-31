@@ -6,7 +6,7 @@
  * (settings/service-accounts); the caller decides where the key is minted.
  */
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { Check, Copy } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -33,7 +33,8 @@ import {
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { copyToClipboard } from '@/lib/clipboard'
 import { useTranslation } from '@/context/i18n-provider'
-import { API_KEY_EXPIRY_OPTIONS, DEFAULT_API_KEY_EXPIRY_DAYS } from '../lib/expiry'
+import { useApiKeyPolicy } from '../api/use-api-keys'
+import { expiryOptionsFor } from '../lib/expiry'
 import type { CreateAPIKeyRequest } from '../types/api-key.types'
 
 /**
@@ -67,7 +68,16 @@ export function GenerateKeyDialog({
   const { t } = useTranslation()
   const [name, setName] = useState('')
   const [desc, setDesc] = useState('')
-  const [expires, setExpires] = useState<string>(DEFAULT_API_KEY_EXPIRY_DAYS)
+  const policy = useApiKeyPolicy(open)
+  const { options: expiryOptions, defaultValue: defaultExpiry } = expiryOptionsFor(
+    policy.data?.max_lifetime_days
+  )
+  const [expires, setExpires] = useState<string>(defaultExpiry)
+  // The organization's maximum arrives after the dialog opens: never keep a
+  // choice above it.
+  useEffect(() => {
+    if (!expiryOptions.some((o) => o.value === expires)) setExpires(defaultExpiry)
+  }, [expiryOptions, expires, defaultExpiry])
   const [scopes, setScopes] = useState<string[]>(DEFAULT_SCOPES)
 
   function toggleScope(s: string) {
@@ -90,7 +100,7 @@ export function GenerateKeyDialog({
       onOpenChange(false)
       setName('')
       setDesc('')
-      setExpires(DEFAULT_API_KEY_EXPIRY_DAYS)
+      setExpires(defaultExpiry)
       setScopes(DEFAULT_SCOPES)
     } catch (error) {
       toast.error(
@@ -142,13 +152,22 @@ export function GenerateKeyDialog({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {API_KEY_EXPIRY_OPTIONS.map((o) => (
+                  {expiryOptions.map((o) => (
                     <SelectItem key={o.value} value={o.value}>
-                      {t(o.labelKey, o.label)}
+                      {t(o.labelKey, o.label, { days: o.days ?? Number(o.value) })}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
+              {policy.data && (
+                <p className="text-xs text-muted-foreground">
+                  {t(
+                    'settings.apiKeys.maxLifetimeHint',
+                    'Your organization allows keys for at most {days} days.',
+                    { days: policy.data.max_lifetime_days }
+                  )}
+                </p>
+              )}
             </div>
             <div className="space-y-2">
               <Label id="key-scopes-label">{t('settings.keys.scopes', 'Scopes')}</Label>
