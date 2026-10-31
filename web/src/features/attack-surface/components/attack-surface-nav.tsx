@@ -88,7 +88,7 @@ export function AttackSurfaceNav({
         <SectionTabs tabs={views.map((v) => v.tab)} label={label} counts={viewCounts} />
       )}
       {current && current.routes.length > 1 && activeRoute && (
-        <SegmentedLens
+        <SegmentedLens // anatomy-ok: switches between the routes of one view (navigation), not a list's state or view mode
           label={t('attackSurface.view.lensLabel', '{view} views', { view: current.tab.label })}
           value={activeRoute}
           options={current.routes.map((r) => ({
