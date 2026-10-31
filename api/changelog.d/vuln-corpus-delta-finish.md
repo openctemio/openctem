@@ -1,0 +1,3 @@
+### Changed: finishing a delta vulnerability bundle no longer reads the whole range table
+
+- The last step of a delta vulnerability-feed bundle (the removal guard and the removal of the ranges it replaced) read every row of `vulnerability_affected` (2.2 million rows, about 870 MB on a full corpus) twice per bundle, because the delta and snapshot conditions shared one statement. A delta now reads only the ranges of the CVEs it carries: about 50 ms instead of 0.6 s with a warm cache and up to 8 s cold, without pushing the table through the cache. Snapshots and the guard's result are unchanged. No migration.

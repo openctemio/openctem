@@ -348,15 +348,21 @@ func (r *CVECorpusRepository) FinishFeedBundle(ctx context.Context, f cvecorpus.
 		return res, err
 	}
 	// Stale: rows of an older sequence, of every CVE (snapshot) or of the
-	// CVEs this bundle wrote (delta).
-	const stale = `a.feed_sequence < $1 AND ($2 OR a.cve_id IN (SELECT cve_id FROM cve_records WHERE feed_sequence = $1))`
+	// CVEs this bundle wrote (delta). Two constant conditions rather than one
+	// with a boolean parameter: behind "$2 OR ..." the planner cannot drive a
+	// delta from the bundle's CVEs and reads the whole range table (seconds
+	// per bundle) instead of the rows of the CVEs the delta touched.
+	stale := `a.feed_sequence < $1 AND a.cve_id IN (SELECT cve_id FROM cve_records WHERE feed_sequence = $1)`
+	if f.Snapshot {
+		stale = `a.feed_sequence < $1`
+	}
 	var total, emptied int
 	if err := tx.QueryRowContext(ctx, `
 		SELECT (SELECT count(*) FROM vulnerability_affected),
 		       (SELECT count(*) FROM vulnerability_affected a JOIN cve_records rec ON rec.cve_id = a.cve_id
 		        WHERE `+stale+` AND lower(rec.status) <> 'rejected'
 		          AND NOT EXISTS (SELECT 1 FROM vulnerability_affected f WHERE f.cve_id = a.cve_id AND f.feed_sequence = $1))`,
-		seq, f.Snapshot).Scan(&total, &emptied); err != nil {
+		seq).Scan(&total, &emptied); err != nil {
 		return res, fmt.Errorf("count removed ranges: %w", err)
 	}
 	limit := max(int(float64(total)*f.MaxEmptiedShare), f.MinEmptiedLimit)
@@ -381,7 +387,7 @@ func (r *CVECorpusRepository) FinishFeedBundle(ctx context.Context, f cvecorpus.
 		), ch AS (
 			UPDATE cve_records SET synced_at = now() WHERE cve_id IN (SELECT cve_id FROM d) RETURNING 1
 		) SELECT (SELECT count(*) FROM d), (SELECT count(*) FROM ch)`,
-		seq, f.Snapshot).Scan(&res.RangesRemoved, &res.Changed); err != nil {
+		seq).Scan(&res.RangesRemoved, &res.Changed); err != nil {
 		return res, fmt.Errorf("remove replaced ranges: %w", err)
 	}
 	if err := tx.Commit(); err != nil {

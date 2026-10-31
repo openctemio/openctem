@@ -2821,7 +2821,7 @@ func (h *TenantHandler) UpdateRetestSettings(w http.ResponseWriter, r *http.Requ
 
 // GetClosureSettings handles GET /api/v1/organization/settings/closure.
 // @Summary      Get the closing mode
-// @Description  How the platform closes findings without a person: mode auto (per the tier rule), review (every close is proposed to a person) or off; an empty mode means review. critical_auto_close lets a plain covered scan close critical, P0 and KEV findings in auto mode. The values are the ones in force; a waiting loosening is in pending_mode, pending_critical_auto_close and pending_at.
+// @Description  How the platform closes findings without a person: mode auto (per the tier rule), review (every close is proposed to a person) or off; an empty mode means review. critical_auto_close lets a plain covered scan close critical, P0 and KEV findings in auto mode. The mode applies to every automatic close: a covered scan, a full default-branch scan, a full-coverage upload and a software version change (off keeps findings open and proposes nothing). The values are the ones in force; a waiting loosening is in pending_mode, pending_critical_auto_close and pending_at.
 // @Tags         Tenants
 // @Produce      json
 // @Success      200     {object}  tenant.ClosureSettings
@@ -2847,7 +2847,7 @@ func (h *TenantHandler) GetClosureSettings(w http.ResponseWriter, r *http.Reques
 
 // UpdateClosureSettings handles PUT /api/v1/organization/settings/closure.
 // @Summary      Update the closing mode
-// @Description  Loosening (off to review or auto, review to auto, critical_auto_close on) needs a recent re-authentication, takes effect 24 hours later (pending_mode, pending_critical_auto_close and pending_at show it; until then the stricter policy applies), is audited at high severity and notifies owners and administrators; turning critical_auto_close on is for the owner only. Tightening is immediate and cancels a waiting loosening. Only mode and critical_auto_close are read. Audited.
+// @Description  Loosening (off to review or auto, review to auto, critical_auto_close on) needs a recent re-authentication, takes effect 24 hours later (pending_mode, pending_critical_auto_close and pending_at show it; until then the stricter policy applies), is audited at high severity and notifies owners and administrators; turning critical_auto_close on is for the owner only. Tightening is immediate and cancels a waiting loosening. Only mode and critical_auto_close are read. The mode decides every automatic close (covered scan, full default-branch scan, full-coverage upload, software version change): off keeps findings open, review proposes them in Ready to close, auto closes per the tier rule. Audited.
 // @Tags         Tenants
 // @Accept       json
 // @Produce      json
