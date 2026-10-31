@@ -399,6 +399,7 @@
   "settings.domains.join.auto": "Bất kỳ ai, tự động",
   "settings.domains.join.off": "Chỉ những người chúng tôi mời",
   "settings.domains.joinRole": "Tham gia với vai trò",
+  "settings.domains.loadFailed": "quy tắc đăng ký theo tên miền",
   "settings.domains.loading": "Đang tải tên miền",
   "settings.domains.notEffective": "Chưa có hiệu lực",
   "settings.domains.notEffectiveHint": "Tên miền hiện chưa được xác minh cho đăng nhập một lần (hoặc một tổ chức khác cũng nhận), nên các thiết lập này không áp dụng.",
