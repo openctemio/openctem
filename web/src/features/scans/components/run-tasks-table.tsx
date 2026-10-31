@@ -20,7 +20,9 @@ import {
   TaskPlacementPanel,
   WhyWaitingButton,
 } from '@/features/scans/components/task-placement'
-import { placementHelp } from '@/features/scans/lib/placement-help'
+import { gapHelp, placementHelp } from '@/features/scans/lib/placement-help'
+import { gapsFixKind } from '@/features/scans/lib/edge-gap'
+import { EdgeGapFixes } from '@/features/scans/components/edge-gap-fixes'
 
 /**
  * Who runs a task: "Platform scanning" (never a platform sensor's name), the
@@ -218,6 +220,12 @@ export function taskSkippedNote(
 /** Coverage-gap reasons that have a translated label. */
 const GAP_REASONS = new Set(['breaker_open', 'rate_floor', 'blocked', 'proxy_unavailable'])
 
+function gapLabel(g: NonNullable<RunTask['coverage_gaps']>[number], t: Translate): string {
+  return g.reason === 'blocked'
+    ? gapHelp(g, t).label
+    : t(GAP_REASONS.has(g.reason ?? '') ? `scans.tasks.gap.${g.reason}` : 'scans.tasks.gap.other')
+}
+
 /**
  * The note of a task that completed with hosts its sensor could not fully
  * cover (the host stopped answering, kept rate-limiting the scan, or blocked
@@ -232,12 +240,7 @@ export function taskCoverageGapNote(
   const list = task.coverage_gaps ?? []
   const total = Math.max(task.coverage_gaps_total ?? 0, list.length)
   if (total <= 0) return null
-  const named = list
-    .slice(0, SKIPPED_NAMED)
-    .map(
-      (g) =>
-        `${g.host ?? '?'} (${t(GAP_REASONS.has(g.reason ?? '') ? `scans.tasks.gap.${g.reason}` : 'scans.tasks.gap.other')})`
-    )
+  const named = list.slice(0, SKIPPED_NAMED).map((g) => `${g.host ?? '?'} (${gapLabel(g, t)})`)
   const more = total - named.length
   let text = t(total === 1 ? 'scans.tasks.gapsOne' : 'scans.tasks.gapsMany', undefined, {
     count: total,
@@ -385,6 +388,7 @@ export function RunTasksTable({
               const note = taskStatusNote(task, t, runId)
               const skipped = taskSkippedNote(task, t)
               const gaps = taskCoverageGapNote(task, t)
+              const gapFix = gapsFixKind(task.coverage_gaps ?? [])
               const prog = taskProgressNote(task, t)
               const content = taskContentNote(task as { content_pins?: TaskContentPins | null }, t)
               return (
@@ -425,6 +429,11 @@ export function RunTasksTable({
                         <div className="mt-1 flex max-w-[260px] items-start gap-1 text-xs text-warning">
                           <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" aria-hidden="true" />
                           <TruncatedText value={gaps} label={t('scans.tasks.coverageGaps')} />
+                        </div>
+                      )}
+                      {gaps && gapFix && (
+                        <div className="mt-1 max-w-[260px]">
+                          <EdgeGapFixes kind={gapFix} />
                         </div>
                       )}
                     </td>
