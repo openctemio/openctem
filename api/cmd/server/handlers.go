@@ -615,6 +615,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		EASM:             newEASMHandler(repos, svc, log),
 		EASMSettings:     newEASMSettingsHandler(cfg, svc, deps, log),
 		EASMLookalike:    newEASMLookalikeHandler(svc, log),
+		PageMonitor:      newPageMonitorHandler(svc, log),
 		EASMNetworkSeed:  newEASMNetworkSeedHandler(svc, log),
 		AssetWebEvidence: newAssetWebEvidenceHandler(svc, log),
 
@@ -1992,6 +1993,18 @@ func bootstrapSession(cfg *config.Config, svc *Services, h routes.Handlers) hand
 	localAuth := h.LocalAuth
 	boot.EmailDelivery = func() bool { return localAuth != nil && localAuth.EmailDeliveryAvailable() }
 	return boot
+}
+
+// newPageMonitorHandler serves web page monitoring; watch changes are audited.
+func newPageMonitorHandler(svc *Services, log *logger.Logger) *handler.PageMonitorHandler {
+	if svc.PageMonitor == nil {
+		return nil
+	}
+	var audit handler.AttributionAuditor
+	if svc.Audit != nil {
+		audit = svc.Audit
+	}
+	return handler.NewPageMonitorHandler(svc.PageMonitor, audit, log)
 }
 
 // newEASMLookalikeHandler serves lookalike monitoring; changes are audited.

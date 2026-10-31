@@ -37,6 +37,8 @@ const (
 	PropKeyAliases             = "aliases"
 	// PropKeyWebEvidence carries a sensor's web captures (RFC-081).
 	PropKeyWebEvidence = "web_evidence"
+	// PropKeyWebContent carries a sensor's fetches of watched URLs (RFC-138).
+	PropKeyWebContent = "web_content"
 )
 
 // reservedPropertyKeys are the keys ingest drops from sensor-supplied
@@ -52,6 +54,9 @@ var reservedPropertyKeys = map[string]bool{
 	// Web evidence captures go to their own table (RFC-081), never to the
 	// asset's properties.
 	PropKeyWebEvidence: true,
+	// Web content fetches go to page monitoring (RFC-138), never to the
+	// asset's properties.
+	PropKeyWebContent: true,
 }
 
 // IsReservedPropertyKey reports whether a top-level property key is owned by
