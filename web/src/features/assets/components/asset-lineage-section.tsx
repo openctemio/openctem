@@ -17,6 +17,7 @@ import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useTranslation } from '@/context/i18n-provider'
 import { DetailSection, ErrorState, RelativeTime } from '@/features/shared'
+import { useSettleSignal } from '@/features/shared/components/settle-group'
 import { assetDetailHref } from '@/features/findings/lib/asset-link'
 import { cn } from '@/lib/utils'
 import { useAssetAttribution } from '../hooks/use-asset-attribution'
@@ -105,6 +106,7 @@ function StepRow({ node, isSelf }: { node: AssetLineageNode; isSelf: boolean }) 
 export function AssetLineageSection({ assetId }: { assetId: string }) {
   const { t } = useTranslation()
   const { lineage, isLoading, error, mutate } = useAssetLineage(assetId)
+  useSettleSignal(isLoading)
   // The same request as the Ownership and scope section (shared cache).
   const { attribution } = useAssetAttribution(assetId)
 

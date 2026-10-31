@@ -6,6 +6,7 @@
  * is a coverage gap. Used by the detail sheet and /assets/{id}.
  */
 
+import { useSettleSignal } from '@/features/shared/components/settle-group'
 import { ShieldCheck } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -17,6 +18,7 @@ import { coverageBadge, coverageReasonText } from '../lib/asset-coverage'
 export function AssetCoverageSection({ assetId }: { assetId: string }) {
   const { t } = useTranslation()
   const { data, error, isLoading, mutate } = useAssetCoverage(assetId)
+  useSettleSignal(isLoading)
 
   const title = t('assetCoverage.title', 'Coverage')
   if (isLoading) {
