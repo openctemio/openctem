@@ -523,6 +523,19 @@ create's target validator, exclusions, zone routing) in one call.
 > another tenant cannot be linked even by a wrong handler. See
 > [scan-zones.md](scan-zones.md).
 
+#### Organization wordlists (`/api/v1/wordlists`)
+
+| Endpoint | Permission Required |
+|----------|---------------------|
+| `GET /api/v1/wordlists` · `/{id}` · `/preview` | `scans:content:read` |
+| `POST /api/v1/wordlists` · `PATCH /{id}` · `DELETE /{id}` | `scans:content:write` |
+
+> An organization's own DNS label lists, joined inline into its subdomain
+> enumeration jobs ([wordlists.md](wordlists.md)). Tenant from the token;
+> every query carries `tenant_id`, so another organization's list is 404.
+> The preview returns counts and list names only, never a label. Every
+> change is audited (`wordlist.created|updated|deleted`, metadata only).
+
 #### Proxy pools (`/api/v1/proxy-pools`, RFC-034)
 
 | Endpoint | Permission Required |

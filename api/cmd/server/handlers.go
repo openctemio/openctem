@@ -714,6 +714,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		ContentSource:       handler.NewContentSourceHandler(svc.ContentSource, log),
 		ContentPack:         handler.NewContentPackHandler(svc.ContentPacks, log),
 		PlatformContentPack: handler.NewPlatformContentPackHandler(svc.PlatformContentPacks, adminConsoleSvc, repos.AdminAuditLog, log),
+		Wordlist:            handler.NewWordlistHandler(svc.Wordlists, svc.ContentPlanner, log),
 		ContentCatalog:      handler.NewContentCatalogHandler(svc.ContentCatalog, log),
 		AdminContentCatalog: handler.NewAdminContentCatalogHandler(svc.ContentCatalog, adminConsoleSvc, repos.AdminAuditLog, log),
 		SensorContentV2:     handler.NewSensorContentV2Handler(svc.ContentDelivery, log),
