@@ -68,7 +68,7 @@ import {
   normalizeColumns,
   widgetRowSpan,
 } from '../layout'
-import { metricNameKey } from '../metrics'
+import { defaultWidgetTitle, metricNameKey } from '../metrics'
 import { initHistory, push, redo, undo, type History } from './history'
 import * as ops from './layout-ops'
 import { newNoteSpec, specShape, widgetFromSpec } from './spec-ops'
@@ -177,7 +177,8 @@ export function DashboardEditor({ dashboard, kind, data, onExit }: DashboardEdit
       const spec = specOf(w)
       if (spec?.title) return spec.title
       if (spec?.data.kind === 'note') return t('dashboards.widget.note', 'Note')
-      if (spec?.data.metric) return t(metricNameKey(spec.data.metric), spec.data.metric)
+      if (spec?.data.metric)
+        return defaultWidgetTitle(spec, t) ?? t(metricNameKey(spec.data.metric), spec.data.metric)
       return t('dashboards.widget.legacy', 'Earlier tile')
     },
     [t]
