@@ -542,6 +542,61 @@ it counts. Code: `internal/app/dashboard/widgets/surface.go`,
   scope, program-only certificates and another tenant's rows never count or
   show; every band equals the asset or findings list it opens).
 
+### Closure quality, campaigns and detection quality
+
+Three more breakdown metrics answer "are our fixes real", "which remediation
+campaign is late" and "which tool should we tune". Same rules as above:
+computed into the snapshot by the refresher (and Refresh now), read through
+`FactReader` with the server-built scope, each row with the list it counts.
+Code: `internal/app/dashboard/widgets/quality.go`,
+`internal/infra/postgres/dashboard_quality_repository.go`.
+
+| Metric | Rows | A row opens | Not measured |
+|---|---|---|---|
+| `findings.closure_quality` (timed, previous period allowed, polarity neutral) | `closed_by_person` (status `resolved`, `resolved_at` in the window, `resolved_by` set), `closed_automatically` (the same with no person recorded: the platform closed it on its own), `reopened` (a fixed finding came back: `last_reopened_at` in the window; the regression trigger sets it, never a person's undo or a seen-again flap), `ready_to_close` (pending, eligible Ready to close proposals now, not windowed; no previous figure) | `/findings?status=resolved&resolved_at_gte=<first day>&resolved_by_null=false` (`=true` for automatic), `/findings?state=all&last_reopened_at_gte=<first day>`, `/findings/ready-to-close` | `no_closures`: nothing fixed or reopened and no proposal |
+| `remediation.campaign_progress` (current, polarity higher better, unit percent) | active campaigns with a task the reader sees, the latest first (most overdue tasks, then a passed due date, then the least done), at most 5; value = done tasks / visible tasks; `n` = visible tasks; `total` = the same share over every active campaign the reader sees | `/remediation/campaigns/<id>` | `no_active_campaigns` |
+| `detection.fp_rate_by_tool` (timed, no previous period, polarity lower better, unit percent; organization dashboards only) | per `tool_name`, findings closed as `false_positive` in the window / findings closed (fixed or dispositioned, `resolved_at` in the window); a tool with fewer than 20 closes (`MinToolClosed`) is left out, never shown as "50 %"; at most 8, highest rate first; `n` = closes; `total` = the rate over the tools shown | `/findings?status=false_positive&tool_name=<tool>&resolved_at_gte=<first day>` (the denominator is the same list with `state=closed`) | `organization_only` on a personal read; `too_few_closed` when no tool reaches the minimum |
+
+- The findings list gained two filters for these rows: `resolved_by_null`
+  (only whether a person closed it, not who) and `last_reopened_at` (ranges).
+- Ready to close is counted with the Ready to close list's own statement and
+  scope (asset scope or the finding's assignee), so the row equals the
+  `badges.ready_to_close` count and the list for the same person. The
+  window rows use `findingWhere`, like every finding widget.
+- Campaigns use the campaign list's rules: a restricted reader sees the
+  campaigns they created or own and those with a task holding a finding in
+  their scope; counts are over their scope (out-of-scope tasks are left
+  out), except a campaign they own, counted whole; an organization read
+  counts every campaign whole. The rows carry the campaign name (`label`),
+  which every reader of that dashboard may see on the campaign list.
+- Tool names are not asset-scoped, so the false-positive rate is read only
+  for a whole-organization scope (organization dashboards, and an owner's
+  personal dashboard, whose data scope is the organization, as for the
+  intake); any other personal read is `organization_only` and never queries
+  it.
+- Permissions on a personal read: `findings:remediation:read` for
+  `remediation.campaign_progress`, `findings:read` for the other two;
+  without it the widget is `unsupported` with reason `forbidden`, also from a
+  stored snapshot.
+- Threat model: every statement starts with `tenant_id = $1` and binds its
+  values (window bounds, tenant, user); the spec carries only the metric id
+  and time range, never a scope or a tool. A scoped member's counts follow
+  their scope (no oracle on findings, proposals or tasks outside it); a
+  member without scope rows sees "not measured" or only campaigns they own.
+  A tool name reaches the web only as a URL-encoded value of `tool_name` and
+  as plain text, never as markup. A stored snapshot read after a permission
+  loss is masked on the way out.
+- Tests: `widgets/quality_test.go` (rows, order, links, minimum, not
+  measured, organization only, every read uses the server-built scope,
+  permission masking), `routes/dashboard_quality_widgets_db_test.go` (a
+  scoped member, a member without scope rows and an administrator: each
+  closure row equals the findings list it opens, Ready to close equals the
+  list's count, campaign visibility and counts, drafts and another tenant's
+  rows never count or show, a lost permission masks the stored figures; the
+  false-positive rate is the same for every organization viewer, leaves out
+  a small tool and another tenant, and equals the false-positive list over
+  the closed list).
+
 ### Emerging threats
 
 `intel.emerging_threats` ("Emerging threats affecting you", kind `breakdown`,

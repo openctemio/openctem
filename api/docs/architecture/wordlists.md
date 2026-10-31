@@ -83,6 +83,9 @@ without internet access uploads the asset instead (`POST /api/v1/admin/content-p
 Asset coverage runs `enumerate.subdomains` at standard depth, so it reads the `dns-labels` lists
 of `wordlists-s`. If no such pack is on `stable` (the built-in one revoked and none imported), the
 capability is paused with readiness reason `content_missing` ([asset-coverage.md](asset-coverage.md)).
+The first enumeration of a new root runs once at deep depth and reads `wordlists-m` instead
+(asset-coverage.md, "Deep onboarding of new roots"); without a stable `wordlists-m` that pass runs
+at standard depth.
 
 ## The list a job reads
 

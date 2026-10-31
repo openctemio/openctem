@@ -83,6 +83,30 @@ export const METRICS: readonly MetricMeta[] = [
     ordinal: true,
   },
   {
+    id: 'findings.closure_quality',
+    group: 'remediation',
+    unit: 'count',
+    defaultGroupBy: [],
+    keyPrefix: 'dashboards.closure',
+    ordinal: true,
+  },
+  // Rows are campaigns named by the server, late first.
+  {
+    id: 'remediation.campaign_progress',
+    group: 'remediation',
+    unit: 'percent',
+    defaultGroupBy: [],
+    ordinal: true,
+  },
+  // Rows are tool names (shown as is), highest rate first.
+  {
+    id: 'detection.fp_rate_by_tool',
+    group: 'ctem',
+    unit: 'percent',
+    defaultGroupBy: [],
+    ordinal: true,
+  },
+  {
     id: 'intel.emerging_threats',
     group: 'threat_intel',
     unit: 'count',
