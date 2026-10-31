@@ -1,0 +1,5 @@
+### Fixed: a team with outside members says so before full data access is tried
+
+- A team that has members from outside the organization (external members or service accounts) still cannot carry a full-data role; that rule is unchanged and the API keeps refusing with `TEAM_EXTERNAL_FULL_DATA`.
+- The refusal now names those members in `details.outside_members` (id, name, whether a service account) for a caller who may read the team's members. `GET /api/v1/groups/{id}` returns `outside_members` (up to 20) and `carries_full_data`; each item of `GET /api/v1/groups/{id}/members` carries `outside` and `service`.
+- Settings > Teams: on the Roles and Access tabs, full-data roles and presets are off while the team has outside members, with a notice naming them and three ways forward (show them, a new team without them, give the role to a person directly). The Members tab marks outside members and filters to them; Add member does not offer an outside person for a team that gives full data access.

@@ -15,6 +15,15 @@ package scan
 //     Also waiting: the tool is enabled but no sensor of the organization
 //     has advertised it yet (a new organization before its first sensor);
 //   - blocked: no enabled tool runs the step, or no sensor may run one.
+//   - skipped (steps only): an optional step (run_policy.optional) that no
+//     installed tool implements. The run skips it with the reason
+//     (scanrun optionalSkipMessage), so it never blocks the workflow; it is
+//     reported so the list can say which step is left out and how to add
+//     it. A workflow whose every step is skipped is blocked.
+//
+// Each step also carries a stable reason code and the tools it names, so
+// the web app shows the reason in the reader's language; Reason and Fix
+// stay as the English text (API clients, the refusal message).
 //
 // Platform sensors are counted as "platform scanning" only: never named or
 // counted per sensor (the tenant view of #1362).
@@ -39,6 +48,20 @@ const (
 	ReadinessWaiting = "waiting"
 	ReadinessCIOnly  = "ci_only"
 	ReadinessBlocked = "blocked"
+	// ReadinessSkipped is a step state only: an optional step without a
+	// tool, which the run skips with the reason.
+	ReadinessSkipped = "skipped"
+)
+
+// Step readiness reason codes (StepReadiness.Code).
+const (
+	ReasonSensorOffline    = "sensor_offline"
+	ReasonNoSensorYet      = "no_sensor_yet"
+	ReasonCIOnly           = "ci_only"
+	ReasonNoTool           = "no_tool"
+	ReasonToolDisabled     = "tool_disabled"
+	ReasonToolNotInstalled = "tool_not_installed"
+	ReasonNoSensor         = "no_sensor"
 )
 
 // CodeWorkflowNotRunnable refuses a scan of a workflow that cannot run.
@@ -56,8 +79,14 @@ type StepReadiness struct {
 	Name       string `json:"name"`
 	Capability string `json:"capability,omitempty"`
 	State      string `json:"state"`
-	Reason     string `json:"reason,omitempty"`
-	Fix        string `json:"fix,omitempty"`
+	// Optional: the step is skipped by a run when no tool implements it.
+	Optional bool `json:"optional,omitempty"`
+	// Code is the stable reason code (Reason* constants); Tools are the
+	// tools the reason and the fix name.
+	Code   string   `json:"code,omitempty"`
+	Tools  []string `json:"tools,omitempty"`
+	Reason string   `json:"reason,omitempty"`
+	Fix    string   `json:"fix,omitempty"`
 }
 
 // WorkflowReadiness is a workflow's readiness for one tenant.
@@ -159,14 +188,21 @@ func (s *Service) workflowReadiness(ctx context.Context, tenantID shared.ID, w *
 	useTenant := pref != scanworkflow.SensorPreferencePlatform
 	r := &WorkflowReadiness{State: ReadinessReady, Steps: make([]StepReadiness, 0, len(w.Steps))}
 	rank := map[string]int{ReadinessReady: 0, ReadinessWaiting: 1, ReadinessCIOnly: 2, ReadinessBlocked: 3}
+	counted := 0
 	for _, step := range w.Steps {
 		sr := s.stepReadiness(ctx, tenantID, step, snap, useTenant, usePlatform)
 		r.Steps = append(r.Steps, sr)
+		if sr.State == ReadinessSkipped {
+			continue
+		}
+		counted++
 		if rank[sr.State] > rank[r.State] {
 			r.State = sr.State
 		}
 	}
-	if len(w.Steps) == 0 {
+	// No steps, or only optional steps that all wait for a tool: a run
+	// would do nothing.
+	if counted == 0 {
 		r.State = ReadinessBlocked
 	}
 	return r
@@ -194,7 +230,7 @@ func (snap readinessSnapshot) toolState(name string, status sensordom.ToolStatus
 }
 
 func (s *Service) stepReadiness(ctx context.Context, tenantID shared.ID, step *scanworkflow.Step, snap readinessSnapshot, useTenant, usePlatform bool) StepReadiness {
-	sr := StepReadiness{StepKey: step.StepKey, Name: step.Name}
+	sr := StepReadiness{StepKey: step.StepKey, Name: step.Name, Optional: step.RunPolicy.Optional}
 	if sr.Name == "" {
 		sr.Name = step.StepKey
 	}
@@ -203,6 +239,11 @@ func (s *Service) stepReadiness(ctx context.Context, tenantID shared.ID, step *s
 	if placed {
 		sr.Capability = string(st.Key)
 		what = st.Name
+	} else if len(step.Capabilities) > 0 {
+		// A planned capability (an optional step that waits for a tool) is
+		// still named, so the reader sees what is missing.
+		sr.Capability = strings.ToLower(strings.TrimSpace(step.Capabilities[0]))
+		what = sr.Capability
 	}
 	var candidates []string
 	switch {
@@ -254,38 +295,55 @@ func (s *Service) stepReadiness(ctx context.Context, tenantID shared.ID, step *s
 	case best == ReadinessReady:
 		sr.State = ReadinessReady
 	case best == ReadinessWaiting:
-		sr.State = ReadinessWaiting
+		sr.State, sr.Code, sr.Tools = ReadinessWaiting, ReasonSensorOffline, candidates
 		sr.Reason = fmt.Sprintf("No sensor that can run %s is online now", what)
 		sr.Fix = "Start a sensor that has one of: " + strings.Join(candidates, ", ")
 	case len(noSensorYet) > 0 && !(placed && ciCapabilities[st.Key]):
 		// Nothing is wrong with the workflow: no sensor with the tool has
 		// connected yet. It can be saved and starts once one is online.
-		sr.State = ReadinessWaiting
+		sr.State, sr.Code, sr.Tools = ReadinessWaiting, ReasonNoSensorYet, noSensorYet
 		sr.Reason = fmt.Sprintf("Waits for a sensor with %s", what)
 		sr.Fix = "Add a sensor with " + strings.Join(noSensorYet, " or ")
 	case placed && ciCapabilities[st.Key]:
-		sr.State = ReadinessCIOnly
+		sr.State, sr.Code = ReadinessCIOnly, ReasonCIOnly
 		sr.Reason = fmt.Sprintf("%s runs in your CI pipeline", st.Name)
 		sr.Fix = "Set up the CI pipeline integration"
 	case len(candidates) == 0:
-		sr.State = ReadinessBlocked
+		sr.State, sr.Code = ReadinessBlocked, ReasonNoTool
 		sr.Reason = fmt.Sprintf("No tool runs %s", what)
 		sr.Fix = "Pick another capability or a tool for the step"
 	case len(missing) == 0 && len(disabled) > 0:
-		sr.State = ReadinessBlocked
+		sr.State, sr.Code, sr.Tools = ReadinessBlocked, ReasonToolDisabled, disabled
 		sr.Reason = fmt.Sprintf("No enabled tool runs %s (%s is turned off)", what, strings.Join(disabled, ", "))
 		sr.Fix = "Enable " + strings.Join(disabled, " or ")
 	case len(missing) == 0:
-		sr.State = ReadinessBlocked
+		sr.State, sr.Code, sr.Tools = ReadinessBlocked, ReasonToolNotInstalled, notInstalled
 		sr.Reason = fmt.Sprintf("%s is not installed in this organization", strings.Join(notInstalled, ", "))
 		sr.Fix = "Pick \"Any tool\" for the step, or add the tool"
 
 	default:
-		sr.State = ReadinessBlocked
+		sr.State, sr.Code, sr.Tools = ReadinessBlocked, ReasonNoSensor, missing
 		sr.Reason = fmt.Sprintf("No sensor offers %s", what)
 		sr.Fix = "Add a sensor with " + strings.Join(missing, " or ")
 	}
+	// An optional step that no installed and enabled tool implements is
+	// skipped by the run (the dispatch refusal NO_MATCHING_TOOL): it never
+	// blocks the workflow. A tool that is installed but on no sensor still
+	// blocks, because the run would dispatch it.
+	if sr.State == ReadinessBlocked && step.RunPolicy.Optional && len(missing) == 0 {
+		sr.State = ReadinessSkipped
+		sr.Reason = "Skipped: " + lowerFirst(sr.Reason) + "; the workflow runs without this step"
+	}
 	return sr
+}
+
+// lowerFirst lower-cases the first letter of a sentence that continues
+// another (tool names are already lower case).
+func lowerFirst(s string) string {
+	if s == "" {
+		return s
+	}
+	return strings.ToLower(s[:1]) + s[1:]
 }
 
 // requireWorkflowRunnable refuses a workflow that is blocked or runs only
@@ -309,6 +367,9 @@ func (s *Service) requireWorkflowRunnable(ctx context.Context, tenantID shared.I
 		if st.State == ReadinessBlocked || st.State == ReadinessCIOnly {
 			parts = append(parts, fmt.Sprintf("%s: %s", st.Name, st.Reason))
 		}
+	}
+	if len(parts) == 0 && len(r.Steps) > 0 {
+		parts = append(parts, "every step is optional and no installed tool runs one")
 	}
 	if len(parts) == 0 {
 		parts = append(parts, "it has no steps")

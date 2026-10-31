@@ -66,6 +66,8 @@ export function reasonKeyOf(reason: string | undefined): string {
     case 'no_receipts':
     case 'no_certificates':
     case 'no_findings':
+    case 'no_threat_alerts':
+    case 'module_off':
       return `dashboards.reason.${reason}`
     default:
       return 'dashboards.reason.failed'

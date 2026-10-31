@@ -135,6 +135,55 @@ func (r *ComplianceAssessmentRepository) GetStatsByFramework(ctx context.Context
 	return stats, nil
 }
 
+// GetStatsByFrameworks returns GetStatsByFramework's stats for several
+// frameworks in one query (the frameworks list, include=stats). The tenant
+// predicate is on the assessments, as there: controls belong to a framework,
+// and the caller passes only frameworks the tenant may see.
+func (r *ComplianceAssessmentRepository) GetStatsByFrameworks(ctx context.Context, tenantID shared.ID, frameworkIDs []shared.ID) (map[shared.ID]*compliance.FrameworkStats, error) {
+	out := make(map[shared.ID]*compliance.FrameworkStats, len(frameworkIDs))
+	if len(frameworkIDs) == 0 {
+		return out, nil
+	}
+	ids := make([]string, len(frameworkIDs))
+	for i, id := range frameworkIDs {
+		ids[i] = id.String()
+	}
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT
+			c.framework_id,
+			COUNT(c.id) as total,
+			COUNT(*) FILTER (WHERE a.status = 'implemented') as implemented,
+			COUNT(*) FILTER (WHERE a.status = 'partial') as partial,
+			COUNT(*) FILTER (WHERE a.status = 'not_implemented') as not_implemented,
+			COUNT(*) FILTER (WHERE a.status = 'not_applicable') as not_applicable,
+			COUNT(*) FILTER (WHERE a.status = 'not_assessed' OR a.status IS NULL) as not_assessed
+		FROM compliance_controls c
+		LEFT JOIN compliance_assessments a ON c.id = a.control_id AND a.tenant_id = $1
+		WHERE c.framework_id = ANY($2::uuid[])
+		GROUP BY c.framework_id`, tenantID.String(), pq.StringArray(ids))
+	if err != nil {
+		return nil, fmt.Errorf("failed to get framework stats: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var fid string
+		st := &compliance.FrameworkStats{}
+		if err := rows.Scan(&fid, &st.TotalControls, &st.Implemented, &st.Partial,
+			&st.NotImplemented, &st.NotApplicable, &st.NotAssessed); err != nil {
+			return nil, fmt.Errorf("failed to read framework stats: %w", err)
+		}
+		id, err := shared.IDFromString(fid)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read framework stats: %w", err)
+		}
+		out[id] = st
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to read framework stats: %w", err)
+	}
+	return out, nil
+}
+
 // GetOverdueCount returns count of overdue assessments.
 func (r *ComplianceAssessmentRepository) GetOverdueCount(ctx context.Context, tenantID shared.ID) (int64, error) {
 	var count int64

@@ -55,6 +55,9 @@ type AssessmentRepository interface {
 	Upsert(ctx context.Context, assessment *Assessment) error
 	ListByFramework(ctx context.Context, tenantID, frameworkID shared.ID, page pagination.Pagination) (pagination.Result[*Assessment], error)
 	GetStatsByFramework(ctx context.Context, tenantID, frameworkID shared.ID) (*FrameworkStats, error)
+	// GetStatsByFrameworks is GetStatsByFramework for several frameworks in
+	// one query; a framework without controls is absent from the map.
+	GetStatsByFrameworks(ctx context.Context, tenantID shared.ID, frameworkIDs []shared.ID) (map[shared.ID]*FrameworkStats, error)
 	GetOverdueCount(ctx context.Context, tenantID shared.ID) (int64, error)
 }
 

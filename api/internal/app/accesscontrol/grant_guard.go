@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	groupdom "github.com/openctemio/openctem/api/pkg/domain/group"
 	"github.com/openctemio/openctem/api/pkg/domain/permission"
 	roledom "github.com/openctemio/openctem/api/pkg/domain/role"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -146,6 +147,17 @@ var ErrExternalRoleCeiling = fmt.Errorf("%w: the trust with this member's organi
 // grant (with the inviter's or assigner's step-up), never as a side effect
 // of joining a team.
 var ErrExternalTeamFullData = fmt.Errorf("%w: someone outside your organization gets full data access only through a role given to them directly, never through a team", ErrGrantForbidden)
+
+// OutsideMembersError is ErrExternalTeamFullData naming the members who stand
+// in the way, so the client can say who they are instead of only refusing.
+// errors.Is(err, ErrExternalTeamFullData) holds for it.
+type OutsideMembersError struct {
+	Members []groupdom.OutsideMember
+}
+
+func (e *OutsideMembersError) Error() string { return ErrExternalTeamFullData.Error() }
+
+func (e *OutsideMembersError) Unwrap() error { return ErrExternalTeamFullData }
 
 // capExternalTarget enforces the outside-member rules (RFC-058 as amended by
 // RFC-095 §4.2) when actorID gives user uid role r:

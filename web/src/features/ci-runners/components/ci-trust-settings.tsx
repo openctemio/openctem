@@ -12,7 +12,7 @@
  * is the authority, the page only hides what the caller cannot do.
  */
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { Check, Copy, KeyRound, Lock, Plus, ShieldAlert, Trash2 } from 'lucide-react'
 import Link from '@/components/link'
@@ -21,17 +21,17 @@ import {
   PageStack,
   EmptyState,
   ErrorState,
-  FilterSelect,
   GatedButton,
-  ListToolbar,
+  RelativeTime,
+  SettingsSection,
 } from '@/features/shared'
+import { ProviderIcon } from '@/features/scm-connections'
 import { CIRequireOIDC } from './ci-require-oidc'
 import { CIPRFeedback } from './ci-pr-feedback'
 import { useUrlFilter } from '@/hooks/use-url-param'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   Dialog,
   DialogContent,
@@ -71,6 +71,7 @@ import {
   useSaveGatePolicy,
   useSaveTrustConfig,
   useTrustConfigs,
+  useTrustRefusals,
 } from '../api/use-ci'
 import {
   CI_PROVIDERS,
@@ -105,9 +106,9 @@ type TFn = ReturnType<typeof useTranslation>['t']
 
 /**
  * Trust, gate policy and break-glass. `embedded` drops the page header (the
- * CI/CD integration page shows these as its Trust and gate tab).
+ * CI/CD integration page shows these as its Settings tab).
  */
-const SETUP_SECTIONS = ['trust', 'gate', 'break-glass', 'feedback'] as const
+const SETUP_SECTIONS = ['trust', 'refused', 'gate', 'break-glass', 'feedback'] as const
 type SetupSection = (typeof SETUP_SECTIONS)[number]
 
 /** The setup section a URL asks for; anything unknown is Trust. */
@@ -120,14 +121,22 @@ export function CITrustSettings({ embedded = false }: { embedded?: boolean } = {
   const { can } = usePermissions()
   const canWrite = can(Permission.CIWrite)
   const canOverride = can(Permission.CIOverride)
-  // The open section lives in the URL (?section=), so a link (the GitHub App
-  // callback, an alert, the docs) can land on it.
-  const [sectionParam, setSectionParam] = useUrlFilter('section', 'trust')
-  const section = setupSection(sectionParam)
-  const setSection = (v: string) => setSectionParam(setupSection(v))
-  // One tab row per page (research/249 R21): on the CI/CD page these sections
-  // sit under its Trust and gate tab, so the section is a token in a toolbar,
-  // not a second row of tabs. Its value stays in the URL (?section=).
+  // Every section is on the page, in the order a pipeline is set up: who may
+  // send results, what fails a pipeline, where the verdict is posted, and the
+  // way past the gate. A link that names a section (?section=: the GitHub App
+  // callback, a run's "Connect GitLab", the scope page) scrolls to it.
+  const [sectionParam] = useUrlFilter('section', '')
+  // The sections above the target change height as they load: scroll once
+  // they have (the same SWR keys the sections read, so no extra request).
+  const trusts = useTrustConfigs()
+  const policies = useGatePolicies()
+  const refusals = useTrustRefusals({ enabled: canWrite })
+  const settled = !trusts.isLoading && !policies.isLoading && !refusals.isLoading
+  useEffect(() => {
+    if (!sectionParam || !settled) return
+    const el = document.getElementById(sectionHeadingId(setupSection(sectionParam)))
+    el?.scrollIntoView?.({ block: 'start' })
+  }, [sectionParam, settled])
   return (
     <PageStack>
       {!embedded && (
@@ -139,34 +148,22 @@ export function CITrustSettings({ embedded = false }: { embedded?: boolean } = {
           )}
         />
       )}
-      <CIRequireOIDC canWrite={canWrite} />
-      <ListToolbar
-        start={
-          <FilterSelect<SetupSection>
-            label={t('scans.ci.sectionLabel', 'Section')}
-            value={section}
-            clearable={false}
-            options={[
-              { value: 'trust', label: t('scans.ci.trust.tab', 'Trust') },
-              { value: 'gate', label: t('scans.ci.gatePolicy.tab', 'Gate policy') },
-              { value: 'break-glass', label: t('scans.ci.breakGlass.tab', 'Break-glass') },
-              { value: 'feedback', label: t('scans.ci.feedback.tab', 'Pull request feedback') },
-            ]}
-            onChange={(v) => setSection(v || 'trust')}
-          />
-        }
-      />
-      {section === 'gate' ? (
-        <GatePolicySection canWrite={can(Permission.CIPolicy)} />
-      ) : section === 'break-glass' ? (
-        <OverridesSection canOverride={canOverride} />
-      ) : section === 'feedback' ? (
+      <TrustConfigsSection canWrite={canWrite} />
+      <GatePolicySection canWrite={can(Permission.CIPolicy)} />
+      <SettingsSection
+        id={sectionHeadingId('feedback')}
+        title={t('scans.ci.feedback.tab', 'Pull request feedback')}
+      >
         <CIPRFeedback canWrite={canWrite} />
-      ) : (
-        <TrustConfigsSection canWrite={canWrite} />
-      )}
+      </SettingsSection>
+      <OverridesSection canOverride={canOverride} />
     </PageStack>
   )
+}
+
+/** The heading id of a setup section, the target of `?section=` links. */
+export function sectionHeadingId(section: SetupSection): string {
+  return `ci-setup-${section}`
 }
 
 // ─────────────────────────────────────────────────────────── trust ───
@@ -195,29 +192,34 @@ function TrustConfigsSection({ canWrite }: { canWrite: boolean }) {
   const { t, locale } = useTranslation()
   const configs = data?.data ?? []
 
-  if (error)
-    return (
-      <ErrorState
-        title={t('scans.ci.trust.configs', 'CI trust configurations')}
-        error={error}
-        onRetry={() => mutate()}
-      />
-    )
   return (
-    <div className="space-y-3">
-      <div className="flex flex-wrap items-center justify-end gap-2">
-        {canWrite && <CISetupEntry canWrite />}
+    <SettingsSection
+      id={sectionHeadingId('trust')}
+      title={t('scans.ci.trust.title', 'Trusted pipelines')}
+      description={t(
+        'scans.ci.trust.summary',
+        'Pipelines send results with the identity their CI provider gives the job. Only the organizations and repositories named here are admitted.'
+      )}
+      actions={
         <GatedButton
           allowed={canWrite}
           reason={t('scans.ci.noWrite', NO_WRITE)}
           size="sm"
-          variant={canWrite ? 'outline' : 'default'}
+          variant="outline"
           onClick={() => setEditing('new')}
         >
           <Plus className="size-4" aria-hidden /> {t('scans.ci.trust.add', 'Add trust')}
         </GatedButton>
-      </div>
-      {isLoading ? (
+      }
+    >
+      <CIRequireOIDC canWrite={canWrite} />
+      {error ? (
+        <ErrorState
+          title={t('scans.ci.trust.configs', 'CI trust configurations')}
+          error={error}
+          onRetry={() => mutate()}
+        />
+      ) : isLoading ? (
         <Skeleton className="h-24 w-full" />
       ) : configs.length === 0 ? (
         <EmptyState
@@ -227,94 +229,101 @@ function TrustConfigsSection({ canWrite }: { canWrite: boolean }) {
             'scans.ci.noTrust',
             'Name the organizations or repositories whose pipelines may send results.'
           )}
+          action={canWrite ? <CISetupEntry canWrite /> : undefined}
         />
       ) : (
-        configs.map((c) => (
-          <Card key={c.id}>
-            <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2 space-y-0">
-              <div className="min-w-0 space-y-1">
-                <CardTitle className="flex flex-wrap items-center gap-2 text-base">
-                  {c.name}
-                  <Badge variant="outline">{PROVIDER_LABEL[c.provider ?? ''] ?? c.provider}</Badge>
-                  {!c.enabled && (
-                    <Badge variant="secondary">{t('scans.ci.disabled', 'Disabled')}</Badge>
+        <ul className="divide-y rounded-lg border" data-testid="ci-trust-list">
+          {configs.map((c) => {
+            const summary = rulesSummary(c, t)
+            return (
+              <li
+                key={c.id}
+                className="flex flex-col gap-2 p-3 sm:flex-row sm:items-start sm:justify-between"
+                data-testid="ci-trust-row"
+              >
+                <div className="min-w-0 space-y-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="flex items-center gap-1.5 font-medium">
+                      <span className="text-muted-foreground" aria-hidden>
+                        <ProviderIcon provider={c.provider ?? ''} />
+                      </span>
+                      <span className="break-words">{c.name}</span>
+                    </span>
+                    {!c.enabled && (
+                      <Badge variant="secondary">{t('scans.ci.disabled', 'Disabled')}</Badge>
+                    )}
+                    {c.rules?.allow_fork_pull_requests && (
+                      <Badge variant="destructive">
+                        {t('scans.ci.trust.forkBadge', 'Fork pull requests')}
+                      </Badge>
+                    )}
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    <span className="break-words">
+                      {PROVIDER_LABEL[c.provider ?? ''] ?? c.provider}
+                      {summary ? `, ${summary}` : ''}
+                    </span>
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {c.last_used_at ? (
+                      <>
+                        {t('scans.ci.trust.lastUsed', 'Last used')}{' '}
+                        <RelativeTime date={c.last_used_at} />
+                      </>
+                    ) : (
+                      t('scans.ci.trust.neverUsed', 'Not used yet')
+                    )}
+                  </p>
+                  {c.legacy_audience && c.legacy_audience_until && (
+                    <p
+                      className="break-words text-sm text-warning"
+                      data-testid="ci-legacy-audience"
+                    >
+                      {t(
+                        'scans.ci.trust.legacyAudience',
+                        'Pipelines that existed before may still use the old audience {value} until {until}, until they use the new one once. Update their pipeline to the current snippet.',
+                        {
+                          value: c.legacy_audience,
+                          until: formatLocalized(c.legacy_audience_until, locale),
+                        }
+                      )}
+                    </p>
                   )}
-                  {c.rules?.allow_fork_pull_requests && (
-                    <Badge variant="destructive">
-                      {t('scans.ci.trust.forkBadge', 'Fork pull requests')}
-                    </Badge>
-                  )}
-                </CardTitle>
-                <CardDescription className="break-all">{rulesSummary(c, t)}</CardDescription>
-              </div>
-              <div className="flex gap-2">
-                <Button variant="outline" size="sm" onClick={() => setSnippetOf(c)}>
-                  {t('scans.ci.trust.snippet', 'Pipeline snippet')}
-                </Button>
-                <GatedButton
-                  allowed={canWrite}
-                  reason={t('scans.ci.noWrite', NO_WRITE)}
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setEditing(c)}
-                >
-                  {t('scans.ci.edit', 'Edit')}
-                </GatedButton>
-                <GatedButton
-                  allowed={canWrite}
-                  reason={t('scans.ci.noWrite', NO_WRITE)}
-                  variant="ghost"
-                  size="sm"
-                  className="ms-3 text-destructive hover:text-destructive"
-                  aria-label={t('scans.ci.trust.deleteLabel', 'Delete {name}', {
-                    name: c.name ?? '',
-                  })}
-                  onClick={() => setDeleting(c)}
-                >
-                  <Trash2 className="size-4" aria-hidden />
-                </GatedButton>
-              </div>
-            </CardHeader>
-            <CardContent className="grid gap-1 text-sm text-muted-foreground sm:grid-cols-2">
-              <span className="break-all">
-                {t('scans.ci.trust.issuerValue', 'Issuer: {value}', { value: c.issuer ?? '' })}
-              </span>
-              <span className="break-all">
-                {t('scans.ci.trust.audienceValue', 'Audience: {value}', {
-                  value: c.audience ?? '',
-                })}
-              </span>
-              {c.legacy_audience && c.legacy_audience_until && (
-                <span
-                  className="break-all text-warning sm:col-span-2"
-                  data-testid="ci-legacy-audience"
-                >
-                  {t(
-                    'scans.ci.trust.legacyAudience',
-                    'Pipelines that existed before may still use the old audience {value} until {until}, until they use the new one once. Update their pipeline to the current snippet.',
-                    {
-                      value: c.legacy_audience,
-                      until: formatLocalized(c.legacy_audience_until, locale),
-                    }
-                  )}
-                </span>
-              )}
-              <span>
-                {t('scans.ci.trust.defaultBranchValue', 'Default branch: {value}', {
-                  value: c.default_branch ?? '',
-                })}
-              </span>
-              <span>
-                {t('scans.ci.trust.lastUsedValue', 'Last used: {value}', {
-                  value: c.last_used_at
-                    ? formatLocalized(c.last_used_at, locale, { time: true })
-                    : t('scans.ci.trust.never', 'never'),
-                })}
-              </span>
-              <CITrustScopeEntries config={c} onChanged={() => void mutate()} />
-            </CardContent>
-          </Card>
-        ))
+                  <div className="text-sm text-muted-foreground">
+                    <CITrustScopeEntries config={c} onChanged={() => void mutate()} />
+                  </div>
+                </div>
+                <div className="flex shrink-0 flex-wrap items-center gap-2">
+                  <Button variant="outline" size="sm" onClick={() => setSnippetOf(c)}>
+                    {t('scans.ci.trust.snippet', 'Pipeline snippet')}
+                  </Button>
+                  <GatedButton
+                    allowed={canWrite}
+                    reason={t('scans.ci.noWrite', NO_WRITE)}
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setEditing(c)}
+                  >
+                    {t('scans.ci.edit', 'Edit')}
+                  </GatedButton>
+                  <GatedButton
+                    allowed={canWrite}
+                    reason={t('scans.ci.noWrite', NO_WRITE)}
+                    variant="ghost"
+                    size="sm"
+                    className="text-destructive hover:text-destructive"
+                    aria-label={t('scans.ci.trust.deleteLabel', 'Delete {name}', {
+                      name: c.name ?? '',
+                    })}
+                    onClick={() => setDeleting(c)}
+                  >
+                    <Trash2 className="size-4" aria-hidden />
+                  </GatedButton>
+                </div>
+              </li>
+            )
+          })}
+        </ul>
       )}
       {editing && (
         <TrustConfigDialog
@@ -354,7 +363,7 @@ function TrustConfigsSection({ canWrite }: { canWrite: boolean }) {
             .catch((e: unknown) => toast.error(getErrorMessage(e)))
         }}
       />
-    </div>
+    </SettingsSection>
   )
 }
 
@@ -952,113 +961,126 @@ function GatePolicySection({ canWrite }: { canWrite: boolean }) {
   const tenantPolicy = policies.find((p) => p.scope_type === 'tenant')
   const others = policies.filter((p) => p.scope_type !== 'tenant')
 
-  if (error)
-    return (
-      <ErrorState
-        title={t('scans.ci.gatePolicy.list', 'gate policies')}
-        error={error}
-        onRetry={() => mutate()}
-      />
-    )
-  if (isLoading) return <Skeleton className="h-40 w-full" />
   const shown = tenantPolicy ?? data?.default
   return (
-    <div className="space-y-4">
-      <Alert>
-        <ShieldAlert />
-        <AlertTitle>{t('scans.ci.gatePolicy.alwaysOn', 'Always on')}</AlertTitle>
-        <AlertDescription>
-          {t(
-            'scans.ci.gatePolicy.alwaysOnBody',
-            'A committed secret always fails the pipeline. Accepted risk, false positives and suppressions are always honored while they apply. A scanner that fails to run fails the pipeline.'
-          )}
-        </AlertDescription>
-      </Alert>
-      <Card>
-        <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2 space-y-0">
-          <div>
-            <CardTitle className="text-base">
-              {t('scans.ci.gatePolicy.orgPolicy', 'Organization policy')}
-            </CardTitle>
-            <CardDescription>
-              {tenantPolicy
+    <SettingsSection
+      id={sectionHeadingId('gate')}
+      title={t('scans.ci.gatePolicy.tab', 'Gate policy')}
+      description={t(
+        'scans.ci.gatePolicy.alwaysOnBody',
+        'A committed secret always fails the pipeline. Accepted risk, false positives and suppressions are always honored while they apply. A scanner that fails to run fails the pipeline.'
+      )}
+    >
+      {error ? (
+        <ErrorState
+          title={t('scans.ci.gatePolicy.list', 'gate policies')}
+          error={error}
+          onRetry={() => mutate()}
+        />
+      ) : isLoading ? (
+        <Skeleton className="h-40 w-full" />
+      ) : (
+        <>
+          <ul className="divide-y rounded-lg border" data-testid="ci-gate-policies">
+            <li className="flex flex-col gap-2 p-3 sm:flex-row sm:items-start sm:justify-between">
+              <div className="min-w-0 space-y-1">
+                <p className="font-medium">
+                  {t('scans.ci.gatePolicy.orgPolicy', 'Organization policy')}
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  {tenantPolicy
+                    ? t(
+                        'scans.ci.gatePolicy.orgApplies',
+                        'Applies to every repository without its own policy.'
+                      )
+                    : t(
+                        'scans.ci.gatePolicy.builtIn',
+                        'Built-in default: no organization policy is set.'
+                      )}
+                </p>
+                {shown && (
+                  <div className="text-sm">
+                    <PolicySummary p={shown} />
+                  </div>
+                )}
+              </div>
+              <GatedButton
+                allowed={canWrite}
+                reason={t('scans.ci.noWrite', NO_WRITE)}
+                size="sm"
+                variant="outline"
+                className="shrink-0 self-start"
+                onClick={() => setEditing(tenantPolicy ?? { scope_type: 'tenant' })}
+              >
+                {tenantPolicy
+                  ? t('scans.ci.edit', 'Edit')
+                  : t('scans.ci.gatePolicy.set', 'Set policy')}
+              </GatedButton>
+            </li>
+            {others.map((p) => (
+              <li
+                key={p.id}
+                className="flex flex-col gap-2 p-3 sm:flex-row sm:items-start sm:justify-between"
+              >
+                <div className="min-w-0 space-y-1">
+                  <p className="break-all font-medium">{policyScope(p, t)}</p>
+                  <div className="text-sm">
+                    <PolicySummary p={p} />
+                  </div>
+                </div>
+                <div className="flex shrink-0 gap-2 self-start">
+                  <GatedButton
+                    allowed={canWrite}
+                    reason={t('scans.ci.noWrite', NO_WRITE)}
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setEditing(p)}
+                  >
+                    {t('scans.ci.edit', 'Edit')}
+                  </GatedButton>
+                  <GatedButton
+                    allowed={canWrite}
+                    reason={t('scans.ci.noWrite', NO_WRITE)}
+                    variant="ghost"
+                    size="sm"
+                    className="text-destructive hover:text-destructive"
+                    aria-label={t(
+                      'confirm.gatePolicy.deleteLabel',
+                      'Delete the policy for {scope}',
+                      { scope: policyScope(p, t) }
+                    )}
+                    onClick={() => setPendingDelete(p)}
+                  >
+                    <Trash2 className="size-4" aria-hidden />
+                  </GatedButton>
+                </div>
+              </li>
+            ))}
+          </ul>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="max-w-2xl text-sm text-muted-foreground">
+              {others.length === 0
                 ? t(
-                    'scans.ci.gatePolicy.orgApplies',
-                    'Applies to every repository without its own policy.'
+                    'scans.ci.gatePolicy.none',
+                    "None. A repository uses its own policy, else the strictest of its business units', else the organization's."
                   )
                 : t(
-                    'scans.ci.gatePolicy.builtIn',
-                    'Built-in default: no organization policy is set.'
+                    'scans.ci.gatePolicy.precedence',
+                    "A repository uses its own policy, else the strictest of its business units', else the organization's."
                   )}
-            </CardDescription>
+            </p>
+            <GatedButton
+              allowed={canWrite}
+              reason={t('scans.ci.noWrite', NO_WRITE)}
+              size="sm"
+              variant="outline"
+              onClick={() => setAdding(true)}
+            >
+              <Plus className="size-4" aria-hidden />{' '}
+              {t('scans.ci.gatePolicy.addScoped', 'Add a business unit or repository policy')}
+            </GatedButton>
           </div>
-          <GatedButton
-            allowed={canWrite}
-            reason={t('scans.ci.noWrite', NO_WRITE)}
-            size="sm"
-            variant="outline"
-            onClick={() => setEditing(tenantPolicy ?? { scope_type: 'tenant' })}
-          >
-            {tenantPolicy ? t('scans.ci.edit', 'Edit') : t('scans.ci.gatePolicy.set', 'Set policy')}
-          </GatedButton>
-        </CardHeader>
-        <CardContent className="text-sm">{shown ? <PolicySummary p={shown} /> : null}</CardContent>
-      </Card>
-      <div className="flex items-center justify-between">
-        <h2 className="text-sm font-medium">
-          {t('scans.ci.gatePolicy.scoped', 'Business unit and repository policies')}
-        </h2>
-        <GatedButton
-          allowed={canWrite}
-          reason={t('scans.ci.noWrite', NO_WRITE)}
-          size="sm"
-          onClick={() => setAdding(true)}
-        >
-          <Plus className="size-4" aria-hidden /> {t('scans.ci.gatePolicy.add', 'Add policy')}
-        </GatedButton>
-      </div>
-      {others.length === 0 ? (
-        <p className="text-sm text-muted-foreground">
-          {t(
-            'scans.ci.gatePolicy.none',
-            "None. A repository uses its own policy, else the strictest of its business units', else the organization's."
-          )}
-        </p>
-      ) : (
-        others.map((p) => (
-          <Card key={p.id}>
-            <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2 space-y-0">
-              <CardTitle className="break-all text-sm">{policyScope(p, t)}</CardTitle>
-              <div className="flex gap-2">
-                <GatedButton
-                  allowed={canWrite}
-                  reason={t('scans.ci.noWrite', NO_WRITE)}
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setEditing(p)}
-                >
-                  {t('scans.ci.edit', 'Edit')}
-                </GatedButton>
-                <GatedButton
-                  allowed={canWrite}
-                  reason={t('scans.ci.noWrite', NO_WRITE)}
-                  variant="ghost"
-                  size="sm"
-                  className="ms-3 text-destructive hover:text-destructive"
-                  aria-label={t('confirm.gatePolicy.deleteLabel', 'Delete the policy for {scope}', {
-                    scope: policyScope(p, t),
-                  })}
-                  onClick={() => setPendingDelete(p)}
-                >
-                  <Trash2 className="size-4" aria-hidden />
-                </GatedButton>
-              </div>
-            </CardHeader>
-            <CardContent className="text-sm">
-              <PolicySummary p={p} />
-            </CardContent>
-          </Card>
-        ))
+        </>
       )}
       {(editing || adding) && (
         <PolicyDialog
@@ -1135,7 +1157,7 @@ function GatePolicySection({ canWrite }: { canWrite: boolean }) {
           </div>
         )}
       </ConfirmDialog>
-    </div>
+    </SettingsSection>
   )
 }
 
@@ -1585,23 +1607,15 @@ function OverridesSection({ canOverride }: { canOverride: boolean }) {
   const { t, locale } = useTranslation()
   const overrides = data?.data ?? []
 
-  if (error)
-    return (
-      <ErrorState
-        title={t('scans.ci.breakGlass.list', 'break-glass overrides')}
-        error={error}
-        onRetry={() => mutate()}
-      />
-    )
   return (
-    <div className="space-y-3">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="max-w-2xl text-sm text-muted-foreground">
-          {t(
-            'scans.ci.breakGlass.description',
-            'Let one commit of one repository pass the gate for a limited time. Every override and every run it lets through is recorded in the audit log.'
-          )}
-        </p>
+    <SettingsSection
+      id={sectionHeadingId('break-glass')}
+      title={t('scans.ci.breakGlass.tab', 'Break-glass')}
+      description={t(
+        'scans.ci.breakGlass.description',
+        'Let one commit of one repository pass the gate for a limited time. Every override and every run it lets through is recorded in the audit log.'
+      )}
+      actions={
         <GatedButton
           allowed={canOverride}
           reason={t(
@@ -1609,21 +1623,33 @@ function OverridesSection({ canOverride }: { canOverride: boolean }) {
             'Only owners and administrators can override the gate'
           )}
           size="sm"
+          variant="outline"
           onClick={() => setOpen(true)}
         >
-          <Plus className="size-4" aria-hidden /> {t('scans.ci.breakGlass.tab', 'Break-glass')}
+          <Plus className="size-4" aria-hidden />{' '}
+          {t('scans.ci.breakGlass.add', 'Override a commit')}
         </GatedButton>
-      </div>
-      {isLoading ? (
+      }
+    >
+      {error ? (
+        <ErrorState
+          title={t('scans.ci.breakGlass.list', 'break-glass overrides')}
+          error={error}
+          onRetry={() => mutate()}
+        />
+      ) : isLoading ? (
         <Skeleton className="h-16 w-full" />
       ) : overrides.length === 0 ? (
         <p className="text-sm text-muted-foreground">
           {t('scans.ci.breakGlass.empty', 'No overrides.')}
         </p>
       ) : (
-        overrides.map((o) => (
-          <Card key={o.id}>
-            <CardContent className="flex flex-wrap items-center justify-between gap-2 p-4 text-sm">
+        <ul className="divide-y rounded-lg border">
+          {overrides.map((o) => (
+            <li
+              key={o.id}
+              className="flex flex-wrap items-center justify-between gap-2 p-3 text-sm"
+            >
               <div className="min-w-0 space-y-1">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="font-mono">{shortSHA(o.commit_sha)}</span>
@@ -1664,9 +1690,9 @@ function OverridesSection({ canOverride }: { canOverride: boolean }) {
                   {t('confirm.revoke', 'Revoke')}
                 </GatedButton>
               )}
-            </CardContent>
-          </Card>
-        ))
+            </li>
+          ))}
+        </ul>
       )}
       <CIOverrideDialog open={open} onOpenChange={setOpen} onCreated={() => void mutate()} />
       <ConfirmDialog
@@ -1693,7 +1719,7 @@ function OverridesSection({ canOverride }: { canOverride: boolean }) {
           }
         }}
       />
-    </div>
+    </SettingsSection>
   )
 }
 

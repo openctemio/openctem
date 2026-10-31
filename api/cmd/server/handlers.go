@@ -472,6 +472,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// only an explicitly-disabled non-core module is blocked. Wired back into the
 	// module service so a toggle invalidates the gate cache immediately.
 	moduleGate := middleware.NewModuleGate(svc.Module, time.Minute)
+	// Dashboard widgets of a module read "module_off" while it is off, and
+	// the widget catalog leaves them out.
+	svc.DashboardWidgets.SetModules(moduleGate)
 	if deps.RedisClient != nil {
 		// Every replica caches module state: a toggle drops the cache here and,
 		// through Redis, on the other replicas at once.
@@ -714,6 +717,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		ContentSource:       handler.NewContentSourceHandler(svc.ContentSource, log),
 		ContentPack:         handler.NewContentPackHandler(svc.ContentPacks, log),
 		PlatformContentPack: handler.NewPlatformContentPackHandler(svc.PlatformContentPacks, adminConsoleSvc, repos.AdminAuditLog, log),
+		Wordlist:            handler.NewWordlistHandler(svc.Wordlists, svc.ContentPlanner, log),
 		ContentCatalog:      handler.NewContentCatalogHandler(svc.ContentCatalog, log),
 		AdminContentCatalog: handler.NewAdminContentCatalogHandler(svc.ContentCatalog, adminConsoleSvc, repos.AdminAuditLog, log),
 		SensorContentV2:     handler.NewSensorContentV2Handler(svc.ContentDelivery, log),

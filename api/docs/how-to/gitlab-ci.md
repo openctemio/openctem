@@ -25,8 +25,8 @@ the shared concepts: [Connect CI pipelines](connect-ci-pipelines.md).
 
 ## 1. Trust the GitLab project in OpenCTEM
 
-**Discovery > CI/CD > Trust and gate > Trust > Add trust**, or **Connect a
-pipeline** on the empty Pipelines tab:
+**Discovery > CI/CD > Settings > Trusted pipelines > Add trust**, or **Connect a
+pipeline** in the CI/CD page header:
 
 | Field | What to enter |
 |---|---|
@@ -104,7 +104,7 @@ capability, so findings appear in the merge request security widget.
   ```
   Remove it to **enforce** the gate, then turn on **Settings > Merge requests >
   Pipelines must succeed**.
-- What fails is set in OpenCTEM under **Discovery > CI/CD > Trust and gate >
+- What fails is set in OpenCTEM under **Discovery > CI/CD > Settings >
   Gate policy** (organization, business unit or repository; `scans:ci:policy`):
   severity threshold, KEV, EPSS, and whether only **new** findings count
   (default: compared with the default branch). Committed secrets always fail;
@@ -192,7 +192,7 @@ run the pipeline on `main` first (push, or **Build > Pipelines > Run pipeline**)
 
 | Symptom | Cause and fix |
 |---|---|
-| `CI_TOKEN_NOT_TRUSTED` (`The CI token was not accepted. Check that ...`) | No trust configuration admits the project or branch, the `aud` is not `openctem:tenant:<OPENCTEM_TENANT_ID>`, the tenant id is wrong, or the token expired. **Trust and gate > Recent refused pipelines** shows the rule and the fix; the audit log has it too (`ci_run.token_refused`), except for tokens that did not verify |
+| `CI_TOKEN_NOT_TRUSTED` (`The CI token was not accepted. Check that ...`) | No trust configuration admits the project or branch, the `aud` is not `openctem:tenant:<OPENCTEM_TENANT_ID>`, the tenant id is wrong, or the token expired. **Settings > Trusted pipelines > Recent refused pipelines** shows the rule and the fix; the audit log has it too (`ci_run.token_refused`), except for tokens that did not verify |
 | `CI_TOKEN_REPLAY_LIMIT`, `CI_TOKEN_REPLAY_RUN_CLOSED` | The job's ID token was already exchanged five times, or its run already has its verdict: rerun the job for a new token |
 | `CI_TOKEN_REPLAY` | A different token under an ID token id already used, or a token presented to another organization: refused and audited at high severity |
 | `the gitlab OIDC token was already exchanged` (openctem-ci v0.3.0 and older) | The first exchange of the job failed and the CLI hid why; update the pinned `openctemio/ci` release, which prints the real cause |
