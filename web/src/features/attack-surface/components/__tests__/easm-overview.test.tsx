@@ -1,10 +1,10 @@
 /**
- * The EASM overview shows the server's numbers as they are: no cycle reads
- * "no cycle started" rather than 0, top risks list with their asset, and an
- * empty list gets the shared empty state.
+ * The overview's middle row (research/353 D4): what to fix first, each row
+ * opening its asset, and whether discovery keeps up, with the decisions as
+ * the next step and the monitoring settings in a drawer.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { SWRConfig } from 'swr'
 import type { ReactNode } from 'react'
@@ -12,6 +12,9 @@ import { EASMOverview, exposureTypeLabel } from '../easm-overview'
 
 const api = vi.hoisted(() => ({ get: vi.fn() }))
 vi.mock('@/lib/api/client', () => api)
+vi.mock('../easm-monitoring-card', () => ({
+  EASMMonitoringCard: () => <div data-testid="monitoring-card" />,
+}))
 vi.mock('@/lib/permissions', async (orig) => {
   const actual = await orig<typeof import('@/lib/permissions')>()
   return { ...actual, usePermissions: () => ({ can: () => true }), useCanMutate: () => true }
@@ -39,6 +42,7 @@ const summary = {
       type: 'dangling_cname',
       severity: 'high',
       title: 'Dangling CNAME: old.acme.com',
+      asset_id: '0198f0e2-3333-7000-8000-000000000003',
       asset_name: 'old.acme.com',
       last_seen: '2026-10-02T00:00:00Z',
     },
@@ -49,46 +53,55 @@ const summary = {
 beforeEach(() => api.get.mockReset())
 
 describe('EASMOverview', () => {
-  it('renders the server numbers and the top risks', async () => {
+  it('lists what to fix first, each opening the asset it is on', async () => {
     api.get.mockResolvedValue(summary)
     wrap(<EASMOverview />)
     expect(await screen.findByText('Dangling CNAME: old.acme.com')).toBeInTheDocument()
     expect(api.get).toHaveBeenCalledWith('/api/v1/easm/summary')
-    expect(screen.getByText('42')).toBeInTheDocument()
-    expect(screen.getByText('12')).toBeInTheDocument()
-    expect(screen.getByText('no cycle started')).toBeInTheDocument()
-    expect(screen.getByText('CT lookups failing')).toBeInTheDocument()
-    expect(screen.getByText(/7 open in total/)).toBeInTheDocument()
+    // One request feeds both cards.
+    expect(api.get).toHaveBeenCalledTimes(1)
     expect(screen.getByText('Dangling CNAME')).toBeInTheDocument()
-    expect(screen.getByText('old.acme.com')).toBeInTheDocument()
-    // Names waiting for review link to the review queue.
-    expect(screen.getByRole('link', { name: 'Review' })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: 'old.acme.com' })).toHaveAttribute(
+      'href',
+      '/assets/0198f0e2-3333-7000-8000-000000000003'
+    )
+    expect(screen.getByRole('link', { name: 'All 7 open' })).toHaveAttribute('href', '/exposures')
+  })
+
+  it('shows whether discovery keeps up, with the decisions as the next step', async () => {
+    api.get.mockResolvedValue(summary)
+    wrap(<EASMOverview />)
+    const health = await screen.findByTestId('easm-discovery-health')
+    await within(health).findByText('Found, not yet decided')
+    expect(within(health).getByText('12')).toBeInTheDocument()
+    expect(within(health).getByText('1 failing')).toBeInTheDocument()
+    expect(within(health).getByRole('link', { name: 'Decide 12' })).toHaveAttribute(
       'href',
       '/attack-surface/review'
     )
   })
 
-  it('counts discovered assets only when asked (research/124)', async () => {
+  it('opens the monitoring settings in a drawer, not inline', async () => {
     api.get.mockResolvedValue(summary)
     wrap(<EASMOverview />)
-    await screen.findByText('Dangling CNAME: old.acme.com')
-    expect(api.get).toHaveBeenCalledWith('/api/v1/easm/summary')
-    await userEvent.click(screen.getByRole('switch', { name: 'Include discovered assets' }))
-    await waitFor(() =>
-      expect(api.get).toHaveBeenCalledWith('/api/v1/easm/summary?include_discovered=true')
-    )
+    const health = await screen.findByTestId('easm-discovery-health')
+    await within(health).findByText('Found, not yet decided')
+    expect(screen.queryByRole('dialog')).toBeNull()
+    await userEvent.click(within(health).getByRole('button', { name: 'Monitoring settings' }))
+    expect(await screen.findByRole('dialog', { name: 'Monitoring settings' })).toBeInTheDocument()
   })
 
-  it('shows the empty state when nothing is open', async () => {
+  it('shows the empty state when nothing is open, and no decide button with nothing waiting', async () => {
     api.get.mockResolvedValue({
       ...summary,
       top_risks: [],
       exposures: { open: 0 },
-      new: { ...summary.new, since_cycle: 3, cycle_start: '2026-09-01T00:00:00Z' },
+      attribution: { ...summary.attribution, needs_review: 0 },
     })
     wrap(<EASMOverview />)
     expect(await screen.findByText('No open external risks')).toBeInTheDocument()
-    expect(screen.queryByText('no cycle started')).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'All exposures' })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /^Decide/ })).toBeNull()
   })
 
   it('labels exposure types in words', () => {

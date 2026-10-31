@@ -87,7 +87,7 @@ func (c *RiskSnapshotController) Reconcile(ctx context.Context) (int, error) {
 		),
 		exposure_metrics AS (
 			SELECT tenant_id, COUNT(*) AS active_count
-			FROM exposure_events e WHERE e.state = 'active'
+			FROM exposure_events e WHERE e.state IN ('active', 'in_progress')
 			  -- exposures of a soft-deleted asset are history, not active work
 			  AND NOT EXISTS (SELECT 1 FROM assets d WHERE d.id = e.asset_id AND d.deleted_at IS NOT NULL)
 			GROUP BY tenant_id

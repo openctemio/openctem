@@ -1424,12 +1424,16 @@ type ListAssetsInput struct {
 	// not_covered, excluded, internal), the attribution rules and discovery
 	// techniques behind the asset, its attribution confidence, and when it
 	// was first seen.
-	ScopeStatus        []string `validate:"max=4,dive,oneof=in_scope not_covered excluded internal"`
-	DiscoveredBy       []string `validate:"max=10,dive,max=40"`
-	DiscoveryTechnique []string `validate:"max=10,dive,max=50"`
-	MinConfidence      *int     `validate:"omitempty,min=0,max=100"`
-	MaxConfidence      *int     `validate:"omitempty,min=0,max=100"`
-	FirstSeenAfter     *time.Time
+	ScopeStatus []string `validate:"max=4,dive,oneof=in_scope not_covered excluded internal"`
+	// MonitoringState: the derived monitoring state (asset.MonitoringStateOf);
+	// UnclassifiedScanned is the tenant's input to it, resolved by the caller.
+	MonitoringState     []string `validate:"max=7,dive,oneof=irrelevant out_of_scope inactive pending_decision unvalidated not_monitored monitored"`
+	UnclassifiedScanned bool
+	DiscoveredBy        []string `validate:"max=10,dive,max=40"`
+	DiscoveryTechnique  []string `validate:"max=10,dive,max=50"`
+	MinConfidence       *int     `validate:"omitempty,min=0,max=100"`
+	MaxConfidence       *int     `validate:"omitempty,min=0,max=100"`
+	FirstSeenAfter      *time.Time
 	// ProgramAssets: only (bug-bounty program assets) or exclude (leave
 	// out program-only assets), RFC-065 §16.5.
 	ProgramAssets string `validate:"omitempty,oneof=only exclude"`
@@ -1639,6 +1643,8 @@ func withTriageFilters(filter assetdom.Filter, input ListAssetsInput) (assetdom.
 		}
 	}
 	filter.ScopeStatuses = input.ScopeStatus
+	filter.MonitoringStates = input.MonitoringState
+	filter.UnclassifiedScanned = input.UnclassifiedScanned
 	filter.DiscoveredBy = input.DiscoveredBy
 	filter.DiscoveryTechniques = input.DiscoveryTechnique
 	filter.MinConfidence, filter.MaxConfidence = input.MinConfidence, input.MaxConfidence
