@@ -1041,7 +1041,7 @@
   "scans.failure.AUTH_CHANGED.text": "The endpoint now asks for authentication, so the check could not run.",
   "scans.failure.BATCH_FAILED.fix": "Open the tasks' logs for each part's error.",
   "scans.failure.BATCH_FAILED.text": "Every part of the step failed.",
-  "scans.failure.BLOCKED.fix": "Allow the sensor's address, then retest.",
+  "scans.failure.BLOCKED.fix": "Allowlist the scanner addresses (Settings, Scanning, Proxies, Scanner addresses), then retest.",
   "scans.failure.BLOCKED.text": "The endpoint refused the retest request (a filter or firewall answered).",
   "scans.failure.CANCELED.fix": "Run the scan again when needed.",
   "scans.failure.CANCELED.text": "A person or the run's deadline stopped the step.",

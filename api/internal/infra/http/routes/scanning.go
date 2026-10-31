@@ -254,6 +254,9 @@ func registerProxyPoolRoutes(
 		// Before /{id} so chi does not read "assignments" as an id.
 		r.GET("/assignments", h.ListAssignments, middleware.Require(permission.SensorEgressRead))
 		r.PUT("/assignments/{sensor_id}", h.SetAssignment, middleware.Require(permission.SensorEgressWrite))
+		// The addresses scans leave from, to allowlist at a WAF (only
+		// addresses the platform observed itself).
+		r.GET("/scanner-addresses", h.ScannerAddresses, middleware.Require(permission.SensorEgressRead))
 		r.GET("/{id}", h.Get, middleware.Require(permission.SensorEgressRead))
 
 		r.POST("/", h.Create, middleware.Require(permission.SensorEgressWrite))
