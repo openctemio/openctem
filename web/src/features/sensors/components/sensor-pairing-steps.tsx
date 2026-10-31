@@ -31,6 +31,7 @@ import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { SignalChip } from '@/components/ui/signal-chip'
 import { KeyValueList } from '@/features/shared/components/text-layout'
 import {
   Select,
@@ -438,9 +439,9 @@ export function RepairComparison({ view }: { view: SensorPairingView }) {
                 <td className="py-1 break-words">
                   {r.now || '-'}
                   {changed && (
-                    <span className="ml-1.5 rounded bg-warning/10 px-1.5 py-0.5 text-xs font-medium text-warning">
+                    <SignalChip className="ml-1.5">
                       {t('sensors.repair.compare.changed')}
-                    </span>
+                    </SignalChip>
                   )}
                 </td>
               </tr>
