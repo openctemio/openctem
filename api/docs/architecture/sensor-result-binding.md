@@ -1,5 +1,7 @@
 # Sensor result binding and the results quarantine
 
+Part of the [sensor and platform workflow](sensor-platform-workflow.md).
+
 > RFC: RFC-040 §5.3 and §6.1 group (C) (mutual distrust between the platform
 > and sensors; decision Q6 (a)). Protocols:
 > [RFC-026](../rfcs/RFC-026-sensor-results-ingest.md) (v2 results),
