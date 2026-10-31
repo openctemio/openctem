@@ -395,6 +395,9 @@ export const NOTHING_YET_REASONS: ReadonlySet<string> = new Set([
   'no_tracked_assets',
   'no_certificates',
   'no_receipts',
+  // Closure quality and campaign progress (their own pull request).
+  'no_closures',
+  'no_active_campaigns',
 ])
 
 /** True when the widget's model is the compact empty state (it needs one row). */
