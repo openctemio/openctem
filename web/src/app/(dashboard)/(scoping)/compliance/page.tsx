@@ -252,15 +252,19 @@ export default function CompliancePage() {
     notes: '',
   })
 
-  // Fetch controls + assessments for the selected framework (or first framework)
+  // Controls + assessments for the selected framework (or the first one).
+  // Only the Controls tab shows them: the Frameworks tab (the default) reads
+  // each framework's own stats, so loading two 200-row lists there only cost
+  // two requests on every visit.
   const activeFrameworkId =
     selectedFrameworkId !== 'all' ? selectedFrameworkId : (frameworks[0]?.id ?? '')
+  const controlsFrameworkId = activeTab === 'controls' ? activeFrameworkId : ''
   const { data: controlsData, isLoading: loadingControls } = useFrameworkControls(
-    activeFrameworkId,
+    controlsFrameworkId,
     1,
     200
   )
-  const { data: assessmentsData } = useAssessments(activeFrameworkId, 1, 200)
+  const { data: assessmentsData } = useAssessments(controlsFrameworkId, 1, 200)
 
   // Build control rows by merging controls + assessments
   const controlRows: ControlRow[] = useMemo(() => {
@@ -395,7 +399,8 @@ export default function CompliancePage() {
       key: 'controls',
       label: 'Controls',
       value: apiStats?.total_controls ?? stats.totalControls,
-      hint: `${stats.byStatus.implemented} implemented`,
+      // Counted from the selected framework's controls, loaded on the Controls tab.
+      hint: activeTab === 'controls' ? `${stats.byStatus.implemented} implemented` : undefined,
       href: '/compliance?tab=controls',
       active: activeTab === 'controls',
     },

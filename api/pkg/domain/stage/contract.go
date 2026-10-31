@@ -179,37 +179,40 @@ type contract struct {
 // routed capability must carry. The checked rules are the capability's
 // required output in ctis/capability (RequiredOutput).
 var requiredFields = map[Key][]string{
-	DiscoverSubdomains: []string{"name", "root_domain", "discovery_method"},
-	ResolveDNS:         []string{"name", "resolves_to"},
-	LookupRDAP:         []string{"name", "registration"},
-	LookupASN:          []string{"address", "asn"},
-	DiscoverHosts:      []string{"address", "live_by"},
-	ScanPorts:          []string{"host", "port", "protocol"},
-	ProbeHTTP:          []string{"url", "status_code", "title"},
-	CrawlWeb:           []string{"url", "parent_url"},
-	VulnTemplates:      []string{"rule_id", "severity", "location", "evidence"},
-	DASTWeb:            []string{"rule_id", "severity", "url", "evidence"},
-	SecretsCode:        []string{"rule_id", "file", "line", "masked_value"},
-	SASTCode:           []string{"rule_id", "file", "line", "severity"},
-	SCADeps:            []string{"purl", "version", "cve"},
-	IaCMisconfig:       []string{"rule_id", "file", "resource"},
-	ContainerImage:     []string{"purl", "version", "cve", "image_digest"},
-	NetworkVAConnector: []string{"plugin_id", "host", "severity"},
+	DiscoverSubdomains:  []string{"name", "root_domain", "discovery_method"},
+	EnumerateSubdomains: []string{"name"},
+	ResolveDNS:          []string{"name", "resolves_to"},
+	LookupRDAP:          []string{"name", "registration"},
+	LookupASN:           []string{"address", "asn"},
+	DiscoverHosts:       []string{"address", "live_by"},
+	ScanPorts:           []string{"host", "port", "protocol"},
+	ProbeHTTP:           []string{"url", "status_code", "title"},
+	CrawlWeb:            []string{"url", "parent_url"},
+	VulnTemplates:       []string{"rule_id", "severity", "location", "evidence"},
+	DASTWeb:             []string{"rule_id", "severity", "url", "evidence"},
+	SecretsCode:         []string{"rule_id", "file", "line", "masked_value"},
+	SASTCode:            []string{"rule_id", "file", "line", "severity"},
+	SCADeps:             []string{"purl", "version", "cve"},
+	IaCMisconfig:        []string{"rule_id", "file", "resource"},
+	ContainerImage:      []string{"purl", "version", "cve", "image_digest"},
+	NetworkVAConnector:  []string{"plugin_id", "host", "severity"},
 }
 
 // chunkSizes are how many targets one task of a list-taking tool gets when
 // a workflow step of the capability is cut into chunks (absent: never cut).
 var chunkSizes = map[Key]int{
 	DiscoverSubdomains: 50,
-	ResolveDNS:         200,
-	LookupRDAP:         100,
-	LookupASN:          500,
-	DiscoverHosts:      64,
-	ScanPorts:          50,
-	ProbeHTTP:          200,
-	CrawlWeb:           10,
-	VulnTemplates:      25,
-	DASTWeb:            10,
+	// One root per task: the tool fans out to the whole label list itself.
+	EnumerateSubdomains: 1,
+	ResolveDNS:          200,
+	LookupRDAP:          100,
+	LookupASN:           500,
+	DiscoverHosts:       64,
+	ScanPorts:           50,
+	ProbeHTTP:           200,
+	CrawlWeb:            10,
+	VulnTemplates:       25,
+	DASTWeb:             10,
 }
 
 // chunkAddressBudgets are how many addresses one chunk of an active
@@ -235,6 +238,52 @@ func (s Stage) ChunkAddressBudget() int {
 // sends them with every host discovery job; a sensor never picks its own.
 const HostProbePorts = "80,443,22,3389,8080,8443"
 
+// DefaultTopPorts is the "top N" port list a port scan runs when its
+// settings name no ports: the platform decides the port set, never a
+// default a sensor picks (a sensor's own default is the top 100, which
+// leaves most services of an address unseen). The whole range runs only
+// when a scan sets it; it needs port-range chunking to fit a task budget.
+const DefaultTopPorts = 1000
+
+// WithDefaultPortSet returns config with the platform's port set added
+// when s is the port scan stage and config names no ports: keyOf maps a
+// standard param to the tool's config key (Stage.ToolParamKey for a
+// catalog tool, the descriptor's params for a declared tool). It returns
+// nil when nothing changes: another stage, a tool that takes no top_n, or
+// a config that already sets ports or top_n. config itself is not changed.
+//
+// The scope clamps still apply after it: a job on names whose addresses
+// are not in scope is cut to the web ports at claim, and one on
+// unclassified assets to the low-impact list (scope.LowImpactClamp).
+func WithDefaultPortSet(s Stage, keyOf func(param string) (string, bool), config map[string]any) map[string]any {
+	if s.Key != ScanPorts || keyOf == nil {
+		return nil
+	}
+	topKey, ok := keyOf("top_n")
+	if !ok || topKey == "" {
+		return nil
+	}
+	if v, set := config[topKey]; set && v != nil {
+		return nil
+	}
+	if portsKey, ok := keyOf("ports"); ok && portsKey != "" {
+		if v, set := config[portsKey]; set && v != nil {
+			return nil
+		}
+	}
+	out := make(map[string]any, len(config)+1)
+	for k, v := range config {
+		out[k] = v
+	}
+	out[topKey] = DefaultTopPorts
+	return out
+}
+
+// DefaultPortSet is WithDefaultPortSet for a catalog tool.
+func (s Stage) DefaultPortSet(tool string, config map[string]any) map[string]any {
+	return WithDefaultPortSet(s, func(p string) (string, bool) { return s.ToolParamKey(tool, p) }, config)
+}
+
 // ToolParamKey is the tool's config key of a standard param of the stage
 // (false when the tool does not take it).
 func (s Stage) ToolParamKey(tool, param string) (string, bool) {
@@ -253,11 +302,12 @@ func (s Stage) ToolParamKey(tool, param string) (string, bool) {
 // no entry for a param does not accept it yet. Keep in step with
 // scan workflow.stepToolSettings.
 var toolParams = map[string]map[string]string{
-	"naabu":  {"ports": "ports", "top_n": "top_ports", "rate": "rate"},
-	"dnsx":   {"record_types": "record_types", "wildcard_filter": "wildcard_filter"},
-	"nuclei": {"severity": "severity", "tags": "tags", "exclude_tags": "exclude_tags"},
-	"rdap":   {"follow_registrar": "follow_registrar"},
-	"asn":    {"include_announced": "include_announced", "max_ranges": "max_ranges"},
+	"naabu":     {"ports": "ports", "top_n": "top_ports", "rate": "rate"},
+	"dnsx":      {"record_types": "record_types", "wildcard_filter": "wildcard_filter"},
+	"nuclei":    {"severity": "severity", "tags": "tags", "exclude_tags": "exclude_tags"},
+	"rdap":      {"follow_registrar": "follow_registrar"},
+	"asn":       {"include_announced": "include_announced", "max_ranges": "max_ranges"},
+	"dnsx-enum": {"method": "method", "max_queries": "max_queries"},
 }
 
 // batchTools take a list of targets in one task (the sensor executor reads
@@ -277,6 +327,27 @@ var capabilityJobTools = map[string]bool{
 	"subfinder": true, "dnsx": true, "naabu": true, "httpx": true, "katana": true,
 	"nuclei": true, "trivy": true, "semgrep": true, "opengrep": true, "codeql": true, "betterleaks": true, "gitleaks": true,
 	"rdap": true, "asn": true,
+}
+
+// WordlistRequest is one wordlist a tool's job asks the platform for: the
+// content slot the tool reads and the purpose of the list (the request
+// format of contentpin.PayloadKeyWordlists).
+type WordlistRequest struct {
+	Slot    string `json:"slot"`
+	Purpose string `json:"purpose"`
+}
+
+// toolWordlists are the wordlists each tool's job asks for, from the tool's
+// descriptor (its content slots). A tool that reads a list has none of its
+// own: a job that does not ask carries none, and the sensor refuses it.
+var toolWordlists = map[string][]WordlistRequest{
+	"dnsx-enum": {{Slot: "labels", Purpose: "dns-labels"}},
+}
+
+// ToolWordlists are the wordlists a job of tool asks for (nil: none). The
+// result is a copy.
+func ToolWordlists(tool string) []WordlistRequest {
+	return slices.Clone(toolWordlists[normalizeTool(tool)])
 }
 
 // TakesCapabilityJobs reports whether a step running tool for the stage

@@ -64,7 +64,10 @@ ends hides them for good. The domain gives every rule an end
 `MaxRuleDuration` = 365 days), the database refuses a row without one
 (`chk_suppression_rules_expires_at_set`, with a 90-day column default for
 writers that name none, such as CI inline-ignore requests), and the expiry job
-lifts the rule's suppressions when it passes.
+lifts the rule's suppressions when it passes. A finding such a rule makes
+`accepted` takes the rule's end; the database gives any accepted finding
+written without an end the default length
+([finding-status-lifecycle.md](finding-status-lifecycle.md#risk-acceptance-end)).
 
 Rules made before the end was required were given 90 days from the upgrade by
 migration `suppression_rule_end_backfill`; the pending and approved ones carry

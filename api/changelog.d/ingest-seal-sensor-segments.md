@@ -1,0 +1,5 @@
+### Security: queued sensor report segments are sealed at rest
+
+- Protocol v2 sensor segments waiting in the ingest queue (`ingest_jobs.payload`) were stored decoded and in plaintext until imported, so secret-scanner findings and other evidence sat in clear in the database and its backups. They are now sealed with the same per-tenant key as queued CI uploads (AES-256-GCM, key derived from `APP_ENCRYPTION_KEY`), bound to tenant, job, report, segment number and content hash, opened only by the ingest worker, and emptied as soon as the segment is applied. Stored bytes drop to about a tenth.
+- Segments already queued in plaintext are sealed in place by the worker (batched, safe on several replicas); the migration `20261030071818_ingest_jobs_sealed_payload` adds `payload_key_id` and `payload_bytes` and empties the payloads of jobs already applied.
+- **Upgrade note:** do not run API workers of the previous release next to this one: an older worker cannot open a sealed segment. Single-replica and compose installs (stop, then start) need nothing. During an `APP_ENCRYPTION_KEY` rotation keep the previous key until the ingest queue has drained.

@@ -1,6 +1,8 @@
 // Package ingestpayload stores the raw reports of queued CI results and file
 // imports until the ingest worker applies them
-// (docs/rfcs/RFC-122-ingest-receipts.md, "Accept fast, apply async").
+// (docs/rfcs/RFC-122-ingest-receipts.md, "Accept fast, apply async"). The
+// same Sealer seals the queued segments of protocol v2 sensor reports, which
+// stay in their ingest_jobs row (docs/rfcs/RFC-026-sensor-results-ingest.md).
 //
 // A raw report is stored before secrets are masked (masking happens when it
 // is applied), so it is sealed at rest: gzip-compressed, then encrypted with
@@ -65,6 +67,12 @@ type Part struct {
 	Digest    []byte
 	Sealed    []byte
 	ExpiresAt time.Time
+	// Binding is extra context the caller rebuilds from where the part is
+	// stored (not persisted with the part): when set it is part of the
+	// additional data, so the part opens only for the same binding. A
+	// queued sensor segment binds its report, segment number and content
+	// hash (SensorSegmentBinding).
+	Binding string
 }
 
 // Repository stores sealed parts. Every method is scoped by tenant.
@@ -123,13 +131,40 @@ func (k sealKey) tenantAEAD(tenantID shared.ID) (cipher.AEAD, error) {
 	return cipher.NewGCM(block)
 }
 
-// aad binds a part to its tenant, job and number.
-func aad(tenantID, jobID shared.ID, part int) []byte {
-	return fmt.Appendf(nil, "%s/%s/%d", tenantID, jobID, part)
+// aad binds a part to its tenant, job and number, and to the caller's
+// binding when there is one (a part sealed without one keeps the original
+// form, so parts stored before bindings existed still open).
+func aad(tenantID, jobID shared.ID, part int, binding string) []byte {
+	if binding == "" {
+		return fmt.Appendf(nil, "%s/%s/%d", tenantID, jobID, part)
+	}
+	return fmt.Appendf(nil, "%s/%s/%d/%s", tenantID, jobID, part, binding)
+}
+
+// SensorSegmentBinding is the binding of one queued protocol v2 sensor
+// segment: its report (the ingest_reports row), its segment number and the
+// SHA-256 of its decoded bytes. A sealed segment moved to another report,
+// segment number or job, or paired with another content hash, does not open.
+func SensorSegmentBinding(reportRef shared.ID, seq int, sha256Sum []byte) string {
+	return fmt.Sprintf("sensor-v2/%s/%d/%s", reportRef, seq, hex.EncodeToString(sha256Sum))
+}
+
+// SensorJobBinding is the binding of one queued protocol v1 sensor job: the
+// SHA-256 of its decoded report. A sealed job paired with another content
+// hash does not open (the tenant and job id are already in the additional
+// data).
+func SensorJobBinding(sha256Sum []byte) string {
+	return "sensor-v1/" + hex.EncodeToString(sha256Sum)
 }
 
 // Seal compresses and encrypts plaintext as part number part of the job.
 func (s *Sealer) Seal(tenantID, jobID shared.ID, part int, name string, plaintext []byte) (*Part, error) {
+	return s.SealBound(tenantID, jobID, part, name, "", plaintext)
+}
+
+// SealBound is Seal with a binding (see Part.Binding); Open needs the same
+// binding on the part.
+func (s *Sealer) SealBound(tenantID, jobID shared.ID, part int, name, binding string, plaintext []byte) (*Part, error) {
 	if s == nil || s.current.master == nil {
 		return nil, ErrNoKey
 	}
@@ -158,16 +193,16 @@ func (s *Sealer) Seal(tenantID, jobID shared.ID, part int, name string, plaintex
 	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
 		return nil, err
 	}
-	sealed := aead.Seal(nonce, nonce, buf.Bytes(), aad(tenantID, jobID, part))
+	sealed := aead.Seal(nonce, nonce, buf.Bytes(), aad(tenantID, jobID, part, binding))
 	sum := sha256.Sum256(plaintext)
 	return &Part{
 		JobID: jobID, Part: part, TenantID: tenantID, Name: name, KeyID: s.current.id,
-		SizeBytes: int64(len(plaintext)), Digest: sum[:], Sealed: sealed,
+		SizeBytes: int64(len(plaintext)), Digest: sum[:], Sealed: sealed, Binding: binding,
 	}, nil
 }
 
 // Open decrypts and decompresses a part, checking its tenant, job, number,
-// size and digest.
+// binding, size and digest.
 func (s *Sealer) Open(p *Part) ([]byte, error) {
 	if s == nil || s.current.master == nil {
 		return nil, ErrNoKey
@@ -187,7 +222,7 @@ func (s *Sealer) Open(p *Part) ([]byte, error) {
 		return nil, ErrOpen
 	}
 	nonce, body := p.Sealed[:aead.NonceSize()], p.Sealed[aead.NonceSize():]
-	compressed, err := aead.Open(nil, nonce, body, aad(p.TenantID, p.JobID, p.Part))
+	compressed, err := aead.Open(nil, nonce, body, aad(p.TenantID, p.JobID, p.Part, p.Binding))
 	if err != nil {
 		return nil, ErrOpen
 	}

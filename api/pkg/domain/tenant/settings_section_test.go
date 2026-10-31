@@ -75,7 +75,7 @@ func TestSectionETag(t *testing.T) {
 }
 
 func TestIsSettingsSection(t *testing.T) {
-	for _, k := range []string{SectionSecurity, SectionGeneral, SectionAssetIdentity, SectionRetest} {
+	for _, k := range []string{SectionSecurity, SectionGeneral, SectionAssetIdentity, SectionRetest, SectionClosure} {
 		if !IsSettingsSection(k) {
 			t.Errorf("%s should be a section", k)
 		}

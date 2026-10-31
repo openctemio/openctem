@@ -61,7 +61,7 @@ func TestIngestClaim_OneRunningJobPerScope_DB(t *testing.T) {
 	if n := len(mine(got, tenant)); n != 0 {
 		t.Fatalf("claimed %d jobs of a scope that has one running", n)
 	}
-	if err := repo.Complete(ctx, first[0].ID(), processing(t, db, first[0].ID()), []byte(`{}`)); err != nil {
+	if err := repo.Complete(ctx, first[0].TenantID(), first[0].ID(), processing(t, db, first[0].ID()), []byte(`{}`)); err != nil {
 		t.Fatal(err)
 	}
 	got, _ = repo.ClaimBatch(ctx, "w3", 100)
@@ -234,7 +234,7 @@ func TestIngestClaim_TenantDepth_DB(t *testing.T) {
 	repo := NewIngestJobRepository(&DB{DB: db})
 	j1 := enqueueRouted(t, repo, tenant, "d1", ingestjob.LaneBulk, "")
 	enqueueRouted(t, repo, tenant, "d2", ingestjob.LaneBulk, "")
-	if err := repo.Complete(ctx, j1.ID(), processing(t, db, j1.ID()), []byte(`{}`)); err != nil {
+	if err := repo.Complete(ctx, j1.TenantID(), j1.ID(), processing(t, db, j1.ID()), []byte(`{}`)); err != nil {
 		t.Fatal(err)
 	}
 	unfinished, finished, err := repo.TenantDepth(ctx, tenant, time.Now().Add(-time.Minute))
@@ -257,4 +257,39 @@ func processing(t *testing.T, db *sql.DB, id ingestjob.ID) int {
 		t.Fatalf("mark processing: %v", err)
 	}
 	return attempts
+}
+
+// The lag gauge reads how long the oldest claimable job of each lane waited;
+// a job that is not claimable yet (retry back-off) is not lag.
+func TestIngestQueue_OldestClaimableByLane_DB(t *testing.T) {
+	db := openSensorDB(t)
+	ctx := context.Background()
+	tenant := newIngestJobTestTenant(t, db)
+	repo := NewIngestJobRepository(&DB{DB: db})
+	old := enqueueRouted(t, repo, tenant, "lag-old", ingestjob.LaneUrgent, "")
+	later := enqueueRouted(t, repo, tenant, "lag-later", ingestjob.LaneUrgent, "")
+	if _, err := db.ExecContext(ctx, `UPDATE ingest_jobs SET available_at = NOW() - INTERVAL '1 hour' WHERE id = $1`, old.ID().String()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, `UPDATE ingest_jobs SET available_at = NOW() + INTERVAL '1 hour' WHERE id = $1`, later.ID().String()); err != nil {
+		t.Fatal(err)
+	}
+	got, err := repo.OldestClaimableByLane(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lag := got[ingestjob.LaneUrgent]; lag < 59*time.Minute {
+		t.Fatalf("urgent lag = %s, want about 1h", lag)
+	}
+	// Once the old job is no longer claimable, it no longer counts.
+	if _, err := db.ExecContext(ctx, `UPDATE ingest_jobs SET status = 'completed' WHERE tenant_id = $1`, tenant.String()); err != nil {
+		t.Fatal(err)
+	}
+	got, err = repo.OldestClaimableByLane(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lag := got[ingestjob.LaneUrgent]; lag >= 59*time.Minute {
+		t.Fatalf("a completed job still counts as lag: %s", lag)
+	}
 }

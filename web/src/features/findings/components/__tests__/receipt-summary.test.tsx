@@ -114,6 +114,8 @@ describe('ReceiptSummary', () => {
     )
     rerender(<ReceiptSummary receipt={receipt({ coverage: { type: 'full', note: 'held' } })} />)
     expect(screen.getByTestId('receipt-summary')).toHaveTextContent(/held for review/)
+    rerender(<ReceiptSummary receipt={receipt({ coverage: { type: 'full', note: 'proposed' } })} />)
+    expect(screen.getByTestId('receipt-summary')).toHaveTextContent(/waits in Ready to close/)
   })
 
   it('says why a declared full coverage closed nothing', () => {

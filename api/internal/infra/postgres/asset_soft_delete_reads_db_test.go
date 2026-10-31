@@ -131,7 +131,7 @@ func TestAssetSoftDelete_InvisibleToSearchGraphGroupsIngestAndExposures(t *testi
 	if members.Total != 1 || len(members.Data) != 1 || members.Data[0].ID != keep {
 		t.Errorf("group members = %d (total %d), want only the live asset", len(members.Data), members.Total)
 	}
-	if err := groups.RecalculateCounts(ctx, group); err != nil {
+	if err := groups.RecalculateCounts(ctx, tenant, group); err != nil {
 		t.Fatal(err)
 	}
 	if n := countRows(ctx, t, db, `SELECT asset_count FROM asset_groups WHERE id = $1`, group.String()); n != 1 {

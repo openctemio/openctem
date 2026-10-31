@@ -369,13 +369,17 @@ func (s *BusinessUnitService) Update(ctx context.Context, input UpdateBusinessUn
 }
 
 // Delete deletes a BU.
-func (s *BusinessUnitService) Delete(ctx context.Context, tenantID, buID string) error {
+func (s *BusinessUnitService) Delete(ctx context.Context, tenantID, buID string) (string, error) {
 	tid, _ := shared.IDFromString(tenantID)
 	bid, _ := shared.IDFromString(buID)
-	if _, _, err := s.writableUnit(ctx, tid, bid); err != nil {
-		return err
+	bu, _, err := s.writableUnit(ctx, tid, bid)
+	if err != nil {
+		return "", err
 	}
-	return s.repo.Delete(ctx, tid, bid)
+	if err := s.repo.Delete(ctx, tid, bid); err != nil {
+		return "", err
+	}
+	return bu.Name(), nil
 }
 
 // AddAsset links an asset to a BU.

@@ -15,6 +15,7 @@ import type {
   DashboardKind,
   DashboardListResponse,
   DashboardRefreshSchedule,
+  FlowPanelResult,
   CreateDashboardInput,
   UpdateDashboardInput,
 } from './dashboards.types'
@@ -116,4 +117,18 @@ export function duplicateOrgDashboard(id: string) {
 /** Replaces an organization dashboard's name, columns and layout (dashboards:org:manage). */
 export function updateOrgDashboard(id: string, input: UpdateDashboardInput) {
   return put<Dashboard>(`${ORG_DASHBOARDS_KEY}/${id}`, input)
+}
+
+/**
+ * Offers the exposure flow panel once on a dashboard that has never been
+ * offered it (personal: the owner; organization: dashboards:org:manage).
+ * Idempotent on the server: a second call returns `added: false`.
+ */
+export function addFlowPanel(id: string, kind: DashboardKind) {
+  return post<FlowPanelResult>(`${basePath(kind)}/${id}/flow-panels`, {})
+}
+
+/** Undo of the add: removes that widget when it is the flow panel. It is never added again. */
+export function undoFlowPanel(id: string, kind: DashboardKind, widgetId: string) {
+  return del<Dashboard>(`${basePath(kind)}/${id}/flow-panels/${encodeURIComponent(widgetId)}`)
 }

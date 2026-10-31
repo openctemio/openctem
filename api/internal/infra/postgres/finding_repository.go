@@ -72,6 +72,28 @@ func marshalFindingSARIFFields(finding *vulnerability.Finding) (partialFingerpri
 	return partialFingerprints, relatedLocations, stacks, attachments, nil
 }
 
+// withoutRequestResponses returns metadata without the request_responses key.
+// Recorded request/responses live only in the evidence service (masked,
+// secrets encrypted); a finding write that still carries them (an edit loaded
+// before the legacy move, an old replica during a rolling deploy) must never
+// put them back in clear. The input map is not modified.
+func withoutRequestResponses(m map[string]any) map[string]any {
+	if _, ok := m[evidenceRequestResponsesKey]; !ok {
+		return m
+	}
+	out := make(map[string]any, len(m))
+	for k, v := range m {
+		if k != evidenceRequestResponsesKey {
+			out[k] = v
+		}
+	}
+	return out
+}
+
+// evidenceRequestResponsesKey is the metadata key that held recorded
+// request/responses before they moved to the evidence service.
+const evidenceRequestResponsesKey = "request_responses"
+
 // nullPriorityClass converts a *PriorityClass to sql.NullString.
 // nil is treated as NULL.
 func nullPriorityClass(pc *vulnerability.PriorityClass) sql.NullString {
@@ -127,7 +149,7 @@ func (r *FindingRepository) Create(ctx context.Context, finding *vulnerability.F
 			mergedMeta[k] = v
 		}
 	}
-	metadata, err := json.Marshal(mergedMeta)
+	metadata, err := json.Marshal(withoutRequestResponses(mergedMeta))
 	if err != nil {
 		return fmt.Errorf("failed to marshal metadata: %w", err)
 	}
@@ -163,7 +185,7 @@ func (r *FindingRepository) CreateInTx(ctx context.Context, tx *sql.Tx, finding 
 	if err := r.checkLimit(ctx, finding.TenantID(), limits.Findings, 1); err != nil {
 		return err
 	}
-	metadata, err := json.Marshal(finding.Metadata())
+	metadata, err := json.Marshal(withoutRequestResponses(finding.Metadata()))
 	if err != nil {
 		return fmt.Errorf("failed to marshal metadata: %w", err)
 	}
@@ -945,7 +967,7 @@ const findingInsertColumnCount = 94 + findingTypeColumnCount + findingNetworkCol
 // INSERT row. Shared by the single-row prepared-statement path and the
 // multi-row batch insert so the column order has one source of truth.
 func findingInsertArgs(finding *vulnerability.Finding) ([]any, error) {
-	metadata, err := json.Marshal(finding.Metadata())
+	metadata, err := json.Marshal(withoutRequestResponses(finding.Metadata()))
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal metadata: %w", err)
 	}
@@ -1151,7 +1173,7 @@ func (r *FindingRepository) Update(ctx context.Context, finding *vulnerability.F
 			mergedMeta[k] = v
 		}
 	}
-	metadata, err := json.Marshal(mergedMeta)
+	metadata, err := json.Marshal(withoutRequestResponses(mergedMeta))
 	if err != nil {
 		return fmt.Errorf("failed to marshal metadata: %w", err)
 	}

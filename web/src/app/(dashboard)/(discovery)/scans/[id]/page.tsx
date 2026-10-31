@@ -50,8 +50,11 @@ import {
   type MetricStripItem,
   PageStack,
 } from '@/features/shared'
-import { RunDetailSheet } from '@/features/scans/components/run-detail-sheet'
-import { CloneScanDialog, EditScanDialog } from '@/features/scans/components'
+import {
+  LazyCloneScanDialog,
+  LazyEditScanDialog,
+  LazyRunDetailSheet,
+} from '@/features/scans/components/lazy-dialogs'
 import { LastRunCell } from '@/features/scans/components/last-run-cell'
 import { ScanControls, scanStateLabel } from '@/features/scans/components/scan-controls'
 import { ScanApprovalPanel } from '@/features/scans/components/approval/scan-approval-panel'
@@ -574,13 +577,13 @@ export default function ScanDetailPage() {
           </Can>
         </PageHeader>
 
-        <EditScanDialog
+        <LazyEditScanDialog
           scanConfig={config}
           open={editOpen}
           onOpenChange={setEditOpen}
           onSuccess={() => void refetchConfig()}
         />
-        <CloneScanDialog
+        <LazyCloneScanDialog
           scan={config}
           open={cloneOpen}
           onOpenChange={setCloneOpen}
@@ -849,7 +852,7 @@ export default function ScanDetailPage() {
           isLoading={stoppingRunId !== null}
           handleConfirm={() => (pendingStop ? handleStopRun(pendingStop) : undefined)}
         />
-        <RunDetailSheet runId={openRunId} onOpenChange={(o) => !o && setOpenRunId(null)} />
+        <LazyRunDetailSheet runId={openRunId} onOpenChange={(o) => !o && setOpenRunId(null)} />
       </PageStack>
     </Main>
   )

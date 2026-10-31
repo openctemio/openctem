@@ -124,6 +124,9 @@ type OAuthService struct {
 	secondFactor     SecondFactorGate
 	sessions         SessionRevoker
 	identityNotifier IdentityNotifier
+	// linkProof checks the code or password typed to link or unlink a
+	// sign-in method (link_proof.go). Unset: nothing is linked or unlinked.
+	linkProof LinkProofVerifier
 }
 
 // InvitationLookup answers whether any organization has a pending invitation
@@ -165,7 +168,7 @@ func (s *OAuthService) SetIdentityRepo(repo useridentity.Repository) {
 }
 
 func (s *OAuthService) accounts() federatedAccounts {
-	return federatedAccounts{identities: s.identities, users: s.userRepo, logger: s.logger}
+	return federatedAccounts{identities: s.identities, users: s.userRepo, logger: s.logger, source: useridentity.SourceSocial}
 }
 
 // Canonical issuers of the social providers' account bindings. Google's
@@ -721,10 +724,27 @@ type OAuthUserInfo struct {
 	// LegacySubject is the subject the identity was bound under before
 	// (Microsoft: sub); a binding found under it is re-keyed to Subject.
 	LegacySubject string
+	// Login is the provider account's handle where it has one (GitHub);
+	// empty otherwise. Shown when the person confirms a pending link.
+	Login string
 }
 
 // getUserInfo fetches user information from the OAuth provider.
+//
+// The address comes back trimmed and lower-cased whatever the provider sent,
+// so a provider spelling an existing account's address in another case finds
+// that account (and its refusal or pending link) instead of creating a second
+// one.
 func (s *OAuthService) getUserInfo(ctx context.Context, provider OAuthProvider, tokens *oauthTokens) (*OAuthUserInfo, error) {
+	info, err := s.providerUserInfo(ctx, provider, tokens)
+	if err != nil {
+		return nil, err
+	}
+	info.Email = userdom.NormalizeEmail(info.Email)
+	return info, nil
+}
+
+func (s *OAuthService) providerUserInfo(ctx context.Context, provider OAuthProvider, tokens *oauthTokens) (*OAuthUserInfo, error) {
 	switch provider {
 	case OAuthProviderGoogle:
 		return s.getGoogleUserInfo(ctx, tokens)
@@ -891,6 +911,7 @@ func (s *OAuthService) getGitHubUserInfo(ctx context.Context, accessToken string
 		AvatarURL: userData.AvatarURL,
 		Issuer:    githubIssuer,
 		Subject:   ghID,
+		Login:     userData.Login,
 	}, nil
 }
 
@@ -1007,6 +1028,7 @@ func microsoftUserInfoFromClaims(claims *oidc.Claims) (*OAuthUserInfo, error) {
 // provider verified it). Only an unknown identity falls back to the email,
 // under the takeover guards, and is then bound to the account.
 func (s *OAuthService) findOrCreateUser(ctx context.Context, userInfo *OAuthUserInfo, provider OAuthProvider) (*userdom.User, error) {
+	userInfo.Email = userdom.NormalizeEmail(userInfo.Email)
 	acc := s.accounts()
 	key := useridentity.Key{Issuer: userInfo.Issuer, Subject: userInfo.Subject}
 	if key.Valid() {
@@ -1018,10 +1040,21 @@ func (s *OAuthService) findOrCreateUser(ctx context.Context, userInfo *OAuthUser
 			// The provider's address moves the account only when the account
 			// belongs to that provider. A provider linked to an account of
 			// another kind (a password account) never changes its address.
+			// An identity an organization's single sign-on manages keeps the
+			// address that sign-on gave it: the organization changes it only
+			// for a domain it proved (SSOService.returningFederatedUser), and
+			// the social button must not skip that proof.
 			var prev string
 			var changed bool
-			if u.AuthProvider() == provider.ToAuthProvider() {
+			if u.AuthProvider() == provider.ToAuthProvider() && !ident.ManagedBySSO() {
 				prev, changed = acc.adoptProviderEmail(ctx, u, userInfo.Email, nil)
+				// The new address counts as verified only where the provider
+				// runs its mailbox, as at account creation: a provider that
+				// verified an address once (GitHub, a consumer Google account
+				// on a company address) does not prove the mailbox now.
+				if changed && !emailAuthoritative(provider, userInfo) {
+					u.MarkEmailUnverified()
+				}
 			}
 			u.UpdateLastLogin()
 			acc.saveLogin(ctx, u, prev, changed)
@@ -1057,23 +1090,15 @@ func (s *OAuthService) findOrCreateUser(ctx context.Context, userInfo *OAuthUser
 			if claimableLocal && !s.claimVouched(ctx, existingUser, userInfo.Email) {
 				return nil, ErrOAuthAccountExists
 			}
-			if !claimableLocal && key.Valid() && s.autoLinkAllowed(ctx, existingUser, userInfo, provider) {
-				if lerr := s.autoLink(ctx, existingUser, key, provider); lerr != nil {
-					return nil, lerr
-				}
-				existingUser.UpdateLastLogin()
-				if uerr := s.userRepo.Update(ctx, existingUser); uerr != nil {
-					s.logger.Warn("failed to update last login", "error", uerr)
-				}
-				return existingUser, nil
-			}
 			if !claimableLocal {
 				s.logger.Warn("OAuth login blocked: email registered with a different auth provider",
 					"email", userInfo.Email,
 					"existing_provider", existingProvider,
 					"oauth_provider", expectedProvider,
 				)
-				return nil, ErrOAuthAccountExists
+				// Nothing changes on the account. The person may sign in to
+				// it and confirm the link (pending_link.go).
+				return nil, s.offerPendingLink(ctx, existingUser, userInfo, provider)
 			}
 		}
 

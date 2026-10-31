@@ -108,7 +108,11 @@ var findingMergeKeptRefs = map[string]string{
 	"finding_correlations.member_id":      "kept on the tombstone; re-derived for the survivor",
 	// A suspended decision is the history of the finding it was made on.
 	"finding_decision_suspensions.finding_id": "kept on the tombstone; history of that finding",
-	"finding_decision_reviews.finding_id":     "kept on the tombstone; a review flag of that finding's decision",
+	// A closure proposal is evidence about the loser's own sightings. Once the
+	// loser is a tombstone it is no longer eligible, so the next sweep withdraws
+	// a pending one (status_changed); the survivor gets its own from coverage.
+	"finding_closure_proposals.finding_id": "kept on the tombstone; withdrawn there, survivor re-proposed by coverage",
+	"finding_decision_reviews.finding_id":  "kept on the tombstone; a review flag of that finding's decision",
 	// A severity request was made on that finding's severity; a pending one
 	// on the tombstone can no longer apply (the tombstone is closed).
 	"finding_severity_requests.finding_id": "kept on the tombstone; a severity request on that finding",

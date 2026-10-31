@@ -533,11 +533,8 @@ func (s *EmailService) NotifyRecoveryCodeUsed(ctx context.Context, userEmail, us
 }
 
 // NotifyIdentityLinked tells the user a social sign-in method was linked.
-func (s *EmailService) NotifyIdentityLinked(ctx context.Context, userEmail, userName, ipAddress, provider string, automatic bool) {
+func (s *EmailService) NotifyIdentityLinked(ctx context.Context, userEmail, userName, ipAddress, provider string) {
 	msg := "Sign-in with " + provider + " was just linked to your account. You can now sign in with it; your second factor, if you have one, is still asked."
-	if automatic {
-		msg = "Sign-in with " + provider + " was linked to your account when you signed in with " + provider + " using this address. For your safety every other session of your account was signed out. You can unlink it under Account > Security."
-	}
 	s.sendSecurityNotice(ctx, userEmail, userName, ipAddress, "Sign-in with "+provider+" was linked to your account",
 		msg+" If this was not you, change your password and unlink "+provider+" under Account > Security.")
 }

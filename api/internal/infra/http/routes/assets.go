@@ -25,6 +25,10 @@ func registerAssetRoutes(
 ) {
 	// Build middleware chain with tenant validation from JWT
 	middlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
+	// The asset page's reads in one response (research/335). Each part is
+	// sent through this router with the caller's credentials, so it passes
+	// its own endpoint's gates; this route itself needs assets:read.
+	assetView := handler.NewAssetViewHandler(router.Handler, nil)
 
 	// Asset routes - tenant from JWT token
 	router.Group("/api/v1/assets", func(r Router) {
@@ -47,6 +51,7 @@ func registerAssetRoutes(
 		// Read operations
 		r.GET("/", h.List, middleware.Require(permission.AssetsRead))
 		r.GET("/{id}", h.Get, middleware.Require(permission.AssetsRead))
+		r.GET("/{id}/view", assetView.View, middleware.Require(permission.AssetsRead))
 		r.GET("/{id}/full", h.GetWithRepository, middleware.Require(permission.AssetsRead))
 		r.GET("/{id}/repository", h.GetRepository, middleware.Require(permission.AssetsRead))
 
@@ -66,6 +71,8 @@ func registerAssetRoutes(
 		r.GET("/{id}/freshness", h.GetFreshness, middleware.Require(permission.AssetsRead))
 		// What each capability the asset needs has done and why (RFC-093).
 		r.GET("/{id}/coverage", h.GetCoverage, middleware.Require(permission.AssetsRead))
+		// Open ports of the addresses a domain or subdomain resolves to.
+		r.GET("/{id}/resolved-ports", h.GetResolvedPorts, middleware.Require(permission.AssetsRead))
 		// Why the risk score is what it is (docs/architecture/asset-risk-score.md).
 		r.GET("/{id}/risk", h.GetRisk, middleware.Require(permission.AssetsRead))
 		// Lowering exposure, criticality or the crown-jewel flag: the impact on
@@ -513,6 +520,17 @@ func registerBranchRoutes(
 		// Default branch management
 		r.GET("/default", h.GetDefault, middleware.Require(permission.AssetsRead))
 		r.PUT("/{branchId}/default", h.SetDefault, middleware.Require(permission.AssetsWrite))
+	}, tenantMiddlewares...)
+}
+
+// registerCertificateRoutes registers the Certificates view of the external
+// attack surface: certificate assets, scoped by their own data scope.
+func registerCertificateRoutes(router Router, h *handler.CertificateHandler, authMiddleware Middleware, userSyncMiddleware Middleware, moduleGate Middleware) {
+	// The module gate runs after tenant extraction so it can read the tenant.
+	tenantMiddlewares := append(buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware), moduleGate)
+	router.Group("/api/v1/attack-surface/certificates", func(r Router) {
+		r.GET("/", h.List, middleware.Require(permission.AssetsRead))
+		r.GET("/stats", h.Stats, middleware.Require(permission.AssetsRead))
 	}, tenantMiddlewares...)
 }
 

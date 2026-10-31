@@ -45,13 +45,6 @@ export function NotificationRow({
   const body = notification.body ? toDisplayText(notification.body) : ''
   const unread = !notification.is_read
   const severity = (notification.severity || '').toLowerCase()
-  const severityLabel = t(`severity.${severity}`, notification.severity)
-
-  const ariaLabel = t(
-    unread ? 'notifications.row.labelUnread' : 'notifications.row.label',
-    unread ? 'Unread: {title}, {type}, {severity}' : '{title}, {type}, {severity}',
-    { title, type: typeLabel, severity: severityLabel }
-  )
 
   const activate = () => {
     if (unread) onMarkAsRead(notification.id)
@@ -111,7 +104,7 @@ export function NotificationRow({
   const href = safeInternalHref(notification.url)
   if (href) {
     return (
-      <Link href={href} className={rowClassName} onClick={activate} aria-label={ariaLabel}>
+      <Link href={href} className={rowClassName} onClick={activate}>
         {content}
       </Link>
     )
@@ -122,7 +115,6 @@ export function NotificationRow({
       className={cn(rowClassName, 'cursor-pointer')}
       role="button"
       tabIndex={0}
-      aria-label={ariaLabel}
       onClick={activate}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {

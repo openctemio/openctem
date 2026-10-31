@@ -159,7 +159,7 @@ func (c SetCoverage) Covers(a SetAttribute, e, key string) bool {
 	case CoverageFull:
 		return true
 	case CoverageKeyed:
-		return c.Key != "" && key == c.Key
+		return c.Key != "" && (key == c.Key || topPortsSubsume(c.Key, key))
 	case CoverageRanges:
 		if c.Key != "" && key == c.Key {
 			return true
@@ -181,6 +181,33 @@ func (c SetCoverage) CoversUnattributed(a SetAttribute, e string) bool {
 		return a == SetAttrOpenPorts && c.inRanges(e)
 	}
 	return false
+}
+
+// topPortsSubsume reports whether a "top N" port scan (key "ports:top-N")
+// covers what the same source found under key: a shorter top list
+// ("ports:top-M", M <= N; every top-M list is the head of the top-N list)
+// or "ports:default", the port scanner's default list (the top 100; the
+// platform names a port set on every port scan job, so only older jobs
+// carry it).
+func topPortsSubsume(have, seen string) bool {
+	n, ok := topPortsN(have)
+	if !ok {
+		return false
+	}
+	if seen == "ports:default" {
+		return n >= 100
+	}
+	m, ok := topPortsN(seen)
+	return ok && m <= n
+}
+
+func topPortsN(key string) (int, bool) {
+	s, ok := strings.CutPrefix(key, "ports:top-")
+	if !ok {
+		return 0, false
+	}
+	n, err := strconv.Atoi(s)
+	return n, err == nil && n > 0
 }
 
 func (c SetCoverage) inRanges(e string) bool {

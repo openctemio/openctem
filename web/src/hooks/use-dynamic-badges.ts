@@ -21,6 +21,7 @@ import { usePermissions, Permission } from '@/lib/permissions'
 import { env } from '@/lib/env'
 import { useTenantModules } from '@/features/integrations/api/use-tenant-modules'
 import { useEASMSuggestionCount } from '@/features/attack-surface/hooks/use-easm-suggestions'
+import { useReadyToCloseCount } from '@/features/closure-review/api'
 
 // ============================================
 // TYPES
@@ -150,8 +151,15 @@ export function useDynamicBadges(): DynamicBadges {
     can(Permission.FindingsApprove) && moduleIds.includes('findings')
   )
 
+  const readyToClose = useReadyToCloseCount(
+    can(Permission.FindingsVerify) && moduleIds.includes('findings')
+  )
+
   const badges = useMemo(() => {
     const result: DynamicBadges = {}
+    if (readyToClose && readyToClose > 0) {
+      result['/findings/ready-to-close'] = String(readyToClose)
+    }
     if (reviewWaiting && reviewWaiting > 0) {
       result['/attack-surface'] = String(reviewWaiting)
     }
@@ -188,7 +196,14 @@ export function useDynamicBadges(): DynamicBadges {
     }
 
     return result
-  }, [badgesEnabled, dashboardStats, credentialStats, reviewWaiting, pendingApprovals])
+  }, [
+    badgesEnabled,
+    dashboardStats,
+    credentialStats,
+    reviewWaiting,
+    pendingApprovals,
+    readyToClose,
+  ])
 
   return badges
 }

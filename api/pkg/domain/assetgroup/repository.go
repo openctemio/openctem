@@ -72,7 +72,7 @@ type Repository interface {
 	GetGroupIDsByAssetID(ctx context.Context, assetID shared.ID) ([]shared.ID, error)
 
 	// RecalculateCounts recalculates asset counts for a group.
-	RecalculateCounts(ctx context.Context, groupID shared.ID) error
+	RecalculateCounts(ctx context.Context, tenantID, groupID shared.ID) error
 
 	// GetDistinctAssetTypes returns all unique asset types in a group.
 	// Used for scan compatibility checking.

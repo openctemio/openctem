@@ -16,6 +16,8 @@ import { StepUpDialogHost } from '@/components/step-up-dialog'
 import { SettingsAnchorHighlighter } from '@/components/layout/settings-anchor-highlighter'
 import { PlatformAnnouncementBanner } from '@/features/announcements/components/platform-announcement-banner'
 import { SupportAccessBanner } from '@/features/support-access/components/support-access-banner'
+import { PendingLinkPrompt } from '@/features/account/components/pending-link-prompt'
+import { pendingLinkCookieName } from '@/features/auth/lib/oauth-cookies'
 
 type SiteLayoutProps = {
   children?: React.ReactNode
@@ -26,6 +28,8 @@ export default async function SiteLayout({ children }: SiteLayoutProps) {
   const cookieStore = await cookies()
   const sidebarState = cookieStore.get('sidebar_state')?.value
   const defaultOpen = sidebarState !== 'false'
+  // A refused social sign-in left a pending link: ask to confirm it.
+  const hasPendingLink = !!cookieStore.get(pendingLinkCookieName())?.value
   return (
     <DashboardProviders>
       <SearchProvider>
@@ -78,6 +82,7 @@ export default async function SiteLayout({ children }: SiteLayoutProps) {
           </TenantGate>
           {/* Re-authentication prompt for sensitive actions (STEP_UP_REQUIRED). */}
           <StepUpDialogHost />
+          {hasPendingLink && <PendingLinkPrompt />}
           <SettingsAnchorHighlighter />
         </LayoutProvider>
       </SearchProvider>

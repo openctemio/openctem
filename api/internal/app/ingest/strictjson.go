@@ -20,6 +20,7 @@ import (
 	"io"
 	"strconv"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/openctemio/ctis"
@@ -353,6 +354,9 @@ func DecodeStrictReport(data []byte, maxDepth int, b JSONBounds) (*ctis.Report, 
 type V2ReportError struct {
 	Problem protov2.ProblemType
 	Errors  []protov2.ItemError
+	// RetryAfter, when set, is the server's advised delay for a retryable
+	// refusal (queue-full: from the tenant's drain rate).
+	RetryAfter time.Duration
 }
 
 func (e *V2ReportError) Error() string {

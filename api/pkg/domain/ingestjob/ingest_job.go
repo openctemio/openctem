@@ -44,24 +44,28 @@ func (s Status) IsTerminal() bool {
 
 // Job is a queued raw ingest payload.
 type Job struct {
-	id          ID
-	tenantID    shared.ID
-	sensorID    *shared.ID
-	reportID    string
-	sourceType  string
-	payload     []byte
-	payloadSHA  []byte
-	status      Status
-	attempts    int
-	maxAttempts int
-	priority    int
-	result      []byte // JSON ingest counts, set on completion
-	lastError   string
-	lockedBy    string
-	lockedAt    *time.Time
-	availableAt time.Time
-	createdAt   time.Time
-	updatedAt   time.Time
+	id         ID
+	tenantID   shared.ID
+	sensorID   *shared.ID
+	reportID   string
+	sourceType string
+	payload    []byte
+	payloadSHA []byte
+	// payloadKeyID is set when payload is sealed (ingestpayload.Sealer key
+	// id); payloadBytes is then the size of the decoded payload.
+	payloadKeyID string
+	payloadBytes int64
+	status       Status
+	attempts     int
+	maxAttempts  int
+	priority     int
+	result       []byte // JSON ingest counts, set on completion
+	lastError    string
+	lockedBy     string
+	lockedAt     *time.Time
+	availableAt  time.Time
+	createdAt    time.Time
+	updatedAt    time.Time
 
 	// v2 is set for protocol v2 results jobs (RFC-026); nil for v1.
 	v2 *V2Segment
@@ -284,17 +288,58 @@ func NewJob(tenantID shared.ID, sensorID *shared.ID, reportID, sourceType string
 	}
 }
 
+// SealRun is the outcome of one in-place sealing step of queued sensor
+// payloads: the rows it picked, the rows it sealed and the rows it could not
+// seal (marked and skipped).
+type SealRun struct {
+	Picked, Sealed int
+	Failed         []SealFailure
+}
+
+// SealFailure is a row that could not be sealed. Err never carries payload
+// content.
+type SealFailure struct {
+	JobID    ID
+	TenantID shared.ID
+	Err      error
+}
+
 // DefaultMaxAttempts is the retry ceiling before a job is marked dead.
 const DefaultMaxAttempts = 5
 
 // Accessors.
-func (j *Job) ID() ID                 { return j.id }
-func (j *Job) TenantID() shared.ID    { return j.tenantID }
-func (j *Job) SensorID() *shared.ID   { return j.sensorID }
-func (j *Job) ReportID() string       { return j.reportID }
-func (j *Job) SourceType() string     { return j.sourceType }
-func (j *Job) Payload() []byte        { return j.payload }
-func (j *Job) PayloadSHA() []byte     { return j.payloadSHA }
+func (j *Job) ID() ID               { return j.id }
+func (j *Job) TenantID() shared.ID  { return j.tenantID }
+func (j *Job) SensorID() *shared.ID { return j.sensorID }
+func (j *Job) ReportID() string     { return j.reportID }
+func (j *Job) SourceType() string   { return j.sourceType }
+func (j *Job) Payload() []byte      { return j.payload }
+func (j *Job) PayloadSHA() []byte   { return j.payloadSHA }
+
+// PayloadSealed reports whether Payload holds sealed bytes (open them with
+// the ingestpayload.Sealer under PayloadKeyID) rather than the decoded
+// payload.
+func (j *Job) PayloadSealed() bool { return j.payloadKeyID != "" }
+
+// PayloadKeyID is the key id of a sealed payload ("" when not sealed).
+func (j *Job) PayloadKeyID() string { return j.payloadKeyID }
+
+// PayloadBytes is the size of the decoded payload (PayloadSHA is over those
+// bytes), sealed or not.
+func (j *Job) PayloadBytes() int64 {
+	if j.payloadKeyID == "" && j.payloadBytes == 0 {
+		return int64(len(j.payload))
+	}
+	return j.payloadBytes
+}
+
+// SetSealedPayload replaces the decoded payload with its sealed form;
+// PayloadSHA keeps the hash of the decoded bytes. Also used when
+// rehydrating a job (keyID "" leaves the payload as stored, with size its
+// recorded decoded size).
+func (j *Job) SetSealedPayload(keyID string, sealed []byte, size int64) {
+	j.payloadKeyID, j.payload, j.payloadBytes = keyID, sealed, size
+}
 func (j *Job) Status() Status         { return j.status }
 func (j *Job) Attempts() int          { return j.attempts }
 func (j *Job) MaxAttempts() int       { return j.maxAttempts }
@@ -461,6 +506,9 @@ type V2Repository interface {
 	GetV2Segment(ctx context.Context, reportRef shared.ID, seq int) (*Job, error)
 	// V2SegmentDigests returns the stored digest of every segment of a report.
 	V2SegmentDigests(ctx context.Context, reportRef shared.ID) (map[int]string, error)
+	// V2SegmentContents returns the decoded SHA-256 and size of every
+	// segment of a report, by segment number.
+	V2SegmentContents(ctx context.Context, reportRef shared.ID) (map[int]V2SegmentContent, error)
 	// RequeueDeadV2 returns a report's dead jobs to pending with a fresh
 	// retry budget, for a sensor that re-sends a failed report.
 	RequeueDeadV2(ctx context.Context, reportRef shared.ID) (int, error)
@@ -468,4 +516,11 @@ type V2Repository interface {
 	// segments: the digests stay for replay checks, the bytes are not needed.
 	// The processor never re-runs a segment of a completed report.
 	ClearV2Payloads(ctx context.Context, reportRef shared.ID) error
+}
+
+// V2SegmentContent is what the server stored of one segment: the SHA-256 of
+// its decoded bytes and their size.
+type V2SegmentContent struct {
+	SHA256 []byte
+	Bytes  int64
 }

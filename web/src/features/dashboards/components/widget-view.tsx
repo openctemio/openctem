@@ -9,13 +9,17 @@ import type { ReactNode } from 'react'
 import {
   AreaLineViz,
   BarViz,
+  BriefViz,
   CategoryTable,
   ColumnViz,
   DivergingViz,
   ExposureFlowViz,
   HeatmapViz,
   IntakeViz,
+  ItemsTable,
   ItemsViz,
+  KpiStripViz,
+  LeversViz,
   LoopViz,
   MatrixTable,
   PathsTable,
@@ -60,11 +64,14 @@ function Viz({
   value,
   viz,
   scope,
+  filters,
 }: {
   model: WidgetModel
   value: WidgetValue | undefined
   viz: VizType | undefined
   scope?: 'organization' | 'personal'
+  /** The list's filters as words (the findings table's chip row). */
+  filters?: string[]
 }): ReactNode {
   const r: WidgetResult | undefined = model.result
   if (!r) return null
@@ -97,6 +104,8 @@ function Viz({
       if (viz === 'table') return <MatrixTable result={r} drill={drill} />
       return <HeatmapViz result={r} drill={drill} />
     case 'items':
+      if (viz === 'table')
+        return <ItemsTable result={r} viewAllHref={model.drill} filters={filters} />
       return <ItemsViz result={r} viewAllHref={model.drill} />
     case 'stages':
       return viz === 'table' ? <StagesTable result={r} /> : <LoopViz result={r} />
@@ -106,6 +115,12 @@ function Viz({
       return <ExposureFlowViz result={r} scope={scope} />
     case 'intake':
       return <IntakeViz result={r} />
+    case 'levers':
+      return <LeversViz result={r} />
+    case 'brief':
+      return <BriefViz result={r} />
+    case 'kpis':
+      return <KpiStripViz result={r} />
     default:
       return null
   }
@@ -170,7 +185,20 @@ export function WidgetView({
     next && next.needs.every((p) => hasPermission(p))
       ? { label: t(next.labelKey, next.fallback), href: openFormHref(next.path, next.form) }
       : undefined
-  if (bare) return <Viz model={model} value={value} viz={model.viz} scope={scope} />
+  // The filters the findings table's list carries (Fix next opens open P0 to P2).
+  const filters =
+    metric === 'fix.next'
+      ? [
+          t('dashboards.table.filterOpen', 'Open'),
+          t('dashboards.table.filterPriority', 'Priority P0–P2'),
+        ]
+      : undefined
+  const count =
+    model.state === 'ready' && model.viz === 'table' && model.result?.shape === 'items'
+      ? model.result.total
+      : undefined
+  if (bare)
+    return <Viz model={model} value={value} viz={model.viz} scope={scope} filters={filters} />
   return (
     <WidgetFrame
       title={title}
@@ -182,11 +210,12 @@ export function WidgetView({
       notMeasuredReason={reason}
       emptyMessage={reason}
       emptyAction={emptyAction}
+      count={count}
       onRetry={model.state === 'error' ? onRetry : undefined}
       actions={actions}
       className={className}
     >
-      <Viz model={model} value={value} viz={model.viz} scope={scope} />
+      <Viz model={model} value={value} viz={model.viz} scope={scope} filters={filters} />
     </WidgetFrame>
   )
 }

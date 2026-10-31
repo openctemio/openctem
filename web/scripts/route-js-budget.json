@@ -1,0 +1,6 @@
+{
+  "$comment": "Gzipped first-load JS per page route of the tenant app (scripts/route-js-budget.mjs, checked after next build in Web CI). Measured 2026-10-30 after the per-locale catalogs: median 455 KB, largest /scans 869 KB. Lower a number when pages get lighter; raising one needs the reason in the pull request (what was added and why it cannot load on demand).",
+  "defaultKb": 900,
+  "medianKb": 480,
+  "routes": {}
+}

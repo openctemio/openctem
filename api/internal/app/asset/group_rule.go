@@ -628,7 +628,7 @@ func (s *AssetGroupService) afterMembershipChange(ctx context.Context, tenantID,
 	if changed <= 0 {
 		return
 	}
-	if err := s.repo.RecalculateCounts(ctx, groupID); err != nil {
+	if err := s.repo.RecalculateCounts(ctx, tenantID, groupID); err != nil {
 		s.logger.Warn("failed to recalculate group counts", "group_id", groupID.String(), "error", err)
 	}
 	s.reconcileScopeRules(tenantID, groupID)

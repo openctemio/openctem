@@ -810,12 +810,20 @@ or a level raised after the service's check refuses it.
   expiry, a pentest acceptance), the 90-day default
   (`vulnerability.DefaultAcceptanceDuration`) applies: an accepted risk always
   ends.
+- **Enforced by the database.** The trigger
+  `trg_findings_default_acceptance_end` gives any row written as `accepted`
+  without an end the 90-day default, capped by the finding's priority
+  (`finding_max_acceptance_days`: 30 days for P0 or KEV), so a writer that sets
+  the end in a later, best-effort step (ingest's `RecordSuppression`) or forgets
+  it can never leave an acceptance open-ended. An end a writer sets is kept; a
+  later write that sets one replaces the default.
 - **Cleared on leaving accepted.** The trigger
   `trg_findings_clear_acceptance_expiry` empties the column on any row that is
   not `accepted`, whatever path wrote the status, so a later accept starts
   clean.
 - **Who reads it.** The CI gate honors an accepted finding only until its end
-  (`cirun.honored`), even before the hourly expiry job reopens it. Threat
+  (`cirun.Decision`), even before the hourly expiry job reopens it, and never
+  honors an acceptance without an end (fail closed). Threat
   models read it as the acceptance horizon.
 
 ### When an acceptance ends

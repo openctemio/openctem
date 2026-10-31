@@ -271,11 +271,32 @@ var (
 
 	// IngestQueueDepth is the number of not-yet-terminal (pending+processing)
 	// jobs, refreshed each worker cycle. The key backpressure signal.
+	IngestV2CommitIntegrityTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "openctem_ingest_v2_commit_integrity_total",
+			Help: "Sensor report commits by integrity: single, manifest, digest_only, or the refusal code (hash_mismatch, size_mismatch, count_mismatch, report_hash_mismatch, manifest_invalid)",
+		},
+		[]string{"result"},
+	)
+
 	IngestQueueDepth = promauto.NewGauge(
 		prometheus.GaugeOpts{
 			Name: "ingest_queue_depth",
 			Help: "Async ingest jobs awaiting or in processing across all tenants",
 		},
+	)
+
+	// IngestQueueOldestSeconds is the import lag per lane: how long the
+	// oldest claimable job has waited (0 = nothing waiting), refreshed each
+	// worker cycle. Depth says how much is queued; this says how far behind
+	// imports are. No tenant label (cardinality); per-tenant views come from
+	// ingest_jobs.
+	IngestQueueOldestSeconds = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "openctem_ingest_queue_oldest_seconds",
+			Help: "Age of the oldest claimable ingest job per lane (0 = none waiting)",
+		},
+		[]string{"lane"},
 	)
 )
 

@@ -190,3 +190,32 @@ func TestResolveSet(t *testing.T) {
 		t.Fatalf("diff = +%v -%v", added, removed)
 	}
 }
+
+// A top-1000 scan (the platform's default port set) covers what the same
+// source found with a shorter top list or with the scanner's default (the
+// top 100), so a port that closed is removed after the default changed;
+// it never covers what a full scan or an explicit list found.
+func TestPortScanCoverage_TopListSubsumesShorter(t *testing.T) {
+	top1000 := PortScanCoverage("", "1000")
+	if top1000.Key != "ports:top-1000" || PortScanCoverage("top-1000", "").Key != top1000.Key {
+		t.Fatalf("top 1000 keys: %+v", top1000)
+	}
+	for key, want := range map[string]bool{
+		"ports:top-1000": true, "ports:top-100": true, "ports:default": true,
+		"ports:full": false, "ports:80,443": false, "ports:top-x": false, "": false,
+	} {
+		if got := top1000.Covers(SetAttrOpenPorts, "8443/tcp", key); got != want {
+			t.Errorf("top-1000 Covers(seen under %q) = %v, want %v", key, got, want)
+		}
+	}
+	top100 := PortScanCoverage("", "100")
+	if top100.Covers(SetAttrOpenPorts, "8443/tcp", "ports:top-1000") {
+		t.Error("a top-100 scan must not cover a port a top-1000 scan found")
+	}
+	if !top100.Covers(SetAttrOpenPorts, "8443/tcp", "ports:default") {
+		t.Error("a top-100 scan covers what the scanner's default (top 100) found")
+	}
+	if PortScanCoverage("", "").Covers(SetAttrOpenPorts, "80/tcp", "ports:top-100") {
+		t.Error("a default scan covers only its own key")
+	}
+}

@@ -77,7 +77,7 @@ func seedStepHistory(ctx context.Context, t *testing.T, db *sql.DB, finish bool)
 		}
 	}
 	if finish {
-		if err := runs.UpdateStatus(ctx, run.ID, scanrun.RunStatusCompleted, ""); err != nil {
+		if err := runs.UpdateStatus(ctx, f.tenant, run.ID, scanrun.RunStatusCompleted, ""); err != nil {
 			t.Fatalf("finish run: %v", err)
 		}
 	}
@@ -331,7 +331,7 @@ func TestStepSelection_PersistsAndStepRunRecordsResolution(t *testing.T) {
 		t.Fatalf("precondition: %v", err)
 	}
 	// Finish the run, then store a prefer list.
-	if err := NewScanRunRepository(&DB{DB: db}).UpdateStatus(ctx, f.run.ID, scanrun.RunStatusCompleted, ""); err != nil {
+	if err := NewScanRunRepository(&DB{DB: db}).UpdateStatus(ctx, f.tenant, f.run.ID, scanrun.RunStatusCompleted, ""); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := steps.MutateSteps(ctx, f.tenant, f.template, func(cur []*scanworkflow.Step) ([]*scanworkflow.Step, error) {

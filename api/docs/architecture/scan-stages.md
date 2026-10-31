@@ -260,7 +260,7 @@ the detail of a tenant copy made from it carries `based_on_retired`.
 |---|---|---|---|---|
 | Passive discovery | subdomains ∥ rdap → dns → asn | every step (all T0), no announced ranges | + announced ranges | + every DNS record type |
 | Subdomains | subdomains → dns → http ∥ takeover (optional) | discovery and resolution | + web probe | + every DNS record type |
-| Standard recon | subdomains → dns → http ∥ ports ∥ asn → screenshots (optional) ∥ crawl ∥ services (optional) → templates (after http and crawl) | discovery, resolution, ASN | top-100 ports (cap 1 000), templates critical/high/medium (cap 500), no crawl | top-1 000 ports (cap 5 000), crawl (cap 200), templates down to low (cap 2 000) |
+| Standard recon | subdomains → dns → http ∥ ports ∥ asn → screenshots (optional) ∥ crawl ∥ services (optional) → templates (after http and crawl) | discovery, resolution, ASN | top-1 000 ports (cap 1 000), templates critical/high/medium (cap 500), no crawl | same ports (cap 5 000), crawl (cap 200), templates down to low (cap 2 000) |
 | Web | http → screenshots (optional) ∥ crawl → templates | refused at save (no first step runs) | templates critical/high/medium, no crawl | + crawl, templates down to low |
 | Deep recon | Standard recon + rdap + takeover (optional), crawl from Standard, higher caps | T0 steps | as drawn | deepest params and caps |
 
@@ -306,6 +306,12 @@ workflow preview). Every step reacts to it:
   scan runs at Passive depth". Independent of intensity.
 - A step's **run policy** (`scan_workflow_steps.run_policy`) may set
   `min_depth`: below it the step is skipped with the reason.
+- **Port set.** A port scan step (`scan.ports`) whose config, after its
+  depth's params, names no ports (`ports` or `top_n`) gets the platform's
+  set, the top 1 000 ports (`stage.DefaultTopPorts`), mapped to the tool's
+  key (a declared tool through its descriptor's params). The sensor's own
+  default (the top 100) is never relied on. A single-tool port scan, and
+  every coverage run, gets the same default. `full` runs only when set.
 - `depths.<depth>.params` are standard params of the step's capability,
   merged over its config at dispatch, before the tool is resolved (a tool
   that does not take a param is not eligible, as for config). Checked on
@@ -339,9 +345,20 @@ an update means unchanged):
   found (the hop router reads only those). A step left with nothing it can
   take settles with no inputs. Without the setting, a dependent of a failed,
   skipped or timed-out step is skipped (unchanged).
-- `delta_gating`: heavy chained stages take only assets new, changed or due
-  since the previous run of the same scan. The setting is stored and served
-  now; the gate itself lands separately.
+- `delta_gating`: heavy chained stages (`stage.Heavy`: `vuln.templates`,
+  `crawl.web`, `capture.screenshot`, `detect.services`) take only the
+  derived targets that are not done since the previous completed or partial
+  run of the same scan (`PreviousRun`). A target is done when its asset was
+  first seen before that run started, has no `asset_change_events` row
+  since, and either that run planned it for the same step key and the step
+  completed within the stage's max age (7 days), or the coverage ledger has
+  it `covered` for the capability and not due. A partial, failed or skipped
+  baseline step is never done, so truncated work is redone. Done targets are
+  recorded `unchanged` in `scan_run_targets`; a heavy stage left with none
+  settles at once with "nothing new since the last run: N unchanged" and no
+  command. No previous run, or a baseline the store cannot read, gates
+  nothing (gating only saves work). Seeds are never gated. Every read is
+  scoped to the run's tenant, and run targets carry composite tenant keys.
 
 **Versions.** A run pins its workflow's version: the run policy is part of
 the version's spec (left out when empty, so the digest of a workflow without
@@ -574,6 +591,18 @@ what makes chained outputs trustworthy.
   that declares open ports. Dropped outputs count as `covered_by_origin`.
   Without any origin among the outputs (a chain with no HTTP probe), the
   open ports stay.
+- **Open ports by name.** A port scan of a host name reports its open
+  ports on the addresses (`<address>:<port>`), but a virtual host, a CDN or
+  a load balancer routes by name (TLS SNI, the Host header). The HTTP probe
+  after a port scan therefore also gets `<name>:<port>` for each open port
+  on an address that a name the port scan planned resolves to
+  (`resolves_to` in the inventory, read for the run's tenant). Only names
+  the predecessor planned are used, never a new one; each `<name>:<port>`
+  goes through the per-hop gate checked by name (no asset), and the sensor
+  checks every address the name resolves to. A failed relation read leaves
+  the address forms only. Web consumers (`vuln.templates`) are not fed this
+  way: they take the origins the probe found. Continuous coverage applies the same
+  rule to its HTTP probe batches ([asset coverage](./asset-coverage.md)).
 - **The per-hop gate.** Each candidate: the stage takes its stored pair; the
   name parses strictly (host, IP, host:port or an http(s) URL without
   credentials; no control or bidi characters; at most 2 048 characters);

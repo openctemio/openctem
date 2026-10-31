@@ -15,6 +15,7 @@ import (
 	"errors"
 	"strings"
 
+	tooldom "github.com/openctemio/openctem/api/internal/app/tool"
 	covdom "github.com/openctemio/openctem/api/pkg/domain/coverage"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -26,6 +27,7 @@ import (
 // checks know). A source that cannot be read counts as ready: the trigger's
 // own checks still apply.
 func (s *Service) CoverageReadiness(ctx context.Context, tenantID shared.ID, capabilities []string) map[string]string {
+	ctx = tooldom.WithAvailabilityMemo(ctx) // one tenant view for all tools of this tick
 	out := make(map[string]string, len(capabilities))
 	byTool := map[string]string{}
 	for _, c := range capabilities {
@@ -93,6 +95,26 @@ func (s *Service) toolReadiness(ctx context.Context, tenantID shared.ID, tool st
 			}
 			return covdom.ReadyNoEligibleSensor
 		}
+	}
+	return s.contentReadiness(ctx, tenantID, tool)
+}
+
+// contentReadiness is ReadyContentMissing when the tool reads a list the
+// platform supplies and the platform has none yet ("" otherwise, and when
+// the answer cannot be read: the claim-time pin still refuses the job).
+func (s *Service) contentReadiness(ctx context.Context, tenantID shared.ID, tool string) string {
+	reqs := stage.ToolWordlists(tool)
+	if len(reqs) == 0 || s.coverageContent == nil {
+		return ""
+	}
+	ok, err := s.coverageContent.CoverageContentReady(ctx, reqs)
+	if err != nil {
+		s.logger.Warn("coverage readiness: platform content unreadable; checked again at claim",
+			"tenant_id", tenantID.String(), "tool", tool, "error", err)
+		return ""
+	}
+	if !ok {
+		return covdom.ReadyContentMissing
 	}
 	return ""
 }

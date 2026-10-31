@@ -761,7 +761,7 @@ func (s *Service) scheduleWorkflowSteps(ctx context.Context, run *scanrun.Run, s
 			msg = "no step started: the condition of every first step was false"
 		}
 		run.Fail(msg)
-		if err := s.runRepo.UpdateStatus(ctx, run.ID, scanrun.RunStatusFailed, msg); err != nil {
+		if err := s.runRepo.UpdateStatus(ctx, run.TenantID, run.ID, scanrun.RunStatusFailed, msg); err != nil {
 			s.logger.Warn("failed to fail a run that cannot start", "run_id", run.ID.String(), "error", err)
 		}
 		return shared.NewDomainError(codeWorkflowCannotStart, msg, shared.ErrValidation)
@@ -884,6 +884,13 @@ func (s *Service) scannerPayload(
 	} else {
 		scannerConfig = withoutTargetKeys(scannerConfig)
 	}
+	// The platform decides the port set of a single-tool port scan that
+	// names none (coverage runs included): stage.DefaultTopPorts.
+	if stg, ok := stage.ForStep(sc.ScannerName, nil); ok {
+		if c := stg.DefaultPortSet(sc.ScannerName, scannerConfig); c != nil {
+			scannerConfig = c
+		}
+	}
 	payloadMap := map[string]any{
 		"run_id":          run.ID.String(),
 		"scan_id":         sc.ID.String(),
@@ -916,6 +923,7 @@ func (s *Service) scannerPayload(
 		payloadMap["custom_templates"] = templates
 	}
 	withRunDeadline(payloadMap, run)
+	withWordlistRequests(payloadMap, sc.ScannerName)
 	return payloadMap
 }
 

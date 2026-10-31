@@ -47,7 +47,13 @@ exclusion widens scope, so it asks you to re-authenticate.
 | URL | `https://app.example.com/api` | that URL and what is under it |
 
 An exclusion of an asset also matches its other names (a URL on it, its
-addresses).
+addresses). An exclusion of an address also excludes the names that resolve
+to it, except when the address is a shared front end inside a range a CDN,
+edge or hosting provider publishes: then only the address (bare, `host:port`,
+URL, inside a range) is left out, and names served through it are still
+scanned, port scans on the web ports only. An address known as an edge only
+by its network holder's name counts as dedicated. The exclusion preview
+lists the names an address exclusion would also stop.
 
 ## 3. How an exclusion reaches the sensor
 
@@ -110,7 +116,36 @@ scope for a full port scan.
 
 Exclusions and "Not ours" always win over all of this.
 
-## 5. Check what was left out
+## 5. CDN, edge and shared-hosting addresses
+
+An address that belongs to a CDN or edge provider (Cloudflare, Fastly, Akamai,
+CloudFront and others), a hosting platform or a cloud provider's shared front
+end serves many organizations. Scanning it tests the provider's network, not
+yours. The platform labels these addresses and leaves the decision to you; it
+does not refuse them by itself.
+
+- **Labels:** a name or service served through a provider shows
+  **Behind <provider>** in the inventory and the asset drawer. An address in a
+  provider's published range shows **<provider> edge** (or *hosting*,
+  *shared*), on IP assets and on Scoping > In scope entries. Hover the label
+  for the reason.
+- **Add to out of scope:** with scope write, click the label on an address.
+  A confirm dialog explains why, then adds a *Do not scan* exclusion of that
+  address (audited; in the Strict scan approval mode it waits for an
+  exclusion approver). From then on no scan, retest or coverage run reaches
+  it.
+- **Names behind the address:** excluding a shared edge address excludes
+  only that address. Names served through it keep being scanned (web ports
+  only), because a scan of the name reaches your origin through the
+  provider, not the provider's own address. The confirm dialog checks this
+  for the address before you confirm. Names that have a dedicated address
+  inside an excluded range or CIDR do stop being scanned, and the dialog
+  lists how many and a sample.
+- **Provider ports:** the ports an IP asset on a provider's edge address
+  shows are labelled *Provider ports*: they belong to the provider's
+  network, not to your open ports. They stay visible.
+
+## 6. Check what was left out
 
 - **Before a scan starts**: the scan preview lists the targets exclusions
   would leave out, with the matching rule.
@@ -121,11 +156,12 @@ Exclusions and "Not ours" always win over all of this.
   dialog's check (`POST /scope/check`) say whether a target may be scanned,
   and why not.
 
-## 6. Troubleshooting
+## 7. Troubleshooting
 
 | Symptom | Cause | Fix |
 |---|---|---|
 | The exclusion shows "Pending" | Strict scan approval: exclusions need an approver other than you | Ask an exclusion approver, or decide on Scoping > Approvals |
 | A range scan skipped an address you did not exclude | The platform deny list (loopback, metadata, link-local ranges) | Nothing to fix: those are never scanned |
 | A port scan of a name found only web ports | An address behind the name is not in scope (section 4) | Add the address or its prefix to scope |
+| A name behind a CDN is no longer scanned | Its edge address was added to out of scope (section 5) | Re-include the address, or keep it excluded and accept that the names behind it are not scanned |
 | A scan refuses a target as `guardrailed` | A platform guardrail holds it (section 4) | Add its exact scope entry, if it is yours (the refusal offers it) |

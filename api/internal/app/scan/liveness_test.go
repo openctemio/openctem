@@ -192,7 +192,60 @@ func TestStepCommandPayload_HostProbePorts(t *testing.T) {
 	if got := payload([]string{"discover.hosts"}, map[string]any{"ports": "22"}); got["ports"] != "22" {
 		t.Fatalf("host discovery config = %v, want the step's ports", got)
 	}
-	if got := payload([]string{"scan.ports"}, nil); got["ports"] != nil {
-		t.Fatalf("port scan config = %v, want no ports added", got)
+	if got := payload([]string{"scan.ports"}, nil); got["ports"] != nil || got["top_ports"] != stage.DefaultTopPorts {
+		t.Fatalf("port scan config = %v, want the platform's top ports and no probe ports", got)
+	}
+}
+
+// The platform decides the port set of a port scan that names none, in a
+// workflow step (capability or pinned tool) and in a single-tool scan
+// (coverage runs are single-tool scans); a set port list or top_n is kept.
+func TestPortScanPayload_PlatformPortSet(t *testing.T) {
+	run := &scanrun.Run{ID: shared.NewID(), Context: map[string]any{"targets": []string{"203.0.113.7"}}}
+	stepCfg := func(tool string, caps []string, cfg map[string]any) map[string]any {
+		t.Helper()
+		step := &scanworkflow.Step{ID: shared.NewID(), StepKey: "ports", Tool: tool, Capabilities: caps, Config: cfg}
+		p, err := StepCommandPayload(run, step, "naabu", shared.NewID().String(), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		c, _ := p[scanworkflow.PayloadKeyConfig].(map[string]any)
+		return c
+	}
+	if got := stepCfg("", []string{"scan.ports"}, nil); got["top_ports"] != stage.DefaultTopPorts {
+		t.Errorf("capability step = %v", got)
+	}
+	if got := stepCfg("naabu", []string{"recon", "portscan"}, map[string]any{}); got["top_ports"] != stage.DefaultTopPorts {
+		t.Errorf("pinned naabu step = %v", got)
+	}
+	if got := stepCfg("", []string{"scan.ports"}, map[string]any{"ports": "full"}); got["ports"] != "full" || got["top_ports"] != nil {
+		t.Errorf("explicit full = %v", got)
+	}
+	if got := stepCfg("", []string{"scan.ports"}, map[string]any{"top_ports": 100}); got["top_ports"] != int64(100) && got["top_ports"] != 100 {
+		t.Errorf("explicit top 100 = %v", got)
+	}
+
+	single := func(tool string, cfg map[string]any) map[string]any {
+		sc := &scan.Scan{ID: shared.NewID(), ScannerName: tool, ScannerConfig: cfg}
+		p := (&Service{}).scannerPayload(sc, run, nil, cfg, nil, []string{"203.0.113.7"}, nil)
+		c, _ := p["config"].(map[string]any)
+		s, _ := p["scanner_config"].(map[string]any)
+		if (c["top_ports"] == nil) != (s["top_ports"] == nil) {
+			t.Fatalf("config %v and scanner_config %v disagree", c, s)
+		}
+		return c
+	}
+	cov := map[string]any{"targets": []string{"203.0.113.7"}}
+	if got := single("naabu", cov); got["top_ports"] != stage.DefaultTopPorts {
+		t.Errorf("coverage port scan = %v", got)
+	}
+	if _, changed := cov["top_ports"]; changed {
+		t.Error("the scan's own settings were changed")
+	}
+	if got := single("naabu", map[string]any{"ports": "80,443"}); got["ports"] != "80,443" || got["top_ports"] != nil {
+		t.Errorf("explicit list = %v", got)
+	}
+	if got := single("httpx", map[string]any{}); got["top_ports"] != nil {
+		t.Errorf("httpx got a port set: %v", got)
 	}
 }

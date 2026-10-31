@@ -5,7 +5,22 @@ providers (Google, GitHub, Microsoft). Each provider identity is a row in
 `user_identities` (issuer, subject), the same store organization SSO uses
 ([accounts are keyed on the identity provider's user id](sso-authentication.md#accounts-are-keyed-on-the-identity-providers-user-id)).
 A sign-in finds the account by that pair first; the e-mail address only matters
-the first time.
+the first time. Addresses are compared without regard to case: every provider's
+address is trimmed and lower-cased before the lookup, accounts are stored that
+way, and `users.email` is unique on `lower(email)` (migration
+`users_email_case_insensitive_unique`), so `Alice@Corp.example` from a provider
+reaches the account of `alice@corp.example` (and its refusal or pending link)
+instead of creating a second account.
+
+Each identity also records its source (`user_identities.source`, migration
+`user_identities_source`): `social` when a social sign-in or an explicit link
+bound it, `sso` when an organization's single sign-on bound or used it. An
+organization's Entra ID or Google Workspace sign-on verifies the same issuer
+and subject as the social Microsoft or Google button, so the key alone does not
+tell them apart; the source does. The organization's sign-on marks an identity
+`sso` on every use (an identity first bound through the social button becomes
+the organization's once its sign-on asserts it), and SAML identities are always
+the organization's.
 
 Code: `internal/app/auth/identity_link.go` (service),
 `internal/infra/http/handler/identity_link_handler.go`,
@@ -17,30 +32,119 @@ Code: `internal/app/auth/identity_link.go` (service),
 
 A social sign-in whose provider-verified address belongs to an account that
 signs in another way (a password account, or an account of another provider)
-and whose provider identity is not linked to it is refused with
-`409 OAUTH_ACCOUNT_EXISTS`. Nothing is written. The sign-in page keeps a notice:
-sign in with your password, then link the provider in Account > Security, with
-a password reset link. Earlier versions answered `500 INTERNAL_ERROR`.
+and whose provider identity is not linked to it changes nothing on that
+account and signs nobody in. It is refused with `409 OAUTH_ACCOUNT_EXISTS`.
+Linking always needs the person to prove the account too: from Account >
+Security, or by signing in to it right away and confirming (below). There is
+no automatic linking and no setting that turns it on: the provider's word about
+an address is not proof that the person owns the account.
 
-The only exception is automatic linking, below.
+### Confirming the link after signing in
+
+When the identity could be linked (the account is active and holds no other
+identity of that provider), the refusal leaves a pending link:
+
+1. The API stores the provider identity (issuer, subject), its address and the
+   account it collided with, for 10 minutes, under the SHA-256 of a random
+   32-byte secret. Nothing on the account changes.
+2. The secret travels only in an HttpOnly cookie (`__Host-oauth_pending_link`
+   with Secure cookies, `oauth_pending_link` without; SameSite=Lax, Path=/,
+   10 minutes) set on the 409; the body says only
+   `details: {link_pending: true, provider}`. The web server relays that
+   cookie to the browser and never shows the secret to page script. The
+   sign-in page says "An account with this email already exists. Sign in with
+   your password or the way you signed in before, and we will ask you to
+   confirm linking this provider."
+3. The person signs in to the account the usual way: password and second
+   factor, or the provider the account already uses. The provider never
+   replaces that sign-in.
+4. In the app, the web server (forwarding the cookie) describes the pending link
+   (`POST /api/v1/me/pending-sign-in-link/describe`) and asks "Link Google
+   account x to your account?" with the authenticator code (or the password)
+   field in the same dialog. The dialog shows the provider account: its name,
+   its handle (GitHub), its address and its picture (kept only when it is an
+   https URL on a known avatar host, loaded without a referrer). "Link" confirms with that proof
+   (`POST /api/v1/me/pending-sign-in-link/complete`), "Not now" drops it
+   (`POST /api/v1/me/pending-sign-in-link/cancel`). The cookie is deleted
+   either way, except after a missing or wrong proof (`LINK_PROOF_REQUIRED`,
+   `LINK_PROOF_FAILED`), when the person can type it again. The routes read the secret from the cookie only, never from the
+   body or the URL.
+5. The confirm is accepted only with a proof typed for it (see
+   [Proof at the moment of the change](#proof-at-the-moment-of-the-change);
+   the sign-in that just happened does not count), only from the account the
+   pending link was made for, only from a session that signed in or stepped
+   up after the pending link was made (the session's own server-side
+   record), only with the secret, once, before it expires, and only
+   while the account's address is still the provider's. A pending link
+   presented by another account is spent. The link itself follows the
+   explicit-link rules (identity linked elsewhere, second identity of the
+   provider). Every other session of the account is then revoked, the link is
+   audited (`how=after_sign_in`) and the account's mailbox is told.
+
+| Route | Gate |
+|---|---|
+| `POST /api/v1/me/pending-sign-in-link/describe` | signed in, CSRF, rate limit; the pending link must be this account's |
+| `POST /api/v1/me/pending-sign-in-link/complete` | proof typed for it (the sign-in that just happened does not count), CSRF, rate limit; authenticated after the pending link |
+| `POST /api/v1/me/pending-sign-in-link/cancel` | signed in, CSRF, rate limit |
+
+Refusals: `404 PENDING_LINK_INVALID` (none for this account: expired, used,
+made for another account or never made; one answer for all; `400` with the
+same code when the request has no pending-link cookie),
+`403 PENDING_LINK_SIGN_IN_REQUIRED` (the session authenticated before the
+pending link), `403 LINK_PROOF_*` (the proof), `409 IDENTITY_LINKED_ELSEWHERE` /
+`PROVIDER_ALREADY_LINKED`.
+
+## Proof at the moment of the change
+
+Every change of an account's sign-in methods (starting an explicit link,
+confirming a pending link, unlinking) needs a proof typed into its confirm
+dialog and sent with that one request as `step_up` (`auth/link_proof.go`):
+
+| The account has | Proof |
+|---|---|
+| TOTP | A current authenticator code. Never a recovery code; a code from an already used time step is refused, so the code that signed the person in a moment ago cannot be replayed here. A password is not accepted instead. |
+| A password, no TOTP | The password. |
+| Neither (signs in only through a provider) | None possible: `403 LINK_PROOF_UNAVAILABLE`. The person turns on two-factor authentication first. |
+
+A recent sign-in or an open [step-up window](step-up-reauth.md) does not count,
+so these routes are not behind `requireStepUp`: the service checks the proof
+itself, and a closed window does not ask for a second, separate proof first.
+The proof authorizes only its request; it never opens a window on the session.
+Passkeys exist only for platform administrators (the admin console), so a
+tenant account never presents one here.
+
+Refusals: `403 LINK_PROOF_REQUIRED` (no proof of the kind the account needs),
+`403 LINK_PROOF_FAILED` (wrong, reused or recovery code, wrong password),
+`403 LINK_PROOF_UNAVAILABLE`, `403 ACCOUNT_LOCKED`. A wrong proof counts towards
+the account lockout exactly like a failed sign-in, on top of the routes' rate
+limit. Every attempt writes `auth.step_up` / `auth.step_up_failed` with
+`method` (`totp` or `password`) and `purpose` (`link_start`, `pending_link`,
+`unlink`); the link and unlink events themselves carry `factor`. For an
+explicit link, the factor that proved the start is kept server side with the
+link's PKCE record and taken at the callback: a link whose start was never
+proved does not complete. `GET /api/v1/me/sign-in-methods` and the pending-link
+describe return `proof` (`totp`, `password` or empty) so the dialog asks for
+the right field.
 
 ## Explicit linking (Account > Security)
 
 "Connected sign-in methods" lists the password (when the account has one), the
-linked providers and the organization SSO identities (read only).
+linked providers and the organization SSO identities (read only, shown as
+managed by the organization: any identity whose source is `sso`, including an
+Entra ID or Google Workspace sign-on identity).
 
 | Route | Gate |
 |---|---|
 | `GET /api/v1/me/sign-in-methods` | signed in |
-| `POST /api/v1/me/sign-in-method-links/{provider}/start` | step-up, CSRF, rate limit |
+| `POST /api/v1/me/sign-in-method-links/{provider}/start` | proof typed for it, CSRF, rate limit |
 | `POST /api/v1/me/sign-in-method-links/{provider}/complete` | signed in, rate limit; state bound to account, session and browser, single use, expires |
-| `DELETE /api/v1/me/sign-in-methods/{id}` | step-up, CSRF, rate limit |
+| `DELETE /api/v1/me/sign-in-methods/{id}` | proof typed for it, CSRF, rate limit |
 
 Link flow:
 
-1. The browser calls the link start through the API client. A session that has
-   not re-authenticated in the step-up window gets `403 STEP_UP_REQUIRED` and
-   the dialog asks for the authenticator code or password first.
+1. "Link" opens a dialog that asks for the authenticator code (or the
+   password); the browser calls the link start with it through the API
+   client. A refused proof is shown in the dialog.
 2. The API returns the provider's authorization URL. Its signed state carries
    `purpose=link`, the account id, the session id and an expiry; the PKCE
    verifier is kept server side under the state, single use, for the state's
@@ -61,7 +165,10 @@ Link flow:
    `400 OAUTH_INVALID_STATE`, before the code exchange. It then exchanges the code, reads the verified
    identity and binds it. It refuses an identity linked to another account
    (`409 IDENTITY_LINKED_ELSEWHERE`) and a second identity of the same
-   provider (`409 PROVIDER_ALREADY_LINKED`).
+   provider (`409 PROVIDER_ALREADY_LINKED`; an organization's sign-on identity
+   does not count as the account's link of that provider). Before binding it
+   revokes every other session of the account, keeping the one that proved the
+   link; when the revoke fails nothing is linked.
 6. The browser lands on `/account/security?linked=<provider>` or
    `?link_error=<CODE>`; the page shows its own text for the code.
 
@@ -74,32 +181,54 @@ Unlinking removes one Google, GitHub or Microsoft identity. The account's last
 sign-in method is never removed (`409 LAST_SIGN_IN_METHOD`): an account without
 a password keeps at least one identity, and the check runs with the account row
 locked so two concurrent unlinks cannot remove the last two. Organization SSO
-identities are managed by the organization (`409 IDENTITY_MANAGED_BY_ORGANIZATION`).
+identities, SAML or OIDC, Entra ID and Google Workspace included (source
+`sso`), are managed by the organization (`409 IDENTITY_MANAGED_BY_ORGANIZATION`).
+After the proof, and before the identity is removed, every other session of
+the account is revoked (keeping the one that proved the unlink), so a session
+opened through the provider does not outlive the unlink. When the revoke fails
+nothing is removed (fail closed); a revoke followed by a failed delete only
+signs the other devices out.
 
 Each link and unlink writes `auth.identity_linked` / `auth.identity_unlinked`
 (security, high) and e-mails the account's address.
 
-## Automatic linking
+## No automatic linking
 
-A social sign-in links itself to an existing password account with the same
-address, instead of answering `OAUTH_ACCOUNT_EXISTS`, only when all hold:
+A social sign-in never links itself to an existing account, whichever provider
+vouches for the address. The sign-up policy has no value for it (a
+`social_auto_link` stored by an earlier build is dropped by the migration
+`signup_policy_drop_social_auto_link`), and the audit value `how=automatic`
+is no longer written; older `auth.identity_linked` rows that carry it stay
+readable.
 
-| Condition | Why |
-|---|---|
-| The platform allows it: Console > Settings > Sign-up, "Link Google and Microsoft sign-in to existing accounts" (`social_auto_link`, on by default; an unreadable policy is off) | An operator whose accounts were ever created without proof of the address can turn it off |
-| The provider is authoritative for the address: Google on `gmail.com`/`googlemail.com`, or a Workspace account whose `hd` claim equals the address domain; Microsoft with the domain-owner-verified claim; never GitHub | The provider must run the mailbox, not merely have seen the address once ([Social sign-in and the e-mail it can prove](user-onboarding.md#social-sign-in-and-the-e-mail-it-can-prove)) |
-| The provider marked the address verified (Google `email_verified`, Microsoft `xms_edov`) | Required by the sign-in itself |
-| The account's own address is verified | Mitigates pre-hijacking, below |
-| The account is active and has no other identity of that provider | A second subject from one issuer is a different person |
+## The provider changes its address
 
-On an automatic link every session of the account is revoked, a pending
-password reset link is cancelled, the link is audited (`how=automatic`) and the
-account's mailbox is told.
+A returning identity is found by (issuer, subject), never by address. On an
+account the provider created, a new verified address replaces the old one when
+no other account holds it; it counts as verified only where the provider is
+authoritative for it (as at account creation), otherwise the account's address
+becomes unverified and cannot claim invitations or join an organization by
+domain until verified another way. A provider linked to a password account
+never changes its address, and a social sign-in through an identity an
+organization's sign-on manages (source `sso`) never changes it either: the
+organization moves the address only to a domain it proved, and the social
+button does not skip that proof.
+
+## Social sign-in through an organization's identity
+
+A person whose account an organization's Entra ID sign-on created can press
+the social Microsoft button: the identity key is the same, so the sign-in
+reaches that account. It gets nothing from the organization: the session is a
+social one with no issuing organization (`Session.IDPTenantID` empty), so an
+organization that enforces its SSO refuses it at token mint (an owner falls to
+the break-glass rule, which needs the owner's own second factor), an
+organization two-factor requirement asks for our own second factor, a
+membership waiting for approval stays suspended, and the directory is the one
+the issuer names. It also changes nothing on the account (above).
 
 ## Second factor after the provider
 
-A password account signed into through a linked provider (explicit or
-automatic) takes exactly the second step its password sign-in takes: with an
+A password account signed into through a linked provider  takes exactly the second step its password sign-in takes: with an
 authenticator on, the callback answers the same challenge as the password
 sign-in (`mfa_required`, `mfa_token`) and no session; with an organization that
 requires two-factor and no factor yet, the enrollment challenge. The web keeps
@@ -129,17 +258,30 @@ Organization policies apply to the session exactly as before:
 
 | Threat | Mitigation |
 |---|---|
-| Account takeover with a provider account carrying the victim's address the provider does not own (consumer Google account on a company address, GitHub address) | Automatic linking needs an authoritative provider; GitHub never links automatically; otherwise `OAUTH_ACCOUNT_EXISTS` |
+| Account takeover with a provider account carrying the victim's address the provider does not own (consumer Google account on a company address, GitHub address) | Nothing links by itself: the sign-in is refused with `OAUTH_ACCOUNT_EXISTS` and a link needs a typed proof |
 | Unverified provider address | Google and Microsoft sign-in already refuse an unverified address; GitHub reads only its primary verified address |
-| Pre-hijacking: an attacker registers the victim's Gmail address with a password before the victim arrives through Google | Automatic linking needs the account's address verified (the attacker cannot click the link sent to the victim's mailbox); on a link every session is revoked and a pending reset link cancelled, and the mailbox (the victim) is told. Residual: an address marked verified without mailbox proof (an administrator-provisioned account with a temporary password, or a deployment that ran without mail delivery); the administrator turns automatic linking off for such deployments |
+| Pre-hijacking: an attacker registers the victim's Gmail address with a password before the victim arrives through Google | Nothing links by itself: a link needs the account's own proof (password and second factor), which the attacker does not have for the victim's account; on a confirmed link every other session is revoked and the mailbox is told |
 | Second-factor bypass through a provider | The linked password account gets the same second step as its password sign-in |
-| Link CSRF (an attacker's provider account linked to the victim's session) | The link start needs step-up and the CSRF token; the state is signed, single use, expires, and bound to the account and session that started it; the callback also checks the state cookie of the browser |
+| Link CSRF (an attacker's provider account linked to the victim's session) | The link start needs a proof typed for it and the CSRF token; the state is signed, single use, expires, and bound to the account and session that started it; the callback also checks the state cookie of the browser |
 | Cross-browser completion (the attacker's code and state, or the victim's leaked callback URL, finished in another browser) | The PKCE verifier is released only with the browser-binding secret held in an HttpOnly cookie of the browser that started the link; a wrong or missing secret spends the record, so the starting browser cannot be raced either |
 | State replay (a used state and code from a log or Referer) | The PKCE record is deleted on first read; a replay is refused before any code exchange |
 | Using a link state to sign in, or a sign-in state to link | The sign-in callback refuses a state with a purpose; the link callback accepts only `purpose=link` |
 | Removing someone else's identity | Unlink deletes by (identity id, account id of the session); another account's identity is not found |
 | Locking oneself out | The last sign-in method stays; checked under a row lock |
-| Account enumeration | `OAUTH_ACCOUNT_EXISTS` and `IDENTITY_LINKED_ELSEWHERE` are answered only after the provider proved the person holds that address or provider account |
+| Account enumeration | `OAUTH_ACCOUNT_EXISTS` and `IDENTITY_LINKED_ELSEWHERE` are answered only after the provider proved the person holds that address or provider account; the pending-link refusals have one answer for every reason |
+| Linking by mailbox control alone (a recycled or transferred mailbox or domain, a compromised provider account) | Off by default: a social sign-in never changes an existing account; the person must sign in to the account and confirm |
+| Planting or stealing a pending link | The secret is never in a response body or URL, only in an HttpOnly `__Host-` cookie (no subdomain or script can read or set it); the record is bound to the account it collided with, so another account cannot confirm or even read it, and presenting it spends it |
+| Confirming with a session someone already held (stolen session, shared computer) | The confirm needs the authenticator code (or the password) typed for it, and a session that signed in or stepped up after the pending link was made; on confirm every other session is revoked and the mailbox is told |
+| Linking or unlinking from a stolen or unattended session | Every change needs a proof typed for that request; a recent sign-in or step-up window does not count; wrong proofs count towards the lockout |
+| Replaying the sign-in's code to confirm | TOTP time steps are single use (`mfa_factors.last_used_step`); recovery codes are refused |
+| Replay of a pending link | Single use (GETDEL), 10 minutes, hash-only storage |
+| A provider's later address counted as proven | The new address is verified only where the provider is authoritative |
+| Organization SSO enforcement or two-factor floor bypassed through social sign-in | A social session is stamped `sso` with no issuing organization: enforcement and the two-factor requirement treat it as a password session without our second factor (`Session.FederatedFor`), so it is refused at token mint |
+| Social sign-in through an organization's Entra ID or Google Workspace identity used to skip the organization's sign-on | The session carries no issuing organization, so the organization's enforcement, two-factor requirement and approval hold; the account's address is not changed through it; the identity cannot be unlinked by the person |
+| A second account for the same mailbox through a different case | Addresses are lower-cased on every write and compared case-insensitively; the database refuses two accounts whose addresses differ only in case |
+| A session opened through a provider outliving its unlink, or a session held before a link outliving it | Unlink and every link revoke the account's other sessions first and fail closed |
+| Confirming a pending link for a provider account that is not the person's | The confirm dialog shows the provider account's name, handle (GitHub), address and picture (https on a known avatar host only, no referrer) |
+| Platform administration through social sign-in | The console needs its own sign-in and second factor; its identity provider bindings are separate from social identities, and break-glass accounts are refused on every main-site path |
 
 Tenant isolation: users and identities are global (not organization data); every
 route acts on the session's own account only, no request field names an

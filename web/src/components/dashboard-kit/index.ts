@@ -19,10 +19,12 @@ export { StatViz, ProgressViz, type StatVizProps } from './stat-viz'
 export { BarViz, barRows, type BarVizProps } from './bar-viz'
 export { ColumnViz, AreaLineViz, DivergingViz, netOf, toRows } from './series-viz'
 export { HeatmapViz, ItemsViz, heatStep } from './grid-viz'
+export { ItemsTable, type ItemsTableProps } from './items-table'
 export { LoopViz } from './loop-viz'
 export { PathsViz } from './paths-viz'
 export { ExposureFlowViz } from './exposure-flow-viz'
 export { IntakeViz, SourceTable } from './intake-viz'
+export { BriefViz, KpiStripViz, LeversViz, useLeverSentence } from './story-viz'
 export { CategoryTable, TimeSeriesTable, MatrixTable, StagesTable, PathsTable } from './table-viz'
 export {
   ChartOrTable,

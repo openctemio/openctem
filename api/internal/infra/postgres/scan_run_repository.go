@@ -235,22 +235,9 @@ func (r *ScanRunRepository) Update(ctx context.Context, run *scanrun.Run) error 
 // terminalRunStatusesSQL lists the statuses a run never leaves.
 const terminalRunStatusesSQL = `('completed', 'partial', 'failed', 'canceled', 'timeout', 'blocked')`
 
-// notUpdatedError explains a guarded UPDATE that touched no row: the run is
-// missing, or it already finished.
-func (r *ScanRunRepository) notUpdatedError(ctx context.Context, id shared.ID) error {
-	var exists bool
-	if err := r.db.QueryRowContext(ctx,
-		`SELECT EXISTS (SELECT 1 FROM scan_runs WHERE id = $1)`, id.String()).Scan(&exists); err != nil {
-		return fmt.Errorf("failed to check pipeline run: %w", err)
-	}
-	if !exists {
-		return shared.ErrNotFound
-	}
-	return scanrun.ErrRunAlreadyFinished
-}
-
-// notUpdatedErrorFor is notUpdatedError for a run of one tenant: another
-// tenant's run is reported as missing, never as finished.
+// notUpdatedErrorFor explains a guarded UPDATE of a run of one tenant that
+// touched no row: the run is missing (another tenant's run counts as
+// missing), or it already finished.
 func (r *ScanRunRepository) notUpdatedErrorFor(ctx context.Context, tenantID, id shared.ID) error {
 	var exists bool
 	if err := r.db.QueryRowContext(ctx,
@@ -395,20 +382,20 @@ func (r *ScanRunRepository) UpdateStats(ctx context.Context, tenantID, id shared
 // only that caller records the outcome (on the scan, in metrics, in the audit
 // log). Two parallel final steps, or a completion racing a cancel or the
 // timeout reaper, otherwise each recorded the run once.
-func (r *ScanRunRepository) UpdateStatus(ctx context.Context, id shared.ID, status scanrun.RunStatus, errorMessage string) error {
+func (r *ScanRunRepository) UpdateStatus(ctx context.Context, tenantID, id shared.ID, status scanrun.RunStatus, errorMessage string) error {
 	query := `
 		UPDATE scan_runs
 		SET status = $2, error_message = $3,
 		    completed_at = CASE WHEN $2::varchar IN ` + terminalRunStatusesSQL + ` THEN NOW() ELSE completed_at END
-		WHERE id = $1
+		WHERE id = $1 AND tenant_id = $4
 		  AND status NOT IN ` + terminalRunStatusesSQL + `
 	`
-	result, err := r.db.ExecContext(ctx, query, id.String(), string(status), errorMessage)
+	result, err := r.db.ExecContext(ctx, query, id.String(), string(status), errorMessage, tenantID.String())
 	if err != nil {
 		return fmt.Errorf("failed to update pipeline run status: %w", err)
 	}
 	if n, _ := result.RowsAffected(); n == 0 {
-		return r.notUpdatedError(ctx, id)
+		return r.notUpdatedErrorFor(ctx, tenantID, id)
 	}
 	return nil
 }
@@ -1217,9 +1204,9 @@ func (r *ScanRunRepository) ListPendingRetries(ctx context.Context, limit int) (
 // against the budget: retry_attempt moves up, which also doubles the backoff.
 // Releasing without spending the attempt (the old behavior) retried a dispatch
 // that kept failing every backoff interval, forever.
-func (r *ScanRunRepository) ReleaseFailedRetryDispatch(ctx context.Context, runID shared.ID) error {
-	const query = `UPDATE scan_runs SET retry_dispatched_at = NULL, retry_attempt = retry_attempt + 1 WHERE id = $1`
-	if _, err := r.db.ExecContext(ctx, query, runID.String()); err != nil {
+func (r *ScanRunRepository) ReleaseFailedRetryDispatch(ctx context.Context, tenantID, runID shared.ID) error {
+	const query = `UPDATE scan_runs SET retry_dispatched_at = NULL, retry_attempt = retry_attempt + 1 WHERE id = $1 AND tenant_id = $2`
+	if _, err := r.db.ExecContext(ctx, query, runID.String(), tenantID.String()); err != nil {
 		return fmt.Errorf("failed to release retry claim: %w", err)
 	}
 	return nil

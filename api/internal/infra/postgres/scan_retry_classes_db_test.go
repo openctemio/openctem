@@ -100,7 +100,7 @@ func TestReleaseFailedRetryDispatch_SpendsTheAttempt(t *testing.T) {
 	if !listedRuns(ctx, t, repo)[runID] {
 		t.Fatal("run not claimed")
 	}
-	if err := repo.ReleaseFailedRetryDispatch(ctx, runID); err != nil {
+	if err := repo.ReleaseFailedRetryDispatch(ctx, tenantID, runID); err != nil {
 		t.Fatal(err)
 	}
 	var attempt int

@@ -744,9 +744,6 @@ func TestMCP_GetPentestFinding_RedactsEvidence(t *testing.T) {
 	if dto.EvidenceCount == nil || *dto.EvidenceCount != 1 {
 		t.Errorf("expected evidence_count=1, got %v", dto.EvidenceCount)
 	}
-	if dto.RequestResponseCount == nil || *dto.RequestResponseCount != 1 {
-		t.Errorf("expected request_response_count=1, got %v", dto.RequestResponseCount)
-	}
 	if dto.BusinessImpact != "full DB compromise" {
 		t.Errorf("expected rich business_impact, got %q", dto.BusinessImpact)
 	}

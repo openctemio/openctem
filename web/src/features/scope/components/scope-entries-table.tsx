@@ -51,6 +51,7 @@ import {
   useScopeTargetsApi,
 } from '../api/use-scope-api'
 import type { ApiScopeTarget } from '../api/scope-api.types'
+import type { AssetEdge } from '@/features/assets/types/asset.types'
 import { scopeErrorMessage } from '../lib/scope-codes'
 import { noLongerOursPattern } from '../lib/exclusion-kind'
 import {
@@ -64,6 +65,7 @@ import {
   type ScopeEntryStatus,
 } from '../lib/scope-entry'
 import { ScopeEntryEditDialog } from './scope-entry-edit-dialog'
+import { EdgeLabel } from './edge-label'
 import {
   scopeKindIcon,
   scopeKindOf,
@@ -300,9 +302,12 @@ export function ScopeEntriesTable({
       enableHiding: false,
       cell: ({ row }) => (
         <div className="min-w-0 space-y-0.5">
-          <code className="break-all rounded bg-muted px-1.5 py-0.5 text-sm">
-            {row.original.pattern}
-          </code>
+          <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+            <code className="break-all rounded bg-muted px-1.5 py-0.5 text-sm">
+              {row.original.pattern}
+            </code>
+            <EntryEdgeLabel entry={row.original} />
+          </div>
           <p className="text-xs text-muted-foreground">
             {t('scope.col.covers', 'Covers {what}', { what: coversText(row.original) })}
           </p>
@@ -550,4 +555,18 @@ function ManagedByCITrust({ entry }: { entry: ApiScopeTarget }) {
       ))}
     </p>
   )
+}
+
+/**
+ * The edge label of an entry wholly inside a provider's published range, or a
+ * name under a provider's host suffix (API `edge`). The generated contract
+ * types `class` as a string, so it is narrowed to the known classes here and
+ * an unknown class shows no label.
+ */
+const EDGE_CLASSES: readonly AssetEdge['class'][] = ['edge', 'saas_hosting', 'cloud_shared']
+
+function EntryEdgeLabel({ entry }: { entry: ApiScopeTarget & { edge?: unknown } }) {
+  const edge = entry.edge as Partial<AssetEdge> | undefined
+  if (!edge?.provider || !edge.class || !EDGE_CLASSES.includes(edge.class)) return null
+  return <EdgeLabel edge={edge as AssetEdge} />
 }

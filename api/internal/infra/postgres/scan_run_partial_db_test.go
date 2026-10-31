@@ -25,7 +25,7 @@ func TestPartialRun_StoredFinalAndCountedOnItsOwn(t *testing.T) {
 	if err := steps.Update(ctx, sr); err != nil {
 		t.Fatalf("step -> partial: %v", err)
 	}
-	if err := runs.UpdateStatus(ctx, run.ID, scanrun.RunStatusPartial, "partial"); err != nil {
+	if err := runs.UpdateStatus(ctx, tenantID, run.ID, scanrun.RunStatusPartial, "partial"); err != nil {
 		t.Fatalf("run -> partial: %v", err)
 	}
 	if err := scans.RefreshRunSummary(ctx, tenantID, scanID); err != nil {
@@ -33,7 +33,7 @@ func TestPartialRun_StoredFinalAndCountedOnItsOwn(t *testing.T) {
 	}
 
 	// partial is terminal for both.
-	if err := runs.UpdateStatus(ctx, run.ID, scanrun.RunStatusCompleted, ""); !errors.Is(err, scanrun.ErrRunAlreadyFinished) {
+	if err := runs.UpdateStatus(ctx, tenantID, run.ID, scanrun.RunStatusCompleted, ""); !errors.Is(err, scanrun.ErrRunAlreadyFinished) {
 		t.Fatalf("run after partial: err=%v, want ErrRunAlreadyFinished", err)
 	}
 	if err := steps.Complete(ctx, sr.ID, 9, nil); !errors.Is(err, scanrun.ErrStepRunAlreadyFinished) {

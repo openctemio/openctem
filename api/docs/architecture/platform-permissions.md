@@ -46,6 +46,7 @@ elevation is required, the default).
 | `platform.settings.general.write` |  | yes |  |  |  |  |  |  |
 | `platform.settings.legal.write` |  | yes |  |  |  |  |  |  |
 | `platform.settings.limits.write` |  | yes |  |  |  |  |  |  |
+| `platform.settings.mfa` |  | yes |  |  |  |  |  |  |
 | `platform.settings.read` | yes | yes | yes | yes | yes | yes | yes | yes |
 | `platform.settings.signup.write` |  | yes |  |  |  |  |  |  |
 | `platform.support.access` |  | yes | yes |  |  | yes |  |  |
@@ -89,6 +90,7 @@ elevation is required, the default).
 | `platform.settings.general.write` | CAPTCHA, region, alerts, storage quota and the version check |
 | `platform.settings.legal.write` | Legal pages |
 | `platform.settings.limits.write` | Default limits of self-service organizations |
+| `platform.settings.mfa` | The platform two-factor floor every organization is held to |
 | `platform.settings.read` | Read every platform setting, announcements, content packs, catalog, target mappings, feeds and AI clients |
 | `platform.settings.signup.write` | Sign-up policy, sign-up alert thresholds and the social-login providers |
 | `platform.support.access` | Open support sessions inside a grant an organization gave you, and read through them |
@@ -207,7 +209,7 @@ session, no permission). `public`: a sign-in step before a session exists.
 | `PUT /api/v1/admin/settings/alerts/` | `platform.settings.general.write` |
 | `POST /api/v1/admin/settings/alerts/test` | `platform.settings.general.write` |
 | `GET /api/v1/admin/settings/auth-mfa/` | `platform.settings.read` |
-| `PUT /api/v1/admin/settings/auth-mfa/` | `platform.settings.general.write` |
+| `PUT /api/v1/admin/settings/auth-mfa/` | `platform.settings.mfa` |
 | `GET /api/v1/admin/settings/captcha/` | `platform.settings.read` |
 | `PUT /api/v1/admin/settings/captcha/` | `platform.settings.general.write` |
 | `POST /api/v1/admin/settings/captcha/verify` | `platform.settings.general.write` |

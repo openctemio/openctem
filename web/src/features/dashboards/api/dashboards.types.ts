@@ -39,6 +39,11 @@ export interface Dashboard {
   refresh_daily_minute?: number
   next_refresh_at?: string
   paused_at?: string
+  /**
+   * When the exposure flow panel was offered on this dashboard. null: never
+   * offered (an existing dashboard); set on every new one.
+   */
+  flow_panel_at?: string | null
   /** Organization dashboards only. */
   position?: number
   is_org_default?: boolean
@@ -46,6 +51,14 @@ export interface Dashboard {
   audience?: DashboardAudienceEntry[]
   created_at?: string
   updated_at?: string
+}
+
+/** The outcome of offering the exposure flow panel on a dashboard. */
+export interface FlowPanelResult {
+  /** True only when this call put the panel on the layout. */
+  added: boolean
+  widget_id?: string
+  dashboard: Dashboard
 }
 
 export interface DashboardListResponse {

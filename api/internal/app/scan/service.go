@@ -24,6 +24,7 @@ import (
 	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/stage"
 	"github.com/openctemio/openctem/api/pkg/domain/tool"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
@@ -210,6 +211,7 @@ type Service struct {
 	securityValidator   SecurityValidator
 	auditService        AuditService
 	scopeExclusions     ScopeExclusionFilter // optional; nil = no exclusions configured
+	nameAddresses       NameAddressReader    // optional; resolution relations for the exclusion match (dispatch_gate.go)
 	attributionGate     AttributionGate      // optional in tests; production always wires it (nil = not checked on a run, refused by the dispatch gate)
 	scopeWaits          ScopeWaitStore       // start_when_scope_approved (nil = refused like any other out-of-scope target)
 	pendingScope        PendingScope
@@ -221,6 +223,7 @@ type Service struct {
 	zoneResolver        scanzone.Resolver                                                 // resolves hostname targets for zone routing
 	windows             WindowLoader                                                      // optional; nil = no trigger-time scan window check (windows.go)
 	actScope            ActScopeChecker                                                   // optional; nil = act scope not enforced (research/15 L-06)
+	namePorts           NamePortReader                                                    // optional; nil = a coverage probe of a name tries its default ports only (coverage_named_ports.go)
 	// revealResolved lets a refusal show what a hostname resolved to
 	// (WithRevealResolved).
 	revealResolved bool
@@ -231,6 +234,7 @@ type Service struct {
 	privatePolicy    PrivateTargetPolicy       // optional; nil = the private-target switch is not read at trigger
 	readiness        *readinessSources         // optional; nil = no workflow readiness (readiness.go)
 	toolAvailability ToolAvailability          // optional; nil = no tool availability check at trigger (tool_availability_gate.go)
+	coverageContent  CoverageContent           // optional; nil = coverage readiness does not check the lists a tool reads
 	tenantTools      TenantToolConfigs         // optional; nil = per-organization tool switch not enforced
 	optIns           OptInPolicy               // optional; nil = every sensor opt-in counts as enabled (opt_ins.go)
 	stepQueuer       StepQueuer                // the scan run service's step dispatcher; nil refuses workflow scans
@@ -272,6 +276,20 @@ type AttributionGate interface {
 
 // ServiceOption is a functional option for Service.
 type ServiceOption func(*Service)
+
+// CoverageContent says whether the platform can supply the lists a
+// coverage run's tool reads (contentpin.Planner): coverage runs at standard
+// depth, so the small platform pack.
+type CoverageContent interface {
+	CoverageContentReady(ctx context.Context, requests []stage.WordlistRequest) (bool, error)
+}
+
+// WithCoverageContent makes coverage readiness pause a capability whose
+// tool reads a platform list the platform cannot supply yet, instead of
+// starting runs whose jobs are refused at claim.
+func WithCoverageContent(c CoverageContent) ServiceOption {
+	return func(s *Service) { s.coverageContent = c }
+}
 
 // WithAuditService sets the audit service for Service.
 func WithAuditService(auditService AuditService) ServiceOption {

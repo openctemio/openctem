@@ -456,6 +456,11 @@ export interface Asset {
   programOnly?: boolean
   /** Triage (list rows asked with_triage): attribution and what a scan would do now. */
   triage?: AssetTriage
+  /**
+   * The asset is a CDN, edge, hosting or cloud-shared address, or a name or
+   * service served through one (API `edge`, research/259). A label only.
+   */
+  edge?: AssetEdge
   riskScore: number // 0-100: open findings x exposure x criticality (asset-risk-score.md)
   /** false = never scored (riskScore is not a real 0); undefined = not known by this payload. */
   riskScored?: boolean
@@ -1039,4 +1044,15 @@ export interface AddAssetOwnerInput {
  */
 export interface UpdateAssetOwnerInput {
   ownershipType: OwnershipType
+}
+
+/**
+ * A provider's shared address (API `edge`): `address` is set when the asset
+ * or scope entry IS the provider's address (the pattern an exclusion takes),
+ * absent for a name or service served through the provider.
+ */
+export interface AssetEdge {
+  class: 'edge' | 'saas_hosting' | 'cloud_shared'
+  provider: string
+  address?: string
 }

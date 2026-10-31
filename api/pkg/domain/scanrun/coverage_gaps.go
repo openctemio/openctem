@@ -25,6 +25,9 @@ const (
 	GapReasonBreakerOpen = "breaker_open"
 	GapReasonRateFloor   = "rate_floor"
 	GapReasonBlocked     = "blocked"
+	// GapReasonProxyUnavailable: the proxy the scan used failed, so the
+	// host was not judged.
+	GapReasonProxyUnavailable = "proxy_unavailable"
 )
 
 // Bounds of a task's coverage gaps.
@@ -44,7 +47,7 @@ const ErrCodeCoverageGaps = FailureCoverageGaps
 
 // GapReasons lists the coverage-gap reasons the platform accepts, in a
 // stable order (the console has words for each; a test checks it).
-var GapReasons = []string{GapReasonBreakerOpen, GapReasonRateFloor, GapReasonBlocked}
+var GapReasons = []string{GapReasonBreakerOpen, GapReasonRateFloor, GapReasonBlocked, GapReasonProxyUnavailable}
 
 // CoverageGap is one host a sensor could not fully cover, and why.
 type CoverageGap struct {
@@ -89,7 +92,7 @@ func ParseCoverageGaps(list json.RawMessage, total int) ([]CoverageGap, int) {
 
 func knownGapReason(r string) bool {
 	switch r {
-	case GapReasonBreakerOpen, GapReasonRateFloor, GapReasonBlocked:
+	case GapReasonBreakerOpen, GapReasonRateFloor, GapReasonBlocked, GapReasonProxyUnavailable:
 		return true
 	}
 	return false

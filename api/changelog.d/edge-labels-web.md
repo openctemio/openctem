@@ -1,0 +1,4 @@
+### Added: "Behind <provider>" and edge labels, with one-click "Add to out of scope"
+
+- The inventory and asset drawer show **Behind <provider>** on a name or service served through a CDN or edge provider, and **<provider> edge** (or *hosting*, *shared*) on an address that belongs to one; Scoping > In scope labels an address, range or CIDR entry inside a published edge range. One shared component, from the API's `edge` label.
+- On an address, a person with scope write can click the label to add it to out of scope: a confirm dialog explains that scanning a shared edge address tests the provider, not the organization, and that names resolving to it stop being scanned too; then one *Do not scan* exclusion through the existing bulk exclusion path (same permission, audit and approval rule). The platform still refuses nothing by itself.

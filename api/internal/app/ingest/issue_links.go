@@ -10,7 +10,8 @@ package ingest
 // a version match an active check confirmed); a failure is logged and leaves
 // findings as they are.
 //
-// A new finding that joins the same-issue group of an open original raises no
+// A new finding that joins the same-issue group of an open original (another
+// technique for the same CVE, or the other scheme of the same page) raises no
 // second "new finding" notification (a higher severity still does).
 
 import (
@@ -66,16 +67,18 @@ func linkableKind(f *ctis.Finding) bool {
 // withoutReported drops, from the findings a batch just created, those that
 // joined the same-issue group of an open original: the issue is already open
 // and reported, so a second "new finding" notification would be noise. The
-// links of the created CVE findings are derived first (the later step 11 is
-// idempotent). A failure keeps every finding: alert when in doubt.
+// links of the created CVE and DAST findings are derived first (the later
+// step 11 is idempotent). A failure keeps every finding: alert when in doubt.
 func (p *FindingProcessor) withoutReported(ctx context.Context, tenantID shared.ID, created []*vulnerability.Finding) []*vulnerability.Finding {
 	if p.issueLinks == nil || len(created) == 0 {
 		return created
 	}
 	fps := make([]string, 0, len(created))
+	ids := make([]string, 0, len(created))
 	for _, f := range created {
-		if f.CVEID() != "" {
+		if groupedOnCreate(f) {
 			fps = append(fps, f.Fingerprint())
+			ids = append(ids, f.ID().String())
 		}
 	}
 	if len(fps) == 0 {
@@ -84,12 +87,6 @@ func (p *FindingProcessor) withoutReported(ctx context.Context, tenantID shared.
 	if err := p.issueLinks.DeriveIssueLinks(ctx, tenantID, fps); err != nil {
 		p.logger.Warn("same-issue links not derived before notifying", "error", err)
 		return created
-	}
-	ids := make([]string, 0, len(fps))
-	for _, f := range created {
-		if f.CVEID() != "" {
-			ids = append(ids, f.ID().String())
-		}
 	}
 	reported, err := p.issueLinks.ReportedByOpenGroup(ctx, tenantID, ids)
 	if err != nil || len(reported) == 0 {
@@ -105,4 +102,15 @@ func (p *FindingProcessor) withoutReported(ctx context.Context, tenantID shared.
 		}
 	}
 	return out
+}
+
+// groupedOnCreate reports whether a created finding can join a group whose
+// new members raise no notification: a finding with a CVE (vuln_asset) or a
+// DAST finding (dast_scheme).
+func groupedOnCreate(f *vulnerability.Finding) bool {
+	if f.CVEID() != "" {
+		return true
+	}
+	k, err := vulnerability.ParseIdentityKey(f.IdentityKey())
+	return err == nil && k.Kind == vulnerability.IdentityKindDAST
 }

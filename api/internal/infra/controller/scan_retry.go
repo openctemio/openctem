@@ -23,7 +23,7 @@ type RetryDispatcher interface {
 // satisfies it, so wiring passes the concrete repo unchanged.
 type retryRunRepository interface {
 	ListPendingRetries(ctx context.Context, limit int) ([]scanrun.RetryCandidate, error)
-	ReleaseFailedRetryDispatch(ctx context.Context, runID shared.ID) error
+	ReleaseFailedRetryDispatch(ctx context.Context, tenantID, runID shared.ID) error
 }
 
 // permanentDispatchCodes are trigger refusals a retry cannot fix (D7): the
@@ -146,7 +146,7 @@ func (c *ScanRetryController) Reconcile(ctx context.Context) (int, error) {
 			// but created no new run. Release the claim and spend the attempt:
 			// a dispatch that keeps failing must run out of budget (and back off
 			// further each time), not be retried every interval forever.
-			if relErr := c.runRepo.ReleaseFailedRetryDispatch(ctx, cand.RunID); relErr != nil {
+			if relErr := c.runRepo.ReleaseFailedRetryDispatch(ctx, cand.TenantID, cand.RunID); relErr != nil {
 				c.logger.Error("failed to release retry claim after dispatch failure",
 					"scan_id", cand.ScanID.String(),
 					"failed_run_id", cand.RunID.String(),

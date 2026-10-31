@@ -1,24 +1,36 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
 
 	"github.com/google/uuid"
 
+	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/pkg/apierror"
+	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // AdminDedupHandler handles asset dedup review endpoints.
 type AdminDedupHandler struct {
-	repo      *postgres.AssetDedupRepository
+	configAuditor
+	repo      dedupReviewStore
 	logger    *logger.Logger
 	dataScope DataScopeEnforcer
+}
+
+// dedupReviewStore is what the handler needs of the review repository.
+type dedupReviewStore interface {
+	ListPendingReviews(ctx context.Context, tenantID string, scope *shared.DataScope) ([]postgres.AssetDedupReview, error)
+	ApproveAndMergeReport(ctx context.Context, tenantID, reviewID, reviewedBy string, scope *shared.DataScope) (*postgres.MergeReport, error)
+	RejectReview(ctx context.Context, tenantID, reviewID, reviewedBy string, scope *shared.DataScope) error
+	GetMergeLog(ctx context.Context, tenantID, assetID string, limit int, scope *shared.DataScope) ([]map[string]any, int, error)
 }
 
 // SetDataScope wires the Layer 2 data scope: a scoped member sees and acts
@@ -86,7 +98,8 @@ func (h *AdminDedupHandler) Approve(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if err := h.repo.ApproveAndMerge(r.Context(), tenantID, reviewID, userID, scope); err != nil {
+	report, err := h.repo.ApproveAndMergeReport(r.Context(), tenantID, reviewID, userID, scope)
+	if err != nil {
 		if writeDedupReviewError(w, err) {
 			return
 		}
@@ -96,6 +109,18 @@ func (h *AdminDedupHandler) Approve(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.logger.Info("dedup merge approved", "review_id", reviewID, "user_id", userID)
+
+	// One entry per asset the merge deleted.
+	for _, m := range report.MergedAssets {
+		recordConfigAudit(r.Context(), h.audit, h.logger, configAuditContext(r),
+			auditapp.NewSuccessEvent(auditdom.ActionAssetDuplicateMerged, auditdom.ResourceTypeAsset, m.ID).
+				WithResourceName(m.Name).
+				WithSeverity(auditdom.SeverityForAction(auditdom.ActionAssetDuplicateMerged)).
+				WithMessage("Duplicate asset merged into another asset and deleted").
+				WithMetadata("kept_asset_id", report.KeptAssetID).
+				WithMetadata("kept_asset_name", report.KeptName).
+				WithMetadata("review_id", report.ReviewID))
+	}
 
 	// Findings moved by the merge were re-keyed for the kept asset inside the
 	// merge transaction; duplicates became tombstones of one survivor

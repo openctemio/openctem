@@ -84,6 +84,54 @@ so the finding shows as stale, never the other way round. A finding's
 evidence version is read under the tenant and the caller's campaign access
 (a non-member gets 404 and no version).
 
+### Recorded request/responses
+
+A request/response a person records on a finding goes through the same
+service as tool evidence and is stored as an `http_exchange` item with
+origin `manual` (migration `20261030053915_finding_evidence_manual_origin`).
+The writers are the pentest finding create and update
+(`request_responses` on `POST /api/v1/pentest/campaigns/{id}/findings` and
+`PUT /api/v1/pentest/findings/{id}`), the Burp Suite import, and the
+MCP `draft_pentest_finding` tool. Two entry shapes are read
+(`evidence.FromRequestResponse`): raw (`request` and `response` as HTTP/1.x
+text, `url` for a path-only request line; a base64 Burp message is decoded
+first so the masking can read it) and structured (`method`, `url`,
+`request_headers`, `request_body`, `response_status`, `response_headers`,
+`response_body`; `notes` becomes the label).
+
+- Nothing of an entry is kept in the finding: `findings.metadata` never holds
+  `request_responses`, so the finding responses, lists, exports, reports,
+  notifications, tickets, the AI triage prompt and the MCP tools never carry
+  it. Readers use `GET /api/v1/findings/{id}/evidence-items` (masked) and
+  the audited reveal, like any evidence.
+- Unlike scan evidence, a failure is returned to the writer (400 for a bad
+  entry, the cap or the daily budget). With no evidence service wired, a
+  write with request/responses is refused rather than kept in clear.
+- At most 50 manual items per finding; an entry already stored on the
+  finding (same content hash) is skipped, so resending the same exchange is
+  harmless. An entry that holds placeholders (a masked item sent back) is
+  refused: its secret values are not in it.
+- A new finding's write-up is saved against the evidence its request/
+  responses make (`writeup_evidence_version` follows), so it is not stale.
+- Manual items are part of the write-up: the 365-day age retention does not
+  delete them (they go with the finding). Their secret values still expire
+  with `secret_retention_days`, after which only the masked item remains.
+- Entries written before this change are moved at API start-up
+  (`evidence.Service.MoveLegacyRequestResponses`, batched, `SKIP LOCKED`,
+  idempotent): masked, encrypted, stored as manual items, and the key is
+  removed from `findings.metadata` in the same transaction. The move keeps
+  `row_version` (a storage move is not an edit an editor must lose to) and
+  keeps a current write-up current. It is one-way: the migration's down step
+  never writes values back to the finding.
+- The move also runs on every tick of the hourly evidence retention sweep, and
+  the finding repository drops `request_responses` from the metadata of every
+  create and update: an edit loaded before the move, or an old replica during
+  a rolling deploy, cannot put the values back in clear. Each finding is moved
+  in its own savepoint; one that fails is skipped and counted (logged without
+  values) and the rest go on. A pentest create checks the daily evidence
+  budget and the entries before the finding row is written, so a refusal
+  leaves no finding behind to be duplicated by a retry.
+
 ## Ingest flow (`internal/app/evidence`)
 
 1. **Normalize** (`evidence.Normalize`): valid UTF-8, no NUL, single-line
@@ -126,11 +174,13 @@ A secret finding keeps no evidence (its evidence is the leaked value itself).
 | retest-attempt items per finding | newest 20 |
 | items per finding per report / per retest attempt | 20 / 5 |
 | new items per tenant per 24 h | 20,000 (excess dropped, logged) |
-| masked evidence | 365 days |
+| recorded (manual) items per finding | 50 (a repeated item is not stored again) |
+| masked evidence | 365 days (manual items: as long as the finding) |
 | encrypted secret values | `settings.evidence.secret_retention_days`, default 30 (1–365) |
 
 The `finding-evidence-retention` controller (hourly) deletes expired secret
-values (the item stays, no longer revealable) and items past 365 days.
+values (the item stays, no longer revealable) and items past 365 days,
+except recorded (manual) items.
 Deleting a finding or a tenant deletes its evidence and secrets (foreign
 keys); a finding merge moves the loser's evidence to the survivor.
 
@@ -205,6 +255,7 @@ response never appeared there.
 | A compromised session or API key exfiltrates secrets | permission + step-up (API keys refused) + per-user rate limit + audit before return + timeline entry + 30-day expiry |
 | Hostile tool content (XSS, bidi tricks, huge bodies) | text-only rendering with escapes; caps at ingest; DB size check |
 | Storage exhaustion | per-item, per-finding and per-tenant caps; dedup; retention |
+| A tester's recorded request/response carries session cookies, tokens, passwords | same masking and encryption as tool evidence; never kept in `findings.metadata`; legacy entries moved and removed at start-up |
 | Key rotation | `finding_evidence_secrets.ciphertext` is a `cmd/rekey` location |
 
 ## Code
@@ -215,6 +266,7 @@ response never appeared there.
 | Service (store, list, reveal, sweep) | `internal/app/evidence/service.go` |
 | Ingest | `internal/app/ingest/evidence_items.go` (step 9 of the finding processor) |
 | Repository | `internal/infra/postgres/finding_evidence_repository.go`, migration `001223_finding_evidence` |
+| Recorded request/responses | `pkg/domain/evidence/manual.go`, `internal/app/evidence/manual.go`, `internal/infra/postgres/finding_evidence_manual.go` |
 | Routes / handler | `internal/infra/http/routes/finding_evidence_items.go`, `internal/infra/http/handler/finding_evidence_items_handler.go` |
 | Retention | `internal/infra/controller/finding_evidence_retention.go` |
 | Settings | `pkg/domain/tenant/evidence_settings.go` |
@@ -232,6 +284,17 @@ response never appeared there.
   one audit row and one timeline entry per reveal and none for a refusal,
   no-store, expiry 410, rate limit 429, retention sweep, finding and tenant
   erasure, ciphertext bound to its item, dedup and pruning.
+- `internal/infra/http/handler/pentest_request_response_evidence_db_test.go`
+  (Postgres): a pentest finding's request/responses masked in the stored
+  item, the finding row, the finding response, the export row, the MCP view
+  and the metadata the AI triage and notifications read; secret values only
+  encrypted; resend dedup; masked resend 400; another tenant cannot store,
+  list or read; the retention sweep keeps manual items; the legacy move
+  strips the key, keeps `row_version` and a current write-up, and is
+  idempotent.
+- `web/.../__tests__/pentest-request-response.test.tsx`: the pentest tab
+  renders recorded exchanges from the evidence API and never metadata
+  request/response.
 - `web/.../__tests__/finding-evidence-items.test.tsx`: hostile HTML and
   scripts rendered as text, match highlighting, no Reveal without the
   permission or after expiry, reveal then re-mask after 60 s, masked curl by

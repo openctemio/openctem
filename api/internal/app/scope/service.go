@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/api/pkg/domain/edgeaddr"
 	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/scope/ipset"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -1254,11 +1255,6 @@ func (s *Service) inventoryCoverage(ctx context.Context, tenantID string) (scope
 	return s.coverage.CountCoverage(ctx, tid, ds)
 }
 
-// getAssetValues returns all values to check for an asset (name, URLs, etc).
-func (s *Service) getAssetValues(a *asset.Asset) []string {
-	return AssetMatchValues(a.Type().String(), a.Name(), a.Properties())
-}
-
 // repositoryMatchKeys are the repository properties that name the repository
 // besides its asset name.
 var repositoryMatchKeys = []string{"full_name", "web_url", "clone_url"}
@@ -1280,13 +1276,34 @@ func AssetMatchValues(assetType, name string, props map[string]any) []string {
 
 // AssetExclusionValues is AssetMatchValues plus the addresses the asset is
 // known to resolve to (asset.IPAddresses: ip_addresses and every synonym of
-// it). A scanner handed the asset's name reaches those addresses, so an
-// exclusion of any of them must exclude the asset. Matching more values can
-// only exclude more (fail closed); it is used for exclusions only, never to
-// put an asset in scope.
+// it), less shared front ends (PropagatingAddresses). A scanner handed the
+// asset's name reaches those addresses, so an exclusion of a dedicated one
+// excludes the asset. It is used for exclusions only, never to put an asset
+// in scope.
 func AssetExclusionValues(assetType, name string, props map[string]any) []string {
 	values := AssetMatchValues(assetType, name, props)
-	return append(values, asset.IPAddresses(props)...)
+	return append(values, PropagatingAddresses(asset.IPAddresses(props))...)
+}
+
+// PropagatingAddresses are the resolved addresses through which an exclusion
+// of an address reaches the names that resolve to it: all of them except
+// shared front ends (edgeaddr.SharedFrontEnd: inside a range a CDN, edge,
+// hosting or shared cloud provider publishes). Such an address serves every
+// customer of the provider, so excluding it stops jobs that target the
+// address itself (bare, host:port, URL, or inside a range) and never every
+// name the organization serves through that provider (owner decision
+// 2026-10-30). Anything not proven shared propagates (fail closed). A name
+// behind a shared front end is still port-capped to the web ports by the
+// active-scan gate.
+func PropagatingAddresses(addrs []string) []string {
+	c := edgeaddr.Default()
+	out := make([]string, 0, len(addrs))
+	for _, a := range addrs {
+		if _, shared := c.SharedFrontEnd(a); !shared {
+			out = append(out, a)
+		}
+	}
+	return out
 }
 
 // effectiveExclusions returns the tenant's exclusions that are in effect:

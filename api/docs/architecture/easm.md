@@ -460,6 +460,23 @@ Web: the **Monitoring** card on `/attack-surface` shows the last runs, the
 switches with a privacy note for CT, the cadence, and **Run now** (disabled
 inside the 15-minute window). How-to:
 [easm-monitoring-settings.md](../how-to/easm-monitoring-settings.md).
+## 4m. Active subdomain enumeration (built)
+
+Passive sources (certificate transparency, `discover.subdomains`) miss names
+that never had a public certificate or a passive-DNS record, such as
+`charts-uat.example.com` or `academy-go.example.com`. Coverage therefore also
+runs `enumerate.subdomains` weekly on every `domain` asset under a scope
+entry: `dnsx-enum` queries DNS for `<label>.<root>` over the platform's small
+label pack plus the labels learned from the organization's own names, and
+keeps only the names that resolve, after wildcard filtering. Found names
+enter the inventory as `subdomain` assets with attribution like any other
+discovered name. They never widen scope by themselves.
+
+Wiring, gates and the `content_missing` pause are described in
+[asset-coverage.md](asset-coverage.md) ("Subdomain enumeration"); the packs
+in [wordlists.md](wordlists.md). Until an instance administrator imports the
+`wordlists-s` release asset, enumeration coverage stays paused.
+
 ## 4h. Port and service results (built, P0-6)
 
 A port scanner (naabu, nmap, masscan, rustscan) reports an IP address with
@@ -494,6 +511,22 @@ the ports it found open (`technical.ip_address.ports`). Ingest
    reactivated (a reactivation is not announced again). Limits: a scan that
    finds no open port reports no address, so "all ports closed" is not
    detected.
+### Ports of a name
+
+The ports a scan of a host name finds are stored on the addresses they were
+found on (`<address>:<port>`), so a domain or subdomain reads them through
+its relations: name `resolves_to` address `exposes` open port.
+`GET /api/v1/assets/{id}/resolved-ports` (`assets:read`) lists the live open
+ports of the live addresses a domain or subdomain resolves to, by address
+then port, with the service, product and version a scanner identified and the
+last seen time (at most 200 rows, `truncated` beyond). The name must be in the
+caller's data scope (the route guard answers 404 otherwise); every address
+and port is filtered by the caller's data scope as well, and the ones left out
+are only counted (`hidden_count`). Every join is bound to the tenant. Other
+asset types answer an empty list. The asset page shows them in a "Ports on
+resolved addresses" section, read through the asset view
+([page-views.md](./page-views.md)).
+
 ## 4g. Honest numbers (built, P0-13)
 
 - `GET /easm/summary` counts only exposure types something writes today
@@ -612,6 +645,63 @@ and the Weekly digest switch on the monitoring card.
 - Decision E1 (308 `/attack-surface/external` → filtered `/assets`) waits for
   the inventory's external columns (attribution, last seen, certificate
   expiry, CDN).
+
+## 4m. Edge labels (built)
+
+A CDN or edge address, a SaaS-hosting address and a cloud provider's shared
+front end belong to the provider and serve many organizations. The platform
+labels them and never refuses to scan them by itself (owner decision
+2026-10-30): the organization decides by adding the address to out of scope,
+and from then on the dispatch gate leaves it out of every job
+(`internal/app/scan/edge_exclusion_dispatch_test.go` pins every path and tool).
+
+- **One classifier:** `pkg/domain/edgeaddr` (published edge ranges, provider
+  network names, provider host suffixes; versioned built-in dataset). The
+  suggestion cards, review rules and guardrails read the same classifier.
+- **On read, not stored:** `GET /assets` and `GET /assets/{id}` carry
+  `edge {class, provider, address?}` computed from the asset's own properties
+  (an address: its range, its `cdn` record, its network holder; a name: its own
+  suffix or a CNAME target under a provider suffix, else every address it
+  resolves to inside a published range; a service: its `cdn` record or CNAME).
+  `GET /scope/targets` carries the same label on an address, range or CIDR entry
+  wholly inside a published range, and on a name entry under a provider suffix.
+  `address` is set only when the asset or entry is itself the provider's
+  address: the pattern an exclusion takes. A cloud static address inside a
+  provider's network (class `dedicated`) is not labeled.
+- **No new request, no new data:** the label is a pure function of data the
+  response already holds; it adds no query and no tenant data leaves the
+  platform.
+- **An exclusion of a shared front end stays on the address** (owner decision
+  2026-10-30). An exclusion of an address normally also excludes every name
+  that resolves to it (a scan of the name reaches that address:
+  `scope.AssetExclusionValues`). For a shared front end it does not: the
+  address serves every customer of the provider, and one click on a CDN edge
+  must not stop scanning every name the organization serves through that CDN.
+  - **Shared front end, precisely:** `edgeaddr.SharedFrontEnd`, an address
+    inside a range a provider publishes for a shared front end (class `edge`,
+    `saas_hosting` or `cloud_shared`) and inside no published `dedicated`
+    range. An address labeled an edge only by its `cdn` record or its network
+    holder's name, a cloud static address (class `dedicated`), an unparsable
+    or unknown address is treated as dedicated: the exclusion propagates to
+    its names (fail closed). The label on an IP asset can therefore say
+    "edge" (network holder) while the exclusion still reaches its names; the
+    preview below is the authority.
+  - **What the exclusion still blocks:** the address itself, its `host:port`
+    and URL forms, and the address inside any range target (cut around it),
+    on every dispatch path and at the claim re-check
+    (`internal/app/scan/edge_exclusion_dispatch_test.go`).
+  - **Names behind it** keep dispatching through the edge. A port scan of such
+    a name is capped to the web ports (`RefusalWebPortsOnly`, the active-scan
+    gate's `namePortCaps`) whatever the scope entries or the unclassified mode
+    say: the provider's other ports are not the organization's. A job that
+    mixes a range holding the excluded address with such a name may still
+    skip the name on sensors that pass the exclusions to naabu
+    (`-exclude-hosts`): that only scans less.
+  - **Preview:** `POST /scope/exclusions/bulk/preview` answers, for an address,
+    range or CIDR, `resolving_names` and `resolving_sample` (the caller's
+    visible names that resolve to a dedicated address inside it, within the
+    data scope: they are excluded too), and for a shared front end
+    `edge {class, provider, address}` with `names_unaffected: true`.
 
 ## 5. Data model (planned)
 

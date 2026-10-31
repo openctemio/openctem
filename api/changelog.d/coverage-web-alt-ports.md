@@ -1,0 +1,4 @@
+### Changed: continuous coverage probes a name whose addresses expose only non-standard web ports
+
+- A name was probed over HTTP only when an address it resolves to had an open port in the standard web set, a web origin of the name was seen, or its ports were unknown. A name whose addresses exposed only a port such as 2083 (control panel), 10443 or 7443 was never probed, so the web service there was never seen with the right Host header and TLS server name.
+- The rule now also counts an open port in the alternate web list, any port 8000-8999, or any port whose detected service is http, https or ssl. A name with only ports such as 22 or 3306 is still not probed. The derived `<name>:<port>` targets (at most 20 per name) pass the same target gate as before, and the lookup stays scoped to the organization.

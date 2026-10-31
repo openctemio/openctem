@@ -27,6 +27,7 @@ import (
 	"errors"
 	"hash"
 	"io"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -233,8 +234,9 @@ func SetV2DecodeBudget(n int64) {
 }
 
 // decodedWeight is what one request may hold decoded: its body, plus, when
-// compressed, the decompressed size it may reach (the ratio and absolute
-// caps of DecodeV2Content).
+// compressed, twice the decompressed size it may reach (the ratio and absolute
+// caps of DecodeV2Content): readCapped holds the chunks and the joined copy at
+// the same time, so the real peak is about two decoded copies.
 func decodedWeight(contentLength int64, encoding string, limits protov2.Limits) int64 {
 	w := contentLength
 	if encoding != "" && encoding != "identity" {
@@ -242,7 +244,10 @@ func decodedWeight(contentLength int64, encoding string, limits protov2.Limits) 
 		if limits.MaxDecompressedBytes > 0 && (d > limits.MaxDecompressedBytes || d < 0) {
 			d = limits.MaxDecompressedBytes
 		}
-		w += d
+		if d > (math.MaxInt64-w)/2 {
+			d = (math.MaxInt64 - w) / 2
+		}
+		w += 2 * d
 	}
 	return max(min(w, V2DecodeBudgetBytes), 1)
 }

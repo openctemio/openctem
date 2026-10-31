@@ -92,17 +92,7 @@ type Policy struct {
 	// RequestAccess lets people who cannot sign up ask the platform
 	// administrators for an organization (admin_only mode).
 	RequestAccess bool `json:"request_access"`
-	// SocialAutoLink lets a Google or Microsoft sign-in link itself to an
-	// existing password account with the same address, when the provider is
-	// authoritative for the address and the account's address is verified.
-	// The account's second factor is still asked. Nil (a policy stored before
-	// this field) reads as on; see AutoLinkSocial.
-	SocialAutoLink *bool `json:"social_auto_link,omitempty"`
 }
-
-// AutoLinkSocial reports whether social sign-in may link itself to an
-// existing password account (identity_link.go in the auth service).
-func (p Policy) AutoLinkSocial() bool { return p.SocialAutoLink == nil || *p.SocialAutoLink }
 
 // PolicySource answers the policy in force. Implementations are fail-closed:
 // when the policy cannot be read, they answer Default (admin_only).
@@ -119,11 +109,8 @@ func (s Static) Current(context.Context) Policy { return Policy(s) }
 
 // Default is the fail-closed policy: no public sign-up, admin_only, no
 // request-access form.
-//
-// Social auto-link is off in it: an unreadable policy links nothing.
 func Default() Policy {
-	off := false
-	return Policy{Mode: ModeAdminOnly, Accounts: AccountsClosed, SocialAutoLink: &off}
+	return Policy{Mode: ModeAdminOnly, Accounts: AccountsClosed}
 }
 
 // ErrInvalidPolicy is returned for an unknown mode.

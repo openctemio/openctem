@@ -29,6 +29,9 @@ const (
 	// ActionTenantRetestUpdated records a change to the tenant's auto-retest
 	// settings (RFC-039).
 	ActionTenantRetestUpdated Action = "tenant.retest_updated"
+	// ActionTenantClosureUpdated records a change to the organization's
+	// closing mode (which findings the platform closes without a person).
+	ActionTenantClosureUpdated Action = "tenant.closure_updated"
 	// ActionTenantVulnMatchingUpdated records a change to the organization's
 	// vulnerability matching policy (RFC-066).
 	ActionTenantVulnMatchingUpdated Action = "tenant.vuln_matching_updated"
@@ -214,6 +217,11 @@ const (
 	ActionFindingUnassigned    Action = "finding.unassigned"
 	ActionFindingCommented     Action = "finding.commented"
 	ActionFindingBulkUpdated   Action = "finding.bulk_updated"
+	// Ready to close: a person confirmed or dismissed proposed closes, or
+	// reopened a finding the platform closed by itself ("not fixed").
+	ActionFindingClosureConfirmed  Action = "finding.closure_confirmed"
+	ActionFindingClosureDismissed  Action = "finding.closure_dismissed"
+	ActionFindingAutoCloseReopened Action = "finding.auto_close_reopened"
 	// ActionFindingEvidenceAdded records a manually-attached piece of evidence
 	// (note/file) on a generic (non-pentest) finding.
 	ActionFindingEvidenceAdded Action = "finding.evidence_added"
@@ -333,8 +341,9 @@ const (
 	ActionAuthSessionRevoked              Action = "auth.session_revoked"
 	ActionAuthPasswordChanged             Action = "auth.password_changed"
 	// A social sign-in identity (Google, GitHub, Microsoft) was linked to or
-	// unlinked from the account: by the person from Account > Security, or
-	// automatically on a sign-in that met the auto-link rules.
+	// unlinked from the account: by the person from Account > Security or
+	// after signing in to the account. Older rows may carry how=automatic from a
+	// removed feature.
 	ActionAuthIdentityLinked   Action = "auth.identity_linked"
 	ActionAuthIdentityUnlinked Action = "auth.identity_unlinked"
 	// Step-up re-authentication: the signed-in user proved their identity
@@ -829,7 +838,7 @@ func (a Action) IsValid() bool {
 		ActionUserLogin, ActionUserLogout,
 		ActionTenantCreated, ActionTenantUpdated, ActionTenantDeleted, ActionTenantSettingsUpdated, ActionTenantModulesUpdated,
 		ActionTenantRiskScoringUpdated, ActionTenantRiskScoresRecalculated, ActionTenantAssetSourceUpdated,
-		ActionTenantAssetLifecycleUpdated, ActionTenantRetestUpdated, ActionTenantEvidenceUpdated, ActionTenantVulnMatchingUpdated, ActionTenantCyclePolicyUpdated,
+		ActionTenantAssetLifecycleUpdated, ActionTenantRetestUpdated, ActionTenantClosureUpdated, ActionTenantEvidenceUpdated, ActionTenantVulnMatchingUpdated, ActionTenantCyclePolicyUpdated,
 		ActionTenantSharedSensorsUpdated,
 		ActionTenantIdleReminded, ActionTenantIdleReadOnly, ActionTenantIdleFinalWarning,
 		ActionTenantIdleDeletionDue, ActionTenantIdleReactivated, ActionTenantIdlePolicyChanged,
@@ -862,6 +871,7 @@ func (a Action) IsValid() bool {
 		ActionVulnerabilityCreated, ActionVulnerabilityUpdated, ActionVulnerabilityDeleted,
 		ActionFindingCreated, ActionFindingUpdated, ActionFindingDeleted, ActionFindingStatusChanged,
 		ActionFindingTriaged, ActionFindingAssigned, ActionFindingUnassigned, ActionFindingCommented, ActionFindingBulkUpdated,
+		ActionFindingClosureConfirmed, ActionFindingClosureDismissed, ActionFindingAutoCloseReopened,
 		ActionFindingEvidenceAdded, ActionFindingEvidenceDeleted, ActionFindingEvidenceUpdated, ActionFindingProofOverridden, ActionFindingRemediationStepAdded,
 		ActionFindingTicketLinked, ActionFindingTicketUnlinked,
 		ActionFindingRetestRequested, ActionFindingEvidenceRevealed, ActionFindingVerificationChecklistUpdated, ActionFindingClassified,
@@ -1004,6 +1014,7 @@ func (a Action) Category() string {
 		return "vulnerability"
 	case ActionFindingCreated, ActionFindingUpdated, ActionFindingDeleted, ActionFindingStatusChanged,
 		ActionFindingTriaged, ActionFindingAssigned, ActionFindingUnassigned, ActionFindingCommented, ActionFindingBulkUpdated,
+		ActionFindingClosureConfirmed, ActionFindingClosureDismissed, ActionFindingAutoCloseReopened,
 		ActionFindingEvidenceAdded, ActionFindingEvidenceDeleted, ActionFindingEvidenceUpdated, ActionFindingProofOverridden, ActionFindingRemediationStepAdded,
 		ActionFindingTicketLinked, ActionFindingTicketUnlinked,
 		ActionFindingRetestRequested, ActionFindingEvidenceRevealed, ActionFindingVerificationChecklistUpdated, ActionFindingClassified, ActionFindingCommentReactionRemoved, ActionFindingCommentEdited, ActionFindingCommentDeleted, ActionFindingDuplicateMarked, ActionFindingIssueUnlinked, ActionFindingBountyReportChanged,
@@ -1330,7 +1341,7 @@ func SeverityForAction(a Action) Severity {
 		ActionAuthStepUp,
 		ActionTenantCreated, ActionTenantUpdated, ActionTenantModulesUpdated,
 		ActionTenantRiskScoringUpdated, ActionTenantRiskScoresRecalculated, ActionTenantAssetSourceUpdated,
-		ActionTenantAssetLifecycleUpdated, ActionTenantRetestUpdated, ActionTenantEvidenceUpdated, ActionTenantVulnMatchingUpdated, ActionTenantCyclePolicyUpdated,
+		ActionTenantAssetLifecycleUpdated, ActionTenantRetestUpdated, ActionTenantClosureUpdated, ActionTenantEvidenceUpdated, ActionTenantVulnMatchingUpdated, ActionTenantCyclePolicyUpdated,
 		ActionAssetLifecycleRun, ActionAssetMarkedStale, ActionAssetReactivated,
 		ActionAssetLifecycleSnoozed, ActionAssetLifecycleUnsnoozed, ActionAssetAttributionDecided,
 		ActionAssetAttributionAutoConfirmed, ActionAssetAttributionChildrenLinked,

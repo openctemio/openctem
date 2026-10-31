@@ -29,7 +29,7 @@ export interface FindingIssueGroupMember {
   file_path?: string
   start_line?: number
   is_primary: boolean
-  /** The rule that linked this member: sast_overlap | secret_value | vuln_alias. */
+  /** The rule that linked this member: sast_overlap | secret_value | vuln_alias | vuln_asset | dast_scheme. */
   rule?: string
   /** Field names the rule compared (never values). */
   basis?: string[]
