@@ -743,7 +743,7 @@ func (s *Service) Expect(ctx context.Context, actor Actor, in ExpectInput) (*Vie
 		return nil, ErrCapacity
 	}
 	s.logAudit(ctx, s.auditContext(actor), auditapp.NewSuccessEvent(auditdom.ActionSensorPairingExpected, auditdom.ResourceTypeSensor, p.ID.String()).
-		WithMessage("Created a code to pair a sensor (expect a sensor)").WithSeverity(auditdom.SeverityLow))
+		WithMessage("Created a pairing code for a new sensor").WithSeverity(auditdom.SeverityLow))
 	v := s.view(ctx, actor, p)
 	v.Code = pairing.FormatCode(code)
 	return v, nil
