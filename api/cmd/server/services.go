@@ -2509,6 +2509,11 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		if s.ScopeJoin != nil {
 			s.CertMonitor.SetScopeJoin(s.ScopeJoin)
 		}
+		// The names in every certificate an ingest writes become candidate
+		// subdomains under the tenant's roots, through the same promotion
+		// (docs/architecture/easm.md, "Certificate SAN promotion").
+		s.CertMonitor.SetNameAddresses(repos.Attribution)
+		s.Ingest.SetCertificateNamePromoter(s.CertMonitor)
 	}
 	s.Ingest.SetEvidenceStore(s.Evidence)
 	// A tool ported to the tool contract declares what it produces in its
