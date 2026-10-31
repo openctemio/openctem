@@ -79,6 +79,8 @@ const REVIEWED = new Set([
   'features/shared/components/stats-card.tsx|Link|href={href}',
   // LEGAL_DOCS paths are constants in src/lib/legal.ts (/terms, /privacy, ...).
   'features/legal/components/legal-document.tsx|Link|href={d.path}',
+  // EDGE_FIX_HREFS is a build-time table of same-origin settings routes (features/scans/lib/edge-gap.ts).
+  'features/scans/components/edge-gap-fixes.tsx|Link|href={EDGE_FIX_HREFS[fix]}',
   // Fix plan rows: href is built in the same file as /remediation/tasks/{id} or /remediation/suggestions.
   'features/remediation-hub/components/fix-plan.tsx|Link|href={r.href}',
   // SLA compliance links: /findings?<fixed filter keys> built by findingsHref from the SLA filter
