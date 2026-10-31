@@ -92,6 +92,7 @@ var sqlProfiles = map[string]SQLProfile{
 	"AuditChainVerifyController":          SQLBatched, // keyset over the chain
 	"CISweepController":                   SQLBatched,
 	"EASMLookalikeController":             SQLBatched,
+	"PageMonitorController":               SQLBatched,
 	"EASMNetworkSeedController":           SQLBatched,
 	"TenableSCSyncController":             SQLBatched,
 	"DefectDojoSyncController":            SQLBatched,

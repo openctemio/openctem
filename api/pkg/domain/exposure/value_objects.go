@@ -42,6 +42,11 @@ const (
 	// organization's root domains, found by passive checks (RFC-083).
 	EventTypeLookalikeDomain EventType = "lookalike_domain"
 
+	// EventTypeThirdPartyScriptAdded: a watched page started loading a
+	// script from a third-party host it did not load before (possible
+	// injection or skimming; web page monitoring).
+	EventTypeThirdPartyScriptAdded EventType = "third_party_script_added"
+
 	// Identity exposures (CTEM Discovery "exposure ≠ vulnerability" — the
 	// identity attack surface). Emitted by the EntraID/IdP identity-exposure
 	// discovery source (see docs/rfcs/RFC-018). These are posture weaknesses on
@@ -86,6 +91,7 @@ func AllEventTypes() []EventType {
 		EventTypeEmailSecurityWeak,
 		EventTypeSubdomainTakeover,
 		EventTypeLookalikeDomain,
+		EventTypeThirdPartyScriptAdded,
 		EventTypeCustom,
 	}
 }
@@ -120,7 +126,7 @@ func (t EventType) IsPositiveExposure() bool {
 		EventTypeIdentityMFAGap, EventTypeIdentityStalePrincipal,
 		EventTypeIdentityOverprivileged,
 		EventTypeDanglingCNAME, EventTypeDanglingNS, EventTypeEmailSecurityWeak,
-		EventTypeSubdomainTakeover, EventTypeLookalikeDomain:
+		EventTypeSubdomainTakeover, EventTypeLookalikeDomain, EventTypeThirdPartyScriptAdded:
 		return true
 	default:
 		return false

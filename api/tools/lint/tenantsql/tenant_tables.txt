@@ -287,6 +287,7 @@ tenant_ownership_transfers
 tenant_sensor_products
 tenant_tool_configs
 tenant_tool_settings
+tenant_wordlists
 threat_actors
 threat_alert_assets
 threat_alert_queue
@@ -312,8 +313,11 @@ vex_statements
 vuln_match_queue
 vulnerabilities
 web_alert_fingerprints
+web_changes
 web_endpoint_events
 web_endpoint_params
 web_endpoint_verifications
 web_endpoints
+web_snapshots
+web_watches
 work_item_subscriptions
