@@ -61,8 +61,8 @@ type NameAddressReader interface {
 	AddressesOf(ctx context.Context, tenantID shared.ID, names []string) (map[string][]string, error)
 }
 
-// SetNameAddresses makes certificate SAN promotion skip a known name whose
-// dedicated address is excluded (nil: only the name is matched).
+// SetNameAddresses makes CT and certificate SAN promotion skip a known name
+// whose dedicated address is excluded (nil: only the name is matched).
 func (s *Service) SetNameAddresses(r NameAddressReader) { s.nameAddresses = r }
 
 // PromoteCertificateNames proposes the names of the given certificates (of

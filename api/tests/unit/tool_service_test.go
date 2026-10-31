@@ -326,9 +326,9 @@ func (m *toolSvcMockConfigRepo) Create(_ context.Context, config *tooldom.Tenant
 	return nil
 }
 
-func (m *toolSvcMockConfigRepo) GetByID(_ context.Context, id shared.ID) (*tooldom.TenantToolConfig, error) {
+func (m *toolSvcMockConfigRepo) GetByID(_ context.Context, tenantID, id shared.ID) (*tooldom.TenantToolConfig, error) {
 	c, ok := m.configs[id.String()]
-	if !ok {
+	if !ok || c.TenantID != tenantID {
 		return nil, shared.ErrNotFound
 	}
 	return c, nil
@@ -375,8 +375,8 @@ func (m *toolSvcMockConfigRepo) Update(_ context.Context, config *tooldom.Tenant
 	return nil
 }
 
-func (m *toolSvcMockConfigRepo) Delete(_ context.Context, id shared.ID) error {
-	if _, ok := m.configs[id.String()]; !ok {
+func (m *toolSvcMockConfigRepo) Delete(_ context.Context, tenantID, id shared.ID) error {
+	if c, ok := m.configs[id.String()]; !ok || c.TenantID != tenantID {
 		return shared.ErrNotFound
 	}
 	delete(m.configs, id.String())
