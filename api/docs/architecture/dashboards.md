@@ -152,6 +152,17 @@ Numbers on organization dashboards are computed once for the organization by
 the platform, never with a person's access, so nobody's access is borrowed when
 a manager leaves.
 
+### Editing a dashboard's details
+
+"Edit details" in the dashboard's menu on `/` opens the details form
+`/dashboards?edit=<id>` (name, description, columns); an organization
+dashboard opens `/dashboards?edit=<id>&kind=organization`, offered to
+`dashboards:org:manage` only and saved through
+`PUT /api/v1/organization/dashboards/{id}` (the server checks the permission
+and the audience; a viewer gets 403, a dashboard outside the audience 404).
+A copy of a template stores the template's name and description in the
+viewer's language and opens on the dashboard.
+
 ### Planned
 
 - The organization management section on `/dashboards` (create, order,
