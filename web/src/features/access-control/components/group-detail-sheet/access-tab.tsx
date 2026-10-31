@@ -29,16 +29,26 @@ import {
   isElevatedChoice,
   type TeamAccessValue,
 } from '../team-access-fields'
+import type { OutsideMember } from '../../types'
+import { OutsideMembersNotice } from './outside-members-notice'
+import { outsideMembersOf } from './roles-tab'
 
 export function AccessTab({
   groupId,
   canEdit,
   memberCount,
+  outsideMembers = [],
+  onShowOutside,
+  onCreateTeam,
   onChanged,
 }: {
   groupId: string
   canEdit: boolean
   memberCount?: number
+  /** Members outside the organization or service accounts (team detail). */
+  outsideMembers?: OutsideMember[]
+  onShowOutside?: () => void
+  onCreateTeam?: () => void
   onChanged?: () => void
 }) {
   const { t } = useTranslation()
@@ -49,6 +59,8 @@ export function AccessTab({
   const [value, setValue] = useState<TeamAccessValue>(EMPTY_TEAM_ACCESS)
   const [busy, setBusy] = useState(false)
   const [confirming, setConfirming] = useState(false)
+  const [refusedBy, setRefusedBy] = useState<OutsideMember[] | null>(null)
+  const outside = refusedBy ?? outsideMembers
 
   const saved: TeamAccessValue = useMemo(
     () => ({
@@ -76,7 +88,16 @@ export function AccessTab({
       toast.success(t('org.teamAccess.saved', 'Team access saved'))
       onChanged?.()
     } catch (err) {
-      toast.error(getErrorMessage(err, t('org.teamAccess.saveFailed', 'Could not save the access')))
+      const named = outsideMembersOf(err)
+      if (named) {
+        setRefusedBy(named.length > 0 ? named : outsideMembers)
+        setValue(saved)
+        onChanged?.()
+      } else {
+        toast.error(
+          getErrorMessage(err, t('org.teamAccess.saveFailed', 'Could not save the access'))
+        )
+      }
     } finally {
       setBusy(false)
     }
@@ -160,6 +181,16 @@ export function AccessTab({
         </div>
       ))}
 
+      {canEdit &&
+        !(access?.privileged ?? false) &&
+        templates.some((tpl) => tpl.has_full_data_access) && (
+          <OutsideMembersNotice
+            members={outside}
+            onShowMembers={onShowOutside}
+            onCreateTeam={onCreateTeam}
+          />
+        )}
+
       <TeamAccessFields
         idPrefix={`team-${groupId}`}
         templates={templates}
@@ -168,6 +199,14 @@ export function AccessTab({
         onChange={setValue}
         canSetAllAssets={owner}
         disabled={locked || busy}
+        blockFullData={
+          outside.length > 0
+            ? t(
+                'org.teamAccess.blockedOutside',
+                'Off while members from outside your organization are in the team.'
+              )
+            : undefined
+        }
       />
 
       {!canEdit ? null : locked ? (

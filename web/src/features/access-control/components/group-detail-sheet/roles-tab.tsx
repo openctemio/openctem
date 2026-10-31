@@ -6,6 +6,8 @@
  * API is the authority on who may change them: nobody grants beyond what they
  * hold, only an owner changes a team that carries a privileged role, and a
  * team with a full-data role admits no external member or service account.
+ * While the team has such members, full-data roles are off in the picker and
+ * the tab names the members and the ways forward; the API refuses regardless.
  */
 
 import { useMemo, useState } from 'react'
@@ -23,9 +25,25 @@ import {
 } from '@/components/ui/select'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { EmptyState, ErrorState } from '@/features/shared'
-import { getErrorMessage } from '@/lib/api/error-handler'
+import { ApiClientError, getErrorMessage } from '@/lib/api/error-handler'
 import { bindGroupRole, unbindGroupRole, useGroupRoles } from '../../api/use-group-roles'
-import { useRoles } from '../../api/use-roles'
+import { useRoleMembers, useRoles } from '../../api/use-roles'
+import type { OutsideMember, Role } from '../../types'
+import { AddMemberToRoleDialog } from '../add-member-to-role-dialog'
+import { OutsideMembersNotice } from './outside-members-notice'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+
+/** The outside members a TEAM_EXTERNAL_FULL_DATA refusal names, if any. */
+export function outsideMembersOf(err: unknown): OutsideMember[] | null {
+  if (!(err instanceof ApiClientError) || err.code !== 'TEAM_EXTERNAL_FULL_DATA') return null
+  const list = (err.details as { outside_members?: unknown } | undefined)?.outside_members
+  return Array.isArray(list) ? (list as OutsideMember[]) : []
+}
 import { useTranslation } from '@/context/i18n-provider'
 
 export function RolesTab({
@@ -33,6 +51,9 @@ export function RolesTab({
   canBind,
   canUnbind,
   memberCount,
+  outsideMembers = [],
+  onShowOutside,
+  onCreateTeam,
   onChanged,
 }: {
   groupId: string
@@ -40,6 +61,10 @@ export function RolesTab({
   canUnbind: boolean
   /** Members now in the team, when the caller knows it. */
   memberCount?: number
+  /** Members outside the organization or service accounts (team detail). */
+  outsideMembers?: OutsideMember[]
+  onShowOutside?: () => void
+  onCreateTeam?: () => void
   onChanged?: () => void
 }) {
   const { t } = useTranslation()
@@ -49,6 +74,9 @@ export function RolesTab({
   const [busy, setBusy] = useState(false)
   const [confirmBind, setConfirmBind] = useState(false)
   const [toRemove, setToRemove] = useState<{ id: string; name: string } | null>(null)
+  // Outside members named by a refusal that raced the team detail.
+  const [refusedBy, setRefusedBy] = useState<OutsideMember[] | null>(null)
+  const [grantRole, setGrantRole] = useState<Role | null>(null)
 
   // Only custom roles can be bound, each once.
   const candidates = useMemo(
@@ -59,6 +87,9 @@ export function RolesTab({
     () => new Set(allRoles.filter((r) => r.has_full_data_access).map((r) => r.id)),
     [allRoles]
   )
+  const outside = refusedBy ?? outsideMembers
+  const fullDataBlocked = outside.length > 0
+  const fullDataCandidates = candidates.filter((r) => fullData.has(r.id))
 
   async function handleBind() {
     if (!selected) return
@@ -70,7 +101,16 @@ export function RolesTab({
       setSelected('')
       onChanged?.()
     } catch (err) {
-      toast.error(getErrorMessage(err, t('org.teamRoles.addFailed', 'Could not add the role')))
+      const named = outsideMembersOf(err)
+      if (named) {
+        // The team gained an outside member since it was loaded: say who,
+        // in place, instead of a toast.
+        setRefusedBy(named.length > 0 ? named : outsideMembers)
+        setSelected('')
+        onChanged?.()
+      } else {
+        toast.error(getErrorMessage(err, t('org.teamRoles.addFailed', 'Could not add the role')))
+      }
     } finally {
       setBusy(false)
     }
@@ -111,6 +151,40 @@ export function RolesTab({
         )}
       </p>
 
+      {canBind && fullDataBlocked && fullDataCandidates.length > 0 && (
+        <OutsideMembersNotice
+          members={outside}
+          onShowMembers={onShowOutside}
+          onCreateTeam={onCreateTeam}
+          grantAction={
+            fullDataCandidates.length === 1 ? (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setGrantRole(fullDataCandidates[0])}
+              >
+                {t('org.teamOutside.grantDirect', 'Give the role to a person')}
+              </Button>
+            ) : (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button size="sm" variant="outline">
+                    {t('org.teamOutside.grantDirect', 'Give the role to a person')}
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start">
+                  {fullDataCandidates.map((r) => (
+                    <DropdownMenuItem key={r.id} onSelect={() => setGrantRole(r)}>
+                      {r.name}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )
+          }
+        />
+      )}
+
       {canBind && (
         <div className="flex flex-wrap items-center gap-2">
           <Select value={selected} onValueChange={setSelected} disabled={busy}>
@@ -123,11 +197,19 @@ export function RolesTab({
                   {t('org.teamRoles.noOther', 'No other custom role')}
                 </SelectItem>
               ) : (
-                candidates.map((r) => (
-                  <SelectItem key={r.id} value={r.id}>
-                    {r.name}
-                  </SelectItem>
-                ))
+                candidates.map((r) => {
+                  const off = fullDataBlocked && fullData.has(r.id)
+                  return (
+                    <SelectItem key={r.id} value={r.id} disabled={off}>
+                      {r.name}
+                      {off && (
+                        <span className="ms-2 text-xs text-muted-foreground">
+                          {t('org.teamRoles.offOutside', 'Not while outside members are in')}
+                        </span>
+                      )}
+                    </SelectItem>
+                  )
+                })
               )}
             </SelectContent>
           </Select>
@@ -237,6 +319,8 @@ export function RolesTab({
         handleConfirm={handleBind}
       />
 
+      {grantRole && <GrantDirectly role={grantRole} onClose={() => setGrantRole(null)} />}
+
       <ConfirmDialog
         open={!!toRemove}
         onOpenChange={(o) => !o && setToRemove(null)}
@@ -257,5 +341,19 @@ export function RolesTab({
         handleConfirm={() => void handleUnbind()}
       />
     </div>
+  )
+}
+
+/** Gives a full-data role to chosen people directly (the per-person grant, with its own step-up). */
+function GrantDirectly({ role, onClose }: { role: Role; onClose: () => void }) {
+  const { members } = useRoleMembers(role.id)
+  return (
+    <AddMemberToRoleDialog
+      role={role}
+      open
+      onOpenChange={(o) => !o && onClose()}
+      existingMembers={members}
+      onSuccess={onClose}
+    />
   )
 }
