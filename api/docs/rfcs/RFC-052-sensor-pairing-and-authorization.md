@@ -122,7 +122,7 @@ User plane (tenant from the session, as every user route):
 | Method and path | Permission | Purpose |
 |---|---|---|
 | `POST /api/v1/sensor-pairings/lookup` | `sensors:pair` | Find an open pairing by code: SAS, key fingerprint, host facts, source address, expiry. Uniform `404` for unknown, expired, used or foreign codes. |
-| `POST /api/v1/sensor-pairings/expectations` | `sensors:pair` | Reverse mode ("expect a sensor"): returns a code for `openctemio-sensor pair <CODE>`. |
+| `POST /api/v1/sensor-pairings/expectations` | `sensors:pair` | Reverse mode ("Create a pairing code first" in the console): returns a code for `openctemio-sensor pair <CODE>`. |
 | `GET /api/v1/sensor-pairings/expectations/{id}` | `sensors:pair` | Poll an expectation: once the sensor connected, the SAS and host facts to compare. |
 | `POST /api/v1/sensor-pairings/{id}/approve` | `sensors:approve` + step-up | Bind the key to a new sensor (or to the registration being re-paired) with the chosen name, type, zones, grant profile. Requires `fingerprint_confirmed: true`. |
 | `POST /api/v1/sensor-pairings/{id}/deny` | `sensors:pair` | Refuse a pairing (audited). |
@@ -514,7 +514,7 @@ Each line is a test in the implementation PRs.
 | SP1d | Signer, pairing client, identity store with permission checks, CA pin, auto-pair | sdk-go |
 | SP1e | `openctemio-sensor pair`, auto-pair on first start, snippet variables | sensor |
 | SP2a | Grants, profiles, trust New/Trusted, enforcement on poll/claim/results/credentials/remote actions, legacy-broad migration | api |
-| SP1f/SP2b | Console: Pair a sensor (enter code / expect a sensor), fingerprint compare, step-up, grant view and narrow, legacy flags, identity policy | web |
+| SP1f/SP2b | Console: Add sensor (enter a code / create a pairing code first), fingerprint compare, step-up, grant view and narrow, legacy flags, identity policy | web |
 | SP3 | Restricted / Quarantined, automatic signals, kill switches | api, sdk-go |
 | SP4 | Two-person widening, time-boxed grants, BU-scoped sensor admin, purge-by-sensor, asset-group target scopes | api |
 | SP5 | Workload attestation enrollment unified with CI trust rules; sensor pools | all |
