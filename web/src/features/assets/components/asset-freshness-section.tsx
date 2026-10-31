@@ -7,6 +7,7 @@
  * asset's automatic enrichment. Used by the detail sheet and /assets/{id}.
  */
 
+import { useSettleSignal } from '@/features/shared/components/settle-group'
 import { Activity } from 'lucide-react'
 import Link from '@/components/link'
 import { Badge } from '@/components/ui/badge'
@@ -19,6 +20,7 @@ import { FRESHNESS_BADGE, enrichmentStatus, ttlParts } from '../lib/asset-freshn
 export function AssetFreshnessSection({ assetId }: { assetId: string }) {
   const { t } = useTranslation()
   const { data, error, isLoading, mutate } = useAssetFreshness(assetId)
+  useSettleSignal(isLoading)
 
   const title = t('assetFreshness.title', 'Data freshness')
   if (isLoading) {
