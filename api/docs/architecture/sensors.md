@@ -12,6 +12,10 @@
 > other, current gaps): [sensor-platform-trust.md](sensor-platform-trust.md),
 > [RFC-040](../rfcs/RFC-040-platform-sensor-mutual-distrust.md) (proposed).
 
+The end-to-end flow (install to decommission, with every failure path) is in
+[sensor and platform workflow](sensor-platform-workflow.md); this page is the
+reference for each part.
+
 ## Glossary
 
 | Term | Meaning |
