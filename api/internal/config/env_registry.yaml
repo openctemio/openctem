@@ -1227,6 +1227,12 @@ vars:
     group: "Sensors"
     type: string
     description: "DNS resolver scan-zone routing resolves host names with: `system` (the platform's own resolver, which may know internal names) or `host[:port]` of a recursive resolver. Unset: a public resolver when organizations are self-service, otherwise `system`."
+  - name: SCAN_STAGE_STREAMING
+    component: api
+    group: "Sensors"
+    type: bool
+    default: "true"
+    description: "Stage streaming: a chained workflow step starts on the results of each finished task of its predecessor instead of waiting for the whole predecessor step; every target still passes the per-hop gate and reaches the sensor in a signed job with an explicit target list. `false` makes every chained step wait for its predecessors (the platform switch; a workflow can also keep its stages behind barriers with its own setting). Read at start-up."
   - name: SENSOR_MTLS_CA_CERT_FILE
     component: api
     group: "Sensors"

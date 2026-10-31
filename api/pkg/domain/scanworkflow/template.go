@@ -50,6 +50,10 @@ type Settings struct {
 	// skipped or timed out still runs, on the seeds and on what its other
 	// predecessors produced.
 	ContinueOnFailedDependency bool `json:"continue_on_failed_dependency,omitempty"`
+	// StageBarrier: every chained step waits for its predecessors to
+	// finish. Off (the default), a step takes its predecessor's results
+	// task by task as they arrive (stage streaming).
+	StageBarrier bool `json:"stage_barrier,omitempty"`
 }
 
 // DefaultSettings returns default scan workflow settings.
