@@ -75,6 +75,42 @@ for (const collapsed of [false, true]) {
   )
 }
 
+// Six groups; the long ones carry sub-headings (Access & security: Sign-in,
+// Oversight; Scanning: Tools, Scanner content). Desktop rail and phone sheet.
+for (const vp of [
+  { name: 'desktop', width: 1440, height: 900 },
+  { name: 'phone', width: 390, height: 844 },
+]) {
+  test(
+    `the rail shows six groups with sub-headings (${vp.name})`,
+    { tag: ['@settings', '@smoke'] },
+    async ({ page }) => {
+      await page.setViewportSize({ width: vp.width, height: vp.height })
+      await page.goto('/settings/members')
+      if (vp.name === 'phone') {
+        await page
+          .getByRole('button', { name: /toggle sidebar/i })
+          .first()
+          .click()
+      }
+      const nav = page.locator(rail)
+      await expect(nav).toBeVisible({ timeout: 30_000 })
+      for (const label of ['My account', 'Organization', 'Access & security', 'Scanning']) {
+        await expect(nav.getByText(label, { exact: true }), label).toBeVisible()
+      }
+      await expect(nav.getByText('Security', { exact: true })).toHaveCount(0)
+      for (const sub of ['Sign-in', 'Oversight', 'Tools']) {
+        await expect(nav.getByText(sub, { exact: true }), sub).toBeVisible()
+      }
+      // Nothing scrolls sideways.
+      const overflow = await page.evaluate(
+        () => document.documentElement.scrollWidth - document.documentElement.clientWidth
+      )
+      expect(overflow).toBeLessThanOrEqual(0)
+    }
+  )
+}
+
 test(
   'moved settings URLs answer 308 with the query kept',
   { tag: ['@settings', '@smoke'] },
