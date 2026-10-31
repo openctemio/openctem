@@ -305,6 +305,11 @@ export interface Sensor {
    * Absent from older APIs.
    */
   auth_kind?: 'bearer' | 'key_bound'
+  /**
+   * When the platform saw this sensor's identity used from two hosts at once
+   * (a copied state volume). Absent or null: never.
+   */
+  identity_cloned_at?: string | null
   version?: string
   hostname?: string
   ip_address?: string

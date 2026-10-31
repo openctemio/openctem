@@ -26,8 +26,22 @@ if (process.env.NODE_ENV !== 'test') {
   validateEnv()
 }
 
+// NEXT_DEPLOYMENT_ID wins; the image build already passes the commit as
+// NEXT_PUBLIC_APP_COMMIT (docker-publish.yml), so releases need no new build arg.
+const DEPLOYMENT_ID = (
+  process.env.NEXT_DEPLOYMENT_ID ||
+  process.env.NEXT_PUBLIC_APP_COMMIT ||
+  ''
+).trim()
+
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  // Version-skew protection: a tab opened before a deploy reloads the page on
+  // its next navigation instead of calling server actions and chunks that no
+  // longer exist (the login form's "Failed to find Server Action"). Set from the
+  // build commit; unset in dev, where there is nothing to skew. The client guard
+  // in src/lib/deployment-skew.ts covers a call already in flight.
+  ...(DEPLOYMENT_ID ? { deploymentId: DEPLOYMENT_ID } : {}),
   // No `X-Powered-By: Next.js` on every response: it only tells a scanner
   // which framework (and so which advisories) to try.
   poweredByHeader: false,

@@ -21,7 +21,7 @@ const portClosedNote = "Resolved automatically: the port scan that had found the
 
 // closePortsTx marks the tenant's active open_port assets among ids
 // inactive, records a "disappeared" entry for each and resolves their
-// active port_open and service_detected exposures, inside tx. A port seen
+// open port_open and service_detected exposures, inside tx. A port seen
 // open at or after seenBefore is not closed. It returns the ids it closed.
 func closePortsTx(ctx context.Context, tx *sql.Tx, tenantID shared.ID, ids []string, seenBefore time.Time, reason string) ([]string, error) {
 	if len(ids) == 0 {
@@ -46,22 +46,10 @@ func closePortsTx(ctx context.Context, tx *sql.Tx, tenantID shared.ID, ids []str
 		}
 	}
 	if len(closed) > 0 {
-		resolved, err := portQueryIDs(ctx, tx, `
-			UPDATE exposure_events SET state = 'resolved', resolved_at = now(), resolved_by = NULL,
-				resolution_notes = $3, updated_at = now()
-			WHERE tenant_id = $1 AND asset_id = ANY($2::uuid[]) AND state = 'active'
-			  AND event_type IN ('port_open', 'service_detected')
-			RETURNING id`, tenantID.String(), pq.Array(closed), portClosedNote)
-		if err != nil {
+		if _, err := resolveOpenExposuresTx(ctx, tx,
+			`e.tenant_id = $1 AND e.asset_id = ANY($2::uuid[]) AND e.event_type IN ('port_open', 'service_detected')`,
+			portClosedNote, tenantID.String(), pq.Array(closed)); err != nil {
 			return nil, fmt.Errorf("resolve exposures of closed ports: %w", err)
-		}
-		for _, id := range resolved {
-			if _, err := tx.ExecContext(ctx, `
-				INSERT INTO exposure_state_history (id, exposure_event_id, previous_state, new_state, changed_by, reason, created_at)
-				VALUES ($1, $2, 'active', 'resolved', NULL, $3, now())`,
-				shared.NewID().String(), id, portClosedNote); err != nil {
-				return nil, fmt.Errorf("record exposure transition: %w", err)
-			}
 		}
 	}
 	return closed, nil
