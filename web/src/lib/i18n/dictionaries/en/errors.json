@@ -34,6 +34,7 @@
   "errors.INVALID_INCLUDE": "The include parameter is not valid.",
   "errors.INVALID_QUERY": "The query is not valid.",
   "errors.MFA_ENROLLMENT_REQUIRED": "Your organization requires two-factor authentication. Sign in again to set it up.",
+  "errors.MFA_REQUIRED_BY_POLICY": "Two-factor authentication is required for your account, so it cannot be turned off. Replace your authenticator to move to a new device.",
   "errors.MODULE_NOT_ENABLED": "This module is not enabled for your organization.",
   "errors.NOT_FOUND": "Not found. It may have been deleted, or you may not have access to it.",
   "errors.OPERATION_RUNNING": "You already have an operation running. Wait for it to finish.",

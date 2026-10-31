@@ -105,6 +105,44 @@ func (r *UserMFARepository) Activate(ctx context.Context, userID shared.ID, step
 	return activated, nil
 }
 
+// ReplaceActive promotes the pending secret of an enabled factor (a new
+// authenticator) and replaces the recovery codes. The old secret stops working
+// in the same statement.
+func (r *UserMFARepository) ReplaceActive(ctx context.Context, userID shared.ID, step int64, codeHashes []string) (bool, error) {
+	replaced := false
+	err := r.db.Transaction(ctx, func(tx *sql.Tx) error {
+		res, err := tx.ExecContext(ctx, `
+			UPDATE user_mfa SET
+			    secret_encrypted = pending_secret_encrypted,
+			    pending_secret_encrypted = NULL,
+			    pending_created_at = NULL,
+			    enabled_at = NOW(),
+			    last_used_step = $2,
+			    updated_at = NOW()
+			WHERE user_id = $1 AND enabled AND pending_secret_encrypted IS NOT NULL`,
+			userID.String(), step)
+		if err != nil {
+			return fmt.Errorf("replace mfa secret: %w", err)
+		}
+		n, err := res.RowsAffected()
+		if err != nil {
+			return fmt.Errorf("replace mfa secret: %w", err)
+		}
+		if n == 0 {
+			return nil
+		}
+		if err := replaceRecoveryCodesTx(ctx, tx, userID, codeHashes); err != nil {
+			return err
+		}
+		replaced = true
+		return nil
+	})
+	if err != nil {
+		return false, err
+	}
+	return replaced, nil
+}
+
 // Disable removes the factor and every recovery code.
 func (r *UserMFARepository) Disable(ctx context.Context, userID shared.ID) error {
 	return r.db.Transaction(ctx, func(tx *sql.Tx) error {

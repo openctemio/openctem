@@ -240,9 +240,12 @@ func toUserRoleResponse(ur *role.UserRole) UserRoleResponse {
 }
 
 func toModuleResponse(m *role.Module) ModuleResponse {
-	perms := make([]PermissionResponse, len(m.Permissions))
-	for i, p := range m.Permissions {
-		perms[i] = toPermissionResponse(p)
+	perms := make([]PermissionResponse, 0, len(m.Permissions))
+	for _, p := range m.Permissions {
+		if !permission.OfferedInRoleEditor(p.ID) {
+			continue
+		}
+		perms = append(perms, toPermissionResponse(p))
 	}
 	return ModuleResponse{
 		ID:           m.ID,
@@ -797,9 +800,12 @@ func (h *RoleHandler) ListPermissions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp := make([]PermissionResponse, len(permissions))
-	for i, p := range permissions {
-		resp[i] = toPermissionResponse(p)
+	resp := make([]PermissionResponse, 0, len(permissions))
+	for _, p := range permissions {
+		if !permission.OfferedInRoleEditor(p.ID) {
+			continue
+		}
+		resp = append(resp, toPermissionResponse(p))
 	}
 
 	w.Header().Set("Content-Type", "application/json")

@@ -56,6 +56,25 @@ export interface TwoFactorStatus {
    * has not ended: the date from which sign-in is gated. They can set up now.
    */
   grace_due_at?: string
+  /** Who requires 2FA (in force or still in grace): organizations by name, the platform floor. */
+  required_by?: TwoFactorRequiredBy
+  /**
+   * false while anybody requires 2FA (or that could not be read): turning it
+   * off is refused, the person replaces the authenticator instead.
+   */
+  can_turn_off?: boolean
+}
+
+export interface TwoFactorRequiredBy {
+  organizations: string[]
+  platform: boolean
+}
+
+/** POST /api/v1/me/2fa/replacement/complete */
+export interface TwoFactorReplaceConfirmResponse {
+  recovery_codes: string[]
+  /** always true: every other session was signed out */
+  other_sessions_ended: boolean
 }
 
 /** POST /api/v1/users/me/2fa/setup — nothing changes until it is confirmed */
@@ -71,6 +90,12 @@ export interface RecoveryCodesResponse {
 
 /** Confirm 2FA setup: the current password and the authenticator code. */
 export interface TwoFactorEnableInput {
+  password: string
+  code: string
+}
+
+/** Start replacing the authenticator: password + current code or recovery code. */
+export interface TwoFactorReplaceInput {
   password: string
   code: string
 }
