@@ -58,6 +58,15 @@ pending ──reveal──▶ pending (sas set) ──approve──▶ approved 
 Reverse mode starts as an `expecting` row with a tenant and a code but no
 key; the sensor's start request fills in the key and turns it `pending`.
 
+The review names the organization the approval binds the sensor to (the
+session's) and the approval must send the same `organization_id`, or it is
+refused `409 ORGANIZATION_MISMATCH` before step-up. The review also shows the
+request's address with its class (private or public, and the edge or hosting
+provider when known) next to the approver's own address, the product, the SDK
+version and the request's age; the console warns on the path where the sensor
+showed the code to approve only a sensor the approver's team started. A
+request no organization claimed yet is rejected only with its code.
+
 ## Enrollment tokens (unattended installs)
 
 For fleets (Kubernetes, Terraform, many hosts) an organization administrator
@@ -225,6 +234,7 @@ marked ✉ notify every administrator of the organization in the app.
 | `sensor.pairing_approved` ✉ | high |
 | `sensor.pairing_denied` | medium |
 | `sensor.pairing_completed` | medium |
+| `sensor.pairing_lookup_locked` (a user hit the failed code lookup limit; audit only) | high |
 | `sensor.repaired` ✉ | high |
 | `sensor.key_revoked` | high |
 | `sensor.grant_changed` (narrowed or demoted; the diff names each dimension) | medium |

@@ -166,3 +166,21 @@ func TestIPAllowlist_CacheAndInvalidate(t *testing.T) {
 		t.Fatalf("after Invalidate the new policy applies, code=%d", code)
 	}
 }
+
+func TestIPAllowlist_InvalidateAllDropsEveryTenant(t *testing.T) {
+	p := &stubPolicy{byTenant: map[string][]string{"t1": {"203.0.113.9"}, "t2": {"203.0.113.9"}}}
+	gate := NewIPAllowlistGate(p, time.Hour, logger.NewNop())
+	for _, tid := range []string{"t1", "t2"} {
+		runIPGate(t, gate, ipReq{remoteAddr: "203.0.113.9:1", claims: userClaims(tid)})
+	}
+	if p.calls != 2 {
+		t.Fatalf("want 2 lookups, got %d", p.calls)
+	}
+	p.byTenant["t1"], p.byTenant["t2"] = []string{"192.0.2.1"}, []string{"192.0.2.1"}
+	gate.InvalidateAll()
+	for _, tid := range []string{"t1", "t2"} {
+		if code, _, _ := runIPGate(t, gate, ipReq{remoteAddr: "203.0.113.9:1", claims: userClaims(tid)}); code != http.StatusForbidden {
+			t.Fatalf("%s: after InvalidateAll the new policy applies, code=%d", tid, code)
+		}
+	}
+}

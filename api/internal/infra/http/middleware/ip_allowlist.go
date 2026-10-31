@@ -44,7 +44,10 @@ type TenantSecurityPolicyProvider interface {
 // The client IP comes from httpsec.ClientIP: forwarding headers are honored
 // only from SERVER_TRUSTED_PROXIES, so a client cannot claim an allowed IP.
 // Policies are cached per organization for a short TTL; Invalidate drops one
-// after a settings change. A policy lookup error is fail-closed.
+// after a settings change. With several API replicas the change is fanned out
+// through the cache invalidation bus (infra/redis), which calls Invalidate on
+// every replica; the TTL stays as the bound when a message is lost or Redis is
+// down. A policy lookup error is fail-closed.
 type IPAllowlistGate struct {
 	provider TenantSecurityPolicyProvider
 	ttl      time.Duration
@@ -104,6 +107,16 @@ func (g *IPAllowlistGate) Invalidate(tenantID string) {
 	}
 	g.mu.Lock()
 	delete(g.cache, tenantID)
+	g.mu.Unlock()
+}
+
+// InvalidateAll drops every organization's cached policy.
+func (g *IPAllowlistGate) InvalidateAll() {
+	if g == nil {
+		return
+	}
+	g.mu.Lock()
+	g.cache = make(map[string]cachedIPPolicy)
 	g.mu.Unlock()
 }
 

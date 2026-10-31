@@ -480,6 +480,13 @@ func run() int {
 		}
 	}
 
+	if services.IPAllowlistBus != nil {
+		if err := services.IPAllowlistBus.Start(wsCtx); err != nil {
+			// Changes still apply here at once and elsewhere after the gate TTL.
+			log.Error("ip allowlist change bus not subscribed", "error", err)
+		}
+	}
+
 	// ==========================================================================
 	// HTTP Server
 	// ==========================================================================
