@@ -173,6 +173,7 @@ tests that cover the console's most user-visible flows.
 | `50-shell-banner-no-shift.spec.ts`          | A platform notice does not push the page down on reload (390px)                          |
 | `50-metric-strip-no-shift.spec.ts`          | Metric strips and /attack-surface hold still while their numbers load (1440, 390)        |
 | `50-asset-detail-no-shift.spec.ts`          | Asset page: no layout shift while its panels load (390px, 1440px)                        |
+| `52-team-outside-members.spec.ts`          | A team with outside members turns full-data roles off up front and names them (390px too) |
 
 Each spec is designed to:
 

@@ -150,6 +150,17 @@ export function MFAFloorForm({ settings, canEdit, onSaved }: MFAFloorFormProps) 
                     {label[f]}
                   </Label>
                   <p className="text-xs text-muted-foreground">{hint[f]}</p>
+                  {f === 'everyone' && (
+                    <p
+                      className="text-xs text-muted-foreground"
+                      data-testid="mfa-floor-everyone-note"
+                    >
+                      {t(
+                        'admin.mfaFloor.everyoneNote',
+                        'Your call on a self-managed install. Members need an authenticator app: organization passkeys are not available yet.'
+                      )}
+                    </p>
+                  )}
                 </div>
               </div>
             ))}

@@ -450,9 +450,12 @@ func (r *GroupRepository) ListMembersWithUserInfo(ctx context.Context, groupID s
 			gm.group_id, gm.user_id, gm.role, gm.joined_at, gm.added_by,
 			u.email, u.name, u.avatar_url, u.last_login_at,
 			COALESCE(ab.name, ab.email, '') AS added_by_name,
-			gm.expires_at, COALESCE(gm.expiry_reason, '')
+			gm.expires_at, COALESCE(gm.expiry_reason, ''),
+			COALESCE(tm.kind = 'external', false), u.kind = 'service'
 		FROM group_members gm
+		INNER JOIN groups g ON g.id = gm.group_id
 		INNER JOIN users u ON u.id = gm.user_id
+		LEFT JOIN tenant_members tm ON tm.user_id = gm.user_id AND tm.tenant_id = g.tenant_id
 		LEFT JOIN users ab ON ab.id = gm.added_by
 		WHERE gm.group_id = $1
 		ORDER BY gm.joined_at ASC
@@ -477,12 +480,14 @@ func (r *GroupRepository) ListMembersWithUserInfo(ctx context.Context, groupID s
 			addedByName                    string
 			expiresAt                      sql.NullTime
 			expiryReason                   string
+			external, service              bool
 		)
 
 		if err := rows.Scan(
 			&groupIDStr, &userIDStr, &roleStr, &joinedAt, &addedByStr,
 			&email, &name, &avatarURL, &lastLoginAt,
 			&addedByName, &expiresAt, &expiryReason,
+			&external, &service,
 		); err != nil {
 			return nil, 0, fmt.Errorf("failed to scan member with user: %w", err)
 		}
@@ -513,6 +518,8 @@ func (r *GroupRepository) ListMembersWithUserInfo(ctx context.Context, groupID s
 			AvatarURL:   avatarURL.String,
 			LastLoginAt: lastLogin,
 			AddedByName: addedByName,
+			External:    external,
+			Service:     service,
 		})
 	}
 

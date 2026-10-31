@@ -34,8 +34,8 @@ type BindGroupRoleRequest struct {
 	RoleID string `json:"role_id" validate:"required,uuid"`
 }
 
-func (h *GroupHandler) writeBindingError(w http.ResponseWriter, err error) {
-	if writeStepUpError(w, err) {
+func (h *GroupHandler) writeBindingError(w http.ResponseWriter, r *http.Request, err error) {
+	if writeStepUpError(w, err) || writeTeamGrantErrorFor(w, r, err) {
 		return
 	}
 	switch {
@@ -64,7 +64,7 @@ func (h *GroupHandler) ListGroupRoles(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	views, err := h.service.ListGroupRoles(ctx, middleware.MustGetTenantID(ctx), chi.URLParam(r, "groupId"))
 	if err != nil {
-		h.writeBindingError(w, err)
+		h.writeBindingError(w, r, err)
 		return
 	}
 	resp := GroupRoleListResponse{Data: make([]GroupRoleResponse, 0, len(views))}
@@ -107,7 +107,7 @@ func (h *GroupHandler) BindGroupRole(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.service.BindRole(r.Context(), chi.URLParam(r, "groupId"), req.RoleID, h.buildAuditContext(r)); err != nil {
-		h.writeBindingError(w, err)
+		h.writeBindingError(w, r, err)
 		return
 	}
 	w.WriteHeader(http.StatusCreated)
@@ -125,7 +125,7 @@ func (h *GroupHandler) BindGroupRole(w http.ResponseWriter, r *http.Request) {
 // @Router /groups/{groupId}/roles/{roleId} [delete]
 func (h *GroupHandler) UnbindGroupRole(w http.ResponseWriter, r *http.Request) {
 	if err := h.service.UnbindRole(r.Context(), chi.URLParam(r, "groupId"), chi.URLParam(r, "roleId"), h.buildAuditContext(r)); err != nil {
-		h.writeBindingError(w, err)
+		h.writeBindingError(w, r, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

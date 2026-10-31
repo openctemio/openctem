@@ -20,7 +20,7 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import { formatRelative, formatDateSafe } from '@/lib/format-date'
-import { EmptyState, PageStack } from '@/features/shared'
+import { EmptyState, ErrorState, PageStack } from '@/features/shared'
 import { useAccountActivity } from '@/features/account'
 import {
   getActionCategory,
@@ -62,7 +62,11 @@ export default function ActivityPage() {
 
   // Paged on the server (the user-activity endpoint has no category filter,
   // so the old browser-side "type" filter is gone with the browser paging).
-  const { activities, total, totalPages, isLoading } = useAccountActivity(user?.id, page, PER_PAGE)
+  const { activities, total, totalPages, isLoading, error, mutate } = useAccountActivity(
+    user?.id,
+    page,
+    PER_PAGE
+  )
 
   return (
     <PageStack>
@@ -91,6 +95,12 @@ export default function ActivityPage() {
                 <Skeleton key={i} className="h-20 w-full" />
               ))}
             </div>
+          ) : error && activities.length === 0 ? (
+            <ErrorState
+              title={t('account.activity.loadFailed', 'your activity')}
+              error={error}
+              onRetry={() => void mutate()}
+            />
           ) : activities.length === 0 ? (
             <EmptyState
               icon={History}

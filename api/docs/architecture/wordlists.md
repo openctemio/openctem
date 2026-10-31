@@ -116,6 +116,47 @@ On import, and on every tenant upload that carries one, the linter checks `wordl
 
 A false or incomplete manifest refuses the whole pack. It never just leaves a file out.
 
+## Organization lists
+
+An organization adds its own words (branch codes, product names, local words) as lists of DNS
+labels under Settings > Scanning > Wordlists, or with `/api/v1/wordlists`
+([authorization-matrix.md](authorization-matrix.md)). No archive, manifest or git is needed: a list
+is text, pasted or uploaded as a `.txt`.
+
+- **Reading the text.** One entry per line; blank lines and lines starting with `#` are ignored, as
+  is a trailing ` # comment`. An entry is lower-cased and kept when it is one to three dot-separated
+  DNS labels (`[a-z0-9-]`, no leading or trailing `-`, at most 63 characters each) and not all
+  digits. A line that looks like a secret (a label of 24 characters or more mixing letters and
+  digits with high entropy) is refused, since every label is sent to resolvers. Repeats are removed,
+  first occurrence first. The response reports what was kept and what was dropped, with examples.
+- **Limits.** 20 lists per organization; 50,000 labels and 1 MiB per list; 2 MiB of text per
+  request.
+- **Versions.** Each list has a `version` that rises when its labels change (not when only its name,
+  description or switch changes) and the sha256 of its labels.
+- **Use.** Every enabled list joins every subdomain enumeration job of the organization, on its own
+  sensors and on shared sensors alike: the lists are merged in creation order without repeats and
+  carried inline under the job signature, after the learned labels and before the platform pack.
+  The job's inline budget (256 KiB compressed per list) keeps the leading labels of a larger merge.
+  Nothing is stored on a sensor beyond the task directory, which is erased with the task.
+- **Preview.** `GET /api/v1/wordlists/preview?root=example.com&depth=standard` counts what a job of
+  that root would carry: the platform pack (name, version, line count), the learned labels and
+  permutations, and the organization's labels. It returns counts and list names only, and sends
+  nothing to any sensor or resolver.
+- **Audit.** `wordlist.created`, `wordlist.updated` and `wordlist.deleted`, with name, version and
+  line count, never the labels.
+
+## What a run used
+
+When the platform signs a job for a sensor it stores what the job read on the command
+(`commands.content_pins`): each pack with its slot, name, version and digest, and each inline list
+with its source (`learned` or `organization`), line count and sha256, plus the organization lists
+it holds with the version each had. The run page shows it per task. The record comes from what was
+signed, never from the sensor, and a retry of the job rewrites it.
+
+Isolation: organization lists and the learned labels are read with the job's own tenant id and
+reach a sensor only inside that organization's signed job; the record is written under the same
+tenant.
+
 ## Licenses
 
 Allowed: MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, CC0-1.0, Unlicense, WTFPL, CC-BY-4.0.

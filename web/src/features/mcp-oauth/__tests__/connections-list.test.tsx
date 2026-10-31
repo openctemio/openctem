@@ -22,6 +22,25 @@ const conn: McpConnection = {
 }
 
 describe('ConnectionsList', () => {
+  it('shows a failed load as an error with Retry, not as "no applications"', () => {
+    const onRetry = vi.fn()
+    render(
+      <ConnectionsList
+        connections={undefined}
+        isLoading={false}
+        error={new Error('boom')}
+        onRetry={onRetry}
+        onRevoke={vi.fn()}
+        emptyTitle="No connected applications"
+        emptyDescription="none"
+      />
+    )
+    expect(screen.queryByText('No connected applications')).not.toBeInTheDocument()
+    expect(screen.getByText('Failed to load connected applications')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
+    expect(onRetry).toHaveBeenCalled()
+  })
+
   it('shows the application, its host and the access, and disconnects after confirmation', async () => {
     const onRevoke = vi.fn(async () => {})
     render(

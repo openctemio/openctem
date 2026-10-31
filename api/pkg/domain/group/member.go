@@ -168,6 +168,10 @@ type MemberWithUser struct {
 	AvatarURL   string
 	LastLoginAt *time.Time
 	AddedByName string // Resolved name of who added this member
+	// External: an external member of the organization (RFC-058).
+	External bool
+	// Service: a service account.
+	Service bool
 }
 
 // MemberStats contains statistics about group members.

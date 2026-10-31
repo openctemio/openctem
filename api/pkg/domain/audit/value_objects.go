@@ -464,6 +464,12 @@ const (
 	// Proxy pool actions (RFC-034): every change to a pool, its endpoints or
 	// credentials, a sensor's network path, and the platform quarantining an
 	// endpoint.
+	// Organization wordlists (docs/architecture/wordlists.md): metadata
+	// only (name, version, lines), never the labels.
+	ActionWordlistCreated Action = "wordlist.created"
+	ActionWordlistUpdated Action = "wordlist.updated"
+	ActionWordlistDeleted Action = "wordlist.deleted"
+
 	ActionProxyPoolCreated            Action = "proxy_pool.created"
 	ActionProxyPoolUpdated            Action = "proxy_pool.updated"
 	ActionProxyPoolDeleted            Action = "proxy_pool.deleted"
@@ -905,6 +911,7 @@ func (a Action) IsValid() bool {
 		ActionProxyPoolCreated, ActionProxyPoolUpdated, ActionProxyPoolDeleted, ActionProxyPoolEndpointsChanged,
 		ActionProxyPoolCredentialsChanged, ActionProxyPoolEndpointUpdated, ActionProxyPoolEndpointQuarantine,
 		ActionProxyPoolTestRequested, ActionProxyPoolTested,
+		ActionWordlistCreated, ActionWordlistUpdated, ActionWordlistDeleted,
 		ActionSensorNetworkPathChanged,
 		ActionAPIKeyCreated, ActionAPIKeyRevoked, ActionAPIKeyDeleted,
 		ActionCredentialCreated, ActionCredentialUpdated, ActionCredentialDeleted, ActionCredentialAccessed,
@@ -1056,6 +1063,8 @@ func (a Action) Category() string {
 		ActionProxyPoolCredentialsChanged, ActionProxyPoolEndpointUpdated, ActionProxyPoolEndpointQuarantine,
 		ActionProxyPoolTestRequested, ActionProxyPoolTested:
 		return "proxy_pool"
+	case ActionWordlistCreated, ActionWordlistUpdated, ActionWordlistDeleted:
+		return "wordlist"
 	case ActionSensorNetworkPathChanged:
 		return "sensor"
 	case ActionIntegrationSyncRequested:
@@ -1157,6 +1166,7 @@ const (
 	ResourceTypeSensor         ResourceType = "sensor"
 	ResourceTypeScanZone       ResourceType = "scan_zone"
 	ResourceTypeProxyPool      ResourceType = "proxy_pool"
+	ResourceTypeWordlist       ResourceType = "wordlist"
 	ResourceTypeGroup          ResourceType = "group"
 	ResourceTypePermissionSet  ResourceType = "permission_set"
 	ResourceTypeRole           ResourceType = "role"
@@ -1221,7 +1231,7 @@ func (r ResourceType) IsValid() bool {
 		ResourceTypeInvitation, ResourceTypeRepository, ResourceTypeBranch,
 		ResourceTypeComponent, ResourceTypeVulnerability, ResourceTypeFinding,
 		ResourceTypeFindingComment, ResourceTypeSLAPolicy, ResourceTypeSavedView, ResourceTypeScan,
-		ResourceTypeAsset, ResourceTypeAssetGroup, ResourceTypeSettings, ResourceTypeToken, ResourceTypeSensor, ResourceTypeScanZone, ResourceTypeProxyPool,
+		ResourceTypeAsset, ResourceTypeAssetGroup, ResourceTypeSettings, ResourceTypeToken, ResourceTypeSensor, ResourceTypeScanZone, ResourceTypeProxyPool, ResourceTypeWordlist,
 		ResourceTypeGroup, ResourceTypePermissionSet, ResourceTypeRole,
 		ResourceTypeScanWorkflow, ResourceTypeScanWorkflowStep, ResourceTypeScanRun, ResourceTypeScanConfig,
 		ResourceTypeScanProfile, ResourceTypeCommand,
