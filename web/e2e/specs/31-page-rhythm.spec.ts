@@ -328,3 +328,35 @@ for (const { route, list } of DETAIL_ROUTES) {
     for (const width of [1440, 390]) await checkAt(page, url, width)
   })
 }
+
+/**
+ * A list toolbar with a chips row takes at most two rows on a phone: the
+ * search, then Add filter and the chips with the end group (views, group,
+ * display) and the count. Before, the end group had a line of its own (three
+ * rows before the data on /findings). A list whose locked chip takes a line of
+ * its own on a phone (/assets with names hidden) has one more.
+ */
+for (const route of ['/findings']) {
+  test(
+    `list toolbar keeps two rows on a phone on ${route}`,
+    { tag: ['@shell'] },
+    async ({ page }) => {
+      await page.setViewportSize({ width: 390, height: 844 })
+      await page.goto(route)
+      const region = page.locator('[data-slot="list-toolbar-region"]').first()
+      await expect(region).toBeVisible({ timeout: 30_000 })
+      await expect(region.locator('[data-slot="list-search-input"]').first()).toBeVisible()
+      const rows = await region.evaluate((el) => {
+        const centers: number[] = []
+        for (const c of el.querySelectorAll<HTMLElement>('button, input, a')) {
+          const r = c.getBoundingClientRect()
+          if (r.width > 0 && r.height > 0) centers.push(r.top + r.height / 2)
+        }
+        centers.sort((a, b) => a - b)
+        // A new row starts where a control's middle is more than 16px lower.
+        return centers.filter((c, i) => i === 0 || c - centers[i - 1] > 16).length
+      })
+      expect(rows, `${route}: toolbar rows at 390px`).toBeLessThanOrEqual(2)
+    }
+  )
+}
