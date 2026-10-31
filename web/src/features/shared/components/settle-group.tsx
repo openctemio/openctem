@@ -2,6 +2,8 @@
 
 import * as React from 'react'
 
+import { useBootstrapPending } from '@/context/bootstrap-provider'
+
 /**
  * Shows a page's skeleton until the blocks that load their own data have
  * answered, then shows the page in one step, so a band or a side panel that
@@ -31,6 +33,9 @@ export function SettleGroup({ fallback, children, maxWaitMs = 1500 }: SettleGrou
   const pending = React.useRef(new Set<symbol>())
   const [released, setReleased] = React.useState(false)
   const [tick, setTick] = React.useState(0)
+  // Blocks whose request waits for the session (permissions, modules) have
+  // no request yet, so they cannot report loading: wait for the session too.
+  const sessionPending = useBootstrapPending()
 
   const report = React.useCallback<Report>((id, isPending) => {
     const set = pending.current
@@ -44,8 +49,8 @@ export function SettleGroup({ fallback, children, maxWaitMs = 1500 }: SettleGrou
   // Children report in their layout effects, before this effect runs, so the
   // first check already knows every block that is still loading.
   React.useEffect(() => {
-    if (!released && pending.current.size === 0) setReleased(true)
-  }, [released, tick])
+    if (!released && !sessionPending && pending.current.size === 0) setReleased(true)
+  }, [released, tick, sessionPending])
 
   React.useEffect(() => {
     if (released) return
