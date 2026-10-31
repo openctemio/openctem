@@ -136,7 +136,7 @@ WHERE ur.role_id = '00000000-0000-0000-0000-000000000001'
 ```
 
 **Remediation.** The organization's real owner (owner membership label) removes
-the row with the membership role route (`PATCH /api/v1/organization/members/{id}`
+the row with the membership role route (`PATCH /api/v1/tenants/{tenant}/members/{id}`
 with the role the person should have). For a target whose owner role row has no
 owner membership, the service accepts the change only when the caller holds the
 owner label, is active, is not the target and passed a fresh step-up
