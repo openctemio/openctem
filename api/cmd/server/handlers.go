@@ -625,6 +625,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		AssetService:           handler.NewAssetServiceHandler(repos.AssetService, repos.Asset, v, log).SetDataScope(svc.DataScope),
 		Certificate:            handler.NewCertificateHandler(certificateapp.NewService(postgres.NewCertificateReadRepository(deps.DB), svc.DataScope), log),
 		Technology:             handler.NewTechnologyHandler(technologyapp.NewService(postgres.NewTechnologyReadRepository(deps.DB), svc.DataScope), log),
+		EASMPosture:            handler.NewEASMPostureHandler(svc.Posture, svc.Audit, log),
 		WebEndpoint:            handler.NewWebEndpointHandler(webendpointapp.NewService(repos.WebEndpoint, svc.DataScope), svc.Audit, log),
 		Query:                  newQueryHandler(deps.DB, svc, log),
 		APISpec:                handler.NewAPISpecHandler(apispecapp.NewService(repos.APISpec, repos.Asset, svc.DataScope), svc.Audit, log),

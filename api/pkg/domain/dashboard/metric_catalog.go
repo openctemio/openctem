@@ -46,6 +46,9 @@ const (
 	// ShapeKPIs is the KPI strip: five fixed figures with their previous
 	// period, state and list.
 	ShapeKPIs Shape = "kpis"
+	// ShapePosture is the attack surface posture: a grade from A to F, the
+	// score, each category's deduction and the next grade.
+	ShapePosture Shape = "posture"
 )
 
 // VizType is how a widget result is drawn.
@@ -72,6 +75,7 @@ const (
 	VizLevers    VizType = "levers"
 	VizBrief     VizType = "brief"
 	VizKPI       VizType = "kpi"
+	VizPosture   VizType = "posture"
 )
 
 // vizByShape lists the visualizations valid for each result shape; the first
@@ -91,6 +95,7 @@ var vizByShape = map[Shape][]VizType{
 	ShapeLevers:     {VizLevers, VizTable},
 	ShapeBrief:      {VizBrief},
 	ShapeKPIs:       {VizKPI, VizTable},
+	ShapePosture:    {VizPosture, VizTable},
 }
 
 // Dimension is a fact column a widget may filter or group by.
@@ -165,6 +170,9 @@ const (
 	// source (assets, certificates, accepted findings): a category, each
 	// key with the list it counts.
 	MetricKindBreakdown MetricKind = "breakdown"
+	// MetricKindPosture is the attack surface posture score, summed from
+	// the precomputed posture facts of the read's scope.
+	MetricKindPosture MetricKind = "posture"
 )
 
 // Metric is one catalog entry.
@@ -259,6 +267,10 @@ var catalog = []Metric{
 	// Assets added to the inventory in the window, by asset type, with the
 	// window before it: how the attack surface changed.
 	{ID: "surface.new_assets", Group: "attack_surface", Kind: MetricKindBreakdown, Polarity: PolarityNeutral, Timed: true},
+	// The attack surface posture: grade A to F, score, category
+	// deductions and the next grade, for the reader's scope.
+	{ID: "surface.posture", Group: "attack_surface", Kind: MetricKindPosture, Polarity: PolarityHigherBetter,
+		Module: module.ModuleAttackSurface},
 	// Certificates by how soon they expire: expired, 7, 30 and 90 days.
 	{ID: "certificates.expiry", Group: "attack_surface", Kind: MetricKindBreakdown, Polarity: PolarityLowerBetter},
 	// Accepted risks by when the acceptance ends: within 7 days, within 30
@@ -336,6 +348,8 @@ func (m Metric) ShapeFor(groupBy []Dimension) Shape {
 		return ShapeKPIs
 	case MetricKindBreakdown:
 		return ShapeCategory
+	case MetricKindPosture:
+		return ShapePosture
 	default: // count
 		switch len(groupBy) {
 		case 0:
@@ -374,7 +388,8 @@ func (m Metric) Vizzes(groupBy []Dimension) []VizType {
 // now (no fact history traces them).
 func (m Metric) Current() bool {
 	switch m.Kind {
-	case MetricKindItems, MetricKindAssetCount, MetricKindStages, MetricKindPaths, MetricKindLevers, MetricKindBrief:
+	case MetricKindItems, MetricKindAssetCount, MetricKindStages, MetricKindPaths, MetricKindLevers, MetricKindBrief,
+		MetricKindPosture:
 		return true
 	case MetricKindBreakdown:
 		// A breakdown with a window (assets added) reads a range; the

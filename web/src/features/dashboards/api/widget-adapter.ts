@@ -25,6 +25,7 @@ import type {
   KpisResult,
   LeverRow,
   LeversResult,
+  PostureResult,
   WidgetState as KitState,
 } from '@/components/dashboard-kit'
 import { safeInternalHref } from '@/lib/safe-href'
@@ -69,6 +70,8 @@ export function reasonKeyOf(reason: string | undefined): string {
     case 'no_active_campaigns':
     case 'too_few_closed':
     case 'no_threat_alerts':
+    case 'no_surface':
+    case 'posture_building':
     case 'module_off':
       return `dashboards.reason.${reason}`
     default:
@@ -342,6 +345,26 @@ function toResult(v: WidgetValue, spec: WidgetSpec | undefined): WidgetResult | 
             href: safeInternalHref(c.drill) ?? null,
           })),
           lever: it.lever ? leverRow(it.lever) : undefined,
+        })),
+      }
+      return out
+    }
+    case 'posture': {
+      if (!v.posture) return undefined
+      const p = v.posture
+      const out: PostureResult = {
+        shape: 'posture',
+        score: p.score,
+        grade: p.grade,
+        assets: p.assets,
+        next_grade: p.next_grade,
+        next_floor: p.next_floor,
+        fix_steps: p.fix_steps ?? 0,
+        categories: (p.categories ?? []).map((c) => ({
+          category: c.category,
+          max: c.max,
+          deduction: c.deduction,
+          issues: c.issues,
         })),
       }
       return out

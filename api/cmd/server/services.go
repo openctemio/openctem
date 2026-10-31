@@ -64,6 +64,7 @@ import (
 	dashwidgets "github.com/openctemio/openctem/api/internal/app/dashboard/widgets"
 	"github.com/openctemio/openctem/api/internal/app/defectdojo"
 	"github.com/openctemio/openctem/api/internal/app/participation"
+	postureapp "github.com/openctemio/openctem/api/internal/app/posture"
 	"github.com/openctemio/openctem/api/internal/app/remediation"
 	savedviewapp "github.com/openctemio/openctem/api/internal/app/savedview"
 	scangovapp "github.com/openctemio/openctem/api/internal/app/scangov"
@@ -744,7 +745,9 @@ type Services struct {
 	UserDashboard *dashboardapp.Service
 	// DashboardWidgets computes widget results and keeps their snapshots.
 	DashboardWidgets *dashwidgets.Service
-	SavedView        *savedviewapp.Service
+	// Posture is the attack surface posture score (precomputed facts).
+	Posture   *postureapp.Service
+	SavedView *savedviewapp.Service
 
 	// Integrations & Notifications
 	Integration    *integration.IntegrationService
@@ -1376,6 +1379,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.DashboardWidgets = dashwidgets.NewService(s.UserDashboard, s.DataScope, repos.DashboardWidget, log)
 	s.DashboardWidgets.SetSnapshots(repos.DashboardSnapshot, repos.UserDashboard, repos.Tenant, s.Tenant)
 	s.DashboardWidgets.SetAttackPaths(s.AttackSurface)
+	s.Posture = postureapp.NewService(repos.EASMPosture, s.DataScope, log.With("service", "easm-posture"))
+	s.DashboardWidgets.SetPosture(s.Posture)
 	// Saved list views (D15): one page config per page that has views.
 	s.SavedView = savedviewapp.NewService(repos.SavedView, map[string]savedviewapp.PageConfig{
 		savedview.PageFindings: {

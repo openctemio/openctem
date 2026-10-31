@@ -574,6 +574,9 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	// Dashboard snapshots: scheduled refreshes, every minute.
 	w.ControllerManager.Register(controller.NewDashboardSnapshotsController(
 		svc.DashboardWidgets, log.With("controller", "dashboard-snapshots")))
+	// Attack surface posture: scheduled refreshes of the posture facts.
+	w.ControllerManager.Register(controller.NewEASMPostureController(
+		svc.Posture, log.With("controller", "easm-posture")))
 
 	w.ControllerManager.Register(controller.NewRoleSyncController(
 		deps.DB,

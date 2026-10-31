@@ -489,6 +489,19 @@ in [wordlists.md](wordlists.md). The API installs built-in `wordlists-s` and
 `wordlists-m` packs on start; enumeration coverage pauses only when no stable
 `wordlists-s` is left (revoked and none imported).
 
+## 4o. Posture score (built)
+
+A grade from A to F for the external surface of the organization and of
+each root domain, with each category's deduction (vulnerabilities,
+hijackable subdomains, exposed services, cloud storage, misconfiguration,
+suspicious activity), the fix plan to the next grade and the risk reduction
+by asset criticality. Precomputed per asset into `easm_posture_assets` on
+each organization's schedule (default every 6 hours) or by Recalculate now;
+every read sums the facts of the assets the reader may see. Formula, routes,
+isolation and threat model: [easm-posture.md](easm-posture.md). Dashboard
+metric `surface.posture`; card on the Attack surface overview; page
+`/attack-surface/posture`.
+
 ## 4n. Technologies view (built)
 
 Attack surface > Technologies lists what the organization's assets run, one
