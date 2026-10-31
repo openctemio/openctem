@@ -122,7 +122,7 @@ User plane (tenant from the session, as every user route):
 | Method and path | Permission | Purpose |
 |---|---|---|
 | `POST /api/v1/sensor-pairings/lookup` | `sensors:pair` | Find an open pairing by code: SAS, key fingerprint, host facts, source address, expiry. Uniform `404` for unknown, expired, used or foreign codes. |
-| `POST /api/v1/sensor-pairings/expectations` | `sensors:pair` | Reverse mode ("expect a sensor"): returns a code for `openctemio-sensor pair <CODE>`. |
+| `POST /api/v1/sensor-pairings/expectations` | `sensors:pair` | Reverse mode ("Create a pairing code first" in the console): returns a code for `openctemio-sensor pair <CODE>`. |
 | `GET /api/v1/sensor-pairings/expectations/{id}` | `sensors:pair` | Poll an expectation: once the sensor connected, the SAS and host facts to compare. |
 | `POST /api/v1/sensor-pairings/{id}/approve` | `sensors:approve` + step-up | Bind the key to a new sensor (or to the registration being re-paired) with the chosen name, type, zones, grant profile. Requires `fingerprint_confirmed: true`. |
 | `POST /api/v1/sensor-pairings/{id}/deny` | `sensors:pair` | Refuse a pairing (audited). |
@@ -222,6 +222,24 @@ depends only on what the request carries, never on whether the code is
 open, so the budget answer reveals nothing about a guessed code. A refused
 start answers `429` with a `Retry-After` of the time until the budget
 holds a token again (with jitter, at most 5 minutes).
+
+**A key starts again (restart before approval).** A sensor keeps the key it
+generated in its data volume, so it may start pairing again with the same
+key before anyone approved it: it was stopped while it waited, or the
+administrator made a new code. Such a start closes the key's open requests
+that nobody approved (status `expired`, whatever their deadline, audited as
+`sensor.pairing_superseded` in the organization of each one that had one) and
+opens the new one. Started again with the same reverse-mode code, the key's
+own request is re-armed in place (same id, new nonces, the fingerprint is
+shown again after the reveal). A key that was ever registered to a sensor
+(an approval inserted it into `sensor_keys`; a thumbprint is never reused,
+whatever became of the key) is refused `409 pairing-key-registered`, for any
+code and any organization; a start that loses a race for the key to another
+open request answers `409 pairing-key-busy` with a `Retry-After`. Both are
+told only to the holder of the key, since the start is signed by it, and
+neither depends on the code, so they reveal nothing about a guessed code. A
+code another key already holds is never taken over: the start gets the
+uniform answer of a code that matches nothing (threat 5).
 
 Uniformity:
 
@@ -481,6 +499,10 @@ Each line is a test in the implementation PRs.
 | 23 | A code sent by someone else (device-code phishing) | Warning on the code path, the request's address and class next to the approver's own, product, SDK version and age shown, plus threat 2's controls | view carries `organization_id`, `approver_ip`, `source_network` (public and private cases) |
 | 24 | A user of another organization rejects a request by its id | Reject of an unclaimed request needs its code | reject with no, a wrong or a malformed code `404` and the request stays open; with the code: rejected; another organization cannot reject an expectation even with its code |
 | 25 | Code guessing goes unnoticed | The lookup lock is audited at high severity, once per lock | audited exactly once after the limit |
+| 26 | A sensor restarted before approval cannot pair again with the key it kept (the old request holds the key) | A start by the same key closes the key's unapproved requests (audited) and opens a new one; only the key's holder can do it (the start is signed by the key) | same key, new code: new request, old one `expired` and not approvable; same key, same code: re-armed; codeless restart: new code, old code `404`; `201` over HTTP, never `500` |
+| 27 | An approved key is reused to pair into another sensor or organization | A key ever registered in `sensor_keys` is refused `409 pairing-key-registered`, before any code is looked at; no request is changed | approved and completed keys refused with a code of their own and another organization's; that organization's code stays open |
+| 28 | A start with a code another sensor holds displaces that sensor (code hijack) | A code matches only an `expecting` row or the same key's own request; another key gets the uniform answer of an unknown code | second key with a held code gets a request no code reaches; the first sensor's request is unchanged and approvable |
+| 29 | Holding keys to block pairings (denial of service) | Only the key's own requests are closed by its start; requests are bounded by the open-request cap and the start budgets; a key never blocks a code it does not hold | — |
 | — | Cross-tenant access | Every query tenant-scoped; approval binds to the approver's tenant; grants and pairings of another tenant answer `404` | cross-tenant grant read/update `404`; re-pair of another tenant's sensor `404` |
 
 ## 7. Data and migrations
@@ -514,7 +536,7 @@ Each line is a test in the implementation PRs.
 | SP1d | Signer, pairing client, identity store with permission checks, CA pin, auto-pair | sdk-go |
 | SP1e | `openctemio-sensor pair`, auto-pair on first start, snippet variables | sensor |
 | SP2a | Grants, profiles, trust New/Trusted, enforcement on poll/claim/results/credentials/remote actions, legacy-broad migration | api |
-| SP1f/SP2b | Console: Pair a sensor (enter code / expect a sensor), fingerprint compare, step-up, grant view and narrow, legacy flags, identity policy | web |
+| SP1f/SP2b | Console: Add sensor (enter a code / create a pairing code first), fingerprint compare, step-up, grant view and narrow, legacy flags, identity policy | web |
 | SP3 | Restricted / Quarantined, automatic signals, kill switches | api, sdk-go |
 | SP4 | Two-person widening, time-boxed grants, BU-scoped sensor admin, purge-by-sensor, asset-group target scopes | api |
 | SP5 | Workload attestation enrollment unified with CI trust rules; sensor pools | all |

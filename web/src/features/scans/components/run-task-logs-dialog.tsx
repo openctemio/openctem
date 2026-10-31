@@ -1,6 +1,6 @@
 'use client'
 
-import { Fragment } from 'react'
+import { Fragment, useEffect, useLayoutEffect, useRef } from 'react'
 import useSWR from 'swr'
 import { useTranslation } from '@/context/i18n-provider'
 import { enTranslate, type Translate } from '../lib/translate'
@@ -34,6 +34,17 @@ export function logLevelTone(level?: string): PillTone {
   }
 }
 
+/** How often an open dialog re-reads the log of a task that is still running or waiting. */
+export const LIVE_LOG_REFRESH_MS = 3000
+
+/** A task whose sensor may still send lines: it waits for a sensor or runs. */
+export function isTaskLive(status?: string): boolean {
+  return status === 'queued' || status === 'running'
+}
+
+/** Within this many pixels of the bottom, the reader is following the newest lines. */
+const FOLLOW_SLACK_PX = 24
+
 /** What a refusal's message starts with ("refused by local policy: …", "refused by the managed policy: …"). */
 const REFUSED_PREFIX = /^refused by\b/i
 
@@ -60,6 +71,12 @@ export function logsEmptyState(
     return {
       title: t('scans.logs.failedEarly'),
       description: toDisplayText(msg, 1024),
+    }
+  }
+  if (isTaskLive(task?.status)) {
+    return {
+      title: t('scans.logs.waiting'),
+      description: t('scans.logs.waitingHint'),
     }
   }
   return {
@@ -141,6 +158,12 @@ function LogLineRow({ line }: { line: RunTaskLogLine }) {
  * The log lines a task's sensor sent (RFC-029 §4.4.1), oldest first. The
  * platform cleaned and redacted them when it stored them; they are still
  * sensor output, so they are shown as plain text only.
+ *
+ * While the task is queued or running the dialog re-reads the log every few
+ * seconds (the sensor sends its lines in batches during the run), follows the
+ * newest line while the reader is at the bottom, and reads once more when the
+ * task settles so its last lines show. `task` must be the task's current
+ * state (the run read refreshes it), or the dialog cannot tell it settled.
  */
 export function RunTaskLogsDialog({
   runId,
@@ -159,12 +182,38 @@ export function RunTaskLogsDialog({
   onOpenChange: (open: boolean) => void
 }) {
   const { t } = useTranslation()
-  const { data, error, isLoading } = useSWR<RunTaskLogs>(
+  const live = open && isTaskLive(task?.status)
+  const { data, error, isLoading, mutate } = useSWR<RunTaskLogs>(
     open ? scanRunEndpoints.taskLogs(runId, taskId) : null,
     (url: string) => get<RunTaskLogs>(url),
-    { revalidateOnFocus: false }
+    { revalidateOnFocus: false, refreshInterval: live ? LIVE_LOG_REFRESH_MS : 0 }
   )
   const lines = data?.lines ?? []
+
+  // The task settled while the dialog was open: one more read for its last lines.
+  const wasLive = useRef(false)
+  useEffect(() => {
+    if (live) {
+      wasLive.current = true
+    } else if (wasLive.current && open) {
+      void mutate()
+    }
+  }, [live, open, mutate])
+
+  // Follow the newest line of a live log while the reader is at the bottom;
+  // scrolling up stops following, scrolling back down resumes it.
+  const bodyRef = useRef<HTMLDivElement>(null)
+  const following = useRef(true)
+  const onBodyScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const el = e.currentTarget
+    following.current = el.scrollHeight - el.scrollTop - el.clientHeight <= FOLLOW_SLACK_PX
+  }
+  useLayoutEffect(() => {
+    const el = bodyRef.current
+    if (!el || !following.current || !(live || wasLive.current)) return
+    el.scrollTop = el.scrollHeight
+  }, [lines.length, live])
+
   const attemptStarts = attemptBoundaries(lines)
   const empty = logsEmptyState(task, t)
 
@@ -178,8 +227,21 @@ export function RunTaskLogsDialog({
               : t('scans.logs.title')}
           </DialogTitle>
           <DialogDescription>{t('scans.logs.description')}</DialogDescription>
+          {live && (
+            <p
+              role="status"
+              className="flex items-center gap-2 text-xs text-muted-foreground"
+              data-testid="logs-live"
+            >
+              <span
+                aria-hidden="true"
+                className="h-2 w-2 shrink-0 rounded-full bg-success animate-pulse motion-reduce:animate-none"
+              />
+              {t('scans.logs.live')}
+            </p>
+          )}
         </DialogHeader>
-        <DialogBody className="p-0">
+        <DialogBody className="p-0" ref={bodyRef} onScroll={onBodyScroll}>
           {isLoading && (
             <div
               className="flex items-center gap-2 p-6 text-sm text-muted-foreground"
