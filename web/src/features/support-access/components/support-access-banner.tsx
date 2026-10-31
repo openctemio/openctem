@@ -5,8 +5,8 @@
  * organization's data (api RFC-063): who, which data, until when, and whether
  * a support session is open right now. Not dismissible: it is the members'
  * view of an access the owners granted. Owners and admins get a link to the
- * Support access page to revoke it. One small read on load, on focus and
- * once a minute.
+ * Support access page to revoke it. One small read (for those who hold team:read) on load
+ * and once a minute.
  */
 
 import { Eye, LifeBuoy } from 'lucide-react'
@@ -14,7 +14,7 @@ import { Eye, LifeBuoy } from 'lucide-react'
 import Link from '@/components/link'
 import { useTranslation } from '@/context/i18n-provider'
 import { useBootstrapPending } from '@/context/bootstrap-provider'
-import { usePermissions } from '@/lib/permissions'
+import { Permission, usePermissions } from '@/lib/permissions'
 import { cn } from '@/lib/utils'
 
 import { useActiveSupportAccess } from '../api/use-support-access'
@@ -25,8 +25,10 @@ export const SUPPORT_ACCESS_SETTINGS_HREF = '/settings/support-access'
 export function SupportAccessBanner() {
   const { t, locale } = useTranslation()
   const bootstrapPending = useBootstrapPending()
-  const active = useActiveSupportAccess(!bootstrapPending)
-  const { isAtLeast } = usePermissions()
+  const { can, isAtLeast } = usePermissions()
+  // The read needs team:read (API gate); without it the shell would only
+  // collect a 403 on every page.
+  const active = useActiveSupportAccess(!bootstrapPending && can(Permission.TeamRead))
   if (active.length === 0) return null
   const canManage = isAtLeast('admin')
 

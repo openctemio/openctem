@@ -112,10 +112,10 @@ func TestInstanceEnrollment_SharedSensorEndToEnd_DB(t *testing.T) {
 
 	// An organization administrator cannot approve or deny the request,
 	// with or without a code.
-	if _, err := f.svc.Approve(ctx, a, id, approve("")); !errors.Is(err, sensorpairing.ErrNotFound) {
+	if _, err := f.svc.Approve(ctx, a, id, approve(a, "")); !errors.Is(err, sensorpairing.ErrNotFound) {
 		t.Fatalf("organization approval of an instance request: %v", err)
 	}
-	if err := f.svc.Deny(ctx, a, id); !errors.Is(err, sensorpairing.ErrNotFound) {
+	if err := f.svc.Deny(ctx, a, id, ""); !errors.Is(err, sensorpairing.ErrNotFound) {
 		t.Fatalf("organization denial of an instance request: %v", err)
 	}
 

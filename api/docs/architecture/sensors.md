@@ -1638,6 +1638,12 @@ It is registered once and again on change. Heartbeats keep carrying the load.
 - The heartbeat's optional `manifest_digest`: when it is not the current one,
   the answer adds the action `send_manifest`. This goes only to sensors that
   send a digest; deployed sensors ignore unknown actions anyway.
+- When the platform starts, the sensors whose current manifest (sent by the
+  sensor) lists an ignored `unknown-tool` or `unknown-capability` are asked
+  once, at their next heartbeat, to send it again
+  (`SensorService.LoadManifestRechecks`, `TakeManifestRecheck`). A release
+  that adds a tool to the catalog (a migration) then keeps a tool a sensor
+  already reported, without waiting for the sensor to restart.
 
 **Processing** (`SensorService.RegisterManifest`):
 
@@ -1646,7 +1652,10 @@ It is registered once and again on change. Heartbeats keep carrying the load.
    - flat capabilities = installed tools' names + their capabilities +
      sensor-wide ones, the SDK registry's rule
    - sanitize it with the heartbeat's catalog lookup
-3. An unchanged digest only touches the version's `last_seen_at`.
+3. An unchanged digest only touches the version's `last_seen_at`, unless
+   its ignored items are no longer the stored ones (the catalog now knows a
+   tool or capability it dropped): then it is stored again as in step 4,
+   under the same digest, and the projection carries the item.
 4. A new one is stored in one transaction:
    - a `sensor_manifests` row; a sensor going back to an earlier manifest
      makes that row current again

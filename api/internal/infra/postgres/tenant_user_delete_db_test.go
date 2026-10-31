@@ -340,6 +340,13 @@ var seedOverrides = map[string]func(s *schemaSeeder) map[string]any{
 		h := strings.Repeat("ab", 32)
 		return map[string]any{"old_hash": h, "old_prev_hash": "", "new_hash": h, "new_prev_hash": ""}
 	},
+	// content_sha256 and version_digest have a sha256 format CHECK.
+	"ai_knowledge_documents": func(*schemaSeeder) map[string]any {
+		return map[string]any{"content_sha256": "sha256:" + strings.Repeat("ab", 32)}
+	},
+	"ai_run_knowledge": func(*schemaSeeder) map[string]any {
+		return map[string]any{"version_digest": "sha256:" + strings.Repeat("ab", 32)}
+	},
 	// filename_sha256 has a lower-case hex CHECK.
 	"content_pack_blobs": func(*schemaSeeder) map[string]any {
 		return map[string]any{"digest": "sha256:" + strings.Repeat("ab", 32), "size_bytes": "1", "file_count": "1"}

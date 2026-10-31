@@ -4,6 +4,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { AlertCircle, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 
+import { useTranslation } from '@/context/i18n-provider'
+
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import {
@@ -54,6 +56,7 @@ export function ScanZoneDialog({
   otherDefaultZone,
   onSaved,
 }: ScanZoneDialogProps) {
+  const { t } = useTranslation()
   const editing = !!zone
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
@@ -77,18 +80,16 @@ export function ScanZoneDialog({
   const parsed = useMemo(() => parseRanges(entries), [entries])
 
   const nameError = !name.trim()
-    ? 'Name is required.'
+    ? t('scans.zones.dialog.err.nameRequired')
     : name.trim().length > MAX_ZONE_NAME_LENGTH
-      ? `Name must be at most ${MAX_ZONE_NAME_LENGTH} characters.`
+      ? t('scans.zones.dialog.err.nameLong', undefined, { max: MAX_ZONE_NAME_LENGTH })
       : null
   const descriptionError =
     description.trim().length > MAX_ZONE_DESCRIPTION_LENGTH
-      ? `Description must be at most ${MAX_ZONE_DESCRIPTION_LENGTH} characters.`
+      ? t('scans.zones.dialog.err.descLong', undefined, { max: MAX_ZONE_DESCRIPTION_LENGTH })
       : null
   const rangesRequiredError =
-    !isDefault && entries.length === 0
-      ? 'A zone that is not the default zone needs at least one range.'
-      : null
+    !isDefault && entries.length === 0 ? t('scans.zones.dialog.err.rangesRequired') : null
   const hasClientError =
     !!nameError || !!descriptionError || !!rangesRequiredError || parsed.errors.length > 0
 
@@ -106,14 +107,18 @@ export function ScanZoneDialog({
         ranges: entries,
       }
       const saved = zone ? await updateScanZone(zone.id, body) : await createScanZone(body)
-      toast.success(editing ? `Zone "${saved.name}" saved` : `Zone "${saved.name}" created`)
+      toast.success(
+        editing
+          ? t('scans.zones.toast.saved', undefined, { name: saved.name })
+          : t('scans.zones.toast.created', undefined, { name: saved.name })
+      )
       await invalidateScanZonesCache()
       onSaved?.(saved)
       onOpenChange(false)
     } catch (err) {
       const d = describeScanZoneError(
         err,
-        editing ? 'Failed to save zone' : 'Failed to create zone'
+        editing ? t('scans.zones.toast.saveFailed') : t('scans.zones.toast.createFailed')
       )
       setServerError({ message: d.message, hint: d.hint })
     } finally {
@@ -128,11 +133,10 @@ export function ScanZoneDialog({
     <Dialog open={open} onOpenChange={(o) => !saving && onOpenChange(o)}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{editing ? 'Edit scan zone' : 'New scan zone'}</DialogTitle>
-          <DialogDescription>
-            Address ranges, and the sensors that can reach them. Scans route each target to the
-            narrowest zone that holds it.
-          </DialogDescription>
+          <DialogTitle>
+            {editing ? t('scans.zones.dialog.titleEdit') : t('scans.zones.dialog.titleNew')}
+          </DialogTitle>
+          <DialogDescription>{t('scans.zones.dialog.desc')}</DialogDescription>
         </DialogHeader>
 
         <DialogForm
@@ -151,12 +155,12 @@ export function ScanZoneDialog({
             )}
 
             <div className="space-y-1.5">
-              <Label htmlFor="zone-name">Name</Label>
+              <Label htmlFor="zone-name">{t('scans.zones.dialog.name')}</Label>
               <Input
                 id="zone-name"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="HQ data centre"
+                placeholder={t('scans.zones.dialog.namePlaceholder')}
                 maxLength={MAX_ZONE_NAME_LENGTH + 20}
                 aria-invalid={showErrors && !!nameError}
                 autoFocus
@@ -165,13 +169,13 @@ export function ScanZoneDialog({
             </div>
 
             <div className="space-y-1.5">
-              <Label htmlFor="zone-description">Description</Label>
+              <Label htmlFor="zone-description">{t('scans.zones.dialog.description')}</Label>
               <Textarea
                 id="zone-description"
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 rows={2}
-                placeholder="Optional"
+                placeholder={t('scans.zones.dialog.optional')}
                 aria-invalid={showErrors && !!descriptionError}
               />
               {showErrors && descriptionError && (
@@ -181,15 +185,15 @@ export function ScanZoneDialog({
 
             <div className="flex items-start justify-between gap-4 rounded-md border p-3">
               <div className="min-w-0 space-y-0.5">
-                <Label htmlFor="zone-default">Default zone</Label>
+                <Label htmlFor="zone-default">{t('scans.zones.dialog.defaultLabel')}</Label>
                 <p className="text-xs text-muted-foreground">
-                  Receives public targets and hostnames no other zone holds. One per team; it may
-                  have no ranges.
+                  {t('scans.zones.dialog.defaultHelp')}
                 </p>
                 {defaultConflict && (
                   <p className="text-xs text-warning">
-                    &quot;{otherDefaultZone.name}&quot; is the default zone now. Unset it there
-                    first, or the server refuses this.
+                    {t('scans.zones.dialog.defaultConflict', undefined, {
+                      name: otherDefaultZone.name,
+                    })}
                   </p>
                 )}
               </div>
@@ -197,7 +201,7 @@ export function ScanZoneDialog({
             </div>
 
             <div className="space-y-1.5">
-              <Label htmlFor="zone-ranges">Ranges</Label>
+              <Label htmlFor="zone-ranges">{t('scans.zones.dialog.ranges')}</Label>
               <Textarea
                 id="zone-ranges"
                 value={rangesText}
@@ -209,14 +213,15 @@ export function ScanZoneDialog({
                 aria-describedby="zone-ranges-help"
               />
               <p id="zone-ranges-help" className="text-xs text-muted-foreground">
-                One per line: an address, a CIDR or a range (a-b). IPv4 up to /8, IPv6 up to /32.
-                Loopback, link-local, metadata, multicast and reserved space are refused.
+                {t('scans.zones.dialog.rangesHelp')}
               </p>
               {parsed.errors.length > 0 && (
                 <ul className="space-y-0.5" data-testid="zone-range-errors">
                   {parsed.errors.map((e) => (
                     <li key={`${e.line}-${e.input}`} className="text-xs text-destructive">
-                      {e.line > 0 ? `Line ${e.line}: ` : ''}
+                      {e.line > 0
+                        ? t('scans.zones.dialog.lineError', undefined, { line: e.line })
+                        : ''}
                       {e.message}
                     </li>
                   ))}
@@ -228,8 +233,16 @@ export function ScanZoneDialog({
               {parsed.errors.length === 0 && parsed.ranges.length > 0 && (
                 <div className="space-y-1 pt-1">
                   <p className="text-xs text-muted-foreground">
-                    Saved as {parsed.ranges.length} range{parsed.ranges.length === 1 ? '' : 's'}
-                    {parsed.privateCount > 0 ? `, ${parsed.privateCount} private` : ''}:
+                    {parsed.ranges.length === 1
+                      ? t('scans.zones.dialog.savedAsOne')
+                      : t('scans.zones.dialog.savedAsMany', undefined, {
+                          count: parsed.ranges.length,
+                        })}
+                    {parsed.privateCount > 0
+                      ? t('scans.zones.dialog.privateSuffix', undefined, {
+                          count: parsed.privateCount,
+                        })
+                      : ''}
                   </p>
                   <RangeChips ranges={parsed.ranges} max={6} />
                 </div>
@@ -244,11 +257,11 @@ export function ScanZoneDialog({
               onClick={() => onOpenChange(false)}
               disabled={saving}
             >
-              Cancel
+              {t('scans.zones.dialog.cancel')}
             </Button>
             <Button type="submit" disabled={saving}>
               {saving && <Loader2 className="h-4 w-4 animate-spin" />}
-              {editing ? 'Save' : 'Create zone'}
+              {editing ? t('scans.zones.dialog.save') : t('scans.zones.dialog.create')}
             </Button>
           </DialogFooter>
         </DialogForm>

@@ -81,6 +81,10 @@ type SensorService struct {
 	// acknowledged may leave their tool inventory out of heartbeats unless
 	// it is set.
 	slimHeartbeatOff bool
+	// manifestRecheck holds the sensors asked once to send their manifest
+	// again because their current one has items the platform dropped as
+	// unknown (LoadManifestRechecks); sensor id -> struct{}.
+	manifestRecheck sync.Map
 	// apiKeyRepo is the optional multi-key store (RFC-014 Phase 3). When wired,
 	// AuthenticateByAPIKey also accepts keys from sensor_api_keys, and self-renewal
 	// under a key TTL issues a NEW key row (rotation overlap) instead of replacing

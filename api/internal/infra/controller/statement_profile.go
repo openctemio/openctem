@@ -120,6 +120,7 @@ var sqlProfiles = map[string]SQLProfile{
 	"AIAgentSweepController":              SQLLight,
 	"JobRecoveryController":               SQLLight,
 	"MemberAccessExpiryController":        SQLLight,
+	"APIKeyExpiryNoticeController":        SQLLight,
 	"ReportScheduler":                     SQLLight,
 	"RetestScheduler":                     SQLLight,
 	"RoleSyncController":                  SQLLight,
