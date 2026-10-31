@@ -98,6 +98,16 @@ func (s *PlatformService) Upload(ctx context.Context, in PlatformInput, archive 
 	return s.ingestArchive(ctx, in, archive, dom.SourceUpload, "", "")
 }
 
+// UploadBuiltin ingests a pack the API ships embedded (the curated wordlist
+// seed): the same canonicalisation, lint and platform signature as an
+// upload, with ref ("builtin:<asset>") recorded as the pack's source.
+func (s *PlatformService) UploadBuiltin(ctx context.Context, in PlatformInput, archive io.Reader, ref string) (*dom.PlatformPack, error) {
+	if err := s.check(in); err != nil {
+		return nil, err
+	}
+	return s.ingestArchive(ctx, in, archive, dom.SourceUpload, ref, "")
+}
+
 // Import fetches an upstream release over https and ingests it. digest
 // (sha256:<hex>) is required and checked against the fetched bytes before
 // anything is parsed: a changed release, or one tampered with in transit,

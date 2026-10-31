@@ -10,6 +10,8 @@ package dashboard
 // (docs/architecture/dashboards.md, "Fact layer"), so any viewer scope applies
 // as a join at read time.
 
+import "github.com/openctemio/openctem/api/pkg/domain/module"
+
 // Shape is the form of a widget result.
 type Shape string
 
@@ -193,6 +195,11 @@ type Metric struct {
 	Flow bool `json:"flow,omitempty"`
 	// NoPrevious marks a timed metric with no previous-period figure.
 	NoPrevious bool `json:"-"`
+	// Module is the tenant module the metric reads (empty: always
+	// available). While the module is off for the organization the metric
+	// is not offered in the catalog and a widget of it reads "unsupported"
+	// with reason "module_off" and no figure, also from a stored snapshot.
+	Module string `json:"module,omitempty"`
 }
 
 var f1Dims = []Dimension{DimSeverity, DimPriorityClass, DimSource, DimSLAState, DimAgeBand, DimKEV, DimReachable, DimAssetGroup}
@@ -268,6 +275,10 @@ var catalog = []Metric{
 	// Findings closed as false positive in the window as a share of the
 	// findings closed in the window, by tool; organization dashboards only.
 	{ID: "detection.fp_rate_by_tool", Group: "ctem", Kind: MetricKindBreakdown, Polarity: PolarityLowerBetter, Timed: true, NoPrevious: true},
+	// Open emerging-threat alerts affecting the reader's scope, by level
+	// (immediate, digest, listed): the alert list's own summary.
+	{ID: "intel.emerging_threats", Group: "threat_intel", Kind: MetricKindBreakdown, Polarity: PolarityLowerBetter,
+		Module: module.ModuleThreatIntel},
 }
 
 var catalogByID = func() map[string]Metric {

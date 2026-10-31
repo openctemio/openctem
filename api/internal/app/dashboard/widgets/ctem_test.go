@@ -39,6 +39,8 @@ type ctemFacts struct {
 	campaigns    []dashboard.CampaignProgressRow
 	toolClosed   []dashboard.ToolClosedRow
 	qualityCalls int
+	// The emerging-threats breakdown.
+	threats dashboard.EmergingThreatCounts
 }
 
 func (f *ctemFacts) FactsBuiltAt(context.Context, shared.ID) (*time.Time, error) {
@@ -164,6 +166,11 @@ func (f *ctemFacts) ClosedByTool(_ context.Context, s dashboard.ReadScope, from 
 	f.since = from
 	f.qualityCalls++
 	return f.toolClosed, nil
+}
+
+func (f *ctemFacts) EmergingThreats(_ context.Context, s dashboard.ReadScope) (dashboard.EmergingThreatCounts, error) {
+	f.scopes = append(f.scopes, s)
+	return f.threats, nil
 }
 
 type fakePaths struct {

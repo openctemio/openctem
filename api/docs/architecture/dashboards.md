@@ -152,6 +152,17 @@ Numbers on organization dashboards are computed once for the organization by
 the platform, never with a person's access, so nobody's access is borrowed when
 a manager leaves.
 
+### Editing a dashboard's details
+
+"Edit details" in the dashboard's menu on `/` opens the details form
+`/dashboards?edit=<id>` (name, description, columns); an organization
+dashboard opens `/dashboards?edit=<id>&kind=organization`, offered to
+`dashboards:org:manage` only and saved through
+`PUT /api/v1/organization/dashboards/{id}` (the server checks the permission
+and the audience; a viewer gets 403, a dashboard outside the audience 404).
+A copy of a template stores the template's name and description in the
+viewer's language and opens on the dashboard.
+
 ### Planned
 
 - The organization management section on `/dashboards` (create, order,
@@ -237,6 +248,7 @@ widget has `widget_type` `metric` or `note` and a `config` of this form
   | `surface.new_assets` | category: assets added in the window by asset type, with the previous window | none | `assets`, see "Attack surface and accepted risk" |
   | `certificates.expiry` | category: certificates expired, or expiring within 7, 8-30 and 31-90 days | none | `assets` |
   | `exceptions.expiring` | category: accepted findings whose acceptance ends within 7, 8-30 days or later | none | `findings` |
+  | `intel.emerging_threats` | category: open emerging-threat alerts affecting the scope, by level (immediate, digest, listed); module `threat_intel` | none | `threat_alerts` + `threat_alert_assets`, see "Emerging threats" |
 
 - **Shapes and visualizations.** scalar: stat, progress; ratio: progress,
   stat; duration: stat; category: bar, column, table, donut, stat; time
@@ -583,6 +595,71 @@ Code: `internal/app/dashboard/widgets/quality.go`,
   false-positive rate is the same for every organization viewer, leaves out
   a small tool and another tenant, and equals the false-positive list over
   the closed list).
+
+### Emerging threats
+
+`intel.emerging_threats` ("Emerging threats affecting you", kind `breakdown`,
+shape `category`, default visualization `bar`) answers "which new threats do
+we act on now". It is computed into the snapshot like every widget. Code:
+`internal/app/dashboard/widgets/intel.go`,
+`internal/infra/postgres/dashboard_intel_repository.go`.
+
+- **Same statement as the list.** The figure is read with `alertSummary`
+  (`internal/infra/postgres/threat_alert_read.go`), the statement the alert
+  list (`GET /api/v1/emerging-threats`) uses for its summary strip: the
+  tenant first, an alert counted only when at least one of its assets is in
+  the read's data scope (`threat_alert_assets`, `filterspec.ScopeSQL`). A
+  personal read uses the owner's data scope, so a scoped member counts only
+  the alerts the list shows them; an organization read counts every alert.
+- **Rows.** `immediate`, `digest`, `listed` (in this order, ordinal): the
+  open alerts (new, acknowledged, remediating) of each level. A row opens
+  `/emerging-threats?level=<level>&state=open`, whose total equals the row;
+  an empty row has no link. The list page reads and writes its filters
+  (`level`, `state`, `tier`, `exposure`, `search`, `page`, `per_page`) in the
+  URL with the list API's names (`web/src/features/emerging-threats/url-filters.ts`).
+- **Not measured** `no_threat_alerts`: no alert in any state has ever
+  affected an asset in the scope, so "no open alert" is not shown as an
+  all-clear. Alerts seen but none open is a real empty figure. The decision
+  uses the scope's own alerts, never the organization's, so it tells a scoped
+  member nothing about alerts outside their scope.
+- **Permission** on a personal read: `vulnerabilities:read` (the alert
+  list's permission); without it `unsupported` / `forbidden`, also from a
+  stored snapshot.
+- **Module** `threat_intel` (the module the alert routes are gated on), see
+  "Module awareness".
+- Threat model: cross-tenant (every statement starts `a.tenant_id = $1`, and
+  the in-scope join repeats `taa.tenant_id = a.tenant_id`); counting oracle
+  (counts and the not-measured decision follow the read's scope); stored
+  snapshot replay after the module is turned off or the permission is lost
+  (masked on the way out); injection (the spec carries only the metric id,
+  the scope values are bound parameters, the level keys are fixed).
+- Tests: `widgets/intel_test.go` (levels, links, not measured, scope,
+  permission, module off), `routes/dashboard_intel_widget_db_test.go` (a
+  scoped member, a member without scope rows and an administrator: alerts
+  outside the scope and another tenant's alerts never count or show; every
+  level equals the alert list it opens; module off on a stored snapshot, the
+  catalog and the list).
+
+### Module awareness
+
+A catalog metric may name the tenant module it reads (`Metric.Module`). While
+that module is off for the organization (the module gate,
+`middleware.ModuleGate.IsReadable`: on, or in its read-only grace):
+
+- the widget catalog (`GET /api/v1/me/dashboards/widget-catalog`) leaves the
+  metric out, so the gallery never offers it;
+- a widget of it is not computed and reads `unsupported` with reason
+  `module_off` and no figure, never a 0. The mask also runs on the way out
+  of every read (`forViewer`, personal and organization), so a snapshot
+  stored while the module was on is not served after it is turned off; a
+  snapshot that holds a `module_off` widget whose module is on again is
+  computed afresh on the next open instead of waiting for the refresh;
+- the web dashboard does not draw the widget at all (`DashboardView`); the
+  layout keeps it, so it comes back when the module is turned on again.
+
+The module gate is a feature switch, not the security boundary: the
+permission mask and the data scope apply as for every widget. Without a gate
+(tests, tools) every module is readable.
 
 ### Scope and isolation
 
@@ -996,31 +1073,56 @@ widget kit's frame, with its own error boundary.
   own, none from the organization) gets a personal copy of the CTEM
   template, created once and computed for their own access, with a hint to
   customize it or choose another template.
-- **New layout offer**: a personal copy of the Overview or CTEM template
-  (three or more of its `w_ov*` / `w_ct*` widget ids) that lacks some of the
-  template's widgets (by metric) shows a hint naming them: "Add them to this
-  dashboard" (each missing widget is inserted where the template has it: a
-  single figure after its predecessor, a larger widget before its successor;
-  every existing widget keeps its place, size and settings, and the layout is
-  saved), "Switch to the new layout" (adds a fresh copy of the template under
-  a name the person does not already use, e.g. "CTEM (new layout)", and opens
-  it; the old dashboard is kept), or dismiss. Nothing changes until the viewer
-  chooses; the dismissal is kept in the browser per layout version
+- **New layout offer**: a personal copy of a template (three or more of its
+  `w_ov*` / `w_ct*` / `w_ex*` / `w_pr*` / `w_tr*` widget ids) is offered the
+  template's changes. When it lacks some of the template's widgets (by
+  metric) the hint names them: "Add them to this dashboard" (each missing
+  widget is inserted where the template has it: a single figure after its
+  predecessor, a larger widget before its successor; every existing widget
+  keeps its place, size and settings, and the layout is saved). When it has
+  them all but the template's widgets (matched by id) are in another order or
+  of another size, the hint says the layout has a new arrangement. Both offer
+  "Switch to the new layout" (adds a fresh copy of the template under a name
+  the person does not already use, e.g. "CTEM (new layout)", and opens it;
+  the old dashboard is kept), or dismiss. A widget of the person's own
+  between template widgets is not a rearrangement. Nothing changes until the
+  viewer chooses; the dismissal is kept in the browser per layout version
   (`LAYOUT_HINT_VERSION` in `layout-hint.ts`). No request is made for the
   hint, and organization dashboards never show it.
 - **Templates** are typed widget configs in
-  `web/src/features/dashboards/templates.json`. CTEM (the first-visit
-  default) and Overview share one set: the exposure flow first (it carries
-  the five CTEM stages, so the separate loop widget is no longer in these
-  templates), then the figure row (open P0-P1, KEV open, open within SLA,
-  time to fix median with p90), discovery coverage beside priority over
-  time, new vs fixed, the severity × age heatmap, fix next and attack paths
-  to crown jewels; CTEM puts attack paths before fix next and ends with the
-  intake and noise reduction panel. Then Executive, Vulnerability program, Triage. `/dashboards` copies one into a personal
-  dashboard ("Use template"); the copy is a stored dashboard like any other.
+  `web/src/features/dashboards/templates.json`, in reading order (the grid
+  places widgets in that order without back-filling, so the order is the
+  layout). Every template opens on its headline figures, then the decision
+  widget, then the story, and ends with diagnostics:
+  - CTEM (first-visit default): key figures; levers; exposure flow (the five
+    CTEM stages); new on the attack surface (7 days) beside certificate
+    expiry; attack paths to crown jewels beside the weekly brief; fix next;
+    open exposure by priority (90 days); new vs fixed beside open by age;
+    intake and noise reduction.
+  - Overview: key figures; levers; exposure flow; open exposure by priority
+    beside new vs fixed; new on the attack surface beside certificate
+    expiry; weekly brief beside attack paths; fix next.
+  - Executive: key figures; weekly brief; open exposure by priority over 12
+    months; new vs fixed beside time to fix by priority; new on the attack
+    surface (30 days) beside accepted risks ending; levers.
+  - Vulnerability program: within SLA, P0-P1 open, KEV open and time to fix;
+    SLA at risk beside new vs fixed; time to fix by priority beside open by
+    age; accepted risks ending beside open findings by SLA state.
+  - Triage: P0-P1 open, KEV open, open findings and within SLA; fix next;
+    open findings by severity beside open findings by SLA state; new vs
+    fixed per day over 30 days.
+  `web/src/features/dashboards/__tests__/template-layouts.test.ts` checks
+  that each template fills its rows with one height per row at four columns
+  and leaves no hole at two columns or on a phone, and that each opens on a
+  one-row headline. `/dashboards` copies one into a personal dashboard ("Use
+  template"); the copy is a stored dashboard like any other.
   `api/pkg/domain/dashboard/templates_test.go` parses every template widget
   with the server's spec validation, so a template is never refused on save.
   Names and descriptions are in the `dashboards` i18n namespace.
+- **Widget titles**: a widget without a title of its own shows the metric's
+  name, followed by "by <dimension>" when it groups by something other than
+  the metric's default ("Open findings by SLA state"), so two widgets of one
+  metric are told apart.
 - **Switcher**: one menu with "Organization" (shown only with
   `dashboards:org:view` or `dashboards:org:manage`; without them the list is
   never requested) and "Mine", search above eight entries, New and Manage.
@@ -1147,7 +1249,7 @@ figure means not measured and is never drawn as 0.
 | `PathsViz` | paths | reachable crown jewels (linked to the attack paths) and the top ones with the entry points reaching them; "none designated" and "none reachable" are different states |
 | `ItemsViz` | items | rows with priority, KEV, asset and due time, and "View all" |
 | `ItemsTable` | items (`viz: table`) | the embedded findings table: Priority, Finding (title link, asset line, KEV chip), Severity and SLA columns (Severity and SLA hidden at phone width, the table scrolls sideways), a read-only chip row with the list's filter, the count in the caption, and a footer "Top n of total" with "Open in Findings" |
-| `ExposureFlowViz` | flow | sources (with health in words and line style), received to new or reopened to actionable, a labelled ring of actionable findings by priority class (at most four arcs, each a focusable link with a sentence, the largest centred at the bottom, a minimum arc so P0 stays visible; the centre is the count the arcs sum to), the five stages (the focus stage filled with the accent), outcomes (open with its severity split, past SLA, in progress, closed in the period); wires are SVG paths between measured rows, width by volume; below the large breakpoint the columns stack and the wires are dropped |
+| `ExposureFlowViz` | flow | sources (with health in words and line style), received to new or reopened to actionable, a labelled ring of actionable findings by priority class (at most four arcs, each a focusable link with a sentence, the largest centred at the bottom, a minimum arc so P0 stays visible; the centre is the count the arcs sum to), the five stages (the focus stage filled with the accent), outcomes (open with its severity split, past SLA, in progress, closed in the period); wires are SVG paths between measured rows, width by volume; the layout follows the widget's own width (see "Connected visuals: layout bands") |
 | `IntakeViz` | intake | the connector panel (each source's icon, tool, receipts, health, count, wired into one summary that shows the hovered source), the noise bar (new or reopened, merged, suppressed, not stored; each legend value opens the receipts), the false-positive row, and the per-source table |
 
 Rules every visualization follows:
@@ -1193,6 +1295,40 @@ Rules every visualization follows:
 `web/src/lib/format-metric.ts` formats the figures in the viewer's locale:
 grouped counts, compact from 10 000, percentages with one decimal below 10 %,
 durations in the largest sensible unit, relative times.
+
+### Connected visuals: layout bands
+
+The exposure flow and the intake panel lay themselves out on the widget's
+own width, never the viewport: a widget sits in grid cells of any size (a
+1-of-4 cell on a wide screen is narrower than a phone). The layout is CSS
+container queries on the visual; the same widths decide in code
+(`flowBand` in `flow-parts.tsx`, `FLOW_MID` 660 px and `FLOW_WIDE` 960 px of
+the visual's width) which wires exist, so a wire is drawn only when both of
+its ends sit side by side, and the rows it joins exist before it is measured.
+
+| Band (visual width) | Exposure flow | Intake panel |
+|---|---|---|
+| narrow, under 660 px | one column in reading order: the first three sources and "N more", the received to actionable figures, the ring (at most 18 rem, 78 % of the width), the stages (three then two per row under 420 px, five in a row above), the outcomes; no wires | sources, then the summary; the health note under each source's name; no wires |
+| mid, 660 to 959 px | the first three sources in one row above; the core (figures, ring, stages) beside the outcomes, wires from the ring to the outcomes | sources (15 to 19 rem) and summary (14 to 18 rem) side by side, centred, wires |
+| wide, 960 px and more | three columns of bounded width (sources 12 to 15 rem, core 20 to 34 rem, outcomes 13 to 16 rem), centred with gaps of 2.5 to 5.5 rem: the composition never stretches to the card edges, so wires stay short whatever the card width | same as mid |
+
+The ring is `clamp(15rem, 24cqi, 20rem)` from the mid band and its centre
+figure `clamp(2.25rem, 4.5cqi, 3rem)`. Wires are re-measured on every resize
+(`useWireAnchors`, a `ResizeObserver`), from a row's right edge to the
+ring's or summary's left edge, so they always meet their ends; their width
+stays proportional to the volume. The DOM order is the reading and focus
+order in every band (no visual reordering). The noise and per-source panels
+of the intake widget sit side by side from 1100 px of widget width.
+
+Widget titles are `h2` (the page title is the `h1`), so the sections inside a
+widget (`h3`) keep the heading order.
+
+Tests: `dashboard-kit/__tests__/exposure-flow.test.tsx` (band thresholds, the
+container query classes use the same widths, the health note sits on its
+row), `e2e/specs/52-dashboard-flow-layout.spec.ts` (at card widths 480, 720,
+960, 1200, 1440 and 1600 px: no sideways scroll, no overlapping columns, the
+ring inside its column, no wires on one column, every wire starts within
+80 px of its source label).
 
 ### Chart palettes
 

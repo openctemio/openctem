@@ -68,6 +68,8 @@ export function reasonKeyOf(reason: string | undefined): string {
     case 'no_closures':
     case 'no_active_campaigns':
     case 'too_few_closed':
+    case 'no_threat_alerts':
+    case 'module_off':
       return `dashboards.reason.${reason}`
     default:
       return 'dashboards.reason.failed'

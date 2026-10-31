@@ -140,5 +140,10 @@ describe('spec ops', () => {
     expect(defaultSize('scalar')).toEqual({ w: 3, h: 1 })
     expect(defaultSize('items')).toEqual({ w: 6, h: 3 })
     expect(defaultSize('time_series')).toEqual({ w: 6, h: 2 })
+    // Story widgets take the whole row.
+    expect(defaultSize('levers')).toEqual({ w: 12, h: 1 })
+    expect(defaultSize('kpis')).toEqual({ w: 12, h: 1 })
+    expect(defaultSize('flow')).toEqual({ w: 12, h: 4 })
+    expect(defaultSize('intake')).toEqual({ w: 12, h: 3 })
   })
 })

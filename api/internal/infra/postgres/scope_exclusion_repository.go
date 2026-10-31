@@ -418,6 +418,20 @@ func (r *ScopeExclusionRepository) Count(ctx context.Context, filter scope.Exclu
 	return count, nil
 }
 
+// CountByStatus counts the tenant's exclusions per stored status
+// (scope.ExclusionRepository).
+func (r *ScopeExclusionRepository) CountByStatus(ctx context.Context, filter scope.ExclusionFilter) (map[scope.Status]int64, error) {
+	if filter.TenantID == nil {
+		return nil, fmt.Errorf("%w: tenant required", shared.ErrValidation)
+	}
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT status, COUNT(*) FROM scope_exclusions WHERE tenant_id = $1 GROUP BY status`, *filter.TenantID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to count scope exclusions by status: %w", err)
+	}
+	return scanStatusCounts(rows)
+}
+
 // ExpireOld marks expired exclusions as expired.
 func (r *ScopeExclusionRepository) ExpireOld(ctx context.Context) error {
 	query := `

@@ -785,9 +785,10 @@ func (h *ScopeHandler) handleServiceError(w http.ResponseWriter, resource string
 // @Param        statuses  query     string  false  "Filter by statuses (comma-separated)"
 // @Param        tags      query     string  false  "Filter by tags (comma-separated)"
 // @Param        search    query     string  false  "Search by pattern"
+// @Param        include   query     string  false  "status_counts: also count every entry the caller may see per status (status_counts), whatever the filters"
 // @Param        page      query     int     false  "Page number" default(1)
 // @Param        per_page  query     int     false  "Items per page" default(20)
-// @Success      200  {object}  ListResponse[ScopeTargetResponse]
+// @Success      200  {object}  ScopeTargetListResponse
 // @Failure      400  {object}  apierror.Error
 // @Failure      401  {object}  apierror.Error
 // @Failure      500  {object}  apierror.Error
@@ -838,13 +839,21 @@ func (h *ScopeHandler) ListTargets(w http.ResponseWriter, r *http.Request) {
 	h.addAttestationStatus(r, outs, result.Data)
 	h.addCITrustLinks(r, outs, result.Data)
 
-	response := ListResponse[ScopeTargetResponse]{
+	response := ScopeTargetListResponse{ListResponse: ListResponse[ScopeTargetResponse]{
 		Data:       responses,
 		Total:      result.Total,
 		Page:       result.Page,
 		PerPage:    result.PerPage,
 		TotalPages: result.TotalPages,
 		Links:      NewPaginationLinks(r, result.Page, result.PerPage, result.TotalPages),
+	}}
+	if wantsStatusCounts(r) {
+		counts, err := h.service.CountTargetsByStatus(r.Context(), tenantID, hidden)
+		if err != nil {
+			h.handleServiceError(w, "Scope target", err)
+			return
+		}
+		response.StatusCounts = statusCountsJSON(counts)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -1131,9 +1140,10 @@ func (h *ScopeHandler) DeactivateTarget(w http.ResponseWriter, r *http.Request) 
 // @Param        statuses     query     string  false  "Filter by statuses (comma-separated)"
 // @Param        is_approved  query     bool    false  "Filter by approval status"
 // @Param        search       query     string  false  "Search by pattern"
+// @Param        include      query     string  false  "status_counts: also count every exclusion per status (status_counts), whatever the filters"
 // @Param        page         query     int     false  "Page number" default(1)
 // @Param        per_page     query     int     false  "Items per page" default(20)
-// @Success      200  {object}  ListResponse[ScopeExclusionResponse]
+// @Success      200  {object}  ScopeExclusionListResponse
 // @Failure      400  {object}  apierror.Error
 // @Failure      401  {object}  apierror.Error
 // @Failure      500  {object}  apierror.Error
@@ -1171,13 +1181,21 @@ func (h *ScopeHandler) ListExclusions(w http.ResponseWriter, r *http.Request) {
 	}
 	resolveActors(r.Context(), h.actors, h.logger, middleware.MustGetTenantID(r.Context()), refs)
 
-	response := ListResponse[ScopeExclusionResponse]{
+	response := ScopeExclusionListResponse{ListResponse: ListResponse[ScopeExclusionResponse]{
 		Data:       responses,
 		Total:      result.Total,
 		Page:       result.Page,
 		PerPage:    result.PerPage,
 		TotalPages: result.TotalPages,
 		Links:      NewPaginationLinks(r, result.Page, result.PerPage, result.TotalPages),
+	}}
+	if wantsStatusCounts(r) {
+		counts, err := h.service.CountExclusionsByStatus(r.Context(), tenantID)
+		if err != nil {
+			h.handleServiceError(w, "Scope exclusion", err)
+			return
+		}
+		response.StatusCounts = statusCountsJSON(counts)
 	}
 
 	w.Header().Set("Content-Type", "application/json")

@@ -679,6 +679,28 @@ func registerContentPackRoutes(
 	}, tenantMiddlewares...)
 }
 
+// registerWordlistRoutes registers an organization's own wordlists
+// (docs/architecture/wordlists.md): DNS labels its subdomain enumeration
+// jobs query. Reading needs scans:content:read, changing scans:content:write;
+// the tenant comes from the token.
+func registerWordlistRoutes(
+	router Router,
+	h *handler.WordlistHandler,
+	authMiddleware Middleware,
+	userSyncMiddleware Middleware,
+) {
+	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
+	router.Group("/api/v1/wordlists", func(r Router) {
+		r.GET("/", h.List, middleware.Require(permission.ContentPacksRead))
+		// Before /{id} so chi does not read "preview" as an id.
+		r.GET("/preview", h.Preview, middleware.Require(permission.ContentPacksRead))
+		r.GET("/{id}", h.Get, middleware.Require(permission.ContentPacksRead))
+		r.POST("/", h.Create, middleware.Require(permission.ContentPacksWrite))
+		r.PATCH("/{id}", h.Update, middleware.Require(permission.ContentPacksWrite))
+		r.DELETE("/{id}", h.Delete, middleware.Require(permission.ContentPacksWrite))
+	}, tenantMiddlewares...)
+}
+
 // registerPlatformContentPackRoutes registers the read-only view every
 // organization has of the platform content packs and channels (RFC-061).
 // The platform administrators manage them under /api/v1/admin/content-packs.

@@ -105,6 +105,14 @@ export const METRICS: readonly MetricMeta[] = [
     defaultGroupBy: [],
     ordinal: true,
   },
+  {
+    id: 'intel.emerging_threats',
+    group: 'threat_intel',
+    unit: 'count',
+    defaultGroupBy: [],
+    keyPrefix: 'emergingThreats.level',
+    ordinal: true,
+  },
 ]
 
 export const METRIC_GROUPS: readonly MetricGroup[] = [
@@ -151,6 +159,31 @@ export const ORDINAL_DIMENSIONS: ReadonlySet<Dimension> = new Set([
   'age_band',
   'sla_state',
 ])
+
+type Translate = (key: string, fallback?: string, vars?: Record<string, string | number>) => string
+
+/**
+ * The title a metric widget shows when it has none of its own: the metric's
+ * name, followed by "by <dimension>" when the widget groups by something
+ * other than the metric's default, so two widgets of one metric on a
+ * dashboard ("Open findings by severity", "Open findings by SLA state") are
+ * told apart.
+ */
+export function defaultWidgetTitle(
+  spec: Pick<WidgetSpec, 'data'> | undefined,
+  t: Translate
+): string | undefined {
+  const metric = spec?.data.metric
+  if (!metric) return undefined
+  const name = t(metricNameKey(metric), metric)
+  const own = spec.data.group_by ?? []
+  const fallback = metricMeta(metric)?.defaultGroupBy ?? []
+  if (own.length === 0 || own.join(',') === fallback.join(',')) return name
+  return t('dashboards.widget.titleBy', '{metric} by {dimension}', {
+    metric: name,
+    dimension: own.map((d) => t(`dashboards.dimension.${d}.inTitle`, d)).join(', '),
+  })
+}
 
 /** The group-by of a widget: its own, or the metric's default. */
 export function groupByOf(spec: Pick<WidgetSpec, 'data'> | undefined): Dimension[] {

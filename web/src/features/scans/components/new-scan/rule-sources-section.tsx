@@ -93,7 +93,7 @@ export function RuleSourcesSection({
       ) : templates.length === 0 ? (
         <p className="text-muted-foreground rounded-md border border-dashed p-3 text-xs">
           {t('scans.rules.empty')}{' '}
-          <Link href={TEMPLATES_PAGE} className="text-primary underline">
+          <Link href={TEMPLATES_PAGE} className="link-inline">
             {t('scans.rules.manage')}
           </Link>
         </p>

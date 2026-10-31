@@ -378,7 +378,7 @@ export interface DetailCopyIdProps {
   id: string
   /** What the ID is, for the button's name and the toast ("Sensor ID"). */
   label?: string
-  /** Translated button name; defaults to "Copy {label}". */
+  /** Translated button name; defaults to "Copy {label}". The ID follows it. */
   ariaLabel?: string
   /** Translated toast; defaults to "{label} copied". */
   copiedMessage?: string
@@ -395,7 +395,9 @@ export function DetailCopyId({
   return (
     <button
       type="button"
-      aria-label={ariaLabel ?? `Copy ${label.charAt(0).toLowerCase()}${label.slice(1)}`}
+      // The name contains the visible ID (WCAG 2.5.3, label in name), so a
+      // speech user can say what they see.
+      aria-label={`${ariaLabel ?? `Copy ${label.charAt(0).toLowerCase()}${label.slice(1)}`} ${id}`}
       className={cn(
         'inline-flex max-w-full items-center gap-1.5 rounded-sm font-mono text-xs text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
         className

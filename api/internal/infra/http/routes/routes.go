@@ -160,6 +160,7 @@ type Handlers struct {
 	ContentSource       *handler.ContentSourceHandler       // nil if not initialized (no database)
 	ContentPack         *handler.ContentPackHandler         // nil if not initialized (no database)
 	PlatformContentPack *handler.PlatformContentPackHandler // nil if not initialized (no database)
+	Wordlist            *handler.WordlistHandler            // nil if not initialized (no database)
 	ContentCatalog      *handler.ContentCatalogHandler      // nil if not initialized (no database)
 	AdminContentCatalog *handler.AdminContentCatalogHandler // nil if not initialized (no database)
 	SensorContentV2     *handler.SensorContentV2Handler     // content delivery to sensors; nil if not initialized
@@ -181,6 +182,7 @@ type Handlers struct {
 	// CTEM Discovery handlers
 	AssetService           *handler.AssetServiceHandler           // nil if not initialized (no database)
 	Certificate            *handler.CertificateHandler            // Certificates view; nil without a database
+	Technology             *handler.TechnologyHandler             // Technologies view; nil without a database
 	WebEndpoint            *handler.WebEndpointHandler            // Web surface (RFC-056); nil without a database
 	Query                  *handler.QueryHandler                  // Custom queries; nil without a database
 	APISpec                *handler.APISpecHandler                // API descriptions of web origins (RFC-056)
@@ -676,6 +678,9 @@ func Register(
 	if h.Certificate != nil {
 		registerCertificateRoutes(router, h.Certificate, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleAttackSurface))
 	}
+	if h.Technology != nil {
+		registerTechnologyRoutes(router, h.Technology, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleAttackSurface))
+	}
 
 	// Web surface: endpoints under their origin asset (RFC-056)
 	if h.WebEndpoint != nil {
@@ -1109,6 +1114,9 @@ func Register(
 	}
 	if h.ContentCatalog != nil {
 		registerContentCatalogRoutes(router, h.ContentCatalog, authMiddleware, userSync)
+	}
+	if h.Wordlist != nil {
+		registerWordlistRoutes(router, h.Wordlist, authMiddleware, userSync)
 	}
 	if h.PlatformContentPack != nil {
 		registerPlatformContentPackRoutes(router, h.PlatformContentPack, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleScannerTemplates))

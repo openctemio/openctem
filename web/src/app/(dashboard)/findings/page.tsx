@@ -73,6 +73,7 @@ import { SEVERITY_LEVELS, type SeverityLevel } from '@/lib/severity'
 import { useSeverityLabel } from '@/hooks/use-scale-labels'
 import { useTranslation } from '@/context/i18n-provider'
 import { Button } from '@/components/ui/button'
+import { DecorativeText } from '@/components/ui/decorative-text'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -1508,33 +1509,19 @@ function FindingsContent() {
             row.original.hasDataFlow || (row.original.dataFlow?.steps.length ?? 0) > 0
 
           return (
+            // The title is the control that opens the finding (its name starts
+            // with the visible title); the rest of the cell opens it on a click
+            // too, but holds the CVE link, so it is not a button itself.
             <div
               className="cursor-pointer max-w-[220px] sm:max-w-[360px] 2xl:max-w-xl"
-              role="button"
-              tabIndex={0}
-              // The title leads the name, so a screen reader announces which
-              // finding the button opens (it used to read "View finding
-              // details" on every row).
-              aria-label={
-                row.original.location?.full
-                  ? t('findings.list.openRowOn', '{title} on {target}, view details', {
-                      title: toDisplayText(row.getValue('title'), 300),
-                      target: toDisplayText(row.original.location.full, 300),
-                    })
-                  : t('findings.list.openRow', '{title}, view details', {
-                      title: toDisplayText(row.getValue('title'), 300),
-                    })
-              }
               onClick={() => handleRowClick(row.original)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault()
-                  handleRowClick(row.original)
-                }
-              }}
             >
               <FindingTitleCell
                 title={row.getValue('title')}
+                onOpen={() => handleRowClick(row.original)}
+                openLabel={t('findings.list.openRow', '{title}, view details', {
+                  title: toDisplayText(row.getValue('title'), 300),
+                })}
                 target={row.original.location?.full}
                 markers={
                   <AssetMarkers
@@ -2471,7 +2458,7 @@ function FindingsContent() {
                   triageCount > 0
                     ? t(
                         'findings.header.triageCount',
-                        '{count, plural, one {Triage, # finding to triage} other {Triage, # findings to triage}}',
+                        '{count, plural, one {Triage # finding to triage} other {Triage # findings to triage}}',
                         { count: triageCount }
                       )
                     : undefined
@@ -2485,17 +2472,19 @@ function FindingsContent() {
                     ? t('findings.header.triage', 'Triage')
                     : t('findings.header.triageView', 'Triage view')}
                 </span>
+                {/* A space, not only a margin, between the word and the count:
+                    the visible label reads "Triage 26", as the name does. */}
+                {triageCount > 0 && ' '}
                 {triageCount > 0 && (
-                  <span className="ms-2 text-xs tabular-nums" data-testid="triage-count">
+                  <span className="ms-1 text-xs tabular-nums" data-testid="triage-count">
                     {triageCount.toLocaleString()}
                   </span>
                 )}
-                <kbd
+                <DecorativeText
+                  as="kbd"
+                  text="t"
                   className="ms-2 hidden rounded border border-current/30 px-1 font-sans text-xs sm:inline"
-                  aria-hidden
-                >
-                  t
-                </kbd>
+                />
               </Button>
             )}
           </PageHeader>

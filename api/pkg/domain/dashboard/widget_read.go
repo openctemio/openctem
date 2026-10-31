@@ -153,6 +153,9 @@ type FactReader interface {
 	// ClosedByTool counts, per tool, the findings in scope closed since from
 	// and those of them closed as false positive.
 	ClosedByTool(ctx context.Context, scope ReadScope, from time.Time) ([]ToolClosedRow, error)
+	// EmergingThreats counts the emerging-threat alerts with at least one
+	// asset in scope, with the alert list's own summary statement.
+	EmergingThreats(ctx context.Context, scope ReadScope) (EmergingThreatCounts, error)
 }
 
 // ClosureQualityCounts are the closure figures of a scope. Current is the
@@ -189,6 +192,13 @@ type ToolClosedRow struct {
 	// Closed: closed statuses with resolved_at in the window. FalsePositive:
 	// of them, closed as false positive.
 	Closed, FalsePositive int64
+}
+
+// EmergingThreatCounts are the emerging-threat alerts of a scope: Seen is
+// every alert in any state; the others count the open alerts (new,
+// acknowledged, remediating) by level, as the alert list's summary does.
+type EmergingThreatCounts struct {
+	Seen, Open, Immediate, Digest, Listed int64
 }
 
 // NewAssetRow is one asset type's additions: in the window and in the
