@@ -296,3 +296,33 @@ Code: `internal/app/command/withheld.go`, `RecordWithheld` in
 ## Proxy pool holds name their pool
 
 A sensor held back by `egress_unsupported`, `egress_validate_unsupported` or `egress_host_direct` carries the pool its jobs use (`egress_pool` with `id` and `name` in the per-sensor verdict of `GET /scan-runs/{id}/tasks/{task_id}/placement`). Like the rest of the per-sensor verdicts it is returned only to a caller with `sensors:read`, and the name is read for the caller's own organization only. The run page turns it into one sentence per sensor ("Sensor X cannot use the proxies of pool P (no proxy support reported)") and links the fix. A pool whose endpoints are all quarantined is not a hold: the sensor fails the job rather than waiting (it never goes direct). Every egress hold takes its code from `egressDecision.holdReason`, so a new kind of hold adds one case there and one entry in the web `PLACEMENT_FIX`.
+
+## A sensor's refusal
+
+The local policy is optional and only narrows ([RFC-040 §13](../rfcs/RFC-040-platform-sensor-mutual-distrust.md)).
+Placement predicts what it can from the sensor's report (`sensor.Accepts`):
+an allow list of zero entries, or a required policy that is absent, keeps
+every job with a network target away from that sensor (`local_policy_refuses`).
+What the report cannot show (which target a non-empty allow list covers) the
+sensor discovers and reports as a refusal:
+
+- Routed scan work refused under the `local`, `managed` or
+  `platform_tool_gate` layer goes back to pending with the refuser in
+  `commands.refused_by` (claim SQL `refused_earlier`): at once to another
+  eligible sensor whose report accepts it, else it waits for one, with
+  `expires_at` brought forward to at most `RefusalWait` (6 h) and the message
+  "waiting for an eligible sensor until …".
+- A shared job refused by a shared sensor is judged against the other shared
+  sensors its shared gate admits (`sharedSensorConditions`), never the
+  organization's sensors; its reason never identifies a shared sensor.
+- A `scope` refusal fails closed and is not re-queued; a `builtin` refusal
+  fails (the deny list is the same everywhere).
+- After three refusals the job fails; a job whose wait ends expires with
+  `POLICY_REFUSED` and a reason naming the target, the refusing sensors and
+  the policy file (`ExpirationChecker.refusalExpiry`).
+- When a sensor's reported policy changes, `ForgetRefusalsOf` removes it
+  from `refused_by` of its tenant's pending commands (the refusal stays in
+  `commands.refusals` and keeps counting).
+
+Code: `internal/app/command/refusal.go`, `internal/infra/postgres/command_refusal.go`,
+`internal/app/sensor/local_policy.go` (`localPolicyChanged`).

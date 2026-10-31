@@ -148,10 +148,15 @@ var requeueCandidateSQL = `s.status = 'active'
 // maxRequeueCandidates bounds the sensors read to decide a re-queue.
 const maxRequeueCandidates = 200
 
-// RequeueCandidates returns the local-policy reports of the tenant's
-// sensors, other than exclude, that could claim the command now: active,
-// dispatchable, with a usable key, in the command's zone when it has one,
-// and with the command's tool. The caller judges the reports
+// RequeueCandidates returns the local-policy reports of the sensors, other
+// than exclude, that could claim the command now. For an organization job:
+// the tenant's own sensors that are active, dispatchable, with a usable key,
+// in the command's zone when it has one, and with the command's tool. For a
+// shared job (is_platform_job), which only shared sensors ever claim: the
+// other live shared sensors whose shared gate admits it
+// (sharedSensorConditions); the organization's own sensors never take a
+// shared job, so they are not candidates. Only reports are returned, never
+// a shared sensor's identity. The caller judges the reports
 // (sensor.Accepts).
 func (r *CommandRepository) RequeueCandidates(ctx context.Context, tenantID, commandID shared.ID, exclude []shared.ID) ([]*sensor.LocalPolicyReport, error) {
 	ex := make([]string, len(exclude))
@@ -163,7 +168,19 @@ func (r *CommandRepository) RequeueCandidates(ctx context.Context, tenantID, com
 		FROM commands
 		JOIN sensors s ON s.tenant_id = commands.tenant_id
 		WHERE commands.id = $1 AND commands.tenant_id = $2
+		  AND commands.is_platform_job = FALSE
 		  AND `+requeueCandidateSQL+`
+		  AND NOT (s.id = ANY($3::uuid[]))
+		UNION ALL
+		SELECT s.id, s.reported_local_policy
+		FROM commands
+		JOIN sensors s ON s.tenant_id IS NULL AND s.scope = 'instance'
+		WHERE commands.id = $1 AND commands.tenant_id = $2
+		  AND commands.is_platform_job = TRUE
+		  AND `+sharedSensorConditions("s")+`
+		  AND s.health IN `+sensorDispatchableHealthSQL+`
+		  AND s.last_seen_at IS NOT NULL
+		  AND `+sensorKeyUsableSQL("s")+`
 		  AND NOT (s.id = ANY($3::uuid[]))
 		LIMIT $4`,
 		commandID.String(), tenantID.String(), pq.Array(ex), maxRequeueCandidates)

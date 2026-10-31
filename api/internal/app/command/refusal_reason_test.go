@@ -30,7 +30,7 @@ func TestRefusalFailureReason(t *testing.T) {
 		{SensorID: "0123456789abcdef", SensorName: "office-1", Layer: "local", Rule: "targets.allow", Detail: "outside"},
 		{SensorID: "fedcba9876543210", Layer: "local", Rule: "tools.allow"},
 	}
-	got := RefusalFailureReason(payload, local)
+	got := RefusalFailureReason(payload, local, false)
 	for _, want := range []string{
 		sensordom.LocalPolicyRefusalPrefix + "tools.allow", // the last refusal leads (older readers parse it)
 		`"vndirect.example" and 1 more target(s)`,
@@ -43,11 +43,18 @@ func TestRefusalFailureReason(t *testing.T) {
 			t.Errorf("reason %q lacks %q", got, want)
 		}
 	}
-	scope := RefusalFailureReason(payload, []commanddom.RefusalRecord{{SensorID: "x", Layer: "scope", Rule: "targets"}})
+	scope := RefusalFailureReason(payload, []commanddom.RefusalRecord{{SensorID: "x", Layer: "scope", Rule: "targets"}}, false)
 	if !strings.Contains(scope, "signed") || strings.Contains(scope, "sensor-policy.yaml") {
 		t.Errorf("scope reason %q: must point at the signed scope, not at the local policy", scope)
 	}
-	if got := RefusalFailureReason(nil, nil); got == "" {
+	shared := RefusalFailureReason(payload, local, true)
+	if strings.Contains(shared, "office-1") || strings.Contains(shared, "fedcba98") || strings.Contains(shared, "sensor-policy.yaml") {
+		t.Errorf("shared reason %q names or identifies a shared sensor", shared)
+	}
+	if !strings.Contains(shared, "No shared sensor accepted") {
+		t.Errorf("shared reason %q", shared)
+	}
+	if got := RefusalFailureReason(nil, nil, false); got == "" {
 		t.Error("empty reason")
 	}
 }

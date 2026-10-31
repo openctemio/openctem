@@ -55,7 +55,7 @@ RFC-003 (asset source priority) was withdrawn on 2026-10-05; see
 | [RFC-037](RFC-037-versioning-and-release-train.md) | Versioning rule and release train | **Accepted** (decisions 2026-10-02, §8; design PR #787). |
 | [RFC-038](RFC-038-sensor-tool-settings.md) | Sensor tool settings: typed schemas from the sensor, forms on the platform, signed config back | **Partially implemented** (2026-10-15). |
 | [RFC-039](RFC-039-continuous-retest.md) | Continuous retest with regression reopen | **Implemented**: P1 (#867), P2a (#881) and tool retest (§12: any tool with a retest handler on a tenant sensor); decisions approved 2026-10-03 (#866). |
-| [RFC-040](RFC-040-platform-sensor-mutual-distrust.md) | Mutual distrust between the platform and sensors | **Accepted** (2026-10-03; every recommendation in §9 approved). |
+| [RFC-040](RFC-040-platform-sensor-mutual-distrust.md) | Mutual distrust between the platform and sensors | **Accepted** (2026-10-03; every recommendation in §9 approved; §13 amended 2026-10-31: local policy optional and narrow-only, refusals re-queue). |
 | [RFC-041](RFC-041-api-path-design.md) | API path design, plane separation and a route style guard | **Accepted** (decisions D1–D12 approved 2026-10-03 as recommended, §8). |
 | [RFC-042](RFC-042-asset-inventory-v2.md) | Asset Inventory v2: services as rows, observations over time, one query language, labels, dynamic groups, policies and screenshots | **Accepted** (2026-10-03; decisions D1–D21, §12). |
 | [RFC-043](RFC-043-deduplication-and-identity.md) | Deduplication and identity | **Accepted — decisions D1–D25 approved** (D1–D15 2026-10-03, #892; D16–D25 2026-10-23, §17). |
