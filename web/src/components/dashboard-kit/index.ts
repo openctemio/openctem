@@ -28,6 +28,7 @@ export { BriefViz, KpiStripViz, LeversViz, useLeverSentence } from './story-viz'
 export {
   PostureViz,
   PostureGrade,
+  PostureHeadline,
   PostureCategoryList,
   formatDeduction,
   type PostureGradeProps,
