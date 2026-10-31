@@ -2,6 +2,11 @@ import { describe, expect, it, vi, afterEach } from 'vitest'
 import { act, render, screen } from '@testing-library/react'
 import { SettleGroup, SettleSignal, useSettleSignal } from '../settle-group'
 
+const session = vi.hoisted(() => ({ pending: false }))
+vi.mock('@/context/bootstrap-provider', () => ({
+  useBootstrapPending: () => session.pending,
+}))
+
 function Block({ loading, label }: { loading: boolean; label: string }) {
   useSettleSignal(loading)
   return <p>{loading ? `${label} loading` : label}</p>
@@ -10,7 +15,10 @@ function Block({ loading, label }: { loading: boolean; label: string }) {
 const contentHidden = () =>
   (document.querySelector('[data-slot="settle-group"]') as HTMLElement).hidden
 
-afterEach(() => vi.useRealTimers())
+afterEach(() => {
+  vi.useRealTimers()
+  session.pending = false
+})
 
 describe('SettleGroup', () => {
   it('shows the content at once when no block is loading', () => {
@@ -96,6 +104,32 @@ describe('SettleGroup', () => {
     const { rerender } = render(tree(true))
     expect(contentHidden()).toBe(true)
     rerender(tree(false))
+    expect(contentHidden()).toBe(false)
+  })
+
+  it('waits for the session: blocks gated on permissions have no request yet', () => {
+    session.pending = true
+    const { rerender } = render(
+      <SettleGroup fallback={<span>skeleton</span>}>
+        <Block loading={false} label="band" />
+      </SettleGroup>
+    )
+    expect(contentHidden()).toBe(true)
+
+    // The session answered; the gated block now starts its request.
+    session.pending = false
+    rerender(
+      <SettleGroup fallback={<span>skeleton</span>}>
+        <Block loading label="band" />
+      </SettleGroup>
+    )
+    expect(contentHidden()).toBe(true)
+
+    rerender(
+      <SettleGroup fallback={<span>skeleton</span>}>
+        <Block loading={false} label="band" />
+      </SettleGroup>
+    )
     expect(contentHidden()).toBe(false)
   })
 })
