@@ -71,9 +71,17 @@ interface GroupDetailSheetProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   onUpdate?: () => void
+  /** Starts a new team (offered when outside members keep full data access off). */
+  onCreateTeam?: () => void
 }
 
-export function GroupDetailSheet({ groupId, open, onOpenChange, onUpdate }: GroupDetailSheetProps) {
+export function GroupDetailSheet({
+  groupId,
+  open,
+  onOpenChange,
+  onUpdate,
+  onCreateTeam,
+}: GroupDetailSheetProps) {
   const { t } = useTranslation()
   const { currentTenant } = useTenant()
   const tenantSlug = currentTenant?.slug
@@ -112,6 +120,7 @@ export function GroupDetailSheet({ groupId, open, onOpenChange, onUpdate }: Grou
 
   // UI State
   const [activeTab, setActiveTab] = useState<GroupTab>('overview')
+  const [outsideOnly, setOutsideOnly] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
   // Each control follows the API gate of the route it calls, so a viewer
   // sees a read-only sheet instead of controls that answer 403.
@@ -158,6 +167,7 @@ export function GroupDetailSheet({ groupId, open, onOpenChange, onUpdate }: Grou
       setMembersOffset(0)
       setAssetsOffset(0)
       setActiveTab('overview')
+      setOutsideOnly(false)
       setIsEditing(false)
       mutateGroup()
       mutateMembers()
@@ -294,6 +304,24 @@ export function GroupDetailSheet({ groupId, open, onOpenChange, onUpdate }: Grou
         return gmId === m.user_id
       })
   )
+
+  const outsideMembers = group?.outside_members ?? []
+  const showOutside = useCallback(() => {
+    setOutsideOnly(true)
+    setActiveTab('members')
+  }, [])
+  const createTeam = onCreateTeam
+    ? () => {
+        onOpenChange(false)
+        onCreateTeam()
+      }
+    : undefined
+  // A change to the team's roles or access changes what the team detail says
+  // about outside members and full data.
+  const accessChanged = () => {
+    void mutateGroup()
+    onUpdate?.()
+  }
 
   const groupType = group ? getGroupType(group) : null
   const typeLabel = groupType ? GroupTypeConfig[groupType]?.label : undefined
@@ -502,6 +530,8 @@ export function GroupDetailSheet({ groupId, open, onOpenChange, onUpdate }: Grou
                     ? (userId, name) => setMemberToRemove({ userId, name })
                     : undefined
                 }
+                outsideOnly={outsideOnly}
+                onOutsideOnlyChange={setOutsideOnly}
               />
             )}
 
@@ -528,7 +558,10 @@ export function GroupDetailSheet({ groupId, open, onOpenChange, onUpdate }: Grou
                 groupId={groupId}
                 canEdit={canSetAccess}
                 memberCount={memberCount}
-                onChanged={onUpdate}
+                outsideMembers={outsideMembers}
+                onShowOutside={showOutside}
+                onCreateTeam={createTeam}
+                onChanged={accessChanged}
               />
             )}
 
@@ -538,7 +571,10 @@ export function GroupDetailSheet({ groupId, open, onOpenChange, onUpdate }: Grou
                 canBind={canBindRole}
                 canUnbind={canUnbindRole}
                 memberCount={memberCount}
-                onChanged={onUpdate}
+                outsideMembers={outsideMembers}
+                onShowOutside={showOutside}
+                onCreateTeam={createTeam}
+                onChanged={accessChanged}
               />
             )}
 
@@ -556,6 +592,7 @@ export function GroupDetailSheet({ groupId, open, onOpenChange, onUpdate }: Grou
         onAddMember={handleAddMember}
         availableMembers={availableMembers}
         requireEnd={groupType === 'external'}
+        carriesFullData={group?.carries_full_data ?? false}
       />
 
       {groupId && (

@@ -71,8 +71,15 @@ type GroupResponse struct {
 	NotificationConfig group.NotificationConfig `json:"notification_config,omitempty"`
 	MemberCount        int                      `json:"member_count"`
 	AssetCount         int                      `json:"asset_count"`
-	CreatedAt          time.Time                `json:"created_at"`
-	UpdatedAt          time.Time                `json:"updated_at"`
+	// OutsideMembers: on a single team, up to 20 members outside the
+	// organization or service accounts. While any is in the team it carries
+	// no full-data role (TEAM_EXTERNAL_FULL_DATA).
+	OutsideMembers []OutsideMemberDetail `json:"outside_members,omitempty"`
+	// CarriesFullData: on a single team, whether it carries a full-data
+	// role; nobody outside the organization can then join it.
+	CarriesFullData bool      `json:"carries_full_data,omitempty"`
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
 }
 
 // GroupMemberResponse represents a group member in API responses.
@@ -98,6 +105,10 @@ type GroupMemberWithUserResponse struct {
 	// ExpiresAt: when the membership ends; absent means no end.
 	ExpiresAt    *time.Time `json:"expires_at,omitempty"`
 	ExpiryReason string     `json:"expiry_reason,omitempty"`
+	// Outside: an external member of the organization or a service account;
+	// Service tells which.
+	Outside bool `json:"outside,omitempty"`
+	Service bool `json:"service,omitempty"`
 }
 
 // GroupWithRoleResponse represents a group with the user's role.
@@ -209,6 +220,7 @@ func toGroupMemberWithUserResponse(m *group.MemberWithUser) GroupMemberWithUserR
 		resp.AddedBy = m.Member.AddedBy().String()
 	}
 	resp.ExpiresAt, resp.ExpiryReason = m.Member.ExpiresAt(), m.Member.ExpiryReason()
+	resp.Outside, resp.Service = m.External || m.Service, m.Service
 	return resp
 }
 
@@ -393,6 +405,18 @@ func (h *GroupHandler) GetGroup(w http.ResponseWriter, r *http.Request) {
 			resp.MemberCount = c.MemberCount
 			resp.AssetCount = c.AssetCount
 		}
+	}
+	outside, err := h.service.ListOutsideMembers(ctx, g)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+	for _, m := range outside {
+		resp.OutsideMembers = append(resp.OutsideMembers, OutsideMemberDetail{UserID: m.UserID.String(), Name: m.Name, Service: m.Service})
+	}
+	if resp.CarriesFullData, err = h.service.CarriesFullData(ctx, g); err != nil {
+		h.handleServiceError(w, err)
+		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -642,7 +666,9 @@ func (h *GroupHandler) AddMember(w http.ResponseWriter, r *http.Request) {
 
 	member, err := h.service.AddMember(ctx, input, actx)
 	if err != nil {
-		h.handleServiceError(w, err)
+		if !writeTeamGrantErrorFor(w, r, err) {
+			h.handleServiceError(w, err)
+		}
 		return
 	}
 
