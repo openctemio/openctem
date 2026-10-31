@@ -103,33 +103,6 @@ Threat model:
   on an asset outside the caller's scope, answers 404 and is not changed (DB
   tests `TestExposureTaxonomy_*`, `TestDataScope_*`).
 
-## Monitoring state
-
-One derived state per asset, computed in SQL beside the scope status; nothing is
-stored. The first matching rule wins:
-
-| State | Derived from |
-|---|---|
-| `irrelevant` | attribution `rejected`, or an in-effect `not_ours` exclusion |
-| `out_of_scope` | an in-effect `do_not_scan` or `retired` exclusion |
-| `inactive` | asset status `inactive` or `archived` |
-| `pending_decision` | attribution `needs_review` |
-| `unvalidated` | attribution `candidate`, or `discovered` below confidence 90 |
-| `not_monitored` | attribution `monitor_only`, or no scope entry covers it (`not_covered`) while the organization does not scan unclassified assets |
-| `monitored` | everything else (in scope, internal, or unclassified and scanned) |
-
-An asset without an attribution record counts as confirmed. "Scans unclassified
-assets" is the organization's unclassified-scans mode as the active-scan gate
-applies it (Strict approval mode and an unreadable setting count as off, so an
-unknown answer labels an asset not monitored, never monitored).
-
-API: `GET /assets?monitoring_state=` filters (comma list); with
-`?with_triage=true` each row carries `monitoring_state`. The Go form
-(`asset.MonitoringStateOf`) and the SQL form are checked against each other on
-every rule (`TestAssetMonitoringState_SQLMatchesDomain`). Every subquery is
-pinned to the asset's tenant; the list's data scope applies as for every other
-asset filter.
-
 ## Exposure Items view
 
 Attack surface > Exposure items (`/attack-surface/exposures` in the web console)
@@ -177,6 +150,33 @@ domains: a domain asset named exactly like the root of a permanent, active
 domain scope entry (`example.com` or `*.example.com`) or like a verified
 domain (`asset.PrimarySQL`). The list marks it with a star and filters on it
 (`primary=true`).
+
+## Monitoring state
+
+One derived state per asset, computed in SQL beside the scope status; nothing is
+stored. The first matching rule wins:
+
+| State | Derived from |
+|---|---|
+| `irrelevant` | attribution `rejected`, or an in-effect `not_ours` exclusion |
+| `out_of_scope` | an in-effect `do_not_scan` or `retired` exclusion |
+| `inactive` | asset status `inactive` or `archived` |
+| `pending_decision` | attribution `needs_review` |
+| `unvalidated` | attribution `candidate`, or `discovered` below confidence 90 |
+| `not_monitored` | attribution `monitor_only`, or no scope entry covers it (`not_covered`) while the organization does not scan unclassified assets |
+| `monitored` | everything else (in scope, internal, or unclassified and scanned) |
+
+An asset without an attribution record counts as confirmed. "Scans unclassified
+assets" is the organization's unclassified-scans mode as the active-scan gate
+applies it (Strict approval mode and an unreadable setting count as off, so an
+unknown answer labels an asset not monitored, never monitored).
+
+API: `GET /assets?monitoring_state=` filters (comma list); with
+`?with_triage=true` each row carries `monitoring_state`. The Go form
+(`asset.MonitoringStateOf`) and the SQL form are checked against each other on
+every rule (`TestAssetMonitoringState_SQLMatchesDomain`). Every subquery is
+pinned to the asset's tenant; the list's data scope applies as for every other
+asset filter.
 
 ## Planned
 
