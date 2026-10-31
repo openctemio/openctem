@@ -107,6 +107,7 @@
   "errors.auth.OAUTH_NO_EMAIL": "Nhà cung cấp không chia sẻ địa chỉ email của bạn. Hãy cho phép ở đó, rồi thử lại.",
   "errors.auth.OAUTH_PROVIDER_DISABLED": "Nhà cung cấp đăng nhập này hiện không khả dụng.",
   "errors.auth.OAUTH_USERINFO_FAILED": "Nhà cung cấp không trả về hồ sơ của bạn. Hãy thử lại.",
+  "errors.auth.OAUTH_USE_ORG_SSO": "Tài khoản này đăng nhập qua tổ chức của bạn. Hãy dùng cách đăng nhập của tổ chức.",
   "errors.auth.ORGANIZATION_ACCESS_DENIED": "Bạn không có quyền truy cập tổ chức này.",
   "errors.auth.ORGANIZATION_CREATION_DISABLED": "Tổ chức do quản trị viên ứng dụng tạo.",
   "errors.auth.ORGANIZATION_REQUIRED": "Hãy chọn một tổ chức để tiếp tục.",
