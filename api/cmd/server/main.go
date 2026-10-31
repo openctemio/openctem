@@ -480,6 +480,13 @@ func run() int {
 		}
 	}
 
+	if services.IPAllowlistBus != nil {
+		if err := services.IPAllowlistBus.Start(wsCtx); err != nil {
+			// Changes still apply here at once and elsewhere after the gate TTL.
+			log.Error("ip allowlist change bus not subscribed", "error", err)
+		}
+	}
+
 	// ==========================================================================
 	// HTTP Server
 	// ==========================================================================
@@ -626,6 +633,11 @@ func run() int {
 		if err := handlers.SensorV3.Start(ctx); err != nil {
 			log.Error("sensor protocol v3 gRPC binding not listening", "error", err)
 		}
+	}
+	// Sensors whose stored manifest has tools or capabilities this
+	// platform's catalog did not know are asked once to send it again.
+	if services.Sensor != nil && servesTenant {
+		go services.Sensor.LoadManifestRechecks(ctx)
 	}
 	internalAPI, err := startInternalAPI(cfg, repos, services, redisClient, log)
 	if err != nil {

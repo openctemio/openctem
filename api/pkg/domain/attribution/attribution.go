@@ -150,6 +150,12 @@ const (
 	// through an IP, range or CIDR entry that contains it. A declared scope
 	// entry is an intentional ownership claim, so it confirms (RFC-054 §4.3).
 	RuleMatchesScopeTarget Rule = "matches_scope_target"
+	// RuleCertificateSAN: the name is a subject alternative name (or the
+	// subject CN) of a TLS certificate a report put in the tenant's
+	// inventory, and it sits below one of the tenant's domain roots. Weak:
+	// anyone can mint a certificate with any names, so it only proposes the
+	// name as a candidate and never confirms or scopes it on its own.
+	RuleCertificateSAN Rule = "certificate_san"
 )
 
 // Class is the strength class of a rule.
@@ -172,6 +178,7 @@ var rules = map[Rule]ruleDef{
 	RuleTenantScanned:      {0.95, ClassStrong},
 	RuleAssertedRoot:       {0.85, ClassMedium},
 	RuleScanDiscovered:     {0.60, ClassMedium},
+	RuleCertificateSAN:     {0.40, ClassWeak},
 }
 
 // Weight returns the base weight and class of a rule.

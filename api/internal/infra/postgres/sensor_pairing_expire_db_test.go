@@ -49,14 +49,14 @@ func TestSensorPairingRepository_ExpectationCloses(t *testing.T) {
 
 	// Another tenant cannot deny it (no row, not an error that leaks it).
 	open := expect(now.Add(10 * time.Minute))
-	if p, err := r.Deny(ctx, other, open.ID, actor, now); err == nil && p != nil {
+	if p, err := r.Deny(ctx, other, open.ID, actor, "", now); err == nil && p != nil {
 		t.Fatalf("a foreign tenant denied the expectation")
 	}
 	if got := status(open.ID); got != "expecting" {
 		t.Fatalf("foreign deny changed the status to %q", got)
 	}
 	// Its own tenant can.
-	if _, err := r.Deny(ctx, tenant, open.ID, actor, now); err != nil {
+	if _, err := r.Deny(ctx, tenant, open.ID, actor, "", now); err != nil {
 		t.Fatalf("deny an expected code: %v", err)
 	}
 	if got := status(open.ID); got != "denied" {
