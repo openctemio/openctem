@@ -188,9 +188,7 @@ export function CIRunsView({ embedded = false, toolbarStart }: CIRunsViewProps) 
           )}
         >
           <Button asChild variant="outline" size="sm">
-            <Link href="/ci-cd?tab=setup">
-              {t('scans.ci.trustAndGateLink', 'CI trust and gate')}
-            </Link>
+            <Link href="/ci-cd?tab=setup">{t('scans.ci.trustAndGateLink', 'CI/CD settings')}</Link>
           </Button>
         </PageHeader>
       )}
@@ -593,7 +591,7 @@ export function CIRunSheet({ id, onClose }: { id: string | null; onClose: () => 
                         <span className="mt-1 block text-xs text-muted-foreground">
                           {t(
                             'scans.ci.runDetail.askConnect',
-                            'An administrator can connect the code host under CI trust and gate, Pull request feedback.'
+                            'An administrator can connect the code host under CI/CD Settings, Pull request feedback.'
                           )}
                         </span>
                       )}
