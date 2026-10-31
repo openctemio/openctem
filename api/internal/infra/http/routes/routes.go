@@ -734,6 +734,7 @@ func Register(
 	registerClosureSettingsRoutes(router, h.Tenant, authMiddleware, userSync)
 	registerVulnMatchingSettingsRoutes(router, h.Tenant, authMiddleware, userSync)
 	registerEmergingThreatSettingsRoutes(router, h.Tenant, authMiddleware, userSync)
+	registerAPIKeySettingsRoutes(router, h.Tenant, authMiddleware, userSync)
 	registerAISettingsRoutes(router, h.AISettings, h.AIMasking, authMiddleware, userSync)
 	registerEmergingThreatRoutes(router, h.EmergingThreat, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleThreatIntel))
 	registerLicensePolicySettingsRoutes(router, h.Tenant, authMiddleware, userSync)
