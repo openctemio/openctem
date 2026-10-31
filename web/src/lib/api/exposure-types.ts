@@ -34,6 +34,7 @@ export type ExposureEventType =
   | 'email_security_weak'
   | 'subdomain_takeover'
   | 'lookalike_domain'
+  | 'third_party_script_added'
   | 'identity_mfa_gap'
   | 'identity_stale_principal'
   | 'identity_overprivileged'
@@ -357,6 +358,11 @@ export const EVENT_TYPE_CONFIG: Record<
   lookalike_domain: {
     label: 'Lookalike Domain',
     description: 'A registered domain that imitates one of your root domains',
+    category: 'domain',
+  },
+  third_party_script_added: {
+    label: 'New Third-Party Script',
+    description: 'A watched page started loading a script from a host it did not use before',
     category: 'domain',
   },
   identity_mfa_gap: {
