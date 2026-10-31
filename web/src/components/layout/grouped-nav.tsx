@@ -63,9 +63,7 @@ export function GroupedNav({ sections, activeUrl }: GroupedNavProps) {
             {section.label &&
               (section.sub ? (
                 <div className="flex h-6 items-end px-1.5 pb-0.5 group-data-[collapsible=icon]:hidden">
-                  <span className="truncate text-xs text-muted-foreground/80">
-                    {section.label}
-                  </span>
+                  <span className="truncate text-xs text-muted-foreground/80">{section.label}</span>
                 </div>
               ) : (
                 <NavClusterLabel label={section.label} />
