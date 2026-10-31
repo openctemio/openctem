@@ -14,7 +14,6 @@
 
 import { useMemo, useState } from 'react'
 import { useUrlFilter } from '@/hooks/use-url-param'
-import Link from '@/components/link'
 import type { ColumnDef } from '@tanstack/react-table'
 import { Ban, Check, Eye, Loader2, Network } from 'lucide-react'
 import { toast } from 'sonner'
@@ -42,7 +41,7 @@ import {
   type AttributionEvidence,
   type AttributionState,
 } from '@/features/assets/lib/attribution'
-import { assetDetailHref } from '@/features/findings/lib/asset-link'
+import { AssetPeekLink } from '@/features/assets/components/asset-peek'
 import { useDecideReviewBatch, useEASMReviewQueue } from '../hooks/use-easm-review'
 import { useEASMSummary } from '../hooks/use-easm-summary'
 import { reviewReasonLabel } from '../lib/review-reasons'
@@ -285,16 +284,9 @@ export function EASMReviewQueue() {
           const kids = childrenText(t, row.original.children)
           return (
             <div className="min-w-0">
-              {row.original.asset_id ? (
-                <Link
-                  href={assetDetailHref(row.original.asset_id)}
-                  className="font-medium hover:underline"
-                >
-                  {row.original.name}
-                </Link>
-              ) : (
-                <span className="font-medium">{row.original.name}</span>
-              )}
+              <AssetPeekLink assetId={row.original.asset_id} className="font-medium">
+                {row.original.name}
+              </AssetPeekLink>
               {kids && <p className="text-xs text-muted-foreground">{kids}</p>}
             </div>
           )

@@ -55,6 +55,7 @@ export function ExposureSeverityBreakdown({
 
 const STATES: { key: ExposureState; label: string }[] = [
   { key: 'active', label: 'Active' },
+  { key: 'in_progress', label: 'In progress' },
   { key: 'resolved', label: 'Resolved' },
   { key: 'accepted', label: 'Accepted' },
   { key: 'false_positive', label: 'False positive' },
@@ -76,7 +77,7 @@ export function ExposureStateBreakdown({ byState, className }: ExposureStateBrea
         <CardTitle>By state</CardTitle>
       </CardHeader>
       <CardContent>
-        <div className="grid grid-cols-2 divide-x divide-y sm:grid-cols-4 sm:divide-y-0">
+        <div className="grid grid-cols-2 divide-x divide-y sm:grid-cols-5 sm:divide-y-0">
           {STATES.map(({ key, label }) => {
             const count = safeByState[key] || 0
             const percentage = total > 0 ? ((count / total) * 100).toFixed(0) : '0'

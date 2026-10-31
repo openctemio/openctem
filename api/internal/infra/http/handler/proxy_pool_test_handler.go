@@ -189,6 +189,9 @@ func (h *ProxyTestEchoHandler) Echo(w http.ResponseWriter, r *http.Request) {
 		apierror.NotFound("Page").WriteJSON(w)
 		return
 	}
+	// What the echo saw is the only source of a proxy's exit address the
+	// platform keeps (the sensor's later report must match it).
+	h.service.RecordTestEcho(r.Context(), tenantID, commandID, addr)
 	w.Header().Set("Cache-Control", "no-store")
 	writeScanZoneJSON(w, http.StatusOK, ProxyTestEchoResponse{Address: addr})
 }
