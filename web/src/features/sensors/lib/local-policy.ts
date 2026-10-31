@@ -163,9 +163,11 @@ export function localPolicySummaryLines(p?: SensorLocalPolicy | null, tr?: Tr): 
   if (!s) return []
   const lines: string[] = []
   lines.push(
-    s.targets_allow < 0
-      ? `Targets: any outside ${s.targets_deny} denied entr${s.targets_deny === 1 ? 'y' : 'ies'}`
-      : `Targets: ${s.targets_allow} allowed, ${s.targets_deny} denied`
+    s.mode === 'allow_all'
+      ? 'Targets: everything the platform signs'
+      : s.targets_allow < 0
+        ? `Targets: any outside ${s.targets_deny} denied entr${s.targets_deny === 1 ? 'y' : 'ies'}`
+        : `Targets: ${s.targets_allow} allowed, ${s.targets_deny} denied`
   )
   lines.push(`Private ranges: ${s.allow_private ? 'allowed' : 'refused'}`)
   lines.push(`Ports: ${s.ports ? s.ports : 'any'}`)
@@ -186,18 +188,20 @@ function localizedSummaryLines(p: SensorLocalPolicy | null | undefined, tr: Tr):
   const none = tr('sensors.localPolicy.sum.none')
   const lines: string[] = []
   lines.push(
-    s.targets_allow < 0
-      ? tr(
-          s.targets_deny === 1
-            ? 'sensors.localPolicy.sum.targetsAny.one'
-            : 'sensors.localPolicy.sum.targetsAny.other',
-          undefined,
-          { deny: s.targets_deny }
-        )
-      : tr('sensors.localPolicy.sum.targets', undefined, {
-          allow: s.targets_allow,
-          deny: s.targets_deny,
-        })
+    s.mode === 'allow_all'
+      ? tr('sensors.localPolicy.sum.targetsAll')
+      : s.targets_allow < 0
+        ? tr(
+            s.targets_deny === 1
+              ? 'sensors.localPolicy.sum.targetsAny.one'
+              : 'sensors.localPolicy.sum.targetsAny.other',
+            undefined,
+            { deny: s.targets_deny }
+          )
+        : tr('sensors.localPolicy.sum.targets', undefined, {
+            allow: s.targets_allow,
+            deny: s.targets_deny,
+          })
   )
   lines.push(tr('sensors.localPolicy.sum.private', undefined, { value: allowed(s.allow_private) }))
   lines.push(

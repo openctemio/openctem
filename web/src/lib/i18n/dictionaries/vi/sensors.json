@@ -858,6 +858,7 @@
   "sensors.localPolicy.sum.rate": "Tốc độ: tối đa {n} yêu cầu/giây",
   "sensors.localPolicy.sum.refused": "bị từ chối",
   "sensors.localPolicy.sum.targets": "Mục tiêu: {allow} được phép, {deny} bị chặn",
+  "sensors.localPolicy.sum.targetsAll": "Mục tiêu: cho phép mọi thứ nền tảng đã ký",
   "sensors.localPolicy.sum.targetsAny.one": "Mục tiêu: bất kỳ ngoài {deny} mục bị chặn",
   "sensors.localPolicy.sum.targetsAny.other": "Mục tiêu: bất kỳ ngoài {deny} mục bị chặn",
   "sensors.localPolicy.sum.templates": "Template tùy chỉnh: {value}",

@@ -651,7 +651,10 @@ logging:
   (ranges, tools, tiers, credentials yes/no) in its RFC-033 manifest, so
   the platform routes only jobs the sensor will accept and the UI shows
   "locked by the sensor owner". The report is informational; enforcement is
-  local.
+  local. The summary's `mode` (`allow_all` for `targets.allow: ["*"]`,
+  `allow_list`, `platform_scope`; absent on older sensors, unknown values
+  dropped) is display data: `allow_all` matches like no allow list and the
+  console shows "allows everything the platform signs".
 - **Enforcement points**, all in the SDK so third-party sensors inherit them
   (RFC-023 D19):
   1. **Job admission**, after the signature check and before any tool

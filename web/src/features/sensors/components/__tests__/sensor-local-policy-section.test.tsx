@@ -39,6 +39,35 @@ describe('SensorLocalPolicySection', () => {
     expect(screen.getByText('Interactsh callbacks: refused')).toBeInTheDocument()
   })
 
+  it('shows allow_all as everything the platform signs, and tolerates a missing mode', () => {
+    const summary = {
+      targets_allow: 1,
+      targets_deny: 0,
+      allow_private: true,
+      allow_custom_templates: false,
+      allow_interactsh: false,
+    }
+    const { rerender } = render(
+      <SensorLocalPolicySection
+        sensor={{
+          local_policy: {
+            state: 'enforced',
+            kill_switch: false,
+            summary: { ...summary, mode: 'allow_all' },
+          },
+        }}
+      />
+    )
+    expect(screen.getByText('Targets: allows everything the platform signs')).toBeInTheDocument()
+    expect(screen.queryByText(/1 allowed/)).not.toBeInTheDocument()
+    rerender(
+      <SensorLocalPolicySection
+        sensor={{ local_policy: { state: 'enforced', kill_switch: false, summary } }}
+      />
+    )
+    expect(screen.getByText('Targets: 1 allowed, 0 denied')).toBeInTheDocument()
+  })
+
   it('warns when the kill switch is engaged or no policy is installed', () => {
     const { rerender } = render(
       <SensorLocalPolicySection sensor={{ local_policy: { state: 'paused', kill_switch: true } }} />
