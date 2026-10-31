@@ -68,6 +68,75 @@ describe('MetricStrip', () => {
     }
   })
 
+  it('never puts a detailed strip in thirds on a phone: halves, the first tile full when odd', () => {
+    const rows = (n: number) => Array.from({ length: n }, (_, i) => phoneSpan(n, i, true))
+    expect(rows(1)).toEqual([6])
+    expect(rows(2)).toEqual([3, 3])
+    expect(rows(3)).toEqual([6, 3, 3])
+    expect(rows(4)).toEqual([3, 3, 3, 3])
+    expect(rows(5)).toEqual([6, 3, 3, 3, 3])
+    for (let n = 1; n <= 5; n++) {
+      expect(rows(n).reduce((a, b) => a + b, 0) % 6, `${n} tiles fill whole rows`).toBe(0)
+    }
+  })
+
+  it('lays a strip with detail lines out in halves and keeps its captions on a phone', () => {
+    const { container } = render(
+      <MetricStrip
+        items={[
+          { key: 'a', label: 'Fleet health', value: 0, hint: 'of 1 can take jobs', detail: 'x' },
+          {
+            key: 'b',
+            label: 'Needs attention',
+            value: 1,
+            detail: 'storage full',
+            onClick: vi.fn(),
+          },
+          { key: 'c', label: 'Updates', value: 0, detail: 'all on the latest', onClick: vi.fn() },
+        ]}
+      />
+    )
+    const tiles = Array.from(container.querySelectorAll('[data-slot="metric-tile"]'))
+    expect(tiles.map((t) => t.className.match(/(?:^| )(col-span-\d)/)?.[1])).toEqual([
+      'col-span-6',
+      'col-span-3',
+      'col-span-3',
+    ])
+    expect(screen.getByText('of 1 can take jobs')).not.toHaveClass('hidden')
+  })
+
+  it('starts every tile at the top, a toggle button too', () => {
+    const { container } = render(
+      <MetricStrip
+        items={[
+          { key: 'a', label: 'Total', value: 3 },
+          { key: 'b', label: 'Open', value: 1, onClick: vi.fn() },
+        ]}
+      />
+    )
+    for (const tile of Array.from(container.querySelectorAll('[data-slot="metric-tile"]'))) {
+      expect(tile).toHaveClass('flex', 'flex-col', 'justify-start')
+    }
+  })
+
+  it('keeps a compact strip in thirds with two label lines, the caption in the tooltip', () => {
+    const { container } = render(
+      <MetricStrip
+        items={[
+          { key: 'a', label: 'Zones', value: 0, hint: 'covered' },
+          { key: 'b', label: 'Inventory addresses', value: 0 },
+          { key: 'c', label: 'Inside a zone', value: 0 },
+        ]}
+      />
+    )
+    const tiles = Array.from(container.querySelectorAll('[data-slot="metric-tile"]'))
+    for (const tile of tiles) {
+      expect(tile).toHaveClass('col-span-2')
+      expect(tile.querySelector('[data-slot="metric-label"]')).toHaveClass('min-h-8')
+    }
+    expect(screen.getByText('covered')).toHaveClass('hidden')
+  })
+
   it('shows skeletons instead of values while loading', () => {
     render(<MetricStrip loading items={[{ key: 't', label: 'Total', value: 93 }]} />)
     expect(screen.getByText('Total')).toBeInTheDocument()
