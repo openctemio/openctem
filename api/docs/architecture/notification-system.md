@@ -374,7 +374,7 @@ setup and set-password links, password reset, owner recovery, the first owner's 
 two-factor mail use the platform relay only, whatever the organization has configured, and an organization relay
 never decides whether such a link can be mailed (owner decision of 2026-10-27, research 308 D12 amendment).
 
-The platform setting `email.tenant_relay` (console, `/admin/settings/email-relay`, env default
+The platform setting `email.tenant_relay` (console page Settings > E-mail, API `/admin/settings/email-relay`, env default
 `ORG_EMAIL_RELAY_MODE`) decides whether that is allowed:
 
 | Mode | Behaviour | Default |

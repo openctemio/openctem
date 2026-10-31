@@ -576,7 +576,7 @@ describe('SensorDetailSheet', () => {
     expect(cell.querySelector('[data-slot="sdk-version"]')?.textContent).toBe('SDK v0.8.0')
     expect(screen.getByText('SDK advisory')).toBeInTheDocument()
     expect(screen.getByText('recent activity')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Copy sensor ID' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^Copy sensor ID / })).toBeInTheDocument()
   })
 
   it('keeps a pseudo-version SDK out of the Version field; More details has it whole', async () => {

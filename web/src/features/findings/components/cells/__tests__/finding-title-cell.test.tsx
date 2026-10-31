@@ -1,11 +1,35 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { describe, expect, it } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { describe, expect, it, vi } from 'vitest'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { FindingTitleCell, TARGET_MIDDLE, shownTarget } from '../finding-title-cell'
 import { findingLocation } from '../../../lib/finding-location'
 
 describe('FindingTitleCell', () => {
+  it('makes only the title the open button, its name starting with the title', () => {
+    const onOpen = vi.fn()
+    render(
+      <FindingTitleCell
+        title="SQL injection"
+        target="api.example.com"
+        onOpen={onOpen}
+        openLabel="SQL injection, view details"
+        meta={<a href="/cve">CVE-2024-1</a>}
+      />
+    )
+    const button = screen.getByRole('button', { name: 'SQL injection, view details' })
+    expect(button.textContent).toBe('SQL injection')
+    // The meta link is not nested inside the button.
+    expect(button.querySelector('a')).toBeNull()
+    fireEvent.click(button)
+    expect(onOpen).toHaveBeenCalledTimes(1)
+  })
+
+  it('renders the title as text without onOpen', () => {
+    render(<FindingTitleCell title="Plain" />)
+    expect(screen.queryByRole('button')).toBeNull()
+  })
+
   it('keeps the stored title and puts the target on its own line', () => {
     const { container } = render(
       <FindingTitleCell title="CVE-2019-9516 in nginx 1.15.5" target="10.20.30.41:443/tcp" />

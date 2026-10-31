@@ -4,9 +4,9 @@ The platform sets the lowest two-factor requirement every organization carries (
 require more, never less. Related: [user two-factor authentication](user-two-factor-authentication.md),
 [step-up re-authentication](step-up-reauth.md).
 
-Status: shipped (floor setting, grace, sign-in gate, credential rule, tenant clamp). Designed, not shipped
-(research 308, D16): passkeys for tenant accounts, switching the floor to everyone, the impact preview, the host
-CLI reset and the console recommendation card (the API field `recommend_raise` is there).
+Status: shipped (floor setting, grace, sign-in gate, credential rule, tenant clamp, the console page Settings >
+Two-factor with its recommendation card). Designed, not shipped (research 308, D16): passkeys for tenant accounts,
+switching the managed-service default to everyone, the impact preview and the host CLI reset.
 
 ## The setting
 

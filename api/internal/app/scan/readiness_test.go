@@ -171,3 +171,77 @@ func TestRequireWorkflowRunnable_NoSensorYetThenReady(t *testing.T) {
 		t.Fatal("a disabled tool must still be refused")
 	}
 }
+
+func optStep(key, tool string, caps ...string) *scanworkflow.Step {
+	s := rstep(key, tool, caps...)
+	s.RunPolicy.Optional = true
+	return s
+}
+
+// An optional step that no installed tool implements is skipped (the run
+// skips it with the reason): it is reported with its capability and reason
+// and never blocks the workflow. A required step in the same situation
+// still blocks, and a workflow of only skipped steps is blocked.
+func TestWorkflowReadiness_OptionalStepSkipped(t *testing.T) {
+	s := readinessService(map[string]sensordom.ToolStatus{
+		"httpx": sensordom.ToolReady, "naabu": sensordom.ToolDisabled, "nuclei": sensordom.ToolNoSensor,
+	}, false, false, nil)
+
+	r := readinessOf(t, s, rwf("", rstep("http", "", "probe.http"), optStep("shots", "", "capture.screenshot")))
+	if r.State != ReadinessReady || !r.Runnable() {
+		t.Fatalf("optional planned step must not block: %+v", r)
+	}
+	shot := r.Steps[1]
+	if shot.State != ReadinessSkipped || !shot.Optional || shot.Capability != "capture.screenshot" ||
+		shot.Code != ReasonNoTool || !strings.HasPrefix(shot.Reason, "Skipped: ") || !strings.Contains(shot.Reason, "capture.screenshot") {
+		t.Fatalf("skipped step: %+v", shot)
+	}
+
+	// An optional step whose only tool is turned off is skipped too (the
+	// run's tool lookup refuses it the same way).
+	if r := readinessOf(t, s, rwf("", rstep("http", "", "probe.http"), optStep("ports", "", "scan.ports"))); r.State != ReadinessReady || r.Steps[1].State != ReadinessSkipped || r.Steps[1].Code != ReasonToolDisabled {
+		t.Fatalf("optional disabled tool: %+v", r)
+	}
+
+	// The same step, required, blocks as before.
+	if r := readinessOf(t, s, rwf("", rstep("http", "", "probe.http"), rstep("shots", "", "capture.screenshot"))); r.State != ReadinessBlocked || r.Steps[1].Code != ReasonNoTool {
+		t.Fatalf("required planned step: %+v", r)
+	}
+
+	// An optional step whose tool is installed and enabled is not skipped:
+	// the run dispatches it, so its sensor state counts.
+	if r := readinessOf(t, s, rwf("", rstep("http", "", "probe.http"), optStep("tpl", "", "vuln.templates"))); r.Steps[1].State != ReadinessWaiting || r.State != ReadinessWaiting {
+		t.Fatalf("optional step with an installed tool: %+v", r)
+	}
+
+	// Only skipped steps: nothing would run.
+	only := rwf("", optStep("shots", "", "capture.screenshot"))
+	if r := readinessOf(t, s, only); r.State != ReadinessBlocked {
+		t.Fatalf("only optional steps: %s", r.State)
+	}
+	err := s.requireWorkflowRunnable(context.Background(), shared.NewID(), only)
+	if err == nil || !strings.Contains(err.Error(), "every step is optional") {
+		t.Fatalf("refusal of a workflow of skipped steps: %v", err)
+	}
+}
+
+// Every reason carries a stable code and the tools it names.
+func TestWorkflowReadiness_ReasonCodes(t *testing.T) {
+	s := readinessService(map[string]sensordom.ToolStatus{
+		"naabu": sensordom.ToolOfflineOnly, "subfinder": sensordom.ToolNoSensor, "httpx": sensordom.ToolDisabled,
+	}, false, false, nil)
+	cases := map[*scanworkflow.Step]string{
+		rstep("ports", "", "scan.ports"):         ReasonSensorOffline,
+		rstep("subs", "", "discover.subdomains"): ReasonNoSensorYet,
+		rstep("http", "", "probe.http"):          ReasonToolDisabled,
+		rstep("sast", "", "sast.code"):           ReasonCIOnly,
+		rstep("x", "gowitness", "scan"):          ReasonToolNotInstalled,
+		rstep("shots", "", "capture.screenshot"): ReasonNoTool,
+	}
+	for step, want := range cases {
+		r := readinessOf(t, s, rwf("", step))
+		if got := r.Steps[0]; got.Code != want {
+			t.Errorf("%s: code %q, want %q (%+v)", step.StepKey, got.Code, want, got)
+		}
+	}
+}

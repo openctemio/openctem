@@ -42,13 +42,16 @@ const (
 	ProbeHTTP           Key = "probe.http"
 	CrawlWeb            Key = "crawl.web"
 	VulnTemplates       Key = "vuln.templates"
-	DASTWeb             Key = "dast.web"
-	SecretsCode         Key = "secrets.code"
-	SASTCode            Key = "sast.code"
-	SCADeps             Key = "sca.deps"
-	IaCMisconfig        Key = "iac.misconfig"
-	ContainerImage      Key = "container.image"
-	NetworkVAConnector  Key = "network_va.connector"
+	// CheckTakeover finds names whose alias points at an unclaimed
+	// third-party resource (nuclei's takeover templates).
+	CheckTakeover      Key = "check.takeover"
+	DASTWeb            Key = "dast.web"
+	SecretsCode        Key = "secrets.code"
+	SASTCode           Key = "sast.code"
+	SCADeps            Key = "sca.deps"
+	IaCMisconfig       Key = "iac.misconfig"
+	ContainerImage     Key = "container.image"
+	NetworkVAConnector Key = "network_va.connector"
 )
 
 // Tier is how intrusive a stage is toward its targets.
@@ -328,6 +331,20 @@ var catalog = []Stage{
 			{Tool: "nuclei", Default: true},
 		},
 		MaxFanout: RunFanoutCap,
+	},
+	{
+		Key: CheckTakeover, Name: "Subdomain takeover check",
+		Description: "Find names whose alias points at an unclaimed third-party resource.",
+		Inputs:      dnsNames,
+		Findings:    true,
+		Tier:        TierActive,
+		// nuclei runs only its takeover templates for this capability
+		// (stageToolConfig); a step that pins nuclei without naming the
+		// capability runs vulnerability templates.
+		Implementations: []Implementation{
+			{Tool: "nuclei", Default: true, ByCapability: true},
+		},
+		MaxFanout: RunFanoutCap, MaxPerParent: DefaultPerParent,
 	},
 	{
 		Key: DASTWeb, Name: "Web application scan",

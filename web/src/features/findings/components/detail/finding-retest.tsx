@@ -19,6 +19,7 @@
  * would refuse).
  */
 
+import { useSettleSignal } from '@/features/shared/components/settle-group'
 import { useEffect, useRef, useState } from 'react'
 import Link from '@/components/link'
 import { useSWRConfig } from 'swr'
@@ -289,12 +290,13 @@ export function FindingRetestSection({ finding, className }: FindingRetestSectio
   const { mutate } = useSWRConfig()
   // A retest check someone attached makes any finding re-checkable, also one
   // with no tool rule (manual, pentest, bug bounty).
-  const { data: checkData } = useFindingRetestCheck(finding.id)
+  const { data: checkData, isLoading: checkLoading } = useFindingRetestCheck(finding.id)
   const check = checkData?.check ?? null
   // The server says how the finding is re-checked (strategy), whether a
   // retest would run now (can_retest) and why not (reason), from what raised
   // the finding and what the organization's sensors can run.
-  const { data } = useFindingRetests(finding.id)
+  const { data, isLoading: retestsLoading } = useFindingRetests(finding.id)
+  useSettleSignal(checkLoading || retestsLoading)
   const retestable = data?.can_retest === true
   const strategy = data?.strategy
   const reason = data?.reason

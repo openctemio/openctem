@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { CICDIntegration, cicdTab } from '../components/ci-cd-integration'
 import { CIPipelinesHint, pipelineHintCounts } from '../components/ci-pipelines-hint'
 import { DOCS } from '@/lib/docs-links'
+import { Permission } from '@/lib/permissions'
 
 let pipelineCounts: Record<string, number> | undefined
 let lastHintCall: { filters: unknown; enabled?: boolean } | undefined
@@ -12,6 +13,12 @@ vi.mock('../api/use-ci', () => ({
     lastHintCall = { filters, enabled: opts?.enabled }
     return { data: pipelineCounts === undefined ? undefined : { data: [], counts: pipelineCounts } }
   },
+}))
+
+let perms: string[] = []
+vi.mock('@/lib/permissions', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/permissions')>()),
+  usePermissions: () => ({ can: (p: string) => perms.includes(p), isLoading: false }),
 }))
 
 vi.mock('../components/ci-pipelines-panel', () => ({
@@ -33,6 +40,7 @@ vi.mock('next/link', () => ({
 describe('CI/CD integration page', () => {
   beforeEach(() => {
     window.history.replaceState(null, '', '/ci-cd')
+    perms = []
   })
 
   it('opens on the pipelines, with the CI guide', () => {
@@ -46,9 +54,22 @@ describe('CI/CD integration page', () => {
     )
   })
 
-  it('shows trust, gate policy and break-glass under Trust and gate, without a second header', async () => {
+  it('offers Connect a pipeline in the header to a CI writer only, on every tab', async () => {
+    const { unmount } = render(<CICDIntegration />)
+    expect(screen.queryByRole('button', { name: 'Connect a pipeline' })).not.toBeInTheDocument()
+    // A reader gets no "ask an administrator" line in the header either.
+    expect(screen.queryByText(/ask an administrator/i)).not.toBeInTheDocument()
+    unmount()
+    perms = [Permission.CIWrite]
     render(<CICDIntegration />)
-    await userEvent.click(screen.getByRole('tab', { name: /trust and gate/i }))
+    expect(screen.getByRole('button', { name: 'Connect a pipeline' })).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('tab', { name: 'Settings' }))
+    expect(screen.getByRole('button', { name: 'Connect a pipeline' })).toBeInTheDocument()
+  })
+
+  it('shows trust, gate policy and break-glass under Settings, without a second header', async () => {
+    render(<CICDIntegration />)
+    await userEvent.click(screen.getByRole('tab', { name: 'Settings' }))
     expect(screen.getByTestId('trust-settings')).toHaveAttribute('data-embedded', 'true')
     expect(screen.queryByTestId('pipelines-panel')).not.toBeInTheDocument()
   })
