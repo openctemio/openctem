@@ -22,6 +22,14 @@ export function startProxyPoolTest(poolId: string, sensorIds: string[]) {
 }
 
 /**
+ * The next poll: none once every test ended. Module scope so its identity is
+ * stable; SWR restarts its timer when `refreshInterval` changes identity.
+ */
+function testResultsInterval(data?: ProxyTestResultsResponse): number {
+  return data && allFinished(data.items) ? 0 : TEST_POLL_MS
+}
+
+/**
  * The results of the tests of one pool by command id. Polled until every
  * test has ended (completed, failed, canceled or expired), then left alone.
  */
@@ -31,7 +39,7 @@ export function useProxyPoolTestResults(poolId: string, commandIds: string[]) {
     (url: string) => get<ProxyTestResultsResponse>(url),
     {
       revalidateOnFocus: false,
-      refreshInterval: (data) => (data && allFinished(data.items) ? 0 : TEST_POLL_MS),
+      refreshInterval: testResultsInterval,
     }
   )
 }
