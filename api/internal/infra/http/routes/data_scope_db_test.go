@@ -202,6 +202,7 @@ func newDSHarness(t *testing.T) *dsHarness {
 	expSvc := exposure.NewExposureService(postgres.NewExposureRepository(db), postgres.NewExposureStateHistoryRepository(db), log)
 	expSvc.SetDataScope(enforcer)
 	expSvc.SetSeverityStore(postgres.NewExposureRepository(db))
+	expSvc.SetItemReader(postgres.NewExposureRepository(db))
 
 	dashSvc := module.NewDashboardService(postgres.NewDashboardRepository(sqldb), log)
 	dashSvc.SetDataScope(enforcer)
@@ -227,7 +228,9 @@ func newDSHarness(t *testing.T) *dsHarness {
 	registerVulnerabilityRoutes(router, vulnHandler, nil, nil, nil, auth, nil)
 	registerAssetGroupRoutes(router, handler.NewAssetGroupHandler(groupSvc, v, log), auth, nil)
 	registerAttackSurfaceRoutes(router, handler.NewAttackSurfaceHandler(surfaceSvc, log), auth, nil, passthrough)
-	registerExposureRoutes(router, handler.NewExposureHandler(expSvc, nil, v, log), auth, nil, passthrough)
+	exposureHandler := handler.NewExposureHandler(expSvc, nil, v, log)
+	registerExposureRoutes(router, exposureHandler, auth, nil, passthrough)
+	registerExposureItemRoutes(router, exposureHandler, auth, nil, passthrough)
 	registerDashboardRoutes(router, handler.NewDashboardHandler(dashSvc, log), auth, nil, log)
 	// The dashboard's threat intel, validation, scan coverage and CTEM cycle
 	// figures.

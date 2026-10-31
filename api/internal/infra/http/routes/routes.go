@@ -1168,6 +1168,8 @@ func Register(
 	// Exposure routes (tenant from JWT token)
 	if h.Exposure != nil {
 		registerExposureRoutes(router, h.Exposure, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleExposures))
+		// The Exposure Items view sits with the external attack surface.
+		registerExposureItemRoutes(router, h.Exposure, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleAttackSurface))
 	}
 
 	// Threat Intelligence routes (global threat intel data)
