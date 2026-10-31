@@ -94,11 +94,13 @@ const PAGE_SIZES = [10, 20, 30, 50, 100]
  */
 const COLUMN_ROOM = {
   findings: 1020,
-  monitoring: 1110,
-  criticality: 1230,
-  exposure: 1345,
-  owner: 1445,
-  last_seen: 1565,
+  // The monitoring cell is a chip with its menu arrow (about 30px wider than
+  // the plain chip), so the columns after it join 30px later.
+  monitoring: 1140,
+  criticality: 1260,
+  exposure: 1375,
+  owner: 1475,
+  last_seen: 1595,
 } as const
 
 /** A one-type list shows "Service facts" only when its own columns do not already. */
