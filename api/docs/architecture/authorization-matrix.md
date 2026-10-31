@@ -675,6 +675,8 @@ authenticator code, and is audited.
 | `GET /api/v1/api-keys` · `/{id}` | `integrations:api_keys:read` — owner/admin see every key of the organization; anyone else sees **only their own keys** (another user's key reads as 404) |
 | `POST /api/v1/api-keys` · `/{id}/revoke` | `integrations:api_keys:write` (owner/admin); create also needs **step-up** |
 | `DELETE /api/v1/api-keys/{id}` | `integrations:api_keys:delete` (owner/admin) + **step-up** |
+| `GET /api/v1/organization/settings/api-keys` | `integrations:api_keys:read` or `:write`, or `settings:read` (the organization's maximum key lifetime; organization from the token) |
+| `PUT /api/v1/organization/settings/api-keys` | owner or administrator **and** `settings:write`; a longer maximum needs a recent sign-in (service-level), is audited high and every owner and administrator is told; a shorter one applies at once |
 
 > Keys belong to the user who minted them (`api_keys.user_id`). The list shows
 > key names, scopes and last-used IPs, so a member or viewer is filtered to

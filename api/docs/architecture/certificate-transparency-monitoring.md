@@ -35,6 +35,16 @@ one is not queried, and a host that matches one gets no exposure (no
 `subdomain_discovered`, no certificate expiry). A failed exclusion lookup
 skips the tenant's sweep for that run.
 
+An exclusion of a **dedicated address** also reaches the names that resolve
+to it: an existing name whose address properties or `resolves_to` relations
+hit an excluded address is not promoted again and gets no CT evidence (the
+same rule as certificate SAN promotion and scan dispatch). Addresses of a
+provider's shared front end never propagate (`scope.PropagatingAddresses`),
+so a name behind a CDN edge is still promoted. A new name has no known
+address yet; ingest checks its name again before creating it. A failed
+address lookup promotes nothing for that run (fail closed); the sweep's
+exposures are still written.
+
 Each run queries at most `CERT_MONITOR_MAX_DOMAINS_PER_RUN` (default 50)
 domains per tenant, picked from `ct_monitor_state` (migration 000266):
 

@@ -11,9 +11,19 @@ import { ConfigHealthTag, ProtocolTag, SensorGrantTags, SensorPostureTag } from 
 import { sensorCapacity } from '../lib/capabilities'
 import { contentStateLabel, worstContentState } from '../lib/content'
 import { agoShort, formatDurationShort, keyExpiry } from '../lib/format'
-import { isOneShotSensor, sensorState, type FleetThresholds } from '../lib/sensor-state'
+import {
+  isOneShotSensor,
+  sensorState,
+  sensorStoppedClaiming,
+  type FleetThresholds,
+} from '../lib/sensor-state'
 import { normalizeSensorVersion, sensorSdkStatus, sensorSdkVersion } from '../lib/sensor-version'
-import { versionStatusIn, type ReleaseChannel } from '../lib/fleet'
+import {
+  ATTENTION_WORDS,
+  sensorAttentionKinds,
+  versionStatusIn,
+  type ReleaseChannel,
+} from '../lib/fleet'
 
 /**
  * A sensor on a phone: name and address, the state on the right, then the few
@@ -39,6 +49,12 @@ export function SensorMobileCard({
   const { t } = useTranslation()
   const state = sensorState(sensor, now, thresholds)
   const facts: { text: string; tone?: 'warning' | 'destructive' }[] = []
+
+  // Why a heartbeating sensor takes no work comes first: "Degraded" alone
+  // does not say what to fix.
+  if (sensorStoppedClaiming(sensor) && state !== 'disabled' && state !== 'revoked') {
+    facts.push({ text: t('sensors.mobile.storageFull'), tone: 'destructive' })
+  }
 
   const ob = sensor.outbox
   if (ob && ob.pending_count > 0) {
@@ -105,6 +121,15 @@ export function SensorMobileCard({
       }),
       tone: content === 'failed' ? 'destructive' : 'warning',
     })
+  }
+
+  // A degraded sensor always says why, even for a problem the facts above do
+  // not word (a setup check, a slow heartbeat loop): the fleet's words for it.
+  if (state === 'degraded' && !facts.some((f) => f.tone)) {
+    const kinds = sensorAttentionKinds(sensor, channel, state)
+    if (kinds.length > 0) {
+      facts.unshift({ text: kinds.map((k) => t(ATTENTION_WORDS[k])).join(', '), tone: 'warning' })
+    }
   }
 
   return (

@@ -40,6 +40,11 @@ export interface ApprovePairingRequest {
   /** The code the approver entered (forward mode); not needed for an expectation. */
   code?: string
   fingerprint_confirmed: boolean
+  /**
+   * The organization the review showed (view.organization_id). The API
+   * refuses the approval when the session is now in another organization.
+   */
+  organization_id: string
   step_up: StepUpProof
   name: string
   type: string
@@ -84,8 +89,15 @@ export function approvePairing(
   return post<SensorPairingView>(`${SENSOR_PAIRINGS_PATH}/${encodeURIComponent(id)}/approve`, body)
 }
 
-export function rejectPairing(id: string): Promise<void> {
-  return post<void>(`${SENSOR_PAIRINGS_PATH}/${encodeURIComponent(id)}/reject`, {})
+/**
+ * Rejects a request. A request no organization claimed yet (the sensor showed
+ * the code) is rejected only with its code; an expectation needs none.
+ */
+export function rejectPairing(id: string, code?: string): Promise<void> {
+  return post<void>(
+    `${SENSOR_PAIRINGS_PATH}/${encodeURIComponent(id)}/reject`,
+    code ? { code } : {}
+  )
 }
 
 /** Poll interval of an expectation while the dialog waits for the sensor. */

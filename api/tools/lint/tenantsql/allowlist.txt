@@ -19,7 +19,6 @@ ingest_report_repository.go:IngestReportRepository.RecordSegmentOutcome:ingest_r
 ingest_report_repository.go:IngestReportRepository.ReleaseSegment:ingest_reports  D-11 baseline: add the tenant predicate
 ingest_report_repository.go:IngestReportRepository.Reopen:ingest_reports  D-11 baseline: add the tenant predicate
 ingest_report_repository.go:IngestReportRepository.ReserveSegment:ingest_reports  D-11 baseline: add the tenant predicate
-integration_repository.go:IntegrationRepository.Delete:integrations  D-11 baseline: add the tenant predicate
 integration_repository.go:IntegrationRepository.GetByID:integrations  D-11 baseline: add the tenant predicate
 outbox_event_repository.go:OutboxEventRepository.Delete:notification_events  D-11 baseline: add the tenant predicate
 outbox_event_repository.go:OutboxEventRepository.GetByID:notification_events  D-11 baseline: add the tenant predicate
@@ -49,9 +48,6 @@ sensor_repository.go:SensorRepository.UpdateLastSeen:sensors  D-11 baseline: add
 sensor_repository.go:SensorRepository.UpdateOfflineTimestamp:sensors  D-11 baseline: add the tenant predicate
 sensor_repository.go:SensorRepository.Update:sensors  D-11 baseline: add the tenant predicate
 sensor_repository.go:updateInlineKey:sensors  D-11 baseline: add the tenant predicate
-tenant_tool_config_repository.go:TenantToolConfigRepository.Delete:tenant_tool_configs  D-11 baseline: add the tenant predicate
-tenant_tool_config_repository.go:TenantToolConfigRepository.GetByID:tenant_tool_configs  D-11 baseline: add the tenant predicate
-tenant_tool_config_repository.go:TenantToolConfigRepository.Update:tenant_tool_configs  D-11 baseline: add the tenant predicate
 toolcategory_repository.go:ToolCategoryRepository.Delete:tool_categories  D-11 baseline: add the tenant predicate
 toolcategory_repository.go:ToolCategoryRepository.GetByID:tool_categories  D-11 baseline: add the tenant predicate
 toolcategory_repository.go:ToolCategoryRepository.Update:tool_categories  D-11 baseline: add the tenant predicate

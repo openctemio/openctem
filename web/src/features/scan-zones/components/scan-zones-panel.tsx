@@ -90,7 +90,7 @@ export function ScanZonesPanel({ createOpen, onCreateOpenChange }: ScanZonesPane
       setDeleteZone(null)
     } catch (err) {
       // 409 ZONE_IN_USE: keep the dialog open and say why.
-      const d = describeScanZoneError(err, 'Failed to delete zone')
+      const d = describeScanZoneError(err, t('scans.zones.toast.deleteFailed'))
       setDeleteError({ message: d.message, hint: d.hint })
     } finally {
       setDeleting(false)
@@ -99,26 +99,31 @@ export function ScanZonesPanel({ createOpen, onCreateOpenChange }: ScanZonesPane
 
   const unassigned = zones.filter((z) => z.sensor_ids.length === 0).length
   const metrics: MetricStripItem[] = [
-    { key: 'zones', label: 'Zones', value: zones.length },
+    { key: 'zones', label: t('scans.zones.metrics.zones'), value: zones.length },
     {
       key: 'addresses',
-      label: 'Inventory addresses',
+      label: t('scans.zones.metrics.addresses'),
       value: coverage?.inventory_addresses ?? '—',
     },
-    { key: 'in', label: 'Inside a zone', value: coverage?.in_zones ?? '—' },
+    { key: 'in', label: t('scans.zones.metrics.inside'), value: coverage?.in_zones ?? '—' },
     {
       key: 'private',
-      label: 'Private, no zone',
+      label: t('scans.zones.metrics.privateNoZone'),
       value: coverage?.outside_private ?? '—',
       tone: 'danger',
-      hint: 'Scans skip these',
+      hint: t('scans.zones.metrics.skipHint'),
     },
-    { key: 'unassigned', label: 'Zones without sensors', value: unassigned, tone: 'danger' },
+    {
+      key: 'unassigned',
+      label: t('scans.zones.metrics.noSensors'),
+      value: unassigned,
+      tone: 'danger',
+    },
   ]
 
   let body: React.ReactNode
   if (error) {
-    body = <ErrorState title="scan zones" error={error} onRetry={refresh} />
+    body = <ErrorState title={t('scans.zones.errorTitle')} error={error} onRetry={refresh} />
   } else if (isLoading) {
     body = <TableSkeleton rows={3} />
   } else if (zones.length === 0) {
@@ -134,7 +139,7 @@ export function ScanZonesPanel({ createOpen, onCreateOpenChange }: ScanZonesPane
           <Can permission={Permission.ScanZonesWrite}>
             <Button size="sm" onClick={() => onCreateOpenChange(true)}>
               <Plus className="h-4 w-4" />
-              Add zone
+              {t('scans.zones.addZone')}
             </Button>
           </Can>
         }
@@ -172,7 +177,7 @@ export function ScanZonesPanel({ createOpen, onCreateOpenChange }: ScanZonesPane
       {warnings.length > 0 && (
         <Alert className="mt-5" data-testid="zone-coverage-warnings">
           <AlertTriangle className="h-4 w-4 text-warning" />
-          <AlertTitle>Coverage needs attention</AlertTitle>
+          <AlertTitle>{t('scans.zones.coverage.attention')}</AlertTitle>
           <AlertDescription>
             <ul className="list-disc space-y-0.5 ps-4">
               {warnings.map((w, i) => (
