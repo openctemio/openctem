@@ -867,7 +867,7 @@ jobs:
       packages: read
       actions: write
     needs: changes
-    if: needs.changes.outputs.api == 'true' && needs.changes.outputs.full != 'true' && needs.changes.outputs.schema == 'true' && github.event_name == 'pull_request'
+    if: needs.changes.outputs.api == 'true' && needs.changes.outputs.schema == 'true' && github.event_name == 'pull_request'
     runs-on: ${{ (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || needs.changes.outputs.pool || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && (vars.CI_RUNNER_HEAVY || needs.changes.outputs.pool)) || 'ubuntu-latest' }}
     timeout-minutes: 15
     services:
