@@ -887,7 +887,6 @@
   "findings.importResults.vexUnmatchable": "; không thể khớp {count} tuyên bố (không có package URL)",
   "findings.importResults.vexWouldClose": ", {count} sẽ được yêu cầu",
   "findings.informational.alwaysShow": "Luôn hiển thị",
-  "findings.informational.hidden": "Đã ẩn mức thông tin",
   "findings.informational.hiddenCount": "Đã ẩn mức thông tin ({count})",
   "findings.informational.hide": "Ẩn",
   "findings.informational.saveFailed": "Không thể lưu tùy chọn của bạn",
