@@ -31,6 +31,7 @@ import { useSWRConfig } from 'swr'
 import { useMemo } from 'react'
 import { AlertTriangle } from 'lucide-react'
 import { Main, useBreadcrumbTitle } from '@/components/layout'
+import { SettleGroup } from '@/features/shared/components/settle-group'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsCount, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -90,33 +91,40 @@ function dataFlowCount(f: FindingDetail) {
 }
 
 /** Same grid as the page, so nothing jumps when the data arrives. */
+// Same grid and order as the page (header, the properties rail, the body), so
+// the swap to the real page moves nothing: on a phone the rail sits under the
+// header, from lg it is the right column.
 function LoadingSkeleton() {
   return (
-    <div className="grid gap-x-8 gap-y-5 lg:grid-cols-[minmax(0,1fr)_19rem]" aria-busy>
-      <div className="space-y-5">
-        <div className="space-y-3">
-          <div className="flex gap-1.5">
-            <Skeleton className="h-5 w-12" />
-            <Skeleton className="h-5 w-28" />
-          </div>
-          <Skeleton className="h-8 w-3/4" />
-          <div className="flex gap-2">
-            <Skeleton className="h-8 w-24" />
-            <Skeleton className="h-8 w-24" />
-          </div>
+    <div
+      className="grid gap-x-8 gap-y-5 lg:grid-cols-[minmax(0,1fr)_19rem] lg:grid-rows-[auto_auto_1fr]"
+      aria-busy
+      data-testid="finding-detail-skeleton"
+    >
+      <div className="space-y-3 lg:col-start-1">
+        <div className="flex gap-1.5">
+          <Skeleton className="h-5 w-12" />
+          <Skeleton className="h-5 w-28" />
         </div>
-        <Skeleton className="h-36 w-full rounded-lg" />
-        <Skeleton className="h-28 w-full rounded-lg" />
-        <Skeleton className="h-9 w-80" />
-        <Skeleton className="h-40 w-full" />
+        <Skeleton className="h-7 w-3/4" />
+        <div className="flex gap-2">
+          <Skeleton className="h-8 w-24" />
+          <Skeleton className="h-8 w-24" />
+        </div>
       </div>
-      <div className="space-y-3 rounded-lg border p-4">
-        {Array.from({ length: 9 }).map((_, i) => (
+      <div className="space-y-3 rounded-lg border p-3 lg:col-start-2 lg:row-span-3 lg:row-start-1 lg:self-start lg:p-4">
+        {Array.from({ length: 6 }).map((_, i) => (
           <div key={i} className="grid grid-cols-[6.5rem_1fr] items-center gap-3">
             <Skeleton className="h-3.5 w-16" />
             <Skeleton className="h-6 w-full" />
           </div>
         ))}
+      </div>
+      <div className="space-y-5 lg:col-start-1">
+        <Skeleton className="h-36 w-full rounded-lg" />
+        <Skeleton className="h-28 w-full rounded-lg" />
+        <Skeleton className="h-9 w-80 max-w-full" />
+        <Skeleton className="h-40 w-full" />
       </div>
     </div>
   )
@@ -246,120 +254,124 @@ export default function FindingDetailPage() {
 
   return (
     <Main>
-      <FromTaskCrumb />
-      <FindingListCrumb findingId={finding.id} />
-      <div className="grid gap-x-8 gap-y-5 lg:grid-cols-[minmax(0,1fr)_19rem] lg:grid-rows-[auto_auto_auto_1fr]">
-        <div className="min-w-0 lg:col-start-1">
-          <FindingHeader
-            finding={finding}
-            status={triage.status}
-            onTriageCompleted={handleTriageCompleted}
-          />
-        </div>
-
-        <aside
-          aria-label={t('findings.detail.propertiesAria', 'Finding properties')}
-          className="min-w-0 lg:sticky lg:top-4 lg:col-start-2 lg:row-span-4 lg:row-start-1 lg:self-start"
-        >
-          <div className="rounded-lg border bg-card p-3 lg:p-4">
-            <FindingProperties finding={finding} triage={triage} />
+      {/* The bands and side panels load their own data: show the page once
+          they answered (at most 1.5 s), so nothing pushes the content down. */}
+      <SettleGroup fallback={<LoadingSkeleton />}>
+        <FromTaskCrumb />
+        <FindingListCrumb findingId={finding.id} />
+        <div className="grid gap-x-8 gap-y-5 lg:grid-cols-[minmax(0,1fr)_19rem] lg:grid-rows-[auto_auto_auto_1fr]">
+          <div className="min-w-0 lg:col-start-1">
+            <FindingHeader
+              finding={finding}
+              status={triage.status}
+              onTriageCompleted={handleTriageCompleted}
+            />
           </div>
-          <VerificationPanel
-            findingId={finding.id}
-            className="mt-4 rounded-lg border bg-card p-3 lg:p-4"
-          />
-          <FindingRetestSection
-            finding={{ ...finding, status: triage.status }}
-            className="mt-4 rounded-lg border bg-card p-3 lg:p-4"
-          />
-          <FindingRetestCheckSection
-            finding={finding}
-            className="mt-4 rounded-lg border bg-card p-3 lg:p-4"
-          />
-          <FindingTenableRescanSection
-            finding={finding}
-            className="mt-4 rounded-lg border bg-card p-3 lg:p-4"
-          />
-          <FindingActivityView
-            className="mt-3"
-            feed={feed}
-            findingId={id}
-            subject={finding.title}
-            shortcut
-          />
-        </aside>
 
-        <div className="min-w-0 space-y-4 lg:col-start-1">
-          <FindingApprovalBand findingId={finding.id} onDecided={() => mutateFinding()} />
-          {slaLate && (
-            <DetailCallout
-              tone="destructive"
-              icon={AlertTriangle}
-              title={
-                slaDays !== null && slaDays < 0
-                  ? Math.abs(slaDays) === 1
-                    ? t('findings.detail.sla.overdueOne', 'SLA overdue by 1 day')
-                    : t('findings.detail.sla.overdueMany', 'SLA overdue by {n} days', {
-                        n: Math.abs(slaDays),
-                      })
-                  : t('findings.detail.sla.breached', 'SLA breached')
-              }
-            >
-              {finding.priorityClass
-                ? t(
-                    'findings.detail.sla.classPastDeadline',
-                    '{class} findings must be fixed within the SLA; this one is past its deadline.',
-                    { class: finding.priorityClass }
-                  )
-                : t(
-                    'findings.detail.sla.pastDeadline',
-                    'This finding is past its remediation deadline.'
-                  )}
-            </DetailCallout>
-          )}
-          <FindingWhyItMatters finding={finding} />
-          <FindingTaskBand findingId={finding.id} />
-          <FindingFixCard finding={finding} onOpenPlan={() => setTab('remediation')} />
-        </div>
-
-        <div className="min-w-0 lg:col-start-1">
-          <Tabs value={tab} onValueChange={(v) => setTab(v)}>
-            <div className="-mx-1 overflow-x-auto px-1">
-              <TabsList>
-                {tabs.map((key) => (
-                  <TabsTrigger key={key} value={key}>
-                    {t(`findings.detail.tab.${key}`, TAB_LABEL[key])}
-                    {key === 'evidence' && evidenceTabCount > 0 && (
-                      <TabsCount value={evidenceTabCount} />
-                    )}
-                    {key === 'attack-path' && <TabsCount value={dataFlowCount(finding)} />}
-                  </TabsTrigger>
-                ))}
-              </TabsList>
+          <aside
+            aria-label={t('findings.detail.propertiesAria', 'Finding properties')}
+            className="min-w-0 lg:sticky lg:top-4 lg:col-start-2 lg:row-span-4 lg:row-start-1 lg:self-start"
+          >
+            <div className="rounded-lg border bg-card p-3 lg:p-4">
+              <FindingProperties finding={finding} triage={triage} />
             </div>
+            <VerificationPanel
+              findingId={finding.id}
+              className="mt-4 rounded-lg border bg-card p-3 lg:p-4"
+            />
+            <FindingRetestSection
+              finding={{ ...finding, status: triage.status }}
+              className="mt-4 rounded-lg border bg-card p-3 lg:p-4"
+            />
+            <FindingRetestCheckSection
+              finding={finding}
+              className="mt-4 rounded-lg border bg-card p-3 lg:p-4"
+            />
+            <FindingTenableRescanSection
+              finding={finding}
+              className="mt-4 rounded-lg border bg-card p-3 lg:p-4"
+            />
+            <FindingActivityView
+              className="mt-3"
+              feed={feed}
+              findingId={id}
+              subject={finding.title}
+              shortcut
+            />
+          </aside>
 
-            <TabsContent value="overview" className="mt-5">
-              <OverviewTab finding={finding} />
-            </TabsContent>
-            <TabsContent value="evidence" className="mt-5">
-              <EvidenceTab evidence={finding.evidence} finding={finding} />
-            </TabsContent>
-            <TabsContent value="remediation" className="mt-5">
-              <RemediationTab remediation={finding.remediation} finding={finding} />
-            </TabsContent>
-            <TabsContent value="attack-path" className="mt-5">
-              <DataFlowTab finding={finding} />
-            </TabsContent>
-            <TabsContent value="pentest" className="mt-5">
-              <PentestDetailsTab finding={finding} />
-            </TabsContent>
-            <TabsContent value="related" className="mt-5">
-              <RelatedTab finding={finding} />
-            </TabsContent>
-          </Tabs>
+          <div className="min-w-0 space-y-4 lg:col-start-1">
+            <FindingApprovalBand findingId={finding.id} onDecided={() => mutateFinding()} />
+            {slaLate && (
+              <DetailCallout
+                tone="destructive"
+                icon={AlertTriangle}
+                title={
+                  slaDays !== null && slaDays < 0
+                    ? Math.abs(slaDays) === 1
+                      ? t('findings.detail.sla.overdueOne', 'SLA overdue by 1 day')
+                      : t('findings.detail.sla.overdueMany', 'SLA overdue by {n} days', {
+                          n: Math.abs(slaDays),
+                        })
+                    : t('findings.detail.sla.breached', 'SLA breached')
+                }
+              >
+                {finding.priorityClass
+                  ? t(
+                      'findings.detail.sla.classPastDeadline',
+                      '{class} findings must be fixed within the SLA; this one is past its deadline.',
+                      { class: finding.priorityClass }
+                    )
+                  : t(
+                      'findings.detail.sla.pastDeadline',
+                      'This finding is past its remediation deadline.'
+                    )}
+              </DetailCallout>
+            )}
+            <FindingWhyItMatters finding={finding} />
+            <FindingTaskBand findingId={finding.id} />
+            <FindingFixCard finding={finding} onOpenPlan={() => setTab('remediation')} />
+          </div>
+
+          <div className="min-w-0 lg:col-start-1">
+            <Tabs value={tab} onValueChange={(v) => setTab(v)}>
+              <div className="-mx-1 overflow-x-auto px-1">
+                <TabsList>
+                  {tabs.map((key) => (
+                    <TabsTrigger key={key} value={key}>
+                      {t(`findings.detail.tab.${key}`, TAB_LABEL[key])}
+                      {key === 'evidence' && evidenceTabCount > 0 && (
+                        <TabsCount value={evidenceTabCount} />
+                      )}
+                      {key === 'attack-path' && <TabsCount value={dataFlowCount(finding)} />}
+                    </TabsTrigger>
+                  ))}
+                </TabsList>
+              </div>
+
+              <TabsContent value="overview" className="mt-5">
+                <OverviewTab finding={finding} />
+              </TabsContent>
+              <TabsContent value="evidence" className="mt-5">
+                <EvidenceTab evidence={finding.evidence} finding={finding} />
+              </TabsContent>
+              <TabsContent value="remediation" className="mt-5">
+                <RemediationTab remediation={finding.remediation} finding={finding} />
+              </TabsContent>
+              <TabsContent value="attack-path" className="mt-5">
+                <DataFlowTab finding={finding} />
+              </TabsContent>
+              <TabsContent value="pentest" className="mt-5">
+                <PentestDetailsTab finding={finding} />
+              </TabsContent>
+              <TabsContent value="related" className="mt-5">
+                <RelatedTab finding={finding} />
+              </TabsContent>
+            </Tabs>
+          </div>
         </div>
-      </div>
-      {triage.dialogs}
+        {triage.dialogs}
+      </SettleGroup>
     </Main>
   )
 }
