@@ -194,6 +194,11 @@ describe('DashboardEditor', () => {
     expect(within(panel).queryByLabelText('Range')).toBeNull()
     await userEvent.click(within(panel).getByRole('radio', { name: 'Table' }))
     await userEvent.click(within(panel).getByRole('button', { name: 'Apply' }))
+    // Focus lands on the new widget (the last card), not back on Add widget.
+    await waitFor(() => {
+      const cards = screen.getAllByTestId('editor-card')
+      expect(document.activeElement).toBe(cards[cards.length - 1])
+    })
     await userEvent.click(screen.getByRole('button', { name: 'Save' }))
     await waitFor(() => expect(api.updateOrg).toHaveBeenCalled())
     const layout = (

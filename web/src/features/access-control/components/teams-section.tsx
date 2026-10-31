@@ -326,6 +326,7 @@ export function TeamsSection({ header }: SectionProps) {
         open={!!selectedGroupId}
         onOpenChange={(open) => !open && setSelectedGroupId(null)}
         onUpdate={refreshData}
+        onCreateTeam={() => setCreateDialogOpen(true)}
       />
 
       {/* Create Group Dialog */}

@@ -34,6 +34,21 @@ export interface Group {
   // Computed fields from API
   member_count?: number
   asset_count?: number
+  /**
+   * Single team only: up to 20 members outside the organization (external
+   * members) or service accounts. While any is in the team it carries no
+   * full-data role (TEAM_EXTERNAL_FULL_DATA).
+   */
+  outside_members?: OutsideMember[]
+  /** Single team only: it carries a full-data role, so nobody outside the organization can join. */
+  carries_full_data?: boolean
+}
+
+/** A team member outside the organization, or a service account. */
+export interface OutsideMember {
+  user_id: string
+  name?: string
+  service?: boolean
 }
 
 /**
@@ -50,6 +65,9 @@ export interface GroupMember {
   /** When the membership ends (RFC-050 W22); absent means it does not. */
   expires_at?: string
   expiry_reason?: string
+  /** Outside the organization (external member) or a service account. */
+  outside?: boolean
+  service?: boolean
   // Backend standard response fields
   name: string
   email: string
