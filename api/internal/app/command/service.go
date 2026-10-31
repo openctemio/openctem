@@ -35,6 +35,8 @@ type Service struct {
 	// (content_pin.go); nil: jobs carry no content.
 	content      ContentSource
 	contentCheck ContentChecker
+	// contentRecorder stores what each signed job pinned (nil: not stored).
+	contentRecorder ContentPinRecorder
 	// durations learns each completed scan command's time per target
 	// (duration_learning.go); nil: nothing is learned.
 	durations toolbudget.StatsStore

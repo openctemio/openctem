@@ -427,6 +427,10 @@ type RunTaskResponse struct {
 	// dispatch gate withheld it (grant_credentials, intensity, ...). The
 	// sensor is never named.
 	WithheldReason string `json:"withheld_reason,omitempty"`
+	// ContentPins is what the task's job read: the packs (name, version,
+	// digest) and the lists generated for it (source, lines, sha256, and
+	// the organization lists with their versions).
+	ContentPins *scanrundom.ContentPins `json:"content_pins,omitempty"`
 }
 
 // RunTaskCoverageGap is one host a sensor could not fully cover, and why:
@@ -475,7 +479,7 @@ func toRunTaskResponses(tasks []scanrundom.Task) []RunTaskResponse {
 			CreatedAt: t.CreatedAt.Format(time.RFC3339), ErrorMessage: platformText(t.Platform, t.ErrorMessage),
 			SkippedTargetsTotal: t.SkippedTotal, WindowHold: t.WindowHold, CoverageGapsTotal: t.CoverageGapsTotal,
 			WaitingOnHosts: t.WaitingOnHosts, EgressRefusedTargets: t.EgressRefusedTargets,
-			GuardRefusedTargets: t.GuardRefusedTargets, WithheldReason: t.WithheldReason,
+			GuardRefusedTargets: t.GuardRefusedTargets, WithheldReason: t.WithheldReason, ContentPins: t.ContentPins,
 		}
 		for _, sk := range t.Skipped {
 			r.SkippedTargets = append(r.SkippedTargets, RunTaskSkippedTarget(sk))

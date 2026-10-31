@@ -864,6 +864,7 @@
   "admin.mfaFloor.errorTitle": "mức tối thiểu xác thực hai lớp",
   "admin.mfaFloor.everyone": "Mọi người",
   "admin.mfaFloor.everyoneHint": "Mọi thành viên của mọi tổ chức.",
+  "admin.mfaFloor.everyoneNote": "Do bạn quyết định khi tự vận hành. Thành viên cần ứng dụng xác thực vì khóa truy cập (passkey) cho tổ chức chưa có.",
   "admin.mfaFloor.grace": "Số ngày để thiết lập",
   "admin.mfaFloor.graceExisting": "Thành viên hiện có",
   "admin.mfaFloor.graceInvalid": "Nhập số ngày nguyên từ 0 đến 90.",

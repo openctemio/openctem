@@ -157,6 +157,8 @@ export default function MCPSettingsPage() {
                     <ConnectionsList
                       connections={orgConnections.data?.data}
                       isLoading={orgConnections.isLoading}
+                      error={orgConnections.error}
+                      onRetry={() => void orgConnections.mutate()}
                       showUser
                       onRevoke={revokeOrgConnection}
                       onScope={scopeOrgConnection}

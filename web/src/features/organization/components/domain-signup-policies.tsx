@@ -29,7 +29,7 @@ import {
   type JoinPolicy,
   type JoinRole,
 } from '../api/use-domain-signup'
-import { PageStack } from '@/features/shared'
+import { ErrorState, PageStack } from '@/features/shared'
 
 interface Props {
   canRead: boolean
@@ -44,9 +44,18 @@ interface Props {
  */
 export function DomainSignupPolicies({ canRead, isOwner }: Props) {
   const { t } = useTranslation()
-  const { domains, isLoading, mutate } = useDomainSignupPolicies(canRead)
+  const { domains, error, isLoading, mutate } = useDomainSignupPolicies(canRead)
 
   if (!canRead) return null
+  if (error && domains.length === 0 && !isLoading) {
+    return (
+      <ErrorState
+        title={t('settings.domains.loadFailed', 'domain sign-up rules')}
+        error={error}
+        onRetry={() => void mutate()}
+      />
+    )
+  }
   if (isLoading) {
     return (
       <div
