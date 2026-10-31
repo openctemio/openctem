@@ -124,6 +124,7 @@ function toSearchFilters(f: InventoryFilters): AssetSearchFilters {
     coverage: f.coverage,
     technologies: f.technologies,
     technologyCategories: f.technologyCategories,
+    technologyVersion: f.technologyVersion,
     hasFindings: f.hasFindings,
     lastSeenBefore: f.lastSeenBefore,
     lastSeenAfter: f.lastSeenAfter,

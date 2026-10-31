@@ -232,6 +232,8 @@
   "assets.chip.tagsAll": "Có tất cả các thẻ {values}",
   "assets.chip.technology": "Công nghệ",
   "assets.chip.technologyCategory": "Nhóm công nghệ",
+  "assets.chip.technologyVersion": "Phiên bản là {version}",
+  "assets.chip.technologyVersionUnknown": "Không rõ phiên bản",
   "assets.cia.availability": "Tính sẵn sàng",
   "assets.cia.availability.consequence": "Tác động kinh doanh nếu xảy ra mất khả năng truy cập hoặc thời gian hoạt động.",
   "assets.cia.confidentiality": "Tính bí mật",
