@@ -627,6 +627,11 @@ func run() int {
 			log.Error("sensor protocol v3 gRPC binding not listening", "error", err)
 		}
 	}
+	// Sensors whose stored manifest has tools or capabilities this
+	// platform's catalog did not know are asked once to send it again.
+	if services.Sensor != nil && servesTenant {
+		go services.Sensor.LoadManifestRechecks(ctx)
+	}
 	internalAPI, err := startInternalAPI(cfg, repos, services, redisClient, log)
 	if err != nil {
 		log.Error("internal API not started", "error", err)
