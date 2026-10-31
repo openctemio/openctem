@@ -246,6 +246,8 @@ export const userEndpoints = {
   twoFactorEnable: () => `${API_BASE.USERS}/me/2fa/enable`,
   twoFactorDisable: () => `${API_BASE.USERS}/me/2fa/disable`,
   twoFactorRecoveryCodes: () => `${API_BASE.USERS}/me/2fa/recovery-codes`,
+  twoFactorReplaceStart: () => '/api/v1/me/2fa/replacement/start',
+  twoFactorReplaceComplete: () => '/api/v1/me/2fa/replacement/complete',
 
   /**
    * Linked sign-in methods (Account > Security). Link start and unlink carry
