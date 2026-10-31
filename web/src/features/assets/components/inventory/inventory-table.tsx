@@ -42,7 +42,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { ScopeCheckBadge, useScopeCheck } from '@/features/scope'
 import { ScopeTriageBadge } from './scope-triage-badge'
-import { MonitoringStateChip } from './monitoring-state-chip'
+import { MonitoringStateControl } from './monitoring-state-control'
 import { useTranslation } from '@/context/i18n-provider'
 import { assetDetailHref } from '@/features/findings/lib/asset-link'
 import type { TypeView } from '@/features/asset-types/lib/type-view'
@@ -378,7 +378,16 @@ export function InventoryTable({
             title={t('assets.monitoring.column', 'Monitoring')}
           />
         ),
-        cell: ({ row }) => <MonitoringStateChip state={row.original.monitoringState} />,
+        cell: ({ row }) => (
+          <MonitoringStateControl
+            assetId={row.original.id}
+            assetName={row.original.name}
+            state={row.original.monitoringState}
+            attributionState={row.original.triage?.attributionState}
+            canWrite={canWriteAssets}
+            onChanged={onAssetUpdated}
+          />
+        ),
       },
       {
         // External-surface facts (status, IP, technologies, TLS …) for the
@@ -626,6 +635,7 @@ export function InventoryTable({
     locale,
     filterTags,
     onToggleTagFilter,
+    onAssetUpdated,
   ])
 
   return (
