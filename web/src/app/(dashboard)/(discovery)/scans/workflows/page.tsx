@@ -84,7 +84,7 @@ import {
   publishDraft,
   saveDraftSteps,
 } from '@/features/scan-workflows/lib/draft'
-import { firstProblem, readinessLabel } from '@/features/scan-workflows/lib/readiness'
+import { WorkflowReadinessBadge } from '@/features/scan-workflows/components/readiness-badge'
 import { RetiredBadge, RetiredNotice } from '@/features/scan-workflows/components/retired-workflow'
 import { WorkflowStagesView } from '@/features/scan-workflows/components/workflow-stages'
 import { ScansPageHeader, ScansSectionTabs } from '@/features/scans/components/scans-section-tabs'
@@ -315,15 +315,7 @@ export default function ScanWorkflowsPage() {
                   {t('scans.workflows.badgeSystem', 'System')}
                 </Badge>
               )}
-              {readinessLabel(workflow.readiness) && (
-                <Badge
-                  variant="outline"
-                  className="shrink-0 text-xs"
-                  title={firstProblem(workflow.readiness)?.reason}
-                >
-                  {readinessLabel(workflow.readiness)}
-                </Badge>
-              )}
+              <WorkflowReadinessBadge readiness={workflow.readiness} />
             </div>
             {workflow.description && (
               <p className="truncate text-xs text-muted-foreground">{workflow.description}</p>

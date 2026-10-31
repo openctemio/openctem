@@ -74,4 +74,44 @@ describe('breakdown widgets', () => {
     expect(m.reasonKey).toBe('dashboards.reason.no_certificates')
     expect(reasonKeyOf('no_certificates')).toBe('dashboards.reason.no_certificates')
   })
+
+  it('emerging threats are named by alert level and keep the level order', () => {
+    const v: WidgetValue = {
+      ...base,
+      metric: 'intel.emerging_threats',
+      shape: 'category',
+      category: {
+        rows: [
+          { key: 'immediate', value: 2, drill: '/emerging-threats?level=immediate&state=open' },
+          { key: 'digest', value: 0 },
+          { key: 'listed', value: 3, drill: '/emerging-threats?level=listed&state=open' },
+        ],
+        total: 5,
+      },
+    }
+    const m = widgetModel(v, spec('intel.emerging_threats'), false)
+    expect(m.result).toMatchObject({ shape: 'category', ordinal: true, total: 5 })
+    const rows = m.result && m.result.shape === 'category' ? m.result.rows : []
+    expect(rows.map((r) => r.label_key)).toEqual([
+      'emergingThreats.level.immediate',
+      'emergingThreats.level.digest',
+      'emergingThreats.level.listed',
+    ])
+  })
+
+  it('emerging threats without any alert, and a module that is off, have their reasons', () => {
+    const m = widgetModel(
+      {
+        ...base,
+        metric: 'intel.emerging_threats',
+        state: 'not_measured',
+        reason: 'no_threat_alerts',
+      },
+      spec('intel.emerging_threats'),
+      false
+    )
+    expect(m.state).toBe('not_measured')
+    expect(m.reasonKey).toBe('dashboards.reason.no_threat_alerts')
+    expect(reasonKeyOf('module_off')).toBe('dashboards.reason.module_off')
+  })
 })

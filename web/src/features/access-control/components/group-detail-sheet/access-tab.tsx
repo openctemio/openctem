@@ -29,17 +29,30 @@ import {
   isElevatedChoice,
   type TeamAccessValue,
 } from '../team-access-fields'
+import type { OutsideMember } from '../../types'
+import { OutsideMembersNotice } from './outside-members-notice'
+import { outsideMembersOf } from './roles-tab'
 
 export function AccessTab({
   groupId,
   canEdit,
   memberCount,
+  outsideMembers = [],
+  onShowOutside,
+  onCreateTeam,
   onChanged,
+  onOutsideNoticeChange,
 }: {
   groupId: string
   canEdit: boolean
   memberCount?: number
+  /** Members outside the organization or service accounts (team detail). */
+  outsideMembers?: OutsideMember[]
+  onShowOutside?: () => void
+  onCreateTeam?: () => void
   onChanged?: () => void
+  /** Whether this tab shows the outside-member notice (so the roles below do not repeat it). */
+  onOutsideNoticeChange?: (shown: boolean) => void
 }) {
   const { t } = useTranslation()
   const { isOwner } = usePermissions()
@@ -49,6 +62,8 @@ export function AccessTab({
   const [value, setValue] = useState<TeamAccessValue>(EMPTY_TEAM_ACCESS)
   const [busy, setBusy] = useState(false)
   const [confirming, setConfirming] = useState(false)
+  const [refusedBy, setRefusedBy] = useState<OutsideMember[] | null>(null)
+  const outside = refusedBy ?? outsideMembers
 
   const saved: TeamAccessValue = useMemo(
     () => ({
@@ -58,6 +73,13 @@ export function AccessTab({
     [access]
   )
   useEffect(() => setValue(saved), [saved])
+
+  const showNotice =
+    canEdit &&
+    !(access?.privileged ?? false) &&
+    templates.some((tpl) => tpl.has_full_data_access) &&
+    outside.length > 0
+  useEffect(() => onOutsideNoticeChange?.(showNotice), [showNotice, onOutsideNoticeChange])
 
   const dirty =
     value.scopeMode !== saved.scopeMode ||
@@ -76,7 +98,16 @@ export function AccessTab({
       toast.success(t('org.teamAccess.saved', 'Team access saved'))
       onChanged?.()
     } catch (err) {
-      toast.error(getErrorMessage(err, t('org.teamAccess.saveFailed', 'Could not save the access')))
+      const named = outsideMembersOf(err)
+      if (named) {
+        setRefusedBy(named.length > 0 ? named : outsideMembers)
+        setValue(saved)
+        onChanged?.()
+      } else {
+        toast.error(
+          getErrorMessage(err, t('org.teamAccess.saveFailed', 'Could not save the access'))
+        )
+      }
     } finally {
       setBusy(false)
     }
@@ -121,16 +152,6 @@ export function AccessTab({
         {access?.privileged && <ElevatedBadge />}
       </div>
 
-      {access && access.other_roles > 0 && (
-        <p className="text-xs text-muted-foreground">
-          {t(
-            'org.teamAccess.otherRoles',
-            'This team also carries {count} role(s) added by hand, listed on the Roles tab.',
-            { count: access.other_roles }
-          )}
-        </p>
-      )}
-
       {updates.map((p) => (
         <div
           key={p.template_id}
@@ -160,6 +181,14 @@ export function AccessTab({
         </div>
       ))}
 
+      {showNotice && (
+        <OutsideMembersNotice
+          members={outside}
+          onShowMembers={onShowOutside}
+          onCreateTeam={onCreateTeam}
+        />
+      )}
+
       <TeamAccessFields
         idPrefix={`team-${groupId}`}
         templates={templates}
@@ -168,6 +197,14 @@ export function AccessTab({
         onChange={setValue}
         canSetAllAssets={owner}
         disabled={locked || busy}
+        blockFullData={
+          outside.length > 0
+            ? t(
+                'org.teamAccess.blockedOutside',
+                'Off while members from outside your organization are in the team.'
+              )
+            : undefined
+        }
       />
 
       {!canEdit ? null : locked ? (

@@ -6,7 +6,7 @@
  * rendered as plain text.
  */
 
-import { useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import type { ColumnDef } from '@tanstack/react-table'
 import { Siren } from 'lucide-react'
@@ -28,7 +28,7 @@ import { ListToolbar } from '@/features/shared/components/list-toolbar'
 import { MetricStrip, type MetricStripItem } from '@/features/shared/components/metric-strip'
 import { PageStack } from '@/features/shared/components/page-stack'
 import { RelativeTime } from '@/features/shared/components/relative-time'
-import { DEFAULT_PER_PAGE, useEmergingThreats } from '../api'
+import { useEmergingThreats } from '../api'
 import {
   LEVELS,
   STATE_FILTERS,
@@ -46,6 +46,8 @@ import {
   useEventKindLabel,
 } from './bits'
 import { useSearchQuery } from '@/hooks/use-search-query'
+import { replaceUrlSearch, useUrlParams, useUrlSettled } from '@/hooks/use-url-param'
+import { parseListQuery, writeListQuery, type ListQuery } from '../url-filters'
 
 const ALL = 'all'
 
@@ -54,55 +56,63 @@ export function EmergingThreatsList() {
   const router = useRouter()
   const dateLocale = useDateLocale()
   const eventLabel = useEventKindLabel()
-  const [level, setLevel] = useState<AlertLevel | typeof ALL>(ALL)
-  const [state, setState] = useState<StateFilter>('open')
-  const [tier, setTier] = useState<AlertTier | typeof ALL>(ALL)
-  const [internetOnly, setInternetOnly] = useState(false)
-  const [searchInput, setSearchInput] = useState('')
+  // Every filter lives in the URL (url-filters.ts), so a view can be linked
+  // to: a dashboard level opens the list filtered to it.
+  const params = useUrlParams()
+  const urlSettled = useUrlSettled()
+  const query = useMemo(() => parseListQuery(params), [params])
+  const { level: levelFilter, state, tier: tierFilter, internetOnly } = query
+  const level: AlertLevel | typeof ALL = levelFilter ?? ALL
+  const tier: AlertTier | typeof ALL = tierFilter ?? ALL
+  const searchInput = query.search
   const search = useSearchQuery(searchInput).term
-  const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: DEFAULT_PER_PAGE })
+  const pagination = { pageIndex: query.page - 1, pageSize: query.perPage }
 
-  // A new search starts at the first page, once it is sent.
-  const [pageSearch, setPageSearch] = useState(search)
-  if (pageSearch !== search) {
-    setPageSearch(search)
-    setPagination((p) => ({ ...p, pageIndex: 0 }))
+  /** Writes filters to the URL; any filter change goes back to the first page. */
+  const update = (patch: Partial<ListQuery>) => {
+    const current = parseListQuery(new URLSearchParams(window.location.search))
+    const next = { ...current, page: 1, ...patch }
+    replaceUrlSearch(writeListQuery(new URLSearchParams(window.location.search), next))
   }
+  const setLevel = (v: AlertLevel | typeof ALL) => update({ level: v === ALL ? undefined : v })
+  const setState = (v: StateFilter) => update({ state: v })
+  const setTier = (v: AlertTier | typeof ALL) => update({ tier: v === ALL ? undefined : v })
+  const setInternetOnly = (v: boolean) => update({ internetOnly: v })
+  const setSearchInput = (v: string) => update({ search: v })
+  const setPagination = (p: { pageIndex: number; pageSize: number }) =>
+    update(
+      p.pageSize !== query.perPage
+        ? { perPage: p.pageSize, page: 1 }
+        : { page: p.pageIndex + 1, perPage: p.pageSize }
+    )
 
-  const { data, error, isLoading, mutate } = useEmergingThreats({
-    level: level === ALL ? undefined : level,
-    state,
-    tier: tier === ALL ? undefined : tier,
-    internetOnly,
-    search,
-    page: pagination.pageIndex + 1,
-    perPage: pagination.pageSize,
-  })
-
-  // Any filter change goes back to the first page.
-  const resetPage = () => setPagination((p) => ({ ...p, pageIndex: 0 }))
+  const { data, error, isLoading, mutate } = useEmergingThreats(
+    {
+      level: levelFilter,
+      state,
+      tier: tierFilter,
+      internetOnly,
+      search,
+      page: query.page,
+      perPage: query.perPage,
+    },
+    undefined,
+    urlSettled
+  )
 
   const rows = useMemo(() => data?.data ?? [], [data])
   const summary = data?.summary
 
   // Every tile is a filter: the level tiles pick that level, Open clears the
   // level and internet-facing filters, Internet-facing toggles its own.
-  const toggleLevel = (target: AlertLevel) => {
-    setLevel((l) => (l === target ? ALL : target))
-    resetPage()
-  }
+  const toggleLevel = (target: AlertLevel) => setLevel(level === target ? ALL : target)
   const strip: MetricStripItem[] = [
     {
       key: 'open',
       label: t('emergingThreats.summary.open'),
       value: summary?.open ?? 0,
       active: level === ALL && !internetOnly && state === 'open',
-      onClick: () => {
-        setLevel(ALL)
-        setInternetOnly(false)
-        setState('open')
-        resetPage()
-      },
+      onClick: () => update({ level: undefined, internetOnly: false, state: 'open' }),
     },
     {
       key: 'immediate',
@@ -132,10 +142,7 @@ export function EmergingThreatsList() {
       value: summary?.internet_facing ?? 0,
       tone: 'warning',
       active: internetOnly,
-      onClick: () => {
-        setInternetOnly((v) => !v)
-        resetPage()
-      },
+      onClick: () => setInternetOnly(!internetOnly),
     },
   ]
 
@@ -236,10 +243,7 @@ export function EmergingThreatsList() {
               id="et-level"
               label={t('emergingThreats.filter.level')}
               value={level}
-              onChange={(v) => {
-                setLevel(v as AlertLevel | typeof ALL)
-                resetPage()
-              }}
+              onChange={(v) => setLevel(v as AlertLevel | typeof ALL)}
               options={[
                 [ALL, t('emergingThreats.filter.allLevels')],
                 ...LEVELS.map((l): [string, string] => [l, t(`emergingThreats.level.${l}`)]),
@@ -249,10 +253,7 @@ export function EmergingThreatsList() {
               id="et-state"
               label={t('emergingThreats.filter.state')}
               value={state}
-              onChange={(v) => {
-                setState(v as StateFilter)
-                resetPage()
-              }}
+              onChange={(v) => setState(v as StateFilter)}
               options={STATE_FILTERS.map((s): [string, string] => [
                 s,
                 s === 'open'
@@ -266,10 +267,7 @@ export function EmergingThreatsList() {
               id="et-tier"
               label={t('emergingThreats.filter.tier')}
               value={tier}
-              onChange={(v) => {
-                setTier(v as AlertTier | typeof ALL)
-                resetPage()
-              }}
+              onChange={(v) => setTier(v as AlertTier | typeof ALL)}
               options={[
                 [ALL, t('emergingThreats.filter.allTiers')],
                 ['confirmed', t('emergingThreats.tier.confirmed')],
@@ -280,10 +278,7 @@ export function EmergingThreatsList() {
               <Switch
                 id="et-internet"
                 checked={internetOnly}
-                onCheckedChange={(v) => {
-                  setInternetOnly(v)
-                  resetPage()
-                }}
+                onCheckedChange={(v) => setInternetOnly(v)}
               />
               <Label htmlFor="et-internet" className="text-sm">
                 {t('emergingThreats.filter.internetOnly')}

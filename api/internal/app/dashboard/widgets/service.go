@@ -65,6 +65,9 @@ const (
 	ReasonTimeout        = "timeout"
 	ReasonNoHistoryForBy = "previous_not_in_history"
 	ReasonForbidden      = "forbidden"
+	// ReasonModuleOff: the metric reads a module that is off for the
+	// organization; the widget carries no figure (the web hides it).
+	ReasonModuleOff = "module_off"
 )
 
 // Service computes widget results.
@@ -83,6 +86,10 @@ type Service struct {
 	repo      dashboard.Repository
 	members   MembershipReader
 	settings  dashboardapp.SettingsStore
+
+	// modules says which modules are readable for an organization
+	// (SetModules); nil: every module is.
+	modules ModuleChecker
 }
 
 // NewService returns a widget data service.
@@ -386,10 +393,13 @@ func (s *Service) personalForViewer(ctx context.Context, d *DashboardData, c das
 	return s.forViewer(ctx, d, c, scope.CampaignViewer)
 }
 
-// forViewer prepares stored or computed figures for one viewer: list rows of
-// pentest findings stay only for an administrator or a member of their
-// campaign, and the campaign fields never leave the server.
+// forViewer prepares stored or computed figures for one viewer (the one exit
+// of every personal and organization read): widgets of a module that is off
+// for the organization lose their figures, list rows of pentest findings stay
+// only for an administrator or a member of their campaign, and the campaign
+// fields never leave the server.
 func (s *Service) forViewer(ctx context.Context, d *DashboardData, c dashboardapp.Caller, viewer *shared.ID) (*DashboardData, error) {
+	s.maskModulesOff(ctx, d, c.TenantID)
 	var member map[string]bool
 	for i := range d.Widgets {
 		it := d.Widgets[i].Items
@@ -449,6 +459,10 @@ func (s *Service) widget(ctx context.Context, i int, w dashboard.Widget, factsRe
 	}
 	m, _ := dashboard.LookupMetric(spec.Data.Metric)
 	v.Metric, v.Viz, v.Polarity, v.Target = m.ID, spec.Viz.Type, m.Polarity, spec.Target
+	if s.moduleOff(ctx, scope.TenantID, m) {
+		v.State, v.Reason = StateUnsupported, ReasonModuleOff
+		return v
+	}
 	if !factsReady {
 		v.State, v.Reason = StateBuilding, ReasonFactsBuilding
 		return v

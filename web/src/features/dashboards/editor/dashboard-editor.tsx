@@ -189,6 +189,20 @@ export function DashboardEditor({ dashboard, kind, data, onExit }: DashboardEdit
     if (focusUid) cardRefs.current.get(focusUid)?.focus()
   }, [focusUid, layout])
 
+  // A widget just added is shown and focused when its settings panel
+  // closes, instead of focus going back to "Add widget": a new widget lands
+  // at the end of a long dashboard, out of sight otherwise.
+  const reveal = useRef<string | null>(null)
+  const revealAdded = () => {
+    const uid = reveal.current
+    reveal.current = null
+    const el = uid ? cardRefs.current.get(uid) : undefined
+    if (!el) return false
+    el.scrollIntoView?.({ block: 'center' })
+    el.focus({ preventScroll: true })
+    return true
+  }
+
   const removeAt = (i: number) => {
     const w = layout[i]
     set(
@@ -293,6 +307,7 @@ export function DashboardEditor({ dashboard, kind, data, onExit }: DashboardEdit
     set(ops.insert(layout, w), t('dashboards.editor.added', '{name} added', { name: nameOf(w) }))
     setGalleryOpen(false)
     setEditing({ uid: w.uid, spec })
+    reveal.current = w.uid
   }
 
   const addNote = () => {
@@ -308,6 +323,7 @@ export function DashboardEditor({ dashboard, kind, data, onExit }: DashboardEdit
       // A new note: added on Apply.
       const w = { ...widgetFromSpec(spec, undefined), uid: nextUid() }
       set(ops.insert(layout, w), t('dashboards.editor.added', '{name} added', { name: nameOf(w) }))
+      reveal.current = w.uid
     } else {
       const prev = layout[i]
       const changedData =
@@ -354,7 +370,8 @@ export function DashboardEditor({ dashboard, kind, data, onExit }: DashboardEdit
   return (
     <div className="flex flex-col gap-3">
       <div
-        className="sticky top-0 z-10 flex flex-wrap items-center gap-2 rounded-lg border bg-background/95 p-2 backdrop-blur"
+        // Sticks below the app header (h-12, sticky top-0), never under it.
+        className="sticky top-12 z-10 flex flex-wrap items-center gap-2 rounded-lg border bg-background/95 p-2 backdrop-blur"
         role="toolbar"
         aria-label={t('dashboards.editor.toolbar', 'Dashboard editor')}
       >
@@ -399,7 +416,16 @@ export function DashboardEditor({ dashboard, kind, data, onExit }: DashboardEdit
           {t('dashboards.editor.save', 'Save')}
         </Button>
       </div>
-      <p id="dashboard-editor-help" className="text-xs text-muted-foreground">
+      {/* Keys mean nothing on a touch screen: a phone gets the touch wording
+          (the keyboard wording stays the cards' description for assistive
+          technology). */}
+      <p className="text-xs text-muted-foreground sm:hidden">
+        {t(
+          'dashboards.editor.helpTouch',
+          'Drag a widget by its handle to move it, or use its menu to move, resize, duplicate or remove it.'
+        )}
+      </p>
+      <p id="dashboard-editor-help" className="text-xs text-muted-foreground max-sm:sr-only">
         {t(
           'dashboards.editor.help',
           'Drag a widget by its handle, or focus it and use the arrow keys to move it, Shift and the arrow keys to resize it, Enter to configure, D to duplicate and Delete to remove.'
@@ -487,6 +513,7 @@ export function DashboardEditor({ dashboard, kind, data, onExit }: DashboardEdit
         initialValue={editing ? values.get(editing.uid) : undefined}
         onCancel={() => setEditing(null)}
         onApply={applyConfig}
+        onCloseFocus={revealAdded}
       />
     </div>
   )

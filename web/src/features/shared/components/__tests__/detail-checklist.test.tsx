@@ -86,6 +86,8 @@ describe('DetailDisclosure and DetailCopyId', () => {
 
   it('names the copy button after what it copies', () => {
     render(<DetailCopyId id="0193-abc" label="Sensor ID" />)
-    expect(screen.getByRole('button', { name: 'Copy sensor ID' })).toHaveTextContent('0193-abc')
+    expect(screen.getByRole('button', { name: 'Copy sensor ID 0193-abc' })).toHaveTextContent(
+      '0193-abc'
+    )
   })
 })

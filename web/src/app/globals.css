@@ -107,6 +107,15 @@
   }
 }
 
+/* A link inside running text. The ink link colour is close to body and muted
+   text (2.3:1 against muted text in light mode, 2:1 in dark), so colour alone
+   does not tell it apart (WCAG 1.4.1): it is always underlined, the line
+   softer than the text until hover or focus. Standalone links (a row's
+   title, an "Open ..." action) keep their own style. */
+@utility link-inline {
+  @apply rounded-sm text-primary underline decoration-primary/45 underline-offset-2 hover:decoration-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none;
+}
+
 @utility faded-bottom {
   @apply after:pointer-events-none after:absolute after:start-0 after:bottom-0 after:hidden after:h-32 after:w-full after:rounded-b-2xl after:bg-[linear-gradient(180deg,_transparent_10%,_var(--background)_70%)] md:after:block;
 }
