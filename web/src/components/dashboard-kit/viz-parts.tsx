@@ -23,7 +23,7 @@ import { useTranslation } from '@/context/i18n-provider'
 import { formatBucket, formatDelta, formatMetric, type MetricUnit } from '@/lib/format-metric'
 import { safeInternalHref } from '@/lib/safe-href'
 import { cn } from '@/lib/utils'
-import { deltaTone, targetStatus, type TargetStatus } from './compare'
+import { deltaTone, targetStatus, type DeltaTone, type TargetStatus } from './compare'
 import type { MetricTarget, Polarity, SeriesPoint } from './types'
 
 /** True when the person asked the system for reduced motion: charts then do not animate. */
@@ -47,12 +47,25 @@ export function useLabel() {
     item.label_key ? t(item.label_key, item.label ?? item.key) : (item.label ?? item.key)
 }
 
-const TONE_CLASS = {
+export const TONE_CLASS = {
   better: 'text-success',
   worse: 'text-destructive',
   flat: 'text-muted-foreground',
   neutral: 'text-muted-foreground',
 } as const
+
+/** The words for a tone ("better", "worse", "unchanged"; none for neutral), for screen readers. */
+export function useToneVerdict(): (tone: DeltaTone) => string | null {
+  const { t } = useTranslation()
+  return (tone) =>
+    tone === 'better'
+      ? t('dashboardKit.delta.better', 'better')
+      : tone === 'worse'
+        ? t('dashboardKit.delta.worse', 'worse')
+        : tone === 'flat'
+          ? t('dashboardKit.delta.unchanged', 'unchanged')
+          : null
+}
 
 /**
  * The change against the previous period, as text with an arrow: "▼ 12 vs
@@ -75,6 +88,7 @@ export function DeltaText({
   comparedTo?: string
 }) {
   const { t, locale } = useTranslation()
+  const toneVerdict = useToneVerdict()
   if (delta == null || !Number.isFinite(delta)) return null
   const tone = deltaTone(delta, polarity)
   const Icon = delta > 0 ? ArrowUpRight : delta < 0 ? ArrowDownRight : ArrowRight
@@ -85,14 +99,7 @@ export function DeltaText({
           value: formatMetric(previous, unit, locale),
         })
       : t('dashboardKit.delta.vsPrevious', 'vs previous period'))
-  const verdict =
-    tone === 'better'
-      ? t('dashboardKit.delta.better', 'better')
-      : tone === 'worse'
-        ? t('dashboardKit.delta.worse', 'worse')
-        : tone === 'flat'
-          ? t('dashboardKit.delta.unchanged', 'unchanged')
-          : null
+  const verdict = toneVerdict(tone)
   return (
     <p className={cn('flex items-center gap-1 text-xs', TONE_CLASS[tone])} data-tone={tone}>
       <Icon className="size-3.5 shrink-0" aria-hidden />
