@@ -20,6 +20,7 @@
 > Simulation: [RFC-030-sim/scan_distribution_sim.py](RFC-030-sim/scan_distribution_sim.py)
 > (standard-library Python, deterministic), output in
 > [RFC-030-sim/sim_output.txt](RFC-030-sim/sim_output.txt).
+> End-to-end flow as implemented today: [sensor-platform-workflow.md](../architecture/sensor-platform-workflow.md).
 
 ## 1. Summary
 

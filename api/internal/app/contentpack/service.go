@@ -95,7 +95,7 @@ func lintError(code string, base error, rep dom.LintReport) error {
 
 // Upload ingests, lints, signs and stores a pack.
 func (s *Service) Upload(ctx context.Context, in UploadInput, actx auditapp.AuditContext) (*dom.Pack, error) {
-	if err := errors.Join(dom.ValidateName(in.Name), dom.ValidateVersion(in.Version), dom.ValidateKind(in.Kind)); err != nil {
+	if err := errors.Join(dom.ValidateName(in.Name), dom.ValidateVersion(in.Version), dom.ValidateKind(in.Kind), dom.ValidateTenantKind(in.Kind)); err != nil {
 		return nil, err
 	}
 	if s.signer == nil {
@@ -236,7 +236,7 @@ func (s *Service) StoreSnapshot(ctx context.Context, in SnapshotInput) (*dom.Pac
 	if in.TenantID.IsZero() || in.Archive == nil {
 		return nil, fmt.Errorf("%w: tenant and archive are required", shared.ErrValidation)
 	}
-	if err := errors.Join(dom.ValidateName(in.Name), dom.ValidateVersion(in.Version), dom.ValidateKind(in.Kind)); err != nil {
+	if err := errors.Join(dom.ValidateName(in.Name), dom.ValidateVersion(in.Version), dom.ValidateKind(in.Kind), dom.ValidateTenantKind(in.Kind)); err != nil {
 		return nil, err
 	}
 	_, used, err := s.repo.Usage(ctx, in.TenantID)

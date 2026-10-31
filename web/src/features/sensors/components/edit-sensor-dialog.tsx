@@ -38,6 +38,7 @@ import {
 import type { Sensor } from '@/lib/api/sensor-types'
 import { Permission, useHasPermission } from '@/lib/permissions'
 import { sensorActions } from '../lib/sensor-actions'
+import { useSensorActionPerms } from '../lib/use-sensor-action-perms'
 
 import { sensorCapacity } from '../lib/capabilities'
 import { agoShort, type Tr } from '../lib/format'
@@ -167,9 +168,7 @@ export function EditSensorDialog({
     maxJobs: useId(),
     form: useId(),
   }
-  const canDelete = useHasPermission(Permission.SensorsDelete)
-  const canWrite = useHasPermission(Permission.SensorsWrite)
-  const canRevoke = useHasPermission(Permission.SensorsRevoke)
+  const actionPerms = useSensorActionPerms()
   const canReadZones = useHasPermission(Permission.ScanZonesRead)
   const canWriteZones = useHasPermission(Permission.ScanZonesWrite)
   const { data: zonesData } = useScanZones(open && canReadZones)
@@ -221,7 +220,7 @@ export function EditSensorDialog({
   )
   const capacity = sensorCapacity(sensor)
   const revoked = sensor.status === 'revoked'
-  const can = sensorActions(sensor, { write: canWrite, revoke: canRevoke, delete: canDelete })
+  const can = sensorActions(sensor, actionPerms)
   const modeKey = EXECUTION_MODE_KEYS[sensor.execution_mode] ?? 'daemon'
   const busy = saving || isRevoking || isDeleting
 
