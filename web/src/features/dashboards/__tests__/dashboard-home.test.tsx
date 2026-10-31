@@ -437,6 +437,8 @@ describe('DashboardHome new layout hint', () => {
       'exposure.open_by_priority',
       'flow.new_vs_fixed',
       'findings.age_bands',
+      'surface.new_assets',
+      'certificates.expiry',
       'fix.next',
       // The person's own extra widget stays.
       'sla.at_risk',

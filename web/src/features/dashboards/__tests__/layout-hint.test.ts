@@ -40,13 +40,19 @@ describe('layout hint', () => {
     ]
     const hint = layoutHintFor({ layout, kind: 'personal' })
     expect(hint?.template).toBe('ctem')
-    expect(hint?.missing).toEqual(['exposure.levers', 'exposure.kpis', 'brief.weekly'])
+    expect(hint?.missing).toEqual([
+      'exposure.levers',
+      'exposure.kpis',
+      'brief.weekly',
+      'surface.new_assets',
+      'certificates.expiry',
+    ])
     const next = withTemplateWidgets(layout, templateByKey('ctem'), hint!.missing)
     const metrics = next.map((x) => (x.config as { data: { metric: string } }).data.metric)
     // Nothing removed, nothing duplicated, the person's extra widget kept.
     expect(new Set(metrics).size).toBe(metrics.length)
     expect(metrics).toContain('crown_jewels.exposed')
-    expect(metrics.length).toBe(layout.length + 3)
+    expect(metrics.length).toBe(layout.length + 5)
     // The levers lead, the strip follows the flow, the brief sits beside the paths.
     expect(metrics.slice(0, 3)).toEqual(['exposure.levers', 'exposure.flow', 'exposure.kpis'])
     expect(metrics.indexOf('brief.weekly')).toBe(

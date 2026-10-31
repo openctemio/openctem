@@ -80,7 +80,7 @@ describe('WidgetGallery', () => {
       />
     )
     const tabs = screen.getAllByRole('tab')
-    expect(tabs).toHaveLength(5)
+    expect(tabs).toHaveLength(6)
     expect(screen.queryByRole('tab', { name: 'Advanced' })).toBeNull()
     expect(tabs.filter((t) => t.getAttribute('tabindex') !== '-1').length).toBeLessThanOrEqual(1)
     expect(screen.getByRole('tablist').className).toContain('overflow-x-auto')
