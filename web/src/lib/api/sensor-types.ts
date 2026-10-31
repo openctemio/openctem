@@ -299,6 +299,12 @@ export interface Sensor {
   health: SensorHealth // Automatic heartbeat: unknown, online, late, stale, offline, error
   status_message?: string
   api_key_prefix: string
+  /**
+   * How the sensor authenticates: "bearer" (an API key, prefix in
+   * api_key_prefix) or "key_bound" (its own signing key, made when it paired).
+   * Absent from older APIs.
+   */
+  auth_kind?: 'bearer' | 'key_bound'
   version?: string
   hostname?: string
   ip_address?: string

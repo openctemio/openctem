@@ -114,7 +114,7 @@ type StartRequest struct {
 	PublicKey string `json:"public_key"`
 	// Commitment is Commit(sensor nonce), base64url.
 	Commitment string `json:"commitment"`
-	// Code is the code an administrator created with "expect a sensor"
+	// Code is the pairing code an administrator created first
 	// (reverse mode); empty in the default mode, where the platform
 	// returns a code for the administrator to enter.
 	Code string    `json:"code,omitempty"`

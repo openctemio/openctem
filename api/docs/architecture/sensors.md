@@ -1015,6 +1015,16 @@ no lines but has a refusal or failure reason, the Logs dialog shows "This task
 was refused before it ran" (or "failed before it sent any logs") with the
 reason, instead of the generic empty state.
 
+While a task is queued or running, the Logs dialog follows it live: it re-reads
+the task's log every 3 seconds (the sensor flushes a batch at least every 3
+seconds, and its outbox sends new batches at once), scrolls to the newest line
+while the reader is at the bottom (scrolling up stops following), and reads once
+more when the task settles so its last lines show. A live task with no lines yet
+says it is waiting for its first lines. The re-read uses the same route,
+permission and tenant-scoped query as the first read, and stops when the dialog
+closes, the browser tab is hidden or the task finishes
+(`web/src/features/scans/components/run-task-logs-dialog.tsx`).
+
 ## Install snippets
 
 `GET /api/v1/sensors/{id}/config-templates` renders the snippets the Sensors
