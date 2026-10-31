@@ -2339,6 +2339,19 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.ProxyPool.EnableTest(repos.Sensor, repos.Command, proxypoolapp.TestConfig{
 		EchoBase: cfg.ProxyTestEchoBase(), AltPort: cfg.SensorConfig.ProxyTestAltPort})
 	contentPlanner := contentpin.New(s.ContentDelivery, postgres.NewKnownNamesRepository(&postgres.DB{DB: deps.DB}), nil)
+	if contentSigner != nil {
+		// The curated wordlist packs embedded in this build become the
+		// stable lists of a platform that has none (a fresh install), so
+		// subdomain enumeration needs no import. An existing stable channel
+		// is never moved (docs/architecture/wordlists.md).
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+			defer cancel()
+			if _, err := contentpin.InstallBuiltin(ctx, s.PlatformContentPacks, log.Logger); err != nil {
+				log.Error("built-in wordlist packs not installed; subdomain enumeration waits for an imported pack", "error", err)
+			}
+		}()
+	}
 	cmdOpts := []command.Option{command.WithSensorLookup(repos.Sensor),
 		// Each scan and retest job carries the claiming sensor's proxy pool.
 		command.WithEgress(s.ProxyPool),
