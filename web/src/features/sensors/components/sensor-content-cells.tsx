@@ -101,9 +101,17 @@ export function FleetContentRefreshButton({
 
   return (
     <>
-      <Button type="button" variant="outline" size="sm" onClick={() => setOpen(true)}>
+      {/* In a list toolbar narrower than 36rem (a phone) the label becomes
+          the button's name and tooltip, like the toolbar's other controls. */}
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        onClick={() => setOpen(true)}
+        title={t('sensors.contentCells.refresh')}
+      >
         <PackageCheck className="h-4 w-4" aria-hidden />
-        {t('sensors.contentCells.refresh')}
+        <span className="sr-only @xl/toolbar:not-sr-only">{t('sensors.contentCells.refresh')}</span>
       </Button>
       <ConfirmDialog
         open={open}

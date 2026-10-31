@@ -281,11 +281,23 @@ func (s *Service) scheduleRunnableSteps(ctx context.Context, run *scanrun.Run, t
 		maxParallel = 3
 	}
 
+	// Streams first (stream.go): waves of open streams, and steps that may
+	// start on their predecessor's finished tasks.
+	streams := s.advanceStreams(ctx, run, template, completedSteps, runningSteps, maxParallel)
+	if streams.settled {
+		return s.advanceRun(ctx, run, template)
+	}
+	runningSteps += streams.started
+	splitForStream := s.streamingFor(template)
+
 	// Get runnable steps (no pending dependencies)
 	runnableSteps := template.GetRunnableSteps(completedSteps)
 	settledInline := false
 
 	for _, step := range runnableSteps {
+		if streams.handled[step.StepKey] {
+			continue
+		}
 		// Check if we've reached the max parallel limit
 		if runningSteps >= maxParallel {
 			s.logger.Info("max parallel steps reached, skipping remaining",
@@ -343,7 +355,8 @@ func (s *Service) scheduleRunnableSteps(ctx context.Context, run *scanrun.Run, t
 		}
 
 		// Queue the step - create a command that sensors can poll
-		err := s.queueStepForExecutionWithSettings(ctx, run, step, stepRun, template.Settings, predecessorsOf(template, step))
+		err := s.queueStepForExecutionWithSettings(ctx, run, step, stepRun, template.Settings, predecessorsOf(template, step),
+			queueOpts{splitForStream: splitForStream && feedsStream(template, step)})
 		var noInputs *noInputsError
 		var tooClose *deadlineTooCloseError
 		switch {
@@ -413,7 +426,7 @@ func predecessorsOf(template *scanworkflow.Workflow, step *scanworkflow.Step) []
 // stage takes, its targets come from the hop router (hop_router.go) and the
 // sentinel errors errStageDeferred, errStageAlreadyPlanned and
 // *noInputsError tell the scheduler to wait, to leave it, or to settle it.
-func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *scanrun.Run, step *scanworkflow.Step, stepRun *scanrun.StepRun, settings scanworkflow.Settings, preds []*scanworkflow.Step) error {
+func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *scanrun.Run, step *scanworkflow.Step, stepRun *scanrun.StepRun, settings scanworkflow.Settings, preds []*scanworkflow.Step, o queueOpts) error {
 	// The tool the step runs: its pinned tool, or the implementation of its
 	// capability the planner picks (F1: a capability-only step used to
 	// reach the sensor with no scanner). Every check below and the payload
@@ -454,38 +467,14 @@ func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *sc
 	// The step's tool is handed only the run's targets it can scan; a step
 	// left with none fails here (INCOMPATIBLE_TARGETS), before any sensor
 	// sees it.
-	chained := s.hops != nil && resolved.HasStage && len(feedingPredecessors(run, resolved.Stage, preds)) > 0
+	chained := s.hops != nil && resolved.HasStage && len(feedingPredecessors(run, resolved.Stage, preds, o.stream)) > 0
 	// A step that runs although a dependency did not succeed (continue on
 	// failure) may find no seed it can take: it then has nothing to do,
 	// which is not a failure of its own.
 	dependent := settings.ContinueOnFailedDependency && len(preds) > 0 && !chained
-	var stepTargets *scanapp.StepTargets
-	if f, ok := s.targetGate.(StepTargetFilter); ok {
-		st, ferr := f.FilterStepTargets(ctx, run.TenantID, step.Tool, run.Context)
-		if ferr != nil && findsNoHosts(resolved, ferr) {
-			return &noInputsError{summary: "no address or range to probe"}
-		}
-		if ferr != nil {
-			var de *shared.DomainError
-			if !errors.As(ferr, &de) || (de.Code != "INCOMPATIBLE_TARGETS" && de.Code != scanapp.CodeStepTargetsRefused) {
-				return fmt.Errorf("step %s: %w", step.StepKey, ferr)
-			}
-			if dependent {
-				return &noInputsError{summary: "no dependency produced anything this step takes, and the scan's targets do not fit it"}
-			}
-			if !chained {
-				return fmt.Errorf("step %s: %w", step.StepKey, ferr)
-			}
-			// A chained step may take no seed: its targets come from
-			// what its predecessors found (the hop gate checks those at
-			// the step's tier).
-			st = &scanapp.StepTargets{Targets: []string{}}
-		}
-		stepTargets = st
-		if st != nil && st.Refused > 0 {
-			s.logger.Info("step targets the tool cannot scan were left out",
-				"run_id", run.ID.String(), "step_key", logger.SanitizeValue(step.StepKey), "refused", st.Refused, "reason", logger.SanitizeValue(st.Reason))
-		}
+	stepTargets, err := s.filterStepSeeds(ctx, run, step, resolved, chained, dependent)
+	if err != nil {
+		return err
 	}
 
 	// Every target, typed in or from the inventory, goes only to a stage
@@ -524,27 +513,9 @@ func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *sc
 
 	// Resolve before active: an active stage skips the names the platform's
 	// freshest evidence says have not resolved for a week (RFC-088 A5).
-	if f, ok := s.targetGate.(StaleNameFilter); ok && activeStep(resolved) {
-		seeds := chunkTargets(stepTargets, run.Context)
-		kept, stale, serr := f.DropStaleNames(ctx, run.TenantID, seeds)
-		if serr != nil {
-			return fmt.Errorf("step %s: %w", step.StepKey, serr)
-		}
-		if len(stale) > 0 {
-			out := &scanapp.StepTargets{Targets: kept, Refused: len(stale), Reason: scanapp.ReasonNotResolving}
-			if stepTargets != nil {
-				out.Refused += stepTargets.Refused
-				if stepTargets.Reason != "" {
-					out.Reason = stepTargets.Reason + "; " + out.Reason
-				}
-			}
-			stepTargets = out
-			s.logger.Info("step names without recent resolution evidence were left out",
-				"run_id", run.ID.String(), "step_key", step.StepKey, "skipped", len(stale))
-			if len(kept) == 0 && !chained {
-				return &noInputsError{summary: fmt.Sprintf("%d name(s) %s", len(stale), scanapp.ReasonNotResolving)}
-			}
-		}
+	stepTargets, err = s.dropStaleSeeds(ctx, run, step, resolved, stepTargets, chained)
+	if err != nil {
+		return err
 	}
 
 	// Whether the step's jobs go to platform sensors decides whether
@@ -554,12 +525,25 @@ func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *sc
 	if wantsPlatform {
 		hopPlacement = attribution.PlacementPlatform
 	}
-	planned, err := s.planStage(attribution.WithPlacement(ctx, hopPlacement), run, step, resolved, preds, stepTargets, settings.DeltaGating)
+	planned, err := s.planStage(attribution.WithPlacement(ctx, hopPlacement), run, step, resolved, preds, stepTargets, settings.DeltaGating, o.stream)
 	if err != nil {
 		return fmt.Errorf("step %s: %w", step.StepKey, err)
 	}
 	stepTargets = planned
 
+	return s.dispatchStep(ctx, run, step, resolved, stepRun, stepTargets, wantsPlatform, o.splitForStream)
+}
+
+// dispatchStep creates the commands of a step for its planned targets and
+// marks a pending step queued. A step's first planning and every later wave
+// of a streamed step (stream.go) dispatch through it, so both get the same
+// placement, chunking, host keys, claim-time gate and deadline admission.
+// splitForStream cuts the step into smaller chunks because a successor
+// streams from it (streamChunkSize). A deadline too close returns
+// *deadlineTooCloseError with the targets and creates nothing.
+func (s *Service) dispatchStep(ctx context.Context, run *scanrun.Run, step *scanworkflow.Step, resolved scanapp.StepTool,
+	stepRun *scanrun.StepRun, stepTargets *scanapp.StepTargets, wantsPlatform, splitForStream bool,
+) error {
 	// Where the step's commands may run. No command is pinned to one
 	// sensor (research/49 W27): a zone-routed run's commands are stamped
 	// with the zone, the others go to the platform queue or to any tenant
@@ -575,7 +559,7 @@ func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *sc
 	// A large step is cut into chunks of the capability's size, so every
 	// eligible sensor takes a share; the step settles with its last chunk
 	// (checkStepBatches). A step that fits one chunk stays one command.
-	chunks := stepChunks(resolved, stepTargets, s.hostAliases(ctx, run.TenantID, resolved, stepTargets))
+	chunks := stepChunksSized(resolved, stepTargets, s.hostAliases(ctx, run.TenantID, resolved, stepTargets), splitForStream)
 	// Admission: a step is not started when its run's deadline would cut it
 	// before it can do anything useful; its targets roll over instead.
 	if tooClose := deadlineTooClose(run, resolved.Name, time.Now()); tooClose != nil {
@@ -623,10 +607,84 @@ func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *sc
 	s.logger.Info("step queued", "step_key", step.StepKey, "commands", len(created),
 		"zone_routed", zoneID != nil, "platform", usePlatform)
 
+	if len(created) == 0 || !stepRun.IsPending() {
+		return nil // a later wave of a streamed step that is queued already
+	}
 	// Mark step as queued
 	stepRun.Queue()
 	stepRun.CommandID = &created[0].ID
 	return s.stepRunRepo.Update(ctx, stepRun)
+}
+
+// filterStepSeeds is the run's targets the step's tool can scan (nil when
+// the target gate does not filter). A chained step may be left with none
+// (its predecessors feed it); a step that runs although a dependency failed
+// then has no inputs; any other step without a target fails.
+func (s *Service) filterStepSeeds(ctx context.Context, run *scanrun.Run, step *scanworkflow.Step, resolved scanapp.StepTool,
+	chained, dependent bool,
+) (*scanapp.StepTargets, error) {
+	f, ok := s.targetGate.(StepTargetFilter)
+	if !ok {
+		return nil, nil
+	}
+	st, ferr := f.FilterStepTargets(ctx, run.TenantID, step.Tool, run.Context)
+	if ferr != nil && findsNoHosts(resolved, ferr) {
+		return nil, &noInputsError{summary: "no address or range to probe"}
+	}
+	if ferr != nil {
+		var de *shared.DomainError
+		if !errors.As(ferr, &de) || (de.Code != "INCOMPATIBLE_TARGETS" && de.Code != scanapp.CodeStepTargetsRefused) {
+			return nil, fmt.Errorf("step %s: %w", step.StepKey, ferr)
+		}
+		if dependent {
+			return nil, &noInputsError{summary: "no dependency produced anything this step takes, and the scan's targets do not fit it"}
+		}
+		if !chained {
+			return nil, fmt.Errorf("step %s: %w", step.StepKey, ferr)
+		}
+		// A chained step may take no seed: its targets come from
+		// what its predecessors found (the hop gate checks those at
+		// the step's tier).
+		st = &scanapp.StepTargets{Targets: []string{}}
+	}
+	if st != nil && st.Refused > 0 {
+		s.logger.Info("step targets the tool cannot scan were left out",
+			"run_id", run.ID.String(), "step_key", logger.SanitizeValue(step.StepKey), "refused", st.Refused, "reason", logger.SanitizeValue(st.Reason))
+	}
+	return st, nil
+}
+
+// dropStaleSeeds leaves out of an active step the names without recent
+// resolution evidence. A step left with nothing (and no predecessor to feed
+// it) has no inputs.
+func (s *Service) dropStaleSeeds(ctx context.Context, run *scanrun.Run, step *scanworkflow.Step, resolved scanapp.StepTool,
+	stepTargets *scanapp.StepTargets, chained bool,
+) (*scanapp.StepTargets, error) {
+	f, ok := s.targetGate.(StaleNameFilter)
+	if !ok || !activeStep(resolved) {
+		return stepTargets, nil
+	}
+	seeds := chunkTargets(stepTargets, run.Context)
+	kept, stale, serr := f.DropStaleNames(ctx, run.TenantID, seeds)
+	if serr != nil {
+		return nil, fmt.Errorf("step %s: %w", step.StepKey, serr)
+	}
+	if len(stale) == 0 {
+		return stepTargets, nil
+	}
+	out := &scanapp.StepTargets{Targets: kept, Refused: len(stale), Reason: scanapp.ReasonNotResolving}
+	if stepTargets != nil {
+		out.Refused += stepTargets.Refused
+		if stepTargets.Reason != "" {
+			out.Reason = stepTargets.Reason + "; " + out.Reason
+		}
+	}
+	s.logger.Info("step names without recent resolution evidence were left out",
+		"run_id", run.ID.String(), "step_key", step.StepKey, "skipped", len(stale))
+	if len(kept) == 0 && !chained {
+		return nil, &noInputsError{summary: fmt.Sprintf("%d name(s) %s", len(stale), scanapp.ReasonNotResolving)}
+	}
+	return out, nil
 }
 
 // findsNoHosts reports whether err says a host discovery step has no
@@ -689,6 +747,13 @@ func stepDispatchGate(run *scanrun.Run, resolved scanapp.StepTool) *command.Disp
 // them); nil keys hosts by their targets alone. A step with no explicit
 // target list is one chunk (nil targets).
 func stepChunks(resolved scanapp.StepTool, st *scanapp.StepTargets, aliases map[string][]string) []*scanapp.StepTargets {
+	return stepChunksSized(resolved, st, aliases, false)
+}
+
+// stepChunksSized is stepChunks; with splitForStream the chunk size is cut
+// so a successor that streams from the step gets its first results early
+// (streamChunkSize).
+func stepChunksSized(resolved scanapp.StepTool, st *scanapp.StepTargets, aliases map[string][]string, splitForStream bool) []*scanapp.StepTargets {
 	size, budget := 0, 0
 	if resolved.HasStage {
 		size = resolved.Stage.ChunkSizeFor(resolved.Name)
@@ -698,6 +763,9 @@ func stepChunks(resolved scanapp.StepTool, st *scanapp.StepTargets, aliases map[
 	}
 	if st == nil || size <= 0 {
 		return []*scanapp.StepTargets{st}
+	}
+	if splitForStream {
+		size = streamChunkSize(size, len(st.Targets))
 	}
 	weights := make([]uint64, len(st.Targets))
 	var total uint64
@@ -1229,7 +1297,16 @@ func (s *Service) OnStepCompletedPartial(ctx context.Context, tenantID shared.ID
 	// some failed and others completed it ends partial with the results it
 	// has (RFC-046 D5).
 	if b := s.checkStepBatches(ctx, run, stepRun); b.batched {
+		if len(p.Unfinished) > 0 {
+			// The batches' outcome below carries counts only: record this
+			// command's unfinished targets now.
+			s.recordUnfinished(ctx, run, stepKey, p.Unfinished)
+			p.Unfinished = nil
+		}
 		if b.wait {
+			// A finished task of a step a successor streams from: hand its
+			// results on now (stream.go).
+			s.streamAfterTask(ctx, run, stepKey)
 			return nil
 		}
 		if b.failed > 0 {
@@ -1607,11 +1684,28 @@ func (s *Service) checkStepBatches(ctx context.Context, run *scanrun.Run, stepRu
 			"run_id", run.ID.String(), "step_key", stepRun.StepKey, "error", err)
 		return stepBatches{}
 	}
-	if st.Total <= 1 {
+	// A streamed step is batched whatever its count (a later wave may add
+	// commands) and waits while its stream is open: the closing wave or
+	// the last command after it settles the step. The stream is read
+	// before the commands, so a close that this read misses is followed by
+	// a close-time check that sees this command finished (stream.go).
+	streamed, open := s.streamStepOpen(ctx, run, stepRun)
+	if streamed {
+		st, err = gate.StepBatchState(ctx, run.TenantID, stepRun.ID)
+		if err != nil {
+			s.logger.Error("failed to read a streamed step's batches; it waits", "run_id", run.ID.String(), "step_key", stepRun.StepKey, "error", err)
+			return stepBatches{batched: true, wait: true}
+		}
+	}
+	if st.Total <= 1 && !streamed {
 		return stepBatches{}
 	}
 	b := stepBatches{batched: true, total: st.Total, failed: st.Failed, findings: st.Findings, skipped: st.Skipped, unresolved: st.Unresolvable, gaps: st.Gaps, firstError: st.FirstError,
 		reachBatches: st.ReachBatches, reachTargets: st.ReachTargets, reached: st.Reached, unreached: st.Unreached}
+	if open {
+		b.wait = true
+		return b
+	}
 	if st.Active > 0 {
 		s.logger.Info("scan batch finished; waiting for the others",
 			"run_id", run.ID.String(), "step_key", stepRun.StepKey, "active", st.Active, "total", st.Total)
@@ -2211,7 +2305,7 @@ func (s *Service) QueueRunStep(ctx context.Context, run *scanrun.Run, step *scan
 			return fmt.Errorf("load step run %s: %w", step.StepKey, err)
 		}
 	}
-	if qerr := s.queueStepForExecutionWithSettings(ctx, run, step, stepRun, template.Settings, predecessorsOf(template, step)); qerr != nil {
+	if qerr := s.queueStepForExecutionWithSettings(ctx, run, step, stepRun, template.Settings, predecessorsOf(template, step), queueOpts{}); qerr != nil {
 		if errors.Is(qerr, errStageAlreadyPlanned) {
 			return nil // queued by a concurrent call
 		}

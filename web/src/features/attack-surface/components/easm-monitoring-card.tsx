@@ -24,6 +24,7 @@ import {
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { ConfirmDialog } from '@/components/confirm-dialog'
+import { useSettleSignal } from '@/features/shared/components/settle-group'
 import { useTranslation } from '@/context/i18n-provider'
 import { RelativeTime } from '@/features/shared'
 import type { EASMSettings } from '@/lib/api/generated'
@@ -78,6 +79,7 @@ export function EASMMonitoringCard() {
   const canSettings = useCanMutate('PUT /api/v1/easm/settings')
   const canRun = can(Permission.ScopeWrite)
   const { settings, isLoading, mutate, enabled } = useEASMSettings()
+  useSettleSignal(isLoading)
   const [busy, setBusy] = useState(false)
   // Starting a run or turning on a lookup asks first; turning one off does not.
   const [pending, setPending] = useState<PendingKey | null>(null)

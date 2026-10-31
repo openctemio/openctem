@@ -100,6 +100,9 @@ type Service struct {
 	// scanAttribution stamps tenant_scanned attribution evidence on the
 	// assets of command-bound reports (RFC-036 O8). Nil-safe.
 	scanAttribution ScanAttributionStamper
+	// certNames proposes certificate SANs as candidate subdomains
+	// (cert_names.go). Nil-safe.
+	certNames CertificateNamePromoter
 	// importCandidates holds the new hosts of an import for review.
 	importCandidates ImportCandidateHolder
 	// groupRules is told when a report created or updated assets, so the
@@ -515,24 +518,7 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	report, endpoints := s.planEndpoints(report, binding, output)
 
 	// Load tenant settings once for both asset processing and finding processing
-	var tenantRules branch.BranchTypeRules
-	var assetIdentityCfg *CorrelationConfig
-	reconcilePolicy := asset.DefaultReconciliationPolicy()
-	if s.tenantRepo != nil {
-		if t, err := s.tenantRepo.GetByID(ctx, tenantID); err == nil && t != nil {
-			settings := t.TypedSettings()
-			tenantRules = settings.Branch.TypeRules
-			// Per-tenant asset identity config (RFC-001)
-			aiSettings := settings.AssetIdentity
-			cfg := s.assetProcessor.defaultCorrelationConfig().WithTenantOverrides(
-				aiSettings.StaleAssetDays, aiSettings.MaxIPsPerAsset,
-			)
-			assetIdentityCfg = &cfg
-			if p, perr := settings.AssetReconciliation.Policy(); perr == nil {
-				reconcilePolicy = p
-			}
-		}
-	}
+	tenantRules, assetIdentityCfg, reconcilePolicy := s.loadTenantIngestConfig(ctx, tenantID)
 	// Who this report is for attribute reconciliation (RFC-069), and when
 	// its source saw what it reports.
 	sourceKind, sourceName := reportSource(binding, opts, report)
@@ -613,6 +599,9 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	}
 	// What a workflow step's report wrote, for the stages chained after it.
 	s.recordStepOutputs(ctx, tenantID, binding, scope)
+	// The names in the certificates this report wrote become candidate
+	// subdomains under the tenant's roots (cert_names.go). Best-effort.
+	s.promoteCertificateNames(ctx, tenantID, binding, report, assetMap)
 
 	// Step 1b: Project recon-discovered assets (open ports, exposed services,
 	// TLS certificates) into the Exposure Register. Best-effort — a failure here
@@ -1195,3 +1184,34 @@ type AssetChangeNotifier interface {
 // SetAssetChangeNotifier wires the evaluation of rule groups after a report
 // created or updated assets.
 func (s *Service) SetAssetChangeNotifier(n AssetChangeNotifier) { s.groupRules = n }
+
+// loadTenantIngestConfig reads the organization's branch rules, asset identity
+// config and reconciliation policy. When the tenant cannot be loaded ingest
+// goes on with the platform defaults rather than refuse a report, but the
+// organization's rules did not apply: that is logged.
+func (s *Service) loadTenantIngestConfig(ctx context.Context, tenantID shared.ID) (branch.BranchTypeRules, *CorrelationConfig, asset.ReconciliationPolicy) {
+	var tenantRules branch.BranchTypeRules
+	var assetIdentityCfg *CorrelationConfig
+	reconcilePolicy := asset.DefaultReconciliationPolicy()
+	if s.tenantRepo == nil {
+		return tenantRules, assetIdentityCfg, reconcilePolicy
+	}
+	t, err := s.tenantRepo.GetByID(ctx, tenantID)
+	if err != nil || t == nil {
+		s.logger.Warn("ingest: tenant settings not loaded; default identity and reconciliation rules used",
+			"tenant_id", tenantID.String(), "error", logger.SanitizeError(err))
+		return tenantRules, assetIdentityCfg, reconcilePolicy
+	}
+	settings := t.TypedSettings()
+	tenantRules = settings.Branch.TypeRules
+	// Per-tenant asset identity config (RFC-001)
+	aiSettings := settings.AssetIdentity
+	cfg := s.assetProcessor.defaultCorrelationConfig().WithTenantOverrides(
+		aiSettings.StaleAssetDays, aiSettings.MaxIPsPerAsset,
+	)
+	assetIdentityCfg = &cfg
+	if p, perr := settings.AssetReconciliation.Policy(); perr == nil {
+		reconcilePolicy = p
+	}
+	return tenantRules, assetIdentityCfg, reconcilePolicy
+}
