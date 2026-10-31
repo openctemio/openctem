@@ -32,6 +32,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/activity"
 	"github.com/openctemio/openctem/api/internal/app/aianalysis"
 	"github.com/openctemio/openctem/api/internal/app/aibundle"
+	"github.com/openctemio/openctem/api/internal/app/aiknowledge"
 	"github.com/openctemio/openctem/api/internal/app/aimaskmap"
 	"github.com/openctemio/openctem/api/internal/app/aipolicy"
 	"github.com/openctemio/openctem/api/internal/app/aitriage"
@@ -943,6 +944,9 @@ type Services struct {
 	// AIAnalysis manages AI agents (service accounts that triage like a
 	// person, with accountable owners) and their runs.
 	AIAnalysis *aianalysis.Service
+	// AIKnowledge manages the knowledge organizations give their AI agents
+	// and retrieves it for runs.
+	AIKnowledge *aiknowledge.Service
 	// AIExecutor runs single-shot AI kinds in the API process.
 	AIExecutor *aianalysis.BuiltinExecutor
 
@@ -951,6 +955,8 @@ type Services struct {
 	// ModuleChangeBus fans module toggles out to every replica's route-gate
 	// cache; nil without Redis. Started with the WebSocket bridge.
 	ModuleChangeBus *redis.ModuleChangeBus
+	// IPAllowlistBus fans IP allowlist changes out to every replica's gate.
+	IPAllowlistBus *redis.CacheInvalidationBus
 	// F-8: Single-use ticket service used by WS upgrade auth.
 	// SessionRevocations rejects access tokens of signed-out sessions
 	// immediately (nil without Redis).
@@ -2250,6 +2256,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// Shared sensor enrollment (RFC-100) has no tenant: console audit.
 		s.SensorPairing.SetAdminAudit(repos.AdminAuditLog)
 		s.SensorPairing.SetEnrollmentTokens(repos.SensorPairing)
+		// The approval screen names the organization the sensor joins.
+		s.SensorPairing.SetTenants(repos.Tenant)
 	}
 	// Per-sensor grants (RFC-052 §5): enforced on poll, claim, results
 	// without a job and heartbeat actions; a pairing approval sets the
@@ -2508,6 +2516,11 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		if s.ScopeJoin != nil {
 			s.CertMonitor.SetScopeJoin(s.ScopeJoin)
 		}
+		// The names in every certificate an ingest writes become candidate
+		// subdomains under the tenant's roots, through the same promotion
+		// (docs/architecture/easm.md, "Certificate SAN promotion").
+		s.CertMonitor.SetNameAddresses(repos.Attribution)
+		s.Ingest.SetCertificateNamePromoter(s.CertMonitor)
 	}
 	s.Ingest.SetEvidenceStore(s.Evidence)
 	// A tool ported to the tool contract declares what it produces in its
@@ -3173,6 +3186,11 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		s.ServiceKeyGate = apikey.NewServiceKeyGate(repos.ServiceAccount, gateMembers, gateHolder)
 		s.APIKey.SetServiceKeyGate(s.ServiceKeyGate)
 	}
+	if s.APIKey != nil && s.Tenant != nil {
+		// The organization's maximum lifetime of a new key (default 90 days,
+		// never above the platform ceiling).
+		s.APIKey.SetLifetimePolicy(s.Tenant)
+	}
 
 	// AI agents: service accounts that triage like a person. What they may
 	// do is read from the role tables (no cache) at every run start, bounded
@@ -3180,8 +3198,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.AIAnalysis = aianalysis.New(repos.AIAnalysis, repos.AIAnalysis,
 		apikey.NewHolderPermissions(repos.Tenant, rolePermissionSource{repos.Role}), s.DataScope,
 		aianalysis.SettingsConsent{Repo: repos.TenantAISettings}, s.Audit, log)
+	s.AIKnowledge = aiknowledge.New(repos.AIKnowledge, repos.AIAnalysis, s.Audit, log)
 	if s.AIExecutor != nil {
 		s.AIExecutor.SetAIAgents(s.AIAnalysis)
+		s.AIExecutor.SetKnowledge(s.AIKnowledge)
 	}
 
 	// Wire permission services to tenant service
@@ -3675,6 +3695,9 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	// pauses schedules or a deprovisioned member still owns work.
 	s.Tenant.SetLifecycleRepository(repos.MemberLifecycle)
 	s.Tenant.SetLifecycleNotifier(s.Notification)
+	if s.APIKey != nil {
+		s.APIKey.SetExpiryNotifier(s.Notification)
+	}
 	// Teams on invitations: checked for the inviter, applied at acceptance.
 	s.Tenant.SetInvitationTeams(s.Group)
 	// Ownership transfer: owner asks, the member accepts with step-up.

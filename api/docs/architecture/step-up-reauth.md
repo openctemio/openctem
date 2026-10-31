@@ -164,6 +164,7 @@ the web dialog appears and the request is retried.
 | Loosening an organization policy: `PUT /api/v1/tenants/{tenant}/settings/asset-lifecycle` (turning it on, a shorter stale threshold or grace period, running while an integration is unhealthy, fewer excluded source types), `PUT /api/v1/organization/settings/cycles` (coverage requirement off), `PUT /api/v1/easm/settings` (a monitor, enrichment or the digest off, a longer interval or reappear window, web screenshots on). Tightening never prompts. | `TenantService.UpdateAssetLifecycleSettings`, `UpdateCycleSettings`, `UpdateEASMSettings` (`settings_loosening.go`); high-severity audit and an owner/admin notice |
 | Renaming the organization's slug: `PATCH /api/v1/tenants/{tenant}` with a new `slug` | `TenantService.UpdateTenant` |
 | Allowing bearer-key sensors again: `PUT /api/v1/sensors/identity-policy` with `bearer_keys_allowed: true` while the organization requires key-bound identity | `SensorService.SetBearerKeysAllowed` (requiring key-bound identity, and re-sending the current value, stay one click) |
+| Raising the organization's maximum API key lifetime: `PUT /api/v1/organization/settings/api-keys` with a longer `max_lifetime_days` (a shorter one never prompts) | `TenantService.UpdateAPIKeySettings`; high-severity audit `tenant.api_key_policy_updated` and an owner/admin notice |
 
 The gate judges only the user making the request: a grant authorized
 earlier and applied for someone else (an invitation accepted by the invitee,

@@ -165,9 +165,11 @@ function ConnectorPanel({ data }: { data: IntakeData }) {
           ref={ref}
           className={cn(
             'relative grid gap-4 p-3',
-            // Side by side from 660 px: bounded columns, centred, so a source's
-            // count and its wire stay next to its name on any card width.
-            '@min-[660px]:grid-cols-[minmax(15rem,19rem)_minmax(14rem,18rem)] @min-[660px]:justify-center @min-[660px]:gap-x-[clamp(3rem,10cqi,8rem)]'
+            // Side by side from 660 px. The source list sits at the left edge, the
+            // summary at the right edge, and the curves take the space between
+            // (justify-between). Both columns grow with the card (cqi), so a wide
+            // card has no empty side gutters; the cap keeps rows readable.
+            '@min-[660px]:grid-cols-[minmax(15rem,clamp(15rem,34cqi,52rem))_minmax(14rem,clamp(14rem,30cqi,44rem))] @min-[660px]:justify-between @min-[660px]:gap-x-[clamp(3rem,8cqi,8rem)]'
           )}
           data-band={band}
           {...containerProps}

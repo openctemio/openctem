@@ -78,6 +78,7 @@ func (r *AssetCoverageRepository) DueBatch(ctx context.Context, tenantID shared.
 	}
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT a.id, a.name, a.asset_type, COALESCE(a.sub_type, ''), c.fail_streak,
+		       c.platform_fail_streak, c.last_success_at IS NULL,
 		       (c.next_due_at IS NULL OR c.next_due_at <= now()),
 		       COALESCE(greatest(extract(epoch FROM now() - c.next_due_at), 0), 1e9)::float8
 		FROM asset_coverage c
@@ -103,7 +104,7 @@ func (r *AssetCoverageRepository) DueBatch(ctx context.Context, tenantID shared.
 			dueNow  bool
 			waited  float64
 		)
-		if err := rows.Scan(&id, &d.Name, &typ, &d.SubType, &d.FailStreak, &dueNow, &waited); err != nil {
+		if err := rows.Scan(&id, &d.Name, &typ, &d.SubType, &d.FailStreak, &d.PlatformFailStreak, &d.NeverCovered, &dueNow, &waited); err != nil {
 			return nil, err
 		}
 		if d.AssetID, err = shared.IDFromString(id); err != nil {
