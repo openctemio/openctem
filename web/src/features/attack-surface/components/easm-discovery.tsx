@@ -362,11 +362,13 @@ export function EASMDiscovery() {
   const metrics: MetricStripItem[] = [
     {
       key: 'running',
+      href: '/scans',
       label: t('attackSurface.discovery.metric.running', 'Stages running'),
       value: runningCount,
     },
     {
       key: 'auto',
+      href: '/attack-surface/review',
       label: t('attackSurface.discovery.metric.autoValidated', 'Assets in last auto-validation'),
       value: overview?.auto_validation.assets ?? 0,
       description: t(
@@ -376,6 +378,7 @@ export function EASMDiscovery() {
     },
     {
       key: 'budget',
+      href: '/scope',
       label: t('attackSurface.discovery.metric.budget', 'Daily budget used'),
       value: overview ? `${overview.budget_used} / ${overview.daily_budget}` : 0,
       tone: overview && overview.budget_used >= overview.daily_budget ? 'warning' : 'default',
