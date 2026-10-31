@@ -899,7 +899,7 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		w.ControllerManager.Register(controller.NewEASMLookalikeController(svc.EASMLookalikes, svc.Module, 0))
 	}
 
-	// Web page monitoring (RFC-137): due watches go through the coverage
+	// Web page monitoring (RFC-138): due watches go through the coverage
 	// dispatch path (scope and active-scan gates, signed jobs) as the
 	// system, only for organizations with automatic coverage on, and only
 	// once the fetch capability is in the stage catalog.

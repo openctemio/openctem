@@ -883,7 +883,7 @@ type Services struct {
 	EASMNetworkSeeds *easmapp.NetworkSeedService
 	// WebEvidence stores and serves web assets' captures (RFC-081).
 	WebEvidence *webevidenceapp.Service
-	// PageMonitor runs web page monitoring (RFC-137).
+	// PageMonitor runs web page monitoring (RFC-138).
 	PageMonitor *pagemonapp.Service
 
 	// Compliance
@@ -3356,7 +3356,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	}
 	s.WebEvidence = webevidenceapp.NewService(repos.AssetWebEvidence, blobs, s.Tenant, log.With("service", "web-evidence"))
 	s.Ingest.SetWebEvidenceRecorder(s.WebEvidence)
-	// Web page monitoring (RFC-137): fetch results of watched URLs are
+	// Web page monitoring (RFC-138): fetch results of watched URLs are
 	// diffed server-side; a new third-party script host is an exposure
 	// through the EASM writer (alerts), resolved by the DNS repository's
 	// auto-resolve when the page drops it. Dispatch is wired with the workers.

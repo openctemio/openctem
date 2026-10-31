@@ -321,7 +321,7 @@ type Repositories struct {
 	EASMSummary    *postgres.EASMSummaryRepository
 	// EASMLookalike stores lookalike watches and candidates (RFC-083).
 	EASMLookalike *postgres.EASMLookalikeRepository
-	// PageMonitor stores web page monitoring watches, snapshots and changes (RFC-137).
+	// PageMonitor stores web page monitoring watches, snapshots and changes (RFC-138).
 	PageMonitor *postgres.PageMonitorRepository
 	// EASMNetworkSeed stores AS number and organization seeds (RFC-082).
 	EASMNetworkSeed *postgres.EASMNetworkSeedRepository

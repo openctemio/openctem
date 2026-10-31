@@ -1,6 +1,6 @@
 package postgres
 
-// Web page monitoring storage (docs/rfcs/RFC-137-web-page-monitoring.md).
+// Web page monitoring storage (docs/rfcs/RFC-138-web-page-monitoring.md).
 // Every statement names the tenant; list reads add the caller's data scope
 // on the watch's asset.
 

@@ -609,7 +609,7 @@ audited). The organization can turn the crt.sh queries off
 
 ## 4o. Page monitoring (partly built)
 
-Design: [RFC-137](../rfcs/RFC-137-web-page-monitoring.md). Attack surface ›
+Design: [RFC-138](../rfcs/RFC-138-web-page-monitoring.md). Attack surface ›
 **Page changes** watches URLs of the organization's web services (manual add,
 or suggestions: root pages, login and admin pages, JS files from the crawl;
 at most 200 watches). JS-only mode (default) keeps the scripts a page loads

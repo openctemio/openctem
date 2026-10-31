@@ -1,4 +1,4 @@
--- Web page monitoring (docs/rfcs/RFC-137-web-page-monitoring.md).
+-- Web page monitoring (docs/rfcs/RFC-138-web-page-monitoring.md).
 -- A watch is one URL of an organization's web origin (an http_service
 -- asset). Snapshots keep the normalized form of a fetch that changed
 -- something (the last few per watch); changes keep the diff. Every row
@@ -44,7 +44,7 @@ CREATE TABLE web_watches (
 CREATE INDEX idx_web_watches_due ON web_watches (next_due_at) WHERE enabled;
 CREATE INDEX idx_web_watches_asset ON web_watches (tenant_id, asset_id);
 CREATE INDEX idx_web_watches_parent ON web_watches (tenant_id, parent_id) WHERE parent_id IS NOT NULL;
-COMMENT ON TABLE web_watches IS 'RFC-137: monitored URLs of an organization''s web origins';
+COMMENT ON TABLE web_watches IS 'RFC-138: monitored URLs of an organization''s web origins';
 
 CREATE TABLE web_snapshots (
     id           UUID          NOT NULL DEFAULT gen_random_uuid(),
@@ -70,7 +70,7 @@ CREATE TABLE web_snapshots (
     CONSTRAINT chk_web_snapshots_kind CHECK (kind IN ('html', 'script', 'other'))
 );
 CREATE INDEX idx_web_snapshots_watch ON web_snapshots (tenant_id, watch_id, fetched_at DESC);
-COMMENT ON TABLE web_snapshots IS 'RFC-137: normalized fetches that changed something (last 5 per watch)';
+COMMENT ON TABLE web_snapshots IS 'RFC-138: normalized fetches that changed something (last 5 per watch)';
 
 CREATE TABLE web_changes (
     id               UUID        NOT NULL DEFAULT gen_random_uuid(),
@@ -92,7 +92,7 @@ CREATE TABLE web_changes (
 CREATE INDEX idx_web_changes_tenant ON web_changes (tenant_id, detected_at DESC);
 CREATE INDEX idx_web_changes_watch ON web_changes (tenant_id, watch_id, detected_at DESC);
 CREATE INDEX idx_web_changes_retention ON web_changes (detected_at);
-COMMENT ON TABLE web_changes IS 'RFC-137: detected changes of watched URLs with their diff (kept 180 days)';
+COMMENT ON TABLE web_changes IS 'RFC-138: detected changes of watched URLs with their diff (kept 180 days)';
 
 -- The exposure type. The list keeps every type the platform knows today.
 -- NOT VALID + VALIDATE keeps writes going on a large table.

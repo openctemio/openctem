@@ -54,7 +54,7 @@ var _ = registerActions("easm", map[Action]Severity{
 	ActionEASMLookalikeWatchDeleted: SeverityMedium,
 })
 
-// Web page monitoring watches (RFC-137): a watch schedules recurring active
+// Web page monitoring watches (RFC-138): a watch schedules recurring active
 // fetches of a URL.
 const (
 	ActionWebWatchAdded   Action = "web_watch.added"

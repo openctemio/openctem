@@ -1,6 +1,6 @@
 package ingest
 
-// Web page monitoring (docs/rfcs/RFC-137-web-page-monitoring.md): a report
+// Web page monitoring (docs/rfcs/RFC-138-web-page-monitoring.md): a report
 // asset's reserved `web_content` property (fetches of watched URLs) is handed,
 // with the stored asset it resolved to, to the page monitor. The property
 // itself is never stored on the asset (asset.IsReservedPropertyKey).

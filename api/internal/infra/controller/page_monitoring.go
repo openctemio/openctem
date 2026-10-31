@@ -1,6 +1,6 @@
 package controller
 
-// Web page monitoring dispatch and retention (docs/rfcs/RFC-137-web-page-monitoring.md).
+// Web page monitoring dispatch and retention (docs/rfcs/RFC-138-web-page-monitoring.md).
 
 import (
 	"context"

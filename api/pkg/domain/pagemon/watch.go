@@ -1,7 +1,7 @@
 // Package pagemon is web page monitoring: what a watched page loads (its
 // scripts) and, optionally, what it says (its visible text), what each of its
 // own scripts contains, and what changed between two fetches.
-// Design: docs/rfcs/RFC-137-web-page-monitoring.md.
+// Design: docs/rfcs/RFC-138-web-page-monitoring.md.
 //
 // Everything a fetch returns is hostile input: the target chose it. Nothing
 // here executes or renders it. HTML is read with a tokenizer, patterns are
