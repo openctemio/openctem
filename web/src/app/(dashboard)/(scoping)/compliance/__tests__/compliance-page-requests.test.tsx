@@ -4,7 +4,7 @@
  * shows each framework's own stats and does not need them.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
@@ -19,13 +19,31 @@ const useFrameworkControls = vi.fn((..._args: unknown[]) => ({ data: undefined, 
 const useAssessments = vi.fn((..._args: unknown[]) => ({ data: undefined }))
 vi.mock('@/features/compliance/api/use-compliance-api', () => ({
   useFrameworks: () => ({
-    data: { data: [{ id: 'fw1', name: 'Framework one', description: '', total_controls: 3 }] },
+    data: {
+      data: [
+        {
+          id: 'fw1',
+          name: 'Framework one',
+          description: '',
+          total_controls: 3,
+          // The list carries each framework's stats (include=stats).
+          stats: {
+            TotalControls: 4,
+            Implemented: 2,
+            Partial: 0,
+            NotImplemented: 1,
+            NotApplicable: 0,
+            NotAssessed: 1,
+          },
+        },
+      ],
+    },
     isLoading: false,
   }),
   useComplianceStats: () => ({
     data: { total_frameworks: 1, total_controls: 3, overdue_controls: 0 },
   }),
-  useFrameworkStats: () => ({ data: undefined }),
+  FRAMEWORKS_KEY: '/api/v1/compliance/frameworks?per_page=50&include=stats',
   useFrameworkControls: (...args: unknown[]) => useFrameworkControls(...args),
   useAssessments: (...args: unknown[]) => useAssessments(...args),
   useUpdateAssessment: () => ({ trigger: vi.fn(), isMutating: false }),
@@ -44,6 +62,12 @@ describe('compliance page requests', () => {
     render(<CompliancePage />)
     for (const call of useFrameworkControls.mock.calls) expect(call[0]).toBe('')
     for (const call of useAssessments.mock.calls) expect(call[0]).toBe('')
+  })
+
+  it('a framework card scores from the stats the list carries, with no request of its own', () => {
+    window.history.replaceState(null, '', '/compliance')
+    render(<CompliancePage />)
+    expect(screen.getByText('50%')).toBeTruthy()
   })
 
   it('the Controls tab loads the first framework when none is selected', () => {

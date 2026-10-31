@@ -565,6 +565,23 @@ func (s *Service) ListTargets(ctx context.Context, input ListTargetsInput) (pagi
 	return s.targetRepo.List(ctx, filter, page)
 }
 
+// CountTargetsByStatus counts the tenant's targets per stored status, without
+// the entries of the programs in excludeProgramIDs (those the caller may not see).
+func (s *Service) CountTargetsByStatus(ctx context.Context, tenantID string, excludeProgramIDs []string) (map[scopedom.Status]int64, error) {
+	if _, err := shared.IDFromString(tenantID); err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
+	return s.targetRepo.CountByStatus(ctx, scopedom.TargetFilter{TenantID: &tenantID, ExcludeProgramIDs: excludeProgramIDs})
+}
+
+// CountExclusionsByStatus counts the tenant's exclusions per stored status.
+func (s *Service) CountExclusionsByStatus(ctx context.Context, tenantID string) (map[scopedom.Status]int64, error) {
+	if _, err := shared.IDFromString(tenantID); err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
+	return s.exclusionRepo.CountByStatus(ctx, scopedom.ExclusionFilter{TenantID: &tenantID})
+}
+
 // ListActiveTargets retrieves the tenant's scope targets in effect: active
 // and not past their expiry. The repository filters on both; re-checking
 // here keeps an expired or pending entry from ever reaching a matcher,
