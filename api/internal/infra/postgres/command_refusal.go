@@ -9,6 +9,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/lib/pq"
 
@@ -47,7 +48,11 @@ func (r *CommandRepository) CommandRefusals(ctx context.Context, tenantID, comma
 // from later claims. One more dispatch attempt is counted, as for a lease
 // re-queue, and the return is counted without a delay: other sensors may
 // take it at once (the refusing sensor is excluded, at most 16 can refuse).
-func (r *CommandRepository) RequeueRefused(ctx context.Context, tenantID, commandID shared.ID, fence command.Fence, rec command.RefusalRecord, message string) (bool, error) {
+//
+// waitUntil, when set, brings expires_at forward to it (never later): no
+// sensor can take the command now, and the expiration checker fails it
+// with the recorded refusals once the wait is over.
+func (r *CommandRepository) RequeueRefused(ctx context.Context, tenantID, commandID shared.ID, fence command.Fence, rec command.RefusalRecord, message string, waitUntil *time.Time) (bool, error) {
 	recJSON, err := json.Marshal(rec)
 	if err != nil {
 		return false, err
@@ -61,12 +66,14 @@ func (r *CommandRepository) RequeueRefused(ctx context.Context, tenantID, comman
 		    `+requeueCountSQL("")+`,
 		    error_message = $6,
 		    refused_by = array_append(refused_by, $3::uuid),
-		    refusals = refusals || jsonb_build_array($7::jsonb)
+		    refusals = refusals || jsonb_build_array($7::jsonb),
+		    expires_at = CASE WHEN $8::timestamptz IS NULL THEN expires_at
+		                      ELSE LEAST(COALESCE(expires_at, $8::timestamptz), $8::timestamptz) END
 		WHERE id = $1 AND tenant_id = $2 AND sensor_id = $3
 		  AND status = $4::text AND lease_epoch = $5
 		  AND NOT (refused_by @> ARRAY[$3::uuid])
 		  AND cardinality(refused_by) < 16`,
-		commandID.String(), tenantID.String(), fence.SensorID, string(fence.Status), fence.Epoch, message, string(recJSON))
+		commandID.String(), tenantID.String(), fence.SensorID, string(fence.Status), fence.Epoch, message, string(recJSON), waitUntil)
 	if err != nil {
 		return false, fmt.Errorf("re-queue refused command: %w", err)
 	}
@@ -78,6 +85,30 @@ func (r *CommandRepository) RequeueRefused(ctx context.Context, tenantID, comman
 		r.changedTenant(tenantID)
 	}
 	return n > 0, nil
+}
+
+// ForgetRefusalsOf lets a sensor of the tenant claim again the pending
+// commands it refused, after its reported local policy changed: the
+// refusal stays recorded (and counts toward command.MaxRefusals), only the
+// exclusion is lifted. Returns how many commands it applied to.
+func (r *CommandRepository) ForgetRefusalsOf(ctx context.Context, tenantID, sensorID shared.ID) (int64, error) {
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE commands
+		SET refused_by = array_remove(refused_by, $2::uuid)
+		WHERE tenant_id = $1 AND status = 'pending'
+		  AND refused_by @> ARRAY[$2::uuid]`,
+		tenantID.String(), sensorID.String())
+	if err != nil {
+		return 0, fmt.Errorf("forget sensor refusals: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("failed to read rows affected: %w", err)
+	}
+	if n > 0 {
+		r.changedTenant(tenantID)
+	}
+	return n, nil
 }
 
 // AppendRefusal records a refusal on a failed command of the tenant.
@@ -117,10 +148,15 @@ var requeueCandidateSQL = `s.status = 'active'
 // maxRequeueCandidates bounds the sensors read to decide a re-queue.
 const maxRequeueCandidates = 200
 
-// RequeueCandidates returns the local-policy reports of the tenant's
-// sensors, other than exclude, that could claim the command now: active,
-// dispatchable, with a usable key, in the command's zone when it has one,
-// and with the command's tool. The caller judges the reports
+// RequeueCandidates returns the local-policy reports of the sensors, other
+// than exclude, that could claim the command now. For an organization job:
+// the tenant's own sensors that are active, dispatchable, with a usable key,
+// in the command's zone when it has one, and with the command's tool. For a
+// shared job (is_platform_job), which only shared sensors ever claim: the
+// other live shared sensors whose shared gate admits it
+// (sharedSensorConditions); the organization's own sensors never take a
+// shared job, so they are not candidates. Only reports are returned, never
+// a shared sensor's identity. The caller judges the reports
 // (sensor.Accepts).
 func (r *CommandRepository) RequeueCandidates(ctx context.Context, tenantID, commandID shared.ID, exclude []shared.ID) ([]*sensor.LocalPolicyReport, error) {
 	ex := make([]string, len(exclude))
@@ -132,7 +168,19 @@ func (r *CommandRepository) RequeueCandidates(ctx context.Context, tenantID, com
 		FROM commands
 		JOIN sensors s ON s.tenant_id = commands.tenant_id
 		WHERE commands.id = $1 AND commands.tenant_id = $2
+		  AND commands.is_platform_job = FALSE
 		  AND `+requeueCandidateSQL+`
+		  AND NOT (s.id = ANY($3::uuid[]))
+		UNION ALL
+		SELECT s.id, s.reported_local_policy
+		FROM commands
+		JOIN sensors s ON s.tenant_id IS NULL AND s.scope = 'instance'
+		WHERE commands.id = $1 AND commands.tenant_id = $2
+		  AND commands.is_platform_job = TRUE
+		  AND `+sharedSensorConditions("s")+`
+		  AND s.health IN `+sensorDispatchableHealthSQL+`
+		  AND s.last_seen_at IS NOT NULL
+		  AND `+sensorKeyUsableSQL("s")+`
 		  AND NOT (s.id = ANY($3::uuid[]))
 		LIMIT $4`,
 		commandID.String(), tenantID.String(), pq.Array(ex), maxRequeueCandidates)
