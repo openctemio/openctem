@@ -11,6 +11,9 @@ const setTabParam = (tab: string | null) =>
 
 vi.mock('@/features/api-keys/api/use-api-keys', () => ({
   useCreateApiKey: () => ({ trigger: mockCreate, isMutating: false }),
+  useApiKeyPolicy: () => ({
+    data: { max_lifetime_days: 90, default_max_lifetime_days: 90, ceiling_days: 365 },
+  }),
 }))
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 vi.mock('@/lib/clipboard', () => ({ copyToClipboard: vi.fn(async () => true) }))

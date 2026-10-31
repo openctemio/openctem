@@ -3179,6 +3179,11 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		s.ServiceKeyGate = apikey.NewServiceKeyGate(repos.ServiceAccount, gateMembers, gateHolder)
 		s.APIKey.SetServiceKeyGate(s.ServiceKeyGate)
 	}
+	if s.APIKey != nil && s.Tenant != nil {
+		// The organization's maximum lifetime of a new key (default 90 days,
+		// never above the platform ceiling).
+		s.APIKey.SetLifetimePolicy(s.Tenant)
+	}
 
 	// AI agents: service accounts that triage like a person. What they may
 	// do is read from the role tables (no cache) at every run start, bounded
@@ -3674,6 +3679,9 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	// pauses schedules or a deprovisioned member still owns work.
 	s.Tenant.SetLifecycleRepository(repos.MemberLifecycle)
 	s.Tenant.SetLifecycleNotifier(s.Notification)
+	if s.APIKey != nil {
+		s.APIKey.SetExpiryNotifier(s.Notification)
+	}
 	// Teams on invitations: checked for the inviter, applied at acceptance.
 	s.Tenant.SetInvitationTeams(s.Group)
 	// Ownership transfer: owner asks, the member accepts with step-up.

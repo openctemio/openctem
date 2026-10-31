@@ -163,7 +163,7 @@ var Features = []Feature{
 		Description: "Ticketing, SCM, SIEM and notification integrations, inbound webhooks, the notification outbox and API keys.",
 		Stages:      []string{StageMobilization},
 		Registers: []string{
-			"registerIntegrationRoutes", "registerIncomingWebhookRoutes", "registerGitHubWebhookRoute", "registerOutboxRoutes", "registerAPIKeyRoutes",
+			"registerIntegrationRoutes", "registerIncomingWebhookRoutes", "registerGitHubWebhookRoute", "registerOutboxRoutes", "registerAPIKeyRoutes", "registerAPIKeySettingsRoutes",
 		},
 		Prefixes: []string{"/api/v1/webhooks/incoming"},
 	},
