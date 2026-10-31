@@ -1081,14 +1081,23 @@ compose file):
   line); otherwise the snippets read `$OPENCTEM_API_KEY` and stop with a clear
   message when it is unset. Compose keeps the key in `.env`, Kubernetes and
   Helm in a Secret. The response is `Cache-Control: no-store`.
-- **CA** `SENSOR_CA_CERT_FILE`: the platform's private CA, e.g. the root the
+- **CA** `PLATFORM_CA_CERT_FILE` (the API's deprecated name
+  `SENSOR_CA_CERT_FILE` is read when it is unset): the PEM bundle of the CA
+  certificate(s) that sign the platform's TLS certificate, e.g. the root the
   built-in gateway exports in TLS mode internal (`deploy/docker-compose.yml`
   mounts the export directory into the API read-only and sets
-  `/ca/openctem-root-ca.crt`). Only X.509 `CERTIFICATE` blocks are used (a
-  key in the file never leaks); the response carries `ca_certificate` and
-  `ca_fingerprint_sha256`. The snippets install it under
-  `/etc/openctem/certs` and set `SSL_CERT_DIR`, which adds it to the system
-  roots (the sensor still verifies public scan targets). Unset or unreadable:
+  `/ca/openctem-root-ca.crt`). It is parsed at startup and re-read when the
+  file changes. Only X.509 CA `CERTIFICATE` blocks are kept; a file that
+  holds any private key is refused as a whole (logged), so a key never
+  reaches a snippet or the public endpoint. The response carries
+  `ca_certificate`, `ca_fingerprint_sha256` (the root) and `platform_ca`
+  (each certificate's name, SHA-256, root or intermediate, expiry; the pin;
+  the download path). The snippets install it under `/etc/openctem/certs`,
+  set `SSL_CERT_DIR` (added to the system roots; the sensor still verifies
+  public scan targets) and pass the root's SHA-256 as `SENSOR_CA_SHA256`.
+  The same bundle is served publicly at `GET /api/v1/sensors/platform-ca`
+  for sensors that hold the pin
+  ([how-to](../how-to/sensors-behind-a-private-ca.md)). Unset or unusable:
   the snippets assume a publicly trusted certificate.
 - **Data** one named volume / PVC (8Gi in the Kubernetes manifest) at
   `/var/lib/openctem`, holding:

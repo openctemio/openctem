@@ -30,6 +30,7 @@ var keyChainExempt = map[string]string{
 	"/api/v1/brand":                           "public, no chain: the instance brand, no tenant data",
 	"/api/v1/brand/images/{kind}":             "public, no chain: the instance brand images, no tenant data",
 	"/api/v1/sensors/install/seccomp-profile": "public, no chain: the sensor release's seccomp profile, no tenant data",
+	"/api/v1/sensors/platform-ca":             "public, no chain: the platform's CA certificates (public), no tenant data",
 	"/api/v1/validation/evidence":             "sensor-key auth only",
 	// CI runner routes (RFC-051): mounted outside every key chain, with
 	// their own authentication (the CI OIDC token, the CI run token).
