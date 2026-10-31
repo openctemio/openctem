@@ -1,0 +1,5 @@
+### Security: a report commit can no longer race a late segment, and replay and decode budgets are accounted exactly
+
+- A segment could be stored after its report was committed (the receiver checked the report on an earlier read, then parsed and sealed slowly), so a manifest-verified report could include a segment the manifest never covered and finalize before a real segment was processed. The database now refuses a segment on a report that is no longer receiving, a commit succeeds only when the reserved segment count equals the committed count (a commit that loses the race fails and the sensor retries), and finalize counts only outcomes for real segment numbers.
+- Replaying a segment of a failed report now passes the per-tenant queue admission (the continuation ceiling) before its jobs are requeued, so replay cannot skip the ceiling.
+- A compressed upload now reserves its encoded size plus twice the decoded size it may reach from the shared decode budget, matching the real peak (chunks plus the joined copy).

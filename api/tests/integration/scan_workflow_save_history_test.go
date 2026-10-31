@@ -145,7 +145,7 @@ func (p *scanWorkflowSaveHarness) seedRun(templateID string, steps map[string]sa
 		}
 	}
 	if finished {
-		if err := runs.UpdateStatus(ctx, run.ID, scanrundom.RunStatusCompleted, ""); err != nil {
+		if err := runs.UpdateStatus(ctx, run.TenantID, run.ID, scanrundom.RunStatusCompleted, ""); err != nil {
 			p.t.Fatal(err)
 		}
 	}

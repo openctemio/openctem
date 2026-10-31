@@ -1211,6 +1211,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Asset.SetFreshness(repos.AssetFreshness)
 	s.Asset.SetResolution(repos.AssetResolution)
 	s.Asset.SetCoverage(repos.AssetCoverage)
+	s.Asset.SetResolvedPorts(repos.AssetRelationship)
 	s.AssetCoverage = coverageapp.NewService(repos.AssetCoverage, log)
 	s.Asset.SetChangeTimeline(repos.AssetChangeEvents)
 	s.Asset.SetAttributeSourceLister(repos.AssetChangeEvents)
@@ -1884,14 +1885,17 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Finding evidence (docs/architecture/finding-evidence.md): secret values
 	// are sealed with the platform key (re-keyed by cmd/rekey).
 	s.Evidence = evidenceapp.NewService(repos.FindingEvidence, s.Encryptor, s.Tenant, repos.FindingActivity, s.Audit, log)
+	s.Evidence.SetDailyCap(cfg.Ingest.EvidenceDailyCap) // 0 = built-in per-tenant default
 	s.Retest.SetEvidenceStore(s.Evidence)
 	if s.Pentest != nil {
-		s.Pentest.SetEvidenceState(s.Evidence) // a write-up records the evidence version it was written against
+		s.Pentest.SetEvidenceState(s.Evidence)       // a write-up records the evidence version it was written against
+		s.Pentest.SetManualEvidenceStore(s.Evidence) // recorded request/responses: masked, secrets encrypted
 	}
 	// The finding verification plan asks the retest service whether a
 	// retest would run and why not.
 	s.Vulnerability.SetRetestAvailability(s.Retest)
 	s.Vulnerability.SetCoverageAutoResolveMode(string(ingest.ParseCoverageAutoResolveMode(cfg.Ingest.CoverageAutoResolve)))
+	s.Vulnerability.SetClosureSettings(s.Tenant)
 
 	s.ThreatActor = threat.NewActorService(repos.ThreatActor, log)
 	s.RemediationCampaign = exposure.NewRemediationCampaignService(repos.RemediationCampaign, log)
@@ -2494,6 +2498,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// priority and SLA enrichment as ingested ones.
 	s.VulnMatch = vulnmatch.NewService(repos.SoftwareMatch, vulnmatch.TenantPolicy(repos.Tenant), repos.Finding, log.With("component", "vulnmatch"))
 	s.VulnMatch.SetEnrichment(s.PriorityClassification, sla.NewApplier(s.SLA), repos.Asset)
+	s.VulnMatch.SetClosureSettings(s.Tenant) // Each organization's closing mode decides (version-change closes)
 	s.VulnMatch.SetIssueLinker(repos.FindingIssueLinks)
 	s.VulnMatch.SetLinkReader(repos.Software)
 	s.VulnMatch.SetRemediationKeyApplier(remediationKeys)
@@ -2519,6 +2524,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Ingest.SetCoverageAutoResolve(ingest.ParseCoverageAutoResolveMode(cfg.Ingest.CoverageAutoResolve), ingest.BlindingGuard{
 		Ratio: cfg.Ingest.V2BlindingRatio, MinFindings: cfg.Ingest.V2BlindingMinFindings,
 	})
+	// Under enforce (or tenant) each organization's closing mode decides.
+	s.Ingest.SetClosureSettings(s.Tenant)
 	// Source-asserted resolve (Tenable.sc mitigated rows, RFC-047; default dry_run).
 	s.Ingest.SetSourceResolveMode(ingest.ParseSourceResolveMode(cfg.Ingest.SourceResolve))
 	s.Ingest.SetVEXMode(ingest.ParseVEXMode(cfg.Ingest.VEX))
@@ -2671,9 +2678,14 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		scan.WithToolConfigChecker(s.Sensor),
 		// Enforce scope EXCLUSIONS on every dispatch path; unwired or failing, nothing is dispatched (fail closed).
 		scan.WithScopeExclusionFilter(s.Scope),
+		// Coverage of a tool that reads a platform wordlist (enumerate.subdomains)
+		// pauses until the platform has the pack, instead of failing at claim.
+		scan.WithCoverageContent(contentPlanner),
 		// Ownership of every actively scanned target (RFC-036 §6.3): confirmed,
 		// or unrecorded inside a scope target / under a seed; never rejected.
 		scan.WithAttributionGate(s.ActiveGate),
+		// An exclusion of a dedicated address reaches the names resolving to it.
+		scan.WithNameAddresses(repos.Attribution),
 		// A scan refused only because pending scope entries cover its
 		// targets may be saved to start once they are approved (RFC-054 §7).
 		scan.WithScopeWaits(postgres.NewScanScopeWaitRepository(&postgres.DB{DB: deps.DB}), s.Scope),
@@ -3287,6 +3299,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	}
 	s.Scan.SetResolveEvidence(repos.AssetFreshness, staleRefresher)
 	s.Scan.SetResolutionStore(repos.AssetResolution)
+	s.Scan.SetNamePorts(repos.Attribution) // coverage HTTP probe of <name>:<port> (coverage_named_ports.go)
 	s.AssetImport.SetCreatedAssetsHook(requestNew)
 	s.Asset.SetEnrichmentRequests(repos.AssetEnrichmentRequests)
 	s.Ingest.SetAssetsDiscoveredCallback(func(ctx context.Context, tenantID shared.ID, assets []*assetdom.Asset) {
@@ -3577,6 +3590,9 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 		// the account's sessions (identity_link.go).
 		s.OAuth.SetSecondFactorGate(s.Auth)
 		s.OAuth.SetSessionRevoker(s.Session)
+		// Linking or unlinking a sign-in method needs a code or password
+		// typed for it (auth/link_proof.go).
+		s.OAuth.SetLinkProofVerifier(s.Auth)
 		if redisClient != nil {
 			s.OAuth.SetPKCEStore(redisClient)
 		} else {

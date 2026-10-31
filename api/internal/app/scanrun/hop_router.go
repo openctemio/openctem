@@ -85,10 +85,13 @@ const codeStageNotChainable = "STAGE_NOT_CHAINABLE"
 const outputReadLimit = 2 * stage.RunFanoutCap
 
 // planStage decides the targets of one step and records the decision. seeds
-// are the run's targets after the type gate. It returns the step's targets,
-// or errStageDeferred, errStageAlreadyPlanned, *noInputsError or a failure.
+// are the run's targets after the type gate. With delta (the workflow's
+// delta gating) a heavy stage keeps only the derived targets that are new,
+// changed or due since the previous run of the scan. It returns the step's
+// targets, or errStageDeferred, errStageAlreadyPlanned, *noInputsError or a
+// failure.
 func (s *Service) planStage(ctx context.Context, run *scanrun.Run, step *scanworkflow.Step, resolved scanapp.StepTool,
-	preds []*scanworkflow.Step, seeds *scanapp.StepTargets,
+	preds []*scanworkflow.Step, seeds *scanapp.StepTargets, delta bool,
 ) (*scanapp.StepTargets, error) {
 	if s.hops == nil || !resolved.HasStage {
 		return seeds, nil
@@ -154,6 +157,7 @@ func (s *Service) planStage(ctx context.Context, run *scanrun.Run, step *scanwor
 	}
 
 	outputs = canonicalWebInputs(st, outputs, plan.Skipped)
+	outputs = s.namedPortOutputs(ctx, run.TenantID, st, outputs, parents)
 	cands, inputs := deriveCandidates(st, outputs, parents, stageOf, seen, plan.Skipped, len(seedList), stepTargetCap(run, step))
 	if cands, err = s.expandEndpoints(ctx, run, st, step, cands, plan.Skipped); err != nil {
 		return nil, err
@@ -169,6 +173,14 @@ func (s *Service) planStage(ctx context.Context, run *scanrun.Run, step *scanwor
 	planned, skipped, err := s.gateCandidates(ctx, run, st, cands)
 	if err != nil {
 		return nil, err
+	}
+	if delta && stage.Heavy(st.Key) {
+		var unchanged []hopCandidate
+		planned, unchanged = s.deltaGate(ctx, run, step, st, planned)
+		for _, c := range unchanged {
+			rows = append(rows, c.row(scanrun.TargetSkipped, scanrun.ReasonUnchanged))
+			plan.Skipped[scanrun.ReasonUnchanged]++
+		}
 	}
 	targets := append([]string{}, seedList...)
 	inRange := seedRanges(seedList)
@@ -210,9 +222,54 @@ func (s *Service) planStage(ctx context.Context, run *scanrun.Run, step *scanwor
 		return nil, err
 	}
 	if len(targets) == 0 {
+		if n := plan.Skipped[scanrun.ReasonUnchanged]; n > 0 {
+			return nil, &noInputsError{summary: fmt.Sprintf("nothing new since the last run: %d unchanged", n)}
+		}
 		return nil, &noInputsError{summary: skipSummary(plan.Skipped)}
 	}
 	return out, nil
+}
+
+// deltaGate splits a heavy stage's planned candidates into those it runs on
+// and those that are done since the previous run of the scan (unchanged).
+// Without a previous run, a store that can decide, or a decision (an error
+// is logged), every candidate runs: gating only ever saves work, it never
+// hides an asset that needs it.
+func (s *Service) deltaGate(ctx context.Context, run *scanrun.Run, step *scanworkflow.Step, st stage.Stage,
+	cands []hopCandidate,
+) (keep, unchanged []hopCandidate) {
+	baseline, ok := s.hops.(scanrun.DeltaBaseline)
+	if !ok || len(cands) == 0 {
+		return cands, nil
+	}
+	prev, err := s.hops.PreviousRun(ctx, run.TenantID, run.ID)
+	if err != nil {
+		s.logger.Warn("delta gating: previous run unreadable; the stage runs on every target",
+			"run_id", run.ID.String(), "step_key", step.StepKey, "error", err)
+		return cands, nil
+	}
+	if prev.IsZero() {
+		return cands, nil // first run of the scan: everything is new
+	}
+	ids := make([]shared.ID, 0, len(cands))
+	for _, c := range cands {
+		ids = append(ids, c.assetID)
+	}
+	done, err := baseline.UnchangedSince(ctx, run.TenantID, prev, step.StepKey, string(st.Key), ids, stage.HeavyMaxAge(st.Key))
+	if err != nil {
+		s.logger.Warn("delta gating: baseline unreadable; the stage runs on every target",
+			"run_id", run.ID.String(), "step_key", step.StepKey, "error", err)
+		return cands, nil
+	}
+	keep = make([]hopCandidate, 0, len(cands))
+	for _, c := range cands {
+		if done[c.assetID] {
+			unchanged = append(unchanged, c)
+			continue
+		}
+		keep = append(keep, c)
+	}
+	return keep, unchanged
 }
 
 // reasonCoveredByRange: a derived address a range seed of the same step
@@ -318,8 +375,12 @@ type hopCandidate struct {
 }
 
 func (c hopCandidate) row(decision, reason string) scanrun.RunTarget {
-	id := c.assetID
-	return scanrun.RunTarget{TargetKey: c.key, AssetID: &id, Origin: scanrun.TargetOriginDerived,
+	var assetID *shared.ID
+	if !c.assetID.IsZero() {
+		id := c.assetID
+		assetID = &id
+	}
+	return scanrun.RunTarget{TargetKey: c.key, AssetID: assetID, Origin: scanrun.TargetOriginDerived,
 		ParentAssetID: c.parentAsset, ParentStageKey: c.parentStage, Relation: c.relation,
 		Hop: c.hop, Decision: decision, Reason: reason}
 }
@@ -420,6 +481,11 @@ func (s *Service) gateCandidates(ctx context.Context, run *scanrun.Run, st stage
 	for _, c := range cands.gate {
 		byKey[c.key] = c
 		in.Targets = append(in.Targets, c.key)
+		if c.assetID.IsZero() {
+			// A named open port (hop_named_ports.go) names no asset: it is
+			// checked by name, as a seed is.
+			continue
+		}
 		in.Assets[c.key] = scanapp.DispatchAsset{IDs: []string{c.assetID.String()}}
 	}
 	d, err := s.targetGate.ResolveDispatchTargets(ctx, in)

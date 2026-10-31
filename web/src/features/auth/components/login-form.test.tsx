@@ -311,7 +311,7 @@ describe('LoginForm ?error= message', () => {
     const notice = screen.getByTestId('login-account-exists')
     expect(notice).toHaveTextContent('You already have an account')
     expect(notice).toHaveTextContent(
-      'An account with this email already exists. Sign in with your password, then link this provider in Account > Security.'
+      'An account with this email already exists. Sign in with your password or the way you signed in before, and we will ask you to confirm linking this provider.'
     )
     expect(screen.getByRole('link', { name: 'Forgot your password? Reset it' })).toHaveAttribute(
       'href',

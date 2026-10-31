@@ -52,11 +52,24 @@ func TestAssetCoverage_HTTPProbeNeedsWebPortOrUnknownPorts(t *testing.T) {
 	g.asset(a, "https://origin.tside.test", "service", "http", "")
 	closed, _ := host(a, "closed.tside.test", "203.0.113.67", 8443)
 	g.exec(`UPDATE assets SET status = 'inactive' WHERE tenant_id = $1 AND name = '203.0.113.67:8443:tcp'`, a.tenant)
+	cpanel, _ := host(a, "cpanel.tside.test", "203.0.113.69", 22, 2083)
+	altRange, _ := host(a, "range.tside.test", "203.0.113.70", 8765)
+	sshOnly, _ := host(a, "ssh.tside.test", "203.0.113.71", 22, 3306)
+	svcName, svcIP := host(a, "svc.tside.test", "203.0.113.72")
+	scanned(a, svcIP)
+	svcPort := g.asset(a, "203.0.113.72:7777:tcp", "service", "open_port", `{"port": 7777, "service": "ssl/http"}`)
+	g.rel(a, svcIP, svcPort, "exposes")
+	otherSvc, otherIP := host(a, "other.tside.test", "203.0.113.73")
+	scanned(a, otherIP)
+	otherPort := g.asset(a, "203.0.113.73:7777:tcp", "service", "open_port", `{"port": 7777, "service": "mysql"}`)
+	g.rel(a, otherIP, otherPort, "exposes")
 	// Tenant isolation: tenant b's web port and origin of the same name
 	// never make tenant a's name applicable.
 	iso, _ := host(a, "iso.tside.test", "203.0.113.68")
 	scanned(a, iso)
 	host(b, "iso.tside.test", "203.0.113.68", 443)
+	isoAlt, _ := host(a, "isoalt.tside.test", "203.0.113.74", 22)
+	host(b, "isoalt.tside.test", "203.0.113.74", 2083)
 	g.asset(b, "https://iso.tside.test", "service", "http", "")
 
 	if _, _, err := g.repo.Reconcile(ctx, a.tenant, covdom.Rules()); err != nil {
@@ -76,6 +89,12 @@ func TestAssetCoverage_HTTPProbeNeedsWebPortOrUnknownPorts(t *testing.T) {
 		{"a web origin of the name was seen", origin, "due:"},
 		{"the web port closed", closed, na},
 		{"another tenant's port and origin", iso, na},
+		{"a control-panel port (2083) on its address", cpanel, "due:"},
+		{"a port in the 8000-8999 range", altRange, "due:"},
+		{"only ssh and a database port", sshOnly, na},
+		{"a detected web service on an odd port", svcName, "due:"},
+		{"a detected non-web service on the same odd port", otherSvc, na},
+		{"another tenant's 2083 on the same name", isoAlt, na},
 	} {
 		if got := g.states(a, c.id)["probe.http"]; got != c.want {
 			t.Errorf("%s: probe.http = %q, want %q", c.name, got, c.want)
@@ -162,8 +181,8 @@ func TestAssetCoverage_TargetSideOutcomeRecheckSchedule(t *testing.T) {
 	}
 }
 
-// A sensor-side failure keeps the back-off, and a target-side streak starts
-// at one after it.
+// A sensor-side failure keeps the back-off (on its own platform streak, not
+// the target's), and a target-side streak starts at one after it.
 func TestAssetCoverage_SensorSideFailureKeepsBackoff(t *testing.T) {
 	g := newCycleRig(t)
 	a := g.r.newTenant()
@@ -175,8 +194,8 @@ func TestAssetCoverage_SensorSideFailureKeepsBackoff(t *testing.T) {
 	g.exec(`UPDATE scan_runs SET status = 'failed' WHERE id = $1`, run)
 	g.pass(a)
 	r := g.row(a, name, "resolve.dns")
-	if r.State != covdom.StateFailed || r.FailStreak != 1 || time.Until(*r.NextDueAt) > 61*time.Minute {
-		t.Fatalf("sensor-side failure = %s streak %d next in %v", r.State, r.FailStreak, time.Until(*r.NextDueAt))
+	if r.State != covdom.StateFailed || r.FailStreak != 0 || r.PlatformFailStreak != 1 || time.Until(*r.NextDueAt) > 61*time.Minute {
+		t.Fatalf("sensor-side failure = %s streak %d platform %d next in %v", r.State, r.FailStreak, r.PlatformFailStreak, time.Until(*r.NextDueAt))
 	}
 	g.dueIn(a, name, "resolve.dns", -time.Minute)
 	g.pass(a)

@@ -322,6 +322,12 @@ describe('taskCoverageGapNote', () => {
     ).toBe(
       'Completed with 5 hosts not fully covered: a (kept rate-limiting the scan), b (blocked the scan), c (not fully covered), and 2 more'
     )
+    expect(
+      taskCoverageGapNote({
+        coverage_gaps: [{ host: 'p.example.com', reason: 'proxy_unavailable' }],
+        coverage_gaps_total: 1,
+      })
+    ).toBe("Completed with 1 host not fully covered: p.example.com (the scan's proxy failed)")
     expect(taskCoverageGapNote({ coverage_gaps_total: 2 })).toBe(
       'Completed with 2 hosts not fully covered'
     )

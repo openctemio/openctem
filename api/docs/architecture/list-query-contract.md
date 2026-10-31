@@ -99,6 +99,22 @@ and the `closed` value of `state`.
 
 There is no constructor without a tenant.
 
+## Certificates (`GET /attack-surface/certificates`)
+
+The Certificates view of the external attack surface reads certificate assets
+through the `certificates` registry (`pkg/domain/certificate`), with no new
+storage: every column is a property of the asset (`subject_cn`, `issuer_cn`,
+`issuer_org`, `not_before`, `not_after`, `fingerprint_sha256`). The data scope
+applies to the certificate asset itself, so a certificate is listed exactly
+when its asset is visible; soft-deleted assets and other asset types are never
+listed. `status` (`expired`, `expiring_soon`, `ok`, `unknown`) is computed at
+read time from `not_after` (`expiring_soon` is under 30 days left; a missing or
+unparsable date is `unknown`, never `ok`), is filterable and sortable, and is
+returned on every row with `days_to_expiry`. `GET /attack-surface/certificates/stats`
+counts the same filtered set by status. Both need `assets:read`. Subjects and
+issuers are chosen by whoever issued the certificate: clients render them as
+text.
+
 ## Errors
 
 A bad filter is `400` with code `INVALID_FILTER` and `details[]` naming the

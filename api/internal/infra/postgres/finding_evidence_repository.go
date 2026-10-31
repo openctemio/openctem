@@ -356,7 +356,10 @@ func (r *FindingEvidenceRepository) DeleteExpired(ctx context.Context, now time.
 			WHERE secrets_expire_at <= $1 AND masked_count > 0`, now); err != nil {
 			return fmt.Errorf("clear expired evidence reveal state: %w", err)
 		}
-		res, err = tx.ExecContext(ctx, `DELETE FROM finding_evidence WHERE created_at < $1`, now.Add(-retention))
+		// A recorded (manual) request/response is part of the finding's
+		// write-up and lives as long as the finding; its secret values still
+		// expire above.
+		res, err = tx.ExecContext(ctx, `DELETE FROM finding_evidence WHERE created_at < $1 AND origin <> 'manual'`, now.Add(-retention))
 		if err != nil {
 			return fmt.Errorf("delete old evidence: %w", err)
 		}

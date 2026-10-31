@@ -79,6 +79,8 @@ const PROTECTIONS = [
   /^AdminConfirmDialog$/,
   /^AlertDialog$/,
   /^undoToast$/,
+  // The confirmation that also asks for the authenticator code or password.
+  /^StepUpDialog$/,
   // Feature dialogs that wrap ConfirmDialog for one object kind.
   /^\w*(?:Delete|Remove|Revoke|Confirm|Purge|Rotate|Regenerate|Offboard|Erase|Disable|Cancel)\w*Dialog\w*$/,
 ]
@@ -91,6 +93,8 @@ const PROTECTIONS = [
  * a "Gap:" entry when its fix lands.
  */
 const REVIEWED: Record<string, string> = {
+  'src/features/closure-settings/components/closing-mode-form.tsx':
+    'cancelPending drops a loosening that is still waiting out its 24 hours; nothing was in force yet and the admin can request it again.',
   'src/features/scans/components/new-scan/targets-step.tsx':
     'removeTyped drops a chip from the unsaved targets field of the new-scan form; the scan is created later.',
   'src/features/scope/components/scope-entry-dialog.tsx':

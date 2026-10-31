@@ -181,6 +181,10 @@ func registerVulnerabilityRoutes(
 ) {
 	// Build base middleware chain
 	baseMiddlewares := buildBaseMiddlewares(authMiddleware, userSyncMiddleware)
+	// The finding page's reads in one response (research/335). Each part is
+	// sent through this router with the caller's credentials, so it passes
+	// its own endpoint's gates; this route itself needs findings:read.
+	findingView := handler.NewFindingViewHandler(router.Handler, nil)
 
 	// Vulnerability routes - global CVE database (no tenant required for catalog ops).
 	// EXCEPTION: /{id}/affected-assets and /cve/{cveId}/affected-assets are
@@ -289,8 +293,16 @@ func registerVulnerabilityRoutes(
 			r.POST("/actions/assign-to-owners", findingActionsHandler.AssignToOwners, middleware.Require(permission.FindingsAssign))
 		}
 
+		// Ready to close and Recently auto-closed (must be before /{id}).
+		// Reads and decisions run in the caller's data scope; confirming more
+		// than one proposal at once needs a recent re-authentication.
+		r.GET("/closure/proposals", h.ListClosureProposals, middleware.Require(permission.FindingsRead))
+		r.POST("/closure/proposals/decide", h.DecideClosureProposals, middleware.Require(permission.FindingsVerify), requireStepUpWhenConfirming())
+		r.GET("/closure/auto-closed", h.ListRecentlyAutoClosed, middleware.Require(permission.FindingsRead))
+
 		// Single finding operations
 		r.GET("/{id}", h.GetFinding, middleware.Require(permission.FindingsRead))
+		r.GET("/{id}/view", findingView.View, middleware.Require(permission.FindingsRead))
 		// Priority explainability: why does this finding hold its P-class?
 		r.GET("/{id}/priority-explanation", h.ExplainPriority, middleware.Require(permission.FindingsRead))
 		// Why this is one finding: recipe and field names of its key, the tools
@@ -300,6 +312,7 @@ func registerVulnerabilityRoutes(
 		// Write operations
 		r.POST("/", h.CreateFinding, middleware.Require(permission.FindingsWrite))
 		r.PATCH("/{id}/status", h.UpdateFindingStatus, middleware.Require(permission.FindingsStatus), handler.FindingIfMatch)
+		r.POST("/{id}/reopen", h.ReopenAutoClosedNotFixed, middleware.Require(permission.FindingsStatus))
 		// The transition engine: the caller's allowed moves of one finding,
 		// and a bulk dry run. Reading them needs only findings:read; each
 		// decision states what the move itself would need.

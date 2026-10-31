@@ -12,6 +12,7 @@ import (
 	"context"
 	"fmt"
 
+	tooldom "github.com/openctemio/openctem/api/internal/app/tool"
 	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
 
 	"github.com/openctemio/openctem/api/pkg/domain/scan"
@@ -63,6 +64,7 @@ func (s *Service) checkScanToolsDispatchable(ctx context.Context, sc *scan.Scan)
 	if s.toolAvailability == nil {
 		return nil
 	}
+	ctx = tooldom.WithAvailabilityMemo(ctx) // one tenant view for every step tool
 	switch sc.ScanType {
 	case scan.ScanTypeSingle:
 		if sc.ScannerName == "" {

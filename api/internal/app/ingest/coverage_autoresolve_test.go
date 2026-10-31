@@ -12,6 +12,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/ingestreport"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
@@ -32,7 +33,7 @@ func completedRun(t *testing.T, sensorID, assetID shared.ID) *ingestreport.Comma
 	return &ingestreport.CommandCoverage{
 		CommandType: "scan", CommandStatus: "completed", Result: json.RawMessage(`{"exit_code":0}`),
 		ProfileID: "p-1",
-		Reports: []ingestreport.CoverageReport{{
+		Reports: []ingestreport.CoverageReport{{Integrity: protov2.IntegritySingle,
 			ReportID: "r-1", SensorID: sensorID, State: protov2.StateCompleted, ToolName: "nuclei",
 			Header:          coverageHeader(t, "nuclei", ctis.ReportMetadata{CoverageType: "full"}),
 			SegmentOutcomes: map[string]ingestreport.SegmentOutcome{"0": {AcceptedFindings: 3}},
@@ -148,7 +149,23 @@ func TestDecideCoverage(t *testing.T) {
 			c.Reports = append(c.Reports, second)
 		}, coverageToolMismatch},
 		{"reserved tool name", func(c *ingestreport.CommandCoverage) { c.Reports[0].ToolName = "pentest" }, coverageReservedTool},
-		{"unreachable target: nothing touched", func(c *ingestreport.CommandCoverage) { c.Reports[0].TouchedAssetIDs = nil }, coverageNoCoveredAssets},
+		// A network run that found nothing touches no asset: the evaluator
+		// takes the covered assets from the command's targets.
+		{"nothing touched: decided by the evaluator", func(c *ingestreport.CommandCoverage) { c.Reports[0].TouchedAssetIDs = nil }, coverageEligible},
+		{"partial run without per-target outcomes", func(c *ingestreport.CommandCoverage) {
+			c.Reports[0].Header = coverageHeader(t, "nuclei", ctis.ReportMetadata{CoverageType: "partial"})
+		}, coveragePartial},
+		{"partial run with per-target outcomes", func(c *ingestreport.CommandCoverage) {
+			c.Reports[0].Header = coverageHeader(t, "nuclei", ctis.ReportMetadata{CoverageType: "partial"})
+			c.Result = json.RawMessage(`{"exit_code":0,"target_outcomes":[{"target":"a.example.com","state":"done"}],"metadata":{"coverage_gaps":[{"host":"b.example.com","reason":"breaker_open"}],"coverage_gaps_total":1}}`)
+		}, coverageEligible},
+		{"incremental run with per-target outcomes", func(c *ingestreport.CommandCoverage) {
+			c.Reports[0].Header = coverageHeader(t, "nuclei", ctis.ReportMetadata{CoverageType: "incremental"})
+			c.Result = json.RawMessage(`{"exit_code":0,"target_outcomes":[{"target":"a.example.com","state":"done"}]}`)
+		}, coveragePartial},
+		{"gaps without per-target outcomes", func(c *ingestreport.CommandCoverage) {
+			c.Result = json.RawMessage(`{"exit_code":0,"metadata":{"coverage_gaps":[{"host":"b.example.com","reason":"blocked"}],"coverage_gaps_total":1}}`)
+		}, coverageUncoveredTargets},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -183,10 +200,16 @@ func TestParseCoverageAutoResolveMode(t *testing.T) {
 type coverageFindingRepo struct {
 	vulnerability.FindingRepository
 	cov      *ingestreport.CommandCoverage
+	tiers    map[shared.ID]vulnerability.RiskTier // absent: standard
 	stale    []shared.ID
 	open     int
 	query    ingestreport.CoverageQuery
 	resolved []shared.ID
+	// candidates is what CoverageCandidateAssets returns; the call's
+	// arguments are recorded.
+	candidates       []shared.ID
+	candidateTool    string
+	candidateTargets []string
 }
 
 func (r *coverageFindingRepo) CommandCoverage(context.Context, shared.ID, shared.ID) (*ingestreport.CommandCoverage, error) {
@@ -196,6 +219,11 @@ func (r *coverageFindingRepo) CommandCoverage(context.Context, shared.ID, shared
 func (r *coverageFindingRepo) CoverageStaleFindings(_ context.Context, _ shared.ID, q ingestreport.CoverageQuery) ([]shared.ID, int, error) {
 	r.query = q
 	return r.stale, r.open, nil
+}
+
+func (r *coverageFindingRepo) CoverageCandidateAssets(_ context.Context, _ shared.ID, tool string, targets []string) ([]shared.ID, error) {
+	r.candidateTool, r.candidateTargets = tool, targets
+	return r.candidates, nil
 }
 
 func (r *coverageFindingRepo) ResolveCoverageStale(_ context.Context, _ shared.ID, ids []shared.ID) ([]shared.ID, error) {
@@ -252,6 +280,7 @@ func coverageService(t *testing.T, mode CoverageAutoResolveMode, declared []stri
 		Payload: json.RawMessage(`{"scanner":"nuclei","targets":["a.example.com"]}`),
 	}})
 	svc.SetCoverageAutoResolve(mode, DefaultBlindingGuard())
+	svc.SetClosureSettings(fixedClosure{Mode: tenant.ClosingModeAuto})
 	return svc, repo
 }
 

@@ -31,21 +31,24 @@ type Key string
 // Stage keys of catalog v1.
 const (
 	DiscoverSubdomains Key = "discover.subdomains"
-	ResolveDNS         Key = "resolve.dns"
-	LookupRDAP         Key = "lookup.rdap"
-	LookupASN          Key = "lookup.asn"
-	DiscoverHosts      Key = "discover.hosts"
-	ScanPorts          Key = "scan.ports"
-	ProbeHTTP          Key = "probe.http"
-	CrawlWeb           Key = "crawl.web"
-	VulnTemplates      Key = "vuln.templates"
-	DASTWeb            Key = "dast.web"
-	SecretsCode        Key = "secrets.code"
-	SASTCode           Key = "sast.code"
-	SCADeps            Key = "sca.deps"
-	IaCMisconfig       Key = "iac.misconfig"
-	ContainerImage     Key = "container.image"
-	NetworkVAConnector Key = "network_va.connector"
+	// EnumerateSubdomains is the active counterpart of DiscoverSubdomains:
+	// candidate names from a label list, kept only when they resolve.
+	EnumerateSubdomains Key = "enumerate.subdomains"
+	ResolveDNS          Key = "resolve.dns"
+	LookupRDAP          Key = "lookup.rdap"
+	LookupASN           Key = "lookup.asn"
+	DiscoverHosts       Key = "discover.hosts"
+	ScanPorts           Key = "scan.ports"
+	ProbeHTTP           Key = "probe.http"
+	CrawlWeb            Key = "crawl.web"
+	VulnTemplates       Key = "vuln.templates"
+	DASTWeb             Key = "dast.web"
+	SecretsCode         Key = "secrets.code"
+	SASTCode            Key = "sast.code"
+	SCADeps             Key = "sca.deps"
+	IaCMisconfig        Key = "iac.misconfig"
+	ContainerImage      Key = "container.image"
+	NetworkVAConnector  Key = "network_va.connector"
 )
 
 // Tier is how intrusive a stage is toward its targets.
@@ -203,6 +206,23 @@ var catalog = []Stage{
 		},
 		MaxFanout: RunFanoutCap, MaxPerParent: DefaultPerParent,
 		Legacy: []string{"subdomain"},
+	},
+	{
+		// Active (T1): every candidate is a DNS query for <label>.<root>, so
+		// it runs only on a root the active-scan gate allows (a scope
+		// entry). The label list is the platform's wordlist pack plus the
+		// labels learned from the organization's own names (ToolWordlists,
+		// contentpin); the tool has no list of its own. One root per task.
+		Key: EnumerateSubdomains, Name: "Subdomain enumeration",
+		Description: "Find subdomains of a root domain by querying DNS for candidate names from a label list, keeping only the names that resolve.",
+		Inputs:      []asset.TypeRef{tDomain},
+		Outputs:     dnsNames,
+		Relations:   []string{"subdomain_of"},
+		Tier:        TierActive,
+		Implementations: []Implementation{
+			{Tool: "dnsx-enum", Default: true},
+		},
+		MaxFanout: RunFanoutCap, MaxPerParent: DefaultPerParent,
 	},
 	{
 		Key: ResolveDNS, Name: "DNS resolution",

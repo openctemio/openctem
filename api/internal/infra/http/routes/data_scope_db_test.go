@@ -26,6 +26,7 @@ import (
 	"testing"
 	"time"
 
+	certificateapp "github.com/openctemio/openctem/api/internal/app/certificate"
 	webendpointapp "github.com/openctemio/openctem/api/internal/app/webendpoint"
 
 	_ "github.com/lib/pq"
@@ -178,6 +179,7 @@ func newDSHarness(t *testing.T) *dsHarness {
 	assetSvc.SetAttributeSources(postgres.NewAssetAttributeSourceRepository(db), tenantRepo)
 	assetSvc.SetChangeTimeline(postgres.NewAssetChangeEventRepository(db))
 	assetSvc.SetTechnologyFacets(postgres.NewAssetTechnologyRepository(db))
+	assetSvc.SetResolvedPorts(postgres.NewAssetRelationshipRepository(db))
 
 	vulnSvc := finding.NewVulnerabilityService(postgres.NewVulnerabilityRepository(db), findingRepo, log)
 	vulnSvc.SetCommentRepository(postgres.NewFindingCommentRepository(db))
@@ -251,6 +253,7 @@ func newDSHarness(t *testing.T) *dsHarness {
 	suggSvc.SetDataScope(enforcer)
 	dedupHandler := handler.NewAdminDedupHandler(postgres.NewAssetDedupRepository(db), log).SetDataScope(enforcer)
 	registerAssetServiceRoutes(router, svcHandler, auth, nil)
+	registerCertificateRoutes(router, handler.NewCertificateHandler(certificateapp.NewService(postgres.NewCertificateReadRepository(db), enforcer), log), auth, nil, func(next http.Handler) http.Handler { return next })
 	registerWebEndpointRoutes(router, handler.NewWebEndpointHandler(webendpointapp.NewService(postgres.NewWebEndpointRepository(db), enforcer), nil, log), auth, nil)
 	registerAssetStateHistoryRoutes(router, historyHandler, auth, nil)
 	registerAssetRelationshipRoutes(router, handler.NewAssetRelationshipHandler(relSvc, v, log), auth, nil, passthrough)
@@ -1113,7 +1116,7 @@ func TestDataScope_DedupReviewPermissions(t *testing.T) {
 // the whole group (2 and 2).
 func TestDataScope_AssetGroupCounts_FollowReaderScope(t *testing.T) {
 	h := newDSHarness(t)
-	if err := postgres.NewAssetGroupRepository(&postgres.DB{DB: h.db}).RecalculateCounts(context.Background(), h.group); err != nil {
+	if err := postgres.NewAssetGroupRepository(&postgres.DB{DB: h.db}).RecalculateCounts(context.Background(), h.tenant, h.group); err != nil {
 		t.Fatal(err)
 	}
 	g := h.group.String()

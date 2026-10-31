@@ -73,3 +73,12 @@ func TestLowImpactRefusalFailsClosed(t *testing.T) {
 		t.Fatal("unreadable settings are refused")
 	}
 }
+
+// Subdomain brute force (dnsx-enum) is not a low-impact tool: an
+// unclassified asset never gets it, whatever its settings.
+func TestLowImpactRefusesSubdomainBruteForce(t *testing.T) {
+	job := LowImpactJob{Tool: "dnsx-enum", Config: map[string]any{"method": "bruteforce", "rate_limit": 1, "max_queries": 1}}
+	if LowImpactRefusal(job) != LowImpactRefused {
+		t.Fatal("dnsx-enum may run on a low-impact target")
+	}
+}

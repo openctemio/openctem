@@ -117,7 +117,24 @@ stored in one table (`user_dashboards.kind`):
 - **Audit.** `dashboard.org_created`, `org_updated`, `org_deleted`,
   `org_default_set`, `org_reordered`, `audience_changed`, `schedule_changed`
   (organization dashboards), `dashboard.layout_shared`,
-  `dashboard.settings_updated`. Plain views are not audited.
+  `dashboard.settings_updated`, `dashboard.flow_panel_added`,
+  `dashboard.flow_panel_undone`. Plain views are not audited.
+- **Exposure flow panel (offered once).** Dashboards that existed before the
+  exposure flow metric get the panel once, at the top. `user_dashboards.flow_panel_at`
+  records the offer: NULL on every existing row (eligible), `now()` on every
+  new row (never auto-offered). The web app opens an eligible dashboard it may
+  edit, calls `POST /api/v1/me/dashboards/{id}/flow-panels` (organization:
+  `POST /api/v1/organization/dashboards/{id}/flow-panels`, needs
+  `dashboards:org:manage`) once, and shows "Exposure flow added at the top"
+  with Undo (`DELETE .../flow-panels/{widget_id}`). The add is one `UPDATE`
+  guarded by `flow_panel_at IS NULL` in the caller's tenant and owner, so a
+  second or concurrent call changes nothing (`added: false`). An empty layout
+  or one that already holds an `exposure.flow` widget is only marked. Undo
+  removes the widget only when it is an `exposure.flow` panel (400 otherwise)
+  and never clears `flow_panel_at`, so a removed panel is not added again.
+  Both the add and the undo are audited for personal and organization
+  dashboards. Someone else's personal dashboard and other tenants' dashboards
+  answer 404; an organization dashboard without the manage permission, 403.
 
 ### Threat model
 
@@ -294,7 +311,13 @@ How each figure is computed (`internal/app/dashboard/widgets`,
 - **Fix next, SLA at risk** (F3): the in-scope partitions' top 10 merged
   (exact for up to 10 rows; only the asset group filter, which does not cut
   into the rank order); list fields are read from `findings` by id inside
-  the tenant, and a finding no longer open is left out.
+  the tenant, and a finding no longer open is left out. A row carries the finding's EPSS probability (`epss`, 0 to 1) read from
+  the same `findings` row; it is omitted when the feed has no score. The `items` value of
+  Fix next also carries `total`: the open count of the list the widget opens
+  (priority P0 to P2 plus the widget's asset group filter), read with the same
+  filter and the same server-built read scope as the rows, so it equals the
+  total of the opened Findings list. SLA at risk opens no list of that count
+  and sends no `total`.
 
 ### CTEM metrics
 
@@ -418,6 +441,54 @@ findings figure equals the findings list; personal reads: a scoped member,
 a member without scope rows and the owner, the out-of-scope false positive
 never counts, receipts only for the owner; receipt list filters refuse
 malformed values), `internal/app/dashboard/widgets/flow_test.go`.
+
+### Story widgets: levers, weekly brief, KPI strip
+
+Three metrics tell the dashboard's story above the fold. Like every widget
+they are computed by the refresher into the snapshot (never on open), read
+through `FactReader` with the scope the server built for the read, and carry
+the list each figure counts (`drill`, or none where no list has exactly that
+total). Code: `internal/app/dashboard/widgets/levers.go`, `brief.go`,
+`kpis.go`; web `components/dashboard-kit/story-viz.tsx`.
+
+- **`exposure.levers`** (shape `levers`): at most three actions, each with an
+  exact effect (the figure before and after its list is gone), ranked by the
+  risk points they clear (the remediation formula, P0 8, P1 4, P2 2, P3 1,
+  severity for unclassified findings):
+  - `kev_open`: open KEV findings; effect on P0-P1 open (or on KEV open when
+    none of them is P0-P1);
+  - `sla_breached`: open P0-P1 findings past their SLA; effect on within SLA,
+    `num / (den - n)`;
+  - `one_fix`: the proposed remediation suggestion that clears the most risk
+    points over its members that are open and in the read's scope
+    (`FactReader.TopFix`, `dashboard_levers_repository.go`); pentest findings
+    are never counted, so a fix found only on pentest findings never reaches
+    a reader outside the campaign; effect on P0-P1 open;
+  - `blind_spot`: tracked assets with no successful run in the coverage
+    window; it takes the last slot while coverage is under 90 % (unmeasured is
+    not safe) and never competes on points.
+  Cards carry kind and numbers only (plus a one-fix suggestion title); the web
+  words them from translated templates. No asset names are shown.
+- **`brief.weekly`** (shape `brief`): up to three deterministic sentences:
+  the last seven days' new against fixed findings (F2, chips without a link,
+  daily flows are not a list), the first lever, and the P0-P2 findings due soon
+  and past their SLA (or the KEV open count when there are none); `quiet` when
+  nothing applies. No generated text.
+- **`exposure.kpis`** (shape `kpis`, viz `kpi`): P0-P1 open, KEV open, within
+  SLA, median time to fix and discovery coverage in one strip, each computed
+  by the same code path as its single-figure metric; a figure that cannot be
+  measured is `not_measured` with its reason, never 0. Rendered with the
+  shared `MetricStrip`.
+
+Permissions on a personal read: the widgets need `findings:read`; without
+`assets:read` the parts read from the coverage ledger are removed on the way
+out (`maskAssetParts`): the coverage tile becomes `unsupported`/`forbidden`,
+the blind spot lever and a brief sentence that words it are dropped.
+
+Tests: `widgets/levers_test.go` (ranking, exact effects, every read uses the
+server-built scope, masking), `postgres/dashboard_levers_db_test.go` (TopFix:
+data scope, no-scope member, pentest exclusion, dismissed suggestions, cross
+tenant).
 
 ### Scope and isolation
 
@@ -981,6 +1052,7 @@ figure means not measured and is never drawn as 0.
 | `LoopViz` | stages | the CTEM loop as an ordered list (`<ol>`); each stage's figure and second figure link to their lists, its state is an icon and words in a pill (never a coloured stripe; cards keep one neutral border), unmeasured stages show "—" with the reason; the focus stage is `aria-current="step"` and marked "Act here" with the brand accent (`--brand`, the only use of it) |
 | `PathsViz` | paths | reachable crown jewels (linked to the attack paths) and the top ones with the entry points reaching them; "none designated" and "none reachable" are different states |
 | `ItemsViz` | items | rows with priority, KEV, asset and due time, and "View all" |
+| `ItemsTable` | items (`viz: table`) | the embedded findings table: Priority, Finding (title link, asset line, KEV chip), Severity and SLA columns (Severity and SLA hidden at phone width, the table scrolls sideways), a read-only chip row with the list's filter, the count in the caption, and a footer "Top n of total" with "Open in Findings" |
 | `ExposureFlowViz` | flow | sources (with health in words and line style), received to new or reopened to actionable, a labelled ring of actionable findings by priority class (at most four arcs, each a focusable link with a sentence, the largest centred at the bottom, a minimum arc so P0 stays visible; the centre is the count the arcs sum to), the five stages (the focus stage filled with the accent), outcomes (open with its severity split, past SLA, in progress, closed in the period); wires are SVG paths between measured rows, width by volume; below the large breakpoint the columns stack and the wires are dropped |
 | `IntakeViz` | intake | the connector panel (each source's icon, tool, receipts, health, count, wired into one summary that shows the hovered source), the noise bar (new or reopened, merged, suppressed, not stored; each legend value opens the receipts), the false-positive row, and the per-source table |
 

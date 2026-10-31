@@ -7,7 +7,7 @@ package asset
 
 // RegistryVersion identifies this registry. It changes whenever the
 // registry content changes.
-const RegistryVersion = "07237494bba54291"
+const RegistryVersion = "98a73e498b7d7ad0"
 
 // Lenses.
 const (
@@ -134,6 +134,7 @@ var registryTypes = []TypeDefinition{
 		ExposureDefault: "public",
 		Coverage: []CoverageRule{
 			{Capability: "discover.subdomains", EverySeconds: 86400, Requires: []string{"scope_entry"}},
+			{Capability: "enumerate.subdomains", EverySeconds: 604800, Requires: []string{"scope_entry"}},
 			{Capability: "resolve.dns", EverySeconds: 86400},
 			{Capability: "lookup.rdap", EverySeconds: 604800},
 			{Capability: "dns.email", EverySeconds: 86400},

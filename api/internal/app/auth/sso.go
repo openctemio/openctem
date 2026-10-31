@@ -160,7 +160,7 @@ func (s *SSOService) SetIdentityRepo(repo useridentity.Repository) {
 }
 
 func (s *SSOService) accounts() federatedAccounts {
-	return federatedAccounts{identities: s.identities, users: s.userRepo, logger: s.logger}
+	return federatedAccounts{identities: s.identities, users: s.userRepo, logger: s.logger, source: useridentity.SourceSSO}
 }
 
 // SetSessionRevocationStore wires immediate revocation for sessions ended by
@@ -754,6 +754,9 @@ func (s *SSOService) HandleCallback(ctx context.Context, input SSOCallbackInput)
 		userInfo.Issuer = canonicalIssuer(claims.Issuer)
 		userInfo.Subject = claims.Subject
 	}
+
+	// One spelling of the address (users.email is unique on lower(email)).
+	userInfo.Email = userdom.NormalizeEmail(userInfo.Email)
 
 	// SECURITY: Require email from SSO provider
 	if userInfo.Email == "" {

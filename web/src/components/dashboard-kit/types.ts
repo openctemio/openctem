@@ -124,6 +124,8 @@ export interface ItemRow {
   asset?: string | null
   due_at?: string | null
   kev?: boolean
+  /** EPSS probability, 0 to 1; absent or null draws the empty bar. */
+  epss?: number | null
   /** Same-origin path the row opens. */
   href?: string | null
 }
@@ -268,6 +270,64 @@ export interface FlowResult {
   as_of?: string
 }
 
+/** One lever: the action, the list it acts on and its exact effect. */
+export interface LeverRow {
+  kind: 'kev_open' | 'sla_breached' | 'one_fix' | 'blind_spot'
+  count: number
+  assets?: number
+  title?: string
+  effect: { metric: string; before: number; after: number; unit: 'count' | 'percent' }
+  href: string | null
+}
+
+/** The actions that would most reduce exposure. */
+export interface LeversResult {
+  shape: 'levers'
+  levers: LeverRow[]
+  as_of?: string
+}
+
+/** One figure of a brief sentence. */
+export interface BriefChip {
+  key: string
+  value: number
+  href: string | null
+}
+
+/** The weekly brief: sentence templates with their figures. */
+export interface BriefResult {
+  shape: 'brief'
+  since: string
+  items: Array<{
+    kind: 'change' | 'lever' | 'sla_due' | 'kev' | 'quiet'
+    variant?: 'down' | 'up' | 'flat'
+    chips: BriefChip[]
+    lever?: LeverRow
+  }>
+  as_of?: string
+}
+
+/** One figure of the KPI strip. */
+export interface KpiTile {
+  key: string
+  metric: string
+  /** Not measured (or not readable by this viewer): value is null and reason_key says why. */
+  measured: boolean
+  reason_key?: string
+  value: number | null
+  previous: number | null
+  unit: 'count' | 'percent' | 'hours'
+  polarity: Polarity
+  href: string | null
+}
+
+/** Five key figures in one divided strip. */
+export interface KpisResult {
+  shape: 'kpis'
+  tiles: KpiTile[]
+  as_of?: string
+}
+
 export type WidgetResult =
   | ScalarResult
   | RatioResult
@@ -280,6 +340,9 @@ export type WidgetResult =
   | PathsResult
   | FlowResult
   | IntakeResult
+  | LeversResult
+  | BriefResult
+  | KpisResult
 
 export type ResultShape = WidgetResult['shape']
 

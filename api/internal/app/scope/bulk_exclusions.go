@@ -11,14 +11,18 @@ package scope
 //
 // The preview counts, for each pattern, the caller's visible inventory
 // assets it would match (Layer 2 data scope; a restricted caller never
-// learns about assets outside it) and changes nothing.
+// learns about assets outside it) and, for an address pattern, the names it
+// also excludes because they resolve into it, or that it is a shared front
+// end whose names stay in scans. It changes nothing.
 
 import (
 	"context"
 	"fmt"
 	"time"
 
+	"github.com/openctemio/openctem/api/pkg/domain/edgeaddr"
 	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
+	"github.com/openctemio/openctem/api/pkg/domain/scope/ipset"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
@@ -135,6 +139,13 @@ type ExclusionMatch struct {
 	// permanent not_ours or retired exclusion would close.
 	OpenFindings int
 	Sample       []string
+	// Names is how many of the caller's visible names (assets that are not
+	// addresses) an address, range or CIDR pattern also excludes because
+	// they resolve to an address inside it (AssetExclusionValues); shared
+	// front ends never count (PropagatingAddresses). NameSample lists up to
+	// ten of them.
+	Names      int
+	NameSample []string
 }
 
 // ExclusionMatchCounter counts the matches of patterns in the database
@@ -157,6 +168,34 @@ type ExclusionPreview struct {
 	// pattern is not exact, so as a not_ours or retired rule it would be
 	// refused (ErrClosingRuleNeedsFullAccess).
 	ClosingNeedsFullAccess bool
+	// Edge is set when the pattern is a shared front end (an address, or a
+	// range wholly inside, a provider's published shared range): the
+	// exclusion stays on those addresses and no name behind them is
+	// excluded with it.
+	Edge *edgeaddr.Result
+}
+
+// patternEdge is the shared front end an address, range or CIDR exclusion
+// names, or nil: every address of the pattern must be one
+// (edgeaddr.SharedFrontEnd at both ends, one published range holding both).
+func patternEdge(t scopedom.ExclusionType, pattern string) *edgeaddr.Result {
+	switch t {
+	case scopedom.ExclusionTypeIPAddress, scopedom.ExclusionTypeIPRange, scopedom.ExclusionTypeCIDR:
+	default:
+		return nil
+	}
+	rg, ok := ipset.Parse(pattern)
+	if !ok {
+		return nil
+	}
+	c := edgeaddr.Default()
+	r := c.Range(rg.Lo, rg.Hi)
+	_, loShared := c.SharedFrontEnd(rg.Lo.String())
+	_, hiShared := c.SharedFrontEnd(rg.Hi.String())
+	if !r.Shared() || r.Basis != edgeaddr.BasisRange || !loShared || !hiShared {
+		return nil
+	}
+	return &r
 }
 
 // PreviewExclusions answers, per item, how many of the caller's visible
@@ -189,6 +228,7 @@ func (s *Service) PreviewExclusions(ctx context.Context, tenantID string, items 
 			continue
 		}
 		out[i].ClosingNeedsFullAccess = ds.Restricted() && !isExactClosingRule(t, it.Pattern)
+		out[i].Edge = patternEdge(t, it.Pattern)
 		valid = append(valid, BulkExclusionItem{ExclusionType: string(t), Pattern: it.Pattern})
 		at = append(at, i)
 	}

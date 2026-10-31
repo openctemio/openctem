@@ -59,6 +59,10 @@ A super admin imports each asset as a platform pack of kind `wordlist` with
 a reason and an audit row, as for any platform pack) and then moves `stable` to it. No
 platform code is specific to wordlists.
 
+Asset coverage runs `enumerate.subdomains` at standard depth, so it reads the `dns-labels` lists
+of `wordlists-s`. Until that pack is imported, the capability is paused with readiness reason
+`content_missing` ([asset-coverage.md](asset-coverage.md)).
+
 ## What the platform checks
 
 On import, and on every tenant upload that carries one, the linter checks `wordlists.yaml`:

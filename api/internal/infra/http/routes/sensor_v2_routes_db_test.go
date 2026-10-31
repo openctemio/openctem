@@ -12,13 +12,16 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -55,21 +58,25 @@ type v2Harness struct {
 }
 
 type v2HarnessOpts struct {
-	limits        protov2.Limits
-	maxPending    int
-	tenantLimiter *middleware.TelemetryRateLimiter
-	control       *handler.SensorControlV2Handler
+	limits     protov2.Limits
+	maxPending int
+	// maxQueuedBytes is the tenant's queued-bytes ceiling (0: none).
+	maxQueuedBytes int64
+	tenantLimiter  *middleware.TelemetryRateLimiter
+	control        *handler.SensorControlV2Handler
 	// ciKeys, when set, is the "OIDC required for CI" policy.
 	ciKeys handler.CIRunnerKeyPolicy
 	// depth, when set, replaces the queue depth reader.
 	depth brokenDepth
+	// noSealer leaves the receiver without a segment sealer.
+	noSealer bool
 }
 
 // brokenDepth is a queue depth that cannot be read.
 type brokenDepth struct{ on bool }
 
-func (brokenDepth) CountPendingByTenant(context.Context, shared.ID) (int, error) {
-	return 0, errors.New("connection refused")
+func (brokenDepth) TenantDepth(context.Context, shared.ID, time.Time) (int, int, error) {
+	return 0, 0, errors.New("connection refused")
 }
 
 func newV2Harness(t *testing.T, opts v2HarnessOpts) *v2Harness {
@@ -107,7 +114,12 @@ func newV2Harness(t *testing.T, opts v2HarnessOpts) *v2Harness {
 	if opts.depth.on {
 		receiver = ingest.NewV2Receiver(h.reports, parked, opts.depth, postgres.NewCommandRepository(db), limits, opts.maxPending, log)
 	}
+	receiver.SetMaxQueuedBytes(opts.maxQueuedBytes)
+	if !opts.noSealer {
+		receiver.SetPayloadSealer(testSegmentSealer(t))
+	}
 	h.proc = ingest.NewV2JobProcessor(ingestSvc, h.reports, h.jobs, limits, ingest.DefaultBlindingGuard(), log)
+	h.proc.SetPayloadSealer(testSegmentSealer(t))
 
 	// A user route behind the real JWT authenticator, for route isolation.
 	gen := jwt.NewGenerator(jwt.TokenConfig{Secret: "v2-route-test-secret-0123456789abcdef", Issuer: "test",
@@ -630,6 +642,105 @@ func TestSensorV2_RateLimitAndQueueFull(t *testing.T) {
 	}
 }
 
+// Admission is per report: once a report's first segment was accepted, its
+// further segments are accepted past the tenant's queue limit up to a hard
+// ceiling (2x), while a new report is refused at the limit. Every queue-full
+// refusal carries a Retry-After within the advised bounds.
+func TestSensorV2_QueueFullAdmitsByReport(t *testing.T) {
+	h := newV2Harness(t, v2HarnessOpts{maxPending: 2})
+	seg := func(name string) []byte { return v2Segment("semgrep", "1.0", name) }
+	base := "/api/v2/sensor/results/" + newReportID()
+
+	// Segments 0 and 1 fill the tenant's limit (2 unfinished jobs).
+	for seq := range 2 {
+		resp, raw := h.do(http.MethodPut, fmt.Sprintf("%s/segments/%d", base, seq), seg(fmt.Sprint("s", seq)))
+		h.expect(resp, raw, 202, "")
+	}
+	// A new report is refused at the limit.
+	resp, raw := h.do(http.MethodPut, "/api/v2/sensor/results/"+newReportID(), seg("other"))
+	h.expect(resp, raw, 429, "queue-full")
+	assertRetryAfter(t, resp)
+	// The open report still gets its next segments, up to the ceiling (4).
+	for seq := 2; seq < 4; seq++ {
+		resp, raw := h.do(http.MethodPut, fmt.Sprintf("%s/segments/%d", base, seq), seg(fmt.Sprint("s", seq)))
+		h.expect(resp, raw, 202, "")
+	}
+	resp, raw = h.do(http.MethodPut, base+"/segments/4", seg("s4"))
+	h.expect(resp, raw, 429, "queue-full")
+	assertRetryAfter(t, resp)
+	// A replay of a segment the server holds is never refused.
+	resp, raw = h.do(http.MethodPut, base+"/segments/0", seg("s0"))
+	h.expect(resp, raw, 200, "")
+}
+
+// A burst of concurrent pushes (sensors finishing a scheduled run at the same
+// moment): every answer is 202 or 429, never a server error; every 429 says
+// when to come back; and every 202 is backed by a stored report (the sensor
+// deletes its copy on 2xx, so an acknowledged report must never be lost).
+func TestSensorV2_BurstOfPushes(t *testing.T) {
+	h := newV2Harness(t, v2HarnessOpts{maxPending: 10})
+	const n = 40
+	type answer struct {
+		status     int
+		retryAfter string
+	}
+	answers := make([]answer, n)
+	var wg sync.WaitGroup
+	for i := range n {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			body := v2Segment("semgrep", "1.0", fmt.Sprint("burst-", i))
+			req, _ := http.NewRequestWithContext(context.Background(), http.MethodPut,
+				h.srv.URL+"/api/v2/sensor/results/"+newReportID(), bytes.NewReader(body))
+			req.Header.Set("Authorization", "Bearer "+h.key)
+			req.Header.Set("Content-Type", protov2.MediaTypeCTIS)
+			req.Header.Set(protov2.HeaderContentDigest, digestOf(body))
+			resp, err := h.srv.Client().Do(req)
+			if err != nil {
+				answers[i] = answer{status: -1}
+				return
+			}
+			_, _ = io.Copy(io.Discard, resp.Body)
+			_ = resp.Body.Close()
+			answers[i] = answer{status: resp.StatusCode, retryAfter: resp.Header.Get("Retry-After")}
+		}(i)
+	}
+	wg.Wait()
+
+	accepted := 0
+	for i, a := range answers {
+		switch a.status {
+		case http.StatusAccepted:
+			accepted++
+		case http.StatusTooManyRequests:
+			if a.retryAfter == "" {
+				t.Fatalf("push %d: 429 without Retry-After", i)
+			}
+		default:
+			t.Fatalf("push %d: status %d, want 202 or 429", i, a.status)
+		}
+	}
+	if accepted == 0 {
+		t.Fatal("the burst accepted nothing")
+	}
+	var stored int
+	if err := h.db.QueryRow(`SELECT count(*) FROM ingest_reports WHERE sensor_id = $1`, h.sensorID).Scan(&stored); err != nil {
+		t.Fatal(err)
+	}
+	if stored != accepted {
+		t.Fatalf("%d pushes acknowledged, %d reports stored", accepted, stored)
+	}
+}
+
+func assertRetryAfter(t *testing.T, resp *http.Response) {
+	t.Helper()
+	n, err := strconv.Atoi(resp.Header.Get("Retry-After"))
+	if err != nil || n < 5 || n > 300 {
+		t.Fatalf("Retry-After = %q, want 5..300 seconds", resp.Header.Get("Retry-After"))
+	}
+}
+
 // A completed v2 report counts toward the sensor's totals once, as a v1
 // ingest does. The v2 path counted every segment as a scan, so a report sent
 // in N segments added N scans (the drawer's "Scans to date").
@@ -766,4 +877,130 @@ func TestIngestV1_QueuedReportOfRevokedSensorIsDropped(t *testing.T) {
 	if audited != 1 {
 		t.Fatalf("%d audit entries for the dropped report, want 1", audited)
 	}
+}
+
+// manifestFor is the commit manifest an honest sensor sends for segments
+// built by v2Segment (one asset each) with the given findings per segment.
+func manifestFor(segs [][]byte, findings []int) protov2.CommitRequest {
+	req := protov2.CommitRequest{SegmentCount: len(segs), Totals: &protov2.Counts{}}
+	hashes := make([][]byte, len(segs))
+	for i, s := range segs {
+		sum := sha256.Sum256(s)
+		hashes[i] = sum[:]
+		req.SegmentDigests = append(req.SegmentDigests, digestOf(s))
+		req.Segments = append(req.Segments, protov2.SegmentManifest{
+			Seq: i, SHA256: hex.EncodeToString(sum[:]), Bytes: int64(len(s)), Assets: 1, Findings: findings[i],
+		})
+		req.Totals.Assets++
+		req.Totals.Findings += findings[i]
+	}
+	req.ReportSHA256 = hex.EncodeToString(protov2.ReportRoot(hashes))
+	return req
+}
+
+func (h *v2Harness) commit(base string, req protov2.CommitRequest) (*http.Response, []byte) {
+	h.t.Helper()
+	b, _ := json.Marshal(req)
+	return h.do(http.MethodPost, base+"/commit", nil, func(r *http.Request) {
+		r.Body = io.NopCloser(bytes.NewReader(b))
+		r.ContentLength = int64(len(b))
+		r.Header.Set("Content-Type", "application/json")
+	})
+}
+
+func (h *v2Harness) reportIntegrity(reportID string) (integrity string, root []byte, committed bool) {
+	h.t.Helper()
+	var at sql.NullTime
+	var in sql.NullString
+	if err := h.db.QueryRow(`SELECT integrity, content_sha256, committed_at FROM ingest_reports WHERE sensor_id = $1 AND report_id = $2`,
+		h.sensorID, reportID).Scan(&in, &root, &at); err != nil {
+		h.t.Fatalf("read report: %v", err)
+	}
+	return in.String, root, at.Valid
+}
+
+// The commit manifest (RFC-026 §3.5a): a matching manifest commits the report
+// as "manifest"; a manifest whose counts or hashes do not match what the
+// server received is refused and the report stays uncommitted (never
+// completes, never proves absence); a commit without a manifest is
+// "digest_only"; a whole report is "single". The status of an uncommitted
+// report lists the segments the server holds.
+func TestSensorV2_CommitManifest(t *testing.T) {
+	h := newV2Harness(t, v2HarnessOpts{})
+	segs := [][]byte{v2Segment("semgrep", "1.0", "a", "b"), v2Segment("semgrep", "1.0", "c")}
+	put := func(base string, seqs ...int) {
+		for _, seq := range seqs {
+			resp, raw := h.do(http.MethodPut, fmt.Sprintf("%s/segments/%d", base, seq), segs[seq])
+			h.expect(resp, raw, 202, "")
+		}
+	}
+
+	t.Run("held segments, then a matching manifest", func(t *testing.T) {
+		id := newReportID()
+		base := "/api/v2/sensor/results/" + id
+		put(base, 1)
+		resp, raw := h.do(http.MethodGet, base, nil)
+		h.expect(resp, raw, 200, "")
+		var st protov2.Status
+		if err := json.Unmarshal(raw, &st); err != nil {
+			t.Fatal(err)
+		}
+		if len(st.Segments.Held) != 1 || st.Segments.Held[0] != 1 {
+			t.Fatalf("held = %v, want [1]", st.Segments.Held)
+		}
+		put(base, 0)
+		resp, raw = h.commit(base, manifestFor(segs, []int{2, 1}))
+		h.expect(resp, raw, 202, "")
+		integrity, root, committed := h.reportIntegrity(id)
+		want := manifestFor(segs, []int{2, 1}).ReportSHA256
+		if !committed || integrity != protov2.IntegrityManifest || hex.EncodeToString(root) != want {
+			t.Fatalf("committed=%v integrity=%q root=%x, want manifest %s", committed, integrity, root, want)
+		}
+	})
+
+	t.Run("inflated counts are refused", func(t *testing.T) {
+		id := newReportID()
+		base := "/api/v2/sensor/results/" + id
+		put(base, 0, 1)
+		req := manifestFor(segs, []int{2, 1})
+		req.Segments[0].Findings, req.Totals.Findings = 50, 51
+		resp, raw := h.commit(base, req)
+		h.expect(resp, raw, 409, "segment-set-mismatch")
+		if !strings.Contains(string(raw), "count_mismatch") {
+			t.Fatalf("refusal does not name the count mismatch: %s", raw)
+		}
+		if _, _, committed := h.reportIntegrity(id); committed {
+			t.Fatal("a refused manifest committed the report")
+		}
+		// The honest manifest still commits it.
+		resp, raw = h.commit(base, manifestFor(segs, []int{2, 1}))
+		h.expect(resp, raw, 202, "")
+	})
+
+	t.Run("a content hash that differs is refused", func(t *testing.T) {
+		base := "/api/v2/sensor/results/" + newReportID()
+		put(base, 0, 1)
+		req := manifestFor(segs, []int{2, 1})
+		other := sha256.Sum256([]byte("not what was sent"))
+		req.Segments[1].SHA256 = hex.EncodeToString(other[:])
+		resp, raw := h.commit(base, req)
+		h.expect(resp, raw, 409, "segment-set-mismatch")
+	})
+
+	t.Run("no manifest is digest_only, a whole report is single", func(t *testing.T) {
+		id := newReportID()
+		base := "/api/v2/sensor/results/" + id
+		put(base, 0, 1)
+		resp, raw := h.commit(base, protov2.CommitRequest{SegmentCount: 2, SegmentDigests: []string{digestOf(segs[0]), digestOf(segs[1])}})
+		h.expect(resp, raw, 202, "")
+		if integrity, _, _ := h.reportIntegrity(id); integrity != protov2.IntegrityDigestOnly {
+			t.Fatalf("integrity %q, want digest_only", integrity)
+		}
+		whole := newReportID()
+		resp, raw = h.do(http.MethodPut, "/api/v2/sensor/results/"+whole, segs[0])
+		h.expect(resp, raw, 202, "")
+		if integrity, root, _ := h.reportIntegrity(whole); integrity != protov2.IntegritySingle || len(root) != 32 {
+			t.Fatalf("whole report integrity %q root %x, want single", integrity, root)
+		}
+	})
 }

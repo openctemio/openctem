@@ -44,8 +44,10 @@ type HeartbeatBucket struct {
 	Start time.Time `json:"at"`
 	// Beats is the heartbeats received in the bucket.
 	Beats int `json:"beats"`
-	// AvgGapSeconds and MaxGapSeconds are over the heartbeats that had a
-	// previous one (0 when none had).
+	// GapBeats is the heartbeats that arrived late (a gap above 1.5
+	// intervals); AvgGapSeconds and MaxGapSeconds are over the heartbeats
+	// that had a previous one (0 when none had).
+	GapBeats      int     `json:"gap_beats"`
 	AvgGapSeconds float64 `json:"avg_gap_s"`
 	MaxGapSeconds float64 `json:"max_gap_s"`
 	// IntervalSeconds is the largest interval the sensor followed in the
@@ -72,6 +74,13 @@ func (s HeartbeatSample) Clamped() HeartbeatSample {
 	return s
 }
 
+// LateGap reports whether the sample's gap exceeds HeartbeatLateGapFactor
+// intervals (the same rule as the heartbeat_late health reason). A sample
+// with no known interval is never late.
+func (s HeartbeatSample) LateGap() bool {
+	return s.Gap > 0 && s.Interval > 0 && s.Gap.Seconds() > HeartbeatLateGapFactor*s.Interval.Seconds()
+}
+
 // HeartbeatHistoryRepository stores and reads the heartbeat history.
 type HeartbeatHistoryRepository interface {
 	// RecordHeartbeat adds one heartbeat to its bucket.
@@ -87,10 +96,14 @@ type HeartbeatHistoryRepository interface {
 // HeartbeatAggregate is many heartbeats of one sensor in one bucket, summed
 // in memory before one batched write (liveness store mode).
 type HeartbeatAggregate struct {
-	TenantID           shared.ID
-	SensorID           shared.ID
-	BucketStart        time.Time
-	Beats              int64
+	TenantID    shared.ID
+	SensorID    shared.ID
+	BucketStart time.Time
+	Beats       int64
+	// PrevBeats is the heartbeats that had a previous one (the divisor of
+	// the average gap); GapBeats the ones that were late (a gap above
+	// HeartbeatLateGapFactor intervals).
+	PrevBeats          int64
 	GapBeats           int64
 	SumGapSeconds      float64
 	MaxGapSeconds      float64
@@ -104,7 +117,10 @@ func (a *HeartbeatAggregate) Add(s HeartbeatSample) {
 	s = s.Clamped()
 	a.Beats++
 	if s.Gap > 0 {
-		a.GapBeats++
+		a.PrevBeats++
+		if s.LateGap() {
+			a.GapBeats++
+		}
 		a.SumGapSeconds += s.Gap.Seconds()
 		a.MaxGapSeconds = max(a.MaxGapSeconds, s.Gap.Seconds())
 	}

@@ -546,8 +546,8 @@ export default function WorkflowBuilderPage({ params }: PageProps) {
       <Main fixed className="p-0">
         <div className="flex flex-col h-full">
           {/* Header */}
-          <div className="flex items-center justify-between px-4 py-3 border-b bg-background shrink-0">
-            <div className="flex items-center gap-3 min-w-0">
+          <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-4 py-3 border-b bg-background shrink-0">
+            <div className="flex min-w-0 flex-[1_1_14rem] items-center gap-3">
               <Button
                 variant="ghost"
                 size="icon"
@@ -564,7 +564,7 @@ export default function WorkflowBuilderPage({ params }: PageProps) {
               )}
               <div className="min-w-0">
                 <h1 className="text-base font-semibold truncate">{workflow.name}</h1>
-                <p className="text-xs text-muted-foreground whitespace-nowrap">
+                <p className="truncate text-xs text-muted-foreground">
                   {isSystemTemplate
                     ? t('workflowStages.builder.hintTemplate')
                     : isReadOnly
@@ -573,7 +573,7 @@ export default function WorkflowBuilderPage({ params }: PageProps) {
                 </p>
               </div>
             </div>
-            <div className="flex items-center gap-2 shrink-0">
+            <div className="ms-auto flex flex-wrap items-center justify-end gap-2">
               {isSystemTemplate && (
                 <Tag
                   variant="plain"

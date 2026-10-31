@@ -9,12 +9,16 @@ package ingest
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
+	"github.com/openctemio/openctem/api/internal/app/ingestqueue"
 	"github.com/openctemio/openctem/api/pkg/domain/command"
 	"github.com/openctemio/openctem/api/pkg/domain/ingestjob"
+	"github.com/openctemio/openctem/api/pkg/domain/ingestpayload"
 	"github.com/openctemio/openctem/api/pkg/domain/ingestreport"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -28,11 +32,10 @@ type v2CommandReader interface {
 	GetByTenantAndID(ctx context.Context, tenantID, id shared.ID) (*command.Command, error)
 }
 
-// v2QueueDepth is the slice of the v1 ingest queue the receiver needs for
-// per-tenant backpressure.
-type v2QueueDepth interface {
-	CountPendingByTenant(ctx context.Context, tenantID shared.ID) (int, error)
-}
+// v2QueueDepth is the slice of the ingest queue the receiver needs for
+// per-tenant backpressure: the tenant's unfinished jobs and its recent drain
+// (the Retry-After is computed from it).
+type v2QueueDepth = ingestqueue.DepthReader
 
 // V2Receiver accepts v2 segments and commits.
 type V2Receiver struct {
@@ -42,8 +45,13 @@ type V2Receiver struct {
 	commands   v2CommandReader
 	limits     protov2.Limits
 	maxPending int
-	logger     *logger.Logger
-	now        func() time.Time
+	// maxQueuedBytes bounds a tenant's queued payload bytes (0: unbounded);
+	// maxPending's continuation allowance applies to it too.
+	maxQueuedBytes int64
+	// sealer seals queued segments; nil refuses every new segment.
+	sealer *ingestpayload.Sealer
+	logger *logger.Logger
+	now    func() time.Time
 }
 
 // NewV2Receiver wires the receiver. maxPendingPerTenant bounds a tenant's
@@ -57,6 +65,19 @@ func NewV2Receiver(reports ingestreport.Repository, jobs ingestjob.V2Repository,
 	return &V2Receiver{reports: reports, jobs: jobs, queue: queue, commands: commands, limits: limits,
 		maxPending: maxPendingPerTenant, logger: log.With("component", "ingest-v2"), now: time.Now}
 }
+
+// SetMaxQueuedBytes bounds the decoded payload bytes one tenant may have
+// queued (INGEST_MAX_QUEUED_BYTES_PER_TENANT; 0 disables the check). A new
+// report is refused at the limit, a continuation of an open report at twice
+// it, with a Retry-After like the job limit gives. The queue must also read
+// bytes (ingestqueue.BytesReader), else every segment is refused (fail
+// closed).
+func (v *V2Receiver) SetMaxQueuedBytes(n int64) { v.maxQueuedBytes = n }
+
+// SetPayloadSealer sets the sealer queued segments are stored under (the
+// CI upload sealer). Without one every new segment is refused: a segment is
+// never stored in plaintext.
+func (v *V2Receiver) SetPayloadSealer(s *ingestpayload.Sealer) { v.sealer = s }
 
 // Limits are the limits the receiver enforces (published on hello).
 func (v *V2Receiver) Limits() protov2.Limits { return v.limits }
@@ -241,16 +262,13 @@ func (v *V2Receiver) Put(ctx context.Context, t V2Target, seq int, whole bool, b
 		return nil, problem(protov2.ProblemSegmentHeaderMismatch)
 	}
 
-	if v.maxPending > 0 {
-		// Fail closed: a depth that cannot be read refuses the segment (the
-		// sensor retries after the advised delay), it never waves it in.
-		n, err := v.queue.CountPendingByTenant(ctx, tenantID)
-		if err != nil {
-			return nil, problem(protov2.ProblemUnavailable)
-		}
-		if n >= v.maxPending {
-			return nil, problem(protov2.ProblemQueueFull)
-		}
+	if v.sealer == nil {
+		v.logger.Error("v2: no segment sealer configured; refusing the segment")
+		return nil, problem(protov2.ProblemUnavailable)
+	}
+
+	if err := v.admit(ctx, tenantID, rep != nil, int64(len(body.Decoded)), now); err != nil {
+		return nil, err
 	}
 
 	if rep == nil {
@@ -265,6 +283,20 @@ func (v *V2Receiver) Put(ctx context.Context, t V2Target, seq int, whole bool, b
 		return nil, err
 	}
 	if !ok {
+		// Refused for size, or the report closed since the read above
+		// (committed, expired or failed): the answer differs.
+		cur, gerr := v.reports.GetByID(ctx, rep.ID)
+		switch {
+		case gerr != nil:
+			return nil, gerr
+		case cur.Committed():
+			return nil, problem(protov2.ProblemReportCommitted)
+		case cur.State != protov2.StateReceiving:
+			if cur.State == protov2.StateExpired || cur.Expired(now) {
+				return nil, problem(protov2.ProblemReportExpired)
+			}
+			return nil, problem(protov2.ProblemReportCommitted)
+		}
 		return nil, &V2ReportError{Problem: protov2.ProblemReportTooLarge}
 	}
 
@@ -272,6 +304,10 @@ func (v *V2Receiver) Put(ctx context.Context, t V2Target, seq int, whole bool, b
 	job := ingestjob.NewV2Job(tenantID, &t.Sensor.ID, t.ReportID, ingestjob.V2Segment{
 		ReportRef: rep.ID, Seq: &s, ContentDigest: body.Digest, MediaType: protov2.MediaTypeCTIS,
 	}, body.Decoded)
+	if err := sealSegment(v.sealer, job); err != nil {
+		_ = v.reports.ReleaseSegment(ctx, rep.ID, len(report.Assets), len(report.Findings))
+		return nil, fmt.Errorf("v2: seal segment: %w", err)
+	}
 	stored, created, err := v.jobs.EnqueueV2(ctx, job)
 	if err != nil {
 		_ = v.reports.ReleaseSegment(ctx, rep.ID, len(report.Assets), len(report.Findings))
@@ -284,7 +320,11 @@ func (v *V2Receiver) Put(ctx context.Context, t V2Target, seq int, whole bool, b
 	}
 
 	if whole {
-		if err := v.commit(ctx, rep, 1, true, now); err != nil {
+		// One segment is the whole report: complete by construction.
+		sum := sha256.Sum256(body.Decoded)
+		facts := ingestreport.CommitFacts{SegmentCount: 1, Implicit: true, Integrity: protov2.IntegritySingle,
+			ContentSHA256: protov2.ReportRoot([][]byte{sum[:]})}
+		if err := v.commit(ctx, rep, facts, now); err != nil {
 			return nil, err
 		}
 	}
@@ -350,6 +390,11 @@ func (v *V2Receiver) replay(ctx context.Context, rep *ingestreport.Report, exist
 	}
 	created := false
 	if rep.State == protov2.StateFailed {
+		// A reopen puts jobs back on the queue: admit it as a continuation
+		// like any other segment, so replay cannot skip the tenant ceiling.
+		if err := v.admit(ctx, rep.TenantID, true, 0, now); err != nil {
+			return nil, err
+		}
 		if _, err := v.jobs.RequeueDeadV2(ctx, rep.ID); err != nil {
 			return nil, err
 		}
@@ -423,7 +468,15 @@ func (v *V2Receiver) Commit(ctx context.Context, t V2Target, req protov2.CommitR
 	if !matches {
 		return nil, problem(protov2.ProblemSegmentSetMismatch)
 	}
-	if err := v.commit(ctx, rep, req.SegmentCount, false, now); err != nil {
+	contents, err := v.jobs.V2SegmentContents(ctx, rep.ID)
+	if err != nil {
+		return nil, err
+	}
+	facts, err := v.commitFacts(rep, req, contents)
+	if err != nil {
+		return nil, err
+	}
+	if err := v.commit(ctx, rep, facts, now); err != nil {
 		return nil, err
 	}
 	st, err := v.status(ctx, rep.ID, now)
@@ -433,19 +486,74 @@ func (v *V2Receiver) Commit(ctx context.Context, t V2Target, req protov2.CommitR
 	return &PutResult{Status: st, Created: true}, nil
 }
 
-func (v *V2Receiver) commit(ctx context.Context, rep *ingestreport.Report, count int, implicit bool, now time.Time) error {
-	ok, err := v.reports.Commit(ctx, rep.ID, count, implicit, now)
+func (v *V2Receiver) commit(ctx context.Context, rep *ingestreport.Report, facts ingestreport.CommitFacts, now time.Time) error {
+	ok, err := v.reports.Commit(ctx, rep.ID, facts, now)
 	if err != nil {
 		return err
 	}
 	if !ok {
-		return problem(protov2.ProblemReportCommitted)
+		// Closed by another request, or a segment arrived after the set was
+		// verified (the commit refuses a count that moved): only the first
+		// is "committed"; the second is retryable against the fresh set.
+		cur, gerr := v.reports.GetByID(ctx, rep.ID)
+		if gerr != nil {
+			return gerr
+		}
+		if cur.Committed() || cur.State != protov2.StateReceiving {
+			return problem(protov2.ProblemReportCommitted)
+		}
+		return problem(protov2.ProblemUnavailable)
 	}
 	job := ingestjob.NewV2Job(rep.TenantID, &rep.SensorID, rep.ReportID, ingestjob.V2Segment{ReportRef: rep.ID}, nil)
 	if _, _, err := v.jobs.EnqueueV2(ctx, job); err != nil {
 		return fmt.Errorf("enqueue v2 commit: %w", err)
 	}
 	return nil
+}
+
+// continuationFactor is how far past the tenant's queue limit a segment of a
+// report that was already admitted may still be accepted. Admission is per
+// report: refusing segment 7 of a report whose segment 0 was accepted leaves
+// a report that expires and never counts, so a started report is let finish
+// up to this hard ceiling, which keeps the worst case bounded (open reports
+// per sensor are capped as well).
+const continuationFactor = 2
+
+// admit is the queue back-pressure for one segment. A new report is refused
+// at the tenant's limit, a continuation of an open report at the ceiling
+// (continuationFactor). Fail closed: a depth that cannot be read refuses the
+// segment (503, the sensor retries after the advised delay), it never waves
+// it in. A refusal carries a Retry-After from the tenant's recent drain.
+func (v *V2Receiver) admit(ctx context.Context, tenantID shared.ID, continuation bool, incoming int64, now time.Time) error {
+	if v.maxPending <= 0 && v.maxQueuedBytes <= 0 {
+		return nil
+	}
+	limit, byteLimit := v.maxPending, v.maxQueuedBytes
+	if continuation {
+		limit *= continuationFactor
+		byteLimit *= continuationFactor
+	}
+	err := ingestqueue.Admit(ctx, v.queue, tenantID, limit, now)
+	if err == nil {
+		var queued ingestqueue.BytesReader
+		if q, ok := v.queue.(ingestqueue.BytesReader); ok {
+			queued = q
+		}
+		err = ingestqueue.AdmitBytes(ctx, v.queue, queued, tenantID, incoming, byteLimit, now)
+	}
+	if err == nil {
+		return nil
+	}
+	var full *ingestqueue.ErrQueueFull
+	if errors.As(err, &full) {
+		return &V2ReportError{Problem: protov2.ProblemQueueFull, RetryAfter: full.RetryAfter}
+	}
+	cause := ingestqueue.Cause(err)
+	if cause == nil {
+		cause = err
+	}
+	v.logger.Warn("v2 ingest: queue depth unreadable; segment refused", "error", cause)
+	return problem(protov2.ProblemUnavailable)
 }
 
 // Status returns the status resource of a report the sensor owns.
@@ -461,7 +569,21 @@ func (v *V2Receiver) Status(ctx context.Context, t V2Target) (protov2.Status, er
 	if err != nil {
 		return protov2.Status{}, err
 	}
-	return rep.Status(v.now()), nil
+	st := rep.Status(v.now())
+	if !rep.Committed() && st.State == protov2.StateReceiving {
+		// The held segments, so a sensor resuming the upload sends only
+		// the missing ones.
+		digests, err := v.jobs.V2SegmentDigests(ctx, rep.ID)
+		if err != nil {
+			return protov2.Status{}, err
+		}
+		st.Segments.Held = make([]int, 0, len(digests))
+		for seq := range digests {
+			st.Segments.Held = append(st.Segments.Held, seq)
+		}
+		slices.Sort(st.Segments.Held)
+	}
+	return st, nil
 }
 
 // Abandon gives up an uncommitted segmented report (DELETE). Its upserts

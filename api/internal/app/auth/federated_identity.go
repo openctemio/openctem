@@ -49,6 +49,9 @@ type federatedAccounts struct {
 	identities useridentity.Repository
 	users      userdom.Repository
 	logger     *logger.Logger
+	// source is the path these accounts serve: SourceSSO for an
+	// organization's single sign-on, SourceSocial for social sign-in.
+	source useridentity.Source
 }
 
 // lookup returns the account bound to key, or (nil, nil, nil) when none is.
@@ -118,6 +121,9 @@ func (f federatedAccounts) bind(ctx context.Context, u *userdom.User, key userid
 	if err != nil {
 		return err
 	}
+	if f.source == useridentity.SourceSSO {
+		ident.Source = useridentity.SourceSSO
+	}
 	now := time.Now().UTC()
 	ident.LastUsedAt = &now
 	if err := f.identities.Create(ctx, ident); err != nil {
@@ -125,6 +131,7 @@ func (f federatedAccounts) bind(ctx context.Context, u *userdom.User, key userid
 			// A concurrent first login may have bound the same pair to this
 			// same account: that is not a conflict.
 			if got, gerr := f.identities.GetByKey(ctx, key); gerr == nil && got.UserID == u.ID() {
+				f.markSSO(ctx, got)
 				return nil
 			}
 			return ErrFederatedIdentityConflict
@@ -143,6 +150,21 @@ func (f federatedAccounts) markUsed(ctx context.Context, ident *useridentity.Ide
 	if err := f.identities.MarkUsed(ctx, ident.ID, time.Now().UTC()); err != nil {
 		f.logger.Warn("record federated identity use", "error", err)
 	}
+	f.markSSO(ctx, ident)
+}
+
+// markSSO records that an organization's single sign-on asserted ident, so
+// the organization manages it from then on (useridentity.SourceSSO). A no-op
+// on the social path and for an identity already marked.
+func (f federatedAccounts) markSSO(ctx context.Context, ident *useridentity.Identity) {
+	if f.source != useridentity.SourceSSO || ident == nil || ident.Source == useridentity.SourceSSO {
+		return
+	}
+	if err := f.identities.MarkSSO(ctx, ident.ID); err != nil {
+		f.logger.Warn("record organization sign-on of identity", "error", err)
+		return
+	}
+	ident.Source = useridentity.SourceSSO
 }
 
 // emailProof authorizes a provider-driven email change; nil error = allowed.

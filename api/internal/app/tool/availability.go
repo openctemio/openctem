@@ -88,7 +88,27 @@ var ErrZoneNotFound = fmt.Errorf("%w: scan zone", shared.ErrNotFound)
 // ToolAvailability computes the tenant's tool availability. zoneID ("" for
 // none) limits it to the sensors of one of the tenant's scan zones; a zone
 // of another tenant is not found.
+//
+// With a memo in ctx (WithAvailabilityMemo) the result is computed once per
+// tenant and zone for that operation; errors are never memoised.
 func (s *Service) ToolAvailability(ctx context.Context, tenantID, zoneID string) (*ToolAvailabilityResult, error) {
+	memo := availabilityMemoFrom(ctx)
+	if memo == nil {
+		return s.computeToolAvailability(ctx, tenantID, zoneID)
+	}
+	key := memoKey(tenantID, zoneID)
+	if r := memo.get(key); r != nil {
+		return r, nil
+	}
+	r, err := s.computeToolAvailability(ctx, tenantID, zoneID)
+	if err != nil {
+		return nil, err
+	}
+	memo.put(key, r)
+	return r, nil
+}
+
+func (s *Service) computeToolAvailability(ctx context.Context, tenantID, zoneID string) (*ToolAvailabilityResult, error) {
 	tid, err := shared.IDFromString(tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)

@@ -294,9 +294,12 @@ func registerUserRoutes(
 
 // registerIdentityLinkRoutes mounts Account > Security "Connected sign-in
 // methods" (auth/identity_link.go). Self-scoped: the account is the session's.
-// Linking and unlinking change how the account can be signed into, so both
-// need a fresh step-up and the CSRF check. The link callback is the second
-// half of a link already stepped up: its state is bound to this account and
+// Linking and unlinking change how the account can be signed into, so each
+// needs the CSRF check and a proof typed for that request (an authenticator
+// code, else the password; auth/link_proof.go), checked by the service. They
+// are deliberately not behind requireStepUp: a recent sign-in or an open
+// step-up window does not count for a sign-in method change. The link
+// callback is the second half of a link already proved: its state is bound to this account and
 // this session, single use, expires, and is accepted only with the browser
 // binding secret the link start gave the starting browser (an HttpOnly
 // cookie); it is called by the web server with the session token.
@@ -314,11 +317,23 @@ func registerIdentityLinkRoutes(router Router, h *handler.OAuthHandler, authMidd
 	}
 	router.Group("/api/v1/me/sign-in-methods", func(r Router) {
 		r.GET("/", h.ListSignInMethods)
-		r.DELETE("/{id}", h.Unlink, withCSRF(linkRL, requireStepUp())...)
+		r.DELETE("/{id}", h.Unlink, withCSRF(linkRL)...)
 	}, middlewares...)
 	router.Group("/api/v1/me/sign-in-method-links", func(r Router) {
-		r.POST("/{provider}/start", h.StartLink, withCSRF(linkRL, requireStepUp())...)
+		r.POST("/{provider}/start", h.StartLink, withCSRF(linkRL)...)
 		r.POST("/{provider}/complete", h.CompleteLink, linkRL)
+	}, middlewares...)
+	// A social sign-in refused because its address has an account leaves a
+	// pending link (auth/pending_link.go); the person signs in to that
+	// account and confirms it here. The secret is read from its HttpOnly
+	// cookie only; the record is bound to this account and single use. All
+	// three carry the CSRF check; confirming changes how the account is
+	// signed into and also needs a proof typed for it (the sign-in that just
+	// happened does not count).
+	router.Group("/api/v1/me/pending-sign-in-link", func(r Router) {
+		r.POST("/describe", h.DescribePendingLink, withCSRF(linkRL)...)
+		r.POST("/complete", h.ConfirmPendingLink, withCSRF(linkRL)...)
+		r.POST("/cancel", h.CancelPendingLink, withCSRF(linkRL)...)
 	}, middlewares...)
 }
 

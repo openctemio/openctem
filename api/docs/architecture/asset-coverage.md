@@ -67,12 +67,38 @@ Each pass, per tenant, after reconciling:
    widening wait, goes on only while the same zone or sensor sees the target
    silent again (or either key is unknown); when another zone or sensor
    observes it, the streak starts over at 1, so a different vantage gets the
-   short recheck. A success, or a sensor-side failure, clears the key. A
+   short recheck. A success or another observation of the target clears
+   the key. A
    paused target-side pair never counts as "keeps failing" and is not a plain
    gap: it counts as **unreachable** and raises its own alert (below), so
    the same pairs never raise two alerts. The asset's coverage entry names
    the observer (`unreached_from`) only when it is the organization's own
    scan zone or sensor; a platform sensor is never named.
+
+   **Platform-side failures.** A failure counts against the target only
+   when it is an observation of the target (`unreachable`, `timeout`,
+   `edge_blocked`, `edge_challenged`, `rate_limited`). Every other outcome
+   is **platform side**: the check did not run, so it says nothing about the
+   target (`not_dispatched`, `stalled`, `failed` (the task failed, or every
+   target of it failed the same way), `unfinished`, `tool_error`,
+   `egress_refused`, `sensor_network_fault`). The rule fails closed: an
+   outcome not in the observation list is platform side
+   (`coverage.IsPlatformSide`). A platform-side failure grows only
+   `platform_fail_streak` (its own back-off: 1 h doubled per failure, at
+   most the cadence and a day) and keeps `fail_streak`, `unreached_from`
+   and the target-side streak as they were; any observation of the target
+   resets `platform_fail_streak`. So `fail_streak` counts only observations
+   of the target, a platform failure between two target-side observations
+   from the same observer neither breaks nor grows that streak, and the
+   organization's `failing` count reads only pairs whose last outcome is an
+   observation. The asset's coverage entry marks such a pair
+   `platform_side`, and the asset page shows it as **Not checked** ("the
+   scan could not run on the scanner side, so this says nothing about the
+   asset"), never as failed. Platform-side failures are the operator's
+   signal instead (see Gap detection). The migration that added the column
+   moved the streak of pairs whose last outcome was a known platform-side
+   failure into it (`dns.*` and the connector capability keep their own
+   rules).
 2. **Plan**, when the organization has automatic coverage on (Scoping >
    Settings, `auto_coverage`; default on, except while the scan approval
    mode in force is Strict, until the organization turns it on): for
@@ -144,6 +170,23 @@ still stops it at the claim-time check, and a scan a person starts is not
 batched. When the daily budget leaves fewer pairs than a task, a batch of
 that size is full.
 
+**Port depth.** The platform names the port set of every port scan: a
+coverage run of `scan.ports` (every 7 days per address, and at once for a
+new address or name) scans the top 1 000 ports
+(`stage.DefaultTopPorts`, `top_ports: 1000` in the job), never the
+sensor's own default of the top 100. The same default fills a workflow
+step or a scan of a port scan tool that names no ports (`ports` or
+`top_n`); a set list, `top-100` or `full` is kept. The whole range runs
+only when a scan sets it. The scope clamps still apply at claim: a job on
+names whose addresses are not in scope is cut to the web ports, one on
+unclassified assets to the low-impact list (`scope.LowImpactClamp`), and
+a port-limited program target refuses any top list. A top-1 000 scan
+removes an open port that the same source found with a shorter top list
+or with the old default (`ports:top-100`, `ports:default`), so a port
+that closed leaves the asset after the switch. Separate cadences per port
+depth (re-checking only the known open ports daily, the whole range on a
+slower cadence) need a depth column on the ledger and are not built yet.
+
 **Passive capabilities and zones.** A passive capability (`resolve.dns`,
 `lookup.rdap`, `lookup.asn`, `discover.subdomains`) sends no traffic to
 its target. For an organization with scan zones, its public names skip
@@ -157,6 +200,31 @@ group of the batch's oldest target runs, and the other group stays due for
 the next batch. Only the coverage run's own trigger can skip zone routing
 (an unexported context marker), and every other gate check still applies.
 Without zones, or for an active capability, nothing changes.
+
+**Subdomain enumeration (`enumerate.subdomains`).** A `domain` asset gets
+`enumerate.subdomains` every 7 days, next to the daily passive
+`discover.subdomains`. It is an active stage (T1): every candidate is a DNS
+query for `<label>.<root>`, so the rule requires a scope entry, the run goes
+through the full dispatch gate (exclusions, the system act scope, the
+active-scan ceiling and attribution) and the claim-time re-check, and it is
+not on the low-impact list (an unclassified asset never gets it). Its tool
+is `dnsx-enum`, one root per task. The coverage run sets the scanner method
+`bruteforce` and runs at standard depth; the command payload asks for
+`wordlists: [{slot: labels, purpose: dns-labels}]` (`stage.ToolWordlists`)
+and carries `context.depth: standard`. When the job is signed,
+`contentpin` pins the small platform pack (`wordlists-s`) and an inline list
+of the labels learned from the organization's own names under that root
+(for example `charts` and `uat` from `charts-uat.example.com`). The learned
+list is read for the job's own tenant only and sealed into the signed job;
+it is never stored.
+
+The tool has no list of its own, so without a stable `wordlists-s` pack the
+job would be refused at claim. Coverage readiness checks this first: while
+the platform has no such pack, the capability is paused with readiness
+reason `content_missing` and its alert asks an instance administrator to
+import the pack (see [wordlists.md](wordlists.md)). Coverage resumes on its
+own once the pack is imported. An error reading the pack store does not
+pause it; the claim-time pin still refuses the job.
 
 **Dead names.** A name that does not resolve is an answer, not a failure.
 A sensor reports it per target: in the result's `refused_targets` with
@@ -192,12 +260,31 @@ resolution that answers brings them back.
 
 **HTTP probe on names.** A subdomain is probed only when it resolves and
 is worth a probe (`web_port_or_unscanned`): an address it resolves to has
-an active open port in the web port set, a web origin of the name
+an active open port that may carry a web service (the web port set, the
+alternate web ports such as 2083, 7443, 10443, any port 8000-8999, or any
+port whose detected service is http, https or ssl), a web origin of the name
 (`https://<name>` or `http://<name>`) was seen, or its ports are still
 unknown (no port scan of the name or its addresses has succeeded and none
 of its addresses has an open port on record). A name whose port scan found
-no web port is `not_applicable` until one appears; reconcile then makes it
-due again.
+no such port (for example only 22 or 3306) is `not_applicable` until one
+appears; reconcile then makes it due again. The ports are then probed with
+the name by the named-ports rule below (`coverage.WebAltPorts`,
+`coverage.IsWebPlausiblePort`).
+
+**Named ports in an HTTP probe batch.** The probe of a bare name tries the
+scheme's default ports only, and a probe of `<address>:<port>` misses a
+virtual host, CDN or load balancer that routes by name (TLS SNI, the Host
+header). So a coverage batch of `probe.http` also probes `<name>:<port>`
+for each other open TCP port (not 80 or 443) of the live addresses each kept
+name resolves to (`resolves_to`, then `exposes`; a tenant-scoped lookup,
+`AttributionRepository.OpenPortsOfNames`), at most 20 per name and the batch
+cap in all (`scan/coverage_named_ports.go`). Only names the batch already
+kept are used. Each `<name>:<port>` goes through the same gate call as the
+batch (exclusions in host:port form, name ownership, scope entries and tier,
+zones) and only the allowed ones run; they carry no coverage pair of their
+own. A failed lookup or a refusal of the derived set as a whole leaves the
+batch as it was. Workflows apply the same rule after a port scan
+([scan stages](./scan-stages.md), "Open ports by name").
 
 **Template scans on web services.** A web service reached by an IPv4
 address (`https://203.0.113.10:8443`) is `not_applicable` for
@@ -256,7 +343,7 @@ and without the expected output. It raises:
 |---|---|
 | `gap` | any gap |
 | `output_drop` | no expected output over at least 20 settled inputs in 24 h (a broken or blocked tool) |
-| `failing` | a pair failed 3 or more times in a row (not for platform checks `dns.*`: a single asset's answer is shown on that asset) |
+| `failing` | a pair's last 3 or more observations of the target failed and its last outcome is one (never a platform-side failure; not for platform checks `dns.*`: a single asset's answer is shown on that asset) |
 | `readiness` | pairs are paused for a readiness reason (the reason is part of the key) |
 | `unreachable` | pairs are paused because their target did not answer from the organization's sensors (counts and the capability only, never the targets) |
 
@@ -282,6 +369,22 @@ repeat it, and a send that fails is logged, not retried every pass. The
 operator sees fleet-wide aggregates with no tenant label:
 `openctem_asset_coverage_gap_pairs{capability}` and
 `openctem_asset_coverage_alerts_total{kind,capability}`.
+
+**Platform-side failures** reach the operator, never the organization's
+`failing` alert: every settled one is counted in
+`openctem_asset_coverage_platform_failures_total{capability,outcome}`, and
+at most every 15 minutes the loop reads the fleet-wide count of pairs with 3
+or more platform-side failures in a row
+(`openctem_asset_coverage_platform_failing_pairs{capability,outcome}`; an
+outcome outside the known list is labelled `other`). A capability whose
+count appears, or gets clearly worse by the same rule as the organization
+alerts (doubles and grows by 5, at most once a day), goes to the platform
+administrators' alert channel (e-mail to active platform administrators and
+the console's alert webhook) with a warning log line
+(`alert=coverage_platform_failures`). The message carries the capability,
+counts per outcome and the number of organizations, never a tenant, asset
+or target. This aggregate is the one read across organizations, on purpose
+and counts only; the state is held by the loop's single replica.
 
 ## Other writers
 

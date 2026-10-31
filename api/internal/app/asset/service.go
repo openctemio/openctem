@@ -110,6 +110,8 @@ type AssetService struct {
 	// Freshness of attribute classes. Optional: nil serves no observation.
 	freshness  freshdom.Repository
 	coverage   covdom.Repository
+	// The open ports of the addresses a name resolves to. Optional.
+	resolvedPorts assetdom.ResolvedPortReader
 	enrichReqs freshdom.RequestRepository
 	resolution assetresolution.Store
 	// createdHook requests enrichment of assets a person created.
@@ -1201,7 +1203,7 @@ func (s *AssetService) updateAsset(ctx context.Context, assetID string, tenantID
 		editedAttributes(a, input.Criticality != nil, input.Exposure != nil, input.OwnerRef != nil), beforeAttrs)
 
 	// Recalculate affected group stats (risk_score, finding_count, etc.)
-	s.recalculateAffectedGroups(ctx, parsedID)
+	s.recalculateAffectedGroups(ctx, parsedTenantID, parsedID)
 
 	if a.Name() != oldName {
 		s.recordStateChange(ctx, assetdom.RecordFieldChange(parsedTenantID, parsedID,
@@ -1335,7 +1337,7 @@ func (s *AssetService) DeleteAsset(ctx context.Context, assetID, tenantID, actor
 
 	// Recalculate affected group stats after deletion
 	for _, groupID := range groupIDs {
-		if err := s.assetGroupRepo.RecalculateCounts(ctx, groupID); err != nil {
+		if err := s.assetGroupRepo.RecalculateCounts(ctx, parsedTenantID, groupID); err != nil {
 			s.logger.Warn("failed to recalculate group stats after asset deletion",
 				"assetID", assetID, "groupID", groupID, "error", err)
 		}
@@ -1346,7 +1348,7 @@ func (s *AssetService) DeleteAsset(ctx context.Context, assetID, tenantID, actor
 }
 
 // recalculateAffectedGroups recalculates stats for groups containing the asset.
-func (s *AssetService) recalculateAffectedGroups(ctx context.Context, assetID shared.ID) {
+func (s *AssetService) recalculateAffectedGroups(ctx context.Context, tenantID, assetID shared.ID) {
 	if s.assetGroupRepo == nil {
 		return
 	}
@@ -1358,7 +1360,7 @@ func (s *AssetService) recalculateAffectedGroups(ctx context.Context, assetID sh
 	}
 
 	for _, groupID := range groupIDs {
-		if err := s.assetGroupRepo.RecalculateCounts(ctx, groupID); err != nil {
+		if err := s.assetGroupRepo.RecalculateCounts(ctx, tenantID, groupID); err != nil {
 			s.logger.Warn("failed to recalculate group stats",
 				"assetID", assetID, "groupID", groupID, "error", err)
 		}

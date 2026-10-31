@@ -39,6 +39,9 @@ func newMatchEnv(t *testing.T) *matchEnv {
 	require.NoError(t, e.sw.EnsureCurated(context.Background(), software.CuratedProducts()))
 	e.svc = vulnmatch.NewService(postgres.NewSoftwareMatchRepository(pdb),
 		vulnmatch.TenantPolicy(postgres.NewTenantRepository(pdb)), postgres.NewFindingRepository(pdb), logger.NewNop())
+	// The organization closes automatically (autoClosing, ingest_v2_binding_test.go):
+	// these tests are about what the matcher closes, not about proposals.
+	e.svc.SetClosureSettings(autoClosing{})
 	e.feed(vm.Range{End: "2.0"})
 	return e
 }

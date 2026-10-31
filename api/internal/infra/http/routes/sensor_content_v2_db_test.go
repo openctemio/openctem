@@ -90,6 +90,7 @@ func newContentHarness(t *testing.T) *contentHarness {
 	ctl.SetContent(handler.NewSensorContentV2Handler(contentpackapp.NewDelivery(packs, platform), log))
 	receiver := ingest.NewV2Receiver(postgres.NewIngestReportRepository(db), postgres.NewIngestJobRepository(db),
 		postgres.NewIngestJobRepository(db), postgres.NewCommandRepository(db), protov2.DefaultLimits(), 100, log)
+	receiver.SetPayloadSealer(testSegmentSealer(t))
 	results := handler.NewSensorResultsV2Handler(receiver, sensorSvc, log)
 	router := infrahttp.NewChiRouter()
 	registerSensorV2Routes(router, results, ctl, nil, log)

@@ -24,6 +24,7 @@ import (
 	scanapp "github.com/openctemio/openctem/api/internal/app/scan"
 
 	apispecapp "github.com/openctemio/openctem/api/internal/app/apispec"
+	certificateapp "github.com/openctemio/openctem/api/internal/app/certificate"
 	"github.com/openctemio/openctem/api/internal/app/datascope"
 	"github.com/openctemio/openctem/api/internal/app/platformlegal"
 	"github.com/openctemio/openctem/api/internal/app/scanrun"
@@ -605,6 +606,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 
 		// CTEM Discovery - Network Services, State History & Relationships
 		AssetService:           handler.NewAssetServiceHandler(repos.AssetService, repos.Asset, v, log).SetDataScope(svc.DataScope),
+		Certificate:            handler.NewCertificateHandler(certificateapp.NewService(postgres.NewCertificateReadRepository(deps.DB), svc.DataScope), log),
 		WebEndpoint:            handler.NewWebEndpointHandler(webendpointapp.NewService(repos.WebEndpoint, svc.DataScope), svc.Audit, log),
 		Query:                  newQueryHandler(deps.DB, svc, log),
 		APISpec:                handler.NewAPISpecHandler(apispecapp.NewService(repos.APISpec, repos.Asset, svc.DataScope), svc.Audit, log),
@@ -940,6 +942,13 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	handlers.AssetOwner.SetAuditService(svc.Audit)
 	handlers.AssetOwner.SetAttributeLocker(svc.Asset)
 	handlers.ScannerTemplate.SetAuditService(svc.Audit)
+	// Destructive deletes leave one audit entry per deleted object.
+	handlers.AssetGroup.SetAuditService(svc.Audit)
+	handlers.BusinessUnit.SetAuditService(svc.Audit)
+	handlers.BusinessService.SetAuditService(svc.Audit)
+	handlers.AttackerProfile.SetAuditService(svc.Audit)
+	handlers.AssetRelationship.SetAuditService(svc.Audit)
+	handlers.AdminDedup.SetAuditService(svc.Audit)
 
 	if svc.SSO != nil {
 		handlers.SSO = handler.NewSSOHandler(svc.SSO, log)
@@ -1515,6 +1524,10 @@ func newSensorResultsV2Handler(cfg *config.Config, repos *Repositories, svc *Ser
 	}
 	receiver := ingest.NewV2Receiver(repos.IngestReport, repos.IngestJob, repos.IngestJob, repos.Command,
 		protov2.DefaultLimits(), cfg.Ingest.MaxPendingPerTenant, log)
+	receiver.SetMaxQueuedBytes(cfg.Ingest.MaxQueuedBytesPerTenant)
+	// Queued segments are sealed like CI uploads; without the sealer every
+	// segment is refused (never stored in plaintext).
+	receiver.SetPayloadSealer(svc.IngestQueue.Sealer())
 	log.Info("sensor protocol v2 results enabled", "path", protov2.PathPrefix)
 	h := handler.NewSensorResultsV2Handler(receiver, svc.Sensor, log)
 	if svc.JobSigner != nil {
@@ -1713,6 +1726,7 @@ func newIngestReceiptHandler(cfg *config.Config, repos *Repositories, svc *Servi
 // enforcer when the upload is imported.
 func newFindingImportService(cfg *config.Config, repos *Repositories, svc *Services, log *logger.Logger) *findingimport.Service {
 	imp := findingimport.NewService(svc.Ingest, repos.Finding, repos.IngestReceipt, ingest.ParseVEXMode(cfg.Ingest.VEX), log)
+	imp.SetClosureSettings(svc.Tenant) // A full-coverage upload closes under the organization's closing mode
 	var audit findingimport.Auditor
 	if svc.Audit != nil {
 		audit = svc.Audit
@@ -1895,34 +1909,49 @@ func newSensorPairingHandler(svc *Services, log *logger.Logger) *handler.SensorP
 // /easm/candidates, the pending count of /approvals, /me/pins and the organization
 // policy of /auth/providers.
 func bootstrapSession(cfg *config.Config, svc *Services, h routes.Handlers) handler.BootstrapSession {
-	s := handler.BootstrapSession{}
+	boot := handler.BootstrapSession{}
 	if h.User != nil {
-		s.Me = h.User.MeResponse
-		s.MyTenants = h.User.MyTenantsResponse
+		boot.Me = h.User.MeResponse
+		boot.MyTenants = h.User.MyTenantsResponse
 	}
 	if svc.Notification != nil {
-		s.UnreadCount = svc.Notification.GetUnreadCount
+		boot.UnreadCount = svc.Notification.GetUnreadCount
 	}
 	if h.EASM != nil && h.EASM.HasReview() {
-		s.EASMReviewCount = h.EASM.ReviewCount
+		boot.EASMReviewCount = h.EASM.ReviewCount
 	}
 	if h.Announcement != nil {
-		s.Announcements = h.Announcement.ActiveResponses
+		boot.Announcements = h.Announcement.ActiveResponses
 	}
 	if svc.Entitlement != nil {
-		s.LimitsApply = svc.Entitlement.Applies
+		boot.LimitsApply = svc.Entitlement.Applies
 	}
 	if h.NavPin != nil {
-		s.Pins = h.NavPin.Response
+		boot.Pins = h.NavPin.Response
+	}
+	if h.SupportAccess != nil {
+		boot.SupportAccess = h.SupportAccess.ActiveResponse
+	}
+	if svc.AITriage != nil {
+		triage := svc.AITriage
+		boot.AIConfig = func(ctx context.Context, tenantID shared.ID) (any, error) {
+			return triage.GetAIConfig(ctx, tenantID.String())
+		}
+	}
+	if h.SLA != nil && svc.SLA != nil {
+		boot.SLA = h.SLA.BootstrapPart
 	}
 	if svc.Vulnerability != nil {
 		vulns := svc.Vulnerability
-		s.PendingApprovalCount = func(ctx context.Context, tenantID shared.ID) (int, error) {
+		boot.PendingApprovalCount = func(ctx context.Context, tenantID shared.ID) (int, error) {
 			page, err := vulns.ListApprovals(ctx, tenantID.String(), string(vulnerability.ApprovalStatusPending), 1, 1)
 			if err != nil {
 				return 0, err
 			}
 			return int(page.StatusCounts[vulnerability.ApprovalStatusPending]), nil
+		}
+		boot.ReadyToCloseCount = func(ctx context.Context, tenantID shared.ID) (int, error) {
+			return vulns.CountClosureProposals(ctx, tenantID.String())
 		}
 	}
 	mode := string(signupdom.Default().Mode)
@@ -1930,7 +1959,7 @@ func bootstrapSession(cfg *config.Config, svc *Services, h routes.Handlers) hand
 		mode = string(signupdom.ModeSelfService)
 	}
 	signup := svc.Signup
-	s.TenantCreationMode = func(ctx context.Context) string {
+	boot.TenantCreationMode = func(ctx context.Context) string {
 		if signup != nil {
 			return string(signup.Current(ctx).Mode)
 		}
@@ -1939,8 +1968,8 @@ func bootstrapSession(cfg *config.Config, svc *Services, h routes.Handlers) hand
 	// The same answer as GET /auth/providers (routes/auth.go): a server
 	// without local auth reports no email delivery.
 	localAuth := h.LocalAuth
-	s.EmailDelivery = func() bool { return localAuth != nil && localAuth.EmailDeliveryAvailable() }
-	return s
+	boot.EmailDelivery = func() bool { return localAuth != nil && localAuth.EmailDeliveryAvailable() }
+	return boot
 }
 
 // newEASMLookalikeHandler serves lookalike monitoring; changes are audited.
@@ -2076,6 +2105,13 @@ func (g findingAccessGuard) AssertFinding(ctx context.Context, tenantID, finding
 // finding (middleware.TaskWorkAsserter).
 func (g findingAccessGuard) AssertFindingForFixWork(ctx context.Context, tenantID, findingID shared.ID) (bool, error) {
 	return g.findings.AssertFindingForFixWork(ctx, tenantID, findingID)
+}
+
+// WithRequestMemo installs the data-scope request memo, so the guard's
+// check and the same checks the services repeat cost their queries once per
+// request (middleware.RequestMemoInstaller).
+func (g findingAccessGuard) WithRequestMemo(ctx context.Context) context.Context {
+	return datascope.WithRequestMemo(ctx)
 }
 
 // byIDGuardAsserter is the asserter of the by-id data-scope guard (nil

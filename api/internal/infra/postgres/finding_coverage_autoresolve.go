@@ -81,13 +81,16 @@ const coverageProtectedSources = `('pentest', 'manual', 'bug_bounty', 'red_team'
 // queued it, and every v2 report filed under it.
 func (r *FindingRepository) CommandCoverage(ctx context.Context, tenantID, commandID shared.ID) (*ingestreport.CommandCoverage, error) {
 	c := &ingestreport.CommandCoverage{}
-	var result []byte
+	var (
+		result    []byte
+		completed sql.NullTime
+	)
 	err := r.db.QueryRowContext(ctx, `
-		SELECT c.type, COALESCE(c.status, ''), c.result, COALESCE(s.profile_id::text, '')
+		SELECT c.type, COALESCE(c.status, ''), c.result, COALESCE(s.profile_id::text, ''), c.completed_at
 		FROM commands c
 		LEFT JOIN scans s ON s.tenant_id = c.tenant_id AND s.id::text = c.payload->>'scan_id'
 		WHERE c.tenant_id = $1 AND c.id = $2`, tenantID.String(), commandID.String(),
-	).Scan(&c.CommandType, &c.CommandStatus, &result, &c.ProfileID)
+	).Scan(&c.CommandType, &c.CommandStatus, &result, &c.ProfileID, &completed)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, shared.ErrNotFound
 	}
@@ -95,9 +98,13 @@ func (r *FindingRepository) CommandCoverage(ctx context.Context, tenantID, comma
 		return nil, fmt.Errorf("load command coverage: %w", err)
 	}
 	c.Result = result
+	if completed.Valid {
+		c.CompletedAt = completed.Time
+	}
 
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT report_id::text, sensor_id, state, tool_name, header, segment_outcomes, touched_asset_ids
+		SELECT report_id::text, sensor_id, state, tool_name, header, segment_outcomes, touched_asset_ids,
+			COALESCE(integrity, '')
 		FROM ingest_reports
 		WHERE tenant_id = $1 AND command_id = $2
 		ORDER BY received_at`, tenantID.String(), commandID.String())
@@ -112,7 +119,7 @@ func (r *FindingRepository) CommandCoverage(ctx context.Context, tenantID, comma
 			header, outcomes []byte
 			touched          []string
 		)
-		if err := rows.Scan(&rep.ReportID, &sensorID, &state, &rep.ToolName, &header, &outcomes, pq.Array(&touched)); err != nil {
+		if err := rows.Scan(&rep.ReportID, &sensorID, &state, &rep.ToolName, &header, &outcomes, pq.Array(&touched), &rep.Integrity); err != nil {
 			return nil, fmt.Errorf("scan command report: %w", err)
 		}
 		if rep.SensorID, err = shared.IDFromString(sensorID); err != nil {
@@ -242,6 +249,52 @@ func (r *FindingRepository) coverageStale(ctx context.Context, tenantID shared.I
 		return nil, 0, fmt.Errorf("iterate coverage candidates: %w", err)
 	}
 	return stale, open, nil
+}
+
+// coverageCandidateAssetsLimit bounds CoverageCandidateAssets: a run covers
+// at most a few thousand targets; the blinding guard holds anything larger.
+const coverageCandidateAssetsLimit = 5000
+
+// CoverageCandidateAssets returns the assets of the tenant that hold open,
+// non-repository findings of tool whose last sighting came from a command
+// aimed at one of targets (the same target string). A later run of the same
+// tool that covered that target, and reported nothing there, makes them
+// candidates for closing; CoverageStaleFindings then applies every other
+// condition (same profile, not reported by this run, open, not protected).
+func (r *FindingRepository) CoverageCandidateAssets(ctx context.Context, tenantID shared.ID, tool string, targets []string) ([]shared.ID, error) {
+	if tool == "" || len(targets) == 0 {
+		return nil, nil
+	}
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT DISTINCT f.asset_id::text
+		FROM findings f
+		JOIN ingest_reports ir ON ir.tenant_id = f.tenant_id AND ir.report_id::text = f.scan_id
+		JOIN commands pc ON pc.tenant_id = ir.tenant_id AND pc.id = ir.command_id
+		WHERE f.tenant_id = $1
+			AND f.tool_name = $2
+			AND f.asset_id IS NOT NULL
+			AND f.branch_id IS NULL
+			AND f.status IN `+autoResolveFromSQL+`
+			AND f.source NOT IN `+coverageProtectedSources+`
+			AND ir.tool_name = $2
+			AND (pc.payload->'targets' ?| $3::text[] OR pc.payload->>'target' = ANY($3::text[]))
+		LIMIT `+fmt.Sprint(coverageCandidateAssetsLimit),
+		tenantID.String(), tool, pq.Array(targets))
+	if err != nil {
+		return nil, fmt.Errorf("coverage candidate assets: %w", err)
+	}
+	defer rows.Close()
+	var out []shared.ID
+	for rows.Next() {
+		var s string
+		if err := rows.Scan(&s); err != nil {
+			return nil, fmt.Errorf("scan coverage candidate asset: %w", err)
+		}
+		if id, err := shared.IDFromString(s); err == nil {
+			out = append(out, id)
+		}
+	}
+	return out, rows.Err()
 }
 
 // ResolveCoverageStale closes the given findings as verified by a scan. It

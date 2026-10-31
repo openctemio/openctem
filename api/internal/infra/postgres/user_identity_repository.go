@@ -26,7 +26,7 @@ func NewUserIdentityRepository(db *DB) *UserIdentityRepository {
 
 var _ useridentity.Repository = (*UserIdentityRepository)(nil)
 
-const userIdentityColumns = `id, user_id, issuer, subject, scope_tenant_id, created_at, last_used_at`
+const userIdentityColumns = `id, user_id, issuer, subject, scope_tenant_id, source, created_at, last_used_at`
 
 // GetByKey returns the identity for (issuer, subject) in the key's scope.
 func (r *UserIdentityRepository) GetByKey(ctx context.Context, key useridentity.Key) (*useridentity.Identity, error) {
@@ -75,11 +75,18 @@ func (r *UserIdentityRepository) Create(ctx context.Context, ident *useridentity
 	if ident == nil || !ident.Key.Valid() {
 		return useridentity.ErrInvalid
 	}
+	source := ident.Source
+	if source == "" {
+		source = useridentity.SourceSocial
+	}
+	if !source.Valid() {
+		return useridentity.ErrInvalid
+	}
 	_, err := r.db.ExecContext(ctx, `
-		INSERT INTO user_identities (id, user_id, issuer, subject, scope_tenant_id, created_at, last_used_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+		INSERT INTO user_identities (id, user_id, issuer, subject, scope_tenant_id, source, created_at, last_used_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
 		ident.ID.String(), ident.UserID.String(), ident.Key.Issuer, ident.Key.Subject,
-		nullID(ident.Key.ScopeTenantID), ident.CreatedAt, nullTime(ident.LastUsedAt))
+		nullID(ident.Key.ScopeTenantID), string(source), ident.CreatedAt, nullTime(ident.LastUsedAt))
 	if isUniqueViolation(err) {
 		return useridentity.ErrConflict
 	}
@@ -111,6 +118,14 @@ func (r *UserIdentityRepository) ChangeSubject(ctx context.Context, id shared.ID
 func (r *UserIdentityRepository) MarkUsed(ctx context.Context, id shared.ID, at time.Time) error {
 	if _, err := r.db.ExecContext(ctx, `UPDATE user_identities SET last_used_at = $2 WHERE id = $1`, id.String(), at); err != nil {
 		return fmt.Errorf("mark identity used: %w", err)
+	}
+	return nil
+}
+
+// MarkSSO records that an organization's single sign-on asserted the identity.
+func (r *UserIdentityRepository) MarkSSO(ctx context.Context, id shared.ID) error {
+	if _, err := r.db.ExecContext(ctx, `UPDATE user_identities SET source = 'sso' WHERE id = $1 AND source <> 'sso'`, id.String()); err != nil {
+		return fmt.Errorf("mark identity sso: %w", err)
 	}
 	return nil
 }
@@ -166,16 +181,18 @@ func scanUserIdentity(s interface{ Scan(dest ...any) error }) (*useridentity.Ide
 		id, userID      string
 		issuer, subject string
 		scope           sql.NullString
+		source          string
 		createdAt       time.Time
 		lastUsed        sql.NullTime
 	)
-	if err := s.Scan(&id, &userID, &issuer, &subject, &scope, &createdAt, &lastUsed); err != nil {
+	if err := s.Scan(&id, &userID, &issuer, &subject, &scope, &source, &createdAt, &lastUsed); err != nil {
 		return nil, err
 	}
 	ident := &useridentity.Identity{
 		ID:         shared.MustIDFromString(id),
 		UserID:     shared.MustIDFromString(userID),
 		Key:        useridentity.Key{Issuer: issuer, Subject: subject},
+		Source:     useridentity.Source(source),
 		CreatedAt:  createdAt,
 		LastUsedAt: nullTimeValue(lastUsed),
 	}

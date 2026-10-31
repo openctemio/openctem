@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -68,6 +69,8 @@ func (i *Invitation) SetAccess(a ExternalAccess) { i.access = a }
 // invitedBy is the local user ID (from users table) of the person sending the invitation.
 // roleIDs are the RBAC role IDs to assign when user accepts the invitation.
 func NewInvitation(tenantID shared.ID, email string, role Role, invitedBy shared.ID, roleIDs []string) (*Invitation, error) {
+	// One spelling of the address, as accounts store it (trimmed, lower case).
+	email = strings.ToLower(strings.TrimSpace(email))
 	if tenantID.IsZero() {
 		return nil, fmt.Errorf("%w: tenantID is required", shared.ErrValidation)
 	}

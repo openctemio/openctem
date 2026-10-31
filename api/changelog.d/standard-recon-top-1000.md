@@ -1,0 +1,3 @@
+### Behaviour change: the Standard recon template scans the top 1 000 ports at Standard depth
+
+- The system templates Standard recon and Deep recon set `top_n` 100 on their port step at Standard depth; it is now 1 000, as the platform's default port set and coverage runs use (Deep depth was already 1 000, and differs from Standard by its target cap and the extra steps). A migration updates only those two system templates. A tenant's copy keeps its own value, edited or not; the template-update check offers the new value to a copy that still matches its source. See `docs/architecture/scan-stages.md`.

@@ -55,6 +55,22 @@ func registerRetestSettingsRoutes(router Router, h *handler.TenantHandler, authM
 	}, buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)...)
 }
 
+// registerClosureSettingsRoutes wires the organization's closing mode under
+// the token singleton /api/v1/organization: the tenant comes from the
+// credential, never from the path. Owner/admin only; the service asks for a
+// recent re-authentication when a change loosens the policy, and for the
+// owner when critical findings leave review. Changes are audited.
+func registerClosureSettingsRoutes(router Router, h *handler.TenantHandler, authMiddleware, userSyncMiddleware Middleware) {
+	if h == nil {
+		return
+	}
+	router.Group("/api/v1/organization/settings/closure", func(r Router) {
+		r.GET("/", h.GetClosureSettings, middleware.RequireAdmin())
+		r.PUT("/", h.UpdateClosureSettings, middleware.RequireAdmin())
+		r.DELETE("/pending", h.CancelPendingClosureSettings, middleware.RequireAdmin())
+	}, buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)...)
+}
+
 // registerVulnMatchingSettingsRoutes wires the organization's vulnerability
 // matching policy (RFC-066 §9) under the token singleton
 // /api/v1/organization. Owner/admin only; changes are audited.

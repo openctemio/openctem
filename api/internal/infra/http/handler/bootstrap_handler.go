@@ -155,6 +155,17 @@ type BootstrapResponse struct {
 	// Pins is the GET /me/pins body (the sidebar's Pinned section, with its
 	// live counts), so the sidebar sends no request of its own per page.
 	Pins *NavPinsResponse `json:"pins,omitempty"`
+	// SupportAccess is the active platform support grants, as GET
+	// /organization/support-access/active returns them (the banner). Only for
+	// callers with team:read, like that endpoint.
+	SupportAccess *SupportActiveResponse `json:"support_access,omitempty"`
+	// AIConfig is the AI setup summary, as GET /findings/ai-triage/config
+	// returns it (mode, provider, model, availability; never a secret). Only
+	// with findings:read and ai_triage:read and the ai_triage module on.
+	AIConfig any `json:"ai_config,omitempty"`
+	// SLA is the windows that govern the organization's assets, so no page asks
+	// for them per asset. Only with assets:read.
+	SLA *BootstrapSLA `json:"sla,omitempty"`
 }
 
 // BootstrapBadges are the counts the app shell shows on every page. A count
@@ -170,6 +181,10 @@ type BootstrapBadges struct {
 	// decision under the caller's data scope, as GET /approvals reports in
 	// `status_counts.pending`. Only for approvers (findings:approve).
 	PendingApprovals *int `json:"pending_approvals,omitempty"`
+	// ReadyToClose is the Ready to close queue (pending closure proposals
+	// under the caller's data scope), as GET /findings/closure/proposals
+	// reports in `total`. Only for verifiers (findings:verify).
+	ReadyToClose *int `json:"ready_to_close,omitempty"`
 }
 
 // BootstrapSession supplies the session parts of the bootstrap. Each source
@@ -188,6 +203,9 @@ type BootstrapSession struct {
 	// request's caller (data scope from ctx); nil when approvals are not
 	// wired.
 	PendingApprovalCount func(ctx context.Context, tenantID shared.ID) (int, error)
+	// ReadyToCloseCount is the total of GET /findings/closure/proposals for
+	// the request's caller (data scope from ctx); nil when not wired.
+	ReadyToCloseCount func(ctx context.Context, tenantID shared.ID) (int, error)
 	// TenantCreationMode reports the current organization policy (the sign-up
 	// policy when it is configured, else the configured mode).
 	TenantCreationMode func(ctx context.Context) string
@@ -203,6 +221,14 @@ type BootstrapSession struct {
 	// Pins is NavPinHandler.Response (the /me/pins body for the request's
 	// own caller, counts computed in the caller's data scope).
 	Pins func(r *http.Request) (*NavPinsResponse, error)
+	// SupportAccess is SupportAccessHandler.ActiveResponse; nil when support
+	// access is not wired.
+	SupportAccess func(ctx context.Context, tenantID shared.ID) (*SupportActiveResponse, error)
+	// AIConfig is the body of GET /findings/ai-triage/config for the tenant
+	// (AITriageService.GetAIConfig); nil when AI triage is not wired.
+	AIConfig func(ctx context.Context, tenantID shared.ID) (any, error)
+	// SLA is SLAHandler.BootstrapPart; nil when SLA is not wired.
+	SLA func(ctx context.Context, tenantID shared.ID) (*BootstrapSLA, error)
 }
 
 // BootstrapPermissions contains user permissions and version.
@@ -566,6 +592,66 @@ func (h *BootstrapHandler) addSession(r *http.Request, resp *BootstrapResponse, 
 			mu.Lock()
 			badges.PendingApprovals = &n
 			hasBadg = true
+			mu.Unlock()
+		})
+	}
+	// The Ready to close badge: verifiers only, findings module on, counted
+	// in the caller's data scope like the queue itself.
+	if h.session.ReadyToCloseCount != nil &&
+		middleware.HasPermission(ctx, permission.FindingsVerify.String()) &&
+		resp.Modules != nil && slices.Contains(resp.Modules.ModuleIDs, module.ModuleFindings) {
+		run(func() {
+			n, err := h.session.ReadyToCloseCount(ctx, tenantID)
+			if err != nil {
+				h.logger.Warn("bootstrap: ready to close count unavailable", "error", err)
+				return
+			}
+			mu.Lock()
+			badges.ReadyToClose = &n
+			hasBadg = true
+			mu.Unlock()
+		})
+	}
+	// The same gates as GET /organization/support-access/active (team:read).
+	if h.session.SupportAccess != nil && middleware.HasPermission(ctx, permission.TeamRead.String()) {
+		run(func() {
+			out, err := h.session.SupportAccess(ctx, tenantID)
+			if err != nil {
+				h.logger.Warn("bootstrap: support access unavailable", "error", logger.SanitizeError(err))
+				return
+			}
+			mu.Lock()
+			resp.SupportAccess = out
+			mu.Unlock()
+		})
+	}
+	// The same gates as GET /findings/ai-triage/config: findings:read and
+	// ai_triage:read, and the ai_triage module on for the tenant.
+	if h.session.AIConfig != nil &&
+		middleware.HasPermission(ctx, permission.FindingsRead.String()) &&
+		middleware.HasPermission(ctx, permission.AITriageRead.String()) &&
+		resp.Modules != nil && slices.Contains(resp.Modules.ModuleIDs, module.ModuleAITriage) {
+		run(func() {
+			cfg, err := h.session.AIConfig(ctx, tenantID)
+			if err != nil {
+				h.logger.Warn("bootstrap: AI setup unavailable", "error", logger.SanitizeError(err))
+				return
+			}
+			mu.Lock()
+			resp.AIConfig = cfg
+			mu.Unlock()
+		})
+	}
+	// The same gate as GET /assets/{id}/sla-policy: assets:read.
+	if h.session.SLA != nil && middleware.HasPermission(ctx, permission.AssetsRead.String()) {
+		run(func() {
+			out, err := h.session.SLA(ctx, tenantID)
+			if err != nil {
+				h.logger.Warn("bootstrap: SLA windows unavailable", "error", logger.SanitizeError(err))
+				return
+			}
+			mu.Lock()
+			resp.SLA = out
 			mu.Unlock()
 		})
 	}

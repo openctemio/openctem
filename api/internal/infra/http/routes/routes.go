@@ -180,6 +180,7 @@ type Handlers struct {
 
 	// CTEM Discovery handlers
 	AssetService           *handler.AssetServiceHandler           // nil if not initialized (no database)
+	Certificate            *handler.CertificateHandler            // Certificates view; nil without a database
 	WebEndpoint            *handler.WebEndpointHandler            // Web surface (RFC-056); nil without a database
 	Query                  *handler.QueryHandler                  // Custom queries; nil without a database
 	APISpec                *handler.APISpecHandler                // API descriptions of web origins (RFC-056)
@@ -672,6 +673,10 @@ func Register(
 		registerAssetServiceRoutes(router, h.AssetService, authMiddleware, userSync)
 	}
 
+	if h.Certificate != nil {
+		registerCertificateRoutes(router, h.Certificate, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleAttackSurface))
+	}
+
 	// Web surface: endpoints under their origin asset (RFC-056)
 	if h.WebEndpoint != nil {
 		registerWebEndpointRoutes(router, h.WebEndpoint, authMiddleware, userSync)
@@ -721,6 +726,7 @@ func Register(
 	registerFindingRetestRoutes(router, h.FindingRetest, authMiddleware, userSync)
 	registerFindingRetestCheckRoutes(router, h.FindingRetestCheck, authMiddleware, userSync)
 	registerRetestSettingsRoutes(router, h.Tenant, authMiddleware, userSync)
+	registerClosureSettingsRoutes(router, h.Tenant, authMiddleware, userSync)
 	registerVulnMatchingSettingsRoutes(router, h.Tenant, authMiddleware, userSync)
 	registerEmergingThreatSettingsRoutes(router, h.Tenant, authMiddleware, userSync)
 	registerAISettingsRoutes(router, h.AISettings, h.AIMasking, authMiddleware, userSync)
@@ -1402,6 +1408,34 @@ func requireStepUpWhenClosing() Middleware {
 					next.ServeHTTP(w, r)
 					return
 				}
+			}
+			gated.ServeHTTP(w, r)
+		})
+	}
+}
+
+// requireStepUpWhenConfirming gates every Ready to close confirm, single or
+// bulk, behind a recent re-authentication (a stolen session cannot close
+// findings one by one either; the step-up window lets one proof cover a short
+// burst). Only a dismissal, which keeps findings open, passes.
+func requireStepUpWhenConfirming() Middleware {
+	gate := requireStepUp()
+	return func(next http.Handler) http.Handler {
+		gated := gate(next)
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 64<<10))
+			if err != nil {
+				apierror.BadRequest("Invalid request body").WriteJSON(w)
+				return
+			}
+			r.Body = io.NopCloser(bytes.NewReader(body))
+			var req struct {
+				Decision string `json:"decision"`
+			}
+			if json.NewDecoder(bytes.NewReader(body)).Decode(&req) == nil &&
+				req.Decision == "dismiss" {
+				next.ServeHTTP(w, r)
+				return
 			}
 			gated.ServeHTTP(w, r)
 		})

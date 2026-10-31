@@ -302,6 +302,13 @@ func (t StepTool) CommandPayload(run *scanrun.Run, step *scanworkflow.Step, step
 	}
 	if t.Declared && t.HasStage {
 		payload[PayloadKeyCapability] = t.Stage.ID()
+		// A declared tool gets the platform's port set through the keys
+		// its descriptor maps, as a catalog tool does.
+		cfg, _ := payload[scanworkflow.PayloadKeyConfig].(map[string]any)
+		keyOf := func(p string) (string, bool) { k, ok := t.params[p]; return k, ok }
+		if c := stage.WithDefaultPortSet(t.Stage, keyOf, cfg); c != nil {
+			payload[scanworkflow.PayloadKeyConfig] = c
+		}
 	}
 	return payload, nil
 }
@@ -351,21 +358,31 @@ func StepCommandPayload(run *scanrun.Run, step *scanworkflow.Step, toolName, ste
 	// the stall window.
 	payload[PayloadKeyBudget] = toolbudget.ForTask(toolName, payloadTargetCount(payload["targets"]))
 	withRunDeadline(payload, run)
+	withWordlistRequests(payload, toolName)
 	if run.AssetID != nil {
 		payload["asset_id"] = run.AssetID.String()
+	}
+	// The platform decides the port set of a port scan that names none
+	// (stage.DefaultTopPorts), pinned tool or capability step alike.
+	stg, hasStage := stage.ForStep(toolName, step.Capabilities)
+	if hasStage {
+		if c := stg.DefaultPortSet(toolName, config); c != nil {
+			config = c
+			payload[scanworkflow.PayloadKeyConfig] = config
+		}
 	}
 	// A capability job (RFC-055): the sensor checks that the tool implements
 	// the capability, checks the output against its contract and stamps it
 	// in the provenance; the platform's grant check applies the
 	// capability's tier floor. The settings stay in config, mapped to the
 	// tool's keys as before, so an older sensor runs the step unchanged.
-	if st, ok := stage.ForStep(toolName, step.Capabilities); ok && stage.TakesCapabilityJobs(st, toolName) {
-		payload[PayloadKeyCapability] = st.ID()
+	if hasStage && stage.TakesCapabilityJobs(stg, toolName) {
+		payload[PayloadKeyCapability] = stg.ID()
 		// The platform decides how hosts are probed: a host discovery step
 		// that names no ports probes the platform's set, never a default
 		// a sensor picks.
-		if st.Key == stage.DiscoverHosts {
-			if key, ok := st.ToolParamKey(toolName, "ports"); ok {
+		if stg.Key == stage.DiscoverHosts {
+			if key, ok := stg.ToolParamKey(toolName, "ports"); ok {
 				if config == nil {
 					config = map[string]any{}
 				}
@@ -392,6 +409,23 @@ const PayloadKeyBudget = "budget"
 // before it, so what the tool settled is reported before the run is
 // settled without it. It can only shorten a job on the sensor.
 const PayloadKeyDeadline = "deadline"
+
+// PayloadKeyWordlists is the command payload key a job names the wordlists
+// its tool reads in (contentpin.PayloadKeyWordlists): the platform pins the
+// pack the run's depth selects and the labels learned from the
+// organization's own names when the job is signed.
+const PayloadKeyWordlists = "wordlists"
+
+// withWordlistRequests asks for the wordlists the tool reads
+// (stage.ToolWordlists). It is a request only: what the sensor trusts is
+// the content the platform pins and signs into the job.
+func withWordlistRequests(payload map[string]any, tool string) {
+	if reqs := stage.ToolWordlists(tool); len(reqs) > 0 {
+		payload[PayloadKeyWordlists] = reqs
+	} else {
+		delete(payload, PayloadKeyWordlists)
+	}
+}
 
 // withRunDeadline puts the run's deadline in payload (nothing for a run
 // whose deadline is not fixed yet).

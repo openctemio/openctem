@@ -124,7 +124,7 @@ func TestEvaluateWildcardDNS(t *testing.T) {
 		"config": map[string]any{"wildcard_filter": true}}
 	done := func() *ingestreport.CommandCoverage {
 		return &ingestreport.CommandCoverage{CommandStatus: string(command.CommandStatusCompleted),
-			Reports: []ingestreport.CoverageReport{{State: protov2.StateCompleted, TouchedAssetIDs: []shared.ID{resolved.ID()}}}}
+			Reports: []ingestreport.CoverageReport{{Integrity: protov2.IntegritySingle, State: protov2.StateCompleted, TouchedAssetIDs: []shared.ID{resolved.ID()}}}}
 	}
 	run := func(cmd *command.Command, cov *ingestreport.CommandCoverage, asTenant shared.ID) *wcStore {
 		st := &wcStore{}
@@ -195,7 +195,7 @@ func TestEvaluateWildcardDNS(t *testing.T) {
 		s := &Service{commands: wcCommands{tenant: tenant, cmd: cmd}, assetRepo: withApex, wildcardDNS: st, logger: logger.NewNop(),
 			nameProber: wcProber{"guess.example.com": NameWildcardOnly}, resolutionStore: &wcResolution{}}
 		cov := &ingestreport.CommandCoverage{CommandStatus: string(command.CommandStatusCompleted),
-			Reports: []ingestreport.CoverageReport{{State: protov2.StateCompleted}}}
+			Reports: []ingestreport.CoverageReport{{Integrity: protov2.IntegritySingle, State: protov2.StateCompleted}}}
 		s.evaluateWildcardDNS(context.Background(), tenant, cmd.ID, cov)
 		if len(st.marked) != 1 || st.marked[0] != guess.ID() {
 			t.Fatalf("marked = %v, want only the subdomain guess", st.marked)

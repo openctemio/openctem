@@ -284,9 +284,32 @@ func openDuplicateCandidates(ctx context.Context, tx *sql.Tx, tenantID, keepID s
 // and a non-nil scope must cover every asset of the review (checked on the
 // locked row, so a concurrent refresh of the review cannot slip past it).
 func (r *AssetDedupRepository) ApproveAndMerge(ctx context.Context, tenantID string, reviewID string, reviewedBy string, scope *shared.DataScope) error {
+	_, err := r.ApproveAndMergeReport(ctx, tenantID, reviewID, reviewedBy, scope)
+	return err
+}
+
+// MergedAsset is an asset a merge folded into the kept asset and deleted.
+type MergedAsset struct {
+	ID   string
+	Name string
+}
+
+// MergeReport says what an approved merge did: the kept asset and the assets
+// it deleted, with the names stored in the tenant before the delete.
+type MergeReport struct {
+	ReviewID     string
+	KeptAssetID  string
+	KeptName     string
+	MergedAssets []MergedAsset
+}
+
+// ApproveAndMergeReport is ApproveAndMerge that also reports the assets the
+// merge deleted, for the audit entries. The report is returned only after the
+// merge committed.
+func (r *AssetDedupRepository) ApproveAndMergeReport(ctx context.Context, tenantID string, reviewID string, reviewedBy string, scope *shared.DataScope) (*MergeReport, error) {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
-		return fmt.Errorf("begin tx: %w", err)
+		return nil, fmt.Errorf("begin tx: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
 
@@ -301,24 +324,34 @@ func (r *AssetDedupRepository) ApproveAndMerge(ctx context.Context, tenantID str
 		FOR UPDATE
 	`, args...).Scan(&rev.ID, &rev.TenantID, &rev.KeepAssetID, pq.Array(&rev.MergeAssetIDs), &rev.Status)
 	if errors.Is(err, sql.ErrNoRows) {
-		return fmt.Errorf("%w: dedup review not found", shared.ErrNotFound)
+		return nil, fmt.Errorf("%w: dedup review not found", shared.ErrNotFound)
 	}
 	if err != nil {
-		return fmt.Errorf("get review: %w", err)
+		return nil, fmt.Errorf("get review: %w", err)
 	}
 	if rev.Status != "pending" {
-		return fmt.Errorf("%w: review already %s", shared.ErrConflict, rev.Status)
+		return nil, fmt.Errorf("%w: review already %s", shared.ErrConflict, rev.Status)
 	}
 
 	keepID := rev.KeepAssetID
 	mergeIDs := rev.MergeAssetIDs
+
+	// Names of the assets the merge deletes, read in the tenant before the
+	// delete, for the audit entries.
+	report := &MergeReport{ReviewID: rev.ID, KeptAssetID: keepID}
+	_ = tx.QueryRowContext(ctx, "SELECT name FROM assets WHERE id = $1 AND tenant_id = $2", keepID, rev.TenantID).Scan(&report.KeptName)
+	merged, err := readMergedAssetNames(ctx, tx, rev.TenantID, mergeIDs)
+	if err != nil {
+		return nil, err
+	}
+	report.MergedAssets = merged
 
 	// Move everything that references the merged assets onto the kept one
 	// (see asset_merge_plan.go for the full list and how each table is
 	// handled). Every statement runs in this transaction: a failure aborts the
 	// merge instead of deleting the assets with part of their data.
 	if err := mergeAssetReferences(ctx, tx, rev.TenantID, rev.ID, keepID, mergeIDs); err != nil {
-		return err
+		return nil, err
 	}
 
 	// Touch the keep asset. Finding counts are computed on read (JOIN), not
@@ -332,7 +365,7 @@ func (r *AssetDedupRepository) ApproveAndMerge(ctx context.Context, tenantID str
 		            WHERE m.tenant_id = $2 AND m.id = ANY($3::uuid[]) AND m.is_crown_jewel)
 		 WHERE id = $1 AND tenant_id = $2`, keepID, tenantID, pq.Array(mergeIDs))
 	if err != nil {
-		return fmt.Errorf("touch keep asset: %w", err)
+		return nil, fmt.Errorf("touch keep asset: %w", err)
 	}
 
 	// Log merges. Name subqueries are tenant-scoped as defense-in-depth:
@@ -352,7 +385,7 @@ func (r *AssetDedupRepository) ApproveAndMerge(ctx context.Context, tenantID str
 				'admin_review', 'merge', 'admin', NOW()
 		`, rev.TenantID, keepID, mergeID)
 		if err != nil {
-			return fmt.Errorf("log merge: %w", err)
+			return nil, fmt.Errorf("log merge: %w", err)
 		}
 	}
 
@@ -362,7 +395,7 @@ func (r *AssetDedupRepository) ApproveAndMerge(ctx context.Context, tenantID str
 		pq.Array(mergeIDs), rev.TenantID,
 	)
 	if err != nil {
-		return fmt.Errorf("delete merged assets: %w", err)
+		return nil, fmt.Errorf("delete merged assets: %w", err)
 	}
 
 	// Mark review as merged
@@ -376,10 +409,13 @@ func (r *AssetDedupRepository) ApproveAndMerge(ctx context.Context, tenantID str
 		WHERE id = $1 AND tenant_id = $4
 	`, reviewID, reviewedBy, now, tenantID)
 	if err != nil {
-		return fmt.Errorf("update review status: %w", err)
+		return nil, fmt.Errorf("update review status: %w", err)
 	}
 
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return report, nil
 }
 
 // RejectReview marks a review as rejected (keep assets separate).
@@ -474,4 +510,26 @@ func (r *AssetDedupRepository) GetMergeLog(ctx context.Context, tenantID, assetI
 		return nil, 0, err
 	}
 	return results, total, nil
+}
+
+// readMergedAssetNames returns the id and stored name of each asset to be
+// merged, read in the tenant inside the merge transaction.
+func readMergedAssetNames(ctx context.Context, tx *sql.Tx, tenantID string, ids []string) ([]MergedAsset, error) {
+	rows, err := tx.QueryContext(ctx, "SELECT id, name FROM assets WHERE id = ANY($1) AND tenant_id = $2", pq.Array(ids), tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("read merged asset names: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []MergedAsset
+	for rows.Next() {
+		var m MergedAsset
+		if err := rows.Scan(&m.ID, &m.Name); err != nil {
+			return nil, fmt.Errorf("scan merged asset name: %w", err)
+		}
+		out = append(out, m)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("read merged asset names: %w", err)
+	}
+	return out, nil
 }

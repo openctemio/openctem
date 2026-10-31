@@ -108,7 +108,9 @@ Set with the `accepted` status by the approval flow and by accepted-risk
 suppression rules; read by the CI gate. Trigger function
 `clear_finding_acceptance_expiry()` (trigger
 `trg_findings_clear_acceptance_expiry`, `BEFORE INSERT OR UPDATE`) empties it
-on any row whose status is not `accepted`. See
+on any row whose status is not `accepted`; `default_finding_acceptance_end()`
+(trigger `trg_findings_default_acceptance_end`) fills it with the default
+length, capped by priority, on an `accepted` row written without one. See
 [finding-status-lifecycle.md](finding-status-lifecycle.md#risk-acceptance-end).
 
 ### sub_status_id - Organization Sub-Status

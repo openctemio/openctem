@@ -32,6 +32,8 @@ func newAbsenceRun(t *testing.T) *repoRun {
 		svc.SetCommandReader(postgres.NewCommandRepository(db))
 		svc.SetCoverageAutoResolve(ingest.CoverageAutoResolveDryRun, ingest.DefaultBlindingGuard())
 		svc.SetReceiptRecorder(postgres.NewIngestReceiptRepository(db))
+		// Closing mode auto: these tests are about what a default-branch run closes.
+		svc.SetClosureSettings(autoClosing{})
 	})
 	return &repoRun{r: r, tn: r.newTenant("semgrep"), results: results}
 }
@@ -157,7 +159,7 @@ func TestAbsence_ConcurrentRunsNeverCloseWhatTheyReported(t *testing.T) {
 		go func(i int) {
 			defer wg.Done()
 			ctx := context.Background()
-			if ok, err := rr.r.reports.Commit(ctx, reps[i].ID, 1, false, reps[i].ReceivedAt); err != nil || !ok {
+			if ok, err := rr.r.reports.Commit(ctx, reps[i].ID, ingestreport.CommitFacts{SegmentCount: 1, Integrity: "single"}, reps[i].ReceivedAt); err != nil || !ok {
 				t.Errorf("commit %d: %v %v", i, ok, err)
 			}
 		}(i)

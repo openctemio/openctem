@@ -241,15 +241,18 @@ and approvals.
 | `secret_value` | the same per-tenant keyed hash of the raw secret, in another file or repository | a secret known only by its mask; another tenant. CI-hashed secrets link within one repository (the CI key is per repository) |
 | `vuln_alias` | a finding still stored under its advisory key while another finding of the asset holds the CVE key the feed gives it | across assets; decided when keys change, not released on a sighting |
 | `vuln_asset` | the same canonical CVE on the same asset from different techniques (a version match, a template check, a network scanner import, a package inventory), with agreeing ports (`443/tcp` equals `443/tcp`; a host-level finding agrees with any port) | another asset, another port or CVE, two findings of one kind at one place, a pentest finding |
+| `dast_scheme` | the same DAST check (rule and method) at the same host, path template and parameter names on the same asset, over http and over https on the default ports ([RFC-043 §19](../rfcs/RFC-043-deduplication-and-identity.md#19-scheme-links-amendment-2026-10-30)); each scheme stays its own finding | an explicit port, another asset, another rule, method, path or parameter names, a pentest finding |
 
 How it runs:
 
 - **Keys.** After an ingest batch is stored (step 11 of
   `FindingProcessor.processBatch`, `internal/app/ingest/issue_links.go`), the
-  batch's version-2 SAST, secret and CVE findings (network, DAST, SCA) get their link keys
+  batch's version-2 SAST, secret and DAST findings and its network and SCA findings with a CVE get their link keys
   (`pkg/domain/issuelink.Keys`) in `finding_link_keys`: a hash of (asset,
   path, CWE) with the line range per CWE, a hash of the secret's keyed
-  hash, or a hash of (asset, CVE) with the port or `host` as the locator. Keys are never returned by the API.
+  hash, a hash of (asset, CVE) with the port or `host` as the locator, or a
+  hash of (asset, rule, method, host and path, parameter names) with the
+  scheme as the locator. Keys are never returned by the API.
 - **Groups.** One indexed lookup finds the other holders of the batch's keys;
   `issuelink.PlanLinks` decides the links. A group is a star around its
   primary (the earliest-created finding when it formed); a finding joins the

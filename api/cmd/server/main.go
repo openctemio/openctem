@@ -572,6 +572,23 @@ func run() int {
 			}
 		}()
 
+		// Request/responses recorded before they went through the evidence
+		// service are still in clear in findings.metadata: mask them, encrypt
+		// their secret values and remove them from the finding. Idempotent,
+		// batched, SKIP LOCKED: safe on every start and across replicas.
+		if services.Evidence != nil {
+			go func() {
+				n, err := services.Evidence.MoveLegacyRequestResponses(ctx)
+				if err != nil {
+					log.Error("legacy request/response evidence move failed", "error", err, "findings", n)
+					return
+				}
+				if n > 0 {
+					log.Info("legacy request/responses moved to masked evidence", "findings", n)
+				}
+			}()
+		}
+
 		// Host keys for commands queued before every command got them at
 		// create (research/130). Idempotent and SKIP LOCKED: safe on every
 		// start and across replicas.

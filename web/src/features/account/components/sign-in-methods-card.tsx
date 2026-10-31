@@ -10,7 +10,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
-import { ConfirmDialog } from '@/components/confirm-dialog'
+import { StepUpDialog, stepUpProofErrorMessage, type StepUpProofInput } from '@/components/security'
 import { useTranslation } from '@/context/i18n-provider'
 import { describeAuthCode } from '@/features/auth/lib/auth-error-codes'
 import { getErrorMessage } from '@/lib/api/error-handler'
@@ -23,6 +23,7 @@ import {
   type SignInMethod,
 } from '../api/use-sign-in-methods'
 import { LINK_PROVIDERS, readLinkResult, type LinkProvider } from '../lib/link-result'
+import { linkProofFrom } from '../lib/link-proof'
 
 const PROVIDER_ICON: Record<LinkProvider, typeof IconGoogle> = {
   google: IconGoogle,
@@ -43,9 +44,12 @@ function errorCode(err: unknown): string | undefined {
 
 /**
  * Account > Security, "Connected sign-in methods": link or unlink Google,
- * GitHub and Microsoft sign-in. Linking and unlinking ask the person to
- * confirm it is them (step-up). The account's last way to sign in cannot be
- * removed. Hidden when the platform offers no social sign-in.
+ * GitHub and Microsoft sign-in. Each link and unlink asks, in its confirm
+ * dialog, for the authenticator code (or the password when two-factor
+ * authentication is off); a recent sign-in does not count. An account with
+ * neither is told to turn on two-factor authentication first. The account's
+ * last way to sign in cannot be removed. Hidden when the platform offers no
+ * social sign-in.
  */
 export function SignInMethodsCard() {
   const { t } = useTranslation()
@@ -56,6 +60,7 @@ export function SignInMethodsCard() {
   const { link, linking } = useLinkProvider()
   const { unlink, isUnlinking } = useUnlinkIdentity()
   const [toUnlink, setToUnlink] = useState<SignInMethod | null>(null)
+  const [toLink, setToLink] = useState<LinkProvider | null>(null)
 
   // The result of a link round trip, once, then a clean address.
   const query = searchParams.toString()
@@ -94,40 +99,55 @@ export function SignInMethodsCard() {
   )
   if (!isLoading && shown.length === 0) return null
 
-  async function startLink(provider: LinkProvider) {
-    try {
-      await link(provider)
-    } catch (err) {
-      toast.error(
-        describeAuthCode(errorCode(err), t) ??
-          getErrorMessage(
-            err,
-            t('account.signInMethods.linkFailed', 'The provider could not be linked. Try again.')
-          )
-      )
-    }
+  const proofKind = methods?.proof ?? ''
+  const proofHint =
+    proofKind === 'password'
+      ? t('account.signInMethods.proofPassword', 'Enter your password to confirm.')
+      : t(
+          'account.signInMethods.proofCode',
+          'Enter the code from your authenticator app to confirm.'
+        )
+  // Refusals are shown in the dialog, which clears the field for another try.
+  const proofError = (fallback: string) => (err: unknown) =>
+    describeAuthCode(errorCode(err), t) ??
+    (errorCode(err) ? getErrorMessage(err, fallback) : stepUpProofErrorMessage(t, err))
+  const noProofNotice = (close: () => void) =>
+    proofKind
+      ? undefined
+      : {
+          body: (
+            <p className="text-sm">
+              {t(
+                'account.signInMethods.proofUnavailable',
+                'Turn on two-factor authentication on this page first: changing how you sign in needs a code from your authenticator app.'
+              )}
+            </p>
+          ),
+          actions: (
+            <Button type="button" variant="outline" onClick={close}>
+              {t('account.signInMethods.close', 'Close')}
+            </Button>
+          ),
+        }
+
+  async function confirmLink(input: StepUpProofInput) {
+    const proof = linkProofFrom(input)
+    if (!toLink || !proof) return
+    // Resolves only on failure: on success the page goes to the provider.
+    await link(toLink, proof)
   }
 
-  async function confirmUnlink() {
-    if (!toUnlink) return
-    try {
-      await unlink(toUnlink.id)
-      toast.success(
-        t('account.signInMethods.unlinked', '{provider} is no longer linked.', {
-          provider: PROVIDER_NAME[toUnlink.provider as LinkProvider],
-        })
-      )
-      setToUnlink(null)
-      mutate()
-    } catch (err) {
-      toast.error(
-        describeAuthCode(errorCode(err), t) ??
-          getErrorMessage(
-            err,
-            t('account.signInMethods.unlinkFailed', 'The provider could not be unlinked.')
-          )
-      )
-    }
+  async function confirmUnlink(input: StepUpProofInput) {
+    const proof = linkProofFrom(input)
+    if (!toUnlink || !proof) return
+    await unlink(toUnlink.id, proof)
+    toast.success(
+      t('account.signInMethods.unlinked', '{provider} is no longer linked.', {
+        provider: PROVIDER_NAME[toUnlink.provider as LinkProvider],
+      })
+    )
+    setToUnlink(null)
+    mutate()
   }
 
   return (
@@ -212,7 +232,7 @@ export function SignInMethodsCard() {
                       size="sm"
                       className="shrink-0"
                       disabled={linking !== null}
-                      onClick={() => startLink(provider)}
+                      onClick={() => setToLink(provider)}
                       aria-label={t('account.signInMethods.linkProvider', 'Link {provider}', {
                         provider: PROVIDER_NAME[provider],
                       })}
@@ -246,25 +266,40 @@ export function SignInMethodsCard() {
         )}
       </CardContent>
 
-      <ConfirmDialog
+      <StepUpDialog
+        open={!!toLink}
+        onOpenChange={(open) => !open && setToLink(null)}
+        title={t('account.signInMethods.linkTitle', 'Link {provider}', {
+          provider: toLink ? PROVIDER_NAME[toLink] : '',
+        })}
+        description={`${t('account.signInMethods.linkDesc', 'Next you sign in to {provider}, then come back here.', { provider: toLink ? PROVIDER_NAME[toLink] : '' })}${proofKind ? ` ${proofHint}` : ''}`}
+        factor={proofKind === 'password' ? 'password' : 'totp'}
+        submitLabel={t('account.signInMethods.link', 'Link')}
+        onSubmit={confirmLink}
+        errorMessage={proofError(
+          t('account.signInMethods.linkFailed', 'The provider could not be linked. Try again.')
+        )}
+        notice={noProofNotice(() => setToLink(null))}
+      />
+
+      <StepUpDialog
         open={!!toUnlink}
-        onOpenChange={(open) => !open && setToUnlink(null)}
+        onOpenChange={(open) => !open && !isUnlinking && setToUnlink(null)}
         title={t('account.signInMethods.unlinkTitle', 'Unlink {provider}?', {
           provider: toUnlink ? PROVIDER_NAME[toUnlink.provider as LinkProvider] : '',
         })}
-        desc={t(
+        description={`${t(
           'account.signInMethods.unlinkDesc',
           'You will no longer be able to sign in with it. You can link it again later.'
-        )}
-        confirmText={
-          <>
-            {isUnlinking && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
-            {t('account.signInMethods.unlink', 'Unlink')}
-          </>
-        }
+        )}${proofKind ? ` ${proofHint}` : ''}`}
+        factor={proofKind === 'password' ? 'password' : 'totp'}
+        submitLabel={t('account.signInMethods.unlink', 'Unlink')}
         destructive
-        isLoading={isUnlinking}
-        handleConfirm={confirmUnlink}
+        onSubmit={confirmUnlink}
+        errorMessage={proofError(
+          t('account.signInMethods.unlinkFailed', 'The provider could not be unlinked.')
+        )}
+        notice={noProofNotice(() => setToUnlink(null))}
       />
     </Card>
   )

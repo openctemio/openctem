@@ -201,7 +201,10 @@ Order matters; each step is cheaper than the next and runs before it.
    (D21); platform sensors only on the command-bound form.
 3. **Rate limit and concurrency**, per sensor and per tenant (existing
    `TelemetryRateLimiter` + `TenantConcurrencyLimiter`) → `429` +
-   `Retry-After`. Queue backpressure (existing `maxPendingPerTenant`) →
+   `Retry-After`. Queue backpressure (existing `maxPendingPerTenant`; a
+   continuation segment of an admitted report up to twice that, so a
+   started report can finish; `Retry-After` from the tenant's drain rate,
+   jittered) →
    `429` + `Retry-After`.
 4. **Header gates**: `Content-Type` (415), `Content-Encoding` (415),
    `Content-Length` (411/413), `Content-Digest` present (400), path ids
@@ -269,6 +272,15 @@ resume byte streams.
 - A single-request `PUT /results/{id}` is exactly one segment plus an
   implicit commit.
 
+**Queued segments at rest.** A segment waits in the queue before its secrets
+are masked, so the server stores it sealed with the per-tenant ingest payload
+key (the CI upload sealer), bound to tenant, job, report, segment number and
+decoded SHA-256, opens it only in the ingest worker, and empties it once the
+segment is applied. Legacy protocol v1 jobs still queued are sealed the same
+way. A tenant's queued payload bytes are capped like its queued jobs (429
+`queue-full`). Details: `docs/architecture/sensors.md`, "Queued segments at
+rest".
+
 Why not tus or the IETF resumable-upload draft: they resume one byte stream
 whose bytes mean nothing until reassembled. That requires server-side
 reassembly storage, and a per-request signature does not cover the whole
@@ -279,6 +291,56 @@ are each signed, each validated with bounded memory, retried alone, and they
 never lose the tool or asset context. That is the v1 chunk bug, fixed by
 construction. Resumable byte uploads remain an option for the human import
 API (§6) if multi-gigabyte files ever matter.
+
+### 3.5a Commit manifest and report integrity (2026-10-30)
+
+A segment's `Content-Digest` covers the bytes **as sent** and is checked
+before decoding, so a damaged or forged body never reaches the decoder. It
+cannot say that the sensor sent everything it produced, and it changes with
+the coding. The commit therefore carries an optional manifest (hello
+feature `results_manifest`; older SDKs omit it):
+
+```json
+{
+  "segment_count": 2,
+  "segment_digests": ["sha-256=:…:", "sha-256=:…:"],
+  "segments": [
+    {"seq": 0, "sha256": "<64 hex>", "bytes": 81234, "assets": 40, "findings": 900},
+    {"seq": 1, "sha256": "<64 hex>", "bytes": 10422, "assets": 7,  "findings": 61}
+  ],
+  "totals": {"assets": 47, "findings": 961},
+  "report_sha256": "<64 hex>"
+}
+```
+
+- `sha256` is over the segment's **decoded** bytes, exactly as the sensor
+  serialized them (no re-canonicalisation: a second serializer on each side
+  would be a parser differential). The server stores the same hash with the
+  segment job when it receives it.
+- `report_sha256` is SHA-256 over the 32-byte decoded hashes of the segments
+  concatenated in segment order. Every segment is verified on its own and the
+  full list is present at commit, so a hash list is enough; it identifies the
+  report content in one value (`ingest_reports.content_sha256`).
+- `totals` sum the segments' counts: an asset repeated in several segments
+  (it travels with each finding that references it) counts in each, which
+  is also how the server counts what it received.
+- The server compares every value with its own: each segment's hash and
+  size with what it stored, the per-segment counts with the totals, the
+  totals with the assets and findings it counted at receipt, and the report
+  hash with its recomputation. Any difference is `409
+  segment-set-mismatch` with `errors[]` (`hash_mismatch`, `size_mismatch`,
+  `count_mismatch`, `report_hash_mismatch`, `manifest_invalid`), and the
+  report stays uncommitted: it never completes and never proves absence.
+- The report records how it proved completeness: `single` (one segment; the
+  one digest covers it), `manifest` (verified) or `digest_only` (segmented,
+  no manifest). Coverage auto-close accepts only `single` and `manifest`.
+- Binding: the report row is keyed by the tenant and sensor from
+  authentication and the report id, and bound to one command; a key-bound
+  sensor signs the commit request (RFC 9421 over `@path` and the
+  `Content-Digest` of the manifest), so a manifest cannot be replayed to
+  another command or organization. No separate manifest signature.
+- Resume: `GET /results/{report_id}` of an uncommitted report lists the
+  segment numbers the server holds (`segments.held`).
 
 ### 3.6 Limits
 

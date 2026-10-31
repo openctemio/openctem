@@ -2819,6 +2819,97 @@ func (h *TenantHandler) UpdateRetestSettings(w http.ResponseWriter, r *http.Requ
 	_ = json.NewEncoder(w).Encode(rs)
 }
 
+// GetClosureSettings handles GET /api/v1/organization/settings/closure.
+// @Summary      Get the closing mode
+// @Description  How the platform closes findings without a person: mode auto (per the tier rule), review (every close is proposed to a person) or off; an empty mode means review. critical_auto_close lets a plain covered scan close critical, P0 and KEV findings in auto mode. The mode applies to every automatic close: a covered scan, a full default-branch scan, a full-coverage upload and a software version change (off keeps findings open and proposes nothing). The values are the ones in force; a waiting loosening is in pending_mode, pending_critical_auto_close and pending_at.
+// @Tags         Tenants
+// @Produce      json
+// @Success      200     {object}  tenant.ClosureSettings
+// @Failure      400     {object}  apierror.Error
+// @Failure      403     {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /organization/settings/closure [get]
+func (h *TenantHandler) GetClosureSettings(w http.ResponseWriter, r *http.Request) {
+	tenantID, err := shared.IDFromString(middleware.GetTenantID(r.Context()))
+	if err != nil || tenantID.IsZero() {
+		apierror.BadRequest("Tenant context required").WriteJSON(w)
+		return
+	}
+	cs, err := h.service.GetClosureSettings(r.Context(), tenantID.String())
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+	h.writeSectionETag(w, r, tenantID, tenant.SectionClosure)
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(cs)
+}
+
+// UpdateClosureSettings handles PUT /api/v1/organization/settings/closure.
+// @Summary      Update the closing mode
+// @Description  Loosening (off to review or auto, review to auto, critical_auto_close on) needs a recent re-authentication, takes effect 24 hours later (pending_mode, pending_critical_auto_close and pending_at show it; until then the stricter policy applies), is audited at high severity and notifies owners and administrators; turning critical_auto_close on is for the owner only. Tightening is immediate and cancels a waiting loosening. Only mode and critical_auto_close are read. The mode decides every automatic close (covered scan, full default-branch scan, full-coverage upload, software version change): off keeps findings open, review proposes them in Ready to close, auto closes per the tier rule. Audited.
+// @Tags         Tenants
+// @Accept       json
+// @Produce      json
+// @Param        body    body      tenant.ClosureSettings  true  "Closing mode"
+// @Success      200     {object}  tenant.ClosureSettings
+// @Failure      400     {object}  apierror.Error
+// @Failure      403     {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /organization/settings/closure [put]
+func (h *TenantHandler) UpdateClosureSettings(w http.ResponseWriter, r *http.Request) {
+	tenantID, err := shared.IDFromString(middleware.GetTenantID(r.Context()))
+	if err != nil || tenantID.IsZero() {
+		apierror.BadRequest("Tenant context required").WriteJSON(w)
+		return
+	}
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	var req tenant.ClosureSettings
+	if err := decoder.Decode(&req); err != nil {
+		apierror.BadRequest("Invalid request body").WriteJSON(w)
+		return
+	}
+	if err := req.Validate(); err != nil {
+		apierror.BadRequest("Closing mode must be auto, review or off").WriteJSON(w)
+		return
+	}
+	cs, err := h.service.UpdateClosureSettings(settingsWriteCtx(r), tenantID.String(), req, h.buildAuditContext(r))
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+	h.writeSectionETag(w, r, tenantID, tenant.SectionClosure)
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(cs)
+}
+
+// CancelPendingClosureSettings handles DELETE /api/v1/organization/settings/closure/pending.
+// @Summary      Cancel a waiting loosening of the closing mode
+// @Description  Drops a loosening chosen less than 24 hours ago; the policy in force stays. Owner or administrator. Audited.
+// @Tags         Tenants
+// @Produce      json
+// @Success      200     {object}  tenant.ClosureSettings
+// @Failure      400     {object}  apierror.Error
+// @Failure      403     {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /organization/settings/closure/pending [delete]
+func (h *TenantHandler) CancelPendingClosureSettings(w http.ResponseWriter, r *http.Request) {
+	tenantID, err := shared.IDFromString(middleware.GetTenantID(r.Context()))
+	if err != nil || tenantID.IsZero() {
+		apierror.BadRequest("Tenant context required").WriteJSON(w)
+		return
+	}
+	cs, err := h.service.CancelPendingClosureSettings(settingsWriteCtx(r), tenantID.String(), h.buildAuditContext(r))
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+	h.writeSectionETag(w, r, tenantID, tenant.SectionClosure)
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(cs)
+}
+
 // GetVulnMatchingSettings handles GET /api/v1/organization/settings/vuln-matching.
 // @Summary      Get vulnerability matching settings
 // @Description  The organization's policy for findings created by matching its software inventory against published CVEs. Zero min_confidence and empty min_severity mean the defaults (65, high).

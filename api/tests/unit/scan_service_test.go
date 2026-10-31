@@ -354,7 +354,7 @@ func (m *mockAssetGroupRepo) GetGroupFindings(_ context.Context, _ shared.ID, _ 
 func (m *mockAssetGroupRepo) GetGroupIDsByAssetID(_ context.Context, _ shared.ID) ([]shared.ID, error) {
 	return nil, nil
 }
-func (m *mockAssetGroupRepo) RecalculateCounts(_ context.Context, _ shared.ID) error { return nil }
+func (m *mockAssetGroupRepo) RecalculateCounts(_ context.Context, _, _ shared.ID) error { return nil }
 func (m *mockAssetGroupRepo) GetDistinctAssetTypes(_ context.Context, _ shared.ID) ([]string, error) {
 	return nil, nil
 }
@@ -443,7 +443,7 @@ func (m *mockRunRepo) CreateRunIfUnderLimit(_ context.Context, r *scanrundom.Run
 func (m *mockRunRepo) UpdateStats(_ context.Context, _, _ shared.ID, _, _, _, _ int) error {
 	return nil
 }
-func (m *mockRunRepo) UpdateStatus(_ context.Context, _ shared.ID, _ scanrundom.RunStatus, _ string) error {
+func (m *mockRunRepo) UpdateStatus(_ context.Context, _, _ shared.ID, _ scanrundom.RunStatus, _ string) error {
 	return nil
 }
 func (m *mockRunRepo) GetStatsByTenant(_ context.Context, _ shared.ID) (scanrundom.RunStats, error) {
@@ -455,7 +455,7 @@ func (m *mockRunRepo) MarkTimedOutRuns(_ context.Context) (int64, error) {
 func (m *mockRunRepo) ListPendingRetries(_ context.Context, _ int) ([]scanrundom.RetryCandidate, error) {
 	return nil, nil
 }
-func (m *mockRunRepo) ReleaseFailedRetryDispatch(_ context.Context, _ shared.ID) error {
+func (m *mockRunRepo) ReleaseFailedRetryDispatch(_ context.Context, _, _ shared.ID) error {
 	return nil
 }
 
