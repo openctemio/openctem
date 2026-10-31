@@ -60,11 +60,12 @@ func hostTarget(targets []coverTarget) bool {
 
 // locatedType reports whether an asset of the stored type is identified by
 // a host: its name is a DNS name, an address, or a service or URL on one.
+// The alias types (website, web application, API) are input-only and never
+// stored: they resolve to application (RFC-042 §6.3.8).
 func locatedType(t asset.AssetType) bool {
 	switch t {
 	case asset.AssetTypeDomain, asset.AssetTypeSubdomain, asset.AssetTypeIPAddress, asset.AssetTypeHost,
-		asset.AssetTypeService, asset.AssetTypeApplication, asset.AssetTypeWebsite,
-		asset.AssetTypeWebApplication, asset.AssetTypeAPI:
+		asset.AssetTypeService, asset.AssetTypeApplication:
 		return true
 	}
 	return false
