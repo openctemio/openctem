@@ -99,6 +99,41 @@ type Pairing struct {
 	// EnrollmentTokenID is the organization enrollment token the sensor
 	// started with: the request has the token's tenant from the start.
 	EnrollmentTokenID *shared.ID
+
+	// LastRefusal is the last refused attempt of a sensor on this request's
+	// code (an open expectation), or nil.
+	LastRefusal *PairingRefusal
+}
+
+// Why a sensor's attempt on an open pairing code was refused (shown on the
+// console's waiting step).
+const (
+	// RefusalClockSkew: the signature was made outside the clock tolerance.
+	RefusalClockSkew = "clock_skew"
+	// RefusalRateLimited: the start budget of the code or address ran out.
+	RefusalRateLimited = "rate_limited"
+	// RefusalCodeTaken: another sensor already attached to the code.
+	RefusalCodeTaken = "code_taken"
+	// RefusalKeyBusy: the sensor's key holds another open request.
+	RefusalKeyBusy = "key_busy"
+	// RefusalKeyRegistered: an approval registered the key before; a key
+	// pairs once.
+	RefusalKeyRegistered = "key_registered"
+)
+
+// PairingRefusal is one refused attempt on a code.
+type PairingRefusal struct {
+	Reason  string
+	At      time.Time
+	Details map[string]any
+}
+
+// RemovedSensor is a sensor the pairing sweep removed: its approval was
+// never confirmed and it never had a working key.
+type RemovedSensor struct {
+	TenantID shared.ID
+	ID       shared.ID
+	Name     string
 }
 
 // IsInstance reports whether the request enrolls a shared sensor.
@@ -178,6 +213,16 @@ type PairingRepository interface {
 	// rows older than purgeBefore; it revokes the pending key of an approval
 	// that was never confirmed.
 	ExpireForPlatform(ctx context.Context, now, purgeBefore time.Time) (int64, error)
+	// RecordRefusalUnscoped notes a refused attempt on the open expectation
+	// whose code hash matches (at most one write per expectation every few
+	// seconds); a code that matches nothing writes nothing. A code_taken
+	// refusal by the key that holds the request, or on a request no key
+	// holds yet, is stored as key_busy.
+	RecordRefusalUnscoped(ctx context.Context, codeHash, thumbprint, reason string, details map[string]any, now time.Time) error
+	// RemoveUnconfirmedSensors deletes the sensors an approval created whose
+	// pairing expired unconfirmed and that never had a working key, never
+	// called in and hold no command; it returns them.
+	RemoveUnconfirmedSensors(ctx context.Context) ([]RemovedSensor, error)
 
 	// CreateInstanceToken stores a new instance enrollment token (its hash).
 	CreateInstanceToken(ctx context.Context, t *InstanceEnrollmentToken) error
