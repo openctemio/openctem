@@ -68,3 +68,4 @@ func TestDropDuplicateUniqueIndexesKeepsForeignKeys_DB(t *testing.T) {
 		t.Fatalf("foreign keys kept: found %d of 11, %d not validated", n, invalid)
 	}
 }
+// schema gate probe
