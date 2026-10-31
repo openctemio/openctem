@@ -607,6 +607,30 @@ tenant). Routes: `/api/v1/easm/lookalikes/watches` (scope permissions,
 audited). The organization can turn the crt.sh queries off
 (`lookalike_ct_enabled` on `/api/v1/easm/settings`; fail closed).
 
+## 4o. Page monitoring (partly built)
+
+Design: [RFC-137](../rfcs/RFC-137-web-page-monitoring.md). Attack surface ›
+**Page changes** watches URLs of the organization's web services (manual add,
+or suggestions: root pages, login and admin pages, JS files from the crawl;
+at most 200 watches). JS-only mode (default) keeps the scripts a page loads
+(source identity without cache busters and build hashes, inline scripts by
+normalized hash, first or third party, integrity attribute) and, for each
+first-party script (a derived watch, at most 25 per page), its hash, size and
+the URLs found in it; full mode also keeps the masked visible text. Fetches
+are the capability `monitor.web_content` (T1) through the coverage dispatch
+path (`scan.Service.StartCoverage`: scope and active-scan gates, zone routing,
+signed jobs with the explicit URL list), started by the `page-monitoring`
+controller (every 10 minutes; at most 100 URLs per tenant and 10 per host per
+pass; only with automatic coverage on). Results arrive as the reserved asset
+property `web_content` and are normalized and diffed server-side
+(`pkg/domain/pagemon`); only a changed content hash stores a snapshot (last 5
+per watch) and a change with its diff (kept 180 days). A new third-party
+script host on a page is a `third_party_script_added` exposure (high) through
+the EASM alert writer, resolved when the page drops the host. Routes:
+`/api/v1/easm/page-monitoring` (reads `assets:read` and the watch asset's data
+scope; watch changes `scans:write`, audited). Not built yet: the capability in
+the taxonomy and the sensor's httpx capture (watches stay `waiting` until then).
+
 ## 4k. Network seeds (built)
 
 Design: [RFC-082](../rfcs/RFC-082-network-seeds.md). Scoping › Scope ›

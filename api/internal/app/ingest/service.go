@@ -269,6 +269,11 @@ func (s *Service) SetFindingCreatedCallback(callback FindingCreatedCallback) {
 	s.findingProcessor.SetFindingCreatedCallback(callback)
 }
 
+// SetWebContentRecorder enables page monitoring ingest (RFC-137).
+func (s *Service) SetWebContentRecorder(r WebContentRecorder) {
+	s.assetProcessor.SetWebContentRecorder(r)
+}
+
 // SetWebEvidenceRecorder enables web evidence captures (RFC-081).
 func (s *Service) SetWebEvidenceRecorder(r WebEvidenceRecorder) {
 	s.assetProcessor.SetWebEvidenceRecorder(r)

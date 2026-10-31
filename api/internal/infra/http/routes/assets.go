@@ -799,6 +799,29 @@ func registerEASMLookalikeRoutes(
 	}, tenantMiddlewares...)
 }
 
+// registerPageMonitorRoutes registers web page monitoring (RFC-137): reads
+// take assets:read plus the data scope of the watch's web service (checked in
+// the service, 404); watch changes schedule active fetches and take
+// scans:write. Behind the attack_surface module.
+func registerPageMonitorRoutes(
+	router Router,
+	h *handler.PageMonitorHandler,
+	authMiddleware Middleware,
+	userSyncMiddleware Middleware,
+	moduleGate Middleware,
+) {
+	tenantMiddlewares := append(buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware), moduleGate)
+	router.Group("/api/v1/easm/page-monitoring", func(r Router) {
+		r.GET("/watches", h.ListWatches, middleware.Require(permission.AssetsRead))
+		r.POST("/watches", h.CreateWatch, middleware.Require(permission.ScansWrite))
+		r.PUT("/watches/{id}", h.UpdateWatch, middleware.Require(permission.ScansWrite))
+		r.DELETE("/watches/{id}", h.DeleteWatch, middleware.Require(permission.ScansWrite))
+		r.GET("/suggestions", h.Suggestions, middleware.Require(permission.AssetsRead))
+		r.GET("/changes", h.ListChanges, middleware.Require(permission.AssetsRead))
+		r.GET("/changes/{id}", h.GetChange, middleware.Require(permission.AssetsRead))
+	}, tenantMiddlewares...)
+}
+
 // registerEASMNetworkSeedRoutes registers network seeds (RFC-082): scope
 // permissions like the verified domains, behind the attack_surface module.
 // A seed never authorizes a probe; suggested prefixes are added through

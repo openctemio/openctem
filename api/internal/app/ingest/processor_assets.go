@@ -66,6 +66,8 @@ type AssetProcessor struct {
 
 	// webEvidence stores the reserved web_evidence captures (nil = dropped).
 	webEvidence WebEvidenceRecorder
+	// webContent takes the reserved web_content fetches (nil = dropped).
+	webContent WebContentRecorder
 }
 
 // AssetsDiscoveredCallback is invoked once per ingest batch with the assets the
@@ -902,6 +904,7 @@ func (p *AssetProcessor) processBatch(
 	// Step 10: Web evidence (status, title, snippet, optional screenshot) of
 	// the assets this report may change (RFC-081).
 	p.recordWebEvidence(ctx, tenantID, report, existingMap, mayChange)
+	p.recordWebContent(ctx, tenantID, report, existingMap, mayChange)
 
 	// Step 8: Typed edges from related_assets (service -> the certificate
 	// it served).
