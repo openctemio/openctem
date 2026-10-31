@@ -71,6 +71,7 @@ import vi_importMappings from './vi/importMappings.json'
 import vi_ticketPolicy from './vi/ticketPolicy.json'
 import vi_ticketingIntegration from './vi/ticketingIntegration.json'
 import vi_proxyPools from './vi/proxyPools.json'
+import vi_wordlists from './vi/wordlists.json'
 import vi_scanApprovals from './vi/scanApprovals.json'
 import vi_scans from './vi/scans.json'
 import vi_scanDetail from './vi/scanDetail.json'
@@ -170,6 +171,7 @@ export const viNamespaces: Record<string, Dictionary> = {
   ticketPolicy: vi_ticketPolicy,
   ticketingIntegration: vi_ticketingIntegration,
   proxyPools: vi_proxyPools,
+  wordlists: vi_wordlists,
   scanApprovals: vi_scanApprovals,
   scans: vi_scans,
   scanDetail: vi_scanDetail,
