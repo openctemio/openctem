@@ -170,7 +170,9 @@ tests that cover the console's most user-visible flows.
 | `50-shell-banner-no-shift.spec.ts`          | A platform notice does not push the page down on reload (390px)                          |
 | `51-cicd-settings.spec.ts`                  | CI/CD Settings: every section on one page, `?section=` scrolls, 1440/390px, axe, budget  |
 | `52-cicd-lists.spec.ts`                     | CI/CD Pipelines and Runs at 1440/390px: no sideways scroll, axe, request budget          |
+| `50-shell-banner-no-shift.spec.ts`          | A platform notice does not push the page down on reload (390px)                          |
 | `50-metric-strip-no-shift.spec.ts`          | Metric strips and /attack-surface hold still while their numbers load (1440, 390)        |
+| `50-asset-detail-no-shift.spec.ts`          | Asset page: no layout shift while its panels load (390px, 1440px)                        |
 
 Each spec is designed to:
 

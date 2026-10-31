@@ -7,6 +7,7 @@
  * the screenshot is a PNG the platform re-encoded. Hidden when there is none.
  */
 
+import { useSettleSignal } from '@/features/shared/components/settle-group'
 import { useState } from 'react'
 import { Camera } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
@@ -92,7 +93,8 @@ export function AssetWebEvidenceCard({
   className?: string
 }) {
   const { t } = useTranslation()
-  const { items } = useWebEvidence(assetId)
+  const { items, isLoading } = useWebEvidence(assetId)
+  useSettleSignal(isLoading)
   if (items.length === 0) return null
   return (
     <Card className={className}>
