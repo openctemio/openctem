@@ -14,6 +14,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/easmdns"
 	"github.com/openctemio/openctem/api/pkg/domain/coverage"
 	"github.com/openctemio/openctem/api/pkg/domain/easmalert"
+	"github.com/openctemio/openctem/api/pkg/domain/exposure"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
@@ -256,15 +257,27 @@ func (r *EASMDNSRepository) SaveNameState(ctx context.Context, tenantID shared.I
 	return nil
 }
 
-// ResolveAuto resolves the tenant's ACTIVE exposures of this source with the
-// given fingerprints and records the transition. Accepted, false-positive and
-// already-resolved exposures are left alone.
+// ResolveAuto resolves the tenant's OPEN exposures (active or in progress)
+// of this source with the given fingerprints and records each transition.
+// Accepted, false-positive and already-resolved exposures are left alone.
 func (r *EASMDNSRepository) ResolveAuto(ctx context.Context, tenantID shared.ID, source string, fingerprints []string, note string) (int, error) {
-	return r.transition(ctx, `
-		UPDATE exposure_events SET state = 'resolved', resolved_at = now(), resolved_by = NULL,
-			resolution_notes = $4, updated_at = now()
-		WHERE tenant_id = $1 AND source = $2 AND fingerprint = ANY($3) AND state = 'active'
-		RETURNING id`, "active", "resolved", tenantID, source, fingerprints, note)
+	if len(fingerprints) == 0 {
+		return 0, nil
+	}
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	ids, err := resolveOpenExposuresTx(ctx, tx, `e.tenant_id = $1 AND e.source = $2 AND e.fingerprint = ANY($3)`,
+		note, tenantID.String(), source, pq.Array(fingerprints))
+	if err != nil {
+		return 0, fmt.Errorf("transition exposures: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	return len(ids), nil
 }
 
 // ReopenAuto reopens exposures this check itself resolved (resolved_by NULL
@@ -275,10 +288,12 @@ func (r *EASMDNSRepository) ReopenAuto(ctx context.Context, tenantID shared.ID, 
 		UPDATE exposure_events SET state = 'active', resolved_at = NULL, resolution_notes = '', updated_at = now()
 		WHERE tenant_id = $1 AND source = $2 AND fingerprint = ANY($3)
 		  AND state = 'resolved' AND resolved_by IS NULL AND resolution_notes = $4
-		RETURNING id`, "resolved", "active", tenantID, source, fingerprints, note)
+		RETURNING id`, tenantID, source, fingerprints, note)
 }
 
-func (r *EASMDNSRepository) transition(ctx context.Context, update, from, to string, tenantID shared.ID, source string, fingerprints []string, note string) (int, error) {
+// transition runs a reopening update and records each move from resolved
+// back to active, queueing a reopened alert.
+func (r *EASMDNSRepository) transition(ctx context.Context, update string, tenantID shared.ID, source string, fingerprints []string, note string) (int, error) {
 	if len(fingerprints) == 0 {
 		return 0, nil
 	}
@@ -291,19 +306,16 @@ func (r *EASMDNSRepository) transition(ctx context.Context, update, from, to str
 	if err != nil {
 		return 0, err
 	}
-	reason := "Reopened automatically: the DNS check finds the problem again."
-	if to == "resolved" {
-		reason = note
-	}
+	const reason = "Reopened automatically: the DNS check finds the problem again."
 	for _, id := range ids {
 		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO exposure_state_history (id, exposure_event_id, previous_state, new_state, changed_by, reason, created_at)
-			VALUES ($1, $2, $3, $4, NULL, $5, now())`,
-			shared.NewID().String(), id, from, to, reason); err != nil {
+			VALUES ($1, $2, 'resolved', 'active', NULL, $3, now())`,
+			shared.NewID().String(), id, reason); err != nil {
 			return 0, fmt.Errorf("record exposure transition: %w", err)
 		}
 	}
-	if to == "active" && r.alerts != nil {
+	if r.alerts != nil {
 		if err := r.alerts.EnqueueInTx(ctx, tx, tenantID, ids, easmalert.ReasonReopened); err != nil {
 			return 0, err
 		}
@@ -361,7 +373,7 @@ func (r *EASMDNSRepository) OpenDanglingCNAMEs(ctx context.Context, tenantID sha
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT id, asset_id, COALESCE(details->>'domain', ''), COALESCE(details->>'target', ''), COALESCE(details->>'provider', '')
 		FROM exposure_events
-		WHERE tenant_id = $1 AND source = $2 AND event_type = 'dangling_cname' AND state = 'active'
+		WHERE tenant_id = $1 AND source = $2 AND event_type = 'dangling_cname' AND state IN `+exposure.OpenStatesSQL+`
 		  AND asset_id = ANY($3::uuid[])`,
 		tenantID.String(), easmdns.Source, pq.Array(ids))
 	if err != nil {
