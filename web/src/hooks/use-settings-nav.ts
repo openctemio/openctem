@@ -18,6 +18,8 @@ export interface VisibleSettingsItem extends SettingsNavItem {
   groupLabel: string
   /** English group title (search matches both languages). */
   groupTitle: string
+  /** Translated sub-heading of the item's section, if it has one. */
+  sectionLabel?: string
   /** The page's settings that search can find, translated. */
   searchAnchors: SearchableAnchor[]
 }
@@ -67,6 +69,9 @@ export function useSettingsNav(): VisibleSettingsGroup[] {
               desc: t(`settings.desc.${item.id}`, item.description),
               groupLabel: label,
               groupTitle: group.title,
+              sectionLabel: item.section
+                ? t(`settings.section.${item.section}`, item.section)
+                : undefined,
               searchAnchors: (item.anchors ?? []).map((a) => ({
                 ...a,
                 label: t(`settings.anchor.${item.id}.${a.id}`, a.title),
@@ -77,4 +82,29 @@ export function useSettingsNav(): VisibleSettingsGroup[] {
         .filter((group) => group.items.length > 0),
     [canSee, subModules, t, limitsApply]
   )
+}
+
+export interface SettingsSectionChunk {
+  /** Section id; undefined for the group's untitled first section. */
+  section?: string
+  label?: string
+  items: VisibleSettingsItem[]
+}
+
+/**
+ * Splits a group's visible items into its sections, in order: consecutive
+ * items with the same `section` form one chunk. An untitled first chunk is
+ * the group's own; when every item of a section is hidden, its heading goes.
+ */
+export function settingsSections(items: VisibleSettingsItem[]): SettingsSectionChunk[] {
+  const chunks: SettingsSectionChunk[] = []
+  for (const item of items) {
+    const last = chunks.at(-1)
+    if (last && last.section === item.section) {
+      last.items.push(item)
+    } else {
+      chunks.push({ section: item.section, label: item.sectionLabel, items: [item] })
+    }
+  }
+  return chunks
 }
