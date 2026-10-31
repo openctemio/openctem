@@ -40,6 +40,7 @@ export type InventoryFilters = Pick<
   | 'isControlPlane'
   | 'isInternetFacing'
   | 'isCrownJewel'
+  | 'isPrimary'
   | 'programAssets'
   | 'freshness'
   | 'resolution'
@@ -107,6 +108,7 @@ const BOOL_PARAMS = {
   isControlPlane: 'is_control_plane',
   isInternetFacing: 'internet_facing',
   isCrownJewel: 'is_crown_jewel',
+  isPrimary: 'primary',
   hasFindings: 'has_findings',
 } as const
 

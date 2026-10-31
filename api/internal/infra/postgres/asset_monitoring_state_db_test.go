@@ -111,6 +111,32 @@ func TestAssetMonitoringState_SQLMatchesDomain(t *testing.T) {
 			t.Errorf("filter unvalidated (scanned=%v) = %v, want cand and low", scanned, names)
 		}
 	}
+	// The primary filter keeps the root domains: the domain asset named like
+	// the permanent wildcard entry's root, never a name below it, nor the
+	// same name in another tenant (whose scope entry does not count here).
+	exec(`INSERT INTO assets (id, tenant_id, name, asset_type, status) VALUES ($1, $2, 'ms-in.example', 'domain', 'active')`,
+		shared.NewID().String(), tid)
+	// A verified domain counts for its own tenant only (domains are unique
+	// across tenants, so the name is unique per run).
+	verified := "ms-verified-" + tid[len(tid)-12:] + ".example"
+	exec(`INSERT INTO assets (id, tenant_id, name, asset_type, status) VALUES ($1, $2, $3, 'domain', 'active')`,
+		shared.NewID().String(), other.String(), verified)
+	exec(`INSERT INTO verified_domains (id, tenant_id, domain, status, verification_token) VALUES ($1, $2, $3, 'verified', 'tok-ms')`,
+		shared.NewID().String(), tid, verified)
+	pf := asset.Filter{Primary: true}
+	pf.TenantID = &tid
+	res, err := repo.List(ctx, pf, asset.NewListOptions(), pagination.New(1, 50))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Data) != 1 || res.Data[0].Name() != "ms-in.example" {
+		names := make([]string, 0, len(res.Data))
+		for _, a := range res.Data {
+			names = append(names, a.Name())
+		}
+		t.Errorf("primary filter = %v, want [ms-in.example]", names)
+	}
+
 	// Another tenant's ids are never answered.
 	got, err := repo.MonitoringStates(ctx, other, ids, true)
 	if err != nil || len(got) != 0 {
