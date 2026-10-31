@@ -30,9 +30,11 @@ const TabsVariantContext = React.createContext<TabsVariant>('line')
  * The underline tab strip, shared by `TabsList` and route-link strips
  * (`SectionTabs`) so both look identical. It scrolls sideways when the tabs do
  * not fit; the fade on an edge (see `useTabStripScroll`) says more are hidden.
+ * Tabs sit 20px apart on a phone (24px from `sm`): three tabs with counts fit
+ * a 390px phone instead of cutting the last label by a few pixels.
  */
 export const TAB_STRIP_CLASS =
-  'flex h-10 w-full max-w-full items-stretch justify-start gap-6 overflow-x-auto overflow-y-hidden overscroll-x-contain border-b text-muted-foreground no-scrollbar data-[fade-end=true]:[mask-image:linear-gradient(to_right,black_calc(100%-2.5rem),transparent)] data-[fade-start=true]:[mask-image:linear-gradient(to_right,transparent,black_2.5rem)] data-[fade-start=true]:data-[fade-end=true]:[mask-image:linear-gradient(to_right,transparent,black_2.5rem,black_calc(100%-2.5rem),transparent)]'
+  'flex h-10 w-full max-w-full items-stretch justify-start gap-5 overflow-x-auto sm:gap-6 overflow-y-hidden overscroll-x-contain border-b text-muted-foreground no-scrollbar data-[fade-end=true]:[mask-image:linear-gradient(to_right,black_calc(100%-2.5rem),transparent)] data-[fade-start=true]:[mask-image:linear-gradient(to_right,transparent,black_2.5rem)] data-[fade-start=true]:data-[fade-end=true]:[mask-image:linear-gradient(to_right,transparent,black_2.5rem,black_calc(100%-2.5rem),transparent)]'
 
 /** One underline tab in a `TAB_STRIP_CLASS` strip. */
 export const TAB_CLASS =
@@ -72,11 +74,26 @@ export function useTabStripScroll(ref: React.RefObject<HTMLElement | null>) {
     revealActive()
     update()
     el.addEventListener('scroll', update, { passive: true })
+    // The strip keeps its own size when a tab grows (a count arrives, a label
+    // is translated, a web font loads), so each tab is observed too: watching
+    // only the strip left the end fade off while the last tab was cut.
     const ro = typeof ResizeObserver === 'function' ? new ResizeObserver(update) : undefined
-    ro?.observe(el)
+    const observeTabs = () => {
+      if (!ro) return
+      ro.disconnect()
+      ro.observe(el)
+      for (const tab of Array.from(el.children)) ro.observe(tab)
+    }
+    observeTabs()
     const mo =
-      typeof MutationObserver === 'function' ? new MutationObserver(revealActive) : undefined
+      typeof MutationObserver === 'function'
+        ? new MutationObserver((records) => {
+            if (records.some((r) => r.type === 'childList' && r.target === el)) observeTabs()
+            revealActive()
+          })
+        : undefined
     mo?.observe(el, {
+      childList: true,
       subtree: true,
       attributes: true,
       attributeFilter: ['data-state', 'aria-current'],

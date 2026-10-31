@@ -65,8 +65,9 @@ anyone else's key loses a scope as soon as the user loses that permission.
 A key is never an admin: the owner/admin bypass never applies, so a route the
 key has no scope for is `403`.
 
-Every key expires: `expires_in_days` is required, 1 to 365 (settings decision
-B14). Keys minted before this rule without an expiry keep working. A member
+Every key expires: `expires_in_days` is required, 1 to the organization's
+maximum (see "Maximum lifetime"). Keys minted before this rule without an
+expiry keep working. A member
 may revoke or delete only their own keys (someone else's key reads as `404`);
 an owner or administrator may revoke or delete any key of the organization.
 
@@ -102,6 +103,43 @@ change for a forged request to cause.
 Audit: an audit entry written during a key request records the key's user as
 the actor and adds `auth_method=api_key`, `api_key_id` and `api_key_prefix` to
 its metadata (`auditapp.WithAPIKeyActor`).
+
+## Maximum lifetime
+
+Settings follow the layered model: the platform sets a ceiling, an
+organization may only tighten below it.
+
+| Layer | Value | Where |
+|---|---|---|
+| Platform ceiling | 365 days (settings decision B14) | `tenant.APIKeyLifetimeCeilingDays`, also `apikey.MaxExpiresInDays` |
+| Organization default | 90 days | `tenant.DefaultAPIKeyMaxLifetimeDays` |
+| Organization maximum | 1 to the ceiling | settings section `api_keys.max_lifetime_days` |
+
+- `GET /api/v1/organization/settings/api-keys` answers `{max_lifetime_days,
+  default_max_lifetime_days, ceiling_days}` to anyone who reads or creates
+  keys (`integrations:api_keys:read` or `:write`, or `settings:read`), so
+  every key dialog (API keys, service accounts, MCP connection key) offers
+  only allowed lifetimes.
+- `PUT` (owner or administrator with `settings:write`) sets it. A shorter
+  maximum applies at once. A longer one is a loosening: it needs a recent
+  sign-in (asked by `TenantService.UpdateAPIKeySettings`, `403
+  STEP_UP_REQUIRED`), is audited high (`tenant.api_key_policy_updated`,
+  metadata `loosened`) and every owner and administrator gets an in-app
+  notice.
+- Create (`apikey.Service.Create`, every entry point including service
+  account keys) refuses `expires_in_days` above the maximum with `400`; a
+  maximum that cannot be read refuses (fail closed). There is no key
+  rotation: a key is replaced by creating a new one, which the same rule
+  covers.
+- Existing keys keep their expiry. An active key minted for longer than the
+  current maximum is answered with `exceeds_org_max: true` in the list and
+  marked "Over the maximum" in Settings > API keys.
+- A week before a key expires, the person who minted it (the creator of a
+  service account key) gets one in-app notice
+  (`APIKeyExpiryNoticeController`, hourly; `api_keys.expiry_notified_at`
+  marks it with a compare-and-swap, so a notice is sent at most once). The
+  sweep reads across organizations as a system job; each notice and mark is
+  scoped to the key's organization.
 
 ## Code
 

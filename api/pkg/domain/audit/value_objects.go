@@ -338,6 +338,7 @@ const (
 	ActionAuthMFAFailed                   Action = "auth.mfa_failed"
 	ActionAuthMFARecoveryCodeUsed         Action = "auth.mfa_recovery_code_used"
 	ActionAuthMFARecoveryCodesRegenerated Action = "auth.mfa_recovery_codes_regenerated"
+	ActionAuthMFAReplaced                 Action = "auth.mfa_replaced"
 	ActionAuthSessionRevoked              Action = "auth.session_revoked"
 	ActionAuthPasswordChanged             Action = "auth.password_changed"
 	// A social sign-in identity (Google, GitHub, Microsoft) was linked to or
@@ -428,7 +429,9 @@ const (
 	ActionSensorPairingApproved  Action = "sensor.pairing_approved"
 	ActionSensorPairingDenied    Action = "sensor.pairing_denied"
 	ActionSensorPairingCompleted Action = "sensor.pairing_completed"
-	ActionSensorRepaired         Action = "sensor.repaired"
+	// LookupLocked: a user hit the failed pairing-code lookup limit (high).
+	ActionSensorPairingLookupLocked Action = "sensor.pairing_lookup_locked"
+	ActionSensorRepaired            Action = "sensor.repaired"
 	// Organization enrollment tokens (docs/architecture/sensor-pairing.md).
 	ActionSensorEnrollmentTokenCreated Action = "sensor.enrollment_token_created"
 	ActionSensorEnrollmentTokenRevoked Action = "sensor.enrollment_token_revoked"
@@ -891,7 +894,7 @@ func (a Action) IsValid() bool {
 		ActionScanStarted, ActionScanCompleted, ActionScanFailed,
 		ActionAuthLogin, ActionAuthLogout, ActionAuthRegister, ActionAuthFailed, ActionPermissionDenied, ActionTokenRevoked,
 		ActionAuthMFAEnabled, ActionAuthMFADisabled, ActionAuthMFAReset, ActionAuthMFAFailed, ActionAuthMFARecoveryCodeUsed,
-		ActionAuthMFARecoveryCodesRegenerated, ActionAuthSessionRevoked, ActionAuthPasswordChanged,
+		ActionAuthMFARecoveryCodesRegenerated, ActionAuthMFAReplaced, ActionAuthSessionRevoked, ActionAuthPasswordChanged,
 		ActionAuthStepUp, ActionAuthStepUpFailed, ActionAuthIdentityLinked, ActionAuthIdentityUnlinked,
 		ActionSettingsUpdated, ActionDataExported, ActionDataImported,
 		ActionSensorCreated, ActionSensorUpdated, ActionSensorDeleted,
@@ -901,7 +904,7 @@ func (a Action) IsValid() bool {
 		ActionSensorContentRefreshRequested, ActionSensorContentPolicyUpdated, ActionSensorCommandsReleased,
 		ActionSensorResultsQuarantined, ActionSensorResultsAccepted, ActionSensorResultsDiscarded,
 		ActionSensorResultPolicyUpdated,
-		ActionSensorPairingExpected, ActionSensorPairingApproved, ActionSensorPairingDenied, ActionSensorPairingCompleted,
+		ActionSensorPairingExpected, ActionSensorPairingApproved, ActionSensorPairingDenied, ActionSensorPairingCompleted, ActionSensorPairingLookupLocked,
 		ActionSensorRepaired, ActionSensorKeyRevoked, ActionSensorIdentityPolicySet, ActionSensorKeyBound, ActionSensorKeyBindRefused,
 		ActionSensorEnrollmentTokenCreated, ActionSensorEnrollmentTokenRevoked, ActionSensorEnrolled, ActionSensorEnrollmentRefused,
 		ActionSensorGrantChanged, ActionSensorClaimRefusedGrant, ActionSensorCredentialRefused, ActionSensorPushRefusedGrant,
@@ -1037,7 +1040,7 @@ func (a Action) Category() string {
 		return "scan"
 	case ActionAuthLogin, ActionAuthLogout, ActionAuthRegister, ActionAuthFailed, ActionPermissionDenied, ActionTokenRevoked,
 		ActionAuthMFAEnabled, ActionAuthMFADisabled, ActionAuthMFAReset, ActionAuthMFAFailed, ActionAuthMFARecoveryCodeUsed,
-		ActionAuthMFARecoveryCodesRegenerated, ActionAuthSessionRevoked, ActionAuthPasswordChanged,
+		ActionAuthMFARecoveryCodesRegenerated, ActionAuthMFAReplaced, ActionAuthSessionRevoked, ActionAuthPasswordChanged,
 		ActionAuthStepUp, ActionAuthStepUpFailed, ActionAuthIdentityLinked, ActionAuthIdentityUnlinked:
 		return "security"
 	case ActionSettingsUpdated:
@@ -1051,7 +1054,7 @@ func (a Action) Category() string {
 		ActionSensorContentRefreshRequested, ActionSensorContentPolicyUpdated, ActionSensorCommandsReleased,
 		ActionSensorResultsQuarantined, ActionSensorResultsAccepted, ActionSensorResultsDiscarded,
 		ActionSensorResultPolicyUpdated,
-		ActionSensorPairingExpected, ActionSensorPairingApproved, ActionSensorPairingDenied, ActionSensorPairingCompleted,
+		ActionSensorPairingExpected, ActionSensorPairingApproved, ActionSensorPairingDenied, ActionSensorPairingCompleted, ActionSensorPairingLookupLocked,
 		ActionSensorRepaired, ActionSensorKeyRevoked, ActionSensorIdentityPolicySet, ActionSensorKeyBound, ActionSensorKeyBindRefused,
 		ActionSensorEnrollmentTokenCreated, ActionSensorEnrollmentTokenRevoked, ActionSensorEnrolled, ActionSensorEnrollmentRefused,
 		ActionSensorGrantChanged, ActionSensorClaimRefusedGrant, ActionSensorCredentialRefused, ActionSensorPushRefusedGrant:
@@ -1236,7 +1239,7 @@ func (r ResourceType) IsValid() bool {
 		ResourceTypeScanWorkflow, ResourceTypeScanWorkflowStep, ResourceTypeScanRun, ResourceTypeScanConfig,
 		ResourceTypeScanProfile, ResourceTypeCommand,
 		ResourceTypeWorkflow, ResourceTypeWorkflowRun, ResourceTypeCapability, ResourceTypeTool,
-		ResourceTypeRuleSource, ResourceTypeRuleOverride, ResourceTypeIngest, ResourceTypeAITriage, ResourceTypeAIAnalysis,
+		ResourceTypeRuleSource, ResourceTypeRuleOverride, ResourceTypeIngest, ResourceTypeAITriage, ResourceTypeAIAnalysis, ResourceTypeAIKnowledge,
 		ResourceTypeCampaign, ResourceTypeMCPTool, ResourceTypeMCPPrompt, ResourceTypeAPIKey,
 		ResourceTypeSAMLConfig, ResourceTypeIdentityProvider, ResourceTypeVerifiedDomain, ResourceTypeEASMNetworkSeed, ResourceTypeEASMLookalikeWatch, ResourceTypeSSOChange,
 		ResourceTypeSCIMGroupMapping, ResourceTypeOrgTrust,
@@ -1347,7 +1350,7 @@ func SeverityForAction(a Action) Severity {
 
 	// Medium - important changes
 	case ActionUserCreated, ActionUserActivated,
-		ActionAuthMFAEnabled, ActionAuthMFARecoveryCodesRegenerated, ActionAuthSessionRevoked, ActionAuthPasswordChanged,
+		ActionAuthMFAEnabled, ActionAuthMFARecoveryCodesRegenerated, ActionAuthMFAReplaced, ActionAuthSessionRevoked, ActionAuthPasswordChanged,
 		ActionAuthStepUp,
 		ActionTenantCreated, ActionTenantUpdated, ActionTenantModulesUpdated,
 		ActionTenantRiskScoringUpdated, ActionTenantRiskScoresRecalculated, ActionTenantAssetSourceUpdated,

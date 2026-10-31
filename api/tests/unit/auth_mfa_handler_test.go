@@ -243,3 +243,70 @@ func TestMFAHandler_SelfServiceErrorsAreNot401(t *testing.T) {
 		t.Fatalf("change password with wrong current password: %d, want 400", rec.Code)
 	}
 }
+
+// Turning two-factor off while an organization requires it answers 409
+// MFA_REQUIRED_BY_POLICY naming the organization; the replacement endpoints
+// work for the same person and say other sessions ended.
+func TestMFAHandler_TurnOffRefusedByPolicyAndReplace(t *testing.T) {
+	h := newMFAHarness(t)
+	tn := newPolicyTenant(t, h.tenants, "handler-2fa", true)
+	h.tenants.userMemberships = []tenant.UserMembership{{TenantID: tn.ID().String(), TenantSlug: tn.Slug(), TenantName: "Acme", Role: "member"}}
+	uid := h.seedUser(t, "held-handler@example.com")
+	lh := newMFAHandler(h)
+	authed := func(fn http.HandlerFunc, body any) *httptest.ResponseRecorder {
+		b, _ := json.Marshal(body)
+		req := httptest.NewRequest(http.MethodPost, "/", bytes.NewReader(b))
+		req = req.WithContext(context.WithValue(req.Context(), middleware.UserIDKey, uid.String()))
+		rec := httptest.NewRecorder()
+		fn(rec, req)
+		return rec
+	}
+	secret, _ := h.enroll(t, uid)
+	h.forgetLastStep(uid)
+
+	rec := authed(lh.DisableMFA, map[string]string{"password": mfaTestPassword, "code": currentCode(t, secret)})
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("disable while required: %d %s, want 409", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		Code    string `json:"code"`
+		Details struct {
+			Organizations []string `json:"organizations"`
+			Platform      bool     `json:"platform"`
+		} `json:"details"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Code != "MFA_REQUIRED_BY_POLICY" || len(body.Details.Organizations) != 1 || body.Details.Organizations[0] != "Acme" || body.Details.Platform {
+		t.Fatalf("body = %s", rec.Body.String())
+	}
+
+	h.forgetLastStep(uid)
+	rec = authed(lh.ReplaceMFA, map[string]string{"password": mfaTestPassword, "code": currentCode(t, secret)})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("replace: %d %s", rec.Code, rec.Body.String())
+	}
+	if rec.Header().Get("Cache-Control") != "no-store" {
+		t.Fatal("a new secret must not be cached")
+	}
+	var setup struct {
+		Secret string `json:"secret"`
+	}
+	_ = json.Unmarshal(rec.Body.Bytes(), &setup)
+	rec = authed(lh.ConfirmReplaceMFA, map[string]string{"code": currentCode(t, setup.Secret)})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("confirm: %d %s", rec.Code, rec.Body.String())
+	}
+	var done struct {
+		RecoveryCodes      []string `json:"recovery_codes"`
+		OtherSessionsEnded bool     `json:"other_sessions_ended"`
+	}
+	_ = json.Unmarshal(rec.Body.Bytes(), &done)
+	if len(done.RecoveryCodes) == 0 || !done.OtherSessionsEnded {
+		t.Fatalf("confirm body = %s", rec.Body.String())
+	}
+	if rec := authed(lh.ConfirmReplaceMFA, map[string]string{"code": "000000"}); rec.Code != http.StatusBadRequest {
+		t.Fatalf("second confirm: %d, want 400", rec.Code)
+	}
+}

@@ -483,7 +483,9 @@ func registerEASMSettingsRoutes(
 	// Own sub-paths: registerEASMRoutes already mounts /api/v1/easm, and chi
 	// panics when the same path is mounted twice.
 	router.Group("/api/v1/easm/settings", func(r Router) {
-		r.GET("/", h.Get, middleware.Require(permission.SettingsRead))
+		// Reading shows the monitoring policy and its run times: those who may run
+		// a sweep (scope:write) and administrators, not every viewer.
+		r.GET("/", h.Get, middleware.Require(permission.ScopeWrite))
 		r.PUT("/", h.Update, middleware.Require(permission.SettingsWrite), middleware.RequireAdmin())
 	}, tenantMiddlewares...)
 	router.Group("/api/v1/easm/sweeps", func(r Router) {
