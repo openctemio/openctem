@@ -14,6 +14,7 @@ package scanrun
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/openctemio/openctem/api/pkg/safetext"
@@ -49,11 +50,67 @@ const ErrCodeCoverageGaps = FailureCoverageGaps
 // stable order (the console has words for each; a test checks it).
 var GapReasons = []string{GapReasonBreakerOpen, GapReasonRateFloor, GapReasonBlocked, GapReasonProxyUnavailable}
 
-// CoverageGap is one host a sensor could not fully cover, and why.
+// Gap causes: what a recheck of a breaker_open host found (sdk-go
+// adapt.GapCause values). An unknown value is dropped, the gap kept.
+const (
+	// GapCauseHTTPReset: the host completed the TLS handshake (or opened
+	// the plain connection) and reset or closed every HTTP request. It is
+	// up; it refuses the scanner (it may block the scanner's address, or
+	// its backend is down).
+	GapCauseHTTPReset = "http_reset"
+	// GapCauseTLSFailed: the connection opened, the TLS handshake failed.
+	GapCauseTLSFailed = "tls_failed"
+	// GapCauseReset: the host accepts connections, then resets them.
+	GapCauseReset = "reset"
+	// GapCauseRefused: the connection was refused (the port is closed).
+	GapCauseRefused = "refused"
+	// GapCauseNoAnswer: nothing answered.
+	GapCauseNoAnswer = "no_answer"
+	// GapCauseAnswered: the host answered the recheck; it failed the
+	// scanner's requests for a while.
+	GapCauseAnswered = "answered"
+)
+
+// GapCauses lists the causes the platform accepts, in a stable order (the
+// console has words for each; a test checks it).
+var GapCauses = []string{GapCauseHTTPReset, GapCauseTLSFailed, GapCauseReset, GapCauseRefused, GapCauseNoAnswer, GapCauseAnswered}
+
+// Certificate problems a recheck saw on the host (sdk-go adapt.GapCert).
+const (
+	GapCertExpired      = "expired"
+	GapCertNotYetValid  = "not_yet_valid"
+	GapCertNameMismatch = "name_mismatch"
+	GapCertSelfSigned   = "self_signed"
+)
+
+// GapCerts lists the certificate problems the platform accepts.
+var GapCerts = []string{GapCertExpired, GapCertNotYetValid, GapCertNameMismatch, GapCertSelfSigned}
+
+// CoverageGap is one host a sensor could not fully cover, and why. Cause
+// and Cert, when the sensor rechecked the host, say what it did and what
+// its certificate showed; they never make the host covered.
 type CoverageGap struct {
 	Host   string `json:"host"`
 	Reason string `json:"reason"`
 	Detail string `json:"detail,omitempty"`
+	Cause  string `json:"cause,omitempty"`
+	Cert   string `json:"cert,omitempty"`
+}
+
+// KnownGapCause returns c when it is one of GapCauses, else "".
+func KnownGapCause(c string) string {
+	if slices.Contains(GapCauses, c) {
+		return c
+	}
+	return ""
+}
+
+// KnownGapCert returns c when it is one of GapCerts, else "".
+func KnownGapCert(c string) string {
+	if slices.Contains(GapCerts, c) {
+		return c
+	}
+	return ""
 }
 
 // ParseCoverageGaps reads a task result's coverage_gaps list and
@@ -80,7 +137,10 @@ func ParseCoverageGaps(list json.RawMessage, total int) ([]CoverageGap, int) {
 			continue
 		}
 		detail, _ := e["detail"].(string)
-		out = append(out, CoverageGap{Host: host, Reason: reason, Detail: safetext.SingleLine(detail, maxGapDetailRunes)})
+		cause, _ := e["cause"].(string)
+		cert, _ := e["cert"].(string)
+		out = append(out, CoverageGap{Host: host, Reason: reason, Detail: safetext.SingleLine(detail, maxGapDetailRunes),
+			Cause: KnownGapCause(cause), Cert: KnownGapCert(cert)})
 	}
 	if len(out) == 0 {
 		out = nil
@@ -116,10 +176,29 @@ func CoverageGapSummary(list []CoverageGap, total int) string {
 		} else {
 			b.WriteString(", ")
 		}
-		fmt.Fprintf(&b, "%s (%s)", g.Host, g.Reason)
+		fmt.Fprintf(&b, "%s (%s)", g.Host, gapLabel(g))
 	}
 	if n := total - min(len(list), maxGapsInSummary); n > 0 && len(list) > 0 {
 		fmt.Fprintf(&b, ", and %d more", n)
 	}
 	return b.String()
+}
+
+// gapLabel is a gap's reason with what the recheck saw: "breaker_open",
+// "breaker_open: http_reset", "breaker_open: http_reset, certificate
+// expired".
+func gapLabel(g CoverageGap) string {
+	l := g.Reason
+	if g.Cause != "" {
+		l += ": " + g.Cause
+	}
+	if g.Cert != "" {
+		if g.Cause == "" {
+			l += ":"
+		} else {
+			l += ","
+		}
+		l += " certificate " + strings.ReplaceAll(g.Cert, "_", " ")
+	}
+	return l
 }
