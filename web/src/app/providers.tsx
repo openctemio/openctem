@@ -10,6 +10,7 @@ import { SWRProvider } from '@/lib/swr-config'
 import { AppToaster } from '@/components/app-toaster'
 import { config as zodConfig } from 'zod/v4/core'
 import { installClientErrorListeners } from '@/lib/client-errors'
+import { installDeploymentSkewGuard } from '@/lib/deployment-skew'
 
 // The CSP has no 'unsafe-eval' (src/lib/middleware/csp.ts). Zod probes for
 // `new Function` on its first parse to pick its JIT path; the probe is caught,
@@ -40,6 +41,10 @@ export function Providers({
   // Count uncaught errors and chunk-load failures for operator alerting
   // (kind only; see src/lib/client-errors.ts).
   useEffect(() => installClientErrorListeners(), [])
+
+  // A tab left open across a deploy calls server actions that no longer exist:
+  // reload once with a notice (src/lib/deployment-skew.ts).
+  useEffect(() => installDeploymentSkewGuard(), [])
 
   // Initialize Web Vitals reporting (lazy load to avoid bundling optional dependencies)
   useEffect(() => {

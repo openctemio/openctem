@@ -557,6 +557,8 @@
   "confirm.sensor.bulkDeleteDesc": "Their API keys stop working at once and they can no longer claim jobs or send results. Findings they reported stay. This cannot be undone.",
   "confirm.sensor.bulkDeleteTitle": "Delete {count} sensors?",
   "confirm.sensor.bulkDeleteTitleOne": "Delete 1 sensor?",
+  "confirm.sensor.bulkDisableDesc": "They stop claiming new jobs until you enable them again. Their keys and history are kept.",
+  "confirm.sensor.bulkDisableTitle": "Disable {count} sensors?",
   "confirm.sensor.deleteDesc": "Its API key stops working at once and it can no longer claim jobs or send results. Findings it reported stay. This cannot be undone.",
   "confirm.sensor.deleteTitle": "Delete the sensor {name}?",
   "confirm.sensor.demote": "Set back to New",

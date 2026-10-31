@@ -3,6 +3,7 @@
 | | |
 |---|---|
 | Status | Proposed (2026-10-11) |
+| Workflow | [sensor-platform-workflow.md](../architecture/sensor-platform-workflow.md) (the end-to-end sensor and platform flow as implemented today) |
 | Scope | api (doorbell, leases, sensor route budgets, hello, control profile, Sensors API), sdk-go (`pkg/adapt` bounds and controllers, client, egress forwarder, resource manager, outbox), sensor (nuclei and tool adapters, status command), web (Sensors page) |
 | Related | RFC-023 §9.2a (heartbeat doorbell), RFC-026 (ingest v2 limits), RFC-029 (control plane v2), RFC-030 (scan distribution, leases, fair share), RFC-033 (manifest, `config_version`), RFC-035 (heartbeat under load, lease epochs), RFC-038 (sensor tool settings), RFC-040 (mutual distrust, local policy), RFC-059 (transport v3 and automatic binding selection), RFC-060 (tool network confinement, egress forwarder), RFC-067 (scan windows), RFC-071 (scan intensity) |
 
