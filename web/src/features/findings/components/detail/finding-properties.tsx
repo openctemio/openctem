@@ -206,73 +206,79 @@ export function FindingProperties({
   )
 
   return (
-    <dl
+    // One group of lists: a description list holds only its rows (dt/dd, each
+    // pair at most in one div), so the people and the folded rows are lists of
+    // their own and the fold toggle sits between them.
+    <div
+      role="group"
       className={cn('space-y-1', className)}
       aria-label={t('findings.properties.ariaLabel', 'Properties')}
     >
-      {!hideTriage && (
-        <>
-          <Row label={t('findings.properties.status', 'Status')}>
-            <StatusSelect
-              findingId={finding.id}
-              value={triage.status}
-              subStatusId={triage.subStatusId}
-              allowSubStatusMoves
-              onChange={triage.changeStatus}
-              loading={triage.statusBusy}
-              disabled={locked}
-            />
+      <dl className="space-y-1">
+        {!hideTriage && (
+          <>
+            <Row label={t('findings.properties.status', 'Status')}>
+              <StatusSelect
+                findingId={finding.id}
+                value={triage.status}
+                subStatusId={triage.subStatusId}
+                allowSubStatusMoves
+                onChange={triage.changeStatus}
+                loading={triage.statusBusy}
+                disabled={locked}
+              />
+            </Row>
+            <Row label={t('findings.properties.severity', 'Severity')}>
+              <SeveritySelect
+                value={triage.severity}
+                onChange={triage.changeSeverity}
+                loading={triage.severityBusy}
+                disabled={locked || !canRescore || !!finding.pendingSeverityRequest}
+                cvss={finding.cvss}
+                showIcon={false}
+              />
+              <SeverityProvenance
+                finding={finding}
+                canRescore={!locked && canRescore}
+                onRestore={triage.restoreSeverity}
+              />
+            </Row>
+          </>
+        )}
+        {!hideTriage && (
+          <Row label={t('findings.properties.priority', 'Priority')}>
+            {finding.priorityClass ? (
+              <span className="inline-flex items-center gap-1.5">
+                <PriorityClassBadge priorityClass={finding.priorityClass} showWord />
+                {finding.priorityClassOverride && (
+                  <span className="text-xs text-muted-foreground">
+                    {t('findings.properties.setManually', 'set manually')}
+                  </span>
+                )}
+              </span>
+            ) : (
+              <span className="text-muted-foreground">
+                {t('findings.properties.notClassified', 'Not classified')}
+              </span>
+            )}
           </Row>
-          <Row label={t('findings.properties.severity', 'Severity')}>
-            <SeveritySelect
-              value={triage.severity}
-              onChange={triage.changeSeverity}
-              loading={triage.severityBusy}
-              disabled={locked || !canRescore || !!finding.pendingSeverityRequest}
-              cvss={finding.cvss}
-              showIcon={false}
+        )}
+        <Row label={t('findings.properties.slaDue', 'SLA due')}>
+          <div className="flex flex-col items-start gap-0.5">
+            <SlaDue
+              deadline={finding.slaDeadline}
+              status={finding.slaStatus}
+              closed={closed}
+              kevCapped={finding.slaKevCapped}
             />
-            <SeverityProvenance
-              finding={finding}
-              canRescore={!locked && canRescore}
-              onRestore={triage.restoreSeverity}
+            <SlaWhyThisDate
+              basis={finding.slaBasis}
+              priorityClass={finding.priorityClass}
+              severity={finding.severity}
             />
-          </Row>
-        </>
-      )}
-      {!hideTriage && (
-        <Row label={t('findings.properties.priority', 'Priority')}>
-          {finding.priorityClass ? (
-            <span className="inline-flex items-center gap-1.5">
-              <PriorityClassBadge priorityClass={finding.priorityClass} showWord />
-              {finding.priorityClassOverride && (
-                <span className="text-xs text-muted-foreground">
-                  {t('findings.properties.setManually', 'set manually')}
-                </span>
-              )}
-            </span>
-          ) : (
-            <span className="text-muted-foreground">
-              {t('findings.properties.notClassified', 'Not classified')}
-            </span>
-          )}
+          </div>
         </Row>
-      )}
-      <Row label={t('findings.properties.slaDue', 'SLA due')}>
-        <div className="flex flex-col items-start gap-0.5">
-          <SlaDue
-            deadline={finding.slaDeadline}
-            status={finding.slaStatus}
-            closed={closed}
-            kevCapped={finding.slaKevCapped}
-          />
-          <SlaWhyThisDate
-            basis={finding.slaBasis}
-            priorityClass={finding.priorityClass}
-            severity={finding.severity}
-          />
-        </div>
-      </Row>
+      </dl>
       <FindingPeople findingId={finding.id} assignee={assigneeNode} />
 
       {/* Below lg the rail sits above "Why it matters": keep the state rows
@@ -297,119 +303,126 @@ export function FindingProperties({
       <div id={moreId} className={cn('space-y-1', !more && 'hidden lg:block')}>
         <div className="my-2 border-t" role="presentation" />
 
-        {asset && (
-          <Row label={t('findings.properties.asset', 'Asset')}>
-            <span className="block min-w-0">
-              {isLinkableAssetId(asset.id) ? (
-                <Link
-                  href={assetDetailHref(asset.id)}
-                  className="rounded-sm font-medium break-words hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-                >
-                  {asset.name}
-                  <ArrowUpRight className="ms-0.5 inline h-3.5 w-3.5 align-text-top" aria-hidden />
-                </Link>
-              ) : (
-                <span className="font-medium">{asset.name}</span>
-              )}
-              {assetCaption && (
-                <span className="block text-xs text-muted-foreground">{assetCaption}</span>
-              )}
-              {finding.assets.length > 1 && (
-                <span className="block text-xs text-muted-foreground">
-                  {t('findings.properties.moreAssets', '+{count} more', {
-                    count: finding.assets.length - 1,
-                  })}
-                </span>
-              )}
-            </span>
-          </Row>
-        )}
-        <Row label={t('findings.properties.foundBy', 'Found by')}>
-          <span>
-            {findingSourceLabel(finding.source)}
-            {tool && <span className="block text-xs text-muted-foreground">{tool}</span>}
-          </span>
-        </Row>
-        <Row label={t('findings.properties.firstSeen', 'First seen')}>
-          <span title={finding.discoveredAt}>
-            <span className="tabular-nums">{formatDate(finding.discoveredAt, locale)}</span>
-            <span className="block text-xs text-muted-foreground">
-              <RelativeTime date={finding.discoveredAt} />
-            </span>
-          </span>
-        </Row>
-        {finding.lastSeenAt &&
-          finding.lastSeenAt.slice(0, 10) !== finding.discoveredAt.slice(0, 10) && (
-            <Row label={t('findings.properties.lastSeen', 'Last seen')}>
-              <span className="tabular-nums" title={finding.lastSeenAt}>
-                {formatDate(finding.lastSeenAt, locale)}
+        <dl className="space-y-1">
+          {asset && (
+            <Row label={t('findings.properties.asset', 'Asset')}>
+              <span className="block min-w-0">
+                {isLinkableAssetId(asset.id) ? (
+                  <Link
+                    href={assetDetailHref(asset.id)}
+                    className="rounded-sm font-medium break-words hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                  >
+                    {asset.name}
+                    <ArrowUpRight
+                      className="ms-0.5 inline h-3.5 w-3.5 align-text-top"
+                      aria-hidden
+                    />
+                  </Link>
+                ) : (
+                  <span className="font-medium">{asset.name}</span>
+                )}
+                {assetCaption && (
+                  <span className="block text-xs text-muted-foreground">{assetCaption}</span>
+                )}
+                {finding.assets.length > 1 && (
+                  <span className="block text-xs text-muted-foreground">
+                    {t('findings.properties.moreAssets', '+{count} more', {
+                      count: finding.assets.length - 1,
+                    })}
+                  </span>
+                )}
               </span>
             </Row>
           )}
-        {(finding.occurrenceCount ?? 0) > 1 && (
-          <Row label={t('findings.properties.seenIn', 'Seen in')}>
-            <span className="tabular-nums">
-              {t('findings.properties.scansCount', '{count} scans', {
-                count: finding.occurrenceCount ?? 0,
-              })}
+          <Row label={t('findings.properties.foundBy', 'Found by')}>
+            <span>
+              {findingSourceLabel(finding.source)}
+              {tool && <span className="block text-xs text-muted-foreground">{tool}</span>}
             </span>
           </Row>
-        )}
-        {finding.resolvedAt && (
-          <Row label={t('findings.properties.resolved', 'Resolved')}>
-            <span className="tabular-nums">{formatDate(finding.resolvedAt, locale)}</span>
-          </Row>
-        )}
-        {finding.observation === 'stale' && (
-          <Row label={t('findings.properties.observation', 'Observation')}>
-            <span>{t('findings.observation.stale', 'Stale: not reported lately, not fixed')}</span>
-          </Row>
-        )}
-        {finding.validation && (
-          <Row label={t('findings.properties.validation', 'Validation')}>
-            <span>
-              {finding.validation === 'not_reproducible'
-                ? t('findings.validation.not_reproducible', 'Not reproducible')
-                : t('findings.validation.reproducible', 'Reproducible')}
+          <Row label={t('findings.properties.firstSeen', 'First seen')}>
+            <span title={finding.discoveredAt}>
+              <span className="tabular-nums">{formatDate(finding.discoveredAt, locale)}</span>
+              <span className="block text-xs text-muted-foreground">
+                <RelativeTime date={finding.discoveredAt} />
+              </span>
             </span>
           </Row>
-        )}
-        {finding.closureReason && (
-          <Row label={t('findings.properties.closedAs', 'Closed as')}>
-            <span>
-              {closureReasonLabel(t, finding.closureReason)}
-              {finding.verification && (
-                <span className="text-muted-foreground">
-                  {' · '}
-                  {verificationLabel(t, finding.verification)}
+          {finding.lastSeenAt &&
+            finding.lastSeenAt.slice(0, 10) !== finding.discoveredAt.slice(0, 10) && (
+              <Row label={t('findings.properties.lastSeen', 'Last seen')}>
+                <span className="tabular-nums" title={finding.lastSeenAt}>
+                  {formatDate(finding.lastSeenAt, locale)}
                 </span>
-              )}
-            </span>
+              </Row>
+            )}
+          {(finding.occurrenceCount ?? 0) > 1 && (
+            <Row label={t('findings.properties.seenIn', 'Seen in')}>
+              <span className="tabular-nums">
+                {t('findings.properties.scansCount', '{count} scans', {
+                  count: finding.occurrenceCount ?? 0,
+                })}
+              </span>
+            </Row>
+          )}
+          {finding.resolvedAt && (
+            <Row label={t('findings.properties.resolved', 'Resolved')}>
+              <span className="tabular-nums">{formatDate(finding.resolvedAt, locale)}</span>
+            </Row>
+          )}
+          {finding.observation === 'stale' && (
+            <Row label={t('findings.properties.observation', 'Observation')}>
+              <span>
+                {t('findings.observation.stale', 'Stale: not reported lately, not fixed')}
+              </span>
+            </Row>
+          )}
+          {finding.validation && (
+            <Row label={t('findings.properties.validation', 'Validation')}>
+              <span>
+                {finding.validation === 'not_reproducible'
+                  ? t('findings.validation.not_reproducible', 'Not reproducible')
+                  : t('findings.validation.reproducible', 'Reproducible')}
+              </span>
+            </Row>
+          )}
+          {finding.closureReason && (
+            <Row label={t('findings.properties.closedAs', 'Closed as')}>
+              <span>
+                {closureReasonLabel(t, finding.closureReason)}
+                {finding.verification && (
+                  <span className="text-muted-foreground">
+                    {' · '}
+                    {verificationLabel(t, finding.verification)}
+                  </span>
+                )}
+              </span>
+            </Row>
+          )}
+          <Row label={t('findings.properties.tickets', 'Tickets')}>
+            <FindingTicketLinks findingId={finding.id} workItemUris={finding.workItemUris} />
           </Row>
-        )}
-        <Row label={t('findings.properties.tickets', 'Tickets')}>
-          <FindingTicketLinks findingId={finding.id} workItemUris={finding.workItemUris} />
-        </Row>
-        {tags.length > 0 && (
-          <Row label={t('findings.properties.tags', 'Tags')}>
-            <span className="flex flex-wrap gap-1 py-1">
-              {tags.map((tag) => (
-                <Badge key={tag} variant="secondary" className="text-xs font-normal">
-                  {tag}
-                </Badge>
-              ))}
-            </span>
-          </Row>
-        )}
-        {!hideTriage && (
-          <Row label={t('findings.properties.id', 'ID')}>
-            <DetailCopyId
-              id={finding.id}
-              label={t('findings.properties.findingId', 'Finding ID')}
-            />
-          </Row>
-        )}
+          {tags.length > 0 && (
+            <Row label={t('findings.properties.tags', 'Tags')}>
+              <span className="flex flex-wrap gap-1 py-1">
+                {tags.map((tag) => (
+                  <Badge key={tag} variant="secondary" className="text-xs font-normal">
+                    {tag}
+                  </Badge>
+                ))}
+              </span>
+            </Row>
+          )}
+          {!hideTriage && (
+            <Row label={t('findings.properties.id', 'ID')}>
+              <DetailCopyId
+                id={finding.id}
+                label={t('findings.properties.findingId', 'Finding ID')}
+              />
+            </Row>
+          )}
+        </dl>
       </div>
-    </dl>
+    </div>
   )
 }
