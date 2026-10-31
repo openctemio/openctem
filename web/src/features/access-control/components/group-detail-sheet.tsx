@@ -26,15 +26,8 @@ import {
 } from '@/features/access-control'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import {
-  DetailCopyId,
-  DetailField,
-  DetailFieldGrid,
   DetailHeader,
-  DetailSection,
-  DetailSections,
   DetailSheet,
-  DetailStat,
-  DetailStatGrid,
   DetailTabs,
   type DetailMenuItem,
   type DetailTab,
@@ -51,8 +44,7 @@ import {
   AddMemberDialog,
   AddAssetDialog,
   BulkAddAssetsDialog,
-  RolesTab,
-  AccessTab,
+  TeamAccessPanel,
   MembershipEndDialog,
   membershipEndISO,
   DEFAULT_EXTERNAL_MEMBERSHIP_DAYS,
@@ -62,7 +54,7 @@ import { dateInputDaysFromNow } from '@/features/organization/lib/external-acces
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { useTranslation } from '@/context/i18n-provider'
 
-type GroupTab = 'overview' | 'members' | 'access' | 'roles' | 'assets' | 'scope-rules'
+type GroupTab = 'members' | 'assets' | 'access' | 'scope-rules'
 
 const EMPTY_NEW_MEMBER: NewGroupMember = { userId: '', role: 'member', endsOn: '', reason: '' }
 
@@ -119,7 +111,7 @@ export function GroupDetailSheet({
   )
 
   // UI State
-  const [activeTab, setActiveTab] = useState<GroupTab>('overview')
+  const [activeTab, setActiveTab] = useState<GroupTab>('members')
   const [outsideOnly, setOutsideOnly] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
   // Each control follows the API gate of the route it calls, so a viewer
@@ -166,7 +158,7 @@ export function GroupDetailSheet({
     if (open && groupId) {
       setMembersOffset(0)
       setAssetsOffset(0)
-      setActiveTab('overview')
+      setActiveTab('members')
       setOutsideOnly(false)
       setIsEditing(false)
       mutateGroup()
@@ -199,8 +191,8 @@ export function GroupDetailSheet({
 
   // Save changes
   const handleSaveChanges = async () => {
-    if (!editForm.name) {
-      toast.error('Team name is required')
+    if (!editForm.name.trim()) {
+      toast.error(t('org.teamSheet.nameRequired', 'Enter a team name'))
       return
     }
 
@@ -210,19 +202,21 @@ export function GroupDetailSheet({
         // "" clears the description (absent would mean unchanged).
         description: editForm.description.trim(),
       })
-      toast.success('Team updated successfully')
+      toast.success(t('org.teamSheet.updated', 'Team saved'))
       setIsEditing(false)
       mutateGroup()
       onUpdate?.()
     } catch (error) {
-      toast.error(getErrorMessage(error, 'Failed to update team'))
+      toast.error(
+        getErrorMessage(error, t('org.teamSheet.updateFailed', 'Could not save the team'))
+      )
     }
   }
 
   // Add member
   const handleAddMember = async () => {
     if (!newMember.userId) {
-      toast.error('Please select a member')
+      toast.error(t('org.teamSheet.pickMember', 'Choose a member'))
       return
     }
 
@@ -233,14 +227,16 @@ export function GroupDetailSheet({
         expires_at: membershipEndISO(newMember.endsOn),
         expiry_reason: newMember.endsOn ? newMember.reason.trim() || undefined : undefined,
       })
-      toast.success('Member added successfully')
+      toast.success(t('org.teamSheet.memberAdded', 'Member added'))
       setAddMemberDialogOpen(false)
       setNewMember(EMPTY_NEW_MEMBER)
       mutateMembers()
       mutateGroup()
       onUpdate?.()
     } catch (error) {
-      toast.error(getErrorMessage(error, 'Failed to add member'))
+      toast.error(
+        getErrorMessage(error, t('org.teamSheet.memberAddFailed', 'Could not add the member'))
+      )
     }
   }
 
@@ -250,13 +246,15 @@ export function GroupDetailSheet({
 
     try {
       await removeMember()
-      toast.success(`Member removed successfully`)
+      toast.success(t('org.teamSheet.memberRemoved', 'Member removed'))
       setMemberToRemove(null)
       mutateMembers()
       mutateGroup()
       onUpdate?.()
     } catch (error) {
-      toast.error(getErrorMessage(error, 'Failed to remove member'))
+      toast.error(
+        getErrorMessage(error, t('org.teamSheet.memberRemoveFailed', 'Could not remove the member'))
+      )
     }
   }
 
@@ -270,13 +268,15 @@ export function GroupDetailSheet({
         asset_id: assetId,
         ownership_type: ownershipType,
       })
-      toast.success('Asset assigned successfully')
+      toast.success(t('org.teamSheet.assetAdded', 'Asset added to the team'))
       setAddAssetDialogOpen(false)
       mutateAssets()
       mutateGroup()
       onUpdate?.()
     } catch (error) {
-      toast.error(getErrorMessage(error, 'Failed to assign asset'))
+      toast.error(
+        getErrorMessage(error, t('org.teamSheet.assetAddFailed', 'Could not add the asset'))
+      )
     }
   }
 
@@ -286,13 +286,15 @@ export function GroupDetailSheet({
 
     try {
       await unassignAsset()
-      toast.success('Asset removed successfully')
+      toast.success(t('org.teamSheet.assetRemoved', 'Asset removed from the team'))
       setAssetToRemove(null)
       mutateAssets()
       mutateGroup()
       onUpdate?.()
     } catch (error) {
-      toast.error(getErrorMessage(error, 'Failed to remove asset'))
+      toast.error(
+        getErrorMessage(error, t('org.teamSheet.assetRemoveFailed', 'Could not remove the asset'))
+      )
     }
   }
 
@@ -324,12 +326,14 @@ export function GroupDetailSheet({
   }
 
   const groupType = group ? getGroupType(group) : null
-  const typeLabel = groupType ? GroupTypeConfig[groupType]?.label : undefined
+  const typeLabel = groupType
+    ? t(`org.teamSheet.type.${groupType}`, GroupTypeConfig[groupType]?.label ?? groupType)
+    : undefined
   const memberCount = group?.member_count ?? membersTotalCount ?? 0
   const assetCount = group?.asset_count ?? assetsTotalCount ?? 0
 
+  // Members first; the counts are on the tabs, the description in the header.
   const tabs: DetailTab<GroupTab>[] = [
-    { value: 'overview', label: t('org.teamSheet.overview', 'Overview') },
     {
       value: 'members',
       label: (
@@ -349,10 +353,7 @@ export function GroupDetailSheet({
       ),
     },
     ...(canViewRoles
-      ? [
-          { value: 'access' as const, label: t('org.teamSheet.access', 'Access') },
-          { value: 'roles' as const, label: t('org.teamSheet.roles', 'Roles') },
-        ]
+      ? [{ value: 'access' as const, label: t('org.teamSheet.access', 'Access') }]
       : []),
     { value: 'scope-rules', label: t('org.teamSheet.scopeRules', 'Scope rules') },
   ]
@@ -382,14 +383,14 @@ export function GroupDetailSheet({
               group && isEditing ? (
                 <Input
                   autoFocus
-                  aria-label="Team name"
+                  aria-label={t('org.teamSheet.name', 'Team name')}
                   value={editForm.name}
                   onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
                   className="h-8 text-base font-semibold"
-                  placeholder="Team name"
+                  placeholder={t('org.teamSheet.name', 'Team name')}
                 />
               ) : (
-                (group?.name ?? 'Team')
+                (group?.name ?? t('org.teamSheet.fallbackTitle', 'Team'))
               )
             }
             badges={
@@ -404,7 +405,16 @@ export function GroupDetailSheet({
                 </Badge>
               ) : undefined
             }
-            meta={group ? [`Created ${formatDate(group.created_at)}`] : undefined}
+            meta={
+              group
+                ? [
+                    t('org.teamSheet.created', 'Created {date}', {
+                      date: formatDate(group.created_at),
+                    }),
+                    ...(group.description && !isEditing ? [group.description] : []),
+                  ]
+                : undefined
+            }
             actions={
               group ? (
                 isEditing ? (
@@ -415,16 +425,16 @@ export function GroupDetailSheet({
                       ) : (
                         <Save className="h-4 w-4" />
                       )}
-                      Save
+                      {t('org.teamSheet.save', 'Save')}
                     </Button>
                     <Button size="sm" variant="outline" onClick={() => setIsEditing(false)}>
-                      Cancel
+                      {t('org.teamSheet.cancel', 'Cancel')}
                     </Button>
                   </>
                 ) : canEditGroup ? (
                   <Button size="sm" onClick={handleStartEdit}>
                     <Pencil className="h-4 w-4" />
-                    Edit
+                    {t('org.teamSheet.edit', 'Edit')}
                   </Button>
                 ) : undefined
               ) : undefined
@@ -459,41 +469,15 @@ export function GroupDetailSheet({
           />
         ) : (
           <>
-            {activeTab === 'overview' && (
-              <div className="space-y-5">
-                <DetailStatGrid aria-label="Key numbers">
-                  <DetailStat label="Members" value={memberCount} />
-                  <DetailStat label="Assets" value={assetCount} />
-                  <DetailStat label="Created" value={formatDate(group.created_at)} />
-                </DetailStatGrid>
-
-                <DetailSections>
-                  <DetailSection title="Description">
-                    {isEditing ? (
-                      <Textarea
-                        aria-label="Description"
-                        value={editForm.description}
-                        onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
-                        placeholder="Add a description..."
-                        rows={3}
-                      />
-                    ) : (
-                      <p className="text-sm text-muted-foreground">
-                        {group.description || 'No description provided.'}
-                      </p>
-                    )}
-                  </DetailSection>
-
-                  <DetailSection title="Details">
-                    <DetailFieldGrid>
-                      <DetailField label="Type">{typeLabel ?? '—'}</DetailField>
-                      <DetailField label="Last updated">{formatDate(group.updated_at)}</DetailField>
-                      <DetailField label="Team ID" full>
-                        <DetailCopyId id={group.id} label="Team ID" />
-                      </DetailField>
-                    </DetailFieldGrid>
-                  </DetailSection>
-                </DetailSections>
+            {isEditing && (
+              <div className="mb-4 space-y-1">
+                <Textarea
+                  aria-label={t('org.teamSheet.description', 'Description')}
+                  value={editForm.description}
+                  onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
+                  placeholder={t('org.teamSheet.descriptionPlaceholder', 'What this team is for')}
+                  rows={3}
+                />
               </div>
             )}
 
@@ -554,20 +538,9 @@ export function GroupDetailSheet({
             )}
 
             {activeTab === 'access' && groupId && (
-              <AccessTab
+              <TeamAccessPanel
                 groupId={groupId}
-                canEdit={canSetAccess}
-                memberCount={memberCount}
-                outsideMembers={outsideMembers}
-                onShowOutside={showOutside}
-                onCreateTeam={createTeam}
-                onChanged={accessChanged}
-              />
-            )}
-
-            {activeTab === 'roles' && groupId && (
-              <RolesTab
-                groupId={groupId}
+                canSetAccess={canSetAccess}
                 canBind={canBindRole}
                 canUnbind={canUnbindRole}
                 memberCount={memberCount}

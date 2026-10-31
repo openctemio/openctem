@@ -4,7 +4,7 @@ import type { Page } from '@playwright/test'
 /**
  * A team with a member from outside the organization cannot carry full data
  * access (the API refuses with TEAM_EXTERNAL_FULL_DATA). The owner's report:
- * the refusal only arrived as a toast after clicking. Now the Roles tab
+ * the refusal only arrived as a toast after clicking. Now the Access tab
  * turns full-data roles off up front, names the outside member and offers
  * the ways forward, and the Members tab marks them. The API answers are
  * stubbed, so the stack needs no data; no request writes anything.
@@ -34,7 +34,7 @@ const json = (body: unknown) => ({
 
 /** Opens a sheet tab, through the More menu where the tab row overflows (phone). */
 async function openTab(page: Page, name: string) {
-  await expect(page.getByRole('tab', { name: 'Overview' })).toBeVisible({ timeout: 30_000 })
+  await expect(page.getByRole('tab', { name: /^Members/ })).toBeVisible({ timeout: 30_000 })
   const tab = page.getByRole('tab', { name })
   if (await tab.isVisible()) return tab.click()
   await page.locator('[data-slot="tabs-more"]').click()
@@ -43,7 +43,10 @@ async function openTab(page: Page, name: string) {
 
 async function stub(page: Page, writes: string[]) {
   await page.route(
-    (url) => url.pathname.startsWith('/api/v1/groups') || url.pathname === '/api/v1/roles',
+    (url) =>
+      url.pathname.startsWith('/api/v1/groups') ||
+      url.pathname === '/api/v1/roles' ||
+      url.pathname === '/api/v1/roles/templates',
     (route) => {
       const req = route.request()
       const path = new URL(req.url()).pathname
@@ -84,6 +87,8 @@ async function stub(page: Page, writes: string[]) {
       if (path === `/api/v1/groups/${TEAM}/roles`) return route.fulfill(json({ data: [] }))
       if (path === `/api/v1/groups/${TEAM}/access`)
         return route.fulfill(json({ presets: [], scope_mode: 'specific', other_roles: 0 }))
+      // No preset offers full data here, so the notice is the custom roles' one.
+      if (path === '/api/v1/roles/templates') return route.fulfill(json({ templates: [] }))
       if (path === '/api/v1/roles')
         return route.fulfill(
           json({
@@ -111,8 +116,12 @@ test.describe('Team with outside members', { tag: ['@settings'] }, () => {
     await page.goto('/settings/teams')
     await page.getByText('DevSecOps').first().click({ timeout: 30_000 })
 
-    await openTab(page, 'Roles')
+    // One Access tab (presets, then custom roles); no Overview or Roles tab.
+    await expect(page.getByRole('tab', { name: 'Overview' })).toHaveCount(0)
+    await expect(page.getByRole('tab', { name: 'Roles' })).toHaveCount(0)
+    await openTab(page, 'Access')
     const notice = page.getByTestId('team-outside-notice')
+    await expect(notice).toHaveCount(1)
     await expect(notice).toBeVisible()
     await expect(notice).toContainText('Pat Contractor')
     await expect(notice.getByRole('button', { name: 'New team without them' })).toBeVisible()
@@ -142,7 +151,7 @@ test.describe('Team with outside members', { tag: ['@settings'] }, () => {
     await stub(page, [])
     await page.goto('/settings/teams')
     await page.getByText('DevSecOps').first().click({ timeout: 30_000 })
-    await openTab(page, 'Roles')
+    await openTab(page, 'Access')
     await expect(page.getByTestId('team-outside-notice')).toBeVisible()
     const overflow = await page.evaluate(
       () => document.documentElement.scrollWidth - document.documentElement.clientWidth
