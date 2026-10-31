@@ -405,7 +405,8 @@ sequenceDiagram
 
 - **Binding.** A result names its command. It is accepted as bound only when
   the command is in the sensor's tenant, held by this sensor, and open (or
-  finished less than 15 minutes ago), and the tool matches. Anything else is
+  finished less than 15 minutes ago), and the tool matches; a lease epoch
+  the sensor states must be the current one. Anything else is
   `command-not-found`; unsolicited results are allowed only for collectors
   and otherwise quarantined (`internal/app/ingest/quarantine.go:OpenCommand`,
   `admitUnsolicited`).
@@ -417,16 +418,26 @@ sequenceDiagram
 - **Hostile input.** Strict JSON, item and size caps, text caps with markers,
   secrets redacted, tool must be one the sensor declared and the command's
   tool; for address-chunk scans, assets outside the chunk are dropped with
-  their findings (`ingest/strictjson.go`, `text_caps.go`, `binding.go`).
+  their findings (`ingest/strictjson.go`, `text_caps.go`, `binding.go`). For
+  a scan or retest whose targets name a host, a located asset that is not at
+  or under a target name, at a target address or range, or at an address an
+  in-bound asset of the report states, is dropped with its findings, counted
+  and audited (`ingest/job_bound.go`, RFC-040 §5.3.1).
 - **Dedup.** The server computes the fingerprint base; a report's own
   fingerprint is a sighting hint only, never the base
   (`ingest/processor_findings.go:generateFindingFingerprint`).
 - **Provenance.** Findings record the sensor, tool and version, the template
   digest, and the command and step as evidence; a shared sensor appears as
-  `platform` (`ingest/scan_attribution.go`, `template_provenance.go`).
+  `platform` (`ingest/scan_attribution.go`, `template_provenance.go`). The
+  channel (`findings.ingest_channel`) is the platform's: `collector` for a
+  collector sensor, `scanner` for any other; the report's
+  `metadata.source_type` is ignored (`ingest/channel.go`).
 - **Revoked or disabled after upload.** A queued report of a sensor revoked
   or disabled since is dropped and audited when processed
   (`ingest/queued_sensor.go:QueuedWorkSensor`).
+- **Run taken back after upload.** Each report records its command's lease
+  epoch at accept; a queued report is processed only while the sensor still
+  holds the command under that epoch (`QueuedWorkSensor`, `heldRun`).
 
 ## 12. Coverage: what a run proves
 
@@ -476,7 +487,7 @@ so an older sensor simply is not offered that work and the task says why.
 | # | Situation | Exact behaviour | Code | Test |
 |---|---|---|---|---|
 | E1 | Network loss, sensor side | heartbeat retried once, then about 10 s; outbox keeps results (sealed, fsync) and drains with backoff and jitter when the link returns; nothing is lost | sdk-go `client/control_v2.go`, `outbox/outbox.go` | sdk-go `outage_test.go:TestOneHourOutageDeliversEachResultExactlyOnce` |
-| E2 | Network loss longer than the lease | the platform expires the lease and re-queues the task for another sensor; the old holder's start, complete and fail are fenced by the epoch and its late result is not bound | `postgres/command_lease.go:RequeueExpiredLeases`, `FencedUpdate` | `postgres/command_lease_db_test.go:TestCommandLease_NoCompletionAfterRequeue` |
+| E2 | Network loss longer than the lease | the platform expires the lease and re-queues the task for another sensor; the old holder's start, complete and fail are fenced by the epoch; its late results are refused at accept when they state an old epoch and dropped by the ingest worker when the run was taken back, for organization and shared sensors; the sensor stops the job past its lease plus a grace and sends nothing of it (sdk-go lease watchdog) | `postgres/command_lease.go:RequeueExpiredLeases`, `FencedUpdate`, `ingest/quarantine.go:OpenCommand`, `ingest/queued_sensor.go:heldRun`, sdk-go `core/lease_watchdog.go` | `postgres/command_lease_db_test.go:TestCommandLease_NoCompletionAfterRequeue`, `routes/sensor_lease_fencing_db_test.go:TestOrgResults_StatedEpochMustBeCurrent`, `TestOrgResults_QueuedReportOfATakenBackRunIsDropped`, sdk-go `TestCommandPoller_LeaseWatchdog` |
 | E3 | Platform restart | leases, queue and pairing state live in Postgres; offline convictions are held for the startup grace; the first answered heartbeat wakes the outbox | `app/sensor/platform_health.go:HoldConvictions` | `platform_health_test.go:TestPlatformHealth_StartupGrace`, `tests/unit/sensor_liveness_store_controller_test.go:TestLivenessStore_ColdStartNoMassOffline` |
 | E4 | Slow database or overloaded controller | offline convictions held while heartbeat p95 ≥ 2 s or after a stalled tick | `platform_health.go:HoldConvictions` | `TestPlatformHealth_SlowHeartbeats`, `TestPlatformHealth_Stall` |
 | E5 | 429 on the control plane or results | jittered `Retry-After`; the sensor honours it (pairing, heartbeat, outbox, poll) | `middleware/ingest_v2.go:V2Throttle` | `middleware/retry_after_test.go:TestV2Throttle_RetryAfterFollowsTheBucket` |
@@ -490,7 +501,7 @@ so an older sensor simply is not offered that work and the task says why.
 | E13 | Sensor refuses a job | routed work re-queued for another sensor that accepts it (up to 3 refusals), the refuser excluded; otherwise failed with every reason | `app/command/refusal.go:handleRefusal` | `postgres/command_refusal_db_test.go:TestRefusal_RequeuedToAnotherSensorThenFails` |
 | E14 | Double claim | `status = pending` guard, `FOR UPDATE SKIP LOCKED`, host advisory locks; the loser gets nothing | `postgres/command_repository.go:ClaimManyForSensor` | `postgres/command_host_keys_db_test.go:TestCommandHostKeys_RacingSensorsNeverShareAHost`, `command_claim_balance_db_test.go:TestClaim_ConcurrentClaimsNeverExceedTheSlots` |
 | E15 | Out-of-order or duplicated result segments | any order; finalize after the commit; replay is idempotent, a changed digest conflicts | `ingest/v2_receiver.go:Commit`, `replay` | `postgres/ingest_report_repository_db_test.go:TestIngestReportRepository_CommitRacesLateSegment`, `routes/sensor_v2_routes_db_test.go:TestSensorV2_WholeReportReplayConflict` |
-| E16 | Signer down or refusing | an unsigned claim is taken back; nothing unsigned leaves | `app/command/job_signing.go:signClaimed`, `unclaim` | `routes/sensor_signed_jobs_db_test.go:TestSignedJobs_SignerFailureHandsOutNothing` |
+| E16 | Signer down or refusing, or delivery fails after the claim | an unsigned claim is taken back; nothing unsigned leaves. A failure after the claim (re-read, proxy stamp, an unreadable HTTP policy, program rules or tool settings) hands every claimed command back at once: no attempt, no `failed_on` | `app/command/job_signing.go:signClaimed`, `unclaim`, `service.go:Claim`, `shared_claim.go` | `routes/sensor_signed_jobs_db_test.go:TestSignedJobs_SignerFailureHandsOutNothing`, `routes/sensor_lease_fencing_db_test.go:TestClaimN_DeliveryFailureHandsTheClaimBack` |
 | E17 | Replayed or tampered job | refused before start (nonce, rising sequence persisted across restarts, statement fields) | sdk-go `jobsig/verify.go` | sdk-go `TestReplayRefused`, `TestSeqSurvivesRestart`, `TestVerifyAcceptsAndRefusesEachTamper` |
 | E18 | No eligible sensor | the task waits and records why; the run ends `NO_SENSOR` with that reason after 1 h (interactive) or 4 h (scheduled); the coverage orchestrator holds the capability | `postgres/scan_run_repository.go:AbortUnclaimedRunsReporting`, `coverage/planner.go:hold` | `postgres/command_withheld_db_test.go:TestAbortUnclaimedRuns_NamesWithheldReason`, `tests/integration/asset_coverage_not_claimed_test.go:TestAssetCoverage_NotClaimedPausesAndResumes` |
 | E19 | Target behind edge protection | blocked or challenged targets are coverage gaps with the edge reason; never covered, never auto-close; rechecked later | `ingest/coverage_targets.go`, `coverage_autoresolve.go:resultLeftTargetsUncovered` | `ingest/coverage_autoresolve_test.go:TestDecideCoverage` |
@@ -500,6 +511,8 @@ so an older sensor simply is not offered that work and the task says why.
 | E23 | Cancel while running | the holder learns on its next heartbeat (or the v3 stream), stops and hands back; nothing from it is delivered | `postgres/command_lease.go:CommandsToCancel` | sdk-go `TestQueue_CancelFromHeartbeat` |
 | E24 | Scan window closes mid-run | after a grace the task is re-queued, then canceled | `app/command/window_closing.go:EnforceClosedWindows` | `tests/unit/command_window_hold_test.go:TestEnforceClosedWindows_GraceThenRequeue` |
 | E25 | Catalog gains a tool a sensor already reported | the sensor is asked for its manifest after the next platform start and re-projected | `app/sensor/manifest.go:LoadManifestRechecks` | `routes/sensor_manifest_db_test.go:TestSensorManifest_CatalogGainsToolReprojects` |
+| E27 | Bound result names hosts outside the job | located assets outside the targets (and their findings) are dropped, counted (`sensor_results_outside_job_total`) and audited (`sensor.results_outside_job`); never created | `ingest/job_bound.go` | `ingest/job_bound_test.go`, `routes/sensor_results_job_bound_db_test.go` |
+| E28 | Sensor labels its findings `manual` or `integration` | ignored: the channel comes from the sensor's role | `ingest/channel.go` | `ingest/job_bound_test.go:TestPrincipalSourceType`, `routes/sensor_results_job_bound_db_test.go` |
 | E26 | Sensor key lost (volume wiped) | the sensor cannot authenticate; console re-pair keeps the registration; outbox items are not identity-bound and are sent under the new key | `sensorpairing/service.go:Approve` | `sensorpairing/service_db_test.go:TestPairing_Repair_DB` |
 
 ## 16. Known limits
@@ -507,17 +520,12 @@ so an older sensor simply is not offered that work and the task says why.
 Open items, each with its owner where one exists. They are listed so that
 nobody reads the matrix above as complete where it is not.
 
-- **A job may outlive its lease on the sensor** during a long network loss:
-  the sensor does not stop a job when its lease runs out, so another sensor
-  can start the same task while the first still scans; only the first one's
-  results are refused. (sdk-go.)
-- **A failed delivery after claim-N** (a tenant policy that cannot be read)
-  leaves the claimed tasks acknowledged until their lease expires, which
-  counts an attempt as `infra.sensor_offline` and excludes a healthy sensor.
-  The signer path already takes such claims back.
-- **Organization sensors' results are not checked against the lease
-  epoch**: a sensor that claims a re-queued task again may still bind
-  results from its earlier run. Shared sensors are checked.
+- **The sensor's lease watchdog needs sdk-go with it** (sdk-go #410):
+  older sensors keep a job running past a lost lease; their late results
+  are still refused or dropped by the platform.
+- **Bound results trust the sensor's statement of what a target name
+  resolves to**: an address an in-bound asset states is accepted; the
+  platform does not resolve names itself (RFC-040 §5.3.1).
 - **Revoking one signing key or deleting a sensor does not release held
   commands**; they wait for the lease. Re-pair and revoke-key lease release
   are being added with the console re-pair work.
@@ -529,6 +537,6 @@ nobody reads the matrix above as complete where it is not.
 - **The pairing sweep runs only on a start or expectation**; reads check
   expiry, so this is housekeeping, not a security gap (a periodic sweep is
   being added with the pairing refusal work).
-- **Hostname-scoped results** can still create assets for hosts outside the
-  job's targets; only address-chunk scans drop them
-  ([result binding](sensor-result-binding.md)).
+- **Older reports** (accepted before migration
+  `ingest_reports_command_lease_epoch`) are checked against the holder only,
+  not the epoch.
