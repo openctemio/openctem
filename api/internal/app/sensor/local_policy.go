@@ -21,6 +21,39 @@ type localPolicyWriter interface {
 	UpdateLocalPolicy(ctx context.Context, tenantID *shared.ID, id shared.ID, r *sensordom.LocalPolicyReport) (bool, error)
 }
 
+// RefusalForgetter lifts a sensor's exclusion from the pending commands it
+// refused (postgres.CommandRepository.ForgetRefusalsOf).
+type RefusalForgetter interface {
+	ForgetRefusalsOf(ctx context.Context, tenantID, sensorID shared.ID) (int64, error)
+}
+
+// SetRefusalForgetter makes a change of a sensor's reported local policy
+// lift its exclusion from the pending commands it refused: under the new
+// policy it may accept them, and it is offered them again (bounded: every
+// refusal still counts toward the command's refusal limit).
+func (s *SensorService) SetRefusalForgetter(f RefusalForgetter) { s.refusalForgetter = f }
+
+// localPolicyChanged is called with a sensor's stored row and its new
+// report: when the policy changed (state, digest or kill switch), the
+// sensor may claim again what it refused. Tenant sensors only. Best effort.
+func (s *SensorService) localPolicyChanged(ctx context.Context, a *sensordom.Sensor, next *sensordom.LocalPolicyReport) {
+	if s.refusalForgetter == nil || a == nil || a.TenantID == nil || next == nil {
+		return
+	}
+	prev := a.LocalPolicy
+	if prev != nil && prev.State == next.State && prev.Digest == next.Digest && prev.KillSwitch == next.KillSwitch {
+		return
+	}
+	n, err := s.refusalForgetter.ForgetRefusalsOf(ctx, *a.TenantID, a.ID)
+	if err != nil {
+		s.logger.Warn("failed to offer refused commands again after a local policy change", "sensor_id", a.ID.String(), "error", err)
+		return
+	}
+	if n > 0 {
+		s.logger.Info("local policy changed; the sensor may claim the commands it refused again", "sensor_id", a.ID.String(), "commands", n)
+	}
+}
+
 // storeManifestLocalPolicy stores the local policy report a manifest
 // carried (RFC-040 §5.7) when it differs from the stored one: the manifest
 // has the summary that slim heartbeats leave out. The live kill switch is
@@ -41,6 +74,9 @@ func (s *SensorService) storeManifestLocalPolicy(ctx context.Context, a *sensord
 	if err != nil {
 		s.logger.Warn("failed to store sensor local policy", "sensor_id", a.ID.String(), "error", err)
 		return
+	}
+	if saved {
+		s.localPolicyChanged(ctx, a, &next)
 	}
 	if saved && s.events != nil {
 		if e, ok := sensordom.LocalPolicyEvent(a, &next, now); ok {

@@ -1223,3 +1223,78 @@ design (nothing records which sensor created them). Protocol v1 reports
 Design and operation: [architecture/sensor-result-binding.md](../architecture/sensor-result-binding.md)
 ("Complete reports from a trusted collector").
 
+
+## 13. Amendment (2026-10-31): the local policy is optional and narrow-only; a refusal is a placement signal
+
+**Why.** A newly paired sensor carried the multi-sensor install's default
+policy, `targets.allow: []`, which allows nothing. The platform still placed
+people-initiated scan runs on it; the sensor refused the first step, every
+later step was skipped and the runs failed. Two gaps: placement did not use
+what the sensor already reported (an allow list of zero entries), and a
+refusal with no other eligible sensor failed the work at once instead of
+waiting for one.
+
+**Owner decision: three policy modes.** The sensor-local policy stays
+authoritative on the sensor and the platform never writes it, but it is no
+longer required:
+
+| Mode | What the sensor reports | What it runs | Console |
+|---|---|---|---|
+| Follows platform scope (default) | `state: absent`, `required: false` | every job whose scope the platform signed, outside the built-in deny list | "Follows platform scope" |
+| Narrowed by host policy | `state: enforced`, summary counts | the intersection of the signed scope and the file (never wider) | "Narrowed by host policy (N rules)" |
+| Allows nothing | `enforced` with `targets_allow: 0` (an explicit `allow: []`), or `absent` with `required: true` (`SENSOR_REQUIRE_LOCAL_POLICY=true`) | no job with a network target | "Allows nothing yet", with the file and restart command |
+
+The kill switch, `tools.allow`, `checks.allow`, `ports.allow`, the opt-ins and
+`managed.accept` keep their meaning: each only removes work. The SDK default
+change (pairing no longer sets `require_local_policy`, a missing file follows
+the platform scope, the generated template no longer writes `allow: []`) is
+in sdk-go and sensor.
+
+**Trade-off (threat model).** Without a local policy, a compromised platform
+holding the signing key can sign a wide scope and the sensor runs it within
+its built-in deny list: §5.7's protection becomes opt-in for the host owner.
+A host owner who does not trust the platform installs a narrowing policy or
+sets `SENSOR_REQUIRE_LOCAL_POLICY=true`. Nothing in this amendment lets the
+platform widen a policy: the platform only reads the sensor's report, which
+can make it withhold work from that sensor, never send it more.
+
+**Placement predicts refusals** (`sensor.Accepts`, shared by poll, claim by
+id, the re-queue check and the trigger preflight). Besides the rules it
+already mirrored, a sensor whose report shows an allow list of zero entries,
+or a required policy that is absent, is not offered a job with a network
+target. A summary without `targets_allow` reads as "no allow list", never as
+an empty one. Which target a non-empty allow list covers is still decided by
+the sensor (the report carries counts, not ranges, research/25 D6).
+
+**Refusal outcomes** (routed scan work; a job a person pinned to one sensor
+still fails with the sensor's reason):
+
+| Refusal layer | Outcome |
+|---|---|
+| `local`, `managed`, `platform_tool_gate` | re-queued, the refuser excluded; at once to another eligible sensor whose report accepts it, else it waits for one at most 6 hours (`RefusalWait`, never past the command's own expiry) |
+| `scope` (the sensor did not accept the platform's signed scope) | fails closed, never handed to another sensor, logged as a security event |
+| `builtin` (the same deny list on every sensor) | fails: a target problem, not a sensor one |
+
+Bounds: every refusal is recorded and counts; the job fails after three
+refusals. A sensor whose reported policy changes (state, digest or kill
+switch) is offered the pending jobs it refused again, so a host owner who
+fixes the file does not have to re-run the scan. A job whose wait ends
+expires with `POLICY_REFUSED` and a reason that names the target, each
+refusing sensor and the file to edit
+(`sensors/<name>/policy/sensor-policy.yaml`, or `/etc/openctem/sensor-policy.yaml`).
+A refused or expired job writes no result, so it never marks a target clean
+or closes a finding.
+
+**Shared jobs.** A shared job (RFC-100) refused by a shared sensor goes to
+another shared sensor whose shared gate admits it (instance scope, shared
+isolation profile, tool, region, required features), never to the
+organization's own sensors, which never claim shared jobs. Its reason counts
+the refusing shared sensors and never names or identifies one.
+
+**Isolation.** The re-queue candidates, the exclusion and its release are
+tenant-scoped queries; another tenant's sensor is never a candidate, and for
+a shared job only reports of shared sensors are read. The release runs only
+for a tenant sensor's own reported change.
+
+Design and operation: [architecture/placement.md](../architecture/placement.md)
+("A sensor's refusal").
