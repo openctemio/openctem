@@ -21,7 +21,7 @@ reaches only that group's projects.
 
 ## 2. Connect it in OpenCTEM
 
-An owner or administrator: **CI/CD > Trust and gate > Pull request feedback >
+An owner or administrator: **CI/CD > Settings > Pull request feedback >
 Connect GitLab group**, enter the GitLab host (empty for gitlab.com), the
 group path and the token, and confirm with the second factor.
 

@@ -8,6 +8,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/dashboard/widgets"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	dashboard "github.com/openctemio/openctem/api/pkg/domain/dashboard"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // WidgetCatalogMetric is one metric of the typed widget catalog. Shapes maps
@@ -85,17 +86,35 @@ func nonNilDims(d []dashboard.Dimension) []dashboard.Dimension {
 
 // WidgetCatalog handles GET /api/v1/me/dashboards/widget-catalog
 // @Summary      Typed widget catalog
-// @Description  The metrics a typed dashboard widget can show (config.data.metric), with the dimensions each may be filtered and grouped by, its result shape per group-by count and the visualizations that fit, plus the allowed enum values. Static: the same for every caller and holds no organization data.
+// @Description  The metrics a typed dashboard widget can show (config.data.metric), with the dimensions each may be filtered and grouped by, its result shape per group-by count and the visualizations that fit, plus the allowed enum values. The same for every caller of an organization and holds no organization data; a metric of a module that is off for the organization is left out.
 // @Tags         Dashboards
 // @Produce      json
 // @Security     BearerAuth
 // @Success      200  {object}  WidgetCatalogResponse
 // @Router       /me/dashboards/widget-catalog [get]
 func (h *UserDashboardHandler) WidgetCatalog(w http.ResponseWriter, r *http.Request) {
-	if _, ok := h.caller(w, r); !ok {
+	c, ok := h.caller(w, r)
+	if !ok {
 		return
 	}
-	writeJSON(w, http.StatusOK, widgetCatalog)
+	writeJSON(w, http.StatusOK, h.catalogFor(r, c.TenantID))
+}
+
+// catalogFor is the catalog without the metrics of modules that are off for
+// the organization, so the gallery never offers a widget that would carry
+// no figure.
+func (h *UserDashboardHandler) catalogFor(r *http.Request, tenantID shared.ID) WidgetCatalogResponse {
+	if h.widgets == nil {
+		return widgetCatalog
+	}
+	out := widgetCatalog
+	out.Metrics = make([]WidgetCatalogMetric, 0, len(widgetCatalog.Metrics))
+	for _, m := range widgetCatalog.Metrics {
+		if h.widgets.MetricOffered(r.Context(), tenantID, m.ID) {
+			out.Metrics = append(out.Metrics, m)
+		}
+	}
+	return out
 }
 
 // SetWidgetData wires the widget data service (the data and preview routes

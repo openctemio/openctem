@@ -2,7 +2,16 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { ArrowLeft, Plus, Star, Trash2, Pencil, ExternalLink, LayoutDashboard } from 'lucide-react'
+import {
+  ArrowLeft,
+  ExternalLink,
+  LayoutDashboard,
+  MoreHorizontal,
+  Pencil,
+  Plus,
+  Star,
+  Trash2,
+} from 'lucide-react'
 import { Main } from '@/components/layout'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { useTranslation } from '@/context/i18n-provider'
@@ -12,6 +21,13 @@ import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { uniqueDashboardName } from '@/features/dashboards/lib/unique-name'
 import { Skeleton } from '@/components/ui/skeleton'
 import { toast } from 'sonner'
@@ -32,8 +48,11 @@ import {
   updateDashboard,
   deleteDashboard,
   setDefaultDashboard,
+  updateOrgDashboard,
+  useOrgDashboard,
+  useRevalidateAllDashboards,
 } from '@/features/dashboards/api/use-dashboards-api'
-import type { DashboardWidget } from '@/features/dashboards/api/dashboards.types'
+import type { DashboardKind, DashboardWidget } from '@/features/dashboards/api/dashboards.types'
 
 /**
  * Dashboards manage surface (RFC-021). A dashboard here is a *container* — its
@@ -46,10 +65,21 @@ export default function DashboardsPage() {
   // The edit form is part of the URL (`?edit=<id>`): Back returns to the list
   // and the form can be linked to.
   const router = useRouter()
-  const editId = useSearchParams()?.get('edit') || null
+  const params = useSearchParams()
+  const editId = params?.get('edit') || null
+  // `&kind=organization` edits an organization dashboard (the server checks
+  // dashboards:org:manage); it is opened from the dashboard itself, so Back
+  // returns there.
+  const kind: DashboardKind = params?.get('kind') === 'organization' ? 'organization' : 'personal'
 
   if (editId) {
-    return <DashboardEditForm id={editId} onBack={() => router.push('/dashboards')} />
+    return (
+      <DashboardEditForm
+        id={editId}
+        kind={kind}
+        onBack={() => router.push(kind === 'organization' ? '/' : '/dashboards')}
+      />
+    )
   }
   return (
     <DashboardsList onEdit={(id) => router.push(`/dashboards?edit=${encodeURIComponent(id)}`)} />
@@ -60,9 +90,12 @@ export default function DashboardsPage() {
 
 const LAYOUT_OPTIONS = [1, 2, 3, 4]
 
-function rememberChoice(id: string) {
+/** Menu rows are 44px tall on a phone (touch target), the kit default from 640px. */
+const ITEM = 'min-h-11 sm:min-h-8'
+
+function rememberChoice(id: string, kind: DashboardKind = 'personal') {
   try {
-    window.localStorage.setItem(DASHBOARD_CHOICE_KEY, refKey({ kind: 'personal', id }))
+    window.localStorage.setItem(DASHBOARD_CHOICE_KEY, refKey({ kind, id }))
   } catch {
     // A per-viewer convenience only.
   }
@@ -97,7 +130,18 @@ function DashboardsList({ onEdit }: { onEdit: (id: string) => void }) {
   const { t } = useTranslation()
   const saved = data?.data ?? []
 
-  const createFrom = async (name: string, layout: DashboardWidget[], columns = 2) => {
+  const openView = (id: string, customize = false) => {
+    rememberChoice(id)
+    router.push(customize ? '/?customize=1' : '/')
+  }
+  // A template copy opens on the dashboard itself (it is ready to read); a
+  // blank one opens its details form, as there is nothing to see yet.
+  const createFrom = async (
+    name: string,
+    layout: DashboardWidget[],
+    columns = 2,
+    description = ''
+  ) => {
     setBusy(true)
     try {
       const d = await createDashboard({
@@ -106,21 +150,18 @@ function DashboardsList({ onEdit }: { onEdit: (id: string) => void }) {
           saved.map((x) => x.name),
           name
         ),
+        description,
         layout,
         columns,
       })
       await revalidate()
-      onEdit(d.id)
+      if (layout.length > 0) openView(d.id)
+      else onEdit(d.id)
     } catch (e) {
       toast.error(getErrorMessage(e))
     } finally {
       setBusy(false)
     }
-  }
-
-  const openView = (id: string, customize = false) => {
-    rememberChoice(id)
-    router.push(customize ? '/?customize=1' : '/')
   }
 
   const remove = async (id: string, name: string) => {
@@ -190,7 +231,8 @@ function DashboardsList({ onEdit }: { onEdit: (id: string) => void }) {
                       createFrom(
                         t(templateNameKey(tpl.key), tpl.key),
                         templateLayout(tpl),
-                        tpl.columns
+                        tpl.columns,
+                        t(templateDescriptionKey(tpl.key), '')
                       )
                     }
                   >
@@ -253,14 +295,14 @@ function DashboardsList({ onEdit }: { onEdit: (id: string) => void }) {
                         {t('dashboards.manage.columns', '{n} columns', { n: d.columns ?? 2 })}
                       </span>
                     </span>
-                    <div className="flex flex-wrap gap-1">
+                    <div className="flex items-center gap-1">
                       <Button
                         type="button"
                         size="sm"
                         variant="outline"
                         onClick={() => openView(d.id)}
                       >
-                        <ExternalLink className="me-2 h-4 w-4" aria-hidden />{' '}
+                        <ExternalLink className="me-2 h-4 w-4" aria-hidden />
                         {t('dashboards.manage.open', 'Open')}
                       </Button>
                       <Button
@@ -269,43 +311,44 @@ function DashboardsList({ onEdit }: { onEdit: (id: string) => void }) {
                         variant="outline"
                         onClick={() => openView(d.id, true)}
                       >
-                        <LayoutDashboard className="me-2 h-4 w-4" aria-hidden />{' '}
+                        <LayoutDashboard className="me-2 h-4 w-4" aria-hidden />
                         {t('dashboards.manage.customize', 'Customize')}
                       </Button>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        onClick={() => onEdit(d.id)}
-                      >
-                        <Pencil className="me-2 h-4 w-4" aria-hidden />{' '}
-                        {t('dashboards.manage.edit', 'Edit')}
-                      </Button>
-                      {!d.is_default && (
-                        <Button
-                          type="button"
-                          size="icon"
-                          variant="ghost"
-                          title={t('dashboards.actions.setDefault', 'Set as my default')}
-                          aria-label={t('dashboards.actions.setDefault', 'Set as my default')}
-                          onClick={() => makeDefault(d.id)}
-                        >
-                          <Star className="h-4 w-4" aria-hidden />
-                        </Button>
-                      )}
-                      <Button
-                        type="button"
-                        size="icon"
-                        variant="ghost"
-                        className="ms-2 text-destructive hover:text-destructive"
-                        title={t('confirm.delete', 'Delete')}
-                        aria-label={t('confirm.dashboard.deleteLabel', 'Delete dashboard {name}', {
-                          name: d.name,
-                        })}
-                        onClick={() => setPendingDelete({ id: d.id, name: d.name })}
-                      >
-                        <Trash2 className="h-4 w-4" aria-hidden />
-                      </Button>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            type="button"
+                            size="icon"
+                            variant="ghost"
+                            className="h-8 w-8"
+                            aria-label={t('dashboards.manage.moreFor', 'More actions for {name}', {
+                              name: d.name,
+                            })}
+                          >
+                            <MoreHorizontal className="h-4 w-4" aria-hidden />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-56">
+                          <DropdownMenuItem className={ITEM} onSelect={() => onEdit(d.id)}>
+                            <Pencil className="me-2 h-4 w-4" aria-hidden />
+                            {t('dashboards.actions.edit', 'Edit details')}
+                          </DropdownMenuItem>
+                          {!d.is_default && (
+                            <DropdownMenuItem className={ITEM} onSelect={() => makeDefault(d.id)}>
+                              <Star className="me-2 h-4 w-4" aria-hidden />
+                              {t('dashboards.actions.setDefault', 'Set as my default')}
+                            </DropdownMenuItem>
+                          )}
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem
+                            className={cn(ITEM, 'text-destructive focus:text-destructive')}
+                            onSelect={() => setPendingDelete({ id: d.id, name: d.name })}
+                          >
+                            <Trash2 className="me-2 h-4 w-4" aria-hidden />
+                            {t('dashboards.actions.delete', 'Delete')}
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </div>
                   </CardContent>
                 </Card>
@@ -321,8 +364,8 @@ function DashboardsList({ onEdit }: { onEdit: (id: string) => void }) {
             name: pendingDelete?.name ?? '',
           })}
           desc={t(
-            'confirm.dashboard.deleteDesc',
-            'The dashboard and its widget layout are deleted for everyone who can see it. The data behind the widgets is not affected.'
+            'confirm.dashboard.deleteDescPersonal',
+            'Your dashboard and its layout are deleted. Copies you shared and the data behind the widgets are not affected.'
           )}
           confirmText={t('confirm.dashboard.deleteButton', 'Delete dashboard')}
           handleConfirm={() =>
@@ -336,10 +379,21 @@ function DashboardsList({ onEdit }: { onEdit: (id: string) => void }) {
 
 // ── Edit form: name + description + layout only ──────────────────────────────
 
-function DashboardEditForm({ id, onBack }: { id: string; onBack: () => void }) {
+function DashboardEditForm({
+  id,
+  kind,
+  onBack,
+}: {
+  id: string
+  kind: DashboardKind
+  onBack: () => void
+}) {
   const router = useRouter()
-  const { data, isLoading } = useMyDashboard(id)
-  const revalidate = useRevalidateDashboards()
+  const isOrg = kind === 'organization'
+  const mine = useMyDashboard(isOrg ? null : id)
+  const org = useOrgDashboard(isOrg ? id : null)
+  const { data, isLoading } = isOrg ? org : mine
+  const revalidate = useRevalidateAllDashboards()
   const { t } = useTranslation()
 
   const [name, setName] = useState('')
@@ -368,10 +422,11 @@ function DashboardEditForm({ id, onBack }: { id: string; onBack: () => void }) {
       // Widths are stored on a 12-unit grid and map to any column count, so
       // a new column count keeps every widget's share of the row.
       const layout: DashboardWidget[] = data.layout
-      await updateDashboard(id, { name: trimmed, description: description.trim(), columns, layout })
+      const input = { name: trimmed, description: description.trim(), columns, layout }
+      await (isOrg ? updateOrgDashboard(id, input) : updateDashboard(id, input))
       await revalidate()
       if (thenOpen) {
-        rememberChoice(id)
+        rememberChoice(id, kind)
         router.push('/')
       } else {
         onBack()

@@ -329,3 +329,36 @@ describe('one definition per figure (count equals the list it opens)', () => {
     expect(actionable).toHaveTextContent('open now, not part of the period')
   })
 })
+
+describe('flow layout bands', () => {
+  it('follow the visual’s own width: one column, then core and outcomes, then three columns', async () => {
+    const { flowBand, FLOW_MID, FLOW_WIDE } = await import('../flow-parts')
+    expect(flowBand(0)).toBe('narrow')
+    expect(flowBand(FLOW_MID - 1)).toBe('narrow')
+    expect(flowBand(FLOW_MID)).toBe('mid')
+    expect(flowBand(FLOW_WIDE - 1)).toBe('mid')
+    expect(flowBand(FLOW_WIDE)).toBe('wide')
+  })
+
+  it('the container query classes use the same widths as the bands', async () => {
+    const fs = await import('node:fs')
+    const path = await import('node:path')
+    const { FLOW_MID, FLOW_WIDE } = await import('../flow-parts')
+    for (const file of ['exposure-flow-viz.tsx', 'intake-viz.tsx']) {
+      const src = fs.readFileSync(path.join(__dirname, '..', file), 'utf8')
+      const used = [...src.matchAll(/@min-\[(\d+)px\]/g)].map((m) => Number(m[1]))
+      for (const w of used) expect([FLOW_MID, FLOW_WIDE, 420, 1100]).toContain(w)
+      expect(used).toContain(FLOW_MID)
+    }
+  })
+
+  it('an unhealthy source says so on its own row, under its name', () => {
+    const { container } = render(<IntakeViz result={{ shape: 'intake', intake }} />)
+    const note = screen.getAllByText(/Stale, last|Failed/)[0]
+    const row = note.closest('a')
+    expect(row).not.toBeNull()
+    // The note sits in the name block, not beside the count at the far edge.
+    expect(row?.querySelector('[data-wire-out]')?.contains(note)).toBe(false)
+    expect(container.querySelector('[data-band]')).toHaveAttribute('data-band', 'narrow')
+  })
+})
