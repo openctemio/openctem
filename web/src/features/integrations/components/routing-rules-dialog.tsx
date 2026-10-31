@@ -147,7 +147,7 @@ export function RoutingRulesDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent size="lg">
         <DialogHeader>
-          <DialogTitle>Routing rules — {integration.name}</DialogTitle>
+          <DialogTitle>Routing rules for {integration.name}</DialogTitle>
           <DialogDescription>
             Route a finding&apos;s ticket to a project by matching its attributes. Rules are
             evaluated top-to-bottom; the first match wins, then the default project. Conditions are

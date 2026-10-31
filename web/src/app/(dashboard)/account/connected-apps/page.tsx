@@ -16,7 +16,7 @@ import { ConnectionsList } from '@/features/mcp-oauth/components/connections-lis
  */
 export default function ConnectedAppsPage() {
   const { t } = useTranslation()
-  const { data, isLoading } = useMyConnections()
+  const { data, error, isLoading, mutate } = useMyConnections()
   return (
     <Card>
       <CardHeader>
@@ -32,6 +32,8 @@ export default function ConnectedAppsPage() {
         <ConnectionsList
           connections={data?.data}
           isLoading={isLoading}
+          error={error}
+          onRetry={() => void mutate()}
           onRevoke={revokeMyConnection}
           onScope={scopeMyConnection}
           emptyTitle={t('mcp.connections.emptyTitle', 'No connected applications')}

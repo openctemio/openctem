@@ -8,90 +8,85 @@ import { AlertTriangle, Bug, CheckCircle, Info, Scan, User, XCircle } from 'luci
  * ship, and a preference that changes nothing misleads. Add it back with the
  * feature.
  */
-export const NOTIFICATION_TYPES = [
+export interface NotificationTypeInfo {
+  id: string
+  /** Sentence case; says what happened. */
+  name: string
+  /** Only where the name alone does not say it (one short line). */
+  description?: string
+}
+
+export const NOTIFICATION_TYPES: readonly NotificationTypeInfo[] = [
   {
     id: 'finding_new',
-    name: 'New Findings',
-    description: 'When new security findings are discovered',
+    name: 'New findings',
   },
   {
     id: 'finding_assigned',
-    name: 'Finding Assigned',
-    description: 'When a finding is assigned to you',
+    name: 'Finding assigned to me',
   },
   {
     id: 'finding_status_change',
-    name: 'Finding Status Change',
-    description: 'When a finding status is updated',
+    name: 'Finding status changed',
   },
   {
     id: 'finding_comment',
-    name: 'Finding Comments',
-    description: 'When someone comments on a finding',
+    name: 'Comments on findings',
   },
   {
     id: 'scan_started',
-    name: 'Scan Started',
-    description: 'When a security scan begins running',
+    name: 'Scan started',
   },
   {
     id: 'scan_completed',
-    name: 'Scan Completed',
-    description: 'When security scans finish running',
+    name: 'Scan completed',
   },
   {
     id: 'scan_failed',
-    name: 'Scan Failed',
-    description: 'When a scan encounters errors',
+    name: 'Scan failed',
   },
   {
     id: 'asset_discovered',
-    name: 'Asset Discovered',
-    description: 'When new assets are discovered in your environment',
+    name: 'New assets',
   },
   {
     id: 'member_invited',
-    name: 'Member Invited',
-    description: 'When new team members are invited',
+    name: 'Member invited',
   },
   {
     id: 'member_joined',
-    name: 'Member Joined',
-    description: 'When invited members join the team',
+    name: 'Member joined',
   },
   {
     id: 'role_changed',
-    name: 'Role Changed',
-    description: 'When your role or permissions are updated',
+    name: 'My role changed',
   },
   {
     id: 'sla_breach',
-    name: 'SLA Breach',
-    description: 'When a finding exceeds its SLA deadline',
+    name: 'SLA breached',
+    description: 'A finding passed its deadline',
   },
   {
     id: 'system_alert',
-    name: 'System Alerts',
-    description: 'Important system-level notifications',
+    name: 'System alerts',
+    description: 'Notices from the platform',
   },
   {
     id: 'finding_approval',
     name: 'Approval requests',
-    description: 'When a false-positive or accepted-risk request waits for your decision',
+    description: 'False-positive or accepted-risk requests for me',
   },
   {
     id: 'mcp_access_request',
     name: 'AI application requests',
-    description:
-      'When a member asks to connect an AI application your organization has not approved, and how your own request was decided',
+    description: 'Requests to connect an unapproved AI app, and answers to mine',
   },
   {
     id: 'finding_approval_digest',
     name: 'Approvals digest',
-    description:
-      'A daily summary of the finding requests waiting for you (muting it also stops the email)',
+    description: 'Daily summary; muting it also stops the email',
   },
-] as const
+]
 
 /** Icon mapping for notification types */
 export const NOTIFICATION_TYPE_ICONS: Record<string, typeof AlertTriangle> = {

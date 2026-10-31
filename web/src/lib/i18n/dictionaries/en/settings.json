@@ -399,6 +399,7 @@
   "settings.domains.join.auto": "Anyone, automatically",
   "settings.domains.join.off": "Only people we invite",
   "settings.domains.joinRole": "Joins as",
+  "settings.domains.loadFailed": "domain sign-up rules",
   "settings.domains.loading": "Loading domains",
   "settings.domains.notEffective": "Not in effect",
   "settings.domains.notEffectiveHint": "The domain is not verified for single sign-on right now (or another organization claims it too), so none of these settings apply.",
