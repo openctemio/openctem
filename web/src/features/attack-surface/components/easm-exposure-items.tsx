@@ -67,7 +67,7 @@ import { useTranslation } from '@/context/i18n-provider'
 import { useListParams } from '@/hooks/use-list-params'
 import { downloadCsv } from '@/hooks/use-csv-export'
 import { Permission, useHasPermission } from '@/lib/permissions'
-import { SEVERITY_LABELS } from '@/lib/severity'
+import { ACTIONABLE_SEVERITIES, SEVERITY_LABELS } from '@/lib/severity'
 import { cn } from '@/lib/utils'
 import {
   EXPOSURE_DISPLAY_CATEGORIES,
@@ -388,8 +388,7 @@ function useAssetColumns(): ColumnDef<ExposureAssetGroupRow>[] {
         cell: ({ row }) => (
           <StackedCell
             primary={<span className="font-medium tabular-nums">{row.original.total}</span>}
-            secondary={(['critical', 'high', 'medium', 'low'] as const)
-              .filter((s) => (row.original.by_severity[s] ?? 0) > 0)
+            secondary={ACTIONABLE_SEVERITIES.filter((s) => (row.original.by_severity[s] ?? 0) > 0)
               .map((s) =>
                 t('attackSurface.exposures.severityCount', '{count} {severity}', {
                   count: row.original.by_severity[s] ?? 0,
