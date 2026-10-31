@@ -242,6 +242,26 @@ func (r *SensorPairingRepository) FindOpenByCodeHash(ctx context.Context, codeHa
 	return scanPairing(row)
 }
 
+// FindOpenForTenantByCodeHash returns the tenant's open, revealed
+// reverse-mode request with this code.
+func (r *SensorPairingRepository) FindOpenForTenantByCodeHash(ctx context.Context, tenantID shared.ID, codeHash string, now time.Time) (*sensordom.Pairing, error) {
+	row := r.db.QueryRowContext(ctx, `SELECT `+sensorPairingColumns+`
+		FROM sensor_pairings
+		WHERE tenant_id = $1 AND code_hash = $2 AND mode = 'reverse' AND status = 'pending'
+		  AND sensor_nonce IS NOT NULL AND expires_at > $3`, tenantID.String(), codeHash, now)
+	return scanPairing(row)
+}
+
+// ExpireStaleCodeUnscoped closes the open rows of this code past their
+// expiry (the sweep would later), so the open-code index frees the code.
+func (r *SensorPairingRepository) ExpireStaleCodeUnscoped(ctx context.Context, codeHash string, now time.Time) error {
+	if _, err := r.db.ExecContext(ctx, `UPDATE sensor_pairings SET status = 'expired'
+		WHERE code_hash = $1 AND status IN ('expecting', 'pending') AND expires_at <= $2`, codeHash, now); err != nil {
+		return fmt.Errorf("expire stale pairing code: %w", err)
+	}
+	return nil
+}
+
 // CreateExpectation inserts a reverse-mode request for the tenant.
 func (r *SensorPairingRepository) CreateExpectation(ctx context.Context, p *sensordom.Pairing) error {
 	if p.TenantID == nil {

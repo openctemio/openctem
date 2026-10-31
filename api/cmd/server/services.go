@@ -2255,6 +2255,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		s.SensorPairing.SetEnrollmentTokens(repos.SensorPairing)
 		// The approval screen names the organization the sensor joins.
 		s.SensorPairing.SetTenants(repos.Tenant)
+		// A sensor prints <APP_URL>/activate?code=… under its code.
+		s.SensorPairing.SetVerificationURL(cfg.App.URL)
 	}
 	// Per-sensor grants (RFC-052 §5): enforced on poll, claim, results
 	// without a job and heartbeat actions; a pairing approval sets the

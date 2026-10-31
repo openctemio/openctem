@@ -6,12 +6,13 @@
 #
 # No key to copy: the sensor makes its own key on first start and pairs.
 {{- if .PairingCode}}
-# It attaches to pairing code {{.PairingCode}} (single use, valid 10 minutes from
-# when the console created it) and prints a fingerprint: approve it in the
-# console only when the console shows the same fingerprint.
+# It pairs with code {{.PairingCode}} (single use), and prints that code, the
+# link to approve it on and its fingerprint: the Add sensor dialog finds it
+# by itself; approve it after picking the fingerprint this host shows.
 {{- else}}
-# It prints a pairing code and a fingerprint (docker logs {{$slug}}): enter
-# the code under Sensors > Add sensor, compare the fingerprint, approve.
+# It prints a pairing code, the link to approve it on and its fingerprint:
+# open the link (or enter the code under Sensors > Add sensor), pick the
+# fingerprint this host shows, approve.
 {{- end}}
 {{- else if not .APIKey}}
 #
@@ -29,23 +30,16 @@ sudo chmod 0644 /etc/openctem/certs/openctem-root-ca.crt
 {{- end}}
 {{- if isDaemon .Sensor}}
 
-# {{if .CACert}}2{{else}}1{{end}}. Install the sensor-local policy (the "Local policy" tab, saved as
-# sensor-policy.yaml), reviewed by the owner of the network this sensor scans.
-# The sensor refuses every job outside it; without the file it does not start.
-# This needs a sensor release later than v0.8.0: v0.8.0 and older ignore the
-# policy and the kill switch, and scan without a local policy.
-sudo install -d -m 0755 /etc/openctem
-sudo install -m 0644 sensor-policy.yaml /etc/openctem/sensor-policy.yaml
-
-# {{if .CACert}}3{{else}}2{{end}}. Download the sensor's seccomp profile and check it: the container
+# {{if .CACert}}2{{else}}1{{end}}. Download the sensor's seccomp profile and check it: the container
 # runtime's default profile plus new namespaces, so each scan task runs in
 # its own network namespace and reaches only its targets (network
 # confinement). Jobs that need it (a web scope) go only to confined sensors.
 # Keep Docker's default AppArmor profile (never apparmor=unconfined).
+sudo install -d -m 0755 /etc/openctem
 sudo curl -fsSL{{if .CACert}} --cacert /etc/openctem/certs/openctem-root-ca.crt{{end}} -o /etc/openctem/sensor-seccomp.json {{shellQuote .SeccompURL}}
 echo '{{.SeccompSHA256}}  /etc/openctem/sensor-seccomp.json' | sha256sum -c -
 
-# {{if .CACert}}4{{else}}3{{end}}. Start the sensor. It connects out to the platform (no inbound port)
+# {{if .CACert}}3{{else}}2{{end}}. Start the sensor. It connects out to the platform (no inbound port)
 # and runs the scans the platform dispatches. One volume, {{$slug}}-data at
 # /var/lib/openctem, holds everything the sensor keeps:
 #   outbox/   results that cannot be delivered yet (a restart or an outage
@@ -66,10 +60,12 @@ echo '{{.SeccompSHA256}}  /etc/openctem/sensor-seccomp.json' | sha256sum -c -
 # writes only /tmp besides its volumes, and its tools keep their settings
 # there (XDG_*); the image's home directory stays as built, with the
 # nuclei-templates release the sensor scans with until its first update.
-# /etc/openctem is mounted read-only: the policy, and the kill switch the
-# host owner creates with sudo touch /etc/openctem/STOP. The image's default
-# command runs the sensor; it runs the tools the image ships (narrow them in
-# the policy's tools.allow).
+# No local policy is needed: the sensor follows your organization's scope.
+# /etc/openctem is mounted read-only for the host owner: a narrowing policy
+# (/etc/openctem/sensor-policy.yaml, read when present; it can only narrow,
+# restart the sensor after writing it) and the kill switch (no job runs while
+# /etc/openctem/STOP exists). The image's default command runs the sensor; it
+# runs the tools the image ships (narrow them in the policy's tools.allow).
 docker run -d --name {{$slug}} --restart unless-stopped \
   --read-only --cap-drop ALL --security-opt no-new-privileges:true \
   --security-opt seccomp=/etc/openctem/sensor-seccomp.json \
@@ -87,7 +83,7 @@ docker run -d --name {{$slug}} --restart unless-stopped \
 {{- else}}
   -e SENSOR_API_KEY="${OPENCTEM_API_KEY:?export OPENCTEM_API_KEY first}" \
 {{- end}}
-  -e SENSOR_LOCAL_POLICY=/etc/openctem/sensor-policy.yaml \
+  -e SENSOR_KILL_SWITCH_FILE=/etc/openctem/STOP \
 {{- if .Policy.AllowPrivate}}
   -e SENSOR_ALLOW_PRIVATE_TARGETS=1 \
 {{- end}}
@@ -99,8 +95,11 @@ docker run -d --name {{$slug}} --restart unless-stopped \
   {{.Image}}
 
 {{- if eq .Auth "pair"}}
-# Watch it pair: docker logs -f {{$slug}}   (the console shows the sensor as
-# soon as it connects)
+
+# {{if .CACert}}4{{else}}3{{end}}. The sensor prints its pairing code, the link to approve it on and its
+# fingerprint; this watch ends by itself once it is paired (Ctrl-C only stops
+# watching: the sensor keeps running).
+docker logs -f {{$slug}} 2>&1 | while IFS= read -r l; do printf '%s\n' "$l"; case "$l" in Paired:*|Enrolled:*) break ;; esac; done || true
 {{- else}}
 # Check it: docker logs -f {{$slug}}   (the Sensors page shows it online
 # within a minute)
