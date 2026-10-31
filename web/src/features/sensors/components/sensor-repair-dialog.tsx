@@ -70,8 +70,8 @@ export function RepairSensorDialog({ sensor, open, onOpenChange }: RepairSensorD
           <DialogTitle>{t('sensors.repair.title', undefined, { name: sensor.name })}</DialogTitle>
           <DialogDescription>{t('sensors.repair.intro')}</DialogDescription>
         </DialogHeader>
-        {/* Remounted on every open: a closed dialog forgets its code. */}
-        {open && <RepairFlow sensor={sensor} onClose={() => onOpenChange(false)} />}
+        {/* The content unmounts when the dialog closes, so a closed dialog forgets its code. */}
+        <RepairFlow sensor={sensor} onClose={() => onOpenChange(false)} />
       </DialogContent>
     </Dialog>
   )
