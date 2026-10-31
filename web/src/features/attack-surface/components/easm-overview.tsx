@@ -36,6 +36,7 @@ const EXPOSURE_TYPE_LABEL: Record<string, [string, string]> = {
   email_security_weak: ['easmReview.exposure.emailSecurityWeak', 'Weak email security'],
   subdomain_takeover: ['easmReview.exposure.subdomainTakeover', 'Subdomain takeover'],
   lookalike_domain: ['easmReview.exposure.lookalikeDomain', 'Lookalike domain'],
+  third_party_script_added: ['easmReview.exposure.thirdPartyScript', 'New third-party script'],
   port_open: ['easmReview.exposure.portOpen', 'Open port'],
   service_detected: ['easmReview.exposure.serviceDetected', 'Exposed service'],
 }

@@ -50,6 +50,7 @@ import vi_notificationChannels from './vi/notificationChannels.json'
 import vi_scmIntegration from './vi/scmIntegration.json'
 import vi_notificationPresets from './vi/notificationPresets.json'
 import vi_lookalikes from './vi/lookalikes.json'
+import vi_pageMonitor from './vi/pageMonitor.json'
 import vi_mcp from './vi/mcp.json'
 import vi_nav from './vi/nav.json'
 import vi_networkSeeds from './vi/networkSeeds.json'
@@ -149,6 +150,7 @@ export const viNamespaces: Record<string, Dictionary> = {
   scmIntegration: vi_scmIntegration,
   notificationPresets: vi_notificationPresets,
   lookalikes: vi_lookalikes,
+  pageMonitor: vi_pageMonitor,
   mcp: vi_mcp,
   nav: vi_nav,
   networkSeeds: vi_networkSeeds,
