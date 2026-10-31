@@ -1,5 +1,6 @@
 {
   "errors.APPROVAL_REQUIRED": "This change needs an approver. Submit a request instead.",
+  "errors.APP_UPDATED_RELOADING": "{product} was updated. Reloading to the latest version.",
   "errors.BAD_REQUEST": "The request is not valid. Check the values and try again.",
   "errors.BULK_NOT_ALLOWED": "This change cannot be made in bulk. Change each item on its own.",
   "errors.BULK_TOO_LARGE": "Too many items for one bulk change. Narrow the selection.",
