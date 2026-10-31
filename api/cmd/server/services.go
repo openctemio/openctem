@@ -88,6 +88,7 @@ import (
 	catalogapp "github.com/openctemio/openctem/api/internal/app/contentcatalog"
 	contentpackapp "github.com/openctemio/openctem/api/internal/app/contentpack"
 	"github.com/openctemio/openctem/api/internal/app/contentpin"
+	contentruleapp "github.com/openctemio/openctem/api/internal/app/contentrule"
 	contentsourceapp "github.com/openctemio/openctem/api/internal/app/contentsource"
 	coverageapp "github.com/openctemio/openctem/api/internal/app/coverage"
 	ctemidapp "github.com/openctemio/openctem/api/internal/app/ctemid"
@@ -804,7 +805,12 @@ type Services struct {
 	ContentDelivery *contentpackapp.Delivery
 	// Wordlists manages organization wordlists; ContentPlanner plans the
 	// content of jobs and previews an enumeration job's label list.
-	Wordlists      *wordlistapp.Service
+	Wordlists *wordlistapp.Service
+	// DetectionRules evaluates web fingerprint and sensitive-information
+	// rules on ingested web content (docs/architecture/rule-packs.md).
+	DetectionRules *contentruleapp.Service
+	// ContentRules manages organization detection rules.
+	ContentRules   *contentruleapp.RulesService
 	ContentPlanner *contentpin.Planner
 	// ContentCatalog is the content catalog (RFC-099).
 	ContentCatalog *catalogapp.Service
@@ -2369,8 +2375,20 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 			if _, err := contentpin.InstallBuiltin(ctx, s.PlatformContentPacks, log.Logger); err != nil {
 				log.Error("built-in wordlist packs not installed; subdomain enumeration waits for an imported pack", "error", err)
 			}
+			// The curated detection rule packs, the same way.
+			if _, err := contentruleapp.InstallBuiltin(ctx, s.PlatformContentPacks, log.Logger); err != nil {
+				log.Error("built-in detection rule packs not installed; only organization rules run", "error", err)
+			}
 		}()
 	}
+	// Detection rules run at ingest on the web content a report carries;
+	// secrets become masked exposures through the EASM writer.
+	s.DetectionRules = contentruleapp.NewService(s.PlatformContentPacks, nil, easmExposures,
+		postgres.NewCommandContentPinsRepository(&postgres.DB{DB: deps.DB}),
+		vulnerability.NewSecretFingerprinter([]byte(cfg.FingerprintSecret())), log.Logger)
+	contentRuleRepo := postgres.NewTenantContentRuleRepository(&postgres.DB{DB: deps.DB})
+	s.DetectionRules.SetOrganizationRules(contentRuleRepo)
+	s.ContentRules = contentruleapp.NewRulesService(contentRuleRepo, s.DetectionRules, s.Audit, log)
 	cmdOpts := []command.Option{command.WithSensorLookup(repos.Sensor),
 		// Each scan and retest job carries the claiming sensor's proxy pool.
 		command.WithEgress(s.ProxyPool),
@@ -2557,6 +2575,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Ingest.SetExclusionSource(s.Scope)                             // New assets matching a scope exclusion are not added (RFC-042 F16)
 	// Secret findings: fingerprint keyed by the platform secret (RFC-043).
 	s.Ingest.SetSecretFingerprinter(vulnerability.NewSecretFingerprinter([]byte(cfg.FingerprintSecret())))
+	s.Ingest.SetDetectionRules(s.DetectionRules)
 	// Receipts of uploads and sensor runs, with the daily ingest fact (RFC-122).
 	s.Ingest.SetReceiptRecorder(repos.IngestReceipt)
 	// Coverage-scoped auto-resolve of non-repository findings (default dry_run).
