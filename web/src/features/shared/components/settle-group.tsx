@@ -56,7 +56,13 @@ export function SettleGroup({ fallback, children, maxWaitMs = 1500 }: SettleGrou
   return (
     <SettleContext.Provider value={released ? null : report}>
       {!released && fallback}
-      <div hidden={!released} data-slot="settle-group">
+      {/* `contents` once shown: the blocks stay direct children of the
+          page's layout (a PageStack's gaps apply to them). */}
+      <div
+        hidden={!released}
+        className={released ? 'contents' : undefined}
+        data-slot="settle-group"
+      >
         {children}
       </div>
     </SettleContext.Provider>
@@ -75,4 +81,10 @@ export function useSettleSignal(isPending: boolean) {
     const own = id.current as symbol
     return () => report?.(own, false)
   }, [report])
+}
+
+/** A `useSettleSignal` for data the page itself loads outside its blocks. */
+export function SettleSignal({ pending }: { pending: boolean }) {
+  useSettleSignal(pending)
+  return null
 }

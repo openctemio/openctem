@@ -1,6 +1,6 @@
 import { describe, expect, it, vi, afterEach } from 'vitest'
 import { act, render, screen } from '@testing-library/react'
-import { SettleGroup, useSettleSignal } from '../settle-group'
+import { SettleGroup, SettleSignal, useSettleSignal } from '../settle-group'
 
 function Block({ loading, label }: { loading: boolean; label: string }) {
   useSettleSignal(loading)
@@ -75,5 +75,27 @@ describe('SettleGroup', () => {
   it('does nothing outside a group', () => {
     render(<Block loading label="band" />)
     expect(screen.getByText('band loading')).toBeTruthy()
+  })
+
+  it('lays its blocks out as direct children of the page once shown', () => {
+    render(
+      <SettleGroup fallback={<span>skeleton</span>}>
+        <Block loading={false} label="band" />
+      </SettleGroup>
+    )
+    expect(document.querySelector('[data-slot="settle-group"]')).toHaveClass('contents')
+  })
+
+  it('SettleSignal holds the group for data the page loads itself', () => {
+    const tree = (pending: boolean) => (
+      <SettleGroup fallback={<span>skeleton</span>}>
+        <SettleSignal pending={pending} />
+        <p>page</p>
+      </SettleGroup>
+    )
+    const { rerender } = render(tree(true))
+    expect(contentHidden()).toBe(true)
+    rerender(tree(false))
+    expect(contentHidden()).toBe(false)
   })
 })
