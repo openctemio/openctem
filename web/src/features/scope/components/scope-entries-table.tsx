@@ -451,7 +451,7 @@ export function ScopeEntriesTable({
           {!tierCeilings && (
             <p className="text-xs text-muted-foreground" data-testid="scope-tier-per-scan-note">
               {t('scope.entries.perScanHint', PER_SCAN_HINT)}{' '}
-              <Link href={SCAN_APPROVAL_HREF} className="text-primary hover:underline">
+              <Link href={SCAN_APPROVAL_HREF} className="link-inline">
                 {t('scope.entries.governanceLink', 'Scan approval settings')}
               </Link>
             </p>
