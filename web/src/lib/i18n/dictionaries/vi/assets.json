@@ -632,7 +632,7 @@
   "assets.mergeHistory.renamed": "đã đổi tên từ “{from}” thành “{to}”",
   "assets.mergeHistory.title": "Lịch sử định danh",
   "assets.monitoring.column": "Giám sát",
-  "assets.monitoring.control.open": "Đổi chế độ giám sát của {name}",
+  "assets.monitoring.control.open": "{state}, đổi chế độ giám sát của {name}",
   "assets.monitoring.control.saved": "Đã lưu quyết định cho {name}",
   "assets.monitoring.control.title": "Quyết định giám sát",
   "assets.monitoring.facet": "Giám sát",

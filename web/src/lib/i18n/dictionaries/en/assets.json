@@ -632,7 +632,7 @@
   "assets.mergeHistory.renamed": "renamed it from “{from}” to “{to}”",
   "assets.mergeHistory.title": "Identity history",
   "assets.monitoring.column": "Monitoring",
-  "assets.monitoring.control.open": "Change monitoring of {name}",
+  "assets.monitoring.control.open": "{state}, change monitoring of {name}",
   "assets.monitoring.control.saved": "Saved the decision for {name}",
   "assets.monitoring.control.title": "Decide monitoring",
   "assets.monitoring.facet": "Monitoring",

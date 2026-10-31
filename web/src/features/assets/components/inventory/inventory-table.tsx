@@ -98,6 +98,8 @@ const COLUMN_ROOM = {
   exposure: 1255,
   owner: 1355,
   last_seen: 1475,
+  // The monitoring state joins last (a chip with its menu, about 150px).
+  monitoring_state: 1630,
 } as const
 
 /** A one-type list shows "Service facts" only when its own columns do not already. */
@@ -372,6 +374,7 @@ export function InventoryTable({
         // The one derived lifecycle state (monitored, pending decision, ...).
         id: 'monitoring_state',
         enableSorting: false,
+        meta: { hideBelow: COLUMN_ROOM.monitoring_state },
         header: ({ column }) => (
           <DataTableColumnHeader
             column={column}

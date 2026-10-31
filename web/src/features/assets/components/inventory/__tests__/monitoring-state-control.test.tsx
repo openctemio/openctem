@@ -31,7 +31,7 @@ describe('MonitoringStateControl', () => {
       />
     )
     await userEvent.click(
-      screen.getByRole('button', { name: 'Change monitoring of dev.example.com' })
+      screen.getByRole('button', { name: 'Pending decision, change monitoring of dev.example.com' })
     )
     expect(await screen.findByText('Decide monitoring')).toBeInTheDocument()
     // What each choice does is written next to it.
