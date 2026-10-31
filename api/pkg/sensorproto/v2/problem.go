@@ -89,6 +89,12 @@ const (
 	// Pairing (RFC-052): one answer for an unknown, expired, used or
 	// foreign pairing request.
 	ProblemPairingNotFound ProblemType = "pairing-not-found"
+	// ProblemPairingKeyRegistered: the start's key was already registered
+	// to a sensor; a key pairs once, so the sensor needs a new key.
+	// ProblemPairingKeyBusy: another open request holds the key (retry
+	// after the advised delay). Both are told only to the key's holder.
+	ProblemPairingKeyRegistered ProblemType = "pairing-key-registered"
+	ProblemPairingKeyBusy       ProblemType = "pairing-key-busy"
 
 	// ProblemClockSkew: a signature that verifies but whose time lies
 	// outside the accepted window, so the sensor's clock or the server's
@@ -165,6 +171,8 @@ var problemDefs = map[ProblemType]problemDef{
 	ProblemManifestNotFound:          {http.StatusNotFound, "Manifest not found", "This sensor has no registered manifest; PUT it first.", false, ProblemTypeBaseSensor},
 	ProblemClockSkew:                 {http.StatusUnauthorized, "Clock skew", "The request signature was made outside the accepted time window: the sensor's clock or the server's clock is wrong. Synchronize both with NTP; clock_offset_seconds is the signature time minus server_time.", false, ProblemTypeBaseSensor},
 	ProblemPairingNotFound:           {http.StatusNotFound, "Pairing not found", "No open pairing request with this id is bound to this key.", false, ProblemTypeBaseSensor},
+	ProblemPairingKeyRegistered:      {http.StatusConflict, "Pairing key already registered", "This key is already registered to a sensor and cannot pair again: restore the sensor's identity, or remove its key so it generates a new one, then pair with a new code.", false, ProblemTypeBaseSensor},
+	ProblemPairingKeyBusy:            {http.StatusConflict, "Pairing key busy", "Another open pairing request holds this key; retry after the advised delay.", true, ProblemTypeBaseSensor},
 	ProblemManifestSchemaUnsupported: {http.StatusUnprocessableEntity, "Manifest schema unsupported", "The manifest's schema version is not one this server reads; send schema 1.", false, ProblemTypeBaseSensor},
 
 	ProblemConfigReportInvalid: {http.StatusUnprocessableEntity, "Config report invalid", "The config report is not a JSON object with schema 1 and a checks array.", false, ProblemTypeBaseSensor},
