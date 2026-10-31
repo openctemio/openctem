@@ -107,6 +107,7 @@ type NameSource interface {
 type Planner struct {
 	delivery Delivery
 	names    NameSource
+	lists    OrganizationLists
 	logger   *slog.Logger
 }
 
@@ -180,30 +181,29 @@ func (p *Planner) PinJobContent(ctx context.Context, req command.PinRequest) ([]
 			return nil, nil, err
 		}
 		content = append(content, *item)
-		if r.Purpose != PurposeDNSLabels || p.names == nil {
+		if r.Purpose != PurposeDNSLabels {
 			continue
 		}
-		in, err := p.dnsLabels(ctx, req.TenantID, r.Slot, commanddom.PayloadTargets(req.Payload))
+		generated, err := p.generatedLabels(ctx, req.TenantID, r.Slot, commanddom.PayloadTargets(req.Payload))
 		if err != nil {
 			return nil, nil, err
 		}
-		if in == nil {
-			continue
+		for _, in := range generated {
+			// A job's inline lists share one compressed budget; a list that
+			// would pass it is left out (the pack's lists still apply).
+			if inputsBytes+len(in.Data) > protov2.MaxJobInputsGzipTotal || len(inputs) >= protov2.MaxJobInputs {
+				p.logger.Warn("generated list left out: the job's inline budget is used", "tenant_id", req.TenantID.String(), "slot", r.Slot, "source", in.Source)
+				continue
+			}
+			inputsBytes += len(in.Data)
+			inputs = append(inputs, in)
 		}
-		// A job's inline lists share one compressed budget; a list that
-		// would pass it is left out (the pack's lists still apply).
-		if inputsBytes+len(in.Data) > protov2.MaxJobInputsGzipTotal {
-			p.logger.Warn("generated list left out: the job's inline budget is used", "tenant_id", req.TenantID.String(), "slot", r.Slot)
-			continue
-		}
-		inputsBytes += len(in.Data)
-		inputs = append(inputs, *in)
 	}
 	for _, c := range content {
 		p.logger.Info("job content pinned", "tenant_id", req.TenantID.String(), "slot", c.Slot, "pack", c.Pack, "digest", c.Digest, "shared", req.Shared)
 	}
 	for _, in := range inputs {
-		p.logger.Info("job input generated", "tenant_id", req.TenantID.String(), "slot", in.Slot, "sha256", in.SHA256, "lines", in.Lines, "shared", req.Shared)
+		p.logger.Info("job input generated", "tenant_id", req.TenantID.String(), "slot", in.Slot, "source", in.Source, "sha256", in.SHA256, "lines", in.Lines, "shared", req.Shared)
 	}
 	return content, inputs, nil
 }
@@ -266,6 +266,7 @@ func (p *Planner) packFor(ctx context.Context, slot, dir, class string) (*protov
 	return &protov2.JobContent{
 		Slot: slot, Kind: pack.Kind, Scope: protov2.ContentScopePlatform, Pack: pack.Name,
 		Digest: pack.Digest, Size: pack.Size, Files: files, MaxLines: maxLinesOf(class), Signature: pack.Signature,
+		Version: pack.Version,
 	}, nil
 }
 
