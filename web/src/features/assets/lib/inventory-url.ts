@@ -46,6 +46,7 @@ export type InventoryFilters = Pick<
   | 'coverage'
   | 'technologies'
   | 'technologyCategories'
+  | 'technologyVersion'
   | 'hasFindings'
   | 'lastSeenBefore'
   | 'lastSeenAfter'
@@ -71,6 +72,8 @@ const TAGS_MODE_PARAM = 'tags_mode'
 const MIN_RISK_PARAM = 'min_risk_score'
 /** coverage=covered|uncovered (the dashboard's Discovery stage opens uncovered). */
 const COVERAGE_PARAM = 'coverage'
+/** technology_version: kept when present and empty (the unknown version). */
+const TECHNOLOGY_VERSION_PARAM = 'technology_version'
 
 function isLens(v: string): v is AssetLens {
   return ASSET_LENSES.some((l) => l.id === v)
@@ -169,6 +172,8 @@ export function parseInventoryFilters(sp: URLSearchParams): InventoryFilters {
 
   const coverage = sp.get(COVERAGE_PARAM)
   if (coverage === 'covered' || coverage === 'uncovered') out.coverage = coverage
+  const techVersion = sp.get(TECHNOLOGY_VERSION_PARAM)
+  if (techVersion !== null && out.technologies?.length) out.technologyVersion = techVersion.trim()
 
   const page = Number(sp.get('page'))
   if (Number.isFinite(page) && page > 0) out.page = page
@@ -200,6 +205,8 @@ export function serializeInventoryFilters(f: InventoryFilters): URLSearchParams 
   if (f.tagsMode === 'all' && f.tags?.length) sp.set(TAGS_MODE_PARAM, 'all')
   if (f.minRiskScore !== undefined) sp.set(MIN_RISK_PARAM, String(f.minRiskScore))
   if (f.coverage) sp.set(COVERAGE_PARAM, f.coverage)
+  if (f.technologyVersion !== undefined && f.technologies?.length)
+    sp.set(TECHNOLOGY_VERSION_PARAM, f.technologyVersion)
   if (f.page && f.page > 1) sp.set('page', String(f.page))
   if (f.pageSize && f.pageSize !== DEFAULT_PAGE_SIZE) sp.set('per_page', String(f.pageSize))
 

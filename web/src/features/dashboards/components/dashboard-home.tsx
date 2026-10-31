@@ -564,24 +564,39 @@ export function DashboardHome() {
                 data-testid="layout-hint"
               >
                 <span className="min-w-0 flex-1 basis-60 text-muted-foreground">
-                  {t('dashboards.layoutHint.text', 'New on the {template} layout: {names}.', {
-                    template: t(templateNameKey(layoutHint.template), layoutHint.template),
-                    names:
-                      hintNames.join(', ') +
-                      (hintMore > 0
-                        ? ` ${t('dashboards.layoutHint.more', 'and {n} more', { n: hintMore })}`
-                        : ''),
-                  })}
+                  {layoutHint.missing.length > 0
+                    ? t('dashboards.layoutHint.text', 'New on the {template} layout: {names}.', {
+                        template: t(templateNameKey(layoutHint.template), layoutHint.template),
+                        names:
+                          hintNames.join(', ') +
+                          (hintMore > 0
+                            ? ` ${t('dashboards.layoutHint.more', 'and {n} more', { n: hintMore })}`
+                            : ''),
+                      })
+                    : t(
+                        'dashboards.layoutHint.rearranged',
+                        'The {template} layout has a new arrangement: the most important figures first.',
+                        {
+                          template: t(templateNameKey(layoutHint.template), layoutHint.template),
+                        }
+                      )}
                 </span>
+                {layoutHint.missing.length > 0 && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={hintBusy}
+                    onClick={addTemplateWidgets}
+                  >
+                    {t('dashboards.layoutHint.add', 'Add them to this dashboard')}
+                  </Button>
+                )}
                 <Button
                   size="sm"
-                  variant="outline"
+                  variant={layoutHint.missing.length > 0 ? 'ghost' : 'outline'}
                   disabled={hintBusy}
-                  onClick={addTemplateWidgets}
+                  onClick={switchToTemplate}
                 >
-                  {t('dashboards.layoutHint.add', 'Add them to this dashboard')}
-                </Button>
-                <Button size="sm" variant="ghost" disabled={hintBusy} onClick={switchToTemplate}>
                   {t('dashboards.layoutHint.switch', 'Switch to the new layout')}
                 </Button>
                 <Button

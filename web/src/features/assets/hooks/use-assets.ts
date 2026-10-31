@@ -96,6 +96,11 @@ export interface AssetSearchFilters {
   technologies?: string[]
   /** Assets with a technology in any of these categories (RFC-112). */
   technologyCategories?: string[]
+  /**
+   * Narrows `technologies` to one exact version; "" is a version the tools
+   * could not tell (the API reads a present, empty technology_version so).
+   */
+  technologyVersion?: string
 
   // CTEM inventory filter dimensions (api: all-assets-inventory).
   // All optional; multi-select where an array.
@@ -503,6 +508,8 @@ export function buildAssetQueryParams(filters?: AssetSearchFilters): Record<stri
   if (filters.technologies?.length) params.technology = filters.technologies.join(',')
   if (filters.technologyCategories?.length)
     params.technology_category = filters.technologyCategories.join(',')
+  if (filters.technologyVersion !== undefined && filters.technologies?.length)
+    params.technology_version = filters.technologyVersion
 
   // CTEM inventory dimensions
   if (filters.businessUnitIds?.length) params.business_unit_ids = filters.businessUnitIds.join(',')

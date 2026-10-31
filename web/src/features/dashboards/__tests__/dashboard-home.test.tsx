@@ -7,6 +7,7 @@ import type { Dashboard } from '../api/dashboards.types'
 import type { DashboardData } from '../api/widget-data'
 import { DashboardHome } from '../components/dashboard-home'
 import { DASHBOARD_CHOICE_KEY } from '../landing'
+import { templateByKey, templateLayout } from '../templates'
 
 const perms = vi.hoisted(() => ({ list: [] as string[] }))
 vi.mock('@/lib/permissions', () => ({
@@ -158,9 +159,9 @@ describe('DashboardHome', () => {
     const metrics = input.layout.map(
       (w) => (w as unknown as { config: { data: { metric: string } } }).config.data.metric
     )
-    // The CTEM story leads: the levers, the exposure flow (with the five
-    // stages) and the key figures, then the brief, fix next and attack paths.
-    expect(metrics.slice(0, 3)).toEqual(['exposure.levers', 'exposure.flow', 'exposure.kpis'])
+    // The CTEM story leads: the key figures, the levers, then the exposure
+    // flow (with the five stages); the brief, fix next and attack paths follow.
+    expect(metrics.slice(0, 3)).toEqual(['exposure.kpis', 'exposure.levers', 'exposure.flow'])
     expect(metrics).toContain('brief.weekly')
     expect(metrics).toContain('ingest.intake')
     expect(metrics).toContain('fix.next')
@@ -405,7 +406,7 @@ describe('DashboardHome new layout hint', () => {
     api.mine = [overviewCopy('d1')]
     renderHome()
     const hint = await screen.findByTestId('layout-hint')
-    expect(hint).toHaveTextContent('New on the Overview layout: What would cut exposure most')
+    expect(hint).toHaveTextContent('New on the Overview layout: Key figures')
     expect(within(hint).getByRole('button', { name: 'Add them to this dashboard' })).toBeVisible()
     expect(within(hint).getByRole('button', { name: 'Switch to the new layout' })).toBeVisible()
     expect(api.update).not.toHaveBeenCalled()
@@ -429,22 +430,35 @@ describe('DashboardHome new layout hint', () => {
       'exposure.priority_open',
       'intel.kev_open',
       'sla.within',
+      'exposure.kpis',
       'exposure.levers',
       'exposure.flow',
-      'exposure.kpis',
-      'brief.weekly',
-      'attack_paths.to_crown_jewels',
       'exposure.open_by_priority',
       'flow.new_vs_fixed',
-      'findings.age_bands',
       'surface.new_assets',
       'certificates.expiry',
+      'brief.weekly',
+      'attack_paths.to_crown_jewels',
       'fix.next',
       // The person's own extra widget stays.
       'sla.at_risk',
     ])
     expect(new Set(input.layout.map((w) => w.config.id)).size).toBe(input.layout.length)
     expect(screen.queryByTestId('layout-hint')).toBeNull()
+  })
+
+  it('a copy with every widget in the earlier order is offered the new arrangement only', async () => {
+    // Every current Overview widget, in the order the template had before
+    // the key figures moved to the top.
+    const tpl = templateLayout(templateByKey('overview'))
+    const layout = [tpl[1], tpl[2], tpl[0], ...tpl.slice(3)]
+    api.mine = [dash('d1', 'Overview', { kind: 'personal', columns: 4, layout })]
+    renderHome()
+    const hint = await screen.findByTestId('layout-hint')
+    expect(hint).toHaveTextContent('The Overview layout has a new arrangement')
+    expect(within(hint).queryByRole('button', { name: 'Add them to this dashboard' })).toBeNull()
+    expect(within(hint).getByRole('button', { name: 'Switch to the new layout' })).toBeVisible()
+    expect(api.update).not.toHaveBeenCalled()
   })
 
   it('"Switch to the new layout" adds a fresh copy and keeps the old dashboard', async () => {
