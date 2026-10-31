@@ -171,8 +171,10 @@ describe('CIPipelinesPanel', () => {
       .getByText('CI pipelines')
       .closest('[data-slot="metric-strip"]') as HTMLElement
     expect(within(strip).getByText('5')).toBeInTheDocument()
-    expect(within(strip).getByText('Inactive')).toBeInTheDocument()
-    // Inactive pipelines are hidden by default.
+    // Inactive pipelines are hidden by default; the switch carries their count
+    // (no metric tile repeats it).
+    expect(within(strip).queryByText('Inactive')).not.toBeInTheDocument()
+    expect(screen.getByRole('switch', { name: 'Show inactive (2)' })).not.toBeChecked()
     expect(lastPipelineFilters?.includeInactive).toBe(false)
   })
 
@@ -209,7 +211,7 @@ describe('CIPipelinesPanel', () => {
     counts = { failing: 1, archived: 2 }
     render(<CIPipelinesPanel />)
     expect(lastPipelineFilters?.status).toEqual(['failing'])
-    await userEvent.click(screen.getByRole('button', { name: /inactive/i }))
+    await userEvent.click(screen.getByRole('switch', { name: /show inactive/i }))
     expect(lastPipelineFilters?.includeInactive).toBe(true)
     expect(lastPipelineFilters?.status).toEqual([])
   })

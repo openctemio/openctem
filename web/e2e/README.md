@@ -165,6 +165,9 @@ tests that cover the console's most user-visible flows.
 | `44-sidebar-phone-drawer.spec.ts`           | Phone sidebar drawer: one scroller, one filled row, rows hold still, footer never clips  |
 | `51-sidebar-footer-pinned.spec.ts`          | Settings and Help stay at the sidebar bottom while the nav scrolls (desktop, phone)      |
 | `50-shell-banner-no-shift.spec.ts`           | A platform notice does not push the page down on reload (390px)                          |
+| `50-shell-banner-no-shift.spec.ts`          | A platform notice does not push the page down on reload (390px)                          |
+| `51-cicd-settings.spec.ts`                  | CI/CD Settings: every section on one page, `?section=` scrolls, 1440/390px, axe, budget  |
+| `52-cicd-lists.spec.ts`                     | CI/CD Pipelines and Runs at 1440/390px: no sideways scroll, axe, request budget          |
 
 Each spec is designed to:
 
