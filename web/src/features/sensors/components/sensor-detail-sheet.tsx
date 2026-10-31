@@ -62,6 +62,7 @@ import type { Sensor, SensorCommand } from '@/lib/api/sensor-types'
 import { sensorRoleOf } from '@/lib/api/sensor-types'
 import { Permission, useHasPermission } from '@/lib/permissions'
 import { sensorActions } from '../lib/sensor-actions'
+import { useSensorActionPerms } from '../lib/use-sensor-action-perms'
 import { redactUrlQueries } from '@/lib/redact-url'
 import { cn } from '@/lib/utils'
 import { useToolAvailability } from '@/lib/api/tool-hooks'
@@ -1016,8 +1017,7 @@ export function SensorDetailSheet({
   const router = useRouter()
   const { t } = useTranslation()
   const canWrite = useHasPermission(Permission.SensorsWrite)
-  const canDelete = useHasPermission(Permission.SensorsDelete)
-  const canRevoke = useHasPermission(Permission.SensorsRevoke)
+  const actionPerms = useSensorActionPerms()
   const canReadZones = useHasPermission(Permission.ScanZonesRead)
   const [tab, setTab] = useState<DrawerTab>('overview')
   const activityRef = useRef<EntityActivityHandle>(null)
@@ -1058,7 +1058,7 @@ export function SensorDetailSheet({
     }
   }
 
-  const can = sensorActions(sensor, { write: canWrite, revoke: canRevoke, delete: canDelete })
+  const can = sensorActions(sensor, actionPerms)
   const oneShot = isOneShotSensor(sensor)
   const role =
     sensorRoleOf(sensor.type) === 'collector'
