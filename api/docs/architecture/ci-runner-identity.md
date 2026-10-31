@@ -43,7 +43,7 @@ graph TD
 | Ingest entry point and the `ci_run` binding | `internal/app/ingest/ci_run.go`, `binding.go` |
 | Repository | `internal/infra/postgres/ci_run_repository.go` |
 | Routes and their chains | `internal/infra/http/routes/ci.go` |
-| Console | `web/src/features/ci-runners`: CI/CD integration page `/ci-cd` (pipelines, runs, coverage; Trust and gate tab, `?tab=setup`; "Connect a pipeline" setup and "Recent refused pipelines" from `GET /api/v1/ci/trust-refusals`); `/ci-runners` and `/runners` redirect to `/ci-cd` |
+| Console | `web/src/features/ci-runners`: CI/CD integration page `/ci-cd` (pipelines, runs, coverage; Settings tab, `?tab=setup`, every section on one page, `?section=` scrolls to one; "Connect a pipeline" in the page header and "Recent refused pipelines" from `GET /api/v1/ci/trust-refusals`); `/ci-runners` and `/runners` redirect to `/ci-cd` |
 | Pipelines: identity, status | `pkg/domain/cirun/pipeline.go`, `internal/app/cirun/pipelines.go`, `internal/infra/postgres/ci_pipeline_repository.go`, `handler/ci_pipeline_handler.go` |
 | Coverage, expectations, retirement | `pkg/domain/cirun/coverage.go`, `internal/app/cirun/coverage.go`, `internal/infra/postgres/ci_coverage_repository.go`, `handler/ci_coverage_handler.go` |
 | Alerts and stale sources (every 15 minutes, one replica) | `internal/app/cirun/alerts.go`, `internal/infra/controller/ci_alerts.go` |
