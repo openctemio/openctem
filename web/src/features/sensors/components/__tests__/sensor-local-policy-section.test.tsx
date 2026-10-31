@@ -30,7 +30,8 @@ describe('SensorLocalPolicySection', () => {
         }}
       />
     )
-    expect(screen.getByText('Enforced')).toBeInTheDocument()
+    expect(screen.getByText('Narrowed by host policy (3 rules)')).toBeInTheDocument()
+    expect(screen.queryByTestId('policy-allows-nothing')).not.toBeInTheDocument()
     // The full digest, selectable, so it can be compared on the host.
     expect(screen.getByTestId('local-policy-digest')).toHaveTextContent('sha256:' + 'ab'.repeat(32))
     expect(screen.queryByTestId('no-policy-guidance')).not.toBeInTheDocument()
@@ -48,11 +49,42 @@ describe('SensorLocalPolicySection', () => {
         sensor={{ local_policy: { state: 'absent', kill_switch: false } }}
       />
     )
-    expect(screen.getByText('No local policy')).toBeInTheDocument()
+    expect(screen.getAllByText('Follows platform scope').length).toBeGreaterThan(0)
+    expect(screen.queryByTestId('policy-allows-nothing')).not.toBeInTheDocument()
     // The corrected guidance next to the sensor's warning (research/25 §2.2).
     const guidance = screen.getByTestId('no-policy-guidance')
     expect(guidance).toHaveTextContent('SENSOR_TEMPLATE_SIGNING_KEYS')
     expect(guidance).toHaveTextContent('your organization allows interactsh')
+  })
+
+  it('says a newly paired sensor with an empty allow list allows nothing, and where to edit it', () => {
+    render(
+      <SensorLocalPolicySection
+        sensor={{
+          name: 'office-1',
+          local_policy: {
+            state: 'enforced',
+            source: 'file',
+            kill_switch: false,
+            summary: {
+              targets_allow: 0,
+              targets_deny: 0,
+              allow_private: false,
+              allow_custom_templates: false,
+              allow_interactsh: false,
+            },
+          },
+        }}
+      />
+    )
+    expect(screen.getAllByText('Allows nothing yet').length).toBeGreaterThan(0)
+    expect(screen.getByTestId('policy-allows-nothing')).toHaveTextContent(
+      'platform sends it no scan'
+    )
+    const help = screen.getByTestId('policy-file-help')
+    expect(help).toHaveTextContent('sensors/office-1/policy/sensor-policy.yaml')
+    expect(help).toHaveTextContent('docker compose restart office-1')
+    expect(help).toHaveTextContent('/etc/openctem/sensor-policy.yaml')
   })
 
   it('adds the guidance when the sensor repeats the absent-policy warning', () => {
@@ -87,7 +119,7 @@ describe('SensorLocalPolicySection', () => {
           }}
         />
       )
-      expect(screen.getByText('Network scans refused: no local policy')).toBeInTheDocument()
+      expect(screen.getByText('Allows nothing yet: list what it may scan')).toBeInTheDocument()
       const block = await screen.findByTestId('policy-suggestion')
       const pre = block.querySelector('pre')
       expect(pre?.textContent).toContain(

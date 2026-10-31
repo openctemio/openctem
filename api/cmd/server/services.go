@@ -2328,6 +2328,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	repos.Command.SetLeaseDuration(cfg.SensorConfig.CommandLease)
 	s.Sensor.SetLeaseRenewer(repos.Command)
 	s.Sensor.SetCancelFinder(repos.Command)
+	// A sensor whose local policy changed may claim again what it refused.
+	s.Sensor.SetRefusalForgetter(repos.Command)
 	// Revoking or disabling a sensor takes back its leased commands at once
 	// (RFC-040 §5.2) instead of at lease expiry.
 	s.Sensor.SetHolderReleaser(repos.Command)

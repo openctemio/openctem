@@ -28,6 +28,15 @@ const (
 	// managed layer of research/25 §3.1), such as the requirement that
 	// private targets go only to sensors with a local policy.
 	RefusalLayerManaged = "managed"
+	// RefusalLayerBuiltin is the sensor's built-in deny list (loopback,
+	// link-local, metadata, reserved): the same on every sensor.
+	RefusalLayerBuiltin = "builtin"
+	// RefusalLayerScope is the sensor's check of the scope the platform
+	// signed for the job.
+	RefusalLayerScope = "scope"
+	// RefusalLayerPlatformToolGate is the platform's tool policy applied on
+	// the sensor (the tool is not allowed there).
+	RefusalLayerPlatformToolGate = "platform_tool_gate"
 )
 
 // Refusal rules the platform-side layer uses. Local-policy rules carry the
@@ -41,6 +50,14 @@ const (
 	RulePortsAllow            = "ports.allow"
 	RuleTargetsAllowPrivate   = "targets.allow_private"
 	RulePrivateNeedsLocalPlcy = "private_targets_require_local_policy"
+	// RuleTargetsAllow is the sensor's rule for a target outside its
+	// targets.allow list; the platform uses it for a list that allows
+	// nothing (reported as zero entries).
+	RuleTargetsAllow = "targets.allow"
+	// RuleNoLocalPolicy is the sensor's rule for a job with network
+	// targets, custom templates or callbacks on a sensor that requires a
+	// local policy and has none.
+	RuleNoLocalPolicy = "no_local_policy"
 )
 
 // DispatchRefusal says why a sensor must not get a job: the layer and rule
@@ -79,6 +96,9 @@ type Job struct {
 	// PrivateAddress: a target is a literal private address or range, which
 	// an enforced policy refuses unless it allows private ranges.
 	PrivateAddress bool
+	// NetworkTarget: the job names a target (payload "target" or
+	// "targets"), or its targets cannot be read (fail closed).
+	NetworkTarget bool
 }
 
 // retiredTools maps a replaced tool name to its replacement, as the sensor
@@ -115,6 +135,7 @@ func JobOf(cmdType string, payload json.RawMessage) Job {
 	}
 	if err := json.Unmarshal(payload, &p); err != nil {
 		job.Private = true // unreadable: fail closed, as HasPrivateTarget does
+		job.NetworkTarget = true
 		return job
 	}
 	for _, s := range []string{p.Scanner, p.ScannerName, p.PreferredTool} {
@@ -139,7 +160,31 @@ func JobOf(cmdType string, payload json.RawMessage) Job {
 	job.Ports = portSetting(p.Config["ports"])
 	job.Private = HasPrivateTarget(payload)
 	job.PrivateAddress = HasPrivateAddress(payload)
+	job.NetworkTarget = HasNetworkTarget(payload)
 	return job
+}
+
+// PayloadTargets returns the targets a command payload names ("target"
+// and "targets"); nil when there are none or they cannot be read.
+func PayloadTargets(payload json.RawMessage) []string {
+	targets, _ := payloadTargets(payload)
+	return targets
+}
+
+// HasNetworkTarget reports whether a command payload names a target
+// ("target" or "targets"). A payload whose targets cannot be read counts as
+// naming one: the check only ever narrows what a sensor is offered.
+func HasNetworkTarget(payload json.RawMessage) bool {
+	targets, ok := payloadTargets(payload)
+	if !ok {
+		return true
+	}
+	for _, t := range targets {
+		if strings.TrimSpace(t) != "" {
+			return true
+		}
+	}
+	return false
 }
 
 // ConfigAsksInteractsh reports whether a job or scanner configuration turns
@@ -216,12 +261,16 @@ type DispatchOptions struct {
 // get job: nil when it may, else the refusal. It mirrors the sensor's own
 // admission check for what the report shows (kill switch, checks, tools,
 // custom templates, interactsh, ports, private ranges); target allow and
-// deny lists are reported as counts only (research/25 D6), so they are
-// left to the sensor.
+// deny lists are reported as counts only (research/25 D6), so which
+// target they cover is left to the sensor. Two shapes need no ranges to
+// decide and are refused here: an allow list with no entry (the host owner
+// allowed nothing yet) and a sensor that requires a local policy and has
+// none (it fails closed). Both refuse every job with a network target.
 //
 // A sensor without a report (an SDK before RFC-040, protocol v1) or with
-// no local policy accepts everything the policy would decide: the absent
-// policy allows both opt-ins (owner decision Q4 (a)).
+// no local policy that it does not require follows the platform's scope:
+// it accepts everything the policy would decide, and the absent policy
+// allows both opt-ins (owner decision Q4 (a)).
 func Accepts(r *LocalPolicyReport, job Job, opts DispatchOptions) *DispatchRefusal {
 	if r != nil && r.KillSwitch {
 		return &DispatchRefusal{Layer: RefusalLayerLocal, Rule: RuleKillSwitch,
@@ -236,10 +285,18 @@ func Accepts(r *LocalPolicyReport, job Job, opts DispatchOptions) *DispatchRefus
 		return &DispatchRefusal{Layer: RefusalLayerManaged, Rule: RulePrivateNeedsLocalPlcy,
 			Detail: "the organization sends jobs with private targets only to sensors that enforce a local policy"}
 	}
+	if r.FailsClosed() && (job.NetworkTarget || job.CustomTemplates > 0 || job.Interactsh) {
+		return &DispatchRefusal{Layer: RefusalLayerLocal, Rule: RuleNoLocalPolicy,
+			Detail: "the sensor requires a local policy and has none, so it refuses every job with a network target; " + LocalPolicyFileHint}
+	}
 	if !r.Enforced() || r.Summary == nil {
 		return nil
 	}
 	s := r.Summary
+	if job.NetworkTarget && s.TargetsAllow == 0 {
+		return &DispatchRefusal{Layer: RefusalLayerLocal, Rule: RuleTargetsAllow,
+			Detail: "the sensor's local policy allows no target yet (targets.allow is empty); " + LocalPolicyFileHint}
+	}
 	if s.Checks != nil && job.Type != "health_check" && !slices.Contains(s.Checks, job.Type) {
 		return &DispatchRefusal{Layer: RefusalLayerLocal, Rule: RuleChecksAllow,
 			Detail: fmt.Sprintf("%q jobs are not allowed on this sensor", job.Type)}
@@ -341,7 +398,7 @@ func firstPortOutside(jobSpec, policySpec string) (int, bool) {
 // Layers a sensor may name in a structured refusal (v2 fail "refusal",
 // research/25 §3.6). A closed set: anything else is stored as "unknown".
 var sensorRefusalLayers = map[string]bool{
-	"builtin": true, RefusalLayerLocal: true, RefusalLayerManaged: true, "scope": true, "platform_tool_gate": true,
+	RefusalLayerBuiltin: true, RefusalLayerLocal: true, RefusalLayerManaged: true, RefusalLayerScope: true, RefusalLayerPlatformToolGate: true,
 }
 
 // SanitizeRefusal reduces a sensor-reported refusal to safe, bounded
