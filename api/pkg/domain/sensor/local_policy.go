@@ -9,6 +9,7 @@ package sensor
 // what the platform dispatches.
 
 import (
+	"encoding/json"
 	"regexp"
 	"slices"
 	"strings"
@@ -89,6 +90,19 @@ type LocalPolicySummary struct {
 	// MaxRPS and MaxJobSeconds are the caps (0 = not set).
 	MaxRPS        int `json:"max_rps,omitempty"`
 	MaxJobSeconds int `json:"max_job_seconds,omitempty"`
+}
+
+// UnmarshalJSON reads a summary; a summary without "targets_allow" has no
+// allow list (-1), never an empty one: only a sensor that says it has zero
+// allow entries is treated as allowing no target.
+func (s *LocalPolicySummary) UnmarshalJSON(b []byte) error {
+	type plain LocalPolicySummary
+	p := plain{TargetsAllow: -1}
+	if err := json.Unmarshal(b, &p); err != nil {
+		return err
+	}
+	*s = LocalPolicySummary(p)
+	return nil
 }
 
 // SanitizeLocalPolicyReport returns r reduced to safe, bounded values, or
@@ -202,6 +216,30 @@ func (r *LocalPolicyReport) DisplayState() string {
 		return r.State
 	}
 }
+
+// FailsClosed reports whether the sensor requires a local policy and has
+// none: it then refuses every job with a network target, custom templates
+// or callbacks (rule no_local_policy).
+func (r *LocalPolicyReport) FailsClosed() bool {
+	return r != nil && r.State == LocalPolicyAbsent && r.Required
+}
+
+// AllowsNoTarget reports whether the sensor refuses every job with a
+// network target under its local policy: an enforced policy whose allow
+// list has no entry, or a required policy that is absent. Display data and
+// a placement hint; the sensor decides.
+func (r *LocalPolicyReport) AllowsNoTarget() bool {
+	if r.FailsClosed() {
+		return true
+	}
+	return r.Enforced() && r.Summary != nil && r.Summary.TargetsAllow == 0
+}
+
+// LocalPolicyFileHint tells an operator where a sensor's local policy is
+// edited: the file the multi-sensor install writes per sensor, or the
+// single-sensor default path.
+const LocalPolicyFileHint = "the network owner lists what it may scan in sensors/<name>/policy/sensor-policy.yaml " +
+	"(multi-sensor install; then docker compose restart <name>) or /etc/openctem/sensor-policy.yaml on the sensor host"
 
 // Enforced reports whether the sensor enforces a local policy.
 func (r *LocalPolicyReport) Enforced() bool {

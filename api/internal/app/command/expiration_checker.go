@@ -11,6 +11,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/metrics"
 
 	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
+	scanrundom "github.com/openctemio/openctem/api/pkg/domain/scanrun"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
@@ -194,7 +195,8 @@ func (c *ExpirationChecker) handleExpiredCommand(ctx context.Context, cmd *comma
 			"command_id", cmd.ID.String())
 		return
 	}
-	won, err := expirer.ExpireIfUnchanged(ctx, cmd, reason.errorMessage)
+	reason = c.refusalExpiry(ctx, cmd, reason)
+	won, err := expirer.ExpireIfUnchanged(ctx, cmd, truncateUTF8(reason.errorMessage, MaxFailErrorMessageBytes))
 	if err != nil {
 		c.logger.Error("failed to update expired command", "command_id", cmd.ID.String(), "error", err)
 		return
@@ -219,6 +221,26 @@ func (c *ExpirationChecker) handleExpiredCommand(ctx context.Context, cmd *comma
 	// Trigger scan workflow failure if this is a scan workflow command
 	if c.scanRunService != nil {
 		c.triggerScanRunExpired(ctx, cmd, reason)
+	}
+}
+
+// refusalExpiry is the expiry reason of a command that waited for an
+// eligible sensor after sensors refused it (refusal.go): the refusals, the
+// target and where each refusing sensor's local policy is edited, under the
+// policy-refusal code, instead of a bare "expired". Any other command keeps
+// reason.
+func (c *ExpirationChecker) refusalExpiry(ctx context.Context, cmd *commanddom.Command, reason expiryReason) expiryReason {
+	store, ok := c.commandRepo.(commanddom.RefusalStore)
+	if !ok || reason.code != expiryReasonCommand.code {
+		return reason
+	}
+	refusals, err := store.CommandRefusals(ctx, cmd.TenantID, cmd.ID)
+	if err != nil || len(refusals) == 0 {
+		return reason
+	}
+	return expiryReason{
+		errorMessage: "No eligible sensor took the job before its wait ended: " + RefusalFailureReason(cmd.Payload, refusals),
+		code:         scanrundom.FailurePolicyRefused,
 	}
 }
 

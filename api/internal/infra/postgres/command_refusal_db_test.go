@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	commandapp "github.com/openctemio/openctem/api/internal/app/command"
 	"github.com/openctemio/openctem/api/pkg/domain/command"
@@ -13,9 +14,11 @@ import (
 )
 
 // A refused routed job is re-queued to another eligible sensor and never
-// offered to the refuser again; it fails once no other eligible sensor
-// accepts it, or after 3 refusals (research/25 §3.6, D8; T-P0e, T-P0f).
-// Against the real SQL, as the app role.
+// offered to the refuser again; when no sensor can take it now it waits for
+// one (bounded by commandapp.RefusalWait), and it fails after 3 refusals or
+// when the wait ends (research/25 §3.6, D8). A sensor whose local policy
+// changes may claim what it refused again. Against the real SQL, as the
+// app role.
 
 type refusalFixture struct {
 	t       *testing.T
@@ -110,18 +113,117 @@ func TestRefusal_RequeuedToAnotherSensorThenFails(t *testing.T) {
 		t.Fatal("sensor B did not get the re-queued job")
 	}
 	// B refuses with the text-only form of an older SDK (T-P0f): nobody is
-	// left, the job fails with both reasons.
+	// left, so the job waits for an eligible sensor instead of failing.
+	before := time.Now()
 	out = f.refuse(b, job, nil, "refused by local policy: allow_interactsh: callbacks are off")
-	if out.Status != command.CommandStatusFailed {
-		t.Fatalf("after B refused: %s, want failed", out.Status)
+	if out.Status != command.CommandStatusPending || out.SensorID != nil {
+		t.Fatalf("after B refused: %s, want pending (waiting for an eligible sensor)", out.Status)
 	}
-	if !strings.HasPrefix(out.ErrorMessage, sensor.LocalPolicyRefusalPrefix+"allow_interactsh") ||
-		!strings.Contains(out.ErrorMessage, "tools.allow") || !strings.Contains(out.ErrorMessage, "refused by 2 sensors") {
-		t.Fatalf("failure reason %q does not aggregate both refusals", out.ErrorMessage)
+	if !strings.HasPrefix(out.ErrorMessage, "waiting for an eligible sensor") {
+		t.Fatalf("waiting reason %q", out.ErrorMessage)
+	}
+	if out.ExpiresAt == nil || out.ExpiresAt.After(before.Add(commandapp.RefusalWait+time.Minute)) {
+		t.Fatalf("expiry %v not brought forward to the refusal wait", out.ExpiresAt)
+	}
+	if f.claim(a)[job] || f.claim(b)[job] {
+		t.Fatal("a refusing sensor claimed the waiting job")
 	}
 	recs, err := f.cmds.CommandRefusals(f.ctx, f.tenant, job)
 	if err != nil || len(recs) != 2 || recs[0].SensorID != a.String() || recs[1].Rule != "allow_interactsh" {
 		t.Fatalf("recorded refusals %+v err %v", recs, err)
+	}
+	if recs[0].SensorName == "" {
+		t.Fatal("the refusal does not record the sensor's name")
+	}
+	reason := commandapp.RefusalFailureReason(out.Payload, recs)
+	for _, want := range []string{sensor.LocalPolicyRefusalPrefix + "allow_interactsh", "tools.allow", "10.60.0.5", "sensor-policy.yaml", recs[0].SensorName} {
+		if !strings.Contains(reason, want) {
+			t.Fatalf("failure reason %q lacks %q", reason, want)
+		}
+	}
+}
+
+// A sensor whose reported local policy changes is offered what it refused
+// again; another tenant's id lifts nothing; the refusals still count, so
+// the job cannot circle forever.
+func TestRefusal_PolicyChangeOffersTheJobAgain(t *testing.T) {
+	f, ids := newRefusalFixture(t, 1)
+	a := ids[0]
+	job := f.routedJob(true)
+	if !f.claim(a)[job] {
+		t.Fatal("not claimed")
+	}
+	if out := f.refuse(a, job, &sensor.DispatchRefusal{Layer: "local", Rule: "targets.allow", Detail: "outside"}, ""); out.Status != command.CommandStatusPending {
+		t.Fatalf("only sensor refused: %s, want pending (waiting)", out.Status)
+	}
+	if f.claim(a)[job] {
+		t.Fatal("the refuser claimed the job before its policy changed")
+	}
+	other := seedTestTenant(f.ctx, t, openSensorDB(t))
+	if n, err := f.cmds.ForgetRefusalsOf(f.ctx, other, a); err != nil || n != 0 {
+		t.Fatalf("another tenant lifted %d exclusions (err %v)", n, err)
+	}
+	if n, err := f.cmds.ForgetRefusalsOf(f.ctx, f.tenant, a); err != nil || n != 1 {
+		t.Fatalf("ForgetRefusalsOf = %d, %v; want 1", n, err)
+	}
+	if !f.claim(a)[job] {
+		t.Fatal("the sensor was not offered the job after its policy changed")
+	}
+	f.refuse(a, job, &sensor.DispatchRefusal{Layer: "local", Rule: "targets.allow"}, "")
+	if _, err := f.cmds.ForgetRefusalsOf(f.ctx, f.tenant, a); err != nil {
+		t.Fatal(err)
+	}
+	if !f.claim(a)[job] {
+		t.Fatal("not offered after the second policy change")
+	}
+	if out := f.refuse(a, job, &sensor.DispatchRefusal{Layer: "local", Rule: "targets.allow"}, ""); out.Status != command.CommandStatusFailed {
+		t.Fatalf("third refusal: %s, want failed", out.Status)
+	}
+}
+
+// A scope refusal (the sensor did not accept the platform's signed scope)
+// and a built-in deny-list refusal fail at once: neither is handed to the
+// next sensor.
+func TestRefusal_ScopeAndBuiltinFailClosed(t *testing.T) {
+	for _, layer := range []string{sensor.RefusalLayerScope, sensor.RefusalLayerBuiltin} {
+		f, ids := newRefusalFixture(t, 2)
+		job := f.routedJob(true)
+		if !f.claim(ids[0])[job] {
+			t.Fatal("not claimed")
+		}
+		out := f.refuse(ids[0], job, &sensor.DispatchRefusal{Layer: layer, Rule: "targets"}, "")
+		if out.Status != command.CommandStatusFailed {
+			t.Fatalf("%s refusal: %s, want failed without a re-queue", layer, out.Status)
+		}
+		if f.claim(ids[1])[job] {
+			t.Fatalf("%s refusal: the job was offered to another sensor", layer)
+		}
+	}
+}
+
+// The incident: a sensor whose local policy allows no target is never
+// offered routed work with targets, while a sensor without an allow list
+// (it follows the platform's scope) is.
+func TestPlacement_EmptyAllowListIsNotOffered(t *testing.T) {
+	f, ids := newRefusalFixture(t, 2)
+	empty, open := ids[0], ids[1]
+	if ok, err := f.sensors.UpdateLocalPolicy(f.ctx, &f.tenant, empty, &sensor.LocalPolicyReport{State: sensor.LocalPolicyEnforced,
+		Summary: &sensor.LocalPolicySummary{TargetsAllow: 0, AllowPrivate: true}}); err != nil || !ok {
+		t.Fatalf("UpdateLocalPolicy: %v %v", ok, err)
+	}
+	if ok, err := f.sensors.UpdateLocalPolicy(f.ctx, &f.tenant, open, &sensor.LocalPolicyReport{State: sensor.LocalPolicyEnforced,
+		Summary: &sensor.LocalPolicySummary{TargetsAllow: -1, AllowPrivate: true}}); err != nil || !ok {
+		t.Fatalf("UpdateLocalPolicy: %v %v", ok, err)
+	}
+	job := f.routedJob(true)
+	if f.claim(empty)[job] {
+		t.Fatal("a sensor whose local policy allows nothing was offered the job")
+	}
+	if _, err := f.svc.Acknowledge(f.ctx, f.tenant.String(), empty.String(), job.String()); err == nil {
+		t.Fatal("a sensor whose local policy allows nothing claimed the job by id")
+	}
+	if !f.claim(open)[job] {
+		t.Fatal("the sensor that follows the platform's scope did not get the job")
 	}
 }
 
@@ -157,23 +259,36 @@ func TestRefusal_UnroutedCommandFails(t *testing.T) {
 	}
 }
 
-// The other sensor's own report refuses it too: nothing to re-queue to.
-// Another tenant's sensor never counts.
-func TestRefusal_NoOtherSensorAccepts(t *testing.T) {
+// The other sensor's own report refuses it too: nothing can take it now,
+// so it waits for one. Another tenant's sensor never counts and never
+// claims it.
+func TestRefusal_NoOtherSensorAcceptsWaits(t *testing.T) {
 	f, ids := newRefusalFixture(t, 2)
 	if ok, err := f.sensors.UpdateLocalPolicy(f.ctx, &f.tenant, ids[1], &sensor.LocalPolicyReport{State: sensor.LocalPolicyEnforced,
 		Summary: &sensor.LocalPolicySummary{TargetsAllow: -1, AllowPrivate: true, Tools: []string{"httpx"}}}); err != nil || !ok {
 		t.Fatalf("UpdateLocalPolicy: %v %v", ok, err)
 	}
 	other := seedTestTenant(f.ctx, t, openSensorDB(t))
-	seedZoneSensor(f.ctx, t, openSensorDB(t), &other, "foreign", zoneSensorOpts{tools: []string{"nuclei"}})
+	foreign := seedZoneSensor(f.ctx, t, openSensorDB(t), &other, "foreign", zoneSensorOpts{tools: []string{"nuclei"}})
 
 	job := f.routedJob(true)
 	if !f.claim(ids[0])[job] {
 		t.Fatal("not claimed")
 	}
 	out := f.refuse(ids[0], job, &sensor.DispatchRefusal{Layer: "local", Rule: "allow_private"}, "")
-	if out.Status != command.CommandStatusFailed || !strings.Contains(out.ErrorMessage, "no other eligible sensor") {
-		t.Fatalf("status %s reason %q, want failed with no other eligible sensor", out.Status, out.ErrorMessage)
+	if out.Status != command.CommandStatusPending || !strings.HasPrefix(out.ErrorMessage, "waiting for an eligible sensor") {
+		t.Fatalf("status %s reason %q, want pending, waiting for an eligible sensor", out.Status, out.ErrorMessage)
+	}
+	got, err := f.svc.Claim(f.ctx, commandapp.ClaimInput{TenantID: other.String(), SensorID: foreign.String(), Limit: 10, MaxJobs: 5})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range got {
+		if c.ID == job {
+			t.Fatal("another tenant's sensor claimed the waiting job")
+		}
+	}
+	if f.claim(ids[1])[job] {
+		t.Fatal("a sensor whose reported policy refuses the job was offered it")
 	}
 }
