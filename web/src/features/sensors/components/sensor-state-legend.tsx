@@ -1,9 +1,9 @@
 'use client'
 
-import { Fragment } from 'react'
 import { ChevronDown, CircleHelp } from 'lucide-react'
 
 import { useTranslation } from '@/context/i18n-provider'
+import { KeyValueList } from '@/features/shared/components/text-layout'
 import type { SensorState } from '@/lib/api/sensor-types'
 
 import { stateDescription, stateLabel } from '../lib/sensor-state'
@@ -32,18 +32,17 @@ export function SensorStateLegend({ offlineAfter }: { offlineAfter: string }) {
       </summary>
       <div className="mt-1 max-w-2xl space-y-2 rounded-lg border bg-card p-3">
         <p>{t('sensors.list.legend.intro')}</p>
-        <dl className="grid grid-cols-[minmax(0,auto)_minmax(0,1fr)] gap-x-3 gap-y-1.5">
-          {LEGEND_STATES.map((state) => (
-            <Fragment key={state}>
-              <dt className="font-medium text-foreground">{stateLabel(state, t)}</dt>
-              <dd className="min-w-0">
-                {state === 'offline'
-                  ? t('sensors.list.legend.offline', undefined, { offlineAfter })
-                  : stateDescription(state, t)}
-              </dd>
-            </Fragment>
-          ))}
-        </dl>
+        <KeyValueList
+          size="meta"
+          items={LEGEND_STATES.map((state) => ({
+            key: state,
+            label: stateLabel(state, t),
+            value:
+              state === 'offline'
+                ? t('sensors.list.legend.offline', undefined, { offlineAfter })
+                : stateDescription(state, t),
+          }))}
+        />
       </div>
     </details>
   )
