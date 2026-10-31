@@ -67,6 +67,10 @@ var (
 	ErrCapacity            = sensordom.ErrPairingCapacity
 	ErrInvalid             = errors.New("invalid pairing request")
 	ErrFingerprintRequired = errors.New("the fingerprint must be confirmed")
+	// ErrFingerprintMismatch: the approver picked a fingerprint the host
+	// did not show. The request is closed (a coached approver gets one try)
+	// and every administrator is told.
+	ErrFingerprintMismatch = errors.New("the picked fingerprint is not the sensor's")
 	ErrLookupLocked        = errors.New("too many failed lookups")
 	// ErrOrganizationMismatch: the approval names another organization than
 	// the session's (the approver switched organization after the review).
@@ -155,8 +159,11 @@ type Service struct {
 
 	platformKey ed25519.PrivateKey
 	codeKey     []byte
-	maxOpen     int
-	now         func() time.Time
+	// verifyURL is the console origin the sensor prints with its code
+	// ("" prints no link).
+	verifyURL string
+	maxOpen   int
+	now       func() time.Time
 
 	sweepMu   sync.Mutex
 	lastSweep time.Time
@@ -193,6 +200,17 @@ func (s *Service) SetApprovalHook(h ApprovalHook) { s.hook = h }
 func (s *Service) SetMaxOpen(n int)               { s.maxOpen = n }
 func (s *Service) SetTenants(t TenantDirectory)   { s.tenants = t }
 func (s *Service) SetClock(now func() time.Time)  { s.now = now }
+
+// SetVerificationURL sets the console origin (APP_URL) a sensor prints as
+// the page to approve it on. An origin that is not absolute http(s) is
+// ignored, so a sensor never prints a link a person cannot open.
+func (s *Service) SetVerificationURL(origin string) {
+	origin = strings.TrimRight(strings.TrimSpace(origin), "/")
+	if !strings.HasPrefix(origin, "https://") && !strings.HasPrefix(origin, "http://") {
+		return
+	}
+	s.verifyURL = origin
+}
 func (s *Service) PlatformPublicKey() ed25519.PublicKey {
 	pub, _ := s.platformKey.Public().(ed25519.PublicKey)
 	return pub
@@ -305,19 +323,8 @@ func (s *Service) Start(ctx context.Context, in StartInput) (*pairing.StartRespo
 			return nil, err
 		}
 	case code != "":
-		ok, err := s.repo.AttachToExpectationUnscoped(ctx, s.codeHash(code), p, now)
-		if err != nil {
+		if userCode, err = s.startWithCode(ctx, p, code, now); err != nil {
 			return nil, err
-		}
-		if !ok {
-			// The console that made the code learns why no sensor arrived:
-			// another key holds it, or this key holds another request.
-			s.RecordRefusal(ctx, Refusal{Code: code, PublicKey: p.PublicKey, SourceIP: p.SourceIP, Reason: sensordom.RefusalCodeTaken})
-			// Same answer as a match: a request no code can ever reach.
-			p.CodeHash = ""
-			if err := s.repo.CreateForward(ctx, p); err != nil {
-				return nil, keyConflict(err)
-			}
 		}
 	default:
 		if userCode, err = s.createWithCode(ctx, p); err != nil {
@@ -332,8 +339,51 @@ func (s *Service) Start(ctx context.Context, in StartInput) (*pairing.StartRespo
 	}
 	if userCode != "" {
 		resp.UserCode = pairing.FormatCode(userCode)
+		if s.verifyURL != "" {
+			resp.VerificationURI = s.verifyURL + "/activate"
+			resp.VerificationURIComplete = resp.VerificationURI + "?code=" + resp.UserCode
+		}
 	}
 	return resp, nil
+}
+
+// startWithCode opens a request under the code the sensor started with, so
+// the console command, the sensor's output and the approval link show one
+// code. It attaches to the organization's open expectation with that code;
+// otherwise the code becomes the request's own (rows of that code past
+// their expiry are closed first); a code another open request holds gives
+// a new code. The answer has the same shape whether or not the platform
+// expected the code, so it tells a guesser nothing.
+func (s *Service) startWithCode(ctx context.Context, p *sensordom.Pairing, code string, now time.Time) (string, error) {
+	hash := s.codeHash(code)
+	ok, err := s.repo.AttachToExpectationUnscoped(ctx, hash, p, now)
+	if err != nil {
+		return "", err
+	}
+	if ok {
+		return code, nil
+	}
+	// The console that made the code learns why no sensor arrived: another
+	// key holds it, or this key holds another request.
+	s.RecordRefusal(ctx, Refusal{Code: code, PublicKey: p.PublicKey, SourceIP: p.SourceIP, Reason: sensordom.RefusalCodeTaken})
+	if err := s.repo.ExpireStaleCodeUnscoped(ctx, hash, now); err != nil {
+		return "", err
+	}
+	p.CodeHash = hash
+	err = s.repo.CreateForward(ctx, p)
+	if err == nil {
+		return code, nil
+	}
+	if !errors.Is(err, shared.ErrConflict) {
+		return "", err
+	}
+	// Another open request holds the code (or, in a race, the key): a new
+	// code; a key conflict fails here too and is key-busy.
+	fresh, err := s.createWithCode(ctx, p)
+	if err != nil {
+		return "", keyConflict(err)
+	}
+	return fresh, nil
 }
 
 // releaseKey lets a key that was never approved start again: a sensor
@@ -599,6 +649,9 @@ type View struct {
 	// SENSOR_JOB_SIGNING_ROOT, so the sensor checks the key set the
 	// platform serves against a root it got from the administrator.
 	JobSigningRoot string `json:"job_signing_root,omitempty"`
+	// FingerprintChoices are three fingerprints, one of them the SAS: the
+	// approver picks the one the host shows, and the approval sends it.
+	FingerprintChoices []string `json:"fingerprint_choices,omitempty"`
 }
 
 // RefusalView is a refused attempt as the console shows it.
@@ -677,6 +730,9 @@ func (s *Service) view(ctx context.Context, actor Actor, p *sensordom.Pairing) *
 	if p.Thumbprint != "" {
 		v.KeyFingerprint = pairing.KeyFingerprint(p.Thumbprint)
 	}
+	if p.SAS != "" {
+		v.FingerprintChoices = s.fingerprintChoices(p)
+	}
 	if p.SourceIP != nil {
 		v.SourceIP = p.SourceIP.String()
 		v.SourceNetwork, v.SourceProvider = classifySource(p.SourceIP)
@@ -723,10 +779,15 @@ func (s *Service) Lookup(ctx context.Context, actor Actor, code string) (*View, 
 		s.lookupMissed(ctx, actor)
 		return nil, ErrNotFound
 	}
-	p, err := s.repo.FindOpenByCodeHash(ctx, s.codeHash(norm), s.now())
+	hash, now := s.codeHash(norm), s.now()
+	p, err := s.repo.FindOpenByCodeHash(ctx, hash, now)
 	if err != nil {
-		s.lookupMissed(ctx, actor)
-		return nil, ErrNotFound
+		// A request that attached to this organization's own code (the
+		// console command carried it): only this organization finds it.
+		if p, err = s.repo.FindOpenForTenantByCodeHash(ctx, actor.TenantID, hash, now); err != nil {
+			s.lookupMissed(ctx, actor)
+			return nil, ErrNotFound
+		}
 	}
 	if p.RepairSensorID != nil && !s.sensorInTenant(ctx, actor.TenantID, *p.RepairSensorID) {
 		s.lookupMissed(ctx, actor)
@@ -799,8 +860,10 @@ func (s *Service) GetExpectation(ctx context.Context, actor Actor, id shared.ID)
 type ApproveInput struct {
 	// Code is the code the approver entered (default mode): approval needs
 	// it, so knowing a request id alone never lets anyone claim it.
-	Code                 string
-	FingerprintConfirmed bool
+	Code string
+	// Fingerprint is the fingerprint the approver picked from
+	// View.FingerprintChoices: it must be the SAS.
+	Fingerprint string
 	// OrganizationID is the organization the approver saw on the review;
 	// it must be the session's.
 	OrganizationID string
@@ -812,12 +875,14 @@ type ApproveInput struct {
 }
 
 // Approve binds the request's key to the actor's tenant (a new sensor, or
-// the re-paired one). Order of checks: the confirmation box, step-up, then
-// the request itself (so an attacker with a stolen session learns nothing
-// about codes without the second factor). The organization check comes
-// before step-up, so a refused approval spends no second factor.
+// the re-paired one). Order of checks: a picked fingerprint is present,
+// the organization, step-up, then the request itself and the pick (so an
+// attacker with a stolen session learns nothing about codes, and closes no
+// request, without the second factor). The organization check comes before
+// step-up, so a refused approval spends no second factor. A pick that is
+// not the request's SAS closes the request.
 func (s *Service) Approve(ctx context.Context, actor Actor, id shared.ID, in ApproveInput) (*View, error) {
-	if !in.FingerprintConfirmed {
+	if strings.TrimSpace(in.Fingerprint) == "" {
 		return nil, ErrFingerprintRequired
 	}
 	if in.OrganizationID != actor.TenantID.String() {
@@ -849,6 +914,10 @@ func (s *Service) Approve(ctx context.Context, actor Actor, id shared.ID, in App
 	p, err := s.claimable(ctx, actor, id, in.Code, now)
 	if err != nil {
 		return nil, err
+	}
+	if !sameFingerprint(in.Fingerprint, p.SAS) {
+		s.fingerprintMismatch(ctx, actor, p, in.Code)
+		return nil, ErrFingerprintMismatch
 	}
 	// The profile chosen now, else the one the expectation named, else the
 	// default for the sensor's type (collector for a collector, else the

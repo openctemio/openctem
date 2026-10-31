@@ -5,14 +5,16 @@
  * the sensor creates its own key and the administrator never handles a
  * secret.
  *
- * - EnterCodePanel: the sensor printed a code and a fingerprint; the
- *   administrator looks the code up and compares the fingerprint.
- * - PairingReview: the fingerprint, the host facts and the approval form,
- *   for a code entered here or one the console created first.
+ * - EnterCodePanel: the code the sensor printed, from its link or typed;
+ *   the administrator looks it up.
+ * - PairingReview: who, where and from where, the fingerprint pick and the
+ *   approval form; one component for the Add sensor dialog, the activate
+ *   page and the enrollment-token approvals.
  *
- * Approval binds the sensor's key to this organization. It needs the
- * "fingerprint matches" tick (the API refuses an approval without it) and
- * step-up re-authentication; the new sensor starts at trust level New.
+ * Approval binds the sensor's key to this organization. The administrator
+ * picks the fingerprint the host shows out of three (the API checks the pick
+ * and closes the request on a wrong one) and re-authenticates; the new
+ * sensor starts at trust level New.
  *
  * Against approving someone else's sensor (a code sent by email or chat),
  * the review names the organization the sensor joins and sends its id with
@@ -22,13 +24,13 @@
  */
 
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
-import { AlertTriangle, Building2, Check, Loader2, ShieldAlert } from 'lucide-react'
+import { AlertTriangle, Building2, Check, ChevronDown, Loader2, ShieldAlert } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { TOTP_CODE_LENGTH, VerificationCodeInput } from '@/components/security'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
-import { Checkbox } from '@/components/ui/checkbox'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { KeyValueList } from '@/features/shared/components/text-layout'
@@ -52,6 +54,7 @@ import {
 } from '@/lib/api/sensor-pairing-hooks'
 import type { SensorType } from '@/lib/api/sensor-types'
 import { Permission, useHasPermission } from '@/lib/permissions'
+import { cn } from '@/lib/utils'
 
 import {
   DEFAULT_GRANT_PROFILE,
@@ -83,13 +86,16 @@ const SENSOR_TYPES: { value: SensorType; labelKey: string }[] = [
 export function EnterCodePanel({
   onApproved,
   onClose,
+  initialCode,
 }: {
   onApproved: (v: SensorPairingView) => void
   onClose: () => void
+  /** The code from the sensor's link: looked up once, never approved on load. */
+  initialCode?: string
 }) {
   const { t } = useTranslation()
   const inputId = useId()
-  const [input, setInput] = useState('')
+  const [input, setInput] = useState(initialCode ?? '')
   const [code, setCode] = useState<string | null>(null)
   const [view, setView] = useState<SensorPairingView | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -117,6 +123,16 @@ export function EnterCodePanel({
       setBusy(false)
     }
   }
+
+  // The link's code is looked up once (a lookup counts toward the per-user
+  // lockout, so never on every render).
+  const looked = useRef(false)
+  useEffect(() => {
+    if (looked.current || !initialCode) return
+    looked.current = true
+    void find(initialCode)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once, for the link's code
+  }, [initialCode])
 
   if (view && code) {
     return (
@@ -147,10 +163,7 @@ export function EnterCodePanel({
       }}
     >
       <PhishingWarning />
-      <p className="text-sm text-muted-foreground">
-        {t('sensors.pair.codeHelpBefore')} <code className="font-mono">openctemio-sensor pair</code>
-        {t('sensors.pair.codeHelpAfter')}
-      </p>
+      <p className="text-sm text-muted-foreground">{t('sensors.pair.codeHelp')}</p>
       <VerificationCodeInput
         id={inputId}
         label={t('sensors.pair.codeLabel')}
@@ -234,28 +247,88 @@ function sourceLabel(view: SensorPairingView, t: (key: string) => string): strin
     view.source_network ? t(`sensors.pair.fact.network.${view.source_network}`) : '',
     view.source_provider ?? '',
   ].filter(Boolean)
+  if (view.approver_ip && view.approver_ip === view.source_ip) {
+    notes.push(t('sensors.pair.fact.sameAsYou'))
+  }
   return notes.length ? `${view.source_ip} (${notes.join(', ')})` : view.source_ip
 }
 
-export function PairingFingerprint({ sas }: { sas?: string }) {
-  const { t } = useTranslation()
+/** "512 · tiger · violet · anchor" read out as "512, tiger, violet, anchor". */
+function spokenFingerprint(sas: string): string {
   const parts = splitSas(sas)
-  if (!parts) return null
+  return parts ? [parts.number, ...parts.words].join(', ') : sas
+}
+
+/** "512 · tiger · violet · anchor" as the sensor prints it, one part per span. */
+function FingerprintText({ sas }: { sas: string }) {
+  const parts = splitSas(sas)
+  if (!parts) return <span className="font-mono">{sas}</span>
   return (
-    <div
-      className="rounded-lg border bg-muted/40 p-4 text-center"
-      data-testid="pairing-fingerprint"
-    >
-      <div className="text-xs uppercase tracking-wide text-muted-foreground">
-        {t('sensors.pair.fingerprint')}
+    <span className="flex flex-wrap items-baseline gap-x-2 font-mono text-lg font-semibold tabular-nums">
+      <span>{parts.number}</span>
+      {parts.words.map((w) => (
+        <span key={w}>{w}</span>
+      ))}
+    </span>
+  )
+}
+
+/**
+ * Pick the fingerprint the host shows: three choices, one of them the
+ * sensor's. A pick needs the host's screen; a tick box does not.
+ */
+export function FingerprintPicker({
+  choices,
+  value,
+  onChange,
+  disabled,
+}: {
+  choices: string[]
+  value: string
+  onChange: (v: string) => void
+  disabled?: boolean
+}) {
+  const { t } = useTranslation()
+  const labelId = useId()
+  return (
+    <fieldset className="space-y-2" data-testid="pairing-fingerprint-picker">
+      <legend id={labelId} className="text-sm font-medium">
+        {t('sensors.pair.pick.title')}
+      </legend>
+      <p className="text-xs text-muted-foreground">{t('sensors.pair.pick.help')}</p>
+      <div role="radiogroup" aria-labelledby={labelId} className="grid gap-2">
+        {choices.map((c) => {
+          const on = value === c
+          return (
+            <button
+              key={c}
+              type="button"
+              role="radio"
+              aria-checked={on}
+              aria-label={spokenFingerprint(c)}
+              disabled={disabled}
+              onClick={() => onChange(c)}
+              className={cn(
+                'flex min-h-11 w-full items-center gap-3 rounded-lg border px-3 py-2 text-start transition-colors',
+                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60',
+                on ? 'border-primary bg-primary/5' : 'hover:bg-muted/40'
+              )}
+            >
+              <span
+                aria-hidden
+                className={cn(
+                  'grid size-4 shrink-0 place-items-center rounded-full border',
+                  on && 'border-primary'
+                )}
+              >
+                {on && <span className="size-2 rounded-full bg-primary" />}
+              </span>
+              <FingerprintText sas={c} />
+            </button>
+          )
+        })}
       </div>
-      <div className="mt-1 font-mono text-2xl font-semibold tabular-nums">
-        {parts.number}
-        {parts.words.map((w) => (
-          <span key={w}>, {w}</span>
-        ))}
-      </div>
-    </div>
+    </fieldset>
   )
 }
 
@@ -278,6 +351,12 @@ export function PairingReview({
   const facts = view.host_facts ?? {}
   const org = useApprovalOrganization(view)
   const ready = !!view.sas && view.status === 'pending' && left > 0 && !org.mismatch
+  // The pick sits first, under the warnings: "the host shows X, pick X" is
+  // the one thing every approver must do; the facts below it are the check.
+  const [pick, setPick] = useState('')
+  // A wrong pick closed the request on the server: nothing more to submit.
+  const [closed, setClosed] = useState(false)
+  const choices = view.fingerprint_choices ?? []
 
   return (
     <div className="space-y-4">
@@ -293,9 +372,11 @@ export function PairingReview({
         </Alert>
       )}
 
-      {view.sas ? (
-        <PairingFingerprint sas={view.sas} />
-      ) : (
+      {ready && choices.length > 0 && (
+        <FingerprintPicker choices={choices} value={pick} onChange={setPick} disabled={closed} />
+      )}
+
+      {!view.sas && (
         <div className="flex items-center justify-between gap-2 rounded-lg border p-4 text-sm">
           <span className="text-muted-foreground">{t('sensors.pair.noHandshake')}</span>
           {onRefresh && (
@@ -346,9 +427,20 @@ export function PairingReview({
         ].filter((i) => !!i.value)}
       />
       <p className="text-xs text-muted-foreground">{t('sensors.pair.factsNote')}</p>
+      <p className="text-sm text-muted-foreground" data-testid="pairing-scope-note">
+        {t('sensors.pair.scopeNote')}
+      </p>
 
       {ready ? (
-        <ApprovalForm view={view} code={code} onApproved={onApproved} onRejected={onDone} />
+        <ApprovalForm
+          view={view}
+          code={code}
+          pick={pick}
+          closed={closed}
+          onClosed={() => setClosed(true)}
+          onApproved={onApproved}
+          onRejected={onDone}
+        />
       ) : (
         left === 0 && (
           <p role="alert" className="text-sm text-destructive">
@@ -363,11 +455,18 @@ export function PairingReview({
 function ApprovalForm({
   view,
   code,
+  pick,
+  closed,
+  onClosed,
   onApproved,
   onRejected,
 }: {
   view: SensorPairingView
   code?: string
+  /** The fingerprint picked above the facts ("" before a pick). */
+  pick: string
+  closed: boolean
+  onClosed: () => void
   onApproved: (v: SensorPairingView) => void
   onRejected: () => void
 }) {
@@ -377,7 +476,6 @@ function ApprovalForm({
     type: useId(),
     profile: useId(),
     integration: useId(),
-    match: useId(),
     stepUp: useId(),
   }
   const canApprove = useHasPermission(Permission.SensorsApprove)
@@ -392,7 +490,6 @@ function ApprovalForm({
   const [zoneIds, setZoneIds] = useState<string[]>([])
   const [profile, setProfile] = useState(DEFAULT_GRANT_PROFILE)
   const [integration, setIntegration] = useState('')
-  const [matches, setMatches] = useState(false)
   const [secret, setSecret] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState<'approve' | 'reject' | null>(null)
@@ -407,7 +504,8 @@ function ApprovalForm({
     canApprove &&
     !!org.id &&
     !org.mismatch &&
-    matches &&
+    !closed &&
+    pick !== '' &&
     name.trim() !== '' &&
     integrationOk &&
     (!needsSecret ||
@@ -421,7 +519,7 @@ function ApprovalForm({
     try {
       const res = await approvePairing(view.id, {
         code,
-        fingerprint_confirmed: matches,
+        fingerprint: pick,
         organization_id: org.id,
         step_up:
           stepUp === 'totp'
@@ -441,7 +539,12 @@ function ApprovalForm({
     } catch (err) {
       setSecret('')
       setError(pairingErrorMessage(err, t('sensors.pair.err.approve'), t))
-      secretRef.current?.focus()
+      if ((err as { code?: string } | null)?.code === 'FINGERPRINT_MISMATCH') {
+        onClosed()
+        await invalidateSensorsCache()
+      } else {
+        secretRef.current?.focus()
+      }
     } finally {
       setBusy(null)
     }
@@ -473,106 +576,108 @@ function ApprovalForm({
         if (canSubmit) void approve()
       }}
     >
-      <div className="grid gap-4 sm:grid-cols-2">
-        <div className="space-y-1.5">
-          <Label htmlFor={ids.name}>{t('sensors.pair.name')}</Label>
-          <Input
-            id={ids.name}
-            value={name}
-            maxLength={100}
-            onChange={(e) => setName(e.target.value)}
-          />
-        </div>
-        <div className="space-y-1.5">
-          <Label htmlFor={ids.type}>{t('sensors.pair.type')}</Label>
-          <Select value={type} onValueChange={(v) => setType(v as SensorType)}>
-            <SelectTrigger id={ids.type}>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {SENSOR_TYPES.map((st) => (
-                <SelectItem key={st.value} value={st.value}>
-                  {t(st.labelKey)}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
-
       <div className="space-y-1.5">
-        <Label htmlFor={ids.profile}>{t('sensors.pair.whatItMayDo')}</Label>
-        <Select value={profile} onValueChange={setProfile}>
-          <SelectTrigger id={ids.profile} data-testid="grant-profile">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {GRANT_PROFILES.map((p) => (
-              <SelectItem key={p.value} value={p.value}>
-                {t(`sensors.grantEdit.profile.${p.value}`, p.label)}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        {selected && (
-          <p className="text-xs text-muted-foreground">
-            {t(`sensors.pair.profileDesc.${selected.value}`, selected.description)}
-          </p>
-        )}
-      </div>
-
-      {PARAMETERISED_PROFILES.includes(profile) && (
-        <div className="space-y-1.5">
-          <Label htmlFor={ids.integration}>
-            {t('sensors.grantEdit.integration')}{' '}
-            <span className="font-normal text-muted-foreground">
-              ({t('sensors.pair.optional')})
-            </span>
-          </Label>
-          <Input
-            id={ids.integration}
-            value={integration}
-            maxLength={64}
-            placeholder={t('sensors.grantEdit.integrationPlaceholder')}
-            onChange={(e) => setIntegration(e.target.value)}
-            aria-invalid={!integrationOk}
-          />
-        </div>
-      )}
-
-      {canReadZones && zones.length > 0 && (
-        <fieldset className="space-y-2">
-          <legend className="text-sm font-medium">{t('sensors.pair.scanZones')}</legend>
-          <div className="flex flex-wrap gap-2">
-            {zones.map((z) => {
-              const on = zoneIds.includes(z.id)
-              return (
-                <ToggleChip
-                  key={z.id}
-                  pressed={on}
-                  onToggle={() =>
-                    setZoneIds(on ? zoneIds.filter((x) => x !== z.id) : [...zoneIds, z.id].sort())
-                  }
-                >
-                  {z.name}
-                </ToggleChip>
-              )
-            })}
-          </div>
-        </fieldset>
-      )}
-
-      <div className="flex items-start gap-2 rounded-lg border p-3">
-        <Checkbox
-          id={ids.match}
-          checked={matches}
-          onCheckedChange={(c) => setMatches(c === true)}
-          className="mt-0.5"
+        <Label htmlFor={ids.name}>{t('sensors.pair.name')}</Label>
+        <Input
+          id={ids.name}
+          value={name}
+          maxLength={100}
+          onChange={(e) => setName(e.target.value)}
         />
-        <Label htmlFor={ids.match} className="font-normal leading-snug">
-          {t('sensors.pair.fingerprintMatches')}
-        </Label>
       </div>
+
+      <Collapsible className="rounded-lg border">
+        <CollapsibleTrigger className="flex w-full items-center justify-between gap-2 px-3 py-2 text-start text-sm font-medium">
+          <span className="min-w-0">
+            <span className="block">{t('sensors.pair.more.title')}</span>
+            <span className="block text-xs font-normal text-muted-foreground">
+              {t('sensors.pair.more.text')}
+            </span>
+          </span>
+          <ChevronDown className="h-4 w-4 shrink-0" aria-hidden />
+        </CollapsibleTrigger>
+        <CollapsibleContent className="space-y-4 border-t p-3">
+          <div className="space-y-1.5">
+            <Label htmlFor={ids.type}>{t('sensors.pair.type')}</Label>
+            <Select value={type} onValueChange={(v) => setType(v as SensorType)}>
+              <SelectTrigger id={ids.type}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {SENSOR_TYPES.map((st) => (
+                  <SelectItem key={st.value} value={st.value}>
+                    {t(st.labelKey)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor={ids.profile}>{t('sensors.pair.whatItMayDo')}</Label>
+            <Select value={profile} onValueChange={setProfile}>
+              <SelectTrigger id={ids.profile} data-testid="grant-profile">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {GRANT_PROFILES.map((p) => (
+                  <SelectItem key={p.value} value={p.value}>
+                    {t(`sensors.grantEdit.profile.${p.value}`, p.label)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {selected && (
+              <p className="text-xs text-muted-foreground">
+                {t(`sensors.pair.profileDesc.${selected.value}`, selected.description)}
+              </p>
+            )}
+          </div>
+
+          {PARAMETERISED_PROFILES.includes(profile) && (
+            <div className="space-y-1.5">
+              <Label htmlFor={ids.integration}>
+                {t('sensors.grantEdit.integration')}{' '}
+                <span className="font-normal text-muted-foreground">
+                  ({t('sensors.pair.optional')})
+                </span>
+              </Label>
+              <Input
+                id={ids.integration}
+                value={integration}
+                maxLength={64}
+                placeholder={t('sensors.grantEdit.integrationPlaceholder')}
+                onChange={(e) => setIntegration(e.target.value)}
+                aria-invalid={!integrationOk}
+              />
+            </div>
+          )}
+
+          {canReadZones && zones.length > 0 && (
+            <fieldset className="space-y-2">
+              <legend className="text-sm font-medium">{t('sensors.pair.scanZones')}</legend>
+              <div className="flex flex-wrap gap-2">
+                {zones.map((z) => {
+                  const on = zoneIds.includes(z.id)
+                  return (
+                    <ToggleChip
+                      key={z.id}
+                      pressed={on}
+                      onToggle={() =>
+                        setZoneIds(
+                          on ? zoneIds.filter((x) => x !== z.id) : [...zoneIds, z.id].sort()
+                        )
+                      }
+                    >
+                      {z.name}
+                    </ToggleChip>
+                  )
+                })}
+              </div>
+            </fieldset>
+          )}
+        </CollapsibleContent>
+      </Collapsible>
 
       {needsSecret && stepUp === 'totp' ? (
         <VerificationCodeInput
@@ -616,7 +721,7 @@ function ApprovalForm({
           type="button"
           variant="outline"
           onClick={() => void reject()}
-          disabled={busy !== null}
+          disabled={busy !== null || closed}
         >
           {busy === 'reject' && <Loader2 className="h-4 w-4 animate-spin" />}
           {t('sensors.pair.reject')}

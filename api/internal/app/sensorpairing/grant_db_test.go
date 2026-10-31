@@ -47,12 +47,12 @@ func TestPairing_ApprovalCreatesGrant_DB(t *testing.T) {
 	id, _ := shared.IDFromString(s.resp.PairingID)
 	legacy := approve(a, s.resp.UserCode)
 	legacy.Profile = sensordom.ProfileLegacyBroad
-	if _, err := f.svc.Approve(ctx, a, id, legacy); !errors.Is(err, sensorpairing.ErrInvalid) {
+	if _, err := f.approveP(ctx, a, id, legacy); !errors.Is(err, sensorpairing.ErrInvalid) {
 		t.Fatalf("legacy-broad chosen at approval: %v", err)
 	}
 	in := approve(a, s.resp.UserCode)
 	in.Profile = sensordom.ProfileEASMExternal
-	if _, err := f.svc.Approve(ctx, a, id, in); err != nil {
+	if _, err := f.approveP(ctx, a, id, in); err != nil {
 		t.Fatalf("approve: %v", err)
 	}
 	st := f.status(s)
@@ -70,7 +70,7 @@ func TestPairing_ApprovalCreatesGrant_DB(t *testing.T) {
 	f.start(second, "", st.Identity.SensorID)
 	f.reveal(second)
 	rid, _ := shared.IDFromString(second.resp.PairingID)
-	if _, err := f.svc.Approve(ctx, a, rid, approve(a, second.resp.UserCode)); err != nil {
+	if _, err := f.approveP(ctx, a, rid, approve(a, second.resp.UserCode)); err != nil {
 		t.Fatalf("re-pair approve: %v", err)
 	}
 	if g := f.grant(grants, a.TenantID, st.Identity.SensorID); g.TrustLevel != sensordom.TrustNew || g.Profile != sensordom.DefaultProfile {
@@ -87,7 +87,7 @@ func TestPairing_ApprovalCreatesGrant_DB(t *testing.T) {
 	f.start(r, exp.Code, "")
 	f.reveal(r)
 	eid, _ := shared.IDFromString(exp.ID)
-	if _, err := f.svc.Approve(ctx, a, eid, approve(a, "")); err != nil {
+	if _, err := f.approveP(ctx, a, eid, approve(a, "")); err != nil {
 		t.Fatalf("approve expectation: %v", err)
 	}
 	if g := f.grant(grants, a.TenantID, f.status(r).Identity.SensorID); g.Profile != sensordom.ProfileCIRunner || g.TargetNetwork != sensordom.TargetNetworkNone {
@@ -109,7 +109,7 @@ func TestPairing_CollectorDefaultProfile_DB(t *testing.T) {
 	id, _ := shared.IDFromString(s.resp.PairingID)
 	in := approve(a, s.resp.UserCode)
 	in.Type = sensordom.SensorTypeCollector
-	if _, err := f.svc.Approve(ctx, a, id, in); err != nil {
+	if _, err := f.approveP(ctx, a, id, in); err != nil {
 		t.Fatalf("approve: %v", err)
 	}
 	g := f.grant(grants, a.TenantID, f.status(s).Identity.SensorID)
