@@ -8,6 +8,7 @@ import { Permission, usePermissions } from '@/lib/permissions'
 import { useProxyPools } from '../api/use-proxy-pools'
 import { DefaultPoolCard } from './default-pool-card'
 import { MorePoolsSection } from './more-pools-section'
+import { ScannerAddressesCard } from './scanner-addresses-card'
 
 /** Settings, Scanning, Proxies. Writes need sensors:egress:write, delete sensors:egress:delete. */
 export function ProxyPoolsPanel() {
@@ -38,6 +39,7 @@ export function ProxyPoolsPanel() {
         canWrite={canWrite}
         canDelete={canDelete}
       />
+      <ScannerAddressesCard enabled={canRead} />
     </PageStack>
   )
 }

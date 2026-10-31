@@ -137,14 +137,18 @@ func (s *Service) ResultPolicy(ctx context.Context, tenantID shared.ID) sensorre
 
 // OpenCommand returns the command a sensor's report names when it is assigned
 // to that sensor and open: claimed and not finished, or finished less than
-// protov2.CommandGraceAfterFinish ago (RFC-023 C-8). Anything else, including
-// a command of another sensor, is ErrCommandNotFound.
+// protov2.CommandGraceAfterFinish ago (RFC-023 C-8). When the sensor states
+// the lease epoch it holds the command under (leaseEpoch, the
+// X-OpenCTEM-Lease-Epoch it was given at the claim), it must be the current
+// one: results of a run the platform took back and handed out again (to
+// this sensor or another) are refused. Anything else, including a command
+// of another sensor, is ErrCommandNotFound.
 //
 // It is the organization sensor's check: the command is looked up in the
 // sensor's own tenant, and a shared job (is_platform_job) is never one of an
 // organization sensor's commands, whoever holds it. A shared sensor binds
 // its reports with OpenSharedCommand.
-func OpenCommand(ctx context.Context, commands commandReader, agt *sensor.Sensor, commandID string, now time.Time) (*command.Command, error) {
+func OpenCommand(ctx context.Context, commands commandReader, agt *sensor.Sensor, commandID string, leaseEpoch *int, now time.Time) (*command.Command, error) {
 	if commands == nil || agt == nil || agt.TenantID == nil || agt.IsShared() {
 		return nil, ErrCommandNotFound
 	}
@@ -154,7 +158,8 @@ func OpenCommand(ctx context.Context, commands commandReader, agt *sensor.Sensor
 	}
 	tenantID := *agt.TenantID
 	cmd, err := commands.GetByTenantAndID(ctx, tenantID, id)
-	if err != nil || cmd == nil || cmd.TenantID != tenantID || cmd.IsPlatformJob || !heldOpen(cmd, agt.ID, now) {
+	if err != nil || cmd == nil || cmd.TenantID != tenantID || cmd.IsPlatformJob || !heldOpen(cmd, agt.ID, now) ||
+		(leaseEpoch != nil && *leaseEpoch != cmd.LeaseEpoch) {
 		return nil, ErrCommandNotFound
 	}
 	return cmd, nil

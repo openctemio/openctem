@@ -258,6 +258,13 @@ type alterScope struct {
 	// ranges, so the report may only name those addresses
 	// (outsideAddressChunk).
 	addrChunk bool
+	// hostBound: the bound scan or retest command names at least one host
+	// name and is not an address chunk, so located report assets must lie
+	// inside its targets (job_bound.go, outsideJobTargets).
+	hostBound bool
+	// vouched are the addresses the report's in-bound assets state they
+	// resolve to or are served from (primeJobBound).
+	vouched map[string]bool
 	// allowed are the persisted ids of the assets this report may change:
 	// those it created and the existing ones its command covers.
 	allowed map[shared.ID]bool
@@ -380,6 +387,7 @@ func newAlterScope(b Binding) *alterScope {
 		s.targets = newCoverTargets(b.Targets)
 		s.commandBound = true
 		s.addrChunk = b.CommandType == command.CommandTypeScan && addressChunk(s.targets)
+		s.hostBound = jobBoundCommand(b.CommandType) && !s.addrChunk && hostTarget(s.targets)
 		s.commandTool, s.commandType = b.Tool, b.CommandType
 	case BindingCIRun:
 		s.targets = newCoverTargets(b.Targets)
