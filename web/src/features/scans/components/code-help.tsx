@@ -45,6 +45,17 @@ export function CodeHelpLine({ help, count }: { help: CodeHelp; count?: number }
   )
 }
 
+/** A same-origin fix link (the path is encoded before it reaches the DOM). */
+function FixLink({ path, label }: { path: string; label: string }) {
+  const fixHref = safeInternalHref(path)
+  if (!fixHref) return null
+  return (
+    <Link href={fixHref} className="font-medium text-primary underline-offset-4 hover:underline">
+      {label}
+    </Link>
+  )
+}
+
 /** A failed step's error code, explained, with its fix. */
 export function StepFailureHelp({ code, errorClass }: { code?: string; errorClass?: string }) {
   const { t } = useTranslation()
@@ -89,7 +100,6 @@ export function StepOutcome({ outcome }: { outcome?: RunMapNode['outcome'] }) {
             <ul className="space-y-1">
               {gaps.map((g, i) => {
                 const r = gapReasonHelp(g.reason, t, g.cause, g.cert)
-                const href = r.href ? safeInternalHref(r.href) : undefined
                 return (
                   <li
                     key={`${g.host}-${i}`}
@@ -103,14 +113,7 @@ export function StepOutcome({ outcome }: { outcome?: RunMapNode['outcome'] }) {
                     {r.cert && <p className="text-foreground">{r.cert}</p>}
                     <p className="text-muted-foreground">{r.help}</p>
                     {r.fix && <p className="text-muted-foreground">{r.fix}</p>}
-                    {href && r.hrefLabel && (
-                      <Link
-                        href={href}
-                        className="font-medium text-primary underline-offset-4 hover:underline"
-                      >
-                        {r.hrefLabel}
-                      </Link>
-                    )}
+                    {r.href && r.hrefLabel && <FixLink path={r.href} label={r.hrefLabel} />}
                   </li>
                 )
               })}
