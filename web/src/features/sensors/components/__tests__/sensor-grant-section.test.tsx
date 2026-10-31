@@ -303,7 +303,8 @@ describe('SensorGrantTags', () => {
       />
     )
     expect(screen.getByText('Legacy broad grant')).toBeInTheDocument()
-    expect(screen.getByText('New')).toBeInTheDocument()
+    // New reads as what it means on the list.
+    expect(screen.getByText('Passive only')).toBeInTheDocument()
   })
 
   it('shows nothing for a trusted narrow grant or without a summary', () => {

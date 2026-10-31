@@ -429,6 +429,9 @@ const (
 	ActionSensorPairingApproved  Action = "sensor.pairing_approved"
 	ActionSensorPairingDenied    Action = "sensor.pairing_denied"
 	ActionSensorPairingCompleted Action = "sensor.pairing_completed"
+	// Superseded: a sensor started pairing again with the same key and its
+	// earlier request, never approved, was closed.
+	ActionSensorPairingSuperseded Action = "sensor.pairing_superseded"
 	// LookupLocked: a user hit the failed pairing-code lookup limit (high).
 	ActionSensorPairingLookupLocked Action = "sensor.pairing_lookup_locked"
 	ActionSensorRepaired            Action = "sensor.repaired"
@@ -472,6 +475,11 @@ const (
 	ActionWordlistCreated Action = "wordlist.created"
 	ActionWordlistUpdated Action = "wordlist.updated"
 	ActionWordlistDeleted Action = "wordlist.deleted"
+
+	// Organization detection rules (docs/architecture/rule-packs.md).
+	ActionContentRuleCreated Action = "content_rule.created"
+	ActionContentRuleUpdated Action = "content_rule.updated"
+	ActionContentRuleDeleted Action = "content_rule.deleted"
 
 	ActionProxyPoolCreated            Action = "proxy_pool.created"
 	ActionProxyPoolUpdated            Action = "proxy_pool.updated"
@@ -904,7 +912,7 @@ func (a Action) IsValid() bool {
 		ActionSensorContentRefreshRequested, ActionSensorContentPolicyUpdated, ActionSensorCommandsReleased,
 		ActionSensorResultsQuarantined, ActionSensorResultsAccepted, ActionSensorResultsDiscarded,
 		ActionSensorResultPolicyUpdated,
-		ActionSensorPairingExpected, ActionSensorPairingApproved, ActionSensorPairingDenied, ActionSensorPairingCompleted, ActionSensorPairingLookupLocked,
+		ActionSensorPairingExpected, ActionSensorPairingApproved, ActionSensorPairingDenied, ActionSensorPairingCompleted, ActionSensorPairingSuperseded, ActionSensorPairingLookupLocked,
 		ActionSensorRepaired, ActionSensorKeyRevoked, ActionSensorIdentityPolicySet, ActionSensorKeyBound, ActionSensorKeyBindRefused,
 		ActionSensorEnrollmentTokenCreated, ActionSensorEnrollmentTokenRevoked, ActionSensorEnrolled, ActionSensorEnrollmentRefused,
 		ActionSensorGrantChanged, ActionSensorClaimRefusedGrant, ActionSensorCredentialRefused, ActionSensorPushRefusedGrant,
@@ -915,6 +923,7 @@ func (a Action) IsValid() bool {
 		ActionProxyPoolCredentialsChanged, ActionProxyPoolEndpointUpdated, ActionProxyPoolEndpointQuarantine,
 		ActionProxyPoolTestRequested, ActionProxyPoolTested,
 		ActionWordlistCreated, ActionWordlistUpdated, ActionWordlistDeleted,
+		ActionContentRuleCreated, ActionContentRuleUpdated, ActionContentRuleDeleted,
 		ActionSensorNetworkPathChanged,
 		ActionAPIKeyCreated, ActionAPIKeyRevoked, ActionAPIKeyDeleted,
 		ActionCredentialCreated, ActionCredentialUpdated, ActionCredentialDeleted, ActionCredentialAccessed,
@@ -1054,7 +1063,7 @@ func (a Action) Category() string {
 		ActionSensorContentRefreshRequested, ActionSensorContentPolicyUpdated, ActionSensorCommandsReleased,
 		ActionSensorResultsQuarantined, ActionSensorResultsAccepted, ActionSensorResultsDiscarded,
 		ActionSensorResultPolicyUpdated,
-		ActionSensorPairingExpected, ActionSensorPairingApproved, ActionSensorPairingDenied, ActionSensorPairingCompleted, ActionSensorPairingLookupLocked,
+		ActionSensorPairingExpected, ActionSensorPairingApproved, ActionSensorPairingDenied, ActionSensorPairingCompleted, ActionSensorPairingSuperseded, ActionSensorPairingLookupLocked,
 		ActionSensorRepaired, ActionSensorKeyRevoked, ActionSensorIdentityPolicySet, ActionSensorKeyBound, ActionSensorKeyBindRefused,
 		ActionSensorEnrollmentTokenCreated, ActionSensorEnrollmentTokenRevoked, ActionSensorEnrolled, ActionSensorEnrollmentRefused,
 		ActionSensorGrantChanged, ActionSensorClaimRefusedGrant, ActionSensorCredentialRefused, ActionSensorPushRefusedGrant:
@@ -1068,6 +1077,8 @@ func (a Action) Category() string {
 		return "proxy_pool"
 	case ActionWordlistCreated, ActionWordlistUpdated, ActionWordlistDeleted:
 		return "wordlist"
+	case ActionContentRuleCreated, ActionContentRuleUpdated, ActionContentRuleDeleted:
+		return "content_rule"
 	case ActionSensorNetworkPathChanged:
 		return "sensor"
 	case ActionIntegrationSyncRequested:
@@ -1170,6 +1181,7 @@ const (
 	ResourceTypeScanZone       ResourceType = "scan_zone"
 	ResourceTypeProxyPool      ResourceType = "proxy_pool"
 	ResourceTypeWordlist       ResourceType = "wordlist"
+	ResourceTypeContentRule    ResourceType = "content_rule"
 	ResourceTypeGroup          ResourceType = "group"
 	ResourceTypePermissionSet  ResourceType = "permission_set"
 	ResourceTypeRole           ResourceType = "role"
@@ -1234,7 +1246,7 @@ func (r ResourceType) IsValid() bool {
 		ResourceTypeInvitation, ResourceTypeRepository, ResourceTypeBranch,
 		ResourceTypeComponent, ResourceTypeVulnerability, ResourceTypeFinding,
 		ResourceTypeFindingComment, ResourceTypeSLAPolicy, ResourceTypeSavedView, ResourceTypeScan,
-		ResourceTypeAsset, ResourceTypeAssetGroup, ResourceTypeSettings, ResourceTypeToken, ResourceTypeSensor, ResourceTypeScanZone, ResourceTypeProxyPool, ResourceTypeWordlist,
+		ResourceTypeAsset, ResourceTypeAssetGroup, ResourceTypeSettings, ResourceTypeToken, ResourceTypeSensor, ResourceTypeScanZone, ResourceTypeProxyPool, ResourceTypeWordlist, ResourceTypeContentRule,
 		ResourceTypeGroup, ResourceTypePermissionSet, ResourceTypeRole,
 		ResourceTypeScanWorkflow, ResourceTypeScanWorkflowStep, ResourceTypeScanRun, ResourceTypeScanConfig,
 		ResourceTypeScanProfile, ResourceTypeCommand,

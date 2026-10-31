@@ -507,6 +507,8 @@ func (s *Service) OnProxyTestFinished(ctx context.Context, c *commanddom.Command
 			all[e.EndpointID] = &pooldom.Endpoint{ID: id}
 		}
 	}
+	// Exit addresses are kept only where the platform's echo saw them.
+	kept, dropped := s.recordVerifiedExits(ctx, c)
 	passed, classes := 0, map[string]int{}
 	results := testResultsOf(c, all)
 	for _, r := range results {
@@ -521,7 +523,9 @@ func (s *Service) OnProxyTestFinished(ctx context.Context, c *commanddom.Command
 			WithMetadata("outcome", "completed").
 			WithMetadata("passed", passed).
 			WithMetadata("tested", len(results)).
-			WithMetadata("failure_classes", classes))
+			WithMetadata("failure_classes", classes).
+			WithMetadata("exits_verified", kept).
+			WithMetadata("exits_unverified", dropped))
 }
 
 // TestEchoToken is the one path segment of a test's echo URL: the tenant, the
