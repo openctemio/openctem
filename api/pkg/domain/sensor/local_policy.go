@@ -32,6 +32,18 @@ const (
 	LocalPolicyUnknown = "unknown"
 )
 
+// Target modes a sensor reports in its policy summary (policy schema v2).
+const (
+	// LocalPolicyModeAllowAll: targets.allow is ["*"]; the sensor runs
+	// every job the platform signs (its deny list still applies).
+	LocalPolicyModeAllowAll = "allow_all"
+	// LocalPolicyModeAllowList: the policy lists the targets it allows.
+	LocalPolicyModeAllowList = "allow_list"
+	// LocalPolicyModePlatformScope: no allow list; the platform's scope
+	// decides what is sent.
+	LocalPolicyModePlatformScope = "platform_scope"
+)
+
 // Limits on a reported local policy.
 const (
 	maxLocalPolicyWarnings   = 10
@@ -74,6 +86,12 @@ type LocalPolicyReport struct {
 type LocalPolicySummary struct {
 	// TargetsAllow is the number of allow entries; -1 = no allow list.
 	TargetsAllow int `json:"targets_allow"`
+	// Mode is how the policy treats targets: LocalPolicyModeAllowAll,
+	// LocalPolicyModeAllowList or LocalPolicyModePlatformScope. "" for a
+	// sensor that does not report it (older SDKs) or an unknown value.
+	// allow_all matches like no allow list: the platform adds no target
+	// restriction of its own either way.
+	Mode string `json:"mode,omitempty" enums:",allow_all,allow_list,platform_scope"`
 	// TargetsDeny is the number of deny entries.
 	TargetsDeny int `json:"targets_deny"`
 	// AllowPrivate: private ranges may be scanned.
@@ -131,6 +149,7 @@ func sanitizeLocalPolicySummary(s *LocalPolicySummary) *LocalPolicySummary {
 	out := &LocalPolicySummary{
 		TargetsAllow:         clampCount(s.TargetsAllow, -1),
 		TargetsDeny:          clampCount(s.TargetsDeny, 0),
+		Mode:                 sanitizeLocalPolicyMode(s.Mode),
 		AllowPrivate:         s.AllowPrivate,
 		AllowCustomTemplates: s.AllowCustomTemplates,
 		AllowInteractsh:      s.AllowInteractsh,
@@ -143,6 +162,15 @@ func sanitizeLocalPolicySummary(s *LocalPolicySummary) *LocalPolicySummary {
 		out.Ports = p
 	}
 	return out
+}
+
+// sanitizeLocalPolicyMode keeps a known mode and drops anything else.
+func sanitizeLocalPolicyMode(m string) string {
+	switch m = strings.ToLower(strings.TrimSpace(m)); m {
+	case LocalPolicyModeAllowAll, LocalPolicyModeAllowList, LocalPolicyModePlatformScope:
+		return m
+	}
+	return ""
 }
 
 func clampCount(n, minimum int) int {
