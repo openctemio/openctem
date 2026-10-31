@@ -2357,6 +2357,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// echo (PROXY_TEST_ECHO_URL, SENSOR_PUBLIC_API_URL or APP_URL).
 	s.ProxyPool.EnableTest(repos.Sensor, repos.Command, proxypoolapp.TestConfig{
 		EchoBase: cfg.ProxyTestEchoBase(), AltPort: cfg.SensorConfig.ProxyTestAltPort})
+	// Scanner addresses: exits the platform's echo saw, sensors' observed
+	// addresses, and the shared sensors' published egress for an
+	// organization allowed to use them.
+	s.ProxyPool.EnableScannerAddresses(repos.ProxyPool, s.proxyScannerPlatformEgress)
 	contentPlanner := contentpin.New(s.ContentDelivery, postgres.NewKnownNamesRepository(&postgres.DB{DB: deps.DB}), nil)
 	// The organization's own wordlists join its DNS label jobs inline, and
 	// the preview counts what a job would carry (docs/architecture/wordlists.md).
@@ -4132,6 +4136,23 @@ func (s *Services) SharedSensorsEgress(ctx context.Context) ([]sensorapp.Platfor
 		return nil, err
 	}
 	return sensorapp.EgressFromLists(v.Global, v.Regions), nil
+}
+
+// proxyScannerPlatformEgress is the shared sensors' published egress for an
+// organization that may use shared sensors; nothing otherwise.
+func (s *Services) proxyScannerPlatformEgress(ctx context.Context, tenantID shared.ID) ([]proxypoolapp.PlatformEgress, error) {
+	if ok, _ := s.SharedSensorsAllowed(ctx, tenantID); !ok {
+		return nil, nil
+	}
+	eg, err := s.SharedSensorsEgress(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]proxypoolapp.PlatformEgress, 0, len(eg))
+	for _, e := range eg {
+		out = append(out, proxypoolapp.PlatformEgress{Region: e.Region, Addresses: e.Addresses})
+	}
+	return out, nil
 }
 
 // learnComponentReleases makes the first-party component releases of the
