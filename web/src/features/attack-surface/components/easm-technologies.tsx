@@ -38,6 +38,7 @@ import { useTranslation } from '@/context/i18n-provider'
 import { useListParams } from '@/hooks/use-list-params'
 import { downloadCsv } from '@/hooks/use-csv-export'
 import { Permission, useHasPermission } from '@/lib/permissions'
+import { safeHref } from '@/lib/safe-href'
 import {
   fetchAllTechnologies,
   useTechnologies,
@@ -158,7 +159,7 @@ function useColumns(canSeeVulns: boolean): ColumnDef<TechnologyRow>[] {
         header: t('attackSurface.technologies.col.assets', 'Assets'),
         cell: ({ row }) => (
           <Link
-            href={technologyAssetsHref(row.original)}
+            href={safeHref(technologyAssetsHref(row.original)) ?? '/assets'}
             className="font-medium tabular-nums hover:underline"
             aria-label={t(
               'attackSurface.technologies.openAssets',

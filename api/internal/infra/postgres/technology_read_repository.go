@@ -88,7 +88,7 @@ func (r *TechnologyReadRepository) ListWhere(
 		return empty, fmt.Errorf("list technologies: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
-	out := make([]*technology.Version, 0, page.Limit())
+	out := make([]*technology.Version, 0, 100)
 	for rows.Next() {
 		var (
 			v       technology.Version
