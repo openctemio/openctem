@@ -149,6 +149,16 @@ describe('EASMDiscovery', () => {
     expect(api.get).toHaveBeenCalledWith('/api/v1/attack-surface/discovery')
   })
 
+  it('makes every summary tile a link to the list it summarizes', async () => {
+    wrap(<EASMDiscovery />)
+    await screen.findAllByTestId(/^discovery-stage-/)
+    const hrefs = screen
+      .getAllByRole('link')
+      .map((a) => a.getAttribute('href'))
+      .filter((h) => ['/scans', '/attack-surface/review', '/scope'].includes(h ?? ''))
+    expect(hrefs.sort()).toEqual(['/attack-surface/review', '/scans', '/scope'])
+  })
+
   it('runs one stage and every stage through the typed commands', async () => {
     const user = userEvent.setup()
     wrap(<EASMDiscovery />)
