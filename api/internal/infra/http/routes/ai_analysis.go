@@ -61,3 +61,38 @@ func registerAIAnalysisRoutes(router Router, h *handler.AIAnalysisHandler, authM
 		r.POST("/analyze", h.AnalyzeFinding, analyzeChecks...)
 	}, gated...)
 }
+
+// registerAIKnowledgeRoutes wires the knowledge organizations give their AI
+// agents (docs/architecture/ai-knowledge.md):
+//
+//   - reading sources (names, state, counts; never text): ai_knowledge:read;
+//   - every change, and previewing what an AI agent would retrieve (which
+//     shows text): ai_knowledge:manage;
+//   - approving (text starts reaching AI agents) and deleting a source: also
+//     a recent sign-in. The service refuses an approval by the person who
+//     added the text, unless they are the organization owner.
+//
+// The tenant always comes from the token; AI agents never hold these
+// permissions (deny list).
+func registerAIKnowledgeRoutes(router Router, h *handler.AIKnowledgeHandler, authMiddleware, userSyncMiddleware, moduleGate Middleware) {
+	if h == nil {
+		return
+	}
+	tenant := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
+	gated := append(append([]Middleware{}, tenant...), moduleGate)
+	read := middleware.Require(permission.AIKnowledgeRead)
+	manage := middleware.Require(permission.AIKnowledgeManage)
+	router.Group("/api/v1/ai/knowledge", func(r Router) {
+		r.GET("/sources", h.ListSources, read)
+		r.POST("/sources", h.CreateSource, manage)
+		r.GET("/sources/{id}", h.GetSource, read)
+		r.PATCH("/sources/{id}", h.UpdateSource, manage)
+		r.DELETE("/sources/{id}", h.DeleteSource, manage, requireStepUp())
+		r.POST("/sources/{id}/approve", h.ApproveSource, manage, requireStepUp())
+		r.POST("/sources/{id}/reject", h.RejectSource, manage)
+		r.POST("/sources/{id}/disable", h.DisableSource, manage)
+		r.POST("/sources/{id}/documents", h.AddDocument, manage)
+		r.DELETE("/documents/{id}", h.DeleteDocument, manage)
+		r.POST("/preview", h.Preview, manage)
+	}, gated...)
+}
