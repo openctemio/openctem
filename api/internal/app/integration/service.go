@@ -463,7 +463,7 @@ func (s *IntegrationService) createIntegrationWithSCM(ctx context.Context, intg 
 		}
 		if scmExt != nil {
 			if err := s.scmExtRepo.Create(ctx, scmExt); err != nil {
-				_ = s.repo.Delete(ctx, intg.ID())
+				_ = s.repo.Delete(ctx, intg.TenantID(), intg.ID())
 				return fmt.Errorf("create scm extension: %w", err)
 			}
 		}
@@ -502,7 +502,7 @@ func (s *IntegrationService) createIntegrationWithNotification(ctx context.Conte
 		}
 		if notifExt != nil {
 			if err := s.notificationExtRepo.Create(ctx, notifExt); err != nil {
-				_ = s.repo.Delete(ctx, intg.ID())
+				_ = s.repo.Delete(ctx, intg.TenantID(), intg.ID())
 				return fmt.Errorf("create notification extension: %w", err)
 			}
 		}
@@ -703,7 +703,7 @@ func (s *IntegrationService) DeleteIntegration(ctx context.Context, id string, t
 	}
 
 	// Delete integration (extension tables cascade delete)
-	if err := s.repo.Delete(ctx, intgID); err != nil {
+	if err := s.repo.Delete(ctx, tid, intgID); err != nil {
 		return fmt.Errorf("delete integration: %w", err)
 	}
 

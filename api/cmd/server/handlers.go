@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/app/aianalysis"
+	"github.com/openctemio/openctem/api/internal/app/aiknowledge"
 	dashfactsapp "github.com/openctemio/openctem/api/internal/app/dashboard/facts"
 	"github.com/openctemio/openctem/api/internal/app/finding"
 	scmappsvc "github.com/openctemio/openctem/api/internal/app/scmapp"
@@ -484,6 +485,16 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		svc.Module.SetModuleCacheInvalidator(moduleGate)
 	}
 
+	// Organization IP allowlist gate: every replica caches each policy for
+	// 30s; a change drops the cache here and, through Redis, on the other
+	// replicas at once (the TTL bounds a lost message or no Redis).
+	ipAllowlistGate := routes.NewIPAllowlistGate(repos.Tenant, log)
+	ipAllowlistInvalidate := ipAllowlistGate.Invalidate
+	if deps.RedisClient != nil {
+		svc.IPAllowlistBus = redis.NewIPAllowlistChangeBus(deps.RedisClient, ipAllowlistGate, log)
+		ipAllowlistInvalidate = svc.IPAllowlistBus.Invalidate
+	}
+
 	// Read-only MCP server: exposes this tenant's CTEM data to an AI client over
 	// JSON-RPC, authenticated by a tenant-scoped `oct_` API key (not the browser
 	// JWT). Built only when the read services and the API-key service exist.
@@ -561,19 +572,21 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	}
 
 	handlers := routes.Handlers{
-		ModuleGate:     moduleGate,
-		Brand:          handler.NewBrandHandler(cfg.Brand),
-		DataScope:      byIDGuardAsserter(svc),
-		MCP:            mcpHandler,
-		MCPAuth:        mcpAuth,
-		MCPDiscovery:   mcpDiscovery,
-		MCPOAuth:       mcpOAuthHandler,
-		MCPSettings:    mcpSettings,
-		AISettings:     aiSettings,
-		AIMasking:      aiMasking,
-		MCPConnections: mcpConnections,
-		MCPClients:     mcpClients,
-		APIKeyAuth:     apiKeyAuth,
+		ModuleGate:            moduleGate,
+		IPAllowlistGate:       ipAllowlistGate,
+		IPAllowlistInvalidate: ipAllowlistInvalidate,
+		Brand:                 handler.NewBrandHandler(cfg.Brand),
+		DataScope:             byIDGuardAsserter(svc),
+		MCP:                   mcpHandler,
+		MCPAuth:               mcpAuth,
+		MCPDiscovery:          mcpDiscovery,
+		MCPOAuth:              mcpOAuthHandler,
+		MCPSettings:           mcpSettings,
+		AISettings:            aiSettings,
+		AIMasking:             aiMasking,
+		MCPConnections:        mcpConnections,
+		MCPClients:            mcpClients,
+		APIKeyAuth:            apiKeyAuth,
 		// Health
 		Health: handler.NewHealthHandler(
 			handler.WithDatabase(deps.DB),
@@ -781,8 +794,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		APIKey: handler.NewAPIKeyHandler(svc.APIKey, v, log),
 
 		// AI Triage (always initialized - handler returns 503 if service is nil)
-		AITriage:   handler.NewAITriageHandler(svc.AITriage, log),
-		AIAnalysis: aiAnalysisHandler(svc.AIAnalysis, svc.AIExecutor, log),
+		AITriage:    handler.NewAITriageHandler(svc.AITriage, log),
+		AIAnalysis:  aiAnalysisHandler(svc.AIAnalysis, svc.AIExecutor, svc.AIKnowledge, log),
+		AIKnowledge: handler.NewAIKnowledgeHandler(svc.AIKnowledge, log),
 
 		// Suppressions
 		Suppression: newSuppressionHandler(svc, log),
@@ -2165,12 +2179,13 @@ func emergingThreatHandler(svc *Services, log *logger.Logger) *handler.EmergingT
 }
 
 // aiAnalysisHandler is nil when the AI agent service is not built.
-func aiAnalysisHandler(svc *aianalysis.Service, exec *aianalysis.BuiltinExecutor, log *logger.Logger) *handler.AIAnalysisHandler {
+func aiAnalysisHandler(svc *aianalysis.Service, exec *aianalysis.BuiltinExecutor, knowledge *aiknowledge.Service, log *logger.Logger) *handler.AIAnalysisHandler {
 	if svc == nil {
 		return nil
 	}
 	h := handler.NewAIAnalysisHandler(svc, log)
 	h.SetExecutor(exec)
+	h.SetKnowledge(knowledge)
 	return h
 }
 

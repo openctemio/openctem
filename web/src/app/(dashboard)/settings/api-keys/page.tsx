@@ -37,6 +37,7 @@ import {
   RevealKeyDialog,
 } from '@/features/api-keys/components/generate-key-dialog'
 import type { APIKey } from '@/features/api-keys/types/api-key.types'
+import { APIKeyPolicyCard } from '@/features/api-keys/components/api-key-policy-card'
 import { toast } from 'sonner'
 import { useTranslation } from '@/context/i18n-provider'
 
@@ -194,6 +195,7 @@ export default function APIKeysPage() {
   // gets only their own keys from the API, and cannot mint or revoke keys.
   const { isAdmin } = usePermissions()
   const canGenerate = useCanMutate('POST /api/v1/api-keys')
+  const canSetPolicy = useCanMutate('PUT /api/v1/organization/settings/api-keys')
   const ownKeysOnly = !isAdmin()
   const [genOpen, setGenOpen] = useState(false)
   const [newKey, setNewKey] = useState('')
@@ -261,7 +263,20 @@ export default function APIKeysPage() {
         ),
         cell: ({ row }) =>
           row.original.expires_at ? (
-            <RelativeTime date={row.original.expires_at} />
+            <span className="inline-flex items-center gap-2">
+              <RelativeTime date={row.original.expires_at} />
+              {row.original.exceeds_org_max && (
+                <Badge
+                  variant="outline"
+                  title={t(
+                    'settings.keys.exceedsMaxHint',
+                    'Created before the organization lowered its maximum lifetime. Replace it sooner.'
+                  )}
+                >
+                  {t('settings.keys.exceedsMax', 'Over the maximum')}
+                </Badge>
+              )}
+            </span>
           ) : (
             <span className="text-muted-foreground text-xs">
               {t('settings.keys.never', 'Never')}
@@ -382,6 +397,8 @@ export default function APIKeysPage() {
             )}
           </CardContent>
         </Card>
+
+        {!ownKeysOnly && <APIKeyPolicyCard canEdit={canSetPolicy} />}
 
         <GenerateKeyDialog
           open={genOpen}

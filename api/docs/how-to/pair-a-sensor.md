@@ -69,9 +69,15 @@ the platform unreachable, the local policy missing) and the fix for each.
    browser, word for word. If anything differs, **Deny**: someone else's
    sensor, or a machine between the sensor and the platform, made the
    request.
-2. Check the host facts and the source address. An address you do not
-   expect is a reason to deny.
-3. Confirm that the fingerprint shown on the sensor console matches, choose the name, the role, the zones and
+2. Check the host facts and the source address. The console shows the
+   request's address (private network or public internet) next to your own,
+   the product and version, and how long ago the request was made. An
+   address you do not expect, or a request you did not start, is a reason to
+   deny. Never approve a code someone sent you by email, chat or phone.
+3. Check the organization named at the top: the sensor joins it. If the
+   sensor is meant for another organization, switch to it and enter the code
+   there; an approval after a switch of organization is refused.
+4. Confirm that the fingerprint shown on the sensor console matches, choose the name, the role, the zones and
    the **grant profile**, enter your TOTP code or password, and **Approve**.
 
 The sensor picks up its identity within a few seconds, confirms it, and

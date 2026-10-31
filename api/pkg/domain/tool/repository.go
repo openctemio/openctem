@@ -84,11 +84,11 @@ type VersionInfo struct {
 type TenantToolConfigRepository interface {
 	// CRUD operations
 	Create(ctx context.Context, config *TenantToolConfig) error
-	GetByID(ctx context.Context, id shared.ID) (*TenantToolConfig, error)
+	GetByID(ctx context.Context, tenantID, id shared.ID) (*TenantToolConfig, error)
 	GetByTenantAndTool(ctx context.Context, tenantID, toolID shared.ID) (*TenantToolConfig, error)
 	List(ctx context.Context, filter TenantToolConfigFilter, page pagination.Pagination) (pagination.Result[*TenantToolConfig], error)
 	Update(ctx context.Context, config *TenantToolConfig) error
-	Delete(ctx context.Context, id shared.ID) error
+	Delete(ctx context.Context, tenantID, id shared.ID) error
 
 	// Upsert - Create or update config
 	Upsert(ctx context.Context, config *TenantToolConfig) error

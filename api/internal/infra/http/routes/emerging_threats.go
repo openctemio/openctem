@@ -36,6 +36,21 @@ func registerEmergingThreatSettingsRoutes(router Router, h *handler.TenantHandle
 	}, buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)...)
 }
 
+// registerAPIKeySettingsRoutes wires the organization's API key policy (the
+// maximum lifetime of new keys) under the token singleton
+// /api/v1/organization. Read: anyone who reads or creates API keys (the key
+// dialog offers only allowed lifetimes). Write: owner or administrator with
+// settings:write; a longer maximum asks a recent sign-in in the service.
+func registerAPIKeySettingsRoutes(router Router, h *handler.TenantHandler, authMiddleware, userSyncMiddleware Middleware) {
+	if h == nil {
+		return
+	}
+	router.Group("/api/v1/organization/settings/api-keys", func(r Router) {
+		r.GET("/", h.GetAPIKeySettings, middleware.RequireAny(permission.APIKeysRead, permission.APIKeysWrite, permission.SettingsRead))
+		r.PUT("/", h.UpdateAPIKeySettings, middleware.RequireAdmin(), middleware.Require(permission.SettingsWrite))
+	}, buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)...)
+}
+
 // registerAISettingsRoutes wires the organization's AI settings (consent,
 // source, own provider) under the token singleton /api/v1/organization.
 // Owner/admin only. Turning AI on or changing the provider changes where

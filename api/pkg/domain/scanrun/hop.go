@@ -103,6 +103,17 @@ type StagePlan struct {
 	MaxHop    int
 	Skipped   map[string]int // reason -> count
 	PlannedAt time.Time
+	// Streamed: the stage took its predecessor's results task by task, while
+	// the predecessor still ran (RFC-137). StreamOpen: more waves may come
+	// (the predecessor has not finished, or its last results are not
+	// planned yet). Waves counts the plannings that handed the stage new
+	// targets; FirstDispatchAt is when the first of them did; ClosedAt is
+	// when the stream closed.
+	Streamed        bool
+	StreamOpen      bool
+	Waves           int
+	FirstDispatchAt *time.Time
+	ClosedAt        *time.Time
 }
 
 // RunTarget is one target a stage was handed or refused, with its
@@ -179,4 +190,31 @@ type DeltaBaseline interface {
 	// of the previous run is never done.
 	UnchangedSince(ctx context.Context, tenantID, previousRunID shared.ID, stepKey, capability string,
 		assetIDs []shared.ID, maxAge time.Duration) (map[shared.ID]bool, error)
+}
+
+// StageStreamStore is the store of a streamed stage (RFC-137): the waves
+// that hand a stage the results of its predecessor's tasks as each task
+// finishes. Implemented by the hop repository; every method is scoped to
+// the tenant it is given.
+type StageStreamStore interface {
+	// LockStageStream serializes the waves of one stage of a run (across
+	// servers). release must be called; it never fails the caller.
+	LockStageStream(ctx context.Context, tenantID, runID shared.ID, stageKey string) (release func(), err error)
+	// StageStream returns the stage's plan, and false when the stage of
+	// that run was not planned (or the run is another tenant's).
+	StageStream(ctx context.Context, tenantID, runID shared.ID, stageKey string) (StagePlan, bool, error)
+	// StageTargets returns every target the stage decided (planned and
+	// skipped), seeds included.
+	StageTargets(ctx context.Context, tenantID, runID shared.ID, stageKey string) ([]RunTarget, error)
+	// SaveStageWave records a later wave of an open stream in one
+	// transaction: the targets (a target the stage decided already keeps
+	// its first decision), the counts (inputs and the skipped reasons that
+	// are not stored as targets come from plan; planned, the furthest hop
+	// and the stored skipped reasons are counted from the targets) and the
+	// wave. It returns the planned targets this wave added: only those may
+	// be dispatched. A closed or missing stream writes nothing.
+	SaveStageWave(ctx context.Context, plan *StagePlan, targets []RunTarget) ([]string, error)
+	// CloseStageStream closes the stage's stream; true for the one caller
+	// that closed it.
+	CloseStageStream(ctx context.Context, tenantID, runID shared.ID, stageKey string) (bool, error)
 }

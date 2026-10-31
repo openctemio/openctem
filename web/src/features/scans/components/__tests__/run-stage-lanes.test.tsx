@@ -9,6 +9,7 @@ import {
   skipLabel,
   skippedReasons,
   stageLabel,
+  streamSavedSeconds,
 } from '../run-stage-lanes'
 
 const getMock = vi.fn()
@@ -176,5 +177,68 @@ describe('stage lane helpers', () => {
       ['a', 1],
     ])
     expect(skippedReasons(undefined)).toEqual([])
+  })
+})
+
+describe('stage streaming marks', () => {
+  const base = {
+    stage_key: 'tpl',
+    stage: 'scan.ports',
+    tool: 'nuclei',
+    tier: 'T1' as const,
+    chained: true,
+  }
+  const steps = [
+    { step_key: 'probe', started_at: '2026-10-31T10:00:00Z', completed_at: '2026-10-31T10:10:00Z' },
+    { step_key: 'tpl', started_at: '2026-10-31T10:04:00Z' },
+  ]
+
+  it('marks an open stream Streaming and a closed one with its waves', async () => {
+    getMock.mockResolvedValue({
+      data: [
+        { ...base, stage_key: 'a', streamed: true, stream_open: true, waves: 1 },
+        { ...base, stage_key: 'b', streamed: true, stream_open: false, waves: 3 },
+        { ...base, stage_key: 'c', streamed: false, stream_open: false, waves: 0 },
+      ],
+    })
+    fresh(<RunStageLanes runId="r1" />)
+    const lanes = await screen.findAllByTestId('stage-lane')
+    expect(within(lanes[0]).getByTestId('stage-stream-badge')).toHaveTextContent('Streaming')
+    expect(within(lanes[1]).getByTestId('stage-stream-badge')).toHaveTextContent(
+      'Streamed in 3 wave(s)'
+    )
+    expect(within(lanes[2]).queryByTestId('stage-stream-badge')).toBeNull()
+  })
+
+  it('shows the time saved against the step that finished after the first dispatch', async () => {
+    getMock.mockResolvedValue({
+      data: [
+        {
+          ...base,
+          streamed: true,
+          stream_open: false,
+          waves: 2,
+          first_dispatch_at: '2026-10-31T10:04:00Z',
+        },
+      ],
+    })
+    fresh(<RunStageLanes runId="r1" steps={steps} />)
+    expect(await screen.findByTestId('stage-saved')).toHaveTextContent('6m')
+  })
+
+  it('computes no figure when the feeder is unclear or the stage did not stream', () => {
+    const lane = { ...base, streamed: true, first_dispatch_at: '2026-10-31T10:04:00Z' }
+    expect(streamSavedSeconds(lane, steps)).toBe(360)
+    const two = [
+      ...steps,
+      {
+        step_key: 'other',
+        started_at: '2026-10-31T10:01:00Z',
+        completed_at: '2026-10-31T10:08:00Z',
+      },
+    ]
+    expect(streamSavedSeconds(lane, two)).toBeNull()
+    expect(streamSavedSeconds({ ...lane, streamed: false }, steps)).toBeNull()
+    expect(streamSavedSeconds(lane, undefined)).toBeNull()
   })
 })

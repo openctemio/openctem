@@ -42,6 +42,7 @@
   "easmReview.overview.total": "Domains, subdomains, IPs, certificates",
   "easmReview.overview.waiting": "Found, not yet decided",
   "easmReview.reason.assertedRoot": "Under a domain you listed, not verified",
+  "easmReview.reason.certificateSan": "Named in a TLS certificate",
   "easmReview.reason.matchesScope": "Covered by a scope entry",
   "easmReview.reason.scanDiscovered": "Found by one of your scans",
   "easmReview.reason.scanned": "A target your organization scanned",

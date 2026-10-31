@@ -340,6 +340,13 @@ var seedOverrides = map[string]func(s *schemaSeeder) map[string]any{
 		h := strings.Repeat("ab", 32)
 		return map[string]any{"old_hash": h, "old_prev_hash": "", "new_hash": h, "new_prev_hash": ""}
 	},
+	// content_sha256 and version_digest have a sha256 format CHECK.
+	"ai_knowledge_documents": func(*schemaSeeder) map[string]any {
+		return map[string]any{"content_sha256": "sha256:" + strings.Repeat("ab", 32)}
+	},
+	"ai_run_knowledge": func(*schemaSeeder) map[string]any {
+		return map[string]any{"version_digest": "sha256:" + strings.Repeat("ab", 32)}
+	},
 	// filename_sha256 has a lower-case hex CHECK.
 	"content_pack_blobs": func(*schemaSeeder) map[string]any {
 		return map[string]any{"digest": "sha256:" + strings.Repeat("ab", 32), "size_bytes": "1", "file_count": "1"}
@@ -516,6 +523,11 @@ var seedOverrides = map[string]func(s *schemaSeeder) map[string]any{
 	"findings": func(*schemaSeeder) map[string]any { return map[string]any{"definition_id": nil} },
 	// A record never follows itself (chk_asset_attributions_follows_other).
 	"asset_attributions": func(*schemaSeeder) map[string]any { return map[string]any{"follows_host_id": nil} },
+	// An organization wordlist: a short name (CHECK), a closed purpose, a
+	// content hash and a line count in range (CHECKs).
+	"tenant_wordlists": func(*schemaSeeder) map[string]any {
+		return map[string]any{"name": "words", "purpose": "dns-labels", "lines": "1", "sha256": strings.Repeat("ab", 32)}
+	},
 	// A CI gate policy names its repository or business unit only for that
 	// scope (chk_ci_gate_policies_scope).
 	"ci_gate_policies": func(*schemaSeeder) map[string]any {
