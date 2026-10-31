@@ -45,3 +45,30 @@ func TestCoverageGapSummary(t *testing.T) {
 		t.Fatalf("summary %q", s)
 	}
 }
+
+// The recheck's cause and certificate problem are kept when the platform
+// knows them and dropped otherwise; the gap stays either way.
+func TestParseCoverageGapsCauseAndCert(t *testing.T) {
+	raw := json.RawMessage(`[
+		{"host":"a.example.com:443","reason":"breaker_open","cause":"http_reset","cert":"expired"},
+		{"host":"b.example.com:443","reason":"breaker_open","cause":"bogus","cert":"bogus"},
+		{"host":"c.example.com:443","reason":"breaker_open","cause":7},
+		{"host":"d.example.com:443","reason":"breaker_open","cert":"name_mismatch"}
+	]`)
+	gaps, total := ParseCoverageGaps(raw, 0)
+	if total != 4 || len(gaps) != 4 {
+		t.Fatalf("%d gaps, total %d: every gap is kept", len(gaps), total)
+	}
+	want := []struct{ cause, cert string }{{GapCauseHTTPReset, GapCertExpired}, {"", ""}, {"", ""}, {"", GapCertNameMismatch}}
+	for i, w := range want {
+		if gaps[i].Cause != w.cause || gaps[i].Cert != w.cert {
+			t.Errorf("gap %d: %+v", i, gaps[i])
+		}
+	}
+	s := CoverageGapSummary(gaps, total)
+	if !strings.Contains(s, "a.example.com:443 (breaker_open: http_reset, certificate expired)") ||
+		!strings.Contains(s, "b.example.com:443 (breaker_open)") ||
+		!strings.Contains(s, "d.example.com:443 (breaker_open: certificate name mismatch)") {
+		t.Fatalf("summary %q", s)
+	}
+}

@@ -20,7 +20,7 @@ import {
   TaskPlacementPanel,
   WhyWaitingButton,
 } from '@/features/scans/components/task-placement'
-import { placementHelp } from '@/features/scans/lib/placement-help'
+import { gapLabel, placementHelp } from '@/features/scans/lib/placement-help'
 
 /**
  * Who runs a task: "Platform scanning" (never a platform sensor's name), the
@@ -215,14 +215,12 @@ export function taskSkippedNote(
   return text
 }
 
-/** Coverage-gap reasons that have a translated label. */
-const GAP_REASONS = new Set(['breaker_open', 'rate_floor', 'blocked', 'proxy_unavailable'])
-
 /**
  * The note of a task that completed with hosts its sensor could not fully
- * cover (the host stopped answering, kept rate-limiting the scan, or blocked
- * it): "Completed with 2 hosts not fully covered: api.example.com (stopped
- * answering), …". Null without gaps. A host with a gap is not "no findings".
+ * cover (the host failed every request, kept rate-limiting the scan, or
+ * blocked it; with the recheck's cause when the sensor sent one):
+ * "Completed with 2 hosts not fully covered: api.example.com (TLS answers,
+ * resets every HTTP request), …". Null without gaps. A host with a gap is not "no findings".
  * The hosts are sensor-supplied text; TruncatedText shows them as plain text.
  */
 export function taskCoverageGapNote(
@@ -232,12 +230,7 @@ export function taskCoverageGapNote(
   const list = task.coverage_gaps ?? []
   const total = Math.max(task.coverage_gaps_total ?? 0, list.length)
   if (total <= 0) return null
-  const named = list
-    .slice(0, SKIPPED_NAMED)
-    .map(
-      (g) =>
-        `${g.host ?? '?'} (${t(GAP_REASONS.has(g.reason ?? '') ? `scans.tasks.gap.${g.reason}` : 'scans.tasks.gap.other')})`
-    )
+  const named = list.slice(0, SKIPPED_NAMED).map((g) => `${g.host ?? '?'} (${gapLabel(g, t)})`)
   const more = total - named.length
   let text = t(total === 1 ? 'scans.tasks.gapsOne' : 'scans.tasks.gapsMany', undefined, {
     count: total,

@@ -88,14 +88,29 @@ export function StepOutcome({ outcome }: { outcome?: RunMapNode['outcome'] }) {
           {gaps.length > 0 ? (
             <ul className="space-y-1">
               {gaps.map((g, i) => {
-                const r = gapReasonHelp(g.reason, t)
+                const r = gapReasonHelp(g.reason, t, g.cause, g.cert)
+                const href = r.href ? safeInternalHref(r.href) : undefined
                 return (
-                  <li key={`${g.host}-${i}`} className="min-w-0">
+                  <li
+                    key={`${g.host}-${i}`}
+                    className="min-w-0"
+                    data-gap-cause={g.cause || undefined}
+                  >
                     <div className="flex min-w-0 items-baseline gap-2">
                       <TruncatedText value={g.host} className="min-w-0 font-mono" />
                       <span className="shrink-0 text-foreground">{r.label}</span>
                     </div>
+                    {r.cert && <p className="text-foreground">{r.cert}</p>}
                     <p className="text-muted-foreground">{r.help}</p>
+                    {r.fix && <p className="text-muted-foreground">{r.fix}</p>}
+                    {href && r.hrefLabel && (
+                      <Link
+                        href={href}
+                        className="font-medium text-primary underline-offset-4 hover:underline"
+                      >
+                        {r.hrefLabel}
+                      </Link>
+                    )}
                   </li>
                 )
               })}
