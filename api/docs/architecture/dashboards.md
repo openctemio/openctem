@@ -552,8 +552,9 @@ The web routes every "nothing has come in yet" reason (`no_findings`,
 result (no rows, or a series whose every bucket is zero) to the frame's one
 compact `no_data_yet` state: "No data yet", the reason, and the next step the
 caller may take (Import results or Set up a scan, behind that page's
-permission). Such a widget takes one grid row whatever its stored height, so
-an empty dashboard never shows tall blank cards. Other reasons
+permission). Such a widget, and a not-measured one, takes one grid row
+whatever its stored height, so an empty dashboard never shows tall blank
+cards. Other reasons
 (`too_few_fixed`, `no_denominator`, `no_crown_jewels`, `organization_only`,
 `forbidden`) keep the grey "—" with the reason. Tests:
 `widgets/empty_test.go`, `web/src/features/dashboards/__tests__/empty-states.test.tsx`.
