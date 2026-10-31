@@ -1117,7 +1117,7 @@ figure means not measured and is never drawn as 0.
 | `PathsViz` | paths | reachable crown jewels (linked to the attack paths) and the top ones with the entry points reaching them; "none designated" and "none reachable" are different states |
 | `ItemsViz` | items | rows with priority, KEV, asset and due time, and "View all" |
 | `ItemsTable` | items (`viz: table`) | the embedded findings table: Priority, Finding (title link, asset line, KEV chip), Severity and SLA columns (Severity and SLA hidden at phone width, the table scrolls sideways), a read-only chip row with the list's filter, the count in the caption, and a footer "Top n of total" with "Open in Findings" |
-| `ExposureFlowViz` | flow | sources (with health in words and line style), received to new or reopened to actionable, a labelled ring of actionable findings by priority class (at most four arcs, each a focusable link with a sentence, the largest centred at the bottom, a minimum arc so P0 stays visible; the centre is the count the arcs sum to), the five stages (the focus stage filled with the accent), outcomes (open with its severity split, past SLA, in progress, closed in the period); wires are SVG paths between measured rows, width by volume; below the large breakpoint the columns stack and the wires are dropped |
+| `ExposureFlowViz` | flow | sources (with health in words and line style), received to new or reopened to actionable, a labelled ring of actionable findings by priority class (at most four arcs, each a focusable link with a sentence, the largest centred at the bottom, a minimum arc so P0 stays visible; the centre is the count the arcs sum to), the five stages (the focus stage filled with the accent), outcomes (open with its severity split, past SLA, in progress, closed in the period); wires are SVG paths between measured rows, width by volume; the layout follows the widget's own width (see "Connected visuals: layout bands") |
 | `IntakeViz` | intake | the connector panel (each source's icon, tool, receipts, health, count, wired into one summary that shows the hovered source), the noise bar (new or reopened, merged, suppressed, not stored; each legend value opens the receipts), the false-positive row, and the per-source table |
 
 Rules every visualization follows:
@@ -1163,6 +1163,40 @@ Rules every visualization follows:
 `web/src/lib/format-metric.ts` formats the figures in the viewer's locale:
 grouped counts, compact from 10 000, percentages with one decimal below 10 %,
 durations in the largest sensible unit, relative times.
+
+### Connected visuals: layout bands
+
+The exposure flow and the intake panel lay themselves out on the widget's
+own width, never the viewport: a widget sits in grid cells of any size (a
+1-of-4 cell on a wide screen is narrower than a phone). The layout is CSS
+container queries on the visual; the same widths decide in code
+(`flowBand` in `flow-parts.tsx`, `FLOW_MID` 660 px and `FLOW_WIDE` 960 px of
+the visual's width) which wires exist, so a wire is drawn only when both of
+its ends sit side by side, and the rows it joins exist before it is measured.
+
+| Band (visual width) | Exposure flow | Intake panel |
+|---|---|---|
+| narrow, under 660 px | one column in reading order: the first three sources and "N more", the received to actionable figures, the ring (at most 18 rem, 78 % of the width), the stages (three then two per row under 420 px, five in a row above), the outcomes; no wires | sources, then the summary; the health note under each source's name; no wires |
+| mid, 660 to 959 px | the first three sources in one row above; the core (figures, ring, stages) beside the outcomes, wires from the ring to the outcomes | sources (15 to 19 rem) and summary (14 to 18 rem) side by side, centred, wires |
+| wide, 960 px and more | three columns of bounded width (sources 12 to 15 rem, core 20 to 34 rem, outcomes 13 to 16 rem), centred with gaps of 2.5 to 5.5 rem: the composition never stretches to the card edges, so wires stay short whatever the card width | same as mid |
+
+The ring is `clamp(15rem, 24cqi, 20rem)` from the mid band and its centre
+figure `clamp(2.25rem, 4.5cqi, 3rem)`. Wires are re-measured on every resize
+(`useWireAnchors`, a `ResizeObserver`), from a row's right edge to the
+ring's or summary's left edge, so they always meet their ends; their width
+stays proportional to the volume. The DOM order is the reading and focus
+order in every band (no visual reordering). The noise and per-source panels
+of the intake widget sit side by side from 1100 px of widget width.
+
+Widget titles are `h2` (the page title is the `h1`), so the sections inside a
+widget (`h3`) keep the heading order.
+
+Tests: `dashboard-kit/__tests__/exposure-flow.test.tsx` (band thresholds, the
+container query classes use the same widths, the health note sits on its
+row), `e2e/specs/52-dashboard-flow-layout.spec.ts` (at card widths 480, 720,
+960, 1200, 1440 and 1600 px: no sideways scroll, no overlapping columns, the
+ring inside its column, no wires on one column, every wire starts within
+80 px of its source label).
 
 ### Chart palettes
 
