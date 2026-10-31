@@ -344,12 +344,14 @@ func (r *SensorPairingRepository) Approve(ctx context.Context, a sensordom.Pairi
 
 // Deny refuses an open request (an expectation of the tenant, or a
 // default-mode request nobody claimed yet).
-func (r *SensorPairingRepository) Deny(ctx context.Context, tenantID, id, actor shared.ID, now time.Time) (*sensordom.Pairing, error) {
+func (r *SensorPairingRepository) Deny(ctx context.Context, tenantID, id, actor shared.ID, codeHash string, now time.Time) (*sensordom.Pairing, error) {
+	// A tenantless request is refused only with its code, like an approval.
 	row := r.db.QueryRowContext(ctx, `UPDATE sensor_pairings
 		SET status = 'denied', denied_by = $3, denied_at = $4, tenant_id = COALESCE(tenant_id, $1)
 		WHERE id = $2 AND status IN ('expecting', 'pending') AND expires_at > $4
-		  AND (tenant_id IS NULL OR tenant_id = $1) AND instance_token_id IS NULL
-		RETURNING `+sensorPairingColumns, tenantID.String(), id.String(), actor.String(), now)
+		  AND (tenant_id = $1 OR (tenant_id IS NULL AND $5 <> '' AND code_hash = $5))
+		  AND instance_token_id IS NULL
+		RETURNING `+sensorPairingColumns, tenantID.String(), id.String(), actor.String(), now, codeHash)
 	return scanPairing(row)
 }
 

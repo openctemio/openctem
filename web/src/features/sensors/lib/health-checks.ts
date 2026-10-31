@@ -9,6 +9,7 @@ import { formatDurationShort, keyExpiry, type Tr } from './format'
 import {
   isOneShotSensor,
   sensorState,
+  sensorStoppedClaiming,
   stateIsHeartbeating,
   stateTakesJobs,
   type FleetThresholds,
@@ -45,6 +46,7 @@ export interface HealthCheck {
     | 'error'
     | 'setup'
     | 'posture'
+    | 'storage'
   label: string
   /** A stable reason where the issue title needs to tell two apart. */
   code?: 'tools_not_reported'
@@ -569,6 +571,32 @@ export function sensorHealthChecks(
       label: msg(tr, 'sensors.checks.label.posture', 'Security posture'),
       status: 'warning',
       text: unhardened.map((i) => msg(tr, i.labelKey, i.label)).join(', '),
+    })
+  }
+
+  // The sensor's local store: full, it claims no new jobs (the platform places
+  // nothing on it) until it has room again.
+  if (!oneShot && sensorStoppedClaiming(sensor)) {
+    const store = sensor.local_store
+    const diskLow = store?.disk_level === 'low' || store?.disk_level === 'critical'
+    const reason = store?.reason?.trim().replace(/\.$/, '')
+    checks.push({
+      key: 'storage',
+      label: msg(tr, 'sensors.checks.label.storage', 'Local storage'),
+      status: 'critical',
+      text: diskLow
+        ? msg(
+            tr,
+            'sensors.checks.storage.diskLow',
+            'Takes no new jobs: the disk under its data directory is almost full{reason}. Free disk space on the sensor host; it resumes on its own.',
+            { reason: reason ? ` (${reason})` : '' }
+          )
+        : msg(
+            tr,
+            'sensors.checks.storage.full',
+            'Takes no new jobs: its local storage is full{reason}. Free disk space on the sensor host or raise its store quota; it resumes on its own.',
+            { reason: reason ? ` (${reason})` : '' }
+          ),
     })
   }
 
