@@ -50,7 +50,7 @@ import { toast } from 'sonner'
 import { type ControlStatus, type Priority } from '@/features/compliance'
 import {
   useFrameworks,
-  useFrameworkStats,
+  FRAMEWORKS_KEY,
   useFrameworkControls,
   useAssessments,
   useUpdateAssessment,
@@ -162,7 +162,7 @@ function ControlPriorityTag({ priority }: { priority: Priority }) {
   )
 }
 
-/** One framework's score. Its own component so its stats hook is stable. */
+/** One framework's score, from the stats the frameworks list carries. */
 function FrameworkCard({
   fw,
   onOpen,
@@ -170,7 +170,7 @@ function FrameworkCard({
   fw: ComplianceFrameworkApi
   onOpen: (id: string) => void
 }) {
-  const { data: fwStats } = useFrameworkStats(fw.id)
+  const fwStats = fw.stats
   const total = fwStats?.TotalControls ?? fw.total_controls
   const implemented = fwStats?.Implemented ?? 0
   const partial = fwStats?.Partial ?? 0
@@ -346,10 +346,13 @@ export default function CompliancePage() {
         notes: formData.notes || undefined,
         due_date: formData.dueDate || undefined,
       })
-      // Invalidate assessments cache
-      await swrMutate(
-        `/api/v1/compliance/assessments?framework_id=${editRequirement.frameworkId}&page=1&per_page=200`
-      )
+      // Invalidate the assessments and the frameworks' stats
+      await Promise.all([
+        swrMutate(
+          `/api/v1/compliance/assessments?framework_id=${editRequirement.frameworkId}&page=1&per_page=200`
+        ),
+        swrMutate(FRAMEWORKS_KEY),
+      ])
       toast.success('Control assessment updated')
       setEditRequirement(null)
     } catch {

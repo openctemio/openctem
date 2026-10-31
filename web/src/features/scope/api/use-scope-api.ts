@@ -89,6 +89,7 @@ function buildTargetsEndpoint(filters?: ScopeTargetFilters): string {
   if (filters.per_page) params.set('per_page', String(filters.per_page))
   if (filters.sort_by) params.set('sort_by', filters.sort_by)
   if (filters.sort_order) params.set('sort_order', filters.sort_order)
+  if (filters.include) params.set('include', filters.include)
 
   const queryString = params.toString()
   return queryString ? `${url}?${queryString}` : url
@@ -107,6 +108,7 @@ function buildExclusionsEndpoint(filters?: ScopeExclusionFilters): string {
   if (filters.per_page) params.set('per_page', String(filters.per_page))
   if (filters.sort_by) params.set('sort_by', filters.sort_by)
   if (filters.sort_order) params.set('sort_order', filters.sort_order)
+  if (filters.include) params.set('include', filters.include)
 
   const queryString = params.toString()
   return queryString ? `${url}?${queryString}` : url
@@ -170,6 +172,35 @@ export function useScopeTargetsApi(filters?: ScopeTargetFilters, config?: SWRCon
   const key = currentTenant ? buildTargetsEndpoint(filters) : null
 
   return useSWR<ApiScopeTargetListResponse>(key, fetchTargets, { ...defaultConfig, ...config })
+}
+
+/** Entry and exclusion counts per status, as GET /scope/{targets,exclusions} count them. */
+export interface ScopeStatusCounts {
+  targets?: Record<string, number>
+  exclusions?: Record<string, number>
+  error?: unknown
+  isLoading: boolean
+}
+
+/**
+ * The scope page's counts (the strip, the tab badges, what waits for approval):
+ * two requests, each a one-row page with every status counted
+ * (include=status_counts), instead of one request per count.
+ */
+export function useScopeStatusCounts(): ScopeStatusCounts {
+  const targets = useScopeTargetsApi({ per_page: 1, include: 'status_counts' })
+  const exclusions = useScopeExclusionsApi({ per_page: 1, include: 'status_counts' })
+  return {
+    targets: targets.data?.status_counts,
+    exclusions: exclusions.data?.status_counts,
+    error: targets.error ?? exclusions.error,
+    isLoading: (!targets.data && !targets.error) || (!exclusions.data && !exclusions.error),
+  }
+}
+
+/** The sum of the counts of these statuses. */
+export function sumStatusCounts(counts: Record<string, number> | undefined, statuses: string[]) {
+  return statuses.reduce((n, st) => n + (counts?.[st] ?? 0), 0)
 }
 
 /**

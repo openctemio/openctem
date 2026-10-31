@@ -709,6 +709,7 @@ func (h *SensorHandler) Get(w http.ResponseWriter, r *http.Request) {
 // @Param        search          query     string  false  "Search by name or description"
 // @Param        page            query     int     false  "Page number" default(1)
 // @Param        per_page        query     int     false  "Items per page" default(20)
+// @Param        changed_since   query     string  false  "Poll mode: empty for a snapshot of the whole fleet, else the cursor of the previous answer; the answer then holds only the sensors that changed (SensorListChangesResponse). Not combined with filters or paging."
 // @Success      200  {object}  ListResponse[SensorResponse]
 // @Failure      400  {object}  apierror.Error
 // @Failure      401  {object}  apierror.Error
@@ -717,6 +718,10 @@ func (h *SensorHandler) Get(w http.ResponseWriter, r *http.Request) {
 // @Router       /sensors [get]
 func (h *SensorHandler) List(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.GetTenantID(r.Context())
+	if cursor, ok := r.URL.Query()["changed_since"]; ok {
+		h.listChanges(w, r, tenantID, cursor[0])
+		return
+	}
 
 	paging, ok := listPage(w, r, 20)
 	if !ok {
@@ -842,18 +847,29 @@ type SensorStatsResponse struct {
 func (h *SensorHandler) GetStats(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.GetTenantID(r.Context())
 
-	stats, err := h.service.GetTenantSensorStats(r.Context(), tenantID)
-	if err != nil {
-		h.handleServiceError(w, err)
-		return
-	}
-
 	sensors, err := h.service.ListAllSensors(r.Context(), tenantID)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
+	resp, err := h.statsResponse(r.Context(), tenantID, sensors, h.policyFor(r.Context(), tenantID))
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
 
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(resp)
+}
+
+// statsResponse is the fleet summary of GET /sensors/stats for the tenant's
+// sensors (all of them, as ListAllSensors returns them).
+func (h *SensorHandler) statsResponse(ctx context.Context, tenantID string, sensors []*sensor.Sensor, p sensor.HealthPolicy) (*SensorStatsResponse, error) {
+	stats, err := h.service.GetTenantSensorStats(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
 	resp := SensorStatsResponse{
 		Total:           stats.Total,
 		ByStatus:        stats.ByStatus,
@@ -863,11 +879,8 @@ func (h *SensorHandler) GetStats(w http.ResponseWriter, r *http.Request) {
 		ActiveJobs:      stats.ActiveJobs,
 		OnlineActive:    stats.OnlineActive,
 	}
-	h.addFleetSummary(&resp, sensors, h.policyFor(r.Context(), tenantID))
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(resp)
+	h.addFleetSummary(&resp, sensors, p)
+	return &resp, nil
 }
 
 // addFleetSummary fills the per-sensor breakdowns of the stats response.
