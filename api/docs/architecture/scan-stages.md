@@ -26,6 +26,7 @@ platform data: a tenant, a sensor or a report cannot widen it.
 | `probe.http` | names, addresses, open_port, http_service → http_service, certificate, ip_address | T1 | httpx |
 | `crawl.web` | http_service, discovered_url, website → discovered_url | T1 | katana |
 | `vuln.templates` | web and network types → findings | T1 | nuclei |
+| `check.takeover` | domain, subdomain → findings (takeover templates; a confirmed match raises `subdomain_takeover`, see `easm-dns-checks.md`) | T1 | nuclei (only for a step that names the capability; runs only the `takeover` tag) |
 | `dast.web` | web applications → findings | T2 | zap |
 | `secrets.code` | repository → findings | T0 | betterleaks, trufflehog, gitleaks |
 | `sast.code` | repository → findings | T0 | semgrep, codeql |
@@ -113,9 +114,18 @@ tool runs it:
   (`hostname → url`: `probe.http`; `hostname → ip`: `resolve.dns`;
   `ip → service`: `scan.ports`; `cidr → ip`: `discover.hosts`; …). The editor offers it when two incompatible
   ports are wired.
-- **Taxonomy v1** lists 22 capabilities. The 13 routed stages above have
-  implementations. Nine are **planned**: they have a contract but no routed
-  implementation (`intel.passive`, `check.takeover`, `detect.services`,
+- **Fixed tool settings.** An implementation may always run a stage with
+  settings of its own, set over the step's at dispatch so a step cannot
+  widen them (`stage.WithStageToolConfig`). `check.takeover` on nuclei runs
+  with `tags: [takeover]` and its job does not name the capability: sensors
+  declare only `vuln.templates@1` on nuclei, and every sensor version runs a
+  nuclei job with that tag set (the sensor checks the tags again and refuses
+  intrusive ones). Its findings take the existing takeover path: a takeover
+  template match in a command-bound nuclei report on an asset the command
+  covered confirms an open `dangling_cname` as `subdomain_takeover`.
+- **Taxonomy v1** lists 22 capabilities. The routed stages above have
+  implementations. Eight are **planned**: they have a contract but no routed
+  implementation (`intel.passive`, `detect.services`,
   `fingerprint.tech`, `check.tls`, `capture.screenshot`, `host.credentialed`,
   `cloud.posture`, `verify.finding`). They are served with `available: false`
   and are invisible to `Lookup`, `ForTool` and `ForCapabilities`, so no step
