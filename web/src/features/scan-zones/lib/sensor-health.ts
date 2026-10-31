@@ -1,4 +1,11 @@
 import type { Sensor } from '@/lib/api/sensor-types'
+import type { Tr } from '@/features/sensors/lib/format'
+import {
+  SENSOR_STATE_META,
+  sensorState,
+  stateLabel,
+  type SensorStateTone,
+} from '@/features/sensors/lib/sensor-state'
 
 /**
  * A sensor the router can pin jobs to: active and heartbeating, online or
@@ -10,15 +17,21 @@ export function isSensorHealthy(sensor: Pick<Sensor, 'status' | 'health'>): bool
   return sensor.status === 'active' && (sensor.health === 'online' || sensor.health === 'late')
 }
 
-export type SensorHealthLabel =
-  'Online' | 'Late' | 'Stale' | 'Offline' | 'Error' | 'Disabled' | 'Revoked'
+/** The fields the shared state ladder reads; callers that lack some leave them out. */
+export type ZoneSensorStateInput = Pick<Sensor, 'status' | 'health'> &
+  Partial<
+    Pick<
+      Sensor,
+      'last_seen_at' | 'state' | 'type' | 'execution_mode' | 'health_reasons' | 'outbox_warning'
+    >
+  >
 
-export function sensorHealthLabel(sensor: Pick<Sensor, 'status' | 'health'>): SensorHealthLabel {
-  if (sensor.status === 'disabled') return 'Disabled'
-  if (sensor.status === 'revoked') return 'Revoked'
-  if (sensor.health === 'error') return 'Error'
-  if (sensor.health === 'online') return 'Online'
-  if (sensor.health === 'late') return 'Late'
-  if (sensor.health === 'stale') return 'Stale'
-  return 'Offline'
+/** The sensor's state word, the same one the Sensors tab shows. */
+export function sensorStateLabel(sensor: ZoneSensorStateInput, tr: Tr): string {
+  return stateLabel(sensorState(sensor as Parameters<typeof sensorState>[0]), tr)
+}
+
+/** The tone of the sensor's state, for the dot colour. */
+export function sensorStateTone(sensor: ZoneSensorStateInput): SensorStateTone {
+  return SENSOR_STATE_META[sensorState(sensor as Parameters<typeof sensorState>[0])].tone
 }

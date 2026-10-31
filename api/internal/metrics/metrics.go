@@ -239,6 +239,17 @@ var (
 		[]string{"outcome"},
 	)
 
+	// SensorResultsOutsideJobTotal counts items of command-bound sensor
+	// reports dropped because they lie outside the command's targets, by
+	// kind (asset, finding): a sensor reporting hosts its job never named.
+	SensorResultsOutsideJobTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "sensor_results_outside_job_total",
+			Help: "Items of command-bound sensor reports dropped because they lie outside the command's targets, by kind (asset, finding)",
+		},
+		[]string{"kind"},
+	)
+
 	// SensorResultChangesWithheldTotal counts changes a sensor report was not
 	// allowed to make because no command covering the object stood behind
 	// it (RFC-040 §5.3): kind asset (an existing asset left unchanged) or
