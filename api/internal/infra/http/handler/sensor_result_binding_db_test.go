@@ -377,15 +377,16 @@ func TestResultBinding_CollectorUploadsWorkWorkerQuarantined(t *testing.T) {
 
 // Results bound to a command assigned to the submitting sensor behave as
 // before, also on a quarantine-mode tenant: they change the existing assets
-// the command covers. An existing asset outside its targets is left alone,
-// and a report from another tool than the command's is refused.
+// the command covers. An existing asset outside its targets is left alone
+// (dropped from the report: it lies outside the job's targets), and a report
+// from another tool than the command's is refused.
 func TestResultBinding_BoundResultsStillApply(t *testing.T) {
 	r := newBindingRig(t, "")
 	r.trusted(hostReport("nmap", false, "db-1.corp.example", "elsewhere.corp.example"))
 	cmd := r.command("worker", "running", map[string]any{"scanner": "nmap", "targets": []string{"db-1.corp.example"}}, 0)
 
 	code, body := r.push("worker", hostReport("nmap", true, "db-1.corp.example", "elsewhere.corp.example"), cmd)
-	if code != http.StatusCreated || body["binding"] != "command" || body["assets_limited"] != float64(1) {
+	if code != http.StatusCreated || body["binding"] != "command" || body["assets_outside_job"] != float64(1) {
 		t.Fatalf("bound push: %d %v", code, body)
 	}
 	// Its scanner signals apply; the data classification it claims does not:

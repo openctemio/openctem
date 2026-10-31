@@ -417,6 +417,9 @@ const (
 	// ActionSensorResultPolicyUpdated records a change of the tenant's
 	// policy for unsolicited sensor results.
 	ActionSensorResultPolicyUpdated Action = "sensor.result_policy_updated"
+	// ActionSensorResultsOutsideJob records report items a sensor sent for a
+	// command that lie outside the command's targets: dropped, not applied.
+	ActionSensorResultsOutsideJob Action = "sensor.results_outside_job"
 
 	// Pairing and key-bound identity (RFC-052). Expected: an administrator
 	// created a reverse-mode code. Approved: a key was bound to the
@@ -913,7 +916,7 @@ func (a Action) IsValid() bool {
 		ActionSensorKeyRenewalRefused, ActionSensorIdentityCloned, ActionSensorJobRefusedByLocalPolicy, ActionSensorOptInChanged,
 		ActionSensorContentRefreshRequested, ActionSensorContentPolicyUpdated, ActionSensorCommandsReleased,
 		ActionSensorResultsQuarantined, ActionSensorResultsAccepted, ActionSensorResultsDiscarded,
-		ActionSensorResultPolicyUpdated,
+		ActionSensorResultPolicyUpdated, ActionSensorResultsOutsideJob,
 		ActionSensorPairingExpected, ActionSensorPairingApproved, ActionSensorPairingDenied, ActionSensorPairingCompleted, ActionSensorPairingSuperseded, ActionSensorPairingLookupLocked,
 		ActionSensorRepaired, ActionSensorKeyRevoked, ActionSensorIdentityPolicySet, ActionSensorKeyBound, ActionSensorKeyBindRefused,
 		ActionSensorEnrollmentTokenCreated, ActionSensorEnrollmentTokenRevoked, ActionSensorEnrolled, ActionSensorEnrollmentRefused,
