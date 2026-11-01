@@ -220,8 +220,11 @@ export interface IntakeSourceRow {
   health: SourceHealth
   expected_every_seconds: number | null
   drill: string | null
+  /** Assets the source discovered or updated in the period (discovery tools). */
   assets?: number
+  /** What the source contributes: assets (discovery), findings (detection), or derived findings (platform). */
   kind?: 'discovery' | 'detection' | 'platform'
+  /** The instances that fed this source; the tool row's health is the worst of theirs. */
   instances?: IntakeInstance[]
 }
 
