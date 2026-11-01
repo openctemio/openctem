@@ -1,6 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { AUTH_REFRESH_LOCK, withAuthRefreshLock } from '../auth-refresh-lock'
+import {
+  AUTH_REFRESH_AT_KEY,
+  AUTH_REFRESH_LOCK,
+  refreshSessionShared,
+  resetBrowserRefreshState,
+  withAuthRefreshLock,
+} from '../auth-refresh-lock'
 
 // A Web Locks stand-in: one holder at a time per name, FIFO.
 function fakeLocks() {
@@ -54,5 +60,77 @@ describe('withAuthRefreshLock (RFC-045)', () => {
   it('runs the refresh directly where Web Locks are unavailable', async () => {
     vi.stubGlobal('navigator', {})
     await expect(withAuthRefreshLock(async () => 'ok')).resolves.toBe('ok')
+  })
+})
+
+describe('refreshSessionShared', () => {
+  afterEach(() => {
+    resetBrowserRefreshState()
+    vi.unstubAllGlobals()
+    try {
+      window.localStorage.removeItem(AUTH_REFRESH_AT_KEY)
+    } catch {
+      // ignore
+    }
+  })
+
+  const okResponse = () =>
+    new Response(JSON.stringify({ success: true, data: { access_token: 'new-access' } }), {
+      status: 200,
+    })
+
+  it('parallel callers in a tab make one network refresh', async () => {
+    vi.stubGlobal('navigator', { locks: fakeLocks() })
+    const doFetch = vi.fn(async () => okResponse())
+    const outcomes = await Promise.all(
+      Array.from({ length: 5 }, () => refreshSessionShared(doFetch))
+    )
+    expect(doFetch).toHaveBeenCalledTimes(1)
+    for (const o of outcomes) expect(o.ok).toBe(true)
+  })
+
+  it('a tab that waited for another tab reuses its refresh', async () => {
+    vi.stubGlobal('navigator', { locks: fakeLocks() })
+    // Another tab finished a refresh just now.
+    window.localStorage.setItem(AUTH_REFRESH_AT_KEY, String(Date.now()))
+    const doFetch = vi.fn(async () => okResponse())
+    const outcome = await refreshSessionShared(doFetch)
+    expect(outcome.ok).toBe(true)
+    expect(doFetch).not.toHaveBeenCalled()
+  })
+
+  it('force refreshes even right after another tab', async () => {
+    vi.stubGlobal('navigator', { locks: fakeLocks() })
+    window.localStorage.setItem(AUTH_REFRESH_AT_KEY, String(Date.now()))
+    const doFetch = vi.fn(async () => okResponse())
+    const outcome = await refreshSessionShared(doFetch, { force: true })
+    expect(doFetch).toHaveBeenCalledTimes(1)
+    expect(outcome.accessToken).toBe('new-access')
+  })
+
+  it('after a 401 the dead refresh token is not presented again', async () => {
+    vi.stubGlobal('navigator', { locks: fakeLocks() })
+    const doFetch = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ success: false, error: { code: 'REFRESH_TOKEN_REUSED' } }), {
+          status: 401,
+        })
+    )
+    const first = await refreshSessionShared(doFetch)
+    const second = await refreshSessionShared(doFetch)
+    expect(doFetch).toHaveBeenCalledTimes(1)
+    expect(first).toMatchObject({ ok: false, status: 401, code: 'REFRESH_TOKEN_REUSED' })
+    expect(second).toEqual(first)
+  })
+
+  it('a network error is retried on the next call', async () => {
+    vi.stubGlobal('navigator', { locks: fakeLocks() })
+    const doFetch = vi
+      .fn<() => Promise<Response>>()
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValueOnce(okResponse())
+    expect((await refreshSessionShared(doFetch)).ok).toBe(false)
+    expect((await refreshSessionShared(doFetch)).ok).toBe(true)
+    expect(doFetch).toHaveBeenCalledTimes(2)
   })
 })
