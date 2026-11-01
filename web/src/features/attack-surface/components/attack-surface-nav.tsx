@@ -26,6 +26,9 @@ interface ResolvedView {
  * stays the one written on its tab. A view with no route left is hidden.
  * `counts` are keyed by route; a view shows the sum of its routes' counts.
  */
+// Switches between the routes of one view (navigation), not a list's state or view mode.
+const RouteLens = SegmentedLens // anatomy-ok: route navigation, not a row filter
+
 export function AttackSurfaceNav({
   tabs,
   counts,
@@ -89,8 +92,7 @@ export function AttackSurfaceNav({
       )}
       {current && current.routes.length > 1 && activeRoute && (
         <div data-slot="route-lens" className="max-w-full self-start overflow-x-auto">
-          {/* anatomy-ok: switches between the routes of one view (navigation), not a list's state or view mode */}
-          <SegmentedLens
+          <RouteLens
             label={t('attackSurface.view.lensLabel', '{view} views', { view: current.tab.label })}
             value={activeRoute}
             options={current.routes.map((r) => ({
