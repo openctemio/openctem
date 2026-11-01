@@ -70,6 +70,7 @@ Signer (`openctem-signer serve`):
 | `SIGNER_TENANT_RATE` / `SIGNER_TENANT_BURST` | signing ceiling per organization (token bucket) | 50/s, 500 |
 | `SIGNER_SENSOR_RATE` / `SIGNER_SENSOR_BURST` | signing ceiling per sensor | 20/s, 200 |
 | `SIGNER_LEDGER` | scope ledger mode: `enforce`, `audit` or `off` ([Scope ledger](#scope-ledger)) | the recorded default: `enforce` on a signer that had never signed, `audit` on one upgraded to the ledger |
+| `SIGNER_FEED_ORIGINS` | comma-separated https origins a [feed relay](#feed-relay) statement may name; `none` signs no feed relay | the official release origins |
 | `SIGNER_LEDGER_MIN_APPROVALS` | the operator's floor under every widening's approval count (0, 1 or 2) | 0 |
 | `SIGNER_LEDGER_T2_MIN_APPROVALS` | the operator's floor for a widening that puts an intrusive (t2) entry into the ledger or turns an organization's tier ceilings off (0, 1 or 2; RFC-073 §7) | 0 |
 
@@ -314,6 +315,9 @@ Its own rules; nothing the API sends relaxes them:
   apply in every ledger mode. A `zone` on an organization's statement is
   refused (`internal/signer/zones.go`).
 
+- for a [feed relay](#feed-relay) statement: the rules of that section
+  instead of the shared-job rules, the zone ledger and the scope ledger.
+
 It does not yet check time windows or per-hour distinct-target ceilings
 (see "Not yet").
 
@@ -329,6 +333,30 @@ start. A compromised API can record a zone; the organization's scope ledger
 still bounds every target, and the sensor's local policy and private-target
 switch still bound what a shared sensor reaches. Limits: 256 ranges, 10000
 organizations and 1000 sensors per zone, 10000 zones.
+
+## Feed relay
+
+A platform with no outbound access receives its signed feeds through a
+platform-owned sensor with internet access ([RFC-142](../rfcs/RFC-142-feed-relay.md)).
+The API asks that sensor for named files with a statement of
+`command_type` `feed_relay` (`internal/signer/feedrelay.go`):
+
+- `tenant_id` is the platform tenant id, the nil UUID
+  `00000000-0000-0000-0000-000000000000`. Only a feed relay may carry it,
+  and a feed relay carries nothing else (`platform_tenant`);
+- `sensor_scope` is `instance`: never an organization's sensor;
+- `tool` is `""`; no `templates`, `content`, `zone` or `limits`;
+- `targets` are 1 to 8 feed origins, each a canonical https URL (lower-case
+  scheme and host, no user info, query, fragment or trailing slash), and each
+  in the signer's own allowlist `SIGNER_FEED_ORIGINS` (`feed_relay_origin`).
+  The defaults are the official vulnerability feed and release feed origins;
+  a mirror must be added here and on the sensor (`SENSOR_FEED_RELAY_ORIGINS`),
+  never only in the API.
+
+No scope ledger or zone applies (the statement belongs to no organization).
+The files the sensor relays are verified by the platform against the feed's
+own pinned root, so the signature here bounds only where the sensor may
+download from.
 
 ## Statement
 

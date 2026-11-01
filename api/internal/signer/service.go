@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"mime"
@@ -50,6 +51,10 @@ type Config struct {
 	// LedgerT2MinApprovals is SIGNER_LEDGER_T2_MIN_APPROVALS: the
 	// operator's floor for a widening to an intrusive entry (0..2).
 	LedgerT2MinApprovals int
+	// FeedOrigins is SIGNER_FEED_ORIGINS: the only origins a feed relay
+	// statement may name (canonical spelling, jobsign.NormalizeFeedOrigin).
+	// nil: jobsign.DefaultFeedOrigins; empty: no feed relay is signed.
+	FeedOrigins []string
 	// Now is the clock (tests replace it); nil: time.Now.
 	Now func() time.Time
 }
@@ -75,6 +80,8 @@ type Service struct {
 	logger *slog.Logger
 	now    func() time.Time
 	keyset keySet
+	// feedOrigins is the feed relay origin allowlist.
+	feedOrigins map[string]bool
 }
 
 // New opens the state directory and returns the service.
@@ -118,6 +125,19 @@ func New(cfg Config) (*Service, error) {
 	if s.now == nil {
 		s.now = time.Now
 	}
+	origins := cfg.FeedOrigins
+	if origins == nil {
+		origins = jobsign.DefaultFeedOrigins
+	}
+	s.feedOrigins = make(map[string]bool, len(origins))
+	for _, o := range origins {
+		n := jobsign.NormalizeFeedOrigin(o)
+		if n == "" {
+			_ = s.Close()
+			return nil, fmt.Errorf("signer: feed origin %q is not an https origin without credentials, query or fragment", o)
+		}
+		s.feedOrigins[n] = true
+	}
 	return s, nil
 }
 
@@ -152,12 +172,18 @@ func (s *Service) Sign(raw []byte) ([]byte, *refusal) {
 			ref = refuse(http.StatusTooManyRequests, ReasonSensorRate, "sensor signing ceiling reached")
 		}
 	}
+	relay := st.CommandType == jobsign.CommandTypeFeedRelay
+	// A feed relay belongs to no organization: no scope ledger or zone
+	// applies; its origins are checked against the signer's allowlist.
+	if ref == nil && relay {
+		ref = s.checkFeedOrigins(st)
+	}
 	// The zone a shared job names is checked in every ledger mode.
-	if ref == nil {
+	if ref == nil && !relay {
 		ref = s.ledger.CheckZone(st)
 	}
 	var audit *refusal
-	if ref == nil {
+	if ref == nil && !relay {
 		ref, audit = s.checkLedger(st, now)
 	}
 	// Only well-formed ids reach the signing log and the process log.
