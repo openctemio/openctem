@@ -19,6 +19,8 @@ import { SupportAccessBanner } from '@/features/support-access/components/suppor
 import { ShellBannerSlot } from '@/components/layout/shell-banner-slot'
 import { PendingLinkPrompt } from '@/features/account/components/pending-link-prompt'
 import { pendingLinkCookieName } from '@/features/auth/lib/oauth-cookies'
+import { AccountShell } from '@/features/account/components/account-shell'
+import { env } from '@/lib/env'
 
 type SiteLayoutProps = {
   children?: React.ReactNode
@@ -31,6 +33,14 @@ export default async function SiteLayout({ children }: SiteLayoutProps) {
   const defaultOpen = sidebarState !== 'false'
   // A refused social sign-in left a pending link: ask to confirm it.
   const hasPendingLink = !!cookieStore.get(pendingLinkCookieName())?.value
+  // No organization open (api RFC-141): the proxy lets only /account,
+  // /account/security and /account/preferences through for such a session, and
+  // they render in the slim account shell: no tenant providers, no sidebar.
+  const accountOnly =
+    !!cookieStore.get(env.cookies.accountOnly)?.value && !cookieStore.get(env.cookies.tenant)?.value
+  if (accountOnly) {
+    return <AccountShell>{children}</AccountShell>
+  }
   return (
     <DashboardProviders>
       <SearchProvider>

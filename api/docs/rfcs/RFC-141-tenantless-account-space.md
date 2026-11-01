@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Accepted (2026-11-01). Implemented: the account allow-list for tokens without a tenant, enforced in the auth middleware with a test over every user-plane route; `POST /auth/account-token`; `POST /auth/onboarding/decline`; the `TENANT_REQUIRED` error code. Designed: the web account space (`/welcome`, the account shell for profile, security and preferences) |
+| Status | Accepted (2026-11-01). Implemented: the account allow-list for tokens without a tenant, enforced in the auth middleware with a test over every user-plane route; `POST /auth/account-token`; `POST /auth/onboarding/decline`; the `TENANT_REQUIRED` error code. Web: the account space (`/welcome`, the slim account shell for profile, security and preferences, the proxy redirect, `TENANT_REQUIRED` handling) |
 | Scope | api, web |
 | Related | RFC-024 (user two-factor), RFC-095 (invitations), RFC-104 (sign-up modes and joining), RFC-134 (platform administration) |
 
@@ -36,6 +36,16 @@ nothing else.
   opaque reference bound to the account. Accept (`/auth/onboarding/accept`) and decline
   (`/auth/onboarding/decline`) check the reference, the verified address and that the invitation
   is still pending; both are audited in the inviting organization.
+- **Web.** Sign-in with no organization stores the account-only token and lands on `/welcome`
+  (invitations with accept and decline, account links, "Create an organization" only when the
+  API's policy allows it for the person, sign out). `/account`, `/account/security` and
+  `/account/preferences` render in a slim shell without the organization sidebar; the proxy sends
+  every other page of such a session to `/welcome`, and the API client does the same on
+  `401 TENANT_REQUIRED`. `/not-set-up` stays a refusal with next steps and names no organization.
+- **Creating an organization.** Offered only where `can_create_organization` in the onboarding
+  options is true, which is the sign-up policy (`SIGNUP_MODE` ceiling, console policy, domain
+  rule). The default is `SIGNUP_MODE=disabled`, so on a self-hosted installation the hub says to
+  ask an administrator, and `POST /tenants` with an account-only token answers 403.
 - **Unchanged.** A refused sign-up creates no account. An SSO sign-in that maps to no organization
   creates no session. Step-up, CSRF, rate limits and session lifetimes are the same as for any
   session.
