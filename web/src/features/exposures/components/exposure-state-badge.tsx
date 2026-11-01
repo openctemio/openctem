@@ -14,15 +14,12 @@ import type { StatusTone } from '@/lib/status-colors'
 import type { ExposureState } from '@/lib/api/exposure-types'
 
 /** Exposure state on the shared status tones: active and in progress are open work, resolved is done. */
-const EXPOSURE_STATE: Record<
-  ExposureState,
-  { tone: StatusTone; icon: StatusGlyph; label: string }
-> = {
-  active: { tone: 'open', icon: RingDotGlyph, label: 'Active' },
-  in_progress: { tone: 'progress', icon: HalfCircleGlyph, label: 'In progress' },
-  resolved: { tone: 'resolved', icon: CheckCircleGlyph, label: 'Resolved' },
-  accepted: { tone: 'accepted', icon: ShieldAlert, label: 'Accepted' },
-  false_positive: { tone: 'closed', icon: SlashedCircleGlyph, label: 'False positive' },
+const EXPOSURE_STATE: Record<ExposureState, { tone: StatusTone; icon: StatusGlyph }> = {
+  active: { tone: 'open', icon: RingDotGlyph },
+  in_progress: { tone: 'progress', icon: HalfCircleGlyph },
+  resolved: { tone: 'resolved', icon: CheckCircleGlyph },
+  accepted: { tone: 'accepted', icon: ShieldAlert },
+  false_positive: { tone: 'closed', icon: SlashedCircleGlyph },
 }
 
 /** The one exposure state label (same lozenge as a finding status). */
@@ -34,7 +31,7 @@ export function ExposureStateBadge({ state }: { state: ExposureState }) {
     <StatusLozenge
       tone={cfg.tone}
       icon={cfg.icon}
-      label={t(`exposures.state.${state}`, cfg.label)}
+      label={t(`exposures.state.${state}`)}
       value={state}
     />
   )
