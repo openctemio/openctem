@@ -8,26 +8,30 @@ import { test, expect } from '../fixtures/authenticated-page'
 
 const REVIEW = '/attack-surface/review'
 
-test('the Discovery count and the decisions page agree', { tag: ['@attack-surface'] }, async ({ page }) => {
-  await page.setViewportSize({ width: 1440, height: 900 })
-  await page.goto(REVIEW)
-  const tabs = page.getByRole('navigation', { name: 'Attack surface sections' })
-  await expect(tabs).toBeVisible({ timeout: 30_000 })
-  await page.waitForLoadState('networkidle')
-  const review = tabs.getByRole('link', { name: /^Discovery/ })
-  const label = (await review.innerText()).replace(/\s+/g, ' ').trim()
-  const badge = Number(label.match(/(\d+)$/)?.[1] ?? '0')
-  const nothing = page.getByText('Nothing to decide')
-  if (badge === 0) {
-    await expect(nothing).toBeVisible()
-  } else {
-    await expect(nothing).toHaveCount(0)
-    // Something to decide: a card that offers an action, or a suggested rule.
-    await expect(
-      page.getByTestId(/^decide-card-/).or(page.getByRole('heading', { name: 'Suggested rules' }))
-    ).not.toHaveCount(0)
+test(
+  'the Discovery count and the decisions page agree',
+  { tag: ['@attack-surface'] },
+  async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await page.goto(REVIEW)
+    const tabs = page.getByRole('navigation', { name: 'Attack surface sections' })
+    await expect(tabs).toBeVisible({ timeout: 30_000 })
+    await page.waitForLoadState('networkidle')
+    const review = tabs.getByRole('link', { name: /^Discovery/ })
+    const label = (await review.innerText()).replace(/\s+/g, ' ').trim()
+    const badge = Number(label.match(/(\d+)$/)?.[1] ?? '0')
+    const nothing = page.getByText('Nothing to decide')
+    if (badge === 0) {
+      await expect(nothing).toBeVisible()
+    } else {
+      await expect(nothing).toHaveCount(0)
+      // Something to decide: a card that offers an action, or a suggested rule.
+      await expect(
+        page.getByTestId(/^decide-card-/).or(page.getByRole('heading', { name: 'Suggested rules' }))
+      ).not.toHaveCount(0)
+    }
   }
-})
+)
 
 test('provider addresses show no ports', { tag: ['@attack-surface'] }, async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 })
