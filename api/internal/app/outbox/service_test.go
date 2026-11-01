@@ -120,3 +120,36 @@ func TestBuildMessage_MinimalUnlessChannelOptsIn(t *testing.T) {
 		t.Errorf("opted-in channel lost details: %q / %q", m.Title, m.Body)
 	}
 }
+
+// A delivered link is absolute and names the event's organization, so a
+// member of several organizations lands on it whichever one is selected; an
+// outside address never gets the organization ID (pkg/weblink).
+func TestBuildMessage_LinkIsAbsoluteAndNamesOrg(t *testing.T) {
+	intg := integration.NewIntegrationWithNotification(integration.Reconstruct(shared.NewID(), shared.NewID(), "c", "",
+		integration.CategoryNotification, integration.ProviderSlack, integration.StatusConnected, "", integration.AuthTypeToken,
+		"", "", nil, nil, 60, "", nil, nil, integration.Stats{}, time.Now(), time.Now(), nil), nil)
+	tenant := shared.NewID()
+	mk := func(url string) *outboxdom.Outbox {
+		return outboxdom.Reconstitute(outboxdom.NewID(), tenant, "emerging_threat", "emerging_threat", nil,
+			"t", "b", outboxdom.SeverityCritical, url,
+			nil, outboxdom.OutboxStatusPending, 0, 3, "", time.Time{}, nil, "", time.Time{}, time.Time{}, nil)
+	}
+	s := &Service{}
+	s.SetLinkBase("https://ctem.example.com/")
+	cases := map[string]string{
+		"/emerging-threats/abc":             "https://ctem.example.com/emerging-threats/abc?org=" + tenant.String(),
+		"/emerging-threats?level=immediate": "https://ctem.example.com/emerging-threats?level=immediate&org=" + tenant.String(),
+		"https://elsewhere.example/x":       "https://elsewhere.example/x",
+		"//elsewhere.example/x":             "//elsewhere.example/x",
+		"":                                  "",
+	}
+	for in, want := range cases {
+		if got := s.buildMessage(intg, mk(in), bountyprogram.Delivery{}).URL; got != want {
+			t.Errorf("link %q delivered as %q, want %q", in, got, want)
+		}
+	}
+	// Without a base the link stays relative but still names the organization.
+	if got := (&Service{}).buildMessage(intg, mk("/findings/1"), bountyprogram.Delivery{}).URL; got != "/findings/1?org="+tenant.String() {
+		t.Errorf("no base: %q", got)
+	}
+}

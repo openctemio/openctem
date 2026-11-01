@@ -83,6 +83,7 @@ import type { EntityActivityHandle } from '@/features/activity/components/entity
 import { AIProposalBadge } from './ai-proposal-badge'
 import { toDisplayText } from '@/lib/untrusted-text'
 import { formatAbsoluteTime, formatRelativeTime } from '@/lib/format-metric'
+import { shareableLink } from '@/lib/org-link'
 
 /** The drawer inside a task: position in the task's findings and the task to return to. */
 export interface FindingDrawerTaskNav {
@@ -203,7 +204,7 @@ export function FindingDetailDrawer({
       label: t('findings.drawer.copyLink', 'Copy link'),
       icon: Link2,
       onSelect: () => {
-        void copyToClipboard(`${window.location.origin}/findings/${finding.id}`).then((ok) =>
+        void copyToClipboard(shareableLink(`/findings/${finding.id}`)).then((ok) =>
           ok
             ? toast.success(t('findings.drawer.linkCopied', 'Link copied'))
             : toast.error(t('findings.toast.copyFailed', 'Could not copy to the clipboard'))

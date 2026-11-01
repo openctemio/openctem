@@ -16,6 +16,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/safetext"
+	"github.com/openctemio/openctem/api/pkg/weblink"
 )
 
 // Proposal tools (docs/rfcs/RFC-062-mcp-authorization.md, "Proposal tools").
@@ -156,7 +157,7 @@ func (h *MCPHandler) toolProposeFindingStatus(ctx context.Context, tenantID stri
 		"approval_id":      approval.ID.String(),
 		"finding_id":       a.FindingID,
 		"requested_status": approval.RequestedStatus,
-		"review_url":       h.webBase + ApprovalsPagePath,
+		"review_url":       weblink.Console(h.webBase, ApprovalsPagePath, tenantID),
 		"next": "Nothing has changed on the finding. Another person decides this request in the approval queue; " +
 			"the user you act for cannot approve it.",
 	}, nil
@@ -380,7 +381,7 @@ func (h *MCPHandler) toolDraftPentestFinding(ctx context.Context, tenantID strin
 	return map[string]any{
 		"status":     "drafted",
 		"finding_id": f.ID().String(),
-		"review_url": h.webBase + "/findings/" + f.ID().String(),
+		"review_url": weblink.Console(h.webBase, "/findings/"+f.ID().String(), tenantID),
 		"next":       "Saved as a draft. Another campaign member (a reviewer or the lead) confirms it; the user cannot confirm a draft written by their AI application.",
 	}, nil
 }

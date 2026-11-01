@@ -9,7 +9,8 @@ import (
 )
 
 func TestFindingValues_TitleFallsBackToMessageAndSecretsStayMasked(t *testing.T) {
-	f, err := vulnerability.NewFinding(shared.NewID(), shared.NewID(), vulnerability.FindingSourceSecret, "gitleaks", vulnerability.SeverityHigh, "AWS key in config")
+	tenantID := shared.NewID()
+	f, err := vulnerability.NewFinding(tenantID, shared.NewID(), vulnerability.FindingSourceSecret, "gitleaks", vulnerability.SeverityHigh, "AWS key in config")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -21,7 +22,7 @@ func TestFindingValues_TitleFallsBackToMessageAndSecretsStayMasked(t *testing.T)
 	if d := v["finding.description"].String(); strings.Contains(d, "AKIA") {
 		t.Fatalf("secret finding description leaked: %q", d)
 	}
-	if u := v["finding.url"].String(); u != "https://app.example.test/findings/"+f.ID().String() {
+	if u := v["finding.url"].String(); u != "https://app.example.test/findings/"+f.ID().String()+"?org="+tenantID.String() {
 		t.Fatalf("url: %q", u)
 	}
 }

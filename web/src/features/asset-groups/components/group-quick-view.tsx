@@ -40,6 +40,7 @@ import { Can, Permission, useHasPermission } from '@/lib/permissions'
 import { cn } from '@/lib/utils'
 import { useGroupAssets, useRemoveAssetsFromGroup } from '../hooks'
 import type { AssetGroup } from '../types'
+import { shareableLink } from '@/lib/org-link'
 
 // ============================================
 // ASSETS IN THE GROUP
@@ -208,7 +209,7 @@ export function GroupQuickView({
       label: 'Copy link',
       icon: LinkIcon,
       onSelect: () => {
-        copyToClipboard(`${window.location.origin}/assets/groups/${group.id}`)
+        copyToClipboard(shareableLink(`/assets/groups/${group.id}`))
         toast.success('Link copied to clipboard')
       },
     },

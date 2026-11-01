@@ -150,7 +150,7 @@ func TestMCP_GetAsset(t *testing.T) {
 	if !reflect.DeepEqual(want, data["overview"]) {
 		t.Errorf("overview differs from GET /assets/{id}:\n%v\n%v", data["overview"], want)
 	}
-	if out["console_url"] != "https://console.example.test/assets/"+id {
+	if out["console_url"] != "https://console.example.test/assets/"+id+"?org=018f5a1e-0000-7000-8000-000000000001" {
 		t.Errorf("console_url %v", out["console_url"])
 	}
 	if fc.tenants[0] != "018f5a1e-0000-7000-8000-000000000001" {
