@@ -10,24 +10,29 @@
  *
  * Every figure opens the receipt list with the same source and period,
  * whose totals are the same sums. The layout follows the widget's own width
- * (container queries, `flowBand`): from 660 px the sources and the summary
- * sit side by side in bounded columns, centred, the wires short; below, a
- * stacked list without wires.
+ * (container queries): from INTAKE_SIDE (560 px) the source rows keep a
+ * fixed reading width at the left (each figure stays beside its name), the
+ * summary sits at the right edge and the curves stretch across everything
+ * between; below, a stacked list without curves. Sources are the shared
+ * ranked rows (RankedBars, source-view): by tool or by instance with its
+ * tools under its name, discovery tools by the assets they found, sources
+ * with nothing folded into one line.
  */
 
-import { useRef } from 'react'
+import { useMemo, useRef } from 'react'
 import { FileUp, GitBranch, Plug, Radar } from 'lucide-react'
 import { useTranslation } from '@/context/i18n-provider'
 import { KeyValueList } from '@/features/shared/components/text-layout'
 import { formatCount, formatRelativeTime } from '@/lib/format-metric'
+import { toDisplayText } from '@/lib/untrusted-text'
 import { cn } from '@/lib/utils'
-import { healthNote, originLabel, sourceName } from './exposure-flow-viz'
 import {
+  FRAME_INSET,
   FlowLink,
   FlowTip,
   tCount,
   dimClass,
-  flowBand,
+  focusGlow,
   useElementWidth,
   useFlowFocus,
   useWireAnchors,
@@ -36,6 +41,15 @@ import {
   wireWidth,
   type FlowTipContent,
 } from './flow-parts'
+import { RankedBars } from './ranked-bars'
+import {
+  SourceViewSwitchers,
+  groupByInstance,
+  sourceName,
+  sourceRankRows,
+  sourceViewFor,
+  useSourceView,
+} from './source-view'
 import { StackedBar } from './stacked-bar'
 import { ChartOrTable, usePrefersReducedMotion } from './viz-parts'
 import type { IntakeData, IntakeResult, IntakeSourceRow } from './types'
@@ -46,6 +60,22 @@ const ORIGIN_ICON: Record<string, React.ReactNode> = {
   connector: <Plug className="size-4" aria-hidden />,
   ci: <GitBranch className="size-4" aria-hidden />,
 }
+
+/** Source rows with a value before "Show all". */
+const MAX_ROWS = 6
+
+/**
+ * Panel width (px) from which the sources and the summary sit side by side:
+ * the rows at their reading width (20 rem), at least 2.5 rem of curves and
+ * the summary (13 rem) fit from here, so a full-width card in a 1024 px
+ * window already joins each row to the summary. The container classes below
+ * use the same number.
+ */
+export const INTAKE_SIDE = 560
+
+/** The dashed frame of the sources and the summary once they sit side by side. */
+const INTAKE_FRAME =
+  '@min-[560px]:rounded-lg @min-[560px]:border @min-[560px]:border-dashed @min-[560px]:border-border-strong @min-[560px]:p-1.5'
 
 /** Noise bar segments, in fixed order, with their chart colour. */
 export const NOISE_PARTS = [
@@ -113,26 +143,77 @@ function ConnectorPanel({ data }: { data: IntakeData }) {
   const ref = useRef<HTMLDivElement>(null)
   const reduced = usePrefersReducedMotion()
   const { active, anchor, tipId, bind, containerProps } = useFlowFocus(ref)
-  const band = flowBand(useElementWidth(ref))
-  const layout = useWireAnchors(ref, `${band}:${data.sources.length}`)
-  const max = Math.max(1, ...data.sources.map((s) => s.received))
+  const band = useElementWidth(ref) >= INTAKE_SIDE ? 'side' : 'narrow'
+  const [measure, group, setMeasure, setGroup] = useSourceView()
+  const { m, g, hasAssets, hasInstances } = sourceViewFor(data.sources, measure, group)
+  const instances = useMemo(() => groupByInstance(t, data.sources), [t, data.sources])
+  const rows = useMemo(
+    () =>
+      sourceRankRows(t, locale, { sources: data.sources, instances, m, g }).map((r) => {
+        const s = data.sources.find((x) => `s:${x.id}` === r.key)
+        const kind = s?.origin ?? instances.find((x) => `i:${x.key}` === r.key)?.instance.kind
+        return { ...r, icon: ORIGIN_ICON[kind ?? 'sensor'] ?? ORIGIN_ICON.sensor }
+      }),
+    [t, locale, data.sources, instances, m, g]
+  )
+  const layout = useWireAnchors(ref, `${band}:${m}:${g}:${rows.length}`)
+  const max = Math.max(1, ...rows.map((r) => r.value))
+  const periodLabel = t('dashboardKit.flow.period', '{days} days', { days: data.days })
   const lit = (k: string) => !!active && (k === active || k === 'summary' || k === `w:${active}`)
   const activeSource = data.sources.find((s) => `s:${s.id}` === active)
+  const activeInstance = instances.find((x) => `i:${x.key}` === active)
   const shown: IntakeSourceRow = activeSource ?? data.totals
 
   const tip = ((): FlowTipContent | null => {
+    if (activeInstance) {
+      const gr = activeInstance
+      return {
+        title: toDisplayText(gr.instance.name, 80),
+        rows: [
+          [t('dashboardKit.flow.tip.received', 'Findings received'), n(gr.received)],
+          [t('dashboardKit.flow.tip.assets', 'Assets discovered or updated'), n(gr.assets)],
+          ...gr.tools.map((x): [string, string] => [
+            x.name,
+            n(m === 'assets' ? x.assets : x.received),
+          ]),
+          [
+            t('dashboardKit.flow.tip.lastReceipt', 'Last receipt'),
+            formatRelativeTime(gr.last_at, locale),
+          ],
+        ],
+        definition: t(
+          'dashboardKit.flow.tip.instanceDef',
+          'What this instance sent in the period, over every tool it ran. An organization figure.'
+        ),
+        link: gr.instance.sensor_href
+          ? {
+              label: t('dashboardKit.flow.tip.sensorActivity', 'Per-sensor activity'),
+              href: gr.instance.sensor_href,
+            }
+          : undefined,
+      }
+    }
     if (!activeSource) return null
     const s = activeSource
+    const rowsOut: Array<[string, string]> = [
+      [t('dashboardKit.flow.tip.received', 'Received'), n(s.received)],
+    ]
+    if ((s.assets ?? 0) > 0) {
+      rowsOut.push([
+        t('dashboardKit.flow.tip.assets', 'Assets discovered or updated'),
+        n(s.assets ?? 0),
+      ])
+    }
+    rowsOut.push(
+      [t('dashboardKit.flow.tip.receipts', 'Receipts'), n(s.receipts)],
+      [
+        t('dashboardKit.flow.tip.lastReceipt', 'Last receipt'),
+        formatRelativeTime(s.last_at, locale),
+      ]
+    )
     return {
       title: sourceName(t, s),
-      rows: [
-        [t('dashboardKit.flow.tip.received', 'Received'), n(s.received)],
-        [t('dashboardKit.flow.tip.receipts', 'Receipts'), n(s.receipts)],
-        [
-          t('dashboardKit.flow.tip.lastReceipt', 'Last receipt'),
-          formatRelativeTime(s.last_at, locale),
-        ],
-      ],
+      rows: rowsOut,
       definition: t(
         'dashboardKit.flow.tip.sourceDef',
         'Findings this source reported in the period, from its import and run receipts. An organization figure.'
@@ -153,24 +234,31 @@ function ConnectorPanel({ data }: { data: IntakeData }) {
 
   return (
     <section className="rounded-lg border" aria-labelledby={`${tipId}-sources`}>
-      <header className="flex items-center justify-between gap-3 border-b px-3 py-2">
+      <header className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b px-3 py-2">
         <h3 id={`${tipId}-sources`} className="flex items-center gap-2 text-sm font-semibold">
           {t('dashboardKit.intake.sources', 'Sources')}
           <span className="rounded border px-1.5 text-xs font-normal tabular-nums text-muted-foreground">
             {data.sources.length}
           </span>
         </h3>
+        <SourceViewSwitchers
+          m={m}
+          g={g}
+          hasAssets={hasAssets}
+          hasInstances={hasInstances}
+          setMeasure={setMeasure}
+          setGroup={setGroup}
+        />
       </header>
       <div className="@container">
         <div
           ref={ref}
           className={cn(
             'relative grid gap-4 p-3',
-            // Side by side from 660 px. The source list sits at the left edge, the
-            // summary at the right edge, and the curves take the space between
-            // (justify-between). Both columns grow with the card (cqi), so a wide
-            // card has no empty side gutters; the cap keeps rows readable.
-            '@min-[660px]:grid-cols-[minmax(15rem,clamp(15rem,34cqi,52rem))_minmax(14rem,clamp(14rem,30cqi,44rem))] @min-[660px]:justify-between @min-[660px]:gap-x-[clamp(3rem,8cqi,8rem)]'
+            // Side by side: the source rows at a fixed reading width (each row's
+            // figure stays beside its name whatever the card), the summary at
+            // the right edge, and the curves take every pixel between.
+            '@min-[560px]:grid-cols-[20rem_minmax(2.5rem,1fr)_clamp(13rem,22cqi,18rem)] @min-[560px]:gap-x-0'
           )}
           data-band={band}
           {...containerProps}
@@ -182,30 +270,37 @@ function ConnectorPanel({ data }: { data: IntakeData }) {
               width={layout.width}
               height={layout.height}
             >
-              {data.sources.map((s) => {
-                const from = layout.out[`s:${s.id}`]
+              {rows.map((r) => {
+                const from = layout.out[r.key]
                 const to = layout.in.summary
                 if (!from || !to) return null
-                const k = `w:s:${s.id}`
-                const w = wireStroke(s.health)
-                const path = wirePath(from.x + 8, from.y, to.x, to.y)
+                const k = `w:${r.key}`
+                const w = wireStroke(r.health ?? 'ok')
+                const path = wirePath(from.x + FRAME_INSET, from.y, to.x, to.y)
+                const on = lit(k)
                 return (
-                  <g key={k} className={dimClass(active, lit(k))} data-wire={s.health}>
+                  <g
+                    key={k}
+                    className={dimClass(active, on)}
+                    data-wire={r.health ?? 'ok'}
+                    data-wire-key={k}
+                  >
                     <path
                       d={path}
                       fill="none"
-                      stroke={lit(k) ? 'var(--signal)' : w.stroke}
-                      strokeWidth={wireWidth(s.received, max)}
+                      stroke={on ? 'var(--signal)' : w.stroke}
+                      style={on ? { filter: focusGlow('var(--signal)') } : undefined}
+                      strokeWidth={wireWidth(r.value, max)}
                       strokeDasharray={w.dash}
                       strokeLinecap="round"
                     />
-                    {s.health === 'ok' && !reduced && (
+                    {(r.health ?? 'ok') === 'ok' && !reduced && (
                       <path
                         d={path}
                         fill="none"
                         stroke="var(--card, #fff)"
                         strokeOpacity={0.55}
-                        strokeWidth={Math.max(1, wireWidth(s.received, max) - 0.5)}
+                        strokeWidth={Math.max(1, wireWidth(r.value, max) - 0.5)}
                         strokeDasharray="3 7"
                         className="animate-flow-dash"
                       />
@@ -216,76 +311,41 @@ function ConnectorPanel({ data }: { data: IntakeData }) {
             </svg>
           )}
 
-          <ul className="grid content-start gap-1">
-            {data.sources.map((s) => {
-              const k = `s:${s.id}`
-              const note = healthNote(t, s, locale)
-              const name = sourceName(t, s)
-              return (
-                <li key={s.id}>
-                  <FlowLink
-                    to={s.drill}
-                    className={cn(
-                      'grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-md px-2 py-1.5 hover:bg-muted/60 focus-visible:bg-muted/60',
-                      dimClass(active, lit(k))
-                    )}
-                    {...bind(k)}
-                  >
-                    <span
-                      className={cn(
-                        'grid size-8 place-items-center rounded-md border text-muted-foreground',
-                        s.health === 'stale' && 'border-warning text-warning',
-                        s.health === 'failed' && 'border-destructive text-destructive'
-                      )}
-                      aria-hidden
-                    >
-                      {ORIGIN_ICON[s.origin] ?? ORIGIN_ICON.sensor}
-                    </span>
-                    <span className="min-w-0">
-                      <span className="block truncate text-sm font-semibold">{name}</span>{' '}
-                      <span className="block truncate text-xs text-muted-foreground">
-                        {originLabel(t, s.origin)}{' '}
-                        <span className="ms-1.5">
-                          {tCount(
-                            t,
-                            'dashboardKit.intake.receiptsCount',
-                            '{count} receipts',
-                            '{count} receipt',
-                            s.receipts,
-                            { count: n(s.receipts) }
-                          )}
-                        </span>
-                      </span>
-                      {note && (
-                        <span
-                          className={cn(
-                            'block truncate text-xs',
-                            s.health === 'stale' ? 'text-warning' : 'text-destructive'
-                          )}
-                        >
-                          {note}
-                        </span>
-                      )}
-                    </span>{' '}
-                    <span
-                      className="text-right text-base font-semibold tabular-nums"
-                      data-wire-out={k}
-                    >
-                      {n(s.received)}
-                    </span>
-                  </FlowLink>
-                </li>
-              )
-            })}
-          </ul>
-          {/* The summary: beside the sources from 660 px, below them on a phone. */}
-          <div className="@min-[660px]:self-center">
+          <div
+            className={cn('min-w-0 @min-[560px]:self-start', INTAKE_FRAME)}
+            data-testid="intake-sources"
+          >
+            <RankedBars
+              rows={rows}
+              limit={MAX_ROWS}
+              label={t('dashboardKit.intake.sources', 'Sources')}
+              resetKey={`${m}:${g}`}
+              zeroLabel={(count) =>
+                tCount(
+                  t,
+                  'dashboardKit.flow.zeroSources',
+                  '+{count} sources with nothing in {period}',
+                  '+{count} source with nothing in {period}',
+                  count,
+                  { count, period: periodLabel }
+                )
+              }
+              rowProps={(r) => ({
+                className: dimClass(active, lit(r.key)),
+                'data-wire-out': r.key,
+                ...bind(r.key),
+              })}
+            />
+          </div>
+          {/* The summary: at the right edge side by side, below the sources on a phone. */}
+          <div className="@min-[560px]:col-start-3 @min-[560px]:self-center">
             <div
               className={cn(
-                'relative rounded-lg border bg-muted/40 p-3',
+                'relative rounded-lg border bg-muted/40 p-3 @min-[560px]:border-dashed @min-[560px]:border-border-strong @min-[560px]:bg-transparent',
                 dimClass(active, lit('summary'))
               )}
               data-k="summary"
+              data-testid="intake-summary"
             >
               <span
                 className="absolute -left-px top-1/2 size-px"
@@ -326,6 +386,8 @@ function ConnectorPanel({ data }: { data: IntakeData }) {
                     )}
               </p>
               <KeyValueList
+                // Short figures: label and value side by side at every width.
+                className="grid-cols-[minmax(6rem,max-content)_minmax(0,1fr)] gap-y-1 sm:gap-y-1"
                 items={[
                   {
                     key: 'new',
@@ -514,6 +576,14 @@ export function SourceTable({ data }: { data: IntakeData }) {
       value: (s) => s.closed,
     },
   ]
+  // Discovery tools report assets, not findings: give them their own column.
+  if (data.sources.some((s) => (s.assets ?? 0) > 0)) {
+    cols.push({
+      key: 'assets',
+      label: t('dashboardKit.intake.col.assets', 'Assets'),
+      value: (s) => s.assets ?? 0,
+    })
+  }
   return (
     <div className="overflow-x-auto">
       <table className="w-full min-w-[32rem] text-sm">

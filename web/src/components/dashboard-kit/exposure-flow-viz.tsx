@@ -25,18 +25,18 @@
  * same figures as tables. Research: research/359-exposure-flow-phone.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Radio, Server, ShieldAlert, Wrench } from 'lucide-react'
+import { useMemo, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { useTranslation } from '@/context/i18n-provider'
 import { categoricalVar } from '@/lib/chart-palette'
-import { ViewSwitcher } from '@/features/shared/components/view-switcher'
 import { formatCount, formatMetric, formatRelativeTime } from '@/lib/format-metric'
 import { PRIORITY_CHART_COLORS, isPriorityClass } from '@/lib/priority-colors'
 import { SEVERITY_CHART_COLORS } from '@/lib/severity-colors'
 import { toDisplayText } from '@/lib/untrusted-text'
 import { cn } from '@/lib/utils'
 import {
+  FLOW_FRAME,
+  FRAME_INSET,
   FlowLink,
   FlowTip,
   tCount,
@@ -52,18 +52,21 @@ import {
   type FlowTipContent,
 } from './flow-parts'
 import { FlowRings, RingKey, type Ring } from './flow-rings'
-import { RankedBars, type RankedBarRow } from './ranked-bars'
+import { RankedBars } from './ranked-bars'
+import {
+  SourceViewSwitchers,
+  groupByInstance,
+  healthNote,
+  originLabel,
+  sourceName,
+  sourceRankRows,
+  sourceViewFor,
+  useSourceView,
+} from './source-view'
 import { StackedBar } from './stacked-bar'
 import { ActHere, StageStateIcon, useStageStateText } from './stage-state'
 import { ChartOrTable, usePrefersReducedMotion } from './viz-parts'
-import type {
-  FlowFigure,
-  FlowResult,
-  IntakeInstance,
-  IntakeSourceRow,
-  SourceHealth,
-  Stage,
-} from './types'
+import type { FlowFigure, FlowResult, IntakeInstance, Stage } from './types'
 
 /** Source rows with a value before "Show all": wide and mid cards, a phone. */
 const MAX_SOURCES = 6
@@ -72,143 +75,6 @@ const MAX_SOURCES_PHONE = 5
 /** An intake figure in a line of text: a whole phrase, 44 px tall on a phone or a touch screen. */
 const INTAKE_LINK = 'inline-flex min-h-7 items-center hover:underline pointer-coarse:min-h-11'
 const INTAKE_LINK_PHONE = 'inline-flex min-h-11 items-center hover:underline'
-
-/** Where the viewer's source view (measure, grouping) is remembered. */
-const SOURCE_VIEW_KEY = 'openctem.dashboard.flow.sources'
-
-type Translate = ReturnType<typeof useTranslation>['t']
-type Measure = 'findings' | 'assets'
-type Grouping = 'tool' | 'instance'
-
-/** The words of a source group. */
-export function originLabel(t: Translate, origin: string): string {
-  switch (origin) {
-    case 'sensor':
-      return t('dashboardKit.flow.origin.sensor', 'Sensor')
-    case 'import':
-      return t('dashboardKit.flow.origin.import', 'Import')
-    case 'connector':
-      return t('dashboardKit.flow.origin.connector', 'Connector')
-    case 'ci':
-      return t('dashboardKit.flow.origin.ci', 'CI')
-    case 'platform':
-      return t('dashboardKit.flow.origin.platform', 'Platform')
-    default:
-      return origin
-  }
-}
-
-/** The name of a source: its tool, or "Unnamed tool". */
-export function sourceName(t: Translate, s: IntakeSourceRow): string {
-  return s.tool === 'unknown' || !s.tool
-    ? t('dashboardKit.flow.unnamedTool', 'Unnamed tool')
-    : toDisplayText(s.tool, 80)
-}
-
-/** "Stale, last receipt 3 days ago" / "Failed 2 hours ago", or null when healthy. */
-export function healthNote(
-  t: Translate,
-  s: { health: SourceHealth; last_at: string | null },
-  locale: string
-): string | null {
-  if (s.health === 'ok') return null
-  const when = formatRelativeTime(s.last_at, locale)
-  return s.health === 'failed'
-    ? t('dashboardKit.flow.health.failed', 'Failed {when}', { when })
-    : t('dashboardKit.flow.health.stale', 'Stale, last receipt {when}', { when })
-}
-
-const HEALTH_RANK: Record<SourceHealth, number> = { ok: 0, stale: 1, failed: 2 }
-
-/** The worst of two healths. */
-function worst(a: SourceHealth, b: SourceHealth): SourceHealth {
-  return HEALTH_RANK[b] > HEALTH_RANK[a] ? b : a
-}
-
-/** One instance with what it fed, summed over the tools it reported for. */
-export interface InstanceGroup {
-  key: string
-  instance: IntakeInstance
-  received: number
-  assets: number
-  health: SourceHealth
-  last_at: string | null
-  tools: Array<{ name: string; received: number; assets: number }>
-}
-
-/** The sources regrouped by instance (sensor, CI project, connector, platform). */
-export function groupByInstance(t: Translate, sources: IntakeSourceRow[]): InstanceGroup[] {
-  const out = new Map<string, InstanceGroup>()
-  for (const s of sources) {
-    for (const i of s.instances ?? []) {
-      const key = `${i.kind}:${i.id}`
-      const g = out.get(key) ?? {
-        key,
-        instance: i,
-        received: 0,
-        assets: 0,
-        health: 'ok' as SourceHealth,
-        last_at: null as string | null,
-        tools: [],
-      }
-      g.received += i.received
-      g.assets += i.assets ?? 0
-      g.health = worst(g.health, i.health)
-      if (i.last_at && (!g.last_at || i.last_at > g.last_at)) g.last_at = i.last_at
-      g.tools.push({ name: sourceName(t, s), received: i.received, assets: i.assets ?? 0 })
-      out.set(key, g)
-    }
-  }
-  return [...out.values()]
-}
-
-function readSourceView(): { measure?: Measure; group?: Grouping } {
-  try {
-    const raw = window.localStorage.getItem(SOURCE_VIEW_KEY)
-    if (!raw) return {}
-    const v = JSON.parse(raw) as { measure?: unknown; group?: unknown }
-    return {
-      measure: v.measure === 'assets' || v.measure === 'findings' ? v.measure : undefined,
-      group: v.group === 'instance' || v.group === 'tool' ? v.group : undefined,
-    }
-  } catch {
-    return {}
-  }
-}
-
-function writeSourceView(v: { measure: Measure; group: Grouping }) {
-  try {
-    window.localStorage.setItem(SOURCE_VIEW_KEY, JSON.stringify(v))
-  } catch {
-    // Private mode or blocked storage: the view is not remembered.
-  }
-}
-
-/** The viewer's source view, remembered on this browser. */
-function useSourceView(): [Measure, Grouping, (m: Measure) => void, (g: Grouping) => void] {
-  const [measure, setMeasure] = useState<Measure>('findings')
-  const [group, setGroup] = useState<Grouping>('tool')
-  useEffect(() => {
-    const v = readSourceView()
-    if (v.measure) setMeasure(v.measure)
-    if (v.group) setGroup(v.group)
-  }, [])
-  const pickMeasure = useCallback(
-    (m: Measure) => {
-      setMeasure(m)
-      writeSourceView({ measure: m, group })
-    },
-    [group]
-  )
-  const pickGroup = useCallback(
-    (g: Grouping) => {
-      setGroup(g)
-      writeSourceView({ measure, group: g })
-    },
-    [measure]
-  )
-  return [measure, group, pickMeasure, pickGroup]
-}
 
 function classColor(key: string | undefined): string {
   return isPriorityClass(key) ? PRIORITY_CHART_COLORS[key] : 'var(--muted-foreground)'
@@ -223,15 +89,6 @@ function severityColor(key: string | undefined): string {
 
 /** A figure tile: a muted box that lights on hover (classes, outcomes). */
 const FLOW_TILE = 'rounded-md bg-muted/40 hover:bg-muted focus-visible:bg-muted'
-
-/**
- * The thin dashed frame of the sources and the outcomes from 660 px (the
- * phone stacks them unframed). The wires meet its edge: FRAME_INSET is its
- * padding plus its border, from a row's edge to the frame's.
- */
-const FLOW_FRAME =
-  '@min-[660px]:rounded-lg @min-[660px]:border @min-[660px]:border-dashed @min-[660px]:border-border-strong @min-[660px]:p-1.5'
-const FRAME_INSET = 7
 
 export function ExposureFlowViz({
   result,
@@ -298,10 +155,7 @@ function FlowChart({ result, scope }: { result: FlowResult; scope?: 'organizatio
   // exist before the wires measure them.
   const band = flowBand(useElementWidth(ref))
   const narrow = band === 'narrow'
-  const hasAssets = sources.some((s) => (s.assets ?? 0) > 0)
-  const hasInstances = sources.some((s) => (s.instances?.length ?? 0) > 0)
-  const m: Measure = hasAssets ? measure : 'findings'
-  const g: Grouping = hasInstances ? group : 'tool'
+  const { m, g, hasAssets, hasInstances } = sourceViewFor(sources, measure, group)
   const layout = useWireAnchors(ref, `${band}:${m}:${g}:${sources.length}:${result.open.value}`)
   // A source's colour follows the source (its place in the read), never its rank.
   const sourceColor = useMemo(() => {
@@ -552,49 +406,13 @@ function FlowChart({ result, scope }: { result: FlowResult; scope?: 'organizatio
   const centreValue = activeClass ? activeClass.value : actionableTotal
 
   // ---- Sources: a ranked bar list ----
-  const unit = (count: number) =>
-    m === 'assets'
-      ? tCount(t, 'dashboardKit.flow.unit.assets', '{count} assets', '{count} asset', count, {
-          count: n(count),
-        })
-      : tCount(t, 'dashboardKit.flow.unit.findings', '{count} findings', '{count} finding', count, {
-          count: n(count),
-        })
-  const sourceRows: RankedBarRow[] =
-    g === 'instance'
-      ? instances.map((gr) => {
-          const value = m === 'assets' ? gr.assets : gr.received
-          const name = toDisplayText(gr.instance.name, 80)
-          const chip = originLabel(t, gr.instance.kind)
-          return {
-            key: `i:${gr.key}`,
-            label: name,
-            chip,
-            value,
-            display: n(value),
-            href: gr.instance.sensor_href ?? null,
-            health: gr.health,
-            note: healthNote(t, gr, locale),
-            unit: unit(value),
-          }
-        })
-      : sources.map((s) => {
-          const value = m === 'assets' ? (s.assets ?? 0) : s.received
-          const name = sourceName(t, s)
-          const chip = originLabel(t, s.origin)
-          return {
-            key: `s:${s.id}`,
-            label: name,
-            chip,
-            value,
-            display: n(value),
-            href: s.drill,
-            color: sourceColor.get(s.id),
-            health: s.health,
-            note: healthNote(t, s, locale),
-            unit: unit(value),
-          }
-        })
+  const sourceRows = sourceRankRows(t, locale, {
+    sources,
+    instances,
+    m,
+    g,
+    color: (s) => sourceColor.get(s.id),
+  })
 
   const sourcesBlock = (
     <section
@@ -645,40 +463,16 @@ function FlowChart({ result, scope }: { result: FlowResult; scope?: 'organizatio
           </FlowLink>
         </p>
       )}
-      {intake && (hasAssets || hasInstances) && (
-        <div className="mb-1 flex flex-wrap gap-2">
-          {hasAssets && (
-            <ViewSwitcher
-              value={m}
-              onChange={setMeasure}
-              options={[
-                {
-                  value: 'findings',
-                  label: t('dashboardKit.flow.measure.findings', 'Findings'),
-                  icon: ShieldAlert,
-                },
-                {
-                  value: 'assets',
-                  label: t('dashboardKit.flow.measure.assets', 'Assets'),
-                  icon: Server,
-                },
-              ]}
-            />
-          )}
-          {hasInstances && (
-            <ViewSwitcher
-              value={g}
-              onChange={setGroup}
-              options={[
-                { value: 'tool', label: t('dashboardKit.flow.group.tool', 'Tool'), icon: Wrench },
-                {
-                  value: 'instance',
-                  label: t('dashboardKit.flow.group.instance', 'Source instance'),
-                  icon: Radio,
-                },
-              ]}
-            />
-          )}
+      {intake && (
+        <div className="mb-1">
+          <SourceViewSwitchers
+            m={m}
+            g={g}
+            hasAssets={hasAssets}
+            hasInstances={hasInstances}
+            setMeasure={setMeasure}
+            setGroup={setGroup}
+          />
         </div>
       )}
       {intake && sourceRows.length > 0 ? (
