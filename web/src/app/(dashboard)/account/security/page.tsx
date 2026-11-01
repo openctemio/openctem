@@ -28,17 +28,13 @@ export default function SecurityPage() {
         activeApiKeys={activeApiKeys}
       />
       <TwoFactorCard email={profile?.email} onOtherSessionsSignedOut={() => mutateSessions()} />
-      <div id="sign-in-methods" className="scroll-mt-4">
-        <SignInMethodsCard />
-      </div>
-      <div id="sessions" className="scroll-mt-4">
-        <SessionsCard
-          sessions={sessions}
-          isLoading={isLoading}
-          onChanged={() => mutateSessions()}
-          activeApiKeys={activeApiKeys}
-        />
-      </div>
+      <SignInMethodsCard />
+      <SessionsCard
+        sessions={sessions}
+        isLoading={isLoading}
+        onChanged={() => mutateSessions()}
+        activeApiKeys={activeApiKeys}
+      />
       <DeleteAccountCard email={profile?.email} />
     </PageStack>
   )
