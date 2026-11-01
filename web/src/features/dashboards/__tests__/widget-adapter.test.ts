@@ -382,4 +382,58 @@ describe('exposure flow and intake', () => {
     expect(personal.state).toBe('not_measured')
     expect(personal.reasonKey).toBe('dashboards.reason.organization_only')
   })
+
+  it('maps assets, kind and senders; a sender link is same-origin only', () => {
+    const withSenders = {
+      ...intake,
+      sources: [
+        {
+          ...src('subfinder', '/findings/imports?origin=sensor&tool=subfinder'),
+          received: 0,
+          assets: 50,
+          kind: 'discovery' as const,
+          instances: [
+            {
+              id: 's1',
+              kind: 'sensor' as const,
+              name: 'edge',
+              received: 0,
+              assets: 50,
+              health: 'failed' as const,
+              last_at: '2026-10-25T10:00:00Z',
+              sensor_href: '/sensors/s1',
+            },
+            {
+              id: 's2',
+              kind: 'sensor' as const,
+              name: '',
+              received: 0,
+              assets: 0,
+              health: 'weird' as 'ok',
+              last_at: '0001-01-01T00:00:00Z',
+              sensor_href: 'https://evil.example/x',
+            },
+          ],
+        },
+        src('nuclei', '/findings/imports?origin=sensor&tool=nuclei'),
+      ],
+      totals: { ...intake.totals, assets: 50 },
+    }
+    const m = widgetModel(
+      { ...base, shape: 'intake', metric: 'ingest.intake', intake: withSenders },
+      spec('ingest.intake'),
+      false
+    )
+    if (m.result?.shape !== 'intake') throw new Error('not intake')
+    const [sub, nuc] = m.result.intake.sources
+    expect(sub.assets).toBe(50)
+    expect(sub.kind).toBe('discovery')
+    expect(sub.instances?.map((i) => [i.id, i.health, i.last_at, i.sensor_href])).toEqual([
+      ['s1', 'failed', '2026-10-25T10:00:00Z', '/sensors/s1'],
+      ['s2', 'ok', null, undefined],
+    ])
+    expect(nuc.assets).toBe(0)
+    expect(nuc.instances).toBeUndefined()
+    expect(m.result.intake.totals.assets).toBe(50)
+  })
 })

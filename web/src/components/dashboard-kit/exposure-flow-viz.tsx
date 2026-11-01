@@ -680,6 +680,9 @@ function FlowChart({ result, scope }: { result: FlowResult; scope?: 'organizatio
           limit={narrow ? MAX_SOURCES_PHONE : MAX_SOURCES}
           label={t('dashboardKit.flow.sources', 'Sources')}
           resetKey={`${m}:${g}`}
+          // Every source is listed by default, a silent one included: a
+          // tool that reported nothing is itself worth seeing.
+          zerosOpen
           listClassName="@min-[660px]:grid-cols-2 @min-[660px]:gap-x-4 @min-[960px]:grid-cols-1"
           zeroLabel={(count) =>
             tCount(
