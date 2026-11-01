@@ -640,6 +640,7 @@ func (h *AssetHandler) handleServiceError(w http.ResponseWriter, err error) {
 // @Param        max_risk_score  query   int     false  "Maximum risk score (0-100)"
 // @Param        has_findings  query     bool    false  "Filter by whether asset has findings"
 // @Param        coverage      query     string  false  "covered: a run of any capability succeeded in the last 30 days; uncovered: tracked by the coverage ledger without one"  Enums(covered, uncovered)
+// @Param        coverage_cause query    string  false  "uncovered assets whose coverage gap has this cause (implies coverage=uncovered)"  Enums(no_sensor, platform_failure, paused, target_unreachable, never_run, overdue, out_of_scope, other)
 // @Param        freshness     query     string  false  "stale: an attribute class is past its freshness TTL; never: a passive class that applies was never observed"
 // @Param        resolution    query     string  false  "not_resolving: the platform knows the host name does not resolve in DNS; resolving: it does"
 // @Param        technology    query     string  false  "Assets using any of these technologies (comma-separated names, case-insensitive, at most 20)"
@@ -740,6 +741,7 @@ func (h *AssetHandler) List(w http.ResponseWriter, r *http.Request) {
 		Freshness:            query.Get("freshness"),
 		Resolution:           query.Get("resolution"),
 		Coverage:             query.Get("coverage"),
+		CoverageCause:        query.Get("coverage_cause"),
 		Technologies:         assettech.ParseFilterValues(query.Get("technology")),
 		TechnologyCategories: technologyCategoryStrings(query.Get("technology_category")),
 		TechnologyVersion:    technologyVersionParam(query),

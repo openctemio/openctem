@@ -34,6 +34,9 @@ type ctemFacts struct {
 	certs        dashboard.CertificateExpiryCounts
 	accepted     dashboard.AcceptanceExpiryCounts
 	breakdownNow time.Time
+	// The coverage causes, and a scope with no finding at all.
+	causes     []dashboard.CauseRow
+	noFindings bool
 	// The quality breakdowns.
 	closure      dashboard.ClosureQualityCounts
 	campaigns    []dashboard.CampaignProgressRow
@@ -95,6 +98,16 @@ func (f *ctemFacts) CrownJewels(_ context.Context, s dashboard.ReadScope, pr []s
 func (f *ctemFacts) Discovery(_ context.Context, s dashboard.ReadScope, _ time.Time) (dashboard.DiscoveryCounts, error) {
 	f.scopes = append(f.scopes, s)
 	return f.disc, nil
+}
+
+func (f *ctemFacts) UncoveredCauses(_ context.Context, s dashboard.ReadScope, _ time.Time) ([]dashboard.CauseRow, error) {
+	f.scopes = append(f.scopes, s)
+	return f.causes, nil
+}
+
+func (f *ctemFacts) HasFindings(_ context.Context, s dashboard.ReadScope) (bool, error) {
+	f.scopes = append(f.scopes, s)
+	return !f.noFindings, nil
 }
 
 func (f *ctemFacts) Validation(_ context.Context, s dashboard.ReadScope, _ time.Time) (dashboard.ValidationCounts, error) {
@@ -383,13 +396,15 @@ func TestDiscoveryCoverage_ShareOfTrackedAssetsInTheReadScope(t *testing.T) {
 	if v.Drill != drillUncovered {
 		t.Errorf("drill %s", v.Drill)
 	}
-	// Read in exactly the scope the server built, never wider.
-	if len(facts.scopes) != 1 {
+	// Read in exactly the scope the server built, never wider (the share
+	// and its causes).
+	if len(facts.scopes) != 2 {
 		t.Fatalf("reads %d", len(facts.scopes))
 	}
-	got := facts.scopes[0]
-	if got.TenantID != scope.TenantID || got.Assets != scope.Assets {
-		t.Fatalf("coverage read another scope: %+v", got)
+	for _, got := range facts.scopes {
+		if got.TenantID != scope.TenantID || got.Assets != scope.Assets {
+			t.Fatalf("coverage read another scope: %+v", got)
+		}
 	}
 }
 
