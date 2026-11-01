@@ -9,6 +9,7 @@ import {
   DropdownMenuLabel,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { useTranslation } from '@/context/i18n-provider'
 import type { ScanWorkflowStep } from '@/lib/api'
 import { canRunAfter } from '../lib/step-deps'
 
@@ -29,10 +30,12 @@ export function StepRunsAfter({
   onChange: (keys: string[]) => void
   disabled?: boolean
 }) {
+  const { t } = useTranslation()
   const current = step.depends_on ?? []
   const others = steps.filter((s) => s.id !== step.id)
   const nameOf = (key: string) => steps.find((s) => s.step_key === key)?.name || key
-  const summary = current.length === 0 ? 'Start of the workflow' : current.map(nameOf).join(', ')
+  const summary =
+    current.length === 0 ? t('scans.workflowForm.runsAfter.start') : current.map(nameOf).join(', ')
 
   return (
     <DropdownMenu>
@@ -42,7 +45,9 @@ export function StepRunsAfter({
           variant="outline"
           size="sm"
           className="h-9 w-full justify-between font-normal"
-          aria-label={`What ${step.name || step.step_key} runs after`}
+          aria-label={t('scans.workflowForm.runsAfter.aria', undefined, {
+            name: step.name || step.step_key,
+          })}
         >
           <span className="truncate">{summary}</span>
           <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-60" />
@@ -50,7 +55,7 @@ export function StepRunsAfter({
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-64">
         <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
-          Runs after these steps finish
+          {t('scans.workflowForm.runsAfter.label')}
         </DropdownMenuLabel>
         {others.map((o) => {
           const checked = current.includes(o.step_key)
@@ -60,7 +65,13 @@ export function StepRunsAfter({
               key={o.id}
               checked={checked}
               disabled={!allowed}
-              title={allowed ? undefined : `${o.name || o.step_key} already runs after this step`}
+              title={
+                allowed
+                  ? undefined
+                  : t('scans.workflowForm.runsAfter.loopTitle', undefined, {
+                      name: o.name || o.step_key,
+                    })
+              }
               onSelect={(e) => e.preventDefault()}
               onCheckedChange={(on) =>
                 onChange(on ? [...current, o.step_key] : current.filter((k) => k !== o.step_key))
@@ -68,7 +79,9 @@ export function StepRunsAfter({
             >
               <span className="truncate">{o.name || o.step_key}</span>
               {!allowed && (
-                <span className="ms-auto ps-2 text-[10px] text-muted-foreground">loop</span>
+                <span className="ms-auto ps-2 text-[10px] text-muted-foreground">
+                  {t('scans.workflowForm.runsAfter.loop')}
+                </span>
               )}
             </DropdownMenuCheckboxItem>
           )
