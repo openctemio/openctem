@@ -34,15 +34,17 @@ var sqlProfiles = map[string]SQLProfile{
 	"DashboardFactsController":           SQLLong, // dirty-queue processing
 	"DashboardFactReconcileController":   SQLLong, // full run steps, partition upkeep
 
-	"VulnFeedImportController":            SQLLong, // CVE corpus chunks and bundle finish
-	"VulnMatchController":                 SQLLong, // software match invalidation and version matching
-	"AuditRetentionController":            SQLLong, // chain prefix prune
-	"EvidenceRetentionController":         SQLLong, // evidence secret and evidence deletes
-	"CIRetentionController":               SQLLong, // run token clearing
-	"AttachmentRetentionController":       SQLLong, // orphan marking over all attachments
-	"WebEvidenceRetentionController":      SQLLong, // capture deletes
-	"IngestWorkerController":              SQLLong, // asset and finding batch upserts, payload clearing
-	"EventRetentionController":            SQLLong, // vuln event and sensor result prunes
+	"VulnFeedImportController":            SQLLong,  // CVE corpus chunks and bundle finish
+	"FeedRelayController":                 SQLLong,  // the relay's import runs the CVE corpus import
+	"offlineGate":                         SQLLight, // a wrapper: the wrapped controller's profile applies
+	"VulnMatchController":                 SQLLong,  // software match invalidation and version matching
+	"AuditRetentionController":            SQLLong,  // chain prefix prune
+	"EvidenceRetentionController":         SQLLong,  // evidence secret and evidence deletes
+	"CIRetentionController":               SQLLong,  // run token clearing
+	"AttachmentRetentionController":       SQLLong,  // orphan marking over all attachments
+	"WebEvidenceRetentionController":      SQLLong,  // capture deletes
+	"IngestWorkerController":              SQLLong,  // asset and finding batch upserts, payload clearing
+	"EventRetentionController":            SQLLong,  // vuln event and sensor result prunes
 	"AssetTechnologyBackfillController":   SQLBatched,
 	"DashboardSnapshotsController":        SQLBatched, // per-tenant widget reads over the fact tables, 5 s context timeout each
 	"AssetIdentityBackfillController":     SQLBatched,

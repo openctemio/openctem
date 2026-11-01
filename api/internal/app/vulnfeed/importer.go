@@ -89,7 +89,12 @@ type Importer struct {
 	transfer           Transfer
 	fetchMu            sync.Mutex
 	fetcher            *transfer.Fetcher
+	dirFetchers        map[string]*transfer.Fetcher
 	consumerRegistered bool
+
+	// relayDir returns the relay spool when the platform receives its feeds
+	// through a relay sensor ("": not in relay mode); nil: never.
+	relayDir func(ctx context.Context) string
 
 	// aliases applies the release's alias dictionary (nil: not applied).
 	aliases software.AliasWriter
@@ -159,6 +164,20 @@ func toUint(v any) uint64 {
 	return 0
 }
 
+// WithRelay makes the importer read the relay spool that spool returns
+// (non-empty only while the platform is in relay mode) as its only origin.
+func (im *Importer) WithRelay(spool func(ctx context.Context) string) *Importer {
+	im.relayDir = spool
+	return im
+}
+
+func (im *Importer) relaySpool(ctx context.Context) string {
+	if im.relayDir == nil || im.cfg.BundleDir != "" {
+		return ""
+	}
+	return im.relayDir(ctx)
+}
+
 // Configured reports whether the importer has a pinned root key (without
 // one it does nothing).
 func (im *Importer) Configured() bool { return im.cfg.RootKeyID != "" }
@@ -185,8 +204,18 @@ func (im *Importer) Run(ctx context.Context) (Result, error) {
 	}
 	defer im.release(ctx)
 	cur := readState(st.Metadata())
-	if im.useV2(ctx) {
-		return im.runV2(ctx, cur)
+	dir := im.cfg.BundleDir
+	if relay := im.relaySpool(ctx); relay != "" {
+		// Relay mode: the spool is the only origin, never the network, and
+		// never the whole-bundle (v1) reader. Until the relay delivered a
+		// pointer there is nothing to import.
+		if !im.useV2(ctx, relay) {
+			return res, nil
+		}
+		return im.runV2(ctx, cur, relay)
+	}
+	if im.useV2(ctx, dir) {
+		return im.runV2(ctx, cur, dir)
 	}
 	if im.chunks != nil {
 		// A v2 bundle may have applied a newer sequence than the status row

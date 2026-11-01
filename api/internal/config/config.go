@@ -1232,7 +1232,11 @@ type SensorConfig struct {
 	VulnFeedRootKeyID string
 	VulnFeedBaseURL   string
 	VulnFeedBundleDir string
-	VulnFeedMirrors   []string
+	// FeedRelayDir is the spool the feed relay writes relayed feed files to
+	// (FEED_RELAY_DIR; default <FEED_CACHE_DIR>/relay). Every API replica
+	// must see the same directory (RFC-142).
+	FeedRelayDir    string
+	VulnFeedMirrors []string
 
 	// VersionCheckEnabled turns on the daily version check: one anonymous
 	// download of the signed release feed, compared with the running version
@@ -1815,6 +1819,7 @@ func Load() (*Config, error) {
 			VulnFeedBaseURL:                   getEnv("VULNFEED_BASE_URL", "https://github.com/openctemio/vulnfeed-bundles/releases"),
 			VulnFeedBundleDir:                 getEnv("VULNFEED_BUNDLE_DIR", ""),
 			VulnFeedMirrors:                   feedURLs("", getEnv("VULNFEED_MIRRORS", "")),
+			FeedRelayDir:                      getEnv("FEED_RELAY_DIR", ""),
 			VersionCheckEnabled:               getEnvBool("VERSION_CHECK_ENABLED", true),
 			VersionCheckURL:                   getEnv("VERSION_CHECK_URL", "https://github.com/openctemio/openctem/releases/latest/download/openctem-releases.json"),
 			CertMonitorEnabled:                getEnvBool("CERT_MONITOR_ENABLED", true),
