@@ -252,6 +252,14 @@ func TestDashboardFlowWidgets_PersonalScope_DB(t *testing.T) {
 				t.Fatal(err)
 			}
 			flow := byID(t, out, "w_flow")
+			if tc.user == h.memberFree {
+				// Nothing in scope and no organization intake: not measured,
+				// never a diagram of zeros.
+				if flow.State != widgets.StateNotMeasured || flow.Reason != widgets.ReasonNoFindings || flow.Flow != nil {
+					t.Fatalf("empty flow = %+v", flow)
+				}
+				return
+			}
 			if flow.State != widgets.StateReady || flow.Flow == nil {
 				t.Fatalf("flow = %+v", flow)
 			}
