@@ -78,7 +78,7 @@ func TestPairing_ReviewNamesAndBindsTheOrganization_DB(t *testing.T) {
 	for _, named := range []string{a.TenantID.String(), "", "not-an-id"} {
 		in := approve(b, s.resp.UserCode)
 		in.OrganizationID = named
-		if _, err := f.svc.Approve(ctx, b, id, in); !errors.Is(err, sensorpairing.ErrOrganizationMismatch) {
+		if _, err := f.approveP(ctx, b, id, in); !errors.Is(err, sensorpairing.ErrOrganizationMismatch) {
 			t.Fatalf("approval naming %q in org-b: %v", named, err)
 		}
 	}
@@ -90,7 +90,7 @@ func TestPairing_ReviewNamesAndBindsTheOrganization_DB(t *testing.T) {
 		t.Fatalf("a refused approval changed the request: %+v", st)
 	}
 	// Named and session organization agree: the sensor joins org-a.
-	if _, err := f.svc.Approve(ctx, a, id, approve(a, s.resp.UserCode)); err != nil {
+	if _, err := f.approveP(ctx, a, id, approve(a, s.resp.UserCode)); err != nil {
 		t.Fatalf("approve: %v", err)
 	}
 	if st := f.status(s); st.Identity == nil || st.Identity.TenantID != a.TenantID.String() {
