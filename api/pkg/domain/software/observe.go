@@ -47,6 +47,9 @@ type Observation struct {
 	Evidence  string
 	// ToolConfidence is the producer's own confidence (0-100), 0 = not given.
 	ToolConfidence int
+	// Class is how the producer knows the version; "" lets ClassOf derive
+	// it from the source.
+	Class EvidenceClass
 }
 
 // Identity is how the catalog looks a product up: by CPE (part, vendor,
