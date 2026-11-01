@@ -42,6 +42,10 @@ const (
 	// organization's root domains, found by passive checks (RFC-083).
 	EventTypeLookalikeDomain EventType = "lookalike_domain"
 
+	// EventTypeThirdPartyScriptAdded: a watched page started loading a
+	// script from a third-party host it did not load before (possible
+	// injection or skimming; web page monitoring).
+	EventTypeThirdPartyScriptAdded EventType = "third_party_script_added"
 	// EventTypeWebInterfaceExposed: an administration or login interface
 	// reachable from the internet (docs/architecture/exposure-taxonomy.md).
 	EventTypeWebInterfaceExposed EventType = "web_interface_exposed"
@@ -96,6 +100,7 @@ func AllEventTypes() []EventType {
 		EventTypeEmailSecurityWeak,
 		EventTypeSubdomainTakeover,
 		EventTypeLookalikeDomain,
+		EventTypeThirdPartyScriptAdded,
 		EventTypeWebInterfaceExposed,
 		EventTypeMCPServerExposed,
 		EventTypeMailServerBlocklisted,
@@ -133,7 +138,7 @@ func (t EventType) IsPositiveExposure() bool {
 		EventTypeIdentityMFAGap, EventTypeIdentityStalePrincipal,
 		EventTypeIdentityOverprivileged,
 		EventTypeDanglingCNAME, EventTypeDanglingNS, EventTypeEmailSecurityWeak,
-		EventTypeSubdomainTakeover, EventTypeLookalikeDomain,
+		EventTypeSubdomainTakeover, EventTypeLookalikeDomain, EventTypeThirdPartyScriptAdded,
 		EventTypeWebInterfaceExposed, EventTypeMCPServerExposed, EventTypeMailServerBlocklisted:
 		return true
 	default:

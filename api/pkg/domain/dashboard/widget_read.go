@@ -108,6 +108,15 @@ type FactReader interface {
 	// scope: assets the ledger tracks, and those with a successful run of
 	// any capability since the given time.
 	Discovery(ctx context.Context, scope ReadScope, since time.Time) (DiscoveryCounts, error)
+	// UncoveredCauses counts the uncovered assets in scope (tracked, not
+	// covered since the given time) by why they are uncovered, one cause per
+	// asset (no_sensor, platform_failure, paused, target_unreachable,
+	// never_run, overdue, out_of_scope, other).
+	UncoveredCauses(ctx context.Context, scope ReadScope, since time.Time) ([]CauseRow, error)
+	// HasFindings reports whether any published finding, in any status, is
+	// in the scope: until one is, a findings figure has nothing to count and
+	// is not measured (never a "0" or a met target).
+	HasFindings(ctx context.Context, scope ReadScope) (bool, error)
 	// Validation counts open findings in scope with validation evidence,
 	// and the retests completed since the given time.
 	Validation(ctx context.Context, scope ReadScope, since time.Time) (ValidationCounts, error)
@@ -309,6 +318,44 @@ type CrownJewelCounts struct {
 type DiscoveryCounts struct {
 	Tracked int64
 	Covered int64
+}
+
+// Coverage gap causes: why an uncovered asset is uncovered
+// (docs/architecture/dashboards.md, "Discovery coverage by cause").
+const (
+	CoverageCauseNoSensor          = "no_sensor"
+	CoverageCausePlatformFailure   = "platform_failure"
+	CoverageCausePaused            = "paused"
+	CoverageCauseTargetUnreachable = "target_unreachable"
+	CoverageCauseNeverRun          = "never_run"
+	CoverageCauseOverdue           = "overdue"
+	CoverageCauseOutOfScope        = "out_of_scope"
+	CoverageCauseOther             = "other"
+)
+
+// CoverageCauses lists the causes in precedence order (one cause per asset,
+// the first that applies): what the platform must fix, a paused pair, what
+// the organization owns, never run, overdue, refused by scope, other.
+func CoverageCauses() []string {
+	return []string{CoverageCauseNoSensor, CoverageCausePlatformFailure, CoverageCausePaused,
+		CoverageCauseTargetUnreachable, CoverageCauseNeverRun, CoverageCauseOverdue,
+		CoverageCauseOutOfScope, CoverageCauseOther}
+}
+
+// IsCoverageCause reports a known cause key.
+func IsCoverageCause(c string) bool {
+	for _, k := range CoverageCauses() {
+		if k == c {
+			return true
+		}
+	}
+	return false
+}
+
+// CauseRow is the uncovered assets of one coverage gap cause.
+type CauseRow struct {
+	Cause string
+	Count int64
 }
 
 // ValidationCounts are the validation figures of a scope.

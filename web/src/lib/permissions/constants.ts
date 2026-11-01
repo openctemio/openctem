@@ -358,6 +358,8 @@ export const Permission = {
   // ===========================================
   AITriageRead: 'ai_triage:read',
   AITriageTrigger: 'ai_triage:trigger',
+  AIKnowledgeRead: 'ai_knowledge:read',
+  AIKnowledgeManage: 'ai_knowledge:manage',
 
   // ===========================================
   // CTEM MODULE (RFC-004 + RFC-005)
@@ -819,6 +821,8 @@ export const PermissionLabels: Partial<Record<PermissionString, string>> = {
   // AI Triage
   [Permission.AITriageRead]: 'View AI Triage',
   [Permission.AITriageTrigger]: 'Trigger AI Triage',
+  [Permission.AIKnowledgeRead]: 'View AI Knowledge',
+  [Permission.AIKnowledgeManage]: 'Manage AI Knowledge',
 
   // Note: Legacy aliases (MembersManage, etc.) map to
   // the same permission IDs as their canonical counterparts, so their
@@ -1021,6 +1025,8 @@ export const RolePermissions: Record<RoleString, PermissionString[]> = {
     // AI Triage
     Permission.AITriageRead,
     Permission.AITriageTrigger,
+    Permission.AIKnowledgeRead,
+    Permission.AIKnowledgeManage,
   ],
 
   [Role.Admin]: [
@@ -1194,6 +1200,8 @@ export const RolePermissions: Record<RoleString, PermissionString[]> = {
     // AI Triage
     Permission.AITriageRead,
     Permission.AITriageTrigger,
+    Permission.AIKnowledgeRead,
+    Permission.AIKnowledgeManage,
   ],
 
   [Role.Member]: [

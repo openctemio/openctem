@@ -56,6 +56,7 @@ import {
   Key,
   KeyRound,
   ListChecks,
+  ScanSearch,
   ArrowLeftRight,
   Lock,
   LockKeyhole,
@@ -860,6 +861,18 @@ export const settingsNav: SettingsNavGroup[] = [
           'labels',
           'discovery',
         ],
+      },
+      {
+        // Organization detection rules (api docs/architecture/rule-packs.md):
+        // read with scans:content:read; changes need scans:content:write.
+        id: 'detectionRules',
+        section: 'content',
+        title: 'Detection rules',
+        description: 'Rules that name technologies and find exposed secrets in scan results.',
+        url: '/settings/scanning/detection-rules',
+        icon: ScanSearch,
+        permission: Permission.ContentPacksRead,
+        keywords: ['fingerprint', 'technology', 'secret', 'token', 'regex', 'rule', 'sensitive'],
       },
     ],
   },

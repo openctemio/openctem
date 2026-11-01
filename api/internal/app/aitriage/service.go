@@ -1314,6 +1314,10 @@ func (s *AITriageService) getConfidence(fpLikelihood float64) string {
 	}
 }
 
+// AutoTriageDefaults is autoTriageDefaults for the settings service, which
+// shows the policy in force to administrators.
+func (s *AITriageService) AutoTriageDefaults() tenant.AISettings { return s.autoTriageDefaults() }
+
 // autoTriageDefaults seeds the platform-level auto-triage defaults
 // (AI_AUTO_TRIAGE_DEFAULT_ENABLED / AI_AUTO_TRIAGE_DEFAULT_SEVERITIES /
 // AI_AUTO_TRIAGE_DELAY). They apply only where a tenant has expressed no
