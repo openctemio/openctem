@@ -13,7 +13,7 @@ func metricPermission(m dashboard.Metric) permission.Permission {
 	switch {
 	case m.Kind == dashboard.MetricKindAssetCount, m.Kind == dashboard.MetricKindPaths, m.ID == metricDiscoveryCoverage:
 		return permission.AssetsRead
-	case assetBreakdowns[m.ID]:
+	case assetBreakdowns[m.ID], m.Kind == dashboard.MetricKindPosture:
 		return permission.AssetsRead
 	case m.ID == "remediation.campaign_progress":
 		return permission.RemediationRead

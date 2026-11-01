@@ -25,6 +25,14 @@ export { PathsViz } from './paths-viz'
 export { ExposureFlowViz } from './exposure-flow-viz'
 export { IntakeViz, SourceTable } from './intake-viz'
 export { BriefViz, KpiStripViz, LeversViz, useLeverSentence } from './story-viz'
+export {
+  PostureViz,
+  PostureGrade,
+  PostureHeadline,
+  PostureCategoryList,
+  formatDeduction,
+  type PostureGradeProps,
+} from './posture-viz'
 export { CategoryTable, TimeSeriesTable, MatrixTable, StagesTable, PathsTable } from './table-viz'
 export {
   ChartOrTable,

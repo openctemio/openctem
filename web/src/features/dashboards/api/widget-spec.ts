@@ -33,6 +33,7 @@ export type ResultShape =
   | 'levers'
   | 'brief'
   | 'kpis'
+  | 'posture'
 export type VizType =
   | 'stat'
   | 'progress'
@@ -53,6 +54,7 @@ export type VizType =
   | 'levers'
   | 'brief'
   | 'kpi'
+  | 'posture'
 export type Dimension =
   | 'severity'
   | 'priority_class'

@@ -240,6 +240,7 @@ var assetMergeLeftAlone = map[string]string{
 	"asset_technology_backfill_removed.asset_id": "audit record of a link the technology backfill deleted; it describes the asset as it was and is not part of the asset's live data",
 	"asset_resolution.asset_id":                  "a merged name's resolution state goes with it; the kept name keeps its own and the next resolution checks it again",
 	"asset_wildcard_dns.asset_id":                "a merged name's wildcard-only mark goes with it; the kept name keeps its own and the next filtered resolution marks it again",
+	"easm_posture_assets.asset_id":               "derived posture facts: rebuilt on the next posture refresh, and reads skip assets that no longer exist",
 }
 
 // mergeAssetReferences moves everything that references mergeIDs onto keepID.

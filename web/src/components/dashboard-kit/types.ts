@@ -351,6 +351,31 @@ export interface KpisResult {
   as_of?: string
 }
 
+/** One category of the attack surface posture. */
+export interface PostureCategoryRow {
+  category: string
+  max: number
+  deduction: number
+  issues: number
+  /** The score once every issue of the category is fixed (Posture page only). */
+  score_if_fixed?: number | null
+  grade_if_fixed?: string
+}
+
+/** The attack surface posture: grade, score, next grade and category deductions. */
+export interface PostureResult {
+  shape: 'posture'
+  score: number
+  grade: string
+  assets: number
+  next_grade?: string
+  next_floor?: number
+  /** Fix-plan items that reach the next grade (0 when the plan does not reach it). */
+  fix_steps: number
+  categories: PostureCategoryRow[]
+  as_of?: string
+}
+
 export type WidgetResult =
   | ScalarResult
   | RatioResult
@@ -366,6 +391,7 @@ export type WidgetResult =
   | LeversResult
   | BriefResult
   | KpisResult
+  | PostureResult
 
 export type ResultShape = WidgetResult['shape']
 
