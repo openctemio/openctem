@@ -75,6 +75,8 @@ func TestAITriage_BugBounty_PersonRequestNoFollowUps(t *testing.T) {
 	disp, prop := &countingDispatcher{}, &countingProposer{}
 	h.svc.SetWorkflowDispatcher(disp)
 	h.svc.SetFalsePositiveProposer(prop)
+	// Auto-apply, so a scanner verdict would file a request on its own.
+	h.svc.SetUseCases(fakeUseCases{set: autoApply()})
 	user := shared.NewID().String()
 	tid := h.tenantID.String()
 
@@ -97,4 +99,5 @@ func TestAITriage_BugBounty_PersonRequestNoFollowUps(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, h.svc.ProcessTriage(ctx, shared.MustIDFromString(resp.JobID), h.tenantID, scanner.ID()))
 	require.Equal(t, 1, disp.completed, "a scanner verdict still reaches workflows")
+	require.Equal(t, 1, prop.n, "a scanner verdict files a false-positive request in auto-apply")
 }

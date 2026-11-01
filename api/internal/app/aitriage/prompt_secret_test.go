@@ -6,6 +6,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/openctemio/openctem/api/internal/app/aipolicy"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 )
@@ -23,7 +24,7 @@ func TestTriagePrompt_NoSnippetForASecretFinding(t *testing.T) {
 		f.SetLocation("config/app.py", 12, 12, 0, 0)
 		f.SetSnippet(line)
 		f.SetContextSnippet("before()\n" + line + "\nafter()")
-		p, _ := s.buildTriagePromptSafe(f)
+		p, _, _ := s.buildTriagePromptSafe(f, aipolicy.ClassRestricted)
 		return p
 	}
 	for name, p := range map[string]string{
@@ -46,7 +47,7 @@ func TestTriagePrompt_RedactsSecretFindingDescription(t *testing.T) {
 	require.NoError(t, err)
 	f.SetFindingType(vulnerability.FindingTypeSecret)
 	f.SetDescription("Found token " + tok + " in config")
-	p, _ := s.buildTriagePromptSafe(f)
+	p, _, _ := s.buildTriagePromptSafe(f, aipolicy.ClassRestricted)
 	require.NotContains(t, p, "ghp_")
 	require.Contains(t, p, "Found token")
 }

@@ -17,3 +17,4 @@
     - "/api/v1/ai"
   jobs:
     - AIAgentSweepController
+    - AIUseCaseDowngradeController
