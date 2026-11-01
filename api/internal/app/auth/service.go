@@ -1219,27 +1219,25 @@ func (s *AuthService) IdentifyRefreshSession(ctx context.Context, refreshToken s
 	return &RefreshSessionIdentity{User: u, AuthMethod: sess.AuthMethod(), SessionID: sess.ID()}, nil
 }
 
-// ExchangeToken exchanges a global refresh token for a tenant-scoped access token.
-// This is the main method for getting access tokens after login.
-func (s *AuthService) ExchangeToken(ctx context.Context, input ExchangeTokenInput) (*ExchangeTokenResult, error) {
-	if input.TenantID == "" {
-		return nil, ErrTenantRequired
-	}
-
+// refreshForMint checks a refresh token before an access token is minted from
+// it (signature, stored and unused with family replay detection, active
+// session, active account that may use the main site) and returns the stored
+// token, its session and the account. The caller spends the token.
+func (s *AuthService) refreshForMint(ctx context.Context, refreshToken string, flow string) (*sessiondom.RefreshToken, *sessiondom.Session, *userdom.User, error) {
 	// Validate the refresh token JWT
-	claims, err := s.tokenGenerator.ValidateRefreshToken(input.RefreshToken)
+	claims, err := s.tokenGenerator.ValidateRefreshToken(refreshToken)
 	if err != nil {
-		return nil, fmt.Errorf("invalid refresh token: %w", err)
+		return nil, nil, nil, fmt.Errorf("invalid refresh token: %w", err)
 	}
 
 	// Get the refresh token hash and verify it exists in database
-	tokenHash := sessiondom.HashToken(input.RefreshToken)
+	tokenHash := sessiondom.HashToken(refreshToken)
 	storedToken, err := s.refreshTokenRepo.GetByTokenHash(ctx, tokenHash)
 	if err != nil {
 		if errors.Is(err, sessiondom.ErrRefreshTokenNotFound) {
-			return nil, sessiondom.ErrRefreshTokenNotFound
+			return nil, nil, nil, sessiondom.ErrRefreshTokenNotFound
 		}
-		return nil, fmt.Errorf("failed to get refresh token: %w", err)
+		return nil, nil, nil, fmt.Errorf("failed to get refresh token: %w", err)
 	}
 
 	// Replay-attack detection: a token that was already used (rotated) being
@@ -1249,41 +1247,56 @@ func (s *AuthService) ExchangeToken(ctx context.Context, input ExchangeTokenInpu
 	// undetected.
 	if storedToken.IsUsed() {
 		s.onRefreshTokenReuse(ctx, storedToken)
-		return nil, sessiondom.ErrRefreshTokenRevoked
+		return nil, nil, nil, sessiondom.ErrRefreshTokenRevoked
 	}
 
 	// Check if token is valid (not used, not revoked, not expired)
 	if !storedToken.IsValid() {
-		return nil, sessiondom.ErrRefreshTokenRevoked
+		return nil, nil, nil, sessiondom.ErrRefreshTokenRevoked
 	}
 
 	// Get the session and verify it's still active
 	sess, err := s.sessionRepo.GetByID(ctx, storedToken.SessionID())
 	if err != nil {
-		return nil, fmt.Errorf("failed to get session: %w", err)
+		return nil, nil, nil, fmt.Errorf("failed to get session: %w", err)
 	}
 	if !sess.IsActive() {
-		return nil, sessiondom.ErrSessionExpired
+		return nil, nil, nil, sessiondom.ErrSessionExpired
 	}
 
 	// Get user
 	userID, err := shared.IDFromString(claims.UserID)
 	if err != nil {
-		return nil, fmt.Errorf("invalid user id in token: %w", err)
+		return nil, nil, nil, fmt.Errorf("invalid user id in token: %w", err)
 	}
 
 	u, err := s.userRepo.GetByID(ctx, userID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get user: %w", err)
+		return nil, nil, nil, fmt.Errorf("failed to get user: %w", err)
 	}
 
-	if refuseBreakGlass(ctx, s.breakGlassGate, s.logger, u, "token_exchange") {
-		return nil, sessiondom.ErrRefreshTokenRevoked
+	if refuseBreakGlass(ctx, s.breakGlassGate, s.logger, u, flow) {
+		return nil, nil, nil, sessiondom.ErrRefreshTokenRevoked
 	}
 	// A blocked or suspended account mints nothing, whatever way its session
 	// was opened (a federated sign-in does not pass the password checks).
 	if !u.IsActive() {
-		return nil, ErrAccountSuspended
+		return nil, nil, nil, ErrAccountSuspended
+	}
+
+	return storedToken, sess, u, nil
+}
+
+// ExchangeToken exchanges a global refresh token for a tenant-scoped access token.
+// This is the main method for getting access tokens after login.
+func (s *AuthService) ExchangeToken(ctx context.Context, input ExchangeTokenInput) (*ExchangeTokenResult, error) {
+	if input.TenantID == "" {
+		return nil, ErrTenantRequired
+	}
+
+	storedToken, sess, u, err := s.refreshForMint(ctx, input.RefreshToken, "token_exchange")
+	if err != nil {
+		return nil, err
 	}
 
 	// Verify user has access to the requested tenant
@@ -1369,27 +1382,9 @@ func (s *AuthService) ExchangeToken(ctx context.Context, input ExchangeTokenInpu
 		s.logger.Error("failed to update session activity", "error", err)
 	}
 
-	newRefreshTokenStr, _, err := s.tokenGenerator.GenerateGlobalRefreshToken(
-		u.ID().String(),
-		u.Email(),
-		u.Name(),
-		sess.ID().String(),
-	)
+	newRefreshTokenStr, err := s.issueSuccessorRefreshToken(ctx, u.ID().String(), u.Email(), u.Name(), sess.ID().String(), storedToken)
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate refresh token: %w", err)
-	}
-	newRefreshToken, err := sessiondom.NewRefreshTokenInFamily(
-		u.ID(),
-		sess.ID(),
-		newRefreshTokenStr,
-		storedToken.Family(),
-		s.config.RefreshTokenDuration,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create refresh token: %w", err)
-	}
-	if err := s.refreshTokenRepo.Create(ctx, newRefreshToken); err != nil {
-		return nil, fmt.Errorf("failed to save refresh token: %w", err)
+		return nil, err
 	}
 
 	s.logger.Debug("token exchanged",

@@ -39,7 +39,7 @@ func (r *AttributionRepository) AddressesBehindNames(ctx context.Context, tenant
 	sc, args := scopeClause("ip.id", scope, args)
 	args = append(args, limit)
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT ip.id, ip.name, COALESCE(ip.properties, '{}'::jsonb),
+		SELECT ip.id, ip.name, COALESCE(ip.properties, '{}'::jsonb), ip.first_seen,
 		       array_agg(DISTINCT lower(src.name)),
 		       COALESCE(array_agg(DISTINCT lower(src.name)) FILTER (WHERE `+visible+`), '{}'),
 		       COALESCE(array_agg(DISTINCT src.id::text) FILTER (WHERE `+visible+`), '{}')
@@ -52,7 +52,7 @@ func (r *AttributionRepository) AddressesBehindNames(ctx context.Context, tenant
 		WHERE ip.tenant_id = $1 AND ip.asset_type = 'ip_address' AND ip.deleted_at IS NULL
 		  AND (aa.asset_id IS NULL OR aa.state = 'confirmed'
 		       OR (aa.state IN ('discovered', 'needs_review', 'candidate') AND aa.decided_at IS NULL))`+sc+fmt.Sprintf(`
-		GROUP BY ip.id, ip.name, ip.properties
+		GROUP BY ip.id, ip.name, ip.properties, ip.first_seen
 		ORDER BY ip.name
 		LIMIT $%d`, len(args)), args...)
 	if err != nil {
@@ -67,7 +67,7 @@ func (r *AttributionRepository) AddressesBehindNames(ctx context.Context, tenant
 			raw []byte
 			ids []string
 		)
-		if err := rows.Scan(&a.AssetID, &a.Address, &raw, pq.Array(&a.AllNames), pq.Array(&a.VisibleNames), pq.Array(&ids)); err != nil {
+		if err := rows.Scan(&a.AssetID, &a.Address, &raw, &a.FirstSeen, pq.Array(&a.AllNames), pq.Array(&a.VisibleNames), pq.Array(&ids)); err != nil {
 			return nil, err
 		}
 		a.Props = map[string]any{}

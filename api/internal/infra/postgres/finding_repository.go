@@ -3203,7 +3203,7 @@ var findingStatsSelect = `
 			COALESCE(SUM(CASE WHEN source = 'external' THEN 1 ELSE 0 END), 0) as source_external,
 			-- Risk posture over the Open lens: the same predicate as the
 			-- "Open" state tab, so a card and the tab never disagree.
-			COUNT(*) FILTER (WHERE is_in_kev AND ` + openLens + `) as kev_open,
+			COUNT(*) FILTER (WHERE ` + vulnerability.OpenKEVFindingSQL("findings") + `) as kev_open,
 			COUNT(*) FILTER (WHERE epss_score >= 0.1 AND ` + openLens + `) as epss_high_open,
 			COUNT(*) FILTER (WHERE sla_status IN ('exceeded','overdue') AND ` + openLens + `) as sla_breached,
 			COUNT(*) FILTER (WHERE severity = 'critical' AND ` + openLens + `) as open_critical,
@@ -3546,12 +3546,7 @@ func (r *FindingRepository) buildWhereClause(filter vulnerability.FindingFilter)
 	// outside the allowed levels, or AI assistants turned off.
 	if filter.PentestAIAllowTLP != nil {
 		args = append(args, pq.StringArray(filter.PentestAIAllowTLP))
-		conditions = append(conditions, fmt.Sprintf(
-			`(findings.source <> 'pentest' OR EXISTS (
-				SELECT 1 FROM pentest_campaigns pc
-				WHERE pc.id = findings.pentest_campaign_id AND pc.tenant_id = findings.tenant_id
-				  AND NOT pc.ai_assistants_disabled AND pc.tlp = ANY($%d)
-			))`, argIndex))
+		conditions = append(conditions, vulnerability.PentestAITLPSQL(fmt.Sprintf("$%d", argIndex)))
 		argIndex++
 	}
 
