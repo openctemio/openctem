@@ -33,6 +33,8 @@ type ConnectionView struct {
 	// FullData: the connection may read all organization data (while its
 	// person keeps a full-data role).
 	FullData bool
+	// Flow: "device" for a connection a terminal made with a user code.
+	Flow mcpoauth.Flow
 }
 
 // ErrConnectionsUnavailable means the service was built without the
@@ -65,6 +67,7 @@ func (s *Service) ListConnections(ctx context.Context, tenantID shared.ID, userI
 			ClientHost: clientHost(g.Client), UserID: g.UserID.String(), UserName: c.UserName, UserEmail: c.UserEmail,
 			Scopes: g.Scopes, CreatedAt: g.CreatedAt, LastUsedAt: g.LastUsedAt, LastUsedIP: g.LastUsedIP, ExpiresAt: g.ExpiresAt,
 			FullData: g.FullData,
+			Flow:     g.Flow,
 		})
 	}
 	return out, nil

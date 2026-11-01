@@ -290,6 +290,7 @@
   "confirm.mcpClient.unblockDesc": "Every organization on this deployment can authorize this application again. Connections that were cut off are not restored; each member connects again.",
   "confirm.mcpClient.unblockTitle": "Unblock {name} everywhere?",
   "confirm.mcpPolicy.confirm": "Save wider policy",
+  "confirm.mcpPolicy.deviceFlow": "Members can sign a terminal in with a code typed into their browser.",
   "confirm.mcpPolicy.dpop": "Connections no longer need proof of possession, so a stolen token works anywhere.",
   "confirm.mcpPolicy.enable": "AI assistants can connect to this organization again.",
   "confirm.mcpPolicy.keys": "API keys can use the MCP server, with no person in the loop.",

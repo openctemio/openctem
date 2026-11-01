@@ -318,6 +318,12 @@ type ConsentView struct {
 	// access, so the page may offer "Allow access to all organization data".
 	FullDataAvailable bool
 	ExpiresAt         time.Time
+	// Device flow: a terminal asked with a user code. The page shows where
+	// the request came from and when, and never calls the client verified.
+	Flow               mcpoauth.Flow
+	RequesterIP        string
+	RequesterUserAgent string
+	RequestedAt        time.Time
 }
 
 // ErrConsentUnavailable is any consent request that cannot be acted on:
@@ -362,6 +368,9 @@ func (s *Service) ConsentRequest(ctx context.Context, requestID, userID, tenantI
 	}
 	s.consentPublisherState(ctx, view, pol, req.Client, tenantID, all, held)
 	view.FullDataAvailable = s.holdsFullData(ctx, tenantID, userID, all)
+	if req.Flow == mcpoauth.FlowDevice {
+		s.deviceConsentView(view, req, pol)
+	}
 	for _, sc := range req.Scopes {
 		allowed := allowsScope(pol, sc)
 		view.Scopes = append(view.Scopes, ScopeView{
@@ -449,6 +458,13 @@ func (s *Service) ApproveAccess(ctx context.Context, requestID, userID, tenantID
 	if s.blockedReason(pol, req.Client, tenantID) != "" {
 		return "", ErrPolicy
 	}
+	device := req.Flow == mcpoauth.FlowDevice
+	if deviceRefused(pol, req.Flow) {
+		return "", ErrDeviceFlowDisabled
+	}
+	if device && fullData {
+		return "", ErrDeviceFullData
+	}
 	all, held, err := s.permissions.HeldPermissions(ctx, tenantID, userID)
 	if err != nil {
 		return "", fmt.Errorf("read permissions: %w", err)
@@ -485,22 +501,27 @@ func (s *Service) ApproveAccess(ctx context.Context, requestID, userID, tenantID
 		}
 		req.Client = *stored
 	}
-	code, err := randomToken("")
-	if err != nil {
-		return "", err
+	// A device request has no code: the terminal's device code redeems the
+	// approval.
+	code, codeHash := "", ""
+	if !device {
+		if code, err = randomToken(""); err != nil {
+			return "", err
+		}
+		codeHash = s.hash(code)
 	}
-	if err := s.repo.ApproveRequest(ctx, req.ID, userID, tenantID, req.Client.ID, granted, fullData, s.hash(code), now.Add(mcpoauth.CodeTTL), now); err != nil {
+	if err := s.repo.ApproveRequest(ctx, req.ID, userID, tenantID, req.Client.ID, granted, fullData, codeHash, now.Add(mcpoauth.CodeTTL), now); err != nil {
 		return "", ErrConsentUnavailable
 	}
 	s.logAudit(ctx, tenantID.String(), userID.String(), actor,
-		auditapp.NewSuccessEvent(auditdom.ActionMCPClientAuthorized, auditdom.ResourceTypeMCPGrant, req.ID.String()).
+		deviceAuditMetadata(auditapp.NewSuccessEvent(auditdom.ActionMCPClientAuthorized, auditdom.ResourceTypeMCPGrant, req.ID.String()).
 			WithResourceName(req.Client.Name).
 			WithMessage("MCP client authorized: "+req.Client.Name).
 			WithMetadata("client_id", req.Client.ClientID).
 			WithMetadata("client_kind", string(req.Client.Kind)).
 			WithMetadata("redirect_host", mcpoauth.RedirectHost(req.RedirectURI)).
 			WithMetadata("scopes", mcpoauth.Join(granted)).
-			WithMetadata("full_data", fullData))
+			WithMetadata("full_data", fullData), req))
 	if fullData {
 		s.logAudit(ctx, tenantID.String(), userID.String(), actor,
 			auditapp.NewSuccessEvent(auditdom.ActionMCPFullDataAllowed, auditdom.ResourceTypeMCPGrant, req.ID.String()).
@@ -510,6 +531,10 @@ func (s *Service) ApproveAccess(ctx context.Context, requestID, userID, tenantID
 				WithMetadata("client_host", clientHost(req.Client)).
 				WithMetadata("redirect_host", mcpoauth.RedirectHost(req.RedirectURI)).
 				WithMetadata("full_data", true))
+	}
+	if device {
+		// Nothing to send the browser to: the terminal picks the grant up.
+		return "", nil
 	}
 	return withQuery(req.RedirectURI, map[string]string{"code": code, "state": req.State, "iss": s.endpoints.Issuer}), nil
 }
@@ -525,10 +550,13 @@ func (s *Service) Deny(ctx context.Context, requestID, userID, tenantID shared.I
 		return "", ErrConsentUnavailable
 	}
 	s.logAudit(ctx, tenantID.String(), userID.String(), actor,
-		auditapp.NewSuccessEvent(auditdom.ActionMCPClientDenied, auditdom.ResourceTypeMCPGrant, req.ID.String()).
+		deviceAuditMetadata(auditapp.NewSuccessEvent(auditdom.ActionMCPClientDenied, auditdom.ResourceTypeMCPGrant, req.ID.String()).
 			WithResourceName(req.Client.Name).
 			WithMessage("MCP client refused: "+req.Client.Name).
-			WithMetadata("client_id", req.Client.ClientID))
+			WithMetadata("client_id", req.Client.ClientID), req))
+	if req.Flow == mcpoauth.FlowDevice {
+		return "", nil
+	}
 	return withQuery(req.RedirectURI, map[string]string{
 		"error": "access_denied", "error_description": "the user refused", "state": req.State, "iss": s.endpoints.Issuer,
 	}), nil
@@ -557,10 +585,12 @@ func (s *Service) Token(ctx context.Context, form url.Values, dpopProof string, 
 		return s.exchangeCode(ctx, form, dpopProof, actor)
 	case "refresh_token":
 		return s.refresh(ctx, form, dpopProof, actor)
+	case mcpoauth.DeviceGrantType:
+		return s.exchangeDeviceCode(ctx, form, dpopProof, actor)
 	case "":
 		return nil, oauthErr("invalid_request", "grant_type is required")
 	default:
-		return nil, oauthErr("unsupported_grant_type", "only authorization_code and refresh_token are supported")
+		return nil, oauthErr("unsupported_grant_type", "only authorization_code, refresh_token and the device code grant are supported")
 	}
 }
 
@@ -599,16 +629,26 @@ func (s *Service) exchangeCode(ctx context.Context, form url.Values, dpopProof s
 		return nil, invalid
 	}
 	// The code is consumed from here on: any mismatch burns it.
-	if req.Client.ClientID != clientID || req.RedirectURI != form.Get("redirect_uri") ||
+	if req.Flow != mcpoauth.FlowCode || req.Client.ClientID != clientID || req.RedirectURI != form.Get("redirect_uri") ||
 		!verifyPKCE(verifier, req.CodeChallenge) || req.Client.BlockedAt != nil ||
 		req.UserID == nil || req.TenantID == nil {
 		return nil, invalid
 	}
+	return s.issueGrant(ctx, req, jkt, actor, now)
+}
+
+// issueGrant turns an approved and just redeemed authorization request
+// (code or device flow) into a grant and its first tokens, after checking
+// again everything that may have changed since the person approved:
+// membership, the organization policy, the scopes it allows, DPoP and the
+// full-data role.
+func (s *Service) issueGrant(ctx context.Context, req *mcpoauth.AuthRequest, jkt string, actor Actor, now time.Time) (*TokenResponse, *OAuthError) {
+	invalid := oauthErr("invalid_grant", "the authorization is invalid, expired or was already used")
 	if ok, err := s.members.IsActiveMember(ctx, *req.TenantID, *req.UserID); err != nil || !ok {
 		return nil, invalid
 	}
 	pol, err := s.policy(ctx, *req.TenantID)
-	if err != nil || s.blockedReason(pol, req.Client, *req.TenantID) != "" {
+	if err != nil || s.blockedReason(pol, req.Client, *req.TenantID) != "" || deviceRefused(pol, req.Flow) {
 		return nil, invalid
 	}
 	scopes := allowedScopes(pol, req.GrantedScopes)
@@ -620,9 +660,10 @@ func (s *Service) exchangeCode(ctx context.Context, form url.Values, dpopProof s
 	}
 	// The choice was checked at consent; the role may have changed in the
 	// 60 seconds since, so check again (a lookup failure makes it scoped).
-	fullData := req.FullData && s.holdsFullDataNow(ctx, *req.TenantID, *req.UserID)
+	fullData := req.FullData && req.Flow != mcpoauth.FlowDevice && s.holdsFullDataNow(ctx, *req.TenantID, *req.UserID)
 	grant := &mcpoauth.Grant{
 		ID:        shared.NewID(),
+		Flow:      req.Flow,
 		TenantID:  *req.TenantID,
 		UserID:    *req.UserID,
 		Client:    req.Client,
@@ -647,7 +688,8 @@ func (s *Service) exchangeCode(ctx context.Context, form url.Values, dpopProof s
 			WithMessage("MCP access granted to "+grant.Client.Name).
 			WithMetadata("client_id", grant.Client.ClientID).
 			WithMetadata("scopes", mcpoauth.Join(grant.Scopes)).
-			WithMetadata("full_data", grant.FullData))
+			WithMetadata("full_data", grant.FullData).
+			WithMetadata("flow", string(grant.Flow)))
 	return resp, nil
 }
 
@@ -696,7 +738,7 @@ func (s *Service) refresh(ctx context.Context, form url.Values, dpopProof string
 		return nil, oauthErr("invalid_dpop_proof", "a proof signed by the key this grant is bound to is required")
 	}
 	if s.blockedReason(pol, grant.Client, grant.TenantID) != "" || !now.Before(grant.CreatedAt.Add(grantLifetime(pol))) ||
-		(pol.RequireDPoP && grant.DPoPJKT == "") {
+		(pol.RequireDPoP && grant.DPoPJKT == "") || deviceRefused(pol, grant.Flow) {
 		_ = s.repo.RevokeGrant(ctx, grant.TenantID, grant.ID, mcpoauth.RevokedByPolicy, now)
 		return nil, invalid
 	}
@@ -866,7 +908,8 @@ func (s *Service) AuthenticateAccessToken(ctx context.Context, raw, ip string, d
 		return nil, ErrInvalidToken
 	}
 	pol, err := s.policy(ctx, grant.TenantID)
-	if err != nil || s.blockedReason(pol, grant.Client, grant.TenantID) != "" || (pol.RequireDPoP && grant.DPoPJKT == "") {
+	if err != nil || s.blockedReason(pol, grant.Client, grant.TenantID) != "" || (pol.RequireDPoP && grant.DPoPJKT == "") ||
+		deviceRefused(pol, grant.Flow) {
 		return nil, ErrInvalidToken
 	}
 	scopePerms := mcpoauth.Permissions(allowedScopes(pol, grant.Scopes))

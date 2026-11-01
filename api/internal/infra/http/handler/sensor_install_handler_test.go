@@ -102,3 +102,20 @@ func TestInstallTemplates_IgnoresAMalformedSigningRoot(t *testing.T) {
 		t.Errorf("status %d; a malformed root reached the commands", rec.Code)
 	}
 }
+
+func TestInstallTemplatesRead_GetHasNoCodeAndRefusesBadProduct(t *testing.T) {
+	h := installHandler(t)
+	rec := httptest.NewRecorder()
+	h.InstallTemplatesRead(rec, httptest.NewRequest(http.MethodGet, "/api/v1/sensors/install-templates", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), "SENSOR_PAIRING_CODE") || !strings.Contains(rec.Body.String(), "https://ctem.example.test") {
+		t.Error("GET must render the code-less commands")
+	}
+	rec = httptest.NewRecorder()
+	h.InstallTemplatesRead(rec, httptest.NewRequest(http.MethodGet, "/api/v1/sensors/install-templates?product=nope", nil))
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("bad product: status %d, want 400", rec.Code)
+	}
+}
