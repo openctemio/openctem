@@ -256,7 +256,7 @@ func (h *MCPHandler) buildTools() []mcpTool {
 			Module:       moduledom.ModuleCompliance,
 			call:         h.toolCompliancePosture,
 		},
-	}, h.buildPentestTools()...)
+	}, append(h.buildAssetTools(), h.buildPentestTools()...)...)
 }
 
 // --- tool executors ----------------------------------------------------------
