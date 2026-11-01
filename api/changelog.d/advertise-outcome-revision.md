@@ -1,0 +1,4 @@
+### Fixed: an edge-protected host no longer counts as a platform-side coverage failure
+
+- Scan commands now name `outcome_revision: 2`. Sensors sent the per-target classes that say why a target was not covered (`edge_blocked`, `edge_challenged`, `rate_limited`, `name_gone`, `resolver_failed`, `sensor_network_fault`) only to a platform that names revision 2. The platform never named it, so a host that answered 403 behind an edge protection arrived as `tool_error`. That outcome counts as a platform-side failure: it grew `platform_fail_streak` and raised the operator alert "Coverage vuln.templates cannot run on N assets (platform side)". Such a host now settles as `edge_blocked`, an observation of the target.
+- Commands that are already queued keep their payload, so the change applies to scans planned after the upgrade. No migration.
