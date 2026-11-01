@@ -172,8 +172,26 @@ func (f *fixture) status(s *sensor) *pairing.StatusResponse {
 	return st
 }
 
+// hostPick stands for "the fingerprint the host shows": approveP replaces
+// it with the request's SAS read from the database.
+const hostPick = "<the host's fingerprint>"
+
 func approve(a sensorpairing.Actor, code string) sensorpairing.ApproveInput {
-	return sensorpairing.ApproveInput{Code: code, FingerprintConfirmed: true, OrganizationID: a.TenantID.String(), StepUp: authapp.StepUpProof{TOTP: "123456"}, Name: "dmz-01"}
+	return sensorpairing.ApproveInput{Code: code, Fingerprint: hostPick, OrganizationID: a.TenantID.String(), StepUp: authapp.StepUpProof{TOTP: "123456"}, Name: "dmz-01"}
+}
+
+// approveP approves like an administrator who picked the fingerprint the
+// host shows (hostPick), or exactly what the input says otherwise.
+func (f *fixture) approveP(ctx context.Context, a sensorpairing.Actor, id shared.ID, in sensorpairing.ApproveInput) (*sensorpairing.View, error) {
+	if in.Fingerprint == hostPick {
+		var sas sql.NullString
+		_ = f.db.QueryRowContext(ctx, `SELECT sas FROM sensor_pairings WHERE id = $1`, id.String()).Scan(&sas)
+		in.Fingerprint = sas.String
+		if in.Fingerprint == "" {
+			in.Fingerprint = "000 · none · none · none"
+		}
+	}
+	return f.svc.Approve(ctx, a, id, in)
 }
 
 func TestPairing_ForwardFlowAndRefusals_DB(t *testing.T) {
@@ -210,22 +228,22 @@ func TestPairing_ForwardFlowAndRefusals_DB(t *testing.T) {
 		t.Fatalf("host facts / source: %+v", v)
 	}
 
-	// Approval refusals: no fingerprint tick, failed step-up, no code,
+	// Approval refusals: no fingerprint picked, failed step-up, no code,
 	// wrong code.
 	in := approve(a, code)
-	in.FingerprintConfirmed = false
-	if _, err := f.svc.Approve(ctx, a, id, in); !errors.Is(err, sensorpairing.ErrFingerprintRequired) {
+	in.Fingerprint = ""
+	if _, err := f.approveP(ctx, a, id, in); !errors.Is(err, sensorpairing.ErrFingerprintRequired) {
 		t.Fatalf("approve without fingerprint: %v", err)
 	}
 	f.stepUp.ok = false
-	if _, err := f.svc.Approve(ctx, a, id, approve(a, code)); !errors.Is(err, authapp.ErrStepUpFailed) {
+	if _, err := f.approveP(ctx, a, id, approve(a, code)); !errors.Is(err, authapp.ErrStepUpFailed) {
 		t.Fatalf("approve with failed step-up: %v", err)
 	}
 	f.stepUp.ok = true
-	if _, err := f.svc.Approve(ctx, a, id, approve(a, "")); !errors.Is(err, sensorpairing.ErrNotFound) {
+	if _, err := f.approveP(ctx, a, id, approve(a, "")); !errors.Is(err, sensorpairing.ErrNotFound) {
 		t.Fatalf("approve by id without the code: %v", err)
 	}
-	if _, err := f.svc.Approve(ctx, a, id, approve(a, "AAAA-AAAA")); !errors.Is(err, sensorpairing.ErrNotFound) {
+	if _, err := f.approveP(ctx, a, id, approve(a, "AAAA-AAAA")); !errors.Is(err, sensorpairing.ErrNotFound) {
 		t.Fatalf("approve with a wrong code: %v", err)
 	}
 	// A stolen code without the key cannot poll (threat 9).
@@ -234,7 +252,7 @@ func TestPairing_ForwardFlowAndRefusals_DB(t *testing.T) {
 		t.Fatalf("poll with another key: %v", err)
 	}
 
-	if _, err := f.svc.Approve(ctx, a, id, approve(a, code)); err != nil {
+	if _, err := f.approveP(ctx, a, id, approve(a, code)); err != nil {
 		t.Fatalf("approve: %v", err)
 	}
 	st := f.status(s)
@@ -250,7 +268,7 @@ func TestPairing_ForwardFlowAndRefusals_DB(t *testing.T) {
 	if _, err := f.svc.Lookup(ctx, b, code); !errors.Is(err, sensorpairing.ErrNotFound) {
 		t.Fatalf("lookup of a used code from another org: %v", err)
 	}
-	if _, err := f.svc.Approve(ctx, b, id, approve(b, code)); !errors.Is(err, sensorpairing.ErrNotFound) {
+	if _, err := f.approveP(ctx, b, id, approve(b, code)); !errors.Is(err, sensorpairing.ErrNotFound) {
 		t.Fatalf("second approval: %v", err)
 	}
 	// A confirmation signed by another key is refused.
@@ -280,7 +298,7 @@ func TestPairing_Repair_DB(t *testing.T) {
 	f.start(first, "", "")
 	f.reveal(first)
 	id, _ := shared.IDFromString(first.resp.PairingID)
-	if _, err := f.svc.Approve(ctx, a, id, approve(a, first.resp.UserCode)); err != nil {
+	if _, err := f.approveP(ctx, a, id, approve(a, first.resp.UserCode)); err != nil {
 		t.Fatal(err)
 	}
 	st := f.status(first)
@@ -298,7 +316,7 @@ func TestPairing_Repair_DB(t *testing.T) {
 	if _, err := f.svc.Lookup(ctx, b, second.resp.UserCode); !errors.Is(err, sensorpairing.ErrNotFound) {
 		t.Fatalf("foreign re-pair lookup: %v", err)
 	}
-	if _, err := f.svc.Approve(ctx, b, rid, approve(b, second.resp.UserCode)); !errors.Is(err, sensorpairing.ErrNotFound) {
+	if _, err := f.approveP(ctx, b, rid, approve(b, second.resp.UserCode)); !errors.Is(err, sensorpairing.ErrNotFound) {
 		t.Fatalf("foreign re-pair approve: %v", err)
 	}
 	v, err := f.svc.Lookup(ctx, a, second.resp.UserCode)
@@ -307,12 +325,12 @@ func TestPairing_Repair_DB(t *testing.T) {
 	}
 	// The sensor asked for the re-pair: the approver must name the sensor
 	// it replaces the key of, checked before anything is written.
-	if _, err := f.svc.Approve(ctx, a, rid, approve(a, second.resp.UserCode)); !errors.Is(err, sensorpairing.ErrRepairNotAcknowledged) {
+	if _, err := f.approveP(ctx, a, rid, approve(a, second.resp.UserCode)); !errors.Is(err, sensorpairing.ErrRepairNotAcknowledged) {
 		t.Fatalf("re-pair approve without naming the sensor: %v", err)
 	}
 	in := approve(a, second.resp.UserCode)
 	in.RepairSensorID = sensorID
-	if _, err := f.svc.Approve(ctx, a, rid, in); err != nil {
+	if _, err := f.approveP(ctx, a, rid, in); err != nil {
 		t.Fatalf("re-pair approve: %v", err)
 	}
 	// The old key stops at approval (a stolen key must not wait).
@@ -346,19 +364,24 @@ func TestPairing_ReverseModeAndUniformAnswers_DB(t *testing.T) {
 	}
 	s := newSensor(21)
 	f.start(s, exp.Code, "")
-	if s.resp.UserCode != "" || s.resp.PairingID != exp.ID {
+	// The sensor's code is the code it started with (one code everywhere).
+	if s.resp.UserCode != exp.Code || s.resp.PairingID != exp.ID {
 		t.Fatalf("reverse start answer: %+v", s.resp)
 	}
-	// A wrong code gets the same shape of answer (threat 5) and never
-	// becomes approvable.
+	// A code nobody expected gets the same shape of answer (threat 5): it
+	// becomes that request's own code, reachable only by that code and
+	// bound to no organization.
 	decoy := newSensor(22)
 	f.start(decoy, "ZZZZ-ZZZZ", "")
-	if decoy.resp.UserCode != "" || decoy.resp.PairingID == "" {
+	if decoy.resp.UserCode != "ZZZZ-ZZZZ" || decoy.resp.PairingID == "" || decoy.resp.PairingID == exp.ID {
 		t.Fatalf("decoy answer differs: %+v", decoy.resp)
 	}
 	f.reveal(decoy)
 	if f.status(decoy).Status != pairing.StatusPending {
 		t.Fatal("decoy status")
+	}
+	if v, err := f.svc.Lookup(ctx, b, "ZZZZ-ZZZZ"); err != nil || v.ID != decoy.resp.PairingID {
+		t.Fatalf("an unexpected code is the request's own code: %v %+v", err, v)
 	}
 
 	f.reveal(s)
@@ -370,12 +393,12 @@ func TestPairing_ReverseModeAndUniformAnswers_DB(t *testing.T) {
 	if _, err := f.svc.GetExpectation(ctx, b, eid); !errors.Is(err, sensorpairing.ErrNotFound) {
 		t.Fatalf("another org read the expectation: %v", err)
 	}
-	if _, err := f.svc.Approve(ctx, b, eid, approve(b, exp.Code)); !errors.Is(err, sensorpairing.ErrNotFound) {
+	if _, err := f.approveP(ctx, b, eid, approve(b, exp.Code)); !errors.Is(err, sensorpairing.ErrNotFound) {
 		t.Fatalf("another org approved the expectation: %v", err)
 	}
 	in := approve(a, "")
 	in.Name = ""
-	if _, err := f.svc.Approve(ctx, a, eid, in); err != nil {
+	if _, err := f.approveP(ctx, a, eid, in); err != nil {
 		t.Fatalf("approve expectation: %v", err)
 	}
 	if st := f.status(s); st.Identity == nil || st.Identity.Name != "branch-office" {
@@ -412,7 +435,7 @@ func TestPairing_CapsDenyExpiry_DB(t *testing.T) {
 		t.Fatalf("expired status %q", st.Status)
 	}
 	eid, _ := shared.IDFromString(e.resp.PairingID)
-	if _, err := f.svc.Approve(ctx, a, eid, approve(a, e.resp.UserCode)); !errors.Is(err, sensorpairing.ErrNotFound) {
+	if _, err := f.approveP(ctx, a, eid, approve(a, e.resp.UserCode)); !errors.Is(err, sensorpairing.ErrNotFound) {
 		t.Fatalf("approve expired: %v", err)
 	}
 	f.now = time.Now()

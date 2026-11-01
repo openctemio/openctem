@@ -88,6 +88,7 @@ export function SensorsEmptyState({
 
           {canPair ? (
             <SensorOnboardingPanel
+              autoStart={false}
               canInstallWithKey={canInstallWithKey}
               onInstallWithKey={onInstall}
               onOpenSensor={onOpenSensor}
