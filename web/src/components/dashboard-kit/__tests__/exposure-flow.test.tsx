@@ -1,10 +1,24 @@
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ExposureFlowViz } from '../exposure-flow-viz'
 import { ringEdgeInset, ringSegments, type RingPart } from '../flow-rings'
 import { IntakeViz } from '../intake-viz'
 import type { FlowResult, IntakeData, IntakeSourceRow } from '../types'
+
+// The view switchers show a tooltip on hover (Radix, which measures with a
+// ResizeObserver that jsdom lacks): without it a click that opens the tooltip
+// throws in a layout effect, depending on timing.
+beforeAll(() => {
+  vi.stubGlobal(
+    'ResizeObserver',
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    }
+  )
+})
 
 const since = new Date(Date.now() - 30 * 86_400_000).toISOString()
 
@@ -514,7 +528,7 @@ describe('ExposureFlowViz on a wide card', () => {
       screen.getByRole('link', { name: 'nuclei: 22 new or reopened, 7% of new or reopened' })
     ).toBeInTheDocument()
     // The source keeps one colour on its row and both arcs.
-    const row = screen.getByRole('link', { name: 'nuclei, Sensor: 402 findings' })
+    const row = screen.getByRole('link', { name: /^nuclei Sensor 402 findings/ })
     const bar = row.querySelector('[data-testid="ranked-bar"]') as HTMLElement
     const outer = rings.querySelector('[data-seg="s:sensor:nuclei"]')
     const middle = rings.querySelector('[data-seg="n:sensor:nuclei"]')
@@ -539,7 +553,7 @@ describe('ExposureFlowViz on a wide card', () => {
     expect(dimmed('[data-seg="n:sensor:nuclei"]')).toBe(false)
     expect(dimmed('[data-seg="s:connector:cloud"]')).toBe(true)
     expect(dimmed('[data-seg="p:P0"]')).toBe(true)
-    const row = screen.getByRole('link', { name: 'nuclei, Sensor: 402 findings' })
+    const row = screen.getByRole('link', { name: /^nuclei Sensor 402 findings/ })
     expect(row.className).not.toContain('opacity-30')
   })
 
@@ -554,11 +568,11 @@ describe('ExposureFlowViz on a wide card', () => {
 
   it('a focused source keeps its colour on its wire, the only wire that glows', () => {
     render(<ExposureFlowViz result={flow} />)
-    act(() => screen.getByRole('link', { name: 'nuclei, Sensor: 402 findings' }).focus())
+    act(() => screen.getByRole('link', { name: /^nuclei Sensor 402 findings/ }).focus())
     const wire = (k: string) =>
       document.querySelector(`[data-wire-key="w:s:${k}"] path`) as SVGPathElement
     const bar = screen
-      .getByRole('link', { name: 'nuclei, Sensor: 402 findings' })
+      .getByRole('link', { name: /^nuclei Sensor 402 findings/ })
       .querySelector('[data-testid="ranked-bar"]') as HTMLElement
     const arc = document.querySelector('[data-seg="s:sensor:nuclei"]')
     // One source, one colour: bar, arc and wire.
