@@ -46,10 +46,16 @@ platform administrator sets up a provider in the console) or
 ## Web UI
 
 - **Settings > AI** (`web/src/app/(dashboard)/settings/ai`, Security group,
-  module `ai_triage`): the on/off switch with a consent dialog, what is sent,
-  the pentest data policy, the source (Platform AI, Own provider, Off) with the
-  own provider's form (write-only key, Test connection) and the month's token use. Read-only
-  for anyone who may not change it; a notice when no provider is set up.
+  module `ai_triage`): a status strip (AI triage on or off, source, this
+  month's use against the limit, automatic triage, masked data kinds; each tile
+  opens its tab) and five tabs in the URL (`?tab=`). Provider: the on/off switch
+  with a consent dialog, what is sent (folded), the pentest data policy, the
+  source (Platform AI, Own provider, Off) with the own provider's form
+  (write-only key, Test connection). Features: automatic triage, AI agents.
+  Knowledge (with `ai_knowledge:read`). Limits and data: the month's token use
+  against the limit, a link to the TLP policy, data masking. Activity (with
+  `audit:read` and the audit module): the latest AI events from the audit log.
+  Read-only for anyone who may not change it; a notice when no provider is set up.
 - **AI triage button** (finding header): hidden when the module is off. When
   AI cannot run, it stays visible but disabled-looking and opens a short
   explanation instead: off for the organization (owners and administrators
