@@ -1,91 +1,89 @@
 'use client'
 
-import { useState } from 'react'
-import { AlertTriangle, Sparkles } from 'lucide-react'
-import { toast } from 'sonner'
+import { useEffect } from 'react'
+import { AlertTriangle } from 'lucide-react'
 
-import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Main } from '@/components/layout'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Label } from '@/components/ui/label'
-import { Skeleton } from '@/components/ui/skeleton'
-import { Switch } from '@/components/ui/switch'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useTranslation } from '@/context/i18n-provider'
-import { useTenant } from '@/context/tenant-provider'
-import { AISourceCard } from '@/features/ai-triage/components/ai-source-card'
-import { AIMaskingSection } from '@/features/ai-triage/components/ai-masking-section'
+import { AIActivityCard } from '@/features/ai-triage/components/ai-activity-card'
 import { AIAgentsSection } from '@/features/ai-triage/components/ai-agents-section'
-import { AIKnowledgeSection } from '@/features/ai-triage/components/ai-knowledge-section'
 import { AIAutoTriageCard } from '@/features/ai-triage/components/ai-auto-triage-card'
+import { AIConsentCard } from '@/features/ai-triage/components/ai-consent-card'
+import { AIKnowledgeSection } from '@/features/ai-triage/components/ai-knowledge-section'
+import { AIMaskingSection } from '@/features/ai-triage/components/ai-masking-section'
+import { AISourceCard } from '@/features/ai-triage/components/ai-source-card'
+import { AIStatusStrip, type AISettingsTab } from '@/features/ai-triage/components/ai-status-strip'
+import { AIUsageCard } from '@/features/ai-triage/components/ai-usage-card'
 import { useAIConfig } from '@/features/ai-triage/api/use-ai-triage-api'
-import { updateAISettings, useAISettings } from '@/features/ai-triage/api/use-ai-settings'
+import { useAIMasking } from '@/features/ai-triage/api/use-ai-masking'
+import { useAISettings } from '@/features/ai-triage/api/use-ai-settings'
+import { useTenantModules } from '@/features/integrations/api/use-tenant-modules'
 import { PageHeader, ReadOnlyNotice, PageStack } from '@/features/shared'
-import { getErrorMessage } from '@/lib/api/error-handler'
-import { formatDateSafe } from '@/lib/format-date'
-import { useCanMutate } from '@/lib/permissions'
+import { useUrlFilter } from '@/hooks/use-url-param'
+import { Permission, useCanMutate, useHasPermission } from '@/lib/permissions'
 
 /**
- * Settings > AI: the organization's consent to AI triage, where the AI
- * comes from (API docs: architecture/ai-triage.md) and the AI agents
- * (architecture/ai-analysis.md) and the masking of what is sent
- * (architecture/ai-context-masking.md). Each part is its own section
- * component, so a section is added without touching the others. Until an owner or administrator turns it on, no
- * finding content is sent to an AI provider. Turning it on needs a recent
- * sign-in (the shared client asks for it) and is audited.
+ * Settings anchors (settings-nav.ts) link to `#<id>`: open the tab that holds
+ * the element so search results still land on it.
+ */
+const ANCHOR_TAB: Record<string, AISettingsTab> = {
+  'ai-triage': 'provider',
+  'ai-source': 'provider',
+  'ai-auto-triage': 'features',
+  'ai-agents': 'features',
+  'ai-knowledge': 'knowledge',
+  'ai-usage': 'limits',
+  'ai-masking': 'limits',
+  'ai-activity': 'activity',
+}
+
+/**
+ * Settings > AI: a status strip, then five tabs (the tab is in the URL).
+ * Provider: the organization's consent and where the AI comes from
+ * (api docs: architecture/ai-triage.md). Features: automatic triage and the
+ * AI agents (architecture/ai-analysis.md). Knowledge: the sources AI agents
+ * cite. Limits and data: use against the limit and the masking of what is
+ * sent (architecture/ai-context-masking.md). Activity: the latest AI events
+ * from the audit log. Each part is its own section component; tabs that read
+ * data mount only when open. Until an owner or administrator turns it on, no
+ * finding content is sent to an AI provider.
  */
 export default function AISettingsPage() {
   const { t } = useTranslation()
-  const { currentTenant } = useTenant()
   const canEdit = useCanMutate('PUT /api/v1/organization/settings/ai')
+  const canReadKnowledge = useHasPermission(Permission.AIKnowledgeRead)
+  const { moduleIds } = useTenantModules()
+  // The audit log is a module: without it there is no activity to show.
+  const canReadAudit = useHasPermission(Permission.AuditRead) && moduleIds.includes('audit')
   const settings = useAISettings(true)
   // Usage is live data: read it on mount, not from the bootstrap's copy.
   const config = useAIConfig({ revalidateIfStale: true, dedupingInterval: 2000 })
-  const [confirmOpen, setConfirmOpen] = useState(false)
-  const [saving, setSaving] = useState(false)
+  const masking = useAIMasking(true)
+  const [urlTab, setUrlTab] = useUrlFilter('tab', 'provider')
 
-  const enabled = settings.data?.enabled === true
+  const available: AISettingsTab[] = [
+    'provider',
+    'features',
+    ...(canReadKnowledge ? (['knowledge'] as const) : []),
+    'limits',
+    ...(canReadAudit ? (['activity'] as const) : []),
+  ]
+  const tab: AISettingsTab = available.includes(urlTab as AISettingsTab)
+    ? (urlTab as AISettingsTab)
+    : 'provider'
+
+  useEffect(() => {
+    const anchor = window.location.hash.slice(1)
+    const target = ANCHOR_TAB[anchor]
+    if (target && target !== tab && available.includes(target)) setUrlTab(target)
+    // Only on arrival: the hash names where a settings search result points.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   const platformMissing = config.data?.reason === 'platform_not_configured'
-  const limit = config.data?.monthlyTokenLimit ?? 0
-  const used = config.data?.tokensUsedThisMonth ?? 0
-
-  const save = async (on: boolean) => {
-    if (!currentTenant) return
-    setSaving(true)
-    try {
-      const next = await updateAISettings({ enabled: on })
-      await settings.mutate(next, { revalidate: false })
-      await config.mutate()
-      toast.success(
-        on
-          ? t('settings.ai.turnedOn', 'AI triage is on for this organization')
-          : t('settings.ai.turnedOff', 'AI triage is off for this organization')
-      )
-    } catch (err) {
-      toast.error(getErrorMessage(err))
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const onToggle = (on: boolean) => {
-    if (on) {
-      setConfirmOpen(true)
-      return
-    }
-    void save(false)
-  }
-
-  const since =
-    settings.data?.enabled_by === 'upgrade'
-      ? t(
-          'settings.ai.sinceUpgrade',
-          'On since {date}: your organization used AI triage before this setting existed.',
-          { date: formatDateSafe(settings.data?.enabled_at) }
-        )
-      : t('settings.ai.since', 'On since {date}.', {
-          date: formatDateSafe(settings.data?.enabled_at),
-        })
+  const enabled = settings.data?.enabled === true
 
   return (
     <Main>
@@ -98,149 +96,108 @@ export default function AISettingsPage() {
           )}
         />
 
-        <PageStack>
-          {!canEdit && (
-            <ReadOnlyNotice
-              reason={t(
-                'settings.ai.readOnly',
-                'Only owners and administrators can change this setting.'
-              )}
-            />
-          )}
+        {!canEdit && (
+          <ReadOnlyNotice
+            reason={t(
+              'settings.ai.readOnly',
+              'Only owners and administrators can change this setting.'
+            )}
+          />
+        )}
 
-          {platformMissing && (
-            <Alert role="status">
-              <AlertTriangle className="h-4 w-4" />
-              <AlertTitle>
-                {t('settings.ai.platformMissingTitle', 'No AI provider is set up yet')}
-              </AlertTitle>
-              <AlertDescription>
-                {t(
-                  'settings.ai.platformMissing',
-                  'A platform administrator sets up the AI provider in the console (System > AI provider). You can turn AI triage on now; it works once a provider is set up.'
-                )}
-              </AlertDescription>
-            </Alert>
-          )}
-
-          <Card id="ai-triage">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Sparkles className="h-4 w-4" aria-hidden />
-                {t('settings.ai.triageTitle', 'AI triage')}
-              </CardTitle>
-              <CardDescription>
-                {t(
-                  'settings.ai.triageDescription',
-                  'Members can ask AI for a severity assessment, exploitability, false-positive likelihood and remediation steps on a finding. The result is a suggestion: nothing on a finding changes without a person.'
-                )}
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {settings.isLoading ? (
-                <Skeleton className="h-6 w-1/2" />
-              ) : settings.error ? (
-                <p className="text-sm text-destructive">{getErrorMessage(settings.error)}</p>
-              ) : (
-                <div className="flex items-start gap-3">
-                  <Switch
-                    id="ai-triage-enabled"
-                    checked={enabled}
-                    disabled={!canEdit || saving}
-                    onCheckedChange={onToggle}
-                  />
-                  <div className="space-y-1">
-                    <Label htmlFor="ai-triage-enabled">
-                      {t('settings.ai.toggle', 'Turn on AI triage for this organization')}
-                    </Label>
-                    <p className="text-sm text-muted-foreground">
-                      {enabled
-                        ? since
-                        : t(
-                            'settings.ai.off',
-                            'Off: no finding content is sent to an AI provider.'
-                          )}
-                    </p>
-                  </div>
-                </div>
-              )}
-
-              <div className="rounded-md border bg-muted/40 p-3 text-sm">
-                <p className="font-medium">{t('settings.ai.dataTitle', 'What is sent')}</p>
-                <p className="mt-1 text-muted-foreground">
-                  {t(
-                    'settings.ai.dataSent',
-                    'For each analysis: the finding’s title, description, severity and score, source and tool, file path and code snippet, CVE, CWE and OWASP ids, and whether the asset is internet-facing. Detected secrets are masked before they are stored.'
-                  )}
-                </p>
-                <p className="mt-2 text-muted-foreground">
-                  {t(
-                    'settings.ai.dataPolicy',
-                    'Pentest findings follow your AI data policy: a campaign above your TLP limit for AI (Settings > AI assistants (MCP), Policy), or with AI turned off by its lead, is never sent.'
-                  )}
-                </p>
-              </div>
-
-              {config.data?.provider && !platformMissing && (
-                <p className="text-sm text-muted-foreground">
-                  {t('settings.ai.provider', 'Provider: {provider}, model {model}.', {
-                    provider: config.data.provider,
-                    model: config.data.model || '—',
-                  })}
-                </p>
-              )}
-              {limit > 0 && (
-                <p className="text-sm text-muted-foreground">
-                  {t('settings.ai.usage', 'This month: {used} of {limit} tokens used.', {
-                    used: used.toLocaleString(),
-                    limit: limit.toLocaleString(),
-                  })}
-                </p>
-              )}
-            </CardContent>
-          </Card>
-
-          {settings.data && (
-            <AISourceCard
-              settings={settings.data}
-              canEdit={canEdit}
-              onSaved={async (next) => {
-                await settings.mutate(next, { revalidate: false })
-                await config.mutate()
-              }}
-            />
-          )}
-
-          <AIAutoTriageCard canEdit={canEdit} aiEnabled={enabled} />
-
-          <AIAgentsSection />
-
-          <AIKnowledgeSection />
-
-          <AIMaskingSection canEdit={canEdit} />
-        </PageStack>
-
-        <ConfirmDialog
-          open={confirmOpen}
-          onOpenChange={setConfirmOpen}
-          title={t('settings.ai.confirmTitle', 'Turn on AI triage?')}
-          desc={
-            settings.data?.source === 'own'
-              ? t(
-                  'settings.ai.confirmDescOwn',
-                  'Finding content (see "What is sent") will be sent to the AI provider your organization set up, each time a member asks for an analysis. You can turn it off at any time.'
-                )
-              : t(
-                  'settings.ai.confirmDesc',
-                  'Finding content (see "What is sent") will be sent to the AI provider your platform administrator set up, each time a member asks for an analysis. You can turn it off at any time.'
-                )
-          }
-          confirmText={t('settings.ai.confirm', 'Turn on')}
-          handleConfirm={async () => {
-            await save(true)
-            setConfirmOpen(false)
-          }}
+        <AIStatusStrip
+          settings={settings.data}
+          config={config.data}
+          masking={masking.data}
+          loading={settings.isLoading}
+          tab={tab}
+          onTab={setUrlTab}
         />
+
+        <Tabs value={tab} onValueChange={setUrlTab}>
+          <TabsList>
+            <TabsTrigger value="provider">{t('settings.ai.tabs.provider', 'Provider')}</TabsTrigger>
+            <TabsTrigger value="features">{t('settings.ai.tabs.features', 'Features')}</TabsTrigger>
+            {available.includes('knowledge') && (
+              <TabsTrigger value="knowledge">
+                {t('settings.ai.tabs.knowledge', 'Knowledge')}
+              </TabsTrigger>
+            )}
+            <TabsTrigger value="limits">
+              {t('settings.ai.tabs.limits', 'Limits and data')}
+            </TabsTrigger>
+            {available.includes('activity') && (
+              <TabsTrigger value="activity">
+                {t('settings.ai.tabs.activity', 'Activity')}
+              </TabsTrigger>
+            )}
+          </TabsList>
+
+          <TabsContent value="provider">
+            <PageStack>
+              {platformMissing && (
+                <Alert role="status">
+                  <AlertTriangle className="h-4 w-4" />
+                  <AlertTitle>
+                    {t('settings.ai.platformMissingTitle', 'No AI provider is set up yet')}
+                  </AlertTitle>
+                  <AlertDescription>
+                    {t(
+                      'settings.ai.platformMissing',
+                      'A platform administrator sets up the AI provider in the console (System > AI provider). You can turn AI triage on now; it works once a provider is set up.'
+                    )}
+                  </AlertDescription>
+                </Alert>
+              )}
+              <AIConsentCard
+                settings={settings.data}
+                isLoading={settings.isLoading}
+                error={settings.error}
+                canEdit={canEdit}
+                onSaved={async (next) => {
+                  await settings.mutate(next, { revalidate: false })
+                  await config.mutate()
+                }}
+              />
+              {settings.data && (
+                <AISourceCard
+                  settings={settings.data}
+                  canEdit={canEdit}
+                  onSaved={async (next) => {
+                    await settings.mutate(next, { revalidate: false })
+                    await config.mutate()
+                  }}
+                />
+              )}
+            </PageStack>
+          </TabsContent>
+
+          <TabsContent value="features">
+            <PageStack>
+              <AIAutoTriageCard canEdit={canEdit} aiEnabled={enabled} />
+              <AIAgentsSection />
+            </PageStack>
+          </TabsContent>
+
+          {available.includes('knowledge') && (
+            <TabsContent value="knowledge">
+              <AIKnowledgeSection />
+            </TabsContent>
+          )}
+
+          <TabsContent value="limits">
+            <PageStack>
+              <AIUsageCard config={config.data} />
+              <AIMaskingSection canEdit={canEdit} />
+            </PageStack>
+          </TabsContent>
+
+          {available.includes('activity') && (
+            <TabsContent value="activity">
+              <AIActivityCard />
+            </TabsContent>
+          )}
+        </Tabs>
       </PageStack>
     </Main>
   )
