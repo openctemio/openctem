@@ -53,9 +53,18 @@ func (s *TenantService) UpdateFindingApprovalSettings(
 	}
 	next := t.TypedSettings().FindingApprovals
 	actx.TenantID = tenantID
-	s.logAudit(ctx, actx, auditapp.NewSuccessEvent(audit.ActionFindingApprovalSettingsChanged, audit.ResourceTypeTenant, tenantID).
+	event := auditapp.NewSuccessEvent(audit.ActionFindingApprovalSettingsChanged, audit.ResourceTypeTenant, tenantID).
 		WithChanges(auditapp.DiffChanges(prev, next)).
 		WithMessage("Finding approval settings changed").
-		WithSeverity(audit.SeverityHigh))
+		WithSeverity(audit.SeverityHigh)
+	if tenantdom.ApprovalLoweringScheduled(prev, next) {
+		// Fewer second approvers (two-person to one-person) once the delay
+		// has passed: the handler tells every approver, owners and
+		// administrators included.
+		event = event.WithMessage("Finding approvals lowered (takes effect after the delay)").
+			WithMetadata("loosened", true).
+			WithSeverity(audit.SeverityCritical)
+	}
+	s.logAudit(ctx, actx, event)
 	return &prev, &next, nil
 }

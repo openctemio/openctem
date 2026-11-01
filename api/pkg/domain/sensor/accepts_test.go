@@ -28,13 +28,13 @@ func TestJobOf(t *testing.T) {
 		"custom templates":     {"scan", `{"scanner":"nuclei","custom_templates":[{},{}]}`, Job{Type: "scan", Tool: "nuclei", CustomTemplates: 2}},
 		"ports string":         {"scan", `{"scanner":"naabu","config":{"ports":"80,443"}}`, Job{Type: "scan", Tool: "naabu", Ports: "80,443"}},
 		"ports number":         {"scan", `{"scanner":"naabu","config":{"ports":8443}}`, Job{Type: "scan", Tool: "naabu", Ports: "8443"}},
-		"private address":      {"scan", `{"scanner":"nmap","targets":["10.0.0.0/24"]}`, Job{Type: "scan", Tool: "nmap", Private: true, PrivateAddress: true}},
-		"private name only":    {"scan", `{"scanner":"nmap","target":"db.internal"}`, Job{Type: "scan", Tool: "nmap", Private: true}},
-		"public":               {"scan", `{"scanner":"nmap","target":"203.0.113.4"}`, Job{Type: "scan", Tool: "nmap"}},
-		"unreadable payload":   {"scan", `not json`, Job{Type: "scan", Private: true}},
+		"private address":      {"scan", `{"scanner":"nmap","targets":["10.0.0.0/24"]}`, Job{Type: "scan", Tool: "nmap", Private: true, PrivateAddress: true, NetworkTarget: true}},
+		"private name only":    {"scan", `{"scanner":"nmap","target":"db.internal"}`, Job{Type: "scan", Tool: "nmap", Private: true, NetworkTarget: true}},
+		"public":               {"scan", `{"scanner":"nmap","target":"203.0.113.4"}`, Job{Type: "scan", Tool: "nmap", NetworkTarget: true}},
+		"unreadable payload":   {"scan", `not json`, Job{Type: "scan", Private: true, NetworkTarget: true}},
 		"empty payload":        {"health_check", ``, Job{Type: "health_check"}},
-		"loopback not policy":  {"scan", `{"scanner":"nmap","target":"127.0.0.1"}`, Job{Type: "scan", Tool: "nmap", Private: true}},
-		"private url and port": {"scan", `{"scanner":"httpx","target":"https://192.168.1.10:8443/x"}`, Job{Type: "scan", Tool: "httpx", Private: true, PrivateAddress: true}},
+		"loopback not policy":  {"scan", `{"scanner":"nmap","target":"127.0.0.1"}`, Job{Type: "scan", Tool: "nmap", Private: true, NetworkTarget: true}},
+		"private url and port": {"scan", `{"scanner":"httpx","target":"https://192.168.1.10:8443/x"}`, Job{Type: "scan", Tool: "httpx", Private: true, PrivateAddress: true, NetworkTarget: true}},
 	} {
 		if got := JobOf(tc.typ, json.RawMessage(tc.payload)); got != tc.want {
 			t.Errorf("%s: %+v, want %+v", name, got, tc.want)
@@ -85,7 +85,19 @@ func TestAccepts(t *testing.T) {
 		"named list: sensor":     {enforced(LocalPolicySummary{Ports: "80,443"}), Job{Type: "scan", Tool: "naabu", Ports: "top-100"}, DispatchOptions{}, "", ""},
 		"ports any in policy":    {enforced(LocalPolicySummary{}), Job{Type: "scan", Tool: "naabu", Ports: "1-65535"}, DispatchOptions{}, "", ""},
 		"private address refuse": {enforced(LocalPolicySummary{}), Job{Type: "scan", Tool: "nmap", Private: true, PrivateAddress: true}, DispatchOptions{}, RefusalLayerLocal, RuleTargetsAllowPrivate},
-		"private name: sensor":   {enforced(LocalPolicySummary{}), Job{Type: "scan", Tool: "nmap", Private: true}, DispatchOptions{}, "", ""},
+		"private name: sensor":   {enforced(LocalPolicySummary{TargetsAllow: -1}), Job{Type: "scan", Tool: "nmap", Private: true}, DispatchOptions{}, "", ""},
+
+		// An allow list with no entry, and a required policy that is
+		// absent, refuse every job with a network target (the sensor's
+		// targets.allow and no_local_policy rules); nothing else.
+		"empty allow list refuses targets":      {enforced(LocalPolicySummary{TargetsAllow: 0}), Job{Type: "scan", Tool: "subfinder", NetworkTarget: true}, DispatchOptions{}, RefusalLayerLocal, RuleTargetsAllow},
+		"empty allow list, no target":           {enforced(LocalPolicySummary{TargetsAllow: 0}), Job{Type: "health_check"}, DispatchOptions{}, "", ""},
+		"no allow list follows the platform":    {enforced(LocalPolicySummary{TargetsAllow: -1}), Job{Type: "scan", Tool: "subfinder", NetworkTarget: true}, DispatchOptions{}, "", ""},
+		"allow entries: the sensor decides":     {enforced(LocalPolicySummary{TargetsAllow: 3}), Job{Type: "scan", Tool: "subfinder", NetworkTarget: true}, DispatchOptions{}, "", ""},
+		"required and absent refuses targets":   {&LocalPolicyReport{State: LocalPolicyAbsent, Required: true}, Job{Type: "scan", Tool: "subfinder", NetworkTarget: true}, DispatchOptions{}, RefusalLayerLocal, RuleNoLocalPolicy},
+		"required and absent refuses templates": {&LocalPolicyReport{State: LocalPolicyAbsent, Required: true}, Job{Type: "scan", Tool: "nuclei", CustomTemplates: 1}, DispatchOptions{}, RefusalLayerLocal, RuleNoLocalPolicy},
+		"required and absent, no target":        {&LocalPolicyReport{State: LocalPolicyAbsent, Required: true}, Job{Type: "health_check"}, DispatchOptions{}, "", ""},
+		"absent, not required: platform scope":  {&LocalPolicyReport{State: LocalPolicyAbsent}, Job{Type: "scan", Tool: "subfinder", NetworkTarget: true}, DispatchOptions{}, "", ""},
 	} {
 		got := Accepts(tc.report, tc.job, tc.opts)
 		switch {
@@ -197,5 +209,43 @@ func TestPrivateTarget_ServiceNames(t *testing.T) {
 		if got := isPrivateAddressLiteral(target); got != want {
 			t.Errorf("isPrivateAddressLiteral(%q) = %v, want %v", target, got, want)
 		}
+	}
+}
+
+func TestHasNetworkTarget(t *testing.T) {
+	for payload, want := range map[string]bool{
+		``:                                 false,
+		`{}`:                               false,
+		`{"scanner":"nuclei"}`:             false,
+		`{"targets":[]}`:                   false,
+		`{"targets":["  "]}`:               false,
+		`{"target":"example.com"}`:         true,
+		`{"target":{"address":"1.2.3.4"}}`: true,
+		`{"targets":["example.com"]}`:      true,
+		`not json`:                         true, // unreadable: fail closed
+		`{"target":42}`:                    true,
+	} {
+		if got := HasNetworkTarget(json.RawMessage(payload)); got != want {
+			t.Errorf("HasNetworkTarget(%s) = %v, want %v", payload, got, want)
+		}
+	}
+}
+
+func TestLocalPolicySummary_MissingTargetsAllowIsNoList(t *testing.T) {
+	var r LocalPolicyReport
+	if err := json.Unmarshal([]byte(`{"state":"enforced","summary":{"targets_deny":1}}`), &r); err != nil {
+		t.Fatal(err)
+	}
+	if r.Summary.TargetsAllow != -1 || r.AllowsNoTarget() {
+		t.Fatalf("missing targets_allow read as %d (allows nothing %v), want -1", r.Summary.TargetsAllow, r.AllowsNoTarget())
+	}
+	if err := json.Unmarshal([]byte(`{"state":"enforced","summary":{"targets_allow":0}}`), &r); err != nil {
+		t.Fatal(err)
+	}
+	if !r.AllowsNoTarget() {
+		t.Fatal("an explicit empty allow list must read as allowing nothing")
+	}
+	if got := SanitizeLocalPolicyReport(&r); got.Summary.TargetsAllow != 0 {
+		t.Fatalf("sanitized targets_allow = %d, want 0", got.Summary.TargetsAllow)
 	}
 }

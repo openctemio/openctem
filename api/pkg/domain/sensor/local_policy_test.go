@@ -148,3 +148,22 @@ func TestLocalPolicyRefusal(t *testing.T) {
 		t.Fatalf("%+v", e)
 	}
 }
+
+func TestSanitizeLocalPolicySummaryMode(t *testing.T) {
+	cases := map[string]string{
+		"allow_all": "allow_all", " Allow_List ": "allow_list", "platform_scope": "platform_scope",
+		"": "", "everything": "", "allow_all; x": "",
+	}
+	for in, want := range cases {
+		got := SanitizeLocalPolicyReport(&LocalPolicyReport{State: LocalPolicyEnforced,
+			Summary: &LocalPolicySummary{Mode: in}})
+		if got.Summary.Mode != want {
+			t.Errorf("mode %q = %q, want %q", in, got.Summary.Mode, want)
+		}
+	}
+	// allow_all is not a target restriction: Accepts treats it like no allow list.
+	r := &LocalPolicyReport{State: LocalPolicyEnforced, Summary: &LocalPolicySummary{Mode: LocalPolicyModeAllowAll, TargetsAllow: 1, AllowPrivate: true}}
+	if ref := Accepts(r, Job{Type: "scan", PrivateAddress: true}, DispatchOptions{}); ref != nil {
+		t.Fatalf("allow_all refused a job: %+v", ref)
+	}
+}
