@@ -107,7 +107,7 @@ type pendingClient struct {
 func (r *MCPOAuthRepository) CreateRequest(ctx context.Context, req *mcpoauth.AuthRequest) error {
 	const q = `
 		INSERT INTO mcp_oauth_requests (id, client_ref, pending_client, redirect_uri, state, code_challenge, resource, scopes, status, created_at, expires_at,
-			flow, device_code_hash, user_code_hash, poll_interval_seconds, requester_ip, requester_user_agent)
+			flow, device_code_hash, user_code_hash, poll_interval_seconds, requester_ip, requester_ua)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'pending', $9, $10, $11, NULLIF($12, ''), NULLIF($13, ''), $14, $15, $16)`
 	var ref, snap any
 	if req.Client.ID != (shared.ID{}) {
@@ -139,7 +139,7 @@ func (r *MCPOAuthRepository) CreateRequest(ctx context.Context, req *mcpoauth.Au
 
 const mcpRequestSelect = `SELECT r.id, r.redirect_uri, r.state, r.code_challenge, r.resource, r.scopes, r.status,
 	r.user_id, r.tenant_id, r.granted_scopes, r.code_expires_at, r.grant_id, r.full_data, r.created_at, r.expires_at, r.pending_client,
-	r.flow, r.poll_interval_seconds, r.requester_ip, r.requester_user_agent,
+	r.flow, r.poll_interval_seconds, r.requester_ip, r.requester_ua,
 	c.id, c.client_id, c.kind, c.tenant_id, c.name, c.redirect_uris,
 	c.metadata_fetched_at, c.metadata_expires_at, c.blocked_at, c.created_at
 	FROM mcp_oauth_requests r LEFT JOIN mcp_oauth_clients c ON c.id = r.client_ref`

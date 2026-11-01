@@ -15,7 +15,7 @@ ALTER TABLE mcp_oauth_requests ADD COLUMN IF NOT EXISTS user_code_hash varchar(1
 ALTER TABLE mcp_oauth_requests ADD COLUMN IF NOT EXISTS poll_interval_seconds integer NOT NULL DEFAULT 5;
 ALTER TABLE mcp_oauth_requests ADD COLUMN IF NOT EXISTS last_polled_at timestamptz;
 ALTER TABLE mcp_oauth_requests ADD COLUMN IF NOT EXISTS requester_ip varchar(45) NOT NULL DEFAULT '';
-ALTER TABLE mcp_oauth_requests ADD COLUMN IF NOT EXISTS requester_user_agent varchar(256) NOT NULL DEFAULT '';
+ALTER TABLE mcp_oauth_requests ADD COLUMN IF NOT EXISTS requester_ua varchar(256) NOT NULL DEFAULT '';
 ALTER TABLE mcp_oauth_requests DROP CONSTRAINT IF EXISTS chk_mcp_oauth_requests_flow;
 ALTER TABLE mcp_oauth_requests
     ADD CONSTRAINT chk_mcp_oauth_requests_flow CHECK (

@@ -11,7 +11,7 @@ ALTER TABLE mcp_oauth_grants DROP COLUMN IF EXISTS flow;
 DROP INDEX IF EXISTS uq_mcp_oauth_requests_user_code;
 DROP INDEX IF EXISTS uq_mcp_oauth_requests_device_code;
 ALTER TABLE mcp_oauth_requests DROP CONSTRAINT IF EXISTS chk_mcp_oauth_requests_flow;
-ALTER TABLE mcp_oauth_requests DROP COLUMN IF EXISTS requester_user_agent;
+ALTER TABLE mcp_oauth_requests DROP COLUMN IF EXISTS requester_ua;
 ALTER TABLE mcp_oauth_requests DROP COLUMN IF EXISTS requester_ip;
 ALTER TABLE mcp_oauth_requests DROP COLUMN IF EXISTS last_polled_at;
 ALTER TABLE mcp_oauth_requests DROP COLUMN IF EXISTS poll_interval_seconds;
