@@ -88,17 +88,19 @@ export function AttackSurfaceNav({
         <SectionTabs tabs={views.map((v) => v.tab)} label={label} counts={viewCounts} />
       )}
       {current && current.routes.length > 1 && activeRoute && (
-        <SegmentedLens // anatomy-ok: switches between the routes of one view (navigation), not a list's state or view mode
-          label={t('attackSurface.view.lensLabel', '{view} views', { view: current.tab.label })}
-          value={activeRoute}
-          options={current.routes.map((r) => ({
-            value: r.href,
-            label: r.label,
-            count: counts?.[r.href],
-          }))}
-          onChange={(href) => router.push(href)}
-          className="max-w-full self-start overflow-x-auto"
-        />
+        <div data-slot="route-lens" className="max-w-full self-start overflow-x-auto">
+          {/* anatomy-ok: switches between the routes of one view (navigation), not a list's state or view mode */}
+          <SegmentedLens
+            label={t('attackSurface.view.lensLabel', '{view} views', { view: current.tab.label })}
+            value={activeRoute}
+            options={current.routes.map((r) => ({
+              value: r.href,
+              label: r.label,
+              count: counts?.[r.href],
+            }))}
+            onChange={(href) => router.push(href)}
+          />
+        </div>
       )}
     </>
   )
