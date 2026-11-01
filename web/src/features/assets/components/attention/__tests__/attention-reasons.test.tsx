@@ -1,5 +1,5 @@
 /**
- * Needs attention landing: two groups in a fixed order, one link per reason,
+ * Needs attention landing: three groups in a fixed order, one link per reason,
  * count and unit from the queue's own endpoint, zero kept and muted, and a
  * reason the reader cannot open is not listed.
  */
@@ -28,20 +28,30 @@ vi.mock('../use-attention-count', () => ({
   useAttentionCount: (id: string) => state.counts[id],
 }))
 
-import { AttentionReasons } from '../attention-reasons'
+import { AttentionReasons, ScopingDecisionCards } from '../attention-reasons'
 
 beforeEach(() => {
   state.hidden = []
-  state.counts = { no_owner: 549, context: 1, unscanned: 0, relationships: 12, duplicates: 3 }
+  state.counts = {
+    validate_primary: 2,
+    decide_monitoring: 0,
+    no_owner: 549,
+    context: 1,
+    unscanned: 0,
+    relationships: 12,
+    duplicates: 3,
+  }
 })
 
 describe('AttentionReasons', () => {
-  it('lists the reasons in two groups, in a fixed order, each a link to its queue', () => {
+  it('lists the reasons in three groups, in a fixed order, each a link to its queue', () => {
     render(<AttentionReasons />)
     const groups = screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent)
-    expect(groups).toEqual(['Fix on the asset', 'Review'])
+    expect(groups).toEqual(['Scoping decisions', 'Fix on the asset', 'Review'])
     const hrefs = screen.getAllByRole('link').map((a) => a.getAttribute('href'))
     expect(hrefs).toEqual([
+      '/assets/attention/validate-primary',
+      '/assets/attention/decide-monitoring',
       '/assets/attention/no-owner',
       '/assets/attention/context',
       '/assets/attention/unscanned',
@@ -79,10 +89,10 @@ describe('AttentionReasons', () => {
     expect(screen.getByTestId('attention-count-no_owner')).toHaveTextContent('')
   })
 
-  it('hides Relationships when its module is off, leaving four reasons', () => {
+  it('hides Relationships when its module is off, leaving six reasons', () => {
     state.hidden = ['relationships']
     render(<AttentionReasons />)
-    expect(screen.getAllByRole('link')).toHaveLength(4)
+    expect(screen.getAllByRole('link')).toHaveLength(6)
     expect(screen.queryByText('Relationships')).toBeNull()
   })
 
@@ -90,5 +100,27 @@ describe('AttentionReasons', () => {
     render(<AttentionReasons />)
     expect(screen.queryByRole('tablist')).toBeNull()
     expect(screen.queryByRole('navigation')).toBeNull()
+  })
+})
+
+describe('ScopingDecisionCards', () => {
+  it('shows a card only for a decision with assets waiting', () => {
+    render(<ScopingDecisionCards />)
+    const links = screen.getAllByRole('link')
+    expect(links.map((a) => a.getAttribute('href'))).toEqual(['/assets/attention/validate-primary'])
+    expect(screen.getByTestId('attention-count-validate_primary')).toHaveTextContent('2 assets')
+    expect(screen.queryByTestId('attention-reason-decide_monitoring')).toBeNull()
+  })
+
+  it('renders no card while counts load or when nothing waits', () => {
+    state.counts = { decide_monitoring: 0 }
+    render(<ScopingDecisionCards />)
+    expect(screen.queryAllByRole('link')).toHaveLength(0)
+  })
+
+  it('renders nothing when the assets module is off', () => {
+    state.hidden = ['assets']
+    const { container } = render(<ScopingDecisionCards />)
+    expect(container).toBeEmptyDOMElement()
   })
 })
