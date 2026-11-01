@@ -20,7 +20,13 @@ import type { FindingTypeStats } from '../hooks/use-finding-type-stats'
  * (see docs/ui-style-contract.md).
  */
 export function ExposuresTabs() {
-  return <SectionTabs tabs={EXPOSURES_SECTION_TABS} label="Exposures sections" />
+  const { t } = useTranslation()
+  return (
+    <SectionTabs
+      tabs={EXPOSURES_SECTION_TABS}
+      label={t('exposures.section.label', 'Exposures sections')}
+    />
+  )
 }
 
 /**
