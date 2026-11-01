@@ -224,12 +224,12 @@ export default function APIKeysPage() {
         cell: ({ row }) => (
           <div className="flex flex-wrap gap-1">
             {row.original.scopes.slice(0, 3).map((s) => (
-              <Badge key={s} variant="secondary" className="font-mono text-[10px]">
+              <Badge key={s} variant="secondary" className="font-mono text-xs">
                 {s}
               </Badge>
             ))}
             {row.original.scopes.length > 3 && (
-              <Badge variant="outline" className="text-[10px]">
+              <Badge variant="outline" className="text-xs">
                 +{row.original.scopes.length - 3}
               </Badge>
             )}
