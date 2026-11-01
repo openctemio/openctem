@@ -20,6 +20,11 @@ import { setServerCookie, removeServerCookie } from '@/lib/cookies-server'
 import { devLog } from '@/lib/logger'
 import { authEndpoints } from '@/lib/api/endpoints'
 import { browserContextHeaders } from '@/lib/api/browser-context-headers'
+import {
+  clearAccountOnlyMarker,
+  requestAccountToken,
+  storeAccountSession,
+} from '@/features/auth/lib/account-session'
 
 import type { AuthSuccessResponse, AuthErrorResponse } from '../schemas/auth.schema'
 
@@ -464,6 +469,11 @@ async function completeLoginTenants(
         path: '/',
       }
     )
+
+    // No organization to open: an account-only access token puts the person in
+    // the account space (/welcome). If it cannot be had now, /welcome asks again.
+    const account = await requestAccountToken(refreshToken)
+    if (account.ok) await storeAccountSession(account)
 
     return {
       success: true,
@@ -910,6 +920,7 @@ export async function selectTenantAction(tenantId: string): Promise<LoginResult>
 
     // Clear pending tenants cookie
     await removeServerCookie(env.cookies.pendingTenants)
+    await clearAccountOnlyMarker()
 
     return {
       success: true,
@@ -973,6 +984,7 @@ export async function localLogoutAction(redirectTo?: string): Promise<never> {
     await removeServerCookie(env.cookies.tenant) // Current tenant info
     await removeServerCookie(env.cookies.userInfo) // User info for Create Team
     await removeServerCookie(env.cookies.pendingTenants) // Pending tenant selection
+    await clearAccountOnlyMarker() // Account-only routing hint
     await removeServerCookie('app_permissions') // Legacy permissions cookie (cleanup)
 
     // A Server Action's argument comes from the client: only a same-origin
@@ -1154,6 +1166,7 @@ export async function createFirstTeamAction(
 
     // Clear user info cookie (no longer needed after team created)
     await removeServerCookie(env.cookies.userInfo)
+    await clearAccountOnlyMarker()
 
     devLog.log('[CreateFirstTeam] All cookies set, team creation complete')
 

@@ -16,6 +16,7 @@ import { cookies } from 'next/headers'
 import { NextRequest, NextResponse } from 'next/server'
 
 import { env } from '@/lib/env'
+import { requestAccountToken } from '@/features/auth/lib/account-session'
 import { devLog } from '@/lib/logger'
 import { csrfRejection } from '@/lib/server-auth-cookies'
 import { refreshSessionOnce } from '@/lib/server-refresh'
@@ -67,6 +68,55 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       } catch {
         devLog.error('[Refresh] Failed to parse tenant cookie')
       }
+    }
+
+    if (!tenantId && cookieStore.get(env.cookies.accountOnly)?.value) {
+      // No organization: renew the account-only token (api RFC-141).
+      const account = await requestAccountToken(refreshToken)
+      if (!account.ok) {
+        const status =
+          account.code === 'SESSION' ? 401 : account.code === 'HAS_ORGANIZATION' ? 409 : 502
+        const failed = NextResponse.json(
+          {
+            success: false,
+            error: { code: `ACCOUNT_${account.code}`, message: 'Token refresh failed' },
+          },
+          { status }
+        )
+        if (status === 401) {
+          for (const name of [ACCESS_TOKEN_COOKIE, REFRESH_TOKEN_COOKIE, env.cookies.accountOnly]) {
+            failed.cookies.set(name, '', {
+              httpOnly: true,
+              secure: process.env.SECURE_COOKIES !== 'false',
+              sameSite: 'lax',
+              maxAge: 0,
+              path: '/',
+            })
+          }
+        }
+        return failed
+      }
+      const ok = NextResponse.json({
+        success: true,
+        data: { access_token: account.accessToken, expires_in: account.expiresIn },
+      })
+      const base = {
+        httpOnly: true,
+        secure: process.env.SECURE_COOKIES !== 'false',
+        sameSite: 'lax' as const,
+        path: '/',
+      }
+      ok.cookies.set(ACCESS_TOKEN_COOKIE, account.accessToken, {
+        ...base,
+        maxAge: account.expiresIn,
+      })
+      if (account.refreshToken) {
+        ok.cookies.set(REFRESH_TOKEN_COOKIE, account.refreshToken, {
+          ...base,
+          maxAge: 7 * 24 * 60 * 60,
+        })
+      }
+      return ok
     }
 
     if (!tenantId) {

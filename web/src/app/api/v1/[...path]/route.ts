@@ -42,6 +42,7 @@ import {
   SENSOR_PROTOCOL_REFUSAL,
   SENSOR_PROTOCOL_REFUSAL_STATUS,
 } from '@/lib/api/sensor-protocol-guard'
+import { requestAccountToken } from '@/features/auth/lib/account-session'
 import { devLog } from '@/lib/logger'
 import { csrfRejection } from '@/lib/server-auth-cookies'
 import { refreshSessionOnce } from '@/lib/server-refresh'
@@ -76,6 +77,29 @@ async function getTenantId(): Promise<string | undefined> {
   return undefined
 }
 
+/** One account-only refresh at a time per refresh token. */
+const accountRefreshLocks = new Map<string, Promise<RefreshResult | null>>()
+
+function tryRefreshAccountToken(refreshToken: string): Promise<RefreshResult | null> {
+  const existing = accountRefreshLocks.get(refreshToken)
+  if (existing) return existing
+  const pending = (async (): Promise<RefreshResult | null> => {
+    try {
+      const result = await requestAccountToken(refreshToken)
+      if (!result.ok) return null
+      return {
+        accessToken: result.accessToken,
+        refreshToken: result.refreshToken,
+        expiresIn: result.expiresIn,
+      }
+    } finally {
+      accountRefreshLocks.delete(refreshToken)
+    }
+  })()
+  accountRefreshLocks.set(refreshToken, pending)
+  return pending
+}
+
 /**
  * Refresh the access token with the caller's refresh token. Every refresh of
  * the web server goes through refreshSessionOnce: concurrent and recent calls
@@ -87,6 +111,11 @@ async function tryRefreshAccessToken(
   tenantId: string | undefined
 ): Promise<RefreshResult | null> {
   if (!tenantId) {
+    // A person with no organization renews the account-only token instead
+    // (the marker says so; the API refuses it for anyone who has one).
+    if ((await cookies()).get(env.cookies.accountOnly)?.value) {
+      return tryRefreshAccountToken(refreshToken)
+    }
     devLog.log('[Proxy] Cannot refresh - no tenant ID')
     return null
   }

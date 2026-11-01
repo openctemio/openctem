@@ -90,7 +90,7 @@ export function SessionsCard({ sessions, isLoading, onChanged, activeApiKeys }: 
   }
 
   return (
-    <Card>
+    <Card id="sessions" className="scroll-mt-4">
       <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0">
         <div className="space-y-1.5">
           <CardTitle className="flex items-center gap-2">

@@ -283,11 +283,11 @@ export function LoginForm({
           hardNavigate(safeRedirectTo)
           return
         }
-        // Otherwise, onboarding: the create-team form, or (when only the
-        // platform administrator creates organizations) a notice to ask for
-        // access. The page decides, so this toast stays neutral.
+        // Otherwise the account space: invitations, the account pages, and
+        // creating an organization where the installation allows it. The page
+        // decides, so this toast stays neutral.
         toast.success(t('auth.login.success', 'Signed in'))
-        hardNavigate('/onboarding/create-team')
+        hardNavigate('/welcome')
         return
       }
 
