@@ -230,6 +230,8 @@ session, no permission). `public`: a sign-in step before a session exists.
 | `PUT /api/v1/admin/settings/region/` | `platform.settings.general.write` |
 | `GET /api/v1/admin/settings/scan-approval-policy/` | `platform.settings.read` |
 | `PUT /api/v1/admin/settings/scan-approval-policy/` | `platform.sensors.manage` |
+| `GET /api/v1/admin/settings/scan-identification/` | `platform.settings.read` |
+| `PUT /api/v1/admin/settings/scan-identification/` | `platform.settings.general.write` |
 | `GET /api/v1/admin/settings/shared-sensor-anomaly/` | `platform.settings.read` |
 | `PUT /api/v1/admin/settings/shared-sensor-anomaly/` | `platform.sensors.manage` |
 | `GET /api/v1/admin/settings/shared-sensor-internal-zones/` | `platform.settings.read` |

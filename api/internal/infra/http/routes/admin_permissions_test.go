@@ -129,6 +129,7 @@ var legacyMinimumTier = map[string]admin.AdminRole{
 	"POST /api/v1/admin/platform-users/{user_id}/reset-link":                 admin.AdminRoleSuperAdmin,
 	"PUT /api/v1/admin/settings/auth-mfa/":                                   admin.AdminRoleSuperAdmin,
 	"PUT /api/v1/admin/settings/threat-intel-source/":                        admin.AdminRoleSuperAdmin,
+	"PUT /api/v1/admin/settings/scan-identification/":                        admin.AdminRoleSuperAdmin,
 	"PUT /api/v1/admin/settings/region/":                                     admin.AdminRoleSuperAdmin,
 	"PUT /api/v1/admin/settings/scan-approval-policy/":                       admin.AdminRoleSuperAdmin,
 	"PUT /api/v1/admin/settings/shared-sensor-anomaly/":                      admin.AdminRoleSuperAdmin,
