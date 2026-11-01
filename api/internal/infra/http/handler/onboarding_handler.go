@@ -136,6 +136,42 @@ func (h *LocalAuthHandler) OnboardingAccept(w http.ResponseWriter, r *http.Reque
 	_ = json.NewEncoder(w).Encode(res)
 }
 
+// OnboardingDecline declines an invitation offered by /auth/onboarding/options.
+// @Summary      Decline an invitation offer
+// @Description  The reference comes from /auth/onboarding/options and is bound to the account; the address must be verified. The invitation is deleted and the decline is audited. A stale or foreign reference is refused with one answer.
+// @Tags         Auth
+// @Accept       json
+// @Param        request  body  OnboardingAcceptRequest  true  "Offer"
+// @Success      204
+// @Failure      409  {object}  apierror.Error
+// @Router       /auth/onboarding/decline [post]
+func (h *LocalAuthHandler) OnboardingDecline(w http.ResponseWriter, r *http.Request) {
+	var req OnboardingAcceptRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8<<10)).Decode(&req); err != nil || strings.TrimSpace(req.Ref) == "" {
+		apierror.BadRequest("ref is required").WriteJSON(w)
+		return
+	}
+	acc, ok := h.onboardingAccount(w, r, req.RefreshToken)
+	if !ok {
+		return
+	}
+	u := acc.User
+	actx := auditapp.AuditContext{ActorID: u.ID().String(), ActorEmail: u.Email(), ActorIP: getClientIP(r),
+		UserAgent: r.UserAgent(), RequestID: middleware.GetRequestID(r.Context())}
+	err := h.onboarding.Decline(r.Context(), u, strings.TrimSpace(req.Ref), actx)
+	switch {
+	case err == nil:
+		w.WriteHeader(http.StatusNoContent)
+	case errors.Is(err, onboarding.ErrEmailNotVerified):
+		apierror.Forbidden("Verify your email address first").WriteJSON(w)
+	case errors.Is(err, onboarding.ErrInvalidRef), errors.Is(err, shared.ErrNotFound), errors.Is(err, shared.ErrValidation):
+		apierror.New(http.StatusConflict, "OFFER_UNAVAILABLE", "This offer is no longer available").WriteJSON(w)
+	default:
+		h.logger.Error("onboarding decline", "error", err)
+		apierror.InternalServerError("could not decline the invitation").WriteJSON(w)
+	}
+}
+
 // --- the organization's inbox (Members > Requests) ---
 
 // SetJoinRequests wires the join-request inbox.
