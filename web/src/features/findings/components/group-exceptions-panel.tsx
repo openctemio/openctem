@@ -103,7 +103,7 @@ function batchSourceTitle(batch: ApprovalBatch, t: Translate): string {
 }
 
 function StatusBadge({ status }: { status: string }) {
-  const { t, locale } = useTranslation()
+  const { t } = useTranslation()
   return (
     <Badge variant="outline" className={cn('text-xs', STATUS_STYLES[status])}>
       {t(`findings.approvals.status.${status}`, STATUS_FALLBACK[status] ?? status)}
