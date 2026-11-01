@@ -538,6 +538,89 @@ Key files: `pkg/domain/technology/`, `internal/app/technology/`,
 `internal/infra/http/handler/technology_handler.go`,
 `web/src/features/attack-surface/components/easm-technologies.tsx`.
 
+## 4o. Discovery management (built)
+
+Attack surface > Discovery shows the organization's coverage work in four
+stages, with a Run button per stage, Run all and Abort all, and exports it as
+CSV. It is a view of the coverage ledger ([asset coverage](asset-coverage.md),
+RFC-093) and adds no scheduler.
+
+| Stage | Capabilities (coverage policy) |
+|---|---|
+| Asset discovery (`asset_discovery`) | `discover.subdomains`, `enumerate.subdomains` (`discover.hosts` when a rule plans it) |
+| Exposure scan (`exposure_scan`) | `scan.ports`, `vuln.templates` (`check.takeover`) |
+| Validation & scoping (`validation_scoping`) | `resolve.dns`, `lookup.rdap`, `lookup.asn`: the facts attribution and scope decisions read |
+| Technology discovery (`technology_discovery`) | `probe.http` (`crawl.web`): the HTTP probe reports each service's technologies |
+
+The mapping is one table in `pkg/domain/coverage/discovery_stage.go`: the capability
+taxonomy's phases do not separate the four stages (`resolve.dns` and
+`scan.ports` are both discovery-phase acts). A test fails when a capability
+the planner runs has no stage, or when an entry's catalog phase does not fit
+its stage. Platform checks (`dns.email`, `dns.dangling`) run on the
+attack-surface sweep's schedule (section 4e, with its own run-now) and are not
+in the discovery stages.
+
+Per stage: status (`running` when a coverage run of one of its capabilities is
+active; `paused` with the reason when automatic coverage is off, `coverage_off`,
+or its pairs are paused for a readiness reason such as `tool_missing` or
+`not_claimed`; `failed` when the latest run of one of them failed, timed out or
+was blocked; else `idle`), the last run time, progress (tasks done of the
+active runs, else covered of the applicable pairs) and, per capability, the
+ledger counts (pairs, covered, due now, queued, failed, blocked, paused) and
+the latest run. The page shows when it was read, reloads on focus and after every action, and has a Refresh button (no polling).
+
+- **Run** (one stage) moves the due time of the stage's `covered`, `due` and
+  `failed` pairs to now minus the batch wait of the capability, so the next
+  coverage pass (every `ASSET_COVERAGE_INTERVAL`, one replica at a time)
+  starts the batch at once. Nothing else changes: queued, blocked, paused and
+  not applicable pairs are left alone (readiness pauses, not-claimed holds
+  and gate refusals still hold), and the pass plans through `StartCoverage`
+  and the full dispatch gate (scope entries, tiers, exclusions, windows, the
+  deny list), within the tenant's daily budget, one active run per capability
+  and the batch size. Run never calls the planner itself: the loop is
+  exclusive across replicas and a request-time pass would race it. Refused
+  with 409 while the coverage loop is off on the server
+  (`DISCOVERY_LOOP_OFF`), while the organization's automatic coverage is off
+  (`DISCOVERY_COVERAGE_OFF`; a switch that cannot be read is off) or when
+  today's budget is spent (`DISCOVERY_BUDGET_SPENT`). At most once a minute
+  per tenant and stage across replicas (a `controller_leases` row named after
+  the tenant and stage): 429 `DISCOVERY_RUN_TOO_SOON` with `Retry-After`.
+- **Run all** runs every stage; a stage run within the minute is skipped and
+  listed, and the call is refused (429) only when every stage is.
+- **Abort all** cancels the tenant's unfinished runs of managed coverage scans
+  (`managed_by = coverage`) through the run cancel (sensors told to stop, one
+  audit entry per run); a person's scan runs are never touched. The next pass
+  settles the canceled pairs as for any canceled run (failed, platform side,
+  with the back-off), so they are not restarted at once; automatic coverage
+  keeps its schedule (turn it off in the scope settings to stop it).
+- **Auto-validation metric.** "N assets in the last auto-validation" on
+  Validation & scoping counts the assets whose automatic attribution (no
+  person decided it, `decided_at IS NULL`) was written between the start of
+  the latest Validation & scoping run and 15 minutes after it ended (now while
+  it runs). No record of an attribution pass exists, so this window is the
+  definition.
+
+| Route | Gate | Notes |
+|---|---|---|
+| `GET /api/v1/attack-surface/discovery` | `scans:read` | the discovery stages |
+| `GET /api/v1/attack-surface/discovery/export` | `scans:read` | CSV, one row per stage and capability, formula cells neutralized |
+| `POST /api/v1/attack-surface/discovery/stages/{stage}/run` | `scans:write` + `scans:execute` (the scan trigger's) | 202; audited `easm_discovery.run` |
+| `POST /api/v1/attack-surface/discovery/run` | `scans:write` + `scans:execute` | 202; audited `easm_discovery.run` |
+| `POST /api/v1/attack-surface/discovery/cancel` | `scans:write` (the run cancel's) | audited `easm_discovery.aborted` (high) |
+
+All five sit behind the attack-surface module and need an **unrestricted data
+scope** (owner, administrator, or a role with full data access): the figures
+count every asset of the organization and Run and Abort act on all of them,
+so a member limited to some assets gets 403 `DISCOVERY_FULL_DATA_REQUIRED`
+rather than organization totals. The tenant is the principal's; every query
+filters the ledger, scans, runs, tasks and attributions on it, and a limiter
+key always names the tenant.
+
+Key files: `pkg/domain/coverage/discovery_stage.go`, `internal/app/coverage/discovery.go`,
+`internal/infra/postgres/asset_coverage_discovery.go`,
+`internal/infra/http/handler/easm_discovery_handler.go`,
+`web/src/features/attack-surface/components/easm-discovery.tsx`.
+
 ## 4h. Port and service results (built, P0-6)
 
 A port scanner (naabu, nmap, masscan, rustscan) reports an IP address with
