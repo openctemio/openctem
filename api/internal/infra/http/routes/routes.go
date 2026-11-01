@@ -111,6 +111,8 @@ type Handlers struct {
 	EASMSettings *handler.EASMSettingsHandler
 	// EASMLookalike manages passive lookalike-domain monitoring (RFC-083)
 	EASMLookalike *handler.EASMLookalikeHandler
+	// PageMonitor serves web page monitoring (RFC-138)
+	PageMonitor *handler.PageMonitorHandler
 	// EASMNetworkSeed manages AS number and organization seeds (RFC-082)
 	EASMNetworkSeed *handler.EASMNetworkSeedHandler
 	// AssetWebEvidence serves an asset's web evidence and screenshots (RFC-081)
@@ -1010,6 +1012,9 @@ func Register(
 	}
 	if h.EASMSettings != nil {
 		registerEASMSettingsRoutes(router, h.EASMSettings, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleAttackSurface))
+	}
+	if h.PageMonitor != nil {
+		registerPageMonitorRoutes(router, h.PageMonitor, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleAttackSurface))
 	}
 	if h.EASMLookalike != nil {
 		registerEASMLookalikeRoutes(router, h.EASMLookalike, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleAttackSurface))

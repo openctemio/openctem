@@ -45,8 +45,10 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/durablejob"
 	"github.com/openctemio/openctem/api/pkg/domain/ingestjob"
 	integrationdom "github.com/openctemio/openctem/api/pkg/domain/integration"
+	"github.com/openctemio/openctem/api/pkg/domain/pagemon"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/stage"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
 )
@@ -901,6 +903,18 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	// Passive lookalike-domain checks (RFC-083): hourly, bounded batches.
 	if svc.EASMLookalikes != nil {
 		w.ControllerManager.Register(controller.NewEASMLookalikeController(svc.EASMLookalikes, svc.Module, 0))
+	}
+
+	// Web page monitoring (RFC-138): due watches go through the coverage
+	// dispatch path (scope and active-scan gates, signed jobs) as the
+	// system, only for organizations with automatic coverage on, and only
+	// once the fetch capability is in the stage catalog.
+	if svc.PageMonitor != nil {
+		if svc.Scan != nil && svc.ScanPolicy != nil {
+			svc.PageMonitor.SetDispatch(svc.Scan, coverageapp.GovernanceSwitch{Modes: svc.ScanPolicy, Settings: svc.Tenant},
+				func() bool { _, ok := stage.Lookup(stage.Key(pagemon.Capability)); return ok })
+		}
+		w.ControllerManager.Register(controller.NewPageMonitorController(svc.PageMonitor, svc.Module, 0))
 	}
 
 	// Network seeds (RFC-082): re-expanded weekly from public routing data.

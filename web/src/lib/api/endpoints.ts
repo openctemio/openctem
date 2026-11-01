@@ -29,6 +29,7 @@ export const API_BASE = {
   SCAN_ZONES: '/api/v1/scan-zones',
   PROXY_POOLS: '/api/v1/proxy-pools',
   WORDLISTS: '/api/v1/wordlists',
+  CONTENT_RULES: '/api/v1/content-rules',
   SCAN_PROFILES: '/api/v1/scan-profiles',
   SCANNER_TEMPLATES: '/api/v1/scanner-templates',
   TOOLS: '/api/v1/tools',
@@ -1542,6 +1543,20 @@ export const wordlistEndpoints = {
   /** GET: counts of the label list an enumeration job of root would carry. */
   preview: (root: string, depth: 'standard' | 'deep' = 'standard') =>
     `${API_BASE.WORDLISTS}/preview?root=${encodeURIComponent(root)}&depth=${depth}`,
+} as const
+
+/**
+ * Organization detection rules (api docs/architecture/rule-packs.md): tenant
+ * from the JWT.
+ */
+export const contentRuleEndpoints = {
+  list: () => API_BASE.CONTENT_RULES,
+  create: () => API_BASE.CONTENT_RULES,
+  get: (id: string) => `${API_BASE.CONTENT_RULES}/${id}`,
+  update: (id: string) => `${API_BASE.CONTENT_RULES}/${id}`,
+  delete: (id: string) => `${API_BASE.CONTENT_RULES}/${id}`,
+  /** POST: runs a draft rule on a sample; secrets come back masked. */
+  test: () => `${API_BASE.CONTENT_RULES}/test`,
 } as const
 
 /**
