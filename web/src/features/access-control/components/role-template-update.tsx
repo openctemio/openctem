@@ -76,7 +76,11 @@ export function RoleTemplateUpdate({
           <div className="flex flex-wrap items-center gap-1">
             <span className="text-xs font-medium">{t('org.roleTemplate.added')}</span>
             {tpl.diff.added.map((p) => (
-              <Badge key={p} variant="outline" className="font-mono text-xs">
+              <Badge // label-ok: a permission id
+                key={p}
+                variant="outline"
+                className="font-mono text-xs"
+              >
                 + {p}
               </Badge>
             ))}
@@ -86,7 +90,11 @@ export function RoleTemplateUpdate({
           <div className="flex flex-wrap items-center gap-1">
             <span className="text-xs font-medium">{t('org.roleTemplate.removed')}</span>
             {tpl.diff.removed.map((p) => (
-              <Badge key={p} variant="outline" className="font-mono text-xs text-muted-foreground">
+              <Badge // label-ok: a permission id
+                key={p}
+                variant="outline"
+                className="font-mono text-xs text-muted-foreground"
+              >
                 − {p}
               </Badge>
             ))}
