@@ -55,6 +55,7 @@ import { CreateTicketDialog } from '../create-ticket-dialog'
 import { useCanCreateTicket } from '../../hooks/use-can-create-ticket'
 import { MarkDuplicateDialog } from '../mark-duplicate-dialog'
 import { findingSourceLabel, HUMAN_SOURCES } from '../../lib/finding-detail'
+import { shareableLink } from '@/lib/org-link'
 
 interface FindingHeaderProps {
   finding: FindingDetail
@@ -223,7 +224,7 @@ export function FindingHeader({ finding, status, onTriageCompleted }: FindingHea
           <DropdownMenuContent align="start" className="w-52">
             <DropdownMenuItem
               onClick={async () => {
-                const ok = await copyToClipboard(`${window.location.origin}/findings/${finding.id}`)
+                const ok = await copyToClipboard(shareableLink(`/findings/${finding.id}`))
                 if (ok) toast.success(t('findings.header.linkCopied', 'Link copied'))
                 else toast.error(t('common.copyFailed', 'Could not copy'))
               }}

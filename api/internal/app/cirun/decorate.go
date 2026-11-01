@@ -38,6 +38,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/scmapp"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/weblink"
 )
 
 // CheckName is the check run branch protection requires.
@@ -210,7 +211,7 @@ func (j *DecorationJob) decorate(ctx context.Context, run *cirun.Run) (string, s
 	if err != nil {
 		return cirun.DecorationRetry, "could not read the other verdicts on the commit"
 	}
-	runURL := j.webBase + RunPath(run.ID)
+	runURL := weblink.Console(j.webBase, RunPath(run.ID), run.TenantID.String())
 	if err := j.github.CreateCheckRun(ctx, inst.InstallationID, owner, repo, buildCheckRun(run, &v, sha, runURL, others)); err != nil {
 		return outcome(err, "post the check run")
 	}
@@ -339,7 +340,7 @@ func (j *DecorationJob) decorateGitLab(ctx context.Context, run *cirun.Run) (str
 	if c := commitConclusion(&v, others); c == conclusionFailure || c == conclusionActionRequired {
 		state = "failed"
 	}
-	runURL := j.webBase + RunPath(run.ID)
+	runURL := weblink.Console(j.webBase, RunPath(run.ID), run.TenantID.String())
 	if err := api.SetCommitStatus(ctx, project, run.CommitSHA, state, CheckName, runURL, plain(commitTitle(&v, others), 250), pipelineID); err != nil {
 		return gitlabOutcome(err, "set the commit status")
 	}
@@ -427,7 +428,7 @@ func (j *DecorationJob) otherFailures(ctx context.Context, run *cirun.Run, check
 		switch {
 		case v.Verdict == cirun.VerdictFail:
 			if f.Failed == 0 {
-				f.FailedURL = j.webBase + RunPath(v.RunID)
+				f.FailedURL = weblink.Console(j.webBase, RunPath(v.RunID), run.TenantID.String())
 			}
 			f.Failed++
 		case v.WouldFail:

@@ -12,6 +12,7 @@ import {
 } from '@/components/layout'
 import { SkipToMain } from '@/components/skip-to-main'
 import { RouteGuard } from '@/components/route-guard'
+import { OrgLinkGate } from '@/components/layout/org-link-gate'
 import { StepUpDialogHost } from '@/components/step-up-dialog'
 import { SettingsAnchorHighlighter } from '@/components/layout/settings-anchor-highlighter'
 import { PlatformAnnouncementBanner } from '@/features/announcements/components/platform-announcement-banner'
@@ -54,16 +55,19 @@ export default async function SiteLayout({ children }: SiteLayoutProps) {
               >
                 {/* RouteGuard checks if user has permission to access current route */}
                 {/* Shows "Access Denied" page if user doesn't have required permission */}
-                <RouteGuard>
-                  {/* Global header that handles per-route visibility */}
-                  <DashboardHeader />
-                  <ShellBannerSlot>
-                    {/* The platform operator's notices (maintenance, warnings). */}
-                    <PlatformAnnouncementBanner />
-                    {/* Platform support can read this organization's data now (RFC-063). */}
-                    <SupportAccessBanner />
-                  </ShellBannerSlot>
-                  {/*
+                {/* A link naming another organization of the person
+                    (?org=, src/lib/org-link.ts) switches to it first. */}
+                <OrgLinkGate>
+                  <RouteGuard>
+                    {/* Global header that handles per-route visibility */}
+                    <DashboardHeader />
+                    <ShellBannerSlot>
+                      {/* The platform operator's notices (maintenance, warnings). */}
+                      <PlatformAnnouncementBanner />
+                      {/* Platform support can read this organization's data now (RFC-063). */}
+                      <SupportAccessBanner />
+                    </ShellBannerSlot>
+                    {/*
                     `flex flex-1 flex-col` propagates the flex context
                     from SidebarInset (which is `flex flex-col flex-1`)
                     down into the page. Without this, any page that uses
@@ -74,12 +78,13 @@ export default async function SiteLayout({ children }: SiteLayoutProps) {
                     The overflow-hidden scope is gated by data-layout=fixed
                     so "normal" pages still scroll naturally at the body.
                   */}
-                  {/* The page's one `main` landmark: a page's own <Main> inside
+                    {/* The page's one `main` landmark: a page's own <Main> inside
                       it renders as a plain container. */}
-                  <MainRegion className="min-h-0 flex-1 overflow-y-auto overscroll-contain has-[[data-layout=fixed]]:flex has-[[data-layout=fixed]]:flex-col has-[[data-layout=fixed]]:overflow-hidden">
-                    {children}
-                  </MainRegion>
-                </RouteGuard>
+                    <MainRegion className="min-h-0 flex-1 overflow-y-auto overscroll-contain has-[[data-layout=fixed]]:flex has-[[data-layout=fixed]]:flex-col has-[[data-layout=fixed]]:overflow-hidden">
+                      {children}
+                    </MainRegion>
+                  </RouteGuard>
+                </OrgLinkGate>
               </SidebarInset>
             </SidebarProvider>
           </TenantGate>

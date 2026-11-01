@@ -86,6 +86,7 @@ import { useUrlFilter, useUrlFilterList } from '@/hooks/use-url-param'
 import { cn } from '@/lib/utils'
 import { useTranslation } from '@/context/i18n-provider'
 import { confirmName } from '@/lib/confirm-name'
+import { shareableLink } from '@/lib/org-link'
 
 // ============================================
 // CONSTANTS
@@ -380,7 +381,7 @@ export default function AssetGroupsPage() {
   }
 
   const handleCopyLink = (id: string) => {
-    copyToClipboard(`${window.location.origin}/assets/groups/${id}`)
+    copyToClipboard(shareableLink(`/assets/groups/${id}`))
     toast.success(t('assetGroups.linkCopied', 'Link copied'))
   }
 
