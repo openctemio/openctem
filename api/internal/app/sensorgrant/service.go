@@ -363,10 +363,14 @@ func (s *Service) DefaultProfileFor(t sensordom.SensorType) string {
 }
 
 // OnApproved returns the step the pairing approval runs in its transaction:
-// the sensor's grant becomes the chosen profile at trust level New (a
-// re-paired sensor returns to New too).
+// a new sensor's grant becomes the chosen profile at trust level New. A
+// re-paired sensor keeps its grant (what it may do did not change, only its
+// key did) and returns to trust level New.
 func (s *Service) OnApproved(tenantID shared.ID, profile string, zones []shared.ID, approvedBy shared.ID) func(ctx context.Context, tx *sql.Tx, sensorID shared.ID, repair bool) error {
-	return func(ctx context.Context, tx *sql.Tx, sensorID shared.ID, _ bool) error {
+	return func(ctx context.Context, tx *sql.Tx, sensorID shared.ID, repair bool) error {
+		if repair {
+			return s.repo.SetTrustTx(ctx, tx, tenantID, sensorID, sensordom.TrustNew)
+		}
 		g, err := sensordom.NewGrantFromProfile(tenantID, sensorID, profile, zones)
 		if err != nil {
 			return err

@@ -456,6 +456,8 @@ export interface Asset {
   programOnly?: boolean
   /** Triage (list rows asked with_triage): attribution and what a scan would do now. */
   triage?: AssetTriage
+  /** The derived monitoring state (list rows asked with_triage). */
+  monitoringState?: string
   /**
    * The asset is a CDN, edge, hosting or cloud-shared address, or a name or
    * service served through one (API `edge`, research/259). A label only.

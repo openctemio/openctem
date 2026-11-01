@@ -322,6 +322,12 @@ added automatically: a name never lends its address authority (dangling DNS,
 shared hosting and released cloud addresses would make a scan probe a third
 party).
 
+Each offered or already-checked address carries `ownership` (band
+`high`/`medium`/`low`/`unknown`, a score that only orders, and the signals
+with their parameters), computed by `pkg/domain/addrowner` from the rows the
+card already reads; the card lists addresses strongest first and counts them
+in `bands`. Rules and threats: RFC-054 §21. It authorizes nothing.
+
 ## 4b3. Inventory triage (built, research/124)
 
 Discovered assets are triaged after the fact, in the inventory, in bulk
@@ -582,6 +588,56 @@ asset types answer an empty list. The asset page shows them in a "Ports on
 resolved addresses" section, read through the asset view
 ([page-views.md](./page-views.md)).
 
+## 4o. Discovery lineage (built)
+
+The asset page and the asset sheet show "How this asset was found": the chain
+of parent assets from the root down to the asset, the asset's discovery
+source and tool (`assets.discovery_source`, `discovery_tool`), when it was
+first found, and its attribution confidence. The reasons behind the
+confidence (`easm_evidence`) stay in the Ownership and scope section above it;
+both read the same `GET /api/v1/assets/{id}/attribution` response.
+
+`GET /api/v1/assets/{id}/lineage` (`assets:read`, the asset detail's
+permission) returns the asset (depth 0) and its ancestors, one parent per hop,
+found by a recursive query bounded at 5 ancestors (`truncated` is set when the
+chain goes on). The parent of an asset is, in order: its `parent_id`; else the
+source of a `contains` edge pointing at it (a CTIS `subdomain_of` is stored
+this way, parent first); else of an `exposes` edge (the address or host of a
+port); else of a `serves_certificate` edge (the endpoint of a certificate);
+else of a `resolves_to` edge (a name of an address). Ties go to the oldest
+edge. Each node carries `via`, the edge kind that leads from it to the node
+below, and its own discovery source, tool, discovery time and first-seen time.
+
+Security:
+
+- The asset must be one the caller may see: another tenant's asset, or one
+  outside the caller's data scope, answers 404 (route guard and service
+  check).
+- Every hop of the recursive query is bound to the tenant (`assets` and
+  `asset_relationships` on `tenant_id`), so an edge or `parent_id` pointing at
+  another tenant's asset is never followed, even if one were stored (the
+  schema's tenant-bound foreign keys already refuse it).
+- An asset already on the path is never visited again (cycle guard), and a
+  soft-deleted parent ends the chain.
+- Every ancestor is checked against the caller's data scope in the same query
+  (`filterspec.ScopeSQL`, so assets hidden from the caller, such as private
+  program assets, count as outside it). An ancestor outside it comes back as
+  `{"hidden": true}` with its depth and `via` only: the database returns no
+  name, id, type or discovery field for it, and the domain layer
+  (`asset.BuildLineage`) strips them again. The page shows it as "Hidden
+  asset", without a link. Visible ancestors above it are still shown.
+
+The asset view primes the lineage with the page's other parts
+([page-views.md](./page-views.md)).
+
+Key files: `pkg/domain/asset/lineage.go`,
+`internal/infra/postgres/asset_lineage_repository.go`,
+`internal/app/asset/lineage.go`,
+`internal/infra/http/handler/asset_lineage_handler.go`,
+`web/src/features/assets/components/asset-lineage-section.tsx`. Tests:
+`internal/infra/http/routes/asset_lineage_db_test.go` (chain, redaction, cycle,
+depth cap, cross-tenant edge, 404s), `web/e2e/specs/53-asset-discovery-lineage.spec.ts`.
+
 ## 4g. Honest numbers (built, P0-13)
 
 - `GET /easm/summary` counts only exposure types something writes today
@@ -618,6 +674,30 @@ false positive (not a threat), resolve (taken down). Controller
 tenant). Routes: `/api/v1/easm/lookalikes/watches` (scope permissions,
 audited). The organization can turn the crt.sh queries off
 (`lookalike_ct_enabled` on `/api/v1/easm/settings`; fail closed).
+
+## 4o. Page monitoring (partly built)
+
+Design: [RFC-138](../rfcs/RFC-138-web-page-monitoring.md). Attack surface ›
+**Page changes** watches URLs of the organization's web services (manual add,
+or suggestions: root pages, login and admin pages, JS files from the crawl;
+at most 200 watches). JS-only mode (default) keeps the scripts a page loads
+(source identity without cache busters and build hashes, inline scripts by
+normalized hash, first or third party, integrity attribute) and, for each
+first-party script (a derived watch, at most 25 per page), its hash, size and
+the URLs found in it; full mode also keeps the masked visible text. Fetches
+are the capability `monitor.web_content` (T1) through the coverage dispatch
+path (`scan.Service.StartCoverage`: scope and active-scan gates, zone routing,
+signed jobs with the explicit URL list), started by the `page-monitoring`
+controller (every 10 minutes; at most 100 URLs per tenant and 10 per host per
+pass; only with automatic coverage on). Results arrive as the reserved asset
+property `web_content` and are normalized and diffed server-side
+(`pkg/domain/pagemon`); only a changed content hash stores a snapshot (last 5
+per watch) and a change with its diff (kept 180 days). A new third-party
+script host on a page is a `third_party_script_added` exposure (high) through
+the EASM alert writer, resolved when the page drops the host. Routes:
+`/api/v1/easm/page-monitoring` (reads `assets:read` and the watch asset's data
+scope; watch changes `scans:write`, audited). Not built yet: the capability in
+the taxonomy and the sensor's httpx capture (watches stay `waiting` until then).
 
 ## 4k. Network seeds (built)
 

@@ -24,6 +24,7 @@ import (
 	signerclient "github.com/openctemio/openctem/api/internal/infra/signer"
 
 	"github.com/openctemio/openctem/api/internal/app/orgdeletion"
+	pagemonapp "github.com/openctemio/openctem/api/internal/app/pagemon"
 	"github.com/openctemio/openctem/api/internal/app/scanrun"
 	"github.com/openctemio/openctem/api/internal/app/suspension"
 	webevidenceapp "github.com/openctemio/openctem/api/internal/app/webevidence"
@@ -88,6 +89,7 @@ import (
 	catalogapp "github.com/openctemio/openctem/api/internal/app/contentcatalog"
 	contentpackapp "github.com/openctemio/openctem/api/internal/app/contentpack"
 	"github.com/openctemio/openctem/api/internal/app/contentpin"
+	contentruleapp "github.com/openctemio/openctem/api/internal/app/contentrule"
 	contentsourceapp "github.com/openctemio/openctem/api/internal/app/contentsource"
 	coverageapp "github.com/openctemio/openctem/api/internal/app/coverage"
 	ctemidapp "github.com/openctemio/openctem/api/internal/app/ctemid"
@@ -804,7 +806,12 @@ type Services struct {
 	ContentDelivery *contentpackapp.Delivery
 	// Wordlists manages organization wordlists; ContentPlanner plans the
 	// content of jobs and previews an enumeration job's label list.
-	Wordlists      *wordlistapp.Service
+	Wordlists *wordlistapp.Service
+	// DetectionRules evaluates web fingerprint and sensitive-information
+	// rules on ingested web content (docs/architecture/rule-packs.md).
+	DetectionRules *contentruleapp.Service
+	// ContentRules manages organization detection rules.
+	ContentRules   *contentruleapp.RulesService
 	ContentPlanner *contentpin.Planner
 	// ContentCatalog is the content catalog (RFC-099).
 	ContentCatalog *catalogapp.Service
@@ -883,6 +890,8 @@ type Services struct {
 	EASMNetworkSeeds *easmapp.NetworkSeedService
 	// WebEvidence stores and serves web assets' captures (RFC-081).
 	WebEvidence *webevidenceapp.Service
+	// PageMonitor runs web page monitoring (RFC-138).
+	PageMonitor *pagemonapp.Service
 
 	// Compliance
 	Compliance *compliance.ComplianceService
@@ -1223,6 +1232,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Asset.SetResolution(repos.AssetResolution)
 	s.Asset.SetCoverage(repos.AssetCoverage)
 	s.Asset.SetResolvedPorts(repos.AssetRelationship)
+	// How an asset was found: its ancestor chain (docs/architecture/easm.md).
+	s.Asset.SetLineage(repos.AssetRelationship)
 	s.AssetCoverage = coverageapp.NewService(repos.AssetCoverage, log)
 	s.Asset.SetChangeTimeline(repos.AssetChangeEvents)
 	s.Asset.SetAttributeSourceLister(repos.AssetChangeEvents)
@@ -1457,6 +1468,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 
 	s.Exposure = exposure.NewExposureService(repos.Exposure, repos.ExposureStateHistory, log)
 	s.Exposure.SetDataScope(s.DataScope)
+	// Analyst severity override: stored on the exposure, audited.
+	s.Exposure.SetSeverityStore(repos.Exposure)
+	s.Exposure.SetItemReader(repos.Exposure)
+	s.Exposure.SetAuditService(s.Audit)
 	// Four-eyes on accepting or dismissing a high or critical exposure or
 	// leaked credential (one gate for both routes).
 	exposureDispositions := exposure.NewDispositionGate(
@@ -1991,6 +2006,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 			orgPolicy = s.PlatformAI
 		}
 		s.TenantAI = tenantai.NewService(repos.TenantAISettings, s.Encryptor, s.Audit, llmFactory, orgPolicy, log)
+		s.TenantAI.SetAutoTriageDefaults(s.AITriage.AutoTriageDefaults)
+		if s.Tenant != nil {
+			s.TenantAI.SetLooseningNotifier(s.Tenant)
+		}
 		s.Vulnerability.SetAITriageService(s.AITriage) // Wire auto-triage on finding creation
 
 		// The organization's AI data-egress policy, shared with MCP: pentest
@@ -2255,6 +2274,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		s.SensorPairing.SetEnrollmentTokens(repos.SensorPairing)
 		// The approval screen names the organization the sensor joins.
 		s.SensorPairing.SetTenants(repos.Tenant)
+		// A re-pair revokes the keys the sensor's leased commands were
+		// claimed with: they are taken back at approval.
+		s.SensorPairing.SetCommandReleaser(repos.Command)
 	}
 	// Per-sensor grants (RFC-052 §5): enforced on poll, claim, results
 	// without a job and heartbeat actions; a pairing approval sets the
@@ -2316,6 +2338,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	repos.Command.SetLeaseDuration(cfg.SensorConfig.CommandLease)
 	s.Sensor.SetLeaseRenewer(repos.Command)
 	s.Sensor.SetCancelFinder(repos.Command)
+	// A sensor whose local policy changed may claim again what it refused.
+	s.Sensor.SetRefusalForgetter(repos.Command)
 	// Revoking or disabling a sensor takes back its leased commands at once
 	// (RFC-040 §5.2) instead of at lease expiry.
 	s.Sensor.SetHolderReleaser(repos.Command)
@@ -2351,6 +2375,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// echo (PROXY_TEST_ECHO_URL, SENSOR_PUBLIC_API_URL or APP_URL).
 	s.ProxyPool.EnableTest(repos.Sensor, repos.Command, proxypoolapp.TestConfig{
 		EchoBase: cfg.ProxyTestEchoBase(), AltPort: cfg.SensorConfig.ProxyTestAltPort})
+	// Scanner addresses: exits the platform's echo saw, sensors' observed
+	// addresses, and the shared sensors' published egress for an
+	// organization allowed to use them.
+	s.ProxyPool.EnableScannerAddresses(repos.ProxyPool, s.proxyScannerPlatformEgress)
 	contentPlanner := contentpin.New(s.ContentDelivery, postgres.NewKnownNamesRepository(&postgres.DB{DB: deps.DB}), nil)
 	// The organization's own wordlists join its DNS label jobs inline, and
 	// the preview counts what a job would carry (docs/architecture/wordlists.md).
@@ -2369,8 +2397,20 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 			if _, err := contentpin.InstallBuiltin(ctx, s.PlatformContentPacks, log.Logger); err != nil {
 				log.Error("built-in wordlist packs not installed; subdomain enumeration waits for an imported pack", "error", err)
 			}
+			// The curated detection rule packs, the same way.
+			if _, err := contentruleapp.InstallBuiltin(ctx, s.PlatformContentPacks, log.Logger); err != nil {
+				log.Error("built-in detection rule packs not installed; only organization rules run", "error", err)
+			}
 		}()
 	}
+	// Detection rules run at ingest on the web content a report carries;
+	// secrets become masked exposures through the EASM writer.
+	s.DetectionRules = contentruleapp.NewService(s.PlatformContentPacks, nil, easmExposures,
+		postgres.NewCommandContentPinsRepository(&postgres.DB{DB: deps.DB}),
+		vulnerability.NewSecretFingerprinter([]byte(cfg.FingerprintSecret())), log.Logger)
+	contentRuleRepo := postgres.NewTenantContentRuleRepository(&postgres.DB{DB: deps.DB})
+	s.DetectionRules.SetOrganizationRules(contentRuleRepo)
+	s.ContentRules = contentruleapp.NewRulesService(contentRuleRepo, s.DetectionRules, s.Audit, log)
 	cmdOpts := []command.Option{command.WithSensorLookup(repos.Sensor),
 		// Each scan and retest job carries the claiming sensor's proxy pool.
 		command.WithEgress(s.ProxyPool),
@@ -2557,6 +2597,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Ingest.SetExclusionSource(s.Scope)                             // New assets matching a scope exclusion are not added (RFC-042 F16)
 	// Secret findings: fingerprint keyed by the platform secret (RFC-043).
 	s.Ingest.SetSecretFingerprinter(vulnerability.NewSecretFingerprinter([]byte(cfg.FingerprintSecret())))
+	s.Ingest.SetDetectionRules(s.DetectionRules)
 	// Receipts of uploads and sensor runs, with the daily ingest fact (RFC-122).
 	s.Ingest.SetReceiptRecorder(repos.IngestReceipt)
 	// Coverage-scoped auto-resolve of non-repository findings (default dry_run).
@@ -3376,6 +3417,13 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	}
 	s.WebEvidence = webevidenceapp.NewService(repos.AssetWebEvidence, blobs, s.Tenant, log.With("service", "web-evidence"))
 	s.Ingest.SetWebEvidenceRecorder(s.WebEvidence)
+	// Web page monitoring (RFC-138): fetch results of watched URLs are
+	// diffed server-side; a new third-party script host is an exposure
+	// through the EASM writer (alerts), resolved by the DNS repository's
+	// auto-resolve when the page drops it. Dispatch is wired with the workers.
+	s.PageMonitor = pagemonapp.NewService(repos.PageMonitor, s.DataScope, log.With("service", "page-monitoring"))
+	s.PageMonitor.SetAlerts(easmExposures, repos.EASMDNS)
+	s.Ingest.SetWebContentRecorder(s.PageMonitor)
 
 	// A successful scan run fires the `scan_completed` workflow trigger.
 	s.ScanRun.SetRunCompletedCallback(s.WorkflowDispatcher.DispatchScanCompleted)
@@ -4113,6 +4161,23 @@ func (s *Services) SharedSensorsEgress(ctx context.Context) ([]sensorapp.Platfor
 		return nil, err
 	}
 	return sensorapp.EgressFromLists(v.Global, v.Regions), nil
+}
+
+// proxyScannerPlatformEgress is the shared sensors' published egress for an
+// organization that may use shared sensors; nothing otherwise.
+func (s *Services) proxyScannerPlatformEgress(ctx context.Context, tenantID shared.ID) ([]proxypoolapp.PlatformEgress, error) {
+	if ok, _ := s.SharedSensorsAllowed(ctx, tenantID); !ok {
+		return nil, nil
+	}
+	eg, err := s.SharedSensorsEgress(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]proxypoolapp.PlatformEgress, 0, len(eg))
+	for _, e := range eg {
+		out = append(out, proxypoolapp.PlatformEgress{Region: e.Region, Addresses: e.Addresses})
+	}
+	return out, nil
 }
 
 // learnComponentReleases makes the first-party component releases of the

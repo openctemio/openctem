@@ -181,6 +181,7 @@ func newDSHarness(t *testing.T) *dsHarness {
 	assetSvc.SetChangeTimeline(postgres.NewAssetChangeEventRepository(db))
 	assetSvc.SetTechnologyFacets(postgres.NewAssetTechnologyRepository(db))
 	assetSvc.SetResolvedPorts(postgres.NewAssetRelationshipRepository(db))
+	assetSvc.SetLineage(postgres.NewAssetRelationshipRepository(db))
 
 	vulnSvc := finding.NewVulnerabilityService(postgres.NewVulnerabilityRepository(db), findingRepo, log)
 	vulnSvc.SetCommentRepository(postgres.NewFindingCommentRepository(db))
@@ -201,6 +202,8 @@ func newDSHarness(t *testing.T) *dsHarness {
 
 	expSvc := exposure.NewExposureService(postgres.NewExposureRepository(db), postgres.NewExposureStateHistoryRepository(db), log)
 	expSvc.SetDataScope(enforcer)
+	expSvc.SetSeverityStore(postgres.NewExposureRepository(db))
+	expSvc.SetItemReader(postgres.NewExposureRepository(db))
 
 	dashSvc := module.NewDashboardService(postgres.NewDashboardRepository(sqldb), log)
 	dashSvc.SetDataScope(enforcer)
@@ -226,7 +229,9 @@ func newDSHarness(t *testing.T) *dsHarness {
 	registerVulnerabilityRoutes(router, vulnHandler, nil, nil, nil, auth, nil)
 	registerAssetGroupRoutes(router, handler.NewAssetGroupHandler(groupSvc, v, log), auth, nil)
 	registerAttackSurfaceRoutes(router, handler.NewAttackSurfaceHandler(surfaceSvc, log), auth, nil, passthrough)
-	registerExposureRoutes(router, handler.NewExposureHandler(expSvc, nil, v, log), auth, nil, passthrough)
+	exposureHandler := handler.NewExposureHandler(expSvc, nil, v, log)
+	registerExposureRoutes(router, exposureHandler, auth, nil, passthrough)
+	registerExposureItemRoutes(router, exposureHandler, auth, nil, passthrough)
 	registerDashboardRoutes(router, handler.NewDashboardHandler(dashSvc, log), auth, nil, log)
 	// The dashboard's threat intel, validation, scan coverage and CTEM cycle
 	// figures.
@@ -469,6 +474,8 @@ func TestDataScope_ByIDWrites_OutOfScopeIs404AndUnchanged(t *testing.T) {
 		{http.MethodPost, "/api/v1/assets/" + h.assetB.String() + "/archive", nil},
 		{http.MethodDelete, "/api/v1/assets/" + h.assetB.String(), nil},
 		{http.MethodPost, "/api/v1/exposures/" + h.exposureB.String() + "/resolve", map[string]any{"reason": "x"}},
+		{http.MethodPost, "/api/v1/exposures/" + h.exposureB.String() + "/start-progress", map[string]any{"reason": "x"}},
+		{http.MethodPatch, "/api/v1/exposures/" + h.exposureB.String() + "/severity", map[string]any{"severity": "low", "reason": "probe"}},
 	}
 	for _, w := range writes {
 		status, body := h.do(h.memberA, false, w.method, w.path, w.body)
@@ -488,10 +495,10 @@ func TestDataScope_ByIDWrites_OutOfScopeIs404AndUnchanged(t *testing.T) {
 	if desc.String == "pwned" || status != "active" {
 		t.Errorf("B1 changed by an out-of-scope member: description=%q status=%s", desc.String, status)
 	}
-	var expState string
-	_ = h.db.QueryRow(`SELECT state FROM exposure_events WHERE id = $1`, h.exposureB.String()).Scan(&expState)
-	if expState != "active" {
-		t.Errorf("exposure B changed by an out-of-scope member: state=%s", expState)
+	var expState, expSeverity string
+	_ = h.db.QueryRow(`SELECT state, severity FROM exposure_events WHERE id = $1`, h.exposureB.String()).Scan(&expState, &expSeverity)
+	if expState != "active" || expSeverity != "high" {
+		t.Errorf("exposure B changed by an out-of-scope member: state=%s severity=%s", expState, expSeverity)
 	}
 
 	// The same member can still change their own group's finding (an

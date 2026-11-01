@@ -343,6 +343,11 @@ func (r *mfaInvSpendRepo) MarkUsedIfUnused(context.Context, shared.ID) (bool, er
 	r.spent++
 	return true, nil
 }
+func (r *mfaInvSpendRepo) RotateIfUnused(context.Context, shared.ID, string, *sessiondom.RefreshToken) (bool, error) {
+	r.spent++
+	r.created++
+	return true, nil
+}
 func (r *mfaInvSpendRepo) Create(context.Context, *sessiondom.RefreshToken) error {
 	r.created++
 	return nil

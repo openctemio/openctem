@@ -3,17 +3,15 @@ package notifier
 import (
 	"bytes"
 	"context"
-	"crypto/tls"
+	"errors"
 	"fmt"
 	"html/template"
 	"net"
-	"net/smtp"
-	"strconv"
+	"sort"
 	"strings"
 	"time"
 
 	emailpkg "github.com/openctemio/openctem/api/pkg/email"
-	"github.com/openctemio/openctem/api/pkg/httpsec"
 )
 
 // EmailClient implements the Client interface for email notifications via SMTP.
@@ -75,66 +73,55 @@ func (c *EmailClient) Provider() string {
 
 // Send sends a notification email.
 func (c *EmailClient) Send(ctx context.Context, msg Message) (*SendResult, error) {
-	// Build HTML email body
+	if err := c.deliver(ctx, msg); err != nil {
+		var be buildError
+		if errors.As(err, &be) {
+			return &SendResult{Success: false, Error: fmt.Sprintf("build email body: %v", be.err)}, nil
+		}
+		return &SendResult{Success: false, Error: fmt.Sprintf("send email: %v", err)}, nil
+	}
+	return &SendResult{Success: true}, nil
+}
+
+// buildError marks a failure to render the message, as opposed to a transport
+// failure.
+type buildError struct{ err error }
+
+func (e buildError) Error() string { return e.err.Error() }
+func (e buildError) Unwrap() error { return e.err }
+
+// deliver renders the notification and sends it through the shared sender.
+func (c *EmailClient) deliver(ctx context.Context, msg Message) error {
 	htmlBody, err := c.buildHTMLEmail(msg)
 	if err != nil {
-		return &SendResult{
-			Success: false,
-			Error:   fmt.Sprintf("build email body: %v", err),
-		}, nil
+		return buildError{err}
 	}
 
-	// Build email headers.
-	// msg.Title comes from the notification payload which is
+	// msg.Title comes from the notification payload, which is
 	// attacker-influenceable (finding titles, scanner output, AI
-	// summaries). A "\r\n" in Title lets an attacker smuggle
-	// additional SMTP headers (Bcc: attacker@evil, Content-Type
-	// override, etc.) — classic CRLF injection. Every value we
-	// write into a header line passes through
-	// emailpkg.SanitizeHeaderValue first. See CodeQL rule
+	// summaries). The shared sender strips CR/LF from every header value
+	// and encodes the subject (RFC 2047), so a "\r\n" in Title cannot
+	// smuggle headers (Bcc, Content-Type). See CodeQL rule
 	// go/email-content-injection.
-	subject := emailpkg.SanitizeHeaderValue(msg.Title)
+	subject := msg.Title
 	if msg.Severity != "" {
-		emoji := GetSeverityEmoji(msg.Severity)
-		subject = fmt.Sprintf("%s [%s] %s", emoji, strings.ToUpper(msg.Severity), emailpkg.SanitizeHeaderValue(msg.Title))
+		subject = fmt.Sprintf("%s [%s] %s", GetSeverityEmoji(msg.Severity), strings.ToUpper(msg.Severity), msg.Title)
 	}
 
-	// Recipient + sender headers — sanitise at the source so a
-	// malicious FromName / FromEmail (operator config) or a stray
-	// CR in ToEmails cannot inject extra headers either.
-	safeFromName := emailpkg.SanitizeHeaderValue(c.config.FromName)
-	safeFromEmail := emailpkg.SanitizeHeaderValue(c.config.FromEmail)
-	safeRecipients := make([]string, 0, len(c.config.ToEmails))
-	for _, r := range c.config.ToEmails {
-		safeRecipients = append(safeRecipients, emailpkg.SanitizeHeaderValue(r))
+	// The port rule is checked again here: a stored configuration may predate it.
+	if err := validateRelay(&c.config); err != nil {
+		return err
 	}
-
-	// Build MIME message
-	var emailBuf bytes.Buffer
-	fmt.Fprintf(&emailBuf, "From: %s <%s>\r\n", safeFromName, safeFromEmail)
-	fmt.Fprintf(&emailBuf, "To: %s\r\n", strings.Join(safeRecipients, ", "))
-	if c.config.ReplyTo != "" {
-		fmt.Fprintf(&emailBuf, "Reply-To: %s\r\n", emailpkg.SanitizeHeaderValue(c.config.ReplyTo))
-	}
-	fmt.Fprintf(&emailBuf, "Subject: %s\r\n", subject)
-	emailBuf.WriteString("MIME-Version: 1.0\r\n")
-	emailBuf.WriteString("Content-Type: text/html; charset=\"UTF-8\"\r\n")
-	fmt.Fprintf(&emailBuf, "Date: %s\r\n", time.Now().Format(time.RFC1123Z))
-	emailBuf.WriteString("\r\n")
-	emailBuf.WriteString(htmlBody)
-
-	// Send via SMTP
-	err = c.sendSMTP(ctx, emailBuf.Bytes())
-	if err != nil {
-		return &SendResult{
-			Success: false,
-			Error:   fmt.Sprintf("send email: %v", err),
-		}, nil
-	}
-
-	return &SendResult{
-		Success: true,
-	}, nil
+	// Date, Message-ID, header encoding and the multipart body are the shared
+	// sender's job (pkg/email): one SMTP stack.
+	return c.sender().Send(ctx, &emailpkg.Message{
+		To:       c.config.ToEmails,
+		Subject:  subject,
+		Body:     htmlBody,
+		IsHTML:   true,
+		ReplyTo:  c.config.ReplyTo,
+		TextBody: c.buildTextEmail(msg),
+	})
 }
 
 // TestConnection tests the SMTP configuration.
@@ -150,15 +137,12 @@ func (c *EmailClient) TestConnection(ctx context.Context) (*SendResult, error) {
 // smtpSessionTimeout bounds one SMTP session of an organization's relay.
 var smtpSessionTimeout = 2 * time.Minute
 
-// resolveSMTPHost and dialSMTP are the network seams of sendSMTP; tests
-// replace them to reach a local relay. dialSMTP connects to an address that
-// resolveSMTPHost already vetted (an IP literal) and honors ctx.
+// relayResolver and relayDialer replace the SSRF-guarded resolution and dial
+// of the shared sender; tests set them to reach a local relay. They are nil
+// in production.
 var (
-	resolveSMTPHost = httpsec.ResolveSafeHost
-	dialSMTP        = func(ctx context.Context, addr string) (net.Conn, error) {
-		var d net.Dialer
-		return d.DialContext(ctx, "tcp", addr)
-	}
+	relayResolver func(ctx context.Context, host string) (net.IP, error)
+	relayDialer   func(ctx context.Context, timeout time.Duration, addr string) (net.Conn, error)
 )
 
 // validateRelay applies the transport rule for an organization's relay (the
@@ -169,119 +153,59 @@ func validateRelay(c *EmailConfig) error {
 	return emailpkg.ValidateTenantRelay(c.SMTPPort, c.UseTLS, c.UseSTARTTLS, c.Username, c.Password)
 }
 
-// sendSMTP sends an email via SMTP.
-func (c *EmailClient) sendSMTP(ctx context.Context, message []byte) error {
-	// SSRF guard: a tenant controls SMTPHost, so block loopback / link-local
-	// (cloud IMDS) / RFC1918 targets before dialing (internal relays require
-	// the operator allow-private flag, same as outbound webhooks). Pin the
-	// validated IP and dial THAT instead of the hostname — dialing the
-	// hostname would re-resolve DNS, reopening a rebinding TOCTOU where the
-	// second lookup could return an internal IP. TLS still uses the hostname
-	// as ServerName so certificate validation is unaffected.
-	// The port is checked again here: a stored configuration may predate
-	// the rule.
-	if err := validateRelay(&c.config); err != nil {
-		return err
-	}
-	safeIP, err := resolveSMTPHost(ctx, c.config.SMTPHost)
-	if err != nil {
-		return fmt.Errorf("smtp host rejected: %w", err)
-	}
-	addr := net.JoinHostPort(safeIP.String(), strconv.Itoa(c.config.SMTPPort))
+// sender returns the shared SMTP sender for this relay. The shared sender
+// resolves the host through the SSRF guard and dials the vetted address, bounds
+// the whole session, fails closed when STARTTLS is not available and never
+// sends credentials in clear text. The relay's certificate is always verified:
+// this client sends a tenant's SMTP password, and a tenant cannot turn
+// verification off, so a stored legacy skip_verify flag is ignored. The port
+// rule is checked by the caller before every send.
+func (c *EmailClient) sender() emailpkg.Sender {
+	return emailpkg.NewSMTPSender(emailpkg.Config{
+		Host:        c.config.SMTPHost,
+		Port:        c.config.SMTPPort,
+		User:        c.config.Username,
+		Password:    c.config.Password,
+		From:        c.config.FromEmail,
+		FromName:    c.config.FromName,
+		ImplicitTLS: c.config.UseTLS,
+		TLS:         c.config.UseSTARTTLS && !c.config.UseTLS,
+		SkipVerify:  false,
+		// The shared sender allows four dial timeouts per session.
+		Timeout:     smtpSessionTimeout / 4,
+		ResolveHost: relayResolver,
+		Dial:        relayDialer,
+	})
+}
 
-	// The relay's certificate is always verified: this client sends a
-	// tenant's SMTP password, and a tenant cannot turn verification off
-	// (RFC-049 F-5). A stored legacy skip_verify flag is ignored.
-	tlsConfig := emailpkg.TLSConfig(c.config.SMTPHost, false)
-
-	// One budget for the whole session (connect, TLS, greeting, AUTH,
-	// MAIL/RCPT/DATA, QUIT), bounded by the caller's deadline: a relay that
-	// accepts the connection and then never answers, or answers one byte at
-	// a time, must not hold a delivery worker or a connection test.
-	deadline := time.Now().Add(smtpSessionTimeout)
-	if d, ok := ctx.Deadline(); ok && d.Before(deadline) {
-		deadline = d
+// buildTextEmail builds the text/plain alternative of the notification.
+func (c *EmailClient) buildTextEmail(msg Message) string {
+	var b strings.Builder
+	if msg.Severity != "" {
+		b.WriteString("[" + strings.ToUpper(msg.Severity) + "] ")
 	}
-	dctx, cancel := context.WithDeadline(ctx, deadline)
-	defer cancel()
-
-	conn, err := dialSMTP(dctx, addr)
-	if err != nil {
-		return fmt.Errorf("dial: %w", err)
+	b.WriteString(msg.Title + "\n")
+	if msg.Body != "" {
+		b.WriteString("\n" + msg.Body + "\n")
 	}
-	defer func() { _ = conn.Close() }()
-	if err := conn.SetDeadline(deadline); err != nil {
-		return fmt.Errorf("set deadline: %w", err)
+	keys := make([]string, 0, len(msg.Fields))
+	for k := range msg.Fields {
+		keys = append(keys, k)
 	}
-
-	// Direct TLS (port 465); otherwise plain, upgraded with STARTTLS below.
-	if c.config.UseTLS {
-		tc := tls.Client(conn, tlsConfig)
-		if err := tc.HandshakeContext(dctx); err != nil {
-			return fmt.Errorf("TLS handshake: %w", err)
-		}
-		conn = tc
+	sort.Strings(keys)
+	if len(keys) > 0 {
+		b.WriteString("\n")
 	}
-
-	// Create SMTP client
-	client, err := smtp.NewClient(conn, c.config.SMTPHost)
-	if err != nil {
-		return fmt.Errorf("new SMTP client: %w", err)
+	for _, k := range keys {
+		b.WriteString(k + ": " + msg.Fields[k] + "\n")
 	}
-	defer func() { _ = client.Close() }()
-
-	// STARTTLS if required (port 587). Fail closed: if STARTTLS was requested
-	// but the server does not advertise it, refuse rather than silently send
-	// credentials + message in cleartext (downgrade/strip protection).
-	if c.config.UseSTARTTLS && !c.config.UseTLS {
-		if ok, _ := client.Extension("STARTTLS"); !ok {
-			return fmt.Errorf("STARTTLS requested but not supported by server %s", c.config.SMTPHost)
-		}
-		if err = client.StartTLS(tlsConfig); err != nil {
-			return fmt.Errorf("STARTTLS: %w", err)
-		}
+	if msg.URL != "" {
+		b.WriteString("\nView details: " + msg.URL + "\n")
 	}
-
-	// Authenticate if credentials provided
-	if c.config.Username != "" && c.config.Password != "" {
-		auth := smtp.PlainAuth("", c.config.Username, c.config.Password, c.config.SMTPHost)
-		if err = client.Auth(auth); err != nil {
-			return fmt.Errorf("auth: %w", err)
-		}
+	if msg.FooterText != "" {
+		b.WriteString("\n" + msg.FooterText + "\n")
 	}
-
-	// Set sender
-	if err = client.Mail(c.config.FromEmail); err != nil {
-		return fmt.Errorf("MAIL FROM: %w", err)
-	}
-
-	// Set recipients
-	for _, to := range c.config.ToEmails {
-		if err = client.Rcpt(to); err != nil {
-			return fmt.Errorf("RCPT TO %s: %w", to, err)
-		}
-	}
-
-	// Send message body
-	w, err := client.Data()
-	if err != nil {
-		return fmt.Errorf("DATA: %w", err)
-	}
-
-	_, err = w.Write(message)
-	if err != nil {
-		return fmt.Errorf("write message: %w", err)
-	}
-
-	err = w.Close()
-	if err != nil {
-		return fmt.Errorf("close writer: %w", err)
-	}
-
-	// Quit gracefully
-	_ = client.Quit()
-
-	return nil
+	return b.String()
 }
 
 // buildHTMLEmail builds an HTML email from the notification message.

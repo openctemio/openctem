@@ -287,9 +287,19 @@ export const ASSETS_SECTION_TABS: readonly SectionTab[] = [
  * the switch menu. The order is fixed (by kind), never sorted by count.
  */
 export interface AttentionReasonDef {
-  id: 'no_owner' | 'context' | 'unscanned' | 'relationships' | 'duplicates'
-  /** "Fix on the asset" reasons are filters of the inventory; "Review" ones have their own rows. */
-  group: 'fix' | 'review'
+  id:
+    | 'validate_primary'
+    | 'decide_monitoring'
+    | 'no_owner'
+    | 'context'
+    | 'unscanned'
+    | 'relationships'
+    | 'duplicates'
+  /**
+   * "Scoping decisions" and "Fix on the asset" reasons are filters of the
+   * inventory; "Review" ones have their own rows.
+   */
+  group: 'decide' | 'fix' | 'review'
   label: string
   labelKey: string
   whyKey: string
@@ -306,6 +316,37 @@ export interface AttentionReasonDef {
 const ASSETS_UNIT = '{count, plural, one {asset} other {assets}}'
 
 export const ASSET_ATTENTION_REASONS: readonly AttentionReasonDef[] = [
+  {
+    // Scoping decisions (research/333 D11): the organization's root domains
+    // whose ownership is not settled yet, then every name that waits for a
+    // person to decide whether it is monitored.
+    id: 'validate_primary',
+    group: 'decide',
+    label: 'Validate primary assets',
+    labelKey: 'assets.attention.tab.validatePrimary',
+    whyKey: 'assets.attention.why.validatePrimary',
+    why: 'Root domains your discovery starts from, not yet confirmed as yours.',
+    unitKey: 'assets.attention.unit.assets',
+    unit: ASSETS_UNIT,
+    href: '/assets/attention/validate-primary',
+    icon: Crown,
+    module: 'assets',
+    permission: Permission.AssetsRead,
+  },
+  {
+    id: 'decide_monitoring',
+    group: 'decide',
+    label: 'Decide monitoring',
+    labelKey: 'assets.attention.tab.decideMonitoring',
+    whyKey: 'assets.attention.why.decideMonitoring',
+    why: 'Discovered names waiting for a decision: monitor, watch only, or not yours.',
+    unitKey: 'assets.attention.unit.assets',
+    unit: ASSETS_UNIT,
+    href: '/assets/attention/decide-monitoring',
+    icon: ListChecks,
+    module: 'assets',
+    permission: Permission.AssetsRead,
+  },
   {
     id: 'no_owner',
     group: 'fix',
@@ -447,6 +488,16 @@ export const ATTACK_SURFACE_SECTION_TABS: readonly SectionTab[] = [
     icon: Layers,
     module: 'assets',
     permission: Permission.AssetsRead,
+  },
+  {
+    // Every exposure of the external surface with the asset it is on
+    // (research/333 D1): open work on monitored assets first.
+    label: 'Exposure items',
+    labelKey: 'nav.tab.exposureItems',
+    href: '/attack-surface/exposures',
+    icon: FileWarning,
+    module: 'attack_surface',
+    permission: Permission.ExposuresRead,
   },
   {
     // The certificate assets of the external surface with their expiry

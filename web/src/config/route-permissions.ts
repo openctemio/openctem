@@ -165,6 +165,12 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     permission: Permission.AssetsRead,
     module: Module.Assets,
   },
+  // Exposure items: the exposures of the external surface (research/333 D1);
+  // the API also needs findings:read.
+  '/attack-surface/exposures': {
+    permission: Permission.ExposuresRead,
+    module: Module.AttackSurface,
+  },
   // Technologies read the assets module's asset technologies (research/333 D4).
   '/attack-surface/technologies': {
     permission: Permission.AssetsRead,
@@ -597,6 +603,11 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
   // Organization wordlists: saving needs scans:content:write (checked by
   // the page and the API).
   '/settings/scanning/wordlists': {
+    permission: Permission.ContentPacksRead,
+  },
+  // Organization detection rules: saving needs scans:content:write
+  // (checked by the page and the API).
+  '/settings/scanning/detection-rules': {
     permission: Permission.ContentPacksRead,
   },
   // Organization tool defaults: a sensors setting; saving needs

@@ -314,6 +314,11 @@ type Filter struct {
 	// successful run of any capability within CoverageWindow ("covered"),
 	// or none ("uncovered"). "" = no filter.
 	Coverage string
+	// CoverageCause keeps the uncovered assets whose coverage gap has this
+	// cause (no_sensor, platform_failure, paused, target_unreachable,
+	// never_run, overdue, out_of_scope, other); it implies "uncovered".
+	// Unknown values are ignored. "" = no filter.
+	CoverageCause string
 	// Technologies keeps assets using any of these technologies (normalised
 	// names, RFC-112); TechnologyCategories keeps assets with a technology
 	// in any of these categories.
@@ -378,7 +383,14 @@ type Filter struct {
 	// (cert_transparency, a scanner name, ...). Min/MaxConfidence bound the
 	// recorded attribution confidence (assets without a record count as
 	// 100, as the attribution API reports them).
-	ScopeStatuses       []string
+	ScopeStatuses []string
+	// MonitoringStates keeps the assets whose derived monitoring state
+	// (MonitoringStateOf) is one of these; UnclassifiedScanned is the
+	// tenant's input to it (its unclassified-scans mode is not off).
+	MonitoringStates    []string
+	UnclassifiedScanned bool
+	// Primary keeps the organization's root domains only (PrimarySQL).
+	Primary             bool
 	DiscoveredBy        []string
 	DiscoveryTechniques []string
 	MinConfidence       *int

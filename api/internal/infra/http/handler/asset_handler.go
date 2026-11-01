@@ -41,6 +41,8 @@ type AssetHandler struct {
 	logger             *logger.Logger
 	programFlags       ProgramAssetFlagReader
 	triageGate         AssetTriageGate
+	unclassifiedPolicy AssetUnclassifiedPolicy
+	monitoringReader   AssetMonitoringReader
 	triageRecords      AssetTriageRecords
 	triageExclusions   AssetTriageExclusions
 	riskGov            *appfinding.AssetRiskGovernance
@@ -319,6 +321,10 @@ type AssetResponse struct {
 	// Triage: attribution and what an active scan would do now; only with
 	// ?with_triage=true on the list.
 	Triage *AssetTriage `json:"triage,omitempty"`
+	// MonitoringState is the one derived lifecycle state (monitored,
+	// not_monitored, pending_decision, unvalidated, irrelevant, inactive,
+	// out_of_scope); only with ?with_triage=true on the list.
+	MonitoringState string `json:"monitoring_state,omitempty" enums:"monitored,not_monitored,pending_decision,unvalidated,irrelevant,inactive,out_of_scope"`
 	// Edge: the asset is a CDN, edge, SaaS-hosting or cloud-shared address,
 	// or a name or service served through one (pkg/domain/edgeaddr). The
 	// platform labels it and never refuses to scan it by itself; the
@@ -634,6 +640,7 @@ func (h *AssetHandler) handleServiceError(w http.ResponseWriter, err error) {
 // @Param        max_risk_score  query   int     false  "Maximum risk score (0-100)"
 // @Param        has_findings  query     bool    false  "Filter by whether asset has findings"
 // @Param        coverage      query     string  false  "covered: a run of any capability succeeded in the last 30 days; uncovered: tracked by the coverage ledger without one"  Enums(covered, uncovered)
+// @Param        coverage_cause query    string  false  "uncovered assets whose coverage gap has this cause (implies coverage=uncovered)"  Enums(no_sensor, platform_failure, paused, target_unreachable, never_run, overdue, out_of_scope, other)
 // @Param        freshness     query     string  false  "stale: an attribute class is past its freshness TTL; never: a passive class that applies was never observed"
 // @Param        resolution    query     string  false  "not_resolving: the platform knows the host name does not resolve in DNS; resolving: it does"
 // @Param        technology    query     string  false  "Assets using any of these technologies (comma-separated names, case-insensitive, at most 20)"
@@ -663,7 +670,9 @@ func (h *AssetHandler) handleServiceError(w http.ResponseWriter, err error) {
 // @Param        min_confidence        query int    false "Lowest attribution confidence (0-100; no record counts as 100)"
 // @Param        max_confidence        query int    false "Highest attribution confidence (0-100)"
 // @Param        first_seen_after      query string false "First seen (added to the inventory) at/after this time (RFC3339 or YYYY-MM-DD)"
-// @Param        with_triage           query bool   false "Add each row's attribution and what an active scan would do with it now (triage)"
+// @Param        with_triage           query bool   false "Add each row's attribution, what an active scan would do with it now (triage) and its monitoring state"
+// @Param        monitoring_state      query string false "Monitoring state (comma-separated): monitored, not_monitored, pending_decision, unvalidated, irrelevant, inactive, out_of_scope"
+// @Param        primary               query bool   false "Only primary assets: the organization's root domains (a domain named like a permanent domain scope entry's root or a verified domain)"
 // @Param        sort          query     string  false  "Sort field (e.g., -created_at, name, -risk_score)"
 // @Param        page          query     int     false  "Page number"  default(1)
 // @Param        per_page      query     int     false  "Items per page"  default(20)  maximum(100)
@@ -721,6 +730,8 @@ func (h *AssetHandler) List(w http.ResponseWriter, r *http.Request) {
 		Attribution:          parseQueryArray(query.Get("attribution")),
 		CoveredBy:            query.Get("covered_by"),
 		ScopeStatus:          parseQueryArray(query.Get("scope_status")),
+		MonitoringState:      parseQueryArray(query.Get("monitoring_state")),
+		Primary:              query.Get("primary") == "true",
 		DiscoveredBy:         parseQueryArray(query.Get("discovered_by")),
 		DiscoveryTechnique:   parseQueryArray(query.Get("discovery_technique")),
 		MinConfidence:        parseQueryIntPtr(query.Get("min_confidence")),
@@ -730,6 +741,7 @@ func (h *AssetHandler) List(w http.ResponseWriter, r *http.Request) {
 		Freshness:            query.Get("freshness"),
 		Resolution:           query.Get("resolution"),
 		Coverage:             query.Get("coverage"),
+		CoverageCause:        query.Get("coverage_cause"),
 		Technologies:         assettech.ParseFilterValues(query.Get("technology")),
 		TechnologyCategories: technologyCategoryStrings(query.Get("technology_category")),
 		TechnologyVersion:    technologyVersionParam(query),
@@ -743,6 +755,9 @@ func (h *AssetHandler) List(w http.ResponseWriter, r *http.Request) {
 	if err := h.validator.Validate(input); err != nil {
 		h.handleValidationError(w, err)
 		return
+	}
+	if len(input.MonitoringState) > 0 {
+		input.UnclassifiedScanned = h.unclassifiedScanned(r, input.TenantID)
 	}
 
 	result, err := h.service.ListAssets(r.Context(), input)
@@ -787,6 +802,7 @@ func (h *AssetHandler) List(w http.ResponseWriter, r *http.Request) {
 			repoPtrs[i] = &data[i].AssetResponse
 		}
 		h.addTriage(r, input.TenantID, repoPtrs, result.Data)
+		h.addMonitoringStates(r, input.TenantID, repoPtrs)
 		h.addTechnologies(r, input.TenantID, listTechnologiesPerAsset, repoPtrs)
 
 		response := ListResponse[AssetWithRepositoryResponse]{
@@ -817,6 +833,7 @@ func (h *AssetHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 	h.addProgramFlags(r, input.TenantID, ptrs)
 	h.addTriage(r, input.TenantID, ptrs, result.Data)
+	h.addMonitoringStates(r, input.TenantID, ptrs)
 	h.addTechnologies(r, input.TenantID, listTechnologiesPerAsset, ptrs)
 
 	response := ListResponse[AssetResponse]{

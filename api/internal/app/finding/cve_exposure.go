@@ -179,7 +179,7 @@ func (s *VulnerabilityService) ListCVEExposures(ctx context.Context, c FilterCal
 	if spec == nil {
 		spec = &filterspec.Spec{}
 	}
-	where, err := filterspec.Compile(vulnerability.WithBranchOnlyDefault(spec), vulnerability.FindingFields, actor)
+	where, err := compileFor(c, spec, actor)
 	if err != nil {
 		return nil, err
 	}

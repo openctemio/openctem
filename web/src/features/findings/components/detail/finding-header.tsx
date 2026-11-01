@@ -5,7 +5,7 @@
  * can do with it. Status, severity, assignee and dates live in the properties
  * rail (finding-properties.tsx), not here, so the header stays one short block.
  *
- *   [SCA] [CVE-2024-21538 ↗] [CWE-1333]
+ *   [KEV] [SCA] [CVE-2024-21538 ↗] [CWE-1333]   (KEV only when CISA lists the CVE)
  *   cross-spawn ReDoS vulnerability
  *   [Re-verify] [Add to task] [AI triage] [⋯]
  *
@@ -32,6 +32,7 @@ import { toast } from 'sonner'
 import { useTranslation } from '@/context/i18n-provider'
 import { Badge } from '@/components/ui/badge'
 import { BranchOnlyBadge } from '../branch-only-badge'
+import { ExploitSignals } from '../exploit-signals'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -128,6 +129,13 @@ export function FindingHeader({ finding, status, onTriageCompleted }: FindingHea
   return (
     <header className="min-w-0" data-slot="finding-header">
       <div className="flex flex-wrap items-center gap-1.5">
+        {finding.isInKev && (
+          <ExploitSignals
+            isInKev
+            kevDueDate={finding.kevDueDate}
+            kevRansomware={finding.kevRansomware}
+          />
+        )}
         <Badge variant="outline" className="text-xs">
           {findingSourceLabel(finding.source)}
         </Badge>
