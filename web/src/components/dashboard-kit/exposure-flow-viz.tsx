@@ -55,6 +55,9 @@ import type {
   Stage,
 } from './types'
 
+// A lens over one widget's own ranking, not a list's filter.
+const WidgetLens = SegmentedLens // anatomy-ok: ranks and groups the sources inside one dashboard widget
+
 /** Source rows with a value before "Show all": wide and mid cards, a phone. */
 const MAX_SOURCES = 6
 const MAX_SOURCES_PHONE = 5
@@ -640,7 +643,7 @@ function FlowChart({ result, scope }: { result: FlowResult; scope?: 'organizatio
       {intake && (hasAssets || hasInstances) && (
         <div className="mb-1 flex flex-wrap gap-2">
           {hasAssets && (
-            <SegmentedLens
+            <WidgetLens
               label={t('dashboardKit.flow.measure.label', 'Rank sources by')}
               value={m}
               onChange={setMeasure}
@@ -651,7 +654,7 @@ function FlowChart({ result, scope }: { result: FlowResult; scope?: 'organizatio
             />
           )}
           {hasInstances && (
-            <SegmentedLens
+            <WidgetLens
               label={t('dashboardKit.flow.group.label', 'Group sources by')}
               value={g}
               onChange={setGroup}
