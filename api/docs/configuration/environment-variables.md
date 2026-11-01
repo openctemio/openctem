@@ -523,6 +523,7 @@ Read by the command-line tools shipped with the server (`bootstrap-admin`, `reke
 | `SIGNER_KEYSET_FILE` | string | empty |  |  | `openctem-signer`: the root-signed keyset the signer serves to sensors. |
 | `SIGNER_KEY_FILE` | string | empty |  |  | `openctem-signer`: the job-signing private key (PEM, mode 0400). |
 | `SIGNER_LEDGER` | string | empty |  |  | `openctem-signer`: scope ledger mode (`enforce`, `audit` or `off`). |
+| `SIGNER_FEED_ORIGINS` | string | empty |  |  | `openctem-signer`: feed origins a feed relay round may name (comma-separated https origins; empty: the official release origins; `none`: no feed relay). |
 | `SIGNER_LEDGER_MIN_APPROVALS` | string | empty |  |  | `openctem-signer`: approvals the ledger requires for a scope change. |
 | `SIGNER_LEDGER_T2_MIN_APPROVALS` | string | empty |  |  | `openctem-signer`: approvals the ledger requires for a tier-2 scope change. |
 | `SIGNER_PUBLISH_DIR` | string | empty |  |  | `openctem-signer serve`: a directory (a volume only the signer writes and the bundled sensor mounts read-only) where the signer writes its public key as `signer.pub` at every start, for the sensor to pin (`SENSOR_JOB_SIGNING_KEYS_FILE`). Unset: nothing is published. |
