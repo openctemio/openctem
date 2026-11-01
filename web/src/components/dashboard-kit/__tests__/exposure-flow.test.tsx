@@ -428,9 +428,11 @@ describe('sources: ranked bars by findings or assets, by tool or instance', () =
 
   it('ranks by findings first and folds the healthy zeros into one line', () => {
     render(<ExposureFlowViz result={withAssets} />)
-    expect(ranked()).toEqual(['s:sensor:nuclei', 's:platform:version-match'])
+    // A discovery tool with assets but no findings says so, it is never a "0" folded away.
+    expect(ranked()).toEqual(['s:sensor:nuclei', 's:platform:version-match', 's:sensor:subfinder'])
+    expect(screen.getByRole('link', { name: /^subfinder Sensor 9,000 assets/ })).toBeInTheDocument()
     expect(screen.getByTestId('ranked-zeros')).toHaveTextContent(
-      '+2 sources with nothing in 30 days'
+      '+1 source with nothing in 30 days'
     )
     expect(hrefOf(/^version-match Platform 59 findings/)).toBe(withAssets.intake?.sources[3].drill)
   })
@@ -449,7 +451,8 @@ describe('sources: ranked bars by findings or assets, by tool or instance', () =
     render(<ExposureFlowViz result={withAssets} />)
     await user.click(screen.getByRole('button', { name: 'Source instance' }))
     expect(ranked()).toEqual(['i:sensor:s1', 'i:platform:platform', 'i:sensor:s2'])
-    const failing = screen.getByRole('link', { name: /^dc-02 Sensor 0 findings/ })
+    // An instance lists the tools it ran under its name (instance, then tools).
+    const failing = screen.getByRole('link', { name: /^dc-02 Sensor 3,000 assets subfinder/ })
     expect(failing).toHaveAttribute('href', '/sensors/s2')
     expect(failing).toHaveAttribute('data-health', 'failed')
   })
@@ -674,6 +677,85 @@ describe('IntakeViz', () => {
     )
     expect(screen.getByRole('tooltip')).toBeInTheDocument()
   })
+
+  const discovery: IntakeData = {
+    ...intake,
+    sources: [
+      ...intake.sources,
+      source({
+        id: 'sensor:subfinder',
+        tool: 'subfinder',
+        origin: 'sensor',
+        kind: 'discovery',
+        received: 0,
+        created: 0,
+        reopened: 0,
+        assets: 412,
+        instances: [
+          {
+            id: 's1',
+            kind: 'sensor',
+            name: 'edge-01',
+            received: 0,
+            assets: 412,
+            health: 'ok',
+            last_at: null,
+            sensor_href: '/sensors/s1',
+          },
+        ],
+      }),
+      source({ id: 'sensor:naabu', tool: 'naabu', origin: 'sensor', received: 0, assets: 0 }),
+      source({ id: 'sensor:asn', tool: 'asn', origin: 'sensor', received: 0, assets: 0 }),
+    ],
+  }
+
+  it('keeps each figure beside its name: rows at a fixed width, the curves take the rest', () => {
+    const { container } = render(<IntakeViz result={{ shape: 'intake', intake: discovery }} />)
+    const grid = container.querySelector('[data-band]') as HTMLElement
+    // The rows' column is a fixed 20 rem, the curves' column takes what is left.
+    expect(grid.className).toContain('@min-[560px]:grid-cols-[20rem_minmax(2.5rem,1fr)_')
+    // The sources and the summary keep the thin dashed frame.
+    expect(screen.getByTestId('intake-sources').className).toContain('@min-[560px]:border-dashed')
+    expect(screen.getByTestId('intake-summary').className).toContain('@min-[560px]:border-dashed')
+  })
+
+  it('shows assets for a discovery tool and folds the sources with nothing', () => {
+    render(<IntakeViz result={{ shape: 'intake', intake: discovery }} />)
+    expect(screen.getByRole('link', { name: /^subfinder Sensor 412 assets/ })).toHaveAttribute(
+      'href',
+      discovery.sources[3].drill
+    )
+    expect(screen.getByTestId('ranked-zeros')).toHaveTextContent(
+      '+2 sources with nothing in 30 days'
+    )
+    expect(screen.queryByRole('link', { name: /^naabu/ })).not.toBeInTheDocument()
+    // The per-source table gives discovery tools an Assets column.
+    expect(screen.getAllByRole('columnheader', { name: 'Assets' }).length).toBeGreaterThan(0)
+  })
+
+  it('orders discovery tools by the assets they found', () => {
+    const more: IntakeData = {
+      ...discovery,
+      sources: [
+        ...discovery.sources,
+        source({ id: 'sensor:dnsx', tool: 'dnsx', origin: 'sensor', received: 0, assets: 9 }),
+      ],
+    }
+    render(<IntakeViz result={{ shape: 'intake', intake: more }} />)
+    const keys = [...document.querySelectorAll('[data-testid="ranked-bars"] li')].map((li) =>
+      li.getAttribute('data-key')
+    )
+    expect(keys.indexOf('s:sensor:subfinder')).toBeLessThan(keys.indexOf('s:sensor:dnsx'))
+  })
+
+  it('groups by instance with its tools under its name (instance, then tools)', async () => {
+    const user = userEvent.setup()
+    render(<IntakeViz result={{ shape: 'intake', intake: discovery }} />)
+    await user.click(screen.getByRole('button', { name: 'Source instance' }))
+    expect(
+      screen.getByRole('link', { name: /^edge-01 Sensor 412 assets subfinder/ })
+    ).toHaveAttribute('href', '/sensors/s1')
+  })
 })
 
 // The seeded organization of the 2026-10-25 screenshots: 1,634 findings
@@ -751,11 +833,16 @@ describe('flow layout bands', () => {
     const fs = await import('node:fs')
     const path = await import('node:path')
     const { FLOW_MID, FLOW_WIDE } = await import('../flow-parts')
-    for (const file of ['exposure-flow-viz.tsx', 'intake-viz.tsx']) {
+    const { INTAKE_SIDE } = await import('../intake-viz')
+    const files: Array<[string, number]> = [
+      ['exposure-flow-viz.tsx', FLOW_MID],
+      ['intake-viz.tsx', INTAKE_SIDE],
+    ]
+    for (const [file, side] of files) {
       const src = fs.readFileSync(path.join(__dirname, '..', file), 'utf8')
       const used = [...src.matchAll(/@min-\[(\d+)px\]/g)].map((m) => Number(m[1]))
-      for (const w of used) expect([FLOW_MID, FLOW_WIDE, 420, 1100]).toContain(w)
-      expect(used).toContain(FLOW_MID)
+      for (const w of used) expect([FLOW_MID, FLOW_WIDE, INTAKE_SIDE, 420, 1100]).toContain(w)
+      expect(used).toContain(side)
     }
   })
 
@@ -764,8 +851,9 @@ describe('flow layout bands', () => {
     const note = screen.getAllByText(/Stale, last|Failed/)[0]
     const row = note.closest('a')
     expect(row).not.toBeNull()
-    // The note sits in the name block, not beside the count at the far edge.
-    expect(row?.querySelector('[data-wire-out]')?.contains(note)).toBe(false)
+    // The note sits on its own line under the name, not beside the count.
+    expect(row?.children[1]?.contains(note)).toBe(false)
+    expect(row?.children[0]?.contains(note)).toBe(false)
     expect(container.querySelector('[data-band]')).toHaveAttribute('data-band', 'narrow')
   })
 })
