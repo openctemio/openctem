@@ -27,6 +27,7 @@ import (
 
 	apispecapp "github.com/openctemio/openctem/api/internal/app/apispec"
 	certificateapp "github.com/openctemio/openctem/api/internal/app/certificate"
+	coverageapp "github.com/openctemio/openctem/api/internal/app/coverage"
 	"github.com/openctemio/openctem/api/internal/app/datascope"
 	"github.com/openctemio/openctem/api/internal/app/platformlegal"
 	"github.com/openctemio/openctem/api/internal/app/scanrun"
@@ -360,6 +361,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	if svc.Signup != nil {
 		tenantHandler.SetSignupPolicy(svc.Signup)
 	}
+	if svc.ScanIdentity != nil {
+		tenantHandler.SetScanIdentity(svc.ScanIdentity)
+	}
 	if svc.Entitlement != nil {
 		tenantHandler.SetSelfServiceLimits(svc.Entitlement)
 	}
@@ -630,6 +634,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		AttackSurface:    handler.NewAttackSurfaceHandler(svc.AttackSurface, log),
 		EASM:             newEASMHandler(repos, svc, log),
 		EASMSettings:     newEASMSettingsHandler(cfg, svc, deps, log),
+		EASMDiscovery:    newEASMDiscoveryHandler(cfg, repos, svc, deps, log),
 		EASMLookalike:    newEASMLookalikeHandler(svc, log),
 		PageMonitor:      newPageMonitorHandler(svc, log),
 		EASMNetworkSeed:  newEASMNetworkSeedHandler(svc, log),
@@ -1728,6 +1733,32 @@ func newEASMSettingsHandler(cfg *config.Config, svc *Services, deps *HandlerDeps
 	}
 	return handler.NewEASMSettingsHandler(svc.Tenant, postgres.NewEASMSweepRepository(deps.DB), sweeper, platform, audit, log).
 		SetDigests(postgres.NewEASMChangeRepository(deps.DB))
+}
+
+// newEASMDiscoveryHandler builds discovery management over the coverage
+// ledger: Run makes pairs due for the coverage loop, Abort all cancels the
+// tenant's coverage runs through the run cancel.
+func newEASMDiscoveryHandler(cfg *config.Config, repos *Repositories, svc *Services, deps *HandlerDeps, log *logger.Logger) *handler.EASMDiscoveryHandler {
+	if repos.AssetCoverage == nil || svc.DataScope == nil {
+		return nil
+	}
+	var sw coverageapp.TenantSwitch
+	if svc.ScanPolicy != nil {
+		sw = coverageapp.GovernanceSwitch{Modes: svc.ScanPolicy, Settings: svc.Tenant}
+	}
+	var cancel coverageapp.RunCanceller
+	if svc.ScanRun != nil {
+		cancel = svc.ScanRun
+	}
+	var audit handler.AttributionAuditor
+	if svc.Audit != nil {
+		audit = svc.Audit
+	}
+	disc := coverageapp.NewDiscovery(repos.AssetCoverage, repos.AssetCoverage, sw, cancel,
+		postgres.NewDiscoveryRunLimiter(deps.DB),
+		coverageapp.DiscoveryConfig{LoopEnabled: cfg.Worker.AssetCoverageEnabled, Interval: cfg.Worker.AssetCoverageInterval,
+			DailyBudget: cfg.Worker.AssetCoverageDailyBudget}, log)
+	return handler.NewEASMDiscoveryHandler(disc, svc.DataScope, audit, log)
 }
 
 // newAssetAttributionHandler builds the attribution handler with its audit

@@ -104,6 +104,8 @@ export function WordlistsPanel() {
         <CardContent>
           {lists.length === 0 ? (
             <EmptyState
+              card={false}
+              className="py-8"
               icon={ListPlus}
               title={t('wordlists.emptyTitle', 'No lists yet')}
               description={t(

@@ -47,6 +47,9 @@ type MCPConnection struct {
 	// FullData: the connection may read all organization data while its
 	// person keeps a full-data role.
 	FullData bool `json:"full_data"`
+	// Flow is "code" (the application connected through the browser) or
+	// "device" (a terminal signed in with a code).
+	Flow string `json:"flow"`
 }
 
 // MCPConnectionList is a list of connections.
@@ -65,7 +68,7 @@ func toMCPConnections(list []mcpoauthapp.ConnectionView, withUser bool) MCPConne
 			ID: c.ID, ClientName: c.ClientName, ClientID: c.ClientID, ClientKind: string(c.ClientKind),
 			ClientHost: c.ClientHost, UserID: c.UserID, Scopes: scopes, CreatedAt: c.CreatedAt,
 			LastUsedAt: c.LastUsedAt, LastUsedIP: c.LastUsedIP, ExpiresAt: c.ExpiresAt,
-			FullData: c.FullData,
+			FullData: c.FullData, Flow: string(c.Flow),
 		}
 		if withUser {
 			m.UserName, m.UserEmail = c.UserName, c.UserEmail

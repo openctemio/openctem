@@ -78,6 +78,34 @@ func (h *SensorHandler) InstallTemplates(w http.ResponseWriter, r *http.Request)
 		apierror.BadRequest("Invalid request body").WriteJSON(w)
 		return
 	}
+	h.renderInstallTemplates(w, r, req)
+}
+
+// InstallTemplatesRead handles GET /api/v1/sensors/install-templates: the
+// commands without a pairing code (the sensor prints a code to enter). Pure
+// read, so a page can load it; the code-carrying variant stays a POST so the
+// code is never in a URL, and is only asked after the user created a code.
+//
+// @Summary Install commands for a new sensor that pairs (no code)
+// @Description Same answer as POST /sensors/install-templates without a pairing code. Reads only; nothing is stored.
+// @Tags Sensors
+// @Produce json
+// @Param product query string false "Sensor product id"
+// @Success 200 {object} SensorConfigTemplatesResponse
+// @Failure 400 {object} apierror.Error
+// @Failure 503 {object} apierror.Error "Template service not configured"
+// @Security BearerAuth
+// @Router /sensors/install-templates [get]
+func (h *SensorHandler) InstallTemplatesRead(w http.ResponseWriter, r *http.Request) {
+	if h.templateService == nil {
+		apierror.New(http.StatusServiceUnavailable, "TEMPLATE_SERVICE_DISABLED",
+			"Sensor config template service is not configured").WriteJSON(w)
+		return
+	}
+	h.renderInstallTemplates(w, r, SensorInstallTemplatesRequest{Product: r.URL.Query().Get("product")})
+}
+
+func (h *SensorHandler) renderInstallTemplates(w http.ResponseWriter, r *http.Request, req SensorInstallTemplatesRequest) {
 	code := ""
 	if req.PairingCode != "" {
 		norm, err := pairing.NormalizeCode(req.PairingCode)

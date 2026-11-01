@@ -46,10 +46,20 @@ interface PoolDialogProps {
   onOpenChange: (open: boolean) => void
   /** The pool to edit; null creates one. */
   pool: ProxyPool | null
+  /**
+   * The organization default pool. Its on/off switch lives on the page (it
+   * asks first and shows which sensors it holds back), so the dialog edits
+   * the name, list and strategy only, and a new default starts off.
+   */
+  asDefault?: boolean
 }
 
-/** New pool / edit pool: name, description, enabled, the paste list, and strategy under Advanced. */
-export function PoolDialog({ open, onOpenChange, pool }: PoolDialogProps) {
+/**
+ * New pool / edit pool: name, description, enabled, the paste list, and
+ * strategy under Advanced. The one editor for every pool, the organization
+ * default included.
+ */
+export function PoolDialog({ open, onOpenChange, pool, asDefault = false }: PoolDialogProps) {
   const { t } = useTranslation()
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
@@ -58,19 +68,22 @@ export function PoolDialog({ open, onOpenChange, pool }: PoolDialogProps) {
   const [text, setText] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const defaultName = t('proxyPools.default.name', 'Organization default')
 
   useEffect(() => {
     if (!open) return
-    setName(pool?.name ?? '')
+    setName(pool?.name ?? (asDefault ? defaultName : ''))
     setDescription(pool?.description ?? '')
     setEnabled(pool?.enabled ?? true)
     setStrategy(pool?.strategy ?? 'sticky')
     setText(maskPasteText(pool?.endpoints_text ?? ''))
     setError(null)
-  }, [open, pool])
+  }, [open, pool, asDefault, defaultName])
 
   // The API refuses an enabled pool without a proxy: scans would fail closed.
-  const needsProxy = enabled && hasNoProxyLines(text)
+  // The default pool's state is set on the page, so its stored state counts.
+  const willBeEnabled = asDefault ? (pool?.enabled ?? false) : enabled
+  const needsProxy = willBeEnabled && hasNoProxyLines(text)
 
   async function submit() {
     if (needsProxy) return
@@ -82,13 +95,19 @@ export function PoolDialog({ open, onOpenChange, pool }: PoolDialogProps) {
           name: name.trim(),
           description: description.trim(),
           strategy,
-          enabled,
+          enabled: asDefault ? false : enabled,
+          ...(asDefault ? { is_default: true } : {}),
           endpoints_text: text,
         })
       } else {
         const changeList = text !== maskPasteText(pool.endpoints_text)
-        const fields = { name: name.trim(), description: description.trim(), strategy, enabled }
-        if (pool.enabled && !enabled) {
+        const fields = {
+          name: name.trim(),
+          description: description.trim(),
+          strategy,
+          ...(asDefault ? {} : { enabled }),
+        }
+        if (pool.enabled && !willBeEnabled) {
           // Turn the pool off before emptying its list: the API refuses an
           // enabled pool without a proxy.
           await updateProxyPool(pool.id, fields)
@@ -120,15 +139,22 @@ export function PoolDialog({ open, onOpenChange, pool }: PoolDialogProps) {
       <DialogContent size="lg">
         <DialogHeader>
           <DialogTitle>
-            {pool
-              ? t('proxyPools.dialog.editTitle', 'Edit pool')
-              : t('proxyPools.dialog.newTitle', 'New pool')}
+            {asDefault
+              ? t('proxyPools.dialog.defaultTitle', 'Default pool proxies')
+              : pool
+                ? t('proxyPools.dialog.editTitle', 'Edit pool')
+                : t('proxyPools.dialog.newTitle', 'New pool')}
           </DialogTitle>
           <DialogDescription>
-            {t(
-              'proxyPools.dialog.description',
-              'A pool is a list of proxies. Assign it to sensors on their pages: a sensor assigned a pool sends all its scan traffic through it, private targets included.'
-            )}
+            {asDefault
+              ? t(
+                  'proxyPools.dialog.defaultDescription',
+                  'The proxies your own sensors use for public targets. Turn proxies on or off on the page.'
+                )
+              : t(
+                  'proxyPools.dialog.description',
+                  'A pool is a list of proxies. Assign it to sensors on their pages: a sensor assigned a pool sends all its scan traffic through it, private targets included.'
+                )}
           </DialogDescription>
         </DialogHeader>
         <DialogForm
@@ -160,21 +186,28 @@ export function PoolDialog({ open, onOpenChange, pool }: PoolDialogProps) {
                 disabled={saving}
               />
             </div>
-            <div className="flex items-center gap-3">
-              <Switch
-                id="pool-enabled"
-                checked={enabled}
-                onCheckedChange={setEnabled}
-                disabled={saving}
-              />
-              <Label htmlFor="pool-enabled">{t('proxyPools.field.enabled', 'Enabled')}</Label>
-            </div>
+            {!asDefault && (
+              <div className="flex items-center gap-3">
+                <Switch
+                  id="pool-enabled"
+                  checked={enabled}
+                  onCheckedChange={setEnabled}
+                  disabled={saving}
+                />
+                <Label htmlFor="pool-enabled">{t('proxyPools.field.enabled', 'Enabled')}</Label>
+              </div>
+            )}
             {needsProxy && (
               <p className="text-sm text-muted-foreground" data-testid="pool-needs-proxy">
-                {t(
-                  'proxyPools.dialog.needsProxy',
-                  'Add at least one proxy before enabling the pool: scans fail closed when it has none.'
-                )}
+                {asDefault
+                  ? t(
+                      'proxyPools.dialog.defaultNeedsProxy',
+                      'Turn proxies off on the page before removing every proxy: scans fail closed when the pool has none.'
+                    )
+                  : t(
+                      'proxyPools.dialog.needsProxy',
+                      'Add at least one proxy before enabling the pool: scans fail closed when it has none.'
+                    )}
               </p>
             )}
             <PasteListField value={text} onChange={setText} error={error} />

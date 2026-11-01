@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 
 	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
@@ -66,5 +67,34 @@ func TestDeliverSetsTheOrganizationHTTPPolicy(t *testing.T) {
 	s.httpPolicy = fakeHTTPPolicy{err: errors.New("db down")}
 	if _, err := s.deliver(context.Background(), "sensor-1", []*commanddom.Command{scan}, nil, nil); err == nil {
 		t.Fatal("delivered without the organization policy")
+	}
+}
+
+type perTenantHTTPPolicy map[shared.ID]sensordom.ToolHTTPPolicy
+
+func (p perTenantHTTPPolicy) ToolHTTPPolicy(_ context.Context, id shared.ID) (sensordom.ToolHTTPPolicy, error) {
+	return p[id], nil
+}
+
+// SECURITY (tenant isolation): one delivery to a shared sensor carries jobs
+// of two organizations; each job carries only its own organization's
+// identification headers, never the other's.
+func TestDeliverIdentityIsPerJobTenant(t *testing.T) {
+	a, b := shared.NewID(), shared.NewID()
+	s := &Service{httpPolicy: perTenantHTTPPolicy{
+		a: {Headers: map[string]string{"X-Org-A": "secret-a"}},
+		b: {Headers: map[string]string{"X-Org-B": "b"}, UserAgent: "b-ua"},
+	}}
+	ja := &commanddom.Command{ID: shared.NewID(), TenantID: a, Type: commanddom.CommandTypeScan, Payload: json.RawMessage(`{"scanner":"nuclei"}`)}
+	jb := &commanddom.Command{ID: shared.NewID(), TenantID: b, Type: commanddom.CommandTypeValidate, Payload: json.RawMessage(`{"scanner":"nuclei"}`)}
+	out, err := s.deliver(context.Background(), "shared-1", []*commanddom.Command{ja, jb}, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := string(out[0].Payload); !strings.Contains(got, "X-Org-A") || strings.Contains(got, "X-Org-B") || strings.Contains(got, "b-ua") {
+		t.Fatalf("tenant A job: %s", got)
+	}
+	if got := string(out[1].Payload); !strings.Contains(got, "X-Org-B") || strings.Contains(got, "secret-a") {
+		t.Fatalf("tenant B job: %s", got)
 	}
 }

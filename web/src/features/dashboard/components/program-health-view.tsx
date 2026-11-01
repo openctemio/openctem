@@ -19,11 +19,18 @@
 
 import { useMemo, useState } from 'react'
 import { Main } from '@/components/layout'
-import { PageHeader, PageStack, EmptyState } from '@/features/shared'
+import {
+  PageHeader,
+  PageStack,
+  EmptyState,
+  MetricStrip,
+  OverviewAnswer,
+  OverviewActList,
+  type MetricStripItem,
+  type OverviewActItem,
+} from '@/features/shared'
 import { useTenant } from '@/context/tenant-provider'
 import { usePermissions, Permission } from '@/lib/permissions'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   Select,
@@ -32,9 +39,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { cn } from '@/lib/utils'
 import { AreaChart, Area, ResponsiveContainer, XAxis, YAxis, Tooltip } from '@/components/charts'
-import { CHART_TOOLTIP_PROPS, STATE_BADGE_SOFT, type CtemState } from '../lib/ctem-colors'
+import { CHART_TOOLTIP_PROPS } from '../lib/ctem-colors'
 import {
   useExecutiveSummary,
   useMttrAnalytics,
@@ -43,6 +49,7 @@ import {
   useValidationCoverage,
 } from '../hooks/use-ctem-dashboard'
 import { WidgetError } from './widget-error'
+import { MetricRowList, type MetricRow } from './metric-row-list'
 import { PERIOD_OPTIONS, formatPct, formatTickDate, formatCount, type Period } from '../lib/format'
 import { OWNER_COVERAGE_TARGET_PCT } from '../lib/data-quality'
 import { ProgramMetricsSection } from './program-metrics-section'
@@ -53,49 +60,32 @@ import {
   hoursToDays,
   remediationTimeState,
   ownerCoverageState,
-  reopenRateState,
   slaComplianceState,
   exposureTrendDelta,
   exposureTrendState,
   downgradeState,
 } from '../lib/program-health'
-import {
-  Target,
-  ShieldCheck,
-  CheckCircle2,
-  AlertTriangle,
-  XCircle,
-  MinusCircle,
-  Lock,
-  type LucideIcon,
-} from 'lucide-react'
+import { ShieldCheck, Lock } from 'lucide-react'
 import { useTranslation } from '@/context/i18n-provider'
 
 // ============================================
-// TYPES / CONSTANTS
+// LINKS
 // ============================================
 
-interface OutcomeMetric {
-  id: string
-  label: string
-  /** What the metric actually measures (one line). */
-  measures: string
-  /** Formatted current value, or null for "not yet measured". */
-  display: string | null
-  /** The guide's target. */
-  target: string
-  status: MetricStatus
-  /** Optional extra context (e.g. the P0↔P1 mapping). */
-  hint?: string
-}
+// The lists behind each figure. Every one is an existing filter of the findings
+// list (state lens, priority_class, sla_status) or the asset attention queue;
+// the list applies the viewer's data scope, like the counts above it.
+export const PROGRAM_HEALTH_LINKS = {
+  p0Open: '/findings?state=open&priority_class=P0',
+  p0Fixed: '/findings?state=fixed&priority_class=P0',
+  pastSla: '/findings?state=open&sla_status=overdue,exceeded',
+  open: '/findings?state=open',
+  noOwner: '/assets/attention/no-owner',
+  validation: '/validation',
+} as const
 
-const STATUS_META: Record<MetricStatus, { labelKey: string; fallback: string; icon: LucideIcon }> =
-  {
-    good: { labelKey: 'insights.status.good', fallback: 'On track', icon: CheckCircle2 },
-    warn: { labelKey: 'insights.status.warn', fallback: 'Watch', icon: AlertTriangle },
-    crit: { labelKey: 'insights.status.crit', fallback: 'Off track', icon: XCircle },
-    pending: { labelKey: 'insights.status.pending', fallback: 'Not measured', icon: MinusCircle },
-  }
+/** Problem rows first (off track before watch); a good or unmeasured figure is not listed. */
+const ACT_ORDER: Record<MetricStatus, number> = { crit: 0, warn: 1, good: 2, pending: 3 }
 
 // ============================================
 // HELPERS
@@ -106,84 +96,30 @@ function fmtPct(v: number | null | undefined, locale: string, n?: number): strin
   return formatPct(v, { locale, n })
 }
 
-// A value is coloured only when it is a problem; the status pill carries the
-// rest of the state (on track / watch / not measured).
-function stateTextClass(status: MetricStatus): string {
-  if (status === 'pending') return 'text-muted-foreground'
-  return status === 'crit' ? 'text-destructive' : ''
-}
-
-function statusBadgeClass(status: MetricStatus): string {
-  return status === 'pending'
-    ? 'bg-muted text-muted-foreground border-border'
-    : STATE_BADGE_SOFT[status as CtemState]
-}
-
 // ============================================
 // SUB-COMPONENTS
 // ============================================
 
-function StatusPill({ status }: { status: MetricStatus }) {
-  const { t } = useTranslation()
-  const meta = STATUS_META[status]
-  const Icon = meta.icon
+function OverviewSkeleton() {
   return (
-    <Badge
-      variant="outline"
-      className={cn('shrink-0 gap-1 whitespace-nowrap', statusBadgeClass(status))}
-    >
-      <Icon className="h-3 w-3" />
-      {t(meta.labelKey, meta.fallback)}
-    </Badge>
-  )
-}
-
-function MetricCard({ metric }: { metric: OutcomeMetric }) {
-  const { t } = useTranslation()
-  return (
-    <Card className="flex flex-col">
-      <CardHeader className="space-y-1 pb-2">
-        <CardTitle className="text-sm font-medium">{metric.label}</CardTitle>
-        <CardDescription className="text-xs">{metric.measures}</CardDescription>
-      </CardHeader>
-      <CardContent className="flex flex-1 flex-col justify-end">
-        {/* Value and status share a row that wraps, so the pill never squeezes
-            (or clips, e.g. "Not measured") the title at narrow widths. */}
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <span className={cn('text-2xl font-bold tabular-nums', stateTextClass(metric.status))}>
-            {metric.display ?? '—'}
-          </span>
-          <StatusPill status={metric.status} />
+    <div className="flex flex-col gap-page" aria-hidden>
+      <div className="grid gap-page lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+        <div className="rounded-lg border bg-card p-4 sm:p-5">
+          <Skeleton className="h-4 w-40" />
+          <Skeleton className="mt-3 h-11 w-28" />
+          <Skeleton className="mt-3 h-4 w-72 max-w-full" />
         </div>
-        <p className="mt-1 text-xs text-muted-foreground">
-          {t('insights.target', 'Target:')}{' '}
-          <span className="font-medium text-foreground">{metric.target}</span>
-        </p>
-        {/* Where each figure comes from: program-health lib and the API handlers
-            (executive-summary, mttr-analytics, data-quality, risk-trend,
-            validation/coverage); it is not shown to users. */}
-        {metric.hint && <p className="mt-2 text-xs text-muted-foreground">{metric.hint}</p>}
-      </CardContent>
-    </Card>
-  )
-}
-
-function ScorecardSkeleton() {
-  return (
-    <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-      {Array.from({ length: 8 }).map((_, i) => (
-        <Card key={i}>
-          <CardHeader className="pb-2">
-            <Skeleton className="h-4 w-28" />
-            <Skeleton className="mt-2 h-3 w-40" />
-          </CardHeader>
-          <CardContent>
-            <Skeleton className="mb-2 h-8 w-20" />
-            <Skeleton className="h-3 w-24" />
-          </CardContent>
-        </Card>
-      ))}
-    </section>
+        <div className="rounded-lg border bg-card p-4 sm:p-5">
+          <Skeleton className="h-4 w-28" />
+          <Skeleton className="mt-3 h-4 w-full" />
+          <Skeleton className="mt-3 h-4 w-full" />
+        </div>
+      </div>
+      <MetricStrip
+        loading
+        items={Array.from({ length: 5 }, (_, i) => ({ key: String(i), label: '', value: 0 }))}
+      />
+    </div>
   )
 }
 
@@ -230,7 +166,6 @@ export function ProgramHealthView() {
 
   // The stored history, ending at today's live open count (the same figure
   // as the rest of the page), so the trend never ends on yesterday's snapshot.
-  // The chart plots this same series, so its last point is the "+N open" figure.
   const openPoints = useMemo(() => {
     const points = (riskTrend ?? []).map((p) => ({ date: p.date, open: p.findings_open }))
     if (!summary || summary.scoped) return summary?.scoped ? [] : points
@@ -241,149 +176,279 @@ export function ProgramHealthView() {
   const openSeries = useMemo(() => openPoints.map((p) => p.open), [openPoints])
   const trendDelta = exposureTrendDelta(openSeries)
 
-  const metrics = useMemo<OutcomeMetric[]>(() => {
-    // 1. P0 fixed in the period, of P0 open + fixed.
-    const completion = summary
-      ? remediationCompletionPct(summary.p0_open, summary.p0_resolved_period)
-      : null
-    // 2. Mean time from discovery to fix for P0 (the API has no P0 median).
+  const windowLabel = t(`insights.period.window.d${period}`, `${period} days`)
+
+  const view = useMemo(() => {
+    const p0Open = summary?.p0_open ?? 0
+    const p0Fixed = summary?.p0_resolved_period ?? 0
+    const completion = summary ? remediationCompletionPct(p0Open, p0Fixed) : null
+    const completionStatus = remediationCompletionState(completion)
+
     const p0Days = mttr ? hoursToDays(mttr.by_priority_class?.P0) : null
-    // 4/5. Regression (re-open / rediscovery).
-    const reopenPct = summary?.regression_rate_pct
-    const rediscovered = summary?.regression_count
-    // 8. Confirm-or-downgrade outcome. `dgValidated` is the denominator
-    // (distinct findings with validation evidence): undefined = API predates the
-    // metric, so "not measured"; 0 = wired but empty until validations run, so
-    // "0% (no validations yet)", never "not measured".
+    const p0TimeStatus = remediationTimeState(p0Days)
+
+    const ownerPct = quality?.asset_ownership_pct
+    const ownerStatus = ownerCoverageState(ownerPct)
+
+    const slaPct = summary?.sla_compliance_pct
+    const slaStatus = slaComplianceState(slaPct)
+    const pastSla = summary?.sla_breached ?? 0
+
+    const trendStatus = exposureTrendState(trendDelta)
+    const trendDisplay =
+      trendDelta === null
+        ? null
+        : t('insights.programHealth.openDelta', '{delta} open', {
+            delta: `${trendDelta > 0 ? '+' : ''}${formatCount(trendDelta, locale)}`,
+          })
+
     const dgValidated = validation?.downgrade_validated
-    const dgDowngraded = validation?.downgraded
     const dgPct = validation?.downgrade_pct
+    const dgStatus = downgradeState(dgPct, dgValidated)
     const dgDisplay =
       dgValidated === undefined
         ? null
         : dgValidated <= 0
           ? t('insights.programHealth.downgradeNone', '0% (no validations yet)')
           : fmtPct(dgPct, locale)
-    const dgHint =
-      dgValidated && dgValidated > 0
-        ? t(
-            dgValidated === 1
-              ? 'insights.programHealth.downgradeHint.one'
-              : 'insights.programHealth.downgradeHint.other',
-            undefined,
-            { downgraded: dgDowngraded ?? 0, count: dgValidated }
-          )
-        : undefined
-    const windowLabel = t(`insights.period.window.d${period}`, `${period} days`)
 
-    return [
+    const reopenPct = summary?.regression_rate_pct
+    const rediscovered = summary?.regression_count
+
+    const statusWord = (s: MetricStatus) =>
+      s === 'crit' ? t('insights.status.crit', 'Off track') : t('insights.status.warn', 'Watch')
+
+    // Where to act: only figures that are off track or on watch AND open a
+    // list that already exists.
+    const candidates: (OverviewActItem & { status: 'crit' | 'warn'; rank: MetricStatus })[] = []
+    const addAct = (
+      status: MetricStatus,
+      key: string,
+      label: string,
+      detail: string | undefined,
+      href: string
+    ) => {
+      if (status !== 'crit' && status !== 'warn') return
+      candidates.push({
+        key,
+        label,
+        detail,
+        href,
+        status,
+        statusLabel: statusWord(status),
+        rank: status,
+      })
+    }
+    addAct(
+      completionStatus,
+      'p0-open',
+      t('insights.programHealth.act.p0Open', 'P0 findings still open'),
+      t('insights.programHealth.act.p0OpenDetail', '{count} open, {fixed} fixed in the period', {
+        count: formatCount(p0Open, locale),
+        fixed: formatCount(p0Fixed, locale),
+      }),
+      PROGRAM_HEALTH_LINKS.p0Open
+    )
+    addAct(
+      pastSla > 0 && slaStatus === 'good' ? 'warn' : slaStatus,
+      'past-sla',
+      t('insights.programHealth.act.pastSla', 'Findings past their SLA'),
+      t('insights.programHealth.act.pastSlaDetail', '{count} open and past the deadline', {
+        count: formatCount(pastSla, locale),
+      }),
+      PROGRAM_HEALTH_LINKS.pastSla
+    )
+    addAct(
+      ownerStatus,
+      'no-owner',
+      t('insights.programHealth.act.noOwner', 'Assets without an owner'),
+      ownerPct === undefined || ownerPct === null
+        ? undefined
+        : t('insights.programHealth.act.noOwnerDetail', '{pct} of assets have an owner', {
+            pct: fmtPct(ownerPct, locale) ?? '',
+          }),
+      PROGRAM_HEALTH_LINKS.noOwner
+    )
+    addAct(
+      p0TimeStatus,
+      'p0-time',
+      t('insights.programHealth.act.p0Time', 'P0 fixes take too long'),
+      p0Days === null
+        ? undefined
+        : t('insights.programHealth.act.p0TimeDetail', 'Mean {value} days to fix', {
+            value: p0Days.toFixed(1),
+          }),
+      PROGRAM_HEALTH_LINKS.p0Fixed
+    )
+    addAct(
+      trendStatus,
+      'open-trend',
+      t('insights.programHealth.act.openTrend', 'Open findings are not falling'),
+      trendDisplay ?? undefined,
+      PROGRAM_HEALTH_LINKS.open
+    )
+    addAct(
+      dgStatus,
+      'downgrade',
+      t('insights.programHealth.act.downgrade', 'Validation downgrades are out of range'),
+      dgDisplay ?? undefined,
+      PROGRAM_HEALTH_LINKS.validation
+    )
+    const actItems: OverviewActItem[] = candidates
+      .sort((a, b) => ACT_ORDER[a.rank] - ACT_ORDER[b.rank])
+      .map(({ rank: _rank, ...item }) => item)
+      .slice(0, 5)
+
+    // One strip, at most five tiles; a tile opens its list. A figure with no
+    // measurement says so and opens nothing.
+    const notMeasuredNode = (
+      <span className="text-sm font-normal text-muted-foreground">
+        {t('insights.status.pending', 'Not measured')}
+      </span>
+    )
+    const strip: MetricStripItem[] = []
+    const target = (text: string) => `${t('insights.target', 'Target:')} ${text}`
+    strip.push(
+      p0Days === null
+        ? {
+            key: 'p0-time',
+            label: t('dashboardMetrics.program.p0MeanTime', 'Mean time to fix, P0'),
+            value: notMeasuredNode,
+            notMeasured: true,
+          }
+        : {
+            key: 'p0-time',
+            label: t('dashboardMetrics.program.p0MeanTime', 'Mean time to fix, P0'),
+            value: t('insights.programHealth.days', '{value}d', { value: p0Days.toFixed(1) }),
+            hint: target(t('insights.programHealth.targetDays', '< {value} days', { value: 14 })),
+            description: t(
+              'dashboardMetrics.program.p0MeanTimeMeasures',
+              'Mean time from discovery to fix for P0 findings fixed in the last 90 days'
+            ),
+            href: PROGRAM_HEALTH_LINKS.p0Fixed,
+          }
+    )
+    const slaDisplay = fmtPct(slaPct, locale, summary?.findings_total)
+    strip.push(
+      slaDisplay === null
+        ? {
+            key: 'sla',
+            label: t('dashboardMetrics.executive.sla', 'SLA compliance'),
+            value: notMeasuredNode,
+            notMeasured: true,
+          }
+        : {
+            key: 'sla',
+            label: t('dashboardMetrics.executive.sla', 'SLA compliance'),
+            value: slaDisplay,
+            hint: target('≥ 90%'),
+            description: t(
+              'dashboardMetrics.program.slaMeasures',
+              'Open findings with an SLA that are not past it'
+            ),
+            href: PROGRAM_HEALTH_LINKS.pastSla,
+          }
+    )
+    const ownerDisplay = fmtPct(ownerPct, locale)
+    strip.push(
+      ownerDisplay === null
+        ? {
+            key: 'owner',
+            label: t('insights.ownerCoverage.label', 'Asset owner coverage'),
+            value: notMeasuredNode,
+            notMeasured: true,
+          }
+        : {
+            key: 'owner',
+            label: t('insights.ownerCoverage.label', 'Asset owner coverage'),
+            value: ownerDisplay,
+            hint: target(
+              t('insights.ownerCoverage.target', '≥ {pct}%', { pct: OWNER_COVERAGE_TARGET_PCT })
+            ),
+            description: t(
+              'insights.ownerCoverage.measures',
+              'Assets in inventory with an assigned owner'
+            ),
+            href: PROGRAM_HEALTH_LINKS.noOwner,
+          }
+    )
+    strip.push(
+      trendDisplay === null
+        ? {
+            key: 'trend',
+            label: t('dashboardMetrics.program.exposureTrend', 'Open findings trend'),
+            value: notMeasuredNode,
+            notMeasured: true,
+          }
+        : {
+            key: 'trend',
+            label: t('dashboardMetrics.program.exposureTrend', 'Open findings trend'),
+            value: trendDisplay,
+            hint: target(t('insights.programHealth.trendingDown', 'Trending down')),
+            description: t(
+              'dashboardMetrics.program.exposureTrendMeasures',
+              'Open findings now vs {window} ago, which should fall after ramp-up',
+              { window: windowLabel }
+            ),
+            href: PROGRAM_HEALTH_LINKS.open,
+          }
+    )
+    strip.push(
+      dgDisplay === null
+        ? {
+            key: 'downgrade',
+            label: t('insights.programHealth.downgrade', 'Validation downgrade %'),
+            value: notMeasuredNode,
+            notMeasured: true,
+          }
+        : {
+            key: 'downgrade',
+            label: t('insights.programHealth.downgrade', 'Validation downgrade %'),
+            value: dgDisplay,
+            hint: target('25–40%'),
+            description: t(
+              'insights.programHealth.downgradeMeasures',
+              'Findings de-prioritised after validation proved them non-exploitable'
+            ),
+            href: PROGRAM_HEALTH_LINKS.validation,
+          }
+    )
+
+    // Figures that open no list: how well fixes hold.
+    const notMeasuredLabel = t('insights.status.pending', 'Not measured')
+    const fixRows: MetricRow[] = [
       {
-        id: 'remediation-completion',
-        label: t('dashboardMetrics.program.p0Fixed', 'P0 fixed in period'),
-        measures: t(
-          'dashboardMetrics.program.p0FixedMeasures',
-          'P0 findings fixed in the period ÷ (P0 open + P0 fixed)'
-        ),
-        display: fmtPct(completion, locale),
-        target: '> 90%',
-        status: remediationCompletionState(completion),
-      },
-      {
-        id: 'remediation-time',
-        label: t('dashboardMetrics.program.p0MeanTime', 'Mean time to fix, P0'),
-        measures: t(
-          'dashboardMetrics.program.p0MeanTimeMeasures',
-          'Mean time from discovery to fix for P0 findings fixed in the last 90 days'
-        ),
-        display:
-          p0Days === null
-            ? null
-            : t('insights.programHealth.days', '{value}d', { value: p0Days.toFixed(1) }),
-        target: t('insights.programHealth.targetDays', '< {value} days', { value: 14 }),
-        status: remediationTimeState(p0Days),
-      },
-      {
-        id: 'owner-coverage',
-        label: t('insights.ownerCoverage.label', 'Asset owner coverage'),
-        measures: t(
-          'insights.ownerCoverage.measures',
-          'Assets in inventory with an assigned owner'
-        ),
-        display: fmtPct(quality?.asset_ownership_pct, locale),
-        target: t('insights.ownerCoverage.target', '≥ {pct}%', { pct: OWNER_COVERAGE_TARGET_PCT }),
-        status: ownerCoverageState(quality?.asset_ownership_pct),
-      },
-      {
-        id: 'reopen-rate',
+        key: 'reopen',
         label: t('insights.programHealth.reopen', 'Remediation re-open rate'),
-        measures: t(
-          'insights.programHealth.reopenMeasures',
-          'Resolved findings that regressed or reopened'
+        value: fmtPct(reopenPct, locale),
+        notMeasuredLabel,
+        caption: t(
+          'insights.programHealth.reopenCaption',
+          'Resolved findings that regressed or reopened. Target: under 20%.'
         ),
-        display: fmtPct(reopenPct, locale),
-        target: '< 20%',
-        status: reopenRateState(reopenPct),
       },
       {
-        id: 'rediscovered',
+        key: 'rediscovered',
         label: t('dashboardMetrics.program.rediscovered', 'Findings back after a fix'),
-        measures: t(
+        value: rediscovered === undefined ? null : formatCount(rediscovered, locale),
+        notMeasuredLabel,
+        caption: t(
           'dashboardMetrics.program.rediscoveredMeasures',
           'Findings that came back after being fixed, in the period'
         ),
-        display: rediscovered === undefined ? null : formatCount(rediscovered, locale),
-        target: '→ 0',
-        status:
-          rediscovered === undefined
-            ? 'pending'
-            : rediscovered >= 4
-              ? 'crit'
-              : rediscovered >= 1
-                ? 'warn'
-                : 'good',
-      },
-      {
-        id: 'sla-compliance',
-        label: t('dashboardMetrics.executive.sla'),
-        measures: t(
-          'dashboardMetrics.program.slaMeasures',
-          'Open findings with an SLA that are not past it'
-        ),
-        display: fmtPct(summary?.sla_compliance_pct, locale, summary?.findings_total),
-        target: '≥ 90%',
-        status: slaComplianceState(summary?.sla_compliance_pct),
-      },
-      {
-        id: 'exposure-trend',
-        label: t('dashboardMetrics.program.exposureTrend', 'Open findings trend'),
-        measures: t(
-          'dashboardMetrics.program.exposureTrendMeasures',
-          'Open findings now vs {window} ago, which should fall after ramp-up',
-          { window: windowLabel }
-        ),
-        display:
-          trendDelta === null
-            ? null
-            : t('insights.programHealth.openDelta', '{delta} open', {
-                delta: `${trendDelta > 0 ? '+' : ''}${formatCount(trendDelta, locale)}`,
-              }),
-        target: t('insights.programHealth.trendingDown', 'Trending down'),
-        status: exposureTrendState(trendDelta),
-      },
-      {
-        id: 'validation-downgrade',
-        label: t('insights.programHealth.downgrade', 'Validation downgrade %'),
-        measures: t(
-          'insights.programHealth.downgradeMeasures',
-          'Findings de-prioritised after validation proved them non-exploitable'
-        ),
-        display: dgDisplay,
-        target: '25–40%',
-        status: downgradeState(dgPct, dgValidated),
-        hint: dgHint,
       },
     ]
-  }, [summary, mttr, quality, period, trendDelta, validation, t, locale])
+
+    return {
+      completion,
+      completionStatus,
+      p0Open,
+      p0Fixed,
+      actItems,
+      strip,
+      fixRows,
+    }
+  }, [summary, mttr, quality, trendDelta, validation, t, locale, windowLabel])
 
   if (!canRead) {
     return (
@@ -416,6 +481,13 @@ export function ProgramHealthView() {
     void retryValidation()
   }
 
+  const answerTone =
+    view.completionStatus === 'crit'
+      ? 'danger'
+      : view.completionStatus === 'warn'
+        ? 'warning'
+        : 'default'
+
   return (
     <Main>
       <PageStack>
@@ -444,7 +516,7 @@ export function ProgramHealthView() {
         </PageHeader>
 
         {loading ? (
-          <ScorecardSkeleton />
+          <OverviewSkeleton />
         ) : allFailed ? (
           <WidgetError onRetry={retryAll} className="rounded-lg border py-8" />
         ) : !hasAnyData ? (
@@ -458,111 +530,159 @@ export function ProgramHealthView() {
           />
         ) : (
           <>
-            <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              {metrics.map((m) => (
-                <MetricCard key={m.id} metric={m} />
-              ))}
+            <div className="grid gap-page lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+              {view.completion === null ? (
+                <OverviewAnswer
+                  question={t('insights.programHealth.answer.question', 'P0 fixed within target')}
+                  notMeasured={{
+                    label: t('insights.status.pending', 'Not measured'),
+                    reason: t(
+                      'insights.programHealth.answer.reason',
+                      'No P0 findings were open or fixed in the last {window}, so there is nothing to divide.',
+                      { window: windowLabel }
+                    ),
+                  }}
+                >
+                  <ExposureTrend
+                    points={openPoints}
+                    loading={trendLoading}
+                    locale={locale}
+                    t={t}
+                    windowLabel={windowLabel}
+                  />
+                </OverviewAnswer>
+              ) : (
+                <OverviewAnswer
+                  question={t('insights.programHealth.answer.question', 'P0 fixed within target')}
+                  value={fmtPct(view.completion, locale) ?? ''}
+                  tone={answerTone}
+                  sentence={t(
+                    'insights.programHealth.answer.sentence',
+                    '{fixed} of {total} P0 findings were fixed in the last {window}. The target is more than 90%.',
+                    {
+                      fixed: formatCount(view.p0Fixed, locale),
+                      total: formatCount(view.p0Open + view.p0Fixed, locale),
+                      window: windowLabel,
+                    }
+                  )}
+                >
+                  <ExposureTrend
+                    points={openPoints}
+                    loading={trendLoading}
+                    locale={locale}
+                    t={t}
+                    windowLabel={windowLabel}
+                  />
+                </OverviewAnswer>
+              )}
+              <OverviewActList
+                title={t('insights.programHealth.act.title', 'Where to act')}
+                items={view.actItems}
+                empty={t(
+                  'insights.programHealth.act.empty',
+                  'Nothing is off track in this period.'
+                )}
+              />
+            </div>
+
+            <MetricStrip items={view.strip} />
+
+            <section className="space-y-3">
+              <h2 className="text-base font-semibold">
+                {t('insights.programHealth.fixQuality', 'How well fixes hold')}
+              </h2>
+              <MetricRowList rows={view.fixRows} />
             </section>
 
             <ProgramMetricsSection tenantId={tenantId} days={Number(period)} />
-
-            {/* Exposure-count trend chart (the guide's day-60 down-slope). */}
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium">
-                  {t('insights.programHealth.chartTitle', 'Exposure over time')}
-                </CardTitle>
-                <CardDescription className="text-xs">
-                  {t(
-                    'insights.programHealth.chartDescription',
-                    'Open findings across the selected window. A healthy program bends this down.'
-                  )}
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                {trendLoading ? (
-                  <Skeleton className="h-48 w-full" />
-                ) : openPoints.length > 1 ? (
-                  <>
-                    <div className="h-48 w-full" aria-hidden>
-                      <ResponsiveContainer width="100%" height="100%">
-                        <AreaChart
-                          data={openPoints}
-                          margin={{ top: 4, right: 8, bottom: 0, left: 0 }}
-                        >
-                          <XAxis
-                            dataKey="date"
-                            tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }}
-                            tickLine={false}
-                            axisLine={false}
-                            minTickGap={24}
-                            tickFormatter={(d: string) => formatTickDate(d, locale)}
-                          />
-                          <YAxis
-                            tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }}
-                            tickLine={false}
-                            axisLine={false}
-                            width={36}
-                            allowDecimals={false}
-                          />
-                          <Tooltip
-                            {...CHART_TOOLTIP_PROPS}
-                            labelFormatter={(d) => formatTickDate(String(d), locale)}
-                          />
-                          <Area
-                            type="monotone"
-                            dataKey="open"
-                            name={t('insights.programHealth.chartSeries', 'Open findings')}
-                            stroke="var(--viz-cat-1)"
-                            strokeWidth={2}
-                            fill="var(--viz-cat-1)"
-                            fillOpacity={0.15}
-                          />
-                        </AreaChart>
-                      </ResponsiveContainer>
-                    </div>
-                    <table className="sr-only">
-                      <caption>
-                        {t('insights.programHealth.chartTitle', 'Exposure over time')}
-                      </caption>
-                      <thead>
-                        <tr>
-                          <th scope="col">{t('insights.programHealth.colDate', 'Date')}</th>
-                          <th scope="col">
-                            {t('insights.programHealth.chartSeries', 'Open findings')}
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {openPoints.map((p) => (
-                          <tr key={p.date}>
-                            <td>{formatTickDate(p.date, locale)}</td>
-                            <td>{formatCount(p.open, locale)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </>
-                ) : (
-                  <EmptyState
-                    card={false}
-                    className="py-10"
-                    icon={Target}
-                    title={t(
-                      'insights.programHealth.chartEmptyTitle',
-                      'Not enough trend history yet'
-                    )}
-                    description={t(
-                      'insights.programHealth.chartEmptyDescription',
-                      'The chart needs at least two risk snapshots.'
-                    )}
-                  />
-                )}
-              </CardContent>
-            </Card>
           </>
         )}
       </PageStack>
     </Main>
+  )
+}
+
+type Translate = ReturnType<typeof useTranslation>['t']
+
+/**
+ * Open findings over the selected window, inside the answer panel. It is the
+ * stored risk-trend series the page already reads; with fewer than two points
+ * there is nothing to draw, so the block is left out.
+ */
+function ExposureTrend({
+  points,
+  loading,
+  locale,
+  t,
+  windowLabel,
+}: {
+  points: { date: string; open: number }[]
+  loading: boolean
+  locale: string
+  t: Translate
+  windowLabel: string
+}) {
+  if (loading) return <Skeleton className="mt-2 h-32 w-full" />
+  if (points.length < 2) return null
+  const title = t('insights.programHealth.chartTitle', 'Exposure over time')
+  return (
+    <div className="mt-2 min-w-0">
+      <p className="text-sm text-muted-foreground">
+        {t('insights.programHealth.trendCaption', 'Open findings over the last {window}', {
+          window: windowLabel,
+        })}
+      </p>
+      <div className="mt-1 h-32 w-full" aria-hidden>
+        <ResponsiveContainer width="100%" height="100%">
+          <AreaChart data={points} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
+            <XAxis
+              dataKey="date"
+              tick={{ fontSize: 12, fill: 'var(--muted-foreground)' }}
+              tickLine={false}
+              axisLine={false}
+              minTickGap={24}
+              tickFormatter={(d: string) => formatTickDate(d, locale)}
+            />
+            <YAxis
+              tick={{ fontSize: 12, fill: 'var(--muted-foreground)' }}
+              tickLine={false}
+              axisLine={false}
+              width={36}
+              allowDecimals={false}
+            />
+            <Tooltip
+              {...CHART_TOOLTIP_PROPS}
+              labelFormatter={(d) => formatTickDate(String(d), locale)}
+            />
+            <Area
+              type="monotone"
+              dataKey="open"
+              name={t('insights.programHealth.chartSeries', 'Open findings')}
+              stroke="var(--viz-cat-1)"
+              strokeWidth={2}
+              fill="var(--viz-cat-1)"
+              fillOpacity={0.15}
+            />
+          </AreaChart>
+        </ResponsiveContainer>
+      </div>
+      <table className="sr-only">
+        <caption>{title}</caption>
+        <thead>
+          <tr>
+            <th scope="col">{t('insights.programHealth.colDate', 'Date')}</th>
+            <th scope="col">{t('insights.programHealth.chartSeries', 'Open findings')}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {points.map((p) => (
+            <tr key={p.date}>
+              <td>{formatTickDate(p.date, locale)}</td>
+              <td>{formatCount(p.open, locale)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   )
 }

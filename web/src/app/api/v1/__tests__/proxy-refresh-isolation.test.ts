@@ -15,6 +15,7 @@ import { cookies } from 'next/headers'
 import { NextRequest } from 'next/server'
 
 import { GET as v1GET } from '@/app/api/v1/[...path]/route'
+import { resetServerRefreshFlights } from '@/lib/server-refresh'
 
 const APP = 'https://app.example.test'
 const TENANT = '01a12aa1-8071-74f1-999a-9de298f5b787'
@@ -74,6 +75,7 @@ describe('API proxy token refresh', () => {
   })
 
   afterEach(() => {
+    resetServerRefreshFlights()
     vi.unstubAllGlobals()
     fetchMock.mockReset()
   })
@@ -102,6 +104,23 @@ describe('API proxy token refresh', () => {
     const [r1, r2] = await Promise.all([call(session), call(session)])
     expect(r1.status).toBe(200)
     expect(r2.status).toBe(200)
+    const refreshCalls = fetchMock.mock.calls.filter(([u]) =>
+      String(u).endsWith('/api/v1/auth/refresh')
+    )
+    expect(refreshCalls).toHaveLength(1)
+  })
+
+  it('a request that still carries the old cookie after the refresh reuses it', async () => {
+    // The production race: the browser sent a request with the old refresh
+    // cookie before the first refresh answered; presenting it again would be
+    // a reuse and end the session.
+    const tenantCookie = JSON.stringify({ id: TENANT, slug: 't', role: 'member' })
+    const session = { refresh_token: VICTIM_RT, app_tenant: tenantCookie }
+    const first = await call(session)
+    const late = await call(session)
+    expect(first.status).toBe(200)
+    expect(late.status).toBe(200)
+    expect(late.cookies.get('auth_token')?.value).toBe('victim-access-token')
     const refreshCalls = fetchMock.mock.calls.filter(([u]) =>
       String(u).endsWith('/api/v1/auth/refresh')
     )
