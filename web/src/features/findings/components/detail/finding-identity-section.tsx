@@ -19,7 +19,7 @@ import {
   DetailSection,
 } from '@/features/shared/components/detail-sheet'
 import { RelativeTime } from '@/features/shared/components/relative-time'
-import { dateFnsLocaleFor } from '@/features/shared/components/activity-timeline'
+import { dateFnsLocaleFor } from '@/lib/format-date'
 import { useFindingIdentity, type FindingIdentity } from '../../api/use-finding-identity'
 import { SectionLoadError, isLoadFailure } from './section-load-error'
 
@@ -164,11 +164,7 @@ export function FindingIdentityView({ identity }: { identity: FindingIdentity })
             key: s.tool,
             label: s.tool,
             meta: s.last_seen_at ? (
-              <RelativeTime
-                date={s.last_seen_at}
-                locale={dateFnsLocaleFor(locale)}
-                className="text-xs"
-              />
+              <RelativeTime date={s.last_seen_at} className="text-xs" />
             ) : undefined,
           }))}
         />

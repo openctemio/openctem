@@ -1,7 +1,6 @@
 'use client'
 
 import { SuppressionStatusBadge, SuppressionTypeBadge } from './suppression-badges'
-import { formatDistanceToNow } from 'date-fns'
 import { AlertTriangle, Check, Clock, Hash, Pencil, ShieldQuestion, Trash2, X } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -18,6 +17,7 @@ import {
   type DetailMenuItem,
 } from '@/features/shared'
 import { useTranslation } from '@/context/i18n-provider'
+import { formatRelative } from '@/lib/format-date'
 import { Permission, useHasPermission } from '@/lib/permissions'
 
 import type { SuppressionRule } from '../types'
@@ -34,15 +34,12 @@ interface SuppressionDetailSheetProps {
   onReviewed?: (rule: SuppressionRule) => void
 }
 
-function relative(iso?: string | null): string {
-  if (!iso) return '—'
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return '—'
-  return formatDistanceToNow(d, { addSuffix: true })
+function relative(iso: string | null | undefined, locale: string): string {
+  return formatRelative(iso, '—', locale)
 }
 
 function Criterion({ value }: { value?: string | null }) {
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
   return value ? (
     <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs break-all">{value}</code>
   ) : (
@@ -64,7 +61,7 @@ export function SuppressionDetailSheet({
   onDelete,
   onReviewed,
 }: SuppressionDetailSheetProps) {
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
   const canApprove = useHasPermission(Permission.SuppressionsApprove)
   const canWrite = useHasPermission(Permission.SuppressionsWrite)
   const canDelete = useHasPermission(Permission.SuppressionsDelete)
@@ -114,11 +111,11 @@ export function SuppressionDetailSheet({
           }
           meta={[
             t('exceptions.detail.requestedAgo', 'Requested {when}', {
-              when: relative(rule.requested_at),
+              when: relative(rule.requested_at, locale),
             }),
             rule.expires_at
               ? t('exceptions.detail.expiresAgo', 'Expires {when}', {
-                  when: relative(rule.expires_at),
+                  when: relative(rule.expires_at, locale),
                 })
               : t('exceptions.detail.neverExpires', 'Never expires'),
           ]}
@@ -164,7 +161,7 @@ export function SuppressionDetailSheet({
             {t(
               'exceptions.detail.reviewBody',
               'This rule had no end date. It was given one ({when}). Check whether it should still suppress findings; to keep it after that date, submit a new rule.',
-              { when: relative(rule.expires_at) }
+              { when: relative(rule.expires_at, locale) }
             )}
           </DetailCallout>
         )}
@@ -222,7 +219,7 @@ export function SuppressionDetailSheet({
           <DetailSection title={t('exceptions.detail.workflow', 'Approval workflow')} icon={Clock}>
             <DetailFieldGrid>
               <DetailField label={t('exceptions.detail.requested', 'Requested')}>
-                {relative(rule.requested_at)}
+                {relative(rule.requested_at, locale)}
               </DetailField>
               <DetailField label={t('exceptions.detail.requestedBy', 'Requested by')}>
                 {/* A request no user made (a CI job) names its requester. */}
@@ -232,21 +229,21 @@ export function SuppressionDetailSheet({
               </DetailField>
               {rule.approved_at && (
                 <DetailField label={t('exceptions.detail.approved', 'Approved')}>
-                  {relative(rule.approved_at)}
+                  {relative(rule.approved_at, locale)}
                 </DetailField>
               )}
               {rule.rejected_at && (
                 <DetailField label={t('exceptions.detail.rejected', 'Rejected')}>
-                  {relative(rule.rejected_at)}
+                  {relative(rule.rejected_at, locale)}
                 </DetailField>
               )}
               <DetailField label={t('exceptions.detail.expires', 'Expires')}>
                 {rule.expires_at
-                  ? relative(rule.expires_at)
+                  ? relative(rule.expires_at, locale)
                   : t('exceptions.detail.never', 'Never')}
               </DetailField>
               <DetailField label={t('exceptions.detail.created', 'Created')}>
-                {relative(rule.created_at)}
+                {relative(rule.created_at, locale)}
               </DetailField>
             </DetailFieldGrid>
           </DetailSection>
