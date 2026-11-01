@@ -9,10 +9,12 @@ import (
 	"time"
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
+	authapp "github.com/openctemio/openctem/api/internal/app/auth"
 	"github.com/openctemio/openctem/api/internal/app/tenantai"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/validator"
 )
@@ -230,4 +232,106 @@ func (h *AISettingsHandler) Test(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, TestAIConnectionResponse{OK: res.OK, Code: res.Code})
+}
+
+// AIAutoTriageStore is the organization's automatic AI triage policy
+// (*tenantai.Service).
+type AIAutoTriageStore interface {
+	GetAutoTriage(ctx context.Context, tenantID string) (tenant.AutoTriagePolicy, error)
+	SaveAutoTriage(ctx context.Context, tenantID string, in tenant.AutoTriagePolicy, actx auditapp.AuditContext) (tenantai.AutoTriageView, error)
+}
+
+// AIAutoTriageResponse is the automatic AI triage policy in force (the
+// platform defaults apply to an organization that never saved it).
+type AIAutoTriageResponse struct {
+	// Enabled: new findings of the chosen severities are sent to the AI
+	// provider without a person asking (only while AI triage is on).
+	Enabled bool `json:"enabled"`
+	// Severities: critical, high, medium, low, info.
+	Severities []string `json:"severities"`
+	// DelaySeconds is the wait before a new finding is triaged (0 to 3600).
+	DelaySeconds int `json:"delay_seconds"`
+	// Loosened (answer of a change): the change widened what is sent; it
+	// was audited high and the owners and administrators were told.
+	Loosened bool `json:"loosened,omitempty"`
+}
+
+// UpdateAIAutoTriageRequest replaces the automatic AI triage policy.
+type UpdateAIAutoTriageRequest struct {
+	Enabled      bool     `json:"enabled"`
+	Severities   []string `json:"severities" validate:"max=5,dive,oneof=critical high medium low info"`
+	DelaySeconds int      `json:"delay_seconds" validate:"min=0,max=3600"`
+}
+
+func (h *AISettingsHandler) autoTriage(w http.ResponseWriter, r *http.Request) (AIAutoTriageStore, string, bool) {
+	store, ok := h.store.(AIAutoTriageStore)
+	if !ok {
+		apierror.NotFound("automatic AI triage").WriteJSON(w)
+		return nil, "", false
+	}
+	tenantID := middleware.GetTenantID(r.Context())
+	if tenantID == "" {
+		apierror.BadRequest("Tenant context required").WriteJSON(w)
+		return nil, "", false
+	}
+	return store, tenantID, true
+}
+
+// GetAutoTriage handles GET /api/v1/organization/settings/ai/auto-triage
+// @Summary      Read the automatic AI triage policy
+// @Description  Whether new findings are sent to the AI provider without a person asking, for which severities and after what delay (the platform defaults apply until an administrator saves it). Owners and administrators.
+// @Tags         Tenants
+// @Produce      json
+// @Security     BearerAuth
+// @Success      200  {object}  AIAutoTriageResponse
+// @Router       /organization/settings/ai/auto-triage [get]
+func (h *AISettingsHandler) GetAutoTriage(w http.ResponseWriter, r *http.Request) {
+	store, tenantID, ok := h.autoTriage(w, r)
+	if !ok {
+		return
+	}
+	p, err := store.GetAutoTriage(r.Context(), tenantID)
+	if err != nil {
+		h.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, AIAutoTriageResponse{Enabled: p.Enabled, Severities: p.Severities, DelaySeconds: p.DelaySeconds})
+}
+
+// UpdateAutoTriage handles PUT /api/v1/organization/settings/ai/auto-triage
+// @Summary      Change the automatic AI triage policy
+// @Description  Replaces the policy. Turning it on, or adding a severity while it is on, sends more finding content to the AI provider without a person asking: it needs a recent sign-in (403 STEP_UP_REQUIRED), is audited high and every owner and administrator is told. Turning it off, fewer severities and the delay apply at once. Owners and administrators with settings:write.
+// @Tags         Tenants
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        body body UpdateAIAutoTriageRequest true "Policy"
+// @Success      200  {object}  AIAutoTriageResponse
+// @Failure      400  {object}  apierror.Error
+// @Failure      403  {object}  apierror.Error
+// @Router       /organization/settings/ai/auto-triage [put]
+func (h *AISettingsHandler) UpdateAutoTriage(w http.ResponseWriter, r *http.Request) {
+	store, tenantID, ok := h.autoTriage(w, r)
+	if !ok {
+		return
+	}
+	var req UpdateAIAutoTriageRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4<<10)).Decode(&req); err != nil {
+		apierror.BadRequest("Invalid request body").WriteJSON(w)
+		return
+	}
+	if err := h.validator.Validate(req); err != nil {
+		apierror.BadRequest("Invalid request: severities are critical, high, medium, low or info; the delay is 0 to 3600 seconds").WriteJSON(w)
+		return
+	}
+	v, err := store.SaveAutoTriage(r.Context(), tenantID,
+		tenant.AutoTriagePolicy{Enabled: req.Enabled, Severities: req.Severities, DelaySeconds: req.DelaySeconds}, h.actx(r))
+	if err != nil {
+		if middleware.WriteStepUpError(w, err, authapp.StepUpWindow) {
+			return
+		}
+		h.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, AIAutoTriageResponse{Enabled: v.Enabled, Severities: v.Severities, DelaySeconds: v.DelaySeconds, Loosened: v.Loosened})
 }

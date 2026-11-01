@@ -29,7 +29,12 @@ func revocationTestSetup(t *testing.T, sessions RevokedSessionChecker) (http.Han
 		Secret: "revocation-outage-test-secret-0123456789abcdef", Issuer: "test",
 		AccessTokenDuration: time.Hour, RefreshTokenDuration: time.Hour,
 	})
-	tok, _, err := gen.GenerateAccessToken("0a0e0c09-5e75-4556-8a26-c8de3ded5d73", "sid", "user")
+	scoped, err := gen.GenerateTenantScopedAccessToken("0a0e0c09-5e75-4556-8a26-c8de3ded5d73", "u@it.test", "U", "sid",
+		jwt.TenantMembership{TenantID: "7d1c3b2a-0000-4000-8000-000000000001", Role: "member"}, false, 0, "password")
+	tok := ""
+	if scoped != nil {
+		tok = scoped.AccessToken
+	}
 	if err != nil {
 		t.Fatal(err)
 	}

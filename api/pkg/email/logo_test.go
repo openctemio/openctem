@@ -106,9 +106,22 @@ func TestBuildMessageEmbedsTheLogoAsRelatedPart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var html bytes.Buffer
-	_, _ = html.ReadFrom(p1)
-	if !strings.Contains(html.String(), body) {
+	amt, aparams, err := mime.ParseMediaType(p1.Header.Get("Content-Type"))
+	if err != nil || amt != "multipart/alternative" {
+		t.Fatalf("first related part is %q (%v), want multipart/alternative", p1.Header.Get("Content-Type"), err)
+	}
+	var html string
+	ar := multipart.NewReader(p1, aparams["boundary"])
+	for {
+		ap, err := ar.NextPart()
+		if err != nil {
+			break
+		}
+		if strings.HasPrefix(ap.Header.Get("Content-Type"), "text/html") {
+			html = readQP(t, ap)
+		}
+	}
+	if !strings.Contains(html, body) {
 		t.Error("html part lost")
 	}
 	p2, err := mr.NextPart()
@@ -126,10 +139,10 @@ func TestBuildMessageEmbedsTheLogoAsRelatedPart(t *testing.T) {
 	}
 }
 
-func TestBuildMessageWithoutInlineStaysSinglePart(t *testing.T) {
+func TestBuildMessageWithoutInlineHasNoRelatedPart(t *testing.T) {
 	s := NewSMTPSender(Config{From: "no-reply@example.com"})
 	raw := string(s.buildMessage(&Message{To: []string{"a@example.com"}, Subject: "Hi", Body: "<p>x</p>", IsHTML: true}))
-	if !strings.Contains(raw, "Content-Type: text/html; charset=UTF-8") || strings.Contains(raw, "multipart") {
+	if !strings.Contains(raw, "Content-Type: text/html; charset=UTF-8") || !strings.Contains(raw, "multipart/alternative") || strings.Contains(raw, "multipart/related") {
 		t.Errorf("unexpected structure: %s", raw)
 	}
 }

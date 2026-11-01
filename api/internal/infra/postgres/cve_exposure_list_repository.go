@@ -170,7 +170,10 @@ func cveListStatement(q vulnerability.CVEListQuery) (string, []any, pagination.P
 			MIN(CASE s.severity WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 WHEN 'low' THEN 4 WHEN 'info' THEN 5 ELSE 6 END) AS sev_rank,
 			MAX(s.cvss_score) AS f_cvss,
 			MAX(s.epss_score) AS f_epss,
-			BOOL_OR(COALESCE(s.is_in_kev, FALSE)) AS f_kev,
+			BOOL_OR(` + vulnerability.KEVFindingSQL("s.is_in_kev") + `) AS f_kev,
+			-- The open known exploited findings of the CVE: the same
+			-- predicate as the findings stats' kev_open (one KEV definition).
+			COUNT(*) FILTER (WHERE ` + vulnerability.OpenKEVFindingSQL("s") + `) AS kev_open,
 			BOOL_OR(COALESCE(s.exploit_available, FALSE)) AS f_exploit,
 			BOOL_OR(s.f_fix) AS f_fix,
 			COUNT(*) FILTER (WHERE ` + open + ` AND ` + pastSLA + `) AS past_sla,
@@ -208,7 +211,10 @@ func cveListStatement(q vulnerability.CVEListQuery) (string, []any, pagination.P
 			COALESCE(v.cvss_version, '') AS cvss_version,
 			COALESCE(v.epss_score, agg.f_epss) AS epss,
 			v.epss_percentile AS epss_pct,
-			(k.cve_id IS NOT NULL OR v.cisa_kev_date_added IS NOT NULL OR agg.f_kev) AS kev,
+			-- Known exploited: in the CISA KEV catalog, or a finding of the
+			-- CVE carries the flag the catalog keeps (KEVFindingSQL). The
+			-- vulnerability catalog's own KEV date is not a third source.
+			(k.cve_id IS NOT NULL OR agg.f_kev) AS kev,
 			COALESCE(k.due_date::timestamptz, v.cisa_kev_due_date) AS kev_due,
 			(LOWER(COALESCE(k.known_ransomware_campaign_use, v.cisa_kev_ransomware_use, '')) = 'known') AS ransomware,
 			(COALESCE(v.exploit_available, FALSE) OR agg.f_exploit
@@ -238,15 +244,16 @@ func cveListStatement(q vulnerability.CVEListQuery) (string, []any, pagination.P
 			COUNT(*) FILTER (WHERE exploit) AS exploit,
 			COUNT(*) FILTER (WHERE em_id IS NOT NULL) AS emerging,
 			COUNT(*) FILTER (WHERE past_sla > 0) AS past_sla,
+			COALESCE(SUM(kev_open), 0) AS kev_open,
 			(SELECT COUNT(*) FROM ranked) AS matched
 		FROM vrows
 	)
-	SELECT sm.total, sm.kev, sm.exploit, sm.emerging, sm.past_sla, sm.matched,
+	SELECT sm.total, sm.kev, sm.exploit, sm.emerging, sm.past_sla, sm.kev_open, sm.matched,
 		p.cve_id, p.in_catalog, p.title, p.severity, p.cvss, p.cvss_version, p.epss, p.epss_pct,
 		p.kev, p.kev_due, p.ransomware, p.exploit, p.maturity, p.has_fix, p.catalog_fixed,
 		p.em_id, p.em_level, p.em_state,
 		COALESCE((ARRAY['P0','P1','P2','P3']::text[])[p.prio_rank + 1], ''),
-		p.total, p.open_count, p.assets, p.internet, p.crown, p.past_sla, p.next_due, p.in_task,
+		p.total, p.open_count, p.kev_open, p.assets, p.internet, p.crown, p.past_sla, p.next_due, p.in_task,
 		p.first_seen, p.last_seen
 	FROM sm
 	LEFT JOIN LATERAL (SELECT * FROM ranked WHERE rn > ` + lo + ` AND rn <= ` + hi + `) p ON TRUE
@@ -265,14 +272,15 @@ func (r *FindingRepository) scanCVEList(ctx context.Context, tx *sql.Tx, w *filt
 			cvss, epss, epssPct                                sql.NullFloat64
 			kevDue, nextDue, firstSeen, lastSeen               sql.NullTime
 			total, open, assets, internet, crown, past, inTask sql.NullInt64
+			kevOpen                                            sql.NullInt64
 			catalogFixed                                       pq.StringArray
 		)
 		if err := rows.Scan(&out.Summary.Total, &out.Summary.KEV, &out.Summary.Exploit, &out.Summary.Emerging,
-			&out.Summary.PastSLA, &out.Total,
+			&out.Summary.PastSLA, &out.Summary.OpenKEVFindings, &out.Total,
 			&cve, &inCatalog, &title, &severity, &cvss, &cvssVersion, &epss, &epssPct,
 			&kev, &kevDue, &ransomware, &exploit, &maturity, &hasFix, &catalogFixed,
 			&emID, &emLevel, &emState, &prio,
-			&total, &open, &assets, &internet, &crown, &past, &nextDue, &inTask,
+			&total, &open, &kevOpen, &assets, &internet, &crown, &past, &nextDue, &inTask,
 			&firstSeen, &lastSeen); err != nil {
 			return nil, fmt.Errorf("scan cve exposure row: %w", err)
 		}
@@ -282,11 +290,12 @@ func (r *FindingRepository) scanCVEList(ctx context.Context, tx *sql.Tx, w *filt
 		}
 		it := vulnerability.CVEListItem{
 			CVEID: cve.String, InCatalog: inCatalog.Bool, Title: title.String, Aliases: []string{}, EPSSTrend: []vulnerability.EPSSPoint{},
-			Severity: severity.String, CVSSVersion: cvssVersion.String,
+			Remediations: []string{},
+			Severity:     severity.String, CVSSVersion: cvssVersion.String,
 			KEV: kev.Bool, KEVDueDate: coverageTime(kevDue), KEVRansomware: ransomware.Bool,
 			Exploit: exploit.Bool, ExploitMaturity: maturity.String,
 			WorstPriority: prio.String,
-			Findings:      total.Int64, OpenFindings: open.Int64,
+			Findings:      total.Int64, OpenFindings: open.Int64, OpenKEVFindings: kevOpen.Int64,
 			Assets: assets.Int64, InternetFacing: internet.Int64, CrownJewels: crown.Int64,
 			Products: []vulnerability.CVEListProduct{}, FixedVersions: []string(catalogFixed),
 			HasFix: hasFix.Bool, PastSLA: past.Int64, NextSLADue: coverageTime(nextDue), InTask: inTask.Int64,
@@ -316,7 +325,8 @@ func (r *FindingRepository) scanCVEList(ctx context.Context, tx *sql.Tx, w *filt
 
 // cveListScopedCTE is the list's scoped findings (the compiled WHERE, as
 // the caller), materialized once with only the columns the grouping reads:
-// the fix flag is computed here so the wide metadata column is never
+// the fix flag (a fix known for the finding, or the finding in a
+// remediation group) is computed here so the wide metadata column is never
 // carried through the aggregation.
 func cveListScopedCTE(w *filterspec.Where) string {
 	return `WITH scoped AS MATERIALIZED (
@@ -324,8 +334,7 @@ func cveListScopedCTE(w *filterspec.Where) string {
 			findings.priority_class, findings.severity, findings.cvss_score, findings.epss_score,
 			findings.is_in_kev, findings.exploit_available, findings.sla_status, findings.sla_deadline,
 			findings.first_detected_at, findings.last_seen_at,
-			(CASE WHEN jsonb_typeof(findings.metadata->'fixed_versions') = 'array'
-				THEN jsonb_array_length(findings.metadata->'fixed_versions') > 0 ELSE FALSE END) AS f_fix
+			` + vulnerability.FindingFixKnownSQL("findings") + ` AS f_fix
 		FROM findings WHERE (` + w.SQL + `) AND findings.cve_id IS NOT NULL
 	)`
 }
@@ -431,6 +440,34 @@ func (r *FindingRepository) cveListDetails(ctx context.Context, tx *sql.Tx, w *f
 		scanner[cve] = append(scanner[cve], fv)
 	}
 	if err := frows.Err(); err != nil {
+		return err
+	}
+	frows.Close()
+
+	// The remediation groups of the CVE's open findings (the same keys as
+	// the remediation groups list): the fix a group names, also when the
+	// scanner gave it only as text.
+	//nolint:gosec // G202: the compiled filter, constants and placeholders only, no request text
+	grows, err := tx.QueryContext(ctx, scopedFindingsCTE(w, "findings.cve_id = ANY("+cveArg+"::text[])")+`
+	SELECT DISTINCT s.cve_id, frk.title
+	FROM scoped s
+	JOIN finding_remediation_keys frk ON frk.finding_id = s.id AND frk.tenant_id = s.tenant_id
+	WHERE `+vulnerability.FindingLensSQLOn(vulnerability.FindingLensOpen, "s.status")+` AND s.source <> 'pentest'
+	ORDER BY 1, 2`, args...)
+	if err != nil {
+		return fmt.Errorf("cve list remediations: %w", err)
+	}
+	defer grows.Close()
+	for grows.Next() {
+		var cve, title string
+		if err := grows.Scan(&cve, &title); err != nil {
+			return fmt.Errorf("scan cve list remediation: %w", err)
+		}
+		if it := &items[idx[cve]]; len(it.Remediations) < vulnerability.MaxCVEListRemediations {
+			it.Remediations = append(it.Remediations, title)
+		}
+	}
+	if err := grows.Err(); err != nil {
 		return err
 	}
 	for i := range items {

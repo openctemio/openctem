@@ -385,7 +385,9 @@ export function WidgetFrame(props: WidgetFrameProps) {
               <Button
                 variant="ghost"
                 size="icon"
-                className="size-6 text-muted-foreground"
+                // A 24 px icon with a 44 px hit area (the after: box), so the
+                // header keeps its height and a finger still lands on it.
+                className="relative size-6 text-muted-foreground after:absolute after:-inset-2.5"
                 aria-label={t('dashboardKit.action.definition', 'How this is counted')}
               >
                 <Info className="size-4" aria-hidden />

@@ -142,13 +142,22 @@ call POST /api/v1/sensors '{"name":"e2e-sensor-b","type":"worker","execution_mod
 # claims the scan's job below, so its run stays in progress for
 # 10-scan-detail-runs. It reports a release and an SDK pseudo-version (a
 # build of an unreleased commit, 40 characters): the drawer specs check that
-# a value that long stays inside its column (30-drawer-text-layout). It
-# reports no local policy while requiring one, so its drawer offers the
-# suggested policy (41-sensor-policy-suggestion).
-code=$(curl -sS -o "$WORK/body" -w '%{http_code}' -X POST "$API/api/v2/sensor/heartbeat" \
-  -H "Authorization: Bearer $KEY" -H 'Content-Type: application/json' \
-  -d '{"status":"online","version":"v0.25.0","scanners":["nuclei"],"tools":[{"name":"nuclei","kind":"scanner","installed":true}],"sdk":{"name":"openctem-sdk-go","version":"v0.37.1-0.20261025003926-6373f2417870"},"sensor":{"name":"openctem-sensor","version":"v0.25.0"},"local_policy":{"state":"absent","required":true}}')
-[[ "$code" =~ ^2 ]] || { log "heartbeat -> $code: $(head -c 300 "$WORK/body")"; exit 1; }
+# a value that long stays inside its column (30-drawer-text-layout).
+#
+# Its local policy is reported in two steps. A sensor that requires a local
+# policy and has none refuses every job with a target (it fails closed), so
+# the scan below could not be triggered while it is reported that way. The
+# first heartbeat reports no policy at all (the platform's scope decides);
+# the second, after the trigger, reports the policy absent while required, so
+# the sensor's drawer offers the suggested policy (41-sensor-policy-suggestion).
+heartbeat() {
+  local policy=$1 code
+  code=$(curl -sS -o "$WORK/body" -w '%{http_code}' -X POST "$API/api/v2/sensor/heartbeat" \
+    -H "Authorization: Bearer $KEY" -H 'Content-Type: application/json' \
+    -d '{"status":"online","version":"v0.25.0","scanners":["nuclei"],"tools":[{"name":"nuclei","kind":"scanner","installed":true}],"sdk":{"name":"openctem-sdk-go","version":"v0.37.1-0.20261025003926-6373f2417870"},"sensor":{"name":"openctem-sensor","version":"v0.25.0"}'"$policy"'}')
+  [[ "$code" =~ ^2 ]] || { log "heartbeat -> $code: $(head -c 300 "$WORK/body")"; exit 1; }
+}
+heartbeat ''
 
 findings=$({
   for i in $(seq 1 15); do
@@ -210,6 +219,7 @@ code=$(curl -sS -o "$WORK/body" -w '%{http_code}' -X PUT "$API/api/v2/sensor/res
 log "a scan with a run in progress"
 call POST /api/v1/scans/ '{"name":"E2E scan","scan_type":"single","scanner_name":"nuclei","targets":["e2e-web.example.com"],"schedule_type":"manual"}'
 call POST "/api/v1/scans/$(jq -r .id <<<"$BODY")/trigger" '{}'
+heartbeat ',"local_policy":{"state":"absent","required":true}'
 
 log "remediation campaign"
 call POST /api/v1/remediation/campaigns '{"name":"E2E remediation campaign","description":"e2e","priority":"high"}'

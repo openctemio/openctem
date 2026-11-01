@@ -31,6 +31,7 @@ import { AssetMergeHistory } from './asset-merge-history'
 import { AssetIdentitySections } from './asset-identity-sections'
 import { AssetAttributionSection } from './asset-attribution-section'
 import { AssetAttributeSourcesSection } from './asset-attribute-sources-section'
+import { AssetLineageSection } from './asset-lineage-section'
 import { AssetFreshnessSection } from './asset-freshness-section'
 import { AssetCoverageSection } from './asset-coverage-section'
 import { AssetTimeline } from './asset-timeline'
@@ -597,6 +598,7 @@ export function AssetDetailSheet<T extends Asset>({
               assetName={asset.name}
               assetType={asset.type}
             />
+            <AssetLineageSection assetId={asset.id} />
             <AssetAttributeSourcesSection assetId={asset.id} />
             <AssetFreshnessSection assetId={asset.id} />
             <AssetCoverageSection assetId={asset.id} />

@@ -45,8 +45,10 @@ describe('Discovery > Assets', () => {
     ])
   })
 
-  it('Needs attention holds the data-quality reasons, relationships and duplicates at their own URLs', () => {
+  it('Needs attention holds the scoping decisions, data-quality reasons, relationships and duplicates at their own URLs', () => {
     expect(ASSET_ATTENTION_REASONS.map((t) => [t.label, t.href, t.module])).toEqual([
+      ['Validate primary assets', '/assets/attention/validate-primary', 'assets'],
+      ['Decide monitoring', '/assets/attention/decide-monitoring', 'assets'],
       ['No owner', '/assets/attention/no-owner', 'assets'],
       ['Criticality not set', '/assets/attention/context', 'assets'],
       ['Not scanned in 30 days', '/assets/attention/unscanned', 'assets'],
@@ -223,7 +225,7 @@ describe('Relationship suggestions live under /assets/suggestions', () => {
 })
 
 describe('Attack surface tabs', () => {
-  it('Review (not Suggestions), Web surface, Technologies and Certificates, each bound to its route guard', () => {
+  it('Review (not Suggestions), Web surface, Technologies, Exposure items and Certificates, each bound to its route guard', () => {
     expect(ATTACK_SURFACE_SECTION_TABS.map((t) => [t.label, t.href, t.module])).toEqual([
       ['Overview', '/attack-surface', 'attack_surface'],
       ['Review', '/attack-surface/review', 'attack_surface'],
@@ -231,6 +233,7 @@ describe('Attack surface tabs', () => {
       ['Changes', '/attack-surface/changes', 'attack_surface'],
       ['Web surface', '/attack-surface/web', 'assets'],
       ['Technologies', '/attack-surface/technologies', 'assets'],
+      ['Exposure items', '/attack-surface/exposures', 'attack_surface'],
       ['Certificates', '/attack-surface/certificates', 'assets'],
     ])
     for (const tab of ATTACK_SURFACE_SECTION_TABS) {
