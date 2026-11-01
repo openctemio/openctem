@@ -549,8 +549,13 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	mcpDiscovery := newMCPDiscovery(cfg, log)
 	if mcpHandler != nil {
 		// get_asset reads the asset page's services as the connection's
-		// caller; console links point to the web origin.
-		mcpHandler.SetAssetContext(svc.Asset, mcpDiscovery.Endpoints.Issuer)
+		// caller; console links point to the web origin. Without discovery
+		// (APP_URL unset) the tool answers without console links.
+		webBase := ""
+		if mcpDiscovery != nil {
+			webBase = mcpDiscovery.Endpoints.Issuer
+		}
+		mcpHandler.SetAssetContext(svc.Asset, webBase)
 	}
 	// OAuth for MCP clients (RFC-062): with an authorization server the MCP
 	// endpoint also accepts its access tokens, and a refused call that
