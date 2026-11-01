@@ -74,7 +74,7 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 | `DB_HOST` | string | `localhost` | yes |  | PostgreSQL host. |
 | `DB_JIT_ENABLED` | bool | `false` |  |  | PostgreSQL JIT for the API's sessions. Off by default because request-path queries pay the JIT compile cost without benefiting from it. |
 | `DB_INGEST_MAX_CONNS` | int | `8` |  |  | Connections of the ingest pool, apart from the API's pool: the asset and finding writes of the ingest worker (CI results, imports, sensor reports) use it, so a burst of uploads cannot take the connections the API's requests need. All are kept idle. |
-| `DB_MAX_IDLE_CONNS` | int | `5` |  |  | Maximum idle connections kept in the pool. |
+| `DB_MAX_IDLE_CONNS` | int | same as `DB_MAX_OPEN_CONNS` |  |  | Maximum idle connections kept in the pool. Defaults to `DB_MAX_OPEN_CONNS`: a smaller value makes every burst of requests close and reopen connections (a TCP and SCRAM handshake and a new server process each). |
 | `DB_MAX_OPEN_CONNS` | int | `25` |  |  | Maximum open connections in the API's pool. |
 | `DB_NAME` | string | `openctem` |  |  | Database name. |
 | `DB_ADMIN_PASSWORD` | string | empty |  | yes | Password of `DB_ADMIN_USER`. Required when `DB_ADMIN_USER` is set; must differ from `DB_PASSWORD`. |
