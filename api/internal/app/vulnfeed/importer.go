@@ -443,11 +443,13 @@ func (im *Importer) finish(ctx context.Context, b summary, res Result) error {
 	return nil
 }
 
+// fail records the failure; the stored text loses URL credentials (a
+// presigned release-asset link carries its signature in the query).
 func (im *Importer) fail(ctx context.Context, cause error) error {
 	st, err := im.status.GetBySource(ctx, SourceName)
 	if err == nil {
 		c := feedstatus.Classify(cause)
-		st.MarkSyncFailedWith(cause.Error(), c.Code, c.Params)
+		st.MarkSyncFailedWith(logger.RedactURLs(cause.Error()), c.Code, c.Params)
 		err = im.status.Update(ctx, st)
 	}
 	if err != nil {
