@@ -54,6 +54,20 @@ var _ = registerActions("easm", map[Action]Severity{
 	ActionEASMLookalikeWatchDeleted: SeverityMedium,
 })
 
+// Web page monitoring watches (RFC-138): a watch schedules recurring active
+// fetches of a URL.
+const (
+	ActionWebWatchAdded   Action = "web_watch.added"
+	ActionWebWatchUpdated Action = "web_watch.updated"
+	ActionWebWatchDeleted Action = "web_watch.deleted"
+)
+
+var _ = registerActions("easm", map[Action]Severity{
+	ActionWebWatchAdded:   SeverityMedium,
+	ActionWebWatchUpdated: SeverityMedium,
+	ActionWebWatchDeleted: SeverityMedium,
+})
+
 // Network seeds (RFC-082): AS numbers and organization names discovery
 // expands from public routing data. A seed never authorizes a probe.
 const (

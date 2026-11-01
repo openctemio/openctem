@@ -21,25 +21,42 @@ import (
 )
 
 // sharedSensorGateSQL keeps a command the shared sensor bound to $1 may run:
-// the sensor is an active shared sensor (scope instance, no tenant) that
+// the sensor is an active shared sensor (scope instance, no tenant), not
+// flagged as a cloned identity (command_cloned_identity.go), that
 // reported the shared isolation profile and accepts unzoned jobs; it
 // verified the command's tool; the command names no region or the sensor's
 // region; and the sensor reported every feature the command requires.
+// The explicit ss.tenant_id IS NULL repeats a condition of
+// sharedSensorConditions so the tenantsql lint, which cannot fold a helper
+// that takes an argument, sees the sensor lookup is by a tenantless sensor.
 var sharedSensorGateSQL = `EXISTS (
 			SELECT 1 FROM sensors ss
 			WHERE ss.id = $1
-			  AND ss.scope = 'instance' AND ss.tenant_id IS NULL
-			  AND ss.status = 'active'
-			  AND ss.accepts_unzoned_jobs
-			  AND '` + command.CapabilitySharedIsolation + `' = ANY(COALESCE(ss.reported_capabilities, ARRAY[]::text[]))
-			  AND (` + commandToolSQL + ` IS NULL OR ` + commandToolSQL + ` = ANY(` + sensorDispatchTools("ss") + `))
+			  AND ss.tenant_id IS NULL
+			  AND ` + sharedSensorConditions("ss") + `
+		)`
+
+// sharedSensorConditions is the part of sharedSensorGateSQL about the
+// sensor aliased alias and the command: an active shared sensor (scope
+// instance, no tenant) with the shared isolation profile that accepts
+// unzoned jobs, verified the command's tool, is in the command's region
+// when it names one and reported every feature the command requires. The
+// shared re-queue check (RequeueCandidates) uses it for the other shared
+// sensors a refused shared job may go to.
+func sharedSensorConditions(alias string) string {
+	return alias + `.scope = 'instance' AND ` + alias + `.tenant_id IS NULL
+			  AND ` + alias + `.status = 'active'
+			  AND ` + alias + `.identity_cloned_at IS NULL
+			  AND ` + alias + `.accepts_unzoned_jobs
+			  AND '` + command.CapabilitySharedIsolation + `' = ANY(COALESCE(` + alias + `.reported_capabilities, ARRAY[]::text[]))
+			  AND (` + commandToolSQL + ` IS NULL OR ` + commandToolSQL + ` = ANY(` + sensorDispatchTools(alias) + `))
 			  AND (NULLIF(commands.payload->>'` + command.PayloadKeyPreferredRegion + `', '') IS NULL
-			       OR commands.payload->>'` + command.PayloadKeyPreferredRegion + `' = ss.region)
+			       OR commands.payload->>'` + command.PayloadKeyPreferredRegion + `' = ` + alias + `.region)
 			  AND (` + noRequiredFeaturesSQL + `
 			       OR NOT EXISTS (
 				SELECT 1 FROM jsonb_array_elements_text(commands.payload->'` + command.PayloadKeyRequiredFeatures + `') AS rf(feature)
-				WHERE rf.feature <> ALL(COALESCE(ss.reported_capabilities, ARRAY[]::text[]))))
-		)`
+				WHERE rf.feature <> ALL(COALESCE(` + alias + `.reported_capabilities, ARRAY[]::text[]))))`
+}
 
 // sharedClaimWhere is the shared poll's and claim's predicate for the
 // shared sensor bound to $1 with the capabilities bound to $2: a shared job,

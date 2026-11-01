@@ -31,6 +31,8 @@ interface StatParts {
   delta: number | null
   unit: MetricUnit
   detail?: string
+  /** The list the detail's population opens ("of 40 open"). */
+  detailHref?: string
 }
 
 function useParts(result: StatVizProps['result'], unit: MetricUnit): StatParts {
@@ -64,6 +66,13 @@ function useParts(result: StatVizProps['result'], unit: MetricUnit): StatParts {
         previous: result.previous,
         delta: result.delta ?? changeOf(result.value, result.previous),
         unit,
+        detail:
+          result.of != null
+            ? t('dashboardKit.stat.ofOpen', 'of {den} open', {
+                den: formatCount(result.of, locale),
+              })
+            : undefined,
+        detailHref: result.of_href ?? undefined,
       }
   }
 }
@@ -99,7 +108,17 @@ export function StatViz({
         </DrillLink>
         {caption && <span className="text-xs text-muted-foreground">{caption}</span>}
       </div>
-      {parts.detail && <p className="text-xs text-muted-foreground">{parts.detail}</p>}
+      {parts.detail && (
+        <p className="text-xs text-muted-foreground">
+          {parts.detailHref ? (
+            <DrillLink to={parts.detailHref} className="hover:underline">
+              {parts.detail}
+            </DrillLink>
+          ) : (
+            parts.detail
+          )}
+        </p>
+      )}
       <div className="flex flex-wrap items-center gap-2">
         <DeltaText
           delta={parts.delta}

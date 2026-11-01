@@ -11,7 +11,7 @@ import (
 // the same entity permission as reading those rows directly.
 func metricPermission(m dashboard.Metric) permission.Permission {
 	switch {
-	case m.Kind == dashboard.MetricKindAssetCount, m.Kind == dashboard.MetricKindPaths, m.ID == "coverage.discovery":
+	case m.Kind == dashboard.MetricKindAssetCount, m.Kind == dashboard.MetricKindPaths, m.ID == metricDiscoveryCoverage:
 		return permission.AssetsRead
 	case assetBreakdowns[m.ID], m.Kind == dashboard.MetricKindPosture:
 		return permission.AssetsRead
@@ -59,7 +59,7 @@ func maskAssetParts(w *WidgetValue, c dashboardapp.Caller) {
 	}
 	if k := w.KPIs; k != nil {
 		for i := range k.Tiles {
-			if k.Tiles[i].Metric == "coverage.discovery" {
+			if k.Tiles[i].Metric == metricDiscoveryCoverage {
 				k.Tiles[i] = KPITile{Key: k.Tiles[i].Key, Metric: k.Tiles[i].Metric, State: StateUnsupported, Reason: ReasonForbidden,
 					Unit: k.Tiles[i].Unit, Polarity: k.Tiles[i].Polarity}
 			}

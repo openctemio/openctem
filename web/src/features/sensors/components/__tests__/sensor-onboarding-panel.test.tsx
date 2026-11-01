@@ -119,6 +119,52 @@ describe('SensorOnboardingPanel', () => {
     ).toHaveTextContent('Compare fingerprint')
   })
 
+  it('says why no sensor arrived: the last refused attempt on the code, with the next step', async () => {
+    api.expect.mockResolvedValue({
+      id: 'e1',
+      mode: 'reverse',
+      status: 'expecting',
+      code: 'K7QM4ZTD',
+      expires_at: future(),
+    })
+    const user = userEvent.setup()
+    const { rerender } = render(<SensorOnboardingPanel />)
+    await user.click(screen.getByRole('button', { name: 'Create pairing code' }))
+    expect(screen.queryByTestId('pairing-refusal')).toBeNull()
+    for (const [refusal, title, fix] of [
+      [
+        { reason: 'clock_skew', at: new Date().toISOString(), clock_offset_seconds: -300 },
+        'its clock is 300 seconds behind',
+        'chronyc makestep',
+      ],
+      [
+        { reason: 'key_registered', at: new Date().toISOString() },
+        'its key is already registered to a sensor',
+        'use Re-pair on that sensor',
+      ],
+      [
+        { reason: 'key_busy', at: new Date().toISOString() },
+        'still has another pairing request open',
+        'Leave the sensor running',
+      ],
+    ] as const) {
+      api.expectation = {
+        data: {
+          id: 'e1',
+          mode: 'reverse',
+          status: 'expecting',
+          code: 'K7QM4ZTD',
+          expires_at: future(),
+          last_refusal: refusal,
+        },
+      }
+      await act(async () => rerender(<SensorOnboardingPanel />))
+      const notice = await screen.findByTestId('pairing-refusal')
+      expect(notice).toHaveTextContent(title)
+      expect(notice).toHaveTextContent(fix)
+    }
+  })
+
   it('switches the command with the platform', async () => {
     api.expect.mockResolvedValue({
       id: 'e1',

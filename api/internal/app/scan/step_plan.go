@@ -21,6 +21,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openctemio/ctis/outcome"
+
 	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
 	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
 
@@ -358,6 +360,7 @@ func StepCommandPayload(run *scanrun.Run, step *scanworkflow.Step, toolName, ste
 	// the stall window.
 	payload[PayloadKeyBudget] = toolbudget.ForTask(toolName, payloadTargetCount(payload["targets"]))
 	withRunDeadline(payload, run)
+	withOutcomeRevision(payload)
 	withWordlistRequests(payload, toolName)
 	if run.AssetID != nil {
 		payload["asset_id"] = run.AssetID.String()
@@ -429,6 +432,24 @@ func withWordlistRequests(payload map[string]any, tool string) {
 	} else {
 		delete(payload, PayloadKeyWordlists)
 	}
+}
+
+// PayloadKeyOutcomeRevision is the command payload key of the highest
+// per-target outcome revision the platform reads (sdk-go
+// ScanCommandPayload.OutcomeRevision, ctis outcome.Revision). A sensor sends
+// the classes that say why a target was not covered (edge_blocked,
+// edge_challenged, rate_limited, name_gone, resolver_failed,
+// sensor_network_fault) only when the payload names revision 2 or more.
+// Without it the sensor sends the closest revision 1 class: a host behind an
+// edge protection that answered 403, or a target that pushed back, then
+// arrived as tool_error, a platform-side failure that fed the coverage
+// platform-failure streak and the operator alert.
+const PayloadKeyOutcomeRevision = "outcome_revision"
+
+// withOutcomeRevision names the outcome revision the platform reads in
+// payload (the field belongs to the platform, whatever the config says).
+func withOutcomeRevision(payload map[string]any) {
+	payload[PayloadKeyOutcomeRevision] = outcome.Revision
 }
 
 // withRunDeadline puts the run's deadline in payload (nothing for a run

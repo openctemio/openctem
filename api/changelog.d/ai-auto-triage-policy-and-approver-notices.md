@@ -1,0 +1,5 @@
+### Security: Automatic AI triage policy can be saved; widening it and lowering approvers need step-up and tell owners and administrators
+
+- New `GET`/`PUT /api/v1/organization/settings/ai/auto-triage` (owner or administrator, `settings:write`) writes the automatic triage policy (on/off, severities, delay); before, the stored policy was never written and the platform defaults always applied. Turning it on, or adding a severity while it is on, needs a recent sign-in, is audited high (`ai_settings.auto_triage_updated`) and every owner and administrator is told; turning it off, fewer severities and the delay apply at once. Settings > AI has an Automatic triage card.
+- Lowering scan approval (strict, on, off) or loosening an enforcing scan approval rule is audited critical and every owner and administrator gets an in-app notice.
+- Scheduling a lower false-positive or risk acceptance approval level (two people to one), a lower second-look share or a relaxing approval policy is audited critical (metadata `loosened`), and the approvers' notice says "Finding approvals lowered" and names a lowered second-look share.

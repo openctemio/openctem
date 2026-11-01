@@ -27,12 +27,40 @@ describe('StepOutcome', () => {
     expect(screen.getByText('a.example.com')).toBeInTheDocument()
     expect(screen.getByText('kept rate-limiting the scan')).toBeInTheDocument()
     expect(
-      screen.getByText(/stopped answering, so the sensor stopped connecting/)
+      screen.getByText(/failed the scanner's requests \(no answer, or connections reset\)/)
     ).toBeInTheDocument()
     expect(screen.getByText('and 1 more host, listed on the tasks')).toBeInTheDocument()
     expect(screen.getByText('1 target not finished')).toBeInTheDocument()
     // The raw reason codes never show.
     expect(screen.queryByText(/rate_floor|breaker_open/)).toBeNull()
+  })
+
+  it('a rechecked host says what it did, what its certificate shows and how to fix it', () => {
+    render(
+      <StepOutcome
+        outcome={{
+          coverage_gap_count: 2,
+          coverage_gaps: [
+            {
+              host: 'shop.example.com:443',
+              reason: 'breaker_open',
+              cause: 'http_reset',
+              cert: 'expired',
+            },
+            { host: 'old.example.com:443', reason: 'breaker_open', cause: 'no_answer' },
+          ],
+        }}
+      />
+    )
+    expect(screen.getByText('TLS answers, resets every HTTP request')).toBeInTheDocument()
+    expect(
+      screen.getByText(/certificate has expired: browsers refuse the site/)
+    ).toBeInTheDocument()
+    const link = screen.getByRole('link', { name: 'Open scanner addresses' })
+    expect(link).toHaveAttribute('href', '/settings/scanning/proxies#scanner-addresses')
+    expect(screen.getByText('no answer')).toBeInTheDocument()
+    expect(screen.queryByText(/stopped answering/)).toBeNull()
+    expect(screen.queryByText(/http_reset|no_answer|breaker_open/)).toBeNull()
   })
 
   it('an unknown reason reads as a generic gap', () => {

@@ -431,9 +431,9 @@ kind's group) and the tool (`unknown` when the source named none).
   the hero funnel and the source tooltip all use it.
 - Funnel: received and new or reopened are the period's flow (received is
   at least new or reopened); actionable is a stock (open findings of
-  classes P0 to P3 now), so the hero shows it apart from the flow with the
-  caption "open now", never as a third step that can be larger than the
-  first.
+  classes P0 to P3 now), so the hero shows it once, apart from the flow
+  (the ring centre on a wide card, the headline on a phone), never as a
+  third step that can be larger than the first.
 - False positive: the findings closed as false positive in the window, the
   same figure as the flow's.
 - Each source figure opens the receipt list with the same filter
@@ -457,6 +457,19 @@ findings figure equals the findings list; personal reads: a scoped member,
 a member without scope rows and the owner, the out-of-scope false positive
 never counts, receipts only for the owner; receipt list filters refuse
 malformed values), `internal/app/dashboard/widgets/flow_test.go`.
+
+Display (web `components/dashboard-kit/exposure-flow-viz.tsx`): the layout
+follows the widget's own width. Below 660 px (a phone) the answer comes
+first: actionable now with its priority split as one bar and four figures,
+the outcomes as a grid, the stages as a list (each figure names what it
+measures, the state is an icon and words from one shared set, "Act here" is a
+separate pill), then the sources. Sources are a ranked bar list
+(`ranked-bars.tsx`) by findings or by assets and by tool or by source
+instance, healthy sources with nothing folded into one line, unhealthy ones
+always shown; a refresh that changes the order moves rows (no motion under
+reduced motion) and marks the change. Every figure is a link of at least
+44 px on a phone. Part-to-whole bars are `stacked-bar.tsx`; a test keeps
+the kit to one component per pattern (`shared-patterns.test.ts`).
 
 ### Story widgets: levers, weekly brief, KPI strip
 
@@ -542,6 +555,78 @@ it counts. Code: `internal/app/dashboard/widgets/surface.go`,
   scope, program-only certificates and another tenant's rows never count or
   show; every band equals the asset or findings list it opens).
 
+### Empty and unmeasured widgets
+
+One rule for every widget: no figure is drawn until there is something to
+count. A findings figure in a scope that has never held a published finding
+(any status, the read's asset rule, data scope and campaign rule) is
+`not_measured` with reason `no_findings`, never a `0`, an empty chart or a met
+target. `FactReader.HasFindings` is read once per dashboard read (a probe in
+the read's context) and applies to the counts, ratios (SLA), durations,
+series, ranked lists, crown jewels exposed and accepted risks ending. The
+exposure flow is not measured only when the scope has no finding and, on an
+organization read, no source sent anything; the KPI strip marks its four
+findings tiles `no_findings` and keeps the coverage tile (with no tile
+measured, the whole strip is `no_findings`); the levers with no lever and
+the brief with no lever sentence are `no_findings` too, never "nothing
+stands out". Asset, coverage,
+certificate and attack path figures never read findings and are unaffected.
+Code: `internal/app/dashboard/widgets/empty.go`.
+
+The web routes every "nothing has come in yet" reason (`no_findings`,
+`no_tracked_assets`, `no_certificates`, `no_receipts`) and every empty ready
+result (no rows, or a series whose every bucket is zero) to the frame's one
+compact `no_data_yet` state: "No data yet", the reason, and the next step the
+caller may take (Import results or Set up a scan, behind that page's
+permission). Such a widget, and a not-measured one, takes one grid row
+whatever its stored height, so an empty dashboard never shows tall blank
+cards. Other reasons
+(`too_few_fixed`, `no_denominator`, `no_crown_jewels`, `organization_only`,
+`forbidden`) keep the grey "—" with the reason. Tests:
+`widgets/empty_test.go`, `web/src/features/dashboards/__tests__/empty-states.test.tsx`.
+
+The KEV count (`intel.kev_open`) carries its population: `scalar.of` is the
+open findings with the widget's filter minus the KEV condition, and
+`of_drill` the list it counts, so the stat reads "3 of 40 open" and a 0 is
+read correctly.
+
+### Discovery coverage by cause
+
+`coverage.discovery` says why the rest is not covered. `ratio.causes` splits
+the uncovered assets (tracked, not covered in the coverage window) by one
+cause per asset, read from the ledger rows of the asset with no success in
+the window, first match in this order:
+
+| Cause | Ledger row | Who acts |
+|---|---|---|
+| `no_sensor` | last outcome `not_dispatched` (no eligible sensor took the check) | platform or operator: deploy or widen a sensor |
+| `platform_failure` | a platform-side failure: `platform_fail_streak > 0` or a known platform-side outcome (stalled, failed, unfinished, tool error, egress refused, sensor network or proxy fault) | operator: fix the sensor or proxy |
+| `paused` | state `paused` | whoever paused it |
+| `target_unreachable` | an observation of the target: unreachable, timeout, edge blocked or challenged, rate limited | the organization: the target or what stands in front of it |
+| `never_run` | never attempted | wait for the planner, or check its schedule |
+| `overdue` | ran before, not within the window | the planner's next run |
+| `out_of_scope` | refused by scope policy (`blocked`), only when nothing above applies | the organization's scope |
+| `other` | only rows outside the requirement (per-vantage rows, DNS checks) | none |
+
+The outcome lists come from `pkg/domain/coverage` (one source with the
+target-versus-platform rule). Each cause row opens
+`/assets?coverage=uncovered&coverage_cause=<cause>&program_assets=exclude`;
+the asset list filter `coverage_cause` uses the same SQL expression
+(`postgres.CoverageCauseCondition`), so a row equals its list, and the causes
+sum to the uncovered count. A fully covered share reads no causes. The cause
+keys are a closed list (`dashboard.CoverageCauses`, validated by the asset
+list input); an unknown key is ignored.
+
+Threat model: the cause rows name fixed keys only, never an asset or a
+target; they follow the read's asset scope like the share, so a scoped member
+never learns the causes of assets outside it; the cause expression is built
+from package constants, and the cause value on the list is a bound parameter.
+Tests: `widgets/empty_test.go` (order, links, scope),
+`routes/dashboard_empty_coverage_db_test.go` (a scoped member, a member
+without scope rows and an administrator: program-only assets and another
+tenant's ledger rows never count; each cause equals its asset list; the
+causes sum to the uncovered count; no findings is not measured; the KEV
+population equals its findings list).
 ### Closure quality, campaigns and detection quality
 
 Three more breakdown metrics answer "are our fixes real", "which remediation
@@ -1218,7 +1303,7 @@ with Retry in that widget, and the rest of the dashboard keeps working.
 | `loading` | a skeleton shaped like the visualization (stat, chart, list, grid, stages), fixed height |
 | `ready` | the figures and the freshness footer |
 | `stale` | the figures, "Stale · 2 hr" and Refresh; `isStale()` is true past twice the refresh interval or after a failed refresh |
-| `no_data_yet` | what will appear and a next-step link (same-origin paths only) |
+| `no_data_yet` | the one compact empty state: "No data yet", what will appear and a next-step link (same-origin paths only); one grid row (see "Empty and unmeasured widgets") |
 | `no_results` | "Nothing matches these filters" and Clear filters |
 | `not_measured` | "—" and the reason, grey; never a number and never a good colour |
 | `no_access` | the missing permission named from the 403's `details.any_of`, no Retry |

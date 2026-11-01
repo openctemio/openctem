@@ -168,7 +168,12 @@ type WidgetValue struct {
 // ScalarValue is one count, with the previous period and a sparkline when
 // the history can trace it.
 type ScalarValue struct {
-	Value    int64   `json:"value"`
+	Value int64 `json:"value"`
+	// Of is the population the count is part of ("12 of 340 open" for the
+	// KEV count: open findings with the widget's other filters), with the
+	// list it counts; absent for counts without one.
+	Of       *int64  `json:"of,omitempty"`
+	OfDrill  string  `json:"of_drill,omitempty"`
 	Previous *int64  `json:"previous,omitempty"`
 	Delta    *int64  `json:"delta,omitempty"`
 	Series   []Point `json:"series,omitempty"`
@@ -179,6 +184,9 @@ type RatioValue struct {
 	Num      int64    `json:"num"`
 	Den      int64    `json:"den"`
 	ValuePct *float64 `json:"value_pct"`
+	// Causes splits the part not counted (Den - Num) by why, each row with
+	// the list it counts (discovery coverage: uncovered assets by cause).
+	Causes []CategoryRow `json:"causes,omitempty"`
 }
 
 // DurationValue is a time-to-fix estimate from hour buckets.
@@ -373,6 +381,7 @@ func (s *Service) compute(ctx context.Context, tenantID, userID shared.ID, dashI
 		DashboardID: dashID, Scope: kind, Restricted: scope.Assets.Restricted(),
 		FactsBuiltAt: builtAt, ComputedAt: s.now().UTC(), Widgets: make([]WidgetValue, 0, len(ws)),
 	}
+	ctx = withFindingsProbe(ctx)
 	for i, w := range ws {
 		out.Widgets = append(out.Widgets, s.widget(ctx, i, w, builtAt != nil, scope))
 	}
@@ -466,6 +475,18 @@ func (s *Service) widget(ctx context.Context, i int, w dashboard.Widget, factsRe
 		v.State, v.Reason = StateError, ReasonTimeout
 		return v
 	}
+	if countsFindings(m) {
+		has, err := s.hasFindings(ctx, scope)
+		if err != nil {
+			s.logger.Warn("dashboard widget read failed", "metric", m.ID, "error", err.Error())
+			v.State, v.Reason = StateError, ReasonFailed
+			return v
+		}
+		if !has {
+			v.State, v.Reason = StateNotMeasured, ReasonNoFindings
+			return v
+		}
+	}
 	if err := s.metric(ctx, &v, m, spec, scope); err != nil {
 		reason := ReasonFailed
 		if errors.Is(err, context.DeadlineExceeded) || ctx.Err() != nil {
@@ -492,10 +513,19 @@ func (s *Service) metric(ctx context.Context, v *WidgetValue, m dashboard.Metric
 	switch m.Kind {
 	case dashboard.MetricKindCount:
 		v.Drill = drillHref(f)
-		return s.count(ctx, v, f, gb, win, compare, spec.Data.Limit, agg)
+		if err := s.count(ctx, v, f, gb, win, compare, spec.Data.Limit, agg); err != nil {
+			return err
+		}
+		if m.ID == "intel.kev_open" && v.Scalar != nil {
+			return s.kevOf(ctx, v.Scalar, f, agg)
+		}
+		return nil
 	case dashboard.MetricKindRatio:
-		if m.ID == "coverage.discovery" {
-			return s.discoveryCoverage(ctx, v, spec.Target, compare, agg)
+		if m.ID == metricDiscoveryCoverage {
+			if err := s.discoveryCoverage(ctx, v, spec.Target, compare, agg); err != nil {
+				return err
+			}
+			return s.coverageCauses(ctx, v, agg)
 		}
 		num, den, err := s.facts.SLAWithin(ctx, agg, f)
 		if err != nil {
@@ -967,4 +997,21 @@ func (l *limiter) acquire(tenantID, userID string) (func(), error) {
 			}
 		})
 	}, nil
+}
+
+// kevOf sets the KEV count's population: open findings with the widget's
+// filter except the KEV condition, so "N of M open" reads 0 correctly.
+func (s *Service) kevOf(ctx context.Context, sv *ScalarValue, f dashboard.WidgetFilter, scope dashboard.ReadScope) error {
+	all := f
+	all.KEV = nil
+	rows, err := s.facts.CountOpen(ctx, scope, all, nil)
+	if err != nil {
+		return err
+	}
+	var n int64
+	for _, r := range rows {
+		n += r.Count
+	}
+	sv.Of, sv.OfDrill = &n, drillHref(all)
+	return nil
 }

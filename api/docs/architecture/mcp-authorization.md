@@ -164,8 +164,8 @@ account. The request then carries the grant's tenant and user, permissions
 everything), never the owner/admin bypass, auth provider `mcp_oauth`, and
 reads only what the user's scope rows allow, not the full-data access of an
 owner, administrator or full-data role (the same rule as `oct_` keys; an
-owner who is in no group sees no assets through MCP, and every empty asset or
-finding result then carries a `scope_notice` saying so). The one exception is
+owner who is in no group sees no assets through MCP; see "Scope notice" in
+[mcp-server.md](mcp-server.md)). The one exception is
 a connection its person allowed, at consent, to read all organization data
 (RFC-062 §7a): the grant has `full_data` and `Principal.FullData` is true
 only while the user still holds a full-data role at this request, in which

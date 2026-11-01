@@ -364,7 +364,9 @@ and SBOM import write it.
 | `POST /api/v1/findings/bulk/assign` | `findings:bulk_update` **and** `findings:assign` |
 | `POST /api/v1/findings/{id}/approvals` (false-positive or accepted-risk request) | `findings:write`, the finding in the caller's data scope; decided at once (`single_person`) only when the organization's false-positive or risk acceptance level allows it **and** the caller holds `findings:approve` and does not own the asset; bulk, group, import and automation paths never decide alone |
 | `GET /api/v1/organization/settings/finding-approvals` | `findings:read` |
-| `PATCH /api/v1/organization/settings/finding-approvals` | owner or administrator **and** `settings:write` **and** step-up; a lower `fp_approval` or `accept_approval` level takes effect after 24 hours, raising at once; lowering a level or `second_look_percent`, relaxing the policy and changing `backup_contact_email` are **owner only** (403 for an administrator); audited `finding_approval.settings_changed` (high), approvers told |
+| `PATCH /api/v1/organization/settings/finding-approvals` | owner or administrator **and** `settings:write` **and** step-up; a lower `fp_approval` or `accept_approval` level takes effect after 24 hours, raising at once; lowering a level or `second_look_percent`, relaxing the policy and changing `backup_contact_email` are **owner only** (403 for an administrator); audited `finding_approval.settings_changed` (high; critical with metadata `loosened` when a lowering is scheduled), approvers told (owners and administrators included; title "Finding approvals lowered") |
+| `GET`/`PUT /api/v1/organization/settings/ai/auto-triage` | owner or administrator **and** `settings:read` / `settings:write`; the organization comes from the token, never the body. Turning automatic AI triage on, or adding a severity while on, needs a recent sign-in (service-level, `403 STEP_UP_REQUIRED`), is audited high and every owner and administrator is told; turning it off, fewer severities and the delay need no step-up |
+| `PUT /api/v1/organization/settings/scan-governance/mode`, `PUT …/rules` | mode: owner; rules: owner or administrator; both step-up and a reason. Lowering the mode or loosening an enforcing rule is audited critical and every owner and administrator is told |
 | `POST /api/v1/findings/{id}/verify` | `findings:verify` |
 
 > The finding **action** routes (status, triage, assign, bulk, verify) are gated on
@@ -399,7 +401,8 @@ and SBOM import write it.
 | Endpoint | Permission Required |
 |----------|---------------------|
 | `GET /api/v1/exposures` · `/{id}` · `/stats` · `/{id}/history` | `findings:read` |
-| `POST /api/v1/exposures` · `/ingest` · `/{id}/resolve` · `/{id}/reactivate` · `PUT /{id}/ctem-id` | `findings:write` |
+| `POST /api/v1/exposures` · `/ingest` · `/{id}/resolve` · `/{id}/reactivate` · `/{id}/start-progress` · `PUT /{id}/ctem-id` | `findings:write` |
+| `PATCH /api/v1/exposures/{id}/severity` | `findings:severity` |
 | `POST /api/v1/exposures/{id}/accept` · `/{id}/false-positive` · `/{id}/disposition/reject` | `findings:approve` |
 | `DELETE /api/v1/exposures/{id}` | `findings:delete` |
 
@@ -535,6 +538,16 @@ create's target validator, exclusions, zone routing) in one call.
 > every query carries `tenant_id`, so another organization's list is 404.
 > The preview returns counts and list names only, never a label. Every
 > change is audited (`wordlist.created|updated|deleted`, metadata only).
+
+| Route | Permission |
+|---|---|
+| `GET /api/v1/content-rules` · `/{id}` | `scans:content:read` |
+| `POST /api/v1/content-rules` · `/test` · `PATCH /{id}` · `DELETE /{id}` | `scans:content:write` |
+
+> An organization's own detection rules ([rule-packs.md](rule-packs.md)). Tenant from the token; every
+> query carries `tenant_id`, so another organization's rule is 404 and never joins another engine. The
+> test runs a draft on a pasted sample and returns masked matches only. Every change is audited
+> (`content_rule.created|updated|deleted`, metadata only).
 
 #### Proxy pools (`/api/v1/proxy-pools`, RFC-034)
 
@@ -2789,7 +2802,7 @@ from a custom role to deny that one action.
 | `ai_triage:trigger` | `POST /findings/{id}/ai-triage`, `POST /findings/ai-triage/bulk` (deprecated, sunset 2027-01-15; also `findings:bulk_update`). Both work only once an organization administrator turned AI triage on (`PUT /tenants/{tenant}/settings/ai`, team admin, `settings:write`, step-up) | `findings:write` |
 | `findings:exposures:read` | `GET /exposures`, `/{id}`, `/stats`, `/{id}/history` | `findings:read` |
 | `findings:exposures:write` | `POST /exposures`, `/ingest`, `PUT /{id}/ctem-id` | `findings:write` |
-| `findings:exposures:triage` | `POST /exposures/{id}/resolve`, `/reactivate` (with `findings:write`), `/accept`, `/false-positive` (with `findings:approve`) | as listed |
+| `findings:exposures:triage` | `POST /exposures/{id}/resolve`, `/reactivate`, `/start-progress` (with `findings:write`), `PATCH /exposures/{id}/severity` (with `findings:severity`), `/accept`, `/false-positive` (with `findings:approve`) | as listed |
 | `findings:exposures:delete` | `DELETE /exposures/{id}` | `findings:delete` |
 | `integrations:scm:read` | `GET /integrations/scm` | `integrations:read` |
 | `integrations:scm:write` / `:delete` | create/update / delete of an SCM-category integration (checked in the handler) | `integrations:manage` |

@@ -15,6 +15,7 @@ import type { SortingState } from '@tanstack/react-table'
 import { isPropertyKey } from '@/features/asset-types/lib/property-schema'
 import { ASSET_LENSES, type AssetLens } from '@/features/asset-types/registry.generated'
 import type { AssetSearchFilters } from '../hooks/use-assets'
+import { isCoverageCause } from './coverage-cause'
 import type { AssetType, Criticality, ExposureLevel, AssetScope } from '../types/asset.types'
 
 /** The subset of AssetSearchFilters the inventory page drives + syncs to the URL. */
@@ -40,10 +41,12 @@ export type InventoryFilters = Pick<
   | 'isControlPlane'
   | 'isInternetFacing'
   | 'isCrownJewel'
+  | 'isPrimary'
   | 'programAssets'
   | 'freshness'
   | 'resolution'
   | 'coverage'
+  | 'coverageCause'
   | 'technologies'
   | 'technologyCategories'
   | 'technologyVersion'
@@ -54,6 +57,7 @@ export type InventoryFilters = Pick<
   | 'expiresAfter'
   | 'attribution'
   | 'scopeStatus'
+  | 'monitoringState'
   | 'discoveredBy'
   | 'firstSeenAfter'
   | 'sort'
@@ -72,6 +76,8 @@ const TAGS_MODE_PARAM = 'tags_mode'
 const MIN_RISK_PARAM = 'min_risk_score'
 /** coverage=covered|uncovered (the dashboard's Discovery stage opens uncovered). */
 const COVERAGE_PARAM = 'coverage'
+/** coverage_cause=<cause>: the uncovered assets of one cause (the dashboard's coverage causes). */
+const COVERAGE_CAUSE_PARAM = 'coverage_cause'
 /** technology_version: kept when present and empty (the unknown version). */
 const TECHNOLOGY_VERSION_PARAM = 'technology_version'
 
@@ -94,6 +100,7 @@ const ARRAY_PARAMS = {
   businessUnitIds: 'business_unit_ids',
   attribution: 'attribution',
   scopeStatus: 'scope_status',
+  monitoringState: 'monitoring_state',
   discoveredBy: 'discovered_by',
   technologies: 'technology',
   technologyCategories: 'technology_category',
@@ -105,6 +112,7 @@ const BOOL_PARAMS = {
   isControlPlane: 'is_control_plane',
   isInternetFacing: 'internet_facing',
   isCrownJewel: 'is_crown_jewel',
+  isPrimary: 'primary',
   hasFindings: 'has_findings',
 } as const
 
@@ -172,6 +180,8 @@ export function parseInventoryFilters(sp: URLSearchParams): InventoryFilters {
 
   const coverage = sp.get(COVERAGE_PARAM)
   if (coverage === 'covered' || coverage === 'uncovered') out.coverage = coverage
+  const cause = sp.get(COVERAGE_CAUSE_PARAM)
+  if (isCoverageCause(cause)) out.coverageCause = cause
   const techVersion = sp.get(TECHNOLOGY_VERSION_PARAM)
   if (techVersion !== null && out.technologies?.length) out.technologyVersion = techVersion.trim()
 
@@ -205,6 +215,7 @@ export function serializeInventoryFilters(f: InventoryFilters): URLSearchParams 
   if (f.tagsMode === 'all' && f.tags?.length) sp.set(TAGS_MODE_PARAM, 'all')
   if (f.minRiskScore !== undefined) sp.set(MIN_RISK_PARAM, String(f.minRiskScore))
   if (f.coverage) sp.set(COVERAGE_PARAM, f.coverage)
+  if (f.coverageCause) sp.set(COVERAGE_CAUSE_PARAM, f.coverageCause)
   if (f.technologyVersion !== undefined && f.technologies?.length)
     sp.set(TECHNOLOGY_VERSION_PARAM, f.technologyVersion)
   if (f.page && f.page > 1) sp.set('page', String(f.page))
@@ -376,6 +387,7 @@ export function countActiveFilters(f: InventoryFilters): number {
   if (f.lens) n += 1
   if (f.minRiskScore !== undefined) n += 1
   if (f.coverage) n += 1
+  if (f.coverageCause) n += 1
   for (const values of Object.values(f.propertiesFilter ?? {})) n += values.length
   if (f.lastSeenBefore || f.lastSeenAfter) n += 1
   if (f.expiresBefore || f.expiresAfter) n += 1
