@@ -29,6 +29,7 @@ import {
   StatViz,
   TimeSeriesTable,
   WidgetFrame,
+  type CategoryResult,
   type DrillFn,
   type WidgetResult,
 } from '@/components/dashboard-kit'
@@ -39,7 +40,7 @@ import { openFormHref } from '@/lib/open-form'
 import { safeInternalHref } from '@/lib/safe-href'
 import type { WidgetValue } from '../api/widget-data'
 import type { VizType, WidgetSpec } from '../api/widget-spec'
-import { specOf, unitOf, widgetModel, type WidgetModel } from '../api/widget-adapter'
+import { reasonKeyOf, specOf, unitOf, widgetModel, type WidgetModel } from '../api/widget-adapter'
 import {
   defaultWidgetTitle,
   kitPolarity,
@@ -58,6 +59,39 @@ function drillFor(v: WidgetValue | undefined, fallback?: string): DrillFn {
     const row = key ? v?.category?.rows.find((r) => r.key === key) : undefined
     return safeInternalHref(row?.drill) ?? fallback
   }
+}
+
+/**
+ * Why the rest of a share is missing (discovery coverage: the uncovered
+ * assets by cause), each cause opening its own list. Drawn with the shared
+ * bars, ordinal (the server's precedence order).
+ */
+function RatioCauses({ value }: { value: WidgetValue | undefined }): ReactNode {
+  const { t } = useTranslation()
+  const causes = value?.ratio?.causes
+  if (!causes || causes.length === 0) return null
+  const result: CategoryResult = {
+    shape: 'category',
+    rows: causes.map((c) => ({
+      key: c.key,
+      label_key: `dashboards.coverage.cause.${c.key.replace(/[^a-zA-Z0-9_]/g, '_')}`,
+      label: c.key,
+      value: c.value,
+    })),
+    total: causes.reduce((s, c) => s + c.value, 0),
+    ordinal: true,
+  }
+  return (
+    <div className="mt-3 flex flex-col gap-1.5">
+      <p className="text-xs font-medium text-muted-foreground">
+        {t('dashboards.coverage.causesTitle', 'Why assets are not covered')}
+      </p>
+      <BarViz
+        result={result}
+        drill={({ key }) => safeInternalHref(causes.find((c) => c.key === key)?.drill)}
+      />
+    </div>
+  )
 }
 
 function Viz({
@@ -85,10 +119,15 @@ function Viz({
     case 'duration':
       return <StatViz result={r} unit={unit} polarity={polarity} href={href} />
     case 'ratio':
-      return viz === 'stat' ? (
-        <StatViz result={r} polarity={polarity} href={href} />
-      ) : (
-        <ProgressViz result={r} polarity={polarity} href={href} />
+      return (
+        <>
+          {viz === 'stat' ? (
+            <StatViz result={r} polarity={polarity} href={href} />
+          ) : (
+            <ProgressViz result={r} polarity={polarity} href={href} />
+          )}
+          <RatioCauses value={value} />
+        </>
       )
     case 'category':
       if (viz === 'table') return <CategoryTable result={r} unit={unit} drill={drill} />
@@ -187,8 +226,12 @@ export function WidgetView({
 
   const model: WidgetModel = loading ? { state: 'loading' } : widgetModel(value, spec, stale)
   const reason = model.reasonKey ? t(model.reasonKey) : undefined
-  // Only a truly empty figure gets a next step; "still building" has none.
-  const next = model.reasonKey === 'dashboards.reason.empty' ? metricEmptyAction(metric) : undefined
+  // Only a truly empty figure (nothing in the period, or nothing has come
+  // in yet) gets a next step; "still building" has none.
+  const next =
+    model.state === 'no_data_yet' && model.reasonKey !== reasonKeyOf('facts_building')
+      ? metricEmptyAction(metric)
+      : undefined
   const emptyAction =
     next && next.needs.every((p) => hasPermission(p))
       ? { label: t(next.labelKey, next.fallback), href: openFormHref(next.path, next.form) }

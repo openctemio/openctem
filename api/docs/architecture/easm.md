@@ -322,6 +322,12 @@ added automatically: a name never lends its address authority (dangling DNS,
 shared hosting and released cloud addresses would make a scan probe a third
 party).
 
+Each offered or already-checked address carries `ownership` (band
+`high`/`medium`/`low`/`unknown`, a score that only orders, and the signals
+with their parameters), computed by `pkg/domain/addrowner` from the rows the
+card already reads; the card lists addresses strongest first and counts them
+in `bands`. Rules and threats: RFC-054 §21. It authorizes nothing.
+
 ## 4b3. Inventory triage (built, research/124)
 
 Discovered assets are triaged after the fact, in the inventory, in bulk
@@ -751,6 +757,30 @@ false positive (not a threat), resolve (taken down). Controller
 tenant). Routes: `/api/v1/easm/lookalikes/watches` (scope permissions,
 audited). The organization can turn the crt.sh queries off
 (`lookalike_ct_enabled` on `/api/v1/easm/settings`; fail closed).
+
+## 4o. Page monitoring (partly built)
+
+Design: [RFC-138](../rfcs/RFC-138-web-page-monitoring.md). Attack surface ›
+**Page changes** watches URLs of the organization's web services (manual add,
+or suggestions: root pages, login and admin pages, JS files from the crawl;
+at most 200 watches). JS-only mode (default) keeps the scripts a page loads
+(source identity without cache busters and build hashes, inline scripts by
+normalized hash, first or third party, integrity attribute) and, for each
+first-party script (a derived watch, at most 25 per page), its hash, size and
+the URLs found in it; full mode also keeps the masked visible text. Fetches
+are the capability `monitor.web_content` (T1) through the coverage dispatch
+path (`scan.Service.StartCoverage`: scope and active-scan gates, zone routing,
+signed jobs with the explicit URL list), started by the `page-monitoring`
+controller (every 10 minutes; at most 100 URLs per tenant and 10 per host per
+pass; only with automatic coverage on). Results arrive as the reserved asset
+property `web_content` and are normalized and diffed server-side
+(`pkg/domain/pagemon`); only a changed content hash stores a snapshot (last 5
+per watch) and a change with its diff (kept 180 days). A new third-party
+script host on a page is a `third_party_script_added` exposure (high) through
+the EASM alert writer, resolved when the page drops the host. Routes:
+`/api/v1/easm/page-monitoring` (reads `assets:read` and the watch asset's data
+scope; watch changes `scans:write`, audited). Not built yet: the capability in
+the taxonomy and the sensor's httpx capture (watches stay `waiting` until then).
 
 ## 4k. Network seeds (built)
 

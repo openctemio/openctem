@@ -187,6 +187,33 @@ func (s *Service) discoveryCoverage(ctx context.Context, v *WidgetValue, target 
 	return nil
 }
 
+// coverageCauses splits the uncovered assets of a measured discovery
+// coverage by cause, in precedence order. Each row opens the uncovered
+// assets of that cause (the asset list's coverage_cause filter reads the
+// same expression), so a row equals its list.
+func (s *Service) coverageCauses(ctx context.Context, v *WidgetValue, scope dashboard.ReadScope) error {
+	if v.State != StateReady || v.Ratio == nil || v.Ratio.Num >= v.Ratio.Den {
+		return nil
+	}
+	rows, err := s.facts.UncoveredCauses(ctx, scope, s.now().Add(-asset.CoverageWindow))
+	if err != nil {
+		return err
+	}
+	byCause := make(map[string]int64, len(rows))
+	for _, r := range rows {
+		byCause[r.Cause] += r.Count
+	}
+	out := make([]CategoryRow, 0, len(rows))
+	for _, c := range dashboard.CoverageCauses() {
+		if n := byCause[c]; n > 0 {
+			out = append(out, CategoryRow{Key: c, Value: float64(n),
+				Drill: "/assets?coverage=uncovered&coverage_cause=" + c + "&program_assets=exclude"})
+		}
+	}
+	v.Ratio.Causes = out
+	return nil
+}
+
 //nolint:cyclop // one block per stage
 func (s *Service) ctemLoop(ctx context.Context, v *WidgetValue, scope dashboard.ReadScope) error {
 	now := s.now()

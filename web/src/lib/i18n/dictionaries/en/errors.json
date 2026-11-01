@@ -60,6 +60,7 @@
   "errors.TEAM_EXTERNAL_FULL_DATA": "Someone outside your organization gets full data access only through a role given to them directly, never through a team.",
   "errors.TEAM_PRIVILEGED_OWNER_ONLY": "Only the organization owner can change the members of a team that carries a privileged role.",
   "errors.TEAM_SELF_JOIN": "You cannot add yourself to a team that carries roles. Ask the organization owner.",
+  "errors.TENANT_REQUIRED": "This needs an organization. Accept an invitation or create one first.",
   "errors.TICKET_BELOW_THRESHOLD": "This finding is below the ticketing threshold.",
   "errors.TICKET_EGRESS_REFUSED": "The organization's data policy does not allow sending this to the ticketing service.",
   "errors.UNAUTHORIZED": "Your session ended. Sign in to continue.",
