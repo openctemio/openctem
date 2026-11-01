@@ -117,11 +117,15 @@ type Rekey struct {
 type LinkState int
 
 const (
-	// LinkCurrent: the same version is still linked and current.
+	// LinkCurrent: the same version is still the established one.
 	LinkCurrent LinkState = iota
-	// LinkUpgraded: another version of the product is current at the location.
+	// LinkUpgraded: another version of the product is established at the
+	// location (it displaced this one: strong evidence or several
+	// consecutive readings, software.ApplySightings). A candidate version
+	// seen once never makes a link upgraded.
 	LinkUpgraded
-	// LinkGone: nothing current at the location for the product.
+	// LinkGone: nothing established and recent at the location for the
+	// product. Not seen is not fixed: the matcher only marks it stale.
 	LinkGone
 )
 
@@ -139,6 +143,24 @@ type LinkInfo struct {
 	// VersionEvaluated: the version has been evaluated against the current
 	// ranges (its matches are up to date).
 	VersionEvaluated bool
+	// Product and FromVersion name the finding's software; Now is the
+	// established version that displaced it (LinkUpgraded only).
+	Product     string
+	FromVersion string
+	Now         *VersionSighting
+}
+
+// VersionSighting is what the inventory knows about one version at a
+// location: the evidence a "version changed" close shows.
+type VersionSighting struct {
+	VersionID  shared.ID
+	Version    string
+	Source     string
+	Class      string
+	Confidence int
+	Sightings  int
+	FirstSeen  time.Time
+	LastSeen   time.Time
 }
 
 // CloseKind is why the matcher closes a finding.
@@ -178,8 +200,9 @@ type Store interface {
 	// DequeueTenants takes up to limit queued tenants.
 	DequeueTenants(ctx context.Context, limit int) ([]shared.ID, error)
 
-	// TenantMatches returns the tenant's current links (seen since
-	// currentSince, not superseded) joined with their versions' matches.
+	// TenantMatches returns the tenant's established links (seen since
+	// currentSince, not superseded, not candidates) joined with their
+	// versions' matches.
 	TenantMatches(ctx context.Context, tenantID shared.ID, currentSince time.Time, limit int) ([]Match, error)
 	// AssetMatches is TenantMatches for one asset, whatever the link's age.
 	AssetMatches(ctx context.Context, tenantID, assetID shared.ID) ([]Match, error)
@@ -200,6 +223,10 @@ type Store interface {
 	// still has From and no finding of the tenant holds To. False when it
 	// did not move (another finding holds To, or the finding changed).
 	RekeyMatcherFinding(ctx context.Context, tenantID shared.ID, r Rekey) (bool, error)
+	// CancelVersionProposals cancels the pending "version changed" close
+	// proposals (method source_reported, from the software inventory) of
+	// these findings of the tenant: their version matches again.
+	CancelVersionProposals(ctx context.Context, tenantID shared.ID, findingIDs []shared.ID) (int, error)
 	// ReopenFindings reopens matcher-owned findings the matcher had closed.
 	ReopenFindings(ctx context.Context, tenantID shared.ID, ids []shared.ID) ([]shared.ID, error)
 	// EnsureDefinitions makes sure each CVE has its global catalog row and

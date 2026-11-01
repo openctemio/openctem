@@ -56,7 +56,7 @@ type FlowFigure struct {
 // IntakeSource is what one source (a source group and a tool) sent in the
 // window, from its receipts, and its health.
 type IntakeSource struct {
-	Origin        string `json:"origin" enums:"sensor,import,connector,ci"`
+	Origin        string `json:"origin" enums:"sensor,import,connector,ci,platform"`
 	Tool          string `json:"tool"`
 	Receipts      int64  `json:"receipts"`
 	Received      int64  `json:"received"`
@@ -77,6 +77,84 @@ type IntakeSource struct {
 	ExpectedEverySeconds *int64 `json:"expected_every_seconds,omitempty"`
 	// Drill is the receipt list of this source in the window.
 	Drill string `json:"drill"`
+	// Assets is the assets the source's reports created or updated (a
+	// discovery tool sends assets, not findings). Not part of the funnel,
+	// which counts findings only.
+	Assets int64 `json:"assets"`
+	// Kind says what the source contributes: findings (detection), assets
+	// only (discovery), or findings the platform derived (platform).
+	Kind string `json:"kind,omitempty" enums:"discovery,detection,platform"`
+	// Instances are the senders of the source's reports, busiest first;
+	// their figures sum to the source's. Health is the worst of theirs.
+	Instances []IntakeInstance `json:"instances,omitempty"`
+}
+
+// IntakeInstance is one sender of a source: a sensor, a CI repository, a
+// connector, an upload, or the platform.
+type IntakeInstance struct {
+	ID       string    `json:"id"`
+	Kind     string    `json:"kind" enums:"sensor,ci,connector,platform,import"`
+	Name     string    `json:"name"`
+	Received int64     `json:"received"`
+	Assets   int64     `json:"assets"`
+	Health   string    `json:"health" enums:"ok,stale,failed"`
+	LastAt   time.Time `json:"last_at"`
+	// SensorHref is the sensor's page (sensors of the organization only).
+	SensorHref string `json:"sensor_href,omitempty"`
+}
+
+// Source kinds.
+const (
+	SourceKindDetection = "detection"
+	SourceKindDiscovery = "discovery"
+	SourceKindPlatform  = "platform"
+)
+
+// sourceKind: the platform's own findings, assets only, or findings.
+func sourceKind(origin string, received, assets int64) string {
+	switch {
+	case origin == SourceKindPlatform:
+		return SourceKindPlatform
+	case received == 0 && assets > 0:
+		return SourceKindDiscovery
+	default:
+		return SourceKindDetection
+	}
+}
+
+// healthRank orders health states, worst last.
+func healthRank(h string) int {
+	switch h {
+	case HealthFailed:
+		return 2
+	case HealthStale:
+		return 1
+	default:
+		return 0
+	}
+}
+
+// intakeInstances maps a source's senders and returns the worst health of
+// them.
+func intakeInstances(rows []dashboard.IntakeInstanceRow, now time.Time) ([]IntakeInstance, string) {
+	worst := HealthOK
+	if len(rows) == 0 {
+		return nil, worst
+	}
+	out := make([]IntakeInstance, 0, len(rows))
+	for _, r := range rows {
+		h := sourceHealth(dashboard.IntakeRow{LastAt: r.LastAt, LastStatus: r.LastStatus, MedianGap: r.MedianGap}, now)
+		if healthRank(h) > healthRank(worst) {
+			worst = h
+		}
+		in := IntakeInstance{ID: r.ID, Kind: r.Kind, Name: r.Name, Received: r.Received, Assets: r.Assets,
+			Health: h, LastAt: r.LastAt.UTC()}
+		if r.Kind == "sensor" && r.Owned {
+			in.SensorHref = "/sensors/" + url.PathEscape(r.ID)
+		}
+		out = append(out, in)
+	}
+	return out, worst
 }
 
 // IntakeNoise splits what was received in the window into new or reopened
@@ -265,7 +343,8 @@ func (s *Service) intake(ctx context.Context, scope dashboard.ReadScope, since t
 		src := IntakeSource{Origin: r.Origin, Tool: r.Tool, Receipts: r.Receipts, Received: r.Received, Created: r.Created,
 			StillDetected: r.StillDetected, Reopened: r.Reopened, Closed: r.Closed, Suppressed: r.Suppressed,
 			NotStored: r.Skipped + r.Failed, LastAt: r.LastAt.UTC(), LastStatus: r.LastStatus, Health: HealthOK,
-			Drill: drillReceiptList(r.Origin, r.Tool, since)}
+			Drill: drillReceiptList(r.Origin, r.Tool, since), Assets: r.Assets,
+			Kind: sourceKind(r.Origin, r.Received, r.Assets)}
 		if !r.LastReceiptID.IsZero() {
 			src.LastReceiptID = r.LastReceiptID.String()
 		}
@@ -274,6 +353,11 @@ func (s *Service) intake(ctx context.Context, scope dashboard.ReadScope, since t
 			src.ExpectedEverySeconds = &secs
 		}
 		src.Health = sourceHealth(r, now)
+		var worst string
+		src.Instances, worst = intakeInstances(r.Instances, now)
+		if healthRank(worst) > healthRank(src.Health) {
+			src.Health = worst
+		}
 		switch src.Health {
 		case HealthFailed:
 			out.Failing++
@@ -290,6 +374,7 @@ func (s *Service) intake(ctx context.Context, scope dashboard.ReadScope, since t
 		t.Closed += src.Closed
 		t.Suppressed += src.Suppressed
 		t.NotStored += src.NotStored
+		t.Assets += src.Assets
 		if src.LastAt.After(t.LastAt) {
 			t.LastAt, t.LastStatus, t.LastReceiptID = src.LastAt, src.LastStatus, src.LastReceiptID
 		}
