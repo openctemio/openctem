@@ -593,6 +593,11 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
   '/settings/scanning/wordlists': {
     permission: Permission.ContentPacksRead,
   },
+  // Organization detection rules: saving needs scans:content:write
+  // (checked by the page and the API).
+  '/settings/scanning/detection-rules': {
+    permission: Permission.ContentPacksRead,
+  },
   // Organization tool defaults: a sensors setting; saving needs
   // sensors:write (checked by the page and the API).
   '/settings/scanning/tool-defaults': {
