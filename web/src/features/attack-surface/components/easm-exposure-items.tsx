@@ -218,7 +218,7 @@ function useItemColumns(h: RowHandlers): ColumnDef<ExposureItemRow>[] {
         accessorFn: (r) => r.asset_name ?? '',
         header: t('attackSurface.exposures.col.asset', 'Asset'),
         cell: ({ row }) => (
-          <div className="max-w-[260px]">
+          <div className="min-w-40 max-w-[260px]">
             <AssetCell
               id={row.original.asset_id}
               name={row.original.asset_name}
@@ -360,7 +360,7 @@ function useAssetColumns(): ColumnDef<ExposureAssetGroupRow>[] {
         header: t('attackSurface.exposures.col.asset', 'Asset'),
         enableSorting: false,
         cell: ({ row }) => (
-          <div className="max-w-[320px]">
+          <div className="min-w-40 max-w-[320px]">
             <AssetCell
               id={row.original.asset_id}
               name={row.original.asset_name}

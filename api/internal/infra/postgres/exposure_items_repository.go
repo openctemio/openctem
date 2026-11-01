@@ -112,7 +112,7 @@ func (r *ExposureRepository) ListItems(ctx context.Context, w *filterspec.Where,
 		return empty, fmt.Errorf("list exposure items: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
-	out := make([]*exposure.Item, 0, page.Limit())
+	out := make([]*exposure.Item, 0, capHint(page.Limit()))
 	for rows.Next() {
 		it := &exposure.Item{}
 		ev, err := r.doScan(func(dest ...any) error {
@@ -213,7 +213,7 @@ func (r *ExposureRepository) ItemsByAsset(ctx context.Context, w *filterspec.Whe
 	}
 	defer func() { _ = rows.Close() }()
 	ranks := exposure.AllSeverities() // critical .. info
-	out := make([]*exposure.AssetGroup, 0, page.Limit())
+	out := make([]*exposure.AssetGroup, 0, capHint(page.Limit()))
 	for rows.Next() {
 		var (
 			g                          exposure.AssetGroup
