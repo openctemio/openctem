@@ -122,7 +122,10 @@ const REVIEWED = new Set([
   'features/assets/components/overview/asset-categories-view.tsx|AttentionChip|href={lens.highRiskHref}',
   'features/assets/components/overview/asset-categories-view.tsx|AttentionChip|href={lens.reviewHref}',
   'features/scoping/components/scoping-overview.tsx|Link|href={r.href}',
-  'app/(dashboard)/(validation)/validation/page.tsx|Link|href={a.href}',
+  // Validation overview: route literals and findingsHref() over constant queries.
+  'features/validation/components/validation-overview.tsx|Link|href={item.href}',
+  'features/validation/components/validation-overview.tsx|Link|href={s.href}',
+  'features/validation/components/validation-overview.tsx|Link|href={o.href}',
   // Build-time constants (process.env / literals in the module).
   'components/layout/sidebar-footer-links.tsx|a|href={REPORT_ISSUE_URL}',
   'features/auth/components/legal-notice.tsx|a|href={termsUrl}',
