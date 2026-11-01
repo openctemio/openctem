@@ -180,8 +180,22 @@ export interface WidgetValue {
     days: number
   }
   previous_reason?: string
-  scalar?: { value: number; previous?: number; delta?: number; series?: WidgetPoint[] }
-  ratio?: { num: number; den: number; value_pct: number | null }
+  scalar?: {
+    value: number
+    previous?: number
+    delta?: number
+    series?: WidgetPoint[]
+    /** The population the count is part of (KEV: open findings), and its list. */
+    of?: number
+    of_drill?: string
+  }
+  ratio?: {
+    num: number
+    den: number
+    value_pct: number | null
+    /** The part not counted, by why (discovery coverage: uncovered assets by cause). */
+    causes?: { key: string; value: number; drill?: string }[]
+  }
   duration?: {
     median_hours: number | null
     p90_hours: number | null
