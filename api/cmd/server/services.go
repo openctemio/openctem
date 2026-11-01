@@ -1312,7 +1312,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// retries, resume and mirror fall-back, and applied chunk by chunk with
 	// a durable checkpoint (docs/architecture/feed-transfer.md); the v1 reader stays the fallback.
 	feedTransfer := programfeedapp.Transfer{URLs: cfg.Scope.ProgramFeedURLs, CacheDir: cfg.Scope.FeedCacheDir,
-		Client: httpsec.SafeHTTPClient(0), Registerer: prometheus.DefaultRegisterer}
+		Client: httpsec.FeedHTTPClient(0), Registerer: prometheus.DefaultRegisterer}
 	if (cfg.Scope.ProgramFeedDir != "" || len(cfg.Scope.ProgramFeedURLs) > 0) && cfg.Scope.ProgramFeedRootKeyID != "" {
 		s.ProgramFeed = programfeedapp.NewImporter(programfeedapp.DirSource(cfg.Scope.ProgramFeedDir), catalogRepo,
 			s.BountyProgram, cfg.Scope.ProgramFeedRootKeyID, log).WithChunks(catalogRepo, feedTransfer)

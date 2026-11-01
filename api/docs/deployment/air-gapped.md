@@ -156,8 +156,31 @@ the trusted root from the same medium as the artifacts it verifies.
 ## Content and intelligence feeds
 
 All outbound calls go through the SSRF-guarded client: an internal mirror on
-a private address needs its range in `OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS`,
-and `HTTPS_PROXY` is not used.
+a private address needs its range in `OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS`.
+`HTTPS_PROXY` is not read. Where the only way out is a corporate proxy, set
+`OPENCTEM_HTTPSEC_FEED_PROXY` (Ansible: `openctem_feed_proxy`): the platform's
+own feeds (vulnerability bundles, KEV, EPSS, CTEM-ID, program feed, release
+feed) then go through it, and nothing an organization configures does
+(`docs/architecture/outbound-requests.md`, "Platform feed proxy").
+
+### Outbound hosts to allow
+
+The platform's own fetchers, all HTTPS on port 443. Allow them at the
+firewall or the proxy, or replace them with a mirror or a local directory:
+
+| Host | Used for | Setting that replaces it |
+|---|---|---|
+| `github.com`, `release-assets.githubusercontent.com`, `objects.githubusercontent.com` | vulnerability bundles (the release download redirects to the asset hosts), release feed | `VULNFEED_BASE_URL`, `VULNFEED_MIRRORS`, `VULNFEED_BUNDLE_DIR`; `VERSION_CHECK_URL` or admin import |
+| `www.cisa.gov`, then `raw.githubusercontent.com` | CISA KEV (fallback origin) | carried in the signed bundle (Console > Threat intelligence, source "bundle") |
+| `epss.empiricalsecurity.com` | EPSS | carried in the signed bundle |
+| `ctem.org` | CTEM-ID catalog | none yet (the catalog stays at the version shipped) |
+| your `PROGRAMFEED_URL` host | public program feed | `PROGRAMFEED_DIR` |
+
+A host whose DNS answers include IPv6 is tried over both families; without an
+IPv6 route the IPv4 addresses are used, and a failure names every address
+tried. EASM lookups (certificate transparency, RIPEstat), AI providers and
+tenant integrations are outside this list: they go where their configuration
+points.
 
 | Feed | Offline path today | If absent |
 |---|---|---|
@@ -166,14 +189,12 @@ and `HTTPS_PROXY` is not used.
 | Content catalog, content packs, scanner templates | admin import endpoints (content catalog needs `CONTENT_TRUST_ROOT_KEY_IDS`); template sources in internal git/S3 | |
 | Sensor scanner content (nuclei, trivy, opengrep) | sensor-side local mirror or directory | sensor health shows stale content |
 | Release feed / version check | admin import (`POST /api/v1/admin/version-check/import`) | newest versions not learned |
-| CISA KEV, EPSS | none (fixed internet URLs) | no KEV flags, no EPSS scores |
+| CISA KEV, EPSS | carried as a signed side manifest of each vulnerability release: with the bundle source (Console > Threat intelligence) and the direct fetch off, they arrive with the bundles from `VULNFEED_BUNDLE_DIR` or a mirror | no KEV flags, no EPSS scores |
 | AI triage | none (provider URLs fixed) | AI triage unavailable |
 | SMTP, Jira, chat, webhooks | internal targets work (private-range allowlist) | |
 | Certificate transparency, RIPEstat (EASM) | none, internet-facing by nature | those EASM checks stop |
 
-Gaps, planned as follow-ups: KEV and EPSS import (a file setting and an admin
-upload, or carried in the signed vulnfeed bundle); an opt-in egress proxy for
-the guarded client; an OpenAI-compatible base URL for an on-premises model;
+Gaps, planned as follow-ups: an OpenAI-compatible base URL for an on-premises model;
 CTEM-ID catalog import; serving the API reference page's script locally;
 release-feed and content-root keys pinned in the release; platform alerts when
 KEV, EPSS or vulnfeed go stale.

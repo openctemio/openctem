@@ -2144,6 +2144,9 @@ func (c *Config) validateBasic() error {
 		os.Getenv(httpsec.EnvAllowPrivate), os.Getenv(httpsec.EnvAllowPrivateCIDRs)); err != nil {
 		return err
 	}
+	if err := httpsec.ValidateFeedProxy(os.Getenv(httpsec.EnvFeedProxy), os.Getenv(httpsec.EnvFeedNoProxy)); err != nil {
+		return err
+	}
 	// The opened ranges are reachable by every organization's integrations.
 	// Where anyone may create an organization, that hands the operator's
 	// private network to strangers, so the two settings are not combined.

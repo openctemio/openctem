@@ -111,13 +111,13 @@ func NewImporter(cfg Config, corpus Corpus, status threatintel.SyncStatusReposit
 		if err != nil || u.Scheme != "https" || u.Host == "" || u.RawQuery != "" || u.Fragment != "" {
 			return nil, errors.New("vulnfeed: VULNFEED_BASE_URL must be an https URL without query or fragment")
 		}
-		if _, err := httpsec.ValidateURL(cfg.BaseURL); err != nil {
+		if err := httpsec.ValidateFeedURL(cfg.BaseURL); err != nil {
 			return nil, fmt.Errorf("vulnfeed: VULNFEED_BASE_URL: %w", err)
 		}
 		cfg.BaseURL = strings.TrimRight(cfg.BaseURL, "/")
 	}
 	return &Importer{cfg: cfg, corpus: corpus, status: status, catalog: catalog,
-		http: httpsec.SafeHTTPClient(10 * time.Minute), logger: log, now: time.Now, tmp: os.TempDir(),
+		http: httpsec.FeedHTTPClient(10 * time.Minute), logger: log, now: time.Now, tmp: os.TempDir(),
 		emptiedShare: maxEmptiedShare, minEmptied: minEmptiedLimit}, nil
 }
 
