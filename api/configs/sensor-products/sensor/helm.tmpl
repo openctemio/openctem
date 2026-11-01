@@ -39,6 +39,11 @@ kubectl create secret generic {{$slug}}-key \
 #    its state, outbox and content cache on one data volume (a release that
 #    already has the sensor's per-directory volumes keeps them). The sensor
 #    runs the tools its image ships; narrow them in the policy's tools.allow.
+{{- if .CAPins}}
+#    The platform uses a private CA: SENSOR_CA_SHA256 pins its root, so a
+#    sensor given an https apiUrl the cluster does not trust fetches the CA
+#    from the platform and trusts only that root.
+{{- end}}
 helm upgrade openctem openctem/openctem --reuse-values \
   --set sensor.enabled=true \
   --set sensor.mode=daemon \
@@ -47,5 +52,9 @@ helm upgrade openctem openctem/openctem --reuse-values \
   --set sensor.sandbox.seccompProfile=openctem \
   --set sensor.data.persistence.enabled=true \
   --set sensor.localPolicy.enabled=true \
+{{- if .CAPins}}
+  --set sensor.extraEnv[0].name=SENSOR_CA_SHA256 \
+  --set-string sensor.extraEnv[0].value={{.CAPins}} \
+{{- end}}
   --set-file sensor.localPolicy.policy=sensor-policy.yaml
 {{- end}}
