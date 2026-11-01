@@ -69,6 +69,8 @@ describe('RankedBars', () => {
     // No safe link: plain text in the same box, still focusable for its tooltip.
     expect(screen.queryByRole('link', { name: 'gamma: 3' })).not.toBeInTheDocument()
     expect(screen.getByText('Stale, last 3 days ago')).toBeInTheDocument()
+    // The health words wrap under the name; they are never cut off.
+    expect(screen.getByText('Stale, last 3 days ago').className).not.toContain('truncate')
   })
 
   it('folds healthy zeros into one line that expands on tap', async () => {

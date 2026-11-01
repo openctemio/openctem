@@ -61,19 +61,20 @@ export function wireStroke(health: SourceHealth | 'neutral' | 'bad'): {
  * Width bands of a connected visual, measured on the widget's own width (a
  * container, never the viewport: a widget sits in grid cells of any size).
  * The layout classes use the same numbers as container queries
- * (`@min-[660px]`, `@min-[960px]`); the wires use the measured band, so a
+ * (`@min-[660px]`, `@min-[900px]`); the wires use the measured band, so a
  * wire is drawn only when both of its ends sit side by side.
  *
  * The widths are the visual's own (the card less its padding).
  *
  * - narrow (< 660 px): one column, no wires; every number stays a link.
- * - mid (660 to 959 px): the core and the outcomes side by side, sources as a
- *   short list above (the first three and "N more"); wires to the outcomes.
- * - wide (960 px and more): three columns of bounded width, centred, so the
- *   wires stay short and proportional however wide the card is.
+ * - mid (660 to 899 px): the core and the outcomes side by side, sources as a
+ *   list above; wires to the outcomes.
+ * - wide (900 px and more): three columns that fill the card: sources and
+ *   outcomes at a reading width against the edges, the core taking the rest
+ *   (a full-width dashboard card from a 1280 px window with the sidebar open).
  */
 export const FLOW_MID = 660
-export const FLOW_WIDE = 960
+export const FLOW_WIDE = 900
 
 export type FlowBand = 'narrow' | 'mid' | 'wide'
 
