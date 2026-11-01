@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Accepted (2026-11-01). Implemented: the job signer's feed relay rules (`SIGNER_FEED_ORIGINS`). Designed: the sensor side (`feed.relay@1` in sdk-go, `SENSOR_FEED_RELAY` in the sensor), the platform relay channel, spool and planner, the `relay` mode of the feed egress category, the console status |
+| Status | Accepted (2026-11-01). Implemented: the job signer's feed relay rules (`SIGNER_FEED_ORIGINS`); the platform relay channel (rounds, spool, planner for the vulnerability feed with its side files and the release feed, the `relay` mode of the feed egress category with the KEV/EPSS, version check, program feed and CTEM-ID fetchers off, admin status and setting); the sensor side in sdk-go (`feed.relay@1`). Designed: the sensor's opt-in wiring, the console card, CTEM-ID as a signed stream, program feed and content packs through the relay |
 | Scope | api (signer, relay channel, importers, console), sdk-go, sensor, vulnfeed (CTEM-ID stream, later) |
 | Related | RFC-040 (signed jobs), RFC-072 (chunked feed transfer), RFC-100 (shared sensors), RFC-105 (version check) |
 

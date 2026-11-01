@@ -41,3 +41,4 @@
     - KEVRefreshController
     - VulnMatchController
     - VulnFeedImportController
+    - FeedRelayController

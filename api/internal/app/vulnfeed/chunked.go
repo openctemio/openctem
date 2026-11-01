@@ -237,14 +237,24 @@ func (im *Importer) trust(a *chunkApplier, minVersion uint64) func(context.Conte
 // counters persist across runs). The bundle directory, when configured,
 // is the only origin (an air-gapped platform reads nothing else).
 func (im *Importer) fetcherV2() (*transfer.Fetcher, error) {
+	return im.fetcherV2For(im.cfg.BundleDir)
+}
+
+// fetcherV2For returns the fetcher of one local directory (the bundle
+// directory or the relay spool: the only origin), or of the network origins
+// when dir is empty. Each is built once.
+func (im *Importer) fetcherV2For(dir string) (*transfer.Fetcher, error) {
 	im.fetchMu.Lock()
 	defer im.fetchMu.Unlock()
-	if im.fetcher != nil {
+	if dir == "" && im.fetcher != nil {
 		return im.fetcher, nil
 	}
+	if dir != "" && im.dirFetchers[dir] != nil {
+		return im.dirFetchers[dir], nil
+	}
 	var origins []transfer.Origin
-	if im.cfg.BundleDir != "" {
-		origins = []transfer.Origin{{Dir: im.cfg.BundleDir, Name: "local"}}
+	if dir != "" {
+		origins = []transfer.Origin{{Dir: dir, Name: "local"}}
 	} else {
 		origins = append(origins, transfer.Origin{URL: im.cfg.BaseURL + "/latest/download"})
 		for _, u := range im.transfer.Mirrors {
@@ -260,6 +270,13 @@ func (im *Importer) fetcherV2() (*transfer.Fetcher, error) {
 	if err != nil {
 		return nil, err
 	}
+	if dir != "" {
+		if im.dirFetchers == nil {
+			im.dirFetchers = map[string]*transfer.Fetcher{}
+		}
+		im.dirFetchers[dir] = f
+		return f, nil
+	}
 	if im.transfer.Registerer != nil {
 		if err := f.Register(im.transfer.Registerer, "openctem", FeedV2); err != nil {
 			im.logger.Warn("vulnfeed: fetcher metrics not registered", "error", err)
@@ -272,12 +289,12 @@ func (im *Importer) fetcherV2() (*transfer.Fetcher, error) {
 // useV2 reports whether this run reads v2: the bundle directory holds a
 // v2 pointer, or the release serves one. Otherwise the whole-bundle (v1)
 // reader is used for this release.
-func (im *Importer) useV2(ctx context.Context) bool {
+func (im *Importer) useV2(ctx context.Context, dir string) bool {
 	if im.chunks == nil {
 		return false
 	}
-	if im.cfg.BundleDir != "" {
-		st, err := os.Stat(filepath.Join(im.cfg.BundleDir, bundle.PointerFile))
+	if dir != "" {
+		st, err := os.Stat(filepath.Join(dir, bundle.PointerFile))
 		return err == nil && st.Mode().IsRegular()
 	}
 	f, err := im.fetcherV2()
@@ -308,12 +325,12 @@ func (im *Importer) syncCheckpoint(ctx context.Context, applied uint64) (bundle.
 }
 
 // runV2 imports the newest v2 bundle through the SDK consumer.
-func (im *Importer) runV2(ctx context.Context, cur state) (Result, error) {
+func (im *Importer) runV2(ctx context.Context, cur state, dir string) (Result, error) {
 	var res Result
 	if _, err := im.syncCheckpoint(ctx, cur.Applied); err != nil {
 		return res, im.fail(ctx, err)
 	}
-	f, err := im.fetcherV2()
+	f, err := im.fetcherV2For(dir)
 	if err != nil {
 		return res, im.fail(ctx, err)
 	}

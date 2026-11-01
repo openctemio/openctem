@@ -23,6 +23,8 @@ type feedControllers struct {
 	epss, kev *controller.ThreatIntelRefreshController
 	// bundles is nil when the bundle import cannot be built.
 	bundles *controller.VulnFeedImportController
+	// importer is the bundle importer (nil: not configured).
+	importer *vulnfeed.Importer
 	// bundlesConfigured: VULNFEED_ROOT_KEY_ID is set.
 	bundlesConfigured bool
 }
@@ -54,6 +56,11 @@ func newFeedControllers(cfg *config.Config, svc *Services, repos *Repositories, 
 			log.Error("vulnerability bundle import disabled", "error", err)
 			return f
 		}
+		// Relay mode (RFC-142): the relay spool is the only origin.
+		if svc.FeedRelay != nil {
+			im.WithRelay(svc.FeedRelay.SpoolIfRelay(feedrelayVulnFeed))
+		}
+		f.importer = im
 		// KEV and EPSS ride the same release as a signed side manifest: applied
 		// when newer than what the platform holds, then the same findings sweep
 		// and event log as after a direct sync.

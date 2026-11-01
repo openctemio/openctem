@@ -1,0 +1,8 @@
+### Added: feeds through a platform relay sensor, so the platform needs no outbound access
+
+- New feed delivery mode `relay` (`GET/PUT /api/v1/admin/settings/feed-relay`; any administrator reads, a super admin with a step-up changes it, audited): a designated platform (instance-scope) sensor relays the signed vulnerability feed (with its KEV, EPSS, alias and vulnerability-id side files) and the version check's release feed. The platform plans which files it needs, the sensor downloads exactly those, and the importers verify them with each feed's pinned root as for a bundle directory: the relay can withhold data, never alter it (RFC-142).
+- In relay mode the platform makes no outbound feed request: the KEV/EPSS direct fetch, the online version check, the program feed URLs and the CTEM-ID refresh are off.
+- Sensor routes `GET /api/v2/sensor/feed-relay/next`, `PUT .../{round}/files/{name}` (Content-Length and Content-Digest required, streamed, pinned files hash-checked before they enter the spool), `POST .../{round}/done`; only the designated sensor reporting `feed.relay@1` is served. Rounds are signed by the job signer.
+- Migration `20261101225650_feed_relay_rounds`: table `feed_relay_rounds` (platform-wide, no tenant data) and origin `relay` for the version check state.
+- New `FEED_RELAY_DIR` (default `<FEED_CACHE_DIR>/relay`): every API replica must see the same directory. Relay mode is not available while `VULNFEED_BUNDLE_DIR` is set or without a job signer.
+- **Upgrade note:** nothing changes until an administrator selects relay mode. The relay sensor needs an SDK with `feed.relay@1` and `SENSOR_FEED_RELAY=1` on its host.

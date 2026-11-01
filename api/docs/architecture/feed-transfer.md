@@ -156,6 +156,55 @@ is fresh, which is the check to make first. A withheld release (a freeze)
 degrades to the own fetch, not to stale data, and the stale alert still fires.
 The sync status of each feed reports `delivered_via` and `data_as_of`.
 
+## Relay: feeds through a platform sensor (no outbound access)
+
+Design: [RFC-142](../rfcs/RFC-142-feed-relay.md). Code: `internal/app/feedrelay`
+(rounds, spool, controller `feed-relay`), `internal/app/vulnfeed/relay.go`
+(the planner), sdk-go `pkg/feedrelay` (the sensor side).
+
+In relay mode (Console > System > Threat intel, setting `egress.mode.feeds` =
+`relay` plus the designated sensor `feed_relay.sensor`; super admin, step-up,
+audited) the platform makes no outbound feed request:
+
+| Feed | In relay mode |
+|---|---|
+| vulnerability feed (corpus, KEV/EPSS side manifest, aliases, vulnerability ids) | relayed; the importer reads the relay spool as its only origin |
+| KEV / EPSS direct fetch | off (the source policy is "bundle, direct fetch off") |
+| version check (release feed) | relayed; applied with origin `relay`; the online check does not run |
+| program feed URLs | not fetched (a `PROGRAMFEED_DIR` still is); relaying it is later work |
+| CTEM-ID catalog | not fetched (unsigned: it is relayed once it is a signed stream) |
+
+How a cycle runs (one replica, every 30 s):
+
+1. **head**: a round asks the relay for the key set, the pointer and the side
+   manifests (unpinned, capped).
+2. **plan**: after the relay delivered, the planner verifies the key set
+   against the pinned root and its floor, the pointer and the manifests, and
+   asks for what the import will need and the spool lacks: the manifest the
+   pointer pins, the chunks (delta on its base, else snapshot), the side data
+   files, each **pinned** by SHA-256 and size, at most 64 files or 1 GiB a
+   round. A head that does not verify fails the cycle (`plan_refused`).
+3. **import**: nothing missing, the importer runs on the spool with every
+   check of a bundle directory; files no current manifest names are removed.
+4. The next cycle starts after the feed's interval (20 min, release feed 24 h);
+   a failed or refused round backs off (at most 10 min).
+
+A round is a platform-wide row `feed_relay_rounds` (no tenant), signed at
+`GET /api/v2/sensor/feed-relay/next` by the job signer as a `feed_relay`
+statement (platform tenant id, instance scope, the feed origins as targets,
+which the signer checks against `SIGNER_FEED_ORIGINS`). Only the designated
+instance-scope sensor, active and reporting `feed.relay@1`, is served (403
+otherwise, one answer for every reason). `PUT .../{round}/files/{name}`
+needs Content-Length and a sha-256 Content-Digest; the body is streamed to
+`<spool>/<feed>/.incoming`, hashed, checked against the declaration and the
+round's pin, and only then renamed into place: a tampered file never enters
+the spool. `POST .../{round}/done` keeps only rows for the round's own files,
+with bounded codes.
+
+The spool is `FEED_RELAY_DIR` (default `<FEED_CACHE_DIR>/relay`); every API
+replica must see it. A bundle directory (`VULNFEED_BUNDLE_DIR`) or a missing
+job signer locks relay mode off.
+
 ## Push: segments and the outbox
 
 Sensors and collectors send results with protocol v2 (RFC-026): segments

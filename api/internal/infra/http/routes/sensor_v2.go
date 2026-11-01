@@ -197,6 +197,14 @@ func mountSensorV2(router Router, h *handler.SensorResultsV2Handler, ctl *handle
 			r.GET(protov2.ContentPath+"/packs/{digest}/index", c.Index, controlRead...)
 			r.GET(protov2.ContentPath+"/packs/{digest}/files/{sha256}", c.File, controlRead...)
 		}
+		if f := ctl.FeedRelay(); f != nil {
+			// Feed relay (RFC-142): only the designated platform relay sensor
+			// is served. A file upload replaces the global body limit with
+			// the relay's per-file cap and is streamed to the spool.
+			r.GET("/feed-relay/next", f.Next, controlRead...)
+			r.PUT("/feed-relay/{round_id}/files/{name}", f.Upload, controlWrite[0], middleware.BodyLimit(handler.FeedRelayUploadLimit))
+			r.POST("/feed-relay/{round_id}/done", f.Done, controlWrite[0], middleware.BodyLimit(1<<20))
+		}
 	}, middleware.V2Observe(v2RouteName), authenticate)
 }
 
