@@ -273,6 +273,26 @@ export const settingsNav: SettingsNavGroup[] = [
         anchors: [
           { id: 'ai-triage', title: 'AI triage', keywords: ['turn on', 'enable'] },
           {
+            id: 'ai-source',
+            title: 'AI source',
+            keywords: ['provider', 'key', 'model', 'test connection'],
+          },
+          {
+            id: 'ai-auto-triage',
+            title: 'Automatic triage',
+            keywords: ['auto', 'severity', 'delay'],
+          },
+          {
+            id: 'ai-knowledge',
+            title: 'Knowledge sources',
+            keywords: ['knowledge', 'documents', 'runbook', 'cite'],
+          },
+          {
+            id: 'ai-usage',
+            title: 'AI use and limits',
+            keywords: ['tokens', 'budget', 'limit', 'tlp'],
+          },
+          {
             id: 'ai-agents',
             title: 'AI agents',
             keywords: ['service account', 'owner', 'attest', 'pause', 'preset', 'triage'],

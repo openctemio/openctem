@@ -19,7 +19,8 @@ import { isTenantRequired, routeToWelcomeOnce } from './tenant-required'
 import { dispatchPermissionStaleEvent } from '@/context/permission-provider'
 import { env } from '@/lib/env'
 import { devLog } from '@/lib/logger'
-import { withAuthRefreshLock } from '@/lib/auth-refresh-lock'
+import { refreshSessionShared } from '@/lib/auth-refresh-lock'
+import { sessionEndReason } from '@/features/auth/lib/session-ended'
 import { coalesceGet } from './request-dedupe'
 import { noteRateLimited } from './rate-limit-backoff'
 import { readCsrfCookie } from '@/lib/csrf-client'
@@ -100,11 +101,8 @@ export function getApiBaseUrl(): string {
  */
 const DEFAULT_TIMEOUT = 30000
 
-/**
- * Token refresh mutex to prevent race conditions
- * When multiple requests fail with 401 simultaneously, only one should refresh
- */
-let refreshPromise: Promise<boolean> | null = null
+/** Why the last refresh failed, carried to the sign-in page. */
+let lastRefreshFailureCode: string | undefined
 
 /**
  * Redirect lock to prevent multiple redirects to login
@@ -117,7 +115,7 @@ let isRedirectingToLogin = false
  * Uses a mutex to prevent multiple concurrent refresh attempts
  * Returns true if refresh succeeded, false otherwise
  */
-async function tryRefreshToken(): Promise<boolean> {
+async function tryRefreshToken(options?: { force?: boolean }): Promise<boolean> {
   // Only attempt refresh in browser
   if (typeof window === 'undefined') {
     return false
@@ -129,48 +127,25 @@ async function tryRefreshToken(): Promise<boolean> {
     return false
   }
 
-  // If already refreshing, wait for the existing refresh to complete
-  if (refreshPromise) {
-    devLog.log('[API Client] Token refresh already in progress, waiting...')
-    return refreshPromise
+  // One refresh for the whole browser: concurrent callers share it, tabs take
+  // turns and reuse a refresh another tab just made, and a dead session is
+  // not refreshed again (refreshSessionShared).
+  const outcome = await refreshSessionShared(
+    () =>
+      csrfFetch('/api/auth/refresh', {
+        method: 'POST',
+        credentials: 'include',
+      }),
+    options
+  )
+  if (outcome.ok) {
+    devLog.log('[API Client] Token refresh successful')
+    if (outcome.accessToken) useAuthStore.getState().updateToken(outcome.accessToken)
+    return true
   }
-
-  // Create a new refresh promise. The cross-tab lock keeps two tabs from
-  // spending the same rotating refresh token at once (reuse revokes the
-  // whole token family).
-  refreshPromise = (async () => {
-    try {
-      devLog.log('[API Client] Starting token refresh...')
-      const response = await withAuthRefreshLock(() =>
-        csrfFetch('/api/auth/refresh', {
-          method: 'POST',
-          credentials: 'include',
-        })
-      )
-
-      const data = await response.json()
-
-      if (response.ok && data.success && data.data?.access_token) {
-        devLog.log('[API Client] Token refresh successful')
-        useAuthStore.getState().updateToken(data.data.access_token)
-        return true
-      }
-
-      devLog.warn('[API Client] Token refresh failed:', data.error?.message || 'Unknown error')
-      return false
-    } catch (error) {
-      devLog.error('[API Client] Token refresh error:', error)
-      return false
-    } finally {
-      // Clear the refresh promise after a short delay
-      // This prevents immediate re-refresh if the refresh just failed
-      setTimeout(() => {
-        refreshPromise = null
-      }, 1000)
-    }
-  })()
-
-  return refreshPromise
+  lastRefreshFailureCode = outcome.code
+  devLog.warn('[API Client] Token refresh failed:', outcome.status, outcome.code)
+  return false
 }
 
 /**
@@ -180,8 +155,8 @@ async function tryRefreshToken(): Promise<boolean> {
  * reconnect after a 4401 close fails (RFC-045). Resolves false when the
  * session cannot be refreshed.
  */
-export function refreshSession(): Promise<boolean> {
-  return tryRefreshToken()
+export function refreshSession(options?: { force?: boolean }): Promise<boolean> {
+  return tryRefreshToken(options)
 }
 
 /**
@@ -216,7 +191,7 @@ function redirectToLoginOnce(): void {
   // session cookies are cleared before /login loads (see endSessionAndSignIn),
   // and the user comes back to this page after signing in.
   setTimeout(() => {
-    endSessionAndSignIn()
+    endSessionAndSignIn(undefined, { reason: sessionEndReason(lastRefreshFailureCode) })
   }, 100)
 }
 
