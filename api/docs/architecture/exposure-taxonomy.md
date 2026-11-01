@@ -130,6 +130,42 @@ every rule (`TestAssetMonitoringState_SQLMatchesDomain`). Every subquery is
 pinned to the asset's tenant; the list's data scope applies as for every other
 asset filter.
 
+### Primary assets
+
+A primary asset is one of the organization's root domains: a domain asset named
+exactly like the root of a permanent, active domain scope entry (`example.com`
+or `*.example.com`) or like a verified domain (`asset.PrimarySQL`; both
+subqueries carry the asset's tenant). `GET /assets?primary=true` keeps primary
+assets only.
+
+### Deciding monitoring
+
+The state is derived, so it changes through the decisions it is derived from.
+In the inventory (and every Needs attention queue, which uses the same table),
+the monitoring state of a row is a menu for a caller holding `assets:write`:
+Ours, Watch only, Ours on third-party infrastructure, Not ours, and, once
+decided, Undo the decision. Each choice says what it does, and a pick is one
+`PUT /assets/{id}/attribution` (the existing typed, audited command; Ours may
+ask for re-authentication and adds the asset's exact scope entry). Without
+`assets:write` the state is a plain label. Out of scope stays a scope
+exclusion (Scoping > Boundaries), not a menu choice.
+
+### Scoping decisions
+
+Assets > Needs attention opens with a "Scoping decisions" group, and the same
+cards show above the inventory while something waits (nothing is drawn when
+both are empty):
+
+- **Validate primary assets** (`/assets/attention/validate-primary`): primary
+  assets whose state is `pending_decision` or `unvalidated`.
+- **Decide monitoring** (`/assets/attention/decide-monitoring`): every asset
+  whose state is `pending_decision` or `unvalidated`.
+
+Both are inventory filters (`monitoring_state`, `primary`, every attribution
+state, since the inventory's default hides names awaiting review), so a count
+is the queue's own total for the reader's data scope, and the queue page is the
+inventory table with the monitoring control and the bulk bar.
+
 ## Planned
 
 - Producers for `web_interface_exposed` (exposed login and administration
@@ -139,4 +175,3 @@ asset filter.
   categories and filters are stable.
 - DKIM in the email checks.
 - `inactive` from 30 days of NXDOMAIN.
-- An inline monitoring control and scoping decision cards built on the state.
