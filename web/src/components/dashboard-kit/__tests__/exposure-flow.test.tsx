@@ -419,8 +419,17 @@ describe('sources: ranked bars by findings or assets, by tool or instance', () =
     }
   })
 
-  it('ranks by findings first and folds the healthy zeros into one line', () => {
+  it('ranks by findings first and lists every source, the silent ones last', async () => {
+    const user = userEvent.setup()
     render(<ExposureFlowViz result={withAssets} />)
+    expect(ranked()).toEqual([
+      's:sensor:nuclei',
+      's:platform:version-match',
+      's:sensor:dnsx',
+      's:sensor:subfinder',
+    ])
+    expect(screen.getByTestId('ranked-zeros')).toHaveTextContent('Hide 2 with nothing')
+    await user.click(screen.getByTestId('ranked-zeros'))
     expect(ranked()).toEqual(['s:sensor:nuclei', 's:platform:version-match'])
     expect(screen.getByTestId('ranked-zeros')).toHaveTextContent(
       '+2 sources with nothing in 30 days'

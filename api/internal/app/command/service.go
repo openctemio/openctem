@@ -80,7 +80,10 @@ type Service struct {
 	windows WindowSource
 	// httpPolicy is the tenant's tool HTTP layer (WithHTTPPolicy).
 	httpPolicy HTTPPolicySource
-	egress     EgressSource
+	// platformIdentity is the platform layer of the scan identification
+	// markers (WithPlatformIdentity).
+	platformIdentity PlatformIdentitySource
+	egress           EgressSource
 	// proxyRequired is the organization's "Proxy required" switch
 	// (WithProxyRequirement); nil: not required.
 	proxyRequired ProxyRequirement
@@ -522,8 +525,9 @@ func freeScanSlots(maxJobs, held int, reportedFree *int) int {
 	return max(free, 0)
 }
 
-// deliver prepares the commands a sensor gets: the tenant's tool HTTP layer
-// on every scan command, the bug-bounty program rules over it, then the
+// deliver prepares the commands a sensor gets: the tool HTTP layer (the
+// platform's and the organization's, merged) on every scan, retest and
+// validate command, the bug-bounty program rules over it, then the
 // custom template signatures. All work on copies; the stored commands are
 // never changed. A tenant policy that cannot be read fails the delivery (the
 // caller hands the claimed commands back at once): a job never leaves
@@ -531,14 +535,14 @@ func freeScanSlots(maxJobs, held int, reportedFree *int) int {
 func (s *Service) deliver(ctx context.Context, sensorID string, cmds []*commanddom.Command, rules map[shared.ID]*bp.JobRules,
 	layers map[shared.ID]settingsLayers,
 ) ([]*commanddom.Command, error) {
-	if s.httpPolicy != nil {
+	if s.httpPolicy != nil || s.platformIdentity != nil {
 		for i, c := range cmds {
-			if c.Type != commanddom.CommandTypeScan {
+			if !egressBound(c.Type) {
 				continue
 			}
-			pol, err := s.httpPolicy.ToolHTTPPolicy(ctx, c.TenantID)
+			pol, err := s.jobHTTPPolicy(ctx, c.TenantID)
 			if err != nil {
-				return nil, fmt.Errorf("read the organization's tool HTTP policy: %w", err)
+				return nil, err
 			}
 			payload, err := withHTTPPolicy(c.Payload, pol)
 			if err != nil {

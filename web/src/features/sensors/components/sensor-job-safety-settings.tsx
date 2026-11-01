@@ -24,7 +24,7 @@ import {
   SettingsLoading,
 } from '@/features/organization/components/settings-load-state'
 import { SensorOptInSwitches } from './sensor-opt-in-switches'
-import { ToolHTTPPolicyFields, toolUserAgentError } from './tool-http-policy-fields'
+import { ToolHTTPPolicyFields } from './tool-http-policy-fields'
 import { SensorIdentityPolicySwitch } from './sensor-identity-policy-switch'
 import { SensorKeyBindPolicySwitch } from './sensor-key-bind-policy-switch'
 import { SharedSensorsOptOutSwitch } from './shared-sensors-opt-out-switch'
@@ -34,7 +34,6 @@ export interface SensorJobForm {
   require_sensor_local_policy_for_private_targets: boolean
   allow_sensor_interactsh: boolean
   allow_sensor_custom_templates: boolean
-  tool_http_user_agent: string
   forbid_tool_insecure_tls: boolean
 }
 
@@ -42,7 +41,6 @@ export const SENSOR_JOB_FIELDS = [
   'require_sensor_local_policy_for_private_targets',
   'allow_sensor_interactsh',
   'allow_sensor_custom_templates',
-  'tool_http_user_agent',
   'forbid_tool_insecure_tls',
 ] as const
 
@@ -53,7 +51,6 @@ export function sensorJobFormFrom(settings: TenantSettings | undefined): SensorJ
       s?.require_sensor_local_policy_for_private_targets ?? false,
     allow_sensor_interactsh: s?.allow_sensor_interactsh ?? false,
     allow_sensor_custom_templates: s?.allow_sensor_custom_templates ?? false,
-    tool_http_user_agent: s?.tool_http_user_agent ?? '',
     forbid_tool_insecure_tls: s?.forbid_tool_insecure_tls ?? false,
   }
 }
@@ -105,14 +102,12 @@ export function SensorJobSafetySettings() {
     reset()
   }, [reset])
 
-  const ua = form.tool_http_user_agent.trim()
-  const uaError = toolUserAgentError(ua, t)
-  const dirty = JSON.stringify({ ...form, tool_http_user_agent: ua }) !== JSON.stringify(saved)
+  const dirty = JSON.stringify(form) !== JSON.stringify(saved)
 
   const doSave = async () => {
     setConfirm(null)
     try {
-      const result = await updateSecuritySettings({ ...form, tool_http_user_agent: ua })
+      const result = await updateSecuritySettings(form)
       if (result) await mutate(result, { revalidate: false })
       toast.success(t('sensors.jobSafety.saved', 'Sensor job settings saved'))
     } catch (err) {
@@ -125,7 +120,6 @@ export function SensorJobSafetySettings() {
     }
   }
   const handleSave = () => {
-    if (uaError) return
     const loosened = sensorLooseningsOf(saved, form)
     if (loosened.length > 0) setConfirm(loosened)
     else void doSave()
@@ -212,10 +206,7 @@ export function SensorJobSafetySettings() {
               <Separator />
               <div id="tool-http">
                 <ToolHTTPPolicyFields
-                  value={{
-                    tool_http_user_agent: form.tool_http_user_agent,
-                    forbid_tool_insecure_tls: form.forbid_tool_insecure_tls,
-                  }}
+                  value={{ forbid_tool_insecure_tls: form.forbid_tool_insecure_tls }}
                   onChange={(next) => setForm((f) => ({ ...f, ...next }))}
                   disabled={disabled}
                 />
@@ -248,13 +239,7 @@ export function SensorJobSafetySettings() {
           </Card>
         </PageStack>
 
-        <SettingsSaveBar
-          dirty={dirty}
-          saving={isUpdating}
-          onSave={handleSave}
-          onDiscard={reset}
-          saveDisabled={!!uaError}
-        />
+        <SettingsSaveBar dirty={dirty} saving={isUpdating} onSave={handleSave} onDiscard={reset} />
         <ConfirmDialog
           open={confirm !== null}
           onOpenChange={(open) => !open && setConfirm(null)}

@@ -326,9 +326,9 @@ func (h *IngestReceiptHandler) writeViewerError(w http.ResponseWriter, err error
 // @Description  Receipts of uploads and sensor runs, newest first: what each did to the organization's findings (created, updated = still detected, reactivated, closed, untouched, skipped, failed), and the totals of every receipt the filter keeps (the figures the dashboards show for the same filter). A caller without the organization view (unrestricted data scope or dashboards:org:view) sees only the uploads they made. Unknown parameters are refused (400 INVALID_FILTER); per_page is capped at 100.
 // @Tags         Findings
 // @Produce      json
-// @Param        source_kind  query  string  false  "upload, scan_run, command, ci_run, connector or sensor"
+// @Param        source_kind  query  string  false  "upload, scan_run, command, ci_run, connector, sensor or platform"
 // @Param        source_ref   query  string  false  "The run, command or connector run id (an upload's receipt id)"
-// @Param        origin       query  string  false  "Source group: sensor, import, connector or ci"
+// @Param        origin       query  string  false  "Source group: sensor, import, connector, ci or platform"
 // @Param        tool         query  string  false  "Tool name (unknown: the receipts that named none)"
 // @Param        since        query  string  false  "Receipts with activity at or after this RFC 3339 time"
 // @Param        page         query  int     false  "Page (from 1)"

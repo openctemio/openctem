@@ -144,6 +144,7 @@ func registerSensorManagementRoutes(
 		r.GET("/grant-summaries", h.ListGrantSummaries, middleware.Require(permission.SensorsRead))
 		// Install commands for a sensor that pairs (the "Add sensor" panel):
 		// no key; a pairing code, when given, travels in the body.
+		r.GET("/install-templates", h.InstallTemplatesRead, middleware.Require(permission.SensorsPair))
 		r.POST("/install-templates", h.InstallTemplates, middleware.Require(permission.SensorsPair))
 		r.GET("/{id}", h.Get, middleware.Require(permission.SensorsRead), own)
 		// Signing keys of key-bound sensors (RFC-052).
