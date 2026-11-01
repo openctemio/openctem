@@ -59,14 +59,14 @@ read tools `readOnlyHint: true, idempotentHint: true`, the write tool
 
 | Tool | Permission | Returns |
 |---|---|---|
-| `list_findings` | `findings:read` | findings (severity/status/source/search filters), caller's data scope; `status_note`: status is per finding (one issue on one asset) |
+| `list_findings` | `findings:read` | the findings list (GET /findings) as the caller: `severity`, `status`, `state`, `source`, `search`, `asset_id`, `cve`, `kev`, `min_epss`, `priority_class`, `sla_status`, `assignee` (`me` or a user id), `created_after/before`, `updated_after/before`, `sort`, paged; parsed by the list's own parser (unknown values refused); `status_note` |
 | `get_finding` (`finding_id`) | `findings:read` | one finding |
 | `finding_stats` | `findings:read` | totals by severity/status + KEV/EPSS/SLA rollups, over the findings list's compiled filter |
 | `list_active_cves` | `findings:read` | one row per CVE named on an open finding in scope, riskiest first (the vulnerabilities list read); `catalog_status` (`in catalog` / `not in catalog`), `open_kev_findings` per row and in total |
 | `explain_finding_priority` (`finding_id`) | `findings:read` | priority explanation (KEV/EPSS/reachability) |
-| `get_exposure_chains` | `assets:read` | shortest attack paths to KEV/crown-jewel assets |
-| `list_remediation_groups` | `findings:read` | solution families |
-| `list_assets` | `assets:read` | assets, riskiest first (exposure/criticality/search); `risk_score` 0..100 from open findings, `risk_scored_at` |
+| `get_exposure_chains` | `assets:read` | shortest attack paths to KEV/crown-jewel assets; summary with directly exposed (length 0) and multi-hop counts, `relationship_note` when no asset relationships can build a longer path |
+| `list_remediation_groups` | `findings:read` | solution families, most findings first, paged |
+| `list_assets` | `assets:read` | assets, riskiest first (exposure/criticality/search), paged; `risk_score` 0..100 from open findings, `risk_scored_at` |
 | `compliance_posture` | `compliance:frameworks:read` | framework/control posture |
 | `list_campaigns` | `pentest:campaigns:read` | the person's campaigns, newest first: role, phase, TLP, dates, counts, next action; `phase`, `role`, `search`, `include_archived` filters, paged |
 | `my_work` | `pentest:campaigns:read` | the person's active campaigns with something to do (drafts, assigned findings, reviews, retests; for a client, open published findings), with the next action, paged |
@@ -82,6 +82,13 @@ read tools `readOnlyHint: true, idempotentHint: true`, the write tool
 
 Tools that took `id` take `campaign_id` or `finding_id` like the others; `id`
 is still accepted.
+
+### Paging
+
+Every generic list tool (`list_findings`, `list_active_cves`, `list_assets`,
+`list_remediation_groups`) takes `page` (from 1) and `limit` (default 25, at
+most 100) and returns `total`, `page`, `limit`, `has_more` and, when there is
+one, `next_page`, the same shape as the pentest list tools.
 
 ### Counts that agree
 
@@ -105,6 +112,19 @@ catalog"`, an empty title, CVSS and EPSS from the findings). A finding's
 status is its own: one finding is one CVE on one asset, so the same CVE can be
 `false_positive` on one asset and `new` on another; the list counts the open
 ones and its `status_note` says so.
+
+A fix has one definition too, `vulnerability.FindingFixKnownSQL`: the
+scanner listed fixed versions or said a fix is available
+(`remediation.fix_available`), or the finding is in a remediation group (a
+group key exists only for a concrete shared fix). `list_active_cves.has_fix`
+and the package inventory read it, and each CVE row lists the titles of the
+remediation groups its open findings are in (`remediations`), as
+`list_remediation_groups` names them. The `remedy_available` column is not a
+signal (it defaults to true).
+
+Pentest findings of campaigns kept away from AI applications (TLP above the
+organization's limit, or AI assistants off) are left out in SQL of every
+compiled findings read an MCP tool makes (`FilterCaller.PentestAIAllowTLP`).
 
 `list_assets.risk_score` is the stored asset risk score (0..100) from the
 asset's open findings; an asset with no open finding scores 0, and
@@ -187,8 +207,9 @@ behind that application, which a TLP:RED engagement typically does not allow.
   `add_finding_comment` (before the confirmation and again when it runs).
   `list_campaigns` and `my_work` leave restricted campaigns out in SQL and
   return `restricted_hidden` (a count, no names). The generic `list_findings`
-  leaves their findings out in SQL. A policy that cannot be read refuses
-  (`internal_error`). `finding_stats` counts stay tenant-wide (numbers only).
+  leaves their findings out in SQL, and so do `finding_stats` and
+  `list_active_cves` (their counts agree with the list). A policy that cannot
+  be read refuses (`internal_error`).
 
 ### Untrusted content
 
