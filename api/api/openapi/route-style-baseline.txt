@@ -12,6 +12,7 @@
 # R8 depth, R9 closed prefix without a deprecation marker.
 #
 # Format: RULE METHOD /path   (path as registered, parameter names included)
+R2 POST /oauth/device_authorization
 R3 DELETE /api/v1/admin/tenants/{tenantId}/sso/identity-providers/{id}
 R3 DELETE /api/v1/admin/tenants/{tenantId}/sso/saml
 R3 DELETE /api/v1/admin/tenants/{tenantId}/sso/verified-domains/{id}

@@ -25,6 +25,8 @@ export interface McpConnection {
   expires_at: string
   /** May read all organization data while its person keeps a full-data role. */
   full_data?: boolean
+  /** "device": a terminal signed in with a code; "code": through the browser. */
+  flow?: 'code' | 'device'
 }
 
 interface McpConnectionList {
@@ -47,6 +49,8 @@ export interface McpPolicy {
   effective_refresh_days: number
   /** Only DPoP-bound tokens (proof of the client key on every request). */
   require_dpop: boolean
+  /** Members may sign a terminal in with a code (device authorization grant). */
+  device_flow_allowed: boolean
   /** Highest TLP of a pentest campaign sent to AI applications (default amber). */
   max_tlp: 'clear' | 'green' | 'amber' | 'amber_strict' | 'red'
   platform_client_hosts: string[]
@@ -62,6 +66,7 @@ export type McpPolicyUpdate = Pick<
   | 'api_keys_allowed'
   | 'refresh_days'
   | 'require_dpop'
+  | 'device_flow_allowed'
   | 'max_tlp'
 >
 
@@ -75,6 +80,11 @@ export function useMyConnections() {
   return useSWR<McpConnectionList>(currentTenant ? MY_CONNECTIONS_URL : null, (url: string) =>
     get<McpConnectionList>(url)
   )
+}
+
+/** One read of the person's connections, for a button that asks on demand (no request on page load). */
+export function fetchMyConnections(): Promise<McpConnectionList> {
+  return get<McpConnectionList>(MY_CONNECTIONS_URL)
 }
 
 /** Every connection of the organization (owners and administrators). */
@@ -133,6 +143,7 @@ export function policyUpdate(p: McpPolicy): McpPolicyUpdate {
     api_keys_allowed: p.api_keys_allowed,
     refresh_days: p.refresh_days,
     require_dpop: p.require_dpop,
+    device_flow_allowed: p.device_flow_allowed,
     max_tlp: p.max_tlp,
   }
 }

@@ -77,12 +77,13 @@ export const config = {
     {
       // Documents only: API routes (JSON, the /api/v1 BFF and its WebSocket
       // upgrade, /api/health), the API's OAuth metadata and endpoints for MCP
-      // clients (/.well-known/oauth-*, /oauth/authorize|token|revoke|register;
+      // clients (/.well-known/oauth-*, /oauth/authorize|token|revoke|register|device_authorization;
       // RFC-062),
       // Next.js assets, and static files carry no inline script, need no nonce
-      // and handle their own auth. The consent page /oauth/consent is a page.
+      // and handle their own auth. The consent page /oauth/consent and the
+      // terminal code page /oauth/device are pages.
       source:
-        '/((?!api/|\\.well-known/oauth-|oauth/(?:authorize|token|revoke|register)|_next/|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|txt|xml|json|webmanifest|js|css|map|woff2?)$).*)',
+        '/((?!api/|\\.well-known/oauth-|oauth/(?:authorize|token|revoke|register|device_authorization)|_next/|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|txt|xml|json|webmanifest|js|css|map|woff2?)$).*)',
       missing: [
         { type: 'header', key: 'next-router-prefetch' },
         { type: 'header', key: 'purpose', value: 'prefetch' },
