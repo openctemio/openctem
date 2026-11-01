@@ -97,6 +97,14 @@ Each pass, per tenant, after reconciling:
    asset"), never as failed. Platform-side failures are the operator's
    signal instead (see Gap detection).
 
+   **Outcome revision.** Every scan command names `outcome_revision` (ctis
+   `outcome.Revision`, 2). A sensor sends the classes that say why a target
+   was not covered (`edge_blocked`, `edge_challenged`, `rate_limited`,
+   `name_gone`, `resolver_failed`, `sensor_network_fault`) only to a
+   platform that names revision 2; without it the sensor sends the closest
+   revision 1 class, so a host behind an edge protection arrived as
+   `tool_error` (platform side) and raised the platform-failure alert.
+
    **Edge protection and older sensors.** A sensor lists the hosts it could
    not fully cover in `metadata.coverage_gaps[]` (`host`, `reason`,
    `detail`) and, on a `blocked` gap, adds `edge` (`challenged` or `blocked`)
