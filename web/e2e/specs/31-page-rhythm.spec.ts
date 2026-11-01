@@ -166,9 +166,10 @@ async function probe(page: Page): Promise<Probe> {
       }
     })
     // A SegmentedLens on a page (the control that used to filter rows); radio
-    // and toggle groups in forms and wizards are inputs, not row filters.
+    // and toggle groups in forms and wizards are inputs, not row filters, and a
+    // lens in a route-lens wrapper switches between routes (navigation).
     const rowFilterSegmented = Array.from(main.querySelectorAll('[data-testid="segmented-lens"]'))
-      .filter((n) => shown(n) && !overlay(n))
+      .filter((n) => shown(n) && !overlay(n) && !n.closest('[data-slot="route-lens"]'))
       .map((n) => n.getAttribute('aria-label') ?? '')
 
     const metricStrips = Array.from(main.querySelectorAll('[data-slot="metric-strip"]'))
