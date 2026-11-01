@@ -55,6 +55,7 @@
   "errors.TEAM_EXTERNAL_FULL_DATA": "Người ngoài tổ chức chỉ nhận quyền truy cập toàn bộ dữ liệu qua vai trò được cấp trực tiếp cho họ, không bao giờ qua một nhóm.",
   "errors.TEAM_PRIVILEGED_OWNER_ONLY": "Chỉ chủ sở hữu tổ chức mới được thay đổi thành viên của nhóm có vai trò đặc quyền.",
   "errors.TEAM_SELF_JOIN": "Bạn không thể tự thêm mình vào nhóm có gán vai trò. Hãy nhờ chủ sở hữu tổ chức.",
+  "errors.TENANT_REQUIRED": "Thao tác này cần một tổ chức. Hãy chấp nhận lời mời hoặc tạo tổ chức trước.",
   "errors.TICKET_BELOW_THRESHOLD": "Phát hiện này thấp hơn ngưỡng tạo ticket.",
   "errors.TICKET_EGRESS_REFUSED": "Chính sách dữ liệu của tổ chức không cho phép gửi nội dung này tới dịch vụ ticket.",
   "errors.UNAUTHORIZED": "Phiên đăng nhập đã kết thúc. Đăng nhập để tiếp tục.",
