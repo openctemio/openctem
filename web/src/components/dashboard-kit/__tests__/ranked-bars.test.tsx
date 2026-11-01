@@ -1,3 +1,4 @@
+import axe from 'axe-core'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -60,14 +61,14 @@ describe('RankedBars', () => {
   it('draws the largest first, each row a link at least 44 px tall, bars scaled to the max', () => {
     render(<RankedBars rows={rows} limit={6} label="Sources" zeroLabel={zeroLabel} />)
     expect(order()).toEqual(['a', 'b', 'd', 'c', 'z2'])
-    const top = screen.getByRole('link', { name: 'alpha: 59' })
+    const top = screen.getByRole('link', { name: 'alpha 59' })
     expect(top).toHaveAttribute('href', '/findings/imports?tool=alpha')
     expect(top.className).toContain('min-h-11')
     const bars = screen.getAllByTestId('ranked-bar')
     expect(bars[0].style.width).toBe('100%')
     expect(parseFloat(bars[1].style.width)).toBeCloseTo((100 * 12) / 59, 1)
     // No safe link: plain text in the same box, still focusable for its tooltip.
-    expect(screen.queryByRole('link', { name: 'gamma: 3' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'gamma 3' })).not.toBeInTheDocument()
     expect(screen.getByText('Stale, last 3 days ago')).toBeInTheDocument()
   })
 
@@ -168,5 +169,29 @@ describe('RankedBars', () => {
     expect(order()[0]).toBe('c')
     expect(screen.queryAllByTestId('rank-move')).toHaveLength(0)
     expect(screen.getByTestId('ranked-announce')).toHaveTextContent('')
+  })
+
+  it('names a row by its own text, so the name holds what is visible (label in name)', async () => {
+    const { container } = render(
+      <RankedBars
+        rows={[
+          {
+            key: 'n',
+            label: 'nuclei',
+            chip: 'Sensor',
+            value: 26,
+            display: '26',
+            unit: '26 findings',
+            href: '/findings/imports?tool=nuclei',
+          },
+        ]}
+        limit={6}
+        label="Sources"
+        zeroLabel={zeroLabel}
+      />
+    )
+    expect(screen.getByRole('link', { name: 'nuclei Sensor 26 findings' })).toBeInTheDocument()
+    const res = await axe.run(container, { runOnly: ['label-content-name-mismatch'] })
+    expect(res.violations).toEqual([])
   })
 })

@@ -574,7 +574,7 @@ function FlowChart({ result, scope }: { result: FlowResult; scope?: 'organizatio
             href: gr.instance.sensor_href ?? null,
             health: gr.health,
             note: healthNote(t, gr, locale),
-            aria: `${name}, ${chip}: ${unit(value)}`,
+            unit: unit(value),
           }
         })
       : sources.map((s) => {
@@ -590,7 +590,7 @@ function FlowChart({ result, scope }: { result: FlowResult; scope?: 'organizatio
             href: s.drill,
             health: s.health,
             note: healthNote(t, s, locale),
-            aria: `${name}, ${chip}: ${unit(value)}`,
+            unit: unit(value),
           }
         })
 
