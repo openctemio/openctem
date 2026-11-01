@@ -47,6 +47,7 @@ import {
   fetchConsentRequest,
   isRequestId,
 } from '../api/consent'
+import { TERMINAL_CLIENT_ID } from '../lib/client-snippets'
 import { useMcpLabels } from '../lib/use-mcp-labels'
 
 interface ConsentViewProps {
@@ -210,7 +211,12 @@ export function ConsentView({ requestId }: ConsentViewProps) {
     return <Unavailable message={error ?? unavailable} />
   }
   if (done) {
-    return <TerminalDone approved={done === 'approved'} client={request.client_name} />
+    return (
+      <TerminalDone
+        approved={done === 'approved'}
+        client={request.client_id === TERMINAL_CLIENT_ID ? null : request.client_name}
+      />
+    )
   }
 
   const verified = request.verified
@@ -224,9 +230,11 @@ export function ConsentView({ requestId }: ConsentViewProps) {
     <Card>
       <CardHeader className="space-y-2">
         <CardTitle className="text-xl break-words">
-          {t('mcp.consent.title', 'Connect {client} to {product}?', {
-            client: request.client_name,
-          })}
+          {device && request.client_id === TERMINAL_CLIENT_ID
+            ? t('mcp.consent.device.title', 'Connect a terminal to {product}?')
+            : t('mcp.consent.title', 'Connect {client} to {product}?', {
+                client: request.client_name,
+              })}
         </CardTitle>
         <CardDescription className="flex flex-wrap items-center gap-2">
           {device ? (
@@ -578,7 +586,7 @@ function DeviceOrigin({ request }: { request: ConsentRequest }) {
   )
 }
 
-function TerminalDone({ approved, client }: { approved: boolean; client: string }) {
+function TerminalDone({ approved, client }: { approved: boolean; client: string | null }) {
   const { t } = useTranslation()
   return (
     <Card>
@@ -589,9 +597,11 @@ function TerminalDone({ approved, client }: { approved: boolean; client: string 
           ) : (
             <X className="h-5 w-5 text-muted-foreground" aria-hidden />
           )}
-          {approved
-            ? t('mcp.consent.device.doneTitle', '{client} is connected', { client })
-            : t('mcp.consent.device.refusedTitle', 'Not connected')}
+          {!approved
+            ? t('mcp.consent.device.refusedTitle', 'Not connected')
+            : client
+              ? t('mcp.consent.device.doneTitle', '{client} is connected', { client })
+              : t('mcp.consent.device.doneTerminal', 'The terminal is connected')}
         </CardTitle>
         <CardDescription role="status">
           {approved

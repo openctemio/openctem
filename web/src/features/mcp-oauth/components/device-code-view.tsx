@@ -89,7 +89,7 @@ export function DeviceCodeView() {
             )}
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className="space-y-4 pt-2">
           <div className="space-y-2">
             <Label htmlFor="device-user-code">{t('mcp.device.codeLabel', 'Code')}</Label>
             <Input
