@@ -35,10 +35,18 @@ export function wirePath(x1: number, y1: number, x2: number, y2: number): string
   return `M${x1} ${y1} C${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`
 }
 
-/** Wire width for a volume: 1 to 6 px on a square-root scale of the largest. */
+/** Wire width for a volume: 1 to 6 px, proportional to its share of the largest. */
 export function wireWidth(value: number, max: number): number {
   if (max <= 0 || value <= 0) return 1
-  return Math.round((1 + 5 * Math.sqrt(value / max)) * 100) / 100
+  return Math.round((1 + 5 * Math.min(1, value / max)) * 100) / 100
+}
+
+/**
+ * The glow of the one focused wire or segment: a soft shadow in its own
+ * colour (CSS filter, so it costs nothing until something is focused).
+ */
+export function focusGlow(color: string): string {
+  return `drop-shadow(0 0 4px color-mix(in oklab, ${color} 60%, transparent))`
 }
 
 /** Stroke of a wire by the health of its source. */
