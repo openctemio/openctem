@@ -77,9 +77,20 @@ const (
 	RequestRedeemed RequestStatus = "redeemed"
 )
 
+// Flow is how an authorization request reaches its person: the browser
+// redirect of the authorization code grant, or a user code typed in by the
+// person (the device authorization grant, RFC 8628).
+type Flow string
+
+const (
+	FlowCode   Flow = "code"
+	FlowDevice Flow = "device"
+)
+
 // AuthRequest is one authorization transaction.
 type AuthRequest struct {
 	ID     shared.ID
+	Flow   Flow
 	Client Client
 	// ClientPending: Client is a metadata document fetched for this request
 	// and not stored yet. It is stored when a signed-in person approves.
@@ -97,9 +108,17 @@ type AuthRequest struct {
 	GrantID       *shared.ID
 	// FullData: the person chose, at consent, to let the connection read
 	// all organization data (needs a full-data role and a fresh step-up).
-	FullData  bool
-	CreatedAt time.Time
-	ExpiresAt time.Time
+	FullData bool
+	// Device flow only: the hashes of the device code (polled by the client)
+	// and of the user code (typed by the person), the polling interval, and
+	// the address and user agent the request came from.
+	DeviceCodeHash     string
+	UserCodeHash       string
+	PollInterval       time.Duration
+	RequesterIP        string
+	RequesterUserAgent string
+	CreatedAt          time.Time
+	ExpiresAt          time.Time
 }
 
 // Grant is what one person allowed one client to do in one organization.
@@ -122,6 +141,8 @@ type Grant struct {
 	// FullData: the connection may read all organization data while its
 	// user still holds a full-data role (re-checked on every request).
 	FullData bool
+	// Flow is how the grant was obtained (FlowCode or FlowDevice).
+	Flow Flow
 }
 
 // AccessTTL is the life of an access token of the grant: shorter when the
@@ -190,6 +211,25 @@ var (
 	ErrRefreshReused = errors.New("refresh token already rotated")
 )
 
+// DevicePoll is what a poll of a device code found (RFC 8628 §3.5).
+type DevicePoll string
+
+const (
+	// DevicePending: nobody approved or refused yet.
+	DevicePending DevicePoll = "pending"
+	// DeviceSlowDown: polled before the interval passed; the interval grew.
+	DeviceSlowDown DevicePoll = "slow_down"
+	// DeviceDenied: the person refused.
+	DeviceDenied DevicePoll = "denied"
+	// DeviceExpired: the request ended before it was approved and redeemed.
+	DeviceExpired DevicePoll = "expired"
+	// DeviceApproved: approved; the request is now redeemed and returned.
+	DeviceApproved DevicePoll = "approved"
+	// DeviceReused: the device code was already redeemed; the request is
+	// returned so the grant it created can be revoked.
+	DeviceReused DevicePoll = "reused"
+)
+
 // Repository persists clients, authorization requests, grants and tokens.
 // Every token and code argument is a hash.
 type Repository interface {
@@ -209,8 +249,20 @@ type Repository interface {
 	// and stores the code hash. clientRef is the stored client the request
 	// now points to (a pending metadata-document client is stored first).
 	// fullData records the person's choice to let the grant read all
-	// organization data.
+	// organization data. A device request has no code: codeHash is "" and
+	// the device code redeems the approval instead.
 	ApproveRequest(ctx context.Context, id, userID, tenantID, clientRef shared.ID, granted []Scope, fullData bool, codeHash string, codeExpiresAt, now time.Time) error
+	// ClaimDeviceRequest binds the pending, unexpired device request whose
+	// user code hashes to userCodeHash to userID and returns it. A request
+	// claimed by someone else, or none, is ErrNotFound. A device request
+	// can be claimed only this way, never by its id.
+	ClaimDeviceRequest(ctx context.Context, userCodeHash string, userID shared.ID, now time.Time) (*AuthRequest, error)
+	// PollDeviceCode records a poll of the device code that hashes to
+	// deviceCodeHash at now, atomically: a poll before the interval passed
+	// grows the interval by DeviceSlowDownStep; an approved request is
+	// moved to redeemed. The request is returned with every outcome. A code
+	// unknown, or issued to another client than clientID, is ErrNotFound.
+	PollDeviceCode(ctx context.Context, deviceCodeHash, clientID string, now time.Time) (*AuthRequest, DevicePoll, error)
 	// DenyRequest moves a pending request claimed by userID to denied.
 	DenyRequest(ctx context.Context, id, userID shared.ID, now time.Time) error
 	// RedeemCode atomically moves the approved request holding codeHash to
