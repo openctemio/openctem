@@ -8,7 +8,10 @@ import { test, expect } from '../fixtures/authenticated-page'
  * critical accessibility violations and no horizontal page scroll; a figure
  * opens its tooltip on keyboard focus with the same list as the figure, and
  * Escape closes it; the receipt list the intake figures open loads with the
- * totals of its filter.
+ * totals of its filter. On a phone the answer comes first (actionable now,
+ * outcomes, stages, then sources), the actionable total shows once, and every
+ * figure is a tap target of at least 44 px; on a desktop the ring stays and
+ * the funnel no longer repeats the actionable total (research/359).
  */
 
 const AXE = path.resolve(__dirname, '../../node_modules/axe-core/axe.min.js')
@@ -40,6 +43,37 @@ for (const vp of VIEWPORTS) {
             () => document.documentElement.scrollWidth - document.documentElement.clientWidth
           )
           expect(overflow, 'horizontal page scroll on a phone').toBeLessThanOrEqual(0)
+        }
+
+        // The actionable total shows once (the ring centre or the phone headline).
+        await expect(flow.getByTestId('flow-centre')).toHaveCount(1)
+        await expect(flow.getByText(/not part of the period/)).toHaveCount(0)
+
+        if (vp.width < 768) {
+          await expect(flow).toHaveAttribute('data-band', 'narrow')
+          const order = await flow.evaluate((el) =>
+            [...el.querySelectorAll('[data-testid]')]
+              .map((n) => n.getAttribute('data-testid'))
+              .filter((id) =>
+                ['flow-headline', 'flow-outcomes', 'flow-stages', 'flow-sources'].includes(id ?? '')
+              )
+          )
+          expect(order.slice(0, 2), 'phone: the answer first').toEqual([
+            'flow-headline',
+            'flow-outcomes',
+          ])
+          // Every figure (link) in the flow is at least 44 px tall to tap.
+          const small = await flow.evaluate((el) =>
+            [...el.querySelectorAll('a[href], [role="link"]')]
+              .map((n) => ({
+                t: (n.textContent ?? '').trim().slice(0, 30),
+                h: n.getBoundingClientRect().height,
+              }))
+              .filter((x) => x.h > 0 && x.h < 43.5)
+          )
+          expect(small, 'phone tap targets under 44 px').toEqual([])
+        } else {
+          await expect(flow.locator('svg[role="group"]')).toBeVisible()
         }
 
         await page.addScriptTag({ path: AXE })

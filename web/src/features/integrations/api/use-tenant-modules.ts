@@ -220,7 +220,10 @@ export function useHasModule(moduleId: string) {
  * ```
  */
 export function useModuleEnabled(moduleId: string): boolean {
-  const { moduleIds } = useTenantModules()
-  // Fail-open when the API reports no module list.
+  const { moduleIds, isLoading } = useTenantModules()
+  // Closed while the list loads: a module the organization switched off
+  // would otherwise be fetched (403 MODULE_NOT_ENABLED) before the list
+  // arrives. Fail-open only once the API has answered with no module list.
+  if (isLoading) return false
   return moduleIds.length === 0 || moduleIds.includes(moduleId)
 }

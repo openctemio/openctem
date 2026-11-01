@@ -36,6 +36,7 @@ import {
   wireWidth,
   type FlowTipContent,
 } from './flow-parts'
+import { StackedBar } from './stacked-bar'
 import { ChartOrTable, usePrefersReducedMotion } from './viz-parts'
 import type { IntakeData, IntakeResult, IntakeSourceRow } from './types'
 
@@ -444,24 +445,14 @@ function NoiseReduction({ data }: { data: IntakeData }) {
         </span>
       </div>
       {noise.received > 0 && (
-        <div
-          className="mb-2 flex h-2.5 gap-0.5 overflow-hidden rounded-sm"
-          role="img"
-          aria-label={t(
+        <StackedBar
+          className="mb-2 h-2.5 rounded-sm"
+          ariaLabel={t(
             'dashboardKit.intake.noiseBarAria',
             'Received split into new or reopened (some suppressed by rules), merged and not stored'
           )}
-        >
-          {NOISE_PARTS.map((p) =>
-            segment(p.key) > 0 ? (
-              <span
-                key={p.key}
-                style={{ flex: segment(p.key), background: p.color }}
-                data-part={p.key}
-              />
-            ) : null
-          )}
-        </div>
+          parts={NOISE_PARTS.map((p) => ({ key: p.key, value: segment(p.key), color: p.color }))}
+        />
       )}
       <ul className="mb-3 flex flex-wrap gap-x-4 gap-y-1 text-xs">
         {NOISE_PARTS.map((p) => (
