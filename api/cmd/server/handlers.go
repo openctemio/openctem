@@ -547,6 +547,11 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		mcpHandler.SetScopeCheck(svc.Scope, postgres.NewVerifiedDomainNameRepository(deps.DB), postgres.NewBountyProgramRepository(deps.DB))
 	}
 	mcpDiscovery := newMCPDiscovery(cfg, log)
+	if mcpHandler != nil {
+		// get_asset reads the asset page's services as the connection's
+		// caller; console links point to the web origin.
+		mcpHandler.SetAssetContext(svc.Asset, mcpDiscovery.Endpoints.Issuer)
+	}
 	// OAuth for MCP clients (RFC-062): with an authorization server the MCP
 	// endpoint also accepts its access tokens, and a refused call that
 	// another scope would allow gets a step-up challenge.

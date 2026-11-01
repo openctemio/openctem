@@ -67,6 +67,8 @@ read tools `readOnlyHint: true, idempotentHint: true`, the write tool
 | `get_exposure_chains` | `assets:read` | shortest attack paths to KEV/crown-jewel assets; summary with directly exposed (length 0) and multi-hop counts, `relationship_note` when no asset relationships can build a longer path |
 | `list_remediation_groups` | `findings:read` | solution families, most findings first, paged |
 | `list_assets` | `assets:read` | assets, riskiest first (exposure/criticality/search), paged; `risk_score` 0..100 from open findings, `risk_scored_at` |
+| `search_assets` | `assets:read` | the inventory list as the caller: free text, an IP or CIDR (assets inside it), a CVE (assets with an open finding of it), `type`, `exposure`, `criticality`, `internet_facing`, `monitoring_state`, `scope_status`, `owner_id`, `technology`, `has_findings`; riskiest first, paged, with `console_url` |
+| `get_asset` (`asset_id` or exact `name`) | `assets:read` | the asset page: `sections` overview, findings (open by severity, top 10 by priority), coverage, ports, lineage, changes; each section is its REST endpoint's own response, and a section the caller may not read carries only an error code |
 | `compliance_posture` | `compliance:frameworks:read` | framework/control posture |
 | `list_campaigns` | `pentest:campaigns:read` | the person's campaigns, newest first: role, phase, TLP, dates, counts, next action; `phase`, `role`, `search`, `include_archived` filters, paged |
 | `my_work` | `pentest:campaigns:read` | the person's active campaigns with something to do (drafts, assigned findings, reviews, retests; for a client, open published findings), with the next action, paged |
@@ -82,6 +84,21 @@ read tools `readOnlyHint: true, idempotentHint: true`, the write tool
 
 Tools that took `id` take `campaign_id` or `finding_id` like the others; `id`
 is still accepted.
+
+### Asset tools
+
+`search_assets` and `get_asset` read the same services as the console's
+inventory and asset page (`AssetService.ListAssets`, `GetAssetInCallerScope`,
+`GetCoverage`, `GetResolvedPorts`, `GetLineage`, `ListAssetChanges`) with the
+connection's request context, so the data-scope enforcer applies the
+connection's scope and the private-program rule exactly as for the console;
+an asset outside it is `not_found`. The sections are built by the REST
+handlers' own response mappers (`toAssetResponse`, `toResolvedPortsResponse`,
+`toLineageResponse`, `toChangePage`), so the tool and the page show the same
+fields, redacted the same way. The findings section reads the findings list
+as the same caller as `list_findings`. A name that matches several assets
+returns them as candidates. Owners, certificates, technologies, attack paths
+and remediation tasks of an asset are not sections yet.
 
 ### Paging
 

@@ -200,6 +200,10 @@ type MCPHandler struct {
 	// (SetFullDataRoles), only to explain a partial view; nil: the scope
 	// notice never names the organization's total.
 	roles mcpFullDataRoles
+	// assetCtx backs get_asset's page sections (SetAssetContext);
+	// assetWebBase is the web origin of its console links.
+	assetCtx     mcpAssetContext
+	assetWebBase string
 }
 
 // mcpFullDataRoles is the data-scope enforcer's person-level role fact
