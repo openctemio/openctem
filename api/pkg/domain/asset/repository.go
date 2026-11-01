@@ -314,6 +314,11 @@ type Filter struct {
 	// successful run of any capability within CoverageWindow ("covered"),
 	// or none ("uncovered"). "" = no filter.
 	Coverage string
+	// CoverageCause keeps the uncovered assets whose coverage gap has this
+	// cause (no_sensor, platform_failure, paused, target_unreachable,
+	// never_run, overdue, out_of_scope, other); it implies "uncovered".
+	// Unknown values are ignored. "" = no filter.
+	CoverageCause string
 	// Technologies keeps assets using any of these technologies (normalised
 	// names, RFC-112); TechnologyCategories keeps assets with a technology
 	// in any of these categories.
