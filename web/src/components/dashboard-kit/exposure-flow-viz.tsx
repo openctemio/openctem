@@ -26,10 +26,11 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Radio, Server, ShieldAlert, Wrench } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useTranslation } from '@/context/i18n-provider'
-import { SegmentedLens } from '@/features/shared/components/segmented-lens'
 import { categoricalVar } from '@/lib/chart-palette'
+import { ViewSwitcher } from '@/features/shared/components/view-switcher'
 import { formatCount, formatMetric, formatRelativeTime } from '@/lib/format-metric'
 import { PRIORITY_CHART_COLORS, isPriorityClass } from '@/lib/priority-colors'
 import { SEVERITY_CHART_COLORS } from '@/lib/severity-colors'
@@ -63,9 +64,6 @@ import type {
   SourceHealth,
   Stage,
 } from './types'
-
-// A lens over one widget's own ranking, not a list's filter.
-const WidgetLens = SegmentedLens // anatomy-ok: ranks and groups the sources inside one dashboard widget
 
 /** Source rows with a value before "Show all": wide and mid cards, a phone. */
 const MAX_SOURCES = 6
@@ -650,26 +648,33 @@ function FlowChart({ result, scope }: { result: FlowResult; scope?: 'organizatio
       {intake && (hasAssets || hasInstances) && (
         <div className="mb-1 flex flex-wrap gap-2">
           {hasAssets && (
-            <WidgetLens
-              label={t('dashboardKit.flow.measure.label', 'Rank sources by')}
+            <ViewSwitcher
               value={m}
               onChange={setMeasure}
               options={[
-                { value: 'findings', label: t('dashboardKit.flow.measure.findings', 'Findings') },
-                { value: 'assets', label: t('dashboardKit.flow.measure.assets', 'Assets') },
+                {
+                  value: 'findings',
+                  label: t('dashboardKit.flow.measure.findings', 'Findings'),
+                  icon: ShieldAlert,
+                },
+                {
+                  value: 'assets',
+                  label: t('dashboardKit.flow.measure.assets', 'Assets'),
+                  icon: Server,
+                },
               ]}
             />
           )}
           {hasInstances && (
-            <WidgetLens
-              label={t('dashboardKit.flow.group.label', 'Group sources by')}
+            <ViewSwitcher
               value={g}
               onChange={setGroup}
               options={[
-                { value: 'tool', label: t('dashboardKit.flow.group.tool', 'Tool') },
+                { value: 'tool', label: t('dashboardKit.flow.group.tool', 'Tool'), icon: Wrench },
                 {
                   value: 'instance',
                   label: t('dashboardKit.flow.group.instance', 'Source instance'),
+                  icon: Radio,
                 },
               ]}
             />

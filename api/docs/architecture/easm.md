@@ -322,6 +322,12 @@ added automatically: a name never lends its address authority (dangling DNS,
 shared hosting and released cloud addresses would make a scan probe a third
 party).
 
+Each offered or already-checked address carries `ownership` (band
+`high`/`medium`/`low`/`unknown`, a score that only orders, and the signals
+with their parameters), computed by `pkg/domain/addrowner` from the rows the
+card already reads; the card lists addresses strongest first and counts them
+in `bands`. Rules and threats: RFC-054 §21. It authorizes nothing.
+
 ## 4b3. Inventory triage (built, research/124)
 
 Discovered assets are triaged after the fact, in the inventory, in bulk
