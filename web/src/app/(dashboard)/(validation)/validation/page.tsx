@@ -1,291 +1,249 @@
 'use client'
 
-import { useMemo } from 'react'
-import Link from '@/components/link'
-import { ClipboardList, Grid3x3, RotateCcw, ShieldCheck, Swords } from 'lucide-react'
 import { Main } from '@/components/layout'
-import { Card, CardContent } from '@/components/ui/card'
-import { Skeleton } from '@/components/ui/skeleton'
-import {
-  EmptyState,
-  LinkCard,
-  MetricStrip,
-  PageHeader,
-  PageStack,
-  RelativeTime,
-  SettingsSection,
-  type MetricStripItem,
-} from '@/features/shared'
+import { ExternalLink } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { MetricStrip, PageHeader, PageStack, type MetricStripItem } from '@/features/shared'
+import { useDocsHref } from '@/context/brand-provider'
+import { DOCS } from '@/lib/docs-links'
+import { useFormatList } from '@/lib/format-list'
 import { useValidationCoverage } from '@/features/validation/api/use-validation-coverage'
-import { useModuleEnabled } from '@/features/integrations/api/use-tenant-modules'
+import { useTranslation } from '@/context/i18n-provider'
+import { useModuleEnabled, useTenantModules } from '@/features/integrations/api/use-tenant-modules'
 import {
-  useAdaptedAllPentestFindings,
   useAdaptedCampaigns,
   useAdaptedPentestFindingPage,
   RETEST_PENDING_STATUSES,
 } from '@/features/pentest/api/use-pentest-api'
-import { campaignHref } from '@/features/pentest/lib/campaign-links'
-import { useControlTests, useSimulations } from '@/features/simulation/api/use-simulation-api'
+import { useFindingsCount } from '@/features/findings/api/use-findings-count'
+import { useReadyToCloseCount } from '@/features/closure-review/api'
 import { useHasPermission, Permission } from '@/lib/permissions'
-
-const pct = (validated: number, total: number) =>
-  total > 0 ? `${Math.round((validated / total) * 100)}%` : '–'
-
-interface Activity {
-  key: string
-  when: string
-  what: string
-  where: string
-  href: string
-}
+import {
+  CLOSED_P0_P1,
+  REOPENED_RECENTLY,
+  STILL_REPRODUCES,
+  VALIDATED_RECENTLY,
+  awaitingValidationQuery,
+  findingsHref,
+  switchedOffModules,
+} from '@/features/validation/lib/overview-queries'
+import {
+  ModulesOffHint,
+  WaitingForYou,
+  type StartLink,
+  type WaitingItem,
+} from '@/features/validation/components/validation-overview'
 
 /**
- * Validation › Overview: is the program proving its fixes and its controls?
+ * Validation › Overview (research/370): how much of the closed P0/P1 work is
+ * proven and what the latest re-checks said (one strip), then what is
+ * waiting for the viewer.
  *
- * - Coverage: of the P0/P1 findings that were closed, the share with
- *   validation evidence, the same definition the CTEM cycle's close gate uses
- *   (api computeValidationCoverage, served tenant-wide by
- *   GET /api/v1/validation/coverage `by_priority`).
- * - Retests due, open campaigns, and the latest activity across pentest,
- *   attack simulation and control testing, each only when its module is on.
+ * Every figure is a findings list (or the coverage KPI, the definition the
+ * CTEM cycle's close gate uses) read through the ordinary API, so the server
+ * applies the viewer's tenant and data scope. A module the organization
+ * switched off leaves the page without a request to its API; owners and
+ * admins get one quiet line pointing at Settings › Modules.
  */
 export default function ValidationOverviewPage() {
+  const { t } = useTranslation()
+  const docsHref = useDocsHref()
+  const formatList = useFormatList()
   const canPentest = useHasPermission(Permission.PentestRead)
+  const canVerify = useHasPermission(Permission.FindingsVerify)
+  const canManageModules = useHasPermission(Permission.TeamUpdate)
   const pentestOn = useModuleEnabled('pentest') && canPentest
   const simOn = useModuleEnabled('attack_simulation') && canPentest
   const controlsOn = useModuleEnabled('control_testing') && canPentest
-  const attackCoverageOn = useModuleEnabled('mitre_coverage') && canPentest
+  const { moduleIds, notEntitledModuleIds, isLoading: modulesLoading } = useTenantModules()
 
-  const { data: coverage, isLoading: coverageLoading } = useValidationCoverage()
-  // null skips the request when the pentest module is off (no 403 noise).
-  const { data: campaignsData, isLoading: campaignsLoading } = useAdaptedCampaigns(
-    pentestOn ? undefined : null
-  )
-  const { data: findingsData, isLoading: findingsLoading } = useAdaptedAllPentestFindings(
-    pentestOn ? { per_page: 200 } : null
-  )
-  const { data: simsData } = useSimulations({ enabled: simOn })
-  const { data: testsData } = useControlTests({ enabled: controlsOn })
-
-  const campaigns = useMemo(() => campaignsData?.data ?? [], [campaignsData])
-  const findings = useMemo(() => findingsData?.data ?? [], [findingsData])
-  // Counted on the server over every finding the viewer may see, not over
-  // the one page of findings loaded above.
+  const awaitingQuery = awaitingValidationQuery(pentestOn)
+  // The query depends on the pentest module, which is unknown until the module
+  // list arrives: counting earlier would send a second request for the same figure.
+  const awaiting = useFindingsCount({ extra: awaitingQuery }, !modulesLoading)
+  const readyToClose = useReadyToCloseCount(canVerify)
+  // Counted on the server over every pentest finding the viewer may see.
   const { data: retestsDueData } = useAdaptedPentestFindingPage(
     pentestOn ? { statuses: RETEST_PENDING_STATUSES, perPage: 1 } : null
   )
-  const retestsDue = retestsDueData?.total ?? 0
-  const openCampaigns = campaigns.filter(
-    (c) => c.status === 'in_progress' || c.status === 'planning'
-  ).length
+  // null skips the request when the pentest module is off (no 403 noise).
+  const { data: campaignsData } = useAdaptedCampaigns(pentestOn ? undefined : null)
+  const openCampaigns = pentestOn
+    ? (campaignsData?.data ?? []).filter(
+        (c) => c.status === 'in_progress' || c.status === 'planning'
+      ).length
+    : undefined
 
-  const byPriority = coverage?.by_priority ?? []
+  const validated = useFindingsCount({ extra: VALIDATED_RECENTLY })
+  const stillReproduces = useFindingsCount({ extra: STILL_REPRODUCES })
+  const reopened = useFindingsCount({ extra: REOPENED_RECENTLY })
+  const {
+    data: coverage,
+    error: coverageError,
+    isLoading: coverageLoading,
+  } = useValidationCoverage()
 
+  const covTotal = coverage?.p0_p1_total ?? 0
+  const covValidated = coverage?.p0_p1_validated ?? 0
+  const share = (v: number, n: number) => (n > 0 ? Math.round((v / n) * 100) : 0)
+  const classes = (coverage?.by_priority ?? [])
+    .filter((r) => r.priority === 'P0' || r.priority === 'P1')
+    .map((r) =>
+      t('validation.overview.coverage.class', '{priority} {validated} of {total}', {
+        priority: r.priority,
+        validated: r.validated,
+        total: r.total,
+      })
+    )
+  const dash = (n: number | undefined) => (n === undefined ? '–' : n)
   const metrics: MetricStripItem[] = [
+    {
+      key: 'coverage',
+      label: t('validation.overview.coverage.label', 'P0/P1 validation coverage'),
+      value: coverageError || covTotal === 0 ? '–' : `${share(covValidated, covTotal)}%`,
+      detail: coverageError
+        ? undefined
+        : covTotal === 0
+          ? t('validation.overview.coverage.none', 'No P0 or P1 finding closed yet')
+          : formatList(classes),
+      description: t(
+        'validation.overview.coverage.description',
+        'Closed P0 and P1 findings with validation evidence (pentest, scripted or sensor).'
+      ),
+      href: findingsHref(CLOSED_P0_P1),
+    },
+    {
+      key: 'validated',
+      label: t('validation.overview.outcomes.validated', 'Validated, last 30 days'),
+      value: dash(validated),
+      description: t(
+        'validation.overview.outcomes.validatedHint',
+        'Closed after a re-check stopped reproducing them.'
+      ),
+      href: findingsHref(VALIDATED_RECENTLY),
+    },
+    {
+      key: 'reproduces',
+      label: t('validation.overview.outcomes.reproduces', 'Still reproduces'),
+      value: dash(stillReproduces),
+      tone: 'danger',
+      description: t(
+        'validation.overview.outcomes.reproducesHint',
+        'Open, and the latest re-check reproduced them.'
+      ),
+      href: findingsHref(STILL_REPRODUCES),
+    },
+    {
+      key: 'reopened',
+      label: t('validation.overview.outcomes.reopened', 'Reopened, last 30 days'),
+      value: dash(reopened),
+      tone: 'warning',
+      description: t(
+        'validation.overview.outcomes.reopenedHint',
+        'Came back after they were closed.'
+      ),
+      href: findingsHref(REOPENED_RECENTLY),
+    },
+  ]
+
+  const waiting: WaitingItem[] = [
+    {
+      key: 'awaiting',
+      count: awaiting,
+      title: t('validation.overview.waiting.awaiting.title', 'Fixes waiting for validation'),
+      reason: t(
+        'validation.overview.waiting.awaiting.reason',
+        'Marked fixed; no re-check has confirmed it yet.'
+      ),
+      action: t('validation.overview.waiting.awaiting.action', 'Validate'),
+      href: findingsHref(awaitingQuery),
+    },
     ...(pentestOn
       ? [
-          { key: 'retests', label: 'Retests due', value: retestsDue, href: '/validation/retests' },
+          {
+            key: 'retests',
+            count: retestsDueData?.total,
+            title: t('validation.overview.waiting.retests.title', 'Pentest retests due'),
+            reason: t(
+              'validation.overview.waiting.retests.reason',
+              'Being fixed or fixed, waiting for a retest, across campaigns.'
+            ),
+            action: t('validation.overview.waiting.retests.action', 'Open retest queue'),
+            href: '/validation/retests',
+          },
+        ]
+      : []),
+    ...(canVerify
+      ? [
+          {
+            key: 'ready',
+            count: readyToClose,
+            title: t('validation.overview.waiting.ready.title', 'Ready to close'),
+            reason: t(
+              'validation.overview.waiting.ready.reason',
+              'Closes waiting for a verifier, and recent closes made by the platform.'
+            ),
+            action: t('validation.overview.waiting.ready.action', 'Review'),
+            href: '/findings/ready-to-close',
+          },
+        ]
+      : []),
+    ...(pentestOn
+      ? [
           {
             key: 'campaigns',
-            label: 'Open campaigns',
-            value: openCampaigns,
+            count: openCampaigns,
+            title: t('validation.overview.waiting.campaigns.title', 'Open campaigns'),
+            reason: t(
+              'validation.overview.waiting.campaigns.reason',
+              'In planning or in progress.'
+            ),
+            action: t('validation.overview.waiting.campaigns.action', 'Open campaigns'),
             href: '/pentest/campaigns',
-          },
-        ]
-      : []),
-    ...(simOn
-      ? [
-          {
-            key: 'sims',
-            label: 'Simulations',
-            value: simsData?.total ?? simsData?.data?.length ?? 0,
-            href: '/attack-simulation',
-          },
-        ]
-      : []),
-    ...(controlsOn
-      ? [
-          {
-            key: 'controls',
-            label: 'Control tests',
-            value: testsData?.total ?? testsData?.data?.length ?? 0,
-            href: '/control-testing',
           },
         ]
       : []),
   ]
 
-  const activity: Activity[] = useMemo(() => {
-    const items: Activity[] = []
-    const campaignName = (id: string) => campaigns.find((c) => c.id === id)?.name ?? 'Campaign'
-    for (const f of findings) {
-      items.push({
-        key: `f-${f.id}`,
-        when: f.updatedAt,
-        what: f.title,
-        where: `Pentest: ${campaignName(f.campaignId)}`,
-        href: campaignHref(f.campaignId, 'findings'),
-      })
-    }
-    for (const s of simsData?.data ?? []) {
-      if (!s.last_run_at) continue
-      items.push({
-        key: `s-${s.id}`,
-        when: s.last_run_at,
-        what: s.name,
-        where: 'Attack simulation',
-        href: '/attack-simulation',
-      })
-    }
-    for (const t of testsData?.data ?? []) {
-      if (!t.last_tested_at) continue
-      items.push({
-        key: `c-${t.id}`,
-        when: t.last_tested_at,
-        what: t.name,
-        where: `Control testing: ${t.framework}`,
-        href: '/control-testing',
-      })
-    }
-    return items
-      .filter((i) => i.when && !isNaN(new Date(i.when).getTime()))
-      .sort((a, b) => new Date(b.when).getTime() - new Date(a.when).getTime())
-      .slice(0, 10)
-  }, [findings, campaigns, simsData, testsData])
-
-  const areas = [
+  const starts: StartLink[] = [
     pentestOn && {
       href: '/pentest/campaigns',
-      icon: ClipboardList,
-      title: 'Pentest campaigns',
-      description: 'Engagements with their findings, retests, reports, scope and team.',
+      label: t('validation.overview.start.pentest', 'Pentest campaigns'),
     },
     simOn && {
       href: '/attack-simulation',
-      icon: Swords,
-      title: 'Attack simulation',
-      description: 'Run attack techniques and measure detection and prevention.',
+      label: t('validation.overview.start.simulation', 'Attack simulation'),
     },
     controlsOn && {
       href: '/control-testing',
-      icon: ShieldCheck,
-      title: 'Control testing',
-      description: 'Test security controls against your frameworks.',
+      label: t('validation.overview.start.controls', 'Control testing'),
     },
-    pentestOn && {
-      href: '/validation/retests',
-      icon: RotateCcw,
-      title: 'Retest queue',
-      description: 'Fixed findings waiting to be re-verified, across campaigns.',
-    },
-    attackCoverageOn && {
-      href: '/validation/attack-coverage',
-      icon: Grid3x3,
-      title: 'ATT&CK coverage',
-      description: 'Which ATT&CK techniques your testing has exercised.',
-    },
-  ].filter(Boolean) as {
-    href: string
-    icon: typeof ClipboardList
-    title: string
-    description: string
-  }[]
+  ].filter(Boolean) as StartLink[]
 
-  const loading = coverageLoading || (pentestOn && (campaignsLoading || findingsLoading))
+  const off = canManageModules
+    ? switchedOffModules(moduleIds, notEntitledModuleIds ?? [], modulesLoading)
+    : []
 
   return (
     <Main>
       <PageStack>
         <PageHeader
-          title="Validation"
-          description="Whether fixes and controls are proven, and what is waiting to be re-tested."
-        />
-        {metrics.length > 0 && <MetricStrip loading={loading} items={metrics} />}
-
-        <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
-          <SettingsSection
-            title="Coverage by priority"
-            description="Closed findings with validation evidence (pentest, scripted or sensor)."
-          >
-            <Card className="py-0">
-              <CardContent className="p-4">
-                {coverageLoading ? (
-                  <Skeleton className="h-24 w-full" />
-                ) : byPriority.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No coverage data yet.</p>
-                ) : (
-                  <ul className="space-y-3">
-                    {byPriority.map((row) => {
-                      const share = row.total > 0 ? (row.validated / row.total) * 100 : 0
-                      return (
-                        <li key={row.priority} className="space-y-1">
-                          <div className="flex items-center justify-between text-sm">
-                            <span className="font-medium">{row.priority}</span>
-                            <span className="text-muted-foreground tabular-nums">
-                              {row.validated} of {row.total}, {pct(row.validated, row.total)}
-                            </span>
-                          </div>
-                          <div className="h-1.5 overflow-hidden rounded-full bg-muted">
-                            <div
-                              className="h-full rounded-full bg-primary"
-                              style={{ width: `${share}%` }}
-                            />
-                          </div>
-                        </li>
-                      )
-                    })}
-                  </ul>
-                )}
-              </CardContent>
-            </Card>
-          </SettingsSection>
-
-          <SettingsSection title="Recent activity" description="Latest across validation work.">
-            <Card className="py-0">
-              <CardContent className="p-0">
-                {activity.length === 0 ? (
-                  <EmptyState
-                    icon={ClipboardList}
-                    title="No validation activity yet"
-                    description="Pentest findings, simulation runs and control tests show up here."
-                  />
-                ) : (
-                  <ul className="divide-y">
-                    {activity.map((a) => (
-                      <li key={a.key}>
-                        <Link
-                          href={a.href}
-                          className="flex items-start justify-between gap-3 px-4 py-2.5 hover:bg-muted/50"
-                        >
-                          <span className="min-w-0">
-                            <span className="block truncate text-sm font-medium">{a.what}</span>
-                            <span className="block truncate text-xs text-muted-foreground">
-                              {a.where}
-                            </span>
-                          </span>
-                          <RelativeTime
-                            date={a.when}
-                            className="shrink-0 text-xs text-muted-foreground"
-                          />
-                        </Link>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </CardContent>
-            </Card>
-          </SettingsSection>
-        </div>
-
-        {areas.length > 0 && (
-          <SettingsSection title="Validation areas">
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-              {areas.map((a) => (
-                <LinkCard key={a.href} {...a} />
-              ))}
-            </div>
-          </SettingsSection>
-        )}
+          title={t('validation.overview.title', 'Validation')}
+          description={t(
+            'validation.overview.description',
+            'Whether fixes hold and controls work, and what is waiting for you.'
+          )}
+        >
+          <Button asChild variant="ghost" size="sm">
+            <a href={docsHref(DOCS.validation.overview)} target="_blank" rel="noopener noreferrer">
+              {t('validation.overview.coverage.howMeasured', 'How coverage is measured')}
+              <ExternalLink aria-hidden="true" />
+            </a>
+          </Button>
+        </PageHeader>
+        <MetricStrip items={metrics} loading={coverageLoading} />
+        <WaitingForYou items={waiting} starts={starts} />
+        <ModulesOffHint modules={off} />
       </PageStack>
     </Main>
   )
