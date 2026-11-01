@@ -104,10 +104,14 @@ type RunMapOutcome struct {
 }
 
 // RunMapCoverageGap is one host and why it was not fully covered
-// (breaker_open, rate_floor, blocked or proxy_unavailable).
+// (breaker_open, rate_floor, blocked or proxy_unavailable). Cause and Cert
+// say what the sensor's recheck of the host saw (scanrun.GapCauses,
+// scanrun.GapCerts); the host stays not covered either way.
 type RunMapCoverageGap struct {
 	Host   string `json:"host"`
 	Reason string `json:"reason"`
+	Cause  string `json:"cause,omitempty"`
+	Cert   string `json:"cert,omitempty"`
 	Edge   string `json:"edge,omitempty"`
 	Vendor string `json:"vendor,omitempty"`
 }
@@ -444,25 +448,28 @@ func stepOutcome(output map[string]any) *RunMapOutcome {
 		Unreachable:      num(scanrunapp.StepOutputUnreachable),
 		Skipped:          num(scanrunapp.StepOutputSkipped),
 	}
-	appendGap := func(host, reason, edge, vendor any) {
+	appendGap := func(host, reason, cause, cert, edge, vendor any) {
 		h, _ := host.(string)
 		r, _ := reason.(string)
+		c, _ := cause.(string)
+		ct, _ := cert.(string)
 		e, _ := edge.(string)
 		v, _ := vendor.(string)
 		if h != "" && len(o.CoverageGaps) < scanrundom.MaxTaskCoverageGaps {
-			o.CoverageGaps = append(o.CoverageGaps, RunMapCoverageGap{Host: h, Reason: r, Edge: e, Vendor: v})
+			o.CoverageGaps = append(o.CoverageGaps, RunMapCoverageGap{Host: h, Reason: r,
+				Cause: scanrundom.KnownGapCause(c), Cert: scanrundom.KnownGapCert(ct), Edge: e, Vendor: v})
 		}
 	}
 	switch list := output[scanrunapp.StepOutputCoverageGaps].(type) {
 	case []any:
 		for _, e := range list {
 			if m, ok := e.(map[string]any); ok {
-				appendGap(m["host"], m["reason"], m["edge"], m["vendor"])
+				appendGap(m["host"], m["reason"], m["cause"], m["cert"], m["edge"], m["vendor"])
 			}
 		}
 	case []map[string]string:
 		for _, m := range list {
-			appendGap(m["host"], m["reason"], m["edge"], m["vendor"])
+			appendGap(m["host"], m["reason"], m["cause"], m["cert"], m["edge"], m["vendor"])
 		}
 	}
 	if o.CoverageGapCount < len(o.CoverageGaps) {
