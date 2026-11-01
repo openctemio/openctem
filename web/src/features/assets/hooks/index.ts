@@ -54,6 +54,9 @@ export type { AssetRename } from './use-asset-identity'
 // Asset attribution (RFC-036): state, evidence and a person's decision
 export { useAssetAttribution, useDecideAttribution } from './use-asset-attribution'
 
+// How an asset was found: its ancestor chain
+export { useAssetLineage, assetLineageUrl } from './use-asset-lineage'
+
 // Where asset values come from (RFC-069)
 export {
   useAttributeSources,

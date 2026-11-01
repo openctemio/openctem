@@ -227,6 +227,7 @@
   "dashboardKit.stage.unmeasured": "Not measured",
   "dashboardKit.stage.warn": "Needs attention",
   "dashboardKit.stat.durationDetail": "median, p90 {p90}, {n} fixed",
+  "dashboardKit.stat.ofOpen": "of {den} open",
   "dashboardKit.stat.ofTotal": "{num} of {den}",
   "dashboardKit.state.error": "Couldn't load these figures",
   "dashboardKit.state.loading": "Loading",

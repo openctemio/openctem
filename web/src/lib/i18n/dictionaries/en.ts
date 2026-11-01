@@ -72,6 +72,7 @@ import en_ticketPolicy from './en/ticketPolicy.json'
 import en_ticketingIntegration from './en/ticketingIntegration.json'
 import en_proxyPools from './en/proxyPools.json'
 import en_wordlists from './en/wordlists.json'
+import en_contentRules from './en/contentRules.json'
 import en_scanApprovals from './en/scanApprovals.json'
 import en_scans from './en/scans.json'
 import en_scanDetail from './en/scanDetail.json'
@@ -172,6 +173,7 @@ export const enNamespaces: Record<string, Dictionary> = {
   ticketingIntegration: en_ticketingIntegration,
   proxyPools: en_proxyPools,
   wordlists: en_wordlists,
+  contentRules: en_contentRules,
   scanApprovals: en_scanApprovals,
   scans: en_scans,
   scanDetail: en_scanDetail,
