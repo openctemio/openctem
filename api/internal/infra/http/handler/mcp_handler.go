@@ -67,6 +67,9 @@ type jsonrpcError struct {
 
 type mcpFindingReader interface {
 	ListFindings(ctx context.Context, in finding.ListFindingsInput) (pagination.Result[*vulnerability.Finding], error)
+	// ListFindingsBySpec is the findings list (GET /findings) for a decoded
+	// filter, as the caller: list_findings reads it.
+	ListFindingsBySpec(ctx context.Context, c finding.FilterCaller, spec *filterspec.Spec) (pagination.Result[*vulnerability.Finding], error)
 	// GetFindingWithScope enforces the caller's data-scope + pentest membership
 	// (never the admin-bypass GetFinding).
 	GetFindingWithScope(ctx context.Context, tenantID, findingID, actingUserID string, isAdmin bool) (*vulnerability.Finding, error)
