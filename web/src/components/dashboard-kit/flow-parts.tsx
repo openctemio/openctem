@@ -225,6 +225,8 @@ export interface FlowTipContent {
   rows: Array<[string, string]>
   definition?: string
   link?: { label: string; href: string | null | undefined }
+  /** Further lists the figure relates to (a sensor's page), after the main link. */
+  more?: Array<{ label: string; href: string | null | undefined }>
 }
 
 /**
@@ -283,6 +285,18 @@ export function FlowTip({
           {content.link.label}
         </Link>
       )}
+      {content.more?.map((m) => {
+        const to = safeInternalHref(m.href)
+        return to ? (
+          <Link
+            key={m.label}
+            href={to}
+            className="mt-1 block text-xs text-signal-text hover:underline"
+          >
+            {m.label}
+          </Link>
+        ) : null
+      })}
     </div>
   )
 }
