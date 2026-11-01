@@ -226,6 +226,8 @@ export function receiptKindLabel(t: T, kind?: string): string {
       return t('findings.receipts.kindCiRun', 'CI run')
     case 'connector':
       return t('findings.receipts.kindConnector', 'Connector sync')
+    case 'platform':
+      return t('findings.receipts.kindPlatform', 'Platform match')
     default:
       return t('findings.receipts.kindSensor', 'Sensor report')
   }

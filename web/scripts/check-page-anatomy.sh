@@ -75,7 +75,7 @@ hits="$(printf '%s\n' "$added" | grep -E '<StatsCard\b' || true)"
 [[ -n "$hits" ]] && report "New StatsCard tiles:" "$hits" \
   "Put the page's numbers in one MetricStrip (features/shared): every tile a link (href) or a filter toggle (onClick), at most 5, no corner icons."
 
-OWNERS='(features/shared/components/metric-strip\.tsx|features/shared/components/page-header\.tsx|components/dashboard-kit/|app/\(auth\)/|features/legal/)'
+OWNERS='(features/shared/components/metric-strip\.tsx|features/shared/components/overview-answer\.tsx|features/shared/components/page-header\.tsx|components/dashboard-kit/|app/\(auth\)/|features/legal/)'
 hits="$(printf '%s\n' "$added" | grep -Ev "^(web/)?src/${OWNERS}" \
   | grep -E '\btext-(2xl|3xl|4xl)\b' | grep -E '\bfont-(bold|semibold)\b' || true)"
 [[ -n "$hits" ]] && report "New ad-hoc metric tile (a big bold number):" "$hits" \

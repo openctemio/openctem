@@ -25,8 +25,20 @@ func registerMCPOAuthRoutes(router Router, h *handler.MCPOAuthHandler, rateLimit
 	router.GET("/oauth/authorize", h.Authorize, pub...)
 	router.POST("/oauth/token", h.Token, pub...)
 	router.POST("/oauth/revoke", h.Revoke, pub...)
+	// RFC 8628 device authorization endpoint: a terminal without a browser
+	// asks for a device code and a user code; rate limited like the token
+	// endpoint it then polls.
+	router.POST("/oauth/device_authorization", h.DeviceAuthorization, pub...)
 
 	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
+
+	// Entering a terminal's user code: any member, for themselves, in the
+	// session's organization (the consent that follows grants no more than
+	// they hold). Attempts are limited per address and per person.
+	userCodeLimiter := newAuthRateLimiter("mcp-user-code").UserCodeMiddleware()
+	router.Group("/api/v1/oauth/device", func(r Router) {
+		r.POST("/", h.EnterDeviceCode, userCodeLimiter)
+	}, tenantMiddlewares...)
 
 	router.Group("/api/v1/oauth/requests", func(r Router) {
 		// Any member may connect an application for themselves: the grant

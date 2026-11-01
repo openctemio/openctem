@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Bot, Database, Loader2, ShieldQuestion, Unplug } from 'lucide-react'
+import { Bot, Database, Loader2, ShieldQuestion, Terminal, Unplug } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Badge } from '@/components/ui/badge'
@@ -126,7 +126,12 @@ export function ConnectionsList({
             <div className="min-w-0 space-y-1">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="font-medium break-words">{c.client_name}</span>
-                {c.client_kind === 'dynamic' ? (
+                {c.flow === 'device' ? (
+                  <Badge variant="outline" className="gap-1">
+                    <Terminal className="h-3 w-3" aria-hidden />
+                    {t('mcp.connections.terminal', 'Terminal sign-in')}
+                  </Badge>
+                ) : c.client_kind === 'dynamic' ? (
                   <Badge variant="outline" className="gap-1">
                     <ShieldQuestion className="h-3 w-3" aria-hidden />
                     {t('mcp.client.unverified', 'Unverified')}
