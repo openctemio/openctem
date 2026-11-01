@@ -58,6 +58,13 @@ func (h *AssetHandler) GetLineage(w http.ResponseWriter, r *http.Request) {
 		h.handleServiceError(w, err)
 		return
 	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(toLineageResponse(l))
+}
+
+// toLineageResponse is the lineage the REST endpoint and the MCP get_asset
+// tool return; a hop outside the caller's scope carries no identity.
+func toLineageResponse(l *assetdom.Lineage) AssetLineageResponse {
 	out := AssetLineageResponse{Nodes: make([]AssetLineageNode, 0, len(l.Nodes)),
 		MaxDepth: assetdom.LineageMaxDepth, Truncated: l.Truncated}
 	for _, n := range l.Nodes {
@@ -69,6 +76,5 @@ func (h *AssetHandler) GetLineage(w http.ResponseWriter, r *http.Request) {
 		}
 		out.Nodes = append(out.Nodes, node)
 	}
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(out)
+	return out
 }

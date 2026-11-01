@@ -53,6 +53,18 @@ export const IOC_SOURCE_LABELS: Record<IOCSource, string> = {
   manual: 'Manual',
 }
 
+type TranslateFn = (key: string, fallback: string) => string
+
+/** Localised IOC type name; the English map is the fallback. */
+export function iocTypeLabel(t: TranslateFn, type: IOCType): string {
+  return t(`threatIntel.iocs.type.${type}`, IOC_TYPE_LABELS[type] ?? type)
+}
+
+/** Localised IOC source name; the English map is the fallback. */
+export function iocSourceLabel(t: TranslateFn, source: IOCSource): string {
+  return t(`threatIntel.iocs.source.${source}`, IOC_SOURCE_LABELS[source] ?? source)
+}
+
 export interface IOC {
   id: string
   tenant_id: string

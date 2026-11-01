@@ -24,7 +24,7 @@ export interface ConsentScope {
 }
 
 /** Why the organization's policy refuses the application. */
-export type ConsentBlocked = 'mcp_disabled' | 'client_not_allowed'
+export type ConsentBlocked = 'mcp_disabled' | 'client_not_allowed' | 'device_flow_disabled'
 
 export interface ConsentRequest {
   id: string
@@ -52,6 +52,17 @@ export interface ConsentRequest {
    */
   full_data_available?: boolean
   expires_at: string
+  /**
+   * "code": the application sent the browser here. "device": a terminal
+   * showed a code the person typed in at /oauth/device.
+   */
+  flow?: 'code' | 'device'
+  /** Device flow: where and when the terminal asked, and this browser's address. */
+  requester_ip?: string
+  requester_user_agent?: string
+  requested_at?: string
+  your_ip?: string
+  same_address?: boolean
 }
 
 export class ConsentError extends Error {
@@ -118,7 +129,8 @@ async function decide(
   }
   const data = (await response.json()) as { redirect_to?: string }
   const to = data.redirect_to ?? ''
-  if (!isSafeRedirect(to)) throw new ConsentError('', 400)
+  // A terminal sign-in has nowhere to send the browser: "" means done here.
+  if (to !== '' && !isSafeRedirect(to)) throw new ConsentError('', 400)
   return to
 }
 
@@ -128,6 +140,23 @@ async function decide(
  */
 export const approveConsent = (id: string, fullData = false) => decide(id, 'approve', fullData)
 export const denyConsent = (id: string) => decide(id, 'deny')
+
+/**
+ * Enters the code a terminal shows (device authorization grant) and returns
+ * the id of the request the consent page then shows. Every unusable code is
+ * the same 404.
+ */
+export async function enterDeviceCode(userCode: string): Promise<string> {
+  const response = await csrfFetch('/api/v1/oauth/device', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ user_code: userCode }),
+  })
+  if (!response.ok) throw await failure(response)
+  const data = (await response.json()) as { request_id?: string }
+  if (!isRequestId(data.request_id)) throw new ConsentError('', 500)
+  return data.request_id
+}
 
 /**
  * The browser is only ever sent to an http(s) address. The API has already

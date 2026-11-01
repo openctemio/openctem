@@ -1,17 +1,17 @@
 'use client'
 
 import { useMemo } from 'react'
-import { GatedSectionTabs } from '@/features/shared'
 import { ATTACK_SURFACE_SECTION_TABS } from '@/config/section-tabs'
 import { useTranslation } from '@/context/i18n-provider'
 import { useVisibleSectionTabs } from '@/lib/permissions'
 import { useEASMSuggestionCount } from '../hooks/use-easm-suggestions'
+import { AttackSurfaceNav } from './attack-surface-nav'
 
 const REVIEW_HREF = '/attack-surface/review'
 const LOOKALIKES_HREF = '/attack-surface/lookalikes'
 
 /**
- * Overview | Review | Lookalikes | Changes | Web surface | Technologies |
+ * Overview | Review | Lookalikes | Changes | Discovery | Web surface | Technologies |
  * Exposure items | Certificates, the route tabs of
  * Discovery > Attack surface. Review shows how many decisions wait (one per card, not
  * per row), fetched only when that tab is visible.
@@ -33,6 +33,8 @@ export function AttackSurfaceSectionTabs() {
             return { ...tab, label: t('attackSurface.tab.changes', tab.label) }
           case LOOKALIKES_HREF:
             return { ...tab, label: t('lookalikes.tab', tab.label) }
+          case '/attack-surface/discovery':
+            return { ...tab, label: t('attackSurface.tab.discovery', tab.label) }
           case '/attack-surface/technologies':
             return { ...tab, label: t('attackSurface.tab.technologies', tab.label) }
           case '/attack-surface/exposures':
@@ -48,7 +50,7 @@ export function AttackSurfaceSectionTabs() {
     [t]
   )
   return (
-    <GatedSectionTabs
+    <AttackSurfaceNav
       tabs={tabs}
       label={t('attackSurface.tab.label', 'Attack surface sections')}
       counts={{ [REVIEW_HREF]: waiting }}
