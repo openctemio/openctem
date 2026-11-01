@@ -2054,6 +2054,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 				MaxTokens: cfg.AITriage.MaxTokens, Temperature: cfg.AITriage.Temperature,
 			}, log)
 		s.AIExecutor.SetBudget(budgetSvc)
+		// Per-use-case settings: off refuses, suggest never applies, the data
+		// class ceiling and minimum confidence (docs/architecture/ai-use-cases.md).
+		s.AIExecutor.SetUseCases(s.TenantAI)
+		s.AITriage.SetUseCases(s.TenantAI)
 		if s.PlatformAI != nil {
 			s.AIExecutor.SetOwnProviderPolicy(s.PlatformAI.OrgProviderAllowed)
 		}

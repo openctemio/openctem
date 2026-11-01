@@ -677,6 +677,12 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		w.ControllerManager.Register(controller.NewAIAgentSweepController(svc.AIAnalysis, time.Hour,
 			log.With("controller", "ai-agent-sweep")))
 	}
+	// AI use cases whose automatic results people keep overriding fall back
+	// from auto-apply to suggest.
+	if svc.TenantAI != nil {
+		w.ControllerManager.Register(controller.NewAIUseCaseDowngradeController(svc.TenantAI, 15*time.Minute,
+			log.With("controller", "ai-use-case-downgrade")))
+	}
 
 	registerPurgeControllers(w.ControllerManager, cfg, repos, svc, log)
 	registerSignerLedgerSync(w.ControllerManager, svc, log)
