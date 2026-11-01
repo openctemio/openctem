@@ -1,11 +1,12 @@
 /**
  * Interactive sensor pairing, user plane (api docs/rfcs/RFC-052 §4.1, §4.5).
  *
- * A sensor creates its own key and asks to pair; an administrator finds the
- * request by the short code the sensor printed (or creates an expectation and
- * runs `openctemio-sensor pair <CODE>` on the host), compares the fingerprint
- * shown on both sides and approves with step-up re-authentication. No secret
- * passes through the browser: the code and fingerprint are public values.
+ * A sensor creates its own key and asks to pair; it prints one code and the
+ * link to approve it on (/activate?code=...). An administrator opens the link,
+ * or the Add sensor dialog finds the sensor by itself (its command carries the
+ * code), picks the fingerprint the host shows out of three and approves with
+ * step-up re-authentication. No secret passes through the browser: the code
+ * and fingerprint are public values.
  *
  * Every route is tenant-scoped by the session. Unknown, expired, used and
  * other-organization codes all answer one 404.
@@ -39,7 +40,11 @@ export interface StepUpProof {
 export interface ApprovePairingRequest {
   /** The code the approver entered (forward mode); not needed for an expectation. */
   code?: string
-  fingerprint_confirmed: boolean
+  /**
+   * The fingerprint the approver picked from view.fingerprint_choices: the
+   * one the host shows. Any other closes the request (409 FINGERPRINT_MISMATCH).
+   */
+  fingerprint: string
   /**
    * The organization the review showed (view.organization_id). The API
    * refuses the approval when the session is now in another organization.
