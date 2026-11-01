@@ -340,7 +340,9 @@ func (h *SensorPairingHandler) writeUserError(w http.ResponseWriter, err error) 
 	case errors.Is(err, sensorpairing.ErrNotFound):
 		apierror.NotFound("Pairing request").WriteJSON(w)
 	case errors.Is(err, sensorpairing.ErrFingerprintRequired):
-		apierror.New(http.StatusBadRequest, "FINGERPRINT_NOT_CONFIRMED", "Confirm that the fingerprint shown on the sensor matches before approving").WriteJSON(w)
+		apierror.New(http.StatusBadRequest, "FINGERPRINT_NOT_CONFIRMED", "Pick the fingerprint the sensor shows before approving").WriteJSON(w)
+	case errors.Is(err, sensorpairing.ErrFingerprintMismatch):
+		apierror.New(http.StatusConflict, "FINGERPRINT_MISMATCH", "The fingerprint you picked is not the one the sensor shows, so the request was closed; every administrator was told").WriteJSON(w)
 	case errors.Is(err, authapp.ErrStepUpRequired):
 		apierror.New(http.StatusForbidden, "STEP_UP_REQUIRED", "Re-authenticate to approve a sensor").WriteJSON(w)
 	case errors.Is(err, authapp.ErrStepUpFailed), errors.Is(err, authapp.ErrAccountLocked):
@@ -488,8 +490,10 @@ func (h *SensorPairingHandler) GetExpectation(w http.ResponseWriter, r *http.Req
 type PairingApproveRequest struct {
 	// Code is the code the approver entered (default mode; not needed for
 	// an expectation of this organization).
-	Code                 string `json:"code"`
-	FingerprintConfirmed bool   `json:"fingerprint_confirmed"`
+	Code string `json:"code"`
+	// Fingerprint is the fingerprint the approver picked from the review's
+	// fingerprint_choices: the one the host shows.
+	Fingerprint string `json:"fingerprint"`
 	// OrganizationID is the organization the review showed
 	// (View.organization_id); it must be the session's.
 	OrganizationID string              `json:"organization_id"`
@@ -507,7 +511,7 @@ type PairingApproveRequest struct {
 
 // Approve godoc
 // @Summary      Approve a sensor pairing
-// @Description  Binds the sensor's key to this organization: a new sensor, or the registration being re-paired (its earlier keys revoked). Needs fingerprint_confirmed=true, organization_id equal to the session's organization (409 ORGANIZATION_MISMATCH otherwise) and step-up re-authentication (TOTP, else password, else a sign-in younger than 10 minutes). Audited at high severity; every administrator is notified.
+// @Description  Binds the sensor's key to this organization: a new sensor, or the registration being re-paired (its earlier keys revoked). Needs fingerprint (the one of the review's fingerprint_choices the host shows; any other closes the request, 409 FINGERPRINT_MISMATCH), organization_id equal to the session's organization (409 ORGANIZATION_MISMATCH otherwise) and step-up re-authentication (TOTP, else password, else a sign-in younger than 10 minutes). Audited at high severity; every administrator is notified.
 // @Tags         sensor-pairing
 // @Accept       json
 // @Produce      json
@@ -542,7 +546,7 @@ func (h *SensorPairingHandler) Approve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	v, err := h.svc.Approve(r.Context(), a, id, sensorpairing.ApproveInput{
-		Code: req.Code, FingerprintConfirmed: req.FingerprintConfirmed, OrganizationID: req.OrganizationID, StepUp: req.StepUp, Name: req.Name,
+		Code: req.Code, Fingerprint: req.Fingerprint, OrganizationID: req.OrganizationID, StepUp: req.StepUp, Name: req.Name,
 		Type: sensordom.SensorType(req.Type), ZoneIDs: zones, Profile: req.GrantProfile, RepairSensorID: req.RepairSensorID,
 	})
 	if err != nil {

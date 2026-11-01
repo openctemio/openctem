@@ -48,7 +48,7 @@ func (f *fixture) paired(a sensorpairing.Actor, name string) (*sensor, string) {
 	id, _ := shared.IDFromString(s.resp.PairingID)
 	in := approve(a, s.resp.UserCode)
 	in.Name = name
-	if _, err := f.svc.Approve(ctx, a, id, in); err != nil {
+	if _, err := f.approveP(ctx, a, id, in); err != nil {
 		f.t.Fatalf("approve %s: %v", name, err)
 	}
 	st := f.status(s)
@@ -132,28 +132,28 @@ func TestPairing_ConsoleRepair_DB(t *testing.T) {
 	if _, err := f.svc.GetExpectation(ctx, b, pid); !errors.Is(err, sensorpairing.ErrNotFound) {
 		t.Fatalf("cross-tenant read: %v", err)
 	}
-	if _, err := f.svc.Approve(ctx, b, pid, approve(b, "")); !errors.Is(err, sensorpairing.ErrNotFound) {
+	if _, err := f.approveP(ctx, b, pid, approve(b, "")); !errors.Is(err, sensorpairing.ErrNotFound) {
 		t.Fatalf("cross-tenant approve: %v", err)
 	}
 	// Step-up is required as for every approval.
 	in := approve(a, "")
 	in.RepairSensorID = sensorID
 	f.stepUp.ok = false
-	if _, err := f.svc.Approve(ctx, a, pid, in); err == nil {
+	if _, err := f.approveP(ctx, a, pid, in); err == nil {
 		t.Fatal("re-pair approved without step-up")
 	}
 	f.stepUp.ok = true
 	// The approval must name the sensor it re-pairs.
-	if _, err := f.svc.Approve(ctx, a, pid, approve(a, "")); !errors.Is(err, sensorpairing.ErrRepairNotAcknowledged) {
+	if _, err := f.approveP(ctx, a, pid, approve(a, "")); !errors.Is(err, sensorpairing.ErrRepairNotAcknowledged) {
 		t.Fatalf("re-pair approved without naming the sensor: %v", err)
 	}
 	wrong := approve(a, "")
 	wrong.RepairSensorID = shared.NewID().String()
-	if _, err := f.svc.Approve(ctx, a, pid, wrong); !errors.Is(err, sensorpairing.ErrRepairNotAcknowledged) {
+	if _, err := f.approveP(ctx, a, pid, wrong); !errors.Is(err, sensorpairing.ErrRepairNotAcknowledged) {
 		t.Fatalf("re-pair approved naming another sensor: %v", err)
 	}
 	in.Name = "renamed" // ignored: the registration is kept
-	if _, err := f.svc.Approve(ctx, a, pid, in); err != nil {
+	if _, err := f.approveP(ctx, a, pid, in); err != nil {
 		t.Fatalf("re-pair approve: %v", err)
 	}
 	// The old key stops at approval; the sensor id and name stay.
@@ -217,10 +217,10 @@ func TestPairing_OrdinaryCodeCannotTargetASensor_DB(t *testing.T) {
 	// Naming a sensor on an approval that adds one is refused too.
 	bad := approve(a, "")
 	bad.RepairSensorID = victimID
-	if _, err := f.svc.Approve(ctx, a, pid, bad); !errors.Is(err, sensorpairing.ErrRepairNotAcknowledged) {
+	if _, err := f.approveP(ctx, a, pid, bad); !errors.Is(err, sensorpairing.ErrRepairNotAcknowledged) {
 		t.Fatalf("approval naming a sensor for a new one: %v", err)
 	}
-	if _, err := f.svc.Approve(ctx, a, pid, approve(a, "")); err != nil {
+	if _, err := f.approveP(ctx, a, pid, approve(a, "")); err != nil {
 		t.Fatalf("approve: %v", err)
 	}
 	st := f.status(intruder)

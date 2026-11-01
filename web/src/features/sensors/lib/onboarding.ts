@@ -1,7 +1,7 @@
 /**
  * Pure helpers of the "Add sensor" panel (api docs/architecture/sensor-pairing.md,
- * "Onboarding"): where the sensor runs, how it joins, where the pairing is,
- * and what to do when the sensor's log says something went wrong.
+ * "Onboarding"): where the sensor runs, where the pairing is, and what to do
+ * when the sensor's log says something went wrong.
  */
 
 import type { SensorPairingView } from '@/lib/api/sensor-pairing-hooks'
@@ -38,11 +38,8 @@ export const ONBOARDING_PLATFORMS: OnboardingPlatformOption[] = [
   { key: 'linux', labelKey: 'sensors.onboard.platform.linux', field: 'cli' },
 ]
 
-/** How the sensor joins the organization. */
-export type JoinMethod = 'code' | 'interactive'
-
 /**
- * Where a "create a pairing code first" pairing stands, in the order the
+ * Where an Add sensor pairing stands, in the order the
  * administrator sees it: no code yet, waiting for the sensor, the sensor is
  * attached (compare the fingerprint and approve), approved (the sensor
  * confirms), online (it called home with its new identity). `ended` is a
@@ -109,8 +106,8 @@ export const TROUBLESHOOTING: TroubleshootingItem[] = [
     lines: ['dial tcp', 'x509: certificate signed by unknown authority', 'proxyconnect tcp'],
   },
   {
-    key: 'policy',
-    lines: ['SENSOR_LOCAL_POLICY'],
+    key: 'fingerprint',
+    lines: ['pairing: an administrator picked another fingerprint'],
   },
   {
     key: 'denied',

@@ -125,11 +125,10 @@ func TestTemplates_DockerRunWorksAsPasted(t *testing.T) {
 			"-e SENSOR_API_URL='https://192.0.2.204'",
 			"-e SENSOR_API_KEY='rda_4b1e0123456789abcdef'",
 			"-e SSL_CERT_DIR=/etc/openctem/certs",
-			// The CA and the sensor-local policy both live under /etc/openctem,
-			// mounted read-only; the policy is required (fail closed).
+			// The CA, the host owner's optional narrowing policy and the
+			// kill switch live under /etc/openctem, mounted read-only.
 			"-v /etc/openctem:/etc/openctem:ro",
-			"sudo install -m 0644 sensor-policy.yaml /etc/openctem/sensor-policy.yaml",
-			"-e SENSOR_LOCAL_POLICY=/etc/openctem/sensor-policy.yaml",
+			"-e SENSOR_KILL_SWITCH_FILE=/etc/openctem/STOP",
 			// Hardened by default (RFC-040 §5.10).
 			"--read-only --cap-drop ALL --security-opt no-new-privileges:true",
 			"--tmpfs /tmp",
@@ -244,11 +243,12 @@ func TestTemplates_ComposeIsValid(t *testing.T) {
 			s.Volumes[1] != "./policy:/etc/openctem/policy:ro" {
 			t.Errorf("[%s] volumes = %v, want the data volume and the read-only policy", dir, s.Volumes)
 		}
-		// Hardened, with the sensor-local policy required (RFC-040).
+		// Hardened; the local policy is optional (narrow only), the kill
+		// switch always honored.
 		if !s.ReadOnly || len(s.CapDrop) != 1 || s.CapDrop[0] != "ALL" || len(s.SecurityOpt) != 2 ||
 			s.SecurityOpt[0] != "no-new-privileges:true" || s.SecurityOpt[1] != "seccomp=./sensor-seccomp.json" || len(s.Tmpfs) != 1 || s.Tmpfs[0] != "/tmp" ||
 			s.Environment["XDG_CONFIG_HOME"] != "/tmp/.config" || s.Environment["XDG_CACHE_HOME"] != "/tmp/.cache" ||
-			s.Environment["SENSOR_LOCAL_POLICY"] != "/etc/openctem/policy/sensor-policy.yaml" ||
+			s.Environment["SENSOR_LOCAL_POLICY"] != "" ||
 			s.Environment["SENSOR_KILL_SWITCH_FILE"] != "/etc/openctem/policy/STOP" {
 			t.Errorf("[%s] hardening/policy: read_only=%v cap_drop=%v security_opt=%v tmpfs=%v env=%v", dir,
 				s.ReadOnly, s.CapDrop, s.SecurityOpt, s.Tmpfs, s.Environment)
