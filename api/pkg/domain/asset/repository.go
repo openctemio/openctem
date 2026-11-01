@@ -384,6 +384,8 @@ type Filter struct {
 	// tenant's input to it (its unclassified-scans mode is not off).
 	MonitoringStates    []string
 	UnclassifiedScanned bool
+	// Primary keeps the organization's root domains only (PrimarySQL).
+	Primary             bool
 	DiscoveredBy        []string
 	DiscoveryTechniques []string
 	MinConfidence       *int

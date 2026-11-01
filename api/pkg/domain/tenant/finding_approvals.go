@@ -311,3 +311,14 @@ const FPApprovalLoweringDelay = 24 * time.Hour
 // MaxSecondLookPercent bounds the share of single-person false positives
 // sent to a second person for a look.
 const MaxSecondLookPercent = 10
+
+// ApprovalLoweringScheduled reports a change that schedules a lowering: a
+// lower false-positive or risk acceptance level, a lower second-look share
+// or a relaxing policy newly waiting (or rescheduled) in after.
+func ApprovalLoweringScheduled(before, after FindingApprovalSettings) bool {
+	newly := func(b, a *time.Time) bool { return a != nil && (b == nil || !a.Equal(*b)) }
+	return newly(before.PendingFPApprovalAt, after.PendingFPApprovalAt) ||
+		newly(before.PendingAcceptApprovalAt, after.PendingAcceptApprovalAt) ||
+		newly(before.PendingSecondLookAt, after.PendingSecondLookAt) ||
+		newly(before.PendingPolicyAt, after.PendingPolicyAt)
+}

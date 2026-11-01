@@ -2,6 +2,9 @@
 package jwt
 
 import (
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"time"
@@ -454,6 +457,42 @@ func (g *Generator) GenerateGlobalRefreshToken(userID, email, name, sessionID st
 	}
 
 	return signedToken, expiresAt, nil
+}
+
+// GenerateDerivedRefreshToken issues a global refresh token whose every claim
+// is fixed by its inputs: the times are given and the jti is an HMAC of seed
+// under the signing secret. HS256 signing is deterministic, so the same inputs
+// always give the same token. Rotation uses it so a successor never has to be
+// stored: it can be re-derived from its stored row (seed = the replaced
+// token's id) and checked against the stored hash.
+func (g *Generator) GenerateDerivedRefreshToken(userID, email, name, sessionID, seed string, issuedAt, expiresAt time.Time) (string, error) {
+	if userID == "" {
+		return "", ErrEmptyUserID
+	}
+	if seed == "" {
+		return "", errors.New("jwt: empty seed for derived refresh token")
+	}
+	mac := hmac.New(sha256.New, []byte(g.config.Secret))
+	mac.Write([]byte("openctem:refresh-successor:" + seed))
+	jti := hex.EncodeToString(mac.Sum(nil)[:16])
+
+	claims := Claims{
+		UserID:    userID,
+		Email:     email,
+		Name:      name,
+		SessionID: sessionID,
+		TokenType: TokenTypeRefresh,
+		RegisteredClaims: jwt.RegisteredClaims{
+			ID:        jti,
+			Audience:  g.claimAudience(),
+			Issuer:    g.config.Issuer,
+			Subject:   userID,
+			ExpiresAt: jwt.NewNumericDate(expiresAt),
+			IssuedAt:  jwt.NewNumericDate(issuedAt),
+			NotBefore: jwt.NewNumericDate(issuedAt),
+		},
+	}
+	return jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(g.config.Secret))
 }
 
 // GenerateTenantScopedAccessToken creates an access token scoped to a specific tenant.

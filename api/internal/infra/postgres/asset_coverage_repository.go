@@ -31,7 +31,7 @@ func NewAssetCoverageRepository(db *DB) *AssetCoverageRepository {
 }
 
 const coverageRowColumns = `capability, vantage, state, reason, priority, next_due_at, queued_at,
-	last_attempt_at, last_success_at, last_outcome, last_error, last_tool, last_run_id,
+	last_attempt_at, last_success_at, last_outcome, COALESCE(last_edge_vendor, ''), last_error, last_tool, last_run_id,
 	fail_streak, platform_fail_streak, change_token, created_at, updated_at`
 
 func scanCoverageRow(sc interface{ Scan(...any) error }, tenantID, assetID shared.ID) (coverage.Row, error) {
@@ -42,7 +42,7 @@ func scanCoverageRow(sc interface{ Scan(...any) error }, tenantID, assetID share
 		runID                                  sql.NullString
 	)
 	err := sc.Scan(&row.Capability, &row.Vantage, &state, &row.Reason, &row.Priority, &nextDue, &queued,
-		&lastAttempt, &lastSucc, &row.LastOutcome, &row.LastError, &row.LastTool, &runID,
+		&lastAttempt, &lastSucc, &row.LastOutcome, &row.LastEdgeVendor, &row.LastError, &row.LastTool, &runID,
 		&row.FailStreak, &row.PlatformFailStreak, &row.ChangeToken, &row.CreatedAt, &row.UpdatedAt)
 	if err != nil {
 		return row, err
