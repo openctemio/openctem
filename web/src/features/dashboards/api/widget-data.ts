@@ -11,7 +11,7 @@
 
 'use client'
 
-import useSWR from 'swr'
+import useSWR, { type SWRConfiguration } from 'swr'
 import { get, post } from '@/lib/api/client'
 import { useTenant } from '@/context/tenant-provider'
 import type { DashboardKind } from './dashboards.types'
@@ -307,12 +307,16 @@ export function refreshDashboard(kind: DashboardKind, id: string) {
 }
 
 /** Every widget result of one dashboard (the stored snapshot). */
-export function useDashboardData(kind: DashboardKind, id: string | null) {
+export function useDashboardData(
+  kind: DashboardKind,
+  id: string | null,
+  config?: SWRConfiguration
+) {
   const { currentTenant } = useTenant()
   return useSWR<DashboardData>(
     currentTenant && id ? dashboardDataKey(kind, id) : null,
     (url: string) => get<DashboardData>(url),
-    { revalidateOnFocus: false, refreshInterval: dashboardRefreshInterval }
+    { revalidateOnFocus: false, refreshInterval: dashboardRefreshInterval, ...config }
   )
 }
 

@@ -282,9 +282,22 @@ widget has `widget_type` `metric` or `note` and a `config` of this form
 
 | Route | Who | Numbers |
 |---|---|---|
+| `GET /api/v1/me/dashboards/home` | any signed-in member; the organization list only with `dashboards:org:view` or `:manage`, the figures only with `dashboard:read` | the same lists and the same figures as the per-dashboard routes, for the same caller (no query path of its own) |
 | `GET /api/v1/me/dashboards/{id}/data` | `dashboard:read` and the dashboard's owner (another person's dashboard is 404) | the caller's own data scope; per-metric permission applies (below) |
 | `GET /api/v1/organization/dashboards/{id}/data` | `dashboards:org:view` (403 without), inside the audience (404 outside) | the whole organization |
 | `POST /api/v1/me/dashboards/widget-preview` | `dashboard:read` | one spec, the caller's own data scope (400 when the spec would be refused on save) |
+
+The dashboard home opens with `GET /api/v1/me/dashboards/home?choice=<kind>:<id>`:
+one response with `personal`, `organization` (absent when the caller cannot
+read organization dashboards), `landing` and the landing dashboard's `data`.
+The server applies the landing rule: the remembered `choice` while it is in
+the caller's lists, else the caller's own default, else the organization
+default (or its first dashboard), else the caller's first own dashboard. A
+malformed, deleted, foreign or out-of-audience `choice` is ignored without a
+word, so it tells nothing about what exists. When the figures cannot be read
+at that moment (busy, no `dashboard:read`) `data` is left out and the page
+reads the dashboard's `/data` route, which reports why. The page seeds its
+cache from the response and does not wait for the bootstrap.
 
 A personal read also needs the permission of what a metric counts:
 `findings:read` for finding metrics, `assets:read` for asset metrics
