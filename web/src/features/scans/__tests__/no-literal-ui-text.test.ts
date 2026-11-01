@@ -2,7 +2,7 @@ import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { en, vi } from '@/lib/i18n/dictionaries'
-import { findLiteralUiText } from './literal-ui-text'
+import { findLiteralUiText } from '@/lib/__tests__/literal-ui-text'
 
 const ROOT = join(__dirname, '..')
 
