@@ -87,6 +87,10 @@ const ALLOWED: { path: RegExp; why: string }[] = [
   },
   { path: /^src\/config\/__tests__\/pipeline-vocabulary\.test\.ts$/, why: 'this guard' },
   {
+    path: /^src\/lib\/__tests__\/literal-ui-text-debt\.json$/,
+    why: 'lists the CI pipeline sheet by its file path',
+  },
+  {
     path: /^src\/hooks\/__tests__\/list-params-guard\.test\.ts$/,
     why: 'names the CI pipelines view',
   },
