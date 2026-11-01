@@ -19,7 +19,7 @@ export default async function SignUp() {
     if (hasTenant) {
       redirect('/')
     } else {
-      redirect('/onboarding/create-team')
+      redirect('/welcome')
     }
   }
 

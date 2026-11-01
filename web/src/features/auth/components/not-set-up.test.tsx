@@ -27,7 +27,14 @@ vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 
 describe('not set up page', () => {
   it('has en and vi text and opens without a session', () => {
-    for (const key of ['auth.notSetUp.title', 'auth.notSetUp.body', 'auth.notSetUp.backToSignIn']) {
+    for (const key of [
+      'auth.notSetUp.title',
+      'auth.notSetUp.body',
+      'auth.notSetUp.backToSignIn',
+      'auth.notSetUp.stepOtherMethod',
+      'auth.notSetUp.stepAskAdmin',
+      'auth.notSetUp.stepInvitation',
+    ]) {
       expect((en as Record<string, string>)[key], key).toBeTruthy()
       expect((vi_ as Record<string, string>)[key], key).toBeTruthy()
     }
@@ -42,6 +49,16 @@ describe('not set up page', () => {
     expect(screen.queryByRole('link', { name: /request access/i })).not.toBeInTheDocument()
     expect(screen.getByRole('heading', { name: /isn't set up yet/i })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /back to sign in/i })).toHaveAttribute('href', '/login')
+  })
+
+  it('lists next steps and says nothing about the address or an organization', () => {
+    vi.mocked(useAuthProviders).mockReturnValue({
+      data: { social: {}, request_access: false },
+    } as unknown as ReturnType<typeof useAuthProviders>)
+    const { container } = render(<NotSetUpNotice />)
+    expect(screen.getAllByRole('listitem')).toHaveLength(3)
+    expect(screen.getByText(/ask your administrator to invite/i)).toBeInTheDocument()
+    expect(container.textContent).not.toMatch(/@|has an account|no account/i)
   })
 
   it('offers to request access when the platform takes requests', () => {

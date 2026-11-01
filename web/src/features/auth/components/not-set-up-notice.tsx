@@ -26,9 +26,29 @@ export function NotSetUpNotice() {
       <p className="text-sm text-muted-foreground">
         {t(
           'auth.notSetUp.body',
-          'Ask your administrator to invite you. If you received an invitation email, open its link to join.'
+          'This sign-in did not lead to an account on this installation, and accounts are not created automatically here.'
         )}
       </p>
+      <ul className="w-full list-disc space-y-1.5 ps-5 text-start text-sm text-muted-foreground">
+        <li>
+          {t(
+            'auth.notSetUp.stepOtherMethod',
+            'Try another way to sign in, such as your email and password or a different provider.'
+          )}
+        </li>
+        <li>
+          {t(
+            'auth.notSetUp.stepAskAdmin',
+            'Ask your administrator to invite the email address you signed in with.'
+          )}
+        </li>
+        <li>
+          {t(
+            'auth.notSetUp.stepInvitation',
+            'If you received an invitation email, open its link to join.'
+          )}
+        </li>
+      </ul>
       <div className="flex flex-wrap justify-center gap-2">
         {providers?.request_access && (
           <Button asChild>

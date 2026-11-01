@@ -45,6 +45,12 @@ export default async function CreateFirstTeamPage() {
   // with zero tenants.
   const hasPendingTenants = !!cookieStore.get(env.cookies.pendingTenants)?.value
 
+  // A first-time account (no organization at all) belongs in the account
+  // space, which also lists invitations and the account pages.
+  if (!hasPendingTenants) {
+    redirect('/welcome')
+  }
+
   return (
     <div className="mx-auto w-full max-w-md">
       {/* Logout button in top right */}

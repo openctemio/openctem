@@ -18,9 +18,12 @@ import { safeAvatarSrc } from '@/lib/safe-href'
 import { identityProviderLabel } from '@/lib/identity-provider-label'
 import { LeaveOrganization } from '@/features/organization/components/leave-organization'
 import { useTranslation } from '@/context/i18n-provider'
+import { useAccountSpace } from '@/context/account-space-provider'
 
 export default function ProfilePage() {
   const { t } = useTranslation()
+  // No organization open: there is nothing to leave.
+  const accountOnly = useAccountSpace()
   const { profile, isLoading, isError, error, mutate } = useProfile()
   const { updateProfile, isUpdating } = useUpdateProfile()
 
@@ -245,7 +248,7 @@ export default function ProfilePage() {
       </Card>
 
       {/* Every member can leave; the only owner sees why they cannot. */}
-      <LeaveOrganization />
+      {!accountOnly && <LeaveOrganization />}
     </PageStack>
   )
 }

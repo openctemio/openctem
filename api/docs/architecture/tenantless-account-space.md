@@ -44,6 +44,37 @@ router agree.
 | `POST /auth/onboarding/accept` | refresh token | Re-checks the reference, verified address, pending state, the organization's policies; audited `invitation.accepted` |
 | `POST /auth/onboarding/decline` | refresh token | Invitation references only; verified address; pending; deletes the invitation; audited `invitation.deleted` with `declined: true` |
 
+## Creating an organization
+
+`POST /tenants` is on the allow-list, so the creation policy is the only gate, and it is enforced in
+the handler: an organization is created only when the sign-up policy admits an organization
+(`SIGNUP_MODE=open` ceiling and a console policy of `self_service`, and the person's email domain
+does not block new organizations). The defaults:
+
+| Installation | `SIGNUP_MODE` | Console policy | Person may create |
+|---|---|---|---|
+| Self-hosted (default) | `disabled` | `admin_only` | No: only a platform administrator creates organizations |
+| Self-hosted with domain sign-up | `domain` | `admin_only` | No |
+| Hosted self-service | `open` | `self_service` | Yes, unless the domain blocks it |
+
+A policy that cannot be read is `admin_only`. `/auth/onboarding/options` reports the answer for the
+signed-in person as `can_create_organization`; the web hub shows "Create an organization" only when
+it is true, and says to ask an administrator otherwise. A test sends `POST /tenants` with an
+account-only token under each self-hosted setting and expects 403.
+
+## Web
+
+- Sign-in with no organization calls `POST /auth/account-token` and lands on `/welcome`. The web
+  keeps an `app_account_only` cookie as a routing hint (the API trusts only the token).
+- `/welcome` lists invitations (accept, decline), the organization of a verified domain, "Create an
+  organization" when allowed, and links to profile, security, sessions, sign-in methods and
+  preferences.
+- The proxy sends every page of an account-only session except `/welcome`, `/account`,
+  `/account/security` and `/account/preferences` to `/welcome`. Those pages render in a slim shell
+  with no tenant providers.
+- The browser's refresh renews the account-only token while no organization cookie exists.
+- The API client routes `401 TENANT_REQUIRED` to `/welcome` once.
+
 ## What does not change
 
 Step-up for sensitive account changes (password change needs the current password, two-factor off
