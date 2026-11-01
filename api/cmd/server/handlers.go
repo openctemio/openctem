@@ -516,6 +516,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		// Audit every MCP tools/call (which key, tenant, tool, sanitized args, outcome).
 		mcpHandler.SetAuditService(svc.Audit)
 		mcpHandler.SetModuleGate(moduleGate)
+		// The scope notice names the organization's asset total only to a
+		// person whose role reads all of it in the web console.
+		mcpHandler.SetFullDataRoles(svc.DataScope)
 		mcpAuth = apiKeyAuth.Handler
 	}
 	// The organization MCP policy applies to oct_ keys on the MCP endpoint
