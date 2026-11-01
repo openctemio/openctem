@@ -516,6 +516,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		// Audit every MCP tools/call (which key, tenant, tool, sanitized args, outcome).
 		mcpHandler.SetAuditService(svc.Audit)
 		mcpHandler.SetModuleGate(moduleGate)
+		// The scope notice names the organization's asset total only to a
+		// person whose role reads all of it in the web console.
+		mcpHandler.SetFullDataRoles(svc.DataScope)
 		mcpAuth = apiKeyAuth.Handler
 	}
 	// The organization MCP policy applies to oct_ keys on the MCP endpoint
@@ -941,6 +944,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		// Triage fields on list rows: the dispatcher's own gate (research/124).
 		handlers.Asset.SetTriage(svc.ActiveGate, repos.Attribution, svc.Scope)
 		handlers.Asset.SetMonitoring(svc.ActiveGate, repos.Asset)
+		handlers.Exposure.SetItemsView(svc.ActiveGate)
 	}
 	handlers.Scope.SetHiddenPrograms(svc.BountyProgram)
 	if svc.Scan != nil && svc.ActiveGate != nil {

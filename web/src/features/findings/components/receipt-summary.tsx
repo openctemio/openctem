@@ -213,7 +213,8 @@ export function RunReceiptSection({
   )
 }
 
-function kindLabel(t: T, kind?: string): string {
+/** The name of the kind of source a receipt came from (upload, scan run, ...). */
+export function receiptKindLabel(t: T, kind?: string): string {
   switch (kind) {
     case 'upload':
       return t('findings.receipts.kindUpload', 'Import')
@@ -240,6 +241,10 @@ function actionLabel(t: T, action?: string): string {
       return t('findings.receipts.actionReopened', 'reopened it')
     case 'closed':
       return t('findings.receipts.actionClosed', 'closed it')
+    case 'suppressed':
+      return t('findings.receipts.actionSuppressed', 'stored it as decided by a rule')
+    case 'held':
+      return t('findings.receipts.actionHeld', 'held it for review')
     default:
       return t('findings.receipts.actionStillDetected', 'still detected it')
   }
@@ -251,7 +256,7 @@ export function FindingLastSeenIn({ findingId }: { findingId: string }) {
   const { data } = useFindingReceipts(findingId)
   const last: FindingReceipt | undefined = data?.data?.[0]
   if (!last) return <span className="text-muted-foreground">—</span>
-  const label = kindLabel(t, last.source?.kind)
+  const label = receiptKindLabel(t, last.source?.kind)
   return (
     <span
       className="flex flex-wrap items-center gap-x-2 gap-y-1"
