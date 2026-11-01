@@ -1342,6 +1342,10 @@ func wireStepUpGate(handlers *routes.Handlers, svc *Services) {
 	if svc.SensorGrant != nil {
 		svc.SensorGrant.SetStepUpGate(gate)
 	}
+	if svc.TenantAI != nil {
+		// Widening automatic AI triage.
+		svc.TenantAI.SetStepUpGate(gate)
+	}
 	if handlers.CIAdmin != nil {
 		handlers.CIAdmin.SetStepUpGate(gate)
 	}

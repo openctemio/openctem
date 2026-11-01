@@ -1614,6 +1614,10 @@ func (r *AssetRepository) buildWhereClause(filter asset.Filter) (string, []any) 
 		args = append(args, pq.Array(filter.MonitoringStates), filter.UnclassifiedScanned)
 		argIndex += 2
 	}
+	if filter.Primary {
+		// Constant SQL; every subquery is pinned to the asset's tenant.
+		conditions = append(conditions, asset.PrimarySQL("a"))
+	}
 	if len(filter.DiscoveredBy) > 0 {
 		conditions = append(conditions, fmt.Sprintf(
 			"EXISTS (SELECT 1 FROM easm_evidence dbe WHERE dbe.asset_id = a.id AND dbe.tenant_id = a.tenant_id AND dbe.rule = ANY($%d))", argIndex))

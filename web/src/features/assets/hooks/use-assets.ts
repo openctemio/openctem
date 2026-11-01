@@ -125,6 +125,8 @@ export interface AssetSearchFilters {
   scopeStatus?: string[]
   /** The derived monitoring state (monitored, not_monitored, pending_decision, ...). */
   monitoringState?: string[]
+  /** Only primary assets: the organization's root domains (the API reads primary=true only). */
+  isPrimary?: boolean
   discoveredBy?: string[]
   firstSeenAfter?: string
   /** Ask each row's triage (attribution and the scan gate's answer). */
@@ -501,6 +503,9 @@ export function buildAssetQueryParams(filters?: AssetSearchFilters): Record<stri
 
   // Crown jewel
   if (filters.isCrownJewel !== undefined) params.is_crown_jewel = String(filters.isCrownJewel)
+
+  // Primary assets (root domains); there is no "not primary" filter
+  if (filters.isPrimary) params.primary = 'true'
 
   // Bug-bounty program assets
   if (filters.programAssets) params.program_assets = filters.programAssets

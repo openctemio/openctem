@@ -31,6 +31,7 @@ import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { SignalChip } from '@/components/ui/signal-chip'
 import { KeyValueList } from '@/features/shared/components/text-layout'
 import {
   Select,
@@ -43,6 +44,7 @@ import { useTranslation } from '@/context/i18n-provider'
 import { useTenant } from '@/context/tenant-provider'
 import { useNow } from '@/hooks/use-now'
 import { useScanZones } from '@/lib/api/scan-zone-hooks'
+import { formatRelative } from '@/lib/format-date'
 import { invalidateSensorsCache } from '@/lib/api/sensor-hooks'
 import {
   approvePairing,
@@ -292,6 +294,7 @@ export function PairingReview({
           <AlertDescription>{t('sensors.pair.repairBody')}</AlertDescription>
         </Alert>
       )}
+      {view.repair_sensor_id && <RepairComparison view={view} />}
 
       {view.sas ? (
         <PairingFingerprint sas={view.sas} />
@@ -360,6 +363,106 @@ export function PairingReview({
   )
 }
 
+/** What the platform knew of a re-paired sensor (sensorpairing.RepairBefore). */
+export interface RepairBefore {
+  hostname?: string
+  ip_address?: string
+  os?: string
+  arch?: string
+  version?: string
+  status?: string
+  auth_kind?: string
+  last_seen_at?: string
+}
+
+type RepairView = SensorPairingView & { repair_reason?: string; repair_before?: RepairBefore }
+
+/**
+ * Re-pair review: the sensor as the platform last saw it next to the host
+ * that holds the new key. A difference is expected after a move or rebuild;
+ * one nobody can explain is a reason to reject.
+ */
+export function RepairComparison({ view }: { view: SensorPairingView }) {
+  const { t, locale } = useTranslation()
+  const v = view as RepairView
+  const before = v.repair_before ?? {}
+  const facts = view.host_facts ?? {}
+  const rows = [
+    { key: 'hostname', before: before.hostname, now: facts.hostname },
+    { key: 'address', before: before.ip_address, now: view.source_ip },
+    {
+      key: 'system',
+      before: [before.os, before.arch].filter(Boolean).join(' / '),
+      now: [facts.os, facts.arch].filter(Boolean).join(' / '),
+    },
+    { key: 'version', before: before.version, now: facts.sensor_version },
+  ]
+  return (
+    <section
+      aria-labelledby="repair-compare-title"
+      className="space-y-2 rounded-lg border p-3"
+      data-testid="repair-comparison"
+    >
+      <h4 id="repair-compare-title" className="text-sm font-medium">
+        {t('sensors.repair.compare.title')}
+      </h4>
+      {v.repair_reason && (
+        <p className="text-xs text-muted-foreground">
+          {t('sensors.repair.compare.reason', undefined, {
+            reason: t(`sensors.repair.reason.${v.repair_reason}.title`),
+          })}
+        </p>
+      )}
+      <table className="w-full table-fixed text-sm">
+        <thead>
+          <tr className="text-left text-xs text-muted-foreground">
+            <th scope="col" className="w-1/4 pb-1 font-medium">
+              <span className="sr-only">{t('sensors.repair.compare.fact')}</span>
+            </th>
+            <th scope="col" className="pb-1 font-medium">
+              {t('sensors.repair.compare.before')}
+            </th>
+            <th scope="col" className="pb-1 font-medium">
+              {t('sensors.repair.compare.now')}
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => {
+            const changed = !!r.before && !!r.now && r.before !== r.now
+            return (
+              <tr key={r.key} className="align-top">
+                <th scope="row" className="py-1 pr-2 text-left font-normal text-muted-foreground">
+                  {t(`sensors.repair.compare.${r.key}`)}
+                </th>
+                <td className="py-1 pr-2 break-words">{r.before || '-'}</td>
+                <td className="py-1 break-words">
+                  {r.now || '-'}
+                  {changed && (
+                    <SignalChip className="ml-1.5">
+                      {t('sensors.repair.compare.changed')}
+                    </SignalChip>
+                  )}
+                </td>
+              </tr>
+            )
+          })}
+          <tr className="align-top">
+            <th scope="row" className="py-1 pr-2 text-left font-normal text-muted-foreground">
+              {t('sensors.repair.compare.lastSeen')}
+            </th>
+            <td className="py-1 pr-2" colSpan={2}>
+              {before.last_seen_at
+                ? formatRelative(before.last_seen_at, '-', locale)
+                : t('sensors.repair.compare.neverSeen')}
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+  )
+}
+
 function ApprovalForm({
   view,
   code,
@@ -386,6 +489,7 @@ function ApprovalForm({
   const zones = useMemo(() => zonesData?.data ?? [], [zonesData?.data])
   const stepUp = stepUpMethodOf(view.step_up)
   const org = useApprovalOrganization(view)
+  const repair = !!view.repair_sensor_id
 
   const [name, setName] = useState(view.host_facts?.name || view.host_facts?.hostname || '')
   const [type, setType] = useState<SensorType>('worker')
@@ -408,8 +512,7 @@ function ApprovalForm({
     !!org.id &&
     !org.mismatch &&
     matches &&
-    name.trim() !== '' &&
-    integrationOk &&
+    (repair || (name.trim() !== '' && integrationOk)) &&
     (!needsSecret ||
       (stepUp === 'totp' ? secret.length === TOTP_CODE_LENGTH : secret.trim() !== '')) &&
     busy === null
@@ -433,6 +536,7 @@ function ApprovalForm({
         type,
         zone_ids: zoneIds,
         grant_profile: grantProfileValue(profile, integration),
+        repair_sensor_id: view.repair_sensor_id || undefined,
       })
       setSecret('')
       toast.success(t('sensors.pair.approvedTitle'))
@@ -473,93 +577,100 @@ function ApprovalForm({
         if (canSubmit) void approve()
       }}
     >
-      <div className="grid gap-4 sm:grid-cols-2">
-        <div className="space-y-1.5">
-          <Label htmlFor={ids.name}>{t('sensors.pair.name')}</Label>
-          <Input
-            id={ids.name}
-            value={name}
-            maxLength={100}
-            onChange={(e) => setName(e.target.value)}
-          />
-        </div>
-        <div className="space-y-1.5">
-          <Label htmlFor={ids.type}>{t('sensors.pair.type')}</Label>
-          <Select value={type} onValueChange={(v) => setType(v as SensorType)}>
-            <SelectTrigger id={ids.type}>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {SENSOR_TYPES.map((st) => (
-                <SelectItem key={st.value} value={st.value}>
-                  {t(st.labelKey)}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
-
-      <div className="space-y-1.5">
-        <Label htmlFor={ids.profile}>{t('sensors.pair.whatItMayDo')}</Label>
-        <Select value={profile} onValueChange={setProfile}>
-          <SelectTrigger id={ids.profile} data-testid="grant-profile">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {GRANT_PROFILES.map((p) => (
-              <SelectItem key={p.value} value={p.value}>
-                {t(`sensors.grantEdit.profile.${p.value}`, p.label)}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        {selected && (
-          <p className="text-xs text-muted-foreground">
-            {t(`sensors.pair.profileDesc.${selected.value}`, selected.description)}
-          </p>
-        )}
-      </div>
-
-      {PARAMETERISED_PROFILES.includes(profile) && (
-        <div className="space-y-1.5">
-          <Label htmlFor={ids.integration}>
-            {t('sensors.grantEdit.integration')}{' '}
-            <span className="font-normal text-muted-foreground">
-              ({t('sensors.pair.optional')})
-            </span>
-          </Label>
-          <Input
-            id={ids.integration}
-            value={integration}
-            maxLength={64}
-            placeholder={t('sensors.grantEdit.integrationPlaceholder')}
-            onChange={(e) => setIntegration(e.target.value)}
-            aria-invalid={!integrationOk}
-          />
-        </div>
-      )}
-
-      {canReadZones && zones.length > 0 && (
-        <fieldset className="space-y-2">
-          <legend className="text-sm font-medium">{t('sensors.pair.scanZones')}</legend>
-          <div className="flex flex-wrap gap-2">
-            {zones.map((z) => {
-              const on = zoneIds.includes(z.id)
-              return (
-                <ToggleChip
-                  key={z.id}
-                  pressed={on}
-                  onToggle={() =>
-                    setZoneIds(on ? zoneIds.filter((x) => x !== z.id) : [...zoneIds, z.id].sort())
-                  }
-                >
-                  {z.name}
-                </ToggleChip>
-              )
-            })}
+      {/* A re-pair keeps the sensor's name, type, zones and grant. */}
+      {!repair && (
+        <>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label htmlFor={ids.name}>{t('sensors.pair.name')}</Label>
+              <Input
+                id={ids.name}
+                value={name}
+                maxLength={100}
+                onChange={(e) => setName(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor={ids.type}>{t('sensors.pair.type')}</Label>
+              <Select value={type} onValueChange={(v) => setType(v as SensorType)}>
+                <SelectTrigger id={ids.type}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {SENSOR_TYPES.map((st) => (
+                    <SelectItem key={st.value} value={st.value}>
+                      {t(st.labelKey)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
-        </fieldset>
+
+          <div className="space-y-1.5">
+            <Label htmlFor={ids.profile}>{t('sensors.pair.whatItMayDo')}</Label>
+            <Select value={profile} onValueChange={setProfile}>
+              <SelectTrigger id={ids.profile} data-testid="grant-profile">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {GRANT_PROFILES.map((p) => (
+                  <SelectItem key={p.value} value={p.value}>
+                    {t(`sensors.grantEdit.profile.${p.value}`, p.label)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {selected && (
+              <p className="text-xs text-muted-foreground">
+                {t(`sensors.pair.profileDesc.${selected.value}`, selected.description)}
+              </p>
+            )}
+          </div>
+
+          {PARAMETERISED_PROFILES.includes(profile) && (
+            <div className="space-y-1.5">
+              <Label htmlFor={ids.integration}>
+                {t('sensors.grantEdit.integration')}{' '}
+                <span className="font-normal text-muted-foreground">
+                  ({t('sensors.pair.optional')})
+                </span>
+              </Label>
+              <Input
+                id={ids.integration}
+                value={integration}
+                maxLength={64}
+                placeholder={t('sensors.grantEdit.integrationPlaceholder')}
+                onChange={(e) => setIntegration(e.target.value)}
+                aria-invalid={!integrationOk}
+              />
+            </div>
+          )}
+
+          {canReadZones && zones.length > 0 && (
+            <fieldset className="space-y-2">
+              <legend className="text-sm font-medium">{t('sensors.pair.scanZones')}</legend>
+              <div className="flex flex-wrap gap-2">
+                {zones.map((z) => {
+                  const on = zoneIds.includes(z.id)
+                  return (
+                    <ToggleChip
+                      key={z.id}
+                      pressed={on}
+                      onToggle={() =>
+                        setZoneIds(
+                          on ? zoneIds.filter((x) => x !== z.id) : [...zoneIds, z.id].sort()
+                        )
+                      }
+                    >
+                      {z.name}
+                    </ToggleChip>
+                  )
+                })}
+              </div>
+            </fieldset>
+          )}
+        </>
       )}
 
       <div className="flex items-start gap-2 rounded-lg border p-3">
@@ -627,9 +738,11 @@ function ApprovalForm({
           ) : (
             <Check className="h-4 w-4" />
           )}
-          {org.name
-            ? t('sensors.pair.approveInto', undefined, { name: org.name })
-            : t('sensors.pair.approve')}
+          {repair
+            ? t('sensors.repair.approve', undefined, { name: view.repair_sensor_name ?? '' })
+            : org.name
+              ? t('sensors.pair.approveInto', undefined, { name: org.name })
+              : t('sensors.pair.approve')}
         </Button>
       </div>
     </form>

@@ -8,6 +8,7 @@ package tenant
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"strings"
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
@@ -69,6 +70,48 @@ func (s *TenantService) UpdateScanGovernanceSettings(
 		WithMetadata("mode_before", string(before.EffectiveMode())).
 		WithMetadata("mode_after", string(after.EffectiveMode())).
 		WithSeverity(audit.SeverityHigh)
+	modeLowered, rulesLoosened := scanGovernanceLoosened(before, after)
+	if modeLowered || rulesLoosened {
+		event = event.WithSeverity(audit.SeverityCritical).WithMetadata("loosened", true)
+	}
 	s.logAudit(ctx, actx, event)
+	switch {
+	case modeLowered:
+		s.notifyPolicyLoosened(ctx, tenantID, actx, "Scan approval lowered",
+			fmt.Sprintf("scan approval from %s to %s (fewer scans wait for an approver)", before.EffectiveMode(), after.EffectiveMode()),
+			"/settings/scanning/scan-approval")
+	case rulesLoosened:
+		s.notifyPolicyLoosened(ctx, tenantID, actx, "Scan approval rules loosened",
+			"the scan approval rules (a rule that held scans for approval was removed, turned off, set to monitor or edited)",
+			"/settings/scanning/scan-approval")
+	}
 	return &after, nil
+}
+
+// scanGovernanceLoosened reports a lower mode (strict, on, off in that
+// order) and, separately, rules that hold fewer scans: an enforcing rule
+// (enabled, not monitor-only) that is gone, turned off, set to monitor or
+// edited. An edit is counted whatever it changed, so a narrowed condition or
+// a lighter requirement is never missed; adding a rule is not loosening.
+func scanGovernanceLoosened(before, after tenantdom.ScanGovernanceSettings) (modeLowered, rulesLoosened bool) {
+	rank := map[scangov.Mode]int{scangov.ModeOff: 0, scangov.ModeOn: 1, scangov.ModeStrict: 2}
+	modeLowered = rank[after.EffectiveMode()] < rank[before.EffectiveMode()]
+	if after.EffectiveMode() == scangov.ModeOff {
+		// Rules do nothing while the mode is off.
+		return modeLowered, false
+	}
+	kept := make(map[string]scangov.Rule, len(after.Rules))
+	for _, r := range after.Rules {
+		kept[r.ID] = r
+	}
+	for _, b := range before.Rules {
+		if !b.Enabled || b.Monitor {
+			continue
+		}
+		a, ok := kept[b.ID]
+		if !ok || !a.Enabled || a.Monitor || !reflect.DeepEqual(a, b) {
+			return modeLowered, true
+		}
+	}
+	return modeLowered, false
 }

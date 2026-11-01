@@ -51,6 +51,21 @@ describe('useAttentionCount', () => {
     expect(calls.dedup.at(-1)).toBe(false)
   })
 
+  it('counts the root domains to validate across every attribution state', () => {
+    const { result } = renderHook(() => useAttentionCount('validate_primary'))
+    expect(result.current).toBe(549)
+    const q = calls.assets.at(-1)!
+    expect(q).toMatchObject({
+      isPrimary: true,
+      monitoringState: ['pending_decision', 'unvalidated'],
+      page: 1,
+      pageSize: 1,
+      skip: false,
+    })
+    // Names awaiting review are what this queue is about: never hidden here.
+    expect(q.attribution).toContain('needs_review')
+  })
+
   it('reads relationships from the suggestion count and sends no asset query', () => {
     const { result } = renderHook(() => useAttentionCount('relationships'))
     expect(result.current).toBe(12)

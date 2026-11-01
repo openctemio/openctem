@@ -101,13 +101,42 @@ when you are satisfied (this needs the **Widen sensor grants** permission).
 
 ## Re-pairing a sensor
 
-If a sensor's key is lost or may be stolen, pair it again as the same sensor:
-the pairing request names the existing sensor (`repair_sensor_id` on
-`POST /api/v1/sensor-pairings/expectations`, or the sensor's own re-pairing
-request), and the console marks the request **Re-pairing <name>**. How to
-start a re-pairing on the host is in the sensor's documentation. Approve it
-like a new pairing. The old keys are revoked at once, the history is kept, and
-the sensor returns to trust level New.
+Re-pair when a sensor's identity is lost (its volume or state directory was
+deleted, it was reinstalled), its host was rebuilt or moved, its key may be
+in someone else's hands, or it is reinstalled another way (for example from
+Docker to Kubernetes). The sensor keeps its name, type, zones, grant, labels
+and history; only its key changes.
+
+1. Open the sensor and choose **Re-pair…**. Pick the reason. For "Its key may
+   be compromised", **Revoke the current key now** is ticked: the sensor stops
+   at its next request and its running jobs go back to the queue. Otherwise
+   the current key keeps working until you approve, so a re-pair that fails
+   never takes a working sensor offline.
+2. **Create re-pair code**. The code works for this sensor only, for 10
+   minutes; a newer re-pair code of the same sensor closes the earlier one.
+   If the host still has the sensor's old identity (its data volume, PVC or
+   state directory), remove it first, or the sensor keeps using its old key.
+3. Run the command shown for your platform on the host.
+4. Compare: the dialog shows what the platform last knew of the sensor next
+   to the host that now asks (hostname, address, system, version, last seen),
+   plus the fingerprint. A difference is expected after a move or rebuild; one
+   nobody can explain is a reason to reject.
+5. Approve with the fingerprint tick and your second factor
+   (`sensors:approve`). Every earlier key of the sensor is revoked, the jobs it
+   held are taken back (scan work is queued again, the rest fails), its trust
+   level returns to New, every administrator is notified, and the re-pair is
+   on the sensor's timeline and in the audit log.
+
+Only a code made with **Re-pair…** re-pairs a sensor. A sensor that names an
+existing sensor while using an ordinary "Add sensor" code is added as a new
+sensor instead, and a re-pair code can never create one. A sensor started
+with `openctemio-sensor pair -repair` shows its own code; when you enter it,
+the console marks the request **Re-pairing <name>** and the approval must
+confirm that sensor (`repair_sensor_id` in the approval,
+`409 REPAIR_NOT_ACKNOWLEDGED` otherwise).
+
+Moving a sensor to another organization is never a re-pair: add a new sensor
+there and remove this one.
 
 ## Bearer keys
 
@@ -128,6 +157,8 @@ being created.
 | The sensor was stopped before you approved it, or you made a new code | Start it again with the new code (`./sensors.sh pair NAME --pairing-code XXXX-XXXX` in the multi-sensor kit). The sensor keeps its key; the new start closes its earlier request that nobody approved, and you approve the new one. Started again with the same code, it re-uses that request: compare the fingerprint again after it reappears. |
 | The sensor says its key is already registered (`pairing-key-registered`) | That key was approved once (even if the sensor never finished, or the key was revoked later); a key never pairs twice. Restore the sensor's identity directory, or remove its key so it generates a new one, then pair with a new code. |
 | The sensor is rate limited (`429`) after a few failed starts | The start budget per code is 5 per hour (burst 3); wait for the `Retry-After` it was given, or make a new code. |
+| The sensor printed a clock offset | Its clock (or the server's) is more than 2 minutes off. Synchronize both with NTP, for example `chronyc makestep`. |
+| Approved, but the sensor never came online | The sensor must keep running until it confirms (10 minutes). Start it again within that time; after it, create a new code. |
 
 ## Many sensors: enrollment tokens
 

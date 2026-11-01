@@ -66,6 +66,13 @@ type RefreshTokenRepository interface {
 	// token cannot both win; the loser is a reuse (research/189 B1a-2).
 	MarkUsedIfUnused(ctx context.Context, id shared.ID) (bool, error)
 
+	// RotateIfUnused spends a refresh token and stores its successor
+	// atomically: it marks the token used (recording the successor id and the
+	// rotating client's fingerprint) only when the token is neither used nor
+	// revoked, inserts the successor in the same transaction, and reports
+	// whether this call won. A loser can then read the winner's successor.
+	RotateIfUnused(ctx context.Context, id shared.ID, fingerprint string, successor *RefreshToken) (bool, error)
+
 	// Delete deletes a refresh token.
 	Delete(ctx context.Context, id shared.ID) error
 

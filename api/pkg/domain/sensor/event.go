@@ -69,6 +69,12 @@ const (
 	// EventKeyBound: a bearer-key sensor bound its own signing key and
 	// became key-bound; details carry the key fingerprint and the address.
 	EventKeyBound EventType = "key_bound"
+	// EventRepairStarted: an administrator created a re-pair code for the
+	// sensor; details carry the pairing id and the reason.
+	EventRepairStarted EventType = "repair_started"
+	// EventRepaired: a re-pair was approved: earlier keys revoked, leased
+	// commands taken back, trust New; details carry the counts.
+	EventRepaired EventType = "repaired"
 )
 
 // ActivityCategory groups timeline items for the filter chips.
@@ -96,7 +102,7 @@ func (c ActivityCategory) IsValid() bool {
 func (t EventType) Category() ActivityCategory {
 	switch t {
 	case EventOnline, EventOffline, EventRestarted, EventKeyIPChanged, EventIdentityCloned, EventHeartbeatRecovered,
-		EventPairingCompleted, EventCertificateIssued, EventKeyBound:
+		EventPairingCompleted, EventCertificateIssued, EventKeyBound, EventRepairStarted, EventRepaired:
 		return CategoryStatus
 	case EventJobRefusedByLocalPolicy, EventJobRefusedByGrant, EventPushRefusedByGrant:
 		return CategoryJobs
@@ -111,7 +117,7 @@ func EventTypesIn(cats []ActivityCategory) []EventType {
 		EventProtocolChanged, EventToolsChanged, EventCapacityChanged, EventContentUpdated, EventContentRefreshFailed,
 		EventKeyIPChanged, EventIdentityCloned, EventManifestChanged, EventHeartbeatRecovered,
 		EventLocalPolicyChanged, EventJobRefusedByLocalPolicy, EventPairingCompleted, EventJobRefusedByGrant,
-		EventPushRefusedByGrant, EventCertificateIssued, EventKeyBound}
+		EventPushRefusedByGrant, EventCertificateIssued, EventKeyBound, EventRepairStarted, EventRepaired}
 	var out []EventType
 	for _, t := range all {
 		if slices.Contains(cats, t.Category()) {

@@ -45,8 +45,10 @@ describe('Discovery > Assets', () => {
     ])
   })
 
-  it('Needs attention holds the data-quality reasons, relationships and duplicates at their own URLs', () => {
+  it('Needs attention holds the scoping decisions, data-quality reasons, relationships and duplicates at their own URLs', () => {
     expect(ASSET_ATTENTION_REASONS.map((t) => [t.label, t.href, t.module])).toEqual([
+      ['Validate primary assets', '/assets/attention/validate-primary', 'assets'],
+      ['Decide monitoring', '/assets/attention/decide-monitoring', 'assets'],
       ['No owner', '/assets/attention/no-owner', 'assets'],
       ['Criticality not set', '/assets/attention/context', 'assets'],
       ['Not scanned in 30 days', '/assets/attention/unscanned', 'assets'],
