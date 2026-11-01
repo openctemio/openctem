@@ -1661,6 +1661,41 @@ func (s *TenantService) AcceptInvitationByID(ctx context.Context, tenantID, invi
 	return s.acceptInvitation(ctx, invitation, userID, userEmail, actx)
 }
 
+// DeclineInvitationByID declines a pending invitation for the signed-in
+// account named by its verified address (the onboarding path; the reference
+// was bound to the account by the caller). The invitation must be for that
+// address and still pending; it is deleted and the decline is audited with
+// the account as the actor. Every refusal is the same validation error, so
+// the call tells nothing about invitations sent to other addresses.
+func (s *TenantService) DeclineInvitationByID(ctx context.Context, tenantID, invitationID, userID shared.ID, userEmail string, emailVerified bool, actx auditapp.AuditContext) error {
+	refused := fmt.Errorf("%w: this invitation is no longer available", shared.ErrValidation)
+	if !emailVerified {
+		return fmt.Errorf("%w: verify your email address first", shared.ErrValidation)
+	}
+	inv, err := s.repo.GetInvitationByID(ctx, tenantID, invitationID)
+	if err != nil {
+		if errors.Is(err, shared.ErrNotFound) {
+			return refused
+		}
+		return err
+	}
+	if !strings.EqualFold(inv.Email(), userEmail) || !inv.IsPending() {
+		return refused
+	}
+	if err := s.repo.DeleteInvitation(ctx, tenantID, invitationID); err != nil {
+		return err
+	}
+	actx.TenantID = tenantID.String()
+	actx.ActorID = userID.String()
+	event := auditapp.NewSuccessEvent(audit.ActionInvitationDeleted, audit.ResourceTypeInvitation, invitationID.String()).
+		WithSeverity(audit.SeverityLow).
+		WithMessage(fmt.Sprintf("Invitation for %s declined by the invitee", inv.Email())).
+		WithMetadata("email", inv.Email()).
+		WithMetadata("declined", true)
+	s.logAudit(ctx, actx, event)
+	return nil
+}
+
 // acceptInvitation is the acceptance shared by the token and the onboarding
 // paths.
 func (s *TenantService) acceptInvitation(ctx context.Context, invitation *tenantdom.Invitation, userID shared.ID, userEmail string, actx auditapp.AuditContext) (*tenantdom.Membership, error) {
