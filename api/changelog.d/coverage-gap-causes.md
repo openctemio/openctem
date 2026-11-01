@@ -1,0 +1,5 @@
+### Fixed: a host that answers TLS and resets every request is no longer shown as "stopped answering"
+
+- A coverage gap now carries what the sensor saw when it rechecked the host (sensor with sdk-go `tlsprobe`): `cause` is `http_reset` (the host completes the TLS handshake and resets or closes every HTTP request: it is up and refuses the scanner, which may mean it blocks the scanner's address or its backend is down), `tls_failed`, `reset`, `refused`, `no_answer` or `answered`, and `cert` is the problem of the certificate it served (`expired`, `not_yet_valid`, `name_mismatch`, `self_signed`). The run map, the task list and the step message show it in plain words with the fix: allow the scanner addresses (Settings, Scanning, Proxies) and scan again, or wait for the next scan. Unknown values from a sensor are dropped and the gap kept.
+- The gap still makes the host not covered: a rechecked host is never read as clean and its findings are never closed by that run.
+- Without a recheck (an older sensor) `breaker_open` now reads "failed every request" instead of claiming the host stopped answering.

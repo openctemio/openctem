@@ -179,6 +179,26 @@ in a URL; the route renders text only and neither checks nor spends it. The
 panel then polls the expectation (waiting, fingerprint to compare, approved)
 and the new sensor (online). Threat model and decisions: research note 280.
 
+### Re-pair (the sensor keeps its registration)
+
+RFC-052 §4.6. **Sensors → sensor → Re-pair…** (`sensor-repair-dialog.tsx`):
+reason, optional "Revoke the current key now" (key-bound sensors, `sensors:write`
+or `sensors:revoke`; the console lists the keys and revokes the active ones),
+a re-pair code (`Expect` with `RepairSensorID` and `RepairReason`; earlier
+open re-pair codes of the sensor closed by `CloseOpenRepairs`), the install
+command for the chosen platform, then the review with the before/now
+comparison (`View.RepairBefore`, `RepairComparison`) and the approval
+(`ApproveInput.RepairSensorID` must match, `ErrRepairNotAcknowledged`).
+
+| Piece | Where |
+|---|---|
+| Target fixed by the code | `AttachToExpectationUnscoped` keeps the expectation's `repair_sensor_id`; `Service.Start` drops a sensor's `sensor_id` when it carries a code |
+| Registration kept | `Service.Approve` uses the sensor's own name and no zones; `sensorgrant.Service.OnApproved` with `repair` only sets trust New (`SetTrustTx`) |
+| Leases | `Service.onRepaired` → `CommandReleaser.ReleaseHeldBySensor` (`commands`, messages `SensorKeyReplaced*`); `SensorService.RevokeSigningKey` → `releaseIfKeyless` |
+| Timeline | `repair_started`, `repaired` (`pkg/domain/sensor/event.go`) |
+| Data | `sensor_pairings.repair_reason` (migration `20261031113852`, check: only with a target, known values) |
+| Tests | `internal/app/sensorpairing/repair_console_db_test.go`, `grant_db_test.go`, `service_db_test.go` (`TestPairing_Repair_DB`) |
+
 ## Self-binding: a bearer-key sensor becomes key-bound
 
 RFC-052 §4.8. A sensor that authenticates with an API key and sees the
@@ -271,7 +291,8 @@ marked ✉ notify every administrator of the organization in the app.
 | `sensor.pairing_completed` | medium |
 | `sensor.pairing_superseded` (a sensor started again with the same key; its unapproved request was closed; audit only) | low |
 | `sensor.pairing_lookup_locked` (a user hit the failed code lookup limit; audit only) | high |
-| `sensor.repaired` ✉ | high |
+| `sensor.repaired` ✉ (a re-pair approved) | high |
+| `sensor.pairing_expected` (a code created; for a re-pair: medium, with the sensor and the reason) | low |
 | `sensor.key_revoked` | high |
 | `sensor.grant_changed` (narrowed or demoted; the diff names each dimension) | medium |
 | `sensor.grant_changed` ✉ (widened or promoted) | high |
