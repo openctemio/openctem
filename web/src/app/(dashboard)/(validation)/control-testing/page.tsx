@@ -800,7 +800,12 @@ export default function ControlTestingPage() {
     ? (statusParam as ControlStatusFilter)
     : 'all'
 
-  const { data: testsData, isLoading: testsLoading, mutate: reloadTests } = useControlTests()
+  const {
+    data: testsData,
+    isLoading: testsLoading,
+    error: testsError,
+    mutate: reloadTests,
+  } = useControlTests()
   const { data: statsData, isLoading: statsLoading } = useControlTestStats()
   // The MITRE coverage panel is derived from the (Phase-3 gated) attack_simulation
   // module. When it's disabled the /simulations fetch 403s — skip it and hide the
@@ -954,7 +959,7 @@ export default function ControlTestingPage() {
           <h2 className="text-base font-semibold">
             {t('validation.controlTesting.controlsTitle', 'Security controls')}
           </h2>
-          {controlTests.length === 0 ? (
+          {controlTests.length === 0 && !testsError ? (
             <EmptyState
               icon={ShieldCheck}
               title={t('validation.controlTesting.emptyTitle', 'No control tests yet')}
@@ -973,6 +978,9 @@ export default function ControlTestingPage() {
             <DataTable
               columns={controlColumns}
               data={visibleTests}
+              error={testsError}
+              onRetry={() => void reloadTests()}
+              errorTitle={t('validation.controlTesting.errorTitle', 'control tests')}
               searchPlaceholder={t('validation.controlTesting.searchControls', 'Search controls…')}
             />
           )}

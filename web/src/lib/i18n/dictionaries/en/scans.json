@@ -1019,6 +1019,7 @@
   "scans.err.tenantNoTemplates": "Choose at least one organization template, or change the rule sources",
   "scans.err.tooMany": "A scan takes at most {max} direct targets; {count} are selected. Remove some, or put them in an asset group and scan the group.",
   "scans.err.workflow": "Please select a workflow",
+  "scans.errorTitle": "scans",
   "scans.event.canceled": "Canceled",
   "scans.event.changed": "Changed",
   "scans.event.claimed": "Picked up by a sensor",

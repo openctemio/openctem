@@ -259,11 +259,12 @@ export default function CompliancePage() {
   const activeFrameworkId =
     selectedFrameworkId !== 'all' ? selectedFrameworkId : (frameworks[0]?.id ?? '')
   const controlsFrameworkId = activeTab === 'controls' ? activeFrameworkId : ''
-  const { data: controlsData, isLoading: loadingControls } = useFrameworkControls(
-    controlsFrameworkId,
-    1,
-    200
-  )
+  const {
+    data: controlsData,
+    isLoading: loadingControls,
+    error: controlsError,
+    mutate: retryControls,
+  } = useFrameworkControls(controlsFrameworkId, 1, 200)
   const { data: assessmentsData } = useAssessments(controlsFrameworkId, 1, 200)
 
   // Build control rows by merging controls + assessments
@@ -554,7 +555,7 @@ export default function CompliancePage() {
                     <Skeleton key={i} className="h-12 w-full" />
                   ))}
                 </div>
-              ) : controlRows.length === 0 ? (
+              ) : controlRows.length === 0 && !controlsError ? (
                 <EmptyState
                   icon={ClipboardCheck}
                   title="No controls"
@@ -564,6 +565,9 @@ export default function CompliancePage() {
                 <DataTable
                   columns={columns}
                   data={filteredRows}
+                  error={controlsError}
+                  onRetry={() => void retryControls()}
+                  errorTitle={t('scoping.compliance.errorTitle', 'controls')}
                   searchPlaceholder={t('scoping.compliance.search', 'Search controls…')}
                   toolbarEnd={filterSelects}
                   onRowClick={setViewRequirement}

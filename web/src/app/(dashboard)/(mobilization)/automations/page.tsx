@@ -56,7 +56,6 @@ import {
   Pencil,
   Copy,
   Clock,
-  AlertCircle,
 } from 'lucide-react'
 import {
   DropdownMenu,
@@ -247,7 +246,12 @@ export default function WorkflowsPage() {
   } = useWorkflows({ per_page: 50 })
 
   // Fetch recent workflow runs
-  const { data: runsData, isLoading: runsLoading } = useWorkflowRuns({ per_page: 10 })
+  const {
+    data: runsData,
+    isLoading: runsLoading,
+    error: runsError,
+    mutate: retryRuns,
+  } = useWorkflowRuns({ per_page: 10 })
 
   // Delete workflow mutation
   const { trigger: deleteWorkflow, isMutating: isDeleting } = useDeleteWorkflow(
@@ -857,26 +861,7 @@ export default function WorkflowsPage() {
             <TabsContent value="workflows">
               {workflowsLoading ? (
                 tableSkeleton
-              ) : workflowsError ? (
-                <Alert variant="destructive">
-                  <AlertCircle className="h-4 w-4" />
-                  <AlertTitle>
-                    {t('automations.error.loadTitle', 'Failed to load workflows')}
-                  </AlertTitle>
-                  <AlertDescription className="flex flex-wrap items-center gap-3">
-                    <span>
-                      {getErrorMessage(
-                        workflowsError,
-                        t('automations.error.tryAgain', 'Please try again.')
-                      )}
-                    </span>
-                    <Button variant="outline" size="sm" onClick={() => invalidateWorkflowsCache()}>
-                      <RefreshCw className="me-2 h-4 w-4" />
-                      {t('automations.error.retry', 'Retry')}
-                    </Button>
-                  </AlertDescription>
-                </Alert>
-              ) : workflows.length === 0 ? (
+              ) : workflows.length === 0 && !workflowsError ? (
                 <EmptyState
                   icon={WorkflowIcon}
                   title={t('automations.empty.title', 'No workflows yet')}
@@ -897,6 +882,9 @@ export default function WorkflowsPage() {
                 <DataTable
                   columns={workflowColumns}
                   data={workflows}
+                  error={workflowsError}
+                  onRetry={() => invalidateWorkflowsCache()}
+                  errorTitle={t('automations.error.workflows', 'workflows')}
                   searchKey="name"
                   searchPlaceholder={t('automations.table.searchPlaceholder', 'Search workflows…')}
                   getRowId={(w) => w.id}
@@ -909,7 +897,7 @@ export default function WorkflowsPage() {
             <TabsContent value="executions">
               {runsLoading ? (
                 tableSkeleton
-              ) : runs.length === 0 ? (
+              ) : runs.length === 0 && !runsError ? (
                 <EmptyState
                   icon={Clock}
                   title={t('automations.executions.emptyTitle', 'No executions yet')}
@@ -922,6 +910,9 @@ export default function WorkflowsPage() {
                 <DataTable
                   columns={runColumns}
                   data={runs}
+                  error={runsError}
+                  onRetry={() => void retryRuns()}
+                  errorTitle={t('automations.error.runs', 'workflow runs')}
                   showSearch={false}
                   showColumnToggle={false}
                   showPagination={false}
