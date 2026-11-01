@@ -156,7 +156,7 @@ func New(repo Repository, cfg Config, log *logger.Logger) *Service {
 // newClient is the SSRF-guarded client with a redirect cap; it never follows
 // a redirect to plain http.
 func newClient() *http.Client {
-	c := httpsec.SafeHTTPClient(FetchTimeout)
+	c := httpsec.FeedHTTPClient(FetchTimeout)
 	c.CheckRedirect = func(req *http.Request, via []*http.Request) error {
 		if len(via) >= MaxRedirects {
 			return errors.New("too many redirects")

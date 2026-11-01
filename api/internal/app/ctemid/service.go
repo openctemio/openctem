@@ -52,7 +52,7 @@ func NewService(repo ctemid.Repository, feedURL string, log *logger.Logger) *Ser
 		// SafeHTTPClient refuses to connect to RFC1918 / link-local addresses
 		// even though the feed URL is a public endpoint — defense against DNS
 		// rebinding of a configurable URL.
-		httpClient: httpsec.SafeHTTPClient(httpTimeout),
+		httpClient: httpsec.FeedHTTPClient(httpTimeout),
 		feedURL:    feedURL,
 		logger:     log.With("service", "ctem_id"),
 	}
