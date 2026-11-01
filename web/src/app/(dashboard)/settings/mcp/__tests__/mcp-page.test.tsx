@@ -49,7 +49,7 @@ vi.mock('@/features/mcp-oauth/components/access-requests-card', () => ({
 vi.mock('@/features/mcp-oauth/api/connections', () => ({
   useMcpPolicy: (on: boolean) => ({ data: on ? { any_client: false } : undefined }),
   useOrgConnections: () => ({ data: undefined, isLoading: false }),
-  useMyConnections: () => ({ data: undefined, mutate: vi.fn() }),
+  fetchMyConnections: vi.fn(async () => ({ data: [] })),
   revokeOrgConnection: vi.fn(),
   scopeOrgConnection: vi.fn(),
 }))

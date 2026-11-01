@@ -82,6 +82,11 @@ export function useMyConnections() {
   )
 }
 
+/** One read of the person's connections, for a button that asks on demand (no request on page load). */
+export function fetchMyConnections(): Promise<McpConnectionList> {
+  return get<McpConnectionList>(MY_CONNECTIONS_URL)
+}
+
 /** Every connection of the organization (owners and administrators). */
 export function useOrgConnections(enabled: boolean) {
   const { currentTenant } = useTenant()

@@ -37,6 +37,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { useTenant } from '@/context/tenant-provider'
 import { getErrorMessage } from '@/lib/api/error-handler'
+import { KeyValueList } from '@/features/shared/components/text-layout'
 
 import { allowPublisher, requestPublisherAccess } from '../api/access-requests'
 import {
@@ -543,37 +544,47 @@ function DeviceOrigin({ request }: { request: ConsentRequest }) {
       <h2 id="consent-device-origin" className="text-sm font-medium">
         {t('mcp.consent.device.origin', 'Where the request came from')}
       </h2>
-      <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
-        <dt className="text-muted-foreground">{t('mcp.consent.device.address', 'Address')}</dt>
-        <dd className="break-all font-mono">
-          {request.requester_ip || t('mcp.consent.device.unknown', 'Unknown')}
-        </dd>
-        <dt className="text-muted-foreground">{t('mcp.consent.device.program', 'Program')}</dt>
-        <dd className="break-all font-mono text-xs leading-5">
-          {request.requester_user_agent || t('mcp.consent.device.unknown', 'Unknown')}
-        </dd>
-        {at && (
-          <>
-            <dt className="text-muted-foreground">{t('mcp.consent.device.when', 'Asked at')}</dt>
-            <dd>
-              <time dateTime={request.requested_at}>{at.toLocaleString()}</time>
-            </dd>
-          </>
-        )}
-        <dt className="text-muted-foreground">
-          {t('mcp.consent.device.yourAddress', 'Your address')}
-        </dt>
-        <dd className="flex flex-wrap items-center gap-2">
-          <span className="break-all font-mono">{request.your_ip || '-'}</span>
-          {request.same_address ? (
-            <Badge variant="secondary">{t('mcp.consent.device.same', 'Same address')}</Badge>
-          ) : (
-            <Badge variant="outline">
-              {t('mcp.consent.device.different', 'Different address')}
-            </Badge>
-          )}
-        </dd>
-      </dl>
+      <KeyValueList
+        items={[
+          {
+            key: 'address',
+            label: t('mcp.consent.device.address', 'Address'),
+            value: request.requester_ip || t('mcp.consent.device.unknown', 'Unknown'),
+            token: true,
+          },
+          {
+            key: 'program',
+            label: t('mcp.consent.device.program', 'Program'),
+            value: request.requester_user_agent || t('mcp.consent.device.unknown', 'Unknown'),
+            token: true,
+          },
+          ...(at
+            ? [
+                {
+                  key: 'when',
+                  label: t('mcp.consent.device.when', 'Asked at'),
+                  value: <time dateTime={request.requested_at}>{at.toLocaleString()}</time>,
+                },
+              ]
+            : []),
+          {
+            key: 'yourAddress',
+            label: t('mcp.consent.device.yourAddress', 'Your address'),
+            value: (
+              <span className="flex flex-wrap items-center gap-2">
+                <span className="break-all font-mono">{request.your_ip || '-'}</span>
+                {request.same_address ? (
+                  <Badge variant="secondary">{t('mcp.consent.device.same', 'Same address')}</Badge>
+                ) : (
+                  <Badge variant="outline">
+                    {t('mcp.consent.device.different', 'Different address')}
+                  </Badge>
+                )}
+              </span>
+            ),
+          },
+        ]}
+      />
       {!request.same_address && (
         <p className="text-xs text-muted-foreground">
           {t(

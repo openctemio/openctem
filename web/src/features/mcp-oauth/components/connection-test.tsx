@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button'
 import { useTranslation } from '@/context/i18n-provider'
 import { formatRelative } from '@/lib/format-date'
 
-import { useMyConnections } from '../api/connections'
+import { fetchMyConnections, type McpConnection } from '../api/connections'
 
 type CheckState = 'ok' | 'fail' | 'idle'
 
@@ -24,7 +24,7 @@ interface Result {
  */
 export function ConnectionTest() {
   const { t } = useTranslation()
-  const mine = useMyConnections()
+  const [mine, setMine] = useState<McpConnection[]>([])
   const [running, setRunning] = useState(false)
   const [result, setResult] = useState<Result | null>(null)
 
@@ -44,14 +44,16 @@ export function ConnectionTest() {
     } catch {
       // Network failure: both checks stay failed.
     }
-    await mine.mutate()
+    try {
+      setMine((await fetchMyConnections()).data ?? [])
+    } catch {
+      // The connection row stays empty; the two checks above still show.
+    }
     setResult(next)
     setRunning(false)
   }
 
-  const newest = [...(mine.data?.data ?? [])].sort((a, b) =>
-    b.created_at.localeCompare(a.created_at)
-  )[0]
+  const newest = [...mine].sort((a, b) => b.created_at.localeCompare(a.created_at))[0]
 
   return (
     <div className="space-y-3">
