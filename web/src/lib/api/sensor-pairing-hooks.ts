@@ -204,17 +204,18 @@ export function setSensorIdentityPolicy(
 export const SENSOR_INSTALL_TEMPLATES_PATH = '/api/v1/sensors/install-templates'
 
 /**
- * Install commands for a sensor that pairs (POST /sensors/install-templates):
- * no key in them; with a code the console created, they pass it as
- * SENSOR_PAIRING_CODE. The code goes in the body, never the URL. Same answer
- * shape as a sensor's own config templates (docker, compose, kubernetes, cli,
- * policy).
+ * Install commands for a sensor that pairs. Without a code they are a read
+ * (GET /sensors/install-templates), so a page can load them; with a code the
+ * console created they come from POST, so the code goes in the body, never
+ * the URL, and only after the user asked for a code. No key in them; with a
+ * code they pass it as SENSOR_PAIRING_CODE. Same answer shape as a sensor's
+ * own config templates (docker, compose, kubernetes, cli, policy).
  */
 export function useSensorInstallTemplates<T>(pairingCode: string | null, enabled = true) {
   const { currentTenant } = useTenant()
   return useSWR<T>(
     currentTenant && enabled ? [SENSOR_INSTALL_TEMPLATES_PATH, pairingCode ?? ''] : null,
-    ([url, code]: [string, string]) => post<T>(url, code ? { pairing_code: code } : {}),
+    ([url, code]: [string, string]) => (code ? post<T>(url, { pairing_code: code }) : get<T>(url)),
     { revalidateOnFocus: false, shouldRetryOnError: false }
   )
 }
