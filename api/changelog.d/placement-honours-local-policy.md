@@ -1,0 +1,7 @@
+### Fixed: a sensor whose local policy allows nothing no longer gets scans, and refused work waits for another sensor
+
+- The platform no longer offers a scan to a sensor whose local policy allows no target (an explicit `targets.allow: []`, as in a newly added multi-sensor install) or that requires a policy and has none. A trigger that only such sensors could run is refused with the sensor's name and the file to edit (`sensors/<name>/policy/sensor-policy.yaml`).
+- A scan task a sensor refuses under its local policy goes back to the queue instead of failing: to another eligible sensor at once, or it waits up to 6 hours for one ("waiting for an eligible sensor"). A sensor whose policy changes is offered the tasks it refused again. After three refusals, or when the wait ends, the task fails with a reason that names the target, the sensors that refused and the policy file.
+- A shared job a shared sensor refuses goes to another shared sensor that may take it (before, only the organization's own sensors were considered, which never take shared jobs); the reason never names a shared sensor.
+- A refusal of the platform's signed scope fails closed and is never handed to another sensor; a target on the built-in deny list fails at once.
+- The sensors page shows the policy mode: "Follows platform scope", "Narrowed by host policy (N rules)" or "Allows nothing yet", with the file and restart command.

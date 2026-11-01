@@ -900,6 +900,11 @@ type AuthConfig struct {
 	AccessTokenDuration  time.Duration // Access token lifetime (default: 15m)
 	RefreshTokenDuration time.Duration // Refresh token lifetime (default: 7d)
 	SessionDuration      time.Duration // Session lifetime (default: 30d)
+	// RefreshReuseGrace is how long after a rotation the same client may
+	// present the replaced refresh token again and receive the successor
+	// already issued, instead of the reuse response that ends the session
+	// (default 30s, 0 disables, at most MaxRefreshReuseGrace).
+	RefreshReuseGrace time.Duration
 
 	// Password policy
 	PasswordMinLength      int  // Minimum password length (default: 12)
@@ -1712,6 +1717,7 @@ func Load() (*Config, error) {
 			AccessTokenDuration:       getEnvDuration("AUTH_ACCESS_TOKEN_DURATION", 15*time.Minute),
 			RefreshTokenDuration:      getEnvDuration("AUTH_REFRESH_TOKEN_DURATION", 7*24*time.Hour),
 			SessionDuration:           getEnvDuration("AUTH_SESSION_DURATION", 30*24*time.Hour),
+			RefreshReuseGrace:         clampRefreshReuseGrace(getEnvDuration("AUTH_REFRESH_REUSE_GRACE", DefaultRefreshReuseGrace)),
 			PasswordMinLength:         getEnvInt("AUTH_PASSWORD_MIN_LENGTH", 12),
 			PasswordRequireUpper:      getEnvBool("AUTH_PASSWORD_REQUIRE_UPPERCASE", true),
 			PasswordRequireLower:      getEnvBool("AUTH_PASSWORD_REQUIRE_LOWERCASE", true),
@@ -3069,4 +3075,24 @@ func defaultWriteTimeout(request time.Duration) time.Duration {
 // connection before the request timeout answer can be written.
 func (s ServerConfig) WriteTimeoutBelowRequest() bool {
 	return s.RequestTimeout > 0 && s.WriteTimeout > 0 && s.WriteTimeout <= s.RequestTimeout
+}
+
+// DefaultRefreshReuseGrace and MaxRefreshReuseGrace bound the refresh-token
+// rotation grace (AuthConfig.RefreshReuseGrace). The window only has to cover
+// requests already in flight when a rotation answers, so it stays short: a
+// longer one would widen what a copied, already rotated token is worth.
+const (
+	DefaultRefreshReuseGrace = 30 * time.Second
+	MaxRefreshReuseGrace     = 2 * time.Minute
+)
+
+// clampRefreshReuseGrace keeps the grace within [0, MaxRefreshReuseGrace].
+func clampRefreshReuseGrace(d time.Duration) time.Duration {
+	if d < 0 {
+		return 0
+	}
+	if d > MaxRefreshReuseGrace {
+		return MaxRefreshReuseGrace
+	}
+	return d
 }

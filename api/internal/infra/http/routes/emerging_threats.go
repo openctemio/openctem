@@ -64,6 +64,10 @@ func registerAISettingsRoutes(router Router, h *handler.AISettingsHandler, maski
 		r.GET("/", h.Get, middleware.RequireAdmin(), middleware.Require(permission.SettingsRead))
 		r.PUT("/", h.Update, middleware.RequireAdmin(), middleware.Require(permission.SettingsWrite), requireStepUp())
 		r.POST("/test", h.Test, middleware.RequireAdmin(), middleware.Require(permission.SettingsWrite))
+		// Automatic triage: a loosening (on, more severities) needs a recent
+		// sign-in, asked by the service; tightening is one click.
+		r.GET("/auto-triage", h.GetAutoTriage, middleware.RequireAdmin(), middleware.Require(permission.SettingsRead))
+		r.PUT("/auto-triage", h.UpdateAutoTriage, middleware.RequireAdmin(), middleware.Require(permission.SettingsWrite))
 
 		// Masking of AI context (docs/architecture/ai-context-masking.md):
 		// what is replaced by placeholders before finding data reaches a

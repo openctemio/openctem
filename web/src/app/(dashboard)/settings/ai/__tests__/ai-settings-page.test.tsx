@@ -36,6 +36,9 @@ vi.mock('@/features/ai-triage/api/use-ai-masking', async (orig) => ({
   ...(await orig<typeof import('@/features/ai-triage/api/use-ai-masking')>()),
   useAIMasking: () => ({ data: null, mutate: vi.fn() }),
 }))
+vi.mock('@/features/ai-triage/components/ai-auto-triage-card', () => ({
+  AIAutoTriageCard: () => null,
+}))
 vi.mock('@/features/ai-triage/components/ai-agents-section', () => ({
   AIAgentsSection: () => null,
 }))
