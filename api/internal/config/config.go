@@ -1580,6 +1580,13 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 
+	// The API's pool keeps as many idle connections as it may open unless
+	// DB_MAX_IDLE_CONNS says otherwise. With fewer idle than open, every burst
+	// of concurrent requests closed the extra connections and opened them
+	// again on the next burst: a TCP and SCRAM handshake and a new server
+	// process per connection.
+	dbMaxOpen := getEnvInt("DB_MAX_OPEN_CONNS", 25)
+
 	cfg := &Config{
 		App: AppConfig{
 			Name:   getEnv("APP_NAME", "openctem"),
@@ -1673,8 +1680,8 @@ func Load() (*Config, error) {
 			AdminPassword:   getEnv("DB_ADMIN_PASSWORD", ""),
 			Name:            getEnv("DB_NAME", "openctem"),
 			SSLMode:         getEnv("DB_SSLMODE", "disable"),
-			MaxOpenConns:    getEnvInt("DB_MAX_OPEN_CONNS", 25),
-			MaxIdleConns:    getEnvInt("DB_MAX_IDLE_CONNS", 5),
+			MaxOpenConns:    dbMaxOpen,
+			MaxIdleConns:    getEnvInt("DB_MAX_IDLE_CONNS", dbMaxOpen),
 			IngestMaxConns:  getEnvInt("DB_INGEST_MAX_CONNS", 8),
 			ConnMaxLifetime: getEnvDuration("DB_CONN_MAX_LIFETIME", 5*time.Minute),
 			JITEnabled:      getEnvBool("DB_JIT_ENABLED", false),
