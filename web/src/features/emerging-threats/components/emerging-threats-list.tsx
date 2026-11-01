@@ -218,7 +218,7 @@ export function EmergingThreatsList() {
         cell: ({ row }) => (
           <div className="text-sm">
             {row.original.last_event_kind && <p>{eventLabel(row.original.last_event_kind)}</p>}
-            <RelativeTime date={row.original.event_at} locale={dateLocale} />
+            <RelativeTime date={row.original.event_at} />
           </div>
         ),
       },

@@ -1,6 +1,5 @@
 'use client'
 
-import { formatDistanceToNow } from 'date-fns'
 import { ChevronDown, ExternalLink, RefreshCw } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
@@ -19,6 +18,7 @@ import type {
   NotificationEventStatus,
 } from '@/features/integrations/types/integration.types'
 import { SafeExternalLink } from '@/components/safe-external-link'
+import { RelativeTime } from '@/features/shared/components/relative-time'
 
 interface NotificationEventsProps {
   integrationId: string
@@ -73,7 +73,7 @@ function NotificationEventItem({ entry }: { entry: NotificationEventEntry }) {
 
         {/* Footer: time and URL */}
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <span>{formatDistanceToNow(new Date(entry.processed_at), { addSuffix: true })}</span>
+          <RelativeTime date={entry.processed_at} />
           {entry.url && (
             <>
               <span>|</span>

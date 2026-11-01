@@ -31,7 +31,7 @@ import {
   StackedCell,
 } from '@/features/shared'
 import { ProviderIcon } from '@/features/scm-connections'
-import { dateFnsLocaleFor } from '@/features/shared/components/activity-timeline'
+import { dateFnsLocaleFor } from '@/lib/format-date'
 import { useListParams } from '@/hooks/use-list-params'
 import { useUrlFilter } from '@/hooks/use-url-param'
 import { Permission, usePermissions } from '@/lib/permissions'
@@ -223,11 +223,7 @@ export function runColumns(
       id: 'started',
       header: t('scans.ci.col.started', 'Started'),
       cell: ({ row }) => (
-        <RelativeTime
-          date={row.original.created_at}
-          locale={dateFnsLocaleFor(locale)}
-          className="text-sm text-muted-foreground"
-        />
+        <RelativeTime date={row.original.created_at} className="text-sm text-muted-foreground" />
       ),
     },
   ]
@@ -540,7 +536,7 @@ export function CIRunSheet({ id, onClose }: { id: string | null; onClose: () => 
                     {override.expires_at && (
                       <p className="text-xs">
                         {t('scans.ci.runDetail.overrideExpires', 'Expires')}{' '}
-                        <RelativeTime date={override.expires_at} locale={dfLocale} />
+                        <RelativeTime date={override.expires_at} />
                       </p>
                     )}
                   </AlertDescription>
@@ -673,7 +669,7 @@ export function CIRunSheet({ id, onClose }: { id: string | null; onClose: () => 
                   )}
                   {run.evaluated_at && (
                     <Row label={t('scans.ci.runDetail.evaluated', 'Judged')}>
-                      <RelativeTime date={run.evaluated_at} locale={dfLocale} />
+                      <RelativeTime date={run.evaluated_at} />
                     </Row>
                   )}
                   {run.decoration_state && (
