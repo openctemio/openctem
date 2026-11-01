@@ -7,7 +7,8 @@ import type { AISettings } from '../api/use-ai-settings'
 import type { AIMaskingPolicy } from '../api/use-ai-masking'
 import type { AIConfig } from '../types/ai-triage.types'
 
-export type AISettingsTab = 'provider' | 'features' | 'knowledge' | 'limits' | 'activity'
+export type AISettingsTab =
+  'provider' | 'use-cases' | 'features' | 'knowledge' | 'limits' | 'activity'
 
 interface AIStatusStripProps {
   settings?: AISettings

@@ -279,6 +279,11 @@ export const settingsNav: SettingsNavGroup[] = [
             keywords: ['provider', 'key', 'model', 'test connection'],
           },
           {
+            id: 'ai-use-cases',
+            title: 'AI use cases',
+            keywords: ['auto-apply', 'suggest', 'confidence', 'data class', 'restricted'],
+          },
+          {
             id: 'ai-auto-triage',
             title: 'Automatic triage',
             keywords: ['auto', 'severity', 'delay'],

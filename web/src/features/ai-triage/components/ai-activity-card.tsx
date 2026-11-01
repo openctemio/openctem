@@ -18,6 +18,8 @@ export const AI_ACTIVITY_ACTIONS = [
   'ai_settings.tested',
   'ai_settings.auto_triage_updated',
   'ai_settings.masking_updated',
+  'ai_use_case.updated',
+  'ai_use_case.downgraded',
   'ai_triage.completed',
   'ai_triage.failed',
   'ai_triage.needs_review',

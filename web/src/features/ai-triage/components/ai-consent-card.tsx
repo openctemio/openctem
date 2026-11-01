@@ -121,7 +121,7 @@ export function AIConsentCard({
             <p>
               {t(
                 'settings.ai.dataSent',
-                'For each analysis: the finding’s title, description, severity and score, source and tool, file path and code snippet, CVE, CWE and OWASP ids, and whether the asset is internet-facing. Detected secrets are masked before they are stored.'
+                'For each analysis, by default: the finding’s title, description, severity and score, source and tool, file path, CVE, CWE and OWASP ids, and whether the asset is internet-facing. The code snippet is sent only where a use case allows restricted data (Use cases tab). Detected secrets are masked before they are stored.'
               )}
             </p>
             <p>

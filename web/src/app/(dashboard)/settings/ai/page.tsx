@@ -16,6 +16,7 @@ import { AIMaskingSection } from '@/features/ai-triage/components/ai-masking-sec
 import { AISourceCard } from '@/features/ai-triage/components/ai-source-card'
 import { AIStatusStrip, type AISettingsTab } from '@/features/ai-triage/components/ai-status-strip'
 import { AIUsageCard } from '@/features/ai-triage/components/ai-usage-card'
+import { AIUseCasesSection } from '@/features/ai-triage/components/ai-use-cases-section'
 import { useAIConfig } from '@/features/ai-triage/api/use-ai-triage-api'
 import { useAIMasking } from '@/features/ai-triage/api/use-ai-masking'
 import { useAISettings } from '@/features/ai-triage/api/use-ai-settings'
@@ -31,6 +32,7 @@ import { Permission, useCanMutate, useHasPermission } from '@/lib/permissions'
 const ANCHOR_TAB: Record<string, AISettingsTab> = {
   'ai-triage': 'provider',
   'ai-source': 'provider',
+  'ai-use-cases': 'use-cases',
   'ai-auto-triage': 'features',
   'ai-agents': 'features',
   'ai-knowledge': 'knowledge',
@@ -40,9 +42,11 @@ const ANCHOR_TAB: Record<string, AISettingsTab> = {
 }
 
 /**
- * Settings > AI: a status strip, then five tabs (the tab is in the URL).
+ * Settings > AI: a status strip, then the tabs (the tab is in the URL).
  * Provider: the organization's consent and where the AI comes from
- * (api docs: architecture/ai-triage.md). Features: automatic triage and the
+ * (api docs: architecture/ai-triage.md). Use cases: per kind of AI result,
+ * whether it waits for a person or applies on its own and how much data is
+ * sent (architecture/ai-use-cases.md). Features: automatic triage and the
  * AI agents (architecture/ai-analysis.md). Knowledge: the sources AI agents
  * cite. Limits and data: use against the limit and the masking of what is
  * sent (architecture/ai-context-masking.md). Activity: the latest AI events
@@ -66,6 +70,7 @@ export default function AISettingsPage() {
   const available = useMemo<AISettingsTab[]>(
     () => [
       'provider',
+      'use-cases',
       'features',
       ...(canReadKnowledge ? (['knowledge'] as const) : []),
       'limits',
@@ -129,6 +134,9 @@ export default function AISettingsPage() {
         <Tabs value={tab} onValueChange={setUrlTab}>
           <TabsList>
             <TabsTrigger value="provider">{t('settings.ai.tabs.provider', 'Provider')}</TabsTrigger>
+            <TabsTrigger value="use-cases">
+              {t('settings.ai.tabs.useCases', 'Use cases')}
+            </TabsTrigger>
             <TabsTrigger value="features">{t('settings.ai.tabs.features', 'Features')}</TabsTrigger>
             {available.includes('knowledge') && (
               <TabsTrigger value="knowledge">
@@ -182,6 +190,10 @@ export default function AISettingsPage() {
                 />
               )}
             </PageStack>
+          </TabsContent>
+
+          <TabsContent value="use-cases">
+            <AIUseCasesSection canEdit={canEdit} aiEnabled={enabled} />
           </TabsContent>
 
           <TabsContent value="features">

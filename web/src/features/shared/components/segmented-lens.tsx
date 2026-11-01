@@ -30,6 +30,8 @@ export interface SegmentedLensProps<V extends string> {
   /** What a count counts, for screen readers ("findings"). */
   countNoun?: string
   className?: string
+  /** Read only: shows the value, nothing can be chosen. */
+  disabled?: boolean
 }
 
 const compact = new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 })
@@ -41,6 +43,7 @@ export function SegmentedLens<V extends string>({
   onChange,
   countNoun = 'items',
   className,
+  disabled = false,
 }: SegmentedLensProps<V>) {
   const refs = React.useRef<(HTMLButtonElement | null)[]>([])
   const index = Math.max(
@@ -55,6 +58,7 @@ export function SegmentedLens<V extends string>({
   }
 
   const onKeyDown = (e: React.KeyboardEvent) => {
+    if (disabled) return
     switch (e.key) {
       case 'ArrowRight':
       case 'ArrowDown':
@@ -81,6 +85,7 @@ export function SegmentedLens<V extends string>({
     <div
       role="radiogroup"
       aria-label={label}
+      aria-disabled={disabled || undefined}
       data-testid="segmented-lens"
       onKeyDown={onKeyDown}
       className={cn(
@@ -100,11 +105,12 @@ export function SegmentedLens<V extends string>({
             role="radio"
             aria-checked={selected}
             tabIndex={selected ? 0 : -1}
+            disabled={disabled}
             title={o.description}
             data-testid={`lens-${o.value}`}
             onClick={() => onChange(o.value)}
             className={cn(
-              'inline-flex h-8 cursor-pointer items-center pointer-coarse:h-11 gap-1.5 rounded-sm px-2.5 text-xs font-medium whitespace-nowrap transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+              'inline-flex h-8 cursor-pointer items-center disabled:cursor-not-allowed disabled:opacity-60 pointer-coarse:h-11 gap-1.5 rounded-sm px-2.5 text-xs font-medium whitespace-nowrap transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
               selected
                 ? 'bg-background text-foreground shadow-sm'
                 : 'text-muted-foreground hover:text-foreground'
