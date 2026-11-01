@@ -11,6 +11,8 @@
   permission: "assets:read"
   mcp:
     - list_assets
+    - search_assets
+    - get_asset
   jobs:
     - AssetGroupRulesController
     - AssetIdentityBackfillController

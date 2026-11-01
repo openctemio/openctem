@@ -16,7 +16,12 @@ import { devtools } from 'zustand/middleware'
 import { clearAllStoredPermissions } from '@/lib/permission-storage'
 import { clearAllLogoCaches } from '@/lib/logo-storage'
 import { devLog } from '@/lib/logger'
-import { withAuthRefreshLock } from '@/lib/auth-refresh-lock'
+import {
+  onRefreshedElsewhere,
+  RECENT_REFRESH_MS,
+  refreshSessionShared,
+} from '@/lib/auth-refresh-lock'
+import { sessionEndReason, type SessionEndReason } from '@/features/auth/lib/session-ended'
 import { csrfHeaders } from '@/lib/csrf-client'
 import { validateRedirectUrl } from '@/lib/redirect'
 import { getCookie, removeCookie } from '@/lib/cookies'
@@ -138,7 +143,11 @@ function extractUser(token: string): AuthUser {
  * (it 404s); the page is /login and it reads `redirect`, which it validates.
  * Without an explicit target, the user comes back to the page they were on.
  */
-export function loginPageUrl(returnUrl?: string, reauth?: { org?: string }): string {
+export function loginPageUrl(
+  returnUrl?: string,
+  reauth?: { org?: string },
+  reason?: SessionEndReason
+): string {
   const target = returnUrl ?? `${window.location.pathname}${window.location.search}`
   const url = new URL('/login', window.location.origin)
   if (target && target !== '/' && !target.startsWith('/login')) {
@@ -150,6 +159,8 @@ export function loginPageUrl(returnUrl?: string, reauth?: { org?: string }): str
     if (reauth.org) url.searchParams.set('org', reauth.org)
     url.searchParams.set('reauth', '1')
   }
+  // Why the session ended: the sign-in page says so (known values only).
+  if (reason) url.searchParams.set('reason', reason)
   return `${url.pathname}${url.search}`
 }
 
@@ -178,11 +189,18 @@ let sessionEnding = false
  * sign-out server action does (and ends the session on the API), then
  * redirects to `/login?redirect=<this page>`.
  */
-export function endSessionAndSignIn(returnUrl?: string, options?: { reauth?: boolean }): void {
+export function endSessionAndSignIn(
+  returnUrl?: string,
+  options?: { reauth?: boolean; reason?: SessionEndReason }
+): void {
   if (sessionEnding || typeof window === 'undefined') return
   sessionEnding = true
   // Read the organization before its cookie is dropped below.
-  const target = loginPageUrl(returnUrl, options?.reauth ? { org: currentTenantSlug() } : undefined)
+  const target = loginPageUrl(
+    returnUrl,
+    options?.reauth ? { org: currentTenantSlug() } : undefined,
+    options?.reason
+  )
   // The team cookies are JS-readable: drop them now, so even if the action
   // below cannot run, /login shows the form instead of sending the browser
   // back (it only skips the form when a team is selected).
@@ -362,6 +380,14 @@ export const useAuthStore = create<AuthState>()(
 // ============================================
 
 let authRefreshTimeout: ReturnType<typeof setTimeout> | null = null
+// Every tab's store follows the refresh any tab made (the cookies are shared).
+const refreshedElsewhereWired =
+  typeof window !== 'undefined' &&
+  onRefreshedElsewhere((accessToken) => {
+    if (useAuthStore.getState().status === 'authenticated') {
+      useAuthStore.getState().updateToken(accessToken)
+    }
+  })
 let isRefreshingToken = false
 let authPermanentlyFailed = false
 let refreshRetryCount = 0
@@ -398,8 +424,10 @@ async function attemptTokenRefresh(): Promise<void> {
   isRefreshingToken = true
 
   try {
-    // Tabs take turns: the refresh token rotates and reuse revokes it.
-    const response = await withAuthRefreshLock(() =>
+    // One refresh for the whole browser (refreshSessionShared): tabs take
+    // turns, a refresh another tab just made is reused, and a dead session is
+    // not refreshed again. The refresh token rotates and reuse revokes it.
+    const outcome = await refreshSessionShared(() =>
       fetch('/api/auth/refresh', {
         method: 'POST',
         credentials: 'include',
@@ -407,30 +435,34 @@ async function attemptTokenRefresh(): Promise<void> {
       })
     )
 
-    const data = await response.json()
-
-    if (response.ok && data.success && data.data?.access_token) {
+    if (outcome.ok) {
       devLog.log('[Auth] Token refreshed successfully')
       refreshRetryCount = 0
-      useAuthStore.getState().updateToken(data.data.access_token)
-    } else if (data.error?.code === 'MFA_ENROLLMENT_REQUIRED') {
+      if (outcome.accessToken) {
+        useAuthStore.getState().updateToken(outcome.accessToken)
+      } else if (!refreshedElsewhereWired && typeof window !== 'undefined') {
+        // Another tab refreshed and no channel told this tab its token: check
+        // again once that refresh is no longer recent.
+        authRefreshTimeout = setTimeout(() => attemptTokenRefresh(), RECENT_REFRESH_MS + 1000)
+      }
+    } else if (outcome.code === 'MFA_ENROLLMENT_REQUIRED') {
       // The organization now requires two-factor authentication and this
       // person has not set it up. They stay signed in: a full-page setup
       // screen enrolls them, re-mints the tenant token and returns here.
       devLog.warn('[Auth] Two-factor setup required, opening the setup page')
       authPermanentlyFailed = true
       redirectToTwoFactorSetup()
-    } else if (response.status === 401 || data.error?.code === 'ORGANIZATION_SUSPENDED') {
+    } else if (outcome.status === 401 || outcome.code === 'ORGANIZATION_SUSPENDED') {
       // 401 = refresh token itself is invalid — no point retrying.
       // ORGANIZATION_SUSPENDED = the platform operator suspended the
       // organization; signing in again says so.
       devLog.warn('[Auth] Refresh token invalid (401), redirecting to login')
       authPermanentlyFailed = true
       useAuthStore.getState().clearAuth()
-      safeRedirectToLogin()
+      safeRedirectToLogin(sessionEndReason(outcome.code))
     } else {
       // Non-401 failure (500, network, etc.) — retry with backoff
-      handleRefreshRetry(`Server error: ${data.error?.message || response.status}`)
+      handleRefreshRetry(`Server error: ${outcome.code || outcome.status}`)
     }
   } catch (error) {
     // Network error — retry with backoff
@@ -460,14 +492,14 @@ function handleRefreshRetry(reason: string): void {
  * Redirect to login with cooldown to prevent redirect loops.
  * If a redirect happened within the last 10 seconds, skip.
  */
-function safeRedirectToLogin(): void {
+function safeRedirectToLogin(reason?: SessionEndReason): void {
   const now = Date.now()
   if (now - lastRedirectTime < REDIRECT_COOLDOWN_MS) {
     devLog.warn('[Auth] Redirect cooldown active, skipping redirect to prevent loop')
     return
   }
   lastRedirectTime = now
-  redirectToLogin()
+  endSessionAndSignIn(undefined, { reason })
 }
 
 const TWO_FACTOR_SETUP_PATH = '/two-factor-setup'
