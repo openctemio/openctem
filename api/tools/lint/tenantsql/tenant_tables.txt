@@ -170,6 +170,7 @@ ingest_payloads
 ingest_policy_versions
 ingest_receipt_coverage
 ingest_receipt_items
+ingest_receipt_tools
 ingest_receipts
 ingest_reports
 instance_scan_zone_tenants

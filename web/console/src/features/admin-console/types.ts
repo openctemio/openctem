@@ -887,6 +887,16 @@ export interface SettingChange {
   changed_by?: string
 }
 
+/** The platform layer of the scan identification markers. */
+export interface ScanIdentificationSettings extends SettingChange {
+  user_agent: string
+  user_agent_enforced: boolean
+  headers: { name: string; value: string; enforced: boolean }[]
+  max_headers: number
+  stored: boolean
+  version: number
+}
+
 /** The lowest two-factor requirement of every organization; organizations may only raise it. */
 export type MFAFloor = 'none' | 'admins' | 'everyone'
 

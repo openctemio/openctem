@@ -140,6 +140,12 @@ export function useMcpLabels() {
       if (b === 'mcp_disabled') {
         return t('mcp.consent.blocked.disabled', 'Your organization has turned off AI assistants.')
       }
+      if (b === 'device_flow_disabled') {
+        return t(
+          'mcp.consent.blocked.deviceFlow',
+          'Your organization does not allow signing a terminal in with a code. Connect from a computer with a browser instead, or ask an administrator.'
+        )
+      }
       if (kind === 'metadata_document' && host) {
         return t(
           'mcp.consent.blocked.publisher',

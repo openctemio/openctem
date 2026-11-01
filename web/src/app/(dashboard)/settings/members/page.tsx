@@ -400,7 +400,7 @@ function UserRolesDetailCard({
                 <div className="flex items-center gap-2">
                   <p className="font-medium text-sm">{role.name}</p>
                   {role.is_system && (
-                    <span className="text-[10px] text-muted-foreground px-1.5 py-0.5 rounded bg-muted">
+                    <span className="text-xs text-muted-foreground px-1.5 py-0.5 rounded bg-muted">
                       {t('org.membersPage.system', 'System')}
                     </span>
                   )}
