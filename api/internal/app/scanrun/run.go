@@ -1184,7 +1184,7 @@ const (
 	// that no longer resolve (a part of StepOutputSkipped).
 	StepOutputNoLongerResolve = "no_longer_resolve_count"
 	// StepOutputCoverageGapCount counts the hosts not fully covered, and
-	// StepOutputCoverageGaps lists them as {host, reason} (single-command
+	// StepOutputCoverageGaps lists them as {host, reason, edge, vendor} (single-command
 	// steps; a batched step's tasks hold the lists).
 	StepOutputCoverageGapCount = "coverage_gap_count"
 	StepOutputCoverageGaps     = "coverage_gaps"
@@ -1231,6 +1231,12 @@ func (p Partial) withNotes(output map[string]any) map[string]any {
 				}
 				if g.Cert != "" {
 					e["cert"] = g.Cert
+				}
+				if g.Edge != "" {
+					e["edge"] = g.Edge
+				}
+				if g.Vendor != "" {
+					e["vendor"] = g.Vendor
 				}
 				list = append(list, e)
 			}

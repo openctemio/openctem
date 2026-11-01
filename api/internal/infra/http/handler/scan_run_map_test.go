@@ -221,6 +221,13 @@ func TestRunMap_StepOutcomeFromOutput(t *testing.T) {
 		out.CoverageGaps[1].Cause != "" || out.CoverageGaps[1].Cert != "" {
 		t.Fatalf("rechecked gaps %+v", out)
 	}
+	edge := stepOutcome(map[string]any{
+		"coverage_gap_count": float64(1),
+		"coverage_gaps":      []map[string]string{{"host": "a.example.com", "reason": "blocked", "edge": "blocked", "vendor": "datadome"}},
+	})
+	if edge == nil || len(edge.CoverageGaps) != 1 || edge.CoverageGaps[0].Edge != "blocked" || edge.CoverageGaps[0].Vendor != "datadome" {
+		t.Fatalf("edge gap lost its edge or vendor: %+v", edge)
+	}
 	if stepOutcome(map[string]any{"findings": float64(4)}) != nil {
 		t.Fatal("a step that did everything has no outcome")
 	}
