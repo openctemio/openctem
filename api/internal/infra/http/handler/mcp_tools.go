@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/openctemio/openctem/api/internal/app/asset"
 	"github.com/openctemio/openctem/api/internal/app/finding"
@@ -96,17 +98,21 @@ type mcpAssetDTO struct {
 	Type        string `json:"type"`
 	Criticality string `json:"criticality"`
 	Exposure    string `json:"exposure"`
-	RiskScore   int    `json:"risk_score"`
+	// RiskScore is 0..100 from the asset's open findings (0: no open finding
+	// scored); RiskScoredAt is when it was last computed.
+	RiskScore    int        `json:"risk_score"`
+	RiskScoredAt *time.Time `json:"risk_scored_at,omitempty"`
 }
 
 func toAssetDTO(a *assetdom.Asset) mcpAssetDTO {
 	return mcpAssetDTO{
-		ID:          a.ID().String(),
-		Name:        a.Name(),
-		Type:        string(a.Type()),
-		Criticality: string(a.Criticality()),
-		Exposure:    string(a.Exposure()),
-		RiskScore:   a.RiskScore(),
+		ID:           a.ID().String(),
+		Name:         a.Name(),
+		Type:         string(a.Type()),
+		Criticality:  string(a.Criticality()),
+		Exposure:     string(a.Exposure()),
+		RiskScore:    a.RiskScore(),
+		RiskScoredAt: a.RiskScoredAt(),
 	}
 }
 
@@ -131,7 +137,9 @@ func (h *MCPHandler) buildTools() []mcpTool {
 		{
 			Name: "list_findings",
 			Description: "List this tenant's vulnerability findings. Optional filters: " +
-				"severity (critical/high/medium/low/info), status, source, free-text search." + mcpUntrustedHint,
+				"severity (critical/high/medium/low/info), status, source, free-text search. A finding is one " +
+				"issue on one asset with its own status: the same CVE can be false_positive on one asset and new " +
+				"on another." + mcpUntrustedHint,
 			InputSchema: json.RawMessage(`{"type":"object","properties":{` +
 				`"severity":{"type":"string","description":"critical|high|medium|low|info"},` +
 				`"status":{"type":"string"},` +
@@ -151,16 +159,22 @@ func (h *MCPHandler) buildTools() []mcpTool {
 		{
 			Name: "finding_stats",
 			Description: "Aggregate finding posture for this tenant: totals by severity and " +
-				"status plus risk rollups (open KEV findings, high-EPSS open findings, SLA-breached).",
+				"status plus risk rollups (open KEV findings, high-EPSS open findings, SLA-breached). " +
+				"Counts the same findings as list_active_cves: kev_open equals the open_kev_findings " +
+				"total of list_active_cves.",
 			InputSchema:  json.RawMessage(`{"type":"object","properties":{}}`),
 			RequiredPerm: string(permission.FindingsRead),
 			call:         h.toolFindingStats,
 		},
 		{
 			Name: "list_active_cves",
-			Description: "List the CVEs of open findings you can see, one row per CVE, riskiest first " +
-				"(priority, KEV, emerging threat, EPSS, CVSS, assets). Filters: kev_only (CISA Known " +
-				"Exploited), min_epss (0..1 exploit-probability floor), severity (of the findings)." + mcpUntrustedHint,
+			Description: "List the CVEs of open findings you can see, one row per CVE named on a finding, " +
+				"riskiest first (priority, KEV, emerging threat, EPSS, CVSS, assets). Title, CVSS and EPSS " +
+				"come from the vulnerability catalog when the CVE is in it (catalog_status \"in catalog\"), " +
+				"otherwise from the findings (\"not in catalog\"). open_kev_findings counts the open known " +
+				"exploited findings, the same count as finding_stats kev_open. Status stays per finding and " +
+				"per asset. Filters: kev_only (CISA Known Exploited), min_epss (0..1 exploit-probability " +
+				"floor), severity (of the findings)." + mcpUntrustedHint,
 			InputSchema: json.RawMessage(`{"type":"object","properties":{` +
 				`"kev_only":{"type":"boolean"},` +
 				`"min_epss":{"type":"number","description":"0..1 EPSS floor"},` +
@@ -205,8 +219,9 @@ func (h *MCPHandler) buildTools() []mcpTool {
 		},
 		{
 			Name: "list_assets",
-			Description: "List this tenant's assets. Filters: exposure (public/private/unknown), " +
-				"criticality, free-text search." + mcpUntrustedHint,
+			Description: "List this tenant's assets, riskiest first. risk_score is 0..100 from the " +
+				"asset's open findings (0: no open finding scored), risk_scored_at when it was computed. " +
+				"Filters: exposure (public/private/unknown), criticality, free-text search." + mcpUntrustedHint,
 			InputSchema: json.RawMessage(`{"type":"object","properties":{` +
 				`"exposure":{"type":"string","description":"public|private|unknown"},` +
 				`"criticality":{"type":"string"},` +
@@ -277,8 +292,8 @@ func (h *MCPHandler) toolListFindings(ctx context.Context, tenantID string, raw 
 	for _, f := range res.Data {
 		out = append(out, toFindingDTO(f, h.findingAssetName(ctx, tenantID, f, names)))
 	}
-	meta := map[string]any{"total": res.Total}
-	h.noteEmptyScope(ctx, tenantID, res.Total, meta)
+	meta := map[string]any{"total": res.Total, "status_note": mcpStatusNote}
+	h.noteScope(ctx, tenantID, meta)
 	return untrustedResult(map[string]any{"findings": out}, meta), nil
 }
 
@@ -321,14 +336,10 @@ func (h *MCPHandler) findingAssetName(ctx context.Context, tenantID string, f *v
 }
 
 func (h *MCPHandler) toolFindingStats(ctx context.Context, tenantID string, _ json.RawMessage) (any, error) {
-	// Scoped stats: confine the aggregate to the key owner's group data-scope
-	// (IsAdmin=false), mirroring how list_findings builds its scope — so a
-	// restricted key never sees posture for findings it can't list.
-	stats, err := h.findings.GetFindingStatsWithScope(ctx, finding.GetFindingStatsInput{
-		TenantID:     tenantID,
-		ActingUserID: actingUser(ctx),
-		IsAdmin:      false,
-	})
+	// The findings list's compiled filter as the connection's caller: the
+	// same WHERE as list_active_cves, so kev_open and the CVE list's
+	// open_kev_findings count the same findings.
+	stats, err := h.findings.GetFindingStatsBySpec(ctx, mcpFilterCaller(ctx, tenantID), &filterspec.Spec{})
 	if err != nil {
 		return nil, err
 	}
@@ -350,7 +361,7 @@ func (h *MCPHandler) toolFindingStats(ctx context.Context, tenantID string, _ js
 		"epss_high_open": stats.EpssHighOpen,
 		"sla_breached":   stats.SLABreached,
 	}
-	h.noteEmptyScope(ctx, tenantID, stats.Total, out)
+	h.noteScope(ctx, tenantID, out)
 	return out, nil
 }
 
@@ -361,11 +372,38 @@ type activeCVEArgs struct {
 	Limit    int      `json:"limit"`
 }
 
+// mcpFilterCaller is the caller of a compiled findings read made by an MCP
+// connection: the key owner, never with the administrator bypass, and on
+// the owner's own scope rows unless the connection was allowed to read all
+// organization data (middleware.ReadsOnOwnScope, the same decision the
+// data-scope enforcer and every REST read make). One caller for every MCP
+// findings tool, so their counts agree.
+func mcpFilterCaller(ctx context.Context, tenantID string) finding.FilterCaller {
+	return finding.FilterCaller{
+		TenantID: tenantID,
+		UserID:   actingUser(ctx),
+		IsAdmin:  false,
+		APIKey:   middleware.ReadsOnOwnScope(ctx),
+		Has:      func(p string) bool { return middleware.HasPermission(ctx, p) },
+	}
+}
+
+// mcpCVERow is a vulnerabilities list row as list_active_cves returns it:
+// the list's row plus whether its catalog fields came from the catalog.
+type mcpCVERow struct {
+	vulnerability.CVEListItem
+	CatalogStatus string `json:"catalog_status"`
+}
+
+// mcpStatusNote says that a finding's status is its own.
+const mcpStatusNote = "Status is per finding: a finding is one CVE or issue on one asset, triaged on its own, " +
+	"so the same CVE can be false_positive on one asset and new on another."
+
 // toolListActiveCVEs is the vulnerabilities list (GET
 // /vulnerability-exposures) for the key's owner: open findings grouped by
-// CVE on the findings list's compiled filter, so the tenant, data scope and
-// member visibility apply exactly as on the page. The key never gets an
-// administrator's view.
+// the CVE they name, on the findings list's compiled filter, so the tenant,
+// data scope and member visibility apply exactly as on the page. The key
+// never gets an administrator's view.
 func (h *MCPHandler) toolListActiveCVEs(ctx context.Context, tenantID string, raw json.RawMessage) (any, error) {
 	var a activeCVEArgs
 	if err := parseToolArgs(raw, &a); err != nil {
@@ -388,21 +426,26 @@ func (h *MCPHandler) toolListActiveCVEs(ctx context.Context, tenantID string, ra
 		kev := true
 		opts.KEV = &kev
 	}
-	caller := finding.FilterCaller{
-		TenantID: tenantID,
-		UserID:   actingUser(ctx), // confine to the key owner's data scope
-		IsAdmin:  false,           // API keys never get the administrator bypass
-		// A delegated credential never inherits its holder's full-data role.
-		APIKey: middleware.IsDelegatedCredential(ctx),
-		Has:    func(p string) bool { return middleware.HasPermission(ctx, p) },
-	}
-	res, err := h.findings.ListCVEExposures(ctx, caller, spec, opts)
+	res, err := h.findings.ListCVEExposures(ctx, mcpFilterCaller(ctx, tenantID), spec, opts)
 	if err != nil {
 		return nil, err
 	}
-	meta := map[string]any{"total": res.Total}
-	h.noteEmptyScope(ctx, tenantID, res.Total, meta)
-	return untrustedResult(map[string]any{"cves": res.Data}, meta), nil
+	rows := make([]mcpCVERow, 0, len(res.Data))
+	for _, it := range res.Data {
+		st := "in catalog"
+		if !it.InCatalog {
+			st = "not in catalog"
+		}
+		rows = append(rows, mcpCVERow{CVEListItem: it, CatalogStatus: st})
+	}
+	meta := map[string]any{
+		"total":             res.Total,
+		"open_kev_findings": res.Summary.OpenKEVFindings,
+		"kev_cves":          res.Summary.KEV,
+		"status_note":       mcpStatusNote,
+	}
+	h.noteScope(ctx, tenantID, meta)
+	return untrustedResult(map[string]any{"cves": rows}, meta), nil
 }
 
 func (h *MCPHandler) toolExplainPriority(ctx context.Context, tenantID string, raw json.RawMessage) (any, error) {
@@ -513,6 +556,7 @@ func (h *MCPHandler) toolListAssets(ctx context.Context, tenantID string, raw js
 		ActingUserID: actingUser(ctx), // confine to the key owner's data-scope
 		IsAdmin:      false,           // API keys never get admin bypass
 		Search:       a.Search,
+		Sort:         "-risk_score", // riskiest first
 		Page:         1,
 		PerPage:      clampLimit(a.Limit),
 	}
@@ -531,7 +575,7 @@ func (h *MCPHandler) toolListAssets(ctx context.Context, tenantID string, raw js
 		out = append(out, toAssetDTO(as))
 	}
 	meta := map[string]any{"total": res.Total}
-	h.noteEmptyScope(ctx, tenantID, res.Total, meta)
+	h.noteScope(ctx, tenantID, meta)
 	return untrustedResult(map[string]any{"assets": out}, meta), nil
 }
 
@@ -542,35 +586,85 @@ func (h *MCPHandler) toolCompliancePosture(ctx context.Context, tenantID string,
 	return h.compliance.GetComplianceStats(ctx, tenantID)
 }
 
-// mcpEmptyScopeNotice is returned beside an empty result when the caller's
-// data scope covers no asset. An MCP connection reads only what the user's
-// scope rows allow, never the full-data role an owner or administrator has in
-// the web console (docs/architecture/mcp-authorization.md), so a member with
-// no group or scope rows would otherwise get empty lists that look like an
-// empty organization.
-const mcpEmptyScopeNotice = "Your data scope in this organization covers 0 assets, so asset and finding " +
-	"results are empty for this connection even if the organization has data. An MCP connection " +
-	"reads only the assets your groups and scope rules grant, not the full-data access an owner or " +
-	"administrator has in the web console. Ask an owner to add you to a group that owns assets."
+// The scope notice (docs/architecture/mcp-authorization.md, "Data scope"):
+// an MCP connection reads only the assets its person's groups and scope
+// rules grant, unless the person allowed it to read all organization data
+// at consent. Assets are granted through owner groups, so a person whose
+// role reads everything in the web console can see far fewer assets over
+// MCP. Every asset and finding tool says so in one line instead of
+// returning data that looks like a small or empty organization.
 
-// noteEmptyScope adds scope_notice to meta when a list or count came back
-// empty (total == 0) and the caller's data scope covers no asset. It is
-// best effort: a lookup failure leaves the result as it is. The check reads
-// the asset list as the same caller, so it can only report what the caller
-// is allowed to see (a count of their own scope), never the organization size.
-func (h *MCPHandler) noteEmptyScope(ctx context.Context, tenantID string, total int64, meta map[string]any) {
-	if total != 0 || h.assets == nil {
+// mcpScopeNoticeEmpty is the notice for a reader who may not see the
+// organization's total: it never names it.
+const mcpScopeNoticeEmpty = "You can see 0 assets: none is assigned to a group you belong to, so asset and " +
+	"finding results are empty or partial for this connection (findings assigned to you still show). " +
+	"Ask an owner to add you to a group that owns assets."
+
+// mcpScopeNoticePartial is the notice for a person whose role reads all
+// organization data in the web console: they may see the total there.
+const mcpScopeNoticePartial = "You can see %d of %d assets; the rest are not assigned to a group you belong to."
+
+// mcpScopeNoticeReconnect follows the partial notice on an MCP OAuth
+// connection, which its person can allow to read all organization data.
+const mcpScopeNoticeReconnect = " This connection reads only your groups' assets: reconnect and allow access " +
+	"to all organization data to read them all."
+
+// noteScope adds scope_notice to meta when the connection reads on its
+// person's own scope rows and those leave assets out. It is best effort: a
+// lookup failure leaves the result as it is. The visible count reads the
+// asset list as the same caller. The organization's total is read, as a
+// count only, when the person holds a full-data role (they see it in the
+// web console) and the connection may read assets; anyone else is told
+// only that their scope covers nothing.
+func (h *MCPHandler) noteScope(ctx context.Context, tenantID string, meta map[string]any) {
+	if h.assets == nil || !middleware.ReadsOnOwnScope(ctx) {
 		return
 	}
-	res, err := h.assets.ListAssets(ctx, asset.ListAssetsInput{
-		TenantID:     tenantID,
-		ActingUserID: actingUser(ctx),
-		IsAdmin:      false,
-		Page:         1,
-		PerPage:      1,
+	user := actingUser(ctx)
+	visible, err := h.assets.ListAssets(ctx, asset.ListAssetsInput{
+		TenantID: tenantID, ActingUserID: user, IsAdmin: false, Page: 1, PerPage: 1,
 	})
-	if err != nil || res.Total != 0 {
+	if err != nil {
 		return
 	}
-	meta["scope_notice"] = mcpEmptyScopeNotice
+	if total, ok := h.orgAssetTotal(ctx, tenantID, user); ok {
+		if visible.Total < total {
+			n := fmt.Sprintf(mcpScopeNoticePartial, visible.Total, total)
+			if middleware.GetAuthProvider(ctx) == middleware.AuthProviderMCPOAuth {
+				n += mcpScopeNoticeReconnect
+			}
+			meta["scope_notice"] = n
+		}
+		return
+	}
+	if visible.Total == 0 {
+		meta["scope_notice"] = mcpScopeNoticeEmpty
+	}
+}
+
+// orgAssetTotal is the number of assets the person sees in the web console
+// with their full-data role (every asset but private program assets hidden
+// from them), and true; false when they hold no such role, the connection
+// may not read assets, or a lookup fails. It is a count, never rows.
+func (h *MCPHandler) orgAssetTotal(ctx context.Context, tenantID, user string) (int64, bool) {
+	if h.roles == nil || user == "" || !middleware.HasPermission(ctx, string(permission.AssetsRead)) {
+		return 0, false
+	}
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return 0, false
+	}
+	full, err := h.roles.HoldsFullDataRole(ctx, tid, user)
+	if err != nil || !full {
+		return 0, false
+	}
+	// IsAdmin here is the full-data view the person has in the console
+	// (unrestricted, private program assets still hidden), used for a count.
+	all, err := h.assets.ListAssets(ctx, asset.ListAssetsInput{
+		TenantID: tenantID, ActingUserID: user, IsAdmin: true, Page: 1, PerPage: 1,
+	})
+	if err != nil {
+		return 0, false
+	}
+	return all.Total, true
 }
