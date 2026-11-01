@@ -343,4 +343,64 @@ describe('EnterCodePanel', () => {
     expect(api.reject).toHaveBeenCalledWith('p1', 'K7QM4ZTD')
     await waitFor(() => expect(onClose).toHaveBeenCalled())
   })
+  describe('re-pair', () => {
+    const repairView = () =>
+      pendingView({
+        repair_sensor_id: 's-old',
+        repair_sensor_name: 'edge-01',
+        repair_reason: 'host_moved',
+        repair_before: {
+          hostname: 'old-host',
+          ip_address: '192.0.2.10',
+          os: 'linux',
+          arch: 'amd64',
+          version: '0.30.0',
+          last_seen_at: new Date(Date.now() - 2 * 86_400_000).toISOString(),
+        },
+      })
+
+    it('compares what the platform knew with the host asking, and marks changes', async () => {
+      api.lookup.mockResolvedValue(repairView())
+      const user = userEvent.setup()
+      render(panel())
+      await findByCode(user)
+      const table = await screen.findByTestId('repair-comparison')
+      expect(table).toHaveTextContent('old-host')
+      expect(table).toHaveTextContent('192.0.2.10')
+      expect(table).toHaveTextContent('Reason given: The host was rebuilt or moved')
+      // hostname, address and version differ; the system does not.
+      expect(screen.getAllByText('changed')).toHaveLength(3)
+    })
+
+    it('keeps the registration: no name, type, zones or profile, and names the re-paired sensor', async () => {
+      api.lookup.mockResolvedValue(repairView())
+      api.approve.mockResolvedValue({ ...repairView(), status: 'approved', sensor_id: 's-old' })
+      const user = userEvent.setup()
+      render(panel())
+      await findByCode(user)
+      await screen.findByTestId('repair-comparison')
+      expect(screen.queryByTestId('grant-profile')).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'dmz' })).not.toBeInTheDocument()
+      await pick(user)
+      await user.type(screen.getByLabelText('Authenticator code'), '123456')
+      await user.click(screen.getByRole('button', { name: 'Approve re-pair of edge-01' }))
+      await waitFor(() => expect(api.approve).toHaveBeenCalledTimes(1))
+      expect(api.approve.mock.calls[0][1]).toMatchObject({ repair_sensor_id: 's-old' })
+    })
+
+    it('explains a re-pair the API refused because the approval named no sensor', async () => {
+      api.lookup.mockResolvedValue(repairView())
+      api.approve.mockRejectedValue(new ApiClientError('no', 'REPAIR_NOT_ACKNOWLEDGED', 409))
+      const user = userEvent.setup()
+      render(panel())
+      await findByCode(user)
+      await screen.findByTestId('repair-comparison')
+      await pick(user)
+      await user.type(screen.getByLabelText('Authenticator code'), '123456')
+      await user.click(screen.getByRole('button', { name: 'Approve re-pair of edge-01' }))
+      expect(
+        await screen.findByText(/This request replaces the key of an existing sensor/)
+      ).toHaveAttribute('role', 'alert')
+    })
+  })
 })

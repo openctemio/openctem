@@ -519,6 +519,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		// Audit every MCP tools/call (which key, tenant, tool, sanitized args, outcome).
 		mcpHandler.SetAuditService(svc.Audit)
 		mcpHandler.SetModuleGate(moduleGate)
+		// The scope notice names the organization's asset total only to a
+		// person whose role reads all of it in the web console.
+		mcpHandler.SetFullDataRoles(svc.DataScope)
 		mcpAuth = apiKeyAuth.Handler
 	}
 	// The organization MCP policy applies to oct_ keys on the MCP endpoint
@@ -547,6 +550,16 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		mcpHandler.SetScopeCheck(svc.Scope, postgres.NewVerifiedDomainNameRepository(deps.DB), postgres.NewBountyProgramRepository(deps.DB))
 	}
 	mcpDiscovery := newMCPDiscovery(cfg, log)
+	if mcpHandler != nil {
+		// get_asset reads the asset page's services as the connection's
+		// caller; console links point to the web origin. Without discovery
+		// (APP_URL unset) the tool answers without console links.
+		webBase := ""
+		if mcpDiscovery != nil {
+			webBase = mcpDiscovery.Endpoints.Issuer
+		}
+		mcpHandler.SetAssetContext(svc.Asset, webBase)
+	}
 	// OAuth for MCP clients (RFC-062): with an authorization server the MCP
 	// endpoint also accepts its access tokens, and a refused call that
 	// another scope would allow gets a step-up challenge.
@@ -618,6 +631,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		EASM:             newEASMHandler(repos, svc, log),
 		EASMSettings:     newEASMSettingsHandler(cfg, svc, deps, log),
 		EASMLookalike:    newEASMLookalikeHandler(svc, log),
+		PageMonitor:      newPageMonitorHandler(svc, log),
 		EASMNetworkSeed:  newEASMNetworkSeedHandler(svc, log),
 		AssetWebEvidence: newAssetWebEvidenceHandler(svc, log),
 
@@ -944,6 +958,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		// Triage fields on list rows: the dispatcher's own gate (research/124).
 		handlers.Asset.SetTriage(svc.ActiveGate, repos.Attribution, svc.Scope)
 		handlers.Asset.SetMonitoring(svc.ActiveGate, repos.Asset)
+		handlers.Exposure.SetItemsView(svc.ActiveGate)
 	}
 	handlers.Scope.SetHiddenPrograms(svc.BountyProgram)
 	if svc.Scan != nil && svc.ActiveGate != nil {
@@ -1344,6 +1359,10 @@ func wireStepUpGate(handlers *routes.Handlers, svc *Services) {
 	}
 	if svc.SensorGrant != nil {
 		svc.SensorGrant.SetStepUpGate(gate)
+	}
+	if svc.TenantAI != nil {
+		// Widening automatic AI triage.
+		svc.TenantAI.SetStepUpGate(gate)
 	}
 	if handlers.CIAdmin != nil {
 		handlers.CIAdmin.SetStepUpGate(gate)
@@ -2026,6 +2045,18 @@ func bootstrapSession(cfg *config.Config, svc *Services, h routes.Handlers) hand
 	localAuth := h.LocalAuth
 	boot.EmailDelivery = func() bool { return localAuth != nil && localAuth.EmailDeliveryAvailable() }
 	return boot
+}
+
+// newPageMonitorHandler serves web page monitoring; watch changes are audited.
+func newPageMonitorHandler(svc *Services, log *logger.Logger) *handler.PageMonitorHandler {
+	if svc.PageMonitor == nil {
+		return nil
+	}
+	var audit handler.AttributionAuditor
+	if svc.Audit != nil {
+		audit = svc.Audit
+	}
+	return handler.NewPageMonitorHandler(svc.PageMonitor, audit, log)
 }
 
 // newEASMLookalikeHandler serves lookalike monitoring; changes are audited.

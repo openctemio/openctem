@@ -145,6 +145,11 @@ export function pairingErrorMessage(err: unknown, fallback: string, tr?: Tr): st
         'sensors.pair.err.orgMismatch',
         'The organization changed since you reviewed this request. Enter the code again in the organization the sensor is meant for.'
       )
+    if (e.code === 'REPAIR_NOT_ACKNOWLEDGED')
+      return pick(
+        'sensors.pair.err.repairNotAcknowledged',
+        'This request replaces the key of an existing sensor (or adds a new one). Review it again and confirm which.'
+      )
     if (e.code === 'FINGERPRINT_NOT_CONFIRMED')
       return pick('sensors.pair.err.fingerprint', 'Pick the fingerprint the sensor shows.')
     if (e.code === 'FINGERPRINT_MISMATCH')

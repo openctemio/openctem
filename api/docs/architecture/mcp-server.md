@@ -59,14 +59,16 @@ read tools `readOnlyHint: true, idempotentHint: true`, the write tool
 
 | Tool | Permission | Returns |
 |---|---|---|
-| `list_findings` | `findings:read` | findings (severity/status/source/search filters), caller's data scope |
+| `list_findings` | `findings:read` | the findings list (GET /findings) as the caller: `severity`, `status`, `state`, `source`, `search`, `asset_id`, `cve`, `kev`, `min_epss`, `priority_class`, `sla_status`, `assignee` (`me` or a user id), `created_after/before`, `updated_after/before`, `sort`, paged; parsed by the list's own parser (unknown values refused); `status_note` |
 | `get_finding` (`finding_id`) | `findings:read` | one finding |
-| `finding_stats` | `findings:read` | totals by severity/status + KEV/EPSS/SLA rollups |
-| `list_active_cves` | `findings:read` | CVEs of open findings in scope, riskiest first (the vulnerabilities list read) |
+| `finding_stats` | `findings:read` | totals by severity/status + KEV/EPSS/SLA rollups, over the findings list's compiled filter |
+| `list_active_cves` | `findings:read` | one row per CVE named on an open finding in scope, riskiest first (the vulnerabilities list read); `catalog_status` (`in catalog` / `not in catalog`), `open_kev_findings` per row and in total |
 | `explain_finding_priority` (`finding_id`) | `findings:read` | priority explanation (KEV/EPSS/reachability) |
-| `get_exposure_chains` | `assets:read` | shortest attack paths to KEV/crown-jewel assets |
-| `list_remediation_groups` | `findings:read` | solution families |
-| `list_assets` | `assets:read` | assets (exposure/criticality/search) |
+| `get_exposure_chains` | `assets:read` | shortest attack paths to KEV/crown-jewel assets; summary with directly exposed (length 0) and multi-hop counts, `relationship_note` when no asset relationships can build a longer path |
+| `list_remediation_groups` | `findings:read` | solution families, most findings first, paged |
+| `list_assets` | `assets:read` | assets, riskiest first (exposure/criticality/search), paged; `risk_score` 0..100 from open findings, `risk_scored_at` |
+| `search_assets` | `assets:read` | the inventory list as the caller: free text, an IP or CIDR (assets inside it), a CVE (assets with an open finding of it), `type`, `exposure`, `criticality`, `internet_facing`, `monitoring_state`, `scope_status`, `owner_id`, `technology`, `has_findings`; riskiest first, paged, with `console_url` |
+| `get_asset` (`asset_id` or exact `name`) | `assets:read` | the asset page: `sections` overview, findings (open by severity, top 10 by priority), coverage, ports, lineage, changes; each section is its REST endpoint's own response, and a section the caller may not read carries only an error code |
 | `compliance_posture` | `compliance:frameworks:read` | framework/control posture |
 | `list_campaigns` | `pentest:campaigns:read` | the person's campaigns, newest first: role, phase, TLP, dates, counts, next action; `phase`, `role`, `search`, `include_archived` filters, paged |
 | `my_work` | `pentest:campaigns:read` | the person's active campaigns with something to do (drafts, assigned findings, reviews, retests; for a client, open published findings), with the next action, paged |
@@ -82,6 +84,87 @@ read tools `readOnlyHint: true, idempotentHint: true`, the write tool
 
 Tools that took `id` take `campaign_id` or `finding_id` like the others; `id`
 is still accepted.
+
+### Asset tools
+
+`search_assets` and `get_asset` read the same services as the console's
+inventory and asset page (`AssetService.ListAssets`, `GetAssetInCallerScope`,
+`GetCoverage`, `GetResolvedPorts`, `GetLineage`, `ListAssetChanges`) with the
+connection's request context, so the data-scope enforcer applies the
+connection's scope and the private-program rule exactly as for the console;
+an asset outside it is `not_found`. The sections are built by the REST
+handlers' own response mappers (`toAssetResponse`, `toResolvedPortsResponse`,
+`toLineageResponse`, `toChangePage`), so the tool and the page show the same
+fields, redacted the same way. The findings section reads the findings list
+as the same caller as `list_findings`. A name that matches several assets
+returns them as candidates. Owners, certificates, technologies, attack paths
+and remediation tasks of an asset are not sections yet.
+
+### Paging
+
+Every generic list tool (`list_findings`, `list_active_cves`, `list_assets`,
+`list_remediation_groups`) takes `page` (from 1) and `limit` (default 25, at
+most 100) and returns `total`, `page`, `limit`, `has_more` and, when there is
+one, `next_page`, the same shape as the pentest list tools.
+
+### Counts that agree
+
+`finding_stats` and `list_active_cves` compile the findings list's filter as
+the same caller (`mcpFilterCaller`: the key owner, never the administrator
+bypass, on the owner's scope rows unless the connection may read all
+organization data, `middleware.ReadsOnOwnScope`), the same decision the web
+console's vulnerabilities page and every data-scope read make. A known
+exploited finding has one definition, `vulnerability.KEVFindingSQL`: the
+finding's `is_in_kev` flag, which the threat-intel refresh keeps in step with
+the CISA KEV catalog. `finding_stats.kev_open`, the sum of
+`open_kev_findings` over `list_active_cves` (its `open_kev_findings` total)
+and the dashboard metric `intel.kev_open` (the findings filter `is_in_kev`)
+therefore give one number. A CVE row is known exploited when the KEV catalog
+lists it or a finding of it carries the flag; the vulnerability catalog's own
+KEV date is not a third source.
+
+`list_active_cves` groups the findings by the CVE they name, so a CVE that is
+not in the vulnerability catalog still has its row (`catalog_status: "not in
+catalog"`, an empty title, CVSS and EPSS from the findings). A finding's
+status is its own: one finding is one CVE on one asset, so the same CVE can be
+`false_positive` on one asset and `new` on another; the list counts the open
+ones and its `status_note` says so.
+
+A fix has one definition too, `vulnerability.FindingFixKnownSQL`: the
+scanner listed fixed versions or said a fix is available
+(`remediation.fix_available`), or the finding is in a remediation group (a
+group key exists only for a concrete shared fix). `list_active_cves.has_fix`
+and the package inventory read it, and each CVE row lists the titles of the
+remediation groups its open findings are in (`remediations`), as
+`list_remediation_groups` names them. The `remedy_available` column is not a
+signal (it defaults to true).
+
+Pentest findings of campaigns kept away from AI applications (TLP above the
+organization's limit, or AI assistants off) are left out in SQL of every
+compiled findings read an MCP tool makes (`FilterCaller.PentestAIAllowTLP`).
+
+`list_assets.risk_score` is the stored asset risk score (0..100) from the
+asset's open findings; an asset with no open finding scores 0, and
+`risk_scored_at` says when it was computed. The tool lists the riskiest first.
+
+### Scope notice
+
+An MCP connection reads only the assets its person's groups and scope rules
+grant ([mcp-authorization.md](mcp-authorization.md)), unless the person
+allowed it to read all organization data at consent. Assets are granted
+through owner groups, so a person whose role reads everything in the console
+can see few or no assets over MCP while findings assigned to them still show.
+`list_assets`, `list_findings`, `finding_stats` and `list_active_cves` then
+add one `scope_notice` line:
+
+- a person who holds a full-data role, on a connection that may read assets:
+  "You can see N of M assets; the rest are not assigned to a group you belong
+  to." (M is the count they see in the console; an OAuth connection is told it
+  can be reconnected with access to all organization data);
+- anyone else whose scope covers no asset: "You can see 0 assets", never the
+  organization's total;
+- no notice when the connection reads all organization data, or the scope
+  covers every asset.
 
 ### Pentest tools
 
@@ -141,8 +224,9 @@ behind that application, which a TLP:RED engagement typically does not allow.
   `add_finding_comment` (before the confirmation and again when it runs).
   `list_campaigns` and `my_work` leave restricted campaigns out in SQL and
   return `restricted_hidden` (a count, no names). The generic `list_findings`
-  leaves their findings out in SQL. A policy that cannot be read refuses
-  (`internal_error`). `finding_stats` counts stay tenant-wide (numbers only).
+  leaves their findings out in SQL, and so do `finding_stats` and
+  `list_active_cves` (their counts agree with the list). A policy that cannot
+  be read refuses (`internal_error`).
 
 ### Untrusted content
 

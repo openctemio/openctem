@@ -619,6 +619,12 @@ vars:
     type: duration
     default: "720h"
     description: "Session lifetime (30 days)."
+  - name: AUTH_REFRESH_REUSE_GRACE
+    component: api
+    group: "Authentication"
+    type: duration
+    default: "30s"
+    description: "How long after a refresh-token rotation the same client may present the replaced token again (parallel requests) and receive the successor already issued instead of ending the session. 0 disables; capped at 2m. Any other reuse still ends the session."
   - name: SCOPE_DENY_EXTRA
     component: api
     group: "Organizations and scope guardrails"

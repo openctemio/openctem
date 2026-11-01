@@ -112,6 +112,7 @@ type AssetService struct {
 	coverage  covdom.Repository
 	// The open ports of the addresses a name resolves to. Optional.
 	resolvedPorts assetdom.ResolvedPortReader
+	lineage       assetdom.LineageReader
 	enrichReqs    freshdom.RequestRepository
 	resolution    assetresolution.Store
 	// createdHook requests enrichment of assets a person created.
@@ -1428,11 +1429,13 @@ type ListAssetsInput struct {
 	// UnclassifiedScanned is the tenant's input to it, resolved by the caller.
 	MonitoringState     []string `validate:"max=7,dive,oneof=irrelevant out_of_scope inactive pending_decision unvalidated not_monitored monitored"`
 	UnclassifiedScanned bool
-	DiscoveredBy        []string `validate:"max=10,dive,max=40"`
-	DiscoveryTechnique  []string `validate:"max=10,dive,max=50"`
-	MinConfidence       *int     `validate:"omitempty,min=0,max=100"`
-	MaxConfidence       *int     `validate:"omitempty,min=0,max=100"`
-	FirstSeenAfter      *time.Time
+	// Primary: only the organization's root domains (asset.PrimarySQL).
+	Primary            bool
+	DiscoveredBy       []string `validate:"max=10,dive,max=40"`
+	DiscoveryTechnique []string `validate:"max=10,dive,max=50"`
+	MinConfidence      *int     `validate:"omitempty,min=0,max=100"`
+	MaxConfidence      *int     `validate:"omitempty,min=0,max=100"`
+	FirstSeenAfter     *time.Time
 	// ProgramAssets: only (bug-bounty program assets) or exclude (leave
 	// out program-only assets), RFC-065 §16.5.
 	ProgramAssets string `validate:"omitempty,oneof=only exclude"`
@@ -1444,6 +1447,8 @@ type ListAssetsInput struct {
 	// Coverage: covered or uncovered by the coverage ledger
 	// (asset.CoverageWindow).
 	Coverage string `validate:"omitempty,oneof=covered uncovered"`
+	// CoverageCause: the uncovered assets with this coverage gap cause.
+	CoverageCause string `validate:"omitempty,oneof=no_sensor platform_failure paused target_unreachable never_run overdue out_of_scope other"`
 	// Technologies: assets using any of these technologies (normalised
 	// names); TechnologyCategories: assets with a technology in any of these
 	// categories (RFC-112).
@@ -1644,6 +1649,7 @@ func withTriageFilters(filter assetdom.Filter, input ListAssetsInput) (assetdom.
 	filter.ScopeStatuses = input.ScopeStatus
 	filter.MonitoringStates = input.MonitoringState
 	filter.UnclassifiedScanned = input.UnclassifiedScanned
+	filter.Primary = input.Primary
 	filter.DiscoveredBy = input.DiscoveredBy
 	filter.DiscoveryTechniques = input.DiscoveryTechnique
 	filter.MinConfidence, filter.MaxConfidence = input.MinConfidence, input.MaxConfidence
@@ -1654,6 +1660,7 @@ func withTriageFilters(filter assetdom.Filter, input ListAssetsInput) (assetdom.
 	filter.Freshness = input.Freshness
 	filter.Resolution = input.Resolution
 	filter.Coverage = input.Coverage
+	filter.CoverageCause = input.CoverageCause
 	filter.Technologies = input.Technologies
 	filter.TechnologyCategories = input.TechnologyCategories
 	filter.TechnologyVersion = input.TechnologyVersion

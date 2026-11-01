@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Accepted (decisions SA-1..SA-6 and the secure defaults D-1..D-7, 2026-10-05); SP1 and SP2 implemented; self-binding of bearer-key sensors (§4.8, owner 2026-10-11) implemented; approval context and organization binding (§4.5, threats 22-25) implemented; one install path, the approval link and the fingerprint pick (§4.9, threats 30-33) implemented |
+| Status | Accepted (decisions SA-1..SA-6 and the secure defaults D-1..D-7, 2026-10-05); SP1 and SP2 implemented; self-binding of bearer-key sensors (§4.8, owner 2026-10-11) implemented; approval context and organization binding (§4.5, threats 22-25) implemented; one install path, the approval link and the fingerprint pick (§4.9, threats 30-33); console re-pair (§4.6, threats 26-27) implemented |
 | Workflow | [sensor-platform-workflow.md](../architecture/sensor-platform-workflow.md) (the end-to-end sensor and platform flow as implemented today) |
 | Scope | api, web, sdk-go (`pkg/sensorsig`, `pkg/sensorproto/pairing`, `pkg/sensorkit`, `pkg/httpsec`), sensor |
 | Builds on | [RFC-032](RFC-032-sensor-enrollment-and-identity.md) (sensor-held Ed25519 key, RFC 9421 signatures, enrollment, `octs_`/`octe_`), [RFC-040](RFC-040-platform-sensor-mutual-distrust.md) (result binding, signed jobs, local ceiling), [RFC-023](RFC-023-scan-zones-and-scanners.md) (zones), [RFC-046](RFC-046-scans-redesign.md) and the stage catalog (tiers T0/T1/T2) |
@@ -316,13 +316,47 @@ The failed lookup that locks a user's lookups (20 within an hour) is audited
 
 ### 4.6 Re-pair
 
-A sensor that lost its key, or whose key is suspected stolen, starts a
-pairing with `sensor_id`. Approval needs the same permission, step-up and
-fingerprint check, plus the registration must be in the approver's tenant. On
-approval every active key of that sensor is revoked (`revoked_reason =
-repaired`), a bearer key on the row is cleared (the sensor becomes key-bound),
-the trust level returns to New, and the history (keys, events, results) is
-kept.
+Re-pair gives an existing registration a new key. The console decides it:
+
+- **Console re-pair (the default).** An administrator opens the sensor and
+  chooses **Re-pair…**, gives a reason (`lost_identity`, `host_moved`,
+  `key_compromised`, `install_method`; stored as `sensor_pairings.repair_reason`,
+  audited and on the timeline) and gets a reverse-mode code bound to the sensor
+  (`POST /api/v1/sensor-pairings/expectations` with `repair_sensor_id` and
+  `repair_reason`; `sensors:pair`; the sensor must be the organization's own,
+  not shared, not revoked, else `404`). The code works for that sensor only; a
+  newer re-pair code of the same sensor closes the earlier ones. The request
+  names no name, zones or profile: a re-pair keeps the registration.
+- **The code decides the target.** A sensor that starts with a code never sets
+  the target: an ordinary code stays a new-sensor request whatever `sensor_id`
+  the sensor sends (logged), and a re-pair code keeps its target. A
+  default-mode request carrying `sensor_id` (`openctemio-sensor pair -repair`,
+  the sensor shows the code) is shown as **Re-pairing <name>**.
+- **The approval confirms the target.** `repair_sensor_id` in the approval must
+  name the sensor the request re-pairs, and be empty for a request that adds a
+  sensor; otherwise `409 REPAIR_NOT_ACKNOWLEDGED` and nothing is written. Same
+  permission (`sensors:approve`), step-up, fingerprint tick and organization
+  echo as every approval.
+- **Approval.** In the approval's transaction every active key of the sensor is
+  revoked (`revoked_reason = repaired`), a bearer key on the row is cleared
+  (the sensor becomes key-bound), the trust level returns to New and the grant
+  is kept (its version moves on); the approval's name, type, zones and profile
+  are ignored. After it, the commands the sensor held under a lease are taken
+  back (routed scan work re-queued, the rest failed, the old holder fenced
+  off), the re-pair is on the sensor's timeline (`repair_started`,
+  `repaired`), audited (`sensor.repaired`, high) and every administrator is
+  notified. The history (keys, events, results) is kept.
+- **The old key until then.** It keeps working until the approval, so a
+  failed re-pair never takes a working sensor offline. For a key that may be
+  compromised the console offers to revoke it at once
+  (`POST /api/v1/sensors/{id}/keys/{key_id}/revoke`); revoking a sensor's last
+  active key also takes back its leased commands.
+- **Not a re-pair.** Moving a sensor to another organization (SA-5): add a new
+  sensor there and remove the old one.
+
+The review shows, next to the host facts of the request, what the platform
+last knew of the sensor (`repair_before`: hostname, address, system, version,
+status, last seen) and the reason.
 
 ### 4.7 Sensor side
 
@@ -553,6 +587,8 @@ Each line is a test in the implementation PRs.
 | 31 | Blind approval (a tick clicked without looking at the host) | The approval carries the picked fingerprint; the server compares it with the SAS in constant time | no pick `400` before step-up; a wrong pick with a failed step-up closes nothing |
 | 32 | A start with a code as an oracle for open codes | Every start without a token answers `user_code`; a code is the request's own whether or not it was expected, so expected and unexpected codes answer alike; budgets unchanged | unexpected code: `user_code` equal to it, a tenantless request reachable only by that code |
 | 33 | The attached request of one organization reached by another through the link | Lookup of an attached request is scoped to the session's organization; tenantless requests only by code | another organization's lookup and approval of an attached code `404` |
+| 34 | A sensor (or whoever holds an ordinary code) turns an "add a sensor" code into a re-pair of an existing sensor and gets its working key revoked | The code's target is set by the console only; the approval must name the re-paired sensor | ordinary code + `sensor_id` stays a new-sensor request; approval without or with another `repair_sensor_id` `409`; re-pair code never creates a sensor |
+| 35 | Work claimed with a key a re-pair or revocation withdrew keeps running or reports later | Leased commands taken back at approval and when the last key is revoked; the lease fence refuses the old holder | release called once per re-pair and per last-key revocation |
 | — | Cross-tenant access | Every query tenant-scoped; approval binds to the approver's tenant; grants and pairings of another tenant answer `404` | cross-tenant grant read/update `404`; re-pair of another tenant's sensor `404` |
 
 ## 7. Data and migrations

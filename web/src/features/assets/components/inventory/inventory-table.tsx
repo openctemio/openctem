@@ -42,7 +42,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { ScopeCheckBadge, useScopeCheck } from '@/features/scope'
 import { ScopeTriageBadge } from './scope-triage-badge'
-import { MonitoringStateChip } from './monitoring-state-chip'
+import { MonitoringStateControl } from './monitoring-state-control'
 import { useTranslation } from '@/context/i18n-provider'
 import { assetDetailHref } from '@/features/findings/lib/asset-link'
 import type { TypeView } from '@/features/asset-types/lib/type-view'
@@ -87,17 +87,21 @@ const PAGE_SIZES = [10, 20, 30, 50, 100]
  * lower-priority column needs before it shows, so a narrow screen drops
  * columns instead of scrolling the table sideways. Name, risk, scope and
  * service facts always show (with the checkbox and the row menu they take
- * about 860px); then open findings, criticality, exposure, owner and last
- * seen join in that order (research/242 D9). Each value is the running sum of the columns'
+ * about 860px); then open findings, monitoring, criticality, exposure, owner
+ * and last seen join in that order (research/242 D9). Each value is the running sum of the columns'
  * measured widths in the every-type list, plus a few pixels of slack. A
  * column turned on or off under Columns keeps that choice.
  */
 const COLUMN_ROOM = {
   findings: 1020,
-  criticality: 1140,
-  exposure: 1255,
-  owner: 1355,
-  last_seen: 1475,
+  // The monitoring cell is a chip with its menu arrow (about 30px wider than
+  // the plain chip), so the columns up to owner join 30px later. Last seen keeps
+  // its width: the wide list has room for it.
+  monitoring: 1140,
+  criticality: 1260,
+  exposure: 1375,
+  owner: 1475,
+  last_seen: 1565,
 } as const
 
 /** A one-type list shows "Service facts" only when its own columns do not already. */
@@ -371,6 +375,7 @@ export function InventoryTable({
       {
         // The one derived lifecycle state (monitored, pending decision, ...).
         id: 'monitoring_state',
+        meta: { hideBelow: COLUMN_ROOM.monitoring },
         enableSorting: false,
         header: ({ column }) => (
           <DataTableColumnHeader
@@ -378,7 +383,16 @@ export function InventoryTable({
             title={t('assets.monitoring.column', 'Monitoring')}
           />
         ),
-        cell: ({ row }) => <MonitoringStateChip state={row.original.monitoringState} />,
+        cell: ({ row }) => (
+          <MonitoringStateControl
+            assetId={row.original.id}
+            assetName={row.original.name}
+            state={row.original.monitoringState}
+            attributionState={row.original.triage?.attributionState}
+            canWrite={canWriteAssets}
+            onChanged={onAssetUpdated}
+          />
+        ),
       },
       {
         // External-surface facts (status, IP, technologies, TLS …) for the
@@ -626,6 +640,7 @@ export function InventoryTable({
     locale,
     filterTags,
     onToggleTagFilter,
+    onAssetUpdated,
   ])
 
   return (

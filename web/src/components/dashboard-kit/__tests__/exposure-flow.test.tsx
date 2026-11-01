@@ -1,9 +1,16 @@
-import { act, fireEvent, render, screen, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ExposureFlowViz, ringArcs } from '../exposure-flow-viz'
 import { IntakeViz } from '../intake-viz'
 import type { FlowResult, IntakeData, IntakeSourceRow } from '../types'
+
+// The tooltip popper measures itself; without this it throws when a click opens a tooltip.
+globalThis.ResizeObserver ??= class {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+} as unknown as typeof ResizeObserver
 
 const since = new Date(Date.now() - 30 * 86_400_000).toISOString()
 
@@ -155,25 +162,65 @@ describe('ringArcs', () => {
   })
 })
 
-describe('ExposureFlowViz', () => {
+/**
+ * jsdom has no layout: the visual measures 0 px and takes the phone band.
+ * `atWidth` gives every element a width so the wide band renders.
+ */
+function atWidth(width: number) {
+  const spy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
+    width,
+    height: 400,
+    top: 0,
+    left: 0,
+    right: width,
+    bottom: 400,
+    x: 0,
+    y: 0,
+    toJSON: () => ({}),
+  } as DOMRect)
+  return () => spy.mockRestore()
+}
+
+describe('ExposureFlowViz on a phone (narrow band)', () => {
   it('shows every figure as a link to the list it counts', () => {
     render(<ExposureFlowViz result={flow} scope="organization" />)
-    expect(hrefOf(/^Actionable now 791/)).toBe(flow.actionable.drill)
-    expect(hrefOf(/^Received 602$/)).toBe(intake.drill)
-    expect(hrefOf(/^New or reopened 312$/)).toBe(intake.drill)
+    expect(screen.getByTestId('exposure-flow')).toHaveAttribute('data-band', 'narrow')
+    expect(hrefOf(/^Actionable now 791$/)).toBe(flow.actionable.drill)
+    expect(hrefOf('P0: 9 actionable findings')).toBe(flow.classes[0].drill)
+    expect(hrefOf('P3: 440 actionable findings')).toBe(flow.classes[3].drill)
+    expect(hrefOf(/^602 findings received$/)).toBe(intake.drill)
+    expect(hrefOf(/^312 new or reopened$/)).toBe(intake.drill)
+    expect(hrefOf(/^924 still detected on import$/)).toBe(intake.drill)
+    expect(hrefOf(/^8 removed by rules$/)).toBe(intake.drill)
     expect(hrefOf(/^Open 791$/)).toBe(flow.open.drill)
     expect(hrefOf(/^Past SLA 43$/)).toBe(flow.past_sla.drill)
     expect(hrefOf(/^In progress 112$/)).toBe(flow.in_progress.drill)
     expect(hrefOf(/^Fixed 318$/)).toBe(flow.fixed.drill)
     expect(hrefOf(/^Accepted 22$/)).toBe(flow.accepted.drill)
     expect(hrefOf(/^False positive 97$/)).toBe(flow.false_positive.drill)
-    expect(hrefOf(/^nuclei Sensor 402$/)).toBe(intake.sources[0].drill)
-    expect(hrefOf('Mobilize: 78%')).toBe('/findings?state=open&sla_status=overdue')
-    // The ring's arcs are focusable links with a sentence each.
-    expect(
-      screen.getByRole('link', { name: 'P0: 9 findings, 1% of actionable' })
-    ).toBeInTheDocument()
-    expect(screen.getByText('Organization figures')).toBeInTheDocument()
+    expect(hrefOf(/^nuclei Sensor 402 findings/)).toBe(intake.sources[0].drill)
+    expect(hrefOf('Mobilize: 78% within SLA, Off track')).toBe(
+      '/findings?state=open&sla_status=overdue'
+    )
+    expect(screen.getByText('Organization')).toBeInTheDocument()
+  })
+
+  it('puts the answer first: actionable, outcomes, stages, then sources; no ring', () => {
+    render(<ExposureFlowViz result={flow} />)
+    const order = [...screen.getByTestId('exposure-flow').querySelectorAll('[data-testid]')]
+      .map((el) => el.getAttribute('data-testid'))
+      .filter((id) =>
+        ['flow-headline', 'flow-outcomes', 'flow-stages', 'flow-sources'].includes(id ?? '')
+      )
+    expect(order).toEqual(['flow-headline', 'flow-outcomes', 'flow-stages', 'flow-sources'])
+    expect(screen.getByTestId('flow-priority-bar').querySelectorAll('[data-part]')).toHaveLength(4)
+    expect(screen.queryByRole('group', { name: /by priority class/ })).not.toBeInTheDocument()
+  })
+
+  it('shows the actionable total once, without the old period caption', () => {
+    render(<ExposureFlowViz result={{ ...flow, open: { value: 800, drill: flow.open.drill } }} />)
+    expect(screen.getAllByText('791')).toHaveLength(1)
+    expect(screen.queryByText(/not part of the period/)).not.toBeInTheDocument()
   })
 
   it('says how unhealthy sources are in words, not only colour', () => {
@@ -183,29 +230,14 @@ describe('ExposureFlowViz', () => {
     expect(screen.getAllByText('Unnamed tool').length).toBeGreaterThan(0)
   })
 
-  it('lights a class on focus: centre swaps, the tooltip opens with its list, Escape closes it', async () => {
-    render(<ExposureFlowViz result={flow} />)
-    const arc = screen.getByRole('link', { name: 'P0: 9 findings, 1% of actionable' })
-    act(() => arc.focus())
-    expect(screen.getByTestId('flow-centre')).toHaveTextContent('9')
-    const tip = screen.getByRole('tooltip')
-    expect(arc).toHaveAttribute('aria-describedby', tip.id)
-    expect(within(tip).getByText('Actionable: P0')).toBeInTheDocument()
-    expect(within(tip).getByRole('link', { name: 'View 9 findings' })).toHaveAttribute(
-      'href',
-      flow.classes[0].drill
-    )
-    fireEvent.keyDown(document, { key: 'Escape' })
-    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
-    expect(screen.getByTestId('flow-centre')).toHaveTextContent('791')
-  })
-
-  it('opens the source tooltip on hover with its receipts', async () => {
+  it('opens the source tooltip on hover with its receipts and its split', async () => {
     const user = userEvent.setup()
     render(<ExposureFlowViz result={flow} />)
-    await user.hover(screen.getByRole('link', { name: /^nuclei Sensor 402$/ }))
+    await user.hover(screen.getByRole('link', { name: /^nuclei Sensor 402 findings/ }))
     const tip = screen.getByRole('tooltip')
-    expect(within(tip).getByText('nuclei: received')).toBeInTheDocument()
+    expect(within(tip).getByText('nuclei')).toBeInTheDocument()
+    expect(within(tip).getByText('Seen again')).toBeInTheDocument()
+    expect(within(tip).getByText('Not stored')).toBeInTheDocument()
     expect(within(tip).getByRole('link', { name: 'View 3 receipts' })).toHaveAttribute(
       'href',
       intake.sources[0].drill
@@ -220,9 +252,9 @@ describe('ExposureFlowViz', () => {
       />
     )
     expect(screen.queryByRole('link', { name: /^nuclei/ })).not.toBeInTheDocument()
-    expect(screen.queryByText('602')).not.toBeInTheDocument()
-    expect(screen.getByText('Counts in your data scope')).toBeInTheDocument()
-    expect(hrefOf(/^Actionable now 791/)).toBe(flow.actionable.drill)
+    expect(screen.queryByText(/602/)).not.toBeInTheDocument()
+    expect(screen.getByText('Your scope')).toBeInTheDocument()
+    expect(hrefOf(/^Actionable now 791$/)).toBe(flow.actionable.drill)
   })
 
   it('never links an unsafe drill', () => {
@@ -237,6 +269,226 @@ describe('ExposureFlowViz', () => {
     const table = screen.getAllByRole('table')
     expect(table.length).toBeGreaterThanOrEqual(3)
     expect(screen.getByRole('row', { name: /P2 260/ })).toBeInTheDocument()
+  })
+})
+
+describe('stages: one icon set, state in words, act-here apart', () => {
+  it('keeps the focus stage icon in its own state colour and marks "Act here" separately', () => {
+    render(<ExposureFlowViz result={flow} />)
+    const stages = screen.getByTestId('flow-stages')
+    const current = stages.querySelector('[aria-current="step"]') as HTMLElement
+    expect(current).toHaveAttribute('data-state', 'crit')
+    const icon = current.querySelector('svg[data-state]') as SVGElement
+    expect(icon.getAttribute('class')).toContain('text-destructive')
+    expect(icon.getAttribute('class')).not.toContain('signal')
+    expect(within(current).getByTestId('stage-act-here')).toHaveTextContent('Act here')
+    expect(within(current).getByText('Off track')).toBeInTheDocument()
+  })
+
+  it('names what each figure measures, so a count and a share never read as one unit', () => {
+    render(<ExposureFlowViz result={flow} />)
+    const stages = screen.getByTestId('flow-stages')
+    expect(within(stages).getByText('crown jewels')).toBeInTheDocument()
+    expect(within(stages).getByText('scanned')).toBeInTheDocument()
+    expect(within(stages).getByText('open P0')).toBeInTheDocument()
+    expect(within(stages).getByText('within SLA')).toBeInTheDocument()
+    expect(within(stages).getByText('Not measured')).toBeInTheDocument()
+  })
+})
+
+describe('sources: ranked bars by findings or assets, by tool or instance', () => {
+  const now = new Date().toISOString()
+  const withAssets: FlowResult = {
+    ...flow,
+    intake: {
+      ...intake,
+      sources: [
+        source({
+          id: 'sensor:nuclei',
+          tool: 'nuclei',
+          origin: 'sensor',
+          received: 402,
+          kind: 'detection',
+          instances: [
+            {
+              id: 's1',
+              kind: 'sensor',
+              name: 'edge-01',
+              received: 402,
+              health: 'ok',
+              last_at: now,
+              sensor_href: '/sensors/s1',
+            },
+          ],
+        }),
+        source({
+          id: 'sensor:subfinder',
+          tool: 'subfinder',
+          origin: 'sensor',
+          received: 0,
+          assets: 9000,
+          kind: 'discovery',
+          instances: [
+            {
+              id: 's1',
+              kind: 'sensor',
+              name: 'edge-01',
+              received: 0,
+              assets: 6000,
+              health: 'ok',
+              last_at: now,
+              sensor_href: '/sensors/s1',
+            },
+            {
+              id: 's2',
+              kind: 'sensor',
+              name: 'dc-02',
+              received: 0,
+              assets: 3000,
+              health: 'failed',
+              last_at: now,
+              sensor_href: '/sensors/s2',
+            },
+          ],
+        }),
+        source({ id: 'sensor:dnsx', tool: 'dnsx', origin: 'sensor', received: 0, assets: 0 }),
+        source({
+          id: 'platform:version-match',
+          tool: 'version-match',
+          origin: 'platform',
+          received: 59,
+          kind: 'platform',
+          instances: [
+            {
+              id: 'platform',
+              kind: 'platform',
+              name: 'Platform',
+              received: 59,
+              health: 'ok',
+              last_at: now,
+            },
+          ],
+        }),
+      ],
+    },
+  }
+  const ranked = () =>
+    [...screen.getByTestId('ranked-bars').querySelectorAll('li[data-key]')].map((li) =>
+      li.getAttribute('data-key')
+    )
+
+  beforeEach(() => {
+    try {
+      window.localStorage.clear()
+    } catch {
+      /* no storage */
+    }
+  })
+
+  it('ranks by findings first and folds the healthy zeros into one line', () => {
+    render(<ExposureFlowViz result={withAssets} />)
+    expect(ranked()).toEqual(['s:sensor:nuclei', 's:platform:version-match'])
+    expect(screen.getByTestId('ranked-zeros')).toHaveTextContent(
+      '+2 sources with nothing in 30 days'
+    )
+    expect(hrefOf(/^version-match Platform 59 findings/)).toBe(withAssets.intake?.sources[3].drill)
+  })
+
+  it('re-ranks by assets, so a discovery tool is never shown as zero', async () => {
+    const user = userEvent.setup()
+    render(<ExposureFlowViz result={withAssets} />)
+    await user.click(screen.getByRole('button', { name: 'Assets' }))
+    expect(ranked()[0]).toBe('s:sensor:subfinder')
+    expect(screen.getByRole('link', { name: /^subfinder Sensor 9,000 assets/ })).toBeInTheDocument()
+    expect(screen.queryAllByTestId('rank-move')).toHaveLength(0)
+  })
+
+  it('groups by instance from the same read, a failing instance keeps its dot', async () => {
+    const user = userEvent.setup()
+    render(<ExposureFlowViz result={withAssets} />)
+    await user.click(screen.getByRole('button', { name: 'Source instance' }))
+    expect(ranked()).toEqual(['i:sensor:s1', 'i:platform:platform', 'i:sensor:s2'])
+    const failing = screen.getByRole('link', { name: /^dc-02 Sensor 0 findings/ })
+    expect(failing).toHaveAttribute('href', '/sensors/s2')
+    expect(failing).toHaveAttribute('data-health', 'failed')
+  })
+
+  it('lists the instances that fed a tool in its tooltip, with a link to the sensor', async () => {
+    const user = userEvent.setup()
+    render(<ExposureFlowViz result={withAssets} />)
+    await user.hover(screen.getByRole('link', { name: /^nuclei Sensor 402 findings/ }))
+    const tip = screen.getByRole('tooltip')
+    expect(within(tip).getByText('edge-01')).toBeInTheDocument()
+    expect(within(tip).getByText('402 (100%)')).toBeInTheDocument()
+    expect(within(tip).getByRole('link', { name: 'Per-sensor activity' })).toHaveAttribute(
+      'href',
+      '/sensors/s1'
+    )
+  })
+
+  it('remembers the view on this browser and survives blocked storage', async () => {
+    const user = userEvent.setup()
+    const { unmount } = render(<ExposureFlowViz result={withAssets} />)
+    await user.click(screen.getByRole('button', { name: 'Source instance' }))
+    unmount()
+    render(<ExposureFlowViz result={withAssets} />)
+    expect(screen.getByRole('button', { name: 'Source instance' })).toHaveAttribute(
+      'aria-pressed',
+      'true'
+    )
+    cleanup()
+    const get = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new Error('blocked')
+    })
+    const set = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('blocked')
+    })
+    render(<ExposureFlowViz result={withAssets} />)
+    await user.click(screen.getByRole('button', { name: 'Assets' }))
+    expect(ranked()[0]).toBe('s:sensor:subfinder')
+    get.mockRestore()
+    set.mockRestore()
+  })
+
+  it('hides the switches when no source carries assets or instances', () => {
+    render(<ExposureFlowViz result={flow} />)
+    expect(screen.queryByRole('group', { name: 'View' })).not.toBeInTheDocument()
+  })
+})
+
+describe('ExposureFlowViz on a wide card', () => {
+  let restore: () => void
+  beforeEach(() => {
+    restore = atWidth(1200)
+  })
+  afterEach(() => restore())
+
+  it('keeps the ring, its arcs are links, the funnel has no actionable figure', () => {
+    render(<ExposureFlowViz result={flow} />)
+    expect(screen.getByTestId('exposure-flow')).toHaveAttribute('data-band', 'wide')
+    expect(
+      screen.getByRole('link', { name: 'P0: 9 findings, 1% of actionable' })
+    ).toBeInTheDocument()
+    expect(hrefOf(/^Findings received 602$/)).toBe(intake.drill)
+    expect(hrefOf(/^New or reopened 312$/)).toBe(intake.drill)
+    expect(hrefOf(/^Actionable now 791 by priority class$/)).toBe(flow.actionable.drill)
+  })
+
+  it('lights a class on focus: centre swaps, the tooltip opens with its list, Escape closes it', () => {
+    render(<ExposureFlowViz result={flow} />)
+    const arc = screen.getByRole('link', { name: 'P0: 9 findings, 1% of actionable' })
+    act(() => arc.focus())
+    expect(screen.getByTestId('flow-centre')).toHaveTextContent('9')
+    const tip = screen.getByRole('tooltip')
+    expect(arc).toHaveAttribute('aria-describedby', tip.id)
+    expect(within(tip).getByText('Actionable: P0')).toBeInTheDocument()
+    expect(within(tip).getByRole('link', { name: 'View 9 findings' })).toHaveAttribute(
+      'href',
+      flow.classes[0].drill
+    )
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
+    expect(screen.getByTestId('flow-centre')).toHaveTextContent('791')
   })
 })
 
@@ -318,15 +570,16 @@ describe('one definition per figure (count equals the list it opens)', () => {
     expect(screen.queryByText('263')).not.toBeInTheDocument()
   })
 
-  it('keeps the flow steps non-increasing and sets the stock apart', () => {
+  it('keeps the flow steps non-increasing and shows the stock once', () => {
+    const restore = atWidth(1200)
     render(<ExposureFlowViz result={seededFlow} />)
-    const received = screen.getByRole('link', { name: /Received/ })
-    const newOrReopened = screen.getByRole('link', { name: /New or reopened/ })
+    const received = screen.getByRole('link', { name: /Findings received/ })
+    const newOrReopened = screen.getByRole('link', { name: /^New or reopened/ })
     expect(received).toHaveTextContent('1,634')
     expect(newOrReopened).toHaveTextContent('346')
-    const actionable = screen.getByRole('link', { name: /Actionable now/ })
-    expect(actionable).toHaveTextContent('760')
-    expect(actionable).toHaveTextContent('open now, not part of the period')
+    expect(screen.getAllByText('760')).toHaveLength(1)
+    expect(screen.queryByText(/not part of the period/)).not.toBeInTheDocument()
+    restore()
   })
 })
 

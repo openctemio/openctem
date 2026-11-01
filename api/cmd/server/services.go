@@ -24,6 +24,7 @@ import (
 	signerclient "github.com/openctemio/openctem/api/internal/infra/signer"
 
 	"github.com/openctemio/openctem/api/internal/app/orgdeletion"
+	pagemonapp "github.com/openctemio/openctem/api/internal/app/pagemon"
 	"github.com/openctemio/openctem/api/internal/app/scanrun"
 	"github.com/openctemio/openctem/api/internal/app/suspension"
 	webevidenceapp "github.com/openctemio/openctem/api/internal/app/webevidence"
@@ -889,6 +890,8 @@ type Services struct {
 	EASMNetworkSeeds *easmapp.NetworkSeedService
 	// WebEvidence stores and serves web assets' captures (RFC-081).
 	WebEvidence *webevidenceapp.Service
+	// PageMonitor runs web page monitoring (RFC-138).
+	PageMonitor *pagemonapp.Service
 
 	// Compliance
 	Compliance *compliance.ComplianceService
@@ -1229,6 +1232,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Asset.SetResolution(repos.AssetResolution)
 	s.Asset.SetCoverage(repos.AssetCoverage)
 	s.Asset.SetResolvedPorts(repos.AssetRelationship)
+	// How an asset was found: its ancestor chain (docs/architecture/easm.md).
+	s.Asset.SetLineage(repos.AssetRelationship)
 	s.AssetCoverage = coverageapp.NewService(repos.AssetCoverage, log)
 	s.Asset.SetChangeTimeline(repos.AssetChangeEvents)
 	s.Asset.SetAttributeSourceLister(repos.AssetChangeEvents)
@@ -1465,6 +1470,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Exposure.SetDataScope(s.DataScope)
 	// Analyst severity override: stored on the exposure, audited.
 	s.Exposure.SetSeverityStore(repos.Exposure)
+	s.Exposure.SetItemReader(repos.Exposure)
 	s.Exposure.SetAuditService(s.Audit)
 	// Four-eyes on accepting or dismissing a high or critical exposure or
 	// leaked credential (one gate for both routes).
@@ -2000,6 +2006,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 			orgPolicy = s.PlatformAI
 		}
 		s.TenantAI = tenantai.NewService(repos.TenantAISettings, s.Encryptor, s.Audit, llmFactory, orgPolicy, log)
+		s.TenantAI.SetAutoTriageDefaults(s.AITriage.AutoTriageDefaults)
+		if s.Tenant != nil {
+			s.TenantAI.SetLooseningNotifier(s.Tenant)
+		}
 		s.Vulnerability.SetAITriageService(s.AITriage) // Wire auto-triage on finding creation
 
 		// The organization's AI data-egress policy, shared with MCP: pentest
@@ -2266,6 +2276,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		s.SensorPairing.SetTenants(repos.Tenant)
 		// A sensor prints <APP_URL>/activate?code=… under its code.
 		s.SensorPairing.SetVerificationURL(cfg.App.URL)
+		// A re-pair revokes the keys the sensor's leased commands were
+		// claimed with: they are taken back at approval.
+		s.SensorPairing.SetCommandReleaser(repos.Command)
 	}
 	// Per-sensor grants (RFC-052 §5): enforced on poll, claim, results
 	// without a job and heartbeat actions; a pairing approval sets the
@@ -2327,6 +2340,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	repos.Command.SetLeaseDuration(cfg.SensorConfig.CommandLease)
 	s.Sensor.SetLeaseRenewer(repos.Command)
 	s.Sensor.SetCancelFinder(repos.Command)
+	// A sensor whose local policy changed may claim again what it refused.
+	s.Sensor.SetRefusalForgetter(repos.Command)
 	// Revoking or disabling a sensor takes back its leased commands at once
 	// (RFC-040 §5.2) instead of at lease expiry.
 	s.Sensor.SetHolderReleaser(repos.Command)
@@ -3404,6 +3419,13 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	}
 	s.WebEvidence = webevidenceapp.NewService(repos.AssetWebEvidence, blobs, s.Tenant, log.With("service", "web-evidence"))
 	s.Ingest.SetWebEvidenceRecorder(s.WebEvidence)
+	// Web page monitoring (RFC-138): fetch results of watched URLs are
+	// diffed server-side; a new third-party script host is an exposure
+	// through the EASM writer (alerts), resolved by the DNS repository's
+	// auto-resolve when the page drops it. Dispatch is wired with the workers.
+	s.PageMonitor = pagemonapp.NewService(repos.PageMonitor, s.DataScope, log.With("service", "page-monitoring"))
+	s.PageMonitor.SetAlerts(easmExposures, repos.EASMDNS)
+	s.Ingest.SetWebContentRecorder(s.PageMonitor)
 
 	// A successful scan run fires the `scan_completed` workflow trigger.
 	s.ScanRun.SetRunCompletedCallback(s.WorkflowDispatcher.DispatchScanCompleted)

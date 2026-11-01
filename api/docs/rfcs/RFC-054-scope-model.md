@@ -1717,3 +1717,47 @@ A skipped-targets group of unconfirmed or wildcard-only names offers
 **Confirm ownership** (`assets:write`) and says that confirmation is
 "Required on platform sensors of the hosted service"; the Scope policy page
 notes that `unclassified_scans` applies there.
+
+## 21. Amendment 2026-11-01: ownership evidence for addresses behind names
+
+### 21.1 Problem
+
+The addresses card (§14, `addresses_behind_names`) filters out what is not
+the organization's (CDN, provider, shared hosting, another organization's
+network) but says nothing about why the rest may be the organization's.
+Every remaining address reaches a person with the same weight and no reason.
+
+### 21.2 Rules
+
+1. Each offered or already-checked address carries an **ownership
+   assessment** (`pkg/domain/addrowner`): named signals and a band.
+2. Signals. Anchors, established by the organization: `own_prefix` (inside
+   a prefix of its network seeds), `own_asn` (announced by a seeded AS).
+   Corroborators: `holder_matches` (network holder name matches the
+   organization or a seed holder), `reverse_name` (reverse DNS name under the
+   same registrable domain as an in-scope name behind it; `confirmed` when
+   it resolves back), `many_names` (3 or more in-scope names under at most
+   two registrable domains), `stable` (first seen 14 or more days ago).
+   Blockers: `new_address` (first seen less than 24 hours ago),
+   `foreign_names` (names under other registrable domains also resolve to
+   it).
+3. Bands: **high** = an anchor and another anchor or a corroborator and no
+   blocker; **medium** = an anchor alone, two or more corroborators, or high
+   held back by a blocker; **low** = anything else with network data or a
+   corroborator; **unknown** = nothing known. The score (0-100) only orders
+   addresses; the card lists them strongest first and counts them per band
+   (`bands`).
+4. Nothing an outside party controls is an anchor: reverse names, holder
+   free text and how many names point at an address can be steered by
+   whoever holds the address or the DNS.
+5. The assessment explains and orders. It authorizes nothing and changes no
+   decision: an address is scannable only through an exact scope entry, as
+   before. Signals are computed from the caller's data-scoped names only.
+
+### 21.3 Threats
+
+| Threat | Control |
+|---|---|
+| An attacker steers an in-scope name (taken-over alias, claimed dangling record) at a victim's address | The victim's network is no anchor of the organization; the assessment cannot reach high from attacker-controlled evidence (test `TestAttackerControlledEvidenceNeverHigh`); nothing is added automatically |
+| A signal reveals names outside the caller's data scope | Signals read visible names only (test `TestSuggestionCards_OwnershipOrderAndBands`) |
+| Cross-tenant reads | Rows come from the existing tenant-scoped store; the assessment reads nothing else |

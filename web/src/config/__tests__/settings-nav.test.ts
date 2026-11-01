@@ -88,17 +88,59 @@ function staticPagesUnder(prefix: string): string[] {
 const isPersonal = (url: string) => url === '/account' || url.startsWith('/account/')
 
 describe('settings nav config', () => {
-  it('has the eight groups in order', () => {
+  // The six groups decided 2026-10-01 (item placement: research 346).
+  it('has the six groups in order', () => {
     expect(settingsNav.map((g) => g.id)).toEqual([
       'account',
       'organization',
-      'security',
       'access',
       'findings',
       'scanning',
-      'content',
       'integrations',
     ])
+  })
+
+  // Personal settings never mix with the organization's: My account holds
+  // every /account page and nothing else.
+  it('keeps personal pages in My account and nowhere else', () => {
+    for (const group of settingsNav) {
+      for (const item of group.items) {
+        expect(isPersonal(item.url), `${group.id} > ${item.id}`).toBe(group.id === 'account')
+      }
+    }
+  })
+
+  // Sections in each group, in order (research 369; undefined = the
+  // untitled first section).
+  it('has the decided sections in order', () => {
+    const sections = Object.fromEntries(
+      settingsNav.map((g) => [g.id, [...new Set(g.items.map((i) => i.section))]])
+    )
+    expect(sections).toEqual({
+      account: [undefined],
+      organization: [undefined],
+      access: [undefined, 'api-access', 'sign-in', 'oversight'],
+      findings: [undefined, 'risk', 'assets'],
+      scanning: [undefined, 'tools', 'sensors', 'content'],
+      integrations: [undefined],
+    })
+  })
+
+  // Items research 369 moved: each sits with the task it serves.
+  it.each([
+    ['sso-approvals', 'access', 'sign-in'],
+    ['audit-log', 'access', 'oversight'],
+    ['mcp', 'access', 'api-access'],
+    ['service-accounts', 'access', 'api-access'],
+    ['api-keys', 'access', 'api-access'],
+    ['risk-scoring', 'findings', 'risk'],
+    ['license-policy', 'findings', 'risk'],
+    ['sensor-products', 'scanning', 'sensors'],
+    ['proxies', 'scanning', 'sensors'],
+  ])('%s is in %s > %s', (id, groupId, section) => {
+    const group = settingsNav.find((g) => g.items.some((i) => i.id === id))
+    expect(group?.id).toBe(groupId)
+    expect(group?.items.find((i) => i.id === id)?.section).toBe(section)
   })
 
   it('has unique ids and urls', () => {
@@ -109,12 +151,32 @@ describe('settings nav config', () => {
   })
 
   for (const group of settingsNav) {
-    // Scanning holds 10 (Sensor products joined its 9); keep groups scannable.
-    it(`group "${group.title}" has 2 to 10 items`, () => {
-      expect(group.items.length).toBeGreaterThanOrEqual(2)
-      expect(group.items.length).toBeLessThanOrEqual(10)
+    // Keep groups scannable: a long group is split into titled sections of 2
+    // to 10, its first section untitled, each section's items contiguous.
+    it(`group "${group.title}" has 2 to 10 items per section`, () => {
+      const chunks: { section?: string; n: number }[] = []
+      for (const item of group.items) {
+        const last = chunks.at(-1)
+        if (last && last.section === item.section) last.n++
+        else chunks.push({ section: item.section, n: 1 })
+      }
+      expect(chunks[0].section, 'the first section is untitled').toBeUndefined()
+      const ids = chunks.map((c) => c.section)
+      expect(new Set(ids).size, 'a section appears once').toBe(ids.length)
+      for (const c of chunks) {
+        expect(c.n, String(c.section)).toBeGreaterThanOrEqual(2)
+        expect(c.n, String(c.section)).toBeLessThanOrEqual(10)
+      }
     })
   }
+
+  it('section titles have en and vi strings', () => {
+    for (const item of settingsNavItems) {
+      if (!item.section) continue
+      expect((en as Record<string, string>)[`settings.section.${item.section}`]).toBeTruthy()
+      expect((vi as Record<string, string>)[`settings.section.${item.section}`]).toBeTruthy()
+    }
+  })
 
   it('titles are sentence case (acronyms allowed)', () => {
     const titles = [...settingsNav.map((g) => g.title), ...settingsNavItems.map((i) => i.title)]
