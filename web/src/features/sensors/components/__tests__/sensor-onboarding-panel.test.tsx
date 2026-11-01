@@ -78,7 +78,7 @@ describe('SensorOnboardingPanel', () => {
     api.sensor = undefined
   })
 
-  it('creates a code first, puts it in the command and waits for the sensor', async () => {
+  it('opens on one command whose code finds the sensor, with no choice of flow', async () => {
     api.expect.mockResolvedValue({
       id: 'e1',
       mode: 'reverse',
@@ -86,37 +86,61 @@ describe('SensorOnboardingPanel', () => {
       code: 'K7QM4ZTD',
       expires_at: future(),
     })
-    const user = userEvent.setup()
     const { rerender } = render(<SensorOnboardingPanel />)
-    // No command before a code exists in this path: it would pair nothing.
-    expect(screen.queryByText(/docker run/)).toBeNull()
-    await user.click(screen.getByRole('button', { name: 'Create pairing code' }))
-    expect(api.expect).toHaveBeenCalledWith({})
+    // The dialog makes the command's code at once: one per opened dialog.
     expect(await screen.findByText(/SENSOR_PAIRING_CODE='K7QM-4ZTD'/)).toBeInTheDocument()
+    expect(api.expect).toHaveBeenCalledTimes(1)
+    expect(api.expect).toHaveBeenCalledWith({})
     expect(api.templateCodes).toContain('K7QM-4ZTD')
+    // One path: no "how should it join" choice, no code box in the dialog.
+    expect(screen.queryByText(/how should it join/i)).toBeNull()
+    expect(screen.queryByLabelText('Pairing code')).toBeNull()
+    expect(screen.getByText(/finds it by itself/i)).toBeInTheDocument()
     const status = screen.getByTestId('onboarding-status')
     expect(status.querySelector('[aria-current="step"]')).toHaveTextContent(
       'Waiting for the sensor'
     )
 
-    // The sensor attached: the fingerprint to compare replaces the command.
+    // The sensor attached: the fingerprint pick replaces the command.
     api.expectation = {
       data: {
         id: 'e1',
         mode: 'reverse',
         status: 'pending',
         sas: '512 · tiger · violet · anchor',
+        fingerprint_choices: [
+          '108 · apple · river · stone',
+          '512 · tiger · violet · anchor',
+          '733 · cloud · ember · north',
+        ],
         host_facts: { hostname: 'dmz-01' },
         expires_at: future(),
         step_up: 'totp',
       },
     }
     await act(async () => rerender(<SensorOnboardingPanel />))
-    expect(await screen.findByTestId('pairing-fingerprint')).toHaveTextContent('tiger')
+    expect(await screen.findAllByRole('radio', { name: /tiger|apple|cloud/ })).toHaveLength(3)
     expect(screen.queryByText(/docker run/)).toBeNull()
     expect(
       screen.getByTestId('onboarding-status').querySelector('[aria-current="step"]')
-    ).toHaveTextContent('Compare fingerprint')
+    ).toHaveTextContent('Pick fingerprint')
+    expect(api.expect).toHaveBeenCalledTimes(1)
+  })
+
+  it('makes no code on a page view: the inline panel waits for a click', async () => {
+    api.expect.mockResolvedValue({
+      id: 'e1',
+      status: 'expecting',
+      code: 'K7QM4ZTD',
+      expires_at: future(),
+    })
+    const user = userEvent.setup()
+    render(<SensorOnboardingPanel autoStart={false} />)
+    expect(api.expect).not.toHaveBeenCalled()
+    expect(screen.queryByText(/docker run/)).toBeNull()
+    await user.click(screen.getByRole('button', { name: 'Show the command' }))
+    expect(await screen.findByText(/SENSOR_PAIRING_CODE='K7QM-4ZTD'/)).toBeInTheDocument()
+    expect(api.expect).toHaveBeenCalledTimes(1)
   })
 
   it('says why no sensor arrived: the last refused attempt on the code, with the next step', async () => {
@@ -127,9 +151,8 @@ describe('SensorOnboardingPanel', () => {
       code: 'K7QM4ZTD',
       expires_at: future(),
     })
-    const user = userEvent.setup()
     const { rerender } = render(<SensorOnboardingPanel />)
-    await user.click(screen.getByRole('button', { name: 'Create pairing code' }))
+    await screen.findByText(/SENSOR_PAIRING_CODE='K7QM-4ZTD'/)
     expect(screen.queryByTestId('pairing-refusal')).toBeNull()
     for (const [refusal, title, fix] of [
       [
@@ -165,7 +188,7 @@ describe('SensorOnboardingPanel', () => {
     }
   })
 
-  it('switches the command with the platform', async () => {
+  it('switches the command with the platform and keeps the code', async () => {
     api.expect.mockResolvedValue({
       id: 'e1',
       status: 'expecting',
@@ -174,23 +197,44 @@ describe('SensorOnboardingPanel', () => {
     })
     const user = userEvent.setup()
     render(<SensorOnboardingPanel />)
-    await user.click(screen.getByRole('button', { name: 'Create pairing code' }))
     await screen.findByText(/docker run/)
     await user.click(screen.getByRole('radio', { name: 'Linux service' }))
     expect(screen.getByText(/systemctl enable --now openctem-sensor/)).toBeInTheDocument()
     await user.click(screen.getByRole('radio', { name: 'Kubernetes' }))
     expect(screen.getByText('kind: Deployment')).toBeInTheDocument()
-    expect(screen.getByText(/a code pairs one sensor/i)).toBeInTheDocument()
+    expect(api.expect).toHaveBeenCalledTimes(1)
   })
 
-  it('pairs interactively: command without a code, then the code entry', async () => {
+  it('offers the narrowing policy as optional and links the approve page', async () => {
+    api.expect.mockResolvedValue({
+      id: 'e1',
+      status: 'expecting',
+      code: 'K7QM4ZTD',
+      expires_at: future(),
+    })
+    render(<SensorOnboardingPanel />)
+    await screen.findByText(/docker run/)
+    expect(screen.getByText('Narrow it on this host (optional)')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /open the approve page/i })).toHaveAttribute(
+      'href',
+      '/activate'
+    )
+  })
+
+  it('says what to do when the code expired, and makes a new command', async () => {
+    api.expect.mockResolvedValue({
+      id: 'e1',
+      status: 'expecting',
+      code: 'K7QM4ZTD',
+      expires_at: new Date(Date.now() - 1000).toISOString(),
+    })
     const user = userEvent.setup()
     render(<SensorOnboardingPanel />)
-    await user.click(screen.getByLabelText(/pair a sensor that shows a code/i))
-    expect(screen.getByText(/docker run/)).toBeInTheDocument()
-    expect(screen.queryByText(/SENSOR_PAIRING_CODE/)).toBeNull()
-    expect(api.templateCodes).toContain(null)
-    expect(screen.getByLabelText('Pairing code')).toBeInTheDocument()
+    expect(
+      await screen.findByText(/the sensor shows a link: open it to approve/i)
+    ).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'New command' }))
+    expect(api.expect).toHaveBeenCalledTimes(2)
   })
 
   it('offers the key install only where it is allowed', async () => {

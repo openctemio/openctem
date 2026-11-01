@@ -113,10 +113,14 @@ type ActionType = ExposureActionType
 // Lifecycle view — the primary filter.
 type StateTab = 'needs_attention' | 'resolved' | 'all'
 
-const STATE_VIEWS: { value: StateTab; label: string }[] = [
-  { value: 'needs_attention', label: 'Needs attention' },
-  { value: 'resolved', label: 'Closed' },
-  { value: 'all', label: 'All states' },
+const STATE_VIEWS: { value: StateTab; labelKey: string; fallback: string }[] = [
+  {
+    value: 'needs_attention',
+    labelKey: 'exposures.view.needsAttention',
+    fallback: 'Needs attention',
+  },
+  { value: 'resolved', labelKey: 'exposures.metrics.closed', fallback: 'Closed' },
+  { value: 'all', labelKey: 'exposures.view.allStates', fallback: 'All states' },
 ]
 
 const SEVERITIES: ExposureSeverity[] = [...SEVERITY_LEVELS]
@@ -124,20 +128,36 @@ const SEVERITY_LABELS: Record<ExposureSeverity, string> = SHARED_SEVERITY_LABELS
 
 const PAGE_SIZES = [10, 20, 30, 50, 100]
 
-// CSV columns for the Export action — every exposure matching the filters.
-const EXPOSURE_EXPORT_FIELDS: ExportFieldConfig<ExposureEvent>[] = [
-  { header: 'ID', accessor: (e) => e.id },
-  { header: 'Title', accessor: (e) => e.title },
-  { header: 'Event Type', accessor: (e) => e.event_type.replace(/_/g, ' ') },
-  { header: 'Category', accessor: (e) => e.display_category ?? '' },
-  { header: 'Summary', accessor: (e) => e.summary?.text ?? '' },
-  { header: 'Severity', accessor: (e) => e.severity },
-  { header: 'State', accessor: (e) => e.state },
-  { header: 'Source', accessor: (e) => e.source },
-  { header: 'First Seen', accessor: (e) => e.first_seen_at },
-  { header: 'Last Seen', accessor: (e) => e.last_seen_at },
-  { header: 'Resolved At', accessor: (e) => e.resolved_at ?? '' },
-]
+// CSV columns for the Export action: every exposure matching the filters.
+type Translate = (key: string, fallback: string, params?: Record<string, string | number>) => string
+
+function exposureExportFields(t: Translate): ExportFieldConfig<ExposureEvent>[] {
+  return [
+    { header: t('exposures.export.col.id', 'ID'), accessor: (e) => e.id },
+    { header: t('exposures.export.col.title', 'Title'), accessor: (e) => e.title },
+    {
+      header: t('exposures.export.col.eventType', 'Event type'),
+      accessor: (e) => e.event_type.replace(/_/g, ' '),
+    },
+    {
+      header: t('exposures.export.col.category', 'Category'),
+      accessor: (e) => e.display_category ?? '',
+    },
+    {
+      header: t('exposures.export.col.summary', 'Summary'),
+      accessor: (e) => e.summary?.text ?? '',
+    },
+    { header: t('exposures.export.col.severity', 'Severity'), accessor: (e) => e.severity },
+    { header: t('exposures.export.col.state', 'State'), accessor: (e) => e.state },
+    { header: t('exposures.export.col.source', 'Source'), accessor: (e) => e.source },
+    { header: t('exposures.export.col.firstSeen', 'First seen'), accessor: (e) => e.first_seen_at },
+    { header: t('exposures.export.col.lastSeen', 'Last seen'), accessor: (e) => e.last_seen_at },
+    {
+      header: t('exposures.export.col.resolvedAt', 'Resolved at'),
+      accessor: (e) => e.resolved_at ?? '',
+    },
+  ]
+}
 
 // Map the lifecycle view to API state filters.
 function getStatesForTab(tab: StateTab): ExposureState[] | undefined {
@@ -267,9 +287,9 @@ export default function ExposuresPage() {
             ),
         }
       )
-      exportToCsv(all, EXPOSURE_EXPORT_FIELDS, 'exposures')
+      exportToCsv(all, exposureExportFields(t), 'exposures')
     } catch {
-      toast.error('Failed to export exposures')
+      toast.error(t('exposures.export.failed', 'Could not export the exposures'))
     } finally {
       setIsExporting(false)
     }
@@ -379,21 +399,19 @@ export default function ExposuresPage() {
   const canChangeSeverity = useCanChangeExposureSeverity()
   const columns = useMemo(
     () =>
-      getExposureColumns({
-        onResolve: (e) => handleAction(e, 'resolve'),
-        onAccept: (e) => handleAction(e, 'accept'),
-        onMarkFalsePositive: (e) => handleAction(e, 'false_positive'),
-        onReactivate: (e) => handleAction(e, 'reactivate'),
-        onStartProgress: (e) => handleAction(e, 'start_progress'),
-        onChangeSeverity: canChangeSeverity ? setSeverityExposure : undefined,
-        onViewDetails: setDetailExposure,
-        canApprove,
-        labels: {
-          startProgress: t('exposures.quick.start', 'Start progress'),
-          stopProgress: t('exposures.quick.stop', 'Stop progress'),
-          changeSeverity: t('exposures.severity.title', 'Change severity'),
+      getExposureColumns(
+        {
+          onResolve: (e) => handleAction(e, 'resolve'),
+          onAccept: (e) => handleAction(e, 'accept'),
+          onMarkFalsePositive: (e) => handleAction(e, 'false_positive'),
+          onReactivate: (e) => handleAction(e, 'reactivate'),
+          onStartProgress: (e) => handleAction(e, 'start_progress'),
+          onChangeSeverity: canChangeSeverity ? setSeverityExposure : undefined,
+          onViewDetails: setDetailExposure,
+          canApprove,
         },
-      }),
+        t
+      ),
     [handleAction, canApprove, canChangeSeverity, t]
   )
 
@@ -409,14 +427,14 @@ export default function ExposuresPage() {
   const metrics: MetricStripItem[] = [
     {
       key: 'total',
-      label: 'Total exposures',
+      label: t('exposures.metrics.total', 'Total exposures'),
       value: stats?.total ?? 0,
       onClick: () => setView('all'),
       active: activeView === 'all',
     },
     {
       key: 'active',
-      label: 'Needs attention',
+      label: t('exposures.view.needsAttention', 'Needs attention'),
       value: activeCount,
       tone: 'danger',
       onClick: () => setView('needs_attention'),
@@ -443,7 +461,7 @@ export default function ExposuresPage() {
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button variant="outline" size="sm" className="h-9">
-            Severity
+            {t('exposures.filter.severity', 'Severity')}
             {selectedSeverities.length > 0 && (
               <Badge variant="secondary" className="ms-2 px-1.5 tabular-nums">
                 {selectedSeverities.length}
@@ -453,7 +471,7 @@ export default function ExposuresPage() {
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start">
-          <DropdownMenuLabel>Severity</DropdownMenuLabel>
+          <DropdownMenuLabel>{t('exposures.filter.severity', 'Severity')}</DropdownMenuLabel>
           {SEVERITIES.map((severity) => (
             <DropdownMenuCheckboxItem
               key={severity}
@@ -467,7 +485,9 @@ export default function ExposuresPage() {
           {selectedSeverities.length > 0 && (
             <>
               <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => setSeverityParam([])}>Clear</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setSeverityParam([])}>
+                {t('exposures.filter.clear', 'Clear')}
+              </DropdownMenuItem>
             </>
           )}
         </DropdownMenuContent>
@@ -512,16 +532,19 @@ export default function ExposuresPage() {
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button variant="outline" size="sm" className="h-9">
-            {STATE_VIEWS.find((v) => v.value === activeView)?.label}
+            {(() => {
+              const view = STATE_VIEWS.find((v) => v.value === activeView)
+              return view ? t(view.labelKey, view.fallback) : null
+            })()}
             <ChevronDown className="ms-2 h-4 w-4 text-muted-foreground" />
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start">
-          <DropdownMenuLabel>State</DropdownMenuLabel>
+          <DropdownMenuLabel>{t('exposures.filter.state', 'State')}</DropdownMenuLabel>
           <DropdownMenuRadioGroup value={activeView} onValueChange={(v) => setView(v as StateTab)}>
             {STATE_VIEWS.map((v) => (
               <DropdownMenuRadioItem key={v.value} value={v.value}>
-                {v.label}
+                {t(v.labelKey, v.fallback)}
               </DropdownMenuRadioItem>
             ))}
           </DropdownMenuRadioGroup>
@@ -530,7 +553,7 @@ export default function ExposuresPage() {
       {hasActiveFilters && (
         <Button variant="ghost" size="sm" className="h-9" onClick={clearFilters}>
           <X className="me-1 h-4 w-4" />
-          Clear
+          {t('exposures.filter.clear', 'Clear')}
         </Button>
       )}
     </>
@@ -539,7 +562,13 @@ export default function ExposuresPage() {
   const toolbarEnd = (
     <>
       <span className="hidden text-sm tabular-nums text-muted-foreground xl:inline">
-        {total === 0 ? 'No results' : `${rangeStart}–${rangeEnd} of ${total.toLocaleString()}`}
+        {total === 0
+          ? t('exposures.count.none', 'No results')
+          : t('exposures.count.range', '{start}–{end} of {total}', {
+              start: rangeStart,
+              end: rangeEnd,
+              total: total.toLocaleString(),
+            })}
       </span>
       <Tooltip>
         <TooltipTrigger asChild>
@@ -549,12 +578,12 @@ export default function ExposuresPage() {
             className="h-9 w-9"
             onClick={handleRefresh}
             disabled={isLoading}
-            aria-label="Refresh"
+            aria-label={t('exposures.toolbar.refresh', 'Refresh')}
           >
             <RefreshCw className={cn('h-4 w-4', isLoading && 'animate-spin')} />
           </Button>
         </TooltipTrigger>
-        <TooltipContent>Refresh</TooltipContent>
+        <TooltipContent>{t('exposures.toolbar.refresh', 'Refresh')}</TooltipContent>
       </Tooltip>
       <Button
         variant="outline"
@@ -564,7 +593,11 @@ export default function ExposuresPage() {
         disabled={isExporting || exposuresLoading || total === 0}
       >
         <Download className="h-4 w-4 xl:me-2" />
-        <span className="sr-only xl:not-sr-only">{isExporting ? 'Exporting…' : 'Export'}</span>
+        <span className="sr-only xl:not-sr-only">
+          {isExporting
+            ? t('exposures.toolbar.exporting', 'Exporting…')
+            : t('exposures.toolbar.export', 'Export')}
+        </span>
       </Button>
     </>
   )
@@ -573,7 +606,7 @@ export default function ExposuresPage() {
     <Main>
       <PageStack>
         <PageHeader
-          title="Exposures"
+          title={t('exposures.page.title', 'Exposures')}
           description={t(
             'exposures.page.description',
             'Changes to your attack surface that need a decision. Resolve, accept or dismiss them.'
@@ -614,11 +647,13 @@ export default function ExposuresPage() {
               {exposuresError ? (
                 <Alert variant="destructive">
                   <AlertTriangle className="h-4 w-4" />
-                  <AlertTitle>Could not load exposures</AlertTitle>
+                  <AlertTitle>
+                    {t('exposures.list.errorTitle', 'Could not load exposures')}
+                  </AlertTitle>
                   <AlertDescription className="flex flex-wrap items-center gap-3">
-                    The exposure list failed to load.
+                    {t('exposures.list.errorDescription', 'The exposure list failed to load.')}
                     <Button variant="outline" size="sm" onClick={handleRefresh}>
-                      Retry
+                      {t('exposures.list.retry', 'Retry')}
                     </Button>
                   </AlertDescription>
                 </Alert>
@@ -651,12 +686,20 @@ export default function ExposuresPage() {
                   resetSelectionKey={selectionEpoch}
                   showSelectionCount={false}
                   emptyMessage={
-                    hasActiveFilters ? 'No exposures match these filters' : 'No exposures'
+                    hasActiveFilters
+                      ? t('exposures.list.emptyFiltered', 'No exposures match these filters')
+                      : t('exposures.list.empty', 'No exposures')
                   }
                   emptyDescription={
                     hasActiveFilters
-                      ? 'Try removing a filter or clearing them all.'
-                      : 'Your attack surface has no open exposure events.'
+                      ? t(
+                          'exposures.list.emptyFilteredHint',
+                          'Try removing a filter or clearing them all.'
+                        )
+                      : t(
+                          'exposures.list.emptyHint',
+                          'Your attack surface has no open exposure events.'
+                        )
                   }
                 />
               )}
@@ -693,7 +736,7 @@ export default function ExposuresPage() {
                   </div>
                   <Card>
                     <CardHeader>
-                      <CardTitle>By event type</CardTitle>
+                      <CardTitle>{t('exposures.eventTypes.title', 'By event type')}</CardTitle>
                     </CardHeader>
                     <CardContent>
                       <EventTypeDistribution byEventType={stats.by_event_type} />
@@ -753,9 +796,16 @@ interface EventTypeDistributionProps {
 }
 
 function EventTypeDistribution({ byEventType }: EventTypeDistributionProps) {
+  const { t } = useTranslation()
   const entries = Object.entries(byEventType || {}).sort((a, b) => b[1] - a[1])
   if (entries.length === 0) {
-    return <EmptyState card={false} icon={BarChart3} title="No exposure data yet" />
+    return (
+      <EmptyState
+        card={false}
+        icon={BarChart3}
+        title={t('exposures.eventTypes.empty', 'No exposure data yet')}
+      />
+    )
   }
   const total = entries.reduce((sum, [, count]) => sum + count, 0) || 1
 
@@ -800,6 +850,7 @@ function ExposureDetailSheet({
   onAction,
   onChanged,
 }: ExposureDetailSheetProps) {
+  const { t } = useTranslation()
   const canApprove = useCanApproveExposures()
   const { currentTenant } = useTenant()
   const {
@@ -825,13 +876,18 @@ function ExposureDetailSheet({
               <PendingDispositionBadge exposure={exposure} />
             </>
           }
-          meta={[`${exposure.event_type.replace(/_/g, ' ')} from ${exposure.source}`]}
+          meta={[
+            t('exposures.detail.meta', '{type} from {source}', {
+              type: exposure.event_type.replace(/_/g, ' '),
+              source: exposure.source,
+            }),
+          ]}
           actions={
             exposure.state === 'active' ? (
               <>
                 <Button size="sm" onClick={() => onAction('resolve')}>
                   <ShieldCheck className="h-4 w-4" />
-                  Resolve
+                  {t('exposures.quick.resolve', 'Resolve')}
                 </Button>
                 <GatedButton
                   size="sm"
@@ -841,13 +897,13 @@ function ExposureDetailSheet({
                   onClick={() => onAction('accept')}
                 >
                   <Shield className="h-4 w-4" />
-                  Accept risk
+                  {t('exposures.action.acceptButton', 'Accept risk')}
                 </GatedButton>
               </>
             ) : (
               <Button size="sm" variant="outline" onClick={() => onAction('reactivate')}>
                 <Activity className="h-4 w-4" />
-                Reactivate
+                {t('exposures.action.reactivateButton', 'Reactivate')}
               </Button>
             )
           }
@@ -857,7 +913,7 @@ function ExposureDetailSheet({
             exposure.state === 'active' && canApprove
               ? [
                   {
-                    label: 'Mark false positive',
+                    label: t('exposures.action.fpButton', 'Mark false positive'),
                     icon: ShieldX,
                     onSelect: () => onAction('false_positive'),
                   },
@@ -871,7 +927,7 @@ function ExposureDetailSheet({
       <DetailSections>
         <PendingDispositionPanel exposure={exposure} onChanged={onChanged} />
         {exposure.description && (
-          <DetailSection title="Description">
+          <DetailSection title={t('exposures.detail.description', 'Description')}>
             <p className="text-sm text-muted-foreground">{exposure.description}</p>
           </DetailSection>
         )}
@@ -881,12 +937,18 @@ function ExposureDetailSheet({
             when the API returns at least one signal. */}
         <ExposureSecurityContext exposure={exposure} />
 
-        <DetailSection title="Timeline" icon={Clock}>
+        <DetailSection title={t('exposures.detail.timeline', 'Timeline')} icon={Clock}>
           <DetailFieldGrid>
-            <DetailField label="First seen">{formatRelative(exposure.first_seen_at)}</DetailField>
-            <DetailField label="Last seen">{formatRelative(exposure.last_seen_at)}</DetailField>
+            <DetailField label={t('exposures.detail.firstSeen', 'First seen')}>
+              {formatRelative(exposure.first_seen_at)}
+            </DetailField>
+            <DetailField label={t('exposures.detail.lastSeen', 'Last seen')}>
+              {formatRelative(exposure.last_seen_at)}
+            </DetailField>
             {exposure.resolved_at && (
-              <DetailField label="Resolved">{formatRelative(exposure.resolved_at)}</DetailField>
+              <DetailField label={t('exposures.detail.resolved', 'Resolved')}>
+                {formatRelative(exposure.resolved_at)}
+              </DetailField>
             )}
           </DetailFieldGrid>
         </DetailSection>
@@ -901,11 +963,11 @@ function ExposureDetailSheet({
         )}
 
         {/* State changes: the shared trigger + panel (read only). */}
-        <DetailSection title="Activity" icon={Activity}>
+        <DetailSection title={t('exposures.detail.activity', 'Activity')} icon={Activity}>
           <EntityActivity
             entityKey={`exposure:${exposure.id}`}
             subject={exposure.title}
-            items={exposureHistoryItems(history)}
+            items={exposureHistoryItems(history, t)}
             loading={historyLoading}
             error={historyError}
             onRetry={() => void retryHistory()}
@@ -922,14 +984,14 @@ function ExposureDetailSheet({
 // STATE HISTORY -> ACTIVITY ITEMS
 // ============================================
 
-function stateWords(state: string) {
-  const s = state.replace(/_/g, ' ')
-  return s.charAt(0).toUpperCase() + s.slice(1)
+function stateWords(state: string, t: Translate) {
+  return t(`exposures.state.${state}`, state.replace(/_/g, ' '))
 }
 
 /** State history rows as the shared ActivityPanel's events (text only). */
 function exposureHistoryItems(
-  history: import('@/lib/api/exposure-types').ExposureStateHistory[]
+  history: import('@/lib/api/exposure-types').ExposureStateHistory[],
+  t: Translate
 ): ActivityItem[] {
   return history.map((h) => ({
     kind: 'event',
@@ -938,12 +1000,18 @@ function exposureHistoryItems(
     actor: h.changed_by_user
       ? {
           id: h.changed_by_user.id,
-          name: h.changed_by_user.name || h.changed_by_user.email || 'Someone',
+          name:
+            h.changed_by_user.name ||
+            h.changed_by_user.email ||
+            t('exposures.history.someone', 'Someone'),
           kind: 'user',
         }
-      : { name: 'System', kind: 'system' },
+      : { name: t('exposures.history.system', 'System'), kind: 'system' },
     icon: ArrowRightLeft,
-    summary: `changed state ${stateWords(h.previous_state)} → ${stateWords(h.new_state)}`,
+    summary: t('exposures.history.changedState', 'changed state {from} → {to}', {
+      from: stateWords(h.previous_state, t),
+      to: stateWords(h.new_state, t),
+    }),
     detail: h.reason ? `“${h.reason}”` : undefined,
   }))
 }
