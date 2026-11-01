@@ -31,6 +31,7 @@ import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import {
   DataTable,
+  DataTableColumnHeader,
   DataTableRowActions,
   EmptyState,
   ErrorState,
@@ -216,7 +217,13 @@ function useItemColumns(h: RowHandlers): ColumnDef<ExposureItemRow>[] {
       {
         id: 'asset_name',
         accessorFn: (r) => r.asset_name ?? '',
-        header: t('attackSurface.exposures.col.asset', 'Asset'),
+        header: ({ column }) => (
+          <DataTableColumnHeader
+            column={column}
+            title={t('attackSurface.exposures.col.asset', 'Asset')}
+            className="min-w-40"
+          />
+        ),
         cell: ({ row }) => (
           <div className="min-w-40 max-w-[260px]">
             <AssetCell
@@ -357,7 +364,13 @@ function useAssetColumns(): ColumnDef<ExposureAssetGroupRow>[] {
     () => [
       {
         id: 'asset',
-        header: t('attackSurface.exposures.col.asset', 'Asset'),
+        header: ({ column }) => (
+          <DataTableColumnHeader
+            column={column}
+            title={t('attackSurface.exposures.col.asset', 'Asset')}
+            className="min-w-40"
+          />
+        ),
         enableSorting: false,
         cell: ({ row }) => (
           <div className="min-w-40 max-w-[320px]">
