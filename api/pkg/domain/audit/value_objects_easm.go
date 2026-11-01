@@ -33,11 +33,17 @@ var _ = registerActions("scope", map[Action]Severity{
 const (
 	ActionEASMSettingsUpdated Action = "easm_settings.updated"
 	ActionEASMSweepRequested  Action = "easm_sweep.requested"
+	// Discovery management: stages run by hand, and every active coverage
+	// run of the organization canceled.
+	ActionEASMDiscoveryRun     Action = "easm_discovery.run"
+	ActionEASMDiscoveryAborted Action = "easm_discovery.aborted"
 )
 
 var _ = registerActions("easm", map[Action]Severity{
-	ActionEASMSettingsUpdated: SeverityHigh,
-	ActionEASMSweepRequested:  SeverityMedium,
+	ActionEASMSettingsUpdated:  SeverityHigh,
+	ActionEASMSweepRequested:   SeverityMedium,
+	ActionEASMDiscoveryRun:     SeverityMedium,
+	ActionEASMDiscoveryAborted: SeverityHigh,
 })
 
 // Lookalike-domain watches (RFC-083): passive monitoring of the
