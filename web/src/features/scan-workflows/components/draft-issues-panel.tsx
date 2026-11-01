@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { AlertTriangle, ChevronDown, CircleAlert } from 'lucide-react'
+import { useTranslation } from '@/context/i18n-provider'
 import type { ScanWorkflowStep } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import type { GraphIssue, GraphValidation } from '../lib/capability-graph'
@@ -20,6 +21,7 @@ export function DraftIssuesPanel({
   steps: ScanWorkflowStep[]
   onSelectStep: (stepKey: string) => void
 }) {
+  const { t } = useTranslation()
   const [open, setOpen] = useState(true)
   const errors = report.errors ?? []
   const warnings = report.warnings ?? []
@@ -27,14 +29,31 @@ export function DraftIssuesPanel({
   const nameOf = (key?: string) => steps.find((s) => s.step_key === key)?.name || key
 
   const summary = [
-    errors.length > 0 && `${errors.length} blocking issue${errors.length > 1 ? 's' : ''}`,
-    warnings.length > 0 && `${warnings.length} warning${warnings.length > 1 ? 's' : ''}`,
+    errors.length > 0 &&
+      t(
+        errors.length > 1
+          ? 'scans.workflowForm.draftIssues.blockingMany'
+          : 'scans.workflowForm.draftIssues.blockingOne',
+        undefined,
+        { count: errors.length }
+      ),
+    warnings.length > 0 &&
+      t(
+        warnings.length > 1
+          ? 'scans.workflowForm.draftIssues.warningMany'
+          : 'scans.workflowForm.draftIssues.warningOne',
+        undefined,
+        { count: warnings.length }
+      ),
   ]
     .filter(Boolean)
     .join(', ')
 
   return (
-    <section aria-label="Problems of this draft" className="border-b bg-muted/30 px-4 py-2 text-xs">
+    <section
+      aria-label={t('scans.workflowForm.draftIssues.aria')}
+      className="border-b bg-muted/30 px-4 py-2 text-xs"
+    >
       <button
         type="button"
         className="flex w-full items-center gap-2 font-medium"
@@ -49,7 +68,7 @@ export function DraftIssuesPanel({
         <span>{summary}</span>
         {errors.length > 0 && (
           <span className="text-muted-foreground font-normal">
-            The draft is saved; fix the blocking issues to publish.
+            {t('scans.workflowForm.draftIssues.saved')}
           </span>
         )}
         <ChevronDown
@@ -77,7 +96,9 @@ export function DraftIssuesPanel({
                       kind === 'error' ? 'text-destructive' : 'text-warning'
                     )}
                   >
-                    {kind === 'error' ? 'Blocking' : 'Warning'}
+                    {kind === 'error'
+                      ? t('scans.workflowForm.draftIssues.blocking')
+                      : t('scans.workflowForm.draftIssues.warning')}
                   </span>
                   {key && <span className="me-1 font-medium">{nameOf(key)}:</span>}
                   <span>
