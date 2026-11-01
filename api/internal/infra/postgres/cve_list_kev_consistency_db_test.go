@@ -63,6 +63,7 @@ func TestCVEListKEVConsistency_DB(t *testing.T) {
 		for _, tid := range []shared.ID{tenantA, tenantB} {
 			for _, q := range []string{
 				`DELETE FROM user_accessible_assets WHERE tenant_id = $1`,
+				`DELETE FROM finding_remediation_keys WHERE tenant_id = $1`,
 				`DELETE FROM findings WHERE tenant_id = $1`,
 				`DELETE FROM assets WHERE tenant_id = $1`,
 				`DELETE FROM tenants WHERE id = $1`,
@@ -133,6 +134,22 @@ func TestCVEListKEVConsistency_DB(t *testing.T) {
 		if _, err := conn.ExecContext(ctx, s.q, s.args...); err != nil {
 			_ = conn.Close()
 			t.Fatalf("seed %.50s: %v", s.q, err)
+		}
+	}
+	// One fix source: x2's finding says a fix is available (scanner flag);
+	// x1's open finding is in a remediation group (its key); x3 has none.
+	for _, q := range []struct {
+		q    string
+		args []any
+	}{
+		{`UPDATE findings SET remediation = '{"fix_available": true}'::jsonb WHERE tenant_id = $1 AND cve_id = $2`, []any{tenantA.String(), x2}},
+		{`INSERT INTO finding_remediation_keys (finding_id, tenant_id, remediation_key, title, algorithm_version)
+			SELECT id, tenant_id, 'sol:sca:kevtest', 'Upgrade kevpkg to 9.9', 3 FROM findings
+			WHERE tenant_id = $1 AND cve_id = $2 AND status = 'new'`, []any{tenantA.String(), x1}},
+	} {
+		if _, err := conn.ExecContext(ctx, q.q, q.args...); err != nil {
+			_ = conn.Close()
+			t.Fatalf("seed fix: %v", err)
 		}
 	}
 	_, _ = conn.ExecContext(ctx, `SET session_replication_role = origin`)
@@ -218,9 +235,19 @@ func TestCVEListKEVConsistency_DB(t *testing.T) {
 				if !r.InCatalog || r.Title != "kev consistency catalog title" || !r.KEV || r.OpenFindings != 1 {
 					t.Errorf("x1 row %+v: want in catalog with its title, KEV, one open finding", r)
 				}
+				if !r.HasFix || len(r.Remediations) != 1 || r.Remediations[0] != "Upgrade kevpkg to 9.9" {
+					t.Errorf("x1 row: has_fix %v remediations %v, want the remediation group's fix", r.HasFix, r.Remediations)
+				}
 			case x2:
 				if r.InCatalog || r.Title != "" || !r.KEV {
 					t.Errorf("x2 row %+v: want not in catalog, KEV from the KEV catalog", r)
+				}
+				if !r.HasFix {
+					t.Errorf("x2 row: the scanner's fix flag must give has_fix")
+				}
+			case x3:
+				if r.HasFix || len(r.Remediations) != 0 {
+					t.Errorf("x3 row: no fix known, got has_fix %v %v", r.HasFix, r.Remediations)
 				}
 			case x4:
 				if r.KEV {
