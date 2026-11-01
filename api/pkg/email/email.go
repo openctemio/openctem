@@ -3,10 +3,7 @@ package email
 
 import (
 	"context"
-	"crypto/sha256"
 	"crypto/tls"
-	"encoding/base64"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"net"
@@ -42,6 +39,11 @@ type Config struct {
 	ImplicitTLS bool
 	SkipVerify  bool
 	Timeout     time.Duration
+	// ResolveHost and Dial replace the SSRF-guarded host resolution and the
+	// dial, so a test can reach a local relay. Production callers leave both
+	// nil; a value set from configuration would bypass the guard.
+	ResolveHost func(ctx context.Context, host string) (net.IP, error)
+	Dial        func(ctx context.Context, timeout time.Duration, addr string) (net.Conn, error)
 }
 
 // Message represents an email message.
@@ -52,6 +54,9 @@ type Message struct {
 	IsHTML  bool
 	ReplyTo string
 	Headers map[string]string
+	// TextBody is the text/plain alternative of an HTML message. When empty it
+	// is generated from Body.
+	TextBody string
 	// Inline images the HTML body references as cid:<CID>; sent as a
 	// multipart/related message.
 	Inline []InlineImage
@@ -150,72 +155,6 @@ func SanitizeHeaderValue(v string) string {
 	return v
 }
 
-// buildMessage builds the email message content.
-func (s *SMTPSender) buildMessage(msg *Message) []byte {
-	var builder strings.Builder
-
-	// Every value that gets printed into a header line MUST pass
-	// through SanitizeHeaderValue first. Skipping the sanitiser on
-	// any one of these readds the CRLF-injection vector CodeQL
-	// flagged.
-	safeFromName := SanitizeHeaderValue(s.config.FromName)
-	safeFrom := SanitizeHeaderValue(s.config.From)
-
-	// From header
-	if safeFromName != "" {
-		builder.WriteString(fmt.Sprintf("From: %s <%s>\r\n", safeFromName, safeFrom))
-	} else {
-		builder.WriteString(fmt.Sprintf("From: %s\r\n", safeFrom))
-	}
-
-	// To header — sanitise each recipient individually, then join.
-	safeRecipients := make([]string, 0, len(msg.To))
-	for _, r := range msg.To {
-		safeRecipients = append(safeRecipients, SanitizeHeaderValue(r))
-	}
-	builder.WriteString(fmt.Sprintf("To: %s\r\n", strings.Join(safeRecipients, ", ")))
-
-	// Subject header
-	builder.WriteString(fmt.Sprintf("Subject: %s\r\n", SanitizeHeaderValue(msg.Subject)))
-
-	// Reply-To header
-	if msg.ReplyTo != "" {
-		builder.WriteString(fmt.Sprintf("Reply-To: %s\r\n", SanitizeHeaderValue(msg.ReplyTo)))
-	}
-
-	// Custom headers — BOTH the key and the value pass through the
-	// sanitiser. An attacker who controls just the key can still
-	// wedge "\r\nBcc:" into the header stream if only values get
-	// cleaned.
-	for key, value := range msg.Headers {
-		builder.WriteString(fmt.Sprintf("%s: %s\r\n",
-			SanitizeHeaderValue(key),
-			SanitizeHeaderValue(value),
-		))
-	}
-
-	// MIME headers
-	builder.WriteString("MIME-Version: 1.0\r\n")
-	if msg.IsHTML && len(msg.Inline) > 0 {
-		writeRelated(&builder, msg)
-		return []byte(builder.String())
-	}
-	if msg.IsHTML {
-		builder.WriteString("Content-Type: text/html; charset=UTF-8\r\n")
-	} else {
-		builder.WriteString("Content-Type: text/plain; charset=UTF-8\r\n")
-	}
-
-	// Empty line before body
-	builder.WriteString("\r\n")
-
-	// Body (HTML bodies are auto-escaped by html/template at the
-	// template-render layer; text bodies are fine to embed as-is).
-	builder.WriteString(msg.Body)
-
-	return []byte(builder.String())
-}
-
 // sendSMTP sends the email via SMTP.
 func (s *SMTPSender) sendSMTP(ctx context.Context, to []string, content []byte) error {
 	// SSRF guard: Host is tenant-configurable (per-tenant SMTP), so resolve it
@@ -224,13 +163,20 @@ func (s *SMTPSender) sendSMTP(ctx context.Context, to []string, content []byte) 
 	// DNS-rebinding answer (TTL 0) could then point the connection at an
 	// internal address after the check passed. TLS and the SMTP greeting still
 	// use the hostname, so certificate verification is unchanged.
-	safeIP, err := resolveSMTPHost(ctx, s.config.Host)
+	resolve, dial := resolveSMTPHost, dialSMTP
+	if s.config.ResolveHost != nil {
+		resolve = s.config.ResolveHost
+	}
+	if s.config.Dial != nil {
+		dial = s.config.Dial
+	}
+	safeIP, err := resolve(ctx, s.config.Host)
 	if err != nil {
 		return fmt.Errorf("smtp host rejected: %w", err)
 	}
 	addr := net.JoinHostPort(safeIP.String(), strconv.Itoa(s.config.Port))
 
-	conn, err := dialSMTP(ctx, s.config.Timeout, addr)
+	conn, err := dial(ctx, s.config.Timeout, addr)
 	if err != nil {
 		return fmt.Errorf("failed to connect: %w", err)
 	}
@@ -466,34 +412,6 @@ func TenantPortAllowed(port int) bool {
 
 // ErrTenantPortNotAllowed refuses an organization's relay on another port.
 var ErrTenantPortNotAllowed = errors.New("the SMTP port must be 25, 465, 587 or 2525")
-
-// writeRelated writes an HTML body with its inline images as one
-// multipart/related message. The boundary is derived from the content, so it
-// cannot occur in the base64 parts, and the Content-IDs come from constants.
-func writeRelated(b *strings.Builder, msg *Message) {
-	sum := sha256.Sum256([]byte(msg.Body))
-	boundary := "oc-" + hex.EncodeToString(sum[:12])
-	b.WriteString("Content-Type: multipart/related; boundary=\"" + boundary + "\"\r\n\r\n")
-	b.WriteString("--" + boundary + "\r\n")
-	b.WriteString("Content-Type: text/html; charset=UTF-8\r\n")
-	b.WriteString("Content-Transfer-Encoding: 8bit\r\n\r\n")
-	b.WriteString(msg.Body + "\r\n")
-	for _, img := range msg.Inline {
-		cid := SanitizeHeaderValue(img.CID)
-		b.WriteString("--" + boundary + "\r\n")
-		b.WriteString("Content-Type: " + SanitizeHeaderValue(img.ContentType) + "\r\n")
-		b.WriteString("Content-Transfer-Encoding: base64\r\n")
-		b.WriteString("Content-ID: <" + cid + ">\r\n")
-		b.WriteString("Content-Disposition: inline; filename=\"" + cid + ".png\"\r\n\r\n")
-		enc := base64.StdEncoding.EncodeToString(img.Data)
-		for len(enc) > 76 {
-			b.WriteString(enc[:76] + "\r\n")
-			enc = enc[76:]
-		}
-		b.WriteString(enc + "\r\n")
-	}
-	b.WriteString("--" + boundary + "--\r\n")
-}
 
 // ManagedSubmissionPorts are the ports an organization's relay may use on a
 // managed (hosted, multi-tenant) service: submission with implicit TLS (465)
