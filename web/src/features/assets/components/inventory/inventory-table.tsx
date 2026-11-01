@@ -95,12 +95,13 @@ const PAGE_SIZES = [10, 20, 30, 50, 100]
 const COLUMN_ROOM = {
   findings: 1020,
   // The monitoring cell is a chip with its menu arrow (about 30px wider than
-  // the plain chip), so the columns after it join 30px later.
+  // the plain chip), so the columns up to owner join 30px later. Last seen keeps
+  // its width: the wide list has room for it.
   monitoring: 1140,
   criticality: 1260,
   exposure: 1375,
   owner: 1475,
-  last_seen: 1595,
+  last_seen: 1565,
 } as const
 
 /** A one-type list shows "Service facts" only when its own columns do not already. */
