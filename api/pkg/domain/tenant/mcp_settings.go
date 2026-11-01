@@ -53,6 +53,9 @@ type MCPSettings struct {
 	// RequireDPoP accepts only DPoP-bound tokens (RFC 9449): a stolen token
 	// is useless without the client's private key.
 	RequireDPoP bool `json:"require_dpop,omitempty"`
+	// DeviceFlowDisabled refuses terminal sign-in with a user code (the
+	// device authorization grant) and stops the connections made that way.
+	DeviceFlowDisabled bool `json:"device_flow_disabled,omitempty"`
 	// MaxTLP is the most restrictive TLP level of a pentest campaign whose
 	// content may be sent to AI applications; "" means amber. A campaign
 	// above it is refused by every MCP pentest tool and prompt.
