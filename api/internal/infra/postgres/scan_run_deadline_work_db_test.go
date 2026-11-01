@@ -117,11 +117,24 @@ func TestExtendRunDeadlinesAtClaim(t *testing.T) {
 		t.Fatalf("payload deadline %q, want the run's %v", sent, at)
 	}
 
-	// A later claim never moves it back.
+	// A later claim never moves it back, and the claimed task's payload
+	// still gets the run's deadline: a task created before an earlier claim
+	// moved the run carries the old one (prod 2026-11-01: a task queued for
+	// hours was handed a deadline already past and ran 30 s).
 	small := createRunCommand(ctx, t, repo, tenant, run, "nuclei", 1)
+	if _, err := db.ExecContext(ctx, `UPDATE commands SET payload = jsonb_set(payload, '{deadline}', to_jsonb($2::text)) WHERE id = $1`,
+		small.String(), time.Now().Add(-2*time.Hour).UTC().Format(time.RFC3339)); err != nil {
+		t.Fatal(err)
+	}
 	claim(tenant, sensor, small)
 	if again, _ := runDeadline(ctx, t, db, run); !again.Equal(at) {
 		t.Fatalf("a shorter estimate moved the deadline from %v to %v", at, again)
+	}
+	if err := db.QueryRowContext(ctx, `SELECT payload->>'deadline' FROM commands WHERE id = $1`, small.String()).Scan(&sent); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := time.Parse(time.RFC3339, sent); err != nil || got.Unix() != at.Truncate(time.Second).Unix() {
+		t.Fatalf("a claim that moved nothing left payload deadline %q, want the run's %v", sent, at)
 	}
 
 	// No measured speed: the run's configured timeout from the claim.
@@ -155,7 +168,9 @@ func TestExtendRunDeadlinesAtClaim(t *testing.T) {
 	iso := seedDeadlineRun(ctx, t, db, tenant, 110*time.Minute, 10*time.Minute, scanrun.DeadlineReasonWorkflowMaxDuration)
 	isoAt, _ := runDeadline(ctx, t, db, iso)
 	isoCmd := createRunCommand(ctx, t, repo, tenant, iso, "nuclei", 25)
-	if _, err := db.ExecContext(ctx, `UPDATE commands SET status = 'acknowledged', sensor_id = $2 WHERE id = $1`, isoCmd.String(), sensor.String()); err != nil {
+	isoStale := time.Now().Add(-time.Hour).UTC().Format(time.RFC3339)
+	if _, err := db.ExecContext(ctx, `UPDATE commands SET status = 'acknowledged', sensor_id = $2,
+		payload = jsonb_set(payload, '{deadline}', to_jsonb($3::text)) WHERE id = $1`, isoCmd.String(), sensor.String(), isoStale); err != nil {
 		t.Fatal(err)
 	}
 	if err := repo.ExtendRunDeadlinesAtClaim(ctx, other, theirs, []shared.ID{isoCmd}); err != nil {
@@ -166,6 +181,14 @@ func TestExtendRunDeadlinesAtClaim(t *testing.T) {
 	}
 	if got, _ := runDeadline(ctx, t, db, iso); !got.Equal(isoAt) {
 		t.Fatalf("a foreign sensor moved the run's deadline to %v", got)
+	}
+	// Nor rewrites the task's payload deadline.
+	var isoSent string
+	if err := db.QueryRowContext(ctx, `SELECT payload->>'deadline' FROM commands WHERE id = $1`, isoCmd.String()).Scan(&isoSent); err != nil {
+		t.Fatal(err)
+	}
+	if isoSent != isoStale {
+		t.Fatalf("a foreign sensor rewrote the payload deadline to %q", isoSent)
 	}
 }
 

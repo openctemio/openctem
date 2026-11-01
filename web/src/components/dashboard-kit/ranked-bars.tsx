@@ -41,8 +41,12 @@ export interface RankedBarRow {
   health?: SourceHealth
   /** Words for an unhealthy item ("Stale, last receipt 3 days ago"). */
   note?: string | null
-  /** Accessible name of the row's link; defaults to "label: display". */
-  aria?: string
+  /**
+   * The figure with its unit ("26 findings"), read in place of the bare figure.
+   * The row's link is named by its own text (label, chip, figure, note), so the
+   * name always holds what is visible; an aria-label that rewrote it would not.
+   */
+  unit?: string
 }
 
 /** Rows in rank order: value descending, then label, then key (stable). */
@@ -189,7 +193,6 @@ export function RankedBars({
       >
         <FlowLink
           to={r.href}
-          label={r.aria ?? `${r.label}: ${display}`}
           className={cn(
             'grid min-h-11 grid-cols-[minmax(0,1fr)_auto] content-center items-center gap-x-2 gap-y-1 rounded-md px-2 py-1.5 hover:bg-muted/60 focus-visible:bg-muted/60',
             extraClass
@@ -208,6 +211,7 @@ export function RankedBars({
               />
             )}
             <span className="truncate text-sm font-medium">{r.label}</span>
+            {r.chip && ' '}
             {r.chip && (
               <span className="shrink-0 rounded border px-1 text-xs leading-4 text-muted-foreground">
                 {r.chip}
@@ -230,9 +234,10 @@ export function RankedBars({
                 {Math.abs(move)}
               </span>
             )}
-          </span>
+          </span>{' '}
           <span className="text-right text-base font-semibold tabular-nums leading-none">
-            {display}
+            <span aria-hidden={r.unit ? true : undefined}>{display}</span>
+            {r.unit && <span className="sr-only"> {r.unit}</span>}
           </span>
           <span className="col-span-2 flex h-1.5 overflow-hidden rounded-full bg-muted" aria-hidden>
             <span

@@ -213,7 +213,7 @@ describe('ExposureFlowViz on a phone (narrow band)', () => {
     expect(hrefOf(/^Fixed 318$/)).toBe(flow.fixed.drill)
     expect(hrefOf(/^Accepted 22$/)).toBe(flow.accepted.drill)
     expect(hrefOf(/^False positive 97$/)).toBe(flow.false_positive.drill)
-    expect(hrefOf('nuclei, Sensor: 402 findings')).toBe(intake.sources[0].drill)
+    expect(hrefOf(/^nuclei Sensor 402 findings/)).toBe(intake.sources[0].drill)
     expect(hrefOf('Mobilize: 78% within SLA, Off track')).toBe(
       '/findings?state=open&sla_status=overdue'
     )
@@ -260,7 +260,7 @@ describe('ExposureFlowViz on a phone (narrow band)', () => {
   it('opens the source tooltip on hover with its receipts and its split', async () => {
     const user = userEvent.setup()
     render(<ExposureFlowViz result={flow} />)
-    await user.hover(screen.getByRole('link', { name: 'nuclei, Sensor: 402 findings' }))
+    await user.hover(screen.getByRole('link', { name: /^nuclei Sensor 402 findings/ }))
     const tip = screen.getByRole('tooltip')
     expect(within(tip).getByText('nuclei')).toBeInTheDocument()
     expect(within(tip).getByText('Seen again')).toBeInTheDocument()
@@ -418,7 +418,7 @@ describe('sources: ranked bars by findings or assets, by tool or instance', () =
     expect(screen.getByTestId('ranked-zeros')).toHaveTextContent(
       '+2 sources with nothing in 30 days'
     )
-    expect(hrefOf('version-match, Platform: 59 findings')).toBe(withAssets.intake?.sources[3].drill)
+    expect(hrefOf(/^version-match Platform 59 findings/)).toBe(withAssets.intake?.sources[3].drill)
   })
 
   it('re-ranks by assets, so a discovery tool is never shown as zero', async () => {
@@ -426,9 +426,7 @@ describe('sources: ranked bars by findings or assets, by tool or instance', () =
     render(<ExposureFlowViz result={withAssets} />)
     await user.click(screen.getByRole('radio', { name: 'Assets' }))
     expect(ranked()[0]).toBe('s:sensor:subfinder')
-    expect(
-      screen.getByRole('link', { name: 'subfinder, Sensor: 9,000 assets' })
-    ).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /^subfinder Sensor 9,000 assets/ })).toBeInTheDocument()
     expect(screen.queryAllByTestId('rank-move')).toHaveLength(0)
   })
 
@@ -437,7 +435,7 @@ describe('sources: ranked bars by findings or assets, by tool or instance', () =
     render(<ExposureFlowViz result={withAssets} />)
     await user.click(screen.getByRole('radio', { name: 'Source instance' }))
     expect(ranked()).toEqual(['i:sensor:s1', 'i:platform:platform', 'i:sensor:s2'])
-    const failing = screen.getByRole('link', { name: 'dc-02, Sensor: 0 findings' })
+    const failing = screen.getByRole('link', { name: /^dc-02 Sensor 0 findings/ })
     expect(failing).toHaveAttribute('href', '/sensors/s2')
     expect(failing).toHaveAttribute('data-health', 'failed')
   })
@@ -445,7 +443,7 @@ describe('sources: ranked bars by findings or assets, by tool or instance', () =
   it('lists the instances that fed a tool in its tooltip, with a link to the sensor', async () => {
     const user = userEvent.setup()
     render(<ExposureFlowViz result={withAssets} />)
-    await user.hover(screen.getByRole('link', { name: 'nuclei, Sensor: 402 findings' }))
+    await user.hover(screen.getByRole('link', { name: /^nuclei Sensor 402 findings/ }))
     const tip = screen.getByRole('tooltip')
     expect(within(tip).getByText('edge-01')).toBeInTheDocument()
     expect(within(tip).getByText('402 (100%)')).toBeInTheDocument()
