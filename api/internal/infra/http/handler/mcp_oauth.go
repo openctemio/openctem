@@ -45,6 +45,9 @@ const (
 	mcpTokenPath     = "/oauth/token"
 	mcpRevokePath    = "/oauth/revoke"
 	mcpRegisterPath  = "/oauth/register"
+	// mcpDeviceAuthorizationPath is the RFC 8628 device authorization
+	// endpoint (the terminal asks for a device code and a user code).
+	mcpDeviceAuthorizationPath = "/oauth/device_authorization"
 	// mcpConsentPage is the web page that asks the person.
 	mcpConsentPage = "/oauth/consent"
 	// maxOAuthFormBytes bounds a token or revocation request body.
@@ -68,6 +71,7 @@ type authorizationServerMetadata struct {
 	AuthorizationResponseIssParameterSupported bool     `json:"authorization_response_iss_parameter_supported"`
 	RegistrationEndpoint                       string   `json:"registration_endpoint,omitempty"`
 	DPoPSigningAlgValuesSupported              []string `json:"dpop_signing_alg_values_supported"`
+	DeviceAuthorizationEndpoint                string   `json:"device_authorization_endpoint"`
 }
 
 // ServerMetadata serves GET /.well-known/oauth-authorization-server.
@@ -91,7 +95,8 @@ func (h *MCPOAuthHandler) ServerMetadata(w http.ResponseWriter, _ *http.Request)
 		RevocationEndpoint:                         e.Issuer + mcpRevokePath,
 		ResponseTypesSupported:                     []string{"code"},
 		ResponseModesSupported:                     []string{"query"},
-		GrantTypesSupported:                        []string{"authorization_code", "refresh_token"},
+		GrantTypesSupported:                        []string{"authorization_code", "refresh_token", mcpoauth.DeviceGrantType},
+		DeviceAuthorizationEndpoint:                e.Issuer + mcpDeviceAuthorizationPath,
 		CodeChallengeMethodsSupported:              []string{"S256"},
 		TokenEndpointAuthMethodsSupported:          []string{"none"},
 		RevocationEndpointAuthMethodsSupported:     []string{"none"},
@@ -161,6 +166,30 @@ func (h *MCPOAuthHandler) Token(w http.ResponseWriter, r *http.Request) {
 			status = http.StatusUnauthorized
 		}
 		if oerr.Code == "server_error" {
+			status = http.StatusInternalServerError
+		}
+		writeOAuthError(w, status, oerr)
+		return
+	}
+	noStoreJSON(w, http.StatusOK, resp)
+}
+
+// DeviceAuthorization serves POST /oauth/device_authorization (RFC 8628
+// §3.1): a terminal without a browser asks for a device code to poll with
+// and a user code for the person to enter at verification_uri.
+func (h *MCPOAuthHandler) DeviceAuthorization(w http.ResponseWriter, r *http.Request) {
+	form, oerr := readOAuthForm(w, r)
+	if oerr != nil {
+		writeOAuthError(w, http.StatusBadRequest, oerr)
+		return
+	}
+	resp, oerr := h.svc.StartDeviceAuthorization(r.Context(), form, oauthActor(r))
+	if oerr != nil {
+		status := http.StatusBadRequest
+		switch oerr.Code {
+		case "invalid_client":
+			status = http.StatusUnauthorized
+		case "server_error":
 			status = http.StatusInternalServerError
 		}
 		writeOAuthError(w, status, oerr)
@@ -262,6 +291,16 @@ type consentRequestResponse struct {
 	// access, so the page offers "Allow access to all organization data".
 	FullDataAvailable bool      `json:"full_data_available"`
 	ExpiresAt         time.Time `json:"expires_at"`
+	// Flow is "code" (the application sent the browser here) or "device"
+	// (a terminal showed a code the person typed in).
+	Flow string `json:"flow"`
+	// Device flow only: where and when the terminal asked, the address this
+	// browser is on, and whether the two are the same.
+	RequesterIP        string     `json:"requester_ip,omitempty"`
+	RequesterUserAgent string     `json:"requester_user_agent,omitempty"`
+	RequestedAt        *time.Time `json:"requested_at,omitempty"`
+	YourIP             string     `json:"your_ip,omitempty"`
+	SameAddress        bool       `json:"same_address"`
 }
 
 // approveConsentRequest is the body of POST .../approve (optional).
@@ -272,7 +311,20 @@ type approveConsentRequest struct {
 }
 
 type consentDecisionResponse struct {
+	// RedirectTo is where the browser goes; empty for a terminal sign-in
+	// (the terminal picks the result up itself).
 	RedirectTo string `json:"redirect_to"`
+}
+
+// enterDeviceCodeRequest is the body of POST /api/v1/oauth/device.
+type enterDeviceCodeRequest struct {
+	UserCode string `json:"user_code"`
+}
+
+// enterDeviceCodeResponse names the authorization request the consent page
+// then shows.
+type enterDeviceCodeResponse struct {
+	RequestID string `json:"request_id"`
 }
 
 // consentCaller reads the signed-in user, their organization and the
@@ -316,7 +368,16 @@ func (h *MCPOAuthHandler) GetConsentRequest(w http.ResponseWriter, r *http.Reque
 		ClientHost: view.ClientHost, RedirectHost: view.RedirectHost, RedirectURI: view.RedirectURI,
 		LoopbackOnly: view.LoopbackOnly, ExpiresAt: view.ExpiresAt, Verified: view.Verified, Blocked: view.Blocked,
 		Requestable: view.Requestable, CanAllow: view.CanAllow, AccessRequested: view.AccessRequested,
-		FullDataAvailable: view.FullDataAvailable,
+		FullDataAvailable: view.FullDataAvailable, Flow: string(view.Flow),
+	}
+	if out.Flow == "" {
+		out.Flow = string(mcpoauth.FlowCode)
+	}
+	if view.Flow == mcpoauth.FlowDevice {
+		at := view.RequestedAt
+		out.RequesterIP, out.RequesterUserAgent, out.RequestedAt = view.RequesterIP, view.RequesterUserAgent, &at
+		out.YourIP = getClientIP(r)
+		out.SameAddress = out.YourIP != "" && out.YourIP == view.RequesterIP
 	}
 	for _, s := range view.Scopes {
 		out.Scopes = append(out.Scopes, consentScopeResponse{Scope: string(s.Scope), Title: s.Title, Write: s.Write, Granted: s.Granted, NotAllowed: s.NotAllowed})
@@ -326,7 +387,7 @@ func (h *MCPOAuthHandler) GetConsentRequest(w http.ResponseWriter, r *http.Reque
 
 // ApproveConsent serves POST /api/v1/oauth/requests/{id}/approve.
 // @Summary      Allow an AI application to connect
-// @Description  Records the signed-in user's approval in the session's organization and returns the address the browser goes to: the application's registered redirect URI with a single-use authorization code, the state and the issuer. Scopes the user holds nothing for are not granted. The optional body field full_data allows the connection to read all organization data: it needs a role with full data access and a fresh step-up, and the connection then lives shorter. Audited.
+// @Description  Records the signed-in user's approval in the session's organization and returns the address the browser goes to: the application's registered redirect URI with a single-use authorization code, the state and the issuer. Scopes the user holds nothing for are not granted. The optional body field full_data allows the connection to read all organization data: it needs a role with full data access and a fresh step-up, and the connection then lives shorter. For a terminal sign-in (device flow) redirect_to is empty, the terminal receives its tokens when it next polls, and full_data is refused. Approving always needs a recent sign-in. Audited.
 // @Tags         MCP
 // @Produce      json
 // @Security     BearerAuth
@@ -431,6 +492,40 @@ func (h *MCPOAuthHandler) AllowPublisher(w http.ResponseWriter, r *http.Request)
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// EnterDeviceCode serves POST /api/v1/oauth/device.
+// @Summary      Enter the code a terminal shows
+// @Description  A terminal signing in with the device authorization grant shows a short code. The signed-in person enters it here; the request becomes theirs and its id is returned for the consent page, which shows where and when the terminal asked. Every unusable code (malformed, unknown, expired, decided, or entered by someone else) answers the same 404. Attempts are limited per address and per person. Browser sessions only.
+// @Tags         MCP
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        body body enterDeviceCodeRequest true "User code"
+// @Success      200  {object}  enterDeviceCodeResponse
+// @Failure      403  {object}  apierror.Error
+// @Failure      404  {object}  apierror.Error
+// @Failure      429  {object}  apierror.Error
+// @Router       /oauth/device [post]
+func (h *MCPOAuthHandler) EnterDeviceCode(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	userID, err1 := shared.IDFromString(middleware.GetUserID(ctx))
+	tenantID, err2 := shared.IDFromString(middleware.GetTenantID(ctx))
+	if middleware.IsAPIKeyAuthenticated(ctx) || err1 != nil || err2 != nil {
+		apierror.NotFound("Code").WriteJSON(w)
+		return
+	}
+	var body enterDeviceCodeRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<10)).Decode(&body); err != nil {
+		apierror.BadRequest("Invalid request body").WriteJSON(w)
+		return
+	}
+	id, err := h.svc.EnterUserCode(ctx, body.UserCode, userID, tenantID)
+	if err != nil {
+		h.consentError(w, err)
+		return
+	}
+	noStoreJSON(w, http.StatusOK, enterDeviceCodeResponse{RequestID: id.String()})
+}
+
 func (h *MCPOAuthHandler) consentError(w http.ResponseWriter, err error) {
 	if writeStepUpError(w, err) {
 		return
@@ -438,6 +533,12 @@ func (h *MCPOAuthHandler) consentError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, mcpoauthapp.ErrFullDataStepUp):
 		writeStepUpError(w, middleware.ErrStepUpUnavailable)
+	case errors.Is(err, mcpoauthapp.ErrUserCodeInvalid):
+		apierror.NotFound("Code").WriteJSON(w)
+	case errors.Is(err, mcpoauthapp.ErrDeviceFlowDisabled):
+		apierror.Forbidden("Your organization does not allow signing in a terminal with a code").WriteJSON(w)
+	case errors.Is(err, mcpoauthapp.ErrDeviceFullData):
+		apierror.Forbidden("Access to all organization data cannot be given to a terminal sign-in").WriteJSON(w)
 	case errors.Is(err, mcpoauthapp.ErrFullDataNotAllowed):
 		apierror.Forbidden("Your role does not have access to all organization data").WriteJSON(w)
 	case errors.Is(err, mcpoauthapp.ErrAccessRequestLimit):

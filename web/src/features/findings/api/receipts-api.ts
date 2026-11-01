@@ -40,7 +40,7 @@ export interface ReceiptListResponse {
 }
 
 /** The source groups the dashboards count by (a receipt kind's group). */
-export const RECEIPT_ORIGINS = ['sensor', 'import', 'connector', 'ci'] as const
+export const RECEIPT_ORIGINS = ['sensor', 'import', 'connector', 'ci', 'platform'] as const
 export type ReceiptOrigin = (typeof RECEIPT_ORIGINS)[number]
 
 export function isReceiptOrigin(v: unknown): v is ReceiptOrigin {
@@ -48,7 +48,7 @@ export function isReceiptOrigin(v: unknown): v is ReceiptOrigin {
 }
 
 export type ReceiptSourceKind =
-  'upload' | 'scan_run' | 'command' | 'ci_run' | 'connector' | 'sensor'
+  'upload' | 'scan_run' | 'command' | 'ci_run' | 'connector' | 'sensor' | 'platform'
 
 export interface ReceiptListFilters {
   sourceKind?: ReceiptSourceKind

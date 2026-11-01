@@ -423,13 +423,34 @@ costs no extra request and no query.
 
 `ingest.intake` (visualization `intake`) sums the receipts
 ([ingest receipts](ingest-receipts.md)) with activity in the window, per
-source: the source group (`sensor`, `import`, `connector`, `ci`, the receipt
-kind's group) and the tool (`unknown` when the source named none).
+source: the source group (`sensor`, `import`, `connector`, `ci`, `platform`,
+the receipt kind's group) and the tool (`unknown` when the source named
+none). A source is the tool that reported: one receipt can carry reports of
+several tools (a scan run of several steps, a CI run with several scanners),
+and each report adds its counts to its own tool's row of the receipt
+(`ingest_receipt_tools`), never to the first tool that reported. Findings
+the platform derives itself (the inventory version matcher) are booked on a
+`platform` receipt per organization and UTC day under the tool
+`version-match`, so they appear as their own source instead of on no
+receipt or on the discovery tool whose report named the software.
 
 - Per source: receipts, received, created, still detected, reopened,
   closed, suppressed, not stored (skipped or failed), the latest receipt
   (time, status, id) and the usual interval (the median time between its
   receipts; three receipts or more).
+- Assets and kind: `assets` is the assets the source's reports created or
+  updated. A discovery tool sends assets, not findings, so a source with no
+  findings received and some assets is `kind: discovery`; the version
+  matcher is `platform`; anything else is `detection`. Assets are not part of
+  the funnel, which counts findings only.
+- Senders (`instances`): who sent the source's reports, busiest first, with
+  received, assets, health and the latest time: a sensor (named and linked to
+  its page only when it is one of the organization's own sensors), a CI
+  repository, a connector source name, an upload, or the platform. Their
+  figures sum to the source's, and the source's health is the worst of its
+  senders' (a failing sensor shows on every tool it feeds). Receipts written
+  before senders were recorded name none (uploads and CI runs are backfilled
+  from the receipt).
 - Health: `failed` when the latest receipt failed; `stale` when nothing
   came for more than twice the usual interval and at least a day; `ok`
   otherwise. A source with fewer than three receipts is never stale.
@@ -449,9 +470,9 @@ kind's group) and the tool (`unknown` when the source named none).
 - False positive: the findings closed as false positive in the window, the
   same figure as the flow's.
 - Each source figure opens the receipt list with the same filter
-  (`/findings/imports?origin=&tool=&since=`), whose `totals` are computed by
-  the same grouping expressions (`receiptOriginSQL`, `receiptToolSQL`), so
-  the figure equals the list it opens.
+  (`/findings/imports?origin=&tool=&since=`). The list's tool filter keeps
+  every receipt the tool reported on, and its `totals` for a tool are that
+  tool's own rows, so the figure equals the list it opens.
 
 Scope: receipts count findings across the organization and are not
 asset-scoped, so the intake is computed only for a read with no data scope
