@@ -1,7 +1,8 @@
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { ExposureFlowViz, ringArcs } from '../exposure-flow-viz'
+import { ExposureFlowViz } from '../exposure-flow-viz'
+import { ringEdgeInset, ringSegments, type RingPart } from '../flow-rings'
 import { IntakeViz } from '../intake-viz'
 import type { FlowResult, IntakeData, IntakeSourceRow } from '../types'
 
@@ -134,24 +135,45 @@ function hrefOf(name: RegExp | string): string | null {
   return screen.getByRole('link', { name }).getAttribute('href')
 }
 
-describe('ringArcs', () => {
-  it('draws one arc per class with findings, the largest centred at the bottom', () => {
-    const arcs = ringArcs(flow.classes)
-    expect(arcs.map((a) => a.key)).toEqual(['P0', 'P1', 'P2', 'P3'])
-    // P3 (the largest) is centred on 6 o'clock: its label sits straight below.
-    const p3 = arcs[3]
-    expect(Math.abs(p3.labelX)).toBeLessThan(0.01)
-    expect(p3.labelY).toBeGreaterThan(0)
+const part = (key: string, value: number): RingPart => ({ key, value, color: 'red', aria: key })
+
+describe('ringSegments', () => {
+  it('draws one segment per part with a value, the largest centred at the bottom', () => {
+    const segs = ringSegments(
+      flow.classes.map((c) => part(c.key ?? '', c.value)),
+      92,
+      18
+    )
+    expect(segs.map((x) => x.key)).toEqual(['P0', 'P1', 'P2', 'P3'])
+    // P3 (the largest) is centred on 6 o'clock.
+    const p3 = segs[3]
+    expect(Math.abs((p3.a0 + p3.a1) / 2 - Math.PI)).toBeLessThan(1e-9)
   })
 
-  it('leaves out an empty class and draws nothing without findings', () => {
-    expect(
-      ringArcs([
-        { key: 'P0', value: 0 },
-        { key: 'P1', value: 5 },
-      ]).map((a) => a.key)
-    ).toEqual(['P1'])
-    expect(ringArcs([{ key: 'P0', value: 0 }])).toEqual([])
+  it('keeps a visible gap after the round caps and a small part visible', () => {
+    const r = 140
+    const w = 12
+    const segs = ringSegments([part('a', 1000), part('b', 1), part('c', 400)], r, w)
+    for (let i = 0; i < segs.length; i++) {
+      const next = segs[(i + 1) % segs.length]
+      let gap = next.a0 - segs[i].a1
+      if (gap < 0) gap += 2 * Math.PI
+      // The gap minus both half-caps leaves about four viewBox units.
+      expect(gap * r - w).toBeGreaterThan(3.9)
+    }
+    expect(segs[1].a1 - segs[1].a0).toBeGreaterThan(0.019)
+  })
+
+  it('leaves out an empty part, closes a single part, draws nothing without values', () => {
+    expect(ringSegments([part('P0', 0), part('P1', 5)], 92, 18).map((x) => x.key)).toEqual(['P1'])
+    expect(ringSegments([part('P1', 5)], 92, 18)[0].a1).toBeCloseTo(2 * Math.PI)
+    expect(ringSegments([part('P0', 0)], 92, 18)).toEqual([])
+  })
+
+  it('puts the wire joints on the outer edge of the outer ring', () => {
+    // Three rings: outer radius 140 + half of 12 = 146 of 160.
+    expect(ringEdgeInset(3)).toBeCloseTo(14 / 320)
+    expect(ringEdgeInset(1)).toBeCloseTo((160 - 139) / 320)
   })
 })
 
@@ -210,6 +232,18 @@ describe('ExposureFlowViz on a phone (narrow band)', () => {
     expect(screen.queryByRole('group', { name: /by priority class/ })).not.toBeInTheDocument()
   })
 
+  it('shows the same rings small beside the headline: decorative, a tap explains', () => {
+    render(<ExposureFlowViz result={flow} />)
+    const rings = within(screen.getByTestId('flow-headline')).getByTestId('flow-rings')
+    expect(rings).toHaveAttribute('aria-hidden', 'true')
+    expect(rings.querySelectorAll('[data-ring]')).toHaveLength(3)
+    expect(rings.querySelector('[role="link"]')).toBeNull()
+    const seg = rings.querySelector('[data-seg="p:P0"]') as Element
+    fireEvent.pointerDown(seg, { pointerType: 'touch' })
+    fireEvent.click(seg)
+    expect(within(screen.getByRole('tooltip')).getByText('Actionable: P0')).toBeInTheDocument()
+  })
+
   it('shows the actionable total once, without the old period caption', () => {
     render(<ExposureFlowViz result={{ ...flow, open: { value: 800, drill: flow.open.drill } }} />)
     expect(screen.getAllByText('791')).toHaveLength(1)
@@ -218,7 +252,7 @@ describe('ExposureFlowViz on a phone (narrow band)', () => {
 
   it('says how unhealthy sources are in words, not only colour', () => {
     render(<ExposureFlowViz result={flow} />)
-    expect(screen.getByText(/Stale, last 3 days ago/)).toBeInTheDocument()
+    expect(screen.getByText(/Stale, last receipt 3 days ago/)).toBeInTheDocument()
     expect(screen.getByText(/Failed/)).toBeInTheDocument()
     expect(screen.getAllByText('Unnamed tool').length).toBeGreaterThan(0)
   })
@@ -467,6 +501,73 @@ describe('ExposureFlowViz on a wide card', () => {
     expect(hrefOf(/^Findings received 602$/)).toBe(intake.drill)
     expect(hrefOf(/^New or reopened 312$/)).toBe(intake.drill)
     expect(hrefOf(/^Actionable now 791 by priority class$/)).toBe(flow.actionable.drill)
+  })
+
+  it('reads from the outside in: received by source, new by source, actionable by class', () => {
+    render(<ExposureFlowViz result={flow} />)
+    const rings = screen.getByRole('group', { name: /by source, actionable findings/ })
+    expect(rings.querySelectorAll('[data-ring]')).toHaveLength(3)
+    expect(rings.querySelectorAll('[data-testid="ring-track"]')).toHaveLength(3)
+    expect(
+      screen.getByRole('link', { name: 'nuclei: 402 findings received, 67% of received' })
+    ).toBeInTheDocument()
+    // created 20 + reopened 2 of the 312 new or reopened.
+    expect(
+      screen.getByRole('link', { name: 'nuclei: 22 new or reopened, 7% of new or reopened' })
+    ).toBeInTheDocument()
+    // The source keeps one colour on its row and both arcs.
+    const row = screen.getByRole('link', { name: 'nuclei, Sensor: 402 findings' })
+    const bar = row.querySelector('[data-testid="ranked-bar"]') as HTMLElement
+    const outer = rings.querySelector('[data-seg="s:sensor:nuclei"]')
+    const middle = rings.querySelector('[data-seg="n:sensor:nuclei"]')
+    expect(bar.style.background).toBe('var(--viz-cat-1)')
+    expect(outer?.getAttribute('stroke')).toBe('var(--viz-cat-1)')
+    expect(middle?.getAttribute('stroke')).toBe('var(--viz-cat-1)')
+  })
+
+  it('lights a source on either arc: its row and both arcs stay, the rest dims', () => {
+    render(<ExposureFlowViz result={flow} />)
+    const arc = screen.getByRole('link', { name: /^nuclei: 22 new or reopened/ })
+    act(() => arc.focus())
+    const tip = screen.getByRole('tooltip')
+    expect(within(tip).getByText('Share of new or reopened')).toBeInTheDocument()
+    expect(within(tip).getByText('7%')).toBeInTheDocument()
+    expect(within(tip).getByRole('link', { name: 'View 3 receipts' })).toHaveAttribute(
+      'href',
+      intake.sources[0].drill
+    )
+    const dimmed = (sel: string) => !!document.querySelector(sel)?.closest('.opacity-30')
+    expect(dimmed('[data-seg="s:sensor:nuclei"]')).toBe(false)
+    expect(dimmed('[data-seg="n:sensor:nuclei"]')).toBe(false)
+    expect(dimmed('[data-seg="s:connector:cloud"]')).toBe(true)
+    expect(dimmed('[data-seg="p:P0"]')).toBe(true)
+    const row = screen.getByRole('link', { name: 'nuclei, Sensor: 402 findings' })
+    expect(row.className).not.toContain('opacity-30')
+  })
+
+  it('an outer arc lights the middle arc of its source', () => {
+    render(<ExposureFlowViz result={flow} />)
+    act(() => screen.getByRole('link', { name: /^cloud: 173 findings received/ }).focus())
+    const dimmed = (sel: string) => !!document.querySelector(sel)?.closest('.opacity-30')
+    expect(dimmed('[data-seg="n:connector:cloud"]')).toBe(false)
+    expect(dimmed('[data-seg="n:sensor:nuclei"]')).toBe(true)
+    expect(within(screen.getByRole('tooltip')).getByText('Share of received')).toBeInTheDocument()
+  })
+
+  it('a funnel figure lights its whole ring', () => {
+    render(<ExposureFlowViz result={flow} />)
+    act(() => screen.getByRole('link', { name: /^Findings received 602$/ }).focus())
+    const dimmed = (sel: string) => !!document.querySelector(sel)?.closest('.opacity-30')
+    expect(dimmed('[data-seg="s:sensor:nuclei"]')).toBe(false)
+    expect(dimmed('[data-seg="s:ci:unknown"]')).toBe(false)
+    expect(dimmed('[data-seg="n:sensor:nuclei"]')).toBe(true)
+  })
+
+  it('a scoped read draws the actionable ring alone, never organization volumes', () => {
+    render(<ExposureFlowViz result={{ ...flow, intake: null }} />)
+    const rings = screen.getByRole('group', { name: 'Actionable findings by priority class' })
+    expect(rings.querySelectorAll('[data-ring]')).toHaveLength(1)
+    expect(rings.querySelector('[data-seg^="s:"]')).toBeNull()
   })
 
   it('lights a class on focus: centre swaps, the tooltip opens with its list, Escape closes it', () => {

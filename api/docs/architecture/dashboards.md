@@ -1334,7 +1334,7 @@ figure means not measured and is never drawn as 0.
 | `PathsViz` | paths | reachable crown jewels (linked to the attack paths) and the top ones with the entry points reaching them; "none designated" and "none reachable" are different states |
 | `ItemsViz` | items | rows with priority, KEV, asset and due time, and "View all" |
 | `ItemsTable` | items (`viz: table`) | the embedded findings table: Priority, Finding (title link, asset line, KEV chip), Severity and SLA columns (Severity and SLA hidden at phone width, the table scrolls sideways), a read-only chip row with the list's filter, the count in the caption, and a footer "Top n of total" with "Open in Findings" |
-| `ExposureFlowViz` | flow | sources (with health in words and line style), received to new or reopened to actionable, a labelled ring of actionable findings by priority class (at most four arcs, each a focusable link with a sentence, the largest centred at the bottom, a minimum arc so P0 stays visible; the centre is the count the arcs sum to), the five stages (the focus stage filled with the accent), outcomes (open with its severity split, past SLA, in progress, closed in the period); wires are SVG paths between measured rows, width by volume; the layout follows the widget's own width (see "Connected visuals: layout bands") |
+| `ExposureFlowViz` | flow | sources (with health in words and line style), received to new or reopened to actionable, three concentric rings read from the outside in (`FlowRings` in `flow-rings.tsx`): findings received by source, new or reopened by source (each source's `created + reopened`, so the middle ring sums to the funnel's new or reopened), actionable findings by priority class (at most four arcs); a scoped read draws the actionable ring alone. Each segment is a focusable link with a sentence (name, count, share of its ring), round caps with a fixed visible gap, the largest centred at the bottom, a minimum sweep so a small part stays visible, a muted track under every ring; the centre is the count the inner arcs sum to. A source keeps one colour (its categorical slot, by its place in the read) on its ranked row and both arcs; focusing a source (row or either arc) lights its row, both arcs and its wire, a funnel figure lights its whole ring (a ring-key glyph beside each funnel label says which), a lit segment is a little thicker with a soft glow in its own colour. The rings draw in once (none under reduced motion); a phone shows the same rings small beside the headline, decorative (a tap explains, the figures under them are the links), the five stages (the focus stage filled with the accent), outcomes (open with its severity split, past SLA, in progress, closed in the period); wires are SVG paths between measured rows, width by volume; the layout follows the widget's own width (see "Connected visuals: layout bands") |
 | `IntakeViz` | intake | the connector panel (each source's icon, tool, receipts, health, count, wired into one summary that shows the hovered source), the noise bar (new or reopened, merged, suppressed, not stored; each legend value opens the receipts), the false-positive row, and the per-source table |
 
 Rules every visualization follows:
@@ -1387,20 +1387,23 @@ The exposure flow and the intake panel lay themselves out on the widget's
 own width, never the viewport: a widget sits in grid cells of any size (a
 1-of-4 cell on a wide screen is narrower than a phone). The layout is CSS
 container queries on the visual; the same widths decide in code
-(`flowBand` in `flow-parts.tsx`, `FLOW_MID` 660 px and `FLOW_WIDE` 960 px of
+(`flowBand` in `flow-parts.tsx`, `FLOW_MID` 660 px and `FLOW_WIDE` 900 px of
 the visual's width) which wires exist, so a wire is drawn only when both of
 its ends sit side by side, and the rows it joins exist before it is measured.
 
 | Band (visual width) | Exposure flow | Intake panel |
 |---|---|---|
 | narrow, under 660 px | one column in reading order: the first three sources and "N more", the received to actionable figures, the ring (at most 18 rem, 78 % of the width), the stages (three then two per row under 420 px, five in a row above), the outcomes; no wires | sources, then the summary; the health note under each source's name; no wires |
-| mid, 660 to 959 px | the first three sources in one row above; the core (figures, ring, stages) beside the outcomes, wires from the ring to the outcomes | sources (`clamp(15rem, 34cqi, 52rem)`) at the left edge and summary (`clamp(14rem, 30cqi, 44rem)`) at the right edge, the wires across the space between |
-| wide, 960 px and more | three columns that grow with the card (sources `clamp(12rem, 20cqi, 26rem)`, core `clamp(20rem, 34cqi, 46rem)`, outcomes `clamp(13rem, 20cqi, 26rem)`), sources at the left padding and outcomes at the right padding, the wires taking the space between: the composition fills the card, with no empty side gutters, and each wire still starts right after its row | same as mid |
+| mid, 660 to 899 px | the first three sources in one row above; the core (figures, ring, stages) beside the outcomes, wires from the ring to the outcomes | sources (`clamp(15rem, 34cqi, 52rem)`) at the left edge and summary (`clamp(14rem, 30cqi, 44rem)`) at the right edge, the wires across the space between |
+| wide, 900 px and more (a full-width card from a 1280 px window with the sidebar open) | three columns that fill the card: sources in their own box flush with the left padding at a reading width (`clamp(16rem, 24cqi, 19rem)`, so a source's name, kind and figure fit and its status wraps under it, never cut off), outcomes as boxes flush with the right padding (`clamp(13rem, 17cqi, 16rem)`), the core taking every pixel between (`minmax(0, 1fr)`); the rings grow with the core and the wires span the rest, from the sources box to the outer ring and from the ring to each outcome | same as mid |
 
-The ring is `clamp(15rem, 24cqi, 26rem)` from the mid band and its centre
-figure `clamp(2.25rem, 4.5cqi, 3rem)`. Wires are re-measured on every resize
-(`useWireAnchors`, a `ResizeObserver`), from a row's right edge to the
-ring's or summary's left edge, so they always meet their ends; their width
+The rings are `clamp(15rem, min(100% - 6rem, 34cqi), 30rem)` from the mid
+band (at least 6 rem left in the core for the wires; about 310 px in a
+1280 px window, 480 px at 1920) and their centre figure scales with the
+rings (`clamp(1.75rem, 12cqi, 3.5rem)` of the rings' own width). Wires are
+re-measured on every resize (`useWireAnchors`, a `ResizeObserver`), from a
+row's right edge (the sources box edge) to the outer ring's edge, and from
+there to the outcome's or summary's left edge, so they always meet their ends; their width
 stays proportional to the volume. The DOM order is the reading and focus
 order in every band (no visual reordering). The noise and per-source panels
 of the intake widget sit side by side from 1100 px of widget width.
@@ -1410,10 +1413,13 @@ widget (`h3`) keep the heading order.
 
 Tests: `dashboard-kit/__tests__/exposure-flow.test.tsx` (band thresholds, the
 container query classes use the same widths, the health note sits on its
-row), `e2e/specs/52-dashboard-flow-layout.spec.ts` (at card widths 480, 720,
-960, 1200, 1440 and 1600 px: no sideways scroll, no overlapping columns, the
-ring inside its column, no wires on one column, every wire starts within
-80 px of its source label).
+row, ring geometry and focus), `e2e/specs/52-dashboard-flow-layout.spec.ts`
+(at card widths 480, 720, 900, 960, 1200, 1440, 1600 and 1920 px: no
+sideways scroll, no overlapping columns, the rings inside their column, no
+wires on one column, every wire starts within 96 px of its source label; on
+a wide card the sources column is 240 to 310 px with no text cut off, every
+source wire runs from the sources box to the outer ring and every outcome
+wire ends at its outcome).
 
 ### Chart palettes
 
