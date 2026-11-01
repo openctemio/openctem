@@ -1343,7 +1343,13 @@ func (r *AssetRepository) buildWhereClause(filter asset.Filter) (string, []any) 
 
 	// Coverage ledger (the dashboard's Discovery stage counts with the same
 	// predicate, so its figure equals this list).
-	if cond := CoverageCondition(filter.Coverage, fmt.Sprintf("$%d", argIndex)); cond != "" {
+	// coverage_cause (uncovered for that cause) is the dashboard's coverage
+	// cause row, read with the same expression.
+	if cond := CoverageCauseCondition(filter.CoverageCause, fmt.Sprintf("$%d", argIndex), fmt.Sprintf("$%d", argIndex+1)); cond != "" {
+		conditions = append(conditions, cond)
+		args = append(args, time.Now().Add(-asset.CoverageWindow).UTC(), filter.CoverageCause)
+		argIndex += 2
+	} else if cond := CoverageCondition(filter.Coverage, fmt.Sprintf("$%d", argIndex)); cond != "" {
 		conditions = append(conditions, cond)
 		args = append(args, time.Now().Add(-asset.CoverageWindow).UTC())
 		argIndex++
@@ -1613,6 +1619,10 @@ func (r *AssetRepository) buildWhereClause(filter asset.Filter) (string, []any) 
 			assetMonitoringStateSQL("a", fmt.Sprintf("$%d::boolean", argIndex+1)), argIndex))
 		args = append(args, pq.Array(filter.MonitoringStates), filter.UnclassifiedScanned)
 		argIndex += 2
+	}
+	if filter.Primary {
+		// Constant SQL; every subquery is pinned to the asset's tenant.
+		conditions = append(conditions, asset.PrimarySQL("a"))
 	}
 	if len(filter.DiscoveredBy) > 0 {
 		conditions = append(conditions, fmt.Sprintf(

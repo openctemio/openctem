@@ -73,6 +73,9 @@ func registerAssetRoutes(
 		r.GET("/{id}/coverage", h.GetCoverage, middleware.Require(permission.AssetsRead))
 		// Open ports of the addresses a domain or subdomain resolves to.
 		r.GET("/{id}/resolved-ports", h.GetResolvedPorts, middleware.Require(permission.AssetsRead))
+		// How the asset was found: its ancestor chain, each ancestor data-scope
+		// checked (docs/architecture/easm.md, Discovery lineage).
+		r.GET("/{id}/lineage", h.GetLineage, middleware.Require(permission.AssetsRead))
 		// Why the risk score is what it is (docs/architecture/asset-risk-score.md).
 		r.GET("/{id}/risk", h.GetRisk, middleware.Require(permission.AssetsRead))
 		// Lowering exposure, criticality or the crown-jewel flag: the impact on
@@ -798,6 +801,29 @@ func registerEASMLookalikeRoutes(
 		r.PUT("/watches/{id}", h.Update, middleware.Require(permission.ScopeWrite))
 		r.DELETE("/watches/{id}", h.Delete, middleware.Require(permission.ScopeDelete))
 		r.GET("/watches/{id}/registered", h.Registered, middleware.Require(permission.ScopeRead))
+	}, tenantMiddlewares...)
+}
+
+// registerPageMonitorRoutes registers web page monitoring (RFC-138): reads
+// take assets:read plus the data scope of the watch's web service (checked in
+// the service, 404); watch changes schedule active fetches and take
+// scans:write. Behind the attack_surface module.
+func registerPageMonitorRoutes(
+	router Router,
+	h *handler.PageMonitorHandler,
+	authMiddleware Middleware,
+	userSyncMiddleware Middleware,
+	moduleGate Middleware,
+) {
+	tenantMiddlewares := append(buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware), moduleGate)
+	router.Group("/api/v1/easm/page-monitoring", func(r Router) {
+		r.GET("/watches", h.ListWatches, middleware.Require(permission.AssetsRead))
+		r.POST("/watches", h.CreateWatch, middleware.Require(permission.ScansWrite))
+		r.PUT("/watches/{id}", h.UpdateWatch, middleware.Require(permission.ScansWrite))
+		r.DELETE("/watches/{id}", h.DeleteWatch, middleware.Require(permission.ScansWrite))
+		r.GET("/suggestions", h.Suggestions, middleware.Require(permission.AssetsRead))
+		r.GET("/changes", h.ListChanges, middleware.Require(permission.AssetsRead))
+		r.GET("/changes/{id}", h.GetChange, middleware.Require(permission.AssetsRead))
 	}, tenantMiddlewares...)
 }
 
