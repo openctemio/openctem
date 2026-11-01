@@ -131,7 +131,7 @@ function SeverityChips({ sev, t }: { sev?: CrownJewel['findingSeverity']; t: TFn
             level: t(`severity.${p.level}`, p.level),
           })}
           className={cn(
-            'rounded px-1.5 py-0.5 text-[10px] font-semibold tabular-nums',
+            'rounded px-1.5 py-0.5 text-xs font-semibold tabular-nums',
             SEVERITY_BADGE_SOLID[p.level]
           )}
         >

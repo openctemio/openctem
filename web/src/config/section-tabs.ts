@@ -468,6 +468,16 @@ export const ATTACK_SURFACE_SECTION_TABS: readonly SectionTab[] = [
     permission: Permission.AssetsRead,
   },
   {
+    // The coverage pipeline by stage with Run, Run all and Abort all
+    // (research/333 §1.2). The API also needs an unrestricted data scope.
+    label: 'Discovery',
+    labelKey: 'nav.tab.discovery',
+    href: '/attack-surface/discovery',
+    icon: Radar,
+    module: 'attack_surface',
+    permission: Permission.ScansRead,
+  },
+  {
     // What the web origins serve: endpoints, parameters, the same path across
     // origins and their changes (RFC-056). Its rows are endpoints, not assets,
     // so it sits with the external surface work rather than as an asset lens
