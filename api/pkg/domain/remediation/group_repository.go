@@ -26,7 +26,9 @@ type KeySource struct {
 	// CurrentVersion is the key rules version that derived the stored key
 	// (0 when there is none).
 	CurrentVersion int
-	Input          KeyInput
+	// Open reports whether the finding is open (the Open state lens).
+	Open  bool
+	Input KeyInput
 }
 
 // KeyRepository persists per-finding remediation keys and answers group queries.
@@ -51,6 +53,10 @@ type KeyRepository interface {
 	// KeySourcesByFingerprints is KeySources for the tenant's findings with
 	// these fingerprints (a re-sighting at ingest knows the fingerprint).
 	KeySourcesByFingerprints(ctx context.Context, tenantID shared.ID, fingerprints []string) ([]KeySource, error)
+
+	// SiblingKeySources reads the key sources of the tenant's other open
+	// findings of the same installed package versions as these findings.
+	SiblingKeySources(ctx context.Context, tenantID shared.ID, findingIDs []shared.ID) ([]KeySource, error)
 
 	// FindingIDsAfter pages through the tenant's finding ids in id order
 	// (keyset: ids greater than after; after zero starts at the beginning).
