@@ -99,7 +99,9 @@ refused `409 ORGANIZATION_MISMATCH` before step-up. The review also shows the
 request's address with its class (private or public, and the edge or hosting
 provider when known) next to the approver's own address, the product, the SDK
 version and the request's age; the console warns on the path where the sensor
-showed the code to approve only a sensor the approver's team started. A
+showed the code to approve only a sensor the approver's team started. The
+approver picks the fingerprint the host shows out of three; the server checks
+the pick and closes the request on a wrong one. A
 request no organization claimed yet is rejected only with its code.
 
 ## Enrollment tokens (unattended installs)
@@ -164,20 +166,37 @@ algorithm: "ed25519", public_key}` in the form of the job-signing keys
 recomputes). The sensor pins them over the pairing connection and never takes
 a key from a content route.
 
-### Onboarding (the Add sensor panel)
+### Onboarding: one install path
 
 The console has one place to add a sensor: **Sensors → Add sensor** (inline
-on the empty page). `POST /api/v1/sensors/install-templates`
-(`sensors:pair`, `internal/infra/http/handler/sensor_install_handler.go`)
-renders the docker run, Compose, Kubernetes and Linux (binary and systemd)
-commands and the local policy from the same templates as a sensor's own
-install (`configs/sensor-products/sensor/*.tmpl`), with
-`SensorTemplateData.Auth = pair`: no API key, the job-signing root as
-`SENSOR_JOB_SIGNING_ROOT`, and, when the console created a code first, the
-code as `SENSOR_PAIRING_CODE`. The code travels in the request body, never
-in a URL; the route renders text only and neither checks nor spends it. The
-panel then polls the expectation (waiting, fingerprint to compare, approved)
-and the new sensor (online). Threat model and decisions: research note 280.
+on the empty page), and one path through it (RFC-052 §4.9, research notes 280
+and 356). Opening the dialog creates one expectation; `POST
+/api/v1/sensors/install-templates` (`sensors:pair`,
+`internal/infra/http/handler/sensor_install_handler.go`) renders the docker
+run, Compose, Kubernetes and Linux (binary and systemd) commands from the
+same templates as a sensor's own install
+(`configs/sensor-products/sensor/*.tmpl`), with `SensorTemplateData.Auth =
+pair`: no API key, the job-signing root as `SENSOR_JOB_SIGNING_ROOT`, the
+expectation's code as `SENSOR_PAIRING_CODE`, the private CA when the
+platform has one (its SHA-256 fingerprint shown under the command), no local
+policy file, and a closing watch of the sensor's output that ends on
+`Paired:`. The code travels in the request body, never in a URL; the route
+renders text only and neither checks nor spends it. The panel polls the
+expectation (waiting, pick the fingerprint, approved) and the new sensor
+(online). The inline empty state creates the expectation only on a click.
+
+A start with a code uses it as the request's own code (attached, or a
+tenantless request under the same code when nothing expects it), and every
+start without a token answers a `user_code` and, when `APP_URL` is set, the
+links `verification_uri` and `verification_uri_complete`
+(`<APP_URL>/activate?code=…`). The web page `/activate`
+(`features/sensors/components/activate-sensor.tsx`, `sensors:pair`) reads
+the code once, removes it from the address bar and shows the same review
+component as the dialog (`PairingReview`). The review carries
+`fingerprint_choices` (the SAS and two keyed decoys,
+`internal/app/sensorpairing/fingerprint.go`); the approval sends the picked
+`fingerprint`, and a wrong pick denies the request, audited high, every
+administrator notified.
 
 ### Re-pair (the sensor keeps its registration)
 

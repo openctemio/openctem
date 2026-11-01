@@ -151,9 +151,11 @@ export function pairingErrorMessage(err: unknown, fallback: string, tr?: Tr): st
         'This request replaces the key of an existing sensor (or adds a new one). Review it again and confirm which.'
       )
     if (e.code === 'FINGERPRINT_NOT_CONFIRMED')
+      return pick('sensors.pair.err.fingerprint', 'Pick the fingerprint the sensor shows.')
+    if (e.code === 'FINGERPRINT_MISMATCH')
       return pick(
-        'sensors.pair.err.fingerprint',
-        'Confirm that the fingerprint shown on the sensor matches before approving.'
+        'sensors.pair.err.fingerprintMismatch',
+        'That is not the fingerprint the sensor shows, so this request was closed and your administrators were told. If you started this sensor, it shows a new code in a moment: open its new link.'
       )
     if (e.statusCode === 503)
       return pick('sensors.pair.err.busy', 'Too many open pairing requests. Try again shortly.')
