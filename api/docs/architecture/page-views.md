@@ -43,7 +43,7 @@ time per tenant; it keeps no error bodies.
 `GET /api/v1/assets/{id}/view` (permission `assets:read`) works the same way: the asset,
 `GET /api/v1/assets/{id}`, is read first and a refusal ends the view; the parts are the asset page's
 panels (attribution, attribute sources, freshness, coverage, identifiers, renames, the change timeline,
-web evidence and the ports on a name's resolved addresses), listed in `AssetViewParts`. The view costs
+web evidence, the ports on a name's resolved addresses and the discovery lineage), listed in `AssetViewParts`. The view costs
 3 read tokens. `useAssetPage` (in `features/assets/hooks/use-assets.ts`) primes it on the page's first
 load of each asset. The scan window card asks with a `POST` and is not a part.
 

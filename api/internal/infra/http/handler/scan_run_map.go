@@ -108,6 +108,8 @@ type RunMapOutcome struct {
 type RunMapCoverageGap struct {
 	Host   string `json:"host"`
 	Reason string `json:"reason"`
+	Edge   string `json:"edge,omitempty"`
+	Vendor string `json:"vendor,omitempty"`
 }
 
 // RunMapEdge is one dependency of the map: Count is what the upstream step
@@ -442,23 +444,25 @@ func stepOutcome(output map[string]any) *RunMapOutcome {
 		Unreachable:      num(scanrunapp.StepOutputUnreachable),
 		Skipped:          num(scanrunapp.StepOutputSkipped),
 	}
-	appendGap := func(host, reason any) {
+	appendGap := func(host, reason, edge, vendor any) {
 		h, _ := host.(string)
 		r, _ := reason.(string)
+		e, _ := edge.(string)
+		v, _ := vendor.(string)
 		if h != "" && len(o.CoverageGaps) < scanrundom.MaxTaskCoverageGaps {
-			o.CoverageGaps = append(o.CoverageGaps, RunMapCoverageGap{Host: h, Reason: r})
+			o.CoverageGaps = append(o.CoverageGaps, RunMapCoverageGap{Host: h, Reason: r, Edge: e, Vendor: v})
 		}
 	}
 	switch list := output[scanrunapp.StepOutputCoverageGaps].(type) {
 	case []any:
 		for _, e := range list {
 			if m, ok := e.(map[string]any); ok {
-				appendGap(m["host"], m["reason"])
+				appendGap(m["host"], m["reason"], m["edge"], m["vendor"])
 			}
 		}
 	case []map[string]string:
 		for _, m := range list {
-			appendGap(m["host"], m["reason"])
+			appendGap(m["host"], m["reason"], m["edge"], m["vendor"])
 		}
 	}
 	if o.CoverageGapCount < len(o.CoverageGaps) {
