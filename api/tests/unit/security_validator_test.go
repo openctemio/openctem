@@ -81,10 +81,7 @@ func (m *secValMockToolRepo) List(_ context.Context, _ tool.ToolFilter, page pag
 func (m *secValMockToolRepo) ListByNames(_ context.Context, _ []string) ([]*tool.Tool, error) {
 	return nil, nil
 }
-func (m *secValMockToolRepo) ListByCategoryID(_ context.Context, _ shared.ID) ([]*tool.Tool, error) {
-	return nil, nil
-}
-func (m *secValMockToolRepo) ListByCategoryName(_ context.Context, _ string) ([]*tool.Tool, error) {
+func (m *secValMockToolRepo) ListByCategoryID(_ context.Context, _, _ shared.ID) ([]*tool.Tool, error) {
 	return nil, nil
 }
 func (m *secValMockToolRepo) ListByCapability(_ context.Context, _ string) ([]*tool.Tool, error) {
