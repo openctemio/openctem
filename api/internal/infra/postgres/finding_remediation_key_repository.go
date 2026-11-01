@@ -186,7 +186,7 @@ func (r *FindingRemediationKeyRepository) CountByKeyInScope(ctx context.Context,
 // for a finding without its own (one a person created), this tenant's other
 // findings of the same package version and CVE: a report never writes fixed
 // versions into the shared catalog (global-catalog-trust.md).
-const keySourceSelect = `
+var keySourceSelect = `
 	SELECT f.id, f.source, COALESCE(f.finding_type, ''),
 	       COALESCE(p.purl_type, ''), COALESCE(p.name, ''), COALESCE(sv.raw, ''),
 	       COALESCE(f.metadata->'fixed_versions', '[]'::jsonb)::text,
@@ -207,7 +207,8 @@ const keySourceSelect = `
 	       COALESCE(f.rule_id, ''),
 	       COALESCE(f.metadata->'version_match'->>'product', ''),
 	       COALESCE(f.metadata->'version_match'->>'version', ''),
-	       COALESCE(f.metadata->'version_match'->>'range', '')
+	       COALESCE(f.metadata->'version_match'->>'range', ''),
+	       ` + vulnerability.FindingLensSQLOn(vulnerability.FindingLensOpen, "f.status") + `
 	FROM findings f
 	LEFT JOIN software_versions sv ON sv.id = f.component_id AND (sv.tenant_id IS NULL OR sv.tenant_id = f.tenant_id)
 	LEFT JOIN software_products p ON p.id = sv.product_id AND p.purl_type IS NOT NULL
@@ -226,6 +227,24 @@ func (r *FindingRemediationKeyRepository) KeySources(ctx context.Context, tenant
 		ids[i] = id.String()
 	}
 	return r.keySources(ctx, keySourceSelect+` AND f.id = ANY($2::uuid[])`, tenantID.String(), pq.Array(ids))
+}
+
+// SiblingKeySources reads the key inputs of the tenant's other open findings
+// of the same installed package versions (component) as these findings, so
+// one upgrade target can be set for all of them (ConsolidateUpgrades).
+func (r *FindingRemediationKeyRepository) SiblingKeySources(ctx context.Context, tenantID shared.ID, findingIDs []shared.ID) ([]remediation.KeySource, error) {
+	if len(findingIDs) == 0 {
+		return nil, nil
+	}
+	ids := make([]string, len(findingIDs))
+	for i, id := range findingIDs {
+		ids[i] = id.String()
+	}
+	return r.keySources(ctx, keySourceSelect+` AND f.id <> ALL($2::uuid[])
+		AND `+vulnerability.FindingLensSQLOn(vulnerability.FindingLensOpen, "f.status")+`
+		AND f.component_id IN (SELECT b.component_id FROM findings b
+			WHERE b.tenant_id = $1 AND b.id = ANY($2::uuid[]) AND b.component_id IS NOT NULL)`,
+		tenantID.String(), pq.Array(ids))
 }
 
 // KeySourcesByFingerprints reads the key inputs of the tenant's findings with
@@ -254,7 +273,7 @@ func (r *FindingRemediationKeyRepository) keySources(ctx context.Context, q stri
 		in := &ks.Input
 		if err := rows.Scan(&id, &in.Source, &in.FindingType, &in.Ecosystem, &in.PackageName, &in.InstalledVersion,
 			&metaFixed, &catalogFixed, &in.SecretFingerprint, &in.SecretType, &in.SolutionText,
-			&ks.CurrentKey, &ks.CurrentTitle, &ks.CurrentVersion, &in.RuleID, &vmProduct, &vmVersion, &vmRange); err != nil {
+			&ks.CurrentKey, &ks.CurrentTitle, &ks.CurrentVersion, &in.RuleID, &vmProduct, &vmVersion, &vmRange, &ks.Open); err != nil {
 			return nil, fmt.Errorf("scan remediation key source: %w", err)
 		}
 		if in.Ecosystem != "" {

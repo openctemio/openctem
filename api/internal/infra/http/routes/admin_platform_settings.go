@@ -71,6 +71,11 @@ func registerAdminPlatformSettingsRoutes(router Router, h Handlers, adminMiddlew
 		r.GET("/", on(threatSource, ps.GetThreatSource))
 		r.PUT("/", on(threatSource, ps.UpdateThreatSource), stepUp("settings.threat_intel_source"))
 	}, adminMiddlewares...)
+	scanIdent := ps.ScanIdentity != nil
+	router.Group("/api/v1/admin/settings/scan-identification", func(r Router) {
+		r.GET("/", on(scanIdent, ps.GetScanIdentification))
+		r.PUT("/", on(scanIdent, ps.UpdateScanIdentification), stepUp("settings.scan_identification"))
+	}, adminMiddlewares...)
 	mfaFloor := ps.MFA != nil
 	router.Group("/api/v1/admin/settings/auth-mfa", func(r Router) {
 		r.GET("/", on(mfaFloor, ps.GetMFAFloor))

@@ -15,7 +15,8 @@ export interface ProxyEndpointHealth {
   consecutive_failures: number
   ok_total: number
   fail_total: number
-  handshake_ms_p95: number
+  /** Null before the first measured connection. */
+  handshake_ms_p95: number | null
   last_error: string
   last_ok_at: string | null
   last_failure_at: string | null

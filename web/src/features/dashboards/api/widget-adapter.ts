@@ -11,6 +11,7 @@ import type {
   FlowResult,
   IntakeData,
   IntakeResult,
+  IntakeInstance,
   IntakeSourceRow,
   ItemsResult,
   MatrixResult,
@@ -35,7 +36,14 @@ import {
   metricMeta,
   ORDINAL_DIMENSIONS,
 } from '../metrics'
-import type { FlowFigure, IntakeSource, IntakeValue, LeverValue, WidgetValue } from './widget-data'
+import type {
+  FlowFigure,
+  IntakeSource,
+  IntakeSourceInstance,
+  IntakeValue,
+  LeverValue,
+  WidgetValue,
+} from './widget-data'
 import type { Dimension, VizType, WidgetSpec } from './widget-spec'
 
 export interface WidgetModel {
@@ -110,6 +118,22 @@ function sourceRow(s: IntakeSource): IntakeSourceRow {
     health: s.health === 'stale' || s.health === 'failed' ? s.health : 'ok',
     expected_every_seconds: s.expected_every_seconds ?? null,
     drill: safeInternalHref(s.drill) ?? null,
+    assets: s.assets ?? 0,
+    kind: s.kind,
+    instances: s.instances?.map(instanceRow),
+  }
+}
+
+function instanceRow(i: IntakeSourceInstance): IntakeInstance {
+  return {
+    id: i.id,
+    kind: i.kind,
+    name: i.name,
+    received: i.received,
+    assets: i.assets,
+    health: i.health === 'stale' || i.health === 'failed' ? i.health : 'ok',
+    last_at: i.last_at && !i.last_at.startsWith('0001-') ? i.last_at : null,
+    sensor_href: safeInternalHref(i.sensor_href) ?? undefined,
   }
 }
 

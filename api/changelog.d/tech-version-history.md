@@ -1,0 +1,6 @@
+### Fixed: one weak sighting of a new version no longer closes a finding
+
+- Every version a source reports at a place on an asset keeps its history (evidence class, sightings, consecutive readings). A new version replaces the established one only on strong evidence (inventory, SBOM, or an active probe at confidence 80 or more) or after three consecutive scans over at least 12 hours; alternating readings (load balancer, stale cache, blue/green) never do. Versions one scan reports together are both kept.
+- The matcher builds findings on established versions only and closes a finding as "version changed" only when another version is established. The Ready to close proposal now names the product, both versions, the source, evidence class, confidence and sightings; a version that comes back cancels its proposal.
+- Out-of-order reports, re-imports, partial versions ("7.1" against 7.1.3) and distribution builds of the same version never move the established version.
+- Migration `20261101125837_asset_software_version_history` adds the history columns and repairs versions that superseded the previous one on a single weak sighting (the previous version is established again; the next matcher pass cancels the proposals they caused).

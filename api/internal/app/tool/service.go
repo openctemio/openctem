@@ -228,15 +228,6 @@ func (s *Service) ListTools(ctx context.Context, input ListInput) (pagination.Re
 	return s.toolRepo.List(ctx, filter, page)
 }
 
-// ListToolsByCategory lists tools by category name.
-func (s *Service) ListToolsByCategory(ctx context.Context, category string) ([]*tooldom.Tool, error) {
-	if category == "" {
-		return nil, fmt.Errorf("%w: category is required", shared.ErrValidation)
-	}
-
-	return s.toolRepo.ListByCategoryName(ctx, category)
-}
-
 // ListToolsByCapability lists tools by capability.
 func (s *Service) ListToolsByCapability(ctx context.Context, capability string) ([]*tooldom.Tool, error) {
 	if capability == "" {
