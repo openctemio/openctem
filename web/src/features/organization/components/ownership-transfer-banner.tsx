@@ -66,7 +66,7 @@ export function OwnershipTransferBanner({
         toast.success(t('org.ownership.toast.accepted', 'You are now the owner'))
         if (reloadAfterAccept) {
           // The new role is read on the next token; refresh it, then reload.
-          await refreshSession()
+          await refreshSession({ force: true })
           window.location.reload()
           return
         }
