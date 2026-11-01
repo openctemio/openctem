@@ -242,3 +242,58 @@ func TestFlowSpec_NoComparison(t *testing.T) {
 		}
 	}
 }
+
+// A source says what it contributes, carries its senders, and is as
+// unhealthy as its worst sender: a failing sensor shows on every tool it
+// feeds. Only the tenant's own sensors link to a sensor page.
+func TestIntake_KindsInstancesAndWorstHealth(t *testing.T) {
+	now := time.Date(2026, 10, 25, 12, 0, 0, 0, time.UTC)
+	hour := time.Hour
+	facts := &ctemFacts{intake: []dashboard.IntakeRow{
+		{Origin: "sensor", Tool: "nuclei", Receipts: 3, Received: 12, LastAt: now.Add(-time.Hour), LastStatus: "completed",
+			Instances: []dashboard.IntakeInstanceRow{
+				{Kind: "sensor", ID: "11111111-1111-1111-1111-111111111111", Name: "edge", Owned: true, Received: 7,
+					LastAt: now.Add(-time.Hour), LastStatus: "completed"},
+				{Kind: "sensor", ID: "22222222-2222-2222-2222-222222222222", Received: 5,
+					LastAt: now.Add(-2 * time.Hour), LastStatus: "failed"},
+			}},
+		{Origin: "sensor", Tool: "subfinder", Receipts: 2, Received: 0, Assets: 50, LastAt: now.Add(-time.Hour), LastStatus: "completed",
+			Instances: []dashboard.IntakeInstanceRow{{Kind: "sensor", ID: "11111111-1111-1111-1111-111111111111", Owned: true,
+				Assets: 50, LastAt: now.Add(-72 * time.Hour), LastStatus: "completed", MedianGap: &hour}}},
+		{Origin: "platform", Tool: "version-match", Receipts: 1, Received: 4, Created: 4, LastAt: now, LastStatus: "completed",
+			Instances: []dashboard.IntakeInstanceRow{{Kind: "platform", ID: "platform", Received: 4, LastAt: now, LastStatus: "completed"}}},
+	}}
+	s := NewService(nil, nil, facts, nil)
+	s.now = func() time.Time { return now }
+	in, err := s.intake(context.Background(), orgScope(shared.NewID()), now.Add(-30*24*time.Hour), FlowFigure{})
+	if err != nil {
+		t.Fatalf("intake: %v", err)
+	}
+	by := map[string]IntakeSource{}
+	for _, src := range in.Sources {
+		by[src.Tool] = src
+	}
+	nuc, sub, vm := by["nuclei"], by["subfinder"], by["version-match"]
+	if nuc.Kind != SourceKindDetection || sub.Kind != SourceKindDiscovery || vm.Kind != SourceKindPlatform {
+		t.Errorf("kinds %s %s %s", nuc.Kind, sub.Kind, vm.Kind)
+	}
+	if nuc.Health != HealthFailed {
+		t.Errorf("nuclei health %s, want failed (its second sensor failed)", nuc.Health)
+	}
+	if sub.Health != HealthStale || sub.Assets != 50 {
+		t.Errorf("subfinder health %s assets %d, want stale 50", sub.Health, sub.Assets)
+	}
+	if len(nuc.Instances) != 2 || nuc.Instances[0].SensorHref != "/sensors/11111111-1111-1111-1111-111111111111" ||
+		nuc.Instances[1].SensorHref != "" || nuc.Instances[1].Health != HealthFailed {
+		t.Errorf("nuclei instances %+v", nuc.Instances)
+	}
+	if vm.Instances[0].SensorHref != "" {
+		t.Errorf("platform instance links a sensor: %+v", vm.Instances[0])
+	}
+	if in.Totals.Assets != 50 || in.Totals.Received != 16 || in.Noise.New != 4 {
+		t.Errorf("totals %+v noise %+v", in.Totals, in.Noise)
+	}
+	if in.Failing != 1 || in.Stale != 1 {
+		t.Errorf("failing %d stale %d", in.Failing, in.Stale)
+	}
+}

@@ -30,6 +30,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
 	moduleTypes "github.com/openctemio/openctem/api/pkg/domain/module"
+	"github.com/openctemio/openctem/api/pkg/domain/scanident"
 	"github.com/openctemio/openctem/api/pkg/domain/scoring"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	signupdom "github.com/openctemio/openctem/api/pkg/domain/signup"
@@ -72,6 +73,9 @@ type TenantHandler struct {
 	// signupPolicy, when wired, replaces selfServiceCreation: the console
 	// sign-up setting, read on each request.
 	signupPolicy signupdom.PolicySource
+	// scanIdentity answers the platform layer of the scan identification
+	// markers the settings page shows (optional).
+	scanIdentity PlatformScanIdentitySource
 	// selfServiceLimits: the instance's self-service default limits and the
 	// per-person organization cap (none unless an operator set them).
 	selfServiceLimits auth.SelfServiceLimits
@@ -112,6 +116,44 @@ func (h *TenantHandler) SetSecurityPolicyInvalidator(fn func(tenantID string)) {
 // (SIGNUP_MODE=open). Without it POST /tenants is refused.
 func (h *TenantHandler) SetSelfServiceTenantCreation(enabled bool) {
 	h.selfServiceCreation = enabled
+}
+
+// PlatformScanIdentitySource returns the platform layer of the scan
+// identification markers (*scanidentity.Service).
+type PlatformScanIdentitySource interface {
+	PlatformLayer(ctx context.Context) (scanident.PlatformLayer, error)
+}
+
+// SetScanIdentity wires the platform layer the security settings show.
+func (h *TenantHandler) SetScanIdentity(src PlatformScanIdentitySource) { h.scanIdentity = src }
+
+// PlatformScanIdentificationResponse is the platform layer as an
+// organization sees it: the values its jobs carry under its own.
+type PlatformScanIdentificationResponse struct {
+	UserAgent         string             `json:"user_agent"`
+	UserAgentEnforced bool               `json:"user_agent_enforced"`
+	Headers           []scanident.Header `json:"headers"`
+}
+
+// platformScanIdentification reads the platform layer (nil: none wired, or
+// it could not be read; the page then shows the organization's layer only).
+func (h *TenantHandler) platformScanIdentification(ctx context.Context) *PlatformScanIdentificationResponse {
+	if h.scanIdentity == nil {
+		return nil
+	}
+	l, err := h.scanIdentity.PlatformLayer(ctx)
+	if err != nil {
+		h.logger.Warn("platform scan identification not read", "error", logger.SanitizeError(err))
+		return nil
+	}
+	return &PlatformScanIdentificationResponse{UserAgent: l.UserAgent, UserAgentEnforced: l.UserAgentEnforced, Headers: nonNilHeaders(l.Headers)}
+}
+
+func nonNilHeaders(hs []scanident.Header) []scanident.Header {
+	if hs == nil {
+		return []scanident.Header{}
+	}
+	return hs
 }
 
 // SetSelfServiceLimits wires the self-service default limits.
@@ -2165,6 +2207,9 @@ type SecuritySettingsResponse struct {
 	// tools that skip TLS verification.
 	ToolHTTPUserAgent     string `json:"tool_http_user_agent"`
 	ForbidToolInsecureTLS bool   `json:"forbid_tool_insecure_tls"`
+	// ToolHTTPHeaders are the organization's scan identification headers
+	// (free names and values, at most 6), merged over the platform's.
+	ToolHTTPHeaders []scanident.Header `json:"tool_http_headers"`
 	// PersonalAccounts: allowed, allowed_with_mfa or blocked.
 	PersonalAccounts string `json:"personal_accounts"`
 	// Invitees: who may be invited: any, verified_domains or allow_list.
@@ -2183,6 +2228,10 @@ type SecuritySettingsResponse struct {
 	// admins, everyone). mfa_required and mfa_required_for_admins already
 	// include it; an organization can raise them, not lower them below it.
 	PlatformMFAFloor string `json:"platform_mfa_floor,omitempty"`
+	// PlatformScanIdentification is the platform's layer of the scan
+	// identification markers, merged under the organization's (read-only
+	// here; GET only).
+	PlatformScanIdentification *PlatformScanIdentificationResponse `json:"platform_scan_identification,omitempty"`
 	// CurrentIP is the caller's IP as the API sees it, the value the IP
 	// allowlist is checked against (empty outside a request context).
 	CurrentIP string `json:"current_ip,omitempty"`
@@ -2217,6 +2266,7 @@ func toSettingsResponse(s *tenant.Settings) SettingsResponse {
 			AllowSensorCustomTemplates:                s.Security.AllowSensorCustomTemplates,
 			ToolHTTPUserAgent:                         s.Security.ToolHTTPUserAgent,
 			ForbidToolInsecureTLS:                     s.Security.ForbidToolInsecureTLS,
+			ToolHTTPHeaders:                           nonNilHeaders(s.Security.ToolHTTPHeaders),
 			PersonalAccounts:                          string(s.Security.PersonalAccounts.Effective()),
 			Invitees:                                  string(s.Security.EffectiveInvitees()),
 			ExternalAccessEndRequired:                 s.Security.ExternalAccessEndRequired,
@@ -2266,6 +2316,7 @@ func (h *TenantHandler) GetSettings(w http.ResponseWriter, r *http.Request) {
 	if resp.Security != nil {
 		resp.Security.CurrentIP = getClientIP(r)
 		resp.Security.PlatformMFAFloor = string(floor)
+		resp.Security.PlatformScanIdentification = h.platformScanIdentification(r.Context())
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
@@ -2349,6 +2400,12 @@ type UpdateSecuritySettingsRequest struct {
 	// Allowing insecure TLS again is audited at high severity.
 	ToolHTTPUserAgent     *string `json:"tool_http_user_agent" validate:"omitempty,max=256"`
 	ForbidToolInsecureTLS *bool   `json:"forbid_tool_insecure_tls"`
+	// ToolHTTPHeaders replaces the organization's scan identification
+	// headers (omitted: unchanged; []: none). Names are HTTP tokens (at most
+	// 64 characters, case-insensitive, no duplicates), values printable ASCII
+	// (at most 200 characters); connection, proxy and credential headers are
+	// refused.
+	ToolHTTPHeaders *[]scanident.Header `json:"tool_http_headers" validate:"omitempty,max=6"`
 	// PersonalAccounts: allowed, allowed_with_mfa or blocked.
 	PersonalAccounts *string `json:"personal_accounts" validate:"omitempty,oneof=allowed allowed_with_mfa blocked"`
 	// Invitees: any, verified_domains or allow_list.
@@ -2400,6 +2457,7 @@ func (h *TenantHandler) UpdateSecuritySettings(w http.ResponseWriter, r *http.Re
 		AllowSensorCustomTemplates:                req.AllowSensorCustomTemplates,
 		ToolHTTPUserAgent:                         req.ToolHTTPUserAgent,
 		ForbidToolInsecureTLS:                     req.ForbidToolInsecureTLS,
+		ToolHTTPHeaders:                           req.ToolHTTPHeaders,
 		PersonalAccounts:                          req.PersonalAccounts,
 		Invitees:                                  req.Invitees,
 		ExternalAccessEndRequired:                 req.ExternalAccessEndRequired,
