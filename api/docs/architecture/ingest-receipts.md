@@ -23,7 +23,7 @@ organization's findings. The ingest service writes it; nothing else does.
 | Nightly load harness (`TestIngestLoad`, workflow `api-ingest-load.yml`): concurrent uploads, the urgent lane behind bulk work, one repository from many runs (RFC-122 §6e) | shipped |
 | Full-coverage uploads (`coverage=full` with an explicit scope) | shipped |
 | List filters `origin` (source group), `tool` and `since`, and the `totals` of every receipt the filter keeps: the figures the dashboard intake shows for the same filter ([dashboards](dashboards.md), "Exposure flow and intake") | shipped |
-| Web: receipt and recent imports in the import dialog, "What this run did to findings" on the scan run page, "Last seen in" on the finding overview (en, vi) | shipped |
+| Web: receipt and recent imports in the import dialog, "What this run did to findings" on the scan run page, "Last seen in" on the finding overview and the import history in the finding page rail (every upload or run that acted on the finding, with its action; hidden when the read is refused) (en, vi) | shipped |
 
 ## Which receipt
 
