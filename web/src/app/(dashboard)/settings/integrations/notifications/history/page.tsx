@@ -4,7 +4,6 @@ import { useState, useCallback, useEffect, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import type { ColumnDef } from '@tanstack/react-table'
 import { useUrlParam } from '@/hooks/use-url-param'
-import { formatDistanceToNow } from 'date-fns'
 import { Main } from '@/components/layout'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -39,6 +38,7 @@ import type { NotificationEventEntry } from '@/features/integrations/types/integ
 import { safeHref } from '@/lib/safe-href'
 import { useTranslation } from '@/context/i18n-provider'
 import { SafeExternalLink } from '@/components/safe-external-link'
+import { RelativeTime } from '@/features/shared/components/relative-time'
 
 /** The channel's own delivery result wins over the event-wide status. */
 function deliveryStatus(entry: NotificationEventEntry): string {
@@ -113,7 +113,7 @@ function buildColumns(t: Translate): ColumnDef<NotificationEventEntry>[] {
           className="whitespace-nowrap text-sm text-muted-foreground"
           title={new Date(row.original.processed_at).toLocaleString()}
         >
-          {formatDistanceToNow(new Date(row.original.processed_at), { addSuffix: true })}
+          <RelativeTime date={row.original.processed_at} />
         </span>
       ),
     },

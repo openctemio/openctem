@@ -1,9 +1,10 @@
-import { format, formatDistanceToNow } from 'date-fns'
+import { format, formatDistanceToNow, type Locale } from 'date-fns'
 import { enUS, vi } from 'date-fns/locale'
 
 const DATE_FNS_LOCALES = { en: enUS, vi } as const
 
-function dateFnsLocale(locale?: string) {
+/** date-fns locale for the console language ("5 phút trước"); English otherwise. */
+export function dateFnsLocaleFor(locale?: string): Locale {
   const base = (locale ?? 'en').toLowerCase().split('-')[0] as keyof typeof DATE_FNS_LOCALES
   return DATE_FNS_LOCALES[base] ?? enUS
 }
@@ -36,7 +37,7 @@ export function formatRelative(
   const d = toDate(value)
   if (!d) return fallback
   try {
-    return formatDistanceToNow(d, { addSuffix: true, locale: dateFnsLocale(locale) })
+    return formatDistanceToNow(d, { addSuffix: true, locale: dateFnsLocaleFor(locale) })
   } catch {
     return fallback
   }

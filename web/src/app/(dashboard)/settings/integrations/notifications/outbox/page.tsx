@@ -7,7 +7,6 @@ import { useState } from 'react'
 import { useListParams } from '@/hooks/use-list-params'
 import type { ColumnDef } from '@tanstack/react-table'
 import Link from '@/components/link'
-import { formatDistanceToNow } from 'date-fns'
 import {
   ArrowLeft,
   RefreshCw,
@@ -63,6 +62,7 @@ import {
 import { safeHref } from '@/lib/safe-href'
 import { SafeExternalLink } from '@/components/safe-external-link'
 import { useTranslation } from '@/context/i18n-provider'
+import { RelativeTime } from '@/features/shared/components/relative-time'
 
 // Queue Health Status component
 function QueueHealthStatus({
@@ -350,7 +350,7 @@ export default function NotificationOutboxPage() {
       header: t('notificationChannels.outbox.col.scheduled', 'Scheduled'),
       cell: ({ row }) => (
         <span className="text-sm text-muted-foreground">
-          {formatDistanceToNow(new Date(row.original.scheduled_at), { addSuffix: true })}
+          <RelativeTime date={row.original.scheduled_at} />
         </span>
       ),
     },

@@ -249,7 +249,7 @@ function Timeline({ alert }: { alert: EmergingThreatDetail }) {
                   <div className="min-w-0">
                     <p className="font-medium">{kindLabel(ev.kind)}</p>
                     {detail && <p className="text-muted-foreground">{detail}</p>}
-                    <RelativeTime date={ev.at} locale={dateLocale} />
+                    <RelativeTime date={ev.at} />
                   </div>
                 </li>
               )

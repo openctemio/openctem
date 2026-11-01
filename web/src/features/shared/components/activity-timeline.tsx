@@ -2,12 +2,11 @@
 
 import type { ReactNode } from 'react'
 import { History, Loader2, type LucideIcon } from 'lucide-react'
-import type { Locale } from 'date-fns'
-import { vi as viLocale } from 'date-fns/locale'
 
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useTranslation } from '@/context/i18n-provider'
+import { dateFnsLocaleFor } from '@/lib/format-date'
 import { cn } from '@/lib/utils'
 
 import { EmptyState } from './empty-state'
@@ -81,10 +80,6 @@ const TONE_CLASS: Record<ActivityTimelineTone, string> = {
 }
 
 /** The date-fns locale for the app locale ("vi" -> Vietnamese, else English). */
-export function dateFnsLocaleFor(locale: string | undefined): Locale | undefined {
-  return (locale ?? '').split('-')[0] === 'vi' ? viLocale : undefined
-}
-
 function TimelineSkeleton() {
   return (
     <div className="space-y-4" aria-hidden data-testid="activity-timeline-skeleton">
@@ -218,7 +213,6 @@ export function ActivityTimeline({
                     </p>
                     <RelativeTime
                       date={e.lastAt && repeated ? e.lastAt : e.at}
-                      locale={dfLocale}
                       className="shrink-0 pt-px text-xs whitespace-nowrap"
                     />
                   </div>

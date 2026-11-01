@@ -4,7 +4,8 @@ import { Badge } from '@/components/ui/badge'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import { AlertOctagon, Calendar, Clock, Skull, ShieldAlert } from 'lucide-react'
-import { formatDistanceToNow, parseISO, isPast, differenceInDays } from 'date-fns'
+import { parseISO, isPast, differenceInDays } from 'date-fns'
+import { RelativeTime } from './relative-time'
 
 interface KEVData {
   date_added?: string
@@ -89,7 +90,7 @@ export function KEVIndicatorBadge({
               <div className="flex items-center gap-2 text-sm">
                 <Calendar className="h-3.5 w-3.5 text-muted-foreground" />
                 <span>
-                  Added: {formatDistanceToNow(parseISO(kevData.date_added), { addSuffix: true })}
+                  Added: <RelativeTime date={kevData.date_added} />
                 </span>
               </div>
             )}
@@ -103,7 +104,7 @@ export function KEVIndicatorBadge({
               >
                 <Clock className="h-3.5 w-3.5" />
                 <span>
-                  Due: {formatDistanceToNow(parseISO(kevData.due_date), { addSuffix: true })}
+                  Due: <RelativeTime date={kevData.due_date} />
                   {isPastDue && ' (OVERDUE)'}
                 </span>
               </div>

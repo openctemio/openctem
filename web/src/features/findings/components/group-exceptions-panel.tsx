@@ -10,7 +10,6 @@
 
 import { useCallback, useMemo, useState, type ReactNode } from 'react'
 import { type ColumnDef, type PaginationState } from '@tanstack/react-table'
-import { formatDistanceToNow } from 'date-fns'
 import { Ban, Check, Loader2, X } from 'lucide-react'
 import { toast } from 'sonner'
 import Link from '@/components/link'
@@ -41,6 +40,7 @@ import { DataTable } from '@/features/shared/components/data-table/data-table'
 import { SeverityBadge } from '@/features/shared/components/severity-badge'
 import type { Severity } from '@/features/shared'
 import { useTranslation } from '@/context/i18n-provider'
+import { formatRelative } from '@/lib/format-date'
 import { Can, Permission } from '@/lib/permissions'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { cn } from '@/lib/utils'
@@ -103,7 +103,7 @@ function batchSourceTitle(batch: ApprovalBatch, t: Translate): string {
 }
 
 function StatusBadge({ status }: { status: string }) {
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
   return (
     <Badge variant="outline" className={cn('text-xs', STATUS_STYLES[status])}>
       {t(`findings.approvals.status.${status}`, STATUS_FALLBACK[status] ?? status)}
@@ -111,10 +111,8 @@ function StatusBadge({ status }: { status: string }) {
   )
 }
 
-function ago(date: string | undefined): string {
-  if (!date) return '-'
-  const d = new Date(date)
-  return Number.isNaN(d.getTime()) ? '-' : formatDistanceToNow(d, { addSuffix: true })
+function ago(iso: string | null | undefined, locale: string): string {
+  return formatRelative(iso, '-', locale)
 }
 
 /** What a group exception decision did, for its toast. */
@@ -159,7 +157,7 @@ export function GroupExceptionsPanel({
   toolbarStart,
   toolbarEnd,
 }: GroupExceptionsPanelProps) {
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
   const { data, isLoading, mutate } = useApprovalBatches(
     pagination.pageIndex + 1,
     pagination.pageSize,
@@ -211,7 +209,7 @@ export function GroupExceptionsPanel({
         header: t('findings.approvals.col.decideBy', 'Decide by'),
         cell: ({ row }) => (
           <span className="text-sm whitespace-nowrap text-muted-foreground">
-            {row.original.status === 'pending' ? ago(row.original.decide_by) : '-'}
+            {row.original.status === 'pending' ? ago(row.original.decide_by, locale) : '-'}
           </span>
         ),
       },
@@ -279,7 +277,7 @@ export function GroupExceptionSheet({
   currentUserId: string | undefined
   onDecided?: () => void | Promise<unknown>
 }) {
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
   const { data: batch, error, isLoading, mutate } = useApprovalBatch(id)
   const [busy, setBusy] = useState<null | 'approve' | 'reject' | 'cancel'>(null)
   const [rejectOpen, setRejectOpen] = useState(false)
@@ -435,13 +433,13 @@ export function GroupExceptionSheet({
                       <dt className="text-muted-foreground">
                         {t('findingApprovals.group.decideBy', 'Decide by')}
                       </dt>
-                      <dd>{ago(batch.decide_by)}</dd>
+                      <dd>{ago(batch.decide_by, locale)}</dd>
                     </>
                   )}
                   <dt className="text-muted-foreground">
                     {t('findings.approvals.col.created', 'Created')}
                   </dt>
-                  <dd>{ago(batch.created_at)}</dd>
+                  <dd>{ago(batch.created_at, locale)}</dd>
                 </dl>
                 <p className="rounded-md border bg-muted/50 p-2 text-sm whitespace-pre-wrap break-words">
                   {batch.justification}
