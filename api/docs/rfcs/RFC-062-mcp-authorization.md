@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Accepted, implemented (PRs 1–9 of §14 shipped; the organization policy has the TLP limit for AI applications since 2026-10-12) (owner 2026-10-08: "the most secure, modern and best design of auth for MCP"; decisions MA1–MA25 delegated) |
+| Status | Accepted, implemented (PRs 1–9 of §14 shipped; the organization policy has the TLP limit for AI applications since 2026-10-12; PR 10, the device authorization grant of §6a, added 2026-11-01) (owner 2026-10-08: "the most secure, modern and best design of auth for MCP"; decisions MA1–MA25 delegated) |
 | Authors | Platform team |
 | Related | RFC-016 (MCP server), RFC-022 (admin console), RFC-041 (API planes), RFC-050 (asset access model), RFC-057 (evidence never leaves through prompts) |
 | Specification | MCP 2026-07-28 (Authorization, Authorization Server Discovery, Client Registration, Security Considerations, Streamable HTTP, Elicitation, Multi Round-Trip Requests) |
@@ -78,6 +78,9 @@ write tool).
 | DNS rebinding and browser-originated calls | The `Origin` header, when present, must be an allowed origin, else `403`. |
 | Authorization server mix-up | `iss` in every authorization response (RFC 9207), advertised in metadata. |
 | Abuse and brute force | Per-IP limits on the OAuth endpoints, constant-time hash lookups, per-grant limits on MCP. |
+| Device-code phishing: someone starts a terminal sign-in and talks a person into entering the code (§6a) | The person must type the code (no link that pre-fills it); the code lives 10 minutes; the page says a terminal asked, shows the address and user agent it asked from next to the person's own address and whether they match, and warns to continue only for a sign-in they just started; approving needs a recent sign-in; such a connection never reads all organization data, is listed as a terminal sign-in and can be revoked; the organization can turn the flow off, which also stops existing terminal connections. |
+| User code guessing (§6a) | 34.5-bit codes alive 10 minutes; entering a code needs a signed-in session in an organization that allows the flow, and is limited per address and per person; a code belongs to the first person who enters it; a device request cannot be opened by its id. |
+| Device code theft or replay (§6a) | 256 bits, hashed, polled only with the client it was issued to; redeemed once, atomically; a second redemption revokes the grant. |
 
 ## 4. Discovery
 
@@ -160,6 +163,63 @@ the console shows the host first and the name as "declares itself as".
 
 Consent is shown on every authorization, including a client the person
 approved before (the page says so); `prompt=none` returns `consent_required`.
+
+## 6a. Device authorization grant (terminals)
+
+A terminal whose browser is on another machine cannot finish §6: the
+redirect to a loopback address reaches the machine with the browser, not the
+terminal. That is the case for a client in an SSH session, a container, a CI
+job started by hand, or a remote desktop. RFC 8628 serves it:
+
+1. The client posts `client_id`, `scope` and optionally `resource` (it must
+   then be the MCP URI) to `POST /oauth/device_authorization`. It receives a
+   `device_code` (`octm_dc_` + 256 random bits), a `user_code` (8 characters
+   of the RFC 8628 §6.1 base-20 set, shown `XXXX-XXXX`, about 34.5 bits),
+   `verification_uri` = `${APP_URL}/oauth/device`, `expires_in` 600 and
+   `interval` 5. There is no `verification_uri_complete`: the person always
+   types the code the terminal shows (§5.4 of RFC 8628), so a link alone
+   cannot get someone to approve a request they did not start. Both codes
+   are stored only as HMAC hashes, with the address and the user agent that
+   asked.
+2. Only a client the platform or an organization registered may use the
+   grant: the platform's terminal client `octc_terminal` (no redirect URI,
+   usable by every organization) or an organization client (`octc_…`, in its
+   own organization only). A metadata-document or dynamically registered
+   client is identified by its redirect URIs, which this grant does not use,
+   so it would let any program borrow its name; it gets
+   `unauthorized_client`.
+3. The person opens `/oauth/device` in any signed-in browser and enters the
+   code (`POST /api/v1/oauth/device`, browser session, CSRF). The first person
+   who enters it owns the request; for anyone else it does not exist (one
+   404 for malformed, unknown, expired, decided or taken codes). A device
+   request can never be opened by its id alone. Attempts are limited to the
+   login rate per address and the second-step rate per person. The
+   organization of the session must allow the flow.
+4. The usual consent page shows the request with what is specific to it:
+   "a terminal asked", the address and user agent it asked from, when, the
+   address of this browser and whether the two match, and a warning to
+   continue only if the person started the sign-in themselves just now. The
+   client is never shown as verified (any program can send
+   `octc_terminal`). Approving needs a recent sign-in (step-up), like every
+   approval. Access to all organization data (§7a) is not offered and is
+   refused.
+5. The client polls `POST /oauth/token` with
+   `grant_type=urn:ietf:params:oauth:grant-type:device_code`, `device_code`,
+   `client_id` and optionally `resource`: `authorization_pending` until the
+   person decides, `slow_down` (and 5 more seconds of interval, at most 60)
+   when it polls early, `access_denied`, `expired_token`, then the same token
+   response as §6 (DPoP-bound when a proof is sent). The poll that redeems
+   is atomic; a device code works only for the client it was issued to. A
+   redeemed device code presented again revokes the grant it created, like a
+   reused authorization code.
+6. The grant records `flow = device`. It is listed with every other
+   connection (marked as a terminal sign-in), refreshes and revokes like
+   them, and follows the policy on every use: an organization that turns
+   the flow off (`device_flow_disabled`) refuses new codes and stops the
+   existing terminal connections at their next request or refresh.
+
+The authorization server metadata lists `device_authorization_endpoint` and
+the device grant type.
 
 ## 7. Scopes and permissions
 
@@ -398,7 +458,7 @@ file a request that a different person reads, marked as written by an AI.
 |---|---|
 | MA1 | The API is the authorization server; issuer = `APP_URL`; an `oauth` gateway plane. |
 | MA2 | One resource, `${APP_URL}/api/v1/mcp`; the organization is chosen at consent, not in the URL. |
-| MA3 | Grant types: `authorization_code` and `refresh_token` only. |
+| MA3 | Grant types: `authorization_code` and `refresh_token`; amended 2026-11-01: plus the device authorization grant (§6a, MA27). |
 | MA4 | The person authenticates with the existing sign-in; the organization's SSO and MFA rules apply through the normal organization switch. |
 | MA5 | Consent on every authorization; `prompt=none` refused. |
 | MA6 | Client ID Metadata Documents first; guarded fetch; public clients only. |
@@ -422,6 +482,7 @@ file a request that a different person reads, marked as written by an AI.
 | MA24 | Tables for clients, authorization requests, grants and tokens; cascades and purge. |
 | MA25 | An MCP token reads only what the user's scope rows allow (amended 2026-10-19: no full data access, as `oct_` keys); an empty result for an empty scope carries a `scope_notice`. Revised 2026-10-27: a person with a full-data role may opt a connection into all organization data at consent (off by default, fresh step-up, audited, badge, revocable or narrowable, shorter lifetimes, role re-checked every request); never for API keys (§7a). |
 | MA26 | Proposal tools (§10a): requests filed in the person's name, decided by another person; never decided by the person or their agent; no per-call confirmation. |
+| MA27 | Device authorization grant for terminals (§6a): registered clients only (platform `octc_terminal`, organization clients); typed user code, no `verification_uri_complete`; 10-minute codes; attempts limited per address and per person; same consent page with the requesting address and user agent and a warning; step-up; never full data access; `flow` on the grant; organization switch `device_flow_disabled` that also stops existing terminal connections. |
 
 ## 14. Implementation
 
@@ -436,6 +497,7 @@ file a request that a different person reads, marked as written by an AI.
 | 7 | Write-tool confirmation with the first write tool (`add_finding_comment`); URL-mode elicitation follows the protocol upgrade |
 | 8 | Proposal tools with `propose_finding_status` (§10a) |
 | 9 | `draft_pentest_finding` and peer review of AI drafts (§10a) |
+| 10 | Device authorization grant (§6a): endpoint, user code entry, polling, `flow` on requests and grants, policy switch, platform terminal client |
 
 Each PR carries tests for cross-tenant use, scope escalation, token replay,
 redirect URI tampering, refresh reuse and consent bypass, and is checked with a
