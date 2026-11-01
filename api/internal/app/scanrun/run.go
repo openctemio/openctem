@@ -1226,6 +1226,12 @@ func (p Partial) withNotes(output map[string]any) map[string]any {
 			list := make([]map[string]string, 0, len(p.GapList))
 			for _, g := range p.GapList {
 				e := map[string]string{"host": g.Host, "reason": g.Reason}
+				if g.Cause != "" {
+					e["cause"] = g.Cause
+				}
+				if g.Cert != "" {
+					e["cert"] = g.Cert
+				}
 				if g.Edge != "" {
 					e["edge"] = g.Edge
 				}

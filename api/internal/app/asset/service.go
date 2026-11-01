@@ -1447,6 +1447,8 @@ type ListAssetsInput struct {
 	// Coverage: covered or uncovered by the coverage ledger
 	// (asset.CoverageWindow).
 	Coverage string `validate:"omitempty,oneof=covered uncovered"`
+	// CoverageCause: the uncovered assets with this coverage gap cause.
+	CoverageCause string `validate:"omitempty,oneof=no_sensor platform_failure paused target_unreachable never_run overdue out_of_scope other"`
 	// Technologies: assets using any of these technologies (normalised
 	// names); TechnologyCategories: assets with a technology in any of these
 	// categories (RFC-112).
@@ -1658,6 +1660,7 @@ func withTriageFilters(filter assetdom.Filter, input ListAssetsInput) (assetdom.
 	filter.Freshness = input.Freshness
 	filter.Resolution = input.Resolution
 	filter.Coverage = input.Coverage
+	filter.CoverageCause = input.CoverageCause
 	filter.Technologies = input.Technologies
 	filter.TechnologyCategories = input.TechnologyCategories
 	filter.TechnologyVersion = input.TechnologyVersion

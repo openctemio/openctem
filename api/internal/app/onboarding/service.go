@@ -63,6 +63,7 @@ type Members interface {
 // (tenant.TenantService).
 type Tenants interface {
 	AcceptInvitationByID(ctx context.Context, tenantID, invitationID, userID shared.ID, userEmail string, emailVerified bool, actx auditapp.AuditContext) (*tenantdom.Membership, error)
+	DeclineInvitationByID(ctx context.Context, tenantID, invitationID, userID shared.ID, userEmail string, emailVerified bool, actx auditapp.AuditContext) error
 	AddMember(ctx context.Context, tenantID string, input AddMemberInput, inviterUserID shared.ID, actx auditapp.AuditContext) (*tenantdom.Membership, error)
 	// AddMemberApprovingJoinRequest adds the member and approves the join
 	// request in one transaction.
@@ -390,6 +391,23 @@ func (s *Service) recordRequest(ctx context.Context, actx auditapp.AuditContext,
 	if err := s.audit.LogEvent(ctx, actx, ev); err != nil {
 		s.log.Error("audit join request", "action", string(action), "error", err)
 	}
+}
+
+// Decline declines an invitation offered by Options. Only invitation
+// references are accepted (a domain offer is simply not taken); the address
+// must be verified, as for Accept.
+func (s *Service) Decline(ctx context.Context, u *userdom.User, ref string, actx auditapp.AuditContext) error {
+	kind, tenantID, targetID, err := s.verify(u.ID(), ref)
+	if err != nil {
+		return err
+	}
+	if kind != kindInvitation {
+		return ErrInvalidRef
+	}
+	if !u.EmailVerified() {
+		return ErrEmailNotVerified
+	}
+	return s.tenants.DeclineInvitationByID(ctx, tenantID, targetID, u.ID(), u.Email(), true, actx)
 }
 
 // sign builds an offer reference: kind, organization, target, account and

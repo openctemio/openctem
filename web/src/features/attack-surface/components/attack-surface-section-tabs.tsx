@@ -12,7 +12,7 @@ const LOOKALIKES_HREF = '/attack-surface/lookalikes'
 
 /**
  * Overview | Review | Lookalikes | Changes | Discovery | Web surface | Technologies |
- * Certificates, the route tabs of
+ * Exposure items | Certificates, the route tabs of
  * Discovery > Attack surface. Review shows how many decisions wait (one per card, not
  * per row), fetched only when that tab is visible.
  */
@@ -37,6 +37,8 @@ export function AttackSurfaceSectionTabs() {
             return { ...tab, label: t('attackSurface.tab.discovery', tab.label) }
           case '/attack-surface/technologies':
             return { ...tab, label: t('attackSurface.tab.technologies', tab.label) }
+          case '/attack-surface/exposures':
+            return { ...tab, label: t('attackSurface.tab.exposureItems', tab.label) }
           case '/attack-surface/certificates':
             return { ...tab, label: t('attackSurface.tab.certificates', tab.label) }
           case '/attack-surface/web':
