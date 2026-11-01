@@ -42,7 +42,9 @@ type ExposureService struct {
 	// severities stores the analyst severity override; audit records it.
 	severities SeverityStore
 	audit      *auditapp.AuditService
-	logger     *logger.Logger
+	// items reads the Exposure Items view (nil: not wired).
+	items  exposuredom.ItemReader
+	logger *logger.Logger
 }
 
 // SetDataScope wires the Layer 2 data-scope enforcer.

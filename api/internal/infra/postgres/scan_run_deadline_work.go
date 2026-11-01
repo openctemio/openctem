@@ -58,10 +58,17 @@ func configuredRunSecondsSQL(r string) string {
 }
 
 // extendAtClaimSQL moves the deadline of every open run with a task among
-// $3 that sensor $2 of tenant $1 just claimed, and writes the run's new
-// deadline into those tasks' payloads. Other tasks' payloads are left as
-// they are: a pending task gets its deadline when it is claimed, and a
-// running one already budgets to the deadline it was given.
+// $3 that sensor $2 of tenant $1 just claimed, and writes the run's current
+// deadline (moved by this claim or not) into each of those tasks' payloads.
+// A task's payload carries the deadline its run had when the task was
+// created; an earlier claim of another task of the run may have moved the
+// run's deadline since, and this claim then moves nothing. Writing the
+// moved deadline only would hand the sensor a deadline already past (prod
+// 2026-11-01: tasks claimed hours after they were queued ran 30 s, the
+// sensor's least budget, and failed as a platform-side error). Other tasks'
+// payloads are left as they are: a pending task gets its deadline when it
+// is claimed, and a running one already budgets to the deadline it was
+// given.
 var extendAtClaimSQL = `
 	WITH claimed AS (
 		SELECT c.id, c.payload->>'scan_run_id' AS run_id,
@@ -92,13 +99,22 @@ var extendAtClaimSQL = `
 		  AND r.deadline_reason IS DISTINCT FROM '` + scanrun.DeadlineReasonScanMaxDuration + `'
 		  AND LEAST(w.want, r.started_at + make_interval(secs => ` + strconv.Itoa(AbsoluteRunTimeoutSeconds) + `)) > r.deadline_at
 		RETURNING r.id, r.deadline_at
+	), current AS (
+		-- The statement's snapshot does not see moved's update: a run this
+		-- claim moved takes moved's deadline, any other its stored one.
+		SELECT k.id, to_char(COALESCE(m.deadline_at, r.deadline_at) AT TIME ZONE 'UTC',
+		                     'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS deadline
+		FROM claimed k
+		JOIN scan_runs r ON r.tenant_id = $1 AND r.id = k.run_id::uuid
+		LEFT JOIN moved m ON m.id = r.id
+		WHERE r.status IN ('pending', 'running') AND r.deadline_at IS NOT NULL
 	)
 	UPDATE commands c
-	SET payload = jsonb_set(c.payload, '{deadline}',
-	        to_jsonb(to_char(m.deadline_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')))
-	FROM moved m, claimed k
-	WHERE c.tenant_id = $1 AND c.id = k.id AND k.run_id = m.id::text
-	  AND c.sensor_id = $2 AND c.payload ? 'deadline'`
+	SET payload = jsonb_set(c.payload, '{deadline}', to_jsonb(d.deadline))
+	FROM current d
+	WHERE c.tenant_id = $1 AND c.id = d.id
+	  AND c.sensor_id = $2 AND c.payload ? 'deadline'
+	  AND c.payload->>'deadline' IS DISTINCT FROM d.deadline`
 
 // commandToolSQLOf is commandToolSQL for command alias c.
 func commandToolSQLOf(c string) string {
