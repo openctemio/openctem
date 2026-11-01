@@ -33,7 +33,9 @@ const state = {
     ],
   } as Record<string, unknown> | undefined,
   readyToClose: 2 as number | undefined,
+  modulesLoading: false,
 }
+const countCalls: { href: string; enabled: boolean }[] = []
 const pentestQueries: unknown[] = []
 const campaignQueries: unknown[] = []
 
@@ -46,7 +48,7 @@ vi.mock('@/features/integrations/api/use-tenant-modules', () => ({
   useTenantModules: () => ({
     moduleIds: state.moduleIds,
     notEntitledModuleIds: state.notEntitled,
-    isLoading: false,
+    isLoading: state.modulesLoading,
   }),
 }))
 vi.mock('@/lib/permissions', () => ({
@@ -58,7 +60,10 @@ vi.mock('@/lib/permissions', () => ({
   useHasPermission: (p: string) => state.perms.has(p),
 }))
 vi.mock('@/features/findings/api/use-findings-count', () => ({
-  useFindingsCount: (f: { extra: Record<string, string> }) => state.counts[findingsHref(f.extra)],
+  useFindingsCount: (f: { extra: Record<string, string> }, enabled = true) => {
+    countCalls.push({ href: findingsHref(f.extra), enabled })
+    return state.counts[findingsHref(f.extra)]
+  },
 }))
 vi.mock('@/features/closure-review/api', () => ({
   useReadyToCloseCount: (fetch: boolean) => (fetch ? state.readyToClose : undefined),
@@ -102,11 +107,21 @@ beforeEach(() => {
     [findingsHref(REOPENED_RECENTLY)]: 0,
   }
   state.readyToClose = 2
+  state.modulesLoading = false
+  countCalls.length = 0
   pentestQueries.length = 0
   campaignQueries.length = 0
 })
 
 describe('Validation overview', () => {
+  it('does not count the awaiting queue until the module list has loaded', () => {
+    state.modulesLoading = true
+    render(<ValidationOverviewPage />)
+    const awaiting = countCalls.filter((c) => c.href.includes('status=fix_applied'))
+    expect(awaiting.length).toBeGreaterThan(0)
+    expect(awaiting.every((c) => !c.enabled)).toBe(true)
+  })
+
   it('lists each waiting queue with its count and the link to the list it counts', () => {
     render(<ValidationOverviewPage />)
     const list = screen.getByTestId('validation-waiting')

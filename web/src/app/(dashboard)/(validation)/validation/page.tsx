@@ -58,7 +58,9 @@ export default function ValidationOverviewPage() {
   const { moduleIds, notEntitledModuleIds, isLoading: modulesLoading } = useTenantModules()
 
   const awaitingQuery = awaitingValidationQuery(pentestOn)
-  const awaiting = useFindingsCount({ extra: awaitingQuery })
+  // The query depends on the pentest module, which is unknown until the module
+  // list arrives: counting earlier would send a second request for the same figure.
+  const awaiting = useFindingsCount({ extra: awaitingQuery }, !modulesLoading)
   const readyToClose = useReadyToCloseCount(canVerify)
   // Counted on the server over every pentest finding the viewer may see.
   const { data: retestsDueData } = useAdaptedPentestFindingPage(
