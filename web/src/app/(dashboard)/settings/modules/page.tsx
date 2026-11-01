@@ -7,6 +7,8 @@ import { PageHeader, SettingsSaveBar, PageStack } from '@/features/shared'
 import { useTenant } from '@/context/tenant-provider'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { Marker } from '@/components/ui/marker'
+import { Tag } from '@/components/ui/tag'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
@@ -759,11 +761,7 @@ function ModuleRow({
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <span className="font-medium text-sm">{mod.name}</span>
-            {!mod.is_core && categoryLabel && (
-              <Badge variant="outline" className="text-xs px-1.5 py-0 text-muted-foreground">
-                {categoryLabel}
-              </Badge>
-            )}
+            {!mod.is_core && categoryLabel && <Tag label={categoryLabel} />}
             {mod.release_status === 'beta' && (
               <Badge variant="outline" className="text-xs">
                 {t('settings.modules.beta', 'Beta')}
@@ -905,11 +903,7 @@ function SubModuleRow({
             {t('settings.modules.beta', 'Beta')}
           </Badge>
         )}
-        {isComingSoon && (
-          <Badge variant="outline" className="px-1 py-0 text-xs text-muted-foreground">
-            {t('settings.modules.soon', 'Soon')}
-          </Badge>
-        )}
+        {isComingSoon && <Marker kind="soon" />}
         {hasPendingChange && !isComingSoon && (
           <Badge variant="secondary" className="px-1 py-0 text-xs">
             {t('settings.modules.modified', 'Modified')}

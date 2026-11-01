@@ -224,7 +224,11 @@ export default function APIKeysPage() {
         cell: ({ row }) => (
           <div className="flex flex-wrap gap-1">
             {row.original.scopes.slice(0, 3).map((s) => (
-              <Badge key={s} variant="secondary" className="font-mono text-xs">
+              <Badge // label-ok: a scope id
+                key={s}
+                variant="secondary"
+                className="font-mono text-xs"
+              >
                 {s}
               </Badge>
             ))}

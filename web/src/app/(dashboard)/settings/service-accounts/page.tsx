@@ -241,7 +241,11 @@ function AccountKeysSheet({
                       </p>
                       <div className="flex flex-wrap gap-1">
                         {k.scopes.map((s) => (
-                          <Badge key={s} variant="secondary" className="font-mono text-xs">
+                          <Badge // label-ok: a scope id
+                            key={s}
+                            variant="secondary"
+                            className="font-mono text-xs"
+                          >
                             {s}
                           </Badge>
                         ))}
