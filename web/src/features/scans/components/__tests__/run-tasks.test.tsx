@@ -309,7 +309,17 @@ describe('taskCoverageGapNote', () => {
         coverage_gaps: [{ host: 'api.example.com', reason: 'breaker_open' }],
         coverage_gaps_total: 1,
       })
-    ).toBe('Completed with 1 host not fully covered: api.example.com (stopped answering)')
+    ).toBe('Completed with 1 host not fully covered: api.example.com (failed every request)')
+    expect(
+      taskCoverageGapNote({
+        coverage_gaps: [
+          { host: 'api.example.com:443', reason: 'breaker_open', cause: 'http_reset' },
+        ],
+        coverage_gaps_total: 1,
+      })
+    ).toBe(
+      'Completed with 1 host not fully covered: api.example.com:443 (TLS answers, resets every HTTP request)'
+    )
     expect(
       taskCoverageGapNote({
         coverage_gaps: [
