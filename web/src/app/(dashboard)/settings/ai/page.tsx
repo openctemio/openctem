@@ -16,6 +16,7 @@ import { useTenant } from '@/context/tenant-provider'
 import { AISourceCard } from '@/features/ai-triage/components/ai-source-card'
 import { AIMaskingSection } from '@/features/ai-triage/components/ai-masking-section'
 import { AIAgentsSection } from '@/features/ai-triage/components/ai-agents-section'
+import { AIAutoTriageCard } from '@/features/ai-triage/components/ai-auto-triage-card'
 import { useAIConfig } from '@/features/ai-triage/api/use-ai-triage-api'
 import { updateAISettings, useAISettings } from '@/features/ai-triage/api/use-ai-settings'
 import { PageHeader, ReadOnlyNotice, PageStack } from '@/features/shared'
@@ -208,6 +209,8 @@ export default function AISettingsPage() {
               }}
             />
           )}
+
+          <AIAutoTriageCard canEdit={canEdit} aiEnabled={enabled} />
 
           <AIAgentsSection />
 

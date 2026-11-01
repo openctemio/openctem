@@ -2000,6 +2000,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 			orgPolicy = s.PlatformAI
 		}
 		s.TenantAI = tenantai.NewService(repos.TenantAISettings, s.Encryptor, s.Audit, llmFactory, orgPolicy, log)
+		s.TenantAI.SetAutoTriageDefaults(s.AITriage.AutoTriageDefaults)
+		if s.Tenant != nil {
+			s.TenantAI.SetLooseningNotifier(s.Tenant)
+		}
 		s.Vulnerability.SetAITriageService(s.AITriage) // Wire auto-triage on finding creation
 
 		// The organization's AI data-egress policy, shared with MCP: pentest
