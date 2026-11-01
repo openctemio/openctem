@@ -216,48 +216,20 @@ func (r *ToolRepository) ListByNames(ctx context.Context, names []string) ([]*to
 	return tools, nil
 }
 
-// ListByCategoryID retrieves tools by category_id.
-func (r *ToolRepository) ListByCategoryID(ctx context.Context, categoryID shared.ID) ([]*tool.Tool, error) {
-	query := r.selectQuery() + " WHERE category_id = $1 AND is_active = true ORDER BY display_name"
-	rows, err := r.db.QueryContext(ctx, query, categoryID.String())
+// ListByCategoryID retrieves the active tools in a category as the given
+// tenant sees them: platform tools plus the tenant's own custom tools. Another
+// tenant's custom tools are never returned. A zero tenantID lists platform
+// tools only.
+func (r *ToolRepository) ListByCategoryID(ctx context.Context, tenantID, categoryID shared.ID) ([]*tool.Tool, error) {
+	var tenantArg any
+	if !tenantID.IsZero() {
+		tenantArg = tenantID.String()
+	}
+	query := r.selectQuery() + ` WHERE category_id = $1 AND is_active = true
+		AND (tenant_id IS NULL OR tenant_id = $2) ORDER BY display_name`
+	rows, err := r.db.QueryContext(ctx, query, categoryID.String(), tenantArg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list tools by category_id: %w", err)
-	}
-	defer rows.Close()
-
-	var tools []*tool.Tool
-	for rows.Next() {
-		t, err := r.scanToolFromRows(rows)
-		if err != nil {
-			return nil, err
-		}
-		tools = append(tools, t)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-
-	return tools, nil
-}
-
-// ListByCategoryName retrieves tools by category name (via join with tool_categories).
-func (r *ToolRepository) ListByCategoryName(ctx context.Context, categoryName string) ([]*tool.Tool, error) {
-	query := `
-		SELECT t.id, t.tenant_id, t.name, t.display_name, t.description, t.logo_url, t.category_id,
-		       t.install_method, t.install_cmd, t.update_cmd,
-		       t.version_cmd, t.version_regex, t.current_version, t.latest_version,
-		       t.config_file_path, t.config_schema, t.default_config,
-		       t.capabilities, t.supported_targets, t.output_formats, t.output_types,
-		       t.docs_url, t.github_url, t.is_active, t.is_builtin,
-		       t.tags, t.metadata, t.created_by, t.created_at, t.updated_at, t.min_version
-		FROM tools t
-		JOIN tool_categories tc ON t.category_id = tc.id
-		WHERE tc.name = $1 AND t.is_active = true
-		ORDER BY t.display_name
-	`
-	rows, err := r.db.QueryContext(ctx, query, categoryName)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list tools by category name: %w", err)
 	}
 	defer rows.Close()
 
