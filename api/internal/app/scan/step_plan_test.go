@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/openctemio/ctis/outcome"
+
 	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
 	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
 
@@ -219,6 +221,9 @@ func TestStepCommandPayload_Golden(t *testing.T) {
 		"capability": "discover.subdomains@1",
 		// The task's layered budget (research/122): one subfinder target.
 		"budget": toolbudget.ForTask("subfinder", 1),
+		// The outcome revision the platform reads: the sensor reports an
+		// edge that blocked a host as edge_blocked, not tool_error.
+		"outcome_revision": outcome.Revision,
 	}
 	if len(p) != len(want) {
 		t.Errorf("keys = %d, want %d: %v", len(p), len(want), p)
