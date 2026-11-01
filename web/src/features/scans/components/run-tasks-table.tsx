@@ -20,7 +20,7 @@ import {
   TaskPlacementPanel,
   WhyWaitingButton,
 } from '@/features/scans/components/task-placement'
-import { gapHelp, placementHelp } from '@/features/scans/lib/placement-help'
+import { gapLabel, placementHelp } from '@/features/scans/lib/placement-help'
 import { gapsFixKind } from '@/features/scans/lib/edge-gap'
 import { EdgeGapFixes } from '@/features/scans/components/edge-gap-fixes'
 
@@ -217,20 +217,12 @@ export function taskSkippedNote(
   return text
 }
 
-/** Coverage-gap reasons that have a translated label. */
-const GAP_REASONS = new Set(['breaker_open', 'rate_floor', 'blocked', 'proxy_unavailable'])
-
-function gapLabel(g: NonNullable<RunTask['coverage_gaps']>[number], t: Translate): string {
-  return g.reason === 'blocked'
-    ? gapHelp(g, t).label
-    : t(GAP_REASONS.has(g.reason ?? '') ? `scans.tasks.gap.${g.reason}` : 'scans.tasks.gap.other')
-}
-
 /**
  * The note of a task that completed with hosts its sensor could not fully
- * cover (the host stopped answering, kept rate-limiting the scan, or blocked
- * it): "Completed with 2 hosts not fully covered: api.example.com (stopped
- * answering), …". Null without gaps. A host with a gap is not "no findings".
+ * cover (the host failed every request, kept rate-limiting the scan, or
+ * blocked it; with the recheck's cause when the sensor sent one):
+ * "Completed with 2 hosts not fully covered: api.example.com (TLS answers,
+ * resets every HTTP request), …". Null without gaps. A host with a gap is not "no findings".
  * The hosts are sensor-supplied text; TruncatedText shows them as plain text.
  */
 export function taskCoverageGapNote(
