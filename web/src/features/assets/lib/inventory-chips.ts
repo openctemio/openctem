@@ -157,6 +157,13 @@ export function inventoryChips(filters: InventoryFilters, ctx: ChipContext): Inv
       clear: without('isCrownJewel'),
     })
   }
+  if (filters.isPrimary) {
+    chips.push({
+      key: 'isPrimary',
+      text: t('assets.monitoring.primaryChip', 'Primary assets'),
+      clear: without('isPrimary'),
+    })
+  }
   if (filters.hasFindings !== undefined) {
     chips.push({
       key: 'hasFindings',

@@ -452,6 +452,11 @@ type RunTaskCoverageGap struct {
 	Host   string `json:"host"`
 	Reason string `json:"reason"`
 	Detail string `json:"detail,omitempty"`
+	// Edge (challenged or blocked) and Vendor (an edge protection's id
+	// token) say that an edge protection answered in the host's place;
+	// only on a blocked gap, shown as text.
+	Edge   string `json:"edge,omitempty"`
+	Vendor string `json:"vendor,omitempty"`
 	Cause  string `json:"cause,omitempty"`
 	Cert   string `json:"cert,omitempty"`
 }
@@ -499,7 +504,7 @@ func toRunTaskResponses(tasks []scanrundom.Task) []RunTaskResponse {
 		}
 		for _, g := range t.CoverageGaps {
 			r.CoverageGaps = append(r.CoverageGaps, RunTaskCoverageGap{Host: g.Host, Reason: g.Reason,
-				Detail: platformText(t.Platform, g.Detail), Cause: g.Cause, Cert: g.Cert})
+				Detail: platformText(t.Platform, g.Detail), Cause: g.Cause, Cert: g.Cert, Edge: g.Edge, Vendor: g.Vendor})
 		}
 		if t.StepRunID != nil {
 			v := t.StepRunID.String()

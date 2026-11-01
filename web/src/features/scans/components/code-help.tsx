@@ -8,7 +8,9 @@ import { safeInternalHref } from '@/lib/safe-href'
 import type { RunMapNode } from '@/lib/api/generated'
 import { TruncatedText } from '@/features/shared'
 
-import { failureHelp, gapReasonHelp, type CodeHelp } from '../lib/placement-help'
+import { failureHelp, gapHelp, type CodeHelp } from '../lib/placement-help'
+import { gapEdgeKind } from '../lib/edge-gap'
+import { EdgeGapFixes } from './edge-gap-fixes'
 
 /**
  * One code with what it means and where to fix it: the code (monospace, as
@@ -99,7 +101,8 @@ export function StepOutcome({ outcome }: { outcome?: RunMapNode['outcome'] }) {
           {gaps.length > 0 ? (
             <ul className="space-y-1">
               {gaps.map((g, i) => {
-                const r = gapReasonHelp(g.reason, t, g.cause, g.cert)
+                const r = gapHelp(g, t)
+                const fixKind = gapEdgeKind(g)
                 return (
                   <li
                     key={`${g.host}-${i}`}
@@ -112,8 +115,14 @@ export function StepOutcome({ outcome }: { outcome?: RunMapNode['outcome'] }) {
                     </div>
                     {r.cert && <p className="text-foreground">{r.cert}</p>}
                     <p className="text-muted-foreground">{r.help}</p>
-                    {r.fix && <p className="text-muted-foreground">{r.fix}</p>}
-                    {r.href && r.hrefLabel && <FixLink path={r.href} label={r.hrefLabel} />}
+                    {fixKind ? (
+                      <EdgeGapFixes kind={fixKind} />
+                    ) : (
+                      <>
+                        {r.fix && <p className="text-muted-foreground">{r.fix}</p>}
+                        {r.href && r.hrefLabel && <FixLink path={r.href} label={r.hrefLabel} />}
+                      </>
+                    )}
                   </li>
                 )
               })}

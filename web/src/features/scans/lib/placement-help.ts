@@ -225,9 +225,10 @@ export interface GapHelp {
 
 /** The short label of one coverage gap: what the recheck saw, else the reason. */
 export function gapLabel(
-  gap: { reason?: string; cause?: string },
+  gap: { reason?: string; cause?: string; edge?: string; vendor?: string },
   t: Translate = enTranslate
 ): string {
+  if (gap.reason === 'blocked' && !gap.cause) return gapHelp(gap, t).label
   if ((GAP_CAUSES as readonly string[]).includes(gap.cause ?? '')) {
     return t(`scans.tasks.gapCause.${gap.cause}`)
   }
@@ -267,4 +268,23 @@ export function gapReasonHelp(
     out.fix = t('scans.tasks.gapFix.retry')
   }
   return out
+}
+
+/**
+ * The translated reason of one coverage gap, with the edge protection that
+ * stopped the host (and its vendor, as the sensor sent it) when it says so.
+ * Any other gap reads as its reason, with the recheck's cause and certificate.
+ */
+export function gapHelp(
+  gap: { reason?: string; cause?: string; cert?: string; edge?: string; vendor?: string },
+  t: Translate = enTranslate
+): GapHelp {
+  if (gap.reason !== 'blocked') return gapReasonHelp(gap.reason, t, gap.cause, gap.cert)
+  const key = gap.edge === 'challenged' ? 'edge_challenged' : 'edge_blocked'
+  return {
+    label: gap.vendor
+      ? t(`scans.tasks.gap.${key}_vendor`, undefined, { vendor: gap.vendor })
+      : t(`scans.tasks.gap.${key}`),
+    help: t(`scans.tasks.gapHelp.${key}`),
+  }
 }

@@ -21,6 +21,8 @@ import {
   WhyWaitingButton,
 } from '@/features/scans/components/task-placement'
 import { gapLabel, placementHelp } from '@/features/scans/lib/placement-help'
+import { gapsFixKind } from '@/features/scans/lib/edge-gap'
+import { EdgeGapFixes } from '@/features/scans/components/edge-gap-fixes'
 
 /**
  * Who runs a task: "Platform scanning" (never a platform sensor's name), the
@@ -378,6 +380,7 @@ export function RunTasksTable({
               const note = taskStatusNote(task, t, runId)
               const skipped = taskSkippedNote(task, t)
               const gaps = taskCoverageGapNote(task, t)
+              const gapFix = gapsFixKind(task.coverage_gaps ?? [])
               const prog = taskProgressNote(task, t)
               const content = taskContentNote(task as { content_pins?: TaskContentPins | null }, t)
               return (
@@ -418,6 +421,11 @@ export function RunTasksTable({
                         <div className="mt-1 flex max-w-[260px] items-start gap-1 text-xs text-warning">
                           <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" aria-hidden="true" />
                           <TruncatedText value={gaps} label={t('scans.tasks.coverageGaps')} />
+                        </div>
+                      )}
+                      {gaps && gapFix && (
+                        <div className="mt-1 max-w-[260px]">
+                          <EdgeGapFixes kind={gapFix} />
                         </div>
                       )}
                     </td>
