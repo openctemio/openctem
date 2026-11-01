@@ -30,13 +30,18 @@ let assignmentsPending = false
 const poolsMutate = vi.fn()
 const assignmentsMutate = vi.fn()
 const updatePool = vi.fn().mockResolvedValue({})
+const poolsCalls: unknown[][] = []
 vi.mock('../api/use-proxy-pools', () => ({
-  useProxyPools: () => ({
-    data: poolsError ? undefined : { items: pools },
-    isLoading: false,
-    error: poolsError,
-    mutate: poolsMutate,
-  }),
+  PROXY_HEALTH_REFRESH_MS: 30_000,
+  useProxyPools: (...args: unknown[]) => (
+    poolsCalls.push(args),
+    {
+      data: poolsError ? undefined : { items: pools },
+      isLoading: false,
+      error: poolsError,
+      mutate: poolsMutate,
+    }
+  ),
   useProxyAssignments: () => ({
     data: assignmentsPending ? undefined : { items: assignments },
     isLoading: assignmentsPending,
@@ -173,95 +178,153 @@ describe('Impact preview', () => {
     execution_mode: 'daemon',
     reported: { capabilities: [] },
   }
-  it('lists the sensors that would stop getting jobs before the default pool is turned on', () => {
+  it('names the sensors it would hold back before the default pool is turned on', async () => {
     pools = [pool({ enabled: false })]
     fleet = [old]
     perms = [...ALL, 'sensors:read']
     renderPanel()
     expect(screen.queryByTestId('proxy-impact-list')).toBeNull()
-    fireEvent.click(document.getElementById('proxy-default-enabled') as HTMLElement)
-    expect(screen.getByTestId('proxy-impact-unsupported')).toHaveTextContent('legacy-sensor')
-    expect(screen.getByText('Turning proxies on holds back 1 sensor')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('switch', { name: 'Use proxies for scans' }))
+    const dialog = within(await screen.findByRole('alertdialog'))
+    expect(dialog.getByTestId('proxy-impact-unsupported')).toHaveTextContent('legacy-sensor')
+    expect(dialog.getByText('Turning proxies on holds back 1 sensor')).toBeInTheDocument()
+    expect(updatePool).not.toHaveBeenCalled()
+    fireEvent.click(dialog.getByRole('button', { name: 'Turn on' }))
+    await waitFor(() => expect(updatePool).toHaveBeenCalledWith('p1', { enabled: true }))
   })
-  it('shows no preview without sensors:read', () => {
+  it('shows no preview without sensors:read', async () => {
     pools = [pool({ enabled: false })]
     fleet = [old]
     renderPanel()
-    fireEvent.click(document.getElementById('proxy-default-enabled') as HTMLElement)
+    fireEvent.click(screen.getByRole('switch', { name: 'Use proxies for scans' }))
+    await screen.findByRole('alertdialog')
     expect(screen.queryByTestId('proxy-impact-list')).toBeNull()
+  })
+  it('keeps listing held-back sensors while the default pool is on', () => {
+    fleet = [old]
+    perms = [...ALL, 'sensors:read']
+    renderPanel()
+    expect(screen.getByTestId('proxy-impact-unsupported')).toHaveTextContent('legacy-sensor')
   })
 })
 
 describe('Proxies page', () => {
-  it('shows stored lines as returned, masked, and never a credential', () => {
-    renderPanel()
-    const field = screen.getByTestId('proxy-paste-list') as HTMLTextAreaElement
-    expect(field.value).toBe('socks5://••••@10.0.0.5:1080#dc1\nhttp://proxy.corp.example:3128')
-    expect(screen.getAllByTestId('proxy-lock')).toHaveLength(1)
-    expect(screen.getByText('socks5://10.0.0.5:1080')).toBeInTheDocument()
-    expect(document.body.textContent).not.toMatch(/user:pass|hunter2/)
-  })
-
-  it('masks userinfo even if a response carried real credentials', () => {
+  it('never shows a credential: endpoint urls carry no userinfo, a lock marks stored ones', () => {
     pools = [pool({ endpoints_text: 'socks5://user:hunter2@10.0.0.5:1080#dc1' })]
     renderPanel()
-    const field = screen.getByTestId('proxy-paste-list') as HTMLTextAreaElement
+    expect(screen.getAllByTestId('proxy-lock')).toHaveLength(1)
+    expect(screen.getByText('socks5://10.0.0.5:1080')).toBeInTheDocument()
+    expect(document.body.innerHTML).not.toMatch(/user:|hunter2/)
+  })
+
+  it('masks userinfo in the edit dialog even if a response carried real credentials', async () => {
+    pools = [pool({ endpoints_text: 'socks5://user:hunter2@10.0.0.5:1080#dc1' })]
+    renderPanel()
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Corp egress' }))
+    const dialog = within(await screen.findByRole('dialog'))
+    const field = dialog.getByTestId('proxy-paste-list') as HTMLTextAreaElement
     expect(field.value).toBe('socks5://••••@10.0.0.5:1080#dc1')
     expect(document.body.innerHTML).not.toContain('hunter2')
     expect(maskPasteText('http://a:b@h:1')).toBe('http://••••@h:1')
     expect(maskPasteText('http://••••@h:1')).toBe('http://••••@h:1')
   })
 
-  it('renders endpoint url without userinfo, state and quarantine', () => {
+  it('renders state, quarantine, score, connect time, connections and last error per proxy', () => {
     expect(endpointUrl({ scheme: 'socks5', host: '::1', port: 1 })).toBe('socks5://[::1]:1')
     renderPanel()
-    const rows = screen.getAllByTestId('proxy-endpoint-row')
+    const table = within(screen.getByTestId('proxy-endpoint-table'))
+    const rows = table.getAllByRole('row').slice(1)
     expect(rows).toHaveLength(2)
     expect(rows[0].textContent).toContain('Quarantined')
     expect(rows[0].textContent).toContain('until')
     expect(rows[0].textContent).toContain('42%')
+    expect(rows[0].textContent).toContain('120 ms')
+    expect(rows[0].textContent).toContain('10 ok, 5 failed')
+    expect(rows[0].textContent).toContain('proxy_down: connection refused')
     expect(rows[1].textContent).toContain('Healthy')
   })
 
-  it('saves the pasted text with PUT endpoints', async () => {
+  it('summarizes each pool and the organization health', () => {
+    renderPanel()
+    expect(screen.getByTestId('pool-health-summary')).toHaveTextContent(
+      '2 proxies, 1 healthy, 1 quarantined'
+    )
+    expect(screen.getByText('Sticky by target')).toBeInTheDocument()
+    expect(screen.getByText('Proxies in use')).toBeInTheDocument()
+  })
+
+  it('re-reads pool health on an interval while the page is open', () => {
+    poolsCalls.length = 0
+    renderPanel()
+    expect(poolsCalls).toContainEqual([true, 30_000])
+  })
+
+  it('edits the default pool list in the shared dialog with PUT endpoints', async () => {
     saveEndpoints.mockResolvedValue({})
     renderPanel()
-    const field = screen.getByTestId('proxy-paste-list')
-    fireEvent.change(field, { target: { value: 'socks5://••••@10.0.0.5:1080#dc1' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Corp egress' }))
+    const dialog = within(await screen.findByRole('dialog'))
+    expect(dialog.queryByLabelText('Enabled')).toBeNull()
+    fireEvent.change(dialog.getByTestId('proxy-paste-list'), {
+      target: { value: 'socks5://••••@10.0.0.5:1080#dc1' },
+    })
+    fireEvent.click(dialog.getByRole('button', { name: 'Save' }))
     await waitFor(() =>
       expect(saveEndpoints).toHaveBeenCalledWith('p1', 'socks5://••••@10.0.0.5:1080#dc1')
     )
+    expect(updatePool).toHaveBeenCalledWith('p1', {
+      name: 'Corp egress',
+      description: '',
+      strategy: 'sticky',
+    })
   })
 
-  it('creates the default pool when none exists', async () => {
+  it('creates the default pool off when none exists, from the empty state', async () => {
     pools = []
     createPool.mockResolvedValue({})
     renderPanel()
-    fireEvent.click(screen.getByRole('switch', { name: 'Use proxies for scans' }))
-    fireEvent.change(screen.getByTestId('proxy-paste-list'), {
+    expect(screen.getByRole('switch', { name: 'Use proxies for scans' })).toBeDisabled()
+    fireEvent.click(screen.getByRole('button', { name: 'Add proxies' }))
+    const dialog = within(await screen.findByRole('dialog'))
+    fireEvent.change(dialog.getByTestId('proxy-paste-list'), {
       target: { value: 'socks5://u:p@10.0.0.9:1080' },
     })
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    fireEvent.click(dialog.getByRole('button', { name: 'Save' }))
     await waitFor(() =>
       expect(createPool).toHaveBeenCalledWith({
         name: 'Organization default',
+        description: '',
+        strategy: 'sticky',
+        enabled: false,
         is_default: true,
-        enabled: true,
         endpoints_text: 'socks5://u:p@10.0.0.9:1080',
       })
     )
   })
 
-  it('refuses to enable an empty pool (it would fail every scan closed)', async () => {
-    pools = []
+  it('cannot turn proxies on without a proxy (it would fail every scan closed)', () => {
+    pools = [pool({ enabled: false, endpoints: [], endpoints_text: '' })]
+    renderPanel()
+    expect(screen.getByRole('switch', { name: 'Use proxies for scans' })).toBeDisabled()
+    expect(screen.getByText('No proxies yet')).toBeInTheDocument()
+  })
+
+  it('asks before turning proxies off, then saves at once', async () => {
     renderPanel()
     fireEvent.click(screen.getByRole('switch', { name: 'Use proxies for scans' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
-    expect(await screen.findByTestId('proxy-paste-error')).toHaveTextContent(
-      'Add at least one proxy'
-    )
-    expect(createPool).not.toHaveBeenCalled()
+    const dialog = within(await screen.findByRole('alertdialog'))
+    expect(dialog.getByText(/directly from their own address/)).toBeInTheDocument()
+    fireEvent.click(dialog.getByRole('button', { name: 'Turn off' }))
+    await waitFor(() => expect(updatePool).toHaveBeenCalledWith('p1', { enabled: false }))
+  })
+
+  it('blocks emptying an enabled default pool in the dialog', async () => {
+    renderPanel()
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Corp egress' }))
+    const dialog = within(await screen.findByRole('dialog'))
+    fireEvent.change(dialog.getByTestId('proxy-paste-list'), { target: { value: '' } })
+    expect(dialog.getByTestId('pool-needs-proxy')).toHaveTextContent('Turn proxies off')
+    expect(dialog.getByRole('button', { name: 'Save' })).toBeDisabled()
   })
 
   it('shows the server validation error with its line inline', async () => {
@@ -269,20 +332,22 @@ describe('Proxies page', () => {
       new ApiClientError('line 2: host is not allowed', 'INVALID_PROXY_ENDPOINT', 400)
     )
     renderPanel()
-    fireEvent.change(screen.getByTestId('proxy-paste-list'), {
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Corp egress' }))
+    const dialog = within(await screen.findByRole('dialog'))
+    fireEvent.change(dialog.getByTestId('proxy-paste-list'), {
       target: { value: 'socks5://localhost:1' },
     })
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
-    expect(await screen.findByTestId('proxy-paste-error')).toHaveTextContent(
+    fireEvent.click(dialog.getByRole('button', { name: 'Save' }))
+    expect(await dialog.findByTestId('proxy-paste-error')).toHaveTextContent(
       'line 2: host is not allowed'
     )
   })
 
-  it('without write permission there is no textarea editing, save or row actions', () => {
+  it('without write permission nothing can be changed', () => {
     perms = ['sensors:egress:read']
     renderPanel()
-    expect((screen.getByTestId('proxy-paste-list') as HTMLTextAreaElement).readOnly).toBe(true)
-    expect(screen.queryByRole('button', { name: 'Save' })).toBeNull()
+    expect(screen.getByRole('switch', { name: 'Use proxies for scans' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Edit Corp egress' })).toBeDisabled()
     expect(screen.queryByRole('button', { name: /Reset health/ })).toBeNull()
     expect(screen.getByRole('button', { name: 'New pool' })).toBeDisabled()
   })
@@ -363,7 +428,7 @@ describe('New pool dialog', () => {
     updatePool.mockImplementation(async () => void order.push('pool'))
     pools = [pool(), pool({ id: 'p2', name: 'Segment A', is_default: false })]
     renderPanel()
-    fireEvent.click(screen.getByRole('button', { name: 'Edit' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Segment A' }))
     const dialog = within(await screen.findByRole('dialog'))
     fireEvent.change(dialog.getByTestId('proxy-paste-list'), { target: { value: '' } })
     fireEvent.click(dialog.getByLabelText('Enabled'))

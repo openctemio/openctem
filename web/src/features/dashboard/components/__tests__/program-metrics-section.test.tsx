@@ -68,8 +68,8 @@ const measured = {
 } as unknown as ProgramMetrics
 
 function valueOf(title: string): HTMLElement {
-  const card = screen.getByText(title).closest('[data-slot="card"]') as HTMLElement
-  return card.querySelector('.text-2xl') as HTMLElement
+  const row = screen.getByText(title).closest('[data-slot="metric-row"]') as HTMLElement
+  return row.querySelector('[data-slot="metric-row-value"]') as HTMLElement
 }
 
 describe('ProgramMetricsSection', () => {
@@ -77,7 +77,7 @@ describe('ProgramMetricsSection', () => {
     hookResult = { isLoading: false, mutate: vi.fn() }
   })
 
-  it('shows "—" for every metric when there is no data (never 0 or 100%)', () => {
+  it('shows "Not measured" for every metric when there is no data (never 0 or 100%)', () => {
     hookResult.data = empty
     render(<ProgramMetricsSection tenantId="t1" days={90} />)
 
@@ -94,7 +94,7 @@ describe('ProgramMetricsSection', () => {
       'Critical storage without logging',
     ]) {
       const v = valueOf(title)
-      expect(v.textContent).toBe('—')
+      expect(v.textContent).toBe('Not measured')
       expect(v.className).toContain('text-muted-foreground')
       expect(v.className).not.toContain('text-destructive')
     }
@@ -128,9 +128,9 @@ describe('ProgramMetricsSection', () => {
     expect(screen.getByText('1 lacking, 2 not recorded, of 5 assets')).toBeTruthy()
     expect(valueOf('Critical accounts without MFA').textContent).toBe('100%')
     // No critical storage: not measured, never 0%.
-    expect(valueOf('Critical storage without logging').textContent).toBe('—')
+    expect(valueOf('Critical storage without logging').textContent).toBe('Not measured')
     // Time-to-break is never computed, even when everything else is.
-    expect(valueOf('Time to break attack paths').textContent).toBe('—')
+    expect(valueOf('Time to break attack paths').textContent).toBe('Not measured')
   })
 
   it('never colours a zero rate red', () => {
@@ -150,7 +150,7 @@ describe('ProgramMetricsSection', () => {
       owner_acceptance: { rate_pct: null, accepted: 0, missed: 0, pending: 2, excluded: 0 },
     } as unknown as ProgramMetrics
     render(<ProgramMetricsSection tenantId="t1" days={90} />)
-    expect(valueOf('Owner acceptance rate').textContent).toBe('—')
+    expect(valueOf('Owner acceptance rate').textContent).toBe('Not measured')
     expect(screen.getByText('2 assignments still inside the SLA window')).toBeTruthy()
   })
 
@@ -174,7 +174,7 @@ describe('ProgramMetricsSection', () => {
       },
     } as unknown as ProgramMetrics
     render(<ProgramMetricsSection tenantId="t1" days={90} />)
-    expect(valueOf('Time to assign an owner').textContent).toBe('—')
+    expect(valueOf('Time to assign an owner').textContent).toBe('Not measured')
     expect(screen.getByText('2 assets still without an owner')).toBeTruthy()
   })
 

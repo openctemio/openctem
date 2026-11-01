@@ -153,6 +153,11 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     permission: Permission.ScopeRead,
     module: Module.AttackSurface,
   },
+  // The coverage work by stage (Run needs scans:write + scans:execute).
+  '/attack-surface/discovery': {
+    permission: Permission.ScansRead,
+    module: Module.AttackSurface,
+  },
   // Typed attack-surface changes (RFC-080), narrowed to the data scope by the API.
   // Web surface reads the assets module's web endpoints (RFC-056).
   '/attack-surface/web': {
@@ -639,6 +644,13 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     permission: Permission.TeamUpdate,
     module: Module.Sensors,
     message: 'You need admin privileges to access sensor job settings.',
+  },
+  // The scan identification part of the security settings: read like
+  // Sensor job safety (team:update), changed by the owner only (the API).
+  '/settings/scanning/identification': {
+    permission: Permission.TeamUpdate,
+    module: Module.Sensors,
+    message: 'You need admin privileges to access scan identification settings.',
   },
 
   // ========================================

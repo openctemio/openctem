@@ -134,6 +134,13 @@ export const adminNav: AdminNavSection[] = [
         keywords: ['scan', 'approval', 'governance', 'second approver', 'policy', 'scope'],
       },
       {
+        title: 'Scan identification',
+        i18nKey: 'admin.nav.scanIdentification',
+        url: '/system/scan-identification',
+        icon: Fingerprint,
+        keywords: ['user-agent', 'header', 'waf', 'marker', 'identify', 'enforced'],
+      },
+      {
         title: 'Platform scanning',
         i18nKey: 'admin.nav.platformScanning',
         url: '/scanning/platform',
