@@ -358,6 +358,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	if svc.Signup != nil {
 		tenantHandler.SetSignupPolicy(svc.Signup)
 	}
+	if svc.ScanIdentity != nil {
+		tenantHandler.SetScanIdentity(svc.ScanIdentity)
+	}
 	if svc.Entitlement != nil {
 		tenantHandler.SetSelfServiceLimits(svc.Entitlement)
 	}
