@@ -152,6 +152,7 @@ type fakeStore struct {
 	dequeueIDs []shared.ID
 	state      map[string]time.Time
 	rekeys     []softwarematch.Rekey
+	canceled   []shared.ID
 }
 
 func newFakeStore() *fakeStore {
@@ -224,6 +225,10 @@ func (f *fakeStore) RekeyMatcherFinding(_ context.Context, _ shared.ID, r softwa
 		return false, nil
 	}
 	return true, nil
+}
+func (f *fakeStore) CancelVersionProposals(_ context.Context, _ shared.ID, ids []shared.ID) (int, error) {
+	f.canceled = append(f.canceled, ids...)
+	return len(ids), nil
 }
 func (f *fakeStore) ReopenFindings(_ context.Context, _ shared.ID, ids []shared.ID) ([]shared.ID, error) {
 	f.reopened = append(f.reopened, ids...)
