@@ -42,8 +42,12 @@ type fakeFindingReader struct {
 	gotCVECaller findingapp.FilterCaller
 	// The findings stats call of finding_stats.
 	gotStatsCaller findingapp.FilterCaller
-	gotCVESpec     *filterspec.Spec
-	gotCVEOpts     vulnerability.CVEListOptions
+	// The findings list call of list_findings, and the total it answers.
+	gotListCaller findingapp.FilterCaller
+	gotListSpec   *filterspec.Spec
+	listTotal     int64
+	gotCVESpec    *filterspec.Spec
+	gotCVEOpts    vulnerability.CVEListOptions
 	// scopeErr, when set, is returned by the scoped read paths so tests can
 	// simulate a data-scope/pentest-membership denial.
 	scopeErr error
@@ -55,6 +59,14 @@ type fakeFindingReader struct {
 func (f *fakeFindingReader) ListFindings(_ context.Context, in findingapp.ListFindingsInput) (pagination.Result[*vulnerability.Finding], error) {
 	f.gotTenant = in.TenantID
 	return pagination.NewResult([]*vulnerability.Finding{}, 0, pagination.Pagination{Page: 1, PerPage: 25}), nil
+}
+func (f *fakeFindingReader) ListFindingsBySpec(_ context.Context, c findingapp.FilterCaller, spec *filterspec.Spec) (pagination.Result[*vulnerability.Finding], error) {
+	f.gotTenant, f.gotScopeUser, f.gotIsAdmin = c.TenantID, c.UserID, c.IsAdmin
+	f.gotListCaller, f.gotListSpec = c, spec
+	if f.scopeErr != nil {
+		return pagination.Result[*vulnerability.Finding]{}, f.scopeErr
+	}
+	return pagination.NewResult([]*vulnerability.Finding{}, f.listTotal, pagination.Pagination{Page: spec.Page, PerPage: spec.PerPage}), nil
 }
 func (f *fakeFindingReader) GetFindingWithScope(_ context.Context, tenantID, _, actingUserID string, _ bool) (*vulnerability.Finding, error) {
 	f.gotTenant = tenantID
