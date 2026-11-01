@@ -557,6 +557,8 @@
   "confirm.sensor.bulkDeleteDesc": "Khóa API của chúng ngừng hoạt động ngay và chúng không thể nhận việc hay gửi kết quả nữa. Các phát hiện chúng đã báo cáo được giữ lại. Không thể hoàn tác.",
   "confirm.sensor.bulkDeleteTitle": "Xóa {count} sensor?",
   "confirm.sensor.bulkDeleteTitleOne": "Xóa 1 sensor?",
+  "confirm.sensor.bulkDisableDesc": "Chúng ngừng nhận job mới cho đến khi bạn bật lại. Khóa và lịch sử được giữ nguyên.",
+  "confirm.sensor.bulkDisableTitle": "Vô hiệu hóa {count} sensor?",
   "confirm.sensor.deleteDesc": "Khóa API của nó ngừng hoạt động ngay và nó không thể nhận việc hay gửi kết quả nữa. Các phát hiện nó đã báo cáo được giữ lại. Không thể hoàn tác.",
   "confirm.sensor.deleteTitle": "Xóa sensor {name}?",
   "confirm.sensor.demote": "Đưa về New",

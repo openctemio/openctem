@@ -301,6 +301,7 @@ var optionalServiceSetters = map[string]string{
 	"VEX.SetClock":                          "test seam: replaces the clock; production uses time.Now",
 	"AIAnalysis.SetClock":                   "test seam: replaces the clock; production uses time.Now",
 	"WebEvidence.SetClock":                  "test seam: replaces the clock; production uses time.Now",
+	"PageMonitor.SetClock":                  "test seam: replaces the clock; production uses time.Now",
 	"RetestCheck.SetClock":                  "test seam: replaces the clock; production uses time.Now",
 	"OrgDeletion.SetClock":                  "test seam: replaces the clock; production uses time.Now",
 	"SignupEvents.SetClock":                 "test seam: replaces the clock; production uses time.Now",

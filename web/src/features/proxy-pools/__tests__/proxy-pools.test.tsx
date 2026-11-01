@@ -43,6 +43,12 @@ vi.mock('../api/use-proxy-pools', () => ({
     error: undefined,
     mutate: assignmentsMutate,
   }),
+  useScannerAddresses: () => ({
+    data: { items: [], cidrs: [] },
+    isLoading: false,
+    error: undefined,
+    mutate: vi.fn(),
+  }),
   invalidateProxyPools: vi.fn(),
   createProxyPool: (...a: unknown[]) => createPool(...a),
   updateProxyPool: (...a: unknown[]) => updatePool(...a),

@@ -14,6 +14,7 @@ import {
   Power,
   PowerOff,
   RefreshCw,
+  RotateCcwKey,
   ShieldOff,
   Terminal,
   Trash2,
@@ -62,6 +63,7 @@ import type { Sensor, SensorCommand } from '@/lib/api/sensor-types'
 import { sensorRoleOf } from '@/lib/api/sensor-types'
 import { Permission, useHasPermission } from '@/lib/permissions'
 import { sensorActions } from '../lib/sensor-actions'
+import { useSensorActionPerms } from '../lib/use-sensor-action-perms'
 import { redactUrlQueries } from '@/lib/redact-url'
 import { cn } from '@/lib/utils'
 import { useToolAvailability } from '@/lib/api/tool-hooks'
@@ -80,6 +82,7 @@ import { SensorManifestTab } from './sensor-manifest-tab'
 import { SensorToolSettingsSection } from './sensor-tool-settings'
 import { SensorSetupTab } from './config-check-list'
 import { SensorStateBadge } from './sensor-state-badge'
+import { RepairSensorDialog } from './sensor-repair-dialog'
 import {
   ConfigHealthTag,
   SensorPostureTag,
@@ -1016,9 +1019,12 @@ export function SensorDetailSheet({
   const router = useRouter()
   const { t } = useTranslation()
   const canWrite = useHasPermission(Permission.SensorsWrite)
-  const canDelete = useHasPermission(Permission.SensorsDelete)
-  const canRevoke = useHasPermission(Permission.SensorsRevoke)
+  const actionPerms = useSensorActionPerms()
   const canReadZones = useHasPermission(Permission.ScanZonesRead)
+  // Re-pair needs a code (sensors:pair); approving it needs sensors:approve,
+  // which the review step checks.
+  const canPair = useHasPermission(Permission.SensorsPair)
+  const [repairOpen, setRepairOpen] = useState(false)
   const [tab, setTab] = useState<DrawerTab>('overview')
   const activityRef = useRef<EntityActivityHandle>(null)
   const [shownId, setShownId] = useState<string | null>(null)
@@ -1058,7 +1064,7 @@ export function SensorDetailSheet({
     }
   }
 
-  const can = sensorActions(sensor, { write: canWrite, revoke: canRevoke, delete: canDelete })
+  const can = sensorActions(sensor, actionPerms)
   const oneShot = isOneShotSensor(sensor)
   const role =
     sensorRoleOf(sensor.type) === 'collector'
@@ -1099,6 +1105,13 @@ export function SensorDetailSheet({
       icon: Power,
       onSelect: () => onActivate(sensor),
     })
+  // A shared or revoked sensor cannot be re-paired (the API answers 404).
+  if (canPair && sensor.status !== 'revoked' && !isOneShotSensor(sensor))
+    menu.push({
+      label: t('sensors.repair.menu'),
+      icon: RotateCcwKey,
+      onSelect: () => setRepairOpen(true),
+    })
   const offerRevoke = can.revoke && !!onRevoke
   if (offerRevoke)
     menu.push({
@@ -1121,137 +1134,146 @@ export function SensorDetailSheet({
     })
 
   return (
-    <DetailSheet
-      open={open}
-      onOpenChange={onOpenChange}
-      panel={tab}
-      header={
-        <DetailHeader
-          title={sensor.name}
-          badges={
-            <>
-              <SensorStateBadge sensor={sensor} now={now} thresholds={thresholds} />
-              <ProtocolTag sensor={sensor} />
-              <ConfigHealthTag health={sensor.config_health} />
-              <SensorPostureTag
-                sensor={sensor}
-                onOpen={() => {
-                  setTab('overview')
-                  // After the overview has rendered.
-                  requestAnimationFrame(() =>
-                    scrollDetailBodyTo(document.getElementById(SENSOR_POSTURE_SECTION_ID))
-                  )
-                }}
-              />
-            </>
-          }
-          meta={subline}
-          menu={menu}
-          onClose={() => onOpenChange(false)}
-          actions={
-            <>
-              {canWrite && (
-                <Button size="sm" onClick={() => onEdit(sensor)}>
-                  <Pencil className="h-4 w-4" />
-                  {t('sensors.detail.edit', 'Edit')}
+    <>
+      <DetailSheet
+        open={open}
+        onOpenChange={onOpenChange}
+        panel={tab}
+        header={
+          <DetailHeader
+            title={sensor.name}
+            badges={
+              <>
+                <SensorStateBadge sensor={sensor} now={now} thresholds={thresholds} />
+                <ProtocolTag sensor={sensor} />
+                <ConfigHealthTag health={sensor.config_health} />
+                <SensorPostureTag
+                  sensor={sensor}
+                  onOpen={() => {
+                    setTab('overview')
+                    // After the overview has rendered.
+                    requestAnimationFrame(() =>
+                      scrollDetailBodyTo(document.getElementById(SENSOR_POSTURE_SECTION_ID))
+                    )
+                  }}
+                />
+              </>
+            }
+            meta={subline}
+            menu={menu}
+            onClose={() => onOpenChange(false)}
+            actions={
+              <>
+                {canWrite && (
+                  <Button size="sm" onClick={() => onEdit(sensor)}>
+                    <Pencil className="h-4 w-4" />
+                    {t('sensors.detail.edit', 'Edit')}
+                  </Button>
+                )}
+                <Button size="sm" variant="outline" onClick={() => setTab('config')}>
+                  <Terminal className="h-4 w-4" />
+                  {t('sensors.detail.action.install', 'Install command')}
                 </Button>
-              )}
-              <Button size="sm" variant="outline" onClick={() => setTab('config')}>
-                <Terminal className="h-4 w-4" />
-                {t('sensors.detail.action.install', 'Install command')}
-              </Button>
-              {!canWrite && (
-                <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                  <Lock className="h-3 w-3" aria-hidden />
-                  {t('sensors.detail.needsAdmin', 'Editing, keys and disabling need an admin')}
-                </span>
-              )}
-            </>
-          }
-        />
-      }
-      tabs={<DetailTabs tabs={tabs} value={tab} onValueChange={setTab} />}
-    >
-      {tab === 'overview' && (
-        <div className="space-y-5">
-          <HealthSummary
-            sensor={sensor}
-            issues={issues}
-            checks={checks}
-            canManage={canWrite}
-            canZones={canReadZones}
-            onAction={handleAction}
-            onActivity={() => activityRef.current?.open()}
+                {!canWrite && (
+                  <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                    <Lock className="h-3 w-3" aria-hidden />
+                    {t('sensors.detail.needsAdmin', 'Editing, keys and disabling need an admin')}
+                  </span>
+                )}
+              </>
+            }
           />
-
-          <SensorStats sensor={sensor} now={now} thresholds={thresholds} />
-
-          <DetailSections>
-            {(!oneShot || sensorToolRows(sensor).length > 0) && (
-              <ToolsAndCapacity sensor={sensor} now={now} thresholds={thresholds} />
-            )}
-            {(sensor.content?.length ?? 0) > 0 && (
-              <SensorContentSection sensor={sensor} now={now} canManage={canWrite} />
-            )}
-            {(sensor.control || hasHeartbeatHistory(heartbeatHistory)) && (
-              <SensorControlSection sensor={sensor} now={now} history={heartbeatHistory} />
-            )}
-            {sensor.load?.resources?.pressure && <HostPressureSection sensor={sensor} />}
-            {sensor.posture && <SensorPostureSection sensor={sensor} />}
-            {sensor.local_policy && <SensorLocalPolicySection sensor={sensor} />}
-            <SensorGrantSection sensorId={sensor.id} sensorType={sensor.type} />
-            {!oneShot && (
-              <SensorNetworkPathSection
-                sensorId={sensor.id}
-                capabilities={sensor.reported?.capabilities ?? null}
-              />
-            )}
-            <SensorRecentActivity ref={activityRef} sensorId={sensor.id} sensorName={sensor.name} />
-            <ConnectionAndIdentity
+        }
+        tabs={<DetailTabs tabs={tabs} value={tab} onValueChange={setTab} />}
+      >
+        {tab === 'overview' && (
+          <div className="space-y-5">
+            <HealthSummary
               sensor={sensor}
-              now={now}
-              channel={channel}
-              zoneNames={zoneNames}
-              onRotateKey={can.rotate ? () => onRegenerateKey(sensor) : undefined}
+              issues={issues}
+              checks={checks}
+              canManage={canWrite}
+              canZones={canReadZones}
+              onAction={handleAction}
+              onActivity={() => activityRef.current?.open()}
             />
-          </DetailSections>
-        </div>
-      )}
 
-      {tab === 'setup' && <SensorSetupTab sensor={sensor} />}
+            <SensorStats sensor={sensor} now={now} thresholds={thresholds} />
 
-      {tab === 'jobs' && <SensorJobs sensor={sensor} />}
-
-      {tab === 'manifest' && <SensorManifestTab sensor={sensor} now={now} />}
-
-      {tab === 'tools' && canWrite && <SensorToolSettingsSection sensorId={sensor.id} />}
-
-      {tab === 'config' && (
-        <div className="space-y-3">
-          <p className="text-sm text-muted-foreground">
-            {t(
-              'sensors.detail.configIntro',
-              'Run one of these on the host that should scan. The key is shown only when it is issued, so the commands read it from {env}.',
-              { env: '\u0000' }
-            )
-              .split('\u0000')
-              .flatMap((part, i) =>
-                i === 0
-                  ? [part]
-                  : [
-                      <span key="env" className="font-mono">
-                        OPENCTEM_API_KEY
-                      </span>,
-                      part,
-                    ]
+            <DetailSections>
+              {(!oneShot || sensorToolRows(sensor).length > 0) && (
+                <ToolsAndCapacity sensor={sensor} now={now} thresholds={thresholds} />
               )}
-            {canWrite
-              ? ` ${t('sensors.detail.configRotate', 'Rotate the key (⋯ menu) to get a new one.')}`
-              : ''}
-          </p>
-          <SensorInstallSnippets sensorId={sensor.id} />
-        </div>
+              {(sensor.content?.length ?? 0) > 0 && (
+                <SensorContentSection sensor={sensor} now={now} canManage={canWrite} />
+              )}
+              {(sensor.control || hasHeartbeatHistory(heartbeatHistory)) && (
+                <SensorControlSection sensor={sensor} now={now} history={heartbeatHistory} />
+              )}
+              {sensor.load?.resources?.pressure && <HostPressureSection sensor={sensor} />}
+              {sensor.posture && <SensorPostureSection sensor={sensor} />}
+              {sensor.local_policy && <SensorLocalPolicySection sensor={sensor} />}
+              <SensorGrantSection sensorId={sensor.id} sensorType={sensor.type} />
+              {!oneShot && (
+                <SensorNetworkPathSection
+                  sensorId={sensor.id}
+                  capabilities={sensor.reported?.capabilities ?? null}
+                />
+              )}
+              <SensorRecentActivity
+                ref={activityRef}
+                sensorId={sensor.id}
+                sensorName={sensor.name}
+              />
+              <ConnectionAndIdentity
+                sensor={sensor}
+                now={now}
+                channel={channel}
+                zoneNames={zoneNames}
+                onRotateKey={can.rotate ? () => onRegenerateKey(sensor) : undefined}
+              />
+            </DetailSections>
+          </div>
+        )}
+
+        {tab === 'setup' && <SensorSetupTab sensor={sensor} />}
+
+        {tab === 'jobs' && <SensorJobs sensor={sensor} />}
+
+        {tab === 'manifest' && <SensorManifestTab sensor={sensor} now={now} />}
+
+        {tab === 'tools' && canWrite && <SensorToolSettingsSection sensorId={sensor.id} />}
+
+        {tab === 'config' && (
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              {t(
+                'sensors.detail.configIntro',
+                'Run one of these on the host that should scan. The key is shown only when it is issued, so the commands read it from {env}.',
+                { env: '\u0000' }
+              )
+                .split('\u0000')
+                .flatMap((part, i) =>
+                  i === 0
+                    ? [part]
+                    : [
+                        <span key="env" className="font-mono">
+                          OPENCTEM_API_KEY
+                        </span>,
+                        part,
+                      ]
+                )}
+              {canWrite
+                ? ` ${t('sensors.detail.configRotate', 'Rotate the key (⋯ menu) to get a new one.')}`
+                : ''}
+            </p>
+            <SensorInstallSnippets sensorId={sensor.id} />
+          </div>
+        )}
+      </DetailSheet>
+      {canPair && (
+        <RepairSensorDialog sensor={sensor} open={repairOpen} onOpenChange={setRepairOpen} />
       )}
-    </DetailSheet>
+    </>
   )
 }

@@ -66,6 +66,7 @@ export function reasonKeyOf(reason: string | undefined): string {
     case 'organization_only':
     case 'no_receipts':
     case 'no_certificates':
+    case 'no_findings':
     case 'no_closures':
     case 'no_active_campaigns':
     case 'too_few_closed':
@@ -170,6 +171,8 @@ function toResult(v: WidgetValue, spec: WidgetSpec | undefined): WidgetResult | 
         delta: v.scalar.delta ?? null,
         series: v.scalar.series,
         target: v.target ? { op: v.target.op, value: v.target.value, source: 'widget' } : null,
+        of: typeof v.scalar.of === 'number' ? v.scalar.of : null,
+        of_href: safeInternalHref(v.scalar.of_drill) ?? null,
       }
       return out
     }
@@ -406,10 +409,31 @@ function isEmpty(r: WidgetResult): boolean {
     case 'matrix':
       return r.rows.length === 0 || r.cols.length === 0
     case 'time_series':
-      return r.series.length === 0
+      // Every bucket of every line at zero draws empty axes: nothing to show.
+      return r.series.length === 0 || r.series.every((l) => l.points.every((p) => !p.v))
     default:
       return false
   }
+}
+
+/**
+ * Reasons that mean "nothing has come in yet" (no finding, no tracked asset,
+ * no certificate, no receipt in the scope): the widget shows the one compact
+ * empty state with its next step, never a figure, an axis or a "—".
+ */
+export const NOTHING_YET_REASONS: ReadonlySet<string> = new Set([
+  'no_findings',
+  'no_tracked_assets',
+  'no_certificates',
+  'no_receipts',
+  // Closure quality and campaign progress (their own pull request).
+  'no_closures',
+  'no_active_campaigns',
+])
+
+/** True when the widget's model is the compact empty state (it needs one row). */
+export function isNothingYet(model: Pick<WidgetModel, 'state'>): boolean {
+  return model.state === 'no_data_yet'
 }
 
 /**
@@ -429,6 +453,8 @@ export function widgetModel(
     case 'building':
       return { state: 'no_data_yet', reasonKey: reasonKeyOf(v.reason ?? 'facts_building') }
     case 'not_measured':
+      if (v.reason && NOTHING_YET_REASONS.has(v.reason))
+        return { state: 'no_data_yet', reasonKey: reasonKeyOf(v.reason), viz, drill }
       return {
         state: 'not_measured',
         reasonKey: reasonKeyOf(v.reason),

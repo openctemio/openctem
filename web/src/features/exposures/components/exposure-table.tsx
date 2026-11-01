@@ -3,11 +3,12 @@
 import type { ColumnDef } from '@tanstack/react-table'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { DataTableRowActions, RelativeTime, SeverityBadge } from '@/features/shared'
+import { DataTableRowActions, RelativeTime } from '@/features/shared'
 import { ExposureThreatPills } from './exposure-enrichment'
 import { APPROVE_REQUIRED_REASON } from './exposure-state-actions'
 import { ExposureStateBadge } from './exposure-state-badge'
 import { PendingDispositionBadge } from './pending-disposition'
+import { ExposureSeverityCell, ExposureSummaryLine } from './exposure-summary'
 import {
   Check,
   X,
@@ -25,6 +26,8 @@ import {
   Database,
   Settings,
   HelpCircle,
+  PlayCircle,
+  Gauge,
 } from 'lucide-react'
 import { EVENT_TYPE_CONFIG } from '@/lib/api/exposure-types'
 import type { ExposureEvent, ExposureEventType } from '@/lib/api/exposure-types'
@@ -76,9 +79,13 @@ export const EXPOSURE_EVENT_TYPE_LABELS: Record<ExposureEventType, string> = {
   email_security_weak: 'Weak email security',
   subdomain_takeover: 'Subdomain takeover',
   lookalike_domain: 'Lookalike domain',
+  third_party_script_added: 'New third-party script',
   identity_mfa_gap: 'MFA gap',
   identity_stale_principal: 'Stale identity',
   identity_overprivileged: 'Over-privileged identity',
+  web_interface_exposed: 'Web interface exposed',
+  mcp_server_exposed: 'MCP server exposed',
+  mail_server_blocklisted: 'Mail server blocklisted',
   custom: 'Custom',
 }
 
@@ -87,7 +94,12 @@ interface ExposureColumnHandlers {
   onAccept: (exposure: ExposureEvent) => void
   onMarkFalsePositive: (exposure: ExposureEvent) => void
   onReactivate: (exposure: ExposureEvent) => void
+  onStartProgress?: (exposure: ExposureEvent) => void
+  /** Present when the viewer may change severities (findings:severity and exposures triage). */
+  onChangeSeverity?: (exposure: ExposureEvent) => void
   onViewDetails: (exposure: ExposureEvent) => void
+  /** Labels of the row actions this table adds, in the viewer's language. */
+  labels?: { startProgress: string; stopProgress: string; changeSeverity: string }
   /**
    * Whether the user holds findings:approve. Accept risk and False positive
    * need it (api#675); without it they show disabled, with the reason.
@@ -150,9 +162,7 @@ export function getExposureColumns(handlers: ExposureColumnHandlers): ColumnDef<
                 <p className="line-clamp-1 font-medium">{exposure.title}</p>
                 <ExposureThreatPills exposure={exposure} />
               </div>
-              {exposure.description && (
-                <p className="line-clamp-1 text-xs text-muted-foreground">{exposure.description}</p>
-              )}
+              <ExposureSummaryLine exposure={exposure} />
             </div>
           </div>
         )
@@ -162,7 +172,7 @@ export function getExposureColumns(handlers: ExposureColumnHandlers): ColumnDef<
       accessorKey: 'severity',
       header: 'Severity',
       enableSorting: false,
-      cell: ({ row }) => <SeverityBadge severity={row.original.severity} />,
+      cell: ({ row }) => <ExposureSeverityCell exposure={row.original} />,
     },
     {
       accessorKey: 'state',
@@ -206,13 +216,25 @@ export function getExposureColumns(handlers: ExposureColumnHandlers): ColumnDef<
                   icon: Eye,
                   onClick: () => handlers.onViewDetails(exposure),
                 },
-                ...(exposure.state === 'active'
+                ...(exposure.state === 'active' || exposure.state === 'in_progress'
                   ? [
+                      exposure.state === 'active'
+                        ? {
+                            label: handlers.labels?.startProgress ?? 'Start progress',
+                            icon: PlayCircle,
+                            onClick: () => handlers.onStartProgress?.(exposure),
+                            separatorBefore: true,
+                          }
+                        : {
+                            label: handlers.labels?.stopProgress ?? 'Stop progress',
+                            icon: RefreshCw,
+                            onClick: () => handlers.onReactivate(exposure),
+                            separatorBefore: true,
+                          },
                       {
                         label: 'Mark resolved',
                         icon: Check,
                         onClick: () => handlers.onResolve(exposure),
-                        separatorBefore: true,
                       },
                       {
                         label: 'Accept risk',
@@ -237,6 +259,16 @@ export function getExposureColumns(handlers: ExposureColumnHandlers): ColumnDef<
                         separatorBefore: true,
                       },
                     ]),
+                ...(handlers.onChangeSeverity
+                  ? [
+                      {
+                        label: handlers.labels?.changeSeverity ?? 'Change severity',
+                        icon: Gauge,
+                        onClick: () => handlers.onChangeSeverity?.(exposure),
+                        separatorBefore: true,
+                      },
+                    ]
+                  : []),
               ]}
             />
           </div>

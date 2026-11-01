@@ -43,7 +43,7 @@ var Features = []Feature{
 		ID: "exposures", Title: "Exposures and leaked credentials",
 		Description: "Non-vulnerability exposures (misconfiguration, identity, leaked credentials, lookalike domains) and the leaked-credential register.",
 		Stages:      []string{StageDiscovery, StagePrioritization},
-		Registers:   []string{"registerExposureRoutes", "registerCredentialRoutes", "registerCTEMIDRoutes"},
+		Registers:   []string{"registerExposureRoutes", "registerExposureItemRoutes", "registerCredentialRoutes", "registerCTEMIDRoutes"},
 	},
 	{
 		ID: "assets", Title: "Assets and inventory",
@@ -62,7 +62,7 @@ var Features = []Feature{
 		Description: "External attack surface management: discovery candidates, verified domains, sweeps, attack paths and the scoping summary.",
 		Stages:      []string{StageScoping, StageDiscovery, StagePrioritization},
 		Registers: []string{
-			"registerAttackSurfaceRoutes", "registerEASMRoutes", "registerEASMSettingsRoutes", "registerAssetWebEvidenceRoutes", "registerEASMNetworkSeedRoutes", "registerEASMLookalikeRoutes",
+			"registerAttackSurfaceRoutes", "registerEASMRoutes", "registerEASMSettingsRoutes", "registerAssetWebEvidenceRoutes", "registerEASMNetworkSeedRoutes", "registerEASMLookalikeRoutes", "registerPageMonitorRoutes",
 			"registerEASMVerifiedDomainRoutes", "registerScopingRoutes",
 		},
 	},
@@ -108,7 +108,7 @@ var Features = []Feature{
 		Stages:      []string{StageDiscovery, StageValidation},
 		Registers: []string{
 			"registerScanRoutes", "registerScanGovernanceRoutes", "registerScanApprovalRoutes", "registerScanWorkflowRoutes", "registerScanProfileRoutes", "registerScanWindowRoutes",
-			"registerScannerTemplateRoutes", "registerContentSourceRoutes", "registerContentSourceWebhookRoute", "registerContentPackRoutes", "registerPlatformContentPackRoutes", "registerContentCatalogRoutes", "registerWordlistRoutes",
+			"registerScannerTemplateRoutes", "registerContentSourceRoutes", "registerContentSourceWebhookRoute", "registerContentPackRoutes", "registerPlatformContentPackRoutes", "registerContentCatalogRoutes", "registerWordlistRoutes", "registerContentRuleRoutes",
 			"registerToolRoutes", "registerToolCategoryRoutes", "registerCapabilityRoutes", "registerSecretStoreRoutes",
 			"registerPlatformScanningRoutes", "registerCommandRoutes",
 		},

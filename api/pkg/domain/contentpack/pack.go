@@ -71,6 +71,11 @@ const (
 	KindNucleiTemplates = "nuclei-templates"
 	KindSemgrepRules    = "semgrep-rules"
 	KindWordlist        = "wordlist"
+	// KindWebFingerprints and KindSecretRules are detection rule packs
+	// (docs/architecture/rule-packs.md); the platform evaluates them, no
+	// sensor receives them.
+	KindWebFingerprints = "web-fingerprints"
+	KindSecretRules     = "secret-rules"
 )
 
 var (
@@ -96,7 +101,7 @@ var (
 // IsKnownKind reports whether the platform lints kind.
 func IsKnownKind(kind string) bool {
 	switch kind {
-	case KindNucleiTemplates, KindSemgrepRules, KindWordlist:
+	case KindNucleiTemplates, KindSemgrepRules, KindWordlist, KindWebFingerprints, KindSecretRules:
 		return true
 	}
 	return false
@@ -113,7 +118,18 @@ func ValidateKind(kind string) error {
 	if IsKnownKind(kind) || IsNamespacedKind(kind) {
 		return nil
 	}
-	return fmt.Errorf("%w %q (known: %s, %s, %s; or x-<namespace>/<kind>)", ErrUnknownKind, kind, KindNucleiTemplates, KindSemgrepRules, KindWordlist)
+	return fmt.Errorf("%w %q (known: %s, %s, %s, %s, %s; or x-<namespace>/<kind>)", ErrUnknownKind, kind,
+		KindNucleiTemplates, KindSemgrepRules, KindWordlist, KindWebFingerprints, KindSecretRules)
+}
+
+// ValidateTenantKind refuses the kinds an organization does not upload as
+// a pack: its detection rules are rows it edits (docs/architecture/rule-packs.md),
+// and only platform rule packs are evaluated.
+func ValidateTenantKind(kind string) error {
+	if kind == KindWebFingerprints || kind == KindSecretRules {
+		return fmt.Errorf("%w: organization detection rules are managed under Scanning > Detection rules, not uploaded as a pack", shared.ErrValidation)
+	}
+	return nil
 }
 
 // ValidateName checks a pack name: lower case, digits, '.', '_', '-'.

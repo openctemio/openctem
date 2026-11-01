@@ -5,6 +5,7 @@ import useSWR from 'swr'
 import { get, post, put, del } from '@/lib/api/client'
 import { endpoints } from '@/lib/api/endpoints'
 import { primeView, type ViewResponse } from '@/lib/api/view-prime'
+import { isCoverageCause, type CoverageCause } from '../lib/coverage-cause'
 import { useTenant } from '@/context/tenant-provider'
 import { usePermissions, Permission } from '@/lib/permissions'
 import type { RiskRequest } from '../lib/risk-impact'
@@ -92,6 +93,8 @@ export interface AssetSearchFilters {
   resolution?: string
   /** covered / uncovered by the coverage ledger: a successful scan in the last 30 days or not. */
   coverage?: 'covered' | 'uncovered'
+  /** Uncovered assets whose coverage gap has this cause (the dashboard's coverage causes). */
+  coverageCause?: CoverageCause
   /** Assets using any of these technologies (normalised names, RFC-112). */
   technologies?: string[]
   /** Assets with a technology in any of these categories (RFC-112). */
@@ -123,6 +126,10 @@ export interface AssetSearchFilters {
   // Triage (research/124): scope status (in_scope, not_covered, excluded,
   // internal), the attribution rules behind the asset, first seen since.
   scopeStatus?: string[]
+  /** The derived monitoring state (monitored, not_monitored, pending_decision, ...). */
+  monitoringState?: string[]
+  /** Only primary assets: the organization's root domains (the API reads primary=true only). */
+  isPrimary?: boolean
   discoveredBy?: string[]
   firstSeenAfter?: string
   /** Ask each row's triage (attribution and the scan gate's answer). */
@@ -171,6 +178,8 @@ interface BackendAsset {
     scan_blocked_by?: string
     scan_refusal_code?: string
   }
+  /** The derived monitoring state (with_triage only). */
+  monitoring_state?: string
   risk_score: number // 0-100
   technologies?: { name: string; version?: string; category: string }[]
   risk_scored_at?: string // absent = never scored (with risk_score_pending present)
@@ -229,6 +238,7 @@ function transformAsset(backend: BackendAsset): Asset {
     systemTags: backend.system_tags,
     programOnly: backend.program_only ?? undefined,
     edge: backend.edge,
+    monitoringState: backend.monitoring_state || undefined,
     triage: backend.triage
       ? {
           attributionState: backend.triage.attribution_state,
@@ -497,6 +507,9 @@ export function buildAssetQueryParams(filters?: AssetSearchFilters): Record<stri
   // Crown jewel
   if (filters.isCrownJewel !== undefined) params.is_crown_jewel = String(filters.isCrownJewel)
 
+  // Primary assets (root domains); there is no "not primary" filter
+  if (filters.isPrimary) params.primary = 'true'
+
   // Bug-bounty program assets
   if (filters.programAssets) params.program_assets = filters.programAssets
   if (filters.freshness === 'stale' || filters.freshness === 'never')
@@ -505,6 +518,8 @@ export function buildAssetQueryParams(filters?: AssetSearchFilters): Record<stri
     params.resolution = filters.resolution
   if (filters.coverage === 'covered' || filters.coverage === 'uncovered')
     params.coverage = filters.coverage
+  if (filters.coverageCause && isCoverageCause(filters.coverageCause))
+    params.coverage_cause = filters.coverageCause
   if (filters.technologies?.length) params.technology = filters.technologies.join(',')
   if (filters.technologyCategories?.length)
     params.technology_category = filters.technologyCategories.join(',')
@@ -527,6 +542,7 @@ export function buildAssetQueryParams(filters?: AssetSearchFilters): Record<stri
   if (filters.expiresBefore) params.expires_before = filters.expiresBefore
   if (filters.attribution?.length) params.attribution = filters.attribution.join(',')
   if (filters.scopeStatus?.length) params.scope_status = filters.scopeStatus.join(',')
+  if (filters.monitoringState?.length) params.monitoring_state = filters.monitoringState.join(',')
   if (filters.discoveredBy?.length) params.discovered_by = filters.discoveredBy.join(',')
   if (filters.firstSeenAfter) params.first_seen_after = filters.firstSeenAfter
   if (filters.withTriage) params.with_triage = 'true'

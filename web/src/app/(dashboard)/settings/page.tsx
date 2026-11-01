@@ -5,7 +5,7 @@ import Link from '@/components/link'
 import { Main } from '@/components/layout'
 import { PageHeader, SettingsSection, PageStack, ListToolbar } from '@/features/shared'
 import { useTranslation } from '@/context/i18n-provider'
-import { useSettingsNav } from '@/hooks/use-settings-nav'
+import { settingsSections, useSettingsNav } from '@/hooks/use-settings-nav'
 import { searchSettings } from '@/config/settings-search'
 import { SecurityScoreCard } from '@/features/security-overview/components/security-score-card'
 
@@ -90,37 +90,47 @@ export default function SettingsIndexPage() {
             <SecurityScoreCard enabled={canSeeOverview} />
             {groups.map((group) => (
               <SettingsSection key={group.id} id={`settings-${group.id}`} title={group.label}>
-                <ul className="grid grid-cols-1 gap-x-6 gap-y-1 sm:grid-cols-2 xl:grid-cols-3">
-                  {group.items.map((item) => {
-                    const Icon = item.icon
-                    return (
-                      <li key={item.id}>
-                        <Link
-                          href={item.url}
-                          className="flex items-start gap-3 rounded-lg px-2 py-2 hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:outline-none"
-                        >
-                          <Icon
-                            className="mt-0.5 size-4 shrink-0 text-muted-foreground"
-                            aria-hidden
-                          />
-                          <span className="min-w-0">
-                            <span className="block text-sm font-medium">
-                              {item.label}
-                              {item.badge && (
-                                <span className="ms-2 text-xs font-normal text-muted-foreground">
-                                  {t('settings.badge.soon', 'Soon')}
+                <div className="space-y-3">
+                  {settingsSections(group.items).map((chunk) => (
+                    <div key={chunk.section ?? ''}>
+                      {chunk.label && (
+                        <h3 className="mb-1 px-2 text-xs font-medium text-muted-foreground">
+                          {chunk.label}
+                        </h3>
+                      )}
+                      {/* Names only: the one-line descriptions are found by
+                          search above and shown on hover, so the index stays
+                          short. */}
+                      <ul className="grid grid-cols-1 gap-x-6 sm:grid-cols-2 xl:grid-cols-3">
+                        {chunk.items.map((item) => {
+                          const Icon = item.icon
+                          return (
+                            <li key={item.id}>
+                              <Link
+                                href={item.url}
+                                title={item.desc}
+                                className="flex min-h-10 items-center gap-3 rounded-lg px-2 py-2 hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:outline-none"
+                              >
+                                <Icon
+                                  className="size-4 shrink-0 text-muted-foreground"
+                                  aria-hidden
+                                />
+                                <span className="min-w-0 truncate text-sm font-medium">
+                                  {item.label}
                                 </span>
-                              )}
-                            </span>
-                            <span className="line-clamp-2 text-xs text-muted-foreground">
-                              {item.desc}
-                            </span>
-                          </span>
-                        </Link>
-                      </li>
-                    )
-                  })}
-                </ul>
+                                {item.badge && (
+                                  <span className="text-xs font-normal text-muted-foreground">
+                                    {t('settings.badge.soon', 'Soon')}
+                                  </span>
+                                )}
+                              </Link>
+                            </li>
+                          )
+                        })}
+                      </ul>
+                    </div>
+                  ))}
+                </div>
               </SettingsSection>
             ))}
           </PageStack>
