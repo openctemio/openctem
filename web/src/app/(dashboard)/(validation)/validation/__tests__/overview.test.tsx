@@ -141,25 +141,43 @@ describe('Validation overview', () => {
     state.campaigns = [{ status: 'in_progress' }, { status: 'completed' }, { status: 'planning' }]
   })
 
-  it('shows P0/P1 coverage only, with its definition link', () => {
+  it('puts P0/P1 coverage first in the strip, with its classes and definition link', () => {
     render(<ValidationOverviewPage />)
-    expect(screen.getByText('68%')).toBeInTheDocument()
-    expect(screen.getByText('34 of 50 closed P0 and P1 findings')).toBeInTheDocument()
-    expect(screen.queryByText('P2')).toBeNull()
-    expect(screen.getByRole('link', { name: 'How coverage is measured' })).toHaveAttribute(
+    const tile = screen.getByRole('link', { name: /P0\/P1 validation coverage/ })
+    expect(tile).toHaveAttribute('href', '/findings?state=closed&priority_class=P0%2CP1')
+    expect(tile).toHaveTextContent('68%')
+    expect(tile).toHaveTextContent('P0 9 of 12')
+    expect(tile).toHaveTextContent('P1 25 of 38')
+    expect(tile).not.toHaveTextContent('P2')
+    expect(screen.getByRole('link', { name: /How coverage is measured/ })).toHaveAttribute(
       'href',
       'https://docs.openctem.io/user-guide/07-validation/#validation-overview'
     )
   })
 
-  it('links every outcome to its findings list and keeps a zero neutral', () => {
+  it('shows a dash, not 0%, when no P0/P1 finding is closed', () => {
+    const saved = state.coverage
+    state.coverage = { p0_p1_total: 0, p0_p1_validated: 0, by_priority: [] }
+    render(<ValidationOverviewPage />)
+    const tile = screen.getByRole('link', { name: /P0\/P1 validation coverage/ })
+    expect(tile).toHaveTextContent('–')
+    expect(tile).not.toHaveTextContent('0%')
+    state.coverage = saved
+  })
+
+  it('links every outcome tile to its findings list and keeps a zero neutral', () => {
     render(<ValidationOverviewPage />)
     const still = screen.getByRole('link', { name: /Still reproduces/ })
     expect(still).toHaveAttribute('href', '/findings?state=open&validation=reproducible')
-    expect(within(still).getByText('2')).toHaveClass('text-destructive')
-    const reopened = screen.getByRole('link', { name: /Reopened in the last 30 days/ })
-    expect(reopened).toHaveAttribute('href', '/findings?state=all&last_reopened_at_gte=-P30D')
-    expect(within(reopened).getByText('0')).not.toHaveClass('text-warning')
+    expect(still).toHaveTextContent('2')
+    expect(screen.getByRole('link', { name: /Validated, last 30 days/ })).toHaveAttribute(
+      'href',
+      '/findings?state=fixed&validation=not_reproducible&resolved_at_gte=-P30D'
+    )
+    expect(screen.getByRole('link', { name: /Reopened, last 30 days/ })).toHaveAttribute(
+      'href',
+      '/findings?state=all&last_reopened_at_gte=-P30D'
+    )
   })
 
   it('with pentest off: no pentest request, its rows leave, awaiting counts pentest findings too', () => {

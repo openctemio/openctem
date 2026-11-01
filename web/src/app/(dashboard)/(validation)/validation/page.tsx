@@ -1,7 +1,13 @@
 'use client'
 
 import { Main } from '@/components/layout'
-import { PageHeader, PageStack } from '@/features/shared'
+import { ExternalLink } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { MetricStrip, PageHeader, PageStack, type MetricStripItem } from '@/features/shared'
+import { useDocsHref } from '@/context/brand-provider'
+import { DOCS } from '@/lib/docs-links'
+import { useFormatList } from '@/lib/format-list'
+import { useValidationCoverage } from '@/features/validation/api/use-validation-coverage'
 import { useTranslation } from '@/context/i18n-provider'
 import { useModuleEnabled, useTenantModules } from '@/features/integrations/api/use-tenant-modules'
 import {
@@ -13,6 +19,7 @@ import { useFindingsCount } from '@/features/findings/api/use-findings-count'
 import { useReadyToCloseCount } from '@/features/closure-review/api'
 import { useHasPermission, Permission } from '@/lib/permissions'
 import {
+  CLOSED_P0_P1,
   REOPENED_RECENTLY,
   STILL_REPRODUCES,
   VALIDATED_RECENTLY,
@@ -21,17 +28,16 @@ import {
   switchedOffModules,
 } from '@/features/validation/lib/overview-queries'
 import {
-  CoverageSummary,
   ModulesOffHint,
-  OutcomesList,
   WaitingForYou,
   type StartLink,
   type WaitingItem,
 } from '@/features/validation/components/validation-overview'
 
 /**
- * Validation › Overview (research/370): what is waiting for me, how much of
- * the closed P0/P1 work is proven, and what the latest re-checks said.
+ * Validation › Overview (research/370): how much of the closed P0/P1 work is
+ * proven and what the latest re-checks said (one strip), then what is
+ * waiting for the viewer.
  *
  * Every figure is a findings list (or the coverage KPI, the definition the
  * CTEM cycle's close gate uses) read through the ordinary API, so the server
@@ -41,6 +47,8 @@ import {
  */
 export default function ValidationOverviewPage() {
   const { t } = useTranslation()
+  const docsHref = useDocsHref()
+  const formatList = useFormatList()
   const canPentest = useHasPermission(Permission.PentestRead)
   const canVerify = useHasPermission(Permission.FindingsVerify)
   const canManageModules = useHasPermission(Permission.TeamUpdate)
@@ -67,6 +75,74 @@ export default function ValidationOverviewPage() {
   const validated = useFindingsCount({ extra: VALIDATED_RECENTLY })
   const stillReproduces = useFindingsCount({ extra: STILL_REPRODUCES })
   const reopened = useFindingsCount({ extra: REOPENED_RECENTLY })
+  const {
+    data: coverage,
+    error: coverageError,
+    isLoading: coverageLoading,
+  } = useValidationCoverage()
+
+  const covTotal = coverage?.p0_p1_total ?? 0
+  const covValidated = coverage?.p0_p1_validated ?? 0
+  const share = (v: number, n: number) => (n > 0 ? Math.round((v / n) * 100) : 0)
+  const classes = (coverage?.by_priority ?? [])
+    .filter((r) => r.priority === 'P0' || r.priority === 'P1')
+    .map((r) =>
+      t('validation.overview.coverage.class', '{priority} {validated} of {total}', {
+        priority: r.priority,
+        validated: r.validated,
+        total: r.total,
+      })
+    )
+  const dash = (n: number | undefined) => (n === undefined ? '–' : n)
+  const metrics: MetricStripItem[] = [
+    {
+      key: 'coverage',
+      label: t('validation.overview.coverage.label', 'P0/P1 validation coverage'),
+      value: coverageError || covTotal === 0 ? '–' : `${share(covValidated, covTotal)}%`,
+      detail: coverageError
+        ? undefined
+        : covTotal === 0
+          ? t('validation.overview.coverage.none', 'No P0 or P1 finding closed yet')
+          : formatList(classes),
+      description: t(
+        'validation.overview.coverage.description',
+        'Closed P0 and P1 findings with validation evidence (pentest, scripted or sensor).'
+      ),
+      href: findingsHref(CLOSED_P0_P1),
+    },
+    {
+      key: 'validated',
+      label: t('validation.overview.outcomes.validated', 'Validated, last 30 days'),
+      value: dash(validated),
+      description: t(
+        'validation.overview.outcomes.validatedHint',
+        'Closed after a re-check stopped reproducing them.'
+      ),
+      href: findingsHref(VALIDATED_RECENTLY),
+    },
+    {
+      key: 'reproduces',
+      label: t('validation.overview.outcomes.reproduces', 'Still reproduces'),
+      value: dash(stillReproduces),
+      tone: 'danger',
+      description: t(
+        'validation.overview.outcomes.reproducesHint',
+        'Open, and the latest re-check reproduced them.'
+      ),
+      href: findingsHref(STILL_REPRODUCES),
+    },
+    {
+      key: 'reopened',
+      label: t('validation.overview.outcomes.reopened', 'Reopened, last 30 days'),
+      value: dash(reopened),
+      tone: 'warning',
+      description: t(
+        'validation.overview.outcomes.reopenedHint',
+        'Came back after they were closed.'
+      ),
+      href: findingsHref(REOPENED_RECENTLY),
+    },
+  ]
 
   const waiting: WaitingItem[] = [
     {
@@ -155,53 +231,16 @@ export default function ValidationOverviewPage() {
             'validation.overview.description',
             'Whether fixes hold and controls work, and what is waiting for you.'
           )}
-        />
+        >
+          <Button asChild variant="ghost" size="sm">
+            <a href={docsHref(DOCS.validation.overview)} target="_blank" rel="noopener noreferrer">
+              {t('validation.overview.coverage.howMeasured', 'How coverage is measured')}
+              <ExternalLink aria-hidden="true" />
+            </a>
+          </Button>
+        </PageHeader>
+        <MetricStrip items={metrics} loading={coverageLoading} />
         <WaitingForYou items={waiting} starts={starts} />
-        <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
-          <CoverageSummary />
-          <OutcomesList
-            items={[
-              {
-                key: 'validated',
-                count: validated,
-                title: t(
-                  'validation.overview.outcomes.validated.title',
-                  'Validated in the last 30 days'
-                ),
-                reason: t(
-                  'validation.overview.outcomes.validated.reason',
-                  'Closed after a re-check stopped reproducing them.'
-                ),
-                href: findingsHref(VALIDATED_RECENTLY),
-              },
-              {
-                key: 'reproduces',
-                count: stillReproduces,
-                tone: 'danger',
-                title: t('validation.overview.outcomes.reproduces.title', 'Still reproduces'),
-                reason: t(
-                  'validation.overview.outcomes.reproduces.reason',
-                  'Open, and the latest re-check reproduced them.'
-                ),
-                href: findingsHref(STILL_REPRODUCES),
-              },
-              {
-                key: 'reopened',
-                count: reopened,
-                tone: 'warning',
-                title: t(
-                  'validation.overview.outcomes.reopened.title',
-                  'Reopened in the last 30 days'
-                ),
-                reason: t(
-                  'validation.overview.outcomes.reopened.reason',
-                  'Came back after they were closed.'
-                ),
-                href: findingsHref(REOPENED_RECENTLY),
-              },
-            ]}
-          />
-        </div>
         <ModulesOffHint modules={off} />
       </PageStack>
     </Main>

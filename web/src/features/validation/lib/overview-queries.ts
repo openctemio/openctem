@@ -63,3 +63,9 @@ export function switchedOffModules(
   if (loading || enabledIds.length === 0) return []
   return VALIDATION_MODULES.filter((m) => !enabledIds.includes(m) && !notEntitledIds.includes(m))
 }
+
+/**
+ * Closed P0 and P1 findings: the coverage figure's denominator (closed =
+ * fixed or dispositioned, the statuses the coverage query counts).
+ */
+export const CLOSED_P0_P1: FindingsQuery = { state: 'closed', priority_class: 'P0,P1' }
