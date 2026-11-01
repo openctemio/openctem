@@ -2,7 +2,8 @@ package sensorpairing_test
 
 // The grant a pairing approval creates (RFC-052 §4.5, §4.6, §5): the chosen
 // profile at trust level New, in the approval's transaction; the profile an
-// expectation named; legacy-broad never; a re-paired sensor back to New.
+// expectation named; legacy-broad never; a re-paired sensor keeps its grant
+// and goes back to New.
 
 import (
 	"context"
@@ -70,11 +71,14 @@ func TestPairing_ApprovalCreatesGrant_DB(t *testing.T) {
 	f.start(second, "", st.Identity.SensorID)
 	f.reveal(second)
 	rid, _ := shared.IDFromString(second.resp.PairingID)
-	if _, err := f.svc.Approve(ctx, a, rid, approve(a, second.resp.UserCode)); err != nil {
+	rin := approve(a, second.resp.UserCode)
+	rin.RepairSensorID = st.Identity.SensorID
+	rin.Profile = sensordom.ProfileCollector // ignored: a re-pair keeps the grant
+	if _, err := f.svc.Approve(ctx, a, rid, rin); err != nil {
 		t.Fatalf("re-pair approve: %v", err)
 	}
-	if g := f.grant(grants, a.TenantID, st.Identity.SensorID); g.TrustLevel != sensordom.TrustNew || g.Profile != sensordom.DefaultProfile {
-		t.Fatalf("grant after re-pair: %+v", g)
+	if g := f.grant(grants, a.TenantID, st.Identity.SensorID); g.TrustLevel != sensordom.TrustNew || g.Profile != sensordom.ProfileEASMExternal {
+		t.Fatalf("grant after re-pair (kept, trust New): %+v", g)
 	}
 
 	// Reverse mode: the expectation's profile applies when the approval

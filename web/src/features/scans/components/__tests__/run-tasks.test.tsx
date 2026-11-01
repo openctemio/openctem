@@ -309,7 +309,17 @@ describe('taskCoverageGapNote', () => {
         coverage_gaps: [{ host: 'api.example.com', reason: 'breaker_open' }],
         coverage_gaps_total: 1,
       })
-    ).toBe('Completed with 1 host not fully covered: api.example.com (stopped answering)')
+    ).toBe('Completed with 1 host not fully covered: api.example.com (failed every request)')
+    expect(
+      taskCoverageGapNote({
+        coverage_gaps: [
+          { host: 'api.example.com:443', reason: 'breaker_open', cause: 'http_reset' },
+        ],
+        coverage_gaps_total: 1,
+      })
+    ).toBe(
+      'Completed with 1 host not fully covered: api.example.com:443 (TLS answers, resets every HTTP request)'
+    )
     expect(
       taskCoverageGapNote({
         coverage_gaps: [
@@ -320,7 +330,7 @@ describe('taskCoverageGapNote', () => {
         coverage_gaps_total: 5,
       })
     ).toBe(
-      'Completed with 5 hosts not fully covered: a (kept rate-limiting the scan), b (blocked the scan), c (not fully covered), and 2 more'
+      'Completed with 5 hosts not fully covered: a (kept rate-limiting the scan), b (blocked by edge protection), c (not fully covered), and 2 more'
     )
     expect(
       taskCoverageGapNote({
@@ -353,8 +363,61 @@ describe('taskCoverageGapNote', () => {
     )
     expect(
       screen.getByText(
-        'Completed with 1 host not fully covered: api.example.com (blocked the scan)'
+        'Completed with 1 host not fully covered: api.example.com (blocked by edge protection)'
       )
     ).toBeInTheDocument()
+  })
+
+  it('names the edge protection and its vendor and links the fixes', () => {
+    expect(
+      taskCoverageGapNote({
+        coverage_gaps: [
+          { host: 'a.example.com', reason: 'blocked', edge: 'challenged', vendor: 'datadome' },
+          { host: 'b.example.com', reason: 'blocked', edge: 'blocked' },
+        ],
+        coverage_gaps_total: 2,
+      })
+    ).toBe(
+      'Completed with 2 hosts not fully covered: a.example.com (challenged by edge protection (datadome)), b.example.com (blocked by edge protection)'
+    )
+    fresh(
+      <RunTasksTable
+        runId="r1"
+        total={2}
+        tasks={[
+          {
+            id: 't1',
+            status: 'completed',
+            tool: 'nuclei',
+            targets: 2,
+            coverage_gaps: [
+              { host: 'a.example.com', reason: 'blocked', edge: 'blocked', vendor: 'datadome' },
+            ],
+            coverage_gaps_total: 1,
+          },
+          {
+            id: 't2',
+            status: 'completed',
+            tool: 'nuclei',
+            targets: 1,
+            coverage_gaps: [{ host: 'b.example.com', reason: 'breaker_open' }],
+            coverage_gaps_total: 1,
+          },
+        ]}
+      />
+    )
+    const rows = within(screen.getByRole('table')).getAllByRole('row')
+    expect(within(rows[1]).getByText(/blocked by edge protection \(datadome\)/)).toBeInTheDocument()
+    expect(
+      within(rows[1])
+        .getAllByRole('link')
+        .map((a) => a.getAttribute('href'))
+    ).toEqual([
+      '/settings/scanning/proxies#scanner-addresses',
+      '/settings/scanning/proxies',
+      '/settings/scanning/tool-defaults',
+    ])
+    // A gap that is not an edge answer or a rate limit has no fix links.
+    expect(within(rows[2]).queryByText('How to fix')).not.toBeInTheDocument()
   })
 })

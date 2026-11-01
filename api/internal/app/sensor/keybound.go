@@ -17,9 +17,10 @@ import (
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
-
+	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/sensorsig"
 )
 
@@ -328,5 +329,48 @@ func (s *SensorService) RevokeSigningKey(ctx context.Context, actx auditapp.Audi
 	s.logAudit(ctx, actx, auditapp.NewSuccessEvent(audit.ActionSensorKeyRevoked, audit.ResourceTypeSensor, sensorID.String()).
 		WithResourceName(a.Name).WithMessage("Revoked a signing key of sensor "+a.Name).
 		WithSeverity(audit.SeverityHigh).WithMetadata("key_id", keyID.String()))
+	s.releaseIfKeyless(ctx, a, actx)
 	return nil
+}
+
+// releaseIfKeyless takes back the leased commands of a key-bound sensor
+// that has no active key left (its last key was just revoked): nothing can
+// finish them, so routed scan work is re-queued now rather than when the
+// lease runs out.
+func (s *SensorService) releaseIfKeyless(ctx context.Context, a *sensordom.Sensor, actx auditapp.AuditContext) {
+	if s.holders == nil || a.TenantID == nil || a.AuthKind != sensordom.AuthKindKeyBound {
+		return
+	}
+	keys, err := s.signingKeys.ListBySensor(ctx, *a.TenantID, a.ID)
+	if err != nil {
+		s.logger.Warn("revoked key: list the sensor's keys", "sensor_id", a.ID.String(), "error", logger.SanitizeError(err))
+		return
+	}
+	for _, k := range keys {
+		if k.Status == sensordom.SigningKeyActive {
+			return
+		}
+	}
+	released, err := s.holders.ReleaseHeldBySensor(ctx, *a.TenantID, a.ID,
+		commanddom.SensorKeyReplacedRequeuedMessage, commanddom.SensorKeyReplacedFailedMessage)
+	if err != nil {
+		s.logger.Error("revoked key: release the sensor's leased commands; they wait for their lease to expire",
+			"sensor_id", a.ID.String(), "error", logger.SanitizeError(err))
+		return
+	}
+	if len(released) == 0 {
+		return
+	}
+	var requeued, failed []string
+	for _, rc := range released {
+		if rc.Requeued {
+			requeued = append(requeued, rc.ID.String())
+		} else {
+			failed = append(failed, rc.ID.String())
+		}
+	}
+	if s.auditService != nil {
+		s.warnAudit(s.auditService.LogSensorCommandsReleased(ctx, actx, a.ID.String(), a.Name, "key revoked", requeued, failed),
+			"LogSensorCommandsReleased", a.ID.String())
+	}
 }

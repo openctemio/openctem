@@ -19,15 +19,24 @@ import { cn } from '@/lib/utils'
 import { useAttentionCount } from './use-attention-count'
 
 const GROUPS: readonly { id: AttentionReasonDef['group']; key: string; fallback: string }[] = [
+  { id: 'decide', key: 'assets.attention.group.decide', fallback: 'Scoping decisions' },
   { id: 'fix', key: 'assets.attention.group.fix', fallback: 'Fix on the asset' },
   { id: 'review', key: 'assets.attention.group.review', fallback: 'Review' },
 ]
 
-function ReasonRow({ reason }: { reason: AttentionReasonDef }) {
+function ReasonRow({
+  reason,
+  hideWhenEmpty = false,
+}: {
+  reason: AttentionReasonDef
+  /** Render nothing while loading or when the queue is empty (the inventory's cards). */
+  hideWhenEmpty?: boolean
+}) {
   const { t } = useTranslation()
   const count = useAttentionCount(reason.id)
   const Icon = reason.icon
   const empty = count === 0
+  if (hideWhenEmpty && !count) return null
   return (
     <li>
       <Link
@@ -96,5 +105,32 @@ export function AttentionReasons() {
         )
       })}
     </div>
+  )
+}
+
+/**
+ * The scoping decisions as cards above the inventory: one card per decision
+ * that has assets waiting (none while loading or when nothing waits), each
+ * opening its queue, where the monitoring control decides a row in one click.
+ * The same rows as the Needs attention landing.
+ */
+export function ScopingDecisionCards() {
+  const { t } = useTranslation()
+  const visible = useVisibleSectionTabs(ASSET_ATTENTION_REASONS).filter((r) => r.group === 'decide')
+  if (visible.length === 0) return null
+  return (
+    <section
+      aria-label={t('assets.attention.group.decide', 'Scoping decisions')}
+      data-testid="scoping-decision-cards"
+      // No card has anything waiting: the section takes no space in the
+      // page's gap rhythm.
+      className="[&:not(:has(li))]:hidden"
+    >
+      <ul className="grid grid-cols-1 gap-2 md:grid-cols-2">
+        {visible.map((r) => (
+          <ReasonRow key={r.id} reason={r} hideWhenEmpty />
+        ))}
+      </ul>
+    </section>
   )
 }

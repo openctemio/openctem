@@ -288,6 +288,19 @@ func (s *Service) exposureFlow(ctx context.Context, v *WidgetValue, win Window, 
 			out.IntakeReason = ReasonNoReceipts
 		}
 	}
+	// Nothing came in and nothing is held: a diagram of zeros would read as
+	// "all clear", so the flow is not measured until a finding exists in
+	// the scope or, on an organization read, a source sent something.
+	if out.Intake == nil || len(out.Intake.Sources) == 0 {
+		has, err := s.hasFindings(ctx, scope)
+		if err != nil {
+			return err
+		}
+		if !has {
+			v.State, v.Reason = StateNotMeasured, ReasonNoFindings
+			return nil
+		}
+	}
 	v.Flow = out
 	v.Drill = out.Actionable.Drill
 	return nil
