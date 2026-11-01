@@ -39,7 +39,7 @@ function relative(iso: string | null | undefined, locale: string): string {
 }
 
 function Criterion({ value }: { value?: string | null }) {
-  const { t, locale } = useTranslation()
+  const { t } = useTranslation()
   return value ? (
     <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs break-all">{value}</code>
   ) : (

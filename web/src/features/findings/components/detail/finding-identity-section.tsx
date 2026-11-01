@@ -19,7 +19,6 @@ import {
   DetailSection,
 } from '@/features/shared/components/detail-sheet'
 import { RelativeTime } from '@/features/shared/components/relative-time'
-import { dateFnsLocaleFor } from '@/lib/format-date'
 import { useFindingIdentity, type FindingIdentity } from '../../api/use-finding-identity'
 import { SectionLoadError, isLoadFailure } from './section-load-error'
 

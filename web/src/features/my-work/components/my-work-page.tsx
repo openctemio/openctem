@@ -20,7 +20,6 @@ import { EmptyState } from '@/features/shared/components/empty-state'
 import { ErrorState } from '@/features/shared/components/error-state'
 import { LockedChip } from '@/features/shared/components/filter-chips-row'
 import { RelativeTime } from '@/features/shared/components/relative-time'
-import { dateFnsLocaleFor } from '@/lib/format-date'
 import { useTranslation } from '@/context/i18n-provider'
 import { usePermissions } from '@/context/permission-provider'
 import { Permission } from '@/lib/permissions'
@@ -73,7 +72,7 @@ const TAB_EXPLAIN: Record<MyWorkTab, string> = {
 }
 
 export function MyWorkPage() {
-  const { t, locale } = useTranslation()
+  const { t } = useTranslation()
   const router = useRouter()
   const params = useSearchParams()
   const { hasPermission } = usePermissions()
