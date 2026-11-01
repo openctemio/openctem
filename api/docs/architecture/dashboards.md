@@ -1395,7 +1395,7 @@ its ends sit side by side, and the rows it joins exist before it is measured.
 |---|---|---|
 | narrow, under 660 px | one column in reading order: the first three sources and "N more", the received to actionable figures, the ring (at most 18 rem, 78 % of the width), the stages (three then two per row under 420 px, five in a row above), the outcomes; no wires | sources, then the summary; the health note under each source's name; no wires |
 | mid, 660 to 899 px | the first three sources in one row above; the core (figures, ring, stages) beside the outcomes, wires from the ring to the outcomes | sources (`clamp(15rem, 34cqi, 52rem)`) at the left edge and summary (`clamp(14rem, 30cqi, 44rem)`) at the right edge, the wires across the space between |
-| wide, 900 px and more (a full-width card from a 1280 px window with the sidebar open) | three columns that fill the card: sources in their own box flush with the left padding at a reading width (`clamp(16rem, 24cqi, 19rem)`, so a source's name, kind and figure fit and its status wraps under it, never cut off), outcomes as boxes flush with the right padding (`clamp(13rem, 17cqi, 16rem)`), the core taking every pixel between (`minmax(0, 1fr)`); the rings grow with the core and the wires span the rest, from the sources box to the outer ring and from the ring to each outcome | same as mid |
+| wide, 900 px and more (a full-width card from a 1280 px window with the sidebar open) | three columns that fill the card: sources in a thin dashed frame (`border-border-strong`, `rounded-lg`, `p-1.5`) flush with the left padding at a reading width (`clamp(16rem, 24cqi, 19rem)`, so a source's name, kind and figure fit and its status wraps under it, never cut off), outcomes in the same dashed frame flush with the right padding (`clamp(13rem, 17cqi, 16rem)`), each outcome a box with its label above its figure (the phone's tile), the core taking every pixel between (`minmax(0, 1fr)`); the rings grow with the core and the wires span the rest, from the sources frame to the outer ring and from the ring to the outcomes frame | same as mid |
 
 The rings are `clamp(15rem, min(100% - 6rem, 34cqi), 30rem)` from the mid
 band (at least 6 rem left in the core for the wires; about 310 px in a
@@ -1404,7 +1404,10 @@ rings (`clamp(1.75rem, 12cqi, 3.5rem)` of the rings' own width). Wires are
 re-measured on every resize (`useWireAnchors`, a `ResizeObserver`), from a
 row's right edge (the sources box edge) to the outer ring's edge, and from
 there to the outcome's or summary's left edge, so they always meet their ends; their width
-stays proportional to the volume. The DOM order is the reading and focus
+is proportional to the volume (1 to 6 px of the largest, `wireWidth`). A
+focused source's wire takes the source's own colour (as its row and arcs)
+and is the only wire with a glow (`focusGlow`, shared with the ring
+segments). The DOM order is the reading and focus
 order in every band (no visual reordering). The noise and per-source panels
 of the intake widget sit side by side from 1100 px of widget width.
 

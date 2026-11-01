@@ -18,7 +18,7 @@
 
 import type { ReactNode } from 'react'
 import { cn } from '@/lib/utils'
-import { dimClass } from './flow-parts'
+import { dimClass, focusGlow } from './flow-parts'
 
 /** The viewBox is -VIEW..VIEW on both axes. */
 const VIEW = 160
@@ -211,9 +211,7 @@ export function FlowRings({
                       className="animate-ring-draw cursor-pointer outline-none transition-[stroke-width,filter] duration-200 motion-reduce:transition-none"
                       style={{
                         animationDelay: `${ri * 90}ms`,
-                        filter: on
-                          ? `drop-shadow(0 0 4px color-mix(in oklab, ${s.color} 60%, transparent))`
-                          : undefined,
+                        filter: on ? focusGlow(s.color) : undefined,
                       }}
                       data-seg={s.key}
                       {...(interactive

@@ -554,6 +554,52 @@ describe('ExposureFlowViz on a wide card', () => {
     expect(within(screen.getByRole('tooltip')).getByText('Share of received')).toBeInTheDocument()
   })
 
+  it('a focused source keeps its colour on its wire, the only wire that glows', () => {
+    render(<ExposureFlowViz result={flow} />)
+    act(() => screen.getByRole('link', { name: 'nuclei, Sensor: 402 findings' }).focus())
+    const wire = (k: string) =>
+      document.querySelector(`[data-wire-key="w:s:${k}"] path`) as SVGPathElement
+    const bar = screen
+      .getByRole('link', { name: 'nuclei, Sensor: 402 findings' })
+      .querySelector('[data-testid="ranked-bar"]') as HTMLElement
+    const arc = document.querySelector('[data-seg="s:sensor:nuclei"]')
+    // One source, one colour: bar, arc and wire.
+    expect(wire('sensor:nuclei').getAttribute('stroke')).toBe(bar.style.background)
+    expect(wire('sensor:nuclei').getAttribute('stroke')).toBe(arc?.getAttribute('stroke'))
+    expect(wire('sensor:nuclei').style.filter).toContain('drop-shadow')
+    expect(wire('connector:cloud').getAttribute('stroke')).not.toBe('var(--viz-cat-1)')
+    expect(wire('connector:cloud').style.filter).toBe('')
+    expect(document.querySelectorAll('[data-wire-key] path[style*="drop-shadow"]')).toHaveLength(1)
+  })
+
+  it('draws a wire proportional to its volume, 1 to 6 px', async () => {
+    const { wireWidth } = await import('../flow-parts')
+    expect(wireWidth(100, 100)).toBe(6)
+    expect(wireWidth(50, 100)).toBe(3.5)
+    expect(wireWidth(0, 100)).toBe(1)
+  })
+
+  it('shows each outcome as a box, its label above its figure', () => {
+    render(<ExposureFlowViz result={flow} />)
+    const open = within(screen.getByTestId('flow-outcomes')).getByRole('link', {
+      name: /^Open 791/,
+    })
+    const [label, figure] = [...open.children] as HTMLElement[]
+    expect(label).toHaveTextContent('Open')
+    expect(figure).toHaveTextContent('791')
+  })
+
+  it('frames the sources and the outcomes alike: one thin dashed frame each', () => {
+    render(<ExposureFlowViz result={flow} />)
+    for (const id of ['flow-sources', 'flow-outcomes']) {
+      const cls = screen.getByTestId(id).className
+      expect(cls).toContain('@min-[660px]:border-dashed')
+      expect(cls).toContain('@min-[660px]:border-border-strong')
+      expect(cls).toContain('@min-[660px]:rounded-lg')
+      expect(cls).toContain('@min-[660px]:p-1.5')
+    }
+  })
+
   it('a funnel figure lights its whole ring', () => {
     render(<ExposureFlowViz result={flow} />)
     act(() => screen.getByRole('link', { name: /^Findings received 602$/ }).focus())

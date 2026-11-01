@@ -41,6 +41,7 @@ import {
   tCount,
   dimClass,
   flowBand,
+  focusGlow,
   useElementWidth,
   useFlowFocus,
   useWireAnchors,
@@ -221,6 +222,15 @@ function severityColor(key: string | undefined): string {
 
 /** A figure tile: a muted box that lights on hover (classes, outcomes). */
 const FLOW_TILE = 'rounded-md bg-muted/40 hover:bg-muted focus-visible:bg-muted'
+
+/**
+ * The thin dashed frame of the sources and the outcomes from 660 px (the
+ * phone stacks them unframed). The wires meet its edge: FRAME_INSET is its
+ * padding plus its border, from a row's edge to the frame's.
+ */
+const FLOW_FRAME =
+  '@min-[660px]:rounded-lg @min-[660px]:border @min-[660px]:border-dashed @min-[660px]:border-border-strong @min-[660px]:p-1.5'
+const FRAME_INSET = 7
 
 export function ExposureFlowViz({
   result,
@@ -588,7 +598,10 @@ function FlowChart({ result, scope }: { result: FlowResult; scope?: 'organizatio
   const sourcesBlock = (
     <section
       aria-labelledby={`${tipId}-src`}
-      className="relative min-w-0 @min-[660px]:col-span-2 @min-[660px]:rounded-lg @min-[660px]:border @min-[660px]:bg-muted/20 @min-[660px]:p-2 @min-[900px]:col-span-1 @min-[900px]:self-start"
+      className={cn(
+        'relative min-w-0 @min-[660px]:col-span-2 @min-[900px]:col-span-1 @min-[900px]:self-start',
+        FLOW_FRAME
+      )}
       data-testid="flow-sources"
     >
       <h3 id={`${tipId}-src`} className="mb-1 text-xs font-medium text-muted-foreground">
@@ -986,7 +999,7 @@ function FlowChart({ result, scope }: { result: FlowResult; scope?: 'organizatio
   const outcomesBlock = (
     <section
       aria-labelledby={`${tipId}-out`}
-      className="relative min-w-0"
+      className={cn('relative min-w-0 @min-[660px]:self-start', FLOW_FRAME)}
       data-testid="flow-outcomes"
     >
       <h3 id={`${tipId}-out`} className="mb-2 text-xs font-medium text-muted-foreground">
@@ -1009,53 +1022,18 @@ function FlowChart({ result, scope }: { result: FlowResult; scope?: 'organizatio
           </div>
         </div>
       ) : (
+        // A box per outcome, its label above its figure (the phone tile).
         <ul className="grid gap-1">
-          {outcomes.map((o, i) => {
-            const k = `o:${o.key}`
-            return (
-              <li key={o.key}>
-                {i === 3 && (
-                  <p className="mb-0.5 mt-2 px-2.5 text-xs text-muted-foreground">
-                    {t('dashboardKit.flow.closedIn', 'Closed in {period}', { period: periodLabel })}
-                  </p>
-                )}
-                <FlowLink
-                  to={o.fig.drill}
-                  className={cn(
-                    'grid min-h-11 grid-cols-[minmax(0,1fr)_auto] content-center items-center gap-x-2.5 gap-y-1 px-2.5 py-1.5',
-                    FLOW_TILE,
-                    o.sub && 'ms-4',
-                    dimClass(active, lit(k))
-                  )}
-                  data-wire-in={k}
-                  {...bind(k)}
-                >
-                  <span className={cn('truncate text-sm', o.sub && 'text-muted-foreground')}>
-                    {o.label}
-                  </span>{' '}
-                  <span
-                    className={cn(
-                      'text-right font-semibold tabular-nums leading-none',
-                      o.sub ? 'text-base' : 'text-xl', // anatomy-ok: a sub-row figure is one step under its outcome
-                      o.tone === 'bad' && o.fig.value > 0 && 'text-destructive'
-                    )}
-                  >
-                    {n(o.fig.value)}
-                  </span>
-                  {o.key === 'open' && result.open.value > 0 && (
-                    <StackedBar
-                      parts={result.severity.map((r) => ({
-                        key: r.key ?? '',
-                        value: r.value,
-                        color: severityColor(r.key),
-                      }))}
-                      className="col-span-2 h-[3px] rounded-sm"
-                    />
-                  )}
-                </FlowLink>
-              </li>
-            )
-          })}
+          {outcomes.map((o, i) => (
+            <li key={o.key}>
+              {i === 3 && (
+                <p className="mb-0.5 mt-2 px-2.5 text-xs text-muted-foreground">
+                  {t('dashboardKit.flow.closedIn', 'Closed in {period}', { period: periodLabel })}
+                </p>
+              )}
+              {tile(o, o.sub ? 'ms-4' : undefined)}
+            </li>
+          ))}
         </ul>
       )}
     </section>
@@ -1095,13 +1073,22 @@ function FlowChart({ result, scope }: { result: FlowResult; scope?: 'organizatio
               if (!from || !to) return null
               const w = wireStroke(s.health)
               const k = `w:s:${s.id}`
-              const d = wirePath(from.x + 9, from.y, to.x + 2, to.y)
+              const d = wirePath(from.x + FRAME_INSET, from.y, to.x + 2, to.y)
+              // Focused, the wire takes its source's colour (one source, one
+              // colour: bar, arcs, wire) and is the only wire that glows.
+              const own = sourceColor.get(s.id) ?? 'var(--signal)'
               return (
-                <g key={k} className={dimClass(active, lit(k))} data-wire={s.health}>
+                <g
+                  key={k}
+                  className={dimClass(active, lit(k))}
+                  data-wire={s.health}
+                  data-wire-key={k}
+                >
                   <path
                     d={d}
                     fill="none"
-                    stroke={lit(k) ? 'var(--signal)' : w.stroke}
+                    stroke={lit(k) ? own : w.stroke}
+                    style={lit(k) ? { filter: focusGlow(own) } : undefined}
                     strokeWidth={wireWidth(s.received, maxSource)}
                     strokeDasharray={w.dash}
                     strokeLinecap="round"
@@ -1130,9 +1117,11 @@ function FlowChart({ result, scope }: { result: FlowResult; scope?: 'organizatio
                 <path
                   key={k}
                   className={dimClass(active, lit(k))}
-                  d={wirePath(from.x - 2, from.y, to.x - 4, to.y)}
+                  d={wirePath(from.x - 2, from.y, to.x - FRAME_INSET, to.y)}
                   fill="none"
+                  data-wire-key={k}
                   stroke={lit(k) ? 'var(--signal)' : w.stroke}
+                  style={lit(k) ? { filter: focusGlow('var(--signal)') } : undefined}
                   strokeWidth={wireWidth(o.fig.value, maxOutcome)}
                   strokeLinecap="round"
                 />
