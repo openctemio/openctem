@@ -128,6 +128,12 @@ func registerAuthRoutes(router Router, h Handlers, cfg *config.Config, authCfg A
 			refreshHandler := ChainFunc(h.LocalAuth.RefreshToken, crossSite, tokenExchangeRL)
 			r.POST("/refresh", refreshHandler.ServeHTTP)
 
+			// An account with no organization it can open gets an access
+			// token without a tenant, which reaches only the account
+			// allow-list (docs/architecture/tenantless-account-space.md).
+			accountTokenHandler := ChainFunc(h.LocalAuth.AccountToken, crossSite, tokenExchangeRL)
+			r.POST("/account-token", accountTokenHandler.ServeHTTP)
+
 			// Email verification - password rate limit
 			verifyHandler := ChainFunc(h.LocalAuth.VerifyEmail, crossSite, passwordRL)
 			r.POST("/verify-email", verifyHandler.ServeHTTP)
@@ -154,6 +160,8 @@ func registerAuthRoutes(router Router, h Handlers, cfg *config.Config, authCfg A
 			r.POST("/onboarding/options", onboardingOptions.ServeHTTP)
 			onboardingAccept := ChainFunc(h.LocalAuth.OnboardingAccept, crossSite, registerRL)
 			r.POST("/onboarding/accept", onboardingAccept.ServeHTTP)
+			onboardingDecline := ChainFunc(h.LocalAuth.OnboardingDecline, crossSite, registerRL)
+			r.POST("/onboarding/decline", onboardingDecline.ServeHTTP)
 
 			// An owner cancels a scheduled organization deletion: the
 			// organization is closed to tenant tokens while it waits, so
