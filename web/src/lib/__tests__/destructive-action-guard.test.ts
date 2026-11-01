@@ -93,6 +93,8 @@ const PROTECTIONS = [
  * a "Gap:" entry when its fix lands.
  */
 const REVIEWED: Record<string, string> = {
+  'src/features/sensors/components/sensor-repair-dialog.tsx':
+    'revokeActiveSensorKeys runs only when the person ticked "Revoke the current key now" (ticked for them only for a compromised key, with the consequence written beside it) and pressed Create re-pair code; the dialog is the confirmation and the re-pair that follows restores the sensor.',
   'src/features/closure-settings/components/closing-mode-form.tsx':
     'cancelPending drops a loosening that is still waiting out its 24 hours; nothing was in force yet and the admin can request it again.',
   'src/features/scans/components/new-scan/targets-step.tsx':

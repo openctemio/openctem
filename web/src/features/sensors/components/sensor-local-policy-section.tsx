@@ -1,6 +1,6 @@
 'use client'
 
-import { Lock, OctagonPause, ShieldAlert } from 'lucide-react'
+import { Lock, OctagonPause, ShieldAlert, ShieldCheck } from 'lucide-react'
 
 import { HealthStatus } from '@/components/ui/health-status'
 import type { HealthState } from '@/lib/health-colors'
@@ -10,7 +10,9 @@ import type { Sensor } from '@/lib/api/sensor-types'
 
 import { exactTime } from '../lib/format'
 import {
+  allowsNothing,
   hasNoLocalPolicyWarning,
+  localPolicyFileHelp,
   localPolicySummaryLines,
   localPolicyView,
   noLocalPolicyGuidance,
@@ -66,12 +68,14 @@ export function SensorPolicySuggestion({ sensorId }: { sensorId: string }) {
 export function SensorLocalPolicySection({
   sensor,
 }: {
-  sensor: Pick<Sensor, 'local_policy'> & { id?: string }
+  sensor: Pick<Sensor, 'local_policy'> & { id?: string; name?: string }
 }) {
   const { t } = useTranslation()
   const p = sensor.local_policy
   if (!p) return null
   const view = localPolicyView(p, t)
+  const nothing = allowsNothing(p)
+  const help = localPolicyFileHelp(sensor.name)
   const lines = localPolicySummaryLines(p, t)
   return (
     <DetailSection title={t('sensors.localPolicy.title')}>
@@ -84,18 +88,35 @@ export function SensorLocalPolicySection({
           {t('sensors.localPolicy.pausedBody')}
         </DetailCallout>
       )}
-      {p.state === 'absent' && p.required && (
+      {nothing && (
         <DetailCallout
           tone="destructive"
           icon={ShieldAlert}
-          title={t('sensors.localPolicy.requiredTitle')}
+          title={t('sensors.localPolicy.allowsNothingTitle')}
         >
-          {t('sensors.localPolicy.requiredBody')}
+          <span data-testid="policy-allows-nothing">
+            {p.state === 'absent'
+              ? t('sensors.localPolicy.allowsNothingRequiredBody')
+              : t('sensors.localPolicy.allowsNothingBody')}
+          </span>
         </DetailCallout>
       )}
+      {nothing && p.state === 'enforced' && (
+        <div className="space-y-2" data-testid="policy-file-help">
+          <p className="text-sm font-medium">{t('sensors.localPolicy.fileLabel')}</p>
+          <Snippet
+            text={`${help.file}\n${help.restart}\n`}
+            label={t('sensors.localPolicy.fileLabel')}
+            file="sensor-policy.txt"
+          />
+          <p className="text-xs text-muted-foreground">
+            {t('sensors.localPolicy.fileSingle', undefined, { path: help.single })}
+          </p>
+        </div>
+      )}
       {p.state === 'absent' && !p.required && (
-        <DetailCallout tone="warning" icon={ShieldAlert} title={t('sensors.localPolicy.noneTitle')}>
-          {t('sensors.localPolicy.noneBody')}
+        <DetailCallout tone="info" icon={ShieldCheck} title={t('sensors.localPolicy.followsTitle')}>
+          {t('sensors.localPolicy.followsBody')}
         </DetailCallout>
       )}
       {p.state === 'absent' && sensor.id && <SensorPolicySuggestion sensorId={sensor.id} />}

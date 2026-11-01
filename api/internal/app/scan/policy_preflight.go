@@ -77,6 +77,7 @@ func scanJob(sc *scan.Scan, targets []string) sensordom.Job {
 	raw, _ := json.Marshal(map[string]any{"targets": targets})
 	job.Private = sensordom.HasPrivateTarget(raw)
 	job.PrivateAddress = sensordom.HasPrivateAddress(raw)
+	job.NetworkTarget = sensordom.HasNetworkTarget(raw)
 	return job
 }
 
@@ -105,10 +106,18 @@ type policyVerdict struct {
 	// one operator-facing detail per rule.
 	byRule map[string]int
 	detail map[string]string
+	// names keeps, per "layer/rule", the first refusing sensors' names
+	// (at most maxNamedSensors), so the reason says which host to edit.
+	names map[string][]string
 }
 
-func judge(reports []*sensordom.LocalPolicyReport, job sensordom.Job, opts sensordom.DispatchOptions) policyVerdict {
-	v := policyVerdict{total: len(reports), byRule: map[string]int{}, detail: map[string]string{}}
+// maxNamedSensors bounds the sensor names one refusal reason lists.
+const maxNamedSensors = 3
+
+// judge decides job for the sensors whose reports are given; names[i] is
+// the name of the sensor of reports[i] (names may be nil or shorter).
+func judge(reports []*sensordom.LocalPolicyReport, names []string, job sensordom.Job, opts sensordom.DispatchOptions) policyVerdict {
+	v := policyVerdict{total: len(reports), byRule: map[string]int{}, detail: map[string]string{}, names: map[string][]string{}}
 	for i, r := range reports {
 		ref := sensordom.Accepts(r, job, opts)
 		if ref == nil {
@@ -119,6 +128,9 @@ func judge(reports []*sensordom.LocalPolicyReport, job sensordom.Job, opts senso
 		v.byRule[key]++
 		if _, ok := v.detail[key]; !ok {
 			v.detail[key] = ref.Detail
+		}
+		if i < len(names) && names[i] != "" && len(v.names[key]) < maxNamedSensors {
+			v.names[key] = append(v.names[key], names[i])
 		}
 	}
 	return v
@@ -137,6 +149,9 @@ func (v policyVerdict) reason(where string) string {
 	for _, k := range keys {
 		layer, rule, _ := strings.Cut(k, "/")
 		who := "the network owner must allow it in the sensor's local policy on the host"
+		if n := v.names[k]; len(n) > 0 {
+			who = fmt.Sprintf("the network owner must allow it in the local policy of %s on its host", quoteNames(n))
+		}
 		if layer == sensordom.RefusalLayerManaged {
 			who = "an administrator can change the organization setting"
 		}
@@ -144,6 +159,18 @@ func (v policyVerdict) reason(where string) string {
 			rule, layer, v.byRule[k], v.total, where, v.detail[k], who))
 	}
 	return strings.Join(parts, "; ")
+}
+
+// quoteNames lists sensor names for a reason: "a", "a" and "b", ….
+func quoteNames(names []string) string {
+	q := make([]string, len(names))
+	for i, n := range names {
+		q[i] = fmt.Sprintf("%q", n)
+	}
+	if len(q) == 1 {
+		return "sensor " + q[0]
+	}
+	return "sensors " + strings.Join(q[:len(q)-1], ", ") + " and " + q[len(q)-1]
 }
 
 // policyRefusedError refuses a trigger that no sensor would accept.
@@ -173,10 +200,12 @@ func (s *Service) preflightUnzoned(ctx context.Context, sc *scan.Scan, targets [
 		return "", nil // nothing to judge: the availability check decides
 	}
 	reports := make([]*sensordom.LocalPolicyReport, len(available))
+	names := make([]string, len(available))
 	for i, a := range available {
 		reports[i] = a.LocalPolicy
+		names[i] = a.Name
 	}
-	v := judge(reports, scanJob(sc, targets), opts)
+	v := judge(reports, names, scanJob(sc, targets), opts)
 	if len(v.accepted) > 0 {
 		return "", nil
 	}
