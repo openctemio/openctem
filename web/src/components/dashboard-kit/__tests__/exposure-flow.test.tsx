@@ -1,24 +1,17 @@
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ExposureFlowViz } from '../exposure-flow-viz'
 import { ringEdgeInset, ringSegments, type RingPart } from '../flow-rings'
 import { IntakeViz } from '../intake-viz'
 import type { FlowResult, IntakeData, IntakeSourceRow } from '../types'
 
-// The view switchers show a tooltip on hover (Radix, which measures with a
-// ResizeObserver that jsdom lacks): without it a click that opens the tooltip
-// throws in a layout effect, depending on timing.
-beforeAll(() => {
-  vi.stubGlobal(
-    'ResizeObserver',
-    class {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
-    }
-  )
-})
+// The tooltip popper measures itself; without this it throws when a click opens a tooltip.
+globalThis.ResizeObserver ??= class {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+} as unknown as typeof ResizeObserver
 
 const since = new Date(Date.now() - 30 * 86_400_000).toISOString()
 
