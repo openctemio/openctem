@@ -696,10 +696,7 @@ func (m *mockToolRepo) List(_ context.Context, _ tool.ToolFilter, _ pagination.P
 func (m *mockToolRepo) ListByNames(_ context.Context, _ []string) ([]*tool.Tool, error) {
 	return nil, nil
 }
-func (m *mockToolRepo) ListByCategoryID(_ context.Context, _ shared.ID) ([]*tool.Tool, error) {
-	return nil, nil
-}
-func (m *mockToolRepo) ListByCategoryName(_ context.Context, _ string) ([]*tool.Tool, error) {
+func (m *mockToolRepo) ListByCategoryID(_ context.Context, _, _ shared.ID) ([]*tool.Tool, error) {
 	return nil, nil
 }
 func (m *mockToolRepo) ListByCapability(_ context.Context, _ string) ([]*tool.Tool, error) {
