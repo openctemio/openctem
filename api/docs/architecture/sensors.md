@@ -5,6 +5,7 @@
 > Protocol v2: [RFC-026](../rfcs/RFC-026-sensor-results-ingest.md) (results) and
 > [RFC-029](../rfcs/RFC-029-sensor-protocol-v2-and-sdk-stability.md) (everything else; protocol v1 retired 2026-10-05).
 > Routing of scanners by network: [scan-zones.md](scan-zones.md).
+> How scan traffic identifies itself to targets (User-Agent and headers, merged platform and organization layers): [scan-identification.md](scan-identification.md).
 > Proxies for scan traffic (proxy pools, built): [sensor-proxies.md](sensor-proxies.md);
 > the wider egress design: [RFC-034](../rfcs/RFC-034-sensor-network-egress.md),
 > section [Network egress and proxies](#network-egress-and-proxies-rfc-034-proposed).

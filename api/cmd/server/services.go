@@ -121,6 +121,7 @@ import (
 	retestapp "github.com/openctemio/openctem/api/internal/app/retest"
 	retestcheckapp "github.com/openctemio/openctem/api/internal/app/retestcheck"
 	"github.com/openctemio/openctem/api/internal/app/scan"
+	"github.com/openctemio/openctem/api/internal/app/scanidentity"
 	scanwindowapp "github.com/openctemio/openctem/api/internal/app/scanwindow"
 	scanzoneapp "github.com/openctemio/openctem/api/internal/app/scanzone"
 	"github.com/openctemio/openctem/api/internal/app/scim"
@@ -1020,6 +1021,7 @@ type Services struct {
 	DeploymentRegion    *deploymentregion.Service
 	StorageQuota        *storagequota.Service
 	ThreatSource        *threatsource.Service
+	ScanIdentity        *scanidentity.Service
 	PlatformAlert       *platformalert.Service
 	PlatformAI          *platformai.Service
 	OrgRelay            *orgrelay.Service
@@ -1483,6 +1485,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// platform's own fetch).
 		s.ThreatSource = threatsource.NewService(repos.PlatformSetting, s.SettingRecorder)
 		s.ThreatIntel.SetSourcePolicy(s.ThreatSource)
+		// The platform layer of the scan identification markers.
+		s.ScanIdentity = scanidentity.NewService(repos.PlatformSetting, s.SettingRecorder)
 	}
 	s.CTEMID = ctemidapp.NewService(repos.CTEMID, cfg.Worker.CTEMIDFeedURL, log)
 	s.VersionCheck = versioncheck.New(postgres.NewVersionCheckRepository(&postgres.DB{DB: deps.DB}), versioncheck.Config{
@@ -2439,6 +2443,11 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// claims it: scope can change while it waits in the queue. Until
 		// the scan service exists the gate refuses (fail closed).
 		command.WithScopeRecheck(probeGate)}
+	if s.ScanIdentity != nil {
+		// The platform's scan identification headers merge under the
+		// organization's in every job's http_policy.
+		cmdOpts = append(cmdOpts, command.WithPlatformIdentity(s.ScanIdentity))
+	}
 	if s.BountyProgram != nil {
 		// RFC-065 §12: program headers, User-Agent and rate caps travel
 		// with each job a program covers.
