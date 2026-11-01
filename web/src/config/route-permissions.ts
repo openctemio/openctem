@@ -153,6 +153,11 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     permission: Permission.ScopeRead,
     module: Module.AttackSurface,
   },
+  // The coverage work by stage (Run needs scans:write + scans:execute).
+  '/attack-surface/discovery': {
+    permission: Permission.ScansRead,
+    module: Module.AttackSurface,
+  },
   // Typed attack-surface changes (RFC-080), narrowed to the data scope by the API.
   // Web surface reads the assets module's web endpoints (RFC-056).
   '/attack-surface/web': {
