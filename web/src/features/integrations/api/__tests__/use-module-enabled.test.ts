@@ -1,46 +1,37 @@
-/**
- * useModuleEnabled — verify per-tenant module gating with fail-open.
- *
- * The boolean it returns gates BOTH in-page feature rendering and conditional
- * SWR keys, so its edge cases (empty module list = OSS fail-open) are load-bearing.
- */
-import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { renderHook } from '@testing-library/react'
-import useSWR from 'swr'
-import { useModuleEnabled } from '../use-tenant-modules'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+const swrState: { data?: unknown; isLoading: boolean } = { isLoading: false }
 
 vi.mock('swr', () => ({
-  default: vi.fn(() => ({ data: undefined, error: undefined, isLoading: false, mutate: vi.fn() })),
+  default: () => ({ ...swrState, error: undefined, mutate: vi.fn() }),
 }))
-vi.mock('@/lib/api/client', () => ({ get: vi.fn() }))
+vi.mock('@/context/bootstrap-provider', () => ({
+  useBootstrapContextOptional: () => null,
+}))
 
-function mockModules(moduleIds: string[]) {
-  vi.mocked(useSWR).mockReturnValue({
-    data: { module_ids: moduleIds, modules: [] },
-    error: undefined,
-    isLoading: false,
-    mutate: vi.fn(),
-  } as unknown as ReturnType<typeof useSWR>)
-}
+import { useModuleEnabled } from '../use-tenant-modules'
 
 describe('useModuleEnabled', () => {
-  beforeEach(() => vi.clearAllMocks())
-
-  it('returns true when the module is present in the tenant module list', () => {
-    mockModules(['assets', 'branches', 'findings'])
-    const { result } = renderHook(() => useModuleEnabled('branches'))
-    expect(result.current).toBe(true)
+  beforeEach(() => {
+    swrState.data = undefined
+    swrState.isLoading = false
   })
 
-  it('returns false when the module is absent from a non-empty list', () => {
-    mockModules(['assets', 'findings'])
-    const { result } = renderHook(() => useModuleEnabled('branches'))
+  it('is closed while the module list loads, so a switched-off module is never fetched', () => {
+    swrState.isLoading = true
+    const { result } = renderHook(() => useModuleEnabled('attack_simulation'))
     expect(result.current).toBe(false)
   })
 
-  it('fails open (returns true) when no modules are reported — OSS edition', () => {
-    mockModules([])
-    const { result } = renderHook(() => useModuleEnabled('branches'))
-    expect(result.current).toBe(true)
+  it('follows the loaded list', () => {
+    swrState.data = { module_ids: ['pentest'], modules: [] }
+    expect(renderHook(() => useModuleEnabled('pentest')).result.current).toBe(true)
+    expect(renderHook(() => useModuleEnabled('attack_simulation')).result.current).toBe(false)
+  })
+
+  it('opens everything once the API has answered with no module list', () => {
+    swrState.data = { module_ids: [], modules: [] }
+    expect(renderHook(() => useModuleEnabled('attack_simulation')).result.current).toBe(true)
   })
 })
