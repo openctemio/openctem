@@ -42,6 +42,7 @@ import {
   setOrgDefaultDashboard,
   undoFlowPanel,
   updateDashboard,
+  useDashboardHome,
   useMyDashboards,
   useOrgDashboards,
   useRevalidateAllDashboards,
@@ -120,34 +121,42 @@ function clearChoice() {
 export function DashboardHome() {
   const { t } = useTranslation()
   const { canAny, can } = usePermissions()
-  const canOrgView = canAny(Permission.DashboardsOrgView, Permission.DashboardsOrgManage)
+  const permsOrgView = canAny(Permission.DashboardsOrgView, Permission.DashboardsOrgManage)
   const canOrgManage = can(Permission.DashboardsOrgManage)
   const { mutate } = useSWRConfig()
   const revalidate = useRevalidateAllDashboards()
 
-  const mine = useMyDashboards()
-  const org = useOrgDashboards(canOrgView)
+  // One request opens the page: both lists and the landing dashboard's
+  // figures arrive together (the server applies the landing rule to the
+  // remembered choice) and seed the cache keys below, so none of the reads
+  // after it fetches. It does not wait for the bootstrap: the server says
+  // whether the viewer can read organization dashboards. When it fails, the
+  // reads below fetch on their own.
+  const [chosen, setChosen] = useState<DashboardRef | null>(readChoice)
+  const [arrivalChoice] = useState(() => (chosen ? refKey(chosen) : null))
+  const home = useDashboardHome(arrivalChoice)
+  const homeSettled = home.status !== 'loading'
+  const canOrgView = home.status === 'ready' ? home.hasOrg : permsOrgView
+  const homeSeeded = home.status === 'ready' ? { revalidateIfStale: false } : undefined
+
+  const mine = useMyDashboards({ enabled: homeSettled, ...homeSeeded })
+  const org = useOrgDashboards(canOrgView && homeSettled, homeSeeded)
   const personal = useMemo(() => mine.data?.data ?? [], [mine.data])
   const organization = useMemo(
     () => (canOrgView ? (org.data?.data ?? []) : undefined),
     [canOrgView, org.data]
   )
-  const listsLoading = mine.isLoading || (canOrgView && org.isLoading)
+  const listsLoading = !homeSettled || mine.isLoading || (canOrgView && org.isLoading)
 
-  const [chosen, setChosen] = useState<DashboardRef | null>(null)
   const [customizing, setCustomizing] = useState(false)
   const [pendingDelete, setPendingDelete] = useState<Dashboard | null>(null)
   const [pendingOrgDefault, setPendingOrgDefault] = useState<Dashboard | null>(null)
-
-  useEffect(() => {
-    if (chosen === null) setChosen(readChoice())
-  }, [chosen])
 
   // A person with no dashboard at all (none of their own, none from the
   // organization) gets a personal copy of the default template, computed in
   // their own scope. Created once; a failure leaves the empty state.
   const seeding = useRef(false)
-  const [seeded, setSeeded] = useState<string | null>(null)
+  const [seededName, setSeeded] = useState<string | null>(null)
   const [seedFailed, setSeedFailed] = useState(false)
   // A failed list read is not "nothing": the organization may have
   // dashboards for the viewer, so no copy is made.
@@ -195,7 +204,12 @@ export function DashboardHome() {
     if (active.kind === 'personal' || canOrgManage) setCustomizing(true)
   }, [startCustomizing, dashboard, active, canOrgManage])
 
-  const data = useDashboardData(active?.kind ?? 'personal', active?.id ?? null)
+  // The home response already carried the landing dashboard's figures: that
+  // one key is not read again on arrival (later reads and polling are normal).
+  const activeDataKey = active ? dashboardDataKey(active.kind, active.id) : null
+  const data = useDashboardData(active?.kind ?? 'personal', active?.id ?? null, {
+    revalidateIfStale: !(home.status === 'ready' && home.dataKey === activeDataKey),
+  })
 
   const choose = useCallback((ref: DashboardRef) => {
     setChosen(ref)
@@ -249,7 +263,7 @@ export function DashboardHome() {
   useEffect(() => setHintDismissed(readLayoutHintDismissed()), [])
   const [hintBusy, setHintBusy] = useState(false)
   const layoutHint =
-    !hintDismissed && !seeded && !flowAdded && !flowEligible && active?.kind === 'personal'
+    !hintDismissed && !seededName && !flowAdded && !flowEligible && active?.kind === 'personal'
       ? layoutHintFor(dashboard ? { ...dashboard, kind: 'personal' } : undefined)
       : null
   const dismissHint = () => {
@@ -535,7 +549,7 @@ export function DashboardHome() {
           />
         ) : (
           <>
-            {seeded && (
+            {seededName && (
               <p
                 className="rounded-md border bg-muted/40 px-3 py-2 text-sm text-muted-foreground"
                 role="status"
@@ -543,7 +557,7 @@ export function DashboardHome() {
                 {t(
                   'dashboards.view.seeded',
                   'This is the {name} layout, computed for your own access.',
-                  { name: seeded }
+                  { name: seededName }
                 )}{' '}
                 <button
                   type="button"

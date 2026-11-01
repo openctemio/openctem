@@ -1,0 +1,3 @@
+### Changed: the dashboard home loads with one request
+- New `GET /api/v1/me/dashboards/home` returns the viewer's dashboards, the organization dashboards they may read, the dashboard to open and its figures in one response. The server applies the landing rule to the viewer's remembered choice; lists and figures come from the same services as the per-dashboard routes, so permissions, audience, data scope and the stored snapshots are unchanged.
+- The `/` page made three dashboard reads in a row (own list, organization list after the bootstrap, then the figures); it now makes one and no longer waits for the bootstrap.
