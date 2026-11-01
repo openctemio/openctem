@@ -192,6 +192,25 @@ export const SENSOR_TEXT_CODES = new Set([
   'BATCH_FAILED',
 ])
 
+/**
+ * The translated reason of one coverage gap, with the edge protection that
+ * stopped the host (and its vendor, as the sensor sent it) when it says so.
+ * Any other gap reads as its reason.
+ */
+export function gapHelp(
+  gap: { reason?: string; edge?: string; vendor?: string },
+  t: Translate = enTranslate
+) {
+  if (gap.reason !== 'blocked') return gapReasonHelp(gap.reason, t)
+  const key = gap.edge === 'challenged' ? 'edge_challenged' : 'edge_blocked'
+  return {
+    label: gap.vendor
+      ? t(`scans.tasks.gap.${key}_vendor`, undefined, { vendor: gap.vendor })
+      : t(`scans.tasks.gap.${key}`),
+    help: t(`scans.tasks.gapHelp.${key}`),
+  }
+}
+
 /** The translated reason of one coverage gap: a short label and why. */
 export function gapReasonHelp(reason: string | undefined, t: Translate = enTranslate) {
   const known = (GAP_REASONS as readonly string[]).includes(reason ?? '')

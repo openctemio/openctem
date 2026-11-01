@@ -3,6 +3,7 @@ package auth
 
 import (
 	"context"
+	"crypto/subtle"
 	"errors"
 	"fmt"
 	"strings"
@@ -1494,6 +1495,99 @@ func (s *AuthService) spendRefreshToken(ctx context.Context, stored *sessiondom.
 	return nil
 }
 
+// refreshClientFingerprint is a hash of the client presenting a refresh
+// token, recorded on rotation and required to match for the rotation grace.
+// Empty when the client sent no user agent (the grace then never applies).
+func refreshClientFingerprint(userAgent string) string {
+	if userAgent == "" {
+		return ""
+	}
+	return sessiondom.HashToken("refresh-client:" + userAgent)
+}
+
+// rotateRefreshToken spends storedToken and issues its successor in one
+// transaction. The successor is derived (jwt.GenerateDerivedRefreshToken) from
+// the replaced token's id and its own row times, so a later grace request can
+// re-derive the identical token without anything secret being stored. When a
+// concurrent request rotated the token first, the loser gets that request's
+// successor back if the rotation grace allows it (returned as grace, with an
+// empty token), otherwise the session ends as for any reuse.
+func (s *AuthService) rotateRefreshToken(
+	ctx context.Context, storedToken *sessiondom.RefreshToken, u *userdom.User, sess *sessiondom.Session, fingerprint string,
+) (token string, expiresAt time.Time, grace *sessiondom.RefreshToken, err error) {
+	issuedAt := time.Now().UTC().Truncate(time.Second)
+	expiresAt = issuedAt.Add(s.config.RefreshTokenDuration)
+	token, err = s.tokenGenerator.GenerateDerivedRefreshToken(
+		u.ID().String(), u.Email(), u.Name(), sess.ID().String(), storedToken.ID().String(), issuedAt, expiresAt)
+	if err != nil {
+		return "", time.Time{}, nil, fmt.Errorf("failed to generate refresh token: %w", err)
+	}
+	successor := sessiondom.ReconstituteRefreshToken(shared.NewID(), u.ID(), sess.ID(),
+		sessiondom.HashToken(token), storedToken.Family(), expiresAt, nil, nil, issuedAt)
+
+	won, err := s.refreshTokenRepo.RotateIfUnused(ctx, storedToken.ID(), fingerprint, successor)
+	if err != nil {
+		return "", time.Time{}, nil, fmt.Errorf("failed to rotate refresh token: %w", err)
+	}
+	if won {
+		_ = storedToken.MarkUsed()
+		return token, expiresAt, nil, nil
+	}
+	// Lost the race: read the winner's rotation record.
+	current, err := s.refreshTokenRepo.GetByID(ctx, storedToken.ID())
+	if err == nil {
+		if successor := s.rotationGraceSuccessor(ctx, current, fingerprint); successor != nil {
+			return "", time.Time{}, successor, nil
+		}
+	}
+	s.onRefreshTokenReuse(ctx, storedToken)
+	return "", time.Time{}, nil, sessiondom.ErrRefreshTokenUsed
+}
+
+// rotationGraceSuccessor returns the successor of a rotated refresh token
+// when presenting the rotated token again is still allowed: the grace is on,
+// the rotation happened at most RefreshReuseGrace ago, the token was not
+// revoked since, the same client (fingerprint, compared in constant time)
+// rotated it, and its successor is the live head of the same session and
+// family (not used, revoked or expired). Only the immediately previous token
+// qualifies: once the successor is rotated in turn, the grace is gone. Any
+// other case returns nil and the caller treats the request as a reuse.
+func (s *AuthService) rotationGraceSuccessor(ctx context.Context, rotated *sessiondom.RefreshToken, fingerprint string) *sessiondom.RefreshToken {
+	grace := s.config.RefreshReuseGrace
+	if grace <= 0 || rotated == nil || rotated.IsRevoked() || rotated.UsedAt() == nil || rotated.SuccessorID() == nil {
+		return nil
+	}
+	if time.Since(*rotated.UsedAt()) > grace {
+		return nil
+	}
+	recorded := rotated.RotatedFingerprint()
+	if fingerprint == "" || recorded == "" || subtle.ConstantTimeCompare([]byte(recorded), []byte(fingerprint)) != 1 {
+		return nil
+	}
+	successor, err := s.refreshTokenRepo.GetByID(ctx, *rotated.SuccessorID())
+	if err != nil {
+		return nil
+	}
+	if successor.SessionID() != rotated.SessionID() || successor.Family() != rotated.Family() ||
+		successor.UserID() != rotated.UserID() || !successor.IsValid() {
+		return nil
+	}
+	return successor
+}
+
+// rederiveSuccessor rebuilds the successor token string from its row and
+// returns it only when it hashes to the stored value (constant time). A
+// mismatch (the user's name or email changed in between) refuses the grace.
+func (s *AuthService) rederiveSuccessor(rotated, successor *sessiondom.RefreshToken, u *userdom.User, sess *sessiondom.Session) (string, bool) {
+	token, err := s.tokenGenerator.GenerateDerivedRefreshToken(
+		u.ID().String(), u.Email(), u.Name(), sess.ID().String(), rotated.ID().String(),
+		successor.CreatedAt(), successor.ExpiresAt())
+	if err != nil || !successor.VerifyToken(token) {
+		return "", false
+	}
+	return token, true
+}
+
 // onRefreshTokenReuse handles a refresh token presented after it was already
 // rotated. Either the legitimate client or a thief holds a copy, and there is
 // no telling which, so the whole session ends: its token family, its other
@@ -1569,14 +1663,19 @@ func (s *AuthService) RefreshToken(ctx context.Context, input RefreshTokenInput)
 		return nil, fmt.Errorf("failed to get refresh token: %w", err)
 	}
 
-	// Check if token has been used (replay attack detection)
+	// A token presented again after its rotation is a reuse, except within
+	// the rotation grace: the same client re-presenting the token it just
+	// rotated (requests already in flight when the rotation answered) gets
+	// the successor that rotation issued. Anything else ends the session.
+	fingerprint := refreshClientFingerprint(input.UserAgent)
+	var graceSuccessor *sessiondom.RefreshToken
 	if storedToken.IsUsed() {
-		s.onRefreshTokenReuse(ctx, storedToken)
-		return nil, sessiondom.ErrRefreshTokenUsed
-	}
-
-	// Check if token is valid
-	if !storedToken.IsValid() {
+		graceSuccessor = s.rotationGraceSuccessor(ctx, storedToken, fingerprint)
+		if graceSuccessor == nil {
+			s.onRefreshTokenReuse(ctx, storedToken)
+			return nil, sessiondom.ErrRefreshTokenUsed
+		}
+	} else if !storedToken.IsValid() {
 		return nil, sessiondom.ErrRefreshTokenRevoked
 	}
 
@@ -1656,38 +1755,29 @@ func (s *AuthService) RefreshToken(ctx context.Context, input RefreshTokenInput)
 		return nil, err
 	}
 
-	// Mark old token as used (token rotation). Every refusal above happens
-	// first, so a person held back by a policy (for example 2FA they still
-	// have to set up) keeps a usable session to meet it.
-	if err := s.spendRefreshToken(ctx, storedToken); err != nil {
-		return nil, err
+	// Rotate the token. Every refusal above happens first, so a person held
+	// back by a policy (for example 2FA they still have to set up) keeps a
+	// usable session to meet it.
+	var newRefreshTokenStr string
+	var refreshExpiresAt time.Time
+	if graceSuccessor == nil {
+		newRefreshTokenStr, refreshExpiresAt, graceSuccessor, err = s.rotateRefreshToken(ctx, storedToken, u, sess, fingerprint)
+		if err != nil {
+			return nil, err
+		}
 	}
-
-	// Generate new GLOBAL refresh token (token rotation)
-	newRefreshTokenStr, refreshExpiresAt, err := s.tokenGenerator.GenerateGlobalRefreshToken(
-		u.ID().String(),
-		u.Email(),
-		u.Name(),
-		sess.ID().String(),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to generate refresh token: %w", err)
-	}
-
-	// Create new refresh token in the same family (for rotation tracking)
-	newRefreshToken, err := sessiondom.NewRefreshTokenInFamily(
-		u.ID(),
-		sess.ID(),
-		newRefreshTokenStr,
-		storedToken.Family(),
-		s.config.RefreshTokenDuration,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create new refresh token: %w", err)
-	}
-
-	if err := s.refreshTokenRepo.Create(ctx, newRefreshToken); err != nil {
-		return nil, fmt.Errorf("failed to save new refresh token: %w", err)
+	if graceSuccessor != nil {
+		// Hand out the successor already issued: the same token string,
+		// re-derived from its row and checked against its stored hash, so the
+		// family stays one chain.
+		tok, ok := s.rederiveSuccessor(storedToken, graceSuccessor, u, sess)
+		if !ok {
+			s.onRefreshTokenReuse(ctx, storedToken)
+			return nil, sessiondom.ErrRefreshTokenUsed
+		}
+		newRefreshTokenStr, refreshExpiresAt = tok, graceSuccessor.ExpiresAt()
+		s.logger.Info("refresh token re-presented within the rotation grace; successor handed out again",
+			"session_id", sess.ID().String())
 	}
 
 	// Determine if user is admin (owner or admin role)

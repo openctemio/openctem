@@ -305,7 +305,14 @@ func TestPairing_Repair_DB(t *testing.T) {
 	if err != nil || v.RepairSensorID != sensorID {
 		t.Fatalf("re-pair lookup: %v %+v", err, v)
 	}
-	if _, err := f.svc.Approve(ctx, a, rid, approve(a, second.resp.UserCode)); err != nil {
+	// The sensor asked for the re-pair: the approver must name the sensor
+	// it replaces the key of, checked before anything is written.
+	if _, err := f.svc.Approve(ctx, a, rid, approve(a, second.resp.UserCode)); !errors.Is(err, sensorpairing.ErrRepairNotAcknowledged) {
+		t.Fatalf("re-pair approve without naming the sensor: %v", err)
+	}
+	in := approve(a, second.resp.UserCode)
+	in.RepairSensorID = sensorID
+	if _, err := f.svc.Approve(ctx, a, rid, in); err != nil {
 		t.Fatalf("re-pair approve: %v", err)
 	}
 	// The old key stops at approval (a stolen key must not wait).
