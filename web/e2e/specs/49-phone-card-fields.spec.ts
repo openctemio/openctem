@@ -155,6 +155,7 @@ const ROUTES = [
   '/settings/api-keys',
   '/attack-surface/certificates',
   '/validation/retests',
+  '/assets/attention/decide-monitoring',
 ]
 
 test(

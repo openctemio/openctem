@@ -4,7 +4,13 @@ import { useSuggestionCount } from '@/features/relationships/api/use-relationshi
 import type { AttentionReasonDef } from '@/config/section-tabs'
 import { attentionCountQuery, type AttentionReason } from './attention-filters'
 
-const ASSET_REASONS: readonly string[] = ['no_owner', 'context', 'unscanned']
+const ASSET_REASONS: readonly string[] = [
+  'validate_primary',
+  'decide_monitoring',
+  'no_owner',
+  'context',
+  'unscanned',
+]
 
 /**
  * How many items a reason holds, or `undefined` while loading or when

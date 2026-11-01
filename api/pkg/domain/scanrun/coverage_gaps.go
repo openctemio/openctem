@@ -54,7 +54,19 @@ type CoverageGap struct {
 	Host   string `json:"host"`
 	Reason string `json:"reason"`
 	Detail string `json:"detail,omitempty"`
+	// Edge is how an edge protection answered in the host's place
+	// (EdgeChallenged or EdgeBlocked); Vendor names it (a token, shown as
+	// text only). Both are kept only on a blocked gap.
+	Edge   string `json:"edge,omitempty"`
+	Vendor string `json:"vendor,omitempty"`
 }
+
+// Edge states a sensor reports on a blocked gap (ctis edgeprotect). Any
+// other value is dropped.
+const (
+	EdgeChallenged = "challenged"
+	EdgeBlocked    = "blocked"
+)
 
 // ParseCoverageGaps reads a task result's coverage_gaps list and
 // coverage_gaps_total. It keeps at most MaxTaskCoverageGaps entries, cleans
@@ -80,7 +92,15 @@ func ParseCoverageGaps(list json.RawMessage, total int) ([]CoverageGap, int) {
 			continue
 		}
 		detail, _ := e["detail"].(string)
-		out = append(out, CoverageGap{Host: host, Reason: reason, Detail: safetext.SingleLine(detail, maxGapDetailRunes)})
+		g := CoverageGap{Host: host, Reason: reason, Detail: safetext.SingleLine(detail, maxGapDetailRunes)}
+		if reason == GapReasonBlocked {
+			if edge, _ := e["edge"].(string); edge == EdgeChallenged || edge == EdgeBlocked {
+				g.Edge = edge
+			}
+			vendor, _ := e["vendor"].(string)
+			g.Vendor = safetext.VendorToken(vendor)
+		}
+		out = append(out, g)
 	}
 	if len(out) == 0 {
 		out = nil

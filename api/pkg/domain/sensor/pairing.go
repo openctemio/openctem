@@ -59,6 +59,30 @@ type PairingHostFacts struct {
 	Name          string `json:"name,omitempty"`
 }
 
+// Why an administrator re-pairs a sensor (the re-pair dialog; audited and
+// on the sensor's timeline).
+const (
+	// RepairLostIdentity: the volume or state directory holding the key is
+	// gone (lost volume, reinstall).
+	RepairLostIdentity = "lost_identity"
+	// RepairHostMoved: the host was rebuilt or the sensor moved to another.
+	RepairHostMoved = "host_moved"
+	// RepairKeyCompromised: the key may be in someone else's hands.
+	RepairKeyCompromised = "key_compromised"
+	// RepairInstallMethod: the sensor is reinstalled another way (for
+	// example from Docker to Kubernetes).
+	RepairInstallMethod = "install_method"
+)
+
+// ValidRepairReason reports whether r is a known re-pair reason.
+func ValidRepairReason(r string) bool {
+	switch r {
+	case RepairLostIdentity, RepairHostMoved, RepairKeyCompromised, RepairInstallMethod:
+		return true
+	}
+	return false
+}
+
 // Pairing is one pairing request.
 type Pairing struct {
 	ID       shared.ID
@@ -78,7 +102,10 @@ type Pairing struct {
 	SourceIP  net.IP
 
 	RepairSensorID *shared.ID
-	SensorID       *shared.ID
+	// RepairReason is why the console started a re-pair (RepairReasons);
+	// empty for every other request.
+	RepairReason string
+	SensorID     *shared.ID
 
 	RequestedName    string
 	RequestedZoneIDs []shared.ID
@@ -208,6 +235,9 @@ type PairingRepository interface {
 	// expiry passed, so the code can open a new request.
 	ExpireStaleCodeUnscoped(ctx context.Context, codeHash string, now time.Time) error
 	CreateExpectation(ctx context.Context, p *Pairing) error
+	// CloseOpenRepairs closes (expired) the tenant's open re-pair requests
+	// for sensorID, so only the newest re-pair code of a sensor works.
+	CloseOpenRepairs(ctx context.Context, tenantID, sensorID shared.ID, now time.Time) (int64, error)
 	GetForTenant(ctx context.Context, tenantID, id shared.ID) (*Pairing, error)
 	Approve(ctx context.Context, a PairingApproval, repair *shared.ID) (*PairingApprovalResult, error)
 	// Deny refuses an open request of the tenant, or a tenantless
