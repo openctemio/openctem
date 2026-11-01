@@ -280,8 +280,8 @@ func TestSetPlatformCA(t *testing.T) {
 
 func TestMultiKitCommand(t *testing.T) {
 	pin := strings.Repeat("ab", 32)
-	got := MultiKitCommand("openctem-sensor", "https://192.168.8.204", "ABCD-EFGH", pin)
-	want := "./sensors.sh add 'openctem-sensor' --api-url 'https://192.168.8.204' --pairing-code 'ABCD-EFGH' --ca-sha256 " + pin + "\n"
+	got := MultiKitCommand("openctem-sensor", "https://192.0.2.10", "ABCD-EFGH", pin)
+	want := "./sensors.sh add 'openctem-sensor' --api-url 'https://192.0.2.10' --pairing-code 'ABCD-EFGH' --ca-sha256 " + pin + "\n"
 	if !strings.HasSuffix(got, want) || !strings.Contains(got, MultiKitGuideURL) {
 		t.Errorf("command:\n%s", got)
 	}

@@ -11,7 +11,8 @@
 import { useId } from 'react'
 import { Download, ShieldCheck } from 'lucide-react'
 
-import { Badge } from '@/components/ui/badge'
+import { SignalChip } from '@/components/ui/signal-chip'
+import { Tag } from '@/components/ui/tag'
 import { Button } from '@/components/ui/button'
 import { useTranslation } from '@/context/i18n-provider'
 
@@ -68,13 +69,11 @@ export function PlatformCAPanel({ ca }: { ca: PlatformCAInfo }) {
           <li key={c.sha256_hex} className="min-w-0 space-y-0.5" data-testid="platform-ca-cert">
             <div className="flex flex-wrap items-center gap-2">
               <span className="font-medium break-all">{c.common_name}</span>
-              <Badge variant={c.root ? 'secondary' : 'outline'} className="text-[11px]">
-                {c.root ? t('sensors.platformCa.root') : t('sensors.platformCa.intermediate')}
-              </Badge>
+              <Tag
+                label={c.root ? t('sensors.platformCa.root') : t('sensors.platformCa.intermediate')}
+              />
               {ca.pin.split(',').includes(c.sha256_hex) && (
-                <Badge variant="outline" className="text-[11px]">
-                  {t('sensors.platformCa.pinned')}
-                </Badge>
+                <SignalChip>{t('sensors.platformCa.pinned')}</SignalChip>
               )}
             </div>
             <p className="text-muted-foreground">
