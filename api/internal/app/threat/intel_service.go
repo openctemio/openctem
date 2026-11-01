@@ -487,10 +487,11 @@ var (
 	ErrFeedShrunk = feedstatus.ErrFeedShrunk
 )
 
-// markFailed records a failed sync with its classification.
+// markFailed records a failed sync with its classification. The stored text
+// is shown on the platform admin route: URL credentials are removed first.
 func markFailed(status *threatintel.SyncStatus, err error) {
 	c := feedstatus.Classify(err)
-	status.MarkSyncFailedWith(err.Error(), c.Code, c.Params)
+	status.MarkSyncFailedWith(logger.RedactURLs(err.Error()), c.Code, c.Params)
 }
 
 func shrinkGuard(source string, got int, stored int64) error {
