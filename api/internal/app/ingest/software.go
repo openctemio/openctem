@@ -131,7 +131,8 @@ func (s *Service) recordSoftware(ctx context.Context, tenantID shared.ID, scope 
 	if len(work) == 0 {
 		return
 	}
-	links, err := s.resolveSoftware(ctx, tenantID, work)
+	observedAt := reportObservedAt(report, time.Now())
+	links, err := s.resolveSoftware(ctx, tenantID, work, observedAt)
 	if err != nil {
 		s.logger.Warn("software inventory not recorded", "tenant_id", tenantID.String(), "error", logger.SanitizeError(err))
 		return
@@ -148,7 +149,7 @@ func (s *Service) recordSoftware(ctx context.Context, tenantID shared.ID, scope 
 
 // resolveSoftware turns observations into links: identity and version
 // parsed, products resolved in one pass, versions created once per report.
-func (s *Service) resolveSoftware(ctx context.Context, tenantID shared.ID, work []softwareWork) ([]software.Link, error) {
+func (s *Service) resolveSoftware(ctx context.Context, tenantID shared.ID, work []softwareWork, observedAt time.Time) ([]software.Link, error) {
 	type item struct {
 		assetID shared.ID
 		obs     software.Observation
@@ -203,10 +204,13 @@ func (s *Service) resolveSoftware(ctx context.Context, tenantID shared.ID, work 
 			Location: it.obs.Location, Port: it.obs.Port, Transport: it.obs.Transport,
 			Source: it.obs.Source, Evidence: it.obs.Evidence,
 			Confidence: software.Confidence(it.parsed, it.obs, ref.Global),
+			Version:    it.parsed.Version, Segments: it.parsed.Segments,
+			Class: software.ClassOf(it.obs, it.parsed), ObservedAt: observedAt,
 		}
 		k := linkKey{asset: it.assetID, version: vid, location: l.Location}
 		if i, seen := byKey[k]; seen {
-			if l.Confidence > links[i].Confidence {
+			if l.Class.Rank() > links[i].Class.Rank() ||
+				(l.Class == links[i].Class && l.Confidence > links[i].Confidence) {
 				links[i] = l
 			}
 			continue
@@ -260,12 +264,16 @@ func productObservations(base software.Observation, product, version, cpe, banne
 		o := base
 		o.Name, o.Version, o.CPE = product, version, cpe
 		o.Evidence = firstNonEmptyStr(banner, evidenceOf(product, version), cpe)
+		// The tool fingerprinted the service (product and version from its
+		// probes), not only read a banner.
+		o.Class = software.ClassProbe
 		return []software.Observation{o}
 	case strings.TrimSpace(banner) != "":
 		var out []software.Observation
 		for _, b := range software.ParseBanner(banner) {
 			o := base
 			o.Name, o.Version, o.Evidence = b.Name, b.Version, banner
+			o.Class = software.ClassBanner
 			out = append(out, o)
 		}
 		return out
