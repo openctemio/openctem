@@ -74,6 +74,19 @@ func registerExposureRoutes(
 	}, tenantMiddlewares...)
 }
 
+// registerExposureItemRoutes registers the Exposure Items view of the
+// external attack surface: exposures with their assets, scoped by the asset's
+// data scope. Writes stay the typed /exposures commands.
+func registerExposureItemRoutes(router Router, h *handler.ExposureHandler, authMiddleware Middleware, userSyncMiddleware Middleware, moduleGate Middleware) {
+	// The module gate runs after tenant extraction so it can read the tenant.
+	tenantMiddlewares := append(buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware), moduleGate)
+	router.Group("/api/v1/attack-surface/exposures", func(r Router) {
+		r.GET("/", h.ListItems, middleware.RequireAll(permission.FindingsRead, permission.ExposuresRead))
+		r.GET("/stats", h.ItemStats, middleware.RequireAll(permission.FindingsRead, permission.ExposuresRead))
+		r.GET("/assets", h.ItemsByAsset, middleware.RequireAll(permission.FindingsRead, permission.ExposuresRead))
+	}, tenantMiddlewares...)
+}
+
 // registerThreatIntelRoutes registers threat intelligence endpoints.
 // Threat intel provides global EPSS scores and KEV catalog data.
 // Permission model:

@@ -103,6 +103,54 @@ Threat model:
   on an asset outside the caller's scope, answers 404 and is not changed (DB
   tests `TestExposureTaxonomy_*`, `TestDataScope_*`).
 
+## Exposure Items view
+
+Attack surface > Exposure items (`/attack-surface/exposures` in the web console)
+is every exposure of the organization with the asset it is on, one table:
+
+- `GET /api/v1/attack-surface/exposures` lists exposures through the list query
+  contract (registry `exposure_items`, `pkg/domain/exposure/items.go`): filters
+  `severity`, `state`, `event_type`, `category` (the display category),
+  `source`, `asset_id`, `asset_name`, `asset_type`, `asset_monitoring_state`,
+  `primary`, `severity_overridden`, `first_seen`, `last_seen`, a search over
+  the title and the asset name, and sorts on `severity` (by rank), `state`,
+  `event_type`, `asset_name`, `first_seen`, `last_seen`. Each row is the
+  exposure response plus `asset_name`, `asset_type`, `asset_monitoring_state`
+  and `asset_primary`.
+- `GET /api/v1/attack-surface/exposures/stats` counts the same filtered set by
+  severity, display category and state (the summary strips).
+- `GET /api/v1/attack-surface/exposures/assets` folds the filtered set into one
+  row per asset (counts per severity, highest severity, first and last seen),
+  most severe first: the group-by-asset view. Exposures without an asset are
+  left out of it.
+
+All three need `findings:read` and `findings:exposures:read` (the gate of
+`GET /exposures`) and the attack surface module. The web console opens on the
+open exposures (active and in progress) of monitored assets; the filters can
+widen to every state and every asset. Writes are the typed exposure commands
+(`start-progress`, `resolve`, `accept`, `false-positive`, `reactivate`,
+`PATCH /severity`), so the four-eyes rule and the audit log apply unchanged; the
+severity cell opens the override dialog for a caller holding `findings:severity`
+and exposure triage. The export is the CSV of the filtered list (at most 2000
+rows, every cell formula-safe).
+
+**Isolation.** Every read compiles the filter for the caller
+(`filterspec.CompileFrom`): the tenant predicate first, then the data scope on
+the exposure's asset, so a member sees only the exposures of assets in their
+scope and an exposure without an asset (a leaked credential) reaches
+unrestricted callers only. The asset join and every subquery of the
+monitoring state and the primary marker carry the exposure's tenant. The
+monitoring state needs the tenant's unclassified-scans mode, which the handler
+resolves from the active-scan gate and binds as `$1` (unknown counts as not
+scanned, so nothing is labeled monitored by mistake); the per-row state join
+is only added when a filter or sort reads it.
+
+**Primary assets.** A primary asset is one of the organization's root
+domains: a domain asset named exactly like the root of a permanent, active
+domain scope entry (`example.com` or `*.example.com`) or like a verified
+domain (`asset.PrimarySQL`). The list marks it with a star and filters on it
+(`primary=true`).
+
 ## Monitoring state
 
 One derived state per asset, computed in SQL beside the scope status; nothing is

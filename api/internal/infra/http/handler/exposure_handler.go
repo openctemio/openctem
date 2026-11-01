@@ -26,6 +26,9 @@ type ExposureHandler struct {
 	userService *tenant.UserService
 	validator   *validator.Validator
 	logger      *logger.Logger
+	// unclassified is the tenant unclassified-scans mode for the Exposure
+	// Items view (nil: unclassified assets count as not scanned).
+	unclassified AssetUnclassifiedPolicy
 }
 
 // NewExposureHandler creates a new exposure handler.
