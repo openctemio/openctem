@@ -95,6 +95,15 @@ export const STATUS_TONES = {
       labelKey: 'sensors.tokens.state.revoked',
     },
   },
+  // Web page monitoring watches (RFC-138): the outcome of the last check.
+  webWatch: {
+    pending: { tone: 'triage', icon: DashedCircleGlyph, labelKey: 'pageMonitor.state.pending' },
+    ok: { tone: 'resolved', icon: CheckCircleGlyph, labelKey: 'pageMonitor.state.ok' },
+    failed: { tone: 'open', icon: RingDotGlyph, labelKey: 'pageMonitor.state.failed' },
+    blocked: { tone: 'closed', icon: SlashedCircleGlyph, labelKey: 'pageMonitor.state.blocked' },
+    waiting: { tone: 'waiting', icon: Clock, labelKey: 'pageMonitor.state.waiting' },
+    off: { tone: 'closed', icon: SlashedCircleGlyph, labelKey: 'pageMonitor.state.off' },
+  },
 } as const satisfies Record<string, Record<string, StatusEntry>>
 
 export type StatusDomain = keyof typeof STATUS_TONES
