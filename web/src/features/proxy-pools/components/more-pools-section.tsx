@@ -1,21 +1,18 @@
 'use client'
 
 import { useState } from 'react'
-import { Plus, Trash2, Waypoints } from 'lucide-react'
+import { Plus, Waypoints } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { ConfirmDialog } from '@/components/confirm-dialog'
-import { Badge } from '@/components/ui/badge'
-import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { useTranslation } from '@/context/i18n-provider'
-import { EmptyState, GatedButton } from '@/features/shared'
+import { EmptyState, GatedButton, SettingsSection } from '@/features/shared'
 
 import { deleteProxyPool, invalidateProxyPools } from '../api/use-proxy-pools'
 import { describeProxyError } from '../lib/errors'
 import type { ProxyPool } from '../types'
-import { EndpointTable } from './endpoint-table'
+import { PoolCard } from './pool-card'
 import { PoolDialog } from './pool-dialog'
-import { TestPoolButton } from './test-pool-button'
 import { confirmName } from '@/lib/confirm-name'
 
 interface MorePoolsSectionProps {
@@ -44,19 +41,14 @@ export function MorePoolsSection({ pools, canWrite, canDelete }: MorePoolsSectio
   )
 
   return (
-    <section aria-labelledby="more-pools-heading" className="space-y-3" data-testid="more-pools">
-      <div className="flex flex-wrap items-end justify-between gap-2">
-        <div>
-          <h2 id="more-pools-heading" className="text-base font-semibold">
-            {t('proxyPools.more.title', 'More pools')}
-          </h2>
-          <p className="text-sm text-muted-foreground">
-            {t(
-              'proxyPools.more.description',
-              'Pools for one network segment or a few sensors. Pick them on a sensor under Network path.'
-            )}
-          </p>
-        </div>
+    <SettingsSection
+      id="more-pools-heading"
+      title={t('proxyPools.more.title', 'More pools')}
+      description={t(
+        'proxyPools.more.description',
+        'Pools for one network segment or a few sensors. Pick them on a sensor under Network path.'
+      )}
+      actions={
         <GatedButton
           allowed={canWrite}
           reason={noWrite}
@@ -66,73 +58,34 @@ export function MorePoolsSection({ pools, canWrite, canDelete }: MorePoolsSectio
           <Plus className="size-4" aria-hidden />
           {t('proxyPools.more.new', 'New pool')}
         </GatedButton>
+      }
+    >
+      <div className="space-y-3" data-testid="more-pools">
+        {pools.length === 0 ? (
+          <EmptyState
+            card
+            icon={Waypoints}
+            title={t('proxyPools.more.emptyTitle', 'No other pools')}
+            description={t(
+              'proxyPools.more.emptyDescription',
+              'Add a pool when a sensor in a network segment must reach its targets through its own proxy.'
+            )}
+          />
+        ) : (
+          pools.map((p) => (
+            <PoolCard
+              key={p.id}
+              pool={p}
+              canWrite={canWrite}
+              stateBadge={p.enabled ? undefined : t('proxyPools.state.disabled', 'Disabled')}
+              onEdit={() => setEditing(p)}
+              onDelete={() => setDeleting(p)}
+              canDelete={canDelete && p.assigned_sensors === 0}
+              deleteReason={canDelete ? inUse : noDelete}
+            />
+          ))
+        )}
       </div>
-
-      {pools.length === 0 ? (
-        <EmptyState
-          icon={Waypoints}
-          title={t('proxyPools.more.emptyTitle', 'No other pools')}
-          description={t(
-            'proxyPools.more.emptyDescription',
-            'Add a pool when a sensor in a network segment must reach its targets through its own proxy.'
-          )}
-        />
-      ) : (
-        pools.map((p) => (
-          <Card key={p.id} data-testid="pool-row">
-            <CardHeader className="space-y-3">
-              <div className="flex flex-wrap items-start justify-between gap-2">
-                <div className="min-w-0 space-y-1">
-                  <CardTitle className="flex flex-wrap items-center gap-2 text-base">
-                    <span className="break-words">{p.name}</span>
-                    {!p.enabled && (
-                      <Badge variant="secondary" className="font-normal">
-                        {t('proxyPools.state.disabled', 'Disabled')}
-                      </Badge>
-                    )}
-                  </CardTitle>
-                  <CardDescription>
-                    {p.assigned_sensors === 1
-                      ? t('proxyPools.assignedSensors.one', '{count} sensor assigned', {
-                          count: p.assigned_sensors,
-                        })
-                      : t('proxyPools.assignedSensors.other', '{count} sensors assigned', {
-                          count: p.assigned_sensors,
-                        })}
-                    {p.description ? `, ${p.description}` : ''}
-                  </CardDescription>
-                </div>
-                <div className="flex gap-2">
-                  <TestPoolButton pool={p} canWrite={canWrite} />
-                  <GatedButton
-                    allowed={canWrite}
-                    reason={noWrite}
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setEditing(p)}
-                  >
-                    {t('proxyPools.edit', 'Edit')}
-                  </GatedButton>
-                  <GatedButton
-                    allowed={canDelete && p.assigned_sensors === 0}
-                    reason={canDelete ? inUse : noDelete}
-                    variant="ghost"
-                    size="sm"
-                    className="ms-3 text-destructive hover:text-destructive"
-                    aria-label={t('proxyPools.deleteNamed', 'Delete {name}', { name: p.name })}
-                    onClick={() => setDeleting(p)}
-                  >
-                    <Trash2 className="size-4" aria-hidden />
-                  </GatedButton>
-                </div>
-              </div>
-              {p.endpoints.length > 0 && (
-                <EndpointTable poolId={p.id} endpoints={p.endpoints} canWrite={canWrite} />
-              )}
-            </CardHeader>
-          </Card>
-        ))
-      )}
 
       {canWrite && (
         <PoolDialog
@@ -175,6 +128,6 @@ export function MorePoolsSection({ pools, canWrite, canDelete }: MorePoolsSectio
             )
         }}
       />
-    </section>
+    </SettingsSection>
   )
 }
