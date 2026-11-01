@@ -226,6 +226,13 @@ func UnifiedAuth(cfg UnifiedAuthConfig) func(http.Handler) http.Handler {
 				ctx = withCookieAuth(ctx)
 			}
 
+			// An account-only session (no tenant claim) reaches only the
+			// account allow-list (tenantless.go); deny by default.
+			if GetTenantID(ctx) == "" && !TenantlessAllowed(r.Method, r.URL.Path) {
+				refuseTenantless(w)
+				return
+			}
+
 			// Update the context logger with user_id and tenant_id
 			// so downstream services using logger.FromContext(ctx) get
 			// request-correlated logs automatically.

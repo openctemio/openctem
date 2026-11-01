@@ -28,6 +28,7 @@ const summary: FleetSummary = {
   zones: { total: 4, covered: 3, uncovered: ['branch-hanoi'] },
   protocolV1: 0,
   hasProtocolInfo: false,
+  cleanup: 0,
 }
 
 function renderStrip(over: Partial<React.ComponentProps<typeof FleetHealthStrip>> = {}) {

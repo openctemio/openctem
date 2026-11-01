@@ -146,6 +146,7 @@ var dataSurfaceRegistry = map[string]dataSurface{
 	"/api/v1/scan-zones":                           {classConfig, "scan zones"},
 	"/api/v1/proxy-pools":                          {classConfig, "proxy pools for sensor scan traffic: tenant configuration, no asset data; credentials never returned"},
 	"/api/v1/wordlists":                            {classConfig, "organization DNS label lists for subdomain enumeration: tenant configuration, no asset data; the preview counts the tenant's own learned labels and reads no asset row it returns"},
+	"/api/v1/content-rules":                        {classConfig, "organization detection rules (web fingerprints, sensitive information): tenant configuration, no asset data; the test runs a draft on a pasted sample and reads no stored row"},
 	"/api/v1/scan-window-policies":                 {classConfig, "scan window policies (RFC-067): tenant dispatch configuration"},
 	"/api/v1/lifecycle-sub-statuses":               {classConfig, "finding sub-status catalog (RFC-110): tenant configuration, no finding data"},
 	"/api/v1/lifecycles":                           {classConfig, "finding lifecycle schemes and versions (RFC-110): tenant configuration, no finding data"},
@@ -211,8 +212,10 @@ var dataSurfaceRegistry = map[string]dataSurface{
 
 	// --- partial -------------------------------------------------------------------
 	"/api/v1/asset-groups":                             {classScoped, "a restricted reader sees only the groups holding an asset in their scope or named by their team's scope rule (research/233 D4): list, search, stats and totals; any other id 404s, members and findings too; counts, risk and finding_count follow the reader (L-18); owner email full-data only"},
+	"/api/v1/attack-surface/exposures":                 {classScoped, "Exposure Items view: filterspec.Compile adds the tenant and the asset data scope; exposures without an asset reach unrestricted callers only (TestExposureItems_DataScopeAndTenant_DB)"},
 	"/api/v1/attack-surface":                           {classPartial, "chains dropped unless every hop is in scope; stats counts, breakdown and average risk and the chain summary follow the scope; the attack-path summary stays an organization-wide count with no ids"},
 	"/api/v1/easm":                                     {classPartial, "summary scoped; candidates are tenant discovery output"},
+	"/api/v1/easm/page-monitoring":                     {classScoped, "watches, changes and suggestions filtered by the data scope of the watch's web service; by id 404"},
 	"/api/v1/business-services":                        {classScoped, "a restricted reader sees only the services linking an asset in their scope (research/233 D4): list and total; any other id 404s, reads and writes; asset links scoped (L-10); update and delete need every linked asset in scope (403); asset_count counts only in-scope links; owner email full-data only"},
 	"/api/v1/business-units":                           {classScoped, "a restricted reader sees only the units holding an asset in their scope, or above one that does (research/233 D4): list, search and total; any other id 404s; asset links scoped (L-10); rollup counters count only in-scope assets; owner email full-data only"},
 	"/api/v1/ctem-cycles":                              {classPartial, "scope snapshot scoped (L-10); cycle metrics are tenant-wide counts"},

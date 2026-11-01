@@ -34,6 +34,7 @@ type ExposureEvent struct {
 	resolutionNotes string
 	createdAt       time.Time
 	updatedAt       time.Time
+	provenance      SeverityProvenance
 }
 
 // NewExposureEvent creates a new ExposureEvent.
@@ -196,10 +197,16 @@ func (e *ExposureEvent) Severity() Severity {
 // of the current severity and the stored peak. A re-ingest can lower the
 // current severity; the peak never goes down.
 func (e *ExposureEvent) PeakSeverity() Severity {
-	if e.peakSeverity.IsValid() && e.peakSeverity.Score() > e.severity.Score() {
+	peak := e.severity
+	// While an analyst override stands, the reported severity counts too:
+	// lowering the effective severity never lowers the peak.
+	if src := e.provenance.Source; e.provenance.OverriddenAt != nil && src.IsValid() && src.Score() > peak.Score() {
+		peak = src
+	}
+	if e.peakSeverity.IsValid() && e.peakSeverity.Score() > peak.Score() {
 		return e.peakSeverity
 	}
-	return e.severity
+	return peak
 }
 
 // WithPeakSeverity records the stored peak when the event is read back.
@@ -370,6 +377,16 @@ func (e *ExposureEvent) Reactivate() error {
 	e.resolvedAt = nil
 	e.resolvedBy = nil
 	e.resolutionNotes = ""
+	e.updatedAt = time.Now().UTC()
+	return nil
+}
+
+// StartProgress marks an open exposure as being worked on.
+func (e *ExposureEvent) StartProgress() error {
+	if !e.state.CanTransitionTo(StateInProgress) {
+		return fmt.Errorf("%w: %w: cannot transition from %s to in_progress", shared.ErrValidation, ErrInvalidStateTransition, e.state)
+	}
+	e.state = StateInProgress
 	e.updatedAt = time.Now().UTC()
 	return nil
 }

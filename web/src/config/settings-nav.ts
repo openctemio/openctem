@@ -7,19 +7,22 @@
  * deep (group, then item), with a way back to the app. The main sidebar keeps a
  * single "Settings" link.
  *
- * Groups (research 178, 2026-10-18): My account, Organization (what the
- * organization is), Security (how it is protected and audited), Access (who and
- * what may sign in: people, teams, roles, tokens), Findings & assets (policies
- * on findings, risk and the inventory), Scanning (what scans may do and with
- * which tools), Scanner content (rules, templates and their sources),
- * Integrations. URLs never move with the grouping.
+ * Six groups (settings IA decided 2026-10-01, item placement research 346):
+ * My account, Organization (what the organization is, its modules, usage and
+ * audit log), Access & security (who may do what, how they sign in, and who
+ * oversees it), Findings & assets (policies on findings, risk and the
+ * inventory), Scanning (what scans may do, with which tools and content),
+ * Integrations. A long group is split by `section` sub-headings. URLs never
+ * move with the grouping.
  *
  * Rules (src/config/__tests__/settings-nav.test.ts):
  * - every url has a page; no page is a scaffold;
  * - `permission` / `module` equal what the route guard enforces for the url,
  *   and personal items (/account) carry neither;
  * - a "Soon" badge if and only if the page is a ComingSoonPage;
- * - 2 to 9 items per group; titles in sentence case;
+ * - 2 to 10 items per group, or per section in a group with sections (a
+ *   group's first section is untitled; items of a section are contiguous);
+ *   titles in sentence case;
  * - every title, group, description and anchor has en and vi strings.
  *
  * Search (rail filter, /settings and ⌘K) matches titles, descriptions,
@@ -53,6 +56,7 @@ import {
   Key,
   KeyRound,
   ListChecks,
+  ScanSearch,
   ArrowLeftRight,
   Lock,
   LockKeyhole,
@@ -121,6 +125,11 @@ export interface SettingsNavItem {
   onlyWhenLimitsApply?: boolean
   /** Settings on the page that search can find and link to directly. */
   anchors?: SettingsNavAnchor[]
+  /**
+   * Sub-heading inside a long group (i18n key `settings.section.<id>`).
+   * Omitted for the group's first, untitled section.
+   */
+  section?: string
 }
 
 export interface SettingsNavGroup {
@@ -243,26 +252,113 @@ export const settingsNav: SettingsNavGroup[] = [
         keywords: ['limits', 'quota', 'seats', 'usage'],
         onlyWhenLimitsApply: true,
       },
+      {
+        // The organization's consent to AI triage (api: GET/PUT
+        // /organization/settings/ai, owners and administrators; the PUT
+        // needs a recent sign-in). Nothing goes to an AI provider until it is on.
+        id: 'ai',
+        title: 'AI',
+        description: 'Whether findings may be sent to an AI provider for triage.',
+        url: '/settings/ai',
+        icon: Sparkles,
+        permission: Permission.TeamUpdate,
+        module: 'ai_triage',
+        keywords: ['ai', 'llm', 'triage', 'consent', 'opt in', 'provider', 'data', 'privacy'],
+        anchors: [
+          { id: 'ai-triage', title: 'AI triage', keywords: ['turn on', 'enable'] },
+          {
+            id: 'ai-agents',
+            title: 'AI agents',
+            keywords: ['service account', 'owner', 'attest', 'pause', 'preset', 'triage'],
+          },
+          {
+            id: 'ai-masking',
+            title: 'AI data masking',
+            keywords: ['mask', 'placeholder', 'pseudonymise', 'redact', 'terms', 'preview'],
+          },
+        ],
+      },
+      {
+        id: 'audit-log',
+        title: 'Audit log',
+        description: 'Who did what, and when, across the organization.',
+        url: '/settings/audit-log',
+        icon: History,
+        permission: Permission.AuditRead,
+        keywords: ['audit trail', 'events', 'compliance'],
+      },
     ],
   },
   {
-    id: 'security',
-    title: 'Security',
+    id: 'access',
+    title: 'Access & security',
     items: [
       {
-        // The organization's posture checks and score (api: GET
-        // /organization/security-overview, owners and admins): the Security
-        // group's landing page.
-        id: 'security-overview',
-        title: 'Security overview',
-        description: 'A score and checklist of what to fix first in your organization.',
-        url: '/settings/security',
-        icon: ShieldAlert,
-        permission: Permission.TeamUpdate,
-        keywords: ['security', 'health', 'score', 'checklist', 'posture', '2fa', 'mfa'],
+        id: 'members',
+        title: 'Members',
+        description: 'People in the organization, their roles and invitations.',
+        url: '/settings/members',
+        icon: Users,
+        permission: Permission.MembersRead,
+        keywords: ['users', 'invite', 'people'],
+      },
+      {
+        id: 'teams',
+        title: 'Teams',
+        description: 'Groups of members, the assets they see, and the rules that assign assets.',
+        url: '/settings/teams',
+        icon: FolderKey,
+        permission: Permission.GroupsRead,
+        keywords: [
+          'groups',
+          'data scope',
+          'assignment rules',
+          'ownership',
+          'routing',
+          'members without a team',
+          'default access',
+        ],
+      },
+      {
+        id: 'roles',
+        title: 'Roles',
+        description: 'Custom roles and the permissions they grant.',
+        url: '/settings/roles',
+        icon: Key,
+        permission: Permission.RolesRead,
+        keywords: ['rbac', 'permissions'],
+      },
+      {
+        // An organization-owned identity for an integration, with its own
+        // roles, teams and API keys. Not module gated: the API gates none of
+        // its routes on the integrations module.
+        id: 'service-accounts',
+        title: 'Service accounts',
+        description: 'Identities for integrations, with their own roles and API keys.',
+        url: '/settings/service-accounts',
+        icon: ServerCog,
+        permission: Permission.MembersRead,
+        keywords: [
+          'service account',
+          'machine',
+          'bot',
+          'integration identity',
+          'api key',
+          'non-human',
+        ],
+      },
+      {
+        id: 'api-keys',
+        title: 'API keys',
+        description: 'Keys for scripts and tools that call the API.',
+        url: '/settings/api-keys',
+        icon: KeyRound,
+        permission: Permission.ApiKeysRead,
+        keywords: ['token', 'programmatic', 'automation'],
       },
       {
         id: 'authentication',
+        section: 'sign-in',
         title: 'Authentication',
         description: 'Two-factor, who may join, the IP allowlist and email verification.',
         url: '/settings/authentication',
@@ -303,6 +399,7 @@ export const settingsNav: SettingsNavGroup[] = [
         // What the verified SSO domains do to accounts on them (api RFC-104):
         // read by owners and admins, changed by owners only.
         id: 'domains',
+        section: 'sign-in',
         title: 'Domains',
         description: 'Who may join with your domain, and whether it must use single sign-on.',
         url: '/settings/domains',
@@ -311,9 +408,20 @@ export const settingsNav: SettingsNavGroup[] = [
         keywords: ['domain', 'join', 'sign up', 'sso required', 'workspace', 'claim'],
       },
       {
+        id: 'scim',
+        section: 'sign-in',
+        title: 'Directory sync (SCIM)',
+        description: 'Provision members from your identity provider.',
+        url: '/settings/scim',
+        icon: UserCog,
+        permission: Permission.MembersRead,
+        keywords: ['scim', 'provisioning', 'okta', 'entra', 'azure ad', 'directory'],
+      },
+      {
         // Two-sided trusts with partner organizations (api RFC-058): read by
         // owners and admins, changed by owners only.
         id: 'trusted-organizations',
+        section: 'sign-in',
         title: 'Trusted organizations',
         description: 'Partner organizations whose people sign in here with their own SSO.',
         url: '/settings/trusted-organizations',
@@ -322,9 +430,23 @@ export const settingsNav: SettingsNavGroup[] = [
         keywords: ['trust', 'partner', 'sister company', 'external', 'home realm', 'sso'],
       },
       {
+        // The organization's posture checks and score (api: GET
+        // /organization/security-overview, owners and admins): the Security
+        // group's landing page.
+        id: 'security-overview',
+        section: 'oversight',
+        title: 'Security overview',
+        description: 'A score and checklist of what to fix first in your organization.',
+        url: '/settings/security',
+        icon: ShieldAlert,
+        permission: Permission.TeamUpdate,
+        keywords: ['security', 'health', 'score', 'checklist', 'posture', '2fa', 'mfa'],
+      },
+      {
         // Owners approve or reject SSO changes the platform administrator
         // proposed (RFC-022 revision 8); the page tells admins it is owner only.
         id: 'sso-approvals',
+        section: 'oversight',
         title: 'SSO approvals',
         description: 'Approve or reject sign-in changes proposed by the platform administrator.',
         url: '/settings/sso-approvals',
@@ -336,6 +458,7 @@ export const settingsNav: SettingsNavGroup[] = [
         // Time-boxed, read-only, audited access for platform support (api
         // RFC-063): owners grant, owners and admins revoke and see history.
         id: 'support-access',
+        section: 'oversight',
         title: 'Support access',
         description: 'Let platform support read your data for a limited time.',
         url: '/settings/support-access',
@@ -344,141 +467,8 @@ export const settingsNav: SettingsNavGroup[] = [
         keywords: ['support', 'help', 'troubleshoot', 'grant', 'revoke', 'case'],
       },
       {
-        // The organization's consent to AI triage (api: GET/PUT
-        // /organization/settings/ai, owners and administrators; the PUT
-        // needs a recent sign-in). Nothing goes to an AI provider until it is on.
-        id: 'ai',
-        title: 'AI',
-        description: 'Whether findings may be sent to an AI provider for triage.',
-        url: '/settings/ai',
-        icon: Sparkles,
-        permission: Permission.TeamUpdate,
-        module: 'ai_triage',
-        keywords: ['ai', 'llm', 'triage', 'consent', 'opt in', 'provider', 'data', 'privacy'],
-        anchors: [
-          { id: 'ai-triage', title: 'AI triage', keywords: ['turn on', 'enable'] },
-          {
-            id: 'ai-agents',
-            title: 'AI agents',
-            keywords: ['service account', 'owner', 'attest', 'pause', 'preset', 'triage'],
-          },
-          {
-            id: 'ai-masking',
-            title: 'AI data masking',
-            keywords: ['mask', 'placeholder', 'pseudonymise', 'redact', 'terms', 'preview'],
-          },
-        ],
-      },
-      {
-        id: 'audit-log',
-        title: 'Audit log',
-        description: 'Who did what, and when, across the organization.',
-        url: '/settings/audit-log',
-        icon: History,
-        permission: Permission.AuditRead,
-        keywords: ['audit trail', 'events', 'compliance'],
-      },
-    ],
-  },
-  {
-    id: 'access',
-    title: 'Access',
-    items: [
-      {
-        id: 'members',
-        title: 'Members',
-        description: 'People in the organization, their roles and invitations.',
-        url: '/settings/members',
-        icon: Users,
-        permission: Permission.MembersRead,
-        keywords: ['users', 'invite', 'people'],
-        anchors: [
-          {
-            id: 'pending-invitations',
-            title: 'Pending invitations',
-            keywords: ['invite', 'invitation', 'resend'],
-          },
-        ],
-      },
-      {
-        id: 'teams',
-        title: 'Teams',
-        description: 'Groups of members, the assets they see, and the rules that assign assets.',
-        url: '/settings/teams',
-        icon: FolderKey,
-        permission: Permission.GroupsRead,
-        keywords: [
-          'groups',
-          'data scope',
-          'assignment rules',
-          'ownership',
-          'routing',
-          'members without a team',
-          'default access',
-        ],
-      },
-      {
-        id: 'roles',
-        title: 'Roles',
-        description: 'Custom roles and the permissions they grant.',
-        url: '/settings/roles',
-        icon: Key,
-        permission: Permission.RolesRead,
-        keywords: ['rbac', 'permissions'],
-        anchors: [
-          {
-            id: 'create-role',
-            title: 'Create a role',
-            keywords: ['custom role', 'permissions', 'new role'],
-          },
-        ],
-      },
-      {
-        id: 'scim',
-        title: 'Directory sync (SCIM)',
-        description: 'Provision members from your identity provider.',
-        url: '/settings/scim',
-        icon: UserCog,
-        permission: Permission.MembersRead,
-        keywords: ['scim', 'provisioning', 'okta', 'entra', 'azure ad', 'directory'],
-        anchors: [
-          {
-            id: 'scim-endpoint',
-            title: 'SCIM endpoint and token',
-            keywords: ['token', 'url', 'provisioning'],
-          },
-        ],
-      },
-      {
-        id: 'api-keys',
-        title: 'API keys',
-        description: 'Keys for scripts and tools that call the API.',
-        url: '/settings/api-keys',
-        icon: KeyRound,
-        permission: Permission.ApiKeysRead,
-        keywords: ['token', 'programmatic', 'automation'],
-      },
-      {
-        // An organization-owned identity for an integration, with its own
-        // roles, teams and API keys. Not module gated: the API gates none of
-        // its routes on the integrations module.
-        id: 'service-accounts',
-        title: 'Service accounts',
-        description: 'Identities for integrations, with their own roles and API keys.',
-        url: '/settings/service-accounts',
-        icon: ServerCog,
-        permission: Permission.MembersRead,
-        keywords: [
-          'service account',
-          'machine',
-          'bot',
-          'integration identity',
-          'api key',
-          'non-human',
-        ],
-      },
-      {
         id: 'mcp',
+        section: 'oversight',
         title: 'AI assistants (MCP)',
         description: 'Let AI assistants work with your data over MCP; approve applications.',
         url: '/settings/mcp',
@@ -754,6 +744,7 @@ export const settingsNav: SettingsNavGroup[] = [
       },
       {
         id: 'scan-profiles',
+        section: 'tools',
         title: 'Scan profiles',
         description: 'Reusable scan configurations: tools, intensity and duration.',
         url: '/settings/scanning/profiles',
@@ -764,6 +755,7 @@ export const settingsNav: SettingsNavGroup[] = [
       },
       {
         id: 'tools',
+        section: 'tools',
         title: 'Tools',
         description: 'The tools your sensors have, and whether a scan can run with each.',
         url: '/settings/scanning/tools',
@@ -774,6 +766,7 @@ export const settingsNav: SettingsNavGroup[] = [
       },
       {
         id: 'tool-defaults',
+        section: 'tools',
         title: 'Tool defaults',
         description: 'Default options for each tool on every sensor; a sensor can override them.',
         url: '/settings/scanning/tool-defaults',
@@ -784,6 +777,7 @@ export const settingsNav: SettingsNavGroup[] = [
       },
       {
         id: 'sensor-products',
+        section: 'tools',
         title: 'Sensor products',
         description: 'Latest and minimum release of the sensors your organization builds.',
         url: '/settings/scanning/sensor-products',
@@ -794,6 +788,7 @@ export const settingsNav: SettingsNavGroup[] = [
       },
       {
         id: 'capabilities',
+        section: 'tools',
         title: 'Capabilities',
         description: 'The capability taxonomy that tools are matched on.',
         url: '/settings/scanning/capabilities',
@@ -802,16 +797,11 @@ export const settingsNav: SettingsNavGroup[] = [
         module: 'scans',
         keywords: ['taxonomy'],
       },
-    ],
-  },
-  {
-    id: 'content',
-    title: 'Scanner content',
-    items: [
       {
         // Signed content packages from the catalog (api RFC-099): read with
         // content:read; installs and approvals need content:install.
         id: 'content',
+        section: 'content',
         title: 'Content catalog',
         description: 'Signed rules, templates and other packages: install, update and approve.',
         url: '/settings/content',
@@ -821,6 +811,7 @@ export const settingsNav: SettingsNavGroup[] = [
       },
       {
         id: 'scanner-templates',
+        section: 'content',
         title: 'Scanner templates',
         description: 'Custom Nuclei, Semgrep and Betterleaks templates.',
         url: '/settings/scanning/templates',
@@ -831,6 +822,7 @@ export const settingsNav: SettingsNavGroup[] = [
       },
       {
         id: 'source-credentials',
+        section: 'content',
         title: 'Source credentials',
         description: 'Encrypted credentials that template sources use to fetch.',
         url: '/settings/scanning/credentials',
@@ -841,6 +833,7 @@ export const settingsNav: SettingsNavGroup[] = [
       },
       {
         id: 'scanner-content',
+        section: 'content',
         title: 'Content freshness',
         description: 'How fresh vulnerability databases, templates and rules must be.',
         url: '/settings/scanning/content',
@@ -853,6 +846,7 @@ export const settingsNav: SettingsNavGroup[] = [
         // Organization wordlists (api docs/architecture/wordlists.md): read
         // with scans:content:read; changes need scans:content:write.
         id: 'wordlists',
+        section: 'content',
         title: 'Wordlists',
         description: 'Words subdomain discovery tries under your domains.',
         url: '/settings/scanning/wordlists',
@@ -867,6 +861,18 @@ export const settingsNav: SettingsNavGroup[] = [
           'labels',
           'discovery',
         ],
+      },
+      {
+        // Organization detection rules (api docs/architecture/rule-packs.md):
+        // read with scans:content:read; changes need scans:content:write.
+        id: 'detectionRules',
+        section: 'content',
+        title: 'Detection rules',
+        description: 'Rules that name technologies and find exposed secrets in scan results.',
+        url: '/settings/scanning/detection-rules',
+        icon: ScanSearch,
+        permission: Permission.ContentPacksRead,
+        keywords: ['fingerprint', 'technology', 'secret', 'token', 'regex', 'rule', 'sensitive'],
       },
     ],
   },

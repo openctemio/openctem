@@ -207,6 +207,8 @@ pentest_retests
 priority_class_audit_log
 priority_override_rules
 proxy_command_egress
+proxy_echo_observations
+proxy_endpoint_exits
 proxy_endpoints
 proxy_pools
 proxy_sensor_assignments
@@ -280,6 +282,7 @@ support_grants
 support_sessions
 suppression_rules
 tenant_ai_settings
+tenant_content_rules
 tenant_feature_denies
 tenant_identity_providers
 tenant_idle_lifecycle
@@ -318,8 +321,11 @@ vex_statements
 vuln_match_queue
 vulnerabilities
 web_alert_fingerprints
+web_changes
 web_endpoint_events
 web_endpoint_params
 web_endpoint_verifications
 web_endpoints
+web_snapshots
+web_watches
 work_item_subscriptions

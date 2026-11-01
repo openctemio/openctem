@@ -39,7 +39,12 @@ type ExposureService struct {
 	// dispositions is the four-eyes rule for accepting or dismissing a high
 	// or critical exposure. nil = one step (unwired tests only).
 	dispositions *DispositionGate
-	logger       *logger.Logger
+	// severities stores the analyst severity override; audit records it.
+	severities SeverityStore
+	audit      *auditapp.AuditService
+	// items reads the Exposure Items view (nil: not wired).
+	items  exposuredom.ItemReader
+	logger *logger.Logger
 }
 
 // SetDataScope wires the Layer 2 data-scope enforcer.
@@ -547,11 +552,14 @@ func (s *ExposureService) TagCTEMID(ctx context.Context, tenantID, eventID, ctem
 type ListExposuresInput struct {
 	TenantID string
 
-	AssetID         string
-	EventTypes      []string
-	Severities      []string
-	States          []string
-	Sources         []string
+	AssetID    string
+	EventTypes []string
+	Severities []string
+	States     []string
+	Sources    []string
+	// Categories keeps exposures of these display categories (their event
+	// types; ANDed with EventTypes).
+	Categories      []string
 	Search          string
 	FirstSeenAfter  int64
 	FirstSeenBefore int64
@@ -599,6 +607,13 @@ func (s *ExposureService) ListExposures(ctx context.Context, input ListExposures
 				return pagination.Result[*exposuredom.ExposureEvent]{}, fmt.Errorf("%w: invalid event_type %q", shared.ErrValidation, t)
 			}
 			types = append(types, et)
+		}
+		filter = filter.WithEventTypes(types...)
+	}
+	if len(input.Categories) > 0 {
+		types, err := categoryEventTypes(input.Categories, filter.EventTypes)
+		if err != nil {
+			return pagination.Result[*exposuredom.ExposureEvent]{}, err
 		}
 		filter = filter.WithEventTypes(types...)
 	}
@@ -892,6 +907,10 @@ func (s *ExposureService) applyState(ctx context.Context, event *exposuredom.Exp
 	previousState := event.State()
 
 	switch newState {
+	case exposuredom.StateInProgress:
+		if err := event.StartProgress(); err != nil {
+			return nil, err
+		}
 	case exposuredom.StateResolved:
 		if err := event.Resolve(parsedUserID, notes); err != nil {
 			return nil, err
@@ -968,12 +987,14 @@ func (s *ExposureService) GetExposureStats(ctx context.Context, tenantID string)
 		total += v
 	}
 	stats := map[string]any{
-		"by_state":       st.ByState,
-		"by_severity":    st.BySeverity,
-		"by_event_type":  st.ByEventType,
-		"total":          total,
-		"active_count":   st.ByState[exposuredom.StateActive.String()],
-		"resolved_count": st.ByState[exposuredom.StateResolved.String()],
+		"by_state":      st.ByState,
+		"by_severity":   st.BySeverity,
+		"by_event_type": st.ByEventType,
+		"total":         total,
+		// active_count counts every open exposure (active or in progress).
+		"active_count":      st.ByState[exposuredom.StateActive.String()] + st.ByState[exposuredom.StateInProgress.String()],
+		"in_progress_count": st.ByState[exposuredom.StateInProgress.String()],
+		"resolved_count":    st.ByState[exposuredom.StateResolved.String()],
 	}
 	// MTTR only when at least one resolved event has a timestamp to average.
 	if st.HasMTTR {

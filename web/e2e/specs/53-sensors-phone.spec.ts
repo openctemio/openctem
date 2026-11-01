@@ -191,7 +191,11 @@ for (const width of [390, 1440] as const) {
       await expect(tile('Needs attention')).toContainText('storage full')
       await expect(tile('Needs attention')).not.toContainText('nothing to fix')
       if (width === 390) {
-        await expect(page.getByText('takes no new jobs: storage full')).toBeVisible()
+        // The reason is in the DOM twice (the phone card and the table row,
+        // one hidden by CSS); the visible one must show it.
+        await expect(
+          page.getByText('takes no new jobs: storage full').locator('visible=true').first()
+        ).toBeVisible()
       }
 
       // The legend is one line until it is opened.

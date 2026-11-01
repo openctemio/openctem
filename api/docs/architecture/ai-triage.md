@@ -235,6 +235,21 @@ it).
   omit to keep, `""` to remove). Needs owner or administrator,
   `settings:write` and a recent sign-in; audited as critical
   `ai_settings.updated` with before and after of everything except the key.
+- `GET/PUT .../auto-triage` is the automatic triage policy: `{enabled,
+  severities, delay_seconds}` (severities `critical` to `info`, delay 0 to
+  3600 seconds). New findings of those severities are queued for triage
+  without a person asking, while AI triage is on. Until an administrator
+  saves it, the platform defaults apply (`AI_AUTO_TRIAGE_DEFAULT_ENABLED`,
+  `AI_AUTO_TRIAGE_DEFAULT_SEVERITIES`, `AI_AUTO_TRIAGE_DELAY`); a save writes
+  every key, so an explicit "off" wins over a default that is on. Owner or
+  administrator with `settings:read` / `settings:write`. A loosening (turning
+  it on, or adding a severity while on) needs a recent sign-in (`403
+  STEP_UP_REQUIRED`, asked by the service), is audited high
+  (`ai_settings.auto_triage_updated`, metadata `loosened`) and every owner and
+  administrator gets an in-app notice. Turning it off, fewer severities and
+  the delay apply at once without step-up, so it can be stopped in one click.
+  Saving the policy never turns AI triage on (consent stays a separate,
+  critical-audited step).
 - POST `/test` calls the provider from the server with one tiny prompt ("Reply
   with OK."; no finding data), with the form's values over the stored ones, and
   answers `{ok, code}` with a fixed code (`ok`, `invalid_url`,
