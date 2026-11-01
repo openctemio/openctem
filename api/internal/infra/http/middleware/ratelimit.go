@@ -491,6 +491,23 @@ func (a *AuthRateLimiter) MFAMiddleware() func(http.Handler) http.Handler {
 	}
 }
 
+// UserCodeMiddleware limits entering the user code of a terminal sign-in
+// (the device authorization grant, RFC 8628 §5.1): the login rate per
+// address and the second-step rate per signed-in person, so neither one
+// address nor one account can try many codes. It runs after authentication.
+func (a *AuthRateLimiter) UserCodeMiddleware() func(http.Handler) http.Handler {
+	perIP := a.loginLimiter.middleware(func(r *http.Request) string { return "user-code-ip:" + getClientIP(r) })
+	perUser := a.mfaLimiter.middleware(func(r *http.Request) string {
+		if u := GetUserID(r.Context()); u != "" {
+			return "user-code-user:" + u
+		}
+		return "user-code-ip:" + getClientIP(r)
+	})
+	return func(next http.Handler) http.Handler {
+		return perIP(perUser(next))
+	}
+}
+
 // mfaChallengeKey keys a second-factor request by its challenge token. The
 // body is read (bounded) and restored for the handler; only a hash of the
 // token is kept as the bucket key.
