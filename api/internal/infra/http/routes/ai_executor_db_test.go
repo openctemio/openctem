@@ -27,6 +27,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/datascope"
 	"github.com/openctemio/openctem/api/internal/app/finding"
 	tenantapp "github.com/openctemio/openctem/api/internal/app/tenant"
+	"github.com/openctemio/openctem/api/internal/app/tenantai"
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
 	"github.com/openctemio/openctem/api/internal/infra/llm"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
@@ -90,6 +91,7 @@ type aiExecHarness struct {
 	aiAgents *aianalysis.Service
 	executor *aianalysis.BuiltinExecutor
 	model    *aiScriptedModel
+	useCases *postgres.TenantAISettingsRepository
 }
 
 func newAIExecHarness(t *testing.T) *aiExecHarness {
@@ -135,6 +137,10 @@ func newAIExecHarness(t *testing.T) *aiExecHarness {
 		aiExecSettings{}, aiScriptedFactory{p: out.model}, aiFixedInputs{host: aiExecHost},
 		aibundle.NewBuilder(aipolicy.New(nil, nil)), maps, aianalysis.ExecutorConfig{MaxTokens: 500}, logger.NewNop())
 	out.executor.SetAIAgents(out.aiAgents)
+	// The organization's use case settings, read from the database at every
+	// run (docs/architecture/ai-use-cases.md).
+	out.useCases = postgres.NewTenantAISettingsRepository(db)
+	out.executor.SetUseCases(tenantai.NewService(out.useCases, nil, nil, nil, nil, nil))
 
 	out.org = h.tenantWithFindings()
 	out.owner = h.member(out.org, "owner")
@@ -159,6 +165,24 @@ func (h *aiExecHarness) aiAgent(preset string) *aidom.AIAgent {
 		_, _ = h.db.ExecContext(context.Background(), `DELETE FROM users WHERE id = $1`, a.ID.String())
 	})
 	return a
+}
+
+// setUseCase stores an organization's use case setting as an administrator
+// would have saved it.
+func (h *aiExecHarness) setUseCase(org string, uc aidom.UseCase, mode aidom.UseCaseMode, ceiling aidom.DataClass, minConf float64) {
+	h.t.Helper()
+	tid, _ := shared.IDFromString(org)
+	set := aidom.DefaultUseCaseSetting()
+	set.Mode, set.Ceiling, set.MinConfidence = mode, ceiling, minConf
+	if err := h.useCases.SaveUseCase(context.Background(), tid, uc, set); err != nil {
+		h.t.Fatalf("save use case: %v", err)
+	}
+}
+
+// autoApplyTriage lets the triage use case apply on its own (default
+// minimum confidence 0.85).
+func (h *aiExecHarness) autoApplyTriage() {
+	h.setUseCase(h.org, aidom.UseCaseTriage, aidom.UseCaseAutoApply, aidom.DataClassInternal, aidom.DefaultMinConfidence)
 }
 
 // findingFor is a new finding of severity assigned to the AI agent (its scope).
@@ -201,6 +225,7 @@ func outcomes(d *aianalysis.RunDetail) map[string]aianalysis.ActionOutcome {
 
 func TestAIExecutor_SuggestAIAgentCommentsAndRequests_DB(t *testing.T) {
 	h := newAIExecHarness(t)
+	h.autoApplyTriage()
 	a := h.aiAgent("suggest")
 	f := h.findingFor(a, "medium")
 	h.model.reply = `{"suggestions":[
@@ -251,6 +276,7 @@ func TestAIExecutor_SuggestAIAgentCommentsAndRequests_DB(t *testing.T) {
 
 func TestAIExecutor_TriageAIAgentActsWithinItsPreset_DB(t *testing.T) {
 	h := newAIExecHarness(t)
+	h.autoApplyTriage()
 	a := h.aiAgent("triage")
 	f := h.findingFor(a, "medium")
 	h.model.reply = `{"suggestions":[
@@ -261,15 +287,17 @@ func TestAIExecutor_TriageAIAgentActsWithinItsPreset_DB(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := outcomes(d); got["verdict"] != aianalysis.ActionApplied || got["severity"] != aianalysis.ActionApplied {
+	// A verdict that confirms the issue adds information and applies; a
+	// severity never changes without a person, even a raise.
+	if got := outcomes(d); got["verdict"] != aianalysis.ActionApplied || got["severity"] != aianalysis.ActionCommented {
 		t.Fatalf("triage agent outcomes: %v", got)
 	}
 	var status, sev string
 	if err := h.db.QueryRow(`SELECT status, severity FROM findings WHERE id = $1`, f).Scan(&status, &sev); err != nil {
 		t.Fatal(err)
 	}
-	if status != "confirmed" || sev != "high" {
-		t.Fatalf("finding status=%s severity=%s, want confirmed/high", status, sev)
+	if status != "confirmed" || sev != "medium" {
+		t.Fatalf("finding status=%s severity=%s, want confirmed/medium", status, sev)
 	}
 
 	// Lowering severity is always a request, even for a triage AI agent.
@@ -294,6 +322,7 @@ func TestAIExecutor_TriageAIAgentActsWithinItsPreset_DB(t *testing.T) {
 
 func TestAIExecutor_UnsafeOutputOnlyComments_DB(t *testing.T) {
 	h := newAIExecHarness(t)
+	h.autoApplyTriage()
 	a := h.aiAgent("triage")
 	f := h.findingFor(a, "medium")
 	// No evidence, a forged placeholder and low confidence: nothing changes.
@@ -361,11 +390,12 @@ func TestAIExecutor_RefusesBeforeAnyRun_DB(t *testing.T) {
 // overwrites that decision; its change becomes a comment.
 func TestAIExecutor_NeverOverwritesAConcurrentChange_DB(t *testing.T) {
 	h := newAIExecHarness(t)
+	h.autoApplyTriage()
 	a := h.aiAgent("triage")
-	f := h.findingFor(a, "medium")
-	h.model.during = func() { h.exec(`UPDATE findings SET severity = 'low' WHERE id = $1`, f) }
+	f := h.findingFor(a, "high")
+	h.model.during = func() { h.exec(`UPDATE findings SET severity = 'medium' WHERE id = $1`, f) }
 	h.model.reply = `{"suggestions":[
- {"kind":"severity","payload":{"severity":"critical","reason":"Internet facing."},"confidence":0.9,"evidence":[{"ref":"bundle:finding.title"}]}
+ {"kind":"severity","payload":{"severity":"low","reason":"Internal only."},"confidence":0.9,"evidence":[{"ref":"bundle:finding.title"}]}
 ]}`
 	d, err := h.analyze(a, f, "triage.v1")
 	if err != nil {
@@ -378,17 +408,18 @@ func TestAIExecutor_NeverOverwritesAConcurrentChange_DB(t *testing.T) {
 	if err := h.db.QueryRow(`SELECT severity FROM findings WHERE id = $1`, f).Scan(&sev); err != nil {
 		t.Fatal(err)
 	}
-	if sev != "low" {
+	if sev != "medium" {
 		t.Fatalf("the agent overwrote a person's change: severity %s", sev)
 	}
 }
 
 // A person who starts a run could approve the risk-lowering request it files
 // as the "second person" (RFC-132 D7). On demand, the AI agent therefore
-// leaves a false positive or a severity downgrade as a comment; raising
-// severity still goes through.
+// leaves a false positive or a severity downgrade as a comment, even in
+// auto-apply.
 func TestAIExecutor_OnDemandRunFilesNoRiskLoweringRequest_DB(t *testing.T) {
 	h := newAIExecHarness(t)
+	h.autoApplyTriage()
 	a := h.aiAgent("triage")
 	f := h.findingFor(a, "high")
 	h.model.reply = `{"suggestions":[
@@ -413,7 +444,7 @@ func TestAIExecutor_OnDemandRunFilesNoRiskLoweringRequest_DB(t *testing.T) {
 		t.Fatalf("an on-demand run filed %d false-positive and %d severity requests, want none", fp, sevReq)
 	}
 
-	// Raising severity lowers no risk: it still applies on demand.
+	// A raise is never applied on its own either: it stays a suggestion.
 	f2 := h.findingFor(a, "medium")
 	h.model.reply = `{"suggestions":[
  {"kind":"severity","payload":{"severity":"high","reason":"Internet facing."},"confidence":0.9,"evidence":[{"ref":"bundle:finding.title"}]}
@@ -422,7 +453,7 @@ func TestAIExecutor_OnDemandRunFilesNoRiskLoweringRequest_DB(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := outcomes(d); got["severity"] != aianalysis.ActionApplied {
-		t.Fatalf("on-demand severity raise outcome: %v, want applied", got)
+	if len(d.Actions) != 1 || d.Actions[0].Outcome != aianalysis.ActionCommented || d.Actions[0].Reason != "severity_needs_person" {
+		t.Fatalf("on-demand severity raise: %+v, want a comment", d.Actions)
 	}
 }
