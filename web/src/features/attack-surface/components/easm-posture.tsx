@@ -92,24 +92,22 @@ export function EASMPosture() {
     const issues = posture.score.categories.reduce((n, c) => n + c.issues, 0)
     return [
       {
-        key: 'score',
-        label: t('attackSurface.posture.strip.score', 'Score'),
-        value: posture.score.score,
-      },
-      {
         key: 'assets',
         label: t('attackSurface.posture.strip.assets', 'Surface assets'),
         value: posture.score.assets,
+        href: '/attack-surface/external',
       },
       {
         key: 'issues',
         label: t('attackSurface.posture.strip.issues', 'Issues counted'),
         value: issues,
+        href: '/attack-surface/exposures',
       },
       {
         key: 'roots',
         label: t('attackSurface.posture.strip.roots', 'Root domains'),
         value: root ? 1 : posture.roots_total,
+        href: '/attack-surface/external',
       },
     ]
   }, [posture, root, t])

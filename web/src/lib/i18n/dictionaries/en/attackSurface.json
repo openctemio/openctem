@@ -424,7 +424,6 @@
   "attackSurface.posture.strip.assets": "Surface assets",
   "attackSurface.posture.strip.issues": "Issues counted",
   "attackSurface.posture.strip.roots": "Root domains",
-  "attackSurface.posture.strip.score": "Score",
   "attackSurface.posture.title": "Posture",
   "attackSurface.posture.tooSoon": "Recalculated less than five minutes ago. Try again later.",
   "attackSurface.posture.topGrade": "Top grade: keep it there.",

@@ -162,6 +162,14 @@ describe('EASMPosture', () => {
     expect(screen.getByRole('button', { name: 'example.com' })).toBeInTheDocument()
   })
 
+  it('makes every figure of the strip a link to the list it counts', async () => {
+    const { container } = (wrap(<EASMPosture />), { container: document.body })
+    await screen.findByTestId('posture-plan')
+    const tiles = Array.from(container.querySelectorAll('[data-slot="metric-strip"] > *'))
+    expect(tiles.length).toBeGreaterThan(0)
+    for (const tile of tiles) expect(tile.matches('a[href]')).toBe(true)
+  })
+
   it('opens one root domain through the API filter', async () => {
     wrap(<EASMPosture />)
     await userEvent.click(await screen.findByRole('button', { name: 'example.com' }))
