@@ -3203,7 +3203,7 @@ var findingStatsSelect = `
 			COALESCE(SUM(CASE WHEN source = 'external' THEN 1 ELSE 0 END), 0) as source_external,
 			-- Risk posture over the Open lens: the same predicate as the
 			-- "Open" state tab, so a card and the tab never disagree.
-			COUNT(*) FILTER (WHERE is_in_kev AND ` + openLens + `) as kev_open,
+			COUNT(*) FILTER (WHERE ` + vulnerability.OpenKEVFindingSQL("findings") + `) as kev_open,
 			COUNT(*) FILTER (WHERE epss_score >= 0.1 AND ` + openLens + `) as epss_high_open,
 			COUNT(*) FILTER (WHERE sla_status IN ('exceeded','overdue') AND ` + openLens + `) as sla_breached,
 			COUNT(*) FILTER (WHERE severity = 'critical' AND ` + openLens + `) as open_critical,

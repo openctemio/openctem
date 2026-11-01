@@ -170,7 +170,10 @@ func cveListStatement(q vulnerability.CVEListQuery) (string, []any, pagination.P
 			MIN(CASE s.severity WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 WHEN 'low' THEN 4 WHEN 'info' THEN 5 ELSE 6 END) AS sev_rank,
 			MAX(s.cvss_score) AS f_cvss,
 			MAX(s.epss_score) AS f_epss,
-			BOOL_OR(COALESCE(s.is_in_kev, FALSE)) AS f_kev,
+			BOOL_OR(` + vulnerability.KEVFindingSQL("s.is_in_kev") + `) AS f_kev,
+			-- The open known exploited findings of the CVE: the same
+			-- predicate as the findings stats' kev_open (one KEV definition).
+			COUNT(*) FILTER (WHERE ` + vulnerability.OpenKEVFindingSQL("s") + `) AS kev_open,
 			BOOL_OR(COALESCE(s.exploit_available, FALSE)) AS f_exploit,
 			BOOL_OR(s.f_fix) AS f_fix,
 			COUNT(*) FILTER (WHERE ` + open + ` AND ` + pastSLA + `) AS past_sla,
@@ -208,7 +211,10 @@ func cveListStatement(q vulnerability.CVEListQuery) (string, []any, pagination.P
 			COALESCE(v.cvss_version, '') AS cvss_version,
 			COALESCE(v.epss_score, agg.f_epss) AS epss,
 			v.epss_percentile AS epss_pct,
-			(k.cve_id IS NOT NULL OR v.cisa_kev_date_added IS NOT NULL OR agg.f_kev) AS kev,
+			-- Known exploited: in the CISA KEV catalog, or a finding of the
+			-- CVE carries the flag the catalog keeps (KEVFindingSQL). The
+			-- vulnerability catalog's own KEV date is not a third source.
+			(k.cve_id IS NOT NULL OR agg.f_kev) AS kev,
 			COALESCE(k.due_date::timestamptz, v.cisa_kev_due_date) AS kev_due,
 			(LOWER(COALESCE(k.known_ransomware_campaign_use, v.cisa_kev_ransomware_use, '')) = 'known') AS ransomware,
 			(COALESCE(v.exploit_available, FALSE) OR agg.f_exploit
@@ -238,15 +244,16 @@ func cveListStatement(q vulnerability.CVEListQuery) (string, []any, pagination.P
 			COUNT(*) FILTER (WHERE exploit) AS exploit,
 			COUNT(*) FILTER (WHERE em_id IS NOT NULL) AS emerging,
 			COUNT(*) FILTER (WHERE past_sla > 0) AS past_sla,
+			COALESCE(SUM(kev_open), 0) AS kev_open,
 			(SELECT COUNT(*) FROM ranked) AS matched
 		FROM vrows
 	)
-	SELECT sm.total, sm.kev, sm.exploit, sm.emerging, sm.past_sla, sm.matched,
+	SELECT sm.total, sm.kev, sm.exploit, sm.emerging, sm.past_sla, sm.kev_open, sm.matched,
 		p.cve_id, p.in_catalog, p.title, p.severity, p.cvss, p.cvss_version, p.epss, p.epss_pct,
 		p.kev, p.kev_due, p.ransomware, p.exploit, p.maturity, p.has_fix, p.catalog_fixed,
 		p.em_id, p.em_level, p.em_state,
 		COALESCE((ARRAY['P0','P1','P2','P3']::text[])[p.prio_rank + 1], ''),
-		p.total, p.open_count, p.assets, p.internet, p.crown, p.past_sla, p.next_due, p.in_task,
+		p.total, p.open_count, p.kev_open, p.assets, p.internet, p.crown, p.past_sla, p.next_due, p.in_task,
 		p.first_seen, p.last_seen
 	FROM sm
 	LEFT JOIN LATERAL (SELECT * FROM ranked WHERE rn > ` + lo + ` AND rn <= ` + hi + `) p ON TRUE
@@ -265,14 +272,15 @@ func (r *FindingRepository) scanCVEList(ctx context.Context, tx *sql.Tx, w *filt
 			cvss, epss, epssPct                                sql.NullFloat64
 			kevDue, nextDue, firstSeen, lastSeen               sql.NullTime
 			total, open, assets, internet, crown, past, inTask sql.NullInt64
+			kevOpen                                            sql.NullInt64
 			catalogFixed                                       pq.StringArray
 		)
 		if err := rows.Scan(&out.Summary.Total, &out.Summary.KEV, &out.Summary.Exploit, &out.Summary.Emerging,
-			&out.Summary.PastSLA, &out.Total,
+			&out.Summary.PastSLA, &out.Summary.OpenKEVFindings, &out.Total,
 			&cve, &inCatalog, &title, &severity, &cvss, &cvssVersion, &epss, &epssPct,
 			&kev, &kevDue, &ransomware, &exploit, &maturity, &hasFix, &catalogFixed,
 			&emID, &emLevel, &emState, &prio,
-			&total, &open, &assets, &internet, &crown, &past, &nextDue, &inTask,
+			&total, &open, &kevOpen, &assets, &internet, &crown, &past, &nextDue, &inTask,
 			&firstSeen, &lastSeen); err != nil {
 			return nil, fmt.Errorf("scan cve exposure row: %w", err)
 		}
@@ -286,7 +294,7 @@ func (r *FindingRepository) scanCVEList(ctx context.Context, tx *sql.Tx, w *filt
 			KEV: kev.Bool, KEVDueDate: coverageTime(kevDue), KEVRansomware: ransomware.Bool,
 			Exploit: exploit.Bool, ExploitMaturity: maturity.String,
 			WorstPriority: prio.String,
-			Findings:      total.Int64, OpenFindings: open.Int64,
+			Findings:      total.Int64, OpenFindings: open.Int64, OpenKEVFindings: kevOpen.Int64,
 			Assets: assets.Int64, InternetFacing: internet.Int64, CrownJewels: crown.Int64,
 			Products: []vulnerability.CVEListProduct{}, FixedVersions: []string(catalogFixed),
 			HasFix: hasFix.Bool, PastSLA: past.Int64, NextSLADue: coverageTime(nextDue), InTask: inTask.Int64,

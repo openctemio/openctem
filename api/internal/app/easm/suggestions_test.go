@@ -3,6 +3,7 @@ package easm
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/openctemio/openctem/api/internal/app/scopeauth"
 	"github.com/openctemio/openctem/api/pkg/domain/easmseed"
@@ -306,5 +307,68 @@ func TestSuggestionCards_ProviderClassesAndNoPorts(t *testing.T) {
 	}
 	if c.Count != 1 || len(c.Addresses[0].Ports) != 1 || c.Addresses[0].Network.Class != "dedicated" {
 		t.Fatalf("offered %+v", c.Addresses)
+	}
+}
+
+// Every offered address carries its ownership evidence; the strongest come
+// first (so the item limit keeps them), shared addresses carry none, and
+// names outside the caller's data scope never feed a signal.
+func TestSuggestionCards_OwnershipOrderAndBands(t *testing.T) {
+	now := time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC)
+	old := now.Add(-40 * 24 * time.Hour)
+	mk := func(ip string, props map[string]any, first time.Time, names ...string) AddressBehindNames {
+		a := addr(ip, props, names...)
+		a.FirstSeen = first
+		return a
+	}
+	hidden := mk("198.51.100.30", map[string]any{"asn": float64(64500), "hostname": "mail.acme.example"}, old, "mail.acme.example")
+	hidden.AllNames = append(hidden.AllNames, "x.other-org.example") // not visible to the caller
+	store := &fakeSuggestionStore{addrs: []AddressBehindNames{
+		mk("192.0.2.77", nil, time.Time{}, "legacy.acme.example"),                                             // unknown
+		mk("203.0.113.7", map[string]any{"asn": "AS64999", "asn_org": "Acme Hosting"}, old, "w.acme.example"), // holder match + stable: medium
+		hidden, // own ASN + reverse name + stable: high
+		mk("198.51.100.31", map[string]any{"asn": "AS64500"}, now.Add(-2*time.Hour), "new.acme.example"), // anchor held back by new: medium
+		mk("198.51.100.32", map[string]any{"cdn": "examplecdn"}, old, "cdn.acme.example"),                // shared
+	}}
+	cover := coverSet{"legacy.acme.example": true, "w.acme.example": true, "mail.acme.example": true, "new.acme.example": true, "cdn.acme.example": true}
+	org := func(context.Context, shared.ID) (string, error) { return "Acme", nil }
+	seeds := func(context.Context, shared.ID) (easmseed.Networks, error) {
+		return easmseed.Networks{ASNs: map[string]bool{"AS64500": true}}, nil
+	}
+	svc := NewSuggestionService(store, cover, nil, org, seeds)
+	svc.now = func() time.Time { return now }
+	out, err := svc.Cards(context.Background(), shared.NewID(), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := out.Cards[0]
+	got := make([]string, 0, len(c.Addresses))
+	for _, a := range c.Addresses {
+		if a.Ownership == nil {
+			t.Fatalf("offered address without ownership: %+v", a)
+		}
+		got = append(got, a.Address+"="+string(a.Ownership.Band))
+	}
+	want := []string{"198.51.100.30=high", "198.51.100.31=medium", "203.0.113.7=medium", "192.0.2.77=unknown"}
+	if len(got) != len(want) {
+		t.Fatalf("order %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("order %v, want %v", got, want)
+		}
+	}
+	for _, s := range c.Addresses[0].Ownership.Signals {
+		if s.ID == "foreign_names" {
+			t.Fatal("a name outside the caller's data scope fed a signal")
+		}
+	}
+	if c.Bands["high"] != 1 || c.Bands["medium"] != 2 || c.Bands["unknown"] != 1 {
+		t.Fatalf("bands %v", c.Bands)
+	}
+	for _, a := range c.SharedAddresses {
+		if a.Ownership != nil {
+			t.Fatalf("shared address assessed: %+v", a)
+		}
 	}
 }

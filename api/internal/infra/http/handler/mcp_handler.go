@@ -70,10 +70,11 @@ type mcpFindingReader interface {
 	// GetFindingWithScope enforces the caller's data-scope + pentest membership
 	// (never the admin-bypass GetFinding).
 	GetFindingWithScope(ctx context.Context, tenantID, findingID, actingUserID string, isAdmin bool) (*vulnerability.Finding, error)
-	// GetFindingStatsWithScope applies the caller's group data-scope (isAdmin=false),
-	// so aggregate posture is confined exactly like list_findings — never the
-	// admin-wide GetFindingStats.
-	GetFindingStatsWithScope(ctx context.Context, input finding.GetFindingStatsInput) (*vulnerability.FindingStats, error)
+	// GetFindingStatsBySpec is the findings stats over the findings list's
+	// compiled filter, as the caller: the same WHERE (tenant, data scope,
+	// member visibility, branch default) as ListCVEExposures, so the two
+	// tools count the same findings.
+	GetFindingStatsBySpec(ctx context.Context, c finding.FilterCaller, spec *filterspec.Spec) (*vulnerability.FindingStats, error)
 	// ListCVEExposures is the vulnerabilities list, compiled as the caller.
 	ListCVEExposures(ctx context.Context, c finding.FilterCaller, spec *filterspec.Spec, opts vulnerability.CVEListOptions) (*vulnerability.CVEList, error)
 	// ListFindingTransitions is the transition engine's allowed moves (also
@@ -192,7 +193,22 @@ type MCPHandler struct {
 	scopeRoots    scopeauth.Roots
 	scopePrograms mcpProgramMembers
 	scopeLimiter  *tenantRateLimiter
+	// roles answers whether the connection's person holds a full-data role
+	// (SetFullDataRoles), only to explain a partial view; nil: the scope
+	// notice never names the organization's total.
+	roles mcpFullDataRoles
 }
+
+// mcpFullDataRoles is the data-scope enforcer's person-level role fact
+// (*datascope.Enforcer).
+type mcpFullDataRoles interface {
+	HoldsFullDataRole(ctx context.Context, tenantID shared.ID, userID string) (bool, error)
+}
+
+// SetFullDataRoles lets the scope notice tell a person whose role reads all
+// organization data in the web console how many assets their connection
+// does not read.
+func (h *MCPHandler) SetFullDataRoles(r mcpFullDataRoles) { h.roles = r }
 
 // mcpModuleChecker is the route module gate (*middleware.ModuleGate).
 type mcpModuleChecker interface {
