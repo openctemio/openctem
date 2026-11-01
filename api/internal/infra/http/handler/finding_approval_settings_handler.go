@@ -392,8 +392,12 @@ func (h *VulnerabilityHandler) UpdateFindingApprovalSettings(w http.ResponseWrit
 		return
 	}
 	resp := toFindingApprovalSettingsResponse(after)
+	title := "Finding approval settings changed"
+	if tenantdom.ApprovalLoweringScheduled(*before, *after) {
+		title = "Finding approvals lowered"
+	}
 	h.service.NotifyApprovalSettingsChanged(r.Context(), tenantID, middleware.GetUserID(r.Context()),
-		"Finding approval settings changed", approvalSettingsChangeNotice(toFindingApprovalSettingsResponse(before), resp))
+		title, approvalSettingsChangeNotice(toFindingApprovalSettingsResponse(before), resp))
 	// A level raised now: the standing decisions one person made that the
 	// new level would send to a second person are flagged for review (they
 	// stand until a person with the approve permission looks again).
@@ -429,6 +433,11 @@ func approvalSettingsChangeNotice(before, after FindingApprovalSettingsResponse)
 	if after.PendingAcceptApproval != "" && after.PendingAcceptApproval != before.PendingAcceptApproval {
 		lines = append(lines, fmt.Sprintf("An owner lowered the risk acceptance approval level to %q. It takes effect at %s unless it is raised again before then.",
 			after.PendingAcceptApproval, *after.PendingAcceptApprovalAt))
+	}
+	if after.PendingSecondLookAt != nil && after.PendingSecondLookPercent != nil &&
+		(before.PendingSecondLookAt == nil || *before.PendingSecondLookAt != *after.PendingSecondLookAt) {
+		lines = append(lines, fmt.Sprintf("An owner lowered the second-look share to %d%%. It takes effect at %s unless it is raised again before then.",
+			*after.PendingSecondLookPercent, *after.PendingSecondLookAt))
 	}
 	if after.PendingPolicyAt != nil && (before.PendingPolicyAt == nil || *before.PendingPolicyAt != *after.PendingPolicyAt) {
 		lines = append(lines, fmt.Sprintf("An owner relaxed the approval policy. The change takes effect at %s unless it is reverted before then; until then the stricter rules apply.",

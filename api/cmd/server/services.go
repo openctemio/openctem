@@ -2002,6 +2002,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 			orgPolicy = s.PlatformAI
 		}
 		s.TenantAI = tenantai.NewService(repos.TenantAISettings, s.Encryptor, s.Audit, llmFactory, orgPolicy, log)
+		s.TenantAI.SetAutoTriageDefaults(s.AITriage.AutoTriageDefaults)
+		if s.Tenant != nil {
+			s.TenantAI.SetLooseningNotifier(s.Tenant)
+		}
 		s.Vulnerability.SetAITriageService(s.AITriage) // Wire auto-triage on finding creation
 
 		// The organization's AI data-egress policy, shared with MCP: pentest
@@ -2266,6 +2270,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		s.SensorPairing.SetEnrollmentTokens(repos.SensorPairing)
 		// The approval screen names the organization the sensor joins.
 		s.SensorPairing.SetTenants(repos.Tenant)
+		// A re-pair revokes the keys the sensor's leased commands were
+		// claimed with: they are taken back at approval.
+		s.SensorPairing.SetCommandReleaser(repos.Command)
 	}
 	// Per-sensor grants (RFC-052 §5): enforced on poll, claim, results
 	// without a job and heartbeat actions; a pairing approval sets the
@@ -2327,6 +2334,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	repos.Command.SetLeaseDuration(cfg.SensorConfig.CommandLease)
 	s.Sensor.SetLeaseRenewer(repos.Command)
 	s.Sensor.SetCancelFinder(repos.Command)
+	// A sensor whose local policy changed may claim again what it refused.
+	s.Sensor.SetRefusalForgetter(repos.Command)
 	// Revoking or disabling a sensor takes back its leased commands at once
 	// (RFC-040 §5.2) instead of at lease expiry.
 	s.Sensor.SetHolderReleaser(repos.Command)
