@@ -5,6 +5,13 @@ import { ExposureFlowViz, ringArcs } from '../exposure-flow-viz'
 import { IntakeViz } from '../intake-viz'
 import type { FlowResult, IntakeData, IntakeSourceRow } from '../types'
 
+// The tooltip popper measures itself; without this it throws when a click opens a tooltip.
+globalThis.ResizeObserver ??= class {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+} as unknown as typeof ResizeObserver
+
 const since = new Date(Date.now() - 30 * 86_400_000).toISOString()
 
 function source(
