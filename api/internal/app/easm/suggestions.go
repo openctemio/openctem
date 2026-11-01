@@ -93,7 +93,7 @@ type SuggestionAddress struct {
 	// it as a scope entry; offered as one rule in PrefixRules.
 	Prefix string `json:"prefix,omitempty"`
 	// Ownership: how likely the address is the organization's, with the
-	// evidence (research/361). It explains and orders; it authorizes
+	// evidence behind it. It explains and orders; it authorizes
 	// nothing. Set on offered and already-checked addresses, never on
 	// shared ones.
 	Ownership *addrowner.Assessment `json:"ownership,omitempty"`
