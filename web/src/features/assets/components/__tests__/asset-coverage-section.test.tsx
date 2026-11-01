@@ -145,4 +145,39 @@ describe('AssetCoverageSection', () => {
     wrap(<AssetCoverageSection assetId="a1" />)
     expect(api.get).not.toHaveBeenCalled()
   })
+
+  it('reads an edge answer or a rate limit as not covered, with the vendor and the fixes', async () => {
+    api.get.mockResolvedValue({
+      asset_id: 'a1',
+      gaps: 1,
+      entries: [
+        {
+          capability: 'probe.http',
+          state: 'failed',
+          gap: true,
+          last_outcome: 'edge_blocked',
+          last_edge_vendor: 'datadome',
+        },
+        { capability: 'scan.ports', state: 'failed', gap: false, last_outcome: 'rate_limited' },
+        {
+          capability: 'vuln.templates',
+          state: 'failed',
+          gap: false,
+          last_outcome: 'edge_challenged',
+        },
+      ],
+    } as AssetCoverage)
+    wrap(<AssetCoverageSection assetId="a1" />)
+    expect(
+      await screen.findByText('Not covered: stopped by edge protection (datadome)')
+    ).toBeInTheDocument()
+    expect(screen.getByText('Not covered: rate limited')).toBeInTheDocument()
+    expect(screen.getByText('Not covered: challenged by edge protection')).toBeInTheDocument()
+    // Never read as clean or covered.
+    expect(screen.queryByText('Covered')).not.toBeInTheDocument()
+    const hrefs = screen.getAllByRole('link').map((a) => a.getAttribute('href'))
+    expect(hrefs).toContain('/settings/scanning/proxies#scanner-addresses')
+    expect(hrefs).toContain('/settings/scanning/tool-defaults')
+    expect(screen.getAllByTestId('edge-gap-fixes')).toHaveLength(3)
+  })
 })

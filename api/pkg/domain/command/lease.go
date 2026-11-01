@@ -97,6 +97,9 @@ const (
 	SensorRevokedFailedMessage    = "failed: the sensor it was addressed to was revoked while holding it"
 	SensorDisabledRequeuedMessage = "re-queued: the sensor holding it was disabled"
 	SensorDisabledFailedMessage   = "failed: the sensor it was addressed to was disabled while holding it"
+	// A re-pair or a key revocation withdrew the key the holder signed with.
+	SensorKeyReplacedRequeuedMessage = "re-queued: the key of the sensor holding it was replaced or revoked"
+	SensorKeyReplacedFailedMessage   = "failed: the key of the sensor it was addressed to was replaced or revoked while it held it"
 )
 
 // Fence is what a sensor-side state change expects to still be true: the
