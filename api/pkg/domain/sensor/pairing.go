@@ -228,6 +228,12 @@ type PairingRepository interface {
 	// FindOpenByCodeHash returns the open, revealed default-mode request
 	// with this code (no tenant yet).
 	FindOpenByCodeHash(ctx context.Context, codeHash string, now time.Time) (*Pairing, error)
+	// FindOpenForTenantByCodeHash returns the tenant's open, revealed
+	// reverse-mode request with this code (a sensor attached to it).
+	FindOpenForTenantByCodeHash(ctx context.Context, tenantID shared.ID, codeHash string, now time.Time) (*Pairing, error)
+	// ExpireStaleCodeUnscoped closes the open rows of this code whose
+	// expiry passed, so the code can open a new request.
+	ExpireStaleCodeUnscoped(ctx context.Context, codeHash string, now time.Time) error
 	CreateExpectation(ctx context.Context, p *Pairing) error
 	// CloseOpenRepairs closes (expired) the tenant's open re-pair requests
 	// for sensorID, so only the newest re-pair code of a sensor works.
