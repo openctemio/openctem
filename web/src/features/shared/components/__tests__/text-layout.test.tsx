@@ -29,6 +29,11 @@ describe('type scale', () => {
 })
 
 describe('MetaLine', () => {
+  it('lets a long unbroken item (a URL) break anywhere so it never widens its container', () => {
+    render(<MetaLine items={['https://h.example/' + 'a'.repeat(200)]} />)
+    expect(screen.getByText(/aaaa/)).toHaveClass('min-w-0', '[overflow-wrap:anywhere]')
+  })
+
   it('renders the items in one size, spaced not dotted, skipping empty ones', () => {
     render(
       <MetaLine
