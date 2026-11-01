@@ -44,6 +44,7 @@ import { ScoringImpactDialog } from '@/features/organization/components/scoring-
 import { useTranslation } from '@/context/i18n-provider'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { getErrorMessage } from '@/lib/api/error-handler'
+import { categoricalVar } from '@/lib/chart-palette'
 
 function LoadingSkeleton() {
   const { t } = useTranslation()
@@ -65,6 +66,9 @@ function LoadingSkeleton() {
   )
 }
 
+// One categorical colour per weight; the bar and the sliders share them.
+const WEIGHT_COLOR = [0, 1, 2, 3].map(categoricalVar)
+
 // Visual stacked bar showing weight distribution
 function WeightDistributionBar({
   weights,
@@ -76,25 +80,25 @@ function WeightDistributionBar({
     {
       key: 'exposure',
       label: t('riskScore.settings.weight.exposure', 'Exposure'),
-      color: '#ef4444',
+      color: WEIGHT_COLOR[0],
       value: weights.exposure,
     },
     {
       key: 'criticality',
       label: t('riskScore.settings.weight.criticality', 'Criticality'),
-      color: '#f97316',
+      color: WEIGHT_COLOR[1],
       value: weights.criticality,
     },
     {
       key: 'findings',
       label: t('riskScore.settings.weight.findings', 'Findings'),
-      color: '#eab308',
+      color: WEIGHT_COLOR[2],
       value: weights.findings,
     },
     {
       key: 'ctem',
       label: t('riskScore.settings.weight.ctem', 'CTEM'),
-      color: '#3b82f6',
+      color: WEIGHT_COLOR[3],
       value: weights.ctem,
     },
   ]
@@ -579,7 +583,7 @@ export default function ScoringConfigurationPage() {
                   label={t('riskScore.settings.weight.exposure', 'Exposure')}
                   value={config.weights.exposure}
                   onChange={(v) => updateWeight('exposure', v)}
-                  color="#ef4444" // label-ok: slider track colour, matches the weight bar segment
+                  color={WEIGHT_COLOR[0]}
                   tooltip={t(
                     'riskScore.settings.weight.exposureTip',
                     "How much the asset's network exposure (public, private, isolated) affects its risk score"
@@ -589,7 +593,7 @@ export default function ScoringConfigurationPage() {
                   label={t('riskScore.settings.weight.criticality', 'Criticality')}
                   value={config.weights.criticality}
                   onChange={(v) => updateWeight('criticality', v)}
-                  color="#f97316" // label-ok: slider track colour, matches the weight bar segment
+                  color={WEIGHT_COLOR[1]}
                   tooltip={t(
                     'riskScore.settings.weight.criticalityTip',
                     "How much the asset's business criticality level affects its risk score"
@@ -599,7 +603,7 @@ export default function ScoringConfigurationPage() {
                   label={t('riskScore.settings.weight.findings', 'Findings')}
                   value={config.weights.findings}
                   onChange={(v) => updateWeight('findings', v)}
-                  color="#eab308" // label-ok: slider track colour, matches the weight bar segment
+                  color={WEIGHT_COLOR[2]}
                   tooltip={t(
                     'riskScore.settings.weight.findingsTip',
                     'How much vulnerability findings (count or severity-weighted) affect the risk score'
@@ -609,7 +613,7 @@ export default function ScoringConfigurationPage() {
                   label={t('riskScore.settings.weight.ctem', 'CTEM')}
                   value={config.weights.ctem}
                   onChange={(v) => updateWeight('ctem', v)}
-                  color="#3b82f6" // label-ok: slider track colour, matches the CTEM bar segment
+                  color={WEIGHT_COLOR[3]}
                   tooltip={t(
                     'riskScore.settings.weight.ctemTip',
                     'Continuous Threat Exposure Management bonus points for factors like PII exposure, internet accessibility, and compliance risk'
