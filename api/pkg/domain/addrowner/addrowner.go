@@ -2,7 +2,7 @@
 // organization's in-scope names resolve to is the organization's own, from
 // named pieces of evidence (signals), and places it in a confidence band.
 //
-// The band is a rule, not a learned number (research/361, RFC-054 §20):
+// The band is a rule, not a learned number (RFC-054 §20):
 //
 //	High     at least one anchor, and another anchor or a corroborator, and no blocker
 //	Medium   an anchor alone, two or more corroborators, or High held back by a blocker
