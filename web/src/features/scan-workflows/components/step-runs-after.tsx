@@ -79,7 +79,7 @@ export function StepRunsAfter({
             >
               <span className="truncate">{o.name || o.step_key}</span>
               {!allowed && (
-                <span className="ms-auto ps-2 text-[10px] text-muted-foreground">
+                <span className="ms-auto ps-2 text-xs text-muted-foreground">
                   {t('scans.workflowForm.runsAfter.loop')}
                 </span>
               )}
