@@ -2130,6 +2130,11 @@ vars:
     group: "Administration tools"
     type: string
     description: "`openctem-signer`: scope ledger mode (`enforce`, `audit` or `off`)."
+  - name: SIGNER_FEED_ORIGINS
+    component: tool
+    group: "Administration tools"
+    type: string
+    description: "`openctem-signer`: feed origins a feed relay round may name (comma-separated https origins; empty: the official release origins; `none`: no feed relay)."
   - name: SIGNER_LEDGER_MIN_APPROVALS
     component: tool
     group: "Administration tools"

@@ -104,8 +104,13 @@ func validate(raw []byte, now time.Time) (*jobsign.Statement, *refusal) {
 	if r := validateContent(st.Content, present["content"]); r != nil {
 		return st, r
 	}
-	if r := checkShared(st); r != nil {
+	if r := checkFeedRelayShape(st); r != nil {
 		return st, r
+	}
+	if st.CommandType != jobsign.CommandTypeFeedRelay {
+		if r := checkShared(st); r != nil {
+			return st, r
+		}
 	}
 	if d := st.IssuedAt.Sub(now); d > jobsign.MaxClockSkew || d < -jobsign.MaxClockSkew {
 		return st, refuse(http.StatusBadRequest, ReasonClockSkew, "issued_at is more than %s from the signer clock", jobsign.MaxClockSkew)
