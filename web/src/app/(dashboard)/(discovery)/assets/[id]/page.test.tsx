@@ -36,6 +36,7 @@ vi.mock('@/features/assets', () => ({
   AssetFreshnessSection: () => null,
   AssetCoverageSection: () => null,
   AssetAttributionSection: () => null,
+  AssetLineageSection: () => null,
   AssetIdentitySections: () => null,
   AssetTimeline: () => null,
 }))
