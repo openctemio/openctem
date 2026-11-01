@@ -2279,6 +2279,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		s.SensorPairing.SetEnrollmentTokens(repos.SensorPairing)
 		// The approval screen names the organization the sensor joins.
 		s.SensorPairing.SetTenants(repos.Tenant)
+		// A sensor prints <APP_URL>/activate?code=… under its code.
+		s.SensorPairing.SetVerificationURL(cfg.App.URL)
 		// A re-pair revokes the keys the sensor's leased commands were
 		// claimed with: they are taken back at approval.
 		s.SensorPairing.SetCommandReleaser(repos.Command)
