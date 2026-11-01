@@ -10,6 +10,7 @@ import {
   Loader2,
   ShieldCheck,
   ShieldQuestion,
+  Terminal,
   X,
 } from 'lucide-react'
 
@@ -75,6 +76,8 @@ export function ConsentView({ requestId }: ConsentViewProps) {
   const [allowing, setAllowing] = useState(false)
   const [reload, setReload] = useState(0)
   const [fullData, setFullData] = useState(false)
+  // A terminal sign-in has nowhere to send the browser: the page says so.
+  const [done, setDone] = useState<'approved' | 'denied' | null>(null)
 
   const tenantId = currentTenant?.id ?? null
   const validId = isRequestId(requestId)
@@ -121,6 +124,11 @@ export function ConsentView({ requestId }: ConsentViewProps) {
           decision === 'approve'
             ? await approveConsent(requestId, fullData)
             : await denyConsent(requestId)
+        if (to === '') {
+          setDone(decision === 'approve' ? 'approved' : 'denied')
+          setDeciding(null)
+          return
+        }
         window.location.assign(to)
       } catch (e: unknown) {
         setError(
@@ -201,12 +209,16 @@ export function ConsentView({ requestId }: ConsentViewProps) {
   if (!request) {
     return <Unavailable message={error ?? unavailable} />
   }
+  if (done) {
+    return <TerminalDone approved={done === 'approved'} client={request.client_name} />
+  }
 
   const verified = request.verified
   const blocked = request.blocked
   const host = request.client_host
   const orgName = currentTenant?.name ?? t('mcp.consent.yourOrganization', 'your organization')
   const requested = asked || !!request.access_requested
+  const device = request.flow === 'device'
 
   return (
     <Card>
@@ -217,13 +229,24 @@ export function ConsentView({ requestId }: ConsentViewProps) {
           })}
         </CardTitle>
         <CardDescription className="flex flex-wrap items-center gap-2">
-          {verified ? (
-            <ShieldCheck className="h-4 w-4 text-muted-foreground" aria-hidden />
+          {device ? (
+            <>
+              <Terminal className="h-4 w-4 text-warning" aria-hidden />
+              <span>{t('mcp.consent.device.kind', 'A terminal asked to connect with a code')}</span>
+            </>
           ) : (
-            <ShieldQuestion className="h-4 w-4 text-warning" aria-hidden />
+            <>
+              {verified ? (
+                <ShieldCheck className="h-4 w-4 text-muted-foreground" aria-hidden />
+              ) : (
+                <ShieldQuestion className="h-4 w-4 text-warning" aria-hidden />
+              )}
+              <span>{clientKind(request.client_kind, host)}</span>
+              {!verified && (
+                <Badge variant="outline">{t('mcp.client.unverified', 'Unverified')}</Badge>
+              )}
+            </>
           )}
-          <span>{clientKind(request.client_kind, host)}</span>
-          {!verified && <Badge variant="outline">{t('mcp.client.unverified', 'Unverified')}</Badge>}
         </CardDescription>
       </CardHeader>
 
@@ -335,12 +358,30 @@ export function ConsentView({ requestId }: ConsentViewProps) {
           </section>
         )}
 
-        <section aria-labelledby="consent-return" className="space-y-1">
-          <h2 id="consent-return" className="text-sm font-medium">
-            {t('mcp.consent.returnTo', 'You will be sent back to')}
-          </h2>
-          <p className="break-all font-mono text-sm">{request.redirect_host}</p>
-        </section>
+        {device ? (
+          <DeviceOrigin request={request} />
+        ) : (
+          <section aria-labelledby="consent-return" className="space-y-1">
+            <h2 id="consent-return" className="text-sm font-medium">
+              {t('mcp.consent.returnTo', 'You will be sent back to')}
+            </h2>
+            <p className="break-all font-mono text-sm">{request.redirect_host}</p>
+          </section>
+        )}
+        {device && (
+          <Alert variant="destructive">
+            <AlertTriangle className="h-4 w-4" />
+            <AlertTitle>
+              {t('mcp.consent.device.warningTitle', 'Did you start this sign-in yourself?')}
+            </AlertTitle>
+            <AlertDescription>
+              {t(
+                'mcp.consent.device.warning',
+                'Allow only if you typed this code from your own terminal in the last few minutes. If someone sent you the code or asked you to enter it, choose Cancel: allowing would give them your access.'
+              )}
+            </AlertDescription>
+          </Alert>
+        )}
 
         {request.loopback_only && (
           <Alert>
@@ -398,7 +439,7 @@ export function ConsentView({ requestId }: ConsentViewProps) {
             </AlertDescription>
           </Alert>
         )}
-        {!verified && !blocked && (
+        {!verified && !blocked && !device && (
           <Alert variant="destructive">
             <AlertTriangle className="h-4 w-4" />
             <AlertTitle>{t('mcp.consent.unverifiedTitle', 'Unverified application')}</AlertTitle>
@@ -476,6 +517,94 @@ export function ConsentView({ requestId }: ConsentViewProps) {
         isLoading={allowing}
         handleConfirm={() => allow()}
       />
+    </Card>
+  )
+}
+
+/**
+ * Where a terminal sign-in came from: the address and program that asked,
+ * when, and whether this browser is on the same address. A request made
+ * from somewhere the person does not recognise is the sign of a code they
+ * were talked into entering.
+ */
+function DeviceOrigin({ request }: { request: ConsentRequest }) {
+  const { t } = useTranslation()
+  const at = request.requested_at ? new Date(request.requested_at) : null
+  return (
+    <section aria-labelledby="consent-device-origin" className="space-y-2">
+      <h2 id="consent-device-origin" className="text-sm font-medium">
+        {t('mcp.consent.device.origin', 'Where the request came from')}
+      </h2>
+      <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
+        <dt className="text-muted-foreground">{t('mcp.consent.device.address', 'Address')}</dt>
+        <dd className="break-all font-mono">
+          {request.requester_ip || t('mcp.consent.device.unknown', 'Unknown')}
+        </dd>
+        <dt className="text-muted-foreground">{t('mcp.consent.device.program', 'Program')}</dt>
+        <dd className="break-all font-mono text-xs leading-5">
+          {request.requester_user_agent || t('mcp.consent.device.unknown', 'Unknown')}
+        </dd>
+        {at && (
+          <>
+            <dt className="text-muted-foreground">{t('mcp.consent.device.when', 'Asked at')}</dt>
+            <dd>
+              <time dateTime={request.requested_at}>{at.toLocaleString()}</time>
+            </dd>
+          </>
+        )}
+        <dt className="text-muted-foreground">
+          {t('mcp.consent.device.yourAddress', 'Your address')}
+        </dt>
+        <dd className="flex flex-wrap items-center gap-2">
+          <span className="break-all font-mono">{request.your_ip || '-'}</span>
+          {request.same_address ? (
+            <Badge variant="secondary">{t('mcp.consent.device.same', 'Same address')}</Badge>
+          ) : (
+            <Badge variant="outline">
+              {t('mcp.consent.device.different', 'Different address')}
+            </Badge>
+          )}
+        </dd>
+      </dl>
+      {!request.same_address && (
+        <p className="text-xs text-muted-foreground">
+          {t(
+            'mcp.consent.device.differentHint',
+            'Expected when the terminal runs on a server or another network. Check that the address is one you know.'
+          )}
+        </p>
+      )}
+    </section>
+  )
+}
+
+function TerminalDone({ approved, client }: { approved: boolean; client: string }) {
+  const { t } = useTranslation()
+  return (
+    <Card>
+      <CardHeader className="space-y-2">
+        <CardTitle className="flex items-center gap-2 text-xl">
+          {approved ? (
+            <CheckCircle2 className="h-5 w-5 text-success" aria-hidden />
+          ) : (
+            <X className="h-5 w-5 text-muted-foreground" aria-hidden />
+          )}
+          {approved
+            ? t('mcp.consent.device.doneTitle', '{client} is connected', { client })
+            : t('mcp.consent.device.refusedTitle', 'Not connected')}
+        </CardTitle>
+        <CardDescription role="status">
+          {approved
+            ? t(
+                'mcp.consent.device.doneDesc',
+                'Go back to your terminal: it picks the connection up within a few seconds. You can close this page, and disconnect it any time under Connected applications.'
+              )
+            : t(
+                'mcp.consent.device.refusedDesc',
+                'Nothing was shared. The terminal is told the request was refused. You can close this page.'
+              )}
+        </CardDescription>
+      </CardHeader>
     </Card>
   )
 }

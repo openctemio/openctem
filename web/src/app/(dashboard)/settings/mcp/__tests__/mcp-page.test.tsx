@@ -49,6 +49,7 @@ vi.mock('@/features/mcp-oauth/components/access-requests-card', () => ({
 vi.mock('@/features/mcp-oauth/api/connections', () => ({
   useMcpPolicy: (on: boolean) => ({ data: on ? { any_client: false } : undefined }),
   useOrgConnections: () => ({ data: undefined, isLoading: false }),
+  useMyConnections: () => ({ data: undefined, mutate: vi.fn() }),
   revokeOrgConnection: vi.fn(),
   scopeOrgConnection: vi.fn(),
 }))
@@ -64,7 +65,10 @@ describe('AI assistants settings page', () => {
   it('shows a member only how to connect, with a link to their connections', () => {
     render(<MCPSettingsPage />)
     expect(screen.getByText('AI assistants (MCP)')).toBeInTheDocument()
-    expect(screen.queryByRole('tablist')).toBeNull()
+    // No page tabs for a member: the only tab strip is the per-client setup.
+    expect(screen.queryByRole('tab', { name: 'Policy' })).toBeNull()
+    expect(screen.queryByRole('tab', { name: 'Connect' })).toBeNull()
+    expect(screen.getByRole('tab', { name: /Remote or VPS/ })).toBeInTheDocument()
     expect(screen.queryByText('status strip')).toBeNull()
     expect(
       screen.getByRole('link', { name: /See and disconnect your connected applications/ })
