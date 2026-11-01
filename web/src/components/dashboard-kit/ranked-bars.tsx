@@ -47,12 +47,28 @@ export interface RankedBarRow {
    * name always holds what is visible; an aria-label that rewrote it would not.
    */
   unit?: string
+  /** A small decorative mark before the name (the source's kind icon). */
+  icon?: ReactNode
+  /** One muted line under the name (an instance's tools). */
+  meta?: string
+  /**
+   * Shown in place of a 0 figure when the item has something else to show
+   * ("1,180 assets" for a discovery tool ranked by findings); such an item is
+   * never folded away as one with nothing.
+   */
+  alt?: string
+  /** Orders items with the same value (higher first), before the label: the size of an `alt`. */
+  tie?: number
 }
 
 /** Rows in rank order: value descending, then label, then key (stable). */
 export function rankRows<T extends RankedBarRow>(rows: T[]): T[] {
   return [...rows].sort(
-    (a, b) => b.value - a.value || a.label.localeCompare(b.label) || a.key.localeCompare(b.key)
+    (a, b) =>
+      b.value - a.value ||
+      (b.tie ?? 0) - (a.tie ?? 0) ||
+      a.label.localeCompare(b.label) ||
+      a.key.localeCompare(b.key)
   )
 }
 
@@ -65,7 +81,7 @@ export function splitRanked<T extends RankedBarRow>(
   ranked: T[],
   limit: number
 ): { shown: T[]; rest: T[]; zeros: T[] } {
-  const zeros = ranked.filter((r) => r.value === 0 && (r.health ?? 'ok') === 'ok')
+  const zeros = ranked.filter((r) => r.value === 0 && !r.alt && (r.health ?? 'ok') === 'ok')
   const live = ranked.filter((r) => !zeros.includes(r))
   return { shown: live.slice(0, limit), rest: live.slice(limit), zeros }
 }
@@ -204,6 +220,11 @@ export function RankedBars({
           {...extra}
         >
           <span className="flex min-w-0 items-center gap-1.5">
+            {r.icon && (
+              <span className="shrink-0 text-muted-foreground" aria-hidden>
+                {r.icon}
+              </span>
+            )}
             {r.health && r.health !== 'ok' && (
               <span
                 className={cn(
@@ -238,10 +259,19 @@ export function RankedBars({
               </span>
             )}
           </span>{' '}
-          <span className="text-right text-base font-semibold tabular-nums leading-none">
-            <span aria-hidden={r.unit ? true : undefined}>{display}</span>
-            {r.unit && <span className="sr-only"> {r.unit}</span>}
-          </span>
+          {r.value === 0 && r.alt ? (
+            <span className="text-right text-sm tabular-nums text-muted-foreground">{r.alt}</span>
+          ) : (
+            <span className="text-right text-base font-semibold tabular-nums leading-none">
+              <span aria-hidden={r.unit ? true : undefined}>{display}</span>
+              {r.unit && <span className="sr-only"> {r.unit}</span>}
+            </span>
+          )}{' '}
+          {r.meta && (
+            <span className="col-span-2 -mt-0.5 text-xs text-muted-foreground break-words">
+              {r.meta}
+            </span>
+          )}{' '}
           <span className="col-span-2 flex h-1.5 overflow-hidden rounded-full bg-muted" aria-hidden>
             <span
               className={cn('rounded-full', !r.color && 'bg-signal')}

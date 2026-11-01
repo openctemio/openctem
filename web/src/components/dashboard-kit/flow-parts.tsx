@@ -81,6 +81,16 @@ export function wireStroke(health: SourceHealth | 'neutral' | 'bad'): {
  *   outcomes at a reading width against the edges, the core taking the rest
  *   (a full-width dashboard card from a 1280 px window with the sidebar open).
  */
+/**
+ * The thin dashed frame of a connected visual's columns (sources, outcomes,
+ * the intake summary) from 660 px; a phone stacks them unframed. Wires meet
+ * its edge: FRAME_INSET is its padding plus its border, from a row's edge to
+ * the frame's.
+ */
+export const FLOW_FRAME =
+  '@min-[660px]:rounded-lg @min-[660px]:border @min-[660px]:border-dashed @min-[660px]:border-border-strong @min-[660px]:p-1.5'
+export const FRAME_INSET = 7
+
 export const FLOW_MID = 660
 export const FLOW_WIDE = 900
 
