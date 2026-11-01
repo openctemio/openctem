@@ -1,24 +1,17 @@
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ExposureFlowViz } from '../exposure-flow-viz'
 import { ringEdgeInset, ringSegments, type RingPart } from '../flow-rings'
 import { IntakeViz } from '../intake-viz'
 import type { FlowResult, IntakeData, IntakeSourceRow } from '../types'
 
-// The view switchers show a tooltip on hover (Radix, which measures with a
-// ResizeObserver that jsdom lacks): without it a click that opens the tooltip
-// throws in a layout effect, depending on timing.
-beforeAll(() => {
-  vi.stubGlobal(
-    'ResizeObserver',
-    class {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
-    }
-  )
-})
+// The tooltip popper measures itself; without this it throws when a click opens a tooltip.
+globalThis.ResizeObserver ??= class {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+} as unknown as typeof ResizeObserver
 
 const since = new Date(Date.now() - 30 * 86_400_000).toISOString()
 
@@ -426,11 +419,20 @@ describe('sources: ranked bars by findings or assets, by tool or instance', () =
     }
   })
 
-  it('ranks by findings first and folds the healthy zeros into one line', () => {
+  it('ranks by findings first and lists every source, the silent ones last', async () => {
+    const user = userEvent.setup()
     render(<ExposureFlowViz result={withAssets} />)
     // A discovery tool with assets but no findings says so, it is never a "0" folded away.
-    expect(ranked()).toEqual(['s:sensor:nuclei', 's:platform:version-match', 's:sensor:subfinder'])
+    expect(ranked()).toEqual([
+      's:sensor:nuclei',
+      's:platform:version-match',
+      's:sensor:subfinder',
+      's:sensor:dnsx',
+    ])
     expect(screen.getByRole('link', { name: /^subfinder Sensor 9,000 assets/ })).toBeInTheDocument()
+    expect(screen.getByTestId('ranked-zeros')).toHaveTextContent('Hide 1 with nothing')
+    await user.click(screen.getByTestId('ranked-zeros'))
+    expect(ranked()).toEqual(['s:sensor:nuclei', 's:platform:version-match', 's:sensor:subfinder'])
     expect(screen.getByTestId('ranked-zeros')).toHaveTextContent(
       '+1 source with nothing in 30 days'
     )

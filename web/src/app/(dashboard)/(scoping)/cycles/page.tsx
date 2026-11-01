@@ -331,7 +331,7 @@ export default function CtemCyclesPage() {
                   <p className="mt-1 whitespace-pre-wrap text-xs text-muted-foreground">
                     {lastLessons.charter?.scope_refinement_notes}
                   </p>
-                  <p className="mt-1.5 text-[11px] text-muted-foreground">
+                  <p className="mt-1.5 text-xs text-muted-foreground">
                     {t(
                       'scoping.cycles.lessonsHint',
                       'Carry the relevant items into the scope and charter of this cycle.'

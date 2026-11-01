@@ -108,16 +108,24 @@ test.describe('phone card @phone', { tag: ['@assets'] }, () => {
     page,
   }) => {
     const rows = await openAssets(page)
-    const withFindings = rows.find((r) => r.finding_count > 0)
-    test.skip(!withFindings, 'no seeded asset with open findings')
-    const asset = withFindings as ListedAsset
+    test.skip(!rows.some((r) => r.finding_count > 0), 'no seeded asset with open findings')
 
+    // Read the card itself, not the list response: other specs in the run
+    // open and close findings concurrently, so a count snapshot taken from
+    // the response can differ from the card by the time it renders. The
+    // invariant under test is that the card's number is the list it opens.
     const link = page
       .locator('[data-slot="asset-card-meta"] [data-slot="open-findings-link"]')
       .first()
-    await expect(link).toHaveText(
-      asset.finding_count === 1 ? '1 open finding' : `${asset.finding_count} open findings`
+    await expect(link).toBeVisible()
+    const label = (await link.textContent()) ?? ''
+    const shown = /^(\d+) open findings?$/.exec(label.trim())
+    expect(shown, `card label "${label}"`).not.toBeNull()
+    const count = Number(shown![1])
+    const assetId = new URL((await link.getAttribute('href')) ?? '', 'http://x').searchParams.get(
+      'asset_id'
     )
+    expect(assetId).toBeTruthy()
 
     // The hit area reaches 44 px tall: points 20 px above and below the
     // centre still land on the link.
@@ -134,13 +142,13 @@ test.describe('phone card @phone', { tag: ['@assets'] }, () => {
     expect(hits).toEqual([true, true])
 
     const listed = page.waitForResponse(
-      (r) => /\/api\/v1\/findings\?/.test(r.url()) && r.url().includes(asset.id) && r.ok(),
+      (r) => /\/api\/v1\/findings\?/.test(r.url()) && r.url().includes(assetId!) && r.ok(),
       { timeout: 45_000 }
     )
     await link.click()
     await expect(page).toHaveURL(/\/findings\?.*asset_id=/)
     const findings = (await (await listed).json()) as { total?: number }
-    expect(findings.total).toBe(asset.finding_count)
+    expect(findings.total).toBe(count)
   })
 })
 

@@ -105,6 +105,7 @@ export function RankedBars({
   label,
   zeroLabel,
   resetKey,
+  zerosOpen = false,
   rowProps,
   className,
   listClassName,
@@ -119,6 +120,8 @@ export function RankedBars({
   zeroLabel: (count: number) => string
   /** Changes when the user switches what is ranked (measure, grouping): re-sort without rank markers. */
   resetKey?: string
+  /** Healthy zeros start listed (the fold line then offers to hide them). */
+  zerosOpen?: boolean
   /** Extra props for a row's link (focus/tooltip binding, wire anchors). */
   rowProps?: (row: RankedBarRow) => Record<string, unknown>
   className?: string
@@ -129,7 +132,7 @@ export function RankedBars({
   const { t } = useTranslation()
   const reduced = usePrefersReducedMotion()
   const [showRest, setShowRest] = useState(false)
-  const [showZeros, setShowZeros] = useState(false)
+  const [showZeros, setShowZeros] = useState(zerosOpen)
   const ranked = useMemo(() => rankRows(rows), [rows])
   const { shown, rest, zeros } = useMemo(() => splitRanked(ranked, limit), [ranked, limit])
   const visible = useMemo(

@@ -15,7 +15,7 @@ export default function ProxiesSettingsPage() {
           title={t('settings.item.proxies', 'Proxies')}
           description={t(
             'proxyPools.page.description',
-            'Send scan traffic from your own sensors through proxies you control. Endpoints are health-checked from real scan traffic; a failing proxy is set aside and tried again later. Scans never fall back to a direct connection while a pool applies.'
+            "Send your own sensors' scan traffic through proxies you control. Health comes from real scan traffic: a failing proxy is set aside and tried again later, and a scan never falls back to a direct connection while a pool applies."
           )}
         />
         <ProxyPoolsPanel />
