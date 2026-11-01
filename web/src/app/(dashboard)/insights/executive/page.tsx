@@ -288,6 +288,9 @@ export default function ExecutiveSummaryPage() {
             <DataTable
               columns={columns}
               data={topRisks}
+              error={summaryError}
+              onRetry={() => void retrySummary()}
+              errorTitle={t('insights.executive.topRisksTitle', 'top risks')}
               showSearch={false}
               showColumnToggle={false}
               showPagination={false}

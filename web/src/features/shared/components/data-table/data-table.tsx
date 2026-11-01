@@ -30,6 +30,7 @@ import {
 } from '@/components/ui/table'
 import { Button } from '@/components/ui/button'
 import { ListToolbar } from '../list-toolbar'
+import { ErrorState } from '../error-state'
 import type { ListSearchProps } from '../list-search'
 import type { FilterPanelToggleProps } from '../filter-button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -110,6 +111,15 @@ interface DataTableProps<TData, TValue> {
    * chips stay; the error does not replace the page.
    */
   errorState?: React.ReactNode
+  /**
+   * The error of the read (SWR `error`). With no rows loaded the body shows the
+   * shared ErrorState with a Retry (`onRetry`); rows already loaded stay.
+   * A custom `errorState` wins.
+   */
+  error?: unknown
+  onRetry?: () => void
+  /** What failed to load, phrased into "Failed to load {title}". Defaults to "the list". */
+  errorTitle?: string
   onRowClick?: (row: TData) => void
   /**
    * The tone of a row: 'dim' greys its text (a colour, never opacity) for rows
@@ -429,7 +439,10 @@ export function DataTable<TData, TValue>({
   emptyMessage,
   emptyDescription,
   emptyState,
-  errorState,
+  errorState: errorStateProp,
+  error,
+  onRetry,
+  errorTitle,
   onRowClick,
   rowTone,
   onSelectionChange,
@@ -463,6 +476,15 @@ export function DataTable<TData, TValue>({
   defaultDensity = 'comfortable',
 }: DataTableProps<TData, TValue>) {
   const { t } = useTranslation()
+  const errorState =
+    errorStateProp ??
+    (error && data.length === 0 ? (
+      <ErrorState
+        title={errorTitle ?? t('common.theList', 'the list')}
+        error={error}
+        onRetry={onRetry}
+      />
+    ) : undefined)
   // Defaults are translated here, not in the signature: they depend on the locale.
   searchPlaceholder ??= t('common.table.search', 'Search…')
   emptyMessage ??= t('common.table.noResults', 'No results found')

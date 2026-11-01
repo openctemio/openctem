@@ -76,6 +76,7 @@
   "exceptions.page.empty.pending": "No pending suppression rules.",
   "exceptions.page.empty.rejected": "No rejected suppression rules.",
   "exceptions.page.emptyAll": "Create a rule to suppress false positives or accepted risks.",
+  "exceptions.page.errorTitle": "suppression rules",
   "exceptions.page.loadError": "Failed to load suppression rules",
   "exceptions.page.metricAll": "All rules",
   "exceptions.page.metricApproved": "Approved",

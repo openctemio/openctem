@@ -1,0 +1,2 @@
+### Fixed: lists say when they could not load
+- A table whose request failed no longer reads as an empty list: it shows the shared error state with a Retry, and its toolbar and filters stay. Applies to suggestions, scans, automations, exceptions, business impact, priority rules, compliance controls, attack simulation, control testing, controls, pentest campaigns, pentest templates, executive insights, audit log and SLA policies.
