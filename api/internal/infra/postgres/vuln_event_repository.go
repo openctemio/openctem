@@ -297,8 +297,7 @@ func (r *VulnEventRepository) SyncKEV(ctx context.Context) (int, error) {
 				SELECT k.cve_id, k.date_added,
 					COALESCE(k.known_ransomware_campaign_use, '') = 'Known' AS ransomware
 				FROM kev_catalog k
-				LEFT JOIN vuln_event_state s ON s.vuln_id = k.cve_id
-				WHERE s.in_kev IS NOT TRUE
+				WHERE NOT EXISTS (SELECT 1 FROM vuln_event_state s WHERE s.vuln_id = k.cve_id AND s.in_kev)
 			), ins AS (
 				INSERT INTO vuln_events (vuln_id, kind, source_at, detail)
 				SELECT cve_id, 'kev_added', date_added::timestamptz,
@@ -308,9 +307,14 @@ func (r *VulnEventRepository) SyncKEV(ctx context.Context) (int, error) {
 			return 0, fmt.Errorf("kev events: %w", err)
 		}
 	}
+	// Only catalog entries not flagged yet reach the upsert: offering every
+	// entry locked each already-flagged row on every sync for no change. The
+	// NOT EXISTS probes the partial index on in_kev (vuln_id is the key, so
+	// it is the same set as a LEFT JOIN on "in_kev IS NOT TRUE").
 	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO vuln_event_state (vuln_id, in_kev)
-		SELECT cve_id, true FROM kev_catalog
+		SELECT k.cve_id, true FROM kev_catalog k
+		WHERE NOT EXISTS (SELECT 1 FROM vuln_event_state s WHERE s.vuln_id = k.cve_id AND s.in_kev)
 		ON CONFLICT (vuln_id) DO UPDATE SET in_kev = true, updated_at = now()
 		WHERE vuln_event_state.in_kev IS NOT TRUE`); err != nil {
 		return 0, fmt.Errorf("kev state: %w", err)
