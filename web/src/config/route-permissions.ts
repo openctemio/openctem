@@ -628,6 +628,13 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     module: Module.Sensors,
     message: 'You need admin privileges to access sensor job settings.',
   },
+  // The scan identification part of the security settings: read like
+  // Sensor job safety (team:update), changed by the owner only (the API).
+  '/settings/scanning/identification': {
+    permission: Permission.TeamUpdate,
+    module: Module.Sensors,
+    message: 'You need admin privileges to access scan identification settings.',
+  },
 
   // ========================================
   // Settings - Organization (Core feature, no module required)
