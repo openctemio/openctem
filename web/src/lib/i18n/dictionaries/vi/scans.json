@@ -1019,6 +1019,7 @@
   "scans.err.tenantNoTemplates": "Hãy chọn ít nhất một mẫu của tổ chức, hoặc đổi nguồn quy tắc",
   "scans.err.tooMany": "Mỗi lần quét tối đa {max} đích trực tiếp; bạn đã chọn {count}. Hãy bỏ bớt, hoặc đưa chúng vào một nhóm tài sản rồi quét cả nhóm.",
   "scans.err.workflow": "Vui lòng chọn một quy trình",
+  "scans.errorTitle": "quét",
   "scans.event.canceled": "Đã hủy",
   "scans.event.changed": "Đã thay đổi",
   "scans.event.claimed": "Sensor đã nhận",

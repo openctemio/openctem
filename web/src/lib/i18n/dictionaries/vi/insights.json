@@ -57,6 +57,7 @@
   "insights.executive.title": "Tóm tắt điều hành",
   "insights.executive.topRisks": "Rủi ro hàng đầu",
   "insights.executive.topRisksHint": "Các phát hiện ưu tiên cao nhất cần lãnh đạo quan tâm.",
+  "insights.executive.topRisksTitle": "rủi ro hàng đầu",
   "insights.executive.vsPrevious": "{change} so với kỳ trước",
   "insights.maturity.breakdown.description.one": "Điểm tổng hợp minh bạch: điểm = Σ (điểm thành phần × trọng số), qua {count} chu kỳ đã đóng.",
   "insights.maturity.breakdown.description.other": "Điểm tổng hợp minh bạch: điểm = Σ (điểm thành phần × trọng số), qua {count} chu kỳ đã đóng.",

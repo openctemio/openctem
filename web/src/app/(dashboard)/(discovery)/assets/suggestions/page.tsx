@@ -7,7 +7,6 @@ import { useState, useCallback, useMemo, useEffect, useEffectEvent } from 'react
 import type { ColumnDef } from '@tanstack/react-table'
 import { Main } from '@/components/layout'
 import { EmptyState, PageHeader, DataTable, BulkActionBar, PageStack } from '@/features/shared'
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -21,16 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import {
-  AlertCircle,
-  ArrowRight,
-  Check,
-  CheckCheck,
-  RefreshCw,
-  Sparkles,
-  X,
-  Link2,
-} from 'lucide-react'
+import { ArrowRight, Check, CheckCheck, RefreshCw, Sparkles, X, Link2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { useSearchQuery } from '@/hooks/use-search-query'
 import { useUrlFilter } from '@/hooks/use-url-param'
@@ -122,7 +112,7 @@ export default function RelationshipSuggestionsPage() {
   const canReview = can(Permission.AssetsWrite)
 
   const pageSize = list.perPage
-  const { data, error, isLoading, isValidating } = useRelationshipSuggestions(
+  const { data, error, isLoading, isValidating, mutate } = useRelationshipSuggestions(
     'pending',
     page,
     pageSize,
@@ -390,19 +380,13 @@ export default function RelationshipSuggestionsPage() {
         <AssetsSectionTabs />
         <AttentionQueueHeader reason="relationships" count={isLoading ? undefined : total} />
 
-        {error && !isLoading ? (
-          <Alert variant="destructive">
-            <AlertCircle className="h-4 w-4" />
-            <AlertTitle>Failed to load suggestions</AlertTitle>
-            <AlertDescription>{getErrorMessage(error, 'Please try again later')}</AlertDescription>
-          </Alert>
-        ) : isLoading || (isValidating && !data) ? (
+        {isLoading || (isValidating && !data) ? (
           <div className="space-y-2 rounded-xl border p-3">
             {Array.from({ length: 5 }).map((_, i) => (
               <Skeleton key={i} className="h-10 w-full" />
             ))}
           </div>
-        ) : suggestions.length === 0 && !searchParam ? (
+        ) : suggestions.length === 0 && !searchParam && !error ? (
           <EmptyState
             icon={Link2}
             title="No pending suggestions"
@@ -416,6 +400,9 @@ export default function RelationshipSuggestionsPage() {
           <DataTable
             columns={columns}
             data={suggestions}
+            error={error}
+            onRetry={() => void mutate()}
+            errorTitle={t('assets.suggestions.errorTitle', 'suggestions')}
             showSearch={false}
             search={{
               value: searchValue,
