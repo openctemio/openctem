@@ -1,0 +1,4 @@
+### Added: Exposure items view of the external attack surface
+
+- Attack surface > Exposure items lists every exposure with the asset it is on, the asset's monitoring state and a primary-asset marker (one of the organization's root domains), with counts by severity and by type, a group-by-asset view, first and last seen, a CSV export, the severity override from the severity cell and the status actions in the row menu. It opens on open exposures (active and in progress) of monitored assets.
+- `GET /api/v1/attack-surface/exposures`, `/stats` and `/assets` (`findings:read` and `findings:exposures:read`, attack surface module) on the list query contract: filters by severity, state, type, display category, asset, asset monitoring state, primary asset and dates; the tenant and the caller's asset data scope apply to every read, and exposures without an asset are visible to unrestricted callers only.

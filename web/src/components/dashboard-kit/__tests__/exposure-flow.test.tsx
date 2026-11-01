@@ -390,7 +390,7 @@ describe('sources: ranked bars by findings or assets, by tool or instance', () =
   it('re-ranks by assets, so a discovery tool is never shown as zero', async () => {
     const user = userEvent.setup()
     render(<ExposureFlowViz result={withAssets} />)
-    await user.click(screen.getByRole('radio', { name: 'Assets' }))
+    await user.click(screen.getByRole('button', { name: 'Assets' }))
     expect(ranked()[0]).toBe('s:sensor:subfinder')
     expect(screen.getByRole('link', { name: /^subfinder Sensor 9,000 assets/ })).toBeInTheDocument()
     expect(screen.queryAllByTestId('rank-move')).toHaveLength(0)
@@ -399,7 +399,7 @@ describe('sources: ranked bars by findings or assets, by tool or instance', () =
   it('groups by instance from the same read, a failing instance keeps its dot', async () => {
     const user = userEvent.setup()
     render(<ExposureFlowViz result={withAssets} />)
-    await user.click(screen.getByRole('radio', { name: 'Source instance' }))
+    await user.click(screen.getByRole('button', { name: 'Source instance' }))
     expect(ranked()).toEqual(['i:sensor:s1', 'i:platform:platform', 'i:sensor:s2'])
     const failing = screen.getByRole('link', { name: /^dc-02 Sensor 0 findings/ })
     expect(failing).toHaveAttribute('href', '/sensors/s2')
@@ -422,11 +422,11 @@ describe('sources: ranked bars by findings or assets, by tool or instance', () =
   it('remembers the view on this browser and survives blocked storage', async () => {
     const user = userEvent.setup()
     const { unmount } = render(<ExposureFlowViz result={withAssets} />)
-    await user.click(screen.getByRole('radio', { name: 'Source instance' }))
+    await user.click(screen.getByRole('button', { name: 'Source instance' }))
     unmount()
     render(<ExposureFlowViz result={withAssets} />)
-    expect(screen.getByRole('radio', { name: 'Source instance' })).toHaveAttribute(
-      'aria-checked',
+    expect(screen.getByRole('button', { name: 'Source instance' })).toHaveAttribute(
+      'aria-pressed',
       'true'
     )
     cleanup()
@@ -437,7 +437,7 @@ describe('sources: ranked bars by findings or assets, by tool or instance', () =
       throw new Error('blocked')
     })
     render(<ExposureFlowViz result={withAssets} />)
-    await user.click(screen.getByRole('radio', { name: 'Assets' }))
+    await user.click(screen.getByRole('button', { name: 'Assets' }))
     expect(ranked()[0]).toBe('s:sensor:subfinder')
     get.mockRestore()
     set.mockRestore()
@@ -445,7 +445,7 @@ describe('sources: ranked bars by findings or assets, by tool or instance', () =
 
   it('hides the switches when no source carries assets or instances', () => {
     render(<ExposureFlowViz result={flow} />)
-    expect(screen.queryByRole('radiogroup')).not.toBeInTheDocument()
+    expect(screen.queryByRole('group', { name: 'View' })).not.toBeInTheDocument()
   })
 })
 

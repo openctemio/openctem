@@ -3546,12 +3546,7 @@ func (r *FindingRepository) buildWhereClause(filter vulnerability.FindingFilter)
 	// outside the allowed levels, or AI assistants turned off.
 	if filter.PentestAIAllowTLP != nil {
 		args = append(args, pq.StringArray(filter.PentestAIAllowTLP))
-		conditions = append(conditions, fmt.Sprintf(
-			`(findings.source <> 'pentest' OR EXISTS (
-				SELECT 1 FROM pentest_campaigns pc
-				WHERE pc.id = findings.pentest_campaign_id AND pc.tenant_id = findings.tenant_id
-				  AND NOT pc.ai_assistants_disabled AND pc.tlp = ANY($%d)
-			))`, argIndex))
+		conditions = append(conditions, vulnerability.PentestAITLPSQL(fmt.Sprintf("$%d", argIndex)))
 		argIndex++
 	}
 
