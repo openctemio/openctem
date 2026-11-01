@@ -270,6 +270,16 @@ func nameSummary(t EventType, a summaryArgs) (Summary, bool) {
 		}
 	case EventTypeSSLIssue:
 		issue := a.arg("issue")
+		// Certificate problems judged per host (exposurebridge
+		// host_certificate.go) have their own sentence.
+		switch {
+		case domain != "" && issue == "foreign_certificate":
+			return mkSummary("foreign_certificate", fmt.Sprintf("%s serves another site's certificate (a takeover candidate)", domain), map[string]string{"domain": domain}), true
+		case domain != "" && issue == "name_mismatch":
+			return mkSummary("name_mismatch", fmt.Sprintf("The certificate %s serves does not cover its name", domain), map[string]string{"domain": domain}), true
+		case domain != "" && issue == "not_yet_valid":
+			return mkSummary("not_yet_valid", fmt.Sprintf("The certificate for %s is not valid yet", domain), map[string]string{"domain": domain}), true
+		}
 		if domain != "" && issue != "" {
 			return mkSummary("", fmt.Sprintf("Weak TLS on %s: %s", domain, issue), map[string]string{"domain": domain, "issue": issue}), true
 		}
