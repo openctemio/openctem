@@ -916,6 +916,11 @@ export type SensorLocalPolicyState = 'enforced' | 'absent' | 'paused' | 'unknown
 export interface SensorLocalPolicySummary {
   /** Number of allow entries; -1 when the policy sets no allow list. */
   targets_allow: number
+  /**
+   * How the policy treats targets. Absent on sensors that do not report it.
+   * allow_all: the sensor runs every job the platform signs.
+   */
+  mode?: 'allow_all' | 'allow_list' | 'platform_scope'
   targets_deny: number
   allow_private: boolean
   /** Allowed ports ("" or absent = any). */

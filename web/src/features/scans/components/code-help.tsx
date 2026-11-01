@@ -8,7 +8,9 @@ import { safeInternalHref } from '@/lib/safe-href'
 import type { RunMapNode } from '@/lib/api/generated'
 import { TruncatedText } from '@/features/shared'
 
-import { failureHelp, gapReasonHelp, type CodeHelp } from '../lib/placement-help'
+import { failureHelp, gapHelp, type CodeHelp } from '../lib/placement-help'
+import { gapEdgeKind } from '../lib/edge-gap'
+import { EdgeGapFixes } from './edge-gap-fixes'
 
 /**
  * One code with what it means and where to fix it: the code (monospace, as
@@ -88,7 +90,8 @@ export function StepOutcome({ outcome }: { outcome?: RunMapNode['outcome'] }) {
           {gaps.length > 0 ? (
             <ul className="space-y-1">
               {gaps.map((g, i) => {
-                const r = gapReasonHelp(g.reason, t)
+                const r = gapHelp(g, t)
+                const fixKind = gapEdgeKind(g)
                 return (
                   <li key={`${g.host}-${i}`} className="min-w-0">
                     <div className="flex min-w-0 items-baseline gap-2">
@@ -96,6 +99,7 @@ export function StepOutcome({ outcome }: { outcome?: RunMapNode['outcome'] }) {
                       <span className="shrink-0 text-foreground">{r.label}</span>
                     </div>
                     <p className="text-muted-foreground">{r.help}</p>
+                    {fixKind && <EdgeGapFixes kind={fixKind} />}
                   </li>
                 )
               })}
