@@ -44,22 +44,12 @@ import {
 } from '@/lib/api/sensor-protocol-guard'
 import { requestAccountToken } from '@/features/auth/lib/account-session'
 import { devLog } from '@/lib/logger'
-import { csrfRejection, rotatedRefreshToken } from '@/lib/server-auth-cookies'
+import { csrfRejection } from '@/lib/server-auth-cookies'
+import { refreshSessionOnce } from '@/lib/server-refresh'
 
 const ACCESS_TOKEN_COOKIE = env.auth.cookieName
 const REFRESH_TOKEN_COOKIE = env.auth.refreshCookieName
 const TENANT_COOKIE = env.cookies.tenant
-
-// One refresh at a time per session: parallel requests of one browser share
-// it. The key is the caller's own refresh token (with the tenant), never the
-// tenant alone: the result is set as the caller's cookies, and the tenant
-// cookie is chosen by the client, so a tenant-keyed lock handed one person's
-// refreshed tokens to anyone whose request arrived during that refresh.
-const refreshLocks = new Map<string, Promise<RefreshResult | null>>()
-
-function refreshLockKey(refreshToken: string, tenantId: string): string {
-  return `${tenantId}\u0000${refreshToken}`
-}
 
 // Switch cooldown is managed by @/lib/api/switch-cooldown
 // imported above as isInSwitchCooldown()
@@ -111,9 +101,10 @@ function tryRefreshAccountToken(refreshToken: string): Promise<RefreshResult | n
 }
 
 /**
- * Attempt to refresh the access token using refresh token
- * Uses locking to prevent concurrent refresh attempts for the same session
- * Returns the new access token if successful, null otherwise
+ * Refresh the access token with the caller's refresh token. Every refresh of
+ * the web server goes through refreshSessionOnce: concurrent and recent calls
+ * presenting the same refresh token share one API call, so parallel requests
+ * of one browser never spend the rotating token twice.
  */
 async function tryRefreshAccessToken(
   refreshToken: string,
@@ -128,58 +119,16 @@ async function tryRefreshAccessToken(
     devLog.log('[Proxy] Cannot refresh - no tenant ID')
     return null
   }
-
-  // Check if this session already has a refresh in progress
-  const lockKey = refreshLockKey(refreshToken, tenantId)
-  const existingPromise = refreshLocks.get(lockKey)
-  if (existingPromise) {
-    devLog.log('[Proxy] Refresh already in progress for this session, waiting...')
-    return existingPromise
+  const result = await refreshSessionOnce(refreshToken, tenantId)
+  if (!result.ok) {
+    devLog.log('[Proxy] Token refresh failed:', result.status, result.code)
+    return null
   }
-
-  // Create a new refresh promise
-  const refreshPromise = (async (): Promise<RefreshResult | null> => {
-    try {
-      devLog.log('[Proxy] Attempting to refresh access token for tenant:', tenantId)
-      const response = await fetch(`${env.api.url}/api/v1/auth/refresh`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          refresh_token: refreshToken,
-          tenant_id: tenantId,
-        }),
-      })
-
-      if (!response.ok) {
-        const errorText = await response.text().catch(() => 'Unknown error')
-        devLog.log('[Proxy] Token refresh failed:', response.status, errorText)
-        return null
-      }
-
-      const data = await response.json()
-      devLog.log('[Proxy] Token refresh successful, new token length:', data.access_token?.length)
-
-      return {
-        accessToken: data.access_token,
-        // The API sends the rotated refresh token in Set-Cookie only.
-        refreshToken: rotatedRefreshToken(response, data),
-        expiresIn: data.expires_in || 900,
-      }
-    } catch (error) {
-      devLog.error('[Proxy] Token refresh error:', error)
-      return null
-    } finally {
-      // Remove lock after completion
-      refreshLocks.delete(lockKey)
-    }
-  })()
-
-  // Store the promise so concurrent requests can wait on it
-  refreshLocks.set(lockKey, refreshPromise)
-
-  return refreshPromise
+  return {
+    accessToken: result.accessToken,
+    refreshToken: result.refreshToken,
+    expiresIn: result.expiresIn,
+  }
 }
 
 /**
