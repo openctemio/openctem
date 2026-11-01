@@ -133,6 +133,7 @@ describe('ConsentView for a terminal sign-in', () => {
   it('shows where the request came from and a warning, never a return address', async () => {
     render(<ConsentView requestId={REQUEST_ID} />)
     expect(await screen.findByText('A terminal asked to connect with a code')).toBeInTheDocument()
+    expect(screen.getByText('Connect a terminal to OpenCTEM?')).toBeInTheDocument()
     expect(screen.getByText('203.0.113.7')).toBeInTheDocument()
     expect(screen.getByText('198.51.100.4')).toBeInTheDocument()
     expect(screen.getByText('Different address')).toBeInTheDocument()
@@ -144,6 +145,6 @@ describe('ConsentView for a terminal sign-in', () => {
   it('approving ends on a page that sends the person back to the terminal', async () => {
     render(<ConsentView requestId={REQUEST_ID} />)
     fireEvent.click(await screen.findByRole('button', { name: 'Allow' }))
-    expect(await screen.findByText('Terminal sign-in is connected')).toBeInTheDocument()
+    expect(await screen.findByText('The terminal is connected')).toBeInTheDocument()
   })
 })
