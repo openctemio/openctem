@@ -80,6 +80,7 @@ var categoryOf = map[EventType]DisplayCategory{
 	EventTypeAPIRemoved:             CategoryExposedAPIs,
 	EventTypeMCPServerExposed:       CategoryAIServices,
 	EventTypeMisconfiguration:       CategoryWebApplication,
+	EventTypeThirdPartyScriptAdded:  CategoryWebApplication,
 	EventTypeHeaderMissing:          CategoryWebApplication,
 	EventTypeSSLIssue:               CategorySSLTLS,
 	EventTypeCertificateExpiring:    CategoryCertificates,

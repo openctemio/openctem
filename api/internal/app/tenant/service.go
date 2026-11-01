@@ -3204,6 +3204,12 @@ func (s *TenantService) UpdateEASMSettings(
 	return &out, nil
 }
 
+// NotifyPolicyLoosened is notifyPolicyLoosened for the services that keep an
+// organization policy outside this package (automatic AI triage).
+func (s *TenantService) NotifyPolicyLoosened(ctx context.Context, tenantID string, actx auditapp.AuditContext, title, what, url string) {
+	s.notifyPolicyLoosened(ctx, tenantID, actx, title, what, url)
+}
+
 // notifyPolicyLoosened tells every owner and administrator, in-app, that a
 // policy outside the security section was loosened, and by whom. Best effort.
 func (s *TenantService) notifyPolicyLoosened(ctx context.Context, tenantID string, actx auditapp.AuditContext, title, what, url string) {

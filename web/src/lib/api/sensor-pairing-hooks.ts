@@ -50,13 +50,55 @@ export interface ApprovePairingRequest {
   type: string
   zone_ids: string[]
   grant_profile: string
+  /**
+   * The sensor this request re-pairs (view.repair_sensor_id); empty for a
+   * request that adds a sensor. The API refuses a mismatch with 409
+   * REPAIR_NOT_ACKNOWLEDGED. A re-pair keeps the sensor's name, zones and
+   * grant, so name, type, zone_ids and grant_profile are ignored.
+   */
+  repair_sensor_id?: string
 }
+
+/** Why an administrator re-pairs a sensor (required with repair_sensor_id). */
+export type RepairReason = 'lost_identity' | 'host_moved' | 'key_compromised' | 'install_method'
+
+export const REPAIR_REASONS: RepairReason[] = [
+  'lost_identity',
+  'host_moved',
+  'key_compromised',
+  'install_method',
+]
 
 export interface CreateExpectationRequest {
   name?: string
   zone_ids?: string[]
   grant_profile?: string
   repair_sensor_id?: string
+  repair_reason?: RepairReason
+}
+
+/** One signing key of a key-bound sensor (GET /sensors/{id}/keys). */
+export interface SensorSigningKey {
+  id: string
+  fingerprint: string
+  status: 'pending' | 'active' | 'revoked'
+  created_at: string
+  revoked_reason?: string
+}
+
+/**
+ * Revokes every active signing key of a sensor ("Revoke the current key
+ * now" in the re-pair dialog): the sensor stops at its next request and its
+ * leased commands are taken back. Returns how many keys were revoked.
+ */
+export async function revokeActiveSensorKeys(sensorId: string): Promise<number> {
+  const base = `/api/v1/sensors/${encodeURIComponent(sensorId)}/keys`
+  const keys = await get<SensorSigningKey[]>(base)
+  const active = keys.filter((k) => k.status === 'active')
+  for (const k of active) {
+    await post<void>(`${base}/${encodeURIComponent(k.id)}/revoke`, {})
+  }
+  return active.length
 }
 
 export interface SensorIdentityPolicy {
@@ -111,8 +153,24 @@ export function pairingSettled(status?: string): boolean {
 }
 
 /**
+ * The next poll of an expectation: none once the SAS is known or the request
+ * settled, EXPECTATION_POLL_MS before that.
+ *
+ * Module scope on purpose. SWR restarts its polling timer whenever the
+ * `refreshInterval` it is given changes identity, so an inline arrow
+ * re-created on every render resets the timer each render: a page that
+ * re-renders faster than the interval (a 1 s countdown) never polls at all.
+ */
+export function expectationRefreshInterval(latest?: SensorPairingView): number {
+  return latest && (latest.sas || pairingSettled(latest.status)) ? 0 : EXPECTATION_POLL_MS
+}
+
+/**
  * An expectation of this organization, polled until the sensor connected and
  * revealed its nonce (the SAS is then known) or the request settled.
+ *
+ * A failed poll is not retried on its own (SWR then stops polling until the
+ * error clears): the caller shows `error` and offers `mutate` as "Check now".
  */
 export function usePairingExpectation(id: string | null, config?: SWRConfiguration) {
   const { currentTenant } = useTenant()
@@ -122,8 +180,7 @@ export function usePairingExpectation(id: string | null, config?: SWRConfigurati
     {
       revalidateOnFocus: false,
       shouldRetryOnError: false,
-      refreshInterval: (latest) =>
-        latest && (latest.sas || pairingSettled(latest.status)) ? 0 : EXPECTATION_POLL_MS,
+      refreshInterval: expectationRefreshInterval,
       ...config,
     }
   )
