@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/openctemio/openctem/api/pkg/domain/ingestreceipt"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/software"
 	"github.com/openctemio/openctem/api/pkg/domain/softwarematch"
@@ -550,5 +551,37 @@ func TestReconcile_TruncatedReadClosesNothing(t *testing.T) {
 	}
 	if st.Closed != 1 || st2.Closed != 1 || st2.CloseSkipped != 0 {
 		t.Fatalf("complete read: closed %d / %d (skipped %d), want 1 / 1 (0)", st.Closed, st2.Closed, st2.CloseSkipped)
+	}
+}
+
+type fakeReceipts struct{ deltas []ingestreceipt.Delta }
+
+func (f *fakeReceipts) Record(_ context.Context, d *ingestreceipt.Delta) (shared.ID, error) {
+	f.deltas = append(f.deltas, *d)
+	return shared.NewID(), nil
+}
+
+// The findings a pass stores are booked on the platform's receipt of the
+// day under the matcher's own tool, never on a sensor's.
+func TestReconcile_RecordsPlatformReceipt(t *testing.T) {
+	store := newFakeStore()
+	store.matches = []softwarematch.Match{match(shared.NewID(), "CVE-2021-23017", 80)}
+	svc, w := newSvc(store, true)
+	rec := &fakeReceipts{}
+	svc.SetReceiptRecorder(rec)
+	svc.now = func() time.Time { return time.Date(2026, 10, 31, 23, 0, 0, 0, time.UTC) }
+	tenantID := shared.NewID()
+	var st Stats
+	if err := svc.ReconcileTenant(context.Background(), tenantID, &st); err != nil {
+		t.Fatal(err)
+	}
+	if len(rec.deltas) != 1 {
+		t.Fatalf("%d receipt deltas, want 1", len(rec.deltas))
+	}
+	d := rec.deltas[0]
+	if d.TenantID != tenantID || d.Source.Kind != ingestreceipt.SourcePlatform || d.Source.Ref != "version-match:2026-10-31" ||
+		d.Tool != softwarematch.ToolName || d.Instance.Kind != ingestreceipt.InstancePlatform || d.Received != 1 ||
+		len(d.Created) != 1 || d.Created[0] != w.created[0].ID() {
+		t.Fatalf("delta %+v", d)
 	}
 }
