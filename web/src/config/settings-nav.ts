@@ -7,13 +7,19 @@
  * deep (group, then item), with a way back to the app. The main sidebar keeps a
  * single "Settings" link.
  *
- * Six groups (settings IA decided 2026-10-01, item placement research 346):
- * My account, Organization (what the organization is, its modules, usage and
- * audit log), Access & security (who may do what, how they sign in, and who
- * oversees it), Findings & assets (policies on findings, risk and the
- * inventory), Scanning (what scans may do, with which tools and content),
- * Integrations. A long group is split by `section` sub-headings. URLs never
- * move with the grouping.
+ * Six groups (settings IA decided 2026-10-01; placement research 346, then
+ * research 369 sorted items by the task and the person who uses them):
+ * - My account: the signed-in person's own pages, nothing of the organization;
+ * - Organization: what the organization is, its modules, usage and AI;
+ * - Access & security: people and their roles, then API access (service
+ *   accounts, keys, AI assistants), Sign-in, and Oversight (security
+ *   overview, audit log, support access);
+ * - Findings & assets: how findings are handled, then Risk and threats
+ *   (scoring, matching, alerts, licenses), then Assets;
+ * - Scanning: what scans may do, then Tools, Sensors and Scanner content;
+ * - Integrations.
+ * A long group is split by `section` sub-headings. URLs never move with the
+ * grouping, so a regrouping needs no redirect.
  *
  * Rules (src/config/__tests__/settings-nav.test.ts):
  * - every url has a page; no page is a scaffold;
@@ -278,15 +284,6 @@ export const settingsNav: SettingsNavGroup[] = [
           },
         ],
       },
-      {
-        id: 'audit-log',
-        title: 'Audit log',
-        description: 'Who did what, and when, across the organization.',
-        url: '/settings/audit-log',
-        icon: History,
-        permission: Permission.AuditRead,
-        keywords: ['audit trail', 'events', 'compliance'],
-      },
     ],
   },
   {
@@ -333,6 +330,7 @@ export const settingsNav: SettingsNavGroup[] = [
         // roles, teams and API keys. Not module gated: the API gates none of
         // its routes on the integrations module.
         id: 'service-accounts',
+        section: 'api-access',
         title: 'Service accounts',
         description: 'Identities for integrations, with their own roles and API keys.',
         url: '/settings/service-accounts',
@@ -349,12 +347,23 @@ export const settingsNav: SettingsNavGroup[] = [
       },
       {
         id: 'api-keys',
+        section: 'api-access',
         title: 'API keys',
         description: 'Keys for scripts and tools that call the API.',
         url: '/settings/api-keys',
         icon: KeyRound,
         permission: Permission.ApiKeysRead,
         keywords: ['token', 'programmatic', 'automation'],
+      },
+      {
+        id: 'mcp',
+        section: 'api-access',
+        title: 'AI assistants (MCP)',
+        description: 'Let AI assistants work with your data over MCP; approve applications.',
+        url: '/settings/mcp',
+        icon: Bot,
+        permission: Permission.ApiKeysRead,
+        keywords: ['mcp', 'claude', 'llm', 'assistant', 'publisher', 'approve', 'request'],
       },
       {
         id: 'authentication',
@@ -430,9 +439,21 @@ export const settingsNav: SettingsNavGroup[] = [
         keywords: ['trust', 'partner', 'sister company', 'external', 'home realm', 'sso'],
       },
       {
+        // Owners approve or reject SSO changes the platform administrator
+        // proposed (RFC-022 revision 8); the page tells admins it is owner only.
+        id: 'sso-approvals',
+        section: 'sign-in',
+        title: 'SSO approvals',
+        description: 'Approve or reject sign-in changes proposed by the platform administrator.',
+        url: '/settings/sso-approvals',
+        icon: ShieldCheck,
+        permission: Permission.TeamUpdate,
+        keywords: ['sso', 'saml', 'identity provider', 'approval', 'owner'],
+      },
+      {
         // The organization's posture checks and score (api: GET
-        // /organization/security-overview, owners and admins): the Security
-        // group's landing page.
+        // /organization/security-overview, owners and admins): the first page of
+        // Oversight.
         id: 'security-overview',
         section: 'oversight',
         title: 'Security overview',
@@ -443,16 +464,14 @@ export const settingsNav: SettingsNavGroup[] = [
         keywords: ['security', 'health', 'score', 'checklist', 'posture', '2fa', 'mfa'],
       },
       {
-        // Owners approve or reject SSO changes the platform administrator
-        // proposed (RFC-022 revision 8); the page tells admins it is owner only.
-        id: 'sso-approvals',
+        id: 'audit-log',
         section: 'oversight',
-        title: 'SSO approvals',
-        description: 'Approve or reject sign-in changes proposed by the platform administrator.',
-        url: '/settings/sso-approvals',
-        icon: ShieldCheck,
-        permission: Permission.TeamUpdate,
-        keywords: ['sso', 'saml', 'identity provider', 'approval', 'owner'],
+        title: 'Audit log',
+        description: 'Who did what, and when, across the organization.',
+        url: '/settings/audit-log',
+        icon: History,
+        permission: Permission.AuditRead,
+        keywords: ['audit trail', 'events', 'compliance'],
       },
       {
         // Time-boxed, read-only, audited access for platform support (api
@@ -465,16 +484,6 @@ export const settingsNav: SettingsNavGroup[] = [
         icon: LifeBuoy,
         permission: Permission.TeamUpdate,
         keywords: ['support', 'help', 'troubleshoot', 'grant', 'revoke', 'case'],
-      },
-      {
-        id: 'mcp',
-        section: 'oversight',
-        title: 'AI assistants (MCP)',
-        description: 'Let AI assistants work with your data over MCP; approve applications.',
-        url: '/settings/mcp',
-        icon: Bot,
-        permission: Permission.ApiKeysRead,
-        keywords: ['mcp', 'claude', 'llm', 'assistant', 'publisher', 'approve', 'request'],
       },
     ],
   },
@@ -524,28 +533,6 @@ export const settingsNav: SettingsNavGroup[] = [
         ],
       },
       {
-        id: 'risk-scoring',
-        title: 'Risk scoring',
-        description: 'How asset risk scores are weighted.',
-        url: '/settings/risk-scoring',
-        icon: Scale,
-        permission: Permission.TeamUpdate,
-        module: 'risk_scoring',
-        keywords: ['score', 'weights', 'presets'],
-        anchors: [
-          {
-            id: 'floor-unowned-toggle',
-            title: 'Unowned findings at P2',
-            keywords: ['owner', 'floor', 'unowned'],
-          },
-          {
-            id: 'ctem-toggle',
-            title: 'CTEM bonus points',
-            keywords: ['bonus', 'exposure', 'pii'],
-          },
-        ],
-      },
-      {
         id: 'sla-policies',
         title: 'SLA policies',
         description: 'Remediation deadlines per severity.',
@@ -554,51 +541,6 @@ export const settingsNav: SettingsNavGroup[] = [
         permission: Permission.SLARead,
         module: 'sla',
         keywords: ['sla', 'deadline', 'due date'],
-      },
-      {
-        id: 'vulnerability-matching',
-        title: 'Vulnerability matching',
-        description: 'Which CVEs affecting your software versions become findings.',
-        url: '/settings/vulnerability-matching',
-        icon: Bug,
-        permission: Permission.TeamUpdate,
-        keywords: ['cve', 'version', 'software', 'nvd', 'banner', 'match'],
-      },
-      {
-        id: 'emerging-threats',
-        title: 'Emerging threats',
-        description: 'When new or newly exploited CVEs alert you, and how.',
-        url: '/settings/emerging-threats',
-        icon: Siren,
-        permission: Permission.TeamUpdate,
-        keywords: ['cve', 'kev', 'epss', 'alert', 'digest', 'quiet hours', 'exploited', 'zero-day'],
-      },
-      {
-        id: 'license-policy',
-        title: 'License policy',
-        description: 'Which open-source licenses your packages may use, and which open findings.',
-        url: '/settings/license-policy',
-        icon: FileBadge,
-        permission: Permission.SettingsRead,
-        keywords: ['license', 'spdx', 'copyleft', 'gpl', 'sbom', 'compliance'],
-      },
-      {
-        id: 'asset-sources',
-        title: 'Asset sources',
-        description: 'Which source decides asset criticality, owner and exposure.',
-        url: '/settings/asset-sources',
-        icon: GitMerge,
-        permission: Permission.TeamUpdate,
-        keywords: ['source', 'precedence', 'integration', 'import', 'scan', 'lock', 'conflict'],
-      },
-      {
-        id: 'asset-lifecycle',
-        title: 'Asset lifecycle',
-        description: 'When stale assets are retired automatically.',
-        url: '/settings/asset-lifecycle',
-        icon: Clock,
-        permission: Permission.TeamUpdate,
-        keywords: ['stale', 'retire', 'archive'],
       },
       {
         id: 'pentest-methodology',
@@ -621,6 +563,79 @@ export const settingsNav: SettingsNavGroup[] = [
           'word',
           'docx',
         ],
+      },
+      {
+        id: 'risk-scoring',
+        section: 'risk',
+        title: 'Risk scoring',
+        description: 'How asset risk scores are weighted.',
+        url: '/settings/risk-scoring',
+        icon: Scale,
+        permission: Permission.TeamUpdate,
+        module: 'risk_scoring',
+        keywords: ['score', 'weights', 'presets'],
+        anchors: [
+          {
+            id: 'floor-unowned-toggle',
+            title: 'Unowned findings at P2',
+            keywords: ['owner', 'floor', 'unowned'],
+          },
+          {
+            id: 'ctem-toggle',
+            title: 'CTEM bonus points',
+            keywords: ['bonus', 'exposure', 'pii'],
+          },
+        ],
+      },
+      {
+        id: 'vulnerability-matching',
+        section: 'risk',
+        title: 'Vulnerability matching',
+        description: 'Which CVEs affecting your software versions become findings.',
+        url: '/settings/vulnerability-matching',
+        icon: Bug,
+        permission: Permission.TeamUpdate,
+        keywords: ['cve', 'version', 'software', 'nvd', 'banner', 'match'],
+      },
+      {
+        id: 'emerging-threats',
+        section: 'risk',
+        title: 'Emerging threats',
+        description: 'When new or newly exploited CVEs alert you, and how.',
+        url: '/settings/emerging-threats',
+        icon: Siren,
+        permission: Permission.TeamUpdate,
+        keywords: ['cve', 'kev', 'epss', 'alert', 'digest', 'quiet hours', 'exploited', 'zero-day'],
+      },
+      {
+        id: 'license-policy',
+        section: 'risk',
+        title: 'License policy',
+        description: 'Which open-source licenses your packages may use, and which open findings.',
+        url: '/settings/license-policy',
+        icon: FileBadge,
+        permission: Permission.SettingsRead,
+        keywords: ['license', 'spdx', 'copyleft', 'gpl', 'sbom', 'compliance'],
+      },
+      {
+        id: 'asset-sources',
+        section: 'assets',
+        title: 'Asset sources',
+        description: 'Which source decides asset criticality, owner and exposure.',
+        url: '/settings/asset-sources',
+        icon: GitMerge,
+        permission: Permission.TeamUpdate,
+        keywords: ['source', 'precedence', 'integration', 'import', 'scan', 'lock', 'conflict'],
+      },
+      {
+        id: 'asset-lifecycle',
+        section: 'assets',
+        title: 'Asset lifecycle',
+        description: 'When stale assets are retired automatically.',
+        url: '/settings/asset-lifecycle',
+        icon: Clock,
+        permission: Permission.TeamUpdate,
+        keywords: ['stale', 'retire', 'archive'],
       },
     ],
   },
@@ -732,17 +747,6 @@ export const settingsNav: SettingsNavGroup[] = [
         ],
       },
       {
-        id: 'proxies',
-        title: 'Proxies',
-        description:
-          "Send your sensors' scan traffic through proxies, with automatic health checks.",
-        url: '/settings/scanning/proxies',
-        icon: Waypoints,
-        permission: Permission.SensorEgressRead,
-        module: 'sensors',
-        keywords: ['proxy', 'socks5', 'http connect', 'egress', 'network path', 'outbound'],
-      },
-      {
         id: 'scan-profiles',
         section: 'tools',
         title: 'Scan profiles',
@@ -776,17 +780,6 @@ export const settingsNav: SettingsNavGroup[] = [
         keywords: ['tool settings', 'rate limit', 'concurrency', 'timeout', 'retries', 'options'],
       },
       {
-        id: 'sensor-products',
-        section: 'tools',
-        title: 'Sensor products',
-        description: 'Latest and minimum release of the sensors your organization builds.',
-        url: '/settings/scanning/sensor-products',
-        icon: Package,
-        permission: Permission.SensorsRead,
-        module: 'sensors',
-        keywords: ['custom sensor', 'sdk-go', 'release', 'update available', 'unsupported'],
-      },
-      {
         id: 'capabilities',
         section: 'tools',
         title: 'Capabilities',
@@ -796,6 +789,29 @@ export const settingsNav: SettingsNavGroup[] = [
         permission: Permission.ToolsRead,
         module: 'scans',
         keywords: ['taxonomy'],
+      },
+      {
+        id: 'sensor-products',
+        section: 'sensors',
+        title: 'Sensor products',
+        description: 'Latest and minimum release of the sensors your organization builds.',
+        url: '/settings/scanning/sensor-products',
+        icon: Package,
+        permission: Permission.SensorsRead,
+        module: 'sensors',
+        keywords: ['custom sensor', 'sdk-go', 'release', 'update available', 'unsupported'],
+      },
+      {
+        id: 'proxies',
+        section: 'sensors',
+        title: 'Proxies',
+        description:
+          "Send your sensors' scan traffic through proxies, with automatic health checks.",
+        url: '/settings/scanning/proxies',
+        icon: Waypoints,
+        permission: Permission.SensorEgressRead,
+        module: 'sensors',
+        keywords: ['proxy', 'socks5', 'http connect', 'egress', 'network path', 'outbound'],
       },
       {
         // Signed content packages from the catalog (api RFC-099): read with
@@ -821,26 +837,16 @@ export const settingsNav: SettingsNavGroup[] = [
         keywords: ['nuclei', 'semgrep', 'betterleaks', 'gitleaks', 'rules'],
       },
       {
-        id: 'source-credentials',
+        // Organization detection rules (api docs/architecture/rule-packs.md):
+        // read with scans:content:read; changes need scans:content:write.
+        id: 'detectionRules',
         section: 'content',
-        title: 'Source credentials',
-        description: 'Encrypted credentials that template sources use to fetch.',
-        url: '/settings/scanning/credentials',
-        icon: Lock,
-        permission: Permission.SecretStoreRead,
-        module: 'scans',
-        keywords: ['secret store', 'secrets', 'tokens', 'git token'],
-      },
-      {
-        id: 'scanner-content',
-        section: 'content',
-        title: 'Content freshness',
-        description: 'How fresh vulnerability databases, templates and rules must be.',
-        url: '/settings/scanning/content',
-        icon: DatabaseZap,
-        permission: Permission.SensorsRead,
-        module: 'sensors',
-        keywords: ['trivy db', 'nuclei templates', 'semgrep rules', 'staleness', 'pin', 'update'],
+        title: 'Detection rules',
+        description: 'Rules that name technologies and find exposed secrets in scan results.',
+        url: '/settings/scanning/detection-rules',
+        icon: ScanSearch,
+        permission: Permission.ContentPacksRead,
+        keywords: ['fingerprint', 'technology', 'secret', 'token', 'regex', 'rule', 'sensitive'],
       },
       {
         // Organization wordlists (api docs/architecture/wordlists.md): read
@@ -863,16 +869,26 @@ export const settingsNav: SettingsNavGroup[] = [
         ],
       },
       {
-        // Organization detection rules (api docs/architecture/rule-packs.md):
-        // read with scans:content:read; changes need scans:content:write.
-        id: 'detectionRules',
+        id: 'scanner-content',
         section: 'content',
-        title: 'Detection rules',
-        description: 'Rules that name technologies and find exposed secrets in scan results.',
-        url: '/settings/scanning/detection-rules',
-        icon: ScanSearch,
-        permission: Permission.ContentPacksRead,
-        keywords: ['fingerprint', 'technology', 'secret', 'token', 'regex', 'rule', 'sensitive'],
+        title: 'Content freshness',
+        description: 'How fresh vulnerability databases, templates and rules must be.',
+        url: '/settings/scanning/content',
+        icon: DatabaseZap,
+        permission: Permission.SensorsRead,
+        module: 'sensors',
+        keywords: ['trivy db', 'nuclei templates', 'semgrep rules', 'staleness', 'pin', 'update'],
+      },
+      {
+        id: 'source-credentials',
+        section: 'content',
+        title: 'Source credentials',
+        description: 'Encrypted credentials that template sources use to fetch.',
+        url: '/settings/scanning/credentials',
+        icon: Lock,
+        permission: Permission.SecretStoreRead,
+        module: 'scans',
+        keywords: ['secret store', 'secrets', 'tokens', 'git token'],
       },
     ],
   },
