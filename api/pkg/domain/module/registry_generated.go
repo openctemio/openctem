@@ -87,7 +87,7 @@ var Registry = []Definition{
 		Core:       true,
 		UserFacing: true,
 		Permission: "assets:read",
-		MCP:        []string{"list_assets"},
+		MCP:        []string{"list_assets", "search_assets", "get_asset"},
 		Jobs:       []string{"AssetGroupRulesController", "AssetIdentityBackfillController", "AssetTechnologyBackfillController", "AssetChangeTimelineController", "AssetLifecycleController", "AssetPurgeController", "AssetRiskScoreController", "AssetRiskReconcileController", "OwnerResolutionController", "DataExpirationController", "DomainReverifyController"},
 	},
 	{
