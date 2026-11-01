@@ -25,6 +25,15 @@ type Link struct {
 	Source     string
 	Evidence   string
 	Confidence int
+	// Version is the catalog version key of VersionID; Segments the number
+	// of segments the source reported (0: none).
+	Version  VersionKey
+	Segments int
+	// Class is how the source knows the version (ClassOf).
+	Class EvidenceClass
+	// ObservedAt is when the source saw it (the report time, never later
+	// than now); zero means now.
+	ObservedAt time.Time
 }
 
 // LinkResult says what a write changed.
@@ -55,6 +64,8 @@ type AssetLink struct {
 	Confidence int
 	FirstSeen  time.Time
 	LastSeen   time.Time
+	Class      EvidenceClass
+	Sightings  int
 }
 
 // MaxAssetLinks bounds one asset's software list.
@@ -74,11 +85,13 @@ type Repository interface {
 	// EnsureVersion returns the catalog version of the product, creating it
 	// in the product's scope.
 	EnsureVersion(ctx context.Context, tenantID shared.ID, product ProductRef, v VersionKey) (shared.ID, error)
-	// UpsertLinks writes the links of one ingest in one transaction. An
-	// older link of the same product at the same location with another
-	// version, not written by this call, is superseded.
+	// UpsertLinks writes the links of one ingest in one transaction as
+	// sightings of each (asset, product, location) version history
+	// (ApplySightings): a version the history does not know starts as a
+	// candidate and supersedes the established one only when the evidence
+	// allows it.
 	UpsertLinks(ctx context.Context, tenantID shared.ID, links []Link) (LinkResult, error)
-	// ListAssetLinks returns the asset's current links (not superseded),
-	// newest first, at most MaxAssetLinks.
+	// ListAssetLinks returns the asset's established links (not superseded,
+	// not candidates), newest first, at most MaxAssetLinks.
 	ListAssetLinks(ctx context.Context, tenantID, assetID shared.ID) ([]AssetLink, error)
 }

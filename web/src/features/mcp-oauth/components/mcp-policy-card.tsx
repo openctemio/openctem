@@ -50,6 +50,7 @@ function draftOf(p: McpPolicy): PolicyDraft {
     api_keys_allowed: p.api_keys_allowed,
     refresh_days: p.refresh_days,
     require_dpop: p.require_dpop,
+    device_flow_allowed: p.device_flow_allowed,
     max_tlp: p.max_tlp,
   }
 }
@@ -115,6 +116,13 @@ export function McpPolicyCard({ policy, canEdit }: McpPolicyCardProps) {
       t(
         'confirm.mcpPolicy.dpop',
         'Connections no longer need proof of possession, so a stolen token works anywhere.'
+      )
+    )
+  if (!was.device_flow_allowed && draft.device_flow_allowed)
+    widened.push(
+      t(
+        'confirm.mcpPolicy.deviceFlow',
+        'Members can sign a terminal in with a code typed into their browser.'
       )
     )
   if (draft.refresh_days > was.refresh_days)
@@ -326,6 +334,26 @@ export function McpPolicyCard({ policy, canEdit }: McpPolicyCardProps) {
               id="mcp-dpop"
               checked={draft.require_dpop}
               onCheckedChange={(v) => set({ require_dpop: v })}
+              disabled={disabled}
+            />
+          </div>
+
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <Label htmlFor="mcp-device-flow">
+                {t('mcp.policy.deviceFlow', 'Terminal sign-in with a code')}
+              </Label>
+              <p className="text-muted-foreground text-sm">
+                {t(
+                  'mcp.policy.deviceFlowHint',
+                  'For assistants running in an SSH session, a container or another machine: the terminal shows a code, the person types it into their browser and approves. Turning it off also ends the connections made this way.'
+                )}
+              </p>
+            </div>
+            <Switch
+              id="mcp-device-flow"
+              checked={draft.device_flow_allowed}
+              onCheckedChange={(v) => set({ device_flow_allowed: v })}
               disabled={disabled}
             />
           </div>

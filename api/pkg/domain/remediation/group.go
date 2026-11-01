@@ -24,8 +24,14 @@ type KeyInput struct {
 	PackageName      string
 	InstalledVersion string
 	// FixedVersions are the versions that fix the finding's vulnerability
-	// (the scanner's list on the finding, then the CVE catalog's).
+	// (the scanner's list on the finding, then the CVE catalog's). When
+	// empty, the versions an upgrade advice naming the package lists
+	// (SolutionText) are used.
 	FixedVersions []string
+	// UpgradeTarget, when set, is the version every open finding of this
+	// package version on the tenant is upgraded to (ConsolidateUpgrades):
+	// one upgrade that fixes them all, instead of one group per advisory.
+	UpgradeTarget string
 
 	// SecretFingerprint is the keyed fingerprint of a leaked secret's value;
 	// SecretType names its kind for the title.
@@ -44,7 +50,11 @@ type KeyInput struct {
 // an older version is derived again (KeyApplier.Backfill) before the
 // suggestion generator trusts it: version 1 grouped any solution text, so
 // unrelated findings with the same boilerplate advice shared one key.
-const KeyAlgorithmVersion = 3
+//
+// Version 4 reads fixed versions from an upgrade advice that names the
+// package when the scanner gave no list, and gives every open finding of one
+// package version the same upgrade target (the highest any of them needs).
+const KeyAlgorithmVersion = 4
 
 // Key kinds: the part of a key before the first colon.
 const (
@@ -91,8 +101,12 @@ func DeriveKey(in KeyInput) (key, title string, ok bool) {
 		}
 		return KindRotate + ":secret:" + fp, secretTitle(in.SecretType, fp), true
 	}
-	if name := strings.TrimSpace(in.PackageName); name != "" && len(in.FixedVersions) > 0 {
-		if target := vulnerability.RecommendedFixVersion(in.InstalledVersion, in.FixedVersions); target != "" {
+	if name := strings.TrimSpace(in.PackageName); name != "" {
+		target := strings.TrimSpace(in.UpgradeTarget)
+		if target == "" {
+			target = OwnUpgradeTarget(in)
+		}
+		if target != "" {
 			eco := strings.ToLower(strings.TrimSpace(in.Ecosystem))
 			if eco == "" {
 				eco = "other"
@@ -116,6 +130,59 @@ func DeriveKey(in KeyInput) (key, title string, ok bool) {
 		return KindSol + ":" + source + ":" + hex.EncodeToString(sum[:]), clip(title, maxTitle), true
 	}
 	return "", "", false
+}
+
+// OwnUpgradeTarget is the version one finding's package needs on its own:
+// the nearest fixed version above the installed one, from the finding's
+// fixed versions or, without them, its upgrade advice. "" when none.
+func OwnUpgradeTarget(in KeyInput) string {
+	name := strings.TrimSpace(in.PackageName)
+	if name == "" {
+		return ""
+	}
+	fixed := in.FixedVersions
+	if len(fixed) == 0 {
+		fixed = vulnerability.FixedVersionsFromAdvice(name, in.SolutionText)
+	}
+	if len(fixed) == 0 {
+		return ""
+	}
+	return vulnerability.RecommendedFixVersion(in.InstalledVersion, fixed)
+}
+
+// PackageVersionKey identifies one installed package version for
+// ConsolidateUpgrades ("" when the input names no package).
+func PackageVersionKey(in KeyInput) string {
+	name := strings.ToLower(strings.TrimSpace(in.PackageName))
+	if name == "" {
+		return ""
+	}
+	return strings.ToLower(strings.TrimSpace(in.Ecosystem)) + "\x1f" + name + "\x1f" + strings.TrimSpace(in.InstalledVersion)
+}
+
+// ConsolidateUpgrades sets one upgrade target for every source of the same
+// installed package version: the highest version any open one of them
+// needs, so a package with many advisories is one "Upgrade <package> to
+// <version>" group (a finding belongs to at most one remediation) instead of
+// one group per advisory. A version above every advisory's own target fixes
+// each of them. Sources of a version with no open finding needing an upgrade
+// keep their own target. open reports whether a source's finding is open.
+func ConsolidateUpgrades(sources []KeySource, open func(KeySource) bool) {
+	best := map[string]string{}
+	for _, s := range sources {
+		k := PackageVersionKey(s.Input)
+		if k == "" || !open(s) {
+			continue
+		}
+		if t := OwnUpgradeTarget(s.Input); t != "" {
+			best[k] = vulnerability.HigherVersion(best[k], t)
+		}
+	}
+	for i := range sources {
+		if t := best[PackageVersionKey(sources[i].Input)]; t != "" && OwnUpgradeTarget(sources[i].Input) != "" {
+			sources[i].Input.UpgradeTarget = t
+		}
+	}
 }
 
 // ruleScopedSources are sources whose solution text is advice for one rule

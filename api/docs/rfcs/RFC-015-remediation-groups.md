@@ -53,7 +53,7 @@ finding that no longer gets a key loses its row.
 | Finding kind | Signal | `remediation_key` and title |
 |---|---|---|
 | Leaked secret | the keyed fingerprint of the secret value | `rotate:secret:<fingerprint>`, "Rotate the leaked <type> secret <fp8>". Only the same secret groups; a secret without a fingerprint gets no key (secret advice text is the same for every secret, so it is never a grouping signal) |
-| Package (SCA, container, OS, version-based match) | ecosystem + package name + installed version + fixed versions (the scanner's list on the finding, then the CVE catalog's) | `upgrade:<ecosystem>:<name>:<target>`, "Upgrade <name> to <target>", where target is the nearest fixed version for the installed one (`RecommendedFixVersion`). Two installed versions that the same upgrade fixes share one group; a version-based match uses ecosystem `cpe` and the fix its matching range names |
+| Package (SCA, container, OS, version-based match) | ecosystem + package name + installed version + fixed versions (the scanner's list on the finding, then the CVE catalog's) | `upgrade:<ecosystem>:<name>:<target>`, "Upgrade <name> to <target>". A finding's own target is the nearest fixed version for the installed one (`RecommendedFixVersion`), from its fixed versions or, when the scanner gave none, the versions an upgrade advice naming the package lists ("Upgrade Django to 1.11.28, 2.2.10, 3.0.3", `FixedVersionsFromAdvice`). Every open finding of one installed package version (one component) then gets the same target, the highest any of them needs (`ConsolidateUpgrades`): a package with many advisories is one group, and a finding stays in one remediation. Two installed versions that the same upgrade fixes share one group; a version-based match uses ecosystem `cpe` and the fix its matching range names |
 | Infra / other | the specific sentences of the solution text: only sentences that name a version (`2.17.1`, `version 8`) or an advisory id (CVE, GHSA, MSnn-nnn, KB, RHSA, USN, DSA, APSB) count, at least 16 characters in all; boilerplate such as "Apply the suggested fix code." never forms a group. For code and configuration sources (`sast`, `iac`, `sarif`, `cspm`) the rule id is part of the hash, and a finding without a rule id gets no `sol` key | `sol:<source>:<sha256([rule id, ] specific sentences)>`, titled by the first specific sentence |
 | pentest, or nothing specific | — | no key (ungrouped) |
 
@@ -62,9 +62,11 @@ URL path segment (`/remediation-groups/{key}/resolve`); a package name with a
 slash (an npm scope, a Go module path) uses `~` in the key.
 
 **Key rules version.** Each stored key records `algorithm_version`, the
-version of these rules that derived it (`KeyAlgorithmVersion`, now 3; version
+version of these rules that derived it (`KeyAlgorithmVersion`, now 4; version
 1 hashed any solution text, so unrelated findings with the same boilerplate
-advice shared a key). The suggestion generator never uses a key older than the
+advice shared a key; version 4 reads fixed versions from upgrade advice and
+gives one package version one upgrade target, so the key applier also rekeys
+the open sibling findings of the same component when one of them changes). The suggestion generator never uses a key older than the
 current rules: before each run it re-derives the tenant's keys when any is
 stale (the backfill below, written, audited as `remediation key rules
 upgrade`), and its candidate query skips stale keys, so a failed re-derivation

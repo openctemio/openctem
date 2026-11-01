@@ -15,6 +15,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/openctemio/openctem/api/pkg/domain/scanident"
 	"github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
@@ -184,14 +185,7 @@ func (r Rules) MaxTier() scope.Tier {
 	return scope.TierActive
 }
 
-func isToken(s string) bool {
-	for _, c := range s {
-		if c > unicode.MaxASCII || !(unicode.IsLetter(c) || unicode.IsDigit(c) || strings.ContainsRune("!#$%&'*+-.^_`|~", c)) {
-			return false
-		}
-	}
-	return true
-}
+func isToken(s string) bool { return scanident.IsToken(s) }
 
 // printableASCII reports whether s is printable ASCII only (0x20-0x7e):
 // what a sensor sends in a request header.
@@ -430,13 +424,7 @@ func inScopeReaches(items []Item, out Item) bool {
 	return false
 }
 
-// refusedHeaders cannot be required by a program: credentials and the
-// headers the HTTP client and the forwarder own (the sensor refuses them
-// too).
-var refusedHeaders = map[string]bool{"authorization": true, "cookie": true, "host": true, "content-length": true,
-	"transfer-encoding": true, "connection": true, "upgrade": true, "te": true, "trailer": true, "keep-alive": true}
-
-func refusedHeader(name string) bool {
-	n := strings.ToLower(name)
-	return refusedHeaders[n] || strings.HasPrefix(n, "proxy-")
-}
+// refusedHeader reports whether a program may not require a header:
+// credentials and the headers the HTTP client and the forwarder own (the
+// scan identification rules, which the sensor applies too).
+func refusedHeader(name string) bool { return scanident.RefusedName(name) }
