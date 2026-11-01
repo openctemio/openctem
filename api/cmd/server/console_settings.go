@@ -92,6 +92,7 @@ func newAdminPlatformSettingsHandler(repos *Repositories, svc *Services, approva
 	h.Captcha, h.Region, h.StorageQuota, h.Alerts, h.AI =
 		svc.PlatformCaptcha, svc.DeploymentRegion, svc.StorageQuota, svc.PlatformAlert, svc.PlatformAI
 	h.ThreatSource = svc.ThreatSource
+	h.ScanIdentity = svc.ScanIdentity
 	if svc.ThreatIntel != nil {
 		h.ThreatReadiness = svc.ThreatIntel
 	}

@@ -62,7 +62,7 @@ var Features = []Feature{
 		Description: "External attack surface management: discovery candidates, verified domains, sweeps, attack paths and the scoping summary.",
 		Stages:      []string{StageScoping, StageDiscovery, StagePrioritization},
 		Registers: []string{
-			"registerAttackSurfaceRoutes", "registerEASMRoutes", "registerEASMSettingsRoutes", "registerAssetWebEvidenceRoutes", "registerEASMNetworkSeedRoutes", "registerEASMLookalikeRoutes", "registerPageMonitorRoutes",
+			"registerAttackSurfaceRoutes", "registerEASMRoutes", "registerEASMSettingsRoutes", "registerEASMDiscoveryRoutes", "registerAssetWebEvidenceRoutes", "registerEASMNetworkSeedRoutes", "registerEASMLookalikeRoutes", "registerPageMonitorRoutes",
 			"registerEASMVerifiedDomainRoutes", "registerScopingRoutes",
 		},
 	},

@@ -165,6 +165,8 @@ export function useTenantModules() {
     comingSoonModuleIds: data?.coming_soon_module_ids || [],
     /** Module IDs that are in beta */
     betaModuleIds: data?.beta_module_ids || [],
+    /** Module IDs the organization does not have (not just switched off) */
+    notEntitledModuleIds: data?.not_entitled_module_ids || [],
     /** Loading state (also true while the app shell's bootstrap is in flight) */
     isLoading: isLoading || waitingForBootstrap,
     /** Error object if request failed */

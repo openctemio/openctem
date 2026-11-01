@@ -11,6 +11,7 @@ import type {
   MFAFloorSettings,
   PlatformAISettings,
   RegionSettings,
+  ScanIdentificationSettings,
   SocialCheckResult,
   SocialLoginSettings,
   StorageQuotaSettings,
@@ -33,6 +34,7 @@ const THREAT_SOURCE = '/settings/threat-intel-source'
 const SOCIAL = '/settings/social-login-providers'
 const MFA_FLOOR = '/settings/auth-mfa'
 const EMAIL_RELAY = '/settings/email-relay'
+const SCAN_IDENT = '/settings/scan-identification'
 
 export const useCaptchaSettings = () => useSWR<CaptchaSettings>(CAPTCHA, adminFetcher)
 export const useRegionSettings = () => useSWR<RegionSettings>(REGION, adminFetcher)
@@ -43,6 +45,19 @@ export const useSocialLoginSettings = () => useSWR<SocialLoginSettings>(SOCIAL, 
 export const usePlatformAI = () => useSWR<PlatformAISettings>(AI, adminFetcher)
 export const useMFAFloor = () => useSWR<MFAFloorSettings>(MFA_FLOOR, adminFetcher)
 export const useEmailRelay = () => useSWR<EmailRelaySettings>(EMAIL_RELAY, adminFetcher)
+export const useScanIdentification = () =>
+  useSWR<ScanIdentificationSettings>(SCAN_IDENT, adminFetcher)
+
+/** Step-up and a reason; every administrator is notified. */
+export function saveScanIdentification(input: {
+  user_agent: string
+  user_agent_enforced: boolean
+  headers: { name: string; value: string; enforced: boolean }[]
+  reason: string
+  version: number
+}) {
+  return adminFetch<ScanIdentificationSettings>(SCAN_IDENT, { method: 'PUT', body: input })
+}
 
 /** Super admin, fresh step-up and a reason; raising the floor starts a new grace period. */
 export function saveMFAFloor(input: {
