@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { AlertTriangle } from 'lucide-react'
 
 import { Main } from '@/components/layout'
@@ -63,24 +63,36 @@ export default function AISettingsPage() {
   const masking = useAIMasking(true)
   const [urlTab, setUrlTab] = useUrlFilter('tab', 'provider')
 
-  const available: AISettingsTab[] = [
-    'provider',
-    'features',
-    ...(canReadKnowledge ? (['knowledge'] as const) : []),
-    'limits',
-    ...(canReadAudit ? (['activity'] as const) : []),
-  ]
+  const available = useMemo<AISettingsTab[]>(
+    () => [
+      'provider',
+      'features',
+      ...(canReadKnowledge ? (['knowledge'] as const) : []),
+      'limits',
+      ...(canReadAudit ? (['activity'] as const) : []),
+    ],
+    [canReadKnowledge, canReadAudit]
+  )
   const tab: AISettingsTab = available.includes(urlTab as AISettingsTab)
     ? (urlTab as AISettingsTab)
     : 'provider'
 
+  // The hash names where a settings search result points. Follow it once on
+  // arrival: the ref stops the effect from pulling the user back to the anchor
+  // tab after they switch tabs. A tab that is not available yet (permissions
+  // still loading) leaves the ref unset, so the effect retries when it is.
+  const hashHandled = useRef(false)
   useEffect(() => {
-    const anchor = window.location.hash.slice(1)
-    const target = ANCHOR_TAB[anchor]
-    if (target && target !== tab && available.includes(target)) setUrlTab(target)
-    // Only on arrival: the hash names where a settings search result points.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+    if (hashHandled.current) return
+    const target = ANCHOR_TAB[window.location.hash.slice(1)]
+    if (!target) {
+      hashHandled.current = true
+      return
+    }
+    if (!available.includes(target)) return
+    hashHandled.current = true
+    if (target !== tab) setUrlTab(target)
+  }, [available, tab, setUrlTab])
 
   const platformMissing = config.data?.reason === 'platform_not_configured'
   const enabled = settings.data?.enabled === true
