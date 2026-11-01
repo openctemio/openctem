@@ -183,3 +183,24 @@ func MarkdownBlock(s string, maxRunes int) string {
 	fence := strings.Repeat("`", n)
 	return fence + "text\n" + body + "\n" + fence
 }
+
+// MaxVendorLen bounds a vendor token.
+const MaxVendorLen = 32
+
+// VendorToken returns v lower-cased when it is a short identifier token
+// ([a-z0-9][a-z0-9_.-]{0,31}), else "". An edge protection's vendor id comes
+// from a sensor, so it is never carried as arbitrary text.
+func VendorToken(v string) string {
+	v = strings.ToLower(v)
+	if v == "" || len(v) > MaxVendorLen {
+		return ""
+	}
+	for i := 0; i < len(v); i++ {
+		c := v[i]
+		ok := (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || (i > 0 && (c == '_' || c == '.' || c == '-'))
+		if !ok {
+			return ""
+		}
+	}
+	return v
+}

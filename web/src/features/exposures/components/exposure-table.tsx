@@ -79,6 +79,7 @@ export const EXPOSURE_EVENT_TYPE_LABELS: Record<ExposureEventType, string> = {
   email_security_weak: 'Weak email security',
   subdomain_takeover: 'Subdomain takeover',
   lookalike_domain: 'Lookalike domain',
+  third_party_script_added: 'New third-party script',
   identity_mfa_gap: 'MFA gap',
   identity_stale_principal: 'Stale identity',
   identity_overprivileged: 'Over-privileged identity',

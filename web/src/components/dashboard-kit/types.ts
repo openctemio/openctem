@@ -34,6 +34,9 @@ export interface ScalarResult {
   target?: MetricTarget | null
   as_of?: string
   n?: number
+  /** The population the count is part of ("3 of 40 open"), with its list. */
+  of?: number | null
+  of_href?: string | null
 }
 
 export interface RatioResult {

@@ -227,6 +227,7 @@
   "dashboardKit.stage.unmeasured": "Chưa đo",
   "dashboardKit.stage.warn": "Cần chú ý",
   "dashboardKit.stat.durationDetail": "trung vị, p90 {p90}, {n} đã khắc phục",
+  "dashboardKit.stat.ofOpen": "trên {den} đang mở",
   "dashboardKit.stat.ofTotal": "{num} trên {den}",
   "dashboardKit.state.error": "Không tải được số liệu này",
   "dashboardKit.state.loading": "Đang tải",

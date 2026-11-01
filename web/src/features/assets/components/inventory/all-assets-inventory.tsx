@@ -23,6 +23,7 @@
  * included), picked from the sidebar's quick views; a type is a filter.
  */
 
+import { ScopingDecisionCards } from '../attention/attention-reasons'
 import { AssetsSectionTabs } from '../assets-section-tabs'
 import { useCallback, useEffect, useEffectEvent, useMemo, useState, type ReactNode } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
@@ -119,10 +120,12 @@ function toSearchFilters(f: InventoryFilters): AssetSearchFilters {
     isControlPlane: f.isControlPlane,
     isInternetFacing: f.isInternetFacing,
     isCrownJewel: f.isCrownJewel,
+    isPrimary: f.isPrimary,
     programAssets: f.programAssets,
     freshness: f.freshness,
     resolution: f.resolution,
     coverage: f.coverage,
+    coverageCause: f.coverageCause,
     technologies: f.technologies,
     technologyCategories: f.technologyCategories,
     technologyVersion: f.technologyVersion,
@@ -563,6 +566,9 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
           )}
         </PageHeader>
         <AssetsSectionTabs />
+        {/* Scoping decisions waiting (root domains to validate, names to
+            decide), only on the whole inventory and only when some wait. */}
+        {!typeView && !scopeLabel && <ScopingDecisionCards />}
 
         <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
           <h2 data-testid="inventory-view-title" className="text-base font-semibold">

@@ -203,6 +203,22 @@ func TestDashboardWidgetData_PersonalScopeParity_DB(t *testing.T) {
 			}
 
 			open := byID(t, out, "w_open")
+			if tc.open == 0 {
+				// No finding at all in this scope: every findings figure is
+				// not measured, never a 0 or an empty chart.
+				for _, w := range out.Widgets {
+					if w.Metric == "" || w.State == widgets.StateUnsupported {
+						continue
+					}
+					if w.State != widgets.StateNotMeasured || w.Reason != widgets.ReasonNoFindings {
+						t.Errorf("%s with no findings = %s %s", w.ID, w.State, w.Reason)
+					}
+				}
+				if got := e.listTotal(t, tc.user, tc.admin, "state=open"); got != 0 {
+					t.Errorf("findings list %d, want 0", got)
+				}
+				return
+			}
 			if open.State != widgets.StateReady || open.Scalar == nil || open.Scalar.Value != tc.open {
 				t.Fatalf("open findings = %+v, want %d", open, tc.open)
 			}
@@ -422,6 +438,13 @@ func TestDashboardWidgetData_SLAAndTimeToFix_DB(t *testing.T) {
 				}
 			} else if sla.Ratio.ValuePct == nil || *sla.Ratio.ValuePct != tc.pct {
 				t.Errorf("within SLA = %+v, want %v", sla.Ratio, tc.pct)
+			}
+			if tc.pct < 0 {
+				// No finding in this scope: not measured, nothing to open.
+				if sla.Reason != widgets.ReasonNoFindings {
+					t.Errorf("no findings in scope = %+v", sla)
+				}
+				return
 			}
 			if !strings.Contains(sla.Drill, "sla_status=overdue,exceeded") {
 				t.Errorf("SLA drill = %q", sla.Drill)
