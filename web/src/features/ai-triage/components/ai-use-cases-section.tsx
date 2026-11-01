@@ -17,10 +17,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useTranslation } from '@/context/i18n-provider'
 import { RelativeTime } from '@/features/shared'
-import { SegmentedLens } from '@/features/shared/components/segmented-lens'
 import { SettingsSaveBar } from '@/features/shared/components/settings-save-bar'
 import { getErrorMessage } from '@/lib/api/error-handler'
 
@@ -214,18 +214,24 @@ export function AIUseCasesSection({
 
                   <div className="min-w-0 space-y-4">
                     <div className="space-y-1.5">
-                      <SegmentedLens<AIUseCaseMode>
-                        label={t('settings.ai.useCases.modeLabel', 'Mode for {name}', {
-                          name: t(`settings.ai.useCases.useCase.${it.use_case}.name`, uc.name),
-                        })}
+                      <RadioGroup
                         value={d.mode}
                         disabled={disabled}
-                        options={AI_USE_CASE_MODES.map((m) => ({
-                          value: m,
-                          label: t(`settings.ai.useCases.mode.${m}`, MODE_FALLBACK[m].label),
-                        }))}
-                        onChange={(m) => setDraft(it.use_case, { mode: m })}
-                      />
+                        onValueChange={(m) => setDraft(it.use_case, { mode: m as AIUseCaseMode })}
+                        className="flex flex-wrap gap-x-4 gap-y-2"
+                        aria-label={t('settings.ai.useCases.modeLabel', 'Mode for {name}', {
+                          name: t(`settings.ai.useCases.useCase.${it.use_case}.name`, uc.name),
+                        })}
+                      >
+                        {AI_USE_CASE_MODES.map((m) => (
+                          <div key={m} className="flex items-center gap-2">
+                            <RadioGroupItem value={m} id={`${it.use_case}-mode-${m}`} />
+                            <Label htmlFor={`${it.use_case}-mode-${m}`} className="font-normal">
+                              {t(`settings.ai.useCases.mode.${m}`, MODE_FALLBACK[m].label)}
+                            </Label>
+                          </div>
+                        ))}
+                      </RadioGroup>
                       <p className="text-sm text-muted-foreground">
                         {t(`settings.ai.useCases.modeHint.${d.mode}`, MODE_FALLBACK[d.mode].hint)}
                       </p>
