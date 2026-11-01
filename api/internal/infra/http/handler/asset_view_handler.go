@@ -36,6 +36,7 @@ func AssetViewParts(id string) []string {
 		a + "/changes?limit=50",
 		a + "/web-evidence",
 		a + "/resolved-ports",
+		a + "/lineage",
 	}
 }
 
