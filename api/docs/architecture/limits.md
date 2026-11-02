@@ -268,26 +268,18 @@ The control plane can only set limits, set denies and turn on the idle
 policy. Every one of these blocks additions or makes data read-only: nothing
 it can call deletes an organization or its data.
 
-## Future: offline signed limits (design only, not built)
+## Future: signed licence for self-managed installs (design only, not built)
 
-A self-hosted install gets every feature, and nothing here changes that.
-Limits that arrive as a signed file instead of through the console or the
-internal API fit as a third source, with no change to any check:
+A self-hosted install gets every Community feature, and nothing here changes
+that. A signed licence file is a third source, with no change to any check of
+the sections above:
 
-- A **signed offline license file** (Ed25519; the verifying public key
-  compiled into the core; no activation and no phone-home, so air-gapped
-  installs work).
-- Its payload is limits and denies: per instance (applied to every
-  organization) and, optionally, per organization id, plus an expiry.
-- A `licenseSource` implements `limits.Source`: it verifies the signature at
-  start and on reload, and yields rows like any other source. An invalid or
-  missing file yields nothing (the default unlimited behaviour), never a
-  crash.
-- Expiry reuses the over-limit rule: the license's limits and denies stay in
-  force (no new additions over them, denied features in read-only grace),
-  nothing is deleted, and running work continues.
-- Every check already goes through the entitlement service with named keys,
-  so a license needs no new seam. The guard test keeps it that way.
+- A **signed offline licence file** for self-managed installations. It does
+  not yield limits or denies: it only **adds** entitlement keys from a fixed
+  registry, and its meters are soft. The design is
+  [RFC-145](../rfcs/RFC-145-enterprise-licence-and-entitlements.md); it is
+  not implemented yet. A control plane keeps writing limits and denies for a
+  hosted service.
 
 ## Code map
 
