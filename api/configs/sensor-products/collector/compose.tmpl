@@ -7,6 +7,12 @@
 # platform. It takes no scan jobs and runs no scanner: no local policy and no
 # seccomp profile are needed.
 #
+# The default image, ghcr.io/openctemio/asset-collector, is private: log in
+# once with the GitHub account the maintainers gave read access (a token with
+# read:packages), or the pull fails with "denied":
+#   docker login ghcr.io -u <github-user>
+# Every vendor and its settings: {{docs}}/sensors/asset-collector/
+#
 # In an empty directory on the host that should collect:
 #   1. Secrets as files (they do not show in docker inspect):
 {{- if .APIKey}}
