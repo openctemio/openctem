@@ -41,6 +41,7 @@ import type { LucideIcon } from 'lucide-react'
 import {
   AttackSurfaceSectionTabs,
   EASMOverview,
+  EASMPostureCard,
   useAttackSurfaceStats,
 } from '@/features/attack-surface'
 import { useEASMSummary } from '@/features/attack-surface/hooks/use-easm-summary'
@@ -193,7 +194,7 @@ export default function AttackSurfacePage() {
             </Alert>
           )}
 
-          {/* Slot for the posture grade card (research/353 D5). */}
+          <EASMPostureCard />
 
           <MetricStrip
             loading={isLoading || summaryLoading}

@@ -67,7 +67,7 @@ export function OrganizationSummary({
   const { t } = useTranslation()
   const keyLabel = useLimitKeyLabel()
   const limits = useTenantLimits(org.id)
-  const activity = useAdminAuditLogs({ page: 1, resourceId: org.id, perPage: 5 })
+  const activity = useAdminAuditLogs({ page: 1, resourceId: org.id, perPage: 5, kind: 'changes' })
   const overLimit = limits.data?.limits?.filter((l) => l.over_limit) ?? []
   const limitCount =
     (limits.data?.limits?.filter((l) => l.limit !== undefined && l.limit >= 0).length ?? 0) +

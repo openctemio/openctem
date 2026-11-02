@@ -572,6 +572,19 @@ func registerTechnologyRoutes(router Router, h *handler.TechnologyHandler, authM
 	}, tenantMiddlewares...)
 }
 
+// registerEASMPostureRoutes registers the attack surface posture score: the
+// read is scoped per asset; Recalculate now is an action on the
+// organization's facts; the schedule is an organization setting.
+func registerEASMPostureRoutes(router Router, h *handler.EASMPostureHandler, authMiddleware Middleware, userSyncMiddleware Middleware, moduleGate Middleware) {
+	// The module gate runs after tenant extraction so it can read the tenant.
+	tenantMiddlewares := append(buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware), moduleGate)
+	router.Group("/api/v1/attack-surface/posture", func(r Router) {
+		r.GET("/", h.Get, middleware.Require(permission.AssetsRead))
+		r.POST("/refresh", h.Recalculate, middleware.Require(permission.AssetsWrite))
+		r.PUT("/schedule", h.SetSchedule, middleware.Require(permission.SettingsWrite))
+	}, tenantMiddlewares...)
+}
+
 // registerWebEndpointRoutes registers the web surface sub-inventory
 // (RFC-056): endpoints under their origin asset, scoped by the origin's data
 // scope.

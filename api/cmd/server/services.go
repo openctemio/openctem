@@ -65,6 +65,7 @@ import (
 	dashwidgets "github.com/openctemio/openctem/api/internal/app/dashboard/widgets"
 	"github.com/openctemio/openctem/api/internal/app/defectdojo"
 	"github.com/openctemio/openctem/api/internal/app/participation"
+	postureapp "github.com/openctemio/openctem/api/internal/app/posture"
 	"github.com/openctemio/openctem/api/internal/app/remediation"
 	savedviewapp "github.com/openctemio/openctem/api/internal/app/savedview"
 	scangovapp "github.com/openctemio/openctem/api/internal/app/scangov"
@@ -745,7 +746,9 @@ type Services struct {
 	UserDashboard *dashboardapp.Service
 	// DashboardWidgets computes widget results and keeps their snapshots.
 	DashboardWidgets *dashwidgets.Service
-	SavedView        *savedviewapp.Service
+	// Posture is the attack surface posture score (precomputed facts).
+	Posture   *postureapp.Service
+	SavedView *savedviewapp.Service
 
 	// Integrations & Notifications
 	Integration    *integration.IntegrationService
@@ -1312,7 +1315,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// retries, resume and mirror fall-back, and applied chunk by chunk with
 	// a durable checkpoint (docs/architecture/feed-transfer.md); the v1 reader stays the fallback.
 	feedTransfer := programfeedapp.Transfer{URLs: cfg.Scope.ProgramFeedURLs, CacheDir: cfg.Scope.FeedCacheDir,
-		Client: httpsec.SafeHTTPClient(0), Registerer: prometheus.DefaultRegisterer}
+		Client: httpsec.FeedHTTPClient(0), Registerer: prometheus.DefaultRegisterer}
 	if (cfg.Scope.ProgramFeedDir != "" || len(cfg.Scope.ProgramFeedURLs) > 0) && cfg.Scope.ProgramFeedRootKeyID != "" {
 		s.ProgramFeed = programfeedapp.NewImporter(programfeedapp.DirSource(cfg.Scope.ProgramFeedDir), catalogRepo,
 			s.BountyProgram, cfg.Scope.ProgramFeedRootKeyID, log).WithChunks(catalogRepo, feedTransfer)
@@ -1389,6 +1392,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.DashboardWidgets = dashwidgets.NewService(s.UserDashboard, s.DataScope, repos.DashboardWidget, log)
 	s.DashboardWidgets.SetSnapshots(repos.DashboardSnapshot, repos.UserDashboard, repos.Tenant, s.Tenant)
 	s.DashboardWidgets.SetAttackPaths(s.AttackSurface)
+	s.Posture = postureapp.NewService(repos.EASMPosture, s.DataScope, log.With("service", "easm-posture"))
+	s.DashboardWidgets.SetPosture(s.Posture)
 	// Saved list views (D15): one page config per page that has views.
 	s.SavedView = savedviewapp.NewService(repos.SavedView, map[string]savedviewapp.PageConfig{
 		savedview.PageFindings: {
