@@ -97,4 +97,22 @@ describe('OrganizationSignInCard', () => {
     expect(screen.getByText('Managed by your organization')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Unlink Acme' })).toBeDisabled()
   })
+
+  it('says in the link dialog that the IdP administrator then controls access without the second factor', async () => {
+    state.mockReturnValue({
+      links: { organizations: [acme], other: [], proof: 'totp' },
+      isLoading: false,
+      isError: false,
+    })
+    const user = userEvent.setup()
+    render(<OrganizationSignInCard />)
+    const row = screen.getByTestId('organization-sign-in-acme-entra_id')
+    await user.click(within(row).getByRole('button', { name: 'Link Acme' }))
+    expect(
+      await screen.findByText(/without your account's own second factor/i, { exact: false })
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText(/administrator therefore controls access/i, { exact: false })
+    ).toBeInTheDocument()
+  })
 })

@@ -674,7 +674,13 @@ func (s *SSOService) HandleCallback(ctx context.Context, input SSOCallbackInput)
 
 	// A link round trip (sso_link.go) finishes only at the link callback of
 	// the account that started it, never as a sign-in.
-	if s.takeLinkRecord(ctx, input.State) != nil {
+	// If the store cannot say whether it is one, refuse (fail closed).
+	linkRec, linkErr := s.takeLinkRecord(ctx, input.State)
+	if linkErr != nil {
+		s.logger.Warn("SSO callback refused: the link record could not be read", "provider", input.Provider)
+		return nil, ErrSSOInvalidState
+	}
+	if linkRec != nil {
 		s.logger.Warn("SSO callback refused: the state belongs to an identity link", "provider", input.Provider)
 		return nil, ErrSSOInvalidState
 	}

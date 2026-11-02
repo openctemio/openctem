@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -578,4 +579,45 @@ func TestSSOLink_ProviderNeverRewritesAPasswordAccountsAddress(t *testing.T) {
 	if fed.Email() != "fed-new@corp.com" {
 		t.Fatalf("an SSO account must follow its provider, got %q", fed.Email())
 	}
+}
+
+// failingLinkStore delegates to a real store but cannot read link records.
+type failingLinkStore struct{ PKCEVerifierStore }
+
+func (f failingLinkStore) GetDel(ctx context.Context, key string) (string, bool, error) {
+	if strings.HasPrefix(key, "sso_link:") {
+		return "", false, errors.New("state store unavailable")
+	}
+	return f.PKCEVerifierStore.GetDel(ctx, key)
+}
+
+// A state store that cannot say whether a state is a link must not make a
+// link state pass as an ordinary sign-in (the callback fails closed), and the
+// link completion refuses too.
+func TestSSOLink_StoreErrorFailsClosed(t *testing.T) {
+	t.Run("sign-in callback", func(t *testing.T) {
+		f := newSSOLinkFixture(t)
+		res := f.mustStart()
+		f.svc.stateStore = failingLinkStore{f.svc.stateStoreOrMemory()}
+		_, err := f.svc.HandleCallback(context.Background(), SSOCallbackInput{
+			Provider: okta, Code: "the-code", State: res.State, BrowserBinding: res.BrowserBinding, RedirectURI: ssoLinkRedirect,
+		})
+		if !errors.Is(err, ErrSSOInvalidState) {
+			t.Fatalf("got %v", err)
+		}
+		if len(f.linkedKeys()) != 0 {
+			t.Fatal("nothing may be linked")
+		}
+	})
+	t.Run("link completion", func(t *testing.T) {
+		f := newSSOLinkFixture(t)
+		res := f.mustStart()
+		f.svc.stateStore = failingLinkStore{f.svc.stateStoreOrMemory()}
+		if _, err := f.complete(res, f.owner.ID().String(), f.sid, res.BrowserBinding); !errors.Is(err, ErrSSOInvalidState) {
+			t.Fatalf("got %v", err)
+		}
+		if len(f.linkedKeys()) != 0 {
+			t.Fatal("nothing may be linked")
+		}
+	})
 }
