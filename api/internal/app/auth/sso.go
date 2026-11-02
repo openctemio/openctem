@@ -1910,17 +1910,19 @@ func (s *SSOService) requireFederatedDomainProof(ctx context.Context, t *tenantd
 // accounts, auto-provisions tenant membership when requested, and creates the
 // session. Reused by the SAML SP flow so it shares the SSO session machinery.
 func (s *SSOService) CompleteFederatedLogin(ctx context.Context, t *tenantdom.Tenant, email, name, defaultRole string, autoProvision bool) (*SSOCallbackResult, error) {
-	return s.completeFederatedLogin(ctx, t, email, name, defaultRole, autoProvision, federatedBinding{}, useridentity.Key{})
+	return s.completeFederatedLogin(ctx, t, email, name, defaultRole, autoProvision, federatedBinding{}, useridentity.Key{}, "")
 }
 
 // completeFederatedLogin is CompleteFederatedLogin with the time the
 // provider authenticated the user (SAML AuthnInstant), which opens the
 // step-up window when it is recent, and the assertion's identity (issuer +
-// persistent NameID, scoped to t; empty when the IdP sent no persistent id).
+// Entra object id or persistent NameID, scoped to t; empty when the IdP sent
+// no immutable id). legacySubject is a subject the identity was bound under
+// before (samlIdentity); a binding found under it is re-keyed.
 //
 //nolint:cyclop // one decision tree: returning identity, existing email, new account
 func (s *SSOService) completeFederatedLogin(ctx context.Context, t *tenantdom.Tenant, email, name, defaultRole string,
-	autoProvision bool, fed federatedBinding, key useridentity.Key) (*SSOCallbackResult, error) {
+	autoProvision bool, fed federatedBinding, key useridentity.Key, legacySubject string) (*SSOCallbackResult, error) {
 	email = strings.ToLower(strings.TrimSpace(email))
 	if email == "" {
 		return nil, ErrSSONoEmail
@@ -1935,7 +1937,7 @@ func (s *SSOService) completeFederatedLogin(ctx context.Context, t *tenantdom.Te
 	newUser := false
 	var u *userdom.User
 	if key.Valid() {
-		found, ident, lerr := s.accounts().lookup(ctx, key, "")
+		found, ident, lerr := s.accounts().lookup(ctx, key, legacySubject)
 		if lerr != nil {
 			return nil, fmt.Errorf("resolve federated identity: %w", lerr)
 		}
