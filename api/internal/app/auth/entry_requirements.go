@@ -30,8 +30,10 @@ func (e *EntryRefusal) ErrorCode() string     { return string(e.Code) }
 func (e *EntryRefusal) PublicMessage() string { return e.Message }
 
 // CheckEntry re-applies, for the organization tenantID, the requirements that
-// token issuance applies: SSO enforcement, the organization's two-factor
-// rule, its personal-account policy and the outside-member privilege rule.
+// token issuance applies: the verified-email rule, SSO enforcement, the
+// identity provider binding (another organization's IdP does not stand in for
+// the account's own sign-in), the organization's two-factor rule, its
+// personal-account policy and the outside-member privilege rule.
 // It runs on every request of a route that names the organization in the URL
 // (/api/v1/tenants/{tenant}/...): such a route accepts a token minted for
 // another organization, and the requirements of the organization in the URL
@@ -70,8 +72,15 @@ func (s *AuthService) CheckEntry(ctx context.Context, sessionID, userID, tenantI
 		return fmt.Errorf("failed to load membership: %w", err)
 	}
 
+	u, err := s.userRepo.GetByID(ctx, uid)
+	if err != nil {
+		return fmt.Errorf("failed to load user: %w", err)
+	}
+
 	for _, check := range []func() error{
+		func() error { return s.enforceEmailVerificationPolicy(ctx, u, tenantID) },
 		func() error { return s.enforceSSOPolicy(ctx, sess, tenantID, m.Role().String()) },
+		func() error { return s.enforceIdPBindingPolicy(ctx, sess, uid, tenantID) },
 		func() error { return s.enforceMFAPolicy(ctx, sess, uid, tenantID) },
 		func() error { return s.enforcePersonalPolicy(ctx, sess, uid, tenantID) },
 		func() error { return s.enforceOutsidePrivilegePolicy(ctx, sess, uid, tenantID) },
@@ -96,6 +105,12 @@ func entryRefusalFor(err error) error {
 	case errors.Is(err, ErrMFAEnrollmentRequired):
 		return &EntryRefusal{Status: http.StatusForbidden, Code: apierror.CodeMFAEnrollmentRequired,
 			Message: "This organization requires two-factor authentication. Sign in again to complete it.", cause: err}
+	case errors.Is(err, ErrEmailNotVerified):
+		return &EntryRefusal{Status: http.StatusForbidden, Code: "EMAIL_NOT_VERIFIED",
+			Message: "This organization requires a verified email address. Verify your email and sign in again.", cause: err}
+	case errors.Is(err, ErrOwnSignInRequired):
+		return &EntryRefusal{Status: http.StatusForbidden, Code: CodeOwnSignInRequired,
+			Message: "Your session comes from another organization's identity provider. Sign in with your own account to open this organization.", cause: err}
 	case errors.Is(err, ErrPersonalAccountsBlocked):
 		return &EntryRefusal{Status: http.StatusForbidden, Code: "PERSONAL_ACCOUNTS_BLOCKED",
 			Message: "This organization does not accept personal email accounts.", cause: err}

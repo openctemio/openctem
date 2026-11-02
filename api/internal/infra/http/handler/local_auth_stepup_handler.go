@@ -121,6 +121,12 @@ func (c recentAuthChecker) RecentAuthAt(ctx context.Context, userID, sessionID s
 	return at, err
 }
 
+// OwnSignInChecker is what middleware.RequireOwnSignIn asks: whether an
+// action on the account itself needs the account's own sign-in.
+func (h *LocalAuthHandler) OwnSignInChecker() middleware.OwnSignInChecker {
+	return h.authService
+}
+
 // CredentialFactorChecker is what middleware.RequireCredentialFactor asks:
 // whether the caller holds the second factor the organization or the
 // platform floor requires before they create a credential.

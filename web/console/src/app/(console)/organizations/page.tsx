@@ -26,6 +26,7 @@ import { useOrganizations } from '@console/features/admin-console/api/use-admin-
 import { useAdmin } from '@console/features/admin-console/components/admin-console-shell'
 import { CreateOrganizationDialog } from '@console/features/admin-console/components/create-organization-dialog'
 import { SSOPostureBadges } from '@console/features/admin-console/components/sso-posture-badges'
+import { OwnerInvitationBadge } from '@console/features/admin-console/components/owner-invitation'
 import { OrganizationStatusBadge } from '@console/features/admin-console/components/organization-suspension'
 import { type AdminOrganization, adminHas } from '@console/features/admin-console/types'
 
@@ -75,6 +76,8 @@ export default function AdminOrganizationsPage() {
                 })}
               </span>
             )
+          if (owners.length === 0 && row.original.owner_invitation)
+            return <OwnerInvitationBadge invitation={row.original.owner_invitation} />
           if (owners.length === 0)
             return (
               <Badge variant="outline" className="border-warning/50 text-warning">

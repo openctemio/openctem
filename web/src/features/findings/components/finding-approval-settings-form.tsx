@@ -10,7 +10,7 @@
  */
 
 import { useEffect, useId, useState } from 'react'
-import { AlertTriangle, Clock, Loader2, Save } from 'lucide-react'
+import { AlertTriangle, Clock } from 'lucide-react'
 import { toast } from 'sonner'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
@@ -20,6 +20,7 @@ import { Label } from '@/components/ui/label'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { useTranslation } from '@/context/i18n-provider'
 import { getErrorMessage } from '@/lib/api/error-handler'
+import { SettingsSaveBar } from '@/features/shared'
 import {
   updateFindingApprovalSettings,
   type FindingApprovalSettings,
@@ -36,6 +37,8 @@ type TFn = ReturnType<typeof useTranslation>['t']
 
 /** What a level decides: a false positive or an accepted risk. */
 export type ApprovalLevelKind = 'fp' | 'accept'
+
+const FORM_ID = 'finding-approval-settings-form'
 
 const LEVELS: FPApprovalLevel[] = ['all', 'high_and_above', 'off']
 
@@ -346,7 +349,7 @@ export function FindingApprovalSettingsForm({
   }
 
   return (
-    <form onSubmit={save} className="space-y-5">
+    <form id={FORM_ID} onSubmit={save} className="space-y-5">
       <Card>
         <CardHeader>
           <CardTitle className="text-base">
@@ -485,16 +488,17 @@ export function FindingApprovalSettingsForm({
         </CardContent>
       </Card>
       {canEdit && (
-        <div className="flex justify-end">
-          <Button type="submit" size="sm" disabled={!dirty || saving}>
-            {saving ? (
-              <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-            ) : (
-              <Save className="h-4 w-4" aria-hidden />
-            )}
-            {t('findingApprovals.settings.save', 'Save changes')}
-          </Button>
-        </div>
+        <SettingsSaveBar
+          dirty={dirty}
+          saving={saving}
+          form={FORM_ID}
+          onDiscard={() => {
+            setEmail(settings.backup_contact_email ?? '')
+            setFPLevel(fpChosen)
+            setAcceptLevel(acceptChosen)
+            setPercent(chosenPercent)
+          }}
+        />
       )}
     </form>
   )

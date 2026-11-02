@@ -118,6 +118,8 @@ var stepUpRoutes = []string{
 	"DELETE /api/v1/tenants/acme",
 	// Deleting one's own account (RFC-104).
 	"DELETE /api/v1/me/account",
+	// Accepting an ownership invitation makes the caller an owner.
+	"POST /api/v1/me/ownership-invitations/{id}/accept",
 	"POST /api/v1/organization/leave",
 	"DELETE /api/v1/organization/members/{id}/mfa",
 	"POST /api/v1/organization/members/{id}/offboard",

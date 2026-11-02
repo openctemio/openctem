@@ -17,7 +17,6 @@
   "licensePolicy.remove": "Remove rule {n}",
   "licensePolicy.reviewFindings": "Open findings for review verdicts",
   "licensePolicy.reviewFindingsHelp": "Medium findings; otherwise review verdicts only show in the inventory.",
-  "licensePolicy.save": "Save changes",
   "licensePolicy.saveFailed": "The license policy could not be saved.",
   "licensePolicy.saved": "Saved: {violations} packages flagged, {created} findings opened, {resolved} resolved.",
   "licensePolicy.savedNotEvaluated": "Saved. Evaluating the inventory did not finish; it runs again on the next package write.",

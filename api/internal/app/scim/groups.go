@@ -91,6 +91,11 @@ func (s *GroupService) Create(ctx context.Context, tenantID shared.ID, in GroupI
 	if strings.TrimSpace(in.DisplayName) == "" {
 		return nil, fmt.Errorf("%w: displayName is required", shared.ErrValidation)
 	}
+	memberIDs, err := s.tenantMembersOnly(ctx, tenantID, in.MemberIDs)
+	if err != nil {
+		return nil, err
+	}
+	in.MemberIDs = memberIDs
 	g := scimgroup.New(shared.NewID(), tenantID, in.DisplayName, in.ExternalID, in.MemberIDs)
 	if err := s.groups.Create(ctx, g); err != nil {
 		return nil, err
@@ -121,6 +126,9 @@ func (s *GroupService) Replace(ctx context.Context, tenantID, id shared.ID, in G
 			return nil, uerr
 		}
 	}
+	if in.MemberIDs, err = s.tenantMembersOnly(ctx, tenantID, in.MemberIDs); err != nil {
+		return nil, err
+	}
 	if err := s.groups.SetMembers(ctx, tenantID, id, in.MemberIDs); err != nil {
 		return nil, err
 	}
@@ -132,6 +140,10 @@ func (s *GroupService) Replace(ctx context.Context, tenantID, id shared.ID, in G
 // PATCH) and reconciles affected users' roles.
 func (s *GroupService) PatchMembers(ctx context.Context, tenantID, id shared.ID, add, remove []shared.ID) (*scimgroup.ScimGroup, error) {
 	if _, err := s.groups.GetByID(ctx, tenantID, id); err != nil {
+		return nil, err
+	}
+	add, err := s.tenantMembersOnly(ctx, tenantID, add)
+	if err != nil {
 		return nil, err
 	}
 	if len(add) > 0 {
@@ -155,11 +167,38 @@ func (s *GroupService) ReplaceMembers(ctx context.Context, tenantID, id shared.I
 	if err != nil {
 		return nil, err
 	}
+	if memberIDs, err = s.tenantMembersOnly(ctx, tenantID, memberIDs); err != nil {
+		return nil, err
+	}
 	if err := s.groups.SetMembers(ctx, tenantID, id, memberIDs); err != nil {
 		return nil, err
 	}
 	s.reconcileUsers(ctx, tenantID, union(existing.Members(), memberIDs), nil)
 	return s.groups.GetByID(ctx, tenantID, id)
+}
+
+// tenantMembersOnly keeps the ids of the organization's own members. A group
+// stores only them: an id of a person outside the organization (another
+// organization's member, or any account on the platform) would otherwise be
+// kept and raise that person's role the day they join, and the stored id
+// would confirm to the client that the account exists. Ids that are not
+// members are dropped, as if unknown; a failed lookup refuses the change.
+func (s *GroupService) tenantMembersOnly(ctx context.Context, tenantID shared.ID, ids []shared.ID) ([]shared.ID, error) {
+	out := make([]shared.ID, 0, len(ids))
+	for _, uid := range dedupe(ids) {
+		m, err := s.members.GetMembership(ctx, uid, tenantID)
+		if err != nil {
+			if shared.IsNotFound(err) {
+				continue
+			}
+			return nil, fmt.Errorf("failed to check group member: %w", err)
+		}
+		if m == nil || m.TenantID() != tenantID {
+			continue
+		}
+		out = append(out, uid)
+	}
+	return out, nil
 }
 
 // Delete removes the group and reconciles its former members' roles.

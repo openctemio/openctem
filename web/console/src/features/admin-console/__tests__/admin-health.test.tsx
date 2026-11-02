@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { useState } from 'react'
+import { jobNeedsAttention, sortJobs } from '../lib/operations'
 import { daysLeft, formatBytes, levelKey, levelTone } from '../lib/system'
 import type { AdminSystem } from '../types'
 
@@ -21,6 +24,11 @@ vi.mock('@console/features/admin-console/api/use-admin-system', () => ({
     isLoading: false,
     mutate: vi.fn(),
   }),
+}))
+
+// The tab lives in the URL (?tab=); a local state stands in for the router.
+vi.mock('@/hooks/use-url-param', () => ({
+  useUrlFilter: (_key: string, fallback: string) => useState(fallback),
 }))
 
 import AdminHealthPage from '@console/app/(console)/health/page'
@@ -135,7 +143,7 @@ describe('Health page', () => {
     expect(screen.queryByRole('button')).not.toBeInTheDocument()
   })
 
-  it('merges the host and API views once: schema, queues and jobs, no second version block', () => {
+  it('merges the host and API views once: schema, queues and jobs, no second version block', async () => {
     state.data = system()
     state.ops = {
       build: { version: 'v0.10.0', commit: 'abc1234', channel: 'release' },
@@ -166,14 +174,69 @@ describe('Health page', () => {
       controllers: [],
       checked_at: '2026-10-17T12:00:00Z',
     }
+    const user = userEvent.setup()
     render(<AdminHealthPage />)
-    expect(screen.getByText('Work queues')).toBeInTheDocument()
+    // Summary first: the schema and the build with the services.
     expect(screen.getByText('Database schema')).toBeInTheDocument()
-    expect(screen.getByText('Background jobs')).toBeInTheDocument()
     expect(screen.getByText(/abc1234/)).toBeInTheDocument()
     expect(screen.getByText(/Pool 1 in use of 2 open/)).toBeInTheDocument()
-    expect(screen.getAllByText('Sensor fleet')).toHaveLength(1)
     expect(screen.queryByText('Version')).not.toBeInTheDocument()
+    expect(screen.queryByText('Work queues')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('tab', { name: /Queues and sensors/ }))
+    expect(screen.getByText('Work queues')).toBeInTheDocument()
+    expect(screen.getAllByText('Sensor fleet')).toHaveLength(1)
     state.ops = undefined
+  })
+
+  it('lists the background jobs that stopped or fail first, the rest behind Show all', async () => {
+    state.data = system()
+    state.ops = {
+      build: { version: 'v0.10.0', commit: 'abc1234', channel: 'release' },
+      schema: { applied: 9, shipped: 9, dirty: false, known: true },
+      queues: {
+        commands_pending: 0,
+        commands_running: 0,
+        command_oldest_pending_seconds: 0,
+        scan_runs_open: 0,
+        scan_runs_past_deadline: 0,
+        outbox_pending: 0,
+        outbox_failed: 0,
+        outbox_dead: 0,
+        outbox_oldest_pending_seconds: 0,
+      },
+      sensors: [],
+      controllers: [
+        { name: 'audit_retention', running: true, errors_total: 0 },
+        { name: 'feed_sync', running: true, errors_total: 4 },
+        { name: 'outbox_relay', running: false, errors_total: 0 },
+        { name: 'session_purge', running: true, errors_total: 0 },
+      ],
+      checked_at: '2026-10-17T12:00:00Z',
+    }
+    const user = userEvent.setup()
+    render(<AdminHealthPage />)
+    const jobsTab = screen.getByRole('tab', { name: /Background jobs/ })
+    // The tab counts the jobs to look at.
+    expect(within(jobsTab).getByText('2')).toBeInTheDocument()
+    await user.click(jobsTab)
+    expect(screen.getByText(/2 background jobs stopped or failed/)).toBeInTheDocument()
+    expect(screen.getAllByText('feed_sync').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('outbox_relay').length).toBeGreaterThan(0)
+    expect(screen.queryByText('session_purge')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Show all (4)' }))
+    expect(screen.getAllByText('session_purge').length).toBeGreaterThan(0)
+    state.ops = undefined
+  })
+
+  it('sorts jobs: stopped or failing first, most errors first, then by name', () => {
+    const jobs = [
+      { name: 'b', running: true, errors_total: 0 },
+      { name: 'a', running: true, errors_total: 0 },
+      { name: 'c', running: true, errors_total: 1 },
+      { name: 'd', running: false, errors_total: 0 },
+      { name: 'e', running: true, errors_total: 9 },
+    ]
+    expect(sortJobs(jobs).map((j) => j.name)).toEqual(['e', 'c', 'd', 'a', 'b'])
+    expect(jobNeedsAttention({ name: 'x', running: true, errors_total: 0 })).toBe(false)
   })
 })
