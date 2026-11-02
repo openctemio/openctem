@@ -23,5 +23,6 @@
     - PageMonitorController
     - EASMNetworkSeedController
     - EASMWeeklyDigestController
+    - EASMPostureController
     - GraphEnrichmentController
     - ScopeJoinController
