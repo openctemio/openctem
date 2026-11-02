@@ -1879,6 +1879,7 @@ inside the reporting organization.
 | `owner` (mail or UPN) | `owner_ref`, then a primary owner | A trusted collector is an `integration` source, so its owner claim is used under the reconciliation policy; an untrusted one's is dropped. The owner-resolution job names only an active member of the organization whose email matches; an unknown owner stays text and nobody is invited. An owner never grants data access. |
 | `zone_visibility: private` on a DNS name | Exposure `private`, not internet-accessible | Also a root domain that only private-zone names name (`private_zone.go`). |
 | A network device's address (PRTG, Splunk) | Matched to the existing device | Network devices only (not segments, hosts or address assets), in the IP trust window, one candidate only ([asset-identity-resolution.md](asset-identity-resolution.md)). |
+| An asset that matches a scope exclusion | Not added | Item error `asset_excluded`, counted neither as accepted nor as rejected, so it does not stop the not-seen sweep of a complete report. |
 | `coverage_type: full` from a trusted collector | Refresh of its own assets, unlisted ones marked not seen | RFC-040 §12, [sensor-result-binding.md](sensor-result-binding.md). Partial and incremental reports keep the unsolicited limits and never mark anything. |
 
 ## Result binding and the results quarantine (RFC-040)
