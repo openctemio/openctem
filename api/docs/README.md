@@ -67,6 +67,7 @@ or use OpenCTEM, see [docs.openctem.io](https://docs.openctem.io)
 - [Platform contracts](architecture/platform-contracts.md): the platform depends on contracts only, never on a sensor or the SDK
 - [CI runner identity and gate](architecture/ci-runner-identity.md), [shift-left CI scanning](architecture/shift-left-ci-scanning.md), [branch-only findings](architecture/branch-only-findings.md)
 - [Scan coverage (Tenable)](architecture/scan-coverage.md), [Tenable.sc connector](architecture/tenable-sc-connector.md)
+- [Connector framework and run modes](architecture/connector-framework.md): sensor-run pull, platform request/response and push-in connectors, the shared kit, matching and precedence, signed connector packs
 
 **Findings and prioritization**
 - [Vulnerability model](architecture/vulnerability-model.md), [vulnerability page](architecture/vulnerability-page.md), [emerging-threat alerts](architecture/emerging-threat-alerts.md), [finding import](architecture/finding-import.md), [import and run receipts](architecture/ingest-receipts.md), [import mappings](architecture/import-mappings.md), [bug-bounty and disclosure reports](architecture/bounty-reports.md), [finding source interop](architecture/finding-source-interop.md), [finding evidence](architecture/finding-evidence.md), [finding lifecycles (sub-statuses and schemes)](architecture/finding-lifecycles.md), [file storage](architecture/file-storage.md), [`not_observed` status](architecture/finding-status-not-observed.md), [finding write concurrency (row_version)](architecture/finding-row-version.md)
