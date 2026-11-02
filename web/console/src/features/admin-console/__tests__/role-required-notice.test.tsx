@@ -43,7 +43,11 @@ describe('RoleRequiredNotice', () => {
         <RoleRequiredNotice needed="ops_admin" />
       </ElevationRequestContext.Provider>
     )
-    expect(screen.getByText('This needs the Operations admin role.')).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        'Your platform roles do not include this. A platform owner can grant it under Roles.'
+      )
+    ).toBeInTheDocument()
     expect(screen.queryByRole('button')).not.toBeInTheDocument()
   })
 
@@ -60,7 +64,11 @@ describe('RoleRequiredNotice', () => {
         <RoleRequiredNotice needed="super_admin" />
       </ElevationRequestContext.Provider>
     )
-    expect(screen.getByText('This needs the Super admin role.')).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        'Your platform roles do not include this. A platform owner can grant it under Roles.'
+      )
+    ).toBeInTheDocument()
     expect(screen.queryByRole('button')).not.toBeInTheDocument()
   })
 })
