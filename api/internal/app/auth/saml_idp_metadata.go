@@ -381,10 +381,14 @@ func (f *idpMetadataFetcher) fetch(ctx context.Context, rawURL string) ([]byte, 
 	}
 	ctx, cancel := context.WithTimeout(ctx, idpMetadataTimeout)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
-	if err != nil {
+	// The URL was parsed and validated above (https, no userinfo, public host
+	// after DNS resolution, every redirect hop re-checked); the request carries
+	// the parsed value, and the client's dialer re-checks the resolved address.
+	target, perr := url.Parse(rawURL)
+	if perr != nil {
 		return nil, metadataErr(SAMLMetadataReasonBadURL)
 	}
+	req := (&http.Request{Method: http.MethodGet, URL: target, Host: target.Host, Header: make(http.Header)}).WithContext(ctx)
 	req.Header.Set("Accept", "application/samlmetadata+xml, application/xml, text/xml")
 	resp, err := client.Do(req)
 	if err != nil {
