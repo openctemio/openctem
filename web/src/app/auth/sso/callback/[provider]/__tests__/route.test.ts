@@ -28,6 +28,7 @@ vi.mock('@/features/sso/actions/sso-auth-actions', () => ({
   handleSSOCallback: (...args: unknown[]) => handleSSOCallback(...args),
 }))
 
+import { bindingCookieName } from '@/features/auth/lib/browser-binding'
 import { GET } from '../route'
 
 async function callback(provider: string, query: string): Promise<string> {
@@ -103,5 +104,17 @@ describe('organization SSO callback route handler', () => {
     expect(to.startsWith('/login?error=')).toBe(true)
     expect(to).toContain('org=acme')
     expect(to).not.toContain('raw')
+  })
+
+  it.each([
+    ['an unknown provider', 'github', 'code=c&state=s'],
+    ['a provider error', 'okta', 'error=access_denied'],
+    ['missing params', 'okta', 'code=c'],
+  ])('clears the single-use attempt cookies on %s', async (_label, provider, query) => {
+    cookieJar.set('sso_redirect', '/findings')
+    await callback(provider, query)
+    expect(deleted).toEqual(
+      expect.arrayContaining(['sso_state', 'sso_redirect', bindingCookieName('sso')])
+    )
   })
 })
