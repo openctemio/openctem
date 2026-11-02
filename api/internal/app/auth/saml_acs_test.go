@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/beevik/etree"
 	"github.com/crewjam/saml"
 	dsig "github.com/russellhaering/goxmldsig"
 
@@ -224,5 +225,65 @@ func TestSAMLACS_SeveralSigningCertificates(t *testing.T) {
 	err := f.post(resp)
 	if err == nil || errors.Is(err, ErrSSOFederatedTakeover) {
 		t.Fatalf("assertion signed by an unconfigured key must be refused, got %v", err)
+	}
+}
+
+// An IdP that signs without an embedded certificate (KeyInfo omitted, as the
+// metadata-based trust model allows) must still sign in once several
+// certificates are stored: the library falls back to the stored certificate
+// only when exactly one is configured, so each is tried in turn.
+func TestSAMLACS_NoEmbeddedCertificateTriesEveryStoredCertificate(t *testing.T) {
+	f := newSAMLACSFixture(t)
+	repo := f.svc.repo.(*fakeSAMLRepo)
+	var tenantID shared.ID
+	var p *samldom.SAMLProvider
+	for id, cfg := range repo.byTenant {
+		tenantID, p = id, cfg
+	}
+	idpCert := p.IDPCertificate()
+	other, other2 := genTestCertPEM(t), genTestCertPEM(t)
+	setCerts := func(certs string) {
+		repo.byTenant[tenantID] = samldom.Reconstruct(p.ID(), tenantID, p.IDPEntityID(), p.IDPSSOURL(), certs,
+			nil, "viewer", true, true, time.Now(), time.Now())
+	}
+	// Assertion-only signature, no KeyInfo.
+	bare := func(resp string) string {
+		return editResponse(t, resp, func(root *etree.Element) {
+			root.RemoveChild(childByTag(root, "Signature"))
+			sig := childByTag(childByTag(root, "Assertion"), "Signature")
+			sig.RemoveChild(childByTag(sig, "KeyInfo"))
+		})
+	}
+
+	setCerts(other + idpCert + other2)
+	_, resp := f.respond(t, false, time.Now(), nil)
+	if err := f.post(bare(resp)); !errors.Is(err, ErrSSOFederatedTakeover) {
+		t.Fatalf("a signature without an embedded certificate must verify against the matching stored one, got %v", err)
+	}
+
+	// None of the stored certificates is the signer's.
+	setCerts(other + other2)
+	_, resp = f.respond(t, false, time.Now(), nil)
+	if err := f.post(bare(resp)); err == nil || errors.Is(err, ErrSSOFederatedTakeover) {
+		t.Fatalf("no stored certificate matches: must be refused, got %v", err)
+	}
+}
+
+// An embedded certificate still has to be one of the stored certificates:
+// the fallback applies only when the signature carries none.
+func TestSAMLACS_EmbeddedCertificateMustMatchAStoredOne(t *testing.T) {
+	f := newSAMLACSFixture(t)
+	repo := f.svc.repo.(*fakeSAMLRepo)
+	var tenantID shared.ID
+	var p *samldom.SAMLProvider
+	for id, cfg := range repo.byTenant {
+		tenantID, p = id, cfg
+	}
+	other, other2 := genTestCertPEM(t), genTestCertPEM(t)
+	repo.byTenant[tenantID] = samldom.Reconstruct(p.ID(), tenantID, p.IDPEntityID(), p.IDPSSOURL(), other+other2,
+		nil, "viewer", true, true, time.Now(), time.Now())
+	_, resp := f.respond(t, false, time.Now(), nil)
+	if err := f.post(resp); err == nil || errors.Is(err, ErrSSOFederatedTakeover) {
+		t.Fatalf("an embedded certificate that is not stored must be refused, got %v", err)
 	}
 }
