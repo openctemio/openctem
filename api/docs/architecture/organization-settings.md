@@ -29,8 +29,9 @@ decode), `internal/app/tenant/settings_write.go` (the write path),
 
 ## Entry requirements on every organization route
 
-An organization's access requirements (SSO enforcement, required two-factor,
-personal-account policy, outside-member privilege rule) gate **entry to that
+An organization's access requirements (SSO enforcement, the identity provider
+binding below, required two-factor, personal-account policy, outside-member
+privilege rule) gate **entry to that
 organization**. Token issuance evaluates them for the organization the token is
 minted for. The `/api/v1/tenants/{tenant}/...` routes take the organization
 from the URL and accept a token minted for another organization the caller
@@ -41,13 +42,41 @@ belongs to, so they carry one more check: `EntryGate`
   the tenantless token that social and SSO sign-in return proves a sign-in, not
   entry to any organization; exchange it for an organization token first;
 - re-applies the URL organization's requirements to the token's own session
-  (`MFA_ENROLLMENT_REQUIRED`, `PERSONAL_ACCOUNTS_BLOCKED`, SSO required, with
-  the second factor an SSO exception needs), exactly as at token issuance.
+  (`EMAIL_NOT_VERIFIED`, `OWN_SIGN_IN_REQUIRED`, `MFA_ENROLLMENT_REQUIRED`,
+  `PERSONAL_ACCOUNTS_BLOCKED`, SSO required, with the second factor an SSO
+  exception needs), exactly as at token issuance.
 
 A pass is cached for 15 seconds per (session, organization), so a tightened
 requirement applies within that window; a refusal or a failure to decide is
 never cached and fails closed. A requirement of organization A never affects
 the person's access to organization B (research/310).
+
+### Identity provider binding
+
+An organization trusts its own identity provider: a sign-in through it skips
+the account's own password and second factor there. That trust ends at the
+organization. A session issued by organization A's IdP opens organization B
+only when B trusts A as the member's home organization (external members,
+RFC-058), or when the account has no sign-in of its own (no password, no second
+factor, not a social account: the IdP created it and is its only way in).
+Otherwise token issuance and `EntryGate` answer `403 OWN_SIGN_IN_REQUIRED`, and
+the person signs in with their own account (password and, when enrolled, the
+second factor) or through B's own IdP. Without this, A's IdP administrator
+controlled the person's access to every other organization that does not
+require 2FA or SSO.
+
+For the same reason a second factor proven by A's IdP satisfies only A's
+rules, or a host's that trusts A as the member's home: it never counts for
+B's personal-account policy, outside-member rule, SSO exception or owner
+break-glass (the last two need the account's own password and factor).
+
+Actions on the account itself reach every organization, so no organization's
+IdP may take them in the account's name: deleting the account
+(`DELETE /api/v1/me/account`) and signing out everywhere
+(`DELETE /api/v1/users/me/sessions`) answer `403 OWN_SIGN_IN_REQUIRED` to an
+organization IdP's session when the account has its own sign-in
+(`middleware.RequireOwnSignIn`). A fresh re-authentication at the IdP does not
+change that: it proves the IdP's sign-in, not the account's.
 
 ## Organization slug
 
