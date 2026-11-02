@@ -70,6 +70,8 @@ if you want a public "Sign in with Microsoft" button.
 
 You can enable **both** at once — they don't conflict.
 
+Prefer SAML for organization SSO? See [Entra ID via SAML in 5 steps](#entra-id-via-saml-in-5-steps).
+
 ---
 
 ## 2. Azure portal: register the application
@@ -552,6 +554,47 @@ id_token's `auth_time`, which Entra adds only as an optional claim: in the app
 registration, **Token configuration → Add optional claim → ID → `auth_time`**.
 Without it the re-sign-in is refused and the user cannot run those actions
 (an authenticator code always works).
+
+## Entra ID via SAML in 5 steps
+
+SAML is an alternative to Path B (OIDC) for organization SSO. Setup is an
+exchange of two metadata files; nothing is typed by hand.
+
+1. **Download our metadata.** Admin console > Customers > Organizations > the
+   organization > Single sign-on > SAML > **Download SP metadata (XML)**. The
+   file is built on `APP_URL` (set it on the API first).
+2. **Create the Entra application.** Microsoft Entra admin center > Enterprise
+   applications > New application > Create your own application > "Integrate
+   any other application you don't find in the gallery (Non-gallery)". Open it >
+   Single sign-on > SAML > **Upload metadata file**, pick the file from step 1,
+   and save (Entra fills Identifier and Reply URL). Under Users and groups,
+   assign who may sign in.
+3. **Claims.** Attributes & Claims > Unique User Identifier (Name ID): source
+   attribute `user.objectid`, name identifier format **Persistent**. Keep the
+   `emailaddress` (`user.mail`) and `name` claims. Never key the account on the
+   email or the UPN alone: both can be renamed and reused in the directory, and
+   the SAML account binding is the persistent NameID (scoped to the
+   organization). Until OpenCTEM's AuthnRequest asks for the persistent format,
+   accounts are matched by the verified email under the domain proof rules
+   below.
+4. **Import Entra's metadata.** In the Entra application, SAML Certificates >
+   copy **App Federation Metadata Url**. In the OpenCTEM SAML form > Import from
+   metadata, paste it and select **Import** (or upload the Federation Metadata
+   XML file). The entity ID, sign-in URL and signing certificate(s) are filled
+   in; when Entra holds a current and a next certificate, both are trusted, so a
+   rollover does not stop sign-in. Turn on **Enable SAML login** and save. An
+   organization with an owner gets a pending change that an owner approves.
+5. **Verify the domain and test.** Under Verified domains, publish the TXT
+   record and verify the organization's email domain (JIT and the claim of
+   invited accounts need it). Test with `https://<app>/login?org=<slug>`.
+
+The import fetches the URL over https only, through the outbound SSRF guard,
+and refuses a document with a DOCTYPE or entity declaration; certificates come
+only from the signing keys of the SAML identity provider descriptor
+([`saml-sso.md`](../architecture/saml-sso.md#importing-the-idps-federation-metadata)).
+The certificate is not refreshed from the URL automatically: when Entra rolls
+its key, import again and save (an owner approves); the expiry alerts warn 30,
+7 and 1 day(s) ahead.
 
 ## Reference
 
