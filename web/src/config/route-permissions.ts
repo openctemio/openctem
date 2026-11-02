@@ -153,6 +153,17 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     permission: Permission.ScopeRead,
     module: Module.AttackSurface,
   },
+  // Web page monitoring (RFC-138): reads need assets:read (narrowed to the
+  // data scope by the API); watch changes need scans:write.
+  '/attack-surface/pages': {
+    permission: Permission.AssetsRead,
+    module: Module.AttackSurface,
+  },
+  // The coverage work by stage (Run needs scans:write + scans:execute).
+  '/attack-surface/discovery': {
+    permission: Permission.ScansRead,
+    module: Module.AttackSurface,
+  },
   // Typed attack-surface changes (RFC-080), narrowed to the data scope by the API.
   // Web surface reads the assets module's web endpoints (RFC-056).
   '/attack-surface/web': {
@@ -382,8 +393,12 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
   // ========================================
   // Validation Phase (Module: pentest)
   // ========================================
+  // Campaign pages: the API reads them with pentest:campaigns:read and the
+  // caller's campaign membership, so a role without the module-wide
+  // validation:read (a vendor tester, a campaign client) still reaches the
+  // campaigns it is a member of.
   '/pentest/**': {
-    permission: Permission.PentestRead,
+    permission: Permission.PentestCampaignsRead,
     module: Module.Pentest,
   },
   // Create/edit forms require write permission (route-level defense-in-depth;
@@ -553,6 +568,13 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     permission: Permission.SensorsRead,
     module: Module.Sensors,
   },
+  // The page a sensor's printed link opens (/activate?code=...): looking a
+  // code up needs sensors:pair; approving needs sensors:approve and step-up
+  // (enforced by the API).
+  '/activate': {
+    permission: Permission.SensorsPair,
+    module: Module.Sensors,
+  },
   // Scope policy (RFC-054 §6.3): readable with scope:read; saving needs
   // scope:approve and step-up, enforced by the API.
   '/settings/scope': {
@@ -627,6 +649,13 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     permission: Permission.TeamUpdate,
     module: Module.Sensors,
     message: 'You need admin privileges to access sensor job settings.',
+  },
+  // The scan identification part of the security settings: read like
+  // Sensor job safety (team:update), changed by the owner only (the API).
+  '/settings/scanning/identification': {
+    permission: Permission.TeamUpdate,
+    module: Module.Sensors,
+    message: 'You need admin privileges to access scan identification settings.',
   },
 
   // ========================================

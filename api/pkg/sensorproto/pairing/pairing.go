@@ -143,14 +143,21 @@ const EnrollmentScopeOrganization = "organization"
 // shape whether or not a reverse-mode code was valid.
 type StartResponse struct {
 	PairingID string `json:"pairing_id"`
-	// UserCode is the code to enter in the console (default mode only),
-	// formatted XXXX-XXXX.
-	UserCode          string    `json:"user_code,omitempty"`
-	PlatformKey       string    `json:"platform_key"`
-	PlatformNonce     string    `json:"platform_nonce"`
-	PlatformSignature string    `json:"platform_signature"`
-	ExpiresAt         time.Time `json:"expires_at"`
-	PollSeconds       int       `json:"poll_interval_seconds"`
+	// UserCode is the request's code, formatted XXXX-XXXX: the code the
+	// start carried, else a new one. Empty for an enrollment token.
+	UserCode string `json:"user_code,omitempty"`
+	// VerificationURI is the console page where a person approves a
+	// request (the platform's /activate); VerificationURIComplete is the
+	// same page with the code filled in. The sensor prints both under the
+	// code. The code is an index, never a credential: approving still needs
+	// a session, the fingerprint the host shows and step-up.
+	VerificationURI         string    `json:"verification_uri,omitempty"`
+	VerificationURIComplete string    `json:"verification_uri_complete,omitempty"`
+	PlatformKey             string    `json:"platform_key"`
+	PlatformNonce           string    `json:"platform_nonce"`
+	PlatformSignature       string    `json:"platform_signature"`
+	ExpiresAt               time.Time `json:"expires_at"`
+	PollSeconds             int       `json:"poll_interval_seconds"`
 }
 
 // RevealRequest is the body of PUT /pairings/{id}/nonce.

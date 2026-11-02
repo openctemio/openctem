@@ -26,6 +26,7 @@ import (
 	notificationdom "github.com/openctemio/openctem/api/pkg/domain/notification"
 	"github.com/openctemio/openctem/api/pkg/domain/orgtrust"
 	roledom "github.com/openctemio/openctem/api/pkg/domain/role"
+	"github.com/openctemio/openctem/api/pkg/domain/scanident"
 	"github.com/openctemio/openctem/api/pkg/domain/scoring"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	sessiondom "github.com/openctemio/openctem/api/pkg/domain/session"
@@ -2109,6 +2110,9 @@ type UpdateSecuritySettingsInput struct {
 	// (RFC-060 §4.1).
 	ToolHTTPUserAgent     *string `json:"tool_http_user_agent"`
 	ForbidToolInsecureTLS *bool   `json:"forbid_tool_insecure_tls"`
+	// ToolHTTPHeaders replaces the organization's scan identification
+	// headers (nil: unchanged; empty: none).
+	ToolHTTPHeaders *[]scanident.Header `json:"tool_http_headers"`
 	// PersonalAccounts and SSOExceptions: see tenantdom.SecuritySettings
 	// (RFC-058). The route already needs the owner with step-up.
 	PersonalAccounts *string                   `json:"personal_accounts"`
@@ -2164,7 +2168,14 @@ func (s *TenantService) ToolHTTPPolicy(ctx context.Context, tenantID shared.ID) 
 	}
 	sec := t.TypedSettings().Security
 	p := sec.ToolHTTPPolicy()
-	return sensordom.ToolHTTPPolicy{UserAgent: p.UserAgent, AllowInsecureTLS: p.AllowInsecureTLS}, nil
+	out := sensordom.ToolHTTPPolicy{UserAgent: p.UserAgent, AllowInsecureTLS: p.AllowInsecureTLS}
+	if len(p.Headers) > 0 {
+		out.Headers = make(map[string]string, len(p.Headers))
+		for _, h := range p.Headers {
+			out.Headers[h.Name] = h.Value
+		}
+	}
+	return out, nil
 }
 
 // ErrIPAllowlistExcludesRequester is returned when saving an IP allowlist that
@@ -2247,6 +2258,12 @@ func (s *TenantService) UpdateSecuritySettings(ctx context.Context, tenantID str
 		}
 		if input.ForbidToolInsecureTLS != nil {
 			security.ForbidToolInsecureTLS = *input.ForbidToolInsecureTLS
+		}
+		if input.ToolHTTPHeaders != nil {
+			security.ToolHTTPHeaders = scanident.Normalize(*input.ToolHTTPHeaders)
+			if len(security.ToolHTTPHeaders) == 0 {
+				security.ToolHTTPHeaders = nil
+			}
 		}
 		if input.PersonalAccounts != nil {
 			security.PersonalAccounts = tenantdom.PersonalAccountsPolicy(*input.PersonalAccounts)

@@ -222,10 +222,19 @@ func portSetting(v any) string {
 type ToolHTTPPolicy struct {
 	UserAgent        string `json:"user_agent,omitempty"`
 	AllowInsecureTLS *bool  `json:"allow_insecure_tls,omitempty"`
+	// Headers are the scan identification headers (name -> value), merged
+	// from the platform and organization layers (scanident.Merge).
+	Headers map[string]string `json:"headers,omitempty"`
+	// LockedHeaders and UserAgentLocked name what a sensor's local layer may
+	// not change: enforced platform headers and a program's.
+	LockedHeaders   []string `json:"locked_headers,omitempty"`
+	UserAgentLocked bool     `json:"user_agent_locked,omitempty"`
 }
 
 // IsZero reports whether the policy sets nothing.
-func (p ToolHTTPPolicy) IsZero() bool { return p.UserAgent == "" && p.AllowInsecureTLS == nil }
+func (p ToolHTTPPolicy) IsZero() bool {
+	return p.UserAgent == "" && p.AllowInsecureTLS == nil && len(p.Headers) == 0
+}
 
 type OptIns struct {
 	AllowInteractsh      bool `json:"allow_interactsh"`

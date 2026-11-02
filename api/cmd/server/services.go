@@ -92,7 +92,6 @@ import (
 	contentruleapp "github.com/openctemio/openctem/api/internal/app/contentrule"
 	contentsourceapp "github.com/openctemio/openctem/api/internal/app/contentsource"
 	coverageapp "github.com/openctemio/openctem/api/internal/app/coverage"
-	ctemidapp "github.com/openctemio/openctem/api/internal/app/ctemid"
 	"github.com/openctemio/openctem/api/internal/app/deploymentregion"
 	easmdnsapp "github.com/openctemio/openctem/api/internal/app/easmdns"
 	entitlementapp "github.com/openctemio/openctem/api/internal/app/entitlement"
@@ -121,6 +120,7 @@ import (
 	retestapp "github.com/openctemio/openctem/api/internal/app/retest"
 	retestcheckapp "github.com/openctemio/openctem/api/internal/app/retestcheck"
 	"github.com/openctemio/openctem/api/internal/app/scan"
+	"github.com/openctemio/openctem/api/internal/app/scanidentity"
 	scanwindowapp "github.com/openctemio/openctem/api/internal/app/scanwindow"
 	scanzoneapp "github.com/openctemio/openctem/api/internal/app/scanzone"
 	"github.com/openctemio/openctem/api/internal/app/scim"
@@ -714,7 +714,6 @@ type Services struct {
 	ThreatAlertPlanner *threatalertapp.Planner
 	// ThreatAlerts is the emerging-threat alert API.
 	ThreatAlerts *threatalertapp.Service
-	CTEMID       *ctemidapp.Service
 	// VersionCheck is the release feed check (RFC-105); never nil with a database.
 	VersionCheck *versioncheck.Service
 	CertMonitor  *certmonitorapp.Service
@@ -1020,6 +1019,7 @@ type Services struct {
 	DeploymentRegion    *deploymentregion.Service
 	StorageQuota        *storagequota.Service
 	ThreatSource        *threatsource.Service
+	ScanIdentity        *scanidentity.Service
 	PlatformAlert       *platformalert.Service
 	PlatformAI          *platformai.Service
 	OrgRelay            *orgrelay.Service
@@ -1483,8 +1483,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// platform's own fetch).
 		s.ThreatSource = threatsource.NewService(repos.PlatformSetting, s.SettingRecorder)
 		s.ThreatIntel.SetSourcePolicy(s.ThreatSource)
+		// The platform layer of the scan identification markers.
+		s.ScanIdentity = scanidentity.NewService(repos.PlatformSetting, s.SettingRecorder)
 	}
-	s.CTEMID = ctemidapp.NewService(repos.CTEMID, cfg.Worker.CTEMIDFeedURL, log)
 	s.VersionCheck = versioncheck.New(postgres.NewVersionCheckRepository(&postgres.DB{DB: deps.DB}), versioncheck.Config{
 		Enabled: cfg.Worker.VersionCheckEnabled, URL: cfg.Worker.VersionCheckURL,
 		Keys: releasefeed.PinnedKeys, Running: version.Get().Version,
@@ -2274,6 +2275,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		s.SensorPairing.SetEnrollmentTokens(repos.SensorPairing)
 		// The approval screen names the organization the sensor joins.
 		s.SensorPairing.SetTenants(repos.Tenant)
+		// A sensor prints <APP_URL>/activate?code=… under its code.
+		s.SensorPairing.SetVerificationURL(cfg.App.URL)
 		// A re-pair revokes the keys the sensor's leased commands were
 		// claimed with: they are taken back at approval.
 		s.SensorPairing.SetCommandReleaser(repos.Command)
@@ -2439,6 +2442,11 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// claims it: scope can change while it waits in the queue. Until
 		// the scan service exists the gate refuses (fail closed).
 		command.WithScopeRecheck(probeGate)}
+	if s.ScanIdentity != nil {
+		// The platform's scan identification headers merge under the
+		// organization's in every job's http_policy.
+		cmdOpts = append(cmdOpts, command.WithPlatformIdentity(s.ScanIdentity))
+	}
 	if s.BountyProgram != nil {
 		// RFC-065 §12: program headers, User-Agent and rate caps travel
 		// with each job a program covers.
@@ -2579,6 +2587,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.VulnMatch.SetEnrichment(s.PriorityClassification, sla.NewApplier(s.SLA), repos.Asset)
 	s.VulnMatch.SetClosureSettings(s.Tenant) // Each organization's closing mode decides (version-change closes)
 	s.VulnMatch.SetIssueLinker(repos.FindingIssueLinks)
+	s.VulnMatch.SetReceiptRecorder(repos.IngestReceipt) // Matched findings are booked on the platform's own receipt
 	s.VulnMatch.SetLinkReader(repos.Software)
 	s.VulnMatch.SetRemediationKeyApplier(remediationKeys)
 	s.VulnMatch.SetVEXApplier(s.VEX) // The organization's VEX statements cover matched findings too

@@ -57,6 +57,9 @@ type MCPSettingsResponse struct {
 	RefreshDays int `json:"refresh_days"`
 	// RequireDPoP: only DPoP-bound tokens (RFC 9449).
 	RequireDPoP bool `json:"require_dpop"`
+	// DeviceFlowAllowed: members may sign a terminal in with a user code
+	// (the device authorization grant).
+	DeviceFlowAllowed bool `json:"device_flow_allowed"`
 	// MaxTLP: the most restrictive TLP of a pentest campaign AI
 	// applications may read (clear, green, amber, amber_strict, red).
 	MaxTLP               string         `json:"max_tlp"`
@@ -74,6 +77,8 @@ type MCPSettingsUpdateRequest struct {
 	APIKeysAllowed bool     `json:"api_keys_allowed"`
 	RefreshDays    int      `json:"refresh_days"`
 	RequireDPoP    bool     `json:"require_dpop"`
+	// DeviceFlowAllowed: absent keeps the current value.
+	DeviceFlowAllowed *bool `json:"device_flow_allowed,omitempty"`
 	// MaxTLP: "" keeps the default (amber).
 	MaxTLP string `json:"max_tlp" validate:"omitempty,oneof=clear green amber amber_strict red"`
 }
@@ -83,6 +88,7 @@ func (h *MCPSettingsHandler) response(s tenant.MCPSettings) MCPSettingsResponse 
 		Enabled: !s.Disabled, AnyClient: s.AnyClient, ClientHosts: s.ClientHosts, Scopes: s.Scopes,
 		APIKeysAllowed: !s.APIKeysDisabled, RefreshDays: s.RefreshDays, EffectiveRefreshDays: s.RefreshLimitDays(),
 		RequireDPoP:         s.RequireDPoP,
+		DeviceFlowAllowed:   !s.DeviceFlowDisabled,
 		MaxTLP:              s.AIMaxTLP(),
 		PlatformClientHosts: h.trustedHosts,
 	}
@@ -103,7 +109,7 @@ func (h *MCPSettingsHandler) response(s tenant.MCPSettings) MCPSettingsResponse 
 
 // Get serves GET /api/v1/mcp-access/settings.
 // @Summary      Read the organization policy for AI applications
-// @Description  Whether the MCP server is on for the organization, which applications may connect (verified only, or any), the organization's trusted client hosts and the platform's, the scopes members may grant, whether oct_ keys work on MCP, how long a connection lasts, and the highest TLP of a pentest campaign AI applications may read.
+// @Description  Whether the MCP server is on for the organization, which applications may connect (verified only, or any), the organization's trusted client hosts and the platform's, the scopes members may grant, whether oct_ keys work on MCP, how long a connection lasts, whether terminals may sign in with a user code, and the highest TLP of a pentest campaign AI applications may read.
 // @Tags         MCP
 // @Produce      json
 // @Security     BearerAuth
@@ -143,11 +149,23 @@ func (h *MCPSettingsHandler) Update(w http.ResponseWriter, r *http.Request) {
 		APIKeysDisabled: !req.APIKeysAllowed, RefreshDays: req.RefreshDays, RequireDPoP: req.RequireDPoP,
 		MaxTLP: req.MaxTLP,
 	}
+	ctx := r.Context()
+	if req.DeviceFlowAllowed != nil {
+		s.DeviceFlowDisabled = !*req.DeviceFlowAllowed
+	} else {
+		// A caller that does not know the field keeps what is stored.
+		cur, err := h.store.GetMCPSettings(ctx, middleware.GetTenantID(ctx))
+		if err != nil {
+			h.logger.Error("mcp settings: read", "error", logger.SanitizeError(err))
+			apierror.InternalServerError("failed to read the settings").WriteJSON(w)
+			return
+		}
+		s.DeviceFlowDisabled = cur.DeviceFlowDisabled
+	}
 	if err := mcpoauthapp.ValidatePolicy(&s); err != nil {
 		apierror.BadRequest(easmValidationMessage(err)).WriteJSON(w)
 		return
 	}
-	ctx := r.Context()
 	saved, err := h.store.UpdateMCPSettings(ctx, middleware.GetTenantID(ctx), s, auditapp.AuditContext{
 		ActorID: middleware.GetUserID(ctx), ActorIP: getClientIP(r), UserAgent: r.UserAgent(), RequestID: middleware.GetRequestID(r.Context()),
 	})

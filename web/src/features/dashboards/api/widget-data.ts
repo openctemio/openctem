@@ -33,7 +33,7 @@ export interface FlowFigure {
 
 /** What one source (a source group and a tool) sent in the window, and its health. */
 export interface IntakeSource {
-  origin: 'sensor' | 'import' | 'connector' | 'ci' | ''
+  origin: 'sensor' | 'import' | 'connector' | 'ci' | 'platform' | ''
   tool: string
   receipts: number
   received: number
@@ -52,6 +52,22 @@ export interface IntakeSource {
   expected_every_seconds?: number
   /** The receipt list of this source in the window (its totals are these figures). */
   drill: string
+  /** Assets the source's reports created or updated (not part of the findings funnel). */
+  assets?: number
+  kind?: 'discovery' | 'detection' | 'platform'
+  instances?: IntakeSourceInstance[]
+}
+
+/** One sender of a source (a sensor, a CI repository, a connector, an upload, the platform). */
+export interface IntakeSourceInstance {
+  id: string
+  kind: 'sensor' | 'ci' | 'connector' | 'platform' | 'import'
+  name: string
+  received: number
+  assets: number
+  health: 'ok' | 'stale' | 'failed'
+  last_at: string
+  sensor_href?: string
 }
 
 /** The organization's intake in the window (ingest.intake, and the exposure flow's sources). */

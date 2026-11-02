@@ -115,6 +115,8 @@ const POLLING_BASELINE: Record<string, number> = {
   // The run list and its counts poll on their own clocks: fast only while a
   // listed run is live (research/81); it was one shared 30 s poll before.
   'features/scans/components/scan-runs-tab.tsx': 2,
+  // The approve page polls the new sensor until its first heartbeat, then stops.
+  'features/sensors/components/activate-sensor.tsx': 1,
   'features/sensors/components/sensor-detail-sheet.tsx': 1,
   'features/sensors/components/sensor-install-flow.tsx': 1,
   // Add sensor: the approved sensor's first heartbeat, stops once it is seen.

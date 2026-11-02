@@ -1,6 +1,7 @@
 'use client'
 
 import { Main } from '@/components/layout'
+import { useTranslation } from '@/context/i18n-provider'
 import { PageHeader } from '@/features/shared'
 import { PentestRetestsSection } from '@/features/pentest/components/pentest-retests-section'
 
@@ -13,13 +14,17 @@ import { PentestRetestsSection } from '@/features/pentest/components/pentest-ret
  * into its own PageStack).
  */
 export default function RetestQueuePage() {
+  const { t } = useTranslation()
   return (
     <Main>
       <PentestRetestsSection
         header={(actions) => (
           <PageHeader
-            title="Retest queue"
-            description="Findings that were fixed and need re-verification, across campaigns."
+            title={t('validation.retests.title', 'Retest queue')}
+            description={t(
+              'validation.retests.description',
+              'Findings that were fixed and need re-verification, across campaigns.'
+            )}
           >
             {actions}
           </PageHeader>

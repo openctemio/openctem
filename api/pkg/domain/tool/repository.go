@@ -43,8 +43,9 @@ type Repository interface {
 	GetByName(ctx context.Context, tenantID shared.ID, name string) (*Tool, error)
 	List(ctx context.Context, filter ToolFilter, page pagination.Pagination) (pagination.Result[*Tool], error)
 	ListByNames(ctx context.Context, names []string) ([]*Tool, error)
-	ListByCategoryID(ctx context.Context, categoryID shared.ID) ([]*Tool, error)
-	ListByCategoryName(ctx context.Context, categoryName string) ([]*Tool, error)
+	// ListByCategoryID lists the active tools of a category visible to the tenant:
+	// platform tools plus its own custom tools, never another tenant's.
+	ListByCategoryID(ctx context.Context, tenantID, categoryID shared.ID) ([]*Tool, error)
 	ListByCapability(ctx context.Context, capability string) ([]*Tool, error)
 	// FindByCapabilities finds an active tool that matches all required capabilities.
 	// Searches platform tools first, then tenant-specific tools.

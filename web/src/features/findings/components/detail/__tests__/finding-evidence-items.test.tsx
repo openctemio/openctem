@@ -68,6 +68,24 @@ describe('FindingEvidenceItems', () => {
     vi.useRealTimers()
   })
 
+  it('lets a long unbroken value wrap inside the item instead of widening the drawer', () => {
+    const long =
+      '{"link":"https:\\/\\/h.example\\/wp-json\\/tribe\\/events\\/v1\\/organizers"}'.repeat(4)
+    const rec = record()
+    ;(rec.item as { extracted?: string[] }).extracted = [long]
+    render(<FindingEvidenceItems findingId="f1" items={[rec]} />)
+    const extracted = screen.getByText(/wp-json/).closest('p') as HTMLElement
+    expect(extracted.className).toContain('[overflow-wrap:anywhere]')
+    const item = screen.getByTestId('evidence-item')
+    expect(item).toHaveClass('min-w-0')
+    // Code blocks scroll inside their own box.
+    expect(screen.getAllByTestId('evidence-text')[0]).toHaveClass('max-w-full', 'overflow-auto')
+    // The footer (tool, rule, digests) wraps too.
+    expect(screen.getByText(/Content sha256/).closest('p')?.className).toContain(
+      '[overflow-wrap:anywhere]'
+    )
+  })
+
   it('renders hostile tool output as text, never as HTML', () => {
     const { container } = render(<FindingEvidenceItems findingId="f1" items={[record()]} />)
     expect(container.querySelector('img')).toBeNull()

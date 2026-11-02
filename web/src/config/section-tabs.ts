@@ -11,6 +11,7 @@ import {
   Building2,
   ClipboardCheck,
   Copy,
+  FileCode2,
   Container,
   Crosshair,
   Crown,
@@ -449,12 +450,32 @@ export const ATTACK_SURFACE_SECTION_TABS: readonly SectionTab[] = [
     permission: Permission.ScopeRead,
   },
   {
+    // Web page monitoring (RFC-138): watched pages and scripts and what
+    // changed on them. Reads need assets:read; watch changes scans:write.
+    label: 'Page changes',
+    labelKey: 'nav.tab.pageChanges',
+    href: '/attack-surface/pages',
+    icon: FileCode2,
+    module: 'attack_surface',
+    permission: Permission.AssetsRead,
+  },
+  {
     label: 'Changes',
     labelKey: 'nav.tab.changes',
     href: '/attack-surface/changes',
     icon: History,
     module: 'attack_surface',
     permission: Permission.AssetsRead,
+  },
+  {
+    // The coverage pipeline by stage with Run, Run all and Abort all
+    // (research/333 §1.2). The API also needs an unrestricted data scope.
+    label: 'Discovery',
+    labelKey: 'nav.tab.discovery',
+    href: '/attack-surface/discovery',
+    icon: Radar,
+    module: 'attack_surface',
+    permission: Permission.ScansRead,
   },
   {
     // What the web origins serve: endpoints, parameters, the same path across

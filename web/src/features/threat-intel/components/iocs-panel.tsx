@@ -66,9 +66,9 @@ import {
   useDeleteIOC,
   useIOCMatches,
   IOC_TYPES,
-  IOC_TYPE_LABELS,
+  iocTypeLabel,
   IOC_SOURCES,
-  IOC_SOURCE_LABELS,
+  iocSourceLabel,
   type IOC,
   type IOCType,
   type IOCSource,
@@ -121,47 +121,59 @@ export function IOCsPanel() {
     () => [
       {
         accessorKey: 'value',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Value" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader column={column} title={t('threatIntel.iocs.col.value', 'Value')} />
+        ),
         cell: ({ row }) => (
           <span className="font-mono text-xs break-all">{row.original.value}</span>
         ),
       },
       {
         accessorKey: 'type',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Type" />,
-        cell: ({ row }) => (
-          <Badge variant="outline">{IOC_TYPE_LABELS[row.original.type] ?? row.original.type}</Badge>
+        header: ({ column }) => (
+          <DataTableColumnHeader column={column} title={t('threatIntel.iocs.col.type', 'Type')} />
         ),
+        cell: ({ row }) => <Badge variant="outline">{iocTypeLabel(t, row.original.type)}</Badge>,
       },
       {
         accessorKey: 'source',
-        header: 'Source',
+        header: t('threatIntel.iocs.col.source', 'Source'),
         cell: ({ row }) =>
           row.original.source ? (
-            <Badge variant="secondary">
-              {IOC_SOURCE_LABELS[row.original.source] ?? row.original.source}
-            </Badge>
+            <Badge variant="secondary">{iocSourceLabel(t, row.original.source)}</Badge>
           ) : (
             <span className="text-muted-foreground">—</span>
           ),
       },
       {
         accessorKey: 'confidence',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Confidence" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader
+            column={column}
+            title={t('threatIntel.iocs.col.confidence', 'Confidence')}
+          />
+        ),
         cell: ({ row }) => <span className="tabular-nums text-sm">{row.original.confidence}%</span>,
       },
       {
         accessorKey: 'active',
-        header: 'Status',
+        header: t('threatIntel.iocs.col.status', 'Status'),
         cell: ({ row }) => (
           <Badge variant={row.original.active ? 'default' : 'outline'}>
-            {row.original.active ? 'Active' : 'Inactive'}
+            {row.original.active
+              ? t('threatIntel.iocs.active', 'Active')
+              : t('threatIntel.iocs.inactive', 'Inactive')}
           </Badge>
         ),
       },
       {
         accessorKey: 'last_seen_at',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Last seen" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader
+            column={column}
+            title={t('threatIntel.iocs.col.lastSeen', 'Last seen')}
+          />
+        ),
         cell: ({ row }) => (
           <span className="text-sm text-muted-foreground">
             {formatDate(row.original.last_seen_at)}
@@ -173,7 +185,11 @@ export function IOCsPanel() {
         cell: ({ row }) => (
           <DataTableRowActions
             actions={[
-              { label: 'View details', icon: Eye, onClick: () => setSelectedId(row.original.id) },
+              {
+                label: t('threatIntel.iocs.viewDetails', 'View details'),
+                icon: Eye,
+                onClick: () => setSelectedId(row.original.id),
+              },
               {
                 label: t('confirm.ioc.menu', 'Deactivate'),
                 icon: Trash2,
@@ -194,8 +210,11 @@ export function IOCsPanel() {
     return (
       <EmptyState
         icon={ShieldAlert}
-        title="No access to indicators"
-        description="You need the View Threat Intel permission to see the IOC catalogue."
+        title={t('threatIntel.iocs.noAccessTitle', 'No access to indicators')}
+        description={t(
+          'threatIntel.iocs.noAccessDescription',
+          'You need the View Threat Intel permission to see the IOC catalogue.'
+        )}
       />
     )
   }
@@ -203,26 +222,32 @@ export function IOCsPanel() {
   const filterSelects = (
     <>
       <Select value={typeFilter} onValueChange={setTypeFilter}>
-        <SelectTrigger className="h-9 w-36" aria-label="Filter by type">
-          <SelectValue placeholder="All types" />
+        <SelectTrigger
+          className="h-9 w-36"
+          aria-label={t('threatIntel.iocs.filterType', 'Filter by type')}
+        >
+          <SelectValue placeholder={t('threatIntel.iocs.allTypes', 'All types')} />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value={ALL}>All types</SelectItem>
-          {IOC_TYPES.map((t) => (
-            <SelectItem key={t} value={t}>
-              {IOC_TYPE_LABELS[t]}
+          <SelectItem value={ALL}>{t('threatIntel.iocs.allTypes', 'All types')}</SelectItem>
+          {IOC_TYPES.map((ty) => (
+            <SelectItem key={ty} value={ty}>
+              {iocTypeLabel(t, ty)}
             </SelectItem>
           ))}
         </SelectContent>
       </Select>
       <Select value={statusFilter} onValueChange={setStatusFilter}>
-        <SelectTrigger className="h-9 w-36" aria-label="Filter by status">
-          <SelectValue placeholder="All statuses" />
+        <SelectTrigger
+          className="h-9 w-36"
+          aria-label={t('threatIntel.iocs.filterStatus', 'Filter by status')}
+        >
+          <SelectValue placeholder={t('threatIntel.iocs.allStatuses', 'All statuses')} />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value={ALL}>All statuses</SelectItem>
-          <SelectItem value="active">Active</SelectItem>
-          <SelectItem value="inactive">Inactive</SelectItem>
+          <SelectItem value={ALL}>{t('threatIntel.iocs.allStatuses', 'All statuses')}</SelectItem>
+          <SelectItem value="active">{t('threatIntel.iocs.active', 'Active')}</SelectItem>
+          <SelectItem value="inactive">{t('threatIntel.iocs.inactive', 'Inactive')}</SelectItem>
         </SelectContent>
       </Select>
     </>
@@ -231,13 +256,16 @@ export function IOCsPanel() {
   return (
     <PageStack>
       <PageHeader
-        title="Indicators of compromise"
-        description="Indicators correlated against runtime telemetry to reopen the findings they belong to."
+        title={t('threatIntel.iocs.title', 'Indicators of compromise')}
+        description={t(
+          'threatIntel.iocs.description',
+          'Indicators correlated against runtime telemetry to reopen the findings they belong to.'
+        )}
       >
         <Can permission={Permission.ThreatIntelWrite} mode="disable">
           <Button size="sm" onClick={() => setCreateOpen(true)}>
             <Plus className="h-4 w-4 sm:me-2" />
-            <span className="sr-only sm:not-sr-only">Add IOC</span>
+            <span className="sr-only sm:not-sr-only">{t('threatIntel.iocs.add', 'Add IOC')}</span>
           </Button>
         </Can>
       </PageHeader>
@@ -251,12 +279,12 @@ export function IOCsPanel() {
       ) : error ? (
         <Alert variant="destructive">
           <AlertCircle />
-          <AlertTitle>Failed to load indicators</AlertTitle>
+          <AlertTitle>{t('threatIntel.iocs.loadFailed', 'Failed to load indicators')}</AlertTitle>
           <AlertDescription>
-            <p>{getErrorMessage(error, 'Please try again.')}</p>
+            <p>{getErrorMessage(error, t('threatIntel.iocs.tryAgain', 'Please try again.'))}</p>
             <Button variant="outline" size="sm" className="mt-2" onClick={() => mutate()}>
               <RefreshCw className="me-2 h-4 w-4" />
-              Retry
+              {t('threatIntel.iocs.retry', 'Retry')}
             </Button>
           </AlertDescription>
         </Alert>
@@ -265,8 +293,11 @@ export function IOCsPanel() {
           columns={columns}
           data={iocs}
           searchPlaceholder={t('threatIntel.iocs.search', 'Search indicators…')}
-          emptyMessage="No indicators"
-          emptyDescription="Add an indicator of compromise to start correlating runtime telemetry."
+          emptyMessage={t('threatIntel.iocs.emptyTitle', 'No indicators')}
+          emptyDescription={t(
+            'threatIntel.iocs.emptyDescription',
+            'Add an indicator of compromise to start correlating runtime telemetry.'
+          )}
           onRowClick={(row) => setSelectedId(row.id)}
           toolbarEnd={filterSelects}
         />
@@ -308,24 +339,25 @@ function IOCDetailSheet({
   onOpenChange: (open: boolean) => void
   onDelete: (ioc: IOC) => void
 }) {
+  const { t } = useTranslation()
   const { can } = usePermissions()
   const canWrite = can(Permission.ThreatIntelWrite)
   if (!ioc) return null
 
-  const typeLabel = IOC_TYPE_LABELS[ioc.type] ?? ioc.type
+  const typeLabel = iocTypeLabel(t, ioc.type)
   const menu: DetailMenuItem[] = [
     {
-      label: 'Copy value',
+      label: t('threatIntel.iocs.copyValue', 'Copy value'),
       icon: Copy,
       onSelect: () => {
         copyToClipboard(ioc.value)
-        toast.success('Indicator copied to clipboard')
+        toast.success(t('threatIntel.iocs.copied', 'Indicator copied to clipboard'))
       },
     },
   ]
   if (canWrite) {
     menu.push({
-      label: 'Delete indicator',
+      label: t('threatIntel.iocs.deleteIndicator', 'Delete indicator'),
       icon: Trash2,
       destructive: true,
       separatorBefore: true,
@@ -353,31 +385,43 @@ function IOCDetailSheet({
                   ioc.active && 'border-success/30 bg-success/10 text-success'
                 )}
               >
-                {ioc.active ? 'Active' : 'Inactive'}
+                {ioc.active
+                  ? t('threatIntel.iocs.active', 'Active')
+                  : t('threatIntel.iocs.inactive', 'Inactive')}
               </Badge>
               {ioc.source && (
                 <Badge variant="secondary" className="text-xs">
-                  {IOC_SOURCE_LABELS[ioc.source] ?? ioc.source}
+                  {iocSourceLabel(t, ioc.source)}
                 </Badge>
               )}
             </>
           }
-          meta={[`${ioc.confidence}% confidence`, `Last seen ${formatDate(ioc.last_seen_at)}`]}
+          meta={[
+            t('threatIntel.iocs.detail.confidenceMeta', '{n}% confidence', { n: ioc.confidence }),
+            t('threatIntel.iocs.detail.lastSeenMeta', 'Last seen {date}', {
+              date: formatDate(ioc.last_seen_at),
+            }),
+          ]}
           menu={menu}
           onClose={() => onOpenChange(false)}
         />
       }
     >
       <DetailSections>
-        <DetailSection title="Indicator">
+        <DetailSection title={t('threatIntel.iocs.detail.indicator', 'Indicator')}>
           <DetailFieldGrid>
-            <DetailField label="Type">{typeLabel}</DetailField>
-            <DetailField label="Confidence">{ioc.confidence}%</DetailField>
-            <DetailField label="Normalized" full>
+            <DetailField label={t('threatIntel.iocs.detail.type', 'Type')}>{typeLabel}</DetailField>
+            <DetailField label={t('threatIntel.iocs.detail.confidence', 'Confidence')}>
+              {ioc.confidence}%
+            </DetailField>
+            <DetailField label={t('threatIntel.iocs.detail.normalized', 'Normalized')} full>
               <span className="font-mono text-xs break-all">{ioc.normalized}</span>
             </DetailField>
             {ioc.source_finding_id && (
-              <DetailField label="Source finding" full>
+              <DetailField
+                label={t('threatIntel.iocs.detail.sourceFinding', 'Source finding')}
+                full
+              >
                 <Link
                   href={`/findings/${ioc.source_finding_id}`}
                   className="font-mono text-xs break-all text-primary hover:underline"
@@ -386,8 +430,12 @@ function IOCDetailSheet({
                 </Link>
               </DetailField>
             )}
-            <DetailField label="First seen">{formatDate(ioc.first_seen_at)}</DetailField>
-            <DetailField label="Last seen">{formatDate(ioc.last_seen_at)}</DetailField>
+            <DetailField label={t('threatIntel.iocs.detail.firstSeen', 'First seen')}>
+              {formatDate(ioc.first_seen_at)}
+            </DetailField>
+            <DetailField label={t('threatIntel.iocs.detail.lastSeen', 'Last seen')}>
+              {formatDate(ioc.last_seen_at)}
+            </DetailField>
           </DetailFieldGrid>
         </DetailSection>
 
@@ -404,16 +452,23 @@ function IOCDetailSheet({
 // deployment where that endpoint isn't live yet reads as "no matches" rather
 // than an error.
 function IOCMatchesSection({ iocId }: { iocId: string }) {
+  const { t } = useTranslation()
   const { data, isLoading } = useIOCMatches(iocId)
   const matches = data?.items ?? []
 
   return (
-    <DetailSection title="Runtime matches" count={isLoading ? undefined : matches.length}>
+    <DetailSection
+      title={t('threatIntel.iocs.matches.title', 'Runtime matches')}
+      count={isLoading ? undefined : matches.length}
+    >
       {isLoading ? (
         <Skeleton className="h-12 w-full" />
       ) : matches.length === 0 ? (
         <p className="text-sm text-muted-foreground">
-          No runtime telemetry has matched this indicator yet.
+          {t(
+            'threatIntel.iocs.matches.empty',
+            'No runtime telemetry has matched this indicator yet.'
+          )}
         </p>
       ) : (
         <ul className="divide-y rounded-lg border">
@@ -426,7 +481,7 @@ function IOCMatchesSection({ iocId }: { iocId: string }) {
                     variant="outline"
                     className="border-destructive/30 bg-destructive/10 text-xs text-destructive"
                   >
-                    Reopened finding
+                    {t('threatIntel.iocs.matches.reopened', 'Reopened finding')}
                   </Badge>
                 )}
               </div>
@@ -456,6 +511,7 @@ function CreateIOCDialog({
   onOpenChange: (open: boolean) => void
   onCreated: () => void
 }) {
+  const { t } = useTranslation()
   const { trigger } = useCreateIOC()
   const [submitting, setSubmitting] = useState(false)
   const [type, setType] = useState<IOCType>('ip')
@@ -472,12 +528,14 @@ function CreateIOCDialog({
 
   const handleSubmit = async () => {
     if (!value.trim()) {
-      toast.error('Value is required')
+      toast.error(t('threatIntel.iocs.create.valueRequired', 'Value is required'))
       return
     }
     const conf = Number(confidence)
     if (Number.isNaN(conf) || conf < 0 || conf > 100) {
-      toast.error('Confidence must be between 0 and 100')
+      toast.error(
+        t('threatIntel.iocs.create.confidenceRange', 'Confidence must be between 0 and 100')
+      )
       return
     }
     const payload: CreateIOCInput = {
@@ -489,12 +547,14 @@ function CreateIOCDialog({
     setSubmitting(true)
     try {
       await trigger(payload)
-      toast.success('Indicator added')
+      toast.success(t('threatIntel.iocs.create.added', 'Indicator added'))
       reset()
       onOpenChange(false)
       onCreated()
     } catch (err) {
-      toast.error(getErrorMessage(err, 'Failed to add indicator'))
+      toast.error(
+        getErrorMessage(err, t('threatIntel.iocs.create.addFailed', 'Failed to add indicator'))
+      )
     } finally {
       setSubmitting(false)
     }
@@ -504,41 +564,43 @@ function CreateIOCDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent size="sm">
         <DialogHeader>
-          <DialogTitle>Add indicator</DialogTitle>
+          <DialogTitle>{t('threatIntel.iocs.create.title', 'Add indicator')}</DialogTitle>
           <DialogDescription>
-            Add an IOC to correlate against runtime telemetry. The value must match the selected
-            type&apos;s format.
+            {t(
+              'threatIntel.iocs.create.description',
+              "Add an IOC to correlate against runtime telemetry. The value must match the selected type's format."
+            )}
           </DialogDescription>
         </DialogHeader>
         <DialogBody>
           <div className="space-y-4 py-2">
             <div className="space-y-2">
-              <Label htmlFor="ioc-type">Type</Label>
+              <Label htmlFor="ioc-type">{t('threatIntel.iocs.create.type', 'Type')}</Label>
               <Select value={type} onValueChange={(v) => setType(v as IOCType)}>
                 <SelectTrigger id="ioc-type">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {IOC_TYPES.map((t) => (
-                    <SelectItem key={t} value={t}>
-                      {IOC_TYPE_LABELS[t]}
+                  {IOC_TYPES.map((ty) => (
+                    <SelectItem key={ty} value={ty}>
+                      {iocTypeLabel(t, ty)}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="ioc-value">Value *</Label>
+              <Label htmlFor="ioc-value">{t('threatIntel.iocs.create.value', 'Value *')}</Label>
               <Input
                 id="ioc-value"
                 value={value}
                 onChange={(e) => setValue(e.target.value)}
-                placeholder="e.g. 203.0.113.10"
+                placeholder={t('threatIntel.iocs.create.valuePlaceholder', 'e.g. 203.0.113.10')}
               />
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="ioc-source">Source</Label>
+                <Label htmlFor="ioc-source">{t('threatIntel.iocs.create.source', 'Source')}</Label>
                 <Select value={source} onValueChange={(v) => setSource(v as IOCSource)}>
                   <SelectTrigger id="ioc-source">
                     <SelectValue />
@@ -546,14 +608,16 @@ function CreateIOCDialog({
                   <SelectContent>
                     {IOC_SOURCES.map((s) => (
                       <SelectItem key={s} value={s}>
-                        {IOC_SOURCE_LABELS[s]}
+                        {iocSourceLabel(t, s)}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="ioc-confidence">Confidence (0-100)</Label>
+                <Label htmlFor="ioc-confidence">
+                  {t('threatIntel.iocs.create.confidence', 'Confidence (0-100)')}
+                </Label>
                 <Input
                   id="ioc-confidence"
                   type="number"
@@ -568,11 +632,11 @@ function CreateIOCDialog({
         </DialogBody>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={submitting}>
-            Cancel
+            {t('threatIntel.iocs.create.cancel', 'Cancel')}
           </Button>
           <Button onClick={handleSubmit} disabled={submitting}>
             {submitting && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
-            Add IOC
+            {t('threatIntel.iocs.create.submit', 'Add IOC')}
           </Button>
         </DialogFooter>
       </DialogContent>

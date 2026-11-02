@@ -34,7 +34,7 @@
 	}
 
 	# Plane mcp: straight to the API.
-	@plane_mcp path /api/v1/mcp /api/v1/mcp/* /.well-known/oauth-protected-resource /.well-known/oauth-protected-resource/* /.well-known/oauth-authorization-server /.well-known/oauth-authorization-server/* /oauth/authorize /oauth/authorize/* /oauth/token /oauth/token/* /oauth/revoke /oauth/revoke/* /oauth/register /oauth/register/*
+	@plane_mcp path /api/v1/mcp /api/v1/mcp/* /.well-known/oauth-protected-resource /.well-known/oauth-protected-resource/* /.well-known/oauth-authorization-server /.well-known/oauth-authorization-server/* /oauth/authorize /oauth/authorize/* /oauth/token /oauth/token/* /oauth/revoke /oauth/revoke/* /oauth/register /oauth/register/* /oauth/device_authorization /oauth/device_authorization/*
 	handle @plane_mcp {
 		import to_api
 	}

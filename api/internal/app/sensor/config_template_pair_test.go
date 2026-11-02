@@ -62,11 +62,21 @@ func TestTemplates_PairDockerWorksAsPasted(t *testing.T) {
 			"--read-only --cap-drop ALL --security-opt no-new-privileges:true",
 			"--security-opt seccomp=/etc/openctem/sensor-seccomp.json",
 			"sha256sum -c -",
-			"-e SENSOR_LOCAL_POLICY=/etc/openctem/sensor-policy.yaml",
-			"docker logs -f openctem-sensor",
+			// No policy file at install: the sensor follows the
+			// organization's scope; the host owner may narrow it later.
+			"-e SENSOR_KILL_SWITCH_FILE=/etc/openctem/STOP",
+			"-v /etc/openctem:/etc/openctem:ro",
+			// The command ends with a watch that stops by itself once paired.
+			"docker logs -f openctem-sensor 2>&1 | while IFS= read -r l;",
+			"Paired:*|Enrolled:*) break",
 		} {
 			if !strings.Contains(d, want) {
 				t.Errorf("[%s] pair docker snippet lacks %q:\n%s", dir, want, d)
+			}
+		}
+		for _, bad := range []string{"SENSOR_LOCAL_POLICY", "sudo install -m 0644 sensor-policy.yaml"} {
+			if strings.Contains(d, bad) {
+				t.Errorf("[%s] pair docker snippet still asks for a policy file (%q):\n%s", dir, bad, d)
 			}
 		}
 	}
@@ -87,9 +97,15 @@ func TestTemplates_PairLinuxServiceWorksAsPasted(t *testing.T) {
 			"sudo install -d -m 0700 -o openctem -g openctem /var/lib/openctem",
 			"sudo systemctl enable --now openctem-sensor",
 			"SSL_CERT_DIR=/etc/openctem/certs",
+			"sudo journalctl -u openctem-sensor -f -n 100 -o cat | while IFS= read -r l;",
 		} {
 			if !strings.Contains(c, want) {
 				t.Errorf("[%s] pair linux snippet lacks %q:\n%s", dir, want, c)
+			}
+		}
+		for _, bad := range []string{"SENSOR_LOCAL_POLICY", "sudo install -m 0644 sensor-policy.yaml"} {
+			if strings.Contains(c, bad) {
+				t.Errorf("[%s] pair linux snippet still asks for a policy file (%q):\n%s", dir, bad, c)
 			}
 		}
 	}
