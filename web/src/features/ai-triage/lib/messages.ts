@@ -29,6 +29,9 @@ const FAILURES: Record<string, string> = {
   enqueue_failed: 'The analysis could not be queued. Try again.',
   stuck_timeout: 'The analysis did not finish in time. Try again.',
   finding_not_available: 'The finding is no longer available.',
+  ai_use_case_off: 'The triage use case was turned off for this organization.',
+  nothing_to_send:
+    'Nothing in this finding may be sent to AI under the triage use case’s data setting.',
 }
 
 /** The translated message of a failure code (unknown codes read as generic). */
@@ -46,6 +49,8 @@ const REQUEST_ERRORS: Record<string, string> = {
   AI_OWN_PROVIDER_NOT_ALLOWED:
     'The platform does not allow organizations to use their own AI provider. An organization administrator switches the AI source to the platform in Settings > AI.',
   AI_POLICY_RESTRICTED: FAILURES.ai_policy_restricted,
+  AI_USE_CASE_OFF:
+    'AI triage is turned off for this organization. An owner or administrator turns it on in Settings > AI > Use cases.',
   CONFLICT: 'An analysis is already running for this finding.',
   RATE_LIMIT_EXCEEDED: 'Too many AI triage requests. Wait a minute and try again.',
 }
