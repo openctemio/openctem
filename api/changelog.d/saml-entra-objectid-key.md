@@ -2,3 +2,4 @@
 
 - A SAML account binding is now keyed on Entra ID's `tenantid` + `objectidentifier` claims, which Entra sends in every assertion, instead of nothing (Entra's default email-format NameID keyed no identity, so the email alone found the account). A renamed or reused address no longer inherits the previous holder's account once that holder has signed in: another directory user presenting the same address is refused.
 - Identities bound earlier under a persistent NameID are re-keyed to the object id on the next sign-in; other IdPs keep the persistent NameID rule. No operator action.
+- The Entra claims count only when the assertion's Issuer is `https://sts.windows.net/{tenantid}/` for the tenantid in the same assertion. A different IdP passing through attributes with Entra's names cannot choose the identity (it keys on the persistent NameID), and an Entra issuer whose tenantid claim disagrees is refused.

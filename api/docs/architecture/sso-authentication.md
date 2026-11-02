@@ -410,7 +410,7 @@ single `users.federated_issuer/subject` pair was copied there and migration
 | Organization OIDC, Entra ID; social Microsoft | verified `id_token` `iss` (contains the directory `tid`) | `oid` (the same for every app in the directory; `sub` is pairwise per app). Identities bound under `sub` are re-keyed on the next login. | platform-wide |
 | Social Google | `https://accounts.google.com` | Google account id (`sub`) | platform-wide |
 | Social GitHub | `https://github.com` | numeric user id | platform-wide |
-| SAML | assertion `Issuer` (IdP entity id) | Entra ID: `{tenantid}/{objectidentifier}` from the claims Entra always sends, whatever the NameID is (each claim exactly once, one value); other IdPs: `NameID`, only when its format is `persistent`. An email-format NameID keys nothing. Identities bound under a persistent NameID are re-keyed to the Entra object id on the next login. | **the organization** whose IdP certificate signed it |
+| SAML | assertion `Issuer` (IdP entity id) | Entra ID: `{tenantid}/{objectidentifier}` from the claims Entra always sends, whatever the NameID is (each claim exactly once, one value), used only when the assertion's Issuer is `https://sts.windows.net/{tenantid}/` (an Entra issuer whose tenantid claim disagrees is refused; the same attribute names from another IdP are ignored); other IdPs: `NameID`, only when its format is `persistent`. An email-format NameID keys nothing. Identities bound under a persistent NameID are re-keyed to the Entra object id on the next login. | **the organization** whose IdP certificate signed it |
 
 A SAML identity is scoped to its organization because the organization
 configures the signing certificate: another organization can configure the

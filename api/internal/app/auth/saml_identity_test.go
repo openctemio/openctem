@@ -294,3 +294,50 @@ func TestSAMLLogin_PersistentNameIDBindingRekeyedToObjectID(t *testing.T) {
 		t.Fatalf("binding must be re-keyed to the object id, got %+v", keys)
 	}
 }
+
+// A non-Entra IdP that passes through attributes named like Entra's claims
+// (user-editable there) must not choose the identity: the key is the
+// persistent NameID.
+func TestSAMLIdentity_NonEntraIssuerIgnoresEntraClaims(t *testing.T) {
+	tn := shared.NewID()
+	a := entraAssertion(string(saml.PersistentNameIDFormat), "nid-mallory", "oid-victim", samlTestTID)
+	a.Issuer.Value = "https://idp.okta.example/saml"
+	k, legacy := samlIdentity(a, tn)
+	if !k.Valid() || k.Subject != "nid-mallory" || legacy != "" {
+		t.Fatalf("a non-Entra issuer must key on the NameID, got %+v legacy %q", k, legacy)
+	}
+	a2 := entraAssertion(string(saml.EmailAddressNameIDFormat), "mallory@corp.com", "oid-victim", samlTestTID)
+	a2.Issuer.Value = "https://idp.okta.example/saml"
+	if k, _ := samlIdentity(a2, tn); k.Valid() {
+		t.Fatalf("forged claims with no persistent NameID must key nothing, got %+v", k)
+	}
+	if samlEntraClaimsMismatch(a) {
+		t.Fatal("a non-Entra issuer is not an Entra mismatch")
+	}
+}
+
+func TestSAMLIdentity_EntraIssuerKeysOnTidAndOid(t *testing.T) {
+	k, _ := samlIdentity(entraAssertion(string(saml.EmailAddressNameIDFormat), "a@corp.com", "oid-1", samlTestTID), shared.NewID())
+	if k.Subject != samlTestTID+"/oid-1" {
+		t.Fatalf("got %+v", k)
+	}
+	if samlEntraClaimsMismatch(entraAssertion(string(saml.EmailAddressNameIDFormat), "a@corp.com", "oid-1", samlTestTID)) {
+		t.Fatal("matching issuer and tid must not be a mismatch")
+	}
+}
+
+func TestSAMLIdentity_EntraTidDifferentFromIssuerRefused(t *testing.T) {
+	a := entraAssertion(string(saml.EmailAddressNameIDFormat), "a@corp.com", "oid-1", samlTestTID)
+	a.Issuer.Value = "https://sts.windows.net/bbbbbbbb-1111-2222-3333-444444444444/"
+	if !samlEntraClaimsMismatch(a) {
+		t.Fatal("an Entra issuer with another tenantid claim must be refused")
+	}
+	if k, _ := samlIdentity(a, shared.NewID()); k.Valid() {
+		t.Fatalf("a mismatched tid must not key an identity, got %+v", k)
+	}
+	b := entraAssertion(string(saml.EmailAddressNameIDFormat), "a@corp.com", "oid-1", "")
+	b.Issuer.Value = "https://sts.windows.net/" + samlTestTID + "/"
+	if !samlEntraClaimsMismatch(b) {
+		t.Fatal("an Entra issuer without a tenantid claim must be refused")
+	}
+}

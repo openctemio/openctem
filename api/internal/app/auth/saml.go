@@ -270,6 +270,10 @@ func (s *SAMLService) ACS(ctx context.Context, orgSlug, baseURL string, r *http.
 			return nil, ErrSAMLResponseInvalid
 		}
 	}
+	if samlEntraClaimsMismatch(assertion) {
+		s.logger.Warn("saml login refused: Entra issuer and tenantid claim disagree", "org", logger.SanitizeValue(orgSlug))
+		return nil, ErrSAMLResponseInvalid
+	}
 	key, legacySubject := samlIdentity(assertion, tenantAndCfg.tenant.ID())
 	return s.sso.completeFederatedLogin(ctx, tenantAndCfg.tenant, email, name, cfg.DefaultRole(), cfg.AutoProvision(),
 		federatedBinding{authTime: authAt, mfa: samlMFAEvidence(assertion)},
@@ -321,7 +325,19 @@ func (s *SAMLService) parseStrictResponse(ctx context.Context, sp *saml.ServiceP
 const (
 	samlEntraObjectIDAttr = "http://schemas.microsoft.com/identity/claims/objectidentifier"
 	samlEntraTenantIDAttr = "http://schemas.microsoft.com/identity/claims/tenantid"
+	samlEntraIssuerPrefix = "https://sts.windows.net/"
 )
+
+// samlEntraClaimsMismatch reports an assertion issued by the Entra STS whose
+// tenantid claim does not name the directory in its Issuer (or has none): a
+// forged or confused assertion, refused rather than keyed on the NameID.
+func samlEntraClaimsMismatch(a *saml.Assertion) bool {
+	if a == nil || !strings.HasPrefix(a.Issuer.Value, samlEntraIssuerPrefix) {
+		return false
+	}
+	tid := samlSingleAttribute(a, samlEntraTenantIDAttr)
+	return tid == "" || a.Issuer.Value != samlEntraIssuerPrefix+tid+"/"
+}
 
 // samlIdentity is the assertion's identity, scoped to the organization whose
 // IdP certificate signed the assertion (another organization can configure
@@ -347,7 +363,11 @@ func samlIdentity(a *saml.Assertion, tenantID shared.ID) (key useridentity.Key, 
 		persistent = strings.TrimSpace(a.Subject.NameID.Value)
 	}
 	oid, tid := samlSingleAttribute(a, samlEntraObjectIDAttr), samlSingleAttribute(a, samlEntraTenantIDAttr)
-	if oid != "" && tid != "" {
+	// The claims are attributes any IdP can pass through (a user-editable
+	// attribute on another IdP could name someone else's object id), so they
+	// count only when the assertion's own Issuer is the Entra STS of that
+	// tenant id.
+	if oid != "" && tid != "" && a.Issuer.Value == samlEntraIssuerPrefix+tid+"/" {
 		subject := tid + "/" + oid
 		if persistent == subject {
 			persistent = ""
