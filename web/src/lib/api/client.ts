@@ -230,6 +230,7 @@ export async function apiClient<T = unknown>(
     retry: _retry, // Reserved for future retry implementation
     _skipRefreshRetry = false,
     _skipStepUpRetry = false,
+    _skipStaleRetry = false,
     ...fetchOptions
   } = options
 
@@ -344,6 +345,21 @@ export async function apiClient<T = unknown>(
       }
 
       const error = await parseErrorResponse(response)
+
+      // The token carries an older permission version than the server (a role
+      // or team change since sign-in), so the server refused this write before
+      // running it. Get a token with the current permissions and retry once.
+      if (
+        response.status === 409 &&
+        error.code === 'permissions_stale' &&
+        !_skipStaleRetry &&
+        !skipAuth &&
+        !isServer()
+      ) {
+        if (await tryRefreshToken()) {
+          return apiClient<T>(endpoint, { ...options, _skipStaleRetry: true })
+        }
+      }
 
       // A sensitive route needs a recent sign-in or step-up in this session:
       // ask the user to re-authenticate (one shared dialog), then retry the
