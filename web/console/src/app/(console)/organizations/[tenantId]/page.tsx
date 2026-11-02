@@ -200,6 +200,7 @@ export default function AdminOrganizationPage({
                   orgName={org.name}
                   canManage={canManageUsers}
                   canRecover={adminHas(admin, 'platform.tenants.owner_recovery')}
+                  ownerInvitation={org.owner_invitation}
                   onChanged={refresh}
                 />
               </TabsContent>
