@@ -12,7 +12,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { User, Mail, Phone, Save, Loader2, AlertCircle, Check } from 'lucide-react'
 import { toast } from 'sonner'
-import { useProfile, useUpdateProfile } from '@/features/account'
+import { OwnershipInvitationsCard, useProfile, useUpdateProfile } from '@/features/account'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { safeAvatarSrc } from '@/lib/safe-href'
 import { identityProviderLabel } from '@/lib/identity-provider-label'
@@ -103,6 +103,8 @@ export default function ProfilePage() {
 
   return (
     <PageStack>
+      {/* Organizations a platform administrator created for this account. */}
+      <OwnershipInvitationsCard hideWhenEmpty />
       {/* Profile Card */}
       <Card>
         <CardHeader>
