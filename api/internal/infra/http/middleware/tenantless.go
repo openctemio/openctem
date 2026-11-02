@@ -60,6 +60,11 @@ var tenantlessRoutes = []string{
 	"GET /api/v1/me/account/deletion",
 	// Accepting an invitation sent to this address, by its token.
 	"POST /api/v1/invitations/accept",
+	// Ownership invitations bound to this account (an organization created
+	// for it by the platform administrator).
+	"GET /api/v1/me/ownership-invitations",
+	"POST /api/v1/me/ownership-invitations/{id}/accept",
+	"POST /api/v1/me/ownership-invitations/{id}/decline",
 	// Session: step-up and sign-out.
 	"GET /api/v1/auth/step-up",
 	"POST /api/v1/auth/step-up",

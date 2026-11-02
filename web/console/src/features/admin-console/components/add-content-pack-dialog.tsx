@@ -19,7 +19,7 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useTranslation } from '@/context/i18n-provider'
 import { Textarea } from '@/components/ui/textarea'
 import { AdminApiError } from '@console/lib/admin-api/client'
@@ -195,7 +195,12 @@ export function AddContentPackDialog({ onAdded }: { onAdded: () => void }) {
               </DialogDescription>
             </DialogHeader>
             <DialogBody className="space-y-4">
-              <Tabs value={mode} onValueChange={(v) => setMode(v as 'upload' | 'import')}>
+              <Tabs
+                value={mode}
+                onValueChange={(v) => setMode(v as 'upload' | 'import')}
+                className="gap-4"
+                aria-label={t('admin.cp.modeLabel', 'How to add the pack')}
+              >
                 <TabsList>
                   <TabsTrigger value="upload">
                     {t('admin.cp.modeUpload', 'Upload an archive')}
@@ -204,76 +209,77 @@ export function AddContentPackDialog({ onAdded }: { onAdded: () => void }) {
                     {t('admin.cp.modeImport', 'Import from a URL')}
                   </TabsTrigger>
                 </TabsList>
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <div className="space-y-1.5">
+                    <Label htmlFor={id.name}>{t('admin.cp.name', 'Name')}</Label>
+                    <Input
+                      id={id.name}
+                      value={name}
+                      onChange={(e) => setName(e.target.value.trim())}
+                      placeholder="nuclei-core"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor={id.version}>{t('admin.cp.version', 'Version')}</Label>
+                    <Input
+                      id={id.version}
+                      value={version}
+                      onChange={(e) => setVersion(e.target.value.trim())}
+                      placeholder="10.2.4"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor={id.kind}>{t('admin.cp.kind', 'Kind')}</Label>
+                    <Input
+                      id={id.kind}
+                      list={`${id.kind}-list`}
+                      value={kind}
+                      onChange={(e) => setKind(e.target.value.trim())}
+                    />
+                    <datalist id={`${id.kind}-list`}>
+                      {KNOWN_KINDS.map((k) => (
+                        <option key={k} value={k} />
+                      ))}
+                    </datalist>
+                  </div>
+                </div>
+                <TabsContent value="upload">
+                  <div className="space-y-1.5">
+                    <Label htmlFor={id.file}>
+                      {t('admin.cp.archive', 'Archive (tar or tar.gz, up to 128 MiB)')}
+                    </Label>
+                    <Input
+                      id={id.file}
+                      type="file"
+                      accept=".tar,.tgz,.tar.gz,application/gzip,application/x-tar"
+                      onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+                    />
+                  </div>
+                </TabsContent>
+                <TabsContent value="import">
+                  <div className="grid gap-3">
+                    <div className="space-y-1.5">
+                      <Label htmlFor={id.url}>{t('admin.cp.url', 'Release URL (https)')}</Label>
+                      <Input
+                        id={id.url}
+                        value={url}
+                        onChange={(e) => setUrl(e.target.value.trim())}
+                        placeholder="https://"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor={id.digest}>{t('admin.cp.digest', 'Expected digest')}</Label>
+                      <Input
+                        id={id.digest}
+                        value={digest}
+                        onChange={(e) => setDigest(e.target.value.trim().toLowerCase())}
+                        placeholder="sha256:"
+                        className="font-mono text-xs"
+                      />
+                    </div>
+                  </div>
+                </TabsContent>
               </Tabs>
-              <div className="grid gap-3 sm:grid-cols-3">
-                <div className="space-y-1.5">
-                  <Label htmlFor={id.name}>{t('admin.cp.name', 'Name')}</Label>
-                  <Input
-                    id={id.name}
-                    value={name}
-                    onChange={(e) => setName(e.target.value.trim())}
-                    placeholder="nuclei-core"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor={id.version}>{t('admin.cp.version', 'Version')}</Label>
-                  <Input
-                    id={id.version}
-                    value={version}
-                    onChange={(e) => setVersion(e.target.value.trim())}
-                    placeholder="10.2.4"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor={id.kind}>{t('admin.cp.kind', 'Kind')}</Label>
-                  <Input
-                    id={id.kind}
-                    list={`${id.kind}-list`}
-                    value={kind}
-                    onChange={(e) => setKind(e.target.value.trim())}
-                  />
-                  <datalist id={`${id.kind}-list`}>
-                    {KNOWN_KINDS.map((k) => (
-                      <option key={k} value={k} />
-                    ))}
-                  </datalist>
-                </div>
-              </div>
-              {mode === 'upload' ? (
-                <div className="space-y-1.5">
-                  <Label htmlFor={id.file}>
-                    {t('admin.cp.archive', 'Archive (tar or tar.gz, up to 128 MiB)')}
-                  </Label>
-                  <Input
-                    id={id.file}
-                    type="file"
-                    accept=".tar,.tgz,.tar.gz,application/gzip,application/x-tar"
-                    onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-                  />
-                </div>
-              ) : (
-                <div className="grid gap-3">
-                  <div className="space-y-1.5">
-                    <Label htmlFor={id.url}>{t('admin.cp.url', 'Release URL (https)')}</Label>
-                    <Input
-                      id={id.url}
-                      value={url}
-                      onChange={(e) => setUrl(e.target.value.trim())}
-                      placeholder="https://"
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor={id.digest}>{t('admin.cp.digest', 'Expected digest')}</Label>
-                    <Input
-                      id={id.digest}
-                      value={digest}
-                      onChange={(e) => setDigest(e.target.value.trim().toLowerCase())}
-                      placeholder="sha256:"
-                      className="font-mono text-xs"
-                    />
-                  </div>
-                </div>
-              )}
               <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
                 <div className="space-y-1.5">
                   <Label htmlFor={id.reason}>{t('admin.confirm.reason', 'Reason')}</Label>

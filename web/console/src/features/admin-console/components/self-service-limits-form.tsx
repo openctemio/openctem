@@ -140,7 +140,7 @@ export function SelfServiceLimitsForm({ defaults, canEdit, onSaved }: SelfServic
               ))}
             </div>
           )}
-          <div className="overflow-x-auto">
+          <div>
             <Table>
               <TableHeader>
                 <TableRow>
