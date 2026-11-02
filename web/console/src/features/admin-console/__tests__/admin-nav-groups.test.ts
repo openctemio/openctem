@@ -92,8 +92,8 @@ describe('platform sensors navigation', () => {
       .flatMap((s) => s.items)
       .map((i) => i.url)
 
-  it('lists Platform sensors first in Scanning, gated by the sensors read permission', () => {
-    const scanning = adminNav.find((s) => s.title === 'Scanning')!.items
+  it('lists Platform sensors first in Sensors and scanning, gated by the sensors read permission', () => {
+    const scanning = adminNav.find((s) => s.title === 'Sensors and scanning')!.items
     expect(scanning[0]).toMatchObject({ url: '/sensors', permission: 'platform.sensors.read' })
     expect(urls('readonly')).toContain('/sensors')
   })
