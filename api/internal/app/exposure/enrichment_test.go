@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/api/pkg/domain/ctemid"
 	exposuredom "github.com/openctemio/openctem/api/pkg/domain/exposure"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -166,5 +167,41 @@ func TestEnrichBatch_NilEnricherAndEmptyBatch(t *testing.T) {
 	var e *ExposureEnricher
 	if got := e.EnrichBatch(context.Background(), shared.NewID(), nil); len(got) != 0 {
 		t.Errorf("nil enricher must return empty map, got %d", len(got))
+	}
+}
+
+// The CTEM-ID code reads the linked asset: a vendor's internet-facing host
+// is a vendor-managed system; another tenant's asset (not found under the
+// caller's tenant) contributes nothing.
+func TestEnrichBatch_CTEMIDFromLinkedAsset(t *testing.T) {
+	tenantID := shared.NewID()
+	a := mustAsset(t, tenantID, asset.CriticalityMedium, asset.ExposurePublic)
+	if err := a.UpdateScope(asset.ScopeVendor); err != nil {
+		t.Fatal(err)
+	}
+	e := NewExposureEnricher(&fakeAssetRepo{assets: map[shared.ID]*asset.Asset{a.ID(): a}}, logger.NewNop())
+
+	aid := a.ID()
+	open := mustEvent(t, tenantID, exposuredom.EventTypePortOpen, nil)
+	open.SetAssetID(&aid)
+	missing := shared.NewID()
+	foreign := mustEvent(t, tenantID, exposuredom.EventTypePortOpen, nil)
+	foreign.SetAssetID(&missing)
+	cert := mustEvent(t, tenantID, exposuredom.EventTypeCertificateExpired, nil)
+	cert.SetAssetID(&aid)
+	look := mustEvent(t, tenantID, exposuredom.EventTypeLookalikeDomain, map[string]any{"technique": "homoglyph"})
+
+	out := e.EnrichBatch(context.Background(), tenantID, []*exposuredom.ExposureEvent{open, foreign, cert, look})
+	if m := out[open.ID()].CTEMID; m == nil || m.Code != ctemid.CodeEXP6 || m.Basis != ctemid.BasisAssetScope {
+		t.Fatalf("vendor host: %+v", m)
+	}
+	if m := out[foreign.ID()].CTEMID; m != nil {
+		t.Fatalf("unknown asset gave %+v", m)
+	}
+	if m := out[cert.ID()].CTEMID; m != nil {
+		t.Fatalf("certificate gave %+v", m)
+	}
+	if m := out[look.ID()].CTEMID; m == nil || m.Code != ctemid.CodeDOM2 {
+		t.Fatalf("lookalike: %+v", m)
 	}
 }
