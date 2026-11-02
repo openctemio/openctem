@@ -52,6 +52,9 @@ vi.mock('@/features/ai-triage/api/use-ai-masking', async (orig) => ({
 vi.mock('@/features/ai-triage/components/ai-auto-triage-card', () => ({
   AIAutoTriageCard: () => null,
 }))
+vi.mock('@/features/ai-triage/components/ai-use-cases-section', () => ({
+  AIUseCasesSection: () => <p>use-cases-section</p>,
+}))
 vi.mock('@/features/ai-triage/components/ai-agents-section', () => ({
   AIAgentsSection: () => null,
 }))
@@ -148,10 +151,17 @@ describe('Settings > AI', () => {
     expect(await screen.findByText('knowledge-section')).toBeInTheDocument()
   })
 
+  it('has a Use cases tab, opened by its settings search anchor', async () => {
+    window.history.replaceState(null, '', '/settings/ai#ai-use-cases')
+    render(<AISettingsPage />)
+    expect(screen.getByRole('tab', { name: 'Use cases' })).toBeInTheDocument()
+    expect(await screen.findByText('use-cases-section')).toBeInTheDocument()
+  })
+
   it('keeps what is sent one click away', async () => {
     render(<AISettingsPage />)
-    expect(screen.queryByText(/code snippet, CVE/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/file path, CVE/)).not.toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'What is sent' }))
-    expect(screen.getByText(/code snippet, CVE/)).toBeInTheDocument()
+    expect(screen.getByText(/file path, CVE/)).toBeInTheDocument()
   })
 })

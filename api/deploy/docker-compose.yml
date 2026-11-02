@@ -419,11 +419,12 @@ services:
       # a JSON object of limits, or unlimited.
       SELF_SERVICE_START_LIMITS: ${SELF_SERVICE_START_LIMITS:-}
       # Platform e-mail (SMTP) is set in the admin console: System > E-mail.
-      # Sensors: the install snippets on the Sensors page install the
-      # gateway's internal CA (TLS mode internal; the file is absent in the
-      # other modes and the snippets then skip it). Each sensor product's
-      # release line is built into the API (versions.yaml), not set here.
-      SENSOR_CA_CERT_FILE: /ca/openctem-root-ca.crt
+      # Sensors: the install commands on the Sensors page install and pin
+      # the gateway's internal CA, and GET /api/v1/sensors/platform-ca serves
+      # it (TLS mode internal; the file is absent in the other modes and the
+      # feature is then off). Each sensor product's release line is built
+      # into the API (versions.yaml), not set here.
+      PLATFORM_CA_CERT_FILE: /ca/openctem-root-ca.crt
       # Signed jobs (docs/architecture/job-signing.md): every job handed to a
       # sensor is signed by the signer service below, reached only through
       # this socket. Production refuses to start without it.

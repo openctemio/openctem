@@ -101,3 +101,18 @@ export function scopeItemsForAssets(names: string[]): {
   }
   return { items, skipped }
 }
+
+/**
+ * The entry dialog's starting draft for one asset's "Add to scope": the same
+ * entry the bulk action would add (a service or URL by its host), else the
+ * asset's own name with the given kind so the dialog explains what it cannot
+ * cover.
+ */
+export function scopeDraftForAsset(
+  name: string,
+  fallbackType?: BulkScopeTargetItemInput['target_type']
+): { pattern: string; target_type?: BulkScopeTargetItemInput['target_type'] } {
+  const r = scopeItemForAsset(name)
+  if (r.item) return { pattern: r.item.pattern, target_type: r.item.target_type }
+  return { pattern: name, target_type: fallbackType }
+}
