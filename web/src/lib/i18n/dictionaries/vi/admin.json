@@ -1039,6 +1039,8 @@
   "admin.org.col.organization": "Tổ chức",
   "admin.org.col.owner": "Chủ sở hữu",
   "admin.org.col.sso": "Đăng nhập một lần",
+  "admin.org.danger.purgeWhat": "Xóa tổ chức và toàn bộ dữ liệu bên trong. Tài khoản thành viên được giữ lại. Không thể hoàn tác.",
+  "admin.org.danger.suspendWhat": "Chặn ngay mọi thông tin xác thực của tổ chức. Không có gì bị xóa; gỡ tạm ngưng sẽ khôi phục quyền truy cập.",
   "admin.org.dashboardData.description": "Dữ liệu lưu sẵn theo từng tài sản dùng cho dashboard của tổ chức, cập nhật theo mọi thay đổi và đối soát mỗi đêm.",
   "admin.org.dashboardData.failed": "Không thể yêu cầu dựng lại.",
   "admin.org.dashboardData.idle": "Không hoạt động",
