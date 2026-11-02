@@ -547,15 +547,18 @@ func (s *TaskService) AutoInclude(ctx context.Context) (int, error) {
 	if s.queries == nil || s.matcher == nil {
 		return 0, nil
 	}
-	due, err := s.queries.DueAutoQueryTasksForPlatform(ctx, time.Now().Add(-AutoIncludeEvery), AutoIncludeBatch)
+	// Tenants with the module off are left out of the query (see CollectEnabled).
+	due, err := moduledom.CollectEnabled(ctx, AutoIncludeBatch,
+		func(skip []shared.ID) ([]remediationdom.DueQueryTask, error) {
+			return s.queries.DueAutoQueryTasksForPlatform(ctx, time.Now().Add(-AutoIncludeEvery), AutoIncludeBatch, skip)
+		},
+		func(d remediationdom.DueQueryTask) shared.ID { return d.TenantID },
+		s.moduleOff)
 	if err != nil {
 		return 0, err
 	}
 	added := 0
 	for _, d := range due {
-		if s.modules != nil && s.modules.TenantDisabledModules(ctx, d.TenantID.String())[moduledom.ModuleRemediation] {
-			continue
-		}
 		n, err := s.autoIncludeOne(ctx, d)
 		if err != nil {
 			s.logger.Warn("query task auto include failed", "tenant", d.TenantID.String(), "task_id", d.TaskID.String(),
