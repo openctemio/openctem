@@ -110,7 +110,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       // (the refresh token is not spent by a refused refresh).
       // ORGANIZATION_SUSPENDED (403): the organization was suspended by the
       // platform operator; signing in again lists it as suspended.
-      if (result.status === 401 || result.code === 'ORGANIZATION_SUSPENDED') {
+      // OWN_SIGN_IN_REQUIRED (403): the session came from another
+      // organization's identity provider; the person signs in again with
+      // their own account.
+      if (
+        result.status === 401 ||
+        result.code === 'ORGANIZATION_SUSPENDED' ||
+        result.code === 'OWN_SIGN_IN_REQUIRED'
+      ) {
         devLog.log('[Refresh] Clearing ALL auth cookies due to invalid refresh token')
         for (const name of [ACCESS_TOKEN_COOKIE, REFRESH_TOKEN_COOKIE]) {
           errorResponse.cookies.set(name, '', {

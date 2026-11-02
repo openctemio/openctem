@@ -75,7 +75,7 @@ RUN printf '%s\n' 'package main' \
 # binaries. Every file is copied in with its final owner: no `cp -a` or
 # `chown -R` afterwards, which stored the whole web and API a second (and
 # third) time in new layers.
-FROM alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6 AS final
+FROM alpine:3.24@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a AS final
 # One user per process (supervise.sh starts each child under its own uid):
 # nextjs = web, openctem-api, openctem-console, openctem-gateway,
 # openctem-signer (the job signer: the only user that can read its key).

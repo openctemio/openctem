@@ -187,7 +187,7 @@ export default function ContentPacksPage() {
                   )}
                 </p>
               ) : (
-                <div className="overflow-x-auto">
+                <div>
                   <table className="w-full text-sm">
                     <thead className="text-muted-foreground">
                       <tr>

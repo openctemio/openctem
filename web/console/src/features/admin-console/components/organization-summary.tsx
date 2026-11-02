@@ -13,6 +13,7 @@ import { useTenantLimits } from '../api/use-limits'
 import { useAdminAuditLogs } from '../api/use-admin-audit'
 import { AdminActivityTable } from './admin-activity-table'
 import { SSOPostureBadges } from './sso-posture-badges'
+import { OwnerInvitationBadge } from './owner-invitation'
 import type { AdminOrganization } from '../types'
 
 function SummaryCard({
@@ -87,6 +88,8 @@ export function OrganizationSummary({
             <span className="text-muted-foreground">
               {t('admin.org.ownerCount', '{count} owner(s)', { count: org.owner_count })}
             </span>
+          ) : org.owner_emails.length === 0 && org.owner_invitation ? (
+            <OwnerInvitationBadge invitation={org.owner_invitation} />
           ) : org.owner_emails.length === 0 ? (
             <span className="flex items-center gap-1.5 font-medium text-warning">
               <AlertTriangle className="size-4" aria-hidden="true" />
