@@ -872,7 +872,7 @@
   "settings.modules.reset": "Đặt lại mặc định",
   "settings.modules.resetDone": "Đã đặt lại mô-đun về mặc định",
   "settings.modules.searchLabel": "Tìm mô-đun",
-  "settings.modules.searchPlaceholder": "Tìm mô-đun",
+  "settings.modules.searchPlaceholder": "Tìm mô-đun…",
   "settings.modules.state.off": "Tắt",
   "settings.modules.state.on": "Bật",
   "settings.modules.subFeatures": "{on}/{total} phần đang bật",

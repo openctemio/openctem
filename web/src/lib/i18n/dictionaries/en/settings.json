@@ -872,7 +872,7 @@
   "settings.modules.reset": "Reset to defaults",
   "settings.modules.resetDone": "Modules reset to the defaults",
   "settings.modules.searchLabel": "Search modules",
-  "settings.modules.searchPlaceholder": "Search modules",
+  "settings.modules.searchPlaceholder": "Search modules…",
   "settings.modules.state.off": "Off",
   "settings.modules.state.on": "On",
   "settings.modules.subFeatures": "{on} of {total} parts on",
