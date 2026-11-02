@@ -43,6 +43,7 @@ const KIND_KEY: Record<string, string> = {
   ci_run: 'findings.receipts.kindCiRun',
   connector: 'findings.receipts.kindConnector',
   sensor: 'findings.receipts.kindSensor',
+  platform: 'findings.receipts.kindPlatform',
 }
 
 /** The filters of the URL that the list accepts; anything else is ignored. */

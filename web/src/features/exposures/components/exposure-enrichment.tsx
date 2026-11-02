@@ -23,6 +23,8 @@
 import { AlertOctagon, Globe, Route, ShieldAlert, TrendingUp } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { useTranslation } from '@/context/i18n-provider'
+import { SafeExternalLink } from '@/components/safe-external-link'
 import { cn } from '@/lib/utils'
 import { formatEpssPercentile, formatEpssScore } from '@/lib/epss'
 import { CRITICALITY_BADGE_LIGHT, type CriticalityLevel } from '@/lib/criticality-colors'
@@ -45,7 +47,8 @@ export function hasExposureEnrichment(exposure: ExposureEvent): boolean {
     exposure.is_internet_accessible === true ||
     exposure.on_attack_path === true ||
     (typeof exposure.epss_score === 'number' && exposure.epss_score > 0) ||
-    exposure.is_in_kev === true
+    exposure.is_in_kev === true ||
+    Boolean(exposure.ctem_id?.code)
   )
 }
 
@@ -62,6 +65,7 @@ interface ExposureThreatPillsProps {
  * not stack redundantly.
  */
 export function ExposureThreatPills({ exposure, className }: ExposureThreatPillsProps) {
+  const { t } = useTranslation()
   const criticality = asCriticalityLevel(exposure.effective_criticality)
   const showEpss = typeof exposure.epss_score === 'number' && exposure.epss_score > 0
   const onAttackPath = exposure.on_attack_path === true
@@ -79,13 +83,19 @@ export function ExposureThreatPills({ exposure, className }: ExposureThreatPills
             <TooltipTrigger asChild>
               <Badge variant="destructive" className="gap-0.5 px-1.5 py-0 text-[10px]">
                 <AlertOctagon className="h-2.5 w-2.5" />
-                KEV
+                {t('exposures.enrich.kev', 'KEV')}
               </Badge>
             </TooltipTrigger>
             <TooltipContent side="top" className="max-w-xs text-xs">
-              <p className="font-semibold">CISA Known Exploited Vulnerability</p>
+              <p className="font-semibold">
+                {t('exposures.enrich.kevTitle', 'CISA Known Exploited Vulnerability')}
+              </p>
               {exposure.kev_due_date && (
-                <p>Remediate by {new Date(exposure.kev_due_date).toLocaleDateString()}</p>
+                <p>
+                  {t('exposures.enrich.remediateBy', 'Remediate by {date}', {
+                    date: new Date(exposure.kev_due_date).toLocaleDateString(),
+                  })}
+                </p>
               )}
             </TooltipContent>
           </Tooltip>
@@ -96,12 +106,16 @@ export function ExposureThreatPills({ exposure, className }: ExposureThreatPills
             <TooltipTrigger asChild>
               <Badge variant="secondary" className="gap-0.5 px-1.5 py-0 text-[10px]">
                 <TrendingUp className="h-2.5 w-2.5" />
-                EPSS {formatEpssScore(exposure.epss_score)}
+                {t('exposures.enrich.epssScore', 'EPSS {score}', {
+                  score: formatEpssScore(exposure.epss_score),
+                })}
               </Badge>
             </TooltipTrigger>
             <TooltipContent side="top" className="max-w-xs text-xs">
-              Exploit Prediction Scoring System — estimated probability of exploitation in the next
-              30 days
+              {t(
+                'exposures.enrich.epssHint',
+                'Exploit Prediction Scoring System: estimated probability of exploitation in the next 30 days'
+              )}
             </TooltipContent>
           </Tooltip>
         )}
@@ -111,11 +125,14 @@ export function ExposureThreatPills({ exposure, className }: ExposureThreatPills
             <TooltipTrigger asChild>
               <Badge variant="outline" className="gap-0.5 px-1.5 py-0 text-[10px]">
                 <Route className="h-2.5 w-2.5" />
-                Attack path
+                {t('exposures.enrich.attackPath', 'Attack path')}
               </Badge>
             </TooltipTrigger>
             <TooltipContent side="top" className="max-w-xs text-xs">
-              On a validated attack path from a public entry point to a KEV / crown-jewel asset
+              {t(
+                'exposures.enrich.attackPathHint',
+                'On a validated attack path from a public entry point to a KEV or crown-jewel asset'
+              )}
             </TooltipContent>
           </Tooltip>
         ) : (
@@ -124,11 +141,14 @@ export function ExposureThreatPills({ exposure, className }: ExposureThreatPills
               <TooltipTrigger asChild>
                 <Badge variant="outline" className="gap-0.5 px-1.5 py-0 text-[10px]">
                   <Globe className="h-2.5 w-2.5" />
-                  Internet-facing
+                  {t('exposures.enrich.internetFacing', 'Internet-facing')}
                 </Badge>
               </TooltipTrigger>
               <TooltipContent side="top" className="max-w-xs text-xs">
-                The linked asset is reachable from the public internet
+                {t(
+                  'exposures.enrich.internetFacingHint',
+                  'The linked asset is reachable from the public internet'
+                )}
               </TooltipContent>
             </Tooltip>
           )
@@ -149,8 +169,10 @@ export function ExposureThreatPills({ exposure, className }: ExposureThreatPills
               </Badge>
             </TooltipTrigger>
             <TooltipContent side="top" className="max-w-xs text-xs">
-              Effective business criticality — MAX of the asset, its business unit, and the services
-              it powers
+              {t(
+                'exposures.enrich.criticalityHint',
+                'Effective business criticality: the highest of the asset, its business unit and the services it powers'
+              )}
             </TooltipContent>
           </Tooltip>
         )}
@@ -170,6 +192,7 @@ interface ExposureSecurityContextProps {
  * carries no enrichment, so a plain exposure does not gain an empty section.
  */
 export function ExposureSecurityContext({ exposure, className }: ExposureSecurityContextProps) {
+  const { t } = useTranslation()
   const criticality = asCriticalityLevel(exposure.effective_criticality)
   const showEpss = typeof exposure.epss_score === 'number' && exposure.epss_score > 0
   const showPercentile = typeof exposure.epss_percentile === 'number'
@@ -185,11 +208,13 @@ export function ExposureSecurityContext({ exposure, className }: ExposureSecurit
     <div className={cn('rounded-lg border', className)}>
       <div className="flex items-center gap-2 border-b bg-muted/30 px-4 py-3">
         <ShieldAlert className="h-4 w-4 text-muted-foreground" />
-        <span className="text-sm font-medium">Security context</span>
+        <span className="text-sm font-medium">
+          {t('exposures.enrich.securityContext', 'Security context')}
+        </span>
       </div>
       <div className="divide-y">
         {criticality && (
-          <Row label="Effective criticality">
+          <Row label={t('exposures.enrich.effectiveCriticality', 'Effective criticality')}>
             <Badge
               variant="outline"
               className={cn('px-1.5 py-0 text-xs', CRITICALITY_BADGE_LIGHT[criticality])}
@@ -200,15 +225,17 @@ export function ExposureSecurityContext({ exposure, className }: ExposureSecurit
         )}
 
         {exposure.is_in_kev && (
-          <Row label="CISA KEV">
+          <Row label={t('exposures.enrich.cisaKev', 'CISA KEV')}>
             <div className="flex items-center gap-2">
               <Badge variant="destructive" className="gap-0.5 px-1.5 py-0 text-xs">
                 <AlertOctagon className="h-3 w-3" />
-                Known exploited
+                {t('exposures.enrich.knownExploited', 'Known exploited')}
               </Badge>
               {exposure.kev_due_date && (
                 <span className="text-xs text-muted-foreground">
-                  due {new Date(exposure.kev_due_date).toLocaleDateString()}
+                  {t('exposures.enrich.due', 'due {date}', {
+                    date: new Date(exposure.kev_due_date).toLocaleDateString(),
+                  })}
                 </span>
               )}
             </div>
@@ -216,12 +243,14 @@ export function ExposureSecurityContext({ exposure, className }: ExposureSecurit
         )}
 
         {showEpss && (
-          <Row label="EPSS">
+          <Row label={t('exposures.enrich.epss', 'EPSS')}>
             <span className="text-sm font-medium">
               {formatEpssScore(exposure.epss_score)}
               {showPercentile && (
                 <span className="ms-1 font-normal text-muted-foreground">
-                  ({formatEpssPercentile(exposure.epss_percentile, 0)} pct)
+                  {t('exposures.enrich.percentile', '({value} pct)', {
+                    value: formatEpssPercentile(exposure.epss_percentile, 0),
+                  })}
                 </span>
               )}
             </span>
@@ -229,34 +258,71 @@ export function ExposureSecurityContext({ exposure, className }: ExposureSecurit
         )}
 
         {hasReachability && (
-          <Row label="Reachability">
+          <Row label={t('exposures.enrich.reachability', 'Reachability')}>
             <div className="flex flex-wrap items-center gap-1.5">
               {exposure.on_attack_path === true && (
                 <Badge variant="outline" className="gap-0.5 px-1.5 py-0 text-xs">
                   <Route className="h-3 w-3" />
-                  On attack path
+                  {t('exposures.enrich.onAttackPath', 'On attack path')}
                 </Badge>
               )}
               {exposure.is_internet_accessible === true && (
                 <Badge variant="outline" className="gap-0.5 px-1.5 py-0 text-xs">
                   <Globe className="h-3 w-3" />
-                  Internet-facing
+                  {t('exposures.enrich.internetFacing', 'Internet-facing')}
                 </Badge>
               )}
               {exposure.on_attack_path !== true && exposure.is_internet_accessible !== true && (
-                <span className="text-sm text-muted-foreground">Not internet-reachable</span>
+                <span className="text-sm text-muted-foreground">
+                  {t('exposures.enrich.notReachable', 'Not internet-reachable')}
+                </span>
               )}
             </div>
           </Row>
         )}
 
+        {exposure.ctem_id?.code && (
+          <Row label={t('exposures.enrich.ctemId', 'CTEM-ID')}>
+            <ExposureCTEMIDLink ctem={exposure.ctem_id} />
+          </Row>
+        )}
+
         {exposure.cve_id && (
-          <Row label="CVE">
+          <Row label={t('exposures.enrich.cve', 'CVE')}>
             <span className="font-mono text-xs">{exposure.cve_id}</span>
           </Row>
         )}
       </div>
     </div>
+  )
+}
+
+/**
+ * The exposure's CTEM-ID code, linked to its ctem.org page, with our own
+ * short description and the signal it was chosen from in a tooltip.
+ */
+function ExposureCTEMIDLink({ ctem }: { ctem: NonNullable<ExposureEvent['ctem_id']> }) {
+  const { t } = useTranslation()
+  const label = t(`exposures.ctemId.code.${ctem.code}`, ctem.code)
+  const basis = t(`exposures.ctemId.basis.${ctem.basis}`, '')
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <SafeExternalLink
+            href={ctem.url}
+            className="font-mono text-xs underline-offset-2 hover:underline"
+            aria-label={t('exposures.ctemId.open', 'Open {code} on ctem.org', { code: ctem.code })}
+          >
+            {ctem.code}
+          </SafeExternalLink>
+        </TooltipTrigger>
+        <TooltipContent side="top" className="max-w-xs text-xs">
+          <p>{label}</p>
+          {basis && <p className="mt-1 opacity-80">{basis}</p>}
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   )
 }
 

@@ -202,12 +202,17 @@ export default function ScanDetailPage() {
   // the latest runs are read from it: one request on load. Only a later
   // page needs its own request for the numbers above the tabs.
   const onFirstPage = runPage === 1
+  // Memoized: SWR restarts its polling timer when the interval changes identity.
+  const latestRunsInterval = useMemo(
+    () => runListRefreshInterval(10000, IDLE_RUN_LIST_REFRESH_MS, realtime),
+    [realtime]
+  )
   const { data: otherLatest, mutate: refetchOtherLatest } = useScanRuns(
     onFirstPage ? null : scanId,
     1,
     10,
     {
-      refreshInterval: runListRefreshInterval(10000, IDLE_RUN_LIST_REFRESH_MS, realtime),
+      refreshInterval: latestRunsInterval,
       onSuccess: (page) => setLiveIds(liveRunIds(page?.data)),
     }
   )

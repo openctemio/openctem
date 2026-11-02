@@ -1,11 +1,12 @@
 /**
  * Interactive sensor pairing, user plane (api docs/rfcs/RFC-052 §4.1, §4.5).
  *
- * A sensor creates its own key and asks to pair; an administrator finds the
- * request by the short code the sensor printed (or creates an expectation and
- * runs `openctemio-sensor pair <CODE>` on the host), compares the fingerprint
- * shown on both sides and approves with step-up re-authentication. No secret
- * passes through the browser: the code and fingerprint are public values.
+ * A sensor creates its own key and asks to pair; it prints one code and the
+ * link to approve it on (/activate?code=...). An administrator opens the link,
+ * or the Add sensor dialog finds the sensor by itself (its command carries the
+ * code), picks the fingerprint the host shows out of three and approves with
+ * step-up re-authentication. No secret passes through the browser: the code
+ * and fingerprint are public values.
  *
  * Every route is tenant-scoped by the session. Unknown, expired, used and
  * other-organization codes all answer one 404.
@@ -39,7 +40,11 @@ export interface StepUpProof {
 export interface ApprovePairingRequest {
   /** The code the approver entered (forward mode); not needed for an expectation. */
   code?: string
-  fingerprint_confirmed: boolean
+  /**
+   * The fingerprint the approver picked from view.fingerprint_choices: the
+   * one the host shows. Any other closes the request (409 FINGERPRINT_MISMATCH).
+   */
+  fingerprint: string
   /**
    * The organization the review showed (view.organization_id). The API
    * refuses the approval when the session is now in another organization.
@@ -50,13 +55,55 @@ export interface ApprovePairingRequest {
   type: string
   zone_ids: string[]
   grant_profile: string
+  /**
+   * The sensor this request re-pairs (view.repair_sensor_id); empty for a
+   * request that adds a sensor. The API refuses a mismatch with 409
+   * REPAIR_NOT_ACKNOWLEDGED. A re-pair keeps the sensor's name, zones and
+   * grant, so name, type, zone_ids and grant_profile are ignored.
+   */
+  repair_sensor_id?: string
 }
+
+/** Why an administrator re-pairs a sensor (required with repair_sensor_id). */
+export type RepairReason = 'lost_identity' | 'host_moved' | 'key_compromised' | 'install_method'
+
+export const REPAIR_REASONS: RepairReason[] = [
+  'lost_identity',
+  'host_moved',
+  'key_compromised',
+  'install_method',
+]
 
 export interface CreateExpectationRequest {
   name?: string
   zone_ids?: string[]
   grant_profile?: string
   repair_sensor_id?: string
+  repair_reason?: RepairReason
+}
+
+/** One signing key of a key-bound sensor (GET /sensors/{id}/keys). */
+export interface SensorSigningKey {
+  id: string
+  fingerprint: string
+  status: 'pending' | 'active' | 'revoked'
+  created_at: string
+  revoked_reason?: string
+}
+
+/**
+ * Revokes every active signing key of a sensor ("Revoke the current key
+ * now" in the re-pair dialog): the sensor stops at its next request and its
+ * leased commands are taken back. Returns how many keys were revoked.
+ */
+export async function revokeActiveSensorKeys(sensorId: string): Promise<number> {
+  const base = `/api/v1/sensors/${encodeURIComponent(sensorId)}/keys`
+  const keys = await get<SensorSigningKey[]>(base)
+  const active = keys.filter((k) => k.status === 'active')
+  for (const k of active) {
+    await post<void>(`${base}/${encodeURIComponent(k.id)}/revoke`, {})
+  }
+  return active.length
 }
 
 export interface SensorIdentityPolicy {
@@ -111,8 +158,24 @@ export function pairingSettled(status?: string): boolean {
 }
 
 /**
+ * The next poll of an expectation: none once the SAS is known or the request
+ * settled, EXPECTATION_POLL_MS before that.
+ *
+ * Module scope on purpose. SWR restarts its polling timer whenever the
+ * `refreshInterval` it is given changes identity, so an inline arrow
+ * re-created on every render resets the timer each render: a page that
+ * re-renders faster than the interval (a 1 s countdown) never polls at all.
+ */
+export function expectationRefreshInterval(latest?: SensorPairingView): number {
+  return latest && (latest.sas || pairingSettled(latest.status)) ? 0 : EXPECTATION_POLL_MS
+}
+
+/**
  * An expectation of this organization, polled until the sensor connected and
  * revealed its nonce (the SAS is then known) or the request settled.
+ *
+ * A failed poll is not retried on its own (SWR then stops polling until the
+ * error clears): the caller shows `error` and offers `mutate` as "Check now".
  */
 export function usePairingExpectation(id: string | null, config?: SWRConfiguration) {
   const { currentTenant } = useTenant()
@@ -122,8 +185,7 @@ export function usePairingExpectation(id: string | null, config?: SWRConfigurati
     {
       revalidateOnFocus: false,
       shouldRetryOnError: false,
-      refreshInterval: (latest) =>
-        latest && (latest.sas || pairingSettled(latest.status)) ? 0 : EXPECTATION_POLL_MS,
+      refreshInterval: expectationRefreshInterval,
       ...config,
     }
   )
@@ -147,17 +209,18 @@ export function setSensorIdentityPolicy(
 export const SENSOR_INSTALL_TEMPLATES_PATH = '/api/v1/sensors/install-templates'
 
 /**
- * Install commands for a sensor that pairs (POST /sensors/install-templates):
- * no key in them; with a code the console created, they pass it as
- * SENSOR_PAIRING_CODE. The code goes in the body, never the URL. Same answer
- * shape as a sensor's own config templates (docker, compose, kubernetes, cli,
- * policy).
+ * Install commands for a sensor that pairs. Without a code they are a read
+ * (GET /sensors/install-templates), so a page can load them; with a code the
+ * console created they come from POST, so the code goes in the body, never
+ * the URL, and only after the user asked for a code. No key in them; with a
+ * code they pass it as SENSOR_PAIRING_CODE. Same answer shape as a sensor's
+ * own config templates (docker, compose, kubernetes, cli, policy).
  */
 export function useSensorInstallTemplates<T>(pairingCode: string | null, enabled = true) {
   const { currentTenant } = useTenant()
   return useSWR<T>(
     currentTenant && enabled ? [SENSOR_INSTALL_TEMPLATES_PATH, pairingCode ?? ''] : null,
-    ([url, code]: [string, string]) => post<T>(url, code ? { pairing_code: code } : {}),
+    ([url, code]: [string, string]) => (code ? post<T>(url, { pairing_code: code }) : get<T>(url)),
     { revalidateOnFocus: false, shouldRetryOnError: false }
   )
 }

@@ -233,8 +233,8 @@ vars:
     component: api
     group: "Database (PostgreSQL)"
     type: int
-    default: "5"
-    description: "Maximum idle connections kept in the pool."
+    default: "same as `DB_MAX_OPEN_CONNS`"
+    description: "Maximum idle connections kept in the pool. Defaults to `DB_MAX_OPEN_CONNS`: a smaller value makes every burst of requests close and reopen connections (a TCP and SCRAM handshake and a new server process each)."
   - name: DB_MAX_OPEN_CONNS
     component: api
     group: "Database (PostgreSQL)"
@@ -619,6 +619,12 @@ vars:
     type: duration
     default: "720h"
     description: "Session lifetime (30 days)."
+  - name: AUTH_REFRESH_REUSE_GRACE
+    component: api
+    group: "Authentication"
+    type: duration
+    default: "30s"
+    description: "How long after a refresh-token rotation the same client may present the replaced token again (parallel requests) and receive the successor already issued instead of ending the session. 0 disables; capped at 2m. Any other reuse still ends the session."
   - name: SCOPE_DENY_EXTRA
     component: api
     group: "Organizations and scope guardrails"
@@ -1028,11 +1034,16 @@ vars:
     type: string
     secret: true
     description: "Secret key. Required with `s3` / `minio`."
+  - name: PLATFORM_CA_CERT_FILE
+    component: api
+    group: "Sensors"
+    type: path
+    description: "PEM bundle of the CA certificate(s) that sign the platform's TLS certificate when it is not publicly trusted (the gateway in TLS mode `internal`, where the Compose stack points it at the exported root CA, or your own private CA). Public certificates only: a file that holds a private key is refused. The install commands install it and pin its root (`SENSOR_CA_SHA256`), and `GET /api/v1/sensors/platform-ca` serves it to sensors that hold the pin. Re-read when the file changes. Empty: the certificate is publicly trusted. Guide: `docs/how-to/sensors-behind-a-private-ca.md`."
   - name: SENSOR_CA_CERT_FILE
     component: api
     group: "Sensors"
-    type: string
-    description: "Private CA certificate (PEM) the install snippets install on the sensor host. Set it with the gateway in TLS mode `internal` (the Compose stack points it at the exported root CA)."
+    type: path
+    description: "Deprecated name of `PLATFORM_CA_CERT_FILE` on the API, read only when that is unset (startup warns). Rename it. On a sensor host `SENSOR_CA_CERT_FILE` keeps its own meaning: the CA file the sensor trusts."
   - name: CI_RUNNER_LATEST_VERSION
     component: api
     group: "Sensors"
@@ -1427,12 +1438,6 @@ vars:
     type: int
     default: "50"
     description: "Domains of one organization queried per sweep; the rest rotate in on later runs."
-  - name: CTEM_ID_FEED_URL
-    component: api
-    group: "Discovery feeds and background jobs"
-    type: string
-    default: "https://ctem.org/source.json"
-    description: "CTEM-ID catalog feed mirrored daily."
   - name: EASM_DNS_CHECK_INTERVAL
     component: api
     group: "Discovery feeds and background jobs"
@@ -2124,6 +2129,11 @@ vars:
     group: "Administration tools"
     type: string
     description: "`openctem-signer`: scope ledger mode (`enforce`, `audit` or `off`)."
+  - name: SIGNER_FEED_ORIGINS
+    component: tool
+    group: "Administration tools"
+    type: string
+    description: "`openctem-signer`: feed origins a feed relay round may name (comma-separated https origins; empty: the official release origins; `none`: no feed relay)."
   - name: SIGNER_LEDGER_MIN_APPROVALS
     component: tool
     group: "Administration tools"

@@ -49,6 +49,7 @@ const policy: McpPolicy = {
   refresh_days: 0,
   effective_refresh_days: 90,
   require_dpop: false,
+  device_flow_allowed: true,
   max_tlp: 'amber',
   platform_client_hosts: ['platform-trusted.example'],
   available_scopes: [],

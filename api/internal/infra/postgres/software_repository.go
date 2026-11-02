@@ -6,9 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/software"
+	"github.com/openctemio/openctem/api/pkg/domain/vulnmatch"
 )
 
 // SoftwareRepository is the software catalog and the per-tenant software
@@ -257,75 +259,90 @@ func (r *SoftwareRepository) EnsureVersion(ctx context.Context, tenantID shared.
 }
 
 // UpsertLinks writes the links of one ingest (see software.Repository).
+// Each (asset, product, location) history is locked, read, advanced by
+// software.ApplySightings and written back in one transaction, so two
+// reports for the same place never interleave.
 func (r *SoftwareRepository) UpsertLinks(ctx context.Context, tenantID shared.ID, links []software.Link) (software.LinkResult, error) {
 	var res software.LinkResult
 	if len(links) == 0 {
 		return res, nil
+	}
+	type group struct {
+		asset, product shared.ID
+		location       string
+	}
+	var order []group
+	byGroup := map[group][]software.Link{}
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	for _, l := range links {
+		l.Location = clipStr(l.Location, software.MaxLocationLen)
+		at := l.ObservedAt.UTC().Truncate(time.Microsecond)
+		if at.IsZero() || at.After(now) {
+			at = now
+		}
+		l.ObservedAt = at
+		if !l.Class.Valid() {
+			l.Class = software.ClassOf(software.Observation{Source: l.Source}, software.Parsed{Segments: 3})
+		}
+		g := group{asset: l.AssetID, product: l.ProductID, location: l.Location}
+		if _, ok := byGroup[g]; !ok {
+			order = append(order, g)
+		}
+		byGroup[g] = append(byGroup[g], l)
 	}
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return res, fmt.Errorf("begin: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
+	if err := fillVersionKeys(ctx, tx, tenantID, byGroup); err != nil {
+		return res, err
+	}
 	changed := map[shared.ID]bool{}
-	type group struct {
-		asset, product shared.ID
-		location       string
-	}
-	groups := map[group]bool{}
-	for _, l := range links {
-		var port, transport any
-		if l.Port > 0 && l.Port <= 65535 {
-			port = l.Port
+	for _, g := range order {
+		gl := byGroup[g]
+		if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtext('openctem.asset_software:' || $1::text), hashtext($2::text || '/' || $3::text))`,
+			tenantID.String(), g.asset.String()+"/"+g.product.String(), g.location); err != nil {
+			return res, fmt.Errorf("asset software lock: %w", err)
 		}
-		if l.Transport != "" {
-			transport = l.Transport
-		}
-		loc := clipStr(l.Location, software.MaxLocationLen)
-		// A link that was superseded and is seen again is a change too.
-		var wasSuperseded bool
-		err := tx.QueryRowContext(ctx, `SELECT superseded_at IS NOT NULL FROM asset_software
-			WHERE tenant_id = $1 AND asset_id = $2 AND software_version_id = $3 AND location = $4`,
-			tenantID.String(), l.AssetID.String(), l.VersionID.String(), loc).Scan(&wasSuperseded)
-		if err != nil && !errors.Is(err, sql.ErrNoRows) {
-			return res, fmt.Errorf("asset software: %w", err)
-		}
-		var inserted bool
-		err = tx.QueryRowContext(ctx, `
-			INSERT INTO asset_software (tenant_id, asset_id, product_id, software_version_id, location,
-				port, transport, source, evidence, confidence)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-			ON CONFLICT ON CONSTRAINT uq_asset_software DO UPDATE SET
-				last_seen_at = now(), updated_at = now(), superseded_at = NULL,
-				port = EXCLUDED.port, transport = EXCLUDED.transport, source = EXCLUDED.source,
-				evidence = EXCLUDED.evidence, confidence = EXCLUDED.confidence
-			RETURNING (xmax = 0)`,
-			tenantID.String(), l.AssetID.String(), l.ProductID.String(), l.VersionID.String(),
-			loc, port, transport, l.Source, clipStr(l.Evidence, software.MaxEvidenceLen), l.Confidence).Scan(&inserted)
+		rows, err := loadHistory(ctx, tx, tenantID, g.asset, g.product, g.location)
 		if err != nil {
-			return res, fmt.Errorf("asset software: %w", err)
+			return res, err
 		}
-		if inserted {
-			res.Inserted++
+		batch := make([]software.Sighting, 0, len(gl))
+		best := map[shared.ID]software.Link{}
+		for _, l := range gl {
+			batch = append(batch, software.Sighting{
+				VersionID: l.VersionID, Raw: l.Version.Raw, Normalized: l.Version.Normalized, Qualifier: l.Version.Qualifier,
+				Segments: l.Segments, At: l.ObservedAt, Class: l.Class, Confidence: l.Confidence,
+			})
+			if b, ok := best[l.VersionID]; !ok || l.Class.Rank() > b.Class.Rank() ||
+				(l.Class == b.Class && l.Confidence > b.Confidence) {
+				best[l.VersionID] = l
+			}
 		}
-		if inserted || wasSuperseded {
-			changed[l.AssetID] = true
+		out := software.ApplySightings(rows, batch)
+		for _, row := range out.Rows {
+			if !row.Dirty {
+				continue
+			}
+			wasSuperseded := false
+			for _, old := range rows {
+				if old.VersionID == row.VersionID {
+					wasSuperseded = old.Superseded
+				}
+			}
+			if row.Superseded && !wasSuperseded {
+				res.Superseded++
+			}
+			if row.New {
+				res.Inserted++
+			}
+			if err := writeHistoryRow(ctx, tx, tenantID, g.asset, g.product, g.location, row, best[row.VersionID]); err != nil {
+				return res, err
+			}
 		}
-		groups[group{asset: l.AssetID, product: l.ProductID, location: loc}] = true
-	}
-	// Every link written above has last_seen_at = now() (the transaction's
-	// start), so "older than now()" is exactly "not seen by this write".
-	for g := range groups {
-		n, err := tx.ExecContext(ctx, `
-			UPDATE asset_software SET superseded_at = now(), updated_at = now()
-			WHERE tenant_id = $1 AND asset_id = $2 AND product_id = $3 AND location = $4
-			  AND superseded_at IS NULL AND last_seen_at < now()`,
-			tenantID.String(), g.asset.String(), g.product.String(), g.location)
-		if err != nil {
-			return res, fmt.Errorf("supersede: %w", err)
-		}
-		if k, _ := n.RowsAffected(); k > 0 {
-			res.Superseded += int(k)
+		if out.EstablishedChanged {
 			changed[g.asset] = true
 		}
 	}
@@ -336,6 +353,129 @@ func (r *SoftwareRepository) UpsertLinks(ctx context.Context, tenantID shared.ID
 		res.ChangedAssets = append(res.ChangedAssets, id)
 	}
 	return res, nil
+}
+
+// fillVersionKeys reads the catalog version of the links that came without
+// one, so the history compares versions the same way for every caller.
+func fillVersionKeys[K comparable](ctx context.Context, tx *sql.Tx, tenantID shared.ID, byGroup map[K][]software.Link) error {
+	for _, gl := range byGroup {
+		for i := range gl {
+			l := &gl[i]
+			if l.Version.Raw != "" || l.Version.Normalized != "" {
+				continue
+			}
+			var norm sql.NullString
+			err := tx.QueryRowContext(ctx, `SELECT raw, normalized, qualifier FROM software_versions
+				WHERE id = $1 AND (tenant_id IS NULL OR tenant_id = $2)`, l.VersionID.String(), tenantID.String()).
+				Scan(&l.Version.Raw, &norm, &l.Version.Qualifier)
+			if errors.Is(err, sql.ErrNoRows) {
+				continue
+			}
+			if err != nil {
+				return fmt.Errorf("software version: %w", err)
+			}
+			l.Version.Normalized = norm.String
+			if l.Segments == 0 {
+				if v, ok := vulnmatch.ParseVersion(l.Version.Raw); ok {
+					l.Segments = v.Segments()
+				}
+			}
+		}
+	}
+	return nil
+}
+
+// loadHistory reads the network version rows of one (asset, product,
+// location) of the tenant.
+func loadHistory(ctx context.Context, tx *sql.Tx, tenantID, assetID, productID shared.ID, location string) ([]software.HistoryRow, error) {
+	rows, err := tx.QueryContext(ctx, `
+		SELECT s.software_version_id, v.raw, COALESCE(v.normalized, ''), v.qualifier, s.version_state,
+			s.superseded_at, s.first_seen_at, s.last_seen_at, s.sightings, s.streak, s.streak_since,
+			s.evidence_class, s.confidence
+		FROM asset_software s
+		JOIN software_versions v ON v.id = s.software_version_id
+		WHERE s.tenant_id = $1 AND s.asset_id = $2 AND s.product_id = $3 AND s.location = $4 AND s.source <> 'package'
+		ORDER BY s.first_seen_at, s.id
+		LIMIT 1000`, tenantID.String(), assetID.String(), productID.String(), location)
+	if err != nil {
+		return nil, fmt.Errorf("asset software history: %w", err)
+	}
+	defer rows.Close()
+	var out []software.HistoryRow
+	for rows.Next() {
+		var h software.HistoryRow
+		var vid, state, class string
+		var superseded, streakSince sql.NullTime
+		if err := rows.Scan(&vid, &h.Raw, &h.Normalized, &h.Qualifier, &state, &superseded, &h.FirstSeen, &h.LastSeen,
+			&h.Sightings, &h.Streak, &streakSince, &class, &h.Confidence); err != nil {
+			return nil, fmt.Errorf("asset software history: %w", err)
+		}
+		h.VersionID = shared.MustIDFromString(vid)
+		h.State, h.Class = software.VersionState(state), software.EvidenceClass(class)
+		h.Superseded, h.SupersededAt = superseded.Valid, superseded.Time
+		h.StreakSince = streakSince.Time
+		h.FirstSeen, h.LastSeen = h.FirstSeen.UTC(), h.LastSeen.UTC()
+		h.SupersededAt, h.StreakSince = h.SupersededAt.UTC(), h.StreakSince.UTC()
+		out = append(out, h)
+	}
+	return out, rows.Err()
+}
+
+// writeHistoryRow stores one changed version row. l is the batch's best
+// link for the version (zero when the batch did not see it): its port,
+// transport, source and evidence describe the latest sighting.
+func writeHistoryRow(ctx context.Context, tx *sql.Tx, tenantID, assetID, productID shared.ID, location string,
+	row software.HistoryRow, l software.Link,
+) error {
+	var superseded, streakSince any
+	if row.Superseded {
+		superseded = row.SupersededAt
+	}
+	if !row.StreakSince.IsZero() {
+		streakSince = row.StreakSince
+	}
+	streak := row.Streak
+	if streak > 1000 {
+		streak = 1000
+	}
+	if !row.Seen {
+		_, err := tx.ExecContext(ctx, `
+			UPDATE asset_software SET version_state = $5, superseded_at = $6, streak = $7, streak_since = $8, updated_at = now()
+			WHERE tenant_id = $1 AND asset_id = $2 AND software_version_id = $3 AND location = $4`,
+			tenantID.String(), assetID.String(), row.VersionID.String(), location,
+			string(row.State), superseded, streak, streakSince)
+		if err != nil {
+			return fmt.Errorf("asset software: %w", err)
+		}
+		return nil
+	}
+	var port, transport any
+	if l.Port > 0 && l.Port <= 65535 {
+		port = l.Port
+	}
+	if l.Transport != "" {
+		transport = l.Transport
+	}
+	_, err := tx.ExecContext(ctx, `
+		INSERT INTO asset_software (tenant_id, asset_id, product_id, software_version_id, location,
+			port, transport, source, evidence, confidence, first_seen_at, last_seen_at,
+			version_state, evidence_class, sightings, streak, streak_since, superseded_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+		ON CONFLICT ON CONSTRAINT uq_asset_software DO UPDATE SET
+			port = COALESCE(EXCLUDED.port, asset_software.port),
+			transport = COALESCE(EXCLUDED.transport, asset_software.transport),
+			source = EXCLUDED.source, evidence = EXCLUDED.evidence, confidence = EXCLUDED.confidence,
+			first_seen_at = EXCLUDED.first_seen_at, last_seen_at = EXCLUDED.last_seen_at,
+			version_state = EXCLUDED.version_state, evidence_class = EXCLUDED.evidence_class,
+			sightings = EXCLUDED.sightings, streak = EXCLUDED.streak, streak_since = EXCLUDED.streak_since,
+			superseded_at = EXCLUDED.superseded_at, updated_at = now()`,
+		tenantID.String(), assetID.String(), productID.String(), row.VersionID.String(), location,
+		port, transport, l.Source, clipStr(l.Evidence, software.MaxEvidenceLen), row.Confidence,
+		row.FirstSeen, row.LastSeen, string(row.State), string(row.Class), row.Sightings, streak, streakSince, superseded)
+	if err != nil {
+		return fmt.Errorf("asset software: %w", err)
+	}
+	return nil
 }
 
 func clipStr(s string, n int) string {
@@ -354,11 +494,12 @@ func (r *SoftwareRepository) ListAssetLinks(ctx context.Context, tenantID, asset
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT s.id, p.id, p.name, p.vendor, COALESCE(p.cpe_vendor || ':' || p.cpe_product, ''), p.tenant_id IS NULL,
 			v.id, v.raw, v.qualifier, s.location, COALESCE(s.port, 0), COALESCE(s.transport, ''),
-			s.source, s.evidence, s.confidence, s.first_seen_at, s.last_seen_at
+			s.source, s.evidence, s.confidence, s.first_seen_at, s.last_seen_at, s.evidence_class, s.sightings
 		FROM asset_software s
 		JOIN software_products p ON p.id = s.product_id
 		JOIN software_versions v ON v.id = s.software_version_id
-		WHERE s.tenant_id = $1 AND s.asset_id = $2 AND s.superseded_at IS NULL AND s.source <> 'package'
+		WHERE s.tenant_id = $1 AND s.asset_id = $2 AND s.superseded_at IS NULL AND s.version_state = 'established'
+		  AND s.source <> 'package'
 		ORDER BY s.last_seen_at DESC, p.name
 		LIMIT $3`, tenantID.String(), assetID.String(), software.MaxAssetLinks)
 	if err != nil {
@@ -368,12 +509,14 @@ func (r *SoftwareRepository) ListAssetLinks(ctx context.Context, tenantID, asset
 	var out []software.AssetLink
 	for rows.Next() {
 		var l software.AssetLink
-		var id, pid, vid string
+		var id, pid, vid, class string
 		if err := rows.Scan(&id, &pid, &l.Product, &l.Vendor, &l.CPE, &l.Global, &vid, &l.Version, &l.Qualifier,
-			&l.Location, &l.Port, &l.Transport, &l.Source, &l.Evidence, &l.Confidence, &l.FirstSeen, &l.LastSeen); err != nil {
+			&l.Location, &l.Port, &l.Transport, &l.Source, &l.Evidence, &l.Confidence, &l.FirstSeen, &l.LastSeen,
+			&class, &l.Sightings); err != nil {
 			return nil, fmt.Errorf("asset software: %w", err)
 		}
 		l.ID, l.ProductID, l.VersionID = shared.MustIDFromString(id), shared.MustIDFromString(pid), shared.MustIDFromString(vid)
+		l.Class = software.EvidenceClass(class)
 		out = append(out, l)
 	}
 	return out, rows.Err()

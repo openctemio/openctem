@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
+	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
 )
 
 // ResolvedPortItem is one open port of an address the name resolves to.
@@ -50,6 +51,13 @@ func (h *AssetHandler) GetResolvedPorts(w http.ResponseWriter, r *http.Request) 
 		h.handleServiceError(w, err)
 		return
 	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(toResolvedPortsResponse(res))
+}
+
+// toResolvedPortsResponse is the resolved ports the REST endpoint and the
+// MCP get_asset tool return.
+func toResolvedPortsResponse(res *assetdom.ResolvedPorts) ResolvedPortsResponse {
 	out := ResolvedPortsResponse{Items: make([]ResolvedPortItem, 0, len(res.Items)),
 		HiddenCount: res.HiddenCount, Truncated: res.Truncated}
 	for _, it := range res.Items {
@@ -58,6 +66,5 @@ func (h *AssetHandler) GetResolvedPorts(w http.ResponseWriter, r *http.Request) 
 			Transport: it.Transport, Service: it.Service, Product: it.Product, Version: it.Version, LastSeen: it.LastSeen,
 		})
 	}
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(out)
+	return out
 }

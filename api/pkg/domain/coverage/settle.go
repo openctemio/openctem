@@ -13,6 +13,8 @@ import (
 	"github.com/openctemio/ctis/outcome"
 
 	"github.com/openctemio/openctem/api/pkg/domain/command"
+	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
+	"github.com/openctemio/openctem/api/pkg/safetext"
 )
 
 // TaskResult is one task (command) of a run as settlement reads it.
@@ -84,6 +86,9 @@ type Verdict struct {
 	Error   string
 	// Observer is the task's TaskResult.Observer for a failed verdict.
 	Observer string
+	// Vendor is the edge protection behind an edge_blocked or
+	// edge_challenged outcome (a token), "" when unknown.
+	Vendor string
 }
 
 func (v Verdict) rank() int {
@@ -133,6 +138,7 @@ func Verdicts(tasks []TaskResult, runUnfinished []string) map[string]Verdict {
 		}
 		outcomes, unreached, has := readResult(t.Result)
 		refused := readRefused(t.Result)
+		gaps := readGaps(t.Result)
 		// A target the sensor refused before any tool saw it (listed in
 		// the result's refused_targets, read against the task's own
 		// targets: a sensor cannot settle a target of another task) is
@@ -178,6 +184,19 @@ func Verdicts(tasks []TaskResult, runUnfinished []string) map[string]Verdict {
 					if _, ok := refused[TargetKey(target)]; ok {
 						continue
 					}
+					// A host the sensor lists as a coverage gap (an edge
+					// protection blocked it, it kept pushing back, it
+					// stopped answering, the proxy failed) was not
+					// scanned, however the task ended.
+					if v, ok := gaps.verdict(target); ok {
+						put(target, v)
+						continue
+					}
+					if gaps.short {
+						put(target, Verdict{Kind: VerdictFailed, Outcome: OutcomeUnfinished,
+							Error: "the result lists fewer coverage gaps than it counts; no target of it is treated as covered"})
+						continue
+					}
 					put(target, Verdict{Kind: VerdictCovered, Outcome: OutcomeOK})
 				}
 			case "failed", "canceled", "expired", "timeout":
@@ -195,6 +214,11 @@ func Verdicts(tasks []TaskResult, runUnfinished []string) map[string]Verdict {
 				if unreached[TargetKey(o.Target)] {
 					put(o.Target, Verdict{Kind: VerdictFailed, Outcome: string(outcome.Unreachable),
 						Error: "the sensor reached no service on the target"})
+					continue
+				}
+				// A gap names the host: the gap wins over a done outcome.
+				if v, ok := gaps.verdict(o.Target); ok {
+					put(o.Target, v)
 					continue
 				}
 				put(o.Target, Verdict{Kind: VerdictCovered, Outcome: OutcomeOK})
@@ -216,10 +240,18 @@ func Verdicts(tasks []TaskResult, runUnfinished []string) map[string]Verdict {
 					put(o.Target, Verdict{Kind: VerdictFailed, Outcome: OutcomeFailed, Error: msg})
 					continue
 				}
-				put(o.Target, Verdict{Kind: VerdictFailed, Outcome: string(o.Class), Error: t.Error})
+				put(o.Target, Verdict{Kind: VerdictFailed, Outcome: string(o.Class), Error: t.Error,
+					Vendor: edgeVendor(o)})
 			case outcome.Skipped:
 				if r, ok := refused[TargetKey(o.Target)]; ok {
 					put(o.Target, r)
+					continue
+				}
+				if o.Class == outcome.EdgeBlocked || o.Class == outcome.EdgeChallenged {
+					// An edge protection answered in place of the service:
+					// not covered, an observation of the target.
+					put(o.Target, Verdict{Kind: VerdictFailed, Outcome: string(o.Class),
+						Error: edgeError(string(o.Class)), Vendor: edgeVendor(o)})
 					continue
 				}
 				put(o.Target, Verdict{Kind: VerdictBlocked, Reason: string(o.Class)})
@@ -388,4 +420,147 @@ func dropDone(in []outcome.Target) []outcome.Target {
 		}
 	}
 	return out
+}
+
+// edgeVendor is the vendor token of an edge outcome ("" for any other, or
+// when the sensor's value is not a token).
+func edgeVendor(o outcome.Target) string {
+	if o.Class != outcome.EdgeBlocked && o.Class != outcome.EdgeChallenged {
+		return ""
+	}
+	return safetext.VendorToken(o.Vendor)
+}
+
+func edgeError(class string) string {
+	if class == string(outcome.EdgeChallenged) {
+		return "an edge protection challenged the scan"
+	}
+	return "an edge protection blocked the scan"
+}
+
+// maxGapsRead bounds the coverage gaps read from one result.
+const maxGapsRead = 1000
+
+// resultGaps is a task result's metadata.coverage_gaps, by host.
+type resultGaps struct {
+	byHost map[string]scanrun.CoverageGap
+	// short: the list names fewer hosts than the result counts (or an entry
+	// has no host), so the hosts it leaves out are unknown.
+	short bool
+}
+
+// readGaps reads a task result's coverage gaps. The list is sensor-supplied
+// and bounded; it is read only for the task's own targets (verdict).
+func readGaps(raw json.RawMessage) resultGaps {
+	if len(raw) == 0 {
+		return resultGaps{}
+	}
+	var r struct {
+		Metadata struct {
+			Gaps  []json.RawMessage `json:"coverage_gaps"`
+			Total int               `json:"coverage_gaps_total"`
+		} `json:"metadata"`
+	}
+	if json.Unmarshal(raw, &r) != nil {
+		return resultGaps{}
+	}
+	m := r.Metadata
+	g := resultGaps{short: len(m.Gaps) < m.Total}
+	if len(m.Gaps) > maxGapsRead {
+		m.Gaps = m.Gaps[:maxGapsRead]
+		g.short = true
+	}
+	g.byHost = make(map[string]scanrun.CoverageGap, len(m.Gaps))
+	for _, e := range m.Gaps {
+		var one struct {
+			Host   string `json:"host"`
+			Reason string `json:"reason"`
+			Edge   string `json:"edge"`
+			Vendor string `json:"vendor"`
+		}
+		if json.Unmarshal(e, &one) != nil || gapHostKey(one.Host) == "" {
+			g.short = true
+			continue
+		}
+		gap := scanrun.CoverageGap{Host: one.Host, Reason: one.Reason}
+		if one.Reason == scanrun.GapReasonBlocked {
+			if one.Edge == scanrun.EdgeChallenged || one.Edge == scanrun.EdgeBlocked {
+				gap.Edge = one.Edge
+			}
+			gap.Vendor = safetext.VendorToken(one.Vendor)
+		}
+		k := gapHostKey(one.Host)
+		if old, ok := g.byHost[k]; ok && gapRank(old) >= gapRank(gap) {
+			continue
+		}
+		g.byHost[k] = gap
+	}
+	return g
+}
+
+// gapRank orders two gaps of one host: an edge answer is the most telling.
+func gapRank(g scanrun.CoverageGap) int {
+	if g.Reason == scanrun.GapReasonBlocked {
+		return 2
+	}
+	return 1
+}
+
+// gapHostKey is the comparison form of a host or a target: its host name
+// lower-cased, without scheme, path, credentials or port.
+func gapHostKey(s string) string {
+	s = TargetKey(s)
+	if i := strings.Index(s, "://"); i >= 0 {
+		s = s[i+3:]
+	}
+	if i := strings.IndexAny(s, "/?#"); i >= 0 {
+		s = s[:i]
+	}
+	if i := strings.LastIndex(s, "@"); i >= 0 {
+		s = s[i+1:]
+	}
+	if strings.HasPrefix(s, "[") {
+		if i := strings.Index(s, "]"); i > 0 {
+			return s[1:i]
+		}
+		return s
+	}
+	if strings.Count(s, ":") == 1 {
+		s, _, _ = strings.Cut(s, ":")
+	}
+	return s
+}
+
+// verdict is the failed verdict of a task target whose host the result
+// lists as a gap, mapped like the sensor's own per-target outcomes: blocked
+// is edge_blocked (edge_challenged when the sensor says challenged),
+// rate_floor is rate_limited, breaker_open is unreachable and
+// proxy_unavailable is sensor_network_fault (the platform's side). A reason
+// this package does not know is unfinished: never covered.
+func (g resultGaps) verdict(target string) (Verdict, bool) {
+	if len(g.byHost) == 0 {
+		return Verdict{}, false
+	}
+	gap, ok := g.byHost[gapHostKey(target)]
+	if !ok {
+		return Verdict{}, false
+	}
+	switch gap.Reason {
+	case scanrun.GapReasonBlocked:
+		class := string(outcome.EdgeBlocked)
+		if gap.Edge == scanrun.EdgeChallenged {
+			class = string(outcome.EdgeChallenged)
+		}
+		return Verdict{Kind: VerdictFailed, Outcome: class, Error: edgeError(class), Vendor: gap.Vendor}, true
+	case scanrun.GapReasonRateFloor:
+		return Verdict{Kind: VerdictFailed, Outcome: string(outcome.RateLimited),
+			Error: "the target kept pushing back at the lowest scan rate"}, true
+	case scanrun.GapReasonBreakerOpen:
+		return Verdict{Kind: VerdictFailed, Outcome: string(outcome.Unreachable), Error: "stopped answering"}, true
+	case scanrun.GapReasonProxyUnavailable:
+		return Verdict{Kind: VerdictFailed, Outcome: string(outcome.SensorNetworkFault),
+			Error: "the scan's proxy failed, so the host was not judged"}, true
+	}
+	return Verdict{Kind: VerdictFailed, Outcome: OutcomeUnfinished,
+		Error: "the sensor listed the host as a coverage gap"}, true
 }

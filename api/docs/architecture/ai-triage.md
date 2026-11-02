@@ -46,10 +46,16 @@ platform administrator sets up a provider in the console) or
 ## Web UI
 
 - **Settings > AI** (`web/src/app/(dashboard)/settings/ai`, Security group,
-  module `ai_triage`): the on/off switch with a consent dialog, what is sent,
-  the pentest data policy, the source (Platform AI, Own provider, Off) with the
-  own provider's form (write-only key, Test connection) and the month's token use. Read-only
-  for anyone who may not change it; a notice when no provider is set up.
+  module `ai_triage`): a status strip (AI triage on or off, source, this
+  month's use against the limit, automatic triage, masked data kinds; each tile
+  opens its tab) and five tabs in the URL (`?tab=`). Provider: the on/off switch
+  with a consent dialog, what is sent (folded), the pentest data policy, the
+  source (Platform AI, Own provider, Off) with the own provider's form
+  (write-only key, Test connection). Features: automatic triage, AI agents.
+  Knowledge (with `ai_knowledge:read`). Limits and data: the month's token use
+  against the limit, a link to the TLP policy, data masking. Activity (with
+  `audit:read` and the audit module): the latest AI events from the audit log.
+  Read-only for anyone who may not change it; a notice when no provider is set up.
 - **AI triage button** (finding header): hidden when the module is off. When
   AI cannot run, it stays visible but disabled-looking and opens a short
   explanation instead: off for the organization (owners and administrators
@@ -235,6 +241,21 @@ it).
   omit to keep, `""` to remove). Needs owner or administrator,
   `settings:write` and a recent sign-in; audited as critical
   `ai_settings.updated` with before and after of everything except the key.
+- `GET/PUT .../auto-triage` is the automatic triage policy: `{enabled,
+  severities, delay_seconds}` (severities `critical` to `info`, delay 0 to
+  3600 seconds). New findings of those severities are queued for triage
+  without a person asking, while AI triage is on. Until an administrator
+  saves it, the platform defaults apply (`AI_AUTO_TRIAGE_DEFAULT_ENABLED`,
+  `AI_AUTO_TRIAGE_DEFAULT_SEVERITIES`, `AI_AUTO_TRIAGE_DELAY`); a save writes
+  every key, so an explicit "off" wins over a default that is on. Owner or
+  administrator with `settings:read` / `settings:write`. A loosening (turning
+  it on, or adding a severity while on) needs a recent sign-in (`403
+  STEP_UP_REQUIRED`, asked by the service), is audited high
+  (`ai_settings.auto_triage_updated`, metadata `loosened`) and every owner and
+  administrator gets an in-app notice. Turning it off, fewer severities and
+  the delay apply at once without step-up, so it can be stopped in one click.
+  Saving the policy never turns AI triage on (consent stays a separate,
+  critical-audited step).
 - POST `/test` calls the provider from the server with one tiny prompt ("Reply
   with OK."; no finding data), with the form's values over the stored ones, and
   answers `{ok, code}` with a fixed code (`ok`, `invalid_url`,

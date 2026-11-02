@@ -322,6 +322,12 @@ added automatically: a name never lends its address authority (dangling DNS,
 shared hosting and released cloud addresses would make a scan probe a third
 party).
 
+Each offered or already-checked address carries `ownership` (band
+`high`/`medium`/`low`/`unknown`, a score that only orders, and the signals
+with their parameters), computed by `pkg/domain/addrowner` from the rows the
+card already reads; the card lists addresses strongest first and counts them
+in `bands`. Rules and threats: RFC-054 §21. It authorizes nothing.
+
 ## 4b3. Inventory triage (built, research/124)
 
 Discovered assets are triaged after the fact, in the inventory, in bulk
@@ -532,6 +538,89 @@ Key files: `pkg/domain/technology/`, `internal/app/technology/`,
 `internal/infra/http/handler/technology_handler.go`,
 `web/src/features/attack-surface/components/easm-technologies.tsx`.
 
+## 4o. Discovery management (built)
+
+Attack surface > Discovery shows the organization's coverage work in four
+stages, with a Run button per stage, Run all and Abort all, and exports it as
+CSV. It is a view of the coverage ledger ([asset coverage](asset-coverage.md),
+RFC-093) and adds no scheduler.
+
+| Stage | Capabilities (coverage policy) |
+|---|---|
+| Asset discovery (`asset_discovery`) | `discover.subdomains`, `enumerate.subdomains` (`discover.hosts` when a rule plans it) |
+| Exposure scan (`exposure_scan`) | `scan.ports`, `vuln.templates` (`check.takeover`) |
+| Validation & scoping (`validation_scoping`) | `resolve.dns`, `lookup.rdap`, `lookup.asn`: the facts attribution and scope decisions read |
+| Technology discovery (`technology_discovery`) | `probe.http` (`crawl.web`): the HTTP probe reports each service's technologies |
+
+The mapping is one table in `pkg/domain/coverage/discovery_stage.go`: the capability
+taxonomy's phases do not separate the four stages (`resolve.dns` and
+`scan.ports` are both discovery-phase acts). A test fails when a capability
+the planner runs has no stage, or when an entry's catalog phase does not fit
+its stage. Platform checks (`dns.email`, `dns.dangling`) run on the
+attack-surface sweep's schedule (section 4e, with its own run-now) and are not
+in the discovery stages.
+
+Per stage: status (`running` when a coverage run of one of its capabilities is
+active; `paused` with the reason when automatic coverage is off, `coverage_off`,
+or its pairs are paused for a readiness reason such as `tool_missing` or
+`not_claimed`; `failed` when the latest run of one of them failed, timed out or
+was blocked; else `idle`), the last run time, progress (tasks done of the
+active runs, else covered of the applicable pairs) and, per capability, the
+ledger counts (pairs, covered, due now, queued, failed, blocked, paused) and
+the latest run. The page shows when it was read, reloads on focus and after every action, and has a Refresh button (no polling).
+
+- **Run** (one stage) moves the due time of the stage's `covered`, `due` and
+  `failed` pairs to now minus the batch wait of the capability, so the next
+  coverage pass (every `ASSET_COVERAGE_INTERVAL`, one replica at a time)
+  starts the batch at once. Nothing else changes: queued, blocked, paused and
+  not applicable pairs are left alone (readiness pauses, not-claimed holds
+  and gate refusals still hold), and the pass plans through `StartCoverage`
+  and the full dispatch gate (scope entries, tiers, exclusions, windows, the
+  deny list), within the tenant's daily budget, one active run per capability
+  and the batch size. Run never calls the planner itself: the loop is
+  exclusive across replicas and a request-time pass would race it. Refused
+  with 409 while the coverage loop is off on the server
+  (`DISCOVERY_LOOP_OFF`), while the organization's automatic coverage is off
+  (`DISCOVERY_COVERAGE_OFF`; a switch that cannot be read is off) or when
+  today's budget is spent (`DISCOVERY_BUDGET_SPENT`). At most once a minute
+  per tenant and stage across replicas (a `controller_leases` row named after
+  the tenant and stage): 429 `DISCOVERY_RUN_TOO_SOON` with `Retry-After`.
+- **Run all** runs every stage; a stage run within the minute is skipped and
+  listed, and the call is refused (429) only when every stage is.
+- **Abort all** cancels the tenant's unfinished runs of managed coverage scans
+  (`managed_by = coverage`) through the run cancel (sensors told to stop, one
+  audit entry per run); a person's scan runs are never touched. The next pass
+  settles the canceled pairs as for any canceled run (failed, platform side,
+  with the back-off), so they are not restarted at once; automatic coverage
+  keeps its schedule (turn it off in the scope settings to stop it).
+- **Auto-validation metric.** "N assets in the last auto-validation" on
+  Validation & scoping counts the assets whose automatic attribution (no
+  person decided it, `decided_at IS NULL`) was written between the start of
+  the latest Validation & scoping run and 15 minutes after it ended (now while
+  it runs). No record of an attribution pass exists, so this window is the
+  definition.
+
+| Route | Gate | Notes |
+|---|---|---|
+| `GET /api/v1/attack-surface/discovery` | `scans:read` | the discovery stages |
+| `GET /api/v1/attack-surface/discovery/export` | `scans:read` | CSV, one row per stage and capability, formula cells neutralized |
+| `POST /api/v1/attack-surface/discovery/stages/{stage}/run` | `scans:write` + `scans:execute` (the scan trigger's) | 202; audited `easm_discovery.run` |
+| `POST /api/v1/attack-surface/discovery/run` | `scans:write` + `scans:execute` | 202; audited `easm_discovery.run` |
+| `POST /api/v1/attack-surface/discovery/cancel` | `scans:write` (the run cancel's) | audited `easm_discovery.aborted` (high) |
+
+All five sit behind the attack-surface module and need an **unrestricted data
+scope** (owner, administrator, or a role with full data access): the figures
+count every asset of the organization and Run and Abort act on all of them,
+so a member limited to some assets gets 403 `DISCOVERY_FULL_DATA_REQUIRED`
+rather than organization totals. The tenant is the principal's; every query
+filters the ledger, scans, runs, tasks and attributions on it, and a limiter
+key always names the tenant.
+
+Key files: `pkg/domain/coverage/discovery_stage.go`, `internal/app/coverage/discovery.go`,
+`internal/infra/postgres/asset_coverage_discovery.go`,
+`internal/infra/http/handler/easm_discovery_handler.go`,
+`web/src/features/attack-surface/components/easm-discovery.tsx`.
+
 ## 4h. Port and service results (built, P0-6)
 
 A port scanner (naabu, nmap, masscan, rustscan) reports an IP address with
@@ -582,6 +671,56 @@ asset types answer an empty list. The asset page shows them in a "Ports on
 resolved addresses" section, read through the asset view
 ([page-views.md](./page-views.md)).
 
+## 4o. Discovery lineage (built)
+
+The asset page and the asset sheet show "How this asset was found": the chain
+of parent assets from the root down to the asset, the asset's discovery
+source and tool (`assets.discovery_source`, `discovery_tool`), when it was
+first found, and its attribution confidence. The reasons behind the
+confidence (`easm_evidence`) stay in the Ownership and scope section above it;
+both read the same `GET /api/v1/assets/{id}/attribution` response.
+
+`GET /api/v1/assets/{id}/lineage` (`assets:read`, the asset detail's
+permission) returns the asset (depth 0) and its ancestors, one parent per hop,
+found by a recursive query bounded at 5 ancestors (`truncated` is set when the
+chain goes on). The parent of an asset is, in order: its `parent_id`; else the
+source of a `contains` edge pointing at it (a CTIS `subdomain_of` is stored
+this way, parent first); else of an `exposes` edge (the address or host of a
+port); else of a `serves_certificate` edge (the endpoint of a certificate);
+else of a `resolves_to` edge (a name of an address). Ties go to the oldest
+edge. Each node carries `via`, the edge kind that leads from it to the node
+below, and its own discovery source, tool, discovery time and first-seen time.
+
+Security:
+
+- The asset must be one the caller may see: another tenant's asset, or one
+  outside the caller's data scope, answers 404 (route guard and service
+  check).
+- Every hop of the recursive query is bound to the tenant (`assets` and
+  `asset_relationships` on `tenant_id`), so an edge or `parent_id` pointing at
+  another tenant's asset is never followed, even if one were stored (the
+  schema's tenant-bound foreign keys already refuse it).
+- An asset already on the path is never visited again (cycle guard), and a
+  soft-deleted parent ends the chain.
+- Every ancestor is checked against the caller's data scope in the same query
+  (`filterspec.ScopeSQL`, so assets hidden from the caller, such as private
+  program assets, count as outside it). An ancestor outside it comes back as
+  `{"hidden": true}` with its depth and `via` only: the database returns no
+  name, id, type or discovery field for it, and the domain layer
+  (`asset.BuildLineage`) strips them again. The page shows it as "Hidden
+  asset", without a link. Visible ancestors above it are still shown.
+
+The asset view primes the lineage with the page's other parts
+([page-views.md](./page-views.md)).
+
+Key files: `pkg/domain/asset/lineage.go`,
+`internal/infra/postgres/asset_lineage_repository.go`,
+`internal/app/asset/lineage.go`,
+`internal/infra/http/handler/asset_lineage_handler.go`,
+`web/src/features/assets/components/asset-lineage-section.tsx`. Tests:
+`internal/infra/http/routes/asset_lineage_db_test.go` (chain, redaction, cycle,
+depth cap, cross-tenant edge, 404s), `web/e2e/specs/53-asset-discovery-lineage.spec.ts`.
+
 ## 4g. Honest numbers (built, P0-13)
 
 - `GET /easm/summary` counts only exposure types something writes today
@@ -618,6 +757,30 @@ false positive (not a threat), resolve (taken down). Controller
 tenant). Routes: `/api/v1/easm/lookalikes/watches` (scope permissions,
 audited). The organization can turn the crt.sh queries off
 (`lookalike_ct_enabled` on `/api/v1/easm/settings`; fail closed).
+
+## 4o. Page monitoring (partly built)
+
+Design: [RFC-138](../rfcs/RFC-138-web-page-monitoring.md). Attack surface ›
+**Page changes** watches URLs of the organization's web services (manual add,
+or suggestions: root pages, login and admin pages, JS files from the crawl;
+at most 200 watches). JS-only mode (default) keeps the scripts a page loads
+(source identity without cache busters and build hashes, inline scripts by
+normalized hash, first or third party, integrity attribute) and, for each
+first-party script (a derived watch, at most 25 per page), its hash, size and
+the URLs found in it; full mode also keeps the masked visible text. Fetches
+are the capability `monitor.web_content` (T1) through the coverage dispatch
+path (`scan.Service.StartCoverage`: scope and active-scan gates, zone routing,
+signed jobs with the explicit URL list), started by the `page-monitoring`
+controller (every 10 minutes; at most 100 URLs per tenant and 10 per host per
+pass; only with automatic coverage on). Results arrive as the reserved asset
+property `web_content` and are normalized and diffed server-side
+(`pkg/domain/pagemon`); only a changed content hash stores a snapshot (last 5
+per watch) and a change with its diff (kept 180 days). A new third-party
+script host on a page is a `third_party_script_added` exposure (high) through
+the EASM alert writer, resolved when the page drops the host. Routes:
+`/api/v1/easm/page-monitoring` (reads `assets:read` and the watch asset's data
+scope; watch changes `scans:write`, audited). Not built yet: the capability in
+the taxonomy and the sensor's httpx capture (watches stay `waiting` until then).
 
 ## 4k. Network seeds (built)
 

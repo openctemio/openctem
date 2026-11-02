@@ -1,7 +1,7 @@
 /**
  * Pure helpers of the "Add sensor" panel (api docs/architecture/sensor-pairing.md,
- * "Onboarding"): where the sensor runs, how it joins, where the pairing is,
- * and what to do when the sensor's log says something went wrong.
+ * "Onboarding"): where the sensor runs, where the pairing is, and what to do
+ * when the sensor's log says something went wrong.
  */
 
 import type { SensorPairingView } from '@/lib/api/sensor-pairing-hooks'
@@ -10,13 +10,13 @@ import { pairingSettled } from '@/lib/api/sensor-pairing-hooks'
 import type { SensorTemplates } from '../components/sensor-install-snippets'
 
 /** Where the sensor runs: one tab each. */
-export type OnboardingPlatform = 'docker' | 'compose' | 'kubernetes' | 'linux'
+export type OnboardingPlatform = 'docker' | 'compose' | 'kubernetes' | 'linux' | 'multi'
 
 export interface OnboardingPlatformOption {
   key: OnboardingPlatform
   labelKey: string
   /** The field of the install-templates answer that holds this platform's commands. */
-  field: keyof Pick<SensorTemplates, 'docker' | 'compose' | 'kubernetes' | 'cli'>
+  field: keyof Pick<SensorTemplates, 'docker' | 'compose' | 'kubernetes' | 'cli' | 'multi'>
   /** File name offered for download, when the snippet is a file. */
   file?: string
 }
@@ -36,13 +36,11 @@ export const ONBOARDING_PLATFORMS: OnboardingPlatformOption[] = [
     file: 'openctem-sensor.yaml',
   },
   { key: 'linux', labelKey: 'sensors.onboard.platform.linux', field: 'cli' },
+  { key: 'multi', labelKey: 'sensors.onboard.platform.multi', field: 'multi' },
 ]
 
-/** How the sensor joins the organization. */
-export type JoinMethod = 'code' | 'interactive'
-
 /**
- * Where a "create a pairing code first" pairing stands, in the order the
+ * Where an Add sensor pairing stands, in the order the
  * administrator sees it: no code yet, waiting for the sensor, the sensor is
  * attached (compare the fingerprint and approve), approved (the sensor
  * confirms), online (it called home with its new identity). `ended` is a
@@ -109,8 +107,8 @@ export const TROUBLESHOOTING: TroubleshootingItem[] = [
     lines: ['dial tcp', 'x509: certificate signed by unknown authority', 'proxyconnect tcp'],
   },
   {
-    key: 'policy',
-    lines: ['SENSOR_LOCAL_POLICY'],
+    key: 'fingerprint',
+    lines: ['pairing: an administrator picked another fingerprint'],
   },
   {
     key: 'denied',

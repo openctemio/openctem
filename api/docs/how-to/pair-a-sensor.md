@@ -1,87 +1,93 @@
 # How to pair a sensor
 
-Pairing connects a new sensor to your organization without any secret being
-copied or pasted. The sensor creates its own key; you approve it in the
-console after checking that both sides show the same fingerprint. Design:
+Pairing connects a new sensor to your organization with one command on the
+host and one approval in the console; no secret is copied or pasted. The
+sensor creates its own key and prints a code and a link; you approve it
+after picking the fingerprint the host shows. Design:
 [RFC-052](../rfcs/RFC-052-sensor-pairing-and-authorization.md).
 
 You need the **Pair sensors** (`sensors:pair`) and **Approve sensors**
 (`sensors:approve`) permissions (owners and administrators have both) and,
 for the approval, your TOTP code or your password.
 
-## 1. Install the sensor
+## 1. Run one command
 
 Open **Sensors → Add sensor** (on an organization with no sensor yet, the
-same panel is on the page). Pick where the sensor runs (Docker, Docker
-Compose, Kubernetes or a Linux service) and how it joins (2a or 2b below);
-the panel shows the exact command for this platform: the current release,
-this instance's URL, the hardening (read-only root filesystem, no
-capabilities, the checked seccomp profile) and the local policy file to save
-next to it. The command contains no key. The sensor installation guide at
-[docs.openctem.io/install](https://docs.openctem.io/install/) has the same
-steps.
+same panel is on the page). Docker is preselected; pick Docker Compose,
+Kubernetes, a Linux service or several sensors on one host (the multi-sensor
+kit) if the sensor runs there. The panel shows one
+command for that platform: the current release, this instance's URL, the
+hardening (read-only root filesystem, no capabilities, the checked seccomp
+profile), this platform's private certificate authority when it has one
+(installed and pinned by its root's SHA-256, shown under the command; see
+[Sensors behind a private CA](sensors-behind-a-private-ca.md)) and a single-use pairing
+code. The command contains no key and asks you to edit nothing. This page is
+the single source for the install steps; the guide at
+[docs.openctem.io/install](https://docs.openctem.io/install/) links here.
 
-Keep the sensor's data directory on a persistent volume (one volume at
-`/var/lib/openctem` in the container, holding `state/`, `outbox/` and
-`content/`): the sensor's identity lives in `state/identity/`. The
-directory must be `0700` and the files `0600`, owned by the sensor's user;
-the sensor refuses to start otherwise and prints the command that fixes it.
-
-Use a named volume (`-v openctem-sensor-data:/var/lib/openctem`, as the install
-commands do): Docker creates it with the sensor's owner. A host directory
-mounted instead must first be given to the sensor's user (`sudo chown -R
-999:999 <dir>`; 1001 on the per-tool images, 65532 on the slim image), or the
-sensor stops at start with the path, the owner and this fix. The complete
-guide is [Run the sensor](https://docs.openctem.io/sensors/run-the-sensor/).
-
-## 2a. Default: the sensor shows a code
-
-Start the sensor (or run `openctemio-sensor pair`). It prints:
+Copy it and paste it on the host. It installs and starts the sensor, then
+shows what the sensor prints and **ends by itself once the sensor is
+paired** (Ctrl-C only stops watching; the sensor keeps running):
 
 ```
-Pair this sensor in OpenCTEM → Sensors → Pair a sensor
+Pair this sensor: open https://ctem.example.com/activate?code=K7QM-4ZTD
   Code:        K7QM-4ZTD
   Fingerprint: 821 · melon · basil · bagel
   Key:         SHA256:UDDReOZl1ipXAfp9wYsm13sDBMK5og--QWdBjzuf6o4
-  Expires:     10:42 (10 minutes)
 ```
 
-In the console, open **Sensors → Add sensor**, choose **Pair a sensor that
-shows a code** and type the code. The console shows the same fingerprint, the host name, OS and version
-the sensor reported, and the address the request came from.
+No local policy is needed: the sensor scans only what your organization's
+scope allows. The host owner may narrow it on the host (optional, below).
 
-## 2b. Reverse: the console shows a code
+Keep the sensor's data on a persistent volume (one volume at
+`/var/lib/openctem` in the container, holding `state/`, `outbox/` and
+`content/`): the sensor's identity lives in `state/identity/`. The commands
+use a named volume, which Docker creates with the sensor's owner. A host
+directory mounted instead must first be given to the sensor's user (`sudo
+chown -R 999:999 <dir>`; 1001 on the per-tool images, 65532 on the slim
+image), or the sensor stops at start with the path, the owner and this fix.
 
-Open **Sensors → Add sensor** and keep **Create a pairing code first**, then
-**Create pairing code**. The command the panel shows now carries the code
-(`SENSOR_PAIRING_CODE`, single use, valid 10 minutes); run it on the host
-(`openctemio-sensor pair K7QM-4ZTD` does the same for an installed binary).
-The panel waits live: as soon as the sensor connects it shows the
-fingerprint to compare, then the approval, then the sensor online.
+## 2. Approve it
 
-The panel's **Troubleshooting** section lists what the sensor log shows for
-the common failures (a code that expired, a wrong clock, too many attempts,
-the platform unreachable, the local policy missing) and the fix for each.
+The Add sensor panel finds the sensor by itself (the command's code tells
+the platform which panel is waiting for it). A sensor started any other way
+(from the docs, `sensors.sh add`, Helm) prints its own code and link: open
+the link, or open **/activate** and type the code. Both show the same
+review:
 
-## 3. Compare and approve
-
-1. **Compare the fingerprint** on the sensor's console with the one in the
-   browser, word for word. If anything differs, **Deny**: someone else's
-   sensor, or a machine between the sensor and the platform, made the
-   request.
-2. Check the host facts and the source address. The console shows the
-   request's address (private network or public internet) next to your own,
-   the product and version, and how long ago the request was made. An
-   address you do not expect, or a request you did not start, is a reason to
-   deny. Never approve a code someone sent you by email, chat or phone.
-3. Check the organization named at the top: the sensor joins it. If the
-   sensor is meant for another organization, switch to it and enter the code
-   there; an approval after a switch of organization is refused.
-4. Confirm that the fingerprint shown on the sensor console matches, choose the name, the role, the zones and
-   the **grant profile**, enter your TOTP code or password, and **Approve**.
+1. **The organization** the sensor joins, named at the top. If the sensor is
+   meant for another organization, switch to it first; an approval after a
+   switch of organization is refused.
+2. **Who and where**: host name, system, product and version, the address
+   the request came from (private network, public internet, or a known
+   provider) next to **your** address, and how long ago it started. A host
+   you do not recognise, an address you do not expect, or a request you did
+   not start just now: **Reject**. Never approve a link or a code someone
+   sent you by email, chat or phone.
+3. **Pick the fingerprint the host shows**, out of three. Look at the host's
+   screen, not at a message. A wrong pick **closes the request** and tells
+   every administrator; if you started the sensor, it shows a new code and
+   link a moment later.
+4. The name is prefilled from the host name. **More options** holds the
+   role, the grant profile and the scan zones; the defaults fit a scanner
+   inside your network.
+5. Enter your TOTP code or password (nothing when you signed in less than 10
+   minutes ago) and **Approve**.
 
 The sensor picks up its identity within a few seconds, confirms it, and
 starts working. Every administrator gets a notification.
+
+Automation keeps the code-first path: create a code with `POST
+/api/v1/sensor-pairings/expectations` and start the sensor with
+`SENSOR_PAIRING_CODE` (or use an enrollment token, below).
+
+### Narrow it on this host (optional)
+
+The host owner may restrict the sensor further than the organization's
+scope: write `/etc/openctem/sensor-policy.yaml` (the panel's **Narrow it on
+this host** fold has a starting point) and restart the sensor. The file can
+only narrow; the platform never writes it. `sudo touch /etc/openctem/STOP`
+stops every job while the file exists.
 
 ## 4. What the new sensor may do
 
@@ -101,13 +107,42 @@ when you are satisfied (this needs the **Widen sensor grants** permission).
 
 ## Re-pairing a sensor
 
-If a sensor's key is lost or may be stolen, pair it again as the same sensor:
-the pairing request names the existing sensor (`repair_sensor_id` on
-`POST /api/v1/sensor-pairings/expectations`, or the sensor's own re-pairing
-request), and the console marks the request **Re-pairing <name>**. How to
-start a re-pairing on the host is in the sensor's documentation. Approve it
-like a new pairing. The old keys are revoked at once, the history is kept, and
-the sensor returns to trust level New.
+Re-pair when a sensor's identity is lost (its volume or state directory was
+deleted, it was reinstalled), its host was rebuilt or moved, its key may be
+in someone else's hands, or it is reinstalled another way (for example from
+Docker to Kubernetes). The sensor keeps its name, type, zones, grant, labels
+and history; only its key changes.
+
+1. Open the sensor and choose **Re-pair…**. Pick the reason. For "Its key may
+   be compromised", **Revoke the current key now** is ticked: the sensor stops
+   at its next request and its running jobs go back to the queue. Otherwise
+   the current key keeps working until you approve, so a re-pair that fails
+   never takes a working sensor offline.
+2. **Create re-pair code**. The code works for this sensor only, for 10
+   minutes; a newer re-pair code of the same sensor closes the earlier one.
+   If the host still has the sensor's old identity (its data volume, PVC or
+   state directory), remove it first, or the sensor keeps using its old key.
+3. Run the command shown for your platform on the host.
+4. Compare: the dialog shows what the platform last knew of the sensor next
+   to the host that now asks (hostname, address, system, version, last seen),
+   plus the fingerprint. A difference is expected after a move or rebuild; one
+   nobody can explain is a reason to reject.
+5. Approve with the fingerprint tick and your second factor
+   (`sensors:approve`). Every earlier key of the sensor is revoked, the jobs it
+   held are taken back (scan work is queued again, the rest fails), its trust
+   level returns to New, every administrator is notified, and the re-pair is
+   on the sensor's timeline and in the audit log.
+
+Only a code made with **Re-pair…** re-pairs a sensor. A sensor that names an
+existing sensor while using an ordinary "Add sensor" code is added as a new
+sensor instead, and a re-pair code can never create one. A sensor started
+with `openctemio-sensor pair -repair` shows its own code; when you enter it,
+the console marks the request **Re-pairing <name>** and the approval must
+confirm that sensor (`repair_sensor_id` in the approval,
+`409 REPAIR_NOT_ACKNOWLEDGED` otherwise).
+
+Moving a sensor to another organization is never a re-pair: add a new sensor
+there and remove this one.
 
 ## Bearer keys
 
@@ -121,13 +156,17 @@ being created.
 
 | Symptom | Cause |
 |---|---|
-| The code is "not found" in the console | It expired (10 minutes), was used, or was mistyped. Restart the pairing on the sensor. |
-| The sensor keeps waiting after you created an expectation | The code typed on the sensor was wrong; run `pair` again with the code from the console. |
+| The code is "not found" | It expired (10 minutes), was used, or was mistyped. The sensor starts a new request by itself and prints a new code and link. |
+| The panel says the command's code expired | You ran the command late: the sensor still prints that code and a link; open the link. Or click **New command**. |
+| The sensor says another fingerprint was picked | Someone picked a fingerprint the host did not show; that request was closed. Open the new link the sensor prints and pick the fingerprint on this host. |
+| `signed by an authority this host does not trust` (older sensors: `x509: certificate signed by unknown authority`) | The platform uses a private certificate authority the host does not trust. Current sensors stop retrying and print the authority's SHA-256 fingerprint: compare it with the one under the console's command, then use the console's command (it pins the root, `SENSOR_CA_SHA256`), set `SENSOR_CA_SHA256` yourself, or give the file with `SENSOR_CA_CERT_FILE` ([Sensors behind a private CA](sensors-behind-a-private-ca.md)). |
 | `certificate chain does not contain the pinned CA` | `SENSOR_CA_FINGERPRINT` does not match the certificate authority your platform presents, or a TLS-inspecting proxy sits in between. |
 | `identity directory permissions` at start | Run the `chmod`/`chown` the sensor printed. |
 | The sensor was stopped before you approved it, or you made a new code | Start it again with the new code (`./sensors.sh pair NAME --pairing-code XXXX-XXXX` in the multi-sensor kit). The sensor keeps its key; the new start closes its earlier request that nobody approved, and you approve the new one. Started again with the same code, it re-uses that request: compare the fingerprint again after it reappears. |
 | The sensor says its key is already registered (`pairing-key-registered`) | That key was approved once (even if the sensor never finished, or the key was revoked later); a key never pairs twice. Restore the sensor's identity directory, or remove its key so it generates a new one, then pair with a new code. |
 | The sensor is rate limited (`429`) after a few failed starts | The start budget per code is 5 per hour (burst 3); wait for the `Retry-After` it was given, or make a new code. |
+| The sensor printed a clock offset | Its clock (or the server's) is more than 2 minutes off. Synchronize both with NTP, for example `chronyc makestep`. |
+| Approved, but the sensor never came online | The sensor must keep running until it confirms (10 minutes). Start it again within that time; after it, create a new code. |
 
 ## Many sensors: enrollment tokens
 

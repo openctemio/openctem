@@ -22,7 +22,7 @@ import (
 // read group by the same expressions, so a dashboard figure equals the list
 // it opens.
 const (
-	receiptOriginSQL = `CASE source_kind WHEN 'upload' THEN 'import' WHEN 'ci_run' THEN 'ci' WHEN 'connector' THEN 'connector' ELSE 'sensor' END`
+	receiptOriginSQL = `CASE source_kind WHEN 'upload' THEN 'import' WHEN 'ci_run' THEN 'ci' WHEN 'connector' THEN 'connector' WHEN 'platform' THEN 'platform' ELSE 'sensor' END`
 	receiptToolSQL   = `COALESCE(NULLIF(tool_name, ''), '` + ingestreceipt.UnknownTool + `')`
 )
 
@@ -44,7 +44,9 @@ func receiptWhere(tenantID shared.ID, f ingestreceipt.Filter) (string, []any) {
 		add(receiptOriginSQL+" = $%d", f.Origin)
 	}
 	if f.Tool != "" {
-		add(receiptToolSQL+" = $%d", f.Tool)
+		// A receipt of several tools is listed under each tool that
+		// reported on it (ingest_receipt_tools), not only its first.
+		add("EXISTS (SELECT 1 FROM ingest_receipt_tools rt WHERE rt.tenant_id = ingest_receipts.tenant_id AND rt.receipt_id = ingest_receipts.id AND rt.tool = $%d)", f.Tool)
 	}
 	if f.Since != nil {
 		add("updated_at >= $%d", f.Since.UTC())
@@ -55,10 +57,27 @@ func receiptWhere(tenantID shared.ID, f ingestreceipt.Filter) (string, []any) {
 	return where, args
 }
 
-// Totals sums the receipts of a filter.
+// Totals sums the receipts of a filter. With a tool, the sums are that
+// tool's own counts on the receipts (a multi-tool run counts only what the
+// tool reported), the figures the dashboards' intake shows for the tool.
 func (r *IngestReceiptRepository) Totals(ctx context.Context, tenantID shared.ID, f ingestreceipt.Filter) (ingestreceipt.Totals, error) {
 	where, args := receiptWhere(tenantID, f)
 	var t ingestreceipt.Totals
+	if f.Tool != "" {
+		args = append(args, f.Tool)
+		//nolint:gosec // G202: fixed SQL, values bound
+		err := r.db.QueryRowContext(ctx, `SELECT count(DISTINCT rt.receipt_id), COALESCE(sum(rt.received), 0), COALESCE(sum(rt.created), 0),
+			COALESCE(sum(rt.still_detected), 0), COALESCE(sum(rt.reopened), 0), COALESCE(sum(rt.closed), 0),
+			COALESCE(sum(rt.skipped), 0), COALESCE(sum(rt.failed), 0), COALESCE(sum(rt.suppressed), 0)
+			FROM ingest_receipt_tools rt
+			WHERE rt.tenant_id = $1 AND rt.tool = $`+strconv.Itoa(len(args))+`
+				AND rt.receipt_id IN (SELECT id FROM ingest_receipts WHERE `+where+`)`, args...).Scan(&t.Receipts, &t.Received,
+			&t.Created, &t.StillDetected, &t.Reopened, &t.Closed, &t.Skipped, &t.Failed, &t.Suppressed)
+		if err != nil {
+			return t, fmt.Errorf("sum receipt tool: %w", err)
+		}
+		return t, nil
+	}
 	//nolint:gosec // G202: fixed SQL, values bound
 	err := r.db.QueryRowContext(ctx, `SELECT count(*), COALESCE(sum(findings_received), 0), COALESCE(sum(findings_created), 0),
 		COALESCE(sum(findings_updated), 0), COALESCE(sum(findings_reopened), 0), COALESCE(sum(findings_closed), 0),

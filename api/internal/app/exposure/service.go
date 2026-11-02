@@ -42,7 +42,9 @@ type ExposureService struct {
 	// severities stores the analyst severity override; audit records it.
 	severities SeverityStore
 	audit      *auditapp.AuditService
-	logger     *logger.Logger
+	// items reads the Exposure Items view (nil: not wired).
+	items  exposuredom.ItemReader
+	logger *logger.Logger
 }
 
 // SetDataScope wires the Layer 2 data-scope enforcer.
@@ -527,21 +529,6 @@ func (s *ExposureService) GetExposureSecure(ctx context.Context, tenantID, event
 	}
 	if err := s.assertExposureScope(ctx, parsedTenantID, event); err != nil {
 		return nil, err
-	}
-	return event, nil
-}
-
-// TagCTEMID associates a CTEM-ID catalog identifier with an exposure (empty
-// clears the tag). Tenant-scoped. The tag is stored on the exposure's details
-// (no schema change) and does not affect the dedupe fingerprint.
-func (s *ExposureService) TagCTEMID(ctx context.Context, tenantID, eventID, ctemID string) (*exposuredom.ExposureEvent, error) {
-	event, err := s.GetExposureSecure(ctx, tenantID, eventID)
-	if err != nil {
-		return nil, err
-	}
-	event.SetCTEMID(ctemID)
-	if err := s.repo.Update(ctx, event); err != nil {
-		return nil, fmt.Errorf("failed to update exposure ctem-id tag: %w", err)
 	}
 	return event, nil
 }

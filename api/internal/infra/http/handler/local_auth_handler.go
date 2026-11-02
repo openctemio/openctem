@@ -1462,3 +1462,58 @@ var trustedProxiesForAuth *httpsec.TrustedProxySet //nolint:gochecknoglobals // 
 func SetAuthTrustedProxies(set *httpsec.TrustedProxySet) {
 	trustedProxiesForAuth = set
 }
+
+// AccountTokenRequest authenticates POST /auth/account-token; refresh_token
+// may be omitted when the cookie and the CSRF pair are sent.
+type AccountTokenRequest struct {
+	RefreshToken string `json:"refresh_token"`
+}
+
+// AccountTokenResponse is an access token without a tenant. The rotated
+// refresh token is set in its httpOnly cookie only.
+type AccountTokenResponse struct {
+	AccessToken string `json:"access_token"`
+	TokenType   string `json:"token_type"`
+	ExpiresIn   int64  `json:"expires_in"`
+}
+
+// AccountToken mints an account-only access token for a signed-in person who
+// has no organization they can open (docs/architecture/tenantless-account-space.md).
+// @Summary      Account-only access token
+// @Description  For an account with no organization it can open: an access token without a tenant that reaches only the account routes (profile, security, sessions, sign-in methods, preferences, creating an organization where allowed). An account that can open an organization gets 409 and exchanges its token with /auth/token instead. Rotates the refresh token.
+// @Tags         Authentication
+// @Accept       json
+// @Produce      json
+// @Param        request  body      AccountTokenRequest  false  "Refresh token (or cookie + CSRF)"
+// @Success      200  {object}  AccountTokenResponse
+// @Failure      401  {object}  apierror.Error
+// @Failure      409  {object}  apierror.Error
+// @Router       /auth/account-token [post]
+func (h *LocalAuthHandler) AccountToken(w http.ResponseWriter, r *http.Request) {
+	var req AccountTokenRequest
+	_ = json.NewDecoder(http.MaxBytesReader(w, r.Body, 8<<10)).Decode(&req)
+	refreshToken, ok := h.refreshTokenFrom(w, r, req.RefreshToken)
+	if !ok {
+		return
+	}
+	if refreshToken == "" {
+		apierror.Unauthorized("refresh_token is required (in body or cookie)").WriteJSON(w)
+		return
+	}
+	result, err := h.authService.AccountToken(r.Context(), refreshToken)
+	if errors.Is(err, auth.ErrAccountTokenHasOrganization) {
+		apierror.Conflict("This account belongs to an organization: open it instead.").WriteJSON(w)
+		return
+	}
+	if err != nil {
+		h.handleAuthError(w, err)
+		return
+	}
+	SetRefreshTokenCookie(w, result.RefreshToken, time.Now().Add(h.authConfig.RefreshTokenDuration), h.cookieConfig)
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(AccountTokenResponse{
+		AccessToken: result.AccessToken,
+		TokenType:   "Bearer",
+		ExpiresIn:   int64(h.authConfig.AccessTokenDuration.Seconds()),
+	})
+}
