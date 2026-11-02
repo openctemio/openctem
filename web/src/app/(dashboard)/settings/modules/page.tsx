@@ -451,7 +451,7 @@ export default function ModuleManagementPage() {
           search={{
             value: query,
             onChange: setQuery,
-            placeholder: t('settings.modules.searchPlaceholder', 'Search modules'),
+            placeholder: t('settings.modules.searchPlaceholder', 'Search modules…'),
             label: t('settings.modules.searchLabel', 'Search modules'),
           }}
           start={

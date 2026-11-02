@@ -1,6 +1,6 @@
 'use client'
 
-import Link from 'next/link'
+import Link from '@/components/link'
 import { useTranslation } from '@/context/i18n-provider'
 import { useAuditLogs } from '@/features/organization/api/use-audit-logs'
 import { formatLocalized } from '@/lib/format-date'
