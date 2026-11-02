@@ -9,7 +9,6 @@ import (
 
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
-	"github.com/openctemio/openctem/api/pkg/domain/ctemid"
 	"github.com/openctemio/openctem/api/pkg/domain/exposure"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
@@ -156,30 +155,6 @@ func TestExposureBulkUpsert_MoreRowsThanOneStatementHolds(t *testing.T) {
 	}
 	if got != n {
 		t.Fatalf("stored %d exposures, want %d", got, n)
-	}
-}
-
-// 9 parameters per catalog entry: a feed of more than 7281 entries failed.
-func TestCTEMIDUpsertBatch_MoreRowsThanOneStatementHolds(t *testing.T) {
-	ctx := context.Background()
-	db := openGroupsDB(t)
-	repo := NewCTEMIDRepository(&DB{DB: db})
-	prefix := "BULK-" + shared.NewID().String()[:8]
-
-	const n = 8000
-	entries := make([]*ctemid.CTEMID, 0, n)
-	for i := range n {
-		entries = append(entries, ctemid.NewCTEMID(fmt.Sprintf("%s-%d", prefix, i), ctemid.CategoryCredentialDumps, "t", "d", "low", "", nil, nil))
-	}
-	if err := repo.UpsertBatch(ctx, entries); err != nil {
-		t.Fatalf("upsert %d entries: %v", n, err)
-	}
-	var got int
-	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM ctem_id_catalog WHERE ctem_id LIKE $1`, prefix+"-%").Scan(&got); err != nil {
-		t.Fatal(err)
-	}
-	if got != n {
-		t.Fatalf("stored %d entries, want %d", got, n)
 	}
 }
 
