@@ -15,6 +15,7 @@ import {
 import {
   DataTable,
   ErrorState,
+  FilterSelect,
   PageHeader,
   PageStack,
   RelativeTime,
@@ -27,7 +28,11 @@ import { useAdmin } from '@console/features/admin-console/components/admin-conso
 import { CreateOrganizationDialog } from '@console/features/admin-console/components/create-organization-dialog'
 import { SSOPostureBadges } from '@console/features/admin-console/components/sso-posture-badges'
 import { OwnerInvitationBadge } from '@console/features/admin-console/components/owner-invitation'
-import { OrganizationStatusBadge } from '@console/features/admin-console/components/organization-suspension'
+import {
+  ORG_STATUSES,
+  OrganizationStatePill,
+  type OrgStatus,
+} from '@console/features/admin-console/components/organization-state-pill'
 import { type AdminOrganization, adminHas } from '@console/features/admin-console/types'
 
 const ANY = 'any'
@@ -38,14 +43,18 @@ export default function AdminOrganizationsPage() {
   const { t } = useTranslation()
   // The list lives in the URL (one list convention): page, per_page, q and
   // the filters, so the overview can link to "organizations without an owner".
-  const list = useListParams({ defaultPageSize: 20, filters: { owner: '' } })
+  const list = useListParams({ defaultPageSize: 20, filters: { owner: '', status: '' } })
   const debounced = list.searchTerm
   const owner =
     list.filters.owner === 'none' || list.filters.owner === 'present' ? list.filters.owner : ''
-  const filtered = Boolean(debounced || owner)
+  const status = (ORG_STATUSES as readonly string[]).includes(list.filters.status)
+    ? (list.filters.status as OrgStatus)
+    : ''
+  const filtered = Boolean(debounced || owner || status)
   const { data, error, isLoading, mutate } = useOrganizations({
     search: debounced.trim(),
     owner,
+    status,
     page: list.page,
     perPage: list.perPage,
   })
@@ -56,10 +65,7 @@ export default function AdminOrganizationsPage() {
         accessorKey: 'name',
         header: t('admin.org.col.organization', 'Organization'),
         cell: ({ row }) => (
-          <div className="flex items-center gap-2">
-            <StackedCell primary={row.original.name} secondary={row.original.slug} />
-            <OrganizationStatusBadge org={row.original} />
-          </div>
+          <StackedCell primary={row.original.name} secondary={row.original.slug} />
         ),
       },
       {
@@ -105,9 +111,26 @@ export default function AdminOrganizationsPage() {
           ),
       },
       {
+        id: 'status',
+        header: t('admin.org.col.status', 'Status'),
+        cell: ({ row }) => <OrganizationStatePill status={row.original.status} />,
+      },
+      {
         accessorKey: 'active_members',
         header: t('admin.org.col.members', 'Members'),
         cell: ({ row }) => <span className="tabular-nums">{row.original.active_members}</span>,
+      },
+      {
+        id: 'last_sign_in',
+        header: t('admin.org.col.lastSignIn', 'Last member sign-in'),
+        cell: ({ row }) =>
+          row.original.last_member_sign_in_at ? (
+            <RelativeTime date={row.original.last_member_sign_in_at} className="text-sm" />
+          ) : (
+            <span className="text-sm text-muted-foreground">
+              {t('admin.org.neverSignedIn', 'Nobody yet')}
+            </span>
+          ),
       },
       {
         id: 'sso',
@@ -174,6 +197,19 @@ export default function AdminOrganizationsPage() {
             }}
             toolbarStart={
               <>
+                <FilterSelect<OrgStatus>
+                  label={t('admin.org.col.status', 'Status')}
+                  value={status}
+                  onChange={(v) => list.setFilter('status', v)}
+                  options={[
+                    { value: 'active', label: t('admin.org.status.active', 'Active') },
+                    { value: 'suspended', label: t('admin.org.suspension.badge', 'Suspended') },
+                    {
+                      value: 'pending_deletion',
+                      label: t('admin.org.deletion.badge', 'Deletion scheduled'),
+                    },
+                  ]}
+                />
                 <Select
                   value={owner || ANY}
                   onValueChange={(v) => list.setFilter('owner', v === ANY ? '' : v)}

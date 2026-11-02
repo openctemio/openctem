@@ -17,7 +17,11 @@ type Organization struct {
 	CreatedAt   time.Time
 	// ActiveMembers counts memberships that are not suspended.
 	ActiveMembers int
-	OwnerEmails   []string
+	// LastMemberSignInAt is the latest sign-in of any active member (nil:
+	// none signed in yet). Sign-in times are kept per account, not per
+	// organization, so a member's sign-in for another organization counts.
+	LastMemberSignInAt *time.Time
+	OwnerEmails        []string
 	// SSO posture.
 	SAMLEnabled             bool
 	ActiveIdentityProviders int
