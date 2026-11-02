@@ -206,7 +206,7 @@ timeout is the direct import's (45 min) so a first relayed snapshot is not
 cancelled.
 
 **Rounds and claims.** A round is a platform-wide row `feed_relay_rounds` (no
-tenant), created unclaimed. `GET /api/v2/sensor/feed-relay/next` claims the
+tenant), created unclaimed. `GET /api/v2/sensor/feed-relay-rounds/next` claims the
 oldest open round for the calling sensor (`FOR UPDATE SKIP LOCKED`) and signs
 it with the job signer as a `feed_relay` statement (platform tenant id,
 instance scope, the feed origins as targets, which the signer checks against

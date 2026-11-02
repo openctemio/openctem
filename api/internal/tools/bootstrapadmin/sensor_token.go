@@ -47,7 +47,7 @@ func runSensorToken(args []string) int {
 	name := fs.String("name", "", "Name the shared sensor gets (default: its host name)")
 	reason := fs.String("reason", "bundled sensor of the install", "Why the token is issued (audited)")
 	ttl := fs.Duration("ttl", time.Hour, "Lifetime, 5m to 1h")
-	feedRelay := fs.Bool("feed-relay", false, "New install only: receive every feed through this sensor (relay mode, docs/rfcs/RFC-142-feed-relay.md); ignored once the feed delivery setting exists")
+	feedRelay := fs.Bool("feed-relay", false, "New install only: receive every feed through this sensor (relay mode); ignored once the feed delivery setting exists")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
