@@ -21,6 +21,61 @@ Only a platform administrator configures an organization's SAML provider, in
 the admin console; each change needs an organization owner's approval under
 **Settings → SSO approvals**.
 
+## Components and trust
+
+The setup procedure (platform admin, Entra admin, organization owner) and the
+OIDC variant are drawn in
+[configure-entraid.md](../how-to/configure-entraid.md#how-it-fits-together).
+
+```mermaid
+flowchart LR
+    B["Browser"]
+    subgraph OC["OpenCTEM API"]
+        L["GET /auth/saml/{org}/login<br/>AuthnRequest + request id cookie"]
+        ACS["POST /auth/saml/{org}/acs<br/>strict checks + replay cache"]
+        MD["GET /auth/saml/{org}/metadata<br/>(public, APP_URL based)"]
+        IMP["POST /admin/tenants/{id}/sso/saml/idp-metadata<br/>(platform admin, parse only)"]
+        CFG[("saml_providers: entity ID, sign-in URL,<br/>1 to 5 public signing certs, domains, role")]
+    end
+    IDP["IdP (Entra ID)<br/>holds the private signing key"]
+    B -- "1 start" --> L
+    L -- "302 redirect binding" --> B
+    B -- "2 AuthnRequest" --> IDP
+    IDP -- "3 form POST SAMLResponse" --> B
+    B -- "4 SAMLResponse" --> ACS
+    IMP -- "https only, SSRF guard, 1 MiB, 10 s" --> IDP
+    ACS --- CFG
+    IMP -. "admin saves via PUT /sso/saml<br/>(owner approval)" .-> CFG
+```
+
+OpenCTEM holds no IdP secret for SAML: only public certificates. The API never
+calls the IdP during sign-in (no artifact binding); every protocol message
+travels through the browser. There is no single logout: Entra sends none, and
+access ends through SCIM, member removal or session expiry.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant B as Browser
+    participant API as OpenCTEM API
+    participant E as Entra ID
+    B->>API: GET /auth/saml/{org}/login
+    API-->>B: 302 to the IdP sign-in URL, request id in a short-lived cookie
+    B->>E: AuthnRequest
+    E-->>B: SAMLResponse (auto-submitting form)
+    B->>API: POST /auth/saml/{org}/acs
+    API->>API: exactly one signed assertion, signature by a configured cert,<br/>no SHA-1, audience, destination, conditions, InResponseTo
+    break any check fails, or the assertion id was seen before
+        API-->>B: /login?error=saml_failed (reason only in the log)
+    end
+    API->>API: identity = Entra tenantid/objectidentifier (else persistent NameID),<br/>scoped to the organization; email for matching under proof rules
+    break another subject bound to the email, password account, not a member and no JIT
+        API-->>B: /login?error=... (stable code)
+    end
+    API->>API: session federated for this organization,<br/>MFA evidence when AuthnContext is multi-factor
+    API-->>B: session cookies, redirect into the app
+```
+
 ## Config (9d)
 
 `saml_providers` (migration 000182), one row per tenant, **disabled by
