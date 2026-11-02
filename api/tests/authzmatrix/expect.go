@@ -83,7 +83,8 @@ var (
 		"/health": true, "/ready": true, "/docs": true, "/openapi.yaml": true, "/metrics": true,
 		"/api/v1/brand": true, "/api/v1/brand/images/{kind}": true, "/api/v1/legal": true,
 		"/api/v1/client-errors": true, "/api/v1/sensors/install/seccomp-profile": true,
-		"/api/v1/ci/oidc/exchange": true, "/api/v1/validation/evidence": true,
+		"/api/v1/sensors/platform-ca": true,
+		"/api/v1/ci/oidc/exchange":    true, "/api/v1/validation/evidence": true,
 	}
 )
 
