@@ -621,3 +621,18 @@ func TestSSOLink_StoreErrorFailsClosed(t *testing.T) {
 		}
 	})
 }
+
+// The redirect_uri check lives in the shared redemption, so the link path
+// keeps it: a code is never redeemed for an address other than the one the
+// authorize request used.
+func TestSSOLink_RedemptionPinsTheAuthorizeRedirectURI(t *testing.T) {
+	f := newSSOLinkFixture(t)
+	st := ssoState{org: "acme", provider: okta, codeVerifier: "v", redirectURI: ssoLinkRedirect}
+	if _, err := f.svc.redeemFederatedIdentity(context.Background(), st, okta, "the-code", "https://evil.example/cb"); !errors.Is(err, ErrSSOInvalidState) {
+		t.Fatalf("a different redirect_uri must be refused, got %v", err)
+	}
+	st.redirectURI = ""
+	if _, err := f.svc.redeemFederatedIdentity(context.Background(), st, okta, "the-code", ssoLinkRedirect); !errors.Is(err, ErrSSOInvalidState) {
+		t.Fatalf("a state without a redirect_uri must be refused, got %v", err)
+	}
+}
