@@ -91,6 +91,14 @@ func assertPresetState(t *testing.T, s *ModuleService, p *moduledom.ModulePreset
 	got := enabledSet(s)
 	for _, m := range cat {
 		id := m.ID()
+		if !moduledom.IsUserFacing(id) {
+			// Not on Settings > Modules: a preset leaves it as it was (on,
+			// since every test tenant starts with all modules on).
+			if !got[id] {
+				t.Errorf("preset %s switched off %s, which Settings > Modules does not list", p.ID, id)
+			}
+			continue
+		}
 		if want[id] != got[id] && !m.IsCore() {
 			t.Errorf("preset %s: module %s enabled=%v, want %v", p.ID, id, got[id], want[id])
 		}

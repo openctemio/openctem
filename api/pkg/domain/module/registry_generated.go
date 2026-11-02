@@ -459,6 +459,7 @@ var Registry = []Definition{
 		Description: "Finding suppression rules to mute known false positives",
 		Icon:        "EyeOff",
 		Category:    "mobilization", DisplayOrder: 41, Release: ReleaseStatusReleased,
+		UserFacing: true,
 		Permission: "findings:suppressions:read",
 		Depends: []Dependency{
 			{ModuleID: ModuleFindings, Type: DependencyHard, Reason: "suppressions suppress findings"},
@@ -701,6 +702,7 @@ var Registry = []Definition{
 		Description: "Indicators of Compromise",
 		Icon:        "Fingerprint",
 		Category:    "operations", DisplayOrder: 84, Release: ReleaseStatusReleased,
+		UserFacing: true,
 		Permission: "threat_intel:read",
 		Depends: []Dependency{
 			{ModuleID: ModuleThreatIntel, Type: DependencySoft, Reason: "IOC enrichment pulls from threat intel feeds"},
