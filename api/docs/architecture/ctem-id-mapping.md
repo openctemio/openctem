@@ -92,8 +92,3 @@ Vietnamese).
   enricher loads under the caller's tenant. An asset that does not load contributes nothing.
 - Details come from producers: the rules only compare them with fixed values; nothing from them reaches the
   code or the link.
-
-## Licence
-
-We hold the codes and our own descriptions only, never the catalog's titles or descriptions. CTEM-ID:
-https://ctem.org, (c) SecureCoders and contributors, licensed CC BY-NC-SA 4.0.
