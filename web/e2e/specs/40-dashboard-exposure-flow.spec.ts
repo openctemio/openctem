@@ -10,8 +10,9 @@ import { test, expect } from '../fixtures/authenticated-page'
  * Escape closes it; the receipt list the intake figures open loads with the
  * totals of its filter. On a phone the answer comes first (actionable now,
  * outcomes, stages, then sources), the actionable total shows once, and every
- * figure is a tap target of at least 44 px; on a desktop the ring stays and
- * the funnel no longer repeats the actionable total (research/359).
+ * figure is a tap target of at least 44 px; on a desktop the rings stay (each
+ * with its track, a source arc explains itself on focus) and the funnel no
+ * longer repeats the actionable total (research/359).
  */
 
 const AXE = path.resolve(__dirname, '../../node_modules/axe-core/axe.min.js')
@@ -74,6 +75,15 @@ for (const vp of VIEWPORTS) {
           expect(small, 'phone tap targets under 44 px').toEqual([])
         } else {
           await expect(flow.locator('svg[role="group"]')).toBeVisible()
+          // Every ring has its track, so an empty ring still reads as a ring.
+          expect(await flow.locator('[data-testid="ring-track"]').count()).toBeGreaterThan(0)
+          // A source arc (organization read with sources) explains itself on focus.
+          const arc = flow.locator('[data-seg^="s:"][role="link"]').first()
+          if (await arc.count()) {
+            await arc.focus()
+            await expect(page.getByRole('tooltip').getByText('Share of received')).toBeVisible()
+            await page.keyboard.press('Escape')
+          }
         }
 
         await page.addScriptTag({ path: AXE })

@@ -15,6 +15,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -54,6 +55,12 @@ var (
 	ErrSSOInvalidDefaultRole  = errors.New("invalid default role")
 	ErrSSONoEmail             = errors.New("SSO provider did not return an email address")
 	ErrSSOInvalidIDToken      = errors.New("SSO id_token failed validation")
+	// ErrSSOProviderMisconfigured: an organization's Entra ID provider names
+	// no single directory (empty, common, organizations, consumers or a
+	// domain name instead of the directory id). Such a provider would accept
+	// accounts of any Microsoft directory, or could never match the token's
+	// tid, so sign-in through it is refused until the directory id is set.
+	ErrSSOProviderMisconfigured = errors.New("SSO provider is misconfigured")
 	// ErrSSONotAMember is returned when a federated login resolves to a user who
 	// is not a member of the target tenant and does not qualify for JIT
 	// auto-provisioning (FIX 2). The caller surfaces a generic "contact your
@@ -289,7 +296,12 @@ func (s *SSOService) GetProvidersForTenant(ctx context.Context, orgSlug string) 
 	hasEntra := false
 	for _, p := range providers {
 		if p.Provider() == identityproviderdom.ProviderEntraID {
+			// The organization's own provider suppresses the env fallback even
+			// when it cannot be used (resolveProvider refuses it).
 			hasEntra = true
+			if !isEntraDirectoryID(p.TenantIdentifier()) {
+				continue
+			}
 		}
 		result = append(result, SSOProviderInfo{
 			ID:          p.ID(),
@@ -443,6 +455,11 @@ func (s *SSOService) resolveProvider(ctx context.Context, tenantID, orgSlug stri
 		if !ip.IsActive() {
 			return nil, ErrSSOProviderInactive
 		}
+		if ip.Provider() == identityproviderdom.ProviderEntraID && !isEntraDirectoryID(ip.TenantIdentifier()) {
+			s.logger.Warn("entra_id SSO refused: the provider has no directory (tenant) id; set it in the admin console",
+				"provider_id", ip.ID(), "tenant_id", tenantID)
+			return nil, ErrSSOProviderMisconfigured
+		}
 		secret, derr := s.encryptor.DecryptString(ip.ClientSecretEncrypted())
 		if derr != nil {
 			s.logger.Error("failed to decrypt client secret", "provider_id", ip.ID(), "error", derr)
@@ -526,6 +543,12 @@ func (s *SSOService) envProvider(orgSlug string, provider identityproviderdom.Pr
 		role = string(tenantdom.RoleViewer)
 	}
 	autoProvision := cfg.AutoProvision
+	if !oidc.IsMultiTenantEntraAuthority(cfg.TenantID) && !isEntraDirectoryID(cfg.TenantID) {
+		// A domain name or another value never equals the token's tid.
+		s.logger.Warn("env Entra fallback refused: SSO_ENTRA_TENANT_ID must be the directory GUID or common/organizations",
+			"tenant_slug", logger.SanitizeValue(orgSlug))
+		return nil
+	}
 	if oidc.IsMultiTenantEntraAuthority(cfg.TenantID) {
 		if len(cfg.AllowedDomains) == 0 {
 			s.logger.Warn("env Entra fallback refused: non-specific directory requires SSO_ENTRA_ALLOWED_DOMAINS",
@@ -569,7 +592,7 @@ func (s *SSOService) GenerateAuthorizeURL(ctx context.Context, input SSOAuthoriz
 
 	// Create the server-side single-use state record (nonce, PKCE verifier,
 	// browser binding hash) and its opaque handle — see generateState.
-	state, nonce, codeChallenge, binding, err := s.generateState(ctx, input.OrgSlug, input.Provider, input.ForceReauth)
+	state, nonce, codeChallenge, binding, err := s.generateState(ctx, input.OrgSlug, input.Provider, input.RedirectURI, input.ForceReauth)
 	if err != nil {
 		return nil, fmt.Errorf("generate state: %w", err)
 	}
@@ -660,6 +683,13 @@ func (s *SSOService) HandleCallback(ctx context.Context, input SSOCallbackInput)
 	orgSlug, stateProvider := st.org, st.provider
 
 	if stateProvider != input.Provider {
+		return nil, ErrSSOInvalidState
+	}
+	// The code is redeemed only for the redirect_uri it was issued to. The
+	// identity provider checks this too; checking it here keeps a callback
+	// from steering the exchange to another allowed address.
+	if st.redirectURI == "" || st.redirectURI != input.RedirectURI {
+		s.logger.Warn("SSO callback refused: redirect_uri differs from the authorize request", "provider", input.Provider)
 		return nil, ErrSSOInvalidState
 	}
 
@@ -1129,6 +1159,9 @@ type ssoStateRecord struct {
 	CodeVerifier string `json:"cv"`
 	BindingHash  string `json:"bh"`
 	Reauth       bool   `json:"reauth,omitempty"`
+	// RedirectURI is the redirect_uri of the authorize request; the callback
+	// must present the same one.
+	RedirectURI string `json:"ru"`
 }
 
 // stateStoreOrMemory returns the wired store, or an in-process one (single
@@ -1199,7 +1232,7 @@ func hashBinding(binding string) string {
 // browser-binding token. The caller hands the binding token to the browser
 // (an HttpOnly cookie) and presents it again at the callback; only its hash is
 // stored. The PKCE verifier stays server-side.
-func (s *SSOService) generateState(ctx context.Context, orgSlug, provider string, reauth bool) (state, nonce, codeChallenge, binding string, err error) {
+func (s *SSOService) generateState(ctx context.Context, orgSlug, provider, redirectURI string, reauth bool) (state, nonce, codeChallenge, binding string, err error) {
 	rnd := make([]byte, 24+16)
 	if _, err := rand.Read(rnd); err != nil {
 		return "", "", "", "", err
@@ -1217,7 +1250,7 @@ func (s *SSOService) generateState(ctx context.Context, orgSlug, provider string
 
 	rec, mErr := json.Marshal(ssoStateRecord{
 		Org: orgSlug, Provider: provider, Nonce: nonce, CodeVerifier: verifier,
-		BindingHash: hashBinding(binding), Reauth: reauth,
+		BindingHash: hashBinding(binding), Reauth: reauth, RedirectURI: redirectURI,
 	})
 	if mErr != nil {
 		return "", "", "", "", mErr
@@ -1240,8 +1273,8 @@ func (s *SSOService) signState(data string) string {
 // code_verifier (RFC 7636) for the token exchange, and whether the flow asked
 // the provider to authenticate the user again.
 type ssoState struct {
-	org, provider, nonce, codeVerifier string
-	reauth                             bool
+	org, provider, nonce, codeVerifier, redirectURI string
+	reauth                                          bool
 }
 
 // consumeState verifies the handle's signature, takes its record exactly once
@@ -1274,7 +1307,8 @@ func (s *SSOService) consumeState(ctx context.Context, state, binding string) (s
 	if rec.Org == "" || rec.Provider == "" || rec.CodeVerifier == "" {
 		return ssoState{}, errors.New("missing state fields")
 	}
-	return ssoState{org: rec.Org, provider: rec.Provider, nonce: rec.Nonce, codeVerifier: rec.CodeVerifier, reauth: rec.Reauth}, nil
+	return ssoState{org: rec.Org, provider: rec.Provider, nonce: rec.Nonce, codeVerifier: rec.CodeVerifier,
+		redirectURI: rec.RedirectURI, reauth: rec.Reauth}, nil
 }
 
 // ssoTokens represents OAuth token response.
@@ -1926,17 +1960,19 @@ func (s *SSOService) requireFederatedDomainProof(ctx context.Context, t *tenantd
 // accounts, auto-provisions tenant membership when requested, and creates the
 // session. Reused by the SAML SP flow so it shares the SSO session machinery.
 func (s *SSOService) CompleteFederatedLogin(ctx context.Context, t *tenantdom.Tenant, email, name, defaultRole string, autoProvision bool) (*SSOCallbackResult, error) {
-	return s.completeFederatedLogin(ctx, t, email, name, defaultRole, autoProvision, federatedBinding{}, useridentity.Key{})
+	return s.completeFederatedLogin(ctx, t, email, name, defaultRole, autoProvision, federatedBinding{}, useridentity.Key{}, "")
 }
 
 // completeFederatedLogin is CompleteFederatedLogin with the time the
 // provider authenticated the user (SAML AuthnInstant), which opens the
 // step-up window when it is recent, and the assertion's identity (issuer +
-// persistent NameID, scoped to t; empty when the IdP sent no persistent id).
+// Entra object id or persistent NameID, scoped to t; empty when the IdP sent
+// no immutable id). legacySubject is a subject the identity was bound under
+// before (samlIdentity); a binding found under it is re-keyed.
 //
 //nolint:cyclop // one decision tree: returning identity, existing email, new account
 func (s *SSOService) completeFederatedLogin(ctx context.Context, t *tenantdom.Tenant, email, name, defaultRole string,
-	autoProvision bool, fed federatedBinding, key useridentity.Key) (*SSOCallbackResult, error) {
+	autoProvision bool, fed federatedBinding, key useridentity.Key, legacySubject string) (*SSOCallbackResult, error) {
 	email = strings.ToLower(strings.TrimSpace(email))
 	if email == "" {
 		return nil, ErrSSONoEmail
@@ -1951,7 +1987,7 @@ func (s *SSOService) completeFederatedLogin(ctx context.Context, t *tenantdom.Te
 	newUser := false
 	var u *userdom.User
 	if key.Valid() {
-		found, ident, lerr := s.accounts().lookup(ctx, key, "")
+		found, ident, lerr := s.accounts().lookup(ctx, key, legacySubject)
 		if lerr != nil {
 			return nil, fmt.Errorf("resolve federated identity: %w", lerr)
 		}
@@ -2188,6 +2224,17 @@ func validateDefaultRole(role string) error {
 // validateTenantIdentifier validates the tenant identifier to prevent SSRF.
 // For Okta, this must be a valid https URL. For Entra ID, it's a directory/tenant ID.
 func validateTenantIdentifier(provider identityproviderdom.Provider, tid string) error {
+	if provider == identityproviderdom.ProviderEntraID {
+		// An organization's Entra provider is pinned to its directory: the
+		// id_token's tid must equal it. A multi-tenant authority (empty,
+		// common, organizations, consumers) would accept accounts of every
+		// Microsoft directory, personal accounts included, and a domain name
+		// never equals the token's tid.
+		if !isEntraDirectoryID(tid) {
+			return fmt.Errorf("%w: the Directory (tenant) ID must be the directory's GUID (common, organizations, consumers and domain names are not accepted)", identityproviderdom.ErrInvalidConfig)
+		}
+		return nil
+	}
 	if tid == "" {
 		return nil
 	}
@@ -2209,14 +2256,17 @@ func validateTenantIdentifier(provider identityproviderdom.Provider, tid string)
 		if !strings.HasSuffix(host, ".okta.com") && !strings.HasSuffix(host, ".oktapreview.com") {
 			return fmt.Errorf("%w: Okta org URL must end with .okta.com or .oktapreview.com", identityproviderdom.ErrInvalidConfig)
 		}
-	case identityproviderdom.ProviderEntraID:
-		// Entra ID tenant identifier is a GUID or domain — no URL, so no SSRF risk.
-		// Just prevent overly long or suspicious values.
-		if len(tid) > 128 {
-			return fmt.Errorf("%w: tenant identifier too long", identityproviderdom.ErrInvalidConfig)
-		}
 	}
 	return nil
+}
+
+// entraDirectoryIDPattern is the canonical form of an Entra directory id.
+var entraDirectoryIDPattern = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
+
+// isEntraDirectoryID reports whether tid names exactly one Entra directory
+// (its GUID). It also keeps the value safe to place in the authority URL path.
+func isEntraDirectoryID(tid string) bool {
+	return entraDirectoryIDPattern.MatchString(tid)
 }
 
 // validateScopes validates that requested scopes are reasonable. A non-empty

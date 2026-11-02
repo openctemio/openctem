@@ -152,7 +152,7 @@ func TestSSOSignIn_OnlyARecentProviderAuthenticationOpensTheWindow(t *testing.T)
 func TestSSOReauth_FlagIsSigned(t *testing.T) {
 	svc := &SSOService{authConfig: config.AuthConfig{JWTSecret: "s-0123456789abcdef0123456789abcdef"}, encryptor: crypto.NewNoOpEncryptor()}
 	ctx := context.Background()
-	state, _, _, bind, err := svc.generateState(ctx, "acme", "okta", true)
+	state, _, _, bind, err := svc.generateState(ctx, "acme", "okta", "https://app.example.com/cb", true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -160,7 +160,7 @@ func TestSSOReauth_FlagIsSigned(t *testing.T) {
 	if err != nil || !st.reauth {
 		t.Fatalf("reauth flag lost: %+v %v", st, err)
 	}
-	plain, _, _, pbind, _ := svc.generateState(ctx, "acme", "okta", false)
+	plain, _, _, pbind, _ := svc.generateState(ctx, "acme", "okta", "https://app.example.com/cb", false)
 	if st, _ := svc.consumeState(ctx, plain, pbind); st.reauth {
 		t.Fatal("an ordinary state reads as a re-authentication")
 	}

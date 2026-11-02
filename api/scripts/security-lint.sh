@@ -427,8 +427,10 @@ check_httpsec_drift() {
         local ctis_dir
         # `go mod download` fetches the exact ctis version sdk-go pins (go.sum
         # verified) when the module cache does not have it; `go list -m`
-        # alone never downloads.
-        ctis_dir=$(cd sdk-go && GOWORK=off GOFLAGS=-mod=mod go mod download -json github.com/openctemio/ctis 2>/dev/null |
+        # alone never downloads. GOTOOLCHAIN=auto: sdk-go main may require a
+        # newer Go than this job's (CI pins GOTOOLCHAIN=local); fetching the
+        # toolchain only serves this download, nothing is built with it.
+        ctis_dir=$(cd sdk-go && GOTOOLCHAIN=auto GOWORK=off GOFLAGS=-mod=mod go mod download -json github.com/openctemio/ctis 2>/dev/null |
             python3 -c 'import json,sys; print(json.load(sys.stdin).get("Dir", ""))' 2>/dev/null)
         if [[ -z "$ctis_dir" || ! -f "$ctis_dir/addrscope/addrscope.go" ]]; then
             say_fail "Rule 6: $sdk_file uses ctis addrscope but its source could not be downloaded (go mod download github.com/openctemio/ctis in sdk-go/)"

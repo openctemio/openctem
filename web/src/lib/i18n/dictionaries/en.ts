@@ -50,6 +50,7 @@ import en_notificationChannels from './en/notificationChannels.json'
 import en_scmIntegration from './en/scmIntegration.json'
 import en_notificationPresets from './en/notificationPresets.json'
 import en_lookalikes from './en/lookalikes.json'
+import en_pageMonitor from './en/pageMonitor.json'
 import en_mcp from './en/mcp.json'
 import en_nav from './en/nav.json'
 import en_networkSeeds from './en/networkSeeds.json'
@@ -150,6 +151,7 @@ export const enNamespaces: Record<string, Dictionary> = {
   scmIntegration: en_scmIntegration,
   notificationPresets: en_notificationPresets,
   lookalikes: en_lookalikes,
+  pageMonitor: en_pageMonitor,
   mcp: en_mcp,
   nav: en_nav,
   networkSeeds: en_networkSeeds,

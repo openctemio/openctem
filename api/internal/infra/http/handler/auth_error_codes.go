@@ -151,6 +151,7 @@ var authErrorTable = []authErrorEntry{
 	// Two-factor authentication.
 	{e(auth.ErrMFAChallengeInvalid), http.StatusUnauthorized, codeMFAChallengeInvalid, "Your sign-in verification expired or is no longer valid. Sign in again.", ""},
 	{e(auth.ErrMFACodeInvalid), http.StatusUnauthorized, codeMFACodeInvalid, "Invalid verification code.", ""},
+	{e(auth.ErrOwnSignInRequired), http.StatusForbidden, auth.CodeOwnSignInRequired, "Your session comes from another organization's identity provider. Sign in with your own account to open this organization.", ""},
 	{e(auth.ErrSSOMFAEvidenceRequired), http.StatusForbidden, codeMFAIDPEvidenceRequired, "This organization requires your identity provider to confirm a second factor. Sign in again through your identity provider with multi-factor authentication.", ""},
 	{e(auth.ErrMFAEnrollmentRequired), http.StatusForbidden, apierror.CodeMFAEnrollmentRequired, "This organization requires two-factor authentication. Sign in again to complete it.", ""},
 	{e(auth.ErrMFANotSupported), http.StatusBadRequest, codeMFANotSupported, "Two-factor authentication for this account is managed by your identity provider.", ""},
@@ -177,7 +178,7 @@ var authErrorTable = []authErrorEntry{
 
 	// Organization SSO. An unknown organization answers exactly like one
 	// without that provider.
-	{e(auth.ErrSSOTenantNotFound, auth.ErrSSONoActiveProviders, auth.ErrSSOProviderNotFound), http.StatusNotFound, codeSSONotConfigured, "SSO provider not configured.", ""},
+	{e(auth.ErrSSOTenantNotFound, auth.ErrSSONoActiveProviders, auth.ErrSSOProviderNotFound, auth.ErrSSOProviderMisconfigured), http.StatusNotFound, codeSSONotConfigured, "SSO provider not configured.", ""},
 	{e(auth.ErrSSOProviderInactive), http.StatusBadRequest, codeSSOProviderInactive, "SSO provider is not active.", ""},
 	{e(auth.ErrSSOInvalidState), http.StatusBadRequest, codeSSOInvalidState, "Invalid or expired state token.", ""},
 	{e(auth.ErrSSOInvalidRedirectURI), http.StatusBadRequest, codeSSOInvalidRedirect, "Invalid redirect URI.", ""},
