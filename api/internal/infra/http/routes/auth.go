@@ -360,6 +360,35 @@ func registerIdentityLinkRoutes(router Router, h *handler.OAuthHandler, authMidd
 	}, middlewares...)
 }
 
+// registerSSOLinkRoutes registers Account > Security, "Organization sign-in"
+// (auth/sso_link.go): link or unlink an organization's single sign-on on the
+// caller's own account. Start and unlink carry the CSRF check and a proof
+// typed for that request (checked by the service; deliberately not behind
+// requireStepUp, as for the social links). The completion is called by the
+// web server with the session token after the identity provider's redirect:
+// its state is bound to this account and this session, single use, expires,
+// and is accepted only with the browser binding the start gave the starting
+// browser.
+func registerSSOLinkRoutes(router Router, h *handler.SSOHandler, authMiddleware, userSyncMiddleware Middleware) {
+	middlewares := []Middleware{authMiddleware}
+	if userSyncMiddleware != nil {
+		middlewares = append(middlewares, userSyncMiddleware)
+	}
+	linkRL := newAuthRateLimiter("sso-links").PasswordMiddleware()
+	withCSRF := func(mws ...Middleware) []Middleware {
+		if csrfProtectionMiddleware != nil {
+			return append([]Middleware{csrfProtectionMiddleware}, mws...)
+		}
+		return mws
+	}
+	router.Group("/api/v1/me/sso-links", func(r Router) {
+		r.GET("/", h.ListSSOLinks)
+		r.POST("/{provider}/start", h.StartSSOLink, withCSRF(linkRL)...)
+		r.POST("/{provider}/complete", h.CompleteSSOLink, linkRL)
+		r.DELETE("/{id}", h.UnlinkSSOIdentity, withCSRF(linkRL)...)
+	}, middlewares...)
+}
+
 // tenantCreationModeOf is the organization policy reported when the console
 // sign-up policy is not wired: self_service only under SIGNUP_MODE=open.
 func tenantCreationModeOf(c config.AuthConfig) string {

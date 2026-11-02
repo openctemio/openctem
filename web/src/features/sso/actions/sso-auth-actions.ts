@@ -21,6 +21,7 @@ import { cookies } from 'next/headers'
 import { env } from '@/lib/env'
 import { browserContextHeaders } from '@/lib/api/browser-context-headers'
 import { bindingCookieName, bindingCookieOptions } from '@/features/auth/lib/browser-binding'
+import { SSO_LINK_INTENT_COOKIE } from '@/features/auth/lib/oauth-cookies'
 import { setServerCookie } from '@/lib/cookies-server'
 import { validateRedirectUrl } from '@/lib/redirect'
 import { isAllowedValue, sanitizeLogValue } from '@/lib/log-sanitize'
@@ -110,6 +111,8 @@ export async function getSSOAuthorizeUrl(
 
     // Browser binding: the API refuses the callback without this secret.
     cookieStore.set(bindingCookieName('sso'), data.browser_binding, bindingCookieOptions())
+    // A sign-in, not a link: drop a link intent left by an abandoned link.
+    cookieStore.delete(SSO_LINK_INTENT_COOKIE)
 
     // Store org slug for callback
     cookieStore.set('sso_org', orgSlug, {

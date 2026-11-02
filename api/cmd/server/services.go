@@ -3634,6 +3634,11 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	s.Auth.SetBreakGlassNotifier(s.Tenant)
 	ssoEnforcement := repos.SSOEnforcement
 	s.SSO.SetSSOSignInRecorder(ssoEnforcement)
+	// Linking an organization's sign-in to an existing account needs a code
+	// or password typed for it and revokes the account's other sessions
+	// (auth/sso_link.go).
+	s.SSO.SetLinkProofVerifier(s.Auth)
+	s.SSO.SetSessionRevoker(s.Session)
 	s.Tenant.SetSSOEnforcementStore(ssoEnforcement)
 	s.Role.SetPrivilegeNotifier(s.Tenant)
 	s.Auth.SetInvitationAcceptor(s.Tenant)

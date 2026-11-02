@@ -444,6 +444,73 @@ The identity store is required: a login that carries an identity is refused
 when it is not wired. Erasing a member's personal data deletes their
 identities, so a later sign-in never finds the anonymised account.
 
+## Linking an existing account
+
+A federated sign-in never adopts a password account because the identity
+provider sends its email: it is refused with `403 ACCOUNT_LINK_REQUIRED`. The
+person links the organization's sign-in from their own account instead
+(`internal/app/auth/sso_link.go`, Account > Security, "Organization sign-in").
+This is how an organization's first owner, created by local sign-up, gets
+the organization's sign-in, and so how "Require single sign-on" becomes
+possible for them (the link counts as their sign-in through the organization's
+identity provider). OIDC providers only (Entra ID, Okta, Google Workspace);
+SAML linking is a follow-up.
+
+| Route | Gate |
+|---|---|
+| `GET /api/v1/me/sso-links` | signed in; the caller's own active memberships only |
+| `POST /api/v1/me/sso-links/{provider}/start` | proof typed for it, CSRF, rate limit |
+| `POST /api/v1/me/sso-links/{provider}/complete` | signed in, rate limit; state bound to account, session, organization and browser, single use, expires |
+| `DELETE /api/v1/me/sso-links/{id}` | proof typed for it, CSRF, rate limit |
+
+Flow:
+
+1. "Link" opens a dialog that asks for the authenticator code, or the password
+   when two-factor authentication is off (`auth/link_proof.go`; never a recovery
+   code, a recent sign-in does not count). The start refuses an organization
+   the account is not an active member of (`403 SSO_NOT_A_MEMBER`, also for an
+   unknown organization) before the proof is checked.
+2. The start reuses the sign-in authorize step with a fresh authentication
+   (`max_age=0`, `prompt=login` except Google): the same server-side state
+   record (PKCE verifier, nonce, browser-binding hash), plus a link record
+   stored next to it under the hash of the state: account, session,
+   organization, provider, redirect URI and the factor that proved the start.
+3. The identity provider returns to `/auth/sso/callback/{provider}`, the
+   redirect URI the organization already registered. The web sees its link
+   intent cookie and hands the code to `/auth/sso/link/{provider}`, which spends
+   the state and binding cookies and calls the completion with the session
+   cookie's token.
+4. The completion spends the state (single use, browser binding) and its link
+   record, and refuses (`400 SSO_INVALID_STATE`) unless the record exists and
+   names this account, this session and this provider, the state asked for a
+   fresh authentication and the start was proved. The session must still be
+   active. Then the code is redeemed exactly as at sign-in
+   (`redeemFederatedIdentity`: id_token signature, issuer, audience, nonce,
+   `auth_time` within five minutes, Google `hd`, Entra `xms_edov`, allowed
+   domains). The account must still be an active member of the organization.
+   The identity is refused when it belongs to another account
+   (`409 IDENTITY_LINKED_ELSEWHERE`) or when the account already holds another
+   subject at that issuer (`409 PROVIDER_ALREADY_LINKED`). Every other session
+   of the account is revoked before the identity is bound (fail closed). No
+   session is issued.
+5. The sign-in callback refuses a state that has a link record, and the link
+   completion refuses one that has none: a link round trip never signs anyone
+   in, and a sign-in round trip never links.
+
+The provider's email does not have to match the account's: the person proved
+both. A password account keeps its own address afterwards: a later sign-in
+through the organization never rewrites it (`returningFederatedUser`), since
+the address is how the account signs in and recovers its password in every
+organization.
+
+Unlinking removes an organization OIDC identity from an account that has a
+password (it keeps a way to sign in); an account without a password stays
+managed by its organization (`409 IDENTITY_MANAGED_BY_ORGANIZATION`). It needs
+the same proof and revokes the account's other sessions first. Link and unlink
+write `auth.identity_linked` / `auth.identity_unlinked` (a link also to the
+organization's audit log, provider `sso:<provider>`) and e-mail the account's
+address.
+
 ## Home-realm sign-in for external members (RFC-058)
 
 A session counts as an SSO sign-in only of the organization whose identity
@@ -595,6 +662,14 @@ used for an organization that requires 2FA (`mfa_required`) gets
 ## Known follow-ups (not yet shipped)
 
 - **SAML / SCIM**: organization SAML 2.0 SSO and SCIM provisioning are documented in [saml-sso.md](saml-sso.md) and [scim-provisioning.md](scim-provisioning.md).
+- **SAML linking**: an existing password account links an organization's OIDC
+  sign-in only; linking a SAML identity (`Linking an existing account`) is not
+  built yet.
+- **Second factor after the organization's sign-in**: a linked password
+  account that signs in through the organization's identity provider is not
+  asked for its own authenticator code (an SSO session, as for every SSO
+  account). Running the account's second step there needs the step to keep
+  the session an SSO sign-in of that organization.
 - The env fallback currently covers `entra_id` only; Okta/Google could follow
   the same `envProvider` seam.
 - **SSO-enforcement residual window** — closed: the access token carries the
