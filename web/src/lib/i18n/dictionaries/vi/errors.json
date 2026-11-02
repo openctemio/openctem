@@ -120,6 +120,7 @@
   "errors.auth.ORGANIZATION_CREATION_DISABLED": "Tổ chức do quản trị viên ứng dụng tạo.",
   "errors.auth.ORGANIZATION_REQUIRED": "Hãy chọn một tổ chức để tiếp tục.",
   "errors.auth.ORGANIZATION_SUSPENDED": "Tổ chức này đã bị tạm ngưng. Hãy liên hệ bộ phận hỗ trợ.",
+  "errors.auth.OWN_SIGN_IN_REQUIRED": "Phiên của bạn đến từ nhà cung cấp danh tính của một tổ chức, không áp dụng cho thao tác này. Hãy đăng nhập bằng tài khoản của chính bạn (mật khẩu và xác thực hai lớp nếu có) để tiếp tục.",
   "errors.auth.PASSWORD_BREACHED": "Mật khẩu này nằm trong danh sách mật khẩu bị lộ. Hãy chọn mật khẩu khác.",
   "errors.auth.PASSWORD_MISMATCH": "Mật khẩu hiện tại không đúng.",
   "errors.auth.PASSWORD_NO_LOWERCASE": "Mật khẩu cần ít nhất một chữ thường.",

@@ -235,11 +235,20 @@ completing login (`SSOService.verifyIDToken` → `oidc.Client.VerifyIDToken`):
   2-minute leeway.
 - **Nonce** — must equal the nonce embedded in the signed `state` at authorize
   time (constant-time compare); binds the token to this flow.
+- **Redirect URI** — the state record keeps the authorize request's
+  `redirect_uri`; a callback presenting another one is refused before the
+  code is redeemed.
 - **Issuer** — provider-specific. For Entra the issuer must be
   `https://login.microsoftonline.com/{tid}/v2.0` consistent with the token's
-  `tid` claim; single-tenant configs additionally require `tid` to match the
-  configured directory, while `common`/`organizations`/`consumers` accept any
-  directory (the email domain allow-list still applies). For Okta the issuer
+  `tid` claim, and `tid` must equal the configured directory. An
+  organization's own Entra provider must name its directory by GUID: an
+  empty value, `common`, `organizations`, `consumers` or a domain name is
+  refused when the provider is saved, and a stored provider with such a value
+  is not offered on the sign-in page and refuses sign-in
+  (`ErrSSOProviderMisconfigured`, answered as "SSO provider not configured").
+  Only the operator's env fallback (`SSO_ENTRA_TENANT_ID`) may use the
+  multi-tenant `common`/`organizations` authority, and then it never
+  auto-provisions and requires `SSO_ENTRA_ALLOWED_DOMAINS`. For Okta the issuer
   must be the configured org's default authorization server
   (`{org}/oauth2/default`); for Google it must be `https://accounts.google.com`
   (or `accounts.google.com`).
@@ -410,7 +419,7 @@ single `users.federated_issuer/subject` pair was copied there and migration
 | Organization OIDC, Entra ID; social Microsoft | verified `id_token` `iss` (contains the directory `tid`) | `oid` (the same for every app in the directory; `sub` is pairwise per app). Identities bound under `sub` are re-keyed on the next login. | platform-wide |
 | Social Google | `https://accounts.google.com` | Google account id (`sub`) | platform-wide |
 | Social GitHub | `https://github.com` | numeric user id | platform-wide |
-| SAML | assertion `Issuer` (IdP entity id) | `NameID`, only when its format is `persistent` | **the organization** whose IdP certificate signed it |
+| SAML | assertion `Issuer` (IdP entity id) | Entra ID: `{tenantid}/{objectidentifier}` from the claims Entra always sends, whatever the NameID is (each claim exactly once, one value), used only when the assertion's Issuer is `https://sts.windows.net/{tenantid}/` (an Entra issuer whose tenantid claim disagrees is refused; the same attribute names from another IdP are ignored); other IdPs: `NameID`, only when its format is `persistent`. An email-format NameID keys nothing. Identities bound under a persistent NameID are re-keyed to the Entra object id on the next login. | **the organization** whose IdP certificate signed it |
 
 A SAML identity is scoped to its organization because the organization
 configures the signing certificate: another organization can configure the
