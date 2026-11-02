@@ -215,8 +215,8 @@ export function VisualBuilderDialog({
       setSelectedStepId(null)
     }
 
-    toast.success('Step deleted')
-  }, [deleteStepId, localSteps, selectedStepId])
+    toast.success(t('scans.workflowForm.visual.stepDeleted'))
+  }, [deleteStepId, localSteps, selectedStepId, t])
 
   // Handle save
   const handleSave = async () => {
@@ -230,10 +230,10 @@ export function VisualBuilderDialog({
         ui_end_position: endPosition,
       })
       setHasChanges(false)
-      toast.success('Workflow saved successfully')
+      toast.success(t('scans.workflowForm.visual.saved'))
     } catch (error) {
       console.error('Failed to save workflow:', error)
-      toast.error(getErrorMessage(error, 'Failed to save workflow'))
+      toast.error(getErrorMessage(error, t('scans.workflowForm.visual.saveFailed')))
     } finally {
       setIsSaving(false)
     }
@@ -250,9 +250,19 @@ export function VisualBuilderDialog({
             className="border-b"
             actions={
               <>
-                {isReadOnly && <Tag variant="plain" icon={Cloud} label="System Template" />}
+                {isReadOnly && (
+                  <Tag
+                    variant="plain"
+                    icon={Cloud}
+                    label={t('scans.workflowForm.visual.systemTemplate')}
+                  />
+                )}
                 {hasChanges && !isReadOnly && (
-                  <StatusLozenge tone="waiting" icon={Clock} label="Unsaved" />
+                  <StatusLozenge
+                    tone="waiting"
+                    icon={Clock}
+                    label={t('scans.workflowForm.visual.unsaved')}
+                  />
                 )}
                 {!isReadOnly && (
                   <Button size="sm" onClick={handleSave} disabled={!hasChanges || isSaving}>
@@ -261,7 +271,7 @@ export function VisualBuilderDialog({
                     ) : (
                       <Save className="me-2 h-4 w-4" />
                     )}
-                    Save
+                    {t('scans.workflowForm.visual.save')}
                   </Button>
                 )}
               </>
@@ -275,12 +285,12 @@ export function VisualBuilderDialog({
               )}
               <div className="min-w-0">
                 <DialogTitle className="text-base font-semibold truncate">
-                  {workflow?.name || 'Visual Builder'}
+                  {workflow?.name || t('scans.workflowForm.visual.title')}
                 </DialogTitle>
                 <DialogDescription className="truncate text-xs text-muted-foreground">
                   {isReadOnly
-                    ? 'Read-only view - Clone to edit'
-                    : 'Drag nodes from the palette, connect them, click one to edit'}
+                    ? t('scans.workflowForm.visual.readOnly')
+                    : t('scans.workflowForm.visual.hint')}
                 </DialogDescription>
               </div>
             </div>
