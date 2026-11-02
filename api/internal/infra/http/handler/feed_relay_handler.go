@@ -12,6 +12,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -181,6 +182,30 @@ type FeedRelayStatusResponse struct {
 	Feeds     []FeedRelayFeedStatus `json:"feeds"`
 	// NotRelayed names feeds that stay idle in relay mode (program_feed).
 	NotRelayed []string `json:"not_relayed"`
+	// Candidates are the platform's shared sensors (at most 100) and
+	// whether each can relay; only eligible ones may be designated.
+	Candidates []FeedRelayCandidate `json:"candidates"`
+	// Alerts are the administrators' open alerts (relay_offline,
+	// feed_stale:<feed>, round_failed:<feed>:<code>) and since when.
+	Alerts []FeedRelayAlert `json:"alerts"`
+}
+
+// FeedRelayCandidate is a platform sensor the console may offer as a relay.
+type FeedRelayCandidate struct {
+	ID         string     `json:"id"`
+	Name       string     `json:"name"`
+	Status     string     `json:"status"`
+	LastSeenAt *time.Time `json:"last_seen_at,omitempty"`
+	// Eligible: active and reporting feed.relay@1. Otherwise Reason is
+	// inactive or no_capability.
+	Eligible bool   `json:"eligible"`
+	Reason   string `json:"reason,omitempty"`
+}
+
+// FeedRelayAlert is one open alert.
+type FeedRelayAlert struct {
+	Key   string    `json:"key"`
+	Since time.Time `json:"since"`
 }
 
 // FeedRelaySensorView is a designated relay sensor.
@@ -269,7 +294,27 @@ func (h *FeedRelayHandler) Status(w http.ResponseWriter, r *http.Request) {
 	now := time.Now()
 	out := FeedRelayStatusResponse{Mode: st.Settings.Mode, Locked: st.Settings.Locked, Version: st.Settings.Version,
 		SensorIDs: st.Settings.SensorIDs, Bootstrap: st.Settings.Bootstrap, Sensors: []FeedRelaySensorView{},
-		Feeds: []FeedRelayFeedStatus{}, NotRelayed: st.NotRelayed}
+		Feeds: []FeedRelayFeedStatus{}, NotRelayed: st.NotRelayed, Candidates: []FeedRelayCandidate{}, Alerts: []FeedRelayAlert{}}
+	cands, err := h.svc.Candidates(r.Context())
+	if err != nil {
+		h.logger.Error("feed relay candidates", "error", logger.SanitizeError(err))
+		apierror.InternalServerError("feed relay status unavailable").WriteJSON(w)
+		return
+	}
+	for _, c := range cands {
+		out.Candidates = append(out.Candidates, FeedRelayCandidate{ID: c.Sensor.ID.String(), Name: c.Sensor.Name,
+			Status: string(c.Sensor.Status), LastSeenAt: c.Sensor.LastSeenAt, Eligible: c.Reason == "", Reason: c.Reason})
+	}
+	alerts, err := h.svc.OpenAlerts(r.Context())
+	if err != nil {
+		h.logger.Error("feed relay alerts", "error", logger.SanitizeError(err))
+		apierror.InternalServerError("feed relay status unavailable").WriteJSON(w)
+		return
+	}
+	for k, a := range alerts {
+		out.Alerts = append(out.Alerts, FeedRelayAlert{Key: k, Since: a.Since})
+	}
+	sort.Slice(out.Alerts, func(i, j int) bool { return out.Alerts[i].Key < out.Alerts[j].Key })
 	for _, rs := range st.Sensors {
 		v := FeedRelaySensorView{ID: rs.ID, CanRelay: rs.CanRelay, Online: rs.Online, LastServedAt: rs.LastServed, BytesToday: rs.BytesToday}
 		if sn := rs.Sensor; sn != nil {

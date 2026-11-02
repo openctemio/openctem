@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Accepted (2026-11-01, revised 2026-11-02). Implemented: the job signer's feed relay rules (`SIGNER_FEED_ORIGINS`); the platform relay channel (claimed rounds, Postgres spool, planner for the vulnerability feed with its side files and the release feed, the `relay` mode of the feed egress category with one to three designated relay sensors, the KEV/EPSS, version check and program feed fetchers off, admin status and setting, relay mode by default on a new compose install with the bundled sensor); the sensor side in sdk-go (`feed.relay@1`, on by default on a shared sensor). Designed: the console card, Helm and installer kit toggles, alerts, program feed and content packs through the relay |
+| Status | Accepted (2026-11-01, revised 2026-11-02). Implemented: the job signer's feed relay rules (`SIGNER_FEED_ORIGINS`); the platform relay channel (claimed rounds, Postgres spool, planner for the vulnerability feed with its side files and the release feed, the `relay` mode of the feed egress category with one to three designated relay sensors, the KEV/EPSS, version check and program feed fetchers off, admin status and setting, relay mode by default on a new compose install with the bundled sensor, administrator alerts); the sensor side in sdk-go (`feed.relay@1`, on by default on a shared sensor). Designed: the console card, Helm and installer kit toggles, program feed and content packs through the relay |
 | Scope | api (signer, relay channel, importers, console), sdk-go, sensor |
 | Related | RFC-040 (signed jobs), RFC-072 (chunked feed transfer), RFC-100 (shared sensors), RFC-105 (version check) |
 
@@ -107,7 +107,29 @@ The console status shows per feed the applied release and its age, the round in 
 bytes delivered, claimer) and one stale reason from a fixed list (`no_relay_designated`,
 `relay_offline`, `signer_refused`, `sensor_refused`, `upstream_missing`, `nothing_delivered`,
 `pin_mismatch`, `verify_failed`, `rollback_refused`, `plan_failed`, `import_failed`,
-`round_expired`, `spool_full`), and the relay sensors (online, last served, bytes today).
+`round_expired`, `spool_full`), the relay sensors (online, last served, bytes today), the
+platform's shared sensors that may be designated (only active ones reporting `feed.relay@1`; the
+others are listed with the reason: inactive or no capability) and the open alerts.
+
+### 2.5 Alerts
+
+Relay mode has no automatic fallback, so losing the relay must not go unnoticed. The `feed-relay`
+controller tells the platform administrators through their existing channel (e-mail and the alert
+webhook, the same as the system checks) when, in relay mode:
+
+| Alert key | Condition | Level |
+|---|---|---|
+| `relay_offline` | no designated relay sensor seen for 1 hour (also: none designated, or the bundled sensor of a relay-mode install never enrolled), after a 1-hour grace from the last change of the setting | critical |
+| `feed_stale:<feed>` | the applied release is older than the feed's alert age: 48 hours for the vulnerability feed (it carries EPSS, stale after 48 hours); the release feed is issued per release, so it has no age alert | warning |
+| `round_failed:<feed>:<code>` | the newest failed round since the last import has `verify_failed`, `pin_mismatch` or `rollback_refused` (critical: possible tampering) or `signer_refused` (warning, with the signer's sanitized reason) | as stated |
+
+One alert per condition: the open alerts are stored in the platform setting `feed_relay.alerts`
+(written only by the controller), so a restart or a lease move does not repeat them; the new state is
+stored before anything is sent. A condition that clears gets one "resolved" notice; switching to
+direct resolves every open alert with a notice that says so. Each alert names the fix and the
+explicit escape hatches (a super administrator switches to direct or loads an offline feed bundle);
+the platform never takes them by itself. Alerts carry codes, times and feed names, never upstream
+content. Thresholds are constants (no console setting) until a deployment needs another value.
 
 ## 3. Threat model
 
@@ -115,7 +137,7 @@ bytes delivered, claimer) and one stale reason from a fixed list (`no_relay_desi
 |---|---|
 | The relay, its network or a mirror alters data | importers verify against the pinned root as for a bundle directory; pinned files are hash-checked on receipt; unpinned files are verified before use |
 | Rollback or replay | importer sequence and expiry, KEV/EPSS data date; a replayed round is refused by the sensor (sequence, nonce) and the API (round bound to its claimer, single use, expiry) |
-| Freeze | per-feed staleness and alerts as today; round failures on the console; direct mode and bundle directories stay available |
+| Freeze | per-feed staleness as today; administrator alerts when no relay is seen for an hour or the vulnerability feed is 48 hours old (§2.5); round failures on the console; direct mode and bundle directories stay available as explicit administrator actions |
 | A compromised API points the relay at internal or arbitrary URLs | signer and sensor origin allowlists; single-segment names; sensor SSRF guard |
 | An organization's sensor used as relay | refused by the API, the signer and sdk-go (§2.2) |
 | Upload exhaustion or path traversal | 32 MiB per file, 256 MiB per round, 512 MiB spool quota, one upload per name per round, Content-Length required, strict name grammar (also a table constraint), names listed in the round |
@@ -136,7 +158,7 @@ platform catalog data, written only by verified imports.
    default on a shared sensor with a pinned key.
 3. API relay channel: claimed rounds, Postgres spool, planner (vulnerability feed with side files,
    release feed), the relay mode with one to three relays, status, the new-install default.
-4. Later: the console card, Helm and installer kit toggles, alerts (relay offline for an hour,
-   `verify_failed`), the program feed and official content packs through the relay (an
+4. Administrator alerts (§2.5).
+5. Later: the console card, Helm and installer kit toggles, the program feed and official content packs through the relay (an
    administrator-typed content pack URL is refused in relay mode: upload the file instead), a
    console upload of an offline bundle into the spool.

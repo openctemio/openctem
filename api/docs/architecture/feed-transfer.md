@@ -244,7 +244,21 @@ stale reason from a fixed list: `no_relay_designated`, `relay_offline` (no
 designated sensor seen for 10 min), `signer_refused`, `sensor_refused`,
 `upstream_missing` (the relay got 404), `nothing_delivered`, `pin_mismatch`,
 `verify_failed`, `rollback_refused`, `plan_failed`, `import_failed`,
-`round_expired`, `spool_full`.
+`round_expired`, `spool_full`. It also lists the platform's shared sensors
+that may be designated (`candidates`: eligible when active and reporting
+`feed.relay@1`, else reason `inactive` or `no_capability`; never an
+organization's sensor) and the open alerts.
+
+**Alerts** (RFC-142 §2.5): in relay mode the controller tells the platform
+administrators (e-mail and the alert webhook, as the system checks) when no
+designated relay is seen for 1 hour (`relay_offline`), the vulnerability feed's
+applied release is 48 hours old (`feed_stale:vulnfeed`), or the newest failed
+round since the last import has `verify_failed`, `pin_mismatch`,
+`rollback_refused` (critical) or `signer_refused`
+(`round_failed:<feed>:<code>`). Open alerts are stored in the platform setting
+`feed_relay.alerts` (one per condition across restarts and lease moves); a
+cleared condition gets one "resolved" notice. Every alert also logs a WARN
+line with `alert=feed_relay_<condition>`.
 
 A bundle directory (`VULNFEED_BUNDLE_DIR`) or a missing job signer locks relay
 mode off.

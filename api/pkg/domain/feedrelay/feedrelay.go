@@ -215,6 +215,9 @@ type Repository interface {
 	Latest(ctx context.Context, feed string) (*Round, error)
 	// LatestOfPhase returns the newest round of a feed in a phase, or nil.
 	LatestOfPhase(ctx context.Context, feed, phase string) (*Round, error)
+	// LatestFailed returns the newest failed round of a feed (a refused
+	// signature or a failed cycle), or nil.
+	LatestFailed(ctx context.Context, feed string) (*Round, error)
 	// Finish closes an open round of that sensor (status, report). false:
 	// the round was not open.
 	Finish(ctx context.Context, id, sensorID shared.ID, status string, rep *Report, at time.Time) (bool, error)

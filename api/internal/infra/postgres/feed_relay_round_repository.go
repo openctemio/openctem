@@ -118,6 +118,13 @@ func (r *FeedRelayRoundRepository) LatestOfPhase(ctx context.Context, feed, phas
 	return optionalRound(scanFeedRelayRound(row))
 }
 
+// LatestFailed returns the newest failed round of a feed, or nil.
+func (r *FeedRelayRoundRepository) LatestFailed(ctx context.Context, feed string) (*feedrelay.Round, error) {
+	row := r.db.QueryRowContext(ctx, `SELECT `+feedRelayRoundColumns+` FROM feed_relay_rounds
+		WHERE feed = $1 AND status = 'failed' ORDER BY created_at DESC LIMIT 1`, feed)
+	return optionalRound(scanFeedRelayRound(row))
+}
+
 // Finish closes an open round of that sensor.
 func (r *FeedRelayRoundRepository) Finish(ctx context.Context, id, sensorID shared.ID, status string, rep *feedrelay.Report, at time.Time) (bool, error) {
 	var report []byte

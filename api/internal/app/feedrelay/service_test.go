@@ -26,6 +26,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/jobsign"
 	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/pagination"
 )
 
 var tNow = time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC)
@@ -167,6 +168,12 @@ func (r *memStore) LatestOfPhase(_ context.Context, feed, phase string) (*dom.Ro
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.latest(feed, func(rd *dom.Round) bool { return rd.Phase == phase }), nil
+}
+
+func (r *memStore) LatestFailed(_ context.Context, feed string) (*dom.Round, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.latest(feed, func(rd *dom.Round) bool { return rd.Status == dom.StatusFailed }), nil
 }
 
 func (r *memStore) Finish(_ context.Context, id, sensorID shared.ID, status string, rep *dom.Report, at time.Time) (bool, error) {
@@ -320,6 +327,17 @@ func (m memSensors) GetByID(_ context.Context, id shared.ID) (*sensor.Sensor, er
 		return s, nil
 	}
 	return nil, errors.New("not found")
+}
+
+func (m memSensors) List(_ context.Context, f sensor.Filter, _ pagination.Pagination) (pagination.Result[*sensor.Sensor], error) {
+	var out pagination.Result[*sensor.Sensor]
+	for _, s := range m {
+		if f.SharedOnly && (s.Scope != sensor.ScopeInstance || s.TenantID != nil) {
+			continue
+		}
+		out.Data = append(out.Data, s)
+	}
+	return out, nil
 }
 
 type fakeSigner struct {

@@ -7,6 +7,7 @@ import (
 	dom "github.com/openctemio/openctem/api/pkg/domain/feedrelay"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/pagination"
 )
 
 // RelaySensor is a designated sensor as the console shows it.
@@ -31,6 +32,48 @@ type FeedStatus struct {
 	// feed is fine; Detail completes signer_refused.
 	StaleReason string
 	Detail      string
+}
+
+// Candidate is a platform sensor the console may offer as a relay. Reason
+// says why one cannot relay ("" when it can): CandidateInactive or
+// CandidateNoCapability (SENSOR_FEED_RELAY=0 on the host, no pinned
+// job-signing key, or a sensor release without the relay).
+type Candidate struct {
+	Sensor *sensor.Sensor
+	Reason string
+}
+
+// Why a platform sensor cannot relay.
+const (
+	CandidateInactive     = "inactive"
+	CandidateNoCapability = "no_capability"
+)
+
+// maxCandidates bounds the platform sensors listed.
+const maxCandidates = 100
+
+// Candidates lists the platform's shared sensors and whether each can
+// relay (never an organization's sensor).
+func (s *Service) Candidates(ctx context.Context) ([]Candidate, error) {
+	res, err := s.sensors.List(ctx, sensor.Filter{SharedOnly: true}, pagination.New(1, maxCandidates))
+	if err != nil {
+		return nil, err
+	}
+	out := make([]Candidate, 0, len(res.Data))
+	for _, sn := range res.Data {
+		if sn == nil || !sn.IsShared() || sn.TenantID != nil {
+			continue
+		}
+		c := Candidate{Sensor: sn}
+		switch {
+		case sn.Status != sensor.SensorStatusActive:
+			c.Reason = CandidateInactive
+		case !sn.HasCapability(Capability):
+			c.Reason = CandidateNoCapability
+		}
+		out = append(out, c)
+	}
+	return out, nil
 }
 
 // Status is the setting, the relay sensors and each feed.

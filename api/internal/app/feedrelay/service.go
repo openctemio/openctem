@@ -54,6 +54,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/jobsign"
 	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/pagination"
 )
 
 // Capability is what a relay sensor reports.
@@ -141,6 +142,8 @@ type Signer interface {
 // sensors are ever accepted).
 type Sensors interface {
 	GetByID(ctx context.Context, id shared.ID) (*sensor.Sensor, error)
+	// List with Filter.SharedOnly lists the platform's shared sensors.
+	List(ctx context.Context, filter sensor.Filter, page pagination.Pagination) (pagination.Result[*sensor.Sensor], error)
 }
 
 // Plan is what a feed wants next.
@@ -215,6 +218,11 @@ type Service struct {
 	feeds    map[string]Feed
 	order    []string
 	logger   *logger.Logger
+	alerts   *consolesetting.Store[alertState]
+	notifier Notifier
+	// lastWatch is when the alert conditions were last read (controller
+	// goroutine only).
+	lastWatch time.Time
 
 	mu sync.Mutex
 	// local is what the working directory holds (feed -> name -> sha256),
@@ -230,10 +238,15 @@ func NewService(cfg Config, repo dom.Repository, spool dom.Spool, sensors Sensor
 	if cfg.Signer == nil && cfg.Locked == "" {
 		cfg.Locked = "no_signer"
 	}
-	return &Service{cfg: cfg, repo: repo, spool: spool, sensors: sensors, settings: settings, recorder: recorder,
+	svc := &Service{cfg: cfg, repo: repo, spool: spool, sensors: sensors, settings: settings, recorder: recorder,
 		feeds: map[string]Feed{}, local: map[string]map[string]string{},
 		setting: consolesetting.NewStore[feedSetting](settings, ModeKey),
+		alerts:  newAlertStore(settings),
 		logger:  log.With("service", "feed_relay")}
+	// One clock for the rounds, the setting's time and the alert grace.
+	svc.setting.SetClock(cfg.Now)
+	svc.alerts.SetClock(cfg.Now)
+	return svc
 }
 
 // AddFeed registers a feed.
@@ -634,8 +647,15 @@ func printable(s string, n int) string {
 }
 
 // Reconcile drives every feed one step (the controller, on the replica
-// holding its lease). It returns the rounds created.
+// holding its lease), then opens or resolves the administrators' alerts.
+// It returns the rounds created.
 func (s *Service) Reconcile(ctx context.Context) (int, error) {
+	n, err := s.reconcile(ctx)
+	s.watch(ctx, s.cfg.Now())
+	return n, err
+}
+
+func (s *Service) reconcile(ctx context.Context) (int, error) {
 	now := s.cfg.Now()
 	if _, err := s.repo.ExpireOpen(ctx, now); err != nil {
 		return 0, err
