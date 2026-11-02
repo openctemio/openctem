@@ -1,52 +1,70 @@
 'use client'
 
-import { useState, useCallback, useMemo } from 'react'
+/**
+ * Settings > Modules: turn features on or off for this organization.
+ * Design: research/394 §4 (one grouped list, dependencies written out, an
+ * impact preview before saving, locks with their reason).
+ */
+import { useCallback, useMemo, useState } from 'react'
+import { AlertCircle, AlertTriangle, RotateCcw, SearchX } from 'lucide-react'
+import { toast } from 'sonner'
 import { Main } from '@/components/layout'
-import { useFormatList } from '@/lib/format-list'
-import { PageHeader, SettingsSaveBar, PageStack } from '@/features/shared'
-import { useTenant } from '@/context/tenant-provider'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
-import { Marker } from '@/components/ui/marker'
-import { Tag } from '@/components/ui/tag'
-import { Skeleton } from '@/components/ui/skeleton'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
-import { Switch } from '@/components/ui/switch'
-import { ConfirmDialog, ConfirmSample } from '@/components/confirm-dialog'
+import { Skeleton } from '@/components/ui/skeleton'
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import {
-  Lock,
-  RotateCcw,
-  ChevronDown,
-  ChevronRight,
-  CornerDownRight,
-  ArrowDownRight,
-  ArrowUpRight,
-  AlertTriangle,
-  AlertCircle,
-} from 'lucide-react'
-import { toast } from 'sonner'
+  EmptyState,
+  FilterSelect,
+  ListToolbar,
+  PageHeader,
+  PageStack,
+  ReadOnlyNotice,
+  SettingsSaveBar,
+  SettingsSection,
+} from '@/features/shared'
+import { useTenant } from '@/context/tenant-provider'
 import { useBootstrapContext } from '@/context/bootstrap-provider'
+import { useTranslation } from '@/context/i18n-provider'
+import { useUrlFilter } from '@/hooks/use-url-param'
 import { ApiClientError, getErrorMessage } from '@/lib/api/error-handler'
-import { Can, isHiddenReleaseStatus } from '@/lib/permissions'
+import { useFormatList } from '@/lib/format-list'
 import {
-  useTenantModules,
-  useUpdateTenantModules,
-  useResetTenantModules,
+  Can,
+  Permission,
+  isHiddenReleaseStatus,
+  useCanMutate,
+  useHasPermission,
+} from '@/lib/permissions'
+import {
   useModuleDependencyGraph,
   useModuleRealtimeInvalidation,
+  useResetTenantModules,
+  useTenantModules,
+  useUpdateTenantModules,
 } from '@/features/organization/api/use-tenant-modules'
 import type {
-  TenantModule,
-  TenantSubModule,
   ModuleToggle,
+  TenantModule,
   ToggleIssue,
 } from '@/features/organization/api/use-tenant-modules'
-import { useTranslation } from '@/context/i18n-provider'
+import {
+  applyToggle,
+  buildDependencyIndex,
+  computePlan,
+  unavailableRequirements,
+  type PlanOptions,
+} from '@/features/organization/lib/module-plan'
+import {
+  ModuleImpactDialog,
+  ModuleRow,
+  ModulesLastChange,
+  useModuleText,
+  type ModuleChange,
+  type ModuleLock,
+} from '@/features/organization/components/module-settings'
 
-// Details payload nested under ApiClientError.details when the backend
-// rejects a toggle because of the dependency graph. Shape mirrors
-// tenant_handler.writeToggleErrorJSON.
+/** The 400 body of PATCH /settings/modules when the dependency check refuses. */
 interface ModuleDependencyErrorDetails {
   module_id: string
   module_name: string
@@ -55,227 +73,261 @@ interface ModuleDependencyErrorDetails {
   required?: ToggleIssue[]
 }
 
-// A dependency edge enriched with its kind — same shape as
-// DependencyEdge but re-declared locally so the reverse-map type is
-// self-documenting.
-type DependencyEdgeWithKind = {
-  from: string
-  to: string
-  type: 'hard' | 'soft'
-  reason: string
-}
-
-// Category display labels
-const CATEGORY_LABELS: Record<string, string> = {
-  core: 'Core',
-  scoping: 'Scoping',
-  discovery: 'Discovery',
-  prioritization: 'Prioritization',
-  validation: 'Validation',
-  mobilization: 'Mobilization',
-  insights: 'Insights',
-  settings: 'Settings',
-  data: 'Data',
-  operations: 'Operations',
-  platform: 'Platform',
-}
-
-// Feature modules are grouped into these ordered sections on the fine-tune
-// panel — the five Gartner CTEM phases first, then the supporting groups.
-// Each entry folds one or more raw `category` values under a display label so
-// the flat 30-item list becomes a scannable, phase-aware layout. Any category
-// not listed here falls through to a trailing "Other" group.
-const PHASE_GROUPS: { key: string; label: string; categories: string[] }[] = [
+/**
+ * Module groups, in order: the exposure-management phases, then the
+ * supporting groups. Each folds one or more registry categories; a category
+ * not listed lands in "Other", so no module is ever dropped.
+ */
+const GROUPS: { key: string; label: string; categories: string[] }[] = [
   { key: 'scoping', label: 'Scoping', categories: ['scoping'] },
   { key: 'discovery', label: 'Discovery', categories: ['discovery'] },
   { key: 'prioritization', label: 'Prioritization', categories: ['prioritization'] },
   { key: 'validation', label: 'Validation', categories: ['validation'] },
   { key: 'mobilization', label: 'Mobilization', categories: ['mobilization'] },
-  { key: 'insights', label: 'Insights & Reporting', categories: ['insights'] },
-  { key: 'operations', label: 'Operations & Data', categories: ['operations', 'data'] },
-  { key: 'settings', label: 'Settings & Integrations', categories: ['settings', 'platform'] },
+  { key: 'insights', label: 'Reporting and compliance', categories: ['insights', 'compliance'] },
+  { key: 'operations', label: 'Operations and data', categories: ['operations', 'data'] },
+  { key: 'settings', label: 'Scanning', categories: ['settings', 'platform'] },
 ]
+
+type StateFilter = 'on' | 'off' | 'unavailable'
+const STATE_FILTERS: StateFilter[] = ['on', 'off', 'unavailable']
+
+const PATCH_ROUTE = 'PATCH /api/v1/tenants/{tenant}/settings/modules' as const
 
 export default function ModuleManagementPage() {
   const { t } = useTranslation()
+  const text = useModuleText()
   const formatList = useFormatList()
+  const pageTitle = t('settings.item.modules', 'Modules')
   const pageDescription = t(
     'settings.modules.pageDescription',
-    'Pick the products your team runs and fine-tune individual features. Turning a module off hides it; its data is kept.'
+    'Turn features on or off for this organization. Turning one off hides its pages and stops its jobs; its data is kept and comes back when you turn it on.'
   )
-  const pageTitle = t('settings.item.modules', 'Modules')
   const { currentTenant } = useTenant()
   const tenantId = currentTenant?.id
 
   const { modules, isLoading, error, mutate } = useTenantModules(tenantId)
   const { updateModules, isUpdating } = useUpdateTenantModules(tenantId)
   const { resetModules, isResetting } = useResetTenantModules(tenantId)
-  const { edges: dependencyEdges } = useModuleDependencyGraph(tenantId)
-  // Sidebar, route guard and module checks read the bootstrap set.
+  const { edges } = useModuleDependencyGraph(tenantId)
   const { refreshModules, data: bootstrapData } = useBootstrapContext()
   // Modules in read-only grace (made unavailable recently), with its end.
-  const readOnlyModules = bootstrapData?.modules?.read_only_modules
-  // Subscribe to "module.updated" WS events on the tenant channel so
-  // an admin in another tab (or another admin) flipping a module
-  // reflects on this page within ~100ms instead of waiting for the
-  // 5-min SWR dedup window.
+  const readOnlyUntil = bootstrapData?.modules?.read_only_modules
+  // Another admin's change reaches this page within a second.
   useModuleRealtimeInvalidation(tenantId)
 
-  const [pendingChanges, setPendingChanges] = useState<Record<string, boolean>>({})
-  const [showResetDialog, setShowResetDialog] = useState(false)
-  // Turning modules off hides them for every member, so a save that does asks first.
-  const [confirmDisable, setConfirmDisable] = useState(false)
-  const [coreExpanded, setCoreExpanded] = useState(false)
-  // Fine-tune phase groups that the admin has collapsed (default: all collapsed;
-  // the admin opens each phase as needed to reduce initial clutter).
-  const [collapsedPhases, setCollapsedPhases] = useState<Set<string>>(
-    () => new Set(PHASE_GROUPS.map((g) => g.key))
-  )
-  // Dependency-conflict dialog surfaced when the backend rejects a
-  // save with code=module_dependency_violation. Stores the structured
-  // ToggleError details so the modal can list blockers/required.
+  const canEdit = useCanMutate(PATCH_ROUTE)
+  const canReadAudit = useHasPermission(Permission.AuditRead)
+
+  const [query, setQuery] = useUrlFilter('q', '')
+  const [stateParam, setStateParam] = useUrlFilter('state', '')
+  const stateFilter = STATE_FILTERS.includes(stateParam as StateFilter)
+    ? (stateParam as StateFilter)
+    : ''
+
+  const [pending, setPending] = useState<Record<string, boolean>>({})
+  const [showImpact, setShowImpact] = useState(false)
+  const [showReset, setShowReset] = useState(false)
   const [depConflict, setDepConflict] = useState<ModuleDependencyErrorDetails | null>(null)
 
-  // Two reverse maps from the platform dependency graph:
-  //   requires[id]    = modules that `id` needs (its OUT-edges)
-  //   requiredBy[id]  = modules that need `id` (its IN-edges)
-  // Badge renderer reads these to show "Needs N" + "Used by N"
-  // next to each module. Recomputed only when edges change.
-  const { requires, requiredBy } = useMemo(() => {
-    const req: Record<string, DependencyEdgeWithKind[]> = {}
-    const by: Record<string, DependencyEdgeWithKind[]> = {}
-    for (const e of dependencyEdges) {
-      ;(req[e.from] ||= []).push(e)
-      ;(by[e.to] ||= []).push(e)
-    }
-    return { requires: req, requiredBy: by }
-  }, [dependencyEdges])
-
-  // Name lookup for badge tooltips — translates module IDs from the
-  // dep graph into display names from the tenant-modules response.
-  const moduleNames = useMemo(() => {
+  const visibleModules = useMemo(
+    () =>
+      modules
+        .filter((m) => !isHiddenReleaseStatus(m.release_status))
+        .sort((a, b) => a.display_order - b.display_order),
+    [modules]
+  )
+  const byId = useMemo(() => {
+    const map: Record<string, TenantModule> = {}
+    for (const m of visibleModules) map[m.id] = m
+    return map
+  }, [visibleModules])
+  // API (English) names, the fallback for module ids the catalog lacks.
+  const apiNames = useMemo(() => {
     const map: Record<string, string> = {}
     for (const m of modules) {
       map[m.id] = m.name
-      for (const sub of m.sub_modules ?? []) map[sub.id] = sub.name
+      for (const s of m.sub_modules ?? []) map[s.id] = s.name
+    }
+    return map
+  }, [modules])
+  const saved = useMemo(() => {
+    const map: Record<string, boolean> = {}
+    for (const m of modules) {
+      map[m.id] = m.is_enabled
+      for (const s of m.sub_modules ?? []) map[s.id] = s.is_enabled
     }
     return map
   }, [modules])
 
-  const isDirty = Object.keys(pendingChanges).length > 0
+  const subIds = useMemo(
+    () => new Set(modules.flatMap((m) => (m.sub_modules ?? []).map((s) => s.id))),
+    [modules]
+  )
+  const index = useMemo(() => buildDependencyIndex(edges), [edges])
 
-  const getEffectiveEnabled = useCallback(
-    (mod: TenantModule) => {
-      if (mod.id in pendingChanges) return pendingChanges[mod.id]
-      return mod.is_enabled
+  const lockOf = useCallback(
+    (m: TenantModule): ModuleLock | undefined => {
+      if (m.is_core) return { kind: 'always_on' }
+      if (m.release_status === 'coming_soon') return { kind: 'coming_soon' }
+      if (m.reason === 'disabled_by_platform') return { kind: 'platform' }
+      const until = readOnlyUntil?.[m.id]
+      if (until && (m.reason === 'read_only_grace' || m.entitled === false)) {
+        return { kind: 'read_only', until }
+      }
+      if (
+        m.entitled === false ||
+        m.reason === 'not_entitled' ||
+        m.reason === 'unavailable' ||
+        m.reason === 'read_only_grace'
+      ) {
+        return { kind: 'not_entitled' }
+      }
+      return undefined
     },
-    [pendingChanges]
+    [readOnlyUntil]
   )
 
-  // Split modules into Core and Toggleable, filtering out deprecated
+  const planOpts = useMemo<PlanOptions>(
+    () => ({
+      // Modules this page does not list are not changed from here.
+      isCore: (id) => (byId[id] ? byId[id].is_core : !subIds.has(id)),
+      canEnable: (id) => {
+        const m = byId[id]
+        return !!m && !lockOf(m)
+      },
+    }),
+    [byId, subIds, lockOf]
+  )
+
+  const plan = useMemo(
+    () => computePlan(saved, pending, index, planOpts),
+    [saved, pending, index, planOpts]
+  )
+  const effective = useCallback(
+    (id: string) => (id in plan.changes ? plan.changes[id] : !!saved[id]),
+    [plan, saved]
+  )
+
+  const rowLock = useCallback(
+    (m: TenantModule): ModuleLock | undefined => {
+      const own = lockOf(m)
+      if (own) return own
+      if (saved[m.id]) return undefined
+      const missing = unavailableRequirements(m.id, saved, index, planOpts)
+      return missing.length ? { kind: 'needs_unavailable', modules: missing } : undefined
+    },
+    [lockOf, saved, index, planOpts]
+  )
+
+  const changeOf = useCallback(
+    (id: string): ModuleChange | undefined => {
+      if (!(id in plan.changes)) return undefined
+      if (plan.offWith[id]) return { kind: 'off_with', because: plan.offWith[id] }
+      if (plan.onWith[id]) return { kind: 'on_with', because: plan.onWith[id] }
+      return { kind: plan.changes[id] ? 'on' : 'off' }
+    },
+    [plan]
+  )
+
+  // Requirements and dependents worth naming: core modules are always on.
+  const listed = useCallback(
+    (ids: string[] | undefined) => (ids ?? []).filter((id) => byId[id] && !byId[id].is_core),
+    [byId]
+  )
+
   const { coreModules, featureModules } = useMemo(() => {
     const core: TenantModule[] = []
     const features: TenantModule[] = []
-    for (const mod of modules) {
-      // Hide deprecated and not-yet-built modules entirely
-      if (isHiddenReleaseStatus(mod.release_status)) continue
-      if (mod.is_core) {
-        core.push(mod)
-      } else {
-        features.push(mod)
-      }
-    }
-    return {
-      coreModules: core.sort((a, b) => a.display_order - b.display_order),
-      featureModules: features.sort((a, b) => a.display_order - b.display_order),
-    }
-  }, [modules])
+    for (const m of visibleModules) (m.is_core ? core : features).push(m)
+    return { coreModules: core, featureModules: features }
+  }, [visibleModules])
 
-  // Bucket feature modules into the ordered CTEM phase groups. Anything whose
-  // category isn't mapped falls into a trailing "Other" group so no module is
-  // ever silently dropped from the list.
-  const groupedFeatures = useMemo(() => {
-    const catToGroup: Record<string, string> = {}
-    for (const g of PHASE_GROUPS) for (const c of g.categories) catToGroup[c] = g.key
-    const byKey: Record<string, TenantModule[]> = {}
-    const other: TenantModule[] = []
-    for (const mod of featureModules) {
-      const key = catToGroup[mod.category]
-      if (key) (byKey[key] ||= []).push(mod)
-      else other.push(mod)
-    }
-    const groups = PHASE_GROUPS.filter((g) => byKey[g.key]?.length).map((g) => ({
-      key: g.key,
-      label: t(`settings.modules.phase.${g.key}`, g.label),
-      mods: byKey[g.key],
-    }))
-    if (other.length)
-      groups.push({ key: 'other', label: t('settings.modules.phase.other', 'Other'), mods: other })
-    return groups
-  }, [featureModules, t])
-
-  // Build a lookup for server state of all modules + sub-modules
-  const serverStateMap = useMemo(() => {
-    const map: Record<string, boolean> = {}
-    for (const mod of modules) {
-      map[mod.id] = mod.is_enabled
-      if (mod.sub_modules) {
-        for (const sub of mod.sub_modules) {
-          map[sub.id] = sub.is_enabled
-        }
-      }
-    }
-    return map
-  }, [modules])
-
-  const toggleModule = useCallback(
-    (moduleId: string, currentEnabled: boolean) => {
-      setPendingChanges((prev) => {
-        const next = { ...prev }
-        const newValue = !currentEnabled
-
-        // If toggling back to server state, remove the pending change
-        if (serverStateMap[moduleId] === newValue) {
-          delete next[moduleId]
-        } else {
-          next[moduleId] = newValue
-        }
-        return next
-      })
+  const needle = query.trim().toLocaleLowerCase()
+  const matchesQuery = useCallback(
+    (m: TenantModule) => {
+      if (!needle) return true
+      return [m.id, m.name, text.name(m.id, m.name), text.description(m.id, m.description)]
+        .join(' ')
+        .toLocaleLowerCase()
+        .includes(needle)
     },
-    [serverStateMap]
+    [needle, text]
+  )
+  const stateOf = useCallback(
+    (m: TenantModule): StateFilter => (lockOf(m) ? 'unavailable' : effective(m.id) ? 'on' : 'off'),
+    [lockOf, effective]
   )
 
-  // Shared save logic — accepts an explicit pending map so the cascade
-  // path can call it with the merged changes WITHOUT racing setState.
-  // (setPendingChanges is async; calling handleSave right after a merge
-  // would otherwise send the old toggles.)
-  const runSave = useCallback(
-    async (pending: Record<string, boolean>) => {
-      const toggles: ModuleToggle[] = Object.entries(pending).map(([moduleId, isEnabled]) => ({
-        module_id: moduleId,
-        is_enabled: isEnabled,
-      }))
+  const groups = useMemo(() => {
+    const catToGroup: Record<string, string> = {}
+    for (const g of GROUPS) for (const c of g.categories) catToGroup[c] = g.key
+    const byKey: Record<string, TenantModule[]> = {}
+    for (const m of featureModules) (byKey[catToGroup[m.category] ?? 'other'] ||= []).push(m)
+    const order = [...GROUPS, { key: 'other', label: 'Other', categories: [] }]
+    return order
+      .filter((g) => byKey[g.key]?.length)
+      .map((g) => {
+        const all = byKey[g.key]
+        return {
+          key: g.key,
+          label: t(`settings.modules.phase.${g.key}`, g.label),
+          total: all.length,
+          on: all.filter((m) => effective(m.id)).length,
+          shown: all.filter((m) => matchesQuery(m) && (!stateFilter || stateOf(m) === stateFilter)),
+        }
+      })
+  }, [featureModules, effective, matchesQuery, stateFilter, stateOf, t])
 
+  const stateCounts = useMemo(() => {
+    const c: Record<StateFilter, number> = { on: 0, off: 0, unavailable: 0 }
+    for (const m of featureModules) c[stateOf(m)]++
+    return c
+  }, [featureModules, stateOf])
+  const featureOn = featureModules.filter((m) => effective(m.id)).length
+
+  // Core modules shown on the "Always on" line, and core modules with
+  // sub-features of their own that can be switched (listed as rows).
+  const coreShown =
+    stateFilter === 'off' || stateFilter === 'unavailable' ? [] : coreModules.filter(matchesQuery)
+  const coreWithSubs = coreShown.filter((m) =>
+    (m.sub_modules ?? []).some((s) => !isHiddenReleaseStatus(s.release_status))
+  )
+  const shownCount = groups.reduce((n, g) => n + g.shown.length, 0) + coreShown.length
+
+  const changeEntries = Object.entries(plan.changes)
+  const toEnable = changeEntries.filter(([, v]) => v).length
+  const toDisable = changeEntries.length - toEnable
+  const isDirty = changeEntries.length > 0
+
+  const onToggle = useCallback(
+    (id: string, next: boolean) => setPending((prev) => applyToggle(prev, saved, id, next, index)),
+    [saved, index]
+  )
+
+  const runSave = useCallback(
+    async (changes: Record<string, boolean>) => {
+      const toggles: ModuleToggle[] = Object.entries(changes).map(([module_id, is_enabled]) => ({
+        module_id,
+        is_enabled,
+      }))
       try {
         const result = await updateModules({ modules: toggles })
-        if (result) {
-          await mutate(result, false)
-        }
-        setPendingChanges({})
+        if (result) await mutate(result, false)
+        setPending({})
+        setShowImpact(false)
         await refreshModules()
         toast.success(t('settings.modules.updated', 'Modules updated'))
-
         for (const w of result?.warnings ?? []) {
           toast.warning(
-            t('settings.modules.willDegrade', '{name} will degrade', { name: w.name }),
-            {
-              description: w.reason,
-              duration: 6000,
-            }
+            t('settings.modules.willDegrade', '{name} works with less', {
+              name: text.name(w.module_id, w.name),
+            }),
+            { description: w.reason, duration: 6000 }
           )
         }
       } catch (err) {
+        setShowImpact(false)
         if (
           err instanceof ApiClientError &&
           err.code === 'module_dependency_violation' &&
@@ -287,79 +339,41 @@ export default function ModuleManagementPage() {
         toast.error(getErrorMessage(err))
       }
     },
-    [updateModules, mutate, refreshModules, t]
+    [updateModules, mutate, refreshModules, t, text]
   )
 
-  const handleSave = useCallback(async () => {
+  const handleSave = useCallback(() => {
     if (!isDirty) return
-    if (Object.values(pendingChanges).some((enabled) => !enabled)) {
-      setConfirmDisable(true)
-      return
-    }
-    await runSave(pendingChanges)
-  }, [isDirty, pendingChanges, runSave])
+    const needsPreview = toDisable > 0 || Object.keys(plan.onWith).length > 0
+    if (needsPreview) setShowImpact(true)
+    else void runSave(plan.changes)
+  }, [isDirty, toDisable, plan, runSave])
 
-  const handleConfirmDisable = useCallback(async () => {
-    setConfirmDisable(false)
-    await runSave(pendingChanges)
-  }, [pendingChanges, runSave])
-
-  // Cascade resolver — when the backend blocks a toggle, the user can
-  // click "Disable them too" (or "Enable required") to flip the
-  // dependents automatically and retry in one step. We merge the new
-  // IDs into the pending map, update state, and immediately save the
-  // merged map — no need to wait for a re-render since runSave takes
-  // the explicit map.
-  const handleCascadeResolve = useCallback(async () => {
+  // Fallback when the API still refuses (a graph newer than the page's).
+  const handleConflictResolve = useCallback(async () => {
     if (!depConflict) return
-
-    const cascade: Record<string, boolean> = { ...pendingChanges }
+    const merged = { ...plan.changes }
     if (depConflict.action === 'disable') {
-      for (const b of depConflict.blockers ?? []) {
-        cascade[b.module_id] = false
-      }
+      for (const b of depConflict.blockers ?? []) merged[b.module_id] = false
     } else {
-      for (const r of depConflict.required ?? []) {
-        cascade[r.module_id] = true
-      }
+      for (const r of depConflict.required ?? []) merged[r.module_id] = true
     }
-
-    setPendingChanges(cascade)
     setDepConflict(null)
-    await runSave(cascade)
-  }, [depConflict, pendingChanges, runSave])
-
-  const handleDiscard = useCallback(() => {
-    setPendingChanges({})
-  }, [])
-
-  const togglePhase = useCallback((key: string) => {
-    setCollapsedPhases((prev) => {
-      const next = new Set(prev)
-      if (next.has(key)) next.delete(key)
-      else next.add(key)
-      return next
-    })
-  }, [])
+    await runSave(merged)
+  }, [depConflict, plan, runSave])
 
   const handleReset = useCallback(async () => {
     try {
       const result = await resetModules()
-      if (result) {
-        await mutate(result, false)
-      }
-      setPendingChanges({})
-      setShowResetDialog(false)
-      // Invalidate sidebar module cache so changes reflect immediately
+      if (result) await mutate(result, false)
+      setPending({})
+      setShowReset(false)
       await refreshModules()
-      toast.success(t('settings.modules.resetDone', 'Modules reset to the defaults: all enabled'))
+      toast.success(t('settings.modules.resetDone', 'Modules reset to the defaults'))
     } catch (err) {
       toast.error(getErrorMessage(err))
     }
   }, [resetModules, mutate, refreshModules, t])
-
-  const pendingEnabled = Object.values(pendingChanges).filter(Boolean).length
-  const pendingDisabled = Object.values(pendingChanges).filter((v) => !v).length
 
   if (error && !modules.length) {
     return (
@@ -391,15 +405,21 @@ export default function ModuleManagementPage() {
       <Main>
         <PageStack>
           <PageHeader title={pageTitle} description={pageDescription} />
-          <PageStack>
-            {Array.from({ length: 3 }).map((_, i) => (
-              <Skeleton key={i} className="h-32 w-full rounded-xl" />
-            ))}
-          </PageStack>
+          {Array.from({ length: 3 }).map((_, i) => (
+            <Skeleton key={i} className="h-32 w-full rounded-xl" />
+          ))}
         </PageStack>
       </Main>
     )
   }
+
+  const conflictNames = (issues: ToggleIssue[] | undefined) =>
+    formatList((issues ?? []).map((i) => text.name(i.module_id, i.name)))
+  const conflictName = depConflict ? text.name(depConflict.module_id, depConflict.module_name) : ''
+  const conflictCount =
+    depConflict?.action === 'disable'
+      ? (depConflict.blockers?.length ?? 0)
+      : (depConflict?.required?.length ?? 0)
 
   return (
     <Main>
@@ -409,161 +429,194 @@ export default function ModuleManagementPage() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => setShowResetDialog(true)}
+              onClick={() => setShowReset(true)}
               disabled={isResetting}
             >
               <RotateCcw className="h-4 w-4" />
-              {t('settings.modules.removeMine', 'Remove my changes')}
+              {t('settings.modules.reset', 'Reset to defaults')}
             </Button>
           </Can>
         </PageHeader>
 
-        <PageStack>
-          {/* Core Modules - Collapsed by default */}
-          {coreModules.length > 0 && (
-            <Card>
-              <CardHeader
-                className="cursor-pointer select-none py-3"
-                onClick={() => setCoreExpanded(!coreExpanded)}
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    {coreExpanded ? (
-                      <ChevronDown className="h-4 w-4 text-muted-foreground" />
-                    ) : (
-                      <ChevronRight className="h-4 w-4 text-muted-foreground" />
+        {!canEdit && (
+          <ReadOnlyNotice
+            reason={t(
+              'settings.modules.readOnly',
+              'You can see which modules are on. Only administrators can change them.'
+            )}
+          />
+        )}
+
+        <ListToolbar
+          search={{
+            value: query,
+            onChange: setQuery,
+            placeholder: t('settings.modules.searchPlaceholder', 'Search modules'),
+            label: t('settings.modules.searchLabel', 'Search modules'),
+          }}
+          start={
+            <FilterSelect<StateFilter>
+              label={t('settings.modules.filter.label', 'Show')}
+              value={stateFilter}
+              onChange={(v) => setStateParam(v)}
+              allLabel={t('settings.modules.filter.all', 'All')}
+              allCount={featureModules.length}
+              options={[
+                {
+                  value: 'on',
+                  label: t('settings.modules.filter.on', 'On'),
+                  count: stateCounts.on,
+                },
+                {
+                  value: 'off',
+                  label: t('settings.modules.filter.off', 'Off'),
+                  count: stateCounts.off,
+                },
+                {
+                  value: 'unavailable',
+                  label: t('settings.modules.filter.unavailable', 'Unavailable'),
+                  count: stateCounts.unavailable,
+                },
+              ]}
+            />
+          }
+          end={
+            <span className="text-sm tabular-nums text-muted-foreground" role="status">
+              {t('settings.modules.onCount', '{on} of {total} on', {
+                on: featureOn,
+                total: featureModules.length,
+              })}
+            </span>
+          }
+        />
+
+        {coreShown.length > 0 && (
+          <SettingsSection
+            id="modules-always-on"
+            title={t('settings.modules.alwaysOnTitle', 'Always on')}
+            description={formatList(coreShown.map((m) => text.name(m.id, m.name)))}
+          >
+            {coreWithSubs.length > 0 && (
+              <ul className="divide-y rounded-xl border">
+                {coreWithSubs.map((m) => (
+                  <ModuleRow
+                    key={m.id}
+                    id={m.id}
+                    apiName={m.name}
+                    apiDescription={m.description}
+                    enabled
+                    lock={{ kind: 'always_on' }}
+                    readOnly={!canEdit}
+                    busy={isUpdating}
+                    apiNames={apiNames}
+                    subModules={m.sub_modules}
+                    subEnabled={Object.fromEntries(
+                      (m.sub_modules ?? []).map((s) => [s.id, effective(s.id)])
                     )}
-                    <CardTitle className="text-base">
-                      {t('settings.modules.core', 'Core modules')}
-                    </CardTitle>
-                    <Badge variant="secondary" className="text-xs gap-1">
-                      <Lock className="h-3 w-3" />
-                      {t('settings.modules.alwaysOn', 'Always on')}
-                    </Badge>
-                    <Badge variant="outline" className="text-xs">
-                      {coreModules.length}
-                    </Badge>
-                  </div>
-                </div>
-              </CardHeader>
-              {coreExpanded && (
-                <CardContent className="pt-0">
-                  <div className="divide-y">
-                    {coreModules.map((mod) => (
-                      <ModuleRow
-                        key={mod.id}
-                        mod={mod}
-                        isEnabled={true}
-                        hasPendingChange={false}
-                        pendingChanges={pendingChanges}
-                        isUpdating={isUpdating}
-                        onToggle={toggleModule}
-                        requires={requires[mod.id]}
-                        requiredBy={requiredBy[mod.id]}
-                        moduleNames={moduleNames}
-                        readOnlyUntil={readOnlyModules?.[mod.id]}
-                      />
-                    ))}
-                  </div>
-                </CardContent>
-              )}
-            </Card>
-          )}
+                    onToggle={onToggle}
+                  />
+                ))}
+              </ul>
+            )}
+          </SettingsSection>
+        )}
 
-          {/* Fine-tune features — grouped by CTEM phase, collapsible. Layered on
-            top of the product selection as per-module overrides. */}
-          {featureModules.length > 0 && (
-            <Card>
-              <CardHeader className="py-3">
-                <div className="flex items-center gap-2">
-                  <CardTitle className="text-base">
-                    {t('settings.modules.fineTune', 'Fine-tune features')}
-                  </CardTitle>
-                  <Badge variant="outline" className="text-xs">
-                    {featureModules.length}
-                  </Badge>
-                </div>
-                <CardDescription>
-                  {t(
-                    'settings.modules.fineTuneHint',
-                    'Individual feature toggles, grouped by CTEM phase and layered on top of your products. Turn anything on or off; dependencies are checked when you save.'
-                  )}
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="pt-0 space-y-2.5">
-                {groupedFeatures.map((group) => {
-                  const collapsed = collapsedPhases.has(group.key)
-                  const enabledCount = group.mods.filter((m) => getEffectiveEnabled(m)).length
-                  return (
-                    <div key={group.key} className="rounded-lg border">
-                      <button
-                        type="button"
-                        onClick={() => togglePhase(group.key)}
-                        aria-expanded={!collapsed}
-                        className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-start hover:bg-muted/40"
-                      >
-                        {collapsed ? (
-                          <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
-                        ) : (
-                          <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
-                        )}
-                        <span className="text-sm font-semibold">{group.label}</span>
-                        <span className="ms-auto text-xs tabular-nums text-muted-foreground">
-                          {t('settings.modules.phaseOn', '{enabled}/{total} on', {
-                            enabled: enabledCount,
-                            total: group.mods.length,
-                          })}
-                        </span>
-                      </button>
-                      {!collapsed && (
-                        <div className="divide-y border-t px-3">
-                          {group.mods.map((mod) => (
-                            <ModuleRow
-                              key={mod.id}
-                              mod={mod}
-                              isEnabled={getEffectiveEnabled(mod)}
-                              hasPendingChange={mod.id in pendingChanges}
-                              pendingChanges={pendingChanges}
-                              isUpdating={isUpdating}
-                              onToggle={toggleModule}
-                              requires={requires[mod.id]}
-                              requiredBy={requiredBy[mod.id]}
-                              moduleNames={moduleNames}
-                              readOnlyUntil={readOnlyModules?.[mod.id]}
-                            />
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )
-                })}
-              </CardContent>
-            </Card>
-          )}
-        </PageStack>
+        {groups
+          .filter((g) => g.shown.length > 0)
+          .map((g) => (
+            <SettingsSection
+              key={g.key}
+              id={`modules-${g.key}`}
+              title={g.label}
+              actions={
+                <span className="text-sm tabular-nums text-muted-foreground">
+                  {t('settings.modules.onCount', '{on} of {total} on', {
+                    on: g.on,
+                    total: g.total,
+                  })}
+                </span>
+              }
+            >
+              <ul className="divide-y rounded-xl border">
+                {g.shown.map((m) => (
+                  <ModuleRow
+                    key={m.id}
+                    id={m.id}
+                    apiName={m.name}
+                    apiDescription={m.description}
+                    beta={m.release_status === 'beta'}
+                    enabled={effective(m.id)}
+                    change={changeOf(m.id)}
+                    lock={rowLock(m)}
+                    readOnly={!canEdit}
+                    busy={isUpdating}
+                    requires={listed(index.requires[m.id])}
+                    requiredBy={listed(index.requiredBy[m.id])}
+                    apiNames={apiNames}
+                    health={m.health}
+                    healthDetail={m.health_detail}
+                    subModules={m.sub_modules}
+                    subEnabled={Object.fromEntries(
+                      (m.sub_modules ?? []).map((s) => [s.id, effective(s.id)])
+                    )}
+                    onToggle={onToggle}
+                  />
+                ))}
+              </ul>
+            </SettingsSection>
+          ))}
 
-        {/* A long list of toggles: Save sits in the shared sticky bar, shown only
-          while there are unsaved changes, and leaving asks first. */}
-        <Can route="PATCH /api/v1/tenants/{tenant}/settings/modules">
+        {shownCount === 0 && (
+          <EmptyState
+            icon={SearchX}
+            title={t('settings.modules.noMatch', 'No modules match')}
+            description={t(
+              'settings.modules.noMatchHint',
+              'Try another word, or show all modules.'
+            )}
+            action={
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setQuery('')
+                  setStateParam('')
+                }}
+              >
+                {t('settings.modules.clearFilters', 'Show all modules')}
+              </Button>
+            }
+          />
+        )}
+
+        {canReadAudit && <ModulesLastChange />}
+
+        {canEdit && (
           <SettingsSaveBar
             dirty={isDirty}
             saving={isUpdating}
-            onSave={() => void handleSave()}
-            onDiscard={handleDiscard}
+            onSave={handleSave}
+            onDiscard={() => setPending({})}
             summary={
               formatList([
-                pendingEnabled > 0 &&
-                  t('settings.modules.toEnable', '{count} to enable', { count: pendingEnabled }),
-                pendingDisabled > 0 &&
-                  t('settings.modules.toDisable', '{count} to disable', { count: pendingDisabled }),
+                toEnable > 0 &&
+                  t('settings.modules.toEnable', '{count} to turn on', { count: toEnable }),
+                toDisable > 0 &&
+                  t('settings.modules.toDisable', '{count} to turn off', { count: toDisable }),
               ]) || undefined
             }
           />
-        </Can>
+        )}
 
-        {/* Dependency-violation Dialog — shown when the backend rejects
-          a save because of the module graph. Lists the concrete modules
-          the admin needs to flip before the proposed toggle will take. */}
+        <ModuleImpactDialog
+          open={showImpact}
+          onOpenChange={setShowImpact}
+          plan={plan}
+          apiNames={apiNames}
+          saving={isUpdating}
+          onConfirm={() => void runSave(plan.changes)}
+        />
+
         <ConfirmDialog
           open={!!depConflict}
           onOpenChange={(open) => !open && setDepConflict(null)}
@@ -571,352 +624,59 @@ export default function ModuleManagementPage() {
             <span className="flex items-center gap-2">
               <AlertTriangle className="h-5 w-5 text-muted-foreground" />
               {depConflict?.action === 'disable'
-                ? t('settings.modules.cannotDisable', 'Cannot disable "{name}"', {
-                    name: depConflict.module_name,
+                ? t('settings.modules.cannotDisable', '{name} cannot turn off alone', {
+                    name: conflictName,
                   })
-                : t('settings.modules.cannotEnable', 'Cannot enable "{name}"', {
-                    name: depConflict?.module_name ?? '',
+                : t('settings.modules.cannotEnable', '{name} cannot turn on alone', {
+                    name: conflictName,
                   })}
             </span>
           }
           desc={
             depConflict?.action === 'disable'
               ? t(
-                  'settings.modules.blockedSr',
-                  '{count} dependent modules block disabling {name}',
+                  'settings.modules.blockedBody',
+                  '{names} {count, plural, one {needs} other {need}} {name}. Turn them off together, or cancel.',
                   {
-                    count: depConflict.blockers?.length ?? 0,
-                    name: depConflict.module_name,
+                    names: conflictNames(depConflict.blockers),
+                    count: conflictCount,
+                    name: conflictName,
                   }
                 )
-              : t('settings.modules.requiredSr', '{count} modules must be enabled before {name}', {
-                  count: depConflict?.required?.length ?? 0,
-                  name: depConflict?.module_name ?? '',
-                })
+              : t(
+                  'settings.modules.requiredBody',
+                  '{name} needs {names}. Turn them on together, or cancel.',
+                  { names: conflictNames(depConflict?.required), name: conflictName }
+                )
           }
           confirmText={
             depConflict?.action === 'disable'
-              ? t(
-                  'settings.modules.disableAndRetry',
-                  'Disable {count} dependent modules and retry',
-                  {
-                    count: depConflict.blockers?.length ?? 0,
-                  }
-                )
-              : t('settings.modules.enableAndRetry', 'Enable {count} required modules and retry', {
-                  count: depConflict?.required?.length ?? 0,
+              ? t('confirm.modules.offTogether', 'Turn off all {count} together', {
+                  count: conflictCount + 1,
+                })
+              : t('confirm.modules.onTogether', 'Turn on all {count} together', {
+                  count: conflictCount + 1,
                 })
           }
           destructive={depConflict?.action === 'disable'}
           isLoading={isUpdating}
-          handleConfirm={handleCascadeResolve}
-        >
-          <div className="space-y-3 text-sm">
-            {depConflict?.action === 'disable' && (depConflict.blockers?.length ?? 0) > 0 && (
-              <div>
-                <div className="text-muted-foreground">
-                  {t(
-                    'settings.modules.blockedBody',
-                    '{count} modules depend on {name}. You can disable them all together, or cancel and handle them manually:',
-                    { count: depConflict.blockers?.length ?? 0, name: depConflict.module_name }
-                  )}
-                </div>
-                <ul className="mt-2 space-y-1.5">
-                  {depConflict.blockers?.map((b) => (
-                    <li key={b.module_id} className="rounded-md border bg-muted/40 px-3 py-2">
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="font-medium">{b.name}</div>
-                        <code className="text-xs text-muted-foreground">{b.module_id}</code>
-                      </div>
-                      <div className="mt-0.5 text-xs text-muted-foreground">{b.reason}</div>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-            {depConflict?.action === 'enable' && (depConflict.required?.length ?? 0) > 0 && (
-              <div>
-                <div className="text-muted-foreground">
-                  {t(
-                    'settings.modules.requiredBody',
-                    '{name} requires {count} other modules that are currently disabled. You can enable them all together, or cancel and handle them manually:',
-                    { count: depConflict.required?.length ?? 0, name: depConflict.module_name }
-                  )}
-                </div>
-                <ul className="mt-2 space-y-1.5">
-                  {depConflict.required?.map((r) => (
-                    <li key={r.module_id} className="rounded-md border bg-muted/40 px-3 py-2">
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="font-medium">{r.name}</div>
-                        <code className="text-xs text-muted-foreground">{r.module_id}</code>
-                      </div>
-                      <div className="mt-0.5 text-xs text-muted-foreground">{r.reason}</div>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-          </div>
-        </ConfirmDialog>
+          handleConfirm={handleConflictResolve}
+        />
 
-        {/* Disabling modules: names what goes away for every member. */}
         <ConfirmDialog
-          open={confirmDisable}
-          onOpenChange={setConfirmDisable}
-          title={t('confirm.modules.disableTitle', 'Turn off {count} modules?', {
-            count: pendingDisabled,
-          })}
-          desc={t(
-            'confirm.modules.disableDesc',
-            'They disappear from the menu and their pages stop opening for every member of this organization. Their data is kept, and turning them on again brings it back.'
-          )}
-          confirmText={t('confirm.modules.disableConfirm', 'Turn off {count} modules', {
-            count: pendingDisabled,
-          })}
-          destructive
-          isLoading={isUpdating}
-          handleConfirm={handleConfirmDisable}
-        >
-          <ConfirmSample
-            names={Object.entries(pendingChanges)
-              .filter(([, enabled]) => !enabled)
-              .map(([id]) => moduleNames[id] ?? id)}
-            total={pendingDisabled}
-          />
-        </ConfirmDialog>
-
-        {/* Reset Confirmation Dialog */}
-        <ConfirmDialog
-          open={showResetDialog}
-          onOpenChange={setShowResetDialog}
-          title={t('confirm.modules.resetTitle', 'Remove your module changes?')}
+          open={showReset}
+          onOpenChange={setShowReset}
+          title={t('confirm.modules.resetTitle', 'Reset modules to the defaults?')}
           desc={t(
             'confirm.modules.resetDesc',
-            'Every module you turned on or off by hand goes back to the default: every module available to this organization is on again. Your changes cannot be restored.'
+            'Every module available to this organization turns on again, and the choices made on this page are cleared. This cannot be undone.'
           )}
-          confirmText={t('confirm.modules.reset', 'Remove changes')}
+          confirmText={t('confirm.modules.reset', 'Reset to defaults')}
           destructive
           isLoading={isResetting}
           handleConfirm={() => void handleReset()}
         />
       </PageStack>
     </Main>
-  )
-}
-
-// ============================================
-// HELPER COMPONENTS
-// ============================================
-
-function ModuleRow({
-  mod,
-  isEnabled,
-  hasPendingChange,
-  pendingChanges,
-  isUpdating,
-  onToggle,
-  requires = [],
-  requiredBy = [],
-  moduleNames = {},
-  readOnlyUntil,
-}: {
-  mod: TenantModule
-  isEnabled: boolean
-  hasPendingChange: boolean
-  pendingChanges: Record<string, boolean>
-  isUpdating: boolean
-  onToggle: (moduleId: string, currentEnabled: boolean) => void
-  requires?: DependencyEdgeWithKind[]
-  requiredBy?: DependencyEdgeWithKind[]
-  moduleNames?: Record<string, string>
-  /** End of the module's read-only grace, when it became unavailable recently. */
-  readOnlyUntil?: string
-}) {
-  const { t } = useTranslation()
-  const hasSubModules = mod.sub_modules && mod.sub_modules.length > 0
-  const categoryLabel = CATEGORY_LABELS[mod.category]
-    ? t(`settings.modules.category.${mod.category}`, CATEGORY_LABELS[mod.category])
-    : mod.category
-
-  // Deprecated and not-yet-built sub-modules are not shown.
-  const visibleSubModules = hasSubModules
-    ? mod.sub_modules!.filter((sub) => !isHiddenReleaseStatus(sub.release_status))
-    : []
-
-  // Count only HARD edges for the compact badges — soft edges are
-  // surfaced as warnings post-save, they're noisy in the row header.
-  const hardRequires = requires.filter((e) => e.type === 'hard')
-  const hardRequiredBy = requiredBy.filter((e) => e.type === 'hard')
-  // Not available for this organization: it cannot be switched on here, only
-  // by the administrator of this installation.
-  const notEntitled = !mod.is_core && mod.entitled === false
-
-  return (
-    <div>
-      <div
-        className={`flex items-center justify-between py-3 ${
-          hasPendingChange ? 'bg-muted/30 -mx-3 px-3 rounded' : ''
-        }`}
-      >
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
-            <span className="font-medium text-sm">{mod.name}</span>
-            {!mod.is_core && categoryLabel && <Tag label={categoryLabel} />}
-            {mod.release_status === 'beta' && (
-              <Badge variant="outline" className="text-xs">
-                {t('settings.modules.beta', 'Beta')}
-              </Badge>
-            )}
-            {notEntitled && readOnlyUntil && (
-              <Badge
-                variant="outline"
-                className="gap-1 text-xs text-warning"
-                title={t(
-                  'limits.moduleLock.readOnlyHint',
-                  'This module is no longer available for this organization. Its data can be viewed and exported until then; changes are turned off.'
-                )}
-              >
-                <Lock className="h-3 w-3" />
-                {t('limits.moduleLock.readOnlyUntil', 'Read-only until {date}', {
-                  date: new Date(readOnlyUntil).toLocaleDateString(),
-                })}
-              </Badge>
-            )}
-            {notEntitled && !readOnlyUntil && (
-              <Badge
-                variant="outline"
-                className="gap-1 text-xs text-muted-foreground"
-                title={t(
-                  'limits.moduleLock.unavailableHint',
-                  'This module is not available for this organization. Contact the administrator of this installation.'
-                )}
-              >
-                <Lock className="h-3 w-3" />
-                {t('limits.moduleLock.unavailable', 'Not available for this organization')}
-              </Badge>
-            )}
-            {hasPendingChange && (
-              <Badge variant="secondary" className="text-xs">
-                {t('settings.modules.modified', 'Modified')}
-              </Badge>
-            )}
-            {/* Dependency badges — click to see the full list in a tooltip-like
-                title. Kept compact so they don't dominate the row. */}
-            {hardRequires.length > 0 && (
-              <Badge
-                variant="outline"
-                className="gap-0.5 px-1.5 py-0 text-xs text-muted-foreground"
-                title={t('settings.modules.requires', 'Requires: {names}', {
-                  names: hardRequires.map((e) => moduleNames[e.to] ?? e.to).join(', '),
-                })}
-              >
-                <ArrowUpRight className="h-2.5 w-2.5" />
-                {t('settings.modules.needs', 'Needs {count}', { count: hardRequires.length })}
-              </Badge>
-            )}
-            {hardRequiredBy.length > 0 && (
-              <Badge
-                variant="outline"
-                className="gap-0.5 px-1.5 py-0 text-xs text-muted-foreground"
-                title={t('settings.modules.requiredBy', 'Required by: {names}', {
-                  names: hardRequiredBy.map((e) => moduleNames[e.from] ?? e.from).join(', '),
-                })}
-              >
-                <ArrowDownRight className="h-2.5 w-2.5" />
-                {t('settings.modules.usedBy', 'Used by {count}', { count: hardRequiredBy.length })}
-              </Badge>
-            )}
-            {visibleSubModules.length > 0 && (
-              <span className="text-xs text-muted-foreground">
-                {t('settings.modules.subModules', '({count} sub-modules)', {
-                  count: visibleSubModules.length,
-                })}
-              </span>
-            )}
-          </div>
-          {mod.description && (
-            <p className="text-xs text-muted-foreground mt-0.5 truncate">{mod.description}</p>
-          )}
-        </div>
-        <div className="ms-4">
-          <Switch
-            checked={isEnabled}
-            onCheckedChange={() => onToggle(mod.id, isEnabled)}
-            disabled={mod.is_core || notEntitled || isUpdating}
-            aria-label={t('settings.modules.toggle', 'Turn {name} on or off', { name: mod.name })}
-          />
-        </div>
-      </div>
-      {visibleSubModules.length > 0 && (
-        <div
-          className={`pb-2 ps-6 space-y-0.5 ${!isEnabled ? 'opacity-40 pointer-events-none' : ''}`}
-        >
-          {visibleSubModules.map((sub) => (
-            <SubModuleRow
-              key={sub.id}
-              sub={sub}
-              parentEnabled={isEnabled}
-              pendingChanges={pendingChanges}
-              isUpdating={isUpdating}
-              onToggle={onToggle}
-            />
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
-
-function SubModuleRow({
-  sub,
-  parentEnabled,
-  pendingChanges,
-  isUpdating,
-  onToggle,
-}: {
-  sub: TenantSubModule
-  parentEnabled: boolean
-  pendingChanges: Record<string, boolean>
-  isUpdating: boolean
-  onToggle: (moduleId: string, currentEnabled: boolean) => void
-}) {
-  const { t } = useTranslation()
-  const isComingSoon = sub.release_status === 'coming_soon'
-  const hasPendingChange = sub.id in pendingChanges
-  const effectiveEnabled = isComingSoon
-    ? false
-    : hasPendingChange
-      ? pendingChanges[sub.id]
-      : sub.is_enabled
-
-  return (
-    <div
-      className={`flex items-center justify-between py-1 ${
-        hasPendingChange ? 'bg-muted/30 -mx-3 px-3 rounded' : ''
-      } ${isComingSoon ? 'opacity-50' : ''}`}
-    >
-      <div className="flex items-center gap-2 text-xs text-muted-foreground min-w-0">
-        <CornerDownRight className="h-3 w-3 shrink-0" />
-        <span className={!effectiveEnabled ? 'line-through opacity-60' : ''}>{sub.name}</span>
-        {sub.release_status === 'beta' && (
-          <Badge variant="outline" className="px-1 py-0 text-xs">
-            {t('settings.modules.beta', 'Beta')}
-          </Badge>
-        )}
-        {isComingSoon && <Marker kind="soon" />}
-        {hasPendingChange && !isComingSoon && (
-          <Badge variant="secondary" className="px-1 py-0 text-xs">
-            {t('settings.modules.modified', 'Modified')}
-          </Badge>
-        )}
-      </div>
-      <Switch
-        checked={effectiveEnabled}
-        onCheckedChange={() => onToggle(sub.id, effectiveEnabled)}
-        disabled={!parentEnabled || isUpdating || isComingSoon}
-        className="scale-75"
-        aria-label={t('settings.modules.toggle', 'Turn {name} on or off', { name: sub.name })}
-      />
-    </div>
   )
 }
