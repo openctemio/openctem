@@ -8,6 +8,8 @@ import { existsSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { sidebarData } from '../sidebar-data'
 import { resolveLegacyRoute } from '../legacy-routes'
+import { matchRoutePermission } from '../route-permissions'
+import { Permission } from '@/lib/permissions'
 import type { NavCollapsible, NavItem } from '@/components/types'
 
 const APP = join(process.cwd(), 'src', 'app')
@@ -61,6 +63,20 @@ describe('Validation section', () => {
       'pentest',
       'mitre_coverage',
     ])
+  })
+
+  // A vendor tester or a campaign client holds pentest:campaigns:read (what
+  // the API checks, with campaign membership) but not the module-wide
+  // validation:read: the campaign pages and their sidebar entry follow the API.
+  it('campaign pages need only pentest:campaigns:read', () => {
+    const item = validation.items.find((i) => i.title === 'Pentest campaigns')!
+    expect(item.permission).toBe(Permission.PentestCampaignsRead)
+    for (const path of ['/pentest/campaigns', '/pentest/campaigns/x']) {
+      expect(matchRoutePermission(path)?.permission, path).toBe(Permission.PentestCampaignsRead)
+    }
+    expect(matchRoutePermission('/pentest/findings/new')?.permission).toBe(
+      Permission.PentestFindingsWrite
+    )
   })
 
   it('every item has a page', () => {

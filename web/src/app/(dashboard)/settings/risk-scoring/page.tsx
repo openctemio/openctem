@@ -44,12 +44,15 @@ import { ScoringImpactDialog } from '@/features/organization/components/scoring-
 import { useTranslation } from '@/context/i18n-provider'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { getErrorMessage } from '@/lib/api/error-handler'
-
-const PAGE_TITLE = 'Risk scoring'
-const PAGE_DESCRIPTION =
-  "Configure the weights and parameters that make up each asset's risk score."
+import { categoricalVar } from '@/lib/chart-palette'
 
 function LoadingSkeleton() {
+  const { t } = useTranslation()
+  const PAGE_TITLE = t('riskScore.settings.page.title', 'Risk scoring')
+  const PAGE_DESCRIPTION = t(
+    'riskScore.settings.page.desc',
+    "Configure the weights and parameters that make up each asset's risk score."
+  )
   return (
     <Main>
       <PageStack>
@@ -63,17 +66,41 @@ function LoadingSkeleton() {
   )
 }
 
+// One categorical colour per weight; the bar and the sliders share them.
+const WEIGHT_COLOR = [0, 1, 2, 3].map(categoricalVar)
+
 // Visual stacked bar showing weight distribution
 function WeightDistributionBar({
   weights,
 }: {
   weights: { exposure: number; criticality: number; findings: number; ctem: number }
 }) {
+  const { t } = useTranslation()
   const segments = [
-    { key: 'exposure', label: 'Exposure', color: '#ef4444', value: weights.exposure },
-    { key: 'criticality', label: 'Criticality', color: '#f97316', value: weights.criticality },
-    { key: 'findings', label: 'Findings', color: '#eab308', value: weights.findings },
-    { key: 'ctem', label: 'CTEM', color: '#3b82f6', value: weights.ctem },
+    {
+      key: 'exposure',
+      label: t('riskScore.settings.weight.exposure', 'Exposure'),
+      color: WEIGHT_COLOR[0],
+      value: weights.exposure,
+    },
+    {
+      key: 'criticality',
+      label: t('riskScore.settings.weight.criticality', 'Criticality'),
+      color: WEIGHT_COLOR[1],
+      value: weights.criticality,
+    },
+    {
+      key: 'findings',
+      label: t('riskScore.settings.weight.findings', 'Findings'),
+      color: WEIGHT_COLOR[2],
+      value: weights.findings,
+    },
+    {
+      key: 'ctem',
+      label: t('riskScore.settings.weight.ctem', 'CTEM'),
+      color: WEIGHT_COLOR[3],
+      value: weights.ctem,
+    },
   ]
 
   return (
@@ -141,14 +168,32 @@ function WeightSlider({
   )
 }
 
-// Preset descriptions for user context
-const PRESET_DESCRIPTIONS: Record<string, string> = {
-  legacy: 'Original formula (backward compatible)',
-  default: 'Balanced for general-purpose use',
-  banking: 'High criticality + CTEM, PII-focused',
-  healthcare: 'Highest CTEM weight, PHI + HIPAA',
-  ecommerce: 'Highest exposure, public-facing apps',
-  government: 'High compliance + restricted data',
+// Copy for the known presets; an unknown preset name falls back to its capitalised name.
+const PRESET_COPY: Record<string, { name: string; desc: string }> = {
+  legacy: {
+    name: 'riskScore.settings.preset.legacy.name',
+    desc: 'riskScore.settings.preset.legacy.desc',
+  },
+  default: {
+    name: 'riskScore.settings.preset.default.name',
+    desc: 'riskScore.settings.preset.default.desc',
+  },
+  banking: {
+    name: 'riskScore.settings.preset.banking.name',
+    desc: 'riskScore.settings.preset.banking.desc',
+  },
+  healthcare: {
+    name: 'riskScore.settings.preset.healthcare.name',
+    desc: 'riskScore.settings.preset.healthcare.desc',
+  },
+  ecommerce: {
+    name: 'riskScore.settings.preset.ecommerce.name',
+    desc: 'riskScore.settings.preset.ecommerce.desc',
+  },
+  government: {
+    name: 'riskScore.settings.preset.government.name',
+    desc: 'riskScore.settings.preset.government.desc',
+  },
 }
 
 function InfoTip({ text }: { text: string }) {
@@ -223,6 +268,11 @@ export default function ScoringConfigurationPage() {
   const [config, setConfig] = useState<RiskScoringSettings | null>(null)
   const [isDirty, setIsDirty] = useState(false)
   const { t } = useTranslation()
+  const PAGE_TITLE = t('riskScore.settings.page.title', 'Risk scoring')
+  const PAGE_DESCRIPTION = t(
+    'riskScore.settings.page.desc',
+    "Configure the weights and parameters that make up each asset's risk score."
+  )
   // The impact review: a whole-organization dry run shown before applying.
   const [impactOpen, setImpactOpen] = useState(false)
   const [impact, setImpact] = useState<RiskScoringPreviewResponse | null>(null)
@@ -379,11 +429,18 @@ export default function ScoringConfigurationPage() {
           <PageHeader title={PAGE_TITLE} description={PAGE_DESCRIPTION} />
           <Alert variant="destructive">
             <AlertCircle className="h-4 w-4" />
-            <AlertTitle>Failed to load scoring settings</AlertTitle>
+            <AlertTitle>
+              {t('riskScore.settings.loadError', 'Failed to load scoring settings')}
+            </AlertTitle>
             <AlertDescription>
-              <p>{getErrorMessage(error, 'The scoring settings request failed.')}</p>
+              <p>
+                {getErrorMessage(
+                  error,
+                  t('riskScore.settings.loadErrorFallback', 'The scoring settings request failed.')
+                )}
+              </p>
               <Button variant="outline" size="sm" className="mt-2" onClick={() => void mutate()}>
-                Retry
+                {t('common.retry', 'Retry')}
               </Button>
             </AlertDescription>
           </Alert>
@@ -422,13 +479,13 @@ export default function ScoringConfigurationPage() {
             <Button variant="outline" size="sm" asChild>
               <Link href="/priority-rules">
                 <ListOrdered className="h-4 w-4" />
-                Priority rules
+                {t('riskScore.settings.priorityRules', 'Priority rules')}
               </Link>
             </Button>
           )}
           <Button variant="outline" size="sm" onClick={handleReset} disabled={!isDirty}>
             <RotateCcw className="h-4 w-4" />
-            Reset
+            {t('riskScore.settings.reset', 'Reset')}
           </Button>
           <Button size="sm" onClick={handleSave} disabled={!canSave}>
             {isUpdating ? (
@@ -444,8 +501,13 @@ export default function ScoringConfigurationPage() {
         {presets && presets.length > 0 && (
           <Card>
             <CardHeader>
-              <CardTitle>Presets</CardTitle>
-              <CardDescription>Start from a preset optimized for your industry</CardDescription>
+              <CardTitle>{t('riskScore.settings.presets.title', 'Presets')}</CardTitle>
+              <CardDescription>
+                {t(
+                  'riskScore.settings.presets.desc',
+                  'Start from a preset optimized for your industry'
+                )}
+              </CardDescription>
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
@@ -461,10 +523,12 @@ export default function ScoringConfigurationPage() {
                     }`}
                   >
                     <div className="text-sm font-medium">
-                      {preset.name.charAt(0).toUpperCase() + preset.name.slice(1)}
+                      {PRESET_COPY[preset.name]
+                        ? t(PRESET_COPY[preset.name].name, preset.name)
+                        : preset.name.charAt(0).toUpperCase() + preset.name.slice(1)}
                     </div>
                     <div className="text-muted-foreground mt-0.5 text-xs">
-                      {PRESET_DESCRIPTIONS[preset.name] || ''}
+                      {PRESET_COPY[preset.name] ? t(PRESET_COPY[preset.name].desc) : ''}
                     </div>
                   </button>
                 ))}
@@ -475,9 +539,11 @@ export default function ScoringConfigurationPage() {
                       : 'hover:border-muted-foreground/30 border-transparent'
                   }`}
                 >
-                  <div className="text-sm font-medium">Custom</div>
+                  <div className="text-sm font-medium">
+                    {t('riskScore.settings.presets.custom', 'Custom')}
+                  </div>
                   <div className="text-muted-foreground mt-0.5 text-xs">
-                    Manually configured values
+                    {t('riskScore.settings.presets.customDesc', 'Manually configured values')}
                   </div>
                 </div>
               </div>
@@ -503,44 +569,62 @@ export default function ScoringConfigurationPage() {
           {weighted && (
             <Card>
               <CardHeader>
-                <CardTitle>Component weights</CardTitle>
+                <CardTitle>{t('riskScore.settings.weights.title', 'Component weights')}</CardTitle>
                 <CardDescription>
-                  Adjust the weight of each factor. Weights auto-balance to 100%.
+                  {t(
+                    'riskScore.settings.weights.desc',
+                    'Adjust the weight of each factor. Weights auto-balance to 100%.'
+                  )}
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <WeightDistributionBar weights={config.weights} />
                 <WeightSlider
-                  label="Exposure"
+                  label={t('riskScore.settings.weight.exposure', 'Exposure')}
                   value={config.weights.exposure}
                   onChange={(v) => updateWeight('exposure', v)}
-                  color="#ef4444" // label-ok: slider track colour, matches the weight bar segment
-                  tooltip="How much the asset's network exposure (public, private, isolated) affects its risk score"
+                  color={WEIGHT_COLOR[0]}
+                  tooltip={t(
+                    'riskScore.settings.weight.exposureTip',
+                    "How much the asset's network exposure (public, private, isolated) affects its risk score"
+                  )}
                 />
                 <WeightSlider
-                  label="Criticality"
+                  label={t('riskScore.settings.weight.criticality', 'Criticality')}
                   value={config.weights.criticality}
                   onChange={(v) => updateWeight('criticality', v)}
-                  color="#f97316" // label-ok: slider track colour, matches the weight bar segment
-                  tooltip="How much the asset's business criticality level affects its risk score"
+                  color={WEIGHT_COLOR[1]}
+                  tooltip={t(
+                    'riskScore.settings.weight.criticalityTip',
+                    "How much the asset's business criticality level affects its risk score"
+                  )}
                 />
                 <WeightSlider
-                  label="Findings"
+                  label={t('riskScore.settings.weight.findings', 'Findings')}
                   value={config.weights.findings}
                   onChange={(v) => updateWeight('findings', v)}
-                  color="#eab308" // label-ok: slider track colour, matches the weight bar segment
-                  tooltip="How much vulnerability findings (count or severity-weighted) affect the risk score"
+                  color={WEIGHT_COLOR[2]}
+                  tooltip={t(
+                    'riskScore.settings.weight.findingsTip',
+                    'How much vulnerability findings (count or severity-weighted) affect the risk score'
+                  )}
                 />
                 <WeightSlider
-                  label="CTEM"
+                  label={t('riskScore.settings.weight.ctem', 'CTEM')}
                   value={config.weights.ctem}
                   onChange={(v) => updateWeight('ctem', v)}
-                  color="#3b82f6" // label-ok: slider track colour, matches the CTEM bar segment
-                  tooltip="Continuous Threat Exposure Management bonus points for factors like PII exposure, internet accessibility, and compliance risk"
+                  color={WEIGHT_COLOR[3]}
+                  tooltip={t(
+                    'riskScore.settings.weight.ctemTip',
+                    'Continuous Threat Exposure Management bonus points for factors like PII exposure, internet accessibility, and compliance risk'
+                  )}
                 />
                 {!config.ctem_points.enabled && config.weights.ctem > 0 && (
                   <p className="text-muted-foreground text-xs">
-                    CTEM is disabled. Its weight will be redistributed to other components.
+                    {t(
+                      'riskScore.settings.weights.ctemOff',
+                      'CTEM is disabled. Its weight will be redistributed to other components.'
+                    )}
                   </p>
                 )}
               </CardContent>
@@ -551,16 +635,29 @@ export default function ScoringConfigurationPage() {
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-1">
-                Exposure scores
-                <InfoTip text="Base scores assigned based on how exposed an asset is to external access. Higher scores mean more risk." />
+                {t('riskScore.settings.exposure.title', 'Exposure scores')}
+                <InfoTip
+                  text={t(
+                    'riskScore.settings.exposure.tip',
+                    'Base scores assigned based on how exposed an asset is to external access. Higher scores mean more risk.'
+                  )}
+                />
               </CardTitle>
-              <CardDescription>Base score (0-100) for each exposure level</CardDescription>
+              <CardDescription>
+                {t(
+                  'riskScore.settings.exposure.desc',
+                  'Base score (0-100) for each exposure level'
+                )}
+              </CardDescription>
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
                 <NumberInput
-                  label="Public"
-                  tooltip="Directly accessible from the internet"
+                  label={t('assets.exposure.public', 'Public')}
+                  tooltip={t(
+                    'riskScore.settings.exposure.publicTip',
+                    'Directly accessible from the internet'
+                  )}
                   value={config.exposure_scores.public}
                   onChange={(v) =>
                     updateConfig((c) => ({
@@ -570,8 +667,11 @@ export default function ScoringConfigurationPage() {
                   }
                 />
                 <NumberInput
-                  label="Restricted"
-                  tooltip="Behind VPN or firewall, limited external access"
+                  label={t('assets.exposure.restricted', 'Restricted')}
+                  tooltip={t(
+                    'riskScore.settings.exposure.restrictedTip',
+                    'Behind VPN or firewall, limited external access'
+                  )}
                   value={config.exposure_scores.restricted}
                   onChange={(v) =>
                     updateConfig((c) => ({
@@ -581,8 +681,11 @@ export default function ScoringConfigurationPage() {
                   }
                 />
                 <NumberInput
-                  label="Private"
-                  tooltip="Internal network only, no external access"
+                  label={t('assets.exposure.private', 'Private')}
+                  tooltip={t(
+                    'riskScore.settings.exposure.privateTip',
+                    'Internal network only, no external access'
+                  )}
                   value={config.exposure_scores.private}
                   onChange={(v) =>
                     updateConfig((c) => ({
@@ -592,8 +695,11 @@ export default function ScoringConfigurationPage() {
                   }
                 />
                 <NumberInput
-                  label="Isolated"
-                  tooltip="Air-gapped or completely isolated from other networks"
+                  label={t('assets.exposure.isolated', 'Isolated')}
+                  tooltip={t(
+                    'riskScore.settings.exposure.isolatedTip',
+                    'Air-gapped or completely isolated from other networks'
+                  )}
                   value={config.exposure_scores.isolated}
                   onChange={(v) =>
                     updateConfig((c) => ({
@@ -603,8 +709,11 @@ export default function ScoringConfigurationPage() {
                   }
                 />
                 <NumberInput
-                  label="Unknown"
-                  tooltip="Exposure level has not been classified"
+                  label={t('assets.exposure.unknown', 'Unknown')}
+                  tooltip={t(
+                    'riskScore.settings.exposure.unknownTip',
+                    'Exposure level has not been classified'
+                  )}
                   value={config.exposure_scores.unknown}
                   onChange={(v) =>
                     updateConfig((c) => ({
@@ -618,12 +727,17 @@ export default function ScoringConfigurationPage() {
                 <>
                   <Separator className="my-4" />
                   <CardDescription className="mb-2 flex items-center">
-                    Multipliers (0.1 - 3.0)
-                    <InfoTip text="Final score is multiplied by this factor based on asset exposure. A multiplier of 1.0 means no change, >1.0 amplifies risk, <1.0 reduces risk." />
+                    {t('riskScore.settings.multiplier.title', 'Multipliers (0.1 - 3.0)')}
+                    <InfoTip
+                      text={t(
+                        'riskScore.settings.multiplier.tip',
+                        'Final score is multiplied by this factor based on asset exposure. A multiplier of 1.0 means no change, >1.0 amplifies risk, <1.0 reduces risk.'
+                      )}
+                    />
                   </CardDescription>
                   <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
                     <NumberInput
-                      label="Public"
+                      label={t('assets.exposure.public', 'Public')}
                       value={config.exposure_multipliers.public}
                       onChange={(v) =>
                         updateConfig((c) => ({
@@ -636,7 +750,7 @@ export default function ScoringConfigurationPage() {
                       step={0.1}
                     />
                     <NumberInput
-                      label="Restricted"
+                      label={t('assets.exposure.restricted', 'Restricted')}
                       value={config.exposure_multipliers.restricted}
                       onChange={(v) =>
                         updateConfig((c) => ({
@@ -649,7 +763,7 @@ export default function ScoringConfigurationPage() {
                       step={0.1}
                     />
                     <NumberInput
-                      label="Private"
+                      label={t('assets.exposure.private', 'Private')}
                       value={config.exposure_multipliers.private}
                       onChange={(v) =>
                         updateConfig((c) => ({
@@ -662,7 +776,7 @@ export default function ScoringConfigurationPage() {
                       step={0.1}
                     />
                     <NumberInput
-                      label="Isolated"
+                      label={t('assets.exposure.isolated', 'Isolated')}
                       value={config.exposure_multipliers.isolated}
                       onChange={(v) =>
                         updateConfig((c) => ({
@@ -675,7 +789,7 @@ export default function ScoringConfigurationPage() {
                       step={0.1}
                     />
                     <NumberInput
-                      label="Unknown"
+                      label={t('assets.exposure.unknown', 'Unknown')}
                       value={config.exposure_multipliers.unknown}
                       onChange={(v) =>
                         updateConfig((c) => ({
@@ -693,8 +807,13 @@ export default function ScoringConfigurationPage() {
               <Separator className="my-4" />
               <div className="space-y-1">
                 <Label className="flex items-center text-sm font-medium">
-                  Score composition
-                  <InfoTip text="Controls how the exposure multiplier combines with the weighted base score. Standard multiplies the whole score (can pin highly-exposed critical assets at 100). Amplify within headroom fills the remaining range instead, so top-risk assets keep a distinguishable ranking." />
+                  {t('riskScore.model.label', 'Score composition')}
+                  <InfoTip
+                    text={t(
+                      'riskScore.settings.composition.tip',
+                      'Controls how the exposure multiplier combines with the weighted base score. Standard multiplies the whole score (can pin highly-exposed critical assets at 100). Amplify within headroom fills the remaining range instead, so top-risk assets keep a distinguishable ranking.'
+                    )}
+                  />
                 </Label>
                 <Select
                   value={config.score_composition_mode ?? 'multiply'}
@@ -715,8 +834,12 @@ export default function ScoringConfigurationPage() {
                     <SelectItem value="likelihood_impact">
                       {t('riskScore.model.likelihoodImpact', 'Likelihood × impact (default)')}
                     </SelectItem>
-                    <SelectItem value="multiply">Standard (multiply)</SelectItem>
-                    <SelectItem value="amplify_headroom">Amplify within headroom</SelectItem>
+                    <SelectItem value="multiply">
+                      {t('riskScore.settings.composition.multiply', 'Standard (multiply)')}
+                    </SelectItem>
+                    <SelectItem value="amplify_headroom">
+                      {t('riskScore.settings.composition.amplify', 'Amplify within headroom')}
+                    </SelectItem>
                   </SelectContent>
                 </Select>
                 <p className="text-muted-foreground text-xs">
@@ -743,22 +866,35 @@ export default function ScoringConfigurationPage() {
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-1">
-                Criticality and risk levels
-                <InfoTip text="Criticality scores define the base risk score for each business criticality level. Risk level thresholds define the score boundaries that determine the final risk label (Critical, High, Medium, Low)." />
+                {t('riskScore.settings.criticality.title', 'Criticality and risk levels')}
+                <InfoTip
+                  text={t(
+                    'riskScore.settings.criticality.tip',
+                    'Criticality scores define the base risk score for each business criticality level. Risk level thresholds define the score boundaries that determine the final risk label (Critical, High, Medium, Low).'
+                  )}
+                />
               </CardTitle>
               <CardDescription>
-                Asset criticality scores and risk level threshold boundaries
+                {t(
+                  'riskScore.settings.criticality.desc',
+                  'Asset criticality scores and risk level threshold boundaries'
+                )}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div>
                 <Label className="flex items-center text-sm font-medium">
-                  Criticality scores (0–100)
-                  <InfoTip text="Base score assigned to each asset based on its criticality classification. A 'Critical' asset (e.g., payment gateway) gets a higher base score than a 'Low' asset (e.g., dev blog)." />
+                  {t('riskScore.settings.criticality.scores', 'Criticality scores (0–100)')}
+                  <InfoTip
+                    text={t(
+                      'riskScore.settings.criticality.scoresTip',
+                      "Base score assigned to each asset based on its criticality classification. A 'Critical' asset (e.g., payment gateway) gets a higher base score than a 'Low' asset (e.g., dev blog)."
+                    )}
+                  />
                 </Label>
                 <div className="mt-2 grid grid-cols-3 gap-2 sm:grid-cols-5">
                   <NumberInput
-                    label="Critical"
+                    label={t('riskScore.level.critical', 'Critical')}
                     value={config.criticality_scores.critical}
                     onChange={(v) =>
                       updateConfig((c) => ({
@@ -768,7 +904,7 @@ export default function ScoringConfigurationPage() {
                     }
                   />
                   <NumberInput
-                    label="High"
+                    label={t('riskScore.level.high', 'High')}
                     value={config.criticality_scores.high}
                     onChange={(v) =>
                       updateConfig((c) => ({
@@ -778,7 +914,7 @@ export default function ScoringConfigurationPage() {
                     }
                   />
                   <NumberInput
-                    label="Medium"
+                    label={t('riskScore.level.medium', 'Medium')}
                     value={config.criticality_scores.medium}
                     onChange={(v) =>
                       updateConfig((c) => ({
@@ -788,7 +924,7 @@ export default function ScoringConfigurationPage() {
                     }
                   />
                   <NumberInput
-                    label="Low"
+                    label={t('riskScore.level.low', 'Low')}
                     value={config.criticality_scores.low}
                     onChange={(v) =>
                       updateConfig((c) => ({
@@ -798,7 +934,7 @@ export default function ScoringConfigurationPage() {
                     }
                   />
                   <NumberInput
-                    label="None"
+                    label={t('riskScore.settings.level.none', 'None')}
                     value={config.criticality_scores.none}
                     onChange={(v) =>
                       updateConfig((c) => ({
@@ -813,18 +949,28 @@ export default function ScoringConfigurationPage() {
               <div>
                 <div className="flex items-center justify-between">
                   <Label className="flex items-center text-sm font-medium">
-                    Risk level thresholds (min score)
-                    <InfoTip text="Minimum score required for each risk level. E.g., if Critical=80, any asset with score >= 80 is labeled Critical. Must be in descending order." />
+                    {t('riskScore.settings.thresholds.title', 'Risk level thresholds (min score)')}
+                    <InfoTip
+                      text={t(
+                        'riskScore.settings.thresholds.tip',
+                        'Minimum score required for each risk level. E.g., if Critical=80, any asset with score >= 80 is labeled Critical. Must be in descending order.'
+                      )}
+                    />
                   </Label>
                   {!isThresholdValid && isDirty && (
                     <span className="text-xs font-medium text-destructive">
-                      Must be ordered: Critical &gt; High &gt; Medium &gt; Low &gt; 0
+                      {t(
+                        'riskScore.settings.thresholds.order',
+                        'Must be ordered: Critical > High > Medium > Low > 0'
+                      )}
                     </span>
                   )}
                 </div>
                 <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
                   <NumberInput
-                    label="Critical (min)"
+                    label={t('riskScore.settings.minLabel', '{level} (min)', {
+                      level: t('riskScore.level.critical', 'Critical'),
+                    })}
                     value={config.risk_levels.critical_min}
                     onChange={(v) =>
                       updateConfig((c) => ({
@@ -835,7 +981,9 @@ export default function ScoringConfigurationPage() {
                     min={1}
                   />
                   <NumberInput
-                    label="High (min)"
+                    label={t('riskScore.settings.minLabel', '{level} (min)', {
+                      level: t('riskScore.level.high', 'High'),
+                    })}
                     value={config.risk_levels.high_min}
                     onChange={(v) =>
                       updateConfig((c) => ({
@@ -846,7 +994,9 @@ export default function ScoringConfigurationPage() {
                     min={1}
                   />
                   <NumberInput
-                    label="Medium (min)"
+                    label={t('riskScore.settings.minLabel', '{level} (min)', {
+                      level: t('riskScore.level.medium', 'Medium'),
+                    })}
                     value={config.risk_levels.medium_min}
                     onChange={(v) =>
                       updateConfig((c) => ({
@@ -857,7 +1007,9 @@ export default function ScoringConfigurationPage() {
                     min={1}
                   />
                   <NumberInput
-                    label="Low (min)"
+                    label={t('riskScore.settings.minLabel', '{level} (min)', {
+                      level: t('riskScore.level.low', 'Low'),
+                    })}
                     value={config.risk_levels.low_min}
                     onChange={(v) =>
                       updateConfig((c) => ({ ...c, risk_levels: { ...c.risk_levels, low_min: v } }))
@@ -874,24 +1026,42 @@ export default function ScoringConfigurationPage() {
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-1">
-                  Finding and CTEM impact
-                  <InfoTip text="Configure how vulnerability findings and CTEM threat exposure factors contribute to the overall risk score." />
+                  {t('riskScore.settings.impact.title', 'Finding and CTEM impact')}
+                  <InfoTip
+                    text={t(
+                      'riskScore.settings.impact.tip',
+                      'Configure how vulnerability findings and CTEM threat exposure factors contribute to the overall risk score.'
+                    )}
+                  />
                 </CardTitle>
                 <CardDescription>
-                  How findings and threat exposure factors affect scores
+                  {t(
+                    'riskScore.settings.impact.desc',
+                    'How findings and threat exposure factors affect scores'
+                  )}
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div>
                   <Label className="flex items-center text-sm font-medium">
-                    Finding impact
-                    <InfoTip text="Determines how vulnerability findings on an asset affect its score. Count-based adds fixed points per finding. Severity-weighted adds different points based on finding severity." />
+                    {t('riskScore.settings.finding.title', 'Finding impact')}
+                    <InfoTip
+                      text={t(
+                        'riskScore.settings.finding.tip',
+                        'Determines how vulnerability findings on an asset affect its score. Count-based adds fixed points per finding. Severity-weighted adds different points based on finding severity.'
+                      )}
+                    />
                   </Label>
                   <div className="mt-2 space-y-3">
                     <div className="space-y-1">
                       <Label className="flex items-center text-xs">
-                        Mode
-                        <InfoTip text="Count-based: each finding adds fixed points regardless of severity. Severity-weighted: each finding adds points based on its severity level (Critical findings add more than Info findings)." />
+                        {t('riskScore.settings.finding.mode', 'Mode')}
+                        <InfoTip
+                          text={t(
+                            'riskScore.settings.finding.modeTip',
+                            'Count-based: each finding adds fixed points regardless of severity. Severity-weighted: each finding adds points based on its severity level (Critical findings add more than Info findings).'
+                          )}
+                        />
                       </Label>
                       <Select
                         value={config.finding_impact.mode}
@@ -909,16 +1079,23 @@ export default function ScoringConfigurationPage() {
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="count">Count-based</SelectItem>
-                          <SelectItem value="severity_weighted">Severity-weighted</SelectItem>
+                          <SelectItem value="count">
+                            {t('riskScore.settings.finding.modeCount', 'Count-based')}
+                          </SelectItem>
+                          <SelectItem value="severity_weighted">
+                            {t('riskScore.settings.finding.modeSeverity', 'Severity-weighted')}
+                          </SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
                     <div className="grid grid-cols-2 gap-2">
                       {config.finding_impact.mode === 'count' && (
                         <NumberInput
-                          label="Per-finding points"
-                          tooltip="Points added to the score for each open finding on this asset"
+                          label={t('riskScore.settings.finding.perFinding', 'Per-finding points')}
+                          tooltip={t(
+                            'riskScore.settings.finding.perFindingTip',
+                            'Points added to the score for each open finding on this asset'
+                          )}
                           value={config.finding_impact.per_finding_points}
                           onChange={(v) =>
                             updateConfig((c) => ({
@@ -931,8 +1108,11 @@ export default function ScoringConfigurationPage() {
                         />
                       )}
                       <NumberInput
-                        label="Finding cap"
-                        tooltip="Maximum number of findings counted toward the score. Prevents a single heavily-scanned asset from getting an unfairly high score."
+                        label={t('riskScore.settings.finding.cap', 'Finding cap')}
+                        tooltip={t(
+                          'riskScore.settings.finding.capTip',
+                          'Maximum number of findings counted toward the score. Prevents a single heavily-scanned asset from getting an unfairly high score.'
+                        )}
                         value={config.finding_impact.finding_cap}
                         onChange={(v) =>
                           updateConfig((c) => ({
@@ -947,12 +1127,20 @@ export default function ScoringConfigurationPage() {
                     {config.finding_impact.mode === 'severity_weighted' && (
                       <div>
                         <Label className="flex items-center text-xs">
-                          Severity weights (points per finding)
-                          <InfoTip text="Points added per finding of each severity. E.g., if Critical=10 and an asset has 3 critical findings, it adds 30 points (capped by Finding Cap)." />
+                          {t(
+                            'riskScore.settings.finding.weights',
+                            'Severity weights (points per finding)'
+                          )}
+                          <InfoTip
+                            text={t(
+                              'riskScore.settings.finding.weightsTip',
+                              'Points added per finding of each severity. E.g., if Critical=10 and an asset has 3 critical findings, it adds 30 points (capped by Finding Cap).'
+                            )}
+                          />
                         </Label>
                         <div className="mt-1 grid grid-cols-3 gap-2 sm:grid-cols-5">
                           <NumberInput
-                            label="Critical"
+                            label={t('riskScore.level.critical', 'Critical')}
                             value={config.finding_impact.severity_weights.critical}
                             onChange={(v) =>
                               updateConfig((c) => ({
@@ -969,7 +1157,7 @@ export default function ScoringConfigurationPage() {
                             max={50}
                           />
                           <NumberInput
-                            label="High"
+                            label={t('riskScore.level.high', 'High')}
                             value={config.finding_impact.severity_weights.high}
                             onChange={(v) =>
                               updateConfig((c) => ({
@@ -986,7 +1174,7 @@ export default function ScoringConfigurationPage() {
                             max={50}
                           />
                           <NumberInput
-                            label="Medium"
+                            label={t('riskScore.level.medium', 'Medium')}
                             value={config.finding_impact.severity_weights.medium}
                             onChange={(v) =>
                               updateConfig((c) => ({
@@ -1003,7 +1191,7 @@ export default function ScoringConfigurationPage() {
                             max={50}
                           />
                           <NumberInput
-                            label="Low"
+                            label={t('riskScore.level.low', 'Low')}
                             value={config.finding_impact.severity_weights.low}
                             onChange={(v) =>
                               updateConfig((c) => ({
@@ -1020,7 +1208,7 @@ export default function ScoringConfigurationPage() {
                             max={50}
                           />
                           <NumberInput
-                            label="Info"
+                            label={t('riskScore.settings.severity.info', 'Info')}
                             value={config.finding_impact.severity_weights.info}
                             onChange={(v) =>
                               updateConfig((c) => ({
@@ -1045,8 +1233,13 @@ export default function ScoringConfigurationPage() {
                 <div>
                   <div className="flex items-center justify-between">
                     <Label className="flex items-center text-sm font-medium">
-                      CTEM bonus points
-                      <InfoTip text="Additional points added to the CTEM component based on specific threat exposure attributes of each asset. Points are additive (an asset with PII + internet exposure gets both bonuses)." />
+                      {t('riskScore.settings.ctem.title', 'CTEM bonus points')}
+                      <InfoTip
+                        text={t(
+                          'riskScore.settings.ctem.tip',
+                          'Additional points added to the CTEM component based on specific threat exposure attributes of each asset. Points are additive (an asset with PII + internet exposure gets both bonuses).'
+                        )}
+                      />
                     </Label>
                     <div className="flex items-center gap-2">
                       <Switch
@@ -1060,15 +1253,18 @@ export default function ScoringConfigurationPage() {
                         }
                       />
                       <Label htmlFor="ctem-toggle" className="text-xs">
-                        Enabled
+                        {t('riskScore.settings.ctem.enabled', 'Enabled')}
                       </Label>
                     </div>
                   </div>
                   {config.ctem_points.enabled && (
                     <div className="mt-2 grid grid-cols-3 gap-2">
                       <NumberInput
-                        label="Internet Accessible"
-                        tooltip="Bonus points for assets directly reachable from the internet"
+                        label={t('riskScore.settings.ctem.internet', 'Internet accessible')}
+                        tooltip={t(
+                          'riskScore.settings.ctem.internetTip',
+                          'Bonus points for assets directly reachable from the internet'
+                        )}
                         value={config.ctem_points.internet_accessible}
                         onChange={(v) =>
                           updateConfig((c) => ({
@@ -1078,8 +1274,11 @@ export default function ScoringConfigurationPage() {
                         }
                       />
                       <NumberInput
-                        label="PII Exposed"
-                        tooltip="Bonus points for assets that process or store Personally Identifiable Information"
+                        label={t('riskScore.settings.ctem.pii', 'PII exposed')}
+                        tooltip={t(
+                          'riskScore.settings.ctem.piiTip',
+                          'Bonus points for assets that process or store Personally Identifiable Information'
+                        )}
                         value={config.ctem_points.pii_exposed}
                         onChange={(v) =>
                           updateConfig((c) => ({
@@ -1089,8 +1288,11 @@ export default function ScoringConfigurationPage() {
                         }
                       />
                       <NumberInput
-                        label="PHI Exposed"
-                        tooltip="Bonus points for assets that process or store Protected Health Information (HIPAA)"
+                        label={t('riskScore.settings.ctem.phi', 'PHI exposed')}
+                        tooltip={t(
+                          'riskScore.settings.ctem.phiTip',
+                          'Bonus points for assets that process or store Protected Health Information (HIPAA)'
+                        )}
                         value={config.ctem_points.phi_exposed}
                         onChange={(v) =>
                           updateConfig((c) => ({
@@ -1100,8 +1302,11 @@ export default function ScoringConfigurationPage() {
                         }
                       />
                       <NumberInput
-                        label="High Risk Compliance"
-                        tooltip="Bonus points for assets under high-risk compliance frameworks (PCI-DSS, SOX, etc.)"
+                        label={t('riskScore.settings.ctem.compliance', 'High-risk compliance')}
+                        tooltip={t(
+                          'riskScore.settings.ctem.complianceTip',
+                          'Bonus points for assets under high-risk compliance frameworks (PCI-DSS, SOX, etc.)'
+                        )}
                         value={config.ctem_points.high_risk_compliance}
                         onChange={(v) =>
                           updateConfig((c) => ({
@@ -1111,8 +1316,11 @@ export default function ScoringConfigurationPage() {
                         }
                       />
                       <NumberInput
-                        label="Restricted Data"
-                        tooltip="Bonus points for assets that handle classified or restricted data"
+                        label={t('riskScore.settings.ctem.restricted', 'Restricted data')}
+                        tooltip={t(
+                          'riskScore.settings.ctem.restrictedTip',
+                          'Bonus points for assets that handle classified or restricted data'
+                        )}
                         value={config.ctem_points.restricted_data}
                         onChange={(v) =>
                           updateConfig((c) => ({
@@ -1125,8 +1333,10 @@ export default function ScoringConfigurationPage() {
                   )}
                   {!config.ctem_points.enabled && (
                     <p className="text-muted-foreground mt-1 text-xs">
-                      CTEM scoring is disabled. Enable to add bonus points for threat exposure
-                      factors.
+                      {t(
+                        'riskScore.settings.ctem.off',
+                        'CTEM scoring is disabled. Enable to add bonus points for threat exposure factors.'
+                      )}
                     </p>
                   )}
                 </div>
@@ -1139,10 +1349,20 @@ export default function ScoringConfigurationPage() {
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-1">
-              Unowned findings floor
-              <InfoTip text="CTEM playbook rule. When enabled, findings on assets with no assigned owner are floored at P2 priority. It is a strict floor: only ever raises a P3 to P2, never lowers anything and never touches P0/P1." />
+              {t('riskScore.settings.floor.heading', 'Unowned findings floor')}
+              <InfoTip
+                text={t(
+                  'riskScore.settings.floor.tip',
+                  'CTEM playbook rule. When enabled, findings on assets with no assigned owner are floored at P2 priority. It is a strict floor: only ever raises a P3 to P2, never lowers anything and never touches P0/P1.'
+                )}
+              />
             </CardTitle>
-            <CardDescription>How findings on ownerless assets are prioritized</CardDescription>
+            <CardDescription>
+              {t(
+                'riskScore.settings.floor.desc',
+                'How findings on ownerless assets are prioritized'
+              )}
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="flex items-start justify-between gap-4">
@@ -1219,7 +1439,7 @@ export default function ScoringConfigurationPage() {
 
           <Card>
             <CardHeader>
-              <CardTitle>How scoring works</CardTitle>
+              <CardTitle>{t('riskScore.settings.how.title', 'How scoring works')}</CardTitle>
             </CardHeader>
             <CardContent>
               {!weighted ? (
@@ -1240,16 +1460,25 @@ export default function ScoringConfigurationPage() {
               ) : (
                 <div className="text-muted-foreground space-y-2 text-sm">
                   <p>
-                    <strong className="text-foreground">Formula:</strong> Score = (Exposure x W1 +
-                    Criticality x W2 + Findings x W3 + CTEM x W4) x Multiplier
+                    <strong className="text-foreground">
+                      {t('riskScore.settings.how.formulaLabel', 'Formula:')}
+                    </strong>{' '}
+                    {t(
+                      'riskScore.settings.how.formula',
+                      'Score = (Exposure x W1 + Criticality x W2 + Findings x W3 + CTEM x W4) x Multiplier'
+                    )}
                   </p>
                   <p>
-                    Each component produces a score (0-100) weighted by its percentage. The exposure
-                    multiplier adjusts the final score. Result is clamped to 0-100.
+                    {t(
+                      'riskScore.settings.how.components',
+                      'Each component produces a score (0-100) weighted by its percentage. The exposure multiplier adjusts the final score. Result is clamped to 0-100.'
+                    )}
                   </p>
                   <p>
-                    When CTEM is disabled, its weight is redistributed proportionally to the other
-                    components.
+                    {t(
+                      'riskScore.settings.how.ctemOff',
+                      'When CTEM is disabled, its weight is redistributed proportionally to the other components.'
+                    )}
                   </p>
                 </div>
               )}

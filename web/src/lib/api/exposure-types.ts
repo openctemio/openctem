@@ -123,6 +123,17 @@ export interface PendingDisposition {
   self_approval_available?: boolean
 }
 
+/** CTEM-ID code derived from an exposure's type, details and linked asset. */
+export interface ExposureCTEMID {
+  /** Such as CTEM-DOM-2. */
+  code: string
+  catalog_version: string
+  /** lookalike_technique, credential_dump, asset_scope or asset_type. */
+  basis: string
+  /** The code's page on ctem.org. */
+  url: string
+}
+
 export interface ExposureEvent {
   id: string
   /** Present while a disposition waits for a second approver. */
@@ -171,6 +182,8 @@ export interface ExposureEvent {
   is_in_kev?: boolean
   /** CISA KEV remediation due date (ISO 8601). */
   kev_due_date?: string
+  /** CTEM-ID code, absent when the data does not settle one. */
+  ctem_id?: ExposureCTEMID
 }
 
 /**

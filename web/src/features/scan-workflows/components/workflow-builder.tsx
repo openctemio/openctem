@@ -329,7 +329,7 @@ function WorkflowBuilderInner({
         id: START_NODE_ID,
         type: 'start',
         position: startPos,
-        data: { label: 'Start' },
+        data: { label: t('scans.workflowForm.builder.start') },
         draggable: !readOnly,
         selectable: false,
         deletable: false,
@@ -339,7 +339,7 @@ function WorkflowBuilderInner({
         id: END_NODE_ID,
         type: 'end',
         position: endPos,
-        data: { label: 'End' },
+        data: { label: t('scans.workflowForm.builder.end') },
         draggable: !readOnly,
         selectable: false,
         deletable: false,
@@ -347,7 +347,7 @@ function WorkflowBuilderInner({
 
       return [startNode, ...scannerNodes, endNode]
     },
-    [readOnly]
+    [readOnly, t]
   )
 
   // Initialize nodes - just start/end, scanner nodes will be added by useEffect
