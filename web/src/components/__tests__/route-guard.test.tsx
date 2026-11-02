@@ -8,6 +8,7 @@ const state = vi.hoisted(() => ({
   notEntitled: [] as string[],
   readOnly: {} as Record<string, string>,
   bootstrapped: true,
+  permissionsLoading: false,
 }))
 
 vi.mock('next/navigation', () => ({
@@ -15,7 +16,10 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ back: vi.fn(), push: vi.fn() }),
 }))
 vi.mock('@/lib/permissions/hooks', () => ({
-  usePermissions: () => ({ can: (p: string) => state.permissions.has(p), isLoading: false }),
+  usePermissions: () => ({
+    can: (p: string) => state.permissions.has(p),
+    isLoading: state.permissionsLoading,
+  }),
 }))
 vi.mock('@/context/bootstrap-provider', () => ({
   useBootstrapModules: () => ({
@@ -37,6 +41,7 @@ describe('RouteGuard', () => {
     state.notEntitled = []
     state.readOnly = {}
     state.bootstrapped = true
+    state.permissionsLoading = false
   })
 
   it('renders a module in read-only grace with a banner saying until when', () => {
@@ -119,6 +124,24 @@ describe('RouteGuard', () => {
     render(<RouteGuard>page</RouteGuard>)
     expect(screen.queryByText('page')).toBeNull()
     expect(screen.getByRole('main')).toHaveAttribute('aria-busy', 'true')
+  })
+
+  it('waits while the permissions load after the bootstrap, on the first check', () => {
+    state.permissionsLoading = true
+    state.permissions = new Set(['sensors:read'])
+    state.moduleIds = ['sensors']
+    render(<RouteGuard>page</RouteGuard>)
+    expect(screen.queryByText('page')).toBeNull()
+  })
+
+  it('keeps an allowed page mounted while the permissions refresh', () => {
+    state.permissions = new Set(['sensors:read'])
+    state.moduleIds = ['sensors']
+    const { rerender } = render(<RouteGuard>page</RouteGuard>)
+    expect(screen.getByText('page')).toBeInTheDocument()
+    state.permissionsLoading = true
+    rerender(<RouteGuard>page</RouteGuard>)
+    expect(screen.getByText('page')).toBeInTheDocument()
   })
 
   it('renders an unprotected page at once, before the access check', () => {
