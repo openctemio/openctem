@@ -1,14 +1,14 @@
 'use client'
 
-import { useEffect, useId, useState } from 'react'
+import { useCallback, useEffect, useId, useState } from 'react'
 import { toast } from 'sonner'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { useTranslation } from '@/context/i18n-provider'
+import { SettingsSaveBar } from '@/features/shared/components/settings-save-bar'
 import { TonePill } from '@/features/shared/components/tone-pill'
 import { saveMFAFloor } from '../api/use-platform-settings'
 import type { MFAFloor, MFAFloorSettings } from '../types'
@@ -49,11 +49,13 @@ export function MFAFloorForm({ settings, canEdit, onSaved }: MFAFloorFormProps) 
   const [graceNew, setGraceNew] = useState(String(settings.grace_days_new))
   const [confirmOpen, setConfirmOpen] = useState(false)
 
-  useEffect(() => {
+  // The saved values: on load, after a save and on Discard.
+  const reset = useCallback(() => {
     setFloor(settings.floor)
     setGraceExisting(String(settings.grace_days_existing))
     setGraceNew(String(settings.grace_days_new))
   }, [settings])
+  useEffect(reset, [reset])
 
   const existing = graceDays(graceExisting)
   const fresh = graceDays(graceNew)
@@ -215,11 +217,13 @@ export function MFAFloorForm({ settings, canEdit, onSaved }: MFAFloorFormProps) 
           </p>
           <SettingChangedLine change={settings} />
           {canEdit ? (
-            <div className="flex justify-end">
-              <Button onClick={() => setConfirmOpen(true)} disabled={!dirty || !valid}>
-                {t('admin.settings.save', 'Save')}
-              </Button>
-            </div>
+            <SettingsSaveBar
+              className="basis-full"
+              dirty={dirty}
+              saveDisabled={!valid}
+              onSave={() => setConfirmOpen(true)}
+              onDiscard={reset}
+            />
           ) : (
             <p className="text-sm text-muted-foreground">
               {t('admin.settings.superAdminOnly', 'Only a super admin can change this setting.')}

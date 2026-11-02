@@ -1,13 +1,13 @@
 'use client'
 
-import { useEffect, useId, useState } from 'react'
+import { useCallback, useEffect, useId, useState } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
 import { useTranslation } from '@/context/i18n-provider'
+import { SettingsSaveBar } from '@/features/shared/components/settings-save-bar'
 import { ErrorState } from '@/features/shared'
 import {
   HeaderListEditor,
@@ -45,13 +45,15 @@ export function ScanIdentificationCard({ canEdit }: { canEdit: boolean }) {
   const [headers, setHeaders] = useState<IdentHeader[]>([])
   const [confirm, setConfirm] = useState(false)
 
-  useEffect(() => {
+  // The saved values: on load, after a save and on Discard.
+  const reset = useCallback(() => {
     if (data) {
       setUa(data.user_agent)
       setUaEnforced(data.user_agent_enforced)
       setHeaders(data.headers)
     }
   }, [data])
+  useEffect(reset, [reset])
 
   if (error) {
     return (
@@ -161,11 +163,13 @@ export function ScanIdentificationCard({ canEdit }: { canEdit: boolean }) {
         <IdentityPreview identity={identity} />
         <SettingChangedLine change={data} />
         {canEdit && (
-          <div className="flex justify-end">
-            <Button onClick={() => setConfirm(true)} disabled={!dirty || invalid}>
-              {t('admin.settings.save', 'Save')}
-            </Button>
-          </div>
+          <SettingsSaveBar
+            className="basis-full"
+            dirty={dirty}
+            saveDisabled={invalid}
+            onSave={() => setConfirm(true)}
+            onDiscard={reset}
+          />
         )}
         <ReasonConfirmDialog
           open={confirm}
