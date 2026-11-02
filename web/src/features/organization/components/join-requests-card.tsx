@@ -69,7 +69,7 @@ export function JoinRequestsCard({
   }
 
   return (
-    <Card className="mt-4">
+    <Card>
       <CardHeader>
         <CardTitle className="text-base">
           {t('org.joinRequests.title', undefined, { count: String(requests.length) })}
@@ -89,7 +89,7 @@ export function JoinRequestsCard({
                 <RelativeTime date={r.requested_at} className="text-xs" />
               </p>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <Select
                 value={roles[r.id] ?? r.requested_role}
                 onValueChange={(v) => setRoles((cur) => ({ ...cur, [r.id]: v as JoinRole }))}

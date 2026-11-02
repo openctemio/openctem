@@ -1,10 +1,8 @@
 'use client'
 
 import { useCallback, useState } from 'react'
-import { Loader2, Save } from 'lucide-react'
 import { Main } from '@/components/layout'
-import { ErrorState, PageHeader, PageStack } from '@/features/shared'
-import { Button } from '@/components/ui/button'
+import { ErrorState, PageHeader, PageStack, SettingsSaveBar } from '@/features/shared'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   LicensePolicyForm,
@@ -27,6 +25,8 @@ export default function LicensePolicySettingsPage() {
   const { settings, mutate: mutateSettings } = useTenantSettings(currentTenant?.id)
   const [status, setStatus] = useState<LicensePolicyFormStatus>({ dirty: false, submitting: false })
   const onStatusChange = useCallback((s: LicensePolicyFormStatus) => setStatus(s), [])
+  // Discard remounts the form on the saved policy.
+  const [resets, setResets] = useState(0)
   const onSaved = useCallback(() => {
     void mutate()
     void mutateSettings()
@@ -41,23 +41,7 @@ export default function LicensePolicySettingsPage() {
             'licensePolicy.pageDescription',
             'Allow, review or deny the licenses your open-source packages declare. Denied licenses open findings.'
           )}
-        >
-          {canEdit && data && (
-            <Button
-              type="submit"
-              form={FORM_ID}
-              size="sm"
-              disabled={!status.dirty || status.submitting}
-            >
-              {status.submitting ? (
-                <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-              ) : (
-                <Save className="h-4 w-4" aria-hidden />
-              )}
-              {t('licensePolicy.save', 'Save changes')}
-            </Button>
-          )}
-        </PageHeader>
+        />
         {error ? (
           <ErrorState
             title={t('licensePolicy.loadTitle', 'license policy')}
@@ -68,13 +52,21 @@ export default function LicensePolicySettingsPage() {
           <Skeleton className="h-96 w-full rounded-xl" />
         ) : (
           <LicensePolicyForm
-            key={JSON.stringify(data.policy)}
+            key={`${JSON.stringify(data.policy)}:${resets}`}
             initial={data.policy}
             etag={(settings?.etags as Record<string, string> | undefined)?.license_policy}
             formId={FORM_ID}
             canEdit={canEdit}
             onSaved={onSaved}
             onStatusChange={onStatusChange}
+          />
+        )}
+        {canEdit && data && (
+          <SettingsSaveBar
+            dirty={status.dirty}
+            saving={status.submitting}
+            form={FORM_ID}
+            onDiscard={() => setResets((n) => n + 1)}
           />
         )}
       </PageStack>

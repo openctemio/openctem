@@ -197,14 +197,16 @@ const PRESET_COPY: Record<string, { name: string; desc: string }> = {
 }
 
 function InfoTip({ text }: { text: string }) {
+  const { t } = useTranslation()
   return (
     <Tooltip>
       <TooltipTrigger asChild>
         <button
           type="button"
+          aria-label={t('common.moreInfo', 'More information')}
           className="text-muted-foreground hover:text-foreground ms-1 inline-flex cursor-help"
         >
-          <Info className="h-3.5 w-3.5" />
+          <Info className="h-3.5 w-3.5" aria-hidden />
         </button>
       </TooltipTrigger>
       <TooltipContent side="top" className="max-w-xs">
