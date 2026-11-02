@@ -116,26 +116,37 @@ func TestSensorConfigTemplates_Endpoint(t *testing.T) {
 		}
 	}
 
-	// The platform CA from SENSOR_CA_CERT_FILE.
+	// The platform CA from PLATFORM_CA_CERT_FILE: installed and pinned.
 	caPath := filepath.Join(t.TempDir(), "openctem-root-ca.crt")
 	if err := os.WriteFile(caPath, selfSignedCAPEM(t), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	f.sh.SetCACertificateFile(caPath)
+	f.sh.SetPlatformCA(sensor.NewPlatformCASource(caPath))
 	_, resp = call("")
 	if !strings.Contains(resp.CACertificate, "BEGIN CERTIFICATE") || strings.Count(resp.CAFingerprintSHA256, ":") != 31 {
 		t.Errorf("ca=%q fingerprint=%q", resp.CACertificate, resp.CAFingerprintSHA256)
+	}
+	if resp.PlatformCA == nil || len(resp.PlatformCA.Pin) != 64 || resp.PlatformCA.DownloadPath != sensor.PlatformCAPath ||
+		len(resp.PlatformCA.Certificates) != 1 || !resp.PlatformCA.Certificates[0].Root {
+		t.Fatalf("platform_ca = %+v", resp.PlatformCA)
+	}
+	for label, s := range map[string]string{"docker": resp.Docker, "compose": resp.Compose, "kubernetes": resp.Kubernetes, "cli": resp.CLI, "helm": resp.Helm, "env": resp.Env} {
+		if !strings.Contains(s, resp.PlatformCA.Pin) || !strings.Contains(s, "SENSOR_CA_SHA256") {
+			t.Errorf("%s does not pin the platform CA:\n%s", label, s)
+		}
 	}
 	if !strings.Contains(resp.Docker, "SSL_CERT_DIR=/etc/openctem/certs") || !strings.Contains(resp.Compose, "openctem_ca") {
 		t.Errorf("CA not installed by the snippets:\n%s", resp.Docker)
 	}
 
-	// A CA file that is not a certificate is skipped, never an error page.
+	// A CA file with a private key is refused, never an error page, and
+	// nothing of it reaches a snippet.
 	if err := os.WriteFile(caPath, []byte("-----BEGIN PRIVATE KEY-----\nAAAA\n-----END PRIVATE KEY-----\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	rec, resp = call("")
-	if rec.Code != http.StatusOK || resp.CACertificate != "" || strings.Contains(resp.Docker, "PRIVATE KEY") {
+	if rec.Code != http.StatusOK || resp.CACertificate != "" || resp.PlatformCA != nil ||
+		strings.Contains(resp.Docker, "PRIVATE KEY") || strings.Contains(resp.Docker, "SENSOR_CA_SHA256") {
 		t.Errorf("bad CA file: status=%d ca=%q", rec.Code, resp.CACertificate)
 	}
 }
