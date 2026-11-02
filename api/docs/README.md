@@ -83,10 +83,10 @@ or use OpenCTEM, see [docs.openctem.io](https://docs.openctem.io)
 ## How-to (integrations and features)
 
 - [Pair a sensor](how-to/pair-a-sensor.md), [fix a sensor's setup checklist](how-to/fix-sensor-setup-checklist.md), [sensors behind a private CA](how-to/sensors-behind-a-private-ca.md)
-- [Connect CI pipelines](how-to/connect-ci-pipelines.md), [GitLab CI](how-to/gitlab-ci.md)
+- [Connect CI pipelines](how-to/connect-ci-pipelines.md), [GitLab CI](how-to/gitlab-ci.md), [post the CI gate to GitLab merge requests](how-to/gitlab-merge-request-feedback.md), [register the OpenCTEM GitHub App](how-to/github-app.md)
 - [Verify a domain for EASM](how-to/verify-a-domain-for-easm.md), [EASM monitoring settings](how-to/easm-monitoring-settings.md)
 - [Mark things out of scope, and how it reaches sensors](how-to/mark-out-of-scope.md)
-- [Configure Microsoft Entra ID](how-to/configure-entraid.md), [SCIM provisioning](how-to/configure-scim-provisioning.md)
+- [Configure Microsoft Entra ID](how-to/configure-entraid.md), [SCIM provisioning](how-to/configure-scim-provisioning.md), [give a team access](how-to/give-a-team-access.md)
 - [Configure Jira ticketing](how-to/configure-jira-ticketing.md), [SIEM forwarding](how-to/configure-siem.md)
 
 ## Deployment and operations (repository runbooks)
