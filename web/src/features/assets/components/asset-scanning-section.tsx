@@ -46,6 +46,7 @@ import {
 } from '../lib/attribution'
 import type { Asset } from '../types/asset.types'
 import { MarkOutOfScopeAction } from './inventory/mark-out-of-scope-action'
+import { scopeDraftForAsset } from '@/features/scope/lib/scope-from-asset'
 
 /** Types a quick scan can target by the asset's name (a host name or an address). */
 const QUICK_SCAN_TYPES = new Set(['domain', 'subdomain', 'ip_address'])
@@ -173,10 +174,12 @@ export function AssetScanningSection({ asset, onShowDetails }: AssetScanningSect
                 variant="outline"
                 className="h-8"
                 onClick={() =>
-                  setDraft({
-                    pattern: asset.name,
-                    target_type: asset.type === 'ip_address' ? 'ip_address' : undefined,
-                  })
+                  setDraft(
+                    scopeDraftForAsset(
+                      asset.name,
+                      asset.type === 'ip_address' ? 'ip_address' : undefined
+                    )
+                  )
                 }
               >
                 {t('assets.attribution.addToScope', 'Add to scope')}
