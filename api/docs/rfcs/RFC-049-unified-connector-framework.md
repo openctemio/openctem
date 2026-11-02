@@ -1,7 +1,7 @@
 # RFC-049 — Unified connector framework (platform-direct and sensor-relayed)
 
 > Status: **Proposed** (2026-10-04). Only the P0 security fixes (#1068, #1069) are implemented.
-> Amended 2026-11-02: [RFC-145](RFC-145-connector-framework-and-run-modes.md) supersedes section 7 (pull connectors
+> Amended 2026-11-02: [RFC-146](RFC-146-connector-framework-and-run-modes.md) supersedes section 7 (pull connectors
 > run only on a sensor; the platform runs request/response connectors through the egress gateway). The contract in
 > section 5 stays.
 > Decision (2026-10-04, final): OpenCTEM talks to external systems

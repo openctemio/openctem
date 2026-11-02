@@ -1,4 +1,4 @@
-# RFC-145: Connector framework and run modes
+# RFC-146: Connector framework and run modes
 
 | | |
 |---|---|

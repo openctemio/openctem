@@ -1,6 +1,6 @@
 # Connector framework and run modes
 
-Design: [RFC-145](../rfcs/RFC-145-connector-framework-and-run-modes.md). Status: **designed**; the pieces marked
+Design: [RFC-146](../rfcs/RFC-146-connector-framework-and-run-modes.md). Status: **designed**; the pieces marked
 shipped below exist today.
 
 ## How integrations run
