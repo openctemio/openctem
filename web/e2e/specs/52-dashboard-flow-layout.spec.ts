@@ -10,10 +10,13 @@ import { test, expect } from '../fixtures/authenticated-page'
  * On a wide card the sources column keeps a reading width with no text cut
  * off, and every curve touches both of its columns: a source wire runs from
  * the sources box to the outer ring, an outcome wire from the ring to its
- * outcome.
+ * outcome. The intake panel keeps each source row (name to figure) at one
+ * width at every card width where it sits beside its summary, and its curves
+ * grow with the card.
  */
 
-const WIDTHS = [480, 720, 900, 960, 1200, 1440, 1600, 1920] as const
+// Includes the full-width card in 1024, 1280, 1440, 1600 and 1920 px windows.
+const WIDTHS = [480, 666, 720, 900, 922, 960, 1082, 1200, 1242, 1440, 1562, 1600, 1920] as const
 
 /** Largest empty gutter (px) between the card's content box and the composition. */
 const MAX_GUTTER = 32
@@ -126,6 +129,15 @@ async function measure(page: Page, index: number) {
       ringInside,
       wires: starts.length,
       gaps,
+      // From a row's name to its figure (the row is one unit), and the longest curve.
+      rowSpan: Math.max(
+        0,
+        ...[...root.querySelectorAll('[data-wire-out^="s:"], [data-wire-out^="i:"]')].map((a) => {
+          const [name, figure] = [...a.children]
+          return name && figure ? Math.round(box(figure).r - box(name).l) : 0
+        })
+      ),
+      curveWidth: Math.max(0, ...curves.map((c) => Math.round(c.x2 - c.x1))),
       sourcesWidth: sb ? Math.round(sb.r - sb.l) : 0,
       cut,
       // Source wires: start at the sources box, end on the ring's outer edge.
@@ -165,6 +177,8 @@ test(
       }, `personal:${id}`)
       await page.reload()
       await expect(page.getByTestId('exposure-flow')).toBeVisible({ timeout: 45_000 })
+      // The intake panel at each card width where its rows and summary sit side by side.
+      const intake: Array<{ w: number; rowSpan: number; curveWidth: number }> = []
       for (const w of WIDTHS) {
         await page.addStyleTag({
           content: `[data-widget-index]{width:${w}px !important;max-width:${w}px !important}`,
@@ -203,10 +217,24 @@ test(
               expect(d, `${at}: an outcome wire reaches its outcome`).toBeLessThanOrEqual(8)
             }
           }
+          if (index === 1 && m.band === 'side' && m.rowSpan > 0)
+            intake.push({ w, rowSpan: m.rowSpan, curveWidth: m.curveWidth })
           // The figure, the row padding and the sources box padding sit between.
           for (const g of m.gaps)
             expect(g, `${at}: a wire starts far from its source`).toBeLessThanOrEqual(96)
         }
+      }
+      // A wider card never pulls a figure away from its name: the row keeps its
+      // width and the curves take the extra space.
+      for (let i = 1; i < intake.length; i++) {
+        const [a, b] = [intake[i - 1], intake[i]]
+        expect(
+          Math.abs(b.rowSpan - a.rowSpan),
+          `intake row at ${b.w}px vs ${a.w}px`
+        ).toBeLessThanOrEqual(2)
+        expect(b.curveWidth, `intake curves at ${b.w}px vs ${a.w}px`).toBeGreaterThanOrEqual(
+          a.curveWidth
+        )
       }
     } finally {
       await api(page, 'DELETE', `/api/v1/me/dashboards/${id}`)

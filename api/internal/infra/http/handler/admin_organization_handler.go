@@ -91,6 +91,62 @@ type AdminOrganizationResponse struct {
 	SuspendedReason string     `json:"suspended_reason,omitempty"`
 	// DeletionDueAt: an owner scheduled the deletion for this time.
 	DeletionDueAt *time.Time `json:"deletion_due_at,omitempty"`
+	// OwnerInvitation is the newest ownership invitation while it matters:
+	// any status but accepted. The invitee's address is for ops_admin and
+	// above only.
+	OwnerInvitation *AdminOwnerInvitationResponse `json:"owner_invitation,omitempty"`
+}
+
+// AdminOwnerInvitationResponse is an ownership invitation of an organization
+// waiting for its first owner (docs/architecture/organization-ownership-invitations.md).
+type AdminOwnerInvitationResponse struct {
+	// Status: pending, expired, declined or canceled (accepted ones are not
+	// shown: the organization has its owner).
+	Status       string `json:"status"`
+	InviteeEmail string `json:"invitee_email,omitempty"`
+	// SendCount: how many times it was sent; ResendsLeft how many more are
+	// allowed; ResendAvailableAt the earliest next send.
+	SendCount         int        `json:"send_count"`
+	ResendsLeft       int        `json:"resends_left"`
+	ResendAvailableAt *time.Time `json:"resend_available_at,omitempty"`
+	ExpiresAt         time.Time  `json:"expires_at"`
+	LastSentAt        time.Time  `json:"last_sent_at"`
+	CreatedAt         time.Time  `json:"created_at"`
+	RespondedAt       *time.Time `json:"responded_at,omitempty"`
+}
+
+// toAdminOwnerInvitationResponse renders the summary; nil for none or an
+// accepted one.
+func toAdminOwnerInvitationResponse(i *admin.OwnerInvitationSummary, personalData bool) *AdminOwnerInvitationResponse {
+	if i == nil || i.Status == string(tenant.OwnerInvitationAccepted) {
+		return nil
+	}
+	out := &AdminOwnerInvitationResponse{
+		Status: i.Status, SendCount: i.SendCount, ExpiresAt: i.ExpiresAt, LastSentAt: i.LastSentAt,
+		CreatedAt: i.CreatedAt, RespondedAt: i.RespondedAt,
+	}
+	if personalData {
+		out.InviteeEmail = i.InviteeEmail
+	}
+	if i.Status == string(tenant.OwnerInvitationPending) || i.Status == string(tenant.OwnerInvitationExpired) {
+		out.ResendsLeft = max(tenant.OwnerInvitationMaxSends-i.SendCount, 0)
+		if out.ResendsLeft > 0 {
+			at := i.LastSentAt.Add(tenant.OwnerInvitationResendInterval)
+			out.ResendAvailableAt = &at
+		}
+	}
+	return out
+}
+
+// toAdminOwnerInvitationFromDomain renders a just-written invitation.
+func toAdminOwnerInvitationFromDomain(inv *tenant.OwnerInvitation) *AdminOwnerInvitationResponse {
+	if inv == nil {
+		return nil
+	}
+	return toAdminOwnerInvitationResponse(&admin.OwnerInvitationSummary{
+		Status: string(inv.Status), InviteeEmail: inv.InviteeEmail, SendCount: inv.SendCount,
+		ExpiresAt: inv.ExpiresAt, LastSentAt: inv.LastSentAt, CreatedAt: inv.CreatedAt, RespondedAt: inv.RespondedAt,
+	}, true)
 }
 
 // AdminOrganizationListResponse is a page of organizations.
@@ -129,6 +185,16 @@ type AdminOwnerSetupResponse struct {
 type AdminCreateOrganizationResponse struct {
 	AdminOrganizationResponse
 	OwnerSetup *AdminOwnerSetupResponse `json:"owner_setup,omitempty"`
+	// OwnerInvited: the owner email already had an account, so the
+	// organization was created with no owner and that account was invited
+	// to own it (owner_invitation carries the invitation).
+	OwnerInvited bool `json:"owner_invited,omitempty"`
+}
+
+// AdminOwnerInvitationResult answers a request that invited an existing
+// account to own the organization.
+type AdminOwnerInvitationResult struct {
+	OwnerInvitation *AdminOwnerInvitationResponse `json:"owner_invitation"`
 }
 
 // AdminCreateOrgUserRequest creates the first owner of an organization that
@@ -243,6 +309,7 @@ func toAdminOrganizationResponse(o *admin.Organization, personalData, withOwnerE
 		SAMLEnabled: o.SAMLEnabled, ActiveIdentityProviders: o.ActiveIdentityProviders,
 		VerifiedDomains: o.VerifiedDomains, SSOEnforced: o.SSOEnforced, LimitsApply: o.LimitsApply,
 		Status: o.Status, SuspendedAt: o.SuspendedAt, SuspendedReason: reason, DeletionDueAt: o.DeletionDueAt,
+		OwnerInvitation: toAdminOwnerInvitationResponse(o.OwnerInvitation, personalData),
 	}
 }
 
@@ -359,19 +426,21 @@ func (h *AdminOrganizationHandler) Get(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, toAdminOrganizationResponse(o, adminSeesPersonalData(r), true))
 }
 
-// Create handles POST /api/v1/admin/tenants. The owner email must not belong
-// to an existing account (409 otherwise): a new password-less account is
-// created and its owner sets a password through an emailed link. The
-// organization is created under every SIGNUP_MODE.
+// Create handles POST /api/v1/admin/tenants. For a new email a password-less
+// account is created and its owner sets a password through an emailed link.
+// For an email that already has an account, the organization is created with
+// no owner and that account is invited to own it: it becomes the owner only
+// by accepting (nobody becomes an owner without consent). The organization is
+// created under every SIGNUP_MODE.
 // @Summary Create an organization (platform admin)
-// @Description Creates an organization and a new owner account (the owner sets a password through an emailed link). An email that already has an account is refused with 409, because nobody becomes an owner without their consent. Works under every SIGNUP_MODE and sign-up policy.
+// @Description Creates an organization and a new owner account (the owner sets a password through an emailed link). When the email already has an account, the organization is created with no owner and that account gets an ownership invitation (owner_invited, owner_invitation): it becomes the owner only by accepting in the app, with a recent re-authentication. Works under every SIGNUP_MODE and sign-up policy.
 // @Tags Admin Organizations
 // @Accept json
 // @Produce json
 // @Param request body AdminCreateOrganizationRequest true "Organization"
 // @Success 201 {object} AdminOrganizationResponse
 // @Failure 400 {object} apierror.Error "Bad Request"
-// @Failure 409 {object} apierror.Error "Owner email already has an account"
+// @Failure 409 {object} apierror.Error "The owner account cannot own an organization"
 // @Security BearerAuth
 // @Router /admin/tenants [post]
 func (h *AdminOrganizationHandler) Create(w http.ResponseWriter, r *http.Request) {
@@ -390,14 +459,17 @@ func (h *AdminOrganizationHandler) Create(w http.ResponseWriter, r *http.Request
 		Create(r.Context(), tenantapp.CreateOrganizationInput{
 			Name: req.Name, Slug: req.Slug, Description: req.Description,
 			OwnerEmail: req.OwnerEmail, OwnerName: req.OwnerName,
+			InviteExistingOwner: true, InvitedBy: adminActorID(r),
 		}, adminAuditContext(r, ""))
 	if err != nil {
 		switch {
 		case errors.Is(err, tenant.ErrBreakGlassMembership):
 			apierror.Conflict("A break-glass administrator cannot own an organization. Use another owner email.").WriteJSON(w)
-		case errors.Is(err, tenantapp.ErrOwnerAccountExists):
-			apierror.Conflict("This person already has an account; they can create the organization after signing in.").WriteJSON(w)
-		case errors.Is(err, tenantapp.ErrAccountExists):
+		case errors.Is(err, tenant.ErrOwnerInviteeNotEligible):
+			apierror.Conflict("This account cannot own an organization (it is not active, or it is a service account). Use another owner email.").WriteJSON(w)
+		case errors.Is(err, tenantapp.ErrOwnerInvitationsUnavailable):
+			apierror.ServiceUnavailable("Ownership invitations are not available").WriteJSON(w)
+		case errors.Is(err, tenantapp.ErrAccountExists), errors.Is(err, tenantapp.ErrOwnerAccountExists):
 			apierror.Conflict("An account with this email was just created. Try again.").WriteJSON(w)
 		case shared.IsValidation(err):
 			apierror.BadRequest(err.Error()).WriteJSON(w)
@@ -423,6 +495,10 @@ func (h *AdminOrganizationHandler) Create(w http.ResponseWriter, r *http.Request
 		return
 	}
 	resp.AdminOrganizationResponse = toAdminOrganizationResponse(o, true, true)
+	if created.OwnerInvitation != nil {
+		resp.OwnerInvited = true
+		resp.OwnerInvitation = toAdminOwnerInvitationFromDomain(created.OwnerInvitation)
+	}
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, http.StatusCreated, resp)
 }
@@ -472,13 +548,14 @@ func (h *AdminOrganizationHandler) ListUsers(w http.ResponseWriter, r *http.Requ
 
 // CreateUser handles POST /api/v1/admin/tenants/{tenantId}/users.
 // @Summary Create the first owner of an organization (platform admin)
-// @Description Bootstrap only: creates the owner of an organization that has no owner, and nothing else (409 when it has one, active or suspended: its owner and administrators add users themselves). The one-time set-password link is emailed when the organization can send email and is then never returned; only when email cannot be sent is setup_token returned, once. Written to the organization's audit log. With "recovery": true (super admin only, 403 otherwise) it creates a new owner of an organization whose owners are all suspended (409 while any owner is active); the link is then emailed only and never returned (400 when the organization cannot send email), and the action is audited as organization.owner_recovery in the admin audit log and at critical severity in the organization's audit log.
+// @Description Bootstrap only: creates the owner of an organization that has no owner, and nothing else (409 when it has one, active or suspended: its owner and administrators add users themselves). The one-time set-password link is emailed when the organization can send email and is then never returned; only when email cannot be sent is setup_token returned, once. Written to the organization's audit log. With "recovery": true (super admin only, 403 otherwise) it creates a new owner of an organization whose owners are all suspended (409 while any owner is active); the link is then emailed only and never returned (400 when the organization cannot send email), and the action is audited as organization.owner_recovery in the admin audit log and at critical severity in the organization's audit log. For an organization waiting for its first owner (created with an ownership invitation, nobody in it yet), an email that already has an account replaces the pending invitation with one to that account (202 with owner_invitation); for any other organization an existing account is refused (409).
 // @Tags Admin Organizations
 // @Accept json
 // @Produce json
 // @Param tenantId path string true "Organization ID"
 // @Param request body AdminCreateOrgUserRequest true "First owner"
 // @Success 201 {object} ProvisionedUserResponse
+// @Success 202 {object} AdminOwnerInvitationResult "The existing account was invited to own the organization"
 // @Failure 400 {object} apierror.Error "Bad Request"
 // @Failure 403 {object} apierror.Error "Owner recovery by an administrator who is not a super admin"
 // @Failure 409 {object} apierror.Error "Organization already has an owner, or the account exists"
@@ -522,6 +599,14 @@ func (h *AdminOrganizationHandler) CreateUser(w http.ResponseWriter, r *http.Req
 		create = h.provisioning.RecoverOwner
 	}
 	result, err := create(r.Context(), id.String(), req.Email, req.Name, adminAuditContext(r, id.String()))
+	if err != nil && !req.Recovery && errors.Is(err, tenantapp.ErrAccountExists) {
+		// An existing account is never made the owner directly: when the
+		// organization is waiting for its first owner (created with an
+		// ownership invitation, nobody in it), it gets the invitation instead.
+		if h.inviteExistingOwner(w, r, id, req.Email) {
+			return
+		}
+	}
 	if err != nil {
 		switch {
 		case errors.Is(err, tenant.ErrOrganizationHasOwner) && req.Recovery:
@@ -529,7 +614,7 @@ func (h *AdminOrganizationHandler) CreateUser(w http.ResponseWriter, r *http.Req
 		case errors.Is(err, tenant.ErrOrganizationHasOwner):
 			apierror.Conflict("This organization already has an owner (active or suspended). Its owner and administrators invite or create users themselves; if every owner is suspended, a super admin can use owner recovery.").WriteJSON(w)
 		case errors.Is(err, tenantapp.ErrAccountExists):
-			apierror.Conflict("An account with this email already exists. The first owner must be a new account.").WriteJSON(w)
+			apierror.Conflict("An account with this email already exists. The first owner of this organization must be a new account; only an organization created waiting for its owner can invite an existing account.").WriteJSON(w)
 		case errors.Is(err, shared.ErrNotFound):
 			apierror.NotFound("organization").WriteJSON(w)
 		case shared.IsValidation(err):
@@ -627,4 +712,116 @@ func (h *AdminOrganizationHandler) SetSSOEnforcement(w http.ResponseWriter, r *h
 		return
 	}
 	writeJSON(w, http.StatusOK, AdminSSOEnforcementResponse{Enforced: settings.Security.SSOEnforced})
+}
+
+// adminActorID is the acting platform administrator's id (zero when none).
+func adminActorID(r *http.Request) shared.ID {
+	if a := middleware.GetAdminUser(r.Context()); a != nil {
+		return a.ID()
+	}
+	return shared.ID{}
+}
+
+// inviteExistingOwner sends an ownership invitation to the account with
+// email for an organization waiting for its first owner, and answers 202. It
+// reports false (writing nothing) when the organization is not waiting for
+// its owner or the account vanished, so the caller answers as before.
+func (h *AdminOrganizationHandler) inviteExistingOwner(w http.ResponseWriter, r *http.Request, tenantID shared.ID, email string) bool {
+	u, err := h.users.GetByEmail(r.Context(), strings.ToLower(strings.TrimSpace(email)))
+	if err != nil {
+		return false
+	}
+	inv, err := h.tenants.InviteOwner(r.Context(), tenantID, u, adminActorID(r), adminAuditContext(r, tenantID.String()))
+	switch {
+	case err == nil:
+	case errors.Is(err, tenant.ErrOwnerInvitationNotAllowed), errors.Is(err, tenantapp.ErrOwnerInvitationsUnavailable):
+		return false
+	default:
+		writeOwnerInvitationError(w, err, h.logger)
+		return true
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusAccepted, AdminOwnerInvitationResult{OwnerInvitation: toAdminOwnerInvitationFromDomain(inv)})
+	return true
+}
+
+// writeOwnerInvitationError maps the ownership-invitation errors of the
+// console paths.
+func writeOwnerInvitationError(w http.ResponseWriter, err error, log *logger.Logger) {
+	switch {
+	case errors.Is(err, tenant.ErrOwnerInvitationResendTooSoon):
+		apierror.New(http.StatusTooManyRequests, apierror.CodeRateLimitExceeded,
+			"The invitation was sent a moment ago. Try again in a few minutes.").WriteJSON(w)
+	case errors.Is(err, tenant.ErrOwnerInvitationResendLimit):
+		apierror.Conflict("This invitation was sent the maximum number of times. Cancel it or invite again.").WriteJSON(w)
+	case errors.Is(err, tenant.ErrOwnerInvitationNotFound):
+		apierror.NotFound("pending ownership invitation").WriteJSON(w)
+	case errors.Is(err, tenant.ErrOwnerInvitationNotAllowed):
+		apierror.Conflict("Only an organization waiting for its first owner, with nobody in it, can invite an owner.").WriteJSON(w)
+	case errors.Is(err, tenant.ErrOwnerInviteeNotEligible):
+		apierror.Conflict("This account cannot own an organization (it is not active, or it is a service account). Use another owner email.").WriteJSON(w)
+	case errors.Is(err, tenant.ErrBreakGlassMembership):
+		apierror.Conflict("A break-glass administrator cannot own an organization. Use another owner email.").WriteJSON(w)
+	case errors.Is(err, tenantapp.ErrEmailDomainNotAllowed):
+		apierror.BadRequest("This organization does not allow that email domain.").WriteJSON(w)
+	case errors.Is(err, tenantapp.ErrOwnerInvitationsUnavailable):
+		apierror.ServiceUnavailable("Ownership invitations are not available").WriteJSON(w)
+	case errors.Is(err, shared.ErrNotFound):
+		apierror.NotFound("organization").WriteJSON(w)
+	default:
+		log.Error("ownership invitation", "error", sanitizeLogField(err.Error()))
+		apierror.InternalError(err).WriteJSON(w)
+	}
+}
+
+// ResendOwnerInvitation handles POST /api/v1/admin/tenants/{tenantId}/owner-invitation/resend.
+// @Summary Send an ownership invitation again (platform admin)
+// @Description Sends the pending (or expired) ownership invitation again and renews its seven-day expiry. At most five sends per invitation, ten minutes apart (429 when too soon). Written to the organization's audit log.
+// @Tags Admin Organizations
+// @Produce json
+// @Param tenantId path string true "Organization ID"
+// @Success 200 {object} AdminOwnerInvitationResult
+// @Failure 404 {object} apierror.Error "No pending invitation"
+// @Failure 409 {object} apierror.Error "Send limit reached"
+// @Failure 429 {object} apierror.Error "Sent too recently"
+// @Security BearerAuth
+// @Router /admin/tenants/{tenantId}/owner-invitation/resend [post]
+func (h *AdminOrganizationHandler) ResendOwnerInvitation(w http.ResponseWriter, r *http.Request) {
+	id, ok := orgIDParam(r)
+	if !ok {
+		apierror.BadRequest("invalid organization id").WriteJSON(w)
+		return
+	}
+	inv, err := h.tenants.ResendOwnerInvitation(r.Context(), id, adminAuditContext(r, id.String()))
+	if err != nil {
+		writeOwnerInvitationError(w, err, h.logger)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, AdminOwnerInvitationResult{OwnerInvitation: toAdminOwnerInvitationFromDomain(inv)})
+}
+
+// CancelOwnerInvitation handles DELETE /api/v1/admin/tenants/{tenantId}/owner-invitation.
+// @Summary Cancel an ownership invitation (platform admin)
+// @Description Withdraws the pending ownership invitation; the invitee is told by email. The organization stays with no owner: invite someone else or create its first owner. Written to the organization's audit log.
+// @Tags Admin Organizations
+// @Produce json
+// @Param tenantId path string true "Organization ID"
+// @Success 200 {object} AdminOwnerInvitationResult
+// @Failure 404 {object} apierror.Error "No pending invitation"
+// @Security BearerAuth
+// @Router /admin/tenants/{tenantId}/owner-invitation [delete]
+func (h *AdminOrganizationHandler) CancelOwnerInvitation(w http.ResponseWriter, r *http.Request) {
+	id, ok := orgIDParam(r)
+	if !ok {
+		apierror.BadRequest("invalid organization id").WriteJSON(w)
+		return
+	}
+	inv, err := h.tenants.CancelOwnerInvitation(r.Context(), id, adminAuditContext(r, id.String()))
+	if err != nil {
+		writeOwnerInvitationError(w, err, h.logger)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, AdminOwnerInvitationResult{OwnerInvitation: toAdminOwnerInvitationFromDomain(inv)})
 }

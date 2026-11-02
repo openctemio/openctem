@@ -4,28 +4,79 @@ import { useState } from 'react'
 import { Ban, ShieldCheck, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { RelativeTime } from '@/features/shared'
+import { DangerZone, DangerZoneItem, RelativeTime } from '@/features/shared'
+import { TonePill } from '@/features/shared/components/tone-pill'
 import { useTranslation } from '@/context/i18n-provider'
 import { purgeOrganization, setOrganizationSuspended } from '../api/use-admin-organizations'
 import { AdminConfirmDialog } from './admin-confirm-dialog'
 import type { AdminOrganization } from '../types'
 
-/** "Suspended" or "Deletion scheduled" next to an organization's name. */
+/**
+ * "Suspended" or "Deletion scheduled" next to an organization's name: the
+ * shared state pill (text and icon, never colour alone).
+ */
 export function OrganizationStatusBadge({ org }: { org: Pick<AdminOrganization, 'status'> }) {
   const { t } = useTranslation()
   if (org.status === 'pending_deletion')
     return (
-      <Badge variant="destructive" data-testid="org-pending-deletion">
-        {t('admin.org.deletion.badge', 'Deletion scheduled')}
-      </Badge>
+      <span data-testid="org-pending-deletion" className="inline-flex">
+        <TonePill tone="destructive" label={t('admin.org.deletion.badge', 'Deletion scheduled')} />
+      </span>
     )
   if (org.status !== 'suspended') return null
   return (
-    <Badge variant="destructive" data-testid="org-suspended">
-      {t('admin.org.suspension.badge', 'Suspended')}
-    </Badge>
+    <span data-testid="org-suspended" className="inline-flex">
+      <TonePill tone="warning" label={t('admin.org.suspension.badge', 'Suspended')} />
+    </span>
+  )
+}
+
+/**
+ * The organization's destructive actions, apart at the end of its overview:
+ * suspend (reversible; reason and step-up) and delete now (irreversible;
+ * fresh code, reason and the name typed back). The API decides; a second
+ * approver is asked for where the installation requires one.
+ */
+export function OrganizationDangerZone({
+  org,
+  canSuspend,
+  canPurge,
+  onChanged,
+  onDeleted,
+}: {
+  org: AdminOrganization
+  canSuspend: boolean
+  canPurge: boolean
+  onChanged: () => void
+  onDeleted: () => void
+}) {
+  const { t } = useTranslation()
+  const suspend = canSuspend && org.status === 'active'
+  if (!suspend && !canPurge) return null
+  return (
+    <DangerZone>
+      {suspend && (
+        <DangerZoneItem
+          title={t('admin.org.suspension.suspend', 'Suspend organization')}
+          description={t(
+            'admin.org.danger.suspendWhat',
+            'Closes the organization to every credential at once. Nothing is deleted; lifting the suspension restores access.'
+          )}
+          action={<OrganizationSuspensionAction org={org} onDone={onChanged} />}
+        />
+      )}
+      {canPurge && (
+        <DangerZoneItem
+          title={t('admin.org.deletion.purge', 'Delete now')}
+          description={t(
+            'admin.org.danger.purgeWhat',
+            'Deletes the organization and everything in it. Member accounts are kept. This cannot be undone.'
+          )}
+          action={<OrganizationPurgeAction org={org} onDone={onDeleted} />}
+        />
+      )}
+    </DangerZone>
   )
 }
 
