@@ -75,8 +75,9 @@ for (const collapsed of [false, true]) {
   )
 }
 
-// Six groups; the long ones carry sub-headings (Access & security: Sign-in,
-// Oversight; Scanning: Tools, Scanner content). Desktop rail and phone sheet.
+// Six groups; the long ones carry sub-headings (Access & security: API access,
+// Sign-in, Oversight; Findings & assets: Risk and threats, Assets; Scanning:
+// Tools, Sensors, Scanner content). Desktop rail and phone sheet.
 for (const vp of [
   { name: 'desktop', width: 1440, height: 900 },
   { name: 'phone', width: 390, height: 844 },
@@ -102,7 +103,7 @@ for (const vp of [
       // "Security" is a link, so only a "Security" that is not a link counts.
       const securityLinks = await nav.getByRole('link', { name: 'Security', exact: true }).count()
       await expect(nav.getByText('Security', { exact: true })).toHaveCount(securityLinks)
-      for (const sub of ['Sign-in', 'Oversight', 'Tools']) {
+      for (const sub of ['API access', 'Sign-in', 'Oversight', 'Risk and threats', 'Tools']) {
         // "Tools" is also the name of a rail link, so match the sub-heading
         // by its own span, not by text alone (strict mode would see two).
         await expect(nav.locator('span.text-xs').getByText(sub, { exact: true }), sub).toBeVisible()

@@ -5,7 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"strconv"
 	"strings"
+
+	"github.com/lib/pq"
 
 	"github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/app/datascope"
@@ -33,6 +36,34 @@ type FilterCaller struct {
 	APIKey bool
 	// Has reports the caller's permissions (for permission-gated fields).
 	Has func(permission string) bool
+	// PentestAIAllowTLP, when non-nil, leaves out the pentest findings of
+	// campaigns kept away from AI applications (a TLP outside these levels,
+	// or AI assistants turned off for the campaign). The MCP tools set it.
+	PentestAIAllowTLP []string
+}
+
+// compileFor compiles a findings spec as the caller's actor, with the
+// branch default and the caller's AI TLP limit.
+func compileFor(c FilterCaller, spec *filterspec.Spec, actor filterspec.Actor) (*filterspec.Where, error) {
+	where, err := filterspec.Compile(vulnerability.WithBranchOnlyDefault(spec), vulnerability.FindingFields, actor)
+	if err != nil {
+		return nil, err
+	}
+	return withAITLP(where, c.PentestAIAllowTLP), nil
+}
+
+// withAITLP ANDs the AI TLP limit to a compiled findings WHERE (nil tlps:
+// unchanged). A compiled WHERE is a top-level AND chain whose first term is
+// the tenant predicate, so the limit is one more term at its end.
+func withAITLP(w *filterspec.Where, tlps []string) *filterspec.Where {
+	if tlps == nil {
+		return w
+	}
+	out := *w
+	out.Args = append(append([]any{}, w.Args...), pq.StringArray(tlps))
+	out.SQL = w.SQL + " AND " + vulnerability.PentestAITLPSQL("$"+strconv.Itoa(w.NextArg))
+	out.NextArg = w.NextArg + 1
+	return &out
 }
 
 // findingWhereRepo is the part of the finding repository that runs compiled
@@ -105,7 +136,7 @@ func (s *VulnerabilityService) ListFindingsBySpec(ctx context.Context, c FilterC
 	if err != nil {
 		return empty, err
 	}
-	where, err := filterspec.Compile(vulnerability.WithBranchOnlyDefault(spec), vulnerability.FindingFields, actor)
+	where, err := compileFor(c, spec, actor)
 	if err != nil {
 		return empty, err
 	}
@@ -176,7 +207,7 @@ func (s *VulnerabilityService) GetFindingStatsBySpec(ctx context.Context, c Filt
 	if err != nil {
 		return nil, err
 	}
-	where, err := filterspec.Compile(vulnerability.WithBranchOnlyDefault(spec), vulnerability.FindingFields, actor)
+	where, err := compileFor(c, spec, actor)
 	if err != nil {
 		return nil, err
 	}

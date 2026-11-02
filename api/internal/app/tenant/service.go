@@ -26,6 +26,7 @@ import (
 	notificationdom "github.com/openctemio/openctem/api/pkg/domain/notification"
 	"github.com/openctemio/openctem/api/pkg/domain/orgtrust"
 	roledom "github.com/openctemio/openctem/api/pkg/domain/role"
+	"github.com/openctemio/openctem/api/pkg/domain/scanident"
 	"github.com/openctemio/openctem/api/pkg/domain/scoring"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	sessiondom "github.com/openctemio/openctem/api/pkg/domain/session"
@@ -1661,6 +1662,41 @@ func (s *TenantService) AcceptInvitationByID(ctx context.Context, tenantID, invi
 	return s.acceptInvitation(ctx, invitation, userID, userEmail, actx)
 }
 
+// DeclineInvitationByID declines a pending invitation for the signed-in
+// account named by its verified address (the onboarding path; the reference
+// was bound to the account by the caller). The invitation must be for that
+// address and still pending; it is deleted and the decline is audited with
+// the account as the actor. Every refusal is the same validation error, so
+// the call tells nothing about invitations sent to other addresses.
+func (s *TenantService) DeclineInvitationByID(ctx context.Context, tenantID, invitationID, userID shared.ID, userEmail string, emailVerified bool, actx auditapp.AuditContext) error {
+	refused := fmt.Errorf("%w: this invitation is no longer available", shared.ErrValidation)
+	if !emailVerified {
+		return fmt.Errorf("%w: verify your email address first", shared.ErrValidation)
+	}
+	inv, err := s.repo.GetInvitationByID(ctx, tenantID, invitationID)
+	if err != nil {
+		if errors.Is(err, shared.ErrNotFound) {
+			return refused
+		}
+		return err
+	}
+	if !strings.EqualFold(inv.Email(), userEmail) || !inv.IsPending() {
+		return refused
+	}
+	if err := s.repo.DeleteInvitation(ctx, tenantID, invitationID); err != nil {
+		return err
+	}
+	actx.TenantID = tenantID.String()
+	actx.ActorID = userID.String()
+	event := auditapp.NewSuccessEvent(audit.ActionInvitationDeleted, audit.ResourceTypeInvitation, invitationID.String()).
+		WithSeverity(audit.SeverityLow).
+		WithMessage(fmt.Sprintf("Invitation for %s declined by the invitee", inv.Email())).
+		WithMetadata("email", inv.Email()).
+		WithMetadata("declined", true)
+	s.logAudit(ctx, actx, event)
+	return nil
+}
+
 // acceptInvitation is the acceptance shared by the token and the onboarding
 // paths.
 func (s *TenantService) acceptInvitation(ctx context.Context, invitation *tenantdom.Invitation, userID shared.ID, userEmail string, actx auditapp.AuditContext) (*tenantdom.Membership, error) {
@@ -2074,6 +2110,9 @@ type UpdateSecuritySettingsInput struct {
 	// (RFC-060 §4.1).
 	ToolHTTPUserAgent     *string `json:"tool_http_user_agent"`
 	ForbidToolInsecureTLS *bool   `json:"forbid_tool_insecure_tls"`
+	// ToolHTTPHeaders replaces the organization's scan identification
+	// headers (nil: unchanged; empty: none).
+	ToolHTTPHeaders *[]scanident.Header `json:"tool_http_headers"`
 	// PersonalAccounts and SSOExceptions: see tenantdom.SecuritySettings
 	// (RFC-058). The route already needs the owner with step-up.
 	PersonalAccounts *string                   `json:"personal_accounts"`
@@ -2129,7 +2168,14 @@ func (s *TenantService) ToolHTTPPolicy(ctx context.Context, tenantID shared.ID) 
 	}
 	sec := t.TypedSettings().Security
 	p := sec.ToolHTTPPolicy()
-	return sensordom.ToolHTTPPolicy{UserAgent: p.UserAgent, AllowInsecureTLS: p.AllowInsecureTLS}, nil
+	out := sensordom.ToolHTTPPolicy{UserAgent: p.UserAgent, AllowInsecureTLS: p.AllowInsecureTLS}
+	if len(p.Headers) > 0 {
+		out.Headers = make(map[string]string, len(p.Headers))
+		for _, h := range p.Headers {
+			out.Headers[h.Name] = h.Value
+		}
+	}
+	return out, nil
 }
 
 // ErrIPAllowlistExcludesRequester is returned when saving an IP allowlist that
@@ -2212,6 +2258,12 @@ func (s *TenantService) UpdateSecuritySettings(ctx context.Context, tenantID str
 		}
 		if input.ForbidToolInsecureTLS != nil {
 			security.ForbidToolInsecureTLS = *input.ForbidToolInsecureTLS
+		}
+		if input.ToolHTTPHeaders != nil {
+			security.ToolHTTPHeaders = scanident.Normalize(*input.ToolHTTPHeaders)
+			if len(security.ToolHTTPHeaders) == 0 {
+				security.ToolHTTPHeaders = nil
+			}
 		}
 		if input.PersonalAccounts != nil {
 			security.PersonalAccounts = tenantdom.PersonalAccountsPolicy(*input.PersonalAccounts)
@@ -3202,6 +3254,12 @@ func (s *TenantService) UpdateEASMSettings(
 	s.logAudit(ctx, actx, event)
 	out := t.TypedSettings().EASM
 	return &out, nil
+}
+
+// NotifyPolicyLoosened is notifyPolicyLoosened for the services that keep an
+// organization policy outside this package (automatic AI triage).
+func (s *TenantService) NotifyPolicyLoosened(ctx context.Context, tenantID string, actx auditapp.AuditContext, title, what, url string) {
+	s.notifyPolicyLoosened(ctx, tenantID, actx, title, what, url)
 }
 
 // notifyPolicyLoosened tells every owner and administrator, in-app, that a

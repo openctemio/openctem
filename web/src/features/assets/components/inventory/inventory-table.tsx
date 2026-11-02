@@ -42,7 +42,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { ScopeCheckBadge, useScopeCheck } from '@/features/scope'
 import { ScopeTriageBadge } from './scope-triage-badge'
-import { MonitoringStateChip } from './monitoring-state-chip'
+import { MonitoringStateControl } from './monitoring-state-control'
 import { useTranslation } from '@/context/i18n-provider'
 import { assetDetailHref } from '@/features/findings/lib/asset-link'
 import type { TypeView } from '@/features/asset-types/lib/type-view'
@@ -94,10 +94,13 @@ const PAGE_SIZES = [10, 20, 30, 50, 100]
  */
 const COLUMN_ROOM = {
   findings: 1020,
-  monitoring: 1110,
-  criticality: 1230,
-  exposure: 1345,
-  owner: 1445,
+  // The monitoring cell is a chip with its menu arrow (about 30px wider than
+  // the plain chip), so the columns up to owner join 30px later. Last seen keeps
+  // its width: the wide list has room for it.
+  monitoring: 1140,
+  criticality: 1260,
+  exposure: 1375,
+  owner: 1475,
   last_seen: 1565,
 } as const
 
@@ -380,7 +383,16 @@ export function InventoryTable({
             title={t('assets.monitoring.column', 'Monitoring')}
           />
         ),
-        cell: ({ row }) => <MonitoringStateChip state={row.original.monitoringState} />,
+        cell: ({ row }) => (
+          <MonitoringStateControl
+            assetId={row.original.id}
+            assetName={row.original.name}
+            state={row.original.monitoringState}
+            attributionState={row.original.triage?.attributionState}
+            canWrite={canWriteAssets}
+            onChanged={onAssetUpdated}
+          />
+        ),
       },
       {
         // External-surface facts (status, IP, technologies, TLS …) for the
@@ -628,6 +640,7 @@ export function InventoryTable({
     locale,
     filterTags,
     onToggleTagFilter,
+    onAssetUpdated,
   ])
 
   return (

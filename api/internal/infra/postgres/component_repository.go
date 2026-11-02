@@ -21,6 +21,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/component"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/software"
+	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/pagination"
 )
 
@@ -47,9 +48,6 @@ const (
 
 	// pkgKEVExpr: the finding's vulnerability is known exploited.
 	pkgKEVExpr = `(COALESCE(f.is_in_kev, false) OR v.cisa_kev_date_added IS NOT NULL)`
-	// pkgFixExpr: a fixed version or fix is known for the finding.
-	pkgFixExpr = `(COALESCE(f.remedy_available, false) OR f.remediation->>'fix_available' = 'true'
-		OR cardinality(COALESCE(v.fixed_versions, '{}'::text[])) > 0)`
 	// pkgRiskExpr is the finding's contribution to package risk (0-100):
 	// severity floor, +15 known exploited, +10 EPSS >= 0.1, times the asset
 	// criticality factor.
@@ -60,6 +58,11 @@ const (
 		* (CASE a.criticality WHEN 'critical' THEN 1.0 WHEN 'high' THEN 0.9 WHEN 'medium' THEN 0.75 WHEN 'low' THEN 0.6 ELSE 0.75 END)
 	)))::int`
 )
+
+// pkgFixExpr: a fixed version or fix is known for the finding. The finding's
+// part is vulnerability.FindingFixKnownSQL, the same as the vulnerabilities
+// list's has_fix; the catalog's fixed versions count too.
+var pkgFixExpr = `(` + vulnerability.FindingFixKnownSQL("f") + ` OR cardinality(COALESCE(v.fixed_versions, '{}'::text[])) > 0)`
 
 // sqlArgs numbers placeholders as conditions are added.
 type sqlArgs struct{ vals []any }

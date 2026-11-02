@@ -54,7 +54,7 @@ export function AttentionQueueHeader({ reason, count, inventoryHref }: Attention
   const current = ASSET_ATTENTION_REASONS.find((r) => r.id === reason)
   if (!current) return null
   const switchTo = (href: string) => router.push(href)
-  const groups = (['fix', 'review'] as const)
+  const groups = (['decide', 'fix', 'review'] as const)
     .map((g) => visible.filter((r) => r.group === g))
     .filter((rows) => rows.length > 0)
   const href = inventoryHref ? safeHref(inventoryHref) : null

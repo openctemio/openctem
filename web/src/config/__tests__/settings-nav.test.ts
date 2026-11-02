@@ -100,6 +100,49 @@ describe('settings nav config', () => {
     ])
   })
 
+  // Personal settings never mix with the organization's: My account holds
+  // every /account page and nothing else.
+  it('keeps personal pages in My account and nowhere else', () => {
+    for (const group of settingsNav) {
+      for (const item of group.items) {
+        expect(isPersonal(item.url), `${group.id} > ${item.id}`).toBe(group.id === 'account')
+      }
+    }
+  })
+
+  // Sections in each group, in order (research 369; undefined = the
+  // untitled first section).
+  it('has the decided sections in order', () => {
+    const sections = Object.fromEntries(
+      settingsNav.map((g) => [g.id, [...new Set(g.items.map((i) => i.section))]])
+    )
+    expect(sections).toEqual({
+      account: [undefined],
+      organization: [undefined],
+      access: [undefined, 'api-access', 'sign-in', 'oversight'],
+      findings: [undefined, 'risk', 'assets'],
+      scanning: [undefined, 'tools', 'sensors', 'content'],
+      integrations: [undefined],
+    })
+  })
+
+  // Items research 369 moved: each sits with the task it serves.
+  it.each([
+    ['sso-approvals', 'access', 'sign-in'],
+    ['audit-log', 'access', 'oversight'],
+    ['mcp', 'access', 'api-access'],
+    ['service-accounts', 'access', 'api-access'],
+    ['api-keys', 'access', 'api-access'],
+    ['risk-scoring', 'findings', 'risk'],
+    ['license-policy', 'findings', 'risk'],
+    ['sensor-products', 'scanning', 'sensors'],
+    ['proxies', 'scanning', 'sensors'],
+  ])('%s is in %s > %s', (id, groupId, section) => {
+    const group = settingsNav.find((g) => g.items.some((i) => i.id === id))
+    expect(group?.id).toBe(groupId)
+    expect(group?.items.find((i) => i.id === id)?.section).toBe(section)
+  })
+
   it('has unique ids and urls', () => {
     const ids = settingsNavItems.map((i) => i.id)
     const urls = settingsNavItems.map((i) => i.url)

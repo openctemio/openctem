@@ -364,7 +364,9 @@ and SBOM import write it.
 | `POST /api/v1/findings/bulk/assign` | `findings:bulk_update` **and** `findings:assign` |
 | `POST /api/v1/findings/{id}/approvals` (false-positive or accepted-risk request) | `findings:write`, the finding in the caller's data scope; decided at once (`single_person`) only when the organization's false-positive or risk acceptance level allows it **and** the caller holds `findings:approve` and does not own the asset; bulk, group, import and automation paths never decide alone |
 | `GET /api/v1/organization/settings/finding-approvals` | `findings:read` |
-| `PATCH /api/v1/organization/settings/finding-approvals` | owner or administrator **and** `settings:write` **and** step-up; a lower `fp_approval` or `accept_approval` level takes effect after 24 hours, raising at once; lowering a level or `second_look_percent`, relaxing the policy and changing `backup_contact_email` are **owner only** (403 for an administrator); audited `finding_approval.settings_changed` (high), approvers told |
+| `PATCH /api/v1/organization/settings/finding-approvals` | owner or administrator **and** `settings:write` **and** step-up; a lower `fp_approval` or `accept_approval` level takes effect after 24 hours, raising at once; lowering a level or `second_look_percent`, relaxing the policy and changing `backup_contact_email` are **owner only** (403 for an administrator); audited `finding_approval.settings_changed` (high; critical with metadata `loosened` when a lowering is scheduled), approvers told (owners and administrators included; title "Finding approvals lowered") |
+| `GET`/`PUT /api/v1/organization/settings/ai/auto-triage` | owner or administrator **and** `settings:read` / `settings:write`; the organization comes from the token, never the body. Turning automatic AI triage on, or adding a severity while on, needs a recent sign-in (service-level, `403 STEP_UP_REQUIRED`), is audited high and every owner and administrator is told; turning it off, fewer severities and the delay need no step-up |
+| `PUT /api/v1/organization/settings/scan-governance/mode`, `PUT …/rules` | mode: owner; rules: owner or administrator; both step-up and a reason. Lowering the mode or loosening an enforcing rule is audited critical and every owner and administrator is told |
 | `POST /api/v1/findings/{id}/verify` | `findings:verify` |
 
 > The finding **action** routes (status, triage, assign, bulk, verify) are gated on
@@ -399,7 +401,7 @@ and SBOM import write it.
 | Endpoint | Permission Required |
 |----------|---------------------|
 | `GET /api/v1/exposures` · `/{id}` · `/stats` · `/{id}/history` | `findings:read` |
-| `POST /api/v1/exposures` · `/ingest` · `/{id}/resolve` · `/{id}/reactivate` · `/{id}/start-progress` · `PUT /{id}/ctem-id` | `findings:write` |
+| `POST /api/v1/exposures` · `/ingest` · `/{id}/resolve` · `/{id}/reactivate` · `/{id}/start-progress` | `findings:write` |
 | `PATCH /api/v1/exposures/{id}/severity` | `findings:severity` |
 | `POST /api/v1/exposures/{id}/accept` · `/{id}/false-positive` · `/{id}/disposition/reject` | `findings:approve` |
 | `DELETE /api/v1/exposures/{id}` | `findings:delete` |
@@ -639,7 +641,7 @@ authenticator code, and is audited.
 |----------|---------------------|
 | `POST /api/v2/sensor/pairing` · `POST /pairing/{id}/reveal` · `GET /pairing/{id}` · `POST /pairing/{id}/confirm` | none by bearer key: every request is RFC 9421-signed by the key being paired; per-address and global caps; no tenant until claimed (RFC-052 §4.4) |
 | `POST /api/v1/sensor-pairings/lookup` · `POST /expectations` · `GET /expectations/{id}` · `POST /{id}/deny` | `sensors:pair` |
-| `POST /api/v1/sensor-pairings/{id}/approve` | `sensors:approve` + step-up re-authentication + `fingerprint_confirmed` |
+| `POST /api/v1/sensor-pairings/{id}/approve` | `sensors:approve` + step-up re-authentication + the fingerprint the host shows, picked out of three (a wrong pick closes the request) |
 | `GET /api/v1/sensors/{id}/grant` · `GET /api/v1/sensors/grant-profiles` · `GET /api/v1/sensors/grant-summaries` · `GET /api/v1/sensors/identity-policy` | `sensors:read` |
 | `PUT /api/v1/sensors/{id}/grant` | `sensors:grant:narrow` when every dimension narrows or stays (demoting the trust level included); `sensors:grant:widen` otherwise, promoting to trusted included (checked in the service against the stored grant) |
 | `PUT /api/v1/sensors/identity-policy` | require key-bound identity: `sensors:grant:narrow`; allow bearer keys again: `sensors:grant:widen` + **step-up** |
@@ -2043,7 +2045,7 @@ a personal address, or be a work domain nobody has verified.
 | `POST /assets/bulk/status`, `/assets/bulk/sync` | bypass | out-of-scope ids skipped |
 | `POST /approvals/{id}/{approve,reject,cancel}`; `GET /approvals` | bypass | 404 / list, total and status counts filtered in SQL |
 | `POST /findings/ai-triage/bulk`; `GET /findings/{id}/ai-triage/{triageId}` | bypass | out-of-scope ids reported as not found; a result is checked against its own finding |
-| `GET /exposures`, `/exposures/{id}`, `/{id}/history`, state changes, ctem-id, delete | **bypass** | list filtered; by-id 404. An exposure with no asset is hidden from restricted members |
+| `GET /exposures`, `/exposures/{id}`, `/{id}/history`, state changes, delete | **bypass** | list filtered; by-id 404. An exposure with no asset is hidden from restricted members |
 | `GET /asset-groups/{id}/assets`, `/{id}/findings` | **bypass** | filtered; 404 on a group not visible to the caller |
 | `GET /asset-groups` (+ `/{id}`, `/stats`, and the group returned by create, update, add and remove) counts | **bypass (asset_count, per-kind counts, risk_score and finding_count over every member, tenant-wide; the risk and has_findings filters and the count/risk sorts could probe them; L-18)** | computed over the members in the reader's scope; filters and sorts use those values |
 | `GET /asset-groups` (+ `/{id}`, search, `/stats` with its totals and breakdowns), `GET /business-units` (+ `/{id}`, search), `GET /business-services` (+ `/{id}`, `/{id}/assets`) | **bypass (every group, unit and service of the tenant with its name, description and owner, incl. the owner email; tenant-wide totals)** | only the containers visible to the caller ("Visibility of groups, units and services"); totals over those; 404 by id; owner email for full-data readers only (research/233 F1–F3) |
@@ -2726,20 +2728,23 @@ lets anyone build a role above their own grants.
 
 | Template | For | Full data |
 |---|---|---|
-| `program-lead` | CISO, CTEM program manager: cycles, priority rules, SLAs, approvals | yes |
+| `program-lead` | CISO, CTEM program manager: cycles, priority rules, SLAs, approvals (risk, exposures, suppressions, scope, scan runs), organization dashboards | yes |
 | `security-analyst` | triage, assignment, verification; requests risk acceptance | no |
-| `vulnerability-manager` | backlog routing, assignment rules, campaigns, scan schedules, reports | no |
-| `remediation-owner` | asset owners, IT, developers: comments, remediation, fix applied | no |
+| `vulnerability-manager` | backlog routing, assignment rules, campaigns, scan schedules, reports, organization-wide saved views | no |
+| `remediation-owner` | asset owners, IT, developers: comments, remediation, fix applied; client of pentest campaigns | no |
+| `remediation-lead` | engineering managers, security champions: a remediation owner who also plans the team's remediation tasks and assigns within the team | no |
 | `appsec-engineer` | code and dependency scanning, application findings, the CI gate | no |
-| `ci-integrator` | platform engineers keeping pipelines connected: CI runs and gate results, read only | no |
+| `ci-integrator` | platform engineers keeping pipelines connected: CI runs, gate results and code host connections, read only | no |
 | `scan-operator` | scans and scan workflows on approved scope | no |
 | `sensor-operator` | sensor health, zones and commands; pairing and keys stay with administrators | no |
-| `validation-engineer` | pentest campaigns, simulations, control tests, retests | no |
+| `validation-engineer` | pentest campaigns, simulations, control tests, targeted scans, retests | no |
+| `validation-lead` | a validation engineer who also maintains methodology checklists and attacker profiles; never changes or approves scope | no |
+| `detection-engineer` | detection and SOC engineers: reads validation results, records compensating controls and their tests | no |
 | `external-tester` | a vendor tester: only the campaigns they are a member of | no |
 | `researcher` (v2) | bug-bounty researchers: programs, scans and findings of their programs (RFC-065); no sensor access since v2 (migration `002905` removes `sensors:read` from existing copies) | no |
 | `bounty-triager` | triages researcher reports; never approves or changes program scope | no |
 | `threat-intel-analyst` | attacker profiles, threat intel, external exposures | no |
-| `risk-approver` | GRC: approves risk acceptance and suppressions, compliance | no |
+| `risk-approver` | GRC: approves risk acceptance, exposure dispositions and suppressions, compliance | no |
 | `auditor` | read-only evidence, the audit log and exports | yes |
 | `executive` | dashboards, cycle outcomes and reports; less than viewer | no |
 
@@ -2770,13 +2775,25 @@ Unit tests (`templates_test.go`) keep the templates honest:
   - fix applied and verify are never together;
   - approve is never with status, triage, bulk or fix;
   - suppression write is never with suppression approve;
-  - scope write is never with scope approve;
+  - scope write is never with scope approve or exclusion approve;
+  - scan write is never with scan approve;
+  - fix applied is never with severity;
 - no template administers the organization or deletes anything;
 - only `program-lead` and `auditor` see all data;
 - `auditor` and `executive` are read-only, and `executive` is within viewer;
 - `external-tester` holds no organization-wide findings, exposures, members or scans;
 - the CI gate policy and break-glass stay with `appsec-engineer`;
-- `researcher` comments but never re-scores or approves.
+- `researcher` comments but never re-scores or approves;
+- `scans:execute` never comes without `scans:write` (or `assets:write`), since a run needs both;
+- `remediation-lead` holds everything `remediation-owner` does and never severity, verify, approve or triage;
+  `validation-lead` holds everything `validation-engineer` does; `detection-engineer` runs no attack or scan.
+
+Two tests in `internal/authzdoc` (`templates_test.go`) read the route gates
+from the router source: every permission a template grants opens at least one
+route the template passes (or is checked in a handler), and each template
+passes the routes of its daily work and fails the ones separation of duties
+keeps from it. A route that moves or changes its gate fails them, so the
+templates are reviewed with the route.
 
 `TestRoleTemplates_CreationIsBoundedByTheCreator` checks two things: the owner can create every template, and a delegated role manager can create only the templates their own grants cover.
 
@@ -2799,7 +2816,7 @@ from a custom role to deny that one action.
 | `ai_triage:read` | `GET /findings/{id}/ai-triage*`, `GET /findings/ai-triage/config` | `findings:read` |
 | `ai_triage:trigger` | `POST /findings/{id}/ai-triage`, `POST /findings/ai-triage/bulk` (deprecated, sunset 2027-01-15; also `findings:bulk_update`). Both work only once an organization administrator turned AI triage on (`PUT /tenants/{tenant}/settings/ai`, team admin, `settings:write`, step-up) | `findings:write` |
 | `findings:exposures:read` | `GET /exposures`, `/{id}`, `/stats`, `/{id}/history` | `findings:read` |
-| `findings:exposures:write` | `POST /exposures`, `/ingest`, `PUT /{id}/ctem-id` | `findings:write` |
+| `findings:exposures:write` | `POST /exposures`, `/ingest` | `findings:write` |
 | `findings:exposures:triage` | `POST /exposures/{id}/resolve`, `/reactivate`, `/start-progress` (with `findings:write`), `PATCH /exposures/{id}/severity` (with `findings:severity`), `/accept`, `/false-positive` (with `findings:approve`) | as listed |
 | `findings:exposures:delete` | `DELETE /exposures/{id}` | `findings:delete` |
 | `integrations:scm:read` | `GET /integrations/scm` | `integrations:read` |

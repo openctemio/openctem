@@ -79,6 +79,7 @@ export const EXPOSURE_EVENT_TYPE_LABELS: Record<ExposureEventType, string> = {
   email_security_weak: 'Weak email security',
   subdomain_takeover: 'Subdomain takeover',
   lookalike_domain: 'Lookalike domain',
+  third_party_script_added: 'New third-party script',
   identity_mfa_gap: 'MFA gap',
   identity_stale_principal: 'Stale identity',
   identity_overprivileged: 'Over-privileged identity',
@@ -87,6 +88,13 @@ export const EXPOSURE_EVENT_TYPE_LABELS: Record<ExposureEventType, string> = {
   mail_server_blocklisted: 'Mail server blocklisted',
   custom: 'Custom',
 }
+
+/** The `t()` of useTranslation(), passed in because column builders are not hooks. */
+type Translate = (
+  key: string,
+  fallback?: string,
+  params?: Record<string, string | number>
+) => string
 
 interface ExposureColumnHandlers {
   onResolve: (exposure: ExposureEvent) => void
@@ -97,8 +105,6 @@ interface ExposureColumnHandlers {
   /** Present when the viewer may change severities (findings:severity and exposures triage). */
   onChangeSeverity?: (exposure: ExposureEvent) => void
   onViewDetails: (exposure: ExposureEvent) => void
-  /** Labels of the row actions this table adds, in the viewer's language. */
-  labels?: { startProgress: string; stopProgress: string; changeSeverity: string }
   /**
    * Whether the user holds findings:approve. Accept risk and False positive
    * need it (api#675); without it they show disabled, with the reason.
@@ -112,7 +118,12 @@ interface ExposureColumnHandlers {
  * column is sortable (a header that reordered only the rows on screen would
  * mislead).
  */
-export function getExposureColumns(handlers: ExposureColumnHandlers): ColumnDef<ExposureEvent>[] {
+export function getExposureColumns(
+  handlers: ExposureColumnHandlers,
+  t: Translate
+): ColumnDef<ExposureEvent>[] {
+  const eventTypeLabel = (type: ExposureEventType) =>
+    t(`exposures.eventType.${type}`, EXPOSURE_EVENT_TYPE_LABELS[type])
   return [
     {
       id: 'select',
@@ -123,14 +134,16 @@ export function getExposureColumns(handlers: ExposureColumnHandlers): ColumnDef<
             (table.getIsSomePageRowsSelected() && 'indeterminate')
           }
           onCheckedChange={(value) => table.toggleAllPageRowsSelected(!!value)}
-          aria-label="Select all"
+          aria-label={t('exposures.table.selectAll', 'Select all')}
         />
       ),
       cell: ({ row }) => (
         <Checkbox
           checked={row.getIsSelected()}
           onCheckedChange={(value) => row.toggleSelected(!!value)}
-          aria-label={`Select ${row.original.title}`}
+          aria-label={t('exposures.table.selectRow', 'Select {title}', {
+            title: row.original.title,
+          })}
           onClick={(e) => e.stopPropagation()}
         />
       ),
@@ -139,7 +152,7 @@ export function getExposureColumns(handlers: ExposureColumnHandlers): ColumnDef<
     },
     {
       accessorKey: 'title',
-      header: 'Exposure',
+      header: t('exposures.table.exposure', 'Exposure'),
       enableSorting: false,
       enableHiding: false,
       cell: ({ row }) => {
@@ -151,10 +164,10 @@ export function getExposureColumns(handlers: ExposureColumnHandlers): ColumnDef<
               <TooltipTrigger asChild>
                 <span className="mt-0.5 shrink-0 text-muted-foreground">
                   <Icon className="h-4 w-4" aria-hidden />
-                  <span className="sr-only">{EXPOSURE_EVENT_TYPE_LABELS[exposure.event_type]}</span>
+                  <span className="sr-only">{eventTypeLabel(exposure.event_type)}</span>
                 </span>
               </TooltipTrigger>
-              <TooltipContent>{EXPOSURE_EVENT_TYPE_LABELS[exposure.event_type]}</TooltipContent>
+              <TooltipContent>{eventTypeLabel(exposure.event_type)}</TooltipContent>
             </Tooltip>
             <div className="min-w-0 space-y-1">
               <div className="flex flex-wrap items-center gap-1.5">
@@ -169,13 +182,13 @@ export function getExposureColumns(handlers: ExposureColumnHandlers): ColumnDef<
     },
     {
       accessorKey: 'severity',
-      header: 'Severity',
+      header: t('exposures.table.severity', 'Severity'),
       enableSorting: false,
       cell: ({ row }) => <ExposureSeverityCell exposure={row.original} />,
     },
     {
       accessorKey: 'state',
-      header: 'State',
+      header: t('exposures.table.state', 'State'),
       enableSorting: false,
       cell: ({ row }) => {
         return (
@@ -188,7 +201,7 @@ export function getExposureColumns(handlers: ExposureColumnHandlers): ColumnDef<
     },
     {
       accessorKey: 'source',
-      header: 'Source',
+      header: t('exposures.table.source', 'Source'),
       enableSorting: false,
       cell: ({ row }) => (
         <span className="text-sm text-muted-foreground">{row.original.source}</span>
@@ -196,7 +209,7 @@ export function getExposureColumns(handlers: ExposureColumnHandlers): ColumnDef<
     },
     {
       accessorKey: 'first_seen_at',
-      header: 'First seen',
+      header: t('exposures.table.firstSeen', 'First seen'),
       enableSorting: false,
       cell: ({ row }) => <RelativeTime date={row.original.first_seen_at} />,
     },
@@ -211,7 +224,7 @@ export function getExposureColumns(handlers: ExposureColumnHandlers): ColumnDef<
             <DataTableRowActions
               actions={[
                 {
-                  label: 'View details',
+                  label: t('exposures.table.viewDetails', 'View details'),
                   icon: Eye,
                   onClick: () => handlers.onViewDetails(exposure),
                 },
@@ -219,31 +232,31 @@ export function getExposureColumns(handlers: ExposureColumnHandlers): ColumnDef<
                   ? [
                       exposure.state === 'active'
                         ? {
-                            label: handlers.labels?.startProgress ?? 'Start progress',
+                            label: t('exposures.quick.start', 'Start progress'),
                             icon: PlayCircle,
                             onClick: () => handlers.onStartProgress?.(exposure),
                             separatorBefore: true,
                           }
                         : {
-                            label: handlers.labels?.stopProgress ?? 'Stop progress',
+                            label: t('exposures.quick.stop', 'Stop progress'),
                             icon: RefreshCw,
                             onClick: () => handlers.onReactivate(exposure),
                             separatorBefore: true,
                           },
                       {
-                        label: 'Mark resolved',
+                        label: t('exposures.action.resolveButton', 'Mark resolved'),
                         icon: Check,
                         onClick: () => handlers.onResolve(exposure),
                       },
                       {
-                        label: 'Accept risk',
+                        label: t('exposures.action.acceptButton', 'Accept risk'),
                         icon: AlertTriangle,
                         onClick: () => handlers.onAccept(exposure),
                         disabled: handlers.canApprove === false,
                         disabledReason: APPROVE_REQUIRED_REASON,
                       },
                       {
-                        label: 'False positive',
+                        label: t('exposures.quick.falsePositive', 'False positive'),
                         icon: X,
                         onClick: () => handlers.onMarkFalsePositive(exposure),
                         disabled: handlers.canApprove === false,
@@ -252,7 +265,7 @@ export function getExposureColumns(handlers: ExposureColumnHandlers): ColumnDef<
                     ]
                   : [
                       {
-                        label: 'Reactivate',
+                        label: t('exposures.action.reactivateButton', 'Reactivate'),
                         icon: RefreshCw,
                         onClick: () => handlers.onReactivate(exposure),
                         separatorBefore: true,
@@ -261,7 +274,7 @@ export function getExposureColumns(handlers: ExposureColumnHandlers): ColumnDef<
                 ...(handlers.onChangeSeverity
                   ? [
                       {
-                        label: handlers.labels?.changeSeverity ?? 'Change severity',
+                        label: t('exposures.severity.title', 'Change severity'),
                         icon: Gauge,
                         onClick: () => handlers.onChangeSeverity?.(exposure),
                         separatorBefore: true,

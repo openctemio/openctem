@@ -83,6 +83,9 @@ func TestEASMSuggestionReads(t *testing.T) {
 		if r.AssetID == ipPending && !slices.Equal(r.Ports, []int{22, 443, 8443}) {
 			t.Fatalf("ports %v", r.Ports)
 		}
+		if r.FirstSeen.IsZero() {
+			t.Fatalf("first seen not read for %s", r.AssetID)
+		}
 	}
 	got := map[string][]string{}
 	for _, r := range rows {

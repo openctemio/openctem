@@ -81,6 +81,8 @@ const REVIEWED = new Set([
   'features/shared/components/stats-card.tsx|Link|href={href}',
   // LEGAL_DOCS paths are constants in src/lib/legal.ts (/terms, /privacy, ...).
   'features/legal/components/legal-document.tsx|Link|href={d.path}',
+  // EDGE_FIX_HREFS is a build-time table of same-origin settings routes (features/scans/lib/edge-gap.ts).
+  'features/scans/components/edge-gap-fixes.tsx|Link|href={EDGE_FIX_HREFS[fix]}',
   // Fix plan rows: href is built in the same file as /remediation/tasks/{id} or /remediation/suggestions.
   'features/remediation-hub/components/fix-plan.tsx|Link|href={r.href}',
   // SLA compliance links: /findings?<fixed filter keys> built by findingsHref from the SLA filter
@@ -120,7 +122,9 @@ const REVIEWED = new Set([
   'features/assets/components/overview/asset-categories-view.tsx|AttentionChip|href={lens.highRiskHref}',
   'features/assets/components/overview/asset-categories-view.tsx|AttentionChip|href={lens.reviewHref}',
   'features/scoping/components/scoping-overview.tsx|Link|href={r.href}',
-  'app/(dashboard)/(validation)/validation/page.tsx|Link|href={a.href}',
+  // Validation overview: route literals and findingsHref() over constant queries.
+  'features/validation/components/validation-overview.tsx|Link|href={item.href}',
+  'features/validation/components/validation-overview.tsx|Link|href={s.href}',
   // Build-time constants (process.env / literals in the module).
   'components/layout/sidebar-footer-links.tsx|a|href={REPORT_ISSUE_URL}',
   'features/auth/components/legal-notice.tsx|a|href={termsUrl}',

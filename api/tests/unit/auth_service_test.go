@@ -705,6 +705,30 @@ func (m *mockAuthRefreshTokenRepo) MarkUsedIfUnused(_ context.Context, id shared
 	return true, nil
 }
 
+// RotateIfUnused mirrors the transactional rotation: it spends a stored
+// token only when unused and not revoked, records the successor on it and
+// stores the successor. lostSpendRace makes it report a lost race.
+func (m *mockAuthRefreshTokenRepo) RotateIfUnused(_ context.Context, id shared.ID, fingerprint string, successor *session.RefreshToken) (bool, error) {
+	m.updateCalls++
+	if m.updateErr != nil {
+		return false, m.updateErr
+	}
+	if m.lostSpendRace {
+		return false, nil
+	}
+	t, ok := m.tokens[id.String()]
+	if ok {
+		if t.IsUsed() || t.IsRevoked() {
+			return false, nil
+		}
+		_ = t.MarkUsed()
+		sid := successor.ID()
+		t.RestoreRotation(&sid, fingerprint)
+	}
+	m.tokens[successor.ID().String()] = successor
+	return true, nil
+}
+
 func (m *mockAuthRefreshTokenRepo) Delete(_ context.Context, _ shared.ID) error {
 	if m.deleteErr != nil {
 		return m.deleteErr

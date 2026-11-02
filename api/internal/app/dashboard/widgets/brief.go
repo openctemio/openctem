@@ -128,6 +128,14 @@ func (s *Service) briefMetric(ctx context.Context, v *WidgetValue, scope dashboa
 	if err != nil {
 		return err
 	}
+	// No finding in scope: sentences about findings would read as a quiet
+	// week. Only a lever (a coverage blind spot) is still worth saying.
+	if !hasLeverItem(b) {
+		empty, err := s.nothingToCount(ctx, v, scope)
+		if err != nil || empty {
+			return err
+		}
+	}
 	v.Brief = b
 	return nil
 }

@@ -337,8 +337,32 @@ func (f *ClientFactory) CreateClient(config Config) (Client, error) {
 | **Slack** | Webhook URL | Slack Blocks + Attachments | Colored sidebars, emoji indicators |
 | **Teams** | Webhook URL | Adaptive Cards | Container styles (attention/warning) |
 | **Telegram** | Bot Token + Chat ID | Markdown + Inline Buttons | URL buttons, markdown escaping |
-| **Email** | SMTP config | HTML with CSS | TLS/STARTTLS, multiple recipients |
+| **Email** | SMTP config | HTML with CSS, plain-text alternative | TLS/STARTTLS, multiple recipients |
 | **Webhook** | Custom URL | JSON payload | Flexible, any endpoint |
+
+### Message format and the one SMTP stack
+
+Every e-mail the platform sends (account mail, invitations, security notices and the notification channel) is
+built and delivered by `pkg/email`; the channel in `internal/infra/notifier/email.go` has no SMTP code of its
+own. It passes its relay (host, port, TLS or STARTTLS, credentials, sender) to the shared sender, so the SSRF
+guard (the vetted IP is dialed), the session deadline, the TLS 1.2 floor, the fail-closed STARTTLS and the
+always-verified certificate of an organization's relay are the same everywhere. Relay selection (platform relay
+or organization relay) is unchanged.
+
+The message format, defined once in `pkg/email/message.go`:
+
+- headers: `Date`, a unique `Message-ID` on the domain of the From address, `Auto-Submitted: auto-generated`
+  (so out-of-office replies do not come back), `MIME-Version`;
+- `Subject` and the From display name are RFC 2047 encoded when they are not ASCII (organization names are often
+  Vietnamese), and a long subject is folded;
+- the body is `multipart/alternative` with a `text/plain` part (the message's `TextBody`, or generated from the
+  HTML, keeping each link's target) and the `text/html` part; a message with the logo is `multipart/related`
+  around that alternative; plain-text messages are a single `text/plain` part;
+- text and HTML parts are quoted-printable, wrapped at 76 characters, so a long HTML line never breaks the
+  998-octet limit;
+- CR and LF are replaced by a space in every header value and name before encoding, so a value cannot start
+  another header (Bcc, Content-Type); a custom header cannot override one the builder writes, and a custom
+  header name with a space or colon is dropped.
 
 ### Mail server rules for the e-mail channel
 

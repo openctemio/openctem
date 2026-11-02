@@ -127,7 +127,14 @@ func TestDashboardSurfaceWidgets_ScopeAndParity_DB(t *testing.T) {
 				}
 			}
 
-			// Accepted risks.
+			// Accepted risks. No finding at all in scope: not measured,
+			// never "0 ending".
+			if tc.user == h.memberFree {
+				if w := byID(t, out, "w_acc"); w.State != widgets.StateNotMeasured || w.Reason != widgets.ReasonNoFindings {
+					t.Fatalf("no findings = %+v", w)
+				}
+				return
+			}
 			acc := category(t, byID(t, out, "w_acc"))
 			if acc[widgets.BandWithin7d].Value != tc.acc7 || acc[widgets.BandLater].Value != tc.accLater || acc[widgets.BandWithin30d].Value != 0 {
 				t.Errorf("acceptance bands %+v", acc)

@@ -104,13 +104,21 @@ function retestsEndpoint(findingId: string): string {
   return `/api/v1/findings/${findingId}/retests`
 }
 
+/**
+ * Poll while the newest retest is pending. Module scope so its identity is
+ * stable; SWR restarts its timer when `refreshInterval` changes identity.
+ */
+function retestsInterval(latest?: FindingRetestList): number {
+  return latest?.data?.[0]?.status === 'pending' ? RETEST_POLL_MS : 0
+}
+
 /** A finding's retests, newest first. Polls while the newest is pending. */
 export function useFindingRetests(findingId: string | null) {
   const { currentTenant } = useTenant()
   const key = currentTenant && findingId ? retestsEndpoint(findingId) : null
   return useSWR<FindingRetestList>(key, (url: string) => get<FindingRetestList>(url), {
     revalidateOnFocus: false,
-    refreshInterval: (latest) => (latest?.data?.[0]?.status === 'pending' ? RETEST_POLL_MS : 0),
+    refreshInterval: retestsInterval,
   })
 }
 

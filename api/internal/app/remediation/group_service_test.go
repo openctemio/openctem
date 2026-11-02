@@ -28,6 +28,9 @@ func (m *mockKeyRepo) KeySources(_ context.Context, _ shared.ID, _ []shared.ID) 
 func (m *mockKeyRepo) KeySourcesByFingerprints(_ context.Context, _ shared.ID, _ []string) ([]remediationdom.KeySource, error) {
 	return nil, nil
 }
+func (m *mockKeyRepo) SiblingKeySources(_ context.Context, _ shared.ID, _ []shared.ID) ([]remediationdom.KeySource, error) {
+	return nil, nil
+}
 func (m *mockKeyRepo) FindingIDsAfter(_ context.Context, _, _ shared.ID, _ int) ([]shared.ID, error) {
 	return nil, nil
 }

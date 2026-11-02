@@ -225,3 +225,28 @@ func TestEvaluateCommandCoverage_NoOutcomesNoWidening(t *testing.T) {
 		}
 	})
 }
+
+// A host an edge protection blocked never closes a finding, with or without
+// per-target outcomes (an older sensor sends only the coverage gap), while
+// a host covered in the same run is judged as before.
+func TestEvaluateCommandCoverage_EdgeBlockedHostNeverCloses(t *testing.T) {
+	gap := `"metadata":{"coverage_gaps":[{"host":"a.example.com","reason":"blocked","edge":"blocked","vendor":"datadome"}],"coverage_gaps_total":1}`
+	for name, result := range map[string]string{
+		"older sensor, no outcomes": `{"exit_code":0,` + gap + `}`,
+		"outcomes say done":         `{"exit_code":0,"target_outcomes":[{"target":"a.example.com","state":"done"},{"target":"b.example.com","state":"done"}],` + gap + `}`,
+		"outcome says edge_blocked": `{"exit_code":0,"target_outcomes":[{"target":"a.example.com","state":"failed","class":"edge_blocked","vendor":"datadome"},{"target":"b.example.com","state":"done"}]}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			svc, repo, ids := perTargetRun(t, `["a.example.com","b.example.com"]`, result, "a.example.com", "b.example.com")
+			repo.cov.Reports[0].Header = coverageHeader(t, "nuclei", ctis.ReportMetadata{CoverageType: "full"})
+			repo.candidates = []shared.ID{ids["a.example.com"], ids["b.example.com"]}
+			svc.EvaluateCommandCoverage(context.Background(), shared.NewID(), shared.NewID())
+			if slices.Contains(repo.query.AssetIDs, ids["a.example.com"]) {
+				t.Fatalf("the edge-blocked host is a candidate for closing: %v", repo.query.AssetIDs)
+			}
+			if len(repo.query.AssetIDs) > 0 && !slices.Contains(repo.query.AssetIDs, ids["b.example.com"]) {
+				t.Fatalf("the covered host b.example.com is not judged: %v", repo.query.AssetIDs)
+			}
+		})
+	}
+}

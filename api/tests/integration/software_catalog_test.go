@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -153,9 +154,10 @@ func TestSoftwareCatalog_Versions(t *testing.T) {
 	assert.Nil(t, norm)
 }
 
-// A new version of the same product at the same location supersedes the
-// old link; two versions in one write (two copies of a library on one page)
-// both stay; another location is untouched.
+// Versions one write reports together (two copies of a library on one
+// page) are both established; a single weak reading of another version is
+// a candidate that supersedes nothing; a strong one supersedes what it
+// does not contain at that location only.
 func TestSoftwareCatalog_LinksSupersede(t *testing.T) {
 	repo, pdb := softwareRepo(t)
 	ctx := context.Background()
@@ -165,52 +167,79 @@ func TestSoftwareCatalog_LinksSupersede(t *testing.T) {
 	refs, err := repo.Resolve(ctx, tenant, []software.Identity{id})
 	require.NoError(t, err)
 	p := refs[id]
+	keys := map[shared.ID]software.VersionKey{}
 	ver := func(s string) shared.ID {
-		v, err := repo.EnsureVersion(ctx, tenant, p, versionKey(s))
+		k := versionKey(s)
+		v, err := repo.EnsureVersion(ctx, tenant, p, k)
 		require.NoError(t, err)
+		keys[v] = k
 		return v
 	}
-	link := func(v shared.ID, loc string) software.Link {
-		return software.Link{AssetID: asset, ProductID: p.ID, VersionID: v, Location: loc, Source: software.SourceTechnology, Confidence: 65}
+	t0 := time.Now().UTC().Add(-72 * time.Hour)
+	link := func(v shared.ID, loc string, c software.EvidenceClass, conf int, at time.Time) software.Link {
+		return software.Link{AssetID: asset, ProductID: p.ID, VersionID: v, Location: loc, Source: software.SourceTechnology,
+			Confidence: conf, Version: keys[v], Segments: 3, Class: c, ObservedAt: at}
 	}
 	v1, v2, v3 := ver("1.12.4"), ver("3.5.1"), ver("3.7.1")
 
-	res, err := repo.UpsertLinks(ctx, tenant, []software.Link{link(v1, ""), link(v2, ""), link(v1, "tcp/8443")})
+	res, err := repo.UpsertLinks(ctx, tenant, []software.Link{
+		link(v1, "", software.ClassBanner, 65, t0), link(v2, "", software.ClassBanner, 65, t0), link(v1, "tcp/8443", software.ClassBanner, 65, t0)})
 	require.NoError(t, err)
 	assert.Equal(t, 3, res.Inserted)
 	assert.Zero(t, res.Superseded)
 	assert.Equal(t, []shared.ID{asset}, res.ChangedAssets)
 
 	// Seen again unchanged: nothing changes for the matcher.
-	res, err = repo.UpsertLinks(ctx, tenant, []software.Link{link(v1, ""), link(v2, "")})
+	res, err = repo.UpsertLinks(ctx, tenant, []software.Link{
+		link(v1, "", software.ClassBanner, 65, t0.Add(time.Hour)), link(v2, "", software.ClassBanner, 65, t0.Add(time.Hour))})
 	require.NoError(t, err)
 	assert.Zero(t, res.Inserted)
 	assert.Empty(t, res.ChangedAssets, "%+v", res)
 
-	// Upgraded at the origin: both old versions there are superseded, the
-	// other location is not.
-	res, err = repo.UpsertLinks(ctx, tenant, []software.Link{link(v3, "")})
+	active := func() []string {
+		var out []string
+		rows, err := pdb.QueryContext(ctx, `SELECT v.raw || '@' || s.location || ':' || s.version_state FROM asset_software s
+			JOIN software_versions v ON v.id = s.software_version_id
+			WHERE s.tenant_id = $1 AND s.asset_id = $2 AND s.superseded_at IS NULL ORDER BY 1`, tenant.String(), asset.String())
+		require.NoError(t, err)
+		defer rows.Close()
+		for rows.Next() {
+			var s string
+			require.NoError(t, rows.Scan(&s))
+			out = append(out, s)
+		}
+		require.NoError(t, rows.Err())
+		return out
+	}
+
+	// One weak reading of a newer version: a candidate, nothing superseded.
+	res, err = repo.UpsertLinks(ctx, tenant, []software.Link{link(v3, "", software.ClassBanner, 65, t0.Add(2*time.Hour))})
 	require.NoError(t, err)
 	assert.Equal(t, 1, res.Inserted)
-	assert.Equal(t, 2, res.Superseded)
-	var active []string
-	rows, err := pdb.QueryContext(ctx, `SELECT v.raw || '@' || s.location FROM asset_software s
-		JOIN software_versions v ON v.id = s.software_version_id
-		WHERE s.tenant_id = $1 AND s.asset_id = $2 AND s.superseded_at IS NULL ORDER BY 1`, tenant.String(), asset.String())
-	require.NoError(t, err)
-	defer rows.Close()
-	for rows.Next() {
-		var s string
-		require.NoError(t, rows.Scan(&s))
-		active = append(active, s)
-	}
-	require.NoError(t, rows.Err())
-	assert.Equal(t, []string{"1.12.4@tcp/8443", "3.7.1@"}, active)
+	assert.Zero(t, res.Superseded)
+	assert.Empty(t, res.ChangedAssets)
+	assert.Equal(t, []string{"1.12.4@:established", "1.12.4@tcp/8443:established", "3.5.1@:established", "3.7.1@:candidate"}, active())
 
-	// Seen again: a superseded link comes back.
-	res, err = repo.UpsertLinks(ctx, tenant, []software.Link{link(v1, "")})
+	// A strong reading: both old versions at the origin are superseded,
+	// the other location is not.
+	res, err = repo.UpsertLinks(ctx, tenant, []software.Link{link(v3, "", software.ClassProbe, 90, t0.Add(3*time.Hour))})
 	require.NoError(t, err)
-	assert.Equal(t, 1, res.Superseded, "the newest link is superseded by the re-seen one")
+	assert.Equal(t, 2, res.Superseded)
+	assert.Equal(t, []shared.ID{asset}, res.ChangedAssets)
+	assert.Equal(t, []string{"1.12.4@tcp/8443:established", "3.7.1@:established"}, active())
+
+	// Seen again weakly after it was superseded: a candidate (rollback
+	// waits for evidence), the established version stays.
+	res, err = repo.UpsertLinks(ctx, tenant, []software.Link{link(v1, "", software.ClassBanner, 65, t0.Add(4*time.Hour))})
+	require.NoError(t, err)
+	assert.Zero(t, res.Superseded)
+	assert.Equal(t, []string{"1.12.4@:candidate", "1.12.4@tcp/8443:established", "3.7.1@:established"}, active())
+
+	// Another tenant writing the same asset id touches nothing here.
+	other := createTestTenant(t, pdb.DB, "sw-links-other")
+	_, err = repo.UpsertLinks(ctx, other, []software.Link{link(v3, "", software.ClassProbe, 95, t0.Add(5*time.Hour))})
+	require.Error(t, err, "the asset is not the other tenant's")
+	assert.Equal(t, []string{"1.12.4@:candidate", "1.12.4@tcp/8443:established", "3.7.1@:established"}, active())
 }
 
 // Evidence is clipped to the column limit without breaking UTF-8.

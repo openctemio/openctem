@@ -34,6 +34,7 @@ export type ExposureEventType =
   | 'email_security_weak'
   | 'subdomain_takeover'
   | 'lookalike_domain'
+  | 'third_party_script_added'
   | 'identity_mfa_gap'
   | 'identity_stale_principal'
   | 'identity_overprivileged'
@@ -122,6 +123,17 @@ export interface PendingDisposition {
   self_approval_available?: boolean
 }
 
+/** CTEM-ID code derived from an exposure's type, details and linked asset. */
+export interface ExposureCTEMID {
+  /** Such as CTEM-DOM-2. */
+  code: string
+  catalog_version: string
+  /** lookalike_technique, credential_dump, asset_scope or asset_type. */
+  basis: string
+  /** The code's page on ctem.org. */
+  url: string
+}
+
 export interface ExposureEvent {
   id: string
   /** Present while a disposition waits for a second approver. */
@@ -170,6 +182,8 @@ export interface ExposureEvent {
   is_in_kev?: boolean
   /** CISA KEV remediation due date (ISO 8601). */
   kev_due_date?: string
+  /** CTEM-ID code, absent when the data does not settle one. */
+  ctem_id?: ExposureCTEMID
 }
 
 /**
@@ -422,6 +436,11 @@ export const EVENT_TYPE_CONFIG: Record<
   lookalike_domain: {
     label: 'Lookalike Domain',
     description: 'A registered domain that imitates one of your root domains',
+    category: 'domain',
+  },
+  third_party_script_added: {
+    label: 'New Third-Party Script',
+    description: 'A watched page started loading a script from a host it did not use before',
     category: 'domain',
   },
   identity_mfa_gap: {

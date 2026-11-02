@@ -441,13 +441,24 @@ type RunTaskResponse struct {
 }
 
 // RunTaskCoverageGap is one host a sensor could not fully cover, and why:
-// reason is breaker_open (the host stopped answering), rate_floor (it kept
-// pushing back at the lowest rate), blocked (it blocked the scan) or
-// proxy_unavailable (the scan's proxy failed).
+// reason is breaker_open (the host failed the scanner's requests until the
+// sensor gave it up), rate_floor (it kept pushing back at the lowest rate),
+// blocked (it blocked the scan) or proxy_unavailable (the scan's proxy
+// failed). Cause says what the sensor's recheck of a breaker_open host saw
+// (http_reset, tls_failed, reset, refused, no_answer, answered) and Cert the
+// problem of the certificate it served (expired, not_yet_valid,
+// name_mismatch, self_signed). The host stays not covered either way.
 type RunTaskCoverageGap struct {
 	Host   string `json:"host"`
 	Reason string `json:"reason"`
 	Detail string `json:"detail,omitempty"`
+	// Edge (challenged or blocked) and Vendor (an edge protection's id
+	// token) say that an edge protection answered in the host's place;
+	// only on a blocked gap, shown as text.
+	Edge   string `json:"edge,omitempty"`
+	Vendor string `json:"vendor,omitempty"`
+	Cause  string `json:"cause,omitempty"`
+	Cert   string `json:"cert,omitempty"`
 }
 
 // RunTaskSkippedTarget is one target a sensor skipped, and why: reason is
@@ -493,7 +504,7 @@ func toRunTaskResponses(tasks []scanrundom.Task) []RunTaskResponse {
 		}
 		for _, g := range t.CoverageGaps {
 			r.CoverageGaps = append(r.CoverageGaps, RunTaskCoverageGap{Host: g.Host, Reason: g.Reason,
-				Detail: platformText(t.Platform, g.Detail)})
+				Detail: platformText(t.Platform, g.Detail), Cause: g.Cause, Cert: g.Cert, Edge: g.Edge, Vendor: g.Vendor})
 		}
 		if t.StepRunID != nil {
 			v := t.StepRunID.String()

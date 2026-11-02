@@ -50,6 +50,7 @@ import vi_notificationChannels from './vi/notificationChannels.json'
 import vi_scmIntegration from './vi/scmIntegration.json'
 import vi_notificationPresets from './vi/notificationPresets.json'
 import vi_lookalikes from './vi/lookalikes.json'
+import vi_pageMonitor from './vi/pageMonitor.json'
 import vi_mcp from './vi/mcp.json'
 import vi_nav from './vi/nav.json'
 import vi_networkSeeds from './vi/networkSeeds.json'
@@ -72,6 +73,7 @@ import vi_ticketPolicy from './vi/ticketPolicy.json'
 import vi_ticketingIntegration from './vi/ticketingIntegration.json'
 import vi_proxyPools from './vi/proxyPools.json'
 import vi_wordlists from './vi/wordlists.json'
+import vi_contentRules from './vi/contentRules.json'
 import vi_scanApprovals from './vi/scanApprovals.json'
 import vi_scans from './vi/scans.json'
 import vi_scanDetail from './vi/scanDetail.json'
@@ -149,6 +151,7 @@ export const viNamespaces: Record<string, Dictionary> = {
   scmIntegration: vi_scmIntegration,
   notificationPresets: vi_notificationPresets,
   lookalikes: vi_lookalikes,
+  pageMonitor: vi_pageMonitor,
   mcp: vi_mcp,
   nav: vi_nav,
   networkSeeds: vi_networkSeeds,
@@ -172,6 +175,7 @@ export const viNamespaces: Record<string, Dictionary> = {
   ticketingIntegration: vi_ticketingIntegration,
   proxyPools: vi_proxyPools,
   wordlists: vi_wordlists,
+  contentRules: vi_contentRules,
   scanApprovals: vi_scanApprovals,
   scans: vi_scans,
   scanDetail: vi_scanDetail,

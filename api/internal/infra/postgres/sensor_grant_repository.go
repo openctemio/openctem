@@ -79,6 +79,24 @@ func (r *SensorGrantRepository) Update(ctx context.Context, g *sensordom.Grant) 
 	return n == 1, nil
 }
 
+// SetTrustTx sets the sensor's trust level inside tx and bumps the version
+// of its grant (so an edit based on the old version is refused).
+func (r *SensorGrantRepository) SetTrustTx(ctx context.Context, tx *sql.Tx, tenantID, sensorID shared.ID, level sensordom.TrustLevel) error {
+	res, err := tx.ExecContext(ctx, `UPDATE sensors SET trust_level = $3 WHERE tenant_id = $1 AND id = $2`,
+		tenantID.String(), sensorID.String(), string(level))
+	if err != nil {
+		return fmt.Errorf("set sensor trust: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n != 1 {
+		return shared.ErrNotFound
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE sensor_grants SET version = version + 1, updated_at = NOW()
+		WHERE tenant_id = $1 AND sensor_id = $2`, tenantID.String(), sensorID.String()); err != nil {
+		return fmt.Errorf("bump sensor grant version: %w", err)
+	}
+	return nil
+}
+
 // ReplaceTx writes g inside tx whatever the stored version (inserting it
 // when the row is missing), and bumps the version.
 func (r *SensorGrantRepository) ReplaceTx(ctx context.Context, tx *sql.Tx, g *sensordom.Grant) error {

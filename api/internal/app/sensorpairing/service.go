@@ -27,6 +27,7 @@ import (
 	authapp "github.com/openctemio/openctem/api/internal/app/auth"
 	"github.com/openctemio/openctem/api/pkg/domain/admin"
 	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
+	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
 	"github.com/openctemio/openctem/api/pkg/domain/edgeaddr"
 	notificationdom "github.com/openctemio/openctem/api/pkg/domain/notification"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
@@ -67,10 +68,18 @@ var (
 	ErrCapacity            = sensordom.ErrPairingCapacity
 	ErrInvalid             = errors.New("invalid pairing request")
 	ErrFingerprintRequired = errors.New("the fingerprint must be confirmed")
+	// ErrFingerprintMismatch: the approver picked a fingerprint the host
+	// did not show. The request is closed (a coached approver gets one try)
+	// and every administrator is told.
+	ErrFingerprintMismatch = errors.New("the picked fingerprint is not the sensor's")
 	ErrLookupLocked        = errors.New("too many failed lookups")
 	// ErrOrganizationMismatch: the approval names another organization than
 	// the session's (the approver switched organization after the review).
 	ErrOrganizationMismatch = errors.New("the approval names another organization")
+	// ErrRepairNotAcknowledged: the request re-pairs an existing sensor (or
+	// does not) and the approval did not name the same sensor: a re-pair
+	// replaces a working sensor's key, so the approver confirms which one.
+	ErrRepairNotAcknowledged = errors.New("the approval does not name the sensor this request re-pairs")
 	// ErrKeyRegistered: the key was already registered to a sensor (an
 	// approval bound it, whatever happened next); a key never pairs twice.
 	ErrKeyRegistered = errors.New("the sensor key is already registered")
@@ -100,6 +109,13 @@ type AdminDirectory interface {
 // InAppNotifier sends one in-app notification.
 type InAppNotifier interface {
 	Notify(ctx context.Context, p notificationdom.NotificationParams) error
+}
+
+// CommandReleaser takes back the commands a sensor holds under a lease
+// (command.HolderReleaser): a re-pair withdraws the key they were claimed
+// with.
+type CommandReleaser interface {
+	ReleaseHeldBySensor(ctx context.Context, tenantID, sensorID shared.ID, requeueMessage, failMessage string) ([]commanddom.ReleasedCommand, error)
 }
 
 // EventRecorder writes sensor timeline events.
@@ -140,6 +156,7 @@ type Service struct {
 	admins   AdminDirectory
 	notifier InAppNotifier
 	hook     ApprovalHook
+	releaser CommandReleaser
 	log      *logger.Logger
 	// jobRoot reads the job-signing root the views carry (nil: none).
 	jobRoot func(ctx context.Context) string
@@ -155,8 +172,11 @@ type Service struct {
 
 	platformKey ed25519.PrivateKey
 	codeKey     []byte
-	maxOpen     int
-	now         func() time.Time
+	// verifyURL is the console origin the sensor prints with its code
+	// ("" prints no link).
+	verifyURL string
+	maxOpen   int
+	now       func() time.Time
 
 	sweepMu   sync.Mutex
 	lastSweep time.Time
@@ -193,6 +213,20 @@ func (s *Service) SetApprovalHook(h ApprovalHook) { s.hook = h }
 func (s *Service) SetMaxOpen(n int)               { s.maxOpen = n }
 func (s *Service) SetTenants(t TenantDirectory)   { s.tenants = t }
 func (s *Service) SetClock(now func() time.Time)  { s.now = now }
+
+// SetCommandReleaser releases a re-paired sensor's leased commands.
+func (s *Service) SetCommandReleaser(r CommandReleaser) { s.releaser = r }
+
+// SetVerificationURL sets the console origin (APP_URL) a sensor prints as
+// the page to approve it on. An origin that is not absolute http(s) is
+// ignored, so a sensor never prints a link a person cannot open.
+func (s *Service) SetVerificationURL(origin string) {
+	origin = strings.TrimRight(strings.TrimSpace(origin), "/")
+	if !strings.HasPrefix(origin, "https://") && !strings.HasPrefix(origin, "http://") {
+		return
+	}
+	s.verifyURL = origin
+}
 func (s *Service) PlatformPublicKey() ed25519.PublicKey {
 	pub, _ := s.platformKey.Public().(ed25519.PublicKey)
 	return pub
@@ -305,19 +339,16 @@ func (s *Service) Start(ctx context.Context, in StartInput) (*pairing.StartRespo
 			return nil, err
 		}
 	case code != "":
-		ok, err := s.repo.AttachToExpectationUnscoped(ctx, s.codeHash(code), p, now)
-		if err != nil {
-			return nil, err
+		if p.RepairSensorID != nil {
+			// A code decides what it pairs: the console sets a re-pair
+			// target on the code it creates; a sensor never turns an
+			// ordinary code into a re-pair of another sensor.
+			s.log.Warn("sensor pairing: a start with a code named a sensor to re-pair; ignored",
+				"key_fingerprint", pairing.KeyFingerprint(p.Thumbprint))
+			p.RepairSensorID = nil
 		}
-		if !ok {
-			// The console that made the code learns why no sensor arrived:
-			// another key holds it, or this key holds another request.
-			s.RecordRefusal(ctx, Refusal{Code: code, PublicKey: p.PublicKey, SourceIP: p.SourceIP, Reason: sensordom.RefusalCodeTaken})
-			// Same answer as a match: a request no code can ever reach.
-			p.CodeHash = ""
-			if err := s.repo.CreateForward(ctx, p); err != nil {
-				return nil, keyConflict(err)
-			}
+		if userCode, err = s.startWithCode(ctx, p, code, now); err != nil {
+			return nil, err
 		}
 	default:
 		if userCode, err = s.createWithCode(ctx, p); err != nil {
@@ -332,8 +363,51 @@ func (s *Service) Start(ctx context.Context, in StartInput) (*pairing.StartRespo
 	}
 	if userCode != "" {
 		resp.UserCode = pairing.FormatCode(userCode)
+		if s.verifyURL != "" {
+			resp.VerificationURI = s.verifyURL + "/activate"
+			resp.VerificationURIComplete = resp.VerificationURI + "?code=" + resp.UserCode
+		}
 	}
 	return resp, nil
+}
+
+// startWithCode opens a request under the code the sensor started with, so
+// the console command, the sensor's output and the approval link show one
+// code. It attaches to the organization's open expectation with that code;
+// otherwise the code becomes the request's own (rows of that code past
+// their expiry are closed first); a code another open request holds gives
+// a new code. The answer has the same shape whether or not the platform
+// expected the code, so it tells a guesser nothing.
+func (s *Service) startWithCode(ctx context.Context, p *sensordom.Pairing, code string, now time.Time) (string, error) {
+	hash := s.codeHash(code)
+	ok, err := s.repo.AttachToExpectationUnscoped(ctx, hash, p, now)
+	if err != nil {
+		return "", err
+	}
+	if ok {
+		return code, nil
+	}
+	// The console that made the code learns why no sensor arrived: another
+	// key holds it, or this key holds another request.
+	s.RecordRefusal(ctx, Refusal{Code: code, PublicKey: p.PublicKey, SourceIP: p.SourceIP, Reason: sensordom.RefusalCodeTaken})
+	if err := s.repo.ExpireStaleCodeUnscoped(ctx, hash, now); err != nil {
+		return "", err
+	}
+	p.CodeHash = hash
+	err = s.repo.CreateForward(ctx, p)
+	if err == nil {
+		return code, nil
+	}
+	if !errors.Is(err, shared.ErrConflict) {
+		return "", err
+	}
+	// Another open request holds the code (or, in a race, the key): a new
+	// code; a key conflict fails here too and is key-busy.
+	fresh, err := s.createWithCode(ctx, p)
+	if err != nil {
+		return "", keyConflict(err)
+	}
+	return fresh, nil
 }
 
 // releaseKey lets a key that was never approved start again: a sensor
@@ -587,10 +661,16 @@ type View struct {
 	LastRefusal    *RefusalView `json:"last_refusal,omitempty"`
 	RepairSensorID string       `json:"repair_sensor_id,omitempty"`
 	RepairSensor   string       `json:"repair_sensor_name,omitempty"`
-	SensorID       string       `json:"sensor_id,omitempty"`
-	Code           string       `json:"code,omitempty"`
-	CreatedAt      time.Time    `json:"created_at"`
-	ExpiresAt      time.Time    `json:"expires_at"`
+	// RepairReason is why the console started the re-pair ("lost_identity",
+	// "host_moved", "key_compromised", "install_method").
+	RepairReason string `json:"repair_reason,omitempty"`
+	// RepairBefore is what the platform knew of the sensor being re-paired,
+	// for the before/now comparison with HostFacts and SourceIP.
+	RepairBefore *RepairBefore `json:"repair_before,omitempty"`
+	SensorID     string        `json:"sensor_id,omitempty"`
+	Code         string        `json:"code,omitempty"`
+	CreatedAt    time.Time     `json:"created_at"`
+	ExpiresAt    time.Time     `json:"expires_at"`
 	// StepUp is what the viewer must present to approve ("totp",
 	// "password" or "fresh_sign_in").
 	StepUp string `json:"step_up,omitempty"`
@@ -599,6 +679,30 @@ type View struct {
 	// SENSOR_JOB_SIGNING_ROOT, so the sensor checks the key set the
 	// platform serves against a root it got from the administrator.
 	JobSigningRoot string `json:"job_signing_root,omitempty"`
+	// FingerprintChoices are three fingerprints, one of them the SAS: the
+	// approver picks the one the host shows, and the approval sends it.
+	FingerprintChoices []string `json:"fingerprint_choices,omitempty"`
+}
+
+// RepairBefore is the sensor being re-paired as the platform last saw it.
+type RepairBefore struct {
+	Hostname   string     `json:"hostname,omitempty"`
+	IPAddress  string     `json:"ip_address,omitempty"`
+	OS         string     `json:"os,omitempty"`
+	Arch       string     `json:"arch,omitempty"`
+	Version    string     `json:"version,omitempty"`
+	Status     string     `json:"status,omitempty"`
+	AuthKind   string     `json:"auth_kind,omitempty"`
+	LastSeenAt *time.Time `json:"last_seen_at,omitempty"`
+}
+
+func repairBefore(sen *sensordom.Sensor) *RepairBefore {
+	b := &RepairBefore{Hostname: sen.Hostname, OS: sen.Reported.OS, Arch: sen.Reported.Arch, Version: sen.Version,
+		Status: string(sen.Status), AuthKind: string(sen.AuthKind), LastSeenAt: sen.LastSeenAt}
+	if sen.IPAddress != nil {
+		b.IPAddress = sen.IPAddress.String()
+	}
+	return b
 }
 
 // RefusalView is a refused attempt as the console shows it.
@@ -677,6 +781,9 @@ func (s *Service) view(ctx context.Context, actor Actor, p *sensordom.Pairing) *
 	if p.Thumbprint != "" {
 		v.KeyFingerprint = pairing.KeyFingerprint(p.Thumbprint)
 	}
+	if p.SAS != "" {
+		v.FingerprintChoices = s.fingerprintChoices(p)
+	}
 	if p.SourceIP != nil {
 		v.SourceIP = p.SourceIP.String()
 		v.SourceNetwork, v.SourceProvider = classifySource(p.SourceIP)
@@ -695,6 +802,7 @@ func (s *Service) view(ctx context.Context, actor Actor, p *sensordom.Pairing) *
 	if p.RepairSensorID != nil && s.sensors != nil {
 		if sen, err := s.sensors.GetByTenantAndID(ctx, actor.TenantID, *p.RepairSensorID); err == nil && sen != nil {
 			v.RepairSensorID, v.RepairSensor = sen.ID.String(), sen.Name
+			v.RepairReason, v.RepairBefore = p.RepairReason, repairBefore(sen)
 		}
 	}
 	if p.LastRefusal != nil && p.Mode == sensordom.PairingReverse &&
@@ -723,10 +831,15 @@ func (s *Service) Lookup(ctx context.Context, actor Actor, code string) (*View, 
 		s.lookupMissed(ctx, actor)
 		return nil, ErrNotFound
 	}
-	p, err := s.repo.FindOpenByCodeHash(ctx, s.codeHash(norm), s.now())
+	hash, now := s.codeHash(norm), s.now()
+	p, err := s.repo.FindOpenByCodeHash(ctx, hash, now)
 	if err != nil {
-		s.lookupMissed(ctx, actor)
-		return nil, ErrNotFound
+		// A request that attached to this organization's own code (the
+		// console command carried it): only this organization finds it.
+		if p, err = s.repo.FindOpenForTenantByCodeHash(ctx, actor.TenantID, hash, now); err != nil {
+			s.lookupMissed(ctx, actor)
+			return nil, ErrNotFound
+		}
 	}
 	if p.RepairSensorID != nil && !s.sensorInTenant(ctx, actor.TenantID, *p.RepairSensorID) {
 		s.lookupMissed(ctx, actor)
@@ -741,23 +854,41 @@ type ExpectInput struct {
 	ZoneIDs        []shared.ID
 	Profile        string
 	RepairSensorID *shared.ID
+	// RepairReason is required with RepairSensorID and refused without it
+	// (sensordom.ValidRepairReason).
+	RepairReason string
 }
 
 // Expect creates a reverse-mode code for the actor's tenant.
 func (s *Service) Expect(ctx context.Context, actor Actor, in ExpectInput) (*View, error) {
-	if in.RepairSensorID != nil && !s.sensorInTenant(ctx, actor.TenantID, *in.RepairSensorID) {
-		return nil, ErrNotFound
+	var target *sensordom.Sensor
+	if in.RepairSensorID != nil {
+		if target = s.tenantSensor(ctx, actor.TenantID, *in.RepairSensorID); target == nil {
+			return nil, ErrNotFound
+		}
+		// A re-pair keeps the registration: no name, zones or profile.
+		if !sensordom.ValidRepairReason(in.RepairReason) || in.Name != "" || len(in.ZoneIDs) > 0 || in.Profile != "" {
+			return nil, ErrInvalid
+		}
+	} else if in.RepairReason != "" {
+		return nil, ErrInvalid
 	}
 	if in.Profile != "" && s.hook != nil && !s.hook.ValidProfile(in.Profile) {
 		return nil, ErrInvalid
 	}
 	s.sweep(ctx)
 	now := s.now()
+	if target != nil {
+		// Only the newest re-pair code of a sensor works.
+		if _, err := s.repo.CloseOpenRepairs(ctx, actor.TenantID, target.ID, now); err != nil {
+			return nil, err
+		}
+	}
 	tid, uid := actor.TenantID, actor.UserID
 	p := &sensordom.Pairing{ID: shared.NewID(), Mode: sensordom.PairingReverse, Status: sensordom.PairingExpecting,
 		TenantID: &tid, RepairSensorID: in.RepairSensorID, RequestedName: sanitizeName(in.Name),
 		RequestedZoneIDs: in.ZoneIDs, RequestedProfile: in.Profile, CreatedBy: &uid,
-		CreatedAt: now, ExpiresAt: now.Add(pairing.TTL).Truncate(time.Second)}
+		CreatedAt: now, ExpiresAt: now.Add(pairing.TTL).Truncate(time.Second), RepairReason: in.RepairReason}
 	var code string
 	for range codeAttempts {
 		c, err := pairing.NewCode()
@@ -778,11 +909,31 @@ func (s *Service) Expect(ctx context.Context, actor Actor, in ExpectInput) (*Vie
 	if code == "" {
 		return nil, ErrCapacity
 	}
-	s.logAudit(ctx, s.auditContext(actor), auditapp.NewSuccessEvent(auditdom.ActionSensorPairingExpected, auditdom.ResourceTypeSensor, p.ID.String()).
-		WithMessage("Created a pairing code for a new sensor").WithSeverity(auditdom.SeverityLow))
+	if target != nil {
+		s.onRepairStarted(ctx, actor, target, p)
+	} else {
+		s.logAudit(ctx, s.auditContext(actor), auditapp.NewSuccessEvent(auditdom.ActionSensorPairingExpected, auditdom.ResourceTypeSensor, p.ID.String()).
+			WithMessage("Created a pairing code for a new sensor").WithSeverity(auditdom.SeverityLow))
+	}
 	v := s.view(ctx, actor, p)
 	v.Code = pairing.FormatCode(code)
 	return v, nil
+}
+
+// onRepairStarted audits a re-pair code and puts it on the sensor's
+// timeline. The sensor keeps working with its current key until the re-pair
+// is approved.
+func (s *Service) onRepairStarted(ctx context.Context, actor Actor, target *sensordom.Sensor, p *sensordom.Pairing) {
+	msg := fmt.Sprintf("Created a code to re-pair sensor %q (reason: %s); its current key works until the re-pair is approved",
+		target.Name, p.RepairReason)
+	s.logAudit(ctx, s.auditContext(actor), auditapp.NewSuccessEvent(auditdom.ActionSensorPairingExpected, auditdom.ResourceTypeSensor, target.ID.String()).
+		WithResourceName(target.Name).WithMessage(msg).WithSeverity(auditdom.SeverityMedium).
+		WithMetadata("pairing_id", p.ID.String()).WithMetadata("repair_reason", p.RepairReason))
+	if s.events != nil {
+		s.events.RecordEvents(ctx, []sensordom.Event{sensordom.NewEvent(actor.TenantID, target.ID, sensordom.EventRepairStarted, s.now(),
+			fmt.Sprintf("%s started a re-pair (reason: %s)", actor.Email, p.RepairReason),
+			map[string]any{"pairing_id": p.ID.String(), "repair_reason": p.RepairReason})})
+	}
 }
 
 // GetExpectation returns a request of the actor's tenant.
@@ -799,8 +950,10 @@ func (s *Service) GetExpectation(ctx context.Context, actor Actor, id shared.ID)
 type ApproveInput struct {
 	// Code is the code the approver entered (default mode): approval needs
 	// it, so knowing a request id alone never lets anyone claim it.
-	Code                 string
-	FingerprintConfirmed bool
+	Code string
+	// Fingerprint is the fingerprint the approver picked from
+	// View.FingerprintChoices: it must be the SAS.
+	Fingerprint string
 	// OrganizationID is the organization the approver saw on the review;
 	// it must be the session's.
 	OrganizationID string
@@ -809,15 +962,20 @@ type ApproveInput struct {
 	Type           sensordom.SensorType
 	ZoneIDs        []shared.ID
 	Profile        string
+	// RepairSensorID must name the sensor the request re-pairs, and be
+	// empty for a request that adds a sensor (ErrRepairNotAcknowledged).
+	RepairSensorID string
 }
 
 // Approve binds the request's key to the actor's tenant (a new sensor, or
-// the re-paired one). Order of checks: the confirmation box, step-up, then
-// the request itself (so an attacker with a stolen session learns nothing
-// about codes without the second factor). The organization check comes
-// before step-up, so a refused approval spends no second factor.
+// the re-paired one). Order of checks: a picked fingerprint is present,
+// the organization, step-up, then the request itself and the pick (so an
+// attacker with a stolen session learns nothing about codes, and closes no
+// request, without the second factor). The organization check comes before
+// step-up, so a refused approval spends no second factor. A pick that is
+// not the request's SAS closes the request.
 func (s *Service) Approve(ctx context.Context, actor Actor, id shared.ID, in ApproveInput) (*View, error) {
-	if !in.FingerprintConfirmed {
+	if strings.TrimSpace(in.Fingerprint) == "" {
 		return nil, ErrFingerprintRequired
 	}
 	if in.OrganizationID != actor.TenantID.String() {
@@ -850,6 +1008,10 @@ func (s *Service) Approve(ctx context.Context, actor Actor, id shared.ID, in App
 	if err != nil {
 		return nil, err
 	}
+	if !sameFingerprint(in.Fingerprint, p.SAS) {
+		s.fingerprintMismatch(ctx, actor, p, in.Code)
+		return nil, ErrFingerprintMismatch
+	}
 	// The profile chosen now, else the one the expectation named, else the
 	// default for the sensor's type (collector for a collector, else the
 	// narrow scanner default).
@@ -862,8 +1024,14 @@ func (s *Service) Approve(ctx context.Context, actor Actor, id shared.ID, in App
 			return nil, ErrInvalid
 		}
 	}
-	if p.RepairSensorID != nil && !s.sensorInTenant(ctx, actor.TenantID, *p.RepairSensorID) {
-		return nil, ErrNotFound
+	var target *sensordom.Sensor
+	if p.RepairSensorID != nil {
+		if target = s.tenantSensor(ctx, actor.TenantID, *p.RepairSensorID); target == nil {
+			return nil, ErrNotFound
+		}
+	}
+	if (target == nil) != (in.RepairSensorID == "") || (target != nil && in.RepairSensorID != target.ID.String()) {
+		return nil, ErrRepairNotAcknowledged
 	}
 	name := sanitizeName(in.Name)
 	if name == "" {
@@ -875,6 +1043,10 @@ func (s *Service) Approve(ctx context.Context, actor Actor, id shared.ID, in App
 	zones := in.ZoneIDs
 	if len(zones) == 0 {
 		zones = p.RequestedZoneIDs
+	}
+	if target != nil {
+		// A re-pair keeps the registration: its name, zones and grant.
+		name, zones = target.Name, nil
 	}
 	approval := sensordom.PairingApproval{
 		PairingID: p.ID, CodeHash: p.CodeHash, TenantID: actor.TenantID, ApprovedBy: actor.UserID, Now: now, ConfirmBy: now.Add(ConfirmWindow),
@@ -943,6 +1115,41 @@ func (s *Service) onApproved(ctx context.Context, actor Actor, res *sensordom.Pa
 		WithMetadata("grant_profile", profile).WithMetadata("revoked_keys", res.RevokedKeys)
 	s.logAudit(ctx, s.auditContext(actor), ev)
 	s.notifyAdmins(ctx, actor.TenantID, "Sensor "+verb+": "+name, msg, "high")
+	if res.Repair {
+		s.onRepaired(ctx, actor, res, name)
+	}
+}
+
+// onRepaired puts the re-pair on the sensor's timeline and takes back the
+// commands the sensor held under a lease: they were claimed with a key that
+// is now revoked, so routed scan work goes back to the queue and the rest
+// fails; whatever the old holder sends later fails the lease fence.
+func (s *Service) onRepaired(ctx context.Context, actor Actor, res *sensordom.PairingApprovalResult, name string) {
+	p := res.Pairing
+	details := map[string]any{"pairing_id": p.ID.String(), "key_fingerprint": pairing.KeyFingerprint(p.Thumbprint),
+		"revoked_keys": res.RevokedKeys, "repair_reason": p.RepairReason}
+	var requeued, failed int
+	if s.releaser != nil {
+		released, err := s.releaser.ReleaseHeldBySensor(ctx, actor.TenantID, res.SensorID,
+			commanddom.SensorKeyReplacedRequeuedMessage, commanddom.SensorKeyReplacedFailedMessage)
+		if err != nil {
+			s.log.Error("re-pair: release the sensor's leased commands; they wait for their lease to expire",
+				"sensor_id", res.SensorID.String(), "error", logger.SanitizeError(err))
+		}
+		for _, rc := range released {
+			if rc.Requeued {
+				requeued++
+			} else {
+				failed++
+			}
+		}
+		details["commands_requeued"], details["commands_failed"] = requeued, failed
+	}
+	if s.events != nil {
+		s.events.RecordEvents(ctx, []sensordom.Event{sensordom.NewEvent(actor.TenantID, res.SensorID, sensordom.EventRepaired, s.now(),
+			fmt.Sprintf("%s approved the re-pair of %s; %d earlier key(s) revoked, %d command(s) re-queued, %d failed; trust is New",
+				actor.Email, name, res.RevokedKeys, requeued, failed), details)})
+	}
 }
 
 // Deny refuses an open request: one of the actor's organization, or a
@@ -972,11 +1179,20 @@ func (s *Service) Deny(ctx context.Context, actor Actor, id shared.ID, code stri
 // ---------------------------------------------------------------------------
 
 func (s *Service) sensorInTenant(ctx context.Context, tenantID, id shared.ID) bool {
+	return s.tenantSensor(ctx, tenantID, id) != nil
+}
+
+// tenantSensor is the tenant's own, not revoked sensor id (a re-pair
+// target), or nil.
+func (s *Service) tenantSensor(ctx context.Context, tenantID, id shared.ID) *sensordom.Sensor {
 	if s.sensors == nil {
-		return false
+		return nil
 	}
 	sen, err := s.sensors.GetByTenantAndID(ctx, tenantID, id)
-	return err == nil && sen != nil && !sen.IsShared() && sen.Status != sensordom.SensorStatusRevoked
+	if err != nil || sen == nil || sen.IsShared() || sen.Status == sensordom.SensorStatusRevoked {
+		return nil
+	}
+	return sen
 }
 
 func (s *Service) auditContext(a Actor) auditapp.AuditContext {

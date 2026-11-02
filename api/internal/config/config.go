@@ -626,11 +626,15 @@ type SensorConfigConfig struct {
 	// collector sensor run (SENSOR_COLLECTOR_IMAGE, default
 	// DefaultCollectorImage): the asset collector, not the scanner image.
 	CollectorImage string
-	// CACertFile is the platform's private CA certificate (PEM) the install
-	// snippets install on the sensor host (SENSOR_CA_CERT_FILE). Set it when
-	// the platform uses the built-in gateway in TLS mode internal: mount the
-	// gateway's CA export directory into the API read-only and point this at
-	// openctem-root-ca.crt. Empty: the certificate is publicly trusted.
+	// CACertFile is the PEM bundle of the CA certificate(s) that sign the
+	// platform's TLS certificate when it is not publicly trusted
+	// (PLATFORM_CA_CERT_FILE; the deprecated SENSOR_CA_CERT_FILE is read
+	// when it is unset). The install commands install and pin it and GET
+	// /api/v1/sensors/platform-ca serves it. Set it when the platform uses
+	// the built-in gateway in TLS mode internal (mount the gateway's CA
+	// export directory read-only, point this at openctem-root-ca.crt) or any
+	// other private CA. Public certificates only: a file with a private key
+	// is refused. Empty: the certificate is publicly trusted.
 	CACertFile string
 
 	// CIRunnerLatestVersion is the newest CI runner release (openctemio/ci,
@@ -900,6 +904,11 @@ type AuthConfig struct {
 	AccessTokenDuration  time.Duration // Access token lifetime (default: 15m)
 	RefreshTokenDuration time.Duration // Refresh token lifetime (default: 7d)
 	SessionDuration      time.Duration // Session lifetime (default: 30d)
+	// RefreshReuseGrace is how long after a rotation the same client may
+	// present the replaced refresh token again and receive the successor
+	// already issued, instead of the reuse response that ends the session
+	// (default 30s, 0 disables, at most MaxRefreshReuseGrace).
+	RefreshReuseGrace time.Duration
 
 	// Password policy
 	PasswordMinLength      int  // Minimum password length (default: 12)
@@ -1211,12 +1220,6 @@ type SensorConfig struct {
 	// to enable periodic auto-import + branch sync + expired-token detection.
 	SCMSyncInterval time.Duration
 
-	// CTEMIDFeedURL is the CTEM-ID catalog feed the daily ctem-id-refresh
-	// controller mirrors into local reference storage. Behind the same
-	// feed-refresh machinery as the EPSS/KEV threat-intel refresh. Set
-	// CTEM_ID_FEED_URL to override; defaults to https://ctem.org/source.json.
-	CTEMIDFeedURL string
-
 	// Vulnerability bundles (RFC-066 §5.5): the pinned root key id
 	// (VULNFEED_ROOT_KEY_ID; defaults to VulnFeedOfficialRootKeyID, the root
 	// of the official openctemio/vulnfeed-bundles releases), the release base URL
@@ -1249,7 +1252,7 @@ type SensorConfig struct {
 	CertMonitorFeedBaseURL string
 
 	// CertMonitorInterval is how often the CT sweep runs across all tenants.
-	// Defaults to 24h (daily), matching the threat-intel / CTEM-ID refreshes.
+	// Defaults to 24h (daily), matching the threat-intel refresh.
 	CertMonitorInterval time.Duration
 
 	// EASMDNSChecksEnabled toggles the daily DNS-only EASM checks (dangling
@@ -1575,6 +1578,13 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 
+	// The API's pool keeps as many idle connections as it may open unless
+	// DB_MAX_IDLE_CONNS says otherwise. With fewer idle than open, every burst
+	// of concurrent requests closed the extra connections and opened them
+	// again on the next burst: a TCP and SCRAM handshake and a new server
+	// process per connection.
+	dbMaxOpen := getEnvInt("DB_MAX_OPEN_CONNS", 25)
+
 	cfg := &Config{
 		App: AppConfig{
 			Name:   getEnv("APP_NAME", "openctem"),
@@ -1623,7 +1633,7 @@ func Load() (*Config, error) {
 			HealthStartupGrace:    getEnvDuration("SENSOR_HEALTH_STARTUP_GRACE", 0),
 			Image:                 getEnv("SENSOR_IMAGE", versions.SensorImage()),
 			CollectorImage:        getEnv("SENSOR_COLLECTOR_IMAGE", DefaultCollectorImage),
-			CACertFile:            getEnv("SENSOR_CA_CERT_FILE", ""),
+			CACertFile:            platformCACertFile(),
 			CIRunnerLatestVersion: sensorVersionSetting(getEnv("CI_RUNNER_LATEST_VERSION", versions.CIRunnerLatest())),
 			CIRunnerMinVersion:    sensorVersionSetting(getEnv("CI_RUNNER_MIN_VERSION", versions.CIRunnerMin())),
 		},
@@ -1668,8 +1678,8 @@ func Load() (*Config, error) {
 			AdminPassword:   getEnv("DB_ADMIN_PASSWORD", ""),
 			Name:            getEnv("DB_NAME", "openctem"),
 			SSLMode:         getEnv("DB_SSLMODE", "disable"),
-			MaxOpenConns:    getEnvInt("DB_MAX_OPEN_CONNS", 25),
-			MaxIdleConns:    getEnvInt("DB_MAX_IDLE_CONNS", 5),
+			MaxOpenConns:    dbMaxOpen,
+			MaxIdleConns:    getEnvInt("DB_MAX_IDLE_CONNS", dbMaxOpen),
 			IngestMaxConns:  getEnvInt("DB_INGEST_MAX_CONNS", 8),
 			ConnMaxLifetime: getEnvDuration("DB_CONN_MAX_LIFETIME", 5*time.Minute),
 			JITEnabled:      getEnvBool("DB_JIT_ENABLED", false),
@@ -1712,6 +1722,7 @@ func Load() (*Config, error) {
 			AccessTokenDuration:       getEnvDuration("AUTH_ACCESS_TOKEN_DURATION", 15*time.Minute),
 			RefreshTokenDuration:      getEnvDuration("AUTH_REFRESH_TOKEN_DURATION", 7*24*time.Hour),
 			SessionDuration:           getEnvDuration("AUTH_SESSION_DURATION", 30*24*time.Hour),
+			RefreshReuseGrace:         clampRefreshReuseGrace(getEnvDuration("AUTH_REFRESH_REUSE_GRACE", DefaultRefreshReuseGrace)),
 			PasswordMinLength:         getEnvInt("AUTH_PASSWORD_MIN_LENGTH", 12),
 			PasswordRequireUpper:      getEnvBool("AUTH_PASSWORD_REQUIRE_UPPERCASE", true),
 			PasswordRequireLower:      getEnvBool("AUTH_PASSWORD_REQUIRE_LOWERCASE", true),
@@ -1804,7 +1815,6 @@ func Load() (*Config, error) {
 		Worker: SensorConfig{
 			HeartbeatTimeout:                  getEnvDuration("WORKER_HEARTBEAT_TIMEOUT", 5*time.Minute),
 			SCMSyncInterval:                   getEnvDuration("SCM_SYNC_INTERVAL", 0),
-			CTEMIDFeedURL:                     getEnv("CTEM_ID_FEED_URL", "https://ctem.org/source.json"),
 			VulnFeedRootKeyID:                 getEnv("VULNFEED_ROOT_KEY_ID", VulnFeedOfficialRootKeyID),
 			VulnFeedBaseURL:                   getEnv("VULNFEED_BASE_URL", "https://github.com/openctemio/vulnfeed-bundles/releases"),
 			VulnFeedBundleDir:                 getEnv("VULNFEED_BUNDLE_DIR", ""),
@@ -1972,6 +1982,9 @@ func Load() (*Config, error) {
 		},
 	}
 
+	if getEnv("PLATFORM_CA_CERT_FILE", "") == "" && getEnv("SENSOR_CA_CERT_FILE", "") != "" {
+		envWarnings = append(envWarnings, "SENSOR_CA_CERT_FILE is deprecated on the API: rename it to PLATFORM_CA_CERT_FILE")
+	}
 	cfg.EnvWarnings = envWarnings
 
 	if cfg.Brand, err = loadBrand(); err != nil {
@@ -2775,6 +2788,16 @@ func defaultCookieSecure(appEnv string) bool {
 	return appEnv != "development"
 }
 
+// platformCACertFile is PLATFORM_CA_CERT_FILE, else the deprecated name the
+// API read before (SENSOR_CA_CERT_FILE, which is also the sensor's own
+// variable and so read as "the sensor's CA" by operators).
+func platformCACertFile() string {
+	if v := getEnv("PLATFORM_CA_CERT_FILE", ""); v != "" {
+		return v
+	}
+	return getEnv("SENSOR_CA_CERT_FILE", "")
+}
+
 // DefaultSensorConfigTemplatesDir is SENSOR_CONFIG_TEMPLATES_DIR when unset.
 const DefaultSensorConfigTemplatesDir = "configs/sensor-products"
 
@@ -3069,4 +3092,24 @@ func defaultWriteTimeout(request time.Duration) time.Duration {
 // connection before the request timeout answer can be written.
 func (s ServerConfig) WriteTimeoutBelowRequest() bool {
 	return s.RequestTimeout > 0 && s.WriteTimeout > 0 && s.WriteTimeout <= s.RequestTimeout
+}
+
+// DefaultRefreshReuseGrace and MaxRefreshReuseGrace bound the refresh-token
+// rotation grace (AuthConfig.RefreshReuseGrace). The window only has to cover
+// requests already in flight when a rotation answers, so it stays short: a
+// longer one would widen what a copied, already rotated token is worth.
+const (
+	DefaultRefreshReuseGrace = 30 * time.Second
+	MaxRefreshReuseGrace     = 2 * time.Minute
+)
+
+// clampRefreshReuseGrace keeps the grace within [0, MaxRefreshReuseGrace].
+func clampRefreshReuseGrace(d time.Duration) time.Duration {
+	if d < 0 {
+		return 0
+	}
+	if d > MaxRefreshReuseGrace {
+		return MaxRefreshReuseGrace
+	}
+	return d
 }

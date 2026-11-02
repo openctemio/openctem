@@ -149,6 +149,32 @@ func (r *TenantAISettingsRepository) Save(ctx context.Context, tenantID shared.I
 	return nil
 }
 
+var _ tenant.AutoTriagePolicyRepository = (*TenantAISettingsRepository)(nil)
+
+// SaveAutoTriagePolicy writes the automatic triage policy only, every key
+// set (an explicit "off" then wins over a platform default). A missing
+// settings row is created with the column defaults (AI stays off until an
+// administrator consents); the row's updated_at is left alone, so a
+// concurrent edit of the provider settings is not reported as a conflict.
+func (r *TenantAISettingsRepository) SaveAutoTriagePolicy(ctx context.Context, tenantID shared.ID, p tenant.AutoTriagePolicy) error {
+	sev := p.Severities
+	if sev == nil {
+		sev = []string{}
+	}
+	enabled, delay := p.Enabled, p.DelaySeconds
+	raw, err := json.Marshal(aiPolicyJSON{AutoTriageEnabled: &enabled, AutoTriageSeverities: sev, AutoTriageDelaySeconds: &delay})
+	if err != nil {
+		return fmt.Errorf("encode AI policy: %w", err)
+	}
+	const q = `
+		INSERT INTO tenant_ai_settings (tenant_id, policy) VALUES ($1, $2)
+		ON CONFLICT (tenant_id) DO UPDATE SET policy = EXCLUDED.policy`
+	if _, err := r.db.ExecContext(ctx, q, tenantID.String(), raw); err != nil {
+		return fmt.Errorf("save AI policy: %w", err)
+	}
+	return nil
+}
+
 var _ tenant.AIMaskingRepository = (*TenantAISettingsRepository)(nil)
 
 // GetMasking reads the organization's AI masking policy. No row or an empty

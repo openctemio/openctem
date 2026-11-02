@@ -74,7 +74,7 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 | `DB_HOST` | string | `localhost` | yes |  | PostgreSQL host. |
 | `DB_JIT_ENABLED` | bool | `false` |  |  | PostgreSQL JIT for the API's sessions. Off by default because request-path queries pay the JIT compile cost without benefiting from it. |
 | `DB_INGEST_MAX_CONNS` | int | `8` |  |  | Connections of the ingest pool, apart from the API's pool: the asset and finding writes of the ingest worker (CI results, imports, sensor reports) use it, so a burst of uploads cannot take the connections the API's requests need. All are kept idle. |
-| `DB_MAX_IDLE_CONNS` | int | `5` |  |  | Maximum idle connections kept in the pool. |
+| `DB_MAX_IDLE_CONNS` | int | same as `DB_MAX_OPEN_CONNS` |  |  | Maximum idle connections kept in the pool. Defaults to `DB_MAX_OPEN_CONNS`: a smaller value makes every burst of requests close and reopen connections (a TCP and SCRAM handshake and a new server process each). |
 | `DB_MAX_OPEN_CONNS` | int | `25` |  |  | Maximum open connections in the API's pool. |
 | `DB_NAME` | string | `openctem` |  |  | Database name. |
 | `DB_ADMIN_PASSWORD` | string | empty |  | yes | Password of `DB_ADMIN_USER`. Required when `DB_ADMIN_USER` is set; must differ from `DB_PASSWORD`. |
@@ -158,6 +158,7 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 | `AUTH_REFRESH_TOKEN_DURATION` | duration | `168h` |  |  | Refresh token lifetime (7 days). |
 | `AUTH_REQUIRE_EMAIL_VERIFICATION` | bool | `true` |  |  | Require a verified email address. Production refuses `false` with `local` or `hybrid`. |
 | `AUTH_SESSION_DURATION` | duration | `720h` |  |  | Session lifetime (30 days). |
+| `AUTH_REFRESH_REUSE_GRACE` | duration | `30s` |  |  | How long after a refresh-token rotation the same client may present the replaced token again (parallel requests) and receive the successor already issued instead of ending the session. 0 disables; capped at 2m. Any other reuse still ends the session. |
 
 ### Organizations and scope guardrails
 
@@ -264,7 +265,8 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 
 | Variable | Type | Default | Required | Secret | Description |
 |---|---|---|---|---|---|
-| `SENSOR_CA_CERT_FILE` | string | empty |  |  | Private CA certificate (PEM) the install snippets install on the sensor host. Set it with the gateway in TLS mode `internal` (the Compose stack points it at the exported root CA). |
+| `PLATFORM_CA_CERT_FILE` | path | empty |  |  | PEM bundle of the CA certificate(s) that sign the platform's TLS certificate when it is not publicly trusted (the gateway in TLS mode `internal`, where the Compose stack points it at the exported root CA, or your own private CA). Public certificates only: a file that holds a private key is refused. The install commands install it and pin its root (`SENSOR_CA_SHA256`), and `GET /api/v1/sensors/platform-ca` serves it to sensors that hold the pin. Re-read when the file changes. Empty: the certificate is publicly trusted. Guide: `docs/how-to/sensors-behind-a-private-ca.md`. |
+| `SENSOR_CA_CERT_FILE` | path | empty |  |  | Deprecated name of `PLATFORM_CA_CERT_FILE` on the API, read only when that is unset (startup warns). Rename it. On a sensor host `SENSOR_CA_CERT_FILE` keeps its own meaning: the CA file the sensor trusts. |
 | `CI_RUNNER_LATEST_VERSION` | string | `versions.yaml` ci.latest, built into the API |  |  | Newest CI runner release (openctemio/ci: the openctem-ci action and image). The console's pipeline snippets pin it, and a pipeline on an older runner shows an update. CI runners have their own release line; the sensor settings never apply to them. `none` or `off` turns the comparison off. |
 | `CI_RUNNER_MIN_VERSION` | string | `versions.yaml` ci.min, built into the API |  |  | Oldest accepted CI runner release. The token exchange refuses an older runner (`RUNNER_OUTDATED`) and its pipeline is shown as degraded. Empty, `none` or `off`: no minimum. |
 | `SENSOR_COMMAND_LEASE` | duration | `3m` |  |  | How long a sensor holds a claimed task without renewing it; an expired lease puts the task back in the queue. |
@@ -342,7 +344,6 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 | `CERT_MONITOR_FEED_URL` | string | `https://crt.sh` |  |  | CT-log search service queried per organization domain. |
 | `CERT_MONITOR_INTERVAL` | duration | `24h` |  |  | How often the CT sweep runs. |
 | `CERT_MONITOR_MAX_DOMAINS_PER_RUN` | int | `50` |  |  | Domains of one organization queried per sweep; the rest rotate in on later runs. |
-| `CTEM_ID_FEED_URL` | string | `https://ctem.org/source.json` |  |  | CTEM-ID catalog feed mirrored daily. |
 | `EASM_DNS_CHECK_INTERVAL` | duration | `24h` |  |  | How often the DNS checks run. |
 | `EASM_DNS_CHECKS_ENABLED` | bool | `true` |  |  | Daily DNS-only checks of each organization's own names (dangling CNAME/NS, email posture). `false` turns them off platform-wide. |
 | `EASM_DNS_MAX_NAMES_PER_RUN` | int | `500` |  |  | Names checked per organization per run. |
@@ -522,6 +523,7 @@ Read by the command-line tools shipped with the server (`bootstrap-admin`, `reke
 | `SIGNER_KEYSET_FILE` | string | empty |  |  | `openctem-signer`: the root-signed keyset the signer serves to sensors. |
 | `SIGNER_KEY_FILE` | string | empty |  |  | `openctem-signer`: the job-signing private key (PEM, mode 0400). |
 | `SIGNER_LEDGER` | string | empty |  |  | `openctem-signer`: scope ledger mode (`enforce`, `audit` or `off`). |
+| `SIGNER_FEED_ORIGINS` | string | empty |  |  | `openctem-signer`: feed origins a feed relay round may name (comma-separated https origins; empty: the official release origins; `none`: no feed relay). |
 | `SIGNER_LEDGER_MIN_APPROVALS` | string | empty |  |  | `openctem-signer`: approvals the ledger requires for a scope change. |
 | `SIGNER_LEDGER_T2_MIN_APPROVALS` | string | empty |  |  | `openctem-signer`: approvals the ledger requires for a tier-2 scope change. |
 | `SIGNER_PUBLISH_DIR` | string | empty |  |  | `openctem-signer serve`: a directory (a volume only the signer writes and the bundled sensor mounts read-only) where the signer writes its public key as `signer.pub` at every start, for the sensor to pin (`SENSOR_JOB_SIGNING_KEYS_FILE`). Unset: nothing is published. |

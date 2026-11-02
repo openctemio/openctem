@@ -95,7 +95,41 @@ Each pass, per tenant, after reconciling:
    `platform_side`, and the asset page shows it as **Not checked** ("the
    scan could not run on the scanner side, so this says nothing about the
    asset"), never as failed. Platform-side failures are the operator's
-   signal instead (see Gap detection). The migration that added the column
+   signal instead (see Gap detection).
+
+   **Outcome revision.** Every scan command names `outcome_revision` (ctis
+   `outcome.Revision`, 2). A sensor sends the classes that say why a target
+   was not covered (`edge_blocked`, `edge_challenged`, `rate_limited`,
+   `name_gone`, `resolver_failed`, `sensor_network_fault`) only to a
+   platform that names revision 2; without it the sensor sends the closest
+   revision 1 class, so a host behind an edge protection arrived as
+   `tool_error` (platform side) and raised the platform-failure alert.
+
+   **Edge protection and older sensors.** A sensor lists the hosts it could
+   not fully cover in `metadata.coverage_gaps[]` (`host`, `reason`,
+   `detail`) and, on a `blocked` gap, adds `edge` (`challenged` or `blocked`)
+   and `vendor` (a lower-case token of at most 32 characters,
+   `[a-z0-9][a-z0-9_.-]*`; the platform drops any other value and shows the
+   vendor only as text). Settlement reads those gaps for a task without
+   per-target outcomes too, so a host an edge protection blocked never reads
+   as covered: `blocked` settles as `edge_blocked` (`edge_challenged` when
+   the sensor says challenged), `rate_floor` as `rate_limited`,
+   `breaker_open` as `unreachable` and `proxy_unavailable` as
+   `sensor_network_fault` (platform side). When per-target outcomes say
+   done for a host the gaps also list, the gap wins. A gap list shorter than
+   `coverage_gaps_total` leaves unknown hosts, so no target of that task is
+   covered (fail closed, outcome `unfinished`). The vendor of an edge outcome
+   (from the gap or from `target_outcomes[].vendor`) is stored in
+   `asset_coverage.last_edge_vendor`, rewritten by every settlement (a later
+   success clears it), and served on the asset's coverage entry as
+   `last_edge_vendor`. The run's task list serves `edge` and `vendor` on each
+   gap. The console shows such a pair as "Not covered: stopped by edge
+   protection (vendor)" or "rate limited", never as clean, with links to the
+   fixes (allow the scanner addresses, use another proxy pool, lower the scan
+   rate). Auto-resolve of findings already refuses to close on a host named
+   in a gap.
+
+   The migration that added the column
    moved the streak of pairs whose last outcome was a known platform-side
    failure into it (`dns.*` and the connector capability keep their own
    rules).
@@ -368,6 +402,16 @@ read is recorded empty: the pause then holds until the probe. The pause
 raises the usual `readiness` alert ("Coverage paused: resolve.dns ... no
 sensor took its last runs") with a link to the sensors, and the asset's
 coverage shows the pair paused with that reason.
+
+### Run by hand (discovery management)
+
+Attack surface > Discovery groups the planned capabilities into four stages
+and can run one stage, all of them, or cancel every active coverage run of the
+organization. Run only moves the due time of the stage's covered, due and
+failed pairs back by the batch wait; the next pass plans them as any due pair
+(readiness, holds, budget, batch size, dispatch gate). Abort all cancels the
+runs through the run cancel and the next pass settles them. Details and gates:
+[EASM, section 4o](easm.md#4o-discovery-management-built).
 
 ## Gap detection
 

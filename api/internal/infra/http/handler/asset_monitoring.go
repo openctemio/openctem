@@ -37,14 +37,21 @@ func (h *AssetHandler) SetMonitoring(policy AssetUnclassifiedPolicy, reader Asse
 // covers. Unknown is false: such assets are then labeled not monitored,
 // never monitored.
 func (h *AssetHandler) unclassifiedScanned(r *http.Request, tenantID string) bool {
-	if h.unclassifiedPolicy == nil {
+	return unclassifiedScannedBy(r, h.unclassifiedPolicy, tenantID)
+}
+
+// unclassifiedScannedBy is the monitoring-state input for one tenant: true
+// only when the policy answers a mode other than off. No policy, a bad tenant
+// id or a failed read is false.
+func unclassifiedScannedBy(r *http.Request, policy AssetUnclassifiedPolicy, tenantID string) bool {
+	if policy == nil {
 		return false
 	}
 	tid, err := shared.IDFromString(tenantID)
 	if err != nil {
 		return false
 	}
-	mode, err := h.unclassifiedPolicy.UnclassifiedMode(r.Context(), tid)
+	mode, err := policy.UnclassifiedMode(r.Context(), tid)
 	return err == nil && mode != "" && mode != "off"
 }
 

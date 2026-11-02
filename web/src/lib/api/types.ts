@@ -78,6 +78,8 @@ export interface ApiRequestOptions extends RequestInit {
   _skipRefreshRetry?: boolean
   /** Internal: already retried after a step-up re-authentication. */
   _skipStepUpRetry?: boolean
+  /** Internal: already retried after refreshing a token with outdated permissions. */
+  _skipStaleRetry?: boolean
 }
 
 // ============================================

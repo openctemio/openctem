@@ -634,6 +634,10 @@ func (m *ssoMockRefreshTokenRepo) MarkUsedIfUnused(_ context.Context, _ shared.I
 	return true, nil
 }
 
+func (m *ssoMockRefreshTokenRepo) RotateIfUnused(_ context.Context, _ shared.ID, _ string, _ *session.RefreshToken) (bool, error) {
+	return true, nil
+}
+
 func (m *ssoMockRefreshTokenRepo) Delete(_ context.Context, _ shared.ID) error {
 	return nil
 }

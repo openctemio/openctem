@@ -140,6 +140,14 @@ func decodeChangeCursor(c string) (time.Time, shared.ID, bool) {
 }
 
 func writeChangePage(w http.ResponseWriter, events []assetdom.ChangeEvent, more bool) {
+	out := toChangePage(events, more)
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(out)
+}
+
+// toChangePage is the change timeline page the REST endpoint and the MCP
+// get_asset tool return.
+func toChangePage(events []assetdom.ChangeEvent, more bool) AssetTimelineResponse {
 	out := AssetTimelineResponse{Items: make([]AssetTimelineEventResponse, 0, len(events))}
 	for _, e := range events {
 		item := AssetTimelineEventResponse{
@@ -157,8 +165,7 @@ func writeChangePage(w http.ResponseWriter, events []assetdom.ChangeEvent, more 
 	if more && len(events) > 0 {
 		out.NextCursor = encodeChangeCursor(events[len(events)-1])
 	}
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(out)
+	return out
 }
 
 func writeChangeQueryError(w http.ResponseWriter, err error) {

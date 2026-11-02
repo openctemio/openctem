@@ -144,6 +144,7 @@ offboarding without step-up and is removed.
 | `DELETE /api/v1/findings/{id}` | Removes a finding and its history. |
 | `POST /api/v1/findings/bulk/status` when the target status is a closed one (or missing) | A bulk close decides many findings at once. Moves between open states never prompt (`requireStepUpWhenClosing` reads the body status). |
 | `POST /api/v1/credentials/{id}/reveal` | Returns a leaked credential in plaintext; also audited (`credential.revealed`), and the response is not cached. |
+| `PUT /api/v1/organization/settings/scan-governance/mode` (owner), `PUT …/scan-governance/rules`, `PATCH /api/v1/organization/settings/finding-approvals` | Who must approve a scan or a finding decision. Lowering the scan approval mode (strict, on, off), loosening the rules (an enforcing rule removed, turned off, set to monitor or edited), or scheduling a lower false-positive or risk acceptance level (two people to one), second-look share or policy is audited critical and every owner and administrator is told (`TenantService.UpdateScanGovernanceSettings`, `UpdateFindingApprovalSettings`). |
 
 ### Actions that need step-up only in some cases
 
@@ -164,6 +165,7 @@ the web dialog appears and the request is retried.
 | Loosening an organization policy: `PUT /api/v1/tenants/{tenant}/settings/asset-lifecycle` (turning it on, a shorter stale threshold or grace period, running while an integration is unhealthy, fewer excluded source types), `PUT /api/v1/organization/settings/cycles` (coverage requirement off), `PUT /api/v1/easm/settings` (a monitor, enrichment or the digest off, a longer interval or reappear window, web screenshots on). Tightening never prompts. | `TenantService.UpdateAssetLifecycleSettings`, `UpdateCycleSettings`, `UpdateEASMSettings` (`settings_loosening.go`); high-severity audit and an owner/admin notice |
 | Renaming the organization's slug: `PATCH /api/v1/tenants/{tenant}` with a new `slug` | `TenantService.UpdateTenant` |
 | Allowing bearer-key sensors again: `PUT /api/v1/sensors/identity-policy` with `bearer_keys_allowed: true` while the organization requires key-bound identity | `SensorService.SetBearerKeysAllowed` (requiring key-bound identity, and re-sending the current value, stay one click) |
+| Widening automatic AI triage: `PUT /api/v1/organization/settings/ai/auto-triage` turning it on, or adding a severity while it is on (more finding content goes to the AI provider without a person asking). Turning it off, fewer severities and the delay never prompt. | `tenantai.Service.SaveAutoTriage` (`tenant.AutoTriageLoosened`); high-severity audit `ai_settings.auto_triage_updated` and an owner/admin notice |
 | Raising the organization's maximum API key lifetime: `PUT /api/v1/organization/settings/api-keys` with a longer `max_lifetime_days` (a shorter one never prompts) | `TenantService.UpdateAPIKeySettings`; high-severity audit `tenant.api_key_policy_updated` and an owner/admin notice |
 
 The gate judges only the user making the request: a grant authorized

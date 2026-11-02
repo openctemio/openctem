@@ -282,13 +282,13 @@ func (r *SoftwareMatchRepository) DequeueTenants(ctx context.Context, limit int)
 
 // TenantMatches (see softwarematch.Store).
 func (r *SoftwareMatchRepository) TenantMatches(ctx context.Context, tenantID shared.ID, currentSince time.Time, limit int) ([]softwarematch.Match, error) {
-	return r.matches(ctx, `s.tenant_id = $1 AND s.superseded_at IS NULL AND s.last_seen_at >= $2`, limit,
+	return r.matches(ctx, `s.tenant_id = $1 AND s.superseded_at IS NULL AND s.version_state = 'established' AND s.last_seen_at >= $2`, limit,
 		tenantID.String(), currentSince)
 }
 
 // AssetMatches (see softwarematch.Store).
 func (r *SoftwareMatchRepository) AssetMatches(ctx context.Context, tenantID, assetID shared.ID) ([]softwarematch.Match, error) {
-	return r.matches(ctx, `s.tenant_id = $1 AND s.asset_id = $2 AND s.superseded_at IS NULL`, 10_000,
+	return r.matches(ctx, `s.tenant_id = $1 AND s.asset_id = $2 AND s.superseded_at IS NULL AND s.version_state = 'established'`, 10_000,
 		tenantID.String(), assetID.String())
 }
 
@@ -472,30 +472,79 @@ func (r *SoftwareMatchRepository) ExistingFingerprints(ctx context.Context, tena
 func (r *SoftwareMatchRepository) LinkStates(ctx context.Context, tenantID shared.ID, keys []softwarematch.LinkKey, currentSince time.Time) (map[softwarematch.LinkKey]softwarematch.LinkInfo, error) {
 	out := make(map[softwarematch.LinkKey]softwarematch.LinkInfo, len(keys))
 	for _, k := range keys {
-		var current, other bool
+		var current bool
 		var evaluated sql.NullBool
+		var product, from sql.NullString
+		// The finding's own version still counts as current while it is
+		// not superseded, established or candidate: a version seen
+		// recently and not displaced is not disproven.
 		err := r.db.QueryRowContext(ctx, `
 			SELECT
 				EXISTS (SELECT 1 FROM asset_software WHERE tenant_id = $1 AND asset_id = $2 AND product_id = $3
 					AND software_version_id = $4 AND location = $5 AND superseded_at IS NULL AND last_seen_at >= $6),
-				EXISTS (SELECT 1 FROM asset_software WHERE tenant_id = $1 AND asset_id = $2 AND product_id = $3
-					AND software_version_id <> $4 AND location = $5 AND superseded_at IS NULL AND last_seen_at >= $6),
-				(SELECT matched_at IS NOT NULL FROM software_versions WHERE id = $4 AND (tenant_id IS NULL OR tenant_id = $1))`,
+				(SELECT matched_at IS NOT NULL FROM software_versions WHERE id = $4 AND (tenant_id IS NULL OR tenant_id = $1)),
+				(SELECT name FROM software_products WHERE id = $3 AND (tenant_id IS NULL OR tenant_id = $1)),
+				(SELECT raw FROM software_versions WHERE id = $4 AND (tenant_id IS NULL OR tenant_id = $1))`,
 			tenantID.String(), k.AssetID.String(), k.ProductID.String(), k.VersionID.String(), k.Location, currentSince).
-			Scan(&current, &other, &evaluated)
+			Scan(&current, &evaluated, &product, &from)
 		if err != nil {
 			return nil, fmt.Errorf("link state: %w", err)
 		}
-		info := softwarematch.LinkInfo{State: softwarematch.LinkGone, VersionEvaluated: evaluated.Valid && evaluated.Bool}
-		switch {
-		case current:
+		info := softwarematch.LinkInfo{State: softwarematch.LinkGone, VersionEvaluated: evaluated.Valid && evaluated.Bool,
+			Product: product.String, FromVersion: from.String}
+		if current {
 			info.State = softwarematch.LinkCurrent
-		case other:
-			info.State = softwarematch.LinkUpgraded
+			out[k] = info
+			continue
+		}
+		// Only an established version displaces the finding's one; a
+		// candidate (seen, not yet trusted) never does.
+		var now softwarematch.VersionSighting
+		var vid string
+		err = r.db.QueryRowContext(ctx, `
+			SELECT s.software_version_id, v.raw, s.source, s.evidence_class, s.confidence, s.sightings,
+				s.first_seen_at, s.last_seen_at
+			FROM asset_software s
+			JOIN software_versions v ON v.id = s.software_version_id AND (v.tenant_id IS NULL OR v.tenant_id = s.tenant_id)
+			WHERE s.tenant_id = $1 AND s.asset_id = $2 AND s.product_id = $3 AND s.software_version_id <> $4
+			  AND s.location = $5 AND s.superseded_at IS NULL AND s.version_state = 'established' AND s.last_seen_at >= $6
+			ORDER BY s.last_seen_at DESC
+			LIMIT 1`,
+			tenantID.String(), k.AssetID.String(), k.ProductID.String(), k.VersionID.String(), k.Location, currentSince).
+			Scan(&vid, &now.Version, &now.Source, &now.Class, &now.Confidence, &now.Sightings, &now.FirstSeen, &now.LastSeen)
+		switch {
+		case errors.Is(err, sql.ErrNoRows):
+		case err != nil:
+			return nil, fmt.Errorf("link state: %w", err)
+		default:
+			now.VersionID = shared.MustIDFromString(vid)
+			info.State, info.Now = softwarematch.LinkUpgraded, &now
 		}
 		out[k] = info
 	}
 	return out, nil
+}
+
+// CancelVersionProposals (see softwarematch.Store).
+func (r *SoftwareMatchRepository) CancelVersionProposals(ctx context.Context, tenantID shared.ID, findingIDs []shared.ID) (int, error) {
+	if len(findingIDs) == 0 {
+		return 0, nil
+	}
+	ids := make([]string, len(findingIDs))
+	for i, id := range findingIDs {
+		ids[i] = id.String()
+	}
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE finding_closure_proposals
+		SET state = 'canceled', reason = 'seen_again', decided_at = now()
+		WHERE tenant_id = $1 AND state = 'pending' AND method = 'source_reported'
+		  AND evidence->>'source' = 'software_inventory' AND finding_id = ANY($2::uuid[])`,
+		tenantID.String(), pq.Array(ids))
+	if err != nil {
+		return 0, fmt.Errorf("cancel version proposals: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	return int(n), nil
 }
 
 // softwarematchVerification is how a matcher close is proven: the inventory

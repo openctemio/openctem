@@ -28,11 +28,13 @@ import (
 	"net/netip"
 	"sort"
 	"strings"
+	"time"
 
 	"golang.org/x/net/publicsuffix"
 
 	"github.com/openctemio/openctem/api/internal/app/datascope"
 	"github.com/openctemio/openctem/api/internal/app/scope"
+	"github.com/openctemio/openctem/api/pkg/domain/addrowner"
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/attribution"
 	"github.com/openctemio/openctem/api/pkg/domain/easmseed"
@@ -90,6 +92,11 @@ type SuggestionAddress struct {
 	// address (from its network seeds), when the platform guardrails accept
 	// it as a scope entry; offered as one rule in PrefixRules.
 	Prefix string `json:"prefix,omitempty"`
+	// Ownership: how likely the address is the organization's, with the
+	// evidence behind it. It explains and orders; it authorizes
+	// nothing. Set on offered and already-checked addresses, never on
+	// shared ones.
+	Ownership *addrowner.Assessment `json:"ownership,omitempty"`
 }
 
 // SuggestionPrefix is a network prefix of the organization's own (an
@@ -156,6 +163,10 @@ type SuggestionCard struct {
 	// PrefixRules: the organization's own prefixes holding offered
 	// addresses (Prefix), most addresses first.
 	PrefixRules []SuggestionPrefix `json:"prefix_rules,omitempty"`
+	// Bands: the offered addresses per ownership band (high, medium, low,
+	// unknown), counted over every offered address, including those past
+	// the card's item limit.
+	Bands map[string]int `json:"bands,omitempty"`
 	// confirmed_out_of_scope only.
 	Assets []SuggestionAsset `json:"assets,omitempty"`
 }
@@ -187,6 +198,8 @@ type AddressBehindNames struct {
 	// Ports: open ports recorded on the address asset or on its visible
 	// names (asset_services), ascending.
 	Ports []int
+	// FirstSeen: when the address asset was first seen.
+	FirstSeen time.Time
 }
 
 // SuggestionStore reads the cards' rows (*postgres.AttributionRepository).
@@ -213,6 +226,15 @@ type SuggestionService struct {
 	// unclassified answers the organization's unclassified-scans mode; nil
 	// or unreadable means off (every offered address waits).
 	unclassified UnclassifiedPolicy
+	// now is the clock (tests set it); nil means time.Now.
+	now func() time.Time
+}
+
+func (s *SuggestionService) clock() time.Time {
+	if s.now != nil {
+		return s.now()
+	}
+	return time.Now()
 }
 
 // DecisionStates are the attribution states that wait for a person: the
@@ -320,6 +342,8 @@ func (s *SuggestionService) addressCard(ctx context.Context, tenantID shared.ID,
 		seeds = &n
 	}
 	checks := s.checksUnclassified(ctx, tenantID)
+	now := s.clock()
+	offered := make([]SuggestionAddress, 0, len(rows))
 	card := &SuggestionCard{Kind: CardAddressesBehindNames, Addresses: []SuggestionAddress{},
 		SharedAddresses: []SuggestionAddress{}, CheckedAddresses: []SuggestionAddress{}}
 	names := map[string]bool{}
@@ -357,6 +381,10 @@ func (s *SuggestionService) addressCard(ctx context.Context, tenantID shared.ID,
 		if item.Shared == "" && seeds != nil {
 			item.Prefix = s.ownPrefix(*seeds, r.Address)
 		}
+		if item.Shared == "" {
+			a := assessAddress(r, item, all, org, seeds, now)
+			item.Ownership = &a
+		}
 		if item.Shared != "" {
 			card.SharedCount++
 			if item.Network.Class != "" && item.Network.Class != string(edgeaddr.Dedicated) {
@@ -382,6 +410,16 @@ func (s *SuggestionService) addressCard(ctx context.Context, tenantID shared.ID,
 		if !item.Network.Known {
 			card.UnknownNetworkCount++
 		}
+		offered = append(offered, item)
+	}
+	// Strongest evidence first, so the card's item limit keeps the
+	// addresses most likely to be the organization's.
+	sortByOwnership(offered)
+	for _, item := range offered {
+		if card.Bands == nil {
+			card.Bands = map[string]int{}
+		}
+		card.Bands[string(item.Ownership.Band)]++
 		if len(card.Addresses) < MaxSuggestionItems {
 			card.Addresses = append(card.Addresses, item)
 		} else {
@@ -435,6 +473,50 @@ func classifyAddress(r AddressBehindNames, org string, seeds *easmseed.Networks)
 		return net, SharedOtherNetwork
 	}
 	return net, ""
+}
+
+// assessAddress gathers the evidence on one offered address. Everything
+// comes from the organization's own rows (tenant-scoped, data-scoped
+// names); nothing is looked up.
+func assessAddress(r AddressBehindNames, item SuggestionAddress, inScope []string, org string, seeds *easmseed.Networks, now time.Time) addrowner.Assessment {
+	in := addrowner.Input{
+		Address:      r.Address,
+		ASN:          item.Network.ASN,
+		Holder:       item.Network.Org,
+		InScopeNames: inScope,
+		OtherNames:   item.OtherNames,
+		FirstSeen:    r.FirstSeen,
+		Now:          now,
+	}
+	if h, _ := r.Props["hostname"].(string); h != "" {
+		in.ReverseName = h
+	}
+	if item.Network.Org != "" {
+		in.HolderMatches = orgMatches(org, item.Network.Org)
+	}
+	if seeds != nil {
+		in.SeedASNs, in.SeedPrefixes = seeds.ASNs, seeds.Prefixes
+		for _, o := range seeds.OrgNames {
+			if item.Network.Org != "" && orgMatches(o, item.Network.Org) {
+				in.HolderMatches = true
+			}
+		}
+	}
+	return addrowner.Assess(in)
+}
+
+// sortByOwnership orders addresses by band, then score, then address.
+func sortByOwnership(list []SuggestionAddress) {
+	sort.SliceStable(list, func(i, j int) bool {
+		a, b := list[i].Ownership, list[j].Ownership
+		if ra, rb := addrowner.Rank(a.Band), addrowner.Rank(b.Band); ra != rb {
+			return ra < rb
+		}
+		if a.Score != b.Score {
+			return a.Score > b.Score
+		}
+		return list[i].Address < list[j].Address
+	})
 }
 
 // providerList is the providers by addresses, most first.

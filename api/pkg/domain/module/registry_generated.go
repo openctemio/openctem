@@ -87,7 +87,7 @@ var Registry = []Definition{
 		Core:       true,
 		UserFacing: true,
 		Permission: "assets:read",
-		MCP:        []string{"list_assets"},
+		MCP:        []string{"list_assets", "search_assets", "get_asset"},
 		Jobs:       []string{"AssetGroupRulesController", "AssetIdentityBackfillController", "AssetTechnologyBackfillController", "AssetChangeTimelineController", "AssetLifecycleController", "AssetPurgeController", "AssetRiskScoreController", "AssetRiskReconcileController", "OwnerResolutionController", "DataExpirationController", "DomainReverifyController"},
 	},
 	{
@@ -99,7 +99,7 @@ var Registry = []Definition{
 		UserFacing: true,
 		Permission: "findings:read",
 		MCP:        []string{"list_findings", "get_finding", "finding_stats", "list_active_cves", "explain_finding_priority", "list_finding_transitions", "list_remediation_groups"},
-		Jobs:       []string{"ApprovalExpirationController", "ApprovalMaterialChangeController", "VEXRequestNoticeController", "ApprovalDigestController", "FindingPriorityController", "FindingPriorityReconcileController", "PriorityAuditRetentionController", "EvidenceRetentionController", "AttachmentRetentionController", "AttachmentScanController", "ReportFileMigrationController", "ScannerOutputRetentionController", "RiskSnapshotController", "CTEMIDRefreshController", "IngestWorkerController", "IngestReceiptRetentionController", "IngestQueueRetentionController", "JobRecoveryController", "RetestScheduler", "ThreatIntelRefreshController", "KEVRefreshController", "VulnMatchController", "VulnFeedImportController"},
+		Jobs:       []string{"ApprovalExpirationController", "ApprovalMaterialChangeController", "VEXRequestNoticeController", "ApprovalDigestController", "FindingPriorityController", "FindingPriorityReconcileController", "PriorityAuditRetentionController", "EvidenceRetentionController", "AttachmentRetentionController", "AttachmentScanController", "ReportFileMigrationController", "ScannerOutputRetentionController", "RiskSnapshotController", "IngestWorkerController", "IngestReceiptRetentionController", "IngestQueueRetentionController", "JobRecoveryController", "RetestScheduler", "ThreatIntelRefreshController", "KEVRefreshController", "VulnMatchController", "VulnFeedImportController"},
 	},
 	{
 		ID: ModuleScans, Slug: "scans", Name: "Scans",
@@ -123,7 +123,7 @@ var Registry = []Definition{
 		},
 		Routes: []string{"/api/v1/attack-surface", "/api/v1/easm", "/api/v1/assets/{id}/web-evidence"},
 		MCP:    []string{"get_exposure_chains"},
-		Jobs:   []string{"AssetEnrichmentController", "AssetCoverageController", "CertMonitorController", "EASMDNSController", "EASMLookalikeController", "EASMNetworkSeedController", "WebEvidenceRetentionController", "EASMWeeklyDigestController", "GraphEnrichmentController", "ScopeJoinController"},
+		Jobs:   []string{"AssetEnrichmentController", "AssetCoverageController", "CertMonitorController", "EASMDNSController", "EASMLookalikeController", "PageMonitorController", "EASMNetworkSeedController", "WebEvidenceRetentionController", "EASMWeeklyDigestController", "GraphEnrichmentController", "ScopeJoinController"},
 	},
 	{
 		ID: ModuleScopeConfig, Slug: "scope-config", Name: "Scope Config",

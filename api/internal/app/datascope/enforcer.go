@@ -298,6 +298,24 @@ func (e *Enforcer) FullData(ctx context.Context, tenantID shared.ID, actingUserI
 	return e.repo.HasFullDataRole(ctx, tenantID, userID)
 }
 
+// HoldsFullDataRole reports whether the person userID holds a
+// has_full_data_access role in the tenant, whatever credential the request
+// came with: a fact about the person (what they see in the web console),
+// not a decision about the request. It never widens a read; a delegated
+// credential's reads stay on its own scope (FullData, ResolveFor). The MCP
+// tools use it only to say how much of the organization a connection does
+// not read.
+func (e *Enforcer) HoldsFullDataRole(ctx context.Context, tenantID shared.ID, userID string) (bool, error) {
+	if e == nil || e.repo == nil || userID == "" {
+		return false, nil
+	}
+	uid, err := shared.IDFromString(userID)
+	if err != nil {
+		return false, fmt.Errorf("%w: invalid user", shared.ErrNotFound)
+	}
+	return e.repo.HasFullDataRole(ctx, tenantID, uid)
+}
+
 // ResolveActing is Resolve for the older services that are handed the acting
 // user and the admin flag instead of reading the request: the same decision
 // (admin, full-data role, scope rows), so every path agrees. The

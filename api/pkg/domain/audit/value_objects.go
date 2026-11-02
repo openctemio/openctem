@@ -1216,6 +1216,7 @@ const (
 	ResourceTypeVerifiedDomain      ResourceType = "verified_domain"
 	ResourceTypeEASMLookalikeWatch  ResourceType = "easm_lookalike_watch"
 	ResourceTypeEASMNetworkSeed     ResourceType = "easm_network_seed"
+	ResourceTypeWebWatch            ResourceType = "web_watch"
 	// ResourceTypeSSOChange is an SSO change waiting for an owner's approval.
 	ResourceTypeSSOChange ResourceType = "sso_change"
 	// ResourceTypeSCIMGroupMapping is the organization's SCIM group -> role
@@ -1258,7 +1259,7 @@ func (r ResourceType) IsValid() bool {
 		ResourceTypeWorkflow, ResourceTypeWorkflowRun, ResourceTypeCapability, ResourceTypeTool,
 		ResourceTypeRuleSource, ResourceTypeRuleOverride, ResourceTypeIngest, ResourceTypeAITriage, ResourceTypeAIAnalysis, ResourceTypeAIKnowledge,
 		ResourceTypeCampaign, ResourceTypeMCPTool, ResourceTypeMCPPrompt, ResourceTypeAPIKey,
-		ResourceTypeSAMLConfig, ResourceTypeIdentityProvider, ResourceTypeVerifiedDomain, ResourceTypeEASMNetworkSeed, ResourceTypeEASMLookalikeWatch, ResourceTypeSSOChange,
+		ResourceTypeSAMLConfig, ResourceTypeIdentityProvider, ResourceTypeVerifiedDomain, ResourceTypeEASMNetworkSeed, ResourceTypeEASMLookalikeWatch, ResourceTypeWebWatch, ResourceTypeSSOChange,
 		ResourceTypeSCIMGroupMapping, ResourceTypeOrgTrust,
 		ResourceTypeCredential, ResourceTypeExposure, ResourceTypeAuditChain, ResourceTypeTemplateSource,
 		ResourceTypeScopeTarget, ResourceTypeScopeExclusion, ResourceTypeBountyProgram, ResourceTypeAuthorizationLetter, ResourceTypeSuppressionRule, ResourceTypeScannerTemplate, ResourceTypeIntegration,

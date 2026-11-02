@@ -187,9 +187,11 @@ func (s *Service) planZoneBatches(ctx context.Context, sc *scan.Scan, routing *s
 		cands := sensors[zid]
 		load := make([]int, len(cands))
 		reports := make([]*sensor.LocalPolicyReport, len(cands))
+		names := make([]string, len(cands))
 		for i, c := range cands {
 			load[i] = c.ActiveCommands
 			reports[i] = c.LocalPolicy
+			names[i] = c.Name
 		}
 		var pinned []string
 		queued, jobs := 0, 0
@@ -198,7 +200,7 @@ func (s *Service) planZoneBatches(ctx context.Context, sc *scan.Scan, routing *s
 			if len(cands) > 0 {
 				// Only a sensor whose reported local policy accepts the
 				// batch is a candidate (sensor.Accepts).
-				v := judge(reports, scanJob(sc, chunk), opts)
+				v := judge(reports, names, scanJob(sc, chunk), opts)
 				if len(v.accepted) == 0 {
 					reason := v.reason(fmt.Sprintf("scan zone %q", z.Name))
 					plan.PolicyRefused = appendUnique(plan.PolicyRefused, reason)

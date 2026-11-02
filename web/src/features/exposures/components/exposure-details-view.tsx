@@ -57,19 +57,16 @@ const FIELD_LABELS: Record<string, string> = {
 }
 
 // Group fields by category
-const FIELD_GROUPS: Record<string, { title: string; icon: typeof Key; fields: string[] }> = {
+const FIELD_GROUPS: Record<string, { icon: typeof Key; fields: string[] }> = {
   credential: {
-    title: 'Credential',
     icon: Key,
     fields: ['credential_type', 'identifier', 'username', 'email', 'is_verified', 'is_revoked'],
   },
   database: {
-    title: 'Database',
     icon: Database,
     fields: ['database_host', 'database_name', 'database_port', 'database_type'],
   },
   source: {
-    title: 'Source',
     icon: Globe,
     fields: [
       'source_type',
@@ -81,12 +78,10 @@ const FIELD_GROUPS: Record<string, { title: string; icon: typeof Key; fields: st
     ],
   },
   code: {
-    title: 'Code location',
     icon: Server,
     fields: ['repository', 'file_path', 'branch', 'commit_hash', 'line_number'],
   },
   network: {
-    title: 'Network',
     icon: Globe,
     fields: ['domain', 'ip_address'],
   },
@@ -202,7 +197,9 @@ export function ExposureDetailsView({
           <div key={groupKey} className="rounded-lg border">
             <div className="flex items-center gap-2 px-3 py-2 bg-muted/50 border-b">
               <GroupIcon className="h-4 w-4 text-muted-foreground" />
-              <span className="text-sm font-medium">{group.title}</span>
+              <span className="text-sm font-medium">
+                {t(`exposures.details.group.${groupKey}`)}
+              </span>
             </div>
             <div className="divide-y">
               {groupItems.map(({ key, value }) => (

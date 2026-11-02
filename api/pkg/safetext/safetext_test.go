@@ -171,3 +171,14 @@ func TestMarkdownBlock_CannotBeClosedEarly(t *testing.T) {
 		}
 	}
 }
+
+func TestVendorToken(t *testing.T) {
+	for in, want := range map[string]string{
+		"datadome": "datadome", "DataDome": "datadome", "a_b.c-d9": "a_b.c-d9", "": "", "-x": "", "_x": "",
+		"a b": "", "a\n": "", "é": "", strings.Repeat("a", 32): strings.Repeat("a", 32), strings.Repeat("a", 33): "",
+	} {
+		if got := VendorToken(in); got != want {
+			t.Errorf("VendorToken(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

@@ -61,7 +61,7 @@ describe('breakdown widgets', () => {
     expect(rows[1].label_key).toBe('assets.typeLabel.ip_address')
   })
 
-  it('no certificate in scope is not measured, with its reason', () => {
+  it('no certificate in scope is the compact empty state, with its reason', () => {
     const v: WidgetValue = {
       ...base,
       metric: 'certificates.expiry',
@@ -69,7 +69,8 @@ describe('breakdown widgets', () => {
       reason: 'no_certificates',
     }
     const m = widgetModel(v, spec('certificates.expiry'), false)
-    expect(m.state).toBe('not_measured')
+    // Nothing has come in yet: the one compact empty state, never a "—".
+    expect(m.state).toBe('no_data_yet')
     expect(m.reasonKey).toBe('dashboards.reason.no_certificates')
     expect(reasonKeyOf('no_certificates')).toBe('dashboards.reason.no_certificates')
   })

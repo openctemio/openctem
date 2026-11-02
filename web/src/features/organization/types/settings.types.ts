@@ -1,3 +1,5 @@
+import type { IdentHeader, PlatformIdentLayer } from '@/features/sensors/lib/scan-identification'
+
 /**
  * Tenant Settings Types
  *
@@ -61,6 +63,10 @@ export interface SecuritySettings {
   tool_http_user_agent?: string
   /** api RFC-060 §4.1: refuse scan tools that skip TLS verification. */
   forbid_tool_insecure_tls?: boolean
+  /** Scan identification headers of the organization (free names and values). */
+  tool_http_headers?: IdentHeader[]
+  /** The platform's layer of the scan identification markers (read-only, GET only). */
+  platform_scan_identification?: PlatformIdentLayer
   /**
    * The caller's IP as the API sees it (read-only, GET only). Shown next to the
    * IP allowlist so an owner does not lock themselves out.
@@ -105,6 +111,8 @@ export interface UpdateSecuritySettingsInput {
   allow_sensor_custom_templates?: boolean
   tool_http_user_agent?: string
   forbid_tool_insecure_tls?: boolean
+  /** Replaces the organization's scan identification headers. */
+  tool_http_headers?: IdentHeader[]
   personal_accounts?: PersonalAccountsPolicy
   invitees?: InviteesPolicy
   external_access_end_required?: boolean

@@ -290,6 +290,7 @@
   "confirm.mcpClient.unblockDesc": "Mọi tổ chức trên hệ thống này có thể cấp quyền lại cho ứng dụng. Các kết nối đã bị cắt không được khôi phục; từng thành viên kết nối lại.",
   "confirm.mcpClient.unblockTitle": "Bỏ chặn {name} ở mọi nơi?",
   "confirm.mcpPolicy.confirm": "Lưu chính sách rộng hơn",
+  "confirm.mcpPolicy.deviceFlow": "Thành viên có thể đăng nhập terminal bằng một mã nhập vào trình duyệt.",
   "confirm.mcpPolicy.dpop": "Kết nối không còn cần bằng chứng sở hữu, nên token bị đánh cắp dùng được ở bất cứ đâu.",
   "confirm.mcpPolicy.enable": "Trợ lý AI lại có thể kết nối với tổ chức này.",
   "confirm.mcpPolicy.keys": "Khóa API có thể dùng máy chủ MCP mà không có người tham gia.",
