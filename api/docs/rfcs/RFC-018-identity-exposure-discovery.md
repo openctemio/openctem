@@ -11,8 +11,7 @@ the CTEM principle *exposure ≠ vulnerability* for identity: a human/privileged
 account without strong MFA, an enabled account that stopped signing in, or a
 principal holding a privileged directory role it does not need are **exposures**,
 not CVEs. They belong next to leaked credentials and misconfigurations in the
-Exposure Register, deduped/reactivated by the same machinery, tagged with a
-CTEM-ID category where one fits, and fed into prioritization/attack-path like any
+Exposure Register, deduped/reactivated by the same machinery, and fed into prioritization/attack-path like any
 other exposure.
 
 The most tractable first source is the customer's **Microsoft Entra ID** directory,
@@ -88,7 +87,7 @@ until an emitter exists, and are exactly what that emitter will write.
 
 Mirror `internal/app/exposurebridge` (the misconfiguration/secret → ExposureEvent
 projection) and the scheduled-controller pattern used by
-`internal/infra/controller/ctemid_refresh.go` / `threat_intel_refresh.go`.
+`internal/infra/controller/threat_intel_refresh.go`.
 
 **Credential surface.** Add an app-only credential to the tenant's Entra config
 (either new fields on `identity_providers` — `graph_app_client_id`,
@@ -121,27 +120,14 @@ consent is missing/expired is logged and skipped, never aborting others.
   no longer returned, so the controller resolves its open event (same lifecycle
   as attack-surface exposures that disappear).
 
-**Schedule.** Daily, alongside `ctemid_refresh`, behind a per-tenant enablement
+**Schedule.** Daily, behind a per-tenant enablement
 flag on the integration (absent config = source simply does not run).
 
-## 6. CTEM-ID mapping (honest)
+## 6. CTEM-ID mapping
 
-The coded CTEM-ID taxonomy (`pkg/domain/ctemid/category.go`) is an **external
-threat-feed** vocabulary: `brand_impersonation`, `credential_dumps`,
-`infected_devices`, `lookalike_domains`, `ransomware`, `source_code_exposure`,
-`system_exposure`, `other`. It has **no first-class identity-posture class**, so
-the mapping is approximate and should be recorded as a hint in `details.ctem_id`
-rather than overstated:
-
-| Exposure type | Best-fit CTEM-ID category | Note |
-|---------------|---------------------------|------|
-| `identity_mfa_gap` | `system_exposure` | Posture weakness; no clean identity class exists. |
-| `identity_overprivileged` | `system_exposure` | Same. |
-| `identity_stale_principal` | `system_exposure` (or `credential_dumps` if the account also appears in a breach feed) | Stale accounts are prime credential-stuffing targets. |
-
-A follow-up may add a dedicated `identity_exposure` CTEM-ID category rather than
-forcing these under `system_exposure`. Deliberately left out of this PR to avoid
-mis-tagging.
+CTEM-ID (catalog 1.0) has no identity-posture class, so the three identity
+types get no CTEM-ID code. The mapping is derived at read time and never
+guesses ([CTEM-ID mapping](../architecture/ctem-id-mapping.md)).
 
 ## 7. Phased plan
 
@@ -150,7 +136,7 @@ mis-tagging.
   reader + scheduled controller + projection for the three types + tenant-isolation
   and fail-open tests. Requires tenant admin consent to the scopes in §2.
 - **Phase 2:** sign-in risk (`riskyUsers`, needs Entra ID P2) as
-  `identity_risky_signin`; a dedicated identity CTEM-ID category; UI surfacing on
+  `identity_risky_signin`; UI surfacing on
   the Exposures view (filter by the identity types).
 
 ## 8. Non-goals / scope notes

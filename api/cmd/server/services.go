@@ -92,7 +92,6 @@ import (
 	contentruleapp "github.com/openctemio/openctem/api/internal/app/contentrule"
 	contentsourceapp "github.com/openctemio/openctem/api/internal/app/contentsource"
 	coverageapp "github.com/openctemio/openctem/api/internal/app/coverage"
-	ctemidapp "github.com/openctemio/openctem/api/internal/app/ctemid"
 	"github.com/openctemio/openctem/api/internal/app/deploymentregion"
 	easmdnsapp "github.com/openctemio/openctem/api/internal/app/easmdns"
 	entitlementapp "github.com/openctemio/openctem/api/internal/app/entitlement"
@@ -715,7 +714,6 @@ type Services struct {
 	ThreatAlertPlanner *threatalertapp.Planner
 	// ThreatAlerts is the emerging-threat alert API.
 	ThreatAlerts *threatalertapp.Service
-	CTEMID       *ctemidapp.Service
 	// VersionCheck is the release feed check (RFC-105); never nil with a database.
 	VersionCheck *versioncheck.Service
 	CertMonitor  *certmonitorapp.Service
@@ -1488,7 +1486,6 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// The platform layer of the scan identification markers.
 		s.ScanIdentity = scanidentity.NewService(repos.PlatformSetting, s.SettingRecorder)
 	}
-	s.CTEMID = ctemidapp.NewService(repos.CTEMID, cfg.Worker.CTEMIDFeedURL, log)
 	s.VersionCheck = versioncheck.New(postgres.NewVersionCheckRepository(&postgres.DB{DB: deps.DB}), versioncheck.Config{
 		Enabled: cfg.Worker.VersionCheckEnabled, URL: cfg.Worker.VersionCheckURL,
 		Keys: releasefeed.PinnedKeys, Running: version.Get().Version,
