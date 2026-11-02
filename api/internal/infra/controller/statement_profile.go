@@ -45,6 +45,7 @@ var sqlProfiles = map[string]SQLProfile{
 	"EventRetentionController":            SQLLong, // vuln event and sensor result prunes
 	"AssetTechnologyBackfillController":   SQLBatched,
 	"DashboardSnapshotsController":        SQLBatched, // per-tenant widget reads over the fact tables, 5 s context timeout each
+	"EASMPostureController":               SQLLong,    // per-organization posture rebuild: SET LOCAL statement_timeout 2 min in Rebuild
 	"AssetIdentityBackfillController":     SQLBatched,
 	"PriorityAuditRetentionController":    SQLBatched,
 	"TicketHoldReleaseController":         SQLBatched,

@@ -48,6 +48,7 @@
   "scoping.charter.timelinePlaceholder": "Ví dụ: Chu kỳ 90 ngày, rà soát hằng tuần",
   "scoping.charter.title": "Điều lệ chu kỳ",
   "scoping.charter.untitled": "Chưa đặt tên",
+  "scoping.compliance.errorTitle": "kiểm soát",
   "scoping.compliance.search": "Tìm biện pháp kiểm soát…",
   "scoping.cycle.dateRange": "{start} đến {end}",
   "scoping.cycle.dayOf": "Ngày {day} trên {total}",

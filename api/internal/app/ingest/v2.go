@@ -140,22 +140,7 @@ func (s *Service) IngestV2Segment(ctx context.Context, prov Provenance, report *
 	o.RejectedFindings = len(report.Findings) - len(kept)
 	o.Errors = itemErrs
 
-	// Assets: accepted when persisted, rejected otherwise.
-	seen := map[shared.ID]bool{}
-	for i := range filtered.Assets {
-		id, ok := out.AssetMap[filtered.Assets[i].ID]
-		if !ok || id.IsZero() {
-			o.RejectedAssets++
-			addItemError(o, protov2.ItemError{Pointer: "/assets/" + strconv.Itoa(assetIdx[i]),
-				Code: protov2.CodeAssetInvalid, Detail: protov2.DetailAssetInvalid})
-			continue
-		}
-		if !seen[id] {
-			seen[id] = true
-			res.Touched = append(res.Touched, id)
-		}
-	}
-	o.AcceptedAssets = len(filtered.Assets) - o.RejectedAssets
+	res.Touched = assetOutcomes(o, filtered.Assets, assetIdx, out.AssetMap, out.ExcludedAssetRefs)
 
 	// Findings: rejected when their asset was not stored or the store failed.
 	failed := map[int]bool{}
@@ -177,6 +162,40 @@ func (s *Service) IngestV2Segment(ctx context.Context, prov Provenance, report *
 	o.RejectedFindings += len(failed)
 	o.AcceptedFindings = len(kept) - len(failed)
 	return res, nil
+}
+
+// assetOutcomes counts the segment's assets and returns the persisted ones
+// (each once). An asset is accepted when it was persisted. One a scope
+// exclusion of the organization kept out is neither accepted nor rejected:
+// the organization chose not to track it, the sensor did nothing wrong, and
+// counting it as rejected made every complete collector report look like it
+// lost assets, so its source's not-seen sweep never ran. Anything else that
+// was not persisted is rejected.
+func assetOutcomes(o *ingestreport.SegmentOutcome, assets []ctis.Asset, assetIdx []int,
+	stored map[string]shared.ID, excluded map[string]bool) []shared.ID {
+	var touched []shared.ID
+	seen := map[shared.ID]bool{}
+	skipped := 0
+	for i := range assets {
+		id, ok := stored[assets[i].ID]
+		if !ok || id.IsZero() {
+			code, detail := protov2.CodeAssetInvalid, protov2.DetailAssetInvalid
+			if excluded[assets[i].ID] {
+				code, detail = protov2.CodeAssetExcluded, protov2.DetailAssetExcluded
+				skipped++
+			} else {
+				o.RejectedAssets++
+			}
+			addItemError(o, protov2.ItemError{Pointer: "/assets/" + strconv.Itoa(assetIdx[i]), Code: code, Detail: detail})
+			continue
+		}
+		if !seen[id] {
+			seen[id] = true
+			touched = append(touched, id)
+		}
+	}
+	o.AcceptedAssets = len(assets) - o.RejectedAssets - skipped
+	return touched
 }
 
 // addItemError appends an item error, capped at protov2.MaxItemErrors.

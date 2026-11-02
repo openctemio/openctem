@@ -527,6 +527,9 @@ export default function ExceptionsPage() {
               <DataTable
                 columns={columns}
                 data={filteredRules}
+                error={error}
+                onRetry={() => void mutate()}
+                errorTitle={t('exceptions.page.errorTitle', 'suppression rules')}
                 searchPlaceholder={t('exceptions.page.search', 'Search by name…')}
                 searchKey="name"
                 showColumnToggle={false}
