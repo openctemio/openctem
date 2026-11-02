@@ -10,7 +10,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { useTranslation } from '@/context/i18n-provider'
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { FilterSelect } from '@/features/shared/components/filter-select'
 import { useListParams } from '@/hooks/use-list-params'
 import { DataTable, ErrorState, ListToolbar, PageHeader, PageStack } from '@/features/shared'
 import { useAdmin } from '@console/features/admin-console/components/admin-console-shell'
@@ -201,16 +201,16 @@ export default function AiApplicationsPage() {
             label: t('admin.systemAiApplicationsPage.searchLabel', 'Search AI applications'),
           }}
           start={
-            <Tabs value={state} onValueChange={(v) => list.setFilter('state', v)}>
-              <TabsList>
-                <TabsTrigger value="all">
-                  {t('admin.systemAiApplicationsPage.filterAll', 'All')}
-                </TabsTrigger>
-                <TabsTrigger value="blocked">
-                  {t('admin.systemAiApplicationsPage.blocked', 'Blocked')}
-                </TabsTrigger>
-              </TabsList>
-            </Tabs>
+            <FilterSelect
+              label={t('admin.systemAiApplicationsPage.filterLabel', 'State')}
+              value={state}
+              allValue="all"
+              allLabel={t('admin.systemAiApplicationsPage.filterAll', 'All')}
+              onChange={(v) => list.setFilter('state', v || 'all')}
+              options={[
+                { value: 'blocked', label: t('admin.systemAiApplicationsPage.blocked', 'Blocked') },
+              ]}
+            />
           }
         />
         {error ? (
