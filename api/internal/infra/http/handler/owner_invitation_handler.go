@@ -53,7 +53,7 @@ func (h *UserHandler) ownerInvitationActor(w http.ResponseWriter, r *http.Reques
 }
 
 func ownerInvitationIDParam(w http.ResponseWriter, r *http.Request) (shared.ID, bool) {
-	id, err := shared.IDFromString(r.PathValue("invitationId"))
+	id, err := shared.IDFromString(r.PathValue("id"))
 	if err != nil {
 		// Same answer as an unknown invitation.
 		apierror.NotFound("invitation").WriteJSON(w)
@@ -113,16 +113,16 @@ func (h *UserHandler) ListMyOwnerInvitations(w http.ResponseWriter, r *http.Requ
 	writeJSON(w, http.StatusOK, resp)
 }
 
-// AcceptOwnerInvitation handles POST /api/v1/me/ownership-invitations/{invitationId}/accept.
+// AcceptOwnerInvitation handles POST /api/v1/me/ownership-invitations/{id}/accept.
 // @Summary      Accept an ownership invitation
 // @Description  Step-up. Makes the caller the owner of the organization. Only the invited account can accept (404 for anyone else, and for a used or canceled invitation); 400 when it expired or until the caller's email address is verified.
 // @Tags         Users
 // @Produce      json
-// @Param        invitationId  path  string  true  "Invitation ID"
+// @Param        id            path  string  true  "Invitation ID"
 // @Success      200  {object}  OwnerInvitationAcceptResponse
 // @Failure      404  {object}  apierror.Error
 // @Failure      400  {object}  apierror.Error
-// @Router       /me/ownership-invitations/{invitationId}/accept [post]
+// @Router       /me/ownership-invitations/{id}/accept [post]
 func (h *UserHandler) AcceptOwnerInvitation(w http.ResponseWriter, r *http.Request) {
 	u, actx, ok := h.ownerInvitationActor(w, r)
 	if !ok {
@@ -140,14 +140,14 @@ func (h *UserHandler) AcceptOwnerInvitation(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, http.StatusOK, OwnerInvitationAcceptResponse{OrganizationID: inv.TenantID.String()})
 }
 
-// DeclineOwnerInvitation handles POST /api/v1/me/ownership-invitations/{invitationId}/decline.
+// DeclineOwnerInvitation handles POST /api/v1/me/ownership-invitations/{id}/decline.
 // @Summary      Decline an ownership invitation
 // @Description  Only the invited account can decline (404 for anyone else). The organization stays without an owner for the platform administrator to decide.
 // @Tags         Users
-// @Param        invitationId  path  string  true  "Invitation ID"
+// @Param        id            path  string  true  "Invitation ID"
 // @Success      204
 // @Failure      404  {object}  apierror.Error
-// @Router       /me/ownership-invitations/{invitationId}/decline [post]
+// @Router       /me/ownership-invitations/{id}/decline [post]
 func (h *UserHandler) DeclineOwnerInvitation(w http.ResponseWriter, r *http.Request) {
 	u, actx, ok := h.ownerInvitationActor(w, r)
 	if !ok {

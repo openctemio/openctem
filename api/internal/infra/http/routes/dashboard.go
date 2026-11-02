@@ -31,6 +31,9 @@ func registerUserDashboardRoutes(
 	router.Group("/api/v1/me/dashboards", func(r Router) {
 		r.GET("/", h.List)
 		r.POST("/", h.Create)
+		// The dashboard home in one read: both lists, the landing dashboard
+		// and its figures (the figures only with dashboard:read).
+		r.GET("/home", h.Home)
 		// Static catalog of typed widget metrics; no organization data.
 		r.GET("/widget-catalog", h.WidgetCatalog)
 		// One typed widget computed for the caller's own scope.

@@ -21,12 +21,12 @@ import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { useTranslation } from '@/context/i18n-provider'
+import { SettingsSaveBar } from '@/features/shared/components/settings-save-bar'
 import { AdminApiError } from '@console/lib/admin-api/client'
 import { StepUpCodeField, stepUpCodeReady, useStepUpCodeOptional } from './step-up-code-hint'
 import { RoleRequiredNotice } from './role-required-notice'
@@ -66,6 +66,7 @@ export function PlatformSensorProofForm({
   const [busy, setBusy] = useState(false)
 
   useEffect(() => setValue(required), [required])
+  const reset = () => setValue(required)
   const dirty = value !== required
 
   const save = async () => {
@@ -130,11 +131,13 @@ export function PlatformSensorProofForm({
           <p className="text-sm text-muted-foreground">{t(k('recommend'))}</p>
           <p className="text-sm text-muted-foreground">{t(k('alwaysOn'))}</p>
           {canEdit ? (
-            <div className="flex justify-end">
-              <Button onClick={() => setOpen(true)} disabled={!dirty || busy}>
-                {t('admin.scanPolicy.save')}
-              </Button>
-            </div>
+            <SettingsSaveBar
+              className="basis-full"
+              dirty={dirty}
+              saving={busy}
+              onSave={() => setOpen(true)}
+              onDiscard={reset}
+            />
           ) : (
             <RoleRequiredNotice needed="super_admin" />
           )}

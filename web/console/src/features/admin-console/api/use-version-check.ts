@@ -4,7 +4,12 @@ import useSWR from 'swr'
 import { adminFetch, adminFetcher } from '@console/lib/admin-api/client'
 import type { VersionCheckStatus } from '../types'
 
-const KEY = '/version-check/'
+/**
+ * One key, without a trailing slash: the console site redirects a path with a
+ * trailing slash to the one without, so a slashed key read the status twice
+ * per page.
+ */
+const KEY = '/version-check'
 
 /**
  * The version check (System > Software updates and the console banner). Any
@@ -23,7 +28,7 @@ export function useVersionCheck() {
  * refuses to turn it on while VERSION_CHECK_ENABLED=false (409).
  */
 export function setVersionCheckEnabled(enabled: boolean) {
-  return adminFetch<VersionCheckStatus>(`${KEY}enabled`, { method: 'PUT', body: { enabled } })
+  return adminFetch<VersionCheckStatus>(`${KEY}/enabled`, { method: 'PUT', body: { enabled } })
 }
 
 /**
@@ -31,5 +36,5 @@ export function setVersionCheckEnabled(enabled: boolean) {
  * sent as read; the API verifies its signatures, sequence and expiry.
  */
 export function importReleaseFeed(file: unknown) {
-  return adminFetch<VersionCheckStatus>(`${KEY}import`, { method: 'POST', body: file })
+  return adminFetch<VersionCheckStatus>(`${KEY}/import`, { method: 'POST', body: file })
 }

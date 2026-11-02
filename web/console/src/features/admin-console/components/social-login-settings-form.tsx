@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useId, useState } from 'react'
+import { useCallback, useEffect, useId, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Alert, AlertDescription } from '@/components/ui/alert'
@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { useTranslation } from '@/context/i18n-provider'
+import { SettingsSaveBar } from '@/features/shared/components/settings-save-bar'
 import { TonePill } from '@/features/shared/components/tone-pill'
 import { saveSocialProvider, testSocialProvider } from '../api/use-platform-settings'
 import type { SocialLoginSettings, SocialProvider } from '../types'
@@ -78,13 +79,15 @@ function ProviderCard({ settings, provider: p, canEdit, onSaved }: CardProps) {
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [checking, setChecking] = useState(false)
 
-  useEffect(() => {
+  // The saved values: on load, after a save and on Discard.
+  const reset = useCallback(() => {
     setEnabled(p.enabled)
     setClientId(p.client_id)
     setSecret('')
     setClearSecret(false)
     setScopes(p.scopes.join(' '))
   }, [p])
+  useEffect(reset, [reset])
 
   const scopeList = scopes.split(/\s+/).filter(Boolean)
   const dirty =
@@ -289,9 +292,12 @@ function ProviderCard({ settings, provider: p, canEdit, onSaved }: CardProps) {
                 {t('admin.socialLogin.check', 'Test configuration')}
               </Button>
               {!locked && (
-                <Button onClick={() => setConfirmOpen(true)} disabled={!dirty}>
-                  {t('admin.settings.save', 'Save')}
-                </Button>
+                <SettingsSaveBar
+                  className="basis-full"
+                  dirty={dirty}
+                  onSave={() => setConfirmOpen(true)}
+                  onDiscard={reset}
+                />
               )}
             </div>
           )}

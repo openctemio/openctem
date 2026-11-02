@@ -152,7 +152,7 @@ export function SignupEventsPanel() {
         />
       ) : (
         <>
-          <div className="overflow-x-auto rounded-lg border">
+          <div className="rounded-lg border">
             <Table>
               <TableHeader>
                 <TableRow>

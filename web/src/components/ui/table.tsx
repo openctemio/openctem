@@ -1,10 +1,24 @@
+'use client'
+
 import * as React from 'react'
 
 import { cn } from '@/lib/utils'
+import { useTranslation } from '@/context/i18n-provider'
 
+/**
+ * The scroller is a named region in the tab order: a table wider than its
+ * container (a phone) must be scrollable with the keyboard (WCAG 2.1.1).
+ */
 function Table({ className, ...props }: React.ComponentProps<'table'>) {
+  const { t } = useTranslation()
   return (
-    <div data-slot="table-container" className="relative w-full overflow-auto">
+    <div
+      data-slot="table-container"
+      role="region"
+      tabIndex={0}
+      aria-label={t('common.table.scrollRegion', 'Table, scrollable')}
+      className="relative w-full overflow-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    >
       <table
         data-slot="table"
         className={cn('w-full caption-bottom text-sm', className)}
