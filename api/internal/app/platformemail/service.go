@@ -108,6 +108,11 @@ func (in Input) trimmed() Input {
 	return in
 }
 
+// errCAInvalid is what a person reads when the CA bundle does not parse: a
+// fixed sentence naming the limits, never the parser's own text.
+var errCAInvalid = fmt.Errorf("%w: the CA certificate must be PEM text holding up to %d CERTIFICATE blocks and at most %d KB",
+	ErrInvalid, emaildom.MaxCACertificates, emaildom.MaxCABundleBytes/1024)
+
 func (in Input) validate() error {
 	if !in.Enabled {
 		return nil
@@ -130,7 +135,7 @@ func (in Input) validate() error {
 	}
 	if in.CAPEM != nil && strings.TrimSpace(*in.CAPEM) != "" {
 		if _, _, err := emaildom.ParseCABundle(*in.CAPEM); err != nil {
-			return fmt.Errorf("%w: %s", ErrInvalid, err.Error())
+			return errCAInvalid
 		}
 	}
 	return nil
@@ -232,7 +237,7 @@ func (s *Service) Update(ctx context.Context, actor *admin.AdminUser, in Input, 
 			// validate() parsed it; the fingerprint is derived here, never taken from the client.
 			_, fp, err := emaildom.ParseCABundle(t)
 			if err != nil {
-				return Settings{}, fmt.Errorf("%w: %s", ErrInvalid, err.Error())
+				return Settings{}, errCAInvalid
 			}
 			next.CAPEM, next.CAFP = t, fp
 		}
@@ -452,7 +457,7 @@ func (s *Service) Seed(ctx context.Context, in Input) (bool, error) {
 	if in.CAPEM != nil && strings.TrimSpace(*in.CAPEM) != "" {
 		_, fp, err := emaildom.ParseCABundle(*in.CAPEM)
 		if err != nil {
-			return false, fmt.Errorf("%w: %s", ErrInvalid, err.Error())
+			return false, errCAInvalid
 		}
 		next.CAPEM, next.CAFP = strings.TrimSpace(*in.CAPEM), fp
 	}
