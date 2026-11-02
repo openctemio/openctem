@@ -98,7 +98,6 @@ var sqlProfiles = map[string]SQLProfile{
 	"TenableSCSyncController":             SQLBatched,
 	"DefectDojoSyncController":            SQLBatched,
 	"SCMSyncController":                   SQLBatched,
-	"CTEMIDRefreshController":             SQLBatched,
 
 	// light.
 	"ApprovalDigestController":            SQLLight,

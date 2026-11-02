@@ -231,6 +231,7 @@ describe('Attack surface tabs', () => {
       ['Posture', '/attack-surface/posture', 'attack_surface'],
       ['Review', '/attack-surface/review', 'attack_surface'],
       ['Lookalikes', '/attack-surface/lookalikes', 'attack_surface'],
+      ['Page changes', '/attack-surface/pages', 'attack_surface'],
       ['Changes', '/attack-surface/changes', 'attack_surface'],
       ['Discovery', '/attack-surface/discovery', 'attack_surface'],
       ['Web surface', '/attack-surface/web', 'assets'],
