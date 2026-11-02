@@ -38,6 +38,7 @@ import {
   scopeStandingText,
   type AttributionDecision,
 } from '../lib/attribution'
+import { scopeDraftForAsset } from '@/features/scope/lib/scope-from-asset'
 
 /** Button labels: what the person is saying about the asset. */
 export function decisionLabel(t: AttributionT, d: AttributionDecision): string {
@@ -220,13 +221,14 @@ export function AssetAttributionSection({
                   variant="outline"
                   className="h-7"
                   onClick={() =>
-                    setDraft({
-                      pattern: assetName,
-                      target_type:
+                    setDraft(
+                      scopeDraftForAsset(
+                        assetName,
                         assetType === 'ip_address' || assetType === 'repository'
                           ? assetType
-                          : undefined,
-                    })
+                          : undefined
+                      )
+                    )
                   }
                 >
                   {t('assets.attribution.addToScope', 'Add to scope')}
