@@ -9,6 +9,9 @@ package bootstrapadmin
 //	# Register the value the install generated and gave the sensor as a secret
 //	SENSOR_INSTANCE_ENROLLMENT_TOKEN=octe_... \
 //	  bootstrap-admin sensor-token -from-env SENSOR_INSTANCE_ENROLLMENT_TOKEN -name bundled-sensor
+//	# A new install whose bundled sensor relays the feeds (zero egress):
+//	# relay mode, the sensor designated once it enrolls with this token
+//	  bootstrap-admin sensor-token -from-env SENSOR_INSTANCE_ENROLLMENT_TOKEN -feed-relay
 //	# Or mint one and print it once (an operator enrolling a sensor by hand)
 //	  bootstrap-admin sensor-token -name central-01 -reason "central scanner"
 //
@@ -28,9 +31,11 @@ import (
 	"os"
 	"time"
 
+	"github.com/openctemio/openctem/api/internal/app/feedrelay"
 	sensorapp "github.com/openctemio/openctem/api/internal/app/sensor"
 	"github.com/openctemio/openctem/api/internal/app/sensorpairing"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
+	"github.com/openctemio/openctem/api/pkg/domain/admin"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
@@ -42,6 +47,7 @@ func runSensorToken(args []string) int {
 	name := fs.String("name", "", "Name the shared sensor gets (default: its host name)")
 	reason := fs.String("reason", "bundled sensor of the install", "Why the token is issued (audited)")
 	ttl := fs.Duration("ttl", time.Hour, "Lifetime, 5m to 1h")
+	feedRelay := fs.Bool("feed-relay", false, "New install only: receive every feed through this sensor (relay mode, docs/rfcs/RFC-142-feed-relay.md); ignored once the feed delivery setting exists")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -98,6 +104,9 @@ func runSensorToken(args []string) int {
 		}
 		fmt.Fprintf(os.Stderr, "Registered shared sensor enrollment token %s (from %s), valid until %s.\n",
 			out.ID, *fromEnv, out.ExpiresAt.Format(time.RFC3339))
+		if *feedRelay {
+			return seedFeedRelay(ctx, pdb, out.ID)
+		}
 		return 0
 	}
 	out, err := svc.IssueInstanceToken(ctx, in)
@@ -105,8 +114,38 @@ func runSensorToken(args []string) int {
 		fmt.Fprintf(os.Stderr, "sensor-token: %v\n", err)
 		return 1
 	}
+	if *feedRelay {
+		if rc := seedFeedRelay(ctx, pdb, out.ID); rc != 0 {
+			return rc
+		}
+	}
 	fmt.Fprintf(os.Stderr, "Shared sensor enrollment token %s, single use, valid until %s. Shown once:\n",
 		out.ID, out.ExpiresAt.Format(time.RFC3339))
 	fmt.Println(out.Token)
+	return 0
+}
+
+// seedFeedRelay stores relay mode for a new install, with the token whose
+// sensor the platform designates as the relay once it enrolls and reports
+// feed.relay@1. An installation that already has the setting (every
+// existing one: the feed relay migration records direct mode) is left alone,
+// and writes a console audit row when it changes something.
+func seedFeedRelay(ctx context.Context, pdb *postgres.DB, tokenID shared.ID) int {
+	written, err := feedrelay.SeedRelayMode(ctx, postgres.NewPlatformSettingRepository(pdb), tokenID)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "sensor-token: feed delivery: %v\n", err)
+		return 1
+	}
+	if !written {
+		fmt.Fprintln(os.Stderr, "Feed delivery is already set on this installation; unchanged.")
+		return 0
+	}
+	entry := admin.NewAuditLogBuilder(nil, feedrelay.ActionChanged).Resource("platform_setting", nil, feedrelay.ModeKey).
+		Request("", "", map[string]any{"mode": feedrelay.ModeRelay, "bootstrap_token_id": tokenID.String()}).Response(200).High().Build()
+	entry.AdminEmail = "bootstrap"
+	if err := postgres.NewAuditLogRepository(pdb).Create(ctx, entry); err != nil {
+		fmt.Fprintf(os.Stderr, "sensor-token: feed delivery audit: %v\n", err)
+	}
+	fmt.Fprintln(os.Stderr, "Feed delivery: relay mode; the bundled sensor relays every feed once it enrolls.")
 	return 0
 }

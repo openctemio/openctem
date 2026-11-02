@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/openctemio/openctem/api/internal/app/feedrelay"
+
 	"github.com/openctemio/openctem/api/internal/app/ingestqueue"
 	queryapp "github.com/openctemio/openctem/api/internal/app/query"
 	threatalertapp "github.com/openctemio/openctem/api/internal/app/threatalert"
@@ -1021,11 +1023,14 @@ type Services struct {
 	DeploymentRegion    *deploymentregion.Service
 	StorageQuota        *storagequota.Service
 	ThreatSource        *threatsource.Service
-	ScanIdentity        *scanidentity.Service
-	PlatformAlert       *platformalert.Service
-	PlatformAI          *platformai.Service
-	OrgRelay            *orgrelay.Service
-	PlatformMFA         *platformmfa.Service
+	// FeedRelay receives every feed through a platform relay sensor in relay
+	// mode (RFC-142); nil without a database or platform settings.
+	FeedRelay     *feedrelay.Service
+	ScanIdentity  *scanidentity.Service
+	PlatformAlert *platformalert.Service
+	PlatformAI    *platformai.Service
+	OrgRelay      *orgrelay.Service
+	PlatformMFA   *platformmfa.Service
 	// TenantAI is the organizations' AI settings (consent, source, own provider).
 	TenantAI *tenantai.Service
 	// AIMasking is the organization's AI masking policy and its preview.
@@ -1488,11 +1493,19 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// The platform layer of the scan identification markers.
 		s.ScanIdentity = scanidentity.NewService(repos.PlatformSetting, s.SettingRecorder)
 	}
+	// Feed relay (RFC-142): in relay mode KEV and EPSS come only from the
+	// relayed release; the platform never calls CISA or FIRST.
+	s.FeedRelay = newFeedRelayService(cfg, deps.DB, repos, s, log)
+	if s.FeedRelay != nil && s.ThreatSource != nil {
+		s.ThreatIntel.SetSourcePolicy(feedrelay.ThreatSourcePolicy{Inner: s.ThreatSource, Relay: s.FeedRelay})
+	}
 	s.CTEMID = ctemidapp.NewService(repos.CTEMID, cfg.Worker.CTEMIDFeedURL, log)
 	s.VersionCheck = versioncheck.New(postgres.NewVersionCheckRepository(&postgres.DB{DB: deps.DB}), versioncheck.Config{
 		Enabled: cfg.Worker.VersionCheckEnabled, URL: cfg.Worker.VersionCheckURL,
 		Keys: releasefeed.PinnedKeys, Running: version.Get().Version,
 		OnFeed: learnComponentReleases,
+		// In relay mode the release feed comes through the relay sensor.
+		Offline: relayMode(s),
 	}, log)
 	// Monitoring > Software updates switches the daily check without a restart;
 	// VERSION_CHECK_ENABLED=false stays a ceiling.

@@ -1509,7 +1509,7 @@ vars:
     group: "Discovery feeds and background jobs"
     type: path
     default: "<system temp dir>/openctem-feeds"
-    description: "Directory holding verified feed chunks between imports."
+    description: "Directory holding verified feed chunks between imports, and the feed relay's local working copy of its spool (`relay/`, RFC-142; pod-local, rebuilt from the database)."
   - name: PROGRAMFEED_DIR
     component: api
     group: "Discovery feeds and background jobs"

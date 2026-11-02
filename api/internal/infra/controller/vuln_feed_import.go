@@ -40,8 +40,11 @@ func (c *VulnFeedImportController) Name() string { return "vuln-feed-import" }
 // that applied the previous bundle fetches only the delta.
 func (c *VulnFeedImportController) Interval() time.Duration { return feedstatus.IntervalVulnfeed }
 
+// FeedImportTimeout leaves room for a first snapshot (direct or relayed).
+const FeedImportTimeout = 45 * time.Minute
+
 // ReconcileTimeout leaves room for a first snapshot.
-func (c *VulnFeedImportController) ReconcileTimeout() time.Duration { return 45 * time.Minute }
+func (c *VulnFeedImportController) ReconcileTimeout() time.Duration { return FeedImportTimeout }
 
 // Exclusive: one replica imports.
 func (c *VulnFeedImportController) Exclusive() bool { return true }

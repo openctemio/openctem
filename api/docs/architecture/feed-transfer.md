@@ -156,6 +156,99 @@ is fresh, which is the check to make first. A withheld release (a freeze)
 degrades to the own fetch, not to stale data, and the stale alert still fires.
 The sync status of each feed reports `delivered_via` and `data_as_of`.
 
+## Relay: feeds through a platform sensor (no outbound access)
+
+Design: [RFC-142](../rfcs/RFC-142-feed-relay.md). Code: `internal/app/feedrelay`
+(rounds, spool, controller `feed-relay`, status), `internal/app/vulnfeed/relay.go`
+(the planner), `internal/infra/postgres/feed_relay_round_repository.go`, sdk-go
+`pkg/feedrelay` (the sensor side).
+
+In relay mode (`GET/PUT /api/v1/admin/settings/feed-relay`; setting
+`egress.mode.feeds` = `{mode, sensor_ids}`, the mode and one to three designated
+relay sensors saved in one write; super admin, step-up, audited) the platform
+makes no outbound feed request:
+
+| Feed | In relay mode |
+|---|---|
+| vulnerability feed (corpus, KEV/EPSS side manifest, aliases, vulnerability ids) | relayed from `VULNFEED_BASE_URL` (not the direct-mode mirrors); the importer reads the relay working directory as its only origin |
+| KEV / EPSS direct fetch | off (the source policy is "bundle, direct fetch off") |
+| version check (release feed) | relayed; applied with origin `relay` (the same file again each day is not an error); the online check does not run |
+| program feed URLs | not fetched (a `PROGRAMFEED_DIR` still is); listed as `not_relayed` in the status |
+
+Defaults: a new compose install with the bundled sensor starts in relay mode
+(`bootstrap-admin sensor-token -feed-relay` stores relay mode only when the
+setting was never written, and the sensor that enrolls with that token is
+designated once it reports `feed.relay@1`). Existing installations stay
+`direct`: the feed relay migration records `direct` for a database that already
+has users. There is never an automatic fallback to direct: a setting that
+cannot be read counts as relay.
+
+How a cycle runs (the replica holding the `feed-relay` controller lease, every
+30 s):
+
+1. **head**: a round asks for the key set, the pointer and the side manifests
+   (unpinned, capped).
+2. **plan**: after a round is delivered, the lease holder copies the spool into
+   its working directory and the planner verifies the key set against the
+   pinned root and its floor, the pointer and the manifests, and asks for what
+   the import will need and the spool lacks: the manifest the pointer pins, the
+   chunks (delta on its base, else snapshot), the side data files, each
+   **pinned** by SHA-256 and size, at most 64 files or 192 MiB a round.
+3. **import**: nothing missing, the importer runs on the working directory with
+   every check of a bundle directory; spool rows and local files the current
+   release no longer names are removed.
+4. The next cycle starts after the feed's interval (20 min, release feed 24 h);
+   a failed, refused or expired round backs off (at most 10 min).
+
+Import is single-runner: the controller is exclusive (Postgres lease) and the
+importer takes its own run guard; no other lock is needed. The controller's
+timeout is the direct import's (45 min) so a first relayed snapshot is not
+cancelled.
+
+**Rounds and claims.** A round is a platform-wide row `feed_relay_rounds` (no
+tenant), created unclaimed. `GET /api/v2/sensor/feed-relay/next` claims the
+oldest open round for the calling sensor (`FOR UPDATE SKIP LOCKED`) and signs
+it with the job signer as a `feed_relay` statement (platform tenant id,
+instance scope, the feed origins as targets, which the signer checks against
+`SIGNER_FEED_ORIGINS`). A claim with nothing uploaded for 10 minutes, or held
+by a sensor no longer designated, may be claimed by another designated sensor:
+two or three relays give failover. The claimer asking again gets its own round
+back (a restarted relay resumes it). Uploads and `done` bind to the claimer.
+A round the signer refuses is closed `failed` with `signer_refused` and the
+signer's reason. With no round the answer is 204 with `Retry-After`: 15 s
+while a cycle waits for its next plan, 60 s otherwise, 10 min for an eligible
+sensor that is not designated (or direct mode). Only active instance-scope
+sensors reporting `feed.relay@1` reach the routes; an organization's sensor
+gets 403.
+
+**Spool.** `PUT .../{round}/files/{name}` needs Content-Length and a sha-256
+Content-Digest. The body is read under the file's cap (at most 32 MiB),
+hashed, checked against the declaration and the round's pin, then stored in
+`feed_relay_files` (one row per feed and name, shared by every API replica) in
+one transaction that also checks the round is open and claimed by the
+uploader, one upload per name per round (the same bytes again is a no-op), the
+round's budget (256 MiB) and the spool quota (512 MiB; `spool_full` is
+recorded on the round). A tampered file never enters the spool. The lease
+holder copies rows into `<FEED_CACHE_DIR>/relay/<feed>` (pod-local, rebuilt
+from the table after a restart, every row's digest re-checked) before it plans
+or imports. Steady state is about 70 MB; the spool is emptied after seven days
+in direct mode. Backups may skip the table's data (re-fetchable).
+`POST .../{round}/done` keeps only rows for the round's own files, with
+bounded codes.
+
+**Status** (`GET /api/v1/admin/settings/feed-relay`, any administrator): the
+mode, the designated sensors (online, can relay, last served, bytes today) and
+per feed the applied sequence, the release's creation time and its age, the
+round in progress (files and bytes delivered of wanted, claimer), and a
+stale reason from a fixed list: `no_relay_designated`, `relay_offline` (no
+designated sensor seen for 10 min), `signer_refused`, `sensor_refused`,
+`upstream_missing` (the relay got 404), `nothing_delivered`, `pin_mismatch`,
+`verify_failed`, `rollback_refused`, `plan_failed`, `import_failed`,
+`round_expired`, `spool_full`.
+
+A bundle directory (`VULNFEED_BUNDLE_DIR`) or a missing job signer locks relay
+mode off.
+
 ## Push: segments and the outbox
 
 Sensors and collectors send results with protocol v2 (RFC-026): segments

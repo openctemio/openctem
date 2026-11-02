@@ -89,7 +89,12 @@ type Importer struct {
 	transfer           Transfer
 	fetchMu            sync.Mutex
 	fetcher            *transfer.Fetcher
+	dirFetchers        map[string]*transfer.Fetcher
 	consumerRegistered bool
+
+	// relayDir returns the relay working directory when the platform receives its feeds
+	// through a relay sensor ("": not in relay mode); nil: never.
+	relayDir func(ctx context.Context) string
 
 	// aliases applies the release's alias dictionary (nil: not applied).
 	aliases software.AliasWriter
@@ -159,6 +164,20 @@ func toUint(v any) uint64 {
 	return 0
 }
 
+// WithRelay makes the importer read the relay working directory dir returns
+// (non-empty only while the platform is in relay mode) as its only origin.
+func (im *Importer) WithRelay(dir func(ctx context.Context) string) *Importer {
+	im.relayDir = dir
+	return im
+}
+
+func (im *Importer) relaySpool(ctx context.Context) string {
+	if im.relayDir == nil || im.cfg.BundleDir != "" {
+		return ""
+	}
+	return im.relayDir(ctx)
+}
+
 // Configured reports whether the importer has a pinned root key (without
 // one it does nothing).
 func (im *Importer) Configured() bool { return im.cfg.RootKeyID != "" }
@@ -185,8 +204,18 @@ func (im *Importer) Run(ctx context.Context) (Result, error) {
 	}
 	defer im.release(ctx)
 	cur := readState(st.Metadata())
-	if im.useV2(ctx) {
-		return im.runV2(ctx, cur)
+	dir := im.cfg.BundleDir
+	if relay := im.relaySpool(ctx); relay != "" {
+		// Relay mode: the relay working directory is the only origin, never the network, and
+		// never the whole-bundle (v1) reader. Until the relay delivered a
+		// pointer there is nothing to import.
+		if !im.useV2(ctx, relay) {
+			return res, nil
+		}
+		return im.runV2(ctx, cur, relay)
+	}
+	if im.useV2(ctx, dir) {
+		return im.runV2(ctx, cur, dir)
 	}
 	if im.chunks != nil {
 		// A v2 bundle may have applied a newer sequence than the status row
@@ -480,6 +509,18 @@ func (im *Importer) checked(ctx context.Context) error {
 	}
 	st.MarkSyncUnchanged(0, 0)
 	return im.status.Update(ctx, st)
+}
+
+// Freshness returns the applied release sequence and the applied bundle's
+// creation time (zero when none was applied).
+func (im *Importer) Freshness(ctx context.Context) (uint64, time.Time, error) {
+	st, err := im.status.GetBySource(ctx, SourceName)
+	if err != nil {
+		return 0, time.Time{}, err
+	}
+	meta := st.Metadata()
+	created, _ := time.Parse(time.RFC3339, fmt.Sprint(meta["bundle_created_at"]))
+	return toUint(meta["applied_sequence"]), created, nil
 }
 
 // CheckStale reports a corpus whose newest bundle is older than three days
