@@ -82,6 +82,8 @@ func TestUpdate_CABundleRefusesKeysAndJunk(t *testing.T) {
 		in.CAPEM = &bad
 		if _, err := svc.Update(context.Background(), superAdmin(t), in, 0, "", ""); !errors.Is(err, ErrInvalid) {
 			t.Errorf("%s: %v", name, err)
+		} else if err.Error() != errCAInvalid.Error() {
+			t.Errorf("%s: a person reads %q, want the fixed sentence", name, err)
 		}
 		if len(repo.rows) != 0 {
 			t.Fatalf("%s: a refused bundle was stored", name)
