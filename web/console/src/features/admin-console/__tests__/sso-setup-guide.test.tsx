@@ -7,7 +7,6 @@ vi.mock('@/lib/clipboard', () => ({ copyToClipboard: (...a: unknown[]) => copy(.
 
 import {
   ProviderSetupGuide,
-  ssoBackchannelLogoutUrl,
   ssoRedirectUri,
 } from '@console/features/sso/components/provider-setup-guide'
 
@@ -18,21 +17,24 @@ describe('SSO provider setup guide', () => {
     expect(ssoRedirectUri('https://app.example.com', 'entra_id')).toBe(
       'https://app.example.com/auth/sso/callback/entra_id'
     )
-    expect(ssoBackchannelLogoutUrl('https://app.example.com')).toBe(
-      'https://app.example.com/api/v1/auth/backchannel-logout'
-    )
   })
 
-  it('shows the Entra redirect URI, logout URL and claims, and copies them', async () => {
+  it('shows the Entra redirect URI and claims, and copies them', async () => {
     render(<ProviderSetupGuide provider="entra_id" appUrl="https://app.example.com" />)
     expect(screen.getByText('Set up in Microsoft Entra ID')).toBeInTheDocument()
     expect(screen.getByText('https://app.example.com/auth/sso/callback/entra_id')).toBeVisible()
-    expect(screen.getByText('https://app.example.com/api/v1/auth/backchannel-logout')).toBeVisible()
-    for (const claim of ['xms_edov', 'auth_time', 'sid']) {
+    for (const claim of ['xms_edov', 'auth_time']) {
       expect(screen.getByText(claim)).toBeInTheDocument()
     }
     await userEvent.click(screen.getAllByRole('button')[0])
     expect(copy).toHaveBeenCalledWith('https://app.example.com/auth/sso/callback/entra_id')
+  })
+
+  it('offers no logout address for Entra ID, which sends no back-channel logout', () => {
+    render(<ProviderSetupGuide provider="entra_id" appUrl="https://app.example.com" />)
+    expect(screen.queryByText(/backchannel-logout/)).toBeNull()
+    expect(screen.queryByText('sid')).toBeNull()
+    expect(screen.getByText(/does not end their/)).toBeInTheDocument()
   })
 
   it('shows only the redirect URI for Okta and Google', () => {

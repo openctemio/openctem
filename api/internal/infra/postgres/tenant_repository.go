@@ -393,11 +393,6 @@ func insertMembership(ctx context.Context, db membershipExecer, m *tenant.Member
 // which could itself fail and leave an orphan tenant with no owner. This makes
 // the whole operation all-or-nothing.
 func (r *TenantRepository) CreateWithOwner(ctx context.Context, t *tenant.Tenant, m *tenant.Membership) (err error) {
-	settings, err := json.Marshal(t.Settings())
-	if err != nil {
-		return fmt.Errorf("failed to marshal settings: %w", err)
-	}
-
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("failed to begin tx: %w", err)
@@ -407,7 +402,27 @@ func (r *TenantRepository) CreateWithOwner(ctx context.Context, t *tenant.Tenant
 			_ = tx.Rollback()
 		}
 	}()
+	err = r.insertTenantTx(ctx, tx, t)
+	if err != nil {
+		return err
+	}
+	err = insertOwnerMembershipTx(ctx, tx, m)
+	if err != nil {
+		return err
+	}
+	if err = tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit tenant creation: %w", err)
+	}
+	return nil
+}
 
+// insertTenantTx writes the tenant row and the limits, feature denies and
+// idle policy it starts with, inside tx.
+func (r *TenantRepository) insertTenantTx(ctx context.Context, tx *sql.Tx, t *tenant.Tenant) error {
+	settings, err := json.Marshal(t.Settings())
+	if err != nil {
+		return fmt.Errorf("failed to marshal settings: %w", err)
+	}
 	// The region, as in Create.
 	region := t.Region()
 	if region == "" && r.region != nil {
@@ -419,7 +434,7 @@ func (r *TenantRepository) CreateWithOwner(ctx context.Context, t *tenant.Tenant
 			(SELECT NULLIF(value->>'region', '') FROM platform_settings WHERE key = 'deployment.region')))
 		RETURNING COALESCE(region, '')
 	`
-	if err = tx.QueryRowContext(ctx, tenantQuery,
+	if err := tx.QueryRowContext(ctx, tenantQuery,
 		t.ID().String(), t.Name(), t.Slug(), t.Description(), t.LogoURL(),
 		settings, t.CreatedBy(), t.CreatedAt(), t.UpdatedAt(), region,
 	).Scan(&region); err != nil {
@@ -434,7 +449,7 @@ func (r *TenantRepository) CreateWithOwner(ctx context.Context, t *tenant.Tenant
 		if l.TenantID != t.ID() {
 			return fmt.Errorf("%w: initial limit for another organization", shared.ErrValidation)
 		}
-		if _, err = tx.ExecContext(ctx, upsertLimitSQL, limitArgs(l)...); err != nil {
+		if _, err := tx.ExecContext(ctx, upsertLimitSQL, limitArgs(l)...); err != nil {
 			return fmt.Errorf("failed to store the organization limits: %w", err)
 		}
 	}
@@ -442,28 +457,32 @@ func (r *TenantRepository) CreateWithOwner(ctx context.Context, t *tenant.Tenant
 		if d.TenantID != t.ID() {
 			return fmt.Errorf("%w: initial deny for another organization", shared.ErrValidation)
 		}
-		if _, err = tx.ExecContext(ctx, upsertDenySQL, denyArgs(d)...); err != nil {
+		if _, err := tx.ExecContext(ctx, upsertDenySQL, denyArgs(d)...); err != nil {
 			return fmt.Errorf("failed to store the organization feature denies: %w", err)
 		}
 	}
 	if initial.IdlePolicy {
-		if _, err = tx.ExecContext(ctx, `
+		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO tenant_idle_lifecycle (tenant_id, stage, stage_changed_at, policy_enabled, policy_reason, policy_set_at)
 			VALUES ($1, 'active', $2, true, $3, $2)`, t.ID().String(), t.CreatedAt(), initial.IdleReason); err != nil {
 			return fmt.Errorf("failed to store the organization idle policy: %w", err)
 		}
 	}
+	return nil
+}
 
+// insertOwnerMembershipTx writes an owner membership and its system owner
+// role row inside tx.
+func insertOwnerMembershipTx(ctx context.Context, tx *sql.Tx, m *tenant.Membership) error {
 	var invitedBy sql.NullString
 	if m.InvitedBy() != nil {
 		invitedBy = sql.NullString{String: m.InvitedBy().String(), Valid: true}
 	}
-
 	const memberQuery = `
 		INSERT INTO tenant_members (id, user_id, tenant_id, role, invited_by, joined_at)
 		VALUES ($1, $2, $3, $4, $5, $6)
 	`
-	if _, err = tx.ExecContext(ctx, memberQuery,
+	if _, err := tx.ExecContext(ctx, memberQuery,
 		m.ID().String(), m.UserID().String(), m.TenantID().String(),
 		m.Role().String(), invitedBy, m.JoinedAt(),
 	); err != nil {
@@ -472,7 +491,6 @@ func (r *TenantRepository) CreateWithOwner(ctx context.Context, t *tenant.Tenant
 		}
 		return fmt.Errorf("failed to create membership: %w", err)
 	}
-
 	const userRolesQuery = `
 		INSERT INTO user_roles (user_id, tenant_id, role_id, assigned_at, assigned_by)
 		SELECT $1, $2, r.id, $3, $4
@@ -480,14 +498,10 @@ func (r *TenantRepository) CreateWithOwner(ctx context.Context, t *tenant.Tenant
 		WHERE r.slug = $5 AND r.is_system = TRUE AND r.tenant_id IS NULL
 		ON CONFLICT (user_id, tenant_id, role_id) DO NOTHING
 	`
-	if _, err = tx.ExecContext(ctx, userRolesQuery,
+	if _, err := tx.ExecContext(ctx, userRolesQuery,
 		m.UserID().String(), m.TenantID().String(), m.JoinedAt(), invitedBy, m.Role().String(),
 	); err != nil {
 		return fmt.Errorf("failed to create user role: %w", err)
-	}
-
-	if err = tx.Commit(); err != nil {
-		return fmt.Errorf("failed to commit tenant creation: %w", err)
 	}
 	return nil
 }

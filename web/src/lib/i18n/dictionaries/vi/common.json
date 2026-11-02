@@ -114,6 +114,7 @@
   "common.markdownEditor.write": "Soạn",
   "common.moduleOffFor": "{title} chưa được bật cho tổ chức này",
   "common.moduleOffHint": "Hãy nhờ quản trị viên tổ chức bật tính năng này.",
+  "common.moreInfo": "Thêm thông tin",
   "common.moreTabs": "Thêm",
   "common.networkError": "Không kết nối được tới máy chủ. Kiểm tra kết nối rồi thử lại.",
   "common.no": "Không",

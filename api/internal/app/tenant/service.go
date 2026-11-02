@@ -139,6 +139,9 @@ type TenantService struct {
 	// Ownership transfer store and its emails (ownership_transfer.go).
 	ownershipTransfers tenantdom.OwnershipTransferRepository
 	ownershipNotifier  OwnershipTransferNotifier
+	// Ownership invitations and their emails (owner_invitation.go).
+	ownerInvitations       tenantdom.OwnerInvitationRepository
+	ownerInvitationNotices OwnerInvitationNotifier
 	// classifier decides whether an invitee is internal or external
 	// (external_members.go).
 	classifier *AddressClassifier
@@ -514,6 +517,26 @@ func (s *TenantService) SetSignupRecorder(r signupevent.Recorder) { s.signups = 
 // CreateTenant creates a new tenant and adds the creator as owner.
 // creatorUserID is the local user ID (from users table).
 func (s *TenantService) CreateTenant(ctx context.Context, input CreateTenantInput, creatorUserID shared.ID, actx auditapp.AuditContext) (*tenantdom.Tenant, error) {
+	return s.createTenant(ctx, input, creatorUserID, actx, func(t *tenantdom.Tenant) error {
+		// Build the owner membership before any write so a construction
+		// error can't leave a tenant without an owner.
+		membership, err := tenantdom.NewOwnerMembership(creatorUserID, t.ID())
+		if err != nil {
+			return fmt.Errorf("failed to create owner membership: %w", err)
+		}
+		// Create tenant + owner membership atomically (no orphan tenant on failure).
+		if err := s.repo.CreateWithOwner(ctx, t, membership); err != nil {
+			return fmt.Errorf("failed to create tenant: %w", err)
+		}
+		return nil
+	})
+}
+
+// createTenant builds the tenant from input (slug check, description,
+// starting limits), stores it with persist, then writes the tenant.created
+// audit event and the sign-up feed entry. creatorUserID is the owner, or the
+// account invited to own it (CreateTenantAwaitingOwner).
+func (s *TenantService) createTenant(ctx context.Context, input CreateTenantInput, creatorUserID shared.ID, actx auditapp.AuditContext, persist func(*tenantdom.Tenant) error) (*tenantdom.Tenant, error) {
 	s.logger.Info("creating tenant", "name", input.Name, "slug", input.Slug, "creator", creatorUserID.String())
 
 	// Check if slug already exists
@@ -544,16 +567,8 @@ func (s *TenantService) CreateTenant(ctx context.Context, input CreateTenantInpu
 		t.SetInitialLimits(limits.SelfServiceRows(t.ID(), input.InitialLimits, t.CreatedAt()))
 	}
 
-	// Build the owner membership before any write so a construction error can't
-	// leave a tenant without an owner.
-	membership, err := tenantdom.NewOwnerMembership(creatorUserID, t.ID())
-	if err != nil {
-		return nil, fmt.Errorf("failed to create owner membership: %w", err)
-	}
-
-	// Create tenant + owner membership atomically (no orphan tenant on failure).
-	if err := s.repo.CreateWithOwner(ctx, t, membership); err != nil {
-		return nil, fmt.Errorf("failed to create tenant: %w", err)
+	if err := persist(t); err != nil {
+		return nil, err
 	}
 
 	s.logger.Info("tenant created", "id", t.ID().String(), "name", t.Name(), "owner", creatorUserID.String())

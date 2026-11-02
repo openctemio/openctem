@@ -32,7 +32,7 @@ doing:
 | Scanning | Scan approval, Platform scanning (policy, fleet, queue, zones, egress, anomalies), Target mappings, Content packs, Content catalog, Threat intelligence |
 | Security | Administrators, Sessions, Approvals, Admin sign-in, Admin activity |
 | Settings | Configuration, Sign-up, Limits, CAPTCHA, E-mail, Legal, Announcements, Alerts, AI provider, AI applications |
-| Monitoring | Health (services, storage, backup, certificates, schema, version, queues, sensors, jobs), Software updates |
+| Monitoring | Health (tabs: Summary with services, storage, backup, certificates, schema and version; Queues and sensors; Background jobs, the stopped or failing ones first), Software updates |
 
 The administrator's own security keys open from the sidebar footer, next to
 their name (the palette still finds them). Pages are listed by the
@@ -119,6 +119,12 @@ session must not be able to read a secret, redirect evidence or audit, or
 widen who can reach the console.
 
 ## Settings moved from the environment
+
+Every settings form saves from the shared `SettingsSaveBar`
+(`web/src/features/shared`): it shows with the first unsaved change (Discard,
+Save changes, Ctrl+S), asks before leaving the page with unsaved changes, and
+its Save opens the form's confirmation (reason, and the code where the
+setting needs one). Discard restores the values last read from the API.
 
 These settings used to need a server edit and a restart; they are now
 console settings (RFC-079), stored in `platform_settings`, read through a

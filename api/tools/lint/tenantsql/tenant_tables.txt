@@ -126,6 +126,8 @@ easm_evidence
 easm_lookalike_candidates
 easm_lookalike_watches
 easm_network_seeds
+easm_posture_assets
+easm_posture_state
 easm_tombstones
 easm_weekly_digests
 exposure_disposition_requests
@@ -193,6 +195,7 @@ notification_state
 notifications
 operations
 organization_join_requests
+organization_owner_invitations
 pentest_campaign_checklist_items
 pentest_campaign_checklists
 pentest_campaign_members
