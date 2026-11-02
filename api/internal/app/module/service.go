@@ -298,6 +298,11 @@ func (s *ModuleService) GetTenantEnabledModules(ctx context.Context, tenantID st
 			break
 		}
 	}
+	for id := range readOnly {
+		if states[id] != ReasonReadOnlyGrace {
+			delete(readOnly, id)
+		}
+	}
 	return &GetTenantEnabledModulesOutput{
 		ModuleIDs:            moduleIDs,
 		Modules:              enabledModules,
@@ -570,17 +575,9 @@ func (s *ModuleService) applyTenantModuleUpdates(ctx context.Context, tenantID s
 	// their SWR cache and refetch immediately.
 	s.notifyModuleChange(ctx, tenantID)
 
-	// Re-derive the states from the applied updates instead of re-querying
-	// the DB (saves one round-trip per toggle request). Entitlement reasons
-	// stay: switching on a module that is not entitled was refused above.
-	for _, u := range updates {
-		switch {
-		case !u.IsEnabled && states[u.ModuleID] == "":
-			states[u.ModuleID] = ReasonDisabledByAdmin
-		case u.IsEnabled && states[u.ModuleID] == ReasonDisabledByAdmin:
-			delete(states, u.ModuleID)
-		}
-	}
+	// Read the states again: a module switched on or off changes the state of
+	// the modules that hard-require it (InheritOffFromHardDependencies).
+	states = s.moduleStates(ctx, tenantID)
 	out, buildErr := s.buildTenantModuleConfigFromMaps(tenantID, allModules, states)
 	if buildErr != nil {
 		return nil, buildErr
@@ -823,9 +820,17 @@ func (s *ModuleService) readOnlyUntil(ctx context.Context, tenantID string) map[
 		return out
 	}
 	now := time.Now()
+	inGrace := map[string]string{}
 	for id, until := range notEntitled {
 		if until != nil && now.Before(*until) {
 			out[id] = *until
+			inGrace[id] = ReasonReadOnlyGrace
+		}
+	}
+	// A dependent of a module in grace is read-only until the same date.
+	for id, src := range moduledom.InheritOffFromHardDependencies(inGrace) {
+		if _, own := notEntitled[id]; !own {
+			out[id] = out[src]
 		}
 	}
 	return out
@@ -877,6 +882,10 @@ func (s *ModuleService) moduleStates(ctx context.Context, tenantID string) map[s
 			}
 		}
 	}
+	// A module cannot be on while a module it hard-requires is off: it takes
+	// that module's reason, so a deny of a dependency reaches its dependents'
+	// routes, jobs and MCP tools too.
+	moduledom.InheritOffFromHardDependencies(states)
 	return states
 }
 
@@ -993,6 +1002,9 @@ type PresetDiffOutput struct {
 	PresetName  string            `json:"preset_name"`
 	ToEnable    []ModuleRefOutput `json:"to_enable"`
 	ToDisable   []ModuleRefOutput `json:"to_disable"`
+	// Unavailable lists modules the preset names that this organization is
+	// not entitled to: the preset leaves them off instead of failing.
+	Unavailable []ModuleRefOutput `json:"unavailable,omitempty"`
 	Unchanged   int               `json:"unchanged"`
 	TotalAfter  int               `json:"total_after"`
 	AuditNotice string            `json:"audit_notice,omitempty"`
@@ -1106,7 +1118,7 @@ func (s *ModuleService) buildPresetDiff(ctx context.Context, tenantID string, p 
 	// Sub-module inheritance: a parent enabled in the preset implicitly enables
 	// its "<parent>.<sub>" sub-modules.
 	applySubModuleInheritance(target, allModules)
-	disabledNow := s.getTenantDisabledModules(ctx, tenantID)
+	states := s.moduleStates(ctx, tenantID)
 
 	diff := &PresetDiffOutput{
 		PresetID:   p.ID,
@@ -1120,9 +1132,22 @@ func (s *ModuleService) buildPresetDiff(ctx context.Context, tenantID string, p 
 	for _, m := range allModules {
 		id := m.ID()
 		wantEnabled := target[id]
-		currentlyEnabled := m.IsActive() && !disabledNow[id]
+		currentlyEnabled := m.IsActive() && states[id] == ""
 
 		switch {
+		case !m.IsCore() && !moduledom.IsUserFacing(id):
+			// A module not listed on Settings > Modules keeps its state: a
+			// preset must not switch off what the page cannot switch back on.
+			diff.Unchanged++
+			if currentlyEnabled {
+				diff.TotalAfter++
+			}
+			continue
+		case wantEnabled && !currentlyEnabled && !m.IsCore() && !entitledState(states[id]):
+			// Not entitled (or in its read-only grace): the organization
+			// cannot switch it on, so the preset leaves it off.
+			diff.Unavailable = append(diff.Unavailable, ModuleRefOutput{ModuleID: id, Name: m.Name()})
+			continue
 		case wantEnabled && !currentlyEnabled:
 			diff.ToEnable = append(diff.ToEnable, ModuleRefOutput{ModuleID: id, Name: m.Name()})
 		case !wantEnabled && currentlyEnabled && !m.IsCore():
@@ -1145,6 +1170,12 @@ func (s *ModuleService) buildPresetDiff(ctx context.Context, tenantID string, p 
 // logPresetApplied records the preset choice separately from the
 // underlying toggle audit, so auditors can reconstruct "admin applied
 // VM Essentials" without parsing toggle-level rows.
+// entitledState reports whether an off reason still lets the organization
+// switch the module on (only its own preference turned it off).
+func entitledState(reason string) bool {
+	return reason != ReasonNotEntitled && reason != ReasonUnavailable && reason != ReasonReadOnlyGrace
+}
+
 func (s *ModuleService) logPresetApplied(ctx context.Context, actx auditapp.AuditContext, tenantID string, p *moduledom.ModulePreset) {
 	if s.auditService == nil {
 		return
