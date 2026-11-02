@@ -763,8 +763,13 @@ the platform admin console (RFC-022); on the tenant plane they do not exist:
   one per region). No sensor id, name, host, address, version, node count,
   capacity or other organization's load. The card links administrators to
   the owner's opt-out.
-- **Console fleet.** Console > Scanning > Platform scanning (Fleet)
-  (`/api/v1/admin/shared-sensors`, `internal/app/sensor/shared_fleet.go`,
+- **Console fleet.** Console > Platform sensors (`/sensors`, shown with the
+  `platform.sensors.read` permission; the enrollment card, the sensor list with
+  pause and retire, and the instance scan zones are not hidden by the
+  shared-scanning rollout gate, so feed relay, passive discovery and AI worker
+  sensors can be enrolled before organizations may use shared scanning; the
+  Fleet tab of Scanning > Platform scanning keeps the instance switch and links
+  here) (`/api/v1/admin/shared-sensors`, `internal/app/sensor/shared_fleet.go`,
   `postgres/shared_fleet_repository.go`). Any administrator: the instance
   sensors, queued and running jobs per tool lane, per-organization counts
   (queued, running, completed and failed in 24 hours) and job metadata. The
