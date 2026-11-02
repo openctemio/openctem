@@ -31,12 +31,26 @@ describe('FindingApprovalSettingsForm', () => {
         onSaved={onSaved}
       />
     )
-    const save = screen.getByRole('button', { name: /save changes/i })
-    expect(save).toBeDisabled()
+    // The one save model of a settings form: the bar shows once something changed.
+    expect(screen.queryByRole('region', { name: 'Unsaved changes' })).toBeNull()
     await userEvent.type(screen.getByLabelText(/email address/i), 'advisor@example.com')
-    await userEvent.click(save)
+    expect(screen.getByRole('region', { name: 'Unsaved changes' })).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: /save changes/i }))
     expect(update).toHaveBeenCalledWith({ backup_contact_email: 'advisor@example.com' })
     expect(onSaved).toHaveBeenCalledWith({ backup_contact_email: 'advisor@example.com' })
+  })
+
+  it('discards the unsaved changes back to the saved values', async () => {
+    render(
+      <FindingApprovalSettingsForm settings={{ backup_contact_email: 'a@example.com' }} canEdit />
+    )
+    const email = screen.getByLabelText(/email address/i)
+    await userEvent.clear(email)
+    await userEvent.type(email, 'b@example.com')
+    await userEvent.click(screen.getByRole('button', { name: 'Discard' }))
+    expect(email).toHaveValue('a@example.com')
+    expect(screen.queryByRole('region', { name: 'Unsaved changes' })).toBeNull()
+    expect(update).not.toHaveBeenCalled()
   })
 
   it('is read-only without settings:write', () => {
@@ -107,6 +121,19 @@ describe('FindingApprovalSettingsForm — risk acceptance level', () => {
     await userEvent.click(acceptGroup().getByRole('button', { name: /cancel the change/i }))
     expect(update).toHaveBeenCalledWith({ cancel_pending: true })
     expect(onSaved).toHaveBeenCalled()
+  })
+
+  it('discards the unsaved changes back to the saved values', async () => {
+    render(
+      <FindingApprovalSettingsForm settings={{ backup_contact_email: 'a@example.com' }} canEdit />
+    )
+    const email = screen.getByLabelText(/email address/i)
+    await userEvent.clear(email)
+    await userEvent.type(email, 'b@example.com')
+    await userEvent.click(screen.getByRole('button', { name: 'Discard' }))
+    expect(email).toHaveValue('a@example.com')
+    expect(screen.queryByRole('region', { name: 'Unsaved changes' })).toBeNull()
+    expect(update).not.toHaveBeenCalled()
   })
 
   it('is read-only without settings:write', () => {

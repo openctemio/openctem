@@ -23,9 +23,15 @@ vi.mock('@/context/tenant-provider', () => ({
 vi.mock('@/hooks/use-display-user', () => ({ useDisplayUser: () => ({ id: 'u-self' }) }))
 vi.mock('@/lib/permissions', () => ({
   Can: ({ children }: { children: ReactNode }) => <>{children}</>,
-  usePermissions: () => ({ isOwner: () => true, isAtLeast: () => true }),
+  Permission: { MembersInvite: 'members:invite', MembersManage: 'members:manage' },
+  usePermissions: () => ({
+    isOwner: () => true,
+    isAtLeast: () => true,
+    canAny: () => permState.canInvite,
+  }),
   useCanMutate: () => true,
 }))
+const permState = vi.hoisted(() => ({ canInvite: true }))
 vi.mock('@/features/access-control', () => ({
   useUserRoles: () => ({ roles: [], isLoading: false, mutate: vi.fn() }),
   useRoles: () => ({ roles: [], isLoading: false }),
@@ -107,5 +113,22 @@ describe('Members page (vi)', () => {
     expect(screen.queryByText('Invite user')).toBeNull()
     expect(screen.queryByText('Last active')).toBeNull()
     expect(screen.queryByText(/of 1 users/)).toBeNull()
+  })
+
+  it('shows no invitation count to someone who cannot read invitations', () => {
+    permState.canInvite = false
+    try {
+      render(
+        <I18nProvider locale="en">
+          <UsersPage />
+        </I18nProvider>
+      )
+      // The count would be 0 because the list is not readable, not because
+      // nobody is invited; the tile and the email notice are for inviters.
+      expect(screen.queryByText('Pending invitations')).toBeNull()
+      expect(screen.queryByText('This server cannot send email')).toBeNull()
+    } finally {
+      permState.canInvite = true
+    }
   })
 })
