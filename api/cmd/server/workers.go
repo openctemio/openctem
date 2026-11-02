@@ -674,6 +674,9 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	// AI agents without an active accountable owner or a fresh attestation
 	// pause (every run start checks the same, fail closed).
 	if svc.AIAnalysis != nil {
+		if svc.Module != nil {
+			svc.AIAnalysis.SetModuleGuard(svc.Module) // skip tenants with ai_triage off
+		}
 		w.ControllerManager.Register(controller.NewAIAgentSweepController(svc.AIAnalysis, time.Hour,
 			log.With("controller", "ai-agent-sweep")))
 	}
@@ -842,22 +845,35 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		w.ControllerManager.Register(controller.NewScopeJoinController(svc.ScopeJoin, 0))
 		// Programs with a scope source are read again every 6 hours (RFC-065 §14).
 		if svc.BountyProgram != nil {
+			if svc.Module != nil {
+				svc.BountyProgram.SetModuleGuard(svc.Module) // skip tenants with scope off
+			}
 			w.ControllerManager.Register(controller.NewProgramSyncController(svc.BountyProgram, 0))
 		}
 		// The public program feed (RFC-065 §16), when a bundle directory and
 		// the root key id are configured.
 		if svc.ProgramFeed != nil {
+			if svc.Module != nil {
+				svc.ProgramFeed.SetModuleGuard(svc.Module) // subscribers with scope off stay as they are
+			}
 			w.ControllerManager.Register(controller.NewProgramFeedController("program-feed", svc.ProgramFeed))
 		}
 		// The operator's local bundle (owner option A): imported only while
 		// a platform administrator has the source enabled.
 		if svc.ProgramFeedLocal != nil {
+			if svc.Module != nil {
+				svc.ProgramFeedLocal.SetModuleGuard(svc.Module)
+			}
 			w.ControllerManager.Register(controller.NewProgramFeedController("program-feed-local", svc.ProgramFeedLocal))
 		}
 		// Program data scope: assets a program covers stay assigned to its
 		// group (RFC-065 §7), also those that arrived by discovery.
 		if svc.ProgramAssigner != nil {
-			w.ControllerManager.Register(controller.NewProgramAssignmentController(svc.ProgramAssigner, 0))
+			assign := controller.NewProgramAssignmentController(svc.ProgramAssigner, 0)
+			if svc.Module != nil {
+				assign.SetModuleGuard(svc.Module) // skip tenants with scope off
+			}
+			w.ControllerManager.Register(assign)
 		}
 	}
 	// Long intrusive (t2) scope entries are re-attested or fall back to t1
@@ -1071,9 +1087,13 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	// Task issues: push each task's state to its tracker issue (move and a
 	// progress comment) when it changed since the last push.
 	if svc != nil && svc.JiraSync != nil && repos.TicketLink != nil {
-		w.ControllerManager.Register(controller.NewTaskTicketController(
+		tickets := controller.NewTaskTicketController(
 			repos.TicketLink, svc.JiraSync, time.Minute, log.With("controller", "task-tickets"),
-		))
+		)
+		if svc.Module != nil {
+			tickets.SetModuleGuard(svc.Module) // no pushes for tenants with remediation off
+		}
+		w.ControllerManager.Register(tickets)
 	}
 	// Remediation suggestions: propose groups and tasks from the remediation
 	// keys (never create them) and send the daily digest.
