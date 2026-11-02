@@ -4,7 +4,6 @@ import { useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import type { ColumnDef } from '@tanstack/react-table'
 import { Main } from '@/components/layout'
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   DataTable,
   ErrorState,
@@ -13,6 +12,7 @@ import {
   PageStack,
   RelativeTime,
 } from '@/features/shared'
+import { FilterSelect } from '@/features/shared/components/filter-select'
 import { useTranslation } from '@/context/i18n-provider'
 import { useListParams } from '@/hooks/use-list-params'
 import {
@@ -132,20 +132,19 @@ export default function AdminUsersPage() {
                 label: t('admin.users.searchLabel', 'Search accounts'),
               }}
               start={
-                <Tabs value={state} onValueChange={(v) => list.setFilter('state', v)}>
-                  <TabsList className="h-auto flex-wrap">
-                    {PLATFORM_USER_STATES.map((s) => (
-                      <TabsTrigger key={s} value={s} className="gap-1.5">
-                        {t(`admin.users.state.${s}`, STATE_LABELS[s])}
-                        {data?.counts?.[s] !== undefined && (
-                          <span className="tabular-nums text-xs text-muted-foreground">
-                            {data.counts[s]}
-                          </span>
-                        )}
-                      </TabsTrigger>
-                    ))}
-                  </TabsList>
-                </Tabs>
+                <FilterSelect
+                  label={t('admin.users.stateFilter', 'State')}
+                  value={state}
+                  allValue="all"
+                  allLabel={t('admin.users.state.all', STATE_LABELS.all)}
+                  allCount={data?.counts?.all}
+                  onChange={(v) => list.setFilter('state', v || 'all')}
+                  options={PLATFORM_USER_STATES.filter((x) => x !== 'all').map((x) => ({
+                    value: x,
+                    label: t(`admin.users.state.${x}`, STATE_LABELS[x]),
+                    count: data?.counts?.[x],
+                  }))}
+                />
               }
             />
             {tooShort && (

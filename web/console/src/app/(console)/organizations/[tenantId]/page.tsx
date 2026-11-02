@@ -17,7 +17,7 @@ import { useAdminAuditLogs } from '@console/features/admin-console/api/use-admin
 import { AdminActivityTable } from '@console/features/admin-console/components/admin-activity-table'
 import { OrganizationSummary } from '@console/features/admin-console/components/organization-summary'
 import {
-  OrganizationPurgeAction,
+  OrganizationDangerZone,
   OrganizationStatusBadge,
   OrganizationSuspendedNotice,
   OrganizationSuspensionAction,
@@ -162,9 +162,9 @@ export default function AdminOrganizationPage({
               }
             >
               <OrganizationStatusBadge org={org} />
-              {canSuspend && <OrganizationSuspensionAction org={org} onDone={refresh} />}
-              {canPurge && (
-                <OrganizationPurgeAction org={org} onDone={() => router.push('/organizations')} />
+              {/* Lifting a suspension restores access: a neutral header action. */}
+              {canSuspend && org.status === 'suspended' && (
+                <OrganizationSuspensionAction org={org} onDone={refresh} />
               )}
             </PageHeader>
             <OrganizationSuspendedNotice org={org} />
@@ -191,6 +191,13 @@ export default function AdminOrganizationPage({
                 <PageStack>
                   <OrganizationSummary org={org} onOpenTab={setTab} />
                   <OrganizationDashboardDataPanel tenantId={org.id} canRebuild={canManageUsers} />
+                  <OrganizationDangerZone
+                    org={org}
+                    canSuspend={canSuspend}
+                    canPurge={canPurge}
+                    onChanged={refresh}
+                    onDeleted={() => router.push('/organizations')}
+                  />
                 </PageStack>
               </TabsContent>
 
@@ -200,6 +207,7 @@ export default function AdminOrganizationPage({
                   orgName={org.name}
                   canManage={canManageUsers}
                   canRecover={adminHas(admin, 'platform.tenants.owner_recovery')}
+                  ownerInvitation={org.owner_invitation}
                   onChanged={refresh}
                 />
               </TabsContent>
