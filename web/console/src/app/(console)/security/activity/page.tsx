@@ -5,14 +5,7 @@ import { Download } from 'lucide-react'
 import { Main } from '@/components/layout'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import { ErrorState, PageHeader, PageStack } from '@/features/shared'
+import { ErrorState, FilterSelect, PageHeader, PageStack } from '@/features/shared'
 import { useTranslation } from '@/context/i18n-provider'
 import { useCsvExport, type ExportFieldConfig } from '@/hooks/use-csv-export'
 import { useSearchQuery } from '@/hooks/use-search-query'
@@ -22,12 +15,15 @@ import {
   type AuditOutcome,
 } from '@console/features/admin-console/api/use-admin-audit'
 import { AdminActivityTable } from '@console/features/admin-console/components/admin-activity-table'
+import {
+  AuditKindLens,
+  auditKind,
+} from '@console/features/admin-console/components/audit-kind-lens'
 import { AdminAuditChainStatus } from '@console/features/admin-console/components/admin-audit-chain-status'
 import { AdminAuditDetailSheet } from '@console/features/admin-console/components/admin-audit-detail-sheet'
 import { dayBound } from '@console/features/admin-console/lib/audit-range'
 import type { AdminAuditEntry } from '@console/features/admin-console/types'
 
-const ALL = 'all'
 const exportFields = (
   t: ReturnType<typeof useTranslation>['t']
 ): ExportFieldConfig<AdminAuditEntry>[] => [
@@ -64,8 +60,11 @@ export default function AdminActivityPage() {
   // The list lives in the URL (one list convention): page and its filters, so
   // the overview can link straight to "break-glass sign-ins" or "failures".
   const list = useListParams({
-    filters: { action: '', admin_email: '', outcome: '', from: '', to: '' },
+    filters: { kind: '', action: '', admin_email: '', outcome: '', from: '', to: '' },
   })
+  // Changes by default: page views and write-ahead rows stay in the chain,
+  // one click away under "All events".
+  const kind = auditKind(list.filters.kind)
   const { page, setPage } = list
   const action = list.filters.action
   const adminEmail = list.filters.admin_email
@@ -80,6 +79,7 @@ export default function AdminActivityPage() {
     action: dAction,
     adminEmail: dEmail,
     outcome,
+    kind,
     from: dayBound(list.filters.from, false),
     to: dayBound(list.filters.to, true),
   })
@@ -127,6 +127,10 @@ export default function AdminActivityPage() {
             }}
             toolbarStart={
               <div className="grid w-full gap-2 sm:grid-cols-2 lg:flex lg:flex-wrap">
+                <AuditKindLens
+                  value={kind}
+                  onChange={(v) => list.setFilter('kind', v === 'all' ? 'all' : '')}
+                />
                 <Input
                   placeholder={t('admin.activity.actionFilter', 'Action, e.g. console.login')}
                   value={action}
@@ -141,28 +145,19 @@ export default function AdminActivityPage() {
                   className="lg:max-w-56"
                   aria-label={t('admin.activity.adminFilterLabel', 'Filter by administrator')}
                 />
-                <Select
-                  value={outcome || ALL}
-                  onValueChange={(v) => list.setFilter('outcome', v === ALL ? '' : v)}
-                >
-                  <SelectTrigger
-                    className="lg:w-44"
-                    aria-label={t('admin.activity.outcomeLabel', 'Filter by result')}
-                  >
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={ALL}>
-                      {t('admin.activity.outcomeAll', 'All results')}
-                    </SelectItem>
-                    <SelectItem value="success">
-                      {t('admin.activity.outcomeSuccess', 'Succeeded')}
-                    </SelectItem>
-                    <SelectItem value="failure">
-                      {t('admin.activity.outcomeFailure', 'Refused or failed')}
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
+                <FilterSelect
+                  label={t('admin.activity.outcomeLabel', 'Filter by result')}
+                  value={outcome}
+                  onChange={(v) => list.setFilter('outcome', v)}
+                  allLabel={t('admin.activity.outcomeAll', 'All results')}
+                  options={[
+                    { value: 'success', label: t('admin.activity.outcomeSuccess', 'Succeeded') },
+                    {
+                      value: 'failure',
+                      label: t('admin.activity.outcomeFailure', 'Refused or failed'),
+                    },
+                  ]}
+                />
                 <Input
                   type="date"
                   value={list.filters.from}
