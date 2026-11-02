@@ -43,6 +43,7 @@ router agree.
 | `POST /auth/onboarding/options` | refresh token | Invitations for the verified address only; references are HMAC-bound to the account and expire |
 | `POST /auth/onboarding/accept` | refresh token | Re-checks the reference, verified address, pending state, the organization's policies; audited `invitation.accepted` |
 | `POST /auth/onboarding/decline` | refresh token | Invitation references only; verified address; pending; deletes the invitation; audited `invitation.deleted` with `declined: true` |
+| `GET /me/ownership-invitations`, `POST /me/ownership-invitations/{id}/accept`, `.../decline` | access token (account-only allowed) | [Ownership invitations](organization-ownership-invitations.md) bound to the caller's account id; accept needs step-up and a verified address |
 
 ## What does not change
 

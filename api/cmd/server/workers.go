@@ -38,7 +38,6 @@ import (
 	"github.com/openctemio/openctem/api/internal/config"
 	"github.com/openctemio/openctem/api/internal/infra/auditsink"
 	"github.com/openctemio/openctem/api/internal/infra/controller"
-	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/internal/infra/jobs"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
@@ -806,7 +805,7 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		}
 		svc.ThreatAlertPlanner.SetSinks(ob, inApp, repos.MemberLifecycle, scopes, mail, deps.Config.SMTP.BaseURL)
 		if svc.Module != nil {
-			svc.ThreatAlertPlanner.SetModules(middleware.NewModuleGate(svc.Module, time.Minute))
+			svc.ThreatAlertPlanner.SetModules(svc.ModuleGate)
 		}
 		w.ControllerManager.Register(controller.NewThreatAlertPlannerController(svc.ThreatAlertPlanner, log.With("controller", "threat-alert-planner")))
 	}
