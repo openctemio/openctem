@@ -270,9 +270,10 @@ func (s *SAMLService) ACS(ctx context.Context, orgSlug, baseURL string, r *http.
 			return nil, ErrSAMLResponseInvalid
 		}
 	}
+	key, legacySubject := samlIdentity(assertion, tenantAndCfg.tenant.ID())
 	return s.sso.completeFederatedLogin(ctx, tenantAndCfg.tenant, email, name, cfg.DefaultRole(), cfg.AutoProvision(),
 		federatedBinding{authTime: authAt, mfa: samlMFAEvidence(assertion)},
-		samlIdentityKey(assertion, tenantAndCfg.tenant.ID()))
+		key, legacySubject)
 }
 
 // parseStrictResponse validates the posted response: the hardening checks
@@ -315,22 +316,78 @@ func (s *SAMLService) parseStrictResponse(ctx context.Context, sp *saml.ServiceP
 	return assertion, nil
 }
 
-// samlIdentityKey is the assertion's identity: the IdP entity id plus a
-// persistent NameID, scoped to the organization whose IdP certificate signed
-// the assertion (another organization can configure the same entity id, so
-// the pair means nothing outside it). Other NameID formats are not stable
-// (transient changes every login; emailAddress is the mutable email itself),
-// so they key nothing and the email finds the account as before.
-func samlIdentityKey(a *saml.Assertion, tenantID shared.ID) useridentity.Key {
-	if a == nil || a.Issuer.Value == "" || a.Subject == nil || a.Subject.NameID == nil {
-		return useridentity.Key{}
-	}
-	nid := a.Subject.NameID
-	if nid.Format != string(saml.PersistentNameIDFormat) || strings.TrimSpace(nid.Value) == "" {
-		return useridentity.Key{}
+// Entra ID's immutable user id and directory id, sent by default in every
+// SAML assertion of an Entra enterprise application.
+const (
+	samlEntraObjectIDAttr = "http://schemas.microsoft.com/identity/claims/objectidentifier"
+	samlEntraTenantIDAttr = "http://schemas.microsoft.com/identity/claims/tenantid"
+)
+
+// samlIdentity is the assertion's identity, scoped to the organization whose
+// IdP certificate signed the assertion (another organization can configure
+// the same entity id, so the pair means nothing outside it). The subject is
+// immutable, never the email:
+//   - Entra ID's object id (objectidentifier claim, with tenantid), which
+//     Entra sends by default, whatever NameID the application is set to;
+//   - otherwise a persistent NameID.
+//
+// Other NameID formats are not stable (transient changes every login;
+// emailAddress is the mutable email itself, and a renamed or reused address
+// would inherit the old account), so they key nothing and the email finds
+// the account as before. legacySubject is a persistent NameID an Entra
+// identity may have been bound under before it was keyed on the object id;
+// the binding is re-keyed on the next login.
+func samlIdentity(a *saml.Assertion, tenantID shared.ID) (key useridentity.Key, legacySubject string) {
+	if a == nil || a.Issuer.Value == "" {
+		return useridentity.Key{}, ""
 	}
 	scope := tenantID
-	return useridentity.Key{Issuer: a.Issuer.Value, Subject: nid.Value, ScopeTenantID: &scope}
+	persistent := ""
+	if a.Subject != nil && a.Subject.NameID != nil && a.Subject.NameID.Format == string(saml.PersistentNameIDFormat) {
+		persistent = strings.TrimSpace(a.Subject.NameID.Value)
+	}
+	oid, tid := samlSingleAttribute(a, samlEntraObjectIDAttr), samlSingleAttribute(a, samlEntraTenantIDAttr)
+	if oid != "" && tid != "" {
+		subject := tid + "/" + oid
+		if persistent == subject {
+			persistent = ""
+		}
+		return useridentity.Key{Issuer: a.Issuer.Value, Subject: subject, ScopeTenantID: &scope}, persistent
+	}
+	if persistent == "" {
+		return useridentity.Key{}, ""
+	}
+	return useridentity.Key{Issuer: a.Issuer.Value, Subject: persistent, ScopeTenantID: &scope}, ""
+}
+
+// samlIdentityKey is samlIdentity without the legacy subject.
+func samlIdentityKey(a *saml.Assertion, tenantID shared.ID) useridentity.Key {
+	k, _ := samlIdentity(a, tenantID)
+	return k
+}
+
+// samlSingleAttribute returns the value of the attribute named name when the
+// assertion carries it exactly once with exactly one non-empty value of at
+// most 128 characters; otherwise "" (an ambiguous identity keys nothing).
+func samlSingleAttribute(a *saml.Assertion, name string) string {
+	found := ""
+	n := 0
+	for _, st := range a.AttributeStatements {
+		for _, attr := range st.Attributes {
+			if attr.Name != name {
+				continue
+			}
+			n++
+			if len(attr.Values) != 1 {
+				return ""
+			}
+			found = strings.TrimSpace(attr.Values[0].Value)
+		}
+	}
+	if n != 1 || found == "" || len(found) > 128 || strings.ContainsAny(found, "/ \t\r\n") {
+		return ""
+	}
+	return found
 }
 
 // assertionAuthnInstant is the latest AuthnInstant of the (signature- and
