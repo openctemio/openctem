@@ -150,6 +150,7 @@ RFC-003 (asset source priority) was withdrawn on 2026-10-05; see
 | [RFC-139](RFC-139-ai-knowledge-and-skills.md) | Knowledge and skills for AI agents | Accepted (2026-10-31). |
 | [RFC-140](RFC-140-rule-packs.md) | Detection rule packs (web fingerprints and sensitive information) | Accepted (2026-10-31). |
 | [RFC-141](RFC-141-tenantless-account-space.md) | Account space for a person with no organization | Accepted (2026-11-01). |
+| [RFC-142](RFC-142-feed-relay.md) | Feed relay: signed feeds through a platform sensor, zero platform egress | Accepted (2026-11-01). |
 <!-- END RFC INDEX -->
 
 > Status legend: **Proposed** = under review · **Phase N done** = that phase shipped to `develop` · **Implemented** = fully landed.
