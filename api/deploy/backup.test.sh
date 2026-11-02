@@ -16,11 +16,16 @@ fixture() {
 	printf 'DB_NAME=openctem\nOPENCTEM_VERSION=v9\nAPP_ENCRYPTION_KEY=secretsecret\n' >"$d/deploy/.env"
 	cat >"$d/bin/docker" <<'STUB'
 #!/usr/bin/env bash
+[ -z "${STUB_LOG:-}" ] || echo "$*" >>"$STUB_LOG"
 case "$1" in
 compose)
 	case "$2" in
 	config) if [ "${3:-}" = "--images" ]; then echo postgres:17; else echo '  "name": "stubproj",'; fi ;;
-	exec) case "$*" in *psql*) echo "t 1" ;; *) echo "PLAINTEXT-DUMP" ;; esac ;;
+	exec) case "$*" in
+		*pg_restore*) cat >/dev/null; [ -z "${FAIL_RESTORE:-}" ] || exit 1 ;;
+		*psql*) echo "t 1" ;;
+		*) echo "PLAINTEXT-DUMP" ;;
+		esac ;;
 	esac ;;
 exec) case "$*" in *pg_restore*) cat >/dev/null ;; *psql*) echo "t 1" ;; esac ;;
 rm) ;;
@@ -100,6 +105,21 @@ grep -q 'volume archives OK' "$d/vout" && ok "verify decrypts with the identity"
 d="$(fixture)"
 rc="$(run_backup "$d" FAIL_DUMPCHECK=1 BACKUP_AGE_RECIPIENT=age1testrecipient)"
 [ "$rc" != 0 ] && grep -q 'not a readable pg_dump archive' "$d/out" && ok "unreadable dump fails the run" || bad "unreadable dump: rc=$rc"
+
+# 7. restore goes into a new database and swaps it in (pg_restore --clean cannot drop the default
+#    partition of a partitioned table); a failed restore leaves the running database alone.
+d="$(fixture)"
+run_backup "$d" >/dev/null
+b="$(find "$d/backups" -mindepth 1 -maxdepth 1 -type d | head -1)"
+rc=0; (cd "$d/deploy" && env PATH="$d/bin:$PATH" STUB_LOG="$d/log" bash ./backup.sh restore "$b" --yes >"$d/rout" 2>&1) || rc=$?
+[ "$rc" = 0 ] || bad "restore failed ($rc): $(tail -3 "$d/rout")"
+! grep -q -e '--clean' "$d/log" && grep -q 'pg_restore.* -d openctem_restore ' "$d/log" && ok "restore targets a fresh database, no --clean" || bad "restore command: $(grep pg_restore "$d/log")"
+grep -q 'ALTER DATABASE "openctem_restore" RENAME TO "openctem"' "$d/log" && ok "restore swaps the new database in" || bad "restore does not swap"
+d="$(fixture)"
+run_backup "$d" >/dev/null
+b="$(find "$d/backups" -mindepth 1 -maxdepth 1 -type d | head -1)"
+rc=0; (cd "$d/deploy" && env PATH="$d/bin:$PATH" STUB_LOG="$d/log" FAIL_RESTORE=1 bash ./backup.sh restore "$b" --yes >"$d/rout" 2>&1) || rc=$?
+[ "$rc" != 0 ] && ! grep -q 'DROP DATABASE "openctem" ' "$d/log" && grep -q 'running database was not changed' "$d/rout" && ok "failed restore keeps the running database" || bad "failed restore: rc=$rc"
 
 echo "passed: $pass failed: $failed"
 [ "$failed" = 0 ]

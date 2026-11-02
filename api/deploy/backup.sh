@@ -220,10 +220,20 @@ do_restore() {
 	fi
 	log "stopping gateway, web, console, api"
 	dc stop gateway web console api
-	log "restoring the database"
-	dc exec -T postgres psql -U "$db_super" -d postgres -v ON_ERROR_STOP=1 -qX \
-		-c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '${db_name}' AND pid <> pg_backend_pid()" >/dev/null
-	unseal "${dir}/openctem.dump" | dc exec -T postgres pg_restore -U "$db_super" -d "$db_name" --clean --if-exists --no-owner --exit-on-error
+	# Restore into a NEW database and swap it in. pg_restore --clean cannot drop a partitioned table's
+	# default partition before its parent (asset_change_events_default), and a failed --clean run leaves
+	# a half-dropped database. A failed restore here leaves the running database untouched.
+	log "restoring the database into ${db_name}_restore"
+	psql_super() { dc exec -T postgres psql -U "$db_super" -d postgres -v ON_ERROR_STOP=1 -qX "$@"; }
+	psql_super -c "DROP DATABASE IF EXISTS \"${db_name}_restore\" WITH (FORCE)"
+	psql_super -c "CREATE DATABASE \"${db_name}_restore\" OWNER \"${db_super}\""
+	if ! unseal "${dir}/openctem.dump" | dc exec -T postgres pg_restore -U "$db_super" -d "${db_name}_restore" --no-owner --exit-on-error; then
+		psql_super -c "DROP DATABASE IF EXISTS \"${db_name}_restore\" WITH (FORCE)" >/dev/null || true
+		die "pg_restore failed; the running database was not changed"
+	fi
+	log "swapping the restored database in"
+	psql_super -c "DROP DATABASE \"${db_name}\" WITH (FORCE)"
+	psql_super -c "ALTER DATABASE \"${db_name}_restore\" RENAME TO \"${db_name}\""
 	# The least-privilege roles (db-roles) re-grant on the restored schema.
 	dc up -d --no-deps db-roles >/dev/null
 	for v in api-data gateway-data signer-keys signer-state; do
