@@ -7,6 +7,13 @@
 # platform. It takes no scan jobs and runs no scanner. Replace the example
 # vendor (Active Directory) with yours, then:
 #   kubectl apply -n <namespace> -f {{$slug}}.yaml
+#
+# The default image, ghcr.io/openctemio/asset-collector, is private: create a
+# pull secret with the GitHub account the maintainers gave read access (a
+# token with read:packages) and uncomment imagePullSecrets below:
+#   kubectl create secret docker-registry ghcr-pull -n <namespace> \
+#     --docker-server=ghcr.io --docker-username=<github-user> --docker-password=<token>
+# Every vendor and its settings: {{docs}}/sensors/asset-collector/
 {{- if not .APIKey}}
 # Replace octs_... below with the sensor's API key first (it is shown once,
 # when the sensor is created or its key is rotated).
@@ -64,6 +71,8 @@ spec:
         app.kubernetes.io/instance: {{$slug}}
     spec:
       automountServiceAccountToken: false
+      # imagePullSecrets:
+      #   - name: ghcr-pull
       securityContext:
         runAsNonRoot: true
         runAsUser: 65532
