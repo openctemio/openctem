@@ -28,7 +28,7 @@ import {
 } from '../api/use-scan-windows'
 import { useSelectorOptions } from '../api/use-selector-options'
 import { describeSchedule, policyState, tierLabel } from '../lib/schedule'
-import { selectorSummary } from '../lib/selector'
+import { referencesObjects, selectorSummary } from '../lib/selector'
 import type { ScanWindowPolicy } from '../types'
 import { OverridesSection } from './overrides-section'
 import { PolicyDialog } from './policy-dialog'
@@ -40,10 +40,14 @@ export function ScanWindowsPanel() {
   const { can } = usePermissions()
   const canManage = can(Permission.ScanWindowsManage)
   const { data, error, isLoading, mutate } = useScanWindowPolicies()
-  const sources = useSelectorOptions()
   const [editing, setEditing] = useState<ScanWindowPolicy | 'new' | null>(null)
   const [deleting, setDeleting] = useState<ScanWindowPolicy | null>(null)
   const policies = data?.data ?? []
+  // The five object lists behind the selector are read only when a policy shows names
+  // or the editor is open: a hard load of the page sends two reads, not seven.
+  const sources = useSelectorOptions(
+    !!editing || policies.some((p) => referencesObjects(p.selector))
+  )
   const noWrite = t(
     'scanWindows.noManage',
     'You need the "Manage scan windows" permission to change policies'
