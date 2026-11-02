@@ -145,14 +145,19 @@ export default function ScanWorkflowsPage() {
     try {
       if (workflow.is_active) {
         await post(scanWorkflowEndpoints.deactivate(workflow.id), {})
-        toast.success(`Workflow "${workflow.name}" deactivated`)
+        toast.success(t('scans.workflows.deactivated', undefined, { name: workflow.name }))
       } else {
         await post(scanWorkflowEndpoints.activate(workflow.id), {})
-        toast.success(`Workflow "${workflow.name}" activated`)
+        toast.success(t('scans.workflows.activated', undefined, { name: workflow.name }))
       }
       await invalidateAllScanWorkflowCaches()
     } catch (error) {
-      toast.error(getErrorMessage(error, `Failed to update workflow "${workflow.name}"`))
+      toast.error(
+        getErrorMessage(
+          error,
+          t('scans.workflows.updateFailed', undefined, { name: workflow.name })
+        )
+      )
     } finally {
       setTogglingWorkflow(null)
     }
@@ -162,7 +167,9 @@ export default function ScanWorkflowsPage() {
   const handleOpenCloneDialog = (workflow: ScanWorkflow) => {
     setCloningWorkflow(workflow)
     // Suggest name: for system template use original name, for tenant workflow add (Copy)
-    const suggestedName = workflow.is_system_template ? workflow.name : `${workflow.name} (Copy)`
+    const suggestedName = workflow.is_system_template
+      ? workflow.name
+      : `${workflow.name} ${t('scans.workflows.copySuffix')}`
     setCloneName(suggestedName)
     setCloneDialogOpen(true)
   }
@@ -176,15 +183,23 @@ export default function ScanWorkflowsPage() {
       await post(scanWorkflowEndpoints.clone(cloningWorkflow.id), { name: cloneName.trim() })
       toast.success(
         cloningWorkflow.is_system_template
-          ? `System template "${cloningWorkflow.name}" has been added to your workflows as "${cloneName.trim()}"`
-          : `Workflow cloned successfully as "${cloneName.trim()}"`
+          ? t('scans.workflows.templateAdded', undefined, {
+              template: cloningWorkflow.name,
+              name: cloneName.trim(),
+            })
+          : t('scans.workflows.cloned', undefined, { name: cloneName.trim() })
       )
       await invalidateAllScanWorkflowCaches()
       setCloneDialogOpen(false)
       setCloningWorkflow(null)
       setCloneName('')
     } catch (error) {
-      toast.error(getErrorMessage(error, `Failed to clone workflow "${cloningWorkflow.name}"`))
+      toast.error(
+        getErrorMessage(
+          error,
+          t('scans.workflows.cloneFailed', undefined, { name: cloningWorkflow.name })
+        )
+      )
     } finally {
       setIsCloning(false)
     }
@@ -216,11 +231,11 @@ export default function ScanWorkflowsPage() {
   ) => {
     try {
       await createWorkflow(data as CreateScanWorkflowRequest)
-      toast.success('Workflow created successfully')
+      toast.success(t('scans.workflows.created'))
       await invalidateAllScanWorkflowCaches()
       setIsFormOpen(false)
     } catch (error) {
-      toast.error(getErrorMessage(error, 'Failed to create workflow'))
+      toast.error(getErrorMessage(error, t('scans.workflows.createFailed')))
     }
   }
 
@@ -242,19 +257,22 @@ export default function ScanWorkflowsPage() {
       if (options?.publish) {
         const published = await publishDraft(editingWorkflow.id)
         toast.success(
-          `Workflow "${editingWorkflow.name}" published as version ${published.version}`
+          t('scans.workflows.published', undefined, {
+            name: editingWorkflow.name,
+            version: published.version,
+          })
         )
       } else if (steps) {
-        toast.success(`Workflow "${editingWorkflow.name}" saved as a draft; publish it to run it`)
+        toast.success(t('scans.workflows.savedDraft', undefined, { name: editingWorkflow.name }))
       } else {
-        toast.success(`Workflow "${editingWorkflow.name}" updated`)
+        toast.success(t('scans.workflows.updated', undefined, { name: editingWorkflow.name }))
       }
       await invalidateAllScanWorkflowCaches()
       setEditingWorkflow(null)
       setIsFormOpen(false)
     } catch (error) {
       console.error('Update workflow error:', error)
-      toast.error(getErrorMessage(error, 'Failed to update workflow'))
+      toast.error(getErrorMessage(error, t('scans.workflows.updateWorkflowFailed')))
     } finally {
       setUpdatingWorkflow(false)
     }
@@ -303,7 +321,9 @@ export default function ScanWorkflowsPage() {
   const workflowColumns: ColumnDef<ScanWorkflow>[] = [
     {
       accessorKey: 'name',
-      header: ({ column }) => <DataTableColumnHeader column={column} title="Workflow" />,
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title={t('scans.workflows.colWorkflow')} />
+      ),
       cell: ({ row }) => {
         const workflow = row.original
         return (
@@ -327,7 +347,9 @@ export default function ScanWorkflowsPage() {
     {
       id: 'status',
       accessorFn: (p) => (p.is_retired ? 'retired' : p.is_active ? 'active' : 'inactive'),
-      header: ({ column }) => <DataTableColumnHeader column={column} title="Status" />,
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title={t('scans.workflows.colStatus')} />
+      ),
       cell: ({ row }) =>
         row.original.is_retired ? (
           <RetiredBadge workflow={row.original} />
@@ -342,12 +364,16 @@ export default function ScanWorkflowsPage() {
     {
       id: 'steps',
       accessorFn: (p) => p.steps?.length ?? 0,
-      header: ({ column }) => <DataTableColumnHeader column={column} title="Steps" />,
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title={t('scans.workflows.colSteps')} />
+      ),
       cell: ({ getValue }) => <span className="text-sm tabular-nums">{getValue<number>()}</span>,
     },
     {
       accessorKey: 'version',
-      header: ({ column }) => <DataTableColumnHeader column={column} title="Version" />,
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title={t('scans.workflows.colVersion')} />
+      ),
       cell: ({ row }) => (
         <span className="text-sm tabular-nums text-muted-foreground">v{row.original.version}</span>
       ),
@@ -355,7 +381,7 @@ export default function ScanWorkflowsPage() {
     {
       id: 'enabled',
       enableSorting: false,
-      header: 'Enabled',
+      header: t('scans.workflows.colEnabled'),
       cell: ({ row }) =>
         row.original.is_system_template ? (
           <span className="text-sm text-muted-foreground">—</span>
@@ -365,7 +391,11 @@ export default function ScanWorkflowsPage() {
               checked={row.original.is_active}
               onCheckedChange={() => handleToggleActive(row.original)}
               disabled={!canWriteWorkflows || togglingWorkflow === row.original.id}
-              aria-label={row.original.is_active ? 'Deactivate workflow' : 'Activate workflow'}
+              aria-label={
+                row.original.is_active
+                  ? t('scans.workflows.deactivate')
+                  : t('scans.workflows.activate')
+              }
             />
           </div>
         ),
@@ -382,7 +412,7 @@ export default function ScanWorkflowsPage() {
                 variant="ghost"
                 size="sm"
                 className="h-8 w-8 p-0"
-                aria-label={`Actions for ${workflow.name}`}
+                aria-label={t('scans.workflows.actionsFor', undefined, { name: workflow.name })}
                 onClick={(e) => e.stopPropagation()}
               >
                 <MoreHorizontal className="h-4 w-4" />
@@ -391,7 +421,7 @@ export default function ScanWorkflowsPage() {
             <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
               <DropdownMenuItem onClick={() => handleOpenWorkflowDetail(workflow)}>
                 <Eye className="me-2 h-4 w-4" />
-                View details
+                {t('scans.workflows.viewDetails')}
               </DropdownMenuItem>
               {!canWriteWorkflows ? null : workflow.is_system_template ? (
                 <DropdownMenuItem
@@ -399,7 +429,7 @@ export default function ScanWorkflowsPage() {
                   disabled={!workflow.is_active || workflow.is_retired}
                 >
                   <Copy className="me-2 h-4 w-4" />
-                  Use template
+                  {t('scans.workflows.useTemplate')}
                 </DropdownMenuItem>
               ) : (
                 <>
@@ -412,12 +442,12 @@ export default function ScanWorkflowsPage() {
                     ) : (
                       <Pencil className="me-2 h-4 w-4" />
                     )}
-                    Edit workflow
+                    {t('scans.workflows.editWorkflow')}
                   </DropdownMenuItem>
                   <DropdownMenuItem asChild>
                     <Link href={`/scans/workflows/${workflow.id}`}>
                       <GitBranch className="me-2 h-4 w-4" />
-                      Open editor
+                      {t('scans.workflows.openEditor')}
                     </Link>
                   </DropdownMenuItem>
                 </>
@@ -427,7 +457,7 @@ export default function ScanWorkflowsPage() {
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={() => handleOpenCloneDialog(workflow)}>
                     <Copy className="me-2 h-4 w-4" />
-                    Clone
+                    {t('scans.workflows.clone')}
                   </DropdownMenuItem>
                 </>
               )}
@@ -481,7 +511,10 @@ export default function ScanWorkflowsPage() {
       <Main>
         <PageStack>
           <ScansPageHeader>
-            <NewScanWorkflowButton label="New workflow" onClick={handleOpenCreateForm} />
+            <NewScanWorkflowButton
+              label={t('scans.workflows.newWorkflow')}
+              onClick={handleOpenCreateForm}
+            />
           </ScansPageHeader>
           <ScansSectionTabs />
 
@@ -490,16 +523,16 @@ export default function ScanWorkflowsPage() {
           {workflowsError ? (
             <Alert variant="destructive">
               <AlertCircle className="h-4 w-4" />
-              <AlertTitle>Failed to load workflows</AlertTitle>
+              <AlertTitle>{t('scans.workflows.loadFailed')}</AlertTitle>
               <AlertDescription className="flex flex-wrap items-center gap-3">
-                <span>{getErrorMessage(workflowsError, 'Please try again.')}</span>
+                <span>{getErrorMessage(workflowsError, t('scans.workflows.tryAgain'))}</span>
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={() => invalidateAllScanWorkflowCaches()}
                 >
                   <RefreshCw className="me-2 h-4 w-4" />
-                  Retry
+                  {t('common.retry')}
                 </Button>
               </AlertDescription>
             </Alert>
@@ -508,10 +541,13 @@ export default function ScanWorkflowsPage() {
           ) : allWorkflows.length === 0 ? (
             <EmptyState
               icon={Workflow}
-              title="No workflows yet"
-              description="Create a workflow to chain scan steps together."
+              title={t('scans.workflows.emptyTitle')}
+              description={t('scans.workflows.emptyDescription')}
               action={
-                <NewScanWorkflowButton label="Create workflow" onClick={handleOpenCreateForm} />
+                <NewScanWorkflowButton
+                  label={t('scans.workflows.createWorkflow')}
+                  onClick={handleOpenCreateForm}
+                />
               }
             />
           ) : (
@@ -523,11 +559,13 @@ export default function ScanWorkflowsPage() {
               getRowId={(p) => p.id}
               onRowClick={handleOpenWorkflowDetail}
               toolbarStart={ownerFilter}
-              emptyMessage={owner === 'mine' ? 'No custom workflows yet' : 'No workflows match'}
+              emptyMessage={
+                owner === 'mine' ? t('scans.workflows.noneMine') : t('scans.workflows.noneMatch')
+              }
               emptyDescription={
                 owner === 'mine'
-                  ? 'Create a workflow, or use a system template as a starting point.'
-                  : 'Try a different search or owner filter.'
+                  ? t('scans.workflows.noneMineHint')
+                  : t('scans.workflows.noneMatchHint')
               }
             />
           )}
@@ -540,12 +578,14 @@ export default function ScanWorkflowsPage() {
           <SheetHeader>
             <SheetTitle className="flex items-center gap-2">
               <Workflow className="h-5 w-5" />
-              {editingWorkflow ? `Edit: ${editingWorkflow.name}` : 'Create workflow'}
+              {editingWorkflow
+                ? t('scans.workflows.sheetEdit', undefined, { name: editingWorkflow.name })
+                : t('scans.workflows.createWorkflow')}
             </SheetTitle>
             <SheetDescription>
               {editingWorkflow
-                ? 'Modify the workflow configuration'
-                : 'Name the workflow and choose what each step does'}
+                ? t('scans.workflows.sheetEditHint')
+                : t('scans.workflows.sheetCreateHint')}
             </SheetDescription>
           </SheetHeader>
           <ScanWorkflowForm
@@ -615,7 +655,7 @@ export default function ScanWorkflowsPage() {
                           }}
                         >
                           <Plus className="h-4 w-4" />
-                          Add to my workflows
+                          {t('scans.workflows.addToMine')}
                         </Button>
                       </>
                     ) : (
@@ -631,7 +671,7 @@ export default function ScanWorkflowsPage() {
                           ) : (
                             <Pencil className="h-4 w-4" />
                           )}
-                          Edit
+                          {t('scans.workflows.edit')}
                         </Button>
                       </>
                     )
@@ -643,20 +683,24 @@ export default function ScanWorkflowsPage() {
               <div className="space-y-5">
                 <RetiredNotice workflow={pl} />
                 {isTemplate && !pl.is_retired && (
-                  <DetailCallout tone="info" icon={Cloud} title="Read-only system template">
-                    Use Add to my workflows to create your own editable copy.
+                  <DetailCallout
+                    tone="info"
+                    icon={Cloud}
+                    title={t('scans.workflows.readOnlyTitle')}
+                  >
+                    {t('scans.workflows.readOnlyBody')}
                   </DetailCallout>
                 )}
 
                 <DetailSections>
                   {pl.description && (
-                    <DetailSection title="Description">
+                    <DetailSection title={t('scans.workflows.sectionDescription')}>
                       <p className="text-sm text-muted-foreground">{pl.description}</p>
                     </DetailSection>
                   )}
 
                   <DetailSection
-                    title="Steps"
+                    title={t('scans.workflows.sectionSteps')}
                     count={loadingDetail ? undefined : (pl.steps?.length ?? 0)}
                   >
                     {loadingDetail ? (
@@ -672,7 +716,7 @@ export default function ScanWorkflowsPage() {
                       />
                     ) : (
                       <p className="text-sm text-muted-foreground">
-                        No steps configured.
+                        {t('scans.workflows.noSteps')}
                         {!isTemplate && (
                           <Button
                             variant="link"
@@ -680,22 +724,26 @@ export default function ScanWorkflowsPage() {
                             className="h-auto p-0 ps-1"
                             onClick={editWorkflow}
                           >
-                            Add steps
+                            {t('scans.workflows.addSteps')}
                           </Button>
                         )}
                       </p>
                     )}
                   </DetailSection>
 
-                  <DetailSection title="Settings" icon={Settings}>
+                  <DetailSection title={t('scans.workflows.sectionSettings')} icon={Settings}>
                     <DetailFieldGrid>
-                      <DetailField label="Max parallel">
-                        {pl.settings?.max_parallel_steps || 3} steps
+                      <DetailField label={t('scans.workflows.maxParallel')}>
+                        {t('scans.workflows.stepsCount', undefined, {
+                          count: pl.settings?.max_parallel_steps || 3,
+                        })}
                       </DetailField>
-                      <DetailField label="Timeout">
-                        {Math.round((pl.settings?.timeout_seconds || 3600) / 60)} min
+                      <DetailField label={t('scans.workflows.timeout')}>
+                        {t('scans.workflows.minutes', undefined, {
+                          count: Math.round((pl.settings?.timeout_seconds || 3600) / 60),
+                        })}
                       </DetailField>
-                      <DetailField label="Sensor">
+                      <DetailField label={t('scans.workflows.sensor')}>
                         <span className="inline-flex items-center gap-1">
                           {pref === 'platform' ? (
                             <Cloud className="h-3.5 w-3.5 text-muted-foreground" />
@@ -709,7 +757,7 @@ export default function ScanWorkflowsPage() {
                   </DetailSection>
 
                   {pl.tags && pl.tags.length > 0 && (
-                    <DetailSection title="Tags" count={pl.tags.length}>
+                    <DetailSection title={t('scans.workflows.sectionTags')} count={pl.tags.length}>
                       <div className="flex flex-wrap gap-1.5">
                         {pl.tags.map((tag, idx) => (
                           <Badge key={idx} variant="outline" className="text-xs">
@@ -733,35 +781,35 @@ export default function ScanWorkflowsPage() {
               {cloningWorkflow?.is_system_template ? (
                 <>
                   <Cloud className="h-5 w-5 text-muted-foreground" />
-                  Use system template
+                  {t('scans.workflows.useSystemTemplate')}
                 </>
               ) : (
                 <>
                   <Copy className="h-5 w-5" />
-                  Clone workflow
+                  {t('scans.workflows.cloneWorkflow')}
                 </>
               )}
             </DialogTitle>
             <DialogDescription>
               {cloningWorkflow?.is_system_template
-                ? `Create your own copy of "${cloningWorkflow?.name}" in My Workflows. You can customize it after creation.`
-                : `Create a copy of "${cloningWorkflow?.name}". The cloned workflow will appear in My Workflows.`}
+                ? t('scans.workflows.cloneSystemBody', undefined, {
+                    name: cloningWorkflow?.name ?? '',
+                  })
+                : t('scans.workflows.cloneBody', undefined, { name: cloningWorkflow?.name ?? '' })}
             </DialogDescription>
           </DialogHeader>
           <DialogBody>
             <div className="space-y-4 py-4">
               <div className="space-y-2">
-                <Label htmlFor="clone-name">Workflow name</Label>
+                <Label htmlFor="clone-name">{t('scans.workflows.workflowName')}</Label>
                 <Input
                   id="clone-name"
                   value={cloneName}
                   onChange={(e) => setCloneName(e.target.value)}
-                  placeholder="Enter a name for the new workflow"
+                  placeholder={t('scans.workflows.namePlaceholder')}
                   autoFocus
                 />
-                <p className="text-xs text-muted-foreground">
-                  You can change this name later in the workflow settings.
-                </p>
+                <p className="text-xs text-muted-foreground">{t('scans.workflows.nameHint')}</p>
               </div>
               {cloningWorkflow?.is_system_template && (
                 <Alert>
@@ -779,23 +827,23 @@ export default function ScanWorkflowsPage() {
           </DialogBody>
           <DialogFooter>
             <Button variant="outline" onClick={handleCloseCloneDialog} disabled={isCloning}>
-              Cancel
+              {t('common.cancel')}
             </Button>
             <Button onClick={handleConfirmClone} disabled={!cloneName.trim() || isCloning}>
               {isCloning ? (
                 <>
                   <RefreshCw className="me-2 h-4 w-4 animate-spin" />
-                  Creating...
+                  {t('scans.workflows.creating')}
                 </>
               ) : cloningWorkflow?.is_system_template ? (
                 <>
                   <Plus className="me-2 h-4 w-4" />
-                  Add to my workflows
+                  {t('scans.workflows.addToMine')}
                 </>
               ) : (
                 <>
                   <Copy className="me-2 h-4 w-4" />
-                  Clone workflow
+                  {t('scans.workflows.cloneWorkflow')}
                 </>
               )}
             </Button>
