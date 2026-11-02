@@ -347,7 +347,7 @@ func (b *AssetBridge) hostCertificateDetails(p hostCert, cert map[string]any, k 
 		d["certificate_names"] = names[:min(len(names), maxDetailSANs)]
 	}
 	if certFlag(cert, "self_signed") {
-		d["self_signed"] = true
+		d["is_self_signed"] = true
 	}
 	status := propInt(p.svc.Properties(), "status_code")
 	d["http_answered"] = status > 0
