@@ -141,13 +141,21 @@ export function AdminConsoleShell({ children }: { children: ReactNode }) {
             <AdminConsoleSidebar admin={admin} onSignOut={signOut} />
             <SidebarInset>
               {/* One header for every width: the sidebar trigger only on small
-              screens, then the console search (Cmd/Ctrl+K) and the theme. */}
+              screens, then the elevation control, the console search
+              (Cmd/Ctrl+K) and the theme. */}
               <header className="flex h-14 shrink-0 items-center gap-2 px-4">
                 <SidebarTrigger variant="outline" className="md:hidden" />
-                <span className="text-sm font-medium md:hidden">
+                <span className="hidden min-w-0 truncate text-sm font-medium sm:inline md:hidden">
                   {t('admin.shell.title', 'Platform administration')}
                 </span>
                 <div className="ms-auto flex items-center gap-2">
+                  {/* Read-only or elevated, always in view, one line high. */}
+                  <AdminElevationBar
+                    admin={admin}
+                    onChanged={() => void mutate()}
+                    open={elevateOpen}
+                    onOpenChange={setElevateOpen}
+                  />
                   <Search placeholder={t('admin.shell.search', 'Search the console')} />
                   <ThemeSwitch />
                 </div>
@@ -175,12 +183,6 @@ export function AdminConsoleShell({ children }: { children: ReactNode }) {
                   </div>
                 )}
                 <VersionCheckBanner />
-                <AdminElevationBar
-                  admin={admin}
-                  onChanged={() => void mutate()}
-                  open={elevateOpen}
-                  onOpenChange={setElevateOpen}
-                />
                 {children}
               </div>
               <AdminStepUpPrompt />

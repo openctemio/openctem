@@ -48,9 +48,20 @@ administrator's own platform roles, not the session's acting ones: an owner
 acting read-only sees every page, and a page that needs more shows "Elevate to
 see this page" with the elevate dialog one click away (`RoleRequiredNotice`).
 An administrator whose roles do not include it is told so; no retired tier
-name is shown. The sidebar header and the elevation bar name what the session
+name is shown. The sidebar header and the elevation control name what the session
 acts as in platform role words (`actingRoleLabel`). The API enforces the
 acting permissions either way.
+
+Elevation lives in the header row on every page: "Read-only" with an Elevate
+button, or the acting role and its end time with "End now". The elevate dialog
+asks for the role, the duration, the reason and the authenticator code in one
+form; the code goes in the step-up header of `POST /admin/auth/elevate`, which
+always needs a fresh proof (it never rides another action's step-up window). A
+refused code is shown under the code field. An administrator with a usable
+security key may leave the code empty, and a console that accepts only
+security keys shows no code field: the shared step-up dialog then asks for the
+key. The audit row (`console.elevated`, written before the elevation is
+granted) is unchanged.
 
 The Overview's "Needs attention" list includes the installation's own state
 from the Health page: a service that does not answer, a volume below 20%
