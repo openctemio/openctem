@@ -527,6 +527,13 @@ func TestTemplates_CollectorRunsTheAssetCollector(t *testing.T) {
 					t.Errorf("[%s] collector %s lacks %q", dir, name, want)
 				}
 			}
+			// The default image is private: every install says how to log in,
+			// and links the collector's guide.
+			for _, want := range []string{"ghcr.io/openctemio/asset-collector, is private", "read:packages", "/sensors/asset-collector/"} {
+				if !strings.Contains(got, want) {
+					t.Errorf("[%s] collector %s lacks the private-image note %q", dir, name, want)
+				}
+			}
 			for _, never := range []string{"ghcr.io/openctemio/sensor", "sensor-policy.yaml", "seccomp=", "SENSOR_LOCAL_POLICY"} {
 				if strings.Contains(got, never) {
 					t.Errorf("[%s] collector %s carries %q", dir, name, never)

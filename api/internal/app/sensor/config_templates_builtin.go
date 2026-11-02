@@ -32,6 +32,12 @@ openctem-asset-collector -daemon
 # platform. It takes no scan jobs and runs no scanner: no local policy and no
 # seccomp profile are needed.
 #
+# The default image, ghcr.io/openctemio/asset-collector, is private: log in
+# once with the GitHub account the maintainers gave read access (a token with
+# read:packages), or the pull fails with "denied":
+#   docker login ghcr.io -u <github-user>
+# Every vendor and its settings: {{docs}}/sensors/asset-collector/
+#
 # In an empty directory on the host that should collect:
 #   1. Secrets as files (they do not show in docker inspect):
 {{- if .APIKey}}
@@ -107,7 +113,13 @@ configs:
 # The asset collector reads inventory from your systems (vCenter, Active
 # Directory/LDAP, DNS, monitoring tools) and sends it to the platform. It takes
 # no scan jobs and runs no scanner: it needs no local policy and no seccomp
-# profile. Every vendor and its settings: {{docs}}, Asset collector.
+# profile. Every vendor and its settings: {{docs}}/sensors/asset-collector/
+#
+# The image is in a registry that may need a login: the default one,
+# ghcr.io/openctemio/asset-collector, is private (read access is granted by
+# the maintainers; log in once with that GitHub account and a token with
+# read:packages, or the pull fails with "denied"):
+#   docker login ghcr.io -u <github-user>
 {{- if .CACert}}
 
 # 0. Trust the platform's certificate authority (it uses a private CA).
@@ -211,6 +223,13 @@ export SSL_CERT_DIR=/etc/openctem/certs
 # platform. It takes no scan jobs and runs no scanner. Replace the example
 # vendor (Active Directory) with yours, then:
 #   kubectl apply -n <namespace> -f {{$slug}}.yaml
+#
+# The default image, ghcr.io/openctemio/asset-collector, is private: create a
+# pull secret with the GitHub account the maintainers gave read access (a
+# token with read:packages) and uncomment imagePullSecrets below:
+#   kubectl create secret docker-registry ghcr-pull -n <namespace> \
+#     --docker-server=ghcr.io --docker-username=<github-user> --docker-password=<token>
+# Every vendor and its settings: {{docs}}/sensors/asset-collector/
 {{- if not .APIKey}}
 # Replace octs_... below with the sensor's API key first (it is shown once,
 # when the sensor is created or its key is rotated).
@@ -268,6 +287,8 @@ spec:
         app.kubernetes.io/instance: {{$slug}}
     spec:
       automountServiceAccountToken: false
+      # imagePullSecrets:
+      #   - name: ghcr-pull
       securityContext:
         runAsNonRoot: true
         runAsUser: 65532

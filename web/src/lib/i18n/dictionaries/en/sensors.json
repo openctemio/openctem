@@ -691,7 +691,7 @@
   "sensors.identityPolicy.error": "Could not change the sensor identity policy",
   "sensors.identityPolicy.label": "Require key-bound sensor identity",
   "sensors.identityPolicy.required": "New sensors now join only by pairing",
-  "sensors.install.trustCollector.help": "A new collector starts untrusted, and the platform refuses every report it sends until it is trusted. Trusted lets it send asset reports without a job: they can add new assets but never change existing ones, and scope exclusions still apply. Tick this only for a collector you install yourself. It is audited and every administrator is notified.",
+  "sensors.install.trustCollector.help": "A new collector starts untrusted, and the platform refuses every report it sends until it is trusted. Trusted lets it send asset reports without a job: they add new assets, and its complete reports also update the assets it created and mark the ones it no longer lists as stale. It never changes assets other sources created or a person locked, and scope exclusions still apply. Tick this only for a collector you install yourself. It is audited and every administrator is notified.",
   "sensors.install.trustCollector.label": "Trust this collector to push asset reports",
   "sensors.install.trustCollector.noPermission": "Only an administrator who may widen sensor grants can trust a collector. You can create it now and have it trusted later on the sensor's Grant.",
   "sensors.install.trustCollector.notApplied": "The collector was created, but trusting it failed. It stays untrusted until it is promoted on the sensor's Grant.",
