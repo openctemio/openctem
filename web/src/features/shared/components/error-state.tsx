@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { useTranslation } from '@/context/i18n-provider'
 import { accessStateOf, errorDetails } from '@/lib/api/access-state'
 import { describePermissionDenied } from '@/lib/api/permission-denied'
+import { ReportProblem } from './report-problem'
 
 interface ErrorStateProps {
   /** What failed to load, e.g. "SAML configuration". Phrased into "Failed to load {title}". */
@@ -113,6 +114,7 @@ export function ErrorState({ title, error, onRetry }: ErrorStateProps) {
               </span>
             </Button>
           )}
+          <ReportProblem error={error} />
         </div>
       </AlertDescription>
     </Alert>
