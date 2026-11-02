@@ -81,6 +81,16 @@ export function wireStroke(health: SourceHealth | 'neutral' | 'bad'): {
  *   outcomes at a reading width against the edges, the core taking the rest
  *   (a full-width dashboard card from a 1280 px window with the sidebar open).
  */
+/**
+ * The thin dashed frame of a connected visual's columns (sources, outcomes,
+ * the intake summary) from 660 px; a phone stacks them unframed. Wires meet
+ * its edge: FRAME_INSET is its padding plus its border, from a row's edge to
+ * the frame's.
+ */
+export const FLOW_FRAME =
+  '@min-[660px]:rounded-lg @min-[660px]:border @min-[660px]:border-dashed @min-[660px]:border-border-strong @min-[660px]:p-1.5'
+export const FRAME_INSET = 7
+
 export const FLOW_MID = 660
 export const FLOW_WIDE = 900
 
@@ -154,7 +164,29 @@ export function useWireAnchors(
     if (!el || typeof ResizeObserver === 'undefined') return
     const ro = new ResizeObserver(() => setLayout(measure()))
     ro.observe(el)
-    return () => ro.disconnect()
+    // The anchors are the rows rendered right now: a row folded or listed by
+    // the user (ranked bars' "with nothing" line) changes them without
+    // changing the container's width, so a change of the anchor set re-measures.
+    // Watching the set (not every mutation) keeps the wires' own svg out of the loop.
+    const sig = () =>
+      [...el.querySelectorAll<HTMLElement>('[data-wire-out],[data-wire-in]')]
+        .map((n) => n.dataset.wireOut ?? n.dataset.wireIn)
+        .join('\u0000')
+    let last = sig()
+    const mo =
+      typeof MutationObserver === 'undefined'
+        ? null
+        : new MutationObserver(() => {
+            const next = sig()
+            if (next === last) return
+            last = next
+            setLayout(measure())
+          })
+    mo?.observe(el, { childList: true, subtree: true })
+    return () => {
+      ro.disconnect()
+      mo?.disconnect()
+    }
   }, [ref, measure, contentKey])
   return layout
 }

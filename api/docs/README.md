@@ -37,7 +37,7 @@ or use OpenCTEM, see [docs.openctem.io](https://docs.openctem.io)
 
 **Foundations**
 - [Overview](architecture/overview.md), [clean architecture](architecture/clean-arch.md), [project structure](architecture/project-structure.md)
-- [Dashboards: organization and personal](architecture/dashboards.md), [module coupling](architecture/module-coupling-and-decoupling.md), [limits and feature denies](architecture/limits.md), [idle-organization policy](architecture/idle-workspaces.md), [organization suspension and account block](architecture/organization-suspension.md) ([runbook](operations/suspension.md)), [organization deletion grace](architecture/organization-deletion.md), [account space for a person with no organization](architecture/tenantless-account-space.md)
+- [Dashboards: organization and personal](architecture/dashboards.md), [module coupling](architecture/module-coupling-and-decoupling.md), [limits and feature denies](architecture/limits.md), [idle-organization policy](architecture/idle-workspaces.md), [organization suspension and account block](architecture/organization-suspension.md) ([runbook](operations/suspension.md)), [organization deletion grace](architecture/organization-deletion.md), [ownership invitations for an organization created for an existing account](architecture/organization-ownership-invitations.md), [account space for a person with no organization](architecture/tenantless-account-space.md)
 - [Organization settings](architecture/organization-settings.md), [product brand](architecture/brand.md), [database notes](architecture/database-notes.md), [row-level security rollout](architecture/rls-rollout.md), [modules](architecture/modules.md), [platform settings in the admin console](architecture/platform-settings.md), [sidebar pins](architecture/sidebar-pins.md), [system actors](architecture/system-actors.md)
 - Decisions: [ADR-001 standard net/http](architecture/decisions/001-use-stdlib-http.md), [ADR-002 protocols](architecture/decisions/002-multi-protocol.md), [ADR-003 connectors](architecture/decisions/003-connector-pattern.md), [ADR-004 finding provenance](architecture/decisions/004-finding-provenance.md)
 
@@ -83,10 +83,10 @@ or use OpenCTEM, see [docs.openctem.io](https://docs.openctem.io)
 ## How-to (integrations and features)
 
 - [Pair a sensor](how-to/pair-a-sensor.md), [fix a sensor's setup checklist](how-to/fix-sensor-setup-checklist.md), [sensors behind a private CA](how-to/sensors-behind-a-private-ca.md)
-- [Connect CI pipelines](how-to/connect-ci-pipelines.md), [GitLab CI](how-to/gitlab-ci.md)
+- [Connect CI pipelines](how-to/connect-ci-pipelines.md), [GitLab CI](how-to/gitlab-ci.md), [post the CI gate to GitLab merge requests](how-to/gitlab-merge-request-feedback.md), [register the OpenCTEM GitHub App](how-to/github-app.md)
 - [Verify a domain for EASM](how-to/verify-a-domain-for-easm.md), [EASM monitoring settings](how-to/easm-monitoring-settings.md)
 - [Mark things out of scope, and how it reaches sensors](how-to/mark-out-of-scope.md)
-- [Configure Microsoft Entra ID](how-to/configure-entraid.md), [SCIM provisioning](how-to/configure-scim-provisioning.md)
+- [Configure Microsoft Entra ID](how-to/configure-entraid.md), [SCIM provisioning](how-to/configure-scim-provisioning.md), [give a team access](how-to/give-a-team-access.md)
 - [Configure Jira ticketing](how-to/configure-jira-ticketing.md), [SIEM forwarding](how-to/configure-siem.md)
 
 ## Deployment and operations (repository runbooks)

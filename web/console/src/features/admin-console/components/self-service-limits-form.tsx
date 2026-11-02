@@ -1,11 +1,10 @@
 'use client'
 
-import { useEffect, useId, useMemo, useState } from 'react'
+import { useCallback, useEffect, useId, useMemo, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import {
@@ -17,6 +16,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { useTranslation } from '@/context/i18n-provider'
+import { SettingsSaveBar } from '@/features/shared/components/settings-save-bar'
 import { useLimitKeyLabel } from '@/features/limits/components/limits-usage-table'
 import { LIMIT_KEYS, parseLimit, UNLIMITED, type LimitKey } from '@/features/limits/lib/limit-keys'
 import type { SelfServiceLimitsResponse } from '@/lib/api/generated'
@@ -61,7 +61,9 @@ export function SelfServiceLimitsForm({ defaults, canEdit, onSaved }: SelfServic
   const [busy, setBusy] = useState(false)
   const codeId = useId()
 
-  useEffect(() => setValues(initial), [initial])
+  // The saved values: on load, after a save and on Discard.
+  const reset = useCallback(() => setValues(initial), [initial])
+  useEffect(reset, [reset])
 
   const invalid = LIMIT_KEYS.some((k) => parseLimit(values[k]) === null)
   const dirty = LIMIT_KEYS.some((k) => values[k] !== initial[k])
@@ -140,7 +142,7 @@ export function SelfServiceLimitsForm({ defaults, canEdit, onSaved }: SelfServic
               ))}
             </div>
           )}
-          <div className="overflow-x-auto">
+          <div>
             <Table>
               <TableHeader>
                 <TableRow>
@@ -179,16 +181,18 @@ export function SelfServiceLimitsForm({ defaults, canEdit, onSaved }: SelfServic
           )}
           <div className="flex justify-end">
             {canEdit ? (
-              <Button
-                onClick={() => {
+              <SettingsSaveBar
+                className="basis-full"
+                dirty={dirty}
+                saving={busy}
+                saveDisabled={invalid}
+                onSave={() => {
                   setCode('')
                   setCodeError(null)
                   setConfirmOpen(true)
                 }}
-                disabled={!dirty || invalid || busy}
-              >
-                {t('limits.console.save', 'Save')}
-              </Button>
+                onDiscard={reset}
+              />
             ) : (
               <RoleRequiredNotice needed="super_admin" />
             )}
