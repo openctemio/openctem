@@ -16,7 +16,7 @@
 # binary shipped both.
 # Base images are pinned by digest in the FROM lines themselves, where
 # Dependabot finds and refreshes them (it does not read ARG defaults).
-FROM golang:1.27.3-alpine@sha256:b8c9b82affbbb82a020bbcf998dad2ba9516944ac7e883524642a481a9505e9c AS build
+FROM golang:1.27.3-alpine@sha256:d200d2dd76b03a99b52651fd1325aff7dcd35422c35c01bac56571b0507f3deb AS build
 ARG CADDY_VERSION=v2.11.4
 ARG CADDY_L4_VERSION=v0.1.2
 # Dependencies with security fixes newer than the Caddy release; drop an entry
