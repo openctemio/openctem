@@ -47,7 +47,7 @@ export function MetaLine({
         <React.Fragment key={i}>
           {i > 0 && <span className="sr-only">, </span>}
           {/* An item wraps as a unit when it fits a line, and by words if not. */}
-          <span className="min-w-0 break-words">{item}</span>
+          <span className="min-w-0 [overflow-wrap:anywhere]">{item}</span>
         </React.Fragment>
       ))}
     </p>
