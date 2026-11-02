@@ -1073,7 +1073,7 @@ func (s *AuthService) SetBreakGlassNotifier(n BreakGlassNotifier) { s.breakGlass
 // only". Enabling Require SSO needs an owner with a factor, so a correctly
 // configured organization always has a way in.
 func (s *AuthService) admitBreakGlassOwner(ctx context.Context, sess *sessiondom.Session, t *tenantdom.Tenant) error {
-	proven, err := s.secondFactorProven(ctx, sess, sess.UserID())
+	proven, err := s.ownSecondFactorProven(ctx, sess, sess.UserID())
 	if err != nil {
 		return fmt.Errorf("failed to verify owner second factor: %w", err)
 	}
@@ -1321,6 +1321,11 @@ func (s *AuthService) ExchangeToken(ctx context.Context, input ExchangeTokenInpu
 	// this tenant's own IdP cannot mint a tenant-scoped token for an
 	// SSO-enforced tenant unless it is the owner.
 	if err := s.enforceSSOPolicy(ctx, sess, input.TenantID, targetMembership.Role); err != nil {
+		return nil, err
+	}
+	// Another organization's identity provider never stands in for the
+	// account's own sign-in here (idp_binding.go).
+	if err := s.enforceIdPBindingPolicy(ctx, sess, u.ID(), input.TenantID); err != nil {
 		return nil, err
 	}
 	// Per-tenant 2FA requirement: a password session whose user has not
@@ -1733,6 +1738,11 @@ func (s *AuthService) RefreshToken(ctx context.Context, input RefreshTokenInput)
 	// refreshes its tenant-scoped token. Sessions issued by this tenant's own
 	// IdP and the owner pass.
 	if err := s.enforceSSOPolicy(ctx, sess, input.TenantID, targetMembership.Role); err != nil {
+		return nil, err
+	}
+	// Another organization's identity provider never stands in for the
+	// account's own sign-in here (idp_binding.go).
+	if err := s.enforceIdPBindingPolicy(ctx, sess, u.ID(), input.TenantID); err != nil {
 		return nil, err
 	}
 	// Per-tenant 2FA requirement: a password session whose user has not
@@ -2515,6 +2525,11 @@ func (s *AuthService) AcceptInvitationWithRefreshToken(ctx context.Context, inpu
 		return nil, err
 	}
 	if err := s.enforceSSOPolicy(ctx, sess, t.ID().String(), membership.Role().String()); err != nil {
+		return nil, err
+	}
+	// Another organization's identity provider never stands in for the
+	// account's own sign-in here (idp_binding.go).
+	if err := s.enforceIdPBindingPolicy(ctx, sess, u.ID(), t.ID().String()); err != nil {
 		return nil, err
 	}
 	if err := s.enforceMFAPolicy(ctx, sess, u.ID(), t.ID().String()); err != nil {

@@ -16,7 +16,7 @@ import (
 type CertMonitorControllerConfig struct {
 	// Interval is how often the sweep runs across all tenants. Default: 24h.
 	// CT data changes slowly (certs are issued/renewed on the order of days), so
-	// a daily cadence mirrors the threat-intel / CTEM-ID feed refreshes.
+	// a daily cadence mirrors the threat-intel feed refresh.
 	Interval time.Duration
 
 	// Logger for structured output. Defaults to NewNop when nil.

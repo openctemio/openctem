@@ -123,6 +123,7 @@
   "errors.auth.ORGANIZATION_CREATION_DISABLED": "Organizations are created by the application administrator.",
   "errors.auth.ORGANIZATION_REQUIRED": "Choose an organization to continue.",
   "errors.auth.ORGANIZATION_SUSPENDED": "This organization is suspended. Contact support.",
+  "errors.auth.OWN_SIGN_IN_REQUIRED": "Your session comes from an organization's identity provider, which does not cover this. Sign in with your own account (password and, if you use it, two-factor) to continue.",
   "errors.auth.PASSWORD_BREACHED": "This password appears in lists of breached passwords. Choose another one.",
   "errors.auth.PASSWORD_MISMATCH": "The current password is incorrect.",
   "errors.auth.PASSWORD_NO_LOWERCASE": "The password needs at least one lowercase letter.",

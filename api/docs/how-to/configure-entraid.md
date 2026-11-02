@@ -196,7 +196,7 @@ config and are wired separately. Pick based on your goal.
 | Purpose | A generic social button on the login/onboarding page. Good for self-service onboarding of new users/orgs. | Enterprise SSO into **one specific organization (tenant)** using **that customer's own** Azure app registration. |
 | Code | `internal/app/auth/oauth.go` | `internal/app/auth/sso.go` |
 | Config source | Platform env: `OAUTH_MICROSOFT_*` | Per-tenant DB record (admin UI) **or** platform env fallback `SSO_ENTRA_*` |
-| Authority | Multi-tenant `/common` (any Entra tenant can complete it) | The customer's directory (single-tenant GUID) — or `/common` if you must |
+| Authority | Multi-tenant `/common` (any Entra tenant can complete it) | The customer's directory (single-tenant GUID, required) |
 | Org binding | None — identity is the domain-verified email | Login is scoped to an org slug via `?org=<slug>` |
 | JIT / auto-provision | N/A (creates a global user; onboarding assigns tenant) | Yes, gated by DNS-verified domains |
 | Endpoints | `GET/POST /api/v1/auth/oauth/microsoft/{authorize,callback}` | `GET/POST /api/v1/auth/sso/entra_id/{authorize,callback}` |
@@ -319,7 +319,7 @@ Fields:
 | `display_name` | Button label, e.g. `Sign in with Company SSO` |
 | `client_id` | Application (client) ID |
 | `client_secret` | Client secret **Value** (stored AES-256-GCM encrypted, never shown again; leave empty on edit to keep it) |
-| `tenant_identifier` | **Directory (tenant) ID** (GUID). Pin to your directory; avoid `common` unless you also set an allow-list. |
+| `tenant_identifier` | **Directory (tenant) ID** (GUID, required). `common`, `organizations`, `consumers`, empty values and domain names are refused. |
 | `allowed_domains` | Email domains permitted, e.g. `["example.com"]`. Empty = any domain allowed to **log in**, but see JIT rules below. |
 | `auto_provision` | `true` to create tenant membership on first login (still gated, see §4) |
 | `default_role` | `member` or `viewer` (role granted to auto-provisioned users) |
