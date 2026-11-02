@@ -93,3 +93,20 @@ func TestSummaryNonStringValuesIgnored(t *testing.T) {
 		t.Errorf("got %+v", s)
 	}
 }
+
+func TestSummaryOfHostCertificateIssues(t *testing.T) {
+	for issue, want := range map[string]string{
+		"foreign_certificate": "promo.example.com serves another site's certificate (a takeover candidate)",
+		"name_mismatch":       "The certificate promo.example.com serves does not cover its name",
+		"not_yet_valid":       "The certificate for promo.example.com is not valid yet",
+		"self-signed":         "Weak TLS on promo.example.com: self-signed",
+	} {
+		s := SummaryOf(EventTypeSSLIssue, "t", map[string]any{"domain": "promo.example.com", "issue": issue})
+		if s.Text != want {
+			t.Errorf("%s: %q", issue, s.Text)
+		}
+		if strings.Contains(issue, "_") && s.Variant != issue {
+			t.Errorf("%s: variant %q", issue, s.Variant)
+		}
+	}
+}
