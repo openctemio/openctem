@@ -189,7 +189,6 @@ type Handlers struct {
 	Exposure         *handler.ExposureHandler         // nil if not initialized (no database)
 	ThreatIntel      *handler.ThreatIntelHandler      // nil if not initialized (no database)
 	EmergingThreat   *handler.EmergingThreatHandler   // emerging-threat alerts (RFC-117); nil disables
-	CTEMID           *handler.CTEMIDHandler           // nil if not initialized (no database)
 	CredentialImport *handler.CredentialImportHandler // nil if not initialized (no database)
 	Workflow         *handler.WorkflowHandler         // nil if not initialized (no database)
 	Suppression      *handler.SuppressionHandler      // nil if not initialized (no database)
@@ -1186,11 +1185,6 @@ func Register(
 	// Threat Intelligence routes (global threat intel data)
 	if h.ThreatIntel != nil {
 		registerThreatIntelRoutes(router, h.ThreatIntel, authMiddleware, userSync)
-	}
-
-	// CTEM-ID catalog routes (global reference data)
-	if h.CTEMID != nil {
-		registerCTEMIDRoutes(router, h.CTEMID, authMiddleware, userSync)
 	}
 
 	// Credential Import routes (tenant from JWT token)

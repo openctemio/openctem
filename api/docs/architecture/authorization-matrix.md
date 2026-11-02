@@ -401,7 +401,7 @@ and SBOM import write it.
 | Endpoint | Permission Required |
 |----------|---------------------|
 | `GET /api/v1/exposures` · `/{id}` · `/stats` · `/{id}/history` | `findings:read` |
-| `POST /api/v1/exposures` · `/ingest` · `/{id}/resolve` · `/{id}/reactivate` · `/{id}/start-progress` · `PUT /{id}/ctem-id` | `findings:write` |
+| `POST /api/v1/exposures` · `/ingest` · `/{id}/resolve` · `/{id}/reactivate` · `/{id}/start-progress` | `findings:write` |
 | `PATCH /api/v1/exposures/{id}/severity` | `findings:severity` |
 | `POST /api/v1/exposures/{id}/accept` · `/{id}/false-positive` · `/{id}/disposition/reject` | `findings:approve` |
 | `DELETE /api/v1/exposures/{id}` | `findings:delete` |
@@ -2045,7 +2045,7 @@ a personal address, or be a work domain nobody has verified.
 | `POST /assets/bulk/status`, `/assets/bulk/sync` | bypass | out-of-scope ids skipped |
 | `POST /approvals/{id}/{approve,reject,cancel}`; `GET /approvals` | bypass | 404 / list, total and status counts filtered in SQL |
 | `POST /findings/ai-triage/bulk`; `GET /findings/{id}/ai-triage/{triageId}` | bypass | out-of-scope ids reported as not found; a result is checked against its own finding |
-| `GET /exposures`, `/exposures/{id}`, `/{id}/history`, state changes, ctem-id, delete | **bypass** | list filtered; by-id 404. An exposure with no asset is hidden from restricted members |
+| `GET /exposures`, `/exposures/{id}`, `/{id}/history`, state changes, delete | **bypass** | list filtered; by-id 404. An exposure with no asset is hidden from restricted members |
 | `GET /asset-groups/{id}/assets`, `/{id}/findings` | **bypass** | filtered; 404 on a group not visible to the caller |
 | `GET /asset-groups` (+ `/{id}`, `/stats`, and the group returned by create, update, add and remove) counts | **bypass (asset_count, per-kind counts, risk_score and finding_count over every member, tenant-wide; the risk and has_findings filters and the count/risk sorts could probe them; L-18)** | computed over the members in the reader's scope; filters and sorts use those values |
 | `GET /asset-groups` (+ `/{id}`, search, `/stats` with its totals and breakdowns), `GET /business-units` (+ `/{id}`, search), `GET /business-services` (+ `/{id}`, `/{id}/assets`) | **bypass (every group, unit and service of the tenant with its name, description and owner, incl. the owner email; tenant-wide totals)** | only the containers visible to the caller ("Visibility of groups, units and services"); totals over those; 404 by id; owner email for full-data readers only (research/233 F1–F3) |
@@ -2801,7 +2801,7 @@ from a custom role to deny that one action.
 | `ai_triage:read` | `GET /findings/{id}/ai-triage*`, `GET /findings/ai-triage/config` | `findings:read` |
 | `ai_triage:trigger` | `POST /findings/{id}/ai-triage`, `POST /findings/ai-triage/bulk` (deprecated, sunset 2027-01-15; also `findings:bulk_update`). Both work only once an organization administrator turned AI triage on (`PUT /tenants/{tenant}/settings/ai`, team admin, `settings:write`, step-up) | `findings:write` |
 | `findings:exposures:read` | `GET /exposures`, `/{id}`, `/stats`, `/{id}/history` | `findings:read` |
-| `findings:exposures:write` | `POST /exposures`, `/ingest`, `PUT /{id}/ctem-id` | `findings:write` |
+| `findings:exposures:write` | `POST /exposures`, `/ingest` | `findings:write` |
 | `findings:exposures:triage` | `POST /exposures/{id}/resolve`, `/reactivate`, `/start-progress` (with `findings:write`), `PATCH /exposures/{id}/severity` (with `findings:severity`), `/accept`, `/false-positive` (with `findings:approve`) | as listed |
 | `findings:exposures:delete` | `DELETE /exposures/{id}` | `findings:delete` |
 | `integrations:scm:read` | `GET /integrations/scm` | `integrations:read` |

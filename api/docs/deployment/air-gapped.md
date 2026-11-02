@@ -174,7 +174,7 @@ and `HTTPS_PROXY` is not used.
 Gaps, planned as follow-ups: KEV and EPSS import (a file setting and an admin
 upload, or carried in the signed vulnfeed bundle); an opt-in egress proxy for
 the guarded client; an OpenAI-compatible base URL for an on-premises model;
-CTEM-ID catalog import; serving the API reference page's script locally;
+serving the API reference page's script locally;
 release-feed and content-root keys pinned in the release; platform alerts when
 KEV, EPSS or vulnfeed go stale.
 

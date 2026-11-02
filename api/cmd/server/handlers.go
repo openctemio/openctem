@@ -691,7 +691,6 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		Exposure:         handler.NewExposureHandler(svc.Exposure, svc.User, v, log),
 		ThreatIntel:      newThreatIntelHandler(deps, v, log),
 		EmergingThreat:   emergingThreatHandler(svc, log),
-		CTEMID:           handler.NewCTEMIDHandler(svc.CTEMID, log),
 		CredentialImport: handler.NewCredentialImportHandler(svc.CredentialImport, v, log),
 
 		// Dashboard & Branch
