@@ -27,3 +27,12 @@ ON CONFLICT (id) DO NOTHING;
 UPDATE modules SET is_core = false WHERE id IN ('risk_scoring', 'suppressions');
 UPDATE permissions SET module_id = 'scan_profiles'
  WHERE id IN ('scans:profiles:read', 'scans:profiles:write', 'scans:profiles:delete');
+
+-- Give the AI triage switch back to the organizations whose switch the up
+-- migration carried into their AI settings (marked), and drop the marker.
+INSERT INTO tenant_modules (tenant_id, module_id, is_enabled)
+SELECT tenant_id, 'ai_triage', false FROM tenant_ai_settings
+ WHERE use_cases -> 'triage' ->> 'from_module_switch' = 'true'
+ON CONFLICT DO NOTHING;
+UPDATE tenant_ai_settings SET use_cases = jsonb_set(use_cases, '{triage}', (use_cases -> 'triage') - 'from_module_switch')
+ WHERE use_cases -> 'triage' ->> 'from_module_switch' = 'true';
