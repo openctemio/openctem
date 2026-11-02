@@ -1216,12 +1216,6 @@ type SensorConfig struct {
 	// to enable periodic auto-import + branch sync + expired-token detection.
 	SCMSyncInterval time.Duration
 
-	// CTEMIDFeedURL is the CTEM-ID catalog feed the daily ctem-id-refresh
-	// controller mirrors into local reference storage. Behind the same
-	// feed-refresh machinery as the EPSS/KEV threat-intel refresh. Set
-	// CTEM_ID_FEED_URL to override; defaults to https://ctem.org/source.json.
-	CTEMIDFeedURL string
-
 	// Vulnerability bundles (RFC-066 §5.5): the pinned root key id
 	// (VULNFEED_ROOT_KEY_ID; defaults to VulnFeedOfficialRootKeyID, the root
 	// of the official openctemio/vulnfeed-bundles releases), the release base URL
@@ -1254,7 +1248,7 @@ type SensorConfig struct {
 	CertMonitorFeedBaseURL string
 
 	// CertMonitorInterval is how often the CT sweep runs across all tenants.
-	// Defaults to 24h (daily), matching the threat-intel / CTEM-ID refreshes.
+	// Defaults to 24h (daily), matching the threat-intel refresh.
 	CertMonitorInterval time.Duration
 
 	// EASMDNSChecksEnabled toggles the daily DNS-only EASM checks (dangling
@@ -1810,7 +1804,6 @@ func Load() (*Config, error) {
 		Worker: SensorConfig{
 			HeartbeatTimeout:                  getEnvDuration("WORKER_HEARTBEAT_TIMEOUT", 5*time.Minute),
 			SCMSyncInterval:                   getEnvDuration("SCM_SYNC_INTERVAL", 0),
-			CTEMIDFeedURL:                     getEnv("CTEM_ID_FEED_URL", "https://ctem.org/source.json"),
 			VulnFeedRootKeyID:                 getEnv("VULNFEED_ROOT_KEY_ID", VulnFeedOfficialRootKeyID),
 			VulnFeedBaseURL:                   getEnv("VULNFEED_BASE_URL", "https://github.com/openctemio/vulnfeed-bundles/releases"),
 			VulnFeedBundleDir:                 getEnv("VULNFEED_BUNDLE_DIR", ""),

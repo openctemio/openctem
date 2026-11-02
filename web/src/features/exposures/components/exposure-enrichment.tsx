@@ -24,6 +24,7 @@ import { AlertOctagon, Globe, Route, ShieldAlert, TrendingUp } from 'lucide-reac
 import { Badge } from '@/components/ui/badge'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { useTranslation } from '@/context/i18n-provider'
+import { SafeExternalLink } from '@/components/safe-external-link'
 import { cn } from '@/lib/utils'
 import { formatEpssPercentile, formatEpssScore } from '@/lib/epss'
 import { CRITICALITY_BADGE_LIGHT, type CriticalityLevel } from '@/lib/criticality-colors'
@@ -46,7 +47,8 @@ export function hasExposureEnrichment(exposure: ExposureEvent): boolean {
     exposure.is_internet_accessible === true ||
     exposure.on_attack_path === true ||
     (typeof exposure.epss_score === 'number' && exposure.epss_score > 0) ||
-    exposure.is_in_kev === true
+    exposure.is_in_kev === true ||
+    Boolean(exposure.ctem_id?.code)
   )
 }
 
@@ -279,6 +281,12 @@ export function ExposureSecurityContext({ exposure, className }: ExposureSecurit
           </Row>
         )}
 
+        {exposure.ctem_id?.code && (
+          <Row label={t('exposures.enrich.ctemId', 'CTEM-ID')}>
+            <ExposureCTEMIDLink ctem={exposure.ctem_id} />
+          </Row>
+        )}
+
         {exposure.cve_id && (
           <Row label={t('exposures.enrich.cve', 'CVE')}>
             <span className="font-mono text-xs">{exposure.cve_id}</span>
@@ -286,6 +294,35 @@ export function ExposureSecurityContext({ exposure, className }: ExposureSecurit
         )}
       </div>
     </div>
+  )
+}
+
+/**
+ * The exposure's CTEM-ID code, linked to its ctem.org page, with our own
+ * short description and the signal it was chosen from in a tooltip.
+ */
+function ExposureCTEMIDLink({ ctem }: { ctem: NonNullable<ExposureEvent['ctem_id']> }) {
+  const { t } = useTranslation()
+  const label = t(`exposures.ctemId.code.${ctem.code}`, ctem.code)
+  const basis = t(`exposures.ctemId.basis.${ctem.basis}`, '')
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <SafeExternalLink
+            href={ctem.url}
+            className="font-mono text-xs underline-offset-2 hover:underline"
+            aria-label={t('exposures.ctemId.open', 'Open {code} on ctem.org', { code: ctem.code })}
+          >
+            {ctem.code}
+          </SafeExternalLink>
+        </TooltipTrigger>
+        <TooltipContent side="top" className="max-w-xs text-xs">
+          <p>{label}</p>
+          {basis && <p className="mt-1 opacity-80">{basis}</p>}
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   )
 }
 

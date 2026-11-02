@@ -361,7 +361,6 @@ PUT /api/v1/business-services/{}
 PUT /api/v1/business-units/{}
 PUT /api/v1/compensating-controls/{}
 PUT /api/v1/ctem-cycles/{}
-PUT /api/v1/exposures/{}/ctem-id
 PUT /api/v1/groups/{}/scope-rules/{}
 PUT /api/v1/pentest/campaigns/{}
 PUT /api/v1/pentest/findings/{}

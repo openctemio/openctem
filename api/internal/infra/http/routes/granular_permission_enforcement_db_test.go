@@ -37,7 +37,7 @@ var granularGateChanges = []gateChange{
 	{"GET /findings/{id}/ai-triage*", []permission.Permission{permission.FindingsRead}, []permission.Permission{permission.FindingsRead, permission.AITriageRead}},
 	{"POST /findings/{id}/ai-triage", []permission.Permission{permission.FindingsWrite}, []permission.Permission{permission.FindingsWrite, permission.AITriageTrigger}},
 	{"GET /exposures*", []permission.Permission{permission.FindingsRead}, []permission.Permission{permission.FindingsRead, permission.ExposuresRead}},
-	{"POST /exposures, /ingest, ctem-id", []permission.Permission{permission.FindingsWrite}, []permission.Permission{permission.FindingsWrite, permission.ExposuresWrite}},
+	{"POST /exposures, /ingest", []permission.Permission{permission.FindingsWrite}, []permission.Permission{permission.FindingsWrite, permission.ExposuresWrite}},
 	{"POST /exposures/{id}/resolve, reactivate", []permission.Permission{permission.FindingsWrite}, []permission.Permission{permission.FindingsWrite, permission.ExposuresTriage}},
 	{"POST /exposures/{id}/accept, false-positive", []permission.Permission{permission.FindingsApprove}, []permission.Permission{permission.FindingsApprove, permission.ExposuresTriage}},
 	{"DELETE /exposures/{id}", []permission.Permission{permission.FindingsDelete}, []permission.Permission{permission.FindingsDelete, permission.ExposuresDelete}},
