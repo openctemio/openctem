@@ -128,7 +128,7 @@ func TestRoleTemplates_RemediationLeadIsBounded(t *testing.T) {
 }
 
 // The validation lead is a validation engineer who also curates methodology
-// and requests engagement scope; the detection engineer reads validation
+// and attacker profiles, never scope; the detection engineer reads validation
 // results and records controls but never runs attacks or scans.
 func TestRoleTemplates_ValidationLeadAndDetectionEngineer(t *testing.T) {
 	ve, _ := permission.RoleTemplateByID("validation-engineer")
@@ -141,10 +141,13 @@ func TestRoleTemplates_ValidationLeadAndDetectionEngineer(t *testing.T) {
 			t.Errorf("validation-lead lacks %s, which the validation engineer holds", p)
 		}
 	}
-	for _, p := range []permission.Permission{permission.PentestChecklistsManage, permission.AttackerProfilesWrite, permission.ScopeWrite} {
+	for _, p := range []permission.Permission{permission.PentestChecklistsManage, permission.AttackerProfilesWrite} {
 		if !hasPerm(vl, p) {
 			t.Errorf("validation-lead lacks %s", p)
 		}
+	}
+	if hasPerm(vl, permission.ScopeWrite) {
+		t.Error("validation-lead holds scope:write: with scans:write it could widen scope and scan it")
 	}
 	de, ok := permission.RoleTemplateByID("detection-engineer")
 	if !ok {
@@ -337,7 +340,7 @@ var templateVersions = map[string]struct {
 	"scan-operator":         {2, "e662a3285d8959e5"},
 	"sensor-operator":       {1, "dad7da0b5236b92c"},
 	"validation-engineer":   {3, "0fc8039a4875f41c"},
-	"validation-lead":       {1, "5c0c66116fc17ad6"},
+	"validation-lead":       {1, "358ae976160838f6"},
 	"detection-engineer":    {1, "caa70fbad545b9ce"},
 	"external-tester":       {1, "8861f6f0f788e217"},
 	"researcher":            {2, "3db22d24b0d4ef59"},
