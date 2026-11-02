@@ -177,7 +177,7 @@ var authErrorTable = []authErrorEntry{
 
 	// Organization SSO. An unknown organization answers exactly like one
 	// without that provider.
-	{e(auth.ErrSSOTenantNotFound, auth.ErrSSONoActiveProviders, auth.ErrSSOProviderNotFound), http.StatusNotFound, codeSSONotConfigured, "SSO provider not configured.", ""},
+	{e(auth.ErrSSOTenantNotFound, auth.ErrSSONoActiveProviders, auth.ErrSSOProviderNotFound, auth.ErrSSOProviderMisconfigured), http.StatusNotFound, codeSSONotConfigured, "SSO provider not configured.", ""},
 	{e(auth.ErrSSOProviderInactive), http.StatusBadRequest, codeSSOProviderInactive, "SSO provider is not active.", ""},
 	{e(auth.ErrSSOInvalidState), http.StatusBadRequest, codeSSOInvalidState, "Invalid or expired state token.", ""},
 	{e(auth.ErrSSOInvalidRedirectURI), http.StatusBadRequest, codeSSOInvalidRedirect, "Invalid redirect URI.", ""},
