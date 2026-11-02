@@ -23,6 +23,11 @@ import { test, expect } from '../fixtures/authenticated-page'
  * - an empty list shows no pagination ("Showing 0 - 0 of 0", "Page 1 of 0");
  * - a table's name column keeps a readable width at 1440px;
  * - no horizontal page scroll;
+ * - a settings page (/settings, /account) shows no Save button at rest: its
+ *   form saves through the sticky SettingsSaveBar, shown while there are
+ *   unsaved changes (SAVE_EXCEPTIONS lists the pages not moved yet);
+ * - no hand-made "Insufficient permissions" / "Access Denied" text: a refusal
+ *   is the shared access notice;
  * - the page renders: no error boundary ("Something went wrong") and no
  *   uncaught page error (a server page calling a client hook crashed
  *   /notifications on every visit with nothing visiting it).

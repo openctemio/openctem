@@ -125,7 +125,7 @@ const MemberRolesContext = createContext<MemberRolesMap>(new Map())
 import { fetcherWithOptions } from '@/lib/api/client'
 import { tenantEndpoints } from '@/lib/api/endpoints'
 import { ApiClientError, getErrorMessage } from '@/lib/api/error-handler'
-import { Can, usePermissions, useCanMutate } from '@/lib/permissions'
+import { Can, Permission, usePermissions, useCanMutate } from '@/lib/permissions'
 import { MemberMfaBadge } from '@/features/organization/components/member-mfa-badge'
 import { MemberBadges } from '@/features/organization/components/member-badges'
 import { MemberAccessDialog } from '@/features/organization/components/member-access-dialog'
@@ -655,7 +655,10 @@ export default function UsersPage() {
   const tenantSlug = currentTenant?.slug
   // Peer administrators are the owner's to manage (the API answers 403 to
   // anyone else); their rows show the actions disabled, with the reason.
-  const { isOwner, isAtLeast } = usePermissions()
+  const { isOwner, isAtLeast, canAny } = usePermissions()
+  // Invitations are read only with members:invite or members:manage (useInvitations);
+  // without them the page does not know the count, so it shows none.
+  const canSeeInvitations = canAny(Permission.MembersInvite, Permission.MembersManage)
   // Same gate as the old <Can permission={MembersManage} minRole="admin">.
   const canManageMembers = useCanMutate('PATCH /api/v1/tenants/{tenant}/members/{userId}')
   const currentUser = useDisplayUser()
@@ -1486,7 +1489,7 @@ export default function UsersPage() {
 
           <JoinRequestsCard canManage={isAtLeast('admin')} onChanged={refreshData} />
 
-          {emailUnavailable && (
+          {emailUnavailable && canSeeInvitations && (
             <Alert>
               <Info className="h-4 w-4" />
               <AlertTitle>
@@ -1556,15 +1559,19 @@ export default function UsersPage() {
                     onClick: () => toggleStatus('offboarded'),
                     active: statusFilter === 'offboarded',
                   },
-                  {
-                    key: 'invites',
-                    label: t('org.membersPage.metric.pendingInvites', 'Pending invitations'),
-                    value: invitations.length,
-                    onClick: () =>
-                      document
-                        .getElementById('pending-invitations')
-                        ?.scrollIntoView({ behavior: 'smooth' }),
-                  },
+                  ...(canSeeInvitations
+                    ? [
+                        {
+                          key: 'invites',
+                          label: t('org.membersPage.metric.pendingInvites', 'Pending invitations'),
+                          value: invitations.length,
+                          onClick: () =>
+                            document
+                              .getElementById('pending-invitations')
+                              ?.scrollIntoView({ behavior: 'smooth' }),
+                        },
+                      ]
+                    : []),
                 ]}
               />
 

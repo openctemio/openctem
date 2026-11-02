@@ -52,7 +52,9 @@ export default function SettingsIndexPage() {
               'Search settings: two-factor, IP allowlist, Slack…'
             ),
             label: searchLabel,
-            inputProps: { 'aria-controls': 'settings-search-results' },
+            // The results region exists only while searching; an aria-controls
+            // naming a missing element is invalid (axe aria-valid-attr-value).
+            inputProps: searching ? { 'aria-controls': 'settings-search-results' } : undefined,
           }}
         />
 

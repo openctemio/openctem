@@ -11,6 +11,26 @@ import { expect } from '@playwright/test'
  * specs/31-page-rhythm.spec.ts.
  */
 
+/**
+ * Settings pages that still save with a button of their own, each to move to
+ * SettingsSaveBar (research/391). The list only shrinks: a page that moves is
+ * removed, and a new page is never added.
+ */
+const SAVE_EXCEPTIONS = new Set<string>([
+  '/account',
+  '/account/notifications',
+  '/account/preferences',
+  '/settings/ai',
+  '/settings/asset-sources',
+  '/settings/finding-lifecycle',
+  '/settings/mcp',
+  '/settings/pentest',
+  '/settings/scanning/content',
+  '/settings/scanning/scan-approval',
+  '/settings/scope',
+  '/settings/trusted-organizations',
+])
+
 const PAGE_GAP = 20
 const TIGHT_GAP = 16
 const NAME_MIN_1440 = 160
@@ -33,6 +53,8 @@ type Probe = {
   emptyPagination: boolean
   nameColumns: { header: string; width: number }[]
   pageOverflowX: boolean
+  restingSave: string[]
+  handDenied: boolean
 }
 
 export async function probe(page: Page): Promise<Probe> {
@@ -168,6 +190,11 @@ export async function probe(page: Page): Promise<Probe> {
       emptyPagination: /Page 1 of 0|Showing 0\s*[-–]\s*0 of 0/.test(main.textContent ?? ''),
       nameColumns,
       pageOverflowX: document.documentElement.scrollWidth > window.innerWidth + 1,
+      restingSave: Array.from(main.querySelectorAll('button'))
+        .filter((b) => shown(b) && !overlay(b) && !b.closest('[data-slot=settings-save-bar]'))
+        .map((b) => (b.textContent ?? '').trim())
+        .filter((label) => /^(Save( changes| policy| settings)?|Lưu( thay đổi)?)$/i.test(label)),
+      handDenied: /Insufficient permissions|Access Denied/.test(main.textContent ?? ''),
     }
   })
 }
@@ -221,6 +248,11 @@ export async function checkAt(
     }
   }
   expect.soft(r.pageOverflowX, `${at}: no horizontal page scroll`).toBe(false)
+  const path = route.split('?')[0]
+  if (/^\/(settings|account)(\/|$)/.test(path) && !SAVE_EXCEPTIONS.has(path)) {
+    expect.soft(r.restingSave, `${at}: a settings form saves through SettingsSaveBar`).toEqual([])
+  }
+  expect.soft(r.handDenied, `${at}: a refusal is the shared access notice`).toBe(false)
 }
 
 export async function open(page: Page, route: string): Promise<boolean> {

@@ -1,19 +1,25 @@
 'use client'
 
 import { useDocsHref } from '@/context/brand-provider'
-import type { ReactNode } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
+import type { ColumnDef } from '@tanstack/react-table'
 import { Info } from 'lucide-react'
 import { Main } from '@/components/layout'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import { ErrorState, PageHeader, PageStack, RelativeTime } from '@/features/shared'
+import { Tabs, TabsContent, TabsCount, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { DataTable, ErrorState, PageHeader, PageStack, RelativeTime } from '@/features/shared'
+import { useUrlFilter } from '@/hooks/use-url-param'
 import { TonePill, type PillTone } from '@/features/shared/components/tone-pill'
 import { useTranslation } from '@/context/i18n-provider'
 import { useAdminOperations } from '@console/features/admin-console/api/use-admin-operations'
 import { useAdminSystem } from '@console/features/admin-console/api/use-admin-system'
 import {
+  jobNeedsAttention,
   schemaState,
+  sortJobs,
   sensorTransportView,
   summarizeSensors,
   type SchemaState,
@@ -33,7 +39,106 @@ import { DOCS } from '@/lib/docs-links'
  * certificates, version: GET /admin/system) and what the API reports about its
  * own work (schema, queues, sensors, background jobs: GET /admin/operations).
  * Each half loads on its own, so one failing read never hides the other.
+ *
+ * Three tabs keep the page short: the summary first (services, storage,
+ * backup, certificates, schema, version), then queues and sensors, then the
+ * background jobs, where the ones that fail or stopped come first and the
+ * rest wait behind "Show all".
  */
+
+const TABS = ['summary', 'work', 'jobs'] as const
+type HealthTab = (typeof TABS)[number]
+
+type Controller = AdminOperations['controllers'][number]
+
+function BackgroundJobs({ o }: { o: AdminOperations }) {
+  const { t } = useTranslation()
+  const [showAll, setShowAll] = useState(false)
+  const sorted = useMemo(() => sortJobs(o.controllers), [o.controllers])
+  const attention = sorted.filter(jobNeedsAttention)
+  const rows = showAll ? sorted : attention
+  const columns = useMemo<ColumnDef<Controller>[]>(
+    () => [
+      {
+        accessorKey: 'name',
+        header: t('admin.ops.jobs.name', 'Job'),
+        cell: ({ row }) => <span className="font-mono text-xs">{row.original.name}</span>,
+      },
+      {
+        id: 'last',
+        header: t('admin.ops.jobs.last', 'Last run'),
+        cell: ({ row }) =>
+          row.original.last_reconcile_at ? (
+            <RelativeTime date={row.original.last_reconcile_at} />
+          ) : (
+            '-'
+          ),
+      },
+      {
+        accessorKey: 'errors_total',
+        header: t('admin.ops.jobs.errors', 'Errors since start'),
+        cell: ({ row }) => <span className="tabular-nums">{row.original.errors_total}</span>,
+      },
+      {
+        id: 'state',
+        header: t('admin.ops.jobs.state', 'State'),
+        cell: ({ row }) => {
+          const c = row.original
+          if (!c.running)
+            return <TonePill tone="destructive" label={t('admin.ops.jobs.idle', 'Stopped')} />
+          if (c.errors_total > 0)
+            return <TonePill tone="warning" label={t('admin.ops.jobs.failing', 'Errors')} />
+          return <TonePill tone="success" label={t('admin.ops.jobs.running', 'Started')} />
+        },
+      },
+    ],
+    [t]
+  )
+
+  if (o.controllers.length === 0) {
+    return (
+      <p className="text-sm text-muted-foreground">
+        {t('admin.ops.jobs.none', 'No background job has reported yet.')}
+      </p>
+    )
+  }
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm text-muted-foreground" aria-live="polite">
+          {attention.length === 0
+            ? t(
+                'admin.ops.jobs.allFine',
+                '{count, plural, one {The background job runs} other {All # background jobs run}} without errors.',
+                { count: sorted.length }
+              )
+            : t(
+                'admin.ops.jobs.needLook',
+                '{count, plural, one {# background job stopped or failed} other {# background jobs stopped or failed}} since the start.',
+                { count: attention.length }
+              )}
+        </p>
+        <Button variant="outline" size="sm" onClick={() => setShowAll((v) => !v)}>
+          {showAll
+            ? t('admin.ops.jobs.showAttention', 'Show only the ones to look at')
+            : t('admin.ops.jobs.showAll', 'Show all ({count})', { count: sorted.length })}
+        </Button>
+      </div>
+      {rows.length > 0 && (
+        <DataTable
+          columns={columns}
+          data={rows}
+          getRowId={(c) => c.name}
+          showSearch={false}
+          showColumnToggle={false}
+          showSelectionCount={false}
+          mobileCards
+          emptyMessage={t('admin.ops.jobs.none', 'No background job has reported yet.')}
+        />
+      )}
+    </div>
+  )
+}
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
@@ -120,7 +225,7 @@ function HostSections({ s, o }: { s: AdminSystem; o?: AdminOperations }) {
                     <span className="text-muted-foreground">
                       {[s.version.running || o?.build.version, o?.build.commit, s.version.channel]
                         .filter(Boolean)
-                        .join(' · ')}
+                        .join(', ')}
                     </span>
                   )}
                   {sv.name === 'postgres' && o?.database && (
@@ -264,7 +369,7 @@ function HostSections({ s, o }: { s: AdminSystem; o?: AdminOperations }) {
                   {t('admin.ops.applied', 'Applied {v}', {
                     v: o.schema.known ? o.schema.applied : '-',
                   })}
-                  {' · '}
+                  {', '}
                   {t('admin.ops.shipped', 'This release ships {v}', { v: o.schema.shipped || '-' })}
                 </span>
                 <TonePill
@@ -456,7 +561,10 @@ function WorkSections({ o }: { o: AdminOperations }) {
                 <div className="flex flex-wrap gap-2">
                   {fleet.versions.map((v) => (
                     <Badge key={v.version} variant={v.advisory ? 'destructive' : 'secondary'}>
-                      {v.version} · {v.count}
+                      {t('admin.ops.fleet.versionCount', '{version}: {count}', {
+                        version: v.version,
+                        count: v.count,
+                      })}
                     </Badge>
                   ))}
                 </div>
@@ -465,70 +573,6 @@ function WorkSections({ o }: { o: AdminOperations }) {
           </CardContent>
         </Card>
       </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">{t('admin.ops.jobs', 'Background jobs')}</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {o.controllers.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              {t('admin.ops.jobs.none', 'No background job has reported yet.')}
-            </p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="text-muted-foreground">
-                  <tr>
-                    <th className="py-2 pe-3 text-start font-medium">
-                      {t('admin.ops.jobs.name', 'Job')}
-                    </th>
-                    <th className="py-2 pe-3 text-start font-medium">
-                      {t('admin.ops.jobs.last', 'Last run')}
-                    </th>
-                    <th className="py-2 pe-3 text-end font-medium">
-                      {t('admin.ops.jobs.errors', 'Errors since start')}
-                    </th>
-                    <th className="py-2 text-start font-medium">
-                      {t('admin.ops.jobs.state', 'State')}
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y">
-                  {o.controllers.map((c) => (
-                    <tr key={c.name}>
-                      <td className="py-2 pe-3 font-mono text-xs">{c.name}</td>
-                      <td className="py-2 pe-3">
-                        {c.last_reconcile_at ? <RelativeTime date={c.last_reconcile_at} /> : '-'}
-                      </td>
-                      <td
-                        className={
-                          c.errors_total > 0
-                            ? 'py-2 pe-3 text-end font-medium text-warning tabular-nums'
-                            : 'py-2 pe-3 text-end tabular-nums'
-                        }
-                      >
-                        {c.errors_total}
-                      </td>
-                      <td className="py-2">
-                        {c.running ? (
-                          <Badge variant="secondary">
-                            {t('admin.ops.jobs.running', 'Started')}
-                          </Badge>
-                        ) : (
-                          <span className="font-medium text-warning">
-                            {t('admin.ops.jobs.idle', 'Stopped')}
-                          </span>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
     </>
   )
 }
@@ -538,6 +582,21 @@ export default function AdminHealthPage() {
   const sys = useAdminSystem()
   const ops = useAdminOperations()
   const checkedAt = sys.data?.checked_at ?? ops.data?.checked_at
+  const [tabParam, setTab] = useUrlFilter('tab', 'summary')
+  const tab: HealthTab = (TABS as readonly string[]).includes(tabParam)
+    ? (tabParam as HealthTab)
+    : 'summary'
+  const jobsToLook = ops.data ? ops.data.controllers.filter(jobNeedsAttention).length : null
+  const opsState =
+    ops.error && !ops.data ? (
+      <ErrorState
+        title={t('admin.healthPage.operations', 'operations')}
+        error={ops.error}
+        onRetry={() => void ops.mutate()}
+      />
+    ) : ops.isLoading || !ops.data ? (
+      <Skeleton className="h-64 w-full" />
+    ) : null
   return (
     <Main>
       <PageStack>
@@ -563,28 +622,37 @@ export default function AdminHealthPage() {
             </span>
           )}
         </PageHeader>
-        {sys.error && !sys.data ? (
-          <ErrorState
-            title={t('admin.healthPage.system', 'system')}
-            error={sys.error}
-            onRetry={() => void sys.mutate()}
-          />
-        ) : sys.isLoading || !sys.data ? (
-          <Skeleton className="h-64 w-full" />
-        ) : (
-          <HostSections s={sys.data} o={ops.data} />
-        )}
-        {ops.error && !ops.data ? (
-          <ErrorState
-            title={t('admin.healthPage.operations', 'operations')}
-            error={ops.error}
-            onRetry={() => void ops.mutate()}
-          />
-        ) : ops.isLoading || !ops.data ? (
-          <Skeleton className="h-64 w-full" />
-        ) : (
-          <WorkSections o={ops.data} />
-        )}
+        <Tabs value={tab} onValueChange={(v) => setTab(v)}>
+          <TabsList aria-label={t('admin.health.tabsLabel', 'Health sections')}>
+            <TabsTrigger value="summary">{t('admin.health.tab.summary', 'Summary')}</TabsTrigger>
+            <TabsTrigger value="work">
+              {t('admin.health.tab.work', 'Queues and sensors')}
+            </TabsTrigger>
+            <TabsTrigger value="jobs">
+              {t('admin.health.tab.jobs', 'Background jobs')}
+              <TabsCount value={jobsToLook || null} tone="danger" />
+            </TabsTrigger>
+          </TabsList>
+          <TabsContent value="summary" className="mt-5 space-y-5">
+            {sys.error && !sys.data ? (
+              <ErrorState
+                title={t('admin.healthPage.system', 'system')}
+                error={sys.error}
+                onRetry={() => void sys.mutate()}
+              />
+            ) : sys.isLoading || !sys.data ? (
+              <Skeleton className="h-64 w-full" />
+            ) : (
+              <HostSections s={sys.data} o={ops.data} />
+            )}
+          </TabsContent>
+          <TabsContent value="work" className="mt-5 space-y-5">
+            {opsState ?? (ops.data && <WorkSections o={ops.data} />)}
+          </TabsContent>
+          <TabsContent value="jobs" className="mt-5">
+            {opsState ?? (ops.data && <BackgroundJobs o={ops.data} />)}
+          </TabsContent>
+        </Tabs>
       </PageStack>
     </Main>
   )

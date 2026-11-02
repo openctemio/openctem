@@ -114,6 +114,7 @@
   "common.markdownEditor.write": "Write",
   "common.moduleOffFor": "{title} is not enabled for this organization",
   "common.moduleOffHint": "Ask an organization administrator to enable it.",
+  "common.moreInfo": "More information",
   "common.moreTabs": "More",
   "common.networkError": "The server could not be reached. Check your connection, then retry.",
   "common.no": "No",

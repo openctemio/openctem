@@ -41,6 +41,7 @@ func seedKnowledge(t *testing.T, svc *aiknowledge.Service, tenant, author, appro
 
 func TestAIExecutor_KnowledgeCitedNeverDecides_DB(t *testing.T) {
 	h := newAIExecHarness(t)
+	h.autoApplyTriage()
 	db := &postgres.DB{DB: h.db}
 	svc := aiknowledge.New(postgres.NewAIKnowledgeRepository(db), nil, nil, logger.NewNop())
 	h.executor.SetKnowledge(svc)
@@ -138,6 +139,7 @@ func TestAIExecutor_KnowledgeCitedNeverDecides_DB(t *testing.T) {
 
 func TestAIExecutor_EmptyRetrievalRecorded_DB(t *testing.T) {
 	h := newAIExecHarness(t)
+	h.autoApplyTriage()
 	h.executor.SetKnowledge(aiknowledge.New(postgres.NewAIKnowledgeRepository(&postgres.DB{DB: h.db}), nil, nil, logger.NewNop()))
 	a := h.aiAgent("suggest")
 	f := h.findingFor(a, "medium")
