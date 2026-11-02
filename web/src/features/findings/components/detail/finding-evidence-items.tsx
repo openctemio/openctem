@@ -226,7 +226,7 @@ function EvidenceItemCard({
   return (
     <RevealContext.Provider value={ctx}>
       <section
-        className="rounded-lg border bg-card"
+        className="min-w-0 rounded-lg border bg-card"
         aria-label={t('findings.evidenceItems.itemAria', '{kind} evidence', {
           kind: kindName(record.kind ?? ''),
         })}
@@ -282,7 +282,7 @@ function EvidenceItemCard({
           {onMove && <EvidenceOrderButtons index={index} count={count} onMove={onMove} />}
           <ItemActions record={record} item={item} />
         </header>
-        <div className="space-y-3 p-4">
+        <div className="min-w-0 space-y-3 p-4">
           <ItemBody item={item} />
           <ItemFooter record={record} />
         </div>
@@ -388,7 +388,7 @@ function ItemBody({ item }: { item: EvidenceItem }) {
       return (
         <div className="space-y-1">
           {item.file?.path && (
-            <p className="font-mono text-xs text-muted-foreground">
+            <p className="font-mono text-xs text-muted-foreground [overflow-wrap:anywhere]">
               {toDisplayText(item.file.path, 500)}
               {item.file.start_line ? `:${item.file.start_line}` : ''}
               {item.file.end_line && item.file.end_line !== item.file.start_line
@@ -404,7 +404,7 @@ function ItemBody({ item }: { item: EvidenceItem }) {
       )
     case 'screenshot':
       return (
-        <p className="text-sm text-muted-foreground">
+        <p className="text-sm text-muted-foreground [overflow-wrap:anywhere]">
           {t('findings.evidenceItems.screenshot', 'Screenshot')}{' '}
           {item.artifact?.media_type ? `(${toDisplayText(item.artifact.media_type, 100)})` : ''}
           {item.artifact?.sha256 ? `, ${item.artifact.sha256.slice(0, 19)}…` : ''}
@@ -414,7 +414,7 @@ function ItemBody({ item }: { item: EvidenceItem }) {
       return (
         <div className="space-y-1">
           {item.command && (
-            <p className="font-mono text-xs text-muted-foreground">
+            <p className="font-mono text-xs text-muted-foreground [overflow-wrap:anywhere]">
               $ {toDisplayText(item.command, 500)}
               {typeof item.exit_code === 'number' ? ` (exit ${item.exit_code})` : ''}
             </p>
@@ -515,7 +515,7 @@ function HTTPExchangeView({ item }: { item: EvidenceItem }) {
             />
           ) : (
             <>
-              <p className="font-mono text-sm">
+              <p className="font-mono text-sm [overflow-wrap:anywhere]">
                 <span
                   className={cn(
                     partMatched(item, 'response', 'status') && 'rounded bg-warning/20 px-1'
@@ -548,7 +548,7 @@ function HTTPExchangeView({ item }: { item: EvidenceItem }) {
         </div>
       )}
       {item.extracted && item.extracted.length > 0 && (
-        <p className="text-xs text-muted-foreground">
+        <p className="text-xs text-muted-foreground [overflow-wrap:anywhere]">
           {t('findings.evidenceItems.extracted', 'Extracted:')}{' '}
           {item.extracted.map((v, i) => (
             <span key={i}>
@@ -622,7 +622,7 @@ function TextPane({
     }
   }, [segments])
   return (
-    <div>
+    <div className="min-w-0">
       <pre
         ref={ref}
         aria-label={label}
@@ -630,7 +630,7 @@ function TextPane({
         tabIndex={0}
         data-testid="evidence-text"
         className={cn(
-          'overflow-auto rounded-md border bg-muted/40 p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap break-words [unicode-bidi:isolate] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+          'max-w-full overflow-auto rounded-md border bg-muted/40 p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap break-words [unicode-bidi:isolate] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
           compact ? 'max-h-64' : 'max-h-96'
         )}
       >
@@ -759,7 +759,7 @@ function ItemFooter({ record }: { record: FindingEvidenceItem }) {
   const item = record.item as EvidenceItem
   const masked = placeholdersOf(item).length
   return (
-    <p className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
+    <p className="flex min-w-0 flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground [overflow-wrap:anywhere]">
       {record.tool_name && (
         <span>
           {t('findings.evidenceItems.footerTool', 'Tool: {value}', {
