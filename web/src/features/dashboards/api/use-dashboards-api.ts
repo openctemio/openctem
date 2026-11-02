@@ -7,7 +7,7 @@
 
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import useSWR, { useSWRConfig, type SWRConfiguration } from 'swr'
 import { get, post, put, del } from '@/lib/api/client'
 import { useTenant } from '@/context/tenant-provider'
@@ -61,11 +61,14 @@ export function useDashboardHome(choice: string | null): DashboardHomeState {
   const { mutate } = useSWRConfig()
   const tenantId = currentTenant?.id
   const [state, setState] = useState<DashboardHomeState>({ status: 'loading' })
+  // One read per visit: the remembered choice is what it was on arrival.
+  const choiceOnArrival = useRef(choice)
   useEffect(() => {
     if (!tenantId) return
     let cancelled = false
-    const path = choice
-      ? `${DASHBOARD_HOME_PATH}?choice=${encodeURIComponent(choice)}`
+    const arrival = choiceOnArrival.current
+    const path = arrival
+      ? `${DASHBOARD_HOME_PATH}?choice=${encodeURIComponent(arrival)}`
       : DASHBOARD_HOME_PATH
     get<DashboardHomeResponse>(path)
       .then(async (home) => {
@@ -90,8 +93,6 @@ export function useDashboardHome(choice: string | null): DashboardHomeState {
     return () => {
       cancelled = true
     }
-    // One read per visit: the remembered choice is what it was on arrival.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tenantId, mutate])
   return state
 }
