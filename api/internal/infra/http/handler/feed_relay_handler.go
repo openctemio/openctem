@@ -76,7 +76,7 @@ func (h *FeedRelayHandler) writeErr(w http.ResponseWriter, err error) {
 	}
 }
 
-// Next answers GET /api/v2/sensor/feed-relay/next: 200 with the round and
+// Next answers GET /api/v2/sensor/feed-relay-rounds/next: 200 with the round and
 // its signed statement, 204 with a Retry-After (seconds) when there is none.
 func (h *FeedRelayHandler) Next(w http.ResponseWriter, r *http.Request) {
 	ref, ok := h.relaySensor(w, r)
@@ -100,7 +100,7 @@ func (h *FeedRelayHandler) Next(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(n)
 }
 
-// Upload answers PUT /api/v2/sensor/feed-relay/{round}/files/{name}. The
+// Upload answers PUT /api/v2/sensor/feed-relay-rounds/{round}/files/{name}. The
 // body is streamed to the spool; Content-Length and a sha-256
 // Content-Digest are required.
 func (h *FeedRelayHandler) Upload(w http.ResponseWriter, r *http.Request) {
@@ -129,7 +129,7 @@ func (h *FeedRelayHandler) Upload(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// Done answers POST /api/v2/sensor/feed-relay/{round}/done.
+// Done answers POST /api/v2/sensor/feed-relay-rounds/{round}/done.
 func (h *FeedRelayHandler) Done(w http.ResponseWriter, r *http.Request) {
 	ref, ok := h.relaySensor(w, r)
 	if !ok {
