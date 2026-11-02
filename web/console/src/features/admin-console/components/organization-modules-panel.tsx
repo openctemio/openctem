@@ -83,7 +83,7 @@ export function OrganizationModulesPanel({ tenantId, canManage }: OrganizationMo
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <div className="overflow-x-auto">
+        <div>
           <Table>
             <TableHeader>
               <TableRow>

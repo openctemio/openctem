@@ -452,10 +452,16 @@ async function attemptTokenRefresh(): Promise<void> {
       devLog.warn('[Auth] Two-factor setup required, opening the setup page')
       authPermanentlyFailed = true
       redirectToTwoFactorSetup()
-    } else if (outcome.status === 401 || outcome.code === 'ORGANIZATION_SUSPENDED') {
+    } else if (
+      outcome.status === 401 ||
+      outcome.code === 'ORGANIZATION_SUSPENDED' ||
+      outcome.code === 'OWN_SIGN_IN_REQUIRED'
+    ) {
       // 401 = refresh token itself is invalid — no point retrying.
       // ORGANIZATION_SUSPENDED = the platform operator suspended the
       // organization; signing in again says so.
+      // OWN_SIGN_IN_REQUIRED = the session came from another organization's
+      // identity provider; this organization wants the account's own sign-in.
       devLog.warn('[Auth] Refresh token invalid (401), redirecting to login')
       authPermanentlyFailed = true
       useAuthStore.getState().clearAuth()

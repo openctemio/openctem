@@ -1,10 +1,20 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 import { issuePlatformUserResetLink, runPlatformUserAction } from '../api/use-platform-users'
 import { AdminApiError } from '@console/lib/admin-api/client'
-import { PlatformUserActions } from '../components/platform-user-actions'
+import { PlatformUserActions as Actions } from '../components/platform-user-actions'
+
+/** The user page renders both parts: routine near the name, danger at the end. */
+function PlatformUserActions(props: Omit<Parameters<typeof Actions>[0], 'part'>) {
+  return (
+    <>
+      <Actions {...props} part="routine" />
+      <Actions {...props} part="danger" />
+    </>
+  )
+}
 import { PlatformUserBadges } from '../components/platform-user-badges'
 import type { PlatformUserDetail } from '../types'
 
@@ -59,7 +69,14 @@ describe('PlatformUserActions', () => {
 
   it('offers only the actions that apply to the account', () => {
     const { rerender } = render(<PlatformUserActions user={account()} onDone={vi.fn()} />)
-    expect(names()).toEqual(['Sign out everywhere', 'Send password reset', 'Block account'])
+    expect(names()).toEqual(['Send password reset', 'Sign out everywhere', 'Block account'])
+    // The actions that cut the person off sit in the danger zone.
+    const zone = screen.getByRole('heading', { name: 'Danger zone' }).closest('section')!
+    expect(
+      within(zone)
+        .getAllByRole('button')
+        .map((b) => b.textContent)
+    ).toEqual(['Sign out everywhere', 'Block account'])
 
     rerender(
       <PlatformUserActions
@@ -181,9 +198,9 @@ describe('PlatformUserActions on a server that cannot send email', () => {
       <PlatformUserActions user={noEmail()} onDone={vi.fn()} isSuperAdmin />
     )
     expect(names()).toEqual([
-      'Sign out everywhere',
       'Copy reset link',
       'Mark email verified',
+      'Sign out everywhere',
       'Reset two-factor',
       'Block account',
     ])

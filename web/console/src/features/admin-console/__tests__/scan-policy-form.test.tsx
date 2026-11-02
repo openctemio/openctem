@@ -28,7 +28,7 @@ describe('ScanPolicyForm', () => {
         'Your platform roles do not include this. A platform owner can grant it under Roles.'
       )
     ).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Save' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Save changes' })).not.toBeInTheDocument()
   })
 
   it('saves a new policy with a reason and a code', async () => {
@@ -44,7 +44,7 @@ describe('ScanPolicyForm', () => {
       />
     )
     await user.click(screen.getByLabelText(/^Strict/))
-    await user.click(screen.getByRole('button', { name: 'Save' }))
+    await user.click(screen.getByRole('button', { name: 'Save changes' }))
     await user.type(await screen.findByLabelText('Reason'), 'regulated customer')
     await user.type(screen.getByLabelText('Code from your authenticator app'), '123456')
     await user.click(screen.getByRole('button', { name: 'Confirm' }))
@@ -68,7 +68,7 @@ describe('ScanPolicyForm', () => {
     )
     expect(screen.getByText(/Now: The organization decides/)).toBeInTheDocument()
     await user.click(screen.getByLabelText(/Follow the platform default/))
-    await user.click(screen.getByRole('button', { name: 'Save' }))
+    await user.click(screen.getByRole('button', { name: 'Save changes' }))
     await user.type(await screen.findByLabelText('Reason'), 'back to default')
     await user.type(screen.getByLabelText('Code from your authenticator app'), '654321')
     await user.click(screen.getByRole('button', { name: 'Confirm' }))
