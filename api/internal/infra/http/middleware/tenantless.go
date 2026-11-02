@@ -63,8 +63,8 @@ var tenantlessRoutes = []string{
 	// Ownership invitations bound to this account (an organization created
 	// for it by the platform administrator).
 	"GET /api/v1/me/ownership-invitations",
-	"POST /api/v1/me/ownership-invitations/{invitationId}/accept",
-	"POST /api/v1/me/ownership-invitations/{invitationId}/decline",
+	"POST /api/v1/me/ownership-invitations/{id}/accept",
+	"POST /api/v1/me/ownership-invitations/{id}/decline",
 	// Session: step-up and sign-out.
 	"GET /api/v1/auth/step-up",
 	"POST /api/v1/auth/step-up",

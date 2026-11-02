@@ -263,8 +263,8 @@ func registerUserRoutes(
 	// makes the caller an organization's owner: step-up.
 	router.Group("/api/v1/me/ownership-invitations", func(r Router) {
 		r.GET("/", h.ListMyOwnerInvitations)
-		r.POST("/{invitationId}/accept", h.AcceptOwnerInvitation, requireStepUp())
-		r.POST("/{invitationId}/decline", h.DeclineOwnerInvitation)
+		r.POST("/{id}/accept", h.AcceptOwnerInvitation, requireStepUp())
+		r.POST("/{id}/decline", h.DeclineOwnerInvitation)
 	}, middlewares...)
 
 	// Moving two-factor to a new authenticator (My account > Security). New
