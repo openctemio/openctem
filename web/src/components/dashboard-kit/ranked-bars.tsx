@@ -12,8 +12,10 @@
  * expands on tap; an unhealthy item stays in view at 0 (health matters more
  * than volume). Above `limit` rows with a value, "Show all" expands the rest.
  * Every row is a link to its list (FlowLink: plain text without a safe
- * same-origin path) at least 44 px tall. Colours: the bar is the brand
- * marker (teal) on a muted track; health is a dot plus words, never colour alone.
+ * same-origin path) at least 44 px tall. Colours: the bar is the item's own
+ * colour when the visual draws the item elsewhere too (a ring segment), else
+ * the brand marker (teal), on a muted track; health is a dot plus words that
+ * wrap under the name (never cut off), never colour alone.
  */
 
 import { useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
@@ -34,8 +36,10 @@ export interface RankedBarRow {
   /** The value as shown (formatted); defaults to the number. */
   display?: string
   href?: string | null
+  /** The item's colour where it is drawn elsewhere too (CSS colour); default teal. */
+  color?: string
   health?: SourceHealth
-  /** Words for an unhealthy item ("Stale, last 3 days ago"). */
+  /** Words for an unhealthy item ("Stale, last receipt 3 days ago"). */
   note?: string | null
   /**
    * The figure with its unit ("26 findings"), read in place of the bare figure.
@@ -240,15 +244,15 @@ export function RankedBars({
           </span>
           <span className="col-span-2 flex h-1.5 overflow-hidden rounded-full bg-muted" aria-hidden>
             <span
-              className="rounded-full bg-signal"
-              style={{ width: `${pct}%` }}
+              className={cn('rounded-full', !r.color && 'bg-signal')}
+              style={{ width: `${pct}%`, background: r.color }}
               data-testid="ranked-bar"
             />
           </span>
           {r.note && (
             <span
               className={cn(
-                'col-span-2 truncate text-xs',
+                'col-span-2 text-xs text-pretty break-words',
                 r.health === 'failed' ? 'text-destructive' : 'text-warning'
               )}
             >

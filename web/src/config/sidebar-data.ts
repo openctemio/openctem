@@ -456,7 +456,7 @@ export const sidebarData: SidebarData = {
           title: 'Pentest campaigns',
           url: '/pentest/campaigns',
           icon: ClipboardList,
-          permission: Permission.PentestRead,
+          permission: Permission.PentestCampaignsRead,
           module: 'pentest',
         },
         {
