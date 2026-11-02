@@ -6,6 +6,7 @@
 | Scope | api (admission, shared claim, politeness, limits, usage records, metrics, console settings), web (usage card, console settings, wait reasons), sdk-go (per-host rate from the signed limits, exists), sensor (proxy egress, exists), docs |
 | Architecture | [sensors.md](../architecture/sensors.md#the-shared-claim-path), [job-dispatch.md](../architecture/job-dispatch.md), [limits.md](../architecture/limits.md), [sensor-proxies.md](../architecture/sensor-proxies.md) |
 | Amends | RFC-100 §8 (shared claim order) and §10 (limits), RFC-030 §5 (signed limits carry a per-host rate share), RFC-090 (claim of shared items) |
+| Amended by | [RFC-145](RFC-145-managed-scanning-fleet.md) (D10 and section 6: platform pools are platform-owned egress proxies) |
 | Related | RFC-040 (mutual distrust, signed jobs), RFC-064 (entitlements and limits), RFC-088 (host keys), RFC-100 (shared sensors) |
 
 ## 1. Summary
@@ -154,6 +155,10 @@ Organization sensors keep per-organization keys: they use the organization's
 own egress, and their politeness is the organization's business.
 
 ## 6. Egress through proxy pools
+
+> Amended by [RFC-145](RFC-145-managed-scanning-fleet.md): the platform pools below are made of
+> platform-owned egress proxies on static published addresses; vendor endpoints are used only for a region
+> without a cell.
 
 | Case | Egress | Reputation and allowlisting |
 |---|---|---|
