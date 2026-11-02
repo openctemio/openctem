@@ -174,7 +174,7 @@ and `HTTPS_PROXY` is not used.
 Gaps, planned as follow-ups: KEV and EPSS import (a file setting and an admin
 upload, or carried in the signed vulnfeed bundle); an opt-in egress proxy for
 the guarded client; an OpenAI-compatible base URL for an on-premises model;
-CTEM-ID catalog import; serving the API reference page's script locally;
+serving the API reference page's script locally;
 release-feed and content-root keys pinned in the release; platform alerts when
 KEV, EPSS or vulnfeed go stale.
 
@@ -185,7 +185,10 @@ that repository's workflows: mirror them through the same paths with that
 identity. A sensor inside the network pairs with the internal platform
 address and verifies jobs against the job-signing key published by the
 signer; it needs reach to its scan targets, not to the internet, once its
-scanner content comes from a local mirror.
+scanner content comes from a local mirror. An internal platform usually has a
+private CA: set `PLATFORM_CA_CERT_FILE` on the API so every install command
+pins its root, or hand sensors the CA file (`SENSOR_CA_CERT_FILE`); see
+[sensors behind a private CA](../how-to/sensors-behind-a-private-ca.md).
 
 ## Troubleshooting
 
