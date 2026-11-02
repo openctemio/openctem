@@ -47,7 +47,8 @@ describe('SignupPolicyForm', () => {
     render(<SignupPolicyForm policy={SEEDED} canEdit onSaved={vi.fn()} />)
     expect(screen.getByRole('radio', { name: /only platform administrators/i })).toBeChecked()
     expect(screen.getByText(/set from the server configuration at install/i)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
+    // No unsaved change, no save bar.
+    expect(screen.queryByRole('button', { name: 'Save changes' })).toBeNull()
   })
 
   it('under SIGNUP_MODE=disabled self-service is locked and the reason is shown', () => {
@@ -85,12 +86,12 @@ describe('SignupPolicyForm', () => {
     expect(screen.getByRole('radio', { name: /^anyone(?! who)/i })).toBeDisabled()
     await user.click(screen.getByRole('radio', { name: /verified domain/i }))
     expect(screen.getByRole('radio', { name: /anyone who signs up/i })).toBeDisabled()
-    expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Save changes' })).toBeEnabled()
   })
 
   it('a read-only administrator cannot change it', () => {
     render(<SignupPolicyForm policy={SEEDED} canEdit={false} onSaved={vi.fn()} />)
-    expect(screen.queryByRole('button', { name: 'Save' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Save changes' })).not.toBeInTheDocument()
     expect(screen.getByRole('radio', { name: /anyone who signs up/i })).toBeDisabled()
     expect(screen.getByText(/only a super admin can change it/i)).toBeInTheDocument()
   })
@@ -103,7 +104,7 @@ describe('SignupPolicyForm', () => {
 
     await user.click(screen.getByRole('radio', { name: /^anyone(?! who)/i }))
     await user.click(screen.getByRole('radio', { name: /anyone who signs up/i }))
-    await user.click(screen.getByRole('button', { name: 'Save' }))
+    await user.click(screen.getByRole('button', { name: 'Save changes' }))
     const confirm = screen.getByRole('button', { name: 'Confirm' })
     expect(confirm).toBeDisabled()
     await user.type(screen.getByLabelText(/code from your authenticator/i), '123456')
@@ -128,7 +129,7 @@ describe('SignupPolicyForm', () => {
     )
     render(<SignupPolicyForm policy={SEEDED} canEdit onSaved={vi.fn()} />)
     await user.click(screen.getByRole('switch', { name: /let people request access/i }))
-    await user.click(screen.getByRole('button', { name: 'Save' }))
+    await user.click(screen.getByRole('button', { name: 'Save changes' }))
     await user.type(screen.getByLabelText(/code from your authenticator/i), '000000')
     await user.click(screen.getByRole('button', { name: 'Confirm' }))
     expect(await screen.findByText(/invalid or already used code/i)).toBeInTheDocument()
@@ -143,7 +144,7 @@ describe('SignupPolicyForm', () => {
     )
     render(<SignupPolicyForm policy={SEEDED} canEdit onSaved={onSaved} />)
     await user.click(screen.getByRole('switch', { name: /let people request access/i }))
-    await user.click(screen.getByRole('button', { name: 'Save' }))
+    await user.click(screen.getByRole('button', { name: 'Save changes' }))
     await user.type(screen.getByLabelText(/code from your authenticator/i), '123456')
     await user.click(screen.getByRole('button', { name: 'Confirm' }))
     await waitFor(() => expect(onSaved).toHaveBeenCalled())

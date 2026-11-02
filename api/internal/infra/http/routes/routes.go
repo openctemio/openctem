@@ -198,6 +198,7 @@ type Handlers struct {
 	AssetService           *handler.AssetServiceHandler           // nil if not initialized (no database)
 	Certificate            *handler.CertificateHandler            // Certificates view; nil without a database
 	Technology             *handler.TechnologyHandler             // Technologies view; nil without a database
+	EASMPosture            *handler.EASMPostureHandler            // Attack surface posture score; nil without a database
 	WebEndpoint            *handler.WebEndpointHandler            // Web surface (RFC-056); nil without a database
 	Query                  *handler.QueryHandler                  // Custom queries; nil without a database
 	APISpec                *handler.APISpecHandler                // API descriptions of web origins (RFC-056)
@@ -492,8 +493,10 @@ func Register(
 		stepUpChecker = h.LocalAuth.RecentAuthChecker()
 	}
 	credentialFactorChecker = nil
+	ownSignInChecker = nil
 	if h.LocalAuth != nil {
 		credentialFactorChecker = h.LocalAuth.CredentialFactorChecker()
+		ownSignInChecker = h.LocalAuth.OwnSignInChecker()
 	}
 	apiKeyOrJWT = nil
 	if h.APIKeyAuth != nil {
@@ -702,6 +705,9 @@ func Register(
 	}
 	if h.Technology != nil {
 		registerTechnologyRoutes(router, h.Technology, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleAttackSurface))
+	}
+	if h.EASMPosture != nil {
+		registerEASMPostureRoutes(router, h.EASMPosture, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleAttackSurface))
 	}
 
 	// Web surface: endpoints under their origin asset (RFC-056)
@@ -1402,6 +1408,17 @@ var stepUpChecker middleware.RecentAuthChecker //nolint:gochecknoglobals // set 
 // creating a credential). Set once during Register from the local auth
 // handler; nil lets requests through (tests without the auth service).
 var credentialFactorChecker middleware.CredentialFactorChecker //nolint:gochecknoglobals // set once during init
+
+// ownSignInChecker answers RequireOwnSignIn (actions on the whole account
+// need the account's own sign-in, not an organization IdP's). Set once
+// during Register from the local auth handler.
+var ownSignInChecker middleware.OwnSignInChecker //nolint:gochecknoglobals // set once during init
+
+// requireOwnSignIn is the middleware for a route that acts on the whole
+// account (deleting it, signing it out everywhere).
+func requireOwnSignIn() Middleware {
+	return middleware.RequireOwnSignIn(ownSignInChecker)
+}
 
 // requireCredentialFactor is the middleware for a route that creates a
 // credential (API key, sensor enrolment, integration secret): the caller
