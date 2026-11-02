@@ -1959,11 +1959,7 @@ func newCIRunService(cfg *config.Config, repos *Repositories, svc *Services, log
 	// No CI run token is issued or accepted for a suspended organization.
 	ciSvc.SetOrganizationGate(svc.OrganizationGate)
 	if svc.Suppression != nil {
-		var mg cirunapp.ModuleGuard
-		if svc.Module != nil {
-			mg = svc.Module
-		}
-		ciSvc.SetSuppressionRules(svc.Suppression, mg)
+		ciSvc.SetSuppressionRules(svc.Suppression)
 	}
 	if repos.RepoIdentity != nil {
 		ciSvc.SetRepositoryIdentity(repos.RepoIdentity)

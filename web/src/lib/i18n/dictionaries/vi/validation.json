@@ -182,7 +182,6 @@
   "validation.overview.description": "Bản sửa có giữ vững và biện pháp kiểm soát có hiệu quả không, và việc gì đang chờ bạn.",
   "validation.overview.module.attack_simulation": "Mô phỏng tấn công",
   "validation.overview.module.control_testing": "Kiểm thử kiểm soát",
-  "validation.overview.module.mitre_coverage": "Phủ MITRE",
   "validation.overview.module.pentest": "Chiến dịch pentest",
   "validation.overview.modulesOff.link": "Bật trong Mô-đun",
   "validation.overview.modulesOff.one": "{list} đang tắt.",

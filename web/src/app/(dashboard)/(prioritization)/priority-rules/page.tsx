@@ -3,7 +3,6 @@
 import Link from '@/components/link'
 import { Scale } from 'lucide-react'
 import { useHasPermission } from '@/lib/permissions'
-import { useModuleEnabled } from '@/features/integrations/api/use-tenant-modules'
 
 import { useCallback, useMemo, useState } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
@@ -175,8 +174,8 @@ const emptyForm: FormState = {
 export default function PriorityRulesPage() {
   const { t } = useTranslation()
   const mayRiskScoring = useHasPermission(Permission.TeamUpdate)
-  const riskScoringOn = useModuleEnabled('risk_scoring')
-  const canSeeRiskScoring = mayRiskScoring && riskScoringOn
+  // Risk scoring is always on: only the permission decides.
+  const canSeeRiskScoring = mayRiskScoring
   const { data, error, mutate, isLoading } = useSWR<ListResponse>(
     '/api/v1/priority-rules',
     (url: string) => get<ListResponse>(url)
