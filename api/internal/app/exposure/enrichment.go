@@ -173,7 +173,7 @@ func (e *ExposureEnricher) EnrichBatch(ctx context.Context, tenantID shared.ID, 
 		if aid := ev.AssetID(); aid != nil && !aid.IsZero() {
 			if a, ok := assets[*aid]; ok {
 				ctemAsset = &ctemid.Asset{
-					Type: a.Type(), Scope: a.Scope(),
+					Type: a.Type(), SubType: a.SubType(), Scope: a.Scope(),
 					InternetFacing: a.IsInternetAccessible() || a.Exposure() == asset.ExposurePublic,
 				}
 				eff, _ := asset.EffectiveCriticality(a.Criticality(), bizCtx[*aid])
