@@ -94,6 +94,9 @@ services:
 {{- if .CACert}}
       SSL_CERT_DIR: /etc/openctem/certs
 {{- end}}
+{{- if .CAPins}}
+      SENSOR_CA_SHA256: "{{.CAPins}}"
+{{- end}}
     volumes:
       # One data volume: state/, outbox/ and content/ (see below).
       # Keep it a named volume: Docker creates it with the sensor's owner. A host
