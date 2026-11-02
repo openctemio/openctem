@@ -6,13 +6,6 @@ import type { ColumnDef } from '@tanstack/react-table'
 import { Main } from '@/components/layout'
 import { Badge } from '@/components/ui/badge'
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import {
   DataTable,
   ErrorState,
   FilterSelect,
@@ -34,8 +27,6 @@ import {
   type OrgStatus,
 } from '@console/features/admin-console/components/organization-state-pill'
 import { type AdminOrganization, adminHas } from '@console/features/admin-console/types'
-
-const ANY = 'any'
 
 export default function AdminOrganizationsPage() {
   const admin = useAdmin()
@@ -210,26 +201,16 @@ export default function AdminOrganizationsPage() {
                     },
                   ]}
                 />
-                <Select
-                  value={owner || ANY}
-                  onValueChange={(v) => list.setFilter('owner', v === ANY ? '' : v)}
-                >
-                  <SelectTrigger
-                    className="sm:w-44"
-                    aria-label={t('admin.org.ownerFilter', 'Filter by owner')}
-                  >
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={ANY}>{t('admin.org.ownerAny', 'Any owner')}</SelectItem>
-                    <SelectItem value="none">
-                      {t('admin.org.ownerNone', 'Without an owner')}
-                    </SelectItem>
-                    <SelectItem value="present">
-                      {t('admin.org.ownerPresent', 'With an owner')}
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
+                <FilterSelect<'none' | 'present'>
+                  label={t('admin.org.col.owner', 'Owner')}
+                  value={owner}
+                  onChange={(v) => list.setFilter('owner', v)}
+                  allLabel={t('admin.org.ownerAny', 'Any owner')}
+                  options={[
+                    { value: 'none', label: t('admin.org.ownerNone', 'Without an owner') },
+                    { value: 'present', label: t('admin.org.ownerPresent', 'With an owner') },
+                  ]}
+                />
               </>
             }
           />
