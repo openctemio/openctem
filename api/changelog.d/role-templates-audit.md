@@ -1,7 +1,7 @@
 ### Added: three role templates: remediation lead, validation lead and detection engineer
 
 - **Remediation lead** (engineering managers, security champions): everything a remediation owner does, plus the team's remediation tasks (create, split, merge, tracker issue, mark fixed, one exception), assignment within the team and bulk status. Never severity, verify, approve or triage.
-- **Validation lead** (pentest and red team leads): a validation engineer who also maintains methodology checklists and attacker profiles and requests engagement scope and authorization letters. Never approves scope or risk.
+- **Validation lead** (pentest and red team leads): a validation engineer who also maintains methodology checklists and attacker profiles. Never changes or approves scope (a new target is active at once where scope approvals are off) and never approves risk.
 - **Detection engineer** (detection, SOC and purple team defenders): reads simulations, control tests and observed campaigns, and records compensating controls and their test results. Runs no attack or scan and changes no finding.
 - Each is available as a role template and as a team preset.
 

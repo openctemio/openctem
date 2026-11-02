@@ -204,13 +204,13 @@ var Personas = []Persona{
 	},
 	{
 		ID: "validation-lead", Name: "Penetration testing or red team lead", Group: "Security program",
-		Goal:      "Plans engagements: methodology checklists, emulated attacker profiles, engagement scope and authorization letters; leads campaigns.",
+		Goal:      "Plans engagements: methodology checklists and emulated attacker profiles; leads campaigns. Engagement scope and authorization letters stay with whoever owns scope.",
 		Stages:    []string{StageScoping, StageValidation},
 		Roles:     []string{"validation-lead"},
 		Team:      "validation",
 		DataScope: "The current validation scope.",
 		Access:    "Permanent; campaign lead per engagement.",
-		MustNot:   []string{"approve the scope they request", "approve risk"},
+		MustNot:   []string{"change or approve scope", "approve risk"},
 	},
 	{
 		ID: "bas-engineer", Name: "Breach and attack simulation engineer", Group: "Security program",

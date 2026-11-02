@@ -139,10 +139,9 @@ var templateFlows = map[string]struct{ must, mustNot []string }{
 	},
 	"validation-lead": {
 		must: []string{
-			"POST /api/v1/pentest/checklist-templates", "POST /api/v1/attacker-profiles", "POST /api/v1/scope/targets",
-			"POST /api/v1/scope/letters", "POST /api/v1/pentest/campaigns",
+			"POST /api/v1/pentest/checklist-templates", "POST /api/v1/attacker-profiles", "POST /api/v1/pentest/campaigns",
 		},
-		mustNot: []string{"POST /api/v1/scope/targets/{id}/approve", "POST /api/v1/scope/exclusions/{id}/approve", "POST /api/v1/approvals/{id}/approve"},
+		mustNot: []string{"POST /api/v1/scope/targets", "POST /api/v1/scope/letters", "POST /api/v1/scope/targets/{id}/approve", "POST /api/v1/scope/exclusions/{id}/approve", "POST /api/v1/approvals/{id}/approve"},
 	},
 	"detection-engineer": {
 		must: []string{

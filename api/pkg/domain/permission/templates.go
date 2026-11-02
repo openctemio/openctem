@@ -246,14 +246,14 @@ var roleTemplates = []RoleTemplate{
 		Version: 1,
 		Name:    "Validation lead",
 		Description: "Leads the validation program on top of a validation engineer's work: maintains " +
-			"methodology checklists and the attacker profiles exercises emulate, and requests the scope and " +
-			"authorization letters of an engagement. Never approves scope or risk.",
+			"methodology checklists and the attacker profiles exercises emulate. Never changes scope or " +
+			"approves risk.",
 		Personas: []string{"Penetration testing or red team lead", "Offensive security manager"},
 		Permissions: join(readCore, validationWork, []Permission{
 			PentestChecklistsManage, AttackerProfilesWrite,
-			// Requests scope entries, exclusions and authorization letters;
-			// widening scope still needs an approver (scope:approve).
-			ScopeWrite,
+			// No scope:write: a new target is active at once where scope
+			// approvals are off, and exclusions could be switched off; with
+			// scans:write that would widen scope and scan it.
 			CTEMCyclesRead, ReportsRead,
 		}),
 	},

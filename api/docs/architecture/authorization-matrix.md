@@ -2738,7 +2738,7 @@ lets anyone build a role above their own grants.
 | `scan-operator` | scans and scan workflows on approved scope | no |
 | `sensor-operator` | sensor health, zones and commands; pairing and keys stay with administrators | no |
 | `validation-engineer` | pentest campaigns, simulations, control tests, targeted scans, retests | no |
-| `validation-lead` | a validation engineer who also maintains methodology checklists and attacker profiles and requests engagement scope and authorization letters | no |
+| `validation-lead` | a validation engineer who also maintains methodology checklists and attacker profiles; never changes or approves scope | no |
 | `detection-engineer` | detection and SOC engineers: reads validation results, records compensating controls and their tests | no |
 | `external-tester` | a vendor tester: only the campaigns they are a member of | no |
 | `researcher` (v2) | bug-bounty researchers: programs, scans and findings of their programs (RFC-065); no sensor access since v2 (migration `002905` removes `sensors:read` from existing copies) | no |
