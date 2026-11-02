@@ -62,7 +62,7 @@ func enabledEntra() config.EntraSSOConfig {
 		Enabled:      true,
 		ClientID:     "env-client-id",
 		ClientSecret: "env-secret",
-		TenantID:     "dir-1234", // pinned directory GUID → auto-provision allowed
+		TenantID:     "99999999-8888-7777-6666-555555555555", // pinned directory GUID → auto-provision allowed
 		DefaultRole:  "member",
 		DisplayName:  "Microsoft Entra ID",
 		// FIX 1: the env fallback is opt-in per tenant slug. The test tenant
@@ -84,7 +84,7 @@ func TestResolveProvider_EnvFallbackWhenTenantHasNone(t *testing.T) {
 	if rp.clientID != "env-client-id" || rp.clientSecret != "env-secret" {
 		t.Fatalf("env creds not used: %+v", rp)
 	}
-	if rp.tenantIdentifier != "dir-1234" {
+	if rp.tenantIdentifier != "99999999-8888-7777-6666-555555555555" {
 		t.Fatalf("expected env directory id, got %q", rp.tenantIdentifier)
 	}
 }
@@ -100,7 +100,7 @@ func TestResolveProvider_NoTenantNoEnv_NotFound(t *testing.T) {
 
 func TestResolveProvider_TenantConfigWinsOverEnv(t *testing.T) {
 	ip := identityproviderdom.New("ip-1", "tid", identityproviderdom.ProviderEntraID, "Tenant Entra", "tenant-client-id", "tenant-secret")
-	ip.SetTenantIdentifier("tenant-dir")
+	ip.SetTenantIdentifier("11111111-2222-3333-4444-555555555555")
 	repo := &fakeIPRepo{byProvider: map[identityproviderdom.Provider]*identityproviderdom.IdentityProvider{
 		identityproviderdom.ProviderEntraID: ip,
 	}}
@@ -129,7 +129,7 @@ func TestGenerateAuthorizeURL_UsesEnvFallback(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GenerateAuthorizeURL: %v", err)
 	}
-	if !strings.Contains(res.AuthorizationURL, "login.microsoftonline.com/dir-1234/oauth2/v2.0/authorize") {
+	if !strings.Contains(res.AuthorizationURL, "login.microsoftonline.com/99999999-8888-7777-6666-555555555555/oauth2/v2.0/authorize") {
 		t.Fatalf("authorize URL should target the env directory: %s", res.AuthorizationURL)
 	}
 	if !strings.Contains(res.AuthorizationURL, "client_id=env-client-id") {
@@ -151,6 +151,7 @@ func TestGetProvidersForTenant_AppendsEnvFallback(t *testing.T) {
 
 func TestGetProvidersForTenant_TenantEntraSuppressesFallback(t *testing.T) {
 	ip := identityproviderdom.New("ip-1", "tid", identityproviderdom.ProviderEntraID, "Tenant Entra", "c", "s")
+	ip.SetTenantIdentifier("11111111-2222-3333-4444-555555555555")
 	svc := newSSOForTest(&fakeIPRepo{active: []*identityproviderdom.IdentityProvider{ip}}, enabledEntra())
 
 	got, err := svc.GetProvidersForTenant(context.Background(), "acme")
