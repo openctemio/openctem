@@ -18,7 +18,7 @@
  * wrap under the name (never cut off), never colour alone.
  */
 
-import { useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useEffectEvent, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { ChevronDown, ChevronUp } from 'lucide-react'
 import { useTranslation } from '@/context/i18n-provider'
 import { cn } from '@/lib/utils'
@@ -134,7 +134,7 @@ export function RankedBars({
   const [announce, setAnnounce] = useState('')
 
   // FLIP: rows that changed place start from where they were and slide in.
-  useLayoutEffect(() => {
+  const flip = useEffectEvent(() => {
     const before = prev.current
     const userSwitch = before != null && before.reset !== resetKey
     if (before && before.order.join('\u0000') !== orderSig) {
@@ -176,8 +176,9 @@ export function RankedBars({
     const next = new Map<string, DOMRect>()
     nodes.current.forEach((el, key) => next.set(key, el.getBoundingClientRect()))
     rects.current = next
-    // order is derived from orderSig; ranked/t only label the message.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  })
+  useLayoutEffect(() => {
+    flip()
   }, [orderSig, resetKey, reduced])
 
   const row = (r: RankedBarRow): ReactNode => {
