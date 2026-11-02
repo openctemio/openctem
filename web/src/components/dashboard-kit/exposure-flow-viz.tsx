@@ -342,7 +342,7 @@ function FlowChart({ result, scope }: { result: FlowResult; scope?: 'organizatio
   const outcome = (key: string) => outcomes.find((o) => o.key === key) as Outcome
 
   const maxSource = Math.max(1, ...sources.map((s) => s.received))
-  const maxOutcome = Math.max(1, ...outcomes.map((o) => o.fig.value))
+  const maxOutcome = Math.max(1, ...outcomes.filter((o) => !o.sub).map((o) => o.fig.value))
 
   // What lights with what: a source lights its wire, the funnel and the
   // ring; a class its arc and the ring; an outcome its wire and the ring.
@@ -981,7 +981,9 @@ function FlowChart({ result, scope }: { result: FlowResult; scope?: 'organizatio
           dimClass(active, lit(k)),
           className
         )}
-        data-wire-in={k}
+        // A sub-figure (Past SLA, a part of Open) is no outcome of its own:
+        // it has no anchor, so no thread comes from the rings to it.
+        data-wire-in={o.sub ? undefined : k}
         {...bind(k)}
       >
         <span className="truncate text-xs text-muted-foreground">{o.label}</span>{' '}
@@ -1082,7 +1084,12 @@ function FlowChart({ result, scope }: { result: FlowResult; scope?: 'organizatio
               const from = layout.out[`s:${s.id}`]
               const to = layout.in.ring
               if (!from || !to) return null
-              const w = wireStroke(s.health)
+              // A source with nothing keeps a thin dashed wire, still, while
+              // its row is listed (no row, no anchor, no wire).
+              const silent = s.health === 'ok' && s.received === 0
+              const w = silent
+                ? { stroke: 'var(--border-strong, var(--border))', dash: '4 4' }
+                : wireStroke(s.health)
               const k = `w:s:${s.id}`
               const d = wirePath(from.x + FRAME_INSET, from.y, to.x + 2, to.y)
               // Focused, the wire takes its source's colour (one source, one
@@ -1104,7 +1111,7 @@ function FlowChart({ result, scope }: { result: FlowResult; scope?: 'organizatio
                     strokeDasharray={w.dash}
                     strokeLinecap="round"
                   />
-                  {s.health === 'ok' && !reduced && (
+                  {s.health === 'ok' && !silent && !reduced && (
                     <path
                       d={d}
                       fill="none"
@@ -1118,26 +1125,28 @@ function FlowChart({ result, scope }: { result: FlowResult; scope?: 'organizatio
                 </g>
               )
             })}
-            {outcomes.map((o) => {
-              const from = layout.out.ring
-              const to = layout.in[`o:${o.key}`]
-              if (!from || !to) return null
-              const k = `w:o:${o.key}`
-              const w = wireStroke(o.tone === 'bad' && o.fig.value > 0 ? 'bad' : 'neutral')
-              return (
-                <path
-                  key={k}
-                  className={dimClass(active, lit(k))}
-                  d={wirePath(from.x - 2, from.y, to.x - FRAME_INSET, to.y)}
-                  fill="none"
-                  data-wire-key={k}
-                  stroke={lit(k) ? 'var(--signal)' : w.stroke}
-                  style={lit(k) ? { filter: focusGlow('var(--signal)') } : undefined}
-                  strokeWidth={wireWidth(o.fig.value, maxOutcome)}
-                  strokeLinecap="round"
-                />
-              )
-            })}
+            {outcomes
+              .filter((o) => !o.sub)
+              .map((o) => {
+                const from = layout.out.ring
+                const to = layout.in[`o:${o.key}`]
+                if (!from || !to) return null
+                const k = `w:o:${o.key}`
+                const w = wireStroke(o.tone === 'bad' && o.fig.value > 0 ? 'bad' : 'neutral')
+                return (
+                  <path
+                    key={k}
+                    className={dimClass(active, lit(k))}
+                    d={wirePath(from.x - 2, from.y, to.x - FRAME_INSET, to.y)}
+                    fill="none"
+                    data-wire-key={k}
+                    stroke={lit(k) ? 'var(--signal)' : w.stroke}
+                    style={lit(k) ? { filter: focusGlow('var(--signal)') } : undefined}
+                    strokeWidth={wireWidth(o.fig.value, maxOutcome)}
+                    strokeLinecap="round"
+                  />
+                )
+              })}
           </svg>
         )}
 

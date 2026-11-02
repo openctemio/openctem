@@ -154,7 +154,29 @@ export function useWireAnchors(
     if (!el || typeof ResizeObserver === 'undefined') return
     const ro = new ResizeObserver(() => setLayout(measure()))
     ro.observe(el)
-    return () => ro.disconnect()
+    // The anchors are the rows rendered right now: a row folded or listed by
+    // the user (ranked bars' "with nothing" line) changes them without
+    // changing the container's width, so a change of the anchor set re-measures.
+    // Watching the set (not every mutation) keeps the wires' own svg out of the loop.
+    const sig = () =>
+      [...el.querySelectorAll<HTMLElement>('[data-wire-out],[data-wire-in]')]
+        .map((n) => n.dataset.wireOut ?? n.dataset.wireIn)
+        .join('\u0000')
+    let last = sig()
+    const mo =
+      typeof MutationObserver === 'undefined'
+        ? null
+        : new MutationObserver(() => {
+            const next = sig()
+            if (next === last) return
+            last = next
+            setLayout(measure())
+          })
+    mo?.observe(el, { childList: true, subtree: true })
+    return () => {
+      ro.disconnect()
+      mo?.disconnect()
+    }
   }, [ref, measure, contentKey])
   return layout
 }
