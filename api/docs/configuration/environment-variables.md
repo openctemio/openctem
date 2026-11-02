@@ -343,7 +343,6 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 | `CERT_MONITOR_FEED_URL` | string | `https://crt.sh` |  |  | CT-log search service queried per organization domain. |
 | `CERT_MONITOR_INTERVAL` | duration | `24h` |  |  | How often the CT sweep runs. |
 | `CERT_MONITOR_MAX_DOMAINS_PER_RUN` | int | `50` |  |  | Domains of one organization queried per sweep; the rest rotate in on later runs. |
-| `CTEM_ID_FEED_URL` | string | `https://ctem.org/source.json` |  |  | CTEM-ID catalog feed mirrored daily. |
 | `EASM_DNS_CHECK_INTERVAL` | duration | `24h` |  |  | How often the DNS checks run. |
 | `EASM_DNS_CHECKS_ENABLED` | bool | `true` |  |  | Daily DNS-only checks of each organization's own names (dangling CNAME/NS, email posture). `false` turns them off platform-wide. |
 | `EASM_DNS_MAX_NAMES_PER_RUN` | int | `500` |  |  | Names checked per organization per run. |
