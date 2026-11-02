@@ -73,7 +73,7 @@ describe('internal zones card', () => {
       />
     )
     await user.click(screen.getByRole('switch'))
-    await user.click(screen.getByRole('button', { name: 'Save' }))
+    await user.click(screen.getByRole('button', { name: 'Save changes' }))
     expect(await screen.findByText('Let shared sensors scan internal zones?')).toBeInTheDocument()
     await user.type(screen.getByLabelText('Reason'), 'central pool')
     await user.type(screen.getByLabelText('Code from your authenticator app'), '123456')
@@ -92,7 +92,7 @@ describe('SharedSensorAnomalyForm', () => {
   it('is read-only without the super admin role', () => {
     render(<SharedSensorAnomalyForm thresholds={thresholds} canEdit={false} onSave={vi.fn()} />)
     expect(screen.getByLabelText('Distinct domains per day')).toBeDisabled()
-    expect(screen.queryByRole('button', { name: 'Save' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Save changes' })).not.toBeInTheDocument()
   })
 
   it('refuses a negative value and saves a valid change', async () => {
@@ -102,10 +102,10 @@ describe('SharedSensorAnomalyForm', () => {
     const domains = screen.getByLabelText('Distinct domains per day')
     await user.clear(domains)
     await user.type(domains, '-3')
-    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Save changes' })).toBeDisabled()
     await user.clear(domains)
     await user.type(domains, '10')
-    await user.click(screen.getByRole('button', { name: 'Save' }))
+    await user.click(screen.getByRole('button', { name: 'Save changes' }))
     await user.type(screen.getByLabelText('Reason'), 'tighter')
     await user.type(screen.getByLabelText('Code from your authenticator app'), '123456')
     await user.click(screen.getByRole('button', { name: 'Confirm' }))

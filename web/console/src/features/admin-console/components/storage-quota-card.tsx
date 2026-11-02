@@ -1,14 +1,13 @@
 'use client'
 
-import { useEffect, useId, useState } from 'react'
-import { Loader2 } from 'lucide-react'
+import { useCallback, useEffect, useId, useState } from 'react'
 import { toast } from 'sonner'
-import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useTranslation } from '@/context/i18n-provider'
+import { SettingsSaveBar } from '@/features/shared/components/settings-save-bar'
 import { ErrorState } from '@/features/shared'
 import { saveStorageQuota, useStorageQuota } from '../api/use-platform-settings'
 import { SettingChangedLine, handleSaveConflict } from './console-setting-parts'
@@ -25,9 +24,11 @@ export function StorageQuotaCard({ canEdit }: { canEdit: boolean }) {
   const [value, setValue] = useState('')
   const [busy, setBusy] = useState(false)
 
-  useEffect(() => {
+  // The saved values: on load, after a save and on Discard.
+  const reset = useCallback(() => {
     if (data) setValue(String(data.default_mb))
   }, [data])
+  useEffect(reset, [reset])
 
   if (error) {
     return (
@@ -119,12 +120,13 @@ export function StorageQuotaCard({ canEdit }: { canEdit: boolean }) {
         </p>
         <SettingChangedLine change={data} />
         {canEdit && (
-          <div className="flex justify-end">
-            <Button onClick={() => void save()} disabled={!dirty || busy}>
-              {busy && <Loader2 className="me-1.5 size-4 animate-spin" />}
-              {t('admin.settings.save', 'Save')}
-            </Button>
-          </div>
+          <SettingsSaveBar
+            className="basis-full"
+            dirty={dirty}
+            saving={busy}
+            onSave={() => void save()}
+            onDiscard={reset}
+          />
         )}
       </CardContent>
     </Card>
