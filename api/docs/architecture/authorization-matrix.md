@@ -2728,20 +2728,23 @@ lets anyone build a role above their own grants.
 
 | Template | For | Full data |
 |---|---|---|
-| `program-lead` | CISO, CTEM program manager: cycles, priority rules, SLAs, approvals | yes |
+| `program-lead` | CISO, CTEM program manager: cycles, priority rules, SLAs, approvals (risk, exposures, suppressions, scope, scan runs), organization dashboards | yes |
 | `security-analyst` | triage, assignment, verification; requests risk acceptance | no |
-| `vulnerability-manager` | backlog routing, assignment rules, campaigns, scan schedules, reports | no |
-| `remediation-owner` | asset owners, IT, developers: comments, remediation, fix applied | no |
+| `vulnerability-manager` | backlog routing, assignment rules, campaigns, scan schedules, reports, organization-wide saved views | no |
+| `remediation-owner` | asset owners, IT, developers: comments, remediation, fix applied; client of pentest campaigns | no |
+| `remediation-lead` | engineering managers, security champions: a remediation owner who also plans the team's remediation tasks and assigns within the team | no |
 | `appsec-engineer` | code and dependency scanning, application findings, the CI gate | no |
-| `ci-integrator` | platform engineers keeping pipelines connected: CI runs and gate results, read only | no |
+| `ci-integrator` | platform engineers keeping pipelines connected: CI runs, gate results and code host connections, read only | no |
 | `scan-operator` | scans and scan workflows on approved scope | no |
 | `sensor-operator` | sensor health, zones and commands; pairing and keys stay with administrators | no |
-| `validation-engineer` | pentest campaigns, simulations, control tests, retests | no |
+| `validation-engineer` | pentest campaigns, simulations, control tests, targeted scans, retests | no |
+| `validation-lead` | a validation engineer who also maintains methodology checklists and attacker profiles and requests engagement scope and authorization letters | no |
+| `detection-engineer` | detection and SOC engineers: reads validation results, records compensating controls and their tests | no |
 | `external-tester` | a vendor tester: only the campaigns they are a member of | no |
 | `researcher` (v2) | bug-bounty researchers: programs, scans and findings of their programs (RFC-065); no sensor access since v2 (migration `002905` removes `sensors:read` from existing copies) | no |
 | `bounty-triager` | triages researcher reports; never approves or changes program scope | no |
 | `threat-intel-analyst` | attacker profiles, threat intel, external exposures | no |
-| `risk-approver` | GRC: approves risk acceptance and suppressions, compliance | no |
+| `risk-approver` | GRC: approves risk acceptance, exposure dispositions and suppressions, compliance | no |
 | `auditor` | read-only evidence, the audit log and exports | yes |
 | `executive` | dashboards, cycle outcomes and reports; less than viewer | no |
 
@@ -2772,13 +2775,25 @@ Unit tests (`templates_test.go`) keep the templates honest:
   - fix applied and verify are never together;
   - approve is never with status, triage, bulk or fix;
   - suppression write is never with suppression approve;
-  - scope write is never with scope approve;
+  - scope write is never with scope approve or exclusion approve;
+  - scan write is never with scan approve;
+  - fix applied is never with severity;
 - no template administers the organization or deletes anything;
 - only `program-lead` and `auditor` see all data;
 - `auditor` and `executive` are read-only, and `executive` is within viewer;
 - `external-tester` holds no organization-wide findings, exposures, members or scans;
 - the CI gate policy and break-glass stay with `appsec-engineer`;
-- `researcher` comments but never re-scores or approves.
+- `researcher` comments but never re-scores or approves;
+- `scans:execute` never comes without `scans:write` (or `assets:write`), since a run needs both;
+- `remediation-lead` holds everything `remediation-owner` does and never severity, verify, approve or triage;
+  `validation-lead` holds everything `validation-engineer` does; `detection-engineer` runs no attack or scan.
+
+Two tests in `internal/authzdoc` (`templates_test.go`) read the route gates
+from the router source: every permission a template grants opens at least one
+route the template passes (or is checked in a handler), and each template
+passes the routes of its daily work and fails the ones separation of duties
+keeps from it. A route that moves or changes its gate fails them, so the
+templates are reviewed with the route.
 
 `TestRoleTemplates_CreationIsBoundedByTheCreator` checks two things: the owner can create every template, and a delegated role manager can create only the templates their own grants cover.
 

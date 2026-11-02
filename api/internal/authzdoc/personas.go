@@ -40,7 +40,7 @@ var TeamPatterns = []TeamPattern{
 		ID: "security-operations", Name: "Security operations", GroupType: "security_team",
 		Purpose: "The central security team that triages and validates across the program scope.",
 		Assets:  "A scope rule on the asset groups (or tags) that make up the current CTEM scope.",
-		Roles:   []string{"security-analyst", "vulnerability-manager", "threat-intel-analyst"},
+		Roles:   []string{"security-analyst", "vulnerability-manager", "threat-intel-analyst", "detection-engineer"},
 	},
 	{
 		ID: "business-unit", Name: "Business unit: <name>", GroupType: "department",
@@ -52,7 +52,7 @@ var TeamPatterns = []TeamPattern{
 		ID: "product-team", Name: "Product: <name>", GroupType: "team",
 		Purpose: "A product's engineers: its repositories, services and hosts.",
 		Assets:  "The product's asset group, or a scope rule on its tag; repositories by owner.",
-		Roles:   []string{"remediation-owner", "appsec-engineer"},
+		Roles:   []string{"remediation-owner", "remediation-lead", "appsec-engineer"},
 	},
 	{
 		ID: "platform-infrastructure", Name: "Infrastructure: <domain>", GroupType: "team",
@@ -64,7 +64,7 @@ var TeamPatterns = []TeamPattern{
 		ID: "validation", Name: "Validation and red team", GroupType: "security_team",
 		Purpose: "Internal testers who prove exploitability on the prioritized exposures.",
 		Assets:  "The assets in the current validation scope (an asset group refreshed each cycle).",
-		Roles:   []string{"validation-engineer"},
+		Roles:   []string{"validation-engineer", "validation-lead"},
 	},
 	{
 		ID: "engagement", Name: "Engagement: <vendor> <dates>", GroupType: "external",
@@ -180,7 +180,7 @@ var Personas = []Persona{
 		Team:      "product-team",
 		DataScope: "The repositories and services of the products they cover.",
 		Access:    "Permanent.",
-		MustNot:   []string{"override the CI gate (administrators)", "author scanner templates (administrators)"},
+		MustNot:   []string{"configure CI trust or code host connections (administrators)", "let a commit past the gate without a recent sign-in", "author scanner templates (administrators)"},
 	},
 	{
 		ID: "cloud-security", Name: "Cloud security engineer", Group: "Security program",
@@ -203,6 +203,16 @@ var Personas = []Persona{
 		MustNot:   []string{"test outside approved scope", "approve risk"},
 	},
 	{
+		ID: "validation-lead", Name: "Penetration testing or red team lead", Group: "Security program",
+		Goal:      "Plans engagements: methodology checklists, emulated attacker profiles, engagement scope and authorization letters; leads campaigns.",
+		Stages:    []string{StageScoping, StageValidation},
+		Roles:     []string{"validation-lead"},
+		Team:      "validation",
+		DataScope: "The current validation scope.",
+		Access:    "Permanent; campaign lead per engagement.",
+		MustNot:   []string{"approve the scope they request", "approve risk"},
+	},
+	{
 		ID: "bas-engineer", Name: "Breach and attack simulation engineer", Group: "Security program",
 		Goal:      "Runs simulations and control tests; checks that detections fire.",
 		Stages:    []string{StageValidation},
@@ -214,13 +224,13 @@ var Personas = []Persona{
 	},
 	{
 		ID: "detection-engineer", Name: "Detection engineer or SOC analyst", Group: "Security program",
-		Goal:      "Uses validation results to tune detections; follows exposures on critical assets.",
+		Goal:      "Uses validation results to tune detections and records the compensating controls they prove; follows exposures on critical assets.",
 		Stages:    []string{StageValidation, StageMobilization},
-		Roles:     []string{"security-analyst"},
+		Roles:     []string{"detection-engineer"},
 		Team:      "security-operations",
 		DataScope: "The program scope.",
 		Access:    "Permanent.",
-		MustNot:   []string{"approve risk"},
+		MustNot:   []string{"approve risk", "run simulations or scans", "change findings"},
 	},
 	{
 		ID: "scan-operator", Name: "Scanning operations engineer", Group: "Security program",
@@ -267,11 +277,21 @@ var Personas = []Persona{
 		ID: "engineering-manager", Name: "Engineering manager", Group: "Owners and fixers",
 		Goal:      "Plans remediation work for a team and follows its SLA.",
 		Stages:    []string{StageMobilization},
-		Roles:     []string{"remediation-owner", "executive"},
+		Roles:     []string{"remediation-lead"},
 		Team:      "product-team",
 		DataScope: "Their product's assets.",
 		Access:    "Permanent.",
-		MustNot:   []string{"approve risk acceptance"},
+		MustNot:   []string{"approve risk acceptance", "verify their team's fixes"},
+	},
+	{
+		ID: "security-champion", Name: "Security champion", Group: "Owners and fixers",
+		Goal:      "The security point of contact in a product team: plans the team's remediation tasks, assigns findings in the team and works the CI gate results with developers.",
+		Stages:    []string{StageMobilization},
+		Roles:     []string{"remediation-lead"},
+		Team:      "product-team",
+		DataScope: "Their product's repositories and services.",
+		Access:    "Permanent.",
+		MustNot:   []string{"re-score or verify the team's findings", "approve risk acceptance", "see other products' findings"},
 	},
 	// Governance and leadership.
 	{
