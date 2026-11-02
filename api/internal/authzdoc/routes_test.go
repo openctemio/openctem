@@ -43,6 +43,8 @@ func TestParseRoutes_ReadsEveryGateKind(t *testing.T) {
 		{"POST /api/v1/credentials/{id}/reveal", Gate{Permissions: []string{"findings:credentials:reveal"}, Modules: []string{"credentials"}, StepUp: true}},
 		// module gate passed in as an argument
 		{"POST /api/v1/pentest/campaigns", Gate{Permissions: []string{"pentest:campaigns:write"}, Modules: []string{"pentest"}}},
+		// a nested group whose router parameter is not named r
+		{"DELETE /api/v1/pentest/campaigns/{id}", Gate{Permissions: []string{"pentest:campaigns:delete"}, Modules: []string{"pentest"}, Other: []string{"campaign_role"}}},
 	}
 	for _, c := range cases {
 		got := routeByKey(t, routes, c.key).Gate
