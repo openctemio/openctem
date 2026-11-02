@@ -21,6 +21,9 @@ func TestMCPPendingClientMigrationCleansUnapprovedClients(t *testing.T) {
 			t.Fatalf("%s: %v", q, err)
 		}
 	}
+	// Start from no clients: later migrations seed their own (the device
+	// grant's terminal client), which this migration rightly keeps.
+	exec(`DELETE FROM mcp_oauth_clients`)
 	for _, id := range []string{"junk", "blocked", "recent", "granted"} {
 		exec(`INSERT INTO mcp_oauth_clients (client_id, kind, name, redirect_uris)
 			VALUES ($1, 'metadata_document', $1, ARRAY['https://x.example/cb'])`, "https://"+id+".example/c.json")

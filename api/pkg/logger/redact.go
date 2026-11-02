@@ -20,11 +20,12 @@ var (
 )
 
 // RedactText masks secrets that free-form text (an upstream error, a driver
-// message) can carry: URL userinfo, key=value pairs for secret-like keys,
+// message) can carry: URL userinfo and query strings, key=value pairs for secret-like keys,
 // bearer and basic credentials, and long hex or base64 runs. Ordinary
 // sentences pass through unchanged. It does not bound length or strip line
 // breaks; combine it with SanitizeText before logging.
 func RedactText(s string) string {
+	s = RedactURLs(s)
 	s = urlUserinfoRe.ReplaceAllString(s, "${1}"+redacted+"@")
 	s = secretKVRe.ReplaceAllString(s, "${1}"+redacted)
 	s = bearerRe.ReplaceAllString(s, "Bearer "+redacted)
