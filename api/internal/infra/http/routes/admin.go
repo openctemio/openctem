@@ -60,7 +60,9 @@ import (
 //	                                            reject; audited)
 //	/admin/tenants            any admin         create: ops_admin+ + step-up;
 //	                                            first owner: ops_admin+ + fresh
-//	                                            step-up (recovery: super_admin +
+//	                                            step-up; owner invitation resend
+//	                                            or cancel: ops_admin+ + step-up
+//	                                            (recovery: super_admin +
 //	                                            reason + fresh code in the body);
 //	                                            SSO writes: super_admin + step-up
 //	                                            (audited)
@@ -640,6 +642,14 @@ func registerAdminRoutes(
 			// organization to a person: step-up.
 			r.POST("/{tenantId}/users", h.AdminOrganization.CreateUser,
 				with([]Middleware{freshStepUp("organization.owner_create"), scope}, bypass("owner create or recovery", false), audit("organization.user_create"))...)
+			// The ownership invitation of an organization waiting for its
+			// first owner: send again or withdraw (step-up, audited). The
+			// invitation itself is created with the organization, or by the
+			// first-owner route above for an existing account.
+			r.POST("/{tenantId}/owner-invitation/resend", h.AdminOrganization.ResendOwnerInvitation,
+				with([]Middleware{stepUp("organization.owner_invitation"), scope}, audit("organization.owner_invitation_resend"))...)
+			r.DELETE("/{tenantId}/owner-invitation", h.AdminOrganization.CancelOwnerInvitation,
+				with([]Middleware{stepUp("organization.owner_invitation"), scope}, audit("organization.owner_invitation_cancel"))...)
 
 			// Suspend / lift (docs/architecture/organization-suspension.md):
 			// cuts or restores every credential of the organization at once.
