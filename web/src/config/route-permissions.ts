@@ -387,8 +387,12 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
   // ========================================
   // Validation Phase (Module: pentest)
   // ========================================
+  // Campaign pages: the API reads them with pentest:campaigns:read and the
+  // caller's campaign membership, so a role without the module-wide
+  // validation:read (a vendor tester, a campaign client) still reaches the
+  // campaigns it is a member of.
   '/pentest/**': {
-    permission: Permission.PentestRead,
+    permission: Permission.PentestCampaignsRead,
     module: Module.Pentest,
   },
   // Create/edit forms require write permission (route-level defense-in-depth;

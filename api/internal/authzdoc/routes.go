@@ -437,8 +437,11 @@ func ParseRoutes(apiRoot string) ([]Route, error) {
 				return vars
 			}
 
-			var process func(block *ast.BlockStmt, prefix string, inherited Gate, vars map[string]Gate)
-			process = func(block *ast.BlockStmt, prefix string, inherited Gate, vars map[string]Gate) {
+			// recvs are the names a router goes by in the current block: r and
+			// router, plus the parameter of each enclosing Group's function
+			// (a nested group may name its router cr, for example).
+			var process func(block *ast.BlockStmt, prefix string, inherited Gate, vars map[string]Gate, recvs map[string]bool)
+			process = func(block *ast.BlockStmt, prefix string, inherited Gate, vars map[string]Gate, recvs map[string]bool) {
 				vs := collectVars(block, vars)
 				ast.Inspect(block, func(m ast.Node) bool {
 					ce, ok := m.(*ast.CallExpr)
@@ -450,7 +453,7 @@ func ParseRoutes(apiRoot string) ([]Route, error) {
 						return true
 					}
 					recv, ok := sel.X.(*ast.Ident)
-					if !ok || (recv.Name != "r" && recv.Name != "router") {
+					if !ok || !recvs[recv.Name] {
 						return true
 					}
 					if sel.Sel.Name == "Group" && len(ce.Args) >= 2 {
@@ -459,18 +462,20 @@ func ParseRoutes(apiRoot string) ([]Route, error) {
 							return true
 						}
 						var body *ast.BlockStmt
+						inner := recvs
 						g := clone(inherited)
 						for _, a := range ce.Args[1:] {
 							if fl, ok := a.(*ast.FuncLit); ok {
 								if body == nil {
 									body = fl.Body
+									inner = withGroupParam(recvs, fl)
 								}
 								continue
 							}
 							merge(&g, w.gateOf(a, vs))
 						}
 						if body != nil {
-							process(body, prefix+gp, g, vs)
+							process(body, prefix+gp, g, vs, inner)
 						}
 						return false
 					}
@@ -506,7 +511,7 @@ func ParseRoutes(apiRoot string) ([]Route, error) {
 					return true
 				})
 			}
-			process(fn.Body, "", Gate{}, base)
+			process(fn.Body, "", Gate{}, base, map[string]bool{"r": true, "router": true})
 		}
 	}
 	sort.Slice(routes, func(i, j int) bool {
@@ -519,4 +524,22 @@ func ParseRoutes(apiRoot string) ([]Route, error) {
 		return nil, fmt.Errorf("parsed only %d routes: the route walker is broken", len(routes))
 	}
 	return routes, nil
+}
+
+// withGroupParam adds the router parameter of a Group's function literal to
+// the receiver names a block's routes are registered on.
+func withGroupParam(recvs map[string]bool, fl *ast.FuncLit) map[string]bool {
+	if fl.Type == nil || fl.Type.Params == nil || len(fl.Type.Params.List) == 0 || len(fl.Type.Params.List[0].Names) == 0 {
+		return recvs
+	}
+	name := fl.Type.Params.List[0].Names[0].Name
+	if recvs[name] || name == "_" {
+		return recvs
+	}
+	out := make(map[string]bool, len(recvs)+1)
+	for k := range recvs {
+		out[k] = true
+	}
+	out[name] = true
+	return out
 }

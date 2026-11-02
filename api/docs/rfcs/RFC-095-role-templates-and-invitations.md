@@ -34,11 +34,15 @@ Nobody's permissions change. `researcher` is no longer a reserved slug.
 
 ### 2.2 The library
 
-Sixteen templates (`permission.RoleTemplates`), each with personas, a
+Nineteen templates (`permission.RoleTemplates`), each with personas, a
 description and a version: program lead, security analyst, vulnerability
-manager, remediation owner, AppSec engineer, CI integrator, scan operator,
-sensor operator, validation engineer, external tester, researcher, bug-bounty
-triager, threat intelligence analyst, risk approver, auditor and executive.
+manager, remediation owner, remediation lead, AppSec engineer, CI integrator,
+scan operator, sensor operator, validation engineer, validation lead,
+detection engineer, external tester, researcher, bug-bounty triager, threat
+intelligence analyst, risk approver, auditor and executive. Remediation lead,
+validation lead and detection engineer were added on 2026-11-02 after an
+audit of every template against the route gates its people need (which also
+gave nine templates a new version).
 The table and the invariants the unit tests enforce are in
 `docs/architecture/authorization-matrix.md`, section "Role templates".
 
