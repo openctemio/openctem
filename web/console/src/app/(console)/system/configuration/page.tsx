@@ -6,7 +6,7 @@ import Link from '@/components/link'
 import { Main } from '@/components/layout'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { FilterSelect } from '@/features/shared/components/filter-select'
 import { ErrorState, PageHeader, PageStack, RelativeTime } from '@/features/shared'
 import { TonePill } from '@/features/shared/components/tone-pill'
 import { useTranslation } from '@/context/i18n-provider'
@@ -47,23 +47,19 @@ export default function ConfigurationPage() {
           )}
         />
         <DeploymentRegionCard canEdit={adminHas(me, 'platform.settings.general.write')} />
-        <Tabs value={filter} onValueChange={(v) => setFilter(v as ConfigFilter)}>
-          <TabsList className="flex-wrap">
-            <TabsTrigger value="all">{t('admin.config.filter.all', 'All')}</TabsTrigger>
-            <TabsTrigger value="console">
-              {t('admin.config.filter.console', 'In this console')}
-            </TabsTrigger>
-            <TabsTrigger value="server">
-              {t('admin.config.filter.server', 'On the server')}
-            </TabsTrigger>
-            <TabsTrigger value="restart">
-              {t('admin.config.filter.restart', 'Needs a restart')}
-            </TabsTrigger>
-            <TabsTrigger value="planned">
-              {t('admin.config.filter.planned', 'Moving to the console')}
-            </TabsTrigger>
-          </TabsList>
-        </Tabs>
+        <FilterSelect
+          label={t('admin.config.filter.label', 'Show')}
+          value={filter}
+          allValue="all"
+          allLabel={t('admin.config.filter.all', 'All')}
+          onChange={(v) => setFilter(v || 'all')}
+          options={[
+            { value: 'console', label: t('admin.config.filter.console', 'In this console') },
+            { value: 'server', label: t('admin.config.filter.server', 'On the server') },
+            { value: 'restart', label: t('admin.config.filter.restart', 'Needs a restart') },
+            { value: 'planned', label: t('admin.config.filter.planned', 'Moving to the console') },
+          ]}
+        />
         {error ? (
           <ErrorState
             title={t('admin.config.errorTitle', 'the configuration')}

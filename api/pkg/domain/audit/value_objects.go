@@ -184,6 +184,13 @@ const (
 	ActionMemberOwnershipTransferCanceled  Action = "member.ownership_transfer_canceled"
 	ActionMemberOwnershipTransferDeclined  Action = "member.ownership_transfer_declined"
 	ActionMemberOwnershipTransferExpired   Action = "member.ownership_transfer_expired"
+	// Ownership invitations of an organization a platform administrator
+	// created for an existing account.
+	ActionMemberOwnerInvitationSent     Action = "member.owner_invitation_sent"
+	ActionMemberOwnerInvitationResent   Action = "member.owner_invitation_resent"
+	ActionMemberOwnerInvitationCanceled Action = "member.owner_invitation_canceled"
+	ActionMemberOwnerInvitationAccepted Action = "member.owner_invitation_accepted"
+	ActionMemberOwnerInvitationDeclined Action = "member.owner_invitation_declined"
 
 	// Invitation actions
 	ActionInvitationCreated  Action = "invitation.created"
@@ -887,6 +894,8 @@ func (a Action) IsValid() bool {
 		ActionMemberOwnershipTransferRequested, ActionMemberOwnershipTransferred,
 		ActionMemberOwnershipTransferCanceled, ActionMemberOwnershipTransferDeclined,
 		ActionMemberOwnershipTransferExpired,
+		ActionMemberOwnerInvitationSent, ActionMemberOwnerInvitationResent, ActionMemberOwnerInvitationCanceled,
+		ActionMemberOwnerInvitationAccepted, ActionMemberOwnerInvitationDeclined,
 		ActionInvitationCreated, ActionInvitationAccepted, ActionInvitationDeleted, ActionInvitationExpired,
 		ActionRepositoryCreated, ActionRepositoryUpdated, ActionRepositoryDeleted, ActionRepositoryArchived,
 		ActionComponentCreated, ActionComponentUpdated, ActionComponentDeleted,
@@ -1024,7 +1033,9 @@ func (a Action) Category() string {
 		ActionMemberAccessChanged,
 		ActionMemberOwnershipTransferRequested, ActionMemberOwnershipTransferred,
 		ActionMemberOwnershipTransferCanceled, ActionMemberOwnershipTransferDeclined,
-		ActionMemberOwnershipTransferExpired:
+		ActionMemberOwnershipTransferExpired,
+		ActionMemberOwnerInvitationSent, ActionMemberOwnerInvitationResent, ActionMemberOwnerInvitationCanceled,
+		ActionMemberOwnerInvitationAccepted, ActionMemberOwnerInvitationDeclined:
 		return "member"
 	case ActionInvitationCreated, ActionInvitationAccepted, ActionInvitationDeleted, ActionInvitationExpired:
 		return "invitation"
@@ -1327,6 +1338,7 @@ func SeverityForAction(a Action) Severity {
 		ActionSecurityValidationFailed, ActionSecurityCrossTenantAccess,
 		ActionAuditChainRebaselined, ActionMemberDataErased, ActionSuppressionRuleSelfApproved,
 		ActionMemberOwnershipTransferred, ActionOwnerRoleDriftRemoved,
+		ActionMemberOwnerInvitationAccepted,
 		ActionExposureDispositionSelfApproved:
 		return SeverityCritical
 
@@ -1342,7 +1354,7 @@ func SeverityForAction(a Action) Severity {
 		ActionAuthIdentityLinked, ActionAuthIdentityUnlinked,
 		ActionAuthStepUpFailed,
 		ActionMemberRemoved, ActionMemberRoleChanged, ActionMemberSuspended, ActionMemberOffboarded,
-		ActionMemberOwnershipTransferRequested,
+		ActionMemberOwnershipTransferRequested, ActionMemberOwnerInvitationSent,
 		ActionCampaignMemberRemoved, ActionCampaignMemberRoleChanged, ActionCampaignDeleted,
 		ActionSensorDeactivated, ActionSensorKeyRegenerated, ActionSensorKeyRenewalRefused,
 		ActionAPIKeyRevoked, ActionAPIKeyDeleted,

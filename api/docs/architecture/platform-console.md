@@ -32,7 +32,7 @@ doing:
 | Scanning | Scan approval, Platform scanning (policy, fleet, queue, zones, egress, anomalies), Target mappings, Content packs, Content catalog, Threat intelligence |
 | Security | Administrators, Sessions, Approvals, Admin sign-in, Admin activity |
 | Settings | Configuration, Sign-up, Limits, CAPTCHA, E-mail, Legal, Announcements, Alerts, AI provider, AI applications |
-| Monitoring | Health (services, storage, backup, certificates, schema, version, queues, sensors, jobs), Software updates |
+| Monitoring | Health (tabs: Summary with services, storage, backup, certificates, schema and version; Queues and sensors; Background jobs, the stopped or failing ones first), Software updates |
 
 The administrator's own security keys open from the sidebar footer, next to
 their name (the palette still finds them). Pages are listed by the

@@ -6,7 +6,8 @@
  * Design: api/docs/architecture/session-refresh.md
  */
 
-export type SessionEndReason = 'session_reused' | 'session_expired' | 'session_revoked'
+export type SessionEndReason =
+  'session_reused' | 'session_expired' | 'session_revoked' | 'own_sign_in_required'
 
 /** Maps the API's refusal code of a failed refresh to a reason. */
 export function sessionEndReason(code: string | undefined): SessionEndReason | undefined {
@@ -19,6 +20,8 @@ export function sessionEndReason(code: string | undefined): SessionEndReason | u
     case 'REFRESH_TOKEN_REVOKED':
     case 'REFRESH_TOKEN_INVALID':
       return 'session_revoked'
+    case 'OWN_SIGN_IN_REQUIRED':
+      return 'own_sign_in_required'
     default:
       return undefined
   }
@@ -45,6 +48,12 @@ export function sessionEndedMessage(
         key: 'auth.login.sessionEndedRevoked',
         fallback:
           'Your session was ended: you signed out on another device, or an administrator ended it. Sign in again.',
+      }
+    case 'own_sign_in_required':
+      return {
+        key: 'auth.login.sessionEndedOwnSignIn',
+        fallback:
+          "You signed in through another organization's identity provider, which does not cover this organization. Sign in with your own account.",
       }
     default:
       return undefined
