@@ -1,7 +1,7 @@
 import { test, expect } from '../fixtures/authenticated-page'
 
 /**
- * Attack surface > Posture (api/docs/architecture/easm-posture.md): the tab
+ * Attack surface > Posture (api/docs/architecture/easm-posture.md): the view
  * opens the page, the page shows a grade or why there is none, and the
  * overview card links to it.
  */
@@ -14,7 +14,11 @@ test('the Posture tab opens a graded page', { tag: ['@attack-surface'] }, async 
   const tabs = page.getByRole('navigation', { name: 'Attack surface sections' })
   await expect(tabs).toBeVisible({ timeout: 30_000 })
   await expect(page.getByTestId('posture-card')).toBeVisible()
-  await tabs.getByRole('link', { name: 'Posture' }).click()
+  // Posture is a view of the Overview tab.
+  await page
+    .getByRole('radiogroup', { name: 'Overview views' })
+    .getByRole('radio', { name: 'Posture' })
+    .click()
   await expect(page).toHaveURL(new RegExp(`${POSTURE}$`))
   await page.waitForLoadState('networkidle')
   // Either a grade, or the reason there is none yet.
