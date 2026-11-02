@@ -327,6 +327,11 @@ named owners exist. Navigation and actions hide by permission
 
 ## Tests
 
+- `web/console/e2e` (Playwright, `web/playwright.console.config.ts`, workflow
+  `console-e2e.yml`): every console page at 1440 and 390 px (page files and the
+  navigation config give the routes), axe WCAG 2.2 AA, page anatomy shared with
+  the tenant app's suite, and the elevation flow with a real authenticator code.
+  See `web/console/e2e/README.md`.
 - `web/console/src/__tests__/app-split.test.ts`: route lists of both apps, no
   cross-imports.
 - `web/console/src/__tests__/console-csrf-cookie.test.ts`: the console sets
