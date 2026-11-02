@@ -1,6 +1,7 @@
 package main
 
 import (
+	"io/fs"
 	"os"
 
 	navpinapp "github.com/openctemio/openctem/api/internal/app/navpin"
@@ -26,6 +27,7 @@ import (
 
 	apispecapp "github.com/openctemio/openctem/api/internal/app/apispec"
 	certificateapp "github.com/openctemio/openctem/api/internal/app/certificate"
+	coverageapp "github.com/openctemio/openctem/api/internal/app/coverage"
 	"github.com/openctemio/openctem/api/internal/app/datascope"
 	"github.com/openctemio/openctem/api/internal/app/platformlegal"
 	"github.com/openctemio/openctem/api/internal/app/scanrun"
@@ -278,7 +280,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 
 	// Command handler with scan run service wired
 	commandHandler := handler.NewCommandHandler(svc.Command, v, log)
+	platformCA := newPlatformCASource(cfg, log)
 	sensorHandler := newSensorHandlerWithTemplates(svc.Sensor, cfg, v, log)
+	sensorHandler.SetPlatformCA(platformCA)
 	sensorHandler.SetContentPolicySource(svc.SensorContent)
 	sensorHandler.SetPolicyPrefill(&handler.SensorPolicyPrefill{
 		Zones: repos.ScanZone, Targets: repos.ScopeTarget, Exclusions: repos.ScopeExcl, Log: log,
@@ -356,6 +360,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	tenantHandler.SetLicensePolicyEvaluator(svc.LicensePolicy)
 	if svc.Signup != nil {
 		tenantHandler.SetSignupPolicy(svc.Signup)
+	}
+	if svc.ScanIdentity != nil {
+		tenantHandler.SetScanIdentity(svc.ScanIdentity)
 	}
 	if svc.Entitlement != nil {
 		tenantHandler.SetSelfServiceLimits(svc.Entitlement)
@@ -549,8 +556,13 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	mcpDiscovery := newMCPDiscovery(cfg, log)
 	if mcpHandler != nil {
 		// get_asset reads the asset page's services as the connection's
-		// caller; console links point to the web origin.
-		mcpHandler.SetAssetContext(svc.Asset, mcpDiscovery.Endpoints.Issuer)
+		// caller; console links point to the web origin. Without discovery
+		// (APP_URL unset) the tool answers without console links.
+		webBase := ""
+		if mcpDiscovery != nil {
+			webBase = mcpDiscovery.Endpoints.Issuer
+		}
+		mcpHandler.SetAssetContext(svc.Asset, webBase)
 	}
 	// OAuth for MCP clients (RFC-062): with an authorization server the MCP
 	// endpoint also accepts its access tokens, and a refused call that
@@ -622,6 +634,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		AttackSurface:    handler.NewAttackSurfaceHandler(svc.AttackSurface, log),
 		EASM:             newEASMHandler(repos, svc, log),
 		EASMSettings:     newEASMSettingsHandler(cfg, svc, deps, log),
+		EASMDiscovery:    newEASMDiscoveryHandler(cfg, repos, svc, deps, log),
 		EASMLookalike:    newEASMLookalikeHandler(svc, log),
 		PageMonitor:      newPageMonitorHandler(svc, log),
 		EASMNetworkSeed:  newEASMNetworkSeedHandler(svc, log),
@@ -681,7 +694,6 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		Exposure:         handler.NewExposureHandler(svc.Exposure, svc.User, v, log),
 		ThreatIntel:      newThreatIntelHandler(deps, v, log),
 		EmergingThreat:   emergingThreatHandler(svc, log),
-		CTEMID:           handler.NewCTEMIDHandler(svc.CTEMID, log),
 		CredentialImport: handler.NewCredentialImportHandler(svc.CredentialImport, v, log),
 
 		// Dashboard & Branch
@@ -707,6 +719,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		// Sensors & Commands
 		Command:          commandHandler,
 		Sensor:           sensorHandler,
+		PlatformCA:       handler.NewPlatformCAHandler(platformCA, log),
 		SensorContent:    handler.NewSensorContentHandler(svc.SensorContent, sensorHandler, log),
 		SensorResults:    handler.NewSensorResultHandler(svc.Ingest, sensorHandler, log),
 		ScanZone:         handler.NewScanZoneHandler(svc.ScanZone, svc.Scan, log),
@@ -1364,6 +1377,37 @@ func wireStepUpGate(handlers *routes.Handlers, svc *Services) {
 	}
 }
 
+// newPlatformCASource loads the platform's private CA (PLATFORM_CA_CERT_FILE)
+// once at startup so a misconfigured file is reported at once: a file with a
+// private key is refused (logged as an error; the install commands and GET
+// /api/v1/sensors/platform-ca then act as if none were set). A file that is
+// missing at startup is not an error: the gateway may export it later, and
+// the source re-reads the file when it changes.
+func newPlatformCASource(cfg *config.Config, log *logger.Logger) *sensor.PlatformCASource {
+	src := sensor.NewPlatformCASource(cfg.SensorConfig.CACertFile)
+	if !src.Configured() {
+		return src
+	}
+	ca, err := src.Get()
+	switch {
+	case errors.Is(err, sensor.ErrCAFileHasPrivateKey):
+		log.Error("PLATFORM_CA_CERT_FILE holds a private key: refused; sensors are not offered the platform CA until it holds certificates only",
+			"path", logger.SanitizeValue(src.Path()))
+	case errors.Is(err, fs.ErrNotExist):
+		log.Info("PLATFORM_CA_CERT_FILE does not exist (yet); the platform CA is offered once it does",
+			"path", logger.SanitizeValue(src.Path()))
+	case err != nil:
+		log.Warn("PLATFORM_CA_CERT_FILE is not usable yet; it is read again when it changes",
+			"path", logger.SanitizeValue(src.Path()), "error", logger.SanitizeError(err))
+	default:
+		for _, c := range ca.Certs {
+			log.Info("platform CA certificate", "common_name", logger.SanitizeValue(c.CommonName),
+				"sha256", c.SHA256, "root", c.Root, "not_after", c.NotAfter)
+		}
+	}
+	return src
+}
+
 // newSensorHandlerWithTemplates creates a SensorHandler wired with the
 // optional config-template service. Templates live in
 // $SENSOR_CONFIG_TEMPLATES_DIR (default: configs/sensor-products) and can be
@@ -1392,7 +1436,6 @@ func newSensorHandlerWithTemplates(
 	h.SetProductSource(sensorInstallProducts(cfg, log))
 	h.SetSDKLatestSource(versions.SDKLatest)
 	h.SetCollectorImage(collectorInstallImage(cfg, log))
-	h.SetCACertificateFile(cfg.SensorConfig.CACertFile)
 
 	return h
 }
@@ -1689,6 +1732,32 @@ func newEASMSettingsHandler(cfg *config.Config, svc *Services, deps *HandlerDeps
 	}
 	return handler.NewEASMSettingsHandler(svc.Tenant, postgres.NewEASMSweepRepository(deps.DB), sweeper, platform, audit, log).
 		SetDigests(postgres.NewEASMChangeRepository(deps.DB))
+}
+
+// newEASMDiscoveryHandler builds discovery management over the coverage
+// ledger: Run makes pairs due for the coverage loop, Abort all cancels the
+// tenant's coverage runs through the run cancel.
+func newEASMDiscoveryHandler(cfg *config.Config, repos *Repositories, svc *Services, deps *HandlerDeps, log *logger.Logger) *handler.EASMDiscoveryHandler {
+	if repos.AssetCoverage == nil || svc.DataScope == nil {
+		return nil
+	}
+	var sw coverageapp.TenantSwitch
+	if svc.ScanPolicy != nil {
+		sw = coverageapp.GovernanceSwitch{Modes: svc.ScanPolicy, Settings: svc.Tenant}
+	}
+	var cancel coverageapp.RunCanceller
+	if svc.ScanRun != nil {
+		cancel = svc.ScanRun
+	}
+	var audit handler.AttributionAuditor
+	if svc.Audit != nil {
+		audit = svc.Audit
+	}
+	disc := coverageapp.NewDiscovery(repos.AssetCoverage, repos.AssetCoverage, sw, cancel,
+		postgres.NewDiscoveryRunLimiter(deps.DB),
+		coverageapp.DiscoveryConfig{LoopEnabled: cfg.Worker.AssetCoverageEnabled, Interval: cfg.Worker.AssetCoverageInterval,
+			DailyBudget: cfg.Worker.AssetCoverageDailyBudget}, log)
+	return handler.NewEASMDiscoveryHandler(disc, svc.DataScope, audit, log)
 }
 
 // newAssetAttributionHandler builds the attribution handler with its audit

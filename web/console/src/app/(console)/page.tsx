@@ -55,7 +55,7 @@ export default function AdminOverviewPage() {
         },
         {
           key: 'sensors',
-          href: '/scanning/platform',
+          href: '/sensors',
           label: t('admin.overview.platformSensors', 'Platform sensors online'),
           value:
             o.platform.platform_sensors.total > 0

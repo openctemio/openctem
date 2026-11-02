@@ -62,10 +62,6 @@ func registerExposureRoutes(
 		// audited; the four-eyes rule keeps reading the reported peak.
 		r.PATCH("/{id}/severity", h.ChangeSeverity, middleware.RequireAll(permission.FindingsSeverity, permission.ExposuresTriage))
 
-		// CTEM-ID tag: associate a standardized exposure-catalog id with this
-		// exposure (stored on the exposure's details; no schema change).
-		r.PUT("/{id}/ctem-id", h.SetCTEMID, middleware.RequireAll(permission.FindingsWrite, permission.ExposuresWrite))
-
 		// History
 		r.GET("/{id}/history", h.GetHistory, middleware.RequireAll(permission.FindingsRead, permission.ExposuresRead))
 

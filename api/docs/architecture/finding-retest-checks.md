@@ -116,7 +116,7 @@ applies (out of scope = 404). The tenant comes from the token. Save, remove and
 approve are audited (`finding.retest_check_saved`, `…_removed`, `…_approved`)
 with the template, digest, kind and tier. `findings:retest_checks:write` is
 held by owner and admin and by the Security analyst, Vulnerability manager,
-AppSec engineer and Validation engineer role templates.
+AppSec engineer, Validation engineer and Validation lead role templates.
 Retest history entries carry `retest_check_id` and `check_digest`.
 
 ## Threat model
