@@ -128,6 +128,12 @@ widen who can reach the console.
 
 ## Settings moved from the environment
 
+Every settings form saves from the shared `SettingsSaveBar`
+(`web/src/features/shared`): it shows with the first unsaved change (Discard,
+Save changes, Ctrl+S), asks before leaving the page with unsaved changes, and
+its Save opens the form's confirmation (reason, and the code where the
+setting needs one). Discard restores the values last read from the API.
+
 These settings used to need a server edit and a restart; they are now
 console settings (RFC-079), stored in `platform_settings`, read through a
 15-second cache so a change applies on every replica without a restart
