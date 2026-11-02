@@ -1,8 +1,9 @@
 package vulnfeed
 
 // Relay delivery (docs/rfcs/RFC-142-feed-relay.md). On a platform with no
-// outbound access a platform sensor relays the release files into a local
-// spool directory, and the importer reads that directory as its only origin
+// outbound access a platform sensor relays the release files into the relay
+// spool, copied into a local working directory, and the importer reads that
+// directory as its only origin
 // (as a bundle directory). RelayPlan tells the relay what to fetch next. It
 // verifies what the spool already holds with the same pinned root and key
 // set floor as the import, so a file a relay altered is asked for again,
@@ -58,7 +59,7 @@ const (
 // Batch caps of one round.
 const (
 	relayMaxFiles = 64
-	relayMaxBytes = 1 << 30
+	relayMaxBytes = 192 << 20 // under the platform's per-round budget
 )
 
 // relayHead are the release's small files: always fetched fresh at the
@@ -112,7 +113,7 @@ func (im *Importer) RelayPlan(ctx context.Context, dir string) (RelayPlan, error
 	}
 	ks, err := vulnbundle.VerifyKeySet(ksRaw, im.cfg.RootKeyID, cur.KeySetVersion, now)
 	if err != nil {
-		return RelayPlan{}, fmt.Errorf("key set: %w", err)
+		return RelayPlan{}, fmt.Errorf("key set: %w: %w", bundle.ErrSignature, err)
 	}
 	pubs := make([]ed25519.PublicKey, 0, len(ks.Keys))
 	for _, k := range ks.Keys {

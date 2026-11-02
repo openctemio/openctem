@@ -313,10 +313,22 @@ func (s *Service) Import(ctx context.Context, raw []byte) (*releasefeed.Verified
 }
 
 // ImportRelayed applies the release feed file the feed relay delivered,
-// verified exactly like a fetched one.
+// verified exactly like a fetched one. The relay fetches the file every
+// day; the feed already applied, byte for byte, applies again without an
+// error (the store accepts the same sequence with the same digest).
 func (s *Service) ImportRelayed(ctx context.Context, raw []byte) error {
 	_, err := s.importFrom(ctx, raw, OriginRelay)
 	return err
+}
+
+// Applied returns the applied release feed's sequence and issue time (zero
+// when none was applied).
+func (s *Service) Applied(ctx context.Context) (uint64, time.Time, error) {
+	st, err := s.repo.Get(ctx)
+	if err != nil || st.Feed == nil {
+		return 0, time.Time{}, err
+	}
+	return st.AppliedSequence, st.Feed.IssuedAt, nil
 }
 
 func (s *Service) importFrom(ctx context.Context, raw []byte, origin string) (*releasefeed.Verified, error) {

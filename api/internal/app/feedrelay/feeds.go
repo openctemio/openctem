@@ -9,7 +9,6 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/app/vulnfeed"
@@ -32,11 +31,13 @@ func Origins(urls ...string) []string {
 }
 
 // VulnFeed relays the vulnerability feed (and its KEV, EPSS, alias and id
-// side files) for the importer, which reads the spool in relay mode.
+// side files) for the importer, which reads the working directory in relay
+// mode.
 type VulnFeed struct {
 	Importer *vulnfeed.Importer
-	// URLs are the release origin (VULNFEED_BASE_URL + /latest/download) and
-	// the mirrors.
+	// URLs are the release origin (VULNFEED_BASE_URL + /latest/download).
+	// Mirrors of direct mode are not relay origins: a relay origin must be
+	// in the job signer's allowlist too.
 	URLs []string
 }
 
@@ -62,14 +63,31 @@ func (v *VulnFeed) Plan(ctx context.Context, dir string) (Plan, error) {
 	return fromVulnPlan(p), nil
 }
 
-// Import implements Feed: the importer verifies and applies the spool, then
-// files the current release no longer names are removed.
-func (v *VulnFeed) Import(ctx context.Context, dir string) error {
+// Import implements Feed: the importer verifies and applies the working
+// directory; the files the current release still names are kept.
+func (v *VulnFeed) Import(ctx context.Context, dir string) ([]string, error) {
 	if _, err := v.Importer.Run(ctx); err != nil {
-		return err
+		return nil, err
 	}
-	prune(dir, v.Importer.RelayKeep(dir))
-	return nil
+	keep := v.Importer.RelayKeep(dir)
+	out := make([]string, 0, len(keep))
+	for n := range keep {
+		out = append(out, n)
+	}
+	return out, nil
+}
+
+// Freshness implements Feed.
+func (v *VulnFeed) Freshness(ctx context.Context) (Freshness, error) {
+	seq, created, err := v.Importer.Freshness(ctx)
+	if err != nil {
+		return Freshness{}, err
+	}
+	f := Freshness{Sequence: seq}
+	if !created.IsZero() {
+		f.PublishedAt = &created
+	}
+	return f, nil
 }
 
 func fromVulnPlan(p vulnfeed.RelayPlan) Plan {
@@ -80,22 +98,12 @@ func fromVulnPlan(p vulnfeed.RelayPlan) Plan {
 	return out
 }
 
-// prune removes the spool's regular files that keep does not name.
-func prune(dir string, keep map[string]bool) {
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return
-	}
-	for _, e := range entries {
-		if e.Type().IsRegular() && !keep[e.Name()] && !strings.HasPrefix(e.Name(), ".") {
-			_ = os.Remove(filepath.Join(dir, e.Name()))
-		}
-	}
-}
-
 // ReleaseImporter applies a release feed file (versioncheck.Service).
 type ReleaseImporter interface {
 	ImportRelayed(ctx context.Context, raw []byte) error
+	// Applied returns the applied release feed's sequence and issue time
+	// (zero when none).
+	Applied(ctx context.Context) (uint64, time.Time, error)
 }
 
 // maxReleaseFeedBytes caps the release feed file.
@@ -150,22 +158,35 @@ func (v *VersionCheck) Plan(_ context.Context, dir string) (Plan, error) {
 }
 
 // Import implements Feed.
-func (v *VersionCheck) Import(ctx context.Context, dir string) error {
+func (v *VersionCheck) Import(ctx context.Context, dir string) ([]string, error) {
 	_, name := v.split()
 	f, err := os.Open(filepath.Join(dir, filepath.Base(name)))
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer func() { _ = f.Close() }()
 	raw, err := io.ReadAll(io.LimitReader(f, maxReleaseFeedBytes+1))
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if len(raw) > maxReleaseFeedBytes {
-		return errors.New("release feed file over its cap")
+		return nil, errors.New("release feed file over its cap")
 	}
 	if err := v.Service.ImportRelayed(ctx, raw); err != nil {
-		return fmt.Errorf("release feed: %w", err)
+		return nil, fmt.Errorf("release feed: %w", err)
 	}
-	return nil
+	return []string{name}, nil
+}
+
+// Freshness implements Feed.
+func (v *VersionCheck) Freshness(ctx context.Context) (Freshness, error) {
+	seq, issued, err := v.Service.Applied(ctx)
+	if err != nil {
+		return Freshness{}, err
+	}
+	f := Freshness{Sequence: seq}
+	if !issued.IsZero() {
+		f.PublishedAt = &issued
+	}
+	return f, nil
 }

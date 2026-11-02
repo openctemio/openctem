@@ -92,7 +92,7 @@ type Importer struct {
 	dirFetchers        map[string]*transfer.Fetcher
 	consumerRegistered bool
 
-	// relayDir returns the relay spool when the platform receives its feeds
+	// relayDir returns the relay working directory when the platform receives its feeds
 	// through a relay sensor ("": not in relay mode); nil: never.
 	relayDir func(ctx context.Context) string
 
@@ -164,10 +164,10 @@ func toUint(v any) uint64 {
 	return 0
 }
 
-// WithRelay makes the importer read the relay spool that spool returns
+// WithRelay makes the importer read the relay working directory dir returns
 // (non-empty only while the platform is in relay mode) as its only origin.
-func (im *Importer) WithRelay(spool func(ctx context.Context) string) *Importer {
-	im.relayDir = spool
+func (im *Importer) WithRelay(dir func(ctx context.Context) string) *Importer {
+	im.relayDir = dir
 	return im
 }
 
@@ -206,7 +206,7 @@ func (im *Importer) Run(ctx context.Context) (Result, error) {
 	cur := readState(st.Metadata())
 	dir := im.cfg.BundleDir
 	if relay := im.relaySpool(ctx); relay != "" {
-		// Relay mode: the spool is the only origin, never the network, and
+		// Relay mode: the relay working directory is the only origin, never the network, and
 		// never the whole-bundle (v1) reader. Until the relay delivered a
 		// pointer there is nothing to import.
 		if !im.useV2(ctx, relay) {
@@ -509,6 +509,18 @@ func (im *Importer) checked(ctx context.Context) error {
 	}
 	st.MarkSyncUnchanged(0, 0)
 	return im.status.Update(ctx, st)
+}
+
+// Freshness returns the applied release sequence and the applied bundle's
+// creation time (zero when none was applied).
+func (im *Importer) Freshness(ctx context.Context) (uint64, time.Time, error) {
+	st, err := im.status.GetBySource(ctx, SourceName)
+	if err != nil {
+		return 0, time.Time{}, err
+	}
+	meta := st.Metadata()
+	created, _ := time.Parse(time.RFC3339, fmt.Sprint(meta["bundle_created_at"]))
+	return toUint(meta["applied_sequence"]), created, nil
 }
 
 // CheckStale reports a corpus whose newest bundle is older than three days

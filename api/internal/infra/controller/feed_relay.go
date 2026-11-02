@@ -28,8 +28,9 @@ func (c *FeedRelayController) Name() string { return "feed-relay" }
 // Interval implements Controller.
 func (c *FeedRelayController) Interval() time.Duration { return 30 * time.Second }
 
-// ReconcileTimeout: an import of a relayed snapshot takes longer than a tick.
-func (c *FeedRelayController) ReconcileTimeout() time.Duration { return 30 * time.Minute }
+// ReconcileTimeout: the import of a relayed first snapshot gets as long as a
+// direct one.
+func (c *FeedRelayController) ReconcileTimeout() time.Duration { return FeedImportTimeout }
 
 // Exclusive implements Exclusive: one replica plans and imports.
 func (c *FeedRelayController) Exclusive() bool { return true }
