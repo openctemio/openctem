@@ -109,8 +109,8 @@ on the [account-space allow-list](tenantless-account-space.md)):
 | Route | Gate |
 |---|---|
 | `GET /api/v1/me/ownership-invitations` | the caller's open invitations |
-| `POST /api/v1/me/ownership-invitations/{invitationId}/accept` | step-up; 404 for anyone but the invitee or a used invitation; 400 when expired or the email is unverified |
-| `POST /api/v1/me/ownership-invitations/{invitationId}/decline` | 404 for anyone but the invitee |
+| `POST /api/v1/me/ownership-invitations/{id}/accept` | step-up; 404 for anyone but the invitee or a used invitation; 400 when expired or the email is unverified |
+| `POST /api/v1/me/ownership-invitations/{id}/decline` | 404 for anyone but the invitee |
 
 ## User interface
 
