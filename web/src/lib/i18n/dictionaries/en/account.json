@@ -31,6 +31,7 @@
   "account.organizationSignIn.description": "Sign in through your organization's identity provider. Linking asks you to confirm it is you, then to sign in at your organization.",
   "account.organizationSignIn.linkDesc": "Next you sign in at {provider}, then come back here.",
   "account.organizationSignIn.linkFailed": "Your organization's sign-in could not be linked. Try again.",
+  "account.organizationSignIn.linkWarning": "After linking, signing in through this organization's identity provider opens your account without your account's own second factor. The organization's identity provider administrator therefore controls access to your account.",
   "account.organizationSignIn.linked": "Your organization's sign-in is linked. You can sign in with it now.",
   "account.organizationSignIn.title": "Organization sign-in",
   "account.organizationSignIn.unlinkDesc": "You will sign in with your password again. If your organization requires single sign-on, link it again to keep access.",

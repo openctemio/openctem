@@ -86,25 +86,27 @@ type ssoLinkRecord struct {
 
 func ssoLinkKey(state string) string { return "sso_link:" + hashBinding(state) }
 
-// takeLinkRecord removes and returns the link record of state, nil when the
-// state is not a link (or its record expired or was taken).
-func (s *SSOService) takeLinkRecord(ctx context.Context, state string) *ssoLinkRecord {
+// takeLinkRecord removes and returns the link record of state: (nil, nil)
+// when the state is not a link (or its record expired or was taken). A state
+// store that cannot answer is an error, never "not a link": the sign-in
+// callback would otherwise treat a link state as an ordinary sign-in.
+func (s *SSOService) takeLinkRecord(ctx context.Context, state string) (*ssoLinkRecord, error) {
 	if state == "" {
-		return nil
+		return nil, nil
 	}
 	raw, found, err := s.stateStoreOrMemory().GetDel(ctx, ssoLinkKey(state))
 	if err != nil {
 		s.logger.Error("read sso link record", "error", err)
-		return nil
+		return nil, fmt.Errorf("read sso link record: %w", err)
 	}
 	if !found {
-		return nil
+		return nil, nil
 	}
 	var rec ssoLinkRecord
 	if err := json.Unmarshal([]byte(raw), &rec); err != nil {
-		return nil
+		return nil, fmt.Errorf("decode sso link record: %w", err)
 	}
-	return &rec
+	return &rec, nil
 }
 
 // linkMember loads the active account userID and checks it is an active
@@ -224,10 +226,13 @@ func (s *SSOService) CompleteSSOLink(ctx context.Context, in SSOLinkCompleteInpu
 	// cannot be retried.
 	st, err := s.consumeState(ctx, in.State, in.BrowserBinding)
 	if err != nil {
-		s.takeLinkRecord(ctx, in.State)
+		_, _ = s.takeLinkRecord(ctx, in.State)
 		return nil, ErrSSOInvalidState
 	}
-	rec := s.takeLinkRecord(ctx, in.State)
+	rec, err := s.takeLinkRecord(ctx, in.State)
+	if err != nil {
+		return nil, ErrSSOInvalidState
+	}
 	if !rec.matches(in, st) {
 		s.logger.Warn("SSO link refused: the state is not a link of this account and session", "provider", in.Provider)
 		return nil, ErrSSOInvalidState

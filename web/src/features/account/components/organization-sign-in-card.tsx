@@ -237,7 +237,7 @@ export function OrganizationSignInCard() {
         title={t('account.signInMethods.linkTitle', 'Link {provider}', {
           provider: toLink?.org_name ?? '',
         })}
-        description={`${t('account.organizationSignIn.linkDesc', 'Next you sign in at {provider}, then come back here.', { provider: toLink?.display_name ?? '' })}${proofKind ? ` ${proofHint}` : ''}`}
+        description={`${t('account.organizationSignIn.linkDesc', 'Next you sign in at {provider}, then come back here.', { provider: toLink?.display_name ?? '' })} ${t('account.organizationSignIn.linkWarning', "After linking, signing in through this organization's identity provider opens your account without your account's own second factor. The organization's identity provider administrator therefore controls access to your account.")}${proofKind ? ` ${proofHint}` : ''}`}
         factor={proofKind === 'password' ? 'password' : 'totp'}
         submitLabel={t('account.signInMethods.link', 'Link')}
         onSubmit={confirmLink}
