@@ -3,8 +3,8 @@ package remediation
 import (
 	"context"
 	"errors"
-	"time"
 	"testing"
+	"time"
 
 	moduledom "github.com/openctemio/openctem/api/pkg/domain/module"
 	remediationdom "github.com/openctemio/openctem/api/pkg/domain/remediation"
