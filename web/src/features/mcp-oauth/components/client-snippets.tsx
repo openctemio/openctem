@@ -1,7 +1,6 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import { Terminal } from 'lucide-react'
 
 import Link from '@/components/link'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -35,14 +34,7 @@ export function ClientSnippets({ endpoint, deviceUrl }: ClientSnippetsProps) {
       <TabsList>
         {CLIENT_IDS.map((id) => (
           <TabsTrigger key={id} value={id}>
-            {id === 'remote' ? (
-              <span className="flex items-center gap-1.5">
-                <Terminal className="h-3.5 w-3.5" aria-hidden />
-                {t('mcp.connect.remoteTab', 'Remote or VPS')}
-              </span>
-            ) : (
-              CLIENT_NAMES[id]
-            )}
+            {id === 'remote' ? t('mcp.connect.remoteTab', 'Remote or VPS') : CLIENT_NAMES[id]}
           </TabsTrigger>
         ))}
       </TabsList>
