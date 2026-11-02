@@ -44,7 +44,7 @@ func (s *AuthService) enforceOutsidePrivilegePolicy(ctx context.Context, sess *s
 	if !privileged {
 		return nil
 	}
-	ok, err := s.secondFactorProven(ctx, sess, userID)
+	ok, err := s.secondFactorProven(ctx, sess, userID, tenantID)
 	if err != nil {
 		return err
 	}

@@ -493,8 +493,10 @@ func Register(
 		stepUpChecker = h.LocalAuth.RecentAuthChecker()
 	}
 	credentialFactorChecker = nil
+	ownSignInChecker = nil
 	if h.LocalAuth != nil {
 		credentialFactorChecker = h.LocalAuth.CredentialFactorChecker()
+		ownSignInChecker = h.LocalAuth.OwnSignInChecker()
 	}
 	apiKeyOrJWT = nil
 	if h.APIKeyAuth != nil {
@@ -1406,6 +1408,17 @@ var stepUpChecker middleware.RecentAuthChecker //nolint:gochecknoglobals // set 
 // creating a credential). Set once during Register from the local auth
 // handler; nil lets requests through (tests without the auth service).
 var credentialFactorChecker middleware.CredentialFactorChecker //nolint:gochecknoglobals // set once during init
+
+// ownSignInChecker answers RequireOwnSignIn (actions on the whole account
+// need the account's own sign-in, not an organization IdP's). Set once
+// during Register from the local auth handler.
+var ownSignInChecker middleware.OwnSignInChecker //nolint:gochecknoglobals // set once during init
+
+// requireOwnSignIn is the middleware for a route that acts on the whole
+// account (deleting it, signing it out everywhere).
+func requireOwnSignIn() Middleware {
+	return middleware.RequireOwnSignIn(ownSignInChecker)
+}
 
 // requireCredentialFactor is the middleware for a route that creates a
 // credential (API key, sensor enrolment, integration secret): the caller
