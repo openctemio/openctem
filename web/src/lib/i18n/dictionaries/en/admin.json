@@ -1051,6 +1051,8 @@
   "admin.org.col.organization": "Organization",
   "admin.org.col.owner": "Owner",
   "admin.org.col.sso": "Single sign-on",
+  "admin.org.danger.purgeWhat": "Deletes the organization and everything in it. Member accounts are kept. This cannot be undone.",
+  "admin.org.danger.suspendWhat": "Closes the organization to every credential at once. Nothing is deleted; lifting the suspension restores access.",
   "admin.org.dashboardData.description": "Stored per-asset data behind the organization dashboards, kept current from every change and reconciled every night.",
   "admin.org.dashboardData.failed": "Could not request a rebuild.",
   "admin.org.dashboardData.idle": "Idle",
