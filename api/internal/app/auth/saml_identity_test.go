@@ -54,7 +54,7 @@ func TestSAMLLogin_NewUserBindsScopedIdentity(t *testing.T) {
 	svc, users, _, ids := samlHarness(t, map[string]bool{"corp.com": true})
 	tn := samlTenant(t, "acme")
 
-	res, err := svc.completeFederatedLogin(context.Background(), tn, "new@corp.com", "New", "member", true, federatedBinding{}, samlKey(tn, "nid-1"))
+	res, err := svc.completeFederatedLogin(context.Background(), tn, "new@corp.com", "New", "member", true, federatedBinding{}, samlKey(tn, "nid-1"), "")
 	if err != nil {
 		t.Fatalf("JIT login: %v", err)
 	}
@@ -79,7 +79,7 @@ func TestSAMLLogin_ReturningIdentity_EmailChangeFollows(t *testing.T) {
 	ident, _ := useridentity.New(u.ID(), samlKey(tn, "nid-1"))
 	_ = ids.Create(context.Background(), ident)
 
-	res, err := svc.completeFederatedLogin(context.Background(), tn, "renamed@corp.com", "Person", "member", false, federatedBinding{}, samlKey(tn, "nid-1"))
+	res, err := svc.completeFederatedLogin(context.Background(), tn, "renamed@corp.com", "Person", "member", false, federatedBinding{}, samlKey(tn, "nid-1"), "")
 	if err != nil {
 		t.Fatalf("returning login: %v", err)
 	}
@@ -100,7 +100,7 @@ func TestSAMLLogin_ReturningIdentity_NotMemberRefused(t *testing.T) {
 	ident, _ := useridentity.New(u.ID(), samlKey(tn, "nid-1"))
 	_ = ids.Create(context.Background(), ident)
 
-	_, err := svc.completeFederatedLogin(context.Background(), tn, "gone@corp.com", "Gone", "member", true, federatedBinding{}, samlKey(tn, "nid-1"))
+	_, err := svc.completeFederatedLogin(context.Background(), tn, "gone@corp.com", "Gone", "member", true, federatedBinding{}, samlKey(tn, "nid-1"), "")
 	if !errors.Is(err, ErrSSOFederatedNotMember) {
 		t.Fatalf("expected ErrSSOFederatedNotMember, got %v", err)
 	}
@@ -127,7 +127,7 @@ func TestSAMLLogin_SameEntityIDOtherOrganization_DoesNotResolve(t *testing.T) {
 		t.Fatalf("organization B's key must not resolve A's account, got %v / %v", got, err)
 	}
 	// A key claiming A's scope but presented to B's login is refused outright.
-	if _, err := svc.completeFederatedLogin(context.Background(), b, "victim@corp.com", "V", "member", true, federatedBinding{}, samlKey(a, "nid-victim")); !errors.Is(err, ErrSSOFederatedNotMember) {
+	if _, err := svc.completeFederatedLogin(context.Background(), b, "victim@corp.com", "V", "member", true, federatedBinding{}, samlKey(a, "nid-victim"), ""); !errors.Is(err, ErrSSOFederatedNotMember) {
 		t.Fatalf("a key scoped to another organization must be refused, got %v", err)
 	}
 }
@@ -144,7 +144,7 @@ func TestSAMLLogin_OtherSubjectSameEmailRefused(t *testing.T) {
 	ident, _ := useridentity.New(u.ID(), samlKey(tn, "nid-1"))
 	_ = ids.Create(context.Background(), ident)
 
-	_, err := svc.completeFederatedLogin(context.Background(), tn, "person@corp.com", "X", "member", false, federatedBinding{}, samlKey(tn, "nid-2"))
+	_, err := svc.completeFederatedLogin(context.Background(), tn, "person@corp.com", "X", "member", false, federatedBinding{}, samlKey(tn, "nid-2"), "")
 	if !errors.Is(err, ErrFederatedIdentityConflict) {
 		t.Fatalf("expected ErrFederatedIdentityConflict, got %v", err)
 	}
@@ -163,7 +163,7 @@ func TestSAMLLogin_ExistingMemberBoundOnNextLogin(t *testing.T) {
 	m, _ := tenantdom.NewMembership(u.ID(), tn.ID(), tenantdom.RoleMember, nil)
 	members.created[u.ID().String()] = m
 
-	if _, err := svc.completeFederatedLogin(context.Background(), tn, "person@corp.com", "Person", "member", false, federatedBinding{}, samlKey(tn, "nid-1")); err != nil {
+	if _, err := svc.completeFederatedLogin(context.Background(), tn, "person@corp.com", "Person", "member", false, federatedBinding{}, samlKey(tn, "nid-1"), ""); err != nil {
 		t.Fatalf("login: %v", err)
 	}
 	if keys := ids.keysOf(u.ID()); len(keys) != 1 || keys[0].Subject != "nid-1" {
@@ -190,5 +190,107 @@ func TestSAMLIdentityKey_PersistentNameIDOnly(t *testing.T) {
 	}
 	if samlIdentityKey(&saml.Assertion{}, tid).Valid() {
 		t.Fatal("an assertion without a subject keys nothing")
+	}
+}
+
+// entraAssertion is an Entra-shaped assertion: emailAddress NameID (Entra's
+// default, the user's UPN), plus the objectidentifier and tenantid claims
+// Entra always sends.
+func entraAssertion(nameIDFormat, nameID, oid, tid string) *saml.Assertion {
+	a := &saml.Assertion{
+		Issuer:  saml.Issuer{Value: "https://sts.windows.net/" + tid + "/"},
+		Subject: &saml.Subject{NameID: &saml.NameID{Format: nameIDFormat, Value: nameID}},
+	}
+	var attrs []saml.Attribute
+	if oid != "" {
+		attrs = append(attrs, saml.Attribute{Name: samlEntraObjectIDAttr, Values: []saml.AttributeValue{{Value: oid}}})
+	}
+	if tid != "" {
+		attrs = append(attrs, saml.Attribute{Name: samlEntraTenantIDAttr, Values: []saml.AttributeValue{{Value: tid}}})
+	}
+	a.AttributeStatements = []saml.AttributeStatement{{Attributes: attrs}}
+	return a
+}
+
+const samlTestTID = "aaaaaaaa-1111-2222-3333-444444444444"
+
+func TestSAMLIdentity_EntraObjectIDKeysEvenWithEmailNameID(t *testing.T) {
+	tn := shared.NewID()
+	k, legacy := samlIdentity(entraAssertion(string(saml.EmailAddressNameIDFormat), "alice@corp.com", "oid-1", samlTestTID), tn)
+	if !k.Valid() || k.Subject != samlTestTID+"/oid-1" || k.ScopeTenantID == nil || *k.ScopeTenantID != tn || legacy != "" {
+		t.Fatalf("the Entra object id must key the identity, got %+v legacy %q", k, legacy)
+	}
+	// A persistent NameID bound before becomes the legacy subject.
+	k, legacy = samlIdentity(entraAssertion(string(saml.PersistentNameIDFormat), "nid-old", "oid-1", samlTestTID), tn)
+	if k.Subject != samlTestTID+"/oid-1" || legacy != "nid-old" {
+		t.Fatalf("want oid key with the persistent NameID as legacy, got %+v legacy %q", k, legacy)
+	}
+}
+
+func TestSAMLIdentity_AmbiguousOrPartialEntraClaimsKeyNothing(t *testing.T) {
+	tn := shared.NewID()
+	email := string(saml.EmailAddressNameIDFormat)
+	if k, _ := samlIdentity(entraAssertion(email, "a@corp.com", "oid-1", ""), tn); k.Valid() {
+		t.Fatal("objectidentifier without tenantid must not key an identity")
+	}
+	if k, _ := samlIdentity(entraAssertion(email, "a@corp.com", "", samlTestTID), tn); k.Valid() {
+		t.Fatal("tenantid without objectidentifier must not key an identity")
+	}
+	a := entraAssertion(email, "a@corp.com", "oid-1", samlTestTID)
+	a.AttributeStatements[0].Attributes = append(a.AttributeStatements[0].Attributes,
+		saml.Attribute{Name: samlEntraObjectIDAttr, Values: []saml.AttributeValue{{Value: "oid-2"}}})
+	if k, _ := samlIdentity(a, tn); k.Valid() {
+		t.Fatal("two objectidentifier claims are ambiguous and must key nothing")
+	}
+	b := entraAssertion(email, "a@corp.com", "oid-1/../x", samlTestTID)
+	if k, _ := samlIdentity(b, tn); k.Valid() {
+		t.Fatal("an object id with a separator must key nothing")
+	}
+}
+
+// A reused address: the old holder's account is bound to their object id; a
+// new directory user who now holds the address is a different person.
+func TestSAMLLogin_EntraReusedAddressDoesNotInheritAccount(t *testing.T) {
+	svc, users, members, ids := samlHarness(t, map[string]bool{"corp.com": true})
+	tn := samlTenant(t, "acme")
+	old, _ := userdom.New("john@corp.com", "John (left)")
+	users.byEmail[old.Email()] = old
+	m, _ := tenantdom.NewMembership(old.ID(), tn.ID(), tenantdom.RoleMember, nil)
+	members.created[old.ID().String()] = m
+	oldKey, _ := samlIdentity(entraAssertion(string(saml.EmailAddressNameIDFormat), "john@corp.com", "oid-old", samlTestTID), tn.ID())
+	ident, _ := useridentity.New(old.ID(), oldKey)
+	_ = ids.Create(context.Background(), ident)
+
+	newKey, legacy := samlIdentity(entraAssertion(string(saml.EmailAddressNameIDFormat), "john@corp.com", "oid-new", samlTestTID), tn.ID())
+	_, err := svc.completeFederatedLogin(context.Background(), tn, "john@corp.com", "John (new)", "member", true, federatedBinding{}, newKey, legacy)
+	if !errors.Is(err, ErrFederatedIdentityConflict) {
+		t.Fatalf("a new directory user holding a reused address must be refused, got %v", err)
+	}
+}
+
+// An identity bound under a persistent NameID before is re-keyed to the
+// object id on the next login: same account, no conflict.
+func TestSAMLLogin_PersistentNameIDBindingRekeyedToObjectID(t *testing.T) {
+	svc, users, members, ids := samlHarness(t, map[string]bool{"corp.com": true})
+	tn := samlTenant(t, "acme")
+	u, _ := userdom.New("alice@corp.com", "Alice")
+	users.byEmail[u.Email()] = u
+	m, _ := tenantdom.NewMembership(u.ID(), tn.ID(), tenantdom.RoleMember, nil)
+	members.created[u.ID().String()] = m
+	scope := tn.ID()
+	issuer := "https://sts.windows.net/" + samlTestTID + "/"
+	ident, _ := useridentity.New(u.ID(), useridentity.Key{Issuer: issuer, Subject: "nid-old", ScopeTenantID: &scope})
+	_ = ids.Create(context.Background(), ident)
+
+	key, legacy := samlIdentity(entraAssertion(string(saml.PersistentNameIDFormat), "nid-old", "oid-1", samlTestTID), tn.ID())
+	res, err := svc.completeFederatedLogin(context.Background(), tn, "alice@corp.com", "Alice", "member", false, federatedBinding{}, key, legacy)
+	if err != nil {
+		t.Fatalf("returning login: %v", err)
+	}
+	if res.User.ID() != u.ID() {
+		t.Fatal("the re-keyed identity must resolve the same account")
+	}
+	if keys := ids.keysOf(u.ID()); len(keys) != 1 || keys[0].Subject != samlTestTID+"/oid-1" {
+		t.Fatalf("binding must be re-keyed to the object id, got %+v", keys)
 	}
 }
