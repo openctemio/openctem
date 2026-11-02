@@ -235,11 +235,20 @@ completing login (`SSOService.verifyIDToken` → `oidc.Client.VerifyIDToken`):
   2-minute leeway.
 - **Nonce** — must equal the nonce embedded in the signed `state` at authorize
   time (constant-time compare); binds the token to this flow.
+- **Redirect URI** — the state record keeps the authorize request's
+  `redirect_uri`; a callback presenting another one is refused before the
+  code is redeemed.
 - **Issuer** — provider-specific. For Entra the issuer must be
   `https://login.microsoftonline.com/{tid}/v2.0` consistent with the token's
-  `tid` claim; single-tenant configs additionally require `tid` to match the
-  configured directory, while `common`/`organizations`/`consumers` accept any
-  directory (the email domain allow-list still applies). For Okta the issuer
+  `tid` claim, and `tid` must equal the configured directory. An
+  organization's own Entra provider must name its directory by GUID: an
+  empty value, `common`, `organizations`, `consumers` or a domain name is
+  refused when the provider is saved, and a stored provider with such a value
+  is not offered on the sign-in page and refuses sign-in
+  (`ErrSSOProviderMisconfigured`, answered as "SSO provider not configured").
+  Only the operator's env fallback (`SSO_ENTRA_TENANT_ID`) may use the
+  multi-tenant `common`/`organizations` authority, and then it never
+  auto-provisions and requires `SSO_ENTRA_ALLOWED_DOMAINS`. For Okta the issuer
   must be the configured org's default authorization server
   (`{org}/oauth2/default`); for Google it must be `https://accounts.google.com`
   (or `accounts.google.com`).
