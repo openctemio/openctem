@@ -2,10 +2,7 @@ import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
-import {
-  actOnSharedSensor,
-  viewSharedJob,
-} from '@console/features/admin-console/api/use-shared-fleet'
+import { viewSharedJob } from '@console/features/admin-console/api/use-shared-fleet'
 import PlatformScanningPage from '../page'
 
 const state = vi.hoisted(() => ({
@@ -141,23 +138,26 @@ describe('Platform scanning console page', () => {
     expect(screen.queryByText('shared-eu-1')).not.toBeInTheDocument()
   })
 
-  it('offers the six tabs once shared sensors are available', () => {
+  it('offers the five tabs once shared sensors are available', () => {
     render(<PlatformScanningPage />)
     expect(screen.getAllByRole('tab').map((t) => t.textContent)).toEqual([
       'Policy',
       'Fleet',
       'Queue',
-      'Zones',
       'Egress',
       'Anomalies',
     ])
   })
 
-  it('shows the fleet, the queue and job metadata to a read-only administrator, with no action', () => {
+  it('links the fleet to Platform sensors, and shows the queue and job metadata to a read-only administrator, with no action', () => {
     state.role = 'readonly'
     state.tab = 'fleet'
     render(<PlatformScanningPage />)
-    expect(screen.getAllByText('shared-eu-1').length).toBeGreaterThan(0)
+    expect(screen.queryByText('shared-eu-1')).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Platform sensors' })).toHaveAttribute(
+      'href',
+      '/sensors'
+    )
     cleanup()
     state.tab = 'queue'
     render(<PlatformScanningPage />)
@@ -180,21 +180,5 @@ describe('Platform scanning console page', () => {
       expect(viewSharedJob).toHaveBeenCalledWith('j1', 'abuse report 42 from the operator')
     )
     expect(await screen.findByText('acme.example')).toBeInTheDocument()
-  })
-
-  it('lets a super admin pause a shared sensor with a reason and a code', async () => {
-    state.role = 'super_admin'
-    state.tab = 'fleet'
-    render(<PlatformScanningPage />)
-    await userEvent.click(screen.getAllByRole('button', { name: /Pause/ })[0])
-    await userEvent.type(screen.getByLabelText(/reason/i), 'maintenance window tonight')
-    await userEvent.type(screen.getByLabelText(/code/i), '123456')
-    await userEvent.click(screen.getByRole('button', { name: 'Pause' }))
-    await waitFor(() =>
-      expect(actOnSharedSensor).toHaveBeenCalledWith('s1', 'pause', {
-        reason: 'maintenance window tonight',
-        totp_code: '123456',
-      })
-    )
   })
 })
