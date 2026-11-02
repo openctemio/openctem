@@ -1,0 +1,4 @@
+### Fixed: the collector's install commands say how to pull its private image
+- The docker run, Compose and Kubernetes commands of a collector sensor now say that the default image (`ghcr.io/openctemio/asset-collector`) is private and how to log in (`docker login ghcr.io` with a token that has `read:packages`; on Kubernetes a pull secret and a commented `imagePullSecrets`). Without a login the pull failed with `denied` and nothing said why.
+- They link the collector's guide (`/sensors/asset-collector/` on the documentation site) instead of naming a page that did not exist.
+- The **Trust this collector** help text no longer says a trusted collector never changes existing assets: its complete reports update the assets it created and mark the ones it no longer lists as stale (English and Vietnamese).
