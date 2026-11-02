@@ -2,6 +2,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
+import { toast } from 'sonner'
+import { AdminApiError } from '@console/lib/admin-api/client'
 import { saveEmailSettings, sendTestEmail } from '../api/use-email-settings'
 import { EmailSettingsForm } from '../components/email-settings-form'
 
@@ -79,5 +81,44 @@ describe('EmailSettingsForm', () => {
     render(<EmailSettingsForm settings={stored} canEdit onSaved={() => {}} />)
     await userEvent.click(screen.getByRole('button', { name: 'Send a test e-mail' }))
     await waitFor(() => expect(sendTestEmail).toHaveBeenCalledTimes(1))
+  })
+
+  it('sends a pasted CA certificate, never shows the stored one and can remove it', async () => {
+    const { unmount } = render(
+      <EmailSettingsForm
+        settings={{ ...stored, ca_set: true, ca_fingerprint: 'ab12' }}
+        canEdit
+        onSaved={() => {}}
+      />
+    )
+    const ca = screen.getByLabelText('Internal CA certificate') as HTMLTextAreaElement
+    expect(ca.value).toBe('')
+    expect(screen.getByText(/ab12/)).toBeTruthy()
+    await userEvent.click(screen.getByLabelText('Remove the stored CA certificate'))
+    await saveWithCode()
+    await waitFor(() => expect(saveEmailSettings).toHaveBeenCalled())
+    expect(vi.mocked(saveEmailSettings).mock.calls[0][0]).toMatchObject({ ca_pem: '' })
+    unmount()
+
+    vi.mocked(saveEmailSettings).mockClear()
+    render(<EmailSettingsForm settings={stored} canEdit onSaved={() => {}} />)
+    await userEvent.click(screen.getByLabelText('Internal CA certificate'))
+    await userEvent.paste('-----BEGIN CERTIFICATE-----\nQUJD\n-----END CERTIFICATE-----')
+    await saveWithCode()
+    await waitFor(() => expect(saveEmailSettings).toHaveBeenCalled())
+    expect(vi.mocked(saveEmailSettings).mock.calls[0][0]).toMatchObject({
+      ca_pem: expect.stringContaining('BEGIN CERTIFICATE'),
+    })
+  })
+
+  it('says what to fix when the test e-mail fails', async () => {
+    vi.mocked(sendTestEmail).mockRejectedValue(
+      new AdminApiError('x', 502, 'EMAIL_TEST_FAILED', { reason: 'unknown_authority' })
+    )
+    render(<EmailSettingsForm settings={stored} canEdit onSaved={() => {}} />)
+    await userEvent.click(screen.getByRole('button', { name: 'Send a test e-mail' }))
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(expect.stringMatching(/certificate is not trusted/))
+    )
   })
 })

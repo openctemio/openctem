@@ -505,6 +505,7 @@ Read by the command-line tools shipped with the server (`bootstrap-admin`, `reke
 | `CONNECTOR_API_URL` | url | empty | yes |  | `openctem-sensor-relay connector`: URL of the API on the private network the opened requests are sent to. |
 | `BOOTSTRAP_SMTP_FROM_NAME` | string | empty |  |  | `bootstrap-admin`: sender name (default `BRAND_NAME`, else OpenCTEM). |
 | `BOOTSTRAP_SMTP_STARTTLS` | string | empty |  |  | `bootstrap-admin`: `false` turns STARTTLS off (default on). |
+| `BOOTSTRAP_SMTP_CA_FILE` | string | empty |  |  | `bootstrap-admin`: path of a PEM file with the internal CA certificate that signed the SMTP server's certificate, stored with the platform e-mail setting and used only to verify that server. Certificates only; a private key is refused. |
 | `ADMIN_BACKUP_EMAIL` | string | empty |  |  | `bootstrap-admin`: e-mail of the break-glass backup administrator. |
 | `ADMIN_BACKUP_NAME` | string | empty |  |  | `bootstrap-admin`: display name of the backup administrator. |
 | `SUDO_USER` | string | empty |  |  | `bootstrap-admin`: set by sudo; recorded as the OS user in its audit entries (else `USER`). |
