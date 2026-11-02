@@ -324,7 +324,7 @@ which it always receives:
 
 ## Platform-owned egress and selection (designed)
 
-> RFC: [RFC-145](../rfcs/RFC-145-managed-scanning-fleet.md). Nothing in this section is built unless
+> RFC: [RFC-147](../rfcs/RFC-147-managed-scanning-fleet.md). Nothing in this section is built unless
 > stated; the pool engine above is what exists.
 
 In a managed deployment the shared fleet's executors have no internet route. Platform pools are operator

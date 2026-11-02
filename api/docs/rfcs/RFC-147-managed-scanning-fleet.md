@@ -1,4 +1,4 @@
-# RFC-145: Managed scanning fleet: demand scaling, owned egress proxies, proxy selection
+# RFC-147: Managed scanning fleet: demand scaling, owned egress proxies, proxy selection
 
 | | |
 |---|---|
