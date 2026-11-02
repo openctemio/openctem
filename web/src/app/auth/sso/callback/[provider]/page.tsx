@@ -9,6 +9,7 @@ import { redirect } from 'next/navigation'
 import { loginErrorCodeFor } from '@/features/auth/lib/auth-error-codes'
 import { loginErrorHref } from '@/features/auth/lib/login-error'
 import { cookies } from 'next/headers'
+import { SSO_LINK_INTENT_COOKIE } from '@/features/auth/lib/oauth-cookies'
 
 import { handleSSOCallback } from '@/features/sso/actions/sso-auth-actions'
 import { validateRedirectUrl } from '@/lib/redirect'
@@ -53,6 +54,16 @@ export default async function SSOCallbackPage({ params, searchParams }: SSOCallb
   const orgSlug = cookieStore.get('sso_org')?.value || ''
   const org = orgSlug ? { org: orgSlug } : undefined
   const storedRedirectTo = validateRedirectUrl(cookieStore.get('sso_redirect')?.value, '/')
+
+  // Linking the organization's sign-in to the signed-in account (Account >
+  // Security): the link route finishes it (it writes cookies, a page cannot).
+  if (isValidProvider(provider) && cookieStore.get(SSO_LINK_INTENT_COOKIE)?.value === provider) {
+    const forward = new URLSearchParams()
+    if (code) forward.set('code', code)
+    if (state) forward.set('state', state)
+    if (error) forward.set('error', '1')
+    redirect(`/auth/sso/link/${provider}?${forward.toString()}`)
+  }
 
   // Validate provider
   if (!isValidProvider(provider)) {
