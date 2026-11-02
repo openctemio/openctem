@@ -46,6 +46,16 @@ Coverage tests read the registry:
 - The web test `module-registry.test.ts`: every module id the console names
   (route map, sidebar, settings rail, embedded checks) exists.
 
+## State cache and ETag
+
+One `ModuleGate` per process (shared by the route gate, the dashboard and the threat-alert planner) keeps the effective state of an organization for at most 60 seconds. The entry:
+
+- is dropped by every module toggle, preset, reset and entitlement change (one organization, or all of them after a plan mapping change), on every replica through the Redis bus; a read that started before the drop does not store its answer after it;
+- ends at the next moment the state changes by itself: a read-only grace ending or a timed deny running out (`NotEntitledWithDeadline`);
+- is never stored when a read failed (the entitlement could not be read, so every non-core module is reported `unavailable`, or the preferences could not be read): the answer is closed for that request and the next request reads again.
+
+The ETag of `/me/modules`, `/settings/modules` and the event-type catalog is `ModuleService.ETagToken`: the Redis version counter, a hash of the effective state of every module and a fingerprint of the registry. A change with no write (grace end, entitlement reader recovering) changes the hash. A counter lost to a Redis flush or an eviction reads as 0, a value the counter never hands out, so an old ETag cannot match again.
+
 ## Rules
 
 1. **A module gates a surface it owns, never an attribute of a core object.**

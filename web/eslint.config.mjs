@@ -2,6 +2,29 @@ import { defineConfig, globalIgnores } from 'eslint/config'
 import nextVitals from 'eslint-config-next/core-web-vitals'
 import nextTs from 'eslint-config-next/typescript'
 
+// Console files that still hand-roll a pattern the shared kit covers (the
+// console kit rule below). Remove a file from the list in the PR that moves
+// it to the shared component; never add one.
+const CONSOLE_KIT_ALLOWLIST = [
+  // raw ui/table
+  'console/src/features/admin-console/components/access-requests-panel.tsx',
+  'console/src/features/admin-console/components/bundle-detail.tsx',
+  'console/src/features/admin-console/components/organization-audit-chain-panel.tsx',
+  'console/src/features/admin-console/components/organization-modules-panel.tsx',
+  'console/src/features/admin-console/components/self-service-limits-form.tsx',
+  'console/src/features/admin-console/components/signup-events-panel.tsx',
+  'console/src/features/admin-console/components/support-session-view.tsx',
+  // raw <table>
+  'console/src/app/(console)/health/page.tsx',
+  'console/src/app/(console)/system/content-packs/page.tsx',
+  'console/src/app/(console)/users/[[]userId]/page.tsx',
+  // tabs used as a filter
+  'console/src/features/admin-console/components/add-content-pack-dialog.tsx',
+  'console/src/app/(console)/system/configuration/page.tsx',
+  'console/src/app/(console)/system/ai-applications/page.tsx',
+  'console/src/app/(console)/users/page.tsx',
+]
+
 const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
@@ -61,6 +84,55 @@ const eslintConfig = defineConfig([
                 'The console must not import tenant routes; move shared code out of src/app.',
             },
           ],
+        },
+      ],
+    },
+  },
+  // One shared component per pattern (owner 2026-11-02): console pages and
+  // components use the kit the tenant app uses (web/src/features/shared),
+  // never a hand-rolled variant of a list table, a confirmation or a filter.
+  // The pattern -> component map is web/docs/ui/shared-kit.md. A file that predates
+  // the rule is listed in CONSOLE_KIT_ALLOWLIST until it is moved; the list
+  // only shrinks.
+  {
+    files: ['console/src/app/**/*.tsx', 'console/src/features/**/*.tsx'],
+    ignores: ['**/*.test.tsx', '**/__tests__/**', ...CONSOLE_KIT_ALLOWLIST],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['@/app/*', '!@/app/providers'],
+              message:
+                'The console must not import tenant routes; move shared code out of src/app.',
+            },
+          ],
+          paths: [
+            {
+              name: '@/components/ui/table',
+              message:
+                'Use the shared DataTable (@/features/shared): sorting, empty state, phone cards and keyboard-focusable scrolling come with it.',
+            },
+            {
+              name: '@/components/ui/alert-dialog',
+              message:
+                'Use ConfirmDialog (@/components/confirm-dialog), or AdminConfirmDialog for a protected write.',
+            },
+          ],
+        },
+      ],
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: "JSXOpeningElement[name.name='table']",
+          message: 'Use the shared DataTable (@/features/shared), not a raw <table>.',
+        },
+        {
+          selector:
+            "ImportDeclaration[source.value='@/components/ui/tabs']:not(:has(ImportSpecifier[imported.name='TabsContent']))",
+          message:
+            'Tabs without panels are a filter: use FilterSelect (@/features/shared). Route tabs use SectionTabs.',
         },
       ],
     },
