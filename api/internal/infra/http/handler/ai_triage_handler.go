@@ -440,6 +440,9 @@ const (
 	// aiErrPolicyRestricted: the organization's AI data policy keeps this
 	// finding on the platform (pentest TLP limit, campaign with AI off).
 	aiErrPolicyRestricted apierror.Code = "AI_POLICY_RESTRICTED"
+	// aiErrUseCaseOff: the organization turned the triage AI use case off
+	// (Settings > AI > Use cases).
+	aiErrUseCaseOff apierror.Code = "AI_USE_CASE_OFF"
 )
 
 func (h *AITriageHandler) handleServiceError(w http.ResponseWriter, err error) {
@@ -455,6 +458,10 @@ func (h *AITriageHandler) handleServiceError(w http.ResponseWriter, err error) {
 	case errors.Is(err, aitriage.ErrOwnProviderNotAllowed):
 		apierror.New(http.StatusForbidden, aiErrOwnProviderNotAllowed,
 			"The platform does not allow organizations to use their own AI provider. Switch the AI source to the platform in Settings > AI.").WriteJSON(w)
+
+	case errors.Is(err, aitriage.ErrUseCaseOff):
+		apierror.New(http.StatusForbidden, aiErrUseCaseOff,
+			"AI triage is turned off for this organization's use cases. An owner or administrator turns it on in Settings > AI > Use cases.").WriteJSON(w)
 
 	case errors.Is(err, aitriage.ErrPolicyRestricted):
 		apierror.New(http.StatusForbidden, aiErrPolicyRestricted,
