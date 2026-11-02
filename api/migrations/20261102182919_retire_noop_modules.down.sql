@@ -36,3 +36,15 @@ SELECT tenant_id, 'ai_triage', false FROM tenant_ai_settings
 ON CONFLICT DO NOTHING;
 UPDATE tenant_ai_settings SET use_cases = jsonb_set(use_cases, '{triage}', (use_cases -> 'triage') - 'from_module_switch')
  WHERE use_cases -> 'triage' ->> 'from_module_switch' = 'true';
+
+-- Give the Suppressions switch back to the organizations whose rules the up
+-- migration deactivated, and re-activate exactly those rules. An organization
+-- that had the switch off and no approved rule has no marker and is not
+-- restored (it had nothing to mute).
+INSERT INTO tenant_modules (tenant_id, module_id, is_enabled)
+SELECT DISTINCT tenant_id, 'suppressions', false FROM suppression_rules
+ WHERE deactivated_by_migration = 'retire_noop_modules'
+ON CONFLICT DO NOTHING;
+UPDATE suppression_rules SET status = 'approved', updated_at = NOW()
+ WHERE deactivated_by_migration = 'retire_noop_modules';
+ALTER TABLE suppression_rules DROP COLUMN IF EXISTS deactivated_by_migration;
