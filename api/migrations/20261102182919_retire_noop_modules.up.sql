@@ -45,10 +45,26 @@ WITH moved(retired, parent) AS (VALUES
     ('integrations.api', 'integrations'), ('integrations.pipelines', 'integrations'))
 UPDATE asset_types a SET module_id = m.parent FROM moved m WHERE a.module_id = m.retired;
 
+-- An organization that switched AI triage off on Settings > Modules keeps it
+-- off: the choice moves to its AI settings (the triage use case, mode off)
+-- before the module switch is dropped, so nothing turns on silently. The
+-- marker lets the down migration give the switch back to exactly these
+-- organizations. A settings row that does not exist yet is created with the
+-- column defaults (AI stays off until an administrator consents).
+INSERT INTO tenant_ai_settings (tenant_id, use_cases)
+SELECT tm.tenant_id, jsonb_build_object('triage', jsonb_build_object('mode', 'off', 'from_module_switch', true))
+  FROM tenant_modules tm
+ WHERE tm.module_id = 'ai_triage' AND NOT tm.is_enabled
+ON CONFLICT (tenant_id) DO UPDATE
+   SET use_cases = tenant_ai_settings.use_cases || jsonb_build_object('triage',
+       COALESCE(tenant_ai_settings.use_cases -> 'triage', '{}'::jsonb)
+       || jsonb_build_object('mode', 'off', 'from_module_switch', true));
+
 -- An organization's switch of a module it can no longer switch is dropped
 -- (tenant_modules has no ON DELETE): the retired modules, the two modules that
 -- are always on now (so their rules and scoring apply again, as the product
--- documents), and the two modules Settings > Modules never listed.
+-- documents), and the two modules Settings > Modules never listed (the
+-- ai_triage switch was carried into the AI settings above).
 DELETE FROM tenant_modules WHERE module_id IN (
     'risk_analysis', 'sbom_export', 'tools', 'scan_profiles', 'business_impact',
     'crown_jewels', 'ctem_maturity', 'executive_summary', 'mitre_coverage',
