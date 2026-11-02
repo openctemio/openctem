@@ -802,13 +802,6 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		w.ControllerManager.Register(controller.NewThreatAlertPlannerController(svc.ThreatAlertPlanner, log.With("controller", "threat-alert-planner")))
 	}
 
-	// CTEM-ID catalog — daily fail-open refresh of the standardized exposure
-	// catalog (https://ctem.org/source.json), mirroring the threat-intel refresh.
-	w.ControllerManager.Register(controller.NewCTEMIDRefreshController(
-		svc.CTEMID,
-		log.With("controller", "ctem-id-refresh"),
-	))
-
 	// Version check (RFC-105): wakes hourly; fetches the signed release feed
 	// once a day when VERSION_CHECK_ENABLED and a root is pinned, weekly
 	// after repeated failures. One replica fetches per check.

@@ -1433,12 +1433,6 @@ vars:
     type: int
     default: "50"
     description: "Domains of one organization queried per sweep; the rest rotate in on later runs."
-  - name: CTEM_ID_FEED_URL
-    component: api
-    group: "Discovery feeds and background jobs"
-    type: string
-    default: "https://ctem.org/source.json"
-    description: "CTEM-ID catalog feed mirrored daily."
   - name: EASM_DNS_CHECK_INTERVAL
     component: api
     group: "Discovery feeds and background jobs"

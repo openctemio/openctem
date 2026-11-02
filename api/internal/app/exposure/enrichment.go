@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/api/pkg/domain/ctemid"
 	exposuredom "github.com/openctemio/openctem/api/pkg/domain/exposure"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -34,6 +35,9 @@ type Enrichment struct {
 	EPSSPercentile *float64   `json:"epss_percentile,omitempty"`
 	IsInKEV        *bool      `json:"is_in_kev,omitempty"`
 	KEVDueDate     *time.Time `json:"kev_due_date,omitempty"`
+	// CTEMID is the exposure's CTEM-ID code chosen with its linked asset in
+	// view (nil when none). The handler sets the asset-free answer itself.
+	CTEMID *ctemid.Mapping `json:"-"`
 }
 
 // EPSSData holds an EPSS score for a CVE. Mirrors the finding-side shape so the
@@ -164,9 +168,14 @@ func (e *ExposureEnricher) EnrichBatch(ctx context.Context, tenantID shared.ID, 
 
 	for _, ev := range events {
 		var enr Enrichment
+		var ctemAsset *ctemid.Asset
 
 		if aid := ev.AssetID(); aid != nil && !aid.IsZero() {
 			if a, ok := assets[*aid]; ok {
+				ctemAsset = &ctemid.Asset{
+					Type: a.Type(), Scope: a.Scope(),
+					InternetFacing: a.IsInternetAccessible() || a.Exposure() == asset.ExposurePublic,
+				}
 				eff, _ := asset.EffectiveCriticality(a.Criticality(), bizCtx[*aid])
 				if eff == "" {
 					eff = a.Criticality()
@@ -192,6 +201,10 @@ func (e *ExposureEnricher) EnrichBatch(ctx context.Context, tenantID shared.ID, 
 				enr.IsInKEV = boolPtr(true)
 				enr.KEVDueDate = k.DueDate
 			}
+		}
+
+		if m, ok := ctemid.Map(ctemid.Input{EventType: ev.EventType(), Details: ev.Details(), Asset: ctemAsset}); ok {
+			enr.CTEMID = &m
 		}
 
 		out[ev.ID()] = enr
