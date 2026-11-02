@@ -8,6 +8,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // stubOwnerLookup reports owner presence for a fixed set of asset IDs.
@@ -169,5 +170,44 @@ func TestEnrichAndClassifyBatch_OwnershipFloor_EnabledUnownedFloorsToP2(t *testi
 	}
 	if got := f.PriorityClass(); got == nil || *got != vulnerability.PriorityP2 {
 		t.Fatalf("batch: unowned P3 must floor to P2, got %v (%s)", got, f.PriorityClassReason())
+	}
+}
+
+// An override rule cannot rank a finding on an unowned asset below P2: the
+// rule result gets the same ownership floor as the built-in classification.
+func TestClassifyFinding_OwnershipFloor_AppliesToRules(t *testing.T) {
+	tenantID := shared.NewID()
+	f, a := lowSeverityUnreachableFinding(t, tenantID)
+	rule, err := vulnerability.NewPriorityOverrideRule(tenantID, "low stays P3", vulnerability.PriorityP3,
+		[]vulnerability.RuleCondition{{Field: "severity", Operator: "eq", Value: "low"}}, shared.NewID())
+	if err != nil {
+		t.Fatal(err)
+	}
+	build := func(owned bool) *PriorityClassificationService {
+		svc := NewPriorityClassificationService(nil, nil, nil, nil, fixedRuleRepo{rules: []*vulnerability.PriorityOverrideRule{rule}}, stubAuditRepo{}, logger.NewNop())
+		svc.SetAssetOwnerLookup(&stubOwnerLookup{owned: map[shared.ID]bool{a.ID(): owned}})
+		svc.SetOwnershipFloorPolicy(&stubFloorPolicy{on: true})
+		return svc
+	}
+	if err := build(false).ClassifyFinding(context.Background(), tenantID, f, a); err != nil {
+		t.Fatal(err)
+	}
+	if got := classOf(t, f); got != vulnerability.PriorityP2 {
+		t.Fatalf("rule result on an unowned asset = %s (%s), want P2", got, f.PriorityClassReason())
+	}
+	if !strings.Contains(f.PriorityClassReason(), "Rule: low stays P3") || !strings.Contains(f.PriorityClassReason(), "no assigned owner") {
+		t.Fatalf("reason = %q", f.PriorityClassReason())
+	}
+
+	// Owned asset: the rule's P3 stands.
+	f2, a2 := lowSeverityUnreachableFinding(t, tenantID)
+	svc := NewPriorityClassificationService(nil, nil, nil, nil, fixedRuleRepo{rules: []*vulnerability.PriorityOverrideRule{rule}}, stubAuditRepo{}, logger.NewNop())
+	svc.SetAssetOwnerLookup(&stubOwnerLookup{owned: map[shared.ID]bool{a2.ID(): true}})
+	svc.SetOwnershipFloorPolicy(&stubFloorPolicy{on: true})
+	if err := svc.ClassifyFinding(context.Background(), tenantID, f2, a2); err != nil {
+		t.Fatal(err)
+	}
+	if got := classOf(t, f2); got != vulnerability.PriorityP3 {
+		t.Fatalf("rule result on an owned asset = %s, want P3", got)
 	}
 }

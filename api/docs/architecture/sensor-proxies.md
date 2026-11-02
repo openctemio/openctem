@@ -46,6 +46,9 @@ choice. Shared (operator) sensors never use an organization pool.
 | `proxy_endpoints` | One row per proxy: `scheme`, `host`, `port`, `label`, `priority` (paste order), `enabled`, `credentials_encrypted` (AES-GCM under `APP_ENCRYPTION_KEY`, plaintext `{"t":tenant,"e":endpoint,"u","p"}` so a ciphertext copied to another row does not open), and the health columns (`state`, `score`, `success_ewma`, `consecutive_failures`, `probation_ok`, `quarantine_count`, totals, `handshake_ms_p95`, `last_error`, `last_ok_at`, `last_failure_at`, `quarantined_until`). Composite FK `(tenant_id, pool_id)`. |
 | `proxy_sensor_assignments` | `sensor_id` (PK), `tenant_id`, `mode` (`direct` or `pool`), `pool_id`. Composite FKs `(tenant_id, sensor_id)` → `sensors` (so a sensor of another tenant, or a shared sensor with no tenant, cannot be assigned) and `(tenant_id, pool_id)` → `proxy_pools` with `ON DELETE RESTRICT` (a pool in use cannot be deleted: `409 PROXY_POOL_IN_USE`). No row: inherit. |
 
+| `proxy_echo_observations` (migration `proxy_exit_addresses`) | `tenant_id`, `command_id`, `address`, `observed_at`: an address the test echo answered for a live `proxy_test` command. Evidence only: removed when the test finishes, pruned after a day, at most 256 per test. |
+| `proxy_endpoint_exits` | `tenant_id`, `pool_id`, `endpoint_id`, `address`, `first_seen_at`, `last_seen_at`. Composite FK `(tenant_id, pool_id, endpoint_id)` → `proxy_endpoints` (`ON DELETE CASCADE`), so an exit can only name an endpoint of the same organization's pool. |
+
 Code: `pkg/domain/proxypool` (validation, paste list, health, job egress),
 `internal/app/proxypool` (service), `internal/infra/postgres/proxy_pool_repository.go`,
 `internal/infra/http/handler/proxy_pool_handler.go` (console API),
@@ -64,6 +67,7 @@ Code: `pkg/domain/proxypool` (validation, paste list, health, job egress),
 | `PUT /api/v1/proxy-pools/assignments/{sensor_id}` `{mode: inherit|direct|pool, pool_id}` | `sensors:egress:write` |
 | `POST /api/v1/proxy-pools/{id}/test` `{sensor_ids}` (1 to 3) → 202 `{items: [{sensor_id, sensor_name, command_id}]}` | `sensors:egress:write` |
 | `GET /api/v1/proxy-pools/{id}/tests?command_ids=a,b,c` | `sensors:egress:read` |
+| `GET /api/v1/proxy-pools/scanner-addresses` → `{items: [{address, cidr, kind, private, pool_id, pool_name, endpoint_id, endpoint_label, sensor_id, sensor_name, region, last_seen_at}], cidrs}` | `sensors:egress:read` |
 | `DELETE /api/v1/proxy-pools/{id}` | `sensors:egress:delete` |
 
 Owner and admin hold all three; write and delete are admin-only (no custom
@@ -133,6 +137,38 @@ information). The sensor refuses an echo address a proxy must never be asked to
 reach (loopback, link-local, metadata) and applies its own
 `SENSOR_SCAN_EGRESS_ALLOW`; a sensor set to `direct-only`, and a shared sensor,
 do not serve the test.
+
+## Scanner addresses
+
+A target that sits behind a WAF or edge protection often blocks or challenges
+a scan. The cooperative fix is that the target's owner allowlists the
+addresses the scans leave from; the platform never tries to get past the
+edge. `GET /api/v1/proxy-pools/scanner-addresses` lists those addresses for
+the caller's organization, and Settings, Scanning, Proxies shows them in the
+"Scanner addresses" card (copy buttons and ready allowlist snippets).
+
+Every listed address is one the platform observed itself:
+
+| Kind | Source |
+|---|---|
+| `proxy_exit` | A proxy endpoint's exit address, learned by the Test. The echo records every address it answers for a live test (`proxy_echo_observations`). When the test finishes, the exit address the sensor reports for an endpoint is kept (`proxy_endpoint_exits`) only if the echo saw that same address for that same test; the rest is dropped and counted in the `proxy_pool.tested` audit entry (`exits_verified`, `exits_unverified`). Listed for 30 days after it was last seen. |
+| `sensor` | The client address of the organization's own active sensors as the platform saw their heartbeats and authenticated requests (trusted-proxy rule, never a header the sensor sets), for sensors seen in the last 30 days. It is the scan address when a sensor scans directly from the same host and NAT as its control connection. Shared sensors are never listed here. |
+| `platform` | The egress the instance administrator published for shared sensors, for an organization allowed to use them. |
+
+`cidrs` is the unique prefixes, sorted (an address as `/32` or `/128`).
+Responses carry no credential and no endpoint host or port.
+
+**Why only observed addresses.** An allowlist is a security control at the
+target: an address in it is trusted to get past the edge. If the platform
+listed an exit address a sensor (or the tool it runs) reported, a hostile or
+broken sensor could make an organization allowlist any address. With the
+echo rule, a listed exit is an address that really connected to the
+platform's echo with the test's secret, tenant-bound token while the test
+was live. What a sensor can still do is attach one observed address to the
+wrong endpoint of the same test, or call the echo from its own address and
+claim it as an endpoint's exit: the address listed is then that sensor's own
+address, in its own organization's list. Per-endpoint echo tokens remove even
+that (later work on the sensor side).
 
 ## Delivery and signing
 
@@ -283,6 +319,7 @@ which it always receives:
 | Silent change | Audit on pool create/update/delete, endpoint list and credential changes, endpoint enable/disable/reset, sensor network path, quarantine. |
 | Unconfined sensor goes direct | Pool jobs only to sensors reporting `egress.upstream@1` and `net.confined@1`. |
 | Task verdicts poisoning another pool or endpoint | A job's verdict only charges the endpoints the platform recorded when it handed that job out (never an id from the result), once per lease epoch, for the sensor holding it; the record joins the command and the pool on the command's tenant. |
+| A sensor makes the organization allowlist an address it chose | Scanner addresses list only addresses the platform observed: an exit address is kept only when the test echo saw it for the same live test (secret, tenant-bound token), and a sensor's own address is its connection's client address. Cross-tenant: tenant-scoped queries and a composite FK on the endpoint. |
 | Score poisoning by a hostile sensor | A report counts only from the sensor holding the job's lease, only for the pool that sensor's jobs use now, and only up to 15 minutes after the job ended; it can never touch another organization's pool or another pool of its own organization; a sensor never uses an endpoint the platform quarantined. |
 
 ## Not built yet
@@ -291,7 +328,7 @@ Credentials sealed to the claiming sensor's key (today they travel in the
 clear inside the sensor's TLS connection, so a TLS-inspecting proxy on the
 sensor's control path can read them), one report per job, zone pools,
 tool rules (pool / direct / refuse), per-scan override,
-instance pools offered to tenants, exit-IP attribution, `dns=proxy`, a reason
+instance pools offered to tenants, per-job exit-IP attribution (exit addresses are learned by the Test only), per-endpoint echo tokens, `dns=proxy`, a reason
 on the sensor page when a sensor lacks proxy support, the "Proxy required"
 organization switch (the dispatch hook exists), and
 pools for reach-probe jobs (the platform does not dispatch them yet; when

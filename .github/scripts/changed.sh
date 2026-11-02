@@ -12,6 +12,11 @@
 #                    changed (api/migrations/, api/deploy/postgres/): the
 #                    least-privilege and PostgreSQL 18 jobs then also run on
 #                    a pull request.
+#   schema=true|false  a migration, the role script, the Postgres repositories or
+#                    the tenant-table lint changed: a pull request then runs the
+#                    schema-wide tests (api-ci.yml `schema`), the few tests that
+#                    read every table, so a new table fails on the PR, not in
+#                    the merge queue.
 #   full=true|false  run the full tier (what the merge queue runs). Always
 #                    true except on pull_request, where it is true when the PR
 #                    has the `ci:full` label or changes a CI definition
@@ -69,7 +74,7 @@ api_paths=(api/ "${shared[@]}")
 web_paths=(web/ "${shared[@]}")
 
 out() { echo "$1=$2" >> "${GITHUB_OUTPUT:-/dev/stdout}"; echo "$1=$2${3:+ ($3)}"; }
-all() { out api true "$1"; out web true "$1"; out docs true "$1"; out migrations true "$1"; out full true "$1"; out release false; out incremental false; exit 0; }
+all() { out api true "$1"; out web true "$1"; out docs true "$1"; out migrations true "$1"; out schema true "$1"; out full true "$1"; out release false; out incremental false; exit 0; }
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 incremental=false since="" head_sha="" action=""
@@ -109,6 +114,7 @@ if [[ "${GITHUB_EVENT_NAME}" == pull_request ]] \
   && reason="$(HEAD_SHA="$head_sha" bash "$HERE/release-provenance.sh")"; then
   out api false "release provenance: $reason"; out web false "release provenance"
   out docs false "release provenance"; out migrations false "release provenance"
+  out schema false "release provenance"
   out full false "release provenance"; out release true "$reason"
   out incremental false; out since ""; out range "$range"
   exit 0
@@ -195,6 +201,7 @@ if [[ -n "$docs" ]]; then out docs true "$docs"; else out docs false "$(unch 'no
 if hit="$(matches "${api_paths[@]}")"; then out api true "$hit"; else out api false "$(unch "nothing under ${api_paths[*]}")"; fi
 if hit="$(matches "${web_paths[@]}")"; then out web true "$hit"; else out web false "$(unch "nothing under ${web_paths[*]}")"; fi
 if hit="$(matches api/migrations/ api/deploy/postgres/)"; then out migrations true "$hit"; else out migrations false "$(unch 'no migration or role script')"; fi
+if hit="$(matches api/migrations/ api/deploy/postgres/ api/internal/infra/postgres/ api/tools/lint/tenantsql/)"; then out schema true "$hit"; else out schema false "$(unch 'nothing that can change or read the schema')"; fi
 out full "$full_out" "$full_why"
 out incremental "$incremental" "${since:+since ${since:0:12}}"
 out since "$since"

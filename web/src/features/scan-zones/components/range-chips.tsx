@@ -1,5 +1,6 @@
 'use client'
 
+import { useTranslation } from '@/context/i18n-provider'
 import { Badge } from '@/components/ui/badge'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 
@@ -12,9 +13,14 @@ interface RangeChipsProps {
 }
 
 /** CIDR chips, truncated with a "+N" whose tooltip lists the rest. */
-export function RangeChips({ ranges, max = 2, emptyLabel = 'No ranges' }: RangeChipsProps) {
+export function RangeChips({ ranges, max = 2, emptyLabel }: RangeChipsProps) {
+  const { t } = useTranslation()
   if (ranges.length === 0) {
-    return <span className="text-xs text-muted-foreground">{emptyLabel}</span>
+    return (
+      <span className="text-xs text-muted-foreground">
+        {emptyLabel ?? t('scans.zones.noRanges')}
+      </span>
+    )
   }
   const shown = ranges.slice(0, max)
   const rest = ranges.slice(max)
@@ -32,7 +38,10 @@ export function RangeChips({ ranges, max = 2, emptyLabel = 'No ranges' }: RangeC
               variant="secondary"
               className="cursor-default text-xs font-normal tabular-nums"
               tabIndex={0}
-              aria-label={`${rest.length} more ranges: ${rest.join(', ')}`}
+              aria-label={t('scans.zones.moreRanges', undefined, {
+                count: rest.length,
+                list: rest.join(', '),
+              })}
             >
               +{rest.length}
             </Badge>

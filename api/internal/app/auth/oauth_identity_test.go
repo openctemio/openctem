@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -107,5 +108,48 @@ func TestOAuthLogin_GitHubKeyedOnID(t *testing.T) {
 		&OAuthUserInfo{Email: "dev@new.example.org", Issuer: githubIssuer, Subject: "42"}, OAuthProviderGitHub)
 	if err != nil || got == nil || got.ID() != u.ID() {
 		t.Fatalf("GitHub id must resolve the account, got %v / %v", got, err)
+	}
+}
+
+// A social sign-in whose provider key matches an identity an organization's
+// single sign-on manages is refused (the person never confirmed that route):
+// no account change, no session. A social identity still signs in.
+func TestOAuthLogin_SocialRefusesSSOManagedIdentity(t *testing.T) {
+	cases := []struct {
+		name     string
+		provider OAuthProvider
+		auth     userdom.AuthProvider
+		issuer   string
+	}{
+		{"google", OAuthProviderGoogle, userdom.AuthProviderGoogle, googleIssuer},
+		{"microsoft", OAuthProviderMicrosoft, userdom.AuthProviderMicrosoft, "https://login.microsoftonline.com/tid-1/v2.0"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			u, _ := userdom.NewOAuthUser("p@corp.com", "P", "", c.auth)
+			repo := &emailUsers{all: []*userdom.User{u}}
+			ids := newMemIdentities()
+			ids.bindSSO(u, c.issuer, "sub-1")
+			s := &OAuthService{userRepo: repo, identities: ids, logger: logger.NewNop()}
+
+			got, err := s.findOrCreateUser(context.Background(),
+				&OAuthUserInfo{Email: "p@corp.com", Issuer: c.issuer, Subject: "sub-1"}, c.provider)
+			if !errors.Is(err, ErrOAuthUseOrgSSO) || got != nil {
+				t.Fatalf("sso-managed identity must be refused, got %v / %v", got, err)
+			}
+			if repo.updated != 0 {
+				t.Fatalf("a refused sign-in must write nothing, updated=%d", repo.updated)
+			}
+
+			// A social identity (another person) still signs in.
+			v, _ := userdom.NewOAuthUser("q@example.org", "Q", "", c.auth)
+			repo.all = append(repo.all, v)
+			ids.bindTo(v, c.issuer, "sub-social")
+			got, err = s.findOrCreateUser(context.Background(),
+				&OAuthUserInfo{Email: "q@example.org", Issuer: c.issuer, Subject: "sub-social"}, c.provider)
+			if err != nil || got == nil || got.ID() != v.ID() {
+				t.Fatalf("a social identity must still sign in, got %v / %v", got, err)
+			}
+		})
 	}
 }

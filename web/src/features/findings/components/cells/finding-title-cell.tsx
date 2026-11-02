@@ -31,6 +31,14 @@ export interface FindingTitleCellProps {
   meta?: ReactNode
   /** Title lines before it is cut: 1 in tables, 2 on cards. */
   titleLines?: 1 | 2
+  /**
+   * Makes the title the control that opens the finding: a button whose name
+   * starts with the visible title (`openLabel`), so the chips, target and
+   * meta (which may hold links) stay outside it.
+   */
+  onOpen?: () => void
+  /** The open button's accessible name; it must contain the visible title. */
+  openLabel?: string
   className?: string
 }
 
@@ -58,22 +66,40 @@ export function FindingTitleCell({
   markers,
   meta,
   titleLines = 1,
+  onOpen,
+  openLabel,
   className,
 }: FindingTitleCellProps) {
   const full = toDisplayText((target ?? '').trim(), 2000)
   const shown = shownTarget(target)
+  const titleClass = cn(
+    'min-w-0 font-medium [unicode-bidi:isolate]',
+    titleLines === 2 ? 'line-clamp-2' : 'truncate'
+  )
   return (
     <div data-slot="finding-title-cell" className={cn('flex min-w-0 flex-col', className)}>
       <div className="flex min-w-0 items-center gap-1.5">
-        <p
-          dir="auto"
-          className={cn(
-            'min-w-0 font-medium [unicode-bidi:isolate]',
-            titleLines === 2 ? 'line-clamp-2' : 'truncate'
-          )}
-        >
-          {toDisplayText(title ?? '', 500)}
-        </p>
+        {onOpen ? (
+          <button
+            type="button"
+            dir="auto"
+            className={cn(
+              titleClass,
+              'rounded-sm text-start hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none'
+            )}
+            aria-label={openLabel}
+            onClick={(e) => {
+              e.stopPropagation()
+              onOpen()
+            }}
+          >
+            {toDisplayText(title ?? '', 500)}
+          </button>
+        ) : (
+          <p dir="auto" className={titleClass}>
+            {toDisplayText(title ?? '', 500)}
+          </p>
+        )}
         {chips}
       </div>
       {(shown || markers) && (

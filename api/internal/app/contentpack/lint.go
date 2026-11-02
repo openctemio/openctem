@@ -49,6 +49,7 @@ func lint(ctx context.Context, kind string, files []dom.File, exclude bool) (dom
 	if kind == dom.KindNucleiTemplates {
 		nuclei = lintNucleiPack(ctx, files, exclude)
 	}
+	ruleIDs := map[string]string{}
 	for _, f := range files {
 		if ctx.Err() != nil {
 			rep.Error("", "LINT_TIMEOUT", "lint did not finish in time")
@@ -62,6 +63,8 @@ func lint(ctx context.Context, kind string, files []dom.File, exclude bool) (dom
 			}
 		case dom.KindSemgrepRules:
 			lintSemgrep(&fr, f)
+		case dom.KindWebFingerprints, dom.KindSecretRules:
+			lintRules(&fr, f, kind, ruleIDs)
 		case dom.KindWordlist:
 			// The manifest and NOTICE are metadata, checked as a whole below.
 			if f.Path != WordlistManifestFile && f.Path != WordlistNoticeFile {

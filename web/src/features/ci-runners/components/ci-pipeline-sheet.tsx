@@ -500,7 +500,7 @@ export function CIPipelineSheet({ id, onClose }: { id: string | null; onClose: (
               <Button asChild size="sm" variant="outline">
                 <Link href="/ci-cd?tab=setup">
                   <Settings2 className="h-4 w-4" />
-                  {t('scans.ci.trustAndGateLink', 'CI trust and gate')}
+                  {t('scans.ci.trustAndGateLink', 'CI/CD settings')}
                 </Link>
               </Button>
             </>

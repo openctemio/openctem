@@ -125,10 +125,12 @@ func newV2Harness(t *testing.T, opts v2HarnessOpts) *v2Harness {
 	gen := jwt.NewGenerator(jwt.TokenConfig{Secret: "v2-route-test-secret-0123456789abcdef", Issuer: "test",
 		AccessTokenDuration: time.Hour, RefreshTokenDuration: time.Hour})
 	userAuth := middleware.UnifiedAuth(middleware.UnifiedAuthConfig{Provider: config.AuthProviderLocal, LocalValidator: gen, Logger: log})
-	tok, _, err := gen.GenerateAccessToken(shared.NewID().String(), shared.NewID().String(), "admin")
+	scoped, err := gen.GenerateTenantScopedAccessToken(shared.NewID().String(), "u@it.test", "U", shared.NewID().String(),
+		jwt.TenantMembership{TenantID: shared.NewID().String(), Role: "admin"}, true, 0, "password")
 	if err != nil {
 		t.Fatal(err)
 	}
+	tok := scoped.AccessToken
 	h.jwtToken = tok
 
 	router := infrahttp.NewChiRouter()

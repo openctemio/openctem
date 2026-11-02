@@ -176,8 +176,10 @@ function severityRows(bySeverity: Record<string, number>) {
 }
 
 export function SeverityDonut({ bySeverity }: { bySeverity: Record<string, number> }) {
+  const { t } = useTranslation()
   const data = severityRows(bySeverity)
-  if (data.length === 0) return <ChartEmpty title="No severity data yet" />
+  if (data.length === 0)
+    return <ChartEmpty title={t('exposures.chart.noSeverity', 'No severity data yet')} />
   return (
     <ResponsiveContainer width="100%" height={300}>
       <PieChart>
@@ -203,8 +205,10 @@ export function SeverityDonut({ bySeverity }: { bySeverity: Record<string, numbe
 }
 
 export function SeverityBars({ bySeverity }: { bySeverity: Record<string, number> }) {
+  const { t } = useTranslation()
   const data = severityRows(bySeverity)
-  if (data.length === 0) return <ChartEmpty title="No severity data yet" />
+  if (data.length === 0)
+    return <ChartEmpty title={t('exposures.chart.noSeverity', 'No severity data yet')} />
   return (
     <ResponsiveContainer width="100%" height={300}>
       <BarChart data={data} barCategoryGap="20%">
@@ -223,10 +227,12 @@ export function SeverityBars({ bySeverity }: { bySeverity: Record<string, number
 }
 
 export function StatusBars({ byStatus }: { byStatus: Record<string, number> }) {
+  const { t } = useTranslation()
   const data = Object.entries(byStatus || {})
     .map(([status, count]) => ({ name: humanize(status), count }))
     .sort((a, b) => b.count - a.count)
-  if (data.length === 0) return <ChartEmpty title="No status data yet" />
+  if (data.length === 0)
+    return <ChartEmpty title={t('exposures.chart.noStatus', 'No status data yet')} />
   return (
     <ResponsiveContainer width="100%" height={Math.max(300, data.length * 40)}>
       <BarChart data={data} layout="vertical" barCategoryGap="20%">
@@ -271,8 +277,14 @@ export function SeverityTrend({
   height?: number
   emptyDescription?: string
 }) {
+  const { t } = useTranslation()
   if (data.length === 0) {
-    return <ChartEmpty title="No trend data yet" description={emptyDescription} />
+    return (
+      <ChartEmpty
+        title={t('exposures.chart.noTrend', 'No trend data yet')}
+        description={emptyDescription}
+      />
+    )
   }
   return (
     <ResponsiveContainer width="100%" height={height}>
@@ -313,8 +325,12 @@ export function SeverityShareList({
   /** Singular and plural, e.g. ['secret', 'secrets']. */
   noun: [string, string]
 }) {
+  const { t } = useTranslation()
   const rows = severityRows(bySeverity)
-  if (rows.length === 0) return <ChartEmpty title="Nothing to prioritise yet" />
+  if (rows.length === 0)
+    return (
+      <ChartEmpty title={t('exposures.chart.nothingToPrioritise', 'Nothing to prioritise yet')} />
+    )
   return (
     <ul className="divide-y">
       {rows.map((row) => {
@@ -352,7 +368,8 @@ export function RankedBarList({
   /** Singular and plural, e.g. ['asset', 'assets']. */
   unit: [string, string]
 }) {
-  if (rows.length === 0) return <ChartEmpty title="No data yet" />
+  const { t } = useTranslation()
+  if (rows.length === 0) return <ChartEmpty title={t('exposures.chart.noData', 'No data yet')} />
   const max = rows[0]?.count || 1
   return (
     <ul className="divide-y">

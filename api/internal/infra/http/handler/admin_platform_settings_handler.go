@@ -27,6 +27,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/platformcaptcha"
 	"github.com/openctemio/openctem/api/internal/app/platformmfa"
 	"github.com/openctemio/openctem/api/internal/app/platformsociallogin"
+	"github.com/openctemio/openctem/api/internal/app/scanidentity"
 	"github.com/openctemio/openctem/api/internal/app/storagequota"
 	"github.com/openctemio/openctem/api/internal/app/threatsource"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
@@ -65,8 +66,10 @@ type AdminPlatformSettingsHandler struct {
 	// how the signed release is doing for them.
 	ThreatSource    *threatsource.Service
 	ThreatReadiness ThreatIntelReadiness
-	SocialLogin     *platformsociallogin.Service
-	MFA             *platformmfa.Service
+	// ScanIdentity is the platform layer of the scan identification markers.
+	ScanIdentity *scanidentity.Service
+	SocialLogin  *platformsociallogin.Service
+	MFA          *platformmfa.Service
 	// Signup answers the sign-up policy the social login page states the
 	// impact of a provider against (optional).
 	Signup     signupdom.PolicySource

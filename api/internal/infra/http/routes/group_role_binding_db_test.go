@@ -283,18 +283,54 @@ func TestTeamRoleBinding_ExternalsNeverGetFullDataThroughATeam(t *testing.T) {
 	if err := h.addMember(h.owner, h.outsider); !errors.Is(err, accesscontrol.ErrExternalTeamFullData) {
 		t.Fatalf("external member joins a full-data team: %v", err)
 	}
+	if full, err := h.groups.CarriesFullData(ctx, mustGroup(t, h, h.team)); err != nil || !full {
+		t.Fatalf("team with a full-data role does not say so: %v %v", full, err)
+	}
 	// And a full-data role is not bound to a team that has an external member.
 	other := h.newTeam(h.tenant)
 	if _, err := h.groups.AddMember(ctx, accesscontrol.AddGroupMemberInput{GroupID: other.String(), UserID: h.outsider, Role: "member"}, h.actx(h.owner)); err != nil {
 		t.Fatal(err)
 	}
-	if err := h.groups.BindRole(ctx, other.String(), h.fullData.String(), h.actx(h.owner)); !errors.Is(err, accesscontrol.ErrExternalTeamFullData) {
+	err := h.groups.BindRole(ctx, other.String(), h.fullData.String(), h.actx(h.owner))
+	if !errors.Is(err, accesscontrol.ErrExternalTeamFullData) {
 		t.Fatalf("full-data role bound to a team with an external member: %v", err)
+	}
+	// The refusal names who stands in the way, and so does the team.
+	var named *accesscontrol.OutsideMembersError
+	if !errors.As(err, &named) || len(named.Members) != 1 || named.Members[0].UserID != h.outsider {
+		t.Fatalf("refusal does not name the outside member: %#v", named)
+	}
+	g, err := h.groups.GetGroupSecure(ctx, h.tenant.String(), other.String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	listed, err := h.groups.ListOutsideMembers(ctx, g)
+	if err != nil || len(listed) != 1 || listed[0].UserID != h.outsider || listed[0].Service {
+		t.Fatalf("team outside members: %#v %v", listed, err)
+	}
+	members, _, err := h.groups.ListGroupMembersWithUserInfo(ctx, h.tenant.String(), other.String(), 20, 0)
+	if err != nil || len(members) != 1 || !members[0].External || members[0].Service {
+		t.Fatalf("member list does not mark the outside member: %v", err)
+	}
+	if full, _ := h.groups.CarriesFullData(ctx, g); full {
+		t.Fatal("refused team carries full data")
+	}
+	if listed, _ := h.groups.ListOutsideMembers(ctx, mustGroup(t, h, h.team)); len(listed) != 0 {
+		t.Fatalf("a team of insiders lists outside members: %#v", listed)
 	}
 	full, err := h.roles.HasFullDataAccess(ctx, rid(h.tenant), rid(h.outsider))
 	if err != nil || full {
 		t.Fatalf("external member has full data: %v %v", full, err)
 	}
+}
+
+func mustGroup(t *testing.T, h *grbHarness, id shared.ID) *group.Group {
+	t.Helper()
+	g, err := h.groups.GetGroupSecure(context.Background(), h.tenant.String(), id.String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return g
 }
 
 func rid(id shared.ID) roledom.ID { return roledom.MustParseID(id.String()) }

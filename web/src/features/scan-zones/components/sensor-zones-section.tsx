@@ -4,6 +4,8 @@ import { useMemo } from 'react'
 import Link from '@/components/link'
 import { Network } from 'lucide-react'
 
+import { useTranslation } from '@/context/i18n-provider'
+
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useScanZones } from '@/lib/api/scan-zone-hooks'
@@ -16,6 +18,7 @@ import { RangeChips } from './range-chips'
  * sensors:zones:read.
  */
 export function SensorZonesSection({ sensorId }: { sensorId: string }) {
+  const { t } = useTranslation()
   const canRead = useHasPermission(Permission.ScanZonesRead)
   const { data, isLoading } = useScanZones(canRead)
   const zones = useMemo(
@@ -29,18 +32,16 @@ export function SensorZonesSection({ sensorId }: { sensorId: string }) {
       <div className="mb-2 flex items-center justify-between gap-2">
         <h4 className="flex items-center gap-2 text-sm font-medium">
           <Network className="h-4 w-4" />
-          Scan zones
+          {t('scans.zones.section.title')}
         </h4>
         <Link href="/sensors?tab=zones" className="text-xs text-muted-foreground hover:underline">
-          Manage zones
+          {t('scans.zones.section.manage')}
         </Link>
       </div>
       {isLoading ? (
         <Skeleton className="h-6 w-2/3" />
       ) : zones.length === 0 ? (
-        <p className="text-sm text-muted-foreground">
-          Serves no zone: it only takes jobs that are not routed to a zone.
-        </p>
+        <p className="text-sm text-muted-foreground">{t('scans.zones.section.servesNone')}</p>
       ) : (
         <ul className="space-y-2">
           {zones.map((z) => (
@@ -49,14 +50,16 @@ export function SensorZonesSection({ sensorId }: { sensorId: string }) {
                 <span className="truncate">{z.name}</span>
                 {z.is_default && (
                   <Badge variant="secondary" className="text-xs font-normal">
-                    Default
+                    {t('scans.zones.default')}
                   </Badge>
                 )}
               </p>
               <RangeChips
                 ranges={z.ranges}
                 max={3}
-                emptyLabel={z.is_default ? 'Public targets' : 'No ranges'}
+                emptyLabel={
+                  z.is_default ? t('scans.zones.publicTargets') : t('scans.zones.noRanges')
+                }
               />
             </li>
           ))}

@@ -154,7 +154,9 @@ const ROUTES = [
   '/settings/audit-log',
   '/settings/api-keys',
   '/attack-surface/certificates',
+  '/attack-surface/exposures',
   '/validation/retests',
+  '/assets/attention/decide-monitoring',
 ]
 
 test(

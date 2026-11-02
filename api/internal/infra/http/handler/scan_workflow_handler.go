@@ -86,6 +86,10 @@ type ScanWorkflowSettingsRequest struct {
 	// skipped or timed out still runs on the seeds and on what its other
 	// predecessors produced. Omitted on update: unchanged.
 	ContinueOnFailedDependency *bool `json:"continue_on_failed_dependency,omitempty"`
+	// StageBarrier: every chained step waits for its predecessors to
+	// finish instead of taking their results task by task (stage
+	// streaming). Omitted on update: unchanged.
+	StageBarrier *bool `json:"stage_barrier,omitempty"`
 }
 
 // UIPositionRequest represents a visual position in the workflow builder.
@@ -190,6 +194,9 @@ type ScanWorkflowSettingsResponse struct {
 	DeltaGating bool `json:"delta_gating"`
 	// ContinueOnFailedDependency: dependents of a failed step still run.
 	ContinueOnFailedDependency bool `json:"continue_on_failed_dependency"`
+	// StageBarrier: chained steps wait for their predecessors to finish
+	// (no stage streaming).
+	StageBarrier bool `json:"stage_barrier"`
 }
 
 // UIPositionResponse represents a visual position in the workflow builder response.
@@ -427,16 +434,31 @@ type RunTaskResponse struct {
 	// dispatch gate withheld it (grant_credentials, intensity, ...). The
 	// sensor is never named.
 	WithheldReason string `json:"withheld_reason,omitempty"`
+	// ContentPins is what the task's job read: the packs (name, version,
+	// digest) and the lists generated for it (source, lines, sha256, and
+	// the organization lists with their versions).
+	ContentPins *scanrundom.ContentPins `json:"content_pins,omitempty"`
 }
 
 // RunTaskCoverageGap is one host a sensor could not fully cover, and why:
-// reason is breaker_open (the host stopped answering), rate_floor (it kept
-// pushing back at the lowest rate), blocked (it blocked the scan) or
-// proxy_unavailable (the scan's proxy failed).
+// reason is breaker_open (the host failed the scanner's requests until the
+// sensor gave it up), rate_floor (it kept pushing back at the lowest rate),
+// blocked (it blocked the scan) or proxy_unavailable (the scan's proxy
+// failed). Cause says what the sensor's recheck of a breaker_open host saw
+// (http_reset, tls_failed, reset, refused, no_answer, answered) and Cert the
+// problem of the certificate it served (expired, not_yet_valid,
+// name_mismatch, self_signed). The host stays not covered either way.
 type RunTaskCoverageGap struct {
 	Host   string `json:"host"`
 	Reason string `json:"reason"`
 	Detail string `json:"detail,omitempty"`
+	// Edge (challenged or blocked) and Vendor (an edge protection's id
+	// token) say that an edge protection answered in the host's place;
+	// only on a blocked gap, shown as text.
+	Edge   string `json:"edge,omitempty"`
+	Vendor string `json:"vendor,omitempty"`
+	Cause  string `json:"cause,omitempty"`
+	Cert   string `json:"cert,omitempty"`
 }
 
 // RunTaskSkippedTarget is one target a sensor skipped, and why: reason is
@@ -475,14 +497,14 @@ func toRunTaskResponses(tasks []scanrundom.Task) []RunTaskResponse {
 			CreatedAt: t.CreatedAt.Format(time.RFC3339), ErrorMessage: platformText(t.Platform, t.ErrorMessage),
 			SkippedTargetsTotal: t.SkippedTotal, WindowHold: t.WindowHold, CoverageGapsTotal: t.CoverageGapsTotal,
 			WaitingOnHosts: t.WaitingOnHosts, EgressRefusedTargets: t.EgressRefusedTargets,
-			GuardRefusedTargets: t.GuardRefusedTargets, WithheldReason: t.WithheldReason,
+			GuardRefusedTargets: t.GuardRefusedTargets, WithheldReason: t.WithheldReason, ContentPins: t.ContentPins,
 		}
 		for _, sk := range t.Skipped {
 			r.SkippedTargets = append(r.SkippedTargets, RunTaskSkippedTarget(sk))
 		}
 		for _, g := range t.CoverageGaps {
 			r.CoverageGaps = append(r.CoverageGaps, RunTaskCoverageGap{Host: g.Host, Reason: g.Reason,
-				Detail: platformText(t.Platform, g.Detail)})
+				Detail: platformText(t.Platform, g.Detail), Cause: g.Cause, Cert: g.Cert, Edge: g.Edge, Vendor: g.Vendor})
 		}
 		if t.StepRunID != nil {
 			v := t.StepRunID.String()
@@ -870,6 +892,7 @@ func (h *ScanWorkflowHandler) UpdateTemplate(w http.ResponseWriter, r *http.Requ
 	if req.Settings != nil {
 		input.DeltaGating = req.Settings.DeltaGating
 		input.ContinueOnFailedDependency = req.Settings.ContinueOnFailedDependency
+		input.StageBarrier = req.Settings.StageBarrier
 	}
 
 	template, err := h.service.UpdateTemplate(scanWorkflowAuditCtx(r), input)
@@ -1427,6 +1450,9 @@ func toSettings(settings *ScanWorkflowSettingsRequest) *scanworkflow.Settings {
 	if settings.ContinueOnFailedDependency != nil {
 		s.ContinueOnFailedDependency = *settings.ContinueOnFailedDependency
 	}
+	if settings.StageBarrier != nil {
+		s.StageBarrier = *settings.StageBarrier
+	}
 	if settings.SensorPreference != "" {
 		s.SensorPreference = scanworkflow.SensorPreference(settings.SensorPreference)
 	}
@@ -1474,6 +1500,7 @@ func toTemplateResponse(t *scanworkflow.Workflow) *TemplateResponse {
 			SensorPreference:           string(t.Settings.SensorPreference),
 			DeltaGating:                t.Settings.DeltaGating,
 			ContinueOnFailedDependency: t.Settings.ContinueOnFailedDependency,
+			StageBarrier:               t.Settings.StageBarrier,
 		},
 		Tags:      t.Tags,
 		Steps:     steps,

@@ -106,10 +106,12 @@ type Row struct {
 	LastAttemptAt *time.Time
 	LastSuccessAt *time.Time
 	LastOutcome   string
-	LastError     string
-	LastTool      string
-	LastRunID     *shared.ID
-	FailStreak    int
+	// LastEdgeVendor is the edge protection behind the last outcome ("" none).
+	LastEdgeVendor string
+	LastError      string
+	LastTool       string
+	LastRunID      *shared.ID
+	FailStreak     int
 	// PlatformFailStreak counts the pair's platform-side failures in a row
 	// (IsPlatformSide); FailStreak never counts them.
 	PlatformFailStreak int

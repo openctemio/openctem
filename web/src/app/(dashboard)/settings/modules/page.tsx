@@ -7,6 +7,8 @@ import { PageHeader, SettingsSaveBar, PageStack } from '@/features/shared'
 import { useTenant } from '@/context/tenant-provider'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { Marker } from '@/components/ui/marker'
+import { Tag } from '@/components/ui/tag'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
@@ -759,11 +761,7 @@ function ModuleRow({
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <span className="font-medium text-sm">{mod.name}</span>
-            {!mod.is_core && categoryLabel && (
-              <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-muted-foreground">
-                {categoryLabel}
-              </Badge>
-            )}
+            {!mod.is_core && categoryLabel && <Tag label={categoryLabel} />}
             {mod.release_status === 'beta' && (
               <Badge variant="outline" className="text-xs">
                 {t('settings.modules.beta', 'Beta')}
@@ -807,7 +805,7 @@ function ModuleRow({
             {hardRequires.length > 0 && (
               <Badge
                 variant="outline"
-                className="gap-0.5 px-1.5 py-0 text-[10px] text-muted-foreground"
+                className="gap-0.5 px-1.5 py-0 text-xs text-muted-foreground"
                 title={t('settings.modules.requires', 'Requires: {names}', {
                   names: hardRequires.map((e) => moduleNames[e.to] ?? e.to).join(', '),
                 })}
@@ -819,7 +817,7 @@ function ModuleRow({
             {hardRequiredBy.length > 0 && (
               <Badge
                 variant="outline"
-                className="gap-0.5 px-1.5 py-0 text-[10px] text-muted-foreground"
+                className="gap-0.5 px-1.5 py-0 text-xs text-muted-foreground"
                 title={t('settings.modules.requiredBy', 'Required by: {names}', {
                   names: hardRequiredBy.map((e) => moduleNames[e.from] ?? e.from).join(', '),
                 })}
@@ -901,17 +899,13 @@ function SubModuleRow({
         <CornerDownRight className="h-3 w-3 shrink-0" />
         <span className={!effectiveEnabled ? 'line-through opacity-60' : ''}>{sub.name}</span>
         {sub.release_status === 'beta' && (
-          <Badge variant="outline" className="px-1 py-0 text-[10px]">
+          <Badge variant="outline" className="px-1 py-0 text-xs">
             {t('settings.modules.beta', 'Beta')}
           </Badge>
         )}
-        {isComingSoon && (
-          <Badge variant="outline" className="px-1 py-0 text-[10px] text-muted-foreground">
-            {t('settings.modules.soon', 'Soon')}
-          </Badge>
-        )}
+        {isComingSoon && <Marker kind="soon" />}
         {hasPendingChange && !isComingSoon && (
-          <Badge variant="secondary" className="px-1 py-0 text-[10px]">
+          <Badge variant="secondary" className="px-1 py-0 text-xs">
             {t('settings.modules.modified', 'Modified')}
           </Badge>
         )}

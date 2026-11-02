@@ -93,14 +93,17 @@ func (s *Service) read(ctx context.Context, c dashboardapp.Caller, d *dashboard.
 		}
 		if snap != nil && snap.ScopeKey == key && snap.LayoutHash == lh && snap.Kind == d.Kind() && snap.OwnerID == d.UserID() {
 			var out DashboardData
-			if err := json.Unmarshal(snap.Data, &out); err == nil {
+			uerr := json.Unmarshal(snap.Data, &out)
+			if uerr == nil && !s.moduleBackOn(ctx, &out, d.TenantID()) {
 				s.decorate(ctx, &out, d, snap)
 				if terr := s.snapshots.TouchSnapshot(ctx, d.TenantID(), d.ID(), s.now()); terr != nil {
 					s.logger.Warn("touch dashboard snapshot", "error", terr.Error())
 				}
 				return &out, nil
 			}
-			s.logger.Warn("unreadable dashboard snapshot, recomputing", "dashboard_id", d.ID().String())
+			if uerr != nil {
+				s.logger.Warn("unreadable dashboard snapshot, recomputing", "dashboard_id", d.ID().String())
+			}
 		}
 	}
 	return s.computeAndStore(ctx, c.TenantID, c.UserID, d, scope, key, lh, true)

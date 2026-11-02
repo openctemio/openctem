@@ -95,6 +95,15 @@ func TestDecideCoverage(t *testing.T) {
 		{"coverage gaps", func(c *ingestreport.CommandCoverage) {
 			c.Result = json.RawMessage(`{"exit_code":0,"metadata":{"coverage_gaps":[{"host":"app.example.test","reason":"breaker_open"}],"coverage_gaps_total":1}}`)
 		}, coverageUncoveredTargets},
+		// A rechecked host stays a gap whatever the recheck saw: one that
+		// resets every request, or even one that answered the recheck, was
+		// not scanned, so its findings are never closed.
+		{"coverage gap rechecked: http reset, expired certificate", func(c *ingestreport.CommandCoverage) {
+			c.Result = json.RawMessage(`{"exit_code":0,"metadata":{"coverage_gaps":[{"host":"app.example.test:443","reason":"breaker_open","cause":"http_reset","cert":"expired"}],"coverage_gaps_total":1}}`)
+		}, coverageUncoveredTargets},
+		{"coverage gap rechecked: answered", func(c *ingestreport.CommandCoverage) {
+			c.Result = json.RawMessage(`{"exit_code":0,"metadata":{"coverage_gaps":[{"host":"app.example.test:443","reason":"breaker_open","cause":"answered"}],"coverage_gaps_total":1}}`)
+		}, coverageUncoveredTargets},
 		{"coverage gaps counted only", func(c *ingestreport.CommandCoverage) {
 			c.Result = json.RawMessage(`{"exit_code":0,"metadata":{"coverage_gaps_total":3}}`)
 		}, coverageUncoveredTargets},

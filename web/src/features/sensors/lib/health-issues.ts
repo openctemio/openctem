@@ -72,6 +72,8 @@ function checkTitle(check: HealthCheck, state: ReturnType<typeof sensorState>, t
       return m('setup', 'Setup needs attention')
     case 'posture':
       return m('posture', 'Runs unhardened')
+    case 'storage':
+      return m('storage', 'Not taking new jobs: storage full')
     default:
       return check.label
   }

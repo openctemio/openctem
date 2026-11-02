@@ -33,7 +33,7 @@ const ingestReportColumns = `
 	implicit_commit, segment_count, segments_received, assets_received, findings_received, committed_at,
 	COALESCE(integrity, ''), content_sha256,
 	segment_outcomes, touched_asset_ids, auto_resolved, auto_resolve,
-	expires_at, received_at, updated_at`
+	expires_at, received_at, updated_at, command_lease_epoch`
 
 // Create inserts a report; ErrExists on (tenant, sensor, report_id) conflict.
 func (r *IngestReportRepository) Create(ctx context.Context, rep *ingestreport.Report) error {
@@ -45,13 +45,13 @@ func (r *IngestReportRepository) Create(ctx context.Context, rep *ingestreport.R
 		INSERT INTO ingest_reports (
 			id, tenant_id, sensor_id, report_id, command_id, scan_zone_id, state,
 			media_type, sensor_type, user_agent, header_digest, header, tool_name,
-			implicit_commit, expires_at, received_at, updated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $16)
+			implicit_commit, expires_at, received_at, updated_at, command_lease_epoch
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $16, $17)
 		ON CONFLICT (tenant_id, sensor_id, report_id) DO NOTHING`,
 		rep.ID.String(), rep.TenantID.String(), rep.SensorID.String(), rep.ReportID,
 		nullIDPtr(rep.CommandID), nullIDPtr(rep.ScanZoneID), string(rep.State),
 		rep.MediaType, rep.SensorType, rep.UserAgent, rep.HeaderDigest, header, rep.ToolName,
-		rep.ImplicitCommit, rep.ExpiresAt, rep.ReceivedAt,
+		rep.ImplicitCommit, rep.ExpiresAt, rep.ReceivedAt, nullIntPtr(rep.CommandLeaseEpoch),
 	)
 	if err != nil {
 		return fmt.Errorf("create ingest report: %w", err)
@@ -315,6 +315,7 @@ func scanIngestReport(row rowScanner) (*ingestreport.Report, error) {
 		committedAt        sql.NullTime
 		touched            []string
 		autoResolve        sql.NullString
+		leaseEpoch         sql.NullInt64
 	)
 	err := row.Scan(
 		&id, &tenant, &sensor, &reportID, &commandID, &zoneID, &state,
@@ -322,7 +323,7 @@ func scanIngestReport(row rowScanner) (*ingestreport.Report, error) {
 		&rep.ImplicitCommit, &segmentCount, &rep.SegmentsReceived, &rep.AssetsReceived, &rep.FindingsReceived, &committedAt,
 		&rep.Integrity, &rep.ContentSHA256,
 		&outcomes, pq.Array(&touched), &rep.AutoResolved, &autoResolve,
-		&rep.ExpiresAt, &rep.ReceivedAt, &rep.UpdatedAt,
+		&rep.ExpiresAt, &rep.ReceivedAt, &rep.UpdatedAt, &leaseEpoch,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ingestreport.ErrNotFound
@@ -342,6 +343,10 @@ func scanIngestReport(row rowScanner) (*ingestreport.Report, error) {
 	rep.ReportID = reportID
 	rep.CommandID = parseNullID(commandID)
 	rep.ScanZoneID = parseNullID(zoneID)
+	if leaseEpoch.Valid {
+		e := int(leaseEpoch.Int64)
+		rep.CommandLeaseEpoch = &e
+	}
 	rep.State = protov2.ReportState(state)
 	rep.Header = header
 	if segmentCount.Valid {

@@ -745,4 +745,8 @@ type GrantRepository interface {
 	// ReplaceTx writes g inside tx whatever the stored version (the
 	// approval of a pairing sets the chosen profile on the new sensor).
 	ReplaceTx(ctx context.Context, tx *sql.Tx, g *Grant) error
+	// SetTrustTx sets the trust level of a sensor of the tenant inside tx
+	// and bumps its grant's version; the grant dimensions stay (a re-pair
+	// returns the sensor to New and keeps what it may do).
+	SetTrustTx(ctx context.Context, tx *sql.Tx, tenantID, sensorID shared.ID, level TrustLevel) error
 }

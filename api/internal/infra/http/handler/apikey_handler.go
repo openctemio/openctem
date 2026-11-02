@@ -67,6 +67,9 @@ type APIKeyResponse struct {
 	UpdatedAt   time.Time  `json:"updated_at"`
 	RevokedAt   *time.Time `json:"revoked_at,omitempty"`
 	RevokedBy   string     `json:"revoked_by,omitempty"`
+	// ExceedsOrgMax: an active key minted for longer than the organization's
+	// current maximum lifetime (it keeps its expiry; rotate it sooner).
+	ExceedsOrgMax bool `json:"exceeds_org_max,omitempty"`
 }
 
 // CreateAPIKeyResponse includes the plaintext key (only shown once).
@@ -126,6 +129,30 @@ func (h *APIKeyHandler) Create(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(resp)
 }
 
+// orgMaxLifetime is the organization's maximum key lifetime in days, 0 when
+// it cannot be read (no key is flagged then; creation still fails closed).
+func (h *APIKeyHandler) orgMaxLifetime(r *http.Request, tenantID string) int {
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return 0
+	}
+	n, err := h.service.MaxLifetimeDays(r.Context(), tid)
+	if err != nil {
+		h.logger.Warn("api keys: read the organization's maximum lifetime", "error", logger.SanitizeError(err))
+		return 0
+	}
+	return n
+}
+
+// exceedsLifetime reports an active key minted for longer than maxDays (a
+// key minted before the organization lowered its maximum).
+func exceedsLifetime(key *apikeydom.APIKey, maxDays int) bool {
+	if maxDays <= 0 || key == nil || key.ExpiresAt() == nil || key.Status() != apikeydom.StatusActive {
+		return false
+	}
+	return key.ExpiresAt().Sub(key.CreatedAt()) > time.Duration(maxDays)*24*time.Hour+time.Minute
+}
+
 // ownKeysOnly returns the user whose keys the caller may see, or "" when the
 // caller is an organization owner/admin and may see every key of the
 // organization. Members and viewers see only their own keys: the list shows
@@ -170,9 +197,11 @@ func (h *APIKeyHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	maxDays := h.orgMaxLifetime(r, tenantID)
 	data := make([]APIKeyResponse, len(result.Data))
 	for i, key := range result.Data {
 		data[i] = toAPIKeyResponse(r.Context(), key)
+		data[i].ExceedsOrgMax = exceedsLifetime(key, maxDays)
 	}
 
 	response := ListResponse[APIKeyResponse]{
@@ -209,8 +238,10 @@ func (h *APIKeyHandler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	resp := toAPIKeyResponse(r.Context(), key)
+	resp.ExceedsOrgMax = exceedsLifetime(key, h.orgMaxLifetime(r, tenantID))
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(toAPIKeyResponse(r.Context(), key))
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 // Revoke handles POST /api/v1/api-keys/{id}/revoke

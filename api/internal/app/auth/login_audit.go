@@ -60,3 +60,23 @@ func auditFederatedLogin(ctx context.Context, svc *auditapp.AuditService, log *l
 		log.Error("failed to audit federated login", "method", method, "error", err)
 	}
 }
+
+// auditSocialRefusedSSOIdentity records a social sign-in refused because its
+// provider key belongs to an identity organization single sign-on manages
+// (auth.failed, denied). The event carries the user id and the provider only.
+func auditSocialRefusedSSOIdentity(ctx context.Context, svc *auditapp.AuditService, log *logger.Logger,
+	u *userdom.User, provider string,
+) {
+	if svc == nil {
+		return
+	}
+	ci := clientInfoFrom(ctx)
+	ev := auditapp.NewDeniedEvent(auditdom.ActionAuthFailed, auditdom.ResourceTypeUser, u.ID().String(), "social_sign_in_on_sso_identity").
+		WithMessage("Social sign-in refused: the account signs in through its organization").
+		WithMetadata("method", "oauth").
+		WithMetadata("provider", provider)
+	actx := auditapp.AuditContext{ActorID: u.ID().String(), ActorIP: ci.IP, UserAgent: ci.UserAgent}
+	if err := svc.LogEvent(ctx, actx, ev); err != nil && log != nil {
+		log.Error("failed to audit refused social sign-in", "error", err)
+	}
+}

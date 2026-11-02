@@ -6,8 +6,12 @@ import { getDictionary } from '@/lib/i18n'
 
 import {
   FAILURE_FIX,
+  GAP_CAUSES,
+  GAP_CERTS,
   PLACEMENT_FIX,
   failureHelp,
+  gapLabel,
+  gapReasonHelp,
   placementHelp,
   placementKey,
 } from '../placement-help'
@@ -104,6 +108,28 @@ describe('every outcome reason the API keeps has words', () => {
       }
     }
   })
+  it('coverage-gap causes and certificate problems match the API', () => {
+    const causes = goConsts('pkg/domain/scanrun/coverage_gaps.go', 'GapCause')
+    const certs = goConsts('pkg/domain/scanrun/coverage_gaps.go', 'GapCert')
+    expect(causes).toEqual([...GAP_CAUSES])
+    expect(certs).toEqual([...GAP_CERTS])
+    for (const d of [en, vi]) {
+      for (const c of causes) {
+        expect(hasKey(d, `scans.tasks.gapCause.${c}`), `gapCause.${c}`).toBe(true)
+        expect(hasKey(d, `scans.tasks.gapCauseHelp.${c}`), `gapCauseHelp.${c}`).toBe(true)
+      }
+      for (const c of certs) {
+        expect(hasKey(d, `scans.tasks.gapCert.${c}`), `gapCert.${c}`).toBe(true)
+      }
+      for (const k of [
+        'scans.tasks.gapFix.addressBlock',
+        'scans.tasks.gapFix.retry',
+        'scans.fixLink.scannerAddresses',
+      ]) {
+        expect(hasKey(d, k), k).toBe(true)
+      }
+    }
+  })
   it('skipped-target reasons', () => {
     const reasons = goConsts('pkg/domain/scanrun/skipped_targets.go', 'SkipReason')
     expect(reasons.length).toBeGreaterThanOrEqual(5)
@@ -197,5 +223,39 @@ describe('egress holds', () => {
       }
       expect(placementHelp(code).href).toBe('/sensors')
     }
+  })
+})
+
+describe('gapReasonHelp', () => {
+  it('a host that completes the handshake and resets every request is not "stopped answering"', () => {
+    const h = gapReasonHelp('breaker_open', undefined, 'http_reset', 'expired')
+    expect(h.label).toMatch(/resets every HTTP request/)
+    expect(h.label).not.toMatch(/stopped answering/)
+    expect(h.cert).toMatch(/expired/)
+    expect(h.fix).toMatch(/scanner addresses/)
+    expect(h.href).toBe('/settings/scanning/proxies#scanner-addresses')
+  })
+  it('a host that does not answer gets the retry hint, no address link', () => {
+    const h = gapReasonHelp('breaker_open', undefined, 'no_answer')
+    expect(h.label).toMatch(/no answer/i)
+    expect(h.href).toBeUndefined()
+    expect(h.fix).toMatch(/next scan/)
+  })
+  it('without a recheck (an older sensor) the reason stays, worded without a guess', () => {
+    const h = gapReasonHelp('breaker_open')
+    expect(h.label).toBe('failed every request')
+    expect(h.cert).toBeUndefined()
+  })
+  it('unknown cause or certificate values are ignored', () => {
+    const h = gapReasonHelp('blocked', undefined, 'bogus', 'bogus')
+    expect(h.label).toBe('blocked the scan')
+    expect(h.cert).toBeUndefined()
+    expect(h.fix).toBeUndefined()
+  })
+  it('gapLabel prefers the cause', () => {
+    expect(gapLabel({ reason: 'breaker_open', cause: 'tls_failed' })).toMatch(
+      /TLS handshake failed/
+    )
+    expect(gapLabel({ reason: 'rate_floor' })).toBe('kept rate-limiting the scan')
   })
 })

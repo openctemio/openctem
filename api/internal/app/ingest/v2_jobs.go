@@ -120,7 +120,7 @@ func (p *V2JobProcessor) Process(ctx context.Context, job *ingestjob.Job) ([]byt
 	if p.sensors == nil {
 		return nil, errors.New("v2 processor: sensor status check is not configured")
 	}
-	agt, dropped, err := p.sensors.QueuedWorkSensor(ctx, rep.TenantID, &rep.SensorID, rep.CommandID, rep.ReportID)
+	agt, dropped, err := p.sensors.QueuedWorkSensor(ctx, rep.TenantID, &rep.SensorID, rep.CommandID, rep.CommandLeaseEpoch, rep.ReportID)
 	if err != nil {
 		return nil, err
 	}

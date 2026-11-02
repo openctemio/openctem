@@ -168,7 +168,7 @@ func (s *Service) levers(ctx context.Context, scope dashboard.ReadScope) (*Lever
 	if uncovered := disc.Tracked - disc.Covered; disc.Tracked > 0 && uncovered > 0 {
 		if cov := pct(disc.Covered, disc.Tracked); cov < blindSpotBelowPct {
 			blind = &Lever{Kind: LeverBlindSpot, Count: uncovered,
-				Effect: LeverEffect{Metric: "coverage.discovery", Before: cov, After: 100, Unit: UnitPercent},
+				Effect: LeverEffect{Metric: metricDiscoveryCoverage, Before: cov, After: 100, Unit: UnitPercent},
 				Drill:  drillUncovered}
 		}
 	}
@@ -193,6 +193,14 @@ func (s *Service) leversMetric(ctx context.Context, v *WidgetValue, scope dashbo
 	lv, err := s.levers(ctx, scope)
 	if err != nil {
 		return err
+	}
+	// No lever and no finding in scope: "nothing stands out" would read as
+	// all clear; nothing has been measured.
+	if len(lv.Levers) == 0 {
+		empty, err := s.nothingToCount(ctx, v, scope)
+		if err != nil || empty {
+			return err
+		}
 	}
 	v.Levers = lv
 	return nil

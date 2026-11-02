@@ -317,6 +317,8 @@ const KNOWN_FINDING_FIELDS: Record<string, true> = Object.fromEntries(
     'first_detected_at',
     'last_seen_at',
     'resolved_at',
+    'resolved_by',
+    'last_reopened_at',
     'created_at',
     'updated_at',
     'observation',

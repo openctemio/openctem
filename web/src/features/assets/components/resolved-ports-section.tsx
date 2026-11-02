@@ -8,6 +8,7 @@
  * outside the caller's data scope are only counted.
  */
 
+import { useSettleSignal } from '@/features/shared/components/settle-group'
 import { useMemo } from 'react'
 import Link from '@/components/link'
 import type { ColumnDef } from '@tanstack/react-table'
@@ -30,6 +31,7 @@ function serviceText(p: ResolvedPort): string {
 export function ResolvedPortsSection({ assetId }: { assetId: string }) {
   const { t } = useTranslation()
   const { data, error, isLoading } = useResolvedPorts(assetId)
+  useSettleSignal(isLoading)
 
   const columns = useMemo<ColumnDef<ResolvedPort>[]>(
     () => [

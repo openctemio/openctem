@@ -94,6 +94,9 @@ type Task struct {
 	// without a claim), the placement code of the last dispatch-gate
 	// refusal of it (grant_credentials, intensity, ...); "" otherwise.
 	WithheldReason string
+	// ContentPins is what the task's job read: packs and generated lists
+	// (nil: it pinned none, or was never signed).
+	ContentPins *ContentPins
 }
 
 // MaxRunTasks bounds the tasks one run read returns; the summary still counts

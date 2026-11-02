@@ -10,6 +10,7 @@
  * who may cancel or approve.
  */
 
+import { useSettleSignal } from '@/features/shared/components/settle-group'
 import { useState } from 'react'
 import { Hourglass, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -169,7 +170,8 @@ export function FindingApprovalBand({
   const { hasPermission } = usePermissions()
   const currentUserId = useDisplayUser()?.id
   // Regardless of the finding's status: a pending request exists before it.
-  const { data, mutate } = useFindingApprovals(findingId || undefined)
+  const { data, mutate, isLoading } = useFindingApprovals(findingId || undefined)
+  useSettleSignal(isLoading)
   // A decision changes the finding (status, activity) as well as the band.
   const decision = useApprovalDecision({ onDecided: () => Promise.all([mutate(), onDecided?.()]) })
   const pending = (data ?? []).filter((a) => a.status === 'pending')

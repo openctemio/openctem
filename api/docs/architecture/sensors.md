@@ -5,12 +5,17 @@
 > Protocol v2: [RFC-026](../rfcs/RFC-026-sensor-results-ingest.md) (results) and
 > [RFC-029](../rfcs/RFC-029-sensor-protocol-v2-and-sdk-stability.md) (everything else; protocol v1 retired 2026-10-05).
 > Routing of scanners by network: [scan-zones.md](scan-zones.md).
+> How scan traffic identifies itself to targets (User-Agent and headers, merged platform and organization layers): [scan-identification.md](scan-identification.md).
 > Proxies for scan traffic (proxy pools, built): [sensor-proxies.md](sensor-proxies.md);
 > the wider egress design: [RFC-034](../rfcs/RFC-034-sensor-network-egress.md),
 > section [Network egress and proxies](#network-egress-and-proxies-rfc-034-proposed).
 > Trust between sensors and the platform (what each side verifies about the
 > other, current gaps): [sensor-platform-trust.md](sensor-platform-trust.md),
 > [RFC-040](../rfcs/RFC-040-platform-sensor-mutual-distrust.md) (proposed).
+
+The end-to-end flow (install to decommission, with every failure path) is in
+[sensor and platform workflow](sensor-platform-workflow.md); this page is the
+reference for each part.
 
 ## Glossary
 
@@ -416,6 +421,22 @@ is not a reconnect (no `sensor.connected` audit row).
 idle interval stays online: interval + grace) and `offline_after_seconds`
 (`WORKER_HEARTBEAT_TIMEOUT`, the backstop above).
 
+**Poll mode** (`GET /sensors?changed_since=<cursor>`,
+`internal/infra/http/handler/sensor_list_changes.go`). The Sensors page
+refreshes every 15 s, because the state moves on with the clock. An empty
+cursor answers the whole fleet (`full: true`), the stats of `GET /sensors/stats`
+(`stats`) and a `cursor`; passing that cursor back answers only the sensors
+whose answer changed (`full: false`), with the stats. The server keeps no
+state: the cursor is a hash of the fleet's ids followed by a 4-byte digest of
+each sensor's answer in id order, so every source of change shows (a write to
+the row by any statement, the clock moving the state, the health policy, the
+product catalog, the caller's host-detail permission). A sensor added or
+removed, or an unusable cursor, answers the whole fleet again. Fleets above
+200 sensors get no cursor (it would not fit a URL) and the whole fleet on each
+refresh, in one request. The population is the paginated list's (the caller's
+organization, the same host redaction); a cursor only selects which of those
+rows are sent. Poll mode is not combined with filters or paging (400).
+
 **Health reasons** (`health_reasons[]`: `code`, `severity`, `message`), listed
 whatever the state: `outbox_backlog` (results waiting over an hour),
 `outbox_dead_letters`, `outbox_evicted`, `key_expired`, `key_expiring` (within
@@ -742,8 +763,13 @@ the platform admin console (RFC-022); on the tenant plane they do not exist:
   one per region). No sensor id, name, host, address, version, node count,
   capacity or other organization's load. The card links administrators to
   the owner's opt-out.
-- **Console fleet.** Console > Scanning > Platform scanning (Fleet)
-  (`/api/v1/admin/shared-sensors`, `internal/app/sensor/shared_fleet.go`,
+- **Console fleet.** Console > Platform sensors (`/sensors`, shown with the
+  `platform.sensors.read` permission; the enrollment card, the sensor list with
+  pause and retire, and the instance scan zones are not hidden by the
+  shared-scanning rollout gate, so feed relay, passive discovery and AI worker
+  sensors can be enrolled before organizations may use shared scanning; the
+  Fleet tab of Scanning > Platform scanning keeps the instance switch and links
+  here) (`/api/v1/admin/shared-sensors`, `internal/app/sensor/shared_fleet.go`,
   `postgres/shared_fleet_repository.go`). Any administrator: the instance
   sensors, queued and running jobs per tool lane, per-organization counts
   (queued, running, completed and failed in 24 hours) and job metadata. The
@@ -999,6 +1025,16 @@ no lines but has a refusal or failure reason, the Logs dialog shows "This task
 was refused before it ran" (or "failed before it sent any logs") with the
 reason, instead of the generic empty state.
 
+While a task is queued or running, the Logs dialog follows it live: it re-reads
+the task's log every 3 seconds (the sensor flushes a batch at least every 3
+seconds, and its outbox sends new batches at once), scrolls to the newest line
+while the reader is at the bottom (scrolling up stops following), and reads once
+more when the task settles so its last lines show. A live task with no lines yet
+says it is waiting for its first lines. The re-read uses the same route,
+permission and tenant-scoped query as the first read, and stops when the dialog
+closes, the browser tab is hidden or the task finishes
+(`web/src/features/scans/components/run-task-logs-dialog.tsx`).
+
 ## Install snippets
 
 `GET /api/v1/sensors/{id}/config-templates` renders the snippets the Sensors
@@ -1051,14 +1087,23 @@ compose file):
   line); otherwise the snippets read `$OPENCTEM_API_KEY` and stop with a clear
   message when it is unset. Compose keeps the key in `.env`, Kubernetes and
   Helm in a Secret. The response is `Cache-Control: no-store`.
-- **CA** `SENSOR_CA_CERT_FILE`: the platform's private CA, e.g. the root the
+- **CA** `PLATFORM_CA_CERT_FILE` (the API's deprecated name
+  `SENSOR_CA_CERT_FILE` is read when it is unset): the PEM bundle of the CA
+  certificate(s) that sign the platform's TLS certificate, e.g. the root the
   built-in gateway exports in TLS mode internal (`deploy/docker-compose.yml`
   mounts the export directory into the API read-only and sets
-  `/ca/openctem-root-ca.crt`). Only X.509 `CERTIFICATE` blocks are used (a
-  key in the file never leaks); the response carries `ca_certificate` and
-  `ca_fingerprint_sha256`. The snippets install it under
-  `/etc/openctem/certs` and set `SSL_CERT_DIR`, which adds it to the system
-  roots (the sensor still verifies public scan targets). Unset or unreadable:
+  `/ca/openctem-root-ca.crt`). It is parsed at startup and re-read when the
+  file changes. Only X.509 CA `CERTIFICATE` blocks are kept; a file that
+  holds any private key is refused as a whole (logged), so a key never
+  reaches a snippet or the public endpoint. The response carries
+  `ca_certificate`, `ca_fingerprint_sha256` (the root) and `platform_ca`
+  (each certificate's name, SHA-256, root or intermediate, expiry; the pin;
+  the download path). The snippets install it under `/etc/openctem/certs`,
+  set `SSL_CERT_DIR` (added to the system roots; the sensor still verifies
+  public scan targets) and pass the root's SHA-256 as `SENSOR_CA_SHA256`.
+  The same bundle is served publicly at `GET /api/v1/sensors/platform-ca`
+  for sensors that hold the pin
+  ([how-to](../how-to/sensors-behind-a-private-ca.md)). Unset or unusable:
   the snippets assume a publicly trusted certificate.
 - **Data** one named volume / PVC (8Gi in the Kubernetes manifest) at
   `/var/lib/openctem`, holding:
@@ -1160,8 +1205,17 @@ replaces bearer keys.
   (critical), one `identity_cloned` event and one `sensor.identity_cloned`
   audit entry (severity high). Steady-state heartbeats cost nothing (the
   instance is compared with the row already read); a change is applied under
-  a row lock. Regenerating the key clears the flag. The sensor is not
-  quarantined automatically in Phase 0.
+  a row lock. Regenerating a bearer key or re-pairing the sensor clears the
+  flag.
+- **A cloned identity gets no new work.** The platform cannot tell which host
+  is the real one, so while `identity_cloned_at` is set every path that grants
+  a lease (the poll, claim-N, claim by id, the shared claim) and the heartbeat
+  doorbell withhold new work from the sensor
+  (`postgres/command_cloned_identity.go`, `identityNotClonedPredicate`).
+  Work it already holds runs to its end; its lease epoch fences the results.
+  The placement explainer names the reason `identity_cloned`, so a waiting
+  task says why. Shared sensors are not observed for clones (they have no
+  tenant), so the shared claim's check is a guard only.
 - **Key-hash pepper.** Keys are stored as HMAC-SHA256 under
   `SENSOR_KEY_PEPPER`, or, when unset, a pepper derived from
   `APP_ENCRYPTION_KEY` with HKDF-SHA256 (label
@@ -1622,6 +1676,12 @@ It is registered once and again on change. Heartbeats keep carrying the load.
 - The heartbeat's optional `manifest_digest`: when it is not the current one,
   the answer adds the action `send_manifest`. This goes only to sensors that
   send a digest; deployed sensors ignore unknown actions anyway.
+- When the platform starts, the sensors whose current manifest (sent by the
+  sensor) lists an ignored `unknown-tool` or `unknown-capability` are asked
+  once, at their next heartbeat, to send it again
+  (`SensorService.LoadManifestRechecks`, `TakeManifestRecheck`). A release
+  that adds a tool to the catalog (a migration) then keeps a tool a sensor
+  already reported, without waiting for the sensor to restart.
 
 **Processing** (`SensorService.RegisterManifest`):
 
@@ -1630,7 +1690,10 @@ It is registered once and again on change. Heartbeats keep carrying the load.
    - flat capabilities = installed tools' names + their capabilities +
      sensor-wide ones, the SDK registry's rule
    - sanitize it with the heartbeat's catalog lookup
-3. An unchanged digest only touches the version's `last_seen_at`.
+3. An unchanged digest only touches the version's `last_seen_at`, unless
+   its ignored items are no longer the stored ones (the catalog now knows a
+   tool or capability it dropped): then it is stored again as in step 4,
+   under the same digest, and the projection carries the item.
 4. A new one is stored in one transaction:
    - a `sensor_manifests` row; a sensor going back to an earlier manifest
      makes that row current again

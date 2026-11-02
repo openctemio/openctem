@@ -11,14 +11,14 @@ export const EASM_SETTINGS_KEY = '/api/v1/easm/settings'
 /**
  * GET /api/v1/easm/settings (research/22 P0-11): whether the Certificate
  * Transparency monitor and the DNS checks run for the organization, their
- * cadence and when each last ran. Fetched only with settings:read and the
+ * cadence and when each last ran. Fetched only with scope:write (the API gate) and the
  * attack_surface module.
  */
 export function useEASMSettings() {
   const { can } = usePermissions()
   const { moduleIds, isLoading: modulesLoading } = useTenantModules()
   const enabled =
-    can(Permission.SettingsRead) && !modulesLoading && moduleIds.includes('attack_surface')
+    can(Permission.ScopeWrite) && !modulesLoading && moduleIds.includes('attack_surface')
   const { data, error, isLoading, mutate } = useSWR<EASMSettings>(
     enabled ? EASM_SETTINGS_KEY : null,
     get,

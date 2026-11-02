@@ -189,7 +189,8 @@ func (r *CommandRepository) GetPendingForSensorExcluding(ctx context.Context, te
 
 // pendingForSensorWhere is the poll's predicate for sensorID in tenantID:
 // pending and due, pinned to the sensor or unpinned, the zone claim
-// predicate, the tool gate and the capability gate. A job waiting for a
+// predicate, the tool gate, the capability gate and the cloned-identity hold
+// (command_cloned_identity.go). A job waiting for a
 // scan window is not due (scheduled_at, window_hold.go). Arguments: $1 tenant,
 // $2 sensor (when given), then the capabilities.
 func pendingForSensorWhere(tenantID shared.ID, sensorID *shared.ID, capabilities []string) (string, []any) {
@@ -205,7 +206,8 @@ func sensorWhere(ready string, tenantID shared.ID, sensorID *shared.ID, capabili
 	args := []any{tenantID.String()}
 	if sensorID != nil {
 		where += " AND (commands.sensor_id = $2 OR commands.sensor_id IS NULL) AND " + zoneClaimPredicate("$2") +
-			" AND " + toolClaimPredicate("$2") + " AND " + refusedByPredicate("$2") + " AND " + failedOnPredicate("$2") + " AND " + featureClaimPredicate("$2")
+			" AND " + toolClaimPredicate("$2") + " AND " + refusedByPredicate("$2") + " AND " + failedOnPredicate("$2") + " AND " + featureClaimPredicate("$2") +
+			" AND " + identityNotClonedPredicate("$2")
 		args = append(args, sensorID.String())
 	} else {
 		// No sensor identity: nothing pinned, no zone membership and no tools
@@ -385,6 +387,7 @@ func (r *CommandRepository) PendingWorkForSensor(ctx context.Context, tenantID, 
 		AND ` + refusedByPredicate("$2") + `
 		AND ` + failedOnPredicate("$2") + `
 		AND ` + featureClaimPredicate("$2") + `
+		AND ` + identityNotClonedPredicate("$2") + `
 		AND ` + capabilityClaimPredicate("$3")
 	query := `
 		SELECT
@@ -568,6 +571,7 @@ func (r *CommandRepository) ClaimForSensor(ctx context.Context, tenantID, comman
 		  AND ` + refusedByPredicate("$3") + `
 		  AND ` + failedOnPredicate("$3") + `
 		  AND ` + featureClaimPredicate("$3") + `
+		  AND ` + identityNotClonedPredicate("$3") + `
 		  AND ` + scheduledDuePredicate + `
 		  AND ` + hostFreePredicate + `
 	`

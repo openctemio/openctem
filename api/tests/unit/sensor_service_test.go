@@ -1601,6 +1601,27 @@ func TestSensorService_ActivateSensor_RevokedCannotReactivate(t *testing.T) {
 	}
 }
 
+// Revoked is final on every path: disable must not turn a revoked sensor
+// into a paused one that activate would then bring back with its old key.
+func TestSensorService_DisableSensor_RevokedStaysRevoked(t *testing.T) {
+	repo := newSensorSvcMockRepo()
+	svc := newSensorSvcTestService(repo)
+	tenantID := shared.NewID()
+	a := repo.seedSensor(tenantID, "sensor-1", sensor.SensorTypeWorker)
+	a.Revoke("compromised")
+
+	_, err := svc.DisableSensor(context.Background(), tenantID.String(), a.ID.String(), "maintenance", nil)
+	if !errors.Is(err, shared.ErrForbidden) {
+		t.Fatalf("disable of a revoked sensor: got %v, want ErrForbidden", err)
+	}
+	if a.Status != sensor.SensorStatusRevoked {
+		t.Fatalf("status after the refused disable = %q, want revoked", a.Status)
+	}
+	if _, err := svc.ActivateSensor(context.Background(), tenantID.String(), a.ID.String(), nil); !errors.Is(err, shared.ErrForbidden) {
+		t.Fatalf("activate after the refused disable: got %v, want ErrForbidden", err)
+	}
+}
+
 func TestSensorService_ActivateSensor_NotFound(t *testing.T) {
 	repo := newSensorSvcMockRepo()
 	svc := newSensorSvcTestService(repo)

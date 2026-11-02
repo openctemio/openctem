@@ -86,29 +86,28 @@ export function BarViz({ result, unit = 'count', stacked = false, drill }: BarVi
     </div>
   ) : (
     <ul className="flex flex-col gap-1.5">
-      {rows.map((r, i) => {
-        const text = `${label(r)}: ${formatMetric(r.value, unit, locale)}`
-        return (
-          <li key={r.key}>
-            <DrillLink to={drill?.({ key: r.key })} label={text} className="block">
-              <div className="grid grid-cols-[minmax(5rem,9rem)_1fr_auto] items-center gap-2 text-sm hover:bg-accent/40">
-                <span className="truncate text-muted-foreground">{label(r)}</span>
-                <span className="h-3 rounded-e-sm bg-muted/60">
-                  <span
-                    className="block h-full rounded-e-sm"
-                    style={{
-                      width: `${(r.value / max) * 100}%`,
-                      minWidth: r.value > 0 ? 2 : 0,
-                      background: seriesFill(r.key, i),
-                    }}
-                  />
-                </span>
-                <span className="tabular-nums">{formatMetric(r.value, unit, locale)}</span>
-              </div>
-            </DrillLink>
-          </li>
-        )
-      })}
+      {rows.map((r, i) => (
+        <li key={r.key}>
+          {/* The link is named by its visible label and value (no aria-label,
+                so the accessible name always contains the visible text). */}
+          <DrillLink to={drill?.({ key: r.key })} className="block">
+            <div className="grid grid-cols-[minmax(5rem,9rem)_1fr_auto] items-center gap-2 text-sm hover:bg-accent/40">
+              <span className="truncate text-muted-foreground">{label(r)}</span>{' '}
+              <span className="h-3 rounded-e-sm bg-muted/60">
+                <span
+                  className="block h-full rounded-e-sm"
+                  style={{
+                    width: `${(r.value / max) * 100}%`,
+                    minWidth: r.value > 0 ? 2 : 0,
+                    background: seriesFill(r.key, i),
+                  }}
+                />
+              </span>{' '}
+              <span className="tabular-nums">{formatMetric(r.value, unit, locale)}</span>
+            </div>
+          </DrillLink>
+        </li>
+      ))}
     </ul>
   )
 

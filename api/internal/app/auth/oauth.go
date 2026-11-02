@@ -43,6 +43,10 @@ var (
 	// identity is not linked to it. Nothing was written. The person signs in
 	// the usual way and links the provider from their account settings.
 	ErrOAuthAccountExists = errors.New("an account with this email already exists; sign in to it and link this provider")
+	// ErrOAuthUseOrgSSO: the provider identity is one an organization's single
+	// sign-on created and manages. The social button never signs it in: the
+	// person never confirmed that route. Nothing was written, no session opens.
+	ErrOAuthUseOrgSSO = errors.New("this account signs in through your organization; use your organization's sign-in")
 	// ErrOAuthNoEmail: the provider returned no email address.
 	ErrOAuthNoEmail = errors.New("the OAuth provider did not return an email address")
 )
@@ -1037,6 +1041,14 @@ func (s *OAuthService) findOrCreateUser(ctx context.Context, userInfo *OAuthUser
 			return nil, fmt.Errorf("resolve federated identity: %w", err)
 		}
 		if u != nil {
+			// An identity an organization's single sign-on manages is signed
+			// in through that sign-on only: a social sign-in that happens to
+			// carry the same provider key is a route the person never
+			// confirmed. Refused, audited, no session.
+			if ident.ManagedBySSO() {
+				auditSocialRefusedSSOIdentity(ctx, s.audit, s.logger, u, string(provider))
+				return nil, ErrOAuthUseOrgSSO
+			}
 			// The provider's address moves the account only when the account
 			// belongs to that provider. A provider linked to an account of
 			// another kind (a password account) never changes its address.

@@ -35,7 +35,8 @@ import {
 import { Skeleton } from '@/components/ui/skeleton'
 import { useTranslation } from '@/context/i18n-provider'
 import { EmptyState, ErrorState, RelativeTime, SeverityBadge } from '@/features/shared'
-import { assetDetailHref, isLinkableAssetId } from '@/features/findings/lib/asset-link'
+import { isLinkableAssetId } from '@/features/findings/lib/asset-link'
+import { AssetPeekLink } from '@/features/assets/components/asset-peek'
 import { useUrlFilter, useUrlFilterList } from '@/hooks/use-url-param'
 import type { EASMChange } from '@/lib/api/generated'
 import { cn } from '@/lib/utils'
@@ -151,12 +152,9 @@ function ChangeRow({ change }: { change: EASMChange }) {
         <div className="flex flex-wrap items-center gap-2 text-sm">
           <span className="font-medium first-letter:uppercase">{label}</span>
           {isLinkableAssetId(change.asset_id) ? (
-            <Link
-              href={assetDetailHref(change.asset_id)}
-              className="break-all text-primary hover:underline"
-            >
+            <AssetPeekLink assetId={change.asset_id} className="break-all text-primary">
               {name}
-            </Link>
+            </AssetPeekLink>
           ) : (
             <span className="break-all text-muted-foreground">{name}</span>
           )}

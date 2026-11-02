@@ -245,3 +245,66 @@ func TestSensorManifest_DerivedFromHeartbeat(t *testing.T) {
 		t.Fatalf("after registration: %d %v", n, src)
 	}
 }
+
+// A tool the catalog did not know when the manifest was stored, added to
+// the catalog later: the sensor is asked once (after LoadManifestRechecks,
+// which runs when the platform starts) to send its unchanged manifest, and
+// the stored version is projected again so the tool is kept. Without this,
+// the sensor's tool stays dropped until the sensor restarts.
+func TestSensorManifest_CatalogGainsToolReprojects(t *testing.T) {
+	h := newCtlHarness(t)
+	s := h.newSensor(h.tenantID, "manifest-catalog-gains")
+	body := map[string]any{
+		"schema":       1,
+		"sensor":       map[string]any{"name": "openctemio-sensor", "version": "v0.7.0"},
+		"capabilities": []string{"validate"},
+		"tools": []any{
+			map[string]any{"name": "semgrep", "kind": "scanner", "version": "1.179.0", "installed": true, "capabilities": []string{"sast"}},
+			map[string]any{"name": "zz-late-tool", "kind": "scanner", "version": "1.0.0", "installed": true},
+		},
+	}
+	first := h.putManifest(s, body)
+	if slices.Contains(first.Accepted.Tools, "zz-late-tool") {
+		t.Fatalf("a tool outside the catalog was kept: %v", first.Accepted.Tools)
+	}
+	hb := map[string]any{"status": "running", "manifest_digest": first.ManifestDigest}
+	h.sensors.LoadManifestRechecks(context.Background())
+	if a := h.heartbeatActions(s, hb); !slices.Contains(a, protov2.ActionSendManifest) {
+		t.Fatalf("a sensor with an unknown tool was not asked again after the start: %v", a)
+	}
+	if a := h.heartbeatActions(s, hb); slices.Contains(a, protov2.ActionSendManifest) {
+		t.Fatalf("asked again on every heartbeat: %v", a)
+	}
+
+	// Unchanged manifest, unchanged catalog: only confirmed.
+	if again := h.putManifest(s, body); again.Changed || slices.Contains(again.Accepted.Tools, "zz-late-tool") {
+		t.Fatalf("repeat answer %+v", again)
+	}
+
+	// The organization's catalog gains the tool; the same manifest is kept
+	// with it now, under the same digest.
+	if _, err := h.db.ExecContext(context.Background(),
+		`INSERT INTO tools (tenant_id, name, display_name, install_method, is_builtin) VALUES ($1, 'zz-late-tool', 'Late', 'binary', false)`,
+		h.tenantID); err != nil {
+		t.Fatal(err)
+	}
+	second := h.putManifest(s, body)
+	if !second.Changed || second.ManifestDigest != first.ManifestDigest || !slices.Contains(second.Accepted.Tools, "zz-late-tool") {
+		t.Fatalf("after the catalog gained the tool %+v", second)
+	}
+	if got := h.load(s); !slices.Contains(got.EffectiveTools(), "zz-late-tool") {
+		t.Fatalf("projection misses the tool: %v", got.EffectiveTools())
+	}
+	cur, err := h.sensors.CurrentManifest(context.Background(), h.tenantID, s.id)
+	if err != nil || len(cur.Ignored) != 0 {
+		t.Fatalf("current %v %+v", err, cur)
+	}
+	if n, _ := h.manifestRows(s); n != 1 {
+		t.Fatalf("%d versions, want 1 (same digest)", n)
+	}
+	// Nothing unknown left: the next start does not ask it again.
+	h.sensors.LoadManifestRechecks(context.Background())
+	if a := h.heartbeatActions(s, hb); slices.Contains(a, protov2.ActionSendManifest) {
+		t.Fatalf("asked again with nothing unknown: %v", a)
+	}
+}

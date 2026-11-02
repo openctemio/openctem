@@ -2,6 +2,7 @@ import { test as base } from '@playwright/test'
 import { test, expect } from '../fixtures/authenticated-page'
 import { loginAs } from '../helpers/auth'
 import { getE2EConfig } from '../helpers/env'
+import { axeRuleViolations } from '../helpers/axe'
 
 /**
  * Landmarks and accessible names.
@@ -64,5 +65,50 @@ test.describe('Organization authentication settings', { tag: ['@shell'] }, () =>
         exact: true,
       })
     ).toBeVisible()
+  })
+})
+
+/**
+ * A control named by an aria-label contains its visible label (WCAG 2.5.3,
+ * label in name): the organization switcher (its initials chip only repeats
+ * the name), the search button (its shortcut hint is hidden and stated as
+ * aria-keyshortcuts), the Triage button and each finding row (its title is
+ * the open button). Before: 2 violations on every page, 12 on /findings.
+ */
+test.describe('Label in name', { tag: ['@shell', '@findings'] }, () => {
+  test('shell and findings list controls contain their visible label', async ({ page }) => {
+    for (const path of ['/', '/findings']) {
+      await page.goto(path)
+      await expect(page.locator('main#content')).toBeVisible({ timeout: 30_000 })
+      await page.waitForLoadState('networkidle')
+      expect(await axeRuleViolations(page, ['label-content-name-mismatch']), path).toEqual([])
+    }
+  })
+})
+
+test.describe('Finding properties markup', { tag: ['@findings'] }, () => {
+  test('the properties are valid description lists', async ({ page }) => {
+    const res = page.waitForResponse((r) => /\/api\/v1\/findings\?/.test(r.url()) && r.ok(), {
+      timeout: 60_000,
+    })
+    await page.goto('/findings')
+    const body = (await (await res).json()) as { data?: Array<{ id: string }> }
+    const id = body.data?.[0]?.id
+    test.skip(!id, 'Needs a finding')
+    await page.goto(`/findings/${id}`)
+    await expect(page.getByRole('group', { name: 'Properties' })).toBeVisible({ timeout: 30_000 })
+    await page.waitForLoadState('networkidle')
+    // Before: the People group and the folded rows sat inside the dl (14 nodes).
+    expect(await axeRuleViolations(page, ['definition-list', 'dlitem'])).toEqual([])
+  })
+})
+
+test.describe('Links in running text', { tag: ['@shell', '@attack-surface'] }, () => {
+  test('/scope tells its in-text link apart without relying on colour', async ({ page }) => {
+    await page.goto('/scope')
+    await expect(page.locator('main#content')).toBeVisible({ timeout: 30_000 })
+    await page.waitForLoadState('networkidle')
+    // Before: the link colour was 2.3:1 against the text around it, no underline.
+    expect(await axeRuleViolations(page, ['link-in-text-block'])).toEqual([])
   })
 })

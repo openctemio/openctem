@@ -42,7 +42,7 @@ var EASMExposureTypes = []string{
 	"subdomain_discovered", "certificate_expiring", "certificate_expired",
 	"port_open", "service_detected", "ssl_issue",
 	"dangling_cname", "dangling_ns", "email_security_weak", "subdomain_takeover",
-	"lookalike_domain",
+	"lookalike_domain", "third_party_script_added",
 }
 
 // notRejected excludes assets a person marked as not the tenant's: they stay
@@ -243,7 +243,7 @@ func (r *EASMSummaryRepository) exposureCounts(ctx context.Context, tenantID sha
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT e.severity, e.event_type, count(*)
 		FROM exposure_events e
-		WHERE e.tenant_id = $1 AND e.state = 'active' AND e.event_type = ANY($2)
+		WHERE e.tenant_id = $1 AND e.state IN ('active', 'in_progress') AND e.event_type = ANY($2)
 		  AND `+notOfDeletedAssetSQL("e.asset_id")+notRejectedFor("e.asset_id")+sc+`
 		GROUP BY 1, 2`, args...)
 	if err != nil {
@@ -270,7 +270,7 @@ func (r *EASMSummaryRepository) topRisks(ctx context.Context, tenantID shared.ID
 		SELECT e.id, e.event_type, e.severity, e.title, e.asset_id, a.name, e.last_seen_at
 		FROM exposure_events e
 		LEFT JOIN assets a ON a.id = e.asset_id AND a.tenant_id = e.tenant_id
-		WHERE e.tenant_id = $1 AND e.state = 'active' AND e.event_type = ANY($2)
+		WHERE e.tenant_id = $1 AND e.state IN ('active', 'in_progress') AND e.event_type = ANY($2)
 		  AND e.severity IN ('critical', 'high', 'medium')
 		  AND (a.id IS NULL OR a.deleted_at IS NULL)`+notRejectedFor("e.asset_id")+sc+`
 		ORDER BY CASE e.severity WHEN 'critical' THEN 0 WHEN 'high' THEN 1 ELSE 2 END, e.last_seen_at DESC

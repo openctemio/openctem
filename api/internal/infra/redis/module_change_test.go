@@ -89,7 +89,7 @@ func TestModuleChangeBusNeverBlocks(t *testing.T) {
 	bus := newModuleChangeBus(redislib.NewClient(&redislib.Options{Addr: "127.0.0.1:1"}), cache, logger.NewNop())
 	done := make(chan struct{})
 	go func() {
-		for range moduleChangeQueue * 2 {
+		for range cacheChangeQueue * 2 {
 			bus.Invalidate(shared.NewID().String())
 		}
 		close(done)
@@ -99,7 +99,7 @@ func TestModuleChangeBusNeverBlocks(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("Invalidate blocked")
 	}
-	if got := cache.snapshot(); len(got) != moduleChangeQueue*2 {
+	if got := cache.snapshot(); len(got) != cacheChangeQueue*2 {
 		t.Fatalf("local invalidations %d", len(got))
 	}
 }

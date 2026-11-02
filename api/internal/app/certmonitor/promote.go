@@ -34,6 +34,9 @@ import (
 // An asset that already existed keeps its standing: a legacy asset (no
 // attribution record) is confirmed and stays so; evidence is added either
 // way. Automation never lowers a state or overrides a human decision.
+//
+// Certificate SAN promotion (san.go) runs through the same path with its own
+// promoteKind: a weak certificate_san rule instead of the root rules.
 
 // AssetIngester is the slice of the ingest service promotion needs.
 type AssetIngester interface {
@@ -85,6 +88,59 @@ type promotion struct {
 	host   ctHost
 	root   rootDomain
 	source string
+	// tool is the new asset's discovery_tool ("" = source).
+	tool string
+	// observed is the evidence datum ("" = the CT datum of host and root).
+	observed map[string]any
+}
+
+// promoteKind is what one promotion path stamps on the names it promotes.
+// CT and certificate SANs share every other step (dedupe, tombstones,
+// per-run cap, ingest, evidence, scope join, automatic record).
+type promoteKind struct {
+	technique string // evidence technique and the new assets' discovery_source
+	tool      string // the CTIS report's tool
+	reportID  string // report id prefix
+	logLabel  string
+	// rule, when set, is the evidence rule of every name; otherwise the
+	// root decides (ruleFor).
+	rule attribution.Rule
+	// anyTombstone: a tombstone blocks the name whatever rules supported
+	// it at rejection (a weak rule never resurrects a rejected name).
+	anyTombstone bool
+	// keep, when set, filters the names (new and existing) once the
+	// existing assets are known; an error stops the promotion.
+	keep func(ctx context.Context, tenantID shared.ID, names []string, existing map[string]*assetdom.Asset) ([]string, error)
+}
+
+// ctKind is the CT sweep's promotion.
+var ctKind = promoteKind{
+	technique: assetdom.DiscoverySourceCertTransparency,
+	tool:      "cert-monitor",
+	reportID:  "ct-promotion",
+	logLabel:  "ct promotion",
+}
+
+// ruleOf is the evidence rule a promoted name earns.
+func (k promoteKind) ruleOf(p promotion) attribution.Rule {
+	if k.rule != "" {
+		return k.rule
+	}
+	return ruleFor(p.root)
+}
+
+// observedOf is the evidence datum of a promoted name.
+func observedOf(p promotion) map[string]any {
+	if p.observed != nil {
+		return p.observed
+	}
+	return map[string]any{
+		"root":        p.root.name,
+		"root_origin": p.root.origin,
+		"first_seen":  p.host.FirstSeen.UTC().Format(time.RFC3339),
+		"not_after":   p.host.NotAfter.UTC().Format(time.RFC3339),
+		"issuer":      p.host.Issuer,
+	}
 }
 
 // SetPromotion enables promotion of CT names into assets. Any nil argument
@@ -109,7 +165,7 @@ func ruleFor(root rootDomain) attribution.Rule {
 // promote writes the collected names as assets and evidence. It returns how
 // many new assets were created. Failures are returned to the caller, which
 // logs them; exposures were already written.
-func (s *Service) promote(ctx context.Context, tenantID shared.ID, cands []promotion) (int, error) {
+func (s *Service) promote(ctx context.Context, tenantID shared.ID, cands []promotion, kind promoteKind) (int, error) {
 	if !s.promotionEnabled() || len(cands) == 0 {
 		return 0, nil
 	}
@@ -131,46 +187,24 @@ func (s *Service) promote(ctx context.Context, tenantID shared.ID, cands []promo
 	if err != nil {
 		return 0, fmt.Errorf("look up existing assets: %w", err)
 	}
+	if kind.keep != nil {
+		if names, err = kind.keep(ctx, tenantID, names, existing); err != nil {
+			return 0, err
+		}
+	}
 
-	// New names, verified roots first, bounded per run. A name a person
-	// rejected is not proposed again unless a rule that was not there at
-	// rejection supports it now (tombstone, RFC-036 §6.4).
-	var fresh []string
-	for _, n := range names {
-		if _, ok := existing[n]; !ok {
-			fresh = append(fresh, n)
-		}
-	}
-	if s.tombstones != nil && len(fresh) > 0 {
-		dead, err := s.tombstones.Tombstoned(ctx, tenantID, fresh)
-		if err != nil {
-			return 0, fmt.Errorf("look up tombstones: %w", err)
-		}
-		kept := fresh[:0]
-		for _, n := range fresh {
-			if rules, ok := dead[n]; ok && containsRule(rules, ruleFor(byName[n].root)) {
-				continue
-			}
-			kept = append(kept, n)
-		}
-		fresh = kept
-	}
-	sort.SliceStable(fresh, func(i, j int) bool {
-		return originRank(byName[fresh[i]].root.origin) > originRank(byName[fresh[j]].root.origin)
-	})
-	if len(fresh) > s.maxPromotions {
-		s.logger.Info("ct promotion: more new names than the per-run cap; the rest follow on later runs",
-			"tenant_id", tenantID.String(), "cap", s.maxPromotions, "deferred", len(fresh)-s.maxPromotions)
-		fresh = fresh[:s.maxPromotions]
+	fresh, err := s.freshNames(ctx, tenantID, names, existing, byName, kind)
+	if err != nil {
+		return 0, err
 	}
 
 	created := map[string]string{} // name -> asset id
 	if len(fresh) > 0 {
-		report := s.promotionReport(tenantID, fresh, byName)
+		report := s.promotionReport(tenantID, fresh, byName, kind)
 		agt := &sensor.Sensor{TenantID: &tenantID, Status: sensor.SensorStatusActive}
 		out, err := s.ingester.Ingest(ctx, agt, ingest.Input{Report: report, CoverageType: ingest.CoverageTypePartial})
 		if err != nil {
-			return 0, fmt.Errorf("ingest CT names: %w", err)
+			return 0, fmt.Errorf("%s: ingest names: %w", kind.logLabel, err)
 		}
 		for i := range report.Assets {
 			if id, ok := out.AssetMap[report.Assets[i].ID]; ok && !id.IsZero() {
@@ -192,21 +226,15 @@ func (s *Service) promote(ctx context.Context, tenantID shared.ID, cands []promo
 			continue
 		}
 		p := byName[n]
-		rule := ruleFor(p.root)
+		rule := kind.ruleOf(p)
 		w, _, _ := attribution.Weight(rule)
 		evidence = append(evidence, attribution.Evidence{
 			AssetID:   id,
 			Rule:      rule,
-			Technique: assetdom.DiscoverySourceCertTransparency,
+			Technique: kind.technique,
 			Source:    p.source,
 			Weight:    w,
-			Observed: map[string]any{
-				"root":        p.root.name,
-				"root_origin": p.root.origin,
-				"first_seen":  p.host.FirstSeen.UTC().Format(time.RFC3339),
-				"not_after":   p.host.NotAfter.UTC().Format(time.RFC3339),
-				"issuer":      p.host.Issuer,
-			},
+			Observed:  observedOf(p),
 		})
 		assetIDs = append(assetIDs, id)
 	}
@@ -214,7 +242,7 @@ func (s *Service) promote(ctx context.Context, tenantID shared.ID, cands []promo
 		extra, err := s.scopeJoin.JoinEvidence(ctx, tenantID, promotedAssets(existing, created, names))
 		if err != nil {
 			// Never confirm on a partial view: the names go to review.
-			s.logger.Warn("ct promotion: scope join failed; names go to review",
+			s.logger.Warn(kind.logLabel+": scope join failed; names go to review",
 				"tenant_id", tenantID.String(), "error", err)
 		} else {
 			evidence = append(evidence, extra...)
@@ -224,13 +252,59 @@ func (s *Service) promote(ctx context.Context, tenantID shared.ID, cands []promo
 		return len(created), err
 	}
 
+	return len(created), s.saveDecisions(ctx, tenantID, assetIDs, created)
+}
+
+// freshNames are the names not yet in the inventory, verified roots first,
+// bounded per run. A name a person rejected is not proposed again unless a
+// rule that was not there at rejection supports it now (tombstone, RFC-036
+// §6.4), or never for a kind with anyTombstone.
+func (s *Service) freshNames(ctx context.Context, tenantID shared.ID, names []string, existing map[string]*assetdom.Asset,
+	byName map[string]promotion, kind promoteKind,
+) ([]string, error) {
+	var fresh []string
+	for _, n := range names {
+		if _, ok := existing[n]; !ok {
+			fresh = append(fresh, n)
+		}
+	}
+	if s.tombstones != nil && len(fresh) > 0 {
+		dead, err := s.tombstones.Tombstoned(ctx, tenantID, fresh)
+		if err != nil {
+			return nil, fmt.Errorf("look up tombstones: %w", err)
+		}
+		kept := fresh[:0]
+		for _, n := range fresh {
+			if rules, ok := dead[n]; ok && (kind.anyTombstone || containsRule(rules, kind.ruleOf(byName[n]))) {
+				continue
+			}
+			kept = append(kept, n)
+		}
+		fresh = kept
+	}
+	sort.SliceStable(fresh, func(i, j int) bool {
+		return originRank(byName[fresh[i]].root.origin) > originRank(byName[fresh[j]].root.origin)
+	})
+	if len(fresh) > s.maxPromotions {
+		s.logger.Info(kind.logLabel+": more new names than the per-run cap; the rest follow on later runs",
+			"tenant_id", tenantID.String(), "cap", s.maxPromotions, "deferred", len(fresh)-s.maxPromotions)
+		fresh = fresh[:s.maxPromotions]
+	}
+	return fresh, nil
+}
+
+// saveDecisions re-evaluates the promoted assets from all their evidence and
+// stores the automatic record. A legacy asset (no record, not created now)
+// is confirmed by construction and keeps having no record; Merge never
+// lowers a state or overrides a person.
+func (s *Service) saveDecisions(ctx context.Context, tenantID shared.ID, assetIDs []string, created map[string]string) error {
 	fired, err := s.attribution.FiredRules(ctx, tenantID, assetIDs)
 	if err != nil {
-		return len(created), err
+		return err
 	}
 	records, err := s.attribution.Records(ctx, tenantID, assetIDs)
 	if err != nil {
-		return len(created), err
+		return err
 	}
 	isNew := map[string]bool{}
 	for _, id := range created {
@@ -239,46 +313,49 @@ func (s *Service) promote(ctx context.Context, tenantID shared.ID, cands []promo
 	for _, id := range assetIDs {
 		rec, hasRecord := records[id]
 		if !hasRecord && !isNew[id] {
-			// A legacy asset: confirmed by construction. Evidence only.
 			continue
 		}
 		dec, err := attribution.Evaluate(fired[id])
 		if err != nil {
-			return len(created), err
+			return err
 		}
 		var cur *attribution.Record
 		if hasRecord {
 			cur = &rec
 		}
 		if err := s.attribution.SaveAutomatic(ctx, tenantID, id, attribution.Merge(cur, dec)); err != nil {
-			return len(created), err
+			return err
 		}
 	}
-	return len(created), nil
+	return nil
 }
 
 // promotionReport builds the CTIS report for the new names. root_domain is
 // set only for roots the tenant owns an asset for or verified, so ingest's
 // root auto-creation never invents a registrable domain from an unverified
 // scope target.
-func (s *Service) promotionReport(tenantID shared.ID, fresh []string, byName map[string]promotion) *ctis.Report {
+func (s *Service) promotionReport(tenantID shared.ID, fresh []string, byName map[string]promotion, kind promoteKind) *ctis.Report {
 	now := s.now()
 	report := &ctis.Report{
 		Version: "1.0",
 		Metadata: ctis.ReportMetadata{
-			ID:           "ct-promotion:" + tenantID.String() + ":" + now.Format(time.RFC3339),
+			ID:           kind.reportID + ":" + tenantID.String() + ":" + now.Format(time.RFC3339Nano),
 			Timestamp:    now,
 			SourceType:   "collector",
 			CoverageType: "partial",
 		},
-		Tool: &ctis.Tool{Name: "cert-monitor", Vendor: "OpenCTEM", Capabilities: []string{"external"}},
+		Tool: &ctis.Tool{Name: kind.tool, Vendor: "OpenCTEM", Capabilities: []string{"external"}},
 	}
 	for i, n := range fresh {
 		p := byName[n]
 		first := p.host.FirstSeen
+		tool := p.tool
+		if tool == "" {
+			tool = p.source
+		}
 		props := ctis.Properties{
-			assetdom.PropKeyDiscoverySource: assetdom.DiscoverySourceCertTransparency,
-			assetdom.PropKeyDiscoveryTool:   p.source,
+			assetdom.PropKeyDiscoverySource: kind.technique,
+			assetdom.PropKeyDiscoveryTool:   tool,
 		}
 		if p.root.origin == OriginVerified || p.root.assetID != nil {
 			props["root_domain"] = p.root.name

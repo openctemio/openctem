@@ -105,6 +105,7 @@ export interface SensorHealthReason {
     | 'config_check_failed'
     | 'config_check_warning'
     | 'config_report_stale'
+    | 'stopped_claiming'
     | (string & {})
   severity: 'warning' | 'critical'
   message: string
@@ -298,6 +299,17 @@ export interface Sensor {
   health: SensorHealth // Automatic heartbeat: unknown, online, late, stale, offline, error
   status_message?: string
   api_key_prefix: string
+  /**
+   * How the sensor authenticates: "bearer" (an API key, prefix in
+   * api_key_prefix) or "key_bound" (its own signing key, made when it paired).
+   * Absent from older APIs.
+   */
+  auth_kind?: 'bearer' | 'key_bound'
+  /**
+   * When the platform saw this sensor's identity used from two hosts at once
+   * (a copied state volume). Absent or null: never.
+   */
+  identity_cloned_at?: string | null
   version?: string
   hostname?: string
   ip_address?: string
@@ -410,6 +422,24 @@ export interface Sensor {
    * report, absent on APIs without config reports.
    */
   config_health?: SensorConfigHealth | null
+  /**
+   * The sensor's local store as it last reported it (results, journal and
+   * workspaces on its host); null without a current report, absent on APIs
+   * without it. `stop_claiming` means it takes no new jobs until it has room.
+   */
+  local_store?: SensorLocalStore | null
+}
+
+/** A sensor's local store report (api SensorLocalStoreResponse). */
+export interface SensorLocalStore {
+  level: '' | 'ok' | 'high' | 'critical' | (string & {})
+  stop_claiming: boolean
+  /** Why, in the sensor's own words ("9 % of the volume free, below 15 %"). */
+  reason?: string
+  total_bytes: number
+  quota_bytes?: number
+  disk_level: '' | 'ok' | 'low' | 'critical' | 'unknown' | (string & {})
+  reported_at: string | null
 }
 
 /** One tool of a sensor's reported inventory. */
@@ -886,6 +916,11 @@ export type SensorLocalPolicyState = 'enforced' | 'absent' | 'paused' | 'unknown
 export interface SensorLocalPolicySummary {
   /** Number of allow entries; -1 when the policy sets no allow list. */
   targets_allow: number
+  /**
+   * How the policy treats targets. Absent on sensors that do not report it.
+   * allow_all: the sensor runs every job the platform signs.
+   */
+  mode?: 'allow_all' | 'allow_list' | 'platform_scope'
   targets_deny: number
   allow_private: boolean
   /** Allowed ports ("" or absent = any). */

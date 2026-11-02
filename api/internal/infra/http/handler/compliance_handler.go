@@ -47,18 +47,36 @@ func (h *ComplianceHandler) ListFrameworks(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	items := make([]ComplianceFrameworkResponse, len(result.Data))
-	for i, f := range result.Data {
-		items[i] = toComplianceFrameworkResponse(f)
+	// include=stats: each framework's stats in this answer, so the page does
+	// not ask GET /frameworks/{id}/stats once per framework card.
+	var stats map[shared.ID]*compliance.FrameworkStats
+	if wantsInclude(r, "stats") {
+		stats, err = h.service.GetFrameworksStats(r.Context(), tenantID, result.Data)
+		if err != nil {
+			h.handleError(w, err)
+			return
+		}
 	}
 
-	writeJSON(w, http.StatusOK, pagination.Result[ComplianceFrameworkResponse]{
+	items := make([]ComplianceFrameworkListItem, len(result.Data))
+	for i, f := range result.Data {
+		items[i] = ComplianceFrameworkListItem{ComplianceFrameworkResponse: toComplianceFrameworkResponse(f), Stats: stats[f.ID()]}
+	}
+
+	writeJSON(w, http.StatusOK, pagination.Result[ComplianceFrameworkListItem]{
 		Data:       items,
 		Total:      result.Total,
 		Page:       result.Page,
 		PerPage:    result.PerPage,
 		TotalPages: result.TotalPages,
 	})
+}
+
+// ComplianceFrameworkListItem is one framework of GET /compliance/frameworks:
+// with include=stats, its stats (the body of GET /frameworks/{id}/stats).
+type ComplianceFrameworkListItem struct {
+	ComplianceFrameworkResponse
+	Stats *compliance.FrameworkStats `json:"stats,omitempty"`
 }
 
 // GetFramework returns a single compliance framework.

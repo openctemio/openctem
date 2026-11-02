@@ -95,7 +95,41 @@ Each pass, per tenant, after reconciling:
    `platform_side`, and the asset page shows it as **Not checked** ("the
    scan could not run on the scanner side, so this says nothing about the
    asset"), never as failed. Platform-side failures are the operator's
-   signal instead (see Gap detection). The migration that added the column
+   signal instead (see Gap detection).
+
+   **Outcome revision.** Every scan command names `outcome_revision` (ctis
+   `outcome.Revision`, 2). A sensor sends the classes that say why a target
+   was not covered (`edge_blocked`, `edge_challenged`, `rate_limited`,
+   `name_gone`, `resolver_failed`, `sensor_network_fault`) only to a
+   platform that names revision 2; without it the sensor sends the closest
+   revision 1 class, so a host behind an edge protection arrived as
+   `tool_error` (platform side) and raised the platform-failure alert.
+
+   **Edge protection and older sensors.** A sensor lists the hosts it could
+   not fully cover in `metadata.coverage_gaps[]` (`host`, `reason`,
+   `detail`) and, on a `blocked` gap, adds `edge` (`challenged` or `blocked`)
+   and `vendor` (a lower-case token of at most 32 characters,
+   `[a-z0-9][a-z0-9_.-]*`; the platform drops any other value and shows the
+   vendor only as text). Settlement reads those gaps for a task without
+   per-target outcomes too, so a host an edge protection blocked never reads
+   as covered: `blocked` settles as `edge_blocked` (`edge_challenged` when
+   the sensor says challenged), `rate_floor` as `rate_limited`,
+   `breaker_open` as `unreachable` and `proxy_unavailable` as
+   `sensor_network_fault` (platform side). When per-target outcomes say
+   done for a host the gaps also list, the gap wins. A gap list shorter than
+   `coverage_gaps_total` leaves unknown hosts, so no target of that task is
+   covered (fail closed, outcome `unfinished`). The vendor of an edge outcome
+   (from the gap or from `target_outcomes[].vendor`) is stored in
+   `asset_coverage.last_edge_vendor`, rewritten by every settlement (a later
+   success clears it), and served on the asset's coverage entry as
+   `last_edge_vendor`. The run's task list serves `edge` and `vendor` on each
+   gap. The console shows such a pair as "Not covered: stopped by edge
+   protection (vendor)" or "rate limited", never as clean, with links to the
+   fixes (allow the scanner addresses, use another proxy pool, lower the scan
+   rate). Auto-resolve of findings already refuses to close on a host named
+   in a gap.
+
+   The migration that added the column
    moved the streak of pairs whose last outcome was a known platform-side
    failure into it (`dns.*` and the connector capability keep their own
    rules).
@@ -219,12 +253,51 @@ list is read for the job's own tenant only and sealed into the signed job;
 it is never stored.
 
 The tool has no list of its own, so without a stable `wordlists-s` pack the
-job would be refused at claim. Coverage readiness checks this first: while
+job would be refused at claim. The API installs its built-in `wordlists-s`
+and `wordlists-m` on start when no stable pack of that name exists
+([wordlists.md](wordlists.md)), so this happens only when an administrator
+revoked it and imported none. Coverage readiness checks this first: while
 the platform has no such pack, the capability is paused with readiness
 reason `content_missing` and its alert asks an instance administrator to
 import the pack (see [wordlists.md](wordlists.md)). Coverage resumes on its
 own once the pack is imported. An error reading the pack store does not
 pause it; the claim-time pin still refuses the job.
+
+**Deep onboarding of new roots.** The first enumeration of a new root runs
+once at deep depth, then the root returns to the weekly standard pass.
+
+- *A new root* is a `domain` asset whose `enumerate.subdomains` pair has
+  never succeeded (no `last_success_at`). The pair exists only while an
+  active scope entry covers the root (the rule's `requires: [scope_entry]`),
+  so this is a root added by a new scope entry, a root newly brought under
+  one, or a root (an acquired domain) added to the inventory under an
+  existing entry. Roots enumerated before this change keep the steady pass;
+  roots never enumerated get the deep pass once.
+- *Once* is recorded by the ledger itself: the pair settles `covered` (with
+  `last_success_at`) when the deep run finishes, so a restart, a second API
+  replica or a later pass never repeats it. No other table holds onboarding
+  state. Deleting and re-adding the root creates a new pair, which is
+  onboarded again.
+- *Dispatch*: one coverage run has one depth, and one run per capability is
+  active at a time. When a due batch of `enumerate.subdomains` holds roots
+  still to onboard, the planner starts only those (at most 10 per run) at
+  `depth: deep`; the other due roots stay due and go at standard depth in
+  the next pass after the deep run finishes (new roots first). The deep job
+  pins the medium pack (`wordlists-m`, up to 1,000,000 lines) plus the same
+  learned labels and permutations as a standard job.
+- *Failure*: a failed deep pass retries on the normal back-off, still deep.
+  After 3 failures in a row (`fail_streak + platform_fail_streak`) the root
+  falls back to standard, so a root is never left without enumeration; the
+  first standard success completes onboarding. When the platform has no
+  stable `wordlists-m` (revoked, none imported), the run starts at standard
+  depth instead of being refused at claim.
+- *Safety*: depth changes only the size of the label list. Which roots may
+  be enumerated is decided exactly as for the steady pass (scope entry, the
+  full dispatch gate, the claim-time re-check, domain proof on shared
+  sensors); a refused root is blocked at every depth. The load on name
+  servers is bounded by one deep run per tenant at a time, 10 roots per run,
+  the sensor's rate limit and the medium pack's line cap. Onboarding state is
+  the tenant's own ledger rows (`DueBatch` filters on the tenant).
 
 **Dead names.** A name that does not resolve is an answer, not a failure.
 A sensor reports it per target: in the result's `refused_targets` with
@@ -329,6 +402,16 @@ read is recorded empty: the pause then holds until the probe. The pause
 raises the usual `readiness` alert ("Coverage paused: resolve.dns ... no
 sensor took its last runs") with a link to the sensors, and the asset's
 coverage shows the pair paused with that reason.
+
+### Run by hand (discovery management)
+
+Attack surface > Discovery groups the planned capabilities into four stages
+and can run one stage, all of them, or cancel every active coverage run of the
+organization. Run only moves the due time of the stage's covered, due and
+failed pairs back by the batch wait; the next pass plans them as any due pair
+(readiness, holds, budget, batch size, dispatch gate). Abort all cancels the
+runs through the run cancel and the next pass settles them. Details and gates:
+[EASM, section 4o](easm.md#4o-discovery-management-built).
 
 ## Gap detection
 

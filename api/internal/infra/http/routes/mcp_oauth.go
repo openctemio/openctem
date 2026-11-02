@@ -25,8 +25,20 @@ func registerMCPOAuthRoutes(router Router, h *handler.MCPOAuthHandler, rateLimit
 	router.GET("/oauth/authorize", h.Authorize, pub...)
 	router.POST("/oauth/token", h.Token, pub...)
 	router.POST("/oauth/revoke", h.Revoke, pub...)
+	// RFC 8628 device authorization endpoint: a terminal without a browser
+	// asks for a device code and a user code; rate limited like the token
+	// endpoint it then polls.
+	router.POST("/oauth/device_authorization", h.DeviceAuthorization, pub...)
 
 	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
+
+	// Entering a terminal's user code: any member, for themselves, in the
+	// session's organization (the consent that follows grants no more than
+	// they hold). Attempts are limited per address and per person.
+	userCodeLimiter := newAuthRateLimiter("mcp-user-code").UserCodeMiddleware()
+	router.Group("/api/v1/oauth/device", func(r Router) {
+		r.POST("/", h.EnterDeviceCode, userCodeLimiter)
+	}, tenantMiddlewares...)
 
 	router.Group("/api/v1/oauth/requests", func(r Router) {
 		// Any member may connect an application for themselves: the grant
@@ -49,7 +61,7 @@ func registerMCPOAuthRoutes(router Router, h *handler.MCPOAuthHandler, rateLimit
 func registerMCPSettingsRoutes(router Router, h *handler.MCPSettingsHandler, authMiddleware, userSyncMiddleware Middleware) {
 	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
 	router.Group("/api/v1/mcp-access/settings", func(r Router) {
-		r.GET("/", h.Get, middleware.Require(permission.SettingsRead))
+		r.GET("/", h.Get, middleware.Require(permission.SettingsRead), middleware.RequireAdmin())
 		r.PUT("/", h.Update, middleware.Require(permission.SettingsWrite), middleware.RequireAdmin(), requireStepUp())
 	}, tenantMiddlewares...)
 }
@@ -86,14 +98,14 @@ func registerMCPConnectionRoutes(router Router, h *handler.MCPConnectionsHandler
 func registerMCPClientRoutes(router Router, h *handler.MCPClientsHandler, authMiddleware, userSyncMiddleware Middleware) {
 	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
 	router.Group("/api/v1/mcp-access/clients", func(r Router) {
-		r.GET("/", h.List, middleware.Require(permission.SettingsRead))
+		r.GET("/", h.List, middleware.Require(permission.SettingsRead), middleware.RequireAdmin())
 		r.POST("/", h.Create, middleware.Require(permission.SettingsWrite), middleware.RequireAdmin(), requireStepUp())
 		r.DELETE("/{id}", h.Delete, middleware.Require(permission.SettingsWrite), middleware.RequireAdmin(), requireStepUp())
 	}, tenantMiddlewares...)
 	// Members' requests to approve a publisher: approving loosens the
 	// policy (step-up); declining does not.
 	router.Group("/api/v1/mcp-access/requests", func(r Router) {
-		r.GET("/", h.ListAccessRequests, middleware.Require(permission.SettingsRead))
+		r.GET("/", h.ListAccessRequests, middleware.Require(permission.SettingsRead), middleware.RequireAdmin())
 		r.POST("/{id}/approve", h.ApproveAccessRequest, middleware.Require(permission.SettingsWrite), middleware.RequireAdmin(), requireStepUp())
 		r.POST("/{id}/deny", h.DenyAccessRequest, middleware.Require(permission.SettingsWrite), middleware.RequireAdmin())
 	}, tenantMiddlewares...)

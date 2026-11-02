@@ -128,19 +128,25 @@ func (s *SensorService) RegisterManifest(ctx context.Context, a *sensordom.Senso
 
 	s.storeManifestLocalPolicy(ctx, a, clean.LocalPolicy, now)
 
-	if digest == a.ManifestDigest {
+	// The version it replaces (or confirms), for the manifest_changed
+	// event and to tell whether an unchanged manifest still projects the
+	// same way.
+	var prev *sensordom.ManifestVersion
+	if a.ManifestDigest != "" {
+		if p, err := store.CurrentManifest(ctx, a.TenantID, a.ID); err == nil {
+			prev = p
+		}
+	}
+
+	// An unchanged manifest only confirms the stored version, unless the
+	// platform now keeps an item it dropped when the version was stored (a
+	// tool or capability added to the catalog since): then the version is
+	// stored again, so its projection carries what the sensor reported.
+	if digest == a.ManifestDigest && (prev == nil || slices.Equal(prev.Ignored, ignored)) {
 		if err := store.TouchManifest(ctx, a.TenantID, a.ID, digest, now); err != nil {
 			s.logger.Warn("failed to confirm sensor manifest", "sensor_id", a.ID.String(), "error", err)
 		}
 		return res, nil
-	}
-
-	// The version it replaces, for the manifest_changed event.
-	var prev *sensordom.ManifestVersion
-	if a.ManifestDigest != "" && a.TenantID != nil && s.events != nil {
-		if p, err := store.CurrentManifest(ctx, a.TenantID, a.ID); err == nil {
-			prev = p
-		}
 	}
 
 	saved, err := store.SaveManifest(ctx, sensordom.ManifestVersion{
@@ -161,6 +167,43 @@ func (s *SensorService) RegisterManifest(ctx context.Context, a *sensordom.Senso
 		s.recordEvents(ctx, withManifestDigests(s.manifestEvents(a, prev, clean, report, now), a.ManifestDigest, digest))
 	}
 	return res, nil
+}
+
+// LoadManifestRechecks marks, once per start, the sensors whose current
+// manifest has items the platform dropped as unknown (a tool or capability
+// missing from the catalog when the manifest was stored). Their next
+// heartbeat asks them to send it again (TakeManifestRecheck), and
+// RegisterManifest stores it again when the catalog now keeps an item:
+// a sensor only sends an unchanged manifest when asked, so without this a
+// catalog that gains a tool would leave the sensor's tool unused until it
+// restarts. Best-effort: a failure is logged; the next start tries again.
+func (s *SensorService) LoadManifestRechecks(ctx context.Context) {
+	src, ok := s.repo.(sensordom.ManifestRecheckSource)
+	if !ok {
+		return
+	}
+	ids, err := src.SensorsWithUnknownManifestItems(ctx, sensordom.MaxManifestRechecks)
+	if err != nil {
+		s.logger.Warn("sensor manifests with unknown items unreadable; not asked again", "error", err)
+		return
+	}
+	for _, id := range ids {
+		s.manifestRecheck.Store(id, struct{}{})
+	}
+	if len(ids) > 0 {
+		s.logger.Info("sensors asked to send their manifest again (items the platform did not know)", "sensors", len(ids))
+	}
+}
+
+// TakeManifestRecheck reports whether the sensor is to be asked to send its
+// manifest again (LoadManifestRechecks), and clears the mark: it is asked
+// once.
+func (s *SensorService) TakeManifestRecheck(id shared.ID) bool {
+	if s == nil {
+		return false
+	}
+	_, ok := s.manifestRecheck.LoadAndDelete(id)
+	return ok
 }
 
 // manifestEvents are the timeline entries of a newly registered manifest

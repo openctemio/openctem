@@ -17,6 +17,8 @@ export interface APIKey {
   created_at: string
   updated_at: string
   revoked_at?: string
+  /** An active key minted for longer than the organization's current maximum. */
+  exceeds_org_max?: boolean
 }
 
 export interface CreateAPIKeyRequest {
@@ -24,7 +26,7 @@ export interface CreateAPIKeyRequest {
   description?: string
   scopes: string[]
   rate_limit?: number
-  /** Required by the API: 1 to 365 days (see lib/expiry). */
+  /** Required by the API: 1 day to the organization's maximum (see lib/expiry). */
   expires_in_days: number
 }
 

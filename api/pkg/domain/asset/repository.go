@@ -314,15 +314,24 @@ type Filter struct {
 	// successful run of any capability within CoverageWindow ("covered"),
 	// or none ("uncovered"). "" = no filter.
 	Coverage string
+	// CoverageCause keeps the uncovered assets whose coverage gap has this
+	// cause (no_sensor, platform_failure, paused, target_unreachable,
+	// never_run, overdue, out_of_scope, other); it implies "uncovered".
+	// Unknown values are ignored. "" = no filter.
+	CoverageCause string
 	// Technologies keeps assets using any of these technologies (normalised
 	// names, RFC-112); TechnologyCategories keeps assets with a technology
 	// in any of these categories.
 	Technologies         []string
 	TechnologyCategories []string
-	ParentID             *string             // Filter by parent asset ID
-	IsCrownJewel         *bool               // Filter crown jewel assets
-	SubType              *string             // Filter by sub_type
-	PropertiesFilter     map[string][]string // Filter by JSONB properties (AND across keys, OR within values)
+	// TechnologyVersion, when set, keeps assets whose matching technology
+	// (one of Technologies, or any) has exactly this version; "" is a
+	// version the tools could not tell.
+	TechnologyVersion *string
+	ParentID          *string             // Filter by parent asset ID
+	IsCrownJewel      *bool               // Filter crown jewel assets
+	SubType           *string             // Filter by sub_type
+	PropertiesFilter  map[string][]string // Filter by JSONB properties (AND across keys, OR within values)
 
 	// CTEM inventory dimensions (all optional; back-compat when unset).
 	BusinessUnitIDs []string // Filter by business_units membership (business_unit_assets)
@@ -374,7 +383,14 @@ type Filter struct {
 	// (cert_transparency, a scanner name, ...). Min/MaxConfidence bound the
 	// recorded attribution confidence (assets without a record count as
 	// 100, as the attribution API reports them).
-	ScopeStatuses       []string
+	ScopeStatuses []string
+	// MonitoringStates keeps the assets whose derived monitoring state
+	// (MonitoringStateOf) is one of these; UnclassifiedScanned is the
+	// tenant's input to it (its unclassified-scans mode is not off).
+	MonitoringStates    []string
+	UnclassifiedScanned bool
+	// Primary keeps the organization's root domains only (PrimarySQL).
+	Primary             bool
 	DiscoveredBy        []string
 	DiscoveryTechniques []string
 	MinConfidence       *int
@@ -738,6 +754,7 @@ func (f Filter) IsEmpty() bool {
 		f.Coverage == "" &&
 		len(f.Technologies) == 0 &&
 		len(f.TechnologyCategories) == 0 &&
+		f.TechnologyVersion == nil &&
 		f.ParentID == nil &&
 		f.DataScopeUserID == nil &&
 		len(f.PropertiesFilter) == 0 &&

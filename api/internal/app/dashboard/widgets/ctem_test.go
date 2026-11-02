@@ -28,6 +28,22 @@ type ctemFacts struct {
 	intake         []dashboard.IntakeRow
 	intakeTenants  []shared.ID
 	since          time.Time
+	// The attack surface and accepted-risk breakdowns.
+	newAssets    []dashboard.NewAssetRow
+	newFrom      [2]time.Time
+	certs        dashboard.CertificateExpiryCounts
+	accepted     dashboard.AcceptanceExpiryCounts
+	breakdownNow time.Time
+	// The coverage causes, and a scope with no finding at all.
+	causes     []dashboard.CauseRow
+	noFindings bool
+	// The quality breakdowns.
+	closure      dashboard.ClosureQualityCounts
+	campaigns    []dashboard.CampaignProgressRow
+	toolClosed   []dashboard.ToolClosedRow
+	qualityCalls int
+	// The emerging-threats breakdown.
+	threats dashboard.EmergingThreatCounts
 }
 
 func (f *ctemFacts) FactsBuiltAt(context.Context, shared.ID) (*time.Time, error) {
@@ -84,6 +100,16 @@ func (f *ctemFacts) Discovery(_ context.Context, s dashboard.ReadScope, _ time.T
 	return f.disc, nil
 }
 
+func (f *ctemFacts) UncoveredCauses(_ context.Context, s dashboard.ReadScope, _ time.Time) ([]dashboard.CauseRow, error) {
+	f.scopes = append(f.scopes, s)
+	return f.causes, nil
+}
+
+func (f *ctemFacts) HasFindings(_ context.Context, s dashboard.ReadScope) (bool, error) {
+	f.scopes = append(f.scopes, s)
+	return !f.noFindings, nil
+}
+
 func (f *ctemFacts) Validation(_ context.Context, s dashboard.ReadScope, _ time.Time) (dashboard.ValidationCounts, error) {
 	f.scopes = append(f.scopes, s)
 	return f.val, nil
@@ -115,6 +141,49 @@ func (f *ctemFacts) OrgIntake(_ context.Context, tenantID shared.ID, since time.
 func (f *ctemFacts) TopFix(_ context.Context, s dashboard.ReadScope) (*dashboard.FixLever, error) {
 	f.scopes = append(f.scopes, s)
 	return nil, nil
+}
+
+func (f *ctemFacts) NewAssets(_ context.Context, s dashboard.ReadScope, from, prevFrom time.Time) ([]dashboard.NewAssetRow, error) {
+	f.scopes = append(f.scopes, s)
+	f.newFrom = [2]time.Time{from, prevFrom}
+	return f.newAssets, nil
+}
+
+func (f *ctemFacts) CertificateExpiry(_ context.Context, s dashboard.ReadScope, now time.Time) (dashboard.CertificateExpiryCounts, error) {
+	f.scopes = append(f.scopes, s)
+	f.breakdownNow = now
+	return f.certs, nil
+}
+
+func (f *ctemFacts) AcceptanceExpiry(_ context.Context, s dashboard.ReadScope, now time.Time) (dashboard.AcceptanceExpiryCounts, error) {
+	f.scopes = append(f.scopes, s)
+	f.breakdownNow = now
+	return f.accepted, nil
+}
+
+func (f *ctemFacts) ClosureQuality(_ context.Context, s dashboard.ReadScope, from, prevFrom time.Time) (dashboard.ClosureQualityCounts, error) {
+	f.scopes = append(f.scopes, s)
+	f.newFrom = [2]time.Time{from, prevFrom}
+	f.qualityCalls++
+	return f.closure, nil
+}
+
+func (f *ctemFacts) ActiveCampaigns(_ context.Context, s dashboard.ReadScope) ([]dashboard.CampaignProgressRow, error) {
+	f.scopes = append(f.scopes, s)
+	f.qualityCalls++
+	return f.campaigns, nil
+}
+
+func (f *ctemFacts) ClosedByTool(_ context.Context, s dashboard.ReadScope, from time.Time) ([]dashboard.ToolClosedRow, error) {
+	f.scopes = append(f.scopes, s)
+	f.since = from
+	f.qualityCalls++
+	return f.toolClosed, nil
+}
+
+func (f *ctemFacts) EmergingThreats(_ context.Context, s dashboard.ReadScope) (dashboard.EmergingThreatCounts, error) {
+	f.scopes = append(f.scopes, s)
+	return f.threats, nil
 }
 
 type fakePaths struct {
@@ -327,13 +396,15 @@ func TestDiscoveryCoverage_ShareOfTrackedAssetsInTheReadScope(t *testing.T) {
 	if v.Drill != drillUncovered {
 		t.Errorf("drill %s", v.Drill)
 	}
-	// Read in exactly the scope the server built, never wider.
-	if len(facts.scopes) != 1 {
+	// Read in exactly the scope the server built, never wider (the share
+	// and its causes).
+	if len(facts.scopes) != 2 {
 		t.Fatalf("reads %d", len(facts.scopes))
 	}
-	got := facts.scopes[0]
-	if got.TenantID != scope.TenantID || got.Assets != scope.Assets {
-		t.Fatalf("coverage read another scope: %+v", got)
+	for _, got := range facts.scopes {
+		if got.TenantID != scope.TenantID || got.Assets != scope.Assets {
+			t.Fatalf("coverage read another scope: %+v", got)
+		}
 	}
 }
 

@@ -115,6 +115,7 @@ export function CIPRFeedback({ canWrite }: { canWrite: boolean }) {
               allowed={canWrite}
               reason={noWrite}
               size="sm"
+              variant="outline"
               disabled={starting}
               onClick={install}
             >
@@ -182,6 +183,7 @@ export function CIPRFeedback({ canWrite }: { canWrite: boolean }) {
             allowed={canWrite}
             reason={noWrite}
             size="sm"
+            variant="outline"
             onClick={() => setGitlabOpen(true)}
           >
             <Plus className="size-4" aria-hidden />

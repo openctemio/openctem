@@ -1343,7 +1343,13 @@ func (r *AssetRepository) buildWhereClause(filter asset.Filter) (string, []any) 
 
 	// Coverage ledger (the dashboard's Discovery stage counts with the same
 	// predicate, so its figure equals this list).
-	if cond := CoverageCondition(filter.Coverage, fmt.Sprintf("$%d", argIndex)); cond != "" {
+	// coverage_cause (uncovered for that cause) is the dashboard's coverage
+	// cause row, read with the same expression.
+	if cond := CoverageCauseCondition(filter.CoverageCause, fmt.Sprintf("$%d", argIndex), fmt.Sprintf("$%d", argIndex+1)); cond != "" {
+		conditions = append(conditions, cond)
+		args = append(args, time.Now().Add(-asset.CoverageWindow).UTC(), filter.CoverageCause)
+		argIndex += 2
+	} else if cond := CoverageCondition(filter.Coverage, fmt.Sprintf("$%d", argIndex)); cond != "" {
 		conditions = append(conditions, cond)
 		args = append(args, time.Now().Add(-asset.CoverageWindow).UTC())
 		argIndex++
@@ -1352,11 +1358,19 @@ func (r *AssetRepository) buildWhereClause(filter asset.Filter) (string, []any) 
 	// Technologies (RFC-112): assets using any of the named technologies,
 	// and assets with a technology in any of the categories. Pinned to the
 	// asset's tenant.
-	if len(filter.Technologies) > 0 {
-		conditions = append(conditions, fmt.Sprintf(`EXISTS (SELECT 1 FROM asset_technologies t
-			WHERE t.tenant_id = a.tenant_id AND t.asset_id = a.id AND t.name_key = ANY($%d::text[]))`, argIndex))
-		args = append(args, pq.Array(filter.Technologies))
-		argIndex++
+	if len(filter.Technologies) > 0 || filter.TechnologyVersion != nil {
+		cond := `EXISTS (SELECT 1 FROM asset_technologies t WHERE t.tenant_id = a.tenant_id AND t.asset_id = a.id`
+		if len(filter.Technologies) > 0 {
+			cond += fmt.Sprintf(` AND t.name_key = ANY($%d::text[])`, argIndex)
+			args = append(args, pq.Array(filter.Technologies))
+			argIndex++
+		}
+		if filter.TechnologyVersion != nil {
+			cond += fmt.Sprintf(` AND t.version = $%d`, argIndex)
+			args = append(args, *filter.TechnologyVersion)
+			argIndex++
+		}
+		conditions = append(conditions, cond+")")
 	}
 	if len(filter.TechnologyCategories) > 0 {
 		conditions = append(conditions, fmt.Sprintf(`EXISTS (SELECT 1 FROM asset_technologies t
@@ -1599,6 +1613,16 @@ func (r *AssetRepository) buildWhereClause(filter asset.Filter) (string, []any) 
 		conditions = append(conditions, fmt.Sprintf("%s = ANY($%d)", assetScopeStatusSQL("a"), argIndex))
 		args = append(args, pq.Array(filter.ScopeStatuses))
 		argIndex++
+	}
+	if len(filter.MonitoringStates) > 0 {
+		conditions = append(conditions, fmt.Sprintf("%s = ANY($%d)",
+			assetMonitoringStateSQL("a", fmt.Sprintf("$%d::boolean", argIndex+1)), argIndex))
+		args = append(args, pq.Array(filter.MonitoringStates), filter.UnclassifiedScanned)
+		argIndex += 2
+	}
+	if filter.Primary {
+		// Constant SQL; every subquery is pinned to the asset's tenant.
+		conditions = append(conditions, asset.PrimarySQL("a"))
 	}
 	if len(filter.DiscoveredBy) > 0 {
 		conditions = append(conditions, fmt.Sprintf(

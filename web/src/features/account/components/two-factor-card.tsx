@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useId, useRef, useState } from 'react'
-import { Clock, KeyRound, Loader2, Smartphone } from 'lucide-react'
+import { Clock, KeyRound, Loader2, RefreshCw, Smartphone } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Badge } from '@/components/ui/badge'
@@ -43,14 +43,44 @@ import {
   useSetupTwoFactor,
   useTwoFactorStatus,
 } from '../api/use-security'
+import type { TwoFactorStatus } from '../types/account.types'
+import { ReplaceAuthenticatorDialog } from './replace-authenticator-dialog'
 
 interface TwoFactorCardProps {
   email?: string
-  /** Called after 2FA is turned on: the server signed out every other session. */
+  /**
+   * Called after 2FA is turned on, turned off or moved to a new authenticator:
+   * the server signed out every other session each time.
+   */
   onOtherSessionsSignedOut?: () => void
 }
 
-type DialogKind = 'enable' | 'disable' | 'regenerate' | null
+type DialogKind = 'enable' | 'disable' | 'regenerate' | 'replace' | null
+
+/** "Required by Acme and the platform", or null when nobody requires 2FA. */
+function useRequiredByLabel(status?: TwoFactorStatus): string | null {
+  const { t } = useTranslation()
+  if (!status) return null
+  const orgs = status.required_by?.organizations ?? []
+  const platform = !!status.required_by?.platform
+  if (orgs.length > 0 && platform) {
+    return t(
+      'settings.twoFactor.requiredByOrgsAndPlatform',
+      'Required by {orgs} and the platform',
+      {
+        orgs: orgs.join(', '),
+      }
+    )
+  }
+  if (orgs.length > 0) {
+    return t('settings.twoFactor.requiredByOrgs', 'Required by {orgs}', { orgs: orgs.join(', ') })
+  }
+  if (platform) return t('settings.twoFactor.requiredByPlatform', 'Required by the platform')
+  if (status.required_by_organization) {
+    return t('settings.twoFactor.required', 'Required by your organization')
+  }
+  return null
+}
 
 /**
  * Two-factor authentication section of My account -> Security.
@@ -61,6 +91,12 @@ export function TwoFactorCard({ email, onOtherSessionsSignedOut }: TwoFactorCard
   const [dialog, setDialog] = useState<DialogKind>(null)
 
   const lowOnCodes = !!status?.enabled && status.recovery_codes_remaining <= 3
+  const requiredBy = useRequiredByLabel(status)
+  // Older servers do not send can_turn_off: the API still refuses when required.
+  const canTurnOff = status?.can_turn_off !== false
+  // While in grace only (not enforced yet), the due-date chip says it instead.
+  const showRequiredBadge =
+    !!requiredBy && (status?.enabled || status?.required_by_organization || !status?.grace_due_at)
 
   return (
     <Card>
@@ -101,11 +137,7 @@ export function TwoFactorCard({ email, onOtherSessionsSignedOut }: TwoFactorCard
                     label={t('settings.twoFactor.protected', 'Protected')}
                   />
                 ) : null}
-                {status.required_by_organization && (
-                  <Badge variant="outline">
-                    {t('settings.twoFactor.required', 'Required by your organization')}
-                  </Badge>
-                )}
+                {showRequiredBadge && <Badge variant="outline">{requiredBy}</Badge>}
                 {!status.enabled && !status.required_by_organization && status.grace_due_at && (
                   <SignalChip icon={Clock} tone="alert">
                     {t('settings.twoFactor.dueBy', 'Required from {date}', {
@@ -133,22 +165,36 @@ export function TwoFactorCard({ email, onOtherSessionsSignedOut }: TwoFactorCard
                   </span>
                 )}
               </p>
+              {status.enabled && !canTurnOff && (
+                <p className="text-sm text-muted-foreground">
+                  {t(
+                    'settings.twoFactor.staysOn',
+                    'It stays on while required. New phone? Replace the authenticator.'
+                  )}
+                </p>
+              )}
             </div>
             <div className="flex flex-wrap gap-2">
               {status.enabled ? (
                 <>
+                  <Button variant="outline" size="sm" onClick={() => setDialog('replace')}>
+                    <RefreshCw className="h-4 w-4" aria-hidden />
+                    {t('settings.twoFactor.replace', 'Replace authenticator')}
+                  </Button>
                   <Button variant="outline" size="sm" onClick={() => setDialog('regenerate')}>
                     <KeyRound className="h-4 w-4" aria-hidden />
                     {t('settings.twoFactor.newCodes', 'New recovery codes')}
                   </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="text-destructive hover:text-destructive"
-                    onClick={() => setDialog('disable')}
-                  >
-                    {t('settings.twoFactor.turnOff', 'Turn off')}
-                  </Button>
+                  {canTurnOff && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="text-destructive hover:text-destructive"
+                      onClick={() => setDialog('disable')}
+                    >
+                      {t('settings.twoFactor.turnOff', 'Turn off')}
+                    </Button>
+                  )}
                 </>
               ) : (
                 <Button size="sm" onClick={() => setDialog('enable')}>
@@ -174,11 +220,23 @@ export function TwoFactorCard({ email, onOtherSessionsSignedOut }: TwoFactorCard
       />
       <DisableTwoFactorDialog
         open={dialog === 'disable'}
-        requiredByOrganization={!!status?.required_by_organization}
         onClose={() => setDialog(null)}
         onDisabled={() => {
           setDialog(null)
           mutate()
+          onOtherSessionsSignedOut?.()
+        }}
+      />
+      <ReplaceAuthenticatorDialog
+        open={dialog === 'replace'}
+        email={email}
+        onClose={() => {
+          setDialog(null)
+          mutate()
+        }}
+        onReplaced={() => {
+          mutate()
+          onOtherSessionsSignedOut?.()
         }}
       />
       <RegenerateCodesDialog
@@ -382,12 +440,10 @@ function EnableTwoFactorDialog({
 
 function DisableTwoFactorDialog({
   open,
-  requiredByOrganization,
   onClose,
   onDisabled,
 }: {
   open: boolean
-  requiredByOrganization: boolean
   onClose: () => void
   onDisabled: () => void
 }) {
@@ -405,17 +461,10 @@ function DisableTwoFactorDialog({
       open={open}
       onOpenChange={(o) => !o && onClose()}
       title={t('settings.twoFactor.turnOffTitle', 'Turn off two-factor authentication')}
-      description={
-        requiredByOrganization
-          ? t(
-              'settings.twoFactor.turnOffRequired',
-              'Your organization requires two-factor authentication: you will have to set it up again the next time you sign in.'
-            )
-          : t(
-              'settings.twoFactor.turnOffBody',
-              'Signing in will need only your password. We will email you about this change.'
-            )
-      }
+      description={t(
+        'settings.twoFactor.turnOffBody',
+        'Sign-in will need only your password. Your other sessions are signed out and we email you.'
+      )}
       recovery={{ length: ACCOUNT_RECOVERY_CODE.length, groups: [...ACCOUNT_RECOVERY_CODE.groups] }}
       ready={!!password}
       destructive
@@ -423,7 +472,12 @@ function DisableTwoFactorDialog({
       onSubmit={async (proof) => {
         if (proof.kind === 'password') return
         await disableTwoFactor({ password, code: proof.code })
-        toast.success(t('settings.twoFactor.disabled', 'Two-factor authentication is off'))
+        toast.success(
+          t(
+            'settings.twoFactor.disabled',
+            'Two-factor authentication is off. Other sessions signed out.'
+          )
+        )
         onDisabled()
       }}
       errorMessage={(err) =>

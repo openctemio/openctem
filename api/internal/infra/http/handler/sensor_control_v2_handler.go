@@ -299,9 +299,13 @@ func (h *SensorControlV2Handler) Heartbeat(w http.ResponseWriter, r *http.Reques
 	// With slim heartbeats switched off (SENSOR_SLIM_HEARTBEAT=false), a
 	// slim one is asked for the manifest too: the answer says
 	// omit_inventory false and the sensor goes back to full heartbeats.
-	if d := manifestDigestFor(&req, 2); !id.Paused && d != "" && h.ingest.sensorService.SupportsManifests() &&
-		(d != s.ManifestDigest || (req.Tools == nil && !h.ingest.sensorService.SlimHeartbeat())) {
-		resp.Actions = append(resp.Actions, protov2.ActionSendManifest)
+	// A sensor whose stored manifest has items the platform did not know
+	// when it was stored is asked once after the platform starts.
+	if d := manifestDigestFor(&req, 2); !id.Paused && d != "" && h.ingest.sensorService.SupportsManifests() {
+		recheck := h.ingest.sensorService.TakeManifestRecheck(s.ID)
+		if d != s.ManifestDigest || (req.Tools == nil && !h.ingest.sensorService.SlimHeartbeat()) || recheck {
+			resp.Actions = append(resp.Actions, protov2.ActionSendManifest)
+		}
 	}
 	// research/26: a sensor that echoes a config report digest the platform
 	// does not have as the stored one is asked to send its report again.

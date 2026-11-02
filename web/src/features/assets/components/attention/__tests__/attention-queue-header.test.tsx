@@ -35,7 +35,15 @@ import { AttentionQueueHeader } from '../attention-queue-header'
 beforeEach(() => {
   state.hidden = []
   state.push.mockClear()
-  state.counts = { no_owner: 549, context: 4, unscanned: 0, relationships: 12, duplicates: 3 }
+  state.counts = {
+    validate_primary: 2,
+    decide_monitoring: 7,
+    no_owner: 549,
+    context: 4,
+    unscanned: 0,
+    relationships: 12,
+    duplicates: 3,
+  }
 })
 
 describe('AttentionQueueHeader', () => {
@@ -70,14 +78,16 @@ describe('AttentionQueueHeader', () => {
     await user.click(screen.getByRole('button', { name: 'Criticality not set' }))
     const items = await screen.findAllByRole('menuitemradio')
     expect(items.map((i) => i.textContent)).toEqual([
+      'Validate primary assets2',
+      'Decide monitoring7',
       'No owner549',
       'Criticality not set4',
       'Not scanned in 30 days0',
       'Relationships12',
       'Possible duplicates3',
     ])
-    expect(items[1]).toHaveAttribute('aria-checked', 'true')
-    expect(items[0]).toHaveAttribute('aria-checked', 'false')
+    expect(items[3]).toHaveAttribute('aria-checked', 'true')
+    expect(items[2]).toHaveAttribute('aria-checked', 'false')
     expect(screen.getByRole('menuitem', { name: 'All reasons' })).toBeInTheDocument()
   })
 
@@ -114,7 +124,7 @@ describe('AttentionQueueHeader', () => {
     await user.click(screen.getByRole('button', { name: 'No owner' }))
     const menu = await screen.findByRole('menu')
     expect(within(menu).queryByText('Relationships')).toBeNull()
-    expect(within(menu).getAllByRole('menuitemradio')).toHaveLength(4)
+    expect(within(menu).getAllByRole('menuitemradio')).toHaveLength(6)
   })
 
   it('renders no tablist', () => {

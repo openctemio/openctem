@@ -12,6 +12,7 @@
  * Watching grants no access.
  */
 
+import { useSettleSignal } from '@/features/shared/components/settle-group'
 import { useRef, useState } from 'react'
 import { Bell, BellOff, ChevronRight, Loader2 } from 'lucide-react'
 import { useTranslation } from '@/context/i18n-provider'
@@ -50,6 +51,7 @@ export function WatchersControl({
     kind,
     itemId
   )
+  useSettleSignal(isLoading)
   const [open, setOpen] = useState(false)
   const summaryRef = useRef<HTMLButtonElement>(null)
 

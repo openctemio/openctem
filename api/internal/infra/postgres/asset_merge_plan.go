@@ -74,6 +74,11 @@ var assetMergeRefs = []mergeRef{
 	// A finding's injection point follows its finding's asset (correlation
 	// is re-derived on the kept asset's next scan).
 	{table: "finding_injection_points", column: "asset_id", tenantCol: "tenant_id"},
+	// Watched pages (RFC-138) follow the asset. A watched URL is unique per
+	// tenant, not per asset, so a move cannot conflict; the detected changes
+	// of a watch name the asset too and move with it.
+	{table: "web_watches", column: "asset_id", tenantCol: "tenant_id"},
+	{table: "web_changes", column: "asset_id", tenantCol: "tenant_id"},
 
 	// UNIQUE keys: drop the merged row when the kept asset already has the key.
 	{table: "asset_services", column: "asset_id", tenantCol: "tenant_id", idCol: "id",

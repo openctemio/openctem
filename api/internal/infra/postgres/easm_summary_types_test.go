@@ -18,7 +18,7 @@ func TestEASMExposureTypesHaveProducers(t *testing.T) {
 		"service_detected": "EventTypeServiceDetected", "ssl_issue": "EventTypeSSLIssue",
 		"dangling_cname": "EventTypeDanglingCNAME", "dangling_ns": "EventTypeDanglingNS",
 		"email_security_weak": "EventTypeEmailSecurityWeak", "subdomain_takeover": "EventTypeSubdomainTakeover",
-		"lookalike_domain": "EventTypeLookalikeDomain",
+		"lookalike_domain": "EventTypeLookalikeDomain", "third_party_script_added": "EventTypeThirdPartyScriptAdded",
 	}
 	var src strings.Builder
 	err := filepath.WalkDir("../../app", func(path string, d fs.DirEntry, err error) error {

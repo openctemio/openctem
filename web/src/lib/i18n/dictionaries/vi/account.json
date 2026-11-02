@@ -1,6 +1,7 @@
 {
   "account.activity.description": "Xem hoạt động tài khoản và các sự kiện bảo mật gần đây của bạn",
   "account.activity.empty": "Không có hoạt động nào",
+  "account.activity.loadFailed": "hoạt động của bạn",
   "account.activity.next": "Trang sau",
   "account.activity.pageOf": "Trang {page} / {total}",
   "account.activity.prev": "Trang trước",
@@ -22,9 +23,6 @@
   "account.notifications.min.low": "Thấp trở lên",
   "account.notifications.min.medium": "Trung bình trở lên",
   "account.notifications.minSeverity": "Mức độ tối thiểu",
-  "account.notifications.minSeverityHint": "Các mức thấp hơn sẽ bị bỏ qua",
-  "account.notifications.off": "Tắt",
-  "account.notifications.on": "Bật",
   "account.notifications.save": "Lưu thay đổi",
   "account.notifications.saveFailed": "Không thể lưu cài đặt thông báo",
   "account.notifications.saved": "Đã lưu cài đặt thông báo",

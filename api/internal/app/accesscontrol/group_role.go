@@ -162,7 +162,7 @@ func (s *GroupService) checkMembershipGrant(ctx context.Context, g *groupdom.Gro
 			return true, err
 		}
 		if external {
-			return true, ErrExternalTeamFullData
+			return true, &OutsideMembersError{Members: []groupdom.OutsideMember{{UserID: userID}}}
 		}
 	}
 	return true, nil
@@ -178,6 +178,32 @@ func (s *GroupService) invalidateMembers(ctx context.Context, tenantID shared.ID
 		ids[i] = u.String()
 	}
 	s.roles.invalidateUsersPermissions(ctx, tenantID.String(), ids)
+}
+
+// ListOutsideMembers returns up to MaxOutsideMembersListed members of team g
+// (already loaded for its tenant) who are outside the organization or service
+// accounts. Without team role bindings it returns none.
+func (s *GroupService) ListOutsideMembers(ctx context.Context, g *groupdom.Group) ([]groupdom.OutsideMember, error) {
+	if s.bindings == nil {
+		return nil, nil
+	}
+	return s.bindings.ListOutsideMembers(ctx, g.TenantID(), g.ID(), groupdom.MaxOutsideMembersListed)
+}
+
+// CarriesFullData reports whether team g (already loaded for its tenant)
+// carries a role with full data access, by hand or from its access presets:
+// such a team admits nobody from outside the organization.
+func (s *GroupService) CarriesFullData(ctx context.Context, g *groupdom.Group) (bool, error) {
+	roles, err := s.boundRoles(ctx, g)
+	if err != nil {
+		return false, err
+	}
+	for _, r := range roles {
+		if r.HasFullDataAccess() {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // ListGroupRoles returns the roles bound to a team.
@@ -289,12 +315,12 @@ func (s *GroupService) BindRole(ctx context.Context, groupID, roleID string, act
 		return groupdom.ErrTooManyBindings
 	}
 	if r.HasFullDataAccess() {
-		external, err := s.bindings.HasExternalMembers(ctx, g.TenantID(), g.ID())
+		outside, err := s.bindings.ListOutsideMembers(ctx, g.TenantID(), g.ID(), groupdom.MaxOutsideMembersListed)
 		if err != nil {
 			return err
 		}
-		if external {
-			return ErrExternalTeamFullData
+		if len(outside) > 0 {
+			return &OutsideMembersError{Members: outside}
 		}
 	}
 	var by *shared.ID

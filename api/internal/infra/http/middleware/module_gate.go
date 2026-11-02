@@ -56,6 +56,17 @@ func (g *ModuleGate) IsEnabled(ctx context.Context, tenantID, moduleID string) b
 	return g.offReason(ctx, tenantID, moduleID) == ""
 }
 
+// IsReadable reports whether the module's data may be read for the tenant:
+// on, or in its read-only grace (reads pass, as RequireModule lets a safe
+// method through). The dashboard uses it for widgets of a module.
+func (g *ModuleGate) IsReadable(ctx context.Context, tenantID, moduleID string) bool {
+	switch g.offReason(ctx, tenantID, moduleID) {
+	case "", ModuleReasonReadOnlyGrace:
+		return true
+	}
+	return false
+}
+
 // offReason is why the module is off for the tenant ("" when it is on).
 func (g *ModuleGate) offReason(ctx context.Context, tenantID, moduleID string) string {
 	if g == nil || g.provider == nil || tenantID == "" || moduledom.IsCoreModule(moduleID) {

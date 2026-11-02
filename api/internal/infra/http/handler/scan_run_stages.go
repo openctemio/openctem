@@ -40,6 +40,13 @@ type RunStageResponse struct {
 	// targets.
 	MaxHop    int    `json:"max_hop"`
 	PlannedAt string `json:"planned_at"`
+	// Streamed: the stage took its predecessor's results task by task while
+	// the predecessor ran; StreamOpen: more may come; Waves: how many
+	// plannings handed it new targets; FirstDispatchAt: when the first did.
+	Streamed        bool   `json:"streamed"`
+	StreamOpen      bool   `json:"stream_open"`
+	Waves           int    `json:"waves"`
+	FirstDispatchAt string `json:"first_dispatch_at,omitempty"`
 	// Chunks counts the stage's commands by state; Sensors is how they are
 	// spread over the sensors that took them. Both are
 	// empty before the stage is queued.
@@ -137,8 +144,16 @@ func toRunStageList(plans []scanrun.StagePlan) RunStageListResponse {
 			StageKey: p.StageKey, Stage: p.Stage, Tool: p.Tool, Tier: stage.Tier(p.Tier).String(),
 			Chained: p.Chained, Inputs: p.Inputs, Planned: p.Planned, Skipped: skipped,
 			MaxHop: p.MaxHop, PlannedAt: p.PlannedAt.UTC().Format(time.RFC3339),
+			Streamed: p.Streamed, StreamOpen: p.StreamOpen, Waves: p.Waves, FirstDispatchAt: rfc3339OrEmpty(p.FirstDispatchAt),
 			Sensors: []RunStageSensor{},
 		})
 	}
 	return out
+}
+
+func rfc3339OrEmpty(t *time.Time) string {
+	if t == nil {
+		return ""
+	}
+	return t.UTC().Format(time.RFC3339)
 }

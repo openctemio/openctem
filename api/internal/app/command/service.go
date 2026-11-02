@@ -35,6 +35,8 @@ type Service struct {
 	// (content_pin.go); nil: jobs carry no content.
 	content      ContentSource
 	contentCheck ContentChecker
+	// contentRecorder stores what each signed job pinned (nil: not stored).
+	contentRecorder ContentPinRecorder
 	// durations learns each completed scan command's time per target
 	// (duration_learning.go); nil: nothing is learned.
 	durations toolbudget.StatsStore
@@ -78,7 +80,10 @@ type Service struct {
 	windows WindowSource
 	// httpPolicy is the tenant's tool HTTP layer (WithHTTPPolicy).
 	httpPolicy HTTPPolicySource
-	egress     EgressSource
+	// platformIdentity is the platform layer of the scan identification
+	// markers (WithPlatformIdentity).
+	platformIdentity PlatformIdentitySource
+	egress           EgressSource
 	// proxyRequired is the organization's "Proxy required" switch
 	// (WithProxyRequirement); nil: not required.
 	proxyRequired ProxyRequirement
@@ -452,6 +457,15 @@ func (s *Service) Claim(ctx context.Context, input ClaimInput) ([]*commanddom.Co
 		return nil, err
 	}
 	s.extendRunDeadlines(ctx, tenantID, sensorID, claimed)
+	// From here on a failure is the platform's, not the sensor's: every
+	// claimed command is handed back at once (as an unsigned claim is),
+	// never left to expire as if the sensor had gone offline.
+	handBack := func(err error) ([]*commanddom.Command, error) {
+		for _, id := range claimed {
+			s.unclaim(ctx, tenantID, id, input.SensorID, pinned[id])
+		}
+		return nil, err
+	}
 	won := make(map[shared.ID]bool, len(claimed))
 	for _, id := range claimed {
 		won[id] = true
@@ -464,7 +478,7 @@ func (s *Service) Claim(ctx context.Context, input ClaimInput) ([]*commanddom.Co
 		// Re-read: the claim set the sensor, the lease and its epoch.
 		cmd, err := s.repo.GetByTenantAndID(ctx, tenantID, c.ID)
 		if err != nil {
-			return nil, err
+			return handBack(err)
 		}
 		out = append(out, cmd)
 	}
@@ -473,13 +487,13 @@ func (s *Service) Claim(ctx context.Context, input ClaimInput) ([]*commanddom.Co
 	// The proxy pool, the organization's HTTP policy and the template
 	// signatures go into the payload first, so the job signature covers them.
 	if out, err = eg.stamp(out); err != nil {
-		return nil, err
+		return handBack(err)
 	}
-	s.recordEgress(ctx, out)
 	delivered, err := s.deliver(ctx, input.SensorID, out, rules, layers)
 	if err != nil {
-		return nil, err
+		return handBack(err)
 	}
+	s.recordEgress(ctx, out)
 	return s.signClaimed(ctx, tenantID, input.SensorID, delivered, pinned), nil
 }
 
@@ -511,23 +525,24 @@ func freeScanSlots(maxJobs, held int, reportedFree *int) int {
 	return max(free, 0)
 }
 
-// deliver prepares the commands a sensor gets: the tenant's tool HTTP layer
-// on every scan command, the bug-bounty program rules over it, then the
+// deliver prepares the commands a sensor gets: the tool HTTP layer (the
+// platform's and the organization's, merged) on every scan, retest and
+// validate command, the bug-bounty program rules over it, then the
 // custom template signatures. All work on copies; the stored commands are
 // never changed. A tenant policy that cannot be read fails the delivery (the
-// claimed commands go back when their lease ends): a job never leaves
+// caller hands the claimed commands back at once): a job never leaves
 // without the organization's layer.
 func (s *Service) deliver(ctx context.Context, sensorID string, cmds []*commanddom.Command, rules map[shared.ID]*bp.JobRules,
 	layers map[shared.ID]settingsLayers,
 ) ([]*commanddom.Command, error) {
-	if s.httpPolicy != nil {
+	if s.httpPolicy != nil || s.platformIdentity != nil {
 		for i, c := range cmds {
-			if c.Type != commanddom.CommandTypeScan {
+			if !egressBound(c.Type) {
 				continue
 			}
-			pol, err := s.httpPolicy.ToolHTTPPolicy(ctx, c.TenantID)
+			pol, err := s.jobHTTPPolicy(ctx, c.TenantID)
 			if err != nil {
-				return nil, fmt.Errorf("read the organization's tool HTTP policy: %w", err)
+				return nil, err
 			}
 			payload, err := withHTTPPolicy(c.Payload, pol)
 			if err != nil {

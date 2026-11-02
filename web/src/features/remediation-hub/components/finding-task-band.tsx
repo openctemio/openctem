@@ -7,6 +7,7 @@
  * remediation module is off.
  */
 
+import { useSettleSignal } from '@/features/shared/components/settle-group'
 import { ClipboardCheck } from 'lucide-react'
 import Link from '@/components/link'
 import { useTranslation } from '@/context/i18n-provider'
@@ -30,10 +31,11 @@ export function FindingTaskBand({
   const { t } = useTranslation()
   const { hasPermission } = usePermissions()
   const canRead = hasPermission(Permission.RemediationRead)
-  const { data, error, mutate } = useTasks(
+  const { data, error, mutate, isLoading } = useTasks(
     { findingId, perPage: 3, sort: 'updated' },
     canRead && !!findingId
   )
+  useSettleSignal(isLoading)
   const tasks = data?.data ?? []
   if (!canRead) return null
   if (error && isLoadFailure(error))

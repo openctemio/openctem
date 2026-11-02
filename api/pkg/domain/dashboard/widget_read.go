@@ -108,6 +108,15 @@ type FactReader interface {
 	// scope: assets the ledger tracks, and those with a successful run of
 	// any capability since the given time.
 	Discovery(ctx context.Context, scope ReadScope, since time.Time) (DiscoveryCounts, error)
+	// UncoveredCauses counts the uncovered assets in scope (tracked, not
+	// covered since the given time) by why they are uncovered, one cause per
+	// asset (no_sensor, platform_failure, paused, target_unreachable,
+	// never_run, overdue, out_of_scope, other).
+	UncoveredCauses(ctx context.Context, scope ReadScope, since time.Time) ([]CauseRow, error)
+	// HasFindings reports whether any published finding, in any status, is
+	// in the scope: until one is, a findings figure has nothing to count and
+	// is not measured (never a "0" or a met target).
+	HasFindings(ctx context.Context, scope ReadScope) (bool, error)
 	// Validation counts open findings in scope with validation evidence,
 	// and the retests completed since the given time.
 	Validation(ctx context.Context, scope ReadScope, since time.Time) (ValidationCounts, error)
@@ -129,6 +138,106 @@ type FactReader interface {
 	// rule, data scope, campaign rule), pentest findings left out; nil when no
 	// suggestion has such a member.
 	TopFix(ctx context.Context, scope ReadScope) (*FixLever, error)
+
+	// NewAssets counts the assets in scope added to the inventory
+	// (created_at) since from, and between prevFrom and from, by asset type.
+	NewAssets(ctx context.Context, scope ReadScope, from, prevFrom time.Time) ([]NewAssetRow, error)
+	// CertificateExpiry counts the certificates in scope by how soon they
+	// expire, measured from now.
+	CertificateExpiry(ctx context.Context, scope ReadScope, now time.Time) (CertificateExpiryCounts, error)
+	// AcceptanceExpiry counts the accepted findings in scope (campaign rule
+	// applied) by how soon their risk acceptance ends, measured from now.
+	AcceptanceExpiry(ctx context.Context, scope ReadScope, now time.Time) (AcceptanceExpiryCounts, error)
+
+	// ClosureQuality counts, for the findings in scope (campaign rule
+	// applied), the fixes by a person and by the platform and the fixed
+	// findings that came back, since from and between prevFrom and from, and
+	// the pending Ready to close proposals in the scope of the Ready to close
+	// list.
+	ClosureQuality(ctx context.Context, scope ReadScope, from, prevFrom time.Time) (ClosureQualityCounts, error)
+	// ActiveCampaigns returns the active remediation campaigns the reader of
+	// the scope may see, each with its task summary over the reader's view
+	// (the campaign list's visibility and summary rules).
+	ActiveCampaigns(ctx context.Context, scope ReadScope) ([]CampaignProgressRow, error)
+	// ClosedByTool counts, per tool, the findings in scope closed since from
+	// and those of them closed as false positive.
+	ClosedByTool(ctx context.Context, scope ReadScope, from time.Time) ([]ToolClosedRow, error)
+	// EmergingThreats counts the emerging-threat alerts with at least one
+	// asset in scope, with the alert list's own summary statement.
+	EmergingThreats(ctx context.Context, scope ReadScope) (EmergingThreatCounts, error)
+}
+
+// ClosureQualityCounts are the closure figures of a scope. Current is the
+// window, Previous the window before it (same comparisons).
+type ClosureQualityCounts struct {
+	Current, Previous ClosureWindowCounts
+	// ReadyToClose is the pending, eligible proposals now (not windowed).
+	ReadyToClose int64
+}
+
+// ClosureWindowCounts are the closes and reopens of one window.
+type ClosureWindowCounts struct {
+	// ByPerson: status resolved, resolved_at in the window, resolved_by set.
+	// Automatic: the same with no person recorded (resolved_by empty).
+	ByPerson, Automatic int64
+	// Reopened: a fixed finding came back (last_reopened_at in the window).
+	Reopened int64
+}
+
+// CampaignProgressRow is one active campaign with its task summary over the
+// reader's view.
+type CampaignProgressRow struct {
+	ID      shared.ID
+	Name    string
+	DueDate *time.Time
+	// Tasks are the tasks the reader sees, Done those done, Overdue the live
+	// ones past their deadline.
+	Tasks, Done, Overdue int64
+}
+
+// ToolClosedRow is one tool's closes in a window.
+type ToolClosedRow struct {
+	Tool string
+	// Closed: closed statuses with resolved_at in the window. FalsePositive:
+	// of them, closed as false positive.
+	Closed, FalsePositive int64
+}
+
+// EmergingThreatCounts are the emerging-threat alerts of a scope: Seen is
+// every alert in any state; the others count the open alerts (new,
+// acknowledged, remediating) by level, as the alert list's summary does.
+type EmergingThreatCounts struct {
+	Seen, Open, Immediate, Digest, Listed int64
+}
+
+// NewAssetRow is one asset type's additions: in the window and in the
+// window before it.
+type NewAssetRow struct {
+	AssetType string
+	Current   int64
+	Previous  int64
+}
+
+// CertificateExpiryCounts are the certificates of a scope by expiry band.
+// The bands use the asset list's expiry filters (expires_after is strictly
+// after, expires_before strictly before), so each band equals its list.
+type CertificateExpiryCounts struct {
+	// Total is every certificate in scope, with or without a known expiry.
+	Total int64
+	// Expired: expiry before now. Within7d: after now, before now + 7 days.
+	// Within30d: after now + 7 days, before now + 30 days. Within90d: after
+	// now + 30 days, before now + 90 days.
+	Expired, Within7d, Within30d, Within90d int64
+}
+
+// AcceptanceExpiryCounts are the accepted findings of a scope by when their
+// acceptance ends.
+type AcceptanceExpiryCounts struct {
+	// Accepted is every accepted finding in scope.
+	Accepted int64
+	// Within7d: ends at or before now + 7 days. Within30d: after now + 7
+	// days, at or before now + 30 days. Later: after now + 30 days.
+	Within7d, Within30d, Later int64
 }
 
 // FixLever is one remediation suggestion re-counted in a read's scope:
@@ -196,6 +305,29 @@ type IntakeRow struct {
 	LastStatus    string
 	LastReceiptID shared.ID
 	MedianGap     *time.Duration
+	// Assets is the assets the source's reports created or updated.
+	Assets int64
+	// Instances are the senders of the source's reports (sensors, CI
+	// repositories, connectors), busiest first; their figures sum to the
+	// row's.
+	Instances []IntakeInstanceRow
+}
+
+// IntakeInstanceRow is what one sender of a source sent in the window.
+// Name is the sender's display name (a tenant sensor's current name, a CI
+// repository, a connector source); Owned is true for a sensor of the
+// tenant, the only kind with a page to open.
+type IntakeInstanceRow struct {
+	Kind       string
+	ID         string
+	Name       string
+	Owned      bool
+	Receipts   int64
+	Received   int64
+	Assets     int64
+	LastAt     time.Time
+	LastStatus string
+	MedianGap  *time.Duration
 }
 
 // CrownJewelCounts are the crown jewels of a scope.
@@ -209,6 +341,44 @@ type CrownJewelCounts struct {
 type DiscoveryCounts struct {
 	Tracked int64
 	Covered int64
+}
+
+// Coverage gap causes: why an uncovered asset is uncovered
+// (docs/architecture/dashboards.md, "Discovery coverage by cause").
+const (
+	CoverageCauseNoSensor          = "no_sensor"
+	CoverageCausePlatformFailure   = "platform_failure"
+	CoverageCausePaused            = "paused"
+	CoverageCauseTargetUnreachable = "target_unreachable"
+	CoverageCauseNeverRun          = "never_run"
+	CoverageCauseOverdue           = "overdue"
+	CoverageCauseOutOfScope        = "out_of_scope"
+	CoverageCauseOther             = "other"
+)
+
+// CoverageCauses lists the causes in precedence order (one cause per asset,
+// the first that applies): what the platform must fix, a paused pair, what
+// the organization owns, never run, overdue, refused by scope, other.
+func CoverageCauses() []string {
+	return []string{CoverageCauseNoSensor, CoverageCausePlatformFailure, CoverageCausePaused,
+		CoverageCauseTargetUnreachable, CoverageCauseNeverRun, CoverageCauseOverdue,
+		CoverageCauseOutOfScope, CoverageCauseOther}
+}
+
+// IsCoverageCause reports a known cause key.
+func IsCoverageCause(c string) bool {
+	for _, k := range CoverageCauses() {
+		if k == c {
+			return true
+		}
+	}
+	return false
+}
+
+// CauseRow is the uncovered assets of one coverage gap cause.
+type CauseRow struct {
+	Cause string
+	Count int64
 }
 
 // ValidationCounts are the validation figures of a scope.

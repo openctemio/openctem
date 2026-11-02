@@ -10,22 +10,66 @@ export interface LocalPolicyView {
 }
 
 /**
- * The view of a sensor-local policy (api RFC-040 §5.7). The policy is written
- * by the network owner on the sensor host and enforced there; the platform
- * only shows what the sensor reports.
+ * Whether a sensor's local policy refuses every job with a network target:
+ * an enforced policy whose allow list has no entry (`targets.allow: []`),
+ * or a sensor that requires a local policy and has none. The platform does
+ * not offer such a sensor scan work; the sensor decides either way.
+ */
+export function allowsNothing(p?: SensorLocalPolicy | null): boolean {
+  if (!p) return false
+  if (p.state === 'absent') return !!p.required
+  return p.state === 'enforced' && p.summary?.targets_allow === 0
+}
+
+/** How many rules a host policy narrows the platform's scope with. */
+function hostRuleCount(p: SensorLocalPolicy): number | undefined {
+  const s = p.summary
+  if (!s) return undefined
+  return Math.max(s.targets_allow, 0) + s.targets_deny
+}
+
+/**
+ * The view of a sensor-local policy (api RFC-040 §5.7). The policy is
+ * optional and only narrows: without one the sensor follows the platform's
+ * signed scope; with one, the network owner's file on the sensor host
+ * narrows it. The platform only shows what the sensor reports.
  */
 export function localPolicyView(p?: SensorLocalPolicy | null, tr?: Tr): LocalPolicyView {
-  const pick = (key: string, english: string) => (tr ? tr(key) : english)
+  const pick = (key: string, english: string, vars?: Record<string, string | number>) => {
+    if (tr) return tr(key, undefined, vars)
+    return english.replace(/\{(\w+)\}/g, (_, k: string) => String(vars?.[k] ?? ''))
+  }
+  if (allowsNothing(p)) {
+    return {
+      label: pick('sensors.localPolicy.label.allowsNothing', 'Allows nothing yet'),
+      tone: 'danger',
+      description: pick(
+        'sensors.localPolicy.desc.allowsNothing',
+        'Its local policy allows no target, so it refuses every scan and the platform sends it none. List what it may scan in its policy file, or remove the empty list to follow the platform scope.'
+      ),
+    }
+  }
   switch (p?.state) {
-    case 'enforced':
+    case 'enforced': {
+      const n = p ? hostRuleCount(p) : undefined
       return {
-        label: pick('sensors.localPolicy.label.enforced', 'Enforced'),
+        label:
+          n === undefined
+            ? pick('sensors.localPolicy.label.narrowed', 'Narrowed by host policy')
+            : pick(
+                'sensors.localPolicy.label.narrowedRules',
+                'Narrowed by host policy ({n} rules)',
+                {
+                  n,
+                }
+              ),
         tone: 'ok',
         description: pick(
           'sensors.localPolicy.desc.enforced',
-          'The network owner installed a local policy. The sensor refuses every job outside it.'
+          'The network owner installed a local policy that narrows the platform scope. The sensor refuses every job outside it.'
         ),
       }
+    }
     case 'paused':
       return {
         label: pick('sensors.localPolicy.label.paused', 'Paused (kill switch)'),
@@ -36,22 +80,12 @@ export function localPolicyView(p?: SensorLocalPolicy | null, tr?: Tr): LocalPol
         ),
       }
     case 'absent':
-      if (p?.required) {
-        return {
-          label: pick('sensors.localPolicy.label.absentRequired', 'Absent (network jobs refused)'),
-          tone: 'danger',
-          description: pick(
-            'sensors.localPolicy.desc.absentRequired',
-            'This sensor requires a local policy and has none: it refuses every job with a network target until the network owner installs one.'
-          ),
-        }
-      }
       return {
-        label: pick('sensors.localPolicy.label.absent', 'Absent'),
-        tone: 'warn',
+        label: pick('sensors.localPolicy.label.followsPlatform', 'Follows platform scope'),
+        tone: 'ok',
         description: pick(
-          'sensors.localPolicy.desc.absent',
-          'No local policy: the sensor runs any target outside its built-in deny list. Install one from the Install tab.'
+          'sensors.localPolicy.desc.followsPlatform',
+          'No local policy: the sensor runs the jobs whose scope the platform signs, outside its built-in deny list. A network owner can install one on the host to narrow it.'
         ),
       }
     default:
@@ -63,6 +97,24 @@ export function localPolicyView(p?: SensorLocalPolicy | null, tr?: Tr): LocalPol
           'This sensor runs an SDK that does not report a local policy.'
         ),
       }
+  }
+}
+
+/**
+ * Where the network owner edits a sensor's local policy, and the command
+ * that applies the change: the per-sensor file of the multi-sensor install,
+ * and the single-sensor default path.
+ */
+export function localPolicyFileHelp(name?: string): {
+  file: string
+  restart: string
+  single: string
+} {
+  const slug = (name || '').trim() || '<name>'
+  return {
+    file: `sensors/${slug}/policy/sensor-policy.yaml`,
+    restart: `docker compose restart ${slug}`,
+    single: '/etc/openctem/sensor-policy.yaml',
   }
 }
 
@@ -111,9 +163,11 @@ export function localPolicySummaryLines(p?: SensorLocalPolicy | null, tr?: Tr): 
   if (!s) return []
   const lines: string[] = []
   lines.push(
-    s.targets_allow < 0
-      ? `Targets: any outside ${s.targets_deny} denied entr${s.targets_deny === 1 ? 'y' : 'ies'}`
-      : `Targets: ${s.targets_allow} allowed, ${s.targets_deny} denied`
+    s.mode === 'allow_all'
+      ? 'Targets: everything the platform signs'
+      : s.targets_allow < 0
+        ? `Targets: any outside ${s.targets_deny} denied entr${s.targets_deny === 1 ? 'y' : 'ies'}`
+        : `Targets: ${s.targets_allow} allowed, ${s.targets_deny} denied`
   )
   lines.push(`Private ranges: ${s.allow_private ? 'allowed' : 'refused'}`)
   lines.push(`Ports: ${s.ports ? s.ports : 'any'}`)
@@ -134,18 +188,20 @@ function localizedSummaryLines(p: SensorLocalPolicy | null | undefined, tr: Tr):
   const none = tr('sensors.localPolicy.sum.none')
   const lines: string[] = []
   lines.push(
-    s.targets_allow < 0
-      ? tr(
-          s.targets_deny === 1
-            ? 'sensors.localPolicy.sum.targetsAny.one'
-            : 'sensors.localPolicy.sum.targetsAny.other',
-          undefined,
-          { deny: s.targets_deny }
-        )
-      : tr('sensors.localPolicy.sum.targets', undefined, {
-          allow: s.targets_allow,
-          deny: s.targets_deny,
-        })
+    s.mode === 'allow_all'
+      ? tr('sensors.localPolicy.sum.targetsAll')
+      : s.targets_allow < 0
+        ? tr(
+            s.targets_deny === 1
+              ? 'sensors.localPolicy.sum.targetsAny.one'
+              : 'sensors.localPolicy.sum.targetsAny.other',
+            undefined,
+            { deny: s.targets_deny }
+          )
+        : tr('sensors.localPolicy.sum.targets', undefined, {
+            allow: s.targets_allow,
+            deny: s.targets_deny,
+          })
   )
   lines.push(tr('sensors.localPolicy.sum.private', undefined, { value: allowed(s.allow_private) }))
   lines.push(

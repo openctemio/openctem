@@ -24,6 +24,9 @@ func (r *ScanRunRepository) ReleaseOrphanStagePlans(ctx context.Context, olderTh
 			JOIN scan_runs r ON r.id = p.run_id AND r.tenant_id = p.tenant_id AND r.status = 'running'
 			JOIN scan_run_steps s ON s.scan_run_id = p.run_id AND s.step_key = p.stage_key AND s.status = 'pending'
 			WHERE p.planned_at < $1
+			  -- an open stream waiting for its first targets is not an orphan:
+			  -- releasing it under a running wave could dispatch without a plan
+			  AND NOT p.stream_open
 			  AND NOT EXISTS (SELECT 1 FROM commands c WHERE c.tenant_id = p.tenant_id AND c.scan_run_step_id = s.id)
 			LIMIT $2
 		), released_targets AS (
@@ -40,7 +43,9 @@ func (r *ScanRunRepository) ReleaseOrphanStagePlans(ctx context.Context, olderTh
 	return n, nil
 }
 
-// StalledRuns returns running workflow runs that wait on nothing.
+// StalledRuns returns running workflow runs that wait on nothing: a pending
+// step, or a streamed step whose closing wave was missed (its stream open,
+// none of its commands active, its predecessor finished).
 func (r *ScanRunRepository) StalledRuns(ctx context.Context, quietSince time.Time, limit int) ([]scanrun.StalledRun, error) {
 	if limit <= 0 {
 		limit = 100
@@ -50,9 +55,19 @@ func (r *ScanRunRepository) StalledRuns(ctx context.Context, quietSince time.Tim
 		FROM scan_runs r
 		WHERE r.status = 'running'
 		  AND COALESCE(r.started_at, r.created_at) < $1
-		  AND EXISTS (SELECT 1 FROM scan_run_steps s WHERE s.scan_run_id = r.id AND s.status = 'pending')
+		  AND (EXISTS (SELECT 1 FROM scan_run_steps s WHERE s.scan_run_id = r.id AND s.status = 'pending')
+		       OR EXISTS (SELECT 1 FROM scan_run_stage_plans p
+		                  WHERE p.tenant_id = r.tenant_id AND p.run_id = r.id AND p.stream_open))
 		  AND NOT EXISTS (SELECT 1 FROM scan_run_steps s WHERE s.scan_run_id = r.id
-		                  AND (s.status IN ('queued', 'running')
+		                  AND ((s.status IN ('queued', 'running')
+		                        -- a streamed step with nothing running only waits
+		                        -- for its closing wave: that is not in flight
+		                        AND NOT (EXISTS (SELECT 1 FROM scan_run_stage_plans p
+		                                         WHERE p.tenant_id = r.tenant_id AND p.run_id = r.id
+		                                           AND p.stage_key = s.step_key AND p.stream_open)
+		                                 AND NOT EXISTS (SELECT 1 FROM commands c
+		                                                 WHERE c.tenant_id = r.tenant_id AND c.scan_run_step_id = s.id
+		                                                   AND c.status IN ('pending', 'acknowledged', 'running'))))
 		                       OR COALESCE(s.completed_at, s.started_at, s.queued_at, s.created_at) >= $1))
 		  AND NOT EXISTS (SELECT 1 FROM ingest_reports ir
 		                  JOIN commands c ON c.id = ir.command_id AND c.tenant_id = ir.tenant_id

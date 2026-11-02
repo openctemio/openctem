@@ -7,6 +7,7 @@
  * the only authority on Resolved; this panel explains it.
  */
 
+import { useSettleSignal } from '@/features/shared/components/settle-group'
 import { useState } from 'react'
 import { useSWRConfig } from 'swr'
 import { toast } from 'sonner'
@@ -221,7 +222,8 @@ interface VerificationPanelProps {
 export function VerificationPanel({ findingId, className }: VerificationPanelProps) {
   const { t } = useTranslation()
   const { hasPermission } = usePermissions()
-  const { data: plan, error, mutate } = useFindingVerificationPlan(findingId)
+  const { data: plan, error, mutate, isLoading } = useFindingVerificationPlan(findingId)
+  useSettleSignal(isLoading)
   const [open, setOpen] = useState(false)
 
   // A refusal stays hidden (no oracle); a real failure must not read as "no verification".

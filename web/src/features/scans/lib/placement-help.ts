@@ -15,6 +15,7 @@ const FIX = {
   windows: '/settings/scanning/scan-windows',
   workflows: '/scans/workflows',
   tools: '/settings/scanning/tools',
+  scannerAddresses: '/settings/scanning/proxies#scanner-addresses',
 } as const
 type FixTarget = keyof typeof FIX
 
@@ -82,6 +83,7 @@ export const PLACEMENT_FIX: Record<string, FixTarget | null> = {
   sensor_hosts_busy: null,
   inactive: 'sensors',
   offline: 'sensors',
+  identity_cloned: 'sensors',
   pinned_elsewhere: null,
   refused_earlier: 'sensors',
   failed_here_earlier: 'sensors',
@@ -191,9 +193,98 @@ export const SENSOR_TEXT_CODES = new Set([
   'BATCH_FAILED',
 ])
 
-/** The translated reason of one coverage gap: a short label and why. */
-export function gapReasonHelp(reason: string | undefined, t: Translate = enTranslate) {
-  const known = (GAP_REASONS as readonly string[]).includes(reason ?? '')
-  const key = known ? (reason as string) : 'other'
-  return { label: t(`scans.tasks.gap.${key}`), help: t(`scans.tasks.gapHelp.${key}`) }
+/**
+ * What the sensor's recheck of a host it gave up saw (api
+ * pkg/domain/scanrun GapCauses).
+ */
+export const GAP_CAUSES = [
+  'http_reset',
+  'tls_failed',
+  'reset',
+  'refused',
+  'no_answer',
+  'answered',
+] as const
+
+/** Certificate problems the recheck saw (api pkg/domain/scanrun GapCerts). */
+export const GAP_CERTS = ['expired', 'not_yet_valid', 'name_mismatch', 'self_signed'] as const
+
+/** Causes after which the host may be refusing the scanner's address. */
+const ADDRESS_BLOCK_CAUSES = new Set<string>(['http_reset', 'reset'])
+
+/** One coverage gap, explained: a label, why, the certificate and the fix. */
+export interface GapHelp {
+  label: string
+  help: string
+  /** What the host's certificate shows (a browser refuses the site). */
+  cert?: string
+  fix?: string
+  href?: string
+  hrefLabel?: string
+}
+
+/** The short label of one coverage gap: what the recheck saw, else the reason. */
+export function gapLabel(
+  gap: { reason?: string; cause?: string; edge?: string; vendor?: string },
+  t: Translate = enTranslate
+): string {
+  if (gap.reason === 'blocked' && !gap.cause) return gapHelp(gap, t).label
+  if ((GAP_CAUSES as readonly string[]).includes(gap.cause ?? '')) {
+    return t(`scans.tasks.gapCause.${gap.cause}`)
+  }
+  const known = (GAP_REASONS as readonly string[]).includes(gap.reason ?? '')
+  return t(`scans.tasks.gap.${known ? gap.reason : 'other'}`)
+}
+
+/**
+ * The translated reason of one coverage gap. When the sensor rechecked the
+ * host, the cause says what it did (it completed the TLS handshake and reset
+ * every request, failed the handshake, refused, did not answer) and the
+ * certificate what a browser sees. A gap is never "covered": the host is
+ * scanned again on the next run.
+ */
+export function gapReasonHelp(
+  reason: string | undefined,
+  t: Translate = enTranslate,
+  cause?: string,
+  cert?: string
+): GapHelp {
+  const knownReason = (GAP_REASONS as readonly string[]).includes(reason ?? '')
+  const reasonKey = knownReason ? (reason as string) : 'other'
+  const knownCause = (GAP_CAUSES as readonly string[]).includes(cause ?? '')
+  const out: GapHelp = knownCause
+    ? {
+        label: t(`scans.tasks.gapCause.${cause}`),
+        help: t(`scans.tasks.gapCauseHelp.${cause}`),
+      }
+    : { label: t(`scans.tasks.gap.${reasonKey}`), help: t(`scans.tasks.gapHelp.${reasonKey}`) }
+  if ((GAP_CERTS as readonly string[]).includes(cert ?? '')) {
+    out.cert = t(`scans.tasks.gapCert.${cert}`)
+  }
+  if (knownCause && ADDRESS_BLOCK_CAUSES.has(cause as string)) {
+    out.fix = t('scans.tasks.gapFix.addressBlock')
+    Object.assign(out, fixLink('scannerAddresses', t))
+  } else if (knownCause || reasonKey === 'breaker_open') {
+    out.fix = t('scans.tasks.gapFix.retry')
+  }
+  return out
+}
+
+/**
+ * The translated reason of one coverage gap, with the edge protection that
+ * stopped the host (and its vendor, as the sensor sent it) when it says so.
+ * Any other gap reads as its reason, with the recheck's cause and certificate.
+ */
+export function gapHelp(
+  gap: { reason?: string; cause?: string; cert?: string; edge?: string; vendor?: string },
+  t: Translate = enTranslate
+): GapHelp {
+  if (gap.reason !== 'blocked') return gapReasonHelp(gap.reason, t, gap.cause, gap.cert)
+  const key = gap.edge === 'challenged' ? 'edge_challenged' : 'edge_blocked'
+  return {
+    label: gap.vendor
+      ? t(`scans.tasks.gap.${key}_vendor`, undefined, { vendor: gap.vendor })
+      : t(`scans.tasks.gap.${key}`),
+    help: t(`scans.tasks.gapHelp.${key}`),
+  }
 }

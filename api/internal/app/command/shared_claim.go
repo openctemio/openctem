@@ -163,6 +163,17 @@ func (s *Service) ClaimShared(ctx context.Context, in SharedClaimInput) ([]*comm
 	for _, id := range claimed {
 		won[id] = true
 	}
+	// A failure after the claim is the platform's: every claimed job goes
+	// back at once, in its own organization, never left to expire as if
+	// the sensor had gone offline.
+	handBack := func(err error) ([]*commanddom.Command, error) {
+		for _, c := range out {
+			if won[c.ID] {
+				s.unclaim(ctx, c.TenantID, c.ID, sensorID.String(), false)
+			}
+		}
+		return nil, err
+	}
 	got := make([]*commanddom.Command, 0, len(claimed))
 	for _, c := range out {
 		if !won[c.ID] {
@@ -172,7 +183,7 @@ func (s *Service) ClaimShared(ctx context.Context, in SharedClaimInput) ([]*comm
 		// holder, the lease and its epoch.
 		cmd, err := s.repo.GetByTenantAndID(ctx, c.TenantID, c.ID)
 		if err != nil {
-			return nil, err
+			return handBack(err)
 		}
 		got = append(got, cmd)
 	}
@@ -180,11 +191,11 @@ func (s *Service) ClaimShared(ctx context.Context, in SharedClaimInput) ([]*comm
 	// Shared sensors use no organization proxy pool: an egress member a
 	// command's creator put in the payload is removed.
 	if got, err = (egressDecision{}).stamp(got); err != nil {
-		return nil, err
+		return handBack(err)
 	}
 	delivered, err := s.deliver(ctx, sensorID.String(), got, rules, layers)
 	if err != nil {
-		return nil, err
+		return handBack(err)
 	}
 	// Signed per organization: the statement's tenant is the command's.
 	signedOrder, signedGroups := byTenant(delivered)

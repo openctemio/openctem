@@ -54,7 +54,7 @@ for (const size of SIZES) {
       const sheet = page.locator('[data-slot="detail-sheet"]')
       await expect(sheet).toBeVisible()
 
-      await expect(sheet.getByText('Network scans refused: no local policy')).toBeVisible({
+      await expect(sheet.getByText('Allows nothing yet: list what it may scan')).toBeVisible({
         timeout: 15_000,
       })
       const block = sheet.getByTestId('policy-suggestion')

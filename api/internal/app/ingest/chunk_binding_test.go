@@ -61,11 +61,15 @@ func TestIngest_DropsAddressesOutsideTheChunk(t *testing.T) {
 		t.Errorf("outside chunk = %d, refs %v", out.AssetsOutsideChunk, out.OutOfScopeAssetRefs)
 	}
 
-	// A command that names a host name may see the addresses it resolves
-	// to: nothing is dropped by this rule (S4 gates those elsewhere).
+	// A command that names a host name is not an address chunk: this rule
+	// drops nothing. The job-target rule (job_bound.go) keeps the range's
+	// addresses and drops an address no in-bound asset vouches for.
 	got, out = run(scanCmd("198.51.100.0/25", "app.example.com"))
-	if !got["203.0.113.9"] || out.AssetsOutsideChunk != 0 {
-		t.Errorf("a chunk with a name dropped %d assets", out.AssetsOutsideChunk)
+	if out.AssetsOutsideChunk != 0 {
+		t.Errorf("a chunk with a name dropped %d assets as outside the chunk", out.AssetsOutsideChunk)
+	}
+	if !got["198.51.100.7"] || got["203.0.113.9"] || !out.OutsideJobAssetRefs["out"] {
+		t.Errorf("job-target rule: stored %v, outside job %v", got, out.OutsideJobAssetRefs)
 	}
 
 	// Not a scan command (a retest names its own items): not this rule.

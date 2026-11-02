@@ -47,6 +47,8 @@ reachable from browsers.
 
 `NEXT_PUBLIC_APP_VERSION` and `NEXT_PUBLIC_APP_COMMIT` are set by the image build.
 
+`NEXT_DEPLOYMENT_ID` (build time, optional) is the Next.js deployment id used for version-skew protection; it defaults to `NEXT_PUBLIC_APP_COMMIT`. A browser tab opened before a deploy then reloads on its next navigation instead of calling server actions that no longer exist, and a client guard (`src/lib/deployment-skew.ts`) reloads once with a notice when an action call is refused. To verify on a live host: sign in, keep the tab open, deploy twice, then submit the login form again; the tab shows "OpenCTEM was updated" and reloads once, and the second sign-in works. Builds without a commit (local `next dev`) have no deployment id.
+
 Cookie names are fixed (`auth_token`, `refresh_token`, `app_tenant`,
 `app_user_info`, `app_pending_tenants`): the API, the console and the gateway
 must agree on them, so they are not configurable.

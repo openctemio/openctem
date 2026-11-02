@@ -338,12 +338,12 @@ func (s *GroupService) authorizeAccessChange(ctx context.Context, g *groupdom.Gr
 		}
 	}
 	if fullData {
-		external, err := s.bindings.HasExternalMembers(ctx, g.TenantID(), g.ID())
+		outside, err := s.bindings.ListOutsideMembers(ctx, g.TenantID(), g.ID(), groupdom.MaxOutsideMembersListed)
 		if err != nil {
 			return false, err
 		}
-		if external {
-			return false, ErrExternalTeamFullData
+		if len(outside) > 0 {
+			return false, &OutsideMembersError{Members: outside}
 		}
 	}
 	return privileged, nil

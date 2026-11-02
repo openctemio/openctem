@@ -56,6 +56,9 @@ type JobContent struct {
 	MaxLines int `json:"max_lines,omitempty"`
 	// Signature is the pack's DSSE envelope.
 	Signature json.RawMessage `json:"signature"`
+	// Version is the pack's version, for the platform's record of what the
+	// job read. It never travels to the sensor.
+	Version string `json:"-"`
 }
 
 // JobInput is a list the platform generated for one job (payload "inputs"):
@@ -70,4 +73,17 @@ type JobInput struct {
 	Lines  int    `json:"lines,omitempty"`
 	// Data is the gzip-compressed list (standard base64 in JSON).
 	Data []byte `json:"data_b64"`
+	// Source and Lists are for the platform's record of what the job read
+	// (where the list came from, and the organization lists with their
+	// versions). They never travel to the sensor.
+	Source string         `json:"-"`
+	Lists  []InputListRef `json:"-"`
+}
+
+// InputListRef is an organization list a generated list was built from.
+type InputListRef struct {
+	ID      string
+	Name    string
+	Version int
+	SHA256  string
 }

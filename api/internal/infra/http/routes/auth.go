@@ -128,6 +128,12 @@ func registerAuthRoutes(router Router, h Handlers, cfg *config.Config, authCfg A
 			refreshHandler := ChainFunc(h.LocalAuth.RefreshToken, crossSite, tokenExchangeRL)
 			r.POST("/refresh", refreshHandler.ServeHTTP)
 
+			// An account with no organization it can open gets an access
+			// token without a tenant, which reaches only the account
+			// allow-list (docs/architecture/tenantless-account-space.md).
+			accountTokenHandler := ChainFunc(h.LocalAuth.AccountToken, crossSite, tokenExchangeRL)
+			r.POST("/account-token", accountTokenHandler.ServeHTTP)
+
 			// Email verification - password rate limit
 			verifyHandler := ChainFunc(h.LocalAuth.VerifyEmail, crossSite, passwordRL)
 			r.POST("/verify-email", verifyHandler.ServeHTTP)
@@ -154,6 +160,8 @@ func registerAuthRoutes(router Router, h Handlers, cfg *config.Config, authCfg A
 			r.POST("/onboarding/options", onboardingOptions.ServeHTTP)
 			onboardingAccept := ChainFunc(h.LocalAuth.OnboardingAccept, crossSite, registerRL)
 			r.POST("/onboarding/accept", onboardingAccept.ServeHTTP)
+			onboardingDecline := ChainFunc(h.LocalAuth.OnboardingDecline, crossSite, registerRL)
+			r.POST("/onboarding/decline", onboardingDecline.ServeHTTP)
 
 			// An owner cancels a scheduled organization deletion: the
 			// organization is closed to tenant tokens while it waits, so
@@ -243,12 +251,28 @@ func registerUserRoutes(
 		middlewares = append(middlewares, userSyncMiddleware)
 	}
 
-	// Self-service account deletion (RFC-104): step-up; signing in again
-	// within the grace period cancels it.
+	// Self-service account deletion (RFC-104): the account's own sign-in
+	// (not an organization IdP's) and step-up; signing in again within the
+	// grace period cancels it.
 	router.Group("/api/v1/me/account", func(r Router) {
-		r.DELETE("/", h.DeleteMe, requireStepUp())
+		r.DELETE("/", h.DeleteMe, requireOwnSignIn(), requireStepUp())
 		r.GET("/deletion", h.GetMyDeletion)
 	}, middlewares...)
+
+	// Moving two-factor to a new authenticator (My account > Security). New
+	// self routes live under /api/v1/me; the older /users/me/2fa calls stay
+	// where they are. Same CSRF check and code rate limits as those.
+	if provider.SupportsLocal() && localAuthHandler != nil {
+		router.Group("/api/v1/me/2fa/replacement", func(r Router) {
+			replaceRL := newAuthRateLimiter("account-2fa-replacement")
+			var csrf []Middleware
+			if csrfProtectionMiddleware != nil {
+				csrf = append(csrf, csrfProtectionMiddleware)
+			}
+			r.POST("/start", localAuthHandler.ReplaceMFA, append(csrf, replaceRL.PasswordMiddleware())...)
+			r.POST("/complete", localAuthHandler.ConfirmReplaceMFA, append(append([]Middleware{}, csrf...), replaceRL.LoginMiddleware())...)
+		}, middlewares...)
+	}
 
 	router.Group("/api/v1/users", func(r Router) {
 		// Current user profile
@@ -268,7 +292,9 @@ func registerUserRoutes(
 			passwordRL := newAuthRateLimiter("account-password")
 			r.POST("/me/change-password", localAuthHandler.ChangePassword, passwordRL.PasswordMiddleware())
 			r.GET("/me/sessions", localAuthHandler.ListSessions)
-			r.DELETE("/me/sessions", localAuthHandler.RevokeAllSessions)
+			// Signing out everywhere (and optionally revoking API keys) reaches
+			// every organization: the account's own sign-in only.
+			r.DELETE("/me/sessions", localAuthHandler.RevokeAllSessions, requireOwnSignIn())
 			r.DELETE("/me/sessions/{sessionId}", localAuthHandler.RevokeSession)
 
 			// Two-factor authentication for the signed-in user. Code-checking

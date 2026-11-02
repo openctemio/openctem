@@ -142,4 +142,14 @@ describe('coverage filter', () => {
       parseInventoryFilters(new URLSearchParams('coverage=everything')).coverage
     ).toBeUndefined()
   })
+  it('reads and writes coverage_cause (a dashboard coverage cause row) and drops unknown causes', () => {
+    const f = parseInventoryFilters(
+      new URLSearchParams('coverage=uncovered&coverage_cause=no_sensor&program_assets=exclude')
+    )
+    expect(f.coverageCause).toBe('no_sensor')
+    expect(serializeInventoryFilters(f).get('coverage_cause')).toBe('no_sensor')
+    expect(
+      parseInventoryFilters(new URLSearchParams('coverage_cause=1%20OR%201')).coverageCause
+    ).toBeUndefined()
+  })
 })

@@ -5,6 +5,8 @@ import Link from '@/components/link'
 import { Loader2, RadioTower } from 'lucide-react'
 import { toast } from 'sonner'
 
+import { useTranslation } from '@/context/i18n-provider'
+
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -29,7 +31,7 @@ import { sensorRoleOf, type Sensor } from '@/lib/api/sensor-types'
 
 import { describeScanZoneError } from '../lib/errors'
 import { useZoneSensors } from '../hooks/use-zone-sensors'
-import { sensorHealthLabel } from '../lib/sensor-health'
+import { sensorStateLabel } from '../lib/sensor-health'
 import { SensorHealthChip } from './sensor-health-dot'
 
 interface ZoneSensorsDialogProps {
@@ -44,6 +46,7 @@ interface ZoneSensorsDialogProps {
  * tenant's sensors (RFC-023 D14). Each change is saved at once.
  */
 export function ZoneSensorsDialog({ open, onOpenChange, zone }: ZoneSensorsDialogProps) {
+  const { t } = useTranslation()
   const { sensors: allSensors, isLoading } = useZoneSensors()
   const [pending, setPending] = useState<string | null>(null)
   const [assigned, setAssigned] = useState<Set<string> | null>(null)
@@ -80,12 +83,18 @@ export function ZoneSensorsDialog({ open, onOpenChange, zone }: ZoneSensorsDialo
       setAssigned(s)
       toast.success(
         next
-          ? `"${sensor.name}" now scans zone "${zone.name}"`
-          : `"${sensor.name}" removed from zone "${zone.name}"`
+          ? t('scans.zones.sensorsDialog.assigned', undefined, {
+              sensor: sensor.name,
+              zone: zone.name,
+            })
+          : t('scans.zones.sensorsDialog.removed', undefined, {
+              sensor: sensor.name,
+              zone: zone.name,
+            })
       )
       await invalidateScanZonesCache()
     } catch (err) {
-      const d = describeScanZoneError(err, 'Failed to change the zone sensors')
+      const d = describeScanZoneError(err, t('scans.zones.sensorsDialog.changeFailed'))
       toast.error(d.message, { description: d.hint })
     } finally {
       setPending(null)
@@ -101,11 +110,10 @@ export function ZoneSensorsDialog({ open, onOpenChange, zone }: ZoneSensorsDialo
     <Dialog open={open} onOpenChange={close}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Sensors for {zone?.name}</DialogTitle>
-          <DialogDescription>
-            Jobs for this zone go to the least busy online sensor checked here. Unchecking a sensor
-            moves its queued jobs of this zone back to the zone pool.
-          </DialogDescription>
+          <DialogTitle>
+            {t('scans.zones.sensorsDialog.title', undefined, { name: zone?.name ?? '' })}
+          </DialogTitle>
+          <DialogDescription>{t('scans.zones.sensorsDialog.desc')}</DialogDescription>
         </DialogHeader>
 
         <DialogBody>
@@ -118,12 +126,12 @@ export function ZoneSensorsDialog({ open, onOpenChange, zone }: ZoneSensorsDialo
           ) : sensors.length === 0 ? (
             <EmptyState
               icon={RadioTower}
-              title="No sensors yet"
-              description="Add a sensor in your network first, then assign it here."
+              title={t('scans.zones.sensorsDialog.emptyTitle')}
+              description={t('scans.zones.sensorsDialog.emptyDesc')}
               card={false}
               action={
                 <Button asChild size="sm" variant="outline">
-                  <Link href="/sensors?tab=scanners">Go to scanners</Link>
+                  <Link href="/sensors">{t('scans.zones.sensorsDialog.goToSensors')}</Link>
                 </Button>
               }
             />
@@ -139,19 +147,21 @@ export function ZoneSensorsDialog({ open, onOpenChange, zone }: ZoneSensorsDialo
                       checked={checked}
                       disabled={pending !== null}
                       onCheckedChange={(v) => void toggle(s, v === true)}
-                      aria-label={`Assign ${s.name}`}
+                      aria-label={t('scans.zones.sensorsDialog.assignAria', undefined, {
+                        name: s.name,
+                      })}
                     />
                     <label htmlFor={id} className="flex min-w-0 flex-1 cursor-pointer flex-col">
                       <span className="flex min-w-0 items-center gap-2">
                         <SensorHealthChip sensor={s} className="border-0 px-0 text-sm" />
                         {sensorRoleOf(s.type) === 'collector' && (
                           <Badge variant="secondary" className="text-xs font-normal">
-                            Collector
+                            {t('scans.zones.sensorsDialog.collector')}
                           </Badge>
                         )}
                       </span>
                       <span className="truncate text-xs text-muted-foreground">
-                        {sensorHealthLabel(s)}
+                        {sensorStateLabel(s, t)}
                         {s.effective?.tools?.length ? `, ${s.effective.tools.join(', ')}` : ''}
                       </span>
                     </label>
@@ -167,7 +177,7 @@ export function ZoneSensorsDialog({ open, onOpenChange, zone }: ZoneSensorsDialo
 
         <DialogFooter>
           <Button variant="outline" onClick={() => close(false)}>
-            Done
+            {t('scans.zones.sensorsDialog.done')}
           </Button>
         </DialogFooter>
       </DialogContent>

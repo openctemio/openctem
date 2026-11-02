@@ -112,12 +112,12 @@ func (m *mockIntegrationRepo) Update(_ context.Context, i *integration.Integrati
 	return nil
 }
 
-func (m *mockIntegrationRepo) Delete(_ context.Context, id integration.ID) error {
+func (m *mockIntegrationRepo) Delete(_ context.Context, tenantID, id integration.ID) error {
 	m.deleteCalls++
 	if m.deleteErr != nil {
 		return m.deleteErr
 	}
-	if _, ok := m.integrations[id]; !ok {
+	if i, ok := m.integrations[id]; !ok || i.TenantID() != tenantID {
 		return integration.ErrIntegrationNotFound
 	}
 	delete(m.integrations, id)

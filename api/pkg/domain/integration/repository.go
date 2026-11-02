@@ -53,7 +53,7 @@ type Repository interface {
 	GetByTenantAndID(ctx context.Context, tenantID ID, id ID) (*Integration, error)
 	GetByTenantAndName(ctx context.Context, tenantID ID, name string) (*Integration, error)
 	Update(ctx context.Context, i *Integration) error
-	Delete(ctx context.Context, id ID) error
+	Delete(ctx context.Context, tenantID, id ID) error
 
 	// List operations
 	List(ctx context.Context, filter Filter) (ListResult, error)

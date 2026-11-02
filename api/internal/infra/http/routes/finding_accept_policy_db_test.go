@@ -255,8 +255,13 @@ func TestFindingAcceptPolicy_LoweringWaits24Hours_DB(t *testing.T) {
 		t.Fatalf("a canceled lowering is still pending: %+v", got)
 	}
 	if n := h.countRows(`SELECT COUNT(*) FROM audit_logs WHERE tenant_id = $1 AND action = 'finding_approval.settings_changed'
-		AND severity = 'high' AND changes IS NOT NULL`, org); n < 4 {
-		t.Fatalf("settings changes audited at high: %d", n)
+		AND severity IN ('high', 'critical') AND changes IS NOT NULL`, org); n < 4 {
+		t.Fatalf("settings changes audited at high or critical: %d", n)
+	}
+	// Each lowering (two people to one) is audited critical.
+	if n := h.countRows(`SELECT COUNT(*) FROM audit_logs WHERE tenant_id = $1 AND action = 'finding_approval.settings_changed'
+		AND severity = 'critical' AND metadata->>'loosened' = 'true'`, org); n < 2 {
+		t.Fatalf("lowerings audited critical: %d", n)
 	}
 }
 

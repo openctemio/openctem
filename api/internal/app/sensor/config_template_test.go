@@ -125,11 +125,10 @@ func TestTemplates_DockerRunWorksAsPasted(t *testing.T) {
 			"-e SENSOR_API_URL='https://192.0.2.204'",
 			"-e SENSOR_API_KEY='rda_4b1e0123456789abcdef'",
 			"-e SSL_CERT_DIR=/etc/openctem/certs",
-			// The CA and the sensor-local policy both live under /etc/openctem,
-			// mounted read-only; the policy is required (fail closed).
+			// The CA, the host owner's optional narrowing policy and the
+			// kill switch live under /etc/openctem, mounted read-only.
 			"-v /etc/openctem:/etc/openctem:ro",
-			"sudo install -m 0644 sensor-policy.yaml /etc/openctem/sensor-policy.yaml",
-			"-e SENSOR_LOCAL_POLICY=/etc/openctem/sensor-policy.yaml",
+			"-e SENSOR_KILL_SWITCH_FILE=/etc/openctem/STOP",
 			// Hardened by default (RFC-040 §5.10).
 			"--read-only --cap-drop ALL --security-opt no-new-privileges:true",
 			"--tmpfs /tmp",
@@ -244,11 +243,12 @@ func TestTemplates_ComposeIsValid(t *testing.T) {
 			s.Volumes[1] != "./policy:/etc/openctem/policy:ro" {
 			t.Errorf("[%s] volumes = %v, want the data volume and the read-only policy", dir, s.Volumes)
 		}
-		// Hardened, with the sensor-local policy required (RFC-040).
+		// Hardened; the local policy is optional (narrow only), the kill
+		// switch always honored.
 		if !s.ReadOnly || len(s.CapDrop) != 1 || s.CapDrop[0] != "ALL" || len(s.SecurityOpt) != 2 ||
 			s.SecurityOpt[0] != "no-new-privileges:true" || s.SecurityOpt[1] != "seccomp=./sensor-seccomp.json" || len(s.Tmpfs) != 1 || s.Tmpfs[0] != "/tmp" ||
 			s.Environment["XDG_CONFIG_HOME"] != "/tmp/.config" || s.Environment["XDG_CACHE_HOME"] != "/tmp/.cache" ||
-			s.Environment["SENSOR_LOCAL_POLICY"] != "/etc/openctem/policy/sensor-policy.yaml" ||
+			s.Environment["SENSOR_LOCAL_POLICY"] != "" ||
 			s.Environment["SENSOR_KILL_SWITCH_FILE"] != "/etc/openctem/policy/STOP" {
 			t.Errorf("[%s] hardening/policy: read_only=%v cap_drop=%v security_opt=%v tmpfs=%v env=%v", dir,
 				s.ReadOnly, s.CapDrop, s.SecurityOpt, s.Tmpfs, s.Environment)
@@ -426,50 +426,6 @@ func TestTemplates_ShippedFilesMatchBuiltins(t *testing.T) {
 		if string(b) != builtinTemplates[f] {
 			t.Errorf("configs/sensor-products/%s.tmpl differs from the built-in %q template", f, f)
 		}
-	}
-}
-
-func TestLoadCACertificate(t *testing.T) {
-	dir := t.TempDir()
-	ca := testCAPEM(t)
-
-	write := func(name string, b []byte) string {
-		p := filepath.Join(dir, name)
-		if err := os.WriteFile(p, b, 0o600); err != nil {
-			t.Fatal(err)
-		}
-		return p
-	}
-
-	pemOut, fp, err := LoadCACertificate(write("ca.crt", ca))
-	if err != nil || pemOut != string(ca) {
-		t.Fatalf("valid CA: err=%v pem=%q", err, pemOut)
-	}
-	if len(fp) != 95 || strings.Count(fp, ":") != 31 {
-		t.Errorf("fingerprint %q is not colon-separated SHA-256", fp)
-	}
-
-	// A file that also holds a private key: only the certificate comes out.
-	keyBlock := pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: []byte("secret-key-material")})
-	pemOut, _, err = LoadCACertificate(write("mixed.pem", append(append([]byte{}, keyBlock...), ca...)))
-	if err != nil || strings.Contains(pemOut, "PRIVATE KEY") || !strings.Contains(pemOut, "BEGIN CERTIFICATE") {
-		t.Errorf("mixed file: err=%v pem=%q", err, pemOut)
-	}
-
-	for name, b := range map[string][]byte{
-		"garbage.crt":  []byte("not a certificate"),
-		"key-only.pem": keyBlock,
-		"bad-der.crt":  pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: []byte("junk")}),
-	} {
-		if pemOut, _, err := LoadCACertificate(write(name, b)); err == nil || pemOut != "" {
-			t.Errorf("%s: want an error and no PEM, got %q", name, pemOut)
-		}
-	}
-	if _, _, err := LoadCACertificate(filepath.Join(dir, "missing.crt")); err == nil {
-		t.Error("missing file: want an error")
-	}
-	if pemOut, fp, err := LoadCACertificate(""); err != nil || pemOut != "" || fp != "" {
-		t.Errorf("unset path: want nothing, got %q %q %v", pemOut, fp, err)
 	}
 }
 

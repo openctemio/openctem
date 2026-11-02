@@ -1,0 +1,28 @@
+[
+  {
+    "pack": "wordlists-s",
+    "release": "2026.10.1",
+    "asset": "wordlists-s-2026.10.1.tar.gz",
+    "archive_sha256": "sha256:a1f072dc75fcf18c708a4e05efa452aa7ab5e64e8785c2874d1bb16b93552cf5",
+    "pack_digest": "sha256:31d496ecafd463a37af1cf2161a7be634d6e6ceafb6539c8b891aba665945fdb",
+    "bytes": 19479,
+    "lines": {
+      "dns/labels-s.txt": 5000,
+      "web/api-routes-s.txt": 366,
+      "web/params-s.txt": 194
+    }
+  },
+  {
+    "pack": "wordlists-m",
+    "release": "2026.10.1",
+    "asset": "wordlists-m-2026.10.1.tar.gz",
+    "archive_sha256": "sha256:d9c42ae004619465cd3d9a2febfacf64de7b2d3e97ff7d204d6d489fd14e5835",
+    "pack_digest": "sha256:a9fff514683d2f13059585c4e59876e2c35b7772d09a13849656651980ce54a9",
+    "bytes": 259954,
+    "lines": {
+      "dns/labels-m.txt": 50000,
+      "web/api-routes-m.txt": 11013,
+      "web/params-m.txt": 194
+    }
+  }
+]

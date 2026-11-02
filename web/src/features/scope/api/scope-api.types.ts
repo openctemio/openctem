@@ -241,6 +241,8 @@ export interface ScopeTargetFilters {
   per_page?: number
   sort_by?: 'created_at' | 'updated_at' | 'pattern' | 'target_type'
   sort_order?: 'asc' | 'desc'
+  /** status_counts: the answer also counts every entry per status. */
+  include?: 'status_counts'
 }
 
 export interface ScopeExclusionFilters {
@@ -251,6 +253,8 @@ export interface ScopeExclusionFilters {
   per_page?: number
   sort_by?: 'created_at' | 'updated_at' | 'pattern' | 'exclusion_type'
   sort_order?: 'asc' | 'desc'
+  /** status_counts: the answer also counts every exclusion per status. */
+  include?: 'status_counts'
 }
 
 // ============================================

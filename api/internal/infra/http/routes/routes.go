@@ -81,6 +81,7 @@ type Handlers struct {
 	// Note: Real-time updates moved to WebSocket (see WebSocket field below)
 	AITriage      *handler.AITriageHandler      // Always initialized - handles nil service gracefully
 	AIAnalysis    *handler.AIAnalysisHandler    // AI agents and runs; nil = not wired
+	AIKnowledge   *handler.AIKnowledgeHandler   // knowledge for AI agents; nil = not wired
 	Dashboard     *handler.DashboardHandler     // nil if not initialized (no database)
 	UserDashboard *handler.UserDashboardHandler // nil if not initialized - per-user customizable dashboards (RFC-021)
 	// DashboardFacts serves "Rebuild dashboard data" (organization and
@@ -108,8 +109,13 @@ type Handlers struct {
 	// EASMSettings is attack-surface monitoring settings and run-now
 	// (research/22 P0-11); nil if not initialized.
 	EASMSettings *handler.EASMSettingsHandler
+	// EASMDiscovery is discovery management: the coverage work by stage
+	// with Run, Run all and Abort all; nil if not initialized.
+	EASMDiscovery *handler.EASMDiscoveryHandler
 	// EASMLookalike manages passive lookalike-domain monitoring (RFC-083)
 	EASMLookalike *handler.EASMLookalikeHandler
+	// PageMonitor serves web page monitoring (RFC-138)
+	PageMonitor *handler.PageMonitorHandler
 	// EASMNetworkSeed manages AS number and organization seeds (RFC-082)
 	EASMNetworkSeed *handler.EASMNetworkSeedHandler
 	// AssetWebEvidence serves an asset's web evidence and screenshots (RFC-081)
@@ -133,11 +139,20 @@ type Handlers struct {
 	SCIMToken     *handler.SCIMTokenHandler  // nil if not initialized - SCIM token admin
 	SCIMAuth      Middleware                 // SCIM bearer-token auth middleware (nil if SCIM disabled)
 	ModuleGate    *middleware.ModuleGate     // per-tenant module route gating (nil-safe: fail-open)
+	// IPAllowlistGate is the organization IP allowlist gate, built by the
+	// caller so a cross-replica invalidation bus can drop its cache
+	// (NewIPAllowlistGate). Nil: Register builds one, invalidated locally only.
+	IPAllowlistGate *middleware.IPAllowlistGate
+	// IPAllowlistInvalidate drops an organization's cached allowlist after a
+	// settings change (the bus when Redis is configured). Nil: the gate's own
+	// Invalidate.
+	IPAllowlistInvalidate func(tenantID string)
 	// DataScope enforces the Layer 2 (group) data scope on every by-id asset
 	// and finding route of the token-tenant chain (DataScopeGuard). nil
 	// disables the guard (tests with a minimal handler set).
 	DataScope     middleware.DataScopeAsserter
 	Sensor        *handler.SensorHandler        // nil if not initialized (no database)
+	PlatformCA    *handler.PlatformCAHandler    // public CA bundle (PLATFORM_CA_CERT_FILE); nil: the route answers 404
 	SensorContent *handler.SensorContentHandler // scanner content policy + refresh (RFC-031); nil without a database
 	SensorResults *handler.SensorResultHandler  // unsolicited results policy + quarantine review (RFC-040); nil without a database
 	ScanZone      *handler.ScanZoneHandler      // nil if not initialized (no database)
@@ -160,6 +175,8 @@ type Handlers struct {
 	ContentSource       *handler.ContentSourceHandler       // nil if not initialized (no database)
 	ContentPack         *handler.ContentPackHandler         // nil if not initialized (no database)
 	PlatformContentPack *handler.PlatformContentPackHandler // nil if not initialized (no database)
+	Wordlist            *handler.WordlistHandler            // nil if not initialized (no database)
+	ContentRule         *handler.ContentRuleHandler         // nil if not initialized (no database)
 	ContentCatalog      *handler.ContentCatalogHandler      // nil if not initialized (no database)
 	AdminContentCatalog *handler.AdminContentCatalogHandler // nil if not initialized (no database)
 	SensorContentV2     *handler.SensorContentV2Handler     // content delivery to sensors; nil if not initialized
@@ -173,7 +190,6 @@ type Handlers struct {
 	Exposure         *handler.ExposureHandler         // nil if not initialized (no database)
 	ThreatIntel      *handler.ThreatIntelHandler      // nil if not initialized (no database)
 	EmergingThreat   *handler.EmergingThreatHandler   // emerging-threat alerts (RFC-117); nil disables
-	CTEMID           *handler.CTEMIDHandler           // nil if not initialized (no database)
 	CredentialImport *handler.CredentialImportHandler // nil if not initialized (no database)
 	Workflow         *handler.WorkflowHandler         // nil if not initialized (no database)
 	Suppression      *handler.SuppressionHandler      // nil if not initialized (no database)
@@ -181,6 +197,7 @@ type Handlers struct {
 	// CTEM Discovery handlers
 	AssetService           *handler.AssetServiceHandler           // nil if not initialized (no database)
 	Certificate            *handler.CertificateHandler            // Certificates view; nil without a database
+	Technology             *handler.TechnologyHandler             // Technologies view; nil without a database
 	WebEndpoint            *handler.WebEndpointHandler            // Web surface (RFC-056); nil without a database
 	Query                  *handler.QueryHandler                  // Custom queries; nil without a database
 	APISpec                *handler.APISpecHandler                // API descriptions of web origins (RFC-056)
@@ -475,8 +492,10 @@ func Register(
 		stepUpChecker = h.LocalAuth.RecentAuthChecker()
 	}
 	credentialFactorChecker = nil
+	ownSignInChecker = nil
 	if h.LocalAuth != nil {
 		credentialFactorChecker = h.LocalAuth.CredentialFactorChecker()
+		ownSignInChecker = h.LocalAuth.OwnSignInChecker()
 	}
 	apiKeyOrJWT = nil
 	if h.APIKeyAuth != nil {
@@ -588,10 +607,17 @@ func Register(
 	// and to the /tenants/{tenant} chain (URL organization). Settings changes
 	// invalidate the cached policy through the tenant handler.
 	if tenantRepo != nil {
-		ipGate := middleware.NewIPAllowlistGate(tenantSecurityPolicyAdapter{repo: tenantRepo}, 30*time.Second, log)
+		ipGate := h.IPAllowlistGate
+		if ipGate == nil {
+			ipGate = NewIPAllowlistGate(tenantRepo, log)
+		}
 		ipAllowlistMiddleware = ipGate.Enforce
 		if h.Tenant != nil {
-			h.Tenant.SetSecurityPolicyInvalidator(ipGate.Invalidate)
+			invalidate := h.IPAllowlistInvalidate
+			if invalidate == nil {
+				invalidate = ipGate.Invalidate
+			}
+			h.Tenant.SetSecurityPolicyInvalidator(invalidate)
 		}
 	}
 
@@ -676,6 +702,9 @@ func Register(
 	if h.Certificate != nil {
 		registerCertificateRoutes(router, h.Certificate, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleAttackSurface))
 	}
+	if h.Technology != nil {
+		registerTechnologyRoutes(router, h.Technology, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleAttackSurface))
+	}
 
 	// Web surface: endpoints under their origin asset (RFC-056)
 	if h.WebEndpoint != nil {
@@ -729,6 +758,7 @@ func Register(
 	registerClosureSettingsRoutes(router, h.Tenant, authMiddleware, userSync)
 	registerVulnMatchingSettingsRoutes(router, h.Tenant, authMiddleware, userSync)
 	registerEmergingThreatSettingsRoutes(router, h.Tenant, authMiddleware, userSync)
+	registerAPIKeySettingsRoutes(router, h.Tenant, authMiddleware, userSync)
 	registerAISettingsRoutes(router, h.AISettings, h.AIMasking, authMiddleware, userSync)
 	registerEmergingThreatRoutes(router, h.EmergingThreat, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleThreatIntel))
 	registerLicensePolicySettingsRoutes(router, h.Tenant, authMiddleware, userSync)
@@ -789,6 +819,8 @@ func Register(
 		h.ModuleGate.RequireModule(moduledom.ModuleAITriage))
 	registerAIAnalysisRoutes(router, h.AIAnalysis, authMiddleware, userSync,
 		h.ModuleGate.RequireModule(moduledom.ModuleAITriage), aiTriageRateLimiter)
+	registerAIKnowledgeRoutes(router, h.AIKnowledge, authMiddleware, userSync,
+		h.ModuleGate.RequireModule(moduledom.ModuleAITriage))
 
 	// Dashboard routes (global and tenant from JWT token)
 	if h.Dashboard != nil {
@@ -865,9 +897,9 @@ func Register(
 		registerMCPClientRoutes(router, h.MCPClients, authMiddleware, userSync)
 	}
 
-	// The sensor's seccomp profile for the install commands: public (the
-	// open-source release's file, no tenant data), rate limited per IP.
-	registerSensorInstallRoutes(router, middleware.RateLimit(&cfg.RateLimit, log))
+	// The sensor's seccomp profile and the platform's private CA bundle for
+	// the install commands: public (no tenant data), rate limited per IP.
+	registerSensorInstallRoutes(router, h.PlatformCA, middleware.RateLimit(&cfg.RateLimit, log))
 
 	// Read-only MCP server — authenticated by tenant-scoped API key, not JWT.
 	// Per-IP rate limit runs before auth to throttle junk-token floods; the
@@ -985,6 +1017,12 @@ func Register(
 	}
 	if h.EASMSettings != nil {
 		registerEASMSettingsRoutes(router, h.EASMSettings, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleAttackSurface))
+	}
+	if h.EASMDiscovery != nil {
+		registerEASMDiscoveryRoutes(router, h.EASMDiscovery, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleAttackSurface))
+	}
+	if h.PageMonitor != nil {
+		registerPageMonitorRoutes(router, h.PageMonitor, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleAttackSurface))
 	}
 	if h.EASMLookalike != nil {
 		registerEASMLookalikeRoutes(router, h.EASMLookalike, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleAttackSurface))
@@ -1110,6 +1148,12 @@ func Register(
 	if h.ContentCatalog != nil {
 		registerContentCatalogRoutes(router, h.ContentCatalog, authMiddleware, userSync)
 	}
+	if h.Wordlist != nil {
+		registerWordlistRoutes(router, h.Wordlist, authMiddleware, userSync)
+	}
+	if h.ContentRule != nil {
+		registerContentRuleRoutes(router, h.ContentRule, authMiddleware, userSync)
+	}
 	if h.PlatformContentPack != nil {
 		registerPlatformContentPackRoutes(router, h.PlatformContentPack, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleScannerTemplates))
 	}
@@ -1137,16 +1181,13 @@ func Register(
 	// Exposure routes (tenant from JWT token)
 	if h.Exposure != nil {
 		registerExposureRoutes(router, h.Exposure, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleExposures))
+		// The Exposure Items view sits with the external attack surface.
+		registerExposureItemRoutes(router, h.Exposure, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleAttackSurface))
 	}
 
 	// Threat Intelligence routes (global threat intel data)
 	if h.ThreatIntel != nil {
 		registerThreatIntelRoutes(router, h.ThreatIntel, authMiddleware, userSync)
-	}
-
-	// CTEM-ID catalog routes (global reference data)
-	if h.CTEMID != nil {
-		registerCTEMIDRoutes(router, h.CTEMID, authMiddleware, userSync)
 	}
 
 	// Credential Import routes (tenant from JWT token)
@@ -1364,6 +1405,17 @@ var stepUpChecker middleware.RecentAuthChecker //nolint:gochecknoglobals // set 
 // handler; nil lets requests through (tests without the auth service).
 var credentialFactorChecker middleware.CredentialFactorChecker //nolint:gochecknoglobals // set once during init
 
+// ownSignInChecker answers RequireOwnSignIn (actions on the whole account
+// need the account's own sign-in, not an organization IdP's). Set once
+// during Register from the local auth handler.
+var ownSignInChecker middleware.OwnSignInChecker //nolint:gochecknoglobals // set once during init
+
+// requireOwnSignIn is the middleware for a route that acts on the whole
+// account (deleting it, signing it out everywhere).
+func requireOwnSignIn() Middleware {
+	return middleware.RequireOwnSignIn(ownSignInChecker)
+}
+
 // requireCredentialFactor is the middleware for a route that creates a
 // credential (API key, sensor enrolment, integration secret): the caller
 // needs a second factor when the organization or the platform floor covers
@@ -1440,6 +1492,12 @@ func requireStepUpWhenConfirming() Middleware {
 			gated.ServeHTTP(w, r)
 		})
 	}
+}
+
+// NewIPAllowlistGate builds the organization IP allowlist gate (policies
+// cached 30s per replica; the cache invalidation bus drops entries early).
+func NewIPAllowlistGate(tenantRepo tenant.Repository, log *logger.Logger) *middleware.IPAllowlistGate {
+	return middleware.NewIPAllowlistGate(tenantSecurityPolicyAdapter{repo: tenantRepo}, 30*time.Second, log)
 }
 
 // tenantSecurityPolicyAdapter adapts tenant.Repository to

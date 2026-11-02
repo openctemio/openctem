@@ -20,6 +20,7 @@ import (
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/app/compliance"
 	findingapp "github.com/openctemio/openctem/api/internal/app/finding"
+	mcpoauthapp "github.com/openctemio/openctem/api/internal/app/mcpoauth"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
 	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
@@ -39,8 +40,14 @@ type fakeFindingReader struct {
 	gotIsAdmin   bool
 	// The vulnerabilities list call of list_active_cves.
 	gotCVECaller findingapp.FilterCaller
-	gotCVESpec   *filterspec.Spec
-	gotCVEOpts   vulnerability.CVEListOptions
+	// The findings stats call of finding_stats.
+	gotStatsCaller findingapp.FilterCaller
+	// The findings list call of list_findings, and the total it answers.
+	gotListCaller findingapp.FilterCaller
+	gotListSpec   *filterspec.Spec
+	listTotal     int64
+	gotCVESpec    *filterspec.Spec
+	gotCVEOpts    vulnerability.CVEListOptions
 	// scopeErr, when set, is returned by the scoped read paths so tests can
 	// simulate a data-scope/pentest-membership denial.
 	scopeErr error
@@ -53,6 +60,14 @@ func (f *fakeFindingReader) ListFindings(_ context.Context, in findingapp.ListFi
 	f.gotTenant = in.TenantID
 	return pagination.NewResult([]*vulnerability.Finding{}, 0, pagination.Pagination{Page: 1, PerPage: 25}), nil
 }
+func (f *fakeFindingReader) ListFindingsBySpec(_ context.Context, c findingapp.FilterCaller, spec *filterspec.Spec) (pagination.Result[*vulnerability.Finding], error) {
+	f.gotTenant, f.gotScopeUser, f.gotIsAdmin = c.TenantID, c.UserID, c.IsAdmin
+	f.gotListCaller, f.gotListSpec = c, spec
+	if f.scopeErr != nil {
+		return pagination.Result[*vulnerability.Finding]{}, f.scopeErr
+	}
+	return pagination.NewResult([]*vulnerability.Finding{}, f.listTotal, pagination.Pagination{Page: spec.Page, PerPage: spec.PerPage}), nil
+}
 func (f *fakeFindingReader) GetFindingWithScope(_ context.Context, tenantID, _, actingUserID string, _ bool) (*vulnerability.Finding, error) {
 	f.gotTenant = tenantID
 	f.gotScopeUser = actingUserID
@@ -61,10 +76,9 @@ func (f *fakeFindingReader) GetFindingWithScope(_ context.Context, tenantID, _, 
 	}
 	return f.finding, nil
 }
-func (f *fakeFindingReader) GetFindingStatsWithScope(_ context.Context, in findingapp.GetFindingStatsInput) (*vulnerability.FindingStats, error) {
-	f.gotTenant = in.TenantID
-	f.gotScopeUser = in.ActingUserID
-	f.gotIsAdmin = in.IsAdmin
+func (f *fakeFindingReader) GetFindingStatsBySpec(_ context.Context, c findingapp.FilterCaller, _ *filterspec.Spec) (*vulnerability.FindingStats, error) {
+	f.gotTenant, f.gotScopeUser, f.gotIsAdmin = c.TenantID, c.UserID, c.IsAdmin
+	f.gotStatsCaller = c
 	if f.scopeErr != nil {
 		return nil, f.scopeErr
 	}
@@ -1045,40 +1059,147 @@ func TestMCP_ListActiveCVEs_RunsTheListAsTheKeyOwner(t *testing.T) {
 }
 
 // fakeTotalAssets answers the asset list with a fixed total, as the real
-// service does for a caller whose data scope covers that many assets.
-type fakeTotalAssets struct{ total int64 }
+// service does for a caller whose data scope covers that many assets; an
+// administrator-view count (the person's full-data console view) answers
+// org.
+type fakeTotalAssets struct{ total, org int64 }
 
-func (a fakeTotalAssets) ListAssets(_ context.Context, _ assetapp.ListAssetsInput) (pagination.Result[*assetdom.Asset], error) {
-	return pagination.NewResult([]*assetdom.Asset{}, a.total, pagination.Pagination{Page: 1, PerPage: 1}), nil
+func (a fakeTotalAssets) ListAssets(_ context.Context, in assetapp.ListAssetsInput) (pagination.Result[*assetdom.Asset], error) {
+	n := a.total
+	if in.IsAdmin {
+		n = a.org
+	}
+	return pagination.NewResult([]*assetdom.Asset{}, n, pagination.Pagination{Page: 1, PerPage: 1}), nil
 }
 func (a fakeTotalAssets) GetAsset(context.Context, string, string) (*assetdom.Asset, error) {
 	return nil, shared.ErrNotFound
 }
 
-// A caller whose data scope covers no asset gets an explicit explanation
-// beside every empty asset/finding result, instead of data that looks like an
-// empty organization. A caller whose scope has assets gets none.
-func TestMCP_EmptyScopeNotice(t *testing.T) {
-	calls := []struct{ tool, args string }{
-		{"list_assets", `{}`}, {"list_findings", `{}`}, {"finding_stats", `{}`}, {"list_active_cves", `{}`},
+// fakeRoles answers HoldsFullDataRole.
+type fakeRoles struct{ full bool }
+
+func (r fakeRoles) HoldsFullDataRole(context.Context, shared.ID, string) (bool, error) {
+	return r.full, nil
+}
+
+// doRPCAs is doRPCScoped for a connection authenticated as provider (an
+// oct_ key or an MCP OAuth token), with fullData the OAuth grant's
+// "read all organization data" consent.
+func doRPCAs(t *testing.T, h *MCPHandler, provider string, fullData bool, scopes []string, body string) rpcResp {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/mcp", bytes.NewBufferString(body))
+	ctx := context.WithValue(req.Context(), middleware.TenantIDKey, "018f5a1e-0000-7000-8000-000000000001")
+	ctx = context.WithValue(ctx, middleware.UserIDKey, "018f5a1e-0000-7000-8000-0000000000aa")
+	ctx = context.WithValue(ctx, middleware.PermissionsKey, scopes)
+	ctx = context.WithValue(ctx, middleware.IsAdminKey, false)
+	ctx = context.WithValue(ctx, middleware.AuthProviderKey, provider)
+	if provider == middleware.AuthProviderMCPOAuth {
+		ctx = context.WithValue(ctx, middleware.MCPPrincipalKey, &mcpoauthapp.Principal{FullData: fullData})
 	}
-	for _, scoped := range []struct {
-		name   string
-		assets int64
-		notice bool
-	}{{"scope covers nothing", 0, true}, {"scope covers assets", 3, false}} {
-		for _, c := range calls {
-			t.Run(scoped.name+"/"+c.tool, func(t *testing.T) {
-				h := NewMCPHandler(&fakeFindingReader{}, nil, nil, nil, nil, fakeTotalAssets{total: scoped.assets}, nil, logger.NewNop())
-				_, resp := doRPC(t, h, "tenant-a", `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"`+c.tool+`","arguments":`+c.args+`}}`)
-				if resp.Error != nil {
-					t.Fatalf("error: %+v", resp.Error)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req.WithContext(ctx))
+	var resp rpcResp
+	_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+	if resp.Error != nil {
+		t.Fatalf("error: %+v", resp.Error)
+	}
+	return resp
+}
+
+// Every asset and finding tool explains a partial view in one line: a
+// person whose role reads everything in the console is told how many of
+// the organization's assets the connection sees; anyone else is told only
+// that their scope covers nothing, never the organization's size. A
+// connection allowed to read all organization data gets no notice.
+func TestMCP_ScopeNotice(t *testing.T) {
+	tools := []string{"list_assets", "list_findings", "finding_stats", "list_active_cves"}
+	noAssets := []string{"findings:read"}
+	cases := []struct {
+		name      string
+		provider  string
+		fullData  bool
+		role      bool
+		scopes    []string
+		visible   int64
+		org       int64
+		want      string // substring; "" = no notice
+		forbidden string // must not appear
+	}{
+		{"member, scope covers nothing", middleware.AuthProviderAPIKey, false, false, allReadScopes, 0, 960, "You can see 0 assets", "960"},
+		{"member, scope covers assets", middleware.AuthProviderAPIKey, false, false, allReadScopes, 3, 960, "", "960"},
+		{"full-data person, key", middleware.AuthProviderAPIKey, false, true, allReadScopes, 0, 960, "You can see 0 of 960 assets", "reconnect"},
+		{"full-data person, oauth", middleware.AuthProviderMCPOAuth, false, true, allReadScopes, 4, 960, "You can see 4 of 960 assets; the rest are not assigned to a group you belong to. This connection reads only your groups' assets: reconnect", ""},
+		{"full-data person, all assets in scope", middleware.AuthProviderMCPOAuth, false, true, allReadScopes, 960, 960, "", ""},
+		{"full-data person, no assets:read", middleware.AuthProviderMCPOAuth, false, true, noAssets, 0, 960, "You can see 0 assets", "960"},
+		{"oauth allowed full data", middleware.AuthProviderMCPOAuth, true, true, allReadScopes, 960, 960, "", ""},
+	}
+	for _, c := range cases {
+		for _, tool := range tools {
+			t.Run(c.name+"/"+tool, func(t *testing.T) {
+				if tool == "list_assets" && !slices.Contains(c.scopes, "assets:read") {
+					t.Skip("tool needs assets:read")
 				}
-				got := strings.Contains(string(resp.Result), "covers 0 assets")
-				if got != scoped.notice {
-					t.Fatalf("notice present=%v want %v: %s", got, scoped.notice, resp.Result)
+				h := NewMCPHandler(&fakeFindingReader{}, nil, nil, nil, nil, fakeTotalAssets{total: c.visible, org: c.org}, nil, logger.NewNop())
+				h.SetFullDataRoles(fakeRoles{full: c.role})
+				resp := doRPCAs(t, h, c.provider, c.fullData, c.scopes,
+					`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"`+tool+`","arguments":{}}}`)
+				var r struct {
+					Content []struct {
+						Text string `json:"text"`
+					} `json:"content"`
+				}
+				if err := json.Unmarshal(resp.Result, &r); err != nil || len(r.Content) == 0 {
+					t.Fatalf("result: %s", resp.Result)
+				}
+				var out map[string]any
+				if err := json.Unmarshal([]byte(r.Content[0].Text), &out); err != nil {
+					t.Fatalf("payload: %v", err)
+				}
+				notice, _ := out["scope_notice"].(string)
+				if c.want == "" && notice != "" {
+					t.Fatalf("want no notice, got %q", notice)
+				}
+				if c.want != "" && !strings.Contains(notice, c.want) {
+					t.Fatalf("notice %q: want %q", notice, c.want)
+				}
+				if c.forbidden != "" && strings.Contains(notice, c.forbidden) {
+					t.Fatalf("notice %q must not contain %q", notice, c.forbidden)
 				}
 			})
 		}
+	}
+}
+
+// finding_stats and list_active_cves compile as the same caller, so their
+// counts are over the same findings: on the connection's own scope rows,
+// except an MCP connection allowed to read all organization data, which
+// reads like its person in the console (it may not on a key).
+func TestMCP_FindingToolsShareOneCaller(t *testing.T) {
+	for _, c := range []struct {
+		name     string
+		provider string
+		fullData bool
+		ownScope bool
+	}{
+		{"oct_ key", middleware.AuthProviderAPIKey, false, true},
+		{"oauth, own scope", middleware.AuthProviderMCPOAuth, false, true},
+		{"oauth, all organization data", middleware.AuthProviderMCPOAuth, true, false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			fr := &fakeFindingReader{}
+			h := newTestMCP(fr)
+			doRPCAs(t, h, c.provider, c.fullData, allReadScopes, `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"finding_stats","arguments":{}}}`)
+			doRPCAs(t, h, c.provider, c.fullData, allReadScopes, `{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"list_active_cves","arguments":{"kev_only":true}}}`)
+			sc, cc := fr.gotStatsCaller, fr.gotCVECaller
+			if sc.TenantID != cc.TenantID || sc.UserID != cc.UserID || sc.IsAdmin != cc.IsAdmin || sc.APIKey != cc.APIKey {
+				t.Fatalf("callers differ: stats %+v, cves %+v", sc, cc)
+			}
+			if sc.IsAdmin {
+				t.Fatal("an MCP connection never gets the administrator bypass")
+			}
+			if sc.APIKey != c.ownScope {
+				t.Fatalf("own-scope reads = %v, want %v", sc.APIKey, c.ownScope)
+			}
+		})
 	}
 }

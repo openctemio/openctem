@@ -208,3 +208,53 @@ describe('DashboardView CTEM widgets without anything to measure', () => {
     expect(screen.queryAllByRole('link').filter((l) => l.textContent?.includes('7'))).toEqual([])
   })
 })
+
+describe('DashboardView module awareness', () => {
+  const data = (reason: string) =>
+    ({
+      dashboard_id: 'd',
+      scope: 'personal',
+      restricted: false,
+      facts_built_at: 'x',
+      computed_at: new Date().toISOString(),
+      stale: false,
+      widgets: [
+        {
+          id: 'w_et',
+          index: 0,
+          widget_type: 'metric',
+          state: 'unsupported',
+          reason,
+          metric: 'intel.emerging_threats',
+        },
+        {
+          id: 'w_kev',
+          index: 1,
+          widget_type: 'metric',
+          state: 'ready',
+          shape: 'scalar',
+          metric: 'intel.kev_open',
+          scalar: { value: 4 },
+        },
+      ],
+    }) as unknown as DashboardData
+  const layout = [stat('w_et', 'intel.emerging_threats'), stat('w_kev', 'intel.kev_open')]
+
+  it('hides a widget whose module is off and keeps the others', () => {
+    const { container } = render(
+      <DashboardView dashboard={{ layout, columns: 2 }} data={data('module_off')} loading={false} />
+    )
+    expect(screen.queryByText('Emerging threats affecting you')).toBeNull()
+    expect(container.querySelector('[data-widget-index="0"]')).toBeNull()
+    expect(screen.getByText('KEV on your assets')).toBeInTheDocument()
+    expect(screen.getByText('4')).toBeInTheDocument()
+  })
+
+  it('still shows a widget that is unsupported for another reason', () => {
+    render(
+      <DashboardView dashboard={{ layout, columns: 2 }} data={data('forbidden')} loading={false} />
+    )
+    expect(screen.getByText('Emerging threats affecting you')).toBeInTheDocument()
+    expect(screen.getByText(/permission to read this data/)).toBeInTheDocument()
+  })
+})

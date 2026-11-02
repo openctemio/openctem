@@ -521,7 +521,9 @@ provenance. The AI worker is an ai-worker-role sensor built on that runtime, so 
   - Optional per-organization institutional memory is built only from people's decisions (false-positive reasons,
     severity overrides, accepted risks, approved conventions), never from model output. It is versioned and audited,
     follows erasure of its source, can be toggled, and is retrieved through a scoped read tool with citations.
-- **Knowledge retrieval.**
+- **Knowledge retrieval.** Designed in full in [RFC-139](RFC-139-ai-knowledge-and-skills.md) (knowledge kinds, skills,
+  retrieval scope, citations, decision memory); organization knowledge sources and their retrieval in built-in runs
+  are shipped there.
   - Sources are tenant documents (approved sources only, per-document provenance, masked, fenced as untrusted data),
     our documentation and vulnerability intelligence.
   - It starts with Postgres full-text and trigram search, which already exist. Vectors are added when measured.

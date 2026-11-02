@@ -58,6 +58,16 @@ jobs:
             cmp "$f" "$RUNNER_TEMP/wordlists-again/$(basename "$f")"
           done
 
+      - name: Compare with the packs built into the API
+        # The API embeds the packs of the current release and installs them
+        # on a platform that has none (api/internal/app/contentpin/builtin):
+        # the published assets must be those exact bytes.
+        run: |
+          for f in "$RUNNER_TEMP"/wordlists/*.tar.gz; do
+            cmp "$f" "api/internal/app/contentpin/builtin/$(basename "$f")"
+          done
+          cmp "$RUNNER_TEMP/wordlists/release.json" api/internal/app/contentpin/builtin/release.json
+
       - name: Attest provenance
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:

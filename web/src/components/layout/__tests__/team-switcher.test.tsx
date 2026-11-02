@@ -112,6 +112,16 @@ describe('TeamSwitcher', () => {
     expect(trigger).not.toHaveTextContent(/free|pro|enterprise|plan/i)
   })
 
+  it('keeps the initials chip out of the accessible name', () => {
+    // The name must contain the visible label (WCAG 2.5.3); the initials only
+    // repeat the organization name.
+    renderSwitcher()
+    const trigger = screen.getByTestId('team-switcher-trigger')
+    const chip = trigger.firstElementChild as HTMLElement
+    expect(chip.getAttribute('aria-hidden')).toBe('true')
+    expect(trigger.getAttribute('aria-label')).toContain('ORG tenant')
+  })
+
   it('opens the card with a single organization, without a chevron', async () => {
     renderSwitcher()
     expect(screen.queryByTestId('team-switcher-chevron')).toBeNull()

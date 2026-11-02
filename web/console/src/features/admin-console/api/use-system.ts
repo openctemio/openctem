@@ -1,5 +1,6 @@
 'use client'
 
+import { useCallback } from 'react'
 import useSWR from 'swr'
 import { adminFetch, adminFetcher } from '@console/lib/admin-api/client'
 import type { AdminAnnouncement, ThreatIntelFeed } from '../types'
@@ -35,9 +36,14 @@ export function cancelAnnouncement(id: string, reason: string) {
  * a sync was requested (`fast`), the list refreshes every 2 seconds.
  */
 export function useThreatIntelFeeds(fast = false) {
-  return useSWR<ThreatIntelFeed[]>('/threat-intel/sync', adminFetcher, {
-    refreshInterval: (latest) =>
+  // Memoized: SWR restarts its polling timer when the interval changes identity.
+  const pollInterval = useCallback(
+    (latest?: ThreatIntelFeed[]) =>
       fast || latest?.some((f) => f.state === 'running') ? 2000 : 60000,
+    [fast]
+  )
+  return useSWR<ThreatIntelFeed[]>('/threat-intel/sync', adminFetcher, {
+    refreshInterval: pollInterval,
   })
 }
 

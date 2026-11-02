@@ -146,3 +146,33 @@ func TestRecordReceipt_FailureIsFlagged(t *testing.T) {
 		t.Fatal("a recorded receipt was flagged as failed")
 	}
 }
+
+// Every ingest names its sender: an upload, the CI repository, the
+// connector source, or the sensor; a report from no known sender names none.
+func TestReceiptInstance(t *testing.T) {
+	sensorID := shared.NewID()
+	agt := &sensor.Sensor{ID: sensorID}
+	report := &ctis.Report{Tool: &ctis.Tool{Name: "trivy"}}
+	upload := ingestreceipt.Source{Kind: ingestreceipt.SourceUpload, Ref: "u"}
+	for _, tc := range []struct {
+		name string
+		got  ingestreceipt.Instance
+		want ingestreceipt.Instance
+	}{
+		{"upload", receiptInstance(agt, TrustedBinding(), Options{Receipt: &upload}, report),
+			ingestreceipt.Instance{Kind: ingestreceipt.InstanceImport, ID: ingestreceipt.InstanceImport}},
+		{"ci run", receiptInstance(&sensor.Sensor{}, CIRunBinding(shared.NewID(), "github.com/acme/app"), Options{}, report),
+			ingestreceipt.Instance{Kind: ingestreceipt.InstanceCI, ID: "github.com/acme/app", Name: "github.com/acme/app"}},
+		{"connector", receiptInstance(&sensor.Sensor{}, TrustedBinding(), Options{SourceName: "Tenable.sc prod"}, report),
+			ingestreceipt.Instance{Kind: ingestreceipt.InstanceConnector, ID: "Tenable.sc prod", Name: "Tenable.sc prod"}},
+		{"connector without a name uses the tool", receiptInstance(&sensor.Sensor{}, TrustedBinding(), Options{}, report),
+			ingestreceipt.Instance{Kind: ingestreceipt.InstanceConnector, ID: "trivy", Name: "trivy"}},
+		{"sensor", receiptInstance(agt, Binding{Kind: BindingUnsolicited}, Options{}, report),
+			ingestreceipt.Instance{Kind: ingestreceipt.InstanceSensor, ID: sensorID.String()}},
+		{"no sender", receiptInstance(&sensor.Sensor{}, Binding{Kind: BindingUnsolicited}, Options{}, report), ingestreceipt.Instance{}},
+	} {
+		if tc.got != tc.want {
+			t.Errorf("%s: %+v, want %+v", tc.name, tc.got, tc.want)
+		}
+	}
+}

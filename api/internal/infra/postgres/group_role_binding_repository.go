@@ -138,23 +138,40 @@ func (r *GroupRoleBindingRepository) ListActiveMemberIDs(ctx context.Context, te
 	return out, rows.Err()
 }
 
-// HasExternalMembers reports whether any member of the team is an external
-// member of the organization (RFC-058) or a service account: neither may hold
-// full data access.
-func (r *GroupRoleBindingRepository) HasExternalMembers(ctx context.Context, tenantID, groupID shared.ID) (bool, error) {
-	var ok bool
-	err := r.db.QueryRowContext(ctx, `
-		SELECT EXISTS (
-			SELECT 1 FROM group_members gm
-			JOIN groups g ON g.id = gm.group_id AND g.tenant_id = $1
-			JOIN tenant_members tm ON tm.user_id = gm.user_id AND tm.tenant_id = $1
-			JOIN users u ON u.id = gm.user_id
-			WHERE gm.group_id = $2 AND (tm.kind = 'external' OR u.kind = 'service'))`,
-		tenantID.String(), groupID.String()).Scan(&ok)
-	if err != nil {
-		return false, fmt.Errorf("check external team members: %w", err)
+// ListOutsideMembers returns up to limit members of the team who are external
+// members of the organization (RFC-058) or service accounts: neither may hold
+// full data access through a team.
+func (r *GroupRoleBindingRepository) ListOutsideMembers(ctx context.Context, tenantID, groupID shared.ID, limit int) ([]group.OutsideMember, error) {
+	if limit <= 0 || limit > group.MaxOutsideMembersListed {
+		limit = group.MaxOutsideMembersListed
 	}
-	return ok, nil
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT u.id, COALESCE(NULLIF(u.name, ''), u.email, ''), u.kind = 'service'
+		FROM group_members gm
+		JOIN groups g ON g.id = gm.group_id AND g.tenant_id = $1
+		JOIN tenant_members tm ON tm.user_id = gm.user_id AND tm.tenant_id = $1
+		JOIN users u ON u.id = gm.user_id
+		WHERE gm.group_id = $2 AND (tm.kind = 'external' OR u.kind = 'service')
+		ORDER BY 2, u.id
+		LIMIT $3`,
+		tenantID.String(), groupID.String(), limit)
+	if err != nil {
+		return nil, fmt.Errorf("list outside team members: %w", err)
+	}
+	defer rows.Close()
+	var out []group.OutsideMember
+	for rows.Next() {
+		var id string
+		var m group.OutsideMember
+		if err := rows.Scan(&id, &m.Name, &m.Service); err != nil {
+			return nil, fmt.Errorf("scan outside team member: %w", err)
+		}
+		if m.UserID, err = shared.IDFromString(id); err != nil {
+			return nil, fmt.Errorf("outside team member id: %w", err)
+		}
+		out = append(out, m)
+	}
+	return out, rows.Err()
 }
 
 // IsExternalMember reports whether the user is an external member of the

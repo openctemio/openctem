@@ -6,6 +6,7 @@
  * every asset detail surface (the detail sheet and /assets/{id}).
  */
 
+import { useSettleSignal } from '@/features/shared/components/settle-group'
 import { ArrowRight, Fingerprint, History, Tags } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -67,6 +68,7 @@ export function AssetIdentitySections({
   const { t } = useTranslation()
   const { identifiers, isLoading: idLoading, error: idError } = useAssetIdentifiers(assetId)
   const { renames, isLoading: renLoading, error: renError } = useAssetRenames(assetId)
+  useSettleSignal(idLoading || renLoading)
 
   const sorted = sortIdentifiers(identifiers)
   const aka = deriveAlsoKnownAs(identifiers, assetName, readAliases(properties))

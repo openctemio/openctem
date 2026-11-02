@@ -3,6 +3,7 @@ import { SearchIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useSearch } from '@/context/search-provider'
 import { Button } from './ui/button'
+import { DecorativeText } from './ui/decorative-text'
 import { useTranslation } from '@/context/i18n-provider'
 
 type SearchProps = {
@@ -36,6 +37,7 @@ export function Search({ className = '', placeholder }: SearchProps) {
       onClick={() => setOpen(true)}
       // Below sm the button is an icon: the label is its only accessible name.
       aria-label={label}
+      aria-keyshortcuts={mac ? 'Meta+K' : 'Control+K'}
     >
       <SearchIcon
         aria-hidden="true"
@@ -43,9 +45,11 @@ export function Search({ className = '', placeholder }: SearchProps) {
         size={16}
       />
       <span className="ms-4 hidden truncate sm:inline">{label}</span>
-      <kbd className="bg-muted group-hover:bg-accent pointer-events-none absolute end-[0.3rem] top-[0.3rem] hidden h-5 items-center gap-1 rounded border px-1.5 font-mono text-xs font-medium opacity-100 select-none sm:flex">
-        {mac ? <span className="text-xs">⌘</span> : <span>Ctrl</span>}K
-      </kbd>
+      <DecorativeText
+        as="kbd"
+        text={mac ? '⌘K' : 'Ctrl K'}
+        className="bg-muted group-hover:bg-accent pointer-events-none absolute end-[0.3rem] top-[0.3rem] hidden h-5 items-center gap-1 rounded border px-1.5 font-mono text-xs font-medium opacity-100 select-none sm:flex"
+      />
     </Button>
   )
 }

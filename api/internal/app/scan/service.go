@@ -278,10 +278,11 @@ type AttributionGate interface {
 type ServiceOption func(*Service)
 
 // CoverageContent says whether the platform can supply the lists a
-// coverage run's tool reads (contentpin.Planner): coverage runs at standard
-// depth, so the small platform pack.
+// coverage run.s tool reads at a depth (contentpin.Planner): the small
+// platform pack at standard depth (steady coverage), the medium one at deep
+// depth (the onboarding pass of a new root).
 type CoverageContent interface {
-	CoverageContentReady(ctx context.Context, requests []stage.WordlistRequest) (bool, error)
+	CoverageContentReady(ctx context.Context, depth scanworkflow.Depth, requests []stage.WordlistRequest) (bool, error)
 }
 
 // WithCoverageContent makes coverage readiness pause a capability whose

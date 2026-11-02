@@ -20,6 +20,7 @@ import {
 } from '@/components/ui/select'
 import { MemberRoleConfig, type GroupMemberRole } from '@/features/access-control'
 import { MembershipEndFields } from './membership-end'
+import { useTranslation } from '@/context/i18n-provider'
 
 export interface NewGroupMember {
   userId: string
@@ -38,7 +39,12 @@ interface AddMemberDialogProps {
   requireEnd: boolean
   isAddingMember: boolean
   onAddMember: () => void
-  availableMembers: Array<{ user_id: string; name: string; email: string }>
+  availableMembers: Array<{ user_id: string; name: string; email: string; kind?: string }>
+  /**
+   * The team carries a full-data role: people outside the organization are
+   * listed but cannot be chosen (the API refuses them, TEAM_EXTERNAL_FULL_DATA).
+   */
+  carriesFullData?: boolean
 }
 
 export function AddMemberDialog({
@@ -50,44 +56,67 @@ export function AddMemberDialog({
   onAddMember,
   availableMembers,
   requireEnd,
+  carriesFullData = false,
 }: AddMemberDialogProps) {
+  const { t } = useTranslation()
+  const blocked = (m: { kind?: string }) => carriesFullData && m.kind === 'external'
+  const anyBlocked = availableMembers.some(blocked)
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent size="sm">
         <DialogHeader>
-          <DialogTitle>Add Member</DialogTitle>
-          <DialogDescription>Add a team member to this group.</DialogDescription>
+          <DialogTitle>{t('org.teamAddMember.title', 'Add member')}</DialogTitle>
+          <DialogDescription>
+            {t('org.teamAddMember.desc', 'Add someone from your organization to this team.')}
+          </DialogDescription>
         </DialogHeader>
 
         <DialogBody>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label>Select Member</Label>
+              <Label htmlFor="add-member-user">{t('org.teamAddMember.member', 'Member')}</Label>
               <Select
                 value={newMember.userId}
                 onValueChange={(value) => setNewMember({ ...newMember, userId: value })}
               >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select a member..." />
+                <SelectTrigger id="add-member-user">
+                  <SelectValue placeholder={t('org.teamAddMember.choose', 'Choose a member…')} />
                 </SelectTrigger>
                 <SelectContent>
                   {availableMembers.length === 0 ? (
                     <SelectItem value="none" disabled>
-                      All members are already in this group
+                      {t('org.teamAddMember.allIn', 'Everyone is already in this team')}
                     </SelectItem>
                   ) : (
                     availableMembers.map((member) => (
-                      <SelectItem key={member.user_id} value={member.user_id}>
+                      <SelectItem
+                        key={member.user_id}
+                        value={member.user_id}
+                        disabled={blocked(member)}
+                      >
                         {member.name} ({member.email})
+                        {blocked(member) && (
+                          <span className="ms-2 text-xs text-muted-foreground">
+                            {t('org.teamAddMember.outside', 'Outside organization')}
+                          </span>
+                        )}
                       </SelectItem>
                     ))
                   )}
                 </SelectContent>
               </Select>
+              {anyBlocked && (
+                <p className="text-xs text-muted-foreground" data-testid="add-member-outside-note">
+                  {t(
+                    'org.teamAddMember.outsideNote',
+                    'This team gives full data access, so people outside your organization cannot join it. Give them a role directly instead.'
+                  )}
+                </p>
+              )}
             </div>
 
             <div className="space-y-2">
-              <Label>Role in Group</Label>
+              <Label>{t('org.teamAddMember.role', 'Role in the team')}</Label>
               <Select
                 value={newMember.role}
                 onValueChange={(value: GroupMemberRole) =>
@@ -124,7 +153,7 @@ export function AddMemberDialog({
 
         <DialogFooter>
           <Button variant="ghost" onClick={() => onOpenChange(false)}>
-            Cancel
+            {t('common.cancel', 'Cancel')}
           </Button>
           <Button
             onClick={onAddMember}
@@ -135,7 +164,7 @@ export function AddMemberDialog({
             ) : (
               <UserPlus className="me-2 h-4 w-4" />
             )}
-            Add Member
+            {t('org.teamAddMember.submit', 'Add member')}
           </Button>
         </DialogFooter>
       </DialogContent>

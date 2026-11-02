@@ -11,8 +11,15 @@ import (
 // the same entity permission as reading those rows directly.
 func metricPermission(m dashboard.Metric) permission.Permission {
 	switch {
-	case m.Kind == dashboard.MetricKindAssetCount, m.Kind == dashboard.MetricKindPaths, m.ID == "coverage.discovery":
+	case m.Kind == dashboard.MetricKindAssetCount, m.Kind == dashboard.MetricKindPaths, m.ID == metricDiscoveryCoverage:
 		return permission.AssetsRead
+	case assetBreakdowns[m.ID]:
+		return permission.AssetsRead
+	case m.ID == "remediation.campaign_progress":
+		return permission.RemediationRead
+	case m.ID == metricEmergingThreats:
+		// The emerging-threat alert list's own permission.
+		return permission.VulnerabilitiesRead
 	default:
 		return permission.FindingsRead
 	}
@@ -52,7 +59,7 @@ func maskAssetParts(w *WidgetValue, c dashboardapp.Caller) {
 	}
 	if k := w.KPIs; k != nil {
 		for i := range k.Tiles {
-			if k.Tiles[i].Metric == "coverage.discovery" {
+			if k.Tiles[i].Metric == metricDiscoveryCoverage {
 				k.Tiles[i] = KPITile{Key: k.Tiles[i].Key, Metric: k.Tiles[i].Metric, State: StateUnsupported, Reason: ReasonForbidden,
 					Unit: k.Tiles[i].Unit, Polarity: k.Tiles[i].Polarity}
 			}
@@ -77,3 +84,6 @@ func maskAssetParts(w *WidgetValue, c dashboardapp.Caller) {
 		b.Items = kept
 	}
 }
+
+// assetBreakdowns are the breakdowns that count assets.
+var assetBreakdowns = map[string]bool{"surface.new_assets": true, "certificates.expiry": true}

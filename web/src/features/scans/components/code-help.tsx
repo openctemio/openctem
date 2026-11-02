@@ -8,7 +8,9 @@ import { safeInternalHref } from '@/lib/safe-href'
 import type { RunMapNode } from '@/lib/api/generated'
 import { TruncatedText } from '@/features/shared'
 
-import { failureHelp, gapReasonHelp, type CodeHelp } from '../lib/placement-help'
+import { failureHelp, gapHelp, type CodeHelp } from '../lib/placement-help'
+import { gapEdgeKind } from '../lib/edge-gap'
+import { EdgeGapFixes } from './edge-gap-fixes'
 
 /**
  * One code with what it means and where to fix it: the code (monospace, as
@@ -42,6 +44,17 @@ export function CodeHelpLine({ help, count }: { help: CodeHelp; count?: number }
         </Link>
       )}
     </div>
+  )
+}
+
+/** A same-origin fix link (the path is encoded before it reaches the DOM). */
+function FixLink({ path, label }: { path: string; label: string }) {
+  const fixHref = safeInternalHref(path)
+  if (!fixHref) return null
+  return (
+    <Link href={fixHref} className="font-medium text-primary underline-offset-4 hover:underline">
+      {label}
+    </Link>
   )
 }
 
@@ -88,14 +101,28 @@ export function StepOutcome({ outcome }: { outcome?: RunMapNode['outcome'] }) {
           {gaps.length > 0 ? (
             <ul className="space-y-1">
               {gaps.map((g, i) => {
-                const r = gapReasonHelp(g.reason, t)
+                const r = gapHelp(g, t)
+                const fixKind = gapEdgeKind(g)
                 return (
-                  <li key={`${g.host}-${i}`} className="min-w-0">
+                  <li
+                    key={`${g.host}-${i}`}
+                    className="min-w-0"
+                    data-gap-cause={g.cause || undefined}
+                  >
                     <div className="flex min-w-0 items-baseline gap-2">
                       <TruncatedText value={g.host} className="min-w-0 font-mono" />
                       <span className="shrink-0 text-foreground">{r.label}</span>
                     </div>
+                    {r.cert && <p className="text-foreground">{r.cert}</p>}
                     <p className="text-muted-foreground">{r.help}</p>
+                    {fixKind ? (
+                      <EdgeGapFixes kind={fixKind} />
+                    ) : (
+                      <>
+                        {r.fix && <p className="text-muted-foreground">{r.fix}</p>}
+                        {r.href && r.hrefLabel && <FixLink path={r.href} label={r.hrefLabel} />}
+                      </>
+                    )}
                   </li>
                 )
               })}

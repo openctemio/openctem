@@ -311,13 +311,16 @@ func (r *ScanHopRepository) SaveStagePlan(ctx context.Context, plan *scanrun.Sta
 
 	res, err := tx.ExecContext(ctx, `
 		INSERT INTO scan_run_stage_plans
-			(tenant_id, run_id, stage_key, stage, tool, tier, chained, inputs, planned, max_hop, skipped)
-		SELECT pr.tenant_id, pr.id, $3, $4, $5, $6, $7, $8, $9, $10, $11
+			(tenant_id, run_id, stage_key, stage, tool, tier, chained, inputs, planned, max_hop, skipped,
+			 streamed, stream_open, waves, first_dispatch_at)
+		SELECT pr.tenant_id, pr.id, $3, $4, $5, $6, $7, $8, $9, $10, $11,
+		       $12, $12, CASE WHEN $12 AND $9 > 0 THEN 1 ELSE 0 END,
+		       CASE WHEN $12 AND $9 > 0 THEN now() END
 		FROM scan_runs pr WHERE pr.tenant_id = $1 AND pr.id = $2
 		ON CONFLICT (run_id, stage_key) DO NOTHING`,
 		plan.TenantID.String(), plan.RunID.String(), plan.StageKey, plan.Stage, plan.Tool,
 		clampSmallint(plan.Tier), plan.Chained, max(plan.Inputs, 0), max(plan.Planned, 0),
-		clampSmallint(plan.MaxHop), skippedJSON)
+		clampSmallint(plan.MaxHop), skippedJSON, plan.Streamed)
 	if err != nil {
 		return false, fmt.Errorf("claim stage plan: %w", err)
 	}
@@ -439,7 +442,7 @@ func (r *ScanHopRepository) PlannedTargets(ctx context.Context, tenantID, runID 
 // ListStagePlans returns the run's stage plans in planning order.
 func (r *ScanHopRepository) ListStagePlans(ctx context.Context, tenantID, runID shared.ID) ([]scanrun.StagePlan, error) {
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT stage_key, stage, tool, tier, chained, inputs, planned, max_hop, skipped, planned_at
+		SELECT `+stagePlanColumns+`
 		FROM scan_run_stage_plans
 		WHERE tenant_id = $1 AND run_id = $2
 		ORDER BY planned_at, stage_key`,
@@ -450,21 +453,40 @@ func (r *ScanHopRepository) ListStagePlans(ctx context.Context, tenantID, runID 
 	defer func() { _ = rows.Close() }()
 	var out []scanrun.StagePlan
 	for rows.Next() {
-		p := scanrun.StagePlan{TenantID: tenantID, RunID: runID}
-		var skipped []byte
-		if err := rows.Scan(&p.StageKey, &p.Stage, &p.Tool, &p.Tier, &p.Chained, &p.Inputs, &p.Planned,
-			&p.MaxHop, &skipped, &p.PlannedAt); err != nil {
-			return nil, fmt.Errorf("scan stage plan: %w", err)
-		}
-		p.Skipped = map[string]int{}
-		if len(skipped) > 0 {
-			if err := json.Unmarshal(skipped, &p.Skipped); err != nil {
-				return nil, fmt.Errorf("decode skipped counts: %w", err)
-			}
+		p, err := scanStagePlan(rows, tenantID, runID)
+		if err != nil {
+			return nil, err
 		}
 		out = append(out, p)
 	}
 	return out, rows.Err()
+}
+
+// stagePlanColumns are the columns scanStagePlan reads, in its order.
+const stagePlanColumns = `stage_key, stage, tool, tier, chained, inputs, planned, max_hop, skipped, planned_at,
+	streamed, stream_open, waves, first_dispatch_at, closed_at`
+
+func scanStagePlan(row interface{ Scan(...any) error }, tenantID, runID shared.ID) (scanrun.StagePlan, error) {
+	p := scanrun.StagePlan{TenantID: tenantID, RunID: runID}
+	var skipped []byte
+	var first, closed sql.NullTime
+	if err := row.Scan(&p.StageKey, &p.Stage, &p.Tool, &p.Tier, &p.Chained, &p.Inputs, &p.Planned,
+		&p.MaxHop, &skipped, &p.PlannedAt, &p.Streamed, &p.StreamOpen, &p.Waves, &first, &closed); err != nil {
+		return p, fmt.Errorf("scan stage plan: %w", err)
+	}
+	p.Skipped = map[string]int{}
+	if len(skipped) > 0 {
+		if err := json.Unmarshal(skipped, &p.Skipped); err != nil {
+			return p, fmt.Errorf("decode skipped counts: %w", err)
+		}
+	}
+	if first.Valid {
+		p.FirstDispatchAt = &first.Time
+	}
+	if closed.Valid {
+		p.ClosedAt = &closed.Time
+	}
+	return p, nil
 }
 
 // StepRunOfCommand resolves a command of the tenant to its run and step.

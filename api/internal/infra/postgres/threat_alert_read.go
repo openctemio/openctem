@@ -33,23 +33,53 @@ func viewerCountsSQL(cond string) string {
 	) vc ON true`
 }
 
-// List (see threatalert.ReadStore).
-func (r *ThreatAlertRepository) List(ctx context.Context, tenantID shared.ID, scope *shared.DataScope, f threatalert.ListFilter) ([]threatalert.Alert, int, threatalert.Summary, error) {
-	var sum threatalert.Summary
+// alertsInScope is the FROM clause of every alert list read: the tenant's
+// alerts with at least one asset in the viewer's data scope ($1 is the
+// tenant, the scope's arguments start at $2), the in-scope counts as vc.
+func alertsInScope(scope *shared.DataScope) (string, []any) {
 	cond, args := inScopeAsset(scope, 2)
-	args = append([]any{tenantID.String()}, args...)
-	from := ` FROM threat_alerts a ` + viewerCountsSQL(cond) + ` WHERE a.tenant_id = $1 AND (vc.c + vc.p) > 0`
+	return ` FROM threat_alerts a ` + viewerCountsSQL(cond) + ` WHERE a.tenant_id = $1 AND (vc.c + vc.p) > 0`, args
+}
 
-	if err := r.db.QueryRowContext(ctx, `SELECT
+// alertCounts is the open-alert summary of a viewer and how many alerts
+// they see in any state (Seen: zero means no alert ever affected an asset in
+// their scope).
+type alertCounts struct {
+	threatalert.Summary
+	Seen int
+}
+
+// alertSummary counts the alerts a viewer sees: the list's summary strip and
+// the dashboard's emerging-threats widget read this one statement, so a
+// level's figure equals the list filtered to that level and the open state.
+func alertSummary(ctx context.Context, db *DB, tenantID shared.ID, scope *shared.DataScope) (alertCounts, error) {
+	var out alertCounts
+	from, sargs := alertsInScope(scope)
+	args := append([]any{tenantID.String()}, sargs...)
+	//nolint:gosec // G202: fixed SQL, the scope predicate binds its values
+	if err := db.QueryRowContext(ctx, `SELECT
+			count(*),
 			count(*) FILTER (WHERE a.state IN `+openAlertStates+`),
 			count(*) FILTER (WHERE a.state IN `+openAlertStates+` AND a.level = 'immediate'),
 			count(*) FILTER (WHERE a.state IN `+openAlertStates+` AND a.level = 'digest'),
 			count(*) FILTER (WHERE a.state IN `+openAlertStates+` AND a.level = 'listed'),
 			count(*) FILTER (WHERE a.state IN `+openAlertStates+` AND a.in_kev),
 			count(*) FILTER (WHERE a.state IN `+openAlertStates+` AND vc.i > 0)`+from, args...).
-		Scan(&sum.Open, &sum.Immediate, &sum.Digest, &sum.Listed, &sum.KEV, &sum.InternetFacing); err != nil {
-		return nil, 0, sum, fmt.Errorf("alert summary: %w", err)
+		Scan(&out.Seen, &out.Open, &out.Immediate, &out.Digest, &out.Listed, &out.KEV, &out.InternetFacing); err != nil {
+		return out, fmt.Errorf("alert summary: %w", err)
 	}
+	return out, nil
+}
+
+// List (see threatalert.ReadStore).
+func (r *ThreatAlertRepository) List(ctx context.Context, tenantID shared.ID, scope *shared.DataScope, f threatalert.ListFilter) ([]threatalert.Alert, int, threatalert.Summary, error) {
+	all, err := alertSummary(ctx, r.db, tenantID, scope)
+	sum := all.Summary
+	if err != nil {
+		return nil, 0, sum, err
+	}
+	from, sargs := alertsInScope(scope)
+	args := append([]any{tenantID.String()}, sargs...)
 
 	where := ""
 	add := func(clause string, v any) {

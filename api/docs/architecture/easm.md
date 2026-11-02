@@ -176,6 +176,7 @@ the inventory changed meaning.
 | Storage, tenant-scoped writes (a foreign asset id writes nothing) | `internal/infra/postgres/attribution_repository.go` |
 | First producer: CT promotion (`fqdn_under_verified_root` 0.99 → confirmed; `fqdn_under_asserted_root` 0.85 → needs_review) | `internal/app/certmonitor/promote.go` |
 | Second producer: sensor reports (decision O8, narrowed by decision E7). A report bound to a command the tenant's own sensor ran: an asset that **is** one of the command's targets (same host or repository path, or an address inside a listed range) gets `tenant_scanned` (0.95, strong) with sensor, command, step run, pipeline run, scan, tool, report id and time; an automatic record is re-evaluated unless it is `needs_review` or `rejected` (a scan never takes a name past review). A name the scan **found** under a target (subfinder child, resolved address, auto-created root domain) gets `tenant_scan_discovered` (0.60, medium, never confirms alone); a new internet-facing one gets a `needs_review` record, or `confirmed` with `fqdn_under_verified_root` evidence when it is at/under a verified domain. An unsolicited sensor report gives a new internet-facing asset a `candidate` record and no evidence. A person's decision is never touched; an existing asset without a record keeps none. Server-side ingests (CT promotion, uploads) never come here. `root_domain` in a report must be a registrable strict parent of the reported name (`publicsuffix`), otherwise no domain is created | `internal/app/ingest/scan_attribution.go`, `internal/app/easm/scanned.go`, `internal/infra/postgres/easm_scan_evidence_repository.go` |
+| **Certificate SAN promotion** (third producer). The subject alternative names and the subject CN of every TLS certificate an ingest writes (any producer: httpx, tlsx, nuclei, uploads; not CI-run reports) go through the CT promotion path (`promote`, one mechanism). A name is proposed only when it is strictly below one of the tenant's roots (the CT roots: attributed domain assets, verified domains, permanent scope entries with discovery on), so a shared CDN or hosting certificate never creates an asset for a foreign name. Names are lower-cased without a trailing dot; wildcard SANs (`*.x`) are skipped, as in CT (a wildcard proves no host of the base name exists); addresses, junk and names of a certificate that lapsed more than 90 days ago are skipped; at most 100 names per certificate, 1000 certificates per report, and 500 new assets per ingest (the rest arrive with the next report that carries the certificate). New names become `subdomain` assets with `discovery_source = certificate` and `discovery_tool` = the reporting tool, and every proposed name (new or existing) gets one `certificate_san` evidence row (0.40, **weak**, source `certificate_san`) whose datum names the certificate asset id, its name, issuer, expiry, the tool and the root: the lineage. A certificate never confirms or scopes a name on its own: a new name is a `candidate`; the scope join (decision S4) still confirms a name a permanent scope entry covers, exactly as for CT names; other evidence (CT under a verified domain) raises it as usual. Excluded names, names under an excluded root, an existing name whose dedicated address is excluded (the CT sweep applies the same address rule to its own names) (its address properties or `resolves_to` relations, `scope.PropagatingAddresses`; shared front ends do not propagate) and any tombstoned name are skipped, and an existing asset gets no evidence for them. An existing asset keeps its standing (a legacy asset keeps no record; automation only raises). Best-effort after the report's assets are stored: a failed lookup (roots, exclusions, addresses, tombstones) promotes nothing and never fails the ingest. Every lookup and write is tenant-scoped; the promoting ingest runs under the report's tenant | `internal/app/ingest/cert_names.go`, `internal/app/certmonitor/san.go`, `internal/app/certmonitor/promote.go` |
 | **Children follow their host** (research/117 F1). A service, certificate or web endpoint (application) with an automatic `needs_review`/`candidate` record is linked to the one host it was seen on: by a stored relationship of the same tenant (`exposes` host → service; `serves_certificate` service → certificate, which follows the service's host) or by the host part of its own name (`host:port`, a URL). A child with two or more candidate hosts is not linked. While linked (`asset_attributions.follows_host_id`, a composite tenant FK, cleared when the host is deleted) the child carries the host's state: every write to the host's record (a person's decision, the scope join, a re-evaluation) cascades to its automatic children in the same transaction, automation never moves the child on its own, and a person's decision on the child itself clears the link. The review queue and its counts list the host only, with `children` (count by type). Linking runs after every sensor report and at the start of every scope-join run (one system audit event `asset.attribution_children_linked` per run that links); migration `attribution_children_follow_host` linked the existing pending children of pending hosts by relationship, without changing any state | `internal/infra/postgres/attribution_hosts.go`, `internal/app/easm/scope_join.go` (`linkChildren`), `internal/app/easm/scanned.go` |
 | CT roots from domain assets: only approved ones (not `needs_review`, `candidate` or `rejected`), so a sensor-created domain cannot widen the CT watch list | `internal/app/certmonitor/service.go` (`gatherRoots`) |
 | Active-scan ownership gate on every active-scan path (typed targets and group members alike): refused when the asset's record is not `confirmed`, when the name or a parent of it was rejected (record or live tombstone), and when an internet-facing asset has **no record** and is neither inside an active scope target nor at/under a root-domain seed or verified domain (`unattributed`). Create, clone, import, quick scan and `POST /commands` refuse the request; a run skips the target with a warning; the dispatch gate refuses it. Generic reason to the caller, specific state in the log. Details: [active-probe-gate.md](active-probe-gate.md) | `internal/app/easm/active_gate.go`, `internal/app/scan/ownership.go` |
@@ -188,7 +189,9 @@ lowercased name and the rules that supported it are kept in
 `easm_tombstones`, in the same transaction as the decision. CT promotion does
 not propose that name again, even after the asset is deleted, unless it is now
 supported by a rule that was not there at rejection (for example the domain
-was verified since). Reversing the rejection removes the tombstone; tombstones
+was verified since). Certificate SAN promotion never proposes a tombstoned
+name, whatever rules it was rejected with: its weak rule must not bring a
+rejected name back. Reversing the rejection removes the tombstone; tombstones
 expire after 12 months (O7) and each CT sweep purges the tenant's expired
 rows. A failed tombstone lookup promotes nothing. All statements are
 tenant-scoped (`internal/infra/postgres/easm_tombstone_repository.go`).
@@ -318,6 +321,12 @@ admin notice); `can_add` tells the caller whether it may. Nothing is ever
 added automatically: a name never lends its address authority (dangling DNS,
 shared hosting and released cloud addresses would make a scan probe a third
 party).
+
+Each offered or already-checked address carries `ownership` (band
+`high`/`medium`/`low`/`unknown`, a score that only orders, and the signals
+with their parameters), computed by `pkg/domain/addrowner` from the rows the
+card already reads; the card lists addresses strongest first and counts them
+in `bands`. Rules and threats: RFC-054 §21. It authorizes nothing.
 
 ## 4b3. Inventory triage (built, research/124)
 
@@ -472,10 +481,145 @@ keeps only the names that resolve, after wildcard filtering. Found names
 enter the inventory as `subdomain` assets with attribution like any other
 discovered name. They never widen scope by themselves.
 
+A new root (a `domain` asset whose enumeration never succeeded, for example
+one added by a new scope entry or an acquisition) is first enumerated once
+at deep depth: the medium label pack (`wordlists-m`) with the same learned
+labels and permutations. After that pass it returns to the weekly standard
+pass. A deep pass that fails three times in a row falls back to standard.
+Details in [asset-coverage.md](asset-coverage.md) ("Deep onboarding of new
+roots").
+
 Wiring, gates and the `content_missing` pause are described in
 [asset-coverage.md](asset-coverage.md) ("Subdomain enumeration"); the packs
-in [wordlists.md](wordlists.md). Until an instance administrator imports the
-`wordlists-s` release asset, enumeration coverage stays paused.
+in [wordlists.md](wordlists.md). The API installs built-in `wordlists-s` and
+`wordlists-m` packs on start; enumeration coverage pauses only when no stable
+`wordlists-s` is left (revoked and none imported).
+
+## 4n. Technologies view (built)
+
+Attack surface > Technologies lists what the organization's assets run, one
+row per technology and version (`nginx 1.18.0` and `nginx 1.25.3` are two
+rows; a version no tool could tell is its own "unknown" row). Each row shows
+the vendor, the category, how many assets run it, the CVEs the corpus knows
+for that version (count, the highest scored CVE and its CVSS), a KEV or
+public-exploit badge and the open emerging-threat alerts about those CVEs.
+The asset count opens the inventory filtered to that exact version
+(`/assets?technology=<key>&technology_version=<version>`, an empty
+`technology_version` selecting the unknown version).
+
+- **API:** `GET /api/v1/attack-surface/technologies` and `/stats`, on the list
+  query contract (`technologies` registry, `pkg/domain/technology`), gated by
+  `assets:read` and the attack-surface module. Filters: `name`, `version`,
+  `version_known`, `category`, `source` (the detecting tool), `vendor`,
+  `asset_id`, `has_cves`, `kev`, `first_seen`, `last_seen`, plus search; sort
+  keys include `asset_count`, `cve_count`, `top_cvss` and `active_alerts`.
+- **Data scope:** the filter, the tenant and the caller's data scope apply to
+  each asset row before rows are grouped, so a version only appears when a
+  visible asset runs it, and its asset count, CVE figures and alert count
+  include visible assets only.
+- **CVE figures:** a technology is joined to the software version its own
+  detection was matched to (`asset_software`, source `technology`, on the same
+  asset, product named like the technology or aliased to its name). The CVEs
+  are that version's `software_version_vulns` (rejected CVEs left out); KEV
+  from the known-exploited catalog; a public exploit from the global
+  vulnerability catalog. These are the same matches the vulnerability
+  matcher turns into findings; a technology the matcher does not treat as
+  software (CDN, hosting, a security header) has none.
+- **Vendor and CPE:** `asset_technologies.vendor` and `cpe` hold what the
+  detecting tool reported in a CPE 2.3 name (migration
+  `20261030200208_asset_technologies_vendor_cpe`); without one, the matched
+  software product's vendor is shown. No backfill: rows fill as probes report.
+- **Relevance:** this is the tenant's technology profile seen from the
+  inventory side; alerts and CVE figures follow the tenant's own matches, and
+  nothing about the inventory leaves the platform.
+
+Key files: `pkg/domain/technology/`, `internal/app/technology/`,
+`internal/infra/postgres/technology_read_repository.go`,
+`internal/infra/http/handler/technology_handler.go`,
+`web/src/features/attack-surface/components/easm-technologies.tsx`.
+
+## 4o. Discovery management (built)
+
+Attack surface > Discovery shows the organization's coverage work in four
+stages, with a Run button per stage, Run all and Abort all, and exports it as
+CSV. It is a view of the coverage ledger ([asset coverage](asset-coverage.md),
+RFC-093) and adds no scheduler.
+
+| Stage | Capabilities (coverage policy) |
+|---|---|
+| Asset discovery (`asset_discovery`) | `discover.subdomains`, `enumerate.subdomains` (`discover.hosts` when a rule plans it) |
+| Exposure scan (`exposure_scan`) | `scan.ports`, `vuln.templates` (`check.takeover`) |
+| Validation & scoping (`validation_scoping`) | `resolve.dns`, `lookup.rdap`, `lookup.asn`: the facts attribution and scope decisions read |
+| Technology discovery (`technology_discovery`) | `probe.http` (`crawl.web`): the HTTP probe reports each service's technologies |
+
+The mapping is one table in `pkg/domain/coverage/discovery_stage.go`: the capability
+taxonomy's phases do not separate the four stages (`resolve.dns` and
+`scan.ports` are both discovery-phase acts). A test fails when a capability
+the planner runs has no stage, or when an entry's catalog phase does not fit
+its stage. Platform checks (`dns.email`, `dns.dangling`) run on the
+attack-surface sweep's schedule (section 4e, with its own run-now) and are not
+in the discovery stages.
+
+Per stage: status (`running` when a coverage run of one of its capabilities is
+active; `paused` with the reason when automatic coverage is off, `coverage_off`,
+or its pairs are paused for a readiness reason such as `tool_missing` or
+`not_claimed`; `failed` when the latest run of one of them failed, timed out or
+was blocked; else `idle`), the last run time, progress (tasks done of the
+active runs, else covered of the applicable pairs) and, per capability, the
+ledger counts (pairs, covered, due now, queued, failed, blocked, paused) and
+the latest run. The page shows when it was read, reloads on focus and after every action, and has a Refresh button (no polling).
+
+- **Run** (one stage) moves the due time of the stage's `covered`, `due` and
+  `failed` pairs to now minus the batch wait of the capability, so the next
+  coverage pass (every `ASSET_COVERAGE_INTERVAL`, one replica at a time)
+  starts the batch at once. Nothing else changes: queued, blocked, paused and
+  not applicable pairs are left alone (readiness pauses, not-claimed holds
+  and gate refusals still hold), and the pass plans through `StartCoverage`
+  and the full dispatch gate (scope entries, tiers, exclusions, windows, the
+  deny list), within the tenant's daily budget, one active run per capability
+  and the batch size. Run never calls the planner itself: the loop is
+  exclusive across replicas and a request-time pass would race it. Refused
+  with 409 while the coverage loop is off on the server
+  (`DISCOVERY_LOOP_OFF`), while the organization's automatic coverage is off
+  (`DISCOVERY_COVERAGE_OFF`; a switch that cannot be read is off) or when
+  today's budget is spent (`DISCOVERY_BUDGET_SPENT`). At most once a minute
+  per tenant and stage across replicas (a `controller_leases` row named after
+  the tenant and stage): 429 `DISCOVERY_RUN_TOO_SOON` with `Retry-After`.
+- **Run all** runs every stage; a stage run within the minute is skipped and
+  listed, and the call is refused (429) only when every stage is.
+- **Abort all** cancels the tenant's unfinished runs of managed coverage scans
+  (`managed_by = coverage`) through the run cancel (sensors told to stop, one
+  audit entry per run); a person's scan runs are never touched. The next pass
+  settles the canceled pairs as for any canceled run (failed, platform side,
+  with the back-off), so they are not restarted at once; automatic coverage
+  keeps its schedule (turn it off in the scope settings to stop it).
+- **Auto-validation metric.** "N assets in the last auto-validation" on
+  Validation & scoping counts the assets whose automatic attribution (no
+  person decided it, `decided_at IS NULL`) was written between the start of
+  the latest Validation & scoping run and 15 minutes after it ended (now while
+  it runs). No record of an attribution pass exists, so this window is the
+  definition.
+
+| Route | Gate | Notes |
+|---|---|---|
+| `GET /api/v1/attack-surface/discovery` | `scans:read` | the discovery stages |
+| `GET /api/v1/attack-surface/discovery/export` | `scans:read` | CSV, one row per stage and capability, formula cells neutralized |
+| `POST /api/v1/attack-surface/discovery/stages/{stage}/run` | `scans:write` + `scans:execute` (the scan trigger's) | 202; audited `easm_discovery.run` |
+| `POST /api/v1/attack-surface/discovery/run` | `scans:write` + `scans:execute` | 202; audited `easm_discovery.run` |
+| `POST /api/v1/attack-surface/discovery/cancel` | `scans:write` (the run cancel's) | audited `easm_discovery.aborted` (high) |
+
+All five sit behind the attack-surface module and need an **unrestricted data
+scope** (owner, administrator, or a role with full data access): the figures
+count every asset of the organization and Run and Abort act on all of them,
+so a member limited to some assets gets 403 `DISCOVERY_FULL_DATA_REQUIRED`
+rather than organization totals. The tenant is the principal's; every query
+filters the ledger, scans, runs, tasks and attributions on it, and a limiter
+key always names the tenant.
+
+Key files: `pkg/domain/coverage/discovery_stage.go`, `internal/app/coverage/discovery.go`,
+`internal/infra/postgres/asset_coverage_discovery.go`,
+`internal/infra/http/handler/easm_discovery_handler.go`,
+`web/src/features/attack-surface/components/easm-discovery.tsx`.
 
 ## 4h. Port and service results (built, P0-6)
 
@@ -527,6 +671,56 @@ asset types answer an empty list. The asset page shows them in a "Ports on
 resolved addresses" section, read through the asset view
 ([page-views.md](./page-views.md)).
 
+## 4o. Discovery lineage (built)
+
+The asset page and the asset sheet show "How this asset was found": the chain
+of parent assets from the root down to the asset, the asset's discovery
+source and tool (`assets.discovery_source`, `discovery_tool`), when it was
+first found, and its attribution confidence. The reasons behind the
+confidence (`easm_evidence`) stay in the Ownership and scope section above it;
+both read the same `GET /api/v1/assets/{id}/attribution` response.
+
+`GET /api/v1/assets/{id}/lineage` (`assets:read`, the asset detail's
+permission) returns the asset (depth 0) and its ancestors, one parent per hop,
+found by a recursive query bounded at 5 ancestors (`truncated` is set when the
+chain goes on). The parent of an asset is, in order: its `parent_id`; else the
+source of a `contains` edge pointing at it (a CTIS `subdomain_of` is stored
+this way, parent first); else of an `exposes` edge (the address or host of a
+port); else of a `serves_certificate` edge (the endpoint of a certificate);
+else of a `resolves_to` edge (a name of an address). Ties go to the oldest
+edge. Each node carries `via`, the edge kind that leads from it to the node
+below, and its own discovery source, tool, discovery time and first-seen time.
+
+Security:
+
+- The asset must be one the caller may see: another tenant's asset, or one
+  outside the caller's data scope, answers 404 (route guard and service
+  check).
+- Every hop of the recursive query is bound to the tenant (`assets` and
+  `asset_relationships` on `tenant_id`), so an edge or `parent_id` pointing at
+  another tenant's asset is never followed, even if one were stored (the
+  schema's tenant-bound foreign keys already refuse it).
+- An asset already on the path is never visited again (cycle guard), and a
+  soft-deleted parent ends the chain.
+- Every ancestor is checked against the caller's data scope in the same query
+  (`filterspec.ScopeSQL`, so assets hidden from the caller, such as private
+  program assets, count as outside it). An ancestor outside it comes back as
+  `{"hidden": true}` with its depth and `via` only: the database returns no
+  name, id, type or discovery field for it, and the domain layer
+  (`asset.BuildLineage`) strips them again. The page shows it as "Hidden
+  asset", without a link. Visible ancestors above it are still shown.
+
+The asset view primes the lineage with the page's other parts
+([page-views.md](./page-views.md)).
+
+Key files: `pkg/domain/asset/lineage.go`,
+`internal/infra/postgres/asset_lineage_repository.go`,
+`internal/app/asset/lineage.go`,
+`internal/infra/http/handler/asset_lineage_handler.go`,
+`web/src/features/assets/components/asset-lineage-section.tsx`. Tests:
+`internal/infra/http/routes/asset_lineage_db_test.go` (chain, redaction, cycle,
+depth cap, cross-tenant edge, 404s), `web/e2e/specs/53-asset-discovery-lineage.spec.ts`.
+
 ## 4g. Honest numbers (built, P0-13)
 
 - `GET /easm/summary` counts only exposure types something writes today
@@ -563,6 +757,30 @@ false positive (not a threat), resolve (taken down). Controller
 tenant). Routes: `/api/v1/easm/lookalikes/watches` (scope permissions,
 audited). The organization can turn the crt.sh queries off
 (`lookalike_ct_enabled` on `/api/v1/easm/settings`; fail closed).
+
+## 4o. Page monitoring (partly built)
+
+Design: [RFC-138](../rfcs/RFC-138-web-page-monitoring.md). Attack surface ›
+**Page changes** watches URLs of the organization's web services (manual add,
+or suggestions: root pages, login and admin pages, JS files from the crawl;
+at most 200 watches). JS-only mode (default) keeps the scripts a page loads
+(source identity without cache busters and build hashes, inline scripts by
+normalized hash, first or third party, integrity attribute) and, for each
+first-party script (a derived watch, at most 25 per page), its hash, size and
+the URLs found in it; full mode also keeps the masked visible text. Fetches
+are the capability `monitor.web_content` (T1) through the coverage dispatch
+path (`scan.Service.StartCoverage`: scope and active-scan gates, zone routing,
+signed jobs with the explicit URL list), started by the `page-monitoring`
+controller (every 10 minutes; at most 100 URLs per tenant and 10 per host per
+pass; only with automatic coverage on). Results arrive as the reserved asset
+property `web_content` and are normalized and diffed server-side
+(`pkg/domain/pagemon`); only a changed content hash stores a snapshot (last 5
+per watch) and a change with its diff (kept 180 days). A new third-party
+script host on a page is a `third_party_script_added` exposure (high) through
+the EASM alert writer, resolved when the page drops the host. Routes:
+`/api/v1/easm/page-monitoring` (reads `assets:read` and the watch asset's data
+scope; watch changes `scans:write`, audited). Not built yet: the capability in
+the taxonomy and the sensor's httpx capture (watches stay `waiting` until then).
 
 ## 4k. Network seeds (built)
 

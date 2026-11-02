@@ -15,6 +15,11 @@ vi.mock('@/features/api-keys/api/use-api-keys', () => ({
   useCreateApiKey: () => ({ trigger: vi.fn(), isMutating: false }),
   useRevokeApiKey: () => ({ trigger: vi.fn(), isMutating: false }),
   useDeleteApiKey: () => ({ trigger: vi.fn(), isMutating: false }),
+  useApiKeyPolicy: () => ({
+    data: { max_lifetime_days: 90, default_max_lifetime_days: 90, ceiling_days: 365 },
+    mutate,
+  }),
+  updateApiKeyPolicy: vi.fn(),
 }))
 vi.mock('@/features/service-accounts/api/use-service-accounts', () => ({
   useServiceAccounts: () => ({ data: { data: [] }, error: undefined, isLoading: false, mutate }),

@@ -11,12 +11,16 @@ export {
   hasExposureEnrichment,
 } from './exposure-enrichment'
 
+export { ExposureSeverityDialog, useCanChangeExposureSeverity } from './exposure-severity-dialog'
+export { ExposureSummaryLine, ExposureSeverityCell } from './exposure-summary'
+
 export {
   ExposureActionDialog,
   ExposureQuickActions,
   ExposureBulkActions,
   APPROVE_REQUIRED_REASON,
   useCanApproveExposures,
+  type ExposureActionType,
 } from './exposure-state-actions'
 export {
   PendingDispositionBadge,

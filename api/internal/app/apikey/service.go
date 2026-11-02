@@ -15,6 +15,7 @@ import (
 	apikeydom "github.com/openctemio/openctem/api/pkg/domain/apikey"
 	"github.com/openctemio/openctem/api/pkg/domain/permission"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
@@ -48,8 +49,13 @@ type Service struct {
 	// external decides whether an external member may create a key and how
 	// long it may live (RFC-058). nil → no external-member rule (tests only).
 	external ExternalKeyPolicy
-	audit    *auditapp.AuditService
-	logger   *logger.Logger
+	// lifetime is the organization's maximum lifetime of a new key. nil →
+	// only the platform ceiling applies (tests only).
+	lifetime LifetimePolicy
+	// expiryNotifier tells a key's holder it expires soon. nil → no notice.
+	expiryNotifier InAppNotifier
+	audit          *auditapp.AuditService
+	logger         *logger.Logger
 }
 
 // ErrScopeNotHeld is returned (wrapped with shared.ErrForbidden) when a key is
@@ -173,14 +179,45 @@ func (s *Service) checkExternalAllowance(ctx context.Context, tenantID shared.ID
 	return nil
 }
 
-// MaxExpiresInDays is the longest lifetime an API key may have (settings
-// decision B14, 2026-10-04): every key expires, at most a year after it is
-// minted. An organization may later tighten this; it may not loosen it.
-const MaxExpiresInDays = 365
+// MaxExpiresInDays is the platform ceiling of an API key's lifetime
+// (settings decision B14): every key expires, at most a year after it is
+// minted. The organization's maximum (LifetimePolicy, default 90 days) may
+// only be lower.
+const MaxExpiresInDays = tenantdom.APIKeyLifetimeCeilingDays
 
 // ErrExpiryRequired is returned when a key is requested without an expiry or
 // with one longer than MaxExpiresInDays.
 var ErrExpiryRequired = fmt.Errorf("%w: expires_in_days must be between 1 and %d: every API key expires", shared.ErrValidation, MaxExpiresInDays)
+
+// ErrExpiryOverOrgMax is returned (wrapped, with the maximum) when a key is
+// requested for longer than the organization's maximum lifetime.
+var ErrExpiryOverOrgMax = fmt.Errorf("%w: expires_in_days is above the organization's maximum API key lifetime", shared.ErrValidation)
+
+// LifetimePolicy answers the organization's maximum lifetime of a new key
+// (TenantService.MaxAPIKeyLifetimeDays).
+type LifetimePolicy interface {
+	MaxAPIKeyLifetimeDays(ctx context.Context, tenantID shared.ID) (int, error)
+}
+
+// SetLifetimePolicy wires the organization's maximum key lifetime.
+func (s *Service) SetLifetimePolicy(p LifetimePolicy) { s.lifetime = p }
+
+// MaxLifetimeDays is the longest a new key of the organization may live:
+// the organization's maximum, never above the platform ceiling. A policy
+// that cannot be read refuses (fail closed).
+func (s *Service) MaxLifetimeDays(ctx context.Context, tenantID shared.ID) (int, error) {
+	if s.lifetime == nil {
+		return MaxExpiresInDays, nil
+	}
+	n, err := s.lifetime.MaxAPIKeyLifetimeDays(ctx, tenantID)
+	if err != nil {
+		return 0, fmt.Errorf("read the organization's API key lifetime: %w", err)
+	}
+	if n < 1 || n > MaxExpiresInDays {
+		n = MaxExpiresInDays
+	}
+	return n, nil
+}
 
 // CreateInput represents input for creating an API key.
 type CreateInput struct {
@@ -218,6 +255,13 @@ func (s *Service) Create(ctx context.Context, input CreateInput) (*CreateResult,
 	}
 	if input.ExpiresInDays < 1 || input.ExpiresInDays > MaxExpiresInDays {
 		return nil, ErrExpiryRequired
+	}
+	maxDays, err := s.MaxLifetimeDays(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	if input.ExpiresInDays > maxDays {
+		return nil, fmt.Errorf("%w (%d days)", ErrExpiryOverOrgMax, maxDays)
 	}
 	if err := s.checkExternalAllowance(ctx, tenantID, input.UserID, input.ExpiresInDays); err != nil {
 		return nil, err

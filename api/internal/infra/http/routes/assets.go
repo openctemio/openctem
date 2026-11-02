@@ -73,6 +73,9 @@ func registerAssetRoutes(
 		r.GET("/{id}/coverage", h.GetCoverage, middleware.Require(permission.AssetsRead))
 		// Open ports of the addresses a domain or subdomain resolves to.
 		r.GET("/{id}/resolved-ports", h.GetResolvedPorts, middleware.Require(permission.AssetsRead))
+		// How the asset was found: its ancestor chain, each ancestor data-scope
+		// checked (docs/architecture/easm.md, Discovery lineage).
+		r.GET("/{id}/lineage", h.GetLineage, middleware.Require(permission.AssetsRead))
 		// Why the risk score is what it is (docs/architecture/asset-risk-score.md).
 		r.GET("/{id}/risk", h.GetRisk, middleware.Require(permission.AssetsRead))
 		// Lowering exposure, criticality or the crown-jewel flag: the impact on
@@ -480,11 +483,35 @@ func registerEASMSettingsRoutes(
 	// Own sub-paths: registerEASMRoutes already mounts /api/v1/easm, and chi
 	// panics when the same path is mounted twice.
 	router.Group("/api/v1/easm/settings", func(r Router) {
-		r.GET("/", h.Get, middleware.Require(permission.SettingsRead))
+		// Reading shows the monitoring policy and its run times: those who may run
+		// a sweep (scope:write) and administrators, not every viewer.
+		r.GET("/", h.Get, middleware.Require(permission.ScopeWrite))
 		r.PUT("/", h.Update, middleware.Require(permission.SettingsWrite), middleware.RequireAdmin())
 	}, tenantMiddlewares...)
 	router.Group("/api/v1/easm/sweeps", func(r Router) {
 		r.POST("/", h.RunNow, middleware.Require(permission.ScopeWrite))
+	}, tenantMiddlewares...)
+}
+
+// registerEASMDiscoveryRoutes registers discovery management: the
+// organization's coverage work by stage (read: scans:read), Run per stage
+// and Run all (the scan trigger's scans:write + scans:execute) and Abort all
+// (the run cancel's scans:write), behind the attack_surface module. The
+// handler also requires an unrestricted data scope.
+func registerEASMDiscoveryRoutes(
+	router Router,
+	h *handler.EASMDiscoveryHandler,
+	authMiddleware Middleware,
+	userSyncMiddleware Middleware,
+	moduleGate Middleware,
+) {
+	tenantMiddlewares := append(buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware), moduleGate)
+	router.Group("/api/v1/attack-surface/discovery", func(r Router) {
+		r.GET("/", h.Overview, middleware.Require(permission.ScansRead))
+		r.GET("/export", h.Export, middleware.Require(permission.ScansRead))
+		r.POST("/stages/{stage}/run", h.RunStage, middleware.RequireAll(permission.ScansWrite, permission.ScansExecute))
+		r.POST("/run", h.RunAll, middleware.RequireAll(permission.ScansWrite, permission.ScansExecute))
+		r.POST("/cancel", h.AbortAll, middleware.Require(permission.ScansWrite))
 	}, tenantMiddlewares...)
 }
 
@@ -529,6 +556,17 @@ func registerCertificateRoutes(router Router, h *handler.CertificateHandler, aut
 	// The module gate runs after tenant extraction so it can read the tenant.
 	tenantMiddlewares := append(buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware), moduleGate)
 	router.Group("/api/v1/attack-surface/certificates", func(r Router) {
+		r.GET("/", h.List, middleware.Require(permission.AssetsRead))
+		r.GET("/stats", h.Stats, middleware.Require(permission.AssetsRead))
+	}, tenantMiddlewares...)
+}
+
+// registerTechnologyRoutes registers the Technologies view of the external
+// attack surface: technologies grouped by version, scoped per asset.
+func registerTechnologyRoutes(router Router, h *handler.TechnologyHandler, authMiddleware Middleware, userSyncMiddleware Middleware, moduleGate Middleware) {
+	// The module gate runs after tenant extraction so it can read the tenant.
+	tenantMiddlewares := append(buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware), moduleGate)
+	router.Group("/api/v1/attack-surface/technologies", func(r Router) {
 		r.GET("/", h.List, middleware.Require(permission.AssetsRead))
 		r.GET("/stats", h.Stats, middleware.Require(permission.AssetsRead))
 	}, tenantMiddlewares...)
@@ -785,6 +823,29 @@ func registerEASMLookalikeRoutes(
 		r.PUT("/watches/{id}", h.Update, middleware.Require(permission.ScopeWrite))
 		r.DELETE("/watches/{id}", h.Delete, middleware.Require(permission.ScopeDelete))
 		r.GET("/watches/{id}/registered", h.Registered, middleware.Require(permission.ScopeRead))
+	}, tenantMiddlewares...)
+}
+
+// registerPageMonitorRoutes registers web page monitoring (RFC-138): reads
+// take assets:read plus the data scope of the watch's web service (checked in
+// the service, 404); watch changes schedule active fetches and take
+// scans:write. Behind the attack_surface module.
+func registerPageMonitorRoutes(
+	router Router,
+	h *handler.PageMonitorHandler,
+	authMiddleware Middleware,
+	userSyncMiddleware Middleware,
+	moduleGate Middleware,
+) {
+	tenantMiddlewares := append(buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware), moduleGate)
+	router.Group("/api/v1/easm/page-monitoring", func(r Router) {
+		r.GET("/watches", h.ListWatches, middleware.Require(permission.AssetsRead))
+		r.POST("/watches", h.CreateWatch, middleware.Require(permission.ScansWrite))
+		r.PUT("/watches/{id}", h.UpdateWatch, middleware.Require(permission.ScansWrite))
+		r.DELETE("/watches/{id}", h.DeleteWatch, middleware.Require(permission.ScansWrite))
+		r.GET("/suggestions", h.Suggestions, middleware.Require(permission.AssetsRead))
+		r.GET("/changes", h.ListChanges, middleware.Require(permission.AssetsRead))
+		r.GET("/changes/{id}", h.GetChange, middleware.Require(permission.AssetsRead))
 	}, tenantMiddlewares...)
 }
 

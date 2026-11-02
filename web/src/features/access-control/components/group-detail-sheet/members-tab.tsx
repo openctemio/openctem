@@ -12,6 +12,7 @@ import {
   ChevronLeft,
   ChevronRight,
   CalendarClock,
+  Globe,
 } from 'lucide-react'
 import { DataTableRowActions, EmptyState } from '@/features/shared'
 import { MemberRoleConfig, getInitials, type GroupMember } from '@/features/access-control'
@@ -32,6 +33,9 @@ interface MembersTabProps {
   onRemoveMember?: (userId: string, name: string) => void
   /** Omitted when the caller may not change end dates (the action is hidden). */
   onChangeEnd?: (userId: string, name: string, expiresAt?: string) => void
+  /** Show only members outside the organization and service accounts. */
+  outsideOnly?: boolean
+  onOutsideOnlyChange?: (on: boolean) => void
 }
 
 export function MembersTab({
@@ -44,6 +48,8 @@ export function MembersTab({
   onAddMember,
   onRemoveMember,
   onChangeEnd,
+  outsideOnly = false,
+  onOutsideOnlyChange,
 }: MembersTabProps) {
   const { t } = useTranslation()
   const [searchQuery, setSearchQuery] = useState('')
@@ -55,8 +61,10 @@ export function MembersTab({
     }
   }, [searchQuery, onPageChange])
 
+  const hasOutside = members.some((m) => m.outside)
+  const shown = outsideOnly ? members.filter((m) => m.outside) : members
   const filteredMembers = searchQuery
-    ? members.filter((member) => {
+    ? shown.filter((member) => {
         const name = member.name || member.user_name || member.user?.name || ''
         const email = member.email || member.user_email || member.user?.email || ''
         return (
@@ -64,7 +72,7 @@ export function MembersTab({
           email.toLowerCase().includes(searchQuery.toLowerCase())
         )
       })
-    : members
+    : shown
 
   const currentPage = Math.floor(offset / limit) + 1
   const totalPages = Math.ceil(totalCount / limit)
@@ -72,11 +80,13 @@ export function MembersTab({
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
-        <h4 className="text-sm font-medium">Group Members ({totalCount})</h4>
+        <h4 className="text-sm font-medium">
+          {t('org.teamMembers.heading', 'Members ({count})', { count: totalCount })}
+        </h4>
         {onAddMember && (
           <Button size="sm" onClick={onAddMember}>
             <UserPlus className="me-2 h-4 w-4" />
-            Add Member
+            {t('org.teamMembers.add', 'Add member')}
           </Button>
         )}
       </div>
@@ -88,6 +98,20 @@ export function MembersTab({
         placeholder={t('org.teamMembers.search', 'Search members…')}
       />
 
+      {(hasOutside || outsideOnly) && onOutsideOnlyChange && (
+        <div className="mb-4">
+          <Button
+            size="sm"
+            variant={outsideOnly ? 'secondary' : 'outline'}
+            aria-pressed={outsideOnly}
+            onClick={() => onOutsideOnlyChange(!outsideOnly)}
+          >
+            <Globe className="me-2 h-4 w-4" />
+            {t('org.teamMembers.outsideOnly', 'Outside organization only')}
+          </Button>
+        </div>
+      )}
+
       {isLoading ? (
         <div className="space-y-3">
           {[1, 2, 3].map((i) => (
@@ -95,16 +119,24 @@ export function MembersTab({
           ))}
         </div>
       ) : totalCount === 0 ? (
-        <EmptyState icon={Users} title="No members in this group yet" card={false} />
+        <EmptyState
+          icon={Users}
+          title={t('org.teamMembers.empty', 'No members in this team yet')}
+          card={false}
+        />
       ) : filteredMembers.length === 0 ? (
         <div className="text-center py-8 text-muted-foreground">
-          <p>No members found matching &quot;{searchQuery}&quot;</p>
+          <p>{t('org.teamMembers.noMatch', 'No member matches this search')}</p>
         </div>
       ) : (
         <div className="space-y-2">
           {filteredMembers.map((member, index) => {
             const roleConfig = MemberRoleConfig[member.role] || MemberRoleConfig.member
-            const name = member.name || member.user_name || member.user?.name || 'Unknown Member'
+            const name =
+              member.name ||
+              member.user_name ||
+              member.user?.name ||
+              t('org.teamMembers.unknown', 'Unknown member')
             const email = member.email || member.user_email || member.user?.email || ''
             const key = member.id || member.user_id || member.user?.id || `member-${index}`
             const initials = getInitials(name)
@@ -124,13 +156,31 @@ export function MembersTab({
                       {email}
                       {(member.added_by_name || member.added_by) && (
                         <span className="ms-2 text-xs text-muted-foreground/60">
-                          Added by {member.added_by_name || member.added_by}
+                          {t('org.teamMembers.addedBy', 'Added by {name}', {
+                            name: member.added_by_name || member.added_by || '',
+                          })}
                         </span>
                       )}
                     </p>
                   </div>
                 </div>
-                <div className="flex shrink-0 items-center gap-2">
+                <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+                  {member.outside && (
+                    <Badge
+                      variant="outline"
+                      className="gap-1 text-xs"
+                      data-testid="member-outside-badge"
+                      title={t(
+                        'org.teamMembers.outsideHint',
+                        'Gets full data access only from a role given directly, never through a team'
+                      )}
+                    >
+                      <Globe className="h-3 w-3" />
+                      {member.service
+                        ? t('org.teamMembers.service', 'Service account')
+                        : t('org.teamMembers.outside', 'Outside organization')}
+                    </Badge>
+                  )}
                   {member.expires_at && (
                     <Badge
                       variant="outline"
@@ -199,13 +249,17 @@ export function MembersTab({
       {totalPages > 1 && (
         <div className="flex items-center justify-between mt-4 pt-4 border-t">
           <span className="text-xs text-muted-foreground">
-            Page {currentPage} of {totalPages} ({totalCount} total)
+            {t('org.teamMembers.page', 'Page {page} of {pages}', {
+              page: currentPage,
+              pages: totalPages,
+            })}
           </span>
           <div className="flex items-center gap-1">
             <Button
               size="sm"
               variant="outline"
               disabled={offset === 0}
+              aria-label={t('org.teamMembers.prev', 'Previous page')}
               onClick={() => onPageChange(Math.max(0, offset - limit))}
             >
               <ChevronLeft className="h-4 w-4" />
@@ -214,6 +268,7 @@ export function MembersTab({
               size="sm"
               variant="outline"
               disabled={offset + limit >= totalCount}
+              aria-label={t('org.teamMembers.next', 'Next page')}
               onClick={() => onPageChange(offset + limit)}
             >
               <ChevronRight className="h-4 w-4" />

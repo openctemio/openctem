@@ -96,6 +96,54 @@ const channel = {
 }
 
 describe('summarizeFleet', () => {
+  it('a sensor that stopped claiming needs attention (storage) and takes no jobs', () => {
+    // The prod case of 2026-10-31: degraded, "Fleet health 1" and "Needs
+    // attention 0, nothing to fix" at the same time.
+    const full = sensor({
+      state: 'degraded',
+      health_reasons: [
+        {
+          code: 'stopped_claiming',
+          severity: 'critical',
+          message: 'The sensor stopped claiming new jobs because its local storage is full.',
+        },
+      ],
+      local_store: {
+        level: 'high',
+        stop_claiming: true,
+        reason: '9 % of the volume free, below 15 %',
+        total_bytes: 0,
+        disk_level: 'ok',
+        reported_at: null,
+      },
+    })
+    const s = summarizeFleet([full], NOW, undefined, channel)
+    expect(s.byState.degraded).toBe(1)
+    expect(s.canTakeJobs).toBe(0)
+    expect(s.jobSlots).toBe(0)
+    expect(s.needsAttention).toBe(1)
+    expect(s.attentionKinds).toEqual(['storage'])
+  })
+
+  it('counts a reason the page has no word for as needing attention', () => {
+    const s = summarizeFleet(
+      [
+        sensor({
+          state: 'degraded',
+          health_reasons: [
+            { code: 'future_reason', severity: 'warning', message: 'Something new.' },
+          ],
+        }),
+      ],
+      NOW,
+      undefined,
+      channel
+    )
+    expect(s.needsAttention).toBe(1)
+    expect(s.attentionKinds).toEqual(['other'])
+    expect(s.canTakeJobs).toBe(1)
+  })
+
   it('counts the health strip from the same ladder the rows use', () => {
     const s = summarizeFleet(fleet(), NOW, undefined, channel)
     expect(s.total).toBe(6)

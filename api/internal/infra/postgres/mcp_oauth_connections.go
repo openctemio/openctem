@@ -69,16 +69,17 @@ func scanMCPGrantRow(row rowScanner, extra1, extra2 *string) (*mcpoauth.Grant, e
 		scopes                       []string
 		lastUsed, revoked            sql.NullTime
 		cid, ctenant                 sql.NullString
-		ckind                        string
+		ckind, flow                  string
 		cfetched, cexpires, cblocked sql.NullTime
 	)
 	if err := row.Scan(&id, &tenantID, &userID, &g.Resource, pq.Array(&scopes), &g.CreatedAt, &lastUsed,
-		&g.LastUsedIP, &g.ExpiresAt, &revoked, &g.RevokedReason, &g.DPoPJKT, &g.FullData,
+		&g.LastUsedIP, &g.ExpiresAt, &revoked, &g.RevokedReason, &g.DPoPJKT, &g.FullData, &flow,
 		&cid, &g.Client.ClientID, &ckind, &ctenant, &g.Client.Name, pq.Array(&g.Client.RedirectURIs),
 		&cfetched, &cexpires, &cblocked, &g.Client.CreatedAt, extra1, extra2); err != nil {
 		return nil, err
 	}
 	g.ID = shared.MustIDFromString(id)
+	g.Flow = mcpoauth.Flow(flow)
 	g.TenantID = shared.MustIDFromString(tenantID)
 	g.UserID = shared.MustIDFromString(userID)
 	g.Scopes = toScopes(scopes)

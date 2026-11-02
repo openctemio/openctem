@@ -280,11 +280,11 @@ export function AuthenticationSettings() {
                   {floorEveryone
                     ? t(
                         'org.auth.mfa.platformFloorEveryone',
-                        'The platform requires two-factor authentication for every member. You cannot turn it off for your organization.'
+                        'The platform requires it for every member.'
                       )
                     : t(
                         'org.auth.mfa.platformFloorAdmins',
-                        'The platform requires two-factor authentication for owners, administrators and members with a privileged role. You can require it for everyone, not less.'
+                        'The platform requires it for owners, administrators and members with a privileged role. You can require it for everyone.'
                       )}
                 </p>
               )}
@@ -304,7 +304,7 @@ export function AuthenticationSettings() {
                 label={t('org.auth.mfa.admins', 'Require for owners and administrators')}
                 hint={t(
                   'org.auth.mfa.adminsHint',
-                  'They can change the organization, so they use an authenticator app even when other members do not. On for new organizations.'
+                  'Owners, administrators and members with a privileged role. On for new organizations.'
                 )}
                 checked={form.mfa_required || form.mfa_required_for_admins}
                 onChange={(v) => patchForm({ mfa_required_for_admins: v })}
@@ -315,7 +315,7 @@ export function AuthenticationSettings() {
                 label={t('org.auth.mfa.ssoProof', 'SSO must prove two-factor')}
                 hint={t(
                   'org.auth.mfa.ssoProofHint',
-                  'For members who must use two-factor, a sign-in through your identity provider counts only when the provider confirms a second factor in the signed sign-in response. Turn on multi-factor authentication in your identity provider first.'
+                  'An SSO sign-in counts only when your identity provider confirms a second factor. Turn that on in the provider first.'
                 )}
                 checked={form.sso_require_mfa_evidence}
                 onChange={(v) => patchForm({ sso_require_mfa_evidence: v })}
@@ -341,7 +341,7 @@ export function AuthenticationSettings() {
                   label={t('org.auth.jit', 'Approve new SSO members')}
                   hint={t(
                     'org.auth.jitHint',
-                    'People your SSO admits for the first time wait, with no access, until an administrator approves them in Members.'
+                    'First-time SSO users wait without access until an administrator approves them in Members.'
                   )}
                   checked={form.jit_requires_approval}
                   onChange={(v) => patchForm({ jit_requires_approval: v })}

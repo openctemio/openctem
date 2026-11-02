@@ -65,6 +65,9 @@ const (
 	ReasonTimeout        = "timeout"
 	ReasonNoHistoryForBy = "previous_not_in_history"
 	ReasonForbidden      = "forbidden"
+	// ReasonModuleOff: the metric reads a module that is off for the
+	// organization; the widget carries no figure (the web hides it).
+	ReasonModuleOff = "module_off"
 )
 
 // Service computes widget results.
@@ -83,6 +86,10 @@ type Service struct {
 	repo      dashboard.Repository
 	members   MembershipReader
 	settings  dashboardapp.SettingsStore
+
+	// modules says which modules are readable for an organization
+	// (SetModules); nil: every module is.
+	modules ModuleChecker
 }
 
 // NewService returns a widget data service.
@@ -159,7 +166,12 @@ type WidgetValue struct {
 // ScalarValue is one count, with the previous period and a sparkline when
 // the history can trace it.
 type ScalarValue struct {
-	Value    int64   `json:"value"`
+	Value int64 `json:"value"`
+	// Of is the population the count is part of ("12 of 340 open" for the
+	// KEV count: open findings with the widget's other filters), with the
+	// list it counts; absent for counts without one.
+	Of       *int64  `json:"of,omitempty"`
+	OfDrill  string  `json:"of_drill,omitempty"`
 	Previous *int64  `json:"previous,omitempty"`
 	Delta    *int64  `json:"delta,omitempty"`
 	Series   []Point `json:"series,omitempty"`
@@ -170,6 +182,9 @@ type RatioValue struct {
 	Num      int64    `json:"num"`
 	Den      int64    `json:"den"`
 	ValuePct *float64 `json:"value_pct"`
+	// Causes splits the part not counted (Den - Num) by why, each row with
+	// the list it counts (discovery coverage: uncovered assets by cause).
+	Causes []CategoryRow `json:"causes,omitempty"`
 }
 
 // DurationValue is a time-to-fix estimate from hour buckets.
@@ -186,7 +201,9 @@ type DurationValue struct {
 // CategoryRow is one key of a category result. For a duration grouped by a
 // key, Value is the median hours and P90/N are set.
 type CategoryRow struct {
-	Key      string   `json:"key"`
+	Key string `json:"key"`
+	// Label is a name shown as is (a campaign, a tool), not translated.
+	Label    string   `json:"label,omitempty"`
 	Value    float64  `json:"value"`
 	Previous *float64 `json:"previous,omitempty"`
 	P90      *float64 `json:"p90,omitempty"`
@@ -362,6 +379,7 @@ func (s *Service) compute(ctx context.Context, tenantID, userID shared.ID, dashI
 		DashboardID: dashID, Scope: kind, Restricted: scope.Assets.Restricted(),
 		FactsBuiltAt: builtAt, ComputedAt: s.now().UTC(), Widgets: make([]WidgetValue, 0, len(ws)),
 	}
+	ctx = withFindingsProbe(ctx)
 	for i, w := range ws {
 		out.Widgets = append(out.Widgets, s.widget(ctx, i, w, builtAt != nil, scope))
 	}
@@ -377,10 +395,13 @@ func (s *Service) personalForViewer(ctx context.Context, d *DashboardData, c das
 	return s.forViewer(ctx, d, c, scope.CampaignViewer)
 }
 
-// forViewer prepares stored or computed figures for one viewer: list rows of
-// pentest findings stay only for an administrator or a member of their
-// campaign, and the campaign fields never leave the server.
+// forViewer prepares stored or computed figures for one viewer (the one exit
+// of every personal and organization read): widgets of a module that is off
+// for the organization lose their figures, list rows of pentest findings stay
+// only for an administrator or a member of their campaign, and the campaign
+// fields never leave the server.
 func (s *Service) forViewer(ctx context.Context, d *DashboardData, c dashboardapp.Caller, viewer *shared.ID) (*DashboardData, error) {
+	s.maskModulesOff(ctx, d, c.TenantID)
 	var member map[string]bool
 	for i := range d.Widgets {
 		it := d.Widgets[i].Items
@@ -440,6 +461,10 @@ func (s *Service) widget(ctx context.Context, i int, w dashboard.Widget, factsRe
 	}
 	m, _ := dashboard.LookupMetric(spec.Data.Metric)
 	v.Metric, v.Viz, v.Polarity, v.Target = m.ID, spec.Viz.Type, m.Polarity, spec.Target
+	if s.moduleOff(ctx, scope.TenantID, m) {
+		v.State, v.Reason = StateUnsupported, ReasonModuleOff
+		return v
+	}
 	if !factsReady {
 		v.State, v.Reason = StateBuilding, ReasonFactsBuilding
 		return v
@@ -447,6 +472,18 @@ func (s *Service) widget(ctx context.Context, i int, w dashboard.Widget, factsRe
 	if ctx.Err() != nil {
 		v.State, v.Reason = StateError, ReasonTimeout
 		return v
+	}
+	if countsFindings(m) {
+		has, err := s.hasFindings(ctx, scope)
+		if err != nil {
+			s.logger.Warn("dashboard widget read failed", "metric", m.ID, "error", err.Error())
+			v.State, v.Reason = StateError, ReasonFailed
+			return v
+		}
+		if !has {
+			v.State, v.Reason = StateNotMeasured, ReasonNoFindings
+			return v
+		}
 	}
 	if err := s.metric(ctx, &v, m, spec, scope); err != nil {
 		reason := ReasonFailed
@@ -474,10 +511,19 @@ func (s *Service) metric(ctx context.Context, v *WidgetValue, m dashboard.Metric
 	switch m.Kind {
 	case dashboard.MetricKindCount:
 		v.Drill = drillHref(f)
-		return s.count(ctx, v, f, gb, win, compare, spec.Data.Limit, agg)
+		if err := s.count(ctx, v, f, gb, win, compare, spec.Data.Limit, agg); err != nil {
+			return err
+		}
+		if m.ID == "intel.kev_open" && v.Scalar != nil {
+			return s.kevOf(ctx, v.Scalar, f, agg)
+		}
+		return nil
 	case dashboard.MetricKindRatio:
-		if m.ID == "coverage.discovery" {
-			return s.discoveryCoverage(ctx, v, spec.Target, compare, agg)
+		if m.ID == metricDiscoveryCoverage {
+			if err := s.discoveryCoverage(ctx, v, spec.Target, compare, agg); err != nil {
+				return err
+			}
+			return s.coverageCauses(ctx, v, agg)
 		}
 		num, den, err := s.facts.SLAWithin(ctx, agg, f)
 		if err != nil {
@@ -566,6 +612,8 @@ func (s *Service) metric(ctx context.Context, v *WidgetValue, m dashboard.Metric
 	case dashboard.MetricKindKPIs:
 		v.Window = &win
 		return s.kpisMetric(ctx, v, win, compare, agg)
+	case dashboard.MetricKindBreakdown:
+		return s.breakdown(ctx, v, m, win, compare, agg)
 	}
 	return fmt.Errorf("unknown metric kind %q", m.Kind)
 }
@@ -945,4 +993,21 @@ func (l *limiter) acquire(tenantID, userID string) (func(), error) {
 			}
 		})
 	}, nil
+}
+
+// kevOf sets the KEV count's population: open findings with the widget's
+// filter except the KEV condition, so "N of M open" reads 0 correctly.
+func (s *Service) kevOf(ctx context.Context, sv *ScalarValue, f dashboard.WidgetFilter, scope dashboard.ReadScope) error {
+	all := f
+	all.KEV = nil
+	rows, err := s.facts.CountOpen(ctx, scope, all, nil)
+	if err != nil {
+		return err
+	}
+	var n int64
+	for _, r := range rows {
+		n += r.Count
+	}
+	sv.Of, sv.OfDrill = &n, drillHref(all)
+	return nil
 }

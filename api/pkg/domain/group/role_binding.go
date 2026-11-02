@@ -47,6 +47,18 @@ type UserTeamGrant struct {
 	MemberUntil *time.Time
 }
 
+// OutsideMember is a team member who may not hold full data access through
+// the team: an external member of the organization or a service account.
+type OutsideMember struct {
+	UserID  shared.ID
+	Name    string
+	Service bool
+}
+
+// MaxOutsideMembersListed caps the outside members a team view or a refusal
+// names.
+const MaxOutsideMembersListed = 20
+
 // RoleBindingRepository persists team role bindings. Every method is scoped
 // to the tenant.
 type RoleBindingRepository interface {
@@ -57,9 +69,10 @@ type RoleBindingRepository interface {
 	// ListActiveMemberIDs returns the members whose membership has not
 	// ended: the users holding the team's roles.
 	ListActiveMemberIDs(ctx context.Context, tenantID, groupID shared.ID) ([]shared.ID, error)
-	// HasExternalMembers reports whether any member of the team is an
-	// external member of the organization (RFC-058).
-	HasExternalMembers(ctx context.Context, tenantID, groupID shared.ID) (bool, error)
+	// ListOutsideMembers returns up to limit members of the team who are
+	// outside the organization (external members, RFC-058) or service
+	// accounts: neither may hold full data access through a team.
+	ListOutsideMembers(ctx context.Context, tenantID, groupID shared.ID, limit int) ([]OutsideMember, error)
 	// IsExternalMember reports whether the user is an external member of the
 	// organization.
 	IsExternalMember(ctx context.Context, tenantID, userID shared.ID) (bool, error)

@@ -28,6 +28,8 @@ export const API_BASE = {
   COMMANDS: '/api/v1/commands',
   SCAN_ZONES: '/api/v1/scan-zones',
   PROXY_POOLS: '/api/v1/proxy-pools',
+  WORDLISTS: '/api/v1/wordlists',
+  CONTENT_RULES: '/api/v1/content-rules',
   SCAN_PROFILES: '/api/v1/scan-profiles',
   SCANNER_TEMPLATES: '/api/v1/scanner-templates',
   TOOLS: '/api/v1/tools',
@@ -246,6 +248,8 @@ export const userEndpoints = {
   twoFactorEnable: () => `${API_BASE.USERS}/me/2fa/enable`,
   twoFactorDisable: () => `${API_BASE.USERS}/me/2fa/disable`,
   twoFactorRecoveryCodes: () => `${API_BASE.USERS}/me/2fa/recovery-codes`,
+  twoFactorReplaceStart: () => '/api/v1/me/2fa/replacement/start',
+  twoFactorReplaceComplete: () => '/api/v1/me/2fa/replacement/complete',
 
   /**
    * Linked sign-in methods (Account > Security). Link start and unlink carry
@@ -1517,11 +1521,42 @@ export const proxyPoolEndpoints = {
     `${API_BASE.PROXY_POOLS}/${poolId}/endpoints/${endpointId}`,
   assignments: () => `${API_BASE.PROXY_POOLS}/assignments`,
   assignment: (sensorId: string) => `${API_BASE.PROXY_POOLS}/assignments/${sensorId}`,
+  /** GET: the addresses scans leave from, to allowlist at a WAF (only addresses the platform observed). */
+  scannerAddresses: () => `${API_BASE.PROXY_POOLS}/scanner-addresses`,
   /** POST: ask sensors to test a pool's endpoints (the platform never connects to a proxy). */
   test: (poolId: string) => `${API_BASE.PROXY_POOLS}/${poolId}/test`,
   /** GET: the results of those tests, by command id. */
   tests: (poolId: string, commandIds: string[]) =>
     `${API_BASE.PROXY_POOLS}/${poolId}/tests?command_ids=${commandIds.map(encodeURIComponent).join(',')}`,
+} as const
+
+/**
+ * Organization wordlists (api docs/architecture/wordlists.md): tenant from
+ * the JWT.
+ */
+export const wordlistEndpoints = {
+  list: () => API_BASE.WORDLISTS,
+  create: () => API_BASE.WORDLISTS,
+  get: (id: string) => `${API_BASE.WORDLISTS}/${id}`,
+  update: (id: string) => `${API_BASE.WORDLISTS}/${id}`,
+  delete: (id: string) => `${API_BASE.WORDLISTS}/${id}`,
+  /** GET: counts of the label list an enumeration job of root would carry. */
+  preview: (root: string, depth: 'standard' | 'deep' = 'standard') =>
+    `${API_BASE.WORDLISTS}/preview?root=${encodeURIComponent(root)}&depth=${depth}`,
+} as const
+
+/**
+ * Organization detection rules (api docs/architecture/rule-packs.md): tenant
+ * from the JWT.
+ */
+export const contentRuleEndpoints = {
+  list: () => API_BASE.CONTENT_RULES,
+  create: () => API_BASE.CONTENT_RULES,
+  get: (id: string) => `${API_BASE.CONTENT_RULES}/${id}`,
+  update: (id: string) => `${API_BASE.CONTENT_RULES}/${id}`,
+  delete: (id: string) => `${API_BASE.CONTENT_RULES}/${id}`,
+  /** POST: runs a draft rule on a sample; secrets come back masked. */
+  test: () => `${API_BASE.CONTENT_RULES}/test`,
 } as const
 
 /**
@@ -1911,6 +1946,7 @@ export const exposureEndpoints = {
     filters.severities?.forEach((v) => sp.append('severity', v))
     filters.states?.forEach((v) => sp.append('state', v))
     filters.sources?.forEach((v) => sp.append('source', v))
+    filters.categories?.forEach((v) => sp.append('category', v))
     // The API filters by a single `asset_id`.
     const assetId = filters.canonical_asset_id || filters.native_asset_id
     if (assetId) sp.set('asset_id', assetId)
@@ -1974,6 +2010,16 @@ export const exposureEndpoints = {
    * Reactivate a resolved/accepted exposure
    */
   reactivate: (exposureId: string) => `${API_BASE.EXPOSURES}/${exposureId}/reactivate`,
+
+  /**
+   * Mark an open exposure as in progress
+   */
+  startProgress: (exposureId: string) => `${API_BASE.EXPOSURES}/${exposureId}/start-progress`,
+
+  /**
+   * Set or remove the analyst severity override
+   */
+  severity: (exposureId: string) => `${API_BASE.EXPOSURES}/${exposureId}/severity`,
 
   /**
    * Reject (or, for the requester, cancel) a pending disposition request

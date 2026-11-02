@@ -143,6 +143,40 @@ else
   fi
 fi
 
+# 4. Release lines --------------------------------------------------------------------
+# versions.yaml's "latest" of each sensor product, the SDK and the CI runner is
+# what a platform release installs without the release feed: the bundled
+# sensor's Compose default, the chart's sensor tag and the install snippets of
+# an instance that cannot reach the feed. It moves forward when a platform
+# release is cut (versions.yaml header), so one behind the published release
+# is a blocker: the release would install an old sensor.
+out ""
+out "### Release lines (versions.yaml latest vs the published releases)"
+manifest="$work/versions.yaml"
+if ! git show "${ref}:versions.yaml" >"$manifest" 2>/dev/null; then
+  out "- no versions.yaml at $ref; skipped"
+else
+  # SECTION=REPO: every product section names its image (ghcr.io/openctemio/<repo>).
+  lines="sdk=sdk-go ci=ci"
+  while IFS= read -r section; do
+    image="$(rel_yaml_get "$manifest" "$section.image" 2>/dev/null || true)"
+    [[ "$image" == ghcr.io/openctemio/* ]] && lines="$lines $section=${image#ghcr.io/openctemio/}"
+  done < <(grep -E '^[a-z0-9][a-z0-9-]*:[[:space:]]*(#.*)?$' "$manifest" | sed 's/:.*//')
+  for pair in $lines; do
+    section="${pair%%=*}" product_repo="${pair#*=}"
+    have="$(rel_yaml_get "$manifest" "$section.latest" 2>/dev/null || true)"
+    [[ -n "$have" ]] || continue
+    published="$(gh api "repos/openctemio/${product_repo}/releases/latest" --jq .tag_name 2>/dev/null || true)"
+    if ! rel_is_version "$published"; then
+      warning "${section}: the latest release of openctemio/${product_repo} could not be read; versions.yaml says ${have}"
+    elif rel_version_gt "$published" "$have"; then
+      blocker "${section}.latest is ${have}, openctemio/${product_repo} published ${published}: set it in versions.yaml and run .github/scripts/release/sync-versions.sh"
+    else
+      out "- ${section}: ${have} (current)"
+    fi
+  done
+fi
+
 out ""
 if [[ "$blockers" -gt 0 ]]; then
   out "**Preflight: ${blockers} blocker(s), ${warnings} warning(s).**"

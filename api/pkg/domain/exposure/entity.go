@@ -34,6 +34,7 @@ type ExposureEvent struct {
 	resolutionNotes string
 	createdAt       time.Time
 	updatedAt       time.Time
+	provenance      SeverityProvenance
 }
 
 // NewExposureEvent creates a new ExposureEvent.
@@ -196,10 +197,16 @@ func (e *ExposureEvent) Severity() Severity {
 // of the current severity and the stored peak. A re-ingest can lower the
 // current severity; the peak never goes down.
 func (e *ExposureEvent) PeakSeverity() Severity {
-	if e.peakSeverity.IsValid() && e.peakSeverity.Score() > e.severity.Score() {
+	peak := e.severity
+	// While an analyst override stands, the reported severity counts too:
+	// lowering the effective severity never lowers the peak.
+	if src := e.provenance.Source; e.provenance.OverriddenAt != nil && src.IsValid() && src.Score() > peak.Score() {
+		peak = src
+	}
+	if e.peakSeverity.IsValid() && e.peakSeverity.Score() > peak.Score() {
 		return e.peakSeverity
 	}
-	return e.severity
+	return peak
 }
 
 // WithPeakSeverity records the stored peak when the event is read back.
@@ -374,6 +381,16 @@ func (e *ExposureEvent) Reactivate() error {
 	return nil
 }
 
+// StartProgress marks an open exposure as being worked on.
+func (e *ExposureEvent) StartProgress() error {
+	if !e.state.CanTransitionTo(StateInProgress) {
+		return fmt.Errorf("%w: %w: cannot transition from %s to in_progress", shared.ErrValidation, ErrInvalidStateTransition, e.state)
+	}
+	e.state = StateInProgress
+	e.updatedAt = time.Now().UTC()
+	return nil
+}
+
 // IsActive returns true if the exposure is active.
 func (e *ExposureEvent) IsActive() bool {
 	return e.state == StateActive
@@ -413,35 +430,4 @@ func (e *ExposureEvent) RemoveDetail(key string) {
 func (e *ExposureEvent) GetDetail(key string) (any, bool) {
 	v, ok := e.details[key]
 	return v, ok
-}
-
-// ctemIDDetailKey is the details map key under which a CTEM-ID catalog tag is
-// stored. CTEM-IDs are standardized exposure-catalog identifiers (like CVE, but
-// for exposure classes: brand impersonation, credential dumps, lookalike
-// domains, ransomware, source-code/system exposure, ...). Tagging reuses the
-// existing details JSONB so no schema change is needed. It is deliberately NOT
-// part of generateFingerprint's whitelist, so tagging never changes the dedupe
-// identity of an exposure.
-const ctemIDDetailKey = "ctem_id"
-
-// CTEMID returns the CTEM-ID catalog tag on this exposure, or "" if untagged.
-func (e *ExposureEvent) CTEMID() string {
-	if v, ok := e.details[ctemIDDetailKey]; ok {
-		if s, ok := v.(string); ok {
-			return s
-		}
-	}
-	return ""
-}
-
-// SetCTEMID tags the exposure with a CTEM-ID catalog identifier (empty clears
-// the tag). ctem_id is not in the fingerprint whitelist, so the dedupe identity
-// is unchanged.
-func (e *ExposureEvent) SetCTEMID(ctemID string) {
-	if ctemID == "" {
-		delete(e.details, ctemIDDetailKey)
-	} else {
-		e.details[ctemIDDetailKey] = ctemID
-	}
-	e.updatedAt = time.Now().UTC()
 }

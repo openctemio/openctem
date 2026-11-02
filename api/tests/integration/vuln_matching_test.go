@@ -74,8 +74,16 @@ func (e *matchEnv) tenant(name string, enabled bool) shared.ID {
 }
 
 // observe links the product at version to a new asset of the tenant, the
-// way ingest does, and tells the matcher.
+// way ingest does (a CPE from a service probe: strong evidence), and tells
+// the matcher.
 func (e *matchEnv) observe(tenantID, assetID shared.ID, version string) shared.ID {
+	e.t.Helper()
+	return e.observeAt(tenantID, assetID, version, software.ClassProbe, software.ConfidenceCPE, time.Time{})
+}
+
+// observeAt is observe with the evidence class, confidence and observation
+// time of the sighting (zero: now).
+func (e *matchEnv) observeAt(tenantID, assetID shared.ID, version string, class software.EvidenceClass, confidence int, at time.Time) shared.ID {
 	e.t.Helper()
 	ctx := context.Background()
 	if assetID.IsZero() {
@@ -91,7 +99,8 @@ func (e *matchEnv) observe(tenantID, assetID shared.ID, version string) shared.I
 	require.NoError(e.t, err)
 	_, err = e.sw.UpsertLinks(ctx, tenantID, []software.Link{{
 		AssetID: assetID, ProductID: ref.ID, VersionID: vid, Location: "tcp/443", Port: 443, Transport: "tcp",
-		Source: software.SourceService, Evidence: "widget/" + version, Confidence: software.ConfidenceCPE,
+		Source: software.SourceService, Evidence: "widget/" + version, Confidence: confidence,
+		Version: p.Version, Segments: p.Segments, Class: class, ObservedAt: at,
 	}})
 	require.NoError(e.t, err)
 	e.svc.SoftwareChanged(tenantID, []shared.ID{assetID})

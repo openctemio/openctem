@@ -215,6 +215,7 @@ type Service struct {
 	runNotifier       RunNotifier               // live run updates (run_notify.go); nil: none
 	versions          scanworkflow.VersionStore // runs pinned to the workflow version they started with; nil reads the live workflow
 	lineage           scanworkflow.LineageStore // lineage of tenant copies of system templates (template_update.go); nil offers no updates
+	streaming         bool                      // stage streaming (stream.go); off: every chained step waits for its predecessors
 	logger            *logger.Logger
 
 	// Quality Gate dependencies (optional)

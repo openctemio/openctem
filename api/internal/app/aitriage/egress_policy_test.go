@@ -28,12 +28,14 @@ type fakeLLM struct {
 	calls int
 	err   error
 	resp  string
+	last  llm.CompletionRequest
 }
 
-func (f *fakeLLM) Complete(_ context.Context, _ llm.CompletionRequest) (*llm.CompletionResponse, error) {
+func (f *fakeLLM) Complete(_ context.Context, req llm.CompletionRequest) (*llm.CompletionResponse, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.calls++
+	f.last = req
 	if f.err != nil {
 		return nil, f.err
 	}

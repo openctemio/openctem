@@ -15,8 +15,11 @@ vi.mock('@/lib/api/client', () => ({
 }))
 
 let role: 'owner' | 'admin' | 'member' = 'member'
+let hasTeamRead = true
 vi.mock('@/lib/permissions', () => ({
+  Permission: { TeamRead: 'team:read' },
   usePermissions: () => ({
+    can: (p: string) => (p === 'team:read' ? hasTeamRead : true),
     isAtLeast: (r: string) =>
       r === 'admin' ? role === 'owner' || role === 'admin' : r === 'member' || role !== 'member',
     isOwner: () => role === 'owner',
@@ -185,6 +188,13 @@ describe('SupportAccessSettings', () => {
     expect(await screen.findByRole('button', { name: 'Grant access' })).toBeInTheDocument()
   })
 
+  it('keeps the empty active list flat: no card inside a card', async () => {
+    fetcher.mockResolvedValue({ data: [] })
+    const { container } = render(withSWR(<SupportAccessSettings canRead isOwner />))
+    await screen.findByText('No one from support has access.')
+    expect(container.querySelector('[data-slot=card] [data-slot=card]')).toBeNull()
+  })
+
   it('a member reads nothing and is told why', () => {
     render(withSWR(<SupportAccessSettings canRead={false} isOwner={false} />))
     expect(fetcher).not.toHaveBeenCalled()
@@ -193,7 +203,19 @@ describe('SupportAccessSettings', () => {
 })
 
 describe('SupportAccessBanner', () => {
-  beforeEach(() => vi.clearAllMocks())
+  beforeEach(() => {
+    vi.clearAllMocks()
+    hasTeamRead = true
+  })
+
+  it('does not read the active grants without team:read', async () => {
+    role = 'member'
+    hasTeamRead = false
+    const { container } = render(withSWR(<SupportAccessBanner />))
+    await new Promise((r) => setTimeout(r, 50))
+    expect(fetcher).not.toHaveBeenCalled()
+    expect(container).toBeEmptyDOMElement()
+  })
 
   it('renders nothing when no support access is active', async () => {
     role = 'member'

@@ -131,3 +131,19 @@ func GainsStepUpGrade(oldPerms []string, oldFull bool, newPerms []string, newFul
 func IsStepUpGradeRole(perms []string, fullData bool) bool {
 	return GainsStepUpGrade(nil, false, perms, fullData)
 }
+
+// adminRoleOnly are permissions whose routes also require the owner or
+// administrator role (routes/tenant.go): granting one to a custom role does
+// nothing, so the role editor does not offer them.
+var adminRoleOnly = []Permission{MembersInvite, MembersWrite}
+
+// OfferedInRoleEditor reports whether a permission id (the wire value) is
+// worth offering in the custom-role editor.
+func OfferedInRoleEditor(id string) bool {
+	for _, p := range adminRoleOnly {
+		if string(p) == id {
+			return false
+		}
+	}
+	return true
+}

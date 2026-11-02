@@ -9,7 +9,7 @@
  */
 
 import { useCallback, useMemo, useState } from 'react'
-import Link from '@/components/link'
+import { AssetPeekLink } from '@/features/assets/components/asset-peek'
 import type { ColumnDef } from '@tanstack/react-table'
 import { Check, Copy, Download, ShieldX } from 'lucide-react'
 import { toast } from 'sonner'
@@ -120,12 +120,9 @@ function useColumns(): ColumnDef<CertificateRow>[] {
             truncate
             className="max-w-[320px]"
             primary={
-              <Link
-                href={`/assets/${row.original.asset_id}`}
-                className="font-medium hover:underline"
-              >
+              <AssetPeekLink assetId={row.original.asset_id} className="font-medium">
                 {row.original.subject_cn || row.original.name}
-              </Link>
+              </AssetPeekLink>
             }
             secondary={
               row.original.is_self_signed

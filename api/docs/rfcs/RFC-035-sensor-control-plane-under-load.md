@@ -22,6 +22,7 @@
 >
 > Problem (2026-10-02): when a sensor scans, it usually eats resources, but
 > meanwhile it must still heartbeat and talk to the platform.
+> End-to-end flow as implemented today: [sensor-platform-workflow.md](../architecture/sensor-platform-workflow.md).
 
 ## 1. Answer in short
 

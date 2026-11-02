@@ -171,3 +171,22 @@ func TestPendingLinkErrorCodes(t *testing.T) {
 		}
 	}
 }
+
+// A social sign-in on an identity the organization's single sign-on manages
+// is a 409 with its own code, so the page can point at the organization sign-in.
+func TestOAuthCallback_UseOrgSSOIs409(t *testing.T) {
+	h := &OAuthHandler{logger: logger.NewNop()}
+	rec := httptest.NewRecorder()
+	h.handleOAuthError(rec, fmt.Errorf("failed to find or create user: %w", auth.ErrOAuthUseOrgSSO))
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status %d, want 409", rec.Code)
+	}
+	var body struct {
+		Code    string `json:"code"`
+		Message string `json:"message"`
+	}
+	_ = json.Unmarshal(rec.Body.Bytes(), &body)
+	if body.Code != "OAUTH_USE_ORG_SSO" || body.Message != "This account signs in through your organization. Use your organization's sign-in." {
+		t.Fatalf("got %+v", body)
+	}
+}

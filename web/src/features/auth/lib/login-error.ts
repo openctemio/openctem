@@ -48,6 +48,8 @@ export const LOGIN_ERROR_CODES = [
    * with it, then link the provider in Account > Security.
    */
   'account_exists',
+  /** The social identity is managed by an organization's single sign-on. */
+  'use_org_sso',
 ] as const
 
 export type LoginErrorCode = (typeof LOGIN_ERROR_CODES)[number]
@@ -92,6 +94,7 @@ const FALLBACKS: Record<LoginErrorCode | 'generic', string> = {
     'Verify your email address before signing in. Check your inbox for the verification link.',
   account_exists:
     'An account with this email already exists. Sign in with your password, then link this provider in Account > Security.',
+  use_org_sso: "This account signs in through your organization. Use your organization's sign-in.",
   generic: 'Sign-in failed. Try again.',
 }
 

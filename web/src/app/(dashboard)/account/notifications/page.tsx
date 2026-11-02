@@ -144,11 +144,6 @@ export default function NotificationsSettingsPage() {
               <Label htmlFor="in-app-enabled">
                 {t('account.notifications.inAppShow', 'Show in-app notifications')}
               </Label>
-              <p className="text-sm text-muted-foreground">
-                {inAppEnabled
-                  ? t('account.notifications.on', 'On')
-                  : t('account.notifications.off', 'Off')}
-              </p>
             </div>
             <Switch
               id="in-app-enabled"
@@ -178,9 +173,6 @@ export default function NotificationsSettingsPage() {
               <Label htmlFor="min-severity">
                 {t('account.notifications.minSeverity', 'Minimum severity')}
               </Label>
-              <p className="text-sm text-muted-foreground">
-                {t('account.notifications.minSeverityHint', 'Lower severities are left out')}
-              </p>
             </div>
             <Select value={minSeverity} onValueChange={edit(setMinSeverity)}>
               <SelectTrigger id="min-severity" className="w-[180px]">
@@ -204,12 +196,6 @@ export default function NotificationsSettingsPage() {
             <Bell className="h-5 w-5" />
             {t('notificationTypes.autoWatch.title', 'Watching')}
           </CardTitle>
-          <CardDescription>
-            {t(
-              'notificationTypes.autoWatch.subtitle',
-              'Findings and tasks you take part in can be watched for you.'
-            )}
-          </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="flex items-center justify-between gap-4">
@@ -220,7 +206,7 @@ export default function NotificationsSettingsPage() {
               <p className="text-sm text-muted-foreground">
                 {t(
                   'notificationTypes.autoWatch.description',
-                  'When you comment, change a status, claim a fix or are assigned, you start watching it. Stopping on one item always sticks.'
+                  'Starts when you comment, change a status, claim a fix or are assigned. Unwatching one item sticks.'
                 )}
               </p>
             </div>
@@ -236,7 +222,7 @@ export default function NotificationsSettingsPage() {
             {t('notificationTypes.title', 'Notification types')}
           </CardTitle>
           <CardDescription>
-            {t('notificationTypes.subtitle', 'Turn individual kinds of notification on or off.')}
+            {t('notificationTypes.subtitle', 'Turn each kind on or off.')}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -251,9 +237,14 @@ export default function NotificationsSettingsPage() {
                       <Label htmlFor={`type-${notifType.id}`}>
                         {t(`notificationTypes.${notifType.id}.name`, notifType.name)}
                       </Label>
-                      <p className="text-sm text-muted-foreground">
-                        {t(`notificationTypes.${notifType.id}.description`, notifType.description)}
-                      </p>
+                      {notifType.description && (
+                        <p className="text-sm text-muted-foreground">
+                          {t(
+                            `notificationTypes.${notifType.id}.description`,
+                            notifType.description
+                          )}
+                        </p>
+                      )}
                     </div>
                     <Switch
                       id={`type-${notifType.id}`}

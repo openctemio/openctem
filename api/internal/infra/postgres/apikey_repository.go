@@ -476,3 +476,55 @@ func (r *APIKeyRepository) CountActiveByUser(ctx context.Context, userID apikey.
 	}
 	return n, nil
 }
+
+// ListExpiringUnnoticed lists, across organizations (a system sweep), the
+// active keys that expire before `before` and whose holder was not told yet,
+// soonest first.
+func (r *APIKeyRepository) ListExpiringUnnoticed(ctx context.Context, before time.Time, limit int) ([]apikey.ExpiringKey, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT id, tenant_id, name, key_prefix, expires_at, user_id, created_by
+		  FROM api_keys
+		 WHERE status = 'active' AND expiry_notified_at IS NULL
+		   AND expires_at IS NOT NULL AND expires_at > now() AND expires_at <= $1
+		 ORDER BY expires_at
+		 LIMIT $2`, before, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list expiring api keys: %w", err)
+	}
+	defer rows.Close()
+	var out []apikey.ExpiringKey
+	for rows.Next() {
+		var (
+			k               apikey.ExpiringKey
+			userID, creator sql.NullString
+		)
+		if err := rows.Scan(&k.ID, &k.TenantID, &k.Name, &k.Prefix, &k.ExpiresAt, &userID, &creator); err != nil {
+			return nil, fmt.Errorf("scan expiring api key: %w", err)
+		}
+		if userID.Valid {
+			if id, err := shared.IDFromString(userID.String); err == nil {
+				k.UserID = &id
+			}
+		}
+		if creator.Valid {
+			if id, err := shared.IDFromString(creator.String); err == nil {
+				k.CreatedBy = &id
+			}
+		}
+		out = append(out, k)
+	}
+	return out, rows.Err()
+}
+
+// MarkExpiryNoticed records that the key's holder was told it expires soon.
+// It reports false when another replica already did (compare-and-swap).
+func (r *APIKeyRepository) MarkExpiryNoticed(ctx context.Context, tenantID, id shared.ID) (bool, error) {
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE api_keys SET expiry_notified_at = now()
+		 WHERE id = $1 AND tenant_id = $2 AND expiry_notified_at IS NULL`, id.String(), tenantID.String())
+	if err != nil {
+		return false, fmt.Errorf("mark api key expiry notice: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	return n == 1, nil
+}

@@ -56,6 +56,7 @@ export function TeamAccessFields({
   onChange,
   canSetAllAssets,
   disabled,
+  blockFullData,
 }: {
   idPrefix: string
   templates: TeamPresetTemplate[]
@@ -65,6 +66,12 @@ export function TeamAccessFields({
   /** Only an owner chooses All assets. */
   canSetAllAssets: boolean
   disabled?: boolean
+  /**
+   * The team has members outside the organization: the choices that give
+   * full data access (a preset that sees all assets, All assets) are off,
+   * unless already chosen, and carry this reason.
+   */
+  blockFullData?: string
 }) {
   const { t } = useTranslation()
   const elevated = isElevatedChoice(value, templates)
@@ -101,7 +108,15 @@ export function TeamAccessFields({
                     id={id}
                     checked={value.presets.includes(tpl.id)}
                     onCheckedChange={(c) => toggle(tpl.id, c === true)}
-                    disabled={disabled}
+                    disabled={
+                      disabled ||
+                      (!!blockFullData &&
+                        tpl.has_full_data_access &&
+                        !value.presets.includes(tpl.id))
+                    }
+                    aria-describedby={
+                      blockFullData && tpl.has_full_data_access ? `${id}-blocked` : undefined
+                    }
                     className="mt-0.5"
                   />
                   <div className="min-w-0 flex-1 space-y-0.5">
@@ -114,6 +129,11 @@ export function TeamAccessFields({
                       )}
                     </Label>
                     <p className="text-xs text-muted-foreground">{tpl.description}</p>
+                    {blockFullData && tpl.has_full_data_access && (
+                      <p id={`${id}-blocked`} className="text-xs text-muted-foreground">
+                        {blockFullData}
+                      </p>
+                    )}
                   </div>
                 </li>
               )
@@ -150,7 +170,7 @@ export function TeamAccessFields({
             <RadioGroupItem
               value="all_assets"
               id={`${idPrefix}-scope-all`}
-              disabled={!canSetAllAssets && value.scopeMode !== 'all_assets'}
+              disabled={(!canSetAllAssets || !!blockFullData) && value.scopeMode !== 'all_assets'}
               className="mt-0.5"
             />
             <div className="space-y-0.5">

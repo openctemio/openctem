@@ -40,6 +40,7 @@ import { useTranslation } from '@/context/i18n-provider'
 
 // Import schema and server actions
 import { loginSchema, type LoginInput } from '../schemas/auth.schema'
+import { sessionEndedMessage } from '../lib/session-ended'
 import { translatingResolver } from '../lib/translating-resolver'
 import {
   loginAction,
@@ -173,14 +174,20 @@ export function LoginForm({
   // A social sign-in found an account that signs in another way: the notice
   // stays on the page with what to do, instead of a toast that fades.
   const accountExists = errorParam === 'account_exists'
+  // A social sign-in hit an identity the organization's single sign-on manages.
+  const useOrgSso = errorParam === 'use_org_sso'
   useEffect(() => {
-    if (errorMessage && !accountExists) toast.error(errorMessage)
-  }, [errorMessage, accountExists])
+    if (errorMessage && !accountExists && !useOrgSso) toast.error(errorMessage)
+  }, [errorMessage, accountExists, useOrgSso])
 
   // Sent when a session ended because an organization requires two-factor
   // authentication and the session could not set it up. Only the known value
   // shows a message.
-  const mfaRequiredReason = searchParams.get('reason') === 'mfa_required'
+  const reasonParam = searchParams.get('reason')
+  const mfaRequiredReason = reasonParam === 'mfa_required'
+  // A session the platform ended (reuse, expiry, signed out elsewhere) says
+  // why instead of silently showing the form.
+  const sessionEnded = sessionEndedMessage(reasonParam)
   useEffect(() => {
     if (mfaRequiredReason) {
       toast.info(
@@ -189,9 +196,11 @@ export function LoginForm({
           'An organization you belong to requires two-factor authentication. Sign in to set it up.'
         )
       )
+    } else if (sessionEnded) {
+      toast.info(t(sessionEnded.key, sessionEnded.fallback))
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mfaRequiredReason])
+  }, [mfaRequiredReason, reasonParam])
 
   // Form setup with centralized schema
   const form = useForm<LoginInput>({
@@ -403,6 +412,16 @@ export function LoginForm({
               <Link href="/forgot-password" className="font-medium underline underline-offset-4">
                 {t('auth.accountExists.resetPassword')}
               </Link>
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {useOrgSso && (
+          <Alert role="alert" data-testid="login-use-org-sso">
+            <AlertTitle>{t('auth.useOrgSso.title')}</AlertTitle>
+            <AlertDescription>
+              <p>{errorMessage}</p>
+              <p>{t('auth.useOrgSso.hint')}</p>
             </AlertDescription>
           </Alert>
         )}

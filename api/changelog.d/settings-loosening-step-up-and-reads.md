@@ -1,0 +1,6 @@
+### Security: loosening lifecycle, cycle and attack-surface settings needs a recent sign-in; policy reads narrowed
+
+- Loosening the asset lifecycle (turning it on, a shorter stale threshold or grace period, running while an integration is unhealthy, fewer excluded source types), the CTEM cycle coverage requirement (turned off) and the attack-surface monitoring settings (a monitor, enrichment or the digest turned off, a longer interval or reappear window, web screenshots on) now needs a recent re-authentication, is audited at high severity and notifies owners and administrators. Tightening needs none.
+- Reading the application-access (MCP) policy, its clients and the members' access requests is for owners and administrators. Reading the attack-surface monitoring settings needs scope:write. A viewer or member with only settings:read no longer reads them.
+- A priority override rule can no longer rank a finding on an asset with no owner below P2 (the ownership floor now applies to rule results, as to the built-in classification).
+- The role editor no longer offers team:members:invite and team:members:write (their routes also need the owner or administrator role, so a custom role holding them did nothing). The built-in Member role no longer holds integrations:scm:write, which did nothing there but made the role privileged (migration 20261031041207).

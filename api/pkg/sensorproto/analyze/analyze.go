@@ -117,8 +117,8 @@ func Kinds() []Kind {
 	return []Kind{kinds["triage.v1"], kinds["remediation.v1"], kinds["summary.v1"]}
 }
 
-// Evidence cites a bundle field ("bundle:<field>") or a tool output
-// ("tool:<n>").
+// Evidence cites a bundle field ("bundle:<field>"), a tool output
+// ("tool:<n>") or a knowledge excerpt the run retrieved ("kb:<n>").
 type Evidence struct {
 	Ref   string `json:"ref"`
 	Quote string `json:"quote,omitempty"`

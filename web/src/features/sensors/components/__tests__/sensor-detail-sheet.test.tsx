@@ -5,6 +5,11 @@ import userEvent from '@testing-library/user-event'
 import type { Sensor, SensorContent } from '@/lib/api/sensor-types'
 
 const perms = vi.hoisted(() => ({ granted: new Set<string>() }))
+// The rotate action reads the organization's identity policy.
+vi.mock('@/lib/api/sensor-pairing-hooks', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/api/sensor-pairing-hooks')>()),
+  useSensorIdentityPolicy: () => ({ data: undefined }),
+}))
 vi.mock('@/lib/permissions', () => ({
   Permission: {
     SensorsWrite: 'sensors:write',
@@ -576,7 +581,7 @@ describe('SensorDetailSheet', () => {
     expect(cell.querySelector('[data-slot="sdk-version"]')?.textContent).toBe('SDK v0.8.0')
     expect(screen.getByText('SDK advisory')).toBeInTheDocument()
     expect(screen.getByText('recent activity')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Copy sensor ID' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^Copy sensor ID / })).toBeInTheDocument()
   })
 
   it('keeps a pseudo-version SDK out of the Version field; More details has it whole', async () => {

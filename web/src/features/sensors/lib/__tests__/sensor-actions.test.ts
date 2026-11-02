@@ -50,4 +50,16 @@ describe('sensorActions', () => {
     expect(offered('revoked', admin)).toEqual(['delete'])
     expect(offered('revoked', { ...admin, delete: false })).toEqual([])
   })
+
+  it('offers Rotate key only for a bearer key the organization still allows', () => {
+    const rotate = (auth_kind: 'bearer' | 'key_bound' | undefined, bearerKeys?: boolean) =>
+      sensorActions({ status: 'active', auth_kind }, { ...admin, bearerKeys }).rotate
+    expect(rotate('bearer')).toBe(true)
+    expect(rotate(undefined)).toBe(true)
+    expect(rotate('bearer', true)).toBe(true)
+    // A key-bound sensor has no API key: it pairs again instead.
+    expect(rotate('key_bound')).toBe(false)
+    // The API refuses a new bearer key when the organization requires key-bound identity.
+    expect(rotate('bearer', false)).toBe(false)
+  })
 })

@@ -97,7 +97,8 @@ type V2Target struct {
 	UserAgent string
 	// LeaseEpoch is the lease epoch the sensor states it holds CommandID
 	// under (X-OpenCTEM-Lease-Epoch); nil when not sent. A shared sensor
-	// must send it (OpenSharedCommand).
+	// must send it (OpenSharedCommand); an organization sensor's, when sent,
+	// must be current (OpenCommand).
 	LeaseEpoch *int
 }
 
@@ -123,7 +124,7 @@ func (v *V2Receiver) openCommand(ctx context.Context, tenantID shared.ID, t V2Ta
 	if t.Sensor == nil || t.Sensor.TenantID == nil || *t.Sensor.TenantID != tenantID {
 		return nil, problem(protov2.ProblemCommandNotFound)
 	}
-	cmd, err := OpenCommand(ctx, v.commands, t.Sensor, t.CommandID, v.now())
+	cmd, err := OpenCommand(ctx, v.commands, t.Sensor, t.CommandID, t.LeaseEpoch, v.now())
 	if err != nil {
 		return nil, problem(protov2.ProblemCommandNotFound)
 	}
@@ -360,6 +361,9 @@ func (v *V2Receiver) createReport(ctx context.Context, t V2Target, tenantID shar
 	if cmd != nil {
 		rep.CommandID = &cmd.ID
 		rep.ScanZoneID = cmd.ScanZoneID
+		// The run the report belongs to: the worker re-checks it.
+		epoch := cmd.LeaseEpoch
+		rep.CommandLeaseEpoch = &epoch
 	}
 	err := v.reports.Create(ctx, rep)
 	if err == nil {

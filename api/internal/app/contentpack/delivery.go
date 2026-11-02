@@ -87,11 +87,12 @@ func NewDelivery(tenant *Service, platform *PlatformService) *Delivery {
 }
 
 type located struct {
-	pack  DeliveredPack
-	id    string
-	scope string
-	name  string
-	kind  string
+	pack    DeliveredPack
+	id      string
+	scope   string
+	name    string
+	kind    string
+	version string
 }
 
 // desired lists what the organization's sensors may hold, keyed by digest
@@ -125,7 +126,7 @@ func (d *Delivery) compute(ctx context.Context, tenantID string) (map[string]loc
 			return nil, nil, err
 		}
 		for _, p := range active {
-			out[p.Digest] = located{DeliveredPack{p.Digest, ScopeTenant, p.SizeBytes, p.Signature}, p.ID.String(), ScopeTenant, p.Name, p.Kind}
+			out[p.Digest] = located{DeliveredPack{p.Digest, ScopeTenant, p.SizeBytes, p.Signature}, p.ID.String(), ScopeTenant, p.Name, p.Kind, p.Version}
 		}
 		gone, _, err := d.tenant.List(ctx, ListInput{TenantID: tenantID, Status: string(dom.StatusRevoked), Limit: maxDesiredPacks})
 		if err != nil {
@@ -153,7 +154,7 @@ func (d *Delivery) compute(ctx context.Context, tenantID string) (map[string]loc
 			if err != nil || p.Status != dom.StatusActive {
 				continue
 			}
-			out[p.Digest] = located{DeliveredPack{p.Digest, ScopePlatform, p.SizeBytes, p.Signature}, p.ID.String(), ScopePlatform, p.Name, p.Kind}
+			out[p.Digest] = located{DeliveredPack{p.Digest, ScopePlatform, p.SizeBytes, p.Signature}, p.ID.String(), ScopePlatform, p.Name, p.Kind, p.Version}
 		}
 		gone, _, err := d.platform.List(ctx, dom.Filter{Status: dom.StatusRevoked}, maxDesiredPacks, 0)
 		if err != nil {
@@ -244,8 +245,9 @@ func (d *Delivery) Version(ctx context.Context, tenantID string) (string, error)
 // Pinnable is a pack a job may pin: what the job's content member carries.
 type Pinnable struct {
 	DeliveredPack
-	Name string
-	Kind string
+	Name    string
+	Kind    string
+	Version string
 }
 
 // Deliverable reports whether digest is one the scope's sensors may hold: a
@@ -274,7 +276,7 @@ func (d *Delivery) PlatformStable(ctx context.Context, name string) (*Pinnable, 
 	}
 	for _, l := range set {
 		if l.name == name && l.scope == ScopePlatform {
-			return &Pinnable{DeliveredPack: l.pack, Name: l.name, Kind: l.kind}, nil
+			return &Pinnable{DeliveredPack: l.pack, Name: l.name, Kind: l.kind, Version: l.version}, nil
 		}
 	}
 	return nil, shared.ErrNotFound

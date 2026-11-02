@@ -39,6 +39,8 @@ const renderList = () =>
   )
 
 beforeEach(() => {
+  // The list reads its filters from the address bar of its own page.
+  window.history.replaceState(null, '', '/emerging-threats')
   api.get.mockReset()
   api.get.mockResolvedValue(page)
 })
@@ -72,6 +74,34 @@ describe('listUrl', () => {
 })
 
 describe('EmergingThreatsList', () => {
+  it('opens with the filters of its URL (a dashboard level link)', async () => {
+    window.history.replaceState(
+      null,
+      '',
+      '/emerging-threats?level=immediate&state=open&tier=confirmed'
+    )
+    renderList()
+    await screen.findByText('CVE-2026-1000')
+    expect(api.get).toHaveBeenCalledWith(
+      '/api/v1/emerging-threats?level=immediate&state=open&tier=confirmed&page=1&per_page=25'
+    )
+    expect(api.get).not.toHaveBeenCalledWith(
+      '/api/v1/emerging-threats?state=open&page=1&per_page=25'
+    )
+  })
+
+  it('writes a filter to the URL and back to page 1', async () => {
+    window.history.replaceState(null, '', '/emerging-threats?page=3&keep=1')
+    renderList()
+    await screen.findByText('CVE-2026-1000')
+    await userEvent.click(screen.getByRole('button', { name: /Digest/ }))
+    await waitFor(() => expect(window.location.search).toBe('?keep=1&level=digest'))
+    await userEvent.click(screen.getByRole('switch', { name: 'Internet-facing only' }))
+    await waitFor(() =>
+      expect(window.location.search).toBe('?keep=1&level=digest&exposure=internet')
+    )
+  })
+
   it('renders rows with level, exploit status and counts', async () => {
     renderList()
     expect(await screen.findByText('CVE-2026-1000')).toBeInTheDocument()

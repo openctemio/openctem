@@ -14,7 +14,7 @@ import (
 )
 
 const refreshTokenColumns = `id, user_id, session_id, token_hash, family,
-	expires_at, used_at, revoked_at, created_at`
+	expires_at, used_at, revoked_at, created_at, successor_id, rotated_fingerprint`
 
 // RefreshTokenRepository implements session.RefreshTokenRepository using PostgreSQL.
 type RefreshTokenRepository struct {
@@ -144,6 +144,47 @@ func (r *RefreshTokenRepository) MarkUsedIfUnused(ctx context.Context, id shared
 	return n == 1, nil
 }
 
+// RotateIfUnused spends the token and stores its successor in one
+// transaction: the conditional update marks the old token used only if it is
+// still unused and not revoked, and records the successor and the rotating
+// client's fingerprint on it. A concurrent rotation of the same token blocks
+// on the row until this one commits, then matches nothing, so exactly one
+// caller wins and every loser can read the successor the winner stored.
+func (r *RefreshTokenRepository) RotateIfUnused(ctx context.Context, id shared.ID, fingerprint string, successor *session.RefreshToken) (bool, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return false, fmt.Errorf("rotate refresh token: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	res, err := tx.ExecContext(ctx, `
+		UPDATE refresh_tokens
+		SET used_at = NOW(), successor_id = $2, rotated_fingerprint = NULLIF($3, '')
+		WHERE id = $1 AND used_at IS NULL AND revoked_at IS NULL`,
+		id.String(), successor.ID().String(), fingerprint)
+	if err != nil {
+		return false, fmt.Errorf("rotate refresh token: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("rotate refresh token: %w", err)
+	}
+	if n != 1 {
+		return false, nil
+	}
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO refresh_tokens (id, user_id, session_id, token_hash, family, expires_at, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+		successor.ID().String(), successor.UserID().String(), successor.SessionID().String(),
+		successor.TokenHash(), successor.Family().String(), successor.ExpiresAt(), successor.CreatedAt()); err != nil {
+		return false, fmt.Errorf("store rotated refresh token: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return false, fmt.Errorf("rotate refresh token: %w", err)
+	}
+	return true, nil
+}
+
 // Delete deletes a refresh token.
 func (r *RefreshTokenRepository) Delete(ctx context.Context, id shared.ID) error {
 	query := `DELETE FROM refresh_tokens WHERE id = $1`
@@ -239,6 +280,8 @@ func (r *RefreshTokenRepository) scanRefreshToken(row *sql.Row) (*session.Refres
 		&fields.usedAt,
 		&fields.revokedAt,
 		&fields.createdAt,
+		&fields.successorID,
+		&fields.rotatedFingerprint,
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -263,6 +306,8 @@ func (r *RefreshTokenRepository) scanRefreshTokenFromRows(rows *sql.Rows) (*sess
 		&fields.usedAt,
 		&fields.revokedAt,
 		&fields.createdAt,
+		&fields.successorID,
+		&fields.rotatedFingerprint,
 	)
 	if err != nil {
 		return nil, err
@@ -283,7 +328,7 @@ func (r *RefreshTokenRepository) reconstructRefreshToken(f refreshTokenScanField
 		revokedAt = &f.revokedAt.Time
 	}
 
-	return session.ReconstituteRefreshToken(
+	rt := session.ReconstituteRefreshToken(
 		shared.IDFromUUID(f.id),
 		shared.IDFromUUID(f.userID),
 		shared.IDFromUUID(f.sessionID),
@@ -294,6 +339,13 @@ func (r *RefreshTokenRepository) reconstructRefreshToken(f refreshTokenScanField
 		revokedAt,
 		f.createdAt,
 	)
+	var successorID *shared.ID
+	if f.successorID.Valid {
+		id := shared.IDFromUUID(f.successorID.UUID)
+		successorID = &id
+	}
+	rt.RestoreRotation(successorID, f.rotatedFingerprint.String)
+	return rt
 }
 
 // refreshTokenScanFields holds scanned fields from database.
@@ -307,4 +359,7 @@ type refreshTokenScanFields struct {
 	usedAt    sql.NullTime
 	revokedAt sql.NullTime
 	createdAt time.Time
+	// rotation record (nullable)
+	successorID        uuid.NullUUID
+	rotatedFingerprint sql.NullString
 }

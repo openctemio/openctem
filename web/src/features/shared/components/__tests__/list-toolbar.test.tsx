@@ -86,10 +86,34 @@ describe('ListToolbar slots', () => {
   it('puts the chips in their own full-width row 8px under the toolbar', () => {
     render(<ListToolbar end={<button type="button">View</button>} below={<span>chip</span>} />)
     const region = document.querySelector('[data-slot="list-toolbar-region"]') as HTMLElement
-    expect(region).toHaveClass('flex-col', 'gap-2')
+    expect(region).toHaveClass('flex', 'flex-wrap', 'gap-2')
     const below = screen.getByTestId('data-table-toolbar-below')
     expect(below).toHaveTextContent('chip')
+    expect(below).toHaveClass('basis-full')
     expect(region.firstElementChild).toBe(screen.getByTestId('data-table-toolbar'))
+    expect(screen.getByTestId('data-table-toolbar')).toHaveClass('basis-full')
+  })
+
+  it('on a phone lends the toolbar to the region so the end group joins the chips row', () => {
+    render(<ListToolbar end={<button type="button">View</button>} below={<span>chip</span>} />)
+    const region = document.querySelector('[data-slot="list-toolbar-region"]') as HTMLElement
+    // The region answers the toolbar's container queries once the toolbar box is lent out.
+    expect(region.className).toMatch(/@container\/toolbar/)
+    const bar = screen.getByTestId('data-table-toolbar')
+    expect(bar.className).toContain('@max-md/toolbar:contents')
+    // Not a container itself: a box-less container would answer no query.
+    expect(bar.className).not.toMatch(/(^|\s)@container\/toolbar/)
+    const end = document.querySelector('[data-slot="list-toolbar-end"]') as HTMLElement
+    expect(end.className).toContain('@max-md/toolbar:order-last')
+    expect(screen.getByTestId('data-table-toolbar-below').className).toContain(
+      '@max-md/toolbar:basis-auto'
+    )
+  })
+
+  it('without a chips row keeps the toolbar a box of its own', () => {
+    render(<ListToolbar end={<button type="button">View</button>} />)
+    expect(screen.getByTestId('data-table-toolbar').className).not.toContain('contents')
+    expect(screen.getByTestId('data-table-toolbar').className).toMatch(/@container\/toolbar/)
   })
 })
 

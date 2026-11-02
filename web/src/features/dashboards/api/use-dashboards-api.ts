@@ -74,6 +74,13 @@ export function useOrgDashboards(enabled: boolean, config?: SWRConfiguration) {
   return useSWR<DashboardListResponse>(key, fetchList, config)
 }
 
+/** Fetch one organization dashboard by id (dashboards:org:view, inside its audience). */
+export function useOrgDashboard(id: string | null, config?: SWRConfiguration) {
+  const { currentTenant } = useTenant()
+  const key = currentTenant && id ? `${ORG_DASHBOARDS_KEY}/${id}` : null
+  return useSWR<Dashboard>(key, fetchOne, config)
+}
+
 /** Revalidate both dashboard lists (call after any mutation). */
 export function useRevalidateAllDashboards() {
   const { mutate } = useSWRConfig()

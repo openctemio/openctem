@@ -49,7 +49,13 @@ import {
 import type { Dashboard, DashboardRefreshSchedule } from '../api/dashboards.types'
 import { dashboardDataKey, refreshDashboard, useDashboardData } from '../api/widget-data'
 import { uniqueDashboardName } from '../lib/unique-name'
-import { DEFAULT_TEMPLATE, templateByKey, templateLayout, templateNameKey } from '../templates'
+import {
+  DEFAULT_TEMPLATE,
+  templateByKey,
+  templateDescriptionKey,
+  templateLayout,
+  templateNameKey,
+} from '../templates'
 import { DASHBOARD_CHOICE_KEY, parseRef, pickLanding, refKey, type DashboardRef } from '../landing'
 import {
   layoutHintFor,
@@ -156,7 +162,12 @@ export function DashboardHome() {
     seeding.current = true
     const tpl = templateByKey(DEFAULT_TEMPLATE)
     const name = t(templateNameKey(tpl.key), tpl.key)
-    createDashboard({ name, columns: tpl.columns, layout: templateLayout(tpl) })
+    createDashboard({
+      name,
+      description: t(templateDescriptionKey(tpl.key), ''),
+      columns: tpl.columns,
+      layout: templateLayout(tpl),
+    })
       .then(async (d) => {
         setSeeded(name)
         // The new dashboard is the whole list: no second request for it.
@@ -286,6 +297,7 @@ export function DashboardHome() {
       )
       const d = await createDashboard({
         name: copyName,
+        description: t(templateDescriptionKey(tpl.key), ''),
         columns: tpl.columns,
         layout: templateLayout(tpl),
       })
@@ -460,7 +472,9 @@ export function DashboardHome() {
                   )}
                   {(!isOrg || canOrgManage) && (
                     <DropdownMenuItem className={ITEM} asChild>
-                      <Link href="/dashboards">
+                      <Link
+                        href={`/dashboards?edit=${encodeURIComponent(dashboard.id)}${isOrg ? '&kind=organization' : ''}`}
+                      >
                         <Pencil className="me-2 h-4 w-4" aria-hidden />
                         {t('dashboards.actions.edit', 'Edit details')}
                       </Link>
@@ -550,24 +564,39 @@ export function DashboardHome() {
                 data-testid="layout-hint"
               >
                 <span className="min-w-0 flex-1 basis-60 text-muted-foreground">
-                  {t('dashboards.layoutHint.text', 'New on the {template} layout: {names}.', {
-                    template: t(templateNameKey(layoutHint.template), layoutHint.template),
-                    names:
-                      hintNames.join(', ') +
-                      (hintMore > 0
-                        ? ` ${t('dashboards.layoutHint.more', 'and {n} more', { n: hintMore })}`
-                        : ''),
-                  })}
+                  {layoutHint.missing.length > 0
+                    ? t('dashboards.layoutHint.text', 'New on the {template} layout: {names}.', {
+                        template: t(templateNameKey(layoutHint.template), layoutHint.template),
+                        names:
+                          hintNames.join(', ') +
+                          (hintMore > 0
+                            ? ` ${t('dashboards.layoutHint.more', 'and {n} more', { n: hintMore })}`
+                            : ''),
+                      })
+                    : t(
+                        'dashboards.layoutHint.rearranged',
+                        'The {template} layout has a new arrangement: the most important figures first.',
+                        {
+                          template: t(templateNameKey(layoutHint.template), layoutHint.template),
+                        }
+                      )}
                 </span>
+                {layoutHint.missing.length > 0 && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={hintBusy}
+                    onClick={addTemplateWidgets}
+                  >
+                    {t('dashboards.layoutHint.add', 'Add them to this dashboard')}
+                  </Button>
+                )}
                 <Button
                   size="sm"
-                  variant="outline"
+                  variant={layoutHint.missing.length > 0 ? 'ghost' : 'outline'}
                   disabled={hintBusy}
-                  onClick={addTemplateWidgets}
+                  onClick={switchToTemplate}
                 >
-                  {t('dashboards.layoutHint.add', 'Add them to this dashboard')}
-                </Button>
-                <Button size="sm" variant="ghost" disabled={hintBusy} onClick={switchToTemplate}>
                   {t('dashboards.layoutHint.switch', 'Switch to the new layout')}
                 </Button>
                 <Button

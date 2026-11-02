@@ -363,7 +363,9 @@ export function WidgetFrame(props: WidgetFrameProps) {
       )}
     >
       <header className="mb-2 flex items-start gap-2">
-        <h3
+        {/* A widget title is the level under the page title (h1): h2, so
+            the sections inside a widget (h3) keep the heading order. */}
+        <h2
           id={titleId}
           className="min-w-0 flex-1 text-sm font-medium line-clamp-2 sm:line-clamp-1"
         >
@@ -376,14 +378,16 @@ export function WidgetFrame(props: WidgetFrameProps) {
               {formatCount(props.count, locale)}
             </span>
           )}
-        </h3>
+        </h2>
         {definition && (
           <Popover>
             <PopoverTrigger asChild>
               <Button
                 variant="ghost"
                 size="icon"
-                className="size-6 text-muted-foreground"
+                // A 24 px icon with a 44 px hit area (the after: box), so the
+                // header keeps its height and a finger still lands on it.
+                className="relative size-6 text-muted-foreground after:absolute after:-inset-2.5"
                 aria-label={t('dashboardKit.action.definition', 'How this is counted')}
               >
                 <Info className="size-4" aria-hidden />

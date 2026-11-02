@@ -75,6 +75,7 @@ jobs:
       verified: ${{ steps.queue.outputs.verified }}
       full: ${{ steps.f.outputs.full }}
       migrations: ${{ steps.f.outputs.migrations }}
+      schema: ${{ steps.f.outputs.schema }}
       api_any: ${{ steps.f.outputs.api }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -849,6 +850,130 @@ jobs:
         if: failure()
         uses: ./.github/actions/fail-fast
 
+  # Schema-wide tests on a pull request (fast tier). The Postgres suite does not
+  # run on a PR, so a change that adds a table or index used to pass here and
+  # fail in the merge queue: tenant_tables.txt drift, the schema-wide delete
+  # seeder, duplicate indexes, merge coverage of every reference. These are the
+  # few tests that read EVERY table; they run only when the PR touches a
+  # migration, the role script, the Postgres repositories or the tenant-table
+  # lint (`schema` output of changed.sh), against one Postgres service, as the
+  # same least-privilege roles the full tier uses. The full tier runs them in
+  # its shards, so this job is skipped there. Add a new schema-wide test to the
+  # -run list below (and to the matching list in docs/development/ci-cd.md).
+  schema:
+    name: Schema-wide tests (PostgreSQL)
+    permissions:
+      contents: read
+      packages: read
+      actions: write
+    needs: changes
+    if: needs.changes.outputs.api == 'true' && needs.changes.outputs.full != 'true' && needs.changes.outputs.schema == 'true' && github.event_name == 'pull_request'
+    runs-on: ${{ (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || needs.changes.outputs.pool || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && (vars.CI_RUNNER_HEAVY || needs.changes.outputs.pool)) || 'ubuntu-latest' }}
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: ghcr.io/openctemio/mirror/postgres:17-alpine
+        credentials:
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+        env:
+          POSTGRES_USER: postgres
+          # Job-scoped throwaway database, trust auth on the service network.
+          POSTGRES_HOST_AUTH_METHOD: trust
+          POSTGRES_DB: app_test
+        ports:
+          - 5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d app_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 2 # the test merge's base parent, for the renumber below
+
+      - name: Renumber this PR's clashing migrations (this run only)
+        working-directory: .
+        run: bash .github/scripts/pr-migration-renumber.sh
+
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: api/go.mod
+          cache: false # ./.github/actions/go-cache restores; only warm-cache saves
+      - name: Go caches
+        id: gocache
+        uses: ./.github/actions/go-cache
+
+      - name: Build the migration runner
+        run: |
+          go build -o "$RUNNER_TEMP/bin/openctem-migrate" ./cmd/openctem-migrate
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+
+      - name: Point the tests at the service container
+        shell: bash
+        env:
+          SVC_HOST: ${{ runner.environment == 'self-hosted' && 'dind' || 'localhost' }}
+          PG_PORT: ${{ job.services.postgres.ports['5432'] }}
+        run: |
+          {
+            echo "SUPER_URL=postgres://postgres@${SVC_HOST}:${PG_PORT}/app_test?sslmode=disable"
+            echo "MIGRATOR_URL=postgres://openctem_migrator@${SVC_HOST}:${PG_PORT}/app_test?sslmode=disable"
+            echo "APP_ROLE_URL=postgres://openctem_app@${SVC_HOST}:${PG_PORT}/app_test?sslmode=disable"
+          } >> "$GITHUB_ENV"
+
+      - name: Bootstrap the roles on a fresh database
+        run: psql "$SUPER_URL" -X -v ON_ERROR_STOP=1 -f deploy/postgres/least-privilege-roles.sql
+
+      - name: Apply every migration as the migrator (not a superuser)
+        run: openctem-migrate -path migrations -database "$MIGRATOR_URL" up
+
+      - name: Re-run the bootstrap (grants on the migrated schema)
+        run: psql "$SUPER_URL" -X -v ON_ERROR_STOP=1 -f deploy/postgres/least-privilege-roles.sql
+
+      - name: Schema-wide tests
+        shell: bash
+        env:
+          OPENCTEM_TEST_DB_REQUIRED: "1"
+          DATABASE_URL: ${{ env.APP_ROLE_URL }}
+          DATABASE_MIGRATE_URL: ${{ env.MIGRATOR_URL }}
+          DATABASE_ADMIN_URL: ${{ env.SUPER_URL }}
+          DB_HOST: ${{ runner.environment == 'self-hosted' && 'dind' || 'localhost' }}
+          DB_PORT: ${{ job.services.postgres.ports['5432'] }}
+          DB_USER: openctem_app
+          DB_NAME: app_test
+        run: |
+          set +e
+          go test -count=1 -json -timeout 10m \
+            -run '^(TestTenantTablesMatchSchema|TestDeleteTenantAndUser_EverySchemaTable|TestDeleteFKPolicy|TestNoDuplicateIndexes_DB|TestFindingMergeCoversEveryFindingReference|TestAssetMergeCoversEveryAssetReference)$' \
+            ./tools/lint/tenantsql/ ./internal/infra/postgres/ ./tests/integration/ > schema.json
+          rc=$?
+          set -e
+          # The log of every failed test, then one line naming them (the merge
+          # queue keeper and the PR checks page show it).
+          jq -r 'select(.Action=="output" and .Test!=null) | .Output' schema.json \
+            | grep -E -B1 -A6 -- '--- FAIL' || true
+          failed="$(jq -r 'select(.Action=="fail" and .Test!=null) | .Test' schema.json | sort -u | tr '\n' ' ')"
+          if [ "$rc" -ne 0 ]; then
+            echo "::error title=Schema-wide tests failed::${failed:-build or package failure, see log}"
+            exit 1
+          fi
+          ran="$(jq -r 'select(.Action=="pass" and .Test!=null and (.Test|contains("/")|not)) | .Test' schema.json | sort -u | wc -l)"
+          echo "schema-wide tests passed: $ran"
+          if [ "$ran" -lt 6 ]; then echo "::error::expected 6 schema-wide tests to pass, got $ran"; exit 1; fi
+
+      # A test that skips itself on a failed ping would otherwise go green.
+      - name: No DB-backed test was skipped
+        if: ${{ !cancelled() }}
+        run: bash ../.github/scripts/check-db-test-skips.sh schema.json
+
+      - name: Fail fast
+        if: failure()
+        uses: ./.github/actions/fail-fast
+
   # The only writer of the Go caches (module cache and compiled packages):
   # every push to develop, so pull requests (which restore them, read-only,
   # through ./.github/actions/go-cache) compile only what they change. At most
@@ -945,7 +1070,7 @@ jobs:
   api-ok:
     name: API CI OK
     if: always()
-    needs: [changes, static, unit, test, pg18, binaries]
+    needs: [changes, static, unit, test, pg18, schema, binaries]
     runs-on: ${{ (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_LIGHT) || 'ubuntu-latest' }}
     timeout-minutes: 5
     steps:
@@ -957,6 +1082,7 @@ jobs:
           TREE_NOTE: ${{ needs.changes.outputs.tree_note }}
           FULL: ${{ needs.changes.outputs.full }}
           MIGRATIONS: ${{ needs.changes.outputs.migrations }}
+          SCHEMA: ${{ needs.changes.outputs.schema }}
           EVENT: ${{ github.event_name }}
         run: |
           echo "$NEEDS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
@@ -979,6 +1105,7 @@ jobs:
             # Full tier: the Postgres suite. The merge queue is authoritative.
             if [ "$FULL" = true ]; then required="changes static test"; else required="changes static unit"; fi
             if [ "$FULL" = true ] || [ "$MIGRATIONS" = true ]; then required="$required pg18"; fi
+            if [ "$FULL" != true ] && [ "$SCHEMA" = true ] && [ "$EVENT" = pull_request ]; then required="$required schema"; fi
             if [ "$EVENT" != pull_request ]; then required="$required binaries"; fi
             for j in $required; do
               r="$(echo "$NEEDS" | jq -r --arg j "$j" '.[$j].result')"

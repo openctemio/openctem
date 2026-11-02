@@ -69,24 +69,27 @@ export function CIRequireOIDC({ canWrite }: { canWrite: boolean }) {
   )
 
   if (required) {
+    // The safe state is one quiet line: it only needs attention when off.
     return (
       <>
         {dialog}
-        <Alert>
-          <ShieldCheck />
-          <AlertTitle>
-            {t('scans.ci.oidc.requiredTitle', 'CI jobs must use their OIDC identity')}
-          </AlertTitle>
-          <AlertDescription className="space-y-2">
-            <p>
-              {t(
-                'scans.ci.oidc.requiredBody',
-                'Results sent by a CI sensor with an API key are refused. Pipelines authenticate with the token their CI provider issues for the job, checked against the trust configurations below.'
-              )}
-            </p>
-            {toggle}
-          </AlertDescription>
-        </Alert>
+        <div
+          className="flex flex-col gap-2 rounded-lg border p-3 text-sm sm:flex-row sm:items-center sm:justify-between"
+          data-testid="ci-require-oidc-on"
+        >
+          <p className="flex min-w-0 items-start gap-2">
+            <ShieldCheck className="mt-0.5 size-4 shrink-0 text-success" aria-hidden />
+            <span>
+              <span className="font-medium">
+                {t('scans.ci.oidc.requiredTitle', 'CI jobs must use their OIDC identity')}
+              </span>{' '}
+              <span className="text-muted-foreground">
+                {t('scans.ci.oidc.requiredShort', 'CI sensor API keys are refused.')}
+              </span>
+            </span>
+          </p>
+          {toggle}
+        </div>
       </>
     )
   }

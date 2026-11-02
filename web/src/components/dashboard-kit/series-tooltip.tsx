@@ -24,7 +24,11 @@
 
 import type { ReactNode } from 'react'
 import { useTranslation } from '@/context/i18n-provider'
+import { cn } from '@/lib/utils'
 import { formatBucketRange, formatDelta, formatMetric, type MetricUnit } from '@/lib/format-metric'
+import { deltaTone } from './compare'
+import type { Polarity } from './types'
+import { TONE_CLASS, useToneVerdict } from './viz-parts'
 
 type Row = Record<string, number | string>
 
@@ -135,6 +139,23 @@ interface SeriesTooltipProps {
   mode: SeriesTooltipMode
   bucket: 'day' | 'week' | 'month'
   unit?: MetricUnit
+  /**
+   * Which way is good for the figure. A change is coloured by it (shared tone
+   * logic of DeltaText); omitted or neutral, changes stay muted. In a flow the
+   * polarity is the open count's: "opened" follows it, "fixed" is its opposite.
+   */
+  polarity?: Polarity
+}
+
+const OPPOSITE: Record<Polarity, Polarity> = {
+  down_good: 'up_good',
+  up_good: 'down_good',
+  neutral: 'neutral',
+}
+
+/** The polarity of one series' change: in a flow, fixed runs against opened. */
+export function seriesPolarity(mode: SeriesTooltipMode, key: string, polarity: Polarity): Polarity {
+  return mode === 'flow' && key === 'fixed' ? OPPOSITE[polarity] : polarity
 }
 
 function Line({
@@ -142,12 +163,21 @@ function Line({
   label,
   value,
   delta,
+  deltaClass,
+  verdict,
+  toneOnValue,
   strong,
 }: {
   swatch?: string
   label: ReactNode
   value: string
   delta?: string
+  /** The tone class of the delta (value for the net row), muted when absent. */
+  deltaClass?: string
+  /** Screen-reader words that say what the colour says. */
+  verdict?: string | null
+  /** Colour the value cell instead of the delta cell (the Net change row has no delta). */
+  toneOnValue?: boolean
   strong?: boolean
 }) {
   return (
@@ -166,9 +196,18 @@ function Line({
       >
         {label}
       </td>
-      <td className="py-0.5 text-end font-medium tabular-nums">{value}</td>
-      <td className="min-w-10 py-0.5 ps-3 text-end tabular-nums text-muted-foreground">
+      <td className={cn('py-0.5 text-end font-medium tabular-nums', toneOnValue && deltaClass)}>
+        {value}
+        {toneOnValue && verdict && <span className="sr-only"> ({verdict})</span>}
+      </td>
+      <td
+        className={cn(
+          'min-w-10 py-0.5 ps-3 text-end tabular-nums',
+          toneOnValue ? 'text-muted-foreground' : (deltaClass ?? 'text-muted-foreground')
+        )}
+      >
         {delta ?? ''}
+        {!toneOnValue && delta != null && verdict && <span className="sr-only"> ({verdict})</span>}
       </td>
     </tr>
   )
@@ -183,8 +222,10 @@ export function SeriesTooltip({
   mode,
   bucket,
   unit = 'count',
+  polarity = 'neutral',
 }: SeriesTooltipProps) {
   const { t, locale } = useTranslation()
+  const verdictOf = useToneVerdict()
   if (!active || label == null) return null
   const model = buildSeriesTooltip(rows, String(label), meta, mode)
   if (!model) return null
@@ -194,6 +235,10 @@ export function SeriesTooltip({
       ? t('dashboardKit.tooltip.week', 'Week of {range}', { range: range.text })
       : range.text
   const delta = (d: number | null) => (d == null ? undefined : formatDelta(d, unit, locale))
+  const tone = (d: number | null, p: Polarity) => {
+    const k = deltaTone(d, p)
+    return { deltaClass: TONE_CLASS[k], verdict: verdictOf(k) }
+  }
   const value = (v: number) => formatMetric(v, unit, locale)
   return (
     <div
@@ -217,6 +262,7 @@ export function SeriesTooltip({
               label={r.label}
               value={value(r.value)}
               delta={delta(r.delta)}
+              {...tone(r.delta, seriesPolarity(mode, r.key, polarity))}
             />
           ))}
         </tbody>
@@ -227,6 +273,7 @@ export function SeriesTooltip({
                 label={t('dashboardKit.tooltip.total', 'Total')}
                 value={value(model.total.value)}
                 delta={delta(model.total.delta)}
+                {...tone(model.total.delta, polarity)}
                 strong
               />
             )}
@@ -234,6 +281,8 @@ export function SeriesTooltip({
               <Line
                 label={t('dashboardKit.tooltip.net', 'Net change')}
                 value={formatDelta(model.net, unit, locale)}
+                toneOnValue
+                {...tone(model.net, polarity)}
                 strong
               />
             )}

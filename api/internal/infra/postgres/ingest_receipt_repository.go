@@ -56,7 +56,7 @@ func (r *IngestReceiptRepository) Record(ctx context.Context, d *ingestreceipt.D
 		if err != nil {
 			return err
 		}
-		var rid string
+		var rid, receiptTool string
 		var recorded int
 		err = tx.QueryRowContext(ctx, `
 			INSERT INTO ingest_receipts (id, tenant_id, source_kind, source_ref, tool_name, status, created_at, updated_at)
@@ -64,8 +64,8 @@ func (r *IngestReceiptRepository) Record(ctx context.Context, d *ingestreceipt.D
 			ON CONFLICT (tenant_id, source_kind, source_ref) DO UPDATE
 				SET updated_at = GREATEST(ingest_receipts.updated_at, EXCLUDED.updated_at),
 					tool_name = COALESCE(ingest_receipts.tool_name, EXCLUDED.tool_name)
-			RETURNING id::text, actions_recorded`,
-			shared.NewID().String(), d.TenantID.String(), string(kind), ref, tool, at).Scan(&rid, &recorded)
+			RETURNING id::text, actions_recorded, COALESCE(tool_name, '')`,
+			shared.NewID().String(), d.TenantID.String(), string(kind), ref, tool, at).Scan(&rid, &recorded, &receiptTool)
 		if err != nil {
 			return fmt.Errorf("upsert receipt: %w", err)
 		}
@@ -105,6 +105,17 @@ func (r *IngestReceiptRepository) Record(ctx context.Context, d *ingestreceipt.D
 		if err != nil {
 			return fmt.Errorf("update receipt counts: %w", err)
 		}
+		rowTool := tool
+		if rowTool == "" {
+			rowTool = receiptTool
+		}
+		if err := upsertReceiptTool(ctx, tx, d.TenantID, id, rowTool, d.Instance, receiptToolCounts{
+			reports: d.Reports, received: d.Received, created: applied.created, still: applied.still,
+			reopened: applied.reopened, closed: applied.closed, skipped: d.Skipped, failed: d.Failed,
+			suppressed: d.Suppressed, assetsCreated: d.AssetsCreated, assetsUpdated: d.AssetsUpdated,
+		}, at); err != nil {
+			return err
+		}
 		if err := recordCoverageDecision(ctx, tx, d, id, at); err != nil {
 			return err
 		}
@@ -119,6 +130,88 @@ func (r *IngestReceiptRepository) Record(ctx context.Context, d *ingestreceipt.D
 		return shared.ID{}, err
 	}
 	return id, nil
+}
+
+// maxInstanceID and maxInstanceName are the widths of
+// ingest_receipt_tools.instance_id and instance_name.
+const (
+	maxInstanceID   = 128
+	maxInstanceName = 255
+)
+
+// receiptToolCounts are what one delta adds to its tool's row.
+type receiptToolCounts struct {
+	reports, received, created, still, reopened, closed int
+	skipped, failed, suppressed                         int
+	assetsCreated, assetsUpdated                        int
+}
+
+func (c receiptToolCounts) empty() bool {
+	return c == receiptToolCounts{}
+}
+
+// upsertReceiptTool adds a delta's counts to the row of its tool and sender
+// on the receipt, so the rows of a receipt always sum to its counts. A delta
+// that names no sender (a coverage decision) adds to the row of the sender
+// that last reported this tool on the receipt, or to a row without a sender.
+func upsertReceiptTool(ctx context.Context, tx *sql.Tx, tenantID, receiptID shared.ID, tool string,
+	inst ingestreceipt.Instance, c receiptToolCounts, at time.Time) error {
+	if c.empty() {
+		return nil
+	}
+	if tool == "" {
+		tool = unknownTool
+	}
+	kind, iid, name := inst.Kind, clipRunes(inst.ID, maxInstanceID), clipRunes(inst.Name, maxInstanceName)
+	if !ingestreceipt.IsInstanceKind(kind) || iid == "" {
+		kind = ""
+	}
+	if kind == "" {
+		iid, name = "", ""
+		err := tx.QueryRowContext(ctx, `
+			SELECT instance_kind, instance_id FROM ingest_receipt_tools
+			WHERE tenant_id = $1 AND receipt_id = $2 AND tool = $3
+			ORDER BY last_at DESC, instance_kind, instance_id LIMIT 1`,
+			tenantID.String(), receiptID.String(), tool).Scan(&kind, &iid)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("receipt tool sender: %w", err)
+		}
+	}
+	_, err := tx.ExecContext(ctx, `
+		INSERT INTO ingest_receipt_tools (tenant_id, receipt_id, tool, instance_kind, instance_id, instance_name,
+			reports, received, created, still_detected, reopened, closed, skipped, failed, suppressed,
+			assets_created, assets_updated, first_at, last_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $18)
+		ON CONFLICT (receipt_id, tool, instance_kind, instance_id) DO UPDATE SET
+			instance_name = COALESCE(NULLIF(EXCLUDED.instance_name, ''), ingest_receipt_tools.instance_name),
+			reports = ingest_receipt_tools.reports + EXCLUDED.reports,
+			received = ingest_receipt_tools.received + EXCLUDED.received,
+			created = ingest_receipt_tools.created + EXCLUDED.created,
+			still_detected = ingest_receipt_tools.still_detected + EXCLUDED.still_detected,
+			reopened = ingest_receipt_tools.reopened + EXCLUDED.reopened,
+			closed = ingest_receipt_tools.closed + EXCLUDED.closed,
+			skipped = ingest_receipt_tools.skipped + EXCLUDED.skipped,
+			failed = ingest_receipt_tools.failed + EXCLUDED.failed,
+			suppressed = ingest_receipt_tools.suppressed + EXCLUDED.suppressed,
+			assets_created = ingest_receipt_tools.assets_created + EXCLUDED.assets_created,
+			assets_updated = ingest_receipt_tools.assets_updated + EXCLUDED.assets_updated,
+			last_at = GREATEST(ingest_receipt_tools.last_at, EXCLUDED.last_at)`,
+		tenantID.String(), receiptID.String(), tool, kind, iid, name,
+		c.reports, c.received, c.created, c.still, c.reopened, c.closed, c.skipped, c.failed, c.suppressed,
+		c.assetsCreated, c.assetsUpdated, at)
+	if err != nil {
+		return fmt.Errorf("upsert receipt tool: %w", err)
+	}
+	return nil
+}
+
+// clipRunes shortens s to at most n runes.
+func clipRunes(s string, n int) string {
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return string(r[:n])
 }
 
 // runSightedSQL is the findings a run's receipt says it reported: created,
@@ -495,6 +588,22 @@ func (r *IngestReceiptRepository) FinishUpload(ctx context.Context, tenantID, id
 	}
 	if n, _ := out.RowsAffected(); n == 0 {
 		return shared.ErrNotFound
+	}
+	if res.Skipped == 0 {
+		return nil
+	}
+	// The file-level skipped count joins the upload's tool row, so the tool
+	// rows still sum to the receipt.
+	_, err = r.db.ExecContext(ctx, `
+		INSERT INTO ingest_receipt_tools (tenant_id, receipt_id, tool, instance_kind, instance_id, skipped, first_at, last_at)
+		SELECT tenant_id, id, `+receiptToolSQL+`, '`+ingestreceipt.InstanceImport+`', '`+ingestreceipt.InstanceImport+`', $3, now(), now()
+		FROM ingest_receipts WHERE tenant_id = $1 AND id = $2 AND source_kind = 'upload'
+		ON CONFLICT (receipt_id, tool, instance_kind, instance_id) DO UPDATE SET
+			skipped = ingest_receipt_tools.skipped + EXCLUDED.skipped,
+			last_at = GREATEST(ingest_receipt_tools.last_at, EXCLUDED.last_at)`,
+		tenantID.String(), id.String(), res.Skipped)
+	if err != nil {
+		return fmt.Errorf("finish upload receipt tool: %w", err)
 	}
 	return nil
 }

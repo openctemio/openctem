@@ -5,8 +5,13 @@ import { adminFetch, adminFetcher } from '@console/lib/admin-api/client'
 import type {
   AlertWebhookSettings,
   CaptchaSettings,
+  EmailRelayMode,
+  EmailRelaySettings,
+  MFAFloor,
+  MFAFloorSettings,
   PlatformAISettings,
   RegionSettings,
+  ScanIdentificationSettings,
   SocialCheckResult,
   SocialLoginSettings,
   StorageQuotaSettings,
@@ -27,6 +32,9 @@ const ALERTS = '/settings/alerts'
 const AI = '/settings/ai'
 const THREAT_SOURCE = '/settings/threat-intel-source'
 const SOCIAL = '/settings/social-login-providers'
+const MFA_FLOOR = '/settings/auth-mfa'
+const EMAIL_RELAY = '/settings/email-relay'
+const SCAN_IDENT = '/settings/scan-identification'
 
 export const useCaptchaSettings = () => useSWR<CaptchaSettings>(CAPTCHA, adminFetcher)
 export const useRegionSettings = () => useSWR<RegionSettings>(REGION, adminFetcher)
@@ -35,6 +43,37 @@ export const useThreatSource = () => useSWR<ThreatSourceSettings>(THREAT_SOURCE,
 export const useAlertWebhook = () => useSWR<AlertWebhookSettings>(ALERTS, adminFetcher)
 export const useSocialLoginSettings = () => useSWR<SocialLoginSettings>(SOCIAL, adminFetcher)
 export const usePlatformAI = () => useSWR<PlatformAISettings>(AI, adminFetcher)
+export const useMFAFloor = () => useSWR<MFAFloorSettings>(MFA_FLOOR, adminFetcher)
+export const useEmailRelay = () => useSWR<EmailRelaySettings>(EMAIL_RELAY, adminFetcher)
+export const useScanIdentification = () =>
+  useSWR<ScanIdentificationSettings>(SCAN_IDENT, adminFetcher)
+
+/** Step-up and a reason; every administrator is notified. */
+export function saveScanIdentification(input: {
+  user_agent: string
+  user_agent_enforced: boolean
+  headers: { name: string; value: string; enforced: boolean }[]
+  reason: string
+  version: number
+}) {
+  return adminFetch<ScanIdentificationSettings>(SCAN_IDENT, { method: 'PUT', body: input })
+}
+
+/** Super admin, fresh step-up and a reason; raising the floor starts a new grace period. */
+export function saveMFAFloor(input: {
+  floor: MFAFloor
+  grace_days_existing: number
+  grace_days_new: number
+  reason: string
+  version: number
+}) {
+  return adminFetch<MFAFloorSettings>(MFA_FLOOR, { method: 'PUT', body: input })
+}
+
+/** Super admin, fresh step-up and a reason. */
+export function saveEmailRelay(input: { mode: EmailRelayMode; reason: string; version: number }) {
+  return adminFetch<EmailRelaySettings>(EMAIL_RELAY, { method: 'PUT', body: input })
+}
 
 /** Omit `secret` to keep the stored one; "" removes it. */
 export function saveCaptcha(input: {

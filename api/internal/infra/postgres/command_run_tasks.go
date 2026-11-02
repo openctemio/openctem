@@ -133,7 +133,8 @@ func (r *CommandRepository) queryRunTasks(ctx context.Context, where string, arg
 		            THEN jsonb_array_length(commands.result->'metadata'->'refused_targets') ELSE 0 END,
 		       CASE WHEN commands.status IN ('pending', 'failed') AND commands.acknowledged_at IS NULL
 		                 AND commands.started_at IS NULL
-		            THEN COALESCE(commands.withheld_reason, '') ELSE '' END
+		            THEN COALESCE(commands.withheld_reason, '') ELSE '' END,
+		       commands.content_pins
 		FROM commands
 		LEFT JOIN scan_run_steps sr ON sr.id = commands.scan_run_step_id
 		LEFT JOIN sensors s ON s.id = commands.sensor_id AND s.tenant_id = commands.tenant_id AND s.scope = 'organization'
@@ -160,14 +161,17 @@ func (r *CommandRepository) queryRunTasks(ctx context.Context, where string, arg
 			progDone, progTotal   sql.NullInt64
 			progressAt            sql.NullTime
 			taskSecs, stallSecs   sql.NullInt64
+			contentPins           []byte
 		)
 		if err := rows.Scan(&id, &stepRunID, &t.StepKey, &t.Tool, &status, &sensorID, &t.SensorName,
 			&t.Platform, &t.Targets, &t.Attempts, &t.CreatedAt, &startedAt, &completeAt, &t.ErrorMessage,
 			&skipped, &skippedTotal, &hold, &gaps, &gapsTotal,
 			&progDone, &progTotal, &progressAt, &taskSecs, &stallSecs, &t.WaitingOnHosts, &t.EgressRefusedTargets,
-			&guardListed, &listed, &t.WithheldReason); err != nil {
+			&guardListed, &listed, &t.WithheldReason, &contentPins); err != nil {
 			return nil, fmt.Errorf("failed to scan run task: %w", err)
 		}
+		// Written by the platform when it signed the job.
+		t.ContentPins = scanrun.ParseContentPins(contentPins)
 		// Sensor-supplied: parsed defensively, bounded and cleaned.
 		t.Skipped, t.SkippedTotal = scanrun.ParseSkippedTargets(skipped, skippedTotal)
 		t.CoverageGaps, t.CoverageGapsTotal = scanrun.ParseCoverageGaps(gaps, gapsTotal)

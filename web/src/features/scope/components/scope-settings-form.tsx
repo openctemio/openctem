@@ -262,6 +262,7 @@ export function ScopeSettingsForm({ settings }: { settings: ApiScopeSettings }) 
       </SettingsSection>
 
       <SettingsSection
+        id="scope-approval-policy"
         title={t('scope.settings.policy', 'Policy')}
         description={
           canEdit

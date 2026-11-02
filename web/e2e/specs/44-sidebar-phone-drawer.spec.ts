@@ -4,8 +4,9 @@ import { test, expect } from '../fixtures/authenticated-page'
 /**
  * The sidebar drawer on a phone, upright and on its side:
  *   - the rows start at the drawer's own inset (no rail width reserved inside);
- *   - one scroller for the whole drawer, so the footer never clips the nav and
- *     iOS has no nested scroller to rubber-band;
+ *   - one scroller: the nav (header and footer pinned) upright, the whole
+ *     column on its side, so the footer never clips the nav and iOS has no
+ *     nested scroller to rubber-band;
  *   - exactly one filled row (Findings with its Active view fills only Active);
  *   - nothing moves once the slide-in has finished;
  *   - no pin glyph over the counts (pins are not offered in the drawer).
@@ -97,8 +98,12 @@ for (const size of [
       expect(layout.sideways, 'nothing in the drawer scrolls sideways').toBe(0)
 
       // Scrolled to the end, the last nav row sits above the footer, in view.
-      const scroller = drawer.locator('[data-slot="sidebar-mobile-scroller"]')
-      await scroller.evaluate((e) => (e.scrollTop = e.scrollHeight))
+      await drawer.evaluate((d) => {
+        for (const sel of ['[data-sidebar="content"]', '[data-slot="sidebar-mobile-scroller"]']) {
+          const e = d.querySelector<HTMLElement>(sel)
+          if (e) e.scrollTop = e.scrollHeight
+        }
+      })
       const ends = await drawer.evaluate((d) => {
         const lastRow = [
           ...d.querySelectorAll('[data-sidebar="content"] [data-sidebar="menu-button"]'),

@@ -109,7 +109,7 @@ func rekeyMergedExposure(ctx context.Context, tx *sql.Tx, tenantID, keepID strin
 // exposureStateRank: a deliberate decision beats an open event, which beats
 // an auto-resolved one, so folding never reopens an accepted risk or closes
 // an exposure that is still active.
-const exposureStateRankSQL = `CASE %s WHEN 'accepted' THEN 3 WHEN 'false_positive' THEN 3 WHEN 'active' THEN 2 ELSE 1 END`
+const exposureStateRankSQL = `CASE %s WHEN 'accepted' THEN 3 WHEN 'false_positive' THEN 3 WHEN 'active' THEN 2 WHEN 'in_progress' THEN 2 ELSE 1 END`
 
 // mergeExposureInto folds loser into survivor and removes the loser. When
 // newFP is set the survivor takes that fingerprint after the loser is gone.

@@ -20,7 +20,16 @@ import { BulkActionBar, GatedButton } from '@/features/shared'
 import { Permission, useHasPermission } from '@/lib/permissions'
 import { cn } from '@/lib/utils'
 import { getErrorMessage } from '@/lib/api/error-handler'
-import { Check, X, AlertTriangle, RefreshCw, ShieldCheck, ShieldX, Loader2 } from 'lucide-react'
+import {
+  Check,
+  X,
+  AlertTriangle,
+  RefreshCw,
+  ShieldCheck,
+  ShieldX,
+  Loader2,
+  PlayCircle,
+} from 'lucide-react'
 import { toast } from 'sonner'
 import type { ExposureEvent } from '@/lib/api/exposure-types'
 import {
@@ -28,9 +37,12 @@ import {
   acceptExposure,
   markExposureFalsePositive,
   reactivateExposure,
+  startExposureProgress,
 } from '../hooks/use-exposures'
 
-type ActionType = 'resolve' | 'accept' | 'false_positive' | 'reactivate'
+export type ExposureActionType =
+  'resolve' | 'accept' | 'false_positive' | 'reactivate' | 'start_progress'
+type ActionType = ExposureActionType
 
 /**
  * Accepting a risk and marking a false positive close an exposure without
@@ -104,6 +116,18 @@ function getActionConfig(t: Translate): Record<
       successMessage: t('exposures.action.fpDone', 'Marked as false positive'),
       requireReason: true,
     },
+    start_progress: {
+      title: t('exposures.action.startTitle', 'Start work on this exposure'),
+      description: t(
+        'exposures.action.startDesc',
+        'Mark this exposure as in progress so others know it is being handled. It stays open until it is resolved.'
+      ),
+      icon: PlayCircle,
+      buttonText: t('exposures.action.startButton', 'Start progress'),
+      buttonVariant: 'default',
+      successMessage: t('exposures.action.startDone', 'Exposure marked as in progress'),
+      requireReason: false,
+    },
     reactivate: {
       title: t('exposures.action.reactivateTitle', 'Reactivate exposure'),
       description: t(
@@ -161,6 +185,9 @@ export function ExposureActionDialog({
           break
         case 'reactivate':
           await reactivateExposure(exposure.id)
+          break
+        case 'start_progress':
+          await startExposureProgress(exposure.id, input)
           break
       }
 
@@ -268,13 +295,24 @@ export function ExposureQuickActions({
   const canApprove = useCanApproveExposures()
   const { t } = useTranslation()
 
-  const isActive = exposure.state === 'active'
+  const isOpen = exposure.state === 'active' || exposure.state === 'in_progress'
 
   return (
     <>
       <div className={cn('flex items-center gap-2', className)}>
-        {isActive ? (
+        {isOpen ? (
           <>
+            {exposure.state === 'active' ? (
+              <Button size="sm" variant="outline" onClick={() => setActionType('start_progress')}>
+                <PlayCircle className="me-1 h-4 w-4" />
+                {t('exposures.quick.start', 'Start progress')}
+              </Button>
+            ) : (
+              <Button size="sm" variant="outline" onClick={() => setActionType('reactivate')}>
+                <RefreshCw className="me-1 h-4 w-4" />
+                {t('exposures.quick.stop', 'Stop progress')}
+              </Button>
+            )}
             <Button size="sm" variant="outline" onClick={() => setActionType('resolve')}>
               <Check className="me-1 h-4 w-4" />
               {t('exposures.quick.resolve', 'Resolve')}

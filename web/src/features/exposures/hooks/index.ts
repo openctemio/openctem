@@ -10,6 +10,8 @@ export {
   acceptExposure,
   markExposureFalsePositive,
   reactivateExposure,
+  startExposureProgress,
+  changeExposureSeverity,
 } from './use-exposures'
 
 export { useFindingTypeStats } from './use-finding-type-stats'

@@ -14,8 +14,8 @@ engineer** template has it, with `scans:ci:override` for break-glass).
 
 ## 1. Add CI trust
 
-**Discovery > CI/CD > Trust and gate > Trust > Add trust**, or **Connect a
-pipeline** on the empty Pipelines tab (a four-step wizard: CI system,
+**Discovery > CI/CD > Settings > Trusted pipelines > Add trust**, or **Connect a
+pipeline** in the CI/CD page header (a four-step wizard: CI system,
 organization and default branch, pipeline snippet, first run). When a trust
 configuration already admits the organization, the wizard reuses it and shows
 its snippet. The fields:
@@ -256,7 +256,7 @@ CI jobs authenticate only with their OIDC identity. The former `runner` sensor
 type (a sensor API key stored in CI) was removed: such sensors and their keys
 were deleted on upgrade (migration `001146`) and new ones cannot be created.
 Delete any `API_KEY` secret left in your CI settings. **Require OIDC for CI**
-(on the **Trust and gate** tab, on for organizations created
+(under **Settings > Trusted pipelines**, on for organizations created
 since it exists) also refuses the key of any one-shot (standalone) sensor
 (`403 ci-oidc-required`, audited).
 
@@ -264,7 +264,7 @@ since it exists) also refuses the key of any one-shot (standalone) sensor
 
 | Symptom | Cause |
 |---|---|
-| `CI_TOKEN_NOT_TRUSTED` (`The CI token was not accepted. Check that ...`) | No trust configuration admits the job, a wrong audience or tenant id, or an expired token. **Recent refused pipelines** on the **Trust and gate** tab lists each refused pipeline with the rule that refused it and the fix; the audit log has it too (`ci_run.token_refused`), except for tokens that did not verify |
+| `CI_TOKEN_NOT_TRUSTED` (`The CI token was not accepted. Check that ...`) | No trust configuration admits the job, a wrong audience or tenant id, or an expired token. **Recent refused pipelines** under **Settings > Trusted pipelines** lists each refused pipeline with the rule that refused it and the fix; the audit log has it too (`ci_run.token_refused`), except for tokens that did not verify |
 | `REPORT_OUT_OF_SCOPE` | The report names an asset other than the job's repository |
 | Every finding counts as new | The default branch was never scanned: run the pipeline on the default branch once |
 | `CI_TOKEN_PIPELINE_IDENTITY` | The token carries no repository/project id or no usable workflow path |

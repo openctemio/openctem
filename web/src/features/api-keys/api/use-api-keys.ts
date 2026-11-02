@@ -7,7 +7,7 @@
 
 import useSWR, { mutate as globalMutate } from 'swr'
 import useSWRMutation from 'swr/mutation'
-import { get, post, del } from '@/lib/api/client'
+import { get, post, put, del } from '@/lib/api/client'
 import { useTenant } from '@/context/tenant-provider'
 import type { APIKey, CreateAPIKeyRequest, CreateAPIKeyResponse } from '../types/api-key.types'
 
@@ -86,4 +86,26 @@ export function useDeleteApiKey() {
       void revalidateApiKeyLists()
     }
   )
+}
+
+/** The organization's API key policy (GET/PUT /api/v1/organization/settings/api-keys). */
+export interface APIKeyPolicy {
+  /** The longest a new key may live, in days. */
+  max_lifetime_days: number
+  default_max_lifetime_days: number
+  /** The platform ceiling; the organization may only set less. */
+  ceiling_days: number
+}
+
+export const API_KEY_POLICY_URL = '/api/v1/organization/settings/api-keys'
+
+export function useApiKeyPolicy(enabled = true) {
+  return useSWR<APIKeyPolicy>(enabled ? API_KEY_POLICY_URL : null, (url: string) =>
+    get<APIKeyPolicy>(url)
+  )
+}
+
+/** A longer maximum needs a recent sign-in (the shared client asks) and tells owners and administrators. */
+export async function updateApiKeyPolicy(maxLifetimeDays: number): Promise<APIKeyPolicy> {
+  return put<APIKeyPolicy>(API_KEY_POLICY_URL, { max_lifetime_days: maxLifetimeDays })
 }

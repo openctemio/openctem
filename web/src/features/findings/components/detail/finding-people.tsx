@@ -4,7 +4,8 @@
  * People on a finding (RFC-120): the assignee, the watchers summary with your
  * own Watch toggle, and the owners of the asset as context. Watchers are
  * listed, added and removed in the manage sheet (research/256). Rendered in
- * the finding's rail on the page and in the drawer, inside its `<dl>`.
+ * the finding's rail on the page and in the drawer, as its own `<dl>` in the
+ * properties group.
  */
 
 import { useState, type ReactNode } from 'react'
@@ -40,24 +41,26 @@ export function FindingPeople({ findingId, assignee }: FindingPeopleProps) {
       <h3 className="text-xs font-medium text-muted-foreground">
         {t('findings.people.title', 'People')}
       </h3>
-      <div className="grid min-h-8 grid-cols-[6.5rem_minmax(0,1fr)] items-center gap-x-3">
-        <dt className="text-body text-muted-foreground">
-          {t('findings.properties.assignee', 'Assignee')}
-        </dt>
-        <dd className="min-w-0 text-body break-words">{assignee}</dd>
-      </div>
-      <WatchersControl
-        kind="finding"
-        itemId={findingId}
-        canAdd={canManage}
-        canRemoveOthers={canManage}
-        picker={{
-          candidates: members.map((m) => ({ id: m.user_id, name: m.name })),
-          isLoading,
-          onSearch: setSearch,
-          onOpenChange: setOpen,
-        }}
-      />
+      <dl className="space-y-1">
+        <div className="grid min-h-8 grid-cols-[6.5rem_minmax(0,1fr)] items-center gap-x-3">
+          <dt className="text-body text-muted-foreground">
+            {t('findings.properties.assignee', 'Assignee')}
+          </dt>
+          <dd className="min-w-0 text-body break-words">{assignee}</dd>
+        </div>
+        <WatchersControl
+          kind="finding"
+          itemId={findingId}
+          canAdd={canManage}
+          canRemoveOthers={canManage}
+          picker={{
+            candidates: members.map((m) => ({ id: m.user_id, name: m.name })),
+            isLoading,
+            onSearch: setSearch,
+            onOpenChange: setOpen,
+          }}
+        />
+      </dl>
     </div>
   )
 }

@@ -225,17 +225,17 @@ function Sidebar({
             <SheetTitle>Sidebar</SheetTitle>
             <SheetDescription>Displays the mobile sidebar.</SheetDescription>
           </SheetHeader>
-          {/* One scroller for the whole drawer: header, nav and footer scroll
-              together. With a scroller inside a scroller (the sheet and the nav)
-              iOS Safari rubber-bands the outer one and the rows shake, and on a
-              short screen (a phone on its side) the pinned header and footer left
-              the nav a sliver. min-h-full keeps the footer at the bottom when the
-              nav is short; SidebarContent stops scrolling on its own here. No sideways
-              scroll: a few px of horizontal overflow let a finger drag the rows left,
-              clipping the first letters of every label. */}
+          {/* The nav is the drawer's one scroller; the header and the footer
+              (Settings, Help) stay put, as in the desktop sidebar. Only one
+              element scrolls, so iOS has no nested scroller to rubber-band. On a
+              short screen (a phone on its side, under 30rem) the pinned header
+              and footer would leave the nav a sliver: there the whole column
+              scrolls instead and the nav takes its full height. No sideways
+              scroll: a few px of horizontal overflow let a finger drag the rows
+              left, clipping the first letters of every label. */}
           <div
             data-slot="sidebar-mobile-scroller"
-            className="no-scrollbar flex h-full w-full flex-col overflow-x-hidden overflow-y-auto overscroll-contain"
+            className="no-scrollbar flex h-full w-full flex-col overflow-hidden overscroll-contain [@media(max-height:30rem)]:overflow-y-auto"
           >
             {children}
           </div>
@@ -420,9 +420,11 @@ function SidebarContent({ className, ...props }: React.ComponentProps<'div'>) {
         // width, so the stable-gutter workaround is no longer needed.
         'no-scrollbar overscroll-contain',
         'group-data-[collapsible=icon]:overflow-y-auto',
-        // In the phone drawer the drawer column scrolls instead (one scroller):
-        // full content height, still growing to push the footer down.
-        'in-data-[mobile=true]:min-h-auto in-data-[mobile=true]:flex-none in-data-[mobile=true]:grow in-data-[mobile=true]:overflow-visible',
+        // Phone drawer: never sideways. On a short screen the drawer column
+        // scrolls instead (one scroller): full content height, still growing to
+        // push the footer down.
+        'in-data-[mobile=true]:overflow-x-hidden',
+        'in-data-[mobile=true]:[@media(max-height:30rem)]:min-h-auto in-data-[mobile=true]:[@media(max-height:30rem)]:flex-none in-data-[mobile=true]:[@media(max-height:30rem)]:grow in-data-[mobile=true]:[@media(max-height:30rem)]:overflow-visible',
         className
       )}
       {...props}

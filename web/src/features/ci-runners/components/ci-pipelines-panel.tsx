@@ -46,6 +46,7 @@ import { CIPipelineSheet } from './ci-pipeline-sheet'
 import { CICoverageView } from './ci-coverage-view'
 import { CIRunsView } from './ci-runs-view'
 import { CISetupEntry } from './ci-setup-wizard'
+import { CIRefusalNotice } from './ci-refusals'
 import { Permission, usePermissions } from '@/lib/permissions'
 import { useTranslation } from '@/context/i18n-provider'
 
@@ -112,20 +113,6 @@ export function pipelineColumns(t: TFn): ColumnDef<CIPipeline>[] {
       id: 'gate',
       header: t('scans.ci.col.defaultGate', 'Default-branch gate'),
       cell: ({ row }) => <GateLabel gate={row.original.gate} />,
-    },
-    {
-      id: 'version',
-      header: t('scans.ci.col.runner', 'Runner'),
-      cell: ({ row }) => (
-        <span
-          className={cn(
-            'text-sm tabular-nums',
-            row.original.version_status === 'unsupported' ? 'text-warning' : 'text-muted-foreground'
-          )}
-        >
-          {row.original.sensor_version || '—'}
-        </span>
-      ),
     },
   ]
 }
@@ -200,7 +187,6 @@ export function CIPipelinesPanel() {
       label: t('scans.ci.metric.pipelines', 'CI pipelines'),
       value: active,
       hint: t('scans.ci.metric.active', 'active'),
-      detail: t('scans.ci.metric.pipelinesDetail', 'one per workflow file of each repository'),
       onClick: clearFilters,
       active: statuses.length === 0 && !includeInactive && !hasOverrides,
     },
@@ -237,17 +223,6 @@ export function CIPipelinesPanel() {
       onClick: () => toggleStatuses(QUICK.attention),
       active: sameSet(statuses, QUICK.attention),
     },
-    {
-      key: 'inactive',
-      label: t('scans.ci.metric.inactive', 'Inactive'),
-      value: inactive,
-      detail: t(
-        'scans.ci.metric.inactiveDetail',
-        'archived, retired, revoked or never ran; hidden, not deleted'
-      ),
-      onClick: () => setInactive(!includeInactive),
-      active: includeInactive,
-    },
   ]
 
   if (view === 'coverage') {
@@ -261,6 +236,7 @@ export function CIPipelinesPanel() {
   const empty = !isLoading && !error && active + inactive === 0 && !q && !hasOverrides
   return (
     <PageStack>
+      <CIRefusalNotice canWrite={canWrite} />
       {!empty && <MetricStrip loading={isLoading && !data} items={metrics} />}
       {error ? (
         <ErrorState
@@ -347,7 +323,11 @@ export function CIPipelinesPanel() {
                   onCheckedChange={setInactive}
                 />
                 <Label htmlFor="pipelines-inactive" className="text-sm font-normal">
-                  {t('scans.ci.showInactive', 'Show inactive')}
+                  {inactive > 0
+                    ? t('scans.ci.showInactiveCount', 'Show inactive ({count})', {
+                        count: inactive,
+                      })
+                    : t('scans.ci.showInactive', 'Show inactive')}
                 </Label>
               </div>
             </div>

@@ -5,23 +5,15 @@ package certificate
 
 import (
 	"context"
-	"errors"
-	"fmt"
 
 	"github.com/openctemio/openctem/api/internal/app/datascope"
 	"github.com/openctemio/openctem/api/pkg/domain/certificate"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/filterspec"
 	"github.com/openctemio/openctem/api/pkg/pagination"
 )
 
 // Caller is the request's caller.
-type Caller struct {
-	TenantID string
-	UserID   string
-	IsAdmin  bool
-	APIKey   bool
-}
+type Caller = datascope.ListCaller
 
 // Service reads certificates.
 type Service struct {
@@ -36,33 +28,7 @@ func NewService(repo certificate.Reader, dataScope *datascope.Enforcer) *Service
 }
 
 func (s *Service) compile(ctx context.Context, c Caller, spec *filterspec.Spec) (*filterspec.Where, error) {
-	tenantID, err := shared.IDFromString(c.TenantID)
-	if err != nil {
-		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
-	}
-	var userID shared.ID
-	if c.UserID != "" {
-		if userID, err = shared.IDFromString(c.UserID); err != nil {
-			return nil, fmt.Errorf("%w: invalid acting user", shared.ErrValidation)
-		}
-	}
-	var scope *shared.DataScope
-	switch {
-	case !c.IsAdmin && c.UserID != "":
-		if s.dataScope == nil {
-			return nil, errors.New("data scope enforcer not configured")
-		}
-		scope, err = s.dataScope.ResolveFor(ctx, tenantID, datascope.Caller{UserID: c.UserID, APIKey: c.APIKey})
-	case c.UserID != "" && s.dataScope != nil:
-		// Private program assets stay hidden from administrators who are
-		// neither owners nor members.
-		scope, err = s.dataScope.ResolveFor(ctx, tenantID, datascope.Caller{UserID: c.UserID, IsAdmin: true,
-			IsOwner: s.dataScope.CallerOf(ctx).IsOwner, APIKey: c.APIKey})
-	}
-	if err != nil {
-		return nil, fmt.Errorf("resolve data scope: %w", err)
-	}
-	a, err := filterspec.UserActor(filterspec.UserActorInput{TenantID: tenantID, UserID: userID, IsAdmin: c.IsAdmin, Scope: scope})
+	a, _, err := datascope.ListActor(ctx, s.dataScope, c)
 	if err != nil {
 		return nil, err
 	}

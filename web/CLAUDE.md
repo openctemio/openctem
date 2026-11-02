@@ -212,8 +212,10 @@ tabs by role), `src/features/sensors`, `src/lib/api/sensor-*`, API
 ## Settings navigation
 
 Every settings page is listed once, in `src/config/settings-nav.ts` (groups My
-account, Organization, Security, Access, Findings & assets, Scanning, Scanner
-content, Integrations). That config drives the settings rail (the left sidebar
+account, Organization, Access & security, Findings & assets, Scanning,
+Integrations; a long group has `section` sub-headings, e.g. Access & security:
+API access, Sign-in, Oversight). Place a page by the task it serves, and never
+put an organization page in My account or a personal page elsewhere. That config drives the settings rail (the left sidebar
 swaps to it on `/settings/*`, `/account/*` and each item's URL), the `/settings`
 overview and the Settings section of the command palette. Search in all three
 (`src/config/settings-search.ts`) also finds the settings inside a page: an
