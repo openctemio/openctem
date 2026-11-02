@@ -158,6 +158,22 @@ export function refreshSession(options?: { force?: boolean }): Promise<boolean> 
   return tryRefreshToken(options)
 }
 
+/** Answers sent with the old token may still arrive just after a renewal. */
+const STALE_RENEW_GAP_MS = 10_000
+let lastStaleRenewAt = 0
+
+/**
+ * Renews the access token after an answer said its permission version is
+ * outdated, at most once per STALE_RENEW_GAP_MS. Fire and forget: a failed
+ * renewal leaves the 401 and 409 handling as it was.
+ */
+function renewStaleToken(): void {
+  const now = Date.now()
+  if (now - lastStaleRenewAt < STALE_RENEW_GAP_MS) return
+  lastStaleRenewAt = now
+  void tryRefreshToken()
+}
+
 /**
  * Redirect to login page and lock to prevent multiple redirects
  */
@@ -230,6 +246,7 @@ export async function apiClient<T = unknown>(
     retry: _retry, // Reserved for future retry implementation
     _skipRefreshRetry = false,
     _skipStepUpRetry = false,
+    _skipStaleRetry = false,
     ...fetchOptions
   } = options
 
@@ -299,6 +316,9 @@ export async function apiClient<T = unknown>(
     const permissionStale = response.headers.get('x-permission-stale')
     if (permissionStale === 'true') {
       devLog.log('[API Client] Permission stale header detected, triggering refresh')
+      // The token carries an older permission version (a role or team change
+      // since sign-in): renew it now, so the next write is not refused.
+      if (!skipAuth && !isServer()) renewStaleToken()
       dispatchPermissionStaleEvent()
     }
 
@@ -344,6 +364,21 @@ export async function apiClient<T = unknown>(
       }
 
       const error = await parseErrorResponse(response)
+
+      // The token carries an older permission version than the server (a role
+      // or team change since sign-in), so the server refused this write before
+      // running it. Get a token with the current permissions and retry once.
+      if (
+        response.status === 409 &&
+        error.code === 'permissions_stale' &&
+        !_skipStaleRetry &&
+        !skipAuth &&
+        !isServer()
+      ) {
+        if (await tryRefreshToken()) {
+          return apiClient<T>(endpoint, { ...options, _skipStaleRetry: true })
+        }
+      }
 
       // A sensitive route needs a recent sign-in or step-up in this session:
       // ask the user to re-authenticate (one shared dialog), then retry the
