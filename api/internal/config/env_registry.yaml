@@ -1509,13 +1509,7 @@ vars:
     group: "Discovery feeds and background jobs"
     type: path
     default: "<system temp dir>/openctem-feeds"
-    description: "Directory holding verified feed chunks between imports."
-  - name: FEED_RELAY_DIR
-    component: api
-    group: "Discovery feeds and background jobs"
-    type: path
-    default: "<FEED_CACHE_DIR>/relay"
-    description: "Spool of the feed relay (RFC-142): feed files a platform relay sensor delivered, read by the importers in relay mode. Every API replica must see the same directory."
+    description: "Directory holding verified feed chunks between imports, and the feed relay's local working copy of its spool (`relay/`, RFC-142; pod-local, rebuilt from the database)."
   - name: PROGRAMFEED_DIR
     component: api
     group: "Discovery feeds and background jobs"

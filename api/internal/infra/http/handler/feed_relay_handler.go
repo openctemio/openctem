@@ -12,6 +12,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -29,7 +30,7 @@ import (
 
 // FeedRelayUploadLimit bounds one uploaded file (the round's cap is
 // checked too).
-const FeedRelayUploadLimit = 64 << 20
+const FeedRelayUploadLimit = feedrelay.MaxFileBytes
 
 // FeedRelayHandler serves the feed relay routes.
 type FeedRelayHandler struct {
@@ -66,6 +67,8 @@ func (h *FeedRelayHandler) writeErr(w http.ResponseWriter, err error) {
 		protov2.NewProblem(protov2.ProblemCommandNotFound).Write(w)
 	case errors.Is(err, feedrelay.ErrFileRefused):
 		protov2.NewProblem(protov2.ProblemDigestMismatch).Write(w)
+	case errors.Is(err, feedrelay.ErrQuota):
+		protov2.NewProblem(protov2.ProblemContentTooLarge).Write(w)
 	default:
 		h.logger.Error("feed relay", "error", logger.SanitizeError(err))
 		protov2.NewProblem(protov2.ProblemInternal).Write(w)
@@ -73,18 +76,21 @@ func (h *FeedRelayHandler) writeErr(w http.ResponseWriter, err error) {
 }
 
 // Next answers GET /api/v2/sensor/feed-relay/next: 200 with the round and
-// its signed statement, 204 when there is none.
+// its signed statement, 204 with a Retry-After (seconds) when there is none.
 func (h *FeedRelayHandler) Next(w http.ResponseWriter, r *http.Request) {
 	ref, ok := h.relaySensor(w, r)
 	if !ok {
 		return
 	}
-	n, err := h.svc.Next(r.Context(), ref)
+	n, retry, err := h.svc.Next(r.Context(), ref)
 	if err != nil {
 		h.writeErr(w, err)
 		return
 	}
 	if n == nil {
+		if retry > 0 {
+			w.Header().Set("Retry-After", strconv.Itoa(int(retry/time.Second)))
+		}
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
@@ -162,33 +168,49 @@ func sha256Digest(v string) (string, bool) {
 
 // FeedRelayStatusResponse is the console view.
 type FeedRelayStatusResponse struct {
-	Mode     string                `json:"mode"`
-	Locked   string                `json:"locked,omitempty"`
-	Version  int                   `json:"version"`
-	Sensor   *FeedRelaySensorView  `json:"sensor,omitempty"`
-	SensorID string                `json:"sensor_id,omitempty"`
-	Feeds    []FeedRelayFeedStatus `json:"feeds"`
+	Mode    string `json:"mode"`
+	Locked  string `json:"locked,omitempty"`
+	Version int    `json:"version"`
+	// SensorIDs are the designated relay sensors (one to three in relay
+	// mode).
+	SensorIDs []string `json:"sensor_ids"`
+	// Bootstrap: relay mode chosen at install; the bundled sensor is
+	// designated once it enrolls and reports feed.relay@1.
+	Bootstrap bool                  `json:"bootstrap,omitempty"`
+	Sensors   []FeedRelaySensorView `json:"sensors"`
+	Feeds     []FeedRelayFeedStatus `json:"feeds"`
+	// NotRelayed names feeds that stay idle in relay mode (program_feed).
+	NotRelayed []string `json:"not_relayed"`
 }
 
-// FeedRelaySensorView is the relay sensor as the console shows it.
+// FeedRelaySensorView is a designated relay sensor.
 type FeedRelaySensorView struct {
 	ID         string     `json:"id"`
-	Name       string     `json:"name"`
-	Status     string     `json:"status"`
+	Name       string     `json:"name,omitempty"`
+	Status     string     `json:"status,omitempty"`
 	LastSeenAt *time.Time `json:"last_seen_at,omitempty"`
-	CanRelay   bool       `json:"can_relay"`
+	// CanRelay: an active platform sensor reporting feed.relay@1.
+	CanRelay bool `json:"can_relay"`
+	// Online: can relay and seen in the last 10 minutes.
+	Online       bool       `json:"online"`
+	LastServedAt *time.Time `json:"last_served_at,omitempty"`
+	BytesToday   int64      `json:"bytes_today"`
 }
 
 // FeedRelayRoundView is one round.
 type FeedRelayRoundView struct {
-	Phase       string     `json:"phase"`
-	Status      string     `json:"status"`
-	ErrorCode   string     `json:"error_code,omitempty"`
-	Refused     string     `json:"refused,omitempty"`
-	Files       int        `json:"files"`
-	Delivered   int        `json:"delivered"`
-	CreatedAt   time.Time  `json:"created_at"`
-	DeliveredAt *time.Time `json:"delivered_at,omitempty"`
+	Phase          string     `json:"phase"`
+	Status         string     `json:"status"`
+	ErrorCode      string     `json:"error_code,omitempty"`
+	Refused        string     `json:"refused,omitempty"`
+	Files          int        `json:"files"`
+	Delivered      int        `json:"delivered"`
+	BytesDelivered int64      `json:"bytes_delivered"`
+	BytesWanted    int64      `json:"bytes_wanted"`
+	ClaimedBy      string     `json:"claimed_by,omitempty"`
+	ClaimedAt      *time.Time `json:"claimed_at,omitempty"`
+	CreatedAt      time.Time  `json:"created_at"`
+	DeliveredAt    *time.Time `json:"delivered_at,omitempty"`
 }
 
 // FeedRelayFeedStatus is one feed.
@@ -196,6 +218,21 @@ type FeedRelayFeedStatus struct {
 	Feed       string              `json:"feed"`
 	Last       *FeedRelayRoundView `json:"last,omitempty"`
 	LastImport *FeedRelayRoundView `json:"last_import,omitempty"`
+	// Current is the round of the cycle in progress.
+	Current *FeedRelayRoundView `json:"current,omitempty"`
+	// AppliedSequence and PublishedAt describe the applied release;
+	// AgeSeconds is now minus PublishedAt (the feed's age).
+	AppliedSequence uint64     `json:"applied_sequence,omitempty"`
+	PublishedAt     *time.Time `json:"published_at,omitempty"`
+	AgeSeconds      *int64     `json:"age_seconds,omitempty"`
+	// StaleReason is one code of a fixed list (no_relay_designated,
+	// relay_offline, signer_refused, sensor_refused, upstream_missing,
+	// pin_mismatch, verify_failed, rollback_refused, import_failed,
+	// plan_failed, nothing_delivered, round_expired, spool_full), empty
+	// when the feed is fine; StaleDetail completes signer_refused and
+	// sensor_refused.
+	StaleReason string `json:"stale_reason,omitempty"`
+	StaleDetail string `json:"stale_detail,omitempty"`
 }
 
 func roundView(rd *dom.Round) *FeedRelayRoundView {
@@ -203,7 +240,11 @@ func roundView(rd *dom.Round) *FeedRelayRoundView {
 		return nil
 	}
 	v := &FeedRelayRoundView{Phase: rd.Phase, Status: rd.Status, ErrorCode: rd.ErrorCode, Files: len(rd.Files),
-		Delivered: rd.Delivered(), CreatedAt: rd.CreatedAt, DeliveredAt: rd.DeliveredAt}
+		Delivered: rd.Delivered(), BytesDelivered: rd.DeliveredBytes, BytesWanted: rd.WantedBytes(), ClaimedAt: rd.ClaimedAt,
+		CreatedAt: rd.CreatedAt, DeliveredAt: rd.DeliveredAt}
+	if rd.SensorID != nil {
+		v.ClaimedBy = rd.SensorID.String()
+	}
 	if rd.Report != nil {
 		v.Refused = rd.Report.Refused
 	}
@@ -212,7 +253,7 @@ func roundView(rd *dom.Round) *FeedRelayRoundView {
 
 // Status answers GET /api/v1/admin/settings/feed-relay.
 // @Summary      Get the feed relay status
-// @Description  How the platform receives its signed feeds: direct (the platform fetches them) or relay (a designated platform sensor relays the files and the platform verifies them with each feed's pinned root, with no outbound feed request). Shows the relay sensor and, per feed, the latest round and import. Any administrator.
+// @Description  How the platform receives its signed feeds: direct (the platform fetches them) or relay (designated platform sensors relay the files and the platform verifies them with each feed's pinned root, with no outbound feed request). Shows the relay sensors and, per feed, the applied release and its age, the cycle in progress and why the feed is stale. Any administrator.
 // @Tags         Admin System
 // @Produce      json
 // @Success      200  {object}  FeedRelayStatusResponse
@@ -225,29 +266,42 @@ func (h *FeedRelayHandler) Status(w http.ResponseWriter, r *http.Request) {
 		apierror.InternalServerError("feed relay status unavailable").WriteJSON(w)
 		return
 	}
+	now := time.Now()
 	out := FeedRelayStatusResponse{Mode: st.Settings.Mode, Locked: st.Settings.Locked, Version: st.Settings.Version,
-		SensorID: st.Settings.SensorID, Feeds: []FeedRelayFeedStatus{}}
-	if sn := st.Sensor; sn != nil {
-		out.Sensor = &FeedRelaySensorView{ID: sn.ID.String(), Name: sn.Name, Status: string(sn.Status), LastSeenAt: sn.LastSeenAt,
-			CanRelay: sn.HasCapability(feedrelay.Capability)}
+		SensorIDs: st.Settings.SensorIDs, Bootstrap: st.Settings.Bootstrap, Sensors: []FeedRelaySensorView{},
+		Feeds: []FeedRelayFeedStatus{}, NotRelayed: st.NotRelayed}
+	for _, rs := range st.Sensors {
+		v := FeedRelaySensorView{ID: rs.ID, CanRelay: rs.CanRelay, Online: rs.Online, LastServedAt: rs.LastServed, BytesToday: rs.BytesToday}
+		if sn := rs.Sensor; sn != nil {
+			v.Name, v.Status, v.LastSeenAt = sn.Name, string(sn.Status), sn.LastSeenAt
+		}
+		out.Sensors = append(out.Sensors, v)
 	}
 	for _, f := range st.Feeds {
-		out.Feeds = append(out.Feeds, FeedRelayFeedStatus{Feed: f.Feed, Last: roundView(f.Last), LastImport: roundView(f.LastImport)})
+		fv := FeedRelayFeedStatus{Feed: f.Feed, Last: roundView(f.Last), LastImport: roundView(f.LastImport), Current: roundView(f.Current),
+			AppliedSequence: f.Freshness.Sequence, PublishedAt: f.Freshness.PublishedAt, StaleReason: f.StaleReason, StaleDetail: f.Detail}
+		if p := f.Freshness.PublishedAt; p != nil {
+			age := int64(now.Sub(*p) / time.Second)
+			fv.AgeSeconds = &age
+		}
+		out.Feeds = append(out.Feeds, fv)
 	}
 	writeJSON(w, http.StatusOK, out)
 }
 
 // FeedRelayUpdateRequest changes the setting.
 type FeedRelayUpdateRequest struct {
-	Mode            string `json:"mode"`
-	SensorID        string `json:"sensor_id"`
-	ExpectedVersion int    `json:"expected_version"`
+	Mode string `json:"mode"`
+	// SensorIDs are the designated relay sensors: one to three active
+	// platform sensors reporting feed.relay@1 (required in relay mode).
+	SensorIDs       []string `json:"sensor_ids"`
+	ExpectedVersion int      `json:"expected_version"`
 }
 
 // Update answers PUT /api/v1/admin/settings/feed-relay (super administrator,
 // step-up, audited by the service).
 // @Summary      Change the feed delivery
-// @Description  Super admin with a step-up. relay: the designated platform sensor relays every feed and the platform makes no outbound feed request; direct: the platform fetches its feeds. Refused while a feed bundle directory is configured or without a job signer. Audited.
+// @Description  Super admin with a step-up. relay: the designated platform sensors (one to three, each active and reporting feed.relay@1) relay every feed and the platform makes no outbound feed request; direct: the platform fetches its feeds. The mode and the sensors are saved together. Refused while a feed bundle directory is configured or without a job signer. Audited.
 // @Tags         Admin System
 // @Accept       json
 // @Produce      json
@@ -264,11 +318,15 @@ func (h *FeedRelayHandler) Update(w http.ResponseWriter, r *http.Request) {
 	if !decodeSetting(w, r, &req) {
 		return
 	}
-	_, err := h.svc.Update(r.Context(), actor, strings.TrimSpace(req.Mode), strings.TrimSpace(req.SensorID), req.ExpectedVersion,
+	if len(req.SensorIDs) > feedrelay.MaxRelays {
+		apierror.BadRequest("at most three relay sensors").WriteJSON(w)
+		return
+	}
+	_, err := h.svc.Update(r.Context(), actor, strings.TrimSpace(req.Mode), req.SensorIDs, req.ExpectedVersion,
 		middleware.ClientIP(r), r.UserAgent())
 	switch {
 	case errors.Is(err, feedrelay.ErrInvalid):
-		apierror.BadRequest("mode must be direct or relay, and relay needs an active platform sensor").WriteJSON(w)
+		apierror.BadRequest("mode must be direct or relay, and relay needs one to three active platform sensors that can relay").WriteJSON(w)
 		return
 	case errors.Is(err, feedrelay.ErrLocked):
 		apierror.Conflict("relay mode is not available on this installation").WriteJSON(w)

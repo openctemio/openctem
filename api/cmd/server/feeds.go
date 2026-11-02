@@ -56,9 +56,9 @@ func newFeedControllers(cfg *config.Config, svc *Services, repos *Repositories, 
 			log.Error("vulnerability bundle import disabled", "error", err)
 			return f
 		}
-		// Relay mode (RFC-142): the relay spool is the only origin.
+		// Relay mode (RFC-142): the relay working directory is the only origin.
 		if svc.FeedRelay != nil {
-			im.WithRelay(svc.FeedRelay.SpoolIfRelay(feedrelayVulnFeed))
+			im.WithRelay(svc.FeedRelay.DirIfRelay(feedrelayVulnFeed))
 		}
 		f.importer = im
 		// KEV and EPSS ride the same release as a signed side manifest: applied

@@ -813,12 +813,10 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 
 	// CTEM-ID catalog — daily fail-open refresh of the standardized exposure
 	// catalog (https://ctem.org/source.json), mirroring the threat-intel refresh.
-	// Not signed and not relayed yet: idle in relay mode (no outbound
-	// request).
-	w.ControllerManager.Register(controller.SkipWhen(controller.NewCTEMIDRefreshController(
+	w.ControllerManager.Register(controller.NewCTEMIDRefreshController(
 		svc.CTEMID,
 		log.With("controller", "ctem-id-refresh"),
-	), relayMode(svc)))
+	))
 
 	// Version check (RFC-105): wakes hourly; fetches the signed release feed
 	// once a day when VERSION_CHECK_ENABLED and a root is pinned, weekly

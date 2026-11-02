@@ -241,7 +241,7 @@ func (im *Importer) fetcherV2() (*transfer.Fetcher, error) {
 }
 
 // fetcherV2For returns the fetcher of one local directory (the bundle
-// directory or the relay spool: the only origin), or of the network origins
+// directory or the relay working directory: the only origin), or of the network origins
 // when dir is empty. Each is built once.
 func (im *Importer) fetcherV2For(dir string) (*transfer.Fetcher, error) {
 	im.fetchMu.Lock()

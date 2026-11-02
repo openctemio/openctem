@@ -8,6 +8,12 @@
 #   docker compose -f docker-compose.yml -f docker-compose.sensor.yml logs sensor
 #     # "Enrolled: shared sensor ..."
 #
+# - Feed relay (RFC-142): on a new install the platform starts in relay
+#   mode and designates this sensor once it enrolls: the sensor fetches the
+#   signed feeds and the platform verifies them with each feed's pinned root,
+#   so the API needs no outbound access. Needs the job signer. The sensor
+#   relays by default as a shared sensor; SENSOR_FEED_RELAY=0 in its
+#   environment turns that off.
 # - sensor-enrollment runs once per `up` after the migrations:
 #   `bootstrap-admin sensor-token -from-env SENSOR_INSTANCE_ENROLLMENT_TOKEN`
 #   stores the token's keyed hash (valid one hour, single use, audited in the
@@ -83,6 +89,10 @@ services:
       - "SENSOR_INSTANCE_ENROLLMENT_TOKEN"
       - "-name=${SENSOR_NAME:-bundled-sensor}"
       - "-reason=bundled sensor of the compose install"
+      # A new install receives its feeds through this sensor (relay mode,
+      # RFC-142: the platform makes no outbound feed request); an existing
+      # install keeps its feed delivery setting. Change it in the console.
+      - "-feed-relay"
     environment:
       DB_HOST: ${DB_HOST:-postgres}
       DB_PORT: ${DB_PORT:-5432}

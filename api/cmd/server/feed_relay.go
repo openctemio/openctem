@@ -25,37 +25,31 @@ func newFeedRelayService(cfg *config.Config, db *sql.DB, repos *Repositories, s 
 	if db == nil || repos.PlatformSetting == nil || repos.Sensor == nil {
 		return nil
 	}
-	fc := feedrelay.Config{Spool: feedRelaySpool(cfg)}
+	fc := feedrelay.Config{WorkDir: filepath.Join(cfg.Scope.FeedCacheDir, "relay")}
+	if len(cfg.Scope.ProgramFeedURLs) > 0 {
+		fc.NotRelayed = []string{"program_feed"}
+	}
 	if cfg.Worker.VulnFeedBundleDir != "" {
 		fc.Locked = "bundle_dir"
 	}
 	if sock := cfg.SensorConfig.SignerSocket; sock != "" {
 		fc.Signer = signerclient.NewClient(sock, cfg.SensorConfig.SignerTimeout)
 	}
-	return feedrelay.NewService(fc, postgres.NewFeedRelayRoundRepository(&postgres.DB{DB: db}), repos.Sensor,
-		repos.PlatformSetting, s.SettingRecorder, log)
-}
-
-// feedRelaySpool is FEED_RELAY_DIR, default <FEED_CACHE_DIR>/relay. Every
-// API replica must see the same directory (the importer runs on one replica,
-// uploads arrive on any).
-func feedRelaySpool(cfg *config.Config) string {
-	if d := strings.TrimSpace(cfg.Worker.FeedRelayDir); d != "" {
-		return d
-	}
-	return filepath.Join(cfg.Scope.FeedCacheDir, "relay")
+	repo := postgres.NewFeedRelayRoundRepository(&postgres.DB{DB: db})
+	return feedrelay.NewService(fc, repo, repo, repos.Sensor, repos.PlatformSetting, s.SettingRecorder, log)
 }
 
 // registerRelayFeeds adds the feeds the relay serves: the vulnerability
-// feed (with its side files) and the version check's release feed.
+// feed (with its side files) and the version check's release feed. The
+// relay fetches the vulnerability feed from VULNFEED_BASE_URL only: the
+// mirrors of direct mode would need to be in the job signer's allowlist too.
 func registerRelayFeeds(cfg *config.Config, svc *Services, im *vulnfeed.Importer) {
 	r := svc.FeedRelay
 	if r == nil {
 		return
 	}
 	if im != nil {
-		urls := append([]string{strings.TrimRight(cfg.Worker.VulnFeedBaseURL, "/") + "/latest/download"}, cfg.Worker.VulnFeedMirrors...)
-		r.AddFeed(&feedrelay.VulnFeed{Importer: im, URLs: urls})
+		r.AddFeed(&feedrelay.VulnFeed{Importer: im, URLs: []string{strings.TrimRight(cfg.Worker.VulnFeedBaseURL, "/") + "/latest/download"}})
 	}
 	if svc.VersionCheck != nil && svc.VersionCheck.Configured() {
 		r.AddFeed(&feedrelay.VersionCheck{Service: svc.VersionCheck, URL: cfg.Worker.VersionCheckURL})
