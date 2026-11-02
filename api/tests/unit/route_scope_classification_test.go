@@ -99,7 +99,6 @@ var dataSurfaceRegistry = map[string]dataSurface{
 	"/api/v1/finding-sources":                     {classSystem, "finding source catalog"},
 	"/api/v1/threat-intel":                        {classSystem, "global EPSS/KEV feeds"},
 	"/api/v1/threat-actors":                       {classSystem, "threat actor catalog"},
-	"/api/v1/ctem-ids":                            {classSystem, "identifier catalog"},
 	"/api/v1/vulnerabilities":                     {classSystem, "global CVE catalog (no tenant data)"},
 	"POST /api/v1/validation/evidence":            {classSystem, "sensor evidence upload (sensor key)"},
 

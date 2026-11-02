@@ -152,6 +152,7 @@ type Handlers struct {
 	// disables the guard (tests with a minimal handler set).
 	DataScope     middleware.DataScopeAsserter
 	Sensor        *handler.SensorHandler        // nil if not initialized (no database)
+	PlatformCA    *handler.PlatformCAHandler    // public CA bundle (PLATFORM_CA_CERT_FILE); nil: the route answers 404
 	SensorContent *handler.SensorContentHandler // scanner content policy + refresh (RFC-031); nil without a database
 	SensorResults *handler.SensorResultHandler  // unsolicited results policy + quarantine review (RFC-040); nil without a database
 	ScanZone      *handler.ScanZoneHandler      // nil if not initialized (no database)
@@ -189,7 +190,6 @@ type Handlers struct {
 	Exposure         *handler.ExposureHandler         // nil if not initialized (no database)
 	ThreatIntel      *handler.ThreatIntelHandler      // nil if not initialized (no database)
 	EmergingThreat   *handler.EmergingThreatHandler   // emerging-threat alerts (RFC-117); nil disables
-	CTEMID           *handler.CTEMIDHandler           // nil if not initialized (no database)
 	CredentialImport *handler.CredentialImportHandler // nil if not initialized (no database)
 	Workflow         *handler.WorkflowHandler         // nil if not initialized (no database)
 	Suppression      *handler.SuppressionHandler      // nil if not initialized (no database)
@@ -897,9 +897,9 @@ func Register(
 		registerMCPClientRoutes(router, h.MCPClients, authMiddleware, userSync)
 	}
 
-	// The sensor's seccomp profile for the install commands: public (the
-	// open-source release's file, no tenant data), rate limited per IP.
-	registerSensorInstallRoutes(router, middleware.RateLimit(&cfg.RateLimit, log))
+	// The sensor's seccomp profile and the platform's private CA bundle for
+	// the install commands: public (no tenant data), rate limited per IP.
+	registerSensorInstallRoutes(router, h.PlatformCA, middleware.RateLimit(&cfg.RateLimit, log))
 
 	// Read-only MCP server — authenticated by tenant-scoped API key, not JWT.
 	// Per-IP rate limit runs before auth to throttle junk-token floods; the
@@ -1188,11 +1188,6 @@ func Register(
 	// Threat Intelligence routes (global threat intel data)
 	if h.ThreatIntel != nil {
 		registerThreatIntelRoutes(router, h.ThreatIntel, authMiddleware, userSync)
-	}
-
-	// CTEM-ID catalog routes (global reference data)
-	if h.CTEMID != nil {
-		registerCTEMIDRoutes(router, h.CTEMID, authMiddleware, userSync)
 	}
 
 	// Credential Import routes (tenant from JWT token)
