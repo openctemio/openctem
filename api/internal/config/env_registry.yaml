@@ -233,8 +233,8 @@ vars:
     component: api
     group: "Database (PostgreSQL)"
     type: int
-    default: "5"
-    description: "Maximum idle connections kept in the pool."
+    default: "same as `DB_MAX_OPEN_CONNS`"
+    description: "Maximum idle connections kept in the pool. Defaults to `DB_MAX_OPEN_CONNS`: a smaller value makes every burst of requests close and reopen connections (a TCP and SCRAM handshake and a new server process each)."
   - name: DB_MAX_OPEN_CONNS
     component: api
     group: "Database (PostgreSQL)"
