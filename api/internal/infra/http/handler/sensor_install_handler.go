@@ -16,6 +16,7 @@ import (
 	"io"
 	"net/http"
 	"regexp"
+	"time"
 
 	sensorapp "github.com/openctemio/openctem/api/internal/app/sensor"
 	"github.com/openctemio/openctem/api/pkg/apierror"
@@ -54,7 +55,7 @@ func (h *SensorHandler) SetJobSigningRoot(f func(ctx context.Context) string) { 
 // InstallTemplates handles POST /api/v1/sensors/install-templates.
 //
 // @Summary Install commands for a new sensor that pairs
-// @Description Renders the docker run, Compose, Kubernetes and Linux (binary and systemd) install commands, and the sensor-local policy, for a sensor that does not exist yet: no API key; the sensor makes its own key on first start and pairs. With pairing_code (a code the console created) the commands pass it as SENSOR_PAIRING_CODE. The code is never checked or spent here.
+// @Description Renders the docker run, Compose, Kubernetes and Linux (binary and systemd) install commands, and the sensor-local policy, for a sensor that does not exist yet: no API key; the sensor makes its own key on first start and pairs. With pairing_code (a code the console created) the commands pass it as SENSOR_PAIRING_CODE. When the platform uses a private CA (PLATFORM_CA_CERT_FILE) every command pins its root (SENSOR_CA_SHA256) and platform_ca describes it. The code is never checked or spent here.
 // @Tags Sensors
 // @Accept json
 // @Produce json
@@ -124,21 +125,19 @@ func (h *SensorHandler) renderInstallTemplates(w http.ResponseWriter, r *http.Re
 	if baseURL == "" {
 		baseURL = "http://localhost:8080"
 	}
-	caPEM, caFingerprint, caErr := sensorapp.LoadCACertificate(h.caCertFile)
-	if caErr != nil {
-		h.logger.Warn("sensor CA certificate not usable; install snippets omit it",
-			"path", h.caCertFile, "error", caErr)
-	}
+	ca := h.loadPlatformCA()
 	root := ""
 	if h.jobRoot != nil {
 		if v := h.jobRoot(r.Context()); jobSigningRootRegexp.MatchString(v) {
 			root = v
 		}
 	}
-	rendered, err := h.templateService.Render(sensorapp.SensorTemplateData{
-		Sensor: s, BaseURL: baseURL, Image: product.Image, CACert: caPEM, Install: product.Install,
+	data := sensorapp.SensorTemplateData{
+		Sensor: s, BaseURL: baseURL, Image: product.Image, Install: product.Install,
 		ReleaseIdentity: product.ReleaseIdentity, Auth: sensorapp.AuthPair, PairingCode: code, JobSigningRoot: root,
-	})
+	}
+	data.SetPlatformCA(ca, time.Now())
+	rendered, err := h.templateService.Render(data)
 	if err != nil {
 		h.logger.Error("failed to render sensor install templates", "error", logger.SanitizeError(err))
 		apierror.InternalServerError("rendering the install commands failed").WriteJSON(w)
@@ -150,7 +149,8 @@ func (h *SensorHandler) renderInstallTemplates(w http.ResponseWriter, r *http.Re
 	resp := SensorConfigTemplatesResponse{
 		Docker: rendered.Docker, Compose: rendered.Compose, Kubernetes: rendered.Kubernetes, CLI: rendered.CLI,
 		Policy: rendered.Policy, Image: product.Image, Product: product.ID, APIURL: baseURL,
-		CACertificate: caPEM, CAFingerprintSHA256: caFingerprint,
+		CACertificate: data.CACert, CAFingerprintSHA256: ca.Fingerprint(), PlatformCA: platformCAInfo(ca),
+		Multi: sensorapp.MultiKitCommand(installSensorName, baseURL, code, data.CAPins),
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "application/json")
