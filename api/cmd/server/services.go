@@ -960,6 +960,8 @@ type Services struct {
 	// ModuleChangeBus fans module toggles out to every replica's route-gate
 	// cache; nil without Redis. Started with the WebSocket bridge.
 	ModuleChangeBus *redis.ModuleChangeBus
+	// ModuleGate is the process-wide module state cache (see NewServices).
+	ModuleGate *middleware.ModuleGate
 	// IPAllowlistBus fans IP allowlist changes out to every replica's gate.
 	IPAllowlistBus *redis.CacheInvalidationBus
 	// F-8: Single-use ticket service used by WS upgrade auth.
@@ -3285,6 +3287,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// key suffix in any future Redis payload cache. Bumped on every
 	// toggle / preset apply / reset via notifyModuleChange.
 	s.Module.SetVersionService(module.NewVersionService(deps.RedisClient, log))
+	// One gate per process, dropped by every module or entitlement change (and,
+	// through the change bus, on every replica): the route gate, the dashboard
+	// and the threat-alert planner all read it, so none keeps an old answer.
+	s.ModuleGate = middleware.NewModuleGate(s.Module, time.Minute)
 	// Ingest honors the suppressions module toggle: with the module off (or
 	// left out of the tenant's bundles) findings land as reported.
 	s.Ingest.SetSuppressionModuleGuard(s.Module)
