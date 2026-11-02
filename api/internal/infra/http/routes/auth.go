@@ -258,6 +258,15 @@ func registerUserRoutes(
 		r.GET("/deletion", h.GetMyDeletion)
 	}, middlewares...)
 
+	// Ownership invitations addressed to this account
+	// (docs/architecture/organization-ownership-invitations.md). Accepting
+	// makes the caller an organization's owner: step-up.
+	router.Group("/api/v1/me/ownership-invitations", func(r Router) {
+		r.GET("/", h.ListMyOwnerInvitations)
+		r.POST("/{invitationId}/accept", h.AcceptOwnerInvitation, requireStepUp())
+		r.POST("/{invitationId}/decline", h.DeclineOwnerInvitation)
+	}, middlewares...)
+
 	// Moving two-factor to a new authenticator (My account > Security). New
 	// self routes live under /api/v1/me; the older /users/me/2fa calls stay
 	// where they are. Same CSRF check and code rate limits as those.

@@ -588,6 +588,20 @@ func (s *EmailService) NotifyOwnershipTransfer(ctx context.Context, email, name,
 	s.sendSecurityNotice(ctx, email, name, "", subject, message)
 }
 
+// SendOwnershipInvitation tells an existing account that a platform
+// administrator created organizationName for it and invites it to be the
+// owner. The message links to the page where the person accepts or declines
+// after signing in; it carries no token (the invitation is bound to the
+// account).
+func (s *EmailService) SendOwnershipInvitation(ctx context.Context, email, name, organizationName string, expiresAt time.Time) {
+	link := fmt.Sprintf("%s/ownership-invitations", strings.TrimSuffix(s.config.BaseURL, "/"))
+	s.sendSecurityNotice(ctx, email, name, "", "You are invited to own an organization",
+		fmt.Sprintf("A platform administrator created the organization %q and invites you to be its owner. "+
+			"Sign in and open %s to accept or decline. The invitation expires on %s. "+
+			"If you did not expect this, decline it or ignore this email: nothing changes until you accept.",
+			organizationName, link, expiresAt.UTC().Format("January 2, 2006")))
+}
+
 func (s *EmailService) sendSecurityNotice(ctx context.Context, userEmail, userName, ipAddress, subject, message string) {
 	if !s.IsConfigured() {
 		return
