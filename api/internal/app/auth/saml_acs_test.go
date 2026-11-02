@@ -192,3 +192,37 @@ func TestAssertionAuthnInstant(t *testing.T) {
 		t.Fatalf("no statement: %v", got)
 	}
 }
+
+// Signing-key rollover: the configuration holds the IdP's next and current
+// certificates; an assertion signed with either verifies, and one signed by a
+// key whose certificate is not configured does not.
+func TestSAMLACS_SeveralSigningCertificates(t *testing.T) {
+	f := newSAMLACSFixture(t)
+	repo := f.svc.repo.(*fakeSAMLRepo)
+	var tenantID shared.ID
+	var p *samldom.SAMLProvider
+	for id, cfg := range repo.byTenant {
+		tenantID, p = id, cfg
+	}
+	idpCert := p.IDPCertificate()
+	other := genTestCertPEM(t)
+	setCerts := func(certs string) {
+		repo.byTenant[tenantID] = samldom.Reconstruct(p.ID(), tenantID, p.IDPEntityID(), p.IDPSSOURL(), certs,
+			nil, "viewer", true, true, time.Now(), time.Now())
+	}
+
+	// The IdP's key is the SECOND configured certificate.
+	setCerts(other + idpCert)
+	_, resp := f.respond(t, false, time.Now(), nil)
+	if err := f.post(resp); !errors.Is(err, ErrSSOFederatedTakeover) {
+		t.Fatalf("assertion signed by the second certificate must verify (then stop at the takeover guard), got %v", err)
+	}
+
+	// Only an unrelated certificate configured: the signature must not verify.
+	setCerts(other)
+	_, resp = f.respond(t, false, time.Now(), nil)
+	err := f.post(resp)
+	if err == nil || errors.Is(err, ErrSSOFederatedTakeover) {
+		t.Fatalf("assertion signed by an unconfigured key must be refused, got %v", err)
+	}
+}

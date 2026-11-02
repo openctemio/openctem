@@ -53,6 +53,8 @@ type SAMLService struct {
 	replay SAMLReplayStore
 	// expiry alerts owners before the IdP certificate expires.
 	expiry samlCertExpiryNotifier
+	// metadataFetcher reads IdP metadata URLs (nil: the SSRF-guarded default).
+	metadataFetcher *idpMetadataFetcher
 }
 
 // NewSAMLService wires the service. sso supplies the shared session/provisioning
@@ -167,10 +169,12 @@ func (s *SAMLService) baseServiceProvider(orgSlug, baseURL string) *saml.Service
 	}
 }
 
-// validateCertificatePEM ensures the supplied IdP certificate is a parseable
-// PEM X.509 certificate (the trust anchor for assertion-signature validation)
-// that has not expired: every signature check fails against an expired
-// certificate, so saving one would only break sign-in.
+// validateCertificatePEM ensures the supplied IdP certificate field holds one
+// or more parseable PEM X.509 certificates (the trust anchors for
+// assertion-signature validation) and that at least one has not expired:
+// every signature check fails against an expired certificate, so saving only
+// expired ones would just break sign-in. Several certificates are the IdP's
+// signing-key rollover (current and next); any of them verifies.
 func validateCertificatePEM(certPEM string) error {
 	cert, err := parseCertificatePEM(certPEM)
 	if err != nil {
@@ -182,20 +186,66 @@ func validateCertificatePEM(certPEM string) error {
 	return nil
 }
 
-// parseCertificatePEM parses the stored PEM IdP certificate.
+// maxSAMLSigningCertificates bounds the certificates one SAML configuration
+// trusts: the IdP's current and next signing keys, with room to spare.
+const maxSAMLSigningCertificates = 5
+
+// parseCertificatesPEM parses every PEM block of the stored IdP certificate
+// field. Each block must be a CERTIFICATE that parses as X.509; at least one
+// is required and at most maxSAMLSigningCertificates are accepted.
+func parseCertificatesPEM(certPEM string) ([]*x509.Certificate, error) {
+	rest := []byte(strings.TrimSpace(certPEM))
+	var certs []*x509.Certificate
+	for len(rest) > 0 {
+		block, r := pem.Decode(rest)
+		if block == nil {
+			break
+		}
+		rest = r
+		if block.Type != "CERTIFICATE" {
+			return nil, ErrSAMLInvalidCert
+		}
+		cert, err := x509.ParseCertificate(block.Bytes)
+		if err != nil {
+			return nil, ErrSAMLInvalidCert
+		}
+		certs = append(certs, cert)
+		if len(certs) > maxSAMLSigningCertificates {
+			return nil, ErrSAMLInvalidCert
+		}
+	}
+	if len(certs) == 0 {
+		return nil, ErrSAMLInvalidCert
+	}
+	return certs, nil
+}
+
+// parseCertificatePEM returns the certificate whose expiry matters for the
+// stored IdP certificate field: the one that expires first among those still
+// valid (sign-in breaks when the IdP still signs with it), or, when all have
+// expired, the one that expired last.
 func parseCertificatePEM(certPEM string) (*x509.Certificate, error) {
-	if strings.TrimSpace(certPEM) == "" {
-		return nil, ErrSAMLInvalidCert
-	}
-	block, _ := pem.Decode([]byte(certPEM))
-	if block == nil {
-		return nil, ErrSAMLInvalidCert
-	}
-	cert, err := x509.ParseCertificate(block.Bytes)
+	certs, err := parseCertificatesPEM(certPEM)
 	if err != nil {
-		return nil, ErrSAMLInvalidCert
+		return nil, err
 	}
-	return cert, nil
+	return expiryCertificate(certs, time.Now()), nil
+}
+
+func expiryCertificate(certs []*x509.Certificate, now time.Time) *x509.Certificate {
+	var soonestValid, latest *x509.Certificate
+	for _, c := range certs {
+		if latest == nil || c.NotAfter.After(latest.NotAfter) {
+			latest = c
+		}
+		if c.NotAfter.After(now) && (soonestValid == nil || c.NotAfter.Before(soonestValid.NotAfter)) {
+			soonestValid = c
+		}
+	}
+	if soonestValid != nil {
+		return soonestValid
+	}
+	return latest
 }
 
 // Login starts an SP-initiated SAML login (RFC-009 9e). It returns the IdP
@@ -289,11 +339,11 @@ func (s *SAMLService) parseStrictResponse(ctx context.Context, sp *saml.ServiceP
 	if err != nil || len(raw) == 0 {
 		return nil, samlStrictErr("SAMLResponse is not base64")
 	}
-	cert, err := parseCertificatePEM(rc.cfg.IDPCertificate())
+	certs, err := parseCertificatesPEM(rc.cfg.IDPCertificate())
 	if err != nil {
 		return nil, err
 	}
-	strict, err := checkSAMLResponseStrict(raw, []*x509.Certificate{cert}, saml.Clock)
+	strict, err := checkSAMLResponseStrict(raw, certs, saml.Clock)
 	if err != nil {
 		return nil, err
 	}
@@ -375,29 +425,30 @@ func (s *SAMLService) resolveServiceProvider(ctx context.Context, orgSlug, baseU
 }
 
 // buildIDPMetadata assembles the crewjam EntityDescriptor from the stored IdP
-// entity id, SSO URL and signing certificate — the trust anchor ParseResponse
-// uses to verify the assertion signature.
+// entity id, SSO URL and signing certificates — the trust anchors
+// ParseResponse uses to verify the assertion signature (any one of them).
 func buildIDPMetadata(p *samldom.SAMLProvider) (*saml.EntityDescriptor, error) {
-	block, _ := pem.Decode([]byte(p.IDPCertificate()))
-	if block == nil {
-		return nil, ErrSAMLInvalidCert
+	certs, err := parseCertificatesPEM(p.IDPCertificate())
+	if err != nil {
+		return nil, err
 	}
-	certB64 := base64.StdEncoding.EncodeToString(block.Bytes)
+	keys := make([]saml.KeyDescriptor, 0, len(certs))
+	for _, c := range certs {
+		keys = append(keys, saml.KeyDescriptor{
+			Use: "signing",
+			KeyInfo: saml.KeyInfo{
+				X509Data: saml.X509Data{
+					X509Certificates: []saml.X509Certificate{{Data: base64.StdEncoding.EncodeToString(c.Raw)}},
+				},
+			},
+		})
+	}
 
 	return &saml.EntityDescriptor{
 		EntityID: p.IDPEntityID(),
 		IDPSSODescriptors: []saml.IDPSSODescriptor{{
 			SSODescriptor: saml.SSODescriptor{
-				RoleDescriptor: saml.RoleDescriptor{
-					KeyDescriptors: []saml.KeyDescriptor{{
-						Use: "signing",
-						KeyInfo: saml.KeyInfo{
-							X509Data: saml.X509Data{
-								X509Certificates: []saml.X509Certificate{{Data: certB64}},
-							},
-						},
-					}},
-				},
+				RoleDescriptor: saml.RoleDescriptor{KeyDescriptors: keys},
 			},
 			SingleSignOnServices: []saml.Endpoint{{
 				Binding:  saml.HTTPRedirectBinding,
@@ -448,4 +499,20 @@ func matchesAny(s string, subs []string) bool {
 		}
 	}
 	return false
+}
+
+// SPMetadataForTenant returns the SP metadata XML of an organization (by id)
+// and its slug, built on the configured public origin. It is the platform
+// admin console's download of the file to upload in the IdP's SAML
+// application; the public metadata URL serves the same document.
+func (s *SAMLService) SPMetadataForTenant(ctx context.Context, tenantID shared.ID, baseURL string) (xmlDoc, slug string, err error) {
+	t, err := s.tenantRepo.GetByID(ctx, tenantID)
+	if err != nil {
+		return "", "", ErrSAMLTenantNotFound
+	}
+	doc, err := s.Metadata(ctx, t.Slug(), baseURL)
+	if err != nil {
+		return "", "", err
+	}
+	return doc, t.Slug(), nil
 }

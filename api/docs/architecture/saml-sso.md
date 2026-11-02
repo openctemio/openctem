@@ -29,14 +29,19 @@ default** — an operator enables SAML only after validating it against their Id
 | Field | Meaning |
 |-------|---------|
 | `idp_entity_id`, `idp_sso_url` | IdP issuer + SSO redirect endpoint |
-| `idp_certificate` | IdP signing cert (PEM) — the trust anchor for assertion signatures |
+| `idp_certificate` | IdP signing certificates (one to five concatenated PEM blocks) — the trust anchors for assertion signatures; any one verifies |
 | `allowed_domains` | email-domain allow-list (empty = any) |
 | `default_role` | role for auto-provisioned users (`admin`/`member`/`viewer`; never `owner`) |
 | `auto_provision`, `enabled` | provision-on-login + master switch |
 
 Admin API (platform admin console, RFC-022):
 `GET`/`PUT`/`DELETE /api/v1/admin/tenants/{tenantId}/sso/saml`. The PUT
-validates the certificate (parseable PEM X.509) and the role. On an
+validates the certificates (every block a parseable PEM X.509 certificate, at
+most five, at least one unexpired) and the role. Several certificates carry the
+IdP's signing-key rollover: the current and the next key are both trusted, so
+the IdP can switch keys without a sign-in outage. A signature must then name
+its certificate in `KeyInfo` (every common IdP does); a signature without one
+verifies only against a single configured certificate. On an
 organization that has an owner, the PUT does **not** change the live config: it
 stores a pending change (202) that an owner approves or rejects (RFC-022
 revision 8; see `sso-authentication.md`). The organization owner sees the new signing
@@ -46,9 +51,42 @@ owner yet gets it applied directly.
 ## SP metadata
 
 `GET /api/v1/auth/saml/{org}/metadata` (public) returns the SP metadata XML the
-admin registers with their IdP. The SP entity id / ACS URL are **derived from
-the request host** (honoring `X-Forwarded-Proto`/`-Host`) so they always match
-the deployment — `…/api/v1/auth/saml/{org}/{metadata,acs}`.
+admin registers with their IdP. The SP entity id / ACS URL are built on the
+configured public origin (`APP_URL`); only without it on the forwarded headers
+of a trusted proxy, then the request host — `…/api/v1/auth/saml/{org}/{metadata,acs}`.
+
+The console downloads the same document from
+`GET /api/v1/admin/tenants/{tenantId}/sso/saml/sp-metadata` (`TenantsRead`):
+JSON `{filename, xml, base_url}`, built on `APP_URL` only (the console reaches
+the API through its own site, so the request host is not where the IdP posts);
+409 `SAML_PUBLIC_URL_UNSET` without it. The console form shows the SP URLs on
+the same origin.
+
+## Importing the IdP's federation metadata
+
+`POST /api/v1/admin/tenants/{tenantId}/sso/saml/idp-metadata` (`TenantsSSOWrite`,
+super admin with step-up, audited as `organization.saml_metadata_import`) takes
+`{"metadata_url": "https://..."}` or `{"metadata_xml": "..."}` (exactly one) and
+returns `{idp_entity_id, idp_sso_url, idp_sso_binding, idp_certificate,
+certificates[]}`. **It stores nothing**: the console fills the form, and the
+administrator saves through `PUT …/sso/saml`, which waits for an owner. There
+is no second write path, and no automatic refresh from the URL (a refreshed
+certificate would change who may sign in without an owner's approval).
+
+| Threat | Control |
+|--------|---------|
+| SSRF through the URL | https only, no userinfo, length ≤ 2048; `httpsec.ValidateURL` on the URL and on every redirect hop; fetched with `httpsec.SafeHTTPClient` (resolve once, dial the vetted address); https→http redirects refused; 10 s timeout |
+| Oversized or slow document | 1 MiB cap on the fetch (`io.LimitReader`) and the upload; the JSON body is capped too |
+| XXE, entity expansion | every token is scanned before decoding; any `DOCTYPE` (or other directive) is refused, so no entity is ever declared; nesting depth ≤ 32; strict UTF-8 parser |
+| Wrong document | root must be `md:EntityDescriptor`, or `md:EntitiesDescriptor` holding exactly one; an `IDPSSODescriptor` for the SAML 2.0 protocol is required |
+| Wrong trust anchor | certificates come only from that `IDPSSODescriptor`'s `KeyDescriptor`s with `use="signing"` or no `use` (never encryption keys, never other role descriptors such as WS-Federation); each must parse as X.509; expired or not-yet-valid ones are dropped; at most five |
+| Sign-in URL | the `HTTP-Redirect` endpoint, else `HTTP-POST`; https only |
+
+A refusal answers 422 `SAML_METADATA_INVALID` (or 502 `SAML_METADATA_UNREACHABLE`)
+with `details.reason` (`doctype`, `not_metadata`, `no_signing_certificate`,
+`url_blocked`, …); the document and the URL are never echoed. A signature on
+the metadata itself is not required: the platform administrator chose the
+source, and the owner approves the resulting certificate (shown by SHA-256).
 
 ## Federated-login seam (shared with future SAML ACS)
 
@@ -117,7 +155,9 @@ Signature checks fail once the IdP certificate expires, so an unnoticed
 expiry stops every SAML sign-in.
 
 - `PUT …/sso/saml` refuses a certificate that has already expired.
-- The admin read view returns `certificate_not_after` (RFC 3339).
+- The admin read view returns `certificate_not_after` (RFC 3339): with several
+  certificates, the soonest expiry among the unexpired ones (the alerts below
+  use the same certificate).
 - The `saml-cert-expiry` controller (every 6 h) reads every **enabled** config,
   500 organizations per page by tenant id, and
   alerts the organization's owners, in-app (system alert, High) and by email,
@@ -136,6 +176,7 @@ expiry stops every SAML sign-in.
 | Federated-login seam | `internal/app/auth/sso.go` (`SSOService.CompleteFederatedLogin`) |
 | HTTP | `internal/infra/http/handler/saml_handler.go`, routes in `routes/auth.go` |
 | Response hardening, replay cache | `internal/app/auth/saml_strict.go` |
+| IdP metadata import | `internal/app/auth/saml_idp_metadata.go` |
 | Certificate expiry alerts | `internal/app/auth/saml_cert_expiry.go`, `internal/infra/controller/saml_cert_expiry.go` |
 | Migration | `000182_saml_providers`, `003295_saml_cert_expiry_notice` |
 
