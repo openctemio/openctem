@@ -155,3 +155,61 @@ describe('ExposureSecurityContext', () => {
     expect(screen.queryByText(/9990/)).not.toBeInTheDocument()
   })
 })
+
+describe('CTEM-ID row', () => {
+  const ctem = {
+    code: 'CTEM-DOM-2',
+    catalog_version: '1.0',
+    basis: 'lookalike_technique',
+    url: 'https://ctem.org/docs/ctem-dom-2',
+  }
+
+  it('counts as enrichment and links the code to its ctem.org page', async () => {
+    const { ExposureSecurityContext, hasExposureEnrichment } =
+      await import('../exposure-enrichment')
+    const exposure = makeExposure({ event_type: 'lookalike_domain', ctem_id: ctem })
+    expect(hasExposureEnrichment(exposure)).toBe(true)
+    render(<ExposureSecurityContext exposure={exposure} />)
+    const link = screen.getByRole('link', { name: /CTEM-DOM-2/ })
+    expect(link).toHaveAttribute('href', 'https://ctem.org/docs/ctem-dom-2')
+    expect(link).toHaveAttribute('target', '_blank')
+    expect(screen.getByText('Lookalike domain using look-alike characters')).toBeInTheDocument()
+    expect(screen.getByText('Chosen from how the lookalike was generated')).toBeInTheDocument()
+  })
+
+  it('renders the code as text when the link is not http(s)', async () => {
+    const { ExposureSecurityContext } = await import('../exposure-enrichment')
+    render(
+      <ExposureSecurityContext
+        exposure={makeExposure({ ctem_id: { ...ctem, url: 'javascript:alert(1)' } })}
+      />
+    )
+    expect(screen.queryByRole('link')).not.toBeInTheDocument()
+    expect(screen.getByText('CTEM-DOM-2')).toBeInTheDocument()
+  })
+})
+
+describe('CTEM-ID labels', () => {
+  // The codes the API can derive today (api/pkg/domain/ctemid/mapping.go).
+  const derivable = [
+    'CTEM-DOM-1',
+    'CTEM-DOM-2',
+    'CTEM-CRD-1',
+    'CTEM-CRD-2',
+    'CTEM-EXP-3',
+    'CTEM-EXP-4',
+    'CTEM-EXP-5',
+    'CTEM-EXP-6',
+    'CTEM-SRC-3',
+  ]
+  const bases = ['lookalike_technique', 'credential_dump', 'asset_scope', 'asset_type']
+
+  it.each(['en', 'vi'])('%s has a label for every derivable code and basis', async (lang) => {
+    const dict = (await import(`@/lib/i18n/dictionaries/${lang}/exposures.json`)).default as Record<
+      string,
+      string
+    >
+    for (const code of derivable) expect(dict[`exposures.ctemId.code.${code}`]).toBeTruthy()
+    for (const b of bases) expect(dict[`exposures.ctemId.basis.${b}`]).toBeTruthy()
+  })
+})
