@@ -68,6 +68,13 @@ func registerAISettingsRoutes(router Router, h *handler.AISettingsHandler, maski
 		// sign-in, asked by the service; tightening is one click.
 		r.GET("/auto-triage", h.GetAutoTriage, middleware.RequireAdmin(), middleware.Require(permission.SettingsRead))
 		r.PUT("/auto-triage", h.UpdateAutoTriage, middleware.RequireAdmin(), middleware.Require(permission.SettingsWrite))
+		// Use cases (docs/architecture/ai-use-cases.md): per use case, whether
+		// results wait for a person or apply on their own, and the data class
+		// sent. Anyone with settings:read reads; a loosening (auto-apply on,
+		// ceiling above internal, lower confidence while auto-applying) needs
+		// a recent sign-in, asked by the service; tightening is one click.
+		r.GET("/use-cases", h.ListUseCases, middleware.Require(permission.SettingsRead))
+		r.PUT("/use-cases/{use_case}", h.UpdateUseCase, middleware.RequireAdmin(), middleware.Require(permission.SettingsWrite))
 
 		// Masking of AI context (docs/architecture/ai-context-masking.md):
 		// what is replaced by placeholders before finding data reaches a

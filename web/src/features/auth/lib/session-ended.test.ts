@@ -8,6 +8,7 @@ describe('session end reasons', () => {
     expect(sessionEndReason('SESSION_EXPIRED')).toBe('session_expired')
     expect(sessionEndReason('REFRESH_TOKEN_EXPIRED')).toBe('session_expired')
     expect(sessionEndReason('REFRESH_TOKEN_REVOKED')).toBe('session_revoked')
+    expect(sessionEndReason('OWN_SIGN_IN_REQUIRED')).toBe('own_sign_in_required')
     expect(sessionEndReason(undefined)).toBeUndefined()
     expect(sessionEndReason('SOMETHING_ELSE')).toBeUndefined()
   })
@@ -16,6 +17,9 @@ describe('session end reasons', () => {
     expect(sessionEndedMessage('session_reused')?.key).toBe('auth.login.sessionEndedReused')
     expect(sessionEndedMessage('session_expired')?.key).toBe('auth.login.sessionExpired')
     expect(sessionEndedMessage('session_revoked')?.key).toBe('auth.login.sessionEndedRevoked')
+    expect(sessionEndedMessage('own_sign_in_required')?.key).toBe(
+      'auth.login.sessionEndedOwnSignIn'
+    )
     expect(sessionEndedMessage('<script>')).toBeUndefined()
     expect(sessionEndedMessage(null)).toBeUndefined()
   })

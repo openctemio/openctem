@@ -251,11 +251,21 @@ func registerUserRoutes(
 		middlewares = append(middlewares, userSyncMiddleware)
 	}
 
-	// Self-service account deletion (RFC-104): step-up; signing in again
-	// within the grace period cancels it.
+	// Self-service account deletion (RFC-104): the account's own sign-in
+	// (not an organization IdP's) and step-up; signing in again within the
+	// grace period cancels it.
 	router.Group("/api/v1/me/account", func(r Router) {
-		r.DELETE("/", h.DeleteMe, requireStepUp())
+		r.DELETE("/", h.DeleteMe, requireOwnSignIn(), requireStepUp())
 		r.GET("/deletion", h.GetMyDeletion)
+	}, middlewares...)
+
+	// Ownership invitations addressed to this account
+	// (docs/architecture/organization-ownership-invitations.md). Accepting
+	// makes the caller an organization's owner: step-up.
+	router.Group("/api/v1/me/ownership-invitations", func(r Router) {
+		r.GET("/", h.ListMyOwnerInvitations)
+		r.POST("/{id}/accept", h.AcceptOwnerInvitation, requireStepUp())
+		r.POST("/{id}/decline", h.DeclineOwnerInvitation)
 	}, middlewares...)
 
 	// Moving two-factor to a new authenticator (My account > Security). New
@@ -291,7 +301,9 @@ func registerUserRoutes(
 			passwordRL := newAuthRateLimiter("account-password")
 			r.POST("/me/change-password", localAuthHandler.ChangePassword, passwordRL.PasswordMiddleware())
 			r.GET("/me/sessions", localAuthHandler.ListSessions)
-			r.DELETE("/me/sessions", localAuthHandler.RevokeAllSessions)
+			// Signing out everywhere (and optionally revoking API keys) reaches
+			// every organization: the account's own sign-in only.
+			r.DELETE("/me/sessions", localAuthHandler.RevokeAllSessions, requireOwnSignIn())
 			r.DELETE("/me/sessions/{sessionId}", localAuthHandler.RevokeSession)
 
 			// Two-factor authentication for the signed-in user. Code-checking

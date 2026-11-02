@@ -112,10 +112,14 @@ interface WorkflowFormProps {
 
 type WizardStep = 'basics' | 'steps' | 'settings'
 
-const WIZARD_STEPS: { id: WizardStep; label: string; icon: React.ReactNode }[] = [
-  { id: 'basics', label: 'Basics', icon: <Info className="h-4 w-4" /> },
-  { id: 'steps', label: 'Steps', icon: <Play className="h-4 w-4" /> },
-  { id: 'settings', label: 'Settings', icon: <Settings className="h-4 w-4" /> },
+const WIZARD_STEPS: { id: WizardStep; labelKey: string; icon: React.ReactNode }[] = [
+  { id: 'basics', labelKey: 'scans.workflowForm.tabBasics', icon: <Info className="h-4 w-4" /> },
+  { id: 'steps', labelKey: 'scans.workflowForm.tabSteps', icon: <Play className="h-4 w-4" /> },
+  {
+    id: 'settings',
+    labelKey: 'scans.workflowForm.tabSettings',
+    icon: <Settings className="h-4 w-4" />,
+  },
 ]
 
 const NONE = '__none__'
@@ -174,6 +178,7 @@ interface StepCardProps {
 }
 
 function SortableStepCard(props: StepCardProps) {
+  const { t } = useTranslation()
   const { step, index, label, otherKeys, table, tools, toolsLoading, choose, errors } = props
   const legacy = legacyCapabilityFix(table, step)
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
@@ -186,7 +191,7 @@ function SortableStepCard(props: StepCardProps) {
   const options = choose.length > 0 ? choose : stepCapabilities(table)
   const saved = !isTempStepId(step.id)
   const keyError = errors[`step_${index}_key`] ?? stepKeyError(step.step_key, otherKeys)
-  const enabledTools = tools.filter((t) => t.is_enabled && t.tool.is_active)
+  const enabledTools = tools.filter((entry) => entry.is_enabled && entry.tool.is_active)
 
   return (
     <div
@@ -203,25 +208,29 @@ function SortableStepCard(props: StepCardProps) {
       <div className="flex items-center gap-2 px-3 py-2 bg-muted/50 border-b">
         <button
           type="button"
-          aria-label={`Move step ${label}`}
+          aria-label={t('scans.workflowForm.moveStep', undefined, { label })}
           className="cursor-grab active:cursor-grabbing touch-none p-0.5 rounded hover:bg-muted"
           {...attributes}
           {...listeners}
         >
           <GripVertical className="h-4 w-4 text-muted-foreground" />
         </button>
-        <Badge variant="outline" className="text-xs" aria-label={`Step ${label}`}>
+        <Badge
+          variant="outline"
+          className="text-xs"
+          aria-label={t('scans.workflowForm.stepBadge', undefined, { label })}
+        >
           {label}
         </Badge>
         <span className="flex-1 text-sm font-medium truncate">
-          {step.name || capability?.name || 'New step'}
+          {step.name || capability?.name || t('scans.workflowForm.newStep')}
         </span>
         {props.onRemove && (
           <Button
             type="button"
             variant="ghost"
             size="icon"
-            aria-label={`Remove step ${label}`}
+            aria-label={t('scans.workflowForm.removeStep', undefined, { label })}
             onClick={props.onRemove}
             className="h-7 w-7 text-muted-foreground hover:text-destructive"
           >
@@ -234,11 +243,11 @@ function SortableStepCard(props: StepCardProps) {
         <div className="grid gap-3 @md:grid-cols-2">
           <div className="space-y-1">
             <Label htmlFor={`${step.id}-name`} className="text-xs">
-              Name *
+              {t('scans.workflowForm.fieldName')} *
             </Label>
             <Input
               id={`${step.id}-name`}
-              placeholder={capability?.name || 'Resolve DNS'}
+              placeholder={capability?.name || t('scans.workflowForm.namePlaceholder')}
               value={step.name}
               onChange={(e) => props.onName(e.target.value)}
               aria-invalid={!!errors[`step_${index}_name`]}
@@ -247,7 +256,7 @@ function SortableStepCard(props: StepCardProps) {
           </div>
           <div className="space-y-1">
             <Label htmlFor={`${step.id}-capability`} className="text-xs">
-              What it does *
+              {t('scans.workflowForm.fieldCapability')} *
             </Label>
             <Select
               value={capability?.key ?? ''}
@@ -258,10 +267,10 @@ function SortableStepCard(props: StepCardProps) {
             >
               <SelectTrigger
                 id={`${step.id}-capability`}
-                aria-label={`What step ${index + 1} does`}
+                aria-label={t('scans.workflowForm.capabilityAria', undefined, { n: index + 1 })}
                 className={`h-9 ${errors[`step_${index}_capability`] ? 'border-destructive' : ''}`}
               >
-                <SelectValue placeholder="Choose a capability" />
+                <SelectValue placeholder={t('scans.workflowForm.capabilityPlaceholder')} />
               </SelectTrigger>
               <SelectContent>
                 {options.map((c) => (
@@ -280,8 +289,11 @@ function SortableStepCard(props: StepCardProps) {
         {legacy.length > 0 && (
           <div className="rounded-md border border-warning/40 bg-warning/5 px-3 py-2 text-xs">
             <p>
-              Old format: {step.tool} runs as {step.capabilities.join(', ') || 'no capability'}.
-              Name its capability to get typed connections and the capability&apos;s settings.
+              {t('scans.workflowForm.legacyBody', undefined, {
+                tool: step.tool ?? '',
+                capabilities:
+                  step.capabilities.join(', ') || t('scans.workflowForm.legacyNoCapability'),
+              })}
             </p>
             <div className="mt-1.5 flex flex-wrap gap-1.5">
               {legacy.map((cap) => (
@@ -293,7 +305,10 @@ function SortableStepCard(props: StepCardProps) {
                   className="h-auto min-h-7 max-w-full whitespace-normal py-1 text-start text-xs"
                   onClick={() => props.onChange(applyLegacyFix(step, cap))}
                 >
-                  Use capability {cap.key} ({step.tool} implements it)
+                  {t('scans.workflowForm.legacyUse', undefined, {
+                    key: cap.key,
+                    tool: step.tool ?? '',
+                  })}
                 </Button>
               ))}
             </div>
@@ -301,13 +316,13 @@ function SortableStepCard(props: StepCardProps) {
         )}
 
         <div className="space-y-1">
-          <Label className="text-xs">Runs after</Label>
+          <Label className="text-xs">{t('scans.workflowForm.runsAfter')}</Label>
           <StepRunsAfter step={step} steps={props.steps} onChange={props.onRunsAfter} />
         </div>
 
         {choose.length > 0 && (
           <p className="text-xs text-warning" role="status">
-            {step.tool} does several things: choose what this step does.
+            {t('scans.workflowForm.chooseSeveral', undefined, { tool: step.tool ?? '' })}
           </p>
         )}
 
@@ -322,7 +337,7 @@ function SortableStepCard(props: StepCardProps) {
         ) : (
           <div className="space-y-1">
             <Label htmlFor={`${step.id}-tool`} className="text-xs">
-              Or start from a tool
+              {t('scans.workflowForm.orTool')}
             </Label>
             <Select
               value={step.tool || NONE}
@@ -331,30 +346,36 @@ function SortableStepCard(props: StepCardProps) {
             >
               <SelectTrigger
                 id={`${step.id}-tool`}
-                aria-label={`Tool of step ${index + 1}`}
+                aria-label={t('scans.workflowForm.toolAria', undefined, { n: index + 1 })}
                 className="h-9"
               >
-                <SelectValue placeholder={toolsLoading ? 'Loading tools...' : 'Select a tool'} />
+                <SelectValue
+                  placeholder={
+                    toolsLoading
+                      ? t('scans.workflowForm.loadingTools')
+                      : t('scans.workflowForm.selectTool')
+                  }
+                />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value={NONE}>
-                  <span className="text-muted-foreground">No tool</span>
+                  <span className="text-muted-foreground">{t('scans.workflowForm.noTool')}</span>
                 </SelectItem>
-                {enabledTools.map((t) => {
+                {enabledTools.map((entry) => {
                   // A tool no online sensor may run is listed but off, with
                   // why; the step's current tool stays selectable.
-                  const reason = t.is_available
+                  const reason = entry.is_available
                     ? null
-                    : (toolUnavailableReason(availability.get(t.tool.name)) ??
-                      'No online sensor can run it')
+                    : (toolUnavailableReason(availability.get(entry.tool.name)) ??
+                      t('scans.workflowForm.noSensorCanRun'))
                   return (
                     <SelectItem
-                      key={t.tool.id}
-                      value={t.tool.name}
-                      disabled={!!reason && t.tool.name !== step.tool}
+                      key={entry.tool.id}
+                      value={entry.tool.name}
+                      disabled={!!reason && entry.tool.name !== step.tool}
                       title={reason ?? undefined}
                     >
-                      <span>{t.tool.display_name || t.tool.name}</span>
+                      <span>{entry.tool.display_name || entry.tool.name}</span>
                       {reason && (
                         <span className="ms-2 text-[10px] text-muted-foreground">{reason}</span>
                       )}
@@ -365,8 +386,10 @@ function SortableStepCard(props: StepCardProps) {
             </Select>
             {step.tool && step.capabilities.length > 0 && (
               <p className="text-xs text-muted-foreground">
-                {step.tool} has no capability contract: it runs as {step.capabilities.join(', ')} on
-                the scan&apos;s targets.
+                {t('scans.workflowForm.noContract', undefined, {
+                  tool: step.tool,
+                  capabilities: step.capabilities.join(', '),
+                })}
               </p>
             )}
           </div>
@@ -374,12 +397,12 @@ function SortableStepCard(props: StepCardProps) {
 
         <details className="rounded-md border bg-background/50 px-3 py-2">
           <summary className="cursor-pointer text-xs font-medium text-muted-foreground">
-            Advanced
+            {t('scans.workflowForm.advanced')}
           </summary>
           <div className="mt-3 grid gap-3 @md:grid-cols-2">
             <div className="space-y-1">
               <Label htmlFor={`${step.id}-key`} className="text-xs">
-                Step key
+                {t('scans.workflowForm.stepKey')}
               </Label>
               <Input
                 id={`${step.id}-key`}
@@ -395,14 +418,12 @@ function SortableStepCard(props: StepCardProps) {
                 className={`text-[11px] ${keyError ? 'text-destructive' : 'text-muted-foreground'}`}
               >
                 {keyError ??
-                  (saved
-                    ? 'Fixed once saved: run history and other steps refer to it.'
-                    : 'Made from what the step does. Other steps refer to it.')}
+                  (saved ? t('scans.workflowForm.keyFixed') : t('scans.workflowForm.keyDerived'))}
               </p>
             </div>
             <div className="space-y-1">
               <Label htmlFor={`${step.id}-timeout`} className="text-xs">
-                Timeout (sec)
+                {t('scans.workflowForm.stepTimeout')}
               </Label>
               <Input
                 id={`${step.id}-timeout`}
@@ -515,19 +536,19 @@ export function ScanWorkflowForm({
 
   const validateStep = (step: WizardStep): boolean => {
     const newErrors: Record<string, string> = {}
-    if (step === 'basics' && !name.trim()) newErrors.name = 'Name is required'
+    if (step === 'basics' && !name.trim()) newErrors.name = t('scans.workflowForm.errName')
     if (step === 'steps') {
       steps.forEach((s, idx) => {
         const others = steps.filter((o) => o.id !== s.id).map((o) => o.step_key)
         const keyErr = stepKeyError(s.step_key, others)
         if (keyErr) newErrors[`step_${idx}_key`] = keyErr
-        if (!s.name.trim()) newErrors[`step_${idx}_name`] = 'Step name is required'
+        if (!s.name.trim()) newErrors[`step_${idx}_name`] = t('scans.workflowForm.errStepName')
         if (!s.tool && s.capabilities.length === 0) {
-          newErrors[`step_${idx}_capability`] = 'Choose what the step does'
+          newErrors[`step_${idx}_capability`] = t('scans.workflowForm.errCapability')
         }
       })
       if (Object.keys(newErrors).some((k) => k.startsWith('step_'))) {
-        newErrors.steps = 'Fix the highlighted steps.'
+        newErrors.steps = t('scans.workflowForm.errSteps')
       }
     }
     setErrors(newErrors)
@@ -721,7 +742,7 @@ export function ScanWorkflowForm({
                 className="flex items-center gap-2 text-xs sm:text-sm"
               >
                 {step.icon}
-                <span className="sr-only sm:not-sr-only">{step.label}</span>
+                <span className="sr-only sm:not-sr-only">{t(step.labelKey)}</span>
               </TabsTrigger>
             ))}
           </TabsList>
@@ -731,11 +752,11 @@ export function ScanWorkflowForm({
             <div className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="name">
-                  Workflow Name <span className="text-destructive">*</span>
+                  {t('scans.workflowForm.workflowName')} <span className="text-destructive">*</span>
                 </Label>
                 <Input
                   id="name"
-                  placeholder="e.g., Daily Security Scan"
+                  placeholder={t('scans.workflowForm.workflowNamePlaceholder')}
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   className={errors.name ? 'border-destructive' : ''}
@@ -744,10 +765,10 @@ export function ScanWorkflowForm({
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="description">Description</Label>
+                <Label htmlFor="description">{t('scans.workflowForm.description')}</Label>
                 <Textarea
                   id="description"
-                  placeholder="Brief description of what this workflow does..."
+                  placeholder={t('scans.workflowForm.descriptionPlaceholder')}
                   rows={3}
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
@@ -755,7 +776,7 @@ export function ScanWorkflowForm({
               </div>
 
               <div className="space-y-2">
-                <Label>Tags</Label>
+                <Label>{t('scans.workflowForm.tags')}</Label>
                 <div className="flex flex-wrap gap-2 min-h-[32px]">
                   {tags.map((tag) => (
                     <Badge key={tag} variant="secondary" className="gap-1 py-1">
@@ -763,7 +784,7 @@ export function ScanWorkflowForm({
                       {tag}
                       <button
                         type="button"
-                        aria-label={`Remove tag ${tag}`}
+                        aria-label={t('scans.workflowForm.removeTag', undefined, { tag })}
                         onClick={() => removeTag(tag)}
                         className="ms-1 hover:text-destructive"
                       >
@@ -774,7 +795,7 @@ export function ScanWorkflowForm({
                 </div>
                 <div className="flex gap-2">
                   <Input
-                    placeholder="Add a tag and press Enter"
+                    placeholder={t('scans.workflowForm.tagPlaceholder')}
                     value={tagInput}
                     onChange={(e) => setTagInput(e.target.value)}
                     onKeyDown={(e) => {
@@ -788,7 +809,7 @@ export function ScanWorkflowForm({
                     type="button"
                     variant="outline"
                     size="icon"
-                    aria-label="Add tag"
+                    aria-label={t('scans.workflowForm.addTag')}
                     onClick={addTag}
                   >
                     <Plus className="h-4 w-4" />
@@ -802,15 +823,12 @@ export function ScanWorkflowForm({
           <TabsContent value="steps" className="space-y-4 mt-0">
             <div className="flex items-center justify-between">
               <div>
-                <h3 className="text-sm font-medium">Workflow Steps</h3>
-                <p className="text-xs text-muted-foreground">
-                  Choose what each step does and what it runs after. Steps of one stage run in
-                  parallel. Drag a step onto another stage to move it there.
-                </p>
+                <h3 className="text-sm font-medium">{t('scans.workflowForm.stepsTitle')}</h3>
+                <p className="text-xs text-muted-foreground">{t('scans.workflowForm.stepsHint')}</p>
               </div>
               <Button type="button" variant="outline" size="sm" onClick={addStep}>
                 <Plus className="me-2 h-3 w-3" />
-                Add Step
+                {t('scans.workflowForm.addStep')}
               </Button>
             </div>
 
@@ -822,8 +840,13 @@ export function ScanWorkflowForm({
                 className="flex flex-wrap items-center gap-2 rounded-md border border-warning/40 bg-warning/5 px-3 py-2 text-xs"
               >
                 <span>
-                  {legacySteps.length} step{legacySteps.length > 1 ? 's use' : ' uses'} the old
-                  format (a tool without its capability).
+                  {t(
+                    legacySteps.length > 1
+                      ? 'scans.workflowForm.legacyMany'
+                      : 'scans.workflowForm.legacyOne',
+                    undefined,
+                    { count: legacySteps.length }
+                  )}
                 </span>
                 <Button
                   type="button"
@@ -832,7 +855,7 @@ export function ScanWorkflowForm({
                   className="h-7 text-xs"
                   onClick={fixAllLegacy}
                 >
-                  Fix all
+                  {t('scans.workflowForm.fixAll')}
                 </Button>
               </div>
             )}
@@ -863,9 +886,10 @@ export function ScanWorkflowForm({
                         id={`form-stage-${i}`}
                         className="text-xs font-semibold text-muted-foreground"
                       >
-                        Stage {i + 1}
-                        {stage.length > 1 && `, ${stage.length} steps run in parallel`}
-                        {i > 0 && `, waits for Stage ${i}`}
+                        {t('scans.workflowForm.stage', undefined, { n: i + 1 })}
+                        {stage.length > 1 &&
+                          t('scans.workflowForm.stageParallel', undefined, { count: stage.length })}
+                        {i > 0 && t('scans.workflowForm.stageWaits', undefined, { n: i })}
                       </h4>
                       <div className={`grid gap-3 ${stage.length > 1 ? '@2xl:grid-cols-2' : ''}`}>
                         {stage.map(renderCard)}
@@ -875,7 +899,7 @@ export function ScanWorkflowForm({
                   {unplaced.length > 0 && (
                     <li className="space-y-2">
                       <h4 className="text-xs font-semibold text-destructive">
-                        Not placed: these steps wait for each other in a loop
+                        {t('scans.workflowForm.unplaced')}
                       </h4>
                       <div className="grid gap-3 @2xl:grid-cols-2">{unplaced.map(renderCard)}</div>
                     </li>
@@ -891,7 +915,7 @@ export function ScanWorkflowForm({
               <div className="space-y-2">
                 <Label htmlFor="wf-timeout" className="flex items-center gap-2 text-sm">
                   <Clock className="h-4 w-4" />
-                  Timeout (seconds)
+                  {t('scans.workflowForm.timeout')}
                 </Label>
                 <Input
                   id="wf-timeout"
@@ -902,13 +926,13 @@ export function ScanWorkflowForm({
                   onChange={(e) => setTimeoutSeconds(parseInt(e.target.value) || 3600)}
                 />
                 <p className="text-xs text-muted-foreground">
-                  Max time for a run of this workflow; a scan&apos;s own timeout wins
+                  {t('scans.workflowForm.timeoutHint')}
                 </p>
               </div>
 
               <div className="space-y-2">
                 <Label htmlFor="wf-parallel" className="text-sm">
-                  Max Parallel Steps
+                  {t('scans.workflowForm.maxParallel')}
                 </Label>
                 <Input
                   id="wf-parallel"
@@ -918,18 +942,20 @@ export function ScanWorkflowForm({
                   value={maxParallelSteps}
                   onChange={(e) => setMaxParallelSteps(parseInt(e.target.value) || 3)}
                 />
-                <p className="text-xs text-muted-foreground">Steps running simultaneously</p>
+                <p className="text-xs text-muted-foreground">
+                  {t('scans.workflowForm.maxParallelHint')}
+                </p>
               </div>
             </div>
 
             <div className="space-y-2">
-              <Label className="text-sm">Sensor Selection</Label>
+              <Label className="text-sm">{t('scans.workflowForm.sensorSelection')}</Label>
               <Select
                 value={sensorPreference}
                 onValueChange={(v) => setSensorPreference(v as ScanWorkflowSensorPreference)}
               >
-                <SelectTrigger aria-label="Sensor selection">
-                  <SelectValue placeholder="Select preference" />
+                <SelectTrigger aria-label={t('scans.workflowForm.sensorSelection')}>
+                  <SelectValue placeholder={t('scans.workflowForm.sensorPlaceholder')} />
                 </SelectTrigger>
                 <SelectContent>
                   {SCAN_WORKFLOW_SENSOR_PREFERENCES.filter(
@@ -973,14 +999,14 @@ export function ScanWorkflowForm({
           {!isFirstStep && (
             <Button type="button" variant="ghost" onClick={handleBack} disabled={isSubmitting}>
               <ChevronLeft className="me-1 h-4 w-4" />
-              Back
+              {t('scans.workflowForm.back')}
             </Button>
           )}
         </div>
 
         <div className="flex items-center gap-2">
           <Button type="button" variant="outline" onClick={onCancel} disabled={isSubmitting}>
-            Cancel
+            {t('common.cancel')}
           </Button>
 
           {isLastStep && isEditing && (stepsChanged || hasDraft) && (
@@ -993,7 +1019,7 @@ export function ScanWorkflowForm({
                 publishRef.current = true
               }}
             >
-              Save and publish
+              {t('scans.workflowForm.saveAndPublish')}
             </Button>
           )}
           {isLastStep ? (
@@ -1003,21 +1029,21 @@ export function ScanWorkflowForm({
               {isSubmitting ? (
                 <>
                   <Loader2 className="me-2 h-4 w-4 animate-spin" />
-                  Saving...
+                  {t('scans.workflowForm.saving')}
                 </>
               ) : isEditing ? (
                 stepsChanged ? (
-                  'Save draft'
+                  t('scans.workflowForm.saveDraft')
                 ) : (
-                  'Update Workflow'
+                  t('scans.workflowForm.updateWorkflow')
                 )
               ) : (
-                'Create Workflow'
+                t('scans.workflowForm.createWorkflow')
               )}
             </Button>
           ) : (
             <Button key="next" type="button" onClick={handleNext}>
-              Next
+              {t('scans.workflowForm.next')}
               <ChevronRight className="ms-1 h-4 w-4" />
             </Button>
           )}

@@ -20,6 +20,7 @@ import {
   ItemsViz,
   KpiStripViz,
   LeversViz,
+  PostureViz,
   LoopViz,
   MatrixTable,
   PathsTable,
@@ -168,6 +169,8 @@ function Viz({
       return <BriefViz result={r} />
     case 'kpis':
       return <KpiStripViz result={r} />
+    case 'posture':
+      return <PostureViz result={r} href={href} />
     default:
       return null
   }
