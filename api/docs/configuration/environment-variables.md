@@ -74,7 +74,7 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 | `DB_HOST` | string | `localhost` | yes |  | PostgreSQL host. |
 | `DB_JIT_ENABLED` | bool | `false` |  |  | PostgreSQL JIT for the API's sessions. Off by default because request-path queries pay the JIT compile cost without benefiting from it. |
 | `DB_INGEST_MAX_CONNS` | int | `8` |  |  | Connections of the ingest pool, apart from the API's pool: the asset and finding writes of the ingest worker (CI results, imports, sensor reports) use it, so a burst of uploads cannot take the connections the API's requests need. All are kept idle. |
-| `DB_MAX_IDLE_CONNS` | int | `5` |  |  | Maximum idle connections kept in the pool. |
+| `DB_MAX_IDLE_CONNS` | int | same as `DB_MAX_OPEN_CONNS` |  |  | Maximum idle connections kept in the pool. Defaults to `DB_MAX_OPEN_CONNS`: a smaller value makes every burst of requests close and reopen connections (a TCP and SCRAM handshake and a new server process each). |
 | `DB_MAX_OPEN_CONNS` | int | `25` |  |  | Maximum open connections in the API's pool. |
 | `DB_NAME` | string | `openctem` |  |  | Database name. |
 | `DB_ADMIN_PASSWORD` | string | empty |  | yes | Password of `DB_ADMIN_USER`. Required when `DB_ADMIN_USER` is set; must differ from `DB_PASSWORD`. |
@@ -265,7 +265,8 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 
 | Variable | Type | Default | Required | Secret | Description |
 |---|---|---|---|---|---|
-| `SENSOR_CA_CERT_FILE` | string | empty |  |  | Private CA certificate (PEM) the install snippets install on the sensor host. Set it with the gateway in TLS mode `internal` (the Compose stack points it at the exported root CA). |
+| `PLATFORM_CA_CERT_FILE` | path | empty |  |  | PEM bundle of the CA certificate(s) that sign the platform's TLS certificate when it is not publicly trusted (the gateway in TLS mode `internal`, where the Compose stack points it at the exported root CA, or your own private CA). Public certificates only: a file that holds a private key is refused. The install commands install it and pin its root (`SENSOR_CA_SHA256`), and `GET /api/v1/sensors/platform-ca` serves it to sensors that hold the pin. Re-read when the file changes. Empty: the certificate is publicly trusted. Guide: `docs/how-to/sensors-behind-a-private-ca.md`. |
+| `SENSOR_CA_CERT_FILE` | path | empty |  |  | Deprecated name of `PLATFORM_CA_CERT_FILE` on the API, read only when that is unset (startup warns). Rename it. On a sensor host `SENSOR_CA_CERT_FILE` keeps its own meaning: the CA file the sensor trusts. |
 | `CI_RUNNER_LATEST_VERSION` | string | `versions.yaml` ci.latest, built into the API |  |  | Newest CI runner release (openctemio/ci: the openctem-ci action and image). The console's pipeline snippets pin it, and a pipeline on an older runner shows an update. CI runners have their own release line; the sensor settings never apply to them. `none` or `off` turns the comparison off. |
 | `CI_RUNNER_MIN_VERSION` | string | `versions.yaml` ci.min, built into the API |  |  | Oldest accepted CI runner release. The token exchange refuses an older runner (`RUNNER_OUTDATED`) and its pipeline is shown as degraded. Empty, `none` or `off`: no minimum. |
 | `SENSOR_COMMAND_LEASE` | duration | `3m` |  |  | How long a sensor holds a claimed task without renewing it; an expired lease puts the task back in the queue. |
@@ -343,7 +344,6 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 | `CERT_MONITOR_FEED_URL` | string | `https://crt.sh` |  |  | CT-log search service queried per organization domain. |
 | `CERT_MONITOR_INTERVAL` | duration | `24h` |  |  | How often the CT sweep runs. |
 | `CERT_MONITOR_MAX_DOMAINS_PER_RUN` | int | `50` |  |  | Domains of one organization queried per sweep; the rest rotate in on later runs. |
-| `CTEM_ID_FEED_URL` | string | `https://ctem.org/source.json` |  |  | CTEM-ID catalog feed mirrored daily. |
 | `EASM_DNS_CHECK_INTERVAL` | duration | `24h` |  |  | How often the DNS checks run. |
 | `EASM_DNS_CHECKS_ENABLED` | bool | `true` |  |  | Daily DNS-only checks of each organization's own names (dangling CNAME/NS, email posture). `false` turns them off platform-wide. |
 | `EASM_DNS_MAX_NAMES_PER_RUN` | int | `500` |  |  | Names checked per organization per run. |
@@ -381,6 +381,8 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 | `GITHUB_APP_WEB_URL` | url | empty |  |  | GitHub web base URL for GitHub Enterprise Server. Unset: github.com. |
 | `OPENCTEM_HTTPSEC_ALLOW_PRIVATE` | string | `unset` |  |  | `1` opens every private range. Honored only with `APP_ENV=development`: with any other `APP_ENV` (or none) the API refuses to start, because it would open the platform's own network to every organization. Use `OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS` instead. Any value other than empty, `0` or `1` is refused. |
 | `OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS` | string | empty |  |  | Comma-separated private ranges that outbound calls of the API (webhook and notification channels, self-hosted Jira or GitLab, an SMTP relay) may reach, for example `10.20.0.0/16`. Each entry must be a CIDR inside `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16` or `fc00::/7`, otherwise the API refuses to start. The list applies to every organization, so name only the subnets of your own services; the API refuses to start when it is set together with `SIGNUP_MODE=open`. Loopback, link-local, CGNAT and cloud metadata addresses stay blocked whatever the list says. |
+| `OPENCTEM_HTTPSEC_FEED_PROXY` | url | empty |  | yes | HTTPS proxy for the platform's own feed fetchers only (vulnerability bundles, CISA KEV, EPSS, CTEM-ID catalog, public program feed, release feed), for a network whose only way out is a proxy: `http://[user:password@]proxy.corp:3128` or `https://...`, no path or query. Requests to an https destination go through it with CONNECT (TLS stays end to end); the destination is still checked first (blocked address literals, dangerous names and names whose local answers are in a blocked range are refused; a name the local resolver cannot answer is left to the proxy). The proxy may be on a private address; loopback, link-local and metadata addresses are refused. Webhooks, integrations, identity providers and anything an organization configures never use it, and `HTTPS_PROXY`/`HTTP_PROXY` are not read. The API refuses to start on a value that is not a proxy URL. Empty (the default): direct connections. |
+| `OPENCTEM_HTTPSEC_FEED_NO_PROXY` | string | empty |  |  | Comma-separated hosts or domains (`mirror.corp.example`, `.corp.example`) that the feed fetchers reach directly even when `OPENCTEM_HTTPSEC_FEED_PROXY` is set, for example an internal bundle mirror (its private range still needs `OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS`). |
 
 ### Internal entitlements API
 

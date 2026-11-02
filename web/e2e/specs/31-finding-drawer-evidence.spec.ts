@@ -72,8 +72,16 @@ for (const size of [
       expect(await page.content()).not.toContain(TOKEN)
 
       // Nothing wider than the drawer.
+      // The seeded item also carries a long unbroken extracted value (escaped
+      // slashes, no spaces): it wraps inside the item, so neither the drawer
+      // nor its scrolling body scrolls sideways.
+      await expect(item.getByText(/wp-json/)).toBeVisible()
       const overflow = await drawer.evaluate((el) => el.scrollWidth - el.clientWidth)
       expect(overflow).toBeLessThanOrEqual(1)
+      const bodyOverflow = await drawer
+        .locator('[data-slot=detail-sheet-body]')
+        .evaluate((el) => el.scrollWidth - el.clientWidth)
+      expect(bodyOverflow).toBeLessThanOrEqual(1)
 
       await test.info().attach(`drawer-evidence-${size.name}`, {
         body: await page.screenshot(),

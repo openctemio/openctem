@@ -247,6 +247,7 @@ widget has `widget_type` `metric` or `note` and a `config` of this form
   | `ingest.intake` | intake (receipts per source, noise, health) | none | `ingest_receipts`, see "Exposure flow and intake" |
   | `surface.new_assets` | category: assets added in the window by asset type, with the previous window | none | `assets`, see "Attack surface and accepted risk" |
   | `certificates.expiry` | category: certificates expired, or expiring within 7, 8-30 and 31-90 days | none | `assets` |
+  | `surface.posture` | posture: grade A to F, score, the six category deductions, the next grade and how many fix-plan steps reach it; building until the first computation, not measured with no surface asset; module `attack_surface`, `assets:read` on a personal read; opens `/attack-surface/posture` | none | `easm_posture_assets`, see [easm-posture.md](easm-posture.md) |
   | `exceptions.expiring` | category: accepted findings whose acceptance ends within 7, 8-30 days or later | none | `findings` |
   | `intel.emerging_threats` | category: open emerging-threat alerts affecting the scope, by level (immediate, digest, listed); module `threat_intel` | none | `threat_alerts` + `threat_alert_assets`, see "Emerging threats" |
 
@@ -254,7 +255,7 @@ widget has `widget_type` `metric` or `note` and a `config` of this form
   stat; duration: stat; category: bar, column, table, donut, stat; time
   series: area, line, column, table (a flow: diverging, column, table, never
   an area); matrix: heatmap, table, column; items: list, table; stages: loop, table;
-  paths: paths, table; flow: flow, table; intake: intake, table. The first is
+  paths: paths, table; flow: flow, table; intake: intake, table; posture: posture, table. The first is
   the default; a widget without `viz.type` gets it.
 - **Validation** (`ParseWidgetSpec`, on every create, update and copy of a
   personal or organization dashboard): the config is decoded with unknown
@@ -282,9 +283,22 @@ widget has `widget_type` `metric` or `note` and a `config` of this form
 
 | Route | Who | Numbers |
 |---|---|---|
+| `GET /api/v1/me/dashboards/home` | any signed-in member; the organization list only with `dashboards:org:view` or `:manage`, the figures only with `dashboard:read` | the same lists and the same figures as the per-dashboard routes, for the same caller (no query path of its own) |
 | `GET /api/v1/me/dashboards/{id}/data` | `dashboard:read` and the dashboard's owner (another person's dashboard is 404) | the caller's own data scope; per-metric permission applies (below) |
 | `GET /api/v1/organization/dashboards/{id}/data` | `dashboards:org:view` (403 without), inside the audience (404 outside) | the whole organization |
 | `POST /api/v1/me/dashboards/widget-preview` | `dashboard:read` | one spec, the caller's own data scope (400 when the spec would be refused on save) |
+
+The dashboard home opens with `GET /api/v1/me/dashboards/home?choice=<kind>:<id>`:
+one response with `personal`, `organization` (absent when the caller cannot
+read organization dashboards), `landing` and the landing dashboard's `data`.
+The server applies the landing rule: the remembered `choice` while it is in
+the caller's lists, else the caller's own default, else the organization
+default (or its first dashboard), else the caller's first own dashboard. A
+malformed, deleted, foreign or out-of-audience `choice` is ignored without a
+word, so it tells nothing about what exists. When the figures cannot be read
+at that moment (busy, no `dashboard:read`) `data` is left out and the page
+reads the dashboard's `/data` route, which reports why. The page seeds its
+cache from the response and does not wait for the bootstrap.
 
 A personal read also needs the permission of what a metric counts:
 `findings:read` for finding metrics, `assets:read` for asset metrics
@@ -1355,7 +1369,7 @@ figure means not measured and is never drawn as 0.
 | `PathsViz` | paths | reachable crown jewels (linked to the attack paths) and the top ones with the entry points reaching them; "none designated" and "none reachable" are different states |
 | `ItemsViz` | items | rows with priority, KEV, asset and due time, and "View all" |
 | `ItemsTable` | items (`viz: table`) | the embedded findings table: Priority, Finding (title link, asset line, KEV chip), Severity and SLA columns (Severity and SLA hidden at phone width, the table scrolls sideways), a read-only chip row with the list's filter, the count in the caption, and a footer "Top n of total" with "Open in Findings" |
-| `ExposureFlowViz` | flow | sources (with health in words and line style), received to new or reopened to actionable, a labelled ring of actionable findings by priority class (at most four arcs, each a focusable link with a sentence, the largest centred at the bottom, a minimum arc so P0 stays visible; the centre is the count the arcs sum to), the five stages (the focus stage filled with the accent), outcomes (open with its severity split, past SLA, in progress, closed in the period); wires are SVG paths between measured rows, width by volume; the layout follows the widget's own width (see "Connected visuals: layout bands") |
+| `ExposureFlowViz` | flow | sources (with health in words and line style), received to new or reopened to actionable, three concentric rings read from the outside in (`FlowRings` in `flow-rings.tsx`): findings received by source, new or reopened by source (each source's `created + reopened`, so the middle ring sums to the funnel's new or reopened), actionable findings by priority class (at most four arcs); a scoped read draws the actionable ring alone. Each segment is a focusable link with a sentence (name, count, share of its ring), round caps with a fixed visible gap, the largest centred at the bottom, a minimum sweep so a small part stays visible, a muted track under every ring; the centre is the count the inner arcs sum to. A source keeps one colour (its categorical slot, by its place in the read) on its ranked row and both arcs; focusing a source (row or either arc) lights its row, both arcs and its wire, a funnel figure lights its whole ring (a ring-key glyph beside each funnel label says which), a lit segment is a little thicker with a soft glow in its own colour. The rings draw in once (none under reduced motion); a phone shows the same rings small beside the headline, decorative (a tap explains, the figures under them are the links), the five stages (the focus stage filled with the accent), outcomes (open with its severity split, past SLA, in progress, closed in the period); wires are SVG paths between measured rows, width by volume; the layout follows the widget's own width (see "Connected visuals: layout bands") |
 | `IntakeViz` | intake | the connector panel (each source's icon, tool, receipts, health, count, wired into one summary that shows the hovered source), the noise bar (new or reopened, merged, suppressed, not stored; each legend value opens the receipts), the false-positive row, and the per-source table |
 
 Rules every visualization follows:
@@ -1408,33 +1422,51 @@ The exposure flow and the intake panel lay themselves out on the widget's
 own width, never the viewport: a widget sits in grid cells of any size (a
 1-of-4 cell on a wide screen is narrower than a phone). The layout is CSS
 container queries on the visual; the same widths decide in code
-(`flowBand` in `flow-parts.tsx`, `FLOW_MID` 660 px and `FLOW_WIDE` 960 px of
+(`flowBand` in `flow-parts.tsx`, `FLOW_MID` 660 px and `FLOW_WIDE` 900 px of
 the visual's width) which wires exist, so a wire is drawn only when both of
 its ends sit side by side, and the rows it joins exist before it is measured.
 
 | Band (visual width) | Exposure flow | Intake panel |
 |---|---|---|
-| narrow, under 660 px | one column in reading order: the first three sources and "N more", the received to actionable figures, the ring (at most 18 rem, 78 % of the width), the stages (three then two per row under 420 px, five in a row above), the outcomes; no wires | sources, then the summary; the health note under each source's name; no wires |
-| mid, 660 to 959 px | the first three sources in one row above; the core (figures, ring, stages) beside the outcomes, wires from the ring to the outcomes | sources (`clamp(15rem, 34cqi, 52rem)`) at the left edge and summary (`clamp(14rem, 30cqi, 44rem)`) at the right edge, the wires across the space between |
-| wide, 960 px and more | three columns that grow with the card (sources `clamp(12rem, 20cqi, 26rem)`, core `clamp(20rem, 34cqi, 46rem)`, outcomes `clamp(13rem, 20cqi, 26rem)`), sources at the left padding and outcomes at the right padding, the wires taking the space between: the composition fills the card, with no empty side gutters, and each wire still starts right after its row | same as mid |
+| narrow, under 660 px | one column in reading order: the first three sources and "N more", the received to actionable figures, the ring (at most 18 rem, 78 % of the width), the stages (three then two per row under 420 px, five in a row above), the outcomes; no wires | under 560 px: sources, then the summary; the health note under each source's name; no wires |
+| mid, 660 to 899 px | the first three sources in one row above; the core (figures, ring, stages) beside the outcomes, wires from the ring to the outcomes | from 560 px (`INTAKE_SIDE`, a full-width card in a 1024 px window): the source rows in a dashed frame at a fixed 20 rem at the left edge, so each row (kind icon, name, kind chip, figure, bar) is one unit and its figure never drifts from its name; the summary in a dashed frame at the right edge (`clamp(13rem, 22cqi, 18rem)`); the curves take every pixel between (`minmax(2.5rem, 1fr)`) and grow with the card |
+| wide, 900 px and more (a full-width card from a 1280 px window with the sidebar open) | three columns that fill the card: sources in a thin dashed frame (`border-border-strong`, `rounded-lg`, `p-1.5`) flush with the left padding at a reading width (`clamp(16rem, 24cqi, 19rem)`, so a source's name, kind and figure fit and its status wraps under it, never cut off), outcomes in the same dashed frame flush with the right padding (`clamp(13rem, 17cqi, 16rem)`), each outcome a box with its label above its figure (the phone's tile), the core taking every pixel between (`minmax(0, 1fr)`); the rings grow with the core and the wires span the rest, from the sources frame to the outer ring and from the ring to the outcomes frame | same as mid |
 
-The ring is `clamp(15rem, 24cqi, 26rem)` from the mid band and its centre
-figure `clamp(2.25rem, 4.5cqi, 3rem)`. Wires are re-measured on every resize
-(`useWireAnchors`, a `ResizeObserver`), from a row's right edge to the
-ring's or summary's left edge, so they always meet their ends; their width
-stays proportional to the volume. The DOM order is the reading and focus
+The rings are `clamp(15rem, min(100% - 6rem, 34cqi), 30rem)` from the mid
+band (at least 6 rem left in the core for the wires; about 310 px in a
+1280 px window, 480 px at 1920) and their centre figure scales with the
+rings (`clamp(1.75rem, 12cqi, 3.5rem)` of the rings' own width). Wires are
+re-measured on every resize (`useWireAnchors`, a `ResizeObserver`), from a
+row's right edge (the sources box edge) to the outer ring's edge, and from
+there to the outcome's or summary's left edge, so they always meet their ends; their width
+is proportional to the volume (1 to 6 px of the largest, `wireWidth`). A
+focused source's wire takes the source's own colour (as its row and arcs)
+and is the only wire with a glow (`focusGlow`, shared with the ring
+segments). The DOM order is the reading and focus
 order in every band (no visual reordering). The noise and per-source panels
 of the intake widget sit side by side from 1100 px of widget width.
+
+Both widgets draw their sources with the same pieces (`source-view.tsx` and
+`RankedBars`): rank by findings or assets and group by tool or by instance
+(one remembered view for both), an instance row listing the tools it ran
+under its name (instance, then tools), a discovery tool with assets but no
+findings showing its assets ("412 assets") instead of 0 and ordered by them,
+and healthy sources with nothing in the period folded into "+N sources with
+nothing in 30 days". The intake's per-source table adds an Assets column
+when a source reported assets.
 
 Widget titles are `h2` (the page title is the `h1`), so the sections inside a
 widget (`h3`) keep the heading order.
 
 Tests: `dashboard-kit/__tests__/exposure-flow.test.tsx` (band thresholds, the
 container query classes use the same widths, the health note sits on its
-row), `e2e/specs/52-dashboard-flow-layout.spec.ts` (at card widths 480, 720,
-960, 1200, 1440 and 1600 px: no sideways scroll, no overlapping columns, the
-ring inside its column, no wires on one column, every wire starts within
-80 px of its source label).
+row, ring geometry and focus), `e2e/specs/52-dashboard-flow-layout.spec.ts`
+(at card widths 480, 720, 900, 960, 1200, 1440, 1600 and 1920 px: no
+sideways scroll, no overlapping columns, the rings inside their column, no
+wires on one column, every wire starts within 96 px of its source label; on
+a wide card the sources column is 240 to 310 px with no text cut off, every
+source wire runs from the sources box to the outer ring and every outcome
+wire ends at its outcome).
 
 ### Chart palettes
 

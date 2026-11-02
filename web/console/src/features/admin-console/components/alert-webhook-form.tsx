@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useId, useState } from 'react'
+import { useCallback, useEffect, useId, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { useTranslation } from '@/context/i18n-provider'
+import { SettingsSaveBar } from '@/features/shared/components/settings-save-bar'
 import { saveAlertWebhook, sendTestAlert } from '../api/use-platform-settings'
 import type { AlertWebhookSettings } from '../types'
 import {
@@ -41,13 +42,15 @@ export function AlertWebhookForm({ settings, canEdit, onSaved }: AlertWebhookFor
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [testing, setTesting] = useState(false)
 
-  useEffect(() => {
+  // The saved values: on load, after a save and on Discard.
+  const reset = useCallback(() => {
     setEnabled(settings.enabled)
     setUrl('')
     setClearUrl(false)
     setSecret('')
     setClearSecret(false)
   }, [settings])
+  useEffect(reset, [reset])
 
   const dirty =
     enabled !== settings.enabled || url !== '' || clearUrl || secret !== '' || clearSecret
@@ -170,12 +173,13 @@ export function AlertWebhookForm({ settings, canEdit, onSaved }: AlertWebhookFor
                 {testing && <Loader2 className="me-1.5 size-4 animate-spin" />}
                 {t('admin.alerts.test', 'Send a test alert')}
               </Button>
-              <Button
-                onClick={() => setConfirmOpen(true)}
-                disabled={!dirty || (enabled && !willHaveUrl)}
-              >
-                {t('admin.settings.save', 'Save')}
-              </Button>
+              <SettingsSaveBar
+                className="basis-full"
+                dirty={dirty}
+                saveDisabled={enabled && !willHaveUrl}
+                onSave={() => setConfirmOpen(true)}
+                onDiscard={reset}
+              />
             </div>
           ) : (
             <p className="text-sm text-muted-foreground">

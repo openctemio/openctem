@@ -240,6 +240,15 @@ export default function AdminUserPage({ params }: { params: Promise<{ userId: st
                 isLoading={activity.isLoading}
               />
             </section>
+
+            {adminHas(admin, 'platform.users.support') && (
+              <PlatformUserActions
+                part="danger"
+                user={user}
+                onDone={refresh}
+                isSuperAdmin={adminHas(admin, 'platform.users.credentials')}
+              />
+            )}
           </>
         )}
       </PageStack>

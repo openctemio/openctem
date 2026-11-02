@@ -99,7 +99,7 @@ var Registry = []Definition{
 		UserFacing: true,
 		Permission: "findings:read",
 		MCP:        []string{"list_findings", "get_finding", "finding_stats", "list_active_cves", "explain_finding_priority", "list_finding_transitions", "list_remediation_groups"},
-		Jobs:       []string{"ApprovalExpirationController", "ApprovalMaterialChangeController", "VEXRequestNoticeController", "ApprovalDigestController", "FindingPriorityController", "FindingPriorityReconcileController", "PriorityAuditRetentionController", "EvidenceRetentionController", "AttachmentRetentionController", "AttachmentScanController", "ReportFileMigrationController", "ScannerOutputRetentionController", "RiskSnapshotController", "CTEMIDRefreshController", "IngestWorkerController", "IngestReceiptRetentionController", "IngestQueueRetentionController", "JobRecoveryController", "RetestScheduler", "ThreatIntelRefreshController", "KEVRefreshController", "VulnMatchController", "VulnFeedImportController", "FeedRelayController"},
+		Jobs:       []string{"ApprovalExpirationController", "ApprovalMaterialChangeController", "VEXRequestNoticeController", "ApprovalDigestController", "FindingPriorityController", "FindingPriorityReconcileController", "PriorityAuditRetentionController", "EvidenceRetentionController", "AttachmentRetentionController", "AttachmentScanController", "ReportFileMigrationController", "ScannerOutputRetentionController", "RiskSnapshotController", "IngestWorkerController", "IngestReceiptRetentionController", "IngestQueueRetentionController", "JobRecoveryController", "RetestScheduler", "ThreatIntelRefreshController", "KEVRefreshController", "VulnMatchController", "VulnFeedImportController", "FeedRelayController"},
 	},
 	{
 		ID: ModuleScans, Slug: "scans", Name: "Scans",
@@ -123,7 +123,7 @@ var Registry = []Definition{
 		},
 		Routes: []string{"/api/v1/attack-surface", "/api/v1/easm", "/api/v1/assets/{id}/web-evidence"},
 		MCP:    []string{"get_exposure_chains"},
-		Jobs:   []string{"AssetEnrichmentController", "AssetCoverageController", "CertMonitorController", "EASMDNSController", "EASMLookalikeController", "PageMonitorController", "EASMNetworkSeedController", "WebEvidenceRetentionController", "EASMWeeklyDigestController", "GraphEnrichmentController", "ScopeJoinController"},
+		Jobs:   []string{"AssetEnrichmentController", "AssetCoverageController", "CertMonitorController", "EASMDNSController", "EASMLookalikeController", "PageMonitorController", "EASMNetworkSeedController", "WebEvidenceRetentionController", "EASMWeeklyDigestController", "EASMPostureController", "GraphEnrichmentController", "ScopeJoinController"},
 	},
 	{
 		ID: ModuleScopeConfig, Slug: "scope-config", Name: "Scope Config",
@@ -332,7 +332,7 @@ var Registry = []Definition{
 			{ModuleID: ModuleThreatIntel, Type: DependencySoft, Reason: "triage uses KEV/EPSS context when scoring"},
 		},
 		Routes: []string{"/api/v1/findings/{}/ai-triage", "/api/v1/findings/ai-triage", "/api/v1/findings/{}/ai", "/api/v1/ai"},
-		Jobs:   []string{"AIAgentSweepController"},
+		Jobs:   []string{"AIAgentSweepController", "AIUseCaseDowngradeController"},
 	},
 	{
 		ID: ModuleSLA, Slug: "sla", Name: "SLA Management",

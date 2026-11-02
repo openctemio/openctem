@@ -123,7 +123,7 @@ func NewIntelService(
 		// (DNS rebinding, hijacked cache), the dialer refuses to
 		// complete the connection rather than silently hitting a
 		// metadata service.
-		httpClient: httpsec.SafeHTTPClient(httpTimeout),
+		httpClient: httpsec.FeedHTTPClient(httpTimeout),
 		logger:     log.With("service", "threat_intel"),
 		now:        time.Now,
 	}
@@ -487,10 +487,11 @@ var (
 	ErrFeedShrunk = feedstatus.ErrFeedShrunk
 )
 
-// markFailed records a failed sync with its classification.
+// markFailed records a failed sync with its classification. The stored text
+// is shown on the platform admin route: URL credentials are removed first.
 func markFailed(status *threatintel.SyncStatus, err error) {
 	c := feedstatus.Classify(err)
-	status.MarkSyncFailedWith(err.Error(), c.Code, c.Params)
+	status.MarkSyncFailedWith(logger.RedactURLs(err.Error()), c.Code, c.Params)
 }
 
 func shrinkGuard(source string, got int, stored int64) error {

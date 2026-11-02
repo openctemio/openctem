@@ -153,6 +153,12 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     permission: Permission.ScopeRead,
     module: Module.AttackSurface,
   },
+  // Web page monitoring (RFC-138): reads need assets:read (narrowed to the
+  // data scope by the API); watch changes need scans:write.
+  '/attack-surface/pages': {
+    permission: Permission.AssetsRead,
+    module: Module.AttackSurface,
+  },
   // The coverage work by stage (Run needs scans:write + scans:execute).
   '/attack-surface/discovery': {
     permission: Permission.ScansRead,
@@ -163,6 +169,11 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
   '/attack-surface/web': {
     permission: Permission.AssetsRead,
     module: Module.Assets,
+  },
+  // The posture score of the external surface, scoped per asset by the API.
+  '/attack-surface/posture': {
+    permission: Permission.AssetsRead,
+    module: Module.AttackSurface,
   },
   // Exposure items: the exposures of the external surface (research/333 D1);
   // the API also needs findings:read.
@@ -387,8 +398,12 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
   // ========================================
   // Validation Phase (Module: pentest)
   // ========================================
+  // Campaign pages: the API reads them with pentest:campaigns:read and the
+  // caller's campaign membership, so a role without the module-wide
+  // validation:read (a vendor tester, a campaign client) still reaches the
+  // campaigns it is a member of.
   '/pentest/**': {
-    permission: Permission.PentestRead,
+    permission: Permission.PentestCampaignsRead,
     module: Module.Pentest,
   },
   // Create/edit forms require write permission (route-level defense-in-depth;

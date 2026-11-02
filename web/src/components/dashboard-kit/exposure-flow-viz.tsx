@@ -9,32 +9,40 @@
  *
  * Hover, keyboard focus or a first tap lights an element and its path, dims
  * the rest and opens a tooltip (definition, figures, the list). The layout
- * follows the widget's own width (container queries, `flowBand`): three
- * bounded columns from 960 px, the core beside the outcomes with the sources
+ * follows the widget's own width (container queries, `flowBand`): from 900 px
+ * three columns that fill the card (sources at the left edge, outcomes at the
+ * right edge, the core taking the rest, its rings growing with it, the wires
+ * spanning the space between); the core beside the outcomes with the sources
  * above from 660 px. Below that (a phone) the answer comes first: actionable
  * now with its priority split as one bar and four figures, the outcomes as a
  * grid, the stages as a list with their state in words, then the sources.
+ * The core is three concentric rings read from the outside in (FlowRings):
+ * findings received by source, new or reopened by source, actionable now by
+ * priority class, the actionable total in the middle. A source keeps one
+ * colour on its row and its two arcs.
  * Sources are a ranked bar list (RankedBars) by findings or assets, by tool or
  * by instance. Wires are drawn between measured rows. "Show table" gives the
  * same figures as tables. Research: research/359-exposure-flow-phone.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Radio, Server, ShieldAlert, Wrench } from 'lucide-react'
+import { useMemo, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { useTranslation } from '@/context/i18n-provider'
-import { ViewSwitcher } from '@/features/shared/components/view-switcher'
+import { categoricalVar } from '@/lib/chart-palette'
 import { formatCount, formatMetric, formatRelativeTime } from '@/lib/format-metric'
 import { PRIORITY_CHART_COLORS, isPriorityClass } from '@/lib/priority-colors'
 import { SEVERITY_CHART_COLORS } from '@/lib/severity-colors'
 import { toDisplayText } from '@/lib/untrusted-text'
 import { cn } from '@/lib/utils'
 import {
+  FLOW_FRAME,
+  FRAME_INSET,
   FlowLink,
   FlowTip,
   tCount,
   dimClass,
   flowBand,
+  focusGlow,
   useElementWidth,
   useFlowFocus,
   useWireAnchors,
@@ -43,18 +51,22 @@ import {
   wireWidth,
   type FlowTipContent,
 } from './flow-parts'
-import { RankedBars, type RankedBarRow } from './ranked-bars'
+import { FlowRings, RingKey, type Ring } from './flow-rings'
+import { RankedBars } from './ranked-bars'
+import {
+  SourceViewSwitchers,
+  groupByInstance,
+  healthNote,
+  originLabel,
+  sourceName,
+  sourceRankRows,
+  sourceViewFor,
+  useSourceView,
+} from './source-view'
 import { StackedBar } from './stacked-bar'
 import { ActHere, StageStateIcon, useStageStateText } from './stage-state'
 import { ChartOrTable, usePrefersReducedMotion } from './viz-parts'
-import type {
-  FlowFigure,
-  FlowResult,
-  IntakeInstance,
-  IntakeSourceRow,
-  SourceHealth,
-  Stage,
-} from './types'
+import type { FlowFigure, FlowResult, IntakeInstance, Stage } from './types'
 
 /** Source rows with a value before "Show all": wide and mid cards, a phone. */
 const MAX_SOURCES = 6
@@ -63,163 +75,6 @@ const MAX_SOURCES_PHONE = 5
 /** An intake figure in a line of text: a whole phrase, 44 px tall on a phone or a touch screen. */
 const INTAKE_LINK = 'inline-flex min-h-7 items-center hover:underline pointer-coarse:min-h-11'
 const INTAKE_LINK_PHONE = 'inline-flex min-h-11 items-center hover:underline'
-
-/** Where the viewer's source view (measure, grouping) is remembered. */
-const SOURCE_VIEW_KEY = 'openctem.dashboard.flow.sources'
-
-type Translate = ReturnType<typeof useTranslation>['t']
-type Measure = 'findings' | 'assets'
-type Grouping = 'tool' | 'instance'
-
-/** The words of a source group. */
-export function originLabel(t: Translate, origin: string): string {
-  switch (origin) {
-    case 'sensor':
-      return t('dashboardKit.flow.origin.sensor', 'Sensor')
-    case 'import':
-      return t('dashboardKit.flow.origin.import', 'Import')
-    case 'connector':
-      return t('dashboardKit.flow.origin.connector', 'Connector')
-    case 'ci':
-      return t('dashboardKit.flow.origin.ci', 'CI')
-    case 'platform':
-      return t('dashboardKit.flow.origin.platform', 'Platform')
-    default:
-      return origin
-  }
-}
-
-/** The name of a source: its tool, or "Unnamed tool". */
-export function sourceName(t: Translate, s: IntakeSourceRow): string {
-  return s.tool === 'unknown' || !s.tool
-    ? t('dashboardKit.flow.unnamedTool', 'Unnamed tool')
-    : toDisplayText(s.tool, 80)
-}
-
-/** "Stale, last 3 days ago" / "Failed 2 hours ago", or null when healthy. */
-export function healthNote(
-  t: Translate,
-  s: { health: SourceHealth; last_at: string | null },
-  locale: string
-): string | null {
-  if (s.health === 'ok') return null
-  const when = formatRelativeTime(s.last_at, locale)
-  return s.health === 'failed'
-    ? t('dashboardKit.flow.health.failed', 'Failed {when}', { when })
-    : t('dashboardKit.flow.health.stale', 'Stale, last {when}', { when })
-}
-
-const HEALTH_RANK: Record<SourceHealth, number> = { ok: 0, stale: 1, failed: 2 }
-
-/** The worst of two healths. */
-function worst(a: SourceHealth, b: SourceHealth): SourceHealth {
-  return HEALTH_RANK[b] > HEALTH_RANK[a] ? b : a
-}
-
-/** One instance with what it fed, summed over the tools it reported for. */
-export interface InstanceGroup {
-  key: string
-  instance: IntakeInstance
-  received: number
-  assets: number
-  health: SourceHealth
-  last_at: string | null
-  tools: Array<{ name: string; received: number; assets: number }>
-}
-
-/** The sources regrouped by instance (sensor, CI project, connector, platform). */
-export function groupByInstance(t: Translate, sources: IntakeSourceRow[]): InstanceGroup[] {
-  const out = new Map<string, InstanceGroup>()
-  for (const s of sources) {
-    for (const i of s.instances ?? []) {
-      const key = `${i.kind}:${i.id}`
-      const g = out.get(key) ?? {
-        key,
-        instance: i,
-        received: 0,
-        assets: 0,
-        health: 'ok' as SourceHealth,
-        last_at: null as string | null,
-        tools: [],
-      }
-      g.received += i.received
-      g.assets += i.assets ?? 0
-      g.health = worst(g.health, i.health)
-      if (i.last_at && (!g.last_at || i.last_at > g.last_at)) g.last_at = i.last_at
-      g.tools.push({ name: sourceName(t, s), received: i.received, assets: i.assets ?? 0 })
-      out.set(key, g)
-    }
-  }
-  return [...out.values()]
-}
-
-function readSourceView(): { measure?: Measure; group?: Grouping } {
-  try {
-    const raw = window.localStorage.getItem(SOURCE_VIEW_KEY)
-    if (!raw) return {}
-    const v = JSON.parse(raw) as { measure?: unknown; group?: unknown }
-    return {
-      measure: v.measure === 'assets' || v.measure === 'findings' ? v.measure : undefined,
-      group: v.group === 'instance' || v.group === 'tool' ? v.group : undefined,
-    }
-  } catch {
-    return {}
-  }
-}
-
-function writeSourceView(v: { measure: Measure; group: Grouping }) {
-  try {
-    window.localStorage.setItem(SOURCE_VIEW_KEY, JSON.stringify(v))
-  } catch {
-    // Private mode or blocked storage: the view is not remembered.
-  }
-}
-
-/** The viewer's source view, remembered on this browser. */
-function useSourceView(): [Measure, Grouping, (m: Measure) => void, (g: Grouping) => void] {
-  const [measure, setMeasure] = useState<Measure>('findings')
-  const [group, setGroup] = useState<Grouping>('tool')
-  useEffect(() => {
-    const v = readSourceView()
-    if (v.measure) setMeasure(v.measure)
-    if (v.group) setGroup(v.group)
-  }, [])
-  const pickMeasure = useCallback(
-    (m: Measure) => {
-      setMeasure(m)
-      writeSourceView({ measure: m, group })
-    },
-    [group]
-  )
-  const pickGroup = useCallback(
-    (g: Grouping) => {
-      setGroup(g)
-      writeSourceView({ measure, group: g })
-    },
-    [measure]
-  )
-  return [measure, group, pickMeasure, pickGroup]
-}
-
-interface Arc {
-  key: string
-  value: number
-  d: string
-  labelX: number
-  labelY: number
-  color: string
-}
-
-const R = 112
-const GAP = 0.035
-const MIN_SWEEP = 0.09
-
-function arcPath(a0: number, a1: number): string {
-  const p = (a: number) => [R * Math.sin(a), -R * Math.cos(a)]
-  const [sx, sy] = p(a0)
-  const [ex, ey] = p(a1)
-  return `M${sx.toFixed(2)} ${sy.toFixed(2)} A${R} ${R} 0 ${a1 - a0 > Math.PI ? 1 : 0} 1 ${ex.toFixed(2)} ${ey.toFixed(2)}`
-}
 
 function classColor(key: string | undefined): string {
   return isPriorityClass(key) ? PRIORITY_CHART_COLORS[key] : 'var(--muted-foreground)'
@@ -232,42 +87,8 @@ function severityColor(key: string | undefined): string {
   )
 }
 
-/**
- * The arcs of the ring: one per class with findings, in fixed order, each at
- * least MIN_SWEEP so a small P0 stays visible, the largest centred at the
- * bottom, away from the wire joints at 9 and 3 o'clock.
- */
-export function ringArcs(classes: FlowFigure[]): Arc[] {
-  const parts = classes.filter((c) => c.value > 0)
-  const total = parts.reduce((s, c) => s + c.value, 0)
-  if (total === 0) return []
-  const n = parts.length
-  const gap = n > 1 ? GAP : 0
-  const spare = 2 * Math.PI - n * (MIN_SWEEP + gap)
-  const sweeps = parts.map((c) => MIN_SWEEP + (spare * c.value) / total)
-  let big = 0
-  parts.forEach((c, i) => {
-    if (c.value > parts[big].value) big = i
-  })
-  let before = 0
-  for (let i = 0; i < big; i++) before += sweeps[i] + gap
-  let a = Math.PI - (before + sweeps[big] / 2)
-  return parts.map((c, i) => {
-    const a0 = a
-    const a1 = a + sweeps[i]
-    a = a1 + gap
-    const mid = (a0 + a1) / 2
-    const lr = R + 26
-    return {
-      key: c.key ?? '',
-      value: c.value,
-      d: n === 1 ? `M0 ${-R} A${R} ${R} 0 1 1 -0.01 ${-R}` : arcPath(a0, a1),
-      labelX: lr * Math.sin(mid),
-      labelY: -lr * Math.cos(mid),
-      color: classColor(c.key),
-    }
-  })
-}
+/** A figure tile: a muted box that lights on hover (classes, outcomes). */
+const FLOW_TILE = 'rounded-md bg-muted/40 hover:bg-muted focus-visible:bg-muted'
 
 export function ExposureFlowViz({
   result,
@@ -334,12 +155,14 @@ function FlowChart({ result, scope }: { result: FlowResult; scope?: 'organizatio
   // exist before the wires measure them.
   const band = flowBand(useElementWidth(ref))
   const narrow = band === 'narrow'
-  const hasAssets = sources.some((s) => (s.assets ?? 0) > 0)
-  const hasInstances = sources.some((s) => (s.instances?.length ?? 0) > 0)
-  const m: Measure = hasAssets ? measure : 'findings'
-  const g: Grouping = hasInstances ? group : 'tool'
+  const { m, g, hasAssets, hasInstances } = sourceViewFor(sources, measure, group)
   const layout = useWireAnchors(ref, `${band}:${m}:${g}:${sources.length}:${result.open.value}`)
-  const arcs = useMemo(() => ringArcs(result.classes), [result.classes])
+  // A source's colour follows the source (its place in the read), never its rank.
+  const sourceColor = useMemo(() => {
+    const out = new Map<string, string>()
+    sources.forEach((s, i) => out.set(s.id, categoricalVar(i)))
+    return out
+  }, [sources])
   const actionableTotal = result.actionable.value
   const periodLabel = t('dashboardKit.flow.period', '{days} days', { days: result.days })
   const instances = useMemo(() => groupByInstance(t, sources), [t, sources])
@@ -377,11 +200,18 @@ function FlowChart({ result, scope }: { result: FlowResult; scope?: 'organizatio
 
   // What lights with what: a source lights its wire, the funnel and the
   // ring; a class its arc and the ring; an outcome its wire and the ring.
+  // A source (its row, or either of its arcs) lights its row, both arcs and
+  // its wire; a funnel figure lights its whole ring.
   const lit = (k: string): boolean => {
     if (!active) return false
     if (k === active) return true
-    if (k === 'ring') return /^(s|p|o|f):/.test(active)
-    if (k === 'funnel') return active.startsWith('s:') || active.startsWith('f:')
+    const src = /^[sn]:/.test(active) ? active.slice(2) : null
+    if (src && (k === `s:${src}` || k === `n:${src}` || k === `w:s:${src}`)) return true
+    if (active === 'f:received' && k.startsWith('s:')) return true
+    if (active === 'f:new' && k.startsWith('n:')) return true
+    if (active === 'f:actionable' && k.startsWith('p:')) return true
+    if (k === 'ring') return /^(s|n|p|o|f):/.test(active)
+    if (k === 'funnel') return /^(s|n|f):/.test(active)
     if (k.startsWith('w:')) return k.slice(2) === active
     return false
   }
@@ -429,8 +259,13 @@ function FlowChart({ result, scope }: { result: FlowResult; scope?: 'organizatio
       const s = sources.find((x) => `s:${x.id}` === active)
       if (!s) return null
       const total = m === 'assets' ? (s.assets ?? 0) : s.received
+      const allReceived = intake?.totals.received ?? 0
       const rows: Array<[string, string]> = [
         [t('dashboardKit.flow.tip.received', 'Findings received'), n(s.received)],
+        [
+          t('dashboardKit.flow.tip.shareReceived', 'Share of received'),
+          `${allReceived > 0 ? Math.round((100 * s.received) / allReceived) : 0}%`,
+        ],
         [t('dashboardKit.flow.tip.newOrReopened', 'New or reopened'), n(s.created + s.reopened)],
         [t('dashboardKit.flow.tip.seenAgain', 'Seen again'), n(s.still_detected)],
         [t('dashboardKit.flow.tip.notStored', 'Not stored'), n(s.not_stored)],
@@ -463,6 +298,28 @@ function FlowChart({ result, scope }: { result: FlowResult; scope?: 'organizatio
               ),
         link: { label: viewReceipts(s.receipts), href: s.drill },
         more: sensorActivity(s.instances),
+      }
+    }
+    if (active.startsWith('n:')) {
+      const s = sources.find((x) => `n:${x.id}` === active)
+      if (!s) return null
+      const v = s.created + s.reopened
+      const all = intake?.noise.new ?? 0
+      return {
+        title: sourceName(t, s),
+        rows: [
+          [t('dashboardKit.flow.tip.newOrReopened', 'New or reopened'), n(v)],
+          [
+            t('dashboardKit.flow.tip.shareNew', 'Share of new or reopened'),
+            `${all > 0 ? Math.round((100 * v) / all) : 0}%`,
+          ],
+          [t('dashboardKit.flow.tip.received', 'Findings received'), n(s.received)],
+        ],
+        definition: t(
+          'dashboardKit.flow.tip.newDef',
+          'Findings this source reported in the period that were new or reopened (the rest were seen again or not stored). An organization figure.'
+        ),
+        link: { label: viewReceipts(s.receipts), href: s.drill },
       }
     }
     if (active.startsWith('i:')) {
@@ -549,53 +406,21 @@ function FlowChart({ result, scope }: { result: FlowResult; scope?: 'organizatio
   const centreValue = activeClass ? activeClass.value : actionableTotal
 
   // ---- Sources: a ranked bar list ----
-  const unit = (count: number) =>
-    m === 'assets'
-      ? tCount(t, 'dashboardKit.flow.unit.assets', '{count} assets', '{count} asset', count, {
-          count: n(count),
-        })
-      : tCount(t, 'dashboardKit.flow.unit.findings', '{count} findings', '{count} finding', count, {
-          count: n(count),
-        })
-  const sourceRows: RankedBarRow[] =
-    g === 'instance'
-      ? instances.map((gr) => {
-          const value = m === 'assets' ? gr.assets : gr.received
-          const name = toDisplayText(gr.instance.name, 80)
-          const chip = originLabel(t, gr.instance.kind)
-          return {
-            key: `i:${gr.key}`,
-            label: name,
-            chip,
-            value,
-            display: n(value),
-            href: gr.instance.sensor_href ?? null,
-            health: gr.health,
-            note: healthNote(t, gr, locale),
-            unit: unit(value),
-          }
-        })
-      : sources.map((s) => {
-          const value = m === 'assets' ? (s.assets ?? 0) : s.received
-          const name = sourceName(t, s)
-          const chip = originLabel(t, s.origin)
-          return {
-            key: `s:${s.id}`,
-            label: name,
-            chip,
-            value,
-            display: n(value),
-            href: s.drill,
-            health: s.health,
-            note: healthNote(t, s, locale),
-            unit: unit(value),
-          }
-        })
+  const sourceRows = sourceRankRows(t, locale, {
+    sources,
+    instances,
+    m,
+    g,
+    color: (s) => sourceColor.get(s.id),
+  })
 
   const sourcesBlock = (
     <section
       aria-labelledby={`${tipId}-src`}
-      className="relative min-w-0 @min-[660px]:col-span-2 @min-[960px]:col-span-1"
+      className={cn(
+        'relative min-w-0 @min-[660px]:col-span-2 @min-[900px]:col-span-1 @min-[900px]:self-start',
+        FLOW_FRAME
+      )}
       data-testid="flow-sources"
     >
       <h3 id={`${tipId}-src`} className="mb-1 text-xs font-medium text-muted-foreground">
@@ -638,40 +463,16 @@ function FlowChart({ result, scope }: { result: FlowResult; scope?: 'organizatio
           </FlowLink>
         </p>
       )}
-      {intake && (hasAssets || hasInstances) && (
-        <div className="mb-1 flex flex-wrap gap-2">
-          {hasAssets && (
-            <ViewSwitcher
-              value={m}
-              onChange={setMeasure}
-              options={[
-                {
-                  value: 'findings',
-                  label: t('dashboardKit.flow.measure.findings', 'Findings'),
-                  icon: ShieldAlert,
-                },
-                {
-                  value: 'assets',
-                  label: t('dashboardKit.flow.measure.assets', 'Assets'),
-                  icon: Server,
-                },
-              ]}
-            />
-          )}
-          {hasInstances && (
-            <ViewSwitcher
-              value={g}
-              onChange={setGroup}
-              options={[
-                { value: 'tool', label: t('dashboardKit.flow.group.tool', 'Tool'), icon: Wrench },
-                {
-                  value: 'instance',
-                  label: t('dashboardKit.flow.group.instance', 'Source instance'),
-                  icon: Radio,
-                },
-              ]}
-            />
-          )}
+      {intake && (
+        <div className="mb-1">
+          <SourceViewSwitchers
+            m={m}
+            g={g}
+            hasAssets={hasAssets}
+            hasInstances={hasInstances}
+            setMeasure={setMeasure}
+            setGroup={setGroup}
+          />
         </div>
       )}
       {intake && sourceRows.length > 0 ? (
@@ -683,7 +484,7 @@ function FlowChart({ result, scope }: { result: FlowResult; scope?: 'organizatio
           // Every source is listed by default, a silent one included: a
           // tool that reported nothing is itself worth seeing.
           zerosOpen
-          listClassName="@min-[660px]:grid-cols-2 @min-[660px]:gap-x-4 @min-[960px]:grid-cols-1"
+          listClassName="@min-[660px]:grid-cols-2 @min-[660px]:gap-x-4 @min-[900px]:grid-cols-1"
           zeroLabel={(count) =>
             tCount(
               t,
@@ -738,7 +539,8 @@ function FlowChart({ result, scope }: { result: FlowResult; scope?: 'organizatio
               count: n(c.value),
             })}
             className={cn(
-              'grid min-h-11 content-center justify-items-start rounded-md bg-muted/40 px-2 py-1.5 hover:bg-muted',
+              'grid min-h-11 content-center justify-items-start px-2 py-1.5',
+              FLOW_TILE,
               dimClass(active, lit(k))
             )}
             {...bind(k)}
@@ -758,33 +560,112 @@ function FlowChart({ result, scope }: { result: FlowResult; scope?: 'organizatio
     </div>
   )
 
+  // ---- Rings: received and new by source, actionable by class ----
+  const pctOf = (v: number, total: number) => (total > 0 ? Math.round((100 * v) / total) : 0)
+  const rings: Ring[] = [
+    ...(intake
+      ? [
+          {
+            id: 'received',
+            parts: sources.map((s) => ({
+              key: `s:${s.id}`,
+              value: s.received,
+              color: sourceColor.get(s.id) ?? categoricalVar(-1),
+              href: s.drill,
+              aria: t(
+                'dashboardKit.flow.ring.receivedAria',
+                '{name}: {count} findings received, {share}% of received',
+                {
+                  name: sourceName(t, s),
+                  count: n(s.received),
+                  share: pctOf(s.received, intake.totals.received),
+                }
+              ),
+            })),
+          },
+          {
+            id: 'new',
+            parts: sources.map((s) => {
+              const v = s.created + s.reopened
+              return {
+                key: `n:${s.id}`,
+                value: v,
+                color: sourceColor.get(s.id) ?? categoricalVar(-1),
+                href: s.drill,
+                aria: t(
+                  'dashboardKit.flow.ring.newAria',
+                  '{name}: {count} new or reopened, {share}% of new or reopened',
+                  { name: sourceName(t, s), count: n(v), share: pctOf(v, intake.noise.new) }
+                ),
+              }
+            }),
+          },
+        ]
+      : []),
+    {
+      id: 'actionable',
+      parts: result.classes.map((c) => ({
+        key: `p:${c.key}`,
+        value: c.value,
+        color: classColor(c.key),
+        href: c.drill,
+        aria: t('dashboardKit.flow.arcAria', '{class}: {count} findings, {share}% of actionable', {
+          class: c.key ?? '',
+          count: n(c.value),
+          share: pctOf(c.value, actionableTotal),
+        }),
+      })),
+    },
+  ]
+  const ringsLabel = intake
+    ? t(
+        'dashboardKit.flow.ringsLabel',
+        'Findings received and new or reopened by source, actionable findings by priority class'
+      )
+    : t('dashboardKit.flow.ringLabel', 'Actionable findings by priority class')
+
   const headline = (
     <div
       className={cn('grid w-full gap-2', dimClass(active, lit('ring')))}
       data-k="ring"
       data-testid="flow-headline"
     >
-      <FlowLink
-        to={result.actionable.drill}
-        className="grid w-fit justify-items-start hover:underline"
-        {...bind('f:actionable')}
-      >
-        <span className="text-xs font-medium text-muted-foreground">
-          {t('dashboardKit.flow.funnel.actionable', 'Actionable now')}
-        </span>{' '}
-        <span
-          className="text-4xl font-semibold leading-none tracking-tight tabular-nums"
-          data-testid="flow-centre"
-        >
-          {n(actionableTotal)}
-        </span>
-      </FlowLink>
-      <span className="text-xs text-muted-foreground">
-        {t(
-          'dashboardKit.flow.headline.caption',
-          'Open findings with a priority class, counted now'
-        )}
-      </span>
+      <div className="flex items-center justify-between gap-3">
+        <div className="grid min-w-0 gap-2">
+          <FlowLink
+            to={result.actionable.drill}
+            className="grid w-fit justify-items-start hover:underline"
+            {...bind('f:actionable')}
+          >
+            <span className="text-xs font-medium text-muted-foreground">
+              {t('dashboardKit.flow.funnel.actionable', 'Actionable now')}
+            </span>{' '}
+            <span
+              className="text-4xl font-semibold leading-none tracking-tight tabular-nums"
+              data-testid="flow-centre"
+            >
+              {n(actionableTotal)}
+            </span>
+          </FlowLink>
+          <span className="text-xs text-muted-foreground">
+            {t(
+              'dashboardKit.flow.headline.caption',
+              'Open findings with a priority class, counted now'
+            )}
+          </span>
+        </div>
+        {/* The same rings, small: a tap lights a segment and opens its
+            tooltip; the figures below stay the links. */}
+        <FlowRings
+          rings={rings}
+          label={ringsLabel}
+          active={active}
+          lit={lit}
+          bind={bind}
+          interactive={false}
+          className="w-24 shrink-0"
+        />
+      </div>
       <StackedBar
         parts={result.classes.map((c) => ({
           key: c.key ?? '',
@@ -799,79 +680,27 @@ function FlowChart({ result, scope }: { result: FlowResult; scope?: 'organizatio
   )
 
   const ring = (
-    <div
-      className={cn('relative size-[clamp(15rem,24cqi,26rem)]', dimClass(active, lit('ring')))}
-      data-k="ring"
-    >
-      <span className="absolute left-[12%] top-1/2 size-px" data-wire-in="ring" aria-hidden />
-      <span className="absolute right-[12%] top-1/2 size-px" data-wire-out="ring" aria-hidden />
-      <svg
-        viewBox="-160 -160 320 320"
-        className="size-full overflow-visible"
-        role="group"
-        aria-label={t('dashboardKit.flow.ringLabel', 'Actionable findings by priority class')}
-      >
-        <circle r={R} fill="none" stroke="var(--border)" strokeWidth={arcs.length ? 0 : 18} />
-        {arcs.map((a) => {
-          const k = `p:${a.key}`
-          const share = actionableTotal > 0 ? Math.round((100 * a.value) / actionableTotal) : 0
-          const fig = result.classes.find((c) => c.key === a.key)
-          return (
-            <g key={a.key} className={dimClass(active, lit(k))}>
-              <path
-                d={a.d}
-                fill="none"
-                stroke={a.color}
-                strokeWidth={lit(k) ? 24 : 18}
-                className="cursor-pointer outline-none transition-[stroke-width] duration-200 focus-visible:[stroke-width:24] motion-reduce:transition-none"
-                role="link"
-                tabIndex={0}
-                aria-label={t(
-                  'dashboardKit.flow.arcAria',
-                  '{class}: {count} findings, {share}% of actionable',
-                  {
-                    class: a.key,
-                    count: n(a.value),
-                    share,
-                  }
-                )}
-                {...bind(k, '[data-k="ring"]')}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && fig?.drill) router.push(fig.drill)
-                }}
-                onClick={(e) => {
-                  const b = bind(k, '[data-k="ring"]')
-                  b.onClick(e)
-                  if (!e.defaultPrevented && fig?.drill) router.push(fig.drill)
-                }}
-              />
-              <text
-                x={a.labelX}
-                y={a.labelY}
-                textAnchor="middle"
-                dominantBaseline="middle"
-                className="fill-foreground text-xs font-semibold tabular-nums"
-                aria-hidden
-              >
-                <tspan className="fill-muted-foreground">{a.key} </tspan>
-                {n(a.value)}
-              </text>
-            </g>
-          )
-        })}
-      </svg>
-      <div className="absolute inset-0 grid place-content-center text-center">
+    <FlowRings
+      rings={rings}
+      label={ringsLabel}
+      active={active}
+      lit={lit}
+      bind={bind}
+      onOpen={(href) => router.push(href)}
+      wireAnchors
+      className={cn('w-[clamp(15rem,min(100%_-_6rem,34cqi),30rem)]', dimClass(active, lit('ring')))}
+      centre={
         <FlowLink
           to={activeClass ? activeClass.drill : result.actionable.drill}
           className="grid justify-items-center rounded-full hover:underline"
           {...bind('f:actionable')}
         >
-          <span className="text-xs font-medium text-muted-foreground">
+          <span className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground">
             {activeClass?.key ?? t('dashboardKit.flow.funnel.actionable', 'Actionable now')}
           </span>{' '}
           <span
             className={cn(
-              'text-[clamp(2.25rem,4.5cqi,3rem)] font-semibold leading-none tracking-tight tabular-nums',
+              'text-[clamp(1.75rem,12cqi,3.5rem)] font-semibold leading-none tracking-tight tabular-nums',
               activeClass && 'text-signal-text'
             )}
             data-testid="flow-centre"
@@ -882,8 +711,8 @@ function FlowChart({ result, scope }: { result: FlowResult; scope?: 'organizatio
             {t('dashboardKit.flow.byClass', 'by priority class')}
           </span>
         </FlowLink>
-      </div>
-    </div>
+      }
+    />
   )
 
   const funnel = intake && (
@@ -899,6 +728,7 @@ function FlowChart({ result, scope }: { result: FlowResult; scope?: 'organizatio
         value={n(intake.totals.received)}
         to={intake.drill}
         bind={bind('f:received')}
+        ring={0}
       />
       <span className="pb-1 text-muted-foreground" aria-hidden>
         →
@@ -908,6 +738,7 @@ function FlowChart({ result, scope }: { result: FlowResult; scope?: 'organizatio
         value={n(intake.noise.new)}
         to={intake.drill}
         bind={bind('f:new')}
+        ring={1}
       />
     </div>
   )
@@ -924,6 +755,7 @@ function FlowChart({ result, scope }: { result: FlowResult; scope?: 'organizatio
         <>
           {funnel}
           {ring}
+          <div className="w-full max-w-[26rem]">{classTiles}</div>
           {stages}
         </>
       )}
@@ -938,7 +770,8 @@ function FlowChart({ result, scope }: { result: FlowResult; scope?: 'organizatio
         key={o.key}
         to={o.fig.drill}
         className={cn(
-          'grid min-h-11 content-center gap-0.5 rounded-md bg-muted/40 px-2.5 py-1.5 hover:bg-muted',
+          'grid min-h-11 content-center gap-0.5 px-2.5 py-1.5',
+          FLOW_TILE,
           dimClass(active, lit(k)),
           className
         )}
@@ -971,7 +804,7 @@ function FlowChart({ result, scope }: { result: FlowResult; scope?: 'organizatio
   const outcomesBlock = (
     <section
       aria-labelledby={`${tipId}-out`}
-      className="relative min-w-0"
+      className={cn('relative min-w-0 @min-[660px]:self-start', FLOW_FRAME)}
       data-testid="flow-outcomes"
     >
       <h3 id={`${tipId}-out`} className="mb-2 text-xs font-medium text-muted-foreground">
@@ -994,52 +827,18 @@ function FlowChart({ result, scope }: { result: FlowResult; scope?: 'organizatio
           </div>
         </div>
       ) : (
-        <ul className="grid gap-0.5">
-          {outcomes.map((o, i) => {
-            const k = `o:${o.key}`
-            return (
-              <li key={o.key}>
-                {i === 3 && (
-                  <p className="mb-0.5 mt-2 px-2.5 text-xs text-muted-foreground">
-                    {t('dashboardKit.flow.closedIn', 'Closed in {period}', { period: periodLabel })}
-                  </p>
-                )}
-                <FlowLink
-                  to={o.fig.drill}
-                  className={cn(
-                    'grid min-h-11 grid-cols-[minmax(0,1fr)_auto] content-center items-center gap-x-2.5 gap-y-1 rounded-md px-2.5 py-1.5 hover:bg-muted/60 focus-visible:bg-muted/60',
-                    o.sub && 'ps-6',
-                    dimClass(active, lit(k))
-                  )}
-                  data-wire-in={k}
-                  {...bind(k)}
-                >
-                  <span className={cn('truncate text-sm', o.sub && 'text-muted-foreground')}>
-                    {o.label}
-                  </span>{' '}
-                  <span
-                    className={cn(
-                      'text-right font-semibold tabular-nums leading-none',
-                      o.sub ? 'text-base' : 'text-xl', // anatomy-ok: a sub-row figure is one step under its outcome
-                      o.tone === 'bad' && o.fig.value > 0 && 'text-destructive'
-                    )}
-                  >
-                    {n(o.fig.value)}
-                  </span>
-                  {o.key === 'open' && result.open.value > 0 && (
-                    <StackedBar
-                      parts={result.severity.map((r) => ({
-                        key: r.key ?? '',
-                        value: r.value,
-                        color: severityColor(r.key),
-                      }))}
-                      className="col-span-2 h-[3px] rounded-sm"
-                    />
-                  )}
-                </FlowLink>
-              </li>
-            )
-          })}
+        // A box per outcome, its label above its figure (the phone tile).
+        <ul className="grid gap-1">
+          {outcomes.map((o, i) => (
+            <li key={o.key}>
+              {i === 3 && (
+                <p className="mb-0.5 mt-2 px-2.5 text-xs text-muted-foreground">
+                  {t('dashboardKit.flow.closedIn', 'Closed in {period}', { period: periodLabel })}
+                </p>
+              )}
+              {tile(o, o.sub ? 'ms-4' : undefined)}
+            </li>
+          ))}
         </ul>
       )}
     </section>
@@ -1056,10 +855,10 @@ function FlowChart({ result, scope }: { result: FlowResult; scope?: 'organizatio
           // mid: the core beside the outcomes (core at the left edge, outcomes at
           // the right edge), the sources a row above.
           '@min-[660px]:grid-cols-[clamp(16rem,46cqi,32rem)_clamp(13rem,30cqi,22rem)] @min-[660px]:justify-between @min-[660px]:gap-x-[clamp(2.5rem,7cqi,5rem)]',
-          // wide: sources at the left edge, outcomes at the right edge, the core
-          // between them; the columns grow with the card (cqi) and the wires take
-          // the space left, so a wide card has no empty side gutters.
-          '@min-[960px]:grid-cols-[clamp(12rem,20cqi,26rem)_clamp(20rem,34cqi,46rem)_clamp(13rem,20cqi,26rem)] @min-[960px]:gap-x-[clamp(2.5rem,5cqi,5.5rem)]'
+          // wide: sources flush with the left edge, outcomes flush with the right
+          // edge, both at a reading width; the core takes every pixel between
+          // them, its rings grow with it and the wires span what is left.
+          '@min-[900px]:grid-cols-[clamp(16rem,24cqi,19rem)_minmax(0,1fr)_clamp(13rem,17cqi,16rem)] @min-[900px]:justify-stretch @min-[900px]:gap-x-3'
         )}
         data-testid="exposure-flow"
         data-band={band}
@@ -1079,13 +878,22 @@ function FlowChart({ result, scope }: { result: FlowResult; scope?: 'organizatio
               if (!from || !to) return null
               const w = wireStroke(s.health)
               const k = `w:s:${s.id}`
-              const d = wirePath(from.x + 6, from.y, to.x + 8, to.y)
+              const d = wirePath(from.x + FRAME_INSET, from.y, to.x + 2, to.y)
+              // Focused, the wire takes its source's colour (one source, one
+              // colour: bar, arcs, wire) and is the only wire that glows.
+              const own = sourceColor.get(s.id) ?? 'var(--signal)'
               return (
-                <g key={k} className={dimClass(active, lit(k))} data-wire={s.health}>
+                <g
+                  key={k}
+                  className={dimClass(active, lit(k))}
+                  data-wire={s.health}
+                  data-wire-key={k}
+                >
                   <path
                     d={d}
                     fill="none"
-                    stroke={lit(k) ? 'var(--signal)' : w.stroke}
+                    stroke={lit(k) ? own : w.stroke}
+                    style={lit(k) ? { filter: focusGlow(own) } : undefined}
                     strokeWidth={wireWidth(s.received, maxSource)}
                     strokeDasharray={w.dash}
                     strokeLinecap="round"
@@ -1114,9 +922,11 @@ function FlowChart({ result, scope }: { result: FlowResult; scope?: 'organizatio
                 <path
                   key={k}
                   className={dimClass(active, lit(k))}
-                  d={wirePath(from.x - 8, from.y, to.x - 4, to.y)}
+                  d={wirePath(from.x - 2, from.y, to.x - FRAME_INSET, to.y)}
                   fill="none"
+                  data-wire-key={k}
                   stroke={lit(k) ? 'var(--signal)' : w.stroke}
+                  style={lit(k) ? { filter: focusGlow('var(--signal)') } : undefined}
                   strokeWidth={wireWidth(o.fig.value, maxOutcome)}
                   strokeLinecap="round"
                 />
@@ -1151,15 +961,21 @@ function FunnelFigure({
   value,
   to,
   bind,
+  ring,
 }: {
   label: string
   value: string
   to: string | null | undefined
   bind: Record<string, unknown>
+  /** The ring this figure is split on (0 = outermost): a key glyph beside the label. */
+  ring: number
 }) {
   return (
     <FlowLink to={to} className="grid justify-items-center hover:underline" {...bind}>
-      <span className="text-xs text-muted-foreground">{label}</span>{' '}
+      <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+        <RingKey index={ring} />
+        {label}
+      </span>{' '}
       <span className="text-2xl font-semibold leading-tight tabular-nums">{value}</span>
     </FlowLink>
   )

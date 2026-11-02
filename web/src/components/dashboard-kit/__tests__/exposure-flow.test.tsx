@@ -1,7 +1,8 @@
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { ExposureFlowViz, ringArcs } from '../exposure-flow-viz'
+import { ExposureFlowViz } from '../exposure-flow-viz'
+import { ringEdgeInset, ringSegments, type RingPart } from '../flow-rings'
 import { IntakeViz } from '../intake-viz'
 import type { FlowResult, IntakeData, IntakeSourceRow } from '../types'
 
@@ -141,24 +142,45 @@ function hrefOf(name: RegExp | string): string | null {
   return screen.getByRole('link', { name }).getAttribute('href')
 }
 
-describe('ringArcs', () => {
-  it('draws one arc per class with findings, the largest centred at the bottom', () => {
-    const arcs = ringArcs(flow.classes)
-    expect(arcs.map((a) => a.key)).toEqual(['P0', 'P1', 'P2', 'P3'])
-    // P3 (the largest) is centred on 6 o'clock: its label sits straight below.
-    const p3 = arcs[3]
-    expect(Math.abs(p3.labelX)).toBeLessThan(0.01)
-    expect(p3.labelY).toBeGreaterThan(0)
+const part = (key: string, value: number): RingPart => ({ key, value, color: 'red', aria: key })
+
+describe('ringSegments', () => {
+  it('draws one segment per part with a value, the largest centred at the bottom', () => {
+    const segs = ringSegments(
+      flow.classes.map((c) => part(c.key ?? '', c.value)),
+      92,
+      18
+    )
+    expect(segs.map((x) => x.key)).toEqual(['P0', 'P1', 'P2', 'P3'])
+    // P3 (the largest) is centred on 6 o'clock.
+    const p3 = segs[3]
+    expect(Math.abs((p3.a0 + p3.a1) / 2 - Math.PI)).toBeLessThan(1e-9)
   })
 
-  it('leaves out an empty class and draws nothing without findings', () => {
-    expect(
-      ringArcs([
-        { key: 'P0', value: 0 },
-        { key: 'P1', value: 5 },
-      ]).map((a) => a.key)
-    ).toEqual(['P1'])
-    expect(ringArcs([{ key: 'P0', value: 0 }])).toEqual([])
+  it('keeps a visible gap after the round caps and a small part visible', () => {
+    const r = 140
+    const w = 12
+    const segs = ringSegments([part('a', 1000), part('b', 1), part('c', 400)], r, w)
+    for (let i = 0; i < segs.length; i++) {
+      const next = segs[(i + 1) % segs.length]
+      let gap = next.a0 - segs[i].a1
+      if (gap < 0) gap += 2 * Math.PI
+      // The gap minus both half-caps leaves about four viewBox units.
+      expect(gap * r - w).toBeGreaterThan(3.9)
+    }
+    expect(segs[1].a1 - segs[1].a0).toBeGreaterThan(0.019)
+  })
+
+  it('leaves out an empty part, closes a single part, draws nothing without values', () => {
+    expect(ringSegments([part('P0', 0), part('P1', 5)], 92, 18).map((x) => x.key)).toEqual(['P1'])
+    expect(ringSegments([part('P1', 5)], 92, 18)[0].a1).toBeCloseTo(2 * Math.PI)
+    expect(ringSegments([part('P0', 0)], 92, 18)).toEqual([])
+  })
+
+  it('puts the wire joints on the outer edge of the outer ring', () => {
+    // Three rings: outer radius 140 + half of 12 = 146 of 160.
+    expect(ringEdgeInset(3)).toBeCloseTo(14 / 320)
+    expect(ringEdgeInset(1)).toBeCloseTo((160 - 139) / 320)
   })
 })
 
@@ -217,6 +239,18 @@ describe('ExposureFlowViz on a phone (narrow band)', () => {
     expect(screen.queryByRole('group', { name: /by priority class/ })).not.toBeInTheDocument()
   })
 
+  it('shows the same rings small beside the headline: decorative, a tap explains', () => {
+    render(<ExposureFlowViz result={flow} />)
+    const rings = within(screen.getByTestId('flow-headline')).getByTestId('flow-rings')
+    expect(rings).toHaveAttribute('aria-hidden', 'true')
+    expect(rings.querySelectorAll('[data-ring]')).toHaveLength(3)
+    expect(rings.querySelector('[role="link"]')).toBeNull()
+    const seg = rings.querySelector('[data-seg="p:P0"]') as Element
+    fireEvent.pointerDown(seg, { pointerType: 'touch' })
+    fireEvent.click(seg)
+    expect(within(screen.getByRole('tooltip')).getByText('Actionable: P0')).toBeInTheDocument()
+  })
+
   it('shows the actionable total once, without the old period caption', () => {
     render(<ExposureFlowViz result={{ ...flow, open: { value: 800, drill: flow.open.drill } }} />)
     expect(screen.getAllByText('791')).toHaveLength(1)
@@ -225,7 +259,7 @@ describe('ExposureFlowViz on a phone (narrow band)', () => {
 
   it('says how unhealthy sources are in words, not only colour', () => {
     render(<ExposureFlowViz result={flow} />)
-    expect(screen.getByText(/Stale, last 3 days ago/)).toBeInTheDocument()
+    expect(screen.getByText(/Stale, last receipt 3 days ago/)).toBeInTheDocument()
     expect(screen.getByText(/Failed/)).toBeInTheDocument()
     expect(screen.getAllByText('Unnamed tool').length).toBeGreaterThan(0)
   })
@@ -388,17 +422,19 @@ describe('sources: ranked bars by findings or assets, by tool or instance', () =
   it('ranks by findings first and lists every source, the silent ones last', async () => {
     const user = userEvent.setup()
     render(<ExposureFlowViz result={withAssets} />)
+    // A discovery tool with assets but no findings says so, it is never a "0" folded away.
     expect(ranked()).toEqual([
       's:sensor:nuclei',
       's:platform:version-match',
-      's:sensor:dnsx',
       's:sensor:subfinder',
+      's:sensor:dnsx',
     ])
-    expect(screen.getByTestId('ranked-zeros')).toHaveTextContent('Hide 2 with nothing')
+    expect(screen.getByRole('link', { name: /^subfinder Sensor 9,000 assets/ })).toBeInTheDocument()
+    expect(screen.getByTestId('ranked-zeros')).toHaveTextContent('Hide 1 with nothing')
     await user.click(screen.getByTestId('ranked-zeros'))
-    expect(ranked()).toEqual(['s:sensor:nuclei', 's:platform:version-match'])
+    expect(ranked()).toEqual(['s:sensor:nuclei', 's:platform:version-match', 's:sensor:subfinder'])
     expect(screen.getByTestId('ranked-zeros')).toHaveTextContent(
-      '+2 sources with nothing in 30 days'
+      '+1 source with nothing in 30 days'
     )
     expect(hrefOf(/^version-match Platform 59 findings/)).toBe(withAssets.intake?.sources[3].drill)
   })
@@ -417,7 +453,8 @@ describe('sources: ranked bars by findings or assets, by tool or instance', () =
     render(<ExposureFlowViz result={withAssets} />)
     await user.click(screen.getByRole('button', { name: 'Source instance' }))
     expect(ranked()).toEqual(['i:sensor:s1', 'i:platform:platform', 'i:sensor:s2'])
-    const failing = screen.getByRole('link', { name: /^dc-02 Sensor 0 findings/ })
+    // An instance lists the tools it ran under its name (instance, then tools).
+    const failing = screen.getByRole('link', { name: /^dc-02 Sensor 3,000 assets subfinder/ })
     expect(failing).toHaveAttribute('href', '/sensors/s2')
     expect(failing).toHaveAttribute('data-health', 'failed')
   })
@@ -483,6 +520,119 @@ describe('ExposureFlowViz on a wide card', () => {
     expect(hrefOf(/^Actionable now 791 by priority class$/)).toBe(flow.actionable.drill)
   })
 
+  it('reads from the outside in: received by source, new by source, actionable by class', () => {
+    render(<ExposureFlowViz result={flow} />)
+    const rings = screen.getByRole('group', { name: /by source, actionable findings/ })
+    expect(rings.querySelectorAll('[data-ring]')).toHaveLength(3)
+    expect(rings.querySelectorAll('[data-testid="ring-track"]')).toHaveLength(3)
+    expect(
+      screen.getByRole('link', { name: 'nuclei: 402 findings received, 67% of received' })
+    ).toBeInTheDocument()
+    // created 20 + reopened 2 of the 312 new or reopened.
+    expect(
+      screen.getByRole('link', { name: 'nuclei: 22 new or reopened, 7% of new or reopened' })
+    ).toBeInTheDocument()
+    // The source keeps one colour on its row and both arcs.
+    const row = screen.getByRole('link', { name: /^nuclei Sensor 402 findings/ })
+    const bar = row.querySelector('[data-testid="ranked-bar"]') as HTMLElement
+    const outer = rings.querySelector('[data-seg="s:sensor:nuclei"]')
+    const middle = rings.querySelector('[data-seg="n:sensor:nuclei"]')
+    expect(bar.style.background).toBe('var(--viz-cat-1)')
+    expect(outer?.getAttribute('stroke')).toBe('var(--viz-cat-1)')
+    expect(middle?.getAttribute('stroke')).toBe('var(--viz-cat-1)')
+  })
+
+  it('lights a source on either arc: its row and both arcs stay, the rest dims', () => {
+    render(<ExposureFlowViz result={flow} />)
+    const arc = screen.getByRole('link', { name: /^nuclei: 22 new or reopened/ })
+    act(() => arc.focus())
+    const tip = screen.getByRole('tooltip')
+    expect(within(tip).getByText('Share of new or reopened')).toBeInTheDocument()
+    expect(within(tip).getByText('7%')).toBeInTheDocument()
+    expect(within(tip).getByRole('link', { name: 'View 3 receipts' })).toHaveAttribute(
+      'href',
+      intake.sources[0].drill
+    )
+    const dimmed = (sel: string) => !!document.querySelector(sel)?.closest('.opacity-30')
+    expect(dimmed('[data-seg="s:sensor:nuclei"]')).toBe(false)
+    expect(dimmed('[data-seg="n:sensor:nuclei"]')).toBe(false)
+    expect(dimmed('[data-seg="s:connector:cloud"]')).toBe(true)
+    expect(dimmed('[data-seg="p:P0"]')).toBe(true)
+    const row = screen.getByRole('link', { name: /^nuclei Sensor 402 findings/ })
+    expect(row.className).not.toContain('opacity-30')
+  })
+
+  it('an outer arc lights the middle arc of its source', () => {
+    render(<ExposureFlowViz result={flow} />)
+    act(() => screen.getByRole('link', { name: /^cloud: 173 findings received/ }).focus())
+    const dimmed = (sel: string) => !!document.querySelector(sel)?.closest('.opacity-30')
+    expect(dimmed('[data-seg="n:connector:cloud"]')).toBe(false)
+    expect(dimmed('[data-seg="n:sensor:nuclei"]')).toBe(true)
+    expect(within(screen.getByRole('tooltip')).getByText('Share of received')).toBeInTheDocument()
+  })
+
+  it('a focused source keeps its colour on its wire, the only wire that glows', () => {
+    render(<ExposureFlowViz result={flow} />)
+    act(() => screen.getByRole('link', { name: /^nuclei Sensor 402 findings/ }).focus())
+    const wire = (k: string) =>
+      document.querySelector(`[data-wire-key="w:s:${k}"] path`) as SVGPathElement
+    const bar = screen
+      .getByRole('link', { name: /^nuclei Sensor 402 findings/ })
+      .querySelector('[data-testid="ranked-bar"]') as HTMLElement
+    const arc = document.querySelector('[data-seg="s:sensor:nuclei"]')
+    // One source, one colour: bar, arc and wire.
+    expect(wire('sensor:nuclei').getAttribute('stroke')).toBe(bar.style.background)
+    expect(wire('sensor:nuclei').getAttribute('stroke')).toBe(arc?.getAttribute('stroke'))
+    expect(wire('sensor:nuclei').style.filter).toContain('drop-shadow')
+    expect(wire('connector:cloud').getAttribute('stroke')).not.toBe('var(--viz-cat-1)')
+    expect(wire('connector:cloud').style.filter).toBe('')
+    expect(document.querySelectorAll('[data-wire-key] path[style*="drop-shadow"]')).toHaveLength(1)
+  })
+
+  it('draws a wire proportional to its volume, 1 to 6 px', async () => {
+    const { wireWidth } = await import('../flow-parts')
+    expect(wireWidth(100, 100)).toBe(6)
+    expect(wireWidth(50, 100)).toBe(3.5)
+    expect(wireWidth(0, 100)).toBe(1)
+  })
+
+  it('shows each outcome as a box, its label above its figure', () => {
+    render(<ExposureFlowViz result={flow} />)
+    const open = within(screen.getByTestId('flow-outcomes')).getByRole('link', {
+      name: /^Open 791/,
+    })
+    const [label, figure] = [...open.children] as HTMLElement[]
+    expect(label).toHaveTextContent('Open')
+    expect(figure).toHaveTextContent('791')
+  })
+
+  it('frames the sources and the outcomes alike: one thin dashed frame each', () => {
+    render(<ExposureFlowViz result={flow} />)
+    for (const id of ['flow-sources', 'flow-outcomes']) {
+      const cls = screen.getByTestId(id).className
+      expect(cls).toContain('@min-[660px]:border-dashed')
+      expect(cls).toContain('@min-[660px]:border-border-strong')
+      expect(cls).toContain('@min-[660px]:rounded-lg')
+      expect(cls).toContain('@min-[660px]:p-1.5')
+    }
+  })
+
+  it('a funnel figure lights its whole ring', () => {
+    render(<ExposureFlowViz result={flow} />)
+    act(() => screen.getByRole('link', { name: /^Findings received 602$/ }).focus())
+    const dimmed = (sel: string) => !!document.querySelector(sel)?.closest('.opacity-30')
+    expect(dimmed('[data-seg="s:sensor:nuclei"]')).toBe(false)
+    expect(dimmed('[data-seg="s:ci:unknown"]')).toBe(false)
+    expect(dimmed('[data-seg="n:sensor:nuclei"]')).toBe(true)
+  })
+
+  it('a scoped read draws the actionable ring alone, never organization volumes', () => {
+    render(<ExposureFlowViz result={{ ...flow, intake: null }} />)
+    const rings = screen.getByRole('group', { name: 'Actionable findings by priority class' })
+    expect(rings.querySelectorAll('[data-ring]')).toHaveLength(1)
+    expect(rings.querySelector('[data-seg^="s:"]')).toBeNull()
+  })
+
   it('lights a class on focus: centre swaps, the tooltip opens with its list, Escape closes it', () => {
     render(<ExposureFlowViz result={flow} />)
     const arc = screen.getByRole('link', { name: 'P0: 9 findings, 1% of actionable' })
@@ -528,6 +678,85 @@ describe('IntakeViz', () => {
       intake.sources[1].drill
     )
     expect(screen.getByRole('tooltip')).toBeInTheDocument()
+  })
+
+  const discovery: IntakeData = {
+    ...intake,
+    sources: [
+      ...intake.sources,
+      source({
+        id: 'sensor:subfinder',
+        tool: 'subfinder',
+        origin: 'sensor',
+        kind: 'discovery',
+        received: 0,
+        created: 0,
+        reopened: 0,
+        assets: 412,
+        instances: [
+          {
+            id: 's1',
+            kind: 'sensor',
+            name: 'edge-01',
+            received: 0,
+            assets: 412,
+            health: 'ok',
+            last_at: null,
+            sensor_href: '/sensors/s1',
+          },
+        ],
+      }),
+      source({ id: 'sensor:naabu', tool: 'naabu', origin: 'sensor', received: 0, assets: 0 }),
+      source({ id: 'sensor:asn', tool: 'asn', origin: 'sensor', received: 0, assets: 0 }),
+    ],
+  }
+
+  it('keeps each figure beside its name: rows at a fixed width, the curves take the rest', () => {
+    const { container } = render(<IntakeViz result={{ shape: 'intake', intake: discovery }} />)
+    const grid = container.querySelector('[data-band]') as HTMLElement
+    // The rows' column is a fixed 20 rem, the curves' column takes what is left.
+    expect(grid.className).toContain('@min-[560px]:grid-cols-[20rem_minmax(2.5rem,1fr)_')
+    // The sources and the summary keep the thin dashed frame.
+    expect(screen.getByTestId('intake-sources').className).toContain('@min-[560px]:border-dashed')
+    expect(screen.getByTestId('intake-summary').className).toContain('@min-[560px]:border-dashed')
+  })
+
+  it('shows assets for a discovery tool and folds the sources with nothing', () => {
+    render(<IntakeViz result={{ shape: 'intake', intake: discovery }} />)
+    expect(screen.getByRole('link', { name: /^subfinder Sensor 412 assets/ })).toHaveAttribute(
+      'href',
+      discovery.sources[3].drill
+    )
+    expect(screen.getByTestId('ranked-zeros')).toHaveTextContent(
+      '+2 sources with nothing in 30 days'
+    )
+    expect(screen.queryByRole('link', { name: /^naabu/ })).not.toBeInTheDocument()
+    // The per-source table gives discovery tools an Assets column.
+    expect(screen.getAllByRole('columnheader', { name: 'Assets' }).length).toBeGreaterThan(0)
+  })
+
+  it('orders discovery tools by the assets they found', () => {
+    const more: IntakeData = {
+      ...discovery,
+      sources: [
+        ...discovery.sources,
+        source({ id: 'sensor:dnsx', tool: 'dnsx', origin: 'sensor', received: 0, assets: 9 }),
+      ],
+    }
+    render(<IntakeViz result={{ shape: 'intake', intake: more }} />)
+    const keys = [...document.querySelectorAll('[data-testid="ranked-bars"] li')].map((li) =>
+      li.getAttribute('data-key')
+    )
+    expect(keys.indexOf('s:sensor:subfinder')).toBeLessThan(keys.indexOf('s:sensor:dnsx'))
+  })
+
+  it('groups by instance with its tools under its name (instance, then tools)', async () => {
+    const user = userEvent.setup()
+    render(<IntakeViz result={{ shape: 'intake', intake: discovery }} />)
+    await user.click(screen.getByRole('button', { name: 'Source instance' }))
+    expect(
+      screen.getByRole('link', { name: /^edge-01 Sensor 412 assets subfinder/ })
+    ).toHaveAttribute('href', '/sensors/s1')
   })
 })
 
@@ -606,11 +835,16 @@ describe('flow layout bands', () => {
     const fs = await import('node:fs')
     const path = await import('node:path')
     const { FLOW_MID, FLOW_WIDE } = await import('../flow-parts')
-    for (const file of ['exposure-flow-viz.tsx', 'intake-viz.tsx']) {
+    const { INTAKE_SIDE } = await import('../intake-viz')
+    const files: Array<[string, number]> = [
+      ['exposure-flow-viz.tsx', FLOW_MID],
+      ['intake-viz.tsx', INTAKE_SIDE],
+    ]
+    for (const [file, side] of files) {
       const src = fs.readFileSync(path.join(__dirname, '..', file), 'utf8')
       const used = [...src.matchAll(/@min-\[(\d+)px\]/g)].map((m) => Number(m[1]))
-      for (const w of used) expect([FLOW_MID, FLOW_WIDE, 420, 1100]).toContain(w)
-      expect(used).toContain(FLOW_MID)
+      for (const w of used) expect([FLOW_MID, FLOW_WIDE, INTAKE_SIDE, 420, 1100]).toContain(w)
+      expect(used).toContain(side)
     }
   })
 
@@ -619,8 +853,9 @@ describe('flow layout bands', () => {
     const note = screen.getAllByText(/Stale, last|Failed/)[0]
     const row = note.closest('a')
     expect(row).not.toBeNull()
-    // The note sits in the name block, not beside the count at the far edge.
-    expect(row?.querySelector('[data-wire-out]')?.contains(note)).toBe(false)
+    // The note sits on its own line under the name, not beside the count.
+    expect(row?.children[1]?.contains(note)).toBe(false)
+    expect(row?.children[0]?.contains(note)).toBe(false)
     expect(container.querySelector('[data-band]')).toHaveAttribute('data-band', 'narrow')
   })
 })

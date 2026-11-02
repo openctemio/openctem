@@ -105,6 +105,8 @@ var legacyMinimumTier = map[string]admin.AdminRole{
 	"POST /api/v1/admin/tenants/{tenantId}/suspend":                          admin.AdminRoleOpsAdmin,
 	"POST /api/v1/admin/tenants/{tenantId}/unsuspend":                        admin.AdminRoleOpsAdmin,
 	"POST /api/v1/admin/tenants/{tenantId}/users":                            admin.AdminRoleOpsAdmin,
+	"POST /api/v1/admin/tenants/{tenantId}/owner-invitation/resend":          admin.AdminRoleOpsAdmin,
+	"DELETE /api/v1/admin/tenants/{tenantId}/owner-invitation":               admin.AdminRoleOpsAdmin,
 	"POST /api/v1/admin/threat-intel/sync":                                   admin.AdminRoleOpsAdmin,
 	"POST /api/v1/admin/users/{id}/break-glass-test":                         admin.AdminRoleSuperAdmin,
 	"POST /api/v1/admin/users/{id}/reset-credentials":                        admin.AdminRoleSuperAdmin,

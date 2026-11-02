@@ -233,8 +233,8 @@ vars:
     component: api
     group: "Database (PostgreSQL)"
     type: int
-    default: "5"
-    description: "Maximum idle connections kept in the pool."
+    default: "same as `DB_MAX_OPEN_CONNS`"
+    description: "Maximum idle connections kept in the pool. Defaults to `DB_MAX_OPEN_CONNS`: a smaller value makes every burst of requests close and reopen connections (a TCP and SCRAM handshake and a new server process each)."
   - name: DB_MAX_OPEN_CONNS
     component: api
     group: "Database (PostgreSQL)"
@@ -1034,11 +1034,16 @@ vars:
     type: string
     secret: true
     description: "Secret key. Required with `s3` / `minio`."
+  - name: PLATFORM_CA_CERT_FILE
+    component: api
+    group: "Sensors"
+    type: path
+    description: "PEM bundle of the CA certificate(s) that sign the platform's TLS certificate when it is not publicly trusted (the gateway in TLS mode `internal`, where the Compose stack points it at the exported root CA, or your own private CA). Public certificates only: a file that holds a private key is refused. The install commands install it and pin its root (`SENSOR_CA_SHA256`), and `GET /api/v1/sensors/platform-ca` serves it to sensors that hold the pin. Re-read when the file changes. Empty: the certificate is publicly trusted. Guide: `docs/how-to/sensors-behind-a-private-ca.md`."
   - name: SENSOR_CA_CERT_FILE
     component: api
     group: "Sensors"
-    type: string
-    description: "Private CA certificate (PEM) the install snippets install on the sensor host. Set it with the gateway in TLS mode `internal` (the Compose stack points it at the exported root CA)."
+    type: path
+    description: "Deprecated name of `PLATFORM_CA_CERT_FILE` on the API, read only when that is unset (startup warns). Rename it. On a sensor host `SENSOR_CA_CERT_FILE` keeps its own meaning: the CA file the sensor trusts."
   - name: CI_RUNNER_LATEST_VERSION
     component: api
     group: "Sensors"
@@ -1433,12 +1438,6 @@ vars:
     type: int
     default: "50"
     description: "Domains of one organization queried per sweep; the rest rotate in on later runs."
-  - name: CTEM_ID_FEED_URL
-    component: api
-    group: "Discovery feeds and background jobs"
-    type: string
-    default: "https://ctem.org/source.json"
-    description: "CTEM-ID catalog feed mirrored daily."
   - name: EASM_DNS_CHECK_INTERVAL
     component: api
     group: "Discovery feeds and background jobs"
@@ -1616,6 +1615,17 @@ vars:
     group: "Integrations"
     type: string
     description: "Comma-separated private ranges that outbound calls of the API (webhook and notification channels, self-hosted Jira or GitLab, an SMTP relay) may reach, for example `10.20.0.0/16`. Each entry must be a CIDR inside `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16` or `fc00::/7`, otherwise the API refuses to start. The list applies to every organization, so name only the subnets of your own services; the API refuses to start when it is set together with `SIGNUP_MODE=open`. Loopback, link-local, CGNAT and cloud metadata addresses stay blocked whatever the list says."
+  - name: OPENCTEM_HTTPSEC_FEED_PROXY
+    component: api
+    group: "Integrations"
+    type: url
+    secret: true
+    description: "HTTPS proxy for the platform's own feed fetchers only (vulnerability bundles, CISA KEV, EPSS, CTEM-ID catalog, public program feed, release feed), for a network whose only way out is a proxy: `http://[user:password@]proxy.corp:3128` or `https://...`, no path or query. Requests to an https destination go through it with CONNECT (TLS stays end to end); the destination is still checked first (blocked address literals, dangerous names and names whose local answers are in a blocked range are refused; a name the local resolver cannot answer is left to the proxy). The proxy may be on a private address; loopback, link-local and metadata addresses are refused. Webhooks, integrations, identity providers and anything an organization configures never use it, and `HTTPS_PROXY`/`HTTP_PROXY` are not read. The API refuses to start on a value that is not a proxy URL. Empty (the default): direct connections."
+  - name: OPENCTEM_HTTPSEC_FEED_NO_PROXY
+    component: api
+    group: "Integrations"
+    type: string
+    description: "Comma-separated hosts or domains (`mirror.corp.example`, `.corp.example`) that the feed fetchers reach directly even when `OPENCTEM_HTTPSEC_FEED_PROXY` is set, for example an internal bundle mirror (its private range still needs `OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS`)."
   - name: ACCOUNT_PORTAL_URL
     component: api
     group: "Internal entitlements API"

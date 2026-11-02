@@ -86,29 +86,17 @@ func (r *TenantRepository) CreateFirstOwnerMembership(ctx context.Context, m *te
 		return err
 	}
 
-	var invitedBy sql.NullString
-	if m.InvitedBy() != nil {
-		invitedBy = sql.NullString{String: m.InvitedBy().String(), Valid: true}
+	err = insertOwnerMembershipTx(ctx, tx, m)
+	if err != nil {
+		return err
 	}
+	// A new first owner ends any ownership invitation still waiting
+	// (docs/architecture/organization-ownership-invitations.md).
 	if _, err = tx.ExecContext(ctx, `
-		INSERT INTO tenant_members (id, user_id, tenant_id, role, invited_by, joined_at)
-		VALUES ($1, $2, $3, $4, $5, $6)`,
-		m.ID().String(), m.UserID().String(), tenantID, m.Role().String(), invitedBy, m.JoinedAt(),
-	); err != nil {
-		if isConstraintViolation(err, breakGlassConsoleOnly) {
-			return tenant.ErrBreakGlassMembership
-		}
-		return fmt.Errorf("failed to create membership: %w", err)
-	}
-	if _, err = tx.ExecContext(ctx, `
-		INSERT INTO user_roles (user_id, tenant_id, role_id, assigned_at, assigned_by)
-		SELECT $1, $2, r.id, $3, $4
-		FROM roles r
-		WHERE r.slug = $5 AND r.is_system = TRUE AND r.tenant_id IS NULL
-		ON CONFLICT (user_id, tenant_id, role_id) DO NOTHING`,
-		m.UserID().String(), tenantID, m.JoinedAt(), invitedBy, m.Role().String(),
-	); err != nil {
-		return fmt.Errorf("failed to create user role: %w", err)
+		UPDATE organization_owner_invitations
+		   SET status = 'canceled', responded_at = $2, updated_at = $2
+		 WHERE tenant_id = $1 AND status = 'pending'`, tenantID, m.JoinedAt()); err != nil {
+		return fmt.Errorf("cancel ownership invitation: %w", err)
 	}
 	if err = tx.Commit(); err != nil {
 		return fmt.Errorf("failed to commit first owner: %w", err)
