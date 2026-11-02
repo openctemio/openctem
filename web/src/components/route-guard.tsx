@@ -127,19 +127,23 @@ export function RouteGuard({ children }: RouteGuardProps) {
     return { hasAccess: true, deniedReason: null }
   }, [routeConfig, can, hasModuleAccess])
 
-  // Before the first bootstrap of this organization: an unprotected route
-  // renders at once; a protected one waits. Rendering its page before the
-  // check let it fire reads the person may not make (403s, each a refused-
-  // action audit row) and flash its content before the access notice.
-  if (!isDataReady) {
-    if (!routeConfig) return <>{children}</>
+  // Whether access was decided once for this organization. Until then an
+  // unprotected route renders at once and a protected one waits: rendering its
+  // page before the check let it fire reads the person may not make (403s,
+  // each a refused-action audit row) and flash its content before the notice.
+  // After that, a background refresh (permissions changed, a module switched)
+  // keeps the page mounted so a half-filled form is not lost; the check runs
+  // again when the refresh lands.
+  const loading = !isDataReady || permissionsLoading || modulesLoading
+  const [decidedOnce, setDecidedOnce] = React.useState(false)
+  React.useEffect(() => {
+    if (!isDataReady) setDecidedOnce(false)
+    else if (!loading) setDecidedOnce(true)
+  }, [isDataReady, loading])
+
+  if (loading) {
+    if (!routeConfig || (isDataReady && decidedOnce)) return <>{children}</>
     return <MainRegion aria-busy="true" className="flex-1" data-route-checking="" />
-  }
-  // A background refresh (permissions changed, a module switched) keeps the
-  // page mounted, so a half-filled form is not lost; the check runs when the
-  // refresh lands.
-  if (permissionsLoading || modulesLoading) {
-    return <>{children}</>
   }
 
   if (!accessCheck.hasAccess && routeConfig) {
