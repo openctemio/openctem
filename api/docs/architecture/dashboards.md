@@ -282,9 +282,22 @@ widget has `widget_type` `metric` or `note` and a `config` of this form
 
 | Route | Who | Numbers |
 |---|---|---|
+| `GET /api/v1/me/dashboards/home` | any signed-in member; the organization list only with `dashboards:org:view` or `:manage`, the figures only with `dashboard:read` | the same lists and the same figures as the per-dashboard routes, for the same caller (no query path of its own) |
 | `GET /api/v1/me/dashboards/{id}/data` | `dashboard:read` and the dashboard's owner (another person's dashboard is 404) | the caller's own data scope; per-metric permission applies (below) |
 | `GET /api/v1/organization/dashboards/{id}/data` | `dashboards:org:view` (403 without), inside the audience (404 outside) | the whole organization |
 | `POST /api/v1/me/dashboards/widget-preview` | `dashboard:read` | one spec, the caller's own data scope (400 when the spec would be refused on save) |
+
+The dashboard home opens with `GET /api/v1/me/dashboards/home?choice=<kind>:<id>`:
+one response with `personal`, `organization` (absent when the caller cannot
+read organization dashboards), `landing` and the landing dashboard's `data`.
+The server applies the landing rule: the remembered `choice` while it is in
+the caller's lists, else the caller's own default, else the organization
+default (or its first dashboard), else the caller's first own dashboard. A
+malformed, deleted, foreign or out-of-audience `choice` is ignored without a
+word, so it tells nothing about what exists. When the figures cannot be read
+at that moment (busy, no `dashboard:read`) `data` is left out and the page
+reads the dashboard's `/data` route, which reports why. The page seeds its
+cache from the response and does not wait for the bootstrap.
 
 A personal read also needs the permission of what a metric counts:
 `findings:read` for finding metrics, `assets:read` for asset metrics
@@ -1414,8 +1427,8 @@ its ends sit side by side, and the rows it joins exist before it is measured.
 
 | Band (visual width) | Exposure flow | Intake panel |
 |---|---|---|
-| narrow, under 660 px | one column in reading order: the first three sources and "N more", the received to actionable figures, the ring (at most 18 rem, 78 % of the width), the stages (three then two per row under 420 px, five in a row above), the outcomes; no wires | sources, then the summary; the health note under each source's name; no wires |
-| mid, 660 to 899 px | the first three sources in one row above; the core (figures, ring, stages) beside the outcomes, wires from the ring to the outcomes | sources (`clamp(15rem, 34cqi, 52rem)`) at the left edge and summary (`clamp(14rem, 30cqi, 44rem)`) at the right edge, the wires across the space between |
+| narrow, under 660 px | one column in reading order: the first three sources and "N more", the received to actionable figures, the ring (at most 18 rem, 78 % of the width), the stages (three then two per row under 420 px, five in a row above), the outcomes; no wires | under 560 px: sources, then the summary; the health note under each source's name; no wires |
+| mid, 660 to 899 px | the first three sources in one row above; the core (figures, ring, stages) beside the outcomes, wires from the ring to the outcomes | from 560 px (`INTAKE_SIDE`, a full-width card in a 1024 px window): the source rows in a dashed frame at a fixed 20 rem at the left edge, so each row (kind icon, name, kind chip, figure, bar) is one unit and its figure never drifts from its name; the summary in a dashed frame at the right edge (`clamp(13rem, 22cqi, 18rem)`); the curves take every pixel between (`minmax(2.5rem, 1fr)`) and grow with the card |
 | wide, 900 px and more (a full-width card from a 1280 px window with the sidebar open) | three columns that fill the card: sources in a thin dashed frame (`border-border-strong`, `rounded-lg`, `p-1.5`) flush with the left padding at a reading width (`clamp(16rem, 24cqi, 19rem)`, so a source's name, kind and figure fit and its status wraps under it, never cut off), outcomes in the same dashed frame flush with the right padding (`clamp(13rem, 17cqi, 16rem)`), each outcome a box with its label above its figure (the phone's tile), the core taking every pixel between (`minmax(0, 1fr)`); the rings grow with the core and the wires span the rest, from the sources frame to the outer ring and from the ring to the outcomes frame | same as mid |
 
 The rings are `clamp(15rem, min(100% - 6rem, 34cqi), 30rem)` from the mid
@@ -1431,6 +1444,15 @@ and is the only wire with a glow (`focusGlow`, shared with the ring
 segments). The DOM order is the reading and focus
 order in every band (no visual reordering). The noise and per-source panels
 of the intake widget sit side by side from 1100 px of widget width.
+
+Both widgets draw their sources with the same pieces (`source-view.tsx` and
+`RankedBars`): rank by findings or assets and group by tool or by instance
+(one remembered view for both), an instance row listing the tools it ran
+under its name (instance, then tools), a discovery tool with assets but no
+findings showing its assets ("412 assets") instead of 0 and ordered by them,
+and healthy sources with nothing in the period folded into "+N sources with
+nothing in 30 days". The intake's per-source table adds an Assets column
+when a source reported assets.
 
 Widget titles are `h2` (the page title is the `h1`), so the sections inside a
 widget (`h3`) keep the heading order.

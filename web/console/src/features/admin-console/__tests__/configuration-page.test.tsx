@@ -93,7 +93,9 @@ describe('Configuration page', () => {
 
   it('filters to the settings that need a restart', async () => {
     render(<ConfigurationPage />)
-    await userEvent.setup().click(screen.getByRole('tab', { name: 'Needs a restart' }))
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'Show: All' }))
+    await user.click(screen.getByRole('menuitemradio', { name: 'Needs a restart' }))
     expect(screen.queryByText('Sign-up policy')).not.toBeInTheDocument()
     expect(screen.getByText('Public address')).toBeInTheDocument()
   })

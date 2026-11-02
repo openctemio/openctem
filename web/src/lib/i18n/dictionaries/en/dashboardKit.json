@@ -129,6 +129,7 @@
   "dashboardKit.heatmap.more": "More",
   "dashboardKit.intake.allFindings": "All findings",
   "dashboardKit.intake.allReceipts": "All receipts",
+  "dashboardKit.intake.col.assets": "Assets",
   "dashboardKit.intake.col.closed": "Resolved",
   "dashboardKit.intake.col.last": "Last",
   "dashboardKit.intake.col.new": "New",
