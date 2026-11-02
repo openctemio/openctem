@@ -27,8 +27,9 @@ const (
 
 // Asset is what the mapping reads of an exposure's linked asset.
 type Asset struct {
-	Type  asset.AssetType
-	Scope asset.Scope
+	Type    asset.AssetType
+	SubType string
+	Scope   asset.Scope
 	// InternetFacing: the asset is marked internet accessible or its
 	// exposure is public.
 	InternetFacing bool
@@ -147,7 +148,9 @@ func mapSystem(a *Asset) (Mapping, bool) {
 	case asset.ScopePartner:
 		return Mapping{}, false
 	}
-	if a.Type == asset.AssetTypeFirewall {
+	// A firewall is the stored pair network/firewall; the legacy firewall type
+	// name resolves to the same pair.
+	if pair := asset.CanonicalPair(a.Type, a.SubType); pair.Type == asset.AssetTypeNetwork && pair.SubType == "firewall" {
 		return Mapping{CodeEXP3, BasisAssetType}, true
 	}
 	if a.Scope == asset.ScopeCloud {

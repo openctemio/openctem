@@ -54,6 +54,8 @@ func TestMap(t *testing.T) {
 		{"shadow system", Input{EventType: exposure.EventTypeWebInterfaceExposed, Asset: sys(asset.AssetTypeWebsite, asset.ScopeShadow, true)}, CodeEXP5, BasisAssetScope},
 		{"firewall", Input{EventType: exposure.EventTypeServiceDetected, Asset: sys(asset.AssetTypeFirewall, asset.ScopeInternal, true)}, CodeEXP3, BasisAssetType},
 		{"cloud firewall is a gateway", Input{EventType: exposure.EventTypePortOpen, Asset: sys(asset.AssetTypeFirewall, asset.ScopeCloud, true)}, CodeEXP3, BasisAssetType},
+		{"firewall as the stored pair", Input{EventType: exposure.EventTypeServiceDetected, Asset: &Asset{Type: asset.AssetTypeNetwork, SubType: "firewall", Scope: asset.ScopeInternal, InternetFacing: true}}, CodeEXP3, BasisAssetType},
+		{"network router is not a gateway", Input{EventType: exposure.EventTypeServiceDetected, Asset: &Asset{Type: asset.AssetTypeNetwork, SubType: "router", Scope: asset.ScopeInternal, InternetFacing: true}}, "", ""},
 		{"cloud api", Input{EventType: exposure.EventTypeAPIExposed, Asset: sys(asset.AssetTypeAPI, asset.ScopeCloud, true)}, CodeEXP4, BasisAssetScope},
 		{"cloud mcp server", Input{EventType: exposure.EventTypeMCPServerExposed, Asset: sys(asset.AssetTypeService, asset.ScopeCloud, true)}, CodeEXP4, BasisAssetScope},
 		{"partner system", Input{EventType: exposure.EventTypePortOpen, Asset: sys(asset.AssetTypeHost, asset.ScopePartner, true)}, "", ""},
