@@ -3753,6 +3753,9 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	s.Tenant.SetInvitationTeams(s.Group)
 	// Ownership transfer: owner asks, the member accepts with step-up.
 	s.Tenant.SetOwnershipTransferRepository(repos.OwnershipTransfer)
+	// Ownership invitations: an organization created for an existing
+	// account waits until that account accepts.
+	s.Tenant.SetOwnerInvitationRepository(repos.Tenant)
 
 	// Sensor pairing approvals need step-up re-authentication and notify
 	// every administrator (RFC-052 D-2, D-6).

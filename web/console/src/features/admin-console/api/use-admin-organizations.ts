@@ -9,6 +9,7 @@ import type {
   AdminOrganization,
   AdminOrganizationList,
   AdminOrganizationUserList,
+  AdminOwnerInvitationResult,
   CreatedOrganization,
   CreateOrganizationInput,
 } from '../types'
@@ -53,10 +54,29 @@ export function useOrganizationUsers(id: string | null) {
  * SWR: the response may carry a one-time setup token that must not be cached.
  */
 export function createOrganizationUser(id: string, input: AdminCreateOrganizationUserInput) {
-  return adminFetch<AdminCreatedOrganizationUser>(`/tenants/${id}/users`, {
-    method: 'POST',
-    body: input,
-  })
+  return adminFetch<AdminCreatedOrganizationUser | AdminOwnerInvitationResult>(
+    `/tenants/${id}/users`,
+    {
+      method: 'POST',
+      body: input,
+    }
+  )
+}
+
+/** Sends the pending (or expired) ownership invitation again (ops_admin+, step-up). */
+export function resendOwnerInvitation(id: string) {
+  return adminFetch<AdminOwnerInvitationResult>(
+    `/tenants/${encodeURIComponent(id)}/owner-invitation/resend`,
+    { method: 'POST' }
+  )
+}
+
+/** Withdraws the pending ownership invitation (ops_admin+, step-up). */
+export function cancelOwnerInvitation(id: string) {
+  return adminFetch<AdminOwnerInvitationResult>(
+    `/tenants/${encodeURIComponent(id)}/owner-invitation`,
+    { method: 'DELETE' }
+  )
 }
 
 /**
