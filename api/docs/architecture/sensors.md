@@ -1140,8 +1140,11 @@ compose file):
   vendor passwords as files (`SENSOR_API_KEY_FILE`, `LDAP_PASSWORD_FILE`),
   one data volume at `/var/lib/openctem` (state and outbox), a `doctor` check
   before `-daemon`, and no local policy or seccomp profile (a collector takes
-  no scan jobs and runs no tool). The Helm tab says the chart bundles the
-  scanner only.
+  no scan jobs and runs no tool). The default image is private, so the
+  docker run, Compose and Kubernetes snippets say how to log in to the
+  registry (Kubernetes: a pull secret and a commented `imagePullSecrets`) and
+  link the collector's guide (`<docs>/sensors/asset-collector/`). The Helm tab
+  says the chart bundles the scanner only.
 
 ### Hardened installs: the sensor's seccomp profile
 
