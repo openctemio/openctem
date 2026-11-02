@@ -4,12 +4,16 @@ import { test, expect } from '../fixtures/authenticated-page'
 /**
  * The exposure flow and the intake panel follow their own card width (api
  * docs/architecture/dashboards.md, "Exposure flow and intake", layout bands):
- * at each card width the columns fill the card (no empty side gutters from 960 px up), never overlap, the ring stays inside its
+ * at each card width the columns fill the card (no empty side gutters from 900 px up), never overlap, the ring stays inside its
  * column, the card never scrolls sideways, and a wire starts right after the
  * row it leaves (no long gap between a source and its curve on a wide card).
+ * On a wide card the sources column keeps a reading width with no text cut
+ * off, and every curve touches both of its columns: a source wire runs from
+ * the sources box to the outer ring, an outcome wire from the ring to its
+ * outcome.
  */
 
-const WIDTHS = [480, 720, 960, 1200, 1440, 1600, 1920] as const
+const WIDTHS = [480, 720, 900, 960, 1200, 1440, 1600, 1920] as const
 
 /** Largest empty gutter (px) between the card's content box and the composition. */
 const MAX_GUTTER = 32
@@ -70,11 +74,32 @@ async function measure(page: Page, index: number) {
     }
     const layer = [...root.children].find((c) => c.tagName.toLowerCase() === 'svg')
     const origin = root.getBoundingClientRect()
-    const starts = [...(layer?.querySelectorAll('path') ?? [])]
+    const curves = [...(layer?.querySelectorAll('path') ?? [])]
       .filter((p) => !p.classList.contains('animate-flow-dash'))
-      .map((p) => /^M([\d.-]+) ([\d.-]+)/.exec(p.getAttribute('d') ?? ''))
-      .filter((m): m is RegExpExecArray => !!m)
-      .map((m) => [origin.left + Number(m[1]), origin.top + Number(m[2])])
+      .map((p) => (p.getAttribute('d') ?? '').match(/-?[\d.]+/g)?.map(Number) ?? [])
+      .filter((n) => n.length >= 4)
+      .map((n) => ({
+        x1: origin.left + n[0],
+        y1: origin.top + n[1],
+        x2: origin.left + n[n.length - 2],
+      }))
+    const starts = curves.map((c) => [c.x1, c.y1])
+    // Where the curves meet their columns (wide card only).
+    const sources = root.querySelector('[data-testid="flow-sources"]')
+    const outcomes = root.querySelector('[data-testid="flow-outcomes"]')
+    const sb = sources ? box(sources) : null
+    const ob = outcomes ? box(outcomes) : null
+    const rb = ring ? box(ring) : null
+    const sourceWires = rb ? curves.filter((c) => c.x1 < rb.l) : []
+    const outcomeWires = rb ? curves.filter((c) => c.x1 > rb.l) : []
+    const cut = sources
+      ? [...sources.querySelectorAll('*')]
+          .filter((e) => {
+            const s = getComputedStyle(e)
+            return s.textOverflow === 'ellipsis' && e.scrollWidth > e.clientWidth + 1
+          })
+          .map((e) => (e.textContent ?? '').trim().slice(0, 40))
+      : []
     // From each source row's label block to the wire leaving that row.
     const gaps = [...root.querySelectorAll('[data-wire-out^="s:"]')].flatMap((out) => {
       const row = out.closest('a')
@@ -101,6 +126,14 @@ async function measure(page: Page, index: number) {
       ringInside,
       wires: starts.length,
       gaps,
+      sourcesWidth: sb ? Math.round(sb.r - sb.l) : 0,
+      cut,
+      // Source wires: start at the sources box, end on the ring's outer edge.
+      sourceStart: sb ? sourceWires.map((c) => Math.round(c.x1 - sb.r)) : [],
+      sourceEnd: rb ? sourceWires.map((c) => Math.round(c.x2 - rb.l)) : [],
+      ringWidth: rb ? Math.round(rb.r - rb.l) : 0,
+      // Outcome wires: end at their outcome's box.
+      outcomeEnd: ob ? outcomeWires.map((c) => Math.round(ob.l - c.x2)) : [],
     }
   })
 }
@@ -144,7 +177,7 @@ test(
           expect(m.overflow, `${at}: sideways scroll`).toBeLessThanOrEqual(0)
           expect(m.overlaps, `${at}: columns overlap`).toEqual([])
           expect(m.ringInside, `${at}: ring outside its column`).toBe(true)
-          if (m.band !== 'narrow' && w >= 960) {
+          if (m.band !== 'narrow' && w >= 900) {
             expect(m.leftGutter, `${at}: empty gutter before the sources`).toBeLessThanOrEqual(
               MAX_GUTTER
             )
@@ -153,8 +186,26 @@ test(
             )
           }
           if (m.band === 'narrow') expect(m.wires, `${at}: wires on one column`).toBe(0)
+          if (index === 0 && m.band === 'wide') {
+            expect(m.sourcesWidth, `${at}: sources column width`).toBeGreaterThanOrEqual(240)
+            expect(m.sourcesWidth, `${at}: sources column width`).toBeLessThanOrEqual(310)
+            expect(m.cut, `${at}: source text cut off`).toEqual([])
+            for (const d of m.sourceStart)
+              expect(Math.abs(d), `${at}: a source wire leaves its box`).toBeLessThanOrEqual(4)
+            for (const d of m.sourceEnd) {
+              expect(d, `${at}: a source wire reaches the ring`).toBeGreaterThanOrEqual(0)
+              expect(d, `${at}: a source wire reaches the ring`).toBeLessThanOrEqual(
+                m.ringWidth * 0.1
+              )
+            }
+            for (const d of m.outcomeEnd) {
+              expect(d, `${at}: an outcome wire reaches its outcome`).toBeGreaterThanOrEqual(-24)
+              expect(d, `${at}: an outcome wire reaches its outcome`).toBeLessThanOrEqual(8)
+            }
+          }
+          // The figure, the row padding and the sources box padding sit between.
           for (const g of m.gaps)
-            expect(g, `${at}: a wire starts far from its source`).toBeLessThanOrEqual(80)
+            expect(g, `${at}: a wire starts far from its source`).toBeLessThanOrEqual(96)
         }
       }
     } finally {
