@@ -1015,7 +1015,7 @@ func TestMFA_OrganizationPolicy(t *testing.T) {
 		requireAll(tn)
 		other, _ := tenant.NewTenant("Other", "cross-other", "creator")
 		h.sessions.sessions[res.SessionID].SetIDPTenant(other.ID()) // issued by another tenant's IdP
-		if _, err := h.svc.ExchangeToken(context.Background(), auth.ExchangeTokenInput{RefreshToken: res.RefreshToken, TenantID: tn.ID().String()}); !errors.Is(err, auth.ErrMFAEnrollmentRequired) {
+		if _, err := h.svc.ExchangeToken(context.Background(), auth.ExchangeTokenInput{RefreshToken: res.RefreshToken, TenantID: tn.ID().String()}); !errors.Is(err, auth.ErrOwnSignInRequired) {
 			t.Fatalf("a foreign IdP's session must be refused, got %v", err)
 		}
 	})

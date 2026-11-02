@@ -53,7 +53,9 @@ func TestFederatedSession_SSOEnforcement_IssuingOrgOnly(t *testing.T) {
 		{"org A own IdP session -> org A (SSO enforced) allowed", session.AuthMethodSSO, "A", "A", "member", true, nil, "sso"},
 		{"social OAuth session -> org A (SSO enforced) refused", session.AuthMethodSSO, "", "A", "member", true, auth.ErrSSORequired, ""},
 		{"social OAuth session -> org A (not enforced) allowed as password", session.AuthMethodSSO, "", "A", "member", false, nil, "password"},
-		{"org B session -> org A (not enforced) allowed as password", session.AuthMethodSAML, "B", "A", "admin", false, nil, "password"},
+		// Org B's IdP skipped the account's own password and second factor; org A
+		// never chose that IdP, so it wants the account's own sign-in.
+		{"org B session -> org A (not enforced) needs the account's own sign-in", session.AuthMethodSAML, "B", "A", "admin", false, auth.ErrOwnSignInRequired, ""},
 		{"org B session -> org A OWNER needs its own second factor, not a foreign IdP session", session.AuthMethodSAML, "B", "A", "owner", true, auth.ErrSSOBreakGlassNeedsMFA, ""},
 	}
 
@@ -147,13 +149,13 @@ func TestFederatedSession_MFARequirement_IssuingOrgOnly(t *testing.T) {
 		return h, a, b, res
 	}
 
-	t.Run("org B SAML session -> org A requiring 2FA: 2FA required", func(t *testing.T) {
+	t.Run("org B SAML session -> org A requiring 2FA: the account's own sign-in required", func(t *testing.T) {
 		for _, enrolled := range []bool{false, true} {
 			h, a, b, res := setup(t, enrolled)
 			federate(h.sessions.sessions[res.SessionID], session.AuthMethodSAML, b.ID())
 			_, err := h.svc.ExchangeToken(context.Background(), auth.ExchangeTokenInput{RefreshToken: res.RefreshToken, TenantID: a.ID().String()})
-			if !errors.Is(err, auth.ErrMFAEnrollmentRequired) {
-				t.Fatalf("enrolled=%v: want ErrMFAEnrollmentRequired, got %v", enrolled, err)
+			if !errors.Is(err, auth.ErrOwnSignInRequired) {
+				t.Fatalf("enrolled=%v: want ErrOwnSignInRequired, got %v", enrolled, err)
 			}
 		}
 	})
