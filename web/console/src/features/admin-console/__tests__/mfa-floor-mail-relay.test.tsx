@@ -118,9 +118,9 @@ describe('two-factor floor', () => {
     expect(screen.getByLabelText('Everyone')).toBeDisabled()
   })
 
-  it('is listed under Settings in the console navigation', () => {
-    const settings = adminNav.find((s) => s.title === 'Settings')!.items.map((i) => i.url)
-    expect(settings).toContain('/system/two-factor')
+  it('is listed in the settings rail of the console navigation', () => {
+    const settings = adminNav.filter((s) => s.rail === 'settings').flatMap((s) => s.items)
+    expect(settings.map((i) => i.url)).toContain('/system/two-factor')
   })
 })
 
