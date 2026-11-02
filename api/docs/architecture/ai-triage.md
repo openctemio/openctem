@@ -180,9 +180,15 @@ than one provider call with its own retries).
 
 ## What the verdict changes
 
-Nothing automatically. A confident false-positive verdict (likelihood at
-least 0.9, no validation warning) on a medium or low finding becomes a
-pending false-positive request that a person approves or rejects. The
+Nothing automatically. AI triage is the `triage` use case
+([AI use cases](ai-use-cases.md)): `off` refuses every path (request
+`AI_USE_CASE_OFF`, bulk, automatic triage, and a queued row fails with
+`ai_use_case_off` before the call), and only the fields within its data class
+ceiling (default `internal`: no code snippet) reach the model. Only in
+`auto_apply`, at or above its minimum confidence, a confident false-positive
+verdict (likelihood at least 0.9, no validation warning) on a medium or low
+finding becomes a pending false-positive request that a person approves or
+rejects; in `suggest` (the default) the result card is the suggestion. The
 verdict never changes the priority class. A result with validation warnings
 (coerced output, prompt-injection markers in the finding, a proposed
 severity change) is flagged `needs_review`, audited, and side-effect
