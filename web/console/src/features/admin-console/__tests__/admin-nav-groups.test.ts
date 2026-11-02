@@ -85,3 +85,16 @@ describe('console navigation groups', () => {
     expect(isSettingsRailPath('/', visible)).toBe(false)
   })
 })
+
+describe('platform sensors navigation', () => {
+  const urls = (role: 'readonly' | 'super_admin') =>
+    visibleAdminNav({ id: 'a', email: 'a@x', name: 'A', role })
+      .flatMap((s) => s.items)
+      .map((i) => i.url)
+
+  it('lists Platform sensors first in Scanning, gated by the sensors read permission', () => {
+    const scanning = adminNav.find((s) => s.title === 'Scanning')!.items
+    expect(scanning[0]).toMatchObject({ url: '/sensors', permission: 'platform.sensors.read' })
+    expect(urls('readonly')).toContain('/sensors')
+  })
+})
