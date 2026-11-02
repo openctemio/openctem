@@ -182,7 +182,6 @@
   "validation.overview.description": "Whether fixes hold and controls work, and what is waiting for you.",
   "validation.overview.module.attack_simulation": "Attack simulation",
   "validation.overview.module.control_testing": "Control testing",
-  "validation.overview.module.mitre_coverage": "ATT&CK coverage",
   "validation.overview.module.pentest": "Pentest campaigns",
   "validation.overview.modulesOff.link": "Turn on in Modules",
   "validation.overview.modulesOff.one": "{list} is switched off.",

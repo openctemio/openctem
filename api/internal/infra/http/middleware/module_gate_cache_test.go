@@ -2,6 +2,9 @@ package middleware
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -90,5 +93,22 @@ func TestModuleGate_InvalidationDuringReadWins(t *testing.T) {
 	p.states = map[string]string{"pentest": ModuleReasonDisabled}
 	if g.IsEnabled(ctx, "t1", "pentest") {
 		t.Fatal("a pre-toggle answer was stored after the invalidation")
+	}
+}
+
+// An installation-wide module the platform has off answers 403
+// MODULE_NOT_ENABLED "disabled by the platform", not a 404.
+func TestRequireModule_DisabledByPlatform(t *testing.T) {
+	p := &snapProvider{states: map[string]string{"pentest": ModuleReasonDisabledByPlatform}, cacheable: true}
+	g := NewModuleGate(p, time.Minute)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/x", nil).WithContext(context.WithValue(context.Background(), TenantIDKey, "t1"))
+	g.RequireModule("pentest")(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		t.Error("the handler ran for a module the platform disabled")
+	})).ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden || !strings.Contains(rec.Body.String(), "MODULE_NOT_ENABLED") ||
+		!strings.Contains(rec.Body.String(), "disabled by the platform") ||
+		!strings.Contains(rec.Body.String(), ModuleReasonDisabledByPlatform) {
+		t.Fatalf("status %d body %s", rec.Code, rec.Body.String())
 	}
 }

@@ -1,7 +1,6 @@
 package routes
 
 import (
-	"context"
 	"net/http"
 	"time"
 
@@ -10,7 +9,6 @@ import (
 	infrahttp "github.com/openctemio/openctem/api/internal/infra/http"
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
-	moduledom "github.com/openctemio/openctem/api/pkg/domain/module"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
 )
@@ -249,13 +247,7 @@ func sensorControlV2Handler(h Handlers, log *logger.Logger) *handler.SensorContr
 	if h.Ingest == nil && h.Command == nil {
 		return nil
 	}
-	var suppressionsEnabled func(ctx context.Context, tenantID string) bool
-	if h.ModuleGate != nil {
-		suppressionsEnabled = func(ctx context.Context, tenantID string) bool {
-			return h.ModuleGate.IsEnabled(ctx, tenantID, moduledom.ModuleSuppressions)
-		}
-	}
-	ctl := handler.NewSensorControlV2Handler(h.Ingest, h.Command, h.Suppression, suppressionsEnabled, log)
+	ctl := handler.NewSensorControlV2Handler(h.Ingest, h.Command, h.Suppression, log)
 	if h.ProxyPool != nil {
 		ctl.SetEgress(h.ProxyPool.Service())
 	}

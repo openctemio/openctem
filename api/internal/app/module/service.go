@@ -58,6 +58,7 @@ type ModuleService struct {
 	wsBroadcaster    WSBroadcaster
 	cacheInvalidator ModuleCacheInvalidator
 	entitlements     EntitlementReader
+	platform         PlatformModules
 	logger           *logger.Logger
 
 	toggleLocks   map[string]*sync.Mutex
@@ -74,6 +75,17 @@ type EntitlementReader interface {
 	NotEntitled(ctx context.Context, tenantID string) (map[string]*time.Time, error)
 }
 
+// PlatformModules reports the installation switch of a platform-scoped module
+// (Definition.Scope). An error means the switch could not be read: the module
+// is then off (fail closed).
+type PlatformModules interface {
+	PlatformModuleOff(ctx context.Context, moduleID string) (bool, error)
+}
+
+// SetPlatformModules wires the installation switches. Without it a platform
+// module is off (fail closed): nothing says the platform enabled it.
+func (s *ModuleService) SetPlatformModules(p PlatformModules) { s.platform = p }
+
 // deadlineEntitlementReader is an EntitlementReader that also tells when its
 // answer next changes without a write (*entitlement.Service).
 type deadlineEntitlementReader interface {
@@ -85,6 +97,10 @@ const (
 	ReasonDisabledByAdmin = "disabled_by_admin"
 	ReasonNotEntitled     = "not_entitled"
 	ReasonUnavailable     = "unavailable"
+	// ReasonDisabledByPlatform: an installation-wide module the platform
+	// administrator has off (or whose state could not be read): off for
+	// every organization, whatever its plan or preferences say.
+	ReasonDisabledByPlatform = "disabled_by_platform"
 	// ReasonReadOnlyGrace: lost recently; reads and export still work, writes
 	// are refused and the module's jobs are stopped.
 	ReasonReadOnlyGrace = "read_only_grace"
@@ -301,7 +317,7 @@ func (s *ModuleService) GetTenantEnabledModules(ctx context.Context, tenantID st
 	}
 	notEntitled := make([]string, 0)
 	for _, m := range topLevel {
-		if r := states[m.ID()]; !m.IsCore() && (r == ReasonNotEntitled || r == ReasonUnavailable) {
+		if r := states[m.ID()]; !m.IsCore() && (r == ReasonNotEntitled || r == ReasonUnavailable || r == ReasonDisabledByPlatform) {
 			notEntitled = append(notEntitled, m.ID())
 		}
 	}
@@ -436,7 +452,7 @@ func (s *ModuleService) buildTenantModuleConfigFromMaps(tenantID string, allModu
 
 		isEnabled := states[m.ID()] == "" || m.IsCore()
 		r := states[m.ID()]
-		entitled := m.IsCore() || (r != ReasonNotEntitled && r != ReasonUnavailable && r != ReasonReadOnlyGrace)
+		entitled := m.IsCore() || entitledState(r)
 
 		// Build sub-module info with INDEPENDENT enabled states.
 		// The admin UI needs the sub-module's OWN state (not combined with parent)
@@ -556,7 +572,7 @@ func (s *ModuleService) applyTenantModuleUpdates(ctx context.Context, tenantID s
 		// Within the entitlement only: a module that is not available for the
 		// organization cannot be switched on by it.
 		if u.IsEnabled && !m.IsCore() {
-			if r := states[u.ModuleID]; r == ReasonNotEntitled || r == ReasonUnavailable || r == ReasonReadOnlyGrace {
+			if !entitledState(states[u.ModuleID]) {
 				return nil, fmt.Errorf("%w: '%s' is not available for this organization", moduledom.ErrModuleNotEntitled, m.Name())
 			}
 		}
@@ -913,7 +929,7 @@ func (s *ModuleService) TenantModuleStateSnapshot(ctx context.Context, tenantID 
 			cacheable = false
 		}
 		for _, o := range overrides {
-			if !o.IsEnabled {
+			if !o.IsEnabled && isSwitchable(o.ModuleID) {
 				states[o.ModuleID] = ReasonDisabledByAdmin
 			}
 		}
@@ -952,6 +968,24 @@ func (s *ModuleService) TenantModuleStateSnapshot(ctx context.Context, tenantID 
 			} else {
 				states[id] = ReasonNotEntitled
 			}
+		}
+	}
+	// An installation-wide module the platform has off is off for every
+	// organization: it wins over the plan and the organization's preference.
+	// A switch that cannot be read is off, and the answer is not cached.
+	for _, id := range moduledom.PlatformModuleIDs() {
+		if s.platform == nil {
+			states[id] = ReasonDisabledByPlatform
+			continue
+		}
+		off, err := s.platform.PlatformModuleOff(ctx, id)
+		if err != nil {
+			s.logger.Warn("platform module switch unavailable; treating the module as off (fail-closed)",
+				"module", id, "error", err)
+			cacheable = false
+		}
+		if err != nil || off {
+			states[id] = ReasonDisabledByPlatform
 		}
 	}
 	// A module cannot be on while a module it hard-requires is off: it takes
@@ -1245,7 +1279,7 @@ func (s *ModuleService) buildPresetDiff(ctx context.Context, tenantID string, p 
 // entitledState reports whether an off reason still lets the organization
 // switch the module on (only its own preference turned it off).
 func entitledState(reason string) bool {
-	return reason != ReasonNotEntitled && reason != ReasonUnavailable && reason != ReasonReadOnlyGrace
+	return reason != ReasonNotEntitled && reason != ReasonUnavailable && reason != ReasonReadOnlyGrace && reason != ReasonDisabledByPlatform
 }
 
 func (s *ModuleService) logPresetApplied(ctx context.Context, actx auditapp.AuditContext, tenantID string, p *moduledom.ModulePreset) {
@@ -1259,4 +1293,17 @@ func (s *ModuleService) logPresetApplied(ctx context.Context, actx auditapp.Audi
 		WithMetadata("preset_id", p.ID).
 		WithMetadata("preset_name", p.Name)
 	auditapp.RecordOrWarn(ctx, nil, s.auditService, actx, event)
+}
+
+// isSwitchable reports whether an organization's own switch can turn the
+// module off: a module Settings > Modules lists. A core module is always on and
+// a module the page does not list has no switch, so an old override row for
+// either is ignored. An id the registry does not declare keeps the row's
+// meaning (sub-module rows come from the catalog, not the registry).
+func isSwitchable(moduleID string) bool {
+	d, ok := moduledom.Lookup(moduleID)
+	if !ok {
+		return true
+	}
+	return !d.Core && d.UserFacing
 }

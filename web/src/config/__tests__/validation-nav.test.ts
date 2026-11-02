@@ -61,7 +61,7 @@ describe('Validation section', () => {
       'attack_simulation',
       'control_testing',
       'pentest',
-      'mitre_coverage',
+      'threat_intel',
     ])
   })
 

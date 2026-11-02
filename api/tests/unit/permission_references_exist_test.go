@@ -61,7 +61,7 @@ func TestPermissionReferences_ModuleMapNamesOnlyRegisteredPermissions(t *testing
 func TestPermissionReferences_CTEMModulesVisibleToMembers(t *testing.T) {
 	mods := []string{
 		module.ModuleAttackSurface, module.ModuleCTEMCycles, module.ModuleBusinessServices,
-		module.ModuleBusinessImpact, module.ModuleCompensatingControls, module.ModuleScanWorkflows,
+		module.ModuleCompensatingControls, module.ModuleScanWorkflows,
 	}
 	for _, r := range []tenant.Role{tenant.RoleMember, tenant.RoleViewer} {
 		got := module.FilterModuleIDsByPermissions(mods, permission.GetPermissionStringsForRole(r), false)
