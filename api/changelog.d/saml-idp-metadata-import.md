@@ -11,3 +11,5 @@
 ### Fixed: the SAML form showed the console's address in the service provider URLs
 
 - The URLs to register at the IdP are now built on the API's public address (`APP_URL`), the same one the SP metadata uses.
+- With several signing certificates stored, an IdP that signs without an embedded certificate now signs in: each stored certificate is tried in turn (each still checked for validity); a signature that embeds a certificate must still match a stored one.
+- A metadata URL that is unreachable, answers something malformed, or answers something that is not SAML metadata is refused with one reason in the response; the detail is logged server-side.

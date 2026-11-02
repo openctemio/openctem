@@ -504,12 +504,9 @@ func (h *SAMLHandler) ImportIdPMetadata(w http.ResponseWriter, r *http.Request) 
 	if err != nil {
 		var me *auth.SAMLMetadataError
 		if errors.As(err, &me) {
-			code := apierror.CodeSAMLMetadataInvalid
-			if me.Reason == auth.SAMLMetadataReasonUnreachable {
-				code = apierror.CodeSAMLMetadataUnreachable
-			}
+			code, shown := samlMetadataRefusalForResponse(me.Reason, strings.TrimSpace(body.MetadataURL) != "")
 			h.logger.Info("saml idp metadata refused", "reason", me.Reason)
-			apierror.FromCode(code).WithDetails(map[string]any{"reason": me.Reason}).WriteJSON(w)
+			apierror.FromCode(code).WithDetails(map[string]any{"reason": shown}).WriteJSON(w)
 			return
 		}
 		h.logger.Error("read saml idp metadata failed", "error", err)
@@ -573,4 +570,18 @@ func (h *SAMLHandler) SPMetadata(w http.ResponseWriter, r *http.Request) {
 		XML:      doc,
 		BaseURL:  base,
 	})
+}
+
+// samlMetadataRefusalForResponse picks the API code and the reason shown for
+// a refused metadata import. A fetched URL must not tell the caller whether
+// the host answered, or what it answered (a probe of internal hosts):
+// unreachable, malformed and not-metadata are one reason there; the detail
+// stays in the server log. A pasted document is the admin's own, so its
+// reason is shown.
+func samlMetadataRefusalForResponse(reason string, fromURL bool) (code apierror.Code, shown string) {
+	if reason == auth.SAMLMetadataReasonUnreachable ||
+		(fromURL && (reason == auth.SAMLMetadataReasonMalformed || reason == auth.SAMLMetadataReasonNotMetadata)) {
+		return apierror.CodeSAMLMetadataUnreachable, auth.SAMLMetadataReasonUnreachable
+	}
+	return apierror.CodeSAMLMetadataInvalid, reason
 }

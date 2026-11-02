@@ -10,6 +10,7 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app/auth"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
@@ -70,5 +71,23 @@ func TestSPMetadataHandler_RequiresPublicURL(t *testing.T) {
 	h.SPMetadata(w, r)
 	if w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), "SAML_PUBLIC_URL_UNSET") {
 		t.Fatalf("status = %d body = %s", w.Code, w.Body.String())
+	}
+}
+
+// A fetched URL shows one reason for "the host did not answer" and "it
+// answered something that is not metadata", so the console cannot probe
+// internal hosts; a pasted document keeps its own reason.
+func TestSAMLMetadataRefusalForResponse(t *testing.T) {
+	for _, reason := range []string{auth.SAMLMetadataReasonUnreachable, auth.SAMLMetadataReasonMalformed, auth.SAMLMetadataReasonNotMetadata} {
+		code, shown := samlMetadataRefusalForResponse(reason, true)
+		if code != apierror.CodeSAMLMetadataUnreachable || shown != auth.SAMLMetadataReasonUnreachable {
+			t.Fatalf("url %s: got %s %s", reason, code, shown)
+		}
+	}
+	if code, shown := samlMetadataRefusalForResponse(auth.SAMLMetadataReasonMalformed, false); code != apierror.CodeSAMLMetadataInvalid || shown != auth.SAMLMetadataReasonMalformed {
+		t.Fatalf("a pasted document keeps its reason, got %s %s", code, shown)
+	}
+	if _, shown := samlMetadataRefusalForResponse(auth.SAMLMetadataReasonNoSSOURL, true); shown != auth.SAMLMetadataReasonNoSSOURL {
+		t.Fatalf("a structural reason is kept, got %s", shown)
 	}
 }
