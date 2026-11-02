@@ -23,6 +23,11 @@
 {{- if .CACert}}
 
 # 1. Trust the platform's certificate authority (it uses a private CA).
+{{- if .CAPins}}
+#    The sensor is also given the root's SHA-256 (SENSOR_CA_SHA256): should
+#    it stop trusting the platform's chain, it fetches the CA from the
+#    platform and trusts only a root with that fingerprint.
+{{- end}}
 sudo mkdir -p /etc/openctem/certs
 sudo tee /etc/openctem/certs/openctem-root-ca.crt >/dev/null <<'OPENCTEM_CA'
 {{.CACert}}OPENCTEM_CA
@@ -90,6 +95,9 @@ docker run -d --name {{$slug}} --restart unless-stopped \
 {{- if .CACert}}
   -e SSL_CERT_DIR=/etc/openctem/certs \
 {{- end}}
+{{- if .CAPins}}
+  -e SENSOR_CA_SHA256={{.CAPins}} \
+{{- end}}
   -v /etc/openctem:/etc/openctem:ro \
   -v {{$slug}}-data:/var/lib/openctem \
   {{.Image}}
@@ -118,6 +126,9 @@ docker run --rm \
 {{- if .CACert}}
   -e SSL_CERT_DIR=/etc/openctem/certs \
   -v /etc/openctem/certs:/etc/openctem/certs:ro \
+{{- end}}
+{{- if .CAPins}}
+  -e SENSOR_CA_SHA256={{.CAPins}} \
 {{- end}}
   -v "$PWD":/scan \
   {{.Image}} \
