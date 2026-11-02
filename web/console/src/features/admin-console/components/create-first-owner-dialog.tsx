@@ -21,7 +21,8 @@ import { Label } from '@/components/ui/label'
 import { SetupLinkResult } from '@/features/shared/components/one-time-setup-link'
 import { createOrganizationUser } from '../api/use-admin-organizations'
 import { AdminApiError } from '@console/lib/admin-api/client'
-import type { AdminCreatedOrganizationUser } from '../types'
+import type { AdminCreatedOrganizationUser, AdminOwnerInvitation } from '../types'
+import { OwnerInvitationSentNotice } from './owner-invitation'
 
 /**
  * Create the FIRST owner of an organization that has none (RFC-022 rev. 5).
@@ -29,13 +30,21 @@ import type { AdminCreatedOrganizationUser } from '../types'
  * once it has an owner, the owner and its administrators add people. The API
  * emails the set-password link when the organization can send email (and then
  * never returns it); only without email is a one-time link shown here, once.
+ *
+ * For an organization waiting for its first owner (created with an ownership
+ * invitation), an email that already has an account gets the invitation
+ * instead (docs/architecture/organization-ownership-invitations.md); with
+ * `changeInvitee` the dialog is labelled for that.
  */
 export function CreateFirstOwnerDialog({
   tenantId,
   onCreated,
+  changeInvitee = false,
 }: {
   tenantId: string
   onCreated: () => void
+  /** The organization has an ownership invitation: label the dialog "Change invitee". */
+  changeInvitee?: boolean
 }) {
   const { t } = useTranslation()
 
@@ -46,6 +55,7 @@ export function CreateFirstOwnerDialog({
   const [error, setError] = useState<string | null>(null)
   // Held only in this component's state; dropped when the dialog closes.
   const [created, setCreated] = useState<AdminCreatedOrganizationUser | null>(null)
+  const [invited, setInvited] = useState<AdminOwnerInvitation | null>(null)
 
   const close = () => {
     setOpen(false)
@@ -53,6 +63,7 @@ export function CreateFirstOwnerDialog({
     setName('')
     setError(null)
     setCreated(null)
+    setInvited(null)
   }
 
   const submit = async (e: FormEvent) => {
@@ -64,7 +75,9 @@ export function CreateFirstOwnerDialog({
         email: email.trim(),
         name: name.trim(),
       })
-      setCreated(res)
+      // An existing account is invited, never made the owner directly.
+      if ('owner_invitation' in res && res.owner_invitation) setInvited(res.owner_invitation)
+      else setCreated(res as AdminCreatedOrganizationUser)
       onCreated()
     } catch (err) {
       setError(err instanceof AdminApiError ? err.message : 'Could not create the owner')
@@ -76,13 +89,32 @@ export function CreateFirstOwnerDialog({
   return (
     <Dialog open={open} onOpenChange={(next) => (next ? setOpen(true) : close())}>
       <DialogTrigger asChild>
-        <Button size="sm">
+        <Button size="sm" variant={changeInvitee ? 'outline' : 'default'}>
           <UserPlus className="me-2 size-4" />
-          {t('admin.createFirstOwnerDialog.createFirstOwner', 'Create first owner')}
+          {changeInvitee
+            ? t('admin.ownerInvitation.changeInvitee', 'Change invitee')
+            : t('admin.createFirstOwnerDialog.createFirstOwner', 'Create first owner')}
         </Button>
       </DialogTrigger>
       <DialogContent size="sm">
-        {created ? (
+        {invited ? (
+          <>
+            <DialogHeader>
+              <DialogTitle>{t('admin.ownerInvitation.sentTitle', 'Invitation sent')}</DialogTitle>
+            </DialogHeader>
+            <DialogBody>
+              <div className="py-2">
+                <OwnerInvitationSentNotice
+                  email={invited.invitee_email ?? email.trim()}
+                  invitation={invited}
+                />
+              </div>
+            </DialogBody>
+            <DialogFooter>
+              <Button onClick={close}>{t('admin.createFirstOwnerDialog.done', 'Done')}</Button>
+            </DialogFooter>
+          </>
+        ) : created ? (
           <>
             <DialogHeader>
               <DialogTitle>
@@ -109,13 +141,20 @@ export function CreateFirstOwnerDialog({
           <DialogForm onSubmit={submit}>
             <DialogHeader>
               <DialogTitle>
-                {t('admin.createFirstOwnerDialog.createFirstOwner', 'Create first owner')}
+                {changeInvitee
+                  ? t('admin.ownerInvitation.changeInvitee', 'Change invitee')
+                  : t('admin.createFirstOwnerDialog.createFirstOwner', 'Create first owner')}
               </DialogTitle>
               <DialogDescription>
-                {t(
-                  'admin.createFirstOwnerDialog.thisOrganizationHasNoOwner',
-                  "This organization has no owner. Create the owner's account; they get a link to set their password, and then invite or create the organization's other users themselves."
-                )}
+                {changeInvitee
+                  ? t(
+                      'admin.ownerInvitation.changeInviteeHelp',
+                      'The current invitation is canceled. Someone who already has an account gets a new invitation to become the owner; for a new person an account is created and they get a link to set their password.'
+                    )
+                  : t(
+                      'admin.createFirstOwnerDialog.thisOrganizationHasNoOwner',
+                      "This organization has no owner. Create the owner's account; they get a link to set their password, and then invite or create the organization's other users themselves."
+                    )}
               </DialogDescription>
             </DialogHeader>
             <DialogBody>
@@ -157,7 +196,9 @@ export function CreateFirstOwnerDialog({
               </Button>
               <Button type="submit" disabled={busy}>
                 {busy && <Loader2 className="me-2 size-4 animate-spin" />}
-                {t('admin.createFirstOwnerDialog.createOwner', 'Create owner')}
+                {changeInvitee
+                  ? t('admin.ownerInvitation.invite', 'Invite')
+                  : t('admin.createFirstOwnerDialog.createOwner', 'Create owner')}
               </Button>
             </DialogFooter>
           </DialogForm>
