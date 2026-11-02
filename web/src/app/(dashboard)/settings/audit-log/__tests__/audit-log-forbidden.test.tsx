@@ -48,7 +48,7 @@ describe('AuditLogPage for a restricted data scope', () => {
     })
     render(<AuditLogPage />)
     expect(screen.getByText(en['auditLog.needsFullData.title'])).toBeInTheDocument()
-    expect(screen.queryByText('Could not load the audit log')).not.toBeInTheDocument()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
     expect(screen.queryByText('Retry')).not.toBeInTheDocument()
     expect(screen.queryByText('Events (7 days)')).not.toBeInTheDocument()
     expect(mockUseAuditStats).toHaveBeenLastCalledWith(false)
@@ -61,7 +61,7 @@ describe('AuditLogPage for a restricted data scope', () => {
       error: new ApiClientError('boom', 'INTERNAL', 500),
     })
     render(<AuditLogPage />)
-    expect(screen.getByText('Could not load the audit log')).toBeInTheDocument()
+    expect(screen.getAllByRole('alert').length).toBeGreaterThan(0)
     expect(mockUseAuditStats).toHaveBeenLastCalledWith(true)
   })
 
