@@ -13,12 +13,12 @@ import { useEffect, useId, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { ConfirmDialog } from '@/components/confirm-dialog'
-import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { useTranslation } from '@/context/i18n-provider'
+import { SettingsSaveBar } from '@/features/shared/components/settings-save-bar'
 import { AdminApiError } from '@console/lib/admin-api/client'
 import type { SharedSensorAnomalyThresholds } from '../api/use-scan-policy'
 import { StepUpCodeField, stepUpCodeReady, useStepUpCodeOptional } from './step-up-code-hint'
@@ -54,6 +54,7 @@ export function SharedSensorAnomalyForm({
   const [busy, setBusy] = useState(false)
 
   useEffect(() => setValue(thresholds), [thresholds])
+  const reset = () => setValue(thresholds)
   const dirty = FIELDS.some(([key]) => value[key] !== thresholds[key])
   const valid = FIELDS.every(
     ([key]) => Number.isInteger(value[key]) && value[key] >= 0 && value[key] <= MAX_THRESHOLD
@@ -110,11 +111,14 @@ export function SharedSensorAnomalyForm({
           <p className="text-sm text-muted-foreground">{t('admin.anomaly.zeroOff')}</p>
           <p className="text-sm text-muted-foreground">{t('admin.anomaly.aggregate')}</p>
           {canEdit ? (
-            <div className="flex justify-end">
-              <Button onClick={() => setOpen(true)} disabled={!dirty || !valid || busy}>
-                {t('admin.scanPolicy.save')}
-              </Button>
-            </div>
+            <SettingsSaveBar
+              className="basis-full"
+              dirty={dirty}
+              saving={busy}
+              saveDisabled={!valid}
+              onSave={() => setOpen(true)}
+              onDiscard={reset}
+            />
           ) : (
             <RoleRequiredNotice needed="super_admin" />
           )}

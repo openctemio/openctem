@@ -14,7 +14,7 @@ vi.mock('sonner', () => ({ toast }))
 const { SharedSensorsForm } = await import('../components/shared-sensors-form')
 
 const confirmWith = async (user: ReturnType<typeof userEvent.setup>, reason: string) => {
-  await user.click(screen.getByRole('button', { name: 'Save' }))
+  await user.click(screen.getByRole('button', { name: 'Save changes' }))
   await user.type(screen.getByLabelText('Reason'), reason)
   await user.type(screen.getByLabelText('Code from your authenticator app'), '123456')
   await user.click(screen.getByRole('button', { name: 'Confirm' }))
@@ -39,7 +39,7 @@ describe('SharedSensorsForm', () => {
     )
     expect(screen.getByRole('switch')).toBeDisabled()
     for (const r of screen.getAllByRole('radio')) expect(r).toBeDisabled()
-    expect(screen.queryByRole('button', { name: 'Save' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Save changes' })).not.toBeInTheDocument()
   })
 
   it('cannot turn shared sensors on without choosing for organizations without a decision', async () => {
@@ -47,7 +47,7 @@ describe('SharedSensorsForm', () => {
     const user = userEvent.setup()
     render(<SharedSensorsForm enabled={false} newOrgs={null} ready canEdit onSave={onSave} />)
     await user.click(screen.getByRole('switch', { name: /Turn on shared sensors/ }))
-    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Save changes' })).toBeDisabled()
     expect(screen.getByTestId('shared-sensors-new-orgs-unset')).toHaveTextContent(
       /Choose allow or deny/
     )

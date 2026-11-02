@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ExposureFlowViz } from '../exposure-flow-viz'
@@ -857,5 +857,71 @@ describe('flow layout bands', () => {
     expect(row?.children[1]?.contains(note)).toBe(false)
     expect(row?.children[0]?.contains(note)).toBe(false)
     expect(container.querySelector('[data-band]')).toHaveAttribute('data-band', 'narrow')
+  })
+})
+
+describe('source wires follow the rows that are listed', () => {
+  let restore: () => void
+  beforeEach(() => {
+    restore = atWidth(1200)
+  })
+  afterEach(() => restore())
+
+  const withZeros: FlowResult = {
+    ...flow,
+    intake: {
+      ...intake,
+      sources: [
+        ...(intake.sources ?? []),
+        source({ id: 'sensor:zero-a', tool: 'zero-a', origin: 'sensor', received: 0, created: 0 }),
+        source({ id: 'sensor:zero-b', tool: 'zero-b', origin: 'sensor', received: 0, created: 0 }),
+      ],
+    },
+  }
+  const sourceWires = () =>
+    [...document.querySelectorAll('[data-wire-key]')]
+      .map((g) => g.getAttribute('data-wire-key'))
+      .filter((k) => k?.startsWith('w:s:'))
+  const wireOf = (k: string) => document.querySelector(`[data-wire-key="w:s:${k}"]`)
+
+  it('draws a wire per listed row, and none for the rows folded under "with nothing"', async () => {
+    const user = userEvent.setup()
+    render(<ExposureFlowViz result={withZeros} />)
+    // Listed by default: a thin still dashed wire each, anchored on their rows.
+    expect(sourceWires()).toHaveLength(5)
+    expect(wireOf('sensor:zero-a')?.querySelector('path')?.getAttribute('stroke-dasharray')).toBe(
+      '4 4'
+    )
+    expect(wireOf('sensor:zero-a')?.querySelector('.animate-flow-dash')).toBeNull()
+
+    await user.click(screen.getByTestId('ranked-zeros'))
+    await waitFor(() => expect(wireOf('sensor:zero-a')).toBeNull())
+    // Collapsed: exactly the visible non-zero sources keep their wire.
+    expect(document.querySelectorAll('li[data-key^="s:"]')).toHaveLength(3)
+    expect(sourceWires()).toHaveLength(3)
+
+    await user.click(screen.getByTestId('ranked-zeros'))
+    await waitFor(() => expect(sourceWires()).toHaveLength(5))
+  })
+})
+
+describe('sub-figures of an outcome', () => {
+  let restore: () => void
+  beforeEach(() => {
+    restore = atWidth(1200)
+  })
+  afterEach(() => restore())
+
+  it('Past SLA (a part of Open) never gets its own thread from the rings', () => {
+    render(<ExposureFlowViz result={flow} />)
+    const keys = [...document.querySelectorAll('path[data-wire-key]')].map((p) =>
+      p.getAttribute('data-wire-key')
+    )
+    expect(keys).toContain('w:o:open')
+    expect(keys).toContain('w:o:fixed')
+    expect(keys).not.toContain('w:o:past_sla')
+    expect(document.querySelector('[data-wire-in="o:past_sla"]')).toBeNull()
+    // Still listed under Open, as a link with its own count.
+    expect(hrefOf(/^Past SLA 43$/)).toBe(flow.past_sla.drill)
   })
 })
