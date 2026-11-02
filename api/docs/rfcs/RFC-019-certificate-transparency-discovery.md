@@ -2,7 +2,7 @@
 
 - Status: **Implemented (Phase 1); Phase 2 partial** — Phase 1 (#480): crt.sh client + parser, per-tenant scheduled controller, and two exposure types emitted. Since then, under RFC-036: every watched domain covered, crt.sh retries and a Cert Spotter fallback with the `ct_monitor_state` table (#811, migration `000266`), `certificate_expired` for the newest certificate, and CT names promoted to assets with attribution (#839, migration `000324`). Not built: lookalike/typosquat detection (checked 2026-10-04).
 - Area: CTEM Discovery — external-exposure connectors, external attack surface.
-- Related: RFC-018 (identity exposure discovery — the sibling connector; it shipped only the *vocabulary*), `internal/app/ctemid` (the public-JSON-feed refresh pattern this mirrors), `internal/app/exposurebridge` (the exposure projection this joins), `pkg/httpsec` (SSRF guard).
+- Related: RFC-018 (identity exposure discovery — the sibling connector; it shipped only the *vocabulary*), `internal/app/exposurebridge` (the exposure projection this joins), `pkg/httpsec` (SSRF guard).
 
 ## 1. Goal
 
@@ -72,7 +72,7 @@ stable per (type, host), so a daily re-poll upserts the same rows (refreshing
 - `internal/app/certmonitor/service.go` — crt.sh client + pure parser +
   `collectDiscoveries` (pure) + exposure emission.
 - `internal/infra/controller/cert_monitor_refresh.go` — daily per-active-tenant
-  controller (mirrors `threat-model-refresh` / `ctem-id-refresh`).
+  controller (mirrors `threat-model-refresh`).
 - Config: `CERT_MONITOR_ENABLED` (default true), `CERT_MONITOR_FEED_URL`
   (default `https://crt.sh`), `CERT_MONITOR_INTERVAL` (default 24h).
 
@@ -80,7 +80,7 @@ stable per (type, host), so a daily re-poll upserts the same rows (refreshing
 
 - **Lookalike / typosquat detection** — flagging brand-adjacent domains in CT
   (e.g. `example-login.test` for `example.com`). This needs a similarity search over CT,
-  is noisy, and maps to a CTEM-ID `lookalike domains` category; deferred.
+  is noisy, and maps to the CTEM-ID lookalike domain codes ([CTEM-ID mapping](../architecture/ctem-id-mapping.md)); deferred.
 - **Asset promotion** — turning a discovered subdomain into a first-class asset
   record. This connector only emits exposures; asset creation stays owned by the
   ingest/asset pipeline to avoid a second, divergent asset-creation path.

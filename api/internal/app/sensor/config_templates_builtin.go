@@ -573,6 +573,9 @@ SENSOR_ALLOW_PRIVATE_TARGETS=1
 {{- if .CACert}}
 SSL_CERT_DIR=/etc/openctem/certs
 {{- end}}
+{{- if .CAPins}}
+SENSOR_CA_SHA256={{.CAPins}}
+{{- end}}
 OPENCTEM_ENV
 sudo chmod 0600 /etc/openctem/sensor.env
 sudo tee /etc/systemd/system/openctem-sensor.service >/dev/null <<'OPENCTEM_UNIT'
@@ -618,6 +621,9 @@ export SENSOR_API_KEY="${OPENCTEM_API_KEY:?export OPENCTEM_API_KEY first}"
 {{- end}}
 {{- if .CACert}}
 export SSL_CERT_DIR=/etc/openctem/certs
+{{- end}}
+{{- if .CAPins}}
+export SENSOR_CA_SHA256={{.CAPins}}
 {{- end}}
 
 # Long-running: run the scans the platform dispatches. The sensor keeps its
@@ -727,6 +733,9 @@ services:
 {{- if .CACert}}
       SSL_CERT_DIR: /etc/openctem/certs
 {{- end}}
+{{- if .CAPins}}
+      SENSOR_CA_SHA256: "{{.CAPins}}"
+{{- end}}
     volumes:
       # One data volume: state/, outbox/ and content/ (see below).
       # Keep it a named volume: Docker creates it with the sensor's owner. A host
@@ -793,6 +802,11 @@ configs:
 {{- if .CACert}}
 
 # 1. Trust the platform's certificate authority (it uses a private CA).
+{{- if .CAPins}}
+#    The sensor is also given the root's SHA-256 (SENSOR_CA_SHA256): should
+#    it stop trusting the platform's chain, it fetches the CA from the
+#    platform and trusts only a root with that fingerprint.
+{{- end}}
 sudo mkdir -p /etc/openctem/certs
 sudo tee /etc/openctem/certs/openctem-root-ca.crt >/dev/null <<'OPENCTEM_CA'
 {{.CACert}}OPENCTEM_CA
@@ -860,6 +874,9 @@ docker run -d --name {{$slug}} --restart unless-stopped \
 {{- if .CACert}}
   -e SSL_CERT_DIR=/etc/openctem/certs \
 {{- end}}
+{{- if .CAPins}}
+  -e SENSOR_CA_SHA256={{.CAPins}} \
+{{- end}}
   -v /etc/openctem:/etc/openctem:ro \
   -v {{$slug}}-data:/var/lib/openctem \
   {{.Image}}
@@ -889,6 +906,9 @@ docker run --rm \
   -e SSL_CERT_DIR=/etc/openctem/certs \
   -v /etc/openctem/certs:/etc/openctem/certs:ro \
 {{- end}}
+{{- if .CAPins}}
+  -e SENSOR_CA_SHA256={{.CAPins}} \
+{{- end}}
   -v "$PWD":/scan \
   {{.Image}} \
   -tool {{firstTool .Sensor.EffectiveTools}} -target /scan -push
@@ -908,6 +928,11 @@ export SENSOR_API_KEY='octs_...'
 # The platform uses a private CA: install it (see the docker run instructions)
 # and let the sensor trust it alongside the system roots.
 export SSL_CERT_DIR=/etc/openctem/certs
+{{- end}}
+{{- if .CAPins}}
+# The platform CA's root by SHA-256: a sensor that does not trust the
+# platform's chain fetches the CA itself and trusts only this root.
+export SENSOR_CA_SHA256={{.CAPins}}
 {{- end}}
 `,
 	"sensor/helm": `{{- $slug := slugify .Sensor.Name -}}
@@ -951,6 +976,11 @@ kubectl create secret generic {{$slug}}-key \
 #    its state, outbox and content cache on one data volume (a release that
 #    already has the sensor's per-directory volumes keeps them). The sensor
 #    runs the tools its image ships; narrow them in the policy's tools.allow.
+{{- if .CAPins}}
+#    The platform uses a private CA: SENSOR_CA_SHA256 pins its root, so a
+#    sensor given an https apiUrl the cluster does not trust fetches the CA
+#    from the platform and trusts only that root.
+{{- end}}
 helm upgrade openctem openctem/openctem --reuse-values \
   --set sensor.enabled=true \
   --set sensor.mode=daemon \
@@ -959,6 +989,10 @@ helm upgrade openctem openctem/openctem --reuse-values \
   --set sensor.sandbox.seccompProfile=openctem \
   --set sensor.data.persistence.enabled=true \
   --set sensor.localPolicy.enabled=true \
+{{- if .CAPins}}
+  --set sensor.extraEnv[0].name=SENSOR_CA_SHA256 \
+  --set-string sensor.extraEnv[0].value={{.CAPins}} \
+{{- end}}
   --set-file sensor.localPolicy.policy=sensor-policy.yaml
 {{- end}}
 `,
@@ -1125,6 +1159,10 @@ spec:
             - name: SSL_CERT_DIR
               value: /etc/openctem/certs
 {{- end}}
+{{- if .CAPins}}
+            - name: SENSOR_CA_SHA256
+              value: "{{.CAPins}}"
+{{- end}}
           volumeMounts:
             - name: data
               mountPath: /var/lib/openctem
@@ -1193,6 +1231,10 @@ spec:
 {{- if .CACert}}
             - name: SSL_CERT_DIR
               value: /etc/openctem/certs
+{{- end}}
+{{- if .CAPins}}
+            - name: SENSOR_CA_SHA256
+              value: "{{.CAPins}}"
 {{- end}}
           volumeMounts:
             - name: scan
