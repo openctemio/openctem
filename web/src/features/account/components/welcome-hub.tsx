@@ -114,7 +114,7 @@ export function WelcomeHub({ needsSession }: WelcomeHubProps) {
       setOptions(res.options)
       setFailed(false)
     } else if (res.sessionExpired) {
-      window.location.href = '/login'
+      window.location.replace('/login')
     } else {
       setFailed(true)
     }
@@ -135,7 +135,7 @@ export function WelcomeHub({ needsSession }: WelcomeHubProps) {
         return
       }
       if (res.code === 'SESSION') {
-        window.location.href = '/login'
+        window.location.replace('/login')
         return
       }
       if (res.code === 'HAS_ORGANIZATION') {
@@ -149,7 +149,7 @@ export function WelcomeHub({ needsSession }: WelcomeHubProps) {
           tried = true
         }
         if (!tried) {
-          window.location.href = '/'
+          window.location.replace('/')
           return
         }
       }
@@ -172,7 +172,7 @@ export function WelcomeHub({ needsSession }: WelcomeHubProps) {
       if (res.success && res.status === 'joined') {
         toast.success(t('org.onboarding.joined', undefined, { name: res.organizationName }))
         // The organization is selected: reload into it.
-        window.location.href = '/'
+        window.location.replace('/')
         return
       }
       if (res.success) {
