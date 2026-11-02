@@ -11,6 +11,7 @@ import {
   Building2,
   ClipboardCheck,
   Copy,
+  FileCode2,
   Container,
   Crosshair,
   Crown,
@@ -447,6 +448,16 @@ export const ATTACK_SURFACE_SECTION_TABS: readonly SectionTab[] = [
     icon: Copy,
     module: 'attack_surface',
     permission: Permission.ScopeRead,
+  },
+  {
+    // Web page monitoring (RFC-138): watched pages and scripts and what
+    // changed on them. Reads need assets:read; watch changes scans:write.
+    label: 'Page changes',
+    labelKey: 'nav.tab.pageChanges',
+    href: '/attack-surface/pages',
+    icon: FileCode2,
+    module: 'attack_surface',
+    permission: Permission.AssetsRead,
   },
   {
     label: 'Changes',
