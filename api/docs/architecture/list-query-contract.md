@@ -90,6 +90,11 @@ Fields added for the views: `pending_approval` (an approval request for the
 finding is pending), `acceptance_expires_at` (ranges; unset unless accepted)
 and the `closed` value of `state`.
 
+Fields added for the dashboard's closure quality widget
+([dashboards](dashboards.md#closure-quality-campaigns-and-detection-quality)):
+`resolved_by` (`is_null` only: whether a person closed the finding, never
+who) and `last_reopened_at` (ranges; when a fixed finding last came back).
+
 ## Actors
 
 | Constructor | When | Effect |
@@ -114,6 +119,37 @@ returned on every row with `days_to_expiry`. `GET /attack-surface/certificates/s
 counts the same filtered set by status. Both need `assets:read`. Subjects and
 issuers are chosen by whoever issued the certificate: clients render them as
 text.
+
+## Exposure items (`GET /attack-surface/exposures`)
+
+The Exposure Items view reads `exposure_events` joined to its live asset
+through the `exposure_items` registry (`pkg/domain/exposure/items.go`). The
+filter is compiled from placeholder `$2`: `$1` is the tenant's
+unclassified-scans mode, an input of the asset's monitoring state
+(`asset_monitoring_state`, a lateral join added only when a filter or sort
+reads it). The data scope applies to the exposure's asset; an exposure with no
+asset is visible to unrestricted callers only. `category` filters by the
+display category through a CASE over the event type built from the same map
+as the row label. `/stats` (counts by severity, category and state) and
+`/assets` (one row per asset) read the same WHERE. Details in
+`exposure-taxonomy.md`, "Exposure Items view".
+
+## Technologies (`GET /attack-surface/technologies`)
+
+The Technologies view reads `asset_technologies` through the `technologies`
+registry (`pkg/domain/technology`) in two stages. The row stage is one row per
+asset and technology, joined to the software version the detection was
+matched to; the tenant predicate, the data scope (on each row's asset) and
+every filter apply there. The group stage folds the rows into one row per
+technology and version and adds the CVE figures and the open alert count.
+Filter fields are therefore row-stage columns and sort keys group-stage
+columns: `asset_count`, `cve_count`, `top_cvss` and `active_alerts` are sort
+keys only (filtering on them is `400`). A version is listed exactly when one
+visible asset runs it, and every count covers visible assets only. `GET
+/attack-surface/technologies/stats` counts the same filtered versions (all,
+with CVEs, with a known-exploited CVE, of unknown version, with open alerts).
+Both need `assets:read`. Names, versions and vendors are scan output: clients
+render them as text.
 
 ## Errors
 

@@ -34,6 +34,9 @@ const sensorAuditSystemActor = "system"
 
 // SensorService handles sensor-related business operations.
 type SensorService struct {
+	// refusalForgetter offers a sensor the commands it refused again once
+	// its local policy changed (local_policy.go); nil: never.
+	refusalForgetter RefusalForgetter
 	// orgGate refuses an organization sensor of a suspended organization
 	// (docs/architecture/organization-suspension.md); nil admits all.
 	orgGate tenantdom.AccessGate
@@ -81,6 +84,10 @@ type SensorService struct {
 	// acknowledged may leave their tool inventory out of heartbeats unless
 	// it is set.
 	slimHeartbeatOff bool
+	// manifestRecheck holds the sensors asked once to send their manifest
+	// again because their current one has items the platform dropped as
+	// unknown (LoadManifestRechecks); sensor id -> struct{}.
+	manifestRecheck sync.Map
 	// apiKeyRepo is the optional multi-key store (RFC-014 Phase 3). When wired,
 	// AuthenticateByAPIKey also accepts keys from sensor_api_keys, and self-renewal
 	// under a key TTL issues a NEW key row (rotation overlap) instead of replacing
@@ -941,6 +948,10 @@ func (s *SensorService) UpdateHeartbeat(ctx context.Context, sensorID shared.ID,
 			TenantID:   a.TenantID.String(),
 			ActorEmail: sensorAuditSystemActor,
 		}, a.ID.String(), a.Name, ip), "LogSensorConnected", a.ID.String())
+	}
+
+	if data.LocalPolicy != nil {
+		s.localPolicyChanged(ctx, a, localPolicy)
 	}
 
 	// The activity timeline: what this heartbeat changed compared with the
@@ -1924,6 +1935,13 @@ func (s *SensorService) DisableSensor(ctx context.Context, tenantID, sensorID, r
 	a, err := s.GetSensor(ctx, tenantID, sensorID)
 	if err != nil {
 		return nil, err
+	}
+
+	// Revoked is final: disabling a revoked sensor would make it "paused",
+	// and ActivateSensor would then bring it and its old credentials back
+	// (UpdateSensor refuses the same move).
+	if a.Status == sensordom.SensorStatusRevoked {
+		return nil, shared.NewDomainError("FORBIDDEN", "cannot disable a revoked sensor", shared.ErrForbidden)
 	}
 
 	if reason == "" {

@@ -100,7 +100,7 @@ func (h *GroupHandler) GetTeamAccess(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	v, err := h.service.GetTeamAccess(ctx, middleware.MustGetTenantID(ctx), chi.URLParam(r, "groupId"))
 	if err != nil {
-		h.writeBindingError(w, err)
+		h.writeBindingError(w, r, err)
 		return
 	}
 	writeJSONBody(w, http.StatusOK, toTeamAccessResponse(v))
@@ -134,7 +134,7 @@ func (h *GroupHandler) SetTeamAccess(w http.ResponseWriter, r *http.Request) {
 		GroupID: chi.URLParam(r, "groupId"), Presets: req.Presets, ScopeMode: req.ScopeMode,
 	}, h.buildAuditContext(r))
 	if err != nil {
-		h.writeBindingError(w, err)
+		h.writeBindingError(w, r, err)
 		return
 	}
 	writeJSONBody(w, http.StatusOK, toTeamAccessResponse(v))
@@ -167,7 +167,7 @@ func (h *GroupHandler) UpgradeTeamPreset(w http.ResponseWriter, r *http.Request)
 	}
 	v, err := h.service.UpgradeTeamPreset(r.Context(), chi.URLParam(r, "groupId"), req.TemplateID, req.Version, h.buildAuditContext(r))
 	if err != nil {
-		h.writeBindingError(w, err)
+		h.writeBindingError(w, r, err)
 		return
 	}
 	writeJSONBody(w, http.StatusOK, toTeamAccessResponse(v))
@@ -192,7 +192,7 @@ func (h *GroupHandler) ListUserTeamAccess(w http.ResponseWriter, r *http.Request
 	}
 	views, err := h.service.ListUserTeamAccess(ctx, middleware.MustGetTenantID(ctx), uid)
 	if err != nil {
-		h.writeBindingError(w, err)
+		h.writeBindingError(w, r, err)
 		return
 	}
 	resp := UserTeamAccessListResponse{Data: make([]UserTeamAccessResponse, 0, len(views))}

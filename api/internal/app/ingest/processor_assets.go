@@ -66,6 +66,8 @@ type AssetProcessor struct {
 
 	// webEvidence stores the reserved web_evidence captures (nil = dropped).
 	webEvidence WebEvidenceRecorder
+	// webContent takes the reserved web_content fetches (nil = dropped).
+	webContent WebContentRecorder
 }
 
 // AssetsDiscoveredCallback is invoked once per ingest batch with the assets the
@@ -422,6 +424,10 @@ func (p *AssetProcessor) processBatch(
 		}
 	}
 
+	// The addresses the report's in-bound assets vouch for (job_bound.go),
+	// read before any asset is dropped.
+	scope.primeJobBound(report)
+
 	// Junk names from passive sources (a domain that is not a host name, the
 	// remnant of a percent-encoded delimiter) never become assets.
 	if err := p.dropJunkHostnames(ctx, tenantID, report, output); err != nil {
@@ -533,6 +539,13 @@ func (p *AssetProcessor) processBatch(
 		// with its findings (RFC-088 output binding).
 		if scope.outsideAddressChunk(normalizedName, ctisAsset.Properties) {
 			skipOutsideChunk(output, ctisAsset.ID)
+			continue
+		}
+		// A hostname-scoped command reports only at or under its target
+		// names, its target addresses and the addresses those names state:
+		// anything else is dropped with its findings (job_bound.go).
+		if scope.outsideJobTargets(normalizedName, coreType) {
+			skipOutsideJob(output, ctisAsset.ID)
 			continue
 		}
 
@@ -902,6 +915,7 @@ func (p *AssetProcessor) processBatch(
 	// Step 10: Web evidence (status, title, snippet, optional screenshot) of
 	// the assets this report may change (RFC-081).
 	p.recordWebEvidence(ctx, tenantID, report, existingMap, mayChange)
+	p.recordWebContent(ctx, tenantID, report, existingMap, mayChange)
 
 	// Step 8: Typed edges from related_assets (service -> the certificate
 	// it served).

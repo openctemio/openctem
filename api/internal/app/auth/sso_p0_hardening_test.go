@@ -39,7 +39,7 @@ func entraCfg(tenantID string, allowedTenants, allowedDomains []string) config.E
 func TestFix1_EnvFallback_NotOptedIn_Refused(t *testing.T) {
 	// "acme" is the test tenant slug; allow-list contains a DIFFERENT slug.
 	svc := newSSOForTest(&fakeIPRepo{byProvider: map[identityproviderdom.Provider]*identityproviderdom.IdentityProvider{}},
-		entraCfg("dir-1234", []string{"other-org"}, nil))
+		entraCfg("99999999-8888-7777-6666-555555555555", []string{"other-org"}, nil))
 
 	if _, err := svc.resolveProvider(context.Background(), "tid", "acme", identityproviderdom.ProviderEntraID); !errors.Is(err, ErrSSOProviderNotFound) {
 		t.Fatalf("non-opted-in tenant must get no env fallback, got err=%v", err)
@@ -59,7 +59,7 @@ func TestFix1_EnvFallback_NotOptedIn_Refused(t *testing.T) {
 // An empty allow-list disables the env fallback for everyone (fail-closed).
 func TestFix1_EnvFallback_EmptyAllowlist_RefusedForAll(t *testing.T) {
 	svc := newSSOForTest(&fakeIPRepo{byProvider: map[identityproviderdom.Provider]*identityproviderdom.IdentityProvider{}},
-		entraCfg("dir-1234", nil, nil))
+		entraCfg("99999999-8888-7777-6666-555555555555", nil, nil))
 	if _, err := svc.resolveProvider(context.Background(), "tid", "acme", identityproviderdom.ProviderEntraID); !errors.Is(err, ErrSSOProviderNotFound) {
 		t.Fatalf("empty allow-list must disable env fallback, got err=%v", err)
 	}
@@ -101,7 +101,7 @@ func TestFix1_EnvFallback_CommonDirWithDomains_NoAutoProvision(t *testing.T) {
 
 // A pinned directory (real GUID) + AllowedDomains + opt-in may still auto-provision.
 func TestFix1_EnvFallback_PinnedDirMayAutoProvision(t *testing.T) {
-	cfg := entraCfg("dir-1234", []string{"acme"}, []string{"corp.com"})
+	cfg := entraCfg("99999999-8888-7777-6666-555555555555", []string{"acme"}, []string{"corp.com"})
 	cfg.AutoProvision = true
 	svc := newSSOForTest(&fakeIPRepo{byProvider: map[identityproviderdom.Provider]*identityproviderdom.IdentityProvider{}}, cfg)
 	rp, err := svc.resolveProvider(context.Background(), "tid", "acme", identityproviderdom.ProviderEntraID)

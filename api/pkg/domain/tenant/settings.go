@@ -12,6 +12,7 @@ import (
 
 	"github.com/openctemio/openctem/api/pkg/domain/branch"
 	"github.com/openctemio/openctem/api/pkg/domain/licensepolicy"
+	"github.com/openctemio/openctem/api/pkg/domain/scanident"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
@@ -64,6 +65,8 @@ type Settings struct {
 	EmergingThreats EmergingThreatSettings `json:"emerging_threats,omitempty"`
 	// FindingViews are the findings work-view defaults.
 	FindingViews FindingViewSettings `json:"finding_views,omitempty"`
+	// APIKeys is the API key policy (maximum lifetime of a new key).
+	APIKeys APIKeySettings `json:"api_keys,omitempty"`
 }
 
 // FindingCorrelationSettings are the per-organization kill switches of
@@ -289,11 +292,15 @@ type SecuritySettings struct {
 	// first).
 	ToolHTTPUserAgent     string `json:"tool_http_user_agent,omitempty"`
 	ForbidToolInsecureTLS bool   `json:"forbid_tool_insecure_tls,omitempty"`
+	// ToolHTTPHeaders are the organization's scan identification headers:
+	// free names and values its sensors' tools send to targets, merged with
+	// the platform's layer (docs/architecture/scan-identification.md).
+	ToolHTTPHeaders []scanident.Header `json:"tool_http_headers,omitempty"`
 }
 
 // ToolHTTPPolicy is the organization's tool HTTP layer for sensor jobs.
 func (s *SecuritySettings) ToolHTTPPolicy() sensorHTTPPolicy {
-	p := sensorHTTPPolicy{UserAgent: s.ToolHTTPUserAgent}
+	p := sensorHTTPPolicy{UserAgent: s.ToolHTTPUserAgent, Headers: s.ToolHTTPHeaders}
 	if s.ForbidToolInsecureTLS {
 		f := false
 		p.AllowInsecureTLS = &f
@@ -306,6 +313,7 @@ func (s *SecuritySettings) ToolHTTPPolicy() sensorHTTPPolicy {
 type sensorHTTPPolicy struct {
 	UserAgent        string
 	AllowInsecureTLS *bool
+	Headers          []scanident.Header
 }
 
 // MFARequiredFor reports whether a member with this role must use two-factor
@@ -845,6 +853,9 @@ func (s *Settings) Validate() error {
 	if err := s.EmergingThreats.Validate(); err != nil {
 		return err
 	}
+	if err := s.APIKeys.Validate(); err != nil {
+		return err
+	}
 	if err := s.VulnMatching.Validate(); err != nil {
 		return fmt.Errorf("vuln_matching settings: %w", err)
 	}
@@ -885,6 +896,9 @@ func (s *GeneralSettings) Validate() error {
 func (s *SecuritySettings) Validate() error {
 	if ua := s.ToolHTTPUserAgent; ua != "" && (len(ua) > 256 || strings.IndexFunc(ua, func(r rune) bool { return r < 0x20 || r > 0x7e }) >= 0) {
 		return fmt.Errorf("%w: tool_http_user_agent must be at most 256 printable ASCII characters", shared.ErrValidation)
+	}
+	if err := scanident.CheckHeaders(s.ToolHTTPHeaders, scanident.MaxOrganizationHeaders, false); err != nil {
+		return fmt.Errorf("tool_http_headers: %w", err)
 	}
 	// Validate email verification mode
 	if !s.EmailVerificationMode.IsValid() {

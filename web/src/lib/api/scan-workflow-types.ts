@@ -133,6 +133,8 @@ export interface ScanWorkflowSettings {
   fail_fast: boolean
   timeout_seconds: number
   sensor_preference?: ScanWorkflowSensorPreference
+  /** Chained steps wait for their predecessors to finish (no stage streaming). */
+  stage_barrier?: boolean
 }
 
 export const DEFAULT_SCAN_WORKFLOW_SETTINGS: ScanWorkflowSettings = {

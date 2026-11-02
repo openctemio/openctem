@@ -1,6 +1,7 @@
 package main
 
 import (
+	"io/fs"
 	"os"
 
 	navpinapp "github.com/openctemio/openctem/api/internal/app/navpin"
@@ -16,6 +17,7 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/app/aianalysis"
+	"github.com/openctemio/openctem/api/internal/app/aiknowledge"
 	dashfactsapp "github.com/openctemio/openctem/api/internal/app/dashboard/facts"
 	"github.com/openctemio/openctem/api/internal/app/finding"
 	scmappsvc "github.com/openctemio/openctem/api/internal/app/scmapp"
@@ -25,10 +27,12 @@ import (
 
 	apispecapp "github.com/openctemio/openctem/api/internal/app/apispec"
 	certificateapp "github.com/openctemio/openctem/api/internal/app/certificate"
+	coverageapp "github.com/openctemio/openctem/api/internal/app/coverage"
 	"github.com/openctemio/openctem/api/internal/app/datascope"
 	"github.com/openctemio/openctem/api/internal/app/platformlegal"
 	"github.com/openctemio/openctem/api/internal/app/scanrun"
 	"github.com/openctemio/openctem/api/internal/app/securityoverview"
+	technologyapp "github.com/openctemio/openctem/api/internal/app/technology"
 	webendpointapp "github.com/openctemio/openctem/api/internal/app/webendpoint"
 
 	"github.com/openctemio/openctem/api/internal/app/adminapproval"
@@ -276,7 +280,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 
 	// Command handler with scan run service wired
 	commandHandler := handler.NewCommandHandler(svc.Command, v, log)
+	platformCA := newPlatformCASource(cfg, log)
 	sensorHandler := newSensorHandlerWithTemplates(svc.Sensor, cfg, v, log)
+	sensorHandler.SetPlatformCA(platformCA)
 	sensorHandler.SetContentPolicySource(svc.SensorContent)
 	sensorHandler.SetPolicyPrefill(&handler.SensorPolicyPrefill{
 		Zones: repos.ScanZone, Targets: repos.ScopeTarget, Exclusions: repos.ScopeExcl, Log: log,
@@ -354,6 +360,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	tenantHandler.SetLicensePolicyEvaluator(svc.LicensePolicy)
 	if svc.Signup != nil {
 		tenantHandler.SetSignupPolicy(svc.Signup)
+	}
+	if svc.ScanIdentity != nil {
+		tenantHandler.SetScanIdentity(svc.ScanIdentity)
 	}
 	if svc.Entitlement != nil {
 		tenantHandler.SetSelfServiceLimits(svc.Entitlement)
@@ -471,6 +480,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// only an explicitly-disabled non-core module is blocked. Wired back into the
 	// module service so a toggle invalidates the gate cache immediately.
 	moduleGate := middleware.NewModuleGate(svc.Module, time.Minute)
+	// Dashboard widgets of a module read "module_off" while it is off, and
+	// the widget catalog leaves them out.
+	svc.DashboardWidgets.SetModules(moduleGate)
 	if deps.RedisClient != nil {
 		// Every replica caches module state: a toggle drops the cache here and,
 		// through Redis, on the other replicas at once.
@@ -478,6 +490,16 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		svc.Module.SetModuleCacheInvalidator(svc.ModuleChangeBus)
 	} else {
 		svc.Module.SetModuleCacheInvalidator(moduleGate)
+	}
+
+	// Organization IP allowlist gate: every replica caches each policy for
+	// 30s; a change drops the cache here and, through Redis, on the other
+	// replicas at once (the TTL bounds a lost message or no Redis).
+	ipAllowlistGate := routes.NewIPAllowlistGate(repos.Tenant, log)
+	ipAllowlistInvalidate := ipAllowlistGate.Invalidate
+	if deps.RedisClient != nil {
+		svc.IPAllowlistBus = redis.NewIPAllowlistChangeBus(deps.RedisClient, ipAllowlistGate, log)
+		ipAllowlistInvalidate = svc.IPAllowlistBus.Invalidate
 	}
 
 	// Read-only MCP server: exposes this tenant's CTEM data to an AI client over
@@ -501,6 +523,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		// Audit every MCP tools/call (which key, tenant, tool, sanitized args, outcome).
 		mcpHandler.SetAuditService(svc.Audit)
 		mcpHandler.SetModuleGate(moduleGate)
+		// The scope notice names the organization's asset total only to a
+		// person whose role reads all of it in the web console.
+		mcpHandler.SetFullDataRoles(svc.DataScope)
 		mcpAuth = apiKeyAuth.Handler
 	}
 	// The organization MCP policy applies to oct_ keys on the MCP endpoint
@@ -529,6 +554,16 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		mcpHandler.SetScopeCheck(svc.Scope, postgres.NewVerifiedDomainNameRepository(deps.DB), postgres.NewBountyProgramRepository(deps.DB))
 	}
 	mcpDiscovery := newMCPDiscovery(cfg, log)
+	if mcpHandler != nil {
+		// get_asset reads the asset page's services as the connection's
+		// caller; console links point to the web origin. Without discovery
+		// (APP_URL unset) the tool answers without console links.
+		webBase := ""
+		if mcpDiscovery != nil {
+			webBase = mcpDiscovery.Endpoints.Issuer
+		}
+		mcpHandler.SetAssetContext(svc.Asset, webBase)
+	}
 	// OAuth for MCP clients (RFC-062): with an authorization server the MCP
 	// endpoint also accepts its access tokens, and a refused call that
 	// another scope would allow gets a step-up challenge.
@@ -557,19 +592,21 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	}
 
 	handlers := routes.Handlers{
-		ModuleGate:     moduleGate,
-		Brand:          handler.NewBrandHandler(cfg.Brand),
-		DataScope:      byIDGuardAsserter(svc),
-		MCP:            mcpHandler,
-		MCPAuth:        mcpAuth,
-		MCPDiscovery:   mcpDiscovery,
-		MCPOAuth:       mcpOAuthHandler,
-		MCPSettings:    mcpSettings,
-		AISettings:     aiSettings,
-		AIMasking:      aiMasking,
-		MCPConnections: mcpConnections,
-		MCPClients:     mcpClients,
-		APIKeyAuth:     apiKeyAuth,
+		ModuleGate:            moduleGate,
+		IPAllowlistGate:       ipAllowlistGate,
+		IPAllowlistInvalidate: ipAllowlistInvalidate,
+		Brand:                 handler.NewBrandHandler(cfg.Brand),
+		DataScope:             byIDGuardAsserter(svc),
+		MCP:                   mcpHandler,
+		MCPAuth:               mcpAuth,
+		MCPDiscovery:          mcpDiscovery,
+		MCPOAuth:              mcpOAuthHandler,
+		MCPSettings:           mcpSettings,
+		AISettings:            aiSettings,
+		AIMasking:             aiMasking,
+		MCPConnections:        mcpConnections,
+		MCPClients:            mcpClients,
+		APIKeyAuth:            apiKeyAuth,
 		// Health
 		Health: handler.NewHealthHandler(
 			handler.WithDatabase(deps.DB),
@@ -597,7 +634,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		AttackSurface:    handler.NewAttackSurfaceHandler(svc.AttackSurface, log),
 		EASM:             newEASMHandler(repos, svc, log),
 		EASMSettings:     newEASMSettingsHandler(cfg, svc, deps, log),
+		EASMDiscovery:    newEASMDiscoveryHandler(cfg, repos, svc, deps, log),
 		EASMLookalike:    newEASMLookalikeHandler(svc, log),
+		PageMonitor:      newPageMonitorHandler(svc, log),
 		EASMNetworkSeed:  newEASMNetworkSeedHandler(svc, log),
 		AssetWebEvidence: newAssetWebEvidenceHandler(svc, log),
 
@@ -607,6 +646,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		// CTEM Discovery - Network Services, State History & Relationships
 		AssetService:           handler.NewAssetServiceHandler(repos.AssetService, repos.Asset, v, log).SetDataScope(svc.DataScope),
 		Certificate:            handler.NewCertificateHandler(certificateapp.NewService(postgres.NewCertificateReadRepository(deps.DB), svc.DataScope), log),
+		Technology:             handler.NewTechnologyHandler(technologyapp.NewService(postgres.NewTechnologyReadRepository(deps.DB), svc.DataScope), log),
 		WebEndpoint:            handler.NewWebEndpointHandler(webendpointapp.NewService(repos.WebEndpoint, svc.DataScope), svc.Audit, log),
 		Query:                  newQueryHandler(deps.DB, svc, log),
 		APISpec:                handler.NewAPISpecHandler(apispecapp.NewService(repos.APISpec, repos.Asset, svc.DataScope), svc.Audit, log),
@@ -654,7 +694,6 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		Exposure:         handler.NewExposureHandler(svc.Exposure, svc.User, v, log),
 		ThreatIntel:      newThreatIntelHandler(deps, v, log),
 		EmergingThreat:   emergingThreatHandler(svc, log),
-		CTEMID:           handler.NewCTEMIDHandler(svc.CTEMID, log),
 		CredentialImport: handler.NewCredentialImportHandler(svc.CredentialImport, v, log),
 
 		// Dashboard & Branch
@@ -680,6 +719,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		// Sensors & Commands
 		Command:          commandHandler,
 		Sensor:           sensorHandler,
+		PlatformCA:       handler.NewPlatformCAHandler(platformCA, log),
 		SensorContent:    handler.NewSensorContentHandler(svc.SensorContent, sensorHandler, log),
 		SensorResults:    handler.NewSensorResultHandler(svc.Ingest, sensorHandler, log),
 		ScanZone:         handler.NewScanZoneHandler(svc.ScanZone, svc.Scan, log),
@@ -712,6 +752,8 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		ContentSource:       handler.NewContentSourceHandler(svc.ContentSource, log),
 		ContentPack:         handler.NewContentPackHandler(svc.ContentPacks, log),
 		PlatformContentPack: handler.NewPlatformContentPackHandler(svc.PlatformContentPacks, adminConsoleSvc, repos.AdminAuditLog, log),
+		Wordlist:            handler.NewWordlistHandler(svc.Wordlists, svc.ContentPlanner, log),
+		ContentRule:         handler.NewContentRuleHandler(svc.ContentRules, svc.DetectionRules, log),
 		ContentCatalog:      handler.NewContentCatalogHandler(svc.ContentCatalog, log),
 		AdminContentCatalog: handler.NewAdminContentCatalogHandler(svc.ContentCatalog, adminConsoleSvc, repos.AdminAuditLog, log),
 		SensorContentV2:     handler.NewSensorContentV2Handler(svc.ContentDelivery, log),
@@ -775,8 +817,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		APIKey: handler.NewAPIKeyHandler(svc.APIKey, v, log),
 
 		// AI Triage (always initialized - handler returns 503 if service is nil)
-		AITriage:   handler.NewAITriageHandler(svc.AITriage, log),
-		AIAnalysis: aiAnalysisHandler(svc.AIAnalysis, svc.AIExecutor, log),
+		AITriage:    handler.NewAITriageHandler(svc.AITriage, log),
+		AIAnalysis:  aiAnalysisHandler(svc.AIAnalysis, svc.AIExecutor, svc.AIKnowledge, log),
+		AIKnowledge: handler.NewAIKnowledgeHandler(svc.AIKnowledge, log),
 
 		// Suppressions
 		Suppression: newSuppressionHandler(svc, log),
@@ -918,6 +961,8 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	if svc.ActiveGate != nil {
 		// Triage fields on list rows: the dispatcher's own gate (research/124).
 		handlers.Asset.SetTriage(svc.ActiveGate, repos.Attribution, svc.Scope)
+		handlers.Asset.SetMonitoring(svc.ActiveGate, repos.Asset)
+		handlers.Exposure.SetItemsView(svc.ActiveGate)
 	}
 	handlers.Scope.SetHiddenPrograms(svc.BountyProgram)
 	if svc.Scan != nil && svc.ActiveGate != nil {
@@ -1319,6 +1364,10 @@ func wireStepUpGate(handlers *routes.Handlers, svc *Services) {
 	if svc.SensorGrant != nil {
 		svc.SensorGrant.SetStepUpGate(gate)
 	}
+	if svc.TenantAI != nil {
+		// Widening automatic AI triage.
+		svc.TenantAI.SetStepUpGate(gate)
+	}
 	if handlers.CIAdmin != nil {
 		handlers.CIAdmin.SetStepUpGate(gate)
 	}
@@ -1326,6 +1375,37 @@ func wireStepUpGate(handlers *routes.Handlers, svc *Services) {
 		// Allowing an AI application to read all organization data.
 		handlers.MCPOAuth.SetStepUpGate(gate)
 	}
+}
+
+// newPlatformCASource loads the platform's private CA (PLATFORM_CA_CERT_FILE)
+// once at startup so a misconfigured file is reported at once: a file with a
+// private key is refused (logged as an error; the install commands and GET
+// /api/v1/sensors/platform-ca then act as if none were set). A file that is
+// missing at startup is not an error: the gateway may export it later, and
+// the source re-reads the file when it changes.
+func newPlatformCASource(cfg *config.Config, log *logger.Logger) *sensor.PlatformCASource {
+	src := sensor.NewPlatformCASource(cfg.SensorConfig.CACertFile)
+	if !src.Configured() {
+		return src
+	}
+	ca, err := src.Get()
+	switch {
+	case errors.Is(err, sensor.ErrCAFileHasPrivateKey):
+		log.Error("PLATFORM_CA_CERT_FILE holds a private key: refused; sensors are not offered the platform CA until it holds certificates only",
+			"path", logger.SanitizeValue(src.Path()))
+	case errors.Is(err, fs.ErrNotExist):
+		log.Info("PLATFORM_CA_CERT_FILE does not exist (yet); the platform CA is offered once it does",
+			"path", logger.SanitizeValue(src.Path()))
+	case err != nil:
+		log.Warn("PLATFORM_CA_CERT_FILE is not usable yet; it is read again when it changes",
+			"path", logger.SanitizeValue(src.Path()), "error", logger.SanitizeError(err))
+	default:
+		for _, c := range ca.Certs {
+			log.Info("platform CA certificate", "common_name", logger.SanitizeValue(c.CommonName),
+				"sha256", c.SHA256, "root", c.Root, "not_after", c.NotAfter)
+		}
+	}
+	return src
 }
 
 // newSensorHandlerWithTemplates creates a SensorHandler wired with the
@@ -1356,7 +1436,6 @@ func newSensorHandlerWithTemplates(
 	h.SetProductSource(sensorInstallProducts(cfg, log))
 	h.SetSDKLatestSource(versions.SDKLatest)
 	h.SetCollectorImage(collectorInstallImage(cfg, log))
-	h.SetCACertificateFile(cfg.SensorConfig.CACertFile)
 
 	return h
 }
@@ -1653,6 +1732,32 @@ func newEASMSettingsHandler(cfg *config.Config, svc *Services, deps *HandlerDeps
 	}
 	return handler.NewEASMSettingsHandler(svc.Tenant, postgres.NewEASMSweepRepository(deps.DB), sweeper, platform, audit, log).
 		SetDigests(postgres.NewEASMChangeRepository(deps.DB))
+}
+
+// newEASMDiscoveryHandler builds discovery management over the coverage
+// ledger: Run makes pairs due for the coverage loop, Abort all cancels the
+// tenant's coverage runs through the run cancel.
+func newEASMDiscoveryHandler(cfg *config.Config, repos *Repositories, svc *Services, deps *HandlerDeps, log *logger.Logger) *handler.EASMDiscoveryHandler {
+	if repos.AssetCoverage == nil || svc.DataScope == nil {
+		return nil
+	}
+	var sw coverageapp.TenantSwitch
+	if svc.ScanPolicy != nil {
+		sw = coverageapp.GovernanceSwitch{Modes: svc.ScanPolicy, Settings: svc.Tenant}
+	}
+	var cancel coverageapp.RunCanceller
+	if svc.ScanRun != nil {
+		cancel = svc.ScanRun
+	}
+	var audit handler.AttributionAuditor
+	if svc.Audit != nil {
+		audit = svc.Audit
+	}
+	disc := coverageapp.NewDiscovery(repos.AssetCoverage, repos.AssetCoverage, sw, cancel,
+		postgres.NewDiscoveryRunLimiter(deps.DB),
+		coverageapp.DiscoveryConfig{LoopEnabled: cfg.Worker.AssetCoverageEnabled, Interval: cfg.Worker.AssetCoverageInterval,
+			DailyBudget: cfg.Worker.AssetCoverageDailyBudget}, log)
+	return handler.NewEASMDiscoveryHandler(disc, svc.DataScope, audit, log)
 }
 
 // newAssetAttributionHandler builds the attribution handler with its audit
@@ -1972,6 +2077,18 @@ func bootstrapSession(cfg *config.Config, svc *Services, h routes.Handlers) hand
 	return boot
 }
 
+// newPageMonitorHandler serves web page monitoring; watch changes are audited.
+func newPageMonitorHandler(svc *Services, log *logger.Logger) *handler.PageMonitorHandler {
+	if svc.PageMonitor == nil {
+		return nil
+	}
+	var audit handler.AttributionAuditor
+	if svc.Audit != nil {
+		audit = svc.Audit
+	}
+	return handler.NewPageMonitorHandler(svc.PageMonitor, audit, log)
+}
+
 // newEASMLookalikeHandler serves lookalike monitoring; changes are audited.
 func newEASMLookalikeHandler(svc *Services, log *logger.Logger) *handler.EASMLookalikeHandler {
 	if svc.EASMLookalikes == nil {
@@ -2155,12 +2272,13 @@ func emergingThreatHandler(svc *Services, log *logger.Logger) *handler.EmergingT
 }
 
 // aiAnalysisHandler is nil when the AI agent service is not built.
-func aiAnalysisHandler(svc *aianalysis.Service, exec *aianalysis.BuiltinExecutor, log *logger.Logger) *handler.AIAnalysisHandler {
+func aiAnalysisHandler(svc *aianalysis.Service, exec *aianalysis.BuiltinExecutor, knowledge *aiknowledge.Service, log *logger.Logger) *handler.AIAnalysisHandler {
 	if svc == nil {
 		return nil
 	}
 	h := handler.NewAIAnalysisHandler(svc, log)
 	h.SetExecutor(exec)
+	h.SetKnowledge(knowledge)
 	return h
 }
 

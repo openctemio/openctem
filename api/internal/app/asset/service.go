@@ -108,12 +108,13 @@ type AssetService struct {
 	changes     assetdom.ChangeEventRepository
 	attrLister  AttributeSourceLister
 	// Freshness of attribute classes. Optional: nil serves no observation.
-	freshness  freshdom.Repository
-	coverage   covdom.Repository
+	freshness freshdom.Repository
+	coverage  covdom.Repository
 	// The open ports of the addresses a name resolves to. Optional.
 	resolvedPorts assetdom.ResolvedPortReader
-	enrichReqs freshdom.RequestRepository
-	resolution assetresolution.Store
+	lineage       assetdom.LineageReader
+	enrichReqs    freshdom.RequestRepository
+	resolution    assetresolution.Store
 	// createdHook requests enrichment of assets a person created.
 	createdHook CreatedAssetsHook
 	// Background re-resolution after a precedence change, per tenant.
@@ -1423,7 +1424,13 @@ type ListAssetsInput struct {
 	// not_covered, excluded, internal), the attribution rules and discovery
 	// techniques behind the asset, its attribution confidence, and when it
 	// was first seen.
-	ScopeStatus        []string `validate:"max=4,dive,oneof=in_scope not_covered excluded internal"`
+	ScopeStatus []string `validate:"max=4,dive,oneof=in_scope not_covered excluded internal"`
+	// MonitoringState: the derived monitoring state (asset.MonitoringStateOf);
+	// UnclassifiedScanned is the tenant's input to it, resolved by the caller.
+	MonitoringState     []string `validate:"max=7,dive,oneof=irrelevant out_of_scope inactive pending_decision unvalidated not_monitored monitored"`
+	UnclassifiedScanned bool
+	// Primary: only the organization's root domains (asset.PrimarySQL).
+	Primary            bool
 	DiscoveredBy       []string `validate:"max=10,dive,max=40"`
 	DiscoveryTechnique []string `validate:"max=10,dive,max=50"`
 	MinConfidence      *int     `validate:"omitempty,min=0,max=100"`
@@ -1440,11 +1447,16 @@ type ListAssetsInput struct {
 	// Coverage: covered or uncovered by the coverage ledger
 	// (asset.CoverageWindow).
 	Coverage string `validate:"omitempty,oneof=covered uncovered"`
+	// CoverageCause: the uncovered assets with this coverage gap cause.
+	CoverageCause string `validate:"omitempty,oneof=no_sensor platform_failure paused target_unreachable never_run overdue out_of_scope other"`
 	// Technologies: assets using any of these technologies (normalised
 	// names); TechnologyCategories: assets with a technology in any of these
 	// categories (RFC-112).
 	Technologies         []string `validate:"max=20,dive,min=1,max=128"`
 	TechnologyCategories []string `validate:"max=10,dive,oneof=web_server framework language js_library cdn hosting waf analytics security_header other"`
+	// TechnologyVersion narrows Technologies to one exact version ("" =
+	// version unknown); nil = any version.
+	TechnologyVersion *string `validate:"omitempty,max=64"`
 
 	Sort    string `validate:"max=100"` // Sort field (e.g., "-created_at", "name")
 	Page    int    `validate:"min=0"`
@@ -1635,6 +1647,9 @@ func withTriageFilters(filter assetdom.Filter, input ListAssetsInput) (assetdom.
 		}
 	}
 	filter.ScopeStatuses = input.ScopeStatus
+	filter.MonitoringStates = input.MonitoringState
+	filter.UnclassifiedScanned = input.UnclassifiedScanned
+	filter.Primary = input.Primary
 	filter.DiscoveredBy = input.DiscoveredBy
 	filter.DiscoveryTechniques = input.DiscoveryTechnique
 	filter.MinConfidence, filter.MaxConfidence = input.MinConfidence, input.MaxConfidence
@@ -1645,8 +1660,10 @@ func withTriageFilters(filter assetdom.Filter, input ListAssetsInput) (assetdom.
 	filter.Freshness = input.Freshness
 	filter.Resolution = input.Resolution
 	filter.Coverage = input.Coverage
+	filter.CoverageCause = input.CoverageCause
 	filter.Technologies = input.Technologies
 	filter.TechnologyCategories = input.TechnologyCategories
+	filter.TechnologyVersion = input.TechnologyVersion
 	if len(input.DataClassifications) > 0 {
 		filter = filter.WithDataClassifications(input.DataClassifications...)
 	}

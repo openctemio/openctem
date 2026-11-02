@@ -1,16 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import {
-  AlertTriangle,
-  ArrowRight,
-  Check,
-  ChevronDown,
-  Copy,
-  KeyRound,
-  Loader2,
-  Sparkles,
-} from 'lucide-react'
+import { AlertTriangle, ArrowRight, ChevronDown, KeyRound, Loader2, Sparkles } from 'lucide-react'
 import { toast } from 'sonner'
 
 import Link from '@/components/link'
@@ -37,12 +28,15 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { useTranslation } from '@/context/i18n-provider'
-import { useCreateApiKey } from '@/features/api-keys/api/use-api-keys'
-import { API_KEY_EXPIRY_OPTIONS, DEFAULT_API_KEY_EXPIRY_DAYS } from '@/features/api-keys/lib/expiry'
+import { useApiKeyPolicy, useCreateApiKey } from '@/features/api-keys/api/use-api-keys'
+import { expiryOptionsFor } from '@/features/api-keys/lib/expiry'
 import type { CreateAPIKeyResponse } from '@/features/api-keys/types/api-key.types'
 import { getErrorMessage } from '@/lib/api/error-handler'
-import { copyToClipboard } from '@/lib/clipboard'
 import { cn } from '@/lib/utils'
+
+import { ClientSnippets } from './client-snippets'
+import { ConnectionTest } from './connection-test'
+import { CopyButton } from './snippet-block'
 
 // A minted MCP key carries exactly the read scopes below, nothing more. The
 // user picks the key's purpose so it maps to what the server's MCP tools and
@@ -60,28 +54,6 @@ const KEY_PRESETS: Record<PresetId, { scopes: string[] }> = {
       'pentest:templates:read',
     ],
   },
-}
-
-function CopyButton({ value, label }: { value: string; label: string }) {
-  const { t } = useTranslation()
-  const [copied, setCopied] = useState(false)
-  return (
-    <Button
-      type="button"
-      variant="outline"
-      size="sm"
-      onClick={async () => {
-        if (await copyToClipboard(value)) {
-          setCopied(true)
-          toast.success(t('mcp.connect.copied', '{label} copied', { label }))
-          setTimeout(() => setCopied(false), 1500)
-        }
-      }}
-    >
-      {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-      <span className="ml-1.5">{t('mcp.connect.copy', 'Copy')}</span>
-    </Button>
-  )
 }
 
 interface ConnectPanelProps {
@@ -107,7 +79,15 @@ export function ConnectPanel({
       : t('mcp.key.defaultName.pentest', 'Pentest report writer')
   const [preset, setPreset] = useState<PresetId>('general')
   const [name, setName] = useState(() => defaultName('general'))
-  const [expiry, setExpiry] = useState<string>(DEFAULT_API_KEY_EXPIRY_DAYS)
+  const policy = useApiKeyPolicy(canWriteKeys)
+  const { options: expiryOptions, defaultValue: defaultExpiry } = expiryOptionsFor(
+    policy.data?.max_lifetime_days
+  )
+  const [expiry, setExpiry] = useState<string>(defaultExpiry)
+  // Never keep a choice above the organization's maximum once it is known.
+  useEffect(() => {
+    if (!expiryOptions.some((o) => o.value === expiry)) setExpiry(defaultExpiry)
+  }, [expiryOptions, expiry, defaultExpiry])
   const [created, setCreated] = useState<CreateAPIKeyResponse | null>(null)
   const [guideOpen, setGuideOpen] = useState(false)
   const { trigger, isMutating } = useCreateApiKey()
@@ -132,15 +112,11 @@ export function ConnectPanel({
 
   // The MCP endpoint is served under the API path on this origin (the Next
   // proxy forwards /api/v1/* to the backend).
-  const [endpoint, setEndpoint] = useState('/api/v1/mcp')
+  const [origin, setOrigin] = useState('')
   useEffect(() => {
-    setEndpoint(`${window.location.origin}/api/v1/mcp`)
+    setOrigin(window.location.origin)
   }, [])
-
-  const oauthConfigJson = useMemo(
-    () => JSON.stringify({ mcpServers: { openctem: { type: 'http', url: endpoint } } }, null, 2),
-    [endpoint]
-  )
+  const endpoint = `${origin}/api/v1/mcp`
   const keyConfigJson = useMemo(() => {
     const key = created?.key ?? 'oct_YOUR_KEY_HERE'
     return JSON.stringify(
@@ -189,20 +165,15 @@ export function ConnectPanel({
             )}
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="flex items-center justify-between">
-            <Label>{t('mcp.connect.clientConfig', 'Client configuration')}</Label>
-            <CopyButton value={oauthConfigJson} label={configLabel} />
-          </div>
-          <pre className="bg-muted overflow-x-auto rounded-md p-4 text-xs">
-            <code>{oauthConfigJson}</code>
-          </pre>
+        <CardContent className="space-y-4">
+          <ClientSnippets endpoint={endpoint} deviceUrl={`${origin}/oauth/device`} />
           <p className="text-muted-foreground text-xs">
             {t(
               'mcp.connect.otherHost',
               'If your {product} API is on a different host, replace the URL accordingly.'
             )}
           </p>
+          <ConnectionTest />
           <Button asChild variant="link" className="h-auto p-0 whitespace-normal text-start">
             <Link href="/account/connected-apps">
               {t('mcp.connect.yourConnections', 'See and disconnect your connected applications')}
@@ -368,9 +339,9 @@ export function ConnectPanel({
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {API_KEY_EXPIRY_OPTIONS.map((o) => (
+                    {expiryOptions.map((o) => (
                       <SelectItem key={o.value} value={o.value}>
-                        {t(`mcp.key.expiry.${o.value}`, o.label)}
+                        {t(o.labelKey, o.label, { days: o.days ?? Number(o.value) })}
                       </SelectItem>
                     ))}
                   </SelectContent>

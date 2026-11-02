@@ -73,6 +73,7 @@ type Service struct {
 	attributes   AttributeReconciler
 	sets         SetReconciler
 	techs        assettech.Repository
+	rules        DetectionRules
 	webRules     WebRuleSource
 	sensorRepo   sensor.Repository
 	branchRepo   branch.Repository
@@ -100,6 +101,9 @@ type Service struct {
 	// scanAttribution stamps tenant_scanned attribution evidence on the
 	// assets of command-bound reports (RFC-036 O8). Nil-safe.
 	scanAttribution ScanAttributionStamper
+	// certNames proposes certificate SANs as candidate subdomains
+	// (cert_names.go). Nil-safe.
+	certNames CertificateNamePromoter
 	// importCandidates holds the new hosts of an import for review.
 	importCandidates ImportCandidateHolder
 	// groupRules is told when a report created or updated assets, so the
@@ -267,6 +271,11 @@ func (s *Service) SetIdentityStore(store IdentityStore, reviewer IdentityReviewe
 // This is used to trigger workflows when new findings are ingested.
 func (s *Service) SetFindingCreatedCallback(callback FindingCreatedCallback) {
 	s.findingProcessor.SetFindingCreatedCallback(callback)
+}
+
+// SetWebContentRecorder enables page monitoring ingest (RFC-138).
+func (s *Service) SetWebContentRecorder(r WebContentRecorder) {
+	s.assetProcessor.SetWebContentRecorder(r)
 }
 
 // SetWebEvidenceRecorder enables web evidence captures (RFC-081).
@@ -489,6 +498,10 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	// Output-type binding (research/27 G12): a command-bound report may
 	// carry only the asset types its tool produces or takes.
 	report = s.bindOutputTypes(ctx, agt, tenantID, binding, report, opts)
+	// Which channel reported the findings is the platform's to say, from
+	// the principal: a sensor's metadata.source_type is ignored, so it can
+	// never file its findings as a person's or an integration's.
+	report.Metadata.SourceType = principalSourceType(agt, binding, report.Metadata.SourceType)
 	scope := newAlterScope(binding).withActor(ctx, opts.Actor)
 
 	// report.Metadata.ID and SourceType come from the CTIS payload
@@ -512,27 +525,13 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	}
 	// Web endpoints (and legacy discovered_url assets) go to the web surface
 	// sub-inventory under their origin asset, never one asset per URL.
+	// Detection rules read the web services before anything is stored
+	// (fingerprints join the assets' technologies).
+	report, detections := s.matchDetectionRules(ctx, tenantID, report)
 	report, endpoints := s.planEndpoints(report, binding, output)
 
 	// Load tenant settings once for both asset processing and finding processing
-	var tenantRules branch.BranchTypeRules
-	var assetIdentityCfg *CorrelationConfig
-	reconcilePolicy := asset.DefaultReconciliationPolicy()
-	if s.tenantRepo != nil {
-		if t, err := s.tenantRepo.GetByID(ctx, tenantID); err == nil && t != nil {
-			settings := t.TypedSettings()
-			tenantRules = settings.Branch.TypeRules
-			// Per-tenant asset identity config (RFC-001)
-			aiSettings := settings.AssetIdentity
-			cfg := s.assetProcessor.defaultCorrelationConfig().WithTenantOverrides(
-				aiSettings.StaleAssetDays, aiSettings.MaxIPsPerAsset,
-			)
-			assetIdentityCfg = &cfg
-			if p, perr := settings.AssetReconciliation.Policy(); perr == nil {
-				reconcilePolicy = p
-			}
-		}
-	}
+	tenantRules, assetIdentityCfg, reconcilePolicy := s.loadTenantIngestConfig(ctx, tenantID)
 	// Who this report is for attribute reconciliation (RFC-069), and when
 	// its source saw what it reports.
 	sourceKind, sourceName := reportSource(binding, opts, report)
@@ -587,6 +586,7 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	// What each asset was fingerprinted with (RFC-112), after the sets
 	// decided which technologies the asset shows.
 	s.recordTechnologies(ctx, tenantID, scope, src, observedAt, report, assetMap)
+	s.recordDetectionRules(ctx, tenantID, scope, binding, detections, assetMap, observedAt)
 	if binding.Kind == BindingTrusted && sourceKind == asset.SourceKindImport {
 		s.holdImportCandidates(ctx, tenantID, scope, report, assetMap, output)
 	}
@@ -613,6 +613,9 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	}
 	// What a workflow step's report wrote, for the stages chained after it.
 	s.recordStepOutputs(ctx, tenantID, binding, scope)
+	// The names in the certificates this report wrote become candidate
+	// subdomains under the tenant's roots (cert_names.go). Best-effort.
+	s.promoteCertificateNames(ctx, tenantID, binding, report, assetMap)
 
 	// Step 1b: Project recon-discovered assets (open ports, exposed services,
 	// TLS certificates) into the Exposure Register. Best-effort — a failure here
@@ -680,6 +683,10 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 			s.auditVEX(ctx, tenantID, binding, report.Tool.Name, output)
 		}
 	}
+
+	// What a hostname-scoped command's report named outside its targets was
+	// dropped above (job_bound.go): count and audit it once.
+	s.reportOutsideJob(agt, tenantID, binding, report, output)
 
 	// Step 2d: takeover-template findings confirm open dangling CNAMEs
 	// (RFC-036 P1); command-bound reports only. Best-effort.
@@ -1195,3 +1202,34 @@ type AssetChangeNotifier interface {
 // SetAssetChangeNotifier wires the evaluation of rule groups after a report
 // created or updated assets.
 func (s *Service) SetAssetChangeNotifier(n AssetChangeNotifier) { s.groupRules = n }
+
+// loadTenantIngestConfig reads the organization's branch rules, asset identity
+// config and reconciliation policy. When the tenant cannot be loaded ingest
+// goes on with the platform defaults rather than refuse a report, but the
+// organization's rules did not apply: that is logged.
+func (s *Service) loadTenantIngestConfig(ctx context.Context, tenantID shared.ID) (branch.BranchTypeRules, *CorrelationConfig, asset.ReconciliationPolicy) {
+	var tenantRules branch.BranchTypeRules
+	var assetIdentityCfg *CorrelationConfig
+	reconcilePolicy := asset.DefaultReconciliationPolicy()
+	if s.tenantRepo == nil {
+		return tenantRules, assetIdentityCfg, reconcilePolicy
+	}
+	t, err := s.tenantRepo.GetByID(ctx, tenantID)
+	if err != nil || t == nil {
+		s.logger.Warn("ingest: tenant settings not loaded; default identity and reconciliation rules used",
+			"tenant_id", tenantID.String(), "error", logger.SanitizeError(err))
+		return tenantRules, assetIdentityCfg, reconcilePolicy
+	}
+	settings := t.TypedSettings()
+	tenantRules = settings.Branch.TypeRules
+	// Per-tenant asset identity config (RFC-001)
+	aiSettings := settings.AssetIdentity
+	cfg := s.assetProcessor.defaultCorrelationConfig().WithTenantOverrides(
+		aiSettings.StaleAssetDays, aiSettings.MaxIPsPerAsset,
+	)
+	assetIdentityCfg = &cfg
+	if p, perr := settings.AssetReconciliation.Policy(); perr == nil {
+		reconcilePolicy = p
+	}
+	return tenantRules, assetIdentityCfg, reconcilePolicy
+}

@@ -43,8 +43,9 @@ type Repository interface {
 	GetByName(ctx context.Context, tenantID shared.ID, name string) (*Tool, error)
 	List(ctx context.Context, filter ToolFilter, page pagination.Pagination) (pagination.Result[*Tool], error)
 	ListByNames(ctx context.Context, names []string) ([]*Tool, error)
-	ListByCategoryID(ctx context.Context, categoryID shared.ID) ([]*Tool, error)
-	ListByCategoryName(ctx context.Context, categoryName string) ([]*Tool, error)
+	// ListByCategoryID lists the active tools of a category visible to the tenant:
+	// platform tools plus its own custom tools, never another tenant's.
+	ListByCategoryID(ctx context.Context, tenantID, categoryID shared.ID) ([]*Tool, error)
 	ListByCapability(ctx context.Context, capability string) ([]*Tool, error)
 	// FindByCapabilities finds an active tool that matches all required capabilities.
 	// Searches platform tools first, then tenant-specific tools.
@@ -84,11 +85,11 @@ type VersionInfo struct {
 type TenantToolConfigRepository interface {
 	// CRUD operations
 	Create(ctx context.Context, config *TenantToolConfig) error
-	GetByID(ctx context.Context, id shared.ID) (*TenantToolConfig, error)
+	GetByID(ctx context.Context, tenantID, id shared.ID) (*TenantToolConfig, error)
 	GetByTenantAndTool(ctx context.Context, tenantID, toolID shared.ID) (*TenantToolConfig, error)
 	List(ctx context.Context, filter TenantToolConfigFilter, page pagination.Pagination) (pagination.Result[*TenantToolConfig], error)
 	Update(ctx context.Context, config *TenantToolConfig) error
-	Delete(ctx context.Context, id shared.ID) error
+	Delete(ctx context.Context, tenantID, id shared.ID) error
 
 	// Upsert - Create or update config
 	Upsert(ctx context.Context, config *TenantToolConfig) error

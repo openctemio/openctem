@@ -29,8 +29,9 @@ decode), `internal/app/tenant/settings_write.go` (the write path),
 
 ## Entry requirements on every organization route
 
-An organization's access requirements (SSO enforcement, required two-factor,
-personal-account policy, outside-member privilege rule) gate **entry to that
+An organization's access requirements (SSO enforcement, the identity provider
+binding below, required two-factor, personal-account policy, outside-member
+privilege rule) gate **entry to that
 organization**. Token issuance evaluates them for the organization the token is
 minted for. The `/api/v1/tenants/{tenant}/...` routes take the organization
 from the URL and accept a token minted for another organization the caller
@@ -41,13 +42,41 @@ belongs to, so they carry one more check: `EntryGate`
   the tenantless token that social and SSO sign-in return proves a sign-in, not
   entry to any organization; exchange it for an organization token first;
 - re-applies the URL organization's requirements to the token's own session
-  (`MFA_ENROLLMENT_REQUIRED`, `PERSONAL_ACCOUNTS_BLOCKED`, SSO required, with
-  the second factor an SSO exception needs), exactly as at token issuance.
+  (`EMAIL_NOT_VERIFIED`, `OWN_SIGN_IN_REQUIRED`, `MFA_ENROLLMENT_REQUIRED`,
+  `PERSONAL_ACCOUNTS_BLOCKED`, SSO required, with the second factor an SSO
+  exception needs), exactly as at token issuance.
 
 A pass is cached for 15 seconds per (session, organization), so a tightened
 requirement applies within that window; a refusal or a failure to decide is
 never cached and fails closed. A requirement of organization A never affects
 the person's access to organization B (research/310).
+
+### Identity provider binding
+
+An organization trusts its own identity provider: a sign-in through it skips
+the account's own password and second factor there. That trust ends at the
+organization. A session issued by organization A's IdP opens organization B
+only when B trusts A as the member's home organization (external members,
+RFC-058), or when the account has no sign-in of its own (no password, no second
+factor, not a social account: the IdP created it and is its only way in).
+Otherwise token issuance and `EntryGate` answer `403 OWN_SIGN_IN_REQUIRED`, and
+the person signs in with their own account (password and, when enrolled, the
+second factor) or through B's own IdP. Without this, A's IdP administrator
+controlled the person's access to every other organization that does not
+require 2FA or SSO.
+
+For the same reason a second factor proven by A's IdP satisfies only A's
+rules, or a host's that trusts A as the member's home: it never counts for
+B's personal-account policy, outside-member rule, SSO exception or owner
+break-glass (the last two need the account's own password and factor).
+
+Actions on the account itself reach every organization, so no organization's
+IdP may take them in the account's name: deleting the account
+(`DELETE /api/v1/me/account`) and signing out everywhere
+(`DELETE /api/v1/users/me/sessions`) answer `403 OWN_SIGN_IN_REQUIRED` to an
+organization IdP's session when the account has its own sign-in
+(`middleware.RequireOwnSignIn`). A fresh re-authentication at the IdP does not
+change that: it proves the IdP's sign-in, not the account's.
 
 ## Organization slug
 
@@ -120,6 +149,24 @@ Consequences:
 - A write to an unreadable section is refused (500, logged as an error), so it
   is never overwritten with defaults. Writes to other sections still work.
   An operator fixes the stored JSON.
+
+## IP allowlist cache and cross-replica invalidation
+
+Every API replica caches each organization's IP allowlist for 30 seconds in
+the IP allowlist gate. After a change to the `security` section (the owner's
+PATCH), the replica that served it drops its entry at once and publishes the
+tenant id on the Redis channel `ip_allowlist:changed`; every other replica
+drops its entry on receipt, so a removed address is refused everywhere at
+once. It is the same bus as module toggles (`CacheInvalidationBus`,
+`modules:changed`).
+
+- The message carries only the origin replica and the tenant id (no tenant
+  data), is size-capped and the id must be a UUID. Redis is a hint: a message
+  can only drop a cache entry, and the next request re-reads the database, so
+  a forged message cannot grant access.
+- The 30 second TTL stays as the bound when a message is lost, Redis is down
+  or the subscription has not started; without Redis the behaviour is local
+  invalidation plus the TTL.
 
 ## Audit: every change carries a diff
 

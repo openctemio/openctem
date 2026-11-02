@@ -55,6 +55,10 @@ type SensorPairingHandler struct {
 	budget PairingStartBudget
 }
 
+// pairingKeyBusyRetry is the Retry-After (seconds) of a start whose key has
+// another open request.
+const pairingKeyBusyRetry = 30
+
 // SetStartBudget sets the budget verified start requests are charged to.
 func (h *SensorPairingHandler) SetStartBudget(b PairingStartBudget) { h.budget = b }
 
@@ -160,7 +164,14 @@ func (h *SensorPairingHandler) Start(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if _, err := h.verifyWithKey(r, pub); err != nil {
-		if writeClockSkew(w, r, err, h.log) {
+		if ce := asClockSkew(err, h.log, r); ce != nil {
+			// The signature verified with the key in the body: the console
+			// that made the code may hear about the wrong clock.
+			if req.Code != "" {
+				h.svc.RecordRefusal(r.Context(), sensorpairing.Refusal{Code: req.Code, PublicKey: pub,
+					SourceIP: net.ParseIP(getClientIP(r)), Reason: sensordom.RefusalClockSkew, ClockSkew: ce.offset})
+			}
+			protov2.NewProblem(protov2.ProblemClockSkew).WithClock(ce.now, ce.offset).Write(w)
 			return
 		}
 		protov2.NewProblem(protov2.ProblemUnauthenticated).Write(w)
@@ -171,6 +182,10 @@ func (h *SensorPairingHandler) Start(w http.ResponseWriter, r *http.Request) {
 	// per-address entry budget of the route.
 	if h.budget != nil {
 		if wait, ok := h.budget.ChargeStart(r, startCredential(req)); !ok {
+			if req.Code != "" {
+				h.svc.RecordRefusal(r.Context(), sensorpairing.Refusal{Code: req.Code, PublicKey: pub,
+					SourceIP: net.ParseIP(getClientIP(r)), Reason: sensordom.RefusalRateLimited, RetryAfter: wait})
+			}
 			w.Header().Set("Retry-After", strconv.Itoa(middleware.JitteredRetryAfter(wait)))
 			protov2.NewProblem(protov2.ProblemRateLimited).Write(w)
 			return
@@ -188,6 +203,13 @@ func (h *SensorPairingHandler) Start(w http.ResponseWriter, r *http.Request) {
 	case errors.Is(err, sensorpairing.ErrCapacity):
 		w.Header().Set("Retry-After", "60")
 		protov2.NewProblem(protov2.ProblemUnavailable).Write(w)
+	case errors.Is(err, sensorpairing.ErrKeyRegistered):
+		// Told only to the key's holder (the signature verified): a key an
+		// approval registered never pairs again, with any code.
+		protov2.NewProblem(protov2.ProblemPairingKeyRegistered).Write(w)
+	case errors.Is(err, sensorpairing.ErrKeyBusy):
+		w.Header().Set("Retry-After", strconv.Itoa(pairingKeyBusyRetry))
+		protov2.NewProblem(protov2.ProblemPairingKeyBusy).Write(w)
 	default:
 		h.log.Error("start pairing", "error", logger.SanitizeError(err))
 		protov2.NewProblem(protov2.ProblemInternal).Write(w)
@@ -318,11 +340,17 @@ func (h *SensorPairingHandler) writeUserError(w http.ResponseWriter, err error) 
 	case errors.Is(err, sensorpairing.ErrNotFound):
 		apierror.NotFound("Pairing request").WriteJSON(w)
 	case errors.Is(err, sensorpairing.ErrFingerprintRequired):
-		apierror.New(http.StatusBadRequest, "FINGERPRINT_NOT_CONFIRMED", "Confirm that the fingerprint shown on the sensor matches before approving").WriteJSON(w)
+		apierror.New(http.StatusBadRequest, "FINGERPRINT_NOT_CONFIRMED", "Pick the fingerprint the sensor shows before approving").WriteJSON(w)
+	case errors.Is(err, sensorpairing.ErrFingerprintMismatch):
+		apierror.New(http.StatusConflict, "FINGERPRINT_MISMATCH", "The fingerprint you picked is not the one the sensor shows, so the request was closed; every administrator was told").WriteJSON(w)
 	case errors.Is(err, authapp.ErrStepUpRequired):
 		apierror.New(http.StatusForbidden, "STEP_UP_REQUIRED", "Re-authenticate to approve a sensor").WriteJSON(w)
 	case errors.Is(err, authapp.ErrStepUpFailed), errors.Is(err, authapp.ErrAccountLocked):
 		apierror.New(http.StatusForbidden, "STEP_UP_FAILED", "Re-authentication failed").WriteJSON(w)
+	case errors.Is(err, sensorpairing.ErrRepairNotAcknowledged):
+		apierror.New(http.StatusConflict, "REPAIR_NOT_ACKNOWLEDGED", "This request replaces the key of an existing sensor (or adds a new one); review it again and confirm which").WriteJSON(w)
+	case errors.Is(err, sensorpairing.ErrOrganizationMismatch):
+		apierror.New(http.StatusConflict, "ORGANIZATION_MISMATCH", "The organization changed since the review; review the request again in the organization the sensor is meant for").WriteJSON(w)
 	case errors.Is(err, sensorpairing.ErrLookupLocked):
 		apierror.TooManyRequests("Too many failed pairing code lookups; try again later").WriteJSON(w)
 	case errors.Is(err, sensorpairing.ErrInvalid), errors.Is(err, shared.ErrValidation):
@@ -373,19 +401,25 @@ func (h *SensorPairingHandler) Lookup(w http.ResponseWriter, r *http.Request) {
 
 // PairingExpectRequest is the body of POST /api/v1/sensor-pairings/expectations.
 type PairingExpectRequest struct {
-	Name           string   `json:"name"`
-	ZoneIDs        []string `json:"zone_ids"`
-	GrantProfile   string   `json:"grant_profile"`
-	RepairSensorID string   `json:"repair_sensor_id"`
+	Name         string   `json:"name"`
+	ZoneIDs      []string `json:"zone_ids"`
+	GrantProfile string   `json:"grant_profile"`
+	// RepairSensorID makes the code a re-pair of that sensor of the
+	// organization (it keeps its name, zones and grant; name, zone_ids and
+	// grant_profile must then be empty).
+	RepairSensorID string `json:"repair_sensor_id"`
+	// RepairReason is required with repair_sensor_id: lost_identity,
+	// host_moved, key_compromised or install_method.
+	RepairReason string `json:"repair_reason"`
 }
 
 // Expect godoc
-// @Summary      Expect a sensor (reverse pairing)
-// @Description  Returns a single-use code (10 minutes) to run as `openctemio-sensor pair <CODE>` on the host.
+// @Summary      Create a pairing code for a new sensor (reverse pairing)
+// @Description  Returns a single-use code (10 minutes) to run as `openctemio-sensor pair <CODE>` on the host. With repair_sensor_id and repair_reason the code re-pairs that sensor (a new key, same registration); a newer re-pair code of the same sensor closes the earlier ones.
 // @Tags         sensor-pairing
 // @Accept       json
 // @Produce      json
-// @Param        body  body      PairingExpectRequest  true  "Expected sensor"
+// @Param        body  body      PairingExpectRequest  true  "Pairing code to create"
 // @Success      201   {object}  sensorpairing.View
 // @Failure      400   {object}  apierror.Error
 // @Security     BearerAuth
@@ -401,7 +435,7 @@ func (h *SensorPairingHandler) Expect(w http.ResponseWriter, r *http.Request) {
 		apierror.BadRequest("Invalid request body").WriteJSON(w)
 		return
 	}
-	in := sensorpairing.ExpectInput{Name: req.Name, Profile: req.GrantProfile}
+	in := sensorpairing.ExpectInput{Name: req.Name, Profile: req.GrantProfile, RepairReason: req.RepairReason}
 	var err error
 	if in.ZoneIDs, err = parseIDs(req.ZoneIDs); err != nil {
 		apierror.BadRequest("Invalid zone id").WriteJSON(w)
@@ -456,18 +490,28 @@ func (h *SensorPairingHandler) GetExpectation(w http.ResponseWriter, r *http.Req
 type PairingApproveRequest struct {
 	// Code is the code the approver entered (default mode; not needed for
 	// an expectation of this organization).
-	Code                 string              `json:"code"`
-	FingerprintConfirmed bool                `json:"fingerprint_confirmed"`
-	StepUp               authapp.StepUpProof `json:"step_up"`
-	Name                 string              `json:"name"`
-	Type                 string              `json:"type"`
-	ZoneIDs              []string            `json:"zone_ids"`
-	GrantProfile         string              `json:"grant_profile"`
+	Code string `json:"code"`
+	// Fingerprint is the fingerprint the approver picked from the review's
+	// fingerprint_choices: the one the host shows.
+	Fingerprint string `json:"fingerprint"`
+	// OrganizationID is the organization the review showed
+	// (View.organization_id); it must be the session's.
+	OrganizationID string              `json:"organization_id"`
+	StepUp         authapp.StepUpProof `json:"step_up"`
+	Name           string              `json:"name"`
+	Type           string              `json:"type"`
+	ZoneIDs        []string            `json:"zone_ids"`
+	GrantProfile   string              `json:"grant_profile"`
+	// RepairSensorID must name the sensor the request re-pairs
+	// (View.repair_sensor_id), and be empty when it adds a sensor; else 409
+	// REPAIR_NOT_ACKNOWLEDGED. A re-pair ignores name, type, zone_ids and
+	// grant_profile: the sensor keeps its registration and grant.
+	RepairSensorID string `json:"repair_sensor_id"`
 }
 
 // Approve godoc
 // @Summary      Approve a sensor pairing
-// @Description  Binds the sensor's key to this organization: a new sensor, or the registration being re-paired (its earlier keys revoked). Needs fingerprint_confirmed=true and step-up re-authentication (TOTP, else password, else a sign-in younger than 10 minutes). Audited at high severity; every administrator is notified.
+// @Description  Binds the sensor's key to this organization: a new sensor, or the registration being re-paired (its earlier keys revoked). Needs fingerprint (the one of the review's fingerprint_choices the host shows; any other closes the request, 409 FINGERPRINT_MISMATCH), organization_id equal to the session's organization (409 ORGANIZATION_MISMATCH otherwise) and step-up re-authentication (TOTP, else password, else a sign-in younger than 10 minutes). Audited at high severity; every administrator is notified.
 // @Tags         sensor-pairing
 // @Accept       json
 // @Produce      json
@@ -477,6 +521,7 @@ type PairingApproveRequest struct {
 // @Failure      400   {object}  apierror.Error
 // @Failure      403   {object}  apierror.Error
 // @Failure      404   {object}  apierror.Error
+// @Failure      409   {object}  apierror.Error
 // @Security     BearerAuth
 // @Router       /sensor-pairings/{id}/approve [post]
 func (h *SensorPairingHandler) Approve(w http.ResponseWriter, r *http.Request) {
@@ -501,8 +546,8 @@ func (h *SensorPairingHandler) Approve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	v, err := h.svc.Approve(r.Context(), a, id, sensorpairing.ApproveInput{
-		Code: req.Code, FingerprintConfirmed: req.FingerprintConfirmed, StepUp: req.StepUp, Name: req.Name,
-		Type: sensordom.SensorType(req.Type), ZoneIDs: zones, Profile: req.GrantProfile,
+		Code: req.Code, Fingerprint: req.Fingerprint, OrganizationID: req.OrganizationID, StepUp: req.StepUp, Name: req.Name,
+		Type: sensordom.SensorType(req.Type), ZoneIDs: zones, Profile: req.GrantProfile, RepairSensorID: req.RepairSensorID,
 	})
 	if err != nil {
 		h.writeUserError(w, err)
@@ -511,10 +556,20 @@ func (h *SensorPairingHandler) Approve(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, v)
 }
 
+// PairingRejectRequest is the body of POST /api/v1/sensor-pairings/{id}/reject.
+type PairingRejectRequest struct {
+	// Code is the code the approver entered (default mode); a request no
+	// organization claimed yet is rejected only with it.
+	Code string `json:"code"`
+}
+
 // Deny godoc
 // @Summary      Reject a sensor pairing request
+// @Description  Rejects an open request of this organization, or an unclaimed request whose code is given (the id alone is not enough).
 // @Tags         sensor-pairing
-// @Param        id  path  string  true  "Pairing id"
+// @Accept       json
+// @Param        id    path  string                true   "Pairing id"
+// @Param        body  body  PairingRejectRequest  false  "Code entered (default mode)"
 // @Success      204
 // @Failure      404  {object}  apierror.Error
 // @Security     BearerAuth
@@ -530,7 +585,14 @@ func (h *SensorPairingHandler) Deny(w http.ResponseWriter, r *http.Request) {
 		apierror.NotFound("Pairing request").WriteJSON(w)
 		return
 	}
-	if err := h.svc.Deny(r.Context(), a, id); err != nil {
+	var req PairingRejectRequest
+	if r.ContentLength != 0 {
+		if err := json.NewDecoder(io.LimitReader(r.Body, 4096)).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
+			apierror.BadRequest("Invalid request body").WriteJSON(w)
+			return
+		}
+	}
+	if err := h.svc.Deny(r.Context(), a, id, req.Code); err != nil {
 		h.writeUserError(w, err)
 		return
 	}

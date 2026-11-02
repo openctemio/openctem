@@ -35,10 +35,18 @@ export function wirePath(x1: number, y1: number, x2: number, y2: number): string
   return `M${x1} ${y1} C${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`
 }
 
-/** Wire width for a volume: 1 to 6 px on a square-root scale of the largest. */
+/** Wire width for a volume: 1 to 6 px, proportional to its share of the largest. */
 export function wireWidth(value: number, max: number): number {
   if (max <= 0 || value <= 0) return 1
-  return Math.round((1 + 5 * Math.sqrt(value / max)) * 100) / 100
+  return Math.round((1 + 5 * Math.min(1, value / max)) * 100) / 100
+}
+
+/**
+ * The glow of the one focused wire or segment: a soft shadow in its own
+ * colour (CSS filter, so it costs nothing until something is focused).
+ */
+export function focusGlow(color: string): string {
+  return `drop-shadow(0 0 4px color-mix(in oklab, ${color} 60%, transparent))`
 }
 
 /** Stroke of a wire by the health of its source. */
@@ -55,6 +63,47 @@ export function wireStroke(health: SourceHealth | 'neutral' | 'bad'): {
     default:
       return { stroke: 'var(--border-strong, var(--border))' }
   }
+}
+
+/**
+ * Width bands of a connected visual, measured on the widget's own width (a
+ * container, never the viewport: a widget sits in grid cells of any size).
+ * The layout classes use the same numbers as container queries
+ * (`@min-[660px]`, `@min-[900px]`); the wires use the measured band, so a
+ * wire is drawn only when both of its ends sit side by side.
+ *
+ * The widths are the visual's own (the card less its padding).
+ *
+ * - narrow (< 660 px): one column, no wires; every number stays a link.
+ * - mid (660 to 899 px): the core and the outcomes side by side, sources as a
+ *   list above; wires to the outcomes.
+ * - wide (900 px and more): three columns that fill the card: sources and
+ *   outcomes at a reading width against the edges, the core taking the rest
+ *   (a full-width dashboard card from a 1280 px window with the sidebar open).
+ */
+export const FLOW_MID = 660
+export const FLOW_WIDE = 900
+
+export type FlowBand = 'narrow' | 'mid' | 'wide'
+
+export function flowBand(width: number | undefined): FlowBand {
+  if (!width || width < FLOW_MID) return 'narrow'
+  return width < FLOW_WIDE ? 'mid' : 'wide'
+}
+
+/** The width of an element, followed on resize (0 until measured). */
+export function useElementWidth(ref: RefObject<HTMLElement | null>): number {
+  const [width, setWidth] = useState(0)
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el) return
+    setWidth(el.getBoundingClientRect().width)
+    if (typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(() => setWidth(el.getBoundingClientRect().width))
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [ref])
+  return width
 }
 
 export interface Anchor {
@@ -185,6 +234,8 @@ export interface FlowTipContent {
   rows: Array<[string, string]>
   definition?: string
   link?: { label: string; href: string | null | undefined }
+  /** Further lists the figure relates to (a sensor's page), after the main link. */
+  more?: Array<{ label: string; href: string | null | undefined }>
 }
 
 /**
@@ -243,6 +294,18 @@ export function FlowTip({
           {content.link.label}
         </Link>
       )}
+      {content.more?.map((m) => {
+        const to = safeInternalHref(m.href)
+        return to ? (
+          <Link
+            key={m.label}
+            href={to}
+            className="mt-1 block text-xs text-signal-text hover:underline"
+          >
+            {m.label}
+          </Link>
+        ) : null
+      })}
     </div>
   )
 }

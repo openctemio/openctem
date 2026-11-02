@@ -228,15 +228,6 @@ func (s *Service) ListTools(ctx context.Context, input ListInput) (pagination.Re
 	return s.toolRepo.List(ctx, filter, page)
 }
 
-// ListToolsByCategory lists tools by category name.
-func (s *Service) ListToolsByCategory(ctx context.Context, category string) ([]*tooldom.Tool, error) {
-	if category == "" {
-		return nil, fmt.Errorf("%w: category is required", shared.ErrValidation)
-	}
-
-	return s.toolRepo.ListByCategoryName(ctx, category)
-}
-
 // ListToolsByCapability lists tools by capability.
 func (s *Service) ListToolsByCapability(ctx context.Context, capability string) ([]*tooldom.Tool, error) {
 	if capability == "" {
@@ -1108,7 +1099,7 @@ func (s *Service) DeleteTenantToolConfig(ctx context.Context, tenantID, toolID s
 		return err
 	}
 
-	return s.configRepo.Delete(ctx, config.ID)
+	return s.configRepo.Delete(ctx, config.TenantID, config.ID)
 }
 
 // EnableToolForTenant enables a tool for a tenant.

@@ -13,6 +13,7 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app/closuremode"
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/api/pkg/domain/ingestreceipt"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/softwarematch"
 	"github.com/openctemio/openctem/api/pkg/domain/tenant"
@@ -77,7 +78,20 @@ type Service struct {
 	closure closuremode.SettingsReader
 	// maxRows bounds one pass's read of a tenant's matches (memory).
 	maxRows int
+	// receipts records the findings a pass stored on the platform's own
+	// receipt (nil: none recorded).
+	receipts ReceiptRecorder
 }
+
+// ReceiptRecorder writes receipt deltas (ingestreceipt.Repository).
+type ReceiptRecorder interface {
+	Record(ctx context.Context, d *ingestreceipt.Delta) (shared.ID, error)
+}
+
+// SetReceiptRecorder records the findings the matcher stores on a receipt
+// of the platform (one per organization and UTC day), so the intake shows
+// them as the platform's, never as the tool whose report named the software.
+func (s *Service) SetReceiptRecorder(r ReceiptRecorder) { s.receipts = r }
 
 // RemediationKeyApplier keys persisted findings into remediation groups
 // (*remediation.KeyApplier). Best-effort: a failure is logged, never fatal.
@@ -377,6 +391,7 @@ func (s *Service) ReconcileTenant(ctx context.Context, tenantID shared.ID, st *S
 		return err
 	}
 	s.applyVEX(ctx, tenantID, append(created, rekeyed...))
+	s.cancelVersionProposals(ctx, tenantID, existing, matched)
 	if !complete {
 		// matched lacks the matches past the limit, so their live findings
 		// would look unmatched and be closed. Creating and reopening from
@@ -511,6 +526,7 @@ func (s *Service) create(ctx context.Context, tenantID shared.ID, cands []*candi
 		}
 	}
 	s.queueAlerts(ctx, tenantID, findings, res)
+	s.recordReceipt(ctx, tenantID, findings, res)
 	if s.keys != nil {
 		if err := s.keys.ApplyBatch(ctx, tenantID, findings); err != nil {
 			s.logger.Warn("vulnerability matching: remediation keys not derived", "tenant_id", tenantID.String(), "error", err)
@@ -526,6 +542,47 @@ func (s *Service) create(ctx context.Context, tenantID shared.ID, cands []*candi
 		}
 	}
 	return built, nil
+}
+
+// recordReceipt books the findings a pass stored on the platform's receipt
+// of the day: new rows as created, rows that already existed as still
+// detected. A failure is logged; the findings stand.
+func (s *Service) recordReceipt(ctx context.Context, tenantID shared.ID, findings []*vulnerability.Finding, res *vulnerability.BatchCreateResult) {
+	if s.receipts == nil || res == nil || len(findings) == 0 {
+		return
+	}
+	now := time.Now().UTC()
+	if s.now != nil {
+		now = s.now().UTC()
+	}
+	d := &ingestreceipt.Delta{
+		TenantID: tenantID,
+		Source:   ingestreceipt.Source{Kind: ingestreceipt.SourcePlatform, Ref: softwarematch.ToolName + ":" + now.Format("2006-01-02")},
+		Tool:     softwarematch.ToolName,
+		Instance: ingestreceipt.Instance{Kind: ingestreceipt.InstancePlatform, ID: ingestreceipt.InstancePlatform},
+		Reports:  1,
+		Received: len(findings),
+		Failed:   len(res.Errors),
+		At:       now,
+	}
+	for i, f := range findings {
+		if _, failed := res.Errors[i]; failed {
+			continue
+		}
+		inserted := res.Inserted == nil || res.Inserted[i]
+		id := f.ID()
+		if v, ok := res.IDs[i]; ok {
+			id = v
+		}
+		if inserted {
+			d.Created = append(d.Created, id)
+		} else {
+			d.StillDetected = append(d.StillDetected, f.Fingerprint())
+		}
+	}
+	if _, err := s.receipts.Record(ctx, d); err != nil {
+		s.logger.Warn("vulnerability matching: receipt not recorded", "tenant_id", tenantID.String(), "error", logger.SanitizeError(err))
+	}
 }
 
 // queueAlerts hands the vulnerabilities of the findings just stored to the
@@ -627,11 +684,15 @@ func (s *Service) close(ctx context.Context, tenantID shared.ID, existing []soft
 		return err
 	}
 	toClose := map[softwarematch.CloseKind][]shared.ID{}
+	infoOf := map[shared.ID]softwarematch.LinkInfo{}
 	for k, ids := range byKey {
 		info := states[k]
 		switch {
 		case info.State == softwarematch.LinkUpgraded:
 			toClose[softwarematch.CloseVersionChanged] = append(toClose[softwarematch.CloseVersionChanged], ids...)
+			for _, id := range ids {
+				infoOf[id] = info
+			}
 		case info.State == softwarematch.LinkGone:
 			toClose[softwarematch.CloseNotObserved] = append(toClose[softwarematch.CloseNotObserved], ids...)
 		case info.VersionEvaluated:
@@ -645,7 +706,7 @@ func (s *Service) close(ctx context.Context, tenantID shared.ID, existing []soft
 			// A fixed close (the inventory reports another version) goes
 			// through the organization's closing mode: close, propose to a
 			// person, or keep. The other kinds do not claim a fix.
-			ids = s.applyClosingMode(ctx, tenantID, ids, kind)
+			ids = s.applyClosingMode(ctx, tenantID, ids, kind, infoOf)
 		}
 		done, err := s.store.CloseFindings(ctx, tenantID, ids, kind)
 		if err != nil {
@@ -659,20 +720,74 @@ func (s *Service) close(ctx context.Context, tenantID shared.ID, existing []soft
 // applyClosingMode sorts the findings the matcher would close as fixed:
 // those the organization's mode lets close are returned, those it asks a
 // person to confirm are recorded as Ready to close proposals (method
-// source_reported), the rest stay open.
-func (s *Service) applyClosingMode(ctx context.Context, tenantID shared.ID, ids []shared.ID, kind softwarematch.CloseKind) []shared.ID {
+// source_reported) with the version change as evidence, the rest stay open.
+func (s *Service) applyClosingMode(ctx context.Context, tenantID shared.ID, ids []shared.ID, kind softwarematch.CloseKind,
+	infoOf map[shared.ID]softwarematch.LinkInfo,
+) []shared.ID {
 	d := closuremode.Decider{Settings: s.closure, Repo: s.findings, Log: s.logger}
 	closeIDs, propose, _ := d.Split(ctx, tenantID, ids, vulnerability.ClosureMethodSourceReported)
 	if len(propose) > 0 {
 		at := s.now().UTC()
-		evidence := map[string]any{"source": "software_inventory", "kind": string(kind), "observed_at": at.Format(time.RFC3339)}
 		recs := make([]vulnerability.ClosureProposalRecord, len(propose))
 		for i, id := range propose {
-			recs[i] = vulnerability.ClosureProposalRecord{FindingID: id, Method: vulnerability.ClosureMethodSourceReported, Evidence: evidence, EvidenceAt: at}
+			evidence, evidenceAt := VersionChangeEvidence(kind, infoOf[id], at)
+			recs[i] = vulnerability.ClosureProposalRecord{FindingID: id, Method: vulnerability.ClosureMethodSourceReported,
+				Evidence: evidence, EvidenceAt: evidenceAt}
 		}
 		d.Record(ctx, tenantID, recs)
 	}
 	return closeIDs
+}
+
+// VersionChangeEvidence is what a "version changed" proposal shows: the
+// product, the version the finding was matched on, the version now
+// established, how the inventory knows it (source, evidence class,
+// confidence, sightings) and since when. Inventory facts only: no banner
+// text, URL or other evidence a source sent. evidenceAt is the established
+// version's latest reading (at when unknown), so a later sighting of the
+// finding cancels the proposal.
+func VersionChangeEvidence(kind softwarematch.CloseKind, info softwarematch.LinkInfo, at time.Time) (map[string]any, time.Time) {
+	ev := map[string]any{"source": "software_inventory", "kind": string(kind), "observed_at": at.Format(time.RFC3339)}
+	evidenceAt := at
+	if info.Product != "" {
+		ev["product"] = info.Product
+	}
+	if info.FromVersion != "" {
+		ev["from_version"] = info.FromVersion
+	}
+	if n := info.Now; n != nil {
+		ev["to_version"] = n.Version
+		ev["to_source"] = n.Source
+		ev["to_evidence_class"] = n.Class
+		ev["to_confidence"] = n.Confidence
+		ev["to_sightings"] = n.Sightings
+		ev["to_first_seen"] = n.FirstSeen.UTC().Format(time.RFC3339)
+		ev["observed_at"] = n.LastSeen.UTC().Format(time.RFC3339)
+		if !n.LastSeen.IsZero() && n.LastSeen.Before(at) {
+			evidenceAt = n.LastSeen.UTC()
+		}
+	}
+	return ev, evidenceAt
+}
+
+// cancelVersionProposals cancels the pending "version changed" proposals
+// of the open matcher findings whose identity matches again (the version
+// they were built on is established again, or the change was not
+// confirmed). Best-effort: logged, never fatal.
+func (s *Service) cancelVersionProposals(ctx context.Context, tenantID shared.ID, existing []softwarematch.MatcherFinding, matched map[string]bool) {
+	var ids []shared.ID
+	for _, f := range existing {
+		if matched[f.Fingerprint] && isOpen(f.Status) {
+			ids = append(ids, f.ID)
+		}
+	}
+	if len(ids) == 0 {
+		return
+	}
+	if _, err := s.store.CancelVersionProposals(ctx, tenantID, ids); err != nil {
+		s.logger.Warn("vulnerability matching: version close proposals not canceled",
+			"tenant_id", tenantID.String(), "error", logger.SanitizeError(err))
+	}
 }
 
 func isOpen(status string) bool {

@@ -75,6 +75,34 @@ func receiptSource(agt *sensor.Sensor, binding Binding, opts Options, report *ct
 	return ingestreceipt.Source{Kind: ingestreceipt.SourceSensor, Ref: ingestreceipt.ReportRef(sensorID, reportID)}
 }
 
+// receiptInstance is the sender of an ingest: the upload, the CI
+// repository, the connector source, or the sensor.
+func receiptInstance(agt *sensor.Sensor, binding Binding, opts Options, report *ctis.Report) ingestreceipt.Instance {
+	if opts.Receipt != nil && opts.Receipt.Kind == ingestreceipt.SourceUpload {
+		return ingestreceipt.Instance{Kind: ingestreceipt.InstanceImport, ID: ingestreceipt.InstanceImport}
+	}
+	switch binding.Kind {
+	case BindingCIRun:
+		if len(binding.Targets) > 0 && binding.Targets[0] != "" {
+			return ingestreceipt.Instance{Kind: ingestreceipt.InstanceCI, ID: binding.Targets[0], Name: binding.Targets[0]}
+		}
+		return ingestreceipt.Instance{}
+	case BindingTrusted:
+		name := opts.SourceName
+		if name == "" && report != nil && report.Tool != nil {
+			name = report.Tool.Name
+		}
+		if name == "" {
+			return ingestreceipt.Instance{}
+		}
+		return ingestreceipt.Instance{Kind: ingestreceipt.InstanceConnector, ID: name, Name: name}
+	}
+	if agt != nil && !agt.ID.IsZero() {
+		return ingestreceipt.Instance{Kind: ingestreceipt.InstanceSensor, ID: agt.ID.String()}
+	}
+	return ingestreceipt.Instance{}
+}
+
 // recordReceipt adds what this ingest did to its receipt. The findings are
 // already stored, so a failure is logged, counted and flagged on the output
 // (ReceiptFailed): the ingest stands, but a command-bound segment is retried
@@ -87,6 +115,7 @@ func (s *Service) recordReceipt(ctx context.Context, agt *sensor.Sensor, tenantI
 	d := &ingestreceipt.Delta{
 		TenantID:      tenantID,
 		Source:        receiptSource(agt, binding, opts, report),
+		Instance:      receiptInstance(agt, binding, opts, report),
 		Reports:       1,
 		AssetsCreated: output.AssetsCreated,
 		AssetsUpdated: output.AssetsUpdated,

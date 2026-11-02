@@ -116,9 +116,9 @@ func TestAuthService_ExchangeToken_RotationFailureRefuses(t *testing.T) {
 	}
 }
 
-// Two concurrent refreshes of one token both pass the read-time checks; the
-// loser of the conditional spend is a reuse and ends the session, so the
-// family never forks.
+// Two concurrent refreshes of one token both pass the read-time checks; a
+// loser of the conditional spend that finds no successor it may be handed
+// (rotation grace) is a reuse and ends the session, so the family never forks.
 func TestAuthService_RefreshToken_LostSpendRaceIsReuse(t *testing.T) {
 	svc, deps := newTestAuthService()
 	rt, sid := loginPassword(t, svc, deps, "race@example.com")
@@ -129,8 +129,8 @@ func TestAuthService_RefreshToken_LostSpendRaceIsReuse(t *testing.T) {
 	deps.tenantRepo.userMemberships = []tenant.UserMembership{{TenantID: tn.ID().String(), TenantSlug: tn.Slug(), Role: "member"}}
 
 	_, err := svc.RefreshToken(context.Background(), auth.RefreshTokenInput{RefreshToken: rt, TenantID: tn.ID().String()})
-	if !errors.Is(err, session.ErrRefreshTokenRevoked) {
-		t.Fatalf("lost spend race: want ErrRefreshTokenRevoked, got %v", err)
+	if !errors.Is(err, session.ErrRefreshTokenUsed) {
+		t.Fatalf("lost spend race: want ErrRefreshTokenUsed, got %v", err)
 	}
 	if deps.sessionRepo.sessions[sid].IsActive() {
 		t.Fatal("the session must be revoked")

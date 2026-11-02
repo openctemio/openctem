@@ -152,6 +152,17 @@ Numbers on organization dashboards are computed once for the organization by
 the platform, never with a person's access, so nobody's access is borrowed when
 a manager leaves.
 
+### Editing a dashboard's details
+
+"Edit details" in the dashboard's menu on `/` opens the details form
+`/dashboards?edit=<id>` (name, description, columns); an organization
+dashboard opens `/dashboards?edit=<id>&kind=organization`, offered to
+`dashboards:org:manage` only and saved through
+`PUT /api/v1/organization/dashboards/{id}` (the server checks the permission
+and the audience; a viewer gets 403, a dashboard outside the audience 404).
+A copy of a template stores the template's name and description in the
+viewer's language and opens on the dashboard.
+
 ### Planned
 
 - The organization management section on `/dashboards` (create, order,
@@ -234,6 +245,10 @@ widget has `widget_type` `metric` or `note` and a `config` of this form
   | `attack_paths.to_crown_jewels` | paths (reachable crown jewels) | none | attack-path scoring + `assets` |
   | `exposure.flow` | flow (sources, funnel, classes, stages, outcomes) | none | F1 + `findings` + receipts, see "Exposure flow and intake" |
   | `ingest.intake` | intake (receipts per source, noise, health) | none | `ingest_receipts`, see "Exposure flow and intake" |
+  | `surface.new_assets` | category: assets added in the window by asset type, with the previous window | none | `assets`, see "Attack surface and accepted risk" |
+  | `certificates.expiry` | category: certificates expired, or expiring within 7, 8-30 and 31-90 days | none | `assets` |
+  | `exceptions.expiring` | category: accepted findings whose acceptance ends within 7, 8-30 days or later | none | `findings` |
+  | `intel.emerging_threats` | category: open emerging-threat alerts affecting the scope, by level (immediate, digest, listed); module `threat_intel` | none | `threat_alerts` + `threat_alert_assets`, see "Emerging threats" |
 
 - **Shapes and visualizations.** scalar: stat, progress; ratio: progress,
   stat; duration: stat; category: bar, column, table, donut, stat; time
@@ -395,13 +410,34 @@ costs no extra request and no query.
 
 `ingest.intake` (visualization `intake`) sums the receipts
 ([ingest receipts](ingest-receipts.md)) with activity in the window, per
-source: the source group (`sensor`, `import`, `connector`, `ci`, the receipt
-kind's group) and the tool (`unknown` when the source named none).
+source: the source group (`sensor`, `import`, `connector`, `ci`, `platform`,
+the receipt kind's group) and the tool (`unknown` when the source named
+none). A source is the tool that reported: one receipt can carry reports of
+several tools (a scan run of several steps, a CI run with several scanners),
+and each report adds its counts to its own tool's row of the receipt
+(`ingest_receipt_tools`), never to the first tool that reported. Findings
+the platform derives itself (the inventory version matcher) are booked on a
+`platform` receipt per organization and UTC day under the tool
+`version-match`, so they appear as their own source instead of on no
+receipt or on the discovery tool whose report named the software.
 
 - Per source: receipts, received, created, still detected, reopened,
   closed, suppressed, not stored (skipped or failed), the latest receipt
   (time, status, id) and the usual interval (the median time between its
   receipts; three receipts or more).
+- Assets and kind: `assets` is the assets the source's reports created or
+  updated. A discovery tool sends assets, not findings, so a source with no
+  findings received and some assets is `kind: discovery`; the version
+  matcher is `platform`; anything else is `detection`. Assets are not part of
+  the funnel, which counts findings only.
+- Senders (`instances`): who sent the source's reports, busiest first, with
+  received, assets, health and the latest time: a sensor (named and linked to
+  its page only when it is one of the organization's own sensors), a CI
+  repository, a connector source name, an upload, or the platform. Their
+  figures sum to the source's, and the source's health is the worst of its
+  senders' (a failing sensor shows on every tool it feeds). Receipts written
+  before senders were recorded name none (uploads and CI runs are backfilled
+  from the receipt).
 - Health: `failed` when the latest receipt failed; `stale` when nothing
   came for more than twice the usual interval and at least a day; `ok`
   otherwise. A source with fewer than three receipts is never stale.
@@ -415,15 +451,15 @@ kind's group) and the tool (`unknown` when the source named none).
   the hero funnel and the source tooltip all use it.
 - Funnel: received and new or reopened are the period's flow (received is
   at least new or reopened); actionable is a stock (open findings of
-  classes P0 to P3 now), so the hero shows it apart from the flow with the
-  caption "open now", never as a third step that can be larger than the
-  first.
+  classes P0 to P3 now), so the hero shows it once, apart from the flow
+  (the ring centre on a wide card, the headline on a phone), never as a
+  third step that can be larger than the first.
 - False positive: the findings closed as false positive in the window, the
   same figure as the flow's.
 - Each source figure opens the receipt list with the same filter
-  (`/findings/imports?origin=&tool=&since=`), whose `totals` are computed by
-  the same grouping expressions (`receiptOriginSQL`, `receiptToolSQL`), so
-  the figure equals the list it opens.
+  (`/findings/imports?origin=&tool=&since=`). The list's tool filter keeps
+  every receipt the tool reported on, and its `totals` for a tool are that
+  tool's own rows, so the figure equals the list it opens.
 
 Scope: receipts count findings across the organization and are not
 asset-scoped, so the intake is computed only for a read with no data scope
@@ -441,6 +477,19 @@ findings figure equals the findings list; personal reads: a scoped member,
 a member without scope rows and the owner, the out-of-scope false positive
 never counts, receipts only for the owner; receipt list filters refuse
 malformed values), `internal/app/dashboard/widgets/flow_test.go`.
+
+Display (web `components/dashboard-kit/exposure-flow-viz.tsx`): the layout
+follows the widget's own width. Below 660 px (a phone) the answer comes
+first: actionable now with its priority split as one bar and four figures,
+the outcomes as a grid, the stages as a list (each figure names what it
+measures, the state is an icon and words from one shared set, "Act here" is a
+separate pill), then the sources. Sources are a ranked bar list
+(`ranked-bars.tsx`) by findings or by assets and by tool or by source
+instance, healthy sources with nothing folded into one line, unhealthy ones
+always shown; a refresh that changes the order moves rows (no motion under
+reduced motion) and marks the change. Every figure is a link of at least
+44 px on a phone. Part-to-whole bars are `stacked-bar.tsx`; a test keeps
+the kit to one component per pattern (`shared-patterns.test.ts`).
 
 ### Story widgets: levers, weekly brief, KPI strip
 
@@ -489,6 +538,234 @@ Tests: `widgets/levers_test.go` (ranking, exact effects, every read uses the
 server-built scope, masking), `postgres/dashboard_levers_db_test.go` (TopFix:
 data scope, no-scope member, pentest exclusion, dismissed suggestions, cross
 tenant).
+
+### Attack surface and accepted risk
+
+Three breakdown metrics (kind `breakdown`, shape `category`, default
+visualization `bar`) answer "what changed on our attack surface", "which
+certificates need renewing" and "which accepted risks come back soon". Like
+every widget they are computed by the refresher into the snapshot, read
+through `FactReader` with the scope the server built for the read
+(`assetWhere` / `findingWhere`: tenant first, deleted and program-only assets
+left out, the data scope, the campaign rule), and each row carries the list
+it counts. Code: `internal/app/dashboard/widgets/surface.go`,
+`internal/infra/postgres/dashboard_surface_repository.go`.
+
+| Metric | Rows | A row opens | Not measured |
+|---|---|---|---|
+| `surface.new_assets` (timed, previous period allowed) | one per asset type with an asset added (`created_at`) since the window's first day; with a comparison, also types that had additions only in the previous window (no link) | `/assets?types=<type>&first_seen_after=<first day>&program_assets=exclude` | never; nothing added is the empty state |
+| `certificates.expiry` (current) | `expired` (expiry before now), `within_7d`, `within_30d` (after 7 days, before 30), `within_90d` (after 30, before 90); the expiry is the asset list's expiry expression | `/assets?types=certificate&expires_after=...&expires_before=...&program_assets=exclude` (strict bounds, the list's own comparisons) | `no_certificates`: no certificate in scope, never "0 expiring" |
+| `exceptions.expiring` (current) | `within_7d` (ends at or before now + 7 days), `within_30d` (after 7, at or before 30), `later`; every acceptance ends (the database caps it), so the bands cover all accepted findings | `/findings?status=accepted&acceptance_expires_at_lte=P7D` (and `_gt` / `_lte` for the others) | never; no accepted risk is the empty state |
+
+- An empty band has no link. The band bounds are taken at the snapshot time;
+  a relative findings filter (`P7D`) is evaluated when the list opens, so a
+  band equals its list up to the refresh interval.
+- Permissions on a personal read: `assets:read` for `surface.new_assets` and
+  `certificates.expiry`, `findings:read` for `exceptions.expiring`; without
+  it the widget is `unsupported` with reason `forbidden` and no figure, also
+  from a stored snapshot.
+- Threat model: the rows name asset types and fixed band keys only, never an
+  asset or a finding; the counts follow the read's scope, so a scoped member
+  never learns how many assets or acceptances exist outside it, and another
+  tenant's rows never count (every statement starts with `tenant_id = $1`).
+- Tests: `widgets/surface_test.go` (rows, bands, links, not measured, every
+  read uses the server-built scope, permission masking),
+  `routes/dashboard_surface_widgets_db_test.go` (a scoped member, a member
+  without scope rows and an administrator: assets and findings outside the
+  scope, program-only certificates and another tenant's rows never count or
+  show; every band equals the asset or findings list it opens).
+
+### Empty and unmeasured widgets
+
+One rule for every widget: no figure is drawn until there is something to
+count. A findings figure in a scope that has never held a published finding
+(any status, the read's asset rule, data scope and campaign rule) is
+`not_measured` with reason `no_findings`, never a `0`, an empty chart or a met
+target. `FactReader.HasFindings` is read once per dashboard read (a probe in
+the read's context) and applies to the counts, ratios (SLA), durations,
+series, ranked lists, crown jewels exposed and accepted risks ending. The
+exposure flow is not measured only when the scope has no finding and, on an
+organization read, no source sent anything; the KPI strip marks its four
+findings tiles `no_findings` and keeps the coverage tile (with no tile
+measured, the whole strip is `no_findings`); the levers with no lever and
+the brief with no lever sentence are `no_findings` too, never "nothing
+stands out". Asset, coverage,
+certificate and attack path figures never read findings and are unaffected.
+Code: `internal/app/dashboard/widgets/empty.go`.
+
+The web routes every "nothing has come in yet" reason (`no_findings`,
+`no_tracked_assets`, `no_certificates`, `no_receipts`) and every empty ready
+result (no rows, or a series whose every bucket is zero) to the frame's one
+compact `no_data_yet` state: "No data yet", the reason, and the next step the
+caller may take (Import results or Set up a scan, behind that page's
+permission). Such a widget, and a not-measured one, takes one grid row
+whatever its stored height, so an empty dashboard never shows tall blank
+cards. Other reasons
+(`too_few_fixed`, `no_denominator`, `no_crown_jewels`, `organization_only`,
+`forbidden`) keep the grey "—" with the reason. Tests:
+`widgets/empty_test.go`, `web/src/features/dashboards/__tests__/empty-states.test.tsx`.
+
+The KEV count (`intel.kev_open`) carries its population: `scalar.of` is the
+open findings with the widget's filter minus the KEV condition, and
+`of_drill` the list it counts, so the stat reads "3 of 40 open" and a 0 is
+read correctly.
+
+### Discovery coverage by cause
+
+`coverage.discovery` says why the rest is not covered. `ratio.causes` splits
+the uncovered assets (tracked, not covered in the coverage window) by one
+cause per asset, read from the ledger rows of the asset with no success in
+the window, first match in this order:
+
+| Cause | Ledger row | Who acts |
+|---|---|---|
+| `no_sensor` | last outcome `not_dispatched` (no eligible sensor took the check) | platform or operator: deploy or widen a sensor |
+| `platform_failure` | a platform-side failure: `platform_fail_streak > 0` or a known platform-side outcome (stalled, failed, unfinished, tool error, egress refused, sensor network or proxy fault) | operator: fix the sensor or proxy |
+| `paused` | state `paused` | whoever paused it |
+| `target_unreachable` | an observation of the target: unreachable, timeout, edge blocked or challenged, rate limited | the organization: the target or what stands in front of it |
+| `never_run` | never attempted | wait for the planner, or check its schedule |
+| `overdue` | ran before, not within the window | the planner's next run |
+| `out_of_scope` | refused by scope policy (`blocked`), only when nothing above applies | the organization's scope |
+| `other` | only rows outside the requirement (per-vantage rows, DNS checks) | none |
+
+The outcome lists come from `pkg/domain/coverage` (one source with the
+target-versus-platform rule). Each cause row opens
+`/assets?coverage=uncovered&coverage_cause=<cause>&program_assets=exclude`;
+the asset list filter `coverage_cause` uses the same SQL expression
+(`postgres.CoverageCauseCondition`), so a row equals its list, and the causes
+sum to the uncovered count. A fully covered share reads no causes. The cause
+keys are a closed list (`dashboard.CoverageCauses`, validated by the asset
+list input); an unknown key is ignored.
+
+Threat model: the cause rows name fixed keys only, never an asset or a
+target; they follow the read's asset scope like the share, so a scoped member
+never learns the causes of assets outside it; the cause expression is built
+from package constants, and the cause value on the list is a bound parameter.
+Tests: `widgets/empty_test.go` (order, links, scope),
+`routes/dashboard_empty_coverage_db_test.go` (a scoped member, a member
+without scope rows and an administrator: program-only assets and another
+tenant's ledger rows never count; each cause equals its asset list; the
+causes sum to the uncovered count; no findings is not measured; the KEV
+population equals its findings list).
+### Closure quality, campaigns and detection quality
+
+Three more breakdown metrics answer "are our fixes real", "which remediation
+campaign is late" and "which tool should we tune". Same rules as above:
+computed into the snapshot by the refresher (and Refresh now), read through
+`FactReader` with the server-built scope, each row with the list it counts.
+Code: `internal/app/dashboard/widgets/quality.go`,
+`internal/infra/postgres/dashboard_quality_repository.go`.
+
+| Metric | Rows | A row opens | Not measured |
+|---|---|---|---|
+| `findings.closure_quality` (timed, previous period allowed, polarity neutral) | `closed_by_person` (status `resolved`, `resolved_at` in the window, `resolved_by` set), `closed_automatically` (the same with no person recorded: the platform closed it on its own), `reopened` (a fixed finding came back: `last_reopened_at` in the window; the regression trigger sets it, never a person's undo or a seen-again flap), `ready_to_close` (pending, eligible Ready to close proposals now, not windowed; no previous figure) | `/findings?status=resolved&resolved_at_gte=<first day>&resolved_by_null=false` (`=true` for automatic), `/findings?state=all&last_reopened_at_gte=<first day>`, `/findings/ready-to-close` | `no_closures`: nothing fixed or reopened and no proposal |
+| `remediation.campaign_progress` (current, polarity higher better, unit percent) | active campaigns with a task the reader sees, the latest first (most overdue tasks, then a passed due date, then the least done), at most 5; value = done tasks / visible tasks; `n` = visible tasks; `total` = the same share over every active campaign the reader sees | `/remediation/campaigns/<id>` | `no_active_campaigns` |
+| `detection.fp_rate_by_tool` (timed, no previous period, polarity lower better, unit percent; organization dashboards only) | per `tool_name`, findings closed as `false_positive` in the window / findings closed (fixed or dispositioned, `resolved_at` in the window); a tool with fewer than 20 closes (`MinToolClosed`) is left out, never shown as "50 %"; at most 8, highest rate first; `n` = closes; `total` = the rate over the tools shown | `/findings?status=false_positive&tool_name=<tool>&resolved_at_gte=<first day>` (the denominator is the same list with `state=closed`) | `organization_only` on a personal read; `too_few_closed` when no tool reaches the minimum |
+
+- The findings list gained two filters for these rows: `resolved_by_null`
+  (only whether a person closed it, not who) and `last_reopened_at` (ranges).
+- Ready to close is counted with the Ready to close list's own statement and
+  scope (asset scope or the finding's assignee), so the row equals the
+  `badges.ready_to_close` count and the list for the same person. The
+  window rows use `findingWhere`, like every finding widget.
+- Campaigns use the campaign list's rules: a restricted reader sees the
+  campaigns they created or own and those with a task holding a finding in
+  their scope; counts are over their scope (out-of-scope tasks are left
+  out), except a campaign they own, counted whole; an organization read
+  counts every campaign whole. The rows carry the campaign name (`label`),
+  which every reader of that dashboard may see on the campaign list.
+- Tool names are not asset-scoped, so the false-positive rate is read only
+  for a whole-organization scope (organization dashboards, and an owner's
+  personal dashboard, whose data scope is the organization, as for the
+  intake); any other personal read is `organization_only` and never queries
+  it.
+- Permissions on a personal read: `findings:remediation:read` for
+  `remediation.campaign_progress`, `findings:read` for the other two;
+  without it the widget is `unsupported` with reason `forbidden`, also from a
+  stored snapshot.
+- Threat model: every statement starts with `tenant_id = $1` and binds its
+  values (window bounds, tenant, user); the spec carries only the metric id
+  and time range, never a scope or a tool. A scoped member's counts follow
+  their scope (no oracle on findings, proposals or tasks outside it); a
+  member without scope rows sees "not measured" or only campaigns they own.
+  A tool name reaches the web only as a URL-encoded value of `tool_name` and
+  as plain text, never as markup. A stored snapshot read after a permission
+  loss is masked on the way out.
+- Tests: `widgets/quality_test.go` (rows, order, links, minimum, not
+  measured, organization only, every read uses the server-built scope,
+  permission masking), `routes/dashboard_quality_widgets_db_test.go` (a
+  scoped member, a member without scope rows and an administrator: each
+  closure row equals the findings list it opens, Ready to close equals the
+  list's count, campaign visibility and counts, drafts and another tenant's
+  rows never count or show, a lost permission masks the stored figures; the
+  false-positive rate is the same for every organization viewer, leaves out
+  a small tool and another tenant, and equals the false-positive list over
+  the closed list).
+
+### Emerging threats
+
+`intel.emerging_threats` ("Emerging threats affecting you", kind `breakdown`,
+shape `category`, default visualization `bar`) answers "which new threats do
+we act on now". It is computed into the snapshot like every widget. Code:
+`internal/app/dashboard/widgets/intel.go`,
+`internal/infra/postgres/dashboard_intel_repository.go`.
+
+- **Same statement as the list.** The figure is read with `alertSummary`
+  (`internal/infra/postgres/threat_alert_read.go`), the statement the alert
+  list (`GET /api/v1/emerging-threats`) uses for its summary strip: the
+  tenant first, an alert counted only when at least one of its assets is in
+  the read's data scope (`threat_alert_assets`, `filterspec.ScopeSQL`). A
+  personal read uses the owner's data scope, so a scoped member counts only
+  the alerts the list shows them; an organization read counts every alert.
+- **Rows.** `immediate`, `digest`, `listed` (in this order, ordinal): the
+  open alerts (new, acknowledged, remediating) of each level. A row opens
+  `/emerging-threats?level=<level>&state=open`, whose total equals the row;
+  an empty row has no link. The list page reads and writes its filters
+  (`level`, `state`, `tier`, `exposure`, `search`, `page`, `per_page`) in the
+  URL with the list API's names (`web/src/features/emerging-threats/url-filters.ts`).
+- **Not measured** `no_threat_alerts`: no alert in any state has ever
+  affected an asset in the scope, so "no open alert" is not shown as an
+  all-clear. Alerts seen but none open is a real empty figure. The decision
+  uses the scope's own alerts, never the organization's, so it tells a scoped
+  member nothing about alerts outside their scope.
+- **Permission** on a personal read: `vulnerabilities:read` (the alert
+  list's permission); without it `unsupported` / `forbidden`, also from a
+  stored snapshot.
+- **Module** `threat_intel` (the module the alert routes are gated on), see
+  "Module awareness".
+- Threat model: cross-tenant (every statement starts `a.tenant_id = $1`, and
+  the in-scope join repeats `taa.tenant_id = a.tenant_id`); counting oracle
+  (counts and the not-measured decision follow the read's scope); stored
+  snapshot replay after the module is turned off or the permission is lost
+  (masked on the way out); injection (the spec carries only the metric id,
+  the scope values are bound parameters, the level keys are fixed).
+- Tests: `widgets/intel_test.go` (levels, links, not measured, scope,
+  permission, module off), `routes/dashboard_intel_widget_db_test.go` (a
+  scoped member, a member without scope rows and an administrator: alerts
+  outside the scope and another tenant's alerts never count or show; every
+  level equals the alert list it opens; module off on a stored snapshot, the
+  catalog and the list).
+
+### Module awareness
+
+A catalog metric may name the tenant module it reads (`Metric.Module`). While
+that module is off for the organization (the module gate,
+`middleware.ModuleGate.IsReadable`: on, or in its read-only grace):
+
+- the widget catalog (`GET /api/v1/me/dashboards/widget-catalog`) leaves the
+  metric out, so the gallery never offers it;
+- a widget of it is not computed and reads `unsupported` with reason
+  `module_off` and no figure, never a 0. The mask also runs on the way out
+  of every read (`forViewer`, personal and organization), so a snapshot
+  stored while the module was on is not served after it is turned off; a
+  snapshot that holds a `module_off` widget whose module is on again is
+  computed afresh on the next open instead of waiting for the refresh;
+- the web dashboard does not draw the widget at all (`DashboardView`); the
+  layout keeps it, so it comes back when the module is turned on again.
+
+The module gate is a feature switch, not the security boundary: the
+permission mask and the data scope apply as for every widget. Without a gate
+(tests, tools) every module is readable.
 
 ### Scope and isolation
 
@@ -902,31 +1179,56 @@ widget kit's frame, with its own error boundary.
   own, none from the organization) gets a personal copy of the CTEM
   template, created once and computed for their own access, with a hint to
   customize it or choose another template.
-- **New layout offer**: a personal copy of the Overview or CTEM template
-  (three or more of its `w_ov*` / `w_ct*` widget ids) that lacks some of the
-  template's widgets (by metric) shows a hint naming them: "Add them to this
-  dashboard" (each missing widget is inserted where the template has it: a
-  single figure after its predecessor, a larger widget before its successor;
-  every existing widget keeps its place, size and settings, and the layout is
-  saved), "Switch to the new layout" (adds a fresh copy of the template under
-  a name the person does not already use, e.g. "CTEM (new layout)", and opens
-  it; the old dashboard is kept), or dismiss. Nothing changes until the viewer
-  chooses; the dismissal is kept in the browser per layout version
+- **New layout offer**: a personal copy of a template (three or more of its
+  `w_ov*` / `w_ct*` / `w_ex*` / `w_pr*` / `w_tr*` widget ids) is offered the
+  template's changes. When it lacks some of the template's widgets (by
+  metric) the hint names them: "Add them to this dashboard" (each missing
+  widget is inserted where the template has it: a single figure after its
+  predecessor, a larger widget before its successor; every existing widget
+  keeps its place, size and settings, and the layout is saved). When it has
+  them all but the template's widgets (matched by id) are in another order or
+  of another size, the hint says the layout has a new arrangement. Both offer
+  "Switch to the new layout" (adds a fresh copy of the template under a name
+  the person does not already use, e.g. "CTEM (new layout)", and opens it;
+  the old dashboard is kept), or dismiss. A widget of the person's own
+  between template widgets is not a rearrangement. Nothing changes until the
+  viewer chooses; the dismissal is kept in the browser per layout version
   (`LAYOUT_HINT_VERSION` in `layout-hint.ts`). No request is made for the
   hint, and organization dashboards never show it.
 - **Templates** are typed widget configs in
-  `web/src/features/dashboards/templates.json`. CTEM (the first-visit
-  default) and Overview share one set: the exposure flow first (it carries
-  the five CTEM stages, so the separate loop widget is no longer in these
-  templates), then the figure row (open P0-P1, KEV open, open within SLA,
-  time to fix median with p90), discovery coverage beside priority over
-  time, new vs fixed, the severity × age heatmap, fix next and attack paths
-  to crown jewels; CTEM puts attack paths before fix next and ends with the
-  intake and noise reduction panel. Then Executive, Vulnerability program, Triage. `/dashboards` copies one into a personal
-  dashboard ("Use template"); the copy is a stored dashboard like any other.
+  `web/src/features/dashboards/templates.json`, in reading order (the grid
+  places widgets in that order without back-filling, so the order is the
+  layout). Every template opens on its headline figures, then the decision
+  widget, then the story, and ends with diagnostics:
+  - CTEM (first-visit default): key figures; levers; exposure flow (the five
+    CTEM stages); new on the attack surface (7 days) beside certificate
+    expiry; attack paths to crown jewels beside the weekly brief; fix next;
+    open exposure by priority (90 days); new vs fixed beside open by age;
+    intake and noise reduction.
+  - Overview: key figures; levers; exposure flow; open exposure by priority
+    beside new vs fixed; new on the attack surface beside certificate
+    expiry; weekly brief beside attack paths; fix next.
+  - Executive: key figures; weekly brief; open exposure by priority over 12
+    months; new vs fixed beside time to fix by priority; new on the attack
+    surface (30 days) beside accepted risks ending; levers.
+  - Vulnerability program: within SLA, P0-P1 open, KEV open and time to fix;
+    SLA at risk beside new vs fixed; time to fix by priority beside open by
+    age; accepted risks ending beside open findings by SLA state.
+  - Triage: P0-P1 open, KEV open, open findings and within SLA; fix next;
+    open findings by severity beside open findings by SLA state; new vs
+    fixed per day over 30 days.
+  `web/src/features/dashboards/__tests__/template-layouts.test.ts` checks
+  that each template fills its rows with one height per row at four columns
+  and leaves no hole at two columns or on a phone, and that each opens on a
+  one-row headline. `/dashboards` copies one into a personal dashboard ("Use
+  template"); the copy is a stored dashboard like any other.
   `api/pkg/domain/dashboard/templates_test.go` parses every template widget
   with the server's spec validation, so a template is never refused on save.
   Names and descriptions are in the `dashboards` i18n namespace.
+- **Widget titles**: a widget without a title of its own shows the metric's
+  name, followed by "by <dimension>" when it groups by something other than
+  the metric's default ("Open findings by SLA state"), so two widgets of one
+  metric are told apart.
 - **Switcher**: one menu with "Organization" (shown only with
   `dashboards:org:view` or `dashboards:org:manage`; without them the list is
   never requested) and "Mine", search above eight entries, New and Manage.
@@ -1021,7 +1323,7 @@ with Retry in that widget, and the rest of the dashboard keeps working.
 | `loading` | a skeleton shaped like the visualization (stat, chart, list, grid, stages), fixed height |
 | `ready` | the figures and the freshness footer |
 | `stale` | the figures, "Stale · 2 hr" and Refresh; `isStale()` is true past twice the refresh interval or after a failed refresh |
-| `no_data_yet` | what will appear and a next-step link (same-origin paths only) |
+| `no_data_yet` | the one compact empty state: "No data yet", what will appear and a next-step link (same-origin paths only); one grid row (see "Empty and unmeasured widgets") |
 | `no_results` | "Nothing matches these filters" and Clear filters |
 | `not_measured` | "—" and the reason, grey; never a number and never a good colour |
 | `no_access` | the missing permission named from the 403's `details.any_of`, no Retry |
@@ -1053,7 +1355,7 @@ figure means not measured and is never drawn as 0.
 | `PathsViz` | paths | reachable crown jewels (linked to the attack paths) and the top ones with the entry points reaching them; "none designated" and "none reachable" are different states |
 | `ItemsViz` | items | rows with priority, KEV, asset and due time, and "View all" |
 | `ItemsTable` | items (`viz: table`) | the embedded findings table: Priority, Finding (title link, asset line, KEV chip), Severity and SLA columns (Severity and SLA hidden at phone width, the table scrolls sideways), a read-only chip row with the list's filter, the count in the caption, and a footer "Top n of total" with "Open in Findings" |
-| `ExposureFlowViz` | flow | sources (with health in words and line style), received to new or reopened to actionable, a labelled ring of actionable findings by priority class (at most four arcs, each a focusable link with a sentence, the largest centred at the bottom, a minimum arc so P0 stays visible; the centre is the count the arcs sum to), the five stages (the focus stage filled with the accent), outcomes (open with its severity split, past SLA, in progress, closed in the period); wires are SVG paths between measured rows, width by volume; below the large breakpoint the columns stack and the wires are dropped |
+| `ExposureFlowViz` | flow | sources (with health in words and line style), received to new or reopened to actionable, three concentric rings read from the outside in (`FlowRings` in `flow-rings.tsx`): findings received by source, new or reopened by source (each source's `created + reopened`, so the middle ring sums to the funnel's new or reopened), actionable findings by priority class (at most four arcs); a scoped read draws the actionable ring alone. Each segment is a focusable link with a sentence (name, count, share of its ring), round caps with a fixed visible gap, the largest centred at the bottom, a minimum sweep so a small part stays visible, a muted track under every ring; the centre is the count the inner arcs sum to. A source keeps one colour (its categorical slot, by its place in the read) on its ranked row and both arcs; focusing a source (row or either arc) lights its row, both arcs and its wire, a funnel figure lights its whole ring (a ring-key glyph beside each funnel label says which), a lit segment is a little thicker with a soft glow in its own colour. The rings draw in once (none under reduced motion); a phone shows the same rings small beside the headline, decorative (a tap explains, the figures under them are the links), the five stages (the focus stage filled with the accent), outcomes (open with its severity split, past SLA, in progress, closed in the period); wires are SVG paths between measured rows, width by volume; the layout follows the widget's own width (see "Connected visuals: layout bands") |
 | `IntakeViz` | intake | the connector panel (each source's icon, tool, receipts, health, count, wired into one summary that shows the hovered source), the noise bar (new or reopened, merged, suppressed, not stored; each legend value opens the receipts), the false-positive row, and the per-source table |
 
 Rules every visualization follows:
@@ -1099,6 +1401,49 @@ Rules every visualization follows:
 `web/src/lib/format-metric.ts` formats the figures in the viewer's locale:
 grouped counts, compact from 10 000, percentages with one decimal below 10 %,
 durations in the largest sensible unit, relative times.
+
+### Connected visuals: layout bands
+
+The exposure flow and the intake panel lay themselves out on the widget's
+own width, never the viewport: a widget sits in grid cells of any size (a
+1-of-4 cell on a wide screen is narrower than a phone). The layout is CSS
+container queries on the visual; the same widths decide in code
+(`flowBand` in `flow-parts.tsx`, `FLOW_MID` 660 px and `FLOW_WIDE` 900 px of
+the visual's width) which wires exist, so a wire is drawn only when both of
+its ends sit side by side, and the rows it joins exist before it is measured.
+
+| Band (visual width) | Exposure flow | Intake panel |
+|---|---|---|
+| narrow, under 660 px | one column in reading order: the first three sources and "N more", the received to actionable figures, the ring (at most 18 rem, 78 % of the width), the stages (three then two per row under 420 px, five in a row above), the outcomes; no wires | sources, then the summary; the health note under each source's name; no wires |
+| mid, 660 to 899 px | the first three sources in one row above; the core (figures, ring, stages) beside the outcomes, wires from the ring to the outcomes | sources (`clamp(15rem, 34cqi, 52rem)`) at the left edge and summary (`clamp(14rem, 30cqi, 44rem)`) at the right edge, the wires across the space between |
+| wide, 900 px and more (a full-width card from a 1280 px window with the sidebar open) | three columns that fill the card: sources in a thin dashed frame (`border-border-strong`, `rounded-lg`, `p-1.5`) flush with the left padding at a reading width (`clamp(16rem, 24cqi, 19rem)`, so a source's name, kind and figure fit and its status wraps under it, never cut off), outcomes in the same dashed frame flush with the right padding (`clamp(13rem, 17cqi, 16rem)`), each outcome a box with its label above its figure (the phone's tile), the core taking every pixel between (`minmax(0, 1fr)`); the rings grow with the core and the wires span the rest, from the sources frame to the outer ring and from the ring to the outcomes frame | same as mid |
+
+The rings are `clamp(15rem, min(100% - 6rem, 34cqi), 30rem)` from the mid
+band (at least 6 rem left in the core for the wires; about 310 px in a
+1280 px window, 480 px at 1920) and their centre figure scales with the
+rings (`clamp(1.75rem, 12cqi, 3.5rem)` of the rings' own width). Wires are
+re-measured on every resize (`useWireAnchors`, a `ResizeObserver`), from a
+row's right edge (the sources box edge) to the outer ring's edge, and from
+there to the outcome's or summary's left edge, so they always meet their ends; their width
+is proportional to the volume (1 to 6 px of the largest, `wireWidth`). A
+focused source's wire takes the source's own colour (as its row and arcs)
+and is the only wire with a glow (`focusGlow`, shared with the ring
+segments). The DOM order is the reading and focus
+order in every band (no visual reordering). The noise and per-source panels
+of the intake widget sit side by side from 1100 px of widget width.
+
+Widget titles are `h2` (the page title is the `h1`), so the sections inside a
+widget (`h3`) keep the heading order.
+
+Tests: `dashboard-kit/__tests__/exposure-flow.test.tsx` (band thresholds, the
+container query classes use the same widths, the health note sits on its
+row, ring geometry and focus), `e2e/specs/52-dashboard-flow-layout.spec.ts`
+(at card widths 480, 720, 900, 960, 1200, 1440, 1600 and 1920 px: no
+sideways scroll, no overlapping columns, the rings inside their column, no
+wires on one column, every wire starts within 96 px of its source label; on
+a wide card the sources column is 240 to 310 px with no text cut off, every
+source wire runs from the sources box to the outer ring and every outcome
+wire ends at its outcome).
 
 ### Chart palettes
 

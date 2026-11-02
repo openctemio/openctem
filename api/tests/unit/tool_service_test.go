@@ -91,7 +91,7 @@ func (m *toolSvcMockToolRepo) ListByNames(_ context.Context, names []string) ([]
 	return result, nil
 }
 
-func (m *toolSvcMockToolRepo) ListByCategoryID(_ context.Context, categoryID shared.ID) ([]*tooldom.Tool, error) {
+func (m *toolSvcMockToolRepo) ListByCategoryID(_ context.Context, _, categoryID shared.ID) ([]*tooldom.Tool, error) {
 	var result []*tooldom.Tool
 	for _, t := range m.tools {
 		if t.CategoryID != nil && *t.CategoryID == categoryID {
@@ -99,11 +99,6 @@ func (m *toolSvcMockToolRepo) ListByCategoryID(_ context.Context, categoryID sha
 		}
 	}
 	return result, nil
-}
-
-func (m *toolSvcMockToolRepo) ListByCategoryName(_ context.Context, categoryName string) ([]*tooldom.Tool, error) {
-	// Simplified: we don't have category names in the mock, return empty
-	return []*tooldom.Tool{}, nil
 }
 
 func (m *toolSvcMockToolRepo) ListByCapability(_ context.Context, capability string) ([]*tooldom.Tool, error) {
@@ -326,9 +321,9 @@ func (m *toolSvcMockConfigRepo) Create(_ context.Context, config *tooldom.Tenant
 	return nil
 }
 
-func (m *toolSvcMockConfigRepo) GetByID(_ context.Context, id shared.ID) (*tooldom.TenantToolConfig, error) {
+func (m *toolSvcMockConfigRepo) GetByID(_ context.Context, tenantID, id shared.ID) (*tooldom.TenantToolConfig, error) {
 	c, ok := m.configs[id.String()]
-	if !ok {
+	if !ok || c.TenantID != tenantID {
 		return nil, shared.ErrNotFound
 	}
 	return c, nil
@@ -375,8 +370,8 @@ func (m *toolSvcMockConfigRepo) Update(_ context.Context, config *tooldom.Tenant
 	return nil
 }
 
-func (m *toolSvcMockConfigRepo) Delete(_ context.Context, id shared.ID) error {
-	if _, ok := m.configs[id.String()]; !ok {
+func (m *toolSvcMockConfigRepo) Delete(_ context.Context, tenantID, id shared.ID) error {
+	if c, ok := m.configs[id.String()]; !ok || c.TenantID != tenantID {
 		return shared.ErrNotFound
 	}
 	delete(m.configs, id.String())
@@ -872,35 +867,6 @@ func TestToolService_ListTools_FilterByActive(t *testing.T) {
 	}
 	if result.Total != 1 {
 		t.Errorf("expected 1 active tool, got %d", result.Total)
-	}
-}
-
-// ============================================================================
-// Tests: ListToolsByCategory
-// ============================================================================
-
-func TestToolService_ListToolsByCategory_EmptyCategory(t *testing.T) {
-	svc, _, _ := newToolSvcTestService()
-
-	_, err := svc.ListToolsByCategory(context.Background(), "")
-	if err == nil {
-		t.Fatal("expected error for empty category")
-	}
-	if !errors.Is(err, shared.ErrValidation) {
-		t.Errorf("expected ErrValidation, got %v", err)
-	}
-}
-
-func TestToolService_ListToolsByCategory_Success(t *testing.T) {
-	svc, _, _ := newToolSvcTestService()
-
-	result, err := svc.ListToolsByCategory(context.Background(), "sast")
-	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
-	}
-	// Mock returns empty for category name
-	if len(result) != 0 {
-		t.Errorf("expected 0 tools (mock), got %d", len(result))
 	}
 }
 

@@ -21,6 +21,7 @@ import {
   normalizeColumns,
   widgetRowSpan,
 } from '../layout'
+import { specOf, widgetModel } from '../api/widget-adapter'
 import { WidgetView } from './widget-view'
 
 export interface DashboardViewProps {
@@ -30,6 +31,14 @@ export interface DashboardViewProps {
   /** The data request failed (every widget shows the error with Retry). */
   failed?: boolean
   onRetry?: () => void
+}
+
+/**
+ * A widget of a module that is off for the organization carries no figure
+ * and is not shown at all: an empty card would read as "nothing to see".
+ */
+function hiddenByModule(value: WidgetValue | undefined): boolean {
+  return value?.state === 'unsupported' && value.reason === 'module_off'
 }
 
 /** The result of the widget at `index` of the layout. */
@@ -63,8 +72,17 @@ export function DashboardView({ dashboard, data, loading, failed, onRetry }: Das
       data-columns={cols}
     >
       {layout.map((w, i) => {
+        if (!failed && hiddenByModule(valueAt(data, i))) return null
         const spec = w.config as { id?: string } | undefined
         const title = t('dashboards.widget.failed', 'This widget could not be shown')
+        const value = failed
+          ? { id: '', index: i, widget_type: w.widget_type, state: 'error' as const }
+          : valueAt(data, i)
+        // A widget with no figure (nothing yet, or not measured) takes one
+        // row: its message never holds a tall card of blank space.
+        const state = value ? widgetModel(value, specOf(w), false).state : undefined
+        const compact = state === 'no_data_yet' || state === 'not_measured'
+        const rows = compact ? 1 : w.h
         return (
           <div
             key={spec?.id ?? `${w.widget_type}-${i}`}
@@ -72,8 +90,8 @@ export function DashboardView({ dashboard, data, loading, failed, onRetry }: Das
               {
                 '--span': gridColumnSpan(colSpanFor(w.w, cols)),
                 '--span-sm': gridColumnSpan(Math.min(2, colSpanFor(w.w, cols))),
-                '--span-xs': phoneSpan(w.w, w.h, cols),
-                '--row-span': widgetRowSpan(w.h),
+                '--span-xs': phoneSpan(w.w, rows, cols),
+                '--row-span': widgetRowSpan(rows),
               } as React.CSSProperties
             }
             className={cn(
@@ -81,6 +99,7 @@ export function DashboardView({ dashboard, data, loading, failed, onRetry }: Das
               widgetSpanClass(cols)
             )}
             data-widget-index={i}
+            data-compact={compact || undefined}
           >
             <WidgetErrorBoundary
               fallback={(reset) => (
@@ -89,11 +108,7 @@ export function DashboardView({ dashboard, data, loading, failed, onRetry }: Das
             >
               <WidgetView
                 widget={w}
-                value={
-                  failed
-                    ? { id: '', index: i, widget_type: w.widget_type, state: 'error' }
-                    : valueAt(data, i)
-                }
+                value={value}
                 asOf={data?.computed_at}
                 pageAsOf={data?.computed_at}
                 stale={data?.stale}

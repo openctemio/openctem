@@ -35,7 +35,7 @@ var Features = []Feature{
 		Registers: []string{
 			"registerVulnerabilityRoutes", "registerFindingActivityRoutes", "registerFindingEvidenceItemRoutes",
 			"registerFindingImportRoutes", "registerImportMappingRoutes", "registerFindingRetestRoutes", "registerFindingRetestCheckRoutes", "registerFindingSourceRoutes", "registerFindingLifecycleRoutes", "registerVerificationChecklistRoutes",
-			"registerAITriageRoutes", "registerAIAnalysisRoutes", "registerAttachmentRoutes", "registerSavedViewRoutes", "registerNavPinRoutes", "registerQueryRoutes",
+			"registerAITriageRoutes", "registerAIAnalysisRoutes", "registerAIKnowledgeRoutes", "registerAttachmentRoutes", "registerSavedViewRoutes", "registerNavPinRoutes", "registerQueryRoutes",
 		},
 		Prefixes: []string{"/api/v1/verification-checklists"},
 	},
@@ -43,7 +43,7 @@ var Features = []Feature{
 		ID: "exposures", Title: "Exposures and leaked credentials",
 		Description: "Non-vulnerability exposures (misconfiguration, identity, leaked credentials, lookalike domains) and the leaked-credential register.",
 		Stages:      []string{StageDiscovery, StagePrioritization},
-		Registers:   []string{"registerExposureRoutes", "registerCredentialRoutes", "registerCTEMIDRoutes"},
+		Registers:   []string{"registerExposureRoutes", "registerExposureItemRoutes", "registerCredentialRoutes"},
 	},
 	{
 		ID: "assets", Title: "Assets and inventory",
@@ -54,7 +54,7 @@ var Features = []Feature{
 			"registerAssetIdentifierRoutes", "registerAssetAttributionRoutes", "registerAssetImportRoutes",
 			"registerAssetDedupRoutes", "registerAssetRelationshipRoutes", "registerRelationshipSuggestionRoutes",
 			"registerAssetServiceRoutes", "registerAssetStateHistoryRoutes", "registerAssetSoftwareRoutes", "registerAssetTechnologyRoutes", "registerComponentRoutes", "registerVEXStatementRoutes",
-			"registerBranchRoutes", "registerAPISpecRoutes", "registerWebEndpointRoutes", "registerCertificateRoutes",
+			"registerBranchRoutes", "registerAPISpecRoutes", "registerWebEndpointRoutes", "registerCertificateRoutes", "registerTechnologyRoutes",
 		},
 	},
 	{
@@ -62,7 +62,7 @@ var Features = []Feature{
 		Description: "External attack surface management: discovery candidates, verified domains, sweeps, attack paths and the scoping summary.",
 		Stages:      []string{StageScoping, StageDiscovery, StagePrioritization},
 		Registers: []string{
-			"registerAttackSurfaceRoutes", "registerEASMRoutes", "registerEASMSettingsRoutes", "registerAssetWebEvidenceRoutes", "registerEASMNetworkSeedRoutes", "registerEASMLookalikeRoutes",
+			"registerAttackSurfaceRoutes", "registerEASMRoutes", "registerEASMSettingsRoutes", "registerEASMDiscoveryRoutes", "registerAssetWebEvidenceRoutes", "registerEASMNetworkSeedRoutes", "registerEASMLookalikeRoutes", "registerPageMonitorRoutes",
 			"registerEASMVerifiedDomainRoutes", "registerScopingRoutes",
 		},
 	},
@@ -108,7 +108,7 @@ var Features = []Feature{
 		Stages:      []string{StageDiscovery, StageValidation},
 		Registers: []string{
 			"registerScanRoutes", "registerScanGovernanceRoutes", "registerScanApprovalRoutes", "registerScanWorkflowRoutes", "registerScanProfileRoutes", "registerScanWindowRoutes",
-			"registerScannerTemplateRoutes", "registerContentSourceRoutes", "registerContentSourceWebhookRoute", "registerContentPackRoutes", "registerPlatformContentPackRoutes", "registerContentCatalogRoutes",
+			"registerScannerTemplateRoutes", "registerContentSourceRoutes", "registerContentSourceWebhookRoute", "registerContentPackRoutes", "registerPlatformContentPackRoutes", "registerContentCatalogRoutes", "registerWordlistRoutes", "registerContentRuleRoutes",
 			"registerToolRoutes", "registerToolCategoryRoutes", "registerCapabilityRoutes", "registerSecretStoreRoutes",
 			"registerPlatformScanningRoutes", "registerCommandRoutes",
 		},
@@ -163,7 +163,7 @@ var Features = []Feature{
 		Description: "Ticketing, SCM, SIEM and notification integrations, inbound webhooks, the notification outbox and API keys.",
 		Stages:      []string{StageMobilization},
 		Registers: []string{
-			"registerIntegrationRoutes", "registerIncomingWebhookRoutes", "registerGitHubWebhookRoute", "registerOutboxRoutes", "registerAPIKeyRoutes",
+			"registerIntegrationRoutes", "registerIncomingWebhookRoutes", "registerGitHubWebhookRoute", "registerOutboxRoutes", "registerAPIKeyRoutes", "registerAPIKeySettingsRoutes",
 		},
 		Prefixes: []string{"/api/v1/webhooks/incoming"},
 	},

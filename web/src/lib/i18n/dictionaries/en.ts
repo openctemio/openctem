@@ -50,6 +50,7 @@ import en_notificationChannels from './en/notificationChannels.json'
 import en_scmIntegration from './en/scmIntegration.json'
 import en_notificationPresets from './en/notificationPresets.json'
 import en_lookalikes from './en/lookalikes.json'
+import en_pageMonitor from './en/pageMonitor.json'
 import en_mcp from './en/mcp.json'
 import en_nav from './en/nav.json'
 import en_networkSeeds from './en/networkSeeds.json'
@@ -71,6 +72,8 @@ import en_importMappings from './en/importMappings.json'
 import en_ticketPolicy from './en/ticketPolicy.json'
 import en_ticketingIntegration from './en/ticketingIntegration.json'
 import en_proxyPools from './en/proxyPools.json'
+import en_wordlists from './en/wordlists.json'
+import en_contentRules from './en/contentRules.json'
 import en_scanApprovals from './en/scanApprovals.json'
 import en_scans from './en/scans.json'
 import en_scanDetail from './en/scanDetail.json'
@@ -148,6 +151,7 @@ export const enNamespaces: Record<string, Dictionary> = {
   scmIntegration: en_scmIntegration,
   notificationPresets: en_notificationPresets,
   lookalikes: en_lookalikes,
+  pageMonitor: en_pageMonitor,
   mcp: en_mcp,
   nav: en_nav,
   networkSeeds: en_networkSeeds,
@@ -170,6 +174,8 @@ export const enNamespaces: Record<string, Dictionary> = {
   ticketPolicy: en_ticketPolicy,
   ticketingIntegration: en_ticketingIntegration,
   proxyPools: en_proxyPools,
+  wordlists: en_wordlists,
+  contentRules: en_contentRules,
   scanApprovals: en_scanApprovals,
   scans: en_scans,
   scanDetail: en_scanDetail,

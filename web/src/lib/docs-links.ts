@@ -35,6 +35,9 @@ export const DOCS = {
   pentest: {
     reportTemplates: 'https://docs.openctem.io/pentest/report-templates/',
   },
+  validation: {
+    overview: 'https://docs.openctem.io/user-guide/07-validation/#validation-overview',
+  },
   developers: {
     toolAuthoring: 'https://docs.openctem.io/developers/tool-authoring/',
   },

@@ -43,7 +43,7 @@ export interface SnippetInput {
  * versions.yaml (ci.latest) by .github/scripts/release/sync-versions.sh:
  * change it there, never here.
  */
-export const CI_RELEASE = 'v0.3.0'
+export const CI_RELEASE = 'v0.3.1'
 
 /** The capabilities the GitHub and GitLab snippets run by default. */
 const DEFAULT_CAPABILITIES = 'sast,sca,secrets,iac'

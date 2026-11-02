@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useMemo, useCallback, useEffect } from 'react'
-import { Plus, Loader2, Download, Trash2, Layers } from 'lucide-react'
+import { Plus, Loader2, Download, Trash2, Layers, PowerOff } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { ScanZonesPanel } from '@/features/scan-zones'
@@ -59,6 +59,8 @@ import { useModuleEnabled } from '@/features/integrations/api/use-tenant-modules
 import { CIPipelinesHint } from '@/features/ci-runners/components/ci-pipelines-hint'
 import { EnrollmentTokensPanel } from './enrollment-tokens-panel'
 import { SensorsEmptyState } from './sensors-empty-state'
+import { SensorCleanupHint } from './sensor-cleanup-hint'
+import { SensorStateLegend } from './sensor-state-legend'
 
 import {
   DEFAULT_FLEET_THRESHOLDS,
@@ -153,6 +155,8 @@ export function SensorsSection({
   const [regenerateKeyDialogOpen, setRegenerateKeyDialogOpen] = useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [bulkDeleteDialogOpen, setBulkDeleteDialogOpen] = useState(false)
+  const [bulkDisableDialogOpen, setBulkDisableDialogOpen] = useState(false)
+  const [isBulkDisabling, setIsBulkDisabling] = useState(false)
   const [revokeDialogOpen, setRevokeDialogOpen] = useState(false)
   // The sensor waiting for a disable confirmation.
   const [pendingDisable, setPendingDisable] = useState<Sensor | null>(null)
@@ -189,12 +193,15 @@ export function SensorsSection({
   // The same name and values as the API's GET /sensors?sdk_version= filter.
   const [sdkVersionParam, setSdkVersionParam] = useUrlFilterList('sdk_version')
   const [attentionParam, setAttentionParam] = useUrlFilter('attention', '')
+  // Sensors to review for removal (never connected for a day, offline for a week).
+  const [cleanupParam, setCleanupParam] = useUrlFilter('cleanup', '')
   const [groupParam, setGroupParam] = useUrlFilter('group', '')
   // Pre-redesign links: ?status=online, ?tab=scanners|collectors, ?mode=collector.
   const [legacyStatus, setLegacyStatus] = useUrlFilter('status', '')
 
   const canReadZones = useHasPermission(Permission.ScanZonesRead)
   const canWriteSensors = useHasPermission(Permission.SensorsWrite)
+  const canDeleteSensors = useHasPermission(Permission.SensorsDelete)
   const canReadSensors = useHasPermission(Permission.SensorsRead)
   // Grant flags on the list (RFC-052): legacy broad grants and New sensors.
   const { data: grantSummaries } = useSensorGrantSummaries(canReadSensors)
@@ -245,8 +252,10 @@ export function SensorsSection({
       ),
       sdkVersions: sdkVersionParam.filter(Boolean),
       attention: attentionParam === '1',
+      cleanup: cleanupParam === '1',
     }
   }, [
+    cleanupParam,
     protocolParam,
     policyParam,
     sdkVersionParam,
@@ -280,6 +289,7 @@ export function SensorsSection({
       setPolicyParam(next.policies)
       setSdkVersionParam(next.sdkVersions)
       setAttentionParam(next.attention ? '1' : '')
+      setCleanupParam(next.cleanup ? '1' : '')
     },
     [
       clearLegacy,
@@ -291,6 +301,7 @@ export function SensorsSection({
       setPolicyParam,
       setSdkVersionParam,
       setAttentionParam,
+      setCleanupParam,
     ]
   )
 
@@ -310,6 +321,11 @@ export function SensorsSection({
     const picked = new Set(selectedIds)
     return sensors.filter((s) => picked.has(s.id)).map((s) => s.name)
   }, [sensors, selectedIds])
+  // The selected sensors Disable applies to (only active ones can be disabled).
+  const selectedActive = useMemo(() => {
+    const picked = new Set(selectedIds)
+    return sensors.filter((s) => picked.has(s.id) && s.status === 'active')
+  }, [sensors, selectedIds])
   const [updatedAt, setUpdatedAt] = useState<number | null>(null)
   useEffect(() => {
     if (sensorsData) setUpdatedAt(Date.now())
@@ -323,8 +339,10 @@ export function SensorsSection({
     [sensors, selectedSensorSnapshot]
   )
 
-  // Ladder thresholds and the release channel the API uses.
-  const { data: tenantSensorStats } = useTenantSensorStats()
+  // Ladder thresholds and the release channel the API uses: the stats come
+  // with the fleet poll; an API without poll mode is asked separately.
+  const { data: polledStats } = useTenantSensorStats(undefined, !isLoading && !sensorsData?.stats)
+  const tenantSensorStats = sensorsData?.stats ?? polledStats
   const thresholds = useMemo<FleetThresholds>(
     () => ({
       onlineWindowSeconds:
@@ -496,6 +514,33 @@ export function SensorsSection({
     }
   }, [selectedIds, bulkDeleteSensorsTrigger, clearSelection, t])
 
+  const handleBulkDisableConfirm = useCallback(async () => {
+    if (selectedActive.length === 0) return
+    setIsBulkDisabling(true)
+    let ok = 0
+    let failed = 0
+    // One at a time, as bulk delete does: a fleet is small and each write is audited.
+    for (const s of selectedActive) {
+      try {
+        await deactivateSensorTrigger(s.id)
+        ok++
+      } catch {
+        failed++
+      }
+    }
+    setIsBulkDisabling(false)
+    if (failed === 0) {
+      toast.success(t('sensors.list.toast.bulkDisabled', undefined, { count: ok }))
+    } else if (ok > 0) {
+      toast.warning(t('sensors.list.toast.bulkDisablePartial', undefined, { success: ok, failed }))
+    } else {
+      toast.error(t('sensors.list.toast.disableFailed'))
+    }
+    await invalidateSensorsCache()
+    setBulkDisableDialogOpen(false)
+    clearSelection()
+  }, [selectedActive, deactivateSensorTrigger, clearSelection, t])
+
   const handleActivateSensor = useCallback(
     async (sensor: Sensor) => {
       setSelectedSensor(sensor)
@@ -594,6 +639,7 @@ export function SensorsSection({
   }, [filteredSensors, now, thresholds, channel, t])
 
   const toggleAttention = () => setFilters({ ...filters, attention: !filters.attention })
+  const toggleCleanup = () => setFilters({ ...filters, cleanup: !filters.cleanup })
   const notConnectedActive =
     filters.states.length === NOT_CONNECTED_STATES.length &&
     NOT_CONNECTED_STATES.every((st) => filters.states.includes(st))
@@ -697,6 +743,7 @@ export function SensorsSection({
         onDeactivateSensor={requestDeactivateSensor}
         onDeleteSensor={handleDeleteClick}
         onRegenerateKey={handleRegenerateKey}
+        onRevokeSensor={handleRevokeSensor}
         onSelectionChange={(rows) => setSelectedIds(rows.map((a) => a.id))}
         resetSelectionKey={selectionEpoch}
         thresholds={thresholds}
@@ -789,6 +836,13 @@ export function SensorsSection({
           {/* Where else scans can run: the platform's shared scanning, shown
               only when the organization may use it. */}
           <PlatformScanningCard />
+          {!fleetEmpty && !error && !isLoading && (
+            <SensorCleanupHint
+              count={summary.cleanup}
+              active={!!filters.cleanup}
+              onToggle={toggleCleanup}
+            />
+          )}
           {!fleetEmpty && (
             <FleetHealthStrip
               loading={isLoading}
@@ -830,11 +884,7 @@ export function SensorsSection({
             <div className="min-w-0 flex-1">
               {body}
               {!fleetEmpty && !error && !isLoading && (
-                <p className="mt-3 text-xs text-muted-foreground">
-                  {t('sensors.list.legend', undefined, {
-                    offlineAfter: secondsLabel(offlineAfter),
-                  })}
-                </p>
+                <SensorStateLegend offlineAfter={secondsLabel(offlineAfter)} />
               )}
             </div>
           </div>
@@ -854,18 +904,31 @@ export function SensorsSection({
         {facetPanel}
       </FilterSheet>
 
-      <Can permission={Permission.SensorsDelete}>
+      {(canWriteSensors || canDeleteSensors) && (
         <BulkActionBar
           count={selectedIds.length}
           onClear={clearSelection}
           noun={t('sensors.list.selected')}
         >
-          <Button variant="destructive" size="sm" onClick={() => setBulkDeleteDialogOpen(true)}>
-            <Trash2 className="h-4 w-4" />
-            {t('confirm.delete', 'Delete')}
-          </Button>
+          {canWriteSensors && (
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={selectedActive.length === 0}
+              onClick={() => setBulkDisableDialogOpen(true)}
+            >
+              <PowerOff className="h-4 w-4" />
+              {t('confirm.disable', 'Disable')}
+            </Button>
+          )}
+          {canDeleteSensors && (
+            <Button variant="destructive" size="sm" onClick={() => setBulkDeleteDialogOpen(true)}>
+              <Trash2 className="h-4 w-4" />
+              {t('confirm.delete', 'Delete')}
+            </Button>
+          )}
         </BulkActionBar>
-      </Can>
+      )}
 
       {pairDialogOpen && (
         <AddSensorDialog
@@ -977,6 +1040,20 @@ export function SensorsSection({
         handleConfirm={handleBulkDeleteConfirm}
       >
         <ConfirmSample names={selectedNames} total={selectedIds.length} />
+      </ConfirmDialog>
+
+      {/* Bulk disable: reversible, applies to the selected active sensors. */}
+      <ConfirmDialog
+        open={bulkDisableDialogOpen}
+        onOpenChange={setBulkDisableDialogOpen}
+        destructive
+        title={t('confirm.sensor.bulkDisableTitle', undefined, { count: selectedActive.length })}
+        desc={t('confirm.sensor.bulkDisableDesc')}
+        confirmText={t('confirm.disable', 'Disable')}
+        isLoading={isBulkDisabling}
+        handleConfirm={handleBulkDisableConfirm}
+      >
+        <ConfirmSample names={selectedActive.map((s) => s.name)} total={selectedActive.length} />
       </ConfirmDialog>
 
       {/* Disable: reversible, the sensor stops claiming jobs until enabled. */}

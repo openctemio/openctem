@@ -36,6 +36,21 @@ func registerEmergingThreatSettingsRoutes(router Router, h *handler.TenantHandle
 	}, buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)...)
 }
 
+// registerAPIKeySettingsRoutes wires the organization's API key policy (the
+// maximum lifetime of new keys) under the token singleton
+// /api/v1/organization. Read: anyone who reads or creates API keys (the key
+// dialog offers only allowed lifetimes). Write: owner or administrator with
+// settings:write; a longer maximum asks a recent sign-in in the service.
+func registerAPIKeySettingsRoutes(router Router, h *handler.TenantHandler, authMiddleware, userSyncMiddleware Middleware) {
+	if h == nil {
+		return
+	}
+	router.Group("/api/v1/organization/settings/api-keys", func(r Router) {
+		r.GET("/", h.GetAPIKeySettings, middleware.RequireAny(permission.APIKeysRead, permission.APIKeysWrite, permission.SettingsRead))
+		r.PUT("/", h.UpdateAPIKeySettings, middleware.RequireAdmin(), middleware.Require(permission.SettingsWrite))
+	}, buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)...)
+}
+
 // registerAISettingsRoutes wires the organization's AI settings (consent,
 // source, own provider) under the token singleton /api/v1/organization.
 // Owner/admin only. Turning AI on or changing the provider changes where
@@ -49,6 +64,17 @@ func registerAISettingsRoutes(router Router, h *handler.AISettingsHandler, maski
 		r.GET("/", h.Get, middleware.RequireAdmin(), middleware.Require(permission.SettingsRead))
 		r.PUT("/", h.Update, middleware.RequireAdmin(), middleware.Require(permission.SettingsWrite), requireStepUp())
 		r.POST("/test", h.Test, middleware.RequireAdmin(), middleware.Require(permission.SettingsWrite))
+		// Automatic triage: a loosening (on, more severities) needs a recent
+		// sign-in, asked by the service; tightening is one click.
+		r.GET("/auto-triage", h.GetAutoTriage, middleware.RequireAdmin(), middleware.Require(permission.SettingsRead))
+		r.PUT("/auto-triage", h.UpdateAutoTriage, middleware.RequireAdmin(), middleware.Require(permission.SettingsWrite))
+		// Use cases (docs/architecture/ai-use-cases.md): per use case, whether
+		// results wait for a person or apply on their own, and the data class
+		// sent. Anyone with settings:read reads; a loosening (auto-apply on,
+		// ceiling above internal, lower confidence while auto-applying) needs
+		// a recent sign-in, asked by the service; tightening is one click.
+		r.GET("/use-cases", h.ListUseCases, middleware.Require(permission.SettingsRead))
+		r.PUT("/use-cases/{use_case}", h.UpdateUseCase, middleware.RequireAdmin(), middleware.Require(permission.SettingsWrite))
 
 		// Masking of AI context (docs/architecture/ai-context-masking.md):
 		// what is replaced by placeholders before finding data reaches a

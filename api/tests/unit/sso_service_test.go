@@ -634,6 +634,10 @@ func (m *ssoMockRefreshTokenRepo) MarkUsedIfUnused(_ context.Context, _ shared.I
 	return true, nil
 }
 
+func (m *ssoMockRefreshTokenRepo) RotateIfUnused(_ context.Context, _ shared.ID, _ string, _ *session.RefreshToken) (bool, error) {
+	return true, nil
+}
+
 func (m *ssoMockRefreshTokenRepo) Delete(_ context.Context, _ shared.ID) error {
 	return nil
 }
@@ -756,6 +760,9 @@ func createTestTenant(slug string) *tenant.Tenant {
 	return t
 }
 
+// testEntraDirectory is the Entra directory id test providers are pinned to.
+const testEntraDirectory = "0f0f0f0f-1111-2222-3333-444444444444"
+
 func createTestProvider(tenantID string, provider identityprovider.Provider, active bool) *identityprovider.IdentityProvider {
 	ip := identityprovider.New(
 		shared.NewID().String(),
@@ -765,6 +772,9 @@ func createTestProvider(tenantID string, provider identityprovider.Provider, act
 		"client-id-123",
 		"encrypted:client-secret",
 	)
+	if provider == identityprovider.ProviderEntraID {
+		ip.SetTenantIdentifier(testEntraDirectory)
+	}
 	if !active {
 		ip.SetActive(false)
 	}
@@ -879,7 +889,7 @@ func TestSSOService_GenerateAuthorizeURL_Success_EntraID(t *testing.T) {
 	tenantRepo.addTenant(testTenant)
 
 	provider := createTestProvider(testTenant.ID().String(), identityprovider.ProviderEntraID, true)
-	provider.SetTenantIdentifier("tenant-guid-123")
+	provider.SetTenantIdentifier(testEntraDirectory)
 	ipRepo.providers[provider.ID()] = provider
 
 	result, err := svc.GenerateAuthorizeURL(context.Background(), auth.SSOAuthorizeInput{
@@ -1148,13 +1158,14 @@ func TestSSOService_CreateProvider_Success(t *testing.T) {
 	svc := newTestSSOService(ipRepo, tenantRepo, newSSOmockUserRepo(), newSSOmockSessionRepo(), newSSOmockRefreshTokenRepo(), newSSOmockEncryptor())
 
 	input := auth.CreateProviderInput{
-		TenantID:     shared.NewID().String(),
-		Provider:     string(identityprovider.ProviderEntraID),
-		DisplayName:  "Microsoft SSO",
-		ClientID:     "client-123",
-		ClientSecret: "super-secret",
-		DefaultRole:  "member",
-		CreatedBy:    shared.NewID().String(),
+		TenantID:         shared.NewID().String(),
+		Provider:         string(identityprovider.ProviderEntraID),
+		TenantIdentifier: testEntraDirectory,
+		DisplayName:      "Microsoft SSO",
+		ClientID:         "client-123",
+		ClientSecret:     "super-secret",
+		DefaultRole:      "member",
+		CreatedBy:        shared.NewID().String(),
 	}
 
 	ip, err := svc.CreateProvider(context.Background(), input)
@@ -1199,12 +1210,13 @@ func TestSSOService_CreateProvider_OwnerRoleRejected(t *testing.T) {
 	svc := newTestSSOService(newSSOmockIPRepo(), newSSOmockTenantRepo(), newSSOmockUserRepo(), newSSOmockSessionRepo(), newSSOmockRefreshTokenRepo(), newSSOmockEncryptor())
 
 	input := auth.CreateProviderInput{
-		TenantID:     shared.NewID().String(),
-		Provider:     string(identityprovider.ProviderEntraID),
-		DisplayName:  "SSO Provider",
-		ClientID:     "client-123",
-		ClientSecret: "super-secret",
-		DefaultRole:  "owner",
+		TenantID:         shared.NewID().String(),
+		Provider:         string(identityprovider.ProviderEntraID),
+		TenantIdentifier: testEntraDirectory,
+		DisplayName:      "SSO Provider",
+		ClientID:         "client-123",
+		ClientSecret:     "super-secret",
+		DefaultRole:      "owner",
 	}
 
 	_, err := svc.CreateProvider(context.Background(), input)
@@ -1221,12 +1233,13 @@ func TestSSOService_CreateProvider_ValidDefaultRoles(t *testing.T) {
 			svc := newTestSSOService(ipRepo, newSSOmockTenantRepo(), newSSOmockUserRepo(), newSSOmockSessionRepo(), newSSOmockRefreshTokenRepo(), newSSOmockEncryptor())
 
 			input := auth.CreateProviderInput{
-				TenantID:     shared.NewID().String(),
-				Provider:     string(identityprovider.ProviderEntraID),
-				DisplayName:  "SSO Provider",
-				ClientID:     "client-123",
-				ClientSecret: "super-secret",
-				DefaultRole:  role,
+				TenantID:         shared.NewID().String(),
+				Provider:         string(identityprovider.ProviderEntraID),
+				TenantIdentifier: testEntraDirectory,
+				DisplayName:      "SSO Provider",
+				ClientID:         "client-123",
+				ClientSecret:     "super-secret",
+				DefaultRole:      role,
 			}
 
 			_, err := svc.CreateProvider(context.Background(), input)
@@ -1244,12 +1257,13 @@ func TestSSOService_CreateProvider_InvalidDefaultRole(t *testing.T) {
 			svc := newTestSSOService(newSSOmockIPRepo(), newSSOmockTenantRepo(), newSSOmockUserRepo(), newSSOmockSessionRepo(), newSSOmockRefreshTokenRepo(), newSSOmockEncryptor())
 
 			input := auth.CreateProviderInput{
-				TenantID:     shared.NewID().String(),
-				Provider:     string(identityprovider.ProviderEntraID),
-				DisplayName:  "SSO Provider",
-				ClientID:     "client-123",
-				ClientSecret: "super-secret",
-				DefaultRole:  role,
+				TenantID:         shared.NewID().String(),
+				Provider:         string(identityprovider.ProviderEntraID),
+				TenantIdentifier: testEntraDirectory,
+				DisplayName:      "SSO Provider",
+				ClientID:         "client-123",
+				ClientSecret:     "super-secret",
+				DefaultRole:      role,
 			}
 
 			_, err := svc.CreateProvider(context.Background(), input)
@@ -1338,12 +1352,13 @@ func TestSSOService_CreateProvider_ScopesValidation(t *testing.T) {
 			svc := newTestSSOService(newSSOmockIPRepo(), newSSOmockTenantRepo(), newSSOmockUserRepo(), newSSOmockSessionRepo(), newSSOmockRefreshTokenRepo(), newSSOmockEncryptor())
 
 			input := auth.CreateProviderInput{
-				TenantID:     shared.NewID().String(),
-				Provider:     string(identityprovider.ProviderEntraID),
-				DisplayName:  "SSO Provider",
-				ClientID:     "client-123",
-				ClientSecret: "super-secret",
-				Scopes:       tt.scopes,
+				TenantID:         shared.NewID().String(),
+				Provider:         string(identityprovider.ProviderEntraID),
+				TenantIdentifier: testEntraDirectory,
+				DisplayName:      "SSO Provider",
+				ClientID:         "client-123",
+				ClientSecret:     "super-secret",
+				Scopes:           tt.scopes,
 			}
 
 			_, err := svc.CreateProvider(context.Background(), input)
@@ -1380,12 +1395,13 @@ func TestSSOService_CreateProvider_AllowedDomainsValidation(t *testing.T) {
 			svc := newTestSSOService(newSSOmockIPRepo(), newSSOmockTenantRepo(), newSSOmockUserRepo(), newSSOmockSessionRepo(), newSSOmockRefreshTokenRepo(), newSSOmockEncryptor())
 
 			input := auth.CreateProviderInput{
-				TenantID:       shared.NewID().String(),
-				Provider:       string(identityprovider.ProviderEntraID),
-				DisplayName:    "SSO Provider",
-				ClientID:       "client-123",
-				ClientSecret:   "super-secret",
-				AllowedDomains: tt.domains,
+				TenantID:         shared.NewID().String(),
+				Provider:         string(identityprovider.ProviderEntraID),
+				TenantIdentifier: testEntraDirectory,
+				DisplayName:      "SSO Provider",
+				ClientID:         "client-123",
+				ClientSecret:     "super-secret",
+				AllowedDomains:   tt.domains,
 			}
 
 			_, err := svc.CreateProvider(context.Background(), input)
@@ -1405,11 +1421,12 @@ func TestSSOService_CreateProvider_EncryptionFailed(t *testing.T) {
 	svc := newTestSSOService(newSSOmockIPRepo(), newSSOmockTenantRepo(), newSSOmockUserRepo(), newSSOmockSessionRepo(), newSSOmockRefreshTokenRepo(), encryptor)
 
 	input := auth.CreateProviderInput{
-		TenantID:     shared.NewID().String(),
-		Provider:     string(identityprovider.ProviderEntraID),
-		DisplayName:  "SSO Provider",
-		ClientID:     "client-123",
-		ClientSecret: "super-secret",
+		TenantID:         shared.NewID().String(),
+		Provider:         string(identityprovider.ProviderEntraID),
+		TenantIdentifier: testEntraDirectory,
+		DisplayName:      "SSO Provider",
+		ClientID:         "client-123",
+		ClientSecret:     "super-secret",
 	}
 
 	_, err := svc.CreateProvider(context.Background(), input)
@@ -1424,11 +1441,12 @@ func TestSSOService_CreateProvider_RepoError(t *testing.T) {
 	svc := newTestSSOService(ipRepo, newSSOmockTenantRepo(), newSSOmockUserRepo(), newSSOmockSessionRepo(), newSSOmockRefreshTokenRepo(), newSSOmockEncryptor())
 
 	input := auth.CreateProviderInput{
-		TenantID:     shared.NewID().String(),
-		Provider:     string(identityprovider.ProviderEntraID),
-		DisplayName:  "SSO Provider",
-		ClientID:     "client-123",
-		ClientSecret: "super-secret",
+		TenantID:         shared.NewID().String(),
+		Provider:         string(identityprovider.ProviderEntraID),
+		TenantIdentifier: testEntraDirectory,
+		DisplayName:      "SSO Provider",
+		ClientID:         "client-123",
+		ClientSecret:     "super-secret",
 	}
 
 	_, err := svc.CreateProvider(context.Background(), input)
@@ -1449,7 +1467,7 @@ func TestSSOService_CreateProvider_SetsOptionalFields(t *testing.T) {
 		ClientID:         "client-123",
 		ClientSecret:     "super-secret",
 		IssuerURL:        "https://login.microsoftonline.com/tenant-id",
-		TenantIdentifier: "tenant-guid",
+		TenantIdentifier: testEntraDirectory,
 		Scopes:           []string{"openid", "email"},
 		AllowedDomains:   []string{"example.com"},
 		AutoProvision:    true,
@@ -1464,7 +1482,7 @@ func TestSSOService_CreateProvider_SetsOptionalFields(t *testing.T) {
 	if ip.IssuerURL() != "https://login.microsoftonline.com/tenant-id" {
 		t.Fatalf("expected issuer URL to be set, got %q", ip.IssuerURL())
 	}
-	if ip.TenantIdentifier() != "tenant-guid" {
+	if ip.TenantIdentifier() != testEntraDirectory {
 		t.Fatalf("expected tenant identifier to be set, got %q", ip.TenantIdentifier())
 	}
 	if len(ip.Scopes()) != 2 {
@@ -1502,6 +1520,9 @@ func TestSSOService_CreateProvider_AllProviderTypes(t *testing.T) {
 				DisplayName:  "Provider " + string(p),
 				ClientID:     "client-123",
 				ClientSecret: "super-secret",
+			}
+			if p == identityprovider.ProviderEntraID {
+				input.TenantIdentifier = testEntraDirectory
 			}
 
 			ip, err := svc.CreateProvider(context.Background(), input)
@@ -1734,7 +1755,7 @@ func TestSSOService_UpdateProvider_AllFields(t *testing.T) {
 	clientID := "new-client"
 	secret := "new-secret"
 	issuer := "https://issuer.example.com"
-	tid := "new-tenant-id"
+	tid := testEntraDirectory
 	autoProvision := false
 	role := "member"
 	active := false
@@ -1765,7 +1786,7 @@ func TestSSOService_UpdateProvider_AllFields(t *testing.T) {
 	if result.IssuerURL() != "https://issuer.example.com" {
 		t.Fatalf("unexpected issuer URL: %q", result.IssuerURL())
 	}
-	if result.TenantIdentifier() != "new-tenant-id" {
+	if result.TenantIdentifier() != testEntraDirectory {
 		t.Fatalf("unexpected tenant identifier: %q", result.TenantIdentifier())
 	}
 	if len(result.Scopes()) != 1 || result.Scopes()[0] != "openid" {
@@ -2134,20 +2155,19 @@ func TestSSOService_ProviderEndpoints_EntraID_DefaultTenant(t *testing.T) {
 	testTenant := createTestTenant("test-org")
 	tenantRepo.addTenant(testTenant)
 
-	// EntraID provider without tenant identifier should use "common"
+	// An organization's EntraID provider without a directory id is refused:
+	// it would accept any Microsoft directory through "common".
 	provider := createTestProvider(testTenant.ID().String(), identityprovider.ProviderEntraID, true)
+	provider.SetTenantIdentifier("")
 	ipRepo.providers[provider.ID()] = provider
 
-	result, err := svc.GenerateAuthorizeURL(context.Background(), auth.SSOAuthorizeInput{
+	_, err := svc.GenerateAuthorizeURL(context.Background(), auth.SSOAuthorizeInput{
 		OrgSlug:     "test-org",
 		Provider:    string(identityprovider.ProviderEntraID),
 		RedirectURI: "https://app.example.com/callback",
 	})
-	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
-	}
-	if !strings.Contains(result.AuthorizationURL, "/common/") {
-		t.Fatalf("expected 'common' tenant in EntraID URL, got %s", result.AuthorizationURL)
+	if !errors.Is(err, auth.ErrSSOProviderMisconfigured) {
+		t.Fatalf("expected ErrSSOProviderMisconfigured, got %v", err)
 	}
 }
 
@@ -2160,7 +2180,7 @@ func TestSSOService_ProviderEndpoints_EntraID_CustomTenant(t *testing.T) {
 	tenantRepo.addTenant(testTenant)
 
 	provider := createTestProvider(testTenant.ID().String(), identityprovider.ProviderEntraID, true)
-	provider.SetTenantIdentifier("my-tenant-guid")
+	provider.SetTenantIdentifier("12345678-aaaa-bbbb-cccc-1234567890ab")
 	ipRepo.providers[provider.ID()] = provider
 
 	result, err := svc.GenerateAuthorizeURL(context.Background(), auth.SSOAuthorizeInput{
@@ -2171,7 +2191,7 @@ func TestSSOService_ProviderEndpoints_EntraID_CustomTenant(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
-	if !strings.Contains(result.AuthorizationURL, "/my-tenant-guid/") {
+	if !strings.Contains(result.AuthorizationURL, "/12345678-aaaa-bbbb-cccc-1234567890ab/") {
 		t.Fatalf("expected custom tenant in EntraID URL, got %s", result.AuthorizationURL)
 	}
 }
@@ -2210,12 +2230,13 @@ func TestSSOService_ValidateDefaultRole_EmptyIsValid(t *testing.T) {
 	svc := newTestSSOService(newSSOmockIPRepo(), newSSOmockTenantRepo(), newSSOmockUserRepo(), newSSOmockSessionRepo(), newSSOmockRefreshTokenRepo(), newSSOmockEncryptor())
 
 	input := auth.CreateProviderInput{
-		TenantID:     shared.NewID().String(),
-		Provider:     string(identityprovider.ProviderEntraID),
-		DisplayName:  "SSO Provider",
-		ClientID:     "client-123",
-		ClientSecret: "super-secret",
-		DefaultRole:  "", // Empty should use entity default ("viewer", least privilege)
+		TenantID:         shared.NewID().String(),
+		Provider:         string(identityprovider.ProviderEntraID),
+		TenantIdentifier: testEntraDirectory,
+		DisplayName:      "SSO Provider",
+		ClientID:         "client-123",
+		ClientSecret:     "super-secret",
+		DefaultRole:      "", // Empty should use entity default ("viewer", least privilege)
 	}
 
 	ip, err := svc.CreateProvider(context.Background(), input)
@@ -2255,12 +2276,12 @@ func TestSSOService_ValidateEntraIDTenantIdentifier_ValidLength(t *testing.T) {
 		DisplayName:      "EntraID SSO",
 		ClientID:         "client-123",
 		ClientSecret:     "super-secret",
-		TenantIdentifier: strings.Repeat("a", 128), // Exactly at max
+		TenantIdentifier: strings.Repeat("a", 128), // not a directory id
 	}
 
 	_, err := svc.CreateProvider(context.Background(), input)
-	if err != nil {
-		t.Fatalf("expected no error for max-length EntraID tenant identifier, got %v", err)
+	if !errors.Is(err, identityprovider.ErrInvalidConfig) {
+		t.Fatalf("expected ErrInvalidConfig for a tenant identifier that is not a directory id, got %v", err)
 	}
 }
 
@@ -2268,12 +2289,13 @@ func TestSSOService_ValidateAllowedDomains_MaxLength(t *testing.T) {
 	svc := newTestSSOService(newSSOmockIPRepo(), newSSOmockTenantRepo(), newSSOmockUserRepo(), newSSOmockSessionRepo(), newSSOmockRefreshTokenRepo(), newSSOmockEncryptor())
 
 	input := auth.CreateProviderInput{
-		TenantID:       shared.NewID().String(),
-		Provider:       string(identityprovider.ProviderEntraID),
-		DisplayName:    "SSO Provider",
-		ClientID:       "client-123",
-		ClientSecret:   "super-secret",
-		AllowedDomains: []string{strings.Repeat("a", 255)}, // Exactly at max
+		TenantID:         shared.NewID().String(),
+		Provider:         string(identityprovider.ProviderEntraID),
+		TenantIdentifier: testEntraDirectory,
+		DisplayName:      "SSO Provider",
+		ClientID:         "client-123",
+		ClientSecret:     "super-secret",
+		AllowedDomains:   []string{strings.Repeat("a", 255)}, // Exactly at max
 	}
 
 	_, err := svc.CreateProvider(context.Background(), input)
@@ -2302,6 +2324,7 @@ func TestSSOService_GetProvidersForTenant_ResponseFormat(t *testing.T) {
 		"client-id",
 		"encrypted-secret",
 	)
+	provider.SetTenantIdentifier(testEntraDirectory)
 	ipRepo.providers[provider.ID()] = provider
 
 	providers, err := svc.GetProvidersForTenant(context.Background(), "test-org")
@@ -2333,11 +2356,12 @@ func TestSSOService_CreateProvider_ClientSecretEncrypted(t *testing.T) {
 	svc := newTestSSOService(ipRepo, newSSOmockTenantRepo(), newSSOmockUserRepo(), newSSOmockSessionRepo(), newSSOmockRefreshTokenRepo(), newSSOmockEncryptor())
 
 	input := auth.CreateProviderInput{
-		TenantID:     shared.NewID().String(),
-		Provider:     string(identityprovider.ProviderEntraID),
-		DisplayName:  "SSO Provider",
-		ClientID:     "client-123",
-		ClientSecret: "my-secret-value",
+		TenantID:         shared.NewID().String(),
+		Provider:         string(identityprovider.ProviderEntraID),
+		TenantIdentifier: testEntraDirectory,
+		DisplayName:      "SSO Provider",
+		ClientID:         "client-123",
+		ClientSecret:     "my-secret-value",
 	}
 
 	ip, err := svc.CreateProvider(context.Background(), input)
@@ -2549,12 +2573,13 @@ func (m *ssoMockUserRepo) UpdatePasswordHash(_ context.Context, _ shared.ID, _ s
 func TestSSOService_CreateProvider_AdminDefaultRoleRefused(t *testing.T) {
 	svc := newTestSSOService(newSSOmockIPRepo(), newSSOmockTenantRepo(), newSSOmockUserRepo(), newSSOmockSessionRepo(), newSSOmockRefreshTokenRepo(), newSSOmockEncryptor())
 	_, err := svc.CreateProvider(context.Background(), auth.CreateProviderInput{
-		TenantID:     shared.NewID().String(),
-		Provider:     string(identityprovider.ProviderEntraID),
-		DisplayName:  "SSO Provider",
-		ClientID:     "client-123",
-		ClientSecret: "super-secret",
-		DefaultRole:  "admin",
+		TenantID:         shared.NewID().String(),
+		Provider:         string(identityprovider.ProviderEntraID),
+		TenantIdentifier: testEntraDirectory,
+		DisplayName:      "SSO Provider",
+		ClientID:         "client-123",
+		ClientSecret:     "super-secret",
+		DefaultRole:      "admin",
 	})
 	if !errors.Is(err, auth.ErrSSOInvalidDefaultRole) {
 		t.Fatalf("admin default role: err = %v, want ErrSSOInvalidDefaultRole", err)

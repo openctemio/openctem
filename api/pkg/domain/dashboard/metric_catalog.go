@@ -10,6 +10,8 @@ package dashboard
 // (docs/architecture/dashboards.md, "Fact layer"), so any viewer scope applies
 // as a join at read time.
 
+import "github.com/openctemio/openctem/api/pkg/domain/module"
+
 // Shape is the form of a widget result.
 type Shape string
 
@@ -159,6 +161,10 @@ const (
 	// MetricKindKPIs is the KPI strip: the counts, ratio and duration of the
 	// single-figure metrics, computed the same way.
 	MetricKindKPIs MetricKind = "kpis"
+	// MetricKindBreakdown is a fixed set of bands or kinds read from one
+	// source (assets, certificates, accepted findings): a category, each
+	// key with the list it counts.
+	MetricKindBreakdown MetricKind = "breakdown"
 )
 
 // Metric is one catalog entry.
@@ -187,6 +193,13 @@ type Metric struct {
 	// Flow marks a series of flows (opened, fixed): columns or diverging
 	// bars, never a stacked area that reads as a stock.
 	Flow bool `json:"flow,omitempty"`
+	// NoPrevious marks a timed metric with no previous-period figure.
+	NoPrevious bool `json:"-"`
+	// Module is the tenant module the metric reads (empty: always
+	// available). While the module is off for the organization the metric
+	// is not offered in the catalog and a widget of it reads "unsupported"
+	// with reason "module_off" and no figure, also from a stored snapshot.
+	Module string `json:"module,omitempty"`
 }
 
 var f1Dims = []Dimension{DimSeverity, DimPriorityClass, DimSource, DimSLAState, DimAgeBand, DimKEV, DimReachable, DimAssetGroup}
@@ -243,6 +256,29 @@ var catalog = []Metric{
 	// Five key figures in one strip: P0-P1 open, KEV open, within SLA, median
 	// time to fix and discovery coverage.
 	{ID: "exposure.kpis", Group: "exposure", Kind: MetricKindKPIs, Polarity: PolarityNeutral, Timed: true},
+	// Assets added to the inventory in the window, by asset type, with the
+	// window before it: how the attack surface changed.
+	{ID: "surface.new_assets", Group: "attack_surface", Kind: MetricKindBreakdown, Polarity: PolarityNeutral, Timed: true},
+	// Certificates by how soon they expire: expired, 7, 30 and 90 days.
+	{ID: "certificates.expiry", Group: "attack_surface", Kind: MetricKindBreakdown, Polarity: PolarityLowerBetter},
+	// Accepted risks by when the acceptance ends: within 7 days, within 30
+	// days, later.
+	{ID: "exceptions.expiring", Group: "remediation", Kind: MetricKindBreakdown, Polarity: PolarityNeutral},
+	// How closes held in the window: findings fixed by a person, fixed by the
+	// platform on its own (no person recorded), fixed findings that came back
+	// (regressions, last_reopened_at), and the Ready to close proposals that
+	// wait for a person now.
+	{ID: "findings.closure_quality", Group: "remediation", Kind: MetricKindBreakdown, Polarity: PolarityNeutral, Timed: true},
+	// Active remediation campaigns, the latest first: the share of each
+	// campaign's tasks that are done, over the reader's view of it.
+	{ID: "remediation.campaign_progress", Group: "remediation", Kind: MetricKindBreakdown, Polarity: PolarityHigherBetter},
+	// Findings closed as false positive in the window as a share of the
+	// findings closed in the window, by tool; organization dashboards only.
+	{ID: "detection.fp_rate_by_tool", Group: "ctem", Kind: MetricKindBreakdown, Polarity: PolarityLowerBetter, Timed: true, NoPrevious: true},
+	// Open emerging-threat alerts affecting the reader's scope, by level
+	// (immediate, digest, listed): the alert list's own summary.
+	{ID: "intel.emerging_threats", Group: "threat_intel", Kind: MetricKindBreakdown, Polarity: PolarityLowerBetter,
+		Module: module.ModuleThreatIntel},
 }
 
 var catalogByID = func() map[string]Metric {
@@ -298,6 +334,8 @@ func (m Metric) ShapeFor(groupBy []Dimension) Shape {
 		return ShapeBrief
 	case MetricKindKPIs:
 		return ShapeKPIs
+	case MetricKindBreakdown:
+		return ShapeCategory
 	default: // count
 		switch len(groupBy) {
 		case 0:
@@ -338,13 +376,21 @@ func (m Metric) Current() bool {
 	switch m.Kind {
 	case MetricKindItems, MetricKindAssetCount, MetricKindStages, MetricKindPaths, MetricKindLevers, MetricKindBrief:
 		return true
+	case MetricKindBreakdown:
+		// A breakdown with a window (assets added) reads a range; the
+		// others (expiry bands) are counted from now.
+		return !m.Timed
 	}
 	return false
 }
 
 // Comparable reports a metric that can show a previous period. The exposure
-// flow and the intake read one window with no previous figure.
+// flow, the intake and a NoPrevious metric read one window with no previous
+// figure.
 func (m Metric) Comparable() bool {
+	if m.NoPrevious {
+		return false
+	}
 	switch m.Kind {
 	case MetricKindExposureFlow, MetricKindIntake:
 		return false

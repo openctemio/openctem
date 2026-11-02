@@ -15,7 +15,8 @@ export interface ProxyEndpointHealth {
   consecutive_failures: number
   ok_total: number
   fail_total: number
-  handshake_ms_p95: number
+  /** Null before the first measured connection. */
+  handshake_ms_p95: number | null
   last_error: string
   last_ok_at: string | null
   last_failure_at: string | null
@@ -142,4 +143,30 @@ export interface ProxyTestOutcome {
 
 export interface ProxyTestResultsResponse {
   items: ProxyTestOutcome[]
+}
+
+/** Where a scanner address comes from (only addresses the platform observed). */
+export type ScannerAddressKind = 'proxy_exit' | 'sensor' | 'platform'
+
+export interface ScannerAddress {
+  /** An IP address, or a CIDR for a published platform range. */
+  address: string
+  /** The address as a prefix (/32 or /128 for one address). */
+  cidr: string
+  kind: ScannerAddressKind
+  private: boolean
+  pool_id?: string
+  pool_name?: string
+  endpoint_id?: string
+  endpoint_label?: string
+  sensor_id?: string
+  sensor_name?: string
+  region?: string
+  last_seen_at?: string | null
+}
+
+export interface ScannerAddressList {
+  items: ScannerAddress[]
+  /** Unique prefixes, sorted. */
+  cidrs: string[]
 }

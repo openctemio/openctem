@@ -18,6 +18,7 @@ import type {
   ProxyAssignmentList,
   ProxyPool,
   ProxyPoolList,
+  ScannerAddressList,
   SetProxyAssignmentRequest,
   UpdateProxyEndpointRequest,
   UpdateProxyPoolRequest,
@@ -29,13 +30,23 @@ const defaultConfig: SWRConfiguration = {
   errorRetryCount: 2,
 }
 
-/** The organization's pools, with their health as of the last load. */
-export function useProxyPools(enabled = true) {
+/**
+ * How often the Proxies page re-reads health while it is visible: endpoint
+ * scores move with every scan report, and a quarantine ends on its own.
+ * SWR skips the refresh while the tab is hidden or offline.
+ */
+export const PROXY_HEALTH_REFRESH_MS = 30_000
+
+/**
+ * The organization's pools, with their health as of the last load. Pass
+ * `refreshInterval` (PROXY_HEALTH_REFRESH_MS) where health is on screen.
+ */
+export function useProxyPools(enabled = true, refreshInterval = 0) {
   const { currentTenant } = useTenant()
   return useSWR<ProxyPoolList>(
     currentTenant && enabled ? proxyPoolEndpoints.list() : null,
     (url: string) => get<ProxyPoolList>(url),
-    defaultConfig
+    { ...defaultConfig, refreshInterval }
   )
 }
 
@@ -45,6 +56,16 @@ export function useProxyAssignments(enabled = true) {
   return useSWR<ProxyAssignmentList>(
     currentTenant && enabled ? proxyPoolEndpoints.assignments() : null,
     (url: string) => get<ProxyAssignmentList>(url),
+    defaultConfig
+  )
+}
+
+/** The addresses the organization's scans leave from (sensors:egress:read). */
+export function useScannerAddresses(enabled = true) {
+  const { currentTenant } = useTenant()
+  return useSWR<ScannerAddressList>(
+    currentTenant && enabled ? proxyPoolEndpoints.scannerAddresses() : null,
+    (url: string) => get<ScannerAddressList>(url),
     defaultConfig
   )
 }

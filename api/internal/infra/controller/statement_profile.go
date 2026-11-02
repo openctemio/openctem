@@ -92,11 +92,11 @@ var sqlProfiles = map[string]SQLProfile{
 	"AuditChainVerifyController":          SQLBatched, // keyset over the chain
 	"CISweepController":                   SQLBatched,
 	"EASMLookalikeController":             SQLBatched,
+	"PageMonitorController":               SQLBatched,
 	"EASMNetworkSeedController":           SQLBatched,
 	"TenableSCSyncController":             SQLBatched,
 	"DefectDojoSyncController":            SQLBatched,
 	"SCMSyncController":                   SQLBatched,
-	"CTEMIDRefreshController":             SQLBatched,
 
 	// light.
 	"ApprovalDigestController":            SQLLight,
@@ -118,8 +118,10 @@ var sqlProfiles = map[string]SQLProfile{
 	"EASMWeeklyDigestController":          SQLLight,
 	"IdleWorkspaceController":             SQLLight,
 	"AIAgentSweepController":              SQLLight,
+	"AIUseCaseDowngradeController":        SQLLight,
 	"JobRecoveryController":               SQLLight,
 	"MemberAccessExpiryController":        SQLLight,
+	"APIKeyExpiryNoticeController":        SQLLight,
 	"ReportScheduler":                     SQLLight,
 	"RetestScheduler":                     SQLLight,
 	"RoleSyncController":                  SQLLight,

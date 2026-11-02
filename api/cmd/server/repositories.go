@@ -63,6 +63,7 @@ type Repositories struct {
 	TenantAISettings *postgres.TenantAISettingsRepository      // Organizations' AI settings (consent, source, own provider)
 	AIAnalysis       *postgres.AIAnalysisRepository            // AI agents, their owners and runs
 	AIMaskMaps       *postgres.AIMaskMapRepository             // Per AI run masking maps (encrypted, expiring)
+	AIKnowledge      *postgres.AIKnowledgeRepository           // Knowledge sources for AI agents and what runs retrieved
 	DataFlow         *postgres.DataFlowRepository              // Data flow traces for taint tracking
 	FindingSource    *postgres.FindingSourceRepository         // Finding source configuration
 	FindingSourceCat *postgres.FindingSourceCategoryRepository // Finding source categories
@@ -71,7 +72,6 @@ type Repositories struct {
 	Exposure             *postgres.ExposureRepository
 	ExposureStateHistory *postgres.ExposureStateHistoryRepository
 	ThreatIntel          *postgres.ThreatIntelRepository
-	CTEMID               *postgres.CTEMIDRepository
 
 	// Dashboard & Branch
 	Dashboard *postgres.DashboardRepository
@@ -321,6 +321,8 @@ type Repositories struct {
 	EASMSummary    *postgres.EASMSummaryRepository
 	// EASMLookalike stores lookalike watches and candidates (RFC-083).
 	EASMLookalike *postgres.EASMLookalikeRepository
+	// PageMonitor stores web page monitoring watches, snapshots and changes (RFC-138).
+	PageMonitor *postgres.PageMonitorRepository
 	// EASMNetworkSeed stores AS number and organization seeds (RFC-082).
 	EASMNetworkSeed *postgres.EASMNetworkSeedRepository
 	// AssetWebEvidence stores web assets' captures (RFC-081).
@@ -450,6 +452,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		TenantAISettings: postgres.NewTenantAISettingsRepository(db),
 		AIAnalysis:       postgres.NewAIAnalysisRepository(db),
 		AIMaskMaps:       postgres.NewAIMaskMapRepository(db),
+		AIKnowledge:      postgres.NewAIKnowledgeRepository(db),
 		DataFlow:         postgres.NewDataFlowRepository(db),              // Data flow traces
 		FindingSource:    postgres.NewFindingSourceRepository(db),         // Finding source configuration
 		FindingSourceCat: postgres.NewFindingSourceCategoryRepository(db), // Finding source categories
@@ -458,7 +461,6 @@ func newRepositories(db *postgres.DB) *Repositories {
 		Exposure:             postgres.NewExposureRepository(db),
 		ExposureStateHistory: postgres.NewExposureStateHistoryRepository(db),
 		ThreatIntel:          postgres.NewThreatIntelRepository(db),
-		CTEMID:               postgres.NewCTEMIDRepository(db),
 
 		// Dashboard & Branch
 		Dashboard: postgres.NewDashboardRepository(db.DB),
@@ -654,6 +656,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		SCMApp:           postgres.NewSCMAppInstallationRepository(db),
 		EASMSummary:      postgres.NewEASMSummaryRepository(db),
 		EASMLookalike:    postgres.NewEASMLookalikeRepository(db),
+		PageMonitor:      postgres.NewPageMonitorRepository(db),
 		EASMNetworkSeed:  postgres.NewEASMNetworkSeedRepository(db),
 		AssetWebEvidence: postgres.NewAssetWebEvidenceRepository(db),
 		EASMChange:       postgres.NewEASMChangeRepository(db),

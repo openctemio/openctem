@@ -144,6 +144,7 @@ func registerSensorManagementRoutes(
 		r.GET("/grant-summaries", h.ListGrantSummaries, middleware.Require(permission.SensorsRead))
 		// Install commands for a sensor that pairs (the "Add sensor" panel):
 		// no key; a pairing code, when given, travels in the body.
+		r.GET("/install-templates", h.InstallTemplatesRead, middleware.Require(permission.SensorsPair))
 		r.POST("/install-templates", h.InstallTemplates, middleware.Require(permission.SensorsPair))
 		r.GET("/{id}", h.Get, middleware.Require(permission.SensorsRead), own)
 		// Signing keys of key-bound sensors (RFC-052).
@@ -254,6 +255,9 @@ func registerProxyPoolRoutes(
 		// Before /{id} so chi does not read "assignments" as an id.
 		r.GET("/assignments", h.ListAssignments, middleware.Require(permission.SensorEgressRead))
 		r.PUT("/assignments/{sensor_id}", h.SetAssignment, middleware.Require(permission.SensorEgressWrite))
+		// The addresses scans leave from, to allowlist at a WAF (only
+		// addresses the platform observed itself).
+		r.GET("/scanner-addresses", h.ScannerAddresses, middleware.Require(permission.SensorEgressRead))
 		r.GET("/{id}", h.Get, middleware.Require(permission.SensorEgressRead))
 
 		r.POST("/", h.Create, middleware.Require(permission.SensorEgressWrite))
@@ -676,6 +680,52 @@ func registerContentPackRoutes(
 		r.GET("/{id}/download", h.Download, middleware.Require(permission.ContentPacksRead))
 		r.POST("/", h.Upload, middleware.Require(permission.ContentPacksWrite), requireStepUp())
 		r.POST("/{id}/revoke", h.Revoke, middleware.Require(permission.ContentPacksWrite), requireStepUp())
+	}, tenantMiddlewares...)
+}
+
+// registerWordlistRoutes registers an organization's own wordlists
+// (docs/architecture/wordlists.md): DNS labels its subdomain enumeration
+// jobs query. Reading needs scans:content:read, changing scans:content:write;
+// the tenant comes from the token.
+func registerWordlistRoutes(
+	router Router,
+	h *handler.WordlistHandler,
+	authMiddleware Middleware,
+	userSyncMiddleware Middleware,
+) {
+	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
+	router.Group("/api/v1/wordlists", func(r Router) {
+		r.GET("/", h.List, middleware.Require(permission.ContentPacksRead))
+		// Before /{id} so chi does not read "preview" as an id.
+		r.GET("/preview", h.Preview, middleware.Require(permission.ContentPacksRead))
+		r.GET("/{id}", h.Get, middleware.Require(permission.ContentPacksRead))
+		r.POST("/", h.Create, middleware.Require(permission.ContentPacksWrite))
+		r.PATCH("/{id}", h.Update, middleware.Require(permission.ContentPacksWrite))
+		r.DELETE("/{id}", h.Delete, middleware.Require(permission.ContentPacksWrite))
+	}, tenantMiddlewares...)
+}
+
+// registerContentRuleRoutes registers an organization's own detection
+// rules (docs/architecture/rule-packs.md): web fingerprint and
+// sensitive-information rules evaluated on its ingested web content.
+// Reading needs scans:content:read; changing and testing a rule
+// scans:content:write (a test runs a draft on a pasted sample and stores
+// nothing). The tenant comes from the token.
+func registerContentRuleRoutes(
+	router Router,
+	h *handler.ContentRuleHandler,
+	authMiddleware Middleware,
+	userSyncMiddleware Middleware,
+) {
+	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
+	router.Group("/api/v1/content-rules", func(r Router) {
+		r.GET("/", h.List, middleware.Require(permission.ContentPacksRead))
+		r.GET("/{id}", h.Get, middleware.Require(permission.ContentPacksRead))
+		r.POST("/", h.Create, middleware.Require(permission.ContentPacksWrite))
+		// Before /{id} so chi does not read "test" as an id.
+		r.POST("/test", h.Test, middleware.Require(permission.ContentPacksWrite))
+		r.PATCH("/{id}", h.Update, middleware.Require(permission.ContentPacksWrite))
+		r.DELETE("/{id}", h.Delete, middleware.Require(permission.ContentPacksWrite))
 	}, tenantMiddlewares...)
 }
 

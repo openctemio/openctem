@@ -1,5 +1,7 @@
 # Sensor pairing, key-bound identity and grants
 
+Part of the [sensor and platform workflow](sensor-platform-workflow.md).
+
 Design and decisions: [RFC-052](../rfcs/RFC-052-sensor-pairing-and-authorization.md).
 Operator steps: [how-to: pair a sensor](../how-to/pair-a-sensor.md).
 Trust boundaries and the remaining gaps: [sensor-platform-trust.md](sensor-platform-trust.md).
@@ -57,6 +59,50 @@ pending ──reveal──▶ pending (sas set) ──approve──▶ approved 
 
 Reverse mode starts as an `expecting` row with a tenant and a code but no
 key; the sensor's start request fills in the key and turns it `pending`.
+
+A key holds at most one open request. A new start by the same key (a sensor
+restarted before approval, or given a new code) closes the key's `pending`
+requests as `expired` and audits `sensor.pairing_superseded` for the ones with
+an organization; with the same reverse-mode code the key's own request is
+re-armed instead. A key already in `sensor_keys` is refused
+`409 pairing-key-registered` (deleting a sensor removes its keys, so its
+old key can pair again as a new sensor; revoke keeps them); a lost race for the key answers
+`409 pairing-key-busy` (RFC-052 §4.4, threats 26-29). Enrollment-token starts
+keep their own rule (a busy key spends nothing and is refused).
+
+**Refusals reach the waiting step.** When a start that carries the code of
+an open expectation is refused after its signature verified with the key in
+its body, the expectation records the attempt (`last_refusal`,
+`last_refusal_at`, `last_refusal_details`; migration `20261031121231`):
+`clock_skew` (with the offset), `rate_limited` (its budget ran out),
+`code_taken` (another key already holds the code; stored as `key_busy` when
+the key is the holder's own or no key holds the request yet), `key_busy` and
+`key_registered` (set by the start when the key is refused). The write is
+one indexed update, at most once every 5 seconds per expectation
+(`RecordRefusalUnscoped`), and a code that matches no open expectation
+writes nothing, so the sensor's answer and the uniform answers of §4.4 are
+unchanged. `GET /api/v1/sensor-pairings/expectations/{id}` returns it as
+`last_refusal` to the expectation's organization only; the console's
+waiting step (`PairingRefusalNotice`) says what happened and what to do.
+
+**Unconfirmed approvals leave no sensor.** An approval creates the sensor
+before the sensor confirms. When the confirmation window closes first, the
+sweep revokes the pending key (`pairing_not_confirmed`) and then removes the
+sensor if it never had another key, never called in and holds no command
+(`RemoveUnconfirmedSensors`; audited `sensor.deleted`, low). A re-pair's
+registration is never removed. The sweep also runs on expectation reads, so
+stale rows do not wait for the next sensor start.
+
+The review names the organization the approval binds the sensor to (the
+session's) and the approval must send the same `organization_id`, or it is
+refused `409 ORGANIZATION_MISMATCH` before step-up. The review also shows the
+request's address with its class (private or public, and the edge or hosting
+provider when known) next to the approver's own address, the product, the SDK
+version and the request's age; the console warns on the path where the sensor
+showed the code to approve only a sensor the approver's team started. The
+approver picks the fingerprint the host shows out of three; the server checks
+the pick and closes the request on a wrong one. A
+request no organization claimed yet is rejected only with its code.
 
 ## Enrollment tokens (unattended installs)
 
@@ -120,20 +166,62 @@ algorithm: "ed25519", public_key}` in the form of the job-signing keys
 recomputes). The sensor pins them over the pairing connection and never takes
 a key from a content route.
 
-### Onboarding (the Add sensor panel)
+### Onboarding: one install path
 
 The console has one place to add a sensor: **Sensors → Add sensor** (inline
-on the empty page). `POST /api/v1/sensors/install-templates`
-(`sensors:pair`, `internal/infra/http/handler/sensor_install_handler.go`)
-renders the docker run, Compose, Kubernetes and Linux (binary and systemd)
-commands and the local policy from the same templates as a sensor's own
-install (`configs/sensor-products/sensor/*.tmpl`), with
-`SensorTemplateData.Auth = pair`: no API key, the job-signing root as
-`SENSOR_JOB_SIGNING_ROOT`, and, when the console created a code first, the
-code as `SENSOR_PAIRING_CODE`. The code travels in the request body, never
-in a URL; the route renders text only and neither checks nor spends it. The
-panel then polls the expectation (waiting, fingerprint to compare, approved)
-and the new sensor (online). Threat model and decisions: research note 280.
+on the empty page), and one path through it (RFC-052 §4.9, research notes 280
+and 356). Opening the dialog creates one expectation; `POST
+/api/v1/sensors/install-templates` (`sensors:pair`,
+`internal/infra/http/handler/sensor_install_handler.go`) renders the docker
+run, Compose, Kubernetes and Linux (binary and systemd) commands from the
+same templates as a sensor's own install
+(`configs/sensor-products/sensor/*.tmpl`), with `SensorTemplateData.Auth =
+pair`: no API key, the job-signing root as `SENSOR_JOB_SIGNING_ROOT`, the
+expectation's code as `SENSOR_PAIRING_CODE`, the private CA when the
+platform has one (installed, and its root pinned as `SENSOR_CA_SHA256`; the
+panel names each CA certificate with its SHA-256 and links the public
+`GET /api/v1/sensors/platform-ca`,
+[how-to](../how-to/sensors-behind-a-private-ca.md)), no local
+policy file, and a closing watch of the sensor's output that ends on
+`Paired:`. The code travels in the request body, never in a URL; the route
+renders text only and neither checks nor spends it. A fifth choice, several
+sensors on one host, shows the multi-sensor kit's `sensors.sh add` line
+(`multi`) with the same code and pin. The panel polls the
+expectation (waiting, pick the fingerprint, approved) and the new sensor
+(online). The inline empty state creates the expectation only on a click.
+
+A start with a code uses it as the request's own code (attached, or a
+tenantless request under the same code when nothing expects it), and every
+start without a token answers a `user_code` and, when `APP_URL` is set, the
+links `verification_uri` and `verification_uri_complete`
+(`<APP_URL>/activate?code=…`). The web page `/activate`
+(`features/sensors/components/activate-sensor.tsx`, `sensors:pair`) reads
+the code once, removes it from the address bar and shows the same review
+component as the dialog (`PairingReview`). The review carries
+`fingerprint_choices` (the SAS and two keyed decoys,
+`internal/app/sensorpairing/fingerprint.go`); the approval sends the picked
+`fingerprint`, and a wrong pick denies the request, audited high, every
+administrator notified.
+
+### Re-pair (the sensor keeps its registration)
+
+RFC-052 §4.6. **Sensors → sensor → Re-pair…** (`sensor-repair-dialog.tsx`):
+reason, optional "Revoke the current key now" (key-bound sensors, `sensors:write`
+or `sensors:revoke`; the console lists the keys and revokes the active ones),
+a re-pair code (`Expect` with `RepairSensorID` and `RepairReason`; earlier
+open re-pair codes of the sensor closed by `CloseOpenRepairs`), the install
+command for the chosen platform, then the review with the before/now
+comparison (`View.RepairBefore`, `RepairComparison`) and the approval
+(`ApproveInput.RepairSensorID` must match, `ErrRepairNotAcknowledged`).
+
+| Piece | Where |
+|---|---|
+| Target fixed by the code | `AttachToExpectationUnscoped` keeps the expectation's `repair_sensor_id`; `Service.Start` drops a sensor's `sensor_id` when it carries a code |
+| Registration kept | `Service.Approve` uses the sensor's own name and no zones; `sensorgrant.Service.OnApproved` with `repair` only sets trust New (`SetTrustTx`) |
+| Leases | `Service.onRepaired` → `CommandReleaser.ReleaseHeldBySensor` (`commands`, messages `SensorKeyReplaced*`); `SensorService.RevokeSigningKey` → `releaseIfKeyless` |
+| Timeline | `repair_started`, `repaired` (`pkg/domain/sensor/event.go`) |
+| Data | `sensor_pairings.repair_reason` (migration `20261031113852`, check: only with a target, known values) |
+| Tests | `internal/app/sensorpairing/repair_console_db_test.go`, `grant_db_test.go`, `service_db_test.go` (`TestPairing_Repair_DB`) |
 
 ## Self-binding: a bearer-key sensor becomes key-bound
 
@@ -225,7 +313,10 @@ marked ✉ notify every administrator of the organization in the app.
 | `sensor.pairing_approved` ✉ | high |
 | `sensor.pairing_denied` | medium |
 | `sensor.pairing_completed` | medium |
-| `sensor.repaired` ✉ | high |
+| `sensor.pairing_superseded` (a sensor started again with the same key; its unapproved request was closed; audit only) | low |
+| `sensor.pairing_lookup_locked` (a user hit the failed code lookup limit; audit only) | high |
+| `sensor.repaired` ✉ (a re-pair approved) | high |
+| `sensor.pairing_expected` (a code created; for a re-pair: medium, with the sensor and the reason) | low |
 | `sensor.key_revoked` | high |
 | `sensor.grant_changed` (narrowed or demoted; the diff names each dimension) | medium |
 | `sensor.grant_changed` ✉ (widened or promoted) | high |

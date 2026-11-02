@@ -33,11 +33,17 @@ var _ = registerActions("scope", map[Action]Severity{
 const (
 	ActionEASMSettingsUpdated Action = "easm_settings.updated"
 	ActionEASMSweepRequested  Action = "easm_sweep.requested"
+	// Discovery management: stages run by hand, and every active coverage
+	// run of the organization canceled.
+	ActionEASMDiscoveryRun     Action = "easm_discovery.run"
+	ActionEASMDiscoveryAborted Action = "easm_discovery.aborted"
 )
 
 var _ = registerActions("easm", map[Action]Severity{
-	ActionEASMSettingsUpdated: SeverityHigh,
-	ActionEASMSweepRequested:  SeverityMedium,
+	ActionEASMSettingsUpdated:  SeverityHigh,
+	ActionEASMSweepRequested:   SeverityMedium,
+	ActionEASMDiscoveryRun:     SeverityMedium,
+	ActionEASMDiscoveryAborted: SeverityHigh,
 })
 
 // Lookalike-domain watches (RFC-083): passive monitoring of the
@@ -52,6 +58,20 @@ var _ = registerActions("easm", map[Action]Severity{
 	ActionEASMLookalikeWatchAdded:   SeverityMedium,
 	ActionEASMLookalikeWatchUpdated: SeverityMedium,
 	ActionEASMLookalikeWatchDeleted: SeverityMedium,
+})
+
+// Web page monitoring watches (RFC-138): a watch schedules recurring active
+// fetches of a URL.
+const (
+	ActionWebWatchAdded   Action = "web_watch.added"
+	ActionWebWatchUpdated Action = "web_watch.updated"
+	ActionWebWatchDeleted Action = "web_watch.deleted"
+)
+
+var _ = registerActions("easm", map[Action]Severity{
+	ActionWebWatchAdded:   SeverityMedium,
+	ActionWebWatchUpdated: SeverityMedium,
+	ActionWebWatchDeleted: SeverityMedium,
 })
 
 // Network seeds (RFC-082): AS numbers and organization names discovery

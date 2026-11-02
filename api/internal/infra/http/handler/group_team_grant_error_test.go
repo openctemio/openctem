@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -10,6 +11,9 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app/accesscontrol"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/api/pkg/domain/group"
+	"github.com/openctemio/openctem/api/pkg/domain/permission"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
@@ -47,5 +51,43 @@ func TestGroupHandler_TeamGrantRefusalCodes(t *testing.T) {
 	h.handleServiceError(rec, accesscontrol.ErrPrivilegedTeamOwnerOnly)
 	if want := "Only the organization owner can change the members of a team that carries a privileged role."; !strings.Contains(rec.Body.String(), want) {
 		t.Errorf("owner-only message missing: %s", rec.Body.String())
+	}
+}
+
+// A full-data refusal names the outside members to a caller who may read the
+// team's members, and to nobody else; the code is the same either way.
+func TestGroupHandler_OutsideMembersNamedOnlyToMemberReaders(t *testing.T) {
+	h := &GroupHandler{logger: logger.NewNop()}
+	outsider := shared.NewID()
+	refusal := fmt.Errorf("bind: %w", &accesscontrol.OutsideMembersError{
+		Members: []group.OutsideMember{{UserID: outsider, Name: "Pat Contractor"}},
+	})
+	for _, c := range []struct {
+		perms []string
+		named bool
+	}{
+		{[]string{permission.GroupsRead.String(), permission.GroupsWrite.String()}, true},
+		{[]string{permission.GroupsWrite.String(), permission.RolesAssign.String()}, false},
+	} {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/groups/x/roles", nil)
+		req = req.WithContext(context.WithValue(req.Context(), middleware.FetchedPermissionsKey, c.perms))
+		rec := httptest.NewRecorder()
+		h.writeBindingError(rec, req, refusal)
+		var body struct {
+			Code    string `json:"code"`
+			Details struct {
+				Outside []OutsideMemberDetail `json:"outside_members"`
+			} `json:"details"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+			t.Fatal(err)
+		}
+		if rec.Code != http.StatusForbidden || body.Code != "TEAM_EXTERNAL_FULL_DATA" {
+			t.Fatalf("%v: got %d %s", c.perms, rec.Code, body.Code)
+		}
+		got := len(body.Details.Outside) == 1 && body.Details.Outside[0].UserID == outsider.String() && body.Details.Outside[0].Name == "Pat Contractor"
+		if got != c.named || (!c.named && strings.Contains(rec.Body.String(), "Pat Contractor")) {
+			t.Fatalf("%v: named=%v want %v: %s", c.perms, got, c.named, rec.Body.String())
+		}
 	}
 }

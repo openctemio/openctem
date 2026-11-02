@@ -111,7 +111,7 @@ services:
         max-file: "5"
 
   sensor:
-    image: ${SENSOR_IMAGE:-ghcr.io/openctemio/sensor}:${SENSOR_VERSION:-v0.23.2}
+    image: ${SENSOR_IMAGE:-ghcr.io/openctemio/sensor}:${SENSOR_VERSION:-v0.29.1}
     environment:
       # The gateway, over https, like every other client. The gateway's
       # network alias on sensor-net is OPENCTEM_HOSTNAME.

@@ -11,6 +11,7 @@ import type {
   FlowResult,
   IntakeData,
   IntakeResult,
+  IntakeInstance,
   IntakeSourceRow,
   ItemsResult,
   MatrixResult,
@@ -35,7 +36,14 @@ import {
   metricMeta,
   ORDINAL_DIMENSIONS,
 } from '../metrics'
-import type { FlowFigure, IntakeSource, IntakeValue, LeverValue, WidgetValue } from './widget-data'
+import type {
+  FlowFigure,
+  IntakeSource,
+  IntakeSourceInstance,
+  IntakeValue,
+  LeverValue,
+  WidgetValue,
+} from './widget-data'
 import type { Dimension, VizType, WidgetSpec } from './widget-spec'
 
 export interface WidgetModel {
@@ -64,6 +72,13 @@ export function reasonKeyOf(reason: string | undefined): string {
     case 'pending':
     case 'organization_only':
     case 'no_receipts':
+    case 'no_certificates':
+    case 'no_findings':
+    case 'no_closures':
+    case 'no_active_campaigns':
+    case 'too_few_closed':
+    case 'no_threat_alerts':
+    case 'module_off':
       return `dashboards.reason.${reason}`
     default:
       return 'dashboards.reason.failed'
@@ -103,6 +118,22 @@ function sourceRow(s: IntakeSource): IntakeSourceRow {
     health: s.health === 'stale' || s.health === 'failed' ? s.health : 'ok',
     expected_every_seconds: s.expected_every_seconds ?? null,
     drill: safeInternalHref(s.drill) ?? null,
+    assets: s.assets ?? 0,
+    kind: s.kind,
+    instances: s.instances?.map(instanceRow),
+  }
+}
+
+function instanceRow(i: IntakeSourceInstance): IntakeInstance {
+  return {
+    id: i.id,
+    kind: i.kind,
+    name: i.name,
+    received: i.received,
+    assets: i.assets,
+    health: i.health === 'stale' || i.health === 'failed' ? i.health : 'ok',
+    last_at: i.last_at && !i.last_at.startsWith('0001-') ? i.last_at : null,
+    sensor_href: safeInternalHref(i.sensor_href) ?? undefined,
   }
 }
 
@@ -161,6 +192,8 @@ function toResult(v: WidgetValue, spec: WidgetSpec | undefined): WidgetResult | 
         delta: v.scalar.delta ?? null,
         series: v.scalar.series,
         target: v.target ? { op: v.target.op, value: v.target.value, source: 'widget' } : null,
+        of: typeof v.scalar.of === 'number' ? v.scalar.of : null,
+        of_href: safeInternalHref(v.scalar.of_drill) ?? null,
       }
       return out
     }
@@ -192,17 +225,24 @@ function toResult(v: WidgetValue, spec: WidgetSpec | undefined): WidgetResult | 
       const c = v.category
       if (!c) return undefined
       const dim = groupBy[0]
+      // A breakdown (no group-by) names its keys with its own prefix.
+      const meta = dim ? undefined : metricMeta(v.metric)
       const out: CategoryResult = {
         shape: 'category',
         rows: c.rows.map((r) => ({
           key: r.key,
-          label_key: dimensionValueKey(dim, r.key),
-          label: r.key,
+          // A server-given label (a campaign name) is shown as is.
+          label_key: r.label
+            ? undefined
+            : meta?.keyPrefix
+              ? `${meta.keyPrefix}.${r.key.replace(/[^a-zA-Z0-9_]/g, '_')}`
+              : dimensionValueKey(dim, r.key),
+          label: r.label || r.key,
           value: r.value,
           previous: r.previous ?? null,
         })),
         total: c.total,
-        ordinal: dim ? ORDINAL_DIMENSIONS.has(dim) : false,
+        ordinal: dim ? ORDINAL_DIMENSIONS.has(dim) : (meta?.ordinal ?? false),
       }
       return out
     }
@@ -370,10 +410,31 @@ function isEmpty(r: WidgetResult): boolean {
     case 'matrix':
       return r.rows.length === 0 || r.cols.length === 0
     case 'time_series':
-      return r.series.length === 0
+      // Every bucket of every line at zero draws empty axes: nothing to show.
+      return r.series.length === 0 || r.series.every((l) => l.points.every((p) => !p.v))
     default:
       return false
   }
+}
+
+/**
+ * Reasons that mean "nothing has come in yet" (no finding, no tracked asset,
+ * no certificate, no receipt in the scope): the widget shows the one compact
+ * empty state with its next step, never a figure, an axis or a "—".
+ */
+export const NOTHING_YET_REASONS: ReadonlySet<string> = new Set([
+  'no_findings',
+  'no_tracked_assets',
+  'no_certificates',
+  'no_receipts',
+  // Closure quality and campaign progress (their own pull request).
+  'no_closures',
+  'no_active_campaigns',
+])
+
+/** True when the widget's model is the compact empty state (it needs one row). */
+export function isNothingYet(model: Pick<WidgetModel, 'state'>): boolean {
+  return model.state === 'no_data_yet'
 }
 
 /**
@@ -393,6 +454,8 @@ export function widgetModel(
     case 'building':
       return { state: 'no_data_yet', reasonKey: reasonKeyOf(v.reason ?? 'facts_building') }
     case 'not_measured':
+      if (v.reason && NOTHING_YET_REASONS.has(v.reason))
+        return { state: 'no_data_yet', reasonKey: reasonKeyOf(v.reason), viz, drill }
       return {
         state: 'not_measured',
         reasonKey: reasonKeyOf(v.reason),

@@ -2,13 +2,18 @@
 
 import { Pin, PinOff } from 'lucide-react'
 import { SidebarMenuAction } from '@/components/ui/sidebar'
+import { cn } from '@/lib/utils'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { useTranslation } from '@/context/i18n-provider'
 import { useNavPins, type NavPin } from '../api/use-nav-pins'
 
 /**
- * The pin button of a sidebar row: shown on hover or focus, it pins the row
- * to the top of the sidebar or unpins it. Not in the phone drawer: there is no
+ * The pin button of a sidebar row: shown while the pointer is on that row
+ * (or the button has keyboard focus), it pins the row to the top of the
+ * sidebar or unpins it. Only the hovered row shows its pin: a menu item's
+ * hover covers its quick-view sub-list, and a clicked link keeps focus in
+ * it, so neither the item's group hover nor focus-within is used. The button
+ * sits on the row's hover background so it covers the row's count. Not in the phone drawer: there is no
  * hover, so every row carried a pin glyph over its count; the drawer is for
  * going somewhere, and pins are managed from a wider screen.
  */
@@ -32,12 +37,12 @@ export function PinAction({
     : t('nav.pins.pin', 'Pin {name} to the top', { name: label })
   return (
     <SidebarMenuAction
-      showOnHover={!sub}
-      className={
+      className={cn(
+        'bg-sidebar-accent md:opacity-0 hover:opacity-100 focus-visible:opacity-100',
         sub
-          ? 'top-1 -end-1 opacity-100 md:opacity-0 group-focus-within/menu-sub-item:opacity-100 group-hover/menu-sub-item:opacity-100'
-          : undefined
-      }
+          ? 'top-1 -end-1 group-hover/menu-sub-item:opacity-100'
+          : 'peer-hover/menu-button:opacity-100'
+      )}
       aria-label={name}
       title={name}
       aria-pressed={pinned}

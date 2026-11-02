@@ -45,8 +45,10 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/durablejob"
 	"github.com/openctemio/openctem/api/pkg/domain/ingestjob"
 	integrationdom "github.com/openctemio/openctem/api/pkg/domain/integration"
+	"github.com/openctemio/openctem/api/pkg/domain/pagemon"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/stage"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
 )
@@ -644,6 +646,12 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 			log.With("controller", "member-access-expiry")))
 	}
 
+	// API keys that expire within a week: their holder is told once.
+	if svc.APIKey != nil {
+		w.ControllerManager.Register(controller.NewAPIKeyExpiryNoticeController(svc.APIKey, time.Hour, 200,
+			log.With("controller", "api-key-expiry-notice")))
+	}
+
 	// Team memberships with an end date (RFC-050 W22): removed within a minute.
 	if svc.Group != nil {
 		w.ControllerManager.Register(controller.NewTeamMembershipExpiryController(svc.Group, time.Minute, 200,
@@ -668,6 +676,12 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	if svc.AIAnalysis != nil {
 		w.ControllerManager.Register(controller.NewAIAgentSweepController(svc.AIAnalysis, time.Hour,
 			log.With("controller", "ai-agent-sweep")))
+	}
+	// AI use cases whose automatic results people keep overriding fall back
+	// from auto-apply to suggest.
+	if svc.TenantAI != nil {
+		w.ControllerManager.Register(controller.NewAIUseCaseDowngradeController(svc.TenantAI, 15*time.Minute,
+			log.With("controller", "ai-use-case-downgrade")))
 	}
 
 	registerPurgeControllers(w.ControllerManager, cfg, repos, svc, log)
@@ -794,13 +808,6 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		w.ControllerManager.Register(controller.NewThreatAlertPlannerController(svc.ThreatAlertPlanner, log.With("controller", "threat-alert-planner")))
 	}
 
-	// CTEM-ID catalog — daily fail-open refresh of the standardized exposure
-	// catalog (https://ctem.org/source.json), mirroring the threat-intel refresh.
-	w.ControllerManager.Register(controller.NewCTEMIDRefreshController(
-		svc.CTEMID,
-		log.With("controller", "ctem-id-refresh"),
-	))
-
 	// Version check (RFC-105): wakes hourly; fetches the signed release feed
 	// once a day when VERSION_CHECK_ENABLED and a root is pinned, weekly
 	// after repeated failures. One replica fetches per check.
@@ -895,6 +902,18 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	// Passive lookalike-domain checks (RFC-083): hourly, bounded batches.
 	if svc.EASMLookalikes != nil {
 		w.ControllerManager.Register(controller.NewEASMLookalikeController(svc.EASMLookalikes, svc.Module, 0))
+	}
+
+	// Web page monitoring (RFC-138): due watches go through the coverage
+	// dispatch path (scope and active-scan gates, signed jobs) as the
+	// system, only for organizations with automatic coverage on, and only
+	// once the fetch capability is in the stage catalog.
+	if svc.PageMonitor != nil {
+		if svc.Scan != nil && svc.ScanPolicy != nil {
+			svc.PageMonitor.SetDispatch(svc.Scan, coverageapp.GovernanceSwitch{Modes: svc.ScanPolicy, Settings: svc.Tenant},
+				func() bool { _, ok := stage.Lookup(stage.Key(pagemon.Capability)); return ok })
+		}
+		w.ControllerManager.Register(controller.NewPageMonitorController(svc.PageMonitor, svc.Module, 0))
 	}
 
 	// Network seeds (RFC-082): re-expanded weekly from public routing data.

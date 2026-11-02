@@ -19,7 +19,6 @@ ingest_report_repository.go:IngestReportRepository.RecordSegmentOutcome:ingest_r
 ingest_report_repository.go:IngestReportRepository.ReleaseSegment:ingest_reports  D-11 baseline: add the tenant predicate
 ingest_report_repository.go:IngestReportRepository.Reopen:ingest_reports  D-11 baseline: add the tenant predicate
 ingest_report_repository.go:IngestReportRepository.ReserveSegment:ingest_reports  D-11 baseline: add the tenant predicate
-integration_repository.go:IntegrationRepository.Delete:integrations  D-11 baseline: add the tenant predicate
 integration_repository.go:IntegrationRepository.GetByID:integrations  D-11 baseline: add the tenant predicate
 outbox_event_repository.go:OutboxEventRepository.Delete:notification_events  D-11 baseline: add the tenant predicate
 outbox_event_repository.go:OutboxEventRepository.GetByID:notification_events  D-11 baseline: add the tenant predicate
@@ -49,9 +48,6 @@ sensor_repository.go:SensorRepository.UpdateLastSeen:sensors  D-11 baseline: add
 sensor_repository.go:SensorRepository.UpdateOfflineTimestamp:sensors  D-11 baseline: add the tenant predicate
 sensor_repository.go:SensorRepository.Update:sensors  D-11 baseline: add the tenant predicate
 sensor_repository.go:updateInlineKey:sensors  D-11 baseline: add the tenant predicate
-tenant_tool_config_repository.go:TenantToolConfigRepository.Delete:tenant_tool_configs  D-11 baseline: add the tenant predicate
-tenant_tool_config_repository.go:TenantToolConfigRepository.GetByID:tenant_tool_configs  D-11 baseline: add the tenant predicate
-tenant_tool_config_repository.go:TenantToolConfigRepository.Update:tenant_tool_configs  D-11 baseline: add the tenant predicate
 toolcategory_repository.go:ToolCategoryRepository.Delete:tool_categories  D-11 baseline: add the tenant predicate
 toolcategory_repository.go:ToolCategoryRepository.GetByID:tool_categories  D-11 baseline: add the tenant predicate
 toolcategory_repository.go:ToolCategoryRepository.Update:tool_categories  D-11 baseline: add the tenant predicate
@@ -73,3 +69,4 @@ mcp_oauth_repository.go:MCPOAuthRepository.DenyRequest:mcp_oauth_requests  pre-t
 command_shared_claim.go:CommandRepository.ClaimManyShared:commands  Permanent: claims platform jobs (is_platform_job = TRUE) for an instance-scope sensor; the queue is cross-tenant by design and each claimed row carries its own tenant
 scan_workflow_lineage.go:ScanWorkflowRepository.SetLineage:scan_workflows  Permanent: the written row is tenant-scoped in the top-level WHERE; the subquery only checks that the source id is a global system template (is_system_template), which has no owning tenant
 support_access_repository.go:SupportAccessRepository.GetGrantForAdmin:support_grants  Permanent: a platform admin reads a support grant naming themselves (admin_id = $2); the grant itself defines the tenant, and no tenant user reaches this method
+mcp_oauth_device.go:MCPOAuthRepository.PollDeviceCode:mcp_oauth_requests  pre-tenant OAuth device request (RFC 8628): no organization is chosen until approval; the row is first found under FOR UPDATE by the device-code hash and client_id, and the later updates use the id of that already-bound row

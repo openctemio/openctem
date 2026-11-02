@@ -42,13 +42,19 @@ const (
 	ProbeHTTP           Key = "probe.http"
 	CrawlWeb            Key = "crawl.web"
 	VulnTemplates       Key = "vuln.templates"
-	DASTWeb             Key = "dast.web"
-	SecretsCode         Key = "secrets.code"
-	SASTCode            Key = "sast.code"
-	SCADeps             Key = "sca.deps"
-	IaCMisconfig        Key = "iac.misconfig"
-	ContainerImage      Key = "container.image"
-	NetworkVAConnector  Key = "network_va.connector"
+	// CheckTakeover finds names whose alias points at an unclaimed
+	// third-party resource (nuclei's takeover templates).
+	CheckTakeover Key = "check.takeover"
+	// MonitorWebContent fetches listed URLs and reports the response so a
+	// change in a page or script can be detected (RFC-138).
+	MonitorWebContent  Key = "monitor.web_content"
+	DASTWeb            Key = "dast.web"
+	SecretsCode        Key = "secrets.code"
+	SASTCode           Key = "sast.code"
+	SCADeps            Key = "sca.deps"
+	IaCMisconfig       Key = "iac.misconfig"
+	ContainerImage     Key = "container.image"
+	NetworkVAConnector Key = "network_va.connector"
 )
 
 // Tier is how intrusive a stage is toward its targets.
@@ -328,6 +334,35 @@ var catalog = []Stage{
 			{Tool: "nuclei", Default: true},
 		},
 		MaxFanout: RunFanoutCap,
+	},
+	{
+		Key: CheckTakeover, Name: "Subdomain takeover check",
+		Description: "Find names whose alias points at an unclaimed third-party resource.",
+		Inputs:      dnsNames,
+		Findings:    true,
+		Tier:        TierActive,
+		// nuclei runs only its takeover templates for this capability
+		// (stageToolConfig); a step that pins nuclei without naming the
+		// capability runs vulnerability templates.
+		Implementations: []Implementation{
+			{Tool: "nuclei", Default: true, ByCapability: true},
+		},
+		MaxFanout: RunFanoutCap, MaxPerParent: DefaultPerParent,
+	},
+	{
+		// Active (T1): one GET per listed URL, nothing executed. The result
+		// is the web_content property of the web asset the URL belongs to, so
+		// the stage has no output port of its own. httpx runs it only for a step or
+		// job that names the capability (a step that pins httpx alone still
+		// runs the HTTP probe).
+		Key: MonitorWebContent, Name: "Web content monitoring",
+		Description: "Fetch listed web pages and scripts and report the response so changes can be detected.",
+		Inputs:      []asset.TypeRef{tHTTPService, tDiscoveredURL, tWebsite},
+		Tier:        TierActive,
+		Implementations: []Implementation{
+			{Tool: "httpx", Default: true, ByCapability: true},
+		},
+		MaxFanout: RunFanoutCap, MaxPerParent: DefaultPerParent,
 	},
 	{
 		Key: DASTWeb, Name: "Web application scan",

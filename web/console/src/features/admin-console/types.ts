@@ -887,6 +887,47 @@ export interface SettingChange {
   changed_by?: string
 }
 
+/** The platform layer of the scan identification markers. */
+export interface ScanIdentificationSettings extends SettingChange {
+  user_agent: string
+  user_agent_enforced: boolean
+  headers: { name: string; value: string; enforced: boolean }[]
+  max_headers: number
+  stored: boolean
+  version: number
+}
+
+/** The lowest two-factor requirement of every organization; organizations may only raise it. */
+export type MFAFloor = 'none' | 'admins' | 'everyone'
+
+/** Settings > Two-factor: the platform floor (GET/PUT /admin/settings/auth-mfa). */
+export interface MFAFloorSettings extends SettingChange {
+  floor: MFAFloor
+  /** console, migration or default */
+  source: string
+  default: MFAFloor
+  env_var: string
+  grace_days_existing: number
+  grace_days_new: number
+  effective_from?: string
+  /** An upgraded install still on the seeded "none": raising it is recommended. */
+  recommend_raise: boolean
+  version: number
+}
+
+/** Whether an organization's own mail relay carries its organization mail. */
+export type EmailRelayMode = 'off' | 'verified_sender' | 'on'
+
+/** Settings > E-mail: the organization relay mode (GET/PUT /admin/settings/email-relay). */
+export interface EmailRelaySettings extends SettingChange {
+  mode: EmailRelayMode
+  /** console or default */
+  source: string
+  default: EmailRelayMode
+  env_var: string
+  version: number
+}
+
 /** Settings > CAPTCHA: the Turnstile keys; the secret is never returned. */
 export interface CaptchaSettings extends SettingChange {
   site_key: string

@@ -58,7 +58,26 @@ export type AttentionKind =
   | 'content'
   | 'preflight'
   | 'posture'
+  | 'storage'
+  | 'other'
   | 'error'
+
+/** The catalog key of each attention kind's word ("storage full"). */
+export const ATTENTION_WORDS: Record<AttentionKind, string> = {
+  offline: 'sensors.health.attention.offline',
+  backlog: 'sensors.health.attention.backlog',
+  key: 'sensors.health.attention.key',
+  version: 'sensors.health.attention.version',
+  sdk: 'sensors.health.attention.sdk',
+  heartbeat: 'sensors.health.attention.heartbeat',
+  tools: 'sensors.health.attention.tools',
+  content: 'sensors.health.attention.content',
+  preflight: 'sensors.health.attention.preflight',
+  posture: 'sensors.health.attention.posture',
+  storage: 'sensors.health.attention.storage',
+  error: 'sensors.health.attention.error',
+  other: 'sensors.health.attention.other',
+}
 
 /**
  * The states of an enabled sensor that is not connected: it stopped
@@ -75,7 +94,7 @@ function attentionKindsOf(
   const kinds: AttentionKind[] = []
   if (NOT_CONNECTED_STATES.includes(state)) kinds.push('offline')
   for (const r of sensor.health_reasons ?? []) {
-    const kind: AttentionKind | null = r.code.startsWith('outbox_')
+    const kind: AttentionKind = r.code.startsWith('outbox_')
       ? 'backlog'
       : r.code.startsWith('key_') || r.code === 'identity_cloned'
         ? 'key'
@@ -93,8 +112,12 @@ function attentionKindsOf(
                     ? 'preflight'
                     : r.code === 'error_reported'
                       ? 'error'
-                      : null
-    if (kind && !kinds.includes(kind)) kinds.push(kind)
+                      : r.code === 'stopped_claiming'
+                        ? 'storage'
+                        : // A reason this page has no word for still counts: the
+                          // API calls the sensor degraded, so it needs attention.
+                          'other'
+    if (!kinds.includes(kind)) kinds.push(kind)
   }
   // The sensor's own setup checks and its security posture count too: the
   // drawer lists them as issues, so the fleet must not call the sensor fine.
@@ -110,6 +133,15 @@ function attentionKindsOf(
     }
   }
   return kinds
+}
+
+/** What needs attention on one sensor (the words of the "Needs attention" caption). */
+export function sensorAttentionKinds(
+  sensor: Sensor,
+  channel: ReleaseChannel,
+  state: SensorState
+): AttentionKind[] {
+  return isEnabled(state) ? attentionKindsOf(sensor, channel, state) : []
 }
 
 function isEnabled(state: SensorState): boolean {
@@ -132,6 +164,48 @@ export function needsAttention(
   return isEnabled(state) && attentionKindsOf(sensor, channel, state).length > 0
 }
 
+/** A sensor added this long ago that never connected is likely an install that never happened. */
+export const CLEANUP_NEVER_CONNECTED_SECONDS = 24 * 3600
+/** A sensor offline this long is likely gone for good. */
+export const CLEANUP_OFFLINE_SECONDS = 7 * 24 * 3600
+
+/**
+ * A sensor to review for removal: added over a day ago and never connected,
+ * or offline (or stale) for over a week. Disabled and revoked sensors are an
+ * admin's decision already, and a CI sensor connects only while it runs.
+ */
+export function isCleanupCandidate(
+  sensor: Pick<
+    Sensor,
+    | 'status'
+    | 'health'
+    | 'last_seen_at'
+    | 'created_at'
+    | 'type'
+    | 'execution_mode'
+    | 'state'
+    | 'health_reasons'
+    | 'outbox_warning'
+  >,
+  now: number,
+  thresholds?: FleetThresholds
+): boolean {
+  const state = sensorState(sensor, now, thresholds)
+  const age = (iso: string | null | undefined) => {
+    const ms = iso ? new Date(iso).getTime() : NaN
+    return Number.isNaN(ms) ? null : (now - ms) / 1000
+  }
+  if (state === 'never_connected') {
+    const created = age(sensor.created_at)
+    return created !== null && created > CLEANUP_NEVER_CONNECTED_SECONDS
+  }
+  if (state === 'offline' || state === 'stale') {
+    const seen = age(sensor.last_seen_at)
+    return seen !== null && seen > CLEANUP_OFFLINE_SECONDS
+  }
+  return false
+}
+
 export interface FleetSummary {
   total: number
   /** Not disabled or revoked. */
@@ -152,6 +226,8 @@ export interface FleetSummary {
   protocolV1: number
   /** Whether any sensor reports protocol telemetry (the API sends it). */
   hasProtocolInfo: boolean
+  /** Sensors to review for removal (isCleanupCandidate). */
+  cleanup: number
 }
 
 /** The protocol a sensor last spoke, from the API's telemetry (RFC-029). */
@@ -183,6 +259,7 @@ export function summarizeFleet(
   let jobSlots = 0
   let protocolV1 = 0
   let hasProtocolInfo = false
+  let cleanup = 0
   const ready = new Set<string>()
   for (const s of sensors) {
     const state = sensorState(s, now, thresholds)
@@ -194,6 +271,7 @@ export function summarizeFleet(
       jobSlots += sensorCapacity(s).effective
     }
     if (s.protocol) hasProtocolInfo = true
+    if (isCleanupCandidate(s, now, thresholds)) cleanup++
     if (sensorProtocolOf(s) === 'v1') protocolV1++
     if (isEnabled(state)) {
       const kinds = attentionKindsOf(s, channel, state)
@@ -227,6 +305,7 @@ export function summarizeFleet(
     zones: zoneSummary,
     protocolV1,
     hasProtocolInfo,
+    cleanup,
   }
 }
 
@@ -273,6 +352,8 @@ export interface FleetFilters {
   sdkVersions: string[]
   /** The "Needs attention" metric. */
   attention: boolean
+  /** Sensors to review for removal (isCleanupCandidate). */
+  cleanup?: boolean
 }
 
 export const EMPTY_FLEET_FILTERS: FleetFilters = {
@@ -297,7 +378,8 @@ export function activeFilterCount(f: FleetFilters): number {
     f.protocols.length +
     f.policies.length +
     f.sdkVersions.length +
-    (f.attention ? 1 : 0)
+    (f.attention ? 1 : 0) +
+    (f.cleanup ? 1 : 0)
   )
 }
 
@@ -340,6 +422,7 @@ export function filterSensors(
     if (f.policies.length && !f.policies.includes(sensorPolicyOf(s))) return false
     if (f.sdkVersions.length && !f.sdkVersions.includes(sensorSdkVersionKey(s))) return false
     if (f.attention && !needsAttention(s, now, thresholds, channel)) return false
+    if (f.cleanup && !isCleanupCandidate(s, now, thresholds)) return false
     return true
   })
 }
