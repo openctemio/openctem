@@ -111,6 +111,6 @@ func newVulnFeedImporter(cfg *config.Config, repos *Repositories, log *logger.Lo
 		return nil, err
 	}
 	im.WithChunks(repos.CVECorpus, vulnfeed.Transfer{Mirrors: cfg.Worker.VulnFeedMirrors, CacheDir: cfg.Scope.FeedCacheDir,
-		Client: httpsec.SafeHTTPClient(0), Registerer: prometheus.DefaultRegisterer})
+		Client: httpsec.FeedHTTPClient(0), Registerer: prometheus.DefaultRegisterer})
 	return im, nil
 }

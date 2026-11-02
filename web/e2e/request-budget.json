@@ -10,6 +10,7 @@
     "/assets/attention": 9,
     "/assets/changes": 4,
     "/insights/program-health": 7,
+    "/attack-surface": 6,
     "/attack-surface/external": 6,
     "/validation": 8,
     "/remediation": 6,
@@ -23,6 +24,7 @@
   },
   "$comment_security": "/account/security reads the account's own sign-in methods (one request, GET /api/v1/me/sign-in-methods): they are per account and change only by the person's own link or unlink, so neither the bootstrap nor the cache holds them.",
   "$comment_counts": "/scope reads its strip, tab and approval counts from two one-row lists with include=status_counts (entries, exclusions) next to its table; /compliance reads every framework card's stats from the frameworks list (include=stats); /sensors reads the fleet and its stats in one poll-mode request (changed_since), which its 15 s refresh repeats with only the changed sensors.",
+  "$comment_posture": "/attack-surface sends the bootstrap, the suggestion count, the summary, the stats, the monitoring settings and the posture score (GET /api/v1/attack-surface/posture, one precomputed row per organization). The score is per organization and changes on the posture refresh schedule, so neither the bootstrap nor the cache holds it; folding it into the summary would couple two cards that refresh on different schedules.",
   "$comment_attention": "/assets/attention lists five reasons with a count each. The counts come from the queues' own caller-scoped list endpoints (three asset lists with per_page=1, the suggestion count, the duplicate reviews), so a number never covers assets the reader cannot open; one summary endpoint (research/233 P1) would replace them. 10 matches /assets, which sends a similar set of list requests.",
   "sessionOnlyFromBootstrap": [
     "/api/v1/users/me",
