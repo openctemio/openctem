@@ -60,6 +60,22 @@ ON CONFLICT (tenant_id) DO UPDATE
        COALESCE(tenant_ai_settings.use_cases -> 'triage', '{}'::jsonb)
        || jsonb_build_object('mode', 'off', 'from_module_switch', true));
 
+-- An organization that switched Suppressions off must not see its rules start
+-- muting findings again: suppressions is always on from now on, so the rules
+-- of such an organization are deactivated (approved -> expired, the status a
+-- lapsed rule already has), marked so the down migration re-activates exactly
+-- these rules. The organization can approve rules again when it wants them.
+-- No audit_logs row is written here: the audit log is hash-chained by the
+-- application; the upgrade notes (changelog) name this change.
+ALTER TABLE suppression_rules ADD COLUMN IF NOT EXISTS deactivated_by_migration text;
+COMMENT ON COLUMN suppression_rules.deactivated_by_migration IS 'Set when a migration deactivated an approved rule (retire_noop_modules: the organization had switched the suppressions module off); the down migration re-activates the marked rules.';
+
+UPDATE suppression_rules sr
+   SET status = 'expired', updated_at = NOW(), deactivated_by_migration = 'retire_noop_modules'
+  FROM tenant_modules tm
+ WHERE tm.module_id = 'suppressions' AND NOT tm.is_enabled
+   AND sr.tenant_id = tm.tenant_id AND sr.status = 'approved';
+
 -- An organization's switch of a module it can no longer switch is dropped
 -- (tenant_modules has no ON DELETE): the retired modules, the two modules that
 -- are always on now (so their rules and scoring apply again, as the product

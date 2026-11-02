@@ -73,3 +73,75 @@ func TestRetireNoopModulesKeepsAITriageOff_DB(t *testing.T) {
 		t.Fatalf("down: %d switches restored (want 2), %d markers left (want 0)", back, marked)
 	}
 }
+
+// An organization that had switched Suppressions off must not see its rules
+// start muting findings again after suppressions became always on: the up
+// migration deactivates them, the down migration brings back exactly those, and
+// an organization that had the module on is untouched.
+func TestRetireNoopModulesKeepsSuppressionsOff_DB(t *testing.T) {
+	dir := "../../../migrations"
+	db := testdb.PrivateDatabase(t, "retire_noop_suppr", dir)
+	ctx := context.Background()
+	v := testdb.MigrationVersion(t, dir, "retire_noop_modules")
+	testdb.Migrate(t, db, dir, v, v, true)
+
+	off, on := shared.NewID(), shared.NewID()
+	for i, id := range []shared.ID{off, on} {
+		if _, err := db.ExecContext(ctx, `INSERT INTO tenants (id, name, slug, created_by) VALUES ($1, 't', $2, NULL)`,
+			id.String(), "retire-suppr-"+strings.Repeat("x", i+1)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := db.ExecContext(ctx, `INSERT INTO tenant_modules (tenant_id, module_id, is_enabled) VALUES ($1, 'suppressions', false)`, off.String()); err != nil {
+		t.Fatal(err)
+	}
+	rule := func(tenant shared.ID, name, status string) {
+		t.Helper()
+		if _, err := db.ExecContext(ctx, `INSERT INTO suppression_rules (tenant_id, name, rule_id, suppression_type, status, expires_at)
+			VALUES ($1, $2, 'sql-injection', 'false_positive', $3, NOW() + interval '30 days')`, tenant.String(), name, status); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rule(off, "off-approved", "approved")
+	rule(off, "off-pending", "pending")
+	rule(on, "on-approved", "approved")
+
+	repo := NewSuppressionRepository(&DB{DB: db})
+	active := func(tenant shared.ID) int {
+		t.Helper()
+		rules, err := repo.FindActiveByTenant(ctx, tenant)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return len(rules)
+	}
+	if active(off) != 1 {
+		t.Fatalf("before the upgrade the rule mutes (the module row is off but nothing read it here): %d", active(off))
+	}
+
+	testdb.Migrate(t, db, dir, v, v, false)
+	if got := active(off); got != 0 {
+		t.Fatalf("after the upgrade %d rule(s) of the organization that switched suppressions off mute findings; want 0", got)
+	}
+	if got := active(on); got != 1 {
+		t.Fatalf("an organization that never switched suppressions off lost its rule: %d active", got)
+	}
+	var pending string
+	if err := db.QueryRowContext(ctx, `SELECT status FROM suppression_rules WHERE name = 'off-pending'`).Scan(&pending); err != nil || pending != "pending" {
+		t.Fatalf("a pending rule must not change: %q %v", pending, err)
+	}
+
+	testdb.Migrate(t, db, dir, v, v, true)
+	if got := active(off); got != 1 {
+		t.Fatalf("down: the rule must be active again as before: %d", got)
+	}
+	var sw int
+	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM tenant_modules WHERE module_id = 'suppressions' AND NOT is_enabled AND tenant_id = $1`, off.String()).Scan(&sw); err != nil || sw != 1 {
+		t.Fatalf("down: the switch must be restored: %d %v", sw, err)
+	}
+	var col int
+	_ = db.QueryRowContext(ctx, `SELECT count(*) FROM information_schema.columns WHERE table_name = 'suppression_rules' AND column_name = 'deactivated_by_migration'`).Scan(&col)
+	if col != 0 {
+		t.Fatal("down must drop the marker column")
+	}
+}
