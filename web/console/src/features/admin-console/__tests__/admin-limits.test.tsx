@@ -52,7 +52,8 @@ describe('SelfServiceLimitsForm', () => {
     expect(screen.getByLabelText('Seats')).toHaveValue('')
     expect(screen.getByLabelText('Organizations per person')).toHaveValue('')
     expect(screen.queryByTestId('limit-sources')).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
+    // No unsaved change, no save bar.
+    expect(screen.queryByRole('button', { name: 'Save changes' })).toBeNull()
   })
 
   it('names the service operator when the control plane is a source', () => {
@@ -68,7 +69,7 @@ describe('SelfServiceLimitsForm', () => {
 
   it('a read-only administrator cannot change them', () => {
     render(<SelfServiceLimitsForm defaults={EMPTY} canEdit={false} onSaved={vi.fn()} />)
-    expect(screen.queryByRole('button', { name: 'Save' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Save changes' })).not.toBeInTheDocument()
     expect(screen.getByLabelText('Seats')).toBeDisabled()
   })
 
@@ -77,7 +78,7 @@ describe('SelfServiceLimitsForm', () => {
     render(<SelfServiceLimitsForm defaults={EMPTY} canEdit onSaved={vi.fn()} />)
     await user.type(screen.getByLabelText('Seats'), '-3')
     expect(screen.getByText(/whole number of 0 or more/i)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Save changes' })).toBeDisabled()
   })
 
   it('saves only the limits that are set, with the code and the version read', async () => {
@@ -87,7 +88,7 @@ describe('SelfServiceLimitsForm', () => {
     render(<SelfServiceLimitsForm defaults={EMPTY} canEdit onSaved={onSaved} />)
     await user.type(screen.getByLabelText('Seats'), '5')
     await user.type(screen.getByLabelText('Organizations per person'), '1')
-    await user.click(screen.getByRole('button', { name: 'Save' }))
+    await user.click(screen.getByRole('button', { name: 'Save changes' }))
     const confirm = screen.getByRole('button', { name: 'Confirm' })
     expect(confirm).toBeDisabled()
     await user.type(screen.getByLabelText(/code from your authenticator/i), '123456')
@@ -109,7 +110,7 @@ describe('SelfServiceLimitsForm', () => {
     )
     render(<SelfServiceLimitsForm defaults={EMPTY} canEdit onSaved={vi.fn()} />)
     await user.type(screen.getByLabelText('Assets'), '1000')
-    await user.click(screen.getByRole('button', { name: 'Save' }))
+    await user.click(screen.getByRole('button', { name: 'Save changes' }))
     await user.type(screen.getByLabelText(/code from your authenticator/i), '000000')
     await user.click(screen.getByRole('button', { name: 'Confirm' }))
     expect(await screen.findByText('Invalid or already used code')).toBeInTheDocument()

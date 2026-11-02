@@ -18,16 +18,17 @@ describe('PlatformSensorProofForm', () => {
     expect(screen.getByText(/an organization's scope entry is enough/)).toBeInTheDocument()
     expect(screen.getByText(/public multi-tenant cloud/)).toBeInTheDocument()
     expect(screen.getByRole('switch')).toBeDisabled()
-    expect(screen.queryByRole('button', { name: 'Save' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Save changes' })).not.toBeInTheDocument()
   })
 
   it('turns it on with a reason and a code', async () => {
     const onSave = vi.fn().mockResolvedValue(undefined)
     const user = userEvent.setup()
     render(<PlatformSensorProofForm required={false} canEdit onSave={onSave} />)
-    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
+    // No unsaved change, no save bar.
+    expect(screen.queryByRole('button', { name: 'Save changes' })).toBeNull()
     await user.click(screen.getByRole('switch'))
-    await user.click(screen.getByRole('button', { name: 'Save' }))
+    await user.click(screen.getByRole('button', { name: 'Save changes' }))
     expect(await screen.findByText('Require a verified domain?')).toBeInTheDocument()
     const confirm = screen.getByRole('button', { name: 'Confirm' })
     expect(confirm).toBeDisabled()
