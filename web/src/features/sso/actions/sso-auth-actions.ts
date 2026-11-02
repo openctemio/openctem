@@ -169,8 +169,17 @@ export async function handleSSOCallback(
   try {
     const cookieStore = await cookies()
 
-    // Verify state to prevent CSRF attacks
+    // Every cookie of this attempt is single use: read what the checks need,
+    // then clear all of them before any check can return, so no exit path
+    // (state mismatch, missing binding, backend refusal) leaves one behind.
     const storedState = cookieStore.get('sso_state')?.value
+    const bindingName = bindingCookieName('sso')
+    const browserBinding = cookieStore.get(bindingName)?.value
+    cookieStore.delete('sso_state')
+    cookieStore.delete(bindingName)
+    cookieStore.delete('sso_redirect')
+
+    // Verify state to prevent CSRF attacks
     if (!storedState || storedState !== state) {
       return {
         success: false,
@@ -178,23 +187,13 @@ export async function handleSSOCallback(
       }
     }
 
-    // Clear state cookie
-    cookieStore.delete('sso_state')
-
     // The binding is single use; a missing one is refused by the API too.
-    const bindingName = bindingCookieName('sso')
-    const browserBinding = cookieStore.get(bindingName)?.value
-    cookieStore.delete(bindingName)
     if (!browserBinding) {
       return {
         success: false,
         error: 'Invalid SSO state. Please try again.',
       }
     }
-
-    // Get stored redirect
-    const _redirectTo = cookieStore.get('sso_redirect')?.value || '/'
-    cookieStore.delete('sso_redirect')
 
     // Exchange code for tokens via backend
     const frontendCallbackUrl = `${env.app.url}/auth/sso/callback/${provider}`

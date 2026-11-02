@@ -685,14 +685,6 @@ func (s *SSOService) HandleCallback(ctx context.Context, input SSOCallbackInput)
 	if stateProvider != input.Provider {
 		return nil, ErrSSOInvalidState
 	}
-	// The code is redeemed only for the redirect_uri it was issued to. The
-	// identity provider checks this too; checking it here keeps a callback
-	// from steering the exchange to another allowed address.
-	if st.redirectURI == "" || st.redirectURI != input.RedirectURI {
-		s.logger.Warn("SSO callback refused: redirect_uri differs from the authorize request", "provider", input.Provider)
-		return nil, ErrSSOInvalidState
-	}
-
 	// PKCE: the authorize step always sent a code_challenge, so a verifier MUST
 	// be present. A missing verifier means the state was tampered with or forged
 	// (or predates PKCE) — fail closed rather than downgrade to a non-PKCE
@@ -792,6 +784,13 @@ type redeemedIdentity struct {
 // for a fresh authentication), applies the organization's domain rules, and
 // returns the verified identity. Nothing is read from or written to accounts.
 func (s *SSOService) redeemFederatedIdentity(ctx context.Context, st ssoState, providerName, code, redirectURI string) (*redeemedIdentity, error) {
+	// The code is redeemed only for the redirect_uri it was issued to (sign-in
+	// and link alike). The identity provider checks this too; checking it here
+	// keeps a callback from steering the exchange to another allowed address.
+	if st.redirectURI == "" || st.redirectURI != redirectURI {
+		s.logger.Warn("SSO redemption refused: redirect_uri differs from the authorize request", "provider", providerName)
+		return nil, ErrSSOInvalidState
+	}
 	// Look up tenant
 	t, err := s.tenantRepo.GetBySlug(ctx, st.org)
 	if err != nil {
