@@ -73,7 +73,6 @@ type Repositories struct {
 	Exposure             *postgres.ExposureRepository
 	ExposureStateHistory *postgres.ExposureStateHistoryRepository
 	ThreatIntel          *postgres.ThreatIntelRepository
-	CTEMID               *postgres.CTEMIDRepository
 
 	// Dashboard & Branch
 	Dashboard *postgres.DashboardRepository
@@ -464,7 +463,6 @@ func newRepositories(db *postgres.DB) *Repositories {
 		Exposure:             postgres.NewExposureRepository(db),
 		ExposureStateHistory: postgres.NewExposureStateHistoryRepository(db),
 		ThreatIntel:          postgres.NewThreatIntelRepository(db),
-		CTEMID:               postgres.NewCTEMIDRepository(db),
 
 		// Dashboard & Branch
 		Dashboard: postgres.NewDashboardRepository(db.DB),
