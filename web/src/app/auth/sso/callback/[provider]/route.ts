@@ -13,6 +13,7 @@ import { redirect } from 'next/navigation'
 import { cookies } from 'next/headers'
 import type { NextRequest } from 'next/server'
 
+import { bindingCookieName } from '@/features/auth/lib/browser-binding'
 import { loginErrorCodeFor } from '@/features/auth/lib/auth-error-codes'
 import { loginErrorHref } from '@/features/auth/lib/login-error'
 import { handleSSOCallback } from '@/features/sso/actions/sso-auth-actions'
@@ -42,10 +43,26 @@ export async function GET(
   const org = orgSlug ? { org: orgSlug } : undefined
   const redirectTo = validateRedirectUrl(cookieStore.get('sso_redirect')?.value, '/')
 
-  if (!isValidProvider(provider)) redirect(loginErrorHref('invalid_provider', org))
+  // These exits come before the callback action, which clears the attempt's
+  // single-use cookies itself, so clear them here.
+  const clearAttempt = () => {
+    cookieStore.delete('sso_state')
+    cookieStore.delete('sso_redirect')
+    cookieStore.delete(bindingCookieName('sso'))
+  }
+  if (!isValidProvider(provider)) {
+    clearAttempt()
+    redirect(loginErrorHref('invalid_provider', org))
+  }
   // error_description is the provider's free text: never echo it on /login.
-  if (search.get('error')) redirect(loginErrorHref('provider_error', org))
-  if (!code || !state) redirect(loginErrorHref('missing_params', org))
+  if (search.get('error')) {
+    clearAttempt()
+    redirect(loginErrorHref('provider_error', org))
+  }
+  if (!code || !state) {
+    clearAttempt()
+    redirect(loginErrorHref('missing_params', org))
+  }
 
   const result = await handleSSOCallback(provider, code, state)
   if (!result.success) {
