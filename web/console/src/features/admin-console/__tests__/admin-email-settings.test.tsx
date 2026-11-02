@@ -30,7 +30,7 @@ beforeEach(() => {
 })
 
 async function saveWithCode() {
-  await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+  await userEvent.click(screen.getByRole('button', { name: 'Save changes' }))
   await userEvent.type(screen.getByLabelText('Code from your authenticator app'), '123456')
   await userEvent.click(screen.getByRole('button', { name: 'Confirm' }))
 }
@@ -70,7 +70,7 @@ describe('EmailSettingsForm', () => {
 
   it('is read-only for an administrator who is not a super admin', () => {
     render(<EmailSettingsForm settings={stored} canEdit={false} onSaved={() => {}} />)
-    expect(screen.queryByRole('button', { name: 'Save' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Save changes' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Send a test e-mail' })).toBeNull()
     expect(screen.getByLabelText('SMTP server')).toBeDisabled()
   })
