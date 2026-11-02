@@ -5,16 +5,13 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { useTranslation } from '@/context/i18n-provider'
 import { ErrorState, PageHeader, PageStack } from '@/features/shared'
 import { Info } from 'lucide-react'
+import Link from '@/components/link'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useUrlFilter } from '@/hooks/use-url-param'
-import {
-  SharedFleetPanel,
-  SharedQueuePanel,
-} from '@console/features/admin-console/components/shared-fleet-panels'
+import { SharedQueuePanel } from '@console/features/admin-console/components/shared-fleet-panels'
 import { useAdmin } from '@console/features/admin-console/components/admin-console-shell'
 import {
-  createSharedSensorEnrollmentToken,
   savePlatformSensorProof,
   saveSharedSensorAnomaly,
   saveSharedSensorInternalZones,
@@ -28,9 +25,6 @@ import {
 } from '@console/features/admin-console/api/use-scan-policy'
 import { PlatformSensorProofForm } from '@console/features/admin-console/components/platform-sensor-proof-form'
 import { SharedSensorAnomalyForm } from '@console/features/admin-console/components/shared-sensor-anomaly-form'
-import { InstanceScanZonesCard } from '@console/features/admin-console/components/instance-scan-zones-card'
-import { useInstanceScanZones } from '@console/features/admin-console/api/use-instance-scan-zones'
-import { SharedSensorEnrollCard } from '@console/features/admin-console/components/shared-sensor-enroll-card'
 import { SharedSensorsForm } from '@console/features/admin-console/components/shared-sensors-form'
 import { SharedSensorsEgressForm } from '@console/features/admin-console/components/shared-sensors-egress-form'
 import { adminHas } from '@console/features/admin-console/types'
@@ -40,16 +34,15 @@ import { adminHas } from '@console/features/admin-console/types'
  * the platform's own and shared sensors, in one page. Policy: whether platform
  * sensors need a verified domain before they scan a target (RFC-054 §8.1) and
  * whether shared sensors may scan internal zones (RFC-100 §6.1). Fleet: the
- * instance switch, the sensors and the single-use enrollment token (RFC-100
- * §5, §7). Queue: lanes, per-organization use and job metadata (§12). Zones,
- * Egress (§9) and Anomalies (§9) follow. Until a value is stored the
+ * instance switch (RFC-100 §5; the sensors, enrollment and zones are on
+ * the Platform sensors page). Queue: lanes, per-organization use and job metadata (§12). Egress (§9) and Anomalies (§9) follow. Until a value is stored the
  * deployment default applies (MANAGED_SERVICE changes the defaults, RFC-100
  * §6). Any administrator sees them; super admins change them. While shared
  * sensors are not available in the release (the API reports ready=false), the
  * page shows one notice and the domain-proof policy only.
  */
 
-const TABS = ['policy', 'fleet', 'queue', 'zones', 'egress', 'anomalies'] as const
+const TABS = ['policy', 'fleet', 'queue', 'egress', 'anomalies'] as const
 
 function useScanning() {
   const me = useAdmin()
@@ -59,7 +52,6 @@ function useScanning() {
     shared: useSharedSensorsSetting(),
     zones: useSharedSensorInternalZones(),
     anomaly: useSharedSensorAnomaly(),
-    instanceZones: useInstanceScanZones(),
     egress: useSharedSensorsEgress(),
   }
 }
@@ -111,8 +103,15 @@ function NotAvailablePanel() {
       <CardContent className="text-sm text-muted-foreground">
         {t(
           'admin.scanning.unavailable.body',
-          'The fleet, queue, zones, egress addresses and alert thresholds of shared sensors appear here once the release enables them. The domain-proof policy below applies to the platform sensors today.'
-        )}
+          'The queue, egress addresses and alert thresholds of shared sensors appear here once the release enables them. The domain-proof policy below applies to the platform sensors today.'
+        )}{' '}
+        <Link
+          href="/sensors"
+          className="font-medium text-primary underline-offset-4 hover:underline"
+        >
+          {t('admin.scanning.manageSensors', 'Manage platform sensors')}
+        </Link>
+        .
       </CardContent>
     </Card>
   )
@@ -122,14 +121,13 @@ function SharedTabs({ s }: { s: Scanning }) {
   const { t } = useTranslation()
   const [rawTab, setTab] = useUrlFilter('tab', 'policy')
   const tab = (TABS as readonly string[]).includes(rawTab) ? rawTab : 'policy'
-  const { shared, zones, anomaly, instanceZones, egress, canEdit } = s
+  const { shared, zones, anomaly, egress, canEdit } = s
   return (
     <Tabs value={tab} onValueChange={setTab}>
       <TabsList className="h-auto flex-wrap justify-start">
         <TabsTrigger value="policy">{t('admin.scanning.tab.policy', 'Policy')}</TabsTrigger>
         <TabsTrigger value="fleet">{t('admin.scanning.tab.fleet', 'Fleet')}</TabsTrigger>
         <TabsTrigger value="queue">{t('admin.scanning.tab.queue', 'Queue')}</TabsTrigger>
-        <TabsTrigger value="zones">{t('admin.scanning.tab.zones', 'Zones')}</TabsTrigger>
         <TabsTrigger value="egress">{t('admin.scanning.tab.egress', 'Egress')}</TabsTrigger>
         <TabsTrigger value="anomalies">
           {t('admin.scanning.tab.anomalies', 'Anomalies')}
@@ -199,42 +197,21 @@ function SharedTabs({ s }: { s: Scanning }) {
               }}
             />
           )}
-          <SharedSensorEnrollCard
-            canEdit={canEdit}
-            onIssue={({ name, ttlMinutes, reason, code }) =>
-              createSharedSensorEnrollmentToken({
-                name,
-                ttl_minutes: ttlMinutes,
-                reason,
-                totp_code: code,
-              })
-            }
-          />
-          <SharedFleetPanel />
+          <p className="text-sm text-muted-foreground">
+            {t('admin.scanning.fleetMoved', 'Sensors, enrollment and zones are managed in')}{' '}
+            <Link
+              href="/sensors"
+              className="font-medium text-primary underline-offset-4 hover:underline"
+            >
+              {t('admin.nav.platformSensors', 'Platform sensors')}
+            </Link>
+            .
+          </p>
         </PageStack>
       </TabsContent>
       <TabsContent value="queue">
         <PageStack>
           <SharedQueuePanel />
-        </PageStack>
-      </TabsContent>
-      <TabsContent value="zones">
-        <PageStack>
-          {instanceZones.error ? (
-            <ErrorState
-              title={t('admin.instanceZones.errorTitle')}
-              error={instanceZones.error}
-              onRetry={() => void instanceZones.mutate()}
-            />
-          ) : instanceZones.isLoading || !instanceZones.data ? (
-            <Skeleton className="h-40 w-full" />
-          ) : (
-            <InstanceScanZonesCard
-              zones={instanceZones.data.items ?? []}
-              canEdit={canEdit}
-              onChanged={() => instanceZones.mutate()}
-            />
-          )}
         </PageStack>
       </TabsContent>
       <TabsContent value="egress">
