@@ -1,0 +1,117 @@
+name: Console E2E
+
+# The platform console's Playwright suite (web/console/e2e): every console page
+# at 1440x900 and 390x844 (one h1, no sideways scroll, no console error,
+# axe WCAG 2.2 AA with no critical or serious violation, no " · " and no em
+# dash in the text, page anatomy) and the elevation flow. The tenant app's suite
+# (web-e2e.yml) never visits the console.
+#
+# No images: one job builds the API (go build), starts it with the console
+# listener against Postgres and Redis service containers, builds and starts
+# `next start console`, creates a platform administrator with bootstrap-admin
+# and signs in with its authenticator code. Everything listens on 127.0.0.1 of
+# the job and is gone when it ends; the secrets are random per run.
+#
+# When: a pull request that changes the console, the shared page checks or this
+# suite; every night on develop; on demand. It is not a required check: a PR
+# that changes the console runs it, and the nightly run is the net under it.
+
+on:
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - 'web/console/**'
+      - 'web/playwright.console.config.ts'
+      - 'web/e2e/helpers/page-anatomy.ts'
+      - 'web/e2e/helpers/axe.ts'
+      - 'web/src/features/shared/**'
+      - 'web/src/components/ui/**'
+      - 'web/src/components/layout/**'
+      - 'web/src/lib/i18n/dictionaries/**'
+      - '.github/workflows/console-e2e.yml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  console:
+    name: Console E2E
+    runs-on: ${{ vars.CI_RUNNER_LIGHT || 'ubuntu-latest' }}
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: openctem
+          POSTGRES_PASSWORD: console-e2e-ci
+          POSTGRES_DB: openctem
+        ports: ['127.0.0.1:5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U openctem" --health-interval 5s --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ['127.0.0.1:6379:6379']
+    env:
+      CI: 'true'
+      GOWORK: 'off'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: api/go.mod
+          cache-dependency-path: api/go.sum
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: web/.nvmrc
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install web dependencies
+        working-directory: web
+        run: npm ci --no-audit --no-fund
+
+      - name: Generate the contract files
+        run: make generate
+
+      - name: Chromium
+        working-directory: web
+        run: npx playwright install --with-deps chromium
+
+      - name: Build the API, the migrations and the console
+        run: |
+          go -C api build -o "$RUNNER_TEMP/server" ./cmd/server
+          go -C api build -o "$RUNNER_TEMP/openctem-migrate" ./cmd/openctem-migrate
+          ln -s server "$RUNNER_TEMP/bootstrap-admin"
+          npm --prefix web run build:console
+
+      - name: Start the stack and create the administrator
+        run: bash web/console/e2e/ci/start-stack.sh
+        env:
+          BIN_DIR: ${{ runner.temp }}
+          STACK_DIR: ${{ runner.temp }}/console-e2e
+
+      - name: Console suite
+        working-directory: web
+        run: npx playwright test -c playwright.console.config.ts
+
+      - name: Stack logs on failure
+        if: failure()
+        run: tail -n 60 "$RUNNER_TEMP"/console-e2e/*.log || true
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: failure()
+        with:
+          name: console-e2e-results
+          path: web/test-results-console
+          retention-days: 7
