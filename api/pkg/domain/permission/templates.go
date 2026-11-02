@@ -37,6 +37,18 @@ var readCore = []Permission{
 	FindingsRead, ExposuresRead, VulnerabilitiesRead, RemediationRead,
 }
 
+// validationWork is what a tester does in a validation exercise: campaigns,
+// findings, retests, simulations and control tests, and the targeted scans
+// that prove a finding (a run needs scans:write and scans:execute together).
+var validationWork = []Permission{
+	PentestRead, PentestWrite,
+	PentestCampaignsRead, PentestCampaignsWrite, PentestFindingsRead, PentestFindingsWrite,
+	PentestRetestsRead, PentestRetestsWrite, PentestTemplatesRead, PentestTemplatesWrite, PentestReportsWrite,
+	FindingsWrite, FindingsComment, FindingsSeverity, FindingsVerify, FindingsRetestChecksWrite,
+	ScansRead, ScansWrite, ScansExecute, ScanProfilesRead, ScopeRead,
+	AttackerProfilesRead, CompensatingControlsRead, VerificationChecklistsRead, ThreatIntelRead,
+}
+
 func join(parts ...[]Permission) []Permission {
 	seen := map[Permission]bool{}
 	var out []Permission
@@ -55,29 +67,32 @@ func join(parts ...[]Permission) []Permission {
 var roleTemplates = []RoleTemplate{
 	{
 		ID:      "program-lead",
-		Version: 2,
+		Version: 3,
 		Name:    "CTEM program lead",
 		Description: "Runs the program: scopes cycles, sets priority rules and SLAs, approves risk acceptance " +
-			"and suppressions, approves scope changes and reports to leadership. Does not administer members, " +
-			"sensors or integrations.",
+			"and suppressions, approves scope changes and scan runs that need approval, and reports to " +
+			"leadership with organization dashboards. Does not administer members, sensors or integrations.",
 		Personas:          []string{"CISO or security leader", "CTEM program manager"},
 		HasFullDataAccess: true,
 		Permissions: join(readCore, []Permission{
-			DashboardsOrgView,
+			DashboardsOrgView, DashboardsOrgManage,
 			CTEMCyclesRead, CTEMCyclesWrite, AttackerProfilesRead, AttackerProfilesWrite,
 			BusinessServicesRead, BusinessServicesWrite, CompensatingControlsRead, CompensatingControlsWrite,
 			PriorityRulesRead, PriorityRulesWrite, VerificationChecklistsRead,
 			SLARead, SLAWrite,
 			FindingsApprove, FindingsComment, SuppressionsRead, SuppressionsApprove,
+			// Accepting the risk of an exposure, or dismissing it, needs the
+			// approver permission and exposure triage together.
+			ExposuresTriage, FindingsViewsShare,
 			ScopeRead, ScopeApprove, ScopeExclusionsApprove,
-			CredentialsRead, ThreatIntelRead, ScansRead,
+			CredentialsRead, ThreatIntelRead, ScansRead, ScansApprove,
 			PentestCampaignsRead, PentestFindingsRead, ComplianceFrameworksRead, ComplianceAssessmentsRead,
 			ReportsRead, ReportsWrite, FindingsExport,
 		}),
 	},
 	{
 		ID:      "security-analyst",
-		Version: 3,
+		Version: 4,
 		Name:    "Security analyst",
 		Description: "Triages findings and exposures in their scope: severity, status, duplicates, assignment, " +
 			"comments and evidence; verifies fixes and requests retests. May request risk acceptance but " +
@@ -88,7 +103,7 @@ var roleTemplates = []RoleTemplate{
 			FindingsTriage, FindingsStatus, FindingsAssign, FindingsBulkUpdate, FindingsVerify, FindingsRetestChecksWrite,
 			ExposuresWrite, ExposuresTriage, SuppressionsRead, SuppressionsWrite,
 			CredentialsRead, AutomationsRead,
-			ScansRead, ScansExecute, ScanProfilesRead,
+			ScansRead, ScanProfilesRead,
 			ThreatIntelRead, AITriageRead, AITriageTrigger,
 			CTEMCyclesRead, BusinessServicesRead, CompensatingControlsRead, VerificationChecklistsRead,
 			VerificationChecklistsWrite, SLARead, ScopeRead, ReportsRead,
@@ -96,7 +111,7 @@ var roleTemplates = []RoleTemplate{
 	},
 	{
 		ID:      "vulnerability-manager",
-		Version: 3,
+		Version: 4,
 		Name:    "Vulnerability manager",
 		Description: "Owns the remediation backlog: routes work to owners with assignment rules, runs " +
 			"remediation campaigns, schedules scans and reports on SLA performance. Does not approve " +
@@ -105,7 +120,7 @@ var roleTemplates = []RoleTemplate{
 		Permissions: join(readCore, []Permission{
 			FindingsWrite, FindingsComment, FindingsSeverity,
 			FindingsTriage, FindingsStatus, FindingsAssign, FindingsBulkUpdate, FindingsVerify, FindingsRetestChecksWrite,
-			FindingsExport,
+			FindingsExport, FindingsViewsShare,
 			ExposuresWrite, ExposuresTriage, SuppressionsRead, SuppressionsWrite,
 			RemediationWrite, AutomationsRead, AutomationsWrite,
 			AssignmentRulesRead, AssignmentRulesWrite,
@@ -118,20 +133,40 @@ var roleTemplates = []RoleTemplate{
 	},
 	{
 		ID:      "remediation-owner",
-		Version: 1,
+		Version: 2,
 		Name:    "Remediation owner",
 		Description: "Fixes what is assigned to their team: comments, remediation steps, tickets and " +
-			"marking a fix applied. Requests risk acceptance with a justification. Cannot re-score " +
-			"severity, verify their own fix, approve, delete or change scans.",
+			"marking a fix applied. Requests risk acceptance with a justification. Follows the pentest " +
+			"campaigns they are a client of. Cannot re-score severity, verify their own fix, approve, " +
+			"delete or change scans.",
 		Personas: []string{"Asset or system owner", "IT and infrastructure engineer", "Developer", "Engineering manager"},
 		Permissions: join(readCore, []Permission{
 			FindingsWrite, FindingsComment, FindingsStatus, FindingsFixApply,
 			VerificationChecklistsRead, SLARead, ScansRead,
+			// A campaign's client: published findings, comments and retest
+			// requests of the campaigns they are a member of (membership
+			// is checked on every campaign route).
+			PentestCampaignsRead, PentestFindingsRead,
+		}),
+	},
+	{
+		ID:      "remediation-lead",
+		Version: 1,
+		Name:    "Remediation lead",
+		Description: "Plans the fixes of their team: remediation tasks in their scope (create, split, merge, " +
+			"tracker issue, mark fixed), assignment within the team and bulk status, besides everything a " +
+			"remediation owner does. Cannot re-score severity, verify a fix, approve or change scans.",
+		Personas: []string{"Engineering manager or tech lead", "Security champion in a product team"},
+		Permissions: join(readCore, []Permission{
+			FindingsWrite, FindingsComment, FindingsStatus, FindingsFixApply,
+			FindingsAssign, FindingsBulkUpdate, RemediationWrite,
+			VerificationChecklistsRead, SLARead, ScansRead, CIRead, ReportsRead,
+			PentestCampaignsRead, PentestFindingsRead,
 		}),
 	},
 	{
 		ID:      "appsec-engineer",
-		Version: 2,
+		Version: 3,
 		Name:    "AppSec engineer",
 		Description: "Runs code and dependency scanning for their repositories, triages application " +
 			"findings, and runs the CI gate: gate policies, expected scans and break-glass.",
@@ -142,7 +177,10 @@ var roleTemplates = []RoleTemplate{
 			SuppressionsRead, SuppressionsWrite,
 			ScansRead, ScansWrite, ScansExecute, ScanProfilesRead, ScanProfilesWrite,
 			ScanWorkflowsRead, ToolsRead, ScannerTemplatesRead,
-			SCMConnectionsRead, SLARead, ReportsRead,
+			// Code host connections are listed under integrations: reading
+			// them needs integrations:read as well.
+			IntegrationsRead, SCMConnectionsRead, SLARead, ReportsRead, ScopeRead,
+			AITriageRead, AITriageTrigger,
 			// Runs the CI gate: gate policies and coverage expectations
 			// (policy), and break-glass for one commit (override, with
 			// step-up). Trust and code host connections issue upload
@@ -152,7 +190,7 @@ var roleTemplates = []RoleTemplate{
 	},
 	{
 		ID:      "ci-integrator",
-		Version: 1,
+		Version: 2,
 		Name:    "CI integrator",
 		Description: "Keeps pipelines connected to the CI gate: reads CI runs, their gate results, " +
 			"code host connections and scan profiles to troubleshoot an integration. Gate policies and " +
@@ -162,12 +200,12 @@ var roleTemplates = []RoleTemplate{
 			DashboardRead, TeamRead,
 			AssetsRead, ComponentsRead, FindingsRead,
 			ScansRead, ScanProfilesRead, ToolsRead,
-			SCMConnectionsRead, CIRead,
+			IntegrationsRead, SCMConnectionsRead, CIRead,
 		},
 	},
 	{
 		ID:      "scan-operator",
-		Version: 1,
+		Version: 2,
 		Name:    "Scan operator",
 		Description: "Schedules and runs scans and scan workflows against approved scope and watches " +
 			"their results. Cannot change scope, sensors, templates or findings.",
@@ -175,7 +213,7 @@ var roleTemplates = []RoleTemplate{
 		Permissions: join(readCore, []Permission{
 			ScansRead, ScansWrite, ScansExecute, ScanProfilesRead, ScanProfilesWrite,
 			ScanWorkflowsRead, ScanWorkflowsWrite, ScannerTemplatesRead, ContentSourcesRead,
-			ToolsRead, TenantToolsRead, ContentPacksRead,
+			ToolsRead, TenantToolsRead, ContentPacksRead, ContentRead,
 			SensorsRead, CommandsRead, ScanZonesRead, ScopeRead,
 		}),
 	},
@@ -195,18 +233,43 @@ var roleTemplates = []RoleTemplate{
 	},
 	{
 		ID:      "validation-engineer",
-		Version: 2,
+		Version: 3,
 		Name:    "Validation engineer",
-		Description: "Proves exploitability: runs pentest campaigns, attack simulations and control " +
-			"tests, records validated findings and retests fixes. Cannot approve risk or change scope.",
-		Personas: []string{"Red team or internal penetration tester", "Breach and attack simulation engineer", "Purple team"},
+		Description: "Proves exploitability: runs pentest campaigns, attack simulations, control " +
+			"tests and targeted scans, records validated findings and retests fixes. Cannot approve risk " +
+			"or change scope.",
+		Personas:    []string{"Red team or internal penetration tester", "Breach and attack simulation engineer", "Purple team"},
+		Permissions: join(readCore, validationWork),
+	},
+	{
+		ID:      "validation-lead",
+		Version: 1,
+		Name:    "Validation lead",
+		Description: "Leads the validation program on top of a validation engineer's work: maintains " +
+			"methodology checklists and the attacker profiles exercises emulate, and requests the scope and " +
+			"authorization letters of an engagement. Never approves scope or risk.",
+		Personas: []string{"Penetration testing or red team lead", "Offensive security manager"},
+		Permissions: join(readCore, validationWork, []Permission{
+			PentestChecklistsManage, AttackerProfilesWrite,
+			// Requests scope entries, exclusions and authorization letters;
+			// widening scope still needs an approver (scope:approve).
+			ScopeWrite,
+			CTEMCyclesRead, ReportsRead,
+		}),
+	},
+	{
+		ID:      "detection-engineer",
+		Version: 1,
+		Name:    "Detection engineer",
+		Description: "Turns validation results into defenses: reads simulations, control tests and the " +
+			"campaigns they observe, and records compensating controls and their test results. Does not " +
+			"run attacks or scans and does not change findings.",
+		Personas: []string{"Detection engineer", "SOC or blue team analyst", "Purple team defender"},
 		Permissions: join(readCore, []Permission{
-			PentestRead, PentestWrite,
-			PentestCampaignsRead, PentestCampaignsWrite, PentestFindingsRead, PentestFindingsWrite,
-			PentestRetestsRead, PentestRetestsWrite, PentestTemplatesRead, PentestTemplatesWrite, PentestReportsWrite,
-			FindingsWrite, FindingsComment, FindingsSeverity, FindingsVerify, FindingsRetestChecksWrite,
-			ScansRead, ScansExecute, ScanProfilesRead, ScopeRead,
-			AttackerProfilesRead, CompensatingControlsRead, VerificationChecklistsRead, ThreatIntelRead,
+			PentestRead, PentestCampaignsRead, PentestFindingsRead,
+			CompensatingControlsRead, CompensatingControlsWrite,
+			AttackerProfilesRead, ThreatIntelRead, FindingsComment,
+			CTEMCyclesRead, VerificationChecklistsRead, ReportsRead,
 		}),
 	},
 	{
@@ -269,7 +332,7 @@ var roleTemplates = []RoleTemplate{
 	},
 	{
 		ID:      "risk-approver",
-		Version: 1,
+		Version: 2,
 		Name:    "Risk approver",
 		Description: "Governance: approves or rejects risk acceptance, false positives and suppression " +
 			"rules, and maintains compliance assessments. Holds no fix or triage permission, so the " +
@@ -277,6 +340,9 @@ var roleTemplates = []RoleTemplate{
 		Personas: []string{"GRC and risk manager", "Compliance manager"},
 		Permissions: join(readCore, []Permission{
 			FindingsApprove, FindingsComment, SuppressionsRead, SuppressionsApprove,
+			// With findings:approve: accept or dismiss an exposure. Alone it
+			// changes nothing (resolve and severity need other writes).
+			ExposuresTriage,
 			ComplianceFrameworksRead, ComplianceAssessmentsRead, ComplianceAssessmentsWrite,
 			ComplianceMappingsRead, ComplianceMappingsWrite,
 			SLARead, CTEMCyclesRead, BusinessServicesRead, CompensatingControlsRead, ReportsRead, ReportsWrite,
@@ -284,7 +350,7 @@ var roleTemplates = []RoleTemplate{
 	},
 	{
 		ID:      "auditor",
-		Version: 1,
+		Version: 2,
 		Name:    "Auditor",
 		Description: "Read-only evidence for an audit: every asset, finding, decision and the audit " +
 			"log, plus exports. Changes nothing. Give it to internal or external auditors with an " +
@@ -296,8 +362,8 @@ var roleTemplates = []RoleTemplate{
 			ScansRead, ScopeRead, SLARead, PriorityRulesRead, CTEMCyclesRead,
 			BusinessServicesRead, CompensatingControlsRead, VerificationChecklistsRead,
 			ComplianceFrameworksRead, ComplianceAssessmentsRead, ComplianceMappingsRead,
-			PentestCampaignsRead, PentestFindingsRead, PentestRetestsRead,
-			RolesRead, GroupsRead, ReportsRead,
+			PentestRead, PentestCampaignsRead, PentestFindingsRead, PentestRetestsRead,
+			AutomationsRead, RolesRead, GroupsRead, ReportsRead,
 		}),
 	},
 	{

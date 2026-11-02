@@ -71,10 +71,95 @@ func TestRoleTemplates_SeparationOfDuties(t *testing.T) {
 		if hasPerm(tpl, permission.SuppressionsApprove) && hasPerm(tpl, permission.SuppressionsWrite) {
 			t.Errorf("%s: writes and approves suppression rules", tpl.ID)
 		}
-		// Scope: whoever widens scope does not approve it.
-		if hasPerm(tpl, permission.ScopeApprove) && hasPerm(tpl, permission.ScopeWrite) {
+		// Scope: whoever widens scope does not approve it, nor the
+		// exclusions they request.
+		if hasPerm(tpl, permission.ScopeWrite) && (hasPerm(tpl, permission.ScopeApprove) || hasPerm(tpl, permission.ScopeExclusionsApprove)) {
 			t.Errorf("%s: writes and approves scope", tpl.ID)
 		}
+		// Scan approvals: whoever creates or changes a scan does not approve
+		// its run.
+		if hasPerm(tpl, permission.ScansApprove) && hasPerm(tpl, permission.ScansWrite) {
+			t.Errorf("%s: writes scans and approves their runs", tpl.ID)
+		}
+		// Whoever re-scores a finding does not mark it fixed.
+		if hasPerm(tpl, permission.FindingsFixApply) && hasPerm(tpl, permission.FindingsSeverity) {
+			t.Errorf("%s: fix_apply and severity together", tpl.ID)
+		}
+	}
+}
+
+// A run needs scans:write and scans:execute together (and execute is added on
+// top of write): a template with execute alone holds a permission that opens
+// nothing.
+func TestRoleTemplates_NoExecuteWithoutWrite(t *testing.T) {
+	for _, tpl := range permission.RoleTemplates() {
+		if hasPerm(tpl, permission.ScansExecute) && !hasPerm(tpl, permission.ScansWrite) && !hasPerm(tpl, permission.AssetsWrite) {
+			t.Errorf("%s: scans:execute without scans:write or assets:write opens no route", tpl.ID)
+		}
+	}
+}
+
+// The remediation lead plans the team's fixes; like the remediation owner it
+// never re-scores, verifies, approves or triages what its team fixes.
+func TestRoleTemplates_RemediationLeadIsBounded(t *testing.T) {
+	rl, ok := permission.RoleTemplateByID("remediation-lead")
+	if !ok {
+		t.Fatal("no remediation-lead template")
+	}
+	for _, p := range []permission.Permission{
+		permission.FindingsSeverity, permission.FindingsVerify, permission.FindingsApprove, permission.FindingsTriage,
+		permission.SuppressionsWrite, permission.ScansWrite, permission.ScansExecute, permission.FindingsExport,
+	} {
+		if hasPerm(rl, p) {
+			t.Errorf("remediation-lead holds %s", p)
+		}
+	}
+	ro, _ := permission.RoleTemplateByID("remediation-owner")
+	for _, p := range ro.Permissions {
+		if !hasPerm(rl, p) {
+			t.Errorf("remediation-lead lacks %s, which the remediation owner holds", p)
+		}
+	}
+	for _, p := range []permission.Permission{permission.RemediationWrite, permission.FindingsAssign} {
+		if !hasPerm(rl, p) {
+			t.Errorf("remediation-lead lacks %s", p)
+		}
+	}
+}
+
+// The validation lead is a validation engineer who also curates methodology
+// and requests engagement scope; the detection engineer reads validation
+// results and records controls but never runs attacks or scans.
+func TestRoleTemplates_ValidationLeadAndDetectionEngineer(t *testing.T) {
+	ve, _ := permission.RoleTemplateByID("validation-engineer")
+	vl, ok := permission.RoleTemplateByID("validation-lead")
+	if !ok {
+		t.Fatal("no validation-lead template")
+	}
+	for _, p := range ve.Permissions {
+		if !hasPerm(vl, p) {
+			t.Errorf("validation-lead lacks %s, which the validation engineer holds", p)
+		}
+	}
+	for _, p := range []permission.Permission{permission.PentestChecklistsManage, permission.AttackerProfilesWrite, permission.ScopeWrite} {
+		if !hasPerm(vl, p) {
+			t.Errorf("validation-lead lacks %s", p)
+		}
+	}
+	de, ok := permission.RoleTemplateByID("detection-engineer")
+	if !ok {
+		t.Fatal("no detection-engineer template")
+	}
+	for _, p := range []permission.Permission{
+		permission.PentestWrite, permission.PentestFindingsWrite, permission.PentestCampaignsWrite,
+		permission.ScansWrite, permission.ScansExecute, permission.FindingsWrite, permission.FindingsStatus,
+	} {
+		if hasPerm(de, p) {
+			t.Errorf("detection-engineer holds %s", p)
+		}
+	}
+	if !hasPerm(de, permission.CompensatingControlsWrite) || !hasPerm(de, permission.PentestRead) {
+		t.Error("detection-engineer cannot read validation results or record controls")
 	}
 }
 
@@ -242,21 +327,24 @@ var templateVersions = map[string]struct {
 	version int
 	digest  string
 }{
-	"program-lead":          {2, "32b7a341272a6334"},
-	"security-analyst":      {3, "68069cd56275302c"},
-	"vulnerability-manager": {3, "edd736ccd70c63dd"},
-	"remediation-owner":     {1, "e7a6827cedd735f8"},
-	"appsec-engineer":       {2, "32bf4071b62e05a5"},
-	"ci-integrator":         {1, "bbc336f2d9c23728"},
-	"scan-operator":         {1, "1e92419c24534f7d"},
+	"program-lead":          {3, "0325b974228208b8"},
+	"security-analyst":      {4, "21f193fd530f795b"},
+	"vulnerability-manager": {4, "9a6df8c9d7573175"},
+	"remediation-owner":     {2, "d8be6e04c6911814"},
+	"remediation-lead":      {1, "75ae33b525c394cb"},
+	"appsec-engineer":       {3, "77b455a340ace578"},
+	"ci-integrator":         {2, "e12bf49f4beef986"},
+	"scan-operator":         {2, "e662a3285d8959e5"},
 	"sensor-operator":       {1, "dad7da0b5236b92c"},
-	"validation-engineer":   {2, "a98665c9403dfa5d"},
+	"validation-engineer":   {3, "0fc8039a4875f41c"},
+	"validation-lead":       {1, "5c0c66116fc17ad6"},
+	"detection-engineer":    {1, "caa70fbad545b9ce"},
 	"external-tester":       {1, "8861f6f0f788e217"},
 	"researcher":            {2, "3db22d24b0d4ef59"},
 	"bounty-triager":        {1, "3701f9612e54d123"},
 	"threat-intel-analyst":  {1, "8dc68d55c347021f"},
-	"risk-approver":         {1, "41e9f0ffdc676549"},
-	"auditor":               {1, "b6f9f10b55df98eb"},
+	"risk-approver":         {2, "dad878aa7a082145"},
+	"auditor":               {2, "abeb3aaa8907df58"},
 	"executive":             {1, "e76d59c68e5ca7ad"},
 }
 
