@@ -19,7 +19,7 @@ func newStateSvc() *SSOService {
 func TestSSOState_SingleUseUnderConcurrency(t *testing.T) {
 	svc := newStateSvc()
 	ctx := context.Background()
-	state, _, _, bind, err := svc.generateState(ctx, "acme", "okta", false)
+	state, _, _, bind, err := svc.generateState(ctx, "acme", "okta", "https://app.example.com/cb", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -48,7 +48,7 @@ func TestSSOState_SingleUseUnderConcurrency(t *testing.T) {
 func TestSSOState_ReplayRefused(t *testing.T) {
 	svc := newStateSvc()
 	ctx := context.Background()
-	state, _, _, bind, _ := svc.generateState(ctx, "acme", "okta", false)
+	state, _, _, bind, _ := svc.generateState(ctx, "acme", "okta", "https://app.example.com/cb", false)
 	if _, err := svc.consumeState(ctx, state, bind); err != nil {
 		t.Fatal(err)
 	}
@@ -61,16 +61,16 @@ func TestSSOState_ReplayRefused(t *testing.T) {
 func TestSSOState_OtherBrowserRefused(t *testing.T) {
 	svc := newStateSvc()
 	ctx := context.Background()
-	state, _, _, bind, _ := svc.generateState(ctx, "acme", "okta", false)
+	state, _, _, bind, _ := svc.generateState(ctx, "acme", "okta", "https://app.example.com/cb", false)
 	for _, wrong := range []string{"", "not-the-binding", bind + "x"} {
-		s2, _, _, b2, _ := svc.generateState(ctx, "acme", "okta", false)
+		s2, _, _, b2, _ := svc.generateState(ctx, "acme", "okta", "https://app.example.com/cb", false)
 		_ = b2
 		if _, err := svc.consumeState(ctx, s2, wrong); err == nil {
 			t.Fatalf("binding %q accepted", wrong)
 		}
 	}
 	// A binding issued for another state is refused too.
-	_, _, _, otherBind, _ := svc.generateState(ctx, "acme", "okta", false)
+	_, _, _, otherBind, _ := svc.generateState(ctx, "acme", "okta", "https://app.example.com/cb", false)
 	if _, err := svc.consumeState(ctx, state, otherBind); err == nil {
 		t.Fatal("another browser's binding was accepted")
 	}
@@ -85,7 +85,7 @@ func TestSSOState_OtherBrowserRefused(t *testing.T) {
 func TestSSOState_ForgedRefused(t *testing.T) {
 	svc := newStateSvc()
 	ctx := context.Background()
-	state, _, _, bind, _ := svc.generateState(ctx, "acme", "okta", false)
+	state, _, _, bind, _ := svc.generateState(ctx, "acme", "okta", "https://app.example.com/cb", false)
 	handle, _, _ := strings.Cut(state, ".")
 	for _, bad := range []string{"", handle, handle + ".", handle + ".AAAA", "x." + svc.signState("y")} {
 		if _, err := svc.consumeState(ctx, bad, bind); err == nil {
@@ -107,7 +107,7 @@ func TestSSOState_ForgedRefused(t *testing.T) {
 func TestSSOState_NoSecretsInState(t *testing.T) {
 	svc := newStateSvc()
 	ctx := context.Background()
-	state, _, _, bind, _ := svc.generateState(ctx, "acme", "okta", false)
+	state, _, _, bind, _ := svc.generateState(ctx, "acme", "okta", "https://app.example.com/cb", false)
 	if strings.Contains(state, bind) {
 		t.Fatal("binding secret inside the state")
 	}
