@@ -159,6 +159,23 @@ func TestFeedRelayRoutes(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// The console's relay picker lists platform sensors only: never an
+	// organization's sensor, even one reporting feed.relay@1.
+	cands, err := svc.Candidates(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	listed := map[string]string{}
+	for _, c := range cands {
+		listed[c.Sensor.ID.String()] = c.Reason
+	}
+	if reason, ok := listed[relay.ID.String()]; !ok || reason != "" {
+		t.Fatalf("relay sensor not offered: %v", listed)
+	}
+	if _, ok := listed[org.Sensor.ID.String()]; ok {
+		t.Fatal("an organization's sensor was offered as a relay")
+	}
+
 	var doH func(key, method, path string, body []byte, hdr ...string) (int, []byte, http.Header)
 	do := func(key, method, path string, body []byte, hdr ...string) (int, []byte) {
 		code, b, _ := doH(key, method, path, body, hdr...)

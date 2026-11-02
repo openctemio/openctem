@@ -775,6 +775,9 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	// idle in relay mode.
 	if svc.FeedRelay != nil {
 		registerRelayFeeds(cfg, svc, feeds.importer)
+		// Relay offline, stale feed, failed verification: the
+		// administrators' channel (e-mail and the alert webhook).
+		svc.FeedRelay.SetNotifier(newAdminNotifier(cfg, repos, svc, log))
 		w.ControllerManager.Register(controller.NewFeedRelayController(svc.FeedRelay))
 	}
 
