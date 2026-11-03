@@ -147,10 +147,13 @@ export function useWireAnchors(
     const inn: Record<string, Anchor> = {}
     el.querySelectorAll<HTMLElement>('[data-wire-out]').forEach((n) => {
       const r = n.getBoundingClientRect()
+      // A row that is not laid out (no size) has no anchor: no wire, never a default point.
+      if (r.width === 0 && r.height === 0) return
       out[n.dataset.wireOut ?? ''] = { x: r.right - box.left, y: r.top + r.height / 2 - box.top }
     })
     el.querySelectorAll<HTMLElement>('[data-wire-in]').forEach((n) => {
       const r = n.getBoundingClientRect()
+      if (r.width === 0 && r.height === 0) return
       inn[n.dataset.wireIn ?? ''] = { x: r.left - box.left, y: r.top + r.height / 2 - box.top }
     })
     return { width: box.width, height: box.height, out, in: inn }
@@ -159,10 +162,32 @@ export function useWireAnchors(
   useLayoutEffect(() => {
     // contentKey is a re-measure trigger, not read here.
     void contentKey
-    setLayout(measure())
     const el = ref.current
-    if (!el || typeof ResizeObserver === 'undefined') return
-    const ro = new ResizeObserver(() => setLayout(measure()))
+    let gone = false
+    // Rows that slide to a new place (the ranked bars' FLIP) are measured where
+    // the slide starts, not where they settle: measure again when every script
+    // animation under the container has finished (CSS animations, such as the
+    // wires' own dash, never end and never move a row).
+    const settle = () => {
+      const running = (el?.getAnimations?.({ subtree: true }) ?? []).filter(
+        (a) => !(typeof CSSAnimation !== 'undefined' && a instanceof CSSAnimation)
+      )
+      if (running.length === 0) return
+      void Promise.allSettled(running.map((a) => a.finished)).then(() => {
+        if (!gone) setLayout(measure())
+      })
+    }
+    const remeasure = () => {
+      setLayout(measure())
+      settle()
+    }
+    remeasure()
+    if (!el || typeof ResizeObserver === 'undefined') {
+      return () => {
+        gone = true
+      }
+    }
+    const ro = new ResizeObserver(remeasure)
     ro.observe(el)
     // The anchors are the rows rendered right now: a row folded or listed by
     // the user (ranked bars' "with nothing" line) changes them without
@@ -180,10 +205,11 @@ export function useWireAnchors(
             const next = sig()
             if (next === last) return
             last = next
-            setLayout(measure())
+            remeasure()
           })
     mo?.observe(el, { childList: true, subtree: true })
     return () => {
+      gone = true
       ro.disconnect()
       mo?.disconnect()
     }

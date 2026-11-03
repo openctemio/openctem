@@ -4,7 +4,7 @@
 
 | Component | Technology |
 |-----------|------------|
-| Language | Go 1.26+ |
+| Language | Go 1.27+ |
 | HTTP Router | Chi v5 (with abstraction layer) |
 | HTTP Handlers | Standard `net/http` signature |
 | Authentication | Local accounts (JWT) / OAuth2 (Google, GitHub, Microsoft) / per-organization OIDC (e.g. Entra ID) and SAML SSO |

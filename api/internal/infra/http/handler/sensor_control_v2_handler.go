@@ -45,6 +45,7 @@ type SensorControlV2Handler struct {
 	commands     *CommandHandler
 	suppressions *SuppressionHandler
 	content      *SensorContentV2Handler
+	feedRelay    *FeedRelayHandler
 	egress       *proxypoolapp.Service
 	limits       protov2.Limits
 	logger       *logger.Logger
@@ -120,6 +121,12 @@ func (h *SensorControlV2Handler) SetContent(c *SensorContentV2Handler) { h.conte
 
 // Content is the content delivery handler, nil when not served.
 func (h *SensorControlV2Handler) Content() *SensorContentV2Handler { return h.content }
+
+// SetFeedRelay serves the feed relay routes (RFC-142) on this control plane.
+func (h *SensorControlV2Handler) SetFeedRelay(f *FeedRelayHandler) { h.feedRelay = f }
+
+// FeedRelay is the feed relay handler (nil: not served).
+func (h *SensorControlV2Handler) FeedRelay() *FeedRelayHandler { return h.feedRelay }
 
 // HasSuppressions reports whether the suppressions route is served.
 func (h *SensorControlV2Handler) HasSuppressions() bool { return h.suppressions != nil }
