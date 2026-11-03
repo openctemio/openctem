@@ -90,7 +90,7 @@ func TestGrants(t *testing.T) {
 // A failing provider leaves every grant off and never stops the server.
 func TestGrantsFailureKeepsCommunity(t *testing.T) {
 	s := build(t, ext.Extension{Grants: func(context.Context, ext.Deps) (ext.GrantProvider, error) {
-		return nil, errors.New("licence store unreadable")
+		return nil, errors.New("grant store unreadable")
 	}})
 	if p := s.Grants(context.Background(), Host{Log: logger.NewNop()}); p != nil {
 		t.Fatalf("provider %T", p)
