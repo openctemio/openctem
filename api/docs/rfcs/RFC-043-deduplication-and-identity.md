@@ -1,7 +1,7 @@
 # RFC-043 — Deduplication and identity
 
 > Status: **Accepted — decisions D1–D25 approved** (D1–D15 2026-10-03, #892; D16–D25 2026-10-23, §17).
-> Progress: P0 merged; P1 item 10 implemented, item 11 implemented: v2 recipes at ingest and the re-fingerprint job with dry run (see §12).
+> Progress: P0 merged; P1 item 10 implemented, item 11 implemented: v2 recipes at ingest and the re-fingerprint job with dry run (see §12). Identity version 3 (CTIS fingerprint recipe v2, §20) implemented: ingest keys every finding kind with it and stored findings are re-keyed in place.
 > Scope: api (ingest, finding and asset repositories, merge, tickets,
 > notifications, migrations) + sensor/sdk-go (fingerprint hints only) + web
 > (duplicate link, correlation group view). No change to the CTIS wire format is
@@ -792,3 +792,58 @@ and different schemes, both URLs on the scheme's default port.
 
 `refingerprint -links [-tenant <id>] [-apply]` derives `dast_point` keys and
 `dast_scheme` links for stored findings; dry run by default.
+
+## 20. Identity version 3: CTIS fingerprint recipe v2 (amendment 2026-11-03)
+
+The finding key is computed with the CTIS fingerprint recipe v2 (`ctis-fp/2`,
+ctis `docs/fingerprints.md`), so the platform implements the standard's recipe
+instead of a recipe of its own. The identity tuple of §4.2 does not change.
+
+### 20.1 Rule
+
+- Version-3 key = hex SHA-256 of the CTIS canonical encoding of
+  (`openctem/finding-key/3`, asset, base, qualifiers), where base is the CTIS
+  recipe v2 fingerprint of the tuple's recipe and parts. Recipes, parts and
+  qualifiers per kind: architecture/deduplication.md, "Since identity
+  version 3".
+- The asset is the scope, never a CTIS part (CTIS recipes describe the issue;
+  the receiver scopes it). Qualifiers carry the version-2 fields the CTIS
+  recipe has no part for (twin-snippet occurrence, non-GET method, mask
+  anchors), so no two findings version 2 kept apart become one.
+- New recipes: compliance (framework, control, resource), web3 (chain,
+  address, rule, function) and generic (rule, path, lines; no message). Only a
+  result with no rule id keeps a version-1 key.
+- Secrets: the digest part is always the server's per-tenant keyed HMAC of
+  the secret (or of its mask, with the `anchor=mask` qualifier). No unsalted
+  hash, mask or secret is ever a part. A producer's `secretHMAC/v1` stays an
+  identity input only, re-keyed per tenant and never stored.
+- The platform still never takes a producer's fingerprint as identity.
+
+### 20.2 Stored data
+
+- The re-key runs on API start (advisory lock, per tenant, batched,
+  resumable, auto-resolve paused, audit entry per tenant) and through
+  `refingerprint -apply`; ingest also adopts a finding's version-2 key on its
+  next sighting. Version-2 rows are re-keyed from their stored tuple, which
+  must reproduce the stored key. CI run sightings follow the key.
+- The version-2 to version-3 mapping is injective and reversible:
+  `refingerprint -down -apply` restores the version-2 key (or the newest older
+  alias for the new kinds). Merges are not undone.
+- No schema change: `fingerprint_version`, `identity_key`, `identity_algo`,
+  `finding_fingerprints` and `finding_rekey_runs` already hold everything.
+
+### 20.3 Threat model
+
+| Threat | Mitigation |
+|---|---|
+| A report chooses which stored finding (and triage) a result lands on | unchanged: the key is computed on the server from the report's content; a producer fingerprint is a hint only |
+| Offline confirmation of a short secret from a stored key | only a per-tenant keyed HMAC enters the key; no unsalted path exists |
+| The re-key merges findings across tenants or assets | every statement is tenant-scoped; a key held on another asset is skipped (`held_by_other_asset`); a stored tuple naming another asset is refused (`key_mismatch`) |
+| The re-key drops or splits findings | injective mapping (tested), merges only through the finding merge (tombstone kept), ingest adopts not-yet-re-keyed rows, rehearsed on a production backup with stable counts |
+| Auto-resolve closes findings while keys move | auto-resolve is paused per tenant while its run is open |
+
+### 20.4 Status
+
+Implemented: ingest, re-key on start, `refingerprint -down`, tests (per-kind
+golden corpus through the re-key, collision merge, tenant isolation, down and
+up), rehearsal on a restored production backup.

@@ -85,7 +85,7 @@ func findingAdvisoryIDs(f *ctis.Finding) []string {
 // the CVE its advisory ids alias, when the feed ties all of them to one
 // CVE, and hands set the key the item had before (its former key).
 func canonicalVulnIDsOf[T any](ctx context.Context, p *FindingProcessor, items []T,
-	get func(*T) (shared.ID, *ctis.Finding), set func(item *T, former string),
+	get func(*T) (shared.ID, *ctis.Finding), set func(item *T, former []string),
 ) {
 	if p.vulnAliases == nil {
 		return
@@ -124,9 +124,9 @@ func canonicalVulnIDsOf[T any](ctx context.Context, p *FindingProcessor, items [
 			continue
 		}
 		a, f := get(&items[i])
-		former := ""
+		var former []string
 		if k, ok := identityV2(a, f, "", 0); ok {
-			former = k.Fingerprint()
+			former = k.KeyForms()
 		}
 		v := ctis.VulnerabilityDetails{}
 		if f.Vulnerability != nil {
