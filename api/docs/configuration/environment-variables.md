@@ -355,7 +355,7 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 | `ASSET_COVERAGE_ENABLED` | bool | `true` |  |  | The asset coverage loop, platform-wide: every asset gets the capabilities its type needs. |
 | `ASSET_COVERAGE_DAILY_BUDGET` | int | `5000` |  |  | Most asset and capability pairs one organization's automatic coverage attempts per 24 hours. |
 | `ASSET_COVERAGE_INTERVAL` | duration | `1m` |  |  | How often the asset coverage loop runs. |
-| `FEED_CACHE_DIR` | path | `<system temp dir>/openctem-feeds` |  |  | Directory holding verified feed chunks between imports. |
+| `FEED_CACHE_DIR` | path | `<system temp dir>/openctem-feeds` |  |  | Directory holding verified feed chunks between imports, and the feed relay's local working copy of its spool (`relay/`; pod-local, rebuilt from the database). |
 | `PROGRAMFEED_DIR` | path | empty |  |  | Directory holding the newest signed public program feed bundle (a mirror or an upload). Needs `PROGRAMFEED_ROOT_KEY_ID`. |
 | `PROGRAMFEED_LOCAL_BUNDLE_DIR` | path | empty |  |  | Directory of the operator's own unsigned local-only program bundle (`programfeed build --local-only`). Read only while a platform administrator has that source enabled. |
 | `PROGRAMFEED_MIRRORS` | list | empty |  |  | Comma-separated https mirrors of the chunked program feed, tried after `PROGRAMFEED_URL`. |
@@ -507,6 +507,7 @@ Read by the command-line tools shipped with the server (`bootstrap-admin`, `reke
 | `CONNECTOR_API_URL` | url | empty | yes |  | `openctem-sensor-relay connector`: URL of the API on the private network the opened requests are sent to. |
 | `BOOTSTRAP_SMTP_FROM_NAME` | string | empty |  |  | `bootstrap-admin`: sender name (default `BRAND_NAME`, else OpenCTEM). |
 | `BOOTSTRAP_SMTP_STARTTLS` | string | empty |  |  | `bootstrap-admin`: `false` turns STARTTLS off (default on). |
+| `BOOTSTRAP_SMTP_CA_FILE` | string | empty |  |  | `bootstrap-admin`: path of a PEM file with the internal CA certificate that signed the SMTP server's certificate, stored with the platform e-mail setting and used only to verify that server. Certificates only; a private key is refused. |
 | `ADMIN_BACKUP_EMAIL` | string | empty |  |  | `bootstrap-admin`: e-mail of the break-glass backup administrator. |
 | `ADMIN_BACKUP_NAME` | string | empty |  |  | `bootstrap-admin`: display name of the backup administrator. |
 | `SUDO_USER` | string | empty |  |  | `bootstrap-admin`: set by sudo; recorded as the OS user in its audit entries (else `USER`). |
