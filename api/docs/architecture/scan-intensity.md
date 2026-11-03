@@ -92,7 +92,7 @@ anything above tier 0 at scan create, update and run (`ACTIVE_SCANNING_NOT_ENTIT
 and at every claim: the re-check fails the job, and the sensor-side gate
 withholds a job the sensor's tool contract lifts above passive (placement
 `active_scanning_not_entitled`). Details and failure modes:
-[limits](limits.md#passive-only-active_scanning).
+[limits](limits.md#passive-only-active-scanning).
 
 ## Tests
 

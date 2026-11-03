@@ -52,7 +52,7 @@ const FailureActiveScanningNotEntitled = scanrundom.FailureActiveScanningNotEnti
 
 // activeScanningMessage is the error recorded on such a job.
 const activeScanningMessage = FailureActiveScanningNotEntitled +
-	": this organization's plan allows passive scanning only, so this job is never sent to a sensor"
+	": active scanning is not available for this organization, so this job is never sent to a sensor"
 
 // activeScanState is one organization's active scanning entitlement as read
 // now: Denied, or Unknown when the read failed (treated as denied for tier
@@ -124,5 +124,5 @@ func (g *dispatchGate) activeScanningRefusal(c *commanddom.Command) *sensordom.D
 		return nil
 	}
 	return &sensordom.DispatchRefusal{Layer: RefusalLayerEntitlement, Rule: RuleActiveScanning,
-		Detail: fmt.Sprintf("tier T%d: the organization's plan allows passive scanning only", t)}
+		Detail: fmt.Sprintf("tier T%d: active scanning is not available for this organization", t)}
 }
