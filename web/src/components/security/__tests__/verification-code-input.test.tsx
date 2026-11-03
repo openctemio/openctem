@@ -58,7 +58,7 @@ describe('formatCodeGroups', () => {
 })
 
 describe('VerificationCodeInput', () => {
-  it('is one labelled text field with one-time-code autofill and a numeric keypad', () => {
+  it('is one labeled text field with one-time-code autofill and a numeric keypad', () => {
     render(<Harness />)
     const input = screen.getByRole('textbox', { name: 'Code from your authenticator app' })
     expect(input).toHaveAttribute('autocomplete', 'one-time-code')
@@ -201,7 +201,7 @@ describe('VerificationCodeInput accessible name', () => {
 })
 
 describe('VerificationCodeInput layout', () => {
-  it('centres the numeric cells, the label and the messages', () => {
+  it('centers the numeric cells, the label and the messages', () => {
     render(<Harness error="Wrong code" hint="hint" />)
     const input = screen.getByRole('textbox', { name: 'Code from your authenticator app' })
     const cells = input.parentElement as HTMLElement

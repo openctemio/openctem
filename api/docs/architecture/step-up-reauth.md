@@ -87,7 +87,7 @@ already judged is not sent again in the same opening (a code that never got
 an answer, after a network error, may be retried). A wrong code names the
 host whose authenticator entry to use.
 
-New authenticator entries are labelled with the product name and the host of
+New authenticator entries are labeled with the product name and the host of
 `APP_URL` (`OpenCTEM (app.example.com)`), so a person with accounts on two
 installations can tell the entries apart. Existing entries and secrets are not
 changed.
