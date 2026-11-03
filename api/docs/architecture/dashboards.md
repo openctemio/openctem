@@ -1194,7 +1194,7 @@ widget kit's frame, with its own error boundary.
   template, created once and computed for their own access, with a hint to
   customize it or choose another template.
 - **New layout offer**: a personal copy of a template (three or more of its
-  `w_ov*` / `w_ct*` / `w_ex*` / `w_pr*` / `w_tr*` widget ids) is offered the
+  `w_ct*` / `w_ex*` / `w_as*` / `w_pr*` / `w_tr*` widget ids) is offered the
   template's changes. When it lacks some of the template's widgets (by
   metric) the hint names them: "Add them to this dashboard" (each missing
   widget is inserted where the template has it: a single figure after its
@@ -1212,30 +1212,51 @@ widget kit's frame, with its own error boundary.
 - **Templates** are typed widget configs in
   `web/src/features/dashboards/templates.json`, in reading order (the grid
   places widgets in that order without back-filling, so the order is the
-  layout). Every template opens on its headline figures, then the decision
-  widget, then the story, and ends with diagnostics:
-  - CTEM (first-visit default): key figures; levers; exposure flow (the five
-    CTEM stages); new on the attack surface (7 days) beside certificate
-    expiry; attack paths to crown jewels beside the weekly brief; fix next;
-    open exposure by priority (90 days); new vs fixed beside open by age;
-    intake and noise reduction.
-  - Overview: key figures; levers; exposure flow; open exposure by priority
-    beside new vs fixed; new on the attack surface beside certificate
-    expiry; weekly brief beside attack paths; fix next.
-  - Executive: key figures; weekly brief; open exposure by priority over 12
-    months; new vs fixed beside time to fix by priority; new on the attack
-    surface (30 days) beside accepted risks ending; levers.
-  - Vulnerability program: within SLA, P0-P1 open, KEV open and time to fix;
-    SLA at risk beside new vs fixed; time to fix by priority beside open by
-    age; accepted risks ending beside open findings by SLA state.
-  - Triage: P0-P1 open, KEV open, open findings and within SLA; fix next;
-    open findings by severity beside open findings by SLA state; new vs
-    fixed per day over 30 days.
-  `web/src/features/dashboards/__tests__/template-layouts.test.ts` checks
-  that each template fills its rows with one height per row at four columns
-  and leaves no hole at two columns or on a phone, and that each opens on a
-  one-row headline. `/dashboards` copies one into a personal dashboard ("Use
-  template"); the copy is a stored dashboard like any other.
+  layout). There is one template per persona:
+  - CTEM (first-visit default, the program lead): key figures; exposure flow
+    (the five CTEM stages); levers; fix next; attack paths to crown jewels
+    beside open exposure by priority (90 days); new vs fixed beside open by
+    age; new on the attack surface (7 days) beside certificate expiry.
+  - Executive (leadership): key figures; open exposure by priority over 12
+    months; weekly brief; attack paths beside new vs fixed (12 months); time
+    to fix by priority beside accepted risks ending; new on the attack
+    surface (30 days) beside remediation campaign progress.
+  - Attack surface: discovery coverage, crown jewels exposed, KEV open and
+    P0-P1 open; posture beside attack paths; fix next; new on the attack
+    surface (30 days) beside certificate expiry.
+  - Vulnerability program (VM lead): within SLA, P0-P1 open, KEV open and
+    time to fix; SLA at risk; new vs fixed beside open by age; time to fix by
+    priority beside accepted risks ending.
+  - Triage (analyst): P0-P1 open, KEV open, open findings and within SLA;
+    fix next; new vs fixed per day beside open by age; open findings by
+    severity beside open findings by SLA state.
+- **Template layout rules** (`web/src/features/dashboards/template-rules.ts`,
+  checked for every template by `__tests__/template-layouts.test.ts`):
+  - Four columns; each visualization has a fixed set of sizes: single
+    figures 3x1 (in runs of four), the key figures strip, levers and brief
+    12x1, bar lists 6x1, charts 6x2 or 12x2, heatmap, posture and attack
+    paths 6x2, lists 12x3, the flow and tables 12x4.
+  - Rows are full at four columns, hold one height and one height band
+    (single figures, short bar lists, charts and lists, or a full-width
+    widget alone): rows grow to their tallest widget, so a bar list beside a
+    chart would stretch into blank space. No hole at two columns or on a
+    phone.
+  - Sections in order: headline figures first (strip or four figures), the
+    hero visual (flow, posture or a full-width chart), what to act on
+    (levers, brief, lists, attack paths), trends, then breakdowns.
+  - At most ten widgets; never the same metric, grouping and filter twice;
+    never two widgets with the same figures (the strip and a single figure
+    it carries, the brief and the levers, the flow and intake or the loop).
+  - The phone shows the template order; single figures pair up.
+  - Module-gated widgets go only in a template whose persona needs the
+    module (posture in Attack surface).
+  - A full-width widget with no figure yet takes one row; a narrower one
+    keeps its row height with its message centred, so no hole opens beside
+    a taller neighbour.
+  `/dashboards` copies one into a personal dashboard ("Use
+  template"); the copy is a stored dashboard like any other. Stored
+  dashboards are never rearranged when a template changes: copies get the
+  new layout offer above.
   `api/pkg/domain/dashboard/templates_test.go` parses every template widget
   with the server's spec validation, so a template is never refused on save.
   Names and descriptions are in the `dashboards` i18n namespace.
