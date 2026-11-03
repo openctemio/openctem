@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 
+	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
+
 	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/internal/app/ingest"
@@ -56,4 +58,18 @@ func ciReportJSON(n int) string {
 		`"tool":{"name":"semgrep","techniques":["sast"]},` +
 		`"assets":[{"id":"repo","type":"repository","value":"github.com/acme/api"}],` +
 		`"findings":[` + strings.Join(f, ",") + `]}`
+}
+
+// The bounds run before any parse: an oversized or over-deep body is
+// refused as invalid even when it is wrapped in the 1.x envelope, whose
+// detection needs a parse of the top level.
+func TestDecodeReport_BoundsBeforeParse(t *testing.T) {
+	flood := `{"report":{"version":"2.0","findings":[` + strings.TrimSuffix(strings.Repeat("{},", ingest.CIReportBounds.MaxArrayLen+1), ",") + `]}}`
+	if _, err := DecodeReport([]byte(flood)); !errors.Is(err, ErrInvalidReport) {
+		t.Fatalf("oversized wrapped body: %v, want ErrInvalidReport", err)
+	}
+	deep := `{"report":` + strings.Repeat(`{"a":`, protov2.DefaultMaxJSONDepth+5) + "1" + strings.Repeat("}", protov2.DefaultMaxJSONDepth+5) + `}`
+	if _, err := DecodeReport([]byte(deep)); !errors.Is(err, ErrInvalidReport) {
+		t.Fatalf("over-deep wrapped body: %v, want ErrInvalidReport", err)
+	}
 }

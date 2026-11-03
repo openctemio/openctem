@@ -167,6 +167,11 @@ type UploadReceipt struct {
 // of the 1.x CI integration, is ErrReportUpgrade; anything else that does not
 // decode and validate is ErrInvalidReport.
 func DecodeReport(body []byte) (*ctis.Report, error) {
+	// Depth and item counts first: no parse, not even of the top level,
+	// before the body is within bounds.
+	if err := ingest.CheckIJSONBounded(body, protov2.DefaultMaxJSONDepth, ingest.CIReportBounds); err != nil {
+		return nil, ErrInvalidReport
+	}
 	var top map[string]json.RawMessage
 	if json.Unmarshal(body, &top) == nil {
 		if _, wrapped := top["report"]; wrapped {
