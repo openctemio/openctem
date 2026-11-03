@@ -312,6 +312,8 @@ type Handlers struct {
 	Announcement      *handler.AnnouncementHandler
 	// AdminSupportRateLimiter caps console support actions per administrator.
 	AdminSupportRateLimiter *middleware.AdminMappingRateLimiter
+	// AdminEmailTestLimiter caps the platform test e-mail per administrator.
+	AdminEmailTestLimiter *middleware.AdminMappingRateLimiter
 	// AdminDirectoryReadLimiter caps reads of the cross-organization user
 	// directory per administrator (bulk harvesting of accounts).
 	AdminDirectoryReadLimiter *middleware.AdminMappingRateLimiter
