@@ -63,6 +63,8 @@ var dataSurfaceRegistry = map[string]dataSurface{
 	"/oauth/token":                                {classSystem, "MCP OAuth token endpoint: issues tokens of a consented grant, no tenant data"},
 	"/oauth/revoke":                               {classSystem, "MCP OAuth revocation endpoint, no tenant data"},
 	"/oauth/register":                             {classSystem, "MCP OAuth dynamic client registration (RFC 7591, off by default), no tenant data"},
+	"/oauth/device_authorization":                 {classSystem, "MCP OAuth device authorization (RFC 8628): stores a terminal's request, no tenant data"},
+	"/api/v1/oauth/device":                        {classSeparate, "the caller enters a terminal's user code: claims that request for themselves (RFC-062 §6a), no tenant data"},
 	"/api/v1/oauth/requests/{id}":                 {classSeparate, "the caller's own MCP consent request (RFC-062): client and scope names, no tenant data"},
 	"/api/v1/oauth/requests/{id}/approve":         {classSeparate, "the caller's own MCP consent decision (RFC-062)"},
 	"/api/v1/oauth/requests/{id}/deny":            {classSeparate, "the caller's own MCP consent decision (RFC-062)"},
@@ -97,7 +99,6 @@ var dataSurfaceRegistry = map[string]dataSurface{
 	"/api/v1/finding-sources":                     {classSystem, "finding source catalog"},
 	"/api/v1/threat-intel":                        {classSystem, "global EPSS/KEV feeds"},
 	"/api/v1/threat-actors":                       {classSystem, "threat actor catalog"},
-	"/api/v1/ctem-ids":                            {classSystem, "identifier catalog"},
 	"/api/v1/vulnerabilities":                     {classSystem, "global CVE catalog (no tenant data)"},
 	"POST /api/v1/validation/evidence":            {classSystem, "sensor evidence upload (sensor key)"},
 

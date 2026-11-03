@@ -23,7 +23,7 @@
  * address next to the approver's own.
  */
 
-import { useEffect, useId, useMemo, useRef, useState } from 'react'
+import { useEffect, useEffectEvent, useId, useMemo, useRef, useState } from 'react'
 import { AlertTriangle, Building2, Check, ChevronDown, Loader2, ShieldAlert } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -129,11 +129,13 @@ export function EnterCodePanel({
   // The link's code is looked up once (a lookup counts toward the per-user
   // lockout, so never on every render).
   const looked = useRef(false)
+  const lookUpLinkCode = useEffectEvent((typed: string) => {
+    void find(typed)
+  })
   useEffect(() => {
     if (looked.current || !initialCode) return
     looked.current = true
-    void find(initialCode)
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- once, for the link's code
+    lookUpLinkCode(initialCode)
   }, [initialCode])
 
   if (view && code) {

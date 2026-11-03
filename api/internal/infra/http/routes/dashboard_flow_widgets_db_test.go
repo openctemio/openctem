@@ -48,10 +48,17 @@ func newFlowEnv(t *testing.T) *widgetEnv {
 	seed(h.tenant, h.assetA, "accepted", "low", "P3", "40 days")
 
 	receipt := func(tenant, kind, tool, status string, received, created, still, reopened, skipped, failed, suppressed int, ago string) {
+		id := shared.NewID().String()
 		h.exec(`INSERT INTO ingest_receipts (id, tenant_id, source_kind, source_ref, tool_name, status, reports, findings_received,
 			findings_created, findings_updated, findings_reopened, skipped, findings_failed, findings_suppressed, created_at, updated_at)
 			VALUES ($1::uuid, $2, $3, $1::text, NULLIF($4, ''), $5, 1, $6, $7, $8, $9, $10, $11, $12, now() - $13::interval, now() - $13::interval)`,
-			shared.NewID().String(), tenant, kind, tool, status, received, created, still, reopened, skipped, failed, suppressed, ago)
+			id, tenant, kind, tool, status, received, created, still, reopened, skipped, failed, suppressed, ago)
+		// What the writer records with every receipt: the counts of the tool
+		// that reported, which the intake reads instead of the receipt's own.
+		h.exec(`INSERT INTO ingest_receipt_tools (tenant_id, receipt_id, tool, reports, received, created, still_detected, reopened,
+			skipped, failed, suppressed, first_at, last_at)
+			VALUES ($1, $2::uuid, COALESCE(NULLIF($3, ''), 'unknown'), 1, $4, $5, $6, $7, $8, $9, $10, now() - $11::interval, now() - $11::interval)`,
+			tenant, id, tool, received, created, still, reopened, skipped, failed, suppressed, ago)
 	}
 	// nuclei on sensors: three runs a day apart, the latest an hour ago.
 	receipt(ten, "scan_run", "nuclei", "completed", 100, 20, 70, 2, 3, 0, 4, "1 hour")

@@ -46,6 +46,14 @@ type CreateOrganizationInput struct {
 	// an organization without their consent. Only the operator CLI and a
 	// request whose requester confirmed the address set it.
 	AllowExistingOwner bool
+	// InviteExistingOwner: when the owner email already has an account (and
+	// AllowExistingOwner is not set), create the organization with no owner
+	// and invite that account to own it, instead of refusing
+	// (docs/architecture/organization-ownership-invitations.md). The console
+	// sets it.
+	InviteExistingOwner bool
+	// InvitedBy is the platform administrator who sends the invitation.
+	InvitedBy shared.ID
 	// SignupSource names the path in the sign-up feed (default console).
 	SignupSource signupevent.Source
 }
@@ -65,6 +73,10 @@ type CreatedOrganization struct {
 	// SetupToken returned once). Nil when the owner already had an account, or
 	// when the link could not be issued (the owner then uses forgot-password).
 	OwnerSetup *ProvisionedUser
+	// OwnerInvitation is set when the owner already had an account and was
+	// invited (InviteExistingOwner): the organization has no owner until
+	// they accept. Owner is then the invited account.
+	OwnerInvitation *tenantdom.OwnerInvitation
 }
 
 // OrganizationCreator creates an organization together with its owner on
@@ -97,10 +109,17 @@ func (c *OrganizationCreator) Create(ctx context.Context, in CreateOrganizationI
 		return nil, fmt.Errorf("%w: a valid owner email is required", shared.ErrValidation)
 	}
 
+	source := in.SignupSource
+	if source == "" {
+		source = signupevent.SourceConsole
+	}
 	owner, err := c.users.GetByEmail(ctx, ownerEmail)
 	ownerCreated := false
 	if err == nil && !in.AllowExistingOwner {
-		return nil, ErrOwnerAccountExists
+		if !in.InviteExistingOwner {
+			return nil, ErrOwnerAccountExists
+		}
+		return c.createAwaitingOwner(ctx, in, owner, source, actx)
 	}
 	if err != nil {
 		if !shared.IsNotFound(err) {
@@ -114,6 +133,12 @@ func (c *OrganizationCreator) Create(ctx context.Context, in CreateOrganizationI
 		owner, err = c.provisioning.CreateAccount(ctx, ownerEmail, in.OwnerName)
 		if err != nil {
 			if !in.AllowExistingOwner && errors.Is(err, ErrAccountExists) {
+				// Created meanwhile: the same answer as an account found above.
+				if in.InviteExistingOwner {
+					if existing, lerr := c.users.GetByEmail(ctx, ownerEmail); lerr == nil {
+						return c.createAwaitingOwner(ctx, in, existing, source, actx)
+					}
+				}
 				return nil, ErrOwnerAccountExists
 			}
 			return nil, err
@@ -121,10 +146,6 @@ func (c *OrganizationCreator) Create(ctx context.Context, in CreateOrganizationI
 		ownerCreated = true
 	}
 
-	source := in.SignupSource
-	if source == "" {
-		source = signupevent.SourceConsole
-	}
 	t, err := c.tenants.CreateTenant(ctx, CreateTenantInput{
 		Name: in.Name, Slug: in.Slug, Description: in.Description, Provisioned: in.Provisioned,
 		SignupSource: source, CreatorEmail: ownerEmail,
@@ -154,4 +175,18 @@ func (c *OrganizationCreator) Create(ctx context.Context, in CreateOrganizationI
 	}
 	res.OwnerSetup = setup
 	return res, nil
+}
+
+// createAwaitingOwner creates the organization with no owner and invites
+// owner, an existing account, to own it. Nobody becomes an owner without
+// accepting.
+func (c *OrganizationCreator) createAwaitingOwner(ctx context.Context, in CreateOrganizationInput, owner *userdom.User, source signupevent.Source, actx auditapp.AuditContext) (*CreatedOrganization, error) {
+	t, inv, err := c.tenants.CreateTenantAwaitingOwner(ctx, CreateTenantInput{
+		Name: in.Name, Slug: in.Slug, Description: in.Description, Provisioned: in.Provisioned,
+		SignupSource: source, CreatorEmail: owner.Email(),
+	}, owner, in.InvitedBy, actx)
+	if err != nil {
+		return nil, err
+	}
+	return &CreatedOrganization{Tenant: t, Owner: owner, OwnerInvitation: inv}, nil
 }

@@ -68,11 +68,11 @@ func newerVersion(a, b string) bool { return sensordom.CompareVersions(a, b) > 0
 // descriptor. Unreadable members are left empty.
 func declarationOf(dt sensordom.DeclaredTool) tooldom.Declaration {
 	var desc struct {
-		Version      string         `json:"version"`
-		Description  string         `json:"description"`
-		Consumes     []string       `json:"consumes"`
-		Config       map[string]any `json:"config"`
-		Implements   []struct {
+		Version     string         `json:"version"`
+		Description string         `json:"description"`
+		Consumes    []string       `json:"consumes"`
+		Config      map[string]any `json:"config"`
+		Implements  []struct {
 			Capability string `json:"capability"`
 			Params     map[string]struct {
 				Key string `json:"key"`

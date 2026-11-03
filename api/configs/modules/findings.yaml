@@ -31,7 +31,6 @@
     - ReportFileMigrationController
     - ScannerOutputRetentionController
     - RiskSnapshotController
-    - CTEMIDRefreshController
     - IngestWorkerController
     - IngestReceiptRetentionController
     - IngestQueueRetentionController
@@ -41,3 +40,5 @@
     - KEVRefreshController
     - VulnMatchController
     - VulnFeedImportController
+    - FeedRelayController
+    - VEXStatementExpiryController

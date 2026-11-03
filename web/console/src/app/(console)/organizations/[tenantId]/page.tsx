@@ -14,10 +14,14 @@ import { useTranslation } from '@/context/i18n-provider'
 import { useUrlFilter } from '@/hooks/use-url-param'
 import { useListParams } from '@/hooks/use-list-params'
 import { useAdminAuditLogs } from '@console/features/admin-console/api/use-admin-audit'
+import {
+  AuditKindLens,
+  auditKind,
+} from '@console/features/admin-console/components/audit-kind-lens'
 import { AdminActivityTable } from '@console/features/admin-console/components/admin-activity-table'
 import { OrganizationSummary } from '@console/features/admin-console/components/organization-summary'
 import {
-  OrganizationPurgeAction,
+  OrganizationDangerZone,
   OrganizationStatusBadge,
   OrganizationSuspendedNotice,
   OrganizationSuspensionAction,
@@ -86,12 +90,19 @@ function VerifiedDomainsSection({ tenantId, canManage }: { tenantId: string; can
 
 /** Every administrator action on this organization (admin audit by resource). */
 function OrganizationActivity({ tenantId }: { tenantId: string }) {
-  const list = useListParams({ filters: {} })
-  const { data, isLoading } = useAdminAuditLogs({ page: list.page, resourceId: tenantId })
+  const list = useListParams({ filters: { kind: '' } })
+  const kind = auditKind(list.filters.kind)
+  const { data, isLoading } = useAdminAuditLogs({ page: list.page, resourceId: tenantId, kind })
   return (
     <AdminActivityTable
       entries={data?.data ?? []}
       isLoading={isLoading}
+      toolbarStart={
+        <AuditKindLens
+          value={kind}
+          onChange={(v) => list.setFilter('kind', v === 'all' ? 'all' : '')}
+        />
+      }
       paging={{
         page: list.page,
         pageCount: data?.total_pages ?? 1,
@@ -162,9 +173,9 @@ export default function AdminOrganizationPage({
               }
             >
               <OrganizationStatusBadge org={org} />
-              {canSuspend && <OrganizationSuspensionAction org={org} onDone={refresh} />}
-              {canPurge && (
-                <OrganizationPurgeAction org={org} onDone={() => router.push('/organizations')} />
+              {/* Lifting a suspension restores access: a neutral header action. */}
+              {canSuspend && org.status === 'suspended' && (
+                <OrganizationSuspensionAction org={org} onDone={refresh} />
               )}
             </PageHeader>
             <OrganizationSuspendedNotice org={org} />
@@ -191,6 +202,13 @@ export default function AdminOrganizationPage({
                 <PageStack>
                   <OrganizationSummary org={org} onOpenTab={setTab} />
                   <OrganizationDashboardDataPanel tenantId={org.id} canRebuild={canManageUsers} />
+                  <OrganizationDangerZone
+                    org={org}
+                    canSuspend={canSuspend}
+                    canPurge={canPurge}
+                    onChanged={refresh}
+                    onDeleted={() => router.push('/organizations')}
+                  />
                 </PageStack>
               </TabsContent>
 
@@ -200,6 +218,7 @@ export default function AdminOrganizationPage({
                   orgName={org.name}
                   canManage={canManageUsers}
                   canRecover={adminHas(admin, 'platform.tenants.owner_recovery')}
+                  ownerInvitation={org.owner_invitation}
                   onChanged={refresh}
                 />
               </TabsContent>

@@ -35,6 +35,7 @@ organization's findings. The ingest service writes it; nothing else does.
 | A CI run's upload | `ci_run`, the run id |
 | A server-side ingest (connector sync, feed, certificate monitor) | `connector`, its run id (`Options.SourceRun`) or a hash of the report id |
 | A sensor report without a command | `sensor`, a hash of the sensor id and the report id |
+| Findings the inventory version matcher stores | `platform`, `version-match:<UTC day>` (one per organization and day) |
 
 The repository resolves a command to its scan run inside the writing
 transaction (`commands.scan_run_step_id` → `scan_run_steps.scan_run_id`); a
@@ -64,10 +65,18 @@ command of another tenant is refused.
    the tenant's findings only, at most 50,000 per receipt;
 3. add to the counts the rows each list actually added (past the cap, the
    rest of the list, and `actions_truncated`);
-4. for a coverage decision, replace the command's row in
+4. add the same counts, with the assets created and updated, to the row of
+   the report's tool and sender in `ingest_receipt_tools` (the sender: the
+   sensor, the CI repository, the connector source name, `import`, or
+   `platform`). The rows of a receipt sum to its counts, so a receipt of
+   several tools (a scan run of several steps) is read per tool: the
+   receipt's `tool_name` is only the first tool that reported. A delta with
+   no sender (a coverage decision) joins the row of the sender that last
+   reported the tool on the receipt;
+5. for a coverage decision, replace the command's row in
    `ingest_receipt_coverage` and set `coverage = full` and
    `findings_untouched` to the sum over its commands;
-5. upsert the day's `dash_ingest_day` row with the same counts.
+6. upsert the day's `dash_ingest_day` row with the same counts.
 
 A failed write is logged and counted in
 `openctem_ingest_receipt_write_failures_total{origin}`. The ingest stands and its

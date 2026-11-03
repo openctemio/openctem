@@ -65,10 +65,12 @@ A test fails when an MCP tool or prompt needs a permission no scope covers.
 
 | Endpoint | What it does |
 |---|---|
-| `GET /.well-known/oauth-authorization-server` | RFC 8414 metadata: endpoints, `code` + S256 only, grants `authorization_code` and `refresh_token`, `token_endpoint_auth_methods_supported: ["none"]` (public clients), `client_id_metadata_document_supported`, `authorization_response_iss_parameter_supported` |
+| `GET /.well-known/oauth-authorization-server` | RFC 8414 metadata: endpoints, `code` + S256 only, grants `authorization_code`, `refresh_token` and `urn:ietf:params:oauth:grant-type:device_code`, `device_authorization_endpoint`, `token_endpoint_auth_methods_supported: ["none"]` (public clients), `client_id_metadata_document_supported`, `authorization_response_iss_parameter_supported` |
 | `GET /oauth/authorize` | Validates the request and stores it for 10 minutes, then redirects to the web page `/oauth/consent?request=<id>` |
 | `POST /api/v1/oauth/requests/{id}` (`GET`), `/approve`, `/deny` | Consent API for the web page: signed-in session in its current organization, CSRF; API keys refused |
-| `POST /oauth/token` | `authorization_code` (with `code_verifier`, `redirect_uri`, `client_id`, `resource`) and `refresh_token` |
+| `POST /oauth/token` | `authorization_code` (with `code_verifier`, `redirect_uri`, `client_id`, `resource`), `refresh_token`, and the device code grant (below) |
+| `POST /oauth/device_authorization` | RFC 8628 device authorization (below): `client_id`, `scope`, optional `resource`; public, rate limited per IP like the token endpoint |
+| `POST /api/v1/oauth/device` | The person enters a terminal's user code (signed-in session, CSRF; API keys refused); returns the request id the consent page shows |
 | `POST /oauth/revoke` | RFC 7009; a token of the presenting client revokes its whole grant; always `200` |
 
 The gateway sends these paths to the API (plane `mcp`); the consent page
@@ -88,6 +90,25 @@ Checked in this order (`mcpoauth.Service.StartAuthorization`):
    `${APP_URL}/api/v1/mcp` (scheme and host case-insensitive, trailing slash
    ignored; else `invalid_target`); `prompt=none` is `consent_required`;
    unknown scopes are `invalid_scope`; no scope means the four read scopes.
+
+### Terminal sign-in: device authorization grant (shipped)
+
+For a client whose browser is on another machine (SSH session, container,
+remote desktop), where the loopback redirect cannot reach it. RFC-062 §6a;
+`mcpoauth/device.go`, `postgres/mcp_oauth_device.go`.
+
+| Step | What happens |
+|---|---|
+| Ask | `POST /oauth/device_authorization` with `client_id` = `octc_terminal` (the platform's terminal client, migration `mcp_oauth_device_grant`) or an organization client. Metadata-document and dynamic clients: `unauthorized_client`. Answer: `device_code` (`octm_dc_…`), `user_code` (`XXXX-XXXX`, base-20 consonants), `verification_uri` `${APP_URL}/oauth/device`, `expires_in` 600, `interval` 5; no `verification_uri_complete`. Stored in `mcp_oauth_requests` with `flow = device`, both codes as HMAC hashes, the requester's IP (trusted-proxy aware) and user agent (printable ASCII, 256 characters) |
+| Enter | Web page `/oauth/device` → `POST /api/v1/oauth/device` `{user_code}`. Normalized (case, spaces and dash ignored). The first person who enters a code owns the request; any unusable code is the same 404. Refused (403) when the session's organization has `device_flow_disabled`. Limited per address (login rate, 5 a minute) and per person (10 a minute), bucket `mcp-user-code`. A device request is never claimable by id (`ClaimRequest` only matches a code-flow request or one already bound to the caller) |
+| Decide | The consent page (same API) gets `flow: "device"`, `requester_ip`, `requester_user_agent`, `requested_at`, `your_ip`, `same_address`; `verified` is false, no redirect, `full_data_available` false. Approve (step-up, as always) stores no code and answers `redirect_to: ""`; `full_data: true` is 403. Audit `mcp_grant.authorized` / `mcp_grant.denied` carry `flow`, `requester_ip`, `requester_user_agent` |
+| Poll | `POST /oauth/token` `grant_type=urn:ietf:params:oauth:grant-type:device_code`, `device_code`, `client_id`, optional `resource`: `authorization_pending`, `slow_down` (interval +5 s, at most 60 s), `access_denied`, `expired_token`, or tokens (same lifetimes, DPoP as usual). Judged under a row lock; a code polled with another `client_id` is `invalid_grant` and not consumed; a redeemed code presented again revokes its grant (`mcp_grant.code_reused`, `flow: device`) |
+| Use | The grant has `flow = device` (shown in connection lists as `flow`); membership, permissions and policy are re-read on every request as for any grant; `device_flow_disabled` stops it at its next request or refresh |
+
+A client that speaks the device grant uses `octc_terminal` as its client id.
+A client that speaks only the browser flow can still sign in from a remote
+terminal by forwarding its loopback callback port over SSH, or by pasting the
+final redirect address back when the client offers that.
 
 ### Clients (shipped part)
 
@@ -183,7 +204,7 @@ tool error.
 
 ### Audit
 
-`mcp_grant.authorized`, `mcp_grant.denied`, `mcp_grant.token_issued`,
+`mcp_grant.authorized`, `mcp_grant.denied`, `mcp_grant.token_issued` (each with `flow`; device approvals also with the requester's address and user agent),
 `mcp_grant.code_reused`, `mcp_grant.refresh_reused`, `mcp_grant.revoked`,
 `mcp_grant.full_data_allowed`, `mcp_grant.full_data_removed`, and
 every `mcp.tool_called` carries `full_data` and `auth_method`, `grant_id`, `client_id` and
@@ -211,6 +232,7 @@ organization settings (`tenant.MCPSettings`), audited as
 | `api_keys_allowed` | on | off: `oct_` keys are `403` on the MCP endpoint (`middleware.MCPKeyPolicyGate`); still valid on the REST API |
 | `refresh_days` | 90 | a connection ends this many days after the person approved it |
 | `require_dpop` | off | only DPoP-bound tokens (below) |
+| `device_flow_allowed` | on | off (`device_flow_disabled`): no terminal sign-in with a user code, and existing terminal connections stop; a `PUT` without the field keeps the stored value |
 
 The policy is read on every use: at consent (the page shows why an
 application is blocked), at code redemption, at refresh (a connection older

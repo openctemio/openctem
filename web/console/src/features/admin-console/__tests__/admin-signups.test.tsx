@@ -109,20 +109,19 @@ describe('SignupAlertsForm', () => {
 
   it('read-only for a non-super admin', () => {
     render(<SignupAlertsForm thresholds={thresholds} canEdit={false} onSave={vi.fn()} />)
-    expect(screen.queryByRole('button', { name: 'Save' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Save changes' })).not.toBeInTheDocument()
     expect(screen.getByLabelText('Per network (/24 or /48)')).toBeDisabled()
   })
 
   it('saves with a reason and a code', async () => {
     const onSave = vi.fn().mockResolvedValue(undefined)
     render(<SignupAlertsForm thresholds={thresholds} canEdit onSave={onSave} />)
-    const save = screen.getByRole('button', { name: 'Save' })
-    expect(save).toBeDisabled()
+    expect(screen.queryByRole('button', { name: 'Save changes' })).toBeNull()
     const prefix = screen.getByLabelText('Per network (/24 or /48)')
     await userEvent.clear(prefix)
     await userEvent.type(prefix, '5')
     await userEvent.type(screen.getByLabelText('Ignored email domains'), 'Gmail.com')
-    await userEvent.click(save)
+    await userEvent.click(screen.getByRole('button', { name: 'Save changes' }))
     await userEvent.type(screen.getByLabelText('Reason'), 'launch')
     await userEvent.type(screen.getByLabelText(/code/i), '123456')
     await userEvent.click(screen.getByRole('button', { name: 'Confirm' }))
@@ -143,6 +142,6 @@ describe('SignupAlertsForm', () => {
     const w = screen.getByLabelText('Window (minutes)')
     await userEvent.clear(w)
     await userEvent.type(w, '1')
-    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Save changes' })).toBeDisabled()
   })
 })

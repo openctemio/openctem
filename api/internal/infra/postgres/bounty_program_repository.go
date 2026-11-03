@@ -216,12 +216,13 @@ func (r *BountyProgramRepository) SaveSync(ctx context.Context, p *bountyprogram
 
 // SyncDue lists the active programs with a source, least recently synced
 // first (the controller).
-func (r *BountyProgramRepository) SyncDue(ctx context.Context, olderThan time.Time, limit int) ([]bountyprogram.ProgramRef, error) {
+func (r *BountyProgramRepository) SyncDue(ctx context.Context, olderThan time.Time, limit int, skipTenants []shared.ID) ([]bountyprogram.ProgramRef, error) {
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT tenant_id::text, id::text FROM bounty_programs
 		WHERE scope_source IN ('program_api', 'program_file') AND status = 'active'
 		  AND (last_synced_at IS NULL OR last_synced_at < $1)
-		ORDER BY last_synced_at NULLS FIRST LIMIT $2`, olderThan, limit)
+		  AND NOT (tenant_id = ANY($3::uuid[]))
+		ORDER BY last_synced_at NULLS FIRST LIMIT $2`, olderThan, limit, pq.Array(tenantIDStrings(skipTenants)))
 	if err != nil {
 		return nil, fmt.Errorf("list programs to sync: %w", err)
 	}

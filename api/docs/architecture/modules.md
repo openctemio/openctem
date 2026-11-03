@@ -40,8 +40,21 @@ Coverage tests read the registry:
   is listed under one module and carries that module.
 - `TestEveryJobBelongsToAModule`: every controller the server builds is listed
   under one module.
+- `TestEveryModuleJobSkipsADisabledTenant`: every job of a module that can be
+  switched off names a test that proves it leaves a tenant with the module off
+  alone.
 - The web test `module-registry.test.ts`: every module id the console names
   (route map, sidebar, settings rail, embedded checks) exists.
+
+## State cache and ETag
+
+One `ModuleGate` per process (shared by the route gate, the dashboard and the threat-alert planner) keeps the effective state of an organization for at most 60 seconds. The entry:
+
+- is dropped by every module toggle, preset, reset and entitlement change (one organization, or all of them after a plan mapping change), on every replica through the Redis bus; a read that started before the drop does not store its answer after it;
+- ends at the next moment the state changes by itself: a read-only grace ending or a timed deny running out (`NotEntitledWithDeadline`);
+- is never stored when a read failed (the entitlement could not be read, so every non-core module is reported `unavailable`, or the preferences could not be read): the answer is closed for that request and the next request reads again.
+
+The ETag of `/me/modules`, `/settings/modules` and the event-type catalog is `ModuleService.ETagToken`: the Redis version counter, a hash of the effective state of every module and a fingerprint of the registry. A change with no write (grace end, entitlement reader recovering) changes the hash. A counter lost to a Redis flush or an eviction reads as 0, a value the counter never hands out, so an old ETag cannot match again.
 
 ## Rules
 
@@ -64,6 +77,12 @@ on(org, module) = core(module)
 entitled(org, module) = !deny(org, module)   # a deny of any origin
 ```
 
+The set is closed over hard dependencies: a module whose hard dependency (or
+whose parent) is off is off too, with that module's reason
+(`InheritOffFromHardDependencies`). A deny of compensating controls therefore
+turns control testing off on every surface, and a dependent of a module in its
+read-only grace is read-only until the same date.
+
 - **Core** (`CoreModuleIDs`, and `modules.is_core`, which a parity test keeps
   equal): dashboard, assets, findings, scans, SLA, team, roles, audit,
   settings, sensors, groups, API keys, notification settings, integrations,
@@ -81,7 +100,11 @@ entitled(org, module) = !deny(org, module)   # a deny of any origin
   module state at once. An organization cannot switch on a module it is not
   entitled to.
 - **Presets** write overrides once (Settings > Modules, or the starting set
-  picked at onboarding) and change nothing else. The organization-chosen
+  picked at onboarding) and change nothing else. A preset changes only the
+  modules Settings > Modules lists (`user_facing`): a module the page does not
+  list keeps its state, so nothing a preset switches off is out of reach. A
+  module the organization is not entitled to is left off and reported in the
+  preview's `unavailable` list instead of failing the preset. The organization-chosen
   product bundles are retired.
 - **Read-only grace** (`tenant_module_grace`): an organization that loses a
   module keeps reading it for 30 days (`limits.GracePeriod`). Grace starts
@@ -109,7 +132,7 @@ organization" (with Settings > Modules for an administrator).
 |---|---|
 | REST | `ModuleGate.RequireModule(id)` on the route group. Answers `403 MODULE_NOT_ENABLED`. Cached 60s per organization and dropped on every replica at once by the Redis bus `modules:changed`. |
 | MCP | Each tool and prompt names the module of its REST route (`Module`), as the registry lists it. When that module is off, the tool is not listed and a call is refused. |
-| Background jobs | `ModuleGuard` (`TenantDisabledModules`) in the report scheduler, certificate monitor, EASM DNS checks, graph enrichment, scope join re-evaluation, threat-model refresh, control-test scheduler and remediation progress. |
+| Background jobs | `ModuleGuard` (`TenantDisabledModules`) in every job owned by a module that can be switched off (the registry `jobs` list): the EASM jobs, report scheduler, control-test scheduler, threat-model refresh, the remediation jobs (progress, task reconcile, query tasks, ticket push, suggestions), program sync, feed reconcile and assignment, the AI agent sweep, rule-source sync and the threat-alert planner. A job that must run whatever the tenant chose (retention, repairs that keep the scope boundary consistent, coverage and enrichment of core scanning) is owned by a core module. Sweeps that read the oldest N rows of all tenants leave a disabled tenant out of the query (`CollectEnabled`), so its rows cannot fill the batch and starve the others. |
 | Automations | `WorkflowEventDispatcher` starts nothing for an organization with `workflows` off. |
 | AI triage | Routes gated on `ai_triage`; auto-triage does not start when it is off. |
 | Ingest | Suppression rules apply only with `suppressions` on. |

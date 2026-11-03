@@ -126,6 +126,8 @@ easm_evidence
 easm_lookalike_candidates
 easm_lookalike_watches
 easm_network_seeds
+easm_posture_assets
+easm_posture_state
 easm_tombstones
 easm_weekly_digests
 exposure_disposition_requests
@@ -170,6 +172,7 @@ ingest_payloads
 ingest_policy_versions
 ingest_receipt_coverage
 ingest_receipt_items
+ingest_receipt_tools
 ingest_receipts
 ingest_reports
 instance_scan_zone_tenants
@@ -192,6 +195,7 @@ notification_state
 notifications
 operations
 organization_join_requests
+organization_owner_invitations
 pentest_campaign_checklist_items
 pentest_campaign_checklists
 pentest_campaign_members

@@ -160,6 +160,9 @@ func TestEmailService_EveryMailMethodIsClassified(t *testing.T) {
 		// The administrator invitation is the same link for a platform
 		// administrator: no organization, so only the platform sender exists.
 		"SendAdminInvitationEmail",
+		// The ownership invitation of an organization with no member yet:
+		// no organization relay exists to carry it.
+		"SendOwnershipInvitation",
 	}
 	organizationMail := []string{
 		"SendMemberReactivatedEmail", "SendMemberSuspendedEmail", "SendReport",

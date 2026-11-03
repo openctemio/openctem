@@ -1,12 +1,18 @@
 'use client'
 
-import { ErrorState } from './error-state'
+import { AccessNotice } from './access-notice'
 
-// A permission the caller lacks, in the same words and surface as a refused
-// read (a 403 that names no module): "You do not have access to {title}".
-const NO_ACCESS = { statusCode: 403, code: 'FORBIDDEN' }
-
-/** Shown in place of a page's content when the user lacks the permission to read it. */
-export function NoAccessState({ title }: { title: string }) {
-  return <ErrorState title={title} error={NO_ACCESS} />
+/**
+ * Shown in place of a page's content when the user lacks the permission to
+ * read it: the same notice as a refused read ("You do not have access to
+ * {title}"), naming the permission and who holds it when the caller knows it.
+ */
+export function NoAccessState({ title, permission }: { title: string; permission?: string }) {
+  return (
+    <AccessNotice
+      kind="no_access"
+      title={title}
+      details={permission ? { missing_permissions: [permission] } : undefined}
+    />
+  )
 }

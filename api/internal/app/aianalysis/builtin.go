@@ -33,10 +33,13 @@ const (
 	RunErrPolicyRestricted = "policy_restricted"
 	RunErrNothingToSend    = "nothing_to_send"
 	RunErrNotConfigured    = "not_configured"
-	RunErrBudgetExhausted  = "budget_exhausted"
-	RunErrProvider         = "provider_error"
-	RunErrInvalidOutput    = "invalid_output"
-	RunErrInternal         = "internal_error"
+	// RunErrUseCaseOff: the organization turned the run's use case off
+	// (docs/architecture/ai-use-cases.md).
+	RunErrUseCaseOff      = "use_case_off"
+	RunErrBudgetExhausted = "budget_exhausted"
+	RunErrProvider        = "provider_error"
+	RunErrInvalidOutput   = "invalid_output"
+	RunErrInternal        = "internal_error"
 )
 
 // Errors of Analyze.
@@ -85,6 +88,12 @@ type MaskMaps interface {
 	Load(ctx context.Context, tenantID, runID shared.ID) ([]byte, aimask.Snapshot, error)
 }
 
+// UseCaseSettings reads an organization's setting of one AI use case
+// (tenantai.Service): mode, data class ceiling, minimum confidence.
+type UseCaseSettings interface {
+	UseCaseSetting(ctx context.Context, tenantID shared.ID, uc aidom.UseCase) (aidom.UseCaseSetting, error)
+}
+
 // TokenBudget is the organization's monthly AI token budget.
 type TokenBudget interface {
 	Check(ctx context.Context, tenantID shared.ID, estimatedTokens int) error
@@ -111,6 +120,9 @@ type BuiltinExecutor struct {
 	budget   TokenBudget
 	// knowledge retrieves the organization's knowledge (nil: none).
 	knowledge KnowledgeSource
+	// useCases is the organization's per-use-case settings (nil: every use
+	// case at its default, suggest).
+	useCases UseCaseSettings
 	// ownProviderAllowed is the platform policy on organizations' own
 	// providers (nil: allowed).
 	ownProviderAllowed func(context.Context) bool
@@ -141,6 +153,18 @@ func (e *BuiltinExecutor) SetAIAgents(svc *Service) { e.svc = svc }
 
 // SetBudget wires the token budget (nil: no budget check).
 func (e *BuiltinExecutor) SetBudget(b TokenBudget) { e.budget = b }
+
+// SetUseCases wires the per-use-case settings.
+func (e *BuiltinExecutor) SetUseCases(u UseCaseSettings) { e.useCases = u }
+
+// useCase reads the run's use case setting; without a source every use case
+// is at its default (suggest: nothing applies on its own).
+func (e *BuiltinExecutor) useCase(ctx context.Context, tenantID shared.ID, uc aidom.UseCase) (aidom.UseCaseSetting, error) {
+	if e.useCases == nil {
+		return aidom.DefaultUseCaseSetting(), nil
+	}
+	return e.useCases.UseCaseSetting(ctx, tenantID, uc)
+}
 
 // SetOwnProviderPolicy wires the platform policy on organizations' own providers.
 func (e *BuiltinExecutor) SetOwnProviderPolicy(allowed func(context.Context) bool) {
@@ -295,7 +319,17 @@ func (e *BuiltinExecutor) execute(ctx context.Context, p *Principal, run *aidom.
 	if settings.Mode == tenant.AIModeBYOK && e.ownProviderAllowed != nil && !e.ownProviderAllowed(ctx) {
 		return nil, refused(RunErrNotConfigured)
 	}
-	ceiling, err := aipolicy.ParseClass(string(p.AIAgent.DataClassCeiling))
+	// The organization's setting of this use case: off refuses the run; the
+	// data class sent is the lower of the use case's and the AI agent's
+	// ceilings. An unreadable setting fails the run (fail closed).
+	uc, err := e.useCase(ctx, run.TenantID, run.UseCase)
+	if err != nil {
+		return nil, err
+	}
+	if uc.Mode == aidom.UseCaseOff {
+		return nil, refused(RunErrUseCaseOff)
+	}
+	ceiling, err := aipolicy.ParseClass(string(uc.EffectiveCeiling(p.AIAgent.DataClassCeiling)))
 	if err != nil || ceiling == aipolicy.ClassTenantOnly {
 		return nil, refused(RunErrPolicyRestricted)
 	}
@@ -365,7 +399,7 @@ func (e *BuiltinExecutor) execute(ctx context.Context, p *Principal, run *aidom.
 		}
 	}
 
-	actions, err := e.act(ctx, p, run, finding, kind, bundle, ret, resp.Content)
+	actions, err := e.act(ctx, p, run, finding, kind, bundle, ret, uc, resp.Content)
 	if err != nil {
 		return actions, err
 	}
@@ -426,7 +460,7 @@ func unmaskPayload(u *aimask.Unmasker, raw json.RawMessage) (json.RawMessage, bo
 // AI agent never overwrites a later decision), and every command carries the
 // row version it expects.
 func (e *BuiltinExecutor) act(ctx context.Context, p *Principal, run *aidom.Run, finding *vulnerability.Finding,
-	kind analyze.Kind, bundle *aibundle.Bundle, ret *retrieval, content string,
+	kind analyze.Kind, bundle *aibundle.Bundle, ret *retrieval, uc aidom.UseCaseSetting, content string,
 ) ([]Action, error) {
 	out, err := analyze.ParseOutput(kind.Name, []byte(strings.TrimSpace(content)))
 	if err != nil {
@@ -447,7 +481,7 @@ func (e *BuiltinExecutor) act(ctx context.Context, p *Principal, run *aidom.Run,
 	cited := map[string]bool{}
 
 	actx := aidom.WithProvenance(ctx, p.Provenance(run))
-	ac := &actor{e: e, p: p, run: run, finding: finding.ID(), version: finding.RowVersion(), versioned: finding.HasRowVersion()}
+	ac := &actor{e: e, p: p, run: run, uc: uc, finding: finding.ID(), version: finding.RowVersion(), versioned: finding.HasRowVersion()}
 	actions := make([]Action, 0, len(out.Suggestions))
 	for _, sg := range out.Suggestions {
 		payload, unknown, err := unmaskPayload(unm, sg.Payload)
@@ -503,6 +537,7 @@ type actor struct {
 	e         *BuiltinExecutor
 	p         *Principal
 	run       *aidom.Run
+	uc        aidom.UseCaseSetting
 	finding   shared.ID
 	version   int64
 	versioned bool
@@ -513,8 +548,12 @@ type actor struct {
 }
 
 func (a *actor) do(ctx context.Context, k aidom.Kind, payload json.RawMessage, confidence float64, reasons []string) Action {
-	// Only a clean, confident item may change the finding.
-	mayChange := len(reasons) == 0 && confidence >= minActConfidence && !a.conflict
+	// Only a clean, confident item may change the finding, and only when the
+	// organization lets this use case apply on its own (auto_apply, at or
+	// above its minimum confidence). Otherwise it stays a suggestion: the
+	// AI agent's comment, for a person to act on.
+	mayChange := len(reasons) == 0 && confidence >= minActConfidence && !a.conflict && a.uc.MayApply(confidence)
+	hold := a.holdReason(reasons, confidence)
 	switch k {
 	case aidom.KindSummary:
 		var v aidom.SummaryPayload
@@ -535,7 +574,7 @@ func (a *actor) do(ctx context.Context, k aidom.Kind, payload json.RawMessage, c
 		text := "AI verdict: " + v.Verdict + ". " + v.Reason
 		switch {
 		case !mayChange:
-			return a.comment(ctx, k, text, firstReason(reasons, a.conflict, confidence))
+			return a.comment(ctx, k, text, hold)
 		case v.Verdict == aidom.VerdictLikelyFalsePositive && a.userTriggered():
 			// The person who started this run could otherwise approve the
 			// request it files as the "second person" (RFC-132 D7).
@@ -561,17 +600,23 @@ func (a *actor) do(ctx context.Context, k aidom.Kind, payload json.RawMessage, c
 		_ = json.Unmarshal(payload, &v)
 		text := "AI severity: " + v.Severity + ". " + v.Reason
 		if !mayChange || !a.p.Can("findings:severity") {
-			return a.comment(ctx, k, text, firstReason(reasons, a.conflict, confidence))
+			return a.comment(ctx, k, text, hold)
+		}
+		// A severity never changes without a person: a raise (or the same
+		// severity) stays a suggestion; a downgrade becomes a severity request
+		// a person decides. When the finding cannot be read, fail closed.
+		f, err := a.e.findings.GetByID(ctx, a.run.TenantID, a.finding)
+		to, perr := vulnerability.ParseSeverity(v.Severity)
+		if err != nil || perr != nil {
+			return a.comment(ctx, k, text, "finding_unavailable")
+		}
+		if !vulnerability.IsSeverityDowngrade(f.Severity(), to) {
+			return a.comment(ctx, k, text, reasonSeverityNeedsPerson)
 		}
 		if a.userTriggered() {
-			// A downgrade becomes a request the triggering person could
-			// approve themselves (RFC-132 D7): leave it as a comment. When the
-			// finding cannot be read, fail closed the same way.
-			f, err := a.e.findings.GetByID(ctx, a.run.TenantID, a.finding)
-			to, perr := vulnerability.ParseSeverity(v.Severity)
-			if err != nil || perr != nil || vulnerability.IsSeverityDowngrade(f.Severity(), to) {
-				return a.comment(ctx, k, text, reasonTriggeredByUser)
-			}
+			// The request could be approved by the person who triggered the
+			// run as the second person (RFC-132 D7): leave it as a comment.
+			return a.comment(ctx, k, text, reasonTriggeredByUser)
 		}
 		return a.change(ctx, k, text, func() (ActionOutcome, error) {
 			requested, err := a.e.commands.ChangeSeverity(ctx, a.run.TenantID, a.finding, a.p.AIAgent.ID, v.Severity, aiJustification(v.Reason))
@@ -593,14 +638,31 @@ const reasonTriggeredByUser = "triggered_by_user"
 // opposed to a schedule or an event.
 func (a *actor) userTriggered() bool { return a.run.TriggeredBy != nil && !a.run.TriggeredBy.IsZero() }
 
-func firstReason(reasons []string, conflict bool, confidence float64) string {
+// Reasons a result stayed a suggestion because of the use case setting.
+const (
+	// reasonSuggestMode: the use case is in suggest mode.
+	reasonSuggestMode = "suggest_mode"
+	// reasonBelowMinConfidence: under the use case's minimum confidence.
+	reasonBelowMinConfidence = "below_min_confidence"
+	// reasonSeverityNeedsPerson: a severity raise is never applied on its own.
+	reasonSeverityNeedsPerson = "severity_needs_person"
+)
+
+// holdReason says why an item would stay a suggestion (the first that
+// applies); "not_permitted" when nothing in the item or the setting holds it
+// back (the AI agent lacks the permission).
+func (a *actor) holdReason(reasons []string, confidence float64) string {
 	switch {
 	case len(reasons) > 0:
 		return reasons[0]
-	case conflict:
+	case a.conflict:
 		return "finding_changed"
 	case confidence < minActConfidence:
 		return "low_confidence"
+	case a.uc.Mode != aidom.UseCaseAutoApply:
+		return reasonSuggestMode
+	case !a.uc.MayApply(confidence):
+		return reasonBelowMinConfidence
 	}
 	return "not_permitted"
 }

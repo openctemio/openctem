@@ -18,7 +18,7 @@
  * A sensor started any other way prints its own link (/activate).
  */
 
-import { useEffect, useId, useMemo, useRef, useState } from 'react'
+import { useEffect, useEffectEvent, useId, useMemo, useRef, useState } from 'react'
 import { Check, ChevronDown, ExternalLink, KeyRound, Loader2, RefreshCw } from 'lucide-react'
 import Link from '@/components/link'
 
@@ -56,6 +56,7 @@ import {
 } from '../lib/pairing'
 import { FIRST_HEARTBEAT_POLL_MS } from './sensor-install-flow'
 import { Snippet, type SensorTemplates } from './sensor-install-snippets'
+import { PlatformCAPanel } from './platform-ca-panel'
 import { PairingReview } from './sensor-pairing-steps'
 
 /** The console page a sensor's printed link opens. */
@@ -104,7 +105,7 @@ export function SensorOnboardingPanel({
           value={platform}
           onValueChange={(v) => setPlatform(v as OnboardingPlatform)}
           aria-labelledby={ids.where}
-          className="grid grid-cols-2 gap-2 sm:grid-cols-4"
+          className="grid grid-cols-2 gap-2 sm:grid-cols-3"
         >
           {ONBOARDING_PLATFORMS.map((p) => (
             <label
@@ -219,14 +220,21 @@ export function InstallCommands({
   return (
     <div className="space-y-3">
       <Snippet text={text} label={t(option.labelKey)} file={option.file} />
+      {platform === 'multi' && (
+        <p className="text-xs text-muted-foreground">{t('sensors.onboard.multiHint')}</p>
+      )}
       {platform === 'kubernetes' && (
         <p className="text-xs text-muted-foreground">{t('sensors.onboard.k8sOneSensor')}</p>
       )}
-      {data.ca_fingerprint_sha256 && (
-        <p className="text-xs text-muted-foreground" data-testid="onboarding-ca-fingerprint">
-          {t('sensors.onboard.caFingerprint')}{' '}
-          <code className="font-mono break-all">{data.ca_fingerprint_sha256}</code>
-        </p>
+      {data.platform_ca ? (
+        <PlatformCAPanel ca={data.platform_ca} />
+      ) : (
+        data.ca_fingerprint_sha256 && (
+          <p className="text-xs text-muted-foreground" data-testid="onboarding-ca-fingerprint">
+            {t('sensors.onboard.caFingerprint')}{' '}
+            <code className="font-mono break-all">{data.ca_fingerprint_sha256}</code>
+          </p>
+        )
       )}
       {data.policy && (
         <Collapsible className="rounded-lg border">
@@ -321,11 +329,13 @@ function InstallSession({
   // One code per opened dialog (a ref, so a re-render or a strict-mode
   // double effect never makes a second one).
   const started = useRef(false)
+  const startSession = useEffectEvent(() => {
+    void create()
+  })
   useEffect(() => {
     if (!autoStart || started.current) return
     started.current = true
-    void create()
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per mounted session
+    startSession()
   }, [autoStart])
 
   if (!created) {
