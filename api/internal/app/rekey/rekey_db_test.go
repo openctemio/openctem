@@ -431,10 +431,10 @@ func TestRekey_SweepCoversExtensionSchemas(t *testing.T) {
 	ctx := context.Background()
 	oldKey, newKey := randomHexKey(t), randomHexKey(t)
 	seedAll(t, db, oldKey)
-	if _, err := db.ExecContext(ctx, `CREATE SCHEMA ee; CREATE TABLE ee.vault (id int PRIMARY KEY, secret text, note text)`); err != nil {
+	if _, err := db.ExecContext(ctx, `CREATE SCHEMA acme_ext; CREATE TABLE acme_ext.vault (id int PRIMARY KEY, secret text, note text)`); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.ExecContext(ctx, `INSERT INTO ee.vault VALUES (1, NULL, 'plain text')`); err != nil {
+	if _, err := db.ExecContext(ctx, `INSERT INTO acme_ext.vault VALUES (1, NULL, 'plain text')`); err != nil {
 		t.Fatal(err)
 	}
 	// Plain extension data does not block a rotation.
@@ -444,15 +444,15 @@ func TestRekey_SweepCoversExtensionSchemas(t *testing.T) {
 
 	c, _ := crypto.NewCipherFromKey(oldKey, "")
 	hidden, _ := c.EncryptString("extension secret")
-	if _, err := db.ExecContext(ctx, `UPDATE ee.vault SET secret = $1`, hidden); err != nil {
+	if _, err := db.ExecContext(ctx, `UPDATE acme_ext.vault SET secret = $1`, hidden); err != nil {
 		t.Fatal(err)
 	}
 	rep, err := Run(ctx, db, Keys{Old: oldKey, New: newKey}, Options{Apply: true, Sweep: true})
 	if !errors.Is(err, ErrFailures) || rep.Committed {
 		t.Fatalf("expected ErrFailures without commit, got committed=%v err=%v", rep != nil && rep.Committed, err)
 	}
-	if len(rep.Unlisted) != 1 || rep.Unlisted[0].Location != "ee.vault.secret" {
-		t.Fatalf("expected ee.vault.secret reported, got %+v", rep.Unlisted)
+	if len(rep.Unlisted) != 1 || rep.Unlisted[0].Location != "acme_ext.vault.secret" {
+		t.Fatalf("expected acme_ext.vault.secret reported, got %+v", rep.Unlisted)
 	}
 }
 

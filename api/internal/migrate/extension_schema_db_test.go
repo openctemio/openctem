@@ -23,14 +23,14 @@ func TestCommunityIgnoresAnExtensionSchema_DB(t *testing.T) {
 	db := testdb.EmptyDatabase(t, "extschema")
 	ctx := context.Background()
 	for _, s := range []string{
-		`CREATE SCHEMA ee`,
-		`CREATE TABLE ee.schema_migrations (version bigint PRIMARY KEY, dirty boolean NOT NULL)`,
-		`INSERT INTO ee.schema_migrations VALUES (99990101000000, true)`,
-		`CREATE TABLE ee.schema_migrations_applied (version bigint PRIMARY KEY, name text NOT NULL)`,
-		`INSERT INTO ee.schema_migrations_applied VALUES (99990101000000, 'extension_only')`,
-		`CREATE TABLE ee.admin_users (id int PRIMARY KEY, api_key_hash text NOT NULL)`,
-		`CREATE TABLE ee.tenants (id int PRIMARY KEY, secret text)`,
-		`INSERT INTO ee.tenants VALUES (1, 'extension data')`,
+		`CREATE SCHEMA acme_ext`,
+		`CREATE TABLE acme_ext.schema_migrations (version bigint PRIMARY KEY, dirty boolean NOT NULL)`,
+		`INSERT INTO acme_ext.schema_migrations VALUES (99990101000000, true)`,
+		`CREATE TABLE acme_ext.schema_migrations_applied (version bigint PRIMARY KEY, name text NOT NULL)`,
+		`INSERT INTO acme_ext.schema_migrations_applied VALUES (99990101000000, 'extension_only')`,
+		`CREATE TABLE acme_ext.admin_users (id int PRIMARY KEY, api_key_hash text NOT NULL)`,
+		`CREATE TABLE acme_ext.tenants (id int PRIMARY KEY, secret text)`,
+		`INSERT INTO acme_ext.tenants VALUES (1, 'extension data')`,
 	} {
 		if _, err := db.ExecContext(ctx, s); err != nil {
 			t.Fatalf("%s: %v", s, err)
@@ -72,10 +72,10 @@ func TestCommunityIgnoresAnExtensionSchema_DB(t *testing.T) {
 
 	var secret string
 	var dirty bool
-	if err := db.QueryRowContext(ctx, `SELECT secret FROM ee.tenants WHERE id = 1`).Scan(&secret); err != nil || secret != "extension data" {
+	if err := db.QueryRowContext(ctx, `SELECT secret FROM acme_ext.tenants WHERE id = 1`).Scan(&secret); err != nil || secret != "extension data" {
 		t.Fatalf("extension data changed: %q %v", secret, err)
 	}
-	if err := db.QueryRowContext(ctx, `SELECT dirty FROM ee.schema_migrations`).Scan(&dirty); err != nil || !dirty {
+	if err := db.QueryRowContext(ctx, `SELECT dirty FROM acme_ext.schema_migrations`).Scan(&dirty); err != nil || !dirty {
 		t.Fatalf("extension tracker changed: %v %v", dirty, err)
 	}
 }
