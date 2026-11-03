@@ -70,9 +70,9 @@ const series = (keys: string[]) =>
     ],
   }))
 
-/** The Overview template with a result of each shape. */
+/** The CTEM template with a result of each shape. */
 function overview(): { layout: ReturnType<typeof templateLayout>; data: DashboardData } {
-  const tpl = DASHBOARD_TEMPLATES.find((t) => t.key === 'overview')!
+  const tpl = DASHBOARD_TEMPLATES.find((t) => t.key === 'ctem')!
   const layout = templateLayout(tpl)
   const widgets = layout.map((w, i) => {
     const metric = (w.config as { data: { metric: string } }).data.metric
