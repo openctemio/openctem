@@ -60,11 +60,13 @@ func (s *store) run(ctx context.Context, tenantID *shared.ID, fn func(context.Co
 	if _, err = tx.ExecContext(ctx, `SELECT set_config('app.current_tenant_id', $1, true)`, tenant); err != nil {
 		return fmt.Errorf("extension store: tenant: %w", err)
 	}
-	if err = fn(ctx, tx); err != nil {
+	if fnErr := fn(ctx, tx); fnErr != nil {
+		err = fnErr
 		return err
 	}
-	if err = tx.Commit(); err != nil {
-		return fmt.Errorf("extension store: commit: %w", err)
+	if cErr := tx.Commit(); cErr != nil {
+		err = fmt.Errorf("extension store: commit: %w", cErr)
+		return err
 	}
 	return nil
 }

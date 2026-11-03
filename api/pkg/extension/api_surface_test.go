@@ -26,9 +26,21 @@ const goldenPath = "testdata/api.golden"
 func surface(t *testing.T) []string {
 	t.Helper()
 	fset := token.NewFileSet()
-	pkgs, err := parser.ParseDir(fset, ".", func(fi os.FileInfo) bool { return !strings.HasSuffix(fi.Name(), "_test.go") }, 0)
+	entries, err := os.ReadDir(".")
 	if err != nil {
 		t.Fatal(err)
+	}
+	var files []*ast.File
+	for _, e := range entries {
+		n := e.Name()
+		if e.IsDir() || !strings.HasSuffix(n, ".go") || strings.HasSuffix(n, "_test.go") {
+			continue
+		}
+		f, err := parser.ParseFile(fset, n, nil, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		files = append(files, f)
 	}
 	str := func(n any) string {
 		var b bytes.Buffer
@@ -38,7 +50,7 @@ func surface(t *testing.T) []string {
 		return strings.Join(strings.Fields(b.String()), " ")
 	}
 	var out []string
-	for _, f := range pkgs["extension"].Files {
+	for _, f := range files {
 		for _, d := range f.Decls {
 			switch d := d.(type) {
 			case *ast.FuncDecl:

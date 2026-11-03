@@ -24,6 +24,10 @@
 //   - the configuration keys it reads (ConfigKeys), handed out through
 //     Settings; any other key reads as empty.
 //
+// Tests of an extension get the Deps the core would hand it, built by the
+// core's own implementations on a test database, from package
+// extensiontest.
+//
 // An audit sink is a controller that reads the administrators' audit chain
 // through Deps.AdminAudit and keeps its position with the forward cursor.
 //
