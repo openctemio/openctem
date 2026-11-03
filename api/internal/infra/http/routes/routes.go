@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"github.com/openctemio/openctem/api/internal/extension"
 	"io"
 	"net/http"
 	"time"
@@ -331,6 +332,10 @@ type Handlers struct {
 	// IdleReadOnly refuses changes to an idle Free organization (read-only
 	// after 90 days without a sign-in).
 	IdleReadOnly middleware.IdleReadOnlyChecker
+	// ExtensionRoutes are the routes of the build's extension (none in the
+	// Community build); Grants enforces their grant keys.
+	ExtensionRoutes []extension.Route
+	Grants          GrantChecker
 	// EntryChecker applies the URL organization's entry requirements on
 	// /api/v1/tenants/{tenant}/... routes (AuthService.CheckEntry).
 	EntryChecker middleware.EntryChecker
@@ -1265,6 +1270,12 @@ func Register(
 	// Platform Stats routes (tenant-scoped platform sensor statistics)
 	if h.PlatformScanning != nil {
 		registerPlatformScanningRoutes(router, h.PlatformScanning, authMiddleware, userSync)
+	}
+
+	// Routes of the build's extension, after every core route so one that
+	// would replace a core route is refused.
+	if len(h.ExtensionRoutes) > 0 {
+		registerExtensionRoutes(router, h.ExtensionRoutes, h.Grants, buildTokenTenantMiddlewares(authMiddleware, userSync))
 	}
 
 	// ==========================================================================

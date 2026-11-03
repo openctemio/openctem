@@ -38,7 +38,7 @@ func resetFallback(t *testing.T, v, c, bt string) {
 func TestGet_ReleaseLdflags(t *testing.T) {
 	resetFallback(t, "v0.9.0", shaA, "2026-10-02T10:00:00Z")
 	got := Get()
-	want := Info{Version: "v0.9.0", Commit: "4d2f4b02", BuildTime: "2026-10-02T10:00:00Z", Channel: ChannelRelease}
+	want := Info{Version: "v0.9.0", Commit: "4d2f4b02", BuildTime: "2026-10-02T10:00:00Z", Channel: ChannelRelease, Edition: CommunityEdition, ExtensionAPI: extensionAPI}
 	if got != want {
 		t.Fatalf("Get() = %+v, want %+v", got, want)
 	}
@@ -61,7 +61,7 @@ func TestGet_NoLdflagsFallsBackToCheckout(t *testing.T) {
 
 	resetFallback(t, "", "", "")
 	got := Get()
-	want := Info{Version: "v0.8.0-dev+4d2f4b02", Commit: "4d2f4b02", Channel: ChannelDev}
+	want := Info{Version: "v0.8.0-dev+4d2f4b02", Commit: "4d2f4b02", Channel: ChannelDev, Edition: CommunityEdition, ExtensionAPI: extensionAPI}
 	if got != want {
 		t.Fatalf("Get() = %+v, want %+v", got, want)
 	}
@@ -71,7 +71,7 @@ func TestGet_NoLdflagsNoGit(t *testing.T) {
 	t.Chdir(t.TempDir())
 	resetFallback(t, "", "", "")
 	got := Get()
-	want := Info{Version: DevVersion, Commit: UnknownCommit, Channel: ChannelDev}
+	want := Info{Version: DevVersion, Commit: UnknownCommit, Channel: ChannelDev, Edition: CommunityEdition, ExtensionAPI: extensionAPI}
 	if got != want {
 		t.Fatalf("Get() = %+v, want %+v", got, want)
 	}
@@ -241,5 +241,22 @@ func TestInfoString(t *testing.T) {
 	}
 	if got := (Info{Version: "dev", Commit: "unknown"}).String(); got != "dev (commit unknown)" {
 		t.Fatalf("String() without build time = %q", got)
+	}
+}
+
+// The edition is reported (Help > About, /api/v1/version, -version) so
+// support and an upgrade check can tell which image runs.
+func TestEdition(t *testing.T) {
+	t.Cleanup(func() { SetEdition("") })
+	if Get().Edition != CommunityEdition {
+		t.Fatalf("default edition %q", Get().Edition)
+	}
+	SetEdition("custom")
+	if i := Get(); i.Edition != "custom" || !strings.Contains(i.String(), "edition custom") {
+		t.Fatalf("edition not reported: %+v %q", i, i.String())
+	}
+	SetEdition("  ")
+	if Get().Edition != CommunityEdition || strings.Contains(Get().String(), "edition") {
+		t.Fatal("empty edition must read as Community, and Community is not printed")
 	}
 }

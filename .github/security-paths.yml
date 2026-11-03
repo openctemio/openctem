@@ -40,6 +40,9 @@ authn-authz:
   - api/internal/infra/http/internalapi/**
   - api/cmd/server/internal_api.go
   - api/internal/app/entitlement/**
+  - api/pkg/extension/**
+  - api/internal/extension/**
+  - api/internal/infra/http/routes/extension.go
   - api/internal/infra/http/routes/misc.go
   - api/internal/infra/http/routes/scim.go
   - api/internal/infra/http/routes/mcp_oauth.go

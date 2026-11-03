@@ -25,7 +25,8 @@ code here, not even to a branch.
 
 | Path | Role |
 |---|---|
-| `api/internal/extension/` | the registration point: the overlay registers its edition and the seams it fills (grants today; routes, permissions and settings as they are needed) |
+| `api/pkg/extension/` | the public, versioned extension API: `Register`, `APIVersion`, `Extension` (grants, controllers, routes, schema and migrations, config keys) and `Deps` (interfaces only); `example/` is a complete extension built and tested in every core build |
+| `api/internal/extension/` | the core side of that API (builds `Deps` from core services, validates and wires what the extension registered); never imported by an extension |
 | `api/cmd/server/edition_*.go` | the build switch: `edition_ee.go` carries the `ee` build tag and is the only file that may |
 | `api/pkg/domain/limits/` | entitlement keys and their descriptions |
 | `api/ee/`, `web/src/ee/`, `web/src/app/(ee)/`, `web/console/src/ee/`, `web/console/src/app/(ee)/` | overlay mount points: git-ignored, empty in this repository |
@@ -41,12 +42,30 @@ CODEOWNERS entries exist already.
   package present and empty in this repository, so `go build -tags ee`,
   `go mod tidy` and editors work without the overlay. The overlay's `init`
   calls `extension.Register` once.
-- **Registration** ([`internal/extension`](../../internal/extension/extension.go)).
-  The overlay registers one `Edition`: a name and constructors for the seams it
-  fills. The core hands it `extension.Deps` (the database pool and the logger)
-  and nothing else. A second registration panics at start; a constructor that
-  fails is logged and the core runs with its defaults, so an overlay can never
-  stop the server or switch off a Community feature.
+- **Registration** ([`pkg/extension`](../../pkg/extension/doc.go)). An
+  extension, ours or anyone's, imports only `pkg/extension` and other public
+  `api/pkg/...` packages, and registers one `Extension`: the API version it
+  was written for (a literal; a mismatch panics at start), a name, and the
+  seams it fills. The core hands it `extension.Deps`, interfaces only: a scoped
+  `Store` (one transaction per call, the extension's schema first on the
+  search path, the organization marked on tenant transactions; no pool), the
+  logger, `Settings` (only the keys it declared; a key the core owns is
+  refused at start), `Entitlements`, read access to the administrators' audit
+  chain with the forward cursor (`AdminAudit`, for an audit sink) and the
+  installation's environment. A second registration panics at start; a grant
+  provider that fails is logged and the core runs with its defaults, so an
+  extension can never stop the server or switch off a Community feature.
+- **Routes.** `Extension.Routes` registers handlers at `/api/v1<path>`; each
+  needs a core permission and a grant key. The core mounts them behind the
+  organization chain (authentication, organization from the credential,
+  membership, CSRF), then the permission, then the grant (403
+  `ADDON_NOT_LICENSED`), and refuses at start a route under a core prefix
+  (`/admin`, `/auth`, `/scim`, ...) or one that would replace a core route.
+- **Controllers.** `Extension.Controllers` are run by the core controller
+  manager (on one replica when `Exclusive`); an error stops the start.
+- **Versioning.** `extension.APIVersion` (reported by `/api/v1/version` with
+  the edition) changes only for a break; `pkg/extension/testdata/api.golden`
+  records the exported surface and its test refuses a removal without a bump.
 - **Grants** (things that are off unless granted). The core defines only the
   shape of the answer in [`pkg/domain/limits/grants.go`](../../pkg/domain/limits/grants.go):
   `GrantKey`, `GrantStatus`, `Grant`, `Notice` and the `GrantProvider`

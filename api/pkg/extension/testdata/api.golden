@@ -1,0 +1,70 @@
+api_version 1
+const APIVersion = 1
+const Community = "community"
+field AuditCursor.Hash string
+field AuditCursor.Position int64
+field Caller.TenantID shared.ID
+field Caller.UserID shared.ID
+field Deps.AdminAudit AdminAuditTrail
+field Deps.Entitlements Entitlements
+field Deps.Env Environment
+field Deps.Log *logger.Logger
+field Deps.Settings Settings
+field Deps.Store Store
+field Environment.ManagedService bool
+field Environment.Production bool
+field Extension.APIVersion int
+field Extension.ConfigKeys []string
+field Extension.Controllers func(ctx context.Context, d Deps) ([]Controller, error)
+field Extension.Grants func(ctx context.Context, d Deps) (GrantProvider, error)
+field Extension.Migrations fs.FS
+field Extension.Name string
+field Extension.Routes func(ctx context.Context, r Router, d Deps) error
+field Extension.Schema string
+field Route.Grant limits.GrantKey
+field Route.Handler http.Handler
+field Route.Method string
+field Route.Path string
+field Route.Permission string
+func CallerFrom func(ctx context.Context) (Caller, bool)
+func Name func() string
+func Register func(e Extension)
+func Registered func() (Extension, bool)
+func ResetForTesting func()
+func ValidateMigrations func(m fs.FS) error
+func WithCaller func(ctx context.Context, c Caller) context.Context
+method AdminAuditTrail.ChainHead func(ctx context.Context) (position int64, hash string, err error)
+method AdminAuditTrail.LoadCursor func(ctx context.Context) (AuditCursor, error)
+method AdminAuditTrail.ReadChain func(ctx context.Context, after int64, limit int) ([]admin.AuditChainEntry, error)
+method AdminAuditTrail.SaveCursor func(ctx context.Context, c AuditCursor) error
+method AdminAuditTrail.VerifyChain func(ctx context.Context) (*admin.AuditChainReport, error)
+method Controller.Interval func() time.Duration
+method Controller.Name func() string
+method Controller.Reconcile func(ctx context.Context) (int, error)
+method Entitlements.RequireGrant func(ctx context.Context, tenantID shared.ID, key limits.GrantKey) error
+method Exclusive.Exclusive func() bool
+method Querier.ExecContext func(ctx context.Context, query string, args ...any) (sql.Result, error)
+method Querier.QueryContext func(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+method Querier.QueryRowContext func(ctx context.Context, query string, args ...any) *sql.Row
+method Router.Handle func(r Route) error
+method Runner.Run func(ctx context.Context)
+method Settings.Get func(key string) string
+method Store.InstanceTx func(ctx context.Context, fn func(ctx context.Context, q Querier) error) error
+method Store.Schema func() string
+method Store.TenantTx func(ctx context.Context, tenantID shared.ID, fn func(ctx context.Context, q Querier) error) error
+type AdminAuditTrail interface
+type AuditCursor struct
+type Caller struct
+type Controller interface
+type Deps struct
+type Entitlements interface
+type Environment struct
+type Exclusive interface
+type Extension struct
+type GrantProvider = limits.GrantProvider
+type Querier interface
+type Route struct
+type Router interface
+type Runner interface
+type Settings interface
+type Store interface

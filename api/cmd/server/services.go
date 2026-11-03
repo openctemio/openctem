@@ -180,6 +180,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/email"
+	ext "github.com/openctemio/openctem/api/pkg/extension"
 	"github.com/openctemio/openctem/api/pkg/httpsec"
 	"github.com/openctemio/openctem/api/pkg/jwt"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -1055,6 +1056,9 @@ type Services struct {
 	Entitlement *entitlementapp.Service
 	// GrantProvider answers for grants; nil in the Community build.
 	GrantProvider limits.GrantProvider
+	// ExtensionDeps is what the build's extension gets (zero in the
+	// Community build).
+	ExtensionDeps ext.Deps
 	// Idle Free workspaces (reminder, read-only, warnings, deletion due).
 	IdleWorkspaces *lifecycleapp.Service
 	// OrganizationGate refuses every credential of a suspended organization;
@@ -1170,9 +1174,13 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// the operator's own rows unless the internal API is on.
 	s.Entitlement = entitlementapp.NewService(repos.Limits, repos.AdminAuditLog, log)
 	// Grants (off unless granted) come only from an extension the build
-	// registered (internal/extension); the Community build has none.
+	// registered (pkg/extension); the Community build has none.
 	if deps.DB != nil {
-		s.GrantProvider = extension.Grants(context.Background(), extension.Deps{DB: &postgres.DB{DB: deps.DB}, Log: log})
+		s.ExtensionDeps = extension.Deps(extension.Host{
+			DB: deps.DB, Log: log, Production: cfg.IsProduction(), ManagedService: cfg.App.ManagedService,
+			Entitlements: extensionEntitlements{s.Entitlement},
+		})
+		s.GrantProvider = extension.Grants(context.Background(), s.ExtensionDeps)
 		s.Entitlement.SetGrantProvider(s.GrantProvider)
 	}
 	if repos.PlatformSetting != nil {

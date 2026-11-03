@@ -25,6 +25,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"sync/atomic"
 )
 
 // Set with -ldflags -X. Empty means "not set by the build".
@@ -56,6 +57,12 @@ type Info struct {
 	Commit    string `json:"commit" example:"4d2f4b02"`
 	BuildTime string `json:"build_time,omitempty" example:"2026-10-02T10:00:00Z"`
 	Channel   string `json:"channel" example:"release" enums:"release,rc,dev"`
+	// Edition is "community", or the name of the extension compiled into
+	// this build (pkg/extension), so support and an upgrade check can tell
+	// which image runs.
+	Edition string `json:"edition" example:"community"`
+	// ExtensionAPI is the extension API version this core serves.
+	ExtensionAPI int `json:"extension_api" example:"1"`
 }
 
 // String is the one-line identity printed by `openctem-server -version` and
@@ -64,6 +71,9 @@ func (i Info) String() string {
 	s := i.Version + " (commit " + i.Commit
 	if i.BuildTime != "" {
 		s += ", built " + i.BuildTime
+	}
+	if i.Edition != "" && i.Edition != CommunityEdition {
+		s += ", edition " + i.Edition
 	}
 	return s + ")"
 }
@@ -99,6 +109,26 @@ func Get() Info {
 	return build(v, c, strings.TrimSpace(BuildTime))
 }
 
+// CommunityEdition is the edition of a build with no extension.
+const CommunityEdition = "community"
+
+// extensionAPI mirrors pkg/extension.APIVersion (a test keeps them equal;
+// pkg/version imports nothing so every binary can use it).
+const extensionAPI = 1
+
+var edition atomic.Value
+
+func init() { edition.Store(CommunityEdition) }
+
+// SetEdition records the build's edition (the server calls it once at start
+// with the registered extension's name). Empty means Community.
+func SetEdition(name string) {
+	if strings.TrimSpace(name) == "" {
+		name = CommunityEdition
+	}
+	edition.Store(name)
+}
+
 func build(v, c, t string) Info {
 	if v == "" {
 		v = DevVersion
@@ -109,7 +139,7 @@ func build(v, c, t string) Info {
 	if len(c) > shortSHALen && isHex(c) {
 		c = c[:shortSHALen]
 	}
-	return Info{Version: v, Commit: c, BuildTime: t, Channel: channelOf(v)}
+	return Info{Version: v, Commit: c, BuildTime: t, Channel: channelOf(v), Edition: edition.Load().(string), ExtensionAPI: extensionAPI}
 }
 
 func channelOf(v string) string {

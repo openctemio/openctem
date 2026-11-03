@@ -94,6 +94,7 @@ func main() {
 		return
 	}
 	flag.Parse()
+	version.SetEdition(extension.Name())
 	if *showVersion {
 		fmt.Println("openctem-server", version.Get())
 		return
@@ -117,6 +118,14 @@ func run() int {
 	if err != nil {
 		log := logger.NewDefault()
 		log.Error("failed to load configuration", "error", err)
+		return 1
+	}
+
+	// The build's extension (none in the Community build) must fit this
+	// core before anything starts; /api/v1/version reports its edition.
+	if err := extension.Check(); err != nil {
+		log := logger.NewDefault()
+		log.Error("refusing to start", "error", err)
 		return 1
 	}
 
@@ -507,6 +516,16 @@ func run() int {
 	// Close a socket whose session was revoked while its upgrade was in flight.
 	if handlers.WebSocket != nil && services.SessionRevocations != nil {
 		handlers.WebSocket.SetSessionRevocationChecker(services.SessionRevocations)
+	}
+
+	extRoutes, err := extension.Routes(ctx, services.ExtensionDeps)
+	if err != nil {
+		log.Error("refusing to start", "error", err)
+		return 1
+	}
+	handlers.ExtensionRoutes = extRoutes
+	if services.Entitlement != nil {
+		handlers.Grants = services.Entitlement
 	}
 
 	server := http.NewServer(cfg, log)
