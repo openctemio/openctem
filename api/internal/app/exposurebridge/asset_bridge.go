@@ -43,6 +43,9 @@ type AssetBridge struct {
 	exposureRepo exposure.Repository
 	historyRepo  exposure.StateHistoryRepository
 	logger       *logger.Logger
+	// resolver resolves host certificate exposures a later scan no longer
+	// sees (host_certificate.go); nil resolves none.
+	resolver ExposureAutoResolver
 }
 
 // NewAssetBridge creates an AssetBridge. historyRepo may be nil (state-change
@@ -70,6 +73,16 @@ func (b *AssetBridge) ProjectAssets(ctx context.Context, tenantID shared.ID, ass
 	}
 
 	var projected, failed int
+	// Certificates are judged per host that served them (host_certificate.go).
+	pairs, served := pairHostCertificates(tenantID, assets)
+	now := time.Now().UTC()
+	var clearFPs, supersededFPs []string
+	hostEvents := map[shared.ID][]*exposure.ExposureEvent{}
+	for _, p := range pairs {
+		evs, clear := b.hostCertificateEvents(p, now)
+		hostEvents[p.svc.ID()] = append(hostEvents[p.svc.ID()], evs...)
+		clearFPs = append(clearFPs, clear...)
+	}
 	for _, a := range assets {
 		if a == nil {
 			continue
@@ -82,6 +95,13 @@ func (b *AssetBridge) ProjectAssets(ctx context.Context, tenantID shared.ID, ass
 		}
 
 		events := b.buildEventsForAsset(a)
+		if a.Type() == asset.AssetTypeCertificate && served[certificateFingerprintOf(a)] {
+			// A host of this batch served the certificate: its expiry is an
+			// exposure of that host, not of the certificate.
+			events = withoutExpiry(events)
+			supersededFPs = append(supersededFPs, b.legacyCertificateExpiryFingerprints(a)...)
+		}
+		events = append(events, hostEvents[a.ID()]...)
 		for _, ev := range events {
 			if err := upsertExposureEvent(ctx, b.exposureRepo, b.historyRepo, b.logger, ev,
 				fmt.Sprintf("asset: %s", a.ID().String())); err != nil {
@@ -98,6 +118,9 @@ func (b *AssetBridge) ProjectAssets(ctx context.Context, tenantID shared.ID, ass
 		}
 	}
 
+	b.resolveAuto(ctx, tenantID, clearFPs, AutoResolveCertNote)
+	b.resolveAuto(ctx, tenantID, supersededFPs, AutoResolveSupersededNote)
+
 	if projected > 0 || failed > 0 {
 		b.logger.Info("projected recon assets into exposure store",
 			"tenant_id", tenantID.String(),
@@ -106,6 +129,37 @@ func (b *AssetBridge) ProjectAssets(ctx context.Context, tenantID shared.ID, ass
 		)
 	}
 	return nil
+}
+
+// withoutExpiry drops the expiry events of a certificate's projection.
+func withoutExpiry(events []*exposure.ExposureEvent) []*exposure.ExposureEvent {
+	out := events[:0]
+	for _, ev := range events {
+		if ev == nil {
+			continue
+		}
+		if t := ev.EventType(); t == exposure.EventTypeCertificateExpired || t == exposure.EventTypeCertificateExpiring {
+			continue
+		}
+		out = append(out, ev)
+	}
+	return out
+}
+
+// resolveAuto resolves the tenant's open recon exposures with the given
+// fingerprints (best effort: a failure is logged, never fails ingest).
+func (b *AssetBridge) resolveAuto(ctx context.Context, tenantID shared.ID, fps []string, note string) {
+	if b.resolver == nil || len(fps) == 0 {
+		return
+	}
+	n, err := b.resolver.ResolveAuto(ctx, tenantID, SourceReconScan, fps, note)
+	if err != nil {
+		b.logger.Warn("failed to resolve certificate exposures", "tenant_id", tenantID.String(), "error", err)
+		return
+	}
+	if n > 0 {
+		b.logger.Info("resolved certificate exposures", "tenant_id", tenantID.String(), "resolved", n)
+	}
 }
 
 // buildEventsForAsset dispatches an asset to the right exposure projection(s).
@@ -228,7 +282,9 @@ func (b *AssetBridge) buildServiceEvent(a *asset.Asset) *exposure.ExposureEvent 
 // property map (buildCertificateProperties). Multiple issues on one cert yield
 // multiple events, each with a distinct title (and therefore fingerprint).
 func (b *AssetBridge) buildCertificateEvents(a *asset.Asset) []*exposure.ExposureEvent {
-	cert := propMap(a.Properties(), "certificate")
+	// A stored certificate asset carries its facts as flat properties; the
+	// nested map is the ingest mapper's shape (certificateProps).
+	cert := certificateProps(a)
 	if cert == nil {
 		return nil
 	}
@@ -256,7 +312,7 @@ func (b *AssetBridge) buildCertificateEvents(a *asset.Asset) []*exposure.Exposur
 	// Expiry: prefer the parsed not_after; fall back to the scanner's expired flag.
 	notAfter, hasNotAfter := parseTime(propString(cert, "not_after"))
 	switch {
-	case propBool(cert, "expired") || (hasNotAfter && notAfter.Before(now)):
+	case certFlag(cert, "expired") || (hasNotAfter && notAfter.Before(now)):
 		events = append(events, b.newEvent(a, exposure.EventTypeCertificateExpired, exposure.SeverityHigh,
 			fmt.Sprintf("Certificate expired: %s", label), baseDetails(),
 			"TLS certificate has expired (discovered by recon scan)"))
@@ -283,7 +339,7 @@ func (b *AssetBridge) buildCertificateEvents(a *asset.Asset) []*exposure.Exposur
 // to avoid the CTEM-ID mislabel trap: a self-signed cert, a small RSA key, or a
 // deprecated signature algorithm.
 func weakTLSReason(cert map[string]any) string {
-	if propBool(cert, "self_signed") {
+	if certFlag(cert, "self_signed") {
 		return "self-signed"
 	}
 	// Only judge key size for RSA — EC keys are legitimately much smaller.

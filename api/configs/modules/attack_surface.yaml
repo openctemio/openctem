@@ -26,5 +26,6 @@
     - EASMNetworkSeedController
     - WebEvidenceRetentionController
     - EASMWeeklyDigestController
+    - EASMPostureController
     - GraphEnrichmentController
     - ScopeJoinController

@@ -114,7 +114,7 @@ export default function BusinessImpactPage() {
   const { currentTenant } = useTenant()
   const { stats, isLoading: statsLoading } = useDashboardStats(currentTenant?.id || null)
   const { stats: assetStats, isLoading: assetStatsLoading } = useAssetStats()
-  const { data: buData, isLoading: buLoading } = useBusinessUnits()
+  const { data: buData, isLoading: buLoading, error: buError, mutate: retryBu } = useBusinessUnits()
   const { data: crownData, isLoading: crownLoading } = useCrownJewels()
 
   const isLoading = statsLoading || assetStatsLoading || buLoading || crownLoading
@@ -323,7 +323,7 @@ export default function BusinessImpactPage() {
                 <Skeleton key={i} className="h-12 w-full" />
               ))}
             </div>
-          ) : sortedUnits.length === 0 ? (
+          ) : sortedUnits.length === 0 && !buError ? (
             <EmptyState
               icon={Building2}
               title={t('prioritization.businessImpact.units.emptyTitle', 'No business units yet')}
@@ -336,6 +336,9 @@ export default function BusinessImpactPage() {
             <DataTable
               columns={buColumns}
               data={sortedUnits}
+              error={buError}
+              onRetry={() => void retryBu()}
+              errorTitle={t('prioritization.businessImpact.units.errorTitle', 'business units')}
               searchPlaceholder={t(
                 'prioritization.businessImpact.units.search',
                 'Search business units…'

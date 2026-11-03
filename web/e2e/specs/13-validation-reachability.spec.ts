@@ -6,7 +6,7 @@ import { LEGACY_VALIDATION_ROUTE_REDIRECTS, splitSource } from '../../src/config
  * Validation, campaign-first (two levels: group, then item).
  *
  *   1. Every Validation entry in the sidebar opens a page with one h1 and no
- *      Access Denied.
+ *      the access-denied page.
  *   2. Every old pentest list URL answers 308 to its new home.
  */
 
@@ -28,7 +28,7 @@ test('every Validation entry opens', { tag: ['@validation'] }, async ({ page }) 
   for (const href of hrefs) {
     await page.goto(href)
     await expect(page.locator('h1'), href).toHaveCount(1, { timeout: 30_000 })
-    await expect(page.getByText('Access Denied'), href).toHaveCount(0)
+    await expect(page.locator('[data-route-denied]'), href).toHaveCount(0)
   }
 })
 
