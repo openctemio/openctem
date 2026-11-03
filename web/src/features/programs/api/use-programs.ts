@@ -28,10 +28,10 @@ import type {
 const BASE = '/api/v1/programs'
 
 /** The programs the caller may see. */
-export function usePrograms() {
+export function usePrograms(enabled = true) {
   const { currentTenant } = useTenant()
   const can = useHasPermission(Permission.ProgramsRead)
-  const key = currentTenant && can ? ['programs', currentTenant.id] : null
+  const key = enabled && currentTenant && can ? ['programs', currentTenant.id] : null
   return useSWR<Program[]>(key, async () => (await get<{ data: Program[] }>(BASE))?.data ?? [], {
     revalidateOnFocus: false,
   })

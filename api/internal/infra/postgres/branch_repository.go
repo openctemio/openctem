@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -521,27 +522,49 @@ func nullIntPtr(v *int) interface{} {
 	return *v
 }
 
-// CompareBranches compares findings between two branches by fingerprint.
-func (r *BranchRepository) CompareBranches(ctx context.Context, tenantID, repositoryID shared.ID, baseBranch, compareBranch string) (*branch.BranchComparison, error) {
-	query := `
-		WITH base_findings AS (
-			SELECT f.fingerprint, f.id, f.title, f.severity, f.file_path, f.source
-			FROM findings f
-			JOIN repository_branches rb ON f.branch_id = rb.id
-			WHERE rb.repository_id = $1 AND rb.name = $2 AND f.tenant_id = $4
-			  AND ` + vulnerability.OpenStatusSQL("f.status") + `
+// branchPresenceCTE is the open findings present on the branches named $2
+// and $3 of repository $1 in tenant $4: an open occurrence on the branch, or,
+// for a finding with no occurrence at all (rows from before occurrences),
+// findings.branch_id. It is the rule the branch counters use (migration
+// branch_counts_from_occurrences), so the compare, the counters and the
+// findings list filtered on a branch agree.
+func branchPresenceCTE() string {
+	return `
+		WITH br AS (
+			SELECT rb.id, rb.name
+			FROM repository_branches rb
+			JOIN assets a ON a.id = rb.repository_id
+			WHERE rb.repository_id = $1 AND a.tenant_id = $4 AND rb.name IN ($2, $3)
 		),
-		compare_findings AS (
-			SELECT f.fingerprint, f.id, f.title, f.severity, f.file_path, f.source
-			FROM findings f
-			JOIN repository_branches rb ON f.branch_id = rb.id
-			WHERE rb.repository_id = $1 AND rb.name = $3 AND f.tenant_id = $4
-			  AND ` + vulnerability.OpenStatusSQL("f.status") + `
-		)
+		on_branch AS (
+			SELECT br.name AS branch, f.id, f.title, f.severity, f.file_path, f.source
+			FROM br
+			JOIN finding_branch_occurrences o ON o.branch_id = br.id AND o.tenant_id = $4 AND o.status = 'open'
+			JOIN findings f ON f.id = o.finding_id AND f.tenant_id = $4
+			WHERE ` + vulnerability.OpenStatusSQL("f.status") + `
+			UNION ALL
+			SELECT br.name, f.id, f.title, f.severity, f.file_path, f.source
+			FROM br
+			JOIN findings f ON f.branch_id = br.id AND f.tenant_id = $4
+			WHERE ` + vulnerability.OpenStatusSQL("f.status") + `
+			  AND NOT EXISTS (SELECT 1 FROM finding_branch_occurrences x WHERE x.finding_id = f.id)
+		),
+		base AS (SELECT * FROM on_branch WHERE branch = $2),
+		cmp AS (SELECT * FROM on_branch WHERE branch = $3)`
+}
+
+// CompareBranches compares the open findings present on two branches of a
+// repository: new (on compare, not on base), resolved (on base, not on
+// compare) and common, with the new ones by severity and the 50 most severe.
+func (r *BranchRepository) CompareBranches(ctx context.Context, tenantID, repositoryID shared.ID, baseBranch, compareBranch string) (*branch.BranchComparison, error) {
+	query := branchPresenceCTE() + `
 		SELECT
-			(SELECT COUNT(*) FROM compare_findings cf WHERE cf.fingerprint NOT IN (SELECT fingerprint FROM base_findings)) as new_count,
-			(SELECT COUNT(*) FROM base_findings bf WHERE bf.fingerprint NOT IN (SELECT fingerprint FROM compare_findings)) as resolved_count,
-			(SELECT COUNT(*) FROM compare_findings cf WHERE cf.fingerprint IN (SELECT fingerprint FROM base_findings)) as common_count
+			(SELECT COUNT(*) FROM cmp WHERE cmp.id NOT IN (SELECT id FROM base)),
+			(SELECT COUNT(*) FROM base WHERE base.id NOT IN (SELECT id FROM cmp)),
+			(SELECT COUNT(*) FROM cmp WHERE cmp.id IN (SELECT id FROM base)),
+			(SELECT COALESCE(jsonb_object_agg(s.severity, s.n), '{}'::jsonb)::text FROM (
+				SELECT cmp.severity, COUNT(*) AS n FROM cmp
+				WHERE cmp.id NOT IN (SELECT id FROM base) GROUP BY cmp.severity) s)
 	`
 
 	result := &branch.BranchComparison{
@@ -549,41 +572,33 @@ func (r *BranchRepository) CompareBranches(ctx context.Context, tenantID, reposi
 		CompareBranch: compareBranch,
 		NewBySeverity: make(map[string]int),
 	}
+	args := []any{repositoryID.String(), baseBranch, compareBranch, tenantID.String()}
 
-	err := r.db.QueryRowContext(ctx, query, repositoryID.String(), baseBranch, compareBranch, tenantID.String()).Scan(
+	var bySeverity string
+	if err := r.db.QueryRowContext(ctx, query, args...).Scan(
 		&result.NewFindings,
 		&result.ResolvedFindings,
 		&result.CommonFindings,
-	)
-	if err != nil {
+		&bySeverity,
+	); err != nil {
 		return nil, fmt.Errorf("compare branches: %w", err)
 	}
+	if err := json.Unmarshal([]byte(bySeverity), &result.NewBySeverity); err != nil {
+		return nil, fmt.Errorf("compare branches: new by severity: %w", err)
+	}
 
-	// Get new findings details (in compare but not in base)
-	detailQuery := `
-		SELECT cf.id, cf.title, cf.severity, COALESCE(cf.file_path, ''), cf.source
-		FROM (
-			SELECT f.fingerprint, f.id, f.title, f.severity, f.file_path, f.source
-			FROM findings f
-			JOIN repository_branches rb ON f.branch_id = rb.id
-			WHERE rb.repository_id = $1 AND rb.name = $3 AND f.tenant_id = $4
-			  AND ` + vulnerability.OpenStatusSQL("f.status") + `
-		) cf
-		WHERE cf.fingerprint NOT IN (
-			SELECT f.fingerprint FROM findings f
-			JOIN repository_branches rb ON f.branch_id = rb.id
-			WHERE rb.repository_id = $1 AND rb.name = $2 AND f.tenant_id = $4
-			  AND ` + vulnerability.OpenStatusSQL("f.status") + `
-		)
-		ORDER BY CASE cf.severity
+	detailQuery := branchPresenceCTE() + `
+		SELECT cmp.id, cmp.title, cmp.severity, COALESCE(cmp.file_path, ''), cmp.source
+		FROM cmp
+		WHERE cmp.id NOT IN (SELECT id FROM base)
+		ORDER BY CASE cmp.severity
 			WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 ELSE 4
-		END
+		END, cmp.id
 		LIMIT 50
 	`
-
-	rows, err := r.db.QueryContext(ctx, detailQuery, repositoryID.String(), baseBranch, compareBranch, tenantID.String())
+	rows, err := r.db.QueryContext(ctx, detailQuery, args...)
 	if err != nil {
-		return result, nil // Non-critical, return counts without details
+		return nil, fmt.Errorf("compare branches: new findings: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 
@@ -591,11 +606,12 @@ func (r *BranchRepository) CompareBranches(ctx context.Context, tenantID, reposi
 	for rows.Next() {
 		var f branch.ComparisonFinding
 		if err := rows.Scan(&f.ID, &f.Title, &f.Severity, &f.FilePath, &f.Source); err != nil {
-			continue
+			return nil, fmt.Errorf("compare branches: scan new finding: %w", err)
 		}
 		result.NewItems = append(result.NewItems, f)
-		result.NewBySeverity[f.Severity]++
 	}
-
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("compare branches: new findings: %w", err)
+	}
 	return result, nil
 }
