@@ -603,6 +603,15 @@ func run() int {
 			}()
 		}
 
+		// Stored findings follow the current identity recipe (version 3, the
+		// CTIS fingerprint recipe v2): re-keyed per tenant in batches, merges
+		// through the finding merge, old keys kept as aliases, scan
+		// auto-resolve paused per tenant while its run is open. Idempotent
+		// and resumable; one replica at a time (advisory lock). Ingest also
+		// re-keys a finding on its next sighting, so nothing is split while
+		// this runs. Down step: refingerprint -down -apply.
+		go runFindingRekeyOnStart(ctx, db, log)
+
 		// Host keys for commands queued before every command got them at
 		// create (research/130). Idempotent and SKIP LOCKED: safe on every
 		// start and across replicas.
