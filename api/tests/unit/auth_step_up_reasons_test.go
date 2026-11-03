@@ -167,7 +167,7 @@ func TestStepUpHandler_ReusedCodeHasItsOwnCode(t *testing.T) {
 
 	post := func(code string) (int, string) {
 		body, _ := json.Marshal(map[string]string{"totp": code})
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/step-up", bytes.NewReader(body))
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/v1/auth/step-up", bytes.NewReader(body))
 		c := context.WithValue(req.Context(), middleware.UserIDKey, id.String())
 		c = context.WithValue(c, middleware.SessionIDKey, sid)
 		rec := httptest.NewRecorder()
@@ -216,7 +216,7 @@ func TestStepUpRateLimit_Audited(t *testing.T) {
 	}))
 	uid := shared.NewID().String()
 	call := func() int {
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/step-up", nil)
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/v1/auth/step-up", nil)
 		req = req.WithContext(context.WithValue(req.Context(), middleware.UserIDKey, uid))
 		rec := httptest.NewRecorder()
 		chain.ServeHTTP(rec, req)
