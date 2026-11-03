@@ -25,14 +25,60 @@ code here, not even to a branch.
 
 | Path | Role |
 |---|---|
-| `api/internal/extension/` | registry the overlay registers routes, controllers, permissions and settings into |
+| `api/internal/extension/` | the registration point: the overlay registers its edition and the seams it fills (grants today; routes, permissions and settings as they are needed) |
 | `api/cmd/server/edition_*.go` | the build switch: `edition_ee.go` carries the `ee` build tag and is the only file that may |
 | `api/pkg/domain/limits/` | entitlement keys and their descriptions |
 | `api/ee/`, `web/src/ee/`, `web/src/app/(ee)/`, `web/console/src/ee/`, `web/console/src/app/(ee)/` | overlay mount points: git-ignored, empty in this repository |
 | `web/src/ee-stub/` | what the `@ee` alias resolves to in the default build |
 
-The `extension` registry and `ee-stub` directories are created with the first
-extension-point change; the CODEOWNERS entries exist already.
+The `ee-stub` directory is created with the first web extension point; the
+CODEOWNERS entries exist already.
+
+## How an overlay plugs in
+
+- **Build switch.** `api/cmd/server/edition_ee.go` (build tag `ee`) is the only
+  file that imports the overlay package `api/ee`. `api/ee/doc.go` keeps that
+  package present and empty in this repository, so `go build -tags ee`,
+  `go mod tidy` and editors work without the overlay. The overlay's `init`
+  calls `extension.Register` once.
+- **Registration** ([`internal/extension`](../../internal/extension/extension.go)).
+  The overlay registers one `Edition`: a name and constructors for the seams it
+  fills. The core hands it `extension.Deps` (the database pool and the logger)
+  and nothing else. A second registration panics at start; a constructor that
+  fails is logged and the core runs with its defaults, so an overlay can never
+  stop the server or switch off a Community feature.
+- **Grants** (things that are off unless granted). The core defines only the
+  shape of the answer in [`pkg/domain/limits/grants.go`](../../pkg/domain/limits/grants.go):
+  `GrantKey`, `GrantStatus`, `Grant`, `Notice` and the `GrantProvider`
+  interface. Every gate asks `entitlement.Service.Addon` / `RequireAddon`
+  (403 `ADDON_NOT_LICENSED` or `ADDON_LICENSE_EXPIRED`, fail-closed for grants
+  only) and banners read `entitlement.Service.Notices`. The Community build has
+  no provider: every grant is `none` and there are no notices. The grant keys
+  themselves, the licence verifier, licence storage and the console page that
+  manages a licence all live in the overlay; this repository holds no licence
+  parsing, no keys and no licence table
+  ([RFC-145](../rfcs/RFC-145-enterprise-licence-and-entitlements.md)).
+- **A provider that keeps itself fresh** implements `extension.Runner`; the
+  server runs it in the background on every plane until shutdown.
+
+## Overlay migrations
+
+The overlay keeps its tables in its own Postgres schema, `ee`, and applies them
+with the same `openctem-migrate` tool, connected with `search_path=ee`. The
+tool keeps its tracking tables in the connection's current schema, so the
+overlay set is tracked in `ee.schema_migrations` (with its own migration lock)
+and never mixes with the core set in `public`. Rules:
+
+- Overlay migrations create objects only in schema `ee` and name core tables
+  with their schema (`public.tenants`). Core migrations never reference `ee`.
+- The schema is created before the tool runs. If it is missing, the current
+  schema is empty and the tool refuses to run, so a mistake can never write
+  overlay versions into the core's tracking tables.
+- Organization data in an overlay table carries `tenant_id` with a foreign key
+  `ON DELETE CASCADE` to `public.tenants`, like core tables.
+- Going back to a Community image leaves schema `ee` unused; nothing in the
+  core reads it.
+- The Community migrations image never contains the overlay set.
 
 ## The edition fence
 
