@@ -146,7 +146,7 @@ type fakeConverger struct {
 	runs    map[shared.ID]*vulnerability.RekeyRun
 }
 
-func (c *fakeConverger) TenantsBelowVersion(context.Context, int) ([]shared.ID, error) {
+func (c *fakeConverger) TenantsToRekey(context.Context, int) ([]shared.ID, error) {
 	return c.tenants, nil
 }
 
