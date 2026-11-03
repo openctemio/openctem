@@ -6,7 +6,7 @@ real use, follow the operator documentation at
 
 ## Prerequisites
 
-- Go 1.26+
+- Go 1.27+
 - Node.js (for the web console and the generated contract types)
 - Docker with Docker Compose
 - Make
