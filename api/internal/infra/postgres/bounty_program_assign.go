@@ -11,6 +11,11 @@ package postgres
 import (
 	"context"
 	"fmt"
+	"strconv"
+
+	"github.com/lib/pq"
+
+	moduledom "github.com/openctemio/openctem/api/pkg/domain/module"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
@@ -99,16 +104,30 @@ func (r *BountyProgramRepository) AssignTenantPrograms(ctx context.Context, tena
 }
 
 // AssignAllPrograms reconciles every program of every tenant (the periodic
-// safety net).
-func (r *BountyProgramRepository) AssignAllPrograms(ctx context.Context) (int64, error) {
-	return r.assignWhere(ctx, `true`)
+// safety net) except those of a tenant for which off answers true (nil: none).
+// Tenants found off are left out of the next read, so they cannot fill the
+// batch and starve the others.
+func (r *BountyProgramRepository) AssignAllPrograms(ctx context.Context, off func(ctx context.Context, tenantID shared.ID) bool) (int64, error) {
+	todo, err := moduledom.CollectEnabled(ctx, programRefBatch,
+		func(skip []shared.ID) ([]programRef, error) {
+			return r.programRefs(ctx, `NOT (tenant_id = ANY($1::uuid[]))`, pq.Array(tenantIDStrings(skip)))
+		},
+		func(x programRef) shared.ID { return x.tenant },
+		off)
+	if err != nil {
+		return 0, err
+	}
+	return r.assignRefs(ctx, todo)
 }
+
+// programRefBatch is the most programs one assign pass reads.
+const programRefBatch = 10000
 
 type programRef struct{ tenant, program shared.ID }
 
 func (r *BountyProgramRepository) programRefs(ctx context.Context, where string, args ...any) ([]programRef, error) {
 	rows, err := r.db.QueryContext(ctx, `SELECT tenant_id::text, id::text FROM bounty_programs
-		WHERE group_id IS NOT NULL AND `+where+` ORDER BY tenant_id, id LIMIT 10000`, args...)
+		WHERE group_id IS NOT NULL AND `+where+` ORDER BY tenant_id, id LIMIT `+strconv.Itoa(programRefBatch), args...)
 	if err != nil {
 		return nil, fmt.Errorf("list programs: %w", err)
 	}
@@ -133,6 +152,10 @@ func (r *BountyProgramRepository) assignWhere(ctx context.Context, where string,
 	if err != nil {
 		return 0, err
 	}
+	return r.assignRefs(ctx, todo)
+}
+
+func (r *BountyProgramRepository) assignRefs(ctx context.Context, todo []programRef) (int64, error) {
 	var changed int64
 	for _, x := range todo {
 		a, d, err := r.AssignProgramAssets(ctx, x.tenant, x.program)

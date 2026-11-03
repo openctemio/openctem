@@ -12,6 +12,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/admin"
 	"github.com/openctemio/openctem/api/pkg/domain/platformsetting"
+	emaildom "github.com/openctemio/openctem/api/pkg/email"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
@@ -49,6 +50,10 @@ type EmailSettingsResponse struct {
 	From        string `json:"from"`
 	FromName    string `json:"from_name"`
 	StartTLS    bool   `json:"starttls"`
+	// CASet says an internal CA bundle is stored; the bundle itself is never returned.
+	CASet bool `json:"ca_set"`
+	// CAFingerprint is the SHA-256 fingerprint of the stored bundle, to compare with the CA you hold.
+	CAFingerprint string `json:"ca_fingerprint,omitempty"`
 	// Version to send back on PUT (optimistic concurrency); 0 = nothing stored.
 	Version   int    `json:"version"`
 	UpdatedAt string `json:"updated_at,omitempty"`
@@ -65,14 +70,19 @@ type UpdateEmailSettingsRequest struct {
 	From     string  `json:"from"`
 	FromName string  `json:"from_name"`
 	StartTLS bool    `json:"starttls"`
-	Version  int     `json:"version"`
+	// CAPEM: PEM certificates of the internal CA that signed the relay's
+	// certificate, used only to verify that relay's TLS. Omit to keep the stored
+	// bundle, "" to remove it. Certificates only: a private key is refused.
+	CAPEM   *string `json:"ca_pem,omitempty"`
+	Version int     `json:"version"`
 	// TOTPCode is a fresh code from the administrator's authenticator.
 	TOTPCode string `json:"totp_code"`
 }
 
 func toEmailSettingsResponse(s platformemail.Settings) EmailSettingsResponse {
 	r := EmailSettingsResponse{Enabled: s.Enabled, Host: s.Host, Port: s.Port, Username: s.Username,
-		PasswordSet: s.PasswordSet, From: s.From, FromName: s.FromName, StartTLS: s.StartTLS, Version: s.Version}
+		PasswordSet: s.PasswordSet, From: s.From, FromName: s.FromName, StartTLS: s.StartTLS,
+		CASet: s.CASet, CAFingerprint: s.CAFingerprint, Version: s.Version}
 	if !s.UpdatedAt.IsZero() {
 		r.UpdatedAt = s.UpdatedAt.UTC().Format(time.RFC3339)
 	}
@@ -113,7 +123,7 @@ func (h *AdminEmailHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req UpdateEmailSettingsRequest
-	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8192))
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 96*1024))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&req); err != nil {
 		apierror.BadRequest("invalid request body").WriteJSON(w)
@@ -124,7 +134,7 @@ func (h *AdminEmailHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 	in := platformemail.Input{
 		Enabled: req.Enabled, Host: req.Host, Port: req.Port, Username: req.Username, Password: req.Password,
-		From: req.From, FromName: req.FromName, StartTLS: req.StartTLS,
+		From: req.From, FromName: req.FromName, StartTLS: req.StartTLS, CAPEM: req.CAPEM,
 	}
 	// SECURITY: the relay receives every set-password, reset and invitation
 	// link, so a new host, port, login or weaker connection security is set by one
@@ -171,8 +181,14 @@ func (h *AdminEmailHandler) SendTest(w http.ResponseWriter, r *http.Request) {
 	if err := h.svc.SendTest(r.Context(), actor, h.appName); err != nil {
 		// The SMTP error may name the server's reply; log it, answer generically.
 		h.logger.Warn("test e-mail failed", "error", logger.SanitizeError(err))
+		// reason is one of a fixed set (no server text), so the console can say what to fix.
+		reason := emaildom.ClassifySendError(err)
+		if errors.Is(err, platformemail.ErrNoAddress) {
+			reason = "no_address"
+		}
 		apierror.New(http.StatusBadGateway, "EMAIL_TEST_FAILED",
-			"The test e-mail could not be sent: check the server, port, TLS and credentials (details are in the API log)").WriteJSON(w)
+			"The test e-mail could not be sent: check the server, port, TLS and credentials (details are in the API log)").
+			WithDetails(map[string]string{"reason": reason}).WriteJSON(w)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

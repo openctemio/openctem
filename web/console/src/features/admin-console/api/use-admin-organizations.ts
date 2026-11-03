@@ -18,14 +18,17 @@ export interface OrganizationQuery {
   search?: string
   /** none: no active owner; present: has one. */
   owner?: '' | 'none' | 'present'
+  /** The platform status; '' for every organization. */
+  status?: '' | 'active' | 'suspended' | 'pending_deletion'
   page?: number
   perPage?: number
 }
 
-function listPath({ search, owner, page = 1, perPage = 25 }: OrganizationQuery): string {
+function listPath({ search, owner, status, page = 1, perPage = 25 }: OrganizationQuery): string {
   const q = new URLSearchParams({ page: String(page), per_page: String(perPage) })
   if (search?.trim()) q.set('search', search.trim())
   if (owner) q.set('owner', owner)
+  if (status) q.set('status', status)
   return `/tenants?${q.toString()}`
 }
 
