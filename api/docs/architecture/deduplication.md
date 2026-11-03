@@ -505,23 +505,42 @@ merge into the survivor and tombstone the loser (RFC-043 §5).
 ### 2.6 Branch counters
 
 `repository_branches.findings_total` and `findings_critical/high/medium/low` count
-the open findings of a branch (`is_open_finding_status`). Statement triggers on
-`findings` keep them up to date (migration `branch_finding_counts_per_statement`):
+the open findings (`is_open_finding_status`) **present on a branch**: the finding
+has an `open` row in `finding_branch_occurrences` for that branch, or it has no
+occurrence at all and `findings.branch_id` is the branch (rows from before the
+occurrence model). A finding present on `main` and on `feature/x` counts on both;
+one fixed on `feature/x` (occurrence `auto_fixed`) counts only on `main`. Migration
+`branch_counts_from_occurrences` (RFC-144 §4); before it the counters read only
+`findings.branch_id`, the finding's one headline branch, and disagreed with the
+findings list filtered on a branch.
 
-- `trg_findings_branch_counts_insert` / `_delete` collect the distinct `branch_id`
-  of the statement's rows from its transition table.
-- `trg_findings_branch_counts_update` collects the old and new branch of every row
-  whose `branch_id`, `status` or `severity` changed. A re-sighting that moves no
-  counted value recounts nothing.
+Statement triggers keep them up to date:
+
+- `trg_fbo_branch_counts_insert` / `_delete` on `finding_branch_occurrences`
+  recount the distinct branches of the statement's rows;
+  `trg_fbo_branch_counts_update` recounts the old and new branch of every
+  occurrence whose state or branch changed (a re-sighting recounts nothing).
+- `trg_findings_branch_counts_insert` / `_delete` on `findings` recount the
+  statement's `branch_id`s; `trg_findings_branch_counts_update` recounts the old
+  and new `branch_id` and every occurrence branch of a finding whose `branch_id`,
+  `status` or `severity` changed.
 - `refresh_branch_finding_counts(uuid[])` locks the touched branch rows in id
-  order, then recounts each branch once in one aggregate pass. It skips a branch
+  order, then recounts each branch once in one aggregate pass. It reads
+  occurrences within the branch's repository tenant only, and skips a branch
   whose repository is gone, as in the cascade of a tenant delete.
 
+The branch compare (`GET /repositories/{id}/branches/compare`,
+`BranchRepository.CompareBranches`) applies the same presence rule, so the
+compare, the counters and the list filtered on a branch agree.
+
 The counts are a recount, not deltas, so they stay exact and heal a counter that
-drifted. The row trigger they replace recounted the whole branch five times for
-every inserted row. That was quadratic in the report size: 5,000 findings took
-37.6 s in research/241, against 7.3 s with the trigger off. It also held the
-branch row lock for the whole upload. Parity with the row trigger is tested by
+drifted. The row trigger replaced in `branch_finding_counts_per_statement`
+recounted the whole branch five times for every inserted row: 5,000 findings took
+37.6 s in research/241, against 7.3 s with the trigger off. Recounting from
+occurrences costs the same as from `branch_id` on a database with statistics
+(5,000 findings on a branch: insert, occurrence upsert, re-sighting and bulk
+close within 5 % of the previous triggers). Tests:
+`internal/infra/postgres/branch_counts_occurrences_db_test.go`,
 `tests/integration/branch_finding_counts_test.go`.
 
 ## 3. Open pull requests that change identity
