@@ -67,12 +67,30 @@ Errors:
 | Status / code | When |
 |---|---|
 | `400` | No proof of the kind the account needs. |
-| `403 STEP_UP_FAILED` | Wrong or replayed code, wrong password. Audited (`auth.step_up_failed`, high). Counts towards the account lockout. |
+| `403 STEP_UP_FAILED` | Wrong code (no step in the ±1 window matches) or wrong password. Audited (`auth.step_up_failed`, high). Counts towards the account lockout. |
+| `403 STEP_UP_CODE_USED` | The code matches a time step that was already used (it signed the person in or confirmed an earlier action). Audited and counted like a wrong code; the web app says to wait for the next code. |
 | `403` "Account is locked…" | The lockout from repeated failures (sign-in and step-up share the counter). |
 | `403 STEP_UP_UNAVAILABLE` | SSO-only account, or the session is not an active session of the caller. |
-| `429` | Per-IP bucket `step-up` (5/min, shared store across replicas). |
+| `429` | Per-IP bucket `step-up` (5/min, shared store across replicas). The limit runs after authentication so a refusal is audited for the person, at most once a minute per user. |
+| `500` | The stored authenticator secret cannot be decrypted (encryption key changed or damaged row). Logged and audited; never reported as a wrong code and not counted towards the lockout. |
+
+Every `auth.step_up_failed` event carries `metadata.reason`: `invalid_code`,
+`replayed_code`, `invalid_password`, `account_locked`, `no_totp_factor`,
+`decrypt_error` or `rate_limited`, with `method`. The typed code or password
+is never recorded.
 
 Success is audited as `auth.step_up` (medium) with the method and the window end.
+
+The web dialog sends each code once: auto-submit on the sixth digit, the
+Confirm button and Enter share one synchronous lock, and a code the server
+already judged is not sent again in the same opening (a code that never got
+an answer, after a network error, may be retried). A wrong code names the
+host whose authenticator entry to use.
+
+New authenticator entries are labelled with the product name and the host of
+`APP_URL` (`OpenCTEM (app.example.com)`), so a person with accounts on two
+installations can tell the entries apart. Existing entries and secrets are not
+changed.
 
 ## Protecting a route
 
