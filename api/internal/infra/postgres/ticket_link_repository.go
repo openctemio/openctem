@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/lib/pq"
+
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/ticketlink"
 )
@@ -248,7 +250,7 @@ func (r *TicketLinkRepository) RecordExternal(ctx context.Context, tenantID, int
 // TaskLinksBehindForPlatform lists active task links (own issues) whose task state
 // differs from the state last pushed, oldest first. The join pairs the task
 // with the link's own tenant.
-func (r *TicketLinkRepository) TaskLinksBehindForPlatform(ctx context.Context, limit int) ([]ticketlink.TaskLinkRef, error) {
+func (r *TicketLinkRepository) TaskLinksBehindForPlatform(ctx context.Context, limit int, skipTenants []shared.ID) ([]ticketlink.TaskLinkRef, error) {
 	if limit <= 0 || limit > 1000 {
 		limit = 1000
 	}
@@ -258,8 +260,9 @@ func (r *TicketLinkRepository) TaskLinksBehindForPlatform(ctx context.Context, l
 		JOIN remediation_tasks t ON t.tenant_id = l.tenant_id AND t.id = l.task_id
 		WHERE l.task_id IS NOT NULL AND l.state = 'active' AND l.role = 'own'
 		  AND t.state <> l.last_pushed_state
+		  AND NOT (l.tenant_id = ANY($2::uuid[]))
 		ORDER BY l.updated_at
-		LIMIT $1`, limit)
+		LIMIT $1`, limit, pq.Array(tenantIDStrings(skipTenants)))
 	if err != nil {
 		return nil, fmt.Errorf("list task links behind: %w", err)
 	}
