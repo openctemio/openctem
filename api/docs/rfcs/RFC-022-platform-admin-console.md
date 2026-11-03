@@ -1240,7 +1240,9 @@ organization and off the main site:
   only after the destination accepted the batch (at-least-once, batch id,
   exponential backoff, lag and chain-break alerts, an idle head export every
   `ADMIN_AUDIT_SINK_HEAD_INTERVAL`).
-  See `docs/architecture/audit-hash-chain.md`.
+  See `docs/architecture/audit-hash-chain.md`. Revised 2026-11-03: the
+  stream is an extension feature, no longer part of the Community build
+  (`docs/development/editions.md`); the chain and its verification stay.
 - Irreversible actions take a step-up (`adminconsole.Service.StepUp`): a fresh
   code from the console authenticator, single use (the sign-in replay guard),
   counted toward lockout when wrong, audited as `console.step_up` /

@@ -418,7 +418,6 @@
   "admin.config.group.storage": "Lưu trữ",
   "admin.config.group.updates": "Cập nhật phần mềm",
   "admin.config.item.ADMIN_ALLOWED_CIDRS": "Các mạng được phép truy cập bảng điều khiển",
-  "admin.config.item.ADMIN_AUDIT_SINK": "Luồng nhật ký kiểm toán quản trị",
   "admin.config.item.ADMIN_ELEVATION": "Nâng quyền có thời hạn",
   "admin.config.item.ADMIN_PUBLIC_URL": "Địa chỉ bảng điều khiển",
   "admin.config.item.APP_URL": "Địa chỉ công khai",

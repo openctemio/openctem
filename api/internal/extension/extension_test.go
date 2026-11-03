@@ -3,8 +3,10 @@ package extension
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
+	"github.com/openctemio/openctem/api/internal/infra/controller"
 	"github.com/openctemio/openctem/api/pkg/domain/limits"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -96,5 +98,18 @@ func TestGrantsFailureKeepsCommunity(t *testing.T) {
 	}
 	if p := Grants(context.Background(), Deps{}); p != nil {
 		t.Fatal("nil logger must not panic and must return no provider")
+	}
+}
+
+func TestControllers(t *testing.T) {
+	reset(t)
+	if cs, err := Controllers(context.Background(), Deps{}); err != nil || cs != nil {
+		t.Fatalf("Community controllers = %v, %v", cs, err)
+	}
+	Register(Edition{Name: "extended", Controllers: func(context.Context, Deps) ([]controller.Controller, error) {
+		return nil, errors.New("sink unusable")
+	}})
+	if _, err := Controllers(context.Background(), Deps{}); err == nil || !strings.Contains(err.Error(), "extended") {
+		t.Fatalf("controller error not returned with the edition: %v", err)
 	}
 }

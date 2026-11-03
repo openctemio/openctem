@@ -14,6 +14,8 @@ import (
 	"regexp"
 	"sync"
 
+	"github.com/openctemio/openctem/api/internal/config"
+	"github.com/openctemio/openctem/api/internal/infra/controller"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/pkg/domain/limits"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -29,6 +31,8 @@ type Deps struct {
 	// organization data stays tenant-scoped like core code.
 	DB  *postgres.DB
 	Log *logger.Logger
+	// Config is the server configuration (read only).
+	Config *config.Config
 }
 
 // Edition is what an extension registers.
@@ -38,6 +42,11 @@ type Edition struct {
 	// Grants builds the grant provider once at start (nil: none). A provider
 	// that also implements Runner is run in the background until shutdown.
 	Grants func(ctx context.Context, d Deps) (limits.GrantProvider, error)
+	// Controllers builds the extension's background controllers, registered
+	// with the core controller manager where the core runs its own (nil:
+	// none). An error stops the boot: it means a controller the operator
+	// configured cannot start, which must never pass silently.
+	Controllers func(ctx context.Context, d Deps) ([]controller.Controller, error)
 }
 
 // Runner is implemented by a provider that keeps itself fresh in the
@@ -97,4 +106,21 @@ func Grants(ctx context.Context, d Deps) limits.GrantProvider {
 		return nil
 	}
 	return p
+}
+
+// Controllers returns the registered extension's controllers (none in the
+// Community build). Its error is returned with the edition named, and the
+// caller stops the boot.
+func Controllers(ctx context.Context, d Deps) ([]controller.Controller, error) {
+	mu.Lock()
+	e := registered
+	mu.Unlock()
+	if e == nil || e.Controllers == nil {
+		return nil, nil
+	}
+	cs, err := e.Controllers(ctx, d)
+	if err != nil {
+		return nil, fmt.Errorf("extension %s: %w", e.Name, err)
+	}
+	return cs, nil
 }

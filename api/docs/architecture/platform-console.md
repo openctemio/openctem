@@ -221,8 +221,9 @@ recommended production setup. Details: [Docker deployment](../deployment/docker.
   `console.elevated` row first and grants the elevation only after the row is
   stored; with the audit log unavailable the elevation is refused with the
   same 503 and the session stays read-only; the per-route outcome rows are
-  written as before. With `MANAGED_SERVICE=true` in production the API does
-  not start without the off-box audit sink (`ADMIN_AUDIT_SINK`). Request
+  written as before. The off-box audit stream is an extension feature
+  (see the audit hash chain doc); a build that has it refuses to start with
+  `MANAGED_SERVICE=true` in production and no stream configured. Request
   bodies are redacted by key: any key ending in `secret`, `password`, `_key`
   or `_token` (any case), and `code`, `totp`, `recovery_code`,
   `recovery_codes`. An address (a key `url`, ending in `url`, or naming a

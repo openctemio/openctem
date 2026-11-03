@@ -27,11 +27,11 @@ const items: ConfigurationItem[] = [
     page: '/system/captcha',
   },
   {
-    key: 'ADMIN_AUDIT_SINK',
+    key: 'STORAGE_PROVIDER',
     group: 'audit',
     managed: 'server',
     source: 'environment',
-    env_var: 'ADMIN_AUDIT_SINK',
+    env_var: 'STORAGE_PROVIDER',
     secret: true,
     is_set: true,
     restart_required: true,
@@ -76,7 +76,7 @@ describe('Configuration page', () => {
       'href',
       '/system/sign-up'
     )
-    const sink = screen.getByText('Admin audit stream').closest('div')!.parentElement!
+    const sink = screen.getByText('Attachment storage').closest('div')!.parentElement!
     expect(within(sink).getByText('Set')).toBeInTheDocument()
     expect(screen.getByText('https://ctem.example.test')).toBeInTheDocument()
     // The deployment region card sits on this page.
