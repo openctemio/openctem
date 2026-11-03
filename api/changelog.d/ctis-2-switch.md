@@ -1,7 +1,7 @@
 ### Behaviour change: CTIS 2.0 only; upgrade sensors and connectors together with the platform
 
 - The platform accepts only CTIS 2.x documents on every path: sensor results (protocol v2 media type `application/vnd.ctis+json; version=2.0`), CI uploads, finding imports, DefectDojo syncs and quarantined reports. A 1.x document is refused (`422 version-mismatch` on protocol v2, a validation error elsewhere) with a message that names the upgrade. A CI upload and a job result are the document itself: the `{"report": ...}` envelope is refused (`400` on `POST /api/v1/ci/runs/{id}/results`). There is no compatibility layer.
-- Minimum producer versions: PLACEHOLDER(lead) sensor vX.Y.Z, sdk-go vX.Y.Z, openctem-ci vX.Y.Z, connector-tenable vX.Y.Z, asset-collector vX.Y.Z.
+- Minimum producer versions: sdk-go v0.46.0, connector-tenable v0.2.0, ai-worker v0.1.0; sensor, asset-collector and openctem-ci: the first release with CTIS 2.0 (sensor v0.36.0, asset-collector v0.3.0, openctem-ci v0.4.0).
 - Every document is checked with the CTIS 2.0 validator: `metadata.id` is the producer's UUIDv7 idempotency key and never one of the platform's ids (the report id comes from the transport), references are never UUID-shaped, asset values are canonical, and every finding names an asset of the document (no fallback asset any more).
 - `properties` no longer steer the platform for sensor, CI and upload reports; the typed members (`technical.http`, `service` assets with `exposes`, `technologies`, `owners`, `last_seen_at`, `extensions["io.openctem"]`) replace them.
 - Import mappings are `openctem.io/mapping/v2`; a saved v1 mapping must be re-saved with the CTIS 2.0 member names.

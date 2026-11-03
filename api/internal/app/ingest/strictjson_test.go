@@ -308,3 +308,19 @@ func TestDecodeStrictReport_VersionAndIdentifiers(t *testing.T) {
 		t.Fatalf("unknown member in this minor: %v, want ErrUnknownField", err)
 	}
 }
+
+// A refused document's validator text (it can quote the input) is the cause,
+// never the error's own text.
+func TestDecodeStrictReport_InvalidKeepsCauseOutOfText(t *testing.T) {
+	doc := `{"version":"2.0","metadata":{"id":"0192a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b","generated_at":"2026-10-01T12:00:00Z"},"tool":{"name":"x"},"assets":[{"id":"a1","type":"domain_name","value":"SECRET-Quoted.Example"}]}`
+	_, err := DecodeStrictReport([]byte(doc), protov2.DefaultMaxJSONDepth, ReportBounds(protov2.DefaultLimits()))
+	if err == nil {
+		t.Skip("document accepted; the canonical-value check moved")
+	}
+	if !errors.Is(err, ErrInvalidReport) {
+		t.Fatalf("err = %v, want ErrInvalidReport", err)
+	}
+	if err.Error() != ErrInvalidReport.Error() {
+		t.Fatalf("error text %q carries more than the sentinel", err.Error())
+	}
+}

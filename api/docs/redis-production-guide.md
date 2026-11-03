@@ -26,7 +26,7 @@ guide for a whole installation is at
 
 ### Go Application Requirements
 
-- Go 1.26+
+- Go 1.27+
 - `github.com/redis/go-redis/v9`
 
 ## Configuration
