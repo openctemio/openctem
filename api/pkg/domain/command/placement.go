@@ -224,7 +224,7 @@ type PlacementReader interface {
 // dimension).
 var withheldText = map[string]string{
 	PlacementIntensity:          "the job's tier is above the scan's intensity",
-	PlacementActiveScanning:     "the organization's plan allows passive scanning only",
+	PlacementActiveScanning:     "active scanning is not available for this organization",
 	PlacementPolicyUnavailable:  "the sensor's policy could not be read",
 	PlacementPrivateNeedsPolicy: "private targets need a sensor with a local policy",
 	PlacementOptInDisabled:      "the organization has not enabled this sensor opt-in",

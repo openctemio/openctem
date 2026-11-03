@@ -49,7 +49,7 @@ func (s *Service) requireActiveScanning(ctx context.Context, sc *scan.Scan) erro
 	}
 	if !ok {
 		return shared.NewDomainError(CodeActiveScanningNotEntitled,
-			"your organization's plan allows passive scanning only; set the intensity to passive and use passive tools", shared.ErrValidation)
+			"active scanning is not available for this organization; set the intensity to passive and use passive tools", shared.ErrValidation)
 	}
 	return nil
 }

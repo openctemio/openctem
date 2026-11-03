@@ -125,7 +125,7 @@ feature). A refused change answers
 `403 FEATURE_NOT_INCLUDED`, or `503` when the limits could not be read; every
 seam fails closed.
 
-### Passive only (`active_scanning`)
+### Passive only (active scanning)
 
 An organization whose entitlements deny `active_scanning` runs passive work
 only (tier 0). The server enforces it, a hidden control is not enough:
