@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/openctemio/openctem/api/pkg/domain/limits"
+	moduledom "github.com/openctemio/openctem/api/pkg/domain/module"
 )
 
 // Every limit and every deniable feature goes through the entitlement
@@ -210,5 +211,98 @@ func TestNoPlanWording(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+	}
+}
+
+// TestEntitlementKeysAreRegisteredAndDescribed keeps one registry: every limit
+// key, named feature and module feature has a description, and the
+// description tables hold no key that is not registered.
+func TestEntitlementKeysAreRegisteredAndDescribed(t *testing.T) {
+	seen := map[limits.Key]bool{}
+	for _, k := range limits.Keys {
+		seen[k] = true
+		if strings.TrimSpace(limits.KeyDescriptions[k]) == "" {
+			t.Errorf("limit key %q has no description in limits.KeyDescriptions", k)
+		}
+	}
+	for k := range limits.KeyDescriptions {
+		if !seen[k] {
+			t.Errorf("limits.KeyDescriptions describes %q, which is not in limits.Keys", k)
+		}
+	}
+	named := map[string]bool{}
+	for _, f := range limits.NamedFeatures {
+		named[f] = true
+		if strings.TrimSpace(limits.NamedFeatureDescriptions[f]) == "" {
+			t.Errorf("named feature %q has no description in limits.NamedFeatureDescriptions", f)
+		}
+	}
+	for f := range limits.NamedFeatureDescriptions {
+		if !named[f] {
+			t.Errorf("limits.NamedFeatureDescriptions describes %q, which is not in limits.NamedFeatures", f)
+		}
+	}
+	for _, f := range limits.Features() {
+		if named[f] {
+			continue
+		}
+		d, ok := moduledom.Lookup(f)
+		if !ok || strings.TrimSpace(d.Description) == "" {
+			t.Errorf("module feature %q has no description in the module registry", f)
+		}
+	}
+}
+
+// TestUnknownEntitlementKeysFail: a key or feature outside the registry is
+// refused everywhere a key is accepted.
+func TestUnknownEntitlementKeysFail(t *testing.T) {
+	for _, bad := range []string{"", "unknown_key", "SEATS", "seats "} {
+		if limits.Key(bad).IsValid() {
+			t.Errorf("limit key %q accepted", bad)
+		}
+		if limits.IsFeature(bad) {
+			t.Errorf("feature %q accepted", bad)
+		}
+		if err := (limits.Limits{limits.Key(bad): 1}).Validate(); err == nil {
+			t.Errorf("Limits.Validate accepted key %q", bad)
+		}
+	}
+	if _, err := limits.DecodeLimits([]byte(`{"unknown_key": 5}`)); err == nil {
+		t.Error("DecodeLimits accepted an unknown key")
+	}
+}
+
+// literalKey matches a limit key built from a string literal, which would
+// skip the registry (use the constants of pkg/domain/limits).
+var literalKey = regexp.MustCompile(`\blimits\.Key\(\s*"`)
+
+// TestNoLiteralLimitKeys fails when code outside the limits package makes a
+// limit key from a string literal.
+func TestNoLiteralLimitKeys(t *testing.T) {
+	for _, dir := range []string{"../../internal", "../../pkg", "../../cmd"} {
+		err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if d.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+				return nil
+			}
+			raw, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+			for i, line := range strings.Split(string(raw), "\n") {
+				if literalKey.MatchString(line) {
+					t.Errorf("%s:%d: limit key from a string literal; use a constant registered in pkg/domain/limits", path, i+1)
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if !literalKey.MatchString(`k := limits.Key("seats")`) {
+		t.Error("literalKey no longer matches the shape it guards")
 	}
 }

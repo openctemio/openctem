@@ -4,6 +4,7 @@ package email
 import (
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"net"
@@ -38,7 +39,10 @@ type Config struct {
 	// ImplicitTLS wraps the connection in TLS before the greeting (port 465).
 	ImplicitTLS bool
 	SkipVerify  bool
-	Timeout     time.Duration
+	// RootCAs, when set, is the only set of roots the relay's certificate is
+	// verified against (an internal CA); nil uses the system roots.
+	RootCAs *x509.CertPool
+	Timeout time.Duration
 	// ResolveHost and Dial replace the SSRF-guarded host resolution and the
 	// dial, so a test can reach a local relay. Production callers leave both
 	// nil; a value set from configuration would bypass the guard.
@@ -106,7 +110,7 @@ func (s *SMTPSender) Send(ctx context.Context, msg *Message) error {
 
 	// Send email
 	if err := s.sendSMTP(ctx, msg.To, content); err != nil {
-		return fmt.Errorf("%w: %v", ErrSendFailed, err)
+		return fmt.Errorf("%w: %w", ErrSendFailed, err)
 	}
 
 	return nil
@@ -196,7 +200,7 @@ func (s *SMTPSender) sendSMTP(ctx context.Context, to []string, content []byte) 
 
 	// Implicit TLS (port 465): the handshake comes before the greeting.
 	if s.config.ImplicitTLS {
-		tc := tls.Client(conn, TLSConfig(s.config.Host, s.config.SkipVerify))
+		tc := tls.Client(conn, s.tlsConfig())
 		if err := tc.HandshakeContext(ctx); err != nil {
 			return fmt.Errorf("failed to complete TLS handshake: %w", err)
 		}
@@ -212,7 +216,7 @@ func (s *SMTPSender) sendSMTP(ctx context.Context, to []string, content []byte) 
 
 	// Start TLS if configured
 	if s.config.TLS {
-		if err := client.StartTLS(TLSConfig(s.config.Host, s.config.SkipVerify)); err != nil {
+		if err := client.StartTLS(s.tlsConfig()); err != nil {
 			return fmt.Errorf("failed to start TLS: %w", err)
 		}
 	}
@@ -394,6 +398,14 @@ func TLSConfig(host string, skipVerify bool) *tls.Config {
 		MinVersion:         tls.VersionTLS12,
 		InsecureSkipVerify: skipVerify, //nolint:gosec // G402: explicit operator opt-in for self-signed relays
 	}
+}
+
+// tlsConfig is the client TLS configuration of this sender: the system roots,
+// or only the configured internal CA bundle.
+func (s *SMTPSender) tlsConfig() *tls.Config {
+	cfg := TLSConfig(s.config.Host, s.config.SkipVerify)
+	cfg.RootCAs = s.config.RootCAs
+	return cfg
 }
 
 // TenantSMTPPorts are the ports an organization's SMTP relay may use: SMTP

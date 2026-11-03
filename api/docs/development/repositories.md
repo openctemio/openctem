@@ -17,7 +17,7 @@ them, shows how they talk to each other, and points you at the right place to wo
 
 | Directory | Stack | What it is | Image |
 |-----------|-------|------------|-------|
-| [`api/`](../../) | Go 1.26 · Chi · PostgreSQL 17 · Redis 7 | The **control plane**. Multi-tenant REST API, domain logic (DDD/clean architecture), auth & RBAC, persistence, migrations, background workers, admin CLI. Go module `github.com/openctemio/openctem/api`. | `ghcr.io/openctemio/openctem-api` (+ `migrations`, `seed`) |
+| [`api/`](../../) | Go 1.27 · Chi · PostgreSQL 17 · Redis 7 | The **control plane**. Multi-tenant REST API, domain logic (DDD/clean architecture), auth & RBAC, persistence, migrations, background workers, admin CLI. Go module `github.com/openctemio/openctem/api`. | `ghcr.io/openctemio/openctem-api` (+ `migrations`, `seed`) |
 | [`web/`](../../../web/) | Next.js 16 · React 19 · TypeScript · Tailwind v4 · shadcn/ui | The **web console** users work in. Talks only to the API. Its navigation is the CTEM loop (see the [User Guide](../user-guide/README.md)). | `ghcr.io/openctemio/openctem-web` |
 | [`deploy/allinone/`](../../../deploy/allinone/) | Dockerfile + supervisor | **All-in-one image**: API + web + the `api/deploy/gateway` Caddy gateway in one container (Postgres/Redis external). | `ghcr.io/openctemio/openctem` |
 | [`.github/`](../../../.github/) | GitHub Actions | One set of workflows for both components, path-gated per component. See [CI/CD](ci-cd.md). | — |
@@ -32,9 +32,9 @@ Detailed docs (architecture, RFCs, deployment, this guide) live in
 
 | Repo | Language / stack | What it is |
 |------|------------------|------------|
-| **[`sensor`](https://github.com/openctemio/sensor)** (formerly `agent`) | Go 1.26 · GPL-3.0 | The **sensor** (binary `openctemio-sensor`) that runs *outside* the control plane (as a daemon in a customer's network, or as a platform sensor). Polls the API for work, runs scanners, reports findings back. Own release stream and images. |
+| **[`sensor`](https://github.com/openctemio/sensor)** (formerly `agent`) | Go 1.27 · GPL-3.0 | The **sensor** (binary `openctemio-sensor`) that runs *outside* the control plane (as a daemon in a customer's network, or as a platform sensor). Polls the API for work, runs scanners, reports findings back. Own release stream and images. |
 | **[`ci`](https://github.com/openctemio/ci)** | Go · GPL-3.0 | The **CI scanner** (`openctem-ci`): per-tool images, the GitHub Action and GitLab templates; reports to the API with the job's OIDC identity. |
-| **[`sdk-go`](https://github.com/openctemio/sdk-go)** | Go 1.26 · GPL-3.0 | The **Go SDK** for anything that talks to the sensor API: task polling, finding submission, key auth, and the SSRF-guarded HTTP client (`httpsec`). The sensor is built on it. Public library with its own semver. |
+| **[`sdk-go`](https://github.com/openctemio/sdk-go)** | Go 1.27 · GPL-3.0 | The **Go SDK** for anything that talks to the sensor API: task polling, finding submission, key auth, and the SSRF-guarded HTTP client (`httpsec`). The sensor is built on it. Public library with its own semver. |
 | **[`ctis`](https://github.com/openctemio/ctis)** | Go · JSON Schema · Apache-2.0 | **CTIS, the CTEM Ingest Schema.** Source of truth for the wire format (assets, findings, metadata) that tools and sensors send in. JSON schemas + generated Go types; the API imports it as `github.com/openctemio/ctis`. |
 | **[`helm-charts`](https://github.com/openctemio/helm-charts)** | Helm · Apache-2.0 | Official **Helm charts** (the `openctem` umbrella chart, incl. the optional bundled sensor). Released with chart-releaser on its own version stream. |
 | **[`docs`](https://github.com/openctemio/docs)** | Markdown | The public **documentation site**. |

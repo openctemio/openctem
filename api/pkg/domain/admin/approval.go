@@ -235,6 +235,10 @@ type platformEmailRelay struct {
 	Port     int    `json:"port"`
 	Security string `json:"security"`
 	Username string `json:"username,omitempty"`
+	// CAFP is the fingerprint of the internal CA bundle the relay is verified
+	// against; empty when the system roots are used. A different bundle is a
+	// different trust root, so it is part of the target.
+	CAFP string `json:"ca_fp,omitempty"`
 }
 
 // PlatformEmailRelayTarget is the approval target of a platform e-mail relay:
@@ -243,11 +247,17 @@ type platformEmailRelay struct {
 // owner: signing in as a different one sends every set-password and reset link
 // through that account. The password is never part of it.
 func PlatformEmailRelayTarget(host string, port int, startTLS bool, username string) string {
+	return PlatformEmailRelayTargetCA(host, port, startTLS, username, "")
+}
+
+// PlatformEmailRelayTargetCA is PlatformEmailRelayTarget with the fingerprint of
+// the internal CA bundle the relay is verified against ("" for the system roots).
+func PlatformEmailRelayTargetCA(host string, port int, startTLS bool, username, caFP string) string {
 	sec := relaySecurityNone
 	if startTLS {
 		sec = relaySecurityStartTLS
 	}
-	return canonicalTarget(platformEmailRelay{Host: strings.ToLower(host), Port: port, Security: sec, Username: strings.TrimSpace(username)})
+	return canonicalTarget(platformEmailRelay{Host: strings.ToLower(host), Port: port, Security: sec, Username: strings.TrimSpace(username), CAFP: strings.ToLower(strings.TrimSpace(caFP))})
 }
 
 // validPlatformEmailRelayTarget accepts only the exact output of
@@ -262,7 +272,7 @@ func validPlatformEmailRelayTarget(target string) bool {
 	if err := dec.Decode(&c); err != nil || c.Host == "" || c.Port < 1 || c.Port > 65535 || (c.Security != relaySecurityStartTLS && c.Security != relaySecurityNone) {
 		return false
 	}
-	return PlatformEmailRelayTarget(c.Host, c.Port, c.Security == relaySecurityStartTLS, c.Username) == target
+	return PlatformEmailRelayTargetCA(c.Host, c.Port, c.Security == relaySecurityStartTLS, c.Username, c.CAFP) == target
 }
 
 // PlatformEmailRelayLabel describes a relay target for the approver, e.g.
@@ -281,6 +291,9 @@ func PlatformEmailRelayLabel(target string) string {
 		out += fmt.Sprintf(", signing in as %s", clipLabel(c.Username))
 	} else {
 		out += ", without a login"
+	}
+	if c.CAFP != "" {
+		out += ", verified against an internal CA bundle (" + clipLabel(c.CAFP[:min(len(c.CAFP), 12)]) + ")"
 	}
 	return out
 }
