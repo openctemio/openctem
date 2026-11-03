@@ -1,100 +1,162 @@
-// Package extension is the one point where a build that adds an extension
-// plugs into the core (docs/development/editions.md). The Community build
-// registers nothing: the core then runs with its defaults (no grant
-// provider, so every grant is off and there are no notices).
-//
-// An extension registers itself from an init function in a package that only
-// the build switch (cmd/server/edition_ee.go, behind a build tag) imports.
-// Everything the core hands it is listed in Deps; it gets no other access.
+// Package extension is the core (host) side of the public extension API
+// (pkg/extension, docs/development/extension-api.md): it builds the Deps an
+// extension gets from core services and wires what the extension registered
+// into the server. Nothing here is visible to an extension; an extension
+// imports only pkg/extension and other public api/pkg packages.
 package extension
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
-	"regexp"
-	"sync"
+	"os"
 
+	"github.com/openctemio/openctem/api/internal/config"
+	"github.com/openctemio/openctem/api/internal/infra/controller"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/pkg/domain/limits"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	ext "github.com/openctemio/openctem/api/pkg/extension"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // Community is the edition name of a build with no extension.
-const Community = "community"
+const Community = ext.Community
 
-// Deps is what the core hands an extension at start.
-type Deps struct {
-	// DB is the API's database pool. An extension reads and writes only its
-	// own schema and installation-wide state through it; every query on
-	// organization data stays tenant-scoped like core code.
-	DB  *postgres.DB
-	Log *logger.Logger
+// Name is the edition of this build.
+func Name() string { return ext.Name() }
+
+// Runner is a grant provider that keeps itself fresh in the background.
+type Runner = ext.Runner
+
+// claimable are core settings an extension may take over by listing them in
+// ConfigKeys: the core feature that reads them then steps aside, so the
+// feature runs once, in the extension. Any other core setting (the secrets
+// above all) is refused: an extension never reads core configuration.
+var claimable = map[string]bool{
+	"ADMIN_AUDIT_SINK":                    true,
+	"ADMIN_AUDIT_SINK_SECRET":             true,
+	"ADMIN_AUDIT_SINK_SYSLOG_CA_FILE":     true,
+	"ADMIN_AUDIT_SINK_SYSLOG_CLIENT_CERT": true,
+	"ADMIN_AUDIT_SINK_SYSLOG_CLIENT_KEY":  true,
+	"ADMIN_AUDIT_SINK_HEAD_INTERVAL":      true,
 }
 
-// Edition is what an extension registers.
-type Edition struct {
-	// Name is reported in logs (lower case letters, digits and dashes).
-	Name string
-	// Grants builds the grant provider once at start (nil: none). A provider
-	// that also implements Runner is run in the background until shutdown.
-	Grants func(ctx context.Context, d Deps) (limits.GrantProvider, error)
+// Host is what the core builds an extension's Deps from.
+type Host struct {
+	DB             *sql.DB
+	Log            *logger.Logger
+	Production     bool
+	ManagedService bool
+	// Entitlements answers RequireGrant (nil: every grant off).
+	Entitlements ext.Entitlements
+	// Getenv reads the environment (nil: os.Getenv).
+	Getenv func(string) string
 }
 
-// Runner is implemented by a provider that keeps itself fresh in the
-// background.
-type Runner interface {
-	Run(ctx context.Context)
-}
-
-var (
-	mu         sync.Mutex
-	registered *Edition
-	namePat    = regexp.MustCompile(`^[a-z][a-z0-9-]{0,31}$`)
-)
-
-// Register records the build's extension. It panics on a second
-// registration, an invalid name, or the Community name: a build has exactly
-// one extension or none, and a mistake must stop the build's first start.
-func Register(e Edition) {
-	mu.Lock()
-	defer mu.Unlock()
-	if registered != nil {
-		panic(fmt.Sprintf("extension: %q registered after %q", e.Name, registered.Name))
+// Check validates the registered extension against the core: its config
+// keys may not name a core setting unless the core lets an extension claim
+// it. The server refuses to start on an error.
+func Check() error {
+	e, ok := ext.Registered()
+	if !ok {
+		return nil
 	}
-	if !namePat.MatchString(e.Name) || e.Name == Community {
-		panic(fmt.Sprintf("extension: invalid edition name %q", e.Name))
+	reg := config.Registry()
+	for _, k := range e.ConfigKeys {
+		if _, core := reg.Lookup(k); core && !claimable[k] {
+			return fmt.Errorf("extension %q: config key %s belongs to the core", e.Name, k)
+		}
 	}
-	registered = &e
+	return nil
 }
 
-// Name is the edition of this build: the registered extension's name, or
-// Community.
-func Name() string {
-	mu.Lock()
-	defer mu.Unlock()
-	if registered == nil {
-		return Community
+// Claims reports whether the registered extension took over core setting
+// key (see claimable).
+func Claims(key string) bool {
+	e, ok := ext.Registered()
+	if !ok || !claimable[key] {
+		return false
 	}
-	return registered.Name
+	for _, k := range e.ConfigKeys {
+		if k == key {
+			return true
+		}
+	}
+	return false
+}
+
+// Deps builds the Deps of the registered extension (zero Deps in the
+// Community build).
+func Deps(h Host) ext.Deps {
+	e, ok := ext.Registered()
+	if !ok {
+		return ext.Deps{}
+	}
+	getenv := h.Getenv
+	if getenv == nil {
+		getenv = os.Getenv
+	}
+	ent := h.Entitlements
+	if ent == nil {
+		ent = noGrants{}
+	}
+	d := ext.Deps{
+		Log:          h.Log,
+		Settings:     newSettings(e.ConfigKeys, getenv),
+		Entitlements: ent,
+		Env:          ext.Environment{Production: h.Production, ManagedService: h.ManagedService},
+	}
+	if h.DB != nil {
+		d.Store = &store{db: h.DB, schema: e.Schema}
+		d.AdminAudit = &auditTrail{repo: postgres.NewAuditLogRepository(&postgres.DB{DB: h.DB}), db: h.DB}
+	}
+	return d
+}
+
+type noGrants struct{}
+
+func (noGrants) RequireGrant(_ context.Context, _ shared.ID, key limits.GrantKey) error {
+	return &limits.ErrGrantRequired{Key: key}
 }
 
 // Grants returns the registered extension's grant provider, or nil when
 // there is none. When the extension fails to build it, the error is logged
 // and the core runs with no provider: an extension can never stop the
 // server or switch off a Community feature, only leave its own grants off.
-func Grants(ctx context.Context, d Deps) limits.GrantProvider {
-	mu.Lock()
-	e := registered
-	mu.Unlock()
-	if e == nil || e.Grants == nil {
+func Grants(ctx context.Context, d ext.Deps) limits.GrantProvider {
+	e, ok := ext.Registered()
+	if !ok || e.Grants == nil {
 		return nil
 	}
 	p, err := e.Grants(ctx, d)
-	if err != nil {
-		if d.Log != nil {
+	if err != nil || p == nil {
+		if err != nil && d.Log != nil {
 			d.Log.Error("extension grant provider failed to start; every grant stays off", "edition", e.Name, "error", err)
 		}
 		return nil
 	}
 	return p
+}
+
+// Controllers returns the registered extension's controllers for the core
+// controller manager (an Exclusive controller keeps that behaviour). An
+// error stops the start.
+func Controllers(ctx context.Context, d ext.Deps) ([]controller.Controller, error) {
+	e, ok := ext.Registered()
+	if !ok || e.Controllers == nil {
+		return nil, nil
+	}
+	cs, err := e.Controllers(ctx, d)
+	if err != nil {
+		return nil, fmt.Errorf("extension %q controllers: %w", e.Name, err)
+	}
+	out := make([]controller.Controller, 0, len(cs))
+	for _, c := range cs {
+		if c == nil {
+			return nil, fmt.Errorf("extension %q returned a nil controller", e.Name)
+		}
+		out = append(out, c)
+	}
+	return out, nil
 }

@@ -28,6 +28,7 @@
 # Edition seams: where an Enterprise overlay plugs into the open core, the build
 # switch, the overlay fence and the entitlement registry. Maintainer review.
 /api/internal/extension/            @0xmanhnv
+/api/pkg/extension/                 @0xmanhnv
 /api/pkg/domain/limits/             @0xmanhnv
 /api/cmd/server/edition_*.go        @0xmanhnv
 /api/ee/                            @0xmanhnv
@@ -44,6 +45,9 @@
 /api/internal/infra/http/internalapi/** @0xmanhnv
 /api/cmd/server/internal_api.go @0xmanhnv
 /api/internal/app/entitlement/** @0xmanhnv
+/api/pkg/extension/** @0xmanhnv
+/api/internal/extension/** @0xmanhnv
+/api/internal/infra/http/routes/extension.go @0xmanhnv
 /api/internal/infra/http/routes/misc.go @0xmanhnv
 /api/internal/infra/http/routes/scim.go @0xmanhnv
 /api/internal/infra/http/routes/mcp_oauth.go @0xmanhnv

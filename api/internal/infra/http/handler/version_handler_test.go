@@ -28,7 +28,7 @@ func TestVersionHandler(t *testing.T) {
 	if cc := rec.Header().Get("Cache-Control"); cc != "no-store" {
 		t.Errorf("Cache-Control = %q", cc)
 	}
-	var body map[string]string
+	var body map[string]any
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
@@ -37,10 +37,14 @@ func TestVersionHandler(t *testing.T) {
 		"commit":     "4d2f4b02",
 		"build_time": "2026-10-02T10:00:00Z",
 		"channel":    "release",
+		"edition":    "community",
 	}
 	for k, v := range want {
 		if body[k] != v {
-			t.Errorf("%s = %q, want %q", k, body[k], v)
+			t.Errorf("%s = %v, want %q", k, body[k], v)
 		}
+	}
+	if body["extension_api"] != float64(version.Get().ExtensionAPI) {
+		t.Errorf("extension_api = %v", body["extension_api"])
 	}
 }

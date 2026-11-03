@@ -36,6 +36,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/sla"
 	webverifyapp "github.com/openctemio/openctem/api/internal/app/webverify"
 	"github.com/openctemio/openctem/api/internal/config"
+	"github.com/openctemio/openctem/api/internal/extension"
 	"github.com/openctemio/openctem/api/internal/infra/auditsink"
 	"github.com/openctemio/openctem/api/internal/infra/controller"
 	"github.com/openctemio/openctem/api/internal/infra/jobs"
@@ -1304,14 +1305,26 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	}
 
 	// Off-box copy of the administrators' audit log. Off unless a sink is
-	// configured; a bad sink fails the boot, never silently.
-	if cfg.AdminAuditSink.URL != "" {
+	// configured; a bad sink fails the boot, never silently. A build whose
+	// extension took the setting over streams it there instead (once).
+	if cfg.AdminAuditSink.URL != "" && !extension.Claims("ADMIN_AUDIT_SINK") {
 		fwd, err := adminAuditSinkForwarder(cfg.AdminAuditSink, repos.AdminAuditLog, log)
 		if err != nil {
 			return nil, fmt.Errorf("admin audit sink: %w", err)
 		}
 		w.ControllerManager.Register(fwd)
 		log.Info("administrators' audit log streamed off the box", "sink", redactSinkURL(cfg.AdminAuditSink.URL))
+	}
+
+	// Controllers of the build's extension (none in the Community build).
+	// One the extension cannot start fails the boot, like a core
+	// controller's bad configuration.
+	extCtrls, err := extension.Controllers(context.Background(), deps.Services.ExtensionDeps)
+	if err != nil {
+		return nil, err
+	}
+	for _, c := range extCtrls {
+		w.ControllerManager.Register(c)
 	}
 
 	// Audit hash-chain integrity verification. The admin endpoint
