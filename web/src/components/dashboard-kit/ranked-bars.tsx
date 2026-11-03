@@ -220,7 +220,7 @@ export function RankedBars({
           data-health={r.health ?? 'ok'}
           {...extra}
         >
-          <span className="flex min-w-0 items-center gap-1.5">
+          <span className="flex min-w-0 items-center gap-1.5" data-wire-main>
             {r.icon && (
               <span className="shrink-0 text-muted-foreground" aria-hidden>
                 {r.icon}
@@ -273,7 +273,11 @@ export function RankedBars({
               {r.meta}
             </span>
           )}{' '}
-          <span className="col-span-2 flex h-1.5 overflow-hidden rounded-full bg-muted" aria-hidden>
+          <span
+            className="col-span-2 flex h-1.5 overflow-hidden rounded-full bg-muted"
+            aria-hidden
+            data-wire-main
+          >
             <span
               className={cn('rounded-full', !r.color && 'bg-signal')}
               style={{ width: `${pct}%`, background: r.color }}
