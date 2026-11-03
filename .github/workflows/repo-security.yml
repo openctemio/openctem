@@ -279,6 +279,10 @@ jobs:
         run: bash .github/scripts/check-action-pins.sh
       # Every runs-on is a hosted label or an approved runner selector, and a
       # fork pull request always runs on a GitHub-hosted runner.
+      # The AI-attribution pattern shared by the commit-msg hook and the
+      # "No AI attribution" workflow.
+      - name: AI attribution check self-test
+        run: bash .github/scripts/check-attribution.test.sh >/dev/null
       - name: Runner selection self-test
         run: bash .github/scripts/check-runners.test.sh
       - name: Runner selection
