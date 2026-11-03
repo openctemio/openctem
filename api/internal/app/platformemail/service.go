@@ -55,6 +55,11 @@ type stored struct {
 	From              string `json:"from"`
 	FromName          string `json:"from_name,omitempty"`
 	StartTLS          bool   `json:"starttls"`
+	// CAPEM is the PEM bundle of the internal CA the relay's certificate is
+	// verified against (public certificates only); empty = the system roots.
+	// Write-only: reads say only whether one is set and its fingerprint.
+	CAPEM string `json:"ca_pem,omitempty"`
+	CAFP  string `json:"ca_fp,omitempty"`
 	// AppliedRelay is the relay (host, port, security, username) last saved while
 	// turned on: a later enabled save with another relay needs a second
 	// super admin. Turning e-mail off keeps it.
@@ -71,8 +76,11 @@ type Settings struct {
 	From        string
 	FromName    string
 	StartTLS    bool
-	Version     int
-	UpdatedAt   time.Time
+	// CASet says an internal CA bundle is stored; CAFingerprint identifies it.
+	CASet         bool
+	CAFingerprint string
+	Version       int
+	UpdatedAt     time.Time
 }
 
 // Input is a change. Password: nil keeps the stored one; "" clears it; any
@@ -86,6 +94,9 @@ type Input struct {
 	From     string
 	FromName string
 	StartTLS bool
+	// CAPEM: nil keeps the stored internal CA bundle; "" removes it (system
+	// roots again); any other value replaces it. Certificates only.
+	CAPEM *string
 }
 
 // hostRE: a DNS name or an IP literal, no scheme, port, path or spaces.
@@ -96,6 +107,11 @@ func (in Input) trimmed() Input {
 	in.Host, in.From, in.Username, in.FromName = strings.TrimSpace(in.Host), strings.TrimSpace(in.From), strings.TrimSpace(in.Username), strings.TrimSpace(in.FromName)
 	return in
 }
+
+// errCAInvalid is what a person reads when the CA bundle does not parse: a
+// fixed sentence naming the limits, never the parser's own text.
+var errCAInvalid = fmt.Errorf("%w: the CA certificate must be PEM text holding up to %d CERTIFICATE blocks and at most %d KB",
+	ErrInvalid, emaildom.MaxCACertificates, emaildom.MaxCABundleBytes/1024)
 
 func (in Input) validate() error {
 	if !in.Enabled {
@@ -116,6 +132,11 @@ func (in Input) validate() error {
 	}
 	if in.Password != nil && len(*in.Password) > 1024 {
 		return fmt.Errorf("%w: password too long", ErrInvalid)
+	}
+	if in.CAPEM != nil && strings.TrimSpace(*in.CAPEM) != "" {
+		if _, _, err := emaildom.ParseCABundle(*in.CAPEM); err != nil {
+			return errCAInvalid
+		}
 	}
 	return nil
 }
@@ -186,7 +207,7 @@ func (s *Service) Get(ctx context.Context) (Settings, error) {
 	return Settings{
 		Enabled: st.Enabled, Host: st.Host, Port: st.Port, Username: st.Username,
 		PasswordSet: st.PasswordEncrypted != "", From: st.From, FromName: st.FromName,
-		StartTLS: st.StartTLS, Version: v, UpdatedAt: at,
+		StartTLS: st.StartTLS, CASet: st.CAPEM != "", CAFingerprint: st.CAFP, Version: v, UpdatedAt: at,
 	}, nil
 }
 
@@ -207,9 +228,22 @@ func (s *Service) Update(ctx context.Context, actor *admin.AdminUser, in Input, 
 	}
 	next := stored{Enabled: in.Enabled, Host: in.Host, Port: in.Port, Username: in.Username,
 		From: in.From, FromName: in.FromName, StartTLS: in.StartTLS, PasswordEncrypted: prev.PasswordEncrypted,
-		AppliedRelay: prev.AppliedRelay}
+		AppliedRelay: prev.AppliedRelay, CAPEM: prev.CAPEM, CAFP: prev.CAFP}
+	caChanged := false
+	if in.CAPEM != nil {
+		caChanged = true
+		next.CAPEM, next.CAFP = "", ""
+		if t := strings.TrimSpace(*in.CAPEM); t != "" {
+			// validate() parsed it; the fingerprint is derived here, never taken from the client.
+			_, fp, err := emaildom.ParseCABundle(t)
+			if err != nil {
+				return Settings{}, errCAInvalid
+			}
+			next.CAPEM, next.CAFP = t, fp
+		}
+	}
 	if next.Enabled {
-		next.AppliedRelay = admin.PlatformEmailRelayTarget(next.Host, next.Port, next.StartTLS, next.Username)
+		next.AppliedRelay = admin.PlatformEmailRelayTargetCA(next.Host, next.Port, next.StartTLS, next.Username, next.CAFP)
 	}
 	credentialChanged := false
 	if in.Password != nil {
@@ -245,7 +279,7 @@ func (s *Service) Update(ctx context.Context, actor *admin.AdminUser, in Input, 
 		}
 		s.remember(next, st.Version, now)
 	}
-	s.record(ctx, actor, prev, next, credentialChanged, ip, userAgent)
+	s.record(ctx, actor, prev, next, credentialChanged, caChanged, ip, userAgent)
 	return s.Get(ctx)
 }
 
@@ -265,15 +299,30 @@ func (s *Service) ApprovalNeeded(ctx context.Context, in Input) (string, bool) {
 	prev, _, _, err := s.loadFresh(ctx)
 	if err != nil {
 		// Cannot read what is applied: ask for the approval rather than skip it.
-		return admin.PlatformEmailRelayTarget(in.Host, in.Port, in.StartTLS, in.Username), true
+		return targetFor(in, stored{}), true
 	}
-	target := admin.PlatformEmailRelayTarget(in.Host, in.Port, in.StartTLS, in.Username)
+	target := targetFor(in, prev)
 	applied := prev.AppliedRelay
 	if applied == "" && prev.Enabled {
 		// Saved before the applied relay was kept (or seeded from the environment).
-		applied = admin.PlatformEmailRelayTarget(prev.Host, prev.Port, prev.StartTLS, prev.Username)
+		applied = admin.PlatformEmailRelayTargetCA(prev.Host, prev.Port, prev.StartTLS, prev.Username, prev.CAFP)
 	}
 	return target, target != applied
+}
+
+// targetFor is the approval target of in given what is stored: a CA bundle
+// left unchanged keeps the stored fingerprint.
+func targetFor(in Input, prev stored) string {
+	fp := prev.CAFP
+	if in.CAPEM != nil {
+		fp = ""
+		if t := strings.TrimSpace(*in.CAPEM); t != "" {
+			if _, f, err := emaildom.ParseCABundle(t); err == nil {
+				fp = f
+			}
+		}
+	}
+	return admin.PlatformEmailRelayTargetCA(in.Host, in.Port, in.StartTLS, in.Username, fp)
 }
 
 func (s *Service) loadFresh(ctx context.Context) (stored, int, time.Time, error) {
@@ -283,7 +332,7 @@ func (s *Service) loadFresh(ctx context.Context) (stored, int, time.Time, error)
 	return s.load(ctx)
 }
 
-func (s *Service) record(ctx context.Context, actor *admin.AdminUser, prev, next stored, credentialChanged bool, ip, userAgent string) {
+func (s *Service) record(ctx context.Context, actor *admin.AdminUser, prev, next stored, credentialChanged, caChanged bool, ip, userAgent string) {
 	s.log.Warn("platform e-mail settings changed", "admin_id", actor.ID().String(),
 		"enabled", next.Enabled, "host", logger.SanitizeValue(next.Host), "credential_changed", credentialChanged)
 	if s.audit == nil {
@@ -298,6 +347,8 @@ func (s *Service) record(ctx context.Context, actor *admin.AdminUser, prev, next
 			"from": next.From, "from_name": next.FromName, "starttls": next.StartTLS,
 			// Never the value: only that it changed.
 			"password_changed": credentialChanged,
+			// The CA bundle is public, but only its fingerprint is audited.
+			"ca_changed": caChanged, "ca_fingerprint": next.CAFP, "previous_ca_fingerprint": prev.CAFP,
 		}).
 		Critical().
 		Build()
@@ -329,8 +380,18 @@ func (s *Service) senderConfig(ctx context.Context) (emaildom.Config, bool) {
 		}
 		password = p
 	}
-	return emaildom.Config{Host: st.Host, Port: st.Port, User: st.Username, Password: password,
-		From: st.From, FromName: st.FromName, TLS: st.StartTLS}, true
+	cfg := emaildom.Config{Host: st.Host, Port: st.Port, User: st.Username, Password: password,
+		From: st.From, FromName: st.FromName, TLS: st.StartTLS}
+	if st.CAPEM != "" {
+		pool, _, err := emaildom.ParseCABundle(st.CAPEM)
+		if err != nil {
+			// Fail closed: never fall back to other roots for a relay that was set up with its own CA.
+			s.log.Error("platform SMTP CA bundle does not parse; e-mail off")
+			return emaildom.Config{}, false
+		}
+		cfg.RootCAs = pool
+	}
+	return cfg, true
 }
 
 // Sender returns an e-mail sender that always uses the settings in force, so a
@@ -393,6 +454,13 @@ func (s *Service) Seed(ctx context.Context, in Input) (bool, error) {
 		return false, err
 	}
 	next := stored{Enabled: true, Host: in.Host, Port: in.Port, Username: in.Username, From: in.From, FromName: in.FromName, StartTLS: in.StartTLS}
+	if in.CAPEM != nil && strings.TrimSpace(*in.CAPEM) != "" {
+		_, fp, err := emaildom.ParseCABundle(*in.CAPEM)
+		if err != nil {
+			return false, errCAInvalid
+		}
+		next.CAPEM, next.CAFP = strings.TrimSpace(*in.CAPEM), fp
+	}
 	if in.Password != nil && *in.Password != "" {
 		enc, err := s.encryptor.EncryptString(*in.Password)
 		if err != nil {
