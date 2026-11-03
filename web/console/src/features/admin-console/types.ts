@@ -108,6 +108,11 @@ export interface AdminOrganization {
   created_at: string
   active_members: number
   /**
+   * The latest sign-in of any active member (per account, so a sign-in for
+   * another organization counts); absent when nobody signed in yet.
+   */
+  last_member_sign_in_at?: string
+  /**
    * Owners' addresses: only on the organization's own page, for ops_admin and
    * above (that view is audited). Empty in the list and for read-only.
    */
