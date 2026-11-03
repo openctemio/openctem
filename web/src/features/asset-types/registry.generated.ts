@@ -9,7 +9,7 @@
  * and labels for compile-time checks and for rendering before it loads.
  */
 
-export const ASSET_REGISTRY_VERSION = '3bf36a87c0f84a0c'
+export const ASSET_REGISTRY_VERSION = '98a73e498b7d7ad0'
 
 export type AssetLens =
   | 'external_surface'
@@ -359,12 +359,7 @@ export const ASSET_TYPE_ALIASES: Readonly<
   subnet: { type: 'network', subType: 'subnet' },
   firewall: { type: 'network', subType: 'firewall' },
   load_balancer: { type: 'network', subType: 'load_balancer' },
-  container_image: { type: 'container', subType: 'image' },
-  endpoint_device: { type: 'host', subType: 'workstation' },
-  ip_range: { type: 'network' },
-  kubernetes_workload: { type: 'kubernetes', subType: 'workload' },
   web_application: { type: 'application', subType: 'website' },
-  web_origin: { type: 'service', subType: 'http' },
 }
 
 export type AssetPropertyFormat = 'code' | 'expiry' | 'ip' | 'url'

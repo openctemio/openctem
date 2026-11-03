@@ -25,7 +25,8 @@ func identityAsset(k ctis.IdentityKind) *ctis.Asset {
 
 // The wire type to stored type table: domain_name is a domain at the
 // public-suffix apex and a subdomain below it; identity takes its sub-type
-// from technical.identity.kind; the rest are type_inputs of the registry.
+// from technical.identity.kind; the other wire-only types are placed here,
+// not by the registry's type_inputs (the REST API's inputs).
 func TestMapCTISAssetType_WireToStored(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -45,9 +46,11 @@ func TestMapCTISAssetType_WireToStored(t *testing.T) {
 		{"identity group keeps its kind", identityAsset(ctis.IdentityGroup), asset.AssetTypeIdentity, "group"},
 		{"identity without technical", &ctis.Asset{Type: ctis.AssetTypeIdentity, Value: "u1"}, asset.AssetTypeIdentity, ""},
 		{"service", &ctis.Asset{Type: ctis.AssetTypeService, Value: "203.0.113.5:443/tcp"}, asset.AssetTypeService, "open_port"},
-		{"web origin", &ctis.Asset{Type: ctis.AssetTypeWebOrigin, Value: "https://example.com"}, asset.AssetType("web_origin"), ""},
-		{"ip range", &ctis.Asset{Type: ctis.AssetTypeIPRange, Value: "10.0.0.0/24"}, asset.AssetType("ip_range"), ""},
-		{"container image", &ctis.Asset{Type: ctis.AssetTypeContainerImage}, asset.AssetType("container_image"), ""},
+		{"web origin", &ctis.Asset{Type: ctis.AssetTypeWebOrigin, Value: "https://example.com"}, asset.AssetTypeService, "http"},
+		{"ip range", &ctis.Asset{Type: ctis.AssetTypeIPRange, Value: "10.0.0.0/24"}, asset.AssetTypeNetwork, ""},
+		{"container image", &ctis.Asset{Type: ctis.AssetTypeContainerImage}, asset.AssetTypeContainer, "image"},
+		{"kubernetes workload", &ctis.Asset{Type: ctis.AssetTypeKubernetesWorkload}, asset.AssetTypeKubernetes, "workload"},
+		{"endpoint device", &ctis.Asset{Type: ctis.AssetTypeEndpointDevice}, asset.AssetTypeHost, "workstation"},
 		{"host", &ctis.Asset{Type: ctis.AssetTypeHost, Value: "h1"}, asset.AssetTypeHost, ""},
 		{"ip address", &ctis.Asset{Type: ctis.AssetTypeIPAddress, Value: "203.0.113.7"}, asset.AssetTypeIPAddress, ""},
 		{"empty type", &ctis.Asset{}, asset.AssetTypeUnclassified, ""},
@@ -437,4 +440,18 @@ func TestBuildPropertiesFromCTIS_PromotesTechnicalBlocks(t *testing.T) {
 	assert.Equal(t, 22, port["port"])
 	assert.Equal(t, "9.6", port["version"])
 	assert.NotContains(t, port, "tls")
+}
+
+// The CTIS 2.0 wire-only types are not REST API asset type inputs: the
+// receiver places them, the API refuses them as it did before 2.0.
+func TestCTISWireTypes_NotAPIInputs(t *testing.T) {
+	for wire := range ctisWireTypes {
+		if _, err := asset.ResolveInputType(string(wire), ""); err == nil {
+			t.Errorf("%s is accepted as a REST asset type input", wire)
+		}
+		got := resolveCTISAssetType(&ctis.Asset{Type: wire, Value: "x"})
+		if got.stored.Type == asset.AssetTypeUnclassified {
+			t.Errorf("%s resolves to unclassified in the receiver", wire)
+		}
+	}
 }

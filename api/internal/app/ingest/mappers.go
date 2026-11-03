@@ -103,13 +103,28 @@ func mapCTISAssetType(ca *ctis.Asset) (asset.AssetType, string) {
 		return asset.AssetTypeNetwork, networkDeviceSubType(ca)
 	case "":
 		return asset.AssetTypeUnclassified, ""
-	default:
-		// Stored types (host, ip_address, certificate, repository, ...)
-		// and the type_inputs of the registry (web_origin, ip_range,
-		// container_image, kubernetes_cluster, ...). An unknown name
-		// resolves to unclassified.
-		return asset.AssetType(ca.Type), ""
 	}
+	if t, ok := ctisWireTypes[ca.Type]; ok {
+		return t.typ, t.sub
+	}
+	// Stored types (host, ip_address, certificate, repository, ...) and the
+	// registry's type_inputs (kubernetes_cluster, web_application, ...). An
+	// unknown name resolves to unclassified.
+	return asset.AssetType(ca.Type), ""
+}
+
+// ctisWireTypes are the CTIS 2.0 wire types that are no stored type and need
+// nothing from the asset to place. They live here, not in the registry's
+// type_inputs, so the REST API's asset type inputs stay unchanged.
+var ctisWireTypes = map[ctis.AssetType]struct {
+	typ asset.AssetType
+	sub string
+}{
+	ctis.AssetTypeWebOrigin:          {asset.AssetTypeService, "http"},
+	ctis.AssetTypeIPRange:            {asset.AssetTypeNetwork, ""},
+	ctis.AssetTypeContainerImage:     {asset.AssetTypeContainer, "image"},
+	ctis.AssetTypeKubernetesWorkload: {asset.AssetTypeKubernetes, "workload"},
+	ctis.AssetTypeEndpointDevice:     {asset.AssetTypeHost, "workstation"},
 }
 
 // =============================================================================
@@ -449,7 +464,7 @@ func buildHTTPProperties(h *ctis.HTTPTechnical) map[string]any {
 		props["status_code"] = h.StatusCode
 	}
 	for k, v := range map[string]string{
-		"title": h.Title, "web_server": h.WebServer, "content_type": h.ContentType,
+		"title": h.Title, "server": h.WebServer, "content_type": h.ContentType,
 		"redirect_url": h.RedirectURL, "cdn": h.CDN, "waf": h.WAF, "jarm": h.JARM,
 		"favicon_mmh3": h.FaviconMMH3, "tls_version": string(h.TLSVersion),
 	} {
