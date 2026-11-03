@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"hash/fnv"
 	"sort"
 	"strings"
 	"sync"
@@ -226,12 +227,14 @@ func (s *ModuleService) ETagToken(ctx context.Context, tenantID string) string {
 		ids = append(ids, id)
 	}
 	sort.Strings(ids)
-	h := sha256.New()
+	// A change fingerprint, not a secret and not a password hash: FNV-1a is
+	// enough to tell two states apart.
+	h := fnv.New64a()
 	for _, id := range ids {
 		_, _ = fmt.Fprintf(h, "%s\x00%s\x00", id, states[id])
 	}
 	return fmt.Sprintf("v%d.%s.%s", s.GetTenantModuleVersion(ctx, tenantID),
-		hex.EncodeToString(h.Sum(nil)[:8]), registryFingerprint())
+		hex.EncodeToString(h.Sum(nil)), registryFingerprint())
 }
 
 // notifyModuleChange increments the version and broadcasts a
