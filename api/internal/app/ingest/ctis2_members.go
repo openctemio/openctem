@@ -12,7 +12,12 @@ package ingest
 //     suffix list: a root is created only when the producer states it, and
 //     ingest still checks it is a registrable parent);
 //   - ip_addresses of a name: its A/AAAA DNS records and the ip_address
-//     assets it resolves_to;
+//     assets it resolves_to (DNS only);
+//   - ip_addresses of a machine (network device, host, endpoint device, any
+//     asset that is not a name, an address or a range): the ip_address
+//     assets a has_address relationship names (its interface or management
+//     addresses). A range is never given addresses, so a segment is never
+//     matched by address;
 //   - host, port and transport of a service, from its value;
 //   - tls_fingerprint of a web origin or service: the certificate a
 //     serves_certificate relationship names;
@@ -77,6 +82,7 @@ func adoptCTIS2Members(report *ctis.Report, serverSide bool) {
 	}
 	fillFromRules(report)
 	resolved := resolvedAddressesByRef(report)
+	addressed := hasAddressesByRef(report)
 	roots := statedRoots(report)
 	served := servedCertificates(report)
 	for i := range report.Assets {
@@ -114,6 +120,9 @@ func adoptCTIS2Members(report *ctis.Report, serverSide bool) {
 			set(propTLSFingerprint, fp)
 		}
 		if ips := resolved[a.ID]; len(ips) > 0 && a.Type == ctis.AssetTypeDomainName {
+			set(asset.PropKeyIPAddresses, ips)
+		}
+		if ips := addressed[a.ID]; len(ips) > 0 && takesHasAddress(a.Type) {
 			set(asset.PropKeyIPAddresses, ips)
 		}
 		for _, k := range []string{PropImportScope, extCandidateExposure, extCandidateUnverified, asset.PropKeyWebContent} {
@@ -187,6 +196,54 @@ func resolvedAddressesByRef(report *ctis.Report) map[string][]string {
 		if ip, ok := ipByRef[rel.ToRef]; ok {
 			add(rel.FromRef, ip)
 		}
+	}
+	return out
+}
+
+// takesHasAddress reports whether an asset of this wire type records the
+// addresses its has_address relationships name: a machine. A name resolves
+// (resolves_to), an address is itself, and a range is a segment, which is
+// never matched by address.
+func takesHasAddress(t ctis.AssetType) bool {
+	switch t {
+	case ctis.AssetTypeDomainName, ctis.AssetTypeIPAddress, ctis.AssetTypeIPRange, "":
+		return false
+	}
+	return true
+}
+
+// hasAddressesByRef is, per document asset id, the ip_address assets its
+// has_address relationships name. Canonical, deduplicated, bounded.
+func hasAddressesByRef(report *ctis.Report) map[string][]string {
+	ipByRef := map[string]string{}
+	for i := range report.Assets {
+		if report.Assets[i].Type == ctis.AssetTypeIPAddress {
+			ipByRef[report.Assets[i].ID] = report.Assets[i].Value
+		}
+	}
+	out := map[string][]string{}
+	seen := map[string]map[string]bool{}
+	for _, rel := range report.Relationships {
+		if rel.Type != ctis.RelHasAddress {
+			continue
+		}
+		ip, ok := ipByRef[rel.ToRef]
+		parsed := net.ParseIP(strings.TrimSpace(ip))
+		if !ok || rel.FromRef == "" || parsed == nil {
+			continue
+		}
+		canon := parsed.String()
+		if v4 := parsed.To4(); v4 != nil {
+			canon = v4.String()
+		}
+		if seen[rel.FromRef] == nil {
+			seen[rel.FromRef] = map[string]bool{}
+		}
+		if seen[rel.FromRef][canon] || len(out[rel.FromRef]) >= maxResolvedAddresses {
+			continue
+		}
+		seen[rel.FromRef][canon] = true
+		out[rel.FromRef] = append(out[rel.FromRef], canon)
 	}
 	return out
 }

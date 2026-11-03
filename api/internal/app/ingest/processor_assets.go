@@ -621,6 +621,25 @@ func (p *AssetProcessor) processBatch(
 			}
 		}
 
+		// 2a. A network device named by its address: the name belongs to the
+		// ip_address asset a has_address relationship recorded (names are
+		// unique per tenant). The device that records the address wins when
+		// exactly one does; the name lookup below handles the rest. The name
+		// cache is left alone, so the address asset keeps its own reports.
+		if hasNameMatch && p.correlator != nil && isNetworkDevice(coreType, rt.stored.SubType) &&
+			nameMatch.Type() == asset.AssetTypeIPAddress {
+			result, corrErr := p.correlator.CorrelateNetworkDevice(ctx, tenantID, normalizedName, p.buildPropertiesFromCTIS(ctisAsset), cfg)
+			if corrErr != nil {
+				p.logger.Warn("network device correlation failed, using the name",
+					"name", logger.SanitizeValue(normalizedName), "error", corrErr)
+			}
+			if result != nil && result.Matched != nil &&
+				(idx == nil || !idx.vetoed(result.Matched, idx.incoming[i], allKinds)) {
+				mergeInto(result.Matched)
+				continue
+			}
+		}
+
 		// 2. Exact name.
 		if hasNameMatch {
 			if idx != nil {

@@ -64,6 +64,10 @@ func mapReportRelationship(t ctis.RelationshipType, from, to *asset.Asset) (asse
 			return asset.RelTypeContains, to, from, true
 		}
 		return asset.RelTypeRunsOn, from, to, true
+	case ctis.RelHasAddress:
+		// A machine's interface or management address: stored as the machine
+		// containing the address, as an address hosted by a host is.
+		return asset.RelTypeContains, from, to, true
 	case ctis.RelContains:
 		return asset.RelTypeContains, from, to, true
 	case ctis.RelRunsOn:
