@@ -1,5 +1,5 @@
 
-.PHONY: platform-authz-docs
+.PHONY: platform-authz-docs sigstore-root-refresh
 .PHONY: all build run test test-db budgets-update lint clean docker-build docker-dev docker-prod docker-down migrate generate seed help seed-required docker-seed docker-seed-required db-setup db-setup-dev swagger contract swagger-check swagger-install env-docs authz-matrix migration-new migration-renumber migrations-released migrate-up migrate-down migrate-status migrate-force
 
 # Variables
@@ -382,6 +382,14 @@ generate-relationships:
 ## whose body is `make modules-sql`.
 generate-modules:
 	@GOWORK=off $(GOCMD) run ./cmd/gen-modules
+
+## sigstore-root-refresh: Refresh the embedded Sigstore trusted root (release feed + content publishers) from Sigstore's TUF repository; needs cosign and internet. Commit the result.
+sigstore-root-refresh:
+	@command -v cosign >/dev/null || { echo "cosign is required"; exit 1; }
+	@cosign initialize
+	@test -s $(HOME)/.sigstore/root/tuf-repo-cdn.sigstore.dev/targets/trusted_root.json || { echo "trusted_root.json not found in the cosign TUF cache"; exit 1; }
+	@cp $(HOME)/.sigstore/root/tuf-repo-cdn.sigstore.dev/targets/trusted_root.json pkg/contentpkg/sigstore/trusted_root.json
+	@GOWORK=off $(GOCMD) test ./pkg/contentpkg/sigstore/ ./pkg/releasefeed/...
 
 ## modules-sql: Print the SQL block that writes the modules rows (the body of a registry migration)
 modules-sql:
