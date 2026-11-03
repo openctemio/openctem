@@ -43,14 +43,14 @@ permissions:
 jobs:
   console:
     name: Console E2E
-    runs-on: ${{ vars.CI_RUNNER_LIGHT || 'ubuntu-latest' }}
+    runs-on: ${{ (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_LIGHT) || 'ubuntu-latest' }}
     timeout-minutes: 30
     services:
       postgres:
         image: postgres:17-alpine
         env:
           POSTGRES_USER: openctem
-          POSTGRES_PASSWORD: console-e2e-ci
+          POSTGRES_HOST_AUTH_METHOD: trust
           POSTGRES_DB: openctem
         ports: ['127.0.0.1:5432:5432']
         options: >-
