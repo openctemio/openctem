@@ -15,6 +15,8 @@ import (
 	"github.com/openctemio/ctis/transfer"
 
 	bp "github.com/openctemio/openctem/api/pkg/domain/bountyprogram"
+	moduledom "github.com/openctemio/openctem/api/pkg/domain/module"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	feed "github.com/openctemio/openctem/api/pkg/programfeed"
 )
@@ -54,6 +56,7 @@ type Importer struct {
 	stream     string
 	// settings gates the local stream on the administrator's switch.
 	settings bp.FeedSourceSettings
+	modules  ModuleGuard
 	log      *logger.Logger
 	now      func() time.Time
 
@@ -195,6 +198,20 @@ const OutcomeFailed = "failed"
 // reconcileBatches bounds one reconcile pass (batches of 200).
 const reconcileBatches = 25
 
+// ModuleGuard reports the modules a tenant has off (*module.ModuleService).
+type ModuleGuard interface {
+	TenantDisabledModules(ctx context.Context, tenantID string) map[string]bool
+}
+
+// SetModuleGuard makes the reconcile leave the programs of a tenant with the
+// scope module off as they are. The catalog import itself is installation-wide
+// and does not depend on any tenant.
+func (i *Importer) SetModuleGuard(g ModuleGuard) { i.modules = g }
+
+func (i *Importer) moduleOff(ctx context.Context, tenantID shared.ID) bool {
+	return i.modules != nil && i.modules.TenantDisabledModules(ctx, tenantID.String())[moduledom.ModuleScopeConfig]
+}
+
 // Reconcile brings every subscribed program that differs from its catalog
 // program up to date. It runs after each import and on every tick, so a
 // program whose update failed is retried until it succeeds.
@@ -202,7 +219,10 @@ func (i *Importer) Reconcile(ctx context.Context) map[string]int {
 	out := map[string]int{}
 	failed := map[string]bool{}
 	for range reconcileBatches {
-		refs, err := i.catalog.StaleSubscriptions(ctx, 200)
+		refs, err := moduledom.CollectEnabled(ctx, 200,
+			func(skip []shared.ID) ([]bp.ProgramRef, error) { return i.catalog.StaleSubscriptions(ctx, 200, skip) },
+			func(r bp.ProgramRef) shared.ID { return r.TenantID },
+			i.moduleOff)
 		if err != nil {
 			i.log.Warn("program feed: subscriptions not read", "error", err)
 			return out

@@ -179,7 +179,7 @@ type TaskQueryRepository interface {
 	RecordQueryRun(ctx context.Context, tenantID, taskID shared.ID, added int, at time.Time) error
 	ClaimQueryFindings(ctx context.Context, c QueryClaim) (*QueryClaimResult, error)
 	PrimaryHolders(ctx context.Context, tenantID shared.ID, ids []shared.ID) ([]PrimaryHolder, error)
-	DueAutoQueryTasksForPlatform(ctx context.Context, olderThan time.Time, limit int) ([]DueQueryTask, error)
+	DueAutoQueryTasksForPlatform(ctx context.Context, olderThan time.Time, limit int, skipTenants []shared.ID) ([]DueQueryTask, error)
 }
 
 // QueryBreakdown is one row of a preview breakdown.

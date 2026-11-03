@@ -103,7 +103,7 @@ func TestPublicProgramRepository(t *testing.T) {
 	if err != nil || got.PublicProgramID == nil || !got.PublicProgramID.Equals(a.ID) || got.Status != bountyprogram.StatusPendingAttestation {
 		t.Fatalf("round trip: %+v %v", got, err)
 	}
-	if stale, _ := cat.StaleSubscriptions(ctx, 100); len(stale) != 0 {
+	if stale, _ := cat.StaleSubscriptions(ctx, 100, nil); len(stale) != 0 {
 		t.Fatalf("stale before a change: %v", stale)
 	}
 
@@ -117,7 +117,7 @@ func TestPublicProgramRepository(t *testing.T) {
 	if k := kinds(ch); k["acme-bounty:a"] != "changed" || k["acme-bounty:c"] != "removed" || k["acme-bounty:b"] != "" {
 		t.Fatalf("second apply: %v", k)
 	}
-	stale, err := cat.StaleSubscriptions(ctx, 100)
+	stale, err := cat.StaleSubscriptions(ctx, 100, nil)
 	if err != nil || len(stale) != 2 {
 		t.Fatalf("stale = %v %v", stale, err)
 	}
