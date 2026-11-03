@@ -13,7 +13,10 @@ import (
 type Filter struct {
 	// TenantID lists the tenant's own sensors; shared platform sensors are
 	// never among them.
-	TenantID      *shared.ID
+	TenantID *shared.ID
+	// SharedOnly lists the platform's shared sensors only (scope instance,
+	// no tenant).
+	SharedOnly    bool
 	Type          *SensorType
 	Status        *SensorStatus // Admin-controlled: active, disabled, revoked
 	Health        *SensorHealth // Automatic: unknown, online, late, stale, offline, error
