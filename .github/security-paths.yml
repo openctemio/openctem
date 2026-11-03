@@ -77,6 +77,8 @@ crypto-keys-signing:
   - api/pkg/jobsign/**
   - api/pkg/feedsign/**
   - api/pkg/licensekey/**
+  - api/internal/app/subscription/**
+  - api/internal/infra/postgres/subscription_repository.go
   - api/pkg/domain/limits/**
   - api/pkg/sensorsig/**
   - api/pkg/sensorkey/**

@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Accepted (2026-11-02). Implementation in progress: step 1 (verifier) built |
+| Status | Accepted (2026-11-02). Implementation in progress: steps 1 (verifier) and 2 (storage, grant answer) built |
 | Scope | api (licence verifier, subscription store, entitlement service, admin API, seams), web console (Subscription page), helm-charts and openctem-ansible (seed), sdk-go consumers (add-on components) |
 | Related | RFC-040 (signed jobs), RFC-142 (feed relay), [limits and feature denies](../architecture/limits.md) |
 
@@ -109,8 +109,9 @@ channel and a compromised relay can withhold a renewal but never forge one.
 Never, in any state: a read-only instance, blocked sign-in, changes to SSO, MFA, audit or any
 security control, deleted data, or stopped Community jobs.
 
-- **Renewal without restart.** Storing a newer valid licence is a database write plus `pg_notify`;
-  every replica reloads (a 60 s poll is the backstop). A future-dated licence waits in history and
+- **Renewal without restart.** Storing a newer valid licence is a database write that bumps a
+  state version; the writing replica reloads at once and every other replica within 30 s (a
+  single-row version check). A future-dated licence waits in history and
   switches on at its `not_before`, so uploading early causes no gap. Overlapping valid licences are
   not merged: the one with the later `not_before` that is valid now wins.
 - **History.** Every licence ever stored is kept (`subscription_licenses`, append-only).
@@ -190,14 +191,15 @@ Naming: `pkg/licensekey` (verify) and `internal/app/subscription` (store, state)
 1. (built) `pkg/licensekey`: wrapper and claims, verification on `pkg/feedsign` key sets, embedded roots,
    revoked list, binding, effective-time rules. Table tests: wrong root, tampered claim, expired,
    future `not_before`, rolled-back key set, revoked id, binding mismatch, oversize, unknown key.
-2. Migration for `subscription_licenses`, installation id and time high-water;
+2. (built) Migration for `subscription_licenses`, installation id and time high-water;
    `internal/app/subscription`; `limits.GrantSource`, the `grant_required` class,
-   `Service.Addon` and `RequireAddon`; add-on rows in the module entitlements. Tests: Community has the
+   `Service.Addon` and `RequireAddon`. Tests: Community has the
    extras off and every existing feature unchanged; grace to expired transitions; a tenant cannot read
    the licence.
 3. Admin API (`GET`, `POST`, `DELETE` under `/api/v1/admin/subscription`), usage export, permission,
    step-up, audit, boot seed.
-4. Console Subscription page, banners, e-mails, i18n, tenant locked state.
+4. Console Subscription page, banners, e-mails, i18n, tenant locked state (add-on rows in the module
+   entitlements).
 5. Seams from section 7.
 6. Documentation: rewrite of the "Later sources" section of the limits architecture doc, a
    subscription operations guide, Helm `license.existingSecret`, Ansible `openctem_license_file`.

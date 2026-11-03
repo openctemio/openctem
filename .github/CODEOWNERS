@@ -77,6 +77,8 @@
 /api/pkg/jobsign/** @0xmanhnv
 /api/pkg/feedsign/** @0xmanhnv
 /api/pkg/licensekey/** @0xmanhnv
+/api/internal/app/subscription/** @0xmanhnv
+/api/internal/infra/postgres/subscription_repository.go @0xmanhnv
 /api/pkg/domain/limits/** @0xmanhnv
 /api/pkg/sensorsig/** @0xmanhnv
 /api/pkg/sensorkey/** @0xmanhnv

@@ -49,6 +49,7 @@ type AuditWriter interface {
 type Service struct {
 	repo    limits.Repository
 	sources []limits.Source
+	grants  []limits.GrantSource
 	audit   AuditWriter
 	log     *logger.Logger
 	now     func() time.Time
