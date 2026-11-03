@@ -145,7 +145,7 @@ export function AddContentPackDialog({ onAdded }: { onAdded: () => void }) {
         excluded > 0
           ? t(
               'admin.cp.addedExcluded',
-              'Pack added; {count} file(s) were left out (see its warnings).',
+              'Pack added; {count, plural, one {# file was} other {# files were}} left out (see its warnings).',
               {
                 count: excluded,
               }

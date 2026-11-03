@@ -86,7 +86,9 @@ export function OrganizationSummary({
         >
           {org.owner_emails.length === 0 && org.owner_count > 0 ? (
             <span className="text-muted-foreground">
-              {t('admin.org.ownerCount', '{count} owner(s)', { count: org.owner_count })}
+              {t('admin.org.ownerCount', '{count, plural, one {# owner} other {# owners}}', {
+                count: org.owner_count,
+              })}
             </span>
           ) : org.owner_emails.length === 0 && org.owner_invitation ? (
             <OwnerInvitationBadge invitation={org.owner_invitation} />
@@ -157,9 +159,13 @@ export function OrganizationSummary({
         >
           <SSOPostureBadges org={org} />
           <p className="mt-1 text-muted-foreground">
-            {t('admin.org.summary.domains', '{count} verified domain(s)', {
-              count: org.verified_domains,
-            })}
+            {t(
+              'admin.org.summary.domains',
+              '{count, plural, one {# verified domain} other {# verified domains}}',
+              {
+                count: org.verified_domains,
+              }
+            )}
           </p>
         </SummaryCard>
 

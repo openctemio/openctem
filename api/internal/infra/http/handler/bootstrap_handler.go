@@ -55,14 +55,14 @@ func (h *BootstrapHandler) WithModulesETagKey(key []byte) *BootstrapHandler {
 
 // modulesETag is base64url(HMAC-SHA256(key, tenant, user, admin, versions))
 // truncated to 128 bits, quoted.
-func (h *BootstrapHandler) modulesETag(tenantID, userID string, isAdmin bool, modVersion, permVersion int) string {
+func (h *BootstrapHandler) modulesETag(tenantID, userID string, isAdmin bool, moduleToken string, permVersion int) string {
 	key := h.etagKey
 	if len(key) == 0 {
 		key = processETagKey()
 	}
 	mac := hmac.New(sha256.New, key)
 	// NUL-separated: ids and decimal numbers never contain NUL.
-	_, _ = fmt.Fprintf(mac, "modules\x00%s\x00%s\x00%t\x00%d\x00%d", tenantID, userID, isAdmin, modVersion, permVersion)
+	_, _ = fmt.Fprintf(mac, "modules\x00%s\x00%s\x00%t\x00%s\x00%d", tenantID, userID, isAdmin, moduleToken, permVersion)
 	return `"` + base64.RawURLEncoding.EncodeToString(mac.Sum(nil)[:16]) + `"`
 }
 
@@ -734,12 +734,12 @@ func (h *BootstrapHandler) GetTenantModules(w http.ResponseWriter, r *http.Reque
 	// them and cannot be matched by another user, even one in the same
 	// tenant with the same counters (a shared browser profile sends the
 	// previous user's ETag).
-	modVersion := h.moduleSvc.GetTenantModuleVersion(ctx, tenantID)
+	moduleToken := h.moduleSvc.ETagToken(ctx, tenantID)
 	permVersion := 0
 	if h.permVersionSvc != nil && userID != "" {
 		permVersion = h.permVersionSvc.Get(ctx, tenantID, userID)
 	}
-	etag := h.modulesETag(tenantID, userID, isAdmin, modVersion, permVersion)
+	etag := h.modulesETag(tenantID, userID, isAdmin, moduleToken, permVersion)
 	w.Header().Set("ETag", etag)
 	w.Header().Set("Cache-Control", "private, max-age=300")
 	w.Header().Add("Vary", "Authorization, Cookie")
@@ -841,8 +841,7 @@ func (h *BootstrapHandler) GetTenantEventTypes(w http.ResponseWriter, r *http.Re
 	// The catalog is a pure function of (registry, tenant module set), so the
 	// module version alone is a sound cache key — unlike /me/modules it does
 	// not vary with the caller's permissions.
-	modVersion := h.moduleSvc.GetTenantModuleVersion(ctx, tenantID)
-	etag := fmt.Sprintf(`"t%s-e%d"`, tenantID[:8], modVersion)
+	etag := fmt.Sprintf(`"t%s-e%s"`, tenantID[:8], h.moduleSvc.ETagToken(ctx, tenantID))
 	w.Header().Set("ETag", etag)
 	w.Header().Set("Cache-Control", "private, max-age=300")
 	if r.Header.Get("If-None-Match") == etag {
