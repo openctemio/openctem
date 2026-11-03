@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| Status | Accepted (2026-11-02). Designed only: nothing in this document is implemented yet |
-| Scope | api (licence verifier, subscription store, entitlement service, admin API, seams), web console (Subscription page), helm-charts and openctem-ansible (seed), sdk-go consumers (add-on components) |
+| Status | Accepted (2026-11-02; revised 2026-11-03: the verifier, licence storage and the Subscription page live in the private Enterprise overlay). The open core holds only the grant seam |
+| Scope | open core: the grant seam (`pkg/domain/limits/grants.go`, `entitlement.Service.Addon`, `internal/extension`). Enterprise overlay: licence verifier, licence store, grant keys, admin API, Subscription page. Also helm-charts and openctem-ansible (seed), sdk-go consumers (add-on components) |
 | Related | RFC-040 (signed jobs), RFC-142 (feed relay), [limits and feature denies](../architecture/limits.md) |
 
 ## 1. Summary
@@ -13,9 +13,28 @@ commercial entitlements from the vendor proves it with one signed licence file. 
 ever **adds** capabilities from a fixed registry of entitlement keys; it never denies or caps a
 Community feature, so a licensed installation is never worse off than an unlicensed one.
 
-The platform verifies the licence offline with a public key compiled into the core, makes no
+The platform verifies the licence offline with a public key compiled into the Enterprise build, makes no
 outbound call for it, and keeps all customer data readable whatever the licence state. Components
 that ship separately under commercial terms verify the same licence themselves.
+
+### Where the code lives (revised 2026-11-03)
+
+The Community edition has every Community feature and no licence concept. The
+open source core therefore contains **no licence verification, no keys and no
+licence storage**: it defines the grant seam only, and the Community build has
+no grant provider (every grant is `none`, no notices).
+
+| Part | Where |
+|---|---|
+| `GrantKey`, `GrantStatus`, `Grant`, `Notice`, `GrantProvider`, `ErrGrantRequired` | open core, `pkg/domain/limits/grants.go` |
+| `entitlement.Service.Addon`, `RequireAddon`, `Notices` (the one entry point for gates and banners) | open core, `internal/app/entitlement/grants.go` |
+| Registration point and the build switch | open core, `internal/extension`, `cmd/server/edition_ee.go` ([editions](../development/editions.md)) |
+| Grant key registry, licence verifier and embedded roots (section 3), licence store and lifecycle (section 6), the provider, admin API (section 9), Subscription page | private Enterprise overlay, compiled into the Enterprise images only |
+| Licence tables (`subscription_licenses`, `subscription_state`) | the overlay's own migration set in schema `ee` ([editions](../development/editions.md#overlay-migrations)); never in the Community migrations |
+| Issuing keys and the portal | the vendor's service, outside this repository |
+
+Sections 3 to 11 describe the design wherever it is implemented; names such as
+`pkg/licensekey` and `internal/app/subscription` below refer to the overlay.
 
 ## 2. Goals and non-goals
 
@@ -33,9 +52,9 @@ through its control plane (those stay deny and limit based, see the limits archi
   form is accepted for environment variables and paste. At most 64 KiB, strict decoding, unknown
   top-level keys refused. Schema `openctem.io/license/v1`; it stays v1 until 1.0 and gains only
   additive optional keys.
-- The `keyset` is signed by a root key that is compiled into the core (the current root and a
+- The `keyset` is signed by a root key that is compiled into the Enterprise build (the current root and a
   pre-staged next root, so a root rotation is one release away). There is no environment or flag
-  override: only a rebuilt core can change the root. It reuses the versioned, expiring, rollback-
+  override: only a rebuild can change the root. It reuses the versioned, expiring, rollback-
   refusing key-set format of `pkg/feedsign`.
 - The `license` is signed by a key listed in that key set. A key set lists at most 8 issuing keys,
   is valid for at most 3 years, and carries a `revoked` list of licence ids and key ids.
@@ -178,8 +197,13 @@ yields are the same for every organization; per-organization data is never read 
 
 ## 11. Implementation plan
 
-Naming: `pkg/licensekey` (verify) and `internal/app/subscription` (store, state). Neither uses the
-`license` prefix, which `pkg/domain/licensepolicy` (SPDX policy) already holds.
+Naming: `licensekey` (verify) and `subscription` (store, state), both in the Enterprise overlay.
+Neither uses the `license` prefix, which `pkg/domain/licensepolicy` (SPDX policy) already holds.
+
+0. Open core: the grant seam (types, `GrantProvider`, `Service.Addon`, `RequireAddon`, `Notices`),
+   `internal/extension` and the build switch; Community default with no provider. Tests: no
+   provider means every grant is off and every Community feature stays allowed; a failing provider
+   fails closed for grants only.
 
 1. `pkg/licensekey`: wrapper and claims, verification on `pkg/feedsign` key sets, embedded roots,
    revoked list, binding, effective-time rules. Table tests: wrong root, tampered claim, expired,

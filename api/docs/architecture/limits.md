@@ -268,25 +268,35 @@ The control plane can only set limits, set denies and turn on the idle
 policy. Every one of these blocks additions or makes data read-only: nothing
 it can call deletes an organization or its data.
 
-## Future: signed licence for self-managed installs (design only, not built)
+## Grants: off unless granted (seam only in the open core)
 
 A self-hosted install gets every Community feature, and nothing here changes
-that. A signed licence file is a third source, with no change to any check of
-the sections above:
+that. Things that are off unless granted are a separate answer, with no change
+to any check of the sections above:
 
-- A **signed offline licence file** for self-managed installations. It does
-  not yield limits or denies: it only **adds** entitlement keys from a fixed
-  registry, and its meters are soft. The design is
-  [RFC-145](../rfcs/RFC-145-enterprise-licence-and-entitlements.md); it is
-  not implemented yet. A control plane keeps writing limits and denies for a
-  hosted service.
+- The core defines the answer's shape (`pkg/domain/limits/grants.go`:
+  `GrantKey`, `GrantStatus`, `Grant`, `Notice`, `GrantProvider`) and asks it
+  only through `entitlement.Service.Addon` / `RequireAddon` (403
+  `ADDON_NOT_LICENSED` or `ADDON_LICENSE_EXPIRED`) and `Notices` (banners for
+  platform administrators). A grant never yields a limit or a deny.
+- The Community build registers no provider: every grant is `none`, there are
+  no notices, and no Community feature, limit or security control depends on
+  a grant. A provider error fails closed for grants only.
+- The provider, the grant keys, the signed offline licence file, its verifier
+  and its storage live in the private Enterprise overlay, registered through
+  `internal/extension` ([editions](../development/editions.md),
+  [RFC-145](../rfcs/RFC-145-enterprise-licence-and-entitlements.md)). A
+  control plane keeps writing limits and denies for a hosted service.
 
 ## Code map
 
 - `pkg/domain/limits`: keys, `Limits`, `Limit`, `FeatureDeny`, origins,
   `Source`, `NoneSource`, `AllowAddition`, `ErrLimitReached`, `GracePeriod`.
 - `internal/app/entitlement`: the service (`service.go`), feature denies and
-  grace (`features.go`), the control-plane source and write (`sources.go`).
+  grace (`features.go`), the control-plane source and write (`sources.go`),
+  the grant seam (`grants.go`).
+- `internal/extension`: where a build's extension registers its grant
+  provider.
 - `internal/infra/postgres/limits_repository.go`: storage and usage counts,
   every query scoped by `tenant_id`; `limits_check.go`: the insert seam.
 - `internal/infra/http/handler/limits_handler.go`: console and organization

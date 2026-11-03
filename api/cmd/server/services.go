@@ -143,6 +143,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/vulnmatch"
 	wordlistapp "github.com/openctemio/openctem/api/internal/app/wordlist"
 	"github.com/openctemio/openctem/api/internal/config"
+	"github.com/openctemio/openctem/api/internal/extension"
 	"github.com/openctemio/openctem/api/internal/infra/bountysource"
 	"github.com/openctemio/openctem/api/internal/infra/controller"
 	infrajira "github.com/openctemio/openctem/api/internal/infra/jira"
@@ -1052,6 +1053,8 @@ type Services struct {
 	SignupEvents *signupeventapp.Service
 	// Plans and limits.
 	Entitlement *entitlementapp.Service
+	// GrantProvider answers for grants; nil in the Community build.
+	GrantProvider limits.GrantProvider
 	// Idle Free workspaces (reminder, read-only, warnings, deletion due).
 	IdleWorkspaces *lifecycleapp.Service
 	// OrganizationGate refuses every credential of a suspended organization;
@@ -1166,6 +1169,12 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// invitations are checked where the rows are inserted. No source beyond
 	// the operator's own rows unless the internal API is on.
 	s.Entitlement = entitlementapp.NewService(repos.Limits, repos.AdminAuditLog, log)
+	// Grants (off unless granted) come only from an extension the build
+	// registered (internal/extension); the Community build has none.
+	if deps.DB != nil {
+		s.GrantProvider = extension.Grants(context.Background(), extension.Deps{DB: &postgres.DB{DB: deps.DB}, Log: log})
+		s.Entitlement.SetGrantProvider(s.GrantProvider)
+	}
 	if repos.PlatformSetting != nil {
 		s.StorageQuota = storagequota.NewService(repos.PlatformSetting, s.Entitlement, s.SettingRecorder, cfg.Storage.TenantQuotaMB)
 	}
