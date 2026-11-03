@@ -20,7 +20,7 @@ const SKIP_DIR = new Set(['__tests__', '__mocks__', 'generated', 'dictionaries']
 const DISTANCE = new Set(['formatDistanceToNow', 'formatDistance', 'formatDistanceStrict'])
 
 // Lower this when you migrate a call; it may never go up.
-const MAX_BARE_TO_LOCALE = 68
+const MAX_BARE_TO_LOCALE = 67
 
 function sources(dir: string): string[] {
   return readdirSync(dir).flatMap((name) => {
