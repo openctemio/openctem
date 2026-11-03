@@ -7,6 +7,8 @@ import (
 	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/api/pkg/domain/sensor"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // dirtyProps is a producer's properties bag full of keys the receiver used
@@ -174,4 +176,31 @@ func TestFillFromRules(t *testing.T) {
 		t.Errorf("finding 3 named an unknown rule: %+v", f[3])
 	}
 	fillFromRules(&ctis.Report{Findings: []ctis.Finding{{RuleRef: "r1"}}}) // no rules: no-op
+}
+
+// Only a document the platform built keeps its properties. A person's
+// upload (no sensor, no uploader scope for an unrestricted member) and a
+// connector's conversion are server-side ingests too, and lose the
+// interpreted keys like any producer's report.
+func TestKeepsOwnProperties(t *testing.T) {
+	server := &sensor.Sensor{}
+	withID := &sensor.Sensor{ID: shared.NewID()}
+	cases := []struct {
+		name string
+		agt  *sensor.Sensor
+		opts Options
+		want bool
+	}{
+		{"platform-built report", server, Options{ServerBuilt: true}, true},
+		{"unrestricted member's upload", server, Options{}, false},
+		{"connector conversion", server, Options{SourceKind: asset.SourceKindIntegration}, false},
+		{"sensor claiming server-built", withID, Options{ServerBuilt: true}, false},
+		{"CI run claiming server-built", server, Options{ServerBuilt: true, Binding: Binding{Kind: BindingCIRun}}, false},
+		{"nil sensor", nil, Options{ServerBuilt: true}, false},
+	}
+	for _, c := range cases {
+		if got := keepsOwnProperties(c.agt, c.opts); got != c.want {
+			t.Errorf("%s: keepsOwnProperties = %v, want %v", c.name, got, c.want)
+		}
+	}
 }

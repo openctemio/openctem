@@ -145,6 +145,13 @@ type Options struct {
 	// what was observed (program targets, RFC-065 §16.8), so its service
 	// assets open no exposure.
 	NoExposureProjection bool
+	// ServerBuilt: the platform built this document itself from its own
+	// data (a certificate promotion), so the properties it set are its own
+	// and are kept. Every other report, a person's upload and a connector's
+	// conversion included, loses the property keys the receiver interprets
+	// (adoptCTIS2Members). Honoured only for a server-side ingest: no
+	// sensor, no CI run, no uploader.
+	ServerBuilt bool
 }
 
 // ActorScope is the data scope of the person behind an upload.

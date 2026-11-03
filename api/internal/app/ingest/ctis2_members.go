@@ -29,6 +29,7 @@ import (
 	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/api/pkg/domain/sensor"
 )
 
 // interpretedPropertyKeys are the asset property keys the receiver reads
@@ -121,6 +122,15 @@ func adoptCTIS2Members(report *ctis.Report, serverSide bool) {
 			}
 		}
 	}
+}
+
+// keepsOwnProperties reports whether a report's properties are the
+// platform's own: a document the platform built (ServerBuilt) and ingests
+// under no sensor, CI run or uploader. A zero sensor alone is not enough: a
+// person's upload and a connector's conversion run server-side too, and
+// their properties come from a file or another system.
+func keepsOwnProperties(agt *sensor.Sensor, opts Options) bool {
+	return opts.ServerBuilt && agt != nil && agt.ID.IsZero() && opts.Binding.Kind != BindingCIRun && opts.Actor == nil
 }
 
 // isSubdomainAsset reports whether a CTIS asset is stored as a subdomain: a
