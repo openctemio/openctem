@@ -53,10 +53,13 @@ const PATH_LABELS: Record<string, string> = {
   // Attack surface > Review (the decisions that still need a person); the
   // crumb carries the tab's name.
   '/attack-surface/review': 'Review',
+  // About > Open-source licenses (reached from Help > About).
+  '/about/licenses': 'Open-source licenses',
 }
 
 /** Segments that are not sidebar entries themselves (section roots, sub-pages). */
 const FALLBACK_LABELS: Record<string, string> = {
+  about: 'About',
   assets: 'Asset inventory',
   settings: 'Settings',
   admin: 'Administration',

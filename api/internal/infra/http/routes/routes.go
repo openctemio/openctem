@@ -30,6 +30,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/jwt"
 	"github.com/openctemio/openctem/api/pkg/keycloak"
 	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/notices"
 )
 
 // Middleware is an alias to the http package's Middleware type.
@@ -311,6 +312,9 @@ type Handlers struct {
 	AdminOperations   *handler.AdminOperationsHandler
 	AdminSystem       *handler.AdminSystemHandler
 	Announcement      *handler.AnnouncementHandler
+	// Licenses serves the third-party notices (About > Open-source licenses).
+	// Always registered: nil falls back to the image's notices file.
+	Licenses *handler.LicensesHandler
 	// AdminSupportRateLimiter caps console support actions per administrator.
 	AdminSupportRateLimiter *middleware.AdminMappingRateLimiter
 	// AdminDirectoryReadLimiter caps reads of the cross-organization user
@@ -636,6 +640,7 @@ func Register(
 
 	// Build identity for Help > About (any signed-in user).
 	registerVersionRoute(router, authMiddleware)
+	registerLicensesRoute(router, licensesHandler(h), authMiddleware)
 	registerLegalRoute(router, h.AdminLegal)
 	registerBrandRoutes(router, h.Brand)
 	// API documentation: public outside production; in production the spec
@@ -1670,4 +1675,13 @@ func registerVerificationChecklistRoutes(router Router, vc *handler.Verification
 		r.GET("/{findingId}", vc.Get, middleware.Require(permission.VerificationChecklistsRead))
 		r.PUT("/{findingId}", vc.Update, middleware.Require(permission.VerificationChecklistsWrite))
 	}, mws...)
+}
+
+// licensesHandler is h.Licenses, or the handler of the image's notices file
+// when none was wired: the licenses page is always present.
+func licensesHandler(h Handlers) *handler.LicensesHandler {
+	if h.Licenses != nil {
+		return h.Licenses
+	}
+	return handler.NewLicensesHandler(notices.DefaultPath, nil)
 }

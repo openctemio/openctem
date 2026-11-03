@@ -110,6 +110,8 @@ COPY --from=api --chown=0:0 /app/migrations /opt/openctem/api/migrations
 COPY --from=api --chown=0:0 /app/configs /opt/openctem/api/configs
 # The OpenAPI spec the API serves at /openapi.yaml (relative to its working dir).
 COPY --from=api --chown=0:0 /app/api/openapi/swagger.yaml /opt/openctem/api/api/openapi/swagger.yaml
+# The third-party notices the API serves (About > Open-source licenses).
+COPY --from=api --chown=0:0 /app/third-party-notices.json /opt/openctem/api/third-party-notices.json
 # The migration runner (api/cmd/openctem-migrate), run by supervise.sh.
 COPY --from=api --chown=0:0 /app/openctem-migrate /usr/local/bin/openctem-migrate
 # Bind :443 (and the optional :80 redirect) as non-root, on Kubernetes too:
