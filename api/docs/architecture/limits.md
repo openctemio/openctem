@@ -268,21 +268,60 @@ The control plane can only set limits, set denies and turn on the idle
 policy. Every one of these blocks additions or makes data read-only: nothing
 it can call deletes an organization or its data.
 
-## Future: signed licence for self-managed installs (design only, not built)
+## Signed licence for self-managed installs (grants only)
 
 A self-hosted install gets every Community feature, and nothing here changes
 that. A signed licence file is a third source, with no change to any check of
-the sections above:
+the sections above. It does not yield limits or denies: it only **adds**
+grant keys from a fixed registry, and its meters are soft. A control plane
+keeps writing limits and denies for a hosted service. Design:
+[RFC-145](../rfcs/RFC-145-enterprise-licence-and-entitlements.md).
 
-- A **signed offline licence file** for self-managed installations. It does
-  not yield limits or denies: it only **adds** entitlement keys from a fixed
-  registry, and its meters are soft. The design is
-  [RFC-145](../rfcs/RFC-145-enterprise-licence-and-entitlements.md); it is
-  not implemented yet. A control plane keeps writing limits and denies for a
-  hosted service.
+### Grant keys
+
+Off unless granted (`pkg/domain/limits/grants.go`). A licence naming any
+other key is refused. A grant key is never a limit key, a deniable feature
+or a module id, and sign-in, SSO, MFA and audit are never grant keys
+(`tests/unit/license_guard_test.go`).
+
+| Key | Kind | Turns on | On expiry |
+|---|---|---|---|
+| `asset_collector` | instance | pairing and ingest of the first-party asset collector component | the collector stops sending new data; collected assets stay |
+| `ai_worker` | instance | dispatch of AI agent runs to the first-party AI worker component | no new runs are dispatched to it; earlier results stay |
+
+### Verification (`pkg/licensekey`)
+
+- The file is JSON `{"license": <DSSE>, "keyset": <DSSE>}` or its one-line
+  base64 form, at most 64 KiB. Every level is decoded strictly: unknown
+  keys, duplicate keys, trailing data and nesting deeper than 16 are refused.
+- The key set (kind `openctem.license.keyset/v1`, at most 8 issuing keys,
+  valid at most 3 years, a `revoked` list of licence ids and key ids) must be
+  signed by a root compiled into `pkg/licensekey/roots.go` (current and next
+  root). No environment variable, flag or setting adds a root; production
+  code uses `licensekey.Default()` only and never imports the test keys
+  (guard test). Until the root ceremony the list is empty and every licence
+  is refused, so the build runs as Community.
+- The claims must be signed by a non-revoked key of that key set, their id
+  must not be revoked (by the file's key set, by the newest key set seen
+  before, or by the build), their term must lie inside the key set's, and a
+  bound licence must list the installation id. The key-set version must not
+  be below the stored high-water mark (rollback).
+- States at the effective time: `not_yet_valid`, `active`, `expiring` (last
+  30 days), `grace` (up to `grace_days`, at most 90) and `expired`;
+  entitlements are on in `active`, `expiring` and `grace`. The effective time
+  is the latest of the wall clock, the stored high-water mark and the newest
+  stored `issued_at`, so winding the clock back cannot revive an expired
+  licence.
+- Every refusal has a stable reason code (`licensekey.Reason`) for the audit
+  entry; the file content is never logged.
+
+Storage, the entitlement service entry point, the admin API and the
+enforcement seams follow the RFC's implementation plan.
 
 ## Code map
 
+- `pkg/domain/limits/grants.go`: the grant key registry; `pkg/licensekey`:
+  the offline licence verifier and states (test keys in `licensekeytest`).
 - `pkg/domain/limits`: keys, `Limits`, `Limit`, `FeatureDeny`, origins,
   `Source`, `NoneSource`, `AllowAddition`, `ErrLimitReached`, `GracePeriod`.
 - `internal/app/entitlement`: the service (`service.go`), feature denies and

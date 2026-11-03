@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Accepted (2026-11-02). Designed only: nothing in this document is implemented yet |
+| Status | Accepted (2026-11-02). Implementation in progress: step 1 (verifier) built |
 | Scope | api (licence verifier, subscription store, entitlement service, admin API, seams), web console (Subscription page), helm-charts and openctem-ansible (seed), sdk-go consumers (add-on components) |
 | Related | RFC-040 (signed jobs), RFC-142 (feed relay), [limits and feature denies](../architecture/limits.md) |
 
@@ -37,6 +37,12 @@ through its control plane (those stay deny and limit based, see the limits archi
   pre-staged next root, so a root rotation is one release away). There is no environment or flag
   override: only a rebuilt core can change the root. It reuses the versioned, expiring, rollback-
   refusing key-set format of `pkg/feedsign`.
+- Claims, envelopes and the key set are decoded as strictly as the top level: unknown keys,
+  duplicate keys and trailing data are refused, so a claim a build does not understand can never
+  be ignored silently. An issuer leaves a newer optional claim out of a licence meant for an older
+  core. The key set uses the field layout of `pkg/feedsign` key sets plus `revoked`
+  (`{"license_ids": [...], "key_ids": [...]}`), with kind `openctem.license.keyset/v1` and
+  payload type `application/vnd.openctem.license.keyset+json`.
 - The `license` is signed by a key listed in that key set. A key set lists at most 8 issuing keys,
   is valid for at most 3 years, and carries a `revoked` list of licence ids and key ids.
 - Verification accepts a licence only when: the key set verifies against an embedded root; the key
@@ -181,7 +187,7 @@ yields are the same for every organization; per-organization data is never read 
 Naming: `pkg/licensekey` (verify) and `internal/app/subscription` (store, state). Neither uses the
 `license` prefix, which `pkg/domain/licensepolicy` (SPDX policy) already holds.
 
-1. `pkg/licensekey`: wrapper and claims, verification on `pkg/feedsign` key sets, embedded roots,
+1. (built) `pkg/licensekey`: wrapper and claims, verification on `pkg/feedsign` key sets, embedded roots,
    revoked list, binding, effective-time rules. Table tests: wrong root, tampered claim, expired,
    future `not_before`, rolled-back key set, revoked id, binding mismatch, oversize, unknown key.
 2. Migration for `subscription_licenses`, installation id and time high-water;
