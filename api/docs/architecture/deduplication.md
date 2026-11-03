@@ -62,10 +62,78 @@ boundary can be moved to forge a collision. Recipes:
 | Network VA | asset, canonical CVE (one finding per CVE, D3; else `rule:<id>`), `port/proto` or `host` | plugin title |
 | Misconfig | asset, policy id, resource type/name, path | message |
 
-A result no recipe covers (compliance, web3, a SAST result with only a line,
-a secret without a configured server key) keeps its version-1 key. The
-sensor's own fingerprint is kept as the sighting key
-`partial_fingerprints["sensor/fingerprint"]` and is never the identity (D1).
+**Since identity version 3 (CTIS fingerprint recipe v2, RFC-043 §20):** the
+tuple above is unchanged; only its hash is. `IdentityVersion` is 3, stored rows
+say `fingerprint_version = 3` and `identity_algo = v3/<kind>`. The key is
+computed in two steps (`pkg/domain/vulnerability/identity_ctis.go`):
+
+1. base = the CTIS recipe v2 fingerprint (`ctis-fp/2:` + hex SHA-256 of the
+   CTIS canonical input: recipe name and parts, each `<byte length>:<bytes>`,
+   joined with 0x1F) of the recipe the kind maps to, computed with the ctis
+   `fingerprint` package. The asset is not a part.
+2. key = hex SHA-256 of the same encoding over `openctem/finding-key/3`, the
+   asset, the base and the qualifiers: the tuple fields the CTIS recipe has no
+   part for, so version 3 keeps every distinction version 2 made.
+
+| Kind | CTIS recipe and parts | Qualifiers |
+|---|---|---|
+| SAST with code | `sast-content`: path, rule, logical location, snippet hash | occurrence when not 0 |
+| SAST with a line only | `sast`: path, rule, line, `0` | none |
+| Secret | `secret`: path, rule (empty for a keyed raw secret), per-tenant keyed HMAC | `anchor=mask`, type, line for a mask key |
+| SCA, container image package | `sca`: canonical versionless PURL, vuln id | none |
+| Misconfig | `misconfig`: resource type, resource name, policy, path | none |
+| DAST | `dast`: rule, origin, path of the URL template, parameter names | method when not GET |
+| Network VA | `va`: empty host (the asset scopes it), port (`0` = host), transport, vuln id | none |
+| Compliance (new) | `compliance`: framework, control id, path or resource | none |
+| Web3 (new) | `web3`: chain id, lower-case address, SWC id or rule, function signature | none |
+| Generic (new) | `generic`: rule, path, start line, end line (no message) | none |
+
+The mapping from a version-2 tuple to its version-3 key is injective (tested),
+so the re-key never merges what version 2 kept apart, and reversible
+(`IdentityKey.AtVersion(2)`), which the down step uses. A test pins the base
+to the ctis module's own `V2*` functions for each recipe.
+
+A result no specific recipe covers (a SAST result with neither code nor a
+line, a secret without a keyed digest, a finding of no specific kind) takes
+the CTIS `generic` recipe when it has a rule id; only a result with no rule id
+keeps its version-1 key. The sensor's own fingerprint is kept as the sighting
+key `partial_fingerprints["sensor/fingerprint"]` and is never the identity
+(D1).
+
+### Recipe versions and the re-key
+
+- **On server start** the API re-keys stored findings to the current version
+  (`refingerprint.Service.RunAll`, `cmd/server/finding_rekey.go`): per tenant,
+  in batches, under a session advisory lock (one replica at a time), with
+  scan auto-resolve paused for the tenant while its run is open. A version-2
+  row is re-keyed from its stored tuple alone, only when the tuple reproduces
+  the stored key and names the row's asset (`key_mismatch` otherwise). The
+  old key stays an alias (trigger), so a late report in the old scheme lands
+  on the same finding. CI run sightings (`ci_run_findings`) move to the new
+  key in the same transaction. A tenant that completed a run to the current
+  version is skipped on later starts. Each tenant changed gets one
+  `findings.refingerprinted` audit entry.
+- **On a sighting** ingest offers a finding's version-2 key (and the version-2
+  forms of its former keys) for adoption, so a finding the start-up run has
+  not reached yet is re-keyed in place, never duplicated. The version matcher
+  and the license policy treat a finding still under its version-2 key as the
+  same finding: never closed as gone, never created a second time.
+- **Collisions** (two stored findings with one new key) merge through the
+  finding merge: the earliest-created survives with its triage, the other is a
+  tombstone; nothing is deleted.
+- **Down** (rollback to a release before version 3): stop the API, run
+  `refingerprint -down -apply` with this release's image, then deploy the
+  older release. Each version-3 finding goes back to the version-2 key of its
+  tuple, or, for a kind version 2 had no recipe for, to its newest older
+  alias; merges are not undone.
+- `exposure_events.fingerprint` is the exposure's own identity
+  (`exposure.Fingerprint`), not a finding key: the re-key does not touch it.
+
+Rehearsal on a restored production backup (2026-11-03, 125 live findings):
+107 version-2 findings re-keyed, 0 merges, 18 kept (human findings, rows
+without an asset or without every recipe input), counts unchanged; second run
+no change; down restored every key and version exactly; up again gave the
+same keys. Each step took under half a second.
 
 Migration without losing triage: when a scan reports a result whose version-1
 key still names a stored finding and no finding holds the version-2 key yet,
@@ -75,12 +143,14 @@ asset merge re-keys a version-2 finding by rewriting the `asset` field of its
 stored tuple, only when the stored tuple still reproduces the stored key.
 
 Findings a scan does not report again are re-keyed by the re-fingerprint job
-(`internal/tools/refingerprintcmd`, shipped in the API image as `/app/refingerprint`):
+(`internal/tools/refingerprintcmd`, shipped in the API image as `/app/refingerprint`;
+the API also runs it on start, see "Recipe versions and the re-key"):
 
 ```bash
 refingerprint                 # dry run, every tenant with older keys (read-only connection)
 refingerprint -tenant <id>    # one tenant
 refingerprint -apply          # commit; resumable from finding_rekey_runs, idempotent
+refingerprint -down -apply    # down step: back to the previous version's keys
 refingerprint -json           # machine-readable report
 ```
 

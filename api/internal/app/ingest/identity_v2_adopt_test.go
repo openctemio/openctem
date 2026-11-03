@@ -41,9 +41,9 @@ func TestAdoptV1Keys_OnlyLiveKeysAreRekeyed(t *testing.T) {
 	repo := &adoptingRepo{live: map[string]bool{"v1-live": true}}
 	p := NewFindingProcessor(repo, nil, nil, logger.NewNop())
 	items := []adoptItem{
-		{v1: "v1-live", k: vulnerability.NewIdentityKey("test", "host", "a.example.test")},
-		{v1: "v1-new-1", k: vulnerability.NewIdentityKey("test", "host", "b.example.test")},
-		{v1: "v1-new-2", k: vulnerability.NewIdentityKey("test", "host", "c.example.test")},
+		{v1: "v1-live", k: vulnerability.NewIdentityKey(vulnerability.IdentityKindGeneric, "asset", "a", "rule", "r")},
+		{v1: "v1-new-1", k: vulnerability.NewIdentityKey(vulnerability.IdentityKindGeneric, "asset", "b", "rule", "r")},
+		{v1: "v1-new-2", k: vulnerability.NewIdentityKey(vulnerability.IdentityKindGeneric, "asset", "c", "rule", "r")},
 	}
 	adoptV1KeysOf(context.Background(), p, shared.NewID(), items, func(it adoptItem) adoptKeys {
 		k := it.k

@@ -17,6 +17,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/lib/pq"
@@ -78,7 +79,8 @@ func (r *FindingRekeyRepository) ListCandidates(ctx context.Context, tenantID sh
 		       COALESCE(f.cve_id, ''), COALESCE(c.purl, ''),
 		       COALESCE(f.type_details->'secret'->>'fingerprint', ''),
 		       COALESCE(f.misconfig_policy_id, ''), COALESCE(f.misconfig_resource_type, ''),
-		       COALESCE(f.misconfig_resource_name, ''), COALESCE(f.partial_fingerprints, '{}'::jsonb)
+		       COALESCE(f.misconfig_resource_name, ''), COALESCE(f.partial_fingerprints, '{}'::jsonb),
+		       f.identity_key
 		FROM findings f
 		LEFT JOIN software_versions c ON c.id = f.component_id
 		WHERE f.tenant_id = $1 AND f.fingerprint_version < $2 AND f.status <> 'duplicate'
@@ -96,10 +98,11 @@ func (r *FindingRekeyRepository) ListCandidates(ctx context.Context, tenantID sh
 		in := &c.Input
 		if err := rows.Scan(&c.ID, &c.Fingerprint, &c.CreatedAt, &in.AssetID, &in.Source, &in.FindingType,
 			&in.ToolName, &in.RuleID, &in.FilePath, &in.CVEID, &in.ComponentPURL, &in.SecretHMAC,
-			&in.MisconfigPolicyID, &in.ResourceType, &in.ResourceName, &partial); err != nil {
+			&in.MisconfigPolicyID, &in.ResourceType, &in.ResourceName, &partial, &in.StoredKey); err != nil {
 			return nil, fmt.Errorf("scan finding to re-key: %w", err)
 		}
 		_ = json.Unmarshal(partial, &in.PartialFingerprints)
+		in.StoredFingerprint = c.Fingerprint
 		out = append(out, c)
 	}
 	return out, rows.Err()
@@ -179,19 +182,29 @@ func (r *FindingRekeyRepository) Rekey(ctx context.Context, tenantID shared.ID, 
 	}
 	res := vulnerability.RekeyResult{Outcome: vulnerability.RekeyOutcomeRekeyed}
 	takeKey := true
+	// The CI run sightings follow the key: every key the two findings give
+	// up moves to the key the survivor holds after this transaction.
+	movedKeys, finalKey := []string{fromFP}, newFP
 	if holderID != "" {
+		var holderFP string
+		if err := tx.QueryRowContext(ctx, `SELECT fingerprint FROM findings WHERE id = $1 AND tenant_id = $2`,
+			holderID, tenant).Scan(&holderFP); err != nil {
+			return vulnerability.RekeyResult{}, fmt.Errorf("read key holder: %w", err)
+		}
 		if created.Before(holderCreated) || (created.Equal(holderCreated) && findingID < holderID) {
 			// This finding is older: it survives and takes the key.
 			if err := mergeFindingInto(ctx, tx, tenant, findingID, holderID, causeRefingerprint); err != nil {
 				return vulnerability.RekeyResult{}, err
 			}
 			res = vulnerability.RekeyResult{Outcome: vulnerability.RekeyOutcomeMerged, SurvivorID: findingID, LoserID: holderID}
+			movedKeys = append(movedKeys, holderFP)
 		} else {
 			if err := mergeFindingInto(ctx, tx, tenant, holderID, findingID, causeRefingerprint); err != nil {
 				return vulnerability.RekeyResult{}, err
 			}
 			res = vulnerability.RekeyResult{Outcome: vulnerability.RekeyOutcomeMerged, SurvivorID: holderID, LoserID: findingID}
 			takeKey = false
+			finalKey = holderFP
 		}
 	}
 	if takeKey {
@@ -203,10 +216,40 @@ func (r *FindingRekeyRepository) Rekey(ctx context.Context, tenantID shared.ID, 
 			return vulnerability.RekeyResult{}, fmt.Errorf("re-key finding: %w", err)
 		}
 	}
+	if err := moveCIRunFindings(ctx, tx, tenant, movedKeys, finalKey); err != nil {
+		return vulnerability.RekeyResult{}, err
+	}
 	if err := tx.Commit(); err != nil {
 		return vulnerability.RekeyResult{}, fmt.Errorf("commit re-key: %w", err)
 	}
 	return res, nil
+}
+
+// moveCIRunFindings moves the CI run sightings recorded under the keys from
+// to the key to, in tx and in the tenant: a run's findings are joined on the
+// finding's current key. A run that already has to keeps one row.
+func moveCIRunFindings(ctx context.Context, tx *sql.Tx, tenant string, from []string, to string) error {
+	olds := make([]string, 0, len(from))
+	for _, k := range from {
+		if k != "" && k != to && !strings.HasPrefix(k, "dup:") {
+			olds = append(olds, k)
+		}
+	}
+	if len(olds) == 0 || to == "" || strings.HasPrefix(to, "dup:") {
+		return nil
+	}
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO ci_run_findings (tenant_id, run_id, fingerprint)
+		SELECT DISTINCT tenant_id, run_id, $3::varchar FROM ci_run_findings
+		WHERE tenant_id = $1 AND fingerprint = ANY($2)
+		ON CONFLICT (run_id, fingerprint) DO NOTHING`, tenant, pq.Array(olds), to); err != nil {
+		return fmt.Errorf("move ci run findings: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `
+		DELETE FROM ci_run_findings WHERE tenant_id = $1 AND fingerprint = ANY($2)`, tenant, pq.Array(olds)); err != nil {
+		return fmt.Errorf("move ci run findings: %w", err)
+	}
+	return nil
 }
 
 // lockKeyHolder finds and locks the live finding other than self that owns
@@ -319,4 +362,171 @@ func autoResolvePaused(ctx context.Context, q interface {
 		return true
 	}
 	return running
+}
+
+// TenantsAtVersion lists the tenants that have live findings keyed with
+// version (the down step's input).
+func (r *FindingRekeyRepository) TenantsAtVersion(ctx context.Context, version int) ([]shared.ID, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT DISTINCT tenant_id FROM findings
+		WHERE fingerprint_version = $1 AND status <> 'duplicate'
+		ORDER BY tenant_id`, version)
+	if err != nil {
+		return nil, fmt.Errorf("list tenants to restore: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []shared.ID
+	for rows.Next() {
+		var s string
+		if err := rows.Scan(&s); err != nil {
+			return nil, fmt.Errorf("scan tenant: %w", err)
+		}
+		id, err := shared.IDFromString(s)
+		if err != nil {
+			return nil, fmt.Errorf("tenant id: %w", err)
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
+}
+
+// ListAtVersion returns up to limit live findings of the tenant keyed with
+// version and an id above afterID, in id order (ID and Fingerprint only).
+func (r *FindingRekeyRepository) ListAtVersion(ctx context.Context, tenantID shared.ID, version int, afterID string, limit int) ([]vulnerability.RekeyCandidate, error) {
+	if afterID == "" {
+		afterID = "00000000-0000-0000-0000-000000000000"
+	}
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT id, fingerprint, created_at FROM findings
+		WHERE tenant_id = $1 AND fingerprint_version = $2 AND status <> 'duplicate' AND id > $3::uuid
+		ORDER BY id
+		LIMIT $4`, tenantID.String(), version, afterID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list findings to restore: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []vulnerability.RekeyCandidate
+	for rows.Next() {
+		var c vulnerability.RekeyCandidate
+		if err := rows.Scan(&c.ID, &c.Fingerprint, &c.CreatedAt); err != nil {
+			return nil, fmt.Errorf("scan finding to restore: %w", err)
+		}
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}
+
+// Reasons the down step leaves a finding on its current key.
+const (
+	restoreSkipNoPrevious = "no_previous_key"
+	restoreSkipHeld       = "previous_key_held"
+	restoreSkipMismatch   = vulnerability.RecomputeSkipKeyMismatch
+)
+
+// Restore moves one finding from its version-3 key back to the key it had
+// before, in one transaction: the version-2 key of its tuple when its kind
+// had one (the tuple is the same in both versions), else its newest older
+// alias (a finding a sighting re-keyed from version 1), with no tuple. The
+// version-3 key stays an alias. A finding that changed since it was listed,
+// whose tuple no longer reproduces its key, or whose previous key another
+// finding holds now is skipped. Merges are not undone: a merged finding is a
+// tombstone and its keys stay aliases of the survivor.
+func (r *FindingRekeyRepository) Restore(ctx context.Context, tenantID shared.ID, findingID, fromFP string) (vulnerability.RekeyResult, error) {
+	tenant := tenantID.String()
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return vulnerability.RekeyResult{}, fmt.Errorf("begin restore: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var raw []byte
+	err = tx.QueryRowContext(ctx, `
+		SELECT identity_key FROM findings
+		WHERE id = $1 AND tenant_id = $2 AND fingerprint = $3 AND fingerprint_version = $4 AND status <> 'duplicate'
+		FOR UPDATE`, findingID, tenant, fromFP, vulnerability.IdentityVersion).Scan(&raw)
+	if errors.Is(err, sql.ErrNoRows) {
+		return vulnerability.RekeyResult{Outcome: vulnerability.RekeyOutcomeSkipped}, nil
+	}
+	if err != nil {
+		return vulnerability.RekeyResult{}, fmt.Errorf("lock finding to restore: %w", err)
+	}
+	k, err := vulnerability.ParseIdentityKey(raw)
+	if err != nil || k.Fingerprint() != fromFP {
+		return vulnerability.RekeyResult{Outcome: vulnerability.RekeyOutcomeSkipped, Reason: restoreSkipMismatch}, nil
+	}
+
+	var (
+		toFP    string
+		toVer   int
+		toKey   any // NULL or the version-2 tuple
+		recipeA = []any{nil, nil}
+	)
+	if k.HasVersion2Form() {
+		k2 := k.AtVersion(2)
+		raw2, err := vulnerability.MarshalIdentityKey(k2)
+		if err != nil {
+			return vulnerability.RekeyResult{Outcome: vulnerability.RekeyOutcomeSkipped, Reason: restoreSkipMismatch}, nil
+		}
+		toFP, toVer, toKey = k2.Fingerprint(), 2, string(raw2)
+		recipeA = identityRecipeArgs(k2.Algo(), k2.FieldNames())
+	} else {
+		err := tx.QueryRowContext(ctx, `
+			SELECT fingerprint, version FROM finding_fingerprints
+			WHERE tenant_id = $1 AND finding_id = $2 AND version < $3
+			ORDER BY version DESC, created_at DESC, fingerprint
+			LIMIT 1`, tenant, findingID, vulnerability.IdentityVersion).Scan(&toFP, &toVer)
+		if errors.Is(err, sql.ErrNoRows) {
+			return vulnerability.RekeyResult{Outcome: vulnerability.RekeyOutcomeSkipped, Reason: restoreSkipNoPrevious}, nil
+		}
+		if err != nil {
+			return vulnerability.RekeyResult{}, fmt.Errorf("read previous key: %w", err)
+		}
+	}
+	holderID, _, _, err := lockKeyHolder(ctx, tx, tenant, toFP, findingID)
+	if err != nil {
+		return vulnerability.RekeyResult{}, err
+	}
+	if holderID != "" {
+		return vulnerability.RekeyResult{Outcome: vulnerability.RekeyOutcomeSkipped, Reason: restoreSkipHeld}, nil
+	}
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE findings SET fingerprint = $1, fingerprint_version = $2, identity_key = $3::jsonb, updated_at = NOW(),
+		       identity_algo = $6, identity_fields = $7
+		WHERE id = $4 AND tenant_id = $5`, append([]any{toFP, toVer, toKey, findingID, tenant}, recipeA...)...); err != nil {
+		return vulnerability.RekeyResult{}, fmt.Errorf("restore finding key: %w", err)
+	}
+	if err := moveCIRunFindings(ctx, tx, tenant, []string{fromFP}, toFP); err != nil {
+		return vulnerability.RekeyResult{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return vulnerability.RekeyResult{}, fmt.Errorf("commit restore: %w", err)
+	}
+	return vulnerability.RekeyResult{Outcome: vulnerability.RekeyOutcomeRekeyed}, nil
+}
+
+// rekeyOnStartLockKey is the session advisory lock that lets one server
+// replica at a time run the re-key on start.
+const rekeyOnStartLockKey int64 = 0x0c7e_f1d6_0003
+
+// WithRekeyLock runs fn while holding the re-key advisory lock on its own
+// connection. ran is false (and fn is not called) when another session holds
+// the lock: that replica is doing the work.
+func (r *FindingRekeyRepository) WithRekeyLock(ctx context.Context, fn func(context.Context) error) (ran bool, err error) {
+	conn, err := r.db.Conn(ctx)
+	if err != nil {
+		return false, fmt.Errorf("re-key lock connection: %w", err)
+	}
+	defer func() { _ = conn.Close() }()
+	var got bool
+	if err := conn.QueryRowContext(ctx, `SELECT pg_try_advisory_lock($1)`, rekeyOnStartLockKey).Scan(&got); err != nil {
+		return false, fmt.Errorf("take re-key lock: %w", err)
+	}
+	if !got {
+		return false, nil
+	}
+	defer func() {
+		// A fresh context: the lock must be released even when ctx ended.
+		_, _ = conn.ExecContext(context.WithoutCancel(ctx), `SELECT pg_advisory_unlock($1)`, rekeyOnStartLockKey)
+	}()
+	return true, fn(ctx)
 }
