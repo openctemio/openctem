@@ -151,7 +151,9 @@ RFC-003 (asset source priority) was withdrawn on 2026-10-05; see
 | [RFC-140](RFC-140-rule-packs.md) | Detection rule packs (web fingerprints and sensitive information) | Accepted (2026-10-31). |
 | [RFC-141](RFC-141-tenantless-account-space.md) | Account space for a person with no organization | Accepted (2026-11-01). |
 | [RFC-142](RFC-142-feed-relay.md) | Feed relay: signed feeds through a platform sensor, zero platform egress | Accepted (2026-11-01). |
+| [RFC-143](RFC-143-vulnerability-catalog.md) | Vulnerability catalog: separate store, reproducible keys, minimal disk, detachable | Proposed (2026-11-02) |
 | [RFC-144](RFC-144-application-security-posture.md) | Application security posture: branches, CI closure, code-to-runtime context | Draft (2026-11-02). |
+| [RFC-145](RFC-145-enterprise-licence-and-entitlements.md) | Enterprise licence verification and entitlements | Accepted (2026-11-02). |
 <!-- END RFC INDEX -->
 
 > Status legend: **Proposed** = under review · **Phase N done** = that phase shipped to `develop` · **Implemented** = fully landed.

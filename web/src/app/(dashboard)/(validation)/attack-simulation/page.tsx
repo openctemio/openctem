@@ -85,7 +85,7 @@ function matchesView(sim: Simulation, view: SimulationView): boolean {
 
 export default function AttackSimulationPage() {
   const { t } = useTranslation()
-  const { data, isLoading, mutate } = useSimulations()
+  const { data, isLoading, error, mutate } = useSimulations()
   const { trigger: runSimulation } = useRunSimulation()
   // The metric tiles filter the list; the value lives in the URL so a view can be linked.
   const [viewParam, setView] = useUrlFilter('show', 'all')
@@ -310,7 +310,7 @@ export default function AttackSimulationPage() {
 
         <MetricStrip items={metrics} />
 
-        {simulations.length === 0 ? (
+        {simulations.length === 0 && !error ? (
           <EmptyState
             icon={Swords}
             title={t('validation.simulation.emptyTitle', 'No simulations yet')}
@@ -323,6 +323,9 @@ export default function AttackSimulationPage() {
           <DataTable
             columns={columns}
             data={visible}
+            error={error}
+            onRetry={() => void mutate()}
+            errorTitle={t('validation.simulation.errorTitle', 'simulations')}
             searchPlaceholder={t('validation.simulation.searchPlaceholder', 'Search simulations…')}
             emptyMessage={t('validation.simulation.noMatch', 'No simulations match')}
             emptyDescription={t('validation.simulation.noMatchDesc', 'Try a different search.')}

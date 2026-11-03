@@ -18,7 +18,7 @@
  * A sensor started any other way prints its own link (/activate).
  */
 
-import { useEffect, useId, useMemo, useRef, useState } from 'react'
+import { useEffect, useEffectEvent, useId, useMemo, useRef, useState } from 'react'
 import { Check, ChevronDown, ExternalLink, KeyRound, Loader2, RefreshCw } from 'lucide-react'
 import Link from '@/components/link'
 
@@ -329,11 +329,13 @@ function InstallSession({
   // One code per opened dialog (a ref, so a re-render or a strict-mode
   // double effect never makes a second one).
   const started = useRef(false)
+  const startSession = useEffectEvent(() => {
+    void create()
+  })
   useEffect(() => {
     if (!autoStart || started.current) return
     started.current = true
-    void create()
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per mounted session
+    startSession()
   }, [autoStart])
 
   if (!created) {

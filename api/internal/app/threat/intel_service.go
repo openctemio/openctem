@@ -123,7 +123,7 @@ func NewIntelService(
 		// (DNS rebinding, hijacked cache), the dialer refuses to
 		// complete the connection rather than silently hitting a
 		// metadata service.
-		httpClient: httpsec.SafeHTTPClient(httpTimeout),
+		httpClient: httpsec.FeedHTTPClient(httpTimeout),
 		logger:     log.With("service", "threat_intel"),
 		now:        time.Now,
 	}

@@ -49,7 +49,7 @@ beforeEach(() => {
 })
 
 async function confirmWithReason(reason: string) {
-  await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+  await userEvent.click(screen.getByRole('button', { name: 'Save changes' }))
   const dialog = screen.getByRole('alertdialog')
   const buttons = within(dialog).getAllByRole('button')
   const confirm = buttons[buttons.length - 1]
@@ -68,7 +68,8 @@ describe('two-factor floor', () => {
 
   it('raises the floor with grace days, the version and a reason', async () => {
     render(<MFAFloorForm settings={floor} canEdit onSaved={() => {}} />)
-    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
+    // No unsaved change, no save bar.
+    expect(screen.queryByRole('button', { name: 'Save changes' })).toBeNull()
     await userEvent.click(screen.getByLabelText('Everyone'))
     await userEvent.clear(screen.getByLabelText('Current members'))
     await userEvent.type(screen.getByLabelText('Current members'), '30')
@@ -88,7 +89,7 @@ describe('two-factor floor', () => {
   it('warns before lowering it', async () => {
     render(<MFAFloorForm settings={floor} canEdit onSaved={() => {}} />)
     await userEvent.click(screen.getByLabelText('No floor'))
-    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Save changes' }))
     expect(screen.getByRole('alertdialog')).toHaveTextContent('Lower the two-factor floor?')
   })
 
@@ -102,7 +103,7 @@ describe('two-factor floor', () => {
     await userEvent.clear(screen.getByLabelText('New members'))
     await userEvent.type(screen.getByLabelText('New members'), '120')
     expect(screen.getByText('Enter a whole number of days from 0 to 90.')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Save changes' })).toBeDisabled()
   })
 
   it('recommends a floor on an install still on none, and is read-only without the permission', () => {
@@ -114,7 +115,7 @@ describe('two-factor floor', () => {
       />
     )
     expect(screen.getByTestId('mfa-floor-recommend')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Save' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Save changes' })).not.toBeInTheDocument()
     expect(screen.getByLabelText('Everyone')).toBeDisabled()
   })
 
@@ -128,7 +129,8 @@ describe('organization mail servers', () => {
   it('changes the mode with the version and a reason', async () => {
     render(<EmailRelayForm settings={relay} canEdit onSaved={() => {}} />)
     expect(screen.getByText('Server default (ORG_EMAIL_RELAY_MODE).')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
+    // No unsaved change, no save bar.
+    expect(screen.queryByRole('button', { name: 'Save changes' })).toBeNull()
     await userEvent.click(screen.getByLabelText('Never'))
     await confirmWithReason('free plan')
     await waitFor(() =>
@@ -138,7 +140,7 @@ describe('organization mail servers', () => {
 
   it('is read-only without the permission', () => {
     render(<EmailRelayForm settings={relay} canEdit={false} onSaved={() => {}} />)
-    expect(screen.queryByRole('button', { name: 'Save' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Save changes' })).not.toBeInTheDocument()
     expect(screen.getByLabelText('Never')).toBeDisabled()
   })
 })

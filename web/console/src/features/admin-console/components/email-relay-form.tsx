@@ -1,12 +1,12 @@
 'use client'
 
-import { useEffect, useId, useState } from 'react'
+import { useCallback, useEffect, useId, useState } from 'react'
 import { toast } from 'sonner'
-import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { useTranslation } from '@/context/i18n-provider'
+import { SettingsSaveBar } from '@/features/shared/components/settings-save-bar'
 import { saveEmailRelay } from '../api/use-platform-settings'
 import type { EmailRelayMode, EmailRelaySettings } from '../types'
 import {
@@ -35,7 +35,10 @@ export function EmailRelayForm({ settings, canEdit, onSaved }: EmailRelayFormPro
   const id = useId()
   const [mode, setMode] = useState<EmailRelayMode>(settings.mode)
   const [confirmOpen, setConfirmOpen] = useState(false)
-  useEffect(() => setMode(settings.mode), [settings])
+  // The saved value: on load, after a save and on Discard.
+  const reset = useCallback(() => setMode(settings.mode), [settings])
+  useEffect(reset, [reset])
+  const dirty = mode !== settings.mode
 
   const label: Record<EmailRelayMode, string> = {
     off: t('admin.emailRelay.off', 'Never'),
@@ -113,11 +116,12 @@ export function EmailRelayForm({ settings, canEdit, onSaved }: EmailRelayFormPro
           </p>
           <SettingChangedLine change={settings} />
           {canEdit ? (
-            <div className="flex justify-end">
-              <Button onClick={() => setConfirmOpen(true)} disabled={mode === settings.mode}>
-                {t('admin.settings.save', 'Save')}
-              </Button>
-            </div>
+            <SettingsSaveBar
+              className="basis-full"
+              dirty={dirty}
+              onSave={() => setConfirmOpen(true)}
+              onDiscard={reset}
+            />
           ) : (
             <p className="text-sm text-muted-foreground">
               {t('admin.settings.superAdminOnly', 'Only a super admin can change this setting.')}
