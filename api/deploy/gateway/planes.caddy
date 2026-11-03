@@ -65,4 +65,11 @@
 	handle @plane_sensor {
 		import to_api
 	}
+
+	# Plane user: straight to the API.
+	#   /api/v1/ci/oidc/exchange: CI job token exchange: no session cookie and no Authorization header (the OIDC token is in the body), so the web app's CSRF check refuses it; the API verifies the token and rate-limits the route
+	@plane_user path /api/v1/ci/oidc/exchange /api/v1/ci/oidc/exchange/*
+	handle @plane_user {
+		import to_api
+	}
 }
