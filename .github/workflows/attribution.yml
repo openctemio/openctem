@@ -1,0 +1,68 @@
+name: No AI attribution
+
+# Server-side twin of .githooks/commit-msg, which only runs in clones where
+# hooks are enabled. Refuses AI attribution lines (the pattern is
+# .github/scripts/check-attribution.sh, shared with the hook) in:
+#   - every commit message the pull request adds (base..head), or the merge
+#     queue group's range;
+#   - the pull request title and body (read fresh through the API, so a re-run
+#     after an edit sees the edit; a title or body edit re-runs this workflow).
+#
+# Security: pull_request (not pull_request_target), read-only token, no code of
+# the pull request is executed (the script comes from the BASE commit), and
+# titles, bodies and messages are only ever written to files by the API client
+# and read by grep as data, never interpolated into a shell command.
+# The job name is stable so it can be made a required check.
+
+on:
+  pull_request:
+    branches: [main, develop]
+    types: [opened, synchronize, reopened, edited, ready_for_review]
+  merge_group:
+    types: [checks_requested]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  attribution:
+    name: No AI attribution
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out the checker from the base commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+          persist-credentials: false
+          sparse-checkout: .github/scripts/check-attribution.sh
+          sparse-checkout-cone-mode: false
+
+      - name: Refuse AI attribution
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha }}
+        run: |
+          set -euo pipefail
+          if [ ! -f .github/scripts/check-attribution.sh ]; then
+            echo "::notice::the base commit has no check-attribution.sh yet; nothing to check"
+            exit 0
+          fi
+          work="$(mktemp -d)"
+          # Commit messages of base...head, NUL-free text in one file.
+          gh api --paginate "repos/$REPO/compare/$BASE_SHA...$HEAD_SHA" \
+            --jq '.commits[] | .commit.message, ""' >"$work/commits.txt"
+          files=("$work/commits.txt")
+          if [ -n "$PR" ]; then
+            gh api "repos/$REPO/pulls/$PR" --jq '.title, "", (.body // "")' >"$work/pr.txt"
+            files+=("$work/pr.txt")
+          fi
+          bash .github/scripts/check-attribution.sh "${files[@]}"
