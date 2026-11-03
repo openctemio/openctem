@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	assettechapp "github.com/openctemio/openctem/api/internal/app/assettech"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
@@ -78,10 +78,10 @@ func TestAssetTechnologyBackfill(t *testing.T) {
 	ctx := context.Background()
 	const name, otherName = "old.tech.example.com", "old.other.example.com"
 	at := time.Now().UTC().Add(-time.Hour)
-	g.send(g.tn, "httpx", at, "", ctis.Asset{ID: "d", Type: ctis.AssetTypeDomain, Value: name,
-		Properties: ctis.Properties{"technologies": []any{"HSTS", "Vercel", "nginx", "Next.js:13.4.1"}}})
-	g.send(other, "httpx", at, "", ctis.Asset{ID: "d", Type: ctis.AssetTypeDomain, Value: otherName,
-		Properties: ctis.Properties{"technologies": []any{"HSTS"}}})
+	g.send(g.tn, "httpx", at, "", ctis.Asset{ID: "d", Type: ctis.AssetTypeDomainName, Value: name,
+		Technologies: techsOf("HSTS", "Vercel", "nginx", "Next.js:13.4.1")})
+	g.send(other, "httpx", at, "", ctis.Asset{ID: "d", Type: ctis.AssetTypeDomainName, Value: otherName,
+		Technologies: techsOf("HSTS")})
 	a, b := g.assetID(g.tn, name), g.assetID(other, otherName)
 
 	// The state before asset_technologies: no rows, and the old ingest's
@@ -198,8 +198,8 @@ func TestAssetTechnologyBackfill_ReportOnlyAndGuards(t *testing.T) {
 	g := newTechRig(t)
 	ctx := context.Background()
 	const name = "report.tech.example.com"
-	g.send(g.tn, "httpx", time.Now().UTC().Add(-time.Hour), "", ctis.Asset{ID: "d", Type: ctis.AssetTypeDomain, Value: name,
-		Properties: ctis.Properties{"technologies": []any{"nginx"}}})
+	g.send(g.tn, "httpx", time.Now().UTC().Add(-time.Hour), "", ctis.Asset{ID: "d", Type: ctis.AssetTypeDomainName, Value: name,
+		Technologies: techsOf("nginx")})
 	a := g.assetID(g.tn, name)
 	if _, err := g.r.db.ExecContext(ctx, `DELETE FROM asset_software WHERE tenant_id = $1`, g.tn.tenant.String()); err != nil {
 		t.Fatal(err)

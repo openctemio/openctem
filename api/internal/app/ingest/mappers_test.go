@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/ctis"
-	"github.com/openctemio/ctis/severity"
+	"github.com/openctemio/ctis/v2"
+	"github.com/openctemio/ctis/v2/severity"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
@@ -18,62 +18,110 @@ import (
 // mapCTISAssetType tests
 // =============================================================================
 
-func TestMapCTISAssetType_AllKnownTypes(t *testing.T) {
-	tests := []struct {
-		ctisType ctis.AssetType
-		expected asset.AssetType
-	}{
-		{ctis.AssetTypeDomain, asset.AssetTypeDomain},
-		{ctis.AssetTypeSubdomain, asset.AssetTypeSubdomain},
-		{ctis.AssetTypeIPAddress, asset.AssetTypeIPAddress},
-		{ctis.AssetTypeCertificate, asset.AssetTypeCertificate},
-		{ctis.AssetTypeWebsite, asset.AssetTypeWebsite},
-		{ctis.AssetTypeWebApplication, asset.AssetTypeWebApplication},
-		{ctis.AssetTypeAPI, asset.AssetTypeAPI},
-		{ctis.AssetTypeMobileApp, asset.AssetTypeMobileApp},
-		{ctis.AssetTypeService, asset.AssetTypeService},
-		{ctis.AssetTypeRepository, asset.AssetTypeRepository},
-		{ctis.AssetTypeCloudAccount, asset.AssetTypeCloudAccount},
-		{ctis.AssetTypeCompute, asset.AssetTypeCompute},
-		{ctis.AssetTypeStorage, asset.AssetTypeStorage},
-		{ctis.AssetTypeDatabase, asset.AssetTypeDatabase},
-		{ctis.AssetTypeServerless, asset.AssetTypeServerless},
-		{ctis.AssetTypeContainerRegistry, asset.AssetTypeContainerRegistry},
-		{ctis.AssetTypeHost, asset.AssetTypeHost},
-		{ctis.AssetTypeServer, asset.AssetTypeHost},
-		{ctis.AssetTypeContainer, asset.AssetTypeContainer},
-		{ctis.AssetTypeKubernetes, asset.AssetTypeKubernetes}, // kind from properties.kind
-		{ctis.AssetTypeKubernetesCluster, asset.AssetTypeKubernetesCluster},
-		{ctis.AssetTypeKubernetesNamespace, asset.AssetTypeKubernetesNamespace},
-		{ctis.AssetTypeNetwork, asset.AssetTypeNetwork},
-		{ctis.AssetTypeVPC, asset.AssetTypeVPC},
-		{ctis.AssetTypeSubnet, asset.AssetTypeSubnet},
-		{ctis.AssetTypeLoadBalancer, asset.AssetTypeLoadBalancer},
-		{ctis.AssetTypeFirewall, asset.AssetTypeFirewall},
-		{ctis.AssetTypeIAMUser, asset.AssetTypeIAMUser},
-		{ctis.AssetTypeIAMRole, asset.AssetTypeIAMRole},
-		{ctis.AssetTypeServiceAccount, asset.AssetTypeServiceAccount},
-		{ctis.AssetTypeHTTPService, asset.AssetTypeHTTPService},
-		{ctis.AssetTypeOpenPort, asset.AssetTypeOpenPort},
-		{ctis.AssetTypeDiscoveredURL, asset.AssetTypeDiscoveredURL},
-	}
+func identityAsset(k ctis.IdentityKind) *ctis.Asset {
+	return &ctis.Asset{Type: ctis.AssetTypeIdentity, Value: "u1",
+		Technical: &ctis.AssetTechnical{Identity: &ctis.IdentityTechnical{Kind: k}}}
+}
 
+// The wire type to stored type table: domain_name is a domain at the
+// public-suffix apex and a subdomain below it; identity takes its sub-type
+// from technical.identity.kind; the rest are type_inputs of the registry.
+func TestMapCTISAssetType_WireToStored(t *testing.T) {
+	tests := []struct {
+		name     string
+		in       *ctis.Asset
+		wantType asset.AssetType
+		wantSub  string
+	}{
+		{"apex domain", &ctis.Asset{Type: ctis.AssetTypeDomainName, Value: "example.com"}, asset.AssetTypeDomain, ""},
+		{"subdomain", &ctis.Asset{Type: ctis.AssetTypeDomainName, Value: "api.example.com"}, asset.AssetTypeSubdomain, ""},
+		{"deep subdomain", &ctis.Asset{Type: ctis.AssetTypeDomainName, Value: "a.b.example.com"}, asset.AssetTypeSubdomain, ""},
+		{"multi-label suffix apex", &ctis.Asset{Type: ctis.AssetTypeDomainName, Value: "example.co.uk"}, asset.AssetTypeDomain, ""},
+		{"multi-label suffix subdomain", &ctis.Asset{Type: ctis.AssetTypeDomainName, Value: "www.example.co.uk"}, asset.AssetTypeSubdomain, ""},
+		{"private suffix is not guessed", &ctis.Asset{Type: ctis.AssetTypeDomainName, Value: "localhost"}, asset.AssetTypeDomain, ""},
+		{"identity user", identityAsset(ctis.IdentityUser), asset.AssetTypeIdentity, "iam_user"},
+		{"identity role", identityAsset(ctis.IdentityRole), asset.AssetTypeIdentity, "iam_role"},
+		{"identity service account", identityAsset(ctis.IdentityServiceAccount), asset.AssetTypeIdentity, "service_account"},
+		{"identity group keeps its kind", identityAsset(ctis.IdentityGroup), asset.AssetTypeIdentity, "group"},
+		{"identity without technical", &ctis.Asset{Type: ctis.AssetTypeIdentity, Value: "u1"}, asset.AssetTypeIdentity, ""},
+		{"service", &ctis.Asset{Type: ctis.AssetTypeService, Value: "203.0.113.5:443/tcp"}, asset.AssetTypeService, "open_port"},
+		{"web origin", &ctis.Asset{Type: ctis.AssetTypeWebOrigin, Value: "https://example.com"}, asset.AssetType("web_origin"), ""},
+		{"ip range", &ctis.Asset{Type: ctis.AssetTypeIPRange, Value: "10.0.0.0/24"}, asset.AssetType("ip_range"), ""},
+		{"container image", &ctis.Asset{Type: ctis.AssetTypeContainerImage}, asset.AssetType("container_image"), ""},
+		{"host", &ctis.Asset{Type: ctis.AssetTypeHost, Value: "h1"}, asset.AssetTypeHost, ""},
+		{"ip address", &ctis.Asset{Type: ctis.AssetTypeIPAddress, Value: "203.0.113.7"}, asset.AssetTypeIPAddress, ""},
+		{"empty type", &ctis.Asset{}, asset.AssetTypeUnclassified, ""},
+	}
 	for _, tt := range tests {
-		t.Run(string(tt.ctisType), func(t *testing.T) {
-			result := mapCTISAssetType(tt.ctisType)
-			assert.Equal(t, tt.expected, result)
+		t.Run(tt.name, func(t *testing.T) {
+			gotType, gotSub := mapCTISAssetType(tt.in)
+			assert.Equal(t, tt.wantType, gotType)
+			assert.Equal(t, tt.wantSub, gotSub)
 		})
 	}
 }
 
-func TestMapCTISAssetType_UnknownType(t *testing.T) {
-	result := mapCTISAssetType("nonexistent_type")
-	assert.Equal(t, asset.AssetTypeUnclassified, result)
+// A network_device takes its stored sub-type from technical.network_device.kind;
+// a wireless access point is stored as access_point; other or absent kinds
+// have no sub-type.
+func TestMapCTISAssetType_NetworkDeviceKinds(t *testing.T) {
+	dev := func(k ctis.NetworkDeviceKind) *ctis.Asset {
+		return &ctis.Asset{Type: ctis.AssetTypeNetworkDevice, Value: "sw1",
+			Technical: &ctis.AssetTechnical{NetworkDevice: &ctis.NetworkDeviceTechnical{Kind: k}}}
+	}
+	cases := map[string]struct {
+		in   *ctis.Asset
+		want string
+	}{
+		"router":        {dev(ctis.NetworkDeviceRouter), "router"},
+		"switch":        {dev(ctis.NetworkDeviceSwitch), "switch"},
+		"firewall":      {dev(ctis.NetworkDeviceFirewall), "firewall"},
+		"load balancer": {dev(ctis.NetworkDeviceLoadBalancer), "load_balancer"},
+		"vpn gateway":   {dev(ctis.NetworkDeviceVPNGateway), "vpn_gateway"},
+		"access point":  {dev(ctis.NetworkDeviceWirelessAccessPoint), "access_point"},
+		"other":         {dev(ctis.NetworkDeviceOther), ""},
+		"no technical":  {&ctis.Asset{Type: ctis.AssetTypeNetworkDevice, Value: "sw1"}, ""},
+	}
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			typ, sub := mapCTISAssetType(c.in)
+			assert.Equal(t, asset.AssetTypeNetwork, typ)
+			assert.Equal(t, c.want, sub)
+			got := resolveCTISAssetType(c.in).stored
+			assert.Equal(t, asset.AssetTypeNetwork, got.Type)
+			assert.Equal(t, c.want, got.SubType)
+		})
+	}
 }
 
-func TestMapCTISAssetType_EmptyType(t *testing.T) {
-	result := mapCTISAssetType("")
-	assert.Equal(t, asset.AssetTypeUnclassified, result)
+// What the registry stores each wire type as.
+func TestResolveCTISAssetType_StoredPairs(t *testing.T) {
+	tests := []struct {
+		name     string
+		in       *ctis.Asset
+		wantType asset.AssetType
+		wantSub  string
+	}{
+		{"apex", &ctis.Asset{Type: ctis.AssetTypeDomainName, Value: "example.com"}, asset.AssetTypeDomain, ""},
+		{"subdomain", &ctis.Asset{Type: ctis.AssetTypeDomainName, Value: "www.example.co.uk"}, asset.AssetTypeSubdomain, ""},
+		{"identity role", identityAsset(ctis.IdentityRole), asset.AssetTypeIdentity, "iam_role"},
+		{"web origin", &ctis.Asset{Type: ctis.AssetTypeWebOrigin}, asset.AssetTypeService, "http"},
+		{"service", &ctis.Asset{Type: ctis.AssetTypeService}, asset.AssetTypeService, "open_port"},
+		{"ip range", &ctis.Asset{Type: ctis.AssetTypeIPRange}, asset.AssetTypeNetwork, ""},
+		{"container image", &ctis.Asset{Type: ctis.AssetTypeContainerImage}, asset.AssetTypeContainer, "image"},
+		{"kubernetes workload", &ctis.Asset{Type: ctis.AssetTypeKubernetesWorkload}, asset.AssetTypeKubernetes, "workload"},
+		{"endpoint device", &ctis.Asset{Type: ctis.AssetTypeEndpointDevice}, asset.AssetTypeHost, "workstation"},
+		{"network device", &ctis.Asset{Type: ctis.AssetTypeNetworkDevice}, asset.AssetTypeNetwork, ""},
+		{"unknown", &ctis.Asset{Type: "nonexistent_type"}, asset.AssetTypeUnclassified, ""},
+		{"empty", &ctis.Asset{}, asset.AssetTypeUnclassified, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := resolveCTISAssetType(tt.in)
+			assert.Equal(t, tt.wantType, got.stored.Type)
+			assert.Equal(t, tt.wantSub, got.stored.SubType)
+		})
+	}
 }
 
 // =============================================================================
@@ -135,23 +183,23 @@ func TestMapSDKSeverity_DefaultsToMedium(t *testing.T) {
 // detectFindingSource tests
 // =============================================================================
 
-func TestDetectFindingSource_FromCapabilities(t *testing.T) {
+func TestDetectFindingSource_FromTechniques(t *testing.T) {
 	tests := []struct {
-		name         string
-		capabilities []string
-		expected     vulnerability.FindingSource
+		name       string
+		techniques []ctis.Technique
+		expected   vulnerability.FindingSource
 	}{
-		{"sast capability", []string{"SAST"}, vulnerability.FindingSourceSAST},
-		{"sca capability", []string{"SCA"}, vulnerability.FindingSourceSCA},
-		{"dast capability", []string{"DAST"}, vulnerability.FindingSourceDAST},
-		{"secret capability", []string{"secret_detection"}, vulnerability.FindingSourceSecret},
-		{"container capability", []string{"container_scanning"}, vulnerability.FindingSourceContainer},
-		{"iac capability", []string{"iac_analysis"}, vulnerability.FindingSourceIaC},
+		{"sast technique", []ctis.Technique{ctis.TechniqueSAST}, vulnerability.FindingSourceSAST},
+		{"sca technique", []ctis.Technique{ctis.TechniqueSCA}, vulnerability.FindingSourceSCA},
+		{"dast technique", []ctis.Technique{ctis.TechniqueDAST}, vulnerability.FindingSourceDAST},
+		{"secret technique", []ctis.Technique{ctis.TechniqueSecret}, vulnerability.FindingSourceSecret},
+		{"container technique", []ctis.Technique{ctis.TechniqueContainer}, vulnerability.FindingSourceContainer},
+		{"iac technique", []ctis.Technique{ctis.TechniqueIaC}, vulnerability.FindingSourceIaC},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := detectFindingSource("generic-tool", tt.capabilities)
+			result := detectFindingSource("generic-tool", tt.techniques...)
 			assert.Equal(t, tt.expected, result)
 		})
 	}
@@ -179,15 +227,15 @@ func TestDetectFindingSource_FromToolName(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.tool, func(t *testing.T) {
-			result := detectFindingSource(tt.tool, nil)
+			result := detectFindingSource(tt.tool)
 			assert.Equal(t, tt.expected, result)
 		})
 	}
 }
 
-func TestDetectFindingSource_CapabilitiesTakePrecedence(t *testing.T) {
-	// Tool name says "trivy" (container) but capability says SCA
-	result := detectFindingSource("trivy", []string{"sca"})
+func TestDetectFindingSource_TechniquesTakePrecedence(t *testing.T) {
+	// Tool name says "trivy" (container) but the technique says SCA
+	result := detectFindingSource("trivy", ctis.TechniqueSCA)
 	assert.Equal(t, vulnerability.FindingSourceSCA, result)
 }
 
@@ -201,7 +249,7 @@ func TestDetectFindingSource_CapabilitiesTakePrecedence(t *testing.T) {
 // Unknown provenance is now recorded as such. See mappers_source_test.go for
 // the full matrix.
 func TestDetectFindingSource_UnknownToolIsRecordedAsExternal(t *testing.T) {
-	result := detectFindingSource("my-custom-tool", nil)
+	result := detectFindingSource("my-custom-tool")
 	assert.Equal(t, vulnerability.FindingSourceExternal, result)
 }
 
@@ -252,10 +300,6 @@ func TestBuildIPAddressProperties_AllFields(t *testing.T) {
 		ASNOrg:   "Google LLC",
 		Country:  "US",
 		City:     "Mountain View",
-		Ports: []ctis.PortInfo{
-			{Port: 80, Protocol: "tcp", State: "open", Service: "http"},
-			{Port: 443, Protocol: "tcp", State: "open", Service: "https", Version: "1.1", Banner: "nginx"},
-		},
 		Geolocation: &ctis.Geolocation{
 			Latitude:  37.386,
 			Longitude: -122.084,
@@ -269,10 +313,8 @@ func TestBuildIPAddressProperties_AllFields(t *testing.T) {
 	assert.Equal(t, "example.com", props["hostname"])
 	assert.Equal(t, 15169, props["asn"])
 	assert.Equal(t, "Google LLC", props["asn_org"])
-	ports := props["ports"].([]map[string]any)
-	assert.Len(t, ports, 2)
-	assert.Equal(t, 80, ports[0]["port"])
-	assert.Equal(t, "nginx", ports[1]["banner"])
+	// Ports are service assets in CTIS 2.0, never a property of the address.
+	assert.NotContains(t, props, "ports")
 	geo := props["geolocation"].(map[string]any)
 	assert.Equal(t, 37.386, geo["latitude"])
 }
@@ -293,7 +335,7 @@ func TestBuildCertificateProperties_AllFields(t *testing.T) {
 	cert := &ctis.CertificateTechnical{
 		SerialNumber:       "1234567890",
 		SubjectCN:          "example.com",
-		SANs:               []string{"*.example.com", "example.com"},
+		SubjectAltNames:    []string{"*.example.com", "example.com"},
 		IssuerCN:           "Let's Encrypt",
 		IssuerOrg:          "Let's Encrypt",
 		NotBefore:          &notBefore,
@@ -301,9 +343,8 @@ func TestBuildCertificateProperties_AllFields(t *testing.T) {
 		SignatureAlgorithm: "SHA256WithRSA",
 		KeyAlgorithm:       "RSA",
 		KeySize:            2048,
-		Fingerprint:        "AB:CD:EF:12:34",
-		SelfSigned:         false,
-		Expired:            false,
+		SHA256Fingerprint:  "abcdef1234",
+		IsSelfSigned:       false,
 	}
 
 	props := buildCertificateProperties(cert)
@@ -314,7 +355,8 @@ func TestBuildCertificateProperties_AllFields(t *testing.T) {
 	assert.Equal(t, "Let's Encrypt", props["issuer_cn"])
 	assert.Equal(t, 2048, props["key_size"])
 	assert.Equal(t, false, props["self_signed"])
-	assert.Equal(t, false, props["expired"])
+	assert.Equal(t, false, props["expired"], "expired is derived from not_after")
+	assert.Equal(t, "abcdef1234", props["fingerprint"])
 }
 
 // =============================================================================
@@ -323,20 +365,20 @@ func TestBuildCertificateProperties_AllFields(t *testing.T) {
 
 func TestBuildServiceProperties_AllFields(t *testing.T) {
 	svc := &ctis.ServiceTechnical{
-		Name:      "nginx",
-		Version:   "1.21.0",
-		Product:   "nginx",
-		Port:      443,
-		Protocol:  "https",
-		TLS:       true,
-		Banner:    "nginx/1.21.0",
-		Transport: "tcp",
-		ExtraInfo: "OpenSSL/1.1.1",
+		Version:     "1.21.0",
+		Product:     "nginx",
+		Port:        443,
+		AppProtocol: "https",
+		IsTLS:       true,
+		Banner:      "nginx/1.21.0",
+		Transport:   ctis.TransportTCP,
+		ExtraInfo:   "OpenSSL/1.1.1",
 	}
 
 	props := buildServiceProperties(svc)
 
-	assert.Equal(t, "nginx", props["name"])
+	assert.Equal(t, "nginx", props["product"])
+	assert.Equal(t, "https", props["protocol"])
 	assert.Equal(t, "1.21.0", props["version"])
 	assert.Equal(t, 443, props["port"])
 	assert.Equal(t, true, props["tls"])
@@ -359,7 +401,7 @@ func TestBuildPropertiesFromCTIS_PromotesTechnicalBlocks(t *testing.T) {
 		Type: ctis.AssetTypeCertificate, Value: "*.example.com",
 		Technical: &ctis.AssetTechnical{Certificate: &ctis.CertificateTechnical{
 			SubjectCN: "*.example.com", IssuerOrg: "Example CA", NotAfter: &notAfter,
-			Fingerprint: "ab:cd", SelfSigned: true,
+			SHA256Fingerprint: "ab:cd", IsSelfSigned: true,
 		}},
 	})
 	assert.Equal(t, "*.example.com", cert["subject_cn"])
@@ -370,7 +412,7 @@ func TestBuildPropertiesFromCTIS_PromotesTechnicalBlocks(t *testing.T) {
 	assert.NotContains(t, cert, "certificate")
 
 	dom := p.buildPropertiesFromCTIS(&ctis.Asset{
-		Type: ctis.AssetTypeDomain, Value: "example.com",
+		Type: ctis.AssetTypeDomainName, Value: "example.com",
 		Technical: &ctis.AssetTechnical{Domain: &ctis.DomainTechnical{
 			Registrar: "Example Registrar",
 			DNSRecords: []ctis.DNSRecord{
@@ -386,44 +428,13 @@ func TestBuildPropertiesFromCTIS_PromotesTechnicalBlocks(t *testing.T) {
 	assert.NotContains(t, dom, "domain")
 
 	port := p.buildPropertiesFromCTIS(&ctis.Asset{
-		Type: ctis.AssetTypeOpenPort, Value: "198.51.100.7:22/tcp",
+		Type: ctis.AssetTypeService, Value: "198.51.100.7:22/tcp",
 		Technical: &ctis.AssetTechnical{Service: &ctis.ServiceTechnical{
-			Name: "ssh", Port: 22, Protocol: "tcp", Version: "9.6",
+			Port: 22, Transport: ctis.TransportTCP, AppProtocol: "ssh", Version: "9.6",
 		}},
 	})
-	assert.Equal(t, "ssh", port["service"])
+	assert.Equal(t, "ssh", port["protocol"])
 	assert.Equal(t, 22, port["port"])
 	assert.Equal(t, "9.6", port["version"])
 	assert.NotContains(t, port, "tls")
-}
-
-// A DNS name reported as ip_address (and an IP reported as a domain) is
-// stored by what its name is, so the inventory never shows a domain as an IP.
-func TestResolveCTISAssetType_NameWinsOverContradictingType(t *testing.T) {
-	tests := []struct {
-		name     string
-		ctisType ctis.AssetType
-		value    string
-		want     asset.AssetType
-	}{
-		{"domain reported as ip_address", ctis.AssetTypeIPAddress, "example.co.uk", asset.AssetTypeDomain},
-		{"subdomain host reported as ip_address", ctis.AssetTypeIPAddress, "api.example.co.uk", asset.AssetTypeDomain},
-		{"real ipv4 stays", ctis.AssetTypeIPAddress, "203.0.113.7", asset.AssetTypeIPAddress},
-		{"real ipv6 stays", ctis.AssetTypeIPAddress, "2001:db8::1", asset.AssetTypeIPAddress},
-		{"bracketed ipv6 stays", ctis.AssetTypeIPAddress, "[2001:db8::1]", asset.AssetTypeIPAddress},
-		{"cidr is not a dns name", ctis.AssetTypeIPAddress, "10.0.0.0/24", asset.AssetTypeIPAddress},
-		{"single label is not guessed", ctis.AssetTypeIPAddress, "localhost", asset.AssetTypeIPAddress},
-		{"ip reported as domain", ctis.AssetTypeDomain, "198.51.100.4", asset.AssetTypeIPAddress},
-		{"ip reported as subdomain", ctis.AssetTypeSubdomain, "198.51.100.4", asset.AssetTypeIPAddress},
-		{"domain stays", ctis.AssetTypeDomain, "example.com", asset.AssetTypeDomain},
-		{"subdomain stays", ctis.AssetTypeSubdomain, "a.example.com", asset.AssetTypeSubdomain},
-		{"host with dns name untouched", ctis.AssetTypeHost, "web01.example.com", asset.AssetTypeHost},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := resolveCTISAssetType(&ctis.Asset{Type: tt.ctisType, Value: tt.value, Name: tt.value})
-			assert.Equal(t, tt.want, got.stored.Type)
-			assert.Equal(t, tt.want, got.normType)
-		})
-	}
 }

@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
@@ -26,15 +26,19 @@ func TestIngest_NetworkDeviceMatchedByIP(t *testing.T) {
 		for _, ip := range ips {
 			list = append(list, ip)
 		}
-		return ctis.Asset{ID: name, Type: ctis.AssetTypeNetwork, Value: name, Name: name,
-			Properties: ctis.Properties{"sub_type": sub, "ip_addresses": list}}
+		if sub == "subnet" {
+			return ctis.Asset{ID: name, Type: ctis.AssetTypeIPRange, Value: name, Properties: ctis.Properties{"ip_addresses": list}}
+		}
+		return ctis.Asset{ID: name, Type: ctis.AssetTypeNetworkDevice, Value: name,
+			Technical:  &ctis.AssetTechnical{NetworkDevice: &ctis.NetworkDeviceTechnical{Kind: ctis.NetworkDeviceKind(sub)}},
+			Properties: ctis.Properties{"ip_addresses": list}}
 	}
 	send := func(tn v2Tenant, tool string, assets ...ctis.Asset) {
 		t.Helper()
 		tid := tn.tenant
 		agt := &sensor.Sensor{TenantID: &tid, Status: sensor.SensorStatusActive}
-		rep := &ctis.Report{Version: "1.0", Tool: &ctis.Tool{Name: tool},
-			Metadata: ctis.ReportMetadata{Timestamp: time.Now().UTC()}, Assets: assets}
+		rep := &ctis.Report{Version: ctis.SchemaVersion, Tool: &ctis.Tool{Name: tool},
+			Metadata: ctis.ReportMetadata{ID: ctis.NewReportID(), GeneratedAt: time.Now().UTC()}, Assets: assets}
 		out, err := r.svc.Ingest(ctx, agt, ingest.Input{Report: rep})
 		if err != nil {
 			t.Fatal(err)
@@ -56,7 +60,7 @@ func TestIngest_NetworkDeviceMatchedByIP(t *testing.T) {
 	a, b := r.newTenant(), r.newTenant()
 	send(b, "prtg", device("core-sw-01", "switch", "192.0.2.1"))
 	send(a, "prtg", device("core-sw-01", "switch", "192.0.2.1"), device("edge-fw-01", "firewall", "192.0.2.9"),
-		device("office-lan", "subnet", "192.0.2.20"))
+		device("192.0.2.16/28", "subnet", "192.0.2.20"))
 
 	// The log collector names the switch by its address: same device.
 	send(a, "splunk", device("192.0.2.1", "switch", "192.0.2.1"))

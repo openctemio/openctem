@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/pkg/domain/cirun"
 )
@@ -19,7 +19,7 @@ func TestCIReportHygiene(t *testing.T) {
 	ctx := context.Background()
 	cfg := r.trust(r.tenant, cirun.Rules{Owners: []string{"acme"}})
 	const sha = "4444444444444444444444444444444444444444"
-	host := strings.TrimPrefix(r.idp.srv.URL, "https://")
+	host := strings.TrimPrefix(r.idp.url, "https://")
 	repoName := strings.ToLower(host) + "/acme/api"
 
 	code, ex := r.exchange(r.tenant, r.idp.token(t, cfg.Audience, "acme/api", "main", sha, nil))
@@ -32,7 +32,7 @@ func TestCIReportHygiene(t *testing.T) {
 	// snippet: nothing of it is stored in clear.
 	const raw = "AKIAZQ7TESTRAWSECRETVALUE9876"
 	leak := ciFinding("AWS key", "aws-access-key", "high", ctis.FindingTypeSecret, "config.go", 3)
-	leak.Secret = &ctis.SecretDetails{SecretType: "aws_access_key", MaskedValue: raw}
+	leak.Secret = &ctis.SecretDetails{Type: "aws_access_key", MaskedValue: raw}
 	leak.Location.Snippet = `aws_key = "` + raw + `"`
 	if resp, out := r.upload(runID, token, ciReport(repoName, leak)); resp.StatusCode != http.StatusAccepted {
 		t.Fatalf("upload: %d %v", resp.StatusCode, out)

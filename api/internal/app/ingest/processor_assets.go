@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net"
-	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -13,7 +12,7 @@ import (
 
 	"golang.org/x/net/publicsuffix"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	scopeapp "github.com/openctemio/openctem/api/internal/app/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
@@ -368,60 +367,22 @@ func (p *AssetProcessor) processBatch(
 		}
 	}()
 
-	// Open ports listed on an address become open_port assets that go
-	// through the rules below like any reported asset (research/22 P0-6).
-	if n := expandOpenPorts(report); n > 0 {
-		p.logger.Debug("expanded open ports into port assets", "count", n)
-	}
 	// The response header posture of an origin keeps its allow-listed keys
 	// only (names and flags, never a header or cookie value).
 	sanitizeHTTPPosture(report)
-	// One key per concept, and a key on the wrong asset (a port on a
-	// domain) moved to the asset it belongs on (RFC-042 §6.3.9).
-	if added, dropped, unknown := routeMisplacedProperties(report); added > 0 || dropped > 0 || len(unknown) > 0 {
-		p.logger.Warn("report asset properties outside the asset type schema",
-			"routed_services", added, "dropped_keys", dropped,
-			"unknown_keys", logger.SanitizeValue(strings.Join(unknown, ",")))
-	}
-
 	p.logger.Debug("starting asset processing",
 		"explicit_assets_count", len(report.Assets),
 		"findings_count", len(report.Findings),
 	)
 
-	// If no explicit assets but there are findings, try to auto-create from metadata
+	// A CTIS 2.0 finding always names an asset of the document, so a report
+	// without assets has nothing for its findings to land on.
 	if len(report.Assets) == 0 {
-		if len(report.Findings) > 0 && !noAutoAsset {
-			// Try to create asset from report metadata (BranchInfo)
-			autoAsset := p.createAssetFromMetadata(report)
-			if autoAsset != nil {
-				report.Assets = append(report.Assets, *autoAsset)
-				p.logger.Info("auto-created asset from report metadata",
-					"asset_name", getAssetName(autoAsset),
-					"asset_type", autoAsset.Type,
-					"asset_id", autoAsset.ID,
-				)
-			} else {
-				p.logger.Warn("failed to auto-create asset from metadata - all priority chains failed",
-					"has_branch_info", report.Metadata.Branch != nil,
-					"has_scope", report.Metadata.Scope != nil,
-					"has_tool", report.Tool != nil,
-					"findings_count", len(report.Findings),
-				)
-			}
+		if len(report.Findings) > 0 {
+			p.logger.Warn("report has findings but no assets; its findings are skipped",
+				"findings_count", len(report.Findings))
 		}
-
-		// Still no assets after auto-creation attempt. Only worth a warning
-		// when there are findings to lose; a report with neither assets nor
-		// findings (a clean scan, an empty chunk) has nothing to orphan.
-		if len(report.Assets) == 0 {
-			if len(report.Findings) > 0 {
-				p.logger.Warn("no assets after auto-creation attempt - findings will be orphaned",
-					"findings_count", len(report.Findings),
-				)
-			}
-			return assetMap, nil
-		}
+		return assetMap, nil
 	}
 
 	// The addresses the report's in-bound assets vouch for (job_bound.go),
@@ -917,12 +878,9 @@ func (p *AssetProcessor) processBatch(
 	p.recordWebEvidence(ctx, tenantID, report, existingMap, mayChange)
 	p.recordWebContent(ctx, tenantID, report, existingMap, mayChange)
 
-	// Step 8: Typed edges from related_assets (service -> the certificate
-	// it served).
+	// Step 8: the report's typed relationships (CTIS 2.0 relationships[];
+	// a service's certificate, an address's ports) and a host's placement.
 	if p.relRepo != nil {
-		p.createRelatedAssetRelationships(ctx, tenantID, report, assetMap, alterRefs)
-		// Step 8b: the report's typed relationships and a host's placement
-		// (hypervisor host, addresses).
 		p.createReportRelationships(ctx, tenantID, report, existingMap, assetMap, mayChange)
 	}
 
@@ -1022,7 +980,7 @@ func (p *AssetProcessor) ensureRootDomainAssets(
 	publicRoot := make(map[string]bool)
 	for i := range report.Assets {
 		ctisAsset := &report.Assets[i]
-		if ctisAsset.Type != ctis.AssetTypeSubdomain {
+		if !isSubdomainAsset(ctisAsset) {
 			continue
 		}
 
@@ -1172,7 +1130,7 @@ func (p *AssetProcessor) createSubdomainRelationships(
 
 	for i := range report.Assets {
 		ctisAsset := &report.Assets[i]
-		if ctisAsset.Type != ctis.AssetTypeSubdomain {
+		if !isSubdomainAsset(ctisAsset) {
 			continue
 		}
 
@@ -1454,421 +1412,10 @@ func deriveWebURLFromAssetName(name string) string {
 	return ""
 }
 
-// getAssetName extracts the name from a CTIS asset.
+// getAssetName is the name a CTIS asset is stored under: its value, in the
+// canonical form of its type (CTIS 2.0). name is only a display label.
 func getAssetName(ctisAsset *ctis.Asset) string {
-	// A web origin is identified by its URL. The recon converter names an
-	// http_service by its bare host, which is the name of the subdomain or
-	// address it runs on: used as the name, the origin was folded into that
-	// row and no origin asset ever existed.
-	if ctisAsset.Type == ctis.AssetTypeHTTPService && !strings.Contains(ctisAsset.Name, "://") &&
-		strings.Contains(ctisAsset.Value, "://") {
-		return ctisAsset.Value
-	}
-	if ctisAsset.Name != "" {
-		return ctisAsset.Name
-	}
-	return ctisAsset.Value
-}
-
-// createAssetFromMetadata creates a CTIS asset from report metadata using a priority chain.
-// This ensures findings are never orphaned due to missing asset context.
-//
-// Priority chain:
-//  1. BranchInfo.RepositoryURL - Most reliable for CI/CD scans
-//  2. Unique AssetValue from findings - If all findings share same asset
-//  3. Scope.Name from metadata - Explicit scan scope
-//  4. Repository inferred from file paths - Pattern matching (github.com/org/repo)
-//  5. Tool+ScanID fallback - Uses tool name with scan ID
-//  6. Emergency fallback - Uses scan_id alone or generates UUID (ensures findings are NEVER orphaned)
-//
-// This function should NEVER return nil when there are findings to process.
-func (p *AssetProcessor) createAssetFromMetadata(report *ctis.Report) *ctis.Asset {
-	// Priority 1: BranchInfo.RepositoryURL (most reliable for CI/CD scans)
-	if asset := p.createAssetFromBranchInfo(report); asset != nil {
-		return asset
-	}
-
-	// Priority 2: Unique AssetValue from ALL findings (not just first)
-	if asset := p.createAssetFromFindingValues(report); asset != nil {
-		return asset
-	}
-
-	// Priority 3: Scope information
-	if asset := p.createAssetFromScope(report); asset != nil {
-		return asset
-	}
-
-	// Priority 4: Infer repository from file path patterns
-	if asset := p.createAssetFromPathInference(report); asset != nil {
-		return asset
-	}
-
-	// Priority 5: Tool+ScanID fallback (uses tool name with scan ID)
-	if asset := p.createAssetFromToolFallback(report); asset != nil {
-		return asset
-	}
-
-	// Priority 6: Emergency fallback - ensures findings are NEVER orphaned
-	// Uses scan_id if available, otherwise generates a timestamp-based ID
-	return p.createAssetFromEmergencyFallback(report)
-}
-
-// createAssetFromBranchInfo creates asset from BranchInfo.RepositoryURL.
-// This is the most reliable source for CI/CD scans.
-func (p *AssetProcessor) createAssetFromBranchInfo(report *ctis.Report) *ctis.Asset {
-	if report.Metadata.Branch == nil || report.Metadata.Branch.RepositoryURL == "" {
-		return nil
-	}
-
-	repoURL := report.Metadata.Branch.RepositoryURL
-	return &ctis.Asset{
-		ID:          "auto-asset-1",
-		Type:        ctis.AssetTypeRepository,
-		Value:       repoURL,
-		Name:        repoURL,
-		Criticality: ctis.CriticalityHigh,
-		Properties: ctis.Properties{
-			"auto_created":   true,
-			"source":         "branch_info",
-			"commit_sha":     report.Metadata.Branch.CommitSHA,
-			"branch":         report.Metadata.Branch.Name,
-			"default_branch": report.Metadata.Branch.IsDefaultBranch,
-		},
-	}
-}
-
-// createAssetFromFindingValues creates asset from findings' AssetValue.
-// Only creates asset if ALL findings with AssetValue reference the SAME asset.
-// This prevents incorrect asset creation when findings span multiple repos.
-func (p *AssetProcessor) createAssetFromFindingValues(report *ctis.Report) *ctis.Asset {
-	// Collect unique asset values from ALL findings
-	type assetInfo struct {
-		assetType ctis.AssetType
-		count     int
-	}
-	assetSet := make(map[string]*assetInfo)
-
-	for _, finding := range report.Findings {
-		if finding.AssetValue == "" {
-			continue
-		}
-		if info, exists := assetSet[finding.AssetValue]; exists {
-			info.count++
-		} else {
-			assetType := finding.AssetType
-			if assetType == "" {
-				assetType = ctis.AssetTypeRepository
-			}
-			assetSet[finding.AssetValue] = &assetInfo{assetType: assetType, count: 1}
-		}
-	}
-
-	// Only auto-create if exactly 1 unique asset value
-	// Multiple different values = require explicit assets (safer)
-	if len(assetSet) != 1 {
-		if len(assetSet) > 1 && p.logger != nil {
-			p.logger.Debug("multiple asset values found in findings, skipping auto-creation",
-				"count", len(assetSet),
-			)
-		}
-		return nil
-	}
-
-	for value, info := range assetSet {
-		// SECURITY: Sanitize user-provided asset value
-		sanitizedValue := sanitizeAssetName(value)
-		if sanitizedValue == "" {
-			if p.logger != nil {
-				p.logger.Warn("asset value sanitized to empty, skipping",
-					"original_value", value,
-				)
-			}
-			return nil
-		}
-
-		if p.logger != nil {
-			p.logger.Debug("creating asset from finding values",
-				"value", logger.SanitizeText(sanitizedValue),
-				"type", info.assetType,
-				"finding_count", info.count,
-			)
-		}
-		return &ctis.Asset{
-			ID:          "auto-asset-1",
-			Type:        info.assetType,
-			Value:       sanitizedValue,
-			Name:        sanitizedValue,
-			Criticality: ctis.CriticalityHigh,
-			Properties: ctis.Properties{
-				"auto_created":  true,
-				"source":        "finding_asset_value",
-				"finding_count": info.count,
-			},
-		}
-	}
-
-	return nil
-}
-
-// createAssetFromScope creates asset from report metadata Scope.
-func (p *AssetProcessor) createAssetFromScope(report *ctis.Report) *ctis.Asset {
-	if report.Metadata.Scope == nil || report.Metadata.Scope.Name == "" {
-		return nil
-	}
-
-	scopeType := ctis.AssetTypeUnclassified
-	switch report.Metadata.Scope.Type {
-	case "repository":
-		scopeType = ctis.AssetTypeRepository
-	case "domain":
-		scopeType = ctis.AssetTypeDomain
-	case "ip_address":
-		scopeType = ctis.AssetTypeIPAddress
-	case "container":
-		scopeType = ctis.AssetTypeContainer
-	case "cloud_account":
-		scopeType = ctis.AssetTypeCloudAccount
-	}
-
-	return &ctis.Asset{
-		ID:          "auto-asset-1",
-		Type:        scopeType,
-		Value:       report.Metadata.Scope.Name,
-		Name:        report.Metadata.Scope.Name,
-		Criticality: ctis.CriticalityMedium,
-		Properties: ctis.Properties{
-			"auto_created": true,
-			"source":       "scope",
-			"scope_type":   report.Metadata.Scope.Type,
-		},
-	}
-}
-
-// createAssetFromPathInference infers repository from file path patterns.
-// Supports patterns like:
-//   - github.com/org/repo/path/to/file.go
-//   - gitlab.com/org/repo/path/to/file.go
-//   - bitbucket.org/org/repo/path/to/file.go
-//
-// Also detects common project root patterns when paths share a common prefix.
-func (p *AssetProcessor) createAssetFromPathInference(report *ctis.Report) *ctis.Asset {
-	if len(report.Findings) == 0 {
-		return nil
-	}
-
-	// Collect all file paths from findings
-	var paths []string
-	for _, finding := range report.Findings {
-		if finding.Location != nil && finding.Location.Path != "" {
-			paths = append(paths, finding.Location.Path)
-		}
-	}
-
-	if len(paths) == 0 {
-		return nil
-	}
-
-	// Pattern 1: Check for Git hosting URL patterns in paths
-	// e.g., github.com/org/repo/... or file:///github.com/org/repo/...
-	// SECURITY: Only allow known git hosts to prevent domain spoofing
-	gitHostPattern := regexp.MustCompile(`(github\.com|gitlab\.com|bitbucket\.org)/([^/]+)/([^/]+)`)
-	for _, path := range paths {
-		if matches := gitHostPattern.FindStringSubmatch(path); len(matches) >= 4 {
-			host := matches[1]
-			org := matches[2]
-			repo := matches[3]
-
-			// SECURITY: Validate host is known git provider
-			if !isValidGitHost(host) {
-				continue
-			}
-
-			// SECURITY: Sanitize org and repo names
-			org = sanitizeAssetName(org)
-			repo = sanitizeAssetName(repo)
-			if org == "" || repo == "" {
-				continue
-			}
-
-			repoURL := fmt.Sprintf("https://%s/%s/%s", host, org, repo)
-
-			if p.logger != nil {
-				p.logger.Debug("inferred repository from path pattern",
-					"repo_url", repoURL,
-					"source_path", path,
-				)
-			}
-			return &ctis.Asset{
-				ID:          "auto-asset-1",
-				Type:        ctis.AssetTypeRepository,
-				Value:       repoURL,
-				Name:        repoURL,
-				Criticality: ctis.CriticalityHigh,
-				Properties: ctis.Properties{
-					"auto_created": true,
-					"source":       "path_inference",
-					"pattern":      "git_host_url",
-				},
-			}
-		}
-	}
-
-	// Pattern 2: Find common path prefix (project root)
-	// If all paths share a common directory prefix, use it as project identifier
-	if len(paths) >= 2 {
-		commonPrefix := findCommonPathPrefix(paths)
-		if commonPrefix != "" && len(commonPrefix) > 3 {
-			// Clean up the prefix
-			projectName := filepath.Base(commonPrefix)
-			if projectName == "" || projectName == "." || projectName == "/" {
-				projectName = commonPrefix
-			}
-			// Only use if it looks like a meaningful project name
-			if len(projectName) >= 2 && !strings.HasPrefix(projectName, ".") {
-				// SECURITY: Sanitize project name
-				projectName = sanitizeAssetName(projectName)
-				if projectName == "" {
-					return nil
-				}
-
-				// SECURITY: Sanitize common_prefix to avoid path disclosure
-				sanitizedPrefix := sanitizePathForProperty(commonPrefix)
-
-				if p.logger != nil {
-					p.logger.Debug("inferred project from common path prefix",
-						"project_name", logger.SanitizeValue(projectName),
-						"common_prefix", sanitizedPrefix,
-						"path_count", len(paths),
-					)
-				}
-				return &ctis.Asset{
-					ID:          "auto-asset-1",
-					Type:        ctis.AssetTypeRepository,
-					Value:       projectName,
-					Name:        projectName,
-					Criticality: ctis.CriticalityMedium,
-					Properties: ctis.Properties{
-						"auto_created":  true,
-						"source":        "path_inference",
-						"pattern":       "common_prefix",
-						"common_prefix": sanitizedPrefix, // SECURITY: Sanitized path
-					},
-				}
-			}
-		}
-	}
-
-	return nil
-}
-
-// createAssetFromToolFallback creates a pseudo-asset from tool name and scan ID.
-// This is the last resort to ensure findings are never orphaned.
-func (p *AssetProcessor) createAssetFromToolFallback(report *ctis.Report) *ctis.Asset {
-	// Need at least tool name to create meaningful fallback
-	if report.Tool == nil || report.Tool.Name == "" {
-		return nil
-	}
-
-	toolName := report.Tool.Name
-	scanID := report.Metadata.ID
-	if scanID == "" {
-		scanID = UnknownValue
-	}
-
-	// Create a meaningful identifier
-	assetName := fmt.Sprintf("scan:%s:%s", toolName, scanID)
-
-	if p.logger != nil {
-		p.logger.Info("creating fallback asset from tool+scan_id",
-			"tool_name", toolName,
-			"scan_id", scanID,
-			"asset_name", assetName,
-		)
-	}
-
-	return &ctis.Asset{
-		ID:          "auto-asset-1",
-		Type:        ctis.AssetTypeUnclassified,
-		Value:       assetName,
-		Name:        assetName,
-		Criticality: ctis.CriticalityMedium,
-		Properties: ctis.Properties{
-			"auto_created": true,
-			"source":       "tool_fallback",
-			"tool_name":    toolName,
-			"scan_id":      scanID,
-		},
-	}
-}
-
-// createAssetFromEmergencyFallback creates a pseudo-asset when all other methods fail.
-// This is the absolute last resort to ensure findings are NEVER orphaned.
-// Uses scan_id if available, otherwise generates a timestamp-based ID.
-func (p *AssetProcessor) createAssetFromEmergencyFallback(report *ctis.Report) *ctis.Asset {
-	// Try to use scan ID
-	scanID := report.Metadata.ID
-	if scanID == "" {
-		// Generate a timestamp-based ID as last resort
-		scanID = fmt.Sprintf("ingest-%d", time.Now().UnixNano())
-	}
-
-	// Try to extract source type for more meaningful naming
-	sourceType := report.Metadata.SourceType
-	if sourceType == "" {
-		sourceType = "unknown"
-	}
-
-	assetName := fmt.Sprintf("scan:%s:%s", sourceType, scanID)
-
-	if p.logger != nil {
-		p.logger.Warn("creating emergency fallback asset - report lacks metadata",
-			"scan_id", scanID,
-			"source_type", sourceType,
-			"asset_name", assetName,
-			"findings_count", len(report.Findings),
-		)
-	}
-
-	return &ctis.Asset{
-		ID:          "auto-asset-1",
-		Type:        ctis.AssetTypeUnclassified,
-		Value:       assetName,
-		Name:        assetName,
-		Criticality: ctis.CriticalityLow, // Low criticality since we have no context
-		Properties: ctis.Properties{
-			"auto_created":   true,
-			"source":         "emergency_fallback",
-			"scan_id":        scanID,
-			"source_type":    sourceType,
-			"findings_count": len(report.Findings),
-		},
-	}
-}
-
-// findCommonPathPrefix finds the longest common directory prefix among paths.
-func findCommonPathPrefix(paths []string) string {
-	if len(paths) == 0 {
-		return ""
-	}
-	if len(paths) == 1 {
-		return filepath.Dir(paths[0])
-	}
-
-	// Start with first path's directory
-	prefix := filepath.Dir(paths[0])
-
-	for _, path := range paths[1:] {
-		pathDir := filepath.Dir(path)
-		// Find common prefix between current prefix and this path
-		for !strings.HasPrefix(pathDir, prefix) && prefix != "" && prefix != "." && prefix != "/" {
-			prefix = filepath.Dir(prefix)
-		}
-		if prefix == "" || prefix == "." || prefix == "/" {
-			return ""
-		}
-	}
-
-	return prefix
+	return assetNameOf(ctisAsset)
 }
 
 // createAssetFromCTIS creates a new domain Asset from a CTIS Asset.
@@ -1933,11 +1480,9 @@ func (p *AssetProcessor) createAssetFromCTIS(
 		newAsset.AddTag(tag)
 	}
 
-	// properties.sub_type was resolved with the type above; it is a column,
-	// not a property.
-	delete(ctisAsset.Properties, "sub_type")
-
-	// Set discovery info
+	// Discovery info: the report's tool, unless a server-side report (the
+	// only one whose properties keep these keys, adoptCTIS2Members) names
+	// its own.
 	discoverySource := DiscoverySourceSensor
 	discoveryTool := ""
 	if tool != nil {
@@ -1952,7 +1497,7 @@ func (p *AssetProcessor) createAssetFromCTIS(
 
 	// A discovery time in the future would keep the asset out of the
 	// lifecycle's grace check for as long as the reporter likes.
-	discoveredAt := ctisAsset.DiscoveredAt
+	discoveredAt := ctisAsset.FirstSeenAt
 	if now := time.Now(); discoveredAt == nil || discoveredAt.After(now) {
 		discoveredAt = &now
 	}
@@ -2001,7 +1546,7 @@ func (p *AssetProcessor) createAssetFromCTIS(
 // The data classification is applied only to a new asset (classify);
 // an existing asset's is decided by attribute reconciliation (RFC-069).
 func (p *AssetProcessor) applyCTEMSignals(a *asset.Asset, ctisAsset *ctis.Asset, classify bool) {
-	if ctisAsset.IsInternetAccessible && !privateZone(ctisAsset) {
+	if ctisAsset.IsInternetAccessible != nil && *ctisAsset.IsInternetAccessible && !privateZone(ctisAsset) {
 		a.SetInternetAccessible(true)
 		if a.Exposure() == asset.ExposureUnknown {
 			a.SetExposure(asset.ExposurePublic)
@@ -2013,18 +1558,22 @@ func (p *AssetProcessor) applyCTEMSignals(a *asset.Asset, ctisAsset *ctis.Asset,
 		return
 	}
 	if len(c.Frameworks) > 0 {
-		a.SetComplianceScope(c.Frameworks)
+		frameworks := make([]string, 0, len(c.Frameworks))
+		for _, f := range c.Frameworks {
+			frameworks = append(frameworks, string(f))
+		}
+		a.SetComplianceScope(frameworks)
 	}
 	if classify && c.DataClassification != "" {
 		if err := a.SetDataClassification(asset.DataClassification(c.DataClassification)); err != nil {
 			p.logger.Warn("invalid data_classification from scanner",
-				"value", logger.SanitizeValue(c.DataClassification), "asset", logger.SanitizeValue(a.Name()), "error", err)
+				"value", logger.SanitizeValue(string(c.DataClassification)), "asset", logger.SanitizeValue(a.Name()), "error", err)
 		}
 	}
-	if c.PIIExposed {
+	if c.HasPII {
 		a.SetPIIDataExposed(true)
 	}
-	if c.PHIExposed {
+	if c.HasPHI {
 		a.SetPHIDataExposed(true)
 	}
 }
@@ -2167,6 +1716,11 @@ func (p *AssetProcessor) buildPropertiesFromCTIS(ctisAsset *ctis.Asset) map[stri
 		if ctisAsset.Technical.Certificate != nil {
 			props["certificate"] = buildCertificateProperties(ctisAsset.Technical.Certificate)
 		}
+		// A web origin's response facts are flat attributes of the
+		// stored http service, as they always were.
+		for k, v := range buildHTTPProperties(ctisAsset.Technical.HTTP) {
+			props[k] = v
+		}
 	}
 
 	// One key per concept (RFC-042 §6.3.9): ip, ips, resolved_ips, a plain
@@ -2218,27 +1772,20 @@ func (p *AssetProcessor) buildPropertiesFromCTIS(ctisAsset *ctis.Asset) map[stri
 // Checks multiple sources: compliance.regulatory_owner, technical.repository.owner,
 // properties.owner, properties.contact.
 func (p *AssetProcessor) extractOwnerRef(ctisAsset *ctis.Asset) string {
-	// 1. Compliance regulatory owner (highest priority)
-	if ctisAsset.Compliance != nil && ctisAsset.Compliance.RegulatoryOwner != "" {
-		return ctisAsset.Compliance.RegulatoryOwner
+	// 1. The owners the producer states (CTIS 2.0 owners[]): a security
+	// owner first, then a technical, then any.
+	for _, role := range []ctis.OwnerRole{ctis.OwnerRoleSecurity, ctis.OwnerRoleTechnical, ""} {
+		for _, o := range ctisAsset.Owners {
+			if ref := strings.TrimSpace(o.Ref); ref != "" && (role == "" || o.Role == role) {
+				return ref
+			}
+		}
 	}
 
 	// 2. Repository owner (GitHub/GitLab org)
 	if ctisAsset.Technical != nil && ctisAsset.Technical.Repository != nil && ctisAsset.Technical.Repository.Owner != "" {
 		return ctisAsset.Technical.Repository.Owner
 	}
-
-	// 3. Properties (custom fields from scanner)
-	if owner, ok := ctisAsset.Properties["owner"].(string); ok && owner != "" {
-		return owner
-	}
-	if contact, ok := ctisAsset.Properties["contact"].(string); ok && contact != "" {
-		return contact
-	}
-	if responsible, ok := ctisAsset.Properties["responsible"].(string); ok && responsible != "" {
-		return responsible
-	}
-
 	return ""
 }
 
@@ -2253,7 +1800,7 @@ func normalizeHostIPProperties(props map[string]any, assetName string) {
 }
 
 // dropMisplacedProperties removes the keys only assets of other classes may
-// hold (routeMisplacedProperties moved the report's own to their asset).
+// hold (a producer states a port as its own service asset in CTIS 2.0).
 func dropMisplacedProperties(t asset.AssetType, subType string, props map[string]any) {
 	for _, k := range asset.MisplacedPropertyKeys(t, subType, props) {
 		delete(props, k)

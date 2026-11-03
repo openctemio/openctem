@@ -3,7 +3,7 @@ package ingest
 import (
 	"context"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
@@ -55,7 +55,7 @@ func (p *FindingProcessor) secretIdentity(tenantID, assetID shared.ID, f *ctis.F
 	path := locationPath(f)
 	maskedHMAC, rule, stype, line := "", f.RuleID, "", 0
 	if f.Secret != nil {
-		stype = f.Secret.SecretType
+		stype = f.Secret.Type
 		if f.Secret.MaskedValue != "" {
 			maskedHMAC = p.secretFingerprinter.Fingerprint(tenantID, f.Secret.MaskedValue)
 		}

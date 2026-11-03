@@ -16,7 +16,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	cirunapp "github.com/openctemio/openctem/api/internal/app/cirun"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
@@ -31,7 +31,7 @@ func (r *ciRig) asyncRun(t *testing.T, sha string) (token, runID, repoName strin
 		r.asyncTrust = r.trust(r.tenant, cirun.Rules{Owners: []string{"acme"}, Refs: []string{"main"}})
 	}
 	cfg := r.asyncTrust
-	host := strings.TrimPrefix(r.idp.srv.URL, "https://")
+	host := strings.TrimPrefix(r.idp.url, "https://")
 	repoName = strings.ToLower(host) + "/acme/api"
 	code, ex := r.exchange(r.tenant, r.idp.token(t, cfg.Audience, "acme/api", "main", sha, nil))
 	if code != http.StatusCreated {
@@ -255,10 +255,11 @@ func TestCIUploadAsync_StatusIsRunScoped(t *testing.T) {
 	}
 }
 
-// ctisImporterFixtures is the testdata of the pinned ctis importer.
-func ctisImporterFixtures(t *testing.T) string {
+// ctisImporterFixtures is the importer testdata of a pinned ctis module
+// (the core module, or a format adapter such as interop/sarif).
+func ctisImporterFixtures(t *testing.T, module string) string {
 	t.Helper()
-	out, err := exec.Command("go", "list", "-m", "-f", "{{.Dir}}", "github.com/openctemio/ctis").Output()
+	out, err := exec.Command("go", "list", "-m", "-f", "{{.Dir}}", module).Output()
 	if err != nil {
 		t.Skipf("ctis module dir: %v", err)
 	}
@@ -270,13 +271,18 @@ func ctisImporterFixtures(t *testing.T) string {
 // run's branch, none is dropped. codeql-provenance names another repository
 // in versionControlProvenance; the run's wins.
 func TestCIUploadAsync_CodeScannerFormatsLandOnTheRunRepository(t *testing.T) {
-	root := ctisImporterFixtures(t)
+	core := ctisImporterFixtures(t, "github.com/openctemio/ctis/v2")
+	sarifDir := ctisImporterFixtures(t, "github.com/openctemio/ctis/v2/interop/sarif")
 	for _, fx := range []string{
 		"sarif/codeql.sarif", "sarif/codeql-provenance.sarif.json", "sarif/semgrep.sarif", "sarif/trivy.sarif",
 		"semgrep/semgrep.json", "trivy/fs.json", "gitleaks/leaks.json",
 	} {
+		path := filepath.Join(core, fx)
+		if name, ok := strings.CutPrefix(fx, "sarif/"); ok {
+			path = filepath.Join(sarifDir, name)
+		}
 		t.Run(fx, func(t *testing.T) {
-			body, err := os.ReadFile(filepath.Join(root, fx))
+			body, err := os.ReadFile(path)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -329,5 +335,27 @@ func TestCIUploadAsync_HostileExportsRefused(t *testing.T) {
 	}
 	if n := r.count(`SELECT count(*) FROM findings WHERE tenant_id = $1`, r.tenant.String()); n != 0 {
 		t.Fatalf("hostile exports wrote %d findings", n)
+	}
+}
+
+// The 1.x CI integration wrapped the report in {"report": ...}. The results
+// route takes the CTIS 2.0 document itself and refuses the envelope with a
+// 400 that names the upgrade, before anything is stored.
+func TestCIUpload_RefusesReportEnvelope(t *testing.T) {
+	r := newCIRig(t)
+	token, runID, repoName := r.asyncRun(t, strings.Repeat("7", 40))
+	doc := ciReport(repoName, ciFinding("A", "a", "low", ctis.FindingTypeVulnerability, "a.go", 1))
+	resp, out := r.post("/api/v1/ci/runs/"+runID+"/results", token, map[string]any{"report": doc})
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("wrapped upload: %d %v, want 400", resp.StatusCode, out)
+	}
+	if msg, _ := out["message"].(string); !strings.Contains(msg, "CTIS 2.0") || !strings.Contains(msg, "upgrade") {
+		t.Fatalf("wrapped upload message %q does not name the upgrade", msg)
+	}
+	if _, has := out["upload_id"]; has {
+		t.Fatalf("a refused upload got an upload id: %v", out)
+	}
+	if resp, out := r.post("/api/v1/ci/runs/"+runID+"/results", token, doc); resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("raw document after the refusal: %d %v", resp.StatusCode, out)
 	}
 }

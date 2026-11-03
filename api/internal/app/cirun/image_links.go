@@ -13,8 +13,6 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/openctemio/ctis"
-
 	"github.com/openctemio/openctem/api/pkg/domain/cirun"
 	"github.com/openctemio/openctem/api/pkg/domain/relationship"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -60,16 +58,17 @@ func imageRelationship(a DigestAsset) string {
 
 // suggestImageLinks records relationship suggestions for the image a run's
 // report scanned. Best effort: errors are logged, never returned.
-func (s *Service) suggestImageLinks(ctx context.Context, run *cirun.Run, report *ctis.Report) int {
-	if s.images == nil || report == nil || report.Metadata.Properties == nil {
+func (s *Service) suggestImageLinks(ctx context.Context, run *cirun.Run, image string) int {
+	if s.images == nil || image == "" {
 		return 0
 	}
-	digest, _ := report.Metadata.Properties["image_digest"].(string)
+	// CTIS 2.0: the scanned image is a container_image asset whose value
+	// is registry/repository@sha256:<digest>.
+	ref, digest, _ := strings.Cut(image, "@")
 	digest = strings.ToLower(strings.TrimSpace(digest))
 	if !imageDigestRE.MatchString(digest) {
 		return 0
 	}
-	ref, _ := report.Metadata.Properties["container_image"].(string)
 	ref = truncate(strings.Map(func(r rune) rune {
 		if r < 0x20 || r == 0x7f {
 			return -1

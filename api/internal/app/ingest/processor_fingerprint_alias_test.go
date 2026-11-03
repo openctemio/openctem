@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -41,8 +41,8 @@ func twoNetFindingsReport() *ctis.Report {
 	mk := func(port int) ctis.Finding {
 		return ctis.Finding{Type: ctis.FindingTypeVulnerability, Title: "t", Severity: ctis.SeverityHigh,
 			RuleID: "CVE-2024-6387", AssetRef: "asset-ref",
-			Vulnerability: &ctis.VulnerabilityDetails{CVEID: "CVE-2024-6387"},
-			Network:       &ctis.NetworkLocation{Port: port, Protocol: "tcp"}}
+			Vulnerability: &ctis.VulnerabilityDetails{IDs: cveIDs("CVE-2024-6387")},
+			Network:       &ctis.NetworkLocation{Port: port, Transport: "tcp"}}
 	}
 	return &ctis.Report{Version: "1.0", Tool: &ctis.Tool{Name: "nessus"}, Findings: []ctis.Finding{mk(22), mk(2222)}}
 }

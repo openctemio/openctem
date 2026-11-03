@@ -28,7 +28,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openctemio/ctis/outcome"
+	"github.com/openctemio/contract/outcome"
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/app/scancoverage"

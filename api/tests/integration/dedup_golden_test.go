@@ -24,7 +24,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
@@ -78,12 +78,15 @@ func (g *goldenRig) ingest(t *testing.T, tn v2Tenant, file goldenFile, tool stri
 		value = tn.tenant.String()[:8] + "." + value
 	}
 	f.AssetRef = "a"
-	rep := &ctis.Report{Version: "1.0", Tool: &ctis.Tool{Name: tool},
-		Metadata: ctis.ReportMetadata{ID: shared.NewID().String(), Timestamp: time.Now().UTC()},
+	rep := &ctis.Report{Version: ctis.SchemaVersion, Tool: &ctis.Tool{Name: tool},
+		Metadata: ctis.ReportMetadata{ID: ctis.NewReportID(), GeneratedAt: time.Now().UTC()},
 		Assets:   []ctis.Asset{{ID: "a", Type: file.Asset.Type, Value: value}},
 		Findings: []ctis.Finding{f}}
 	out, err := g.svc.Ingest(context.Background(), agt, ingest.Input{Report: rep})
-	if err != nil || len(out.Errors) > 0 {
+	if err != nil {
+		t.Fatalf("ingest: %v", err)
+	}
+	if len(out.Errors) > 0 {
 		t.Fatalf("ingest: %v %v", err, out.Errors)
 	}
 }

@@ -11,12 +11,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 )
 
 // TestCTISSchemaParity proves the Go structs the strict v2 decoder uses and
-// the published JSON Schema (schemas/v1 in the ctis module) describe the same
-// documents (RFC-026 WP-A3). The strict decoder rejects unknown fields, so a
+// the published JSON Schema (schemas/v2 of github.com/openctemio/ctis/v2) describe the same
+// documents (RFC-026 WP-A3, CTIS 2.0 member names). The strict decoder rejects unknown fields, so a
 // field the schema has and the structs lack would refuse a schema-valid
 // report, and a field only the structs have is an undocumented contract.
 //
@@ -64,7 +64,7 @@ func TestCTISSchemaParity(t *testing.T) {
 
 // schemaParityExceptions are reviewed differences between the ctis Go structs
 // and the published schema. Each must still exist (the test fails on a stale
-// entry), and nothing may be added without a reason. Empty since ctis v1.3.0,
+
 // whose own test makes the schema and the Go types agree field by field and
 // enum by enum; the 32 entries recorded against v1.1.0 were all fixed there.
 var schemaParityExceptions = map[string]string{}
@@ -121,15 +121,15 @@ func diff(schema, goVals []string) string {
 
 func ctisSchemaDir(t *testing.T) string {
 	t.Helper()
-	cmd := exec.Command("go", "list", "-m", "-f", "{{.Dir}}", "github.com/openctemio/ctis")
+	cmd := exec.Command("go", "list", "-m", "-f", "{{.Dir}}", "github.com/openctemio/ctis/v2")
 	cmd.Env = append(os.Environ(), "GOWORK=off", "GOFLAGS=-mod=mod")
 	out, err := cmd.Output()
 	if err != nil {
 		t.Skipf("cannot locate the ctis module: %v", err)
 	}
-	dir := filepath.Join(strings.TrimSpace(string(out)), "schemas", "v1")
+	dir := filepath.Join(strings.TrimSpace(string(out)), "schemas", "v2")
 	if _, err := os.Stat(filepath.Join(dir, "report.json")); err != nil {
-		t.Fatalf("ctis module has no schemas/v1: %v", err)
+		t.Fatalf("ctis module has no schemas/v2: %v", err)
 	}
 	return dir
 }

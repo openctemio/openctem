@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/pkg/domain/command"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -31,10 +31,10 @@ func TestClampReportTimestamp(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			r := &ctis.Report{Metadata: ctis.ReportMetadata{Timestamp: tc.ts}}
+			r := &ctis.Report{Metadata: ctis.ReportMetadata{GeneratedAt: tc.ts}}
 			clampReportTimestamp(r, tc.binding, now)
-			if !r.Metadata.Timestamp.Equal(tc.want) {
-				t.Fatalf("timestamp = %s, want %s", r.Metadata.Timestamp, tc.want)
+			if !r.Metadata.GeneratedAt.Equal(tc.want) {
+				t.Fatalf("timestamp = %s, want %s", r.Metadata.GeneratedAt, tc.want)
 			}
 		})
 	}

@@ -1,8 +1,8 @@
 # Feed transfer
 
-Design: [RFC-072](../rfcs/RFC-072-chunked-feed-transfer.md). Code: ctis
+Design: [RFC-072](../rfcs/RFC-072-chunked-feed-transfer.md). Code: contract
 `transfer` (fetcher) and `transfer/bundle` (format, writer, consumer), one Go
-module of their own, `github.com/openctemio/ctis/transfer` (tags
+module of their own, `github.com/openctemio/contract/transfer` (tags
 `transfer/vX.Y.Z`). It is a contract: the feed publishers and the api share
 it, and the api depends on no sensor SDK module at all
 ([RFC-094](../rfcs/RFC-094-platform-contracts-only.md)). It moved unchanged

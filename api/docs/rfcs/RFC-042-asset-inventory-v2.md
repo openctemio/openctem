@@ -2907,3 +2907,17 @@ Every slice that adds a table referencing `assets` also updates
   Hamming search (Norouzi, Punjani, Fleet, "Fast Search in Hamming Space
   with Multi-Index Hashing", CVPR 2012).
 - RFC 9457 (Problem Details), RFC 9110 §9.2.1 (safe methods), via RFC-041.
+
+## Amendment (2026-11-03): CTIS 2.0 wire types
+
+CTIS 2.0 collapsed several wire asset types; the stored model of this RFC
+does not change. The wire names that are no stored type are `type_inputs`
+of `configs/asset-types.yaml` (`web_origin` -> service/http, `ip_range` ->
+network, `container_image` -> container/image, `kubernetes_workload` ->
+kubernetes/workload, `endpoint_device` -> host/workstation); `domain_name`
+(domain or subdomain by the public-suffix apex), `service` (open_port),
+`identity` (sub-type from `technical.identity.kind`) and `network_device`
+(sub-type from `technical.network_device.kind`) are resolved in ingest. Ingest
+reads no sub-type from `properties` any more. Table and rules:
+`docs/architecture/ctis-receiver.md`.
+

@@ -1,8 +1,8 @@
 package ingest
 
 import (
-	"github.com/openctemio/ctis"
-	"github.com/openctemio/ctis/capability"
+	"github.com/openctemio/contract/capability"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 )
@@ -43,11 +43,11 @@ var capabilitySource = map[string]vulnerability.FindingSource{
 }
 
 // reportFindingSource is the technique of a report's findings: its bound
-// capability when it has one the table knows, else the tool's own
-// capabilities and name (detectFindingSource).
+// capability when it has one the table knows, else the tool's techniques
+// and name (detectFindingSource).
 func reportFindingSource(report *ctis.Report) vulnerability.FindingSource {
 	if report == nil {
-		return detectFindingSource("", nil)
+		return detectFindingSource("")
 	}
 	if id, _, ok := capability.ParseRef(reportCapability(report)); ok {
 		if src, ok := capabilitySource[id]; ok {
@@ -55,28 +55,51 @@ func reportFindingSource(report *ctis.Report) vulnerability.FindingSource {
 		}
 	}
 	if report.Tool == nil {
-		return detectFindingSource("", nil)
+		return detectFindingSource("")
 	}
-	return detectFindingSource(report.Tool.Name, report.Tool.Capabilities)
+	return detectFindingSource(report.Tool.Name, report.Tool.Techniques...)
 }
 
-// reportCapability is the capability a report answers: metadata.capability,
-// or the "capability" property, where openctem-ci reports put it.
+// reportCapability is the capability a report answers. The output binding
+// writes the capability of the command it bound the report to into
+// metadata.extensions["io.openctem"].capability (boundCapability); before
+// that it is the producer's claim, a hint that never widens what the report
+// may create (CTIS receiver profile, section 3).
 func reportCapability(report *ctis.Report) string {
-	if report.Metadata.Capability != "" {
-		return report.Metadata.Capability
+	if report == nil {
+		return ""
 	}
-	if c, ok := report.Metadata.Properties["capability"].(string); ok {
-		return c
-	}
-	return ""
+	v, _ := report.Metadata.Extensions.Get(ctis.OpenCTEMNamespace, capabilityExtKey)
+	c, _ := v.(string)
+	return c
 }
 
-// findingTechnique is the technique of one finding of a report. A report
-// bound to a capability takes its technique; without one, a scanner with
-// several capabilities (trivy: dependencies, misconfigurations, secrets in
-// one run) names its first, so the finding's own type decides between them.
+// capabilityExtKey is the io.openctem key of the capability on metadata.
+const capabilityExtKey = "capability"
+
+// setReportCapability records the capability a report is bound to (empty:
+// none) in the receiver's copy of the document.
+func setReportCapability(report *ctis.Report, ref string) {
+	if ref == "" {
+		if ns := report.Metadata.Extensions[ctis.OpenCTEMNamespace]; ns != nil {
+			delete(ns, capabilityExtKey)
+		}
+		return
+	}
+	report.Metadata.Extensions.Set(ctis.OpenCTEMNamespace, capabilityExtKey, ref)
+}
+
+// findingTechnique is the technique of one finding of a report: its own
+// finding.technique, else the report's bound capability, else the tool's
+// techniques. A scanner with several techniques (trivy: dependencies,
+// misconfigurations, secrets in one run) that names none per finding lists
+// sca first, so the finding's type decides between them.
 func findingTechnique(report *ctis.Report, f *ctis.Finding) vulnerability.FindingSource {
+	if f != nil && f.Technique != "" {
+		if src, ok := techniqueSource[f.Technique]; ok {
+			return src
+		}
+	}
 	src := reportFindingSource(report)
 	if report == nil || f == nil || src != vulnerability.FindingSourceSCA {
 		return src

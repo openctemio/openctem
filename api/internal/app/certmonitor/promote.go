@@ -6,7 +6,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
@@ -336,18 +336,24 @@ func (s *Service) saveDecisions(ctx context.Context, tenantID shared.ID, assetID
 // scope target.
 func (s *Service) promotionReport(tenantID shared.ID, fresh []string, byName map[string]promotion, kind promoteKind) *ctis.Report {
 	now := s.now()
+	// A CTIS 2.0 document carries no receiver key: metadata.id is a fresh
+	// UUIDv7 idempotency key, the tenant comes from the ingest principal.
 	report := &ctis.Report{
-		Version: "1.0",
+		Version: ctis.SchemaVersion,
 		Metadata: ctis.ReportMetadata{
-			ID:           kind.reportID + ":" + tenantID.String() + ":" + now.Format(time.RFC3339Nano),
-			Timestamp:    now,
-			SourceType:   "collector",
-			CoverageType: "partial",
+			ID:           ctis.NewReportID(),
+			GeneratedAt:  now,
+			Channel:      ctis.ChannelCollector,
+			CoverageType: ctis.CoveragePartial,
 		},
-		Tool: &ctis.Tool{Name: kind.tool, Vendor: "OpenCTEM", Capabilities: []string{"external"}},
+		Tool: &ctis.Tool{Name: kind.tool, Vendor: "OpenCTEM"},
 	}
 	for i, n := range fresh {
 		p := byName[n]
+		value, err := ctis.CanonicalDomain(n)
+		if err != nil {
+			continue // not a host name CTIS can carry (a wildcard, an IP)
+		}
 		first := p.host.FirstSeen
 		tool := p.tool
 		if tool == "" {
@@ -361,12 +367,11 @@ func (s *Service) promotionReport(tenantID shared.ID, fresh []string, byName map
 			props["root_domain"] = p.root.name
 		}
 		report.Assets = append(report.Assets, ctis.Asset{
-			ID:           fmt.Sprintf("ct-%d", i),
-			Type:         ctis.AssetTypeSubdomain,
-			Value:        n,
-			Name:         n,
-			DiscoveredAt: &first,
-			Properties:   props,
+			ID:          fmt.Sprintf("ct-%d", i),
+			Type:        ctis.AssetTypeDomainName,
+			Value:       value,
+			FirstSeenAt: &first,
+			Properties:  props,
 		})
 	}
 	return report

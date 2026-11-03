@@ -164,7 +164,7 @@ findings=$({
     # The first two (one per asset) name one CVE: the vulnerability page spec
     # (40) opens it. Two findings of one CVE on one asset would be merged.
     cve=''
-    [[ $i -le 2 ]] && cve=',"vulnerability":{"cve_id":"CVE-2099-0101"}'
+    [[ $i -le 2 ]] && cve=',"vulnerability":{"ids":[{"type":"cve","id":"CVE-2099-0101"}]}'
     printf '{"type":"vulnerability","title":"E2E finding %02d","severity":"%s","rule_id":"e2e-%02d","asset_ref":"a%d","description":"e2e"%s}\n' \
       "$i" "$([[ $((i % 3)) == 0 ]] && echo critical || echo medium)" "$i" "$((i % 2 + 1))" "$cve"
   done
@@ -198,22 +198,24 @@ findings=$({
     ]
   }'
 } | jq -s .)
-# Protocol v1 is gone: the report goes to the v2 results resource (one PUT
-# is a whole report), its id a lower-case UUID that metadata.id repeats.
-REPORT_ID=$(cat /proc/sys/kernel/random/uuid 2>/dev/null || uuidgen | tr 'A-Z' 'a-z')
+# The report goes to the v2 results resource (one PUT is a whole report).
+# CTIS 2.0: metadata.id is the producer's UUIDv7 (here the same value as the
+# report id of the URL, which binds the delivery).
+ms=$(printf '%012x' "$(date +%s%3N)"); rnd=$(openssl rand -hex 10)
+REPORT_ID="${ms:0:8}-${ms:8:4}-7${rnd:0:3}-$(printf '%x' $(( (0x${rnd:3:1} & 3) | 8 )))${rnd:4:3}-${rnd:8:12}"
 jq -n --arg id "$REPORT_ID" --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --argjson findings "$findings" '{
-  version: "1.0",
-  metadata: { id: $id, timestamp: $ts, source_type: "scanner" },
+  version: "2.0",
+  metadata: { id: $id, generated_at: $ts, channel: "scanner" },
   tool: { name: "nuclei", version: "3.3.0" },
   assets: [
-    { id: "a1", type: "domain", value: "e2e-web.example.com" },
-    { id: "a2", type: "domain", value: "e2e-api.example.com" }
+    { id: "a1", type: "domain_name", value: "e2e-web.example.com" },
+    { id: "a2", type: "domain_name", value: "e2e-api.example.com" }
   ],
   findings: $findings
 }' >"$WORK/report.json"
 DIGEST=$(openssl dgst -sha256 -binary "$WORK/report.json" | base64)
 code=$(curl -sS -o "$WORK/body" -w '%{http_code}' -X PUT "$API/api/v2/sensor/results/$REPORT_ID" \
-  -H "Authorization: Bearer $KEY" -H 'Content-Type: application/vnd.openctem.ctis.v1+json' \
+  -H "Authorization: Bearer $KEY" -H 'Content-Type: application/vnd.ctis+json; version=2.0' \
   -H "Content-Digest: sha-256=:$DIGEST:" --data-binary @"$WORK/report.json")
 [[ "$code" =~ ^2 ]] || { log "ingest -> $code: $(head -c 300 "$WORK/body")"; exit 1; }
 

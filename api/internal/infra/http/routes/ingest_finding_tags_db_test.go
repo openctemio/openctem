@@ -7,9 +7,10 @@ import (
 	"net/http"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/lib/pq"
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
@@ -33,9 +34,9 @@ func (h *v2Harness) findingTags(ruleID string) []string {
 
 func tagReport(ruleID string, tags []string) *ctis.Report {
 	return &ctis.Report{
-		Version:  "1.0",
-		Metadata: ctis.ReportMetadata{ID: "tags-" + ruleID, SourceType: "scanner"},
-		Tool:     &ctis.Tool{Name: "semgrep"},
+		Version:  ctis.SchemaVersion,
+		Metadata: ctis.ReportMetadata{ID: ctis.NewReportID(), GeneratedAt: time.Now().UTC(), Channel: ctis.ChannelScanner},
+		Tool:     &ctis.Tool{Name: "semgrep", Techniques: []ctis.Technique{ctis.TechniqueSAST}},
 		Assets:   []ctis.Asset{{ID: "repo", Type: ctis.AssetTypeRepository, Value: "github.com/acme/" + ruleID}},
 		Findings: []ctis.Finding{{
 			Type: ctis.FindingTypeVulnerability, Severity: ctis.SeverityHigh, RuleID: ruleID, AssetRef: "repo",
@@ -94,9 +95,9 @@ func TestIngest_FindingTagsPersistAndMerge_DB(t *testing.T) {
 
 	// Protocol v2 (PUT /api/v2/sensor/results/{id}, then the worker).
 	seg, _ := json.Marshal(map[string]any{
-		"version":  "1.0",
-		"metadata": map[string]any{"timestamp": "2026-10-01T12:00:00Z"},
-		"tool":     map[string]any{"name": "semgrep"},
+		"version":  "2.0",
+		"metadata": map[string]any{"id": ctis.NewReportID(), "generated_at": "2026-10-01T12:00:00Z", "channel": "scanner"},
+		"tool":     map[string]any{"name": "semgrep", "techniques": []string{"sast"}},
 		"assets":   []any{map[string]any{"id": "repo", "type": "repository", "value": "github.com/acme/tags-v2"}},
 		"findings": []any{map[string]any{
 			"type": "vulnerability", "severity": "high", "rule_id": "tags-v2", "asset_ref": "repo",

@@ -600,6 +600,12 @@ func run() int {
 			}()
 		}
 
+		// Stored asset names to the CTIS 2.0 canonical form, so ingest finds
+		// the assets it stored before the switch (asset_canonical.go).
+		// Idempotent, one transaction per asset, re-checked under lock:
+		// safe on every start and across replicas.
+		go runAssetCanonicalOnStart(ctx, db, log)
+
 		// Host keys for commands queued before every command got them at
 		// create (research/130). Idempotent and SKIP LOCKED: safe on every
 		// start and across replicas.

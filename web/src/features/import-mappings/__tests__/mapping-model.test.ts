@@ -20,7 +20,7 @@ import {
 import type { MappingDocument } from '../types/import-mapping.types'
 
 const csvDoc: MappingDocument = {
-  apiVersion: 'openctem.io/mapping/v1',
+  apiVersion: 'openctem.io/mapping/v2',
   source: 'csv',
   csv: { delimiter: ';', skip_rows: 2 },
   identity: ['title', 'asset_value'],
@@ -38,7 +38,7 @@ const csvDoc: MappingDocument = {
         },
         asset_value: '/asset',
         tags: { path: '/tags', split: ',' },
-        'vulnerability.cve_id': { path: '/CVE ID', upper: true, max_bytes: 64 },
+        'vulnerability.ids': { path: '/CVE ID', upper: true, max_bytes: 64 },
       },
     },
     {
@@ -52,7 +52,7 @@ const csvDoc: MappingDocument = {
 }
 
 const xmlDoc: MappingDocument = {
-  apiVersion: 'openctem.io/mapping/v1',
+  apiVersion: 'openctem.io/mapping/v2',
   source: 'xml',
   each: '//testcase',
   notes: 'JUnit-style results',
@@ -82,7 +82,7 @@ describe('document -> draft -> document', () => {
 
   it('writes a path-only value as the bare path', () => {
     const doc: MappingDocument = {
-      apiVersion: 'openctem.io/mapping/v1',
+      apiVersion: 'openctem.io/mapping/v2',
       source: 'jsonl',
       identity: ['title'],
       records: [{ kind: 'finding', set: { title: { path: '/t' }, severity: '/s' } }],

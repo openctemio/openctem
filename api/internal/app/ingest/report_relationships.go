@@ -19,7 +19,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -64,6 +64,22 @@ func mapReportRelationship(t ctis.RelationshipType, from, to *asset.Asset) (asse
 			return asset.RelTypeContains, to, from, true
 		}
 		return asset.RelTypeRunsOn, from, to, true
+	case ctis.RelContains:
+		return asset.RelTypeContains, from, to, true
+	case ctis.RelRunsOn:
+		return asset.RelTypeRunsOn, from, to, true
+	case ctis.RelDependsOn:
+		return asset.RelTypeDependsOn, from, to, true
+	case ctis.RelHasAccessTo:
+		return asset.RelTypeHasAccessTo, from, to, true
+	case ctis.RelMemberOf:
+		// One direction for hierarchy: the group contains its member.
+		return asset.RelTypeContains, to, from, true
+	case ctis.RelDeployedFrom:
+		// Stored source first: the repository or image is deployed to it.
+		return asset.RelTypeDeployedTo, to, from, true
+	case ctis.RelRoutesTo:
+		return asset.RelTypeLoadBalances, from, to, true
 	}
 	return "", nil, nil, false
 }
