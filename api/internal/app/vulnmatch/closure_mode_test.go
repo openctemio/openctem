@@ -3,6 +3,7 @@ package vulnmatch
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/softwarematch"
@@ -77,5 +78,76 @@ func TestReconcile_VersionChangeClosesUnderClosingMode(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// The proposal of a version-change close names what changed: product, the
+// finding's version, the established version, its source, evidence class,
+// confidence and sightings, and dates evidence_at at the version's latest
+// reading.
+func TestReconcile_VersionChangeProposalCarriesEvidence(t *testing.T) {
+	asset, product, v, id := shared.NewID(), shared.NewID(), shared.NewID(), shared.NewID()
+	store := newFakeStore()
+	store.existing = []softwarematch.MatcherFinding{{ID: id, AssetID: asset, CVEID: "CVE-2026-119977", Fingerprint: "gone",
+		Status: "new", ProductID: &product, VersionID: &v}}
+	last := time.Date(2026, 11, 1, 6, 0, 0, 0, time.UTC)
+	store.links[softwarematch.LinkKey{AssetID: asset, ProductID: product, VersionID: v}] = softwarematch.LinkInfo{
+		State: softwarematch.LinkUpgraded, VersionEvaluated: true, Product: "WordPress", FromVersion: "7.1.3",
+		Now: &softwarematch.VersionSighting{VersionID: shared.NewID(), Version: "7.1.4", Source: "technology",
+			Class: "probe", Confidence: 85, Sightings: 3, FirstSeen: last.Add(-36 * time.Hour), LastSeen: last},
+	}
+	w := &proposalWriter{}
+	svc := NewService(store, fakePolicy{tenant.VulnMatchingSettings{Enabled: true}}, w, logger.NewNop())
+	svc.now = func() time.Time { return last.Add(5 * time.Hour) }
+	var st Stats
+	if err := svc.ReconcileTenant(context.Background(), shared.NewID(), &st); err != nil {
+		t.Fatal(err)
+	}
+	if len(w.recs) != 1 {
+		t.Fatalf("proposals %d, want 1", len(w.recs))
+	}
+	ev := w.recs[0].Evidence
+	want := map[string]any{"source": "software_inventory", "kind": "version_changed", "product": "WordPress",
+		"from_version": "7.1.3", "to_version": "7.1.4", "to_source": "technology", "to_evidence_class": "probe",
+		"to_confidence": 85, "to_sightings": 3, "observed_at": last.Format(time.RFC3339)}
+	for k, v := range want {
+		if ev[k] != v {
+			t.Errorf("evidence[%s] = %v, want %v", k, ev[k], v)
+		}
+	}
+	if !w.recs[0].EvidenceAt.Equal(last) {
+		t.Fatalf("evidence_at = %s, want the version's latest reading %s", w.recs[0].EvidenceAt, last)
+	}
+}
+
+// A finding whose identity matches again (the version it was built on is
+// established again, or the change never got confirmed) has its pending
+// version-change proposal canceled; findings no longer matched do not.
+func TestReconcile_MatchedAgainCancelsVersionProposal(t *testing.T) {
+	asset := shared.NewID()
+	m := match(asset, "CVE-1", 80)
+	store := newFakeStore()
+	store.matches = []softwarematch.Match{m}
+	open, closedOne, gone := shared.NewID(), shared.NewID(), shared.NewID()
+	store.existing = []softwarematch.MatcherFinding{
+		{ID: open, AssetID: asset, Fingerprint: fp(m), Status: "new"},
+		{ID: closedOne, AssetID: asset, Fingerprint: "other-resolved", Status: "resolved"},
+		{ID: gone, AssetID: asset, Fingerprint: "gone", Status: "new"},
+	}
+	svc, _ := newSvc(store, true)
+	var st Stats
+	if err := svc.ReconcileTenant(context.Background(), shared.NewID(), &st); err != nil {
+		t.Fatal(err)
+	}
+	if len(store.canceled) != 1 || store.canceled[0] != open {
+		t.Fatalf("canceled %v, want only the open matched finding", store.canceled)
+	}
+}
+
+func TestVersionChangeEvidenceWithoutDetail(t *testing.T) {
+	at := time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)
+	ev, evAt := VersionChangeEvidence(softwarematch.CloseVersionChanged, softwarematch.LinkInfo{}, at)
+	if !evAt.Equal(at) || ev["to_version"] != nil || ev["kind"] != "version_changed" {
+		t.Fatalf("evidence %+v at %s", ev, evAt)
 	}
 }

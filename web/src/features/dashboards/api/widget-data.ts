@@ -11,7 +11,7 @@
 
 'use client'
 
-import useSWR from 'swr'
+import useSWR, { type SWRConfiguration } from 'swr'
 import { get, post } from '@/lib/api/client'
 import { useTenant } from '@/context/tenant-provider'
 import type { DashboardKind } from './dashboards.types'
@@ -33,7 +33,7 @@ export interface FlowFigure {
 
 /** What one source (a source group and a tool) sent in the window, and its health. */
 export interface IntakeSource {
-  origin: 'sensor' | 'import' | 'connector' | 'ci' | ''
+  origin: 'sensor' | 'import' | 'connector' | 'ci' | 'platform' | ''
   tool: string
   receipts: number
   received: number
@@ -52,6 +52,22 @@ export interface IntakeSource {
   expected_every_seconds?: number
   /** The receipt list of this source in the window (its totals are these figures). */
   drill: string
+  /** Assets the source's reports created or updated (not part of the findings funnel). */
+  assets?: number
+  kind?: 'discovery' | 'detection' | 'platform'
+  instances?: IntakeSourceInstance[]
+}
+
+/** One sender of a source (a sensor, a CI repository, a connector, an upload, the platform). */
+export interface IntakeSourceInstance {
+  id: string
+  kind: 'sensor' | 'ci' | 'connector' | 'platform' | 'import'
+  name: string
+  received: number
+  assets: number
+  health: 'ok' | 'stale' | 'failed'
+  last_at: string
+  sensor_href?: string
 }
 
 /** The organization's intake in the window (ingest.intake, and the exposure flow's sources). */
@@ -249,6 +265,17 @@ export interface WidgetValue {
   brief?: BriefValue
   /** The KPI strip (exposure.kpis). */
   kpis?: { tiles: KpiTileValue[] }
+  /** The attack surface posture (surface.posture). */
+  posture?: {
+    score: number
+    grade: string
+    assets: number
+    next_grade?: string
+    next_floor?: number
+    fix_steps?: number
+    categories: Array<{ category: string; max: number; deduction: number; issues: number }>
+    computed_at?: string
+  }
   /** Attack paths to crown jewels (attack_paths.to_crown_jewels). */
   paths?: {
     reachable: number
@@ -307,12 +334,16 @@ export function refreshDashboard(kind: DashboardKind, id: string) {
 }
 
 /** Every widget result of one dashboard (the stored snapshot). */
-export function useDashboardData(kind: DashboardKind, id: string | null) {
+export function useDashboardData(
+  kind: DashboardKind,
+  id: string | null,
+  config?: SWRConfiguration
+) {
   const { currentTenant } = useTenant()
   return useSWR<DashboardData>(
     currentTenant && id ? dashboardDataKey(kind, id) : null,
     (url: string) => get<DashboardData>(url),
-    { revalidateOnFocus: false, refreshInterval: dashboardRefreshInterval }
+    { revalidateOnFocus: false, refreshInterval: dashboardRefreshInterval, ...config }
   )
 }
 

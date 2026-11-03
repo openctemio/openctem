@@ -105,6 +105,11 @@ func (a *KeyApplier) ApplyIDs(ctx context.Context, tenantID shared.ID, ids []sha
 }
 
 func (a *KeyApplier) apply(ctx context.Context, tenantID shared.ID, sources []remediationdom.KeySource, write bool) (*KeyChanges, error) {
+	sources, err := a.withSiblings(ctx, tenantID, sources)
+	if err != nil {
+		return nil, err
+	}
+	remediationdom.ConsolidateUpgrades(sources, func(s remediationdom.KeySource) bool { return s.Open })
 	ch := newKeyChanges()
 	var firstErr error
 	for _, src := range sources {
@@ -152,6 +157,37 @@ func (a *KeyApplier) apply(ctx context.Context, tenantID shared.ID, sources []re
 		return ch, fmt.Errorf("%d remediation key writes failed: %w", ch.Failed, firstErr)
 	}
 	return ch, nil
+}
+
+// withSiblings adds to sources the other open findings of the same installed
+// package versions, so their shared upgrade target is computed over all of
+// them and every one of them is keyed with it (a sibling whose key does not
+// change is not written).
+func (a *KeyApplier) withSiblings(ctx context.Context, tenantID shared.ID, sources []remediationdom.KeySource) ([]remediationdom.KeySource, error) {
+	ids := make([]shared.ID, 0, len(sources))
+	for _, s := range sources {
+		if remediationdom.PackageVersionKey(s.Input) != "" {
+			ids = append(ids, s.FindingID)
+		}
+	}
+	if len(ids) == 0 {
+		return sources, nil
+	}
+	sib, err := a.repo.SiblingKeySources(ctx, tenantID, ids)
+	if err != nil {
+		return nil, fmt.Errorf("read sibling remediation key sources: %w", err)
+	}
+	seen := make(map[shared.ID]bool, len(sources))
+	for _, s := range sources {
+		seen[s.FindingID] = true
+	}
+	for _, s := range sib {
+		if !seen[s.FindingID] {
+			seen[s.FindingID] = true
+			sources = append(sources, s)
+		}
+	}
+	return sources, nil
 }
 
 // DefaultBackfillBatch is how many findings the backfill reads per query.

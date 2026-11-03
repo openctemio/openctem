@@ -21,6 +21,7 @@ import { usePreferences, useUpdatePreferences } from '@/features/account'
 import type { FindingsInformationalPreference, UpdatePreferencesInput } from '@/features/account'
 import { refreshFindingQuickViews } from '@/features/findings/api/use-quick-views'
 import { PageStack } from '@/features/shared'
+import { useAccountSpace } from '@/context/account-space-provider'
 
 const THEME_FALLBACK = { light: 'Light', dark: 'Dark', system: 'System' } as const
 
@@ -36,6 +37,8 @@ const INFORMATIONAL_CHOICES: ReadonlyArray<{
 export default function PreferencesPage() {
   const { t } = useTranslation()
   const { theme, setTheme } = useTheme()
+  // No organization: the findings views are organization data, so they are neither shown nor refreshed.
+  const accountOnly = useAccountSpace()
   const { preferences, isLoading, mutate } = usePreferences()
   const { updatePreferences, isUpdating } = useUpdatePreferences()
 
@@ -92,7 +95,7 @@ export default function PreferencesPage() {
         findings_informational: formData.findings_informational,
       })
       // The findings work views follow the new choice.
-      void refreshFindingQuickViews()
+      if (!accountOnly) void refreshFindingQuickViews()
       // Re-read the preferences from the server rather than caching the PUT
       // response: an older API returned the whole user object there, which
       // reset this form to its defaults (23a B4).
@@ -177,51 +180,53 @@ export default function PreferencesPage() {
         </CardContent>
       </Card>
 
-      {/* Findings */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Bug className="h-5 w-5" />
-            {t('account.preferences.findings', 'Findings')}
-          </CardTitle>
-          <CardDescription>
-            {t(
-              'account.preferences.findingsDescription',
-              'How your findings work views (Active, My queue, SLA breached) open'
-            )}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-2 sm:max-w-sm">
-            <Label htmlFor="findings-informational">
-              {t('account.preferences.findingsInformational', 'Informational findings')}
-            </Label>
-            <Select
-              value={formData.findings_informational}
-              onValueChange={(value) =>
-                handleChange('findings_informational', value as FindingsInformationalPreference)
-              }
-            >
-              <SelectTrigger id="findings-informational">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {INFORMATIONAL_CHOICES.map((c) => (
-                  <SelectItem key={c.value} value={c.value}>
-                    {t(`account.preferences.findingsInformational.${c.value}`, c.fallback)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <p className="text-xs text-muted-foreground">
+      {/* Findings (organization data: not in the account space) */}
+      {!accountOnly && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Bug className="h-5 w-5" />
+              {t('account.preferences.findings', 'Findings')}
+            </CardTitle>
+            <CardDescription>
               {t(
-                'account.preferences.findingsInformationalHint',
-                'Needs triage never lists them. All findings and an Informational severity filter always do.'
+                'account.preferences.findingsDescription',
+                'How your findings work views (Active, My queue, SLA breached) open'
               )}
-            </p>
-          </div>
-        </CardContent>
-      </Card>
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2 sm:max-w-sm">
+              <Label htmlFor="findings-informational">
+                {t('account.preferences.findingsInformational', 'Informational findings')}
+              </Label>
+              <Select
+                value={formData.findings_informational}
+                onValueChange={(value) =>
+                  handleChange('findings_informational', value as FindingsInformationalPreference)
+                }
+              >
+                <SelectTrigger id="findings-informational">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {INFORMATIONAL_CHOICES.map((c) => (
+                    <SelectItem key={c.value} value={c.value}>
+                      {t(`account.preferences.findingsInformational.${c.value}`, c.fallback)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                {t(
+                  'account.preferences.findingsInformationalHint',
+                  'Needs triage never lists them. All findings and an Informational severity filter always do.'
+                )}
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Actions */}
       <div className="flex justify-between">

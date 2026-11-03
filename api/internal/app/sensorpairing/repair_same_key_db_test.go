@@ -85,7 +85,7 @@ func TestPairing_SameKeyNewCodeSupersedesUnapproved_DB(t *testing.T) {
 		t.Fatalf("request A after the new start: %s", st)
 	}
 	aid, _ := shared.IDFromString(expA.ID)
-	if _, err := f.svc.Approve(ctx, a, aid, approve(a, "")); !errors.Is(err, sensorpairing.ErrNotFound) {
+	if _, err := f.approveP(ctx, a, aid, approve(a, "")); !errors.Is(err, sensorpairing.ErrNotFound) {
 		t.Fatalf("approve the superseded request: %v", err)
 	}
 	if _, err := f.svc.Status(ctx, aid, s.thumb()); err != nil {
@@ -94,7 +94,7 @@ func TestPairing_SameKeyNewCodeSupersedesUnapproved_DB(t *testing.T) {
 	// B pairs normally.
 	f.reveal(s)
 	bid, _ := shared.IDFromString(expB.ID)
-	if _, err := f.svc.Approve(ctx, a, bid, approve(a, "")); err != nil {
+	if _, err := f.approveP(ctx, a, bid, approve(a, "")); err != nil {
 		t.Fatalf("approve B: %v", err)
 	}
 	st := f.status(s)
@@ -143,7 +143,7 @@ func TestPairing_SameKeySameCodeRearms_DB(t *testing.T) {
 	// The new nonce opens the new commitment (the old reveal was reset).
 	f.reveal(s)
 	id, _ := shared.IDFromString(exp.ID)
-	if _, err := f.svc.Approve(ctx, a, id, approve(a, "")); err != nil {
+	if _, err := f.approveP(ctx, a, id, approve(a, "")); err != nil {
 		t.Fatalf("approve the re-armed request: %v", err)
 	}
 	if st := f.status(s); st.Identity == nil {
@@ -185,7 +185,7 @@ func TestPairing_ApprovedKeyRefused_DB(t *testing.T) {
 	f.start(s, "", "")
 	f.reveal(s)
 	id, _ := shared.IDFromString(s.resp.PairingID)
-	if _, err := f.svc.Approve(ctx, a, id, approve(a, s.resp.UserCode)); err != nil {
+	if _, err := f.approveP(ctx, a, id, approve(a, s.resp.UserCode)); err != nil {
 		t.Fatal(err)
 	}
 	approvedID, approvedResp := s.resp.PairingID, s.resp
@@ -223,9 +223,9 @@ func TestPairing_ApprovedKeyRefused_DB(t *testing.T) {
 	}
 }
 
-// A code another key holds is never taken over: the second key gets the
-// uniform answer (a request no code reaches) and the first sensor's request
-// stays approvable.
+// A code another key holds is never taken over: the second key gets a
+// request of its own under a new code, and the first sensor's request stays
+// approvable.
 func TestPairing_CodeHeldByAnotherKeyRefused_DB(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
@@ -239,7 +239,7 @@ func TestPairing_CodeHeldByAnotherKeyRefused_DB(t *testing.T) {
 	if err := f.tryStart(thief, exp.Code); err != nil {
 		t.Fatalf("start with a held code: %v", err)
 	}
-	if thief.resp.PairingID == exp.ID || thief.resp.UserCode != "" {
+	if thief.resp.PairingID == exp.ID || thief.resp.UserCode == "" || thief.resp.UserCode == exp.Code {
 		t.Fatalf("the second key reached the held code: %+v", thief.resp)
 	}
 	var thumb string
@@ -248,7 +248,7 @@ func TestPairing_CodeHeldByAnotherKeyRefused_DB(t *testing.T) {
 		t.Fatalf("the held request changed: %s %s", thumb, f.pairingStatus(exp.ID))
 	}
 	id, _ := shared.IDFromString(exp.ID)
-	if _, err := f.svc.Approve(ctx, a, id, approve(a, "")); err != nil {
+	if _, err := f.approveP(ctx, a, id, approve(a, "")); err != nil {
 		t.Fatalf("approve the legitimate sensor: %v", err)
 	}
 	if st := f.status(owner); st.Identity == nil {
@@ -272,17 +272,17 @@ func TestPairing_UnapprovedKeyMovesOrganization_DB(t *testing.T) {
 	f.start(s, expB.Code, "")
 	f.reveal(s)
 	aid, _ := shared.IDFromString(expA.ID)
-	if _, err := f.svc.Approve(ctx, a, aid, approve(a, "")); !errors.Is(err, sensorpairing.ErrNotFound) {
+	if _, err := f.approveP(ctx, a, aid, approve(a, "")); !errors.Is(err, sensorpairing.ErrNotFound) {
 		t.Fatalf("organization A approved a superseded request: %v", err)
 	}
 	bid, _ := shared.IDFromString(expB.ID)
 	if _, err := f.svc.GetExpectation(ctx, a, bid); !errors.Is(err, sensorpairing.ErrNotFound) {
 		t.Fatalf("organization A read B's request: %v", err)
 	}
-	if _, err := f.svc.Approve(ctx, a, bid, approve(a, "")); !errors.Is(err, sensorpairing.ErrNotFound) {
+	if _, err := f.approveP(ctx, a, bid, approve(a, "")); !errors.Is(err, sensorpairing.ErrNotFound) {
 		t.Fatalf("organization A approved B's request: %v", err)
 	}
-	if _, err := f.svc.Approve(ctx, b, bid, approve(b, "")); err != nil {
+	if _, err := f.approveP(ctx, b, bid, approve(b, "")); err != nil {
 		t.Fatalf("organization B approves: %v", err)
 	}
 	if st := f.status(s); st.Identity == nil || st.Identity.TenantID != b.TenantID.String() {

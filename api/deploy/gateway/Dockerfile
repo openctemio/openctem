@@ -16,7 +16,7 @@
 # binary shipped both.
 # Base images are pinned by digest in the FROM lines themselves, where
 # Dependabot finds and refreshes them (it does not read ARG defaults).
-FROM golang:1.27.3-alpine@sha256:b8c9b82affbbb82a020bbcf998dad2ba9516944ac7e883524642a481a9505e9c AS build
+FROM golang:1.27.3-alpine@sha256:d200d2dd76b03a99b52651fd1325aff7dcd35422c35c01bac56571b0507f3deb AS build
 ARG CADDY_VERSION=v2.11.4
 ARG CADDY_L4_VERSION=v0.1.2
 # Dependencies with security fixes newer than the Caddy release; drop an entry
@@ -38,7 +38,7 @@ RUN printf '%s\n' 'package main' \
  && /usr/bin/caddy version | grep -q "^${CADDY_VERSION} " \
  && /usr/bin/caddy list-modules | grep -qx layer4
 
-FROM alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6
+FROM alpine:3.24@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a
 # mailcap: /etc/mime.types for file responses, as in the Caddy image.
 # The gateway runs as uid/gid 1000 (as in the Helm chart). /data and /config
 # belong to it, so a new named volume mounted there starts with that owner.

@@ -19,7 +19,7 @@
 // Environment: SIGNER_KEY_FILE, SIGNER_SOCKET, SIGNER_STATE_DIR,
 // SIGNER_KEYSET_FILE, SIGNER_TENANT_RATE, SIGNER_TENANT_BURST,
 // SIGNER_SENSOR_RATE, SIGNER_SENSOR_BURST, SIGNER_PUBLISH_DIR, SIGNER_LEDGER,
-// SIGNER_LEDGER_MIN_APPROVALS.
+// SIGNER_LEDGER_MIN_APPROVALS, SIGNER_FEED_ORIGINS.
 package main
 
 import (
@@ -212,6 +212,11 @@ func serve() error {
 	if err := ledgerConfig(&cfg); err != nil {
 		return err
 	}
+	origins, ok := jobsign.ParseFeedOrigins(os.Getenv("SIGNER_FEED_ORIGINS"))
+	if !ok {
+		return errors.New("SIGNER_FEED_ORIGINS must be \"none\" or comma-separated https origins without credentials, query or fragment")
+	}
+	cfg.FeedOrigins = origins
 	svc, err := signer.New(cfg)
 	if err != nil {
 		return err

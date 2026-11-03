@@ -27,8 +27,6 @@ export interface RoutePermissionConfig {
   module?: string
   /** Optional: Redirect to this path if permission denied (default: show access denied) */
   redirectTo?: string
-  /** Optional: Custom message to show when access denied */
-  message?: string
 }
 
 /**
@@ -153,11 +151,27 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     permission: Permission.ScopeRead,
     module: Module.AttackSurface,
   },
+  // Web page monitoring (RFC-138): reads need assets:read (narrowed to the
+  // data scope by the API); watch changes need scans:write.
+  '/attack-surface/pages': {
+    permission: Permission.AssetsRead,
+    module: Module.AttackSurface,
+  },
+  // The coverage work by stage (Run needs scans:write + scans:execute).
+  '/attack-surface/discovery': {
+    permission: Permission.ScansRead,
+    module: Module.AttackSurface,
+  },
   // Typed attack-surface changes (RFC-080), narrowed to the data scope by the API.
   // Web surface reads the assets module's web endpoints (RFC-056).
   '/attack-surface/web': {
     permission: Permission.AssetsRead,
     module: Module.Assets,
+  },
+  // The posture score of the external surface, scoped per asset by the API.
+  '/attack-surface/posture': {
+    permission: Permission.AssetsRead,
+    module: Module.AttackSurface,
   },
   // Exposure items: the exposures of the external surface (research/333 D1);
   // the API also needs findings:read.
@@ -382,8 +396,12 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
   // ========================================
   // Validation Phase (Module: pentest)
   // ========================================
+  // Campaign pages: the API reads them with pentest:campaigns:read and the
+  // caller's campaign membership, so a role without the module-wide
+  // validation:read (a vendor tester, a campaign client) still reaches the
+  // campaigns it is a member of.
   '/pentest/**': {
-    permission: Permission.PentestRead,
+    permission: Permission.PentestCampaignsRead,
     module: Module.Pentest,
   },
   // Create/edit forms require write permission (route-level defense-in-depth;
@@ -553,6 +571,13 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     permission: Permission.SensorsRead,
     module: Module.Sensors,
   },
+  // The page a sensor's printed link opens (/activate?code=...): looking a
+  // code up needs sensors:pair; approving needs sensors:approve and step-up
+  // (enforced by the API).
+  '/activate': {
+    permission: Permission.SensorsPair,
+    module: Module.Sensors,
+  },
   // Scope policy (RFC-054 §6.3): readable with scope:read; saving needs
   // scope:approve and step-up, enforced by the API.
   '/settings/scope': {
@@ -619,14 +644,18 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
   '/settings/scanning/proxies': {
     permission: Permission.SensorEgressRead,
     module: Module.Sensors,
-    message: 'You need permission to view sensor proxies.',
   },
   // The sensor scan-job part of the security settings: read like
   // Authentication (team:update), changed by the owner only (the API).
   '/settings/scanning/sensor-safety': {
     permission: Permission.TeamUpdate,
     module: Module.Sensors,
-    message: 'You need admin privileges to access sensor job settings.',
+  },
+  // The scan identification part of the security settings: read like
+  // Sensor job safety (team:update), changed by the owner only (the API).
+  '/settings/scanning/identification': {
+    permission: Permission.TeamUpdate,
+    module: Module.Sensors,
   },
 
   // ========================================
@@ -638,36 +667,29 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
   // the page.
   '/settings/general': {
     permission: Permission.TeamUpdate,
-    message: 'You need admin privileges to access organization settings.',
   },
   '/settings/authentication': {
     permission: Permission.TeamUpdate,
-    message: 'You need admin privileges to access authentication settings.',
   },
   // Owner only in the API (RequireTeamOwner); admins see an "owners only" note.
   '/settings/sso-approvals': {
     permission: Permission.TeamUpdate,
-    message: 'Only an owner can approve or reject SSO changes.',
   },
   // Owners and admins see support access; granting is owner only (api RFC-063).
   '/settings/support-access': {
     permission: Permission.TeamUpdate,
-    message: 'Only owners and admins can manage support access.',
   },
   // Owners and admins read the security overview (api: RequireAdmin).
   '/settings/security': {
     permission: Permission.TeamUpdate,
-    message: 'Only owners and admins can see the security overview.',
   },
   // Owners and admins read domain policies; changes are owner only (api RFC-104).
   '/settings/domains': {
     permission: Permission.TeamUpdate,
-    message: 'Only owners and admins can see domain settings.',
   },
   // Owners and admins read trusts; changes are owner only (api RFC-058).
   '/settings/trusted-organizations': {
     permission: Permission.TeamUpdate,
-    message: 'Only owners and admins can see trusted organizations.',
   },
   '/settings/modules': {
     permission: Permission.TeamUpdate,
@@ -711,7 +733,6 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
   // ========================================
   '/settings/audit-log': {
     permission: Permission.AuditRead,
-    message: 'Audit logs require admin or owner privileges.',
   },
 
   // ========================================
@@ -763,12 +784,10 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
   '/settings/integrations/notifications/history': {
     permission: Permission.IntegrationsManage,
     module: Module.Integrations,
-    message: 'Only people who manage notification channels can see delivery history.',
   },
   '/settings/integrations/notifications/outbox': {
     permission: Permission.IntegrationsManage,
     module: Module.Integrations,
-    message: 'Only people who manage notification channels can see the delivery queue.',
   },
 
   // ========================================

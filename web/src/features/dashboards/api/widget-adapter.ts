@@ -11,6 +11,7 @@ import type {
   FlowResult,
   IntakeData,
   IntakeResult,
+  IntakeInstance,
   IntakeSourceRow,
   ItemsResult,
   MatrixResult,
@@ -25,6 +26,7 @@ import type {
   KpisResult,
   LeverRow,
   LeversResult,
+  PostureResult,
   WidgetState as KitState,
 } from '@/components/dashboard-kit'
 import { safeInternalHref } from '@/lib/safe-href'
@@ -35,7 +37,14 @@ import {
   metricMeta,
   ORDINAL_DIMENSIONS,
 } from '../metrics'
-import type { FlowFigure, IntakeSource, IntakeValue, LeverValue, WidgetValue } from './widget-data'
+import type {
+  FlowFigure,
+  IntakeSource,
+  IntakeSourceInstance,
+  IntakeValue,
+  LeverValue,
+  WidgetValue,
+} from './widget-data'
 import type { Dimension, VizType, WidgetSpec } from './widget-spec'
 
 export interface WidgetModel {
@@ -70,6 +79,8 @@ export function reasonKeyOf(reason: string | undefined): string {
     case 'no_active_campaigns':
     case 'too_few_closed':
     case 'no_threat_alerts':
+    case 'no_surface':
+    case 'posture_building':
     case 'module_off':
       return `dashboards.reason.${reason}`
     default:
@@ -110,6 +121,22 @@ function sourceRow(s: IntakeSource): IntakeSourceRow {
     health: s.health === 'stale' || s.health === 'failed' ? s.health : 'ok',
     expected_every_seconds: s.expected_every_seconds ?? null,
     drill: safeInternalHref(s.drill) ?? null,
+    assets: s.assets ?? 0,
+    kind: s.kind,
+    instances: s.instances?.map(instanceRow),
+  }
+}
+
+function instanceRow(i: IntakeSourceInstance): IntakeInstance {
+  return {
+    id: i.id,
+    kind: i.kind,
+    name: i.name,
+    received: i.received,
+    assets: i.assets,
+    health: i.health === 'stale' || i.health === 'failed' ? i.health : 'ok',
+    last_at: i.last_at && !i.last_at.startsWith('0001-') ? i.last_at : null,
+    sensor_href: safeInternalHref(i.sensor_href) ?? undefined,
   }
 }
 
@@ -345,6 +372,26 @@ function toResult(v: WidgetValue, spec: WidgetSpec | undefined): WidgetResult | 
             href: safeInternalHref(c.drill) ?? null,
           })),
           lever: it.lever ? leverRow(it.lever) : undefined,
+        })),
+      }
+      return out
+    }
+    case 'posture': {
+      if (!v.posture) return undefined
+      const p = v.posture
+      const out: PostureResult = {
+        shape: 'posture',
+        score: p.score,
+        grade: p.grade,
+        assets: p.assets,
+        next_grade: p.next_grade,
+        next_floor: p.next_floor,
+        fix_steps: p.fix_steps ?? 0,
+        categories: (p.categories ?? []).map((c) => ({
+          category: c.category,
+          max: c.max,
+          deduction: c.deduction,
+          issues: c.issues,
         })),
       }
       return out

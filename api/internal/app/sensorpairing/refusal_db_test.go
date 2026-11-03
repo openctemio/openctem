@@ -87,7 +87,7 @@ func TestPairing_UnconfirmedApprovalLeavesNoSensor_DB(t *testing.T) {
 	f.start(kept, "", "")
 	f.reveal(kept)
 	kid, _ := shared.IDFromString(kept.resp.PairingID)
-	if _, err := f.svc.Approve(ctx, a, kid, approve(a, kept.resp.UserCode)); err != nil {
+	if _, err := f.approveP(ctx, a, kid, approve(a, kept.resp.UserCode)); err != nil {
 		t.Fatal(err)
 	}
 	st := f.status(kept)
@@ -101,7 +101,7 @@ func TestPairing_UnconfirmedApprovalLeavesNoSensor_DB(t *testing.T) {
 	gid, _ := shared.IDFromString(ghost.resp.PairingID)
 	in := approve(a, ghost.resp.UserCode)
 	in.Name = "ghost"
-	if _, err := f.svc.Approve(ctx, a, gid, in); err != nil {
+	if _, err := f.approveP(ctx, a, gid, in); err != nil {
 		t.Fatal(err)
 	}
 	ghostID := f.status(ghost).Identity.SensorID

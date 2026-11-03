@@ -33,11 +33,17 @@ var _ = registerActions("scope", map[Action]Severity{
 const (
 	ActionEASMSettingsUpdated Action = "easm_settings.updated"
 	ActionEASMSweepRequested  Action = "easm_sweep.requested"
+	// Discovery management: stages run by hand, and every active coverage
+	// run of the organization canceled.
+	ActionEASMDiscoveryRun     Action = "easm_discovery.run"
+	ActionEASMDiscoveryAborted Action = "easm_discovery.aborted"
 )
 
 var _ = registerActions("easm", map[Action]Severity{
-	ActionEASMSettingsUpdated: SeverityHigh,
-	ActionEASMSweepRequested:  SeverityMedium,
+	ActionEASMSettingsUpdated:  SeverityHigh,
+	ActionEASMSweepRequested:   SeverityMedium,
+	ActionEASMDiscoveryRun:     SeverityMedium,
+	ActionEASMDiscoveryAborted: SeverityHigh,
 })
 
 // Lookalike-domain watches (RFC-083): passive monitoring of the
@@ -80,4 +86,16 @@ var _ = registerActions("easm", map[Action]Severity{
 	ActionEASMNetworkSeedAdded:    SeverityMedium,
 	ActionEASMNetworkSeedDeleted:  SeverityMedium,
 	ActionEASMNetworkSeedExpanded: SeverityLow,
+})
+
+// Attack surface posture (docs/architecture/easm-posture.md): Recalculate
+// now and the refresh schedule.
+const (
+	ActionEASMPostureRecalculated    Action = "easm_posture.recalculated"
+	ActionEASMPostureScheduleChanged Action = "easm_posture.schedule_changed"
+)
+
+var _ = registerActions("easm", map[Action]Severity{
+	ActionEASMPostureRecalculated:    SeverityLow,
+	ActionEASMPostureScheduleChanged: SeverityMedium,
 })

@@ -7,7 +7,7 @@
  * Flow:
  * 1. Read refresh token from cookie
  * 2. Read tenant info from tenant cookie
- * 3. Send to backend `/api/v1/auth/refresh` with tenant_id
+ * 3. Refresh through refreshSessionOnce (one API call per refresh token)
  * 4. Update cookies with new tokens
  * 5. Return new access token to client
  */
@@ -16,8 +16,10 @@ import { cookies } from 'next/headers'
 import { NextRequest, NextResponse } from 'next/server'
 
 import { env } from '@/lib/env'
+import { requestAccountToken } from '@/features/auth/lib/account-session'
 import { devLog } from '@/lib/logger'
-import { csrfRejection, rotatedRefreshToken } from '@/lib/server-auth-cookies'
+import { csrfRejection } from '@/lib/server-auth-cookies'
+import { refreshSessionOnce } from '@/lib/server-refresh'
 
 // Frontend cookie names (from env config)
 const ACCESS_TOKEN_COOKIE = env.auth.cookieName
@@ -25,16 +27,6 @@ const REFRESH_TOKEN_COOKIE = env.auth.refreshCookieName
 const TENANT_COOKIE = env.cookies.tenant
 // NOTE: Permissions are NOT stored in cookies anymore (too large, > 4KB limit)
 // Frontend fetches permissions via /api/v1/me/permissions API instead
-
-interface BackendRefreshResponse {
-  access_token: string
-  refresh_token?: string
-  expires_in: number
-  tenant_id: string
-  tenant_slug: string
-  role: string
-  permissions?: string[]
-}
 
 interface TenantInfo {
   id: string
@@ -78,6 +70,55 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       }
     }
 
+    if (!tenantId && cookieStore.get(env.cookies.accountOnly)?.value) {
+      // No organization: renew the account-only token (api RFC-141).
+      const account = await requestAccountToken(refreshToken)
+      if (!account.ok) {
+        const status =
+          account.code === 'SESSION' ? 401 : account.code === 'HAS_ORGANIZATION' ? 409 : 502
+        const failed = NextResponse.json(
+          {
+            success: false,
+            error: { code: `ACCOUNT_${account.code}`, message: 'Token refresh failed' },
+          },
+          { status }
+        )
+        if (status === 401) {
+          for (const name of [ACCESS_TOKEN_COOKIE, REFRESH_TOKEN_COOKIE, env.cookies.accountOnly]) {
+            failed.cookies.set(name, '', {
+              httpOnly: true,
+              secure: process.env.SECURE_COOKIES !== 'false',
+              sameSite: 'lax',
+              maxAge: 0,
+              path: '/',
+            })
+          }
+        }
+        return failed
+      }
+      const ok = NextResponse.json({
+        success: true,
+        data: { access_token: account.accessToken, expires_in: account.expiresIn },
+      })
+      const base = {
+        httpOnly: true,
+        secure: process.env.SECURE_COOKIES !== 'false',
+        sameSite: 'lax' as const,
+        path: '/',
+      }
+      ok.cookies.set(ACCESS_TOKEN_COOKIE, account.accessToken, {
+        ...base,
+        maxAge: account.expiresIn,
+      })
+      if (account.refreshToken) {
+        ok.cookies.set(REFRESH_TOKEN_COOKIE, account.refreshToken, {
+          ...base,
+          maxAge: 7 * 24 * 60 * 60,
+        })
+      }
+      return ok
+    }
+
     if (!tenantId) {
       return NextResponse.json(
         { success: false, error: { code: 'NO_TENANT', message: 'No tenant context found' } },
@@ -85,33 +126,30 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       )
     }
 
-    // Make request to backend refresh endpoint
-    const response = await fetch(`${env.api.url}/api/v1/auth/refresh`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        refresh_token: refreshToken,
-        tenant_id: tenantId,
-      }),
-    })
+    // One refresh per refresh token across every route of this server:
+    // concurrent and recent callers with the same token share the result.
+    const result = await refreshSessionOnce(refreshToken, tenantId)
 
-    // Handle non-OK response
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({ message: 'Refresh failed' }))
-      devLog.error('[Refresh] Backend returned error:', response.status, errorData)
+    // Handle a refused refresh
+    if (!result.ok) {
+      devLog.error('[Refresh] Backend returned error:', result.status, result.code)
+      if (result.status === 0) {
+        return NextResponse.json(
+          { success: false, error: { code: 'REFRESH_FAILED', message: 'Failed to refresh token' } },
+          { status: 502 }
+        )
+      }
 
       // Create error response
       const errorResponse = NextResponse.json(
         {
           success: false,
           error: {
-            code: errorData.code || 'REFRESH_FAILED',
-            message: errorData.message || 'Token refresh failed',
+            code: result.code || 'REFRESH_FAILED',
+            message: result.message || 'Token refresh failed',
           },
         },
-        { status: response.status }
+        { status: result.status }
       )
 
       // CRITICAL: Clear ALL cookies when refresh fails with 401
@@ -122,27 +160,24 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       // (the refresh token is not spent by a refused refresh).
       // ORGANIZATION_SUSPENDED (403): the organization was suspended by the
       // platform operator; signing in again lists it as suspended.
-      if (response.status === 401 || errorData.code === 'ORGANIZATION_SUSPENDED') {
+      // OWN_SIGN_IN_REQUIRED (403): the session came from another
+      // organization's identity provider; the person signs in again with
+      // their own account.
+      if (
+        result.status === 401 ||
+        result.code === 'ORGANIZATION_SUSPENDED' ||
+        result.code === 'OWN_SIGN_IN_REQUIRED'
+      ) {
         devLog.log('[Refresh] Clearing ALL auth cookies due to invalid refresh token')
-
-        // Clear access token cookie
-        errorResponse.cookies.set(ACCESS_TOKEN_COOKIE, '', {
-          httpOnly: true,
-          secure: process.env.SECURE_COOKIES !== 'false',
-          sameSite: 'lax',
-          maxAge: 0,
-          path: '/',
-        })
-
-        // Clear refresh token cookie
-        errorResponse.cookies.set(REFRESH_TOKEN_COOKIE, '', {
-          httpOnly: true,
-          secure: process.env.SECURE_COOKIES !== 'false',
-          sameSite: 'lax',
-          maxAge: 0,
-          path: '/',
-        })
-
+        for (const name of [ACCESS_TOKEN_COOKIE, REFRESH_TOKEN_COOKIE]) {
+          errorResponse.cookies.set(name, '', {
+            httpOnly: true,
+            secure: process.env.SECURE_COOKIES !== 'false',
+            sameSite: 'lax',
+            maxAge: 0,
+            path: '/',
+          })
+        }
         // Clear tenant cookie to prevent login loops
         // When user logs in again, they'll go through proper tenant selection
         errorResponse.cookies.set(TENANT_COOKIE, '', {
@@ -157,16 +192,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       return errorResponse
     }
 
-    const data: BackendRefreshResponse = await response.json()
-    devLog.log('[Refresh] Backend success, new access_token:', !!data.access_token)
-    devLog.log('[Refresh] Access token LENGTH:', data.access_token?.length, 'bytes')
-
-    // Check token size - warn if approaching browser cookie limit
-    if (data.access_token && data.access_token.length > 3500) {
-      devLog.warn(
-        `[Refresh] WARNING: Token size (${data.access_token.length} bytes) may approach browser cookie limit (4096 bytes)`
-      )
+    const data = {
+      access_token: result.accessToken,
+      expires_in: result.expiresIn,
+      tenant_id: result.tenantId,
+      tenant_slug: result.tenantSlug,
+      role: result.role,
     }
+    devLog.log('[Refresh] Backend success, new access_token:', !!data.access_token)
 
     // Build success response
     // NOTE: Permissions NOT included here - frontend fetches via /api/v1/me/permissions
@@ -200,7 +233,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     // Store the rotated refresh token. The API sends it in Set-Cookie only;
     // keeping the old cookie left a revoked token and the next refresh signed
     // the user out.
-    const rotated = rotatedRefreshToken(response, data)
+    const rotated = result.refreshToken
     if (rotated) {
       clientResponse.cookies.set(REFRESH_TOKEN_COOKIE, rotated, {
         httpOnly: true,

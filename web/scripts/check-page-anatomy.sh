@@ -23,6 +23,19 @@
 #      tab icons are drawn by the strip, 16px in the tab's text colour; route
 #      tabs take them from SectionTab.icon.
 #   8. A second tab row: a file that renders route tabs and adds a TabsList.
+#  11. A Save button of its own on a settings page (`type="submit"` in a page
+#      under /settings or /account, or a "Save" label beside it): a settings
+#      form saves through SettingsSaveBar (sticky, shown while dirty,
+#      Discard, Ctrl/Cmd+S, asks before leaving).
+#  12. A hand-made "no permission" alert ("Insufficient permissions", an
+#      `Access Denied` card, a `noPermission` key in a destructive Alert):
+#      NoAccessState / AccessNotice say what is missing and who can grant it.
+#  13. A raw table (`@/components/ui/table`) imported by a page or a console
+#      page: a list is a DataTable (sorting, phone cards, empty and loading
+#      states); a small key/value block is KeyValueList.
+#
+# Rules 1-8 and 11-13 read added lines of the tenant app (src/) and of the
+# platform console (console/src/): both apps share one kit (features/shared).
 #
 # Whole tree (not only added lines), since the sweep that put every page on
 # the primitives (research/244 mobile-and-sweep):
@@ -57,7 +70,7 @@ merge_base="$(git merge-base "$BASE_REF" HEAD)"
 
 # Added lines, each prefixed with its file, from component sources only. The
 # primitives that legitimately own a big number are excluded from rule 2 below.
-added="$(git diff -U0 "$merge_base"...HEAD -- 'src/*.tsx' \
+added="$(git diff -U0 "$merge_base"...HEAD -- 'src/*.tsx' 'console/src/*.tsx' \
   | awk '/^\+\+\+ b\//{f=substr($0,7); next} /^\+/{print f ":" substr($0,2)}' \
   | grep -v 'anatomy-ok:' | grep -v '/__tests__/' | grep -v '\.test\.tsx:' || true)"
 
@@ -75,7 +88,7 @@ hits="$(printf '%s\n' "$added" | grep -E '<StatsCard\b' || true)"
 [[ -n "$hits" ]] && report "New StatsCard tiles:" "$hits" \
   "Put the page's numbers in one MetricStrip (features/shared): every tile a link (href) or a filter toggle (onClick), at most 5, no corner icons."
 
-OWNERS='(features/shared/components/metric-strip\.tsx|features/shared/components/page-header\.tsx|components/dashboard-kit/|app/\(auth\)/|features/legal/)'
+OWNERS='(features/shared/components/metric-strip\.tsx|features/shared/components/overview-answer\.tsx|features/shared/components/page-header\.tsx|components/dashboard-kit/|app/\(auth\)/|features/legal/)'
 hits="$(printf '%s\n' "$added" | grep -Ev "^(web/)?src/${OWNERS}" \
   | grep -E '\btext-(2xl|3xl|4xl)\b' | grep -E '\bfont-(bold|semibold)\b' || true)"
 [[ -n "$hits" ]] && report "New ad-hoc metric tile (a big bold number):" "$hits" \
@@ -121,6 +134,19 @@ hits="$(printf '%s\n' "$added" | grep -E '<TabsList\b' | while IFS= read -r line
 done || true)"
 [[ -n "$hits" ]] && report "A second tab row under route tabs:" "$hits" \
   "One tab row per page (research/249 R21). A filter or state of the rows is a FilterSelect in the toolbar; another view is ViewSwitcher; a sub-page is a route tab."
+
+SETTINGS_PAGE='^(web/)?src/app/\(dashboard\)/(settings|account)/.*page\.tsx:'
+hits="$(printf '%s\n' "$added" | grep -E "$SETTINGS_PAGE" | grep -E 'type="submit"' || true)"
+[[ -n "$hits" ]] && report "A Save button of its own on a settings page:" "$hits" \
+  "Save a settings form through SettingsSaveBar (features/shared): <SettingsSaveBar dirty saving form={FORM_ID} onDiscard=...>. It shows only while there are unsaved changes, has Discard and Ctrl/Cmd+S, and asks before leaving."
+
+hits="$(printf '%s\n' "$added" | grep -E "Insufficient permissions|'Access Denied'|>Access Denied<|\.noPermission(Title)?'" || true)"
+[[ -n "$hits" ]] && report "A hand-made no-permission message:" "$hits" \
+  "Use NoAccessState (content the caller may not read) or AccessNotice (features/shared): it names the page, the missing permission, the built-in roles that hold it and who can grant it, in both languages."
+
+hits="$(printf '%s\n' "$added" | grep -E "/app/.*page\.tsx:.*from '@/components/ui/table'" || true)"
+[[ -n "$hits" ]] && report "A raw table in a page:" "$hits" \
+  "A list is a DataTable (features/shared: sorting, phone cards, empty, loading and error states). A short key/value block is KeyValueList."
 
 hits="$(grep -rlE '<PageHeader\b' src console/src --include='*.tsx' 2>/dev/null | grep -v '/__tests__/' | while IFS= read -r f; do
   grep -qE '<PageStack\b' "$f" && continue

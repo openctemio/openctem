@@ -322,6 +322,33 @@ which it always receives:
 | A sensor makes the organization allowlist an address it chose | Scanner addresses list only addresses the platform observed: an exit address is kept only when the test echo saw it for the same live test (secret, tenant-bound token), and a sensor's own address is its connection's client address. Cross-tenant: tenant-scoped queries and a composite FK on the endpoint. |
 | Score poisoning by a hostile sensor | A report counts only from the sensor holding the job's lease, only for the pool that sensor's jobs use now, and only up to 15 minutes after the job ended; it can never touch another organization's pool or another pool of its own organization; a sensor never uses an endpoint the platform quarantined. |
 
+## Platform-owned egress and selection (designed)
+
+> RFC: [RFC-147](../rfcs/RFC-147-managed-scanning-fleet.md). Nothing in this section is built unless
+> stated; the pool engine above is what exists.
+
+In a managed deployment the shared fleet's executors have no internet route. Platform pools are operator
+(instance) pools whose endpoints are platform-owned egress proxies: one static, published address each, per
+region and tier, run as the sensor's `egress-proxy` role (the sdk-go forwarder as a server). They are
+ordinary endpoints, so the health score, quarantine and sticky slots described above select among them.
+
+- **Per-job credentials.** Each connection authenticates with an HMAC over the command id, lease epoch and
+  expiry, minted at claim. The proxy verifies it without a database call and logs the command id, so every
+  connection is attributable to one job; the credential dies with the lease.
+- **Selection.** Platform weight (`admin_weight x state factor x score^2`), then a sticky slot per (job,
+  target host), a weighted power-of-two-choices first pick on in-flight load, a job-local breaker and
+  bounded failover on proxy faults only. A target's answer (403, 429, reset, challenge) never moves traffic
+  to another exit: it backs the rate off, reports a coverage gap and sets a site-block memory per (tenant,
+  registrable domain) that survives address changes.
+- **Reputation.** Block rate per exit address drives slow, pool-wide, audited actions (stop assigning,
+  abuse review, replace), never per-target routing.
+- **Never** residential, rotating-gateway, Tor or public-list proxies; vendor endpoints only for a region
+  the operator does not host.
+
+Shipped: pools, credentials, sticky slots with weighted first pick, breaker, platform score and
+quarantine, exit-address verification. Designed: instance pools and offers, per-job credentials, the
+`egress-proxy` role, egress evidence, site-block memory, reputation, power-of-two-choices pick.
+
 ## Not built yet
 
 Credentials sealed to the claiming sensor's key (today they travel in the

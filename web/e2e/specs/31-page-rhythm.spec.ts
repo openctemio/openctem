@@ -23,6 +23,11 @@ import { test, expect } from '../fixtures/authenticated-page'
  * - an empty list shows no pagination ("Showing 0 - 0 of 0", "Page 1 of 0");
  * - a table's name column keeps a readable width at 1440px;
  * - no horizontal page scroll;
+ * - a settings page (/settings, /account) shows no Save button at rest: its
+ *   form saves through the sticky SettingsSaveBar, shown while there are
+ *   unsaved changes (SAVE_EXCEPTIONS lists the pages not moved yet);
+ * - no hand-made "Insufficient permissions" / "Access Denied" text: a refusal
+ *   is the shared access notice;
  * - the page renders: no error boundary ("Something went wrong") and no
  *   uncaught page error (a server page calling a client hook crashed
  *   /notifications on every visit with nothing visiting it).
@@ -75,6 +80,26 @@ const EXCEPTIONS: Record<string, string> = {
  */
 const OWN_LAYOUT = [/^\/findings\/(?!approvals$)[^/]+$/, /^\/remediation\/campaigns\/[^/]+$/]
 
+/**
+ * Settings pages that still save with a button of their own, each to move to
+ * SettingsSaveBar (research/391). The list only shrinks: a page that moves is
+ * removed, and a new page is never added.
+ */
+const SAVE_EXCEPTIONS = new Set<string>([
+  '/account',
+  '/account/notifications',
+  '/account/preferences',
+  '/settings/ai',
+  '/settings/asset-sources',
+  '/settings/finding-lifecycle',
+  '/settings/mcp',
+  '/settings/pentest',
+  '/settings/scanning/content',
+  '/settings/scanning/scan-approval',
+  '/settings/scope',
+  '/settings/trusted-organizations',
+])
+
 const PAGE_GAP = 20
 const TIGHT_GAP = 16
 const NAME_MIN_1440 = 160
@@ -97,6 +122,8 @@ type Probe = {
   emptyPagination: boolean
   nameColumns: { header: string; width: number }[]
   pageOverflowX: boolean
+  restingSave: string[]
+  handDenied: boolean
 }
 
 async function probe(page: Page): Promise<Probe> {
@@ -166,9 +193,10 @@ async function probe(page: Page): Promise<Probe> {
       }
     })
     // A SegmentedLens on a page (the control that used to filter rows); radio
-    // and toggle groups in forms and wizards are inputs, not row filters.
+    // and toggle groups in forms and wizards are inputs, not row filters, and a
+    // lens in a route-lens wrapper switches between routes (navigation).
     const rowFilterSegmented = Array.from(main.querySelectorAll('[data-testid="segmented-lens"]'))
-      .filter((n) => shown(n) && !overlay(n))
+      .filter((n) => shown(n) && !overlay(n) && !n.closest('[data-slot="route-lens"]'))
       .map((n) => n.getAttribute('aria-label') ?? '')
 
     const metricStrips = Array.from(main.querySelectorAll('[data-slot="metric-strip"]'))
@@ -231,6 +259,11 @@ async function probe(page: Page): Promise<Probe> {
       emptyPagination: /Page 1 of 0|Showing 0\s*[-–]\s*0 of 0/.test(main.textContent ?? ''),
       nameColumns,
       pageOverflowX: document.documentElement.scrollWidth > window.innerWidth + 1,
+      restingSave: Array.from(main.querySelectorAll('button'))
+        .filter((b) => shown(b) && !overlay(b) && !b.closest('[data-slot=settings-save-bar]'))
+        .map((b) => (b.textContent ?? '').trim())
+        .filter((label) => /^(Save( changes| policy| settings)?|Lưu( thay đổi)?)$/i.test(label)),
+      handDenied: /Insufficient permissions|Access Denied/.test(main.textContent ?? ''),
     }
   })
 }
@@ -279,6 +312,11 @@ async function checkAt(page: Page, route: string, width: number) {
     }
   }
   expect.soft(r.pageOverflowX, `${at}: no horizontal page scroll`).toBe(false)
+  const path = route.split('?')[0]
+  if (/^\/(settings|account)(\/|$)/.test(path) && !SAVE_EXCEPTIONS.has(path)) {
+    expect.soft(r.restingSave, `${at}: a settings form saves through SettingsSaveBar`).toEqual([])
+  }
+  expect.soft(r.handDenied, `${at}: a refusal is the shared access notice`).toBe(false)
 }
 
 async function open(page: Page, route: string): Promise<boolean> {

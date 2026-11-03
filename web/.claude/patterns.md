@@ -1090,6 +1090,15 @@ export function useStats(tenantId: string | null) {
 
 Pattern for conditionally showing/disabling UI based on permissions.
 
+### "You cannot see this": one notice
+
+A refused page (`RouteGuard`), a refused read inside a page (`ErrorState` on a 403) and content the caller may not read (`NoAccessState`) all render the
+shared `AccessNotice` (`features/shared`): "You do not have access to {title}",
+the missing permission by id, which built-in roles hold it
+(`lib/permissions/who-can.ts`, from the `RolePermissions` mirror) and who can
+grant it, translated. Never hand-roll an access-denied card or show the API's
+raw 403 message; pass the refusal's `details` (or a `permission`) instead.
+
 ### Can Component with Disable Mode
 
 ```tsx

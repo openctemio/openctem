@@ -36,6 +36,7 @@
  * `<url>#<anchor id>` (src/config/settings-search.ts).
  */
 import {
+  Fingerprint,
   GitMerge,
   Handshake,
   LifeBuoy,
@@ -272,6 +273,31 @@ export const settingsNav: SettingsNavGroup[] = [
         keywords: ['ai', 'llm', 'triage', 'consent', 'opt in', 'provider', 'data', 'privacy'],
         anchors: [
           { id: 'ai-triage', title: 'AI triage', keywords: ['turn on', 'enable'] },
+          {
+            id: 'ai-source',
+            title: 'AI source',
+            keywords: ['provider', 'key', 'model', 'test connection'],
+          },
+          {
+            id: 'ai-use-cases',
+            title: 'AI use cases',
+            keywords: ['auto-apply', 'suggest', 'confidence', 'data class', 'restricted'],
+          },
+          {
+            id: 'ai-auto-triage',
+            title: 'Automatic triage',
+            keywords: ['auto', 'severity', 'delay'],
+          },
+          {
+            id: 'ai-knowledge',
+            title: 'Knowledge sources',
+            keywords: ['knowledge', 'documents', 'runbook', 'cite'],
+          },
+          {
+            id: 'ai-usage',
+            title: 'AI use and limits',
+            keywords: ['tokens', 'budget', 'limit', 'tlp'],
+          },
           {
             id: 'ai-agents',
             title: 'AI agents',
@@ -711,7 +737,6 @@ export const settingsNav: SettingsNavGroup[] = [
           'interactsh',
           'out-of-band',
           'custom templates',
-          'user-agent',
           'tls',
           'private targets',
           'local policy',
@@ -731,8 +756,8 @@ export const settingsNav: SettingsNavGroup[] = [
           },
           {
             id: 'tool-http',
-            title: 'User-Agent and TLS of scan tools',
-            keywords: ['user agent', 'certificate', 'insecure'],
+            title: 'TLS of scan tools',
+            keywords: ['certificate', 'insecure'],
           },
           {
             id: 'sensor-policies',
@@ -744,6 +769,31 @@ export const settingsNav: SettingsNavGroup[] = [
             title: 'Shared sensors',
             keywords: ['platform sensors', 'opt out'],
           },
+        ],
+      },
+      {
+        // The scan identification part of the security settings section
+        // (owner only to change): the User-Agent and headers scans send.
+        id: 'scan-identification',
+        title: 'Scan identification',
+        description: 'The User-Agent and headers your scans send, so targets recognize them.',
+        url: '/settings/scanning/identification',
+        icon: Fingerprint,
+        permission: Permission.TeamUpdate,
+        module: 'sensors',
+        keywords: [
+          'user-agent',
+          'header',
+          'waf',
+          'siem',
+          'marker',
+          'identify',
+          'allowlist',
+          'bypass token',
+        ],
+        anchors: [
+          { id: 'user-agent', title: 'User-Agent of scan tools', keywords: ['user agent'] },
+          { id: 'headers', title: 'Request headers', keywords: ['custom header', 'x-scanner'] },
         ],
       },
       {

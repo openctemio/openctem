@@ -193,8 +193,16 @@ func pairingRouteName(r *http.Request) string {
 }
 
 // registerSensorInstallRoutes mounts the public files the install commands
-// download: the sensor's seccomp profile (the open-source release's file,
-// the same for every organization, no tenant data), rate limited per IP.
-func registerSensorInstallRoutes(router Router, rateLimit Middleware) {
+// download, the same for every organization and without tenant data, rate
+// limited per IP: the sensor's seccomp profile (the open-source release's
+// file) and the platform's private CA bundle (public certificates only;
+// 404 when none is configured).
+func registerSensorInstallRoutes(router Router, platformCA *handler.PlatformCAHandler, rateLimit Middleware) {
 	router.GET("/api/v1/sensors/install/seccomp-profile", handler.ServeSensorSeccompProfile, rateLimit)
+	if platformCA == nil {
+		platformCA = handler.NewPlatformCAHandler(nil, nil) // answers 404
+	}
+	// A literal path: the route manifest and the contract checks read it
+	// from the source (sensorapp.PlatformCAPath must stay equal, tested).
+	router.GET("/api/v1/sensors/platform-ca", platformCA.Serve, rateLimit)
 }

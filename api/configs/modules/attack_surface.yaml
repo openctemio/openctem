@@ -17,14 +17,12 @@
   mcp:
     - get_exposure_chains
   jobs:
-    - AssetEnrichmentController
-    - AssetCoverageController
     - CertMonitorController
     - EASMDNSController
     - EASMLookalikeController
     - PageMonitorController
     - EASMNetworkSeedController
-    - WebEvidenceRetentionController
     - EASMWeeklyDigestController
+    - EASMPostureController
     - GraphEnrichmentController
     - ScopeJoinController

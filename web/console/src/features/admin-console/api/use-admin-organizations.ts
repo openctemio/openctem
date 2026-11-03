@@ -9,6 +9,7 @@ import type {
   AdminOrganization,
   AdminOrganizationList,
   AdminOrganizationUserList,
+  AdminOwnerInvitationResult,
   CreatedOrganization,
   CreateOrganizationInput,
 } from '../types'
@@ -17,14 +18,17 @@ export interface OrganizationQuery {
   search?: string
   /** none: no active owner; present: has one. */
   owner?: '' | 'none' | 'present'
+  /** The platform status; '' for every organization. */
+  status?: '' | 'active' | 'suspended' | 'pending_deletion'
   page?: number
   perPage?: number
 }
 
-function listPath({ search, owner, page = 1, perPage = 25 }: OrganizationQuery): string {
+function listPath({ search, owner, status, page = 1, perPage = 25 }: OrganizationQuery): string {
   const q = new URLSearchParams({ page: String(page), per_page: String(perPage) })
   if (search?.trim()) q.set('search', search.trim())
   if (owner) q.set('owner', owner)
+  if (status) q.set('status', status)
   return `/tenants?${q.toString()}`
 }
 
@@ -53,10 +57,29 @@ export function useOrganizationUsers(id: string | null) {
  * SWR: the response may carry a one-time setup token that must not be cached.
  */
 export function createOrganizationUser(id: string, input: AdminCreateOrganizationUserInput) {
-  return adminFetch<AdminCreatedOrganizationUser>(`/tenants/${id}/users`, {
-    method: 'POST',
-    body: input,
-  })
+  return adminFetch<AdminCreatedOrganizationUser | AdminOwnerInvitationResult>(
+    `/tenants/${id}/users`,
+    {
+      method: 'POST',
+      body: input,
+    }
+  )
+}
+
+/** Sends the pending (or expired) ownership invitation again (ops_admin+, step-up). */
+export function resendOwnerInvitation(id: string) {
+  return adminFetch<AdminOwnerInvitationResult>(
+    `/tenants/${encodeURIComponent(id)}/owner-invitation/resend`,
+    { method: 'POST' }
+  )
+}
+
+/** Withdraws the pending ownership invitation (ops_admin+, step-up). */
+export function cancelOwnerInvitation(id: string) {
+  return adminFetch<AdminOwnerInvitationResult>(
+    `/tenants/${encodeURIComponent(id)}/owner-invitation`,
+    { method: 'DELETE' }
+  )
 }
 
 /**

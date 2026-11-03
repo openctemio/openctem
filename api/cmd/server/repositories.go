@@ -42,6 +42,7 @@ type Repositories struct {
 	DashboardFacts          *postgres.DashboardFactsRepository          // Dashboard fact layer upkeep
 	DashboardWidget         *postgres.DashboardWidgetRepository         // Typed widget reads over the facts
 	DashboardSnapshot       *postgres.DashboardSnapshotRepository       // Stored dashboard results and the refresh budget
+	EASMPosture             *postgres.EASMPostureRepository             // Attack surface posture facts and state
 	APISpec                 *postgres.APISpecRepository                 // API descriptions of web origins (RFC-056)
 	AssetStateHistory       *postgres.AssetStateHistoryRepository       // CTEM: State change audit log
 	AssetRelationship       *postgres.AssetRelationshipRepository       // CTEM: Asset topology graph
@@ -72,7 +73,6 @@ type Repositories struct {
 	Exposure             *postgres.ExposureRepository
 	ExposureStateHistory *postgres.ExposureStateHistoryRepository
 	ThreatIntel          *postgres.ThreatIntelRepository
-	CTEMID               *postgres.CTEMIDRepository
 
 	// Dashboard & Branch
 	Dashboard *postgres.DashboardRepository
@@ -432,6 +432,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		DashboardFacts:          postgres.NewDashboardFactsRepository(db),
 		DashboardWidget:         postgres.NewDashboardWidgetRepository(db),
 		DashboardSnapshot:       postgres.NewDashboardSnapshotRepository(db),
+		EASMPosture:             postgres.NewEASMPostureRepository(db),
 		APISpec:                 postgres.NewAPISpecRepository(db),
 		AssetStateHistory:       postgres.NewAssetStateHistoryRepository(db),      // CTEM: State change audit
 		AssetRelationship:       postgres.NewAssetRelationshipRepository(db),      // CTEM: Asset topology graph
@@ -462,7 +463,6 @@ func newRepositories(db *postgres.DB) *Repositories {
 		Exposure:             postgres.NewExposureRepository(db),
 		ExposureStateHistory: postgres.NewExposureStateHistoryRepository(db),
 		ThreatIntel:          postgres.NewThreatIntelRepository(db),
-		CTEMID:               postgres.NewCTEMIDRepository(db),
 
 		// Dashboard & Branch
 		Dashboard: postgres.NewDashboardRepository(db.DB),

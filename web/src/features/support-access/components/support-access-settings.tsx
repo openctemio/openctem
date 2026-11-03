@@ -215,6 +215,8 @@ export function SupportAccessSettings({
             <CardContent>
               {active.length === 0 ? (
                 <EmptyState
+                  card={false}
+                  className="py-8"
                   icon={LifeBuoy}
                   title={t('supportAccess.active.empty', 'No one from support has access.')}
                 />

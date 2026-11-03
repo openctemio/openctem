@@ -18,10 +18,12 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"time"
 
 	bp "github.com/openctemio/openctem/api/pkg/domain/bountyprogram"
 	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
+	"github.com/openctemio/openctem/api/pkg/domain/scanident"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
@@ -103,7 +105,30 @@ func (s *Service) programDecide(ctx context.Context, c *commanddom.Command, now 
 			"command_id", c.ID.String(), "programs", r.Programs)
 		return nil, ErrSensorCannotHonorProgram
 	}
+	if err := s.programFits(ctx, c, r); err != nil {
+		return nil, err
+	}
 	return r, nil
+}
+
+// programFits fails a job whose program headers, with the platform's and the
+// organization's, would exceed what a sensor accepts (the job could never
+// run as the program requires). A layer that cannot be read withholds it.
+func (s *Service) programFits(ctx context.Context, c *commanddom.Command, r *bp.JobRules) error {
+	if r == nil || len(r.Headers) == 0 || (s.httpPolicy == nil && s.platformIdentity == nil) {
+		return nil
+	}
+	eff, _, err := s.jobIdentity(ctx, c.TenantID)
+	if err != nil {
+		s.logger.Warn("scan identification could not be read; withholding the job", "command_id", c.ID.String(), "error", err)
+		return ErrScopeRecheckUnavailable
+	}
+	if _, err := eff.Overlay(r.Headers, r.UserAgent, scanident.SourceProgram); err != nil {
+		s.failAtClaim(ctx, c, fmt.Sprintf("%s: the program's identification headers with the platform's and the organization's exceed %d",
+			FailureProgramRules, scanident.MaxHeaders), FailureProgramRules)
+		return err
+	}
+	return nil
 }
 
 // programHoldOne decides one command a sensor acknowledges by id: the rules
@@ -172,8 +197,9 @@ func (s *Service) withProgramRules(cmds []*commanddom.Command, rules map[shared.
 }
 
 // applyJobRules writes the rules into a payload: http_policy headers and
-// User-Agent (merged with what is there: the program's win), and the rate
-// cap in config and scanner_config.
+// User-Agent (merged with what is there: the program's win, except over an
+// enforced platform header or User-Agent, and the program's names become
+// locked), and the rate cap in config and scanner_config.
 func applyJobRules(payload json.RawMessage, r *bp.JobRules) (json.RawMessage, error) {
 	var fields map[string]json.RawMessage
 	if len(payload) == 0 || string(payload) == jsonNull {
@@ -188,18 +214,21 @@ func applyJobRules(payload json.RawMessage, r *bp.JobRules) (json.RawMessage, er
 				return nil, fmt.Errorf("http_policy: %w", err)
 			}
 		}
-		if len(r.Headers) > 0 {
-			headers := map[string]any{}
-			if h, ok := pol["headers"].(map[string]any); ok {
-				headers = h
-			}
-			for k, v := range r.Headers {
-				headers[k] = v
-			}
-			pol["headers"] = headers
+		eff, err := policyIdentity(pol).Overlay(r.Headers, r.UserAgent, scanident.SourceProgram)
+		if err != nil {
+			return nil, err
 		}
-		if r.UserAgent != "" {
-			pol["user_agent"] = r.UserAgent
+		if m := eff.HeaderMap(); m != nil {
+			pol["headers"] = m
+		}
+		if locked := eff.LockedNames(); len(locked) > 0 {
+			pol["locked_headers"] = locked
+		}
+		if eff.UserAgent != "" {
+			pol["user_agent"] = eff.UserAgent
+		}
+		if eff.UserAgentLocked {
+			pol["user_agent_locked"] = true
 		}
 		b, err := json.Marshal(pol)
 		if err != nil {
@@ -228,4 +257,36 @@ func applyJobRules(payload json.RawMessage, r *bp.JobRules) (json.RawMessage, er
 		}
 	}
 	return json.Marshal(fields)
+}
+
+// policyIdentity reads the identity of a delivered http_policy: its headers,
+// the names locked by the platform (enforced) and its User-Agent.
+func policyIdentity(pol map[string]any) scanident.Effective {
+	var e scanident.Effective
+	locked := map[string]bool{}
+	if ls, ok := pol["locked_headers"].([]any); ok {
+		for _, l := range ls {
+			if n, ok := l.(string); ok {
+				locked[strings.ToLower(n)] = true
+			}
+		}
+	}
+	if hs, ok := pol["headers"].(map[string]any); ok {
+		names := make([]string, 0, len(hs))
+		for n := range hs {
+			names = append(names, n)
+		}
+		slices.Sort(names)
+		for _, n := range names {
+			v, _ := hs[n].(string)
+			m := scanident.Marker{Name: n, Value: v, Source: scanident.SourceOrganization}
+			if locked[strings.ToLower(n)] {
+				m.Source, m.Locked = scanident.SourcePlatformEnforced, true
+			}
+			e.Headers = append(e.Headers, m)
+		}
+	}
+	e.UserAgent, _ = pol["user_agent"].(string)
+	e.UserAgentLocked, _ = pol["user_agent_locked"].(bool)
+	return e
 }

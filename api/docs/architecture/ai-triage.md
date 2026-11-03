@@ -46,10 +46,16 @@ platform administrator sets up a provider in the console) or
 ## Web UI
 
 - **Settings > AI** (`web/src/app/(dashboard)/settings/ai`, Security group,
-  module `ai_triage`): the on/off switch with a consent dialog, what is sent,
-  the pentest data policy, the source (Platform AI, Own provider, Off) with the
-  own provider's form (write-only key, Test connection) and the month's token use. Read-only
-  for anyone who may not change it; a notice when no provider is set up.
+  module `ai_triage`): a status strip (AI triage on or off, source, this
+  month's use against the limit, automatic triage, masked data kinds; each tile
+  opens its tab) and five tabs in the URL (`?tab=`). Provider: the on/off switch
+  with a consent dialog, what is sent (folded), the pentest data policy, the
+  source (Platform AI, Own provider, Off) with the own provider's form
+  (write-only key, Test connection). Features: automatic triage, AI agents.
+  Knowledge (with `ai_knowledge:read`). Limits and data: the month's token use
+  against the limit, a link to the TLP policy, data masking. Activity (with
+  `audit:read` and the audit module): the latest AI events from the audit log.
+  Read-only for anyone who may not change it; a notice when no provider is set up.
 - **AI triage button** (finding header): hidden when the module is off. When
   AI cannot run, it stays visible but disabled-looking and opens a short
   explanation instead: off for the organization (owners and administrators
@@ -174,9 +180,15 @@ than one provider call with its own retries).
 
 ## What the verdict changes
 
-Nothing automatically. A confident false-positive verdict (likelihood at
-least 0.9, no validation warning) on a medium or low finding becomes a
-pending false-positive request that a person approves or rejects. The
+Nothing automatically. AI triage is the `triage` use case
+([AI use cases](ai-use-cases.md)): `off` refuses every path (request
+`AI_USE_CASE_OFF`, bulk, automatic triage, and a queued row fails with
+`ai_use_case_off` before the call), and only the fields within its data class
+ceiling (default `internal`: no code snippet) reach the model. Only in
+`auto_apply`, at or above its minimum confidence, a confident false-positive
+verdict (likelihood at least 0.9, no validation warning) on a medium or low
+finding becomes a pending false-positive request that a person approves or
+rejects; in `suggest` (the default) the result card is the suggestion. The
 verdict never changes the priority class. A result with validation warnings
 (coerced output, prompt-injection markers in the finding, a proposed
 severity change) is flagged `needs_review`, audited, and side-effect

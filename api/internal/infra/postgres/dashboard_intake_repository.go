@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/api/pkg/domain/dashboard"
+	"github.com/openctemio/openctem/api/pkg/domain/ingestreceipt"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
@@ -41,30 +42,41 @@ func (r *DashboardWidgetRepository) Outcomes(ctx context.Context, scope dashboar
 	return out, nil
 }
 
+// intakeBaseSQL is one row per receipt, tool and sender in the window: the
+// receipt's source group and status with the counts the tool's reports by
+// that sender added (ingest_receipt_tools), so a source is the tool that
+// reported, never the first tool of a multi-tool run. The receipt list
+// filters by the same rows (receiptWhere), so a figure equals its list.
+const intakeBaseSQL = `SELECT ` + receiptOriginSQL + ` AS origin, t.tool, t.instance_kind AS ikind, t.instance_id AS iid,
+		t.instance_name AS iname, r.id, r.status, r.created_at, r.updated_at,
+		t.received, t.created, t.still_detected, t.reopened, t.closed, t.skipped, t.failed, t.suppressed,
+		t.assets_created + t.assets_updated AS assets
+	FROM ingest_receipt_tools t
+	JOIN ingest_receipts r ON r.tenant_id = t.tenant_id AND r.id = t.receipt_id
+	WHERE r.tenant_id = $1 AND t.tenant_id = $1 AND r.updated_at >= $2`
+
 // OrgIntake implements dashboard.FactReader.
 func (r *DashboardWidgetRepository) OrgIntake(ctx context.Context, tenantID shared.ID, since time.Time) ([]dashboard.IntakeRow, error) {
 	//nolint:gosec // G202: fixed SQL (constant expressions), values bound
-	q := `WITH rc AS (
-			SELECT ` + receiptOriginSQL + ` AS origin, ` + receiptToolSQL + ` AS tool, id, status, created_at, updated_at,
-				findings_received, findings_created, findings_updated, findings_reopened, findings_closed,
-				skipped, findings_failed, findings_suppressed
-			FROM ingest_receipts WHERE tenant_id = $1 AND updated_at >= $2
+	q := `WITH rc AS (` + intakeBaseSQL + `
+		), rr AS (
+			SELECT DISTINCT ON (origin, tool, id) origin, tool, id, created_at FROM rc
 		), gaps AS (
 			SELECT origin, tool, EXTRACT(EPOCH FROM created_at - lag(created_at) OVER (PARTITION BY origin, tool ORDER BY created_at)) AS gap
-			FROM rc
+			FROM rr
 		), med AS (
 			SELECT origin, tool, percentile_cont(0.5) WITHIN GROUP (ORDER BY gap) AS gap, COUNT(*) AS n
 			FROM gaps WHERE gap IS NOT NULL GROUP BY origin, tool
 		)
-		SELECT rc.origin, rc.tool, COUNT(*), COALESCE(SUM(findings_received), 0), COALESCE(SUM(findings_created), 0),
-			COALESCE(SUM(findings_updated), 0), COALESCE(SUM(findings_reopened), 0), COALESCE(SUM(findings_closed), 0),
-			COALESCE(SUM(skipped), 0), COALESCE(SUM(findings_failed), 0), COALESCE(SUM(findings_suppressed), 0),
-			MAX(updated_at), (array_agg(status ORDER BY updated_at DESC, id DESC))[1],
-			(array_agg(id::text ORDER BY updated_at DESC, id DESC))[1],
-			CASE WHEN MAX(med.n) >= 2 THEN MAX(med.gap) END
+		SELECT rc.origin, rc.tool, COUNT(DISTINCT rc.id), COALESCE(SUM(received), 0), COALESCE(SUM(created), 0),
+			COALESCE(SUM(still_detected), 0), COALESCE(SUM(reopened), 0), COALESCE(SUM(closed), 0),
+			COALESCE(SUM(skipped), 0), COALESCE(SUM(failed), 0), COALESCE(SUM(suppressed), 0),
+			MAX(updated_at), (array_agg(status ORDER BY updated_at DESC, rc.id DESC))[1],
+			(array_agg(rc.id::text ORDER BY updated_at DESC, rc.id DESC))[1],
+			CASE WHEN MAX(med.n) >= 2 THEN MAX(med.gap) END, COALESCE(SUM(assets), 0)
 		FROM rc LEFT JOIN med ON med.origin = rc.origin AND med.tool = rc.tool
 		GROUP BY rc.origin, rc.tool
-		ORDER BY SUM(findings_received) DESC, rc.origin, rc.tool
+		ORDER BY SUM(received) DESC, SUM(assets) DESC, rc.origin, rc.tool
 		LIMIT ` + fmt.Sprint(maxIntakeSources)
 	qctx, cancel := context.WithTimeout(ctx, widgetQueryTimeout)
 	defer cancel()
@@ -79,17 +91,90 @@ func (r *DashboardWidgetRepository) OrgIntake(ctx context.Context, tenantID shar
 		var id string
 		var gap sql.NullFloat64
 		if err := rows.Scan(&row.Origin, &row.Tool, &row.Receipts, &row.Received, &row.Created, &row.StillDetected,
-			&row.Reopened, &row.Closed, &row.Skipped, &row.Failed, &row.Suppressed, &row.LastAt, &row.LastStatus, &id, &gap); err != nil {
+			&row.Reopened, &row.Closed, &row.Skipped, &row.Failed, &row.Suppressed, &row.LastAt, &row.LastStatus, &id, &gap,
+			&row.Assets); err != nil {
 			return nil, fmt.Errorf("scan intake: %w", err)
 		}
 		if sid, perr := shared.IDFromString(id); perr == nil {
 			row.LastReceiptID = sid
 		}
-		if gap.Valid {
-			d := time.Duration(gap.Float64 * float64(time.Second))
-			row.MedianGap = &d
-		}
+		row.MedianGap = gapDuration(gap)
 		out = append(out, row)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if len(out) == 0 {
+		return out, nil
+	}
+	if err := r.intakeInstances(qctx, tenantID, since, out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// maxIntakeInstances bounds the senders one intake read returns.
+const maxIntakeInstances = 1000
+
+// intakeInstances fills each source's senders. A sensor is named from the
+// tenant's own sensors only (another tenant's or a platform sensor stays
+// unnamed and has no page to open).
+func (r *DashboardWidgetRepository) intakeInstances(ctx context.Context, tenantID shared.ID, since time.Time, srcs []dashboard.IntakeRow) error {
+	//nolint:gosec // G202: fixed SQL (constant expressions), values bound
+	q := `WITH rc AS (` + intakeBaseSQL + `
+		), rr AS (
+			SELECT DISTINCT ON (origin, tool, ikind, iid, id) origin, tool, ikind, iid, id, created_at FROM rc
+		), gaps AS (
+			SELECT origin, tool, ikind, iid,
+				EXTRACT(EPOCH FROM created_at - lag(created_at) OVER (PARTITION BY origin, tool, ikind, iid ORDER BY created_at)) AS gap
+			FROM rr
+		), med AS (
+			SELECT origin, tool, ikind, iid, percentile_cont(0.5) WITHIN GROUP (ORDER BY gap) AS gap, COUNT(*) AS n
+			FROM gaps WHERE gap IS NOT NULL GROUP BY origin, tool, ikind, iid
+		), agg AS (
+			SELECT rc.origin, rc.tool, rc.ikind, rc.iid, MAX(rc.iname) AS iname, COUNT(DISTINCT rc.id) AS receipts,
+				COALESCE(SUM(received), 0) AS received, COALESCE(SUM(assets), 0) AS assets, MAX(updated_at) AS last_at,
+				(array_agg(status ORDER BY updated_at DESC, rc.id DESC))[1] AS last_status,
+				CASE WHEN MAX(med.n) >= 2 THEN MAX(med.gap) END AS gap
+			FROM rc LEFT JOIN med ON med.origin = rc.origin AND med.tool = rc.tool AND med.ikind = rc.ikind AND med.iid = rc.iid
+			GROUP BY rc.origin, rc.tool, rc.ikind, rc.iid
+		)
+		SELECT agg.origin, agg.tool, agg.ikind, agg.iid, COALESCE(s.name, agg.iname, ''), s.id IS NOT NULL,
+			agg.receipts, agg.received, agg.assets, agg.last_at, agg.last_status, agg.gap
+		FROM agg
+		LEFT JOIN sensors s ON agg.ikind = '` + ingestreceipt.InstanceSensor + `' AND s.tenant_id = $1 AND s.id::text = agg.iid
+		ORDER BY agg.received DESC, agg.assets DESC, agg.ikind, agg.iid
+		LIMIT ` + fmt.Sprint(maxIntakeInstances)
+	rows, err := r.db.QueryContext(ctx, q, tenantID.String(), since.UTC())
+	if err != nil {
+		return fmt.Errorf("intake instances: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	idx := make(map[[2]string]int, len(srcs))
+	for i := range srcs {
+		idx[[2]string{srcs[i].Origin, srcs[i].Tool}] = i
+	}
+	for rows.Next() {
+		var origin, tool string
+		var in dashboard.IntakeInstanceRow
+		var gap sql.NullFloat64
+		if err := rows.Scan(&origin, &tool, &in.Kind, &in.ID, &in.Name, &in.Owned, &in.Receipts, &in.Received,
+			&in.Assets, &in.LastAt, &in.LastStatus, &gap); err != nil {
+			return fmt.Errorf("scan intake instance: %w", err)
+		}
+		in.MedianGap = gapDuration(gap)
+		if i, ok := idx[[2]string{origin, tool}]; ok {
+			srcs[i].Instances = append(srcs[i].Instances, in)
+		}
+	}
+	return rows.Err()
+}
+
+// gapDuration is a median gap in seconds as a duration (nil when unknown).
+func gapDuration(gap sql.NullFloat64) *time.Duration {
+	if !gap.Valid {
+		return nil
+	}
+	d := time.Duration(gap.Float64 * float64(time.Second))
+	return &d
 }

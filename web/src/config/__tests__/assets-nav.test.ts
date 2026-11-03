@@ -225,12 +225,15 @@ describe('Relationship suggestions live under /assets/suggestions', () => {
 })
 
 describe('Attack surface tabs', () => {
-  it('Review (not Suggestions), Web surface, Technologies, Exposure items and Certificates, each bound to its route guard', () => {
+  it('Posture, Review (not Suggestions), Web surface, Technologies, Exposure items and Certificates, each bound to its route guard', () => {
     expect(ATTACK_SURFACE_SECTION_TABS.map((t) => [t.label, t.href, t.module])).toEqual([
       ['Overview', '/attack-surface', 'attack_surface'],
+      ['Posture', '/attack-surface/posture', 'attack_surface'],
       ['Review', '/attack-surface/review', 'attack_surface'],
       ['Lookalikes', '/attack-surface/lookalikes', 'attack_surface'],
+      ['Page changes', '/attack-surface/pages', 'attack_surface'],
       ['Changes', '/attack-surface/changes', 'attack_surface'],
+      ['Discovery', '/attack-surface/discovery', 'attack_surface'],
       ['Web surface', '/attack-surface/web', 'assets'],
       ['Technologies', '/attack-surface/technologies', 'assets'],
       ['Exposure items', '/attack-surface/exposures', 'attack_surface'],
