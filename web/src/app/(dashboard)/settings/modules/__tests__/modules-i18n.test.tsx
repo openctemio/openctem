@@ -28,7 +28,11 @@ const mod = (id: string, over: Record<string, unknown>) => ({
 })
 vi.mock('@/features/organization/api/use-tenant-modules', () => ({
   useTenantModules: () => ({
-    modules: [mod('core1', { is_core: true, category: 'core' }), mod('assets', {})],
+    modules: [
+      mod('assets', { is_core: true, category: 'core' }),
+      mod('scope_config', { category: 'scoping' }),
+      mod('compliance', { category: 'compliance' }),
+    ],
     summary: { total: 2, enabled: 2, disabled: 0, core: 1 },
     isLoading: false,
     error: undefined,
@@ -36,7 +40,9 @@ vi.mock('@/features/organization/api/use-tenant-modules', () => ({
   }),
   useUpdateTenantModules: () => ({ updateModules: vi.fn(), isUpdating: false }),
   useResetTenantModules: () => ({ resetModules: vi.fn(), isResetting: false }),
-  useModuleDependencyGraph: () => ({ edges: [] }),
+  useModuleDependencyGraph: () => ({
+    edges: [{ from: 'compliance', to: 'scope_config', type: 'hard', reason: '' }],
+  }),
   useModuleRealtimeInvalidation: vi.fn(),
 }))
 
@@ -49,12 +55,15 @@ describe('modules page (vi)', () => {
         <ModulesPage />
       </I18nProvider>
     )
-    expect(screen.getByText('Mô-đun lõi')).toBeInTheDocument()
-    expect(screen.getByText('Tinh chỉnh tính năng')).toBeInTheDocument()
-    expect(screen.getByText('Xóa các thay đổi của tôi')).toBeInTheDocument()
-    expect(screen.queryByText('Core modules')).not.toBeInTheDocument()
-    expect(screen.queryByText('Fine-tune features')).not.toBeInTheDocument()
-    // The strip of totals is gone: the list shows the counts.
-    expect(screen.queryByText('Tổng số mô-đun')).not.toBeInTheDocument()
+    expect(screen.getByText('Luôn bật')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Báo cáo và tuân thủ' })).toBeInTheDocument()
+    expect(screen.getByText('Đặt lại mặc định')).toBeInTheDocument()
+    // Module names, descriptions and dependency lines come from the catalog.
+    expect(screen.getByRole('switch', { name: 'Phạm vi' })).toBeInTheDocument()
+    expect(screen.getByText('Cần Phạm vi')).toBeInTheDocument()
+    expect(screen.getByText(/Khung tuân thủ/)).toBeInTheDocument()
+    expect(screen.queryByText('scope_config')).not.toBeInTheDocument()
+    expect(screen.queryByText('Always on')).not.toBeInTheDocument()
+    expect(screen.queryByText('Reset to defaults')).not.toBeInTheDocument()
   })
 })

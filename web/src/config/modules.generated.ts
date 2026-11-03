@@ -46,7 +46,7 @@ export const MODULE_REGISTRY: readonly ModuleDefinition[] = [
   { id: 'control_testing', name: 'Control Testing', core: false, release: 'beta', userFacing: true },
   { id: 'compensating_controls', name: 'Compensating Controls', core: false, release: 'released', userFacing: true, permission: 'ctem:compensating_controls:read' },
   { id: 'remediation', name: 'Remediation', core: false, release: 'released', userFacing: true, permission: 'findings:remediation:read' },
-  { id: 'suppressions', name: 'Suppressions', core: false, release: 'released', userFacing: false, permission: 'findings:suppressions:read' },
+  { id: 'suppressions', name: 'Suppressions', core: false, release: 'released', userFacing: true, permission: 'findings:suppressions:read' },
   { id: 'workflows', name: 'Workflows', core: false, release: 'released', userFacing: true, permission: 'automations:read' },
   { id: 'reports', name: 'Reports', core: false, release: 'released', userFacing: true, permission: 'reports:read' },
   { id: 'audit', name: 'Audit', core: true, release: 'released', userFacing: true, permission: 'audit:read' },
@@ -72,7 +72,7 @@ export const MODULE_REGISTRY: readonly ModuleDefinition[] = [
   { id: 'notification_settings', name: 'Notifications', core: true, release: 'released', userFacing: false, permission: 'integrations:notifications:read' },
   { id: 'tools', name: 'Tools', core: false, release: 'released', userFacing: false, permission: 'scans:tools:read' },
   { id: 'scan_profiles', name: 'Scan Profiles', core: false, release: 'released', userFacing: false, permission: 'scans:profiles:read' },
-  { id: 'iocs', name: 'IOCs', core: false, release: 'released', userFacing: false, permission: 'threat_intel:read' },
+  { id: 'iocs', name: 'IOCs', core: false, release: 'released', userFacing: true, permission: 'threat_intel:read' },
   { id: 'compliance', name: 'Compliance', core: false, release: 'released', userFacing: true, permission: 'compliance:frameworks:read' },
 ]
 

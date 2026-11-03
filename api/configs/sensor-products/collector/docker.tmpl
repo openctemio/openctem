@@ -7,7 +7,13 @@
 # The asset collector reads inventory from your systems (vCenter, Active
 # Directory/LDAP, DNS, monitoring tools) and sends it to the platform. It takes
 # no scan jobs and runs no scanner: it needs no local policy and no seccomp
-# profile. Every vendor and its settings: {{docs}}, Asset collector.
+# profile. Every vendor and its settings: {{docs}}/sensors/asset-collector/
+#
+# The image is in a registry that may need a login: the default one,
+# ghcr.io/openctemio/asset-collector, is private (read access is granted by
+# the maintainers; log in once with that GitHub account and a token with
+# read:packages, or the pull fails with "denied"):
+#   docker login ghcr.io -u <github-user>
 {{- if .CACert}}
 
 # 0. Trust the platform's certificate authority (it uses a private CA).

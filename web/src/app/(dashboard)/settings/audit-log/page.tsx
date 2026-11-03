@@ -24,7 +24,6 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import {
   Select,
   SelectContent,
@@ -32,7 +31,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { RefreshCw, AlertCircle, ShieldX, Copy, Download } from 'lucide-react'
+import { RefreshCw, ShieldX, Copy, Download } from 'lucide-react'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -468,22 +467,6 @@ export default function AuditLogPage() {
               title={t('auditLog.needsFullData.title')}
               description={t('auditLog.needsFullData.description')}
             />
-          ) : isError && !isLoading ? (
-            <Alert variant="destructive">
-              <AlertCircle className="h-4 w-4" />
-              <AlertTitle>{t('auditLog.loadFailed', 'Could not load the audit log')}</AlertTitle>
-              <AlertDescription>
-                <p>
-                  {error instanceof Error
-                    ? error.message
-                    : t('auditLog.unexpectedError', 'An unexpected error occurred.')}
-                </p>
-                <Button variant="outline" size="sm" className="mt-2" onClick={() => mutate()}>
-                  <RefreshCw className="me-2 h-4 w-4" />
-                  {t('common.retry', 'Retry')}
-                </Button>
-              </AlertDescription>
-            </Alert>
           ) : isLoading && logs.length === 0 ? (
             <div className="space-y-2">
               <Skeleton className="h-9 w-full max-w-sm" />
@@ -495,6 +478,9 @@ export default function AuditLogPage() {
             <DataTable
               columns={columns}
               data={logs}
+              error={isError ? error : undefined}
+              onRetry={() => void mutate()}
+              errorTitle={t('auditLog.errorTitle', 'the audit log')}
               getRowId={(log) => log.id}
               showSearch={false}
               search={{

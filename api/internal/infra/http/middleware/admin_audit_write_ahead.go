@@ -17,8 +17,9 @@ import (
 // request of an authenticated administrator gets one, whatever role the
 // session acts as: an unelevated super administrator acts as read-only, and
 // their elevation, factor and password writes are exactly the ones that must
-// be on record first.
-const AuditActionWriteStarted = "admin.write_started"
+// be on record first. The name is the domain's (the audit list's "changes"
+// view leaves these rows out).
+const AuditActionWriteStarted = admin.AuditActionWriteStarted
 
 // CodeAuditUnavailable is the refusal when the write-ahead row cannot be stored.
 const CodeAuditUnavailable apierror.Code = "AUDIT_UNAVAILABLE"

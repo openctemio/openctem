@@ -103,6 +103,7 @@ export default function CompensatingControlsPage() {
   const {
     data: response,
     isLoading,
+    error,
     mutate,
   } = useSWR<PaginatedResponse>('/api/v1/compensating-controls?per_page=100', get, {
     revalidateOnFocus: false,
@@ -405,7 +406,7 @@ export default function CompensatingControlsPage() {
                 <Skeleton key={i} className="h-12 w-full" />
               ))}
             </div>
-          ) : controls.length === 0 ? (
+          ) : controls.length === 0 && !error ? (
             <EmptyState
               icon={ShieldCheck}
               title={t('validation.controls.emptyTitle', 'No compensating controls yet')}
@@ -418,6 +419,9 @@ export default function CompensatingControlsPage() {
             <DataTable
               columns={columns}
               data={controls}
+              error={error}
+              onRetry={() => void mutate()}
+              errorTitle={t('validation.controls.errorTitle', 'controls')}
               searchPlaceholder={t('validation.controls.searchPlaceholder', 'Search controls…')}
             />
           )}
