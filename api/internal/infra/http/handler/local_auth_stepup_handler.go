@@ -80,7 +80,9 @@ func (h *LocalAuthHandler) AuditStepUpRateLimit(limit func(http.Handler) http.Ha
 
 type stepUpPassedKey struct{}
 
-// stepUpStatusRecorder remembers the status the rate limit wrote.
+// stepUpStatusRecorder remembers the status passed to WriteHeader. It does not
+// wrap Write: the rate limit refuses with an explicit 429 header, and a body
+// written without one is an implicit 200, which is not what it looks for.
 type stepUpStatusRecorder struct {
 	http.ResponseWriter
 	status int
@@ -91,13 +93,6 @@ func (r *stepUpStatusRecorder) WriteHeader(code int) {
 		r.status = code
 	}
 	r.ResponseWriter.WriteHeader(code)
-}
-
-func (r *stepUpStatusRecorder) Write(b []byte) (int, error) {
-	if r.status == 0 {
-		r.status = http.StatusOK
-	}
-	return r.ResponseWriter.Write(b)
 }
 
 // StepUpRequest is the proof for POST /auth/step-up: totp when the account
