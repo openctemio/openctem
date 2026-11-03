@@ -76,6 +76,8 @@ crypto-keys-signing:
   - api/pkg/crypto/**
   - api/pkg/jobsign/**
   - api/pkg/feedsign/**
+  - api/pkg/licensekey/**
+  - api/pkg/domain/limits/**
   - api/pkg/sensorsig/**
   - api/pkg/sensorkey/**
   - api/internal/signer/**
