@@ -38,18 +38,17 @@
 
 ## 2. Minimum producer versions
 
-Upgrade these together with the platform (the release notes carry the
-numbers):
-
-<!-- PLACEHOLDER(lead): minimum versions — sensor vX, sdk-go vX, openctem-ci vX, connector-tenable vX, asset-collector vX -->
+Upgrade these together with the platform; an older release sends CTIS 1.x
+and is refused:
 
 | Producer | Minimum version |
 |---|---|
-| sensor | _to be filled_ |
-| sdk-go (custom tools) | _to be filled_ |
-| openctem-ci (CI integration) | _to be filled_ |
-| connector-tenable | _to be filled_ |
-| asset-collector | _to be filled_ |
+| sensor | the first release with CTIS 2.0 (v0.36.0) |
+| sdk-go (custom tools) | v0.46.0 |
+| openctem-ci (CI integration) | the first release with CTIS 2.0 (v0.4.0) |
+| connector-tenable | v0.2.0 |
+| asset-collector | the first release with CTIS 2.0 (v0.3.0) |
+| ai-worker | v0.1.0 |
 
 ## 3. Upgrade order
 

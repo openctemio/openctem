@@ -354,10 +354,24 @@ func DecodeStrictReport(data []byte, maxDepth int, b JSONBounds) (*ctis.Report, 
 		return nil, err
 	}
 	if err := report.Validate(); err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrInvalidReport, err) //nolint:errorlint // keep one sentinel
+		return nil, withCause(ErrInvalidReport, err)
 	}
 	return report, nil
 }
+
+// causeError is a refusal whose text is the fixed sentinel's: the validator's
+// message can quote the document, so it is kept only as the cause (errors.As,
+// server logs) and never becomes what a caller or a person reads.
+type causeError struct {
+	sentinel error
+	cause    error
+}
+
+func (e *causeError) Error() string   { return e.sentinel.Error() }
+func (e *causeError) Unwrap() []error { return []error{e.sentinel, e.cause} }
+
+// withCause returns sentinel carrying cause without exposing its text.
+func withCause(sentinel, cause error) error { return &causeError{sentinel: sentinel, cause: cause} }
 
 // DecodeReportShape is DecodeStrictReport without the semantic Validate pass:
 // the bounded pre-pass and ctis.Decode only. For reading a document this

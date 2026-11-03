@@ -445,7 +445,7 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	// the paths meet it here, before anything is changed or stored.
 	if err := report.Validate(); err != nil {
 		return nil, shared.NewDomainError("INVALID_INPUT", "the report is not a valid CTIS 2.0 document",
-			fmt.Errorf("%w: %v", shared.ErrValidation, err)) //nolint:errorlint // one sentinel
+			withCause(shared.ErrValidation, err))
 	}
 	// properties carry no meaning in CTIS 2.0: the keys the stored model
 	// keeps come from typed members and the io.openctem extension.

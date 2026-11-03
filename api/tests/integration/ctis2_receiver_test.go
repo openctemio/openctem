@@ -22,7 +22,7 @@ func TestCTIS2Receiver_ReportIDAndRefusals(t *testing.T) {
 	r := newV2Rig(t, ingest.DefaultBlindingGuard())
 	ctx := context.Background()
 	a, b := r.newTenant("semgrep"), r.newTenant("semgrep")
-	agent := func(tn v2Tenant) *sensor.Sensor {
+	sensorOf := func(tn v2Tenant) *sensor.Sensor {
 		tid := tn.tenant
 		return &sensor.Sensor{ID: tn.sensor, TenantID: &tid, Type: sensor.SensorTypeWorker, Status: sensor.SensorStatusActive}
 	}
@@ -45,14 +45,14 @@ func TestCTIS2Receiver_ReportIDAndRefusals(t *testing.T) {
 	// A value planted as the document id, equal to a scan id tenant A already has.
 	planted := ctis.NewReportID()
 	first := ingest.Input{Report: report(a, ctis.NewReportID(), "repo"), ReportID: planted}
-	if out, err := r.svc.Ingest(ctx, agent(a), first); err != nil || len(out.Errors) > 0 {
+	if out, err := r.svc.Ingest(ctx, sensorOf(a), first); err != nil || len(out.Errors) > 0 {
 		t.Fatalf("first ingest: %v %v", err, out)
 	}
 
 	own := ctis.NewReportID()
 	rep := report(a, planted, "repo")
 	rep.Findings[0].RuleID = "rule-2"
-	out, err := r.svc.Ingest(ctx, agent(a), ingest.Input{Report: rep, ReportID: own})
+	out, err := r.svc.Ingest(ctx, sensorOf(a), ingest.Input{Report: rep, ReportID: own})
 	if err != nil {
 		t.Fatalf("ingest: %v", err)
 	}
@@ -70,7 +70,7 @@ func TestCTIS2Receiver_ReportIDAndRefusals(t *testing.T) {
 	}
 
 	// No Input.ReportID: a new random id, not the document's.
-	none, err := r.svc.Ingest(ctx, agent(a), ingest.Input{Report: report(a, planted, "repo")})
+	none, err := r.svc.Ingest(ctx, sensorOf(a), ingest.Input{Report: report(a, planted, "repo")})
 	if err != nil || none.ReportID == "" || none.ReportID == planted {
 		t.Fatalf("empty Input.ReportID gave %q (%v)", none.ReportID, err)
 	}
@@ -78,7 +78,7 @@ func TestCTIS2Receiver_ReportIDAndRefusals(t *testing.T) {
 	// A UUID-shaped document id is refused, nothing is written.
 	before := count(`SELECT count(*) FROM assets WHERE tenant_id = $1`, a.tenant.String())
 	bad := report(a, ctis.NewReportID(), "01936f4e-7b8c-7d4e-9f00-0123456789ab")
-	if _, err := r.svc.Ingest(ctx, agent(a), ingest.Input{Report: bad, ReportID: ctis.NewReportID()}); err == nil {
+	if _, err := r.svc.Ingest(ctx, sensorOf(a), ingest.Input{Report: bad, ReportID: ctis.NewReportID()}); err == nil {
 		t.Fatal("a report whose asset id is UUID-shaped was accepted")
 	}
 	if after := count(`SELECT count(*) FROM assets WHERE tenant_id = $1`, a.tenant.String()); after != before {
@@ -95,7 +95,7 @@ func TestCTIS2Receiver_ReportIDAndRefusals(t *testing.T) {
 	// Another tenant ingesting the same document creates nothing in tenant A.
 	aAssets := count(`SELECT count(*) FROM assets WHERE tenant_id = $1`, a.tenant.String())
 	aFindings := count(`SELECT count(*) FROM findings WHERE tenant_id = $1`, a.tenant.String())
-	if _, err := r.svc.Ingest(ctx, agent(b), ingest.Input{Report: report(b, planted, "repo"), ReportID: own}); err != nil {
+	if _, err := r.svc.Ingest(ctx, sensorOf(b), ingest.Input{Report: report(b, planted, "repo"), ReportID: own}); err != nil {
 		t.Fatalf("tenant B ingest: %v", err)
 	}
 	if n := count(`SELECT count(*) FROM assets WHERE tenant_id = $1`, a.tenant.String()); n != aAssets {
