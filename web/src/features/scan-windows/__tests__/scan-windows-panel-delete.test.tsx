@@ -10,7 +10,7 @@ globalThis.ResizeObserver ??= class {
   disconnect() {}
 } as unknown as typeof ResizeObserver
 
-const api = vi.hoisted(() => ({ del: vi.fn() }))
+const api = vi.hoisted(() => ({ del: vi.fn(), sources: vi.fn() }))
 vi.mock('@/lib/permissions', async (orig) => ({
   ...(await orig<typeof import('@/lib/permissions')>()),
   usePermissions: () => ({ can: () => true }),
@@ -41,7 +41,12 @@ vi.mock('../api/use-scan-windows', () => ({
     mutate: vi.fn(),
   }),
 }))
-vi.mock('../api/use-selector-options', () => ({ useSelectorOptions: () => ({ names: {} }) }))
+vi.mock('../api/use-selector-options', () => ({
+  useSelectorOptions: (enabled?: boolean) => {
+    api.sources(enabled)
+    return { names: {} }
+  },
+}))
 vi.mock('../components/overrides-section', () => ({ OverridesSection: () => null }))
 vi.mock('../components/policy-dialog', () => ({ PolicyDialog: () => null }))
 
@@ -49,6 +54,17 @@ import { ScanWindowsPanel } from '../components/scan-windows-panel'
 
 describe('ScanWindowsPanel delete', () => {
   beforeEach(() => api.del.mockReset().mockResolvedValue(undefined))
+
+  it('reads the selector object lists only when a policy shows names or the editor is open', () => {
+    api.sources.mockClear()
+    render(
+      <TooltipProvider>
+        <ScanWindowsPanel />
+      </TooltipProvider>
+    )
+    expect(api.sources).toHaveBeenCalled()
+    expect(api.sources.mock.calls.every(([enabled]) => enabled === false)).toBe(true)
+  })
 
   it('deletes a policy only after its name is typed', async () => {
     const user = userEvent.setup()
