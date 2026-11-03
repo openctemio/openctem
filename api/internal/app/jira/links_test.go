@@ -164,7 +164,7 @@ func (m *memLinks) RecordPush(_ context.Context, _, id shared.ID, state, status 
 	}
 	return nil
 }
-func (m *memLinks) TaskLinksBehindForPlatform(context.Context, int) ([]ticketlink.TaskLinkRef, error) {
+func (m *memLinks) TaskLinksBehindForPlatform(context.Context, int, []shared.ID) ([]ticketlink.TaskLinkRef, error) {
 	return nil, nil
 }
 func (m *memLinks) RecordSync(context.Context, shared.ID, shared.ID, string, string, time.Time) error {

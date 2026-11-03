@@ -102,7 +102,7 @@ type TaskRepository interface {
 	CampaignInTenant(ctx context.Context, tenantID, campaignID shared.ID) (bool, error)
 	// LiveTaskIDsByCampaign lists the campaign's tasks that still take work.
 	LiveTaskIDsByCampaign(ctx context.Context, tenantID, campaignID shared.ID) ([]shared.ID, error)
-	StaleTasksForPlatform(ctx context.Context, limit int) ([]StaleTaskRef, error)
+	StaleTasksForPlatform(ctx context.Context, limit int, skipTenants []shared.ID) ([]StaleTaskRef, error)
 	MoveMembers(ctx context.Context, m MoveRequest) (*MoveResult, error)
 	SplitTask(ctx context.Context, sp SplitRequest) (shared.ID, *MoveResult, error)
 	MergeTasks(ctx context.Context, mg MergeRequest) (map[shared.ID]int, error)

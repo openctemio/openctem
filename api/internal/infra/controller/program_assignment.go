@@ -3,12 +3,15 @@ package controller
 import (
 	"context"
 	"time"
+
+	moduledom "github.com/openctemio/openctem/api/pkg/domain/module"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // ProgramAssignments reconciles every program's group assignments with what
 // its entries cover (*postgres.BountyProgramRepository).
 type ProgramAssignments interface {
-	AssignAllPrograms(ctx context.Context) (int64, error)
+	AssignAllPrograms(ctx context.Context, off func(ctx context.Context, tenantID shared.ID) bool) (int64, error)
 }
 
 // ProgramAssignmentController keeps the program data scope current (RFC-065
@@ -18,6 +21,7 @@ type ProgramAssignments interface {
 // this is the safety net. Idempotent.
 type ProgramAssignmentController struct {
 	programs ProgramAssignments
+	modules  ModuleGuard
 	interval time.Duration
 }
 
@@ -28,6 +32,10 @@ func NewProgramAssignmentController(p ProgramAssignments, interval time.Duration
 	}
 	return &ProgramAssignmentController{programs: p, interval: interval}
 }
+
+// SetModuleGuard makes the pass skip the programs of a tenant with the scope
+// module off.
+func (c *ProgramAssignmentController) SetModuleGuard(g ModuleGuard) { c.modules = g }
 
 // Name implements Controller.
 func (c *ProgramAssignmentController) Name() string { return "program-assignment" }
@@ -40,6 +48,12 @@ func (c *ProgramAssignmentController) Reconcile(ctx context.Context) (int, error
 	if c.programs == nil {
 		return 0, nil
 	}
-	n, err := c.programs.AssignAllPrograms(ctx)
+	var off func(context.Context, shared.ID) bool
+	if c.modules != nil {
+		off = func(ctx context.Context, t shared.ID) bool {
+			return c.modules.TenantDisabledModules(ctx, t.String())[moduledom.ModuleScopeConfig]
+		}
+	}
+	n, err := c.programs.AssignAllPrograms(ctx, off)
 	return int(min(n, int64(1<<30))), err
 }
