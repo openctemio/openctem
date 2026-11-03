@@ -212,7 +212,9 @@ Recommended settings (`.vscode/settings.json`):
 
 ```
 openctem/
-├── cmd/server/          # Entry point
+├── cmd/server/          # Entry point (one line: calls pkg/server.Main)
+├── pkg/server/          # Public entry point, server.Main
+├── internal/server/     # The server: wiring, workers, command-line tools
 ├── internal/
 │   ├── domain/          # Business logic (entities, interfaces)
 │   │   ├── shared/      # Shared domain types (ID, errors)
@@ -310,3 +312,25 @@ Update golangci-lint:
 ```bash
 go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0
 ```
+
+## Custom builds: the `pkg/server.Main` entry point
+
+The server's code lives in `internal/server`. The only public way in is
+`github.com/openctemio/openctem/api/pkg/server`, whose `Main()` runs the server
+(or one of its bundled command-line tools, chosen by the name the binary was
+invoked as). The stock binary `cmd/server` is one line, `server.Main()`.
+
+A custom build is a separate Go module with its own `main` package:
+
+```go
+package main
+
+import "github.com/openctemio/openctem/api/pkg/server"
+
+func main() { server.Main() }
+```
+
+Because everything under `api/internal` is unimportable from another module,
+such a build can use only the public `api/pkg/...` packages. `Main` defines its
+command-line flags on its own flag set, so importing the package adds nothing to
+the importing program's global flags.

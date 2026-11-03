@@ -17,7 +17,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
-// coverageDispatcher is cmd/server's connectorCoverageDispatcher.
+// coverageDispatcher is internal/server's connectorCoverageDispatcher.
 type coverageDispatcher struct{ svc *tenablesc.Service }
 
 func (d coverageDispatcher) DispatchTenableScan(ctx context.Context, in scancoverage.DispatchTenableInput) (shared.ID, string, error) {

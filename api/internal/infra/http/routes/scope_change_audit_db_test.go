@@ -34,7 +34,7 @@ import (
 
 // newChangeAuditHarness is the authorization-policy harness (real route
 // registration, auth chain and role tables) with the scope, scanner template
-// and tool handlers wired to the audit service as in cmd/server.
+// and tool handlers wired to the audit service as in internal/server.
 // changeAuditExtraHandlers adds handlers to the next harness (set and
 // reset by a test; the route tests do not run in parallel).
 var changeAuditExtraHandlers func(*Handlers, *postgres.DB)
