@@ -56,11 +56,10 @@ __pycache__/
 **/.claude/settings.local.json
 
 # Enterprise overlay: compiled in from a private repository, never tracked
-# here. Only the README and the empty package file stay. The edition fence check
+# here. Only the README placeholder stays. The edition fence check
 # (.github/scripts/check-edition-fence.sh) fails when any of this is tracked.
 /api/ee/*
 !/api/ee/README.md
-!/api/ee/doc.go
 /web/src/ee/
 /web/src/app/(ee)/
 /web/console/src/ee/

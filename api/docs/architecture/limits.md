@@ -282,11 +282,13 @@ to any check of the sections above:
 - The Community build registers no provider: every grant is `none`, there are
   no notices, and no Community feature, limit or security control depends on
   a grant. A provider error fails closed for grants only.
-- The provider, the grant keys, the signed offline licence file, its verifier
-  and its storage live in the private Enterprise overlay, registered through
-  `internal/extension` ([editions](../development/editions.md),
-  [RFC-145](../rfcs/RFC-145-enterprise-licence-and-entitlements.md)). A
-  control plane keeps writing limits and denies for a hosted service.
+- A build's extension may register one provider through the public extension
+  API; the provider, its grant keys and its source (a signed licence file, or
+  a hosted service's control plane) live in that extension
+  ([editions](../development/editions.md),
+  [RFC-145](../rfcs/RFC-145-enterprise-licence-and-entitlements.md), which
+  lists the guarantees every provider keeps). A control plane keeps writing
+  limits and denies for a hosted service; a grant never replaces them.
 
 ## Code map
 
@@ -295,8 +297,6 @@ to any check of the sections above:
 - `internal/app/entitlement`: the service (`service.go`), feature denies and
   grace (`features.go`), the control-plane source and write (`sources.go`),
   the grant seam (`grants.go`).
-- `internal/extension`: where a build's extension registers its grant
-  provider.
 - `internal/infra/postgres/limits_repository.go`: storage and usage counts,
   every query scoped by `tenant_id`; `limits_check.go`: the insert seam.
 - `internal/infra/http/handler/limits_handler.go`: console and organization

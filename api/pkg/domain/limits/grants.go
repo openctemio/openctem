@@ -12,9 +12,10 @@ import (
 // entitlement answer next to limits and denies
 // (docs/development/editions.md, RFC-145). The open core defines only the
 // shape of the answer and asks it through entitlement.Service; it holds no
-// grant keys, no license code and no license storage. A build that adds an
-// extension registers a GrantProvider (internal/extension); the Community
-// build has none, so every grant is GrantNone and nothing changes.
+// grant keys, no license code and no license storage. A build's extension
+// may register one GrantProvider; the Community build has none, so every
+// grant is GrantNone and nothing changes. RFC-145 lists the guarantees every
+// provider keeps.
 //
 // A grant only ever adds: no Community feature, limit or security control
 // depends on one, and sign-in, SSO, MFA and audit are never grants.

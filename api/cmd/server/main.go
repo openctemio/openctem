@@ -16,7 +16,6 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/auth"
 	"github.com/openctemio/openctem/api/internal/app/tenant"
 	"github.com/openctemio/openctem/api/internal/config"
-	"github.com/openctemio/openctem/api/internal/extension"
 	"github.com/openctemio/openctem/api/internal/infra/http"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/internal/infra/http/routes"
@@ -537,12 +536,6 @@ func run() int {
 		}
 		http.PrintRoutes(os.Stdout, stats, *routeFormat, filters)
 		return 0
-	}
-
-	// A grant provider that keeps itself fresh (an extension's) runs on
-	// every plane until shutdown; the Community build has none.
-	if r, ok := services.GrantProvider.(extension.Runner); ok {
-		go r.Run(ctx)
 	}
 
 	// ==========================================================================
