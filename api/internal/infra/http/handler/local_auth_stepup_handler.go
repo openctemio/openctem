@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"sync"
 	"time"
 
 	authapp "github.com/openctemio/openctem/api/internal/app/auth"
@@ -14,6 +15,90 @@ import (
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
+
+// Error codes of POST /auth/step-up besides the shared STEP_UP_* codes.
+const (
+	// CodeStepUpFailed: the code or password is wrong.
+	CodeStepUpFailed = "STEP_UP_FAILED"
+	// CodeStepUpCodeUsed: the authenticator code is from a time step that was
+	// already used; the next code will work.
+	CodeStepUpCodeUsed = "STEP_UP_CODE_USED"
+)
+
+// stepUpRateLimitAuditGap is how often a rate-limited step-up is recorded per
+// user: one row says "this person hit the limit", a row per refused request
+// would let a flood fill the audit log.
+const stepUpRateLimitAuditGap = time.Minute
+
+// AuditStepUpRateLimit wraps the step-up rate limit so that a request it
+// refuses is recorded as auth.step_up_failed with reason rate_limited for the
+// signed-in user (at most once per stepUpRateLimitAuditGap per user). It must
+// run after the authentication middleware, which names the user.
+func (h *LocalAuthHandler) AuditStepUpRateLimit(limit func(http.Handler) http.Handler) func(http.Handler) http.Handler {
+	var (
+		mu   sync.Mutex
+		last = map[string]time.Time{}
+	)
+	due := func(userID string, now time.Time) bool {
+		mu.Lock()
+		defer mu.Unlock()
+		if at, ok := last[userID]; ok && now.Sub(at) < stepUpRateLimitAuditGap {
+			return false
+		}
+		if len(last) > 4096 {
+			for id, at := range last {
+				if now.Sub(at) >= stepUpRateLimitAuditGap {
+					delete(last, id)
+				}
+			}
+		}
+		last[userID] = now
+		return true
+	}
+	return func(next http.Handler) http.Handler {
+		// The limit calls inner only for a request it lets through.
+		limited := limit(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if passed, ok := r.Context().Value(stepUpPassedKey{}).(*bool); ok {
+				*passed = true
+			}
+			next.ServeHTTP(w, r)
+		}))
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			passed := false
+			rec := &stepUpStatusRecorder{ResponseWriter: w}
+			limited.ServeHTTP(rec, r.WithContext(context.WithValue(r.Context(), stepUpPassedKey{}, &passed)))
+			userID := middleware.GetUserID(r.Context())
+			if passed || rec.status != http.StatusTooManyRequests || userID == "" || !due(userID, time.Now()) {
+				return
+			}
+			actx := selfAuditContext(r)
+			actx.TenantID = middleware.GetTenantID(r.Context())
+			h.authService.AuditStepUpRateLimited(r.Context(), actx, userID)
+		})
+	}
+}
+
+type stepUpPassedKey struct{}
+
+// stepUpStatusRecorder remembers the status the rate limit wrote.
+type stepUpStatusRecorder struct {
+	http.ResponseWriter
+	status int
+}
+
+func (r *stepUpStatusRecorder) WriteHeader(code int) {
+	if r.status == 0 {
+		r.status = code
+	}
+	r.ResponseWriter.WriteHeader(code)
+}
+
+func (r *stepUpStatusRecorder) Write(b []byte) (int, error) {
+	if r.status == 0 {
+		r.status = http.StatusOK
+	}
+	return r.ResponseWriter.Write(b)
+}
 
 // StepUpRequest is the proof for POST /auth/step-up: totp when the account
 // has an authenticator, otherwise password.
@@ -64,7 +149,7 @@ func (h *LocalAuthHandler) GetStepUp(w http.ResponseWriter, r *http.Request) {
 // @Success      200  {object}  StepUpResponse
 // @Failure      400  {object}  apierror.Error
 // @Failure      401  {object}  apierror.Error
-// @Failure      403  {object}  apierror.Error
+// @Failure      403  {object}  apierror.Error  "STEP_UP_FAILED (wrong code or password), STEP_UP_CODE_USED (the code's time step was already used: wait for the next code), STEP_UP_UNAVAILABLE, or a locked account"
 // @Failure      429  {object}  apierror.Error
 // @Security     BearerAuth
 // @Router       /auth/step-up [post]
@@ -92,8 +177,10 @@ func (h *LocalAuthHandler) StepUp(w http.ResponseWriter, r *http.Request) {
 		writeNoStoreJSON(w, http.StatusOK, StepUpResponse{ValidUntil: until, WindowSeconds: int(authapp.StepUpWindow.Seconds())})
 	case errors.Is(err, authapp.ErrStepUpRequired):
 		apierror.BadRequest("Enter your authenticator code or password").WriteJSON(w)
+	case errors.Is(err, authapp.ErrStepUpCodeReused):
+		apierror.New(http.StatusForbidden, CodeStepUpCodeUsed, "That code was already used. Wait for the next code.").WriteJSON(w)
 	case errors.Is(err, authapp.ErrStepUpFailed):
-		apierror.New(http.StatusForbidden, "STEP_UP_FAILED", "Re-authentication failed").WriteJSON(w)
+		apierror.New(http.StatusForbidden, CodeStepUpFailed, "Re-authentication failed").WriteJSON(w)
 	case errors.Is(err, authapp.ErrAccountLocked):
 		apierror.Forbidden("Account is locked due to too many failed attempts").WriteJSON(w)
 	case errors.Is(err, authapp.ErrStepUpUnavailable):

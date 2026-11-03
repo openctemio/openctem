@@ -234,15 +234,22 @@ export function VerificationCodeInput({
   const active = Math.min(value.length, length - 1)
   const split = length >= 6 && length % 2 === 0 ? length / 2 : -1
 
+  // Numeric cells sit centred in their container (dialogs, sign-in and
+  // set-up screens alike), with the label and messages centred over them.
+  const centered = mode === 'numeric'
+
   return (
-    <div className={cn('space-y-2', className)}>
-      <Label htmlFor={inputId} className={cn(hideLabel && 'sr-only')}>
+    <div
+      className={cn('space-y-2', centered && 'text-center', className)}
+      data-align={centered ? 'center' : undefined}
+    >
+      <Label htmlFor={inputId} className={cn(centered && 'justify-center', hideLabel && 'sr-only')}>
         {label}
       </Label>
       {mode === 'numeric' ? (
         <div
           dir="ltr"
-          className={cn('relative w-fit', disabled && 'opacity-50')}
+          className={cn('relative mx-auto w-fit', disabled && 'opacity-50')}
           data-invalid={error ? '' : undefined}
         >
           <div aria-hidden className="flex items-center gap-1.5 sm:gap-2">

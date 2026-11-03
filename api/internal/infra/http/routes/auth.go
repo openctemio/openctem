@@ -183,9 +183,12 @@ func registerAuthRoutes(router Router, h Handlers, cfg *config.Config, authCfg A
 			// session for sensitive routes (requireStepUp). Its own rate-limit
 			// bucket per IP; wrong proofs also count towards the account
 			// lockout. CSRF is enforced by authMiddleware for cookie sessions.
-			stepUpRL := newAuthRateLimiter("step-up").LoginMiddleware()
+			// The limit runs after authentication so a refusal can be
+			// audited for the person (reason rate_limited); a request
+			// without a valid session is refused by authMiddleware first.
+			stepUpRL := h.LocalAuth.AuditStepUpRateLimit(newAuthRateLimiter("step-up").LoginMiddleware())
 			r.GET("/step-up", ChainFunc(h.LocalAuth.GetStepUp, authMiddleware).ServeHTTP)
-			r.POST("/step-up", ChainFunc(h.LocalAuth.StepUp, stepUpRL, authMiddleware).ServeHTTP)
+			r.POST("/step-up", ChainFunc(h.LocalAuth.StepUp, authMiddleware, stepUpRL).ServeHTTP)
 
 		}
 
