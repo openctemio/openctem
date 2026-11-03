@@ -53,7 +53,7 @@ export function useSelectorOptions(enabled = true): SelectorOptions {
     { per_page: 100, sort_by: 'pattern', sort_order: 'asc' },
     { revalidateOnFocus: false, isPaused: () => !canRead.scope_target_ids }
   )
-  const programs = usePrograms()
+  const programs = usePrograms(enabled)
 
   const groupData = groups.data?.data
   const unitData = units.data?.data
