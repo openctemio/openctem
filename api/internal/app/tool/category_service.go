@@ -289,7 +289,7 @@ func (s *CategoryService) DeleteCategory(ctx context.Context, tenantID, category
 
 	// Check if category is in use by any tools
 	if s.toolRepo != nil {
-		tools, err := s.toolRepo.ListByCategoryID(ctx, cid)
+		tools, err := s.toolRepo.ListByCategoryID(ctx, tid, cid)
 		if err == nil && len(tools) > 0 {
 			return fmt.Errorf("%w: category is in use by %d tool(s)", shared.ErrConflict, len(tools))
 		}

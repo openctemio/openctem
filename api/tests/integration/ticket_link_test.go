@@ -194,7 +194,7 @@ func TestTicketLinks_Tasks(t *testing.T) {
 
 	behind := func() bool {
 		t.Helper()
-		refs, err := repo.TaskLinksBehindForPlatform(ctx, 1000)
+		refs, err := repo.TaskLinksBehindForPlatform(ctx, 1000, nil)
 		if err != nil {
 			t.Fatal(err)
 		}

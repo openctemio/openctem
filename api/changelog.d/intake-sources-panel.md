@@ -1,0 +1,4 @@
+### Changed: the intake panel keeps each source's figure beside its name
+
+- On a wide card, the intake panel's source rows keep one reading width at the left. Each figure stays next to its tool's name, the summary sits at the right edge, and the connector curves stretch across the space between, instead of the figure drifting away from its name. The rows and the summary sit side by side from a full-width card in a 1024 px window, each in a thin dashed frame.
+- Sources are the same ranked rows as the exposure flow: rank by findings or assets, group by tool or by source instance (an instance lists the tools it ran under its name), discovery tools (subfinder, dnsx, httpx and similar) show the assets they found instead of "0", and sources with nothing in the period fold into one line. The per-source table adds an Assets column.

@@ -5,6 +5,7 @@
 > Protocol v2: [RFC-026](../rfcs/RFC-026-sensor-results-ingest.md) (results) and
 > [RFC-029](../rfcs/RFC-029-sensor-protocol-v2-and-sdk-stability.md) (everything else; protocol v1 retired 2026-10-05).
 > Routing of scanners by network: [scan-zones.md](scan-zones.md).
+> How scan traffic identifies itself to targets (User-Agent and headers, merged platform and organization layers): [scan-identification.md](scan-identification.md).
 > Proxies for scan traffic (proxy pools, built): [sensor-proxies.md](sensor-proxies.md);
 > the wider egress design: [RFC-034](../rfcs/RFC-034-sensor-network-egress.md),
 > section [Network egress and proxies](#network-egress-and-proxies-rfc-034-proposed).
@@ -762,8 +763,13 @@ the platform admin console (RFC-022); on the tenant plane they do not exist:
   one per region). No sensor id, name, host, address, version, node count,
   capacity or other organization's load. The card links administrators to
   the owner's opt-out.
-- **Console fleet.** Console > Scanning > Platform scanning (Fleet)
-  (`/api/v1/admin/shared-sensors`, `internal/app/sensor/shared_fleet.go`,
+- **Console fleet.** Console > Platform sensors (`/sensors`, shown with the
+  `platform.sensors.read` permission; the enrollment card, the sensor list with
+  pause and retire, and the instance scan zones are not hidden by the
+  shared-scanning rollout gate, so feed relay, passive discovery and AI worker
+  sensors can be enrolled before organizations may use shared scanning; the
+  Fleet tab of Scanning > Platform scanning keeps the instance switch and links
+  here) (`/api/v1/admin/shared-sensors`, `internal/app/sensor/shared_fleet.go`,
   `postgres/shared_fleet_repository.go`). Any administrator: the instance
   sensors, queued and running jobs per tool lane, per-organization counts
   (queued, running, completed and failed in 24 hours) and job metadata. The
@@ -1081,14 +1087,23 @@ compose file):
   line); otherwise the snippets read `$OPENCTEM_API_KEY` and stop with a clear
   message when it is unset. Compose keeps the key in `.env`, Kubernetes and
   Helm in a Secret. The response is `Cache-Control: no-store`.
-- **CA** `SENSOR_CA_CERT_FILE`: the platform's private CA, e.g. the root the
+- **CA** `PLATFORM_CA_CERT_FILE` (the API's deprecated name
+  `SENSOR_CA_CERT_FILE` is read when it is unset): the PEM bundle of the CA
+  certificate(s) that sign the platform's TLS certificate, e.g. the root the
   built-in gateway exports in TLS mode internal (`deploy/docker-compose.yml`
   mounts the export directory into the API read-only and sets
-  `/ca/openctem-root-ca.crt`). Only X.509 `CERTIFICATE` blocks are used (a
-  key in the file never leaks); the response carries `ca_certificate` and
-  `ca_fingerprint_sha256`. The snippets install it under
-  `/etc/openctem/certs` and set `SSL_CERT_DIR`, which adds it to the system
-  roots (the sensor still verifies public scan targets). Unset or unreadable:
+  `/ca/openctem-root-ca.crt`). It is parsed at startup and re-read when the
+  file changes. Only X.509 CA `CERTIFICATE` blocks are kept; a file that
+  holds any private key is refused as a whole (logged), so a key never
+  reaches a snippet or the public endpoint. The response carries
+  `ca_certificate`, `ca_fingerprint_sha256` (the root) and `platform_ca`
+  (each certificate's name, SHA-256, root or intermediate, expiry; the pin;
+  the download path). The snippets install it under `/etc/openctem/certs`,
+  set `SSL_CERT_DIR` (added to the system roots; the sensor still verifies
+  public scan targets) and pass the root's SHA-256 as `SENSOR_CA_SHA256`.
+  The same bundle is served publicly at `GET /api/v1/sensors/platform-ca`
+  for sensors that hold the pin
+  ([how-to](../how-to/sensors-behind-a-private-ca.md)). Unset or unusable:
   the snippets assume a publicly trusted certificate.
 - **Data** one named volume / PVC (8Gi in the Kubernetes manifest) at
   `/var/lib/openctem`, holding:
@@ -1125,8 +1140,11 @@ compose file):
   vendor passwords as files (`SENSOR_API_KEY_FILE`, `LDAP_PASSWORD_FILE`),
   one data volume at `/var/lib/openctem` (state and outbox), a `doctor` check
   before `-daemon`, and no local policy or seccomp profile (a collector takes
-  no scan jobs and runs no tool). The Helm tab says the chart bundles the
-  scanner only.
+  no scan jobs and runs no tool). The default image is private, so the
+  docker run, Compose and Kubernetes snippets say how to log in to the
+  registry (Kubernetes: a pull secret and a commented `imagePullSecrets`) and
+  link the collector's guide (`<docs>/sensors/asset-collector/`). The Helm tab
+  says the chart bundles the scanner only.
 
 ### Hardened installs: the sensor's seccomp profile
 
@@ -1878,6 +1896,7 @@ inside the reporting organization.
 | `owner` (mail or UPN) | `owner_ref`, then a primary owner | A trusted collector is an `integration` source, so its owner claim is used under the reconciliation policy; an untrusted one's is dropped. The owner-resolution job names only an active member of the organization whose email matches; an unknown owner stays text and nobody is invited. An owner never grants data access. |
 | `zone_visibility: private` on a DNS name | Exposure `private`, not internet-accessible | Also a root domain that only private-zone names name (`private_zone.go`). |
 | A network device's address (PRTG, Splunk) | Matched to the existing device | Network devices only (not segments, hosts or address assets), in the IP trust window, one candidate only ([asset-identity-resolution.md](asset-identity-resolution.md)). |
+| An asset that matches a scope exclusion | Not added | Item error `asset_excluded`, counted neither as accepted nor as rejected, so it does not stop the not-seen sweep of a complete report. |
 | `coverage_type: full` from a trusted collector | Refresh of its own assets, unlisted ones marked not seen | RFC-040 §12, [sensor-result-binding.md](sensor-result-binding.md). Partial and incremental reports keep the unsolicited limits and never mark anything. |
 
 ## Result binding and the results quarantine (RFC-040)

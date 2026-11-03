@@ -26,9 +26,16 @@ import (
 //
 // Key format: mod_ver:{tenant_id} → integer version (starts at 1)
 //
-// Graceful degradation: on Redis failure, reads return 1 and writes
-// are best-effort — the HTTP layer still works, ETag just never
-// matches (serving fresh payloads), and WS broadcasts still fire.
+// The counter says "a toggle or an entitlement write happened". It is not the
+// whole state: a read-only grace or a timed deny ends without a write, and the
+// key is lost with a Redis flush or an eviction. The ETag therefore also
+// carries a hash of the effective module state (ModuleService.ETagToken), and
+// a missing or unreadable counter reads as 0, which is never a version a
+// counter hands out, so a flush cannot make an old ETag match again.
+//
+// Graceful degradation: on Redis failure, reads return 0 and writes
+// are best-effort — the HTTP layer still works, the state hash still tells
+// a changed payload from an unchanged one, and WS broadcasts still fire.
 type VersionService struct {
 	redisClient *redis.Client
 	logger      *logger.Logger
@@ -38,7 +45,7 @@ const (
 	moduleVersionPrefix = "mod_ver"
 	// 30 days — same as permVersionTTL. Key is renewed on every
 	// Increment; if a tenant hasn't toggled in 30 days, the key
-	// expires and the next read returns 1. That's fine — the client
+	// expires and the next read returns 0. That's fine — the client
 	// ETag won't match, which is exactly what we want after dormancy.
 	moduleVersionTTL = 30 * 24 * time.Hour
 )
@@ -58,18 +65,18 @@ func (s *VersionService) buildKey(tenantID string) string {
 	return fmt.Sprintf("%s:%s", moduleVersionPrefix, tenantID)
 }
 
-// Get returns the current module version for the tenant. Returns 1
-// when no version exists yet or Redis is unavailable — callers must
-// treat this as "unknown / probably changed" rather than a literal
-// version.
+// Get returns the current module version for the tenant: 0 when no
+// version exists (never toggled, expired, evicted, flushed) or Redis is
+// unavailable. Callers treat the value as an opaque token and never compare
+// it with a number they hold.
 func (s *VersionService) Get(ctx context.Context, tenantID string) int {
 	if s == nil || s.redisClient == nil || tenantID == "" {
-		return 1
+		return 0
 	}
 
 	val, err := s.redisClient.Client().Get(ctx, s.buildKey(tenantID)).Int()
 	if err != nil {
-		return 1
+		return 0
 	}
 	return val
 }
@@ -77,10 +84,10 @@ func (s *VersionService) Get(ctx context.Context, tenantID string) int {
 // Increment atomically bumps the module version for a tenant and
 // refreshes the TTL. Called after every successful toggle / reset /
 // preset apply. The returned version is the fresh value, useful for
-// embedding in WebSocket broadcasts and log lines.
+// embedding in WebSocket broadcasts and log lines; 0 when Redis failed.
 func (s *VersionService) Increment(ctx context.Context, tenantID string) int {
 	if s == nil || s.redisClient == nil || tenantID == "" {
-		return 1
+		return 0
 	}
 
 	key := s.buildKey(tenantID)
@@ -88,13 +95,13 @@ func (s *VersionService) Increment(ctx context.Context, tenantID string) int {
 	if err != nil {
 		s.logger.Warn("failed to increment module version",
 			"tenant_id", tenantID, "error", err)
-		return 1
+		return 0
 	}
 
 	if err := s.redisClient.Client().Expire(ctx, key, moduleVersionTTL).Err(); err != nil {
 		// TTL refresh failure is non-fatal — the key still carries the
 		// prior TTL from its last write. Worst case: key expires
-		// earlier than expected, next read returns 1, clients refetch.
+		// earlier than expected, next read returns 0, clients refetch.
 		s.logger.Debug("failed to refresh module version TTL",
 			"tenant_id", tenantID, "error", err)
 	}

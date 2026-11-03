@@ -26,6 +26,7 @@ import (
 	notificationdom "github.com/openctemio/openctem/api/pkg/domain/notification"
 	"github.com/openctemio/openctem/api/pkg/domain/orgtrust"
 	roledom "github.com/openctemio/openctem/api/pkg/domain/role"
+	"github.com/openctemio/openctem/api/pkg/domain/scanident"
 	"github.com/openctemio/openctem/api/pkg/domain/scoring"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	sessiondom "github.com/openctemio/openctem/api/pkg/domain/session"
@@ -138,6 +139,9 @@ type TenantService struct {
 	// Ownership transfer store and its emails (ownership_transfer.go).
 	ownershipTransfers tenantdom.OwnershipTransferRepository
 	ownershipNotifier  OwnershipTransferNotifier
+	// Ownership invitations and their emails (owner_invitation.go).
+	ownerInvitations       tenantdom.OwnerInvitationRepository
+	ownerInvitationNotices OwnerInvitationNotifier
 	// classifier decides whether an invitee is internal or external
 	// (external_members.go).
 	classifier *AddressClassifier
@@ -513,6 +517,26 @@ func (s *TenantService) SetSignupRecorder(r signupevent.Recorder) { s.signups = 
 // CreateTenant creates a new tenant and adds the creator as owner.
 // creatorUserID is the local user ID (from users table).
 func (s *TenantService) CreateTenant(ctx context.Context, input CreateTenantInput, creatorUserID shared.ID, actx auditapp.AuditContext) (*tenantdom.Tenant, error) {
+	return s.createTenant(ctx, input, creatorUserID, actx, func(t *tenantdom.Tenant) error {
+		// Build the owner membership before any write so a construction
+		// error can't leave a tenant without an owner.
+		membership, err := tenantdom.NewOwnerMembership(creatorUserID, t.ID())
+		if err != nil {
+			return fmt.Errorf("failed to create owner membership: %w", err)
+		}
+		// Create tenant + owner membership atomically (no orphan tenant on failure).
+		if err := s.repo.CreateWithOwner(ctx, t, membership); err != nil {
+			return fmt.Errorf("failed to create tenant: %w", err)
+		}
+		return nil
+	})
+}
+
+// createTenant builds the tenant from input (slug check, description,
+// starting limits), stores it with persist, then writes the tenant.created
+// audit event and the sign-up feed entry. creatorUserID is the owner, or the
+// account invited to own it (CreateTenantAwaitingOwner).
+func (s *TenantService) createTenant(ctx context.Context, input CreateTenantInput, creatorUserID shared.ID, actx auditapp.AuditContext, persist func(*tenantdom.Tenant) error) (*tenantdom.Tenant, error) {
 	s.logger.Info("creating tenant", "name", input.Name, "slug", input.Slug, "creator", creatorUserID.String())
 
 	// Check if slug already exists
@@ -543,16 +567,8 @@ func (s *TenantService) CreateTenant(ctx context.Context, input CreateTenantInpu
 		t.SetInitialLimits(limits.SelfServiceRows(t.ID(), input.InitialLimits, t.CreatedAt()))
 	}
 
-	// Build the owner membership before any write so a construction error can't
-	// leave a tenant without an owner.
-	membership, err := tenantdom.NewOwnerMembership(creatorUserID, t.ID())
-	if err != nil {
-		return nil, fmt.Errorf("failed to create owner membership: %w", err)
-	}
-
-	// Create tenant + owner membership atomically (no orphan tenant on failure).
-	if err := s.repo.CreateWithOwner(ctx, t, membership); err != nil {
-		return nil, fmt.Errorf("failed to create tenant: %w", err)
+	if err := persist(t); err != nil {
+		return nil, err
 	}
 
 	s.logger.Info("tenant created", "id", t.ID().String(), "name", t.Name(), "owner", creatorUserID.String())
@@ -2109,6 +2125,9 @@ type UpdateSecuritySettingsInput struct {
 	// (RFC-060 §4.1).
 	ToolHTTPUserAgent     *string `json:"tool_http_user_agent"`
 	ForbidToolInsecureTLS *bool   `json:"forbid_tool_insecure_tls"`
+	// ToolHTTPHeaders replaces the organization's scan identification
+	// headers (nil: unchanged; empty: none).
+	ToolHTTPHeaders *[]scanident.Header `json:"tool_http_headers"`
 	// PersonalAccounts and SSOExceptions: see tenantdom.SecuritySettings
 	// (RFC-058). The route already needs the owner with step-up.
 	PersonalAccounts *string                   `json:"personal_accounts"`
@@ -2164,7 +2183,14 @@ func (s *TenantService) ToolHTTPPolicy(ctx context.Context, tenantID shared.ID) 
 	}
 	sec := t.TypedSettings().Security
 	p := sec.ToolHTTPPolicy()
-	return sensordom.ToolHTTPPolicy{UserAgent: p.UserAgent, AllowInsecureTLS: p.AllowInsecureTLS}, nil
+	out := sensordom.ToolHTTPPolicy{UserAgent: p.UserAgent, AllowInsecureTLS: p.AllowInsecureTLS}
+	if len(p.Headers) > 0 {
+		out.Headers = make(map[string]string, len(p.Headers))
+		for _, h := range p.Headers {
+			out.Headers[h.Name] = h.Value
+		}
+	}
+	return out, nil
 }
 
 // ErrIPAllowlistExcludesRequester is returned when saving an IP allowlist that
@@ -2247,6 +2273,12 @@ func (s *TenantService) UpdateSecuritySettings(ctx context.Context, tenantID str
 		}
 		if input.ForbidToolInsecureTLS != nil {
 			security.ForbidToolInsecureTLS = *input.ForbidToolInsecureTLS
+		}
+		if input.ToolHTTPHeaders != nil {
+			security.ToolHTTPHeaders = scanident.Normalize(*input.ToolHTTPHeaders)
+			if len(security.ToolHTTPHeaders) == 0 {
+				security.ToolHTTPHeaders = nil
+			}
 		}
 		if input.PersonalAccounts != nil {
 			security.PersonalAccounts = tenantdom.PersonalAccountsPolicy(*input.PersonalAccounts)

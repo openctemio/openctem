@@ -294,7 +294,7 @@ export function AccessRequestsPanel({ canDecide }: { canDecide: boolean }) {
           )}
         />
       ) : (
-        <div className="overflow-x-auto rounded-lg border">
+        <div className="rounded-lg border">
           <Table>
             <TableHeader>
               <TableRow>

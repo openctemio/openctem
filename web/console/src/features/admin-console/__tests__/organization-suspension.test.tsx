@@ -1,9 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 import { purgeOrganization, setOrganizationSuspended } from '../api/use-admin-organizations'
 import {
+  OrganizationDangerZone,
   OrganizationPurgeAction,
   OrganizationStatusBadge,
   OrganizationSuspendedNotice,
@@ -144,5 +145,53 @@ describe('Organization suspension', () => {
       </>
     )
     expect(container).toBeEmptyDOMElement()
+  })
+
+  it('groups suspend and delete in the danger zone, by permission and state', () => {
+    const { rerender } = render(
+      <OrganizationDangerZone
+        org={org()}
+        canSuspend
+        canPurge
+        onChanged={vi.fn()}
+        onDeleted={vi.fn()}
+      />
+    )
+    const zone = screen.getByRole('heading', { name: 'Danger zone' }).closest('section')!
+    expect(within(zone).getByRole('button', { name: 'Suspend organization' })).toBeInTheDocument()
+    expect(within(zone).getByRole('button', { name: 'Delete now' })).toBeInTheDocument()
+
+    // An operator without purge: suspend only. A suspended organization is
+    // lifted from the header, so the zone holds only the delete.
+    rerender(
+      <OrganizationDangerZone
+        org={org()}
+        canSuspend
+        canPurge={false}
+        onChanged={vi.fn()}
+        onDeleted={vi.fn()}
+      />
+    )
+    expect(screen.queryByRole('button', { name: 'Delete now' })).toBeNull()
+    rerender(
+      <OrganizationDangerZone
+        org={org({ status: 'suspended' })}
+        canSuspend
+        canPurge
+        onChanged={vi.fn()}
+        onDeleted={vi.fn()}
+      />
+    )
+    expect(screen.queryByRole('button', { name: 'Suspend organization' })).toBeNull()
+    rerender(
+      <OrganizationDangerZone
+        org={org()}
+        canSuspend={false}
+        canPurge={false}
+        onChanged={vi.fn()}
+        onDeleted={vi.fn()}
+      />
+    )
+    expect(screen.queryByRole('heading', { name: 'Danger zone' })).toBeNull()
   })
 })

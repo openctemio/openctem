@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 import { saveSocialProvider, testSocialProvider } from '../api/use-platform-settings'
@@ -83,7 +83,7 @@ describe('Social login settings', () => {
     expect(secret.value).toBe('')
     expect(secret.type).toBe('password')
     await userEvent.click(card.getByLabelText('Offer on the sign-in page'))
-    await userEvent.click(card.getByRole('button', { name: 'Save' }))
+    await userEvent.click(card.getByRole('button', { name: 'Save changes' }))
     const dialog = within(screen.getByRole('alertdialog'))
     await userEvent.type(dialog.getByLabelText('Reason'), 'pause for maintenance')
     const buttons = dialog.getAllByRole('button')
@@ -143,15 +143,17 @@ describe('Social login settings', () => {
       card.getByText(/Locked by the server configuration \(OAUTH_GITHUB_CLIENT_SECRET\)/)
     ).toBeInTheDocument()
     expect(card.getByLabelText('Client ID')).toBeDisabled()
-    expect(card.queryByRole('button', { name: 'Save' })).toBeNull()
-    expect(
-      within(screen.getByTestId('social-google')).getByRole('button', { name: 'Save' })
-    ).toBeInTheDocument()
+    expect(card.queryByRole('button', { name: 'Save changes' })).toBeNull()
+    // An editable provider shows its save bar once something changed.
+    const google = within(screen.getByTestId('social-google'))
+    expect(google.queryByRole('button', { name: 'Save changes' })).toBeNull()
+    fireEvent.change(google.getByLabelText('Client ID'), { target: { value: 'new-client' } })
+    expect(google.getByRole('button', { name: 'Save changes' })).toBeInTheDocument()
   })
 
   it('is read-only for an administrator who is not a super admin', () => {
     render(<SocialLoginSettingsForm settings={settings()} canEdit={false} onSaved={() => {}} />)
     expect(screen.getAllByText('Only a super admin can change this setting.')).toHaveLength(3)
-    expect(screen.queryByRole('button', { name: 'Save' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Save changes' })).toBeNull()
   })
 })

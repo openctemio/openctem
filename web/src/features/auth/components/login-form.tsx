@@ -8,7 +8,7 @@
 
 'use client'
 
-import { useEffect, useState, useTransition } from 'react'
+import { useEffect, useEffectEvent, useState, useTransition } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import Link from '@/components/link'
@@ -40,6 +40,7 @@ import { useTranslation } from '@/context/i18n-provider'
 
 // Import schema and server actions
 import { loginSchema, type LoginInput } from '../schemas/auth.schema'
+import { sessionEndedMessage } from '../lib/session-ended'
 import { translatingResolver } from '../lib/translating-resolver'
 import {
   loginAction,
@@ -182,8 +183,13 @@ export function LoginForm({
   // Sent when a session ended because an organization requires two-factor
   // authentication and the session could not set it up. Only the known value
   // shows a message.
-  const mfaRequiredReason = searchParams.get('reason') === 'mfa_required'
-  useEffect(() => {
+  const reasonParam = searchParams.get('reason')
+  const mfaRequiredReason = reasonParam === 'mfa_required'
+  // A session the platform ended (reuse, expiry, signed out elsewhere) says
+  // why instead of silently showing the form.
+  const sessionEnded = sessionEndedMessage(reasonParam)
+  // The notice shows once per reason: a language switch must not toast again.
+  const showReasonNotice = useEffectEvent(() => {
     if (mfaRequiredReason) {
       toast.info(
         t(
@@ -191,9 +197,13 @@ export function LoginForm({
           'An organization you belong to requires two-factor authentication. Sign in to set it up.'
         )
       )
+    } else if (sessionEnded) {
+      toast.info(t(sessionEnded.key, sessionEnded.fallback))
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mfaRequiredReason])
+  })
+  useEffect(() => {
+    showReasonNotice()
+  }, [reasonParam])
 
   // Form setup with centralized schema
   const form = useForm<LoginInput>({
@@ -276,11 +286,11 @@ export function LoginForm({
           hardNavigate(safeRedirectTo)
           return
         }
-        // Otherwise, onboarding: the create-team form, or (when only the
-        // platform administrator creates organizations) a notice to ask for
-        // access. The page decides, so this toast stays neutral.
+        // Otherwise the account space: invitations, the account pages, and
+        // creating an organization where the installation allows it. The page
+        // decides, so this toast stays neutral.
         toast.success(t('auth.login.success', 'Signed in'))
-        hardNavigate('/onboarding/create-team')
+        hardNavigate('/welcome')
         return
       }
 

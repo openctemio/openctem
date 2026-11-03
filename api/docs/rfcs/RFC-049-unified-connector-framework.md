@@ -1,6 +1,9 @@
 # RFC-049 — Unified connector framework (platform-direct and sensor-relayed)
 
 > Status: **Proposed** (2026-10-04). Only the P0 security fixes (#1068, #1069) are implemented.
+> Amended 2026-11-02: [RFC-146](RFC-146-connector-framework-and-run-modes.md) supersedes section 7 (pull connectors
+> run only on a sensor; the platform runs request/response connectors through the egress gateway). The contract in
+> section 5 stays.
 > Decision (2026-10-04, final): OpenCTEM talks to external systems
 > through **one connector framework**. Each connector runs either **directly
 > from the platform** (reachable systems, cloud SaaS) or **via a sensor**
@@ -73,7 +76,7 @@ encrypted with `APP_ENCRYPTION_KEY` (AES-256-GCM, with key rotation).
 | GitHub, GitLab, Bitbucket, Azure DevOps | repository sync, inbound GitHub webhook | token, encrypted | per tenant |
 | DefectDojo | finding import | API token, encrypted | per tenant |
 | AI triage (OpenAI, Gemini, Claude) | outbound LLM calls | platform key or tenant key, encrypted and redacted | tenant settings |
-| Threat intelligence (EPSS, CISA KEV), CTEM-ID feed, certificate transparency | outbound feeds | none | platform-wide |
+| Threat intelligence (EPSS, CISA KEV), certificate transparency | outbound feeds | none | platform-wide |
 | Social OAuth, organization SSO (OIDC, SAML), admin IdP | sign-in | client secrets, encrypted | IdP record or environment |
 | Tenant S3 storage | object storage | keys, encrypted | tenant settings |
 | Template sources (HTTP, git, S3) | content fetch | secret store | per tenant |

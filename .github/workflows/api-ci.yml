@@ -403,7 +403,7 @@ jobs:
 
       - name: Lint (staticcheck)
         run: |
-          STATICCHECK_VERSION=v0.7.0
+          STATICCHECK_VERSION=v0.8.2
           if ! command -v staticcheck >/dev/null 2>&1 || ! staticcheck -version | grep -q "${STATICCHECK_VERSION#v}"; then
             go install honnef.co/go/tools/cmd/staticcheck@${STATICCHECK_VERSION}
           fi
@@ -412,7 +412,7 @@ jobs:
       - name: Lint (golangci-lint on new code)
         if: github.event_name == 'pull_request'
         env:
-          # golangci-lint v1.64.8 is built with a Go that ignores cgroup CPU
+          # Older golangci-lint (v1.64.8) was built with a Go that ignored cgroup CPU
           # limits: in a 4-CPU runner container it sees every host CPU and
           # starts that many type-check workers, which blows the container's
           # memory limit (12 GiB) and gets it killed ("signal: killed").

@@ -149,6 +149,9 @@ func run() int {
 	if httpsec.AllowPrivate() {
 		log.Warn("outbound requests may reach every private network range (" + httpsec.EnvAllowPrivate + "=1, development only)")
 	}
+	if host := httpsec.FeedProxyHost(); host != "" {
+		log.Info("platform feeds go through the feed proxy ("+httpsec.EnvFeedProxy+")", "proxy", host)
+	}
 	if cidrs := httpsec.AllowedPrivateCIDRs(); len(cidrs) > 0 {
 		log.Warn("outbound requests may reach these private ranges for every tenant ("+httpsec.EnvAllowPrivateCIDRs+")",
 			"cidrs", strings.Join(cidrs, ","))
@@ -372,6 +375,7 @@ func run() int {
 	if services.Email != nil {
 		services.Tenant.SetMemberStatusEmailNotifier(services.Email)
 		services.Tenant.SetOwnershipTransferNotifier(services.Email)
+		services.Tenant.SetOwnerInvitationNotifier(services.Email)
 	}
 	// Administrator-created accounts. The set-password link is emailed
 	// when SMTP is configured, otherwise returned once to the administrator.

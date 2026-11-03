@@ -15,10 +15,12 @@ import {
 } from './organization-suspended'
 import { IP_NOT_ALLOWED_MESSAGE, isIpNotAllowed, notifyIpNotAllowed } from './ip-not-allowed'
 import { isStepUpRequired, requestStepUp } from './step-up'
+import { isTenantRequired, routeToWelcomeOnce } from './tenant-required'
 import { dispatchPermissionStaleEvent } from '@/context/permission-provider'
 import { env } from '@/lib/env'
 import { devLog } from '@/lib/logger'
-import { withAuthRefreshLock } from '@/lib/auth-refresh-lock'
+import { refreshSessionShared } from '@/lib/auth-refresh-lock'
+import { sessionEndReason } from '@/features/auth/lib/session-ended'
 import { coalesceGet } from './request-dedupe'
 import { noteRateLimited } from './rate-limit-backoff'
 import { readCsrfCookie } from '@/lib/csrf-client'
@@ -99,11 +101,8 @@ export function getApiBaseUrl(): string {
  */
 const DEFAULT_TIMEOUT = 30000
 
-/**
- * Token refresh mutex to prevent race conditions
- * When multiple requests fail with 401 simultaneously, only one should refresh
- */
-let refreshPromise: Promise<boolean> | null = null
+/** Why the last refresh failed, carried to the sign-in page. */
+let lastRefreshFailureCode: string | undefined
 
 /**
  * Redirect lock to prevent multiple redirects to login
@@ -116,7 +115,7 @@ let isRedirectingToLogin = false
  * Uses a mutex to prevent multiple concurrent refresh attempts
  * Returns true if refresh succeeded, false otherwise
  */
-async function tryRefreshToken(): Promise<boolean> {
+async function tryRefreshToken(options?: { force?: boolean }): Promise<boolean> {
   // Only attempt refresh in browser
   if (typeof window === 'undefined') {
     return false
@@ -128,48 +127,25 @@ async function tryRefreshToken(): Promise<boolean> {
     return false
   }
 
-  // If already refreshing, wait for the existing refresh to complete
-  if (refreshPromise) {
-    devLog.log('[API Client] Token refresh already in progress, waiting...')
-    return refreshPromise
+  // One refresh for the whole browser: concurrent callers share it, tabs take
+  // turns and reuse a refresh another tab just made, and a dead session is
+  // not refreshed again (refreshSessionShared).
+  const outcome = await refreshSessionShared(
+    () =>
+      csrfFetch('/api/auth/refresh', {
+        method: 'POST',
+        credentials: 'include',
+      }),
+    options
+  )
+  if (outcome.ok) {
+    devLog.log('[API Client] Token refresh successful')
+    if (outcome.accessToken) useAuthStore.getState().updateToken(outcome.accessToken)
+    return true
   }
-
-  // Create a new refresh promise. The cross-tab lock keeps two tabs from
-  // spending the same rotating refresh token at once (reuse revokes the
-  // whole token family).
-  refreshPromise = (async () => {
-    try {
-      devLog.log('[API Client] Starting token refresh...')
-      const response = await withAuthRefreshLock(() =>
-        csrfFetch('/api/auth/refresh', {
-          method: 'POST',
-          credentials: 'include',
-        })
-      )
-
-      const data = await response.json()
-
-      if (response.ok && data.success && data.data?.access_token) {
-        devLog.log('[API Client] Token refresh successful')
-        useAuthStore.getState().updateToken(data.data.access_token)
-        return true
-      }
-
-      devLog.warn('[API Client] Token refresh failed:', data.error?.message || 'Unknown error')
-      return false
-    } catch (error) {
-      devLog.error('[API Client] Token refresh error:', error)
-      return false
-    } finally {
-      // Clear the refresh promise after a short delay
-      // This prevents immediate re-refresh if the refresh just failed
-      setTimeout(() => {
-        refreshPromise = null
-      }, 1000)
-    }
-  })()
-
-  return refreshPromise
+  lastRefreshFailureCode = outcome.code
+  devLog.warn('[API Client] Token refresh failed:', outcome.status, outcome.code)
+  return false
 }
 
 /**
@@ -179,8 +155,24 @@ async function tryRefreshToken(): Promise<boolean> {
  * reconnect after a 4401 close fails (RFC-045). Resolves false when the
  * session cannot be refreshed.
  */
-export function refreshSession(): Promise<boolean> {
-  return tryRefreshToken()
+export function refreshSession(options?: { force?: boolean }): Promise<boolean> {
+  return tryRefreshToken(options)
+}
+
+/** Answers sent with the old token may still arrive just after a renewal. */
+const STALE_RENEW_GAP_MS = 10_000
+let lastStaleRenewAt = 0
+
+/**
+ * Renews the access token after an answer said its permission version is
+ * outdated, at most once per STALE_RENEW_GAP_MS. Fire and forget: a failed
+ * renewal leaves the 401 and 409 handling as it was.
+ */
+function renewStaleToken(): void {
+  const now = Date.now()
+  if (now - lastStaleRenewAt < STALE_RENEW_GAP_MS) return
+  lastStaleRenewAt = now
+  void tryRefreshToken()
 }
 
 /**
@@ -215,7 +207,7 @@ function redirectToLoginOnce(): void {
   // session cookies are cleared before /login loads (see endSessionAndSignIn),
   // and the user comes back to this page after signing in.
   setTimeout(() => {
-    endSessionAndSignIn()
+    endSessionAndSignIn(undefined, { reason: sessionEndReason(lastRefreshFailureCode) })
   }, 100)
 }
 
@@ -255,6 +247,7 @@ export async function apiClient<T = unknown>(
     retry: _retry, // Reserved for future retry implementation
     _skipRefreshRetry = false,
     _skipStepUpRetry = false,
+    _skipStaleRetry = false,
     ...fetchOptions
   } = options
 
@@ -324,6 +317,9 @@ export async function apiClient<T = unknown>(
     const permissionStale = response.headers.get('x-permission-stale')
     if (permissionStale === 'true') {
       devLog.log('[API Client] Permission stale header detected, triggering refresh')
+      // The token carries an older permission version (a role or team change
+      // since sign-in): renew it now, so the next write is not refused.
+      if (!skipAuth && !isServer()) renewStaleToken()
       dispatchPermissionStaleEvent()
     }
 
@@ -369,6 +365,27 @@ export async function apiClient<T = unknown>(
       }
 
       const error = await parseErrorResponse(response)
+
+      // The token carries an older permission version than the server (a role
+      // or team change since sign-in), so the server refused this write before
+      // running it. Get a token with the current permissions and retry once.
+      if (
+        response.status === 409 &&
+        error.code === 'permissions_stale' &&
+        !_skipStaleRetry &&
+        !skipAuth &&
+        !isServer()
+      ) {
+        if (await tryRefreshToken()) {
+          return apiClient<T>(endpoint, { ...options, _skipStaleRetry: true })
+        }
+      }
+
+      // No organization is open for this session: the page does not exist for
+      // it. After the one refresh above has not helped, go to the account space.
+      if (isTenantRequired(error) && _skipRefreshRetry && !isServer()) {
+        routeToWelcomeOnce(window.location)
+      }
 
       // A sensitive route needs a recent sign-in or step-up in this session:
       // ask the user to re-authenticate (one shared dialog), then retry the

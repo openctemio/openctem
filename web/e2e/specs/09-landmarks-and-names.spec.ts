@@ -40,10 +40,10 @@ base.describe('Access denied view', { tag: ['@shell'] }, () => {
 
     await loginAs(page, { ...cfg.config, userEmail: email!, userPassword: password! })
     await page.goto('/settings/general')
-    await expect(page.getByText('Access Denied', { exact: true })).toBeVisible({ timeout: 30_000 })
+    await expect(page.locator('[data-route-denied]')).toBeVisible({ timeout: 30_000 })
 
     await expect(page.getByRole('main')).toHaveCount(1)
-    await expect(page.locator('main#content')).toContainText('Access Denied')
+    await expect(page.locator('main#content')).toContainText('You do not have access to')
 
     // The skip link is the first stop and lands on the denied view.
     await page.keyboard.press('Tab')

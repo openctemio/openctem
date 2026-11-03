@@ -417,3 +417,28 @@ func TestOnFeed_OnlineImportRefresh(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// The relay delivers the release feed every day: the same file again is
+// not a failed import, and Applied reports its sequence and issue time.
+func TestImportRelayedSameFileDaily(t *testing.T) {
+	k, srv, repo, c := newKeys(t), newServer(t), &memRepo{}, &clock{now: t0}
+	svc := newService(repo, []string{k.pinned()}, srv.srv.URL, c, "v0.9.7")
+	ctx := context.Background()
+	raw := k.feed(t, 400, t0.Add(-time.Hour), "v0.9.8")
+	for day := 0; day < 3; day++ {
+		if err := svc.ImportRelayed(ctx, raw); err != nil {
+			t.Fatalf("day %d: %v", day, err)
+		}
+		c.now = c.now.Add(24 * time.Hour)
+	}
+	if repo.st.Origin != OriginRelay || repo.st.LastError != "" {
+		t.Fatalf("state %+v", repo.st)
+	}
+	seq, issued, err := svc.Applied(ctx)
+	if err != nil || seq != 400 || !issued.Equal(t0.Add(-time.Hour)) {
+		t.Fatalf("applied %d %v %v", seq, issued, err)
+	}
+	if err := svc.ImportRelayed(ctx, k.feed(t, 400, t0.Add(-time.Hour), "v0.9.9")); err == nil {
+		t.Fatal("same sequence with other bytes accepted")
+	}
+}

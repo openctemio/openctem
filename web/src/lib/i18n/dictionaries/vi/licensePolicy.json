@@ -17,7 +17,6 @@
   "licensePolicy.remove": "Xóa quy tắc {n}",
   "licensePolicy.reviewFindings": "Mở phát hiện cho kết quả cần xem xét",
   "licensePolicy.reviewFindingsHelp": "Phát hiện mức trung bình; nếu tắt, kết quả cần xem xét chỉ hiện trong kho.",
-  "licensePolicy.save": "Lưu thay đổi",
   "licensePolicy.saveFailed": "Không lưu được chính sách giấy phép.",
   "licensePolicy.saved": "Đã lưu: {violations} gói bị gắn cờ, mở {created} phát hiện, đóng {resolved}.",
   "licensePolicy.savedNotEvaluated": "Đã lưu. Việc đánh giá kho chưa hoàn tất; nó sẽ chạy lại ở lần ghi gói tiếp theo.",

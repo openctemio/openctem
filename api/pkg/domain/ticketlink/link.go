@@ -274,7 +274,7 @@ type Repository interface {
 	// TaskLinksBehindForPlatform lists active task links whose task state differs from
 	// the state last pushed (all tenants; the reconciler pushes each in its
 	// own tenant).
-	TaskLinksBehindForPlatform(ctx context.Context, limit int) ([]TaskLinkRef, error)
+	TaskLinksBehindForPlatform(ctx context.Context, limit int, skipTenants []shared.ID) ([]TaskLinkRef, error)
 }
 
 // TaskLinkRef names a task link the reconciler pushes.

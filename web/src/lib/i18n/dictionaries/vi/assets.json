@@ -1118,6 +1118,7 @@
   "assets.software.viewComponents": "Xem thành phần",
   "assets.suggestions.approve": "Duyệt",
   "assets.suggestions.approveAll": "Duyệt tất cả ({count})",
+  "assets.suggestions.errorTitle": "gợi ý",
   "assets.suggestions.search.label": "Tìm đề xuất",
   "assets.suggestions.search.placeholder": "Tìm theo tên tài sản…",
   "assets.tabs.aria": "Các mục tài sản",

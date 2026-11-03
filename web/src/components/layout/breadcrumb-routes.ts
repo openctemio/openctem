@@ -30,9 +30,6 @@ export function isIdSegment(segment: string): boolean {
  * dynamic segment written as `[id]`).
  */
 export const PATHS_WITHOUT_PAGE: ReadonlySet<string> = new Set([
-  '/auth',
-  '/auth/sso',
-  '/auth/sso/callback',
   '/ci-cd/github-app',
   '/insights',
   '/mcp',

@@ -35,10 +35,18 @@ export function wirePath(x1: number, y1: number, x2: number, y2: number): string
   return `M${x1} ${y1} C${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`
 }
 
-/** Wire width for a volume: 1 to 6 px on a square-root scale of the largest. */
+/** Wire width for a volume: 1 to 6 px, proportional to its share of the largest. */
 export function wireWidth(value: number, max: number): number {
   if (max <= 0 || value <= 0) return 1
-  return Math.round((1 + 5 * Math.sqrt(value / max)) * 100) / 100
+  return Math.round((1 + 5 * Math.min(1, value / max)) * 100) / 100
+}
+
+/**
+ * The glow of the one focused wire or segment: a soft shadow in its own
+ * colour (CSS filter, so it costs nothing until something is focused).
+ */
+export function focusGlow(color: string): string {
+  return `drop-shadow(0 0 4px color-mix(in oklab, ${color} 60%, transparent))`
 }
 
 /** Stroke of a wire by the health of its source. */
@@ -61,19 +69,30 @@ export function wireStroke(health: SourceHealth | 'neutral' | 'bad'): {
  * Width bands of a connected visual, measured on the widget's own width (a
  * container, never the viewport: a widget sits in grid cells of any size).
  * The layout classes use the same numbers as container queries
- * (`@min-[660px]`, `@min-[960px]`); the wires use the measured band, so a
+ * (`@min-[660px]`, `@min-[900px]`); the wires use the measured band, so a
  * wire is drawn only when both of its ends sit side by side.
  *
  * The widths are the visual's own (the card less its padding).
  *
  * - narrow (< 660 px): one column, no wires; every number stays a link.
- * - mid (660 to 959 px): the core and the outcomes side by side, sources as a
- *   short list above (the first three and "N more"); wires to the outcomes.
- * - wide (960 px and more): three columns of bounded width, centred, so the
- *   wires stay short and proportional however wide the card is.
+ * - mid (660 to 899 px): the core and the outcomes side by side, sources as a
+ *   list above; wires to the outcomes.
+ * - wide (900 px and more): three columns that fill the card: sources and
+ *   outcomes at a reading width against the edges, the core taking the rest
+ *   (a full-width dashboard card from a 1280 px window with the sidebar open).
  */
+/**
+ * The thin dashed frame of a connected visual's columns (sources, outcomes,
+ * the intake summary) from 660 px; a phone stacks them unframed. Wires meet
+ * its edge: FRAME_INSET is its padding plus its border, from a row's edge to
+ * the frame's.
+ */
+export const FLOW_FRAME =
+  '@min-[660px]:rounded-lg @min-[660px]:border @min-[660px]:border-dashed @min-[660px]:border-border-strong @min-[660px]:p-1.5'
+export const FRAME_INSET = 7
+
 export const FLOW_MID = 660
-export const FLOW_WIDE = 960
+export const FLOW_WIDE = 900
 
 export type FlowBand = 'narrow' | 'mid' | 'wide'
 
@@ -128,10 +147,13 @@ export function useWireAnchors(
     const inn: Record<string, Anchor> = {}
     el.querySelectorAll<HTMLElement>('[data-wire-out]').forEach((n) => {
       const r = n.getBoundingClientRect()
+      // A row that is not laid out (no size) has no anchor: no wire, never a default point.
+      if (r.width === 0 && r.height === 0) return
       out[n.dataset.wireOut ?? ''] = { x: r.right - box.left, y: r.top + r.height / 2 - box.top }
     })
     el.querySelectorAll<HTMLElement>('[data-wire-in]').forEach((n) => {
       const r = n.getBoundingClientRect()
+      if (r.width === 0 && r.height === 0) return
       inn[n.dataset.wireIn ?? ''] = { x: r.left - box.left, y: r.top + r.height / 2 - box.top }
     })
     return { width: box.width, height: box.height, out, in: inn }
@@ -140,12 +162,57 @@ export function useWireAnchors(
   useLayoutEffect(() => {
     // contentKey is a re-measure trigger, not read here.
     void contentKey
-    setLayout(measure())
     const el = ref.current
-    if (!el || typeof ResizeObserver === 'undefined') return
-    const ro = new ResizeObserver(() => setLayout(measure()))
+    let gone = false
+    // Rows that slide to a new place (the ranked bars' FLIP) are measured where
+    // the slide starts, not where they settle: measure again when every script
+    // animation under the container has finished (CSS animations, such as the
+    // wires' own dash, never end and never move a row).
+    const settle = () => {
+      const running = (el?.getAnimations?.({ subtree: true }) ?? []).filter(
+        (a) => !(typeof CSSAnimation !== 'undefined' && a instanceof CSSAnimation)
+      )
+      if (running.length === 0) return
+      void Promise.allSettled(running.map((a) => a.finished)).then(() => {
+        if (!gone) setLayout(measure())
+      })
+    }
+    const remeasure = () => {
+      setLayout(measure())
+      settle()
+    }
+    remeasure()
+    if (!el || typeof ResizeObserver === 'undefined') {
+      return () => {
+        gone = true
+      }
+    }
+    const ro = new ResizeObserver(remeasure)
     ro.observe(el)
-    return () => ro.disconnect()
+    // The anchors are the rows rendered right now: a row folded or listed by
+    // the user (ranked bars' "with nothing" line) changes them without
+    // changing the container's width, so a change of the anchor set re-measures.
+    // Watching the set (not every mutation) keeps the wires' own svg out of the loop.
+    const sig = () =>
+      [...el.querySelectorAll<HTMLElement>('[data-wire-out],[data-wire-in]')]
+        .map((n) => n.dataset.wireOut ?? n.dataset.wireIn)
+        .join('\u0000')
+    let last = sig()
+    const mo =
+      typeof MutationObserver === 'undefined'
+        ? null
+        : new MutationObserver(() => {
+            const next = sig()
+            if (next === last) return
+            last = next
+            remeasure()
+          })
+    mo?.observe(el, { childList: true, subtree: true })
+    return () => {
+      gone = true
+      ro.disconnect()
+      mo?.disconnect()
+    }
   }, [ref, measure, contentKey])
   return layout
 }

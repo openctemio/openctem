@@ -493,6 +493,28 @@ func registerEASMSettingsRoutes(
 	}, tenantMiddlewares...)
 }
 
+// registerEASMDiscoveryRoutes registers discovery management: the
+// organization's coverage work by stage (read: scans:read), Run per stage
+// and Run all (the scan trigger's scans:write + scans:execute) and Abort all
+// (the run cancel's scans:write), behind the attack_surface module. The
+// handler also requires an unrestricted data scope.
+func registerEASMDiscoveryRoutes(
+	router Router,
+	h *handler.EASMDiscoveryHandler,
+	authMiddleware Middleware,
+	userSyncMiddleware Middleware,
+	moduleGate Middleware,
+) {
+	tenantMiddlewares := append(buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware), moduleGate)
+	router.Group("/api/v1/attack-surface/discovery", func(r Router) {
+		r.GET("/", h.Overview, middleware.Require(permission.ScansRead))
+		r.GET("/export", h.Export, middleware.Require(permission.ScansRead))
+		r.POST("/stages/{stage}/run", h.RunStage, middleware.RequireAll(permission.ScansWrite, permission.ScansExecute))
+		r.POST("/run", h.RunAll, middleware.RequireAll(permission.ScansWrite, permission.ScansExecute))
+		r.POST("/cancel", h.AbortAll, middleware.Require(permission.ScansWrite))
+	}, tenantMiddlewares...)
+}
+
 // registerBranchRoutes registers branch management endpoints.
 // Branches are repository-scoped, tenant from JWT token.
 func registerBranchRoutes(
@@ -547,6 +569,19 @@ func registerTechnologyRoutes(router Router, h *handler.TechnologyHandler, authM
 	router.Group("/api/v1/attack-surface/technologies", func(r Router) {
 		r.GET("/", h.List, middleware.Require(permission.AssetsRead))
 		r.GET("/stats", h.Stats, middleware.Require(permission.AssetsRead))
+	}, tenantMiddlewares...)
+}
+
+// registerEASMPostureRoutes registers the attack surface posture score: the
+// read is scoped per asset; Recalculate now is an action on the
+// organization's facts; the schedule is an organization setting.
+func registerEASMPostureRoutes(router Router, h *handler.EASMPostureHandler, authMiddleware Middleware, userSyncMiddleware Middleware, moduleGate Middleware) {
+	// The module gate runs after tenant extraction so it can read the tenant.
+	tenantMiddlewares := append(buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware), moduleGate)
+	router.Group("/api/v1/attack-surface/posture", func(r Router) {
+		r.GET("/", h.Get, middleware.Require(permission.AssetsRead))
+		r.POST("/refresh", h.Recalculate, middleware.Require(permission.AssetsWrite))
+		r.PUT("/schedule", h.SetSchedule, middleware.Require(permission.SettingsWrite))
 	}, tenantMiddlewares...)
 }
 

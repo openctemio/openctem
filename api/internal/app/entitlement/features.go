@@ -205,18 +205,37 @@ func (s *Service) ModuleEntitlements(ctx context.Context, tenantID shared.ID) ([
 // (nil: no access at all). An error means the state could not be read; the
 // caller treats every non-core module as unavailable.
 func (s *Service) NotEntitled(ctx context.Context, tenantID string) (map[string]*time.Time, error) {
+	off, _, err := s.NotEntitledWithDeadline(ctx, tenantID)
+	return off, err
+}
+
+// NotEntitledWithDeadline is NotEntitled plus the next moment the answer
+// changes by itself: a read-only grace ends or a timed deny runs out. Nothing
+// writes at those moments, so a cache of the answer must not outlive it. nil:
+// the answer holds until the next change.
+func (s *Service) NotEntitledWithDeadline(ctx context.Context, tenantID string) (map[string]*time.Time, *time.Time, error) {
 	id, err := shared.IDFromString(tenantID)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	list, err := s.ModuleEntitlements(ctx, id)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
+	}
+	now := s.now()
+	var next *time.Time
+	earlier := func(t *time.Time) {
+		if t != nil && t.After(now) && (next == nil || t.Before(*next)) {
+			u := *t
+			next = &u
+		}
 	}
 	off := map[string]*time.Time{}
 	for _, e := range list {
 		if !e.Entitled {
 			off[e.Module] = e.ReadOnlyUntil
+			earlier(e.ReadOnlyUntil)
+			earlier(e.ExpiresAt)
 		}
 	}
 	for _, d := range moduledom.Registry {
@@ -224,7 +243,7 @@ func (s *Service) NotEntitled(ctx context.Context, tenantID string) (map[string]
 			off[d.ID] = until
 		}
 	}
-	return off, nil
+	return off, next, nil
 }
 
 // deniedSet returns the denied features, or nil when they cannot be read

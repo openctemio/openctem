@@ -3,7 +3,7 @@
 # explains the columns. A bump is a human or agent pull request, so CI runs on it.
 #
 # name	repository	source	highest major	file	regex (one group)	flags
-golangci-lint	golangci/golangci-lint	releases	1	api/Makefile	^GOLANGCI_LINT_VERSION \?= (v[0-9.]+)	
+golangci-lint	golangci/golangci-lint	releases	2	api/Makefile	^GOLANGCI_LINT_VERSION \?= (v[0-9.]+)	
 govulncheck	golang/vuln	tags	-	.github/workflows/api-security.yml	govulncheck@(v[0-9.]+)	
 go-licenses	google/go-licenses	releases	-	.github/workflows/api-security.yml	go-licenses@(v[0-9.]+)	
 staticcheck	dominikh/go-tools	tags	-	.github/workflows/api-ci.yml	STATICCHECK_VERSION=(v[0-9.]+)	

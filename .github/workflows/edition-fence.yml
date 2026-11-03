@@ -1,0 +1,36 @@
+name: Edition fence
+
+# The Community build must never contain Enterprise code and the open core
+# never names the commercial brand (api/docs/development/editions.md). The
+# check reads only the tracked tree, needs no secrets and no toolchain, so it
+# runs on every pull request, merge-queue group and push with no path filter
+# and can be a required check ("Edition fence").
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  merge_group:
+    types: [checks_requested]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  fence:
+    name: Edition fence
+    runs-on: ${{ (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_LIGHT) || 'ubuntu-latest' }}
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Edition fence (self-test)
+        run: bash .github/scripts/check-edition-fence.test.sh >/dev/null
+      - name: Edition fence
+        run: bash .github/scripts/check-edition-fence.sh

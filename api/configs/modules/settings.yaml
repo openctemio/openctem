@@ -9,3 +9,7 @@
   core: true
   user_facing: true
   permission: "settings:read"
+  jobs:
+    - AIUseCaseDowngradeController
+    - AutomationRunReaper
+    - AutomationRunRetention

@@ -4,7 +4,7 @@
 
 | Component | Technology |
 |-----------|------------|
-| Language | Go 1.26+ |
+| Language | Go 1.27+ |
 | HTTP Router | Chi v5 (with abstraction layer) |
 | HTTP Handlers | Standard `net/http` signature |
 | Authentication | Local accounts (JWT) / OAuth2 (Google, GitHub, Microsoft) / per-organization OIDC (e.g. Entra ID) and SAML SSO |
@@ -293,7 +293,7 @@ Hexagonal / Ports & Adapters
 - [Sensor ↔ Platform Trust](sensor-platform-trust.md)
 - [Signed Jobs: the Job Signer](job-signing.md)
 - [Audit Hash Chain](audit-hash-chain.md)
-- [CTEM-ID Catalog](ctem-id-catalog.md)
+- [CTEM-ID Mapping](ctem-id-mapping.md)
 - [Certificate-Transparency Monitoring](certificate-transparency-monitoring.md)
 - [External Attack Surface Management (EASM)](easm.md)
 - [EASM DNS-only checks (dangling DNS, email posture)](easm-dns-checks.md)

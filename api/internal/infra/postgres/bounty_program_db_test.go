@@ -181,7 +181,7 @@ func TestBountyProgramSync(t *testing.T) {
 		got.Pending == nil || got.Pending.TermsSHA256 != strings.Repeat("b", 64) || len(got.Pending.Items) != 1 {
 		t.Fatalf("round trip: %+v %+v %v", got.Sync, got.Pending, err)
 	}
-	due, err := repo.SyncDue(ctx, now.Add(time.Hour), 100)
+	due, err := repo.SyncDue(ctx, now.Add(time.Hour), 100, nil)
 	found := false
 	for _, r := range due {
 		found = found || r.ProgramID.Equals(p.ID)
@@ -189,7 +189,34 @@ func TestBountyProgramSync(t *testing.T) {
 	if err != nil || !found {
 		t.Fatalf("due: %v %v", due, err)
 	}
-	if due, _ := repo.SyncDue(ctx, now.Add(-time.Hour), 100); len(due) != 0 {
+	// A tenant on the skip list (its scope module is off) has no program due,
+	// so its rows cannot fill the batch ahead of the other tenants.
+	due, err = repo.SyncDue(ctx, now.Add(time.Hour), 100, []shared.ID{tenant})
+	if err != nil {
+		t.Fatalf("due with skip: %v", err)
+	}
+	for _, r := range due {
+		if r.TenantID.Equals(tenant) {
+			t.Fatal("a skipped tenant's program was listed as due")
+		}
+	}
+	// The same skip list is accepted by the other platform sweeps.
+	if _, err := repo.AssignAllPrograms(ctx, func(_ context.Context, id shared.ID) bool { return id.Equals(tenant) }); err != nil {
+		t.Fatalf("assign all with a skipped tenant: %v", err)
+	}
+	if _, err := NewPublicProgramRepository(repo.db).StaleSubscriptions(ctx, 10, []shared.ID{tenant}); err != nil {
+		t.Fatalf("stale subscriptions with skip: %v", err)
+	}
+	if _, err := NewRemediationTaskRepository(repo.db).StaleTasksForPlatform(ctx, 10, []shared.ID{tenant}); err != nil {
+		t.Fatalf("stale tasks with skip: %v", err)
+	}
+	if _, err := NewRemediationTaskRepository(repo.db).DueAutoQueryTasksForPlatform(ctx, now, 10, []shared.ID{tenant}); err != nil {
+		t.Fatalf("due query tasks with skip: %v", err)
+	}
+	if _, err := NewTicketLinkRepository(repo.db).TaskLinksBehindForPlatform(ctx, 10, []shared.ID{tenant}); err != nil {
+		t.Fatalf("task links behind with skip: %v", err)
+	}
+	if due, _ := repo.SyncDue(ctx, now.Add(-time.Hour), 100, nil); len(due) != 0 {
 		for _, r := range due {
 			if r.ProgramID.Equals(p.ID) {
 				t.Fatal("a program synced after the cut-off is not due")
