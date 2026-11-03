@@ -6,6 +6,7 @@
   icon: EyeOff
   category: mobilization
   order: 41
+  user_facing: true
   permission: "findings:suppressions:read"
   depends:
     - {id: findings, kind: hard, reason: "suppressions suppress findings"}

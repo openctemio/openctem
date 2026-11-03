@@ -22,6 +22,12 @@ export type IdDimension = (typeof ID_DIMENSIONS)[number]
 /** Names of the objects a selector refers to, by dimension and id. */
 export type SelectorNames = Partial<Record<IdDimension, Map<string, string>>>
 
+/** Whether a selector names objects by id, so a list showing it must look the names up. */
+export function referencesObjects(s: ScanWindowSelector | undefined): boolean {
+  if (!s) return false
+  return ID_DIMENSIONS.some((d) => (s[d]?.length ?? 0) > 0)
+}
+
 /** No dimension given: the policy governs every target. */
 export function isEmptySelector(s: ScanWindowSelector | undefined): boolean {
   if (!s) return true

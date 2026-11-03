@@ -425,7 +425,12 @@ function ConfigurationsTab() {
     []
   )
 
-  const { data: configsResponse, isLoading: isLoadingConfigs } = useScanConfigs(filters, swrConfig)
+  const {
+    data: configsResponse,
+    isLoading: isLoadingConfigs,
+    error: configsError,
+    mutate: retryConfigs,
+  } = useScanConfigs(filters, swrConfig)
   const { data: stats, isLoading: isLoadingStats } = useScanConfigStats(swrConfig)
 
   // Bulk operation hooks
@@ -909,6 +914,9 @@ function ConfigurationsTab() {
             <DataTable
               columns={columns}
               data={configs}
+              error={configsError}
+              onRetry={() => void retryConfigs()}
+              errorTitle={t('scans.errorTitle', 'scans')}
               showSearch={false}
               search={{
                 value: searchQuery,
