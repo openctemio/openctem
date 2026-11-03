@@ -114,7 +114,7 @@ func TestIdentityV3_OldKeyFindingsOfANewKindConvergeOnIngest(t *testing.T) {
 				t.Fatalf("%d live findings after the sightings, want 1 (%v)", len(live), live)
 			}
 			surv, ok := live[id1]
-			if !ok || surv.status != "accepted" || surv.version != 3 || surv.fingerprint != key {
+			if !ok || surv.status != "accepted" || surv.version != vulnerability.IdentityVersion || surv.fingerprint != key {
 				t.Fatalf("survivor %+v, want the older finding, accepted, on key %s", live, key)
 			}
 			var status string

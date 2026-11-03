@@ -602,7 +602,7 @@ func run() int {
 
 		// Stored asset names to the CTIS 2.0 canonical form first
 		// (asset_canonical.go), then stored findings to the current identity
-		// recipe (version 3, the CTIS fingerprint recipe v2; finding_rekey.go).
+		// recipe (version 4, the CTIS fingerprint recipe v2; finding_rekey.go).
 		// In this order, in one goroutine: an asset merge moves findings,
 		// which the re-key then keys once, and the two never contend for the
 		// same rows. Both are idempotent and resumable; the re-key runs on one
