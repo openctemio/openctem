@@ -18,7 +18,7 @@ type IntegrationSyncStore interface {
 }
 
 // TenantSyncer runs a DefectDojo pull for one tenant. Returns error only (not
-// the result) so the controller need not import app/defectdojo — cmd/server
+// the result) so the controller need not import app/defectdojo — internal/server
 // adapts *defectdojo.SyncService into this. Avoids a controller→app cycle.
 type TenantSyncer interface {
 	SyncTenant(ctx context.Context, tenantID shared.ID) error
