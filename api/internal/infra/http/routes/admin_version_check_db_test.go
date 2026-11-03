@@ -16,7 +16,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/admin"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/releasefeed"
-	"github.com/openctemio/openctem/api/pkg/releasefeed/releasefeedtest"
+	"github.com/openctemio/openctem/api/pkg/releasefeed/testdata/releasefeedtest"
 )
 
 // The version check through the console routes: any administrator reads the
@@ -69,7 +69,15 @@ func TestAdminVersionCheck_Routes_DB(t *testing.T) {
 	super.autoStepUp = true
 
 	// A tampered file is refused with its reason; nothing is stored.
-	tampered := bytes.Replace(feedFile(11), []byte(`"payload": "`), []byte(`"payload": "A`), 1)
+	var tb releasefeed.Bundle
+	if err := json.Unmarshal(feedFile(11), &tb); err != nil || len(tb.Feed) == 0 {
+		t.Fatalf("feed file does not parse: %v", err)
+	}
+	tb.Feed[0] ^= 0xff // the signature no longer covers these bytes
+	tampered, err := json.Marshal(tb)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if code, body := super.do(http.MethodPost, path+"/import", json.RawMessage(tampered), true); code != http.StatusBadRequest ||
 		!strings.Contains(body, "RELEASE_FEED_INVALID") {
 		t.Fatalf("tampered: %d %s", code, body)

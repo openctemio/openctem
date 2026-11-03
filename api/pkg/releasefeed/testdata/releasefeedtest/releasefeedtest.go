@@ -1,7 +1,7 @@
 // Package releasefeedtest signs release feeds with a virtual Sigstore (own
 // certificate authority, transparency log and timestamp authority), so tests
 // exercise the real offline verification without Sigstore or the network. It
-// is test support only: nothing in a production binary imports it, and no
+// is test support only (it lives under testdata so ./... and govulncheck skip it): nothing in a production binary imports it, and no
 // fixture here is accepted by the embedded trusted root.
 package releasefeedtest
 

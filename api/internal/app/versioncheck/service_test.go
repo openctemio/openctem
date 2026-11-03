@@ -12,7 +12,7 @@ import (
 
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/releasefeed"
-	"github.com/openctemio/openctem/api/pkg/releasefeed/releasefeedtest"
+	"github.com/openctemio/openctem/api/pkg/releasefeed/testdata/releasefeedtest"
 )
 
 // Real time: the virtual Sigstore certificate is valid from the moment the test starts.
