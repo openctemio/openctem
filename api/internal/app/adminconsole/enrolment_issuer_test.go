@@ -26,7 +26,7 @@ func TestEnrolmentIssuer(t *testing.T) {
 }
 
 // A new enrolment is labeled with the console host; without the setting the
-// plain label stays (existing behaviour, secrets untouched).
+// plain label stays (existing behavior, secrets untouched).
 func TestNewEnrolmentCarriesConsoleHost(t *testing.T) {
 	h := newHarness(t)
 	res, err := h.svc.Start(context.Background(), refresh, password, client)
