@@ -272,7 +272,7 @@ export const userEndpoints = {
   ssoLinkStart: (provider: string) => `/api/v1/me/sso-links/${encodeURIComponent(provider)}/start`,
   ssoLinkComplete: (provider: string) =>
     `/api/v1/me/sso-links/${encodeURIComponent(provider)}/complete`,
-  ssoLink: (id: string) => `/api/v1/me/sso-links/${encodeURIComponent(id)}`,
+  ssoLink: (id: string) => `/api/v1/me/sso-links/identities/${encodeURIComponent(id)}`,
   /**
    * The pending link a refused social sign-in left, confirmed after signing
    * in (describe, confirm with the typed code or password, cancel). Called by server actions

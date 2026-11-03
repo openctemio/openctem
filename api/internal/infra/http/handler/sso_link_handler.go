@@ -138,7 +138,7 @@ func (h *SSOHandler) CompleteSSOLink(w http.ResponseWriter, r *http.Request) {
 // @Param        id       path  string            true  "Identity id"
 // @Param        request  body  LinkProofRequest  true  "Proof typed in the confirm dialog"
 // @Success      204
-// @Router       /me/sso-links/{id} [delete]
+// @Router       /me/sso-links/identities/{identity} [delete]
 func (h *SSOHandler) UnlinkSSOIdentity(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.GetUserID(r.Context())
 	sessionID := middleware.GetSessionID(r.Context())
@@ -151,7 +151,7 @@ func (h *SSOHandler) UnlinkSSOIdentity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	err := h.ssoService.UnlinkSSOIdentity(auth.WithClientInfo(r.Context(), getClientIP(r), r.UserAgent()), auth.SSOUnlinkInput{
-		UserID: userID, SessionID: sessionID, IdentityID: r.PathValue("id"), Proof: proof,
+		UserID: userID, SessionID: sessionID, IdentityID: r.PathValue("identity"), Proof: proof,
 	})
 	if err != nil {
 		h.handlePublicError(w, err)

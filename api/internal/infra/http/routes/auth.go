@@ -397,7 +397,7 @@ func registerSSOLinkRoutes(router Router, h *handler.SSOHandler, authMiddleware,
 		r.GET("/", h.ListSSOLinks)
 		r.POST("/{provider}/start", h.StartSSOLink, withCSRF(linkRL)...)
 		r.POST("/{provider}/complete", h.CompleteSSOLink, linkRL)
-		r.DELETE("/{id}", h.UnlinkSSOIdentity, withCSRF(linkRL)...)
+		r.DELETE("/identities/{identity}", h.UnlinkSSOIdentity, withCSRF(linkRL)...)
 	}, middlewares...)
 }
 
