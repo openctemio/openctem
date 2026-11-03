@@ -241,10 +241,10 @@ func TestMigrationBranchCountsPerStatement(t *testing.T) {
 	defer func() { _ = tx.Rollback() }()
 
 	const dir = "../../migrations"
-	version := testdb.MigrationVersion(t, dir, "branch_finding_counts_per_statement")
-	apply := func(direction string) {
+	applyNamed := func(name, direction string) {
 		t.Helper()
-		path := filepath.Join(dir, fmt.Sprintf("%06d_branch_finding_counts_per_statement.%s.sql", version, direction))
+		version := testdb.MigrationVersion(t, dir, name)
+		path := filepath.Join(dir, fmt.Sprintf("%06d_%s.%s.sql", version, name, direction))
 		body, err := os.ReadFile(path)
 		if err != nil {
 			t.Fatal(err)
@@ -263,6 +263,11 @@ func TestMigrationBranchCountsPerStatement(t *testing.T) {
 		return names
 	}
 
+	// The later migration builds on this one's functions: take it off first
+	// and put it back last.
+	const later = "branch_counts_from_occurrences"
+	apply := func(direction string) { t.Helper(); applyNamed("branch_finding_counts_per_statement", direction) }
+	applyNamed(later, "down")
 	apply("down")
 	if got := triggers(); got != "trg_update_branch_finding_counts_delete,trg_update_branch_finding_counts_insert,trg_update_branch_finding_counts_update" {
 		t.Fatalf("after down: triggers %q", got)
@@ -278,6 +283,7 @@ func TestMigrationBranchCountsPerStatement(t *testing.T) {
 	if fmt.Sprint(rowTrigger) != fmt.Sprint(statementTrigger) {
 		t.Errorf("counters differ between the row and statement triggers:\nrow       %v\nstatement %v", rowTrigger, statementTrigger)
 	}
+	applyNamed(later, "up")
 }
 
 // TestBranchFindingCounts_ConcurrentWriters: concurrent committed writers
