@@ -16,7 +16,7 @@
   "help.licenses.noMatch": "Không có thành phần nào khớp với tìm kiếm",
   "help.licenses.noText": "Thành phần này không kèm tệp giấy phép.",
   "help.licenses.notGenerated": "Bản dựng {part} này không có danh sách giấy phép: danh sách được tạo khi dựng image phát hành.",
-  "help.licenses.search": "Tìm theo thành phần hoặc giấy phép",
+  "help.licenses.search": "Tìm theo thành phần hoặc giấy phép…",
   "help.licenses.searchLabel": "Tìm thành phần",
   "help.licenses.source": "Phần",
   "help.licenses.source.api": "API",

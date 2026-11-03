@@ -14,9 +14,14 @@ const MAX_BYTES = 32 * 1024 * 1024
 
 let cached: Promise<NoticesDocument> | undefined
 
-export async function loadWebNotices(dir: string = process.cwd()): Promise<NoticesDocument> {
+// The two turbopackIgnore comments keep the build's file tracing from treating
+// the working directory as an input: tracing it copies the whole project into
+// the standalone output (about 40 MB of extra image size).
+export async function loadWebNotices(
+  dir: string = process.cwd(/*turbopackIgnore: true*/)
+): Promise<NoticesDocument> {
   try {
-    const raw = await readFile(path.join(dir, NOTICES_FILE), 'utf8')
+    const raw = await readFile(path.join(/*turbopackIgnore: true*/ dir, NOTICES_FILE), 'utf8')
     if (raw.length > MAX_BYTES) return emptyNotices('web')
     const doc = parseNotices(JSON.parse(raw), 'web')
     return doc ? { ...doc, generated: true } : emptyNotices('web')
