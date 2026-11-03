@@ -170,15 +170,15 @@ var presetAssetInventory = ModulePreset{
 	EnabledModules: []string{
 		// Scoping split-outs (own toggleable modules, migration 000214;
 		// default-on so prior scope_config / attack_surface visibility is kept).
-		"business_units", "threat_model",
+		ModuleBusinessUnits, ModuleThreatModel,
 		// Scoping — map assets to business context
-		"attack_surface", "scope_config", "ctem_cycles", "business_services", "relationships",
+		ModuleAttackSurface, ModuleScopeConfig, ModuleCTEMCycles, ModuleBusinessServices, ModuleRelationships,
 		// Discovery
-		"components", "branches",
+		ModuleComponents, ModuleBranches,
 		// Insights — asset-level reporting only
-		"reports",
+		ModuleReports,
 		// Settings — cloud + SCM for asset ingestion
-		"integrations",
+		ModuleIntegrations,
 	},
 }
 
@@ -209,24 +209,24 @@ var presetVMEssentials = ModulePreset{
 	EnabledModules: []string{
 		// Scoping split-outs (own toggleable modules, migration 000214;
 		// default-on so prior scope_config / attack_surface visibility is kept).
-		"business_units", "threat_model",
+		ModuleBusinessUnits, ModuleThreatModel,
 		// Scoping — even a basic VM team needs an asset surface view
 		// to know "what's in scope this scan cycle". Skip business
 		// services + attacker profiles (those are CTEM-level concerns).
-		"attack_surface", "scope_config", "ctem_cycles", "relationships",
+		ModuleAttackSurface, ModuleScopeConfig, ModuleCTEMCycles, ModuleRelationships,
 		// Discovery
-		"components", "branches", "credentials",
+		ModuleComponents, ModuleBranches, ModuleCredentials,
 		// Prioritization
-		"threat_intel", "ai_triage",
-		"priority_rules", "risk_scoring",
+		ModuleThreatIntel, ModuleAITriage,
+		ModulePriorityRules, ModuleRiskScoring,
 		// Mobilization
-		"remediation", "suppressions", "workflows",
+		ModuleRemediation, ModuleSuppressions, ModuleWorkflows,
 		// Insights
-		"reports",
+		ModuleReports,
 		// Settings / ops
-		"integrations",
-		"scanner_templates", "scan_workflows",
-		"iocs",
+		ModuleIntegrations,
+		ModuleScannerTemplates, ModuleScanWorkflows,
+		ModuleIOCs,
 	},
 }
 
@@ -255,22 +255,22 @@ var presetASM = ModulePreset{
 	EnabledModules: []string{
 		// Scoping split-outs (own toggleable modules, migration 000214;
 		// default-on so prior scope_config / attack_surface visibility is kept).
-		"business_units", "threat_model",
+		ModuleBusinessUnits, ModuleThreatModel,
 		// Scoping (full — ASM is all about scoping)
-		"attack_surface", "scope_config", "ctem_cycles", "business_services",
-		"relationships", "attacker_profiles",
+		ModuleAttackSurface, ModuleScopeConfig, ModuleCTEMCycles, ModuleBusinessServices,
+		ModuleRelationships, ModuleAttackerProfiles,
 		// Discovery
-		"components", "credentials",
+		ModuleComponents, ModuleCredentials,
 		// Prioritization
-		"threat_intel", "ai_triage", "risk_scoring",
-		"priority_rules",
+		ModuleThreatIntel, ModuleAITriage, ModuleRiskScoring,
+		ModulePriorityRules,
 		// Mobilization — workflow alert on new exposure
-		"workflows", "suppressions",
+		ModuleWorkflows, ModuleSuppressions,
 		// Insights
-		"reports",
+		ModuleReports,
 		// Settings + ops
-		"integrations",
-		"scanner_templates", "scan_workflows",
+		ModuleIntegrations,
+		ModuleScannerTemplates, ModuleScanWorkflows,
 	},
 }
 
@@ -314,28 +314,28 @@ var presetOffensive = ModulePreset{
 	EnabledModules: []string{
 		// Scoping split-outs (own toggleable modules, migration 000214;
 		// default-on so prior scope_config / attack_surface visibility is kept).
-		"business_units", "threat_model",
+		ModuleBusinessUnits, ModuleThreatModel,
 		// Scoping (full — every offensive engagement needs scope)
-		"attack_surface", "scope_config", "business_services",
-		"ctem_cycles", "attacker_profiles", "relationships",
+		ModuleAttackSurface, ModuleScopeConfig, ModuleBusinessServices,
+		ModuleCTEMCycles, ModuleAttackerProfiles, ModuleRelationships,
 		// Discovery — recon-heavy
-		"components", "branches", "credentials",
+		ModuleComponents, ModuleBranches, ModuleCredentials,
 		// Validation — keep on for red team; bounty hunters can
 		// disable BAS / control_testing post-apply if not needed
-		"pentest", "attack_simulation", "control_testing",
-		"compensating_controls",
+		ModulePentest, ModuleAttackSimulation, ModuleControlTesting,
+		ModuleCompensatingControls,
 		// Prioritization
-		"threat_intel", "ai_triage",
-		"priority_rules", "risk_scoring",
+		ModuleThreatIntel, ModuleAITriage,
+		ModulePriorityRules, ModuleRiskScoring,
 		// Mobilization — handoff (pentest) + auto-submit (bounty)
-		"workflows", "suppressions", "remediation",
+		ModuleWorkflows, ModuleSuppressions, ModuleRemediation,
 		// Insights — reports are the deliverable for both
-		"reports",
+		ModuleReports,
 		// Operations — recon scanning at scale
-		"scanner_templates", "template_sources", "scan_workflows",
-		"iocs",
+		ModuleScannerTemplates, ModuleTemplateSources, ModuleScanWorkflows,
+		ModuleIOCs,
 		// Settings — ticketing (pentest handoff)
-		"integrations",
+		ModuleIntegrations,
 	},
 }
 
@@ -367,22 +367,22 @@ var presetASPM = ModulePreset{
 	EnabledModules: []string{
 		// Scoping split-outs (own toggleable modules, migration 000214;
 		// default-on so prior scope_config / attack_surface visibility is kept).
-		"business_units", "threat_model",
+		ModuleBusinessUnits, ModuleThreatModel,
 		// Scoping — apps/services map
-		"attack_surface", "scope_config", "ctem_cycles", "business_services", "relationships",
+		ModuleAttackSurface, ModuleScopeConfig, ModuleCTEMCycles, ModuleBusinessServices, ModuleRelationships,
 		// Discovery — the AppSec surface: components, repos, secrets
-		"components", "branches", "credentials",
+		ModuleComponents, ModuleBranches, ModuleCredentials,
 		// Prioritization — full app-finding lifecycle
-		"threat_intel", "ai_triage",
-		"priority_rules", "risk_scoring",
+		ModuleThreatIntel, ModuleAITriage,
+		ModulePriorityRules, ModuleRiskScoring,
 		// Mobilization — gate + fix
-		"remediation", "suppressions", "workflows",
+		ModuleRemediation, ModuleSuppressions, ModuleWorkflows,
 		// Insights — SBOM + exec
-		"reports",
+		ModuleReports,
 		// Settings — SCM/CI/scanner integration heavy
-		"integrations",
-		"scanner_templates", "template_sources", "scan_workflows",
-		"iocs",
+		ModuleIntegrations,
+		ModuleScannerTemplates, ModuleTemplateSources, ModuleScanWorkflows,
+		ModuleIOCs,
 	},
 }
 
@@ -412,22 +412,22 @@ var presetSBOM = ModulePreset{
 	EnabledModules: []string{
 		// Scoping split-outs (own toggleable modules, migration 000214;
 		// default-on so prior scope_config / attack_surface visibility is kept).
-		"business_units", "threat_model",
+		ModuleBusinessUnits, ModuleThreatModel,
 		// Scoping — repos belong to apps/services, need that map
-		"attack_surface", "scope_config", "ctem_cycles", "business_services", "relationships",
+		ModuleAttackSurface, ModuleScopeConfig, ModuleCTEMCycles, ModuleBusinessServices, ModuleRelationships,
 		// Discovery — component-heavy
-		"components", "branches", "credentials",
+		ModuleComponents, ModuleBranches, ModuleCredentials,
 		// Prioritization
-		"threat_intel", "ai_triage",
-		"priority_rules", "risk_scoring",
+		ModuleThreatIntel, ModuleAITriage,
+		ModulePriorityRules, ModuleRiskScoring,
 		// Mobilization
-		"remediation", "suppressions", "workflows",
+		ModuleRemediation, ModuleSuppressions, ModuleWorkflows,
 		// Insights — SBOM is the key deliverable
-		"reports",
+		ModuleReports,
 		// Settings — SCM/CI integration heavy
-		"integrations",
+		ModuleIntegrations,
 
-		"scanner_templates", "template_sources", "scan_workflows",
+		ModuleScannerTemplates, ModuleTemplateSources, ModuleScanWorkflows,
 	},
 }
 
@@ -455,27 +455,27 @@ var presetCSPM = ModulePreset{
 	EnabledModules: []string{
 		// Scoping split-outs (own toggleable modules, migration 000214;
 		// default-on so prior scope_config / attack_surface visibility is kept).
-		"business_units", "threat_model",
+		ModuleBusinessUnits, ModuleThreatModel,
 		// Scoping
-		"attack_surface", "scope_config", "ctem_cycles", "business_services", "relationships",
+		ModuleAttackSurface, ModuleScopeConfig, ModuleCTEMCycles, ModuleBusinessServices, ModuleRelationships,
 		// Discovery — cloud-native asset types
-		"components", "credentials",
+		ModuleComponents, ModuleCredentials,
 		// Prioritization
-		"threat_intel", "ai_triage", "priority_rules",
-		"risk_scoring",
+		ModuleThreatIntel, ModuleAITriage, ModulePriorityRules,
+		ModuleRiskScoring,
 		// Validation
-		"compensating_controls", "control_testing",
+		ModuleCompensatingControls, ModuleControlTesting,
 		// Mobilization
-		"remediation", "suppressions", "workflows",
+		ModuleRemediation, ModuleSuppressions, ModuleWorkflows,
 		// Insights
-		"reports",
+		ModuleReports,
 		// Settings — cloud integrations heavy
-		"integrations",
+		ModuleIntegrations,
 
-		"scanner_templates", "template_sources", "scan_workflows",
-		"iocs",
+		ModuleScannerTemplates, ModuleTemplateSources, ModuleScanWorkflows,
+		ModuleIOCs,
 		// Compliance (light — for cloud benchmarks)
-		"compliance",
+		ModuleCompliance,
 	},
 }
 
@@ -484,7 +484,7 @@ var presetCSPM = ModulePreset{
 // (compliance frameworks audit specific assets/services). Skips
 // offensive modules — auditors don't pentest.
 var presetCompliance = ModulePreset{
-	ID:            "compliance",
+	ID:            ModuleCompliance,
 	Name:          "Compliance & Audit",
 	Description:   "Framework-driven compliance — PCI, SOC2, ISO 27001, HIPAA — with asset-to-control mapping and evidence tracking.",
 	TargetPersona: "GRC / compliance officer / auditor",
@@ -505,23 +505,23 @@ var presetCompliance = ModulePreset{
 	EnabledModules: []string{
 		// Scoping split-outs (own toggleable modules, migration 000214;
 		// default-on so prior scope_config / attack_surface visibility is kept).
-		"business_units", "threat_model",
+		ModuleBusinessUnits, ModuleThreatModel,
 		// Scoping — controls audit specific assets
-		"attack_surface", "scope_config", "ctem_cycles", "business_services",
+		ModuleAttackSurface, ModuleScopeConfig, ModuleCTEMCycles, ModuleBusinessServices,
 		// Compliance
-		"compliance",
+		ModuleCompliance,
 		// Validation
-		"compensating_controls", "control_testing",
+		ModuleCompensatingControls, ModuleControlTesting,
 		// Discovery — light, just enough for asset mapping
-		"components",
+		ModuleComponents,
 		// Prioritization
-		"threat_intel", "priority_rules", "risk_scoring",
+		ModuleThreatIntel, ModulePriorityRules, ModuleRiskScoring,
 		// Mobilization
-		"remediation", "suppressions", "workflows",
+		ModuleRemediation, ModuleSuppressions, ModuleWorkflows,
 		// Insights (heavy)
-		"reports",
+		ModuleReports,
 		// Settings
-		"integrations",
+		ModuleIntegrations,
 	},
 }
 
@@ -549,32 +549,32 @@ var presetCTEMFull = ModulePreset{
 	EnabledModules: []string{
 		// Scoping split-outs (own toggleable modules, migration 000214;
 		// default-on so prior scope_config / attack_surface visibility is kept).
-		"business_units", "threat_model",
+		ModuleBusinessUnits, ModuleThreatModel,
 		// Scoping
-		"attack_surface", "scope_config", "business_services",
-		"ctem_cycles", "attacker_profiles", "relationships",
+		ModuleAttackSurface, ModuleScopeConfig, ModuleBusinessServices,
+		ModuleCTEMCycles, ModuleAttackerProfiles, ModuleRelationships,
 		// Discovery
-		"components", "branches", "credentials",
+		ModuleComponents, ModuleBranches, ModuleCredentials,
 		// Discovery — vulnerability database is part of the CTEM discovery surface
 		// Prioritization
-		"exposures",
-		"threat_intel", "ai_triage",
-		"priority_rules",
-		"risk_scoring",
+		ModuleExposures,
+		ModuleThreatIntel, ModuleAITriage,
+		ModulePriorityRules,
+		ModuleRiskScoring,
 		// Validation
-		"pentest", "attack_simulation", "control_testing",
-		"compensating_controls",
+		ModulePentest, ModuleAttackSimulation, ModuleControlTesting,
+		ModuleCompensatingControls,
 		// Mobilization
-		"remediation", "workflows",
-		"suppressions",
+		ModuleRemediation, ModuleWorkflows,
+		ModuleSuppressions,
 		// Insights
-		"reports",
+		ModuleReports,
 		// Operations
-		"scanner_templates", "template_sources", "scan_workflows",
-		"iocs",
+		ModuleScannerTemplates, ModuleTemplateSources, ModuleScanWorkflows,
+		ModuleIOCs,
 		// Compliance
-		"compliance",
+		ModuleCompliance,
 		// Integrations — all
-		"integrations",
+		ModuleIntegrations,
 	},
 }

@@ -102,7 +102,7 @@ func TestRequireModule_DisabledByPlatform(t *testing.T) {
 	p := &snapProvider{states: map[string]string{"pentest": ModuleReasonDisabledByPlatform}, cacheable: true}
 	g := NewModuleGate(p, time.Minute)
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/x", nil).WithContext(context.WithValue(context.Background(), TenantIDKey, "t1"))
+	req := httptest.NewRequestWithContext(context.WithValue(context.Background(), TenantIDKey, "t1"), http.MethodGet, "/x", nil)
 	g.RequireModule("pentest")(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
 		t.Error("the handler ran for a module the platform disabled")
 	})).ServeHTTP(rec, req)
