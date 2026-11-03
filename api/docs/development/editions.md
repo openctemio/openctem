@@ -10,6 +10,10 @@ Enterprise code.
 The core gets extension points and entitlement keys only.** Never push overlay
 code here, not even to a branch.
 
+How the overlay is organized, which core surfaces it may use, how it keeps
+working across core releases, and how an installation moves between the
+Community and Enterprise editions: [editions-overlay.md](editions-overlay.md).
+
 ## What lands here for a paid feature
 
 1. An entitlement key, registered in [`pkg/domain/limits`](../../pkg/domain/limits/registry.go)
