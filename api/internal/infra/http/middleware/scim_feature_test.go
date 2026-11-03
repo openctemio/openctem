@@ -62,3 +62,45 @@ func TestSCIMFeatureGate(t *testing.T) {
 		t.Fatalf("unwired gate must pass: %d", code)
 	}
 }
+
+// Deprovisioning is never gated: a user DELETE, PUT or PATCH passes (marked
+// leave-only) when the feature is off or the limits cannot be read; reads,
+// creates and group requests stay refused.
+func TestSCIMFeatureGateLetsLeaversThrough(t *testing.T) {
+	tenant := shared.NewID()
+	run := func(gate SCIMFeatureUsage, method, target string) (int, bool) {
+		r := httptest.NewRequest(method, target, nil)
+		r = r.WithContext(context.WithValue(r.Context(), scimTenantCtxKey, tenant))
+		w := httptest.NewRecorder()
+		leave := false
+		SCIMFeatureGate(gate)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			leave = SCIMLeaveOnly(r.Context())
+			w.WriteHeader(http.StatusNoContent)
+		})).ServeHTTP(w, r)
+		return w.Code, leave
+	}
+	off := &scimUsage{}
+	broken := &scimUsage{err: errors.New("db down")}
+	id := shared.NewID().String()
+	for _, gate := range []SCIMFeatureUsage{off, broken} {
+		for _, m := range []string{http.MethodDelete, http.MethodPut, http.MethodPatch} {
+			if code, leave := run(gate, m, "/scim/v2/Users/"+id); code != http.StatusNoContent || !leave {
+				t.Fatalf("%s user must pass leave-only: %d %v", m, code, leave)
+			}
+		}
+		for _, c := range []struct{ m, p string }{
+			{http.MethodPost, "/scim/v2/Users"},
+			{http.MethodGet, "/scim/v2/Users/" + id},
+			{http.MethodDelete, "/scim/v2/Groups/" + id},
+			{http.MethodPatch, "/scim/v2/Groups/" + id},
+		} {
+			if code, _ := run(gate, c.m, c.p); code != http.StatusForbidden && code != http.StatusServiceUnavailable {
+				t.Fatalf("%s %s must stay refused: %d", c.m, c.p, code)
+			}
+		}
+	}
+	// A usable organization is not marked leave-only.
+	if _, leave := run(&scimUsage{usable: map[shared.ID]bool{tenant: true}}, http.MethodDelete, "/scim/v2/Users/"+id); leave {
+		t.Fatal("usable organization must not be leave-only")
+	}
+}

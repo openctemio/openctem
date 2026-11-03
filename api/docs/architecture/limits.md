@@ -110,7 +110,7 @@ decides which organizations get them.
 |---|---|---|
 | `sso.connections` | creating or changing a SAML or OIDC connection: console PUT/POST, a pending change's submission and its approval (`SSOService.requireConnections`) | sign-in through a connection already configured keeps working (never a lock-out); deleting one always works |
 | `sso.enforcement` | turning SSO enforcement on (`TenantService.UpdateSecuritySettings`) | enforcement stays during the grace, then the `sso-enforcement-entitlement` controller (hourly) turns it off and tells the owners and administrators: members sign in with a password (and 2FA where required) again |
-| `scim` | minting a SCIM token (`TokenService.Mint`) and the SCIM API (`middleware.SCIMFeatureGate`, after the token is authenticated) | existing tokens keep working during the grace (`Usable`), then 403; no new token |
+| `scim` | minting a SCIM token (`TokenService.Mint`) and the SCIM API (`middleware.SCIMFeatureGate`, after the token is authenticated) | existing tokens keep working during the grace (`Usable`), then 403; no new token. Deprovisioning is never gated: a user DELETE, and a PUT or PATCH that sets `active:false`, still work when the feature is off or the limits cannot be read (the handler refuses `active:true` then), so a disabled feature never keeps a leaver's access |
 | `sso.group_links` | changing SCIM group to role mappings (`GroupService.SetRoleMappings`) | existing mappings keep applying |
 | `ldap` | reserved: there is no LDAP sign-in yet | — |
 | `content_sources.webhook` | setting a rule source's webhook secret (`contentsource.Service.RotateWebhookSecret`); webhook calls check `Usable` | calls keep queuing syncs during the grace, then they are refused; scheduled syncs go on |
