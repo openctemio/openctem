@@ -78,7 +78,11 @@ func TestImportRecon_CandidatesAreNeverTargeted(t *testing.T) {
 		return out
 	}
 	host := func(id, name, scope string) ctis.Asset {
-		return ctis.Asset{ID: id, Type: ctis.AssetTypeDomainName, Value: name, Properties: ctis.Properties{"import_scope": scope}}
+		// The import service's verdict travels in the io.openctem extension
+		// (findingimport judgeScope); properties carry no meaning.
+		a := ctis.Asset{ID: id, Type: ctis.AssetTypeDomainName, Value: name}
+		a.Extensions.Set(ctis.OpenCTEMNamespace, "import_scope", scope)
+		return a
 	}
 	idIn := func(tenant shared.ID, name string) string {
 		var id string

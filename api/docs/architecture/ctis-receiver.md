@@ -102,9 +102,12 @@ ingest, after validation:
   name); `import_scope`, `candidate_exposure`, `candidate_unverified` and
   `web_content` from `extensions["io.openctem"]`.
 
-The platform's own server-side reports (certificate promotion, program
-targets, DefectDojo) keep their properties; an upload by a person (with an
-actor), a CI run and every sensor report do not. Whatever a producer leaves
+Only a report the platform builds from its own data keeps its properties:
+the certificate promotion, which marks its ingest `ServerBuilt` (honoured
+only with no sensor, no CI run and no uploader). Every other report loses
+the interpreted keys: every sensor report, a CI run, a person's upload
+(restricted or not), a connector's conversion (DefectDojo) and program
+targets (which set none). Whatever a producer leaves
 under other keys is stored as an opaque, display-only, bounded attribute bag.
 
 Typed members that replaced properties:

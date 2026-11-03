@@ -202,7 +202,10 @@ func (s *Service) promote(ctx context.Context, tenantID shared.ID, cands []promo
 	if len(fresh) > 0 {
 		report := s.promotionReport(tenantID, fresh, byName, kind)
 		agt := &sensor.Sensor{TenantID: &tenantID, Status: sensor.SensorStatusActive}
-		out, err := s.ingester.Ingest(ctx, agt, ingest.Input{Report: report, CoverageType: ingest.CoverageTypePartial})
+		// The platform built this report from its own certificate data: its
+		// properties (discovery source, verified root) are kept.
+		out, err := s.ingester.Ingest(ctx, agt, ingest.Input{Report: report, CoverageType: ingest.CoverageTypePartial,
+			Options: ingest.Options{ServerBuilt: true}})
 		if err != nil {
 			return 0, fmt.Errorf("%s: ingest names: %w", kind.logLabel, err)
 		}

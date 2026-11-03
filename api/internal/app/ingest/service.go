@@ -449,7 +449,7 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	}
 	// properties carry no meaning in CTIS 2.0: the keys the stored model
 	// keeps come from typed members and the io.openctem extension.
-	adoptCTIS2Members(report, agt.ID.IsZero() && input.Options.Binding.Kind != BindingCIRun && input.Options.Actor == nil)
+	adoptCTIS2Members(report, keepsOwnProperties(agt, input.Options))
 	// The policies this ingest applies, before anything is written: no
 	// snapshot, no ingest (the caller retries).
 	policy, err := s.loadPolicySnapshot(ctx, tenantID)
