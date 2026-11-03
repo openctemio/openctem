@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- Go 1.26+
+- Go 1.27+
 - Docker & Docker Compose
 - Make (recommended)
 - PostgreSQL 16, 17 or 18 if you do not use Docker (17 recommended; the compose files ship 17)
@@ -308,5 +308,5 @@ Ensure Air is configured with polling (for Docker on macOS/Windows):
 
 Update golangci-lint:
 ```bash
-go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0
 ```
