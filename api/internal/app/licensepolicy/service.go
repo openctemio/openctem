@@ -225,6 +225,7 @@ func severityFor(a licensepolicy.Action) vulnerability.Severity {
 
 func (s *Service) reconcileFindings(ctx context.Context, tenantID shared.ID, assetIDs []shared.ID, violations []Violation, res *Result) error {
 	want := map[string]desired{}
+	current := map[string]string{} // version-2 key -> current key
 	order := []string{}
 	for _, v := range violations {
 		key, ok := identity(v)
@@ -241,6 +242,11 @@ func (s *Service) reconcileFindings(ctx context.Context, tenantID shared.ID, ass
 		}
 		want[fp] = desired{v: v, severity: sev}
 		order = append(order, fp)
+		// A finding not re-keyed to the current identity version yet is
+		// the same finding: it must be neither resolved nor created again.
+		for _, form := range key.KeyForms()[1:] {
+			current[form] = fp
+		}
 	}
 	existing, err := s.store.LicenseFindings(ctx, tenantID, assetIDs)
 	if err != nil {
@@ -250,8 +256,12 @@ func (s *Service) reconcileFindings(ctx context.Context, tenantID shared.ID, ass
 	var resolve, reopen []shared.ID
 	bySeverity := map[string][]shared.ID{}
 	for _, e := range existing {
-		have[e.Fingerprint] = e
-		d, wanted := want[e.Fingerprint]
+		fp := e.Fingerprint
+		if cur, ok := current[fp]; ok {
+			fp = cur
+		}
+		have[fp] = e
+		d, wanted := want[fp]
 		switch {
 		case !wanted:
 			if isOpen(e.Status) {
