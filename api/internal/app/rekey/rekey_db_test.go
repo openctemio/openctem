@@ -421,3 +421,89 @@ func TestRekey_PlaceholderIsNotCiphertext(t *testing.T) {
 	}
 	assertAll(t, readAll(t, db, newKey), want, "after apply with a placeholder")
 }
+
+// An extension keeps its tables in its own schema (pkg/extension). Until a
+// rekey seam lets it list its encrypted columns, a value it encrypted with
+// the app key must stop the rotation (named, nothing committed), never be
+// left unreadable under the new key; its other data passes.
+func TestRekey_SweepCoversExtensionSchemas(t *testing.T) {
+	db := freshDB(t)
+	ctx := context.Background()
+	oldKey, newKey := randomHexKey(t), randomHexKey(t)
+	seedAll(t, db, oldKey)
+	if _, err := db.Exec(`CREATE SCHEMA ee; CREATE TABLE ee.vault (id int PRIMARY KEY, secret text, note text)`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO ee.vault VALUES (1, NULL, 'plain text')`); err != nil {
+		t.Fatal(err)
+	}
+	// Plain extension data does not block a rotation.
+	if rep, err := Run(ctx, db, Keys{Old: oldKey, New: newKey}, Options{Sweep: true}); err != nil {
+		t.Fatalf("plain extension data blocked the dry run: %v %+v", err, rep.Unlisted)
+	}
+
+	c, _ := crypto.NewCipherFromKey(oldKey, "")
+	hidden, _ := c.EncryptString("extension secret")
+	if _, err := db.Exec(`UPDATE ee.vault SET secret = $1`, hidden); err != nil {
+		t.Fatal(err)
+	}
+	rep, err := Run(ctx, db, Keys{Old: oldKey, New: newKey}, Options{Apply: true, Sweep: true})
+	if !errors.Is(err, ErrFailures) || rep.Committed {
+		t.Fatalf("expected ErrFailures without commit, got committed=%v err=%v", rep != nil && rep.Committed, err)
+	}
+	if len(rep.Unlisted) != 1 || rep.Unlisted[0].Location != "ee.vault.secret" {
+		t.Fatalf("expected ee.vault.secret reported, got %+v", rep.Unlisted)
+	}
+}
+
+// A table the rekey role may not read cannot be proved free of OLD-key
+// ciphertext, so it is reported and the run refused.
+func TestRekey_SweepReportsUnreadableTables(t *testing.T) {
+	db := freshDB(t)
+	ctx := context.Background()
+	role := "rekey_ro_" + strings.ToLower(randomHexKey(t)[:8])
+	stmts := []string{
+		`CREATE SCHEMA hidden`, `CREATE TABLE hidden.t (v text)`,
+		`CREATE ROLE ` + role,
+		`GRANT USAGE ON SCHEMA public TO ` + role,
+		`GRANT SELECT, UPDATE ON ALL TABLES IN SCHEMA public TO ` + role,
+	}
+	for _, s := range stmts {
+		if _, err := db.Exec(s); err != nil {
+			t.Fatalf("%s: %v", s, err)
+		}
+	}
+	t.Cleanup(func() {
+		_, _ = db.Exec(`DROP OWNED BY ` + role)
+		_, _ = db.Exec(`DROP ROLE ` + role)
+	})
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = conn.Close() }()
+	if _, err := conn.ExecContext(ctx, `SET ROLE `+role); err != nil {
+		t.Fatal(err)
+	}
+	tx, err := conn.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	got, err := unreadableTables(ctx, tx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, x := range got {
+		if x == "hidden.t" {
+			found = true
+		}
+		if strings.HasPrefix(x, "public.") {
+			t.Errorf("readable core table reported: %s", x)
+		}
+	}
+	if !found {
+		t.Fatalf("hidden.t not reported: %v", got)
+	}
+}
