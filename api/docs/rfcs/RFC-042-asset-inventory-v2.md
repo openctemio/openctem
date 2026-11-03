@@ -2911,13 +2911,13 @@ Every slice that adds a table referencing `assets` also updates
 ## Amendment (2026-11-03): CTIS 2.0 wire types
 
 CTIS 2.0 collapsed several wire asset types; the stored model of this RFC
-does not change. The wire names that are no stored type are `type_inputs`
-of `configs/asset-types.yaml` (`web_origin` -> service/http, `ip_range` ->
-network, `container_image` -> container/image, `kubernetes_workload` ->
-kubernetes/workload, `endpoint_device` -> host/workstation); `domain_name`
-(domain or subdomain by the public-suffix apex), `service` (open_port),
-`identity` (sub-type from `technical.identity.kind`) and `network_device`
-(sub-type from `technical.network_device.kind`) are resolved in ingest. Ingest
+does not change. The CTIS receiver places the wire names that are no stored
+type (`web_origin` -> service/http, `ip_range` -> network, `container_image`
+-> container/image, `kubernetes_workload` -> kubernetes/workload,
+`endpoint_device` -> host/workstation; `domain_name` is a domain or subdomain
+by the public-suffix apex, `service` is open_port, `identity` and
+`network_device` take their sub-type from `technical.*.kind`). They are not
+`type_inputs`: the REST API's asset type inputs do not change. Ingest
 reads no sub-type from `properties` any more. Table and rules:
 `docs/architecture/ctis-receiver.md`.
 

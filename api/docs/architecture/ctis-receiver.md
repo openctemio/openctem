@@ -62,7 +62,9 @@ A document carries canonical natural keys and the producer's own references
 ## Wire types and the stored model
 
 The stored asset model does not change. The CTIS 2.0 wire types map onto it
-(`internal/app/ingest/mappers.go`, `configs/asset-types.yaml` `type_inputs`):
+in the receiver (`mapCTISAssetType` in `internal/app/ingest/mappers.go`).
+The wire-only names are not `type_inputs` of `configs/asset-types.yaml`, so
+the REST API's asset type inputs stay as they were:
 
 | Wire type | Stored as |
 |---|---|
