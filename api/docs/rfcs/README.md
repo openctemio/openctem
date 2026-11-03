@@ -152,6 +152,7 @@ RFC-003 (asset source priority) was withdrawn on 2026-10-05; see
 | [RFC-141](RFC-141-tenantless-account-space.md) | Account space for a person with no organization | Accepted (2026-11-01). |
 | [RFC-142](RFC-142-feed-relay.md) | Feed relay: signed feeds through a platform sensor, zero platform egress | Accepted (2026-11-01). |
 | [RFC-143](RFC-143-vulnerability-catalog.md) | Vulnerability catalog: separate store, reproducible keys, minimal disk, detachable | Proposed (2026-11-02) |
+| [RFC-144](RFC-144-application-security-posture.md) | Application security posture: branches, CI closure, code-to-runtime context | Draft (2026-11-02). |
 | [RFC-145](RFC-145-enterprise-licence-and-entitlements.md) | Enterprise licence verification and entitlements | Accepted (2026-11-02). |
 | [RFC-147](RFC-147-managed-scanning-fleet.md) | Managed scanning fleet: demand scaling, owned egress proxies, proxy selection | Proposed (2026-11-02); nothing here is built unless a section says "shipped" |
 <!-- END RFC INDEX -->
