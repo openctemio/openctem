@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"log/slog"
 	nethttp "net/http"
 	"os"
 	"os/signal"
@@ -731,6 +732,11 @@ func loggerConfig(cfg *config.Config) logger.Config {
 		Level:  cfg.Log.Level,
 		Format: cfg.Log.Format,
 		Output: os.Stdout,
+		Attrs: []slog.Attr{
+			slog.String("service", "api"),
+			slog.String("version", version.Get().Version),
+			slog.String("env", cfg.App.Env),
+		},
 		Sampling: logger.SamplingConfig{
 			Enabled:   cfg.Log.SamplingEnabled,
 			Tick:      time.Second,
