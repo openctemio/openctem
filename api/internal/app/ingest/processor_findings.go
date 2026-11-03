@@ -1246,6 +1246,11 @@ func (p *FindingProcessor) buildFinding(
 	f.MarkIngestV1Key() // a version-2 identity applied later replaces it
 	f.SetSensorID(sensorID)
 	f.SetScanID(reportIDOf(ctx))
+	if tech := findingClaimedTechnique(ctisFinding); tech != "" {
+		// The producer's technique, recorded apart from the source (which a
+		// bound capability decides).
+		f.SetMetadata(findingMetaTechnique, tech)
+	}
 
 	// Provenance. ctis.ReportMetadata.SourceType has always carried this — the
 	// Nessus converter sets "integration", the sensor's reports say "scanner" —

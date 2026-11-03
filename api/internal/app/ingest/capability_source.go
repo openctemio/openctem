@@ -89,12 +89,21 @@ func setReportCapability(report *ctis.Report, ref string) {
 	report.Metadata.Extensions.Set(ctis.OpenCTEMNamespace, capabilityExtKey, ref)
 }
 
-// findingTechnique is the technique of one finding of a report: its own
-// finding.technique, else the report's bound capability, else the tool's
-// techniques. A scanner with several techniques (trivy: dependencies,
-// misconfigurations, secrets in one run) that names none per finding lists
-// sca first, so the finding's type decides between them.
+// findingTechnique is the source of one finding of a report. A report bound
+// to a command's capability takes the source of that capability whatever the
+// finding says: the capability is the receiver's fact, finding.technique is
+// the producer's claim and never moves a finding to another source (it is
+// recorded on its own, findingClaimedTechnique). An unbound report takes the
+// finding's technique, else the tool's techniques. A scanner with several
+// techniques (trivy: dependencies, misconfigurations, secrets in one run)
+// that names none per finding lists sca first, so the finding's type decides
+// between them.
 func findingTechnique(report *ctis.Report, f *ctis.Finding) vulnerability.FindingSource {
+	if id, _, ok := capability.ParseRef(reportCapability(report)); ok {
+		if src, ok := capabilitySource[id]; ok {
+			return src
+		}
+	}
 	if f != nil && f.Technique != "" {
 		if src, ok := techniqueSource[f.Technique]; ok {
 			return src
@@ -115,4 +124,21 @@ func findingTechnique(report *ctis.Report, f *ctis.Finding) vulnerability.Findin
 	default:
 		return src
 	}
+}
+
+// findingMetaTechnique is the finding metadata key of the technique the
+// producer named for the finding (finding.technique), kept apart from its
+// source.
+const findingMetaTechnique = "technique"
+
+// findingClaimedTechnique is the finding's own technique when it is one the
+// receiver knows (a closed set, so nothing unbounded is stored), else "".
+func findingClaimedTechnique(f *ctis.Finding) string {
+	if f == nil {
+		return ""
+	}
+	if _, ok := techniqueSource[f.Technique]; !ok {
+		return ""
+	}
+	return string(f.Technique)
 }
