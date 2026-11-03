@@ -1702,6 +1702,7 @@
   "admin.sensors.pageDesc": "Sensors the platform owns. Organizations never see them by name.",
   "admin.sensors.pageTitle": "Platform sensors",
   "admin.sensors.sharedClosed": "Organizations cannot use shared scanning in this release yet. Sensors connected now serve platform roles (feed relay, passive discovery, AI worker) and start scanning for organizations when shared scanning is turned on.",
+  "admin.sensors.sharedClosedNoRelay": "Organizations cannot use shared scanning in this release yet. Sensors connected now serve platform roles (passive discovery, AI worker) and start scanning for organizations when shared scanning is turned on.",
   "admin.sessions.breakGlass": "Break-glass",
   "admin.sessions.col.admin": "Administrator",
   "admin.sessions.col.ip": "IP address",
