@@ -6,6 +6,7 @@
  * ../src through the `@/` alias; the tenant app never imports anything from
  * here. It serves only the console, at the root of its own site.
  */
+import { existsSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -14,6 +15,28 @@ import type { NextConfig } from 'next'
 /** web/: the root that holds node_modules and the shared source. */
 const webRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 
+const OVERLAY_ROOT = '../src/ee'
+const STUB_ROOT = '../src/extension-default'
+const OVERLAY_DIR = path.join(webRoot, 'src', 'ee')
+
+/**
+ * Edition switch (api/docs/development/editions.md, "Web"). The `@extension/*`
+ * modules resolve to the empty stub in src/extension-default, or with EDITION=ee to
+ * the overlay mounted at src/ee. A default production build refuses to run
+ * while an overlay is mounted, so a Community image can never carry
+ * overlay pages; an EDITION=ee build without the overlay fails to resolve.
+ */
+const EDITION = (process.env.EDITION || '').trim()
+if (EDITION !== '' && EDITION !== 'ee') {
+  throw new Error(`EDITION must be unset or "ee", got "${EDITION}"`)
+}
+if (EDITION !== 'ee' && process.env.NODE_ENV === 'production' && existsSync(OVERLAY_DIR)) {
+  throw new Error(`${OVERLAY_DIR} is mounted: build with EDITION=ee, or remove the overlay`)
+}
+const EDITION_ALIASES = {
+  '@extension/*': EDITION === 'ee' ? `${OVERLAY_ROOT}/*` : `${STUB_ROOT}/*`,
+}
+
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
@@ -21,7 +44,7 @@ const nextConfig: NextConfig = {
   output: 'standalone',
   // Trace and bundle from web/, so the shared source and packages resolve.
   outputFileTracingRoot: webRoot,
-  turbopack: { root: webRoot },
+  turbopack: { root: webRoot, resolveAlias: EDITION_ALIASES },
 
   /**
    * Response headers of every console response. The per-request nonce CSP is

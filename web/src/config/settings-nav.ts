@@ -91,6 +91,8 @@ import {
 } from 'lucide-react'
 import { Permission } from '@/lib/permissions'
 import { matchesAllWords } from './settings-search'
+import { webExtension } from '@/lib/extension'
+import { mergeSettingsGroups } from '@/lib/extension/merge'
 
 /**
  * One setting inside a page, so search finds the setting and not only its page.
@@ -146,7 +148,7 @@ export interface SettingsNavGroup {
   items: SettingsNavItem[]
 }
 
-export const settingsNav: SettingsNavGroup[] = [
+const coreSettingsNav: SettingsNavGroup[] = [
   {
     id: 'account',
     title: 'My account',
@@ -1037,6 +1039,12 @@ export const settingsNav: SettingsNavGroup[] = [
 ]
 
 /** Every item, in rail order. */
+/** The core pages plus the pages the build's extension adds (none by default). */
+export const settingsNav: SettingsNavGroup[] = mergeSettingsGroups(
+  coreSettingsNav,
+  webExtension.settingsItems
+)
+
 export const settingsNavItems: SettingsNavItem[] = settingsNav.flatMap((g) => g.items)
 
 /**

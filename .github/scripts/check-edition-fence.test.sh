@@ -38,12 +38,18 @@ check "go imports private module without tag" 1 api/cmd/server/a.go $'package ma
 check "go imports overlay with tag in the switch" 0 api/cmd/server/edition_ee.go $'//go:build ee\n\npackage main\nimport _ "github.com/openctemio/openctem/api/ee/billing"\n'
 check "ee tag outside the switch file" 1 api/internal/x/a.go $'//go:build ee\n\npackage x\n'
 check "ee in a combined tag outside the switch" 1 api/internal/x/a.go $'//go:build linux && ee\n\npackage x\n'
+check "nested overlay route group tracked" 1 'web/src/app/(dashboard)/(ee)/a/page.tsx' 'x'
+check "nested console overlay route group tracked" 1 'web/console/src/app/(console)/(ee)/a/page.tsx' 'x'
+check "core route group named like ee-tools is fine" 0 'web/src/app/(dashboard)/(ee-tools)/a/page.tsx' 'x'
+check "console build config may name the overlay" 0 web/console/next.config.ts "const OVERLAY_ROOT = '../src/ee'"
+check "other console file may not name the overlay" 1 web/console/src/a.ts "const p = '../src/ee'"
+check "web code may import the @ee alias" 0 web/src/lib/a.ts "import { extension } from '@extension/web'"
 check "other tag is fine" 0 api/internal/x/a.go $'//go:build linux\n\npackage x\n'
 check "word ee in a package name is fine" 0 api/internal/x/a.go $'package x\n// see ee docs\n'
 check "web direct overlay import" 1 web/src/a.ts "import { x } from '@/ee/legal-hold';"
 check "web relative overlay import" 1 web/src/a/b.tsx "import x from '../ee/y';"
-check "web alias import is fine" 0 web/src/a.ts "import { x } from '@ee/legal-hold';"
-check "web ee-stub import is fine" 0 web/src/a.ts "import { x } from '@/ee-stub/y';"
+check "web alias import is fine" 0 web/src/a.ts "import { x } from '@extension/legal-hold';"
+check "web extension-default import is fine" 0 web/src/a.ts "import { x } from '@/extension-default/y';"
 check "overlay dir named in a non-config file" 1 web/src/b.ts "const p = 'src/ee/';"
 check "overlay dir named in next.config" 0 web/next.config.mjs "const p = 'src/ee/';"
 check "brand in a source file" 1 api/internal/x/a.go "package x // $brand"
