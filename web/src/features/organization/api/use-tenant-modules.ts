@@ -37,7 +37,23 @@ export interface TenantModule {
   is_enabled: boolean
   release_status: string
   sub_modules?: TenantSubModule[]
+  /**
+   * Why the module is off, when the API says so (the MODULE_NOT_ENABLED
+   * reasons: disabled_by_admin, not_entitled, unavailable, read_only_grace,
+   * disabled_by_platform). Older APIs omit it; the page then reads
+   * `entitled` and the session's read-only modules.
+   */
+  reason?: ModuleStateReason
+  /** Runtime health of a module that is on. Absent means full. */
+  health?: ModuleHealth
+  /** One line on what is degraded, shown under the module. */
+  health_detail?: string
 }
+
+export type ModuleStateReason =
+  'disabled_by_admin' | 'not_entitled' | 'unavailable' | 'read_only_grace' | 'disabled_by_platform'
+
+export type ModuleHealth = 'full' | 'degraded'
 
 export interface TenantModuleSummary {
   total: number
