@@ -349,13 +349,29 @@
    source's wire carries a moving dash; volume is the wire's width, so the
    speed is constant. Static under reduced motion (the meaning holds through
    width and the row's words). */
-.animate-flow-dash {
-  animation: flow-dash 1.6s linear infinite;
+
+/* The travelling light of a healthy wire (FlowWire): a short bright dash that
+   runs along the path from source to target, the same speed on every wire
+   (px, not a share of the length). None under reduced motion or motion off. */
+.animate-flow-light {
+  stroke-dasharray: 10 44;
+  animation: flow-light 1.8s linear infinite;
+}
+@keyframes flow-light {
+  to {
+    stroke-dashoffset: -54;
+  }
 }
 @media (prefers-reduced-motion: reduce) {
-  .animate-flow-dash {
+  .animate-flow-light {
     animation: none;
+    stroke-dasharray: none;
+    display: none;
   }
+}
+[data-motion='off'] .animate-flow-light {
+  animation: none;
+  display: none;
 }
 
 /* The exposure flow's rings draw in once when they mount (each segment's
