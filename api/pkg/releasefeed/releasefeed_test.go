@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/releasefeed/releasefeedtest"
+	"github.com/openctemio/openctem/api/pkg/releasefeed/testdata/releasefeedtest"
 )
 
 // The virtual log is valid from the moment the test starts, so the clock is real.
