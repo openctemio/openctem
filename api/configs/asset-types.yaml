@@ -441,18 +441,12 @@ virtual_types:
 # (RFC-042 §6.3.8). `web_application` is stored as (application, website):
 # one web sub-type, labelled "Web application" (owner decision O3).
 #
-# The CTIS 2.0 wire types that are no stored type map onto the stored model
-# here (the CTIS receiver profile, section 5). `domain_name` (domain or
-# subdomain by the public-suffix apex), `service` (open_port) and `identity`
-# (sub-type from technical.identity.kind) need the asset and are resolved in
-# ingest (internal/app/ingest/mappers.go).
+# The CTIS 2.0 wire types that are no stored type (domain_name, web_origin,
+# service, ip_range, container_image, kubernetes_workload, endpoint_device,
+# identity, network_device) are placed by the CTIS receiver
+# (internal/app/ingest/mappers.go), not here: these are the REST API's inputs.
 type_inputs:
   web_application: { type: application, sub_type: website }
-  web_origin: { type: service, sub_type: http }
-  ip_range: { type: network }
-  container_image: { type: container, sub_type: image }
-  kubernetes_workload: { type: kubernetes, sub_type: workload }
-  endpoint_device: { type: host, sub_type: workstation }
 
 # Attribute types: string, int, number, bool, time, enum (needs values),
 # list (of strings) and object (opaque). Only string, int, enum and bool
