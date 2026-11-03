@@ -13,6 +13,7 @@ import (
 	cryptopkg "github.com/openctemio/openctem/api/pkg/crypto"
 	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/httpsec"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/pagination"
 )
@@ -86,15 +87,19 @@ func (s *AuditService) LogEvent(ctx context.Context, actx AuditContext, event Au
 		log.WithActor(shared.ID{}, actx.ActorEmail)
 	}
 
-	// Set request context
-	if actx.ActorIP != "" {
-		log.WithActorIP(actx.ActorIP)
+	// Set request context. Most callers build AuditContext by hand and leave
+	// the request id and client address out; the HTTP middleware has already
+	// put both on the request context (request id, and the client IP derived
+	// with the trusted-proxy rule), so fall back to them. A caller's explicit
+	// value wins. Background work has neither and records neither.
+	if ip := firstNonEmpty(actx.ActorIP, httpsec.ClientIPFromContext(ctx)); ip != "" {
+		log.WithActorIP(ip)
 	}
 	if actx.UserAgent != "" {
 		log.WithActorUserAgent(actx.UserAgent)
 	}
-	if actx.RequestID != "" {
-		log.WithRequestID(actx.RequestID)
+	if rid := firstNonEmpty(actx.RequestID, requestIDFromContext(ctx)); rid != "" {
+		log.WithRequestID(rid)
 	}
 	if actx.SessionID != "" {
 		log.WithSessionID(actx.SessionID)
@@ -1308,4 +1313,23 @@ func (s *AuditService) LogSensorDisconnected(ctx context.Context, actx AuditCont
 		WithResourceName(sensorName).
 		WithMessage(fmt.Sprintf("Sensor '%s' disconnected (heartbeat timeout)", sensorName))
 	return s.LogEvent(ctx, actx, event)
+}
+
+// requestIDFromContext returns the request id the HTTP request-id middleware
+// stored on the context (the logger's context key), or "".
+func requestIDFromContext(ctx context.Context) string {
+	if ctx == nil {
+		return ""
+	}
+	v, _ := ctx.Value(logger.ContextKeyRequestID).(string)
+	return v
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
 }
