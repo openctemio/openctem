@@ -576,6 +576,9 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	w.ControllerManager.Register(controller.NewDashboardSnapshotsController(
 		svc.DashboardWidgets, log.With("controller", "dashboard-snapshots")))
 	// Attack surface posture: scheduled refreshes of the posture facts.
+	if svc.Module != nil {
+		svc.Posture.SetModuleGuard(svc.Module) // skip tenants with attack_surface off
+	}
 	w.ControllerManager.Register(controller.NewEASMPostureController(
 		svc.Posture, log.With("controller", "easm-posture")))
 
