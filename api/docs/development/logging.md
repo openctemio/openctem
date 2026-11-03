@@ -10,6 +10,16 @@ OpenCTEM uses Go's standard library `log/slog` for structured logging. The logge
 - **Log sampling** for high-traffic production environments
 - **Configurable HTTP request logging** with skip paths
 
+Every record carries the identity of the process that wrote it: `service`
+(`api`), `version` (the build version) and `env` (`APP_ENV`), so records stay
+attributable once several services' logs are shipped to one store.
+
+Audit rows written during a request carry its `request_id` and the client
+address (trusted-proxy rule applied) even when the caller did not set them:
+`AuditService.LogEvent` falls back to the request context. Search the
+application log by an audit row's `request_id` to find what else the request
+did.
+
 ## Configuration
 
 ### Environment Variables
