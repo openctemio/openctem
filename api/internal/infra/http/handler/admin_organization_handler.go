@@ -70,6 +70,10 @@ type AdminOrganizationResponse struct {
 	Description   string    `json:"description,omitempty"`
 	CreatedAt     time.Time `json:"created_at"`
 	ActiveMembers int       `json:"active_members"`
+	// LastMemberSignInAt: the latest sign-in of any active member (per
+	// account, so a sign-in for another organization counts); absent when
+	// nobody signed in yet.
+	LastMemberSignInAt *time.Time `json:"last_member_sign_in_at,omitempty"`
 	// OwnerEmails is on the organization's own page only (GET one), for
 	// ops_admin and above, and that view is audited; the list never carries
 	// it. OwnerDomains (the list's owner column) is for ops_admin and above.
@@ -305,7 +309,7 @@ func toAdminOrganizationResponse(o *admin.Organization, personalData, withOwnerE
 	}
 	return AdminOrganizationResponse{
 		ID: o.ID.String(), Name: o.Name, Slug: o.Slug, Description: o.Description,
-		CreatedAt: o.CreatedAt, ActiveMembers: o.ActiveMembers, OwnerEmails: owners, OwnerDomains: domains, OwnerCount: count,
+		CreatedAt: o.CreatedAt, ActiveMembers: o.ActiveMembers, LastMemberSignInAt: o.LastMemberSignInAt, OwnerEmails: owners, OwnerDomains: domains, OwnerCount: count,
 		SAMLEnabled: o.SAMLEnabled, ActiveIdentityProviders: o.ActiveIdentityProviders,
 		VerifiedDomains: o.VerifiedDomains, SSOEnforced: o.SSOEnforced, LimitsApply: o.LimitsApply,
 		Status: o.Status, SuspendedAt: o.SuspendedAt, SuspendedReason: reason, DeletionDueAt: o.DeletionDueAt,
