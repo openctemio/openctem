@@ -38,31 +38,32 @@ const DEPLOYMENT_ID = (
 ).trim()
 
 const webRoot = path.dirname(fileURLToPath(import.meta.url))
-const OVERLAY_ROOT = './src/ee'
-const STUB_ROOT = './src/extension-default'
-const OVERLAY_DIR = path.join(webRoot, 'src', 'ee')
+const EXTENSION_ROOT = './src/extensions'
+const DEFAULT_ROOT = './src/extension-default'
+const EXTENSION_DIR = path.join(webRoot, 'src', 'extensions')
 
 /**
- * Edition switch (api/docs/development/editions.md, "Web"). The `@extension/*`
- * modules resolve to the empty stub in src/extension-default, or with EDITION=ee to
- * the overlay mounted at src/ee. A default production build refuses to run
- * while an overlay is mounted, so a Community image can never carry
- * overlay pages; an EDITION=ee build without the overlay fails to resolve.
+ * Extension switch (api/docs/development/editions.md, "Web"). The `@extension/*`
+ * modules resolve to the empty default in src/extension-default, or with
+ * EXTENSIONS=on to the extension mounted at src/extensions. Any other value
+ * than unset or "on" is refused. A production build without the switch
+ * refuses to run while an extension is mounted, so a default image can never
+ * carry extension pages; an EXTENSIONS=on build without one fails to resolve.
  */
-const EDITION = (process.env.EDITION || '').trim()
-if (EDITION !== '' && EDITION !== 'ee') {
-  throw new Error(`EDITION must be unset or "ee", got "${EDITION}"`)
+const EXTENSIONS = (process.env.EXTENSIONS || '').trim()
+if (EXTENSIONS !== '' && EXTENSIONS !== 'on') {
+  throw new Error(`EXTENSIONS must be unset or "on", got "${EXTENSIONS}"`)
 }
-if (EDITION !== 'ee' && process.env.NODE_ENV === 'production' && existsSync(OVERLAY_DIR)) {
-  throw new Error(`${OVERLAY_DIR} is mounted: build with EDITION=ee, or remove the overlay`)
+if (EXTENSIONS !== 'on' && process.env.NODE_ENV === 'production' && existsSync(EXTENSION_DIR)) {
+  throw new Error(`${EXTENSION_DIR} is mounted: build with EXTENSIONS=on, or remove it`)
 }
-const EDITION_ALIASES = {
-  '@extension/*': EDITION === 'ee' ? `${OVERLAY_ROOT}/*` : `${STUB_ROOT}/*`,
+const EXTENSION_ALIASES = {
+  '@extension/*': EXTENSIONS === 'on' ? `${EXTENSION_ROOT}/*` : `${DEFAULT_ROOT}/*`,
 }
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
-  turbopack: { resolveAlias: EDITION_ALIASES },
+  turbopack: { resolveAlias: EXTENSION_ALIASES },
   // Version-skew protection: a tab opened before a deploy reloads the page on
   // its next navigation instead of calling server actions and chunks that no
   // longer exist (the login form's "Failed to find Server Action"). Set from the

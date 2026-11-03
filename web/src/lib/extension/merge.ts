@@ -1,7 +1,7 @@
 /**
  * Pure functions that fold an extension's registrations into the core's
  * navigation and catalogs. They run once at module load. Every mismatch
- * throws: an overlay that does not fit the core must fail its build and its
+ * throws: an extension that does not fit the core must fail its build and its
  * tests, never ship a page that silently lacks (or replaces) something.
  */
 import type { NavGroup } from '@/components/types'
@@ -14,9 +14,17 @@ import {
   type ExtensionSettingsItem,
 } from './types'
 
-const EDITION_RE = /^[a-z][a-z0-9-]{0,31}$/
+/**
+ * Answers whether a grant key is on for the organization (tenant app) or the
+ * installation (console). The web only hides what a grant does not cover: the
+ * API route behind every extension page checks permission and grant itself,
+ * so a wrong answer here can show a row that then answers 403, never open data.
+ */
+export type GrantCheck = (grant: string) => boolean
 
-/** Refuses an overlay built for another contract version. */
+const NAME_RE = /^[a-z][a-z0-9-]{0,31}$/
+
+/** Refuses an extension built for another contract version. */
 export function assertCompatible(what: string, apiVersion: number): void {
   if (apiVersion !== EXTENSION_API_VERSION) {
     throw new Error(
@@ -25,16 +33,21 @@ export function assertCompatible(what: string, apiVersion: number): void {
   }
 }
 
-export function assertEditionName(edition: string): void {
-  if (!EDITION_RE.test(edition)) throw new Error(`extension: invalid edition name "${edition}"`)
+export function assertExtensionName(name: string): void {
+  if (!NAME_RE.test(name)) throw new Error(`extension: invalid name "${name}"`)
 }
 
-/** Appends extension rows to the named sidebar groups. */
-export function mergeNavGroups(groups: NavGroup[], extra: readonly ExtensionNavItem[]): NavGroup[] {
-  if (extra.length === 0) return groups
+/** Appends extension rows whose grant is on to the named sidebar groups. */
+export function mergeNavGroups(
+  groups: NavGroup[],
+  extra: readonly ExtensionNavItem[],
+  isGrantOn: GrantCheck
+): NavGroup[] {
+  const rows = extra.filter((r) => isGrantOn(r.grant))
+  if (rows.length === 0) return groups
   const out = groups.map((g) => ({ ...g, items: [...g.items] }))
   const urls = new Set(out.flatMap((g) => g.items.map((i) => ('url' in i ? String(i.url) : ''))))
-  for (const { group, item } of extra) {
+  for (const { group, item } of rows) {
     const target = out.find((g) => g.title === group)
     if (!target) throw new Error(`extension: sidebar group "${group}" does not exist`)
     if ('url' in item && urls.has(String(item.url))) {
@@ -45,16 +58,18 @@ export function mergeNavGroups(groups: NavGroup[], extra: readonly ExtensionNavI
   return out
 }
 
-/** Appends extension pages to the named settings groups. */
+/** Appends extension pages whose grant is on to the named settings groups. */
 export function mergeSettingsGroups(
   groups: SettingsNavGroup[],
-  extra: readonly ExtensionSettingsItem[]
+  extra: readonly ExtensionSettingsItem[],
+  isGrantOn: GrantCheck
 ): SettingsNavGroup[] {
-  if (extra.length === 0) return groups
+  const rows = extra.filter((r) => isGrantOn(r.grant))
+  if (rows.length === 0) return groups
   const out = groups.map((g) => ({ ...g, items: [...g.items] }))
   const ids = new Set(out.flatMap((g) => g.items.map((i) => i.id)))
   const urls = new Set(out.flatMap((g) => g.items.map((i) => i.url)))
-  for (const { group, item } of extra) {
+  for (const { group, item } of rows) {
     const target = out.find((g) => g.id === group)
     if (!target) throw new Error(`extension: settings group "${group}" does not exist`)
     if (ids.has(item.id) || urls.has(item.url)) {
@@ -67,15 +82,16 @@ export function mergeSettingsGroups(
   return out
 }
 
-/** Appends extension rows to the console sections, found by their i18nKey. */
+/** Appends extension rows whose grant is on to the console sections, found by their i18nKey. */
 export function mergeConsoleNav<
   S extends { i18nKey?: string; items: I[] },
   I extends { url: string },
->(sections: S[], extra: readonly ExtensionConsoleNavItem[]): S[] {
-  if (extra.length === 0) return sections
+>(sections: S[], extra: readonly ExtensionConsoleNavItem[], isGrantOn: GrantCheck): S[] {
+  const rows = extra.filter((r) => isGrantOn(r.grant))
+  if (rows.length === 0) return sections
   const out = sections.map((s) => ({ ...s, items: [...s.items] }))
   const urls = new Set(out.flatMap((s) => s.items.map((i) => i.url)))
-  for (const { section, item } of extra) {
+  for (const { section, item } of rows) {
     const target = out.find((s) => s.i18nKey === section)
     if (!target) throw new Error(`extension: console section "${section}" does not exist`)
     if (urls.has(item.url)) throw new Error(`extension: console row ${item.url} already exists`)

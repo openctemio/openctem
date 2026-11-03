@@ -64,7 +64,3 @@ __pycache__/
 /web/src/app/(ee)/
 /web/console/src/ee/
 /web/console/src/app/(ee)/
-# Route groups of the overlay nested under a core layout group, e.g.
-# web/src/app/(dashboard)/(ee)/ (pages that use the core shell).
-/web/src/app/**/(ee)/
-/web/console/src/app/**/(ee)/

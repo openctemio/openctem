@@ -1,12 +1,12 @@
 /**
- * The web extension API: what an extension build (a private overlay, a fork
- * or any third-party build) can add to the tenant app and the console
- * (api/docs/development/editions-overlay.md). The default build resolves the
+ * The web extension API: what an extension build (a separately built
+ * extension, a fork or any third-party build) can add to the tenant app and the console
+ * (api/docs/development/editions.md). The default build resolves the
  * `@extension/*` modules to src/extension-default, which adds nothing; an
  * extension build resolves them to its own modules. An extension sees only
  * what is declared here, so anything it needs from the core is added to this
  * file first, in a core pull request, with a test. Names say what a point
- * does, never which edition uses it.
+ * does, never which build uses it.
  *
  * Bump EXTENSION_API_VERSION when a change here breaks an extension written
  * against the previous version (a removed or renamed member, a narrowed
@@ -18,16 +18,19 @@ import type { LucideIcon } from 'lucide-react'
 import type { NavItem } from '@/components/types'
 import type { SettingsNavItem } from '@/config/settings-nav'
 
-/** Version of this contract. The overlay states the version it was built for. */
+/** Version of this contract. The extension states the version it was built for. */
 export const EXTENSION_API_VERSION = 1
-
-/** Edition name of a build with no extension. */
-export const COMMUNITY_EDITION = 'community'
 
 /** A sidebar row the extension adds to an existing tenant-app group. */
 export interface ExtensionNavItem {
   /** English title of the group the row joins (as in config/sidebar-data.ts). */
   group: string
+  /**
+   * Grant key that must be on for the organization, or the row is not shown.
+   * Hiding is a convenience: the API route behind the page enforces
+   * permission and grant on its own.
+   */
+  grant: string
   /** The row. Its `module` and `permission` gate it like any core row. */
   item: NavItem
 }
@@ -36,6 +39,8 @@ export interface ExtensionNavItem {
 export interface ExtensionSettingsItem {
   /** Id of the settings group (config/settings-nav.ts), e.g. `organization`. */
   group: string
+  /** Grant key that must be on for the organization, or the page is not listed. */
+  grant: string
   item: SettingsNavItem
 }
 
@@ -72,12 +77,12 @@ export interface ExtensionOverrideProps {
 
 export type ExtensionOverrideId = keyof ExtensionOverrideProps
 
-/** What the overlay's `@extension/web` module exports as `extension`. */
+/** What the extension's `@extension/web` module exports as `extension`. */
 export interface WebExtension {
-  /** The EXTENSION_API_VERSION the overlay was built for. */
+  /** The EXTENSION_API_VERSION the extension was built for. */
   apiVersion: number
-  /** Edition name: lower-case letters, digits and dashes. */
-  edition: string
+  /** Name of the extension: lower-case letters, digits and dashes. */
+  name: string
   navItems: readonly ExtensionNavItem[]
   settingsItems: readonly ExtensionSettingsItem[]
   slots: { readonly [K in ExtensionSlotId]?: ComponentType<ExtensionSlotProps[K]> }
@@ -88,6 +93,8 @@ export interface WebExtension {
 export interface ExtensionConsoleNavItem {
   /** i18nKey of the console section the row joins, e.g. `admin.nav.group.security`. */
   section: string
+  /** Grant key that must be on for the installation, or the row is not shown. */
+  grant: string
   item: {
     title: string
     i18nKey: string
@@ -98,14 +105,14 @@ export interface ExtensionConsoleNavItem {
   }
 }
 
-/** What the overlay's `@extension/console` module exports as `extension`. */
+/** What the extension's `@extension/console` module exports as `extension`. */
 export interface ConsoleExtension {
   apiVersion: number
   navItems: readonly ExtensionConsoleNavItem[]
 }
 
 /**
- * What the overlay's `@extension/messages` module exports: extra catalog entries
+ * What the extension's `@extension/messages` module exports: extra catalog entries
  * per locale. They may add keys, never replace a core key.
  */
 export interface ExtensionMessages {

@@ -93,6 +93,7 @@ import { Permission } from '@/lib/permissions'
 import { matchesAllWords } from './settings-search'
 import { webExtension } from '@/lib/extension'
 import { mergeSettingsGroups } from '@/lib/extension/merge'
+import { isGrantOn } from '@/lib/extension/grants'
 
 /**
  * One setting inside a page, so search finds the setting and not only its page.
@@ -1042,7 +1043,8 @@ const coreSettingsNav: SettingsNavGroup[] = [
 /** The core pages plus the pages the build's extension adds (none by default). */
 export const settingsNav: SettingsNavGroup[] = mergeSettingsGroups(
   coreSettingsNav,
-  webExtension.settingsItems
+  webExtension.settingsItems,
+  isGrantOn
 )
 
 export const settingsNavItems: SettingsNavItem[] = settingsNav.flatMap((g) => g.items)

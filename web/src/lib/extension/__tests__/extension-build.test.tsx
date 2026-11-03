@@ -1,5 +1,5 @@
 /**
- * Contract test of the web extension points with a fake overlay: what an
+ * Contract test of the web extension points with a fake extension: what an
  * extension registers reaches the sidebar, the settings navigation and the
  * slots, gated like core entries, and nothing else changes. Runs in the
  * public repository, so a core change that breaks the contract fails here.
@@ -11,10 +11,11 @@ import { FileText } from 'lucide-react'
 vi.mock('@extension/web', () => ({
   extension: {
     apiVersion: 1,
-    edition: 'test-edition',
+    name: 'test-extension',
     navItems: [
       {
         group: 'Validation',
+        grant: 'fake_grant',
         item: {
           title: 'Fake page',
           url: '/fake-page',
@@ -22,14 +23,20 @@ vi.mock('@extension/web', () => ({
           permission: 'fake:read',
         },
       },
+      {
+        group: 'Validation',
+        grant: 'off_grant',
+        item: { title: 'Hidden page', url: '/hidden-page', module: 'fake_module' },
+      },
     ],
     settingsItems: [
       {
         group: 'organization',
+        grant: 'fake_grant',
         item: {
           id: 'fake-settings',
           title: 'Fake settings',
-          description: 'A page the fake overlay adds.',
+          description: 'A page the fake extension adds.',
           url: '/settings/fake',
           icon: FileText,
           permission: 'fake:write',
@@ -49,22 +56,36 @@ vi.mock('@extension/web', () => ({
   },
 }))
 
-describe('extension build (fake overlay)', () => {
-  it('adds the overlay rows to the sidebar group it names, keeping their gates', async () => {
+// The app has no client-side grant read yet (lib/extension/grants.ts): the test
+// answers for it, with one grant on and one off.
+vi.mock('@/lib/extension/grants', () => ({
+  isGrantOn: (grant: string) => grant === 'fake_grant',
+}))
+
+describe('extension build (fake extension)', () => {
+  it('adds the extension rows to the sidebar group it names, keeping their gates', async () => {
     const { sidebarData } = await import('@/config/sidebar-data')
     const group = sidebarData.navGroups.find((g) => g.title === 'Validation')
     const row = group?.items.find((i) => 'url' in i && i.url === '/fake-page')
     expect(row).toMatchObject({ module: 'fake_module', permission: 'fake:read' })
   })
 
-  it('adds the overlay settings page to its group', async () => {
+  it('does not render a row whose grant is off', async () => {
+    const { sidebarData } = await import('@/config/sidebar-data')
+    const urls = sidebarData.navGroups.flatMap((g) =>
+      g.items.map((i) => ('url' in i ? String(i.url) : ''))
+    )
+    expect(urls).not.toContain('/hidden-page')
+  })
+
+  it('adds the extension settings page to its group', async () => {
     const { settingsNav, settingsNavItems } = await import('@/config/settings-nav')
     const org = settingsNav.find((g) => g.id === 'organization')
     expect(org?.items.at(-1)).toMatchObject({ id: 'fake-settings', permission: 'fake:write' })
     expect(settingsNavItems.some((i) => i.id === 'fake-settings')).toBe(true)
   })
 
-  it('renders the overlay component in its slot', async () => {
+  it('renders the extension component in its slot', async () => {
     const { ExtensionSlot } = await import('@/lib/extension/slot')
     render(<ExtensionSlot id="reports.sections" />)
     expect(screen.getByText('fake section')).toBeInTheDocument()
