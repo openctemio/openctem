@@ -40,7 +40,7 @@ export function stripRoute(path: string): string {
     '/' +
     segs
       .map((s) => {
-        let seg = s
+        let seg: string
         try {
           seg = decodeURIComponent(s)
         } catch {
