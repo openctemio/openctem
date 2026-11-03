@@ -67,6 +67,7 @@ import (
 	dashwidgets "github.com/openctemio/openctem/api/internal/app/dashboard/widgets"
 	"github.com/openctemio/openctem/api/internal/app/defectdojo"
 	"github.com/openctemio/openctem/api/internal/app/participation"
+	postureapp "github.com/openctemio/openctem/api/internal/app/posture"
 	"github.com/openctemio/openctem/api/internal/app/remediation"
 	savedviewapp "github.com/openctemio/openctem/api/internal/app/savedview"
 	scangovapp "github.com/openctemio/openctem/api/internal/app/scangov"
@@ -94,7 +95,6 @@ import (
 	contentruleapp "github.com/openctemio/openctem/api/internal/app/contentrule"
 	contentsourceapp "github.com/openctemio/openctem/api/internal/app/contentsource"
 	coverageapp "github.com/openctemio/openctem/api/internal/app/coverage"
-	ctemidapp "github.com/openctemio/openctem/api/internal/app/ctemid"
 	"github.com/openctemio/openctem/api/internal/app/deploymentregion"
 	easmdnsapp "github.com/openctemio/openctem/api/internal/app/easmdns"
 	entitlementapp "github.com/openctemio/openctem/api/internal/app/entitlement"
@@ -717,7 +717,6 @@ type Services struct {
 	ThreatAlertPlanner *threatalertapp.Planner
 	// ThreatAlerts is the emerging-threat alert API.
 	ThreatAlerts *threatalertapp.Service
-	CTEMID       *ctemidapp.Service
 	// VersionCheck is the release feed check (RFC-105); never nil with a database.
 	VersionCheck *versioncheck.Service
 	CertMonitor  *certmonitorapp.Service
@@ -749,7 +748,9 @@ type Services struct {
 	UserDashboard *dashboardapp.Service
 	// DashboardWidgets computes widget results and keeps their snapshots.
 	DashboardWidgets *dashwidgets.Service
-	SavedView        *savedviewapp.Service
+	// Posture is the attack surface posture score (precomputed facts).
+	Posture   *postureapp.Service
+	SavedView *savedviewapp.Service
 
 	// Integrations & Notifications
 	Integration    *integration.IntegrationService
@@ -1317,7 +1318,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// retries, resume and mirror fall-back, and applied chunk by chunk with
 	// a durable checkpoint (docs/architecture/feed-transfer.md); the v1 reader stays the fallback.
 	feedTransfer := programfeedapp.Transfer{URLs: cfg.Scope.ProgramFeedURLs, CacheDir: cfg.Scope.FeedCacheDir,
-		Client: httpsec.SafeHTTPClient(0), Registerer: prometheus.DefaultRegisterer}
+		Client: httpsec.FeedHTTPClient(0), Registerer: prometheus.DefaultRegisterer}
 	if (cfg.Scope.ProgramFeedDir != "" || len(cfg.Scope.ProgramFeedURLs) > 0) && cfg.Scope.ProgramFeedRootKeyID != "" {
 		s.ProgramFeed = programfeedapp.NewImporter(programfeedapp.DirSource(cfg.Scope.ProgramFeedDir), catalogRepo,
 			s.BountyProgram, cfg.Scope.ProgramFeedRootKeyID, log).WithChunks(catalogRepo, feedTransfer)
@@ -1394,6 +1395,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.DashboardWidgets = dashwidgets.NewService(s.UserDashboard, s.DataScope, repos.DashboardWidget, log)
 	s.DashboardWidgets.SetSnapshots(repos.DashboardSnapshot, repos.UserDashboard, repos.Tenant, s.Tenant)
 	s.DashboardWidgets.SetAttackPaths(s.AttackSurface)
+	s.Posture = postureapp.NewService(repos.EASMPosture, s.DataScope, log.With("service", "easm-posture"))
+	s.DashboardWidgets.SetPosture(s.Posture)
 	// Saved list views (D15): one page config per page that has views.
 	s.SavedView = savedviewapp.NewService(repos.SavedView, map[string]savedviewapp.PageConfig{
 		savedview.PageFindings: {
@@ -1499,7 +1502,6 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	if s.FeedRelay != nil && s.ThreatSource != nil {
 		s.ThreatIntel.SetSourcePolicy(feedrelay.ThreatSourcePolicy{Inner: s.ThreatSource, Relay: s.FeedRelay})
 	}
-	s.CTEMID = ctemidapp.NewService(repos.CTEMID, cfg.Worker.CTEMIDFeedURL, log)
 	s.VersionCheck = versioncheck.New(postgres.NewVersionCheckRepository(&postgres.DB{DB: deps.DB}), versioncheck.Config{
 		Enabled: cfg.Worker.VersionCheckEnabled, URL: cfg.Worker.VersionCheckURL,
 		Keys: releasefeed.PinnedKeys, Running: version.Get().Version,
@@ -2067,6 +2069,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 				MaxTokens: cfg.AITriage.MaxTokens, Temperature: cfg.AITriage.Temperature,
 			}, log)
 		s.AIExecutor.SetBudget(budgetSvc)
+		// Per-use-case settings: off refuses, suggest never applies, the data
+		// class ceiling and minimum confidence (docs/architecture/ai-use-cases.md).
+		s.AIExecutor.SetUseCases(s.TenantAI)
+		s.AITriage.SetUseCases(s.TenantAI)
 		if s.PlatformAI != nil {
 			s.AIExecutor.SetOwnProviderPolicy(s.PlatformAI.OrgProviderAllowed)
 		}
@@ -3193,8 +3199,14 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// announced through the notification outbox like the other EASM ones
 	// (research/22 P0-6 with P0-7).
 	reconDB := &postgres.DB{DB: deps.DB}
-	s.Ingest.SetAssetExposureProjector(exposurebridge.NewAssetBridge(
-		postgres.NewAnnouncingExposureRepository(reconDB, postgres.NewEASMAlerter(reconDB)), repos.ExposureStateHistory, log))
+	reconBridge := exposurebridge.NewAssetBridge(
+		postgres.NewAnnouncingExposureRepository(reconDB, postgres.NewEASMAlerter(reconDB)), repos.ExposureStateHistory, log)
+	if repos.EASMDNS != nil {
+		// Host certificate exposures resolve when a later scan sees a good
+		// certificate (tenant, source and fingerprint scoped).
+		reconBridge.SetAutoResolver(repos.EASMDNS)
+	}
+	s.Ingest.SetAssetExposureProjector(reconBridge)
 	s.RemediationGroup = remediation.NewGroupService(repos.FindingRemediationKey, s.Vulnerability, s.BulkGuard, log)
 	s.RemediationGroup.SetDataScope(s.DataScope)
 
@@ -3765,6 +3777,9 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	s.Tenant.SetInvitationTeams(s.Group)
 	// Ownership transfer: owner asks, the member accepts with step-up.
 	s.Tenant.SetOwnershipTransferRepository(repos.OwnershipTransfer)
+	// Ownership invitations: an organization created for an existing
+	// account waits until that account accepts.
+	s.Tenant.SetOwnerInvitationRepository(repos.Tenant)
 
 	// Sensor pairing approvals need step-up re-authentication and notify
 	// every administrator (RFC-052 D-2, D-6).

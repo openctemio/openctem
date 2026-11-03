@@ -65,6 +65,16 @@ export interface DashboardListResponse {
   data: Dashboard[]
 }
 
+/** GET /api/v1/me/dashboards/home: both lists, the landing dashboard and its figures. */
+export interface DashboardHomeResponse {
+  personal: Dashboard[]
+  /** Absent when the caller cannot read organization dashboards. */
+  organization?: Dashboard[]
+  landing: { kind: DashboardKind; id: string } | null
+  /** The landing dashboard's /data payload; absent when it could not be read. */
+  data?: unknown
+}
+
 export interface CreateDashboardInput {
   name: string
   description?: string

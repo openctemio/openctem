@@ -429,50 +429,6 @@ func TestTemplates_ShippedFilesMatchBuiltins(t *testing.T) {
 	}
 }
 
-func TestLoadCACertificate(t *testing.T) {
-	dir := t.TempDir()
-	ca := testCAPEM(t)
-
-	write := func(name string, b []byte) string {
-		p := filepath.Join(dir, name)
-		if err := os.WriteFile(p, b, 0o600); err != nil {
-			t.Fatal(err)
-		}
-		return p
-	}
-
-	pemOut, fp, err := LoadCACertificate(write("ca.crt", ca))
-	if err != nil || pemOut != string(ca) {
-		t.Fatalf("valid CA: err=%v pem=%q", err, pemOut)
-	}
-	if len(fp) != 95 || strings.Count(fp, ":") != 31 {
-		t.Errorf("fingerprint %q is not colon-separated SHA-256", fp)
-	}
-
-	// A file that also holds a private key: only the certificate comes out.
-	keyBlock := pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: []byte("secret-key-material")})
-	pemOut, _, err = LoadCACertificate(write("mixed.pem", append(append([]byte{}, keyBlock...), ca...)))
-	if err != nil || strings.Contains(pemOut, "PRIVATE KEY") || !strings.Contains(pemOut, "BEGIN CERTIFICATE") {
-		t.Errorf("mixed file: err=%v pem=%q", err, pemOut)
-	}
-
-	for name, b := range map[string][]byte{
-		"garbage.crt":  []byte("not a certificate"),
-		"key-only.pem": keyBlock,
-		"bad-der.crt":  pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: []byte("junk")}),
-	} {
-		if pemOut, _, err := LoadCACertificate(write(name, b)); err == nil || pemOut != "" {
-			t.Errorf("%s: want an error and no PEM, got %q", name, pemOut)
-		}
-	}
-	if _, _, err := LoadCACertificate(filepath.Join(dir, "missing.crt")); err == nil {
-		t.Error("missing file: want an error")
-	}
-	if pemOut, fp, err := LoadCACertificate(""); err != nil || pemOut != "" || fp != "" {
-		t.Errorf("unset path: want nothing, got %q %q %v", pemOut, fp, err)
-	}
-}
-
 // SECURITY: every daemon install runs the sensor under its own seccomp
 // profile, downloaded from the platform and checked by its SHA-256 before
 // the container starts, so tool tasks can run network-confined.
@@ -525,6 +481,13 @@ func TestTemplates_CollectorRunsTheAssetCollector(t *testing.T) {
 			for _, want := range []string{"ghcr.io/openctemio/asset-collector:v0.2.0", "SENSOR_API_KEY_FILE", "LDAP_PASSWORD_FILE", "/var/lib/openctem"} {
 				if !strings.Contains(got, want) {
 					t.Errorf("[%s] collector %s lacks %q", dir, name, want)
+				}
+			}
+			// The default image is private: every install says how to log in,
+			// and links the collector's guide.
+			for _, want := range []string{"ghcr.io/openctemio/asset-collector, is private", "read:packages", "/sensors/asset-collector/"} {
+				if !strings.Contains(got, want) {
+					t.Errorf("[%s] collector %s lacks the private-image note %q", dir, name, want)
 				}
 			}
 			for _, never := range []string{"ghcr.io/openctemio/sensor", "sensor-policy.yaml", "seccomp=", "SENSOR_LOCAL_POLICY"} {

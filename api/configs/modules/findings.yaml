@@ -31,7 +31,6 @@
     - ReportFileMigrationController
     - ScannerOutputRetentionController
     - RiskSnapshotController
-    - CTEMIDRefreshController
     - IngestWorkerController
     - IngestReceiptRetentionController
     - IngestQueueRetentionController

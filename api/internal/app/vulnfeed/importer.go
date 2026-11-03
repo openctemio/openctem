@@ -116,13 +116,13 @@ func NewImporter(cfg Config, corpus Corpus, status threatintel.SyncStatusReposit
 		if err != nil || u.Scheme != "https" || u.Host == "" || u.RawQuery != "" || u.Fragment != "" {
 			return nil, errors.New("vulnfeed: VULNFEED_BASE_URL must be an https URL without query or fragment")
 		}
-		if _, err := httpsec.ValidateURL(cfg.BaseURL); err != nil {
+		if err := httpsec.ValidateFeedURL(cfg.BaseURL); err != nil {
 			return nil, fmt.Errorf("vulnfeed: VULNFEED_BASE_URL: %w", err)
 		}
 		cfg.BaseURL = strings.TrimRight(cfg.BaseURL, "/")
 	}
 	return &Importer{cfg: cfg, corpus: corpus, status: status, catalog: catalog,
-		http: httpsec.SafeHTTPClient(10 * time.Minute), logger: log, now: time.Now, tmp: os.TempDir(),
+		http: httpsec.FeedHTTPClient(10 * time.Minute), logger: log, now: time.Now, tmp: os.TempDir(),
 		emptiedShare: maxEmptiedShare, minEmptied: minEmptiedLimit}, nil
 }
 
@@ -472,11 +472,13 @@ func (im *Importer) finish(ctx context.Context, b summary, res Result) error {
 	return nil
 }
 
+// fail records the failure; the stored text loses URL credentials (a
+// presigned release-asset link carries its signature in the query).
 func (im *Importer) fail(ctx context.Context, cause error) error {
 	st, err := im.status.GetBySource(ctx, SourceName)
 	if err == nil {
 		c := feedstatus.Classify(cause)
-		st.MarkSyncFailedWith(cause.Error(), c.Code, c.Params)
+		st.MarkSyncFailedWith(logger.RedactURLs(cause.Error()), c.Code, c.Params)
 		err = im.status.Update(ctx, st)
 	}
 	if err != nil {

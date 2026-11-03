@@ -260,7 +260,7 @@ function FindingsTab({ session, onEnded }: { session: SupportSessionState; onEnd
           {t('admin.support.noFindings', 'No findings match.')}
         </p>
       ) : (
-        <div className="overflow-x-auto">
+        <div>
           <Table>
             <TableHeader>
               <TableRow>
@@ -446,7 +446,7 @@ function AssetsTab({ session, onEnded }: { session: SupportSessionState; onEnded
           {t('admin.support.noAssets', 'No assets match.')}
         </p>
       ) : (
-        <div className="overflow-x-auto">
+        <div>
           <Table>
             <TableHeader>
               <TableRow>

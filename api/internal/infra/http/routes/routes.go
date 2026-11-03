@@ -152,6 +152,7 @@ type Handlers struct {
 	// disables the guard (tests with a minimal handler set).
 	DataScope     middleware.DataScopeAsserter
 	Sensor        *handler.SensorHandler        // nil if not initialized (no database)
+	PlatformCA    *handler.PlatformCAHandler    // public CA bundle (PLATFORM_CA_CERT_FILE); nil: the route answers 404
 	SensorContent *handler.SensorContentHandler // scanner content policy + refresh (RFC-031); nil without a database
 	SensorResults *handler.SensorResultHandler  // unsolicited results policy + quarantine review (RFC-040); nil without a database
 	ScanZone      *handler.ScanZoneHandler      // nil if not initialized (no database)
@@ -190,7 +191,6 @@ type Handlers struct {
 	Exposure         *handler.ExposureHandler         // nil if not initialized (no database)
 	ThreatIntel      *handler.ThreatIntelHandler      // nil if not initialized (no database)
 	EmergingThreat   *handler.EmergingThreatHandler   // emerging-threat alerts (RFC-117); nil disables
-	CTEMID           *handler.CTEMIDHandler           // nil if not initialized (no database)
 	CredentialImport *handler.CredentialImportHandler // nil if not initialized (no database)
 	Workflow         *handler.WorkflowHandler         // nil if not initialized (no database)
 	Suppression      *handler.SuppressionHandler      // nil if not initialized (no database)
@@ -199,6 +199,7 @@ type Handlers struct {
 	AssetService           *handler.AssetServiceHandler           // nil if not initialized (no database)
 	Certificate            *handler.CertificateHandler            // Certificates view; nil without a database
 	Technology             *handler.TechnologyHandler             // Technologies view; nil without a database
+	EASMPosture            *handler.EASMPostureHandler            // Attack surface posture score; nil without a database
 	WebEndpoint            *handler.WebEndpointHandler            // Web surface (RFC-056); nil without a database
 	Query                  *handler.QueryHandler                  // Custom queries; nil without a database
 	APISpec                *handler.APISpecHandler                // API descriptions of web origins (RFC-056)
@@ -493,8 +494,10 @@ func Register(
 		stepUpChecker = h.LocalAuth.RecentAuthChecker()
 	}
 	credentialFactorChecker = nil
+	ownSignInChecker = nil
 	if h.LocalAuth != nil {
 		credentialFactorChecker = h.LocalAuth.CredentialFactorChecker()
+		ownSignInChecker = h.LocalAuth.OwnSignInChecker()
 	}
 	apiKeyOrJWT = nil
 	if h.APIKeyAuth != nil {
@@ -704,6 +707,9 @@ func Register(
 	if h.Technology != nil {
 		registerTechnologyRoutes(router, h.Technology, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleAttackSurface))
 	}
+	if h.EASMPosture != nil {
+		registerEASMPostureRoutes(router, h.EASMPosture, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleAttackSurface))
+	}
 
 	// Web surface: endpoints under their origin asset (RFC-056)
 	if h.WebEndpoint != nil {
@@ -896,9 +902,9 @@ func Register(
 		registerMCPClientRoutes(router, h.MCPClients, authMiddleware, userSync)
 	}
 
-	// The sensor's seccomp profile for the install commands: public (the
-	// open-source release's file, no tenant data), rate limited per IP.
-	registerSensorInstallRoutes(router, middleware.RateLimit(&cfg.RateLimit, log))
+	// The sensor's seccomp profile and the platform's private CA bundle for
+	// the install commands: public (no tenant data), rate limited per IP.
+	registerSensorInstallRoutes(router, h.PlatformCA, middleware.RateLimit(&cfg.RateLimit, log))
 
 	// Read-only MCP server — authenticated by tenant-scoped API key, not JWT.
 	// Per-IP rate limit runs before auth to throttle junk-token floods; the
@@ -1192,11 +1198,6 @@ func Register(
 		registerThreatIntelRoutes(router, h.ThreatIntel, authMiddleware, userSync)
 	}
 
-	// CTEM-ID catalog routes (global reference data)
-	if h.CTEMID != nil {
-		registerCTEMIDRoutes(router, h.CTEMID, authMiddleware, userSync)
-	}
-
 	// Credential Import routes (tenant from JWT token)
 	if h.CredentialImport != nil {
 		registerCredentialRoutes(router, h.CredentialImport, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleCredentials))
@@ -1411,6 +1412,17 @@ var stepUpChecker middleware.RecentAuthChecker //nolint:gochecknoglobals // set 
 // creating a credential). Set once during Register from the local auth
 // handler; nil lets requests through (tests without the auth service).
 var credentialFactorChecker middleware.CredentialFactorChecker //nolint:gochecknoglobals // set once during init
+
+// ownSignInChecker answers RequireOwnSignIn (actions on the whole account
+// need the account's own sign-in, not an organization IdP's). Set once
+// during Register from the local auth handler.
+var ownSignInChecker middleware.OwnSignInChecker //nolint:gochecknoglobals // set once during init
+
+// requireOwnSignIn is the middleware for a route that acts on the whole
+// account (deleting it, signing it out everywhere).
+func requireOwnSignIn() Middleware {
+	return middleware.RequireOwnSignIn(ownSignInChecker)
+}
 
 // requireCredentialFactor is the middleware for a route that creates a
 // credential (API key, sensor enrolment, integration secret): the caller

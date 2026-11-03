@@ -1,0 +1,4 @@
+### Security: logged and stored fetch errors no longer carry URL credentials
+
+- A failed outbound fetch quotes its full URL in the error. The vulnerability bundle download follows a presigned release-asset link whose query holds a signature and a token, so every retry wrote a usable download credential to the API log, and the feed status kept it as the last error on the platform admin route.
+- The log handler now removes the userinfo and the whole query string and fragment of every URL in an error or string attribute and in the message, for every caller, including the transfer library that logs its own retries. `logger.SanitizeError` and `logger.RedactText` do the same, and the KEV, EPSS and vulnerability bundle status store the redacted text. Scheme, host and path stay, so the log still names the endpoint that failed.
