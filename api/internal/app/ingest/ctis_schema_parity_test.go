@@ -1,6 +1,7 @@
 package ingest
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"os/exec"
@@ -121,7 +122,7 @@ func diff(schema, goVals []string) string {
 
 func ctisSchemaDir(t *testing.T) string {
 	t.Helper()
-	cmd := exec.Command("go", "list", "-m", "-f", "{{.Dir}}", "github.com/openctemio/ctis/v2")
+	cmd := exec.CommandContext(context.Background(), "go", "list", "-m", "-f", "{{.Dir}}", "github.com/openctemio/ctis/v2")
 	cmd.Env = append(os.Environ(), "GOWORK=off", "GOFLAGS=-mod=mod")
 	out, err := cmd.Output()
 	if err != nil {

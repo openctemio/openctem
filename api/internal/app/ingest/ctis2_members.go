@@ -34,6 +34,8 @@ import (
 // interpretedPropertyKeys are the asset property keys the receiver reads
 // meaning from. A producer's value under one of them is dropped; the
 // receiver sets the ones it needs from typed members (adoptCTIS2Members).
+//
+//nolint:goconst // a list of wire property names, each read where it is used
 var interpretedPropertyKeys = []string{
 	"sub_type", "kind", "root_domain", "parent_domain", "exposure", "aliases",
 	"technologies", "technology", "zone_visibility", "last_seen",

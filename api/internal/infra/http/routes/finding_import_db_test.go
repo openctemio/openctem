@@ -37,7 +37,7 @@ import (
 // importers (every format the pin ships), from the module cache.
 func ctisImporterFixtures(t *testing.T) []string {
 	t.Helper()
-	out, err := exec.Command("go", "list", "-m", "-f", "{{.Dir}}", "github.com/openctemio/ctis/v2").Output()
+	out, err := exec.CommandContext(context.Background(), "go", "list", "-m", "-f", "{{.Dir}}", "github.com/openctemio/ctis/v2").Output()
 	if err != nil {
 		t.Skipf("ctis module not resolvable: %v", err)
 	}
@@ -448,7 +448,7 @@ func TestFindingImport_RecordsTheProducer_DB(t *testing.T) {
 }
 
 func (ih *importHarness) scanIDs(t *testing.T) []string {
-	rows, err := ih.db.Query(`SELECT DISTINCT COALESCE(scan_id,'') FROM findings WHERE tenant_id = $1`, ih.tenantID)
+	rows, err := ih.db.QueryContext(context.Background(), `SELECT DISTINCT COALESCE(scan_id,'') FROM findings WHERE tenant_id = $1`, ih.tenantID)
 	if err != nil {
 		t.Fatal(err)
 	}

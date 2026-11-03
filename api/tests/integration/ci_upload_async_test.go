@@ -259,7 +259,7 @@ func TestCIUploadAsync_StatusIsRunScoped(t *testing.T) {
 // (the core module, or a format adapter such as interop/sarif).
 func ctisImporterFixtures(t *testing.T, module string) string {
 	t.Helper()
-	out, err := exec.Command("go", "list", "-m", "-f", "{{.Dir}}", module).Output()
+	out, err := exec.CommandContext(context.Background(), "go", "list", "-m", "-f", "{{.Dir}}", module).Output()
 	if err != nil {
 		t.Skipf("ctis module dir: %v", err)
 	}

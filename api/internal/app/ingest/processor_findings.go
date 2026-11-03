@@ -589,7 +589,7 @@ func (p *FindingProcessor) processBatch(
 		// below if it was closed. The duplicate itself is never reopened.
 		p.sightDuplicateTargets(ctx, tenantID, existingFingerprints, reportIDOf(ctx), scanner)
 		// Each reopen writes its timeline entry with the scan behind it.
-		reopenCtx := vulnerability.WithTransitionEvidence(ctx, map[string]any{"scanner": scanner, "scan_id": reportIDOf(ctx)})
+		reopenCtx := vulnerability.WithTransitionEvidence(ctx, map[string]any{"scanner": scanner, "scan_id": reportIDOf(ctx)}) //nolint:goconst // evidence key, as in the other transition evidence maps
 		reopenedMap, err := p.repo.AutoReopenByFingerprintsBatch(reopenCtx, tenantID, existingFingerprints, reportObservedAt(report, time.Now()))
 		if err != nil {
 			p.logger.Warn("failed to batch auto-reopen findings", "error", err)
