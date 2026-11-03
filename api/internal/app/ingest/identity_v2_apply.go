@@ -9,10 +9,13 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 )
 
-// applyIdentityV2Of computes the version-2 identity of every item and hands
-// it to set, with the former keys a finding may still be stored under within
-// version 2 (a SAST finding anchored on its line before its reports carried
-// the code; a secret keyed on its mask). Items without one keep their
+// applyIdentityV2Of computes the identity of every item (version 3, the CTIS
+// recipe v2 over the identity tuple) and hands it to set, with the former
+// keys a finding may still be stored under: its own version-2 key (a finding
+// not re-keyed yet), and the keys of earlier forms of its recipe in both
+// versions (a SAST finding anchored on its line before its reports carried
+// the code; a secret keyed on its mask). An item no specific recipe keys
+// takes the generic recipe when it has a rule id; without one it keeps its
 // version-1 key.
 func applyIdentityV2Of[T any](p *FindingProcessor, tenantID shared.ID, items []T,
 	get func(*T) (shared.ID, *ctis.Finding), set func(item *T, k vulnerability.IdentityKey, formers []string),
@@ -28,18 +31,30 @@ func applyIdentityV2Of[T any](p *FindingProcessor, tenantID shared.ID, items []T
 		f := &findings[i]
 		if identityKind(f) == vulnerability.IdentityKindSecret {
 			if k, formers, ok := p.secretIdentity(tenantID, assets[i], f); ok {
-				set(&items[i], k, formers)
+				set(&items[i], k, withOwnVersion2Key(k, formers))
+				continue
 			}
+		} else if k, ok := identityV2(assets[i], f, "", occ[i]); ok {
+			set(&items[i], k, withOwnVersion2Key(k, formerKeys(assets[i], f, k)))
 			continue
 		}
-		if k, ok := identityV2(assets[i], f, "", occ[i]); ok {
-			var formers []string
-			if former := formerKey(assets[i], f, k); former != "" {
-				formers = append(formers, former)
-			}
-			set(&items[i], k, formers)
+		// A secret without a keyed digest, a SAST result with neither code
+		// nor a line, a finding of no specific kind: the generic recipe.
+		if k, ok := genericIdentity(assets[i], f); ok {
+			set(&items[i], k, nil)
 		}
 	}
+}
+
+// withOwnVersion2Key puts the version-2 key of k first among formers: a
+// finding stored before the version-3 re-key reached it is taken over on
+// this sighting, its triage kept.
+func withOwnVersion2Key(k vulnerability.IdentityKey, formers []string) []string {
+	forms := k.KeyForms()
+	if len(forms) < 2 {
+		return formers
+	}
+	return append([]string{forms[1]}, formers...)
 }
 
 // secretIdentity keys a secret on a keyed hash of the raw value: the
@@ -68,10 +83,10 @@ func (p *FindingProcessor) secretIdentity(tenantID, assetID shared.ID, f *ctis.F
 	secretHMAC := p.rawSecretHMAC(tenantID, f)
 	if k, ok := vulnerability.SecretIdentity(asset, secretHMAC, path); ok {
 		if maskOK {
-			formers = append(formers, maskKey.Fingerprint())
+			formers = append(formers, maskKey.KeyForms()...)
 		}
 		if old, ok := vulnerability.SecretIdentity(asset, maskedHMAC, path); ok {
-			formers = append(formers, old.Fingerprint())
+			formers = append(formers, old.KeyForms()...)
 		}
 		return k, formers, true
 	}
@@ -79,7 +94,7 @@ func (p *FindingProcessor) secretIdentity(tenantID, assetID shared.ID, f *ctis.F
 		return vulnerability.IdentityKey{}, nil, false
 	}
 	if old, ok := vulnerability.SecretIdentity(asset, maskedHMAC, path); ok {
-		formers = append(formers, old.Fingerprint())
+		formers = append(formers, old.KeyForms()...)
 	}
 	return maskKey, formers, true
 }
@@ -91,10 +106,34 @@ type fingerprintAdopter interface {
 	AdoptFingerprint(ctx context.Context, tenantID shared.ID, from, to string, identityKey []byte, version int, g vulnerability.AdoptGuard) (bool, error)
 }
 
+// staleKeyMerger is implemented by the postgres finding repository: it folds
+// a finding still stored under an older key into the finding that holds the
+// item's current key (the merge the start-up re-key makes). Optional.
+type staleKeyMerger interface {
+	MergeStaleKey(ctx context.Context, tenantID shared.ID, from string, k vulnerability.IdentityKey, g vulnerability.AdoptGuard) (bool, error)
+}
+
+// mergesStaleKeys reports whether two findings that map to one key of this
+// kind are one finding. True for the kinds version 3 added (compliance, web3,
+// generic): their stored findings carry keys of the ingest version 1 form,
+// and several of them can converge on one new key. Not for the older kinds,
+// whose former keys can be shared by unrelated findings (two secrets with one
+// mask): there the first sighting adopts and the others stay apart.
+func mergesStaleKeys(kind string) bool {
+	switch kind {
+	case vulnerability.IdentityKindCompliance, vulnerability.IdentityKindWeb3, vulnerability.IdentityKindGeneric:
+		return true
+	}
+	return false
+}
+
 // adoptKeys is what one item offers to a re-key: the key a stored finding
 // may still carry, the item's identity, and the guard naming its issue.
 type adoptKeys struct {
-	from     string
+	from string
+	// froms are further keys tried in order after from; the first one a
+	// live finding holds is re-keyed.
+	froms    []string
 	identity *vulnerability.IdentityKey
 	guard    vulnerability.AdoptGuard
 }
@@ -146,25 +185,36 @@ func adoptKeysOf[T any](ctx context.Context, p *FindingProcessor, tenantID share
 		v1, v2 string
 		raw    []byte
 		guard  vulnerability.AdoptGuard
+		key    vulnerability.IdentityKey
+		merge  bool
 	}
 	pairs := make([]pair, 0, len(items))
 	v2s := make([]string, 0, len(items))
 	for _, it := range items {
 		ak := keys(it)
-		v1, k := ak.from, ak.identity
-		if k == nil || v1 == "" {
+		k := ak.identity
+		if k == nil {
 			continue
 		}
 		v2 := k.Fingerprint()
-		if v2 == "" || v2 == v1 {
+		if v2 == "" {
 			continue
 		}
 		raw, err := vulnerability.MarshalIdentityKey(*k)
 		if err != nil {
 			continue
 		}
-		pairs = append(pairs, pair{v1: v1, v2: v2, raw: raw, guard: ak.guard})
-		v2s = append(v2s, v2)
+		added := false
+		for _, v1 := range append([]string{ak.from}, ak.froms...) {
+			if v1 == "" || v1 == v2 {
+				continue
+			}
+			pairs = append(pairs, pair{v1: v1, v2: v2, raw: raw, guard: ak.guard, key: *k, merge: mergesStaleKeys(k.Kind)})
+			added = true
+		}
+		if added {
+			v2s = append(v2s, v2)
+		}
 	}
 	if len(pairs) == 0 {
 		return
@@ -181,7 +231,9 @@ func adoptKeysOf[T any](ctx context.Context, p *FindingProcessor, tenantID share
 	}
 	v1s := make([]string, 0, len(pairs))
 	for _, pr := range pairs {
-		if !held[pr.v2] {
+		// A key of a kind that merges is looked up even when its new key is
+		// held: a finding still under the old key is then folded in.
+		if !held[pr.v2] || pr.merge {
 			v1s = append(v1s, pr.v1)
 		}
 	}
@@ -208,14 +260,31 @@ func adoptKeysOf[T any](ctx context.Context, p *FindingProcessor, tenantID share
 		p.logger.Warn("failed to check version-1 finding keys", "error", err)
 		return
 	}
-	adopted, claimed := 0, map[string]bool{}
+	merger, _ := adopter.(staleKeyMerger)
+	adopted, merged, claimed := 0, 0, map[string]bool{}
 	for _, pr := range pairs {
-		if held[pr.v2] {
-			continue
-		}
 		from := pr.v1
 		if cur, ok := v1Current[pr.v1]; ok {
 			from = cur
+		}
+		if held[pr.v2] {
+			// Another finding has the key: a finding of a merging kind still
+			// under an older key is the same issue, so it is folded into the
+			// holder (never left to be skipped, and so to be auto-resolved
+			// as a finding no report matches any more).
+			if !pr.merge || merger == nil || from == pr.v2 || claimed[from] || !live[from] {
+				continue
+			}
+			claimed[from] = true
+			ok, err := merger.MergeStaleKey(ctx, tenantID, from, pr.key, pr.guard)
+			if err != nil {
+				p.logger.Warn("failed to merge a finding under an older key into its current one", "error", err)
+				continue
+			}
+			if ok {
+				merged++
+			}
+			continue
 		}
 		if claimed[from] || !live[from] {
 			continue
@@ -228,10 +297,16 @@ func adoptKeysOf[T any](ctx context.Context, p *FindingProcessor, tenantID share
 		}
 		if moved {
 			adopted++
+			// The item's key is taken: its other former keys stay where
+			// they are.
+			held[pr.v2] = true
 		}
 	}
 	if adopted > 0 {
 		p.logger.Info("re-keyed findings to their version-2 identity", "count", adopted)
+	}
+	if merged > 0 {
+		p.logger.Info("merged findings under older keys into their current finding", "count", merged)
 	}
 }
 
