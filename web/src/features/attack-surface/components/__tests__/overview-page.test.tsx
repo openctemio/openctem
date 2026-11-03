@@ -48,6 +48,7 @@ const stats = vi.hoisted(() => ({
 
 vi.mock('@/features/attack-surface', () => ({
   AttackSurfaceSectionTabs: () => null,
+  EASMPostureCard: () => null,
   EASMOverview: () => <div data-testid="middle-row" />,
   useAttackSurfaceStats: () => ({ stats: stats.value, isLoading: false, error: undefined }),
 }))

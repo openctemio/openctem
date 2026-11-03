@@ -34,6 +34,23 @@ type Organization struct {
 	// DeletionDueAt: an owner scheduled the deletion; the purge worker
 	// deletes the organization at this time unless an owner cancels.
 	DeletionDueAt *time.Time
+	// OwnerInvitation is the organization's newest ownership invitation
+	// (docs/architecture/organization-ownership-invitations.md), nil when
+	// it never had one.
+	OwnerInvitation *OwnerInvitationSummary
+}
+
+// OwnerInvitationSummary is an ownership invitation as the console shows it.
+type OwnerInvitationSummary struct {
+	// Status: pending, expired (pending past its expiry), accepted,
+	// declined or canceled.
+	Status       string
+	InviteeEmail string
+	SendCount    int
+	ExpiresAt    time.Time
+	LastSentAt   time.Time
+	CreatedAt    time.Time
+	RespondedAt  *time.Time
 }
 
 // Owner filter values for OrganizationFilter.Owner.

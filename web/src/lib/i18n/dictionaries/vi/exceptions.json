@@ -76,6 +76,7 @@
   "exceptions.page.empty.pending": "Không có quy tắc loại trừ đang chờ.",
   "exceptions.page.empty.rejected": "Không có quy tắc loại trừ bị từ chối.",
   "exceptions.page.emptyAll": "Tạo quy tắc để loại trừ dương tính giả hoặc rủi ro đã chấp nhận.",
+  "exceptions.page.errorTitle": "quy tắc loại trừ",
   "exceptions.page.loadError": "Không tải được quy tắc loại trừ",
   "exceptions.page.metricAll": "Tất cả quy tắc",
   "exceptions.page.metricApproved": "Đã phê duyệt",

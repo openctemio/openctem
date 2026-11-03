@@ -28,14 +28,16 @@
 import { useTranslation } from '@/context/i18n-provider'
 import * as React from 'react'
 import Link from '@/components/link'
-import { usePathname } from 'next/navigation'
-import { ShieldX, ArrowLeft, Home, Package, Settings, Lock } from 'lucide-react'
+import { usePathname, useRouter } from 'next/navigation'
+import { ArrowLeft, Home, Settings, Lock } from 'lucide-react'
 import { usePermissions } from '@/lib/permissions/hooks'
 import { Permission } from '@/lib/permissions/constants'
 import { useBootstrapModules, useBootstrapContextSafe } from '@/context/bootstrap-provider'
 import { matchRoutePermission } from '@/config/route-permissions'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { AccessNotice } from '@/features/shared/components/access-notice'
+import { PageStack } from '@/features/shared/components/page-stack'
+import { activeSettingsItem } from '@/config/settings-nav'
 import { MainRegion } from '@/components/layout/main'
 
 interface RouteGuardProps {
@@ -125,10 +127,23 @@ export function RouteGuard({ children }: RouteGuardProps) {
     return { hasAccess: true, deniedReason: null }
   }, [routeConfig, can, hasModuleAccess])
 
-  // Show children (loading screen from TenantGate) while bootstrap hasn't completed
-  // or permissions are still being fetched — prevents flash of AccessDenied
-  if (!isDataReady || permissionsLoading || modulesLoading) {
-    return <>{children}</>
+  // Whether access was decided once for this organization. Until then an
+  // unprotected route renders at once and a protected one waits: rendering its
+  // page before the check let it fire reads the person may not make (403s,
+  // each a refused-action audit row) and flash its content before the notice.
+  // After that, a background refresh (permissions changed, a module switched)
+  // keeps the page mounted so a half-filled form is not lost; the check runs
+  // again when the refresh lands.
+  const loading = !isDataReady || permissionsLoading || modulesLoading
+  const [decidedOnce, setDecidedOnce] = React.useState(false)
+  React.useEffect(() => {
+    if (!isDataReady) setDecidedOnce(false)
+    else if (!loading) setDecidedOnce(true)
+  }, [isDataReady, loading])
+
+  if (loading) {
+    if (!routeConfig || (isDataReady && decidedOnce)) return <>{children}</>
+    return <MainRegion aria-busy="true" className="flex-1" data-route-checking="" />
   }
 
   if (!accessCheck.hasAccess && routeConfig) {
@@ -136,8 +151,6 @@ export function RouteGuard({ children }: RouteGuardProps) {
       <AccessDenied
         reason={accessCheck.deniedReason!}
         permission={routeConfig.permission}
-        module={routeConfig.module}
-        message={routeConfig.message}
         canManageModules={can(Permission.TeamUpdate)}
         notAvailable={!!routeConfig.module && notEntitledModuleIds.includes(routeConfig.module)}
       />
@@ -197,16 +210,15 @@ export function ReadOnlyModuleBanner({ until }: { until: string }) {
 }
 
 /**
- * Access Denied Page
- *
- * Shown when user doesn't have access to a route.
- * Handles both module (licensing) and permission (RBAC) denied reasons.
+ * Access denied page: the shared AccessNotice in the page frame (main
+ * landmark, PageStack), so a refused page reads like a refused read inside a
+ * page. It names the page (its settings title when it has one), the
+ * permission or module, which built-in roles hold the permission and who can
+ * grant it, with a way back.
  */
 interface AccessDeniedProps {
   reason: AccessDeniedReason
   permission: string
-  module?: string
-  message?: string
   /** Whether the user may switch modules on (Settings > Modules). */
   canManageModules?: boolean
   /** The module is not available for the organization (not just switched off). */
@@ -216,108 +228,67 @@ interface AccessDeniedProps {
 function AccessDenied({
   reason,
   permission,
-  module,
-  message,
   canManageModules = false,
   notAvailable = false,
 }: AccessDeniedProps) {
   const { t } = useTranslation()
-  const handleGoBack = () => {
-    if (typeof window !== 'undefined' && window.history.length > 1) {
-      window.history.back()
-    } else {
-      window.location.href = '/'
-    }
-  }
-
-  const handleGoHome = () => {
-    window.location.href = '/'
-  }
-
-  // Determine icon and title based on reason
+  const pathname = usePathname()
+  const router = useRouter()
+  const item = activeSettingsItem(pathname)
   const isModuleDenied = reason === 'module'
-  const Icon = isModuleDenied ? Package : ShieldX
-  // A module missing for a user who holds the route's permission is either
-  // not available for the organization (set by the administrator of this
-  // installation) or switched off by the organization itself.
-  const title = !isModuleDenied
-    ? 'Access Denied'
-    : notAvailable
-      ? t('limits.access.unavailableTitle', 'Not available for this organization')
-      : 'Turned off for your organization'
-  const defaultMessage = !isModuleDenied
-    ? "You don't have permission to access this page."
-    : notAvailable
-      ? t('limits.access.unavailableBody', 'This feature is not available for this organization.')
-      : 'This feature is switched off for your organization.'
-  // Only an organization's own switch can be turned back on from Settings.
+  const pageTitle = item
+    ? t(`settings.item.${item.id}`, item.title)
+    : isModuleDenied
+      ? t('common.access.thisFeature', 'This feature')
+      : t('common.access.thisPage', 'this page')
+  const handleGoBack = () => {
+    if (typeof window !== 'undefined' && window.history.length > 1) router.back()
+    else router.push('/')
+  }
+
   const canTurnOn = isModuleDenied && !notAvailable && canManageModules
+  const kind = !isModuleDenied ? 'no_access' : notAvailable ? 'module_unavailable' : 'module_off'
+  const hint = !isModuleDenied
+    ? undefined
+    : notAvailable
+      ? undefined
+      : canManageModules
+        ? t('common.access.moduleTurnOn', 'You can turn it on in Settings, Modules.')
+        : t('common.access.moduleAsk', 'Ask an administrator of your organization to turn it on.')
 
-  // This view replaces the page header and the layout's <main>, so it is the
-  // page's main landmark and the skip link's #content target itself.
   return (
-    <MainRegion className="flex flex-1 items-center justify-center p-8">
-      <Card className="w-full max-w-md">
-        <CardHeader className="text-center">
-          <div
-            className={`mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full ${isModuleDenied ? 'bg-warning/10' : 'bg-destructive/10'}`}
-          >
-            <Icon className={`h-8 w-8 ${isModuleDenied ? 'text-warning' : 'text-destructive'}`} />
-          </div>
-          <CardTitle className="text-xl">{title}</CardTitle>
-          <CardDescription className="mt-2">{message || defaultMessage}</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {/* Access info (for debugging) */}
-          <div className="rounded-md bg-muted p-3 text-center space-y-1">
-            {isModuleDenied && module && (
-              <p className="text-xs text-muted-foreground">
-                Required module: <code className="font-mono text-foreground">{module}</code>
-              </p>
-            )}
-            {!isModuleDenied && (
-              <p className="text-xs text-muted-foreground">
-                Required permission: <code className="font-mono text-foreground">{permission}</code>
-              </p>
-            )}
-          </div>
-
-          {/* Help text */}
-          <p className="text-center text-sm text-muted-foreground">
-            {!isModuleDenied
-              ? 'If you believe you should have access, please contact your administrator.'
-              : notAvailable
-                ? t(
-                    'limits.access.unavailableHelp',
-                    'Contact the administrator of this installation to make it available.'
-                  )
-                : canManageModules
-                  ? 'You can turn it on in Settings > Modules.'
-                  : 'Ask an administrator of your organization to turn it on.'}
-          </p>
-
-          {/* Actions */}
-          <div className="flex justify-center gap-3">
-            <Button variant="outline" onClick={handleGoBack}>
-              <ArrowLeft className="me-2 h-4 w-4" />
-              Go Back
-            </Button>
-            {canTurnOn ? (
-              <Button asChild>
-                <Link href="/settings/modules">
-                  <Settings className="me-2 h-4 w-4" />
-                  Manage modules
-                </Link>
+    <MainRegion className="p-4 sm:p-6" data-route-denied="">
+      <PageStack className="mx-auto w-full max-w-2xl">
+        <AccessNotice
+          kind={kind}
+          title={pageTitle}
+          details={isModuleDenied ? undefined : { missing_permissions: [permission] }}
+          hint={hint}
+          actions={
+            <>
+              <Button variant="outline" size="sm" onClick={handleGoBack}>
+                <ArrowLeft className="me-2 h-4 w-4" aria-hidden />
+                {t('common.goBack', 'Go back')}
               </Button>
-            ) : (
-              <Button onClick={handleGoHome}>
-                <Home className="me-2 h-4 w-4" />
-                Dashboard
-              </Button>
-            )}
-          </div>
-        </CardContent>
-      </Card>
+              {canTurnOn ? (
+                <Button size="sm" asChild>
+                  <Link href="/settings/modules">
+                    <Settings className="me-2 h-4 w-4" aria-hidden />
+                    {t('common.access.manageModules', 'Manage modules')}
+                  </Link>
+                </Button>
+              ) : (
+                <Button size="sm" variant="outline" asChild>
+                  <Link href="/">
+                    <Home className="me-2 h-4 w-4" aria-hidden />
+                    {t('common.access.toDashboard', 'Go to the dashboard')}
+                  </Link>
+                </Button>
+              )}
+            </>
+          }
+        />
+      </PageStack>
     </MainRegion>
   )
 }

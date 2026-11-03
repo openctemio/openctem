@@ -1,12 +1,17 @@
 'use client'
 
 import { useCallback, useState } from 'react'
-import { AlertCircle, Loader2, PlayCircle, Save } from 'lucide-react'
+import { PlayCircle } from 'lucide-react'
 import { Main } from '@/components/layout'
-import { PageHeader, PageStack } from '@/features/shared'
+import {
+  ErrorState,
+  NoAccessState,
+  PageHeader,
+  PageStack,
+  SettingsSaveBar,
+} from '@/features/shared'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import {
   LifecycleSettingsForm,
   useAssetLifecycleSettings,
@@ -27,6 +32,8 @@ export default function AssetLifecycleSettingsPage() {
   const { data, error, isLoading, mutate } = useAssetLifecycleSettings()
   const [status, setStatus] = useState<LifecycleFormStatus>({ dirty: false, submitting: false })
   const [dryRunOpen, setDryRunOpen] = useState(false)
+  // Discard remounts the form on the saved settings.
+  const [resets, setResets] = useState(0)
   const onStatusChange = useCallback((s: LifecycleFormStatus) => setStatus(s), [])
 
   const formReady = canRead && !error && !isLoading
@@ -42,63 +49,47 @@ export default function AssetLifecycleSettingsPage() {
           )}
         >
           {formReady && (
-            <>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setDryRunOpen(true)}
-                disabled={status.submitting || !currentTenant}
-              >
-                <PlayCircle className="h-4 w-4" />
-                {t('settings.assetLifecycle.runDryRun', 'Run dry run')}
-              </Button>
-              <Button
-                type="submit"
-                form={FORM_ID}
-                size="sm"
-                disabled={!status.dirty || status.submitting || !currentTenant}
-              >
-                {status.submitting ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Save className="h-4 w-4" />
-                )}
-                {t('settings.assetLifecycle.save', 'Save changes')}
-              </Button>
-            </>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setDryRunOpen(true)}
+              disabled={status.submitting || !currentTenant}
+            >
+              <PlayCircle className="h-4 w-4" />
+              {t('settings.assetLifecycle.runDryRun', 'Run dry run')}
+            </Button>
           )}
         </PageHeader>
 
         {!canRead ? (
-          <Alert variant="destructive">
-            <AlertCircle className="h-4 w-4" />
-            <AlertTitle>{t('settings.noPermissionTitle', 'Insufficient permissions')}</AlertTitle>
-            <AlertDescription>
-              {t(
-                'settings.assetLifecycle.noPermission',
-                'You do not have permission to view or change asset lifecycle settings.'
-              )}
-            </AlertDescription>
-          </Alert>
+          <NoAccessState
+            title={t('settings.assetLifecycle.errorName', 'asset lifecycle settings')}
+          />
         ) : error ? (
-          <Alert variant="destructive">
-            <AlertCircle className="h-4 w-4" />
-            <AlertTitle>{t('settings.loadFailed', 'Failed to load settings')}</AlertTitle>
-            <AlertDescription>
-              <Button variant="outline" size="sm" className="mt-2" onClick={() => void mutate()}>
-                {t('common.retry', 'Retry')}
-              </Button>
-            </AlertDescription>
-          </Alert>
+          <ErrorState
+            title={t('settings.assetLifecycle.errorName', 'asset lifecycle settings')}
+            error={error}
+            onRetry={() => void mutate()}
+          />
         ) : isLoading ? (
           <Skeleton className="h-96 w-full rounded-xl" />
         ) : (
           <LifecycleSettingsForm
+            key={resets}
             initial={data ?? DEFAULT_LIFECYCLE_SETTINGS}
             formId={FORM_ID}
             onStatusChange={onStatusChange}
             dryRunOpen={dryRunOpen}
             onDryRunOpenChange={setDryRunOpen}
+          />
+        )}
+        {formReady && (
+          <SettingsSaveBar
+            dirty={status.dirty}
+            saving={status.submitting}
+            form={FORM_ID}
+            saveDisabled={!currentTenant}
+            onDiscard={() => setResets((n) => n + 1)}
           />
         )}
       </PageStack>

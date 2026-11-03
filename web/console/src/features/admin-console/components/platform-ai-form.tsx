@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useId, useState } from 'react'
+import { useCallback, useEffect, useId, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -16,6 +16,7 @@ import {
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { useTranslation } from '@/context/i18n-provider'
+import { SettingsSaveBar } from '@/features/shared/components/settings-save-bar'
 import { saveOrgAIPolicy, savePlatformAI, testPlatformAI } from '../api/use-platform-settings'
 import type { PlatformAISettings } from '../types'
 import {
@@ -64,7 +65,8 @@ export function PlatformAIForm({ settings, canEdit, onSaved }: PlatformAIFormPro
   const [policyConfirmOpen, setPolicyConfirmOpen] = useState(false)
   const [testing, setTesting] = useState(false)
 
-  useEffect(() => {
+  // The saved values: on load, after a save and on Discard.
+  const reset = useCallback(() => {
     setEnabled(settings.enabled)
     setProvider(settings.provider || settings.providers[0] || '')
     setModel(settings.model)
@@ -75,6 +77,7 @@ export function PlatformAIForm({ settings, canEdit, onSaved }: PlatformAIFormPro
     setKey('')
     setClearKey(false)
   }, [settings])
+  useEffect(reset, [reset])
 
   const providerChanged = settings.provider !== '' && provider !== settings.provider
   const compat = provider === 'openai_compatible'
@@ -338,9 +341,13 @@ export function PlatformAIForm({ settings, canEdit, onSaved }: PlatformAIFormPro
                 {testing && <Loader2 className="me-1.5 size-4 animate-spin" />}
                 {t('admin.ai.test', 'Test the key')}
               </Button>
-              <Button onClick={() => setConfirmOpen(true)} disabled={!dirty || incomplete}>
-                {t('admin.settings.save', 'Save')}
-              </Button>
+              <SettingsSaveBar
+                className="basis-full"
+                dirty={dirty}
+                saveDisabled={incomplete}
+                onSave={() => setConfirmOpen(true)}
+                onDiscard={reset}
+              />
             </div>
           )}
           {!canEdit && (

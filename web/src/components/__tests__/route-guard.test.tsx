@@ -7,6 +7,8 @@ const state = vi.hoisted(() => ({
   moduleIds: ['dashboard'] as string[],
   notEntitled: [] as string[],
   readOnly: {} as Record<string, string>,
+  bootstrapped: true,
+  permissionsLoading: false,
 }))
 
 vi.mock('next/navigation', () => ({
@@ -14,7 +16,10 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ back: vi.fn(), push: vi.fn() }),
 }))
 vi.mock('@/lib/permissions/hooks', () => ({
-  usePermissions: () => ({ can: (p: string) => state.permissions.has(p), isLoading: false }),
+  usePermissions: () => ({
+    can: (p: string) => state.permissions.has(p),
+    isLoading: state.permissionsLoading,
+  }),
 }))
 vi.mock('@/context/bootstrap-provider', () => ({
   useBootstrapModules: () => ({
@@ -23,7 +28,7 @@ vi.mock('@/context/bootstrap-provider', () => ({
     readOnlyModules: state.readOnly,
     isLoading: false,
   }),
-  useBootstrapContextSafe: () => ({ isBootstrapped: true }),
+  useBootstrapContextSafe: () => ({ isBootstrapped: state.bootstrapped }),
 }))
 
 import { RouteGuard } from '../route-guard'
@@ -35,6 +40,8 @@ describe('RouteGuard', () => {
     state.moduleIds = ['dashboard']
     state.notEntitled = []
     state.readOnly = {}
+    state.bootstrapped = true
+    state.permissionsLoading = false
   })
 
   it('renders a module in read-only grace with a banner saying until when', () => {
@@ -76,15 +83,19 @@ describe('RouteGuard', () => {
     // The API leaves a module out of the list when the user may not use it, so
     // a member without sensors:read has no "sensors" module either.
     render(<RouteGuard>page</RouteGuard>)
-    expect(screen.getByText('Access Denied')).toBeInTheDocument()
-    expect(screen.queryByText('Turned off for your organization')).toBeNull()
+    expect(screen.getByText('You do not have access to this page')).toBeInTheDocument()
+    expect(screen.getByText(/You need the permission sensors:read\./)).toBeInTheDocument()
+    expect(screen.getByText(/Ask an owner or administrator/)).toBeInTheDocument()
+    expect(screen.queryByText(/not enabled/)).toBeNull()
     expect(screen.queryByText('page')).toBeNull()
   })
 
   it('says the feature is switched off when the user holds the permission but the module is off', () => {
     state.permissions = new Set(['sensors:read'])
     render(<RouteGuard>page</RouteGuard>)
-    expect(screen.getByText('Turned off for your organization')).toBeInTheDocument()
+    expect(
+      screen.getByText('This feature is not enabled for this organization')
+    ).toBeInTheDocument()
     expect(screen.queryByText(/plan/i)).toBeNull()
     expect(
       screen.getByText('Ask an administrator of your organization to turn it on.')
@@ -96,6 +107,48 @@ describe('RouteGuard', () => {
     state.permissions = new Set(['sensors:read', 'team:update'])
     render(<RouteGuard>page</RouteGuard>)
     expect(screen.getByRole('link', { name: /Manage modules/ })).toBeInTheDocument()
+  })
+
+  it('names a settings page by its title and who holds the permission', () => {
+    state.pathname = '/settings/audit-log'
+    render(<RouteGuard>page</RouteGuard>)
+    expect(screen.getByText('You do not have access to Audit log')).toBeInTheDocument()
+    expect(screen.getByText(/audit:read\. Owners and administrators have it\./)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /Go to the dashboard/ })).toHaveAttribute('href', '/')
+    expect(screen.queryByText(/Required permission/)).toBeNull()
+  })
+
+  it('does not render a protected page before the access check can run', () => {
+    // Rendering it first let the page fire reads the person may not make.
+    state.bootstrapped = false
+    render(<RouteGuard>page</RouteGuard>)
+    expect(screen.queryByText('page')).toBeNull()
+    expect(screen.getByRole('main')).toHaveAttribute('aria-busy', 'true')
+  })
+
+  it('waits while the permissions load after the bootstrap, on the first check', () => {
+    state.permissionsLoading = true
+    state.permissions = new Set(['sensors:read'])
+    state.moduleIds = ['sensors']
+    render(<RouteGuard>page</RouteGuard>)
+    expect(screen.queryByText('page')).toBeNull()
+  })
+
+  it('keeps an allowed page mounted while the permissions refresh', () => {
+    state.permissions = new Set(['sensors:read'])
+    state.moduleIds = ['sensors']
+    const { rerender } = render(<RouteGuard>page</RouteGuard>)
+    expect(screen.getByText('page')).toBeInTheDocument()
+    state.permissionsLoading = true
+    rerender(<RouteGuard>page</RouteGuard>)
+    expect(screen.getByText('page')).toBeInTheDocument()
+  })
+
+  it('renders an unprotected page at once, before the access check', () => {
+    state.bootstrapped = false
+    state.pathname = '/account'
+    render(<RouteGuard>page</RouteGuard>)
+    expect(screen.getByText('page')).toBeInTheDocument()
   })
 
   it('renders the page with both the module and the permission', () => {
@@ -111,6 +164,6 @@ describe('RouteGuard', () => {
     render(<RouteGuard>page</RouteGuard>)
     const main = screen.getByRole('main')
     expect(main).toHaveAttribute('id', 'content')
-    expect(main).toHaveTextContent('Access Denied')
+    expect(main).toHaveTextContent('You do not have access to this page')
   })
 })
