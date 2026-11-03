@@ -17,7 +17,7 @@ import (
 func postIdPMetadata(t *testing.T, body string) *httptest.ResponseRecorder {
 	t.Helper()
 	h := NewSAMLHandler(auth.NewSAMLService(nil, nil, nil, logger.NewNop()), CookieConfig{}, "", logger.NewNop())
-	r := httptest.NewRequest(http.MethodPost, "/api/v1/admin/tenants/x/sso/saml/idp-metadata", strings.NewReader(body))
+	r := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v1/admin/tenants/x/sso/saml/idp-metadata", strings.NewReader(body))
 	r = r.WithContext(context.WithValue(r.Context(), middleware.TenantIDKey, "11111111-1111-7111-8111-111111111111"))
 	w := httptest.NewRecorder()
 	h.ImportIdPMetadata(w, r)
@@ -64,7 +64,7 @@ func TestImportIdPMetadataHandler_BodyTooLarge(t *testing.T) {
 // request's host is the console's, not the address the IdP must post to.
 func TestSPMetadataHandler_RequiresPublicURL(t *testing.T) {
 	h := NewSAMLHandler(auth.NewSAMLService(nil, nil, nil, logger.NewNop()), CookieConfig{}, "", logger.NewNop())
-	r := httptest.NewRequest(http.MethodGet, "/api/v1/admin/tenants/x/sso/saml/sp-metadata", nil)
+	r := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/admin/tenants/x/sso/saml/sp-metadata", nil)
 	r.Host = "console.example.com"
 	r = r.WithContext(context.WithValue(r.Context(), middleware.TenantIDKey, "11111111-1111-7111-8111-111111111111"))
 	w := httptest.NewRecorder()
