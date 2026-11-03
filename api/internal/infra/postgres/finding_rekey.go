@@ -66,6 +66,39 @@ func (r *FindingRekeyRepository) TenantsBelowVersion(ctx context.Context, target
 	return out, rows.Err()
 }
 
+// TenantsToRekey lists the tenants that have live findings keyed with a
+// version below target and no completed run to target (or later). The run
+// table is read first: a tenant that finished is not looked up in the
+// findings table, so the server start does not scan findings of tenants that
+// have nothing left to do. A tenant with no run row yet is checked once,
+// with an early-exit EXISTS, and gets its row when its run starts.
+func (r *FindingRekeyRepository) TenantsToRekey(ctx context.Context, target int) ([]shared.ID, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT t.id FROM tenants t
+		WHERE NOT EXISTS (SELECT 1 FROM finding_rekey_runs r
+		                  WHERE r.tenant_id = t.id AND r.status = 'completed' AND r.target_version >= $1)
+		  AND EXISTS (SELECT 1 FROM findings f
+		              WHERE f.tenant_id = t.id AND f.fingerprint_version < $1 AND f.status <> 'duplicate')
+		ORDER BY t.id`, target)
+	if err != nil {
+		return nil, fmt.Errorf("list tenants to re-key: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []shared.ID
+	for rows.Next() {
+		var s string
+		if err := rows.Scan(&s); err != nil {
+			return nil, fmt.Errorf("scan tenant: %w", err)
+		}
+		id, err := shared.IDFromString(s)
+		if err != nil {
+			return nil, fmt.Errorf("tenant id: %w", err)
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
+}
+
 // ListCandidates returns up to limit live findings of the tenant keyed with a
 // version below target and an id above afterID ("" = from the start), in id
 // order.

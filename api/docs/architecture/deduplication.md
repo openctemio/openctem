@@ -111,16 +111,29 @@ key `partial_fingerprints["sensor/fingerprint"]` and is never the identity
   old key stays an alias (trigger), so a late report in the old scheme lands
   on the same finding. CI run sightings (`ci_run_findings`) move to the new
   key in the same transaction. A tenant that completed a run to the current
-  version is skipped on later starts. Each tenant changed gets one
+  version is skipped on later starts, and is not even looked up in the
+  findings table (`TenantsToRekey` reads `finding_rekey_runs` first, so a
+  start after the upgrade does not scan findings). Each tenant changed gets one
   `findings.refingerprinted` audit entry.
   Every start that held the lock logs one `finding re-key on start
   finished` line (tenants, rekeyed, merged, incomplete, failed): deploy
-  verification checks it, and `finding_rekey_runs` shows each tenant's run.
+  verification checks it, and `finding_rekey_runs` shows each tenant's run
+  (`status = 'completed'` and `target_version` equal to the current identity
+  version for every tenant that had findings; `incomplete=0, failed=false` in
+  the log line).
   CI run sightings are found by key through
   `idx_ci_run_findings_tenant_fingerprint`.
 - **On a sighting** ingest offers a finding's version-2 key (and the version-2
   forms of its former keys) for adoption, so a finding the start-up run has
-  not reached yet is re-keyed in place, never duplicated. The version matcher
+  not reached yet is re-keyed in place, never duplicated. For the kinds
+  version 3 added (compliance, web3, generic) several stored findings can be
+  under old keys that all map to one new key: the first sighting re-keys one,
+  and every other one found under an old key in the same or a later report is
+  folded into it through the same merge as a collision (`MergeStaleKey`),
+  so no finding is left under a key no report matches, where scan
+  auto-resolve would close it. The older kinds keep first-sighting-adopts:
+  their former keys can be shared by unrelated findings (two secrets with one
+  mask). The version matcher
   and the license policy treat a finding still under its version-2 key as the
   same finding: never closed as gone, never created a second time.
 - **Collisions** (two stored findings with one new key) merge through the
@@ -130,7 +143,12 @@ key `partial_fingerprints["sensor/fingerprint"]` and is never the identity
   `refingerprint -down -apply` with this release's image, then deploy the
   older release. Each version-3 finding goes back to the version-2 key of its
   tuple, or, for a kind version 2 had no recipe for, to its newest older
-  alias; merges are not undone.
+  alias; merges are not undone. **Caveat:** a finding of a kind version 2 had
+  no recipe for (compliance, web3, generic) that was created under version 3
+  has no older key; the down step skips it (`no_previous_key`) and it keeps
+  its version-3 key, which an earlier release does not match, so it is
+  reported again as a new finding after the rollback. Check the `down` report
+  for `no_previous_key` before rolling back.
 - `exposure_events.fingerprint` is the exposure's own identity
   (`exposure.Fingerprint`), not a finding key: the re-key does not touch it.
 

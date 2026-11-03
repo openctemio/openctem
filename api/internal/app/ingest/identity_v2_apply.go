@@ -106,6 +106,27 @@ type fingerprintAdopter interface {
 	AdoptFingerprint(ctx context.Context, tenantID shared.ID, from, to string, identityKey []byte, version int, g vulnerability.AdoptGuard) (bool, error)
 }
 
+// staleKeyMerger is implemented by the postgres finding repository: it folds
+// a finding still stored under an older key into the finding that holds the
+// item's current key (the merge the start-up re-key makes). Optional.
+type staleKeyMerger interface {
+	MergeStaleKey(ctx context.Context, tenantID shared.ID, from string, k vulnerability.IdentityKey, g vulnerability.AdoptGuard) (bool, error)
+}
+
+// mergesStaleKeys reports whether two findings that map to one key of this
+// kind are one finding. True for the kinds version 3 added (compliance, web3,
+// generic): their stored findings carry keys of the ingest version 1 form,
+// and several of them can converge on one new key. Not for the older kinds,
+// whose former keys can be shared by unrelated findings (two secrets with one
+// mask): there the first sighting adopts and the others stay apart.
+func mergesStaleKeys(kind string) bool {
+	switch kind {
+	case vulnerability.IdentityKindCompliance, vulnerability.IdentityKindWeb3, vulnerability.IdentityKindGeneric:
+		return true
+	}
+	return false
+}
+
 // adoptKeys is what one item offers to a re-key: the key a stored finding
 // may still carry, the item's identity, and the guard naming its issue.
 type adoptKeys struct {
@@ -164,6 +185,8 @@ func adoptKeysOf[T any](ctx context.Context, p *FindingProcessor, tenantID share
 		v1, v2 string
 		raw    []byte
 		guard  vulnerability.AdoptGuard
+		key    vulnerability.IdentityKey
+		merge  bool
 	}
 	pairs := make([]pair, 0, len(items))
 	v2s := make([]string, 0, len(items))
@@ -186,7 +209,7 @@ func adoptKeysOf[T any](ctx context.Context, p *FindingProcessor, tenantID share
 			if v1 == "" || v1 == v2 {
 				continue
 			}
-			pairs = append(pairs, pair{v1: v1, v2: v2, raw: raw, guard: ak.guard})
+			pairs = append(pairs, pair{v1: v1, v2: v2, raw: raw, guard: ak.guard, key: *k, merge: mergesStaleKeys(k.Kind)})
 			added = true
 		}
 		if added {
@@ -208,7 +231,9 @@ func adoptKeysOf[T any](ctx context.Context, p *FindingProcessor, tenantID share
 	}
 	v1s := make([]string, 0, len(pairs))
 	for _, pr := range pairs {
-		if !held[pr.v2] {
+		// A key of a kind that merges is looked up even when its new key is
+		// held: a finding still under the old key is then folded in.
+		if !held[pr.v2] || pr.merge {
 			v1s = append(v1s, pr.v1)
 		}
 	}
@@ -235,14 +260,31 @@ func adoptKeysOf[T any](ctx context.Context, p *FindingProcessor, tenantID share
 		p.logger.Warn("failed to check version-1 finding keys", "error", err)
 		return
 	}
-	adopted, claimed := 0, map[string]bool{}
+	merger, _ := adopter.(staleKeyMerger)
+	adopted, merged, claimed := 0, 0, map[string]bool{}
 	for _, pr := range pairs {
-		if held[pr.v2] {
-			continue
-		}
 		from := pr.v1
 		if cur, ok := v1Current[pr.v1]; ok {
 			from = cur
+		}
+		if held[pr.v2] {
+			// Another finding has the key: a finding of a merging kind still
+			// under an older key is the same issue, so it is folded into the
+			// holder (never left to be skipped, and so to be auto-resolved
+			// as a finding no report matches any more).
+			if !pr.merge || merger == nil || from == pr.v2 || claimed[from] || !live[from] {
+				continue
+			}
+			claimed[from] = true
+			ok, err := merger.MergeStaleKey(ctx, tenantID, from, pr.key, pr.guard)
+			if err != nil {
+				p.logger.Warn("failed to merge a finding under an older key into its current one", "error", err)
+				continue
+			}
+			if ok {
+				merged++
+			}
+			continue
 		}
 		if claimed[from] || !live[from] {
 			continue
@@ -262,6 +304,9 @@ func adoptKeysOf[T any](ctx context.Context, p *FindingProcessor, tenantID share
 	}
 	if adopted > 0 {
 		p.logger.Info("re-keyed findings to their version-2 identity", "count", adopted)
+	}
+	if merged > 0 {
+		p.logger.Info("merged findings under older keys into their current finding", "count", merged)
 	}
 }
 

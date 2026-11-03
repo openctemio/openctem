@@ -359,7 +359,7 @@ func (s *Service) RunDown(ctx context.Context, tenantID shared.ID, opts Options)
 
 // Converger is the storage RunAll needs besides Store.
 type Converger interface {
-	TenantsBelowVersion(ctx context.Context, target int) ([]shared.ID, error)
+	TenantsToRekey(ctx context.Context, target int) ([]shared.ID, error)
 	GetRun(ctx context.Context, tenantID shared.ID) (*vulnerability.RekeyRun, error)
 }
 
@@ -371,7 +371,7 @@ type Converger interface {
 // is called with each tenant's report. A tenant whose run fails is logged by
 // the caller through the returned error; the others still run.
 func (s *Service) RunAll(ctx context.Context, c Converger, report func(*Report)) error {
-	tenants, err := c.TenantsBelowVersion(ctx, vulnerability.IdentityVersion)
+	tenants, err := c.TenantsToRekey(ctx, vulnerability.IdentityVersion)
 	if err != nil {
 		return err
 	}
