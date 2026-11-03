@@ -132,6 +132,19 @@ The aliases are set in `web/next.config.ts` and `web/console/next.config.ts`
 production build refuses to run while an extension is mounted, and an `EDITION=ee`
 build without one fails to resolve.
 
+
+## Brand pack and open-source notices
+
+Branding is data supplied by an extension, not a fork of the UI: a brand pack
+(product name, logos and icons, sign-in panel, e-mail header and footer,
+documentation, support and legal links) comes through the brand source
+extension point and `GET /api/v1/brand`; the default pack is OpenCTEM. An
+installation or an organization can carry its own pack (white-label) on the
+same mechanism. The About > Open-source licences page (third-party notices
+generated at build time) is part of every build: no brand pack, white-label or
+extension can remove or replace it, and a build that carries another brand
+still credits OpenCTEM there.
+
 ## Extension layout
 
 The extension repository uses the core's paths, so mounting is one copy per mount
