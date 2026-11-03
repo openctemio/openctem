@@ -90,6 +90,10 @@ func TestAlertBootstrapNeverEnrolled(t *testing.T) {
 		t.Fatal(err)
 	}
 	f.now = time.Now() // the seed is stamped with the wall clock
+	// The feed must be as fresh relative to that clock as the fixture's is
+	// to tNow, or the age alert fires once the calendar passes tNow+48h.
+	pub := f.now.Add(-time.Hour)
+	f.feed.publishedAt = &pub
 	f.svc = f.newService(t, t.TempDir())
 	f.svc.SetNotifier(n)
 	f.at(t, 61*time.Minute)
