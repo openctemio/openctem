@@ -95,6 +95,29 @@ describe('FindingIdentityView', () => {
     ).toBeInTheDocument()
     expect(screen.getByText('Manual finding key')).toBeInTheDocument()
   })
+
+  it('names the version-3 recipes like their version-2 forms, and the new ones', () => {
+    const { unmount } = render(
+      <FindingIdentityView identity={identity({ algo: 'v3/sca', version: 3 })} />
+    )
+    expect(screen.getByText('Package vulnerability')).toBeInTheDocument()
+    unmount()
+    render(
+      <FindingIdentityView
+        identity={identity({
+          algo: 'v3/compliance',
+          version: 3,
+          fields: ['asset', 'framework', 'control', 'resource'],
+        })}
+      />
+    )
+    expect(screen.getByText('Compliance control')).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        'Findings are one when they share: asset, compliance framework, control, resource'
+      )
+    ).toBeInTheDocument()
+  })
 })
 
 describe('identity explanation i18n', () => {

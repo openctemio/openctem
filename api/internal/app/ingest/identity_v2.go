@@ -36,14 +36,23 @@ const (
 	partialServerSecretHMAC = "server/secretHMAC/v1"
 )
 
-// identityKind tells which v2 recipe applies to a CTIS finding, or "" when
-// none does (compliance, web3, a generic finding without a location): such a
-// finding keeps its version-1 key.
+// identityKind tells which recipe applies to a CTIS finding, or "" when none
+// of the specific ones does: the finding is then keyed by the generic recipe
+// (genericIdentity), or keeps its version-1 key when it has no rule either.
 func identityKind(f *ctis.Finding) string {
 	switch {
 	case f.Type == ctis.FindingTypeSecret || f.Secret != nil:
 		return vulnerability.IdentityKindSecret
-	case f.Type == ctis.FindingTypeCompliance || f.Web3 != nil:
+	case f.Type == ctis.FindingTypeCompliance:
+		if c := f.Compliance; c != nil && (strings.TrimSpace(string(c.Framework)) != "" || strings.TrimSpace(c.ControlID) != "") {
+			return vulnerability.IdentityKindCompliance
+		}
+		return ""
+	case f.Web3 != nil:
+		// CTIS 2.0 has no web3 finding type: the web3 profile marks one.
+		if strings.TrimSpace(f.Web3.ContractAddress) != "" {
+			return vulnerability.IdentityKindWeb3
+		}
 		return ""
 	case f.Type == ctis.FindingTypeMisconfiguration || f.Misconfiguration != nil:
 		return vulnerability.IdentityKindMisconfig
@@ -111,8 +120,28 @@ func identityV2(assetID shared.ID, f *ctis.Finding, secretHMAC string, occurrenc
 		return vulnerability.DASTIdentity(asset, dastRule(f), dastMethod(f), dastKeyURL(f), dastParams(f))
 	case vulnerability.IdentityKindSAST:
 		return vulnerability.SASTIdentity(sastInput(asset, f, occurrence))
+	case vulnerability.IdentityKindCompliance:
+		return vulnerability.ComplianceIdentity(asset, string(f.Compliance.Framework), f.Compliance.ControlID, locationPath(f))
+	case vulnerability.IdentityKindWeb3:
+		w := f.Web3
+		rule := w.SWCID
+		if strings.TrimSpace(rule) == "" {
+			rule = f.RuleID
+		}
+		return vulnerability.Web3Identity(asset, w.ChainID, w.ContractAddress, rule, w.FunctionSignature)
 	}
 	return vulnerability.IdentityKey{}, false
+}
+
+// genericIdentity is the CTIS generic recipe (rule, path, lines) for a
+// finding no specific recipe keys; false without a rule id, and the finding
+// then keeps its version-1 key.
+func genericIdentity(assetID shared.ID, f *ctis.Finding) (vulnerability.IdentityKey, bool) {
+	start, end := 0, 0
+	if f.Location != nil {
+		start, end = f.Location.StartLine, f.Location.EndLine
+	}
+	return vulnerability.GenericIdentity(assetID.String(), f.RuleID, locationPath(f), start, end)
 }
 
 func sastInput(asset string, f *ctis.Finding, occurrence int) vulnerability.SASTIdentityInput {
@@ -141,30 +170,31 @@ func sastInput(asset string, f *ctis.Finding, occurrence int) vulnerability.SAST
 	return in
 }
 
-// formerKey is the version-2 key a finding may still be stored under from an
-// earlier form of its recipe, "" when none.
-func formerKey(assetID shared.ID, f *ctis.Finding, identity vulnerability.IdentityKey) string {
+// formerKeys are the keys a finding may still be stored under from an
+// earlier form of its recipe, in both their current and version-2 forms;
+// nil when none.
+func formerKeys(assetID shared.ID, f *ctis.Finding, identity vulnerability.IdentityKey) []string {
 	switch identityKind(f) {
 	case vulnerability.IdentityKindSAST:
 		return sastFormerLineKey(assetID, f, identity)
 	case vulnerability.IdentityKindDAST:
 		return dastFormerURLKey(assetID, f)
 	}
-	return ""
+	return nil
 }
 
 // sastFormerLineKey is the line-anchored key of a SAST finding whose key is
 // anchored on its code: the key it was stored under while its reports
 // carried no code. "" when the finding is not SAST or has no such key.
-func sastFormerLineKey(assetID shared.ID, f *ctis.Finding, identity vulnerability.IdentityKey) string {
+func sastFormerLineKey(assetID shared.ID, f *ctis.Finding, identity vulnerability.IdentityKey) []string {
 	if identityKind(f) != vulnerability.IdentityKindSAST || identity.Field("snippet") == "" {
-		return ""
+		return nil
 	}
 	k, ok := vulnerability.SASTLineIdentity(sastInput(assetID.String(), f, 0))
 	if !ok {
-		return ""
+		return nil
 	}
-	return k.Fingerprint()
+	return k.KeyForms()
 }
 
 // sastSnippetGroup is the key under which identical SAST snippets of one file
@@ -296,16 +326,16 @@ func dastTemplateBase(f *ctis.Finding, matched string) (string, bool) {
 
 // dastFormerURLKey is the key a template-path DAST result had when it was
 // keyed on its matched URL, "" when it is keyed so now.
-func dastFormerURLKey(assetID shared.ID, f *ctis.Finding) string {
+func dastFormerURLKey(assetID shared.ID, f *ctis.Finding) []string {
 	matched := locationPath(f)
 	if _, ok := dastTemplateBase(f, matched); !ok {
-		return ""
+		return nil
 	}
 	k, ok := vulnerability.DASTIdentity(assetID.String(), dastRule(f), dastMethod(f), matched, dastParams(f))
 	if !ok {
-		return ""
+		return nil
 	}
-	return k.Fingerprint()
+	return k.KeyForms()
 }
 
 // splitMultiCVEFinding returns one finding per CVE for a network VA or SCA

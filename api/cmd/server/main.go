@@ -600,11 +600,19 @@ func run() int {
 			}()
 		}
 
-		// Stored asset names to the CTIS 2.0 canonical form, so ingest finds
-		// the assets it stored before the switch (asset_canonical.go).
-		// Idempotent, one transaction per asset, re-checked under lock:
-		// safe on every start and across replicas.
-		go runAssetCanonicalOnStart(ctx, db, log)
+		// Stored asset names to the CTIS 2.0 canonical form first
+		// (asset_canonical.go), then stored findings to the current identity
+		// recipe (version 3, the CTIS fingerprint recipe v2; finding_rekey.go).
+		// In this order, in one goroutine: an asset merge moves findings,
+		// which the re-key then keys once, and the two never contend for the
+		// same rows. Both are idempotent and resumable; the re-key runs on one
+		// replica at a time (advisory lock), and ingest re-keys a finding on
+		// its next sighting, so nothing is split while they run. Down steps:
+		// asset-canonical -revert, refingerprint -down -apply.
+		go func() {
+			runAssetCanonicalOnStart(ctx, db, log)
+			runFindingRekeyOnStart(ctx, db, log)
+		}()
 
 		// Host keys for commands queued before every command got them at
 		// create (research/130). Idempotent and SKIP LOCKED: safe on every
