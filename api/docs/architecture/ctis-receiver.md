@@ -96,7 +96,11 @@ ingest, after validation:
   response fields, hypervisor host, every IP address key);
 - it derives the keys the stored model keeps from typed members:
   `ip_addresses` of a name from its A/AAAA DNS records and its `resolves_to`
-  relationships; `root_domain` of a subdomain only from a `subdomain_of`
+  relationships (DNS only); `ip_addresses` of a machine (network device,
+  host, endpoint device, any asset that is not a name, an address or a
+  range) from its `has_address` relationships (ctis v2.0.1: interface or
+  management addresses), which is what network device matching reads; a
+  range never records addresses, so a segment is never matched by address; `root_domain` of a subdomain only from a `subdomain_of`
   relationship of the document (never from the public suffix list, so a
   sensor cannot make the platform create a registrable domain it did not
   name); `import_scope`, `candidate_exposure`, `candidate_unverified` and
@@ -128,9 +132,12 @@ Typed members that replaced properties:
 
 ## Findings
 
-- Technique: `finding.technique`, else the report's bound capability, else
-  the first of `tool.techniques` (closed vocabulary), else the tool name;
-  unknown is `external`. The channel is the principal's, never the document's.
+- Source: the report's bound capability (the command's, never the
+  producer's claim); unbound, `finding.technique`, else the first of
+  `tool.techniques` (closed vocabulary), else the tool name; unknown is
+  `external`. `finding.technique` never moves a bound report's finding to
+  another source; a known technique is recorded apart in the finding's
+  metadata (`technique`). The channel is the principal's, never the document's.
 - Vulnerability ids: `vulnerability.ids[]`. A finding is keyed on its
   preferred CVE (numerically smallest); a network or SCA finding naming
   several CVEs is split per CVE as before.

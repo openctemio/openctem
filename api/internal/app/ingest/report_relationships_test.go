@@ -41,6 +41,7 @@ func TestMapReportRelationship(t *testing.T) {
 		{"address hosted by host", ctis.RelHostedBy, ip, vm, asset.RelTypeContains, vm, true},
 		{"subdomain stored parent first", ctis.RelSubdomainOf, sub, dom, asset.RelTypeContains, dom, true},
 		{"resolves to address", ctis.RelResolvesTo, sub, ip, asset.RelTypeResolvesTo, sub, true},
+		{"host has an address", ctis.RelHasAddress, vm, ip, asset.RelTypeContains, vm, true},
 		{"host hosted by an address is not a pair", ctis.RelHostedBy, vm, ip, asset.RelTypeRunsOn, vm, false},
 		{"domain resolves to a host is not a pair", ctis.RelResolvesTo, dom, vm, asset.RelTypeResolvesTo, dom, false},
 	}

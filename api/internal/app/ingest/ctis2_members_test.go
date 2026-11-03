@@ -96,6 +96,48 @@ func TestAdoptCTIS2Members_IPAddressesFromDNSAndResolvesTo(t *testing.T) {
 	}
 }
 
+// ip_addresses of a machine come only from its has_address relationships to
+// ip_address assets of the document: a producer's ip_addresses property is
+// dropped, a name gets nothing from has_address (names resolve), and a range
+// never records addresses.
+func TestAdoptCTIS2Members_IPAddressesFromHasAddress(t *testing.T) {
+	r := &ctis.Report{
+		Assets: []ctis.Asset{
+			{ID: "sw", Type: ctis.AssetTypeNetworkDevice, Value: "core-sw-01",
+				Properties: ctis.Properties{"ip_addresses": []any{"6.6.6.6"}}},
+			{ID: "h", Type: ctis.AssetTypeHost, Value: "web01"},
+			{ID: "d", Type: ctis.AssetTypeDomainName, Value: "www.example.com"},
+			{ID: "net", Type: ctis.AssetTypeIPRange, Value: "192.0.2.0/24",
+				Properties: ctis.Properties{"ip_addresses": []any{"192.0.2.1"}}},
+			{ID: "ip1", Type: ctis.AssetTypeIPAddress, Value: "192.0.2.1"},
+			{ID: "ip2", Type: ctis.AssetTypeIPAddress, Value: "2001:db8:0:0:0:0:0:1"},
+		},
+		Relationships: []ctis.Relationship{
+			{Type: ctis.RelHasAddress, FromRef: "sw", ToRef: "ip1"},
+			{Type: ctis.RelHasAddress, FromRef: "sw", ToRef: "ip2"},
+			{Type: ctis.RelHasAddress, FromRef: "sw", ToRef: "ip1"}, // duplicate
+			{Type: ctis.RelHasAddress, FromRef: "h", ToRef: "ip2"},
+			{Type: ctis.RelHasAddress, FromRef: "d", ToRef: "ip1"}, // a name resolves, it has no address
+			{Type: ctis.RelHasAddress, FromRef: "sw", ToRef: "h"},  // not an address asset
+			{Type: ctis.RelResolvesTo, FromRef: "h", ToRef: "ip1"}, // DNS only
+		},
+	}
+	adoptCTIS2Members(r, false)
+	ips := func(i int) []string { v, _ := r.Assets[i].Properties[asset.PropKeyIPAddresses].([]string); return v }
+	if got, want := ips(0), []string{"192.0.2.1", "2001:db8::1"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("device ip_addresses = %v, want %v (the producer's 6.6.6.6 is dropped)", got, want)
+	}
+	if got, want := ips(1), []string{"2001:db8::1"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("host ip_addresses = %v, want %v", got, want)
+	}
+	if _, ok := r.Assets[2].Properties[asset.PropKeyIPAddresses]; ok {
+		t.Fatal("a name got ip_addresses from has_address")
+	}
+	if _, ok := r.Assets[3].Properties[asset.PropKeyIPAddresses]; ok {
+		t.Fatal("a range kept or got ip_addresses")
+	}
+}
+
 // root_domain of a subdomain comes only from a subdomain_of relationship to a
 // domain_name of the document: never from the public suffix list, never from
 // a property, never on a name that is not a subdomain.
