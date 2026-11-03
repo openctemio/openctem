@@ -215,7 +215,7 @@ function RedactedMemberCounts({
       <p className="text-muted-foreground">
         {t(
           'admin.org.users.redacted',
-          'Your console role sees how many members there are, not who they are. {count} member(s) in total.',
+          'Your console role sees how many members there are, not who they are. {count, plural, one {# member} other {# members}} in total.',
           { count: total }
         )}
       </p>
