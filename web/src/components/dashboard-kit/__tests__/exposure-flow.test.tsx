@@ -925,3 +925,124 @@ describe('sub-figures of an outcome', () => {
     expect(hrefOf(/^Past SLA 43$/)).toBe(flow.past_sla.drill)
   })
 })
+
+describe('source wires after toggling findings and assets', () => {
+  const ROW_H = 50
+  const STALE = 900
+  const live: Array<{ finished: Promise<void>; done: () => void }> = []
+  const shifted = new WeakSet<Element>()
+  const protoRect = HTMLElement.prototype.getBoundingClientRect
+  const protoAnimate = (HTMLElement.prototype as { animate?: unknown }).animate
+  const protoAnims = (HTMLElement.prototype as { getAnimations?: unknown }).getAnimations
+
+  const toggled: FlowResult = {
+    ...flow,
+    intake: {
+      ...intake,
+      sources: [
+        source({ id: 'sensor:nuclei', tool: 'nuclei', origin: 'sensor', received: 400 }),
+        source({ id: 'sensor:dnsx', tool: 'dnsx', origin: 'sensor', received: 0, assets: 0 }),
+        source({
+          id: 'sensor:subfinder',
+          tool: 'subfinder',
+          origin: 'sensor',
+          received: 0,
+          assets: 9000,
+          kind: 'discovery',
+        }),
+      ],
+    },
+  }
+
+  // A layout the test controls: a row sits at its place in the list, plus the
+  // transform of a slide that has not finished (the ranked bars' FLIP).
+  const rowTop = (el: Element) => {
+    const li = el.closest('li')
+    const idx = li ? [...li.parentElement!.children].indexOf(li) : 0
+    return idx * ROW_H + (li && shifted.has(li) ? STALE : 0)
+  }
+  const rect = (x: number, y: number, w: number, h: number) =>
+    ({
+      x,
+      y,
+      left: x,
+      top: y,
+      right: x + w,
+      bottom: y + h,
+      width: w,
+      height: h,
+      toJSON: () => ({}),
+    }) as DOMRect
+
+  beforeEach(() => {
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (
+      this: HTMLElement
+    ) {
+      if (this.dataset.wireOut) return rect(0, rowTop(this), 300, 44)
+      if (this.dataset.wireIn === 'ring') return rect(600, 200, 1, 1)
+      if (this.tagName === 'LI') return rect(0, rowTop(this), 300, 44)
+      return rect(0, 0, 1200, 600)
+    })
+    Object.assign(HTMLElement.prototype, {
+      animate(this: HTMLElement) {
+        shifted.add(this)
+        let done!: () => void
+        const finished = new Promise<void>((res) => {
+          done = () => {
+            shifted.delete(this)
+            res()
+          }
+        })
+        live.push({ finished, done })
+        return { finished }
+      },
+      getAnimations: () => [...live],
+    })
+    try {
+      window.localStorage.clear()
+    } catch {
+      /* no storage */
+    }
+  })
+  afterEach(() => {
+    vi.restoreAllMocks()
+    live.length = 0
+    Object.assign(HTMLElement.prototype, { animate: protoAnimate, getAnimations: protoAnims })
+    HTMLElement.prototype.getBoundingClientRect = protoRect
+  })
+
+  const starts = () =>
+    [...document.querySelectorAll('[data-wire-key^="w:s:"]')].map((g) => {
+      const d = g.querySelector('path')!.getAttribute('d')!
+      const m = /^M([\d.-]+) ([\d.-]+)/.exec(d)!
+      const end = /([\d.-]+) ([\d.-]+)$/.exec(d)!
+      return {
+        key: g.getAttribute('data-wire-key')!.replace('w:', ''),
+        y: Number(m[2]),
+        endY: Number(end[2]),
+        endX: Number(end[1]),
+      }
+    })
+  const expectWiresOnRows = () => {
+    const wires = starts()
+    expect(wires.length).toBe(3)
+    for (const w of wires) {
+      const li = document.querySelector(`li[data-key="${w.key}"]`)!
+      expect(w.y).toBe(rowTop(li) + 22)
+      expect(w.endY).toBe(200.5)
+      expect(w.endX).toBeGreaterThan(0)
+    }
+  }
+
+  it('starts every wire at its own row after findings, assets and findings again', async () => {
+    const user = userEvent.setup()
+    render(<ExposureFlowViz result={toggled} />)
+    expectWiresOnRows()
+    for (const name of ['Assets', 'Findings']) {
+      await user.click(screen.getByRole('button', { name }))
+      // The slide is still running: the wires have not settled on it yet.
+      act(() => live.splice(0).forEach((a) => a.done()))
+      await waitFor(expectWiresOnRows)
+    }
+  })
+})
