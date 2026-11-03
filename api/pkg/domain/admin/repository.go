@@ -205,6 +205,19 @@ type AuditChainReport struct {
 	Truncated bool              `json:"truncated"`
 	// VerifiedAt is when the walk ran.
 	VerifiedAt time.Time `json:"verified_at"`
+	// Head is the chain's newest position and its hash (the newest anchor
+	// when no row is online; absent for an empty chain). An offline copy of
+	// the rows and this head let a reader verify the log without the
+	// database, and compare the head with an earlier copy: a rewritten chain
+	// no longer ends in the hash recorded before. It is part of the report in
+	// every edition, with or without a forwarding sink.
+	Head *AuditChainHead `json:"head,omitempty"`
+}
+
+// AuditChainHead is the newest link of the administrators' audit chain.
+type AuditChainHead struct {
+	Position int64  `json:"position"`
+	Hash     string `json:"hash"`
 }
 
 // OK reports whether every row verified.
