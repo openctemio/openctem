@@ -57,10 +57,14 @@ export function SecurityScoreCard({ enabled }: { enabled: boolean }) {
           })}
         />
         <p className="text-xs text-muted-foreground">
-          {t('settings.securityCard.counts', '{risks} risks, {warns} warnings', {
-            risks,
-            warns,
-          })}
+          {t(
+            'settings.securityCard.counts',
+            '{risks, plural, one {# risk} other {# risks}}, {warns, plural, one {# warning} other {# warnings}}',
+            {
+              risks,
+              warns,
+            }
+          )}
         </p>
       </div>
       <div className="flex min-w-0 flex-col justify-between gap-2">

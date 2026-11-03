@@ -191,7 +191,8 @@ findings=$({
             headers: [ { name: "Content-Type", value: "text/html" },
                        { name: "Server", value: "e2e" } ],
             body: "<html><script>window.__pwned=1</script> e2e theme preview wp-version 7.1.0</html>" } },
-        match: [ { location: "response", part: "body", start: 69, end: 74, matcher: "version" } ] },
+        match: [ { location: "response", part: "body", start: 69, end: 74, matcher: "version" } ],
+        extracted: [ "{\"link\":\"https:\\/\\/e2e-web.example.com\\/wp-json\\/tribe\\/events\\/v1\\/organizers\\/?id=24148&status=publish\",\"global_id_lineage\":[\"e2e-web.example.com?id=24148\"]}" ] },
       { kind: "curl",
         text: "curl -X GET -H \"Authorization: Bearer e2e-not-a-real-token-0001\" https://e2e-web.example.com/wp-admin/js/theme.js" }
     ]

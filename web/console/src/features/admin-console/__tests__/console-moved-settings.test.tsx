@@ -49,7 +49,7 @@ beforeEach(() => {
 })
 
 async function confirmWithReason(reason = 'rotate the key') {
-  await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+  await userEvent.click(screen.getByRole('button', { name: 'Save changes' }))
   const confirmButton = () => {
     const buttons = within(screen.getByRole('alertdialog')).getAllByRole('button')
     return buttons[buttons.length - 1]
@@ -87,12 +87,12 @@ describe('CAPTCHA settings', () => {
       screen.getByText(/Locked by the server configuration \(CAPTCHA_TURNSTILE_SECRET\)/)
     ).toBeInTheDocument()
     expect(screen.getByLabelText('Site key (public)')).toBeDisabled()
-    expect(screen.queryByRole('button', { name: 'Save' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Save changes' })).not.toBeInTheDocument()
   })
 
   it('offers no change to a non-super admin', () => {
     render(<CaptchaSettingsForm settings={captcha} canEdit={false} onSaved={() => {}} />)
-    expect(screen.queryByRole('button', { name: 'Save' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Save changes' })).not.toBeInTheDocument()
     expect(screen.getByText('Only a super admin can change this setting.')).toBeInTheDocument()
   })
 })
@@ -156,10 +156,10 @@ describe('Platform AI provider', () => {
     render(<PlatformAIForm settings={ai} canEdit onSaved={() => {}} />)
     await userEvent.click(screen.getByRole('switch', { name: /Offer platform AI/ }))
     expect(screen.getByText(/Choose a provider and a model and set its key/)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Save changes' })).toBeDisabled()
     await userEvent.type(screen.getByLabelText('Model'), 'claude-sonnet-4')
     await userEvent.type(screen.getByLabelText('API key'), 'sk-test-key-123456')
-    expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Save changes' })).toBeEnabled()
   })
 
   it('an OpenAI-compatible server needs a base URL and no key; the private toggle is shown only for it', async () => {
@@ -169,9 +169,9 @@ describe('Platform AI provider', () => {
     await userEvent.click(screen.getByRole('switch', { name: /Offer platform AI/ }))
     await userEvent.type(screen.getByLabelText('Model'), 'llama3')
     expect(screen.getByText(/Choose a model and a base URL/)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Save changes' })).toBeDisabled()
     await userEvent.type(screen.getByLabelText('Base URL'), 'http://10.0.0.5:11434/v1')
-    expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Save changes' })).toBeEnabled()
   })
 
   it("saves the policy on organizations' own providers with a reason", async () => {

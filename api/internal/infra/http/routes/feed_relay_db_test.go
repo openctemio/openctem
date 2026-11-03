@@ -200,7 +200,7 @@ func TestFeedRelayRoutes(t *testing.T) {
 
 	// Direct mode: nobody relays; an eligible sensor is told to come back
 	// much later.
-	if code, _, h := doH(relayKey, http.MethodGet, "/feed-relay/next", nil); code != http.StatusNoContent || h.Get("Retry-After") != "600" {
+	if code, _, h := doH(relayKey, http.MethodGet, "/feed-relay-rounds/next", nil); code != http.StatusNoContent || h.Get("Retry-After") != "600" {
 		t.Fatalf("direct mode: %d %q", code, h.Get("Retry-After"))
 	}
 	actor, _ := admin.NewAdminUser("root@example.com", "Root", admin.AdminRoleSuperAdmin, nil)
@@ -213,13 +213,13 @@ func TestFeedRelayRoutes(t *testing.T) {
 	if _, err := svcB.Reconcile(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if code, _ := do(org.APIKey, http.MethodGet, "/feed-relay/next", nil); code != http.StatusForbidden {
+	if code, _ := do(org.APIKey, http.MethodGet, "/feed-relay-rounds/next", nil); code != http.StatusForbidden {
 		t.Errorf("organization sensor: %d, want 403", code)
 	}
-	if code, _, h := doH(otherKey, http.MethodGet, "/feed-relay/next", nil); code != http.StatusNoContent || h.Get("Retry-After") != "600" {
+	if code, _, h := doH(otherKey, http.MethodGet, "/feed-relay-rounds/next", nil); code != http.StatusNoContent || h.Get("Retry-After") != "600" {
 		t.Errorf("other platform sensor: %d %q, want 204 600", code, h.Get("Retry-After"))
 	}
-	code, raw := do(relayKey, http.MethodGet, "/feed-relay/next", nil)
+	code, raw := do(relayKey, http.MethodGet, "/feed-relay-rounds/next", nil)
 	if code != http.StatusOK {
 		t.Fatalf("designated: %d %s", code, raw)
 	}
@@ -236,7 +236,7 @@ func TestFeedRelayRoutes(t *testing.T) {
 		_ = sqldb.QueryRowContext(ctx, `SELECT data FROM feed_relay_files WHERE feed = 'vulnfeed' AND name = 'keyset.dsse.json'`).Scan(&data)
 		return string(data)
 	}
-	put := "/feed-relay/" + next.ID + "/files/keyset.dsse.json"
+	put := "/feed-relay-rounds/" + next.ID + "/files/keyset.dsse.json"
 	for name, key := range map[string]string{"another platform sensor": otherKey, "organization sensor": org.APIKey} {
 		if code, _ := do(key, http.MethodPut, put, []byte("K"), "Content-Digest", contentDigest([]byte("K"))); code != http.StatusForbidden {
 			t.Fatalf("%s upload: %d", name, code)
@@ -268,15 +268,15 @@ func TestFeedRelayRoutes(t *testing.T) {
 		t.Fatalf("delivered bytes %d", delivered)
 	}
 	rep, _ := json.Marshal(dom.Report{Files: []dom.Outcome{{Name: "keyset.dsse.json", Status: "ok"}}})
-	if code, _ := do(relayKey, http.MethodPost, "/feed-relay/"+next.ID+"/done", rep); code != http.StatusNoContent {
+	if code, _ := do(relayKey, http.MethodPost, "/feed-relay-rounds/"+next.ID+"/done", rep); code != http.StatusNoContent {
 		t.Fatalf("done: %d", code)
 	}
-	if code, _ := do(relayKey, http.MethodPost, "/feed-relay/"+next.ID+"/done", rep); code != http.StatusNotFound {
+	if code, _ := do(relayKey, http.MethodPost, "/feed-relay-rounds/"+next.ID+"/done", rep); code != http.StatusNotFound {
 		t.Fatalf("done twice: %d", code)
 	}
 	// While the cycle waits for its next plan the relay is told to come
 	// back soon.
-	if code, _, h := doH(relayKey, http.MethodGet, "/feed-relay/next", nil); code != http.StatusNoContent || h.Get("Retry-After") != "15" {
+	if code, _, h := doH(relayKey, http.MethodGet, "/feed-relay-rounds/next", nil); code != http.StatusNoContent || h.Get("Retry-After") != "15" {
 		t.Fatalf("in cycle: %d %q", code, h.Get("Retry-After"))
 	}
 	// Instance B (the lease holder, its own directory) plans and imports.

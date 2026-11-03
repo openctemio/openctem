@@ -66,7 +66,9 @@ inventory a collector owns:
   ones are demoted to `stale` (never a manual status override, never
   deleted), with a `disappeared` state-history row. Nothing is marked when
   the report is empty, when any segment refused, quarantined or failed an
-  asset, or when the share would blind the inventory (the auto-resolve
+  asset (an asset a scope exclusion of the organization kept out is not a
+  refusal: it gets the item error `asset_excluded` and is counted neither
+  as accepted nor as rejected), or when the share would blind the inventory (the auto-resolve
   `BlindingGuard`: more than 100 and more than half of the source's assets).
   A partial or incremental report never marks anything, and a report
   replayed with an older time neither overwrites newer values nor marks

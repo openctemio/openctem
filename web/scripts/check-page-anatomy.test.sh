@@ -7,8 +7,11 @@ fail=0
 git -C "$t" init -q -b develop
 git -C "$t" config user.email t@example.invalid
 git -C "$t" config user.name t
-mkdir -p "$t/src/features/x" "$t/src/features/shared/components" "$t/src/app/x"
+mkdir -p "$t/src/features/x" "$t/src/features/shared/components" "$t/src/app/x" \
+  "$t/src/app/(dashboard)/settings/x" "$t/console/src/app/y"
 echo 'export const p = 1' > "$t/src/app/x/page.tsx"
+echo 'export const s = 1' > "$t/src/app/(dashboard)/settings/x/page.tsx"
+echo 'export const c = 1' > "$t/console/src/app/y/page.tsx"
 echo 'export const a = 1' > "$t/src/features/x/a.tsx"
 echo 'export const b = 1' > "$t/src/features/shared/components/metric-strip.tsx"
 git -C "$t" add -A
@@ -42,6 +45,11 @@ must_pass 'plain tab trigger' "$(printf '<TabsTrigger value="a">\n  {t(\x27a\x27
 must_fail_at() { run "$1" "$2" && { echo "FAIL accepted: $3"; fail=1; }; }
 must_fail_at app/x/page.tsx "$(printf 'export default function P() {\n  const { t } = useTranslation()\n}')" 'server page with hooks'
 must_pass 'client page with hooks' "$(printf '/** doc */\n\047use client\047\nexport default function P() {\n  const [a] = useState(1)\n}')" app/x/page.tsx
+must_fail_at 'app/(dashboard)/settings/x/page.tsx' '<Button type="submit" form={FORM_ID}>Save</Button>' 'own Save on a settings page'
+must_pass 'submit outside settings pages' '<Button type="submit">Create</Button>' app/x/page.tsx
+must_fail 'hand-made no-permission alert' "<AlertTitle>{t('settings.noPermissionTitle', 'Insufficient permissions')}</AlertTitle>"
+must_fail_at app/x/page.tsx "import { Table } from '@/components/ui/table'" 'raw table in a page'
+must_fail_at ../console/src/app/y/page.tsx '<StatsCard title="Open" value={3} />' 'console drift is checked too'
 must_pass 'metric strip owns its number' '<span className="text-2xl font-semibold">' features/shared/components/metric-strip.tsx
 must_pass 'responsive size' '<p className="text-sm sm:text-base">x</p>'
 must_pass 'one size' '<span className="text-xs text-muted-foreground">Source</span>'

@@ -576,6 +576,9 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	// Dashboard snapshots: scheduled refreshes, every minute.
 	w.ControllerManager.Register(controller.NewDashboardSnapshotsController(
 		svc.DashboardWidgets, log.With("controller", "dashboard-snapshots")))
+	// Attack surface posture: scheduled refreshes of the posture facts.
+	w.ControllerManager.Register(controller.NewEASMPostureController(
+		svc.Posture, log.With("controller", "easm-posture")))
 
 	w.ControllerManager.Register(controller.NewRoleSyncController(
 		deps.DB,
@@ -676,6 +679,12 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	if svc.AIAnalysis != nil {
 		w.ControllerManager.Register(controller.NewAIAgentSweepController(svc.AIAnalysis, time.Hour,
 			log.With("controller", "ai-agent-sweep")))
+	}
+	// AI use cases whose automatic results people keep overriding fall back
+	// from auto-apply to suggest.
+	if svc.TenantAI != nil {
+		w.ControllerManager.Register(controller.NewAIUseCaseDowngradeController(svc.TenantAI, 15*time.Minute,
+			log.With("controller", "ai-use-case-downgrade")))
 	}
 
 	registerPurgeControllers(w.ControllerManager, cfg, repos, svc, log)
@@ -813,13 +822,6 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		}
 		w.ControllerManager.Register(controller.NewThreatAlertPlannerController(svc.ThreatAlertPlanner, log.With("controller", "threat-alert-planner")))
 	}
-
-	// CTEM-ID catalog — daily fail-open refresh of the standardized exposure
-	// catalog (https://ctem.org/source.json), mirroring the threat-intel refresh.
-	w.ControllerManager.Register(controller.NewCTEMIDRefreshController(
-		svc.CTEMID,
-		log.With("controller", "ctem-id-refresh"),
-	))
 
 	// Version check (RFC-105): wakes hourly; fetches the signed release feed
 	// once a day when VERSION_CHECK_ENABLED and a root is pinned, weekly

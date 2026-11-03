@@ -24,6 +24,7 @@ import (
 
 	"github.com/openctemio/ctis/transfer/bundle"
 
+	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/vulnbundle"
 )
 
@@ -113,7 +114,8 @@ func (im *Importer) RelayPlan(ctx context.Context, dir string) (RelayPlan, error
 	}
 	ks, err := vulnbundle.VerifyKeySet(ksRaw, im.cfg.RootKeyID, cur.KeySetVersion, now)
 	if err != nil {
-		return RelayPlan{}, fmt.Errorf("key set: %w: %w", bundle.ErrSignature, err)
+		im.logger.Warn("feed relay: key set verification failed", "error", err)
+		return RelayPlan{}, fmt.Errorf("key set: %w", bundle.ErrSignature)
 	}
 	pubs := make([]ed25519.PublicKey, 0, len(ks.Keys))
 	for _, k := range ks.Keys {
@@ -125,7 +127,7 @@ func (im *Importer) RelayPlan(ctx context.Context, dir string) (RelayPlan, error
 	}
 	v := bundle.NewEd25519Verifier(pubs...)
 	var p bundle.Pointer
-	if err := verifiedJSON(v, dir, bundle.PointerFile, nil, bundle.PointerPayloadType(FeedV2), 64<<10, &p); err != nil {
+	if err := verifiedJSON(im.logger, v, dir, bundle.PointerFile, nil, bundle.PointerPayloadType(FeedV2), 64<<10, &p); err != nil {
 		return RelayPlan{}, fmt.Errorf("pointer: %w", err)
 	}
 	if err := p.Validate(FeedV2, now, v2Limits); err != nil {
@@ -154,7 +156,7 @@ func (im *Importer) RelayPlan(ctx context.Context, dir string) (RelayPlan, error
 			want(RelayFile{Name: ref.Name, SHA256: ref.SHA256, Size: ref.Size, MaxBytes: ref.Size})
 		} else {
 			var m bundle.Manifest
-			if err := verifiedJSON(v, dir, ref.Name, &ref, bundle.ManifestPayloadType(FeedV2), ref.Size, &m); err != nil {
+			if err := verifiedJSON(im.logger, v, dir, ref.Name, &ref, bundle.ManifestPayloadType(FeedV2), ref.Size, &m); err != nil {
 				return RelayPlan{}, fmt.Errorf("manifest: %w", err)
 			}
 			if err := m.Validate(FeedV2, now, v2Limits); err != nil {
@@ -244,7 +246,7 @@ func (im *Importer) RelayKeep(dir string) map[string]bool {
 	}
 	v := bundle.NewEd25519Verifier(pubs...)
 	var p bundle.Pointer
-	if err := verifiedJSON(v, dir, bundle.PointerFile, nil, bundle.PointerPayloadType(FeedV2), 64<<10, &p); err != nil {
+	if err := verifiedJSON(im.logger, v, dir, bundle.PointerFile, nil, bundle.PointerPayloadType(FeedV2), 64<<10, &p); err != nil {
 		return keep
 	}
 	refs := []bundle.FileRef{p.Snapshot}
@@ -254,7 +256,7 @@ func (im *Importer) RelayKeep(dir string) map[string]bool {
 	for _, ref := range refs {
 		keep[ref.Name] = true
 		var m bundle.Manifest
-		if err := verifiedJSON(v, dir, ref.Name, &ref, bundle.ManifestPayloadType(FeedV2), ref.Size, &m); err != nil {
+		if err := verifiedJSON(im.logger, v, dir, ref.Name, &ref, bundle.ManifestPayloadType(FeedV2), ref.Size, &m); err != nil {
 			continue
 		}
 		for _, c := range m.Chunks() {
@@ -269,7 +271,7 @@ func (im *Importer) RelayKeep(dir string) map[string]bool {
 
 // verifiedJSON reads name from dir (pinned by ref when given), verifies its
 // envelope and decodes the payload into out.
-func verifiedJSON(v bundle.Verifier, dir, name string, ref *bundle.FileRef, payloadType string, maxBytes int64, out any) error {
+func verifiedJSON(lg *logger.Logger, v bundle.Verifier, dir, name string, ref *bundle.FileRef, payloadType string, maxBytes int64, out any) error {
 	raw, err := readCapped(dir, name, maxBytes)
 	if err != nil {
 		return err
@@ -282,7 +284,8 @@ func verifiedJSON(v bundle.Verifier, dir, name string, ref *bundle.FileRef, payl
 	}
 	payload, err := v.Verify(raw, payloadType)
 	if err != nil {
-		return fmt.Errorf("%w: %w", bundle.ErrSignature, err)
+		lg.Warn("feed relay: file verification failed", "file", name, "error", err)
+		return fmt.Errorf("%w: %s", bundle.ErrSignature, name)
 	}
 	return json.Unmarshal(payload, out)
 }

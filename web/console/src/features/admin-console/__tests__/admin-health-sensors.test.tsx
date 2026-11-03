@@ -4,6 +4,12 @@ import type { AdminOperations } from '../types'
 
 const state = vi.hoisted(() => ({ data: undefined as unknown }))
 
+// The sensor fleet is on the "Queues and sensors" tab (?tab=work).
+vi.mock('@/hooks/use-url-param', async () => {
+  const { useState } = await import('react')
+  return { useUrlFilter: () => useState('work') }
+})
+
 vi.mock('@console/features/admin-console/api/use-admin-operations', () => ({
   useAdminOperations: () => ({
     data: state.data,
