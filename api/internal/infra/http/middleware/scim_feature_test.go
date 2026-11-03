@@ -69,8 +69,7 @@ func TestSCIMFeatureGate(t *testing.T) {
 func TestSCIMFeatureGateLetsLeaversThrough(t *testing.T) {
 	tenant := shared.NewID()
 	run := func(gate SCIMFeatureUsage, method, target string) (int, bool) {
-		r := httptest.NewRequest(method, target, nil)
-		r = r.WithContext(context.WithValue(r.Context(), scimTenantCtxKey, tenant))
+		r := httptest.NewRequestWithContext(context.WithValue(context.Background(), scimTenantCtxKey, tenant), method, target, nil)
 		w := httptest.NewRecorder()
 		leave := false
 		SCIMFeatureGate(gate)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
