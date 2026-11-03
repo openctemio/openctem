@@ -130,12 +130,15 @@ type dispatchGate struct {
 	// closed: the sensor or the tenant setting could not be read; every
 	// command is withheld (fail closed) until a later poll can read them.
 	closed bool
+	// activeDenied / activeUnknown: the organization is passive only, or
+	// its entitlement could not be read (active_scanning.go).
+	activeDenied, activeUnknown bool
 }
 
 // gateFor loads the dispatch gate of sensorID. The tenant's private-target
 // switch is read only when a candidate names a private target.
 func (s *Service) gateFor(ctx context.Context, tenantID shared.ID, sensorID *shared.ID, cmds []*commanddom.Command) *dispatchGate {
-	if sensorID == nil || len(cmds) == 0 || (s.sensors == nil && s.privatePolicy == nil && s.optIns == nil && s.grants == nil) {
+	if sensorID == nil || len(cmds) == 0 || (s.sensors == nil && s.privatePolicy == nil && s.optIns == nil && s.grants == nil && s.activeScan == nil) {
 		return nil
 	}
 	return s.gateWith(ctx, tenantID, s.tenantSubject(ctx, tenantID, *sensorID), cmds)
@@ -194,7 +197,9 @@ func (s *Service) gateWith(ctx context.Context, tenantID shared.ID, subj gateSub
 			"tenant_id", tenantID.String(), "error", err)
 		return &dispatchGate{closed: true}
 	}
-	return &dispatchGate{opts: opts, grant: subj.grant, manifest: subj.manifest, report: subj.report}
+	as := s.activeScanning(ctx, tenantID)
+	return &dispatchGate{opts: opts, grant: subj.grant, manifest: subj.manifest, report: subj.report,
+		activeDenied: as.denied, activeUnknown: as.unknown}
 }
 
 // dispatchOptions reads the tenant settings the pre-check needs for cmds:
@@ -230,6 +235,9 @@ func (g *dispatchGate) refusal(c *commanddom.Command) *sensordom.DispatchRefusal
 	}
 	if r := g.grantRefusal(c); r != nil {
 		return &sensordom.DispatchRefusal{Layer: RefusalLayerGrant, Rule: r.Dimension, Detail: r.Detail}
+	}
+	if r := g.activeScanningRefusal(c); r != nil {
+		return r
 	}
 	if r := g.intensityRefusal(c); r != nil {
 		return r

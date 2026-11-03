@@ -196,6 +196,11 @@ func (s *Service) CreateScan(ctx context.Context, input CreateScanInput) (*scan.
 	if err := s.applyIntensity(ctx, sc, input.Intensity); err != nil {
 		return nil, err
 	}
+	// Passive only: an organization without active scanning saves no scan
+	// above passive (the dispatch re-check enforces it again).
+	if err := s.requireActiveScanning(ctx, sc); err != nil {
+		return nil, err
+	}
 	// The depth: at least one first step of the workflow must run at it.
 	if err := sc.SetDepth(input.Depth); err != nil {
 		return nil, err
@@ -975,6 +980,9 @@ func (s *Service) UpdateScan(ctx context.Context, input UpdateScanInput) (*scan.
 			requested = string(sc.EffectiveIntensity())
 		}
 		if err := s.applyIntensity(ctx, sc, requested); err != nil {
+			return nil, err
+		}
+		if err := s.requireActiveScanning(ctx, sc); err != nil {
 			return nil, err
 		}
 	}
