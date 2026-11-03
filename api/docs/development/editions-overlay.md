@@ -52,9 +52,15 @@ core    ──X never imports the overlay
 | Migrations | the overlay's own set in schema `ee`, applied after the core set ([editions.md](editions.md#overlay-migrations)) |
 | Web navigation | `@ee/web` `navItems` (by sidebar group title) and `settingsItems` (by settings group id), merged into `config/sidebar-data.ts` and `config/settings-nav.ts`; gated by `module`/`permission` like core rows |
 | Web pages | route groups `src/app/(dashboard)/(ee)/` (inside the core shell) or `src/app/(ee)/`; the URL does not change when a page moves |
-| Places in core pages | `<ExtensionSlot id="..." />`; ids and props in `types.ts` |
+| Places in core pages | `<ExtensionSlot id="..." />`; ids and props in `types.ts` (`ExtensionSlotProps`) |
+| Replacing a core component | only the short allowlist in `ExtensionOverrideProps` (today `auth.footer`), each with a stable props contract: `<Overridable id="..." fallback={CoreComponent} />` |
 | Strings | `@ee/messages` `{ en, vi }` merged into the catalogs; adding keys only, a core key cannot be replaced |
 | Console | `@ee/console` `navItems` (by section `i18nKey`); pages in `console/src/app/(console)/(ee)/` |
+
+Core pages are never copied into the overlay. A missing customisation point is a
+core pull request adding a generic slot (or, rarely, an override id) with a test;
+look and feel changes go through design tokens and brand settings, never by
+replacing a component for its styling.
 
 The aliases are set in `web/next.config.ts` and `web/console/next.config.ts`
 (`EDITION=ee` selects the overlay, otherwise `src/ee-stub`), in `vitest.config.ts`
