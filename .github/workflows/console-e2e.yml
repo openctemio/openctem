@@ -96,7 +96,7 @@ jobs:
           npm --prefix web run build:console
 
       - name: Start the stack and create the administrator
-        run: bash web/console/e2e/ci/start-stack.sh
+        run: bash web/console/e2e/scripts/start-stack.sh
         env:
           BIN_DIR: ${{ runner.temp }}
           STACK_DIR: ${{ runner.temp }}/console-e2e

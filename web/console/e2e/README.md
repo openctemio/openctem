@@ -48,14 +48,14 @@ npm --prefix web run build:console
 
 # 3. stack and administrator (ports and passwords as in step 1)
 DB_PORT=55432 DB_PASSWORD=<pw> REDIS_PORT=56379 BIN_DIR=$BIN STACK_DIR=$PWD/.console-e2e \
-  bash web/console/e2e/ci/start-stack.sh
+  bash web/console/e2e/scripts/start-stack.sh
 set -a; . .console-e2e/env; set +a
 
 # 4. the suite
 cd web && npx playwright test -c playwright.console.config.ts
 
 # 5. clean up
-STACK_DIR=$PWD/.console-e2e bash web/console/e2e/ci/stop-stack.sh   # from the repo root
+STACK_DIR=$PWD/.console-e2e bash web/console/e2e/scripts/stop-stack.sh   # from the repo root
 docker rm -f -v console-e2e-pg console-e2e-redis
 ```
 
