@@ -34,6 +34,7 @@ import {
 import { extension } from '@extension/console'
 
 import { assertCompatible, mergeConsoleNav } from '@/lib/extension/merge'
+import { isGrantOn } from '@/lib/extension/grants'
 
 export interface AdminNavItem {
   /** English label; also the i18n fallback. */
@@ -422,4 +423,8 @@ const coreAdminNav: AdminNavSection[] = [
 assertCompatible('extension @extension/console', extension.apiVersion)
 
 /** The core rows plus the rows the build's extension adds (none by default). */
-export const adminNav: AdminNavSection[] = mergeConsoleNav(coreAdminNav, extension.navItems)
+export const adminNav: AdminNavSection[] = mergeConsoleNav(
+  coreAdminNav,
+  extension.navItems,
+  isGrantOn
+)

@@ -1,5 +1,5 @@
 // Types of the `@extension/*` modules. The bundler resolves them (next.config.ts:
-// the stub in src/extension-default by default, the overlay when EDITION=ee); these
+// the stub in src/extension-default by default, the mounted extension when EXTENSIONS=on); these
 // declarations give both the same contract, from ./types.ts.
 declare module '@extension/web' {
   export const extension: import('./types').WebExtension
