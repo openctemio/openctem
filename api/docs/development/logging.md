@@ -77,6 +77,14 @@ log.Error("user created", "id", 3) // Group: "ERROR:user created" (different)
 
 ## HTTP Request Logging
 
+Each request line has `method`, `path` (invitation tokens redacted, no query
+string), `status`, `duration`, `request_id`, `remote_addr`, `client_ip`,
+`user_agent` and, once the request authenticated, who it authenticated as:
+`user_id` and `tenant_id` (or `admin_id` on the platform admin plane).
+Identifiers only, never an e-mail. A `401`/`403` line therefore says which
+account was refused, so access-control failures can be counted per account and
+organization.
+
 ### Skip Paths
 
 By default, these paths are not logged:

@@ -16,7 +16,7 @@ API process. The API keeps only the single-shot executor (one model call, no too
 | Copies of the analyze/v1 schemas, pinned by sha256 | shipped in sdk-go (in review) | `sdk-go/pkg/harness/contract` (source: `api/pkg/sensorproto/analyze/schemas`) |
 | Playbook format `openctem.io/playbook/v1` + sample | shipped in sdk-go (in review) | `sdk-go/pkg/harness/playbook`, `sdk-go/examples/playbooks/web-vuln-triage` |
 | Eval harness and `openctem playbook init\|test` | shipped in sdk-go (in review) | `sdk-go/pkg/harness/eval`, `sdk-go/internal/playbookcli` |
-| Model provider core (settings, presets, per-job credentials, hardened client, retries, prices, degradation, policy-safe fallback with circuit breakers, conformance kit) and adapters: OpenAI family (incl. Azure OpenAI and compatible/local servers), Anthropic, Gemini/Vertex, Bedrock Converse, Cohere | in review | `openctemio/ai-worker` `internal/llm` (RFC-133 §6a) |
+| Model provider core (settings, presets, per-job credentials, hardened client, retries, prices, degradation, policy-safe fallback with circuit breakers, conformance kit) and adapters: OpenAI family (incl. Azure OpenAI and compatible/local servers), Anthropic, Gemini/Vertex, Bedrock Converse, Cohere | in review | the AI worker, which is distributed separately (RFC-133 §6a) |
 | Sensorkit ai-worker role; hostile-model conformance | planned | sdk-go |
 | `analyze` command type, analyst-role grant profile, grant builder, interactive lane + affinity, shared host keys, AI limit keys, provider token bucket | planned | api |
 | Platform AI worker pool deployment, agent manifest, routing, shadow/canary/rollback, playbook catalog content, editor | planned | api, web, deploy |
