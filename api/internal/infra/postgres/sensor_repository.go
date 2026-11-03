@@ -900,6 +900,10 @@ func (r *SensorRepository) buildWhereClause(filter sensor.Filter) (string, []any
 		argIndex++
 	}
 
+	if filter.SharedOnly {
+		conditions = append(conditions, "scope = 'instance' AND tenant_id IS NULL")
+	}
+
 	if filter.Type != nil {
 		conditions = append(conditions, fmt.Sprintf("type = $%d", argIndex))
 		args = append(args, string(*filter.Type))
