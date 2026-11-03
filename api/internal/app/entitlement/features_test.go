@@ -122,3 +122,24 @@ func TestAllowedNamedFeatures(t *testing.T) {
 		t.Fatalf("unknown feature: %v", err)
 	}
 }
+
+// The answer carries the moment it changes by itself: a deny starts a
+// read-only grace, and the grace end is the next change; a timed deny that
+// runs out is one too.
+func TestNotEntitledWithDeadline(t *testing.T) {
+	_, mod := someModules(t)
+	svc := NewService(&memRepo{}, &memAudit{}, nil)
+	ctx := context.Background()
+	tid := shared.NewID()
+
+	if _, next, err := svc.NotEntitledWithDeadline(ctx, tid.String()); err != nil || next != nil {
+		t.Fatalf("nothing denied: no deadline, got %v %v", next, err)
+	}
+	if err := svc.PutDeny(ctx, operator(t), tid, DenyInput{Feature: mod, Reason: "contract"}, "", ""); err != nil {
+		t.Fatal(err)
+	}
+	off, next, err := svc.NotEntitledWithDeadline(ctx, tid.String())
+	if err != nil || next == nil || off[mod] == nil || !next.Equal(*off[mod]) {
+		t.Fatalf("the grace end is the next change: off=%v next=%v err=%v", off, next, err)
+	}
+}
