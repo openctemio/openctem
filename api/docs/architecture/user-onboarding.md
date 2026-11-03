@@ -12,7 +12,8 @@ access policies (allowed email domains, IP allowlist). Design and rationale:
 | New set-password link for a pending account | `POST /api/v1/tenants/{tenant}/users/{userId}/setup-link` | owner/admin; account unused and in this organization only |
 | Platform admin creates the **first owner** of an organization with no owner | `POST /api/v1/admin/tenants/{tenantId}/users` | console session, ops_admin+ (audited); 409 once the organization has an owner, active or suspended — see [First owner](#first-owner-platform-administrator) |
 | Platform admin recovers an organization whose owners are all suspended, blocked or erased | `POST /api/v1/admin/tenants/{tenantId}/users` with `"recovery": true` | console session, **super_admin** (403 otherwise); link emailed only; audited as `organization.owner_recovery` and at critical severity in the organization |
-| Platform admin creates an organization with a new owner | `POST /api/v1/admin/tenants` (`owner_email` without an account; an email that already has an account is refused with 409) | console session, ops_admin+ (audited) |
+| Platform admin creates an organization with a new owner | `POST /api/v1/admin/tenants` (`owner_email` without an account) | console session, ops_admin+ (audited) |
+| Platform admin creates an organization for an existing account | `POST /api/v1/admin/tenants` (`owner_email` of an account): the organization is created with no owner and the account gets an [ownership invitation](organization-ownership-invitations.md); it becomes the owner only by accepting (step-up) | console session, ops_admin+ (audited); the invitee accepts with `POST /api/v1/me/ownership-invitations/{id}/accept` |
 | First organization at install | `bootstrap-admin -org-name … -org-owner-email …` (CLI, same service as the console path) | database credentials; audited with actor `bootstrap-admin` |
 | Invitation | `POST /api/v1/tenants/{tenant}/invitations`, then register with `invitation_token` (if no account) and `POST /api/v1/invitations/accept` with `{"token"}` in the body | owner/admin to invite; the token + matching email to accept |
 | Organization SSO (OIDC/SAML JIT) | `/api/v1/auth/sso/*`, `/api/v1/auth/saml/{org}/*` | provider active + auto-provision + DNS-verified domain **with purpose `sso`** (set up in the admin console; a domain the organization verified itself for EASM never admits users, research/22 E6) + allowed domains |
@@ -378,12 +379,14 @@ written to the organization's audit log as `user.created` by
 `platform-admin:<email>`. The owner created with `POST /api/v1/admin/tenants`
 follows the same delivery rule.
 
-Nobody becomes an owner without their consent: the creator refuses an owner
-email that already has an account (409 "This person already has an account;
-they can create the organization after signing in"). The only callers that
-may attach an existing account are the operator CLI (`bootstrap-admin
--org-*`, run by someone holding the database credentials) and the approval of
-a confirmed access request.
+Nobody becomes an owner without their consent. For an owner email that
+already has an account, the console creates the organization with no owner and
+sends that account an [ownership invitation](organization-ownership-invitations.md):
+the person becomes the owner only by accepting it in the app, with a recent
+re-authentication. The only callers that may attach an existing account
+directly are the operator CLI (`bootstrap-admin -org-*`, run by someone holding
+the database credentials) and the approval of a confirmed access request; any
+other caller is refused.
 
 `bootstrap-admin -org-*` follows the delivery rule too, with one difference: when the send
 fails it prints the link once on its standard output, with a warning that the

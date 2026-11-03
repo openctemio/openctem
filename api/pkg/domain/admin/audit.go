@@ -353,4 +353,14 @@ type AuditLogFilter struct {
 	StartTime    *time.Time
 	EndTime      *time.Time
 	Search       string // Search in action, resource_name, error_message
+	// ChangesOnly leaves out reads and write-ahead rows: a row stays when it
+	// records a non-GET request (a write, a sign-in, an elevation), a request
+	// without a method (a command on the host), or anything that failed (a
+	// refused read is a change worth seeing). The rows themselves are never
+	// dropped; this is a view of the same chain.
+	ChangesOnly bool
 }
+
+// AuditActionWriteStarted is the write-ahead row an audited write stores
+// before it runs (its outcome follows in a row of its own).
+const AuditActionWriteStarted = "admin.write_started"
