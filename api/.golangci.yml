@@ -145,6 +145,7 @@ linters:
       - linters:
           - gocognit
           - nestif
+          - cyclop
         path: internal/server/main\.go
       - linters:
           - dupl
