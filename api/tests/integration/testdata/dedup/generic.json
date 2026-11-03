@@ -1,0 +1,18 @@
+{
+  "tool": "custom-audit",
+  "asset": {"type": "host", "value": "audit.example.com"},
+  "cases": [
+    {
+      "name": "the title is not identity (no message in any recipe)",
+      "expect": "same",
+      "before": {"type": "vulnerability", "title": "Weak SSH configuration", "severity": "low", "rule_id": "ssh-weak-config"},
+      "after": {"type": "vulnerability", "title": "SSH allows weak configuration", "severity": "low", "rule_id": "ssh-weak-config"}
+    },
+    {
+      "name": "another rule",
+      "expect": "different",
+      "before": {"type": "vulnerability", "title": "Weak SSH configuration", "severity": "low", "rule_id": "ssh-weak-config"},
+      "after": {"type": "vulnerability", "title": "Weak SSH configuration", "severity": "low", "rule_id": "ssh-root-login"}
+    }
+  ]
+}

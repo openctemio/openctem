@@ -68,6 +68,13 @@ func (s *fakeStore) StartRun(context.Context, shared.ID, int) (*vulnerability.Re
 }
 func (s *fakeStore) SaveProgress(context.Context, shared.ID, string, int, int, int) error { return nil }
 func (s *fakeStore) FinishRun(context.Context, shared.ID) error                           { return nil }
+func (s *fakeStore) ListAtVersion(context.Context, shared.ID, int, string, int) ([]vulnerability.RekeyCandidate, error) {
+	return nil, nil
+}
+
+func (s *fakeStore) Restore(context.Context, shared.ID, string, string) (vulnerability.RekeyResult, error) {
+	return vulnerability.RekeyResult{}, nil
+}
 
 func sca(id, asset, version, cve string, created time.Time) vulnerability.RekeyCandidate {
 	return vulnerability.RekeyCandidate{ID: id, Fingerprint: "v1-" + id, CreatedAt: created,
@@ -131,5 +138,41 @@ func TestRun_DryRunPredictsTheRealRunAndWritesNothing(t *testing.T) {
 func TestRun_RequiresTenant(t *testing.T) {
 	if _, err := NewService(newStore()).Run(context.Background(), shared.ID{}, Options{}); err == nil {
 		t.Fatal("a run without a tenant must fail")
+	}
+}
+
+type fakeConverger struct {
+	tenants []shared.ID
+	runs    map[shared.ID]*vulnerability.RekeyRun
+}
+
+func (c *fakeConverger) TenantsToRekey(context.Context, int) ([]shared.ID, error) {
+	return c.tenants, nil
+}
+
+func (c *fakeConverger) GetRun(_ context.Context, t shared.ID) (*vulnerability.RekeyRun, error) {
+	return c.runs[t], nil
+}
+
+// The run on server start applies the re-key to every tenant that has not
+// completed a run to the current version, and skips the ones that have (a
+// finding still on an older key there waits for its next sighting).
+func TestRunAll_SkipsTenantsThatCompletedTheCurrentVersion(t *testing.T) {
+	done, stale, fresh := shared.NewID(), shared.NewID(), shared.NewID()
+	c := &fakeConverger{tenants: []shared.ID{done, stale, fresh}, runs: map[shared.ID]*vulnerability.RekeyRun{
+		done:  {TargetVersion: vulnerability.IdentityVersion, Status: vulnerability.RekeyRunCompleted},
+		stale: {TargetVersion: vulnerability.IdentityVersion - 1, Status: vulnerability.RekeyRunCompleted},
+	}}
+	var ran []string
+	if err := NewService(newStore()).RunAll(context.Background(), c, func(r *Report) {
+		if !r.Applied {
+			t.Errorf("tenant %s: not applied", r.TenantID)
+		}
+		ran = append(ran, r.TenantID)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(ran) != 2 || ran[0] != stale.String() || ran[1] != fresh.String() {
+		t.Fatalf("ran %v, want the stale and the fresh tenant", ran)
 	}
 }

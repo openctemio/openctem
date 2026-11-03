@@ -15,6 +15,7 @@ package postgres
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 
 	"github.com/lib/pq"
@@ -118,6 +119,36 @@ func adoptGuardArgs(g vulnerability.AdoptGuard) []any {
 // the unique index decide, and losing a race is not an error.
 func (r *FindingRepository) AdoptFingerprint(ctx context.Context, tenantID shared.ID, from, to string, identityKey []byte, version int, g vulnerability.AdoptGuard) (bool, error) {
 	return r.adopt(ctx, tenantID, from, to, identityKey, version, "<", g)
+}
+
+// MergeStaleKey folds the live finding stored under from (an older recipe
+// version, on the guard's asset) into the finding that holds k's key, through
+// the same transaction the start-up re-key uses: the earliest-created survives
+// with its triage, state, assignee and ticket links, the other becomes a
+// tombstone, and every key either gave up stays an alias. It reports whether
+// a merge happened; a finding that is gone, not on the guard's asset, or a
+// holder on another asset is left alone. Tenant-scoped.
+func (r *FindingRepository) MergeStaleKey(ctx context.Context, tenantID shared.ID, from string, k vulnerability.IdentityKey, g vulnerability.AdoptGuard) (bool, error) {
+	if from == "" || tenantID.IsZero() || g.AssetID == "" || from == k.Fingerprint() {
+		return false, nil
+	}
+	args := append([]any{tenantID.String(), from, k.Version}, adoptGuardArgs(g)...)
+	var id string
+	err := r.db.QueryRowContext(ctx, `
+		SELECT id FROM findings
+		WHERE tenant_id = $1 AND fingerprint = $2 AND fingerprint_version < $3
+		  AND status <> 'duplicate'`+adoptGuardSQL(4), args...).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("find finding under an older key: %w", err)
+	}
+	res, err := NewFindingRekeyRepository(r.db).Rekey(ctx, tenantID, id, from, k)
+	if err != nil {
+		return false, err
+	}
+	return res.Outcome == vulnerability.RekeyOutcomeMerged, nil
 }
 
 // AdoptFormerFingerprint re-keys the finding stored under from to to within
