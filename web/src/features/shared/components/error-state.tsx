@@ -1,13 +1,13 @@
 'use client'
 
-import { AlertCircle, Copy, Lock, RefreshCw } from 'lucide-react'
+import { AlertCircle, Copy, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
 import { copyToClipboard } from '@/lib/clipboard'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { useTranslation } from '@/context/i18n-provider'
 import { accessStateOf, errorDetails } from '@/lib/api/access-state'
-import { describePermissionDenied } from '@/lib/api/permission-denied'
+import { AccessNotice } from './access-notice'
 import { ReportProblem } from './report-problem'
 
 interface ErrorStateProps {
@@ -63,26 +63,7 @@ export function ErrorState({ title, error, onRetry }: ErrorStateProps) {
   const access = accessStateOf(error)
   const requestId = (error as { requestId?: unknown } | undefined)?.requestId
   if (access === 'no_access' || access === 'module_off') {
-    return (
-      <Alert>
-        <Lock />
-        <AlertTitle>
-          {access === 'no_access'
-            ? t('common.noAccessTo', 'You do not have access to {title}', { title })
-            : t('common.moduleOffFor', '{title} is not enabled for this organization', {
-                title,
-              })}
-        </AlertTitle>
-        <AlertDescription>
-          <p>
-            {access === 'no_access'
-              ? (describePermissionDenied(errorDetails(error)) ??
-                t('common.noAccessHint', 'Ask an organization administrator to grant access.'))
-              : t('common.moduleOffHint', 'Ask an organization administrator to enable it.')}
-          </p>
-        </AlertDescription>
-      </Alert>
-    )
+    return <AccessNotice kind={access} title={title} details={errorDetails(error)} />
   }
   return (
     <Alert variant="destructive">
