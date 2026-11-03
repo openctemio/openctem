@@ -84,18 +84,29 @@ func TestFindingTechniqueByTypeWhenUnbound(t *testing.T) {
 	}
 }
 
-// finding.technique wins over the report's capability and the tool's
-// techniques; an unknown technique falls back to them.
-func TestFindingTechniqueWins(t *testing.T) {
-	r := withCapability(&ctis.Report{Tool: &ctis.Tool{Name: "trivy", Techniques: []ctis.Technique{ctis.TechniqueSCA}}}, "sca.deps@1")
-	if got := findingTechnique(r, &ctis.Finding{Technique: ctis.TechniqueSecret}); got != vulnerability.FindingSourceSecret {
-		t.Errorf("finding.technique secret: got %s", got)
+// A bound capability decides the source: finding.technique never overrides
+// it. Unbound, the finding's technique wins over the tool's techniques; an
+// unknown technique falls back to them. The claimed technique is recorded
+// apart, only when it is a known one.
+func TestFindingTechnique_BoundCapabilityWins(t *testing.T) {
+	bound := withCapability(&ctis.Report{Tool: &ctis.Tool{Name: "trivy", Techniques: []ctis.Technique{ctis.TechniqueSCA}}}, "sca.deps@1")
+	for _, tech := range []ctis.Technique{ctis.TechniqueSecret, ctis.TechniqueIaC, ctis.TechniqueDAST, ctis.Technique("nonsense")} {
+		if got := findingTechnique(bound, &ctis.Finding{Technique: tech}); got != vulnerability.FindingSourceSCA {
+			t.Errorf("bound sca.deps, finding.technique %s: got %s, want sca", tech, got)
+		}
 	}
-	if got := findingTechnique(r, &ctis.Finding{Technique: ctis.TechniqueIaC}); got != vulnerability.FindingSourceIaC {
-		t.Errorf("finding.technique iac: got %s", got)
+	unbound := &ctis.Report{Tool: &ctis.Tool{Name: "trivy", Techniques: []ctis.Technique{ctis.TechniqueSCA}}}
+	if got := findingTechnique(unbound, &ctis.Finding{Technique: ctis.TechniqueSecret}); got != vulnerability.FindingSourceSecret {
+		t.Errorf("unbound, finding.technique secret: got %s", got)
 	}
-	if got := findingTechnique(r, &ctis.Finding{Technique: ctis.Technique("nonsense")}); got != vulnerability.FindingSourceSCA {
-		t.Errorf("unknown technique falls back to the report: got %s", got)
+	if got := findingTechnique(unbound, &ctis.Finding{Technique: ctis.Technique("nonsense")}); got != vulnerability.FindingSourceSCA {
+		t.Errorf("unbound, unknown technique falls back to the report: got %s", got)
+	}
+	if got := findingClaimedTechnique(&ctis.Finding{Technique: ctis.TechniqueSecret}); got != string(ctis.TechniqueSecret) {
+		t.Errorf("claimed technique = %q, want secret", got)
+	}
+	if got := findingClaimedTechnique(&ctis.Finding{Technique: ctis.Technique("x<script>")}); got != "" {
+		t.Errorf("unknown claimed technique recorded: %q", got)
 	}
 }
 
