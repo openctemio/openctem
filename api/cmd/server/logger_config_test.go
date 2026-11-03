@@ -55,3 +55,24 @@ func TestLoggerConfig_Sampling(t *testing.T) {
 		t.Errorf("sampling = %+v", lc.Sampling)
 	}
 }
+
+// Every record names the emitting service, its version and the environment,
+// so shipped logs from several services stay attributable.
+func TestLoggerConfig_RecordsCarryServiceIdentity(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.App.Env = "production"
+	cfg.Log.Level = "info"
+	cfg.Log.Format = "json"
+	lc := loggerConfig(cfg)
+	var buf bytes.Buffer
+	lc.Output = &buf
+	logger.New(lc).With("component", "x").Info("hello")
+
+	var m map[string]any
+	if err := json.Unmarshal([]byte(strings.TrimSpace(buf.String())), &m); err != nil {
+		t.Fatalf("not JSON: %q", buf.String())
+	}
+	if m["service"] != "api" || m["env"] != "production" || m["version"] == nil || m["version"] == "" {
+		t.Errorf("identity fields = service:%v env:%v version:%v", m["service"], m["env"], m["version"])
+	}
+}
