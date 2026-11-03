@@ -103,7 +103,7 @@ key `partial_fingerprints["sensor/fingerprint"]` and is never the identity
 ### Recipe versions and the re-key
 
 - **On server start** the API re-keys stored findings to the current version
-  (`refingerprint.Service.RunAll`, `cmd/server/finding_rekey.go`): per tenant,
+  (`refingerprint.Service.RunAll`, `internal/server/finding_rekey.go`): per tenant,
   in batches, under a session advisory lock (one replica at a time), with
   scan auto-resolve paused for the tenant while its run is open. A version-2
   row is re-keyed from its stored tuple alone, only when the tuple reproduces
