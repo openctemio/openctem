@@ -478,6 +478,9 @@ type samlIdPMetadataView struct {
 // auth.MaxIdPMetadataBytes) can grow when escaped as a JSON string.
 const maxSAMLIdPMetadataRequest = 2*auth.MaxIdPMetadataBytes + 4096
 
+// samlRefusalDetailReason is the error detail naming why metadata was refused.
+const samlRefusalDetailReason = "reason"
+
 // ImportIdPMetadata handles POST /api/v1/admin/tenants/{tenantId}/sso/saml/idp-metadata.
 // It reads the IdP side of a SAML configuration from the IdP's metadata URL or
 // an uploaded metadata document and returns it. Nothing is stored: the
@@ -506,7 +509,7 @@ func (h *SAMLHandler) ImportIdPMetadata(w http.ResponseWriter, r *http.Request) 
 		if errors.As(err, &me) {
 			code, shown := samlMetadataRefusalForResponse(me.Reason, strings.TrimSpace(body.MetadataURL) != "")
 			h.logger.Info("saml idp metadata refused", "reason", me.Reason)
-			apierror.FromCode(code).WithDetails(map[string]any{"reason": shown}).WriteJSON(w)
+			apierror.FromCode(code).WithDetails(map[string]any{samlRefusalDetailReason: shown}).WriteJSON(w)
 			return
 		}
 		h.logger.Error("read saml idp metadata failed", "error", err)
