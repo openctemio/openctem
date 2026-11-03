@@ -43,10 +43,14 @@ var interpretedPropertyKeys = []string{
 	PropImportScope, extCandidateExposure, extCandidateUnverified,
 	"sans", "subject_cn", "issuer_cn", "issuer_org", "not_before", "not_after",
 	"owner", "contact", "responsible", "http_posture",
-	"method", "status_code", "content_type", "title", "web_server", "server",
+	"method", "status_code", "content_type", "title", "web_server", propServer,
 	"redirect_url", "final_url", "url", "favicon_mmh3", propHypervisorHost, propTLSFingerprint,
 	"host", "port", "transport",
 }
+
+// propServer is the stored attribute of an http service naming its HTTP
+// Server header (the registry's canonical key; web_server is its synonym).
+const propServer = "server"
 
 // propTLSFingerprint is the stored attribute of an http service naming the
 // certificate it served (read by the exposure bridge's certificate checks).
