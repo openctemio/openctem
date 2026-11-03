@@ -780,7 +780,19 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	// CVE corpus; nothing happens until VULNFEED_ROOT_KEY_ID is set and a
 	// platform admin enables the "vulnfeed" source.
 	if feeds.bundles != nil {
-		w.ControllerManager.Register(feeds.bundles)
+		// In relay mode the feed-relay controller imports, once the relay
+		// delivered every file a release needs.
+		w.ControllerManager.Register(controller.SkipWhen(feeds.bundles, relayMode(svc)))
+	}
+	// Feed relay (RFC-142): rounds for the designated platform sensor and
+	// the import of what it relayed; the direct feed fetchers below stay
+	// idle in relay mode.
+	if svc.FeedRelay != nil {
+		registerRelayFeeds(cfg, svc, feeds.importer)
+		// Relay offline, stale feed, failed verification: the
+		// administrators' channel (e-mail and the alert webhook).
+		svc.FeedRelay.SetNotifier(newAdminNotifier(cfg, repos, svc, log))
+		w.ControllerManager.Register(controller.NewFeedRelayController(svc.FeedRelay))
 	}
 
 	// Inventory vulnerability matching (RFC-066): versions × CVE ranges, then
@@ -861,7 +873,13 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 			if svc.Module != nil {
 				svc.ProgramFeed.SetModuleGuard(svc.Module) // subscribers with scope off stay as they are
 			}
-			w.ControllerManager.Register(controller.NewProgramFeedController("program-feed", svc.ProgramFeed))
+			// The signed program feed's URL origins are not fetched in relay
+			// mode (not relayed yet).
+			var pf controller.Controller = controller.NewProgramFeedController("program-feed", svc.ProgramFeed)
+			if len(cfg.Scope.ProgramFeedURLs) > 0 {
+				pf = controller.SkipWhen(pf, relayMode(svc))
+			}
+			w.ControllerManager.Register(pf)
 		}
 		// The operator's local bundle (owner option A): imported only while
 		// a platform administrator has the source enabled.

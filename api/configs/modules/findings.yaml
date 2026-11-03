@@ -40,4 +40,5 @@
     - KEVRefreshController
     - VulnMatchController
     - VulnFeedImportController
+    - FeedRelayController
     - VEXStatementExpiryController
