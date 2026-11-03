@@ -386,7 +386,13 @@ func registerAdminRoutes(
 		router.Group("/api/v1/admin/settings/email", func(r Router) {
 			r.GET("/", h.AdminEmail.Get)
 			r.PUT("/", h.AdminEmail.Update, freshStepUp("settings.email"))
-			r.POST("/test", h.AdminEmail.SendTest)
+			// Each call sends a real message through the stored server:
+			// bounded per administrator.
+			testMW := []Middleware{}
+			if h.AdminEmailTestLimiter != nil {
+				testMW = append(testMW, h.AdminEmailTestLimiter.WriteMiddleware())
+			}
+			r.POST("/test", h.AdminEmail.SendTest, testMW...)
 		}, adminMiddlewares...)
 	}
 
