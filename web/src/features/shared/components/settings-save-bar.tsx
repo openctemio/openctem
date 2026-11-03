@@ -76,6 +76,7 @@ export function SettingsSaveBar({
       {dirty && (
         <div
           role="region"
+          data-slot="settings-save-bar"
           aria-label={t('settings.saveBar.label', 'Unsaved changes')}
           className={cn(
             'sticky bottom-4 z-20 mt-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card px-4 py-3 shadow-lg',

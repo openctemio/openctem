@@ -11,17 +11,17 @@
  * emailed.
  */
 
-import { useEffect, useId, useState } from 'react'
+import { useCallback, useEffect, useId, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { ConfirmDialog } from '@/components/confirm-dialog'
-import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { useTranslation } from '@/context/i18n-provider'
+import { SettingsSaveBar } from '@/features/shared/components/settings-save-bar'
 import { AdminApiError } from '@console/lib/admin-api/client'
 import { StepUpCodeField, stepUpCodeReady, useStepUpCodeOptional } from './step-up-code-hint'
 import { RoleRequiredNotice } from './role-required-notice'
@@ -53,8 +53,12 @@ export function SharedSensorsForm({
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
 
-  useEffect(() => setOn(enabled), [enabled])
-  useEffect(() => setOrgs(newOrgs), [newOrgs])
+  // The saved values: on load, after a save and on Discard.
+  const reset = useCallback(() => {
+    setOn(enabled)
+    setOrgs(newOrgs)
+  }, [enabled, newOrgs])
+  useEffect(reset, [reset])
   const dirty = on !== enabled || orgs !== newOrgs
   // Turning shared sensors on needs an explicit choice for organizations
   // without a decision (the API refuses it otherwise).
@@ -150,11 +154,14 @@ export function SharedSensorsForm({
             </p>
           )}
           {canEdit ? (
-            <div className="flex justify-end">
-              <Button onClick={() => setOpen(true)} disabled={!dirty || busy || needsChoice}>
-                {t('admin.scanPolicy.save')}
-              </Button>
-            </div>
+            <SettingsSaveBar
+              className="basis-full"
+              dirty={dirty}
+              saving={busy}
+              saveDisabled={needsChoice}
+              onSave={() => setOpen(true)}
+              onDiscard={reset}
+            />
           ) : (
             <RoleRequiredNotice needed="super_admin" />
           )}

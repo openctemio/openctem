@@ -222,7 +222,7 @@ overview and the Settings section of the command palette. Search in all three
 item's `anchors` name elements by id, and a result links to `<url>#<id>`, where
 the page scrolls to and outlines it. A settings form saves through
 `SettingsSaveBar` (`features/shared`): a sticky bar shown while there are
-unsaved changes, Ctrl/⌘+S, and a prompt before leaving with unsaved changes. The main sidebar's one "Settings" link is
+unsaved changes, Ctrl/⌘+S, and a prompt before leaving with unsaved changes. A settings page never adds a Save button of its own: `scripts/check-page-anatomy.sh` fails the pull request, and `e2e/specs/31-page-rhythm` fails a settings page that shows one at rest (its `SAVE_EXCEPTIONS` list only shrinks). The main sidebar's one "Settings" link is
 pinned in its footer with Help (`sidebar-footer-links.tsx`, shared with the
 admin console); Help's shortcut list is `src/config/keyboard-shortcuts.ts`,
 and an entry needs a real handler (`keyboard-shortcuts.test.ts`).

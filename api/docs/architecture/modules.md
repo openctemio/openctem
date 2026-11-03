@@ -64,6 +64,12 @@ on(org, module) = core(module)
 entitled(org, module) = !deny(org, module)   # a deny of any origin
 ```
 
+The set is closed over hard dependencies: a module whose hard dependency (or
+whose parent) is off is off too, with that module's reason
+(`InheritOffFromHardDependencies`). A deny of compensating controls therefore
+turns control testing off on every surface, and a dependent of a module in its
+read-only grace is read-only until the same date.
+
 - **Core** (`CoreModuleIDs`, and `modules.is_core`, which a parity test keeps
   equal): dashboard, assets, findings, scans, SLA, team, roles, audit,
   settings, sensors, groups, API keys, notification settings, integrations,
@@ -81,7 +87,11 @@ entitled(org, module) = !deny(org, module)   # a deny of any origin
   module state at once. An organization cannot switch on a module it is not
   entitled to.
 - **Presets** write overrides once (Settings > Modules, or the starting set
-  picked at onboarding) and change nothing else. The organization-chosen
+  picked at onboarding) and change nothing else. A preset changes only the
+  modules Settings > Modules lists (`user_facing`): a module the page does not
+  list keeps its state, so nothing a preset switches off is out of reach. A
+  module the organization is not entitled to is left off and reported in the
+  preview's `unavailable` list instead of failing the preset. The organization-chosen
   product bundles are retired.
 - **Read-only grace** (`tenant_module_grace`): an organization that loses a
   module keeps reading it for 30 days (`limits.GracePeriod`). Grace starts

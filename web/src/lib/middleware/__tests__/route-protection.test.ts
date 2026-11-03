@@ -225,3 +225,78 @@ describe('handleAuth: page loads only', () => {
     expect(handleAuth(req)?.status).toBe(307)
   })
 })
+
+describe('an account-only session (signed in, no organization)', () => {
+  const accountOnly = { refresh_token: JWT, auth_token: JWT, app_account_only: '1' }
+
+  it.each(['/welcome', '/account', '/account/security', '/account/preferences'])(
+    '%s opens',
+    (pathname) => {
+      expect(decideAuth({ pathname, search: '', cookie: jar(accountOnly) })).toEqual({
+        type: 'allow',
+      })
+    }
+  )
+
+  it.each([
+    '/',
+    '/findings',
+    '/settings/members',
+    '/select-tenant',
+    '/onboarding/create-team',
+    // Tenant data behind /account stays shut: only the three personal pages open.
+    '/account/activity',
+    '/account/notifications',
+    '/account/connected-apps',
+    '/accountx',
+  ])('%s redirects to /welcome', (pathname) => {
+    expect(decideAuth({ pathname, search: '?x=1', cookie: jar(accountOnly) })).toEqual({
+      type: 'redirect',
+      location: '/welcome',
+      clearCookies: [],
+    })
+  })
+
+  it('still opens the public pages and the API routes', () => {
+    for (const pathname of ['/login', '/invitations', '/not-set-up', '/api/v1/users/me']) {
+      expect(decideAuth({ pathname, search: '', cookie: jar(accountOnly) })).toEqual({
+        type: 'allow',
+      })
+    }
+  })
+
+  it('treats a trailing slash like the page itself', () => {
+    expect(decideAuth({ pathname: '/welcome/', search: '', cookie: jar(accountOnly) })).toEqual({
+      type: 'allow',
+    })
+  })
+
+  it('lets an organization session through even with a stale marker', () => {
+    const member = { ...accountOnly, app_tenant: '{"id":"t1"}' }
+    expect(decideAuth({ pathname: '/findings', search: '', cookie: jar(member) })).toEqual({
+      type: 'allow',
+    })
+  })
+
+  it('sends a signed-out visitor of /welcome to the sign-in page, and clears the marker', () => {
+    const decision = decideAuth({
+      pathname: '/welcome',
+      search: '',
+      cookie: jar({ app_account_only: '1' }),
+    })
+    expect(decision).toMatchObject({
+      type: 'redirect',
+      location: `/login?next=${encodeURIComponent('/welcome')}`,
+    })
+    if (decision.type === 'redirect') expect(decision.clearCookies).toContain('app_account_only')
+  })
+
+  it('redirects a page load through the proxy handler with a 307 to /welcome', () => {
+    const req = new NextRequest('https://app.example/findings', {
+      headers: { cookie: `refresh_token=${JWT}; app_account_only=1` },
+    })
+    const res = handleAuth(req)
+    expect(res?.status).toBe(307)
+    expect(new URL(res!.headers.get('location')!).pathname).toBe('/welcome')
+  })
+})

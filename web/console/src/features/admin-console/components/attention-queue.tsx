@@ -68,45 +68,47 @@ export function AttentionQueue({
     )
   }
 
+  // One bordered list with a divider per item: a problem is a row, not a
+  // card, so eight problems still leave the numbers on the first screen.
   return (
-    <ul className="space-y-2" aria-label={t('admin.attention.heading', 'Needs attention')}>
+    <ul
+      className="divide-y overflow-hidden rounded-lg border bg-card"
+      aria-label={t('admin.attention.heading', 'Needs attention')}
+    >
       {items.map((item) => {
         const sev = SEVERITY[item.severity]
         const Icon = sev.icon
         return (
-          <li key={item.id}>
-            <Card className="py-0">
-              <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center">
-                <div className="flex min-w-0 flex-1 items-start gap-3">
-                  <Icon
-                    className={cn('mt-0.5 size-5 shrink-0', sev.className)}
-                    aria-hidden="true"
-                  />
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium">
-                      <span className="sr-only">{t(sev.labelKey)}: </span>
-                      {t(item.titleKey, item.title, item.vars)}
-                    </p>
-                    <p className="text-sm text-muted-foreground">
-                      {t(item.detailKey, item.detail, item.vars)}
-                    </p>
-                  </div>
-                </div>
-                {item.href && item.actionKey && (
-                  <Button
-                    asChild
-                    variant="outline"
-                    size="sm"
-                    className="shrink-0 self-start sm:self-center"
-                  >
-                    <Link href={safeHref(item.href) ?? '/'}>
-                      {t(item.actionKey, item.action)}
-                      <ArrowRight className="ms-1 size-4" />
-                    </Link>
-                  </Button>
-                )}
-              </CardContent>
-            </Card>
+          <li
+            key={item.id}
+            data-severity={item.severity}
+            className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:gap-4"
+          >
+            <div className="flex min-w-0 flex-1 items-start gap-3">
+              <Icon className={cn('mt-0.5 size-4 shrink-0', sev.className)} aria-hidden="true" />
+              <div className="min-w-0">
+                <p className="text-sm font-medium">
+                  <span className="sr-only">{t(sev.labelKey)}: </span>
+                  {t(item.titleKey, item.title, item.vars)}
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  {t(item.detailKey, item.detail, item.vars)}
+                </p>
+              </div>
+            </div>
+            {item.href && item.actionKey && (
+              <Button
+                asChild
+                variant="outline"
+                size="sm"
+                className="ms-7 shrink-0 self-start sm:ms-0 sm:self-center"
+              >
+                <Link href={safeHref(item.href) ?? '/'}>
+                  {t(item.actionKey, item.action)}
+                  <ArrowRight className="ms-1 size-4" />
+                </Link>
+              </Button>
+            )}
           </li>
         )
       })}

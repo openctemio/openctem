@@ -34,6 +34,9 @@ const adminOrganizationSelect = `
 	SELECT t.id, t.name, t.slug, COALESCE(t.description, ''), t.created_at,
 	       (SELECT COUNT(*) FROM tenant_members m
 	         WHERE m.tenant_id = t.id AND m.status = 'active'),
+	       (SELECT MAX(u.last_login_at) FROM tenant_members m
+	         JOIN users u ON u.id = m.user_id
+	         WHERE m.tenant_id = t.id AND m.status = 'active'),
 	       COALESCE((SELECT array_agg(u.email ORDER BY u.email) FROM tenant_members m
 	         JOIN users u ON u.id = m.user_id
 	         JOIN v_user_effective_role ver ON ver.user_id = m.user_id AND ver.tenant_id = m.tenant_id
@@ -47,8 +50,16 @@ const adminOrganizationSelect = `
 	       COALESCE((t.settings -> 'security' ->> 'sso_enforced')::boolean, FALSE),
 	       (EXISTS (SELECT 1 FROM tenant_limits l WHERE l.tenant_id = t.id)
 	        OR EXISTS (SELECT 1 FROM tenant_feature_denies d WHERE d.tenant_id = t.id)),
-	       t.status, t.suspended_at, COALESCE(t.suspended_reason, ''), t.deletion_due_at
-	FROM tenants t`
+	       t.status, t.suspended_at, COALESCE(t.suspended_reason, ''), t.deletion_due_at,
+	       oi.status, oi.invitee_email, oi.send_count, oi.expires_at, oi.last_sent_at, oi.created_at, oi.responded_at
+	FROM tenants t
+	LEFT JOIN LATERAL (
+	       SELECT CASE WHEN i.status = 'pending' AND i.expires_at <= now() THEN 'expired' ELSE i.status END AS status,
+	              i.invitee_email, i.send_count, i.expires_at, i.last_sent_at, i.created_at, i.responded_at
+	         FROM organization_owner_invitations i
+	        WHERE i.tenant_id = t.id
+	        ORDER BY i.created_at DESC, i.id DESC
+	        LIMIT 1) oi ON TRUE`
 
 // adminOrganizationActiveOwner holds when the organization has a usable owner.
 var adminOrganizationActiveOwner = UsableOwnerExists("t.id")
@@ -58,12 +69,28 @@ func scanOrganization(sc interface{ Scan(...any) error }) (*admin.Organization, 
 		o      admin.Organization
 		id     string
 		owners pq.StringArray
+		// The newest ownership invitation (all NULL when none).
+		invStatus, invEmail          sql.NullString
+		invSends                     sql.NullInt64
+		invExpires, invSent, invMade sql.NullTime
+		invResponded                 sql.NullTime
 	)
 	if err := sc.Scan(&id, &o.Name, &o.Slug, &o.Description, &o.CreatedAt,
-		&o.ActiveMembers, &owners, &o.SAMLEnabled, &o.ActiveIdentityProviders,
+		&o.ActiveMembers, &o.LastMemberSignInAt, &owners, &o.SAMLEnabled, &o.ActiveIdentityProviders,
 		&o.VerifiedDomains, &o.SSOEnforced, &o.LimitsApply,
-		&o.Status, &o.SuspendedAt, &o.SuspendedReason, &o.DeletionDueAt); err != nil {
+		&o.Status, &o.SuspendedAt, &o.SuspendedReason, &o.DeletionDueAt,
+		&invStatus, &invEmail, &invSends, &invExpires, &invSent, &invMade, &invResponded); err != nil {
 		return nil, err
+	}
+	if invStatus.Valid {
+		o.OwnerInvitation = &admin.OwnerInvitationSummary{
+			Status: invStatus.String, InviteeEmail: invEmail.String, SendCount: int(invSends.Int64),
+			ExpiresAt: invExpires.Time.UTC(), LastSentAt: invSent.Time.UTC(), CreatedAt: invMade.Time.UTC(),
+		}
+		if invResponded.Valid {
+			t := invResponded.Time.UTC()
+			o.OwnerInvitation.RespondedAt = &t
+		}
 	}
 	parsed, err := shared.IDFromString(id)
 	if err != nil {

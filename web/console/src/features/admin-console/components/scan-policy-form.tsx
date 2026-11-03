@@ -12,16 +12,16 @@
  * are told.
  */
 
-import { useEffect, useId, useState } from 'react'
+import { useCallback, useEffect, useId, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { ConfirmDialog } from '@/components/confirm-dialog'
-import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Textarea } from '@/components/ui/textarea'
 import { useTranslation } from '@/context/i18n-provider'
+import { SettingsSaveBar } from '@/features/shared/components/settings-save-bar'
 import { AdminApiError } from '@console/lib/admin-api/client'
 import type { ScanApprovalMode, ScanApprovalPolicy } from '../api/use-scan-policy'
 import { StepUpCodeField, stepUpCodeReady, useStepUpCodeOptional } from './step-up-code-hint'
@@ -106,7 +106,12 @@ export function ScanPolicyForm({
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
 
-  useEffect(() => setChoice(value ?? (inherits ? INHERIT : 'tenant_controlled')), [value, inherits])
+  // The saved values: on load, after a save and on Discard.
+  const reset = useCallback(
+    () => setChoice(value ?? (inherits ? INHERIT : 'tenant_controlled')),
+    [value, inherits]
+  )
+  useEffect(reset, [reset])
 
   const next = choice === INHERIT ? null : (choice as ScanApprovalPolicy)
   const dirty = choice !== initial
@@ -182,11 +187,13 @@ export function ScanPolicyForm({
             )}
           </p>
           {canEdit ? (
-            <div className="flex justify-end">
-              <Button onClick={() => setOpen(true)} disabled={!dirty || busy}>
-                {t('admin.scanPolicy.save', 'Save')}
-              </Button>
-            </div>
+            <SettingsSaveBar
+              className="basis-full"
+              dirty={dirty}
+              saving={busy}
+              onSave={() => setOpen(true)}
+              onDiscard={reset}
+            />
           ) : (
             <RoleRequiredNotice needed="super_admin" />
           )}

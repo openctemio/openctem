@@ -35,6 +35,11 @@ const api = vi.hoisted(() => ({
   undoFlow: vi.fn(),
 }))
 vi.mock('../api/use-dashboards-api', () => ({
+  useDashboardHome: () => ({
+    status: 'ready',
+    hasOrg: perms.list.some((p) => p.startsWith('dashboards:org:')),
+    dataKey: null,
+  }),
   useMyDashboards: () => ({ data: { data: api.mine }, isLoading: false }),
   useOrgDashboards: (enabled: boolean) => {
     api.orgEnabled.push(enabled)
