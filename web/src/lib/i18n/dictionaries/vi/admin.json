@@ -1702,6 +1702,7 @@
   "admin.sensors.pageDesc": "Các sensor do nền tảng sở hữu. Tổ chức không thấy tên của chúng.",
   "admin.sensors.pageTitle": "Sensor của nền tảng",
   "admin.sensors.sharedClosed": "Tổ chức chưa thể dùng quét dùng chung trong bản phát hành này. Sensor kết nối bây giờ phục vụ các vai trò của nền tảng (chuyển tiếp nguồn tin, khám phá thụ động, AI worker) và bắt đầu quét cho tổ chức khi quét dùng chung được bật.",
+  "admin.sensors.sharedClosedNoRelay": "Tổ chức chưa thể dùng quét dùng chung trong bản phát hành này. Sensor kết nối bây giờ phục vụ các vai trò của nền tảng (khám phá thụ động, AI worker) và bắt đầu quét cho tổ chức khi quét dùng chung được bật.",
   "admin.sessions.breakGlass": "Khẩn cấp",
   "admin.sessions.col.admin": "Quản trị viên",
   "admin.sessions.col.ip": "Địa chỉ IP",
