@@ -22,7 +22,7 @@ root="$(cd "$(dirname "$0")/../../../.." && pwd)"
 BIN_DIR="${BIN_DIR:?set BIN_DIR}"
 STACK_DIR="${STACK_DIR:?set STACK_DIR}"
 DB_HOST="${DB_HOST:-127.0.0.1}" DB_PORT="${DB_PORT:-5432}" DB_USER="${DB_USER:-openctem}"
-DB_PASSWORD="${DB_PASSWORD:-console-e2e-ci}" DB_NAME="${DB_NAME:-openctem}"
+DB_PASSWORD="${DB_PASSWORD:-$(openssl rand -hex 16)}" DB_NAME="${DB_NAME:-openctem}"
 REDIS_HOST="${REDIS_HOST:-127.0.0.1}" REDIS_PORT="${REDIS_PORT:-6379}" REDIS_PASSWORD="${REDIS_PASSWORD:-}"
 API_PORT="${API_PORT:-8080}" ADMIN_PORT="${ADMIN_PORT:-8081}" CONSOLE_PORT="${CONSOLE_PORT:-3001}"
 
