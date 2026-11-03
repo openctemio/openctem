@@ -147,7 +147,7 @@ func TestExampleRoutesAreTenantScoped(t *testing.T) {
 	}
 	a, b := newTenant(t, db), newTenant(t, db)
 	call := func(h http.Handler, tenant shared.ID, method, body string) *httptest.ResponseRecorder {
-		req := httptest.NewRequest(method, "/api/v1/example-notes", bytes.NewBufferString(body))
+		req := httptest.NewRequestWithContext(context.Background(), method, "/api/v1/example-notes", bytes.NewBufferString(body))
 		if !tenant.IsZero() {
 			req = req.WithContext(ext.WithCaller(req.Context(), ext.Caller{TenantID: tenant}))
 		}
@@ -216,13 +216,18 @@ func TestAdminAuditTrail(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer func() { _ = rows.Close() }()
 	var cols []string
 	for rows.Next() {
 		var c string
-		_ = rows.Scan(&c)
+		if err := rows.Scan(&c); err != nil {
+			t.Fatal(err)
+		}
 		cols = append(cols, c)
 	}
-	_ = rows.Close()
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
 	decided := append(append([]string(nil), postgres.AdminAuditShippedColumns...), postgres.AdminAuditWithheldColumns...)
 	sort.Strings(cols)
 	sort.Strings(decided)

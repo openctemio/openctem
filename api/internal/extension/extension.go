@@ -93,6 +93,13 @@ func Deps(h Host) ext.Deps {
 	if !ok {
 		return ext.Deps{}
 	}
+	return DepsFor(e, h)
+}
+
+// DepsFor builds the Deps the core would hand extension e (also used by
+// pkg/extension/extensiontest, so an extension's tests run against the
+// real core implementations).
+func DepsFor(e ext.Extension, h Host) ext.Deps {
 	getenv := h.Getenv
 	if getenv == nil {
 		getenv = os.Getenv
@@ -140,7 +147,7 @@ func Grants(ctx context.Context, d ext.Deps) limits.GrantProvider {
 }
 
 // Controllers returns the registered extension's controllers for the core
-// controller manager (an Exclusive controller keeps that behaviour). An
+// controller manager (an Exclusive controller stays exclusive). An
 // error stops the start.
 func Controllers(ctx context.Context, d ext.Deps) ([]controller.Controller, error) {
 	e, ok := ext.Registered()

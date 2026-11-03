@@ -32,7 +32,7 @@ func (f fakeGrants) RequireAddon(_ context.Context, tenantID shared.ID, key limi
 }
 
 func serve(h http.Handler, tenant shared.ID) *httptest.ResponseRecorder {
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/custom", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/custom", nil)
 	if !tenant.IsZero() {
 		req = req.WithContext(context.WithValue(req.Context(), middleware.TenantIDKey, tenant.String()))
 	}
@@ -108,7 +108,7 @@ func TestExtensionRouteNeedsThePermission(t *testing.T) {
 	registerExtensionRoutes(r, []extension.Route{{Method: http.MethodGet, Path: "/custom", Permission: "settings:write", Grant: "x", Handler: h}},
 		fakeGrants{on: map[string]bool{}}, nil)
 	tenant := shared.NewID()
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/custom", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/custom", nil)
 	ctx := context.WithValue(req.Context(), middleware.TenantIDKey, tenant.String())
 	ctx = context.WithValue(ctx, middleware.FetchedPermissionsKey, []string{"settings:read"})
 	w := httptest.NewRecorder()
