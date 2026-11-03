@@ -2,6 +2,8 @@
 -- the whole row, and closed to UPDATE and TRUNCATE.
 -- See docs/architecture/audit-hash-chain.md.
 --
+-- expand-contract-ok: removes no data; TRUNCATE appears only in the triggers that refuse it
+--
 -- Before this migration the chain row was written by the application after the
 -- audit row, in a second transaction, and hashed only action, resource type,
 -- resource id, result and time. Every path that inserted into audit_logs
@@ -11,7 +13,13 @@
 -- actor_id and deleting an organization nulled tenant_id, which moved its rows
 -- into the tenant-less (system) view.
 
--- 1. Give rows of deleted organizations their organization back. Their chain
+-- 1. Audit rows outlive the accounts and organizations they name. The ids stay
+--    as recorded (pseudonymous references), and retention removes the rows.
+--    Dropped first: the backfill below names organizations that no longer exist.
+ALTER TABLE audit_logs DROP CONSTRAINT IF EXISTS audit_logs_actor_id_fkey;
+ALTER TABLE audit_logs DROP CONSTRAINT IF EXISTS audit_logs_tenant_id_fkey;
+
+-- 2. Give rows of deleted organizations their organization back. Their chain
 --    row still carries it, and the version 1 hash does not cover tenant_id, so
 --    this changes no hash.
 UPDATE audit_logs l
@@ -20,11 +28,6 @@ UPDATE audit_logs l
  WHERE c.audit_log_id = l.id
    AND l.tenant_id IS NULL
    AND c.tenant_id <> 'ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid;
-
--- 2. Audit rows outlive the accounts and organizations they name. The ids stay
---    as recorded (pseudonymous references), and retention removes the rows.
-ALTER TABLE audit_logs DROP CONSTRAINT IF EXISTS audit_logs_actor_id_fkey;
-ALTER TABLE audit_logs DROP CONSTRAINT IF EXISTS audit_logs_tenant_id_fkey;
 
 -- 3. Hash version per chain row: 1 = the application hash over
 --    action|resource_type|resource_id|result and time, 2 = the database hash
