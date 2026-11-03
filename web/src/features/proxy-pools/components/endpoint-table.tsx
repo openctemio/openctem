@@ -235,6 +235,9 @@ export function EndpointTable({ poolId, endpoints, canWrite }: EndpointTableProp
       <DataTable
         columns={columns}
         data={endpoints}
+        // The rows are the pool's own, already loaded: a failed read is shown
+        // by the pools panel in place of every pool, never as an empty table.
+        error={null}
         getRowId={(e) => e.id}
         showSearch={false}
         showColumnToggle={false}
