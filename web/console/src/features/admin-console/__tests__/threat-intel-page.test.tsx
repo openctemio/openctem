@@ -26,6 +26,10 @@ vi.mock('../api/use-system', async (orig) => ({
   },
   syncThreatIntel: mocks.sync,
 }))
+vi.mock('../api/use-feed-relay', async (orig) => ({
+  ...(await orig<typeof import('../api/use-feed-relay')>()),
+  useFeedRelay: () => ({ data: undefined, error: undefined, isLoading: true, mutate: vi.fn() }),
+}))
 vi.mock('@/components/layout', () => ({
   Main: ({ children }: { children: React.ReactNode }) => <main>{children}</main>,
 }))
