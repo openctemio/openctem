@@ -344,6 +344,7 @@ func run() int {
 			domains = repos.VerifiedDomain
 		}
 		services.Email.SetTenantSMTPResolver(auth.NewIntegrationSMTPResolver(repos.Integration, services.Encryptor.DecryptString, mode, domains, log))
+		services.Email.SetLocaleResolver(auth.NewRepoEmailLocaleResolver(repos.User, repos.Tenant, log))
 	}
 
 	// ==========================================================================
