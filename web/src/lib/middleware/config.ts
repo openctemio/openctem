@@ -44,6 +44,24 @@ export const PUBLIC_ROUTES = [
 
 export type PublicRoute = (typeof PUBLIC_ROUTES)[number]
 
+/**
+ * The pages a session without an organization (account-only) may open, besides
+ * the public ones: the account hub and the personal account pages. Anything
+ * else redirects to /welcome. The API enforces the same boundary with its own
+ * allow-list of routes; this list only keeps the person off pages that would
+ * show errors. Exact paths: `/account/activity` and the other tenant-data
+ * account pages are not on it.
+ */
+export const ACCOUNT_ONLY_PAGES = [
+  '/welcome',
+  '/account',
+  '/account/security',
+  '/account/preferences',
+] as const
+
+/** Where an account-only session lands. */
+export const WELCOME_PATH = '/welcome'
+
 /** The tenant app's sign-in page. */
 export const LOGIN_PATH = '/login'
 
