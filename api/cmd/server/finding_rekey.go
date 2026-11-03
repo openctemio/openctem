@@ -7,6 +7,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/internal/tools/refingerprintcmd"
 	"github.com/openctemio/openctem/api/internal/tools/toolaudit"
+	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
@@ -19,8 +20,15 @@ func runFindingRekeyOnStart(ctx context.Context, db *postgres.DB, log *logger.Lo
 	svc := refingerprint.NewService(store)
 	auditWriter := postgres.NewAuditRepository(db)
 	runID := toolaudit.NewRunID()
+	tenants, rekeyed, merged, open := 0, 0, 0, 0
 	ran, err := store.WithRekeyLock(ctx, func(ctx context.Context) error {
 		return svc.RunAll(ctx, store, func(rep *refingerprint.Report) {
+			tenants++
+			rekeyed += rep.Rekeyed
+			merged += rep.Merged
+			if !rep.Completed {
+				open++
+			}
 			if rep.Rekeyed > 0 || rep.Merged > 0 {
 				log.Info("findings re-keyed to the current identity version",
 					"tenant_id", rep.TenantID, "rekeyed", rep.Rekeyed, "merged", rep.Merged,
@@ -31,11 +39,15 @@ func runFindingRekeyOnStart(ctx context.Context, db *postgres.DB, log *logger.Lo
 			}
 		})
 	})
-	if err != nil {
-		log.Error("finding re-key on start failed", "error", err)
+	if !ran && err == nil {
+		log.Info("finding re-key on start: another replica holds the lock")
 		return
 	}
-	if !ran {
-		log.Debug("finding re-key on start: another replica holds the lock")
+	// One line per start for deploy verification: what ran, and whether
+	// every tenant reached the current identity version.
+	log.Info("finding re-key on start finished", "identity_version", vulnerability.IdentityVersion,
+		"tenants", tenants, "rekeyed", rekeyed, "merged", merged, "incomplete", open, "failed", err != nil)
+	if err != nil {
+		log.Error("finding re-key on start failed", "error", err)
 	}
 }

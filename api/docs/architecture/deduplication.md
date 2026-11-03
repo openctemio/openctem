@@ -113,6 +113,11 @@ key `partial_fingerprints["sensor/fingerprint"]` and is never the identity
   key in the same transaction. A tenant that completed a run to the current
   version is skipped on later starts. Each tenant changed gets one
   `findings.refingerprinted` audit entry.
+  Every start that held the lock logs one `finding re-key on start
+  finished` line (tenants, rekeyed, merged, incomplete, failed): deploy
+  verification checks it, and `finding_rekey_runs` shows each tenant's run.
+  CI run sightings are found by key through
+  `idx_ci_run_findings_tenant_fingerprint`.
 - **On a sighting** ingest offers a finding's version-2 key (and the version-2
   forms of its former keys) for adoption, so a finding the start-up run has
   not reached yet is re-keyed in place, never duplicated. The version matcher
