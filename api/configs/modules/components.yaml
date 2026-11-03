@@ -17,4 +17,3 @@
     - "/api/v1/assets/{}/dependency-graph"
     - /api/v1/vex-statements
   jobs:
-    - VEXStatementExpiryController

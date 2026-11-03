@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/app/datascope"
+	moduledom "github.com/openctemio/openctem/api/pkg/domain/module"
 	"github.com/openctemio/openctem/api/pkg/domain/posture"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/filterspec"
@@ -45,7 +46,19 @@ type Service struct {
 	dataScope *datascope.Enforcer
 	log       *logger.Logger
 	now       func() time.Time
+	// modules reports the modules a tenant has off; nil refreshes every tenant.
+	modules ModuleGuard
 }
+
+// ModuleGuard reports the modules a tenant has off (*module.ModuleService).
+type ModuleGuard interface {
+	TenantDisabledModules(ctx context.Context, tenantID string) map[string]bool
+}
+
+// SetModuleGuard makes the scheduled refresh skip a tenant with the
+// attack_surface module off. Its state stays as it was, and the refresh
+// resumes when the module is back on.
+func (s *Service) SetModuleGuard(g ModuleGuard) { s.modules = g }
 
 // NewService creates a Service. dataScope must be wired in production; a nil
 // enforcer refuses every member read (fail closed).
@@ -286,6 +299,9 @@ func (s *Service) RefreshDue(ctx context.Context, limit int) (int, error) {
 // refreshOne refreshes one claimed organization; a failure is logged (it is
 // retried on the organization's next due time) and never stops the batch.
 func (s *Service) refreshOne(ctx context.Context, id shared.ID) bool {
+	if s.modules != nil && s.modules.TenantDisabledModules(ctx, id.String())[moduledom.ModuleAttackSurface] {
+		return false
+	}
 	st, err := s.repo.EnsureState(ctx, id)
 	if err != nil {
 		s.log.Warn("posture: read state", "tenant_id", id.String(), "error", err)
