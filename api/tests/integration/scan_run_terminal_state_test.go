@@ -32,7 +32,7 @@ import (
 //     'completed' and was counted as a successful run on the scan.
 
 // newRecordingScanRunService is newScanRunService with the scan-run recorder
-// wired, exactly as cmd/server does.
+// wired, exactly as internal/server does.
 func newRecordingScanRunService(db *sql.DB) *scanrun.Service {
 	pg := &postgres.DB{DB: db}
 	return scanrun.NewService(

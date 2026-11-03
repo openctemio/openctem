@@ -888,6 +888,9 @@ func (r *AuditLogRepository) VerifyChain(ctx context.Context) (*admin.AuditChain
 			return nil, err
 		}
 		if n < adminAuditVerifyBatch {
+			if after > 0 {
+				report.Head = &admin.AuditChainHead{Position: after, Hash: prevHash}
+			}
 			return report, nil
 		}
 		if err := ctx.Err(); err != nil {

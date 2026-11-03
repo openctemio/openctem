@@ -42,13 +42,11 @@ import {
   tCount,
   dimClass,
   flowBand,
-  focusGlow,
   useElementWidth,
   useFlowFocus,
   useWireAnchors,
+  FlowWire,
   wirePath,
-  wireStroke,
-  wireWidth,
   type FlowTipContent,
 } from './flow-parts'
 import { FlowRings, RingKey, type Ring } from './flow-rings'
@@ -65,7 +63,7 @@ import {
 } from './source-view'
 import { StackedBar } from './stacked-bar'
 import { ActHere, StageStateIcon, useStageStateText } from './stage-state'
-import { ChartOrTable, usePrefersReducedMotion } from './viz-parts'
+import { ChartOrTable } from './viz-parts'
 import type { FlowFigure, FlowResult, IntakeInstance, Stage } from './types'
 
 /** Source rows with a value before "Show all": wide and mid cards, a phone. */
@@ -146,7 +144,6 @@ function FlowChart({ result, scope }: { result: FlowResult; scope?: 'organizatio
   const n = (v: number) => formatCount(v, locale)
   const ref = useRef<HTMLDivElement>(null)
   const router = useRouter()
-  const reduced = usePrefersReducedMotion()
   const { active, anchor, tipId, bind, containerProps } = useFlowFocus(ref)
   const [measure, group, setMeasure, setGroup] = useSourceView()
   const intake = result.intake
@@ -156,7 +153,10 @@ function FlowChart({ result, scope }: { result: FlowResult; scope?: 'organizatio
   const band = flowBand(useElementWidth(ref))
   const narrow = band === 'narrow'
   const { m, g, hasAssets, hasInstances } = sourceViewFor(sources, measure, group)
-  const layout = useWireAnchors(ref, `${band}:${m}:${g}:${sources.length}:${result.open.value}`)
+  const layout = useWireAnchors(
+    ref,
+    `${band}:${m}:${g}:${result.open.value}:${sources.map((x) => `${x.id}=${x.received}/${x.health}`).join(',')}`
+  )
   // A source's colour follows the source (its place in the read), never its rank.
   const sourceColor = useMemo(() => {
     const out = new Map<string, string>()
@@ -878,45 +878,21 @@ function FlowChart({ result, scope }: { result: FlowResult; scope?: 'organizatio
               const from = layout.out[`s:${s.id}`]
               const to = layout.in.ring
               if (!from || !to) return null
-              // A source with nothing keeps a thin dashed wire, still, while
-              // its row is listed (no row, no anchor, no wire).
-              const silent = s.health === 'ok' && s.received === 0
-              const w = silent
-                ? { stroke: 'var(--border-strong, var(--border))', dash: '4 4' }
-                : wireStroke(s.health)
               const k = `w:s:${s.id}`
-              const d = wirePath(from.x + FRAME_INSET, from.y, to.x + 2, to.y)
               // Focused, the wire takes its source's colour (one source, one
               // colour: bar, arcs, wire) and is the only wire that glows.
-              const own = sourceColor.get(s.id) ?? 'var(--signal)'
               return (
-                <g
+                <FlowWire
                   key={k}
+                  wireKey={k}
+                  d={wirePath(from.x + FRAME_INSET, from.y, to.x + 2, to.y)}
+                  value={s.received}
+                  max={maxSource}
+                  health={s.health}
+                  focused={lit(k)}
+                  focusColor={sourceColor.get(s.id) ?? 'var(--signal)'}
                   className={dimClass(active, lit(k))}
-                  data-wire={s.health}
-                  data-wire-key={k}
-                >
-                  <path
-                    d={d}
-                    fill="none"
-                    stroke={lit(k) ? own : w.stroke}
-                    style={lit(k) ? { filter: focusGlow(own) } : undefined}
-                    strokeWidth={wireWidth(s.received, maxSource)}
-                    strokeDasharray={w.dash}
-                    strokeLinecap="round"
-                  />
-                  {s.health === 'ok' && !silent && !reduced && (
-                    <path
-                      d={d}
-                      fill="none"
-                      stroke="var(--card, #fff)"
-                      strokeOpacity={0.55}
-                      strokeWidth={Math.max(1, wireWidth(s.received, maxSource) - 0.5)}
-                      strokeDasharray="3 7"
-                      className="animate-flow-dash"
-                    />
-                  )}
-                </g>
+                />
               )
             })}
             {outcomes
@@ -926,18 +902,16 @@ function FlowChart({ result, scope }: { result: FlowResult; scope?: 'organizatio
                 const to = layout.in[`o:${o.key}`]
                 if (!from || !to) return null
                 const k = `w:o:${o.key}`
-                const w = wireStroke(o.tone === 'bad' && o.fig.value > 0 ? 'bad' : 'neutral')
                 return (
-                  <path
+                  <FlowWire
                     key={k}
-                    className={dimClass(active, lit(k))}
+                    wireKey={k}
                     d={wirePath(from.x - 2, from.y, to.x - FRAME_INSET, to.y)}
-                    fill="none"
-                    data-wire-key={k}
-                    stroke={lit(k) ? 'var(--signal)' : w.stroke}
-                    style={lit(k) ? { filter: focusGlow('var(--signal)') } : undefined}
-                    strokeWidth={wireWidth(o.fig.value, maxOutcome)}
-                    strokeLinecap="round"
+                    value={o.fig.value}
+                    max={maxOutcome}
+                    health={o.tone === 'bad' && o.fig.value > 0 ? 'bad' : 'neutral'}
+                    focused={lit(k)}
+                    className={dimClass(active, lit(k))}
                   />
                 )
               })}

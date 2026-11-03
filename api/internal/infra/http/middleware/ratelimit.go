@@ -239,7 +239,7 @@ func getClientIP(r *http.Request) string {
 	return httpsec.ClientIP(r, trustedProxies)
 }
 
-// trustedProxies is wired by cmd/server during init. It can stay nil for
+// trustedProxies is wired by internal/server during init. It can stay nil for
 // tests / direct-Internet deployments — ClientIP falls back to r.RemoteAddr.
 var trustedProxies *httpsec.TrustedProxySet //nolint:gochecknoglobals // set once at startup
 

@@ -18,6 +18,16 @@
 //	                                   auto-resolve is paused per tenant while
 //	                                   its run is open
 //	refingerprint -json                print the reports as JSON
+//	refingerprint -down [-tenant <id>] [-apply]
+//	                                   down step of the current version's
+//	                                   re-key (version 3, CTIS recipe v2):
+//	                                   move findings back to the key they had
+//	                                   before (version-2 key of the same
+//	                                   tuple, else the newest older alias);
+//	                                   run it with this release's image before
+//	                                   rolling back to an older release, with
+//	                                   the API stopped (the API re-keys on
+//	                                   start); merges are not undone
 //	refingerprint -dast-repair [-fold-dast-rules r1,r2] [-apply]
 //	                                   one-time repair of DAST findings that
 //	                                   are one issue under the current recipe
@@ -105,7 +115,7 @@ const (
 )
 
 // Main runs the command with os.Args. It parses its flags on a fresh flag
-// set: the server binary that dispatches to it (see cmd/server/tools.go)
+// set: the server binary that dispatches to it (see internal/server/tools.go)
 // registers its own flags on flag.CommandLine at init.
 func Main() {
 	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
@@ -123,6 +133,7 @@ func Main() {
 	clearLegacy := flag.Bool("clear-legacy-secret-fingerprints", false, "clear the unverifiable secret fingerprints written before the keyed fingerprint (the next sighting rewrites them)")
 	before := flag.String("before", "", "with -clear-legacy-secret-fingerprints: clear fingerprints of findings created before this RFC 3339 time (default: when the keyed fingerprint was introduced)")
 	resetMask := flag.Bool("reset-mask-secret-fingerprints", false, "clear the secret fingerprints derived from a mask, empty RE…ED previews and re-derive the rotation keys (needs -before)")
+	down := flag.Bool("down", false, "move findings keyed with the current version back to their previous key (rollback)")
 	foldRules := flag.String("fold-dast-rules", "", "comma-separated DAST rules whose fixed request paths are one issue per origin (with -dast-repair)")
 	flag.Parse()
 
@@ -179,8 +190,16 @@ func Main() {
 			fail(2, "-tenant: not an id")
 		}
 		tenants = []shared.ID{id}
+	} else if *down {
+		if tenants, err = store.TenantsAtVersion(ctx, vulnerability.IdentityVersion); err != nil {
+			fail(2, err.Error())
+		}
 	} else if tenants, err = store.TenantsBelowVersion(ctx, vulnerability.IdentityVersion); err != nil {
 		fail(2, err.Error())
+	}
+	run := svc.Run
+	if *down {
+		run = svc.RunDown
 	}
 
 	failed := false
@@ -188,7 +207,7 @@ func Main() {
 	var auditWriter toolaudit.Writer = postgres.NewAuditRepository(&postgres.DB{DB: sqlDB})
 	reports := make([]*refingerprint.Report, 0, len(tenants))
 	for _, t := range tenants {
-		rep, err := svc.Run(ctx, t, refingerprint.Options{Apply: *apply, BatchSize: *batch, MaxBatches: *maxBatches})
+		rep, err := run(ctx, t, refingerprint.Options{Apply: *apply, BatchSize: *batch, MaxBatches: *maxBatches})
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "refingerprint: tenant %s: %v\n", t, err)
 			failed = true
@@ -196,7 +215,7 @@ func Main() {
 		}
 		reports = append(reports, rep)
 		if *apply {
-			if err := auditRun(ctx, auditWriter, runID, rep); err != nil {
+			if err := AuditRun(ctx, auditWriter, runID, rep); err != nil {
 				fmt.Fprintf(os.Stderr, "refingerprint: tenant %s: %v\n", t, err)
 				failed = true
 			}
@@ -223,9 +242,9 @@ func Main() {
 	}
 }
 
-// auditRun records the tenant's re-keys in its own audit log: one entry per
+// AuditRun records the tenant's re-keys in its own audit log: one entry per
 // tenant per run, only when the run changed something.
-func auditRun(ctx context.Context, w toolaudit.Writer, runID string, rep *refingerprint.Report) error {
+func AuditRun(ctx context.Context, w toolaudit.Writer, runID string, rep *refingerprint.Report) error {
 	if !rep.Applied || (rep.Rekeyed == 0 && rep.Merged == 0) {
 		return nil
 	}

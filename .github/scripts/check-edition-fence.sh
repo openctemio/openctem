@@ -4,9 +4,8 @@
 # is tracked or staged), so the same script runs in CI and in pre-commit.
 #
 #   a. no tracked file under an Enterprise overlay path (the overlay is
-#      compiled in from a private repository; api/ee/README.md and the empty
-#      package file api/ee/doc.go are the only tracked files there), and
-#      .gitignore lists every overlay path;
+#      compiled in from a private repository; api/ee/README.md is the only
+#      tracked file there), and .gitignore lists every overlay path;
 #   b. no Go file imports the overlay (an api/ee package or a private
 #      module) unless it carries the ee build tag;
 #   c. the ee build tag appears in exactly one file (the build switch);
@@ -28,12 +27,11 @@ overlay_paths=(
   'web/console/src/ee/'
   'web/console/src/app/(ee)/'
 )
-overlay_keep=('api/ee/README.md' 'api/ee/doc.go')
+overlay_keep='api/ee/README.md'
 # The .gitignore lines that keep the overlay out of git.
 ignore_lines=(
   '/api/ee/*'
   '!/api/ee/README.md'
-  '!/api/ee/doc.go'
   '/web/src/ee/'
   '/web/src/app/(ee)/'
   '/web/console/src/ee/'
@@ -56,9 +54,7 @@ is_self() { local f; for f in "${self_files[@]}"; do [[ "$1" == "$f" ]] && retur
 
 # a. overlay paths are not tracked, and are ignored.
 for f in "${tracked[@]}"; do
-  keep=0
-  for k in "${overlay_keep[@]}"; do [[ "$f" == "$k" ]] && keep=1; done
-  (( keep )) && continue
+  [[ "$f" == "$overlay_keep" ]] && continue
   for p in "${overlay_paths[@]}"; do
     if [[ "$f" == "$p"* ]]; then fail "$f: Enterprise overlay path is tracked (rule a); the overlay lives only in the private repository"; fi
   done
