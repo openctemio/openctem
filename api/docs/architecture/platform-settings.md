@@ -51,6 +51,8 @@ other stored secrets.
   is part of the relay approval target (a changed bundle needs a second super
   admin like a new host), is audited by fingerprint only, and an unparsable
   stored bundle turns e-mail off rather than falling back to the system roots.
+- The test e-mail is limited to 5 per minute per administrator (`429` beyond that); each call sends a real
+  message through the stored server. Clients must not retry a `429` automatically.
 - A failed test e-mail returns `EMAIL_TEST_FAILED` with `details.reason` from a
   fixed set (`email.ClassifySendError`: unknown_authority, hostname_mismatch,
   certificate_invalid, tls_failed, auth_failed, auth_required, sender_rejected,
