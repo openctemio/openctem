@@ -1,0 +1,4 @@
+### Added: feed delivery card in the platform console
+
+- System > Threat intelligence has a "Feed delivery" card: choose direct or relay (super admin, fresh authenticator code, audited by the API), pick one to three relay sensors from the platform sensors that can relay (the others are listed with the reason: not active, or cannot relay because the host set `SENSOR_FEED_RELAY=0`, there is no pinned job-signing key or the release is too old; organizations' sensors are never offered).
+- In relay mode it shows, per feed, the last good import, the feed age, the round in progress (files and bytes received, which relay claimed it) and why a feed is stale in plain words with the fix; per relay sensor whether it is online, its last round and the bytes it relayed in the last 24 hours; the alerts sent to administrators; and the explicit escape hatches (switch to direct now, with a confirmation, and the offline bundle guide).
