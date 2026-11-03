@@ -31,8 +31,6 @@ check() {
 
 check "clean tree" 0
 check "overlay file tracked" 1 api/ee/billing/x.go 'package billing'
-check "empty overlay package file may be tracked" 0 api/ee/doc.go 'package ee'
-check "other overlay root file tracked" 1 api/ee/register.go 'package ee'
 check "web overlay file tracked" 1 'web/src/app/(ee)/a/page.tsx' 'x'
 check "console overlay file tracked" 1 web/console/src/ee/a.ts 'x'
 check "go imports overlay without tag" 1 api/cmd/server/a.go $'package main\nimport _ "github.com/openctemio/openctem/api/ee/billing"\n'

@@ -668,7 +668,7 @@ catalog but has no emitter: nothing in the platform sets a sensor's health to
 ## Wiring in Main
 
 ```go
-// cmd/server/main.go
+// internal/server/main.go
 
 // Initialize repositories
 notificationOutboxRepo := postgres.NewNotificationOutboxRepository(db)
@@ -836,3 +836,27 @@ permissions and the module toggle from coming back without a sender.
   scheme, host or port while credentials are stored requires new credentials
   in the same request (400 otherwise), so a manager cannot point Jira or SCM at
   their own server and receive the stored token.
+
+## Transactional e-mail language
+
+Account and organization e-mail (verification, password reset and changed,
+welcome, invitation, account setup, member suspended and reactivated, security
+notices, domain managed) renders in one language per message. Supported:
+`en`, `vi`.
+
+- **Choice.** The recipient account's language (`users.preferences.language`);
+  else the default language of the organization the e-mail is sent for (tenant
+  settings, General); else `en`. An unsupported value at a level is skipped.
+- **Tenant safety.** The organization default is read only for the tenant id the
+  e-mail is already sent for. The address is looked up among accounts only
+  (`auth.EmailLocaleResolver`); no search across organizations. A failed lookup
+  is `en`; it never blocks or fails the send.
+- **Catalog.** `api/pkg/email/locales/{en,vi}.json` hold subjects, headings,
+  paragraphs, buttons and footer lines, keyed identically; values are
+  placeholders (`{0}`, `{1}`) filled in one pass. The HTML layout is shared by
+  all languages. User-controlled values are template data: the HTML templates
+  keep `html/template` escaping, and the few catalog strings with inline markup
+  escape every value. A test fails when a key or placeholder differs between
+  locales or a template refers to a missing key.
+- **Adding a language.** Add `locales/<code>.json` with every key, register the
+  code in `mustLoadCatalog`, and add it to the tests' locale lists.

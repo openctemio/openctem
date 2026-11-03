@@ -76,7 +76,7 @@ RUN go install github.com/swaggo/swag/cmd/swag@${SWAG_VERSION}
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN swag init --generalInfo cmd/server/main.go --output api/openapi --outputTypes yaml --parseDependency --quiet \
+RUN swag init --generalInfo internal/server/main.go --output api/openapi --outputTypes yaml --parseDependency --quiet \
  && test -s api/openapi/swagger.yaml
 
 # -----------------------------------------------------------------------------
@@ -106,7 +106,7 @@ ARG BUILD_TIME=""
 # Binaries:
 #   server           the API, and the operator commands below: each is a link
 #                    to the server binary, which runs the command named by the
-#                    link (cmd/server/tools.go). One binary instead of one per
+#                    link (internal/server/tools.go). One binary instead of one per
 #                    command keeps the shared packages in the image once.
 #     bootstrap-admin      initial setup: platform administrators and the
 #                          first organization
@@ -175,7 +175,7 @@ COPY --from=builder /app/bin/server /app/bin/openctem-signer /app/bin/openctem-m
 COPY --from=runtime-fs /out/tool-links/ ./
 
 # The OpenAPI spec served at /openapi.yaml (path relative to WORKDIR, see
-# cmd/server/handlers.go NewDocsHandler).
+# internal/server/handlers.go NewDocsHandler).
 COPY --from=openapi /app/api/openapi/swagger.yaml ./api/openapi/swagger.yaml
 
 COPY --from=builder /app/migrations ./migrations

@@ -14,6 +14,7 @@ import (
 	authapp "github.com/openctemio/openctem/api/internal/app/auth"
 	tenantapp "github.com/openctemio/openctem/api/internal/app/tenant"
 	"github.com/openctemio/openctem/api/internal/config"
+	"github.com/openctemio/openctem/api/internal/extensionhost"
 	infrahttp "github.com/openctemio/openctem/api/internal/infra/http"
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
@@ -313,6 +314,8 @@ type Handlers struct {
 	Announcement      *handler.AnnouncementHandler
 	// AdminSupportRateLimiter caps console support actions per administrator.
 	AdminSupportRateLimiter *middleware.AdminMappingRateLimiter
+	// AdminEmailTestLimiter caps the platform test e-mail per administrator.
+	AdminEmailTestLimiter *middleware.AdminMappingRateLimiter
 	// AdminDirectoryReadLimiter caps reads of the cross-organization user
 	// directory per administrator (bulk harvesting of accounts).
 	AdminDirectoryReadLimiter *middleware.AdminMappingRateLimiter
@@ -331,6 +334,10 @@ type Handlers struct {
 	// IdleReadOnly refuses changes to an idle Free organization (read-only
 	// after 90 days without a sign-in).
 	IdleReadOnly middleware.IdleReadOnlyChecker
+	// ExtensionRoutes are the routes of the build's extensions (none in the
+	// Community build); Grants enforces their grant keys.
+	ExtensionRoutes []extensionhost.Route
+	Grants          GrantChecker
 	// EntryChecker applies the URL organization's entry requirements on
 	// /api/v1/tenants/{tenant}/... routes (AuthService.CheckEntry).
 	EntryChecker middleware.EntryChecker
@@ -1265,6 +1272,12 @@ func Register(
 	// Platform Stats routes (tenant-scoped platform sensor statistics)
 	if h.PlatformScanning != nil {
 		registerPlatformScanningRoutes(router, h.PlatformScanning, authMiddleware, userSync)
+	}
+
+	// Routes of the build's extensions, after every core route so one that
+	// would replace a core route is refused.
+	if len(h.ExtensionRoutes) > 0 {
+		registerExtensionRoutes(router, h.ExtensionRoutes, h.Grants, buildTokenTenantMiddlewares(authMiddleware, userSync))
 	}
 
 	// ==========================================================================

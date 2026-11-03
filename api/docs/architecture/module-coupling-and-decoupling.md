@@ -42,7 +42,7 @@
 | Dimension | State | Evidence |
 |-----------|-------|----------|
 | **Build-time (imports)** | Domain clean; one app-layer wrinkle: core `internal/app/finding` imports features `aitriage` + `validation`, but only via **optional nil-guarded setters** (`SetAITriageService`, `autoValidator == nil` bail) — compiles-against, runs-without. `workflow` is the orchestration hub (imports finding/aitriage/pipeline/scan). No cycles. | `finding/vulnerability_service.go:45`, `actions.go:163` |
-| **Wiring (composition root)** | Monolithic + unconditional. ~110 repo fields, ~89 service fields, all built in one pass. Conditionals are **env-driven, not module-driven**. No build tags. | `cmd/server/repositories.go`, `services.go` |
+| **Wiring (composition root)** | Monolithic + unconditional. ~110 repo fields, ~89 service fields, all built in one pass. Conditionals are **env-driven, not module-driven**. No build tags. | `internal/server/repositories.go`, `services.go` |
 | **Data (DB FKs)** | **One** core→feature FK: `findings.pentest_campaign_id`. All other 45+ links feature→core. | `migrations/000095`, `000171` |
 | **Runtime (module gating)** | **Shipped (Phase 1).** `middleware.ModuleGate.RequireModule(moduleID)` gates **26 route groups**, returning `403 MODULE_NOT_ENABLED` for a tenant's explicitly-disabled module; fail-open, 60s-TTL cache invalidated on toggle. `tenant_modules.is_enabled` now drives both the sidebar and route enforcement. | `middleware/module_gate.go`, `routes/routes.go` (26 `RequireModule(...)` sites), `bootstrap_handler.go:243` |
 

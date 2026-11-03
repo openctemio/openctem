@@ -164,12 +164,11 @@ describe('DashboardHome', () => {
     const metrics = input.layout.map(
       (w) => (w as unknown as { config: { data: { metric: string } } }).config.data.metric
     )
-    // The CTEM story leads: the key figures, the levers, then the exposure
-    // flow (with the five stages); the brief, fix next and attack paths follow.
-    expect(metrics.slice(0, 3)).toEqual(['exposure.kpis', 'exposure.levers', 'exposure.flow'])
-    expect(metrics).toContain('brief.weekly')
-    expect(metrics).toContain('ingest.intake')
+    // The CTEM story leads: the key figures, the exposure flow (with the
+    // five stages), then the levers; fix next and attack paths follow.
+    expect(metrics.slice(0, 3)).toEqual(['exposure.kpis', 'exposure.flow', 'exposure.levers'])
     expect(metrics).toContain('fix.next')
+    expect(metrics).toContain('attack_paths.to_crown_jewels')
     expect(metrics).toContain('attack_paths.to_crown_jewels')
     rerender(
       <I18nProvider locale="en">
@@ -182,7 +181,7 @@ describe('DashboardHome', () => {
 
   it('no copy when the organization has dashboards for the viewer; a failed copy shows the empty state', async () => {
     perms.list = ['dashboards:org:view']
-    api.org = [dash('o1', 'Overview', { is_org_default: true })]
+    api.org = [dash('o1', 'CTEM', { is_org_default: true })]
     renderHome()
     expect(api.create).not.toHaveBeenCalled()
   })
@@ -227,10 +226,10 @@ describe('DashboardHome', () => {
   it('an organization viewer lands on the organization default, badge organization-wide, no schedule or customize without manage', () => {
     perms.list = ['dashboards:org:view']
     api.mine = [dash('p1', 'Mine')]
-    api.org = [dash('o1', 'Program'), dash('o2', 'Overview', { is_org_default: true })]
+    api.org = [dash('o1', 'Program'), dash('o2', 'CTEM', { is_org_default: true })]
     data.byKey['organization:o2'] = snapshot('organization', 120)
     renderHome()
-    expect(screen.getByRole('heading', { name: 'Overview' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'CTEM' })).toBeInTheDocument()
     expect(screen.getByText('Organization-wide')).toBeInTheDocument()
     expect(screen.getByText('120')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Customize' })).toBeNull()
@@ -240,7 +239,7 @@ describe('DashboardHome', () => {
 
   it('Customize is offered on an organization dashboard to a manager only', () => {
     perms.list = ['dashboards:org:view', 'dashboards:org:manage']
-    api.org = [dash('o2', 'Overview', { is_org_default: true })]
+    api.org = [dash('o2', 'CTEM', { is_org_default: true })]
     data.byKey['organization:o2'] = snapshot('organization', 1)
     renderHome()
     expect(screen.getByRole('button', { name: 'Customize' })).toBeInTheDocument()
@@ -248,7 +247,7 @@ describe('DashboardHome', () => {
 
   it('Edit details is hidden on an organization dashboard for a viewer, shown to a manager', async () => {
     perms.list = ['dashboards:org:view']
-    api.org = [dash('o2', 'Overview', { is_org_default: true })]
+    api.org = [dash('o2', 'CTEM', { is_org_default: true })]
     data.byKey['organization:o2'] = snapshot('organization', 1)
     const { unmount } = renderHome()
     await userEvent.click(screen.getByRole('button', { name: 'More dashboard actions' }))
@@ -309,7 +308,7 @@ describe('DashboardHome', () => {
 
   it('a manager may set the organization schedule', () => {
     perms.list = ['dashboards:org:view', 'dashboards:org:manage']
-    api.org = [dash('o2', 'Overview', { is_org_default: true })]
+    api.org = [dash('o2', 'CTEM', { is_org_default: true })]
     data.byKey['organization:o2'] = snapshot('organization', 1)
     renderHome()
     expect(screen.getByRole('combobox', { name: 'Refresh schedule' })).toBeInTheDocument()
@@ -384,16 +383,16 @@ describe('DashboardHome', () => {
 })
 
 describe('DashboardHome new layout hint', () => {
-  const overviewCopy = (id: string): Dashboard =>
-    dash(id, 'Overview', {
+  const ctemCopy = (id: string): Dashboard =>
+    dash(id, 'CTEM', {
       kind: 'personal',
       columns: 4,
       layout: [
-        stat('w_ov1', 'exposure.priority_open'),
-        stat('w_ov2', 'intel.kev_open'),
-        stat('w_ov3', 'sla.within'),
-        { ...stat('w_ov5', 'exposure.open_by_priority'), h: 2 },
-        { ...stat('w_ov8', 'sla.at_risk'), h: 3 },
+        stat('w_ct91', 'exposure.priority_open'),
+        stat('w_ct92', 'intel.kev_open'),
+        stat('w_ct93', 'sla.within'),
+        { ...stat('w_ct95', 'exposure.open_by_priority'), h: 2 },
+        { ...stat('w_ct98', 'sla.at_risk'), h: 3 },
       ],
     })
 
@@ -407,11 +406,11 @@ describe('DashboardHome new layout hint', () => {
     vi.clearAllMocks()
   })
 
-  it('offers the new widgets on an earlier Overview copy and never changes it on its own', async () => {
-    api.mine = [overviewCopy('d1')]
+  it('offers the new widgets on an earlier CTEM copy and never changes it on its own', async () => {
+    api.mine = [ctemCopy('d1')]
     renderHome()
     const hint = await screen.findByTestId('layout-hint')
-    expect(hint).toHaveTextContent('New on the Overview layout: Key figures')
+    expect(hint).toHaveTextContent('New on the CTEM layout: Key figures')
     expect(within(hint).getByRole('button', { name: 'Add them to this dashboard' })).toBeVisible()
     expect(within(hint).getByRole('button', { name: 'Switch to the new layout' })).toBeVisible()
     expect(api.update).not.toHaveBeenCalled()
@@ -419,7 +418,7 @@ describe('DashboardHome new layout hint', () => {
   })
 
   it('"Add them" inserts each missing widget where the template has it and keeps every widget', async () => {
-    api.mine = [overviewCopy('d1')]
+    api.mine = [ctemCopy('d1')]
     api.update.mockResolvedValue({})
     renderHome()
     await userEvent.click(await screen.findByRole('button', { name: 'Add them to this dashboard' }))
@@ -429,22 +428,22 @@ describe('DashboardHome new layout hint', () => {
       { name: string; layout: Array<{ config: { id: string; data: { metric: string } } }> },
     ]
     expect(id).toBe('d1')
-    expect(input.name).toBe('Overview')
+    expect(input.name).toBe('CTEM')
     expect(input.layout.map((w) => w.config.data.metric)).toEqual([
       // The copy's own figures keep their place.
       'exposure.priority_open',
       'intel.kev_open',
       'sla.within',
       'exposure.kpis',
-      'exposure.levers',
       'exposure.flow',
+      'exposure.levers',
+      'fix.next',
+      'attack_paths.to_crown_jewels',
       'exposure.open_by_priority',
       'flow.new_vs_fixed',
+      'findings.age_bands',
       'surface.new_assets',
       'certificates.expiry',
-      'brief.weekly',
-      'attack_paths.to_crown_jewels',
-      'fix.next',
       // The person's own extra widget stays.
       'sla.at_risk',
     ])
@@ -453,43 +452,43 @@ describe('DashboardHome new layout hint', () => {
   })
 
   it('a copy with every widget in the earlier order is offered the new arrangement only', async () => {
-    // Every current Overview widget, in the order the template had before
+    // Every current CTEM widget, in the order the template had before
     // the key figures moved to the top.
-    const tpl = templateLayout(templateByKey('overview'))
+    const tpl = templateLayout(templateByKey('ctem'))
     const layout = [tpl[1], tpl[2], tpl[0], ...tpl.slice(3)]
-    api.mine = [dash('d1', 'Overview', { kind: 'personal', columns: 4, layout })]
+    api.mine = [dash('d1', 'CTEM', { kind: 'personal', columns: 4, layout })]
     renderHome()
     const hint = await screen.findByTestId('layout-hint')
-    expect(hint).toHaveTextContent('The Overview layout has a new arrangement')
+    expect(hint).toHaveTextContent('The CTEM layout has a new arrangement')
     expect(within(hint).queryByRole('button', { name: 'Add them to this dashboard' })).toBeNull()
     expect(within(hint).getByRole('button', { name: 'Switch to the new layout' })).toBeVisible()
     expect(api.update).not.toHaveBeenCalled()
   })
 
   it('"Switch to the new layout" adds a fresh copy and keeps the old dashboard', async () => {
-    api.mine = [overviewCopy('d1')]
+    api.mine = [ctemCopy('d1')]
     api.create.mockResolvedValue({ id: 'c1' })
     renderHome()
     await userEvent.click(await screen.findByRole('button', { name: 'Switch to the new layout' }))
     await waitFor(() => expect(api.create).toHaveBeenCalledTimes(1))
     // The copy the hint is on already uses the template's name.
-    expect((api.create.mock.calls[0][0] as { name: string }).name).toBe('Overview (new layout)')
+    expect((api.create.mock.calls[0][0] as { name: string }).name).toBe('CTEM (new layout)')
     expect(api.update).not.toHaveBeenCalled()
     expect(window.localStorage.getItem(DASHBOARD_CHOICE_KEY)).toBe('personal:c1')
   })
 
   it('the fresh copy never takes a name the person already uses', async () => {
-    api.mine = [{ ...overviewCopy('d1'), name: 'Overview' }, dash('d2', 'Overview (new layout)')]
+    api.mine = [{ ...ctemCopy('d1'), name: 'CTEM' }, dash('d2', 'CTEM (new layout)')]
     window.localStorage.setItem(DASHBOARD_CHOICE_KEY, 'personal:d1')
     api.create.mockResolvedValue({ id: 'c1' })
     renderHome()
     await userEvent.click(await screen.findByRole('button', { name: 'Switch to the new layout' }))
     await waitFor(() => expect(api.create).toHaveBeenCalledTimes(1))
-    expect((api.create.mock.calls[0][0] as { name: string }).name).toBe('Overview (new layout) 2')
+    expect((api.create.mock.calls[0][0] as { name: string }).name).toBe('CTEM (new layout) 2')
   })
 
   it('a dismissed hint stays dismissed for this layout version', async () => {
-    api.mine = [overviewCopy('d1')]
+    api.mine = [ctemCopy('d1')]
     const { unmount } = renderHome()
     await userEvent.click(await screen.findByRole('button', { name: 'Dismiss' }))
     expect(screen.queryByTestId('layout-hint')).toBeNull()
@@ -510,7 +509,7 @@ describe('DashboardHome new layout hint', () => {
       unmount()
     }
     api.mine = []
-    api.org = [{ ...overviewCopy('o1'), kind: 'organization', is_org_default: true }]
+    api.org = [{ ...ctemCopy('o1'), kind: 'organization', is_org_default: true }]
     data.byKey['organization:o1'] = snapshot('organization', 1)
     renderHome()
     expect(await screen.findByTestId('dashboard-freshness')).toBeInTheDocument()

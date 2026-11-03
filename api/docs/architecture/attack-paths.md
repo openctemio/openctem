@@ -11,7 +11,7 @@ GET /api/v1/attack-surface/attack-paths/{id}  (assets:read, module attack_surfac
 ```
 
 Key code: `api/internal/app/attack/` (`path_scoring.go`, `exposure_chains.go`,
-`path_detail.go`, `scoped.go`), the priority oracle in `api/cmd/server/reachability_oracle.go`, the
+`path_detail.go`, `scoped.go`), the priority oracle in `api/internal/server/reachability_oracle.go`, the
 threat-model consumer in `api/internal/app/threatmodel/service.go`.
 
 ## Graph
