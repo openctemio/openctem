@@ -338,10 +338,8 @@ github.com/openctemio/contract v1.1.1 h1:qe8Q57KVuM2FNngk2vBXwzATgUvoe44oORUBbBe
 github.com/openctemio/contract v1.1.1/go.mod h1:HxX5pwiijz4RjtUWUjbqsFMIUPMOPx4kyPnsoXVhwW4=
 github.com/openctemio/contract/transfer v1.0.1 h1:d7Od6Lmd2rqdd9HwiWnQy8u518vFj4eUOBxFe7+C4BA=
 github.com/openctemio/contract/transfer v1.0.1/go.mod h1:pNJPUtGJBhm+DfBxgeUz2tGSfW1KSUF+Ry7fV0BJnWg=
-github.com/openctemio/ctis/v2 v2.0.0 h1:QB6JCCTYQxqmUhZDi7Wk5q0HDapkS5V4/Tc6Pwvgt4U=
-github.com/openctemio/ctis/v2 v2.0.0/go.mod h1:BaBATGBV/+qKDaElbacvp8OXHLQj7MB/52ViXTNvmSk=
-github.com/openctemio/ctis/v2 v2.0.1-0.20261103125448-96bc1e48f175 h1:TSs47uG9NEPaAPyHyUbaSStAXfP4WNP6JaNTtveboUM=
-github.com/openctemio/ctis/v2 v2.0.1-0.20261103125448-96bc1e48f175/go.mod h1:BaBATGBV/+qKDaElbacvp8OXHLQj7MB/52ViXTNvmSk=
+github.com/openctemio/ctis/v2 v2.0.1 h1:KGRtKPLTuo1yl9QU1lxAnhuKpb7RPwRukEdvWfzI8HE=
+github.com/openctemio/ctis/v2 v2.0.1/go.mod h1:BaBATGBV/+qKDaElbacvp8OXHLQj7MB/52ViXTNvmSk=
 github.com/openctemio/ctis/v2/interop/csaf v0.1.0 h1:abP8MV/a2gfzztYyAlEtgQi9e3orpbPr3+4GugLa+H4=
 github.com/openctemio/ctis/v2/interop/csaf v0.1.0/go.mod h1:oiEXv0dBPNMfoou9pIKZyDnprsvGHYV+wJTlzGTJhJQ=
 github.com/openctemio/ctis/v2/interop/cyclonedx v0.1.0 h1:x50GyqignhVpfuDE7aheOMDqMlnIhXOXe9uYQ0hkXx0=
