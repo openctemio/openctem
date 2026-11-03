@@ -1,240 +1,166 @@
 # Extension API: building your own edition
 
-OpenCTEM Community is an extensible platform. It ships a public, documented,
-versioned extension API, and anyone can build a custom edition by adding an
-extension package against it: a company adapting the product to its own
-processes, a fork, a partner. The Enterprise edition is one such extension and
-uses nothing beyond this API: when it needs more, the API grows (generic,
-documented, tested) and every other extension gets the same capability.
+OpenCTEM Community is an extensible platform. Anyone can build their own
+edition: a separate Go module that requires the core, adds one or more
+extensions written against the public extension API, and calls the core's
+server entry point. The Enterprise edition is one such custom build; it uses
+exactly the API described here and nothing else.
 
-Community is complete for practitioners. An empty extension point renders
-nothing: no locked items, no greyed-out features, no upgrade prompts. What the
-Enterprise edition adds is listed on the public Editions page of the docs site.
+| Part | Where |
+|---|---|
+| Back-end API | [`api/pkg/extension`](../../pkg/extension/doc.go) |
+| Server entry point | [`api/pkg/server`](../../pkg/server/server.go): `Main(exts ...extension.Extension)` |
+| Test helpers | [`api/pkg/extension/extensiontest`](../../pkg/extension/extensiontest/extensiontest.go) |
+| Reference extension | [`api/pkg/extension/example`](../../pkg/extension/example/example.go) |
+| Reference custom build | [`api/examples/custombuild`](../../examples/custombuild/main.go) |
+| Web API | `web/src/lib/extension` (navigation, settings, slots, override allowlist, message catalogs) |
+| Where paid code goes, the fence | [editions](editions.md) |
 
-Companion to [editions.md](editions.md) (where paid-feature code goes and the
-edition fence). This page covers the API, how an extension keeps working across
-core releases, the three ways the product is run (Community, Enterprise, hosted
-service), and how an installation moves between editions.
+## Build your own
 
-## Build your own extension
-
-An extension is a Go package mounted at `api/ee/` and, for the web, modules
-mounted at `web/src/ee/` (both paths are git-ignored in this repository, so an
-extension lives in its own repository and is copied in at build time).
-
-Back end (`api/ee/register.go`):
+```
+go mod init example.com/myedition
+go get github.com/openctemio/openctem/api@<version or commit>
+```
 
 ```go
-package ee
+// cmd/openctem-server/main.go
+package main
 
-import "github.com/openctemio/openctem/api/internal/extension"
+import (
+	"example.com/myedition/myext"
+	"github.com/openctemio/openctem/api/pkg/server"
+)
 
-func init() {
-	extension.Register(extension.Edition{
-		Name:        "acme",       // reported in logs and /version
-		Controllers: controllers,  // background jobs, run by the core controller manager
-		Grants:      grants,       // optional: things that are off unless granted
-	})
+func main() { server.Main(myext.Extension()) }
+```
+
+```go
+// myext/myext.go
+package myext
+
+import "github.com/openctemio/openctem/api/pkg/extension"
+
+func Extension() extension.Extension {
+	return extension.Extension{
+		APIVersion: 1,             // the API version written for, as a literal
+		Name:       "myext",       // unique in the build, reported by /api/v1/version
+		Version:    "v0.1.0",
+		Schema:     "myext",       // its own Postgres schema
+		Migrations: migrations,    // fs.FS of VERSION_name.up.sql / .down.sql
+		ConfigKeys: []string{"MYEXT_ENDPOINT"},
+		Routes:     routes,
+	}
 }
 ```
 
-Build: `go build -tags ee ./cmd/server`. Without the tag the same tree is the
-plain Community build.
-
-Web (`web/src/ee/web.ts`, resolved as `@extension/web` when built with
-`EDITION=ee`):
-
-```ts
-import type { WebExtension } from '@/lib/extension/types'
-
-export const extension: WebExtension = {
-  apiVersion: 1,
-  edition: 'acme',
-  navItems: [{ group: 'Validation', item: { title: 'Lab runs', url: '/lab-runs', permission: 'lab:read' } }],
-  settingsItems: [],
-  slots: { 'reports.sections': LabReportSection },
-  overrides: {},
-}
-```
-
-plus `web/src/ee/console.ts` (`@extension/console`), `web/src/ee/messages.ts`
-(`@extension/messages`, en and vi strings) and pages in
-`web/src/app/(dashboard)/(ee)/lab-runs/page.tsx`. Build: `EDITION=ee npm run build`.
-A complete fake extension is the contract test
-`web/src/lib/extension/__tests__/extension-build.test.tsx`.
-
-The back-end package is `internal/extension` today; it moves to a public
-`pkg/extension` with interface-only dependencies (a scoped store, settings,
-logger, audit recorder, controller interface) so that an extension needs no
-`internal/` package at all.
+`go build ./cmd/openctem-server` gives one binary that is the whole server: the
+core, its bundled operator commands (picked by the name it runs under) and
+every extension passed to `Main`. A build may pass several extensions; their
+names, schemas and config keys must be unique, and at most one may provide
+grants. The server checks the whole build before anything starts and refuses
+to start on a mistake.
 
 ## Dependency rule
 
-```
-extension ──► extension contract   api/internal/extension (Go), web/src/lib/extension/types.ts (web)
-        ──► public packages      api/pkg/..., web shared UI          (best effort)
-core    ──X never imports the extension
-```
+- An extension imports `api/pkg/extension`, the other public `api/pkg/...`
+  packages (best effort, not versioned before 1.0), its own packages and its
+  own dependencies. Go refuses `api/internal/...` from another module, so
+  this rule is enforced by the compiler.
+- The core imports nothing of any extension and never names a grant key, a
+  plan, a tier, an edition or a brand.
+- The web build reaches extension code only through the `@extension/*` alias
+  (see [Web](#web)).
 
-- Only `api/cmd/server/edition_ee.go` (build tag `ee`) imports the extension
-  package, and only the `@extension/*` web modules resolve to it. The edition fence
-  enforces both.
-- An extension uses the extension API and public `api/pkg/...` packages only.
-  Until the back-end API moves to `pkg/extension`, it may also use the types the
-  current contract names (`internal/infra/postgres`, `internal/config`,
-  `internal/infra/controller`); nothing else in `internal/`. When an extension
-  needs core behaviour, the core adds a generic extension point (below).
-- A seam is generic and brand-neutral, has a Community default that keeps
-  today's behaviour, and is tested in this repository with a fake extension.
+## Extension points
 
-## The contract and its version
+Each point is named by function, has a Community default that keeps today's
+behaviour, and is covered by the example extension and a contract test.
 
-| Contract | Version constant | Tests in this repository |
+| Point | Shape | Notes |
 |---|---|---|
-| `api/internal/extension`: `Edition` (one registration, one optional field per seam), `Deps`, `Runner` | `extension.APIVersion` | `internal/extension` tests with a fake `Edition` |
-| `web/src/lib/extension/types.ts`: `WebExtension`, `ConsoleExtension`, `ExtensionMessages`, slot ids | `EXTENSION_API_VERSION` | `src/lib/extension/__tests__` (default build adds nothing; a mocked extension reaches sidebar, settings and slots) |
+| Grants | `Grants func(ctx, Deps) (GrantProvider, error)` | things that are off unless granted; at most one provider per build; a failing provider leaves every grant off ([RFC-145](../rfcs/RFC-145-enterprise-licence-and-entitlements.md) lists the guarantees every provider keeps) |
+| Controllers | `Controllers func(ctx, Deps) ([]Controller, error)` | run by the core controller manager; `Exclusive` ones on one replica; an error stops the start |
+| Routes | `Routes func(ctx, Router, Deps) error`, `Route{Method, Path, Permission, Grant, Handler}` | mounted at `/api/v1<Path>` behind authentication, the organization from the credential, membership, CSRF, the core permission and the grant; core routes and planes (`/admin`, `/auth`, `/internal`, `/sensor`, `/scim`, ...) cannot be used; the caller is in `CallerFrom(ctx)` |
+| Migrations | `Schema` + `Migrations fs.FS` | in the extension's own schema; reference core tables only by primary key and `tenant_id` (`ON DELETE CASCADE`) |
+| Config keys | `ConfigKeys []string` | read through `Deps.Settings`; core keys refused; any other key reads as empty |
 
-- The extension states the version it was written for as a literal. A mismatch
-  stops registration (Go) or module load (web), so the extension's CI and any
-  start fail loudly.
-- Adding an optional field or a slot is not a break. Removing, renaming or
-  narrowing one is: bump the version.
-- Change a seam in three steps: add the new one beside the old (no bump), let the
-  extension move to it, then remove the old one and bump. Never in one pull request.
-- A pull request touching a contract path updates the contract tests and this
-  page; CODEOWNERS requires the maintainer.
+What the core hands over (`Deps`) is interfaces only: `Store` (one transaction
+per call; `TenantTx` marks the organization, and every query still filters by
+`tenant_id`), `Settings`, `Entitlements`, `AdminAudit` (read access to the
+administrators' audit chain and a forward cursor), `Log` and `Env`.
 
-## Extension points, one per kind
+Points planned with their first users (each lands with that user, never
+ahead): route surfaces beyond tenant routes (platform console, SCIM, internal
+API), extension permissions, an audit recorder, a secret store, tenant-data
+export and erasure hooks, event subscribers, notification channels,
+connectors, dashboard metrics, report sections, and behaviour seams in core
+flows (brand, retention, member lifecycle, sensor admission).
 
-| Kind | Mechanism |
-|---|---|
-| Grants (things off unless granted) | `Edition.Grants` → `limits.GrantProvider`; gates call `entitlement.Service.RequireAddon` |
-| Background jobs | `Edition.Controllers`, run by the core controller manager |
-| HTTP routes | an `Edition` route registration in which every route names a permission and a grant key; the core mounts it behind its tenant, permission and grant middleware (added with the first route that moves) |
-| Behaviour inside core flows | one typed `Edition` field per seam with a Community default (branding source, trust policy, simulation link, member lifecycle, tenant-data duties) |
-| Settings | extension-only environment keys are listed in `cmd/server/edition_guard.go`: a Community server refuses to start with one set |
-| Migrations | the extension's own set in schema `ee`, applied after the core set ([editions.md](editions.md#extension-migrations)) |
-| Web navigation | `@extension/web` `navItems` (by sidebar group title) and `settingsItems` (by settings group id), merged into `config/sidebar-data.ts` and `config/settings-nav.ts`; gated by `module`/`permission` like core rows |
-| Web pages | route groups `src/app/(dashboard)/(ee)/` (inside the core shell) or `src/app/(ee)/`; the URL does not change when a page moves |
-| Places in core pages | `<ExtensionSlot id="..." />`; ids and props in `types.ts` (`ExtensionSlotProps`) |
-| Replacing a core component | only the short allowlist in `ExtensionOverrideProps` (today `auth.footer`), each with a stable props contract: `<Overridable id="..." fallback={CoreComponent} />` |
-| Strings | `@extension/messages` `{ en, vi }` merged into the catalogs; adding keys only, a core key cannot be replaced |
-| Console | `@extension/console` `navItems` (by section `i18nKey`); pages in `console/src/app/(console)/(ee)/` |
+## Web
 
-Core pages are never copied into the extension. A missing customisation point is a
-core pull request adding a generic slot (or, rarely, an override id) with a test;
-look and feel changes go through design tokens and brand settings, never by
-replacing a component for its styling.
+- `EXTENSIONS=on` builds the web app with the extension's web code copied to
+  `web/src/extensions/` and its pages to `(extensions)` route groups (all
+  git-ignored here); unset, the `@extension/*` alias resolves to the empty
+  modules in `web/src/extension-default/`. A production build without the
+  switch refuses to run while a mount directory exists.
+- Navigation and settings rows carry `module`, `permission` and `grant`. A row
+  whose grant is off is not rendered, so a build without a grant shows exactly
+  the Community UI: no locked items, no upsell. The API gate is the security
+  boundary; the web only hides.
+- Strings go through the message catalogs (en and vi); an extension adds keys
+  and never replaces core ones.
 
-The aliases are set in `web/next.config.ts` and `web/console/next.config.ts`
-(`EDITION=ee` selects the extension, otherwise `src/extension-default`), in `vitest.config.ts`
-(always the stub), and typed by `src/lib/extension/ee-modules.d.ts`. A default
-production build refuses to run while an extension is mounted, and an `EDITION=ee`
-build without one fails to resolve.
+## Security model
 
+A compiled-in extension is fully trusted: it runs in the server's process
+with its memory and database credentials. The API's guarantees are guard
+rails and correct defaults, not a sandbox. Untrusted third-party code never
+runs in-process; it uses the public network surfaces instead (REST API with
+scoped API keys, CTIS ingest, the sensor protocol, notification webhooks,
+MCP). `/api/v1/version` lists the extensions a build contains, so an operator
+and support can tell a stock build from a custom one.
 
-## Brand pack and open-source notices
+## Testing
 
-Branding is data supplied by an extension, not a fork of the UI: a brand pack
-(product name, logos and icons, sign-in panel, e-mail header and footer,
-documentation, support and legal links) comes through the brand source
-extension point and `GET /api/v1/brand`; the default pack is OpenCTEM. An
-installation or an organization can carry its own pack (white-label) on the
-same mechanism. The About > Open-source licences page (third-party notices
-generated at build time) is part of every build: no brand pack, white-label or
-extension can remove or replace it, and a build that carries another brand
-still credits OpenCTEM there.
+- `extensiontest.Deps(db, e, opts)` returns the `Deps` the core would hand
+  `e`, built by the core's own implementations; `extensiontest.DB(t, e)` is a
+  private test database with the core migrations and `e`'s migrations
+  applied (it needs `DATABASE_URL` to name a database ending in `_test`).
+- Every extension's tests include: a route without the grant answers 403
+  `ADDON_NOT_LICENSED`; another organization's data is never visible (by id
+  and by filter); migrations up, down, up.
+- Core CI compiles and tests the example extension and the custom build on
+  every pull request; `pkg/extension/testdata/api.golden` records the exported
+  surface and changes to it get maintainer review.
 
-## Extension layout
+## Versions
 
-The extension repository uses the core's paths, so mounting is one copy per mount
-point and a path means the same in both trees: `api/ee/register.go` (the only
-wiring file), one directory per feature under `api/ee/` and `web/src/ee/`, the
-`ee` migration set under `api/ee/migrations/`, pages in the `(ee)` route groups.
-Every mount point is git-ignored here.
-
-## Testing and CI
-
-- **This repository, every pull request:** the edition fence; the contract tests
-  above; Community behaviour tests for every seam.
-- **The Enterprise extension's CI** (and any extension's, the same way): its tests and the core's extension tests with `-tags ee`,
-  the combined build, migrations core → `ee` up → down → up, cross-tenant
-  negatives for every Enterprise route, the upgrade test below; on every extension
-  pull request (against its pinned core commit), hourly against `develop`, and on
-  each release tag.
-- **No private code in public CI.** Workflows in this repository never check out
-  or receive credentials for any private extension: their logs are public and branch pull
-  requests run their own workflow files. An extension watches this repository
-  instead.
-
-## Versions and releases
-
-- The extension pins one core commit and moves it forward after its drift job is
-  green against `develop`.
-- One core tag `vX.Y.Z` builds the Community images here and, in the extension's
-  release job, the Enterprise images from the same commit. The Enterprise images
-  for a tag exist only once the extension suite passes on that tag; Community
-  releases never wait for them.
-- `/version` reports the edition.
+- `extension.APIVersion` is 1 until the core's 1.0 release. An extension
+  states the version it was written for as a literal, and the server refuses
+  to start on a mismatch.
+- Before 1.0 a breaking change goes expand (new form added, old kept), migrate
+  the extensions, contract (old form removed) within one release train, and
+  is listed under "Extension API" in the release notes. After 1.0 the `api`
+  module follows semantic versioning.
+- A custom build pins the core in its `go.mod` (a release tag or a commit).
+  Build and test it against the core's development branch regularly to catch
+  breaks early.
 
 ## Moving an installation between editions
 
-Same database, data, configuration and keys; only the images change.
-
-| From | To | Supported |
+| From | To | How |
 |---|---|---|
-| Community vX | Enterprise vX | always |
-| Community vX | Enterprise vY (Y > X) | along the normal upgrade path for X → Y |
-| Enterprise vX | Enterprise vY | core migrations, then the `ee` set |
-| Enterprise vX | Community vX | yes: schema `ee` stays, unused, and nothing is lost |
-| Enterprise vY | Community vX (X < Y) | no: restore the pre-upgrade backup, as for any downgrade |
+| Community vX | a custom build on core vX | swap the images; migrations apply the core set, then each extension's set in its schema |
+| a custom build | Community, same core version | swap back; the extension schemas stay and are ignored; its permission ids in stored roles are ignored |
+| a custom build on vY | Community vX, X < Y | not supported: restore the backup taken before the upgrade |
 
-Guarantees the core keeps:
+Nothing else changes on a swap: database, users, sessions and signing keys,
+sensors (no re-pairing), the encryption keys, SSO settings, API keys.
 
-- Nothing in the core reads, writes or drops schema `ee`; a Community server and
-  its migrations run unchanged on a database that has one.
-- Users, sessions, sensors (no re-pairing), API keys, SSO settings,
-  `APP_ENCRYPTION_KEY` and the fingerprint key are untouched by a swap.
-- Without a licence an Enterprise image behaves exactly like Community, so the
-  images can be swapped first and the licence activated afterwards.
-- A setting that only an extension understands stops a Community server with a
-  clear message, so moving back never drops a feature silently.
+## Licence
 
-Known limits: key rotation (`internal/app/rekey`) re-encrypts the current schema
-only, so extension tables keep no data encrypted with the application key until a
-rekey seam exists; extension table names never repeat a core table name.
-
-Procedure: back up (the backup dumps every schema), rehearse on a restored copy,
-switch the images (compose image names, Helm `edition` and registry values, the
-Ansible kit variable), start (migrations: core set, then `ee`), activate the
-licence, verify, and switch back to roll back.
-
-## Adding a paid feature or moving one
-
-1. Decide the tier; register the grant key (extension).
-2. Here: the seam with a Community default, a fake-extension contract test, a
-   Community-unchanged test, a row in [editions.md](editions.md); for a move, the
-   feature leaves the Community build and its tables stay; extension-only
-   settings go to `edition_guard.go`. Bump the contract version only for a break.
-3. Overlay: the feature, its registration, routes with permission and grant key,
-   tenant-scoped queries, `ee` migrations with `tenant_id` cascading to
-   `public.tenants`, tenant-data duties, tests (unlicensed, expired, cross-tenant,
-   out-of-scope), web under `web/src/ee/`, the pinned core commit moved to the
-   seam's merge commit.
-4. Docs: the docs-site Enterprise badge and upgrade notes.
-
-## Community, Enterprise and the hosted service
-
-| | Community | Enterprise (self-hosted) | Hosted service |
-|---|---|---|---|
-| Image | public | private registry, same version and core commit | the Enterprise image, unmodified |
-| Extension | none | the Enterprise extension | the Enterprise extension |
-| Who decides limits and grants | the operator | the licence | the service's control plane, through the internal admin API |
-| Extra behaviour | – | licence page, paid features | plan, usage and billing link, shown only when the API reports the deployment has them |
-
-Rules that keep one codebase for all three: no "is hosted" branches in core code
-(capabilities and entitlements only); plan limits are entitlements; the control
-plane talks to the platform only through the internal admin API (versioned,
-additive within a version, a new version served beside the old one for at least
-one release), never through the database; staff reach tenant data only through
-support access the tenant grants; the internal admin API is off unless configured.
+The core is GPL-3.0. A custom build that compiles an extension into the core
+and is distributed is a work based on the core and is distributed under the
+GPL. Closed third-party code uses the out-of-process surfaces listed under
+[Security model](#security-model).
