@@ -143,6 +143,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/vulnmatch"
 	wordlistapp "github.com/openctemio/openctem/api/internal/app/wordlist"
 	"github.com/openctemio/openctem/api/internal/config"
+	"github.com/openctemio/openctem/api/internal/extensionhost"
 	"github.com/openctemio/openctem/api/internal/infra/bountysource"
 	"github.com/openctemio/openctem/api/internal/infra/controller"
 	infrajira "github.com/openctemio/openctem/api/internal/infra/jira"
@@ -1052,6 +1053,11 @@ type Services struct {
 	SignupEvents *signupeventapp.Service
 	// Plans and limits.
 	Entitlement *entitlementapp.Service
+	// GrantProvider answers for grants; nil unless an extension of the
+	// build provides one.
+	GrantProvider limits.GrantProvider
+	// ExtensionHost is what the build's extensions get their Deps from.
+	ExtensionHost extensionhost.Host
 	// Idle Free workspaces (reminder, read-only, warnings, deletion due).
 	IdleWorkspaces *lifecycleapp.Service
 	// OrganizationGate refuses every credential of a suspended organization;
@@ -1131,6 +1137,8 @@ type ServiceDeps struct {
 	RedisClient *redis.Client
 	// IngestDB is the ingest pool (DB_INGEST_MAX_CONNS); nil uses the API's.
 	IngestDB *postgres.DB
+	// Extensions are the build's extensions (nil or empty: Community).
+	Extensions *extensionhost.Set
 }
 
 // NewServices initializes all services.
@@ -1166,6 +1174,16 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// invitations are checked where the rows are inserted. No source beyond
 	// the operator's own rows unless the internal API is on.
 	s.Entitlement = entitlementapp.NewService(repos.Limits, repos.AdminAuditLog, log)
+	// Grants (off unless granted) come only from an extension of the
+	// build; the Community build has none.
+	s.ExtensionHost = extensionhost.Host{
+		DB: deps.DB, Log: log, Production: cfg.IsProduction(), ManagedService: cfg.App.ManagedService,
+		Entitlements: extensionEntitlements{s.Entitlement},
+	}
+	if deps.DB != nil {
+		s.GrantProvider = deps.Extensions.Grants(context.Background(), s.ExtensionHost)
+		s.Entitlement.SetGrantProvider(s.GrantProvider)
+	}
 	if repos.PlatformSetting != nil {
 		s.StorageQuota = storagequota.NewService(repos.PlatformSetting, s.Entitlement, s.SettingRecorder, cfg.Storage.TenantQuotaMB)
 	}
