@@ -170,6 +170,8 @@ probe api POST /api/v1/auth/saml/acme/acs
 probe api GET /api/v1/auth/saml/acme/metadata
 probe api POST /api/v1/auth/backchannel-logout
 probe api GET /api/v1/ws
+probe api POST /api/v1/ci/oidc/exchange
+probe api POST /api/v1/ci/runs/r1/results -H "Authorization: Bearer run-token"
 probe api GET /health
 probe api GET /openapi.yaml
 probe api GET /docs
