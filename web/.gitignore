@@ -59,3 +59,5 @@ next-env.d.ts
 
 # sentry configs (temporary, until package installed)
 /sentry-configs
+# third-party notices, generated at image build (scripts/third-party-notices.mjs)
+/third-party-notices.json
