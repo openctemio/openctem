@@ -71,6 +71,9 @@ func printAuditReport(w io.Writer, r *admin.AuditChainReport, asJSON bool) {
 		fmt.Fprintf(w, ", pruned up to %d", r.AnchorPosition)
 	}
 	fmt.Fprintln(w)
+	if r.Head != nil {
+		fmt.Fprintf(w, "chain head: position %d  hash %s\n", r.Head.Position, r.Head.Hash)
+	}
 	if r.OK() {
 		fmt.Fprintln(w, "OK: every row verifies")
 		return

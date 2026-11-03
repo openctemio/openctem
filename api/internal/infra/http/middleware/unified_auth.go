@@ -236,6 +236,7 @@ func UnifiedAuth(cfg UnifiedAuthConfig) func(http.Handler) http.Handler {
 			// Update the context logger with user_id and tenant_id
 			// so downstream services using logger.FromContext(ctx) get
 			// request-correlated logs automatically.
+			notePrincipal(ctx)
 			if ctxLogger := logger.FromContext(ctx); ctxLogger != nil {
 				enriched := ctxLogger.WithContext(ctx)
 				ctx = logger.ToContext(ctx, enriched)
