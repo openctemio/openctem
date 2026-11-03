@@ -116,6 +116,9 @@ func ciRunKeys(t *testing.T, g *goldenRig, run shared.ID) map[string]bool {
 		}
 		out[k] = true
 	}
+	if err := rs.Err(); err != nil {
+		t.Fatal(err)
+	}
 	return out
 }
 
