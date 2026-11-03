@@ -5,7 +5,12 @@ import userEvent from '@testing-library/user-event'
 import { actOnSharedSensor } from '@console/features/admin-console/api/use-shared-fleet'
 import PlatformSensorsPage from '../page'
 
-const state = vi.hoisted(() => ({ role: 'readonly' as string, ready: false, fleetError: false }))
+const state = vi.hoisted(() => ({
+  role: 'readonly' as string,
+  ready: false,
+  fleetError: false,
+  relay: true,
+}))
 
 function swr(data: unknown) {
   return { data, error: undefined, isLoading: false, mutate: vi.fn() }
@@ -38,7 +43,7 @@ vi.mock('@console/features/admin-console/api/use-shared-fleet', () => ({
               status: 'active',
               health: 'online',
               version: 'v1.2.3',
-              tools: ['feed.relay'],
+              tools: state.relay ? ['feed.relay'] : ['nuclei'],
               current_jobs: 0,
               max_jobs: 4,
               created_at: '2026-10-01T00:00:00Z',
@@ -54,6 +59,7 @@ describe('Platform sensors page', () => {
     vi.clearAllMocks()
     state.ready = false
     state.fleetError = false
+    state.relay = true
   })
 
   it('shows enroll card, sensors and zones while shared scanning is not available', () => {
@@ -63,6 +69,17 @@ describe('Platform sensors page', () => {
     expect(screen.getAllByText('relay-01').length).toBeGreaterThan(0)
     expect(screen.getByTestId('sensors-shared-scanning-closed')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Pause/ })).not.toBeInTheDocument()
+  })
+
+  it('names the feed relay role only when a sensor advertises it', () => {
+    const { unmount } = render(<PlatformSensorsPage />)
+    expect(screen.getByTestId('sensors-shared-scanning-closed').textContent).toMatch(/feed relay/)
+    unmount()
+    state.relay = false
+    render(<PlatformSensorsPage />)
+    const note = screen.getByTestId('sensors-shared-scanning-closed').textContent ?? ''
+    expect(note).toMatch(/passive discovery, AI worker/)
+    expect(note).not.toMatch(/feed relay/)
   })
 
   it('drops the gate notice once shared scanning is ready', () => {

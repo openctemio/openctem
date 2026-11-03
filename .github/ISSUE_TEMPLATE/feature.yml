@@ -1,0 +1,29 @@
+name: Feedback or feature request
+description: Suggest an improvement or tell us what is missing.
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the idea. **Do not report a security vulnerability here** (issues are public): follow [SECURITY.md](https://github.com/openctemio/openctem/security/policy).
+
+        Do not paste organization names, e-mail addresses, domains or finding data.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do
+      description: The problem or the workflow, not the solution.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would help
+      description: How you would like it to work, and what you do today instead.
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Help > About OpenCTEM.
+      placeholder: v0.16.0

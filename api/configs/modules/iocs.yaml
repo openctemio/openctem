@@ -6,6 +6,7 @@
   icon: Fingerprint
   category: operations
   order: 84
+  user_facing: true
   permission: "threat_intel:read"
   depends:
     - {id: threat_intel, kind: soft, reason: "IOC enrichment pulls from threat intel feeds"}

@@ -63,6 +63,20 @@ export function identityFieldLabel(t: T, name: string): string {
       return t('findings.identity.field.policy', 'policy')
     case 'resource':
       return t('findings.identity.field.resource', 'resource')
+    case 'framework':
+      return t('findings.identity.field.framework', 'compliance framework')
+    case 'control':
+      return t('findings.identity.field.control', 'control')
+    case 'chain':
+      return t('findings.identity.field.chain', 'chain')
+    case 'address':
+      return t('findings.identity.field.address', 'contract address')
+    case 'function':
+      return t('findings.identity.field.function', 'function')
+    case 'start':
+      return t('findings.identity.field.start', 'start line')
+    case 'end':
+      return t('findings.identity.field.end', 'end line')
     case 'message':
       return t('findings.identity.field.message', 'message')
     case 'campaign':
@@ -74,21 +88,31 @@ export function identityFieldLabel(t: T, name: string): string {
   }
 }
 
-/** The name of the recipe ("Package vulnerability", "Manual finding key"). */
+/**
+ * The name of the recipe ("Package vulnerability", "Manual finding key").
+ * Versions 2 and 3 key the same identity fields (version 3 hashes them with
+ * the CTIS fingerprint recipe v2), so both read the same.
+ */
 export function identityAlgoLabel(t: T, algo: string): string {
-  switch (algo) {
-    case 'v2/sca':
+  switch (algo.replace(/^v[23]\//, 'v/')) {
+    case 'v/sca':
       return t('findings.identity.algo.sca', 'Package vulnerability')
-    case 'v2/sast':
+    case 'v/sast':
       return t('findings.identity.algo.sast', 'Code issue')
-    case 'v2/secret':
+    case 'v/secret':
       return t('findings.identity.algo.secret', 'Secret')
-    case 'v2/dast':
+    case 'v/dast':
       return t('findings.identity.algo.dast', 'Web application issue')
-    case 'v2/network':
+    case 'v/network':
       return t('findings.identity.algo.network', 'Network vulnerability')
-    case 'v2/misconfig':
+    case 'v/misconfig':
       return t('findings.identity.algo.misconfig', 'Misconfiguration')
+    case 'v/compliance':
+      return t('findings.identity.algo.compliance', 'Compliance control')
+    case 'v/web3':
+      return t('findings.identity.algo.web3', 'Smart contract issue')
+    case 'v/generic':
+      return t('findings.identity.algo.generic', 'Rule and location')
     case 'v1/ingest':
       return t('findings.identity.algo.ingestV1', 'Earlier scanner key')
     case 'manual/v1':

@@ -34,3 +34,20 @@ var _ = registerActions("ai_settings", map[Action]Severity{
 	ActionAIMaskingPreviewed:      SeverityLow,
 	ActionAIAutoTriageUpdated:     SeverityMedium,
 })
+
+// Per-use-case AI settings (docs/architecture/ai-use-cases.md).
+const (
+	// ActionAIUseCaseUpdated records a change of one AI use case's mode,
+	// data class ceiling or minimum confidence. A loosening (auto-apply on,
+	// ceiling above internal, lower confidence while auto-applying) is
+	// audited critical.
+	ActionAIUseCaseUpdated Action = "ai_use_case.updated"
+	// ActionAIUseCaseDowngraded records the automatic fall-back of a use
+	// case from auto-apply to suggest, after people overrode its results.
+	ActionAIUseCaseDowngraded Action = "ai_use_case.downgraded"
+)
+
+var _ = registerActions("ai_use_case", map[Action]Severity{
+	ActionAIUseCaseUpdated:    SeverityMedium,
+	ActionAIUseCaseDowngraded: SeverityHigh,
+})

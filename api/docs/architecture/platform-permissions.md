@@ -220,6 +220,8 @@ session, no permission). `public`: a sign-in step before a session exists.
 | `GET /api/v1/admin/settings/email/` | `platform.settings.read` |
 | `PUT /api/v1/admin/settings/email/` | `platform.settings.email.write` |
 | `POST /api/v1/admin/settings/email/test` | `platform.settings.email.write` |
+| `GET /api/v1/admin/settings/feed-relay/` | `platform.settings.read` |
+| `PUT /api/v1/admin/settings/feed-relay/` | `platform.settings.general.write` |
 | `GET /api/v1/admin/settings/legal/` | `platform.settings.read` |
 | `PUT /api/v1/admin/settings/legal/` | `platform.settings.legal.write` |
 | `GET /api/v1/admin/settings/limits/` | `platform.settings.read` |
@@ -293,6 +295,8 @@ session, no permission). `public`: a sign-in step before a session exists.
 | `GET /api/v1/admin/tenants/{tenantId}/modules` | `platform.tenants.read` |
 | `DELETE /api/v1/admin/tenants/{tenantId}/modules/{module_id}/deny` | `platform.tenants.limits.write` |
 | `PUT /api/v1/admin/tenants/{tenantId}/modules/{module_id}/deny` | `platform.tenants.limits.write` |
+| `DELETE /api/v1/admin/tenants/{tenantId}/owner-invitation` | `platform.tenants.owner_bootstrap` |
+| `POST /api/v1/admin/tenants/{tenantId}/owner-invitation/resend` | `platform.tenants.owner_bootstrap` |
 | `POST /api/v1/admin/tenants/{tenantId}/purge` | `platform.tenants.purge` |
 | `GET /api/v1/admin/tenants/{tenantId}/scan-approval-policy` | `platform.tenants.read` |
 | `PUT /api/v1/admin/tenants/{tenantId}/scan-approval-policy` | `platform.tenants.scan_policy.write` |

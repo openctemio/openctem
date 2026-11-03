@@ -319,7 +319,7 @@ export function OrganizationAuditChainPanel({
                       'Entries that do not verify'
                     )}
                   </h3>
-                  <div className="overflow-x-auto rounded-lg border">
+                  <div className="rounded-lg border">
                     <Table>
                       <TableHeader>
                         <TableRow>

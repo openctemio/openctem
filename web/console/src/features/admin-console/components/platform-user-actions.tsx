@@ -14,6 +14,7 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
+import { DangerZone, DangerZoneItem } from '@/features/shared'
 import { useTranslation } from '@/context/i18n-provider'
 import { OneTimeLinkDialog } from '@/components/one-time-link-dialog'
 import { issuePlatformUserResetLink, runPlatformUserAction } from '../api/use-platform-users'
@@ -158,37 +159,84 @@ export function PlatformUserActions({
   user,
   onDone,
   isSuperAdmin = false,
+  part = 'routine',
 }: {
   user: PlatformUserDetail
   onDone: () => void
   /** The signed-in administrator is a super admin (offers the recovery actions). */
   isSuperAdmin?: boolean
+  /**
+   * routine: the everyday actions, under the account's name; danger: the ones
+   * that cut the person off (sign out everywhere, reset two-factor, block),
+   * in the shared danger zone at the end of the page.
+   */
+  part?: 'routine' | 'danger'
 }) {
   const { t } = useTranslation()
   const [open, setOpen] = useState<ActionSpec | null>(null)
   const [resetLink, setResetLink] = useState<{ link: string; expiresAt: string } | null>(null)
   const unavailable = user.is_platform_admin || user.erased
+  const offered = ACTIONS.filter(
+    (a) =>
+      (!a.superOnly || isSuperAdmin) && a.available(user) && !!a.destructive === (part === 'danger')
+  )
+
+  if (part === 'danger') {
+    if (unavailable || offered.length === 0) return null
+    return (
+      <>
+        <DangerZone>
+          {offered.map((a) => (
+            <DangerZoneItem
+              key={a.action}
+              title={t(a.labelKey, a.label)}
+              description={t(a.whatKey, a.what, { email: user.email })}
+              action={
+                <Button size="sm" variant="destructive" onClick={() => setOpen(a)}>
+                  <a.icon className="me-2 size-4" aria-hidden />
+                  {t(a.labelKey, a.label)}
+                </Button>
+              }
+            />
+          ))}
+        </DangerZone>
+        {open && (
+          <AdminConfirmDialog
+            open
+            onOpenChange={(next) => !next && setOpen(null)}
+            title={t(open.labelKey, open.label)}
+            description={<p>{t(open.whatKey, open.what, { email: user.email })}</p>}
+            confirmLabel={t(open.labelKey, open.label)}
+            destructive
+            onConfirm={async ({ reason }) => {
+              await runPlatformUserAction(user.id, open.action, reason)
+              toast.success(t(open.doneKey, open.done))
+              onDone()
+            }}
+          />
+        )}
+      </>
+    )
+  }
 
   return (
     <>
-      <div className="flex flex-wrap gap-2">
-        {/* A destructive action after routine ones is set apart from them. */}
-        {ACTIONS.filter((a) => (!a.superOnly || isSuperAdmin) && a.available(user)).map(
-          (a, i, all) => (
+      {offered.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {offered.map((a) => (
             <Button
               key={a.action}
               size="sm"
-              variant={a.destructive ? 'destructive' : 'outline'}
-              className={a.destructive && i > 0 && !all[i - 1].destructive ? 'ms-4' : undefined}
+              variant="outline"
               disabled={unavailable}
               onClick={() => setOpen(a)}
             >
-              <a.icon className="me-2 size-4" />
+              <a.icon className="me-2 size-4" aria-hidden />
               {t(a.labelKey, a.label)}
             </Button>
-          )
-        )}
-      </div>
+          ))}
+        </div>
+      )}
       {user.blocked && !unavailable && (
         <p className="text-sm text-muted-foreground">
           {user.blocked_reason

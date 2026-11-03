@@ -1,7 +1,7 @@
 'use client'
 
 import { useBrand } from '@/context/brand-provider'
-import { useEffect, useId, useState } from 'react'
+import { useCallback, useEffect, useId, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { ConfirmDialog } from '@/components/confirm-dialog'
@@ -9,8 +9,10 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
 import { Switch } from '@/components/ui/switch'
 import { useTranslation } from '@/context/i18n-provider'
+import { SettingsSaveBar } from '@/features/shared/components/settings-save-bar'
 import type { EmailSettingsResponse } from '@/lib/api/generated'
 import { AdminApiError } from '@console/lib/admin-api/client'
 import { saveEmailSettings, sendTestEmail } from '../api/use-email-settings'
@@ -45,6 +47,24 @@ function toForm(s: EmailSettingsResponse): FormState {
   }
 }
 
+/** Failure reasons the API names for a test e-mail; each has an admin.email.testFailed.<reason> text. */
+const TEST_REASONS = [
+  'unknown_authority',
+  'hostname_mismatch',
+  'certificate_invalid',
+  'tls_failed',
+  'auth_failed',
+  'auth_required',
+  'sender_rejected',
+  'relay_denied',
+  'host_rejected',
+  'connect_failed',
+  'timeout',
+  'not_configured',
+  'no_address',
+  'unknown',
+]
+
 /**
  * System > E-mail: the platform's SMTP server, used for sign-up, invitations,
  * verification and password e-mails when an organization has no e-mail
@@ -58,6 +78,8 @@ export function EmailSettingsForm({ settings, canEdit, onSaved }: EmailSettingsF
   const [form, setForm] = useState<FormState>(() => toForm(settings))
   const [password, setPassword] = useState('')
   const [clearPassword, setClearPassword] = useState(false)
+  const [caPem, setCaPem] = useState('')
+  const [clearCa, setClearCa] = useState(false)
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [code, setCode] = useState('')
   const codeOptional = useStepUpCodeOptional()
@@ -65,11 +87,15 @@ export function EmailSettingsForm({ settings, canEdit, onSaved }: EmailSettingsF
   const [busy, setBusy] = useState(false)
   const [testing, setTesting] = useState(false)
 
-  useEffect(() => {
+  // The saved values: on load, after a save and on Discard.
+  const reset = useCallback(() => {
     setForm(toForm(settings))
     setPassword('')
     setClearPassword(false)
+    setCaPem('')
+    setClearCa(false)
   }, [settings])
+  useEffect(reset, [reset])
 
   const set = <K extends keyof FormState>(k: K, v: FormState[K]) =>
     setForm((f) => ({ ...f, [k]: v }))
@@ -77,6 +103,8 @@ export function EmailSettingsForm({ settings, canEdit, onSaved }: EmailSettingsF
   const dirty =
     password !== '' ||
     clearPassword ||
+    caPem.trim() !== '' ||
+    clearCa ||
     (Object.keys(form) as (keyof FormState)[]).some((k) => form[k] !== original[k])
 
   const save = async () => {
@@ -93,6 +121,8 @@ export function EmailSettingsForm({ settings, canEdit, onSaved }: EmailSettingsF
         from: form.from.trim(),
         from_name: form.fromName.trim(),
         starttls: form.starttls,
+        // Omitted: keep the stored CA bundle.
+        ...(clearCa ? { ca_pem: '' } : caPem.trim() !== '' ? { ca_pem: caPem.trim() } : {}),
         version: settings.version ?? 0,
         totp_code: code.trim(),
       })
@@ -132,9 +162,13 @@ export function EmailSettingsForm({ settings, canEdit, onSaved }: EmailSettingsF
       await sendTestEmail()
       toast.success(t('admin.email.testSent', 'Test e-mail sent to your address'))
     } catch (e) {
+      const reason =
+        e instanceof AdminApiError && e.details && typeof e.details === 'object'
+          ? (e.details as { reason?: string }).reason
+          : undefined
       toast.error(
-        e instanceof Error
-          ? e.message
+        reason && TEST_REASONS.includes(reason)
+          ? t(`admin.email.testFailed.${reason}`, 'The test e-mail could not be sent')
           : t('admin.email.testFailed', 'The test e-mail could not be sent')
       )
     } finally {
@@ -259,6 +293,55 @@ export function EmailSettingsForm({ settings, canEdit, onSaved }: EmailSettingsF
             />
           </div>
 
+          <div className="grid gap-1.5">
+            <Label htmlFor={`${id}-ca`}>{t('admin.email.ca', 'Internal CA certificate')}</Label>
+            <Textarea
+              id={`${id}-ca`}
+              value={caPem}
+              onChange={(e) => {
+                setCaPem(e.target.value)
+                setClearCa(false)
+              }}
+              disabled={!canEdit || clearCa}
+              rows={4}
+              spellCheck={false}
+              autoComplete="off"
+              className="font-mono text-xs"
+              placeholder={
+                settings.ca_set
+                  ? t('admin.email.caKeep', 'Stored. Paste a new PEM bundle to replace it.')
+                  : '-----BEGIN CERTIFICATE-----'
+              }
+            />
+            <p className="text-sm text-muted-foreground">
+              {t(
+                'admin.email.caHelp',
+                'Only if your mail server uses a certificate from your own certificate authority. Paste the CA certificate (PEM, certificates only, never a private key). It is used only to verify this server and is never shown again.'
+              )}
+            </p>
+            {settings.ca_set && (
+              <p className="text-sm text-muted-foreground">
+                {t(
+                  'admin.email.caFingerprint',
+                  'Stored bundle fingerprint (SHA-256): {fp}'
+                ).replace('{fp}', settings.ca_fingerprint ?? '')}
+              </p>
+            )}
+            {settings.ca_set && canEdit && (
+              <label className="flex items-center gap-2 text-sm text-muted-foreground">
+                <input
+                  type="checkbox"
+                  checked={clearCa}
+                  onChange={(e) => {
+                    setClearCa(e.target.checked)
+                    setCaPem('')
+                  }}
+                />
+                {t('admin.email.caClear', 'Remove the stored CA certificate')}
+              </label>
+            )}
+          </div>
+
           <div className="flex flex-wrap items-center justify-end gap-3">
             {canEdit && (
               <Button
@@ -271,16 +354,17 @@ export function EmailSettingsForm({ settings, canEdit, onSaved }: EmailSettingsF
               </Button>
             )}
             {canEdit && (
-              <Button
-                onClick={() => {
+              <SettingsSaveBar
+                className="basis-full"
+                dirty={dirty}
+                saving={busy}
+                onSave={() => {
                   setCode('')
                   setCodeError(null)
                   setConfirmOpen(true)
                 }}
-                disabled={!dirty || busy}
-              >
-                {t('admin.email.save', 'Save')}
-              </Button>
+                onDiscard={reset}
+              />
             )}
           </div>
           {!canEdit && (

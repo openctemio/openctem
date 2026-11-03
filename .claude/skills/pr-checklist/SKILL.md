@@ -15,8 +15,8 @@ description: What a pull request in this repository needs before it is ready - v
 
 ## Verify (from `api/` or `web/`)
 - API: `GOWORK=off go build ./... && GOWORK=off go vet ./...`; tests of the touched packages (integration
-  tests against a scratch Postgres and Redis); `make lint-new` (golangci-lint pinned to v1.64.8 with
-  `--new-from-rev=origin/develop`; a global v2 binary rejects the v1 config). If lint reports findings in
+  tests against a scratch Postgres and Redis); `make lint-new` (golangci-lint pinned to v2.14.0 with
+  `--new-from-rev=origin/develop`; use the Makefile's pin, not a global binary). If lint reports findings in
   files you did not touch, your branch lags `develop`: merge it and rerun.
 - Web: `npm run validate` (type-check, eslint, prettier) and `npx vitest run <touched paths>`.
 - A test that fails without the change, plus a real functional check (call the endpoint, load the page).

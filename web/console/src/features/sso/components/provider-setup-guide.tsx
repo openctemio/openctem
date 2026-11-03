@@ -9,15 +9,12 @@ export function ssoRedirectUri(appUrl: string, provider: SSOProviderType): strin
   return `${appUrl}/auth/sso/callback/${provider}`
 }
 
-/** The address the identity provider calls when a person signs out or is disabled. */
-export function ssoBackchannelLogoutUrl(appUrl: string): string {
-  return `${appUrl}/api/v1/auth/backchannel-logout`
-}
-
 /**
  * What to enter at the identity provider before filling in the form below:
- * the redirect URI (every provider) and, for Microsoft Entra ID, the logout
- * URL and the optional claims the sign-in depends on.
+ * the redirect URI (every provider) and, for Microsoft Entra ID, the optional
+ * claims the sign-in depends on. Entra ID sends no back-channel logout, so no
+ * logout address is offered: ending access when a person leaves goes through
+ * SCIM deprovisioning.
  */
 export function ProviderSetupGuide({
   provider,
@@ -41,20 +38,8 @@ export function ProviderSetupGuide({
             label={t('admin.ssoSetupGuide.redirectUri', 'Redirect URI (type: Web)')}
             url={ssoRedirectUri(appUrl, provider)}
           />
-          {isEntra && (
-            <CopyableUrl
-              label={t(
-                'admin.ssoSetupGuide.logoutUrl',
-                'Front-channel logout URL (enables sign-out of {product} sessions)'
-              )}
-              url={ssoBackchannelLogoutUrl(appUrl)}
-            />
-          )}
           <p className="text-muted-foreground text-xs">
-            {t(
-              'admin.ssoSetupGuide.addressHint',
-              'These use the address in APP_URL. If the API is published on a different address, use that address for the logout URL.'
-            )}
+            {t('admin.ssoSetupGuide.redirectHint', 'This uses the address in APP_URL.')}
           </p>
         </div>
       ) : (
@@ -85,14 +70,13 @@ export function ProviderSetupGuide({
               <code>auth_time</code>{' '}
               {t('admin.ssoSetupGuide.claimAuthTime', '(needed for step-up re-authentication).')}
             </li>
-            <li>
-              <code>sid</code>{' '}
-              {t(
-                'admin.ssoSetupGuide.claimSid',
-                '(signs out one {product} session; without it a sign-out ends all of the user sessions).'
-              )}
-            </li>
           </ul>
+          <p className="text-muted-foreground text-xs">
+            {t(
+              'admin.ssoSetupGuide.entraRevocation',
+              'Disabling or deleting a user in Entra ID does not end their {product} sessions. Turn on SCIM provisioning to remove access as soon as a person is removed in Entra ID.'
+            )}
+          </p>
           <p className="text-muted-foreground text-xs">
             {t(
               'admin.ssoSetupGuide.secretExpiry',

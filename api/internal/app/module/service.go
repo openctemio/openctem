@@ -3,7 +3,12 @@ package module
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
+	"hash/fnv"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -68,6 +73,12 @@ type EntitlementReader interface {
 	// NotEntitled maps each module the organization may not use to the end of
 	// its read-only grace (nil: no access).
 	NotEntitled(ctx context.Context, tenantID string) (map[string]*time.Time, error)
+}
+
+// deadlineEntitlementReader is an EntitlementReader that also tells when its
+// answer next changes without a write (*entitlement.Service).
+type deadlineEntitlementReader interface {
+	NotEntitledWithDeadline(ctx context.Context, tenantID string) (map[string]*time.Time, *time.Time, error)
 }
 
 // Reasons a module is off for an organization (MODULE_NOT_ENABLED details).
@@ -181,9 +192,49 @@ func (s *ModuleService) SetEntitlements(e EntitlementReader) {
 // returned value is opaque to callers (treat as a token, not a count).
 func (s *ModuleService) GetTenantModuleVersion(ctx context.Context, tenantID string) int {
 	if s.versionService == nil {
-		return 1
+		return 0
 	}
 	return s.versionService.Get(ctx, tenantID)
+}
+
+var (
+	registryTagOnce sync.Once
+	registryTag     string
+)
+
+// registryFingerprint hashes the module registry, so a deploy that renames a
+// module or changes what it needs changes every ETag.
+func registryFingerprint() string {
+	registryTagOnce.Do(func() {
+		b, _ := json.Marshal(moduledom.Registry)
+		sum := sha256.Sum256(b)
+		registryTag = hex.EncodeToString(sum[:8])
+	})
+	return registryTag
+}
+
+// ETagToken names the module state of an organization for an ETag: the
+// version counter (every toggle and entitlement write bumps it, on every
+// replica at once), a hash of the effective state of every module (a grace or
+// a timed deny that ended, an entitlement reader that recovered after a
+// failure, and a counter lost to a Redis flush all change the state or the
+// counter, never neither), and the registry fingerprint (a deploy). It carries
+// no module id or reason.
+func (s *ModuleService) ETagToken(ctx context.Context, tenantID string) string {
+	states, _, _ := s.TenantModuleStateSnapshot(ctx, tenantID)
+	ids := make([]string, 0, len(states))
+	for id := range states {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	// A change fingerprint, not a secret and not a password hash: FNV-1a is
+	// enough to tell two states apart.
+	h := fnv.New64a()
+	for _, id := range ids {
+		_, _ = fmt.Fprintf(h, "%s\x00%s\x00", id, states[id])
+	}
+	return fmt.Sprintf("v%d.%s.%s", s.GetTenantModuleVersion(ctx, tenantID),
+		hex.EncodeToString(h.Sum(nil)), registryFingerprint())
 }
 
 // notifyModuleChange increments the version and broadcasts a
@@ -296,6 +347,11 @@ func (s *ModuleService) GetTenantEnabledModules(ctx context.Context, tenantID st
 		if r == ReasonReadOnlyGrace {
 			readOnly = s.readOnlyUntil(ctx, tenantID)
 			break
+		}
+	}
+	for id := range readOnly {
+		if states[id] != ReasonReadOnlyGrace {
+			delete(readOnly, id)
 		}
 	}
 	return &GetTenantEnabledModulesOutput{
@@ -570,17 +626,9 @@ func (s *ModuleService) applyTenantModuleUpdates(ctx context.Context, tenantID s
 	// their SWR cache and refetch immediately.
 	s.notifyModuleChange(ctx, tenantID)
 
-	// Re-derive the states from the applied updates instead of re-querying
-	// the DB (saves one round-trip per toggle request). Entitlement reasons
-	// stay: switching on a module that is not entitled was refused above.
-	for _, u := range updates {
-		switch {
-		case !u.IsEnabled && states[u.ModuleID] == "":
-			states[u.ModuleID] = ReasonDisabledByAdmin
-		case u.IsEnabled && states[u.ModuleID] == ReasonDisabledByAdmin:
-			delete(states, u.ModuleID)
-		}
-	}
+	// Read the states again: a module switched on or off changes the state of
+	// the modules that hard-require it (InheritOffFromHardDependencies).
+	states = s.moduleStates(ctx, tenantID)
 	out, buildErr := s.buildTenantModuleConfigFromMaps(tenantID, allModules, states)
 	if buildErr != nil {
 		return nil, buildErr
@@ -823,18 +871,39 @@ func (s *ModuleService) readOnlyUntil(ctx context.Context, tenantID string) map[
 		return out
 	}
 	now := time.Now()
+	inGrace := map[string]string{}
 	for id, until := range notEntitled {
 		if until != nil && now.Before(*until) {
 			out[id] = *until
+			inGrace[id] = ReasonReadOnlyGrace
+		}
+	}
+	// A dependent of a module in grace is read-only until the same date.
+	for id, src := range moduledom.InheritOffFromHardDependencies(inGrace) {
+		if _, own := notEntitled[id]; !own {
+			out[id] = out[src]
 		}
 	}
 	return out
 }
 
 func (s *ModuleService) moduleStates(ctx context.Context, tenantID string) map[string]string {
-	states := make(map[string]string)
+	states, _, _ := s.TenantModuleStateSnapshot(ctx, tenantID)
+	return states
+}
+
+// TenantModuleStateSnapshot is TenantModuleStates plus what a cache of it
+// needs: validUntil, the next moment the state changes by itself (a read-only
+// grace ends, a timed deny runs out; zero: no such moment), and cacheable,
+// false when a read failed (the entitlement could not be read, so every
+// non-core module is reported unavailable, or the organization's preferences
+// could not be read). A caller must not keep an uncacheable answer: it is the
+// failure, not the organization's state.
+func (s *ModuleService) TenantModuleStateSnapshot(ctx context.Context, tenantID string) (states map[string]string, validUntil time.Time, cacheable bool) {
+	states = make(map[string]string)
+	cacheable = true
 	if _, err := shared.IDFromString(tenantID); err != nil {
-		return states
+		return states, validUntil, cacheable
 	}
 
 	// Preference: the organization's explicit-off overrides. A lookup error
@@ -844,6 +913,7 @@ func (s *ModuleService) moduleStates(ctx context.Context, tenantID string) map[s
 		overrides, err := s.tenantModuleRepo.ListByTenant(ctx, parsedID)
 		if err != nil {
 			s.logger.Warn("failed to get tenant module overrides", "tenant_id", tenantID, "error", err)
+			cacheable = false
 		}
 		for _, o := range overrides {
 			if !o.IsEnabled {
@@ -854,7 +924,17 @@ func (s *ModuleService) moduleStates(ctx context.Context, tenantID string) map[s
 
 	// Entitlement: fail-closed.
 	if s.entitlements != nil {
-		notEntitled, err := s.entitlements.NotEntitled(ctx, tenantID)
+		var notEntitled map[string]*time.Time
+		var err error
+		if dr, ok := s.entitlements.(deadlineEntitlementReader); ok {
+			var next *time.Time
+			notEntitled, next, err = dr.NotEntitledWithDeadline(ctx, tenantID)
+			if next != nil {
+				validUntil = *next
+			}
+		} else {
+			notEntitled, err = s.entitlements.NotEntitled(ctx, tenantID)
+		}
 		if err != nil {
 			s.logger.Warn("module entitlement unavailable; treating non-core modules as off (fail-closed)",
 				"tenant_id", tenantID, "error", err)
@@ -863,7 +943,7 @@ func (s *ModuleService) moduleStates(ctx context.Context, tenantID string) map[s
 					states[d.ID] = ReasonUnavailable
 				}
 			}
-			return states
+			return states, time.Time{}, false
 		}
 		now := time.Now()
 		for id, until := range notEntitled {
@@ -877,7 +957,11 @@ func (s *ModuleService) moduleStates(ctx context.Context, tenantID string) map[s
 			}
 		}
 	}
-	return states
+	// A module cannot be on while a module it hard-requires is off: it takes
+	// that module's reason, so a deny of a dependency reaches its dependents'
+	// routes, jobs and MCP tools too.
+	moduledom.InheritOffFromHardDependencies(states)
+	return states, validUntil, cacheable
 }
 
 // applySubModuleInheritance enables a parent's "<parent>.<sub>" sub-modules in
@@ -989,10 +1073,13 @@ type ModulePresetOutput struct {
 
 // PresetDiffOutput describes what would change if a preset were applied.
 type PresetDiffOutput struct {
-	PresetID    string            `json:"preset_id"`
-	PresetName  string            `json:"preset_name"`
-	ToEnable    []ModuleRefOutput `json:"to_enable"`
-	ToDisable   []ModuleRefOutput `json:"to_disable"`
+	PresetID   string            `json:"preset_id"`
+	PresetName string            `json:"preset_name"`
+	ToEnable   []ModuleRefOutput `json:"to_enable"`
+	ToDisable  []ModuleRefOutput `json:"to_disable"`
+	// Unavailable lists modules the preset names that this organization is
+	// not entitled to: the preset leaves them off instead of failing.
+	Unavailable []ModuleRefOutput `json:"unavailable,omitempty"`
 	Unchanged   int               `json:"unchanged"`
 	TotalAfter  int               `json:"total_after"`
 	AuditNotice string            `json:"audit_notice,omitempty"`
@@ -1106,7 +1193,7 @@ func (s *ModuleService) buildPresetDiff(ctx context.Context, tenantID string, p 
 	// Sub-module inheritance: a parent enabled in the preset implicitly enables
 	// its "<parent>.<sub>" sub-modules.
 	applySubModuleInheritance(target, allModules)
-	disabledNow := s.getTenantDisabledModules(ctx, tenantID)
+	states := s.moduleStates(ctx, tenantID)
 
 	diff := &PresetDiffOutput{
 		PresetID:   p.ID,
@@ -1120,9 +1207,22 @@ func (s *ModuleService) buildPresetDiff(ctx context.Context, tenantID string, p 
 	for _, m := range allModules {
 		id := m.ID()
 		wantEnabled := target[id]
-		currentlyEnabled := m.IsActive() && !disabledNow[id]
+		currentlyEnabled := m.IsActive() && states[id] == ""
 
 		switch {
+		case !m.IsCore() && !moduledom.IsUserFacing(id):
+			// A module not listed on Settings > Modules keeps its state: a
+			// preset must not switch off what the page cannot switch back on.
+			diff.Unchanged++
+			if currentlyEnabled {
+				diff.TotalAfter++
+			}
+			continue
+		case wantEnabled && !currentlyEnabled && !m.IsCore() && !entitledState(states[id]):
+			// Not entitled (or in its read-only grace): the organization
+			// cannot switch it on, so the preset leaves it off.
+			diff.Unavailable = append(diff.Unavailable, ModuleRefOutput{ModuleID: id, Name: m.Name()})
+			continue
 		case wantEnabled && !currentlyEnabled:
 			diff.ToEnable = append(diff.ToEnable, ModuleRefOutput{ModuleID: id, Name: m.Name()})
 		case !wantEnabled && currentlyEnabled && !m.IsCore():
@@ -1145,6 +1245,12 @@ func (s *ModuleService) buildPresetDiff(ctx context.Context, tenantID string, p 
 // logPresetApplied records the preset choice separately from the
 // underlying toggle audit, so auditors can reconstruct "admin applied
 // VM Essentials" without parsing toggle-level rows.
+// entitledState reports whether an off reason still lets the organization
+// switch the module on (only its own preference turned it off).
+func entitledState(reason string) bool {
+	return reason != ReasonNotEntitled && reason != ReasonUnavailable && reason != ReasonReadOnlyGrace
+}
+
 func (s *ModuleService) logPresetApplied(ctx context.Context, actx auditapp.AuditContext, tenantID string, p *moduledom.ModulePreset) {
 	if s.auditService == nil {
 		return
