@@ -159,8 +159,14 @@ require (
 	github.com/go-pdf/fpdf v0.9.0
 	github.com/go-webauthn/webauthn v0.18.2
 	github.com/mattermost/xml-roundtrip-validator v0.1.0
-	github.com/openctemio/ctis v1.6.5
-	github.com/openctemio/ctis/transfer v0.1.0
+	github.com/openctemio/contract v1.1.1
+	github.com/openctemio/contract/transfer v1.0.1
+	github.com/openctemio/ctis/v2 v2.0.0
+	github.com/openctemio/ctis/v2/interop/csaf v0.1.0
+	github.com/openctemio/ctis/v2/interop/cyclonedx v0.1.0
+	github.com/openctemio/ctis/v2/interop/openvex v0.1.0
+	github.com/openctemio/ctis/v2/interop/sarif v0.1.0
+	github.com/openctemio/ctis/v2/interop/spdx v0.1.0
 	github.com/pires/go-proxyproto v0.16.0
 	github.com/russellhaering/goxmldsig v1.6.1
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3

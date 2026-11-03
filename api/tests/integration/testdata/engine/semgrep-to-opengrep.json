@@ -7,15 +7,7 @@
       "message": "User input reaches a shell command.",
       "severity": "high",
       "confidence": 90,
-      "impact": "high",
-      "likelihood": "medium",
       "category": "security",
-      "vulnerability_class": [
-        "Command Injection"
-      ],
-      "subcategory": [
-        "vuln"
-      ],
       "rule_id": "example.python.command-injection",
       "rule_name": "Command Injection",
       "location": {
@@ -29,9 +21,8 @@
         "cwe_ids": [
           "CWE-78"
         ],
-        "cwe_id": "CWE-78",
         "owasp_ids": [
-          "A03:2021 - Injection"
+          "A03:2021"
         ]
       },
       "references": [
@@ -52,7 +43,13 @@
         "engine_kind": "OSS",
         "rule_license": "MIT",
         "validation_state": "NO_VALIDATOR"
-      }
+      },
+      "vulnerability_classes": [
+        "Command Injection"
+      ],
+      "subcategories": [
+        "vuln"
+      ]
     },
     {
       "type": "vulnerability",
@@ -73,13 +70,12 @@
       "vulnerability": {
         "cwe_ids": [
           "CWE-328"
-        ],
-        "cwe_id": "CWE-328"
+        ]
       },
       "remediation": {
         "recommendation": "Apply the suggested fix code.",
-        "fix_available": true,
-        "fix_code": "hashlib.sha256($...ARGS)"
+        "fix_code": "hashlib.sha256($...ARGS)",
+        "is_fix_available": true
       },
       "tags": [
         "semgrep"
@@ -135,15 +131,7 @@
       "message": "User input reaches a shell command.",
       "severity": "high",
       "confidence": 90,
-      "impact": "high",
-      "likelihood": "medium",
       "category": "security",
-      "vulnerability_class": [
-        "Command Injection"
-      ],
-      "subcategory": [
-        "vuln"
-      ],
       "rule_id": "example.python.command-injection",
       "rule_name": "Command Injection",
       "location": {
@@ -158,9 +146,8 @@
         "cwe_ids": [
           "CWE-78"
         ],
-        "cwe_id": "CWE-78",
         "owasp_ids": [
-          "A03:2021 - Injection"
+          "A03:2021"
         ]
       },
       "references": [
@@ -212,7 +199,7 @@
             "type": "sink"
           }
         ],
-        "tainted": true
+        "is_tainted": true
       },
       "native": {
         "scheme": "other",
@@ -224,7 +211,13 @@
         "engine_kind": "OSS",
         "rule_license": "MIT",
         "validation_state": "NO_VALIDATOR"
-      }
+      },
+      "vulnerability_classes": [
+        "Command Injection"
+      ],
+      "subcategories": [
+        "vuln"
+      ]
     },
     {
       "type": "vulnerability",
@@ -246,13 +239,12 @@
       "vulnerability": {
         "cwe_ids": [
           "CWE-328"
-        ],
-        "cwe_id": "CWE-328"
+        ]
       },
       "remediation": {
         "recommendation": "Apply the suggested fix code.",
-        "fix_available": true,
-        "fix_code": "hashlib.sha256($...ARGS)"
+        "fix_code": "hashlib.sha256($...ARGS)",
+        "is_fix_available": true
       },
       "tags": [
         "opengrep"

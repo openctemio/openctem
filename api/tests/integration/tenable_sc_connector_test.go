@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/lib/pq"
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/internal/app/tenablesc"
@@ -103,12 +103,15 @@ func TestTenableSCConnector_Flow(t *testing.T) {
 	agt := &sensor.Sensor{ID: connSensor, TenantID: &tid, Type: sensor.SensorTypeWorker, Status: sensor.SensorStatusActive}
 	cmdID := res.CommandID
 	bind := ingest.Binding{Kind: ingest.BindingCommand, CommandID: &cmdID, Tool: tenablesc.ToolName, CommandType: command.CommandTypeConnectorSync}
-	for _, rep := range reports {
+	for i, rep := range reports {
 		out, err := ing.Ingest(ctx, agt, ingest.Input{Report: rep, Options: ingest.Options{Binding: bind}})
-		if err != nil || len(out.Errors) > 0 {
+		if err != nil {
+			t.Fatalf("ingest: %v", err)
+		}
+		if len(out.Errors) > 0 {
 			t.Fatalf("ingest %s: %v %v", rep.Metadata.ID, err, out.Errors)
 		}
-		if rep.Metadata.ID == "cmd-1-0" && out.FindingsSourceMitigated == 0 {
+		if i == 0 && out.FindingsSourceMitigated == 0 {
 			t.Fatal("the golden mitigated row was not recognized")
 		}
 	}
@@ -145,7 +148,7 @@ func TestTenableSCConnector_Flow(t *testing.T) {
 		}
 	}
 	mitigated.Findings = keep
-	mitigated.Metadata.ID = "cmd-2-0"
+	mitigated.Metadata.ID = ctis.NewReportID()
 	out, err := ing.Ingest(ctx, agt, ingest.Input{Report: mitigated, Options: ingest.Options{Binding: bind}})
 	if err != nil || out.FindingsSourceResolved != 1 {
 		t.Fatalf("mitigated ingest: resolved %d, err %v, errors %v", out.FindingsSourceResolved, err, out.Errors)

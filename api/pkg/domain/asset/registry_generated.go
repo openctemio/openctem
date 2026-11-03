@@ -7,7 +7,7 @@ package asset
 
 // RegistryVersion identifies this registry. It changes whenever the
 // registry content changes.
-const RegistryVersion = "98a73e498b7d7ad0"
+const RegistryVersion = "3bf36a87c0f84a0c"
 
 // Lenses.
 const (
@@ -1820,12 +1820,17 @@ var TypeAliases = map[AssetType]struct {
 	"subnet":               {CoreType: "network", SubType: "subnet"},
 	"firewall":             {CoreType: "network", SubType: "firewall"},
 	"load_balancer":        {CoreType: "network", SubType: "load_balancer"},
+	"container_image":      {CoreType: "container", SubType: "image"},
+	"endpoint_device":      {CoreType: "host", SubType: "workstation"},
+	"ip_range":             {CoreType: "network", SubType: ""},
+	"kubernetes_workload":  {CoreType: "kubernetes", SubType: "workload"},
 	"web_application":      {CoreType: "application", SubType: "website"},
+	"web_origin":           {CoreType: "service", SubType: "http"},
 }
 
 // registryTypeInputs are the legacy type names accepted on input that are no
 // type of their own (`type_inputs`).
-var registryTypeInputs = []AssetType{"web_application"}
+var registryTypeInputs = []AssetType{"container_image", "endpoint_device", "ip_range", "kubernetes_workload", "web_application", "web_origin"}
 
 // registryStoredTypes are the core types, in registry order: the only values
 // assets.asset_type may hold (core and legacy types).
@@ -1906,9 +1911,14 @@ var registryInputs = map[TypeRef]TypeInput{
 	{Type: "network", SubType: "ids"}:                 {Type: "network", SubType: "ids_ips"},
 	{Type: "network", SubType: "ips"}:                 {Type: "network", SubType: "ids_ips"},
 	{Type: "network", SubType: "wireless_ap"}:         {Type: "network", SubType: "access_point"},
-	{Type: "vpc"}:             {Type: "network", SubType: "vpc"},
-	{Type: "subnet"}:          {Type: "network", SubType: "subnet"},
-	{Type: "firewall"}:        {Type: "network", SubType: "firewall"},
-	{Type: "load_balancer"}:   {Type: "network", SubType: "load_balancer"},
-	{Type: "web_application"}: {Type: "application", SubType: "website"},
+	{Type: "vpc"}:                 {Type: "network", SubType: "vpc"},
+	{Type: "subnet"}:              {Type: "network", SubType: "subnet"},
+	{Type: "firewall"}:            {Type: "network", SubType: "firewall"},
+	{Type: "load_balancer"}:       {Type: "network", SubType: "load_balancer"},
+	{Type: "container_image"}:     {Type: "container", SubType: "image"},
+	{Type: "endpoint_device"}:     {Type: "host", SubType: "workstation"},
+	{Type: "ip_range"}:            {Type: "network"},
+	{Type: "kubernetes_workload"}: {Type: "kubernetes", SubType: "workload"},
+	{Type: "web_application"}:     {Type: "application", SubType: "website"},
+	{Type: "web_origin"}:          {Type: "service", SubType: "http"},
 }

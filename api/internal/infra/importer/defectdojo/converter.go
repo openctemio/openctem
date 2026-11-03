@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 )
 
 // Finding is the subset of a DefectDojo /api/v2/findings/ record we map. Unknown
@@ -83,27 +83,26 @@ func Convert(findings []Finding, opts ConvertOptions) *ctis.Report {
 		ts = time.Now().UTC()
 	}
 
+	// A CTIS 2.0 document carries no receiver key: metadata.id is a fresh
+	// UUIDv7 idempotency key and DefectDojo's own reference is a source_ref.
 	report := &ctis.Report{
-		Version: "1.0",
+		Version: ctis.SchemaVersion,
 		Metadata: ctis.ReportMetadata{
-			ID:         opts.SourceRef,
-			Timestamp:  ts,
-			SourceType: "integration",
-			SourceRef:  opts.SourceRef,
+			ID:          ctis.NewReportID(),
+			GeneratedAt: ts,
+			Channel:     ctis.ChannelIntegration,
 			// NEVER "full": a DefectDojo import is a partial view; auto-resolve
 			// must not fire and wrongly close native findings.
-			CoverageType: "partial",
+			CoverageType: ctis.CoveragePartial,
 		},
-		Tool: &ctis.Tool{
-			Name:   toolName,
-			Vendor: "DefectDojo",
-			// A DefectDojo sync is an import from another platform, not a scan
-			// we ran. Without this the ingest mapper defaulted to SAST, so a
-			// synced network or container finding arrived labeled as source
-			// code analysis.
-			Capabilities: []string{"external"},
-		},
+		// A DefectDojo sync is an import from another platform, not a scan we
+		// ran: no technique, so the ingest files the findings as external.
+		Tool: &ctis.Tool{Name: toolName, Vendor: "DefectDojo"},
 	}
+	if ref := strings.TrimSpace(opts.SourceRef); ref != "" {
+		report.Metadata.SourceRefs = []ctis.SourceRef{{System: "defectdojo", ID: ref}}
+	}
+	assets := newAssetIndex(report)
 
 	minRank := severityRank(opts.MinSeverity)
 	for i := range findings {
@@ -112,12 +111,12 @@ func Convert(findings []Finding, opts ConvertOptions) *ctis.Report {
 		if minRank > 0 && severityRank(sev) < minRank {
 			continue
 		}
-		report.Findings = append(report.Findings, buildFinding(f, sev, opts.ProductName))
+		report.Findings = append(report.Findings, buildFinding(f, sev, assets.refFor(f, opts.ProductName)))
 	}
 	return report
 }
 
-func buildFinding(f *Finding, sev ctis.Severity, product string) ctis.Finding {
+func buildFinding(f *Finding, sev ctis.Severity, assetRef string) ctis.Finding {
 	out := ctis.Finding{
 		Type:        ctis.FindingTypeVulnerability,
 		Title:       strings.TrimSpace(f.Title),
@@ -125,27 +124,18 @@ func buildFinding(f *Finding, sev ctis.Severity, product string) ctis.Finding {
 		Severity:    sev,
 		RuleID:      firstNonEmpty(f.UniqueIDFromTool, f.HashCode, strconv.Itoa(f.ID)),
 		References:  splitReferences(f.References),
+		AssetRef:    assetRef,
 		// Stable across re-imports so DefectDojo findings map to the same
 		// OpenCTEM finding instead of duplicating each pull.
 		Fingerprint: defectDojoFingerprint(f),
 		PartialFingerprints: map[string]string{
 			"defectdojo/finding_id": strconv.Itoa(f.ID),
 		},
-		Tags: triageTags(f),
+		SourceRefs: []ctis.SourceRef{{System: "defectdojo", ID: strconv.Itoa(f.ID)}},
+		Tags:       triageTags(f),
 	}
 	if f.HashCode != "" {
 		out.PartialFingerprints["defectdojo/hash_code"] = f.HashCode
-	}
-
-	// Asset: prefer a resolved endpoint host (web/host target); else fall back to
-	// the product name (an app/repo). Empty → the platform's tool_fallback
-	// creates a synthetic asset so findings are never orphaned.
-	if host := firstNonEmpty(f.Endpoints...); host != "" {
-		out.AssetValue = host
-		out.AssetType = ctis.AssetTypeWebsite
-	} else if product != "" {
-		out.AssetValue = product
-		out.AssetType = ctis.AssetTypeRepository
 	}
 
 	// Code location for SAST/SCA-style findings.
@@ -153,30 +143,85 @@ func buildFinding(f *Finding, sev ctis.Severity, product string) ctis.Finding {
 		out.Location = &ctis.FindingLocation{Path: f.FilePath, StartLine: f.Line}
 	}
 
-	// Vulnerability details: CVE(s), CWE, CVSS.
+	// Vulnerability details: CVE(s), CWE; the CVSS score is a finding score.
 	vuln := &ctis.VulnerabilityDetails{}
-	cves := collectCVEs(f)
-	if len(cves) > 0 {
-		vuln.CVEID = cves[0]
-		vuln.CVEIDs = cves
+	for _, c := range collectCVEs(f) {
+		vuln.AddID(c, "defectdojo")
 	}
 	if f.CWE > 0 {
-		vuln.CWEID = fmt.Sprintf("CWE-%d", f.CWE)
-		vuln.CWEIDs = []string{vuln.CWEID}
+		vuln.CWEIDs = []string{fmt.Sprintf("CWE-%d", f.CWE)}
+	}
+	if len(vuln.IDs) > 0 || len(vuln.CWEIDs) > 0 {
+		out.Vulnerability = vuln
 	}
 	if f.CVSSv3Score > 0 {
-		vuln.CVSSScore = f.CVSSv3Score
-		vuln.CVSSVersion = "3.x"
-		vuln.CVSSVector = f.CVSSv3
-	}
-	if vuln.CVEID != "" || vuln.CWEID != "" || vuln.CVSSScore > 0 {
-		out.Vulnerability = vuln
+		score := f.CVSSv3Score
+		out.Scores = []ctis.Score{{System: ctis.ScoreSystemCVSS, Version: "3.x", Vector: f.CVSSv3, Value: &score, Source: "defectdojo"}}
+		if v := ctis.CVSSVersionOfVector(f.CVSSv3); v != "" {
+			out.Scores[0].Version = v
+		}
 	}
 
 	if m := strings.TrimSpace(f.Mitigation); m != "" {
 		out.Remediation = &ctis.Remediation{Recommendation: m}
 	}
 	return out
+}
+
+// assetIndex is the assets of a converted report, one per canonical value.
+type assetIndex struct {
+	report *ctis.Report
+	refs   map[string]string // type + value -> asset id
+}
+
+func newAssetIndex(r *ctis.Report) *assetIndex {
+	return &assetIndex{report: r, refs: map[string]string{}}
+}
+
+// refFor returns the asset id of the asset a DefectDojo finding is on, adding
+// the asset to the report: its first endpoint (a web origin for a URL, else
+// an address or a host name), else the product (an unclassified asset named
+// after it), else one "defectdojo" asset, so every finding names an asset.
+func (x *assetIndex) refFor(f *Finding, product string) string {
+	typ, value := ctis.AssetTypeUnclassified, "defectdojo"
+	if host := firstNonEmpty(f.Endpoints...); host != "" {
+		if t, v, ok := endpointAsset(host); ok {
+			typ, value = t, v
+		}
+	} else if p := strings.TrimSpace(product); p != "" {
+		value = p
+	}
+	key := string(typ) + "\x1f" + value
+	if id, ok := x.refs[key]; ok {
+		return id
+	}
+	id := "dd-asset-" + strconv.Itoa(len(x.refs)+1)
+	x.refs[key] = id
+	x.report.Assets = append(x.report.Assets, ctis.Asset{ID: id, Type: typ, Value: value})
+	return id
+}
+
+// endpointAsset is the CTIS asset a DefectDojo endpoint string names, in the
+// canonical form of its type.
+func endpointAsset(raw string) (ctis.AssetType, string, bool) {
+	raw = strings.TrimSpace(raw)
+	if strings.Contains(raw, "://") {
+		if v, err := ctis.CanonicalOrigin(raw); err == nil {
+			return ctis.AssetTypeWebOrigin, v, true
+		}
+		return "", "", false
+	}
+	host := raw
+	if h, _, ok := strings.Cut(raw, "/"); ok {
+		host = h
+	}
+	if v, err := ctis.CanonicalIP(host); err == nil {
+		return ctis.AssetTypeIPAddress, v, true
+	}
+	if v, err := ctis.CanonicalDomain(host); err == nil {
+		return ctis.AssetTypeDomainName, v, true
+	}
+	return "", "", false
 }
 
 // defectDojoFingerprint is deterministic per DefectDojo finding so re-imports are

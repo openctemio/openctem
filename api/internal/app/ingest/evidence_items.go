@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	evidenceapp "github.com/openctemio/openctem/api/internal/app/evidence"
 	evidencedom "github.com/openctemio/openctem/api/pkg/domain/evidence"
@@ -24,39 +24,24 @@ func (p *FindingProcessor) SetEvidenceStore(s EvidenceStore) { p.evidence = s }
 // SetEvidenceStore wires finding evidence storage on the processor.
 func (s *Service) SetEvidenceStore(e EvidenceStore) { s.findingProcessor.SetEvidenceStore(e) }
 
-// findingEvidence is a sighting's evidence: the CTIS 1.6 evidence_items
-// a tool sent (any tool, any kind; an unknown kind is kept as text), or,
-// from tools that predate them, the HTTP exchange, extracted values and
-// reproduction command attached as properties (the nuclei sensor). A secret
-// finding keeps none: its evidence is the leaked value itself, which the
-// secret pipeline handles.
-func findingEvidence(fingerprint string, cf *ctis.Finding, tool *ctis.Tool) (evidenceapp.Detection, bool) {
-	if cf == nil || cf.Type == ctis.FindingTypeSecret || cf.Secret != nil {
+// findingEvidence is a sighting's evidence: the evidence_items a tool sent
+// (any tool, any kind; an unknown kind is kept as text). properties carry no
+// meaning in CTIS 2.0, so nothing is read from them. A secret finding keeps
+// none: its evidence is the leaked value itself, which the secret pipeline
+// handles.
+func findingEvidence(fingerprint string, cf *ctis.Finding, report *ctis.Report) (evidenceapp.Detection, bool) {
+	if cf == nil || cf.Type == ctis.FindingTypeSecret || cf.Secret != nil || len(cf.EvidenceItems) == 0 {
 		return evidenceapp.Detection{}, false
-	}
-	if len(cf.EvidenceItems) == 0 && len(cf.Properties) == 0 {
-		return evidenceapp.Detection{}, false
-	}
-	matchedAt := ""
-	if cf.Location != nil {
-		matchedAt = cf.Location.Path
-	}
-	toolName := ""
-	if tool != nil {
-		toolName = tool.Name
-	}
-	label := toolName
-	if cf.RuleID != "" {
-		label += " " + cf.RuleID
 	}
 	items := typedEvidence(cf.EvidenceItems)
 	if len(items) == 0 {
-		items = evidencedom.FromToolProperties(cf.Properties, matchedAt, label)
-	}
-	if len(items) == 0 {
 		return evidenceapp.Detection{}, false
 	}
-	prov := findingTemplateProvenance(cf, tool)
+	prov := findingTemplateProvenance(cf, report)
+	toolName := ""
+	if report != nil && report.Tool != nil {
+		toolName = report.Tool.Name
+	}
 	return evidenceapp.Detection{
 		Fingerprint: fingerprint,
 		Items:       items,

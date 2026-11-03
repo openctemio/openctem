@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	cirunapp "github.com/openctemio/openctem/api/internal/app/cirun"
 	"github.com/openctemio/openctem/api/pkg/domain/cirun"
@@ -20,7 +20,7 @@ func TestCIRepositoryPolicyFile(t *testing.T) {
 	r := newCIRig(t)
 	ctx := context.Background()
 	cfg := r.trust(r.tenant, cirun.Rules{Owners: []string{"acme"}})
-	host := strings.TrimPrefix(r.idp.srv.URL, "https://")
+	host := strings.TrimPrefix(r.idp.url, "https://")
 	repoName := strings.ToLower(host) + "/acme/api"
 	const sha = "7777777777777777777777777777777777777777"
 	medium := ciFinding("Weak hash", "go.weak-hash", "medium", ctis.FindingTypeVulnerability, "hash.go", 10)

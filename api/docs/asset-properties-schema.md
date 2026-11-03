@@ -3,6 +3,23 @@
 This document defines the JSON schema for the `properties` JSONB field in the `assets` table.
 The schema varies by `asset_type` - each type has specific properties relevant to that asset category.
 
+> **CTIS 2.0 (2026-11-03).** This page describes the **stored** `properties`
+> of an asset. On the wire (CTIS 2.x, media type
+> `application/vnd.ctis+json; version=2.0`) `properties` carry no meaning: the
+> platform strips the keys it used to interpret from every external report and
+> reads typed members and `extensions["io.openctem"]` instead (open ports are
+> `service` assets with an `exposes` relationship, HTTP facts are
+> `technical.http`, technologies are `asset.technologies`, owners are
+> `asset.owners`, `last_seen` is `asset.last_seen_at`). Wire asset types are
+> collapsed and mapped to the stored types below (`domain_name` becomes
+> `domain` or `subdomain`, `web_origin` becomes `service`/`http`, `service`
+> becomes `service`/`open_port`, `identity` + kind becomes `iam_user`,
+> `iam_role` or `service_account`, `kubernetes_cluster` becomes `kubernetes`,
+> `ip_range` becomes `network`; `discovered_url` is gone from the wire and is
+> carried as `endpoints`). Whatever a producer leaves under other keys is an
+> opaque, display-only, bounded attribute bag. Mapping table and rules:
+> [ctis-receiver.md](architecture/ctis-receiver.md).
+
 ## Architecture Overview
 
 ```

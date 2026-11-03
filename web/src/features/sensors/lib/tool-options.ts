@@ -1,6 +1,6 @@
 /**
  * A tool's options, read from the configuration schema of its tool manifest
- * (`descriptor.config`, the closed JSON Schema subset of the CTIS settings
+ * (`descriptor.config`, the closed JSON Schema subset of the contract settings
  * contract) as the sensor reported it. The descriptor is a claim from the
  * sensor: every field is checked for its type here, unknown or malformed
  * parts are skipped, and every string is rendered as text.
@@ -10,7 +10,7 @@
  * the tool.
  */
 
-/** The common tool options, in display order (CTIS tooloption). */
+/** The common tool options, in display order (contract tooloption). */
 export const COMMON_OPTIONS = ['timeout', 'rate', 'concurrency', 'retries'] as const
 export type CommonOption = (typeof COMMON_OPTIONS)[number]
 

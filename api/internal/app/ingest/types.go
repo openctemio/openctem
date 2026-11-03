@@ -4,7 +4,7 @@ package ingest
 import (
 	"context"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/ingestreceipt"
@@ -67,6 +67,14 @@ const (
 // All formats (CTIS, SARIF, Recon, etc.) are converted to this via adapters.
 type Input struct {
 	Report *ctis.Report
+
+	// ReportID is the receiver's own id of this delivery, from the
+	// transport: the protocol v2 report id of the URL path, an import
+	// receipt, a CI upload. It is the scan identity of the findings the
+	// report writes. Empty means a new id for this ingest. It is never read
+	// from the document: metadata.id is the producer's idempotency key
+	// (docs/profiles/openctem.md of the CTIS module).
+	ReportID string
 
 	// CoverageType indicates the scan coverage level.
 	// Auto-resolve is only enabled for full scans on default branch.
@@ -259,16 +267,14 @@ type Output struct {
 	// the sub-inventory; EndpointsRefused those dropped (unparseable, an
 	// origin the report may not write to); EndpointsStatic static files
 	// counted and not stored; EndpointsOverCap new endpoints or parameters
-	// beyond the per-origin caps; LegacyURLAssetsFolded discovered_url
-	// assets turned into endpoints instead of assets.
-	EndpointsCreated      int      `json:"endpoints_created,omitempty"`
-	EndpointsUpdated      int      `json:"endpoints_updated,omitempty"`
-	EndpointsRefused      int      `json:"endpoints_refused,omitempty"`
-	EndpointsStatic       int      `json:"endpoints_static,omitempty"`
-	EndpointsOverCap      int      `json:"endpoints_over_cap,omitempty"`
-	LegacyURLAssetsFolded int      `json:"legacy_url_assets_folded,omitempty"`
-	Errors                []string `json:"errors,omitempty"`
-	Warnings              []string `json:"warnings,omitempty"`
+	// beyond the per-origin caps.
+	EndpointsCreated int      `json:"endpoints_created,omitempty"`
+	EndpointsUpdated int      `json:"endpoints_updated,omitempty"`
+	EndpointsRefused int      `json:"endpoints_refused,omitempty"`
+	EndpointsStatic  int      `json:"endpoints_static,omitempty"`
+	EndpointsOverCap int      `json:"endpoints_over_cap,omitempty"`
+	Errors           []string `json:"errors,omitempty"`
+	Warnings         []string `json:"warnings,omitempty"`
 
 	// Binding is the authority the report was applied under: command,
 	// unsolicited or trusted (RFC-040 §5.3).
@@ -372,4 +378,19 @@ type BaselineDiffOutput struct {
 	// BaseBranchKnown is false when the base branch has no scan history yet
 	// (then everything is treated as new).
 	BaseBranchKnown bool `json:"base_branch_scanned"`
+}
+
+// reportIDKey carries the receiver's report id of the ingest in progress.
+type reportIDKey struct{}
+
+// withReportID returns ctx carrying the receiver's report id of an ingest.
+func withReportID(ctx context.Context, id string) context.Context {
+	return context.WithValue(ctx, reportIDKey{}, id)
+}
+
+// reportIDOf is the receiver's report id of the ingest ctx belongs to, or ""
+// outside an ingest.
+func reportIDOf(ctx context.Context) string {
+	id, _ := ctx.Value(reportIDKey{}).(string)
+	return id
 }

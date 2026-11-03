@@ -2,10 +2,11 @@ package integration
 
 import (
 	"context"
+	"database/sql"
 	"testing"
 	"time"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/internal/app/easm"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
@@ -55,17 +56,24 @@ func TestIngest_SensorReportAttribution(t *testing.T) {
 	run := func(a *sensor.Sensor, bind ingest.Binding, names ...reportedName) {
 		t.Helper()
 		assets := make([]ctis.Asset, 0, len(names))
+		var rels []ctis.Relationship
 		for i, n := range names {
-			ca := ctis.Asset{ID: string(rune('a' + i)), Type: ctis.AssetTypeSubdomain, Value: n.name}
+			id := string(rune('a' + i))
+			assets = append(assets, ctis.Asset{ID: id, Type: ctis.AssetTypeDomainName, Value: n.name})
 			if n.root != "" {
-				ca.Properties = map[string]any{"root_domain": n.root}
+				// The root is stated as a subdomain_of relationship to a
+				// domain_name of the document, never as a property.
+				assets = append(assets, ctis.Asset{ID: "root-" + id, Type: ctis.AssetTypeDomainName, Value: n.root})
+				rels = append(rels, ctis.Relationship{Type: ctis.RelSubdomainOf, FromRef: id, ToRef: "root-" + id})
 			}
-			assets = append(assets, ca)
 		}
-		rep := &ctis.Report{Version: "1.0", Tool: &ctis.Tool{Name: "subfinder"}, Assets: assets,
-			Metadata: ctis.ReportMetadata{ID: "rep-1", Timestamp: time.Now().UTC()}}
+		rep := &ctis.Report{Version: ctis.SchemaVersion, Tool: &ctis.Tool{Name: "subfinder"}, Assets: assets, Relationships: rels,
+			Metadata: ctis.ReportMetadata{ID: ctis.NewReportID(), GeneratedAt: time.Now().UTC()}}
 		out, err := svc.Ingest(ctx, a, ingest.Input{Report: rep, Options: ingest.Options{Binding: bind}})
-		if err != nil || len(out.Errors) > 0 {
+		if err != nil {
+			t.Fatalf("ingest: %v", err)
+		}
+		if len(out.Errors) > 0 {
 			t.Fatalf("Ingest: %v %v", err, out.Errors)
 		}
 	}
@@ -172,12 +180,18 @@ func TestIngest_SensorReportAttribution(t *testing.T) {
 	// registrable parent creates the domain, in review.
 	cmd4 := shared.NewID()
 	run(agt, ingest.Binding{Kind: ingest.BindingCommand, CommandID: &cmd4, Targets: []string{"www.acme.example.net"}},
-		reportedName{"www.acme.example.net", "victim.example.com"}, reportedName{"api.acme.example.net", "net"},
+		reportedName{"www.acme.example.net", "victim.example.com"},
 		reportedName{"mail.acme.example.net", "example.net"})
-	for _, n := range []string{"victim.example.com", "net"} {
-		if idIn(tid, n) != "" {
-			t.Fatalf("root_domain %q was created from a name it is not a parent of", n)
-		}
+	// The producer-stated parent is not a registrable parent of the name: the
+	// name is never recorded under it (the unrelated domain is only a
+	// discovered asset of its own, if the report names it at all).
+	var rootOf sql.NullString
+	if err := r.db.QueryRowContext(ctx, `SELECT properties->>'root_domain' FROM assets WHERE tenant_id = $1 AND name = 'www.acme.example.net'`,
+		tid.String()).Scan(&rootOf); err != nil {
+		t.Fatal(err)
+	}
+	if rootOf.String == "victim.example.com" {
+		t.Fatalf("www.acme.example.net recorded under root_domain %q, which is not its parent", rootOf.String)
 	}
 	// In the inventory as discovered; never a CT root (attributed only).
 	if got := state(tid, idOf("example.net")); got != attribution.StateDiscovered {

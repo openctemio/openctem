@@ -10,7 +10,7 @@ import (
 
 	"github.com/lib/pq"
 
-	"github.com/openctemio/ctis/politeness"
+	"github.com/openctemio/contract/politeness"
 
 	"github.com/openctemio/openctem/api/pkg/domain/command"
 	"github.com/openctemio/openctem/api/pkg/domain/scan"

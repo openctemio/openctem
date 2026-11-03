@@ -13,7 +13,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/pkg/domain/cirun"
@@ -51,7 +51,7 @@ func TestCIKnownFindings_DecisionsHoldOnTheNextRun(t *testing.T) {
 	r.svc.SetSuppressionRules(suppression.NewService(postgres.NewSuppressionRepository(r.db), logger.NewNop()), nil)
 	ctx := context.Background()
 	cfg := r.trust(r.tenant, cirun.Rules{Owners: []string{"acme"}})
-	host := strings.TrimPrefix(r.idp.srv.URL, "https://")
+	host := strings.TrimPrefix(r.idp.url, "https://")
 	repoName := strings.ToLower(host) + "/acme/api"
 
 	run := func(tenant string, aud, ref, sha, job string, policy map[string]any, findings ...ctis.Finding) (map[string]any, map[string]any) {

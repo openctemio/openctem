@@ -14,9 +14,8 @@ package ingest
 
 import (
 	"context"
-	"strings"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
@@ -58,15 +57,7 @@ func namesCVE(f *ctis.Finding) bool {
 	if v == nil {
 		return false
 	}
-	if strings.TrimSpace(v.CVEID) != "" {
-		return true
-	}
-	for _, c := range v.CVEIDs {
-		if strings.TrimSpace(c) != "" {
-			return true
-		}
-	}
-	return false
+	return len(findingCVEs(v)) > 0
 }
 
 // findingAdvisoryIDs are the advisory ids a finding names: its typed ids
@@ -132,8 +123,7 @@ func canonicalVulnIDsOf[T any](ctx context.Context, p *FindingProcessor, items [
 		if f.Vulnerability != nil {
 			v = *f.Vulnerability
 		}
-		v.CVEID = cve
-		v.CVEIDs = []string{cve}
+		v.IDs = withOnlyCVE(v.IDs, cve)
 		f.Vulnerability = &v
 		set(&items[i], former)
 	}

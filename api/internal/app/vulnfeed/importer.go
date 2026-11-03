@@ -19,8 +19,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/openctemio/ctis/transfer"
-	"github.com/openctemio/ctis/transfer/bundle"
+	"github.com/openctemio/contract/transfer"
+	"github.com/openctemio/contract/transfer/bundle"
 
 	"github.com/openctemio/openctem/api/internal/app/feedstatus"
 	"github.com/openctemio/openctem/api/pkg/domain/cvecorpus"

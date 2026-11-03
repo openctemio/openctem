@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Proposed (2026-10-14). Implemented: the api requires no sensor SDK module (feed transfer from `ctis/transfer`) and CI refuses a sensor or SDK dependency in `api/` or `web/`. In implementation: port-scan caps and retest by capability, the sensor product catalog. Designed: the remaining steps |
+| Status | Proposed (2026-10-14). Implemented: the api requires no sensor SDK module (feed transfer from `contract/transfer`; the orchestration contracts moved from ctis to `github.com/openctemio/contract` with CTIS 2.0, 2026-11-03) and CI refuses a sensor or SDK dependency in `api/` or `web/`. In implementation: port-scan caps and retest by capability, the sensor product catalog. Designed: the remaining steps |
 | Scope | api, web, ctis (`transfer`, contract packages), sdk-go (removes its `pkg/transfer`), versions.yaml (sensor product catalog) |
 | Related | RFC-092 (tool-agnostic platform), RFC-055 (tool contract), RFC-033 (sensor manifest), RFC-037 (versions.yaml), RFC-072 (feed transfer, D1 amended), RFC-040 (mutual distrust) |
 

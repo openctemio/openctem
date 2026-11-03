@@ -3,7 +3,7 @@ package ingest
 import (
 	"testing"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
@@ -24,9 +24,9 @@ func TestGenerateFindingFingerprint_NetworkVA_SameCVESameHostDifferentScanner_De
 		RuleID:  "nessus-plugin-118987",
 		Message: "The remote host is affected by a vulnerability in OpenSSL.",
 		Vulnerability: &ctis.VulnerabilityDetails{
-			CVEID: "CVE-2022-3602",
+			IDs: cveIDs("CVE-2022-3602"),
 		},
-		Network: &ctis.NetworkLocation{Host: "10.0.0.5", Port: 443, Protocol: "tcp"},
+		Network: &ctis.NetworkLocation{Host: "10.0.0.5", Port: 443, Transport: "tcp"},
 	}
 	qualys := &ctis.Finding{
 		Type:    ctis.FindingTypeVulnerability,
@@ -34,9 +34,9 @@ func TestGenerateFindingFingerprint_NetworkVA_SameCVESameHostDifferentScanner_De
 		RuleID:  "qualys-qid-376023",
 		Message: "OpenSSL is prone to a buffer overflow; upgrade to a fixed version.",
 		Vulnerability: &ctis.VulnerabilityDetails{
-			CVEID: "CVE-2022-3602",
+			IDs: cveIDs("CVE-2022-3602"),
 		},
-		Network: &ctis.NetworkLocation{Host: "10.0.0.5", Port: 443, Protocol: "tcp"},
+		Network: &ctis.NetworkLocation{Host: "10.0.0.5", Port: 443, Transport: "tcp"},
 	}
 
 	nComposite, nBase := generateFindingFingerprint(assetID, nessus, nil)
@@ -58,13 +58,13 @@ func TestGenerateFindingFingerprint_NetworkVA_CVEIDvsCVEIDsAgree(t *testing.T) {
 	primary := &ctis.Finding{
 		Type:          ctis.FindingTypeVulnerability,
 		RuleID:        "scanner-a-1",
-		Vulnerability: &ctis.VulnerabilityDetails{CVEID: "CVE-2021-44228"},
+		Vulnerability: &ctis.VulnerabilityDetails{IDs: cveIDs("CVE-2021-44228")},
 		Network:       &ctis.NetworkLocation{Host: "host.example.com", Port: 8080},
 	}
 	list := &ctis.Finding{
 		Type:          ctis.FindingTypeVulnerability,
 		RuleID:        "scanner-b-2",
-		Vulnerability: &ctis.VulnerabilityDetails{CVEIDs: []string{"CVE-2021-44228"}},
+		Vulnerability: &ctis.VulnerabilityDetails{IDs: cveIDs("CVE-2021-44228")},
 		Network:       &ctis.NetworkLocation{Host: "host.example.com", Port: 8080},
 	}
 
@@ -83,13 +83,13 @@ func TestGenerateFindingFingerprint_NetworkVA_DifferentPortDoesNotDedup(t *testi
 	p443 := &ctis.Finding{
 		Type:          ctis.FindingTypeVulnerability,
 		RuleID:        "plugin-1",
-		Vulnerability: &ctis.VulnerabilityDetails{CVEID: "CVE-2023-0001"},
+		Vulnerability: &ctis.VulnerabilityDetails{IDs: cveIDs("CVE-2023-0001")},
 		Network:       &ctis.NetworkLocation{Host: "10.0.0.9", Port: 443},
 	}
 	p8443 := &ctis.Finding{
 		Type:          ctis.FindingTypeVulnerability,
 		RuleID:        "plugin-1",
-		Vulnerability: &ctis.VulnerabilityDetails{CVEID: "CVE-2023-0001"},
+		Vulnerability: &ctis.VulnerabilityDetails{IDs: cveIDs("CVE-2023-0001")},
 		Network:       &ctis.NetworkLocation{Host: "10.0.0.9", Port: 8443},
 	}
 
@@ -110,9 +110,9 @@ func TestGenerateFindingFingerprint_SCA_NotTreatedAsNetworkVA(t *testing.T) {
 		RuleID:  "trivy-1",
 		Message: "lodash prototype pollution",
 		Vulnerability: &ctis.VulnerabilityDetails{
-			CVEID:           "CVE-2019-10744",
-			Package:         "lodash",
-			AffectedVersion: "4.17.11",
+			IDs:              cveIDs("CVE-2019-10744"),
+			PackageName:      "lodash",
+			InstalledVersion: "4.17.11",
 		},
 	}
 	scaB := &ctis.Finding{
@@ -120,9 +120,9 @@ func TestGenerateFindingFingerprint_SCA_NotTreatedAsNetworkVA(t *testing.T) {
 		RuleID:  "grype-2",
 		Message: "different message entirely",
 		Vulnerability: &ctis.VulnerabilityDetails{
-			CVEID:           "CVE-2019-10744",
-			Package:         "lodash",
-			AffectedVersion: "4.17.11",
+			IDs:              cveIDs("CVE-2019-10744"),
+			PackageName:      "lodash",
+			InstalledVersion: "4.17.11",
 		},
 	}
 

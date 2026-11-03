@@ -3,7 +3,7 @@ package ingest
 import (
 	"testing"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -55,7 +55,7 @@ func TestMapReportRelationship(t *testing.T) {
 			}
 		})
 	}
-	if _, _, _, ok := mapReportRelationship("member_of", vm, esx); ok {
+	if _, _, _, ok := mapReportRelationship("no_such_relationship", vm, esx); ok {
 		t.Fatal("an unknown relationship type was mapped")
 	}
 }

@@ -3,7 +3,7 @@ package ingest
 import (
 	"testing"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
@@ -15,7 +15,7 @@ func TestGenerateFindingFingerprint_GenericNetworkFindingKeysOnPort(t *testing.T
 	mk := func(port int, proto string) *ctis.Finding {
 		f := &ctis.Finding{RuleID: "51192", Title: "SSL Certificate Cannot Be Trusted"}
 		if port > 0 {
-			f.Network = &ctis.NetworkLocation{Port: port, Protocol: proto}
+			f.Network = &ctis.NetworkLocation{Port: port, Transport: ctis.Transport(proto)}
 		}
 		return f
 	}
@@ -47,7 +47,7 @@ func TestGenerateFindingFingerprint_GenericNetworkFindingKeysOnPort(t *testing.T
 func TestLegacyPortlessFingerprint_OnlyForTheGenericRecipe(t *testing.T) {
 	assetID := shared.NewID()
 	cve := &ctis.Finding{RuleID: "p", Title: "t", Network: &ctis.NetworkLocation{Port: 443},
-		Vulnerability: &ctis.VulnerabilityDetails{CVEID: "CVE-2024-6387"}}
+		Vulnerability: &ctis.VulnerabilityDetails{IDs: cveIDs("CVE-2024-6387")}}
 	if legacyPortlessFingerprint(assetID, cve) != "" {
 		t.Fatal("network VA with a CVE must not be re-keyed")
 	}
@@ -57,7 +57,7 @@ func TestLegacyPortlessFingerprint_OnlyForTheGenericRecipe(t *testing.T) {
 		t.Fatal("a sensor-supplied fingerprint must not be re-keyed")
 	}
 	sca := &ctis.Finding{RuleID: "p", Title: "t", Network: &ctis.NetworkLocation{Port: 443},
-		Vulnerability: &ctis.VulnerabilityDetails{Package: "openssl", AffectedVersion: "1", CVEID: "CVE-1"}}
+		Vulnerability: &ctis.VulnerabilityDetails{PackageName: "openssl", InstalledVersion: "1", IDs: cveIDs("CVE-2024-1000")}}
 	if legacyPortlessFingerprint(assetID, sca) != "" {
 		t.Fatal("an SCA finding must not be re-keyed")
 	}

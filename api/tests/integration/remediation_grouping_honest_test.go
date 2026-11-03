@@ -11,7 +11,7 @@ import (
 	"encoding/hex"
 	"testing"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -24,7 +24,7 @@ import (
 func codeFinding(rule, title, path string, line int) ctis.Finding {
 	return ctis.Finding{Type: ctis.FindingTypeVulnerability, Title: title, Severity: ctis.SeverityHigh,
 		RuleID: rule, Location: &ctis.FindingLocation{Path: path, StartLine: line},
-		Remediation: &ctis.Remediation{Recommendation: "Apply the suggested fix code.", FixCode: "user.check_password(pw)", FixAvailable: true}}
+		Remediation: &ctis.Remediation{Recommendation: "Apply the suggested fix code.", FixCode: "user.check_password(pw)", IsFixAvailable: ctis.Bool(true)}}
 }
 
 func hostFinding(rule, title, solution string) ctis.Finding {
