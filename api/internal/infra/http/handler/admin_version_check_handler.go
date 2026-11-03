@@ -189,7 +189,7 @@ func (h *AdminVersionCheckHandler) audit(r *http.Request, actor *admin.AdminUser
 	details := map[string]any{}
 	if v != nil {
 		details["sequence"] = v.Feed.Sequence
-		details["key_id"] = v.KeyID
+		details["signed_at"] = v.SignedAt.UTC().Format(time.RFC3339)
 	}
 	entry := admin.NewAuditLogBuilder(actor, "version_check.feed_imported").
 		Resource("version_check", nil, "release_feed").
