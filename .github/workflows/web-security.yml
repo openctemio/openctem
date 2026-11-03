@@ -80,10 +80,14 @@ jobs:
           name: npm-audit-results
           path: web/npm-audit-results.json
           retention-days: 30
+      - name: Set up trivy
+        if: ${{ !cancelled() }}
+        uses: ./.github/actions/setup-trivy
       - name: Trivy Vulnerability Scanner (web)
         if: ${{ !cancelled() }}
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
+          skip-setup-trivy: true
           scan-type: 'fs'
           scan-ref: 'web'
           format: 'sarif'
@@ -172,9 +176,12 @@ jobs:
           tags: openctem-web:scan
           build-args: |
             NEXT_PUBLIC_API_URL=http://localhost:8080
+      - name: Set up trivy
+        uses: ./.github/actions/setup-trivy
       - name: Run Trivy on the image
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
+          skip-setup-trivy: true
           image-ref: 'openctem-web:scan'
           format: 'sarif'
           output: 'trivy-docker-web.sarif'
