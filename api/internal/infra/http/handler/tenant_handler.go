@@ -3495,13 +3495,13 @@ func (h *TenantHandler) GetTenantModules(w http.ResponseWriter, r *http.Request)
 	// ETag based on module-config version. Same module state across
 	// tenant admins → same ETag → 304s on repeat fetches. Mutations
 	// bump the version via ModuleService.notifyModuleChange.
-	modVersion := h.moduleService.GetTenantModuleVersion(r.Context(), tenantID.String())
+	moduleToken := h.moduleService.ETagToken(r.Context(), tenantID.String())
 	// Include tenant prefix in etag — see bootstrap_handler comment.
 	tidStr := tenantID.String()
 	if len(tidStr) > 8 {
 		tidStr = tidStr[:8]
 	}
-	etag := fmt.Sprintf(`"t%s-m%d"`, tidStr, modVersion)
+	etag := fmt.Sprintf(`"t%s-m%s"`, tidStr, moduleToken)
 	w.Header().Set("ETag", etag)
 	w.Header().Set("Cache-Control", "private, max-age=300")
 	if r.Header.Get("If-None-Match") == etag {

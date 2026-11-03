@@ -21,7 +21,14 @@ import { NextRequest, NextResponse } from 'next/server'
 
 import { env } from '@/lib/env'
 import { safeInternalHref } from '@/lib/safe-href'
-import { API_PREFIX, LOGIN_PATH, NEXT_PARAM, PUBLIC_ROUTES } from './config'
+import {
+  ACCOUNT_ONLY_PAGES,
+  API_PREFIX,
+  LOGIN_PATH,
+  NEXT_PARAM,
+  PUBLIC_ROUTES,
+  WELCOME_PATH,
+} from './config'
 
 /** Reads one cookie's value. */
 export type CookieReader = (name: string) => string | undefined
@@ -70,6 +77,7 @@ export function sessionCookieNames() {
     refresh: env.auth.refreshCookieName,
     tenant: env.cookies.tenant,
     pendingTenants: env.cookies.pendingTenants,
+    accountOnly: env.cookies.accountOnly,
   }
 }
 
@@ -82,6 +90,23 @@ export function hasSessionCookie(read: CookieReader): boolean {
   if (looksLikeJwt(read(names.access)) || looksLikeJwt(read(names.refresh))) return true
   // Local development sign-in (never in a production build).
   return process.env.NODE_ENV === 'development' && !!read('dev_auth_token')
+}
+
+/**
+ * The session belongs to a person with no organization: the web set the
+ * account-only marker and there is no organization selected. A tenant cookie
+ * wins, so a stale marker never hides an organization the person has opened.
+ * A routing hint only; the API refuses every tenant route for such a token.
+ */
+export function isAccountOnlySession(read: CookieReader): boolean {
+  const names = sessionCookieNames()
+  return !!read(names.accountOnly) && !read(names.tenant)
+}
+
+/** A page an account-only session may open (exact path, trailing slash ignored). */
+export function isAccountOnlyPage(pathname: string): boolean {
+  const path = pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname
+  return (ACCOUNT_ONLY_PAGES as readonly string[]).includes(path)
 }
 
 /** Request helper kept for route handlers (GET /api/version). */
@@ -97,7 +122,7 @@ export type AuthDecision =
   | { type: 'allow' }
   | {
       type: 'redirect'
-      /** Same-origin path and query of the sign-in page. */
+      /** Same-origin path and query of the page to go to. */
       location: string
       /** Cookies to expire on the redirect response. */
       clearCookies: string[]
@@ -135,14 +160,24 @@ function withNext(page: string, next: string | undefined): string {
 export function decideAuth({ pathname, search, cookie }: AuthRequest): AuthDecision {
   if (isApiRoute(pathname) || isPublicRoute(pathname)) return { type: 'allow' }
 
-  if (hasSessionCookie(cookie)) return { type: 'allow' }
+  if (hasSessionCookie(cookie)) {
+    // No organization: the account space is the only app page there is.
+    if (isAccountOnlySession(cookie) && !isAccountOnlyPage(pathname)) {
+      return { type: 'redirect', location: WELCOME_PATH, clearCookies: [] }
+    }
+    return { type: 'allow' }
+  }
 
   const names = sessionCookieNames()
   // A tenant cookie without a session is stale (the next sign-in picks the
   // team again); a malformed token cookie would only be sent again.
-  const clearCookies = [names.tenant, names.pendingTenants, names.access, names.refresh].filter(
-    (name) => cookie(name) !== undefined
-  )
+  const clearCookies = [
+    names.tenant,
+    names.pendingTenants,
+    names.accountOnly,
+    names.access,
+    names.refresh,
+  ].filter((name) => cookie(name) !== undefined)
   return {
     type: 'redirect',
     location: withNext(LOGIN_PATH, returnPath(pathname, search)),

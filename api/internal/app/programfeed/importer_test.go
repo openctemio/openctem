@@ -34,7 +34,7 @@ func (m *memCatalog) ListPublic(context.Context, string, int, int) ([]bp.PublicP
 func (m *memCatalog) GetPublic(context.Context, shared.ID) (*bp.PublicProgram, error) {
 	return nil, bp.ErrNotFound
 }
-func (m *memCatalog) StaleSubscriptions(context.Context, int) ([]bp.ProgramRef, error) {
+func (m *memCatalog) StaleSubscriptions(context.Context, int, []shared.ID) ([]bp.ProgramRef, error) {
 	out := m.stale
 	m.stale = nil
 	return out, nil

@@ -15,6 +15,7 @@ import {
 } from './organization-suspended'
 import { IP_NOT_ALLOWED_MESSAGE, isIpNotAllowed, notifyIpNotAllowed } from './ip-not-allowed'
 import { isStepUpRequired, requestStepUp } from './step-up'
+import { isTenantRequired, routeToWelcomeOnce } from './tenant-required'
 import { dispatchPermissionStaleEvent } from '@/context/permission-provider'
 import { env } from '@/lib/env'
 import { devLog } from '@/lib/logger'
@@ -378,6 +379,12 @@ export async function apiClient<T = unknown>(
         if (await tryRefreshToken()) {
           return apiClient<T>(endpoint, { ...options, _skipStaleRetry: true })
         }
+      }
+
+      // No organization is open for this session: the page does not exist for
+      // it. After the one refresh above has not helped, go to the account space.
+      if (isTenantRequired(error) && _skipRefreshRetry && !isServer()) {
+        routeToWelcomeOnce(window.location)
       }
 
       // A sensitive route needs a recent sign-in or step-up in this session:

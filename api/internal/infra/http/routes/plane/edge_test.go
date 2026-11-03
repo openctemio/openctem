@@ -116,3 +116,20 @@ func TestGatewayPlanesFileShape(t *testing.T) {
 		}
 	}
 }
+
+// The CI OIDC exchange carries its credential in the body, not in a cookie or
+// an Authorization header, so the gateway must hand it to the API: the web app
+// answers a request without a session with a CSRF 403.
+func TestCIOIDCExchangeGoesToTheAPI(t *testing.T) {
+	for _, path := range []string{"/api/v1/ci/oidc/exchange"} {
+		if e, ok := EdgeOf(path); !ok || e != EdgeAPI {
+			t.Errorf("EdgeOf(%s) = %q, want %q", path, e, EdgeAPI)
+		}
+	}
+	// Run endpoints carry the run token as a bearer; the browser planes stay web.
+	for _, path := range []string{"/api/v1/ci/runs", "/api/v1/ci/pipelines", "/api/v1/ci/oidc-trusts"} {
+		if e, _ := EdgeOf(path); e != EdgeWeb {
+			t.Errorf("EdgeOf(%s) = %q, want %q", path, e, EdgeWeb)
+		}
+	}
+}
