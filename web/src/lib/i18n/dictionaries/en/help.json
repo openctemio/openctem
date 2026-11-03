@@ -16,7 +16,7 @@
   "help.licenses.noMatch": "No component matches the search",
   "help.licenses.noText": "This component ships no license file.",
   "help.licenses.notGenerated": "This {part} build has no license list: it is generated when the release image is built.",
-  "help.licenses.search": "Search by component or license",
+  "help.licenses.search": "Search by component or license…",
   "help.licenses.searchLabel": "Search components",
   "help.licenses.source": "Part",
   "help.licenses.source.api": "API",
