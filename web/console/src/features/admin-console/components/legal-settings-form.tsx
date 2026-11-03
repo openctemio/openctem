@@ -1,15 +1,15 @@
 'use client'
 
-import { useEffect, useId, useState } from 'react'
+import { useCallback, useEffect, useId, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { ConfirmDialog } from '@/components/confirm-dialog'
-import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { useTranslation } from '@/context/i18n-provider'
+import { SettingsSaveBar } from '@/features/shared/components/settings-save-bar'
 import type { LegalSettingsResponse } from '@/lib/api/generated'
 import { AdminApiError } from '@console/lib/admin-api/client'
 import { saveLegalSettings } from '../api/use-legal-settings'
@@ -79,7 +79,9 @@ export function LegalSettingsForm({ settings, canEdit, onSaved }: LegalSettingsF
   const [codeError, setCodeError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
-  useEffect(() => setForm(toForm(settings)), [settings])
+  // The saved values: on load, after a save and on Discard.
+  const reset = useCallback(() => setForm(toForm(settings)), [settings])
+  useEffect(reset, [reset])
 
   const original = toForm(settings)
   const dirty = (Object.keys(form) as (keyof FormState)[]).some((k) => form[k] !== original[k])
@@ -223,16 +225,17 @@ export function LegalSettingsForm({ settings, canEdit, onSaved }: LegalSettingsF
 
           <div className="flex justify-end">
             {canEdit && (
-              <Button
-                onClick={() => {
+              <SettingsSaveBar
+                className="basis-full"
+                dirty={dirty}
+                saving={busy}
+                onSave={() => {
                   setCode('')
                   setCodeError(null)
                   setConfirmOpen(true)
                 }}
-                disabled={!dirty || busy}
-              >
-                {t('admin.legal.save', 'Save')}
-              </Button>
+                onDiscard={reset}
+              />
             )}
           </div>
           {!canEdit && (

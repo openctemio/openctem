@@ -1,7 +1,7 @@
 'use client'
 
 import { useBrand } from '@/context/brand-provider'
-import { useEffect, useId, useState } from 'react'
+import { useCallback, useEffect, useId, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { ConfirmDialog } from '@/components/confirm-dialog'
@@ -11,6 +11,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { useTranslation } from '@/context/i18n-provider'
+import { SettingsSaveBar } from '@/features/shared/components/settings-save-bar'
 import type { EmailSettingsResponse } from '@/lib/api/generated'
 import { AdminApiError } from '@console/lib/admin-api/client'
 import { saveEmailSettings, sendTestEmail } from '../api/use-email-settings'
@@ -65,11 +66,13 @@ export function EmailSettingsForm({ settings, canEdit, onSaved }: EmailSettingsF
   const [busy, setBusy] = useState(false)
   const [testing, setTesting] = useState(false)
 
-  useEffect(() => {
+  // The saved values: on load, after a save and on Discard.
+  const reset = useCallback(() => {
     setForm(toForm(settings))
     setPassword('')
     setClearPassword(false)
   }, [settings])
+  useEffect(reset, [reset])
 
   const set = <K extends keyof FormState>(k: K, v: FormState[K]) =>
     setForm((f) => ({ ...f, [k]: v }))
@@ -271,16 +274,17 @@ export function EmailSettingsForm({ settings, canEdit, onSaved }: EmailSettingsF
               </Button>
             )}
             {canEdit && (
-              <Button
-                onClick={() => {
+              <SettingsSaveBar
+                className="basis-full"
+                dirty={dirty}
+                saving={busy}
+                onSave={() => {
                   setCode('')
                   setCodeError(null)
                   setConfirmOpen(true)
                 }}
-                disabled={!dirty || busy}
-              >
-                {t('admin.email.save', 'Save')}
-              </Button>
+                onDiscard={reset}
+              />
             )}
           </div>
           {!canEdit && (

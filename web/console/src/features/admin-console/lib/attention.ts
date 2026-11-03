@@ -6,6 +6,7 @@ import {
   type AdminSystem,
 } from '../types'
 import { daysLeft, formatBytes, hoursAgo } from './system'
+import { PLATFORM_SENSORS_URL } from './installation-health'
 
 export type AttentionSeverity = 'critical' | 'warning' | 'info'
 
@@ -94,7 +95,8 @@ export function buildAttention(
       titleKey: 'admin.attention.breakGlass.title',
       title: 'Emergency access was used',
       detailKey: 'admin.attention.breakGlass.detail',
-      detail: '{count} break-glass sign-in(s) in the last 7 days. Confirm each was expected.',
+      detail:
+        '{count, plural, one {# break-glass sign-in} other {# break-glass sign-ins}} in the last 7 days. Confirm each was expected.',
       vars: { count: o.security.break_glass_sign_ins_7d },
       href: '/security/activity?action=console.break_glass_sign_in',
       actionKey: 'admin.attention.review',
@@ -133,7 +135,8 @@ export function buildAttention(
       titleKey: 'admin.attention.accessRequests.title',
       title: 'Access requests waiting',
       detailKey: 'admin.attention.accessRequests.detail',
-      detail: '{count} request(s) for an organization; the oldest has waited {days} day(s).',
+      detail:
+        '{count, plural, one {# request} other {# requests}} for an organization; the oldest has waited {days, plural, =0 {less than a day} one {# day} other {# days}}.',
       vars: { count: access, days },
       href: '/requests',
       actionKey: 'admin.attention.review',
@@ -157,6 +160,7 @@ export function buildAttention(
   }
 
   if (o.security.break_glass_tests_overdue > 0) {
+    // Everyone gets the way there; the page offers the elevation to record it.
     const canManage = adminHas(who, 'platform.admins.manage')
     items.push({
       id: 'break-glass-test-overdue',
@@ -164,15 +168,12 @@ export function buildAttention(
       titleKey: 'admin.attention.breakGlassTest.title',
       title: 'Break-glass test overdue',
       detailKey: 'admin.attention.breakGlassTest.detail',
-      detail: '{count} emergency-access account(s) not tested in 90 days.',
+      detail:
+        '{count, plural, one {# emergency-access account} other {# emergency-access accounts}} not tested in 90 days.',
       vars: { count: o.security.break_glass_tests_overdue },
-      ...(canManage
-        ? {
-            href: '/security/administrators',
-            actionKey: 'admin.attention.test',
-            action: 'Record a test',
-          }
-        : {}),
+      href: '/security/administrators',
+      actionKey: canManage ? 'admin.attention.test' : 'admin.attention.review',
+      action: canManage ? 'Record a test' : 'Review',
     })
   }
 
@@ -185,7 +186,7 @@ export function buildAttention(
       detailKey: 'admin.attention.sensorsOffline.detail',
       detail: '{offline} of {total} platform sensors are offline or stale.',
       vars: { offline: p.platform_sensors.offline, total: p.platform_sensors.total },
-      href: '/health',
+      href: PLATFORM_SENSORS_URL,
       actionKey: 'admin.attention.inspect',
       action: 'Inspect',
     })
@@ -199,7 +200,7 @@ export function buildAttention(
       title: 'Scan runs past their deadline',
       detailKey: 'admin.attention.runsPastDeadline.detail',
       detail:
-        '{count} run(s) are more than 10 minutes past their deadline: the timeout controller may be stopped.',
+        '{count, plural, one {# run is} other {# runs are}} more than 10 minutes past their deadline: the timeout controller may be stopped.',
       vars: { count: p.scan_runs_past_deadline },
       href: '/health',
       actionKey: 'admin.attention.inspect',
@@ -214,7 +215,8 @@ export function buildAttention(
       titleKey: 'admin.attention.outboxDead.title',
       title: 'Notifications gave up',
       detailKey: 'admin.attention.outboxDead.detail',
-      detail: '{count} notification(s) failed every retry and were not delivered.',
+      detail:
+        '{count, plural, one {# notification} other {# notifications}} failed every retry and were not delivered.',
       vars: { count: p.outbox_dead },
       href: '/health',
       actionKey: 'admin.attention.inspect',
@@ -229,7 +231,8 @@ export function buildAttention(
       titleKey: 'admin.attention.commandsWaiting.title',
       title: 'Sensor jobs are waiting',
       detailKey: 'admin.attention.commandsWaiting.detail',
-      detail: '{count} job(s) pending; the oldest has waited {minutes} minutes for a sensor.',
+      detail:
+        '{count, plural, one {# job} other {# jobs}} pending; the oldest has waited {minutes} minutes for a sensor.',
       vars: {
         count: p.commands_pending,
         minutes: Math.floor(p.command_oldest_pending_seconds / 60),
@@ -258,41 +261,63 @@ export function buildSystemAttention(sys: AdminSystem): AttentionItem[] {
   const items: AttentionItem[] = []
 
   for (const svc of sys.services) {
-    if (svc.configured && !svc.ok) {
+    if (!svc.configured || svc.ok) continue
+    if (svc.name === 'sensors') {
+      // Not a service to restart: every connected sensor stopped reporting
+      // (or the count could not be read).
       items.push({
-        id: `service-down-${svc.name}`,
+        id: 'sensors-all-offline',
         severity: 'critical',
-        titleKey: 'admin.attention.serviceDown.title',
-        title: 'A service is not answering',
-        detailKey: 'admin.attention.serviceDown.detail',
-        detail: '{name} does not answer its health check.',
-        vars: { name: svc.name },
+        titleKey: 'admin.attention.sensorsAllOffline.title',
+        title: 'No sensor is online',
+        detailKey: 'admin.attention.sensorsAllOffline.detail',
+        detail: 'Every connected sensor stopped reporting: scans and feeds wait until one is back.',
         href: '/health',
         actionKey: 'admin.attention.inspect',
         action: 'Inspect',
       })
+      continue
     }
+    items.push({
+      id: `service-down-${svc.name}`,
+      severity: 'critical',
+      titleKey: 'admin.attention.serviceDown.title',
+      title: 'A service is not answering',
+      detailKey: 'admin.attention.serviceDown.detail',
+      detail: '{name} does not answer its health check.',
+      vars: { name: svc.name },
+      href: '/health',
+      actionKey: 'admin.attention.inspect',
+      action: 'Inspect',
+    })
   }
 
+  // Volumes on one filesystem report the same free and total bytes: one item
+  // naming them all, not one per mount.
+  const byDisk = new Map<string, AdminSystem['storage']['volumes']>()
   for (const vol of sys.storage.volumes) {
-    if (vol.ok && vol.level >= 1) {
-      items.push({
-        id: `storage-${vol.name}`,
-        severity: levelSeverity(vol.level),
-        titleKey: 'admin.attention.storage.title',
-        title: 'Disk space is running out',
-        detailKey: 'admin.attention.storage.detail',
-        detail: '{name}: {free} free ({percent}%). A full disk stops the database.',
-        vars: {
-          name: vol.name,
-          free: formatBytes(vol.free_bytes),
-          percent: Math.round(vol.free_ratio * 100),
-        },
-        href: '/health',
-        actionKey: 'admin.attention.inspect',
-        action: 'Inspect',
-      })
-    }
+    if (!vol.ok || vol.level < 1) continue
+    const key = `${vol.total_bytes}:${vol.free_bytes}`
+    byDisk.set(key, [...(byDisk.get(key) ?? []), vol])
+  }
+  for (const vols of byDisk.values()) {
+    const vol = vols[0]
+    items.push({
+      id: `storage-${vols.map((v) => v.name).join('-')}`,
+      severity: levelSeverity(Math.max(...vols.map((v) => v.level))),
+      titleKey: 'admin.attention.storage.title',
+      title: 'Disk space is running out',
+      detailKey: 'admin.attention.storage.detail',
+      detail: '{name}: {free} free ({percent}%). A full disk stops the database.',
+      vars: {
+        name: vols.map((v) => v.name).join(', '),
+        free: formatBytes(vol.free_bytes),
+        percent: Math.round(vol.free_ratio * 100),
+      },
+      href: '/health',
+      actionKey: 'admin.attention.inspect',
+      action: 'Inspect',
+    })
   }
 
   if (sys.backup.reported && sys.backup.level >= 1) {
@@ -369,7 +394,7 @@ export function buildSystemAttention(sys: AdminSystem): AttentionItem[] {
         ? 'admin.attention.securityUpdate.detail'
         : 'admin.attention.updateAvailable.detail',
       detail: security
-        ? 'Running {running}; {latest} fixes {count} advisory(ies).'
+        ? 'Running {running}; {latest} fixes {count, plural, one {# advisory} other {# advisories}}.'
         : 'Running {running}; {latest} is out.',
       vars: { running: sys.version.running, latest: check.latest, count: check.advisories },
       href: '/system/software-updates',

@@ -47,7 +47,8 @@ describe('ThreatSourceCard', () => {
     expect(screen.getByRole('switch', { name: /call cisa and first/i })).toBeChecked()
     expect(screen.getByText(/no release has carried this feed yet/i)).toBeInTheDocument()
     expect(screen.getByText(/release copy read/i)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
+    // No unsaved change, no save bar.
+    expect(screen.queryByRole('button', { name: 'Save changes' })).toBeNull()
   })
 
   it('saves the switched values with the version read', async () => {
@@ -56,7 +57,7 @@ describe('ThreatSourceCard', () => {
     render(<ThreatSourceCard canEdit />)
     await userEvent.click(screen.getByRole('switch', { name: /use the signed release/i }))
     await userEvent.click(screen.getByRole('switch', { name: /call cisa and first/i }))
-    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Save changes' }))
     await waitFor(() =>
       expect(saveThreatSource).toHaveBeenCalledWith({
         source: 'bundle',
@@ -70,6 +71,6 @@ describe('ThreatSourceCard', () => {
     seed(SEEDED)
     render(<ThreatSourceCard canEdit={false} />)
     expect(screen.getByRole('switch', { name: /use the signed release/i })).toBeDisabled()
-    expect(screen.queryByRole('button', { name: 'Save' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Save changes' })).not.toBeInTheDocument()
   })
 })

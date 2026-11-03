@@ -71,7 +71,9 @@ export default function AdminOrganizationsPage() {
           if (owners.length === 0 && row.original.owner_count > 0)
             return (
               <span className="text-sm text-muted-foreground">
-                {t('admin.org.ownerCount', '{count} owner(s)', { count: row.original.owner_count })}
+                {t('admin.org.ownerCount', '{count, plural, one {# owner} other {# owners}}', {
+                  count: row.original.owner_count,
+                })}
               </span>
             )
           if (owners.length === 0 && row.original.owner_invitation)

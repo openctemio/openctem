@@ -755,6 +755,13 @@ Effort is engineer-weeks across all repos.
 | P3–P6 | P6 in part: passive lookalike-domain monitoring ([RFC-083](RFC-083-lookalike-domains.md)). P3, P4 observations, P5 not started. |
 | P3–P6 | P4 in part: typed changes and the weekly digest over the existing records ([RFC-080](RFC-080-attack-surface-changes-and-digest.md)); no `easm_observations` yet. P3, P5, P6 not started. |
 
+**Posture score (2026-10-31).** Shipped: an A to F grade per organization
+and root domain with category contributions, a fix plan to the next grade
+and the risk reduction by asset criticality, precomputed into
+`easm_posture_assets` / `easm_posture_state` (migration `easm_posture`) on a
+schedule with Recalculate now, data scope applied on read; dashboard metric
+`surface.posture`. Design: [easm-posture.md](../architecture/easm-posture.md).
+
 **EASM maturity plan P0 (decisions E1–E13, 2026-10-04).**
 One entry per item; the sensor items (P0-1 to P0-4) live in the sensor and
 sdk-go repositories, P0-5 with the scan-engine work (RFC-046).
