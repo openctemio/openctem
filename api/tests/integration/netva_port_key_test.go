@@ -71,9 +71,27 @@ func TestNetworkFindingWithoutCVE_PortIsPartOfTheKey(t *testing.T) {
 // row over, the other port becomes a new finding.
 func TestNetworkFindingWithoutCVE_LegacyRowKeepsItsTriage(t *testing.T) {
 	r, tn, scan := netPortIngest(t)
-	scan(0) // stored under the legacy generic key
-	if _, err := r.db.Exec(`UPDATE findings SET status = 'false_positive', resolution = 'false_positive'
-		WHERE tenant_id = $1 AND rule_id = '51192'`, tn.tenant.String()); err != nil {
+	// A release before the port joined the key stored the finding under the
+	// port-less version-1 key with no identity tuple; the re-key leaves such
+	// a row there (the port is not on the row). A host-level report today is
+	// a finding of its own (the network key's "host" port), so the row is
+	// written as that release wrote it.
+	scan(0)
+	var assetID string
+	if err := r.db.QueryRowContext(context.Background(), `SELECT asset_id FROM findings WHERE tenant_id = $1 AND rule_id = '51192'`,
+		tn.tenant.String()).Scan(&assetID); err != nil {
+		t.Fatal(err)
+	}
+	legacy := ingest.VersionOneFingerprint(shared.MustIDFromString(assetID), &ctis.Finding{Type: ctis.FindingTypeVulnerability,
+		Title: "SSL Certificate Cannot Be Trusted", Severity: ctis.SeverityMedium, RuleID: "51192", AssetRef: "h"}, nil)
+	if _, err := r.db.ExecContext(context.Background(), `UPDATE findings SET fingerprint = $2, fingerprint_version = 1, identity_key = NULL,
+		identity_algo = NULL, identity_fields = NULL, status = 'false_positive', resolution = 'false_positive'
+		WHERE tenant_id = $1 AND rule_id = '51192'`, tn.tenant.String(), legacy); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.db.ExecContext(context.Background(), `DELETE FROM finding_fingerprints a USING findings f
+		WHERE a.finding_id = f.id AND f.tenant_id = $1 AND f.rule_id = '51192' AND a.fingerprint <> $2`,
+		tn.tenant.String(), legacy); err != nil {
 		t.Fatal(err)
 	}
 	var legacyID string
