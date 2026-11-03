@@ -218,6 +218,8 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	middleware.SetAdminCSRFSecret(cfg.Auth.JWTSecret)
 	adminConsoleSvc := adminconsole.NewService(repos.Admin, repos.AdminConsole, repos.AdminAuditLog, svc.Encryptor,
 		adminAccountDirectory{auth: svc.Auth}, log)
+	// New console authenticator entries carry the console host.
+	adminConsoleSvc.SetEnrolmentIssuer(adminconsole.EnrolmentIssuer(cfg.Brand.DisplayName()+" Admin", cfg.AdminPublicURL))
 	// Administrators' platform identity provider (RFC-022 revision 4): every
 	// discovery, JWKS and token request goes through the SSRF-safe client.
 	adminConsoleSvc.SetPlatformIdP(repos.PlatformIdP, newPlatformIdPClient())
