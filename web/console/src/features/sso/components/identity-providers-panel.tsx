@@ -26,6 +26,7 @@ import {
   useOrgIdentityProviders,
 } from '../api/use-org-identity-providers'
 import { ProviderSetupGuide } from './provider-setup-guide'
+import { entraNeedsDirectoryId } from '../lib/entra-directory'
 import { usePendingSSOChanges } from '@console/features/saml/api/use-saml-config'
 import {
   isPendingSSOChange,
@@ -291,7 +292,15 @@ export function IdentityProvidersPanel({
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
-                        {isConfigured ? (
+                        {isConfigured &&
+                        entraNeedsDirectoryId(providerDef.value, existing.tenant_identifier) ? (
+                          <Badge variant="destructive">
+                            {t(
+                              'admin.identityProvidersPanel.needsDirectoryId',
+                              'Needs directory ID'
+                            )}
+                          </Badge>
+                        ) : isConfigured ? (
                           <Badge variant={existing.is_active ? 'default' : 'secondary'}>
                             {existing.is_active
                               ? t('admin.identityProvidersPanel.active', 'Active')
@@ -357,6 +366,18 @@ export function IdentityProvidersPanel({
                             }
                             disabled={!canManage}
                           />
+                          {isConfigured &&
+                            entraNeedsDirectoryId(
+                              providerDef.value,
+                              existing.tenant_identifier
+                            ) && (
+                              <p className="text-destructive text-sm" role="alert">
+                                {t(
+                                  'admin.identityProvidersPanel.directoryIdRequiredNotice',
+                                  'Sign-in through this provider is refused: members see "SSO not configured". Enter the directory GUID (not common, organizations, consumers or a domain name) and save.'
+                                )}
+                              </p>
+                            )}
                         </div>
                       </div>
 

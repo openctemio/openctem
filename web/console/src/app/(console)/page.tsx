@@ -18,6 +18,8 @@ import { useAdminAuditLogs } from '@console/features/admin-console/api/use-admin
 import { useAdmin } from '@console/features/admin-console/components/admin-console-shell'
 import { AdminActivityTable } from '@console/features/admin-console/components/admin-activity-table'
 import { AttentionQueue } from '@console/features/admin-console/components/attention-queue'
+import { InstallationHealthStrip } from '@console/features/admin-console/components/installation-health-strip'
+import { buildHealthTiles } from '@console/features/admin-console/lib/installation-health'
 import { useAdminSystem } from '@console/features/admin-console/api/use-admin-system'
 import {
   buildAttention,
@@ -29,7 +31,7 @@ export default function AdminOverviewPage() {
   const admin = useAdmin()
   const { t } = useTranslation()
   const overview = useAdminOverview()
-  const activity = useAdminAuditLogs({ page: 1 })
+  const activity = useAdminAuditLogs({ page: 1, perPage: 10 })
   // The installation's own state (disk, backup, certificates, services,
   // updates) belongs in the attention queue too.
   const system = useAdminSystem()
@@ -41,6 +43,10 @@ export default function AdminOverviewPage() {
     [o, sys, admin]
   )
 
+  const health = useMemo(() => (o && sys ? buildHealthTiles(o, sys) : []), [o, sys])
+
+  // Customers and administrator numbers; the installation's own state is in
+  // the health strip above the attention list.
   const metrics: MetricStripItem[] = o
     ? [
         {
@@ -54,18 +60,14 @@ export default function AdminOverviewPage() {
           tone: o.organizations.without_owner > 0 ? 'warning' : 'default',
         },
         {
-          key: 'sensors',
-          href: '/sensors',
-          label: t('admin.overview.platformSensors', 'Platform sensors online'),
-          value:
-            o.platform.platform_sensors.total > 0
-              ? `${o.platform.platform_sensors.online} / ${o.platform.platform_sensors.total}`
-              : t('admin.overview.none', 'None'),
-          tone: o.platform.platform_sensors.offline > 0 ? 'warning' : 'default',
+          key: 'requests',
+          href: '/requests',
+          label: t('admin.overview.accessRequests', 'Access requests waiting'),
+          value: o.requests?.access_pending ?? 0,
         },
         {
           key: 'failed',
-          href: '/security/activity',
+          href: '/security/activity?outcome=failure',
           label: t('admin.overview.failedActions', 'Refused admin actions (24 h)'),
           value: o.security.failed_admin_actions_24h,
           tone: o.security.failed_admin_actions_24h > 0 ? 'danger' : 'default',
@@ -97,6 +99,12 @@ export default function AdminOverviewPage() {
           />
         ) : (
           <>
+            <section className="space-y-3" aria-labelledby="health-heading">
+              <h2 id="health-heading" className="text-base font-semibold">
+                {t('admin.health.heading', 'Installation')}
+              </h2>
+              <InstallationHealthStrip tiles={health} loading={!o || !sys} />
+            </section>
             <section className="space-y-3" aria-labelledby="attention-heading">
               <h2 id="attention-heading" className="text-base font-semibold">
                 {t('admin.attention.heading', 'Needs attention')}
@@ -108,7 +116,12 @@ export default function AdminOverviewPage() {
               </h2>
               <AttentionQueue items={attention} isLoading={overview.isLoading && !o} />
             </section>
-            <MetricStrip items={metrics} loading={overview.isLoading && !o} />
+            <section className="space-y-3" aria-labelledby="customers-heading">
+              <h2 id="customers-heading" className="text-base font-semibold">
+                {t('admin.overview.customersHeading', 'Customers and administrators')}
+              </h2>
+              <MetricStrip items={metrics} loading={overview.isLoading && !o} />
+            </section>
           </>
         )}
         <section className="space-y-3">
