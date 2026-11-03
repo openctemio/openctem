@@ -234,8 +234,8 @@ export function VerificationCodeInput({
   const active = Math.min(value.length, length - 1)
   const split = length >= 6 && length % 2 === 0 ? length / 2 : -1
 
-  // Numeric cells sit centred in their container (dialogs, sign-in and
-  // set-up screens alike), with the label and messages centred over them.
+  // Numeric cells sit centered in their container (dialogs, sign-in and
+  // set-up screens alike), with the label and messages centered over them.
   const centered = mode === 'numeric'
 
   return (
