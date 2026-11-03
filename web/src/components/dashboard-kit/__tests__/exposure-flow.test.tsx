@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ExposureFlowViz } from '../exposure-flow-viz'
@@ -422,17 +422,19 @@ describe('sources: ranked bars by findings or assets, by tool or instance', () =
   it('ranks by findings first and lists every source, the silent ones last', async () => {
     const user = userEvent.setup()
     render(<ExposureFlowViz result={withAssets} />)
+    // A discovery tool with assets but no findings says so, it is never a "0" folded away.
     expect(ranked()).toEqual([
       's:sensor:nuclei',
       's:platform:version-match',
-      's:sensor:dnsx',
       's:sensor:subfinder',
+      's:sensor:dnsx',
     ])
-    expect(screen.getByTestId('ranked-zeros')).toHaveTextContent('Hide 2 with nothing')
+    expect(screen.getByRole('link', { name: /^subfinder Sensor 9,000 assets/ })).toBeInTheDocument()
+    expect(screen.getByTestId('ranked-zeros')).toHaveTextContent('Hide 1 with nothing')
     await user.click(screen.getByTestId('ranked-zeros'))
-    expect(ranked()).toEqual(['s:sensor:nuclei', 's:platform:version-match'])
+    expect(ranked()).toEqual(['s:sensor:nuclei', 's:platform:version-match', 's:sensor:subfinder'])
     expect(screen.getByTestId('ranked-zeros')).toHaveTextContent(
-      '+2 sources with nothing in 30 days'
+      '+1 source with nothing in 30 days'
     )
     expect(hrefOf(/^version-match Platform 59 findings/)).toBe(withAssets.intake?.sources[3].drill)
   })
@@ -451,7 +453,8 @@ describe('sources: ranked bars by findings or assets, by tool or instance', () =
     render(<ExposureFlowViz result={withAssets} />)
     await user.click(screen.getByRole('button', { name: 'Source instance' }))
     expect(ranked()).toEqual(['i:sensor:s1', 'i:platform:platform', 'i:sensor:s2'])
-    const failing = screen.getByRole('link', { name: /^dc-02 Sensor 0 findings/ })
+    // An instance lists the tools it ran under its name (instance, then tools).
+    const failing = screen.getByRole('link', { name: /^dc-02 Sensor 3,000 assets subfinder/ })
     expect(failing).toHaveAttribute('href', '/sensors/s2')
     expect(failing).toHaveAttribute('data-health', 'failed')
   })
@@ -676,6 +679,85 @@ describe('IntakeViz', () => {
     )
     expect(screen.getByRole('tooltip')).toBeInTheDocument()
   })
+
+  const discovery: IntakeData = {
+    ...intake,
+    sources: [
+      ...intake.sources,
+      source({
+        id: 'sensor:subfinder',
+        tool: 'subfinder',
+        origin: 'sensor',
+        kind: 'discovery',
+        received: 0,
+        created: 0,
+        reopened: 0,
+        assets: 412,
+        instances: [
+          {
+            id: 's1',
+            kind: 'sensor',
+            name: 'edge-01',
+            received: 0,
+            assets: 412,
+            health: 'ok',
+            last_at: null,
+            sensor_href: '/sensors/s1',
+          },
+        ],
+      }),
+      source({ id: 'sensor:naabu', tool: 'naabu', origin: 'sensor', received: 0, assets: 0 }),
+      source({ id: 'sensor:asn', tool: 'asn', origin: 'sensor', received: 0, assets: 0 }),
+    ],
+  }
+
+  it('keeps each figure beside its name: rows at a fixed width, the curves take the rest', () => {
+    const { container } = render(<IntakeViz result={{ shape: 'intake', intake: discovery }} />)
+    const grid = container.querySelector('[data-band]') as HTMLElement
+    // The rows' column is a fixed 20 rem, the curves' column takes what is left.
+    expect(grid.className).toContain('@min-[560px]:grid-cols-[20rem_minmax(2.5rem,1fr)_')
+    // The sources and the summary keep the thin dashed frame.
+    expect(screen.getByTestId('intake-sources').className).toContain('@min-[560px]:border-dashed')
+    expect(screen.getByTestId('intake-summary').className).toContain('@min-[560px]:border-dashed')
+  })
+
+  it('shows assets for a discovery tool and folds the sources with nothing', () => {
+    render(<IntakeViz result={{ shape: 'intake', intake: discovery }} />)
+    expect(screen.getByRole('link', { name: /^subfinder Sensor 412 assets/ })).toHaveAttribute(
+      'href',
+      discovery.sources[3].drill
+    )
+    expect(screen.getByTestId('ranked-zeros')).toHaveTextContent(
+      '+2 sources with nothing in 30 days'
+    )
+    expect(screen.queryByRole('link', { name: /^naabu/ })).not.toBeInTheDocument()
+    // The per-source table gives discovery tools an Assets column.
+    expect(screen.getAllByRole('columnheader', { name: 'Assets' }).length).toBeGreaterThan(0)
+  })
+
+  it('orders discovery tools by the assets they found', () => {
+    const more: IntakeData = {
+      ...discovery,
+      sources: [
+        ...discovery.sources,
+        source({ id: 'sensor:dnsx', tool: 'dnsx', origin: 'sensor', received: 0, assets: 9 }),
+      ],
+    }
+    render(<IntakeViz result={{ shape: 'intake', intake: more }} />)
+    const keys = [...document.querySelectorAll('[data-testid="ranked-bars"] li')].map((li) =>
+      li.getAttribute('data-key')
+    )
+    expect(keys.indexOf('s:sensor:subfinder')).toBeLessThan(keys.indexOf('s:sensor:dnsx'))
+  })
+
+  it('groups by instance with its tools under its name (instance, then tools)', async () => {
+    const user = userEvent.setup()
+    render(<IntakeViz result={{ shape: 'intake', intake: discovery }} />)
+    await user.click(screen.getByRole('button', { name: 'Source instance' }))
+    expect(
+      screen.getByRole('link', { name: /^edge-01 Sensor 412 assets subfinder/ })
+    ).toHaveAttribute('href', '/sensors/s1')
+  })
 })
 
 // The seeded organization of the 2026-10-25 screenshots: 1,634 findings
@@ -753,11 +835,16 @@ describe('flow layout bands', () => {
     const fs = await import('node:fs')
     const path = await import('node:path')
     const { FLOW_MID, FLOW_WIDE } = await import('../flow-parts')
-    for (const file of ['exposure-flow-viz.tsx', 'intake-viz.tsx']) {
+    const { INTAKE_SIDE } = await import('../intake-viz')
+    const files: Array<[string, number]> = [
+      ['exposure-flow-viz.tsx', FLOW_MID],
+      ['intake-viz.tsx', INTAKE_SIDE],
+    ]
+    for (const [file, side] of files) {
       const src = fs.readFileSync(path.join(__dirname, '..', file), 'utf8')
       const used = [...src.matchAll(/@min-\[(\d+)px\]/g)].map((m) => Number(m[1]))
-      for (const w of used) expect([FLOW_MID, FLOW_WIDE, 420, 1100]).toContain(w)
-      expect(used).toContain(FLOW_MID)
+      for (const w of used) expect([FLOW_MID, FLOW_WIDE, INTAKE_SIDE, 420, 1100]).toContain(w)
+      expect(used).toContain(side)
     }
   })
 
@@ -766,8 +853,440 @@ describe('flow layout bands', () => {
     const note = screen.getAllByText(/Stale, last|Failed/)[0]
     const row = note.closest('a')
     expect(row).not.toBeNull()
-    // The note sits in the name block, not beside the count at the far edge.
-    expect(row?.querySelector('[data-wire-out]')?.contains(note)).toBe(false)
+    // The note sits on its own line under the name, not beside the count.
+    expect(row?.children[1]?.contains(note)).toBe(false)
+    expect(row?.children[0]?.contains(note)).toBe(false)
     expect(container.querySelector('[data-band]')).toHaveAttribute('data-band', 'narrow')
+  })
+})
+
+describe('source wires follow the rows that are listed', () => {
+  let restore: () => void
+  beforeEach(() => {
+    restore = atWidth(1200)
+  })
+  afterEach(() => restore())
+
+  const withZeros: FlowResult = {
+    ...flow,
+    intake: {
+      ...intake,
+      sources: [
+        ...(intake.sources ?? []),
+        source({ id: 'sensor:zero-a', tool: 'zero-a', origin: 'sensor', received: 0, created: 0 }),
+        source({ id: 'sensor:zero-b', tool: 'zero-b', origin: 'sensor', received: 0, created: 0 }),
+      ],
+    },
+  }
+  const sourceWires = () =>
+    [...document.querySelectorAll('[data-wire-key]')]
+      .map((g) => g.getAttribute('data-wire-key'))
+      .filter((k) => k?.startsWith('w:s:'))
+  const wireOf = (k: string) => document.querySelector(`[data-wire-key="w:s:${k}"]`)
+
+  it('draws a wire per listed row, and none for the rows folded under "with nothing"', async () => {
+    const user = userEvent.setup()
+    render(<ExposureFlowViz result={withZeros} />)
+    // Listed by default: a thin still dashed wire each, anchored on their rows.
+    expect(sourceWires()).toHaveLength(5)
+    expect(wireOf('sensor:zero-a')?.querySelector('path')?.getAttribute('stroke-dasharray')).toBe(
+      '4 4'
+    )
+    expect(wireOf('sensor:zero-a')?.querySelector('.animate-flow-light')).toBeNull()
+
+    await user.click(screen.getByTestId('ranked-zeros'))
+    await waitFor(() => expect(wireOf('sensor:zero-a')).toBeNull())
+    // Collapsed: exactly the visible non-zero sources keep their wire.
+    expect(document.querySelectorAll('li[data-key^="s:"]')).toHaveLength(3)
+    expect(sourceWires()).toHaveLength(3)
+
+    await user.click(screen.getByTestId('ranked-zeros'))
+    await waitFor(() => expect(sourceWires()).toHaveLength(5))
+  })
+})
+
+describe('sub-figures of an outcome', () => {
+  let restore: () => void
+  beforeEach(() => {
+    restore = atWidth(1200)
+  })
+  afterEach(() => restore())
+
+  it('Past SLA (a part of Open) never gets its own thread from the rings', () => {
+    render(<ExposureFlowViz result={flow} />)
+    const keys = [...document.querySelectorAll('[data-wire-key]')].map((p) =>
+      p.getAttribute('data-wire-key')
+    )
+    expect(keys).toContain('w:o:open')
+    expect(keys).toContain('w:o:fixed')
+    expect(keys).not.toContain('w:o:past_sla')
+    expect(document.querySelector('[data-wire-in="o:past_sla"]')).toBeNull()
+    // Still listed under Open, as a link with its own count.
+    expect(hrefOf(/^Past SLA 43$/)).toBe(flow.past_sla.drill)
+  })
+})
+
+describe('source wires after toggling findings and assets', () => {
+  const ROW_H = 50
+  const STALE = 900
+  const live: Array<{ finished: Promise<void>; done: () => void }> = []
+  const shifted = new WeakSet<Element>()
+  const protoRect = HTMLElement.prototype.getBoundingClientRect
+  const protoAnimate = (HTMLElement.prototype as { animate?: unknown }).animate
+  const protoAnims = (HTMLElement.prototype as { getAnimations?: unknown }).getAnimations
+
+  const toggled: FlowResult = {
+    ...flow,
+    intake: {
+      ...intake,
+      sources: [
+        source({ id: 'sensor:nuclei', tool: 'nuclei', origin: 'sensor', received: 400 }),
+        source({ id: 'sensor:dnsx', tool: 'dnsx', origin: 'sensor', received: 0, assets: 0 }),
+        source({
+          id: 'sensor:subfinder',
+          tool: 'subfinder',
+          origin: 'sensor',
+          received: 0,
+          assets: 9000,
+          kind: 'discovery',
+        }),
+      ],
+    },
+  }
+
+  // A layout the test controls: a row sits at its place in the list, plus the
+  // transform of a slide that has not finished (the ranked bars' FLIP).
+  const rowTop = (el: Element) => {
+    const li = el.closest('li')
+    const idx = li ? [...li.parentElement!.children].indexOf(li) : 0
+    return idx * ROW_H + (li && shifted.has(li) ? STALE : 0)
+  }
+  const rect = (x: number, y: number, w: number, h: number) =>
+    ({
+      x,
+      y,
+      left: x,
+      top: y,
+      right: x + w,
+      bottom: y + h,
+      width: w,
+      height: h,
+      toJSON: () => ({}),
+    }) as DOMRect
+
+  beforeEach(() => {
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (
+      this: HTMLElement
+    ) {
+      if (this.dataset.wireOut) return rect(0, rowTop(this), 300, 44)
+      if (this.hasAttribute('data-wire-main')) return rect(0, rowTop(this), 300, 44)
+      if (this.dataset.wireIn === 'ring') return rect(600, 200, 1, 1)
+      if (this.tagName === 'LI') return rect(0, rowTop(this), 300, 44)
+      return rect(0, 0, 1200, 600)
+    })
+    Object.assign(HTMLElement.prototype, {
+      animate(this: HTMLElement) {
+        shifted.add(this)
+        let done!: () => void
+        const finished = new Promise<void>((res) => {
+          done = () => {
+            shifted.delete(this)
+            res()
+          }
+        })
+        live.push({ finished, done })
+        return { finished }
+      },
+      getAnimations: () => [...live],
+    })
+    try {
+      window.localStorage.clear()
+    } catch {
+      /* no storage */
+    }
+  })
+  afterEach(() => {
+    vi.restoreAllMocks()
+    live.length = 0
+    Object.assign(HTMLElement.prototype, { animate: protoAnimate, getAnimations: protoAnims })
+    HTMLElement.prototype.getBoundingClientRect = protoRect
+  })
+
+  const starts = () =>
+    [...document.querySelectorAll('[data-wire-key^="w:s:"]')].map((g) => {
+      const d = g.querySelector('path')!.getAttribute('d')!
+      const m = /^M([\d.-]+) ([\d.-]+)/.exec(d)!
+      const end = /([\d.-]+) ([\d.-]+)$/.exec(d)!
+      return {
+        key: g.getAttribute('data-wire-key')!.replace('w:', ''),
+        y: Number(m[2]),
+        endY: Number(end[2]),
+        endX: Number(end[1]),
+      }
+    })
+  const expectWiresOnRows = () => {
+    const wires = starts()
+    expect(wires.length).toBe(3)
+    for (const w of wires) {
+      const li = document.querySelector(`li[data-key="${w.key}"]`)!
+      expect(w.y).toBe(rowTop(li) + 22)
+      expect(w.endY).toBe(200.5)
+      expect(w.endX).toBeGreaterThan(0)
+    }
+  }
+
+  it('starts every wire at its own row after findings, assets and findings again', async () => {
+    const user = userEvent.setup()
+    render(<ExposureFlowViz result={toggled} />)
+    expectWiresOnRows()
+    for (const name of ['Assets', 'Findings']) {
+      await user.click(screen.getByRole('button', { name }))
+      // The slide is still running: the wires have not settled on it yet.
+      act(() => live.splice(0).forEach((a) => a.done()))
+      await waitFor(expectWiresOnRows)
+    }
+  })
+})
+
+describe('source wires of the Sources card: rows of different heights', () => {
+  const protoRect = HTMLElement.prototype.getBoundingClientRect
+  const rect = (y: number, h: number, w = 300, x = 0) =>
+    ({
+      x,
+      y,
+      left: x,
+      top: y,
+      right: x + w,
+      bottom: y + h,
+      width: w,
+      height: h,
+      toJSON: () => ({}),
+    }) as DOMRect
+  const CARD_H = 1000
+  const MAIN_H = 44
+  const NOTE_H = 20
+  const GAP = 2
+  // Row tops follow the real flow: a stale row is taller by its note line.
+  const layoutOf = (list: Element) => {
+    let y = 10
+    const tops = new Map<Element, { top: number; h: number }>()
+    for (const li of [...list.children]) {
+      const stale = li.querySelector('[data-health="stale"]') != null
+      const h = MAIN_H + (stale ? NOTE_H : 0)
+      tops.set(li, { top: y, h })
+      y += h + GAP
+    }
+    return tops
+  }
+  const place = (el: HTMLElement) => {
+    const li = el.closest('li')
+    if (!li) return null
+    return layoutOf(li.parentElement!).get(li)!
+  }
+  const SUMMARY = { y: 300, x: 700 }
+
+  beforeEach(() => {
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (
+      this: HTMLElement
+    ) {
+      if (this.dataset.wireIn === 'summary') return rect(SUMMARY.y, 1, 1, SUMMARY.x)
+      if (this.hasAttribute('data-wire-main')) {
+        const p = place(this)
+        return p ? rect(p.top, MAIN_H) : rect(0, 0)
+      }
+      if (this.dataset.wireOut) {
+        const p = place(this)
+        return p ? rect(p.top, p.h) : rect(0, 0)
+      }
+      return rect(0, CARD_H, 1200)
+    })
+    try {
+      window.localStorage.clear()
+    } catch {
+      /* no storage */
+    }
+  })
+  afterEach(() => {
+    vi.restoreAllMocks()
+    HTMLElement.prototype.getBoundingClientRect = protoRect
+  })
+
+  const names = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']
+  const many = (stale: string[], received?: (n: string, i: number) => number): IntakeData => ({
+    ...intake,
+    sources: names.map((n, i) =>
+      source({
+        id: `sensor:${n}`,
+        tool: n,
+        origin: 'sensor',
+        received: received ? received(n, i) : 1000 - i * 50,
+        health: stale.includes(n) ? 'stale' : 'ok',
+      })
+    ),
+  })
+  const wires = () =>
+    [...document.querySelectorAll('[data-wire-key]')].map((g) => {
+      const d = g.querySelector('path')!.getAttribute('d')!
+      const a = /^M([\d.-]+) ([\d.-]+)/.exec(d)!
+      const b = /([\d.-]+) ([\d.-]+)$/.exec(d)!
+      return {
+        key: g.getAttribute('data-wire-key')!.replace('w:', ''),
+        health: g.getAttribute('data-wire'),
+        motion: g.getAttribute('data-wire-motion'),
+        light: g.querySelector('.animate-flow-light') != null,
+        y: Number(a[2]),
+        endX: Number(b[1]),
+        endY: Number(b[2]),
+      }
+    })
+  const expectOnOwnRows = () => {
+    const ws = wires()
+    for (const w of ws) {
+      const li = document.querySelector(`li[data-key="${w.key}"]`)!
+      const p = layoutOf(li.parentElement!).get(li)!
+      // The centre of the name and bar, not of the row with its note line.
+      expect(w.y).toBe(p.top + MAIN_H / 2)
+      expect(w.endY).toBe(SUMMARY.y + 0.5)
+      expect(w.endX).toBe(SUMMARY.x)
+      expect(w.y).toBeGreaterThanOrEqual(0)
+      expect(w.y).toBeLessThanOrEqual(CARD_H)
+    }
+    return ws
+  }
+
+  it('starts every wire at its own row, with and without the stale note line', async () => {
+    render(<IntakeViz result={{ shape: 'intake', intake: many(['a', 'c']) }} />)
+    await waitFor(() => expect(wires().length).toBeGreaterThan(0))
+    const ws = expectOnOwnRows()
+    // Only the listed rows have a wire: the rest sit behind "Show all".
+    expect(ws).toHaveLength(document.querySelectorAll('li[data-key^="s:"]').length)
+    expect(ws.length).toBeLessThan(names.length)
+    expect(ws.find((w) => w.key === 's:sensor:a')?.health).toBe('stale')
+  })
+
+  it('gives rows behind "Show all" a wire only once listed, and removes it on "Show fewer"', async () => {
+    const user = userEvent.setup()
+    render(<IntakeViz result={{ shape: 'intake', intake: many(['b']) }} />)
+    await waitFor(() => expect(wires().length).toBeGreaterThan(0))
+    const folded = wires().length
+    expect(document.querySelector('[data-wire-key="w:s:sensor:h"]')).toBeNull()
+    await user.click(screen.getByRole('button', { name: /show all/i }))
+    await waitFor(() => expect(wires()).toHaveLength(names.length))
+    expectOnOwnRows()
+    await user.click(screen.getByRole('button', { name: /show fewer/i }))
+    await waitFor(() => expect(wires()).toHaveLength(folded))
+    expect(document.querySelector('[data-wire-key="w:s:sensor:h"]')).toBeNull()
+    expectOnOwnRows()
+  })
+
+  it('re-measures when a data refresh makes a row stale (taller) and when the toggle changes', async () => {
+    const user = userEvent.setup()
+    const { rerender } = render(<IntakeViz result={{ shape: 'intake', intake: many([]) }} />)
+    await waitFor(() => expect(wires().length).toBeGreaterThan(0))
+    expectOnOwnRows()
+    rerender(<IntakeViz result={{ shape: 'intake', intake: many(['a', 'b']) }} />)
+    await waitFor(() => {
+      expect(wires().find((w) => w.key === 's:sensor:a')?.health).toBe('stale')
+      expectOnOwnRows()
+    })
+    const assets = screen.queryByRole('button', { name: 'Assets' })
+    if (assets) {
+      await user.click(assets)
+      await waitFor(expectOnOwnRows)
+    }
+  })
+
+  it('moves the light from source to target only on healthy wires with data; the rest stay still', async () => {
+    render(
+      <IntakeViz
+        result={{
+          shape: 'intake',
+          intake: many(['b'], (n) => (n === 'c' ? 0 : 500)),
+        }}
+      />
+    )
+    await waitFor(() => expect(wires().length).toBeGreaterThan(0))
+    const zeros = screen.queryByTestId('ranked-zeros')
+    if (zeros && !document.querySelector('[data-wire-key="w:s:sensor:c"]')) {
+      await userEvent.setup().click(zeros)
+    }
+    await waitFor(() =>
+      expect(document.querySelector('[data-wire-key="w:s:sensor:c"]')).not.toBeNull()
+    )
+    const by = (k: string) => wires().find((w) => w.key === `s:sensor:${k}`)!
+    expect(by('a')).toMatchObject({ health: 'ok', motion: 'on', light: true })
+    expect(by('b')).toMatchObject({ health: 'stale', motion: 'off', light: false })
+    expect(by('c')).toMatchObject({ health: 'ok', motion: 'off', light: false })
+    const dash = document
+      .querySelector('[data-wire-key="w:s:sensor:c"] path')
+      ?.getAttribute('stroke-dasharray')
+    expect(dash).toBe('4 4')
+    const stale = document.querySelector('[data-wire-key="w:s:sensor:b"] path')
+    expect(stale?.getAttribute('stroke')).toBe('var(--warning)')
+    expect(stale?.getAttribute('stroke-dasharray')).toBe('1 5')
+    // The light runs along the same path as its wire, so source to target.
+    const g = document.querySelector('[data-wire-key="w:s:sensor:a"]')!
+    const [base, light] = [...g.querySelectorAll('path')]
+    expect(light.getAttribute('d')).toBe(base.getAttribute('d'))
+  })
+
+  it('has no motion under prefers-reduced-motion', async () => {
+    const prev = window.matchMedia
+    window.matchMedia = ((q: string) => ({
+      matches: q.includes('prefers-reduced-motion'),
+      media: q,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    })) as unknown as typeof window.matchMedia
+    render(<IntakeViz result={{ shape: 'intake', intake: many([]) }} />)
+    await waitFor(() => expect(wires().length).toBeGreaterThan(0))
+    for (const w of wires()) {
+      expect(w.light).toBe(false)
+      expect(w.motion).toBe('off')
+    }
+    window.matchMedia = prev
+  })
+
+  it('draws no wire whose anchor lies outside the card', async () => {
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (
+      this: HTMLElement
+    ) {
+      if (this.dataset.wireIn === 'summary') return rect(300, 1, 1, 700)
+      if (this.hasAttribute('data-wire-main') || this.dataset.wireOut) return rect(5000, 44)
+      return rect(0, 400, 1200)
+    })
+    render(<IntakeViz result={{ shape: 'intake', intake: many([]) }} />)
+    await new Promise((r) => setTimeout(r, 20))
+    expect(wires()).toHaveLength(0)
+  })
+})
+
+describe('Exposure flow wires and light', () => {
+  const protoRect = HTMLElement.prototype.getBoundingClientRect
+  beforeEach(() => {
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
+      width: 1200,
+      height: 400,
+      top: 0,
+      left: 0,
+      right: 1200,
+      bottom: 400,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    } as DOMRect)
+  })
+  afterEach(() => {
+    vi.restoreAllMocks()
+    HTMLElement.prototype.getBoundingClientRect = protoRect
+  })
+  it('carries the light on wires with data (sources and outcomes), still dashed for none', async () => {
+    render(<ExposureFlowViz result={flow} />)
+    await waitFor(() => expect(document.querySelector('[data-wire-key^="w:s:"]')).not.toBeNull())
+    const lit = [...document.querySelectorAll('[data-wire-key]')].filter(
+      (g) => g.getAttribute('data-wire-motion') === 'on'
+    )
+    expect(lit.length).toBeGreaterThan(0)
+    for (const g of lit) expect(g.querySelector('.animate-flow-light')).not.toBeNull()
   })
 })

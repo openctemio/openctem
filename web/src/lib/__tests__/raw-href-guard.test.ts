@@ -69,6 +69,9 @@ const SAFE_TAGS = new Set(['SafeExternalLink'])
  * route builder or a constant.
  */
 const REVIEWED = new Set([
+  // Account space links: NAV and ACCOUNT_LINKS are constant same-origin paths in the same file.
+  'features/account/components/account-shell.tsx|Link|href={item.href}',
+  'features/account/components/welcome-hub.tsx|Link|href={item.href}',
   // Exception batch source link: batchSourceHref() is a fixed same-origin path (/vulnerabilities or
   // /remediation/tasks) with the id or CVE ids passed through encodeURIComponent.
   'features/findings/components/group-exceptions-panel.tsx|Link|href={batchSourceHref(row.original)}',

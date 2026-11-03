@@ -1,8 +1,8 @@
 module github.com/openctemio/openctem/api
 
-go 1.26.9
+go 1.27.0
 
-toolchain go1.26.10
+toolchain go1.27.3
 
 require (
 	github.com/go-chi/chi/v5 v5.5.0
@@ -63,6 +63,7 @@ require (
 	github.com/gabriel-vasile/mimetype v1.4.15 // indirect
 	github.com/go-git/gcfg v1.5.1-0.20230307220236-3a3c6141e376 // indirect
 	github.com/go-git/go-billy/v5 v5.9.2 // indirect
+	github.com/go-jose/go-jose/v4 v4.1.7 // indirect
 	github.com/go-logr/logr v1.4.4 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-openapi/analysis v0.25.5 // indirect
@@ -158,7 +159,7 @@ require (
 	github.com/go-pdf/fpdf v0.9.0
 	github.com/go-webauthn/webauthn v0.18.2
 	github.com/mattermost/xml-roundtrip-validator v0.1.0
-	github.com/openctemio/ctis v1.6.5
+	github.com/openctemio/ctis v1.6.8-0.20261103015342-459d43b53b35
 	github.com/openctemio/ctis/transfer v0.1.0
 	github.com/pires/go-proxyproto v0.16.0
 	github.com/russellhaering/goxmldsig v1.6.1

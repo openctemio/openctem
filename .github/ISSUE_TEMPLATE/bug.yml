@@ -1,0 +1,68 @@
+name: Bug report
+description: Something in the API or the web console does not work as it should.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. **Do not report a security vulnerability here** (issues are public): follow [SECURITY.md](https://github.com/openctemio/openctem/security/policy).
+
+        Do not paste organization names, e-mail addresses, domains, tokens or finding data. Remove them from logs and screenshots first.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you did, what you expected and what you saw instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open ...
+        2. Click ...
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Help > About OpenCTEM. Filled in by "Report this problem".
+      placeholder: v0.16.0
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: How is it installed
+      options:
+        - Docker Compose
+        - Helm (Kubernetes)
+        - Ansible kit
+        - All-in-one image
+        - Built from source
+        - Other
+  - type: input
+    id: browser
+    attributes:
+      label: Browser
+      description: Filled in by "Report this problem".
+      placeholder: Chrome 131
+  - type: input
+    id: route
+    attributes:
+      label: Page
+      description: The page's address with ids removed, for example /findings/:id. Filled in by "Report this problem".
+      placeholder: /findings/:id
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics
+      description: Version, channel, browser, page, request ID and error code. Filled in by "Report this problem" or "Copy diagnostics". Review it before you submit.
+      render: text
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or screenshots
+      description: Redact names, addresses, domains and tokens.
+      render: text

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	moduledom "github.com/openctemio/openctem/api/pkg/domain/module"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/ticketlink"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -18,7 +19,7 @@ type taskIssueSyncer interface {
 
 // taskLinksBehind lists task links whose task moved since the last push.
 type taskLinksBehind interface {
-	TaskLinksBehindForPlatform(ctx context.Context, limit int) ([]ticketlink.TaskLinkRef, error)
+	TaskLinksBehindForPlatform(ctx context.Context, limit int, skipTenants []shared.ID) ([]ticketlink.TaskLinkRef, error)
 }
 
 // TaskTicketBatch bounds how many task issues one pass pushes (the tracker's
@@ -32,6 +33,7 @@ const TaskTicketBatch = 100
 type TaskTicketController struct {
 	links    taskLinksBehind
 	syncer   taskIssueSyncer
+	modules  ModuleGuard
 	interval time.Duration
 	logger   *logger.Logger
 }
@@ -45,6 +47,10 @@ func NewTaskTicketController(links taskLinksBehind, syncer taskIssueSyncer, inte
 	return &TaskTicketController{links: links, syncer: syncer, interval: interval, logger: log}
 }
 
+// SetModuleGuard makes the pass push nothing for a tenant with the
+// remediation module off (the push goes to the tenant's tracker).
+func (c *TaskTicketController) SetModuleGuard(g ModuleGuard) { c.modules = g }
+
 // Name returns the controller name.
 func (c *TaskTicketController) Name() string { return "task-tickets" }
 
@@ -56,7 +62,16 @@ func (c *TaskTicketController) Interval() time.Duration { return c.interval }
 
 // Reconcile pushes the task issues that are behind.
 func (c *TaskTicketController) Reconcile(ctx context.Context) (int, error) {
-	refs, err := c.links.TaskLinksBehindForPlatform(ctx, TaskTicketBatch)
+	// Tenants with the module off are left out of the query, so their links
+	// (always the oldest) cannot fill the batch and starve the others.
+	refs, err := moduledom.CollectEnabled(ctx, TaskTicketBatch,
+		func(skip []shared.ID) ([]ticketlink.TaskLinkRef, error) {
+			return c.links.TaskLinksBehindForPlatform(ctx, TaskTicketBatch, skip)
+		},
+		func(r ticketlink.TaskLinkRef) shared.ID { return r.TenantID },
+		func(ctx context.Context, t shared.ID) bool {
+			return c.modules != nil && c.modules.TenantDisabledModules(ctx, t.String())[moduledom.ModuleRemediation]
+		})
 	if err != nil {
 		return 0, err
 	}

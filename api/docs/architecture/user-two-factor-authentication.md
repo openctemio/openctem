@@ -101,7 +101,11 @@ organization and fails closed when it cannot.
   2FA, enrolled or not. The UI signs the user out; they sign in again with
   password and 2FA, or through that organization's IdP. Users and sessions are
   global, so without this a sign-in through organization B's IdP would get into
-  organization A without A's 2FA. See `Session.FederatedFor` in
+  organization A without A's 2FA. Organization B's IdP does not open
+  organization A without 2FA either: when the account has its own password or
+  factor, A refuses that session with `403 OWN_SIGN_IN_REQUIRED` whatever its
+  2FA rule ([organization-settings.md](organization-settings.md#identity-provider-binding)).
+  See `Session.FederatedFor` in
   [sso-authentication.md](sso-authentication.md#how-a-sessions-login-method-is-recorded).
 - Owners and admins see each member's status in the members list
   (`GET /tenants/{t}/members?include=user` → `mfa_status`: `enabled`, `disabled` or

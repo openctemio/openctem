@@ -23,6 +23,14 @@ type ModuleStateProvider interface {
 	TenantModuleStates(ctx context.Context, tenantID string) map[string]string
 }
 
+// ModuleSnapshotProvider is a ModuleStateProvider that also says how long its
+// answer can be kept: validUntil is the next moment the state changes by
+// itself (zero: none), cacheable is false when a read failed.
+// *module.ModuleService implements it.
+type ModuleSnapshotProvider interface {
+	TenantModuleStateSnapshot(ctx context.Context, tenantID string) (states map[string]string, validUntil time.Time, cacheable bool)
+}
+
 // ModuleGate answers "is module X on for tenant Y" for per-tenant route
 // gating, with a short-TTL cache dropped on every replica by a module change
 // (RFC-064). The organization's own switches are preferences; its plan and
@@ -35,6 +43,9 @@ type ModuleGate struct {
 	ttl      time.Duration
 	mu       sync.RWMutex
 	cache    map[string]cachedStates
+	// gen counts invalidations: a read that started before an invalidation
+	// must not store its (then stale) answer after it.
+	gen uint64
 }
 
 type cachedStates struct {
@@ -82,11 +93,25 @@ func (g *ModuleGate) states(ctx context.Context, tenantID string) map[string]str
 		g.mu.RUnlock()
 		return e.states
 	}
+	gen := g.gen
 	g.mu.RUnlock()
 
 	var states map[string]string
-	if sp, ok := g.provider.(ModuleStateProvider); ok {
+	ttl := g.ttl
+	cacheable := true
+	if snap, ok := g.provider.(ModuleSnapshotProvider); ok {
+		var validUntil time.Time
+		states, validUntil, cacheable = snap.TenantModuleStateSnapshot(ctx, tenantID)
+		// A grace or a timed deny that ends by itself changes the state with no
+		// write to tell us: never keep the answer past it.
+		if !validUntil.IsZero() {
+			if d := validUntil.Sub(now); d < ttl {
+				ttl = d
+			}
+		}
+	} else if sp, ok := g.provider.(ModuleStateProvider); ok {
 		states = sp.TenantModuleStates(ctx, tenantID)
+		cacheable = !hasUnavailable(states)
 	} else {
 		states = map[string]string{}
 		for id, off := range g.provider.TenantDisabledModules(ctx, tenantID) {
@@ -95,14 +120,16 @@ func (g *ModuleGate) states(ctx context.Context, tenantID string) map[string]str
 			}
 		}
 	}
-	ttl := g.ttl
-	if hasUnavailable(states) {
-		// An entitlement read failure is retried soon, not held for the TTL.
-		ttl = 5 * time.Second
+	// A failed read (entitlement unreadable: every module reported unavailable)
+	// is the failure, not the organization's state: it is answered now, closed,
+	// and never kept, so the next request reads again.
+	if cacheable && ttl > 0 {
+		g.mu.Lock()
+		if g.gen == gen {
+			g.cache[tenantID] = cachedStates{states: states, expiry: now.Add(ttl)}
+		}
+		g.mu.Unlock()
 	}
-	g.mu.Lock()
-	g.cache[tenantID] = cachedStates{states: states, expiry: now.Add(ttl)}
-	g.mu.Unlock()
 	return states
 }
 
@@ -123,6 +150,7 @@ func (g *ModuleGate) Invalidate(tenantID string) {
 	}
 	g.mu.Lock()
 	delete(g.cache, tenantID)
+	g.gen++
 	g.mu.Unlock()
 }
 
@@ -132,6 +160,7 @@ func (g *ModuleGate) InvalidateAll() {
 		return
 	}
 	g.mu.Lock()
+	g.gen++
 	g.cache = make(map[string]cachedStates)
 	g.mu.Unlock()
 }

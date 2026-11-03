@@ -22,6 +22,7 @@ import (
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/app/datascope"
 	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
+	moduledom "github.com/openctemio/openctem/api/pkg/domain/module"
 	remediationdom "github.com/openctemio/openctem/api/pkg/domain/remediation"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
@@ -733,7 +734,15 @@ const ReconcileBatch = 500
 // recompute (a scan closed one, a person claimed a fix, an SLA moved). It
 // runs in the background, as the platform.
 func (s *TaskService) Reconcile(ctx context.Context) (int, error) {
-	refs, err := s.repo.StaleTasksForPlatform(ctx, ReconcileBatch)
+	// A tenant with the remediation module off keeps its tasks as they are.
+	// CollectEnabled leaves such tenants out of the query, so their stale
+	// rows (always the oldest) cannot fill the batch and starve the others.
+	refs, err := moduledom.CollectEnabled(ctx, ReconcileBatch,
+		func(skip []shared.ID) ([]remediationdom.StaleTaskRef, error) {
+			return s.repo.StaleTasksForPlatform(ctx, ReconcileBatch, skip)
+		},
+		func(r remediationdom.StaleTaskRef) shared.ID { return r.TenantID },
+		s.moduleOff)
 	if err != nil {
 		return 0, err
 	}
@@ -817,4 +826,10 @@ func manualStr(m *remediationdom.ManualState) string {
 		return ""
 	}
 	return string(*m)
+}
+
+// moduleOff reports whether the remediation module is off for the tenant (a
+// nil guard: on).
+func (s *TaskService) moduleOff(ctx context.Context, tenantID shared.ID) bool {
+	return s.modules != nil && s.modules.TenantDisabledModules(ctx, tenantID.String())[moduledom.ModuleRemediation]
 }

@@ -127,13 +127,17 @@ the run's logical state: `queued`, `running`, `waiting_tool`, `waiting_approval`
 3. builds the masked bundle under the AI agent's data class ceiling, calls the model, validates the
    output against the kind's schema and maps placeholders back through the stored mapping;
 4. turns each item into the AI agent's own command (`finding.AIAgentCommands`), with the provenance
-   in the context:
+   in the context, within the organization's setting of the run's use case
+   ([AI use cases](ai-use-cases.md)): `off` refuses the run (`use_case_off`) before any model call,
+   `suggest` (the default) writes every item as a comment, and the data class sent is the lower of
+   the use case's ceiling and the AI agent's. In `auto_apply`, at or above the use case's minimum
+   confidence:
 
 | Output | Command | Needs | Result |
 |---|---|---|---|
 | summary, remediation steps, needs-info | internal comment | `findings:comment` | comment |
 | true positive on a new finding | status `confirmed` | `findings:status` | applied, else a comment |
-| severity | severity change | `findings:severity` | raise applied, downgrade a severity request; else a comment |
+| severity | severity change | `findings:severity` | downgrade a severity request; a raise stays a comment (a severity never changes without a person) |
 | likely false positive | false-positive approval request | `findings:write` | request a person decides |
 
 Output that cites nothing real, carries a placeholder the run did not issue, comes from a bundle with

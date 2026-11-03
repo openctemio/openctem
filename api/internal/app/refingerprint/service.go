@@ -21,6 +21,7 @@ package refingerprint
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 
@@ -37,7 +38,13 @@ type Store interface {
 	StartRun(ctx context.Context, tenantID shared.ID, target int) (*vulnerability.RekeyRun, error)
 	SaveProgress(ctx context.Context, tenantID shared.ID, cursorID string, rekeyed, merged, skipped int) error
 	FinishRun(ctx context.Context, tenantID shared.ID) error
+	ListAtVersion(ctx context.Context, tenantID shared.ID, version int, afterID string, limit int) ([]vulnerability.RekeyCandidate, error)
+	Restore(ctx context.Context, tenantID shared.ID, findingID, fromFP string) (vulnerability.RekeyResult, error)
 }
+
+// DownTargetVersion is the checkpoint target of a down run: the version the
+// findings go back to (2, or 1 for a finding version 2 had no recipe for).
+const DownTargetVersion = 2
 
 // DefaultBatchSize is the number of findings read and re-keyed per batch.
 const DefaultBatchSize = 500
@@ -272,4 +279,120 @@ func (s *Service) planBatch(ctx context.Context, tenantID shared.ID, cands []vul
 		rep.Merges = append(rep.Merges, MergePair{SurvivorID: survivor.id, LoserID: loser.id, Fingerprint: fp})
 	}
 	return nil
+}
+
+// RunDown moves (or, without Apply, counts) one tenant's findings from the
+// current version's key back to the key they had before: the down step of
+// the version-3 re-key, run with the release's image before rolling back to
+// a release that does not know version 3. It uses the same checkpoint (so
+// scan auto-resolve is paused while it runs), batching and resume as Run.
+// Merges made by the re-key are not undone.
+func (s *Service) RunDown(ctx context.Context, tenantID shared.ID, opts Options) (*Report, error) {
+	if tenantID.IsZero() {
+		return nil, fmt.Errorf("refingerprint: a tenant is required")
+	}
+	batch := opts.BatchSize
+	if batch <= 0 {
+		batch = DefaultBatchSize
+	}
+	rep := &Report{TenantID: tenantID.String(), Applied: opts.Apply, Skipped: map[string]int{}}
+	cursor := ""
+	if opts.Apply {
+		run, err := s.store.StartRun(ctx, tenantID, DownTargetVersion)
+		if err != nil {
+			return nil, err
+		}
+		if run != nil && run.CursorID != "" {
+			cursor = run.CursorID
+			rep.Resumed = true
+		}
+	}
+	for n := 0; opts.MaxBatches <= 0 || n < opts.MaxBatches; n++ {
+		cands, err := s.store.ListAtVersion(ctx, tenantID, vulnerability.IdentityVersion, cursor, batch)
+		if err != nil {
+			return nil, err
+		}
+		if len(cands) == 0 {
+			rep.Completed = true
+			break
+		}
+		var t batchTally
+		for _, c := range cands {
+			rep.Scanned++
+			if !opts.Apply {
+				t.rekeyed++
+				continue
+			}
+			res, err := s.store.Restore(ctx, tenantID, c.ID, c.Fingerprint)
+			if err != nil {
+				return nil, err
+			}
+			if res.Outcome == vulnerability.RekeyOutcomeRekeyed {
+				t.rekeyed++
+				continue
+			}
+			reason := res.Reason
+			if reason == "" {
+				reason = "changed"
+			}
+			rep.skip(&t, reason)
+		}
+		rep.Rekeyed += t.rekeyed
+		cursor = cands[len(cands)-1].ID
+		if opts.Apply {
+			if err := s.store.SaveProgress(ctx, tenantID, cursor, t.rekeyed, 0, t.skipped); err != nil {
+				return nil, err
+			}
+		}
+		if len(cands) < batch {
+			rep.Completed = true
+			break
+		}
+	}
+	if opts.Apply && rep.Completed {
+		if err := s.store.FinishRun(ctx, tenantID); err != nil {
+			return nil, err
+		}
+	}
+	return rep, nil
+}
+
+// Converger is the storage RunAll needs besides Store.
+type Converger interface {
+	TenantsToRekey(ctx context.Context, target int) ([]shared.ID, error)
+	GetRun(ctx context.Context, tenantID shared.ID) (*vulnerability.RekeyRun, error)
+}
+
+// RunAll applies the re-key to the current version for every tenant that
+// has findings keyed with an older one and has not completed a run to it.
+// The server calls it on start, so stored findings follow a recipe change
+// without an operator step; ingest also re-keys a finding on its next
+// sighting, so a finding the run has not reached yet is never split. report
+// is called with each tenant's report. A tenant whose run fails is logged by
+// the caller through the returned error; the others still run.
+func (s *Service) RunAll(ctx context.Context, c Converger, report func(*Report)) error {
+	tenants, err := c.TenantsToRekey(ctx, vulnerability.IdentityVersion)
+	if err != nil {
+		return err
+	}
+	var errs []error
+	for _, t := range tenants {
+		run, err := c.GetRun(ctx, t)
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		if run != nil && run.Status == vulnerability.RekeyRunCompleted && run.TargetVersion >= vulnerability.IdentityVersion {
+			continue
+		}
+		rep, err := s.Run(ctx, t, Options{Apply: true})
+		if err != nil {
+			errs = append(errs, fmt.Errorf("tenant %s: %w", t, err))
+			continue
+		}
+		if report != nil {
+			report(rep)
+		}
+	}
+	return errors.Join(errs...)
 }

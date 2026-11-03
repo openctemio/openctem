@@ -16,7 +16,7 @@ func (f *fakeRepo) SaveSync(_ context.Context, p *bp.Program) error {
 	return nil
 }
 
-func (f *fakeRepo) SyncDue(context.Context, time.Time, int) ([]bp.ProgramRef, error) {
+func (f *fakeRepo) SyncDue(context.Context, time.Time, int, []shared.ID) ([]bp.ProgramRef, error) {
 	var out []bp.ProgramRef
 	for _, p := range f.programs {
 		if p.ScopeSource != bp.ScopeSourcePaste && p.Status == bp.StatusActive {

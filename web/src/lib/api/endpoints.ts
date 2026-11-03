@@ -124,6 +124,13 @@ export const authEndpoints = {
    */
   onboardingOptions: () => `${API_BASE.AUTH}/onboarding/options`,
   onboardingAccept: () => `${API_BASE.AUTH}/onboarding/accept`,
+  onboardingDecline: () => `${API_BASE.AUTH}/onboarding/decline`,
+
+  /**
+   * An access token without an organization for an account that has none it
+   * can open (409 when it has one). It reaches only the account routes.
+   */
+  accountToken: () => `${API_BASE.AUTH}/account-token`,
 
   /**
    * Second login step: verify a TOTP or recovery code against the challenge

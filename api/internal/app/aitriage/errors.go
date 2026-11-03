@@ -50,6 +50,11 @@ const (
 	FailEnqueue             = "enqueue_failed"
 	FailStuck               = "stuck_timeout"
 	FailFindingNotAvailable = "finding_not_available"
+	// FailUseCaseOff: the organization turned the triage AI use case off.
+	FailUseCaseOff = "ai_use_case_off"
+	// FailNothingToSend: no field of the finding is within the triage use
+	// case's data class ceiling.
+	FailNothingToSend = "nothing_to_send"
 )
 
 var failureCodes = map[string]bool{
@@ -57,7 +62,7 @@ var failureCodes = map[string]bool{
 	FailAuth: true, FailQuota: true, FailTimeout: true, FailUnavailable: true, FailContentBlocked: true,
 	FailInputTooLarge: true, FailInvalidResponse: true, FailEmptyResponse: true, FailBudgetExhausted: true,
 	FailBudgetUnavailable: true, FailTokenLimit: true, FailEnqueue: true, FailStuck: true,
-	FailFindingNotAvailable: true,
+	FailFindingNotAvailable: true, FailUseCaseOff: true, FailNothingToSend: true,
 }
 
 // transientFailures are retried by the job queue while attempts are left;
