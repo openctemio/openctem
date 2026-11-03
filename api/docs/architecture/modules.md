@@ -40,6 +40,9 @@ Coverage tests read the registry:
   is listed under one module and carries that module.
 - `TestEveryJobBelongsToAModule`: every controller the server builds is listed
   under one module.
+- `TestEveryModuleJobSkipsADisabledTenant`: every job of a module that can be
+  switched off names a test that proves it leaves a tenant with the module off
+  alone.
 - The web test `module-registry.test.ts`: every module id the console names
   (route map, sidebar, settings rail, embedded checks) exists.
 
@@ -119,7 +122,7 @@ organization" (with Settings > Modules for an administrator).
 |---|---|
 | REST | `ModuleGate.RequireModule(id)` on the route group. Answers `403 MODULE_NOT_ENABLED`. Cached 60s per organization and dropped on every replica at once by the Redis bus `modules:changed`. |
 | MCP | Each tool and prompt names the module of its REST route (`Module`), as the registry lists it. When that module is off, the tool is not listed and a call is refused. |
-| Background jobs | `ModuleGuard` (`TenantDisabledModules`) in the report scheduler, certificate monitor, EASM DNS checks, graph enrichment, scope join re-evaluation, threat-model refresh, control-test scheduler and remediation progress. |
+| Background jobs | `ModuleGuard` (`TenantDisabledModules`) in every job owned by a module that can be switched off (the registry `jobs` list): the EASM jobs, report scheduler, control-test scheduler, threat-model refresh, the remediation jobs (progress, task reconcile, query tasks, ticket push, suggestions), program sync, feed reconcile and assignment, the AI agent sweep, rule-source sync and the threat-alert planner. A job that must run whatever the tenant chose (retention, repairs that keep the scope boundary consistent, coverage and enrichment of core scanning) is owned by a core module. Sweeps that read the oldest N rows of all tenants leave a disabled tenant out of the query (`CollectEnabled`), so its rows cannot fill the batch and starve the others. |
 | Automations | `WorkflowEventDispatcher` starts nothing for an organization with `workflows` off. |
 | AI triage | Routes gated on `ai_triage`; auto-triage does not start when it is off. |
 | Ingest | Suppression rules apply only with `suppressions` on. |
