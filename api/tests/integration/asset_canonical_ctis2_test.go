@@ -33,7 +33,7 @@ func TestAssetCanonicalCTIS2(t *testing.T) {
 		if sub != "" {
 			subType = sub
 		}
-		if _, err := db.Exec(`INSERT INTO assets (id, tenant_id, name, asset_type, sub_type, criticality, status, created_at, updated_at)
+		if _, err := db.ExecContext(context.Background(), `INSERT INTO assets (id, tenant_id, name, asset_type, sub_type, criticality, status, created_at, updated_at)
 			VALUES ($1, $2, $3, $4, $5, 'medium', 'active', NOW(), NOW())`, id.String(), tid.String(), name, typ, subType); err != nil {
 			t.Fatalf("asset %s: %v", name, err)
 		}
@@ -42,7 +42,7 @@ func TestAssetCanonicalCTIS2(t *testing.T) {
 	finding := func(tid, assetID shared.ID, status string) shared.ID {
 		t.Helper()
 		id := createTestFinding(t, db, tid, assetID, "ctis2 canonical "+status)
-		if _, err := db.Exec(`UPDATE findings SET status = $3 WHERE tenant_id = $1 AND id = $2`, tid.String(), id.String(), status); err != nil {
+		if _, err := db.ExecContext(context.Background(), `UPDATE findings SET status = $3 WHERE tenant_id = $1 AND id = $2`, tid.String(), id.String(), status); err != nil {
 			t.Fatal(err)
 		}
 		return id
@@ -50,7 +50,7 @@ func TestAssetCanonicalCTIS2(t *testing.T) {
 	name := func(id shared.ID) string {
 		t.Helper()
 		var n string
-		if err := db.QueryRow(`SELECT name FROM assets WHERE id = $1`, id.String()).Scan(&n); err != nil {
+		if err := db.QueryRowContext(context.Background(), `SELECT name FROM assets WHERE id = $1`, id.String()).Scan(&n); err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
 				return "<deleted>"
 			}
@@ -61,14 +61,14 @@ func TestAssetCanonicalCTIS2(t *testing.T) {
 	count := func(q string, args ...any) int {
 		t.Helper()
 		var n int
-		if err := db.QueryRow(q, args...).Scan(&n); err != nil {
+		if err := db.QueryRowContext(context.Background(), q, args...).Scan(&n); err != nil {
 			t.Fatalf("%s: %v", q, err)
 		}
 		return n
 	}
 	findingOf := func(id shared.ID) (assetID, status string) {
 		t.Helper()
-		if err := db.QueryRow(`SELECT asset_id, status FROM findings WHERE id = $1`, id.String()).Scan(&assetID, &status); err != nil {
+		if err := db.QueryRowContext(context.Background(), `SELECT asset_id, status FROM findings WHERE id = $1`, id.String()).Scan(&assetID, &status); err != nil {
 			t.Fatal(err)
 		}
 		return

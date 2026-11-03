@@ -124,7 +124,7 @@ func (o onlyAssets) AssetsInScope(_ context.Context, ids []shared.ID) ([]shared.
 // golden inputs), from the module cache.
 func ctisFixture(t *testing.T, rel string) string {
 	t.Helper()
-	out, err := exec.Command("go", "list", "-m", "-f", "{{.Dir}}", "github.com/openctemio/ctis/v2").Output()
+	out, err := exec.CommandContext(context.Background(), "go", "list", "-m", "-f", "{{.Dir}}", "github.com/openctemio/ctis/v2").Output()
 	if err != nil {
 		t.Skipf("ctis module not resolvable: %v", err)
 	}
