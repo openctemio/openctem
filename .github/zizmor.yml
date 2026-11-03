@@ -28,7 +28,7 @@ rules:
       # Inside a run: block, where an inline comment is not seen. One
       # exact-version dev tool (the SARIF formatter for the eslint upload) on
       # the code-scanning job, which holds no secrets.
-      - web-security.yml:106
+      - web-security.yml:111
   github-env:
     ignore:
       # .github/actions/setup-gh: puts its own download directory
