@@ -47,6 +47,14 @@ from the Health page: a service that does not answer, a volume below 20%
 (warning) or 10% (critical) free, a failed, stale or unreported backup, a
 certificate close to expiry, and a newer release (a warning when it fixes
 security advisories).
+The Overview opens with an Installation strip built from the same two reads
+(`/overview`, `/system`; `lib/installation-health.ts`): services, storage
+(the lowest volume), backups, platform sensors (linked to their page) and the
+database schema, each a state in words with a link. "Needs attention" follows
+as one compact list (volumes of one filesystem are one item; "No sensor is
+online" when every connected sensor stopped reporting), then the customer and
+administrator numbers. A page whose read needs a permission the session does
+not act with does not send it and shows the elevation notice instead.
 Suspending an organization and blocking an account (the console's kill
 switches): [organization-suspension.md](organization-suspension.md).
 
@@ -220,6 +228,13 @@ recommended production setup. Details: [Docker deployment](../deployment/docker.
   `recovery_codes`. An address (a key `url`, ending in `url`, or naming a
   webhook) keeps only its scheme and host: a webhook path or query works as
   a bearer secret.
+- Reading the log: Admin activity and an organization's Activity tab open on
+  "Changes" (`GET /admin/audit-logs?kind=changes`): rows of non-GET requests
+  (writes, sign-ins, elevations), rows without a request (host commands) and
+  every refused or failed row; successful page views and the
+  `admin.write_started` rows are under "All events". It is a view of the same
+  chain: nothing is dropped, and the chain status, export and verification
+  cover every row.
 - One identity (RFC-134): the account an administrator signs in with may also
   sign in on the main site and be an ordinary member of organizations, where
   it acts with its tenant role only. The main site never reads the platform

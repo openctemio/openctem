@@ -30,6 +30,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Textarea } from '@/components/ui/textarea'
 import { useTranslation } from '@/context/i18n-provider'
 import { EmptyState, ErrorState, PageStack } from '@/features/shared'
+import { RoleRequiredNotice } from './role-required-notice'
 import { formatSupportTime } from '@/features/support-access/lib/format'
 import { replaceUrlSearch, useUrlParam } from '@/hooks/use-url-param'
 import type { AdminSupportGrant } from '@/lib/api/generated'
@@ -165,7 +166,7 @@ function OpenSessionDialog({
 
 export function SupportAccessPanel({ canSupport }: { canSupport: boolean }) {
   const { t, locale } = useTranslation()
-  const { data, error, isLoading, mutate } = useAdminSupportGrants()
+  const { data, error, isLoading, mutate } = useAdminSupportGrants(canSupport)
   const [opening, setOpening] = useState<AdminSupportGrant | null>(null)
   const [session, setSession] = useState<SupportSessionState | null>(null)
   const [ended, setEnded] = useState(false)
@@ -241,18 +242,9 @@ export function SupportAccessPanel({ canSupport }: { canSupport: boolean }) {
           </AlertDescription>
         </Alert>
       )}
-      {!canSupport && (
-        <Alert>
-          <AlertCircle className="size-4" />
-          <AlertDescription>
-            {t(
-              'admin.support.readonlyNote',
-              'Support sessions need an operations or super administrator.'
-            )}
-          </AlertDescription>
-        </Alert>
-      )}
-      {error ? (
+      {!canSupport ? (
+        <RoleRequiredNotice needed="ops_admin" variant="page" />
+      ) : error ? (
         <ErrorState
           title={t('admin.support.grantsFailed', 'Support grants could not be loaded')}
           error={error}

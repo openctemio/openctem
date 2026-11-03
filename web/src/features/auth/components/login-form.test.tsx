@@ -296,6 +296,15 @@ describe('LoginForm ?error= message', () => {
     )
   })
 
+  it('announces why the session ended once, and not again on a re-render', () => {
+    vi.mocked(toast.info).mockClear()
+    withParams('reason=mfa_required')
+    const { rerender } = render(<LoginForm />)
+    expect(toast.info).toHaveBeenCalledTimes(1)
+    rerender(<LoginForm />)
+    expect(toast.info).toHaveBeenCalledTimes(1)
+  })
+
   it('never shows attacker-chosen text', () => {
     withParams('error=' + encodeURIComponent('Account locked. Call +1 555 0100 now'))
     render(<LoginForm />)
