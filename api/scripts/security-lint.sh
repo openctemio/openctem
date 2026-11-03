@@ -417,27 +417,32 @@ check_httpsec_drift() {
     fi
 
     local tables=(hardBlockedIPRanges privateIPRanges)
-    # sdk-go takes its deny list from contract addrscope (IsInternal), the one
-    # shared definition, instead of a local table. Then the API's tables are
+    # sdk-go takes its deny list from addrscope (IsInternal), the one shared
+    # definition. It lives in the contract module (github.com/openctemio/contract/
+    # addrscope); sdk-go before the contract split imported it from ctis. The
+    # module path is read from sdk-go's own import, so the rule follows
+    # whichever module sdk-go uses, and compares against that same source. instead of a local table. Then the API's tables are
     # checked against addrscope itself: every addrscope range is blocked by
     # the API (hard or private), and the API blocks nothing addrscope does not
     # name (its ranges and the IPv4-embedding carriers it checks). A missing
-    # contract module fails the rule: it is never skipped.
-    if ! grep -q '^var hardBlockedIPRanges ' "$sdk_file" && grep -q 'contract/addrscope"' "$sdk_file"; then
-        local contract_dir
-        # `go mod download` fetches the exact contract version sdk-go pins (go.sum
+    # ctis module fails the rule: it is never skipped.
+    local scope_mod
+    scope_mod=$(grep -oE 'github\.com/openctemio/(contract|ctis)(/v[0-9]+)?/addrscope"' "$sdk_file" | head -n1 | sed 's#/addrscope"$##')
+    if ! grep -q '^var hardBlockedIPRanges ' "$sdk_file" && [[ -n "$scope_mod" ]]; then
+        local ctis_dir
+        # `go mod download` fetches the exact ctis version sdk-go pins (go.sum
         # verified) when the module cache does not have it; `go list -m`
         # alone never downloads. GOTOOLCHAIN=auto: sdk-go main may require a
         # newer Go than this job's (CI pins GOTOOLCHAIN=local); fetching the
         # toolchain only serves this download, nothing is built with it.
-        contract_dir=$(cd sdk-go && GOTOOLCHAIN=auto GOWORK=off GOFLAGS=-mod=mod go mod download -json github.com/openctemio/contract 2>/dev/null |
+        ctis_dir=$(cd sdk-go && GOTOOLCHAIN=auto GOWORK=off GOFLAGS=-mod=mod go mod download -json "$scope_mod" 2>/dev/null |
             python3 -c 'import json,sys; print(json.load(sys.stdin).get("Dir", ""))' 2>/dev/null)
-        if [[ -z "$contract_dir" || ! -f "$contract_dir/addrscope/addrscope.go" ]]; then
-            say_fail "Rule 6: $sdk_file uses contract addrscope but its source could not be downloaded (go mod download github.com/openctemio/contract in sdk-go/)"
+        if [[ -z "$ctis_dir" || ! -f "$ctis_dir/addrscope/addrscope.go" ]]; then
+            say_fail "Rule 6: $sdk_file uses addrscope but its source could not be downloaded (go mod download $scope_mod in sdk-go/)"
             return
         fi
         local out
-        if out=$(python3 - "$api_file" "$contract_dir/addrscope/addrscope.go" <<'PY'
+        if out=$(python3 - "$api_file" "$ctis_dir/addrscope/addrscope.go" <<'PY'
 import ipaddress, re, sys
 api = open(sys.argv[1]).read()
 scope = open(sys.argv[2]).read()
@@ -463,9 +468,9 @@ bad += ["API privateIPRanges %s is not in addrscope" % n for n in private if not
 print("\n".join(bad)); sys.exit(1 if bad else 0)
 PY
         ); then
-            say_pass "Rule 6: api httpsec tables match contract addrscope, sdk-go's deny list ($contract_dir)"
+            say_pass "Rule 6: api httpsec tables match addrscope ($scope_mod), sdk-go's deny list ($ctis_dir)"
         else
-            say_fail "Rule 6: api httpsec tables drift from contract addrscope (sdk-go's deny list)"
+            say_fail "Rule 6: api httpsec tables drift from addrscope ($scope_mod), sdk-go's deny list"
             printf '%s\n' "$out" | sed 's/^/       /'
         fi
         return
