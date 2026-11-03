@@ -81,7 +81,7 @@ export function RoleRiskBadge({ risk, className }: { risk: RoleRisk; className?:
   return (
     <Badge
       variant="outline"
-      className={cn('gap-1 px-1.5 py-0 text-[11px] font-medium', RISK_STYLE[risk], className)}
+      className={cn('gap-1 px-1.5 py-0 text-xs font-medium', RISK_STYLE[risk], className)}
       data-testid={`role-risk-${risk}`}
     >
       <Icon className="size-3" aria-hidden="true" />

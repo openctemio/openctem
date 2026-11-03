@@ -68,6 +68,10 @@ const (
 	// sensor's grant does not allow results without a job (RFC-052 §5.3);
 	// its items were rejected and not kept.
 	CodePushIngestNotGranted = "push_ingest_not_granted"
+	// CodeAssetExcluded: the asset matches one of the organization's scope
+	// exclusions and was not added. Not an error of the sensor: the asset is
+	// counted neither as accepted nor as rejected.
+	CodeAssetExcluded = "asset_excluded"
 )
 
 // Fixed item error details. Details never quote sensor bytes.
@@ -76,6 +80,7 @@ const (
 	DetailAssetAmbiguous   = "finding has no asset_ref and the segment has more than one asset"
 	DetailAssetNotStored   = "the asset this finding references was not stored"
 	DetailAssetInvalid     = "asset has no usable value"
+	DetailAssetExcluded    = "asset matches a scope exclusion of the organization and was not added"
 	DetailFindingNotStored = "the finding could not be stored"
 	DetailRequired         = "a required field is missing"
 	DetailInvalidValue     = "the value is not allowed here"

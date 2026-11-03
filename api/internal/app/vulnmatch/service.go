@@ -13,6 +13,7 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app/closuremode"
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/api/pkg/domain/ingestreceipt"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/softwarematch"
 	"github.com/openctemio/openctem/api/pkg/domain/tenant"
@@ -77,7 +78,20 @@ type Service struct {
 	closure closuremode.SettingsReader
 	// maxRows bounds one pass's read of a tenant's matches (memory).
 	maxRows int
+	// receipts records the findings a pass stored on the platform's own
+	// receipt (nil: none recorded).
+	receipts ReceiptRecorder
 }
+
+// ReceiptRecorder writes receipt deltas (ingestreceipt.Repository).
+type ReceiptRecorder interface {
+	Record(ctx context.Context, d *ingestreceipt.Delta) (shared.ID, error)
+}
+
+// SetReceiptRecorder records the findings the matcher stores on a receipt
+// of the platform (one per organization and UTC day), so the intake shows
+// them as the platform's, never as the tool whose report named the software.
+func (s *Service) SetReceiptRecorder(r ReceiptRecorder) { s.receipts = r }
 
 // RemediationKeyApplier keys persisted findings into remediation groups
 // (*remediation.KeyApplier). Best-effort: a failure is logged, never fatal.
@@ -512,6 +526,7 @@ func (s *Service) create(ctx context.Context, tenantID shared.ID, cands []*candi
 		}
 	}
 	s.queueAlerts(ctx, tenantID, findings, res)
+	s.recordReceipt(ctx, tenantID, findings, res)
 	if s.keys != nil {
 		if err := s.keys.ApplyBatch(ctx, tenantID, findings); err != nil {
 			s.logger.Warn("vulnerability matching: remediation keys not derived", "tenant_id", tenantID.String(), "error", err)
@@ -527,6 +542,47 @@ func (s *Service) create(ctx context.Context, tenantID shared.ID, cands []*candi
 		}
 	}
 	return built, nil
+}
+
+// recordReceipt books the findings a pass stored on the platform's receipt
+// of the day: new rows as created, rows that already existed as still
+// detected. A failure is logged; the findings stand.
+func (s *Service) recordReceipt(ctx context.Context, tenantID shared.ID, findings []*vulnerability.Finding, res *vulnerability.BatchCreateResult) {
+	if s.receipts == nil || res == nil || len(findings) == 0 {
+		return
+	}
+	now := time.Now().UTC()
+	if s.now != nil {
+		now = s.now().UTC()
+	}
+	d := &ingestreceipt.Delta{
+		TenantID: tenantID,
+		Source:   ingestreceipt.Source{Kind: ingestreceipt.SourcePlatform, Ref: softwarematch.ToolName + ":" + now.Format("2006-01-02")},
+		Tool:     softwarematch.ToolName,
+		Instance: ingestreceipt.Instance{Kind: ingestreceipt.InstancePlatform, ID: ingestreceipt.InstancePlatform},
+		Reports:  1,
+		Received: len(findings),
+		Failed:   len(res.Errors),
+		At:       now,
+	}
+	for i, f := range findings {
+		if _, failed := res.Errors[i]; failed {
+			continue
+		}
+		inserted := res.Inserted == nil || res.Inserted[i]
+		id := f.ID()
+		if v, ok := res.IDs[i]; ok {
+			id = v
+		}
+		if inserted {
+			d.Created = append(d.Created, id)
+		} else {
+			d.StillDetected = append(d.StillDetected, f.Fingerprint())
+		}
+	}
+	if _, err := s.receipts.Record(ctx, d); err != nil {
+		s.logger.Warn("vulnerability matching: receipt not recorded", "tenant_id", tenantID.String(), "error", logger.SanitizeError(err))
+	}
 }
 
 // queueAlerts hands the vulnerabilities of the findings just stored to the

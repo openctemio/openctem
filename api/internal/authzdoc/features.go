@@ -43,7 +43,7 @@ var Features = []Feature{
 		ID: "exposures", Title: "Exposures and leaked credentials",
 		Description: "Non-vulnerability exposures (misconfiguration, identity, leaked credentials, lookalike domains) and the leaked-credential register.",
 		Stages:      []string{StageDiscovery, StagePrioritization},
-		Registers:   []string{"registerExposureRoutes", "registerExposureItemRoutes", "registerCredentialRoutes", "registerCTEMIDRoutes"},
+		Registers:   []string{"registerExposureRoutes", "registerExposureItemRoutes", "registerCredentialRoutes"},
 	},
 	{
 		ID: "assets", Title: "Assets and inventory",
@@ -54,7 +54,7 @@ var Features = []Feature{
 			"registerAssetIdentifierRoutes", "registerAssetAttributionRoutes", "registerAssetImportRoutes",
 			"registerAssetDedupRoutes", "registerAssetRelationshipRoutes", "registerRelationshipSuggestionRoutes",
 			"registerAssetServiceRoutes", "registerAssetStateHistoryRoutes", "registerAssetSoftwareRoutes", "registerAssetTechnologyRoutes", "registerComponentRoutes", "registerVEXStatementRoutes",
-			"registerBranchRoutes", "registerAPISpecRoutes", "registerWebEndpointRoutes", "registerCertificateRoutes", "registerTechnologyRoutes",
+			"registerBranchRoutes", "registerAPISpecRoutes", "registerWebEndpointRoutes", "registerCertificateRoutes", "registerTechnologyRoutes", "registerEASMPostureRoutes",
 		},
 	},
 	{

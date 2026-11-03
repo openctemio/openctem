@@ -24,6 +24,8 @@ import { sensorEndpoints } from '@/lib/api/endpoints'
 import { useTenantSensorStats } from '@/lib/api/sensor-hooks'
 import { cn } from '@/lib/utils'
 
+import { PlatformCAPanel, type PlatformCAInfo } from './platform-ca-panel'
+
 /** GET /sensors/{id}/config-templates (older APIs send only the first four). */
 export interface SensorTemplates {
   yaml: string
@@ -42,6 +44,10 @@ export interface SensorTemplates {
   api_key_included?: boolean
   ca_certificate?: string
   ca_fingerprint_sha256?: string
+  /** The platform's private CA the commands pin (absent: publicly trusted). */
+  platform_ca?: PlatformCAInfo
+  /** The multi-sensor kit's command (install-templates only). */
+  multi?: string
 }
 
 export type SnippetFormat =
@@ -335,7 +341,9 @@ export function SensorInstallSnippets({
         ))}
       </Tabs>
 
-      {data.ca_certificate ? (
+      {data.platform_ca ? (
+        <PlatformCAPanel ca={data.platform_ca} />
+      ) : data.ca_certificate ? (
         <div className="flex gap-2 rounded-lg border p-3 text-xs">
           <Info className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
           <div className="min-w-0 space-y-1.5">

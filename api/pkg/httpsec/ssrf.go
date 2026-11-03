@@ -197,7 +197,7 @@ var dangerousHosts = []string{
 // defaultDialer; tests build their own value (a scripted DNS server, a
 // recording dial) instead of mutating package state.
 type guardedDialer struct {
-	resolver *net.Resolver
+	resolver ipResolver
 	// privateOK lets this dialer reach RFC1918 / ULA addresses. Hard-blocked
 	// ranges (loopback, link-local and cloud metadata, CGNAT, ...) stay
 	// blocked. Only PrivateAllowedHTTPClient sets it.
@@ -208,6 +208,18 @@ type guardedDialer struct {
 	// dial connects to an already-vetted IP literal; it never resolves.
 	dial func(ctx context.Context, network, addr string) (net.Conn, error)
 }
+
+// ipResolver is the lookup the guard uses (*net.Resolver; a fake in tests).
+type ipResolver interface {
+	LookupIPAddr(ctx context.Context, host string) ([]net.IPAddr, error)
+}
+
+// dialAttemptTimeout bounds one connection attempt while other vetted
+// addresses remain to be tried. A network that drops packets to one address
+// family (no IPv6 route, a firewall that silently discards) must not spend
+// the whole request budget on the first address; the last address gets the
+// dialer's own timeout.
+const dialAttemptTimeout = 4 * time.Second
 
 var defaultDialer = guardedDialer{
 	resolver: net.DefaultResolver,
@@ -309,13 +321,13 @@ func ResolveSafeHost(ctx context.Context, host string) (net.IP, error) {
 // resolveSafeIPs is ResolveSafeHost returning every vetted address, in
 // resolver order, so a dialer can fall back across them without resolving
 // again.
-func resolveSafeIPs(ctx context.Context, resolver *net.Resolver, host string) ([]net.IP, error) {
+func resolveSafeIPs(ctx context.Context, resolver ipResolver, host string) ([]net.IP, error) {
 	return resolveSafeIPsPolicy(ctx, resolver, host, false)
 }
 
 // resolveSafeIPsPolicy is resolveSafeIPs with the per-call private switch of
 // isIPBlocked.
-func resolveSafeIPsPolicy(ctx context.Context, resolver *net.Resolver, host string, privateOK bool) ([]net.IP, error) {
+func resolveSafeIPsPolicy(ctx context.Context, resolver ipResolver, host string, privateOK bool) ([]net.IP, error) {
 	return resolveSafeIPsWith(ctx, resolver, host, func(ip net.IP) bool { return isIPBlocked(ip, privateOK) })
 }
 
@@ -363,7 +375,7 @@ func isDangerousHost(host string) bool {
 }
 
 // resolveSafeIPsWith resolves host once and vets every answer with blocked.
-func resolveSafeIPsWith(ctx context.Context, resolver *net.Resolver, host string, blocked func(net.IP) bool) ([]net.IP, error) {
+func resolveSafeIPsWith(ctx context.Context, resolver ipResolver, host string, blocked func(net.IP) bool) ([]net.IP, error) {
 	if host == "" {
 		return nil, fmt.Errorf("empty host")
 	}
@@ -569,8 +581,9 @@ func CheckRedirect(req *http.Request, via []*http.Request) error {
 // exported for transports that need their own http.Transport settings (an
 // SDK client, a custom TLS config). It resolves addr's host once, refuses it
 // if any answer is in a blocked range, and connects to the vetted addresses
-// only — trying each in resolver order — so a second DNS answer can never
-// redirect the connection.
+// only — every one of them, the two families interleaved, each attempt
+// bounded while others remain — so a second DNS answer can never redirect the
+// connection and a host without an IPv6 route still reaches IPv4.
 func SafeDialContext(ctx context.Context, network, addr string) (net.Conn, error) {
 	return defaultDialer.dialContext(ctx, network, addr)
 }
@@ -589,16 +602,77 @@ func (d guardedDialer) dialContext(ctx context.Context, network, addr string) (n
 	if err != nil {
 		return nil, fmt.Errorf("ssrf guard: %w", err)
 	}
-	var lastErr error
-	for _, ip := range ips {
-		conn, dialErr := d.dial(ctx, network, net.JoinHostPort(ip.String(), port))
+	ips = interleaveFamilies(ips)
+	errs := make([]error, 0, len(ips))
+	for i, ip := range ips {
+		attemptCtx, cancel := ctx, context.CancelFunc(func() {})
+		if i < len(ips)-1 {
+			attemptCtx, cancel = context.WithTimeout(ctx, dialAttemptTimeout)
+		}
+		conn, dialErr := d.dial(attemptCtx, network, net.JoinHostPort(ip.String(), port))
+		cancel()
 		if dialErr == nil {
 			return conn, nil
 		}
-		lastErr = dialErr
+		errs = append(errs, dialErr)
 		if ctx.Err() != nil {
 			break
 		}
 	}
-	return nil, lastErr
+	return nil, newDialError(errs)
 }
+
+// interleaveFamilies orders the vetted addresses so the two families
+// alternate, starting with the family of the resolver's first answer (the
+// address ordering of RFC 8305, section 4). With every IPv6 address first, a
+// host without an IPv6 route would fail all of them before it tried IPv4.
+func interleaveFamilies(ips []net.IP) []net.IP {
+	if len(ips) < 2 {
+		return ips
+	}
+	first := ips[0].To4() != nil
+	var same, other []net.IP
+	for _, ip := range ips {
+		if (ip.To4() != nil) == first {
+			same = append(same, ip)
+		} else {
+			other = append(other, ip)
+		}
+	}
+	out := make([]net.IP, 0, len(ips))
+	for i := 0; i < len(same) || i < len(other); i++ {
+		if i < len(same) {
+			out = append(out, same[i])
+		}
+		if i < len(other) {
+			out = append(out, other[i])
+		}
+	}
+	return out
+}
+
+// dialError is the failure of every attempt of one dial. Its text names each
+// address and why it failed, so a log says "IPv4 timed out, IPv6 has no
+// route" instead of only the last attempt; errors.Is and errors.As see every
+// cause (a timeout stays a net.Error).
+type dialError struct{ errs []error }
+
+func newDialError(errs []error) error {
+	switch len(errs) {
+	case 0:
+		return errors.New("ssrf guard: no address to dial")
+	case 1:
+		return errs[0]
+	}
+	return &dialError{errs: errs}
+}
+
+func (e *dialError) Error() string {
+	parts := make([]string, len(e.errs))
+	for i, err := range e.errs {
+		parts[i] = err.Error()
+	}
+	return strings.Join(parts, "; ")
+}
+
+func (e *dialError) Unwrap() []error { return e.errs }

@@ -120,3 +120,22 @@ export function sensorTransportView(st?: AdminSensorTransport): SensorTransportV
     reason,
   }
 }
+
+/** One background job as GET /admin/operations reports it. */
+export type Controller = AdminOperations['controllers'][number]
+
+/** A background job needs a look: it stopped, or it failed since the start. */
+export function jobNeedsAttention(c: Controller): boolean {
+  return !c.running || c.errors_total > 0
+}
+
+/** Jobs that need a look first (most errors first), then the rest by name. */
+export function sortJobs(jobs: readonly Controller[]): Controller[] {
+  return [...jobs].sort((a, b) => {
+    const pa = jobNeedsAttention(a) ? 0 : 1
+    const pb = jobNeedsAttention(b) ? 0 : 1
+    if (pa !== pb) return pa - pb
+    if (b.errors_total !== a.errors_total) return b.errors_total - a.errors_total
+    return a.name.localeCompare(b.name)
+  })
+}

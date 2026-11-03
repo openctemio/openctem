@@ -14,6 +14,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/credential"
+	"github.com/openctemio/openctem/api/pkg/domain/ctemid"
 	"github.com/openctemio/openctem/api/pkg/domain/exposure"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -66,16 +67,18 @@ type ExposureResponse struct {
 	Title            string                            `json:"title"`
 	Description      string                            `json:"description,omitempty"`
 	Details          map[string]any                    `json:"details,omitempty"`
-	CTEMID           string                            `json:"ctem_id,omitempty"`
-	Fingerprint      string                            `json:"fingerprint"`
-	Source           string                            `json:"source"`
-	FirstSeenAt      time.Time                         `json:"first_seen_at"`
-	LastSeenAt       time.Time                         `json:"last_seen_at"`
-	ResolvedAt       *time.Time                        `json:"resolved_at,omitempty"`
-	ResolvedBy       string                            `json:"resolved_by,omitempty"`
-	ResolutionNotes  string                            `json:"resolution_notes,omitempty"`
-	CreatedAt        time.Time                         `json:"created_at"`
-	UpdatedAt        time.Time                         `json:"updated_at"`
+	// CTEMID is the CTEM-ID code derived from the exposure, its details and
+	// its linked asset; absent when the data does not settle one.
+	CTEMID          *ExposureCTEMIDResponse `json:"ctem_id,omitempty"`
+	Fingerprint     string                  `json:"fingerprint"`
+	Source          string                  `json:"source"`
+	FirstSeenAt     time.Time               `json:"first_seen_at"`
+	LastSeenAt      time.Time               `json:"last_seen_at"`
+	ResolvedAt      *time.Time              `json:"resolved_at,omitempty"`
+	ResolvedBy      string                  `json:"resolved_by,omitempty"`
+	ResolutionNotes string                  `json:"resolution_notes,omitempty"`
+	CreatedAt       time.Time               `json:"created_at"`
+	UpdatedAt       time.Time               `json:"updated_at"`
 
 	// CTEM enrichment (read-time, additive). Present only when an enricher is
 	// wired and the exposure has a linked asset (criticality/reachability) or a
@@ -95,6 +98,24 @@ type ExposureSummaryResponse struct {
 	Text    string            `json:"text"`
 	Variant string            `json:"variant,omitempty"`
 	Args    map[string]string `json:"args,omitempty"`
+}
+
+// ExposureCTEMIDResponse is an exposure's CTEM-ID code
+// (docs/architecture/ctem-id-mapping.md).
+type ExposureCTEMIDResponse struct {
+	// Code, such as CTEM-DOM-2.
+	Code string `json:"code"`
+	// CatalogVersion is the catalog version the rules follow.
+	CatalogVersion string `json:"catalog_version"`
+	// Basis is the signal the code was chosen from: lookalike_technique,
+	// credential_dump, asset_scope or asset_type.
+	Basis string `json:"basis"`
+	// URL is the code's page on ctem.org.
+	URL string `json:"url"`
+}
+
+func toCTEMIDResponse(m ctemid.Mapping) *ExposureCTEMIDResponse {
+	return &ExposureCTEMIDResponse{Code: string(m.Code), CatalogVersion: ctemid.CatalogVersion, Basis: string(m.Basis), URL: m.Code.URL()}
 }
 
 // ExposureSeverityOverrideResponse is a standing analyst severity override.
@@ -123,6 +144,9 @@ func applyEnrichment(resp *ExposureResponse, enr exposuresvc.Enrichment) {
 	resp.EPSSPercentile = enr.EPSSPercentile
 	resp.IsInKEV = enr.IsInKEV
 	resp.KEVDueDate = enr.KEVDueDate
+	if enr.CTEMID != nil {
+		resp.CTEMID = toCTEMIDResponse(*enr.CTEMID)
+	}
 }
 
 // CreateExposureRequest represents the request to create an exposure event.
@@ -144,11 +168,6 @@ type ChangeStateRequest struct {
 	// a fresh TOTPCode from the owner's authenticator app.
 	SelfApprove bool   `json:"self_approve,omitempty"`
 	TOTPCode    string `json:"totp_code,omitempty" validate:"max=16"`
-}
-
-// SetCTEMIDRequest represents the request to tag an exposure with a CTEM-ID.
-type SetCTEMIDRequest struct {
-	CTEMID string `json:"ctem_id" validate:"max=100"`
 }
 
 // BulkIngestRequest represents the request to bulk ingest exposures.
@@ -207,6 +226,11 @@ func toExposureResponse(e *exposure.ExposureEvent) ExposureResponse {
 			override.OverriddenBy = p.OverriddenBy.String()
 		}
 	}
+	// The asset-free code; applyEnrichment refines it with the linked asset.
+	var ctem *ExposureCTEMIDResponse
+	if m, ok := ctemid.Map(ctemid.Input{EventType: e.EventType(), Details: e.Details()}); ok {
+		ctem = toCTEMIDResponse(m)
+	}
 	return ExposureResponse{
 		ID: e.ID().String(),
 
@@ -220,7 +244,7 @@ func toExposureResponse(e *exposure.ExposureEvent) ExposureResponse {
 		Title:            e.Title(),
 		Description:      e.Description(),
 		Details:          details,
-		CTEMID:           e.CTEMID(),
+		CTEMID:           ctem,
 		Fingerprint:      e.Fingerprint(),
 		Source:           e.Source(),
 		FirstSeenAt:      e.FirstSeenAt(),
@@ -611,34 +635,6 @@ func (h *ExposureHandler) Resolve(w http.ResponseWriter, r *http.Request) {
 	}
 
 	event, err := h.service.ResolveExposure(r.Context(), tenantID, exposureID, userID, req.Reason)
-	if err != nil {
-		h.handleServiceError(w, err)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(toExposureResponse(event))
-}
-
-// SetCTEMID handles PUT /api/v1/exposures/{id}/ctem-id — it associates a
-// standardized CTEM-ID catalog identifier with an exposure (empty clears it).
-// Baselined in api/openapi/undocumented-routes.txt.
-func (h *ExposureHandler) SetCTEMID(w http.ResponseWriter, r *http.Request) {
-	tenantID := middleware.MustGetTenantID(r.Context())
-	exposureID := chi.URLParam(r, "id")
-
-	var req SetCTEMIDRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		apierror.BadRequest("Invalid request body").WriteJSON(w)
-		return
-	}
-	if err := h.validator.Validate(req); err != nil {
-		h.handleValidationError(w, err)
-		return
-	}
-
-	event, err := h.service.TagCTEMID(r.Context(), tenantID, exposureID, req.CTEMID)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return

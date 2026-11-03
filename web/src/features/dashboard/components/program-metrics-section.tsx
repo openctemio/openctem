@@ -12,22 +12,12 @@
 
 'use client'
 
-import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
-import { StatsCard, ErrorState } from '@/features/shared'
+import { ErrorState } from '@/features/shared'
 import { useTranslation } from '@/context/i18n-provider'
-import {
-  Radar,
-  Wrench,
-  UserCheck,
-  Route,
-  FlaskConical,
-  UserPlus,
-  RefreshCcw,
-  ShieldOff,
-} from 'lucide-react'
 import { useProgramMetrics } from '../hooks/use-ctem-dashboard'
 import { formatDurationHours, formatRatePct } from '../lib/program-health'
+import { MetricRowList, type MetricRow } from './metric-row-list'
 
 const NOT_MEASURED = '—'
 const K = 'insights.programMetrics'
@@ -48,10 +38,6 @@ type ControlRow = {
   lacking: number
   unknown: number
   gap_pct?: number | null
-}
-
-function valueClass(display: string | null): string | undefined {
-  return display === null ? 'text-muted-foreground' : 'tabular-nums'
 }
 
 /** "{count} asset" / "{count} assets" through the dictionary. */
@@ -206,7 +192,6 @@ export function ProgramMetricsSection({
       title: t(`${K}.mttd.title`, 'Time to detect internet-facing assets'),
       display: mttdDisplay,
       caption: mttdCaption,
-      icon: Radar,
       info: t(
         `${K}.mttd.info`,
         'Assets first seen in this period that are internet-facing now. Measured from when the asset was first seen to the earliest sign it was known to be internet-facing: its exposure being set to public, an internet-exposure change in its history, its first exposure event, or its first finding. Known at discovery counts as 0 h. Assets with no such sign are not averaged.'
@@ -216,7 +201,6 @@ export function ProgramMetricsSection({
       title: t(`${K}.timeToOwner.title`, 'Time to assign an owner'),
       display: ttoDisplay,
       caption: ttoCaption,
-      icon: UserPlus,
       info: t(
         `${K}.timeToOwner.info`,
         'The same new internet-facing assets. Measured from when the asset was first seen to when its first owner (a person or a group) was assigned. An owner set before discovery counts as 0 h. Assets still without an owner are not averaged and are listed below the value.'
@@ -226,7 +210,6 @@ export function ProgramMetricsSection({
       title: t(`${K}.mttv.title`, 'Time to validate priority exposures'),
       display: mttvDisplay,
       caption: mttvCaption,
-      icon: FlaskConical,
       info: t(
         `${K}.mttv.info`,
         'P0 and P1 findings first detected in this period. Measured from detection to the first conclusive validation: reproduced or not reproduced. Inconclusive or failed runs do not count. False positives and duplicates are left out.'
@@ -236,7 +219,6 @@ export function ProgramMetricsSection({
       title: t(`${K}.mttr.title`, 'Time to remediate validated exposures'),
       display: mttrDisplay,
       caption: mttrCaption,
-      icon: Wrench,
       info: t(
         `${K}.mttr.info`,
         'Findings a validation run reproduced (outcome "detected", still exploitable) and that were then resolved or verified in this period. Measured from the first reproducing validation to resolution. False positives, accepted risk and fixes made before validation are excluded.'
@@ -246,7 +228,6 @@ export function ProgramMetricsSection({
       title: t(`${K}.acceptance.title`, 'Owner acceptance rate'),
       display: oaDisplay,
       caption: oaCaption,
-      icon: UserCheck,
       info: t(
         `${K}.acceptance.info`,
         'Findings assigned in this period to a named owner. Accepted when that owner changed status, triaged, commented, updated remediation or resolved it before the finding’s SLA deadline. Missed when the deadline passed without that. Assignments still inside their SLA window, without an SLA, or handed to someone else first are left out of the rate.'
@@ -256,7 +237,6 @@ export function ProgramMetricsSection({
       title: t(`${K}.cycles.title`, 'Cycles completed on time'),
       display: ccDisplay,
       caption: ccCaption,
-      icon: RefreshCcw,
       info: t(
         `${K}.cycles.info`,
         'CTEM cycles whose end date fell in this period. On time when the cycle was closed by the end of its end date. "Criteria met" is the average share of measurable charter success criteria met at close.'
@@ -266,13 +246,44 @@ export function ProgramMetricsSection({
       title: t(`${K}.timeToBreak.title`, 'Time to break attack paths'),
       display: null,
       caption: t(`${K}.timeToBreak.caption`, 'Not measured: attack-path history isn’t stored'),
-      icon: Route,
       info: t(
         `${K}.timeToBreak.info`,
         'Not computed. Attack paths are calculated on demand from the current asset graph and never stored, and exposure and relationship changes keep no history — so there is no record of when a path opened or when one of its links was fixed. Any number here would be invented.'
       ),
     },
   ]
+
+  const notMeasured = t(`${K}.notMeasured`, 'Not measured')
+  const toRow = (tile: (typeof tiles)[number], key: string): MetricRow => ({
+    key,
+    label: tile.title,
+    value: tile.display,
+    notMeasuredLabel: notMeasured,
+    caption: tile.caption,
+    info: tile.info,
+    infoLabel: measuredLabel(tile.title),
+  })
+  const rows = tiles.map((tile, i) => toRow(tile, String(i)))
+  const controlRows: MetricRow[] = controls.map((row) => {
+    const display = formatRatePct(row.gap_pct)
+    const title = controlTitle[row.control] ?? row.control
+    return {
+      key: `control-${row.control}`,
+      label: title,
+      value: display,
+      notMeasuredLabel: notMeasured,
+      caption:
+        display !== null
+          ? t(`${K}.controls.caption`, '{lacking} lacking, {unknown} not recorded, of {total}', {
+              lacking: row.lacking.toLocaleString(),
+              unknown: row.unknown.toLocaleString(),
+              total: counted(t, 'asset', row.total),
+            })
+          : t(`${K}.controls.empty`, 'No critical assets of this kind'),
+      info: controlInfo[row.control],
+      infoLabel: measuredLabel(title),
+    }
+  })
 
   return (
     <section className="space-y-3">
@@ -281,7 +292,7 @@ export function ProgramMetricsSection({
         <p className="text-sm text-muted-foreground">
           {t(
             `${K}.description`,
-            'How fast the program detects, validates, fixes and takes ownership. “—” means there is not enough data to measure it yet.'
+            'How fast the program detects, validates, fixes and takes ownership. “Not measured” means there is not enough data to measure it yet.'
           )}
         </p>
       </div>
@@ -293,71 +304,21 @@ export function ProgramMetricsSection({
           onRetry={() => void mutate()}
         />
       ) : isLoading ? (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="space-y-2 rounded-lg border bg-card p-4">
           {Array.from({ length: 4 }).map((_, i) => (
-            <Card key={i}>
-              <CardHeader className="pb-2">
-                <Skeleton className="h-4 w-32" />
-              </CardHeader>
-              <CardContent>
-                <Skeleton className="mb-2 h-8 w-20" />
-                <Skeleton className="h-3 w-36" />
-              </CardContent>
-            </Card>
+            <Skeleton key={i} className="h-5 w-full" />
           ))}
         </div>
       ) : (
         <>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {tiles.map((tile) => (
-              <StatsCard
-                key={tile.title}
-                title={tile.title}
-                value={tile.display ?? NOT_MEASURED}
-                valueClassName={valueClass(tile.display)}
-                description={tile.caption}
-                icon={tile.icon}
-                info={tile.info}
-                infoLabel={measuredLabel(tile.title)}
-              />
-            ))}
-          </div>
+          <MetricRowList rows={rows} />
 
-          {controls.length > 0 && (
+          {controlRows.length > 0 && (
             <div className="space-y-2">
               <h3 className="text-sm font-medium">
                 {t(`${K}.controls.heading`, 'Critical assets lacking a control')}
               </h3>
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-                {controls.map((row) => {
-                  const display = formatRatePct(row.gap_pct)
-                  const title = controlTitle[row.control] ?? row.control
-                  return (
-                    <StatsCard
-                      key={row.control}
-                      title={title}
-                      value={display ?? NOT_MEASURED}
-                      valueClassName={valueClass(display)}
-                      description={
-                        display !== null
-                          ? t(
-                              `${K}.controls.caption`,
-                              '{lacking} lacking, {unknown} not recorded, of {total}',
-                              {
-                                lacking: row.lacking.toLocaleString(),
-                                unknown: row.unknown.toLocaleString(),
-                                total: counted(t, 'asset', row.total),
-                              }
-                            )
-                          : t(`${K}.controls.empty`, 'No critical assets of this kind')
-                      }
-                      icon={ShieldOff}
-                      info={controlInfo[row.control]}
-                      infoLabel={measuredLabel(title)}
-                    />
-                  )
-                })}
-              </div>
+              <MetricRowList rows={controlRows} />
             </div>
           )}
         </>

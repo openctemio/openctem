@@ -108,6 +108,11 @@ export interface AdminOrganization {
   created_at: string
   active_members: number
   /**
+   * The latest sign-in of any active member (per account, so a sign-in for
+   * another organization counts); absent when nobody signed in yet.
+   */
+  last_member_sign_in_at?: string
+  /**
    * Owners' addresses: only on the organization's own page, for ops_admin and
    * above (that view is audited). Empty in the list and for read-only.
    */
@@ -128,6 +133,28 @@ export interface AdminOrganization {
   suspended_reason?: string
   /** An owner scheduled the deletion for this time. */
   deletion_due_at?: string
+  /**
+   * The ownership invitation of an organization created for an existing
+   * account and waiting for that account to accept (absent once accepted).
+   */
+  owner_invitation?: AdminOwnerInvitation
+}
+
+/** pending | expired | declined | canceled */
+export type AdminOwnerInvitationStatus = 'pending' | 'expired' | 'declined' | 'canceled'
+
+export interface AdminOwnerInvitation {
+  status: AdminOwnerInvitationStatus
+  /** ops_admin and above only. */
+  invitee_email?: string
+  send_count: number
+  resends_left: number
+  /** Earliest next send (absent when no send is left). */
+  resend_available_at?: string
+  expires_at: string
+  last_sent_at: string
+  created_at: string
+  responded_at?: string
 }
 
 export interface AdminOrganizationList {
@@ -155,6 +182,13 @@ export interface CreateOrganizationInput {
  */
 export interface CreatedOrganization extends AdminOrganization {
   owner_setup?: SetupLinkOutcome
+  /** The owner email already had an account: it was invited to own the organization. */
+  owner_invited?: boolean
+}
+
+/** Answer of a request that invited an existing account to own an organization. */
+export interface AdminOwnerInvitationResult {
+  owner_invitation: AdminOwnerInvitation
 }
 
 /** Membership level an admin can give someone they add to an organization. */
@@ -885,6 +919,16 @@ export interface ConfigurationItem {
 export interface SettingChange {
   changed_at?: string
   changed_by?: string
+}
+
+/** The platform layer of the scan identification markers. */
+export interface ScanIdentificationSettings extends SettingChange {
+  user_agent: string
+  user_agent_enforced: boolean
+  headers: { name: string; value: string; enforced: boolean }[]
+  max_headers: number
+  stored: boolean
+  version: number
 }
 
 /** The lowest two-factor requirement of every organization; organizations may only raise it. */

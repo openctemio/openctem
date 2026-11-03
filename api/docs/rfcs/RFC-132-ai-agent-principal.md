@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Accepted (2026-10-28). In review: the AI agent principal, accountable owners, provenance and the run ledger. Designed: runs as `analyze` jobs on ai-worker sensors, the tool loop through sensor commands, owner digests and alerts, override-rate downgrade |
+| Status | Accepted (2026-10-28). In review: the AI agent principal, accountable owners, provenance and the run ledger. Designed: runs as `analyze` jobs on ai-worker sensors, the tool loop through sensor commands, owner digests and alerts. In review: per-use-case settings and the override-rate downgrade |
 | Scope | api (AI agents, owners, ledger, provenance, executor), web (Settings > AI > AI agents, one AI badge), sdk-go and sensor (ai-worker role, later), docs |
 | Architecture | [ai-analysis.md](../architecture/ai-analysis.md), [ai-triage.md](../architecture/ai-triage.md), [job-dispatch.md](../architecture/job-dispatch.md) |
 | Amends | RFC-131 (AI results are no longer stored as suggestions: the AI agent acts through the normal commands) |
@@ -278,7 +278,9 @@ the queue is worked down.
   timeline, lists, approvals, exports, tickets and notifications.
 - Undo per action and per run, the override rate (rejected requests, undone changes, values a person
   set back) and per-owner metrics are queries over this history. Above 20 % overrides in the last 50
-  decided actions a triage AI agent moves to the suggest preset until an administrator moves it back.
+  decided actions (at least 10) the organization's use case falls back from auto-apply to suggest
+  until an owner or administrator turns it back on ([AI use cases](../architecture/ai-use-cases.md));
+  the AI agent's preset is left alone. Today rejected requests count; undo is not recorded yet.
 
 ## 7. Decisions
 
@@ -336,4 +338,5 @@ the queue is worked down.
 | AI agent principal, owners, provenance, ledger, sweep, API | in review (openctem #3239) |
 | Built-in executor acting as the AI agent through the commands | in review (openctem #3249) |
 | Settings > AI > AI agents and the AI badge | in review (openctem #3242) |
-| `analyze` jobs on ai-worker sensors, tool loop, owner digest and alerts, override downgrade, proposals with Apply, `findings:retest`, triggerer exclusion | designed |
+| Per-use-case settings (mode, data class ceiling, minimum confidence) and the override-rate downgrade per use case ([AI use cases](../architecture/ai-use-cases.md)) | in review |
+| `analyze` jobs on ai-worker sensors, tool loop, owner digest and alerts, proposals with Apply, `findings:retest`, triggerer exclusion | designed |

@@ -10,3 +10,6 @@
   permission: "team:groups:read"
   jobs:
     - ScopeReconciliationController
+    - ScopeAttestationController
+    - ScopeEffectsController
+    - ScopePendingController

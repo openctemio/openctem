@@ -188,6 +188,13 @@ describe('SupportAccessSettings', () => {
     expect(await screen.findByRole('button', { name: 'Grant access' })).toBeInTheDocument()
   })
 
+  it('keeps the empty active list flat: no card inside a card', async () => {
+    fetcher.mockResolvedValue({ data: [] })
+    const { container } = render(withSWR(<SupportAccessSettings canRead isOwner />))
+    await screen.findByText('No one from support has access.')
+    expect(container.querySelector('[data-slot=card] [data-slot=card]')).toBeNull()
+  })
+
   it('a member reads nothing and is told why', () => {
     render(withSWR(<SupportAccessSettings canRead={false} isOwner={false} />))
     expect(fetcher).not.toHaveBeenCalled()

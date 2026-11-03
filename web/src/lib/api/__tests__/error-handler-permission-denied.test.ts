@@ -14,10 +14,27 @@ import { describePermissionDenied } from '../permission-denied'
 describe('permission denied explanation', () => {
   beforeEach(() => vi.clearAllMocks())
 
-  it('names a missing permission with its label and id', () => {
-    const why = describePermissionDenied({ missing_permissions: ['findings:verify'] })
-    expect(why).toContain('(findings:verify)')
-    expect(why).toMatch(/^You need the permission /)
+  it('names a missing permission, who holds it and who grants it', () => {
+    const why = describePermissionDenied({ missing_permissions: ['audit:read'] })
+    expect(why).toBe(
+      'You need the permission audit:read. Owners and administrators have it. Ask an owner or administrator to give it to you through a role.'
+    )
+  })
+
+  it('says when only a custom role can grant the permission', () => {
+    expect(describePermissionDenied({ missing_permissions: ['made:up'] })).toContain(
+      'No built-in role has it; a custom role can grant it.'
+    )
+  })
+
+  it('speaks the language it is given', () => {
+    const t = (key: string) => `[${key}]`
+    expect(describePermissionDenied({ required_role: 'owner' }, t)).toBe(
+      '[common.access.roleOwner]'
+    )
+    expect(describePermissionDenied({ missing_permissions: ['audit:read'] }, t)).toBe(
+      '[common.access.needPermission] [common.access.heldBy.owner-admin] [common.access.askGrant]'
+    )
   })
 
   it('names several missing permissions', () => {
@@ -25,19 +42,18 @@ describe('permission denied explanation', () => {
       missing_permissions: ['findings:write', 'ai_triage:trigger'],
     })
     expect(why).toMatch(/^You need the permissions /)
-    expect(why).toContain('(findings:write)')
-    expect(why).toContain('(ai_triage:trigger)')
+    expect(why).toContain('findings:write, ai_triage:trigger')
   })
 
   it('names the alternatives of an any-of gate', () => {
     const why = describePermissionDenied({ any_of: ['sensors:read', 'scans:ci:read'] })
     expect(why).toMatch(/^You need one of these permissions: /)
-    expect(why).toContain('(scans:ci:read)')
+    expect(why).toContain('scans:ci:read')
   })
 
   it('names the required team role', () => {
     expect(describePermissionDenied({ required_role: 'admin' })).toBe(
-      'Only an organization administrator can do this.'
+      'Only an owner or administrator of the organization can do this.'
     )
     expect(describePermissionDenied({ required_role: 'owner' })).toBe(
       'Only the organization owner can do this.'
@@ -58,7 +74,7 @@ describe('permission denied explanation', () => {
     )
     expect(toast.error).toHaveBeenCalledWith(
       'Permission needed',
-      expect.objectContaining({ description: expect.stringContaining('(findings:verify)') })
+      expect.objectContaining({ description: expect.stringContaining('findings:verify') })
     )
   })
 

@@ -232,6 +232,29 @@ func sanitizeAttr(_ []string, a slog.Attr) slog.Attr {
 		}
 	}
 
+	return redactURLAttr(a)
+}
+
+// redactURLAttr strips URL credentials (userinfo, query string) from an error
+// or string attribute, the message included. An outbound fetch error quotes
+// the full request URL (net/http: Get "https://...?sig=...": ...), and a
+// presigned download link carries its signature in the query, so every
+// caller that logs such an error is covered here, including libraries that
+// receive this logger's *slog.Logger.
+func redactURLAttr(a slog.Attr) slog.Attr {
+	switch a.Value.Kind() {
+	case slog.KindString:
+		if s := a.Value.String(); strings.Contains(s, "://") {
+			return slog.String(a.Key, RedactURLs(s))
+		}
+	case slog.KindAny:
+		if err, ok := a.Value.Any().(error); ok && err != nil {
+			if s := err.Error(); strings.Contains(s, "://") {
+				return slog.String(a.Key, RedactURLs(s))
+			}
+		}
+	default:
+	}
 	return a
 }
 
@@ -436,11 +459,11 @@ func SanitizeText(s string) string {
 
 // SanitizeError renders err for a log attribute through SanitizeText, so an
 // error that quotes user input (a name, a parser fragment, a URL) cannot forge
-// log lines. Error chains are long and the tail usually carries the cause,
+// log lines, after removing URL userinfo and query strings (RedactURLs). Error chains are long and the tail usually carries the cause,
 // hence the larger bound than SanitizeValue. A nil error yields "".
 func SanitizeError(err error) string {
 	if err == nil {
 		return ""
 	}
-	return SanitizeText(err.Error())
+	return SanitizeText(RedactURLs(err.Error()))
 }
