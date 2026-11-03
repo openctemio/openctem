@@ -89,7 +89,9 @@ func TestAlertBootstrapNeverEnrolled(t *testing.T) {
 	if _, err := SeedRelayMode(context.Background(), f.settings, mustID(t, "6f1c2a7e-0000-4000-8000-000000000001")); err != nil {
 		t.Fatal(err)
 	}
-	f.now = time.Now() // the seed is stamped with the wall clock
+	f.now = time.Now()                 // the seed is stamped with the wall clock
+	published := f.now.Add(-time.Hour) // a fresh release, so only the relay alert fires
+	f.feed.published = &published
 	f.svc = f.newService(t, t.TempDir())
 	f.svc.SetNotifier(n)
 	f.at(t, 61*time.Minute)

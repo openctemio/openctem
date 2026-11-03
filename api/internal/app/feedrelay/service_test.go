@@ -365,6 +365,9 @@ type fakeFeed struct {
 	keep    []string
 	dirs    []string
 	seen    map[string]string // what the working directory held at Plan
+	// published, when set, is the applied release's time (default: an hour
+	// before tNow). A test on the wall clock sets it from its own now.
+	published *time.Time
 }
 
 func (f *fakeFeed) Name() string            { return dom.FeedVulnFeed }
@@ -389,6 +392,9 @@ func (f *fakeFeed) Import(context.Context, string) ([]string, error) {
 }
 func (f *fakeFeed) Freshness(context.Context) (Freshness, error) {
 	at := tNow.Add(-time.Hour)
+	if f.published != nil {
+		at = *f.published
+	}
 	return Freshness{Sequence: 7, PublishedAt: &at}, nil
 }
 
