@@ -421,11 +421,16 @@ func (s *Service) plan(tenantID shared.ID, policy tenant.VulnMatchingSettings, m
 		}
 		conf, label, reasons := vulnmatch.Confidence(m.LinkConfidence, res, m.ConditionMet)
 		if res.Findable() {
-			matched[fp] = true
+			// A finding still stored under its version-2 or legacy key is
+			// matched too: it must not be closed while it waits to be
+			// re-keyed.
+			for _, form := range key.KeyForms() {
+				matched[form] = true
+			}
 			if legacy != nil {
-				// A finding still stored under the legacy key is matched too:
-				// it must not be closed while it waits to be re-keyed.
-				matched[legacy.Fingerprint()] = true
+				for _, form := range legacy.KeyForms() {
+					matched[form] = true
+				}
 			}
 		}
 		if !Passes(policy, m, res, conf) {
@@ -475,9 +480,11 @@ func (s *Service) create(ctx context.Context, tenantID shared.ID, cands []*candi
 	if err != nil {
 		return nil, err
 	}
-	fps := make([]string, 0, len(cands))
+	fps := make([]string, 0, 2*len(cands))
 	for _, c := range cands {
-		fps = append(fps, c.key.Fingerprint())
+		// The version-2 form too: a finding the re-key has not reached yet
+		// owns this identity.
+		fps = append(fps, c.key.KeyForms()...)
 	}
 	taken, err := s.store.ExistingFingerprints(ctx, tenantID, fps)
 	if err != nil {
@@ -489,7 +496,7 @@ func (s *Service) create(ctx context.Context, tenantID shared.ID, cands []*candi
 		if open[c.m.AssetID][vulnerability.NormalizeCVEID(c.m.Result.CVEID)] {
 			continue // a scanner (or a person) already has this CVE open on the asset
 		}
-		if taken[c.key.Fingerprint()] {
+		if takenAny(taken, c.key.KeyForms()) {
 			continue // another tool's finding (open or closed) owns this identity
 		}
 		kept = append(kept, c)
@@ -815,4 +822,13 @@ func (p tenantPolicy) VulnMatchingPolicy(ctx context.Context, tenantID shared.ID
 		return tenant.VulnMatchingSettings{}, err
 	}
 	return t.TypedSettings().VulnMatching, nil
+}
+
+func takenAny(taken map[string]bool, keys []string) bool {
+	for _, k := range keys {
+		if taken[k] {
+			return true
+		}
+	}
+	return false
 }

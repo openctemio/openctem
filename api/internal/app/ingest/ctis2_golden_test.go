@@ -11,8 +11,9 @@ import (
 
 // Same input, same record: each finding below is the CTIS 2.0 form of a
 // finding a CTIS 1.6 producer sent before the switch. The keys were captured
-// from the 1.x receiver (develop before the switch, same asset id and tool):
-// the version-1 composite and base, and the version-2 identity. A 2.0 report
+// from the 1.x receiver (develop before the switch, same asset id and tool,
+// with the version-3 finding identity): the version-1 composite and base, and
+// the current identity key. A 2.0 report
 // of the same observation must land on the same stored finding.
 func TestCTIS2KeepsFindingKeys(t *testing.T) {
 	asset := shared.MustIDFromString("0193a000-0000-7000-8000-000000000001")
@@ -35,28 +36,28 @@ func TestCTIS2KeepsFindingKeys(t *testing.T) {
 			Vulnerability: cve("CVE-2024-6387"), Network: &ctis.NetworkLocation{Port: 22, Transport: ctis.TransportTCP}},
 			"94e8ce35c450fb54be150cfae10c489daa8aa2d21932233b496e18fe461b3faf",
 			"1e88315a16c655dd7ee9ff64fc3239dc568090f994c8fb37ddf000c016bbe0a4",
-			"7463886ed82a8e10994d46a936901e48feca4801896c4b8ef2fb0a34fc94c3d0"},
+			"d0ea8e0414bfbeb54c3db92859038f50968ab539793b75827aeb21f0f3498225"},
 		{"sca", ctis.Finding{Type: ctis.FindingTypeVulnerability, Title: "lodash", Severity: ctis.SeverityHigh, RuleID: "CVE-2021-23337",
 			Vulnerability: sca},
 			"b82b27c82ac581217d78d9f63a772eb77b9f395e331ab861985aef4ce3819128",
 			"9f1db051a46c4baac14700fead4409a55b87a5daeaecc735132329518c73a91b",
-			"a2690806739a31071319a2baece6334ade4a1ad53738435575ead3e17d4da86c"},
+			"4db6b2115f9889fd0622feae3e69582f39829e70b5876e5dcadb185a23380bfa"},
 		{"sast", ctis.Finding{Type: ctis.FindingTypeVulnerability, Title: "SQLi", Severity: ctis.SeverityHigh, RuleID: "go.sqli",
 			Location: &ctis.FindingLocation{Path: "db/query.go", StartLine: 42, EndLine: 42, Snippet: "db.Query(\"SELECT * FROM t WHERE id=\" + id)"}},
 			"10270fb91257a4e674e858eebd27aaff3f66c12c5d8002cef0cc808a36230f2e",
 			"d5952842d0238cff81eb0d8dea45f6a37ad60cf954ee16a012499af4c03fbd54",
-			"359d984b41fa8025f4b69e5aeb49009557f6803752e44c7c83d3b14a35b11547"},
+			"bbba6cf9416cf858c1ad90227a3ff787757d639eebde3226aeaca2251a9e32de"},
 		{"dast", ctis.Finding{Type: ctis.FindingTypeVulnerability, Title: "XSS", Severity: ctis.SeverityMedium, RuleID: "xss-reflected",
 			Location: &ctis.FindingLocation{Path: "https://app.example.com/search?q=1"}, Web: &ctis.WebLocation{Method: "GET"}},
 			"17f0dcbe99f66cf4c0687a9b23bc45f51dff82bf6131146c92e12e506489f372",
 			"10296d161c1362a85ac8d3a94bb5238af73629810e2ffbfc05b860cce0b4d652",
-			"bc32bc09a9fd0651e3abe786ca7ac6e5c3855fd0fd41d074724aaffc2bd43597"},
+			"cb5f5227fe5870a868969f25ca795c71ceb62fe47b734cbb371af3a94c88fa8b"},
 		{"misconfig", ctis.Finding{Type: ctis.FindingTypeMisconfiguration, Title: "S3 public", Severity: ctis.SeverityHigh, RuleID: "AVD-AWS-0086",
 			Misconfiguration: &ctis.MisconfigurationDetails{PolicyID: "AVD-AWS-0086", ResourceType: "aws_s3_bucket", ResourceName: "logs"},
 			Location:         &ctis.FindingLocation{Path: "main.tf", StartLine: 3}},
 			"b8dc30ab45a509d6a338cfe168993d1d19c1973f0ccd5afca6c348244f71aa77",
 			"817fddf90b66c1372bcd16d5cc4d0ece4e60daed331cf35aa224f40037190013",
-			"298002fa1ebab7bc7b9726203d839c6a8fd4df1341bdba616474de8ce49db072"},
+			"713a51614c997f523144c5d62c5c1fac8ca7cfc954376f4b7901070e2f39f59b"},
 		{"generic", ctis.Finding{Type: ctis.FindingTypeVulnerability, Title: "Weak TLS", Severity: ctis.SeverityLow, RuleID: "tls-weak"},
 			"2af980553064cd3f1849df422c128a4627f3410924fa8e0433ccc39204bb5fe8",
 			"6425330bd370a647c1cee8f38de57fd1b60c941774288a331885279247c985fb",

@@ -1,0 +1,69 @@
+{
+  "tool": "slither",
+  "asset": {
+    "type": "smart_contract",
+    "value": "0xAbCdEf0123456789AbCdEf0123456789AbCdEf01"
+  },
+  "cases": [
+    {
+      "name": "the same function, address written in another case",
+      "expect": "same",
+      "before": {
+        "type": "vulnerability",
+        "title": "Reentrancy",
+        "severity": "high",
+        "rule_id": "reentrancy-eth",
+        "web3": {
+          "chain": "ethereum",
+          "chain_id": 1,
+          "contract_address": "0xAbCdEf0123456789AbCdEf0123456789AbCdEf01",
+          "swc_id": "SWC-107",
+          "function_signature": "withdraw(uint256)"
+        }
+      },
+      "after": {
+        "type": "vulnerability",
+        "title": "Reentrancy in withdraw",
+        "severity": "high",
+        "rule_id": "reentrancy-eth",
+        "web3": {
+          "chain": "ethereum",
+          "chain_id": 1,
+          "contract_address": "0xabcdef0123456789abcdef0123456789abcdef01",
+          "swc_id": "SWC-107",
+          "function_signature": "withdraw(uint256)"
+        }
+      }
+    },
+    {
+      "name": "another function",
+      "expect": "different",
+      "before": {
+        "type": "vulnerability",
+        "title": "Reentrancy",
+        "severity": "high",
+        "rule_id": "reentrancy-eth",
+        "web3": {
+          "chain": "ethereum",
+          "chain_id": 1,
+          "contract_address": "0xAbCdEf0123456789AbCdEf0123456789AbCdEf01",
+          "swc_id": "SWC-107",
+          "function_signature": "withdraw(uint256)"
+        }
+      },
+      "after": {
+        "type": "vulnerability",
+        "title": "Reentrancy",
+        "severity": "high",
+        "rule_id": "reentrancy-eth",
+        "web3": {
+          "chain": "ethereum",
+          "chain_id": 1,
+          "contract_address": "0xAbCdEf0123456789AbCdEf0123456789AbCdEf01",
+          "swc_id": "SWC-107",
+          "function_signature": "claim()"
+        }
+      }
+    }
+  ]
+}
