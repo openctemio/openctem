@@ -205,7 +205,7 @@ func encryptIntegrations(ctx context.Context, db *sql.DB, cipher *crypto.Cipher,
 	err := db.QueryRowContext(ctx, `
 		SELECT EXISTS (
 			SELECT FROM information_schema.tables
-			WHERE table_name = 'integrations'
+			WHERE table_schema = current_schema() AND table_name = 'integrations'
 		)
 	`).Scan(&exists)
 	if err != nil {
@@ -286,7 +286,7 @@ func encryptSCMConnections(ctx context.Context, db *sql.DB, cipher *crypto.Ciphe
 	err := db.QueryRowContext(ctx, `
 		SELECT EXISTS (
 			SELECT FROM information_schema.tables
-			WHERE table_name = 'scm_connections'
+			WHERE table_schema = current_schema() AND table_name = 'scm_connections'
 		)
 	`).Scan(&exists)
 	if err != nil {
