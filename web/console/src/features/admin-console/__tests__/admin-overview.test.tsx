@@ -122,10 +122,16 @@ describe('buildAttention', () => {
     expect(item.action).toBe('View')
   })
 
-  it('links the break-glass test only for a super admin (the roster is theirs)', () => {
+  it('leads everyone to the break-glass test; only a roster manager is told to record it', () => {
     const o = overview({ security: { break_glass_tests_overdue: 1 } })
-    expect(buildAttention(o, 'super_admin')[0].href).toBe('/security/administrators')
-    expect(buildAttention(o, 'ops_admin')[0].href).toBeUndefined()
+    expect(buildAttention(o, 'super_admin')[0]).toMatchObject({
+      href: '/security/administrators',
+      action: 'Record a test',
+    })
+    expect(buildAttention(o, 'ops_admin')[0]).toMatchObject({
+      href: '/security/administrators',
+      action: 'Review',
+    })
   })
 
   it('sends waiting access requests to the Requests inbox, late after two days', () => {
