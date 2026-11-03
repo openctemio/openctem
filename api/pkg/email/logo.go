@@ -39,7 +39,7 @@ const brandHeaderTemplate = `{{define "brandHeader"}}{{if eq . "` + brand.Defaul
 // bodyTemplate parses an HTML email body with the shared header sub-template
 // and any extra functions the template needs.
 func bodyTemplate(name, text string, extra ...template.FuncMap) *template.Template {
-	t := template.New(name)
+	t := template.New(name).Funcs(templateFuncs())
 	for _, f := range extra {
 		t = t.Funcs(f)
 	}
