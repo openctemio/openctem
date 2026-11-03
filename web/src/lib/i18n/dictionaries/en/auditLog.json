@@ -23,6 +23,7 @@
   "auditLog.empty": "No audit events found",
   "auditLog.emptyFiltered": "Try adjusting your search or filters.",
   "auditLog.emptyHint": "Events appear here as people and systems act in this organization.",
+  "auditLog.errorTitle": "the audit log",
   "auditLog.export.button": "Export",
   "auditLog.export.confirmCsv": "Export CSV",
   "auditLog.export.confirmDesc": "The file lists the events that match the current filters, newest first, with members' emails and IP addresses. Keep it where only people who may see them can read it. You may be asked to verify it's you.",

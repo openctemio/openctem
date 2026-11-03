@@ -23,6 +23,7 @@
   "auditLog.empty": "Không có sự kiện kiểm tra nào",
   "auditLog.emptyFiltered": "Hãy thử thay đổi tìm kiếm hoặc bộ lọc.",
   "auditLog.emptyHint": "Sự kiện sẽ xuất hiện ở đây khi người dùng và hệ thống thao tác trong tổ chức này.",
+  "auditLog.errorTitle": "nhật ký kiểm toán",
   "auditLog.export.button": "Xuất",
   "auditLog.export.confirmCsv": "Xuất CSV",
   "auditLog.export.confirmDesc": "Tệp liệt kê các sự kiện khớp với bộ lọc hiện tại, mới nhất trước, kèm email và địa chỉ IP của thành viên. Hãy lưu ở nơi chỉ những người được phép xem mới đọc được. Bạn có thể được yêu cầu xác minh danh tính.",

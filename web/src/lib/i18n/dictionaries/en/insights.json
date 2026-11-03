@@ -57,6 +57,7 @@
   "insights.executive.title": "Executive summary",
   "insights.executive.topRisks": "Top risks",
   "insights.executive.topRisksHint": "Highest-priority findings that need executive attention.",
+  "insights.executive.topRisksTitle": "top risks",
   "insights.executive.vsPrevious": "{change} vs previous period",
   "insights.maturity.breakdown.description.one": "A transparent composite: score = Σ (component score × weight), across {count} closed cycle.",
   "insights.maturity.breakdown.description.other": "A transparent composite: score = Σ (component score × weight), across {count} closed cycles.",

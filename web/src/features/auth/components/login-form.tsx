@@ -8,7 +8,7 @@
 
 'use client'
 
-import { useEffect, useState, useTransition } from 'react'
+import { useEffect, useEffectEvent, useState, useTransition } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import Link from '@/components/link'
@@ -188,7 +188,8 @@ export function LoginForm({
   // A session the platform ended (reuse, expiry, signed out elsewhere) says
   // why instead of silently showing the form.
   const sessionEnded = sessionEndedMessage(reasonParam)
-  useEffect(() => {
+  // The notice shows once per reason: a language switch must not toast again.
+  const showReasonNotice = useEffectEvent(() => {
     if (mfaRequiredReason) {
       toast.info(
         t(
@@ -199,8 +200,10 @@ export function LoginForm({
     } else if (sessionEnded) {
       toast.info(t(sessionEnded.key, sessionEnded.fallback))
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mfaRequiredReason, reasonParam])
+  })
+  useEffect(() => {
+    showReasonNotice()
+  }, [reasonParam])
 
   // Form setup with centralized schema
   const form = useForm<LoginInput>({
