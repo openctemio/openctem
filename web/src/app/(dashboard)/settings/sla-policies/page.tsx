@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
-import { AlertCircle, Plus, Pencil, Trash2, ShieldCheck, ShieldPlus, Timer } from 'lucide-react'
+import { Plus, Pencil, Trash2, ShieldCheck, ShieldPlus, Timer } from 'lucide-react'
 
 import { Main } from '@/components/layout'
 import {
@@ -14,7 +14,6 @@ import {
 } from '@/features/shared'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Skeleton } from '@/components/ui/skeleton'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Can, Permission } from '@/lib/permissions'
@@ -264,30 +263,12 @@ export default function SlaPoliciesPage() {
           )}
         </PageHeader>
 
-        {error ? (
-          <Alert variant="destructive">
-            <AlertCircle className="h-4 w-4" />
-            <AlertTitle>
-              {t('settings.slaPolicies.page.loadFailedTitle', 'Failed to load SLA policies')}
-            </AlertTitle>
-            <AlertDescription>
-              <p>
-                {getErrorMessage(
-                  error,
-                  t('settings.slaPolicies.page.loadFailedBody', 'The SLA policies request failed.')
-                )}
-              </p>
-              <Button variant="outline" size="sm" className="mt-2" onClick={() => void mutate()}>
-                {t('common.retry', 'Retry')}
-              </Button>
-            </AlertDescription>
-          </Alert>
-        ) : isLoading ? (
+        {isLoading ? (
           <div className="space-y-2">
             <Skeleton className="h-9 w-full max-w-sm" />
             <Skeleton className="h-64 w-full rounded-md" />
           </div>
-        ) : policies.length === 0 ? (
+        ) : policies.length === 0 && !error ? (
           <EmptyState
             icon={Timer}
             title={t('settings.slaPolicies.page.emptyTitle', 'No SLA policies yet')}
@@ -308,6 +289,9 @@ export default function SlaPoliciesPage() {
           <DataTable
             columns={columns}
             data={policies}
+            error={error}
+            onRetry={() => void mutate()}
+            errorTitle={t('settings.slaPolicies.page.errorTitle', 'SLA policies')}
             searchKey="name"
             searchPlaceholder={t('settings.slaPolicies.page.searchPlaceholder', 'Search policies…')}
           />
