@@ -41,7 +41,7 @@ func init() {
 Build: `go build -tags ee ./cmd/server`. Without the tag the same tree is the
 plain Community build.
 
-Web (`web/src/ee/index.ts`, resolved as `@extension/web` when built with
+Web (`web/src/ee/web.ts`, resolved as `@extension/web` when built with
 `EDITION=ee`):
 
 ```ts
