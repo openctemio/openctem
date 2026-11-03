@@ -62,6 +62,7 @@ type Service struct {
 	isGone     func(error) bool
 	syncAudit  SyncAuditor
 	assigner   Assigner
+	modules    ModuleGuard
 	repo       bp.Repository
 	fullData   FullData
 	guardrails scopedom.Guardrails
@@ -96,6 +97,15 @@ func (s *Service) SetGuardrails(g scopedom.Guardrails) { s.guardrails = g }
 
 // SetNotifier wires the administrator notification.
 func (s *Service) SetNotifier(n AdminNotifier) { s.notifier = n }
+
+// ModuleGuard reports the modules a tenant has off (*module.ModuleService).
+type ModuleGuard interface {
+	TenantDisabledModules(ctx context.Context, tenantID string) map[string]bool
+}
+
+// SetModuleGuard makes the scheduled sync skip a tenant with the scope module
+// off (no lookups against the program source, no scope changes).
+func (s *Service) SetModuleGuard(g ModuleGuard) { s.modules = g }
 
 // SetAssigner wires the program data scope (group assignments).
 func (s *Service) SetAssigner(a Assigner) { s.assigner = a }

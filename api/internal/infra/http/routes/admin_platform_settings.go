@@ -17,6 +17,7 @@ import (
 //	                                           step-up + reason (critical audit)
 //	/admin/settings/storage-quota  any admin   PUT: super_admin + step-up (audited)
 //	/admin/settings/threat-intel-source  any admin   PUT: super_admin + step-up (audited)
+//	/admin/settings/feed-relay     any admin   PUT: super_admin + step-up (audited)
 //	/admin/settings/alerts         any admin   PUT: super_admin + fresh step-up + reason
 //	                                           (critical audit, admins told);
 //	                                           test: super_admin
@@ -70,6 +71,12 @@ func registerAdminPlatformSettingsRoutes(router Router, h Handlers, adminMiddlew
 	router.Group("/api/v1/admin/settings/threat-intel-source", func(r Router) {
 		r.GET("/", on(threatSource, ps.GetThreatSource))
 		r.PUT("/", on(threatSource, ps.UpdateThreatSource), stepUp("settings.threat_intel_source"))
+	}, adminMiddlewares...)
+	// Feed delivery (RFC-142): direct, or through a platform relay sensor.
+	relay := h.FeedRelay != nil
+	router.Group("/api/v1/admin/settings/feed-relay", func(r Router) {
+		r.GET("/", on(relay, func(w http.ResponseWriter, r *http.Request) { h.FeedRelay.Status(w, r) }))
+		r.PUT("/", on(relay, func(w http.ResponseWriter, r *http.Request) { h.FeedRelay.Update(w, r) }), stepUp("settings.feed_relay"))
 	}, adminMiddlewares...)
 	scanIdent := ps.ScanIdentity != nil
 	router.Group("/api/v1/admin/settings/scan-identification", func(r Router) {
