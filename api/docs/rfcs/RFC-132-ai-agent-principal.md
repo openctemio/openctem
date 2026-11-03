@@ -15,7 +15,7 @@ ticket routing) do other work on the same loop. The platform principal this RFC 
 **role** (`analyst`, `remediator`, `reporter`, `hunter`, `router`; column `ai_agents.role`, default `analyst`). The
 analyst is the first role built; the others are accepted values for later work. The role says what the AI agent is for;
 the **preset** (`suggest`, `triage`) says what it may do. The harness is sdk-go `pkg/harness` (RFC-133), the worker
-repository is `openctemio/ai-worker`, and the sensor role is `ai-worker`. Names: table `ai_agents`
+is distributed separately from the core, and the sensor role is `ai-worker`. Names: table `ai_agents`
 (`ai_agent_owners`), routes `/api/v1/ai/agents`, stored value `ai_agent`, Go `AIAgent` (the package keeps the feature's
 name, `aianalysis`), UI "AI agent".
 
