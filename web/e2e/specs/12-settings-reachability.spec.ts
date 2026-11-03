@@ -8,7 +8,7 @@ import { LEGACY_SETTINGS_ROUTE_REDIRECTS } from '../../src/config/legacy-routes'
  * Settings reachability (Settings IA).
  *
  *   1. As the seed user (an owner or admin): every settings-rail entry opens
- *      a page with one h1, the rail, and no Access Denied.
+ *      a page with one h1, the rail, and no access-denied page.
  *   2. Every moved settings URL answers 308 to its new home, query kept.
  *   3. Cmd+K finds settings pages.
  *   4. As a member or viewer (E2E_LIMITED_EMAIL / E2E_LIMITED_PASSWORD): the
@@ -40,7 +40,7 @@ test('every settings rail entry opens', { tag: ['@settings', '@smoke'] }, async 
     await page.goto(href)
     await expect(page.locator(rail), href).toBeVisible({ timeout: 30_000 })
     await expect(page.locator('h1'), href).toHaveCount(1)
-    await expect(page.getByText('Access Denied'), href).toHaveCount(0)
+    await expect(page.locator('[data-route-denied]'), href).toHaveCount(0)
     await expect(page.locator(`${rail} a[aria-current="page"]`), href).toHaveCount(1)
   }
 })
@@ -184,11 +184,11 @@ base(
     await openUserMenuItem(page, 'Notifications')
     await expect(page).toHaveURL(/\/account\/notifications/)
     await expect(page.getByRole('heading', { level: 1, name: 'Notifications' })).toBeVisible()
-    await expect(page.getByText('Access Denied')).toHaveCount(0)
+    await expect(page.locator('[data-route-denied]')).toHaveCount(0)
 
     await openUserMenuItem(page, 'All settings')
     await expect(page).toHaveURL(/\/settings$/)
-    await expect(page.getByText('Access Denied')).toHaveCount(0)
+    await expect(page.locator('[data-route-denied]')).toHaveCount(0)
     // Owner/admin-only entries are hidden, not shown and refused.
     for (const adminOnly of ['/settings/general', '/settings/modules']) {
       await expect(page.locator(`${rail} a[href="${adminOnly}"]`), adminOnly).toHaveCount(0)
