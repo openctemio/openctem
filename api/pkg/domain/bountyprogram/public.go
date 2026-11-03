@@ -349,7 +349,7 @@ type CatalogRepository interface {
 	GetPublic(ctx context.Context, id shared.ID) (*PublicProgram, error)
 	// StaleSubscriptions lists followed programs (any tenant) whose catalog
 	// program changed since they were brought up to date.
-	StaleSubscriptions(ctx context.Context, limit int) ([]ProgramRef, error)
+	StaleSubscriptions(ctx context.Context, limit int, skipTenants []shared.ID) ([]ProgramRef, error)
 }
 
 // AssetFlags are the fields of an asset derived from its program links.

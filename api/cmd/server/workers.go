@@ -38,7 +38,6 @@ import (
 	"github.com/openctemio/openctem/api/internal/config"
 	"github.com/openctemio/openctem/api/internal/infra/auditsink"
 	"github.com/openctemio/openctem/api/internal/infra/controller"
-	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/internal/infra/jobs"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
@@ -577,6 +576,9 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	w.ControllerManager.Register(controller.NewDashboardSnapshotsController(
 		svc.DashboardWidgets, log.With("controller", "dashboard-snapshots")))
 	// Attack surface posture: scheduled refreshes of the posture facts.
+	if svc.Module != nil {
+		svc.Posture.SetModuleGuard(svc.Module) // skip tenants with attack_surface off
+	}
 	w.ControllerManager.Register(controller.NewEASMPostureController(
 		svc.Posture, log.With("controller", "easm-posture")))
 
@@ -677,6 +679,9 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	// AI agents without an active accountable owner or a fresh attestation
 	// pause (every run start checks the same, fail closed).
 	if svc.AIAnalysis != nil {
+		if svc.Module != nil {
+			svc.AIAnalysis.SetModuleGuard(svc.Module) // skip tenants with ai_triage off
+		}
 		w.ControllerManager.Register(controller.NewAIAgentSweepController(svc.AIAnalysis, time.Hour,
 			log.With("controller", "ai-agent-sweep")))
 	}
@@ -775,7 +780,19 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	// CVE corpus; nothing happens until VULNFEED_ROOT_KEY_ID is set and a
 	// platform admin enables the "vulnfeed" source.
 	if feeds.bundles != nil {
-		w.ControllerManager.Register(feeds.bundles)
+		// In relay mode the feed-relay controller imports, once the relay
+		// delivered every file a release needs.
+		w.ControllerManager.Register(controller.SkipWhen(feeds.bundles, relayMode(svc)))
+	}
+	// Feed relay (RFC-142): rounds for the designated platform sensor and
+	// the import of what it relayed; the direct feed fetchers below stay
+	// idle in relay mode.
+	if svc.FeedRelay != nil {
+		registerRelayFeeds(cfg, svc, feeds.importer)
+		// Relay offline, stale feed, failed verification: the
+		// administrators' channel (e-mail and the alert webhook).
+		svc.FeedRelay.SetNotifier(newAdminNotifier(cfg, repos, svc, log))
+		w.ControllerManager.Register(controller.NewFeedRelayController(svc.FeedRelay))
 	}
 
 	// Inventory vulnerability matching (RFC-066): versions × CVE ranges, then
@@ -806,7 +823,7 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		}
 		svc.ThreatAlertPlanner.SetSinks(ob, inApp, repos.MemberLifecycle, scopes, mail, deps.Config.SMTP.BaseURL)
 		if svc.Module != nil {
-			svc.ThreatAlertPlanner.SetModules(middleware.NewModuleGate(svc.Module, time.Minute))
+			svc.ThreatAlertPlanner.SetModules(svc.ModuleGate)
 		}
 		w.ControllerManager.Register(controller.NewThreatAlertPlannerController(svc.ThreatAlertPlanner, log.With("controller", "threat-alert-planner")))
 	}
@@ -845,22 +862,41 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		w.ControllerManager.Register(controller.NewScopeJoinController(svc.ScopeJoin, 0))
 		// Programs with a scope source are read again every 6 hours (RFC-065 §14).
 		if svc.BountyProgram != nil {
+			if svc.Module != nil {
+				svc.BountyProgram.SetModuleGuard(svc.Module) // skip tenants with scope off
+			}
 			w.ControllerManager.Register(controller.NewProgramSyncController(svc.BountyProgram, 0))
 		}
 		// The public program feed (RFC-065 §16), when a bundle directory and
 		// the root key id are configured.
 		if svc.ProgramFeed != nil {
-			w.ControllerManager.Register(controller.NewProgramFeedController("program-feed", svc.ProgramFeed))
+			if svc.Module != nil {
+				svc.ProgramFeed.SetModuleGuard(svc.Module) // subscribers with scope off stay as they are
+			}
+			// The signed program feed's URL origins are not fetched in relay
+			// mode (not relayed yet).
+			var pf controller.Controller = controller.NewProgramFeedController("program-feed", svc.ProgramFeed)
+			if len(cfg.Scope.ProgramFeedURLs) > 0 {
+				pf = controller.SkipWhen(pf, relayMode(svc))
+			}
+			w.ControllerManager.Register(pf)
 		}
 		// The operator's local bundle (owner option A): imported only while
 		// a platform administrator has the source enabled.
 		if svc.ProgramFeedLocal != nil {
+			if svc.Module != nil {
+				svc.ProgramFeedLocal.SetModuleGuard(svc.Module)
+			}
 			w.ControllerManager.Register(controller.NewProgramFeedController("program-feed-local", svc.ProgramFeedLocal))
 		}
 		// Program data scope: assets a program covers stay assigned to its
 		// group (RFC-065 §7), also those that arrived by discovery.
 		if svc.ProgramAssigner != nil {
-			w.ControllerManager.Register(controller.NewProgramAssignmentController(svc.ProgramAssigner, 0))
+			assign := controller.NewProgramAssignmentController(svc.ProgramAssigner, 0)
+			if svc.Module != nil {
+				assign.SetModuleGuard(svc.Module) // skip tenants with scope off
+			}
+			w.ControllerManager.Register(assign)
 		}
 	}
 	// Long intrusive (t2) scope entries are re-attested or fall back to t1
@@ -1074,9 +1110,13 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	// Task issues: push each task's state to its tracker issue (move and a
 	// progress comment) when it changed since the last push.
 	if svc != nil && svc.JiraSync != nil && repos.TicketLink != nil {
-		w.ControllerManager.Register(controller.NewTaskTicketController(
+		tickets := controller.NewTaskTicketController(
 			repos.TicketLink, svc.JiraSync, time.Minute, log.With("controller", "task-tickets"),
-		))
+		)
+		if svc.Module != nil {
+			tickets.SetModuleGuard(svc.Module) // no pushes for tenants with remediation off
+		}
+		w.ControllerManager.Register(tickets)
 	}
 	// Remediation suggestions: propose groups and tasks from the remediation
 	// keys (never create them) and send the daily digest.

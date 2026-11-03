@@ -479,7 +479,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// Per-tenant module route gating (module-coupling plan Phase 1). Fail-open:
 	// only an explicitly-disabled non-core module is blocked. Wired back into the
 	// module service so a toggle invalidates the gate cache immediately.
-	moduleGate := middleware.NewModuleGate(svc.Module, time.Minute)
+	moduleGate := svc.ModuleGate
 	// Dashboard widgets of a module read "module_off" while it is off, and
 	// the widget catalog leaves them out.
 	svc.DashboardWidgets.SetModules(moduleGate)
@@ -758,6 +758,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		ContentCatalog:      handler.NewContentCatalogHandler(svc.ContentCatalog, log),
 		AdminContentCatalog: handler.NewAdminContentCatalogHandler(svc.ContentCatalog, adminConsoleSvc, repos.AdminAuditLog, log),
 		SensorContentV2:     handler.NewSensorContentV2Handler(svc.ContentDelivery, log),
+		FeedRelay:           newFeedRelayHandler(svc, log),
 		AdminVersionCheck:   handler.NewAdminVersionCheckHandler(svc.VersionCheck, repos.AdminAuditLog, log),
 		AdminConfiguration: handler.NewAdminConfigurationHandler(
 			configoverview.NewBuilder(cfg, platformSettings(repos), repos.Admin, os.LookupEnv), log),

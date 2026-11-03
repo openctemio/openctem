@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/openctemio/openctem/api/internal/app/feedrelay"
+
 	"github.com/openctemio/openctem/api/internal/app/ingestqueue"
 	queryapp "github.com/openctemio/openctem/api/internal/app/query"
 	threatalertapp "github.com/openctemio/openctem/api/internal/app/threatalert"
@@ -963,6 +965,8 @@ type Services struct {
 	// ModuleChangeBus fans module toggles out to every replica's route-gate
 	// cache; nil without Redis. Started with the WebSocket bridge.
 	ModuleChangeBus *redis.ModuleChangeBus
+	// ModuleGate is the process-wide module state cache (see NewServices).
+	ModuleGate *middleware.ModuleGate
 	// IPAllowlistBus fans IP allowlist changes out to every replica's gate.
 	IPAllowlistBus *redis.CacheInvalidationBus
 	// F-8: Single-use ticket service used by WS upgrade auth.
@@ -1022,11 +1026,14 @@ type Services struct {
 	DeploymentRegion    *deploymentregion.Service
 	StorageQuota        *storagequota.Service
 	ThreatSource        *threatsource.Service
-	ScanIdentity        *scanidentity.Service
-	PlatformAlert       *platformalert.Service
-	PlatformAI          *platformai.Service
-	OrgRelay            *orgrelay.Service
-	PlatformMFA         *platformmfa.Service
+	// FeedRelay receives every feed through a platform relay sensor in relay
+	// mode (RFC-142); nil without a database or platform settings.
+	FeedRelay     *feedrelay.Service
+	ScanIdentity  *scanidentity.Service
+	PlatformAlert *platformalert.Service
+	PlatformAI    *platformai.Service
+	OrgRelay      *orgrelay.Service
+	PlatformMFA   *platformmfa.Service
 	// TenantAI is the organizations' AI settings (consent, source, own provider).
 	TenantAI *tenantai.Service
 	// AIMasking is the organization's AI masking policy and its preview.
@@ -1491,10 +1498,18 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// The platform layer of the scan identification markers.
 		s.ScanIdentity = scanidentity.NewService(repos.PlatformSetting, s.SettingRecorder)
 	}
+	// Feed relay (RFC-142): in relay mode KEV and EPSS come only from the
+	// relayed release; the platform never calls CISA or FIRST.
+	s.FeedRelay = newFeedRelayService(cfg, deps.DB, repos, s, log)
+	if s.FeedRelay != nil && s.ThreatSource != nil {
+		s.ThreatIntel.SetSourcePolicy(feedrelay.ThreatSourcePolicy{Inner: s.ThreatSource, Relay: s.FeedRelay})
+	}
 	s.VersionCheck = versioncheck.New(postgres.NewVersionCheckRepository(&postgres.DB{DB: deps.DB}), versioncheck.Config{
 		Enabled: cfg.Worker.VersionCheckEnabled, URL: cfg.Worker.VersionCheckURL,
 		Keys: releasefeed.PinnedKeys, Running: version.Get().Version,
 		OnFeed: learnComponentReleases,
+		// In relay mode the release feed comes through the relay sensor.
+		Offline: relayMode(s),
 	}, log)
 	// Monitoring > Software updates switches the daily check without a restart;
 	// VERSION_CHECK_ENABLED=false stays a ceiling.
@@ -3296,6 +3311,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// key suffix in any future Redis payload cache. Bumped on every
 	// toggle / preset apply / reset via notifyModuleChange.
 	s.Module.SetVersionService(module.NewVersionService(deps.RedisClient, log))
+	// One gate per process, dropped by every module or entitlement change (and,
+	// through the change bus, on every replica): the route gate, the dashboard
+	// and the threat-alert planner all read it, so none keeps an old answer.
+	s.ModuleGate = middleware.NewModuleGate(s.Module, time.Minute)
 	// Ingest honors the suppressions module toggle: with the module off (or
 	// left out of the tenant's bundles) findings land as reported.
 	s.Ingest.SetSuppressionModuleGuard(s.Module)

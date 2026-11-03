@@ -12,7 +12,7 @@ import (
 
 type behindStub struct{ refs []ticketlink.TaskLinkRef }
 
-func (b behindStub) TaskLinksBehindForPlatform(context.Context, int) ([]ticketlink.TaskLinkRef, error) {
+func (b behindStub) TaskLinksBehindForPlatform(context.Context, int, []shared.ID) ([]ticketlink.TaskLinkRef, error) {
 	return b.refs, nil
 }
 
