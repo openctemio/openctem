@@ -94,6 +94,9 @@ var (
 // ssoMaxRedirectURILength is the maximum length for redirect URIs.
 const ssoMaxRedirectURILength = 2000
 
+// tokenTypeBearer is the token_type of the session tokens SSO sign-in returns.
+const tokenTypeBearer = "Bearer"
+
 // SSOService handles per-tenant SSO authentication.
 type SSOService struct {
 	// signups records sign-up events for the platform console (optional).
@@ -761,7 +764,7 @@ func (s *SSOService) HandleCallback(ctx context.Context, input SSOCallbackInput)
 		AccessToken:  sessionResult.AccessToken,
 		RefreshToken: sessionResult.RefreshToken,
 		ExpiresIn:    int64(s.authConfig.AccessTokenDuration.Seconds()),
-		TokenType:    "Bearer",
+		TokenType:    tokenTypeBearer,
 		User:         u,
 		TenantID:     t.ID().String(),
 		TenantSlug:   t.Slug(),
@@ -2176,7 +2179,7 @@ func (s *SSOService) federatedSessionResult(ctx context.Context, u *userdom.User
 		AccessToken:  sessionResult.AccessToken,
 		RefreshToken: sessionResult.RefreshToken,
 		ExpiresIn:    int64(s.authConfig.AccessTokenDuration.Seconds()),
-		TokenType:    "Bearer",
+		TokenType:    tokenTypeBearer,
 		User:         u,
 		TenantID:     t.ID().String(),
 		TenantSlug:   t.Slug(),
