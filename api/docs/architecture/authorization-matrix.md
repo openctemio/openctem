@@ -1827,7 +1827,7 @@ and every by-id read answers 404. There is no per-organization switch back.
 
 **One enforcement point.** `internal/app/datascope.Enforcer` resolves the
 caller's scope (caller and admin flag come from the HTTP auth context, wired in
-`cmd/server/services.go`) and is shared by every service. Nil-safe: an unwired
+`internal/server/services.go`) and is shared by every service. Nil-safe: an unwired
 service is unrestricted. Out-of-scope by-id access returns **404**, never 403 —
 the same answer as a missing row, so it is not an existence oracle; in bulk
 results an out-of-scope id is reported exactly like an unknown id.

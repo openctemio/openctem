@@ -292,7 +292,7 @@ the sections above:
 - `internal/infra/http/handler/limits_handler.go`: console and organization
   endpoints; `WriteLimitError` (403 `LIMIT_REACHED`).
 - `internal/infra/http/internalapi`: the internal API (token verifier,
-  replay cache, listener and endpoints); `cmd/server/internal_api.go` wires
+  replay cache, listener and endpoints); `internal/server/internal_api.go` wires
   it.
 - Migration `per_organization_limits` (002890): moved every organization's
   earlier limits and excluded modules to operator rows, then dropped the old
