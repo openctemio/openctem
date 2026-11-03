@@ -9,7 +9,7 @@ import (
 
 // Main must keep the func() signature a custom build's main calls.
 func TestMainIsExported(t *testing.T) {
-	var f func() = server.Main
+	f := server.Main
 	_ = f
 }
 

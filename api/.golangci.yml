@@ -140,6 +140,12 @@ linters:
           - gochecknoglobals
           - gochecknoinits
         path: cmd/.*/main\.go
+      # The server's composition root, moved verbatim from cmd/server/main.go:
+      # it wires the whole application in one function by design.
+      - linters:
+          - gocognit
+          - nestif
+        path: internal/server/main\.go
       - linters:
           - dupl
           - errcheck
