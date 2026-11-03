@@ -130,6 +130,7 @@ import (
 	signupapp "github.com/openctemio/openctem/api/internal/app/signup"
 	"github.com/openctemio/openctem/api/internal/app/sla"
 	"github.com/openctemio/openctem/api/internal/app/storagequota"
+	subscriptionapp "github.com/openctemio/openctem/api/internal/app/subscription"
 	"github.com/openctemio/openctem/api/internal/app/template"
 	tenantapp "github.com/openctemio/openctem/api/internal/app/tenant"
 	"github.com/openctemio/openctem/api/internal/app/tenantai"
@@ -181,6 +182,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/email"
 	"github.com/openctemio/openctem/api/pkg/httpsec"
 	"github.com/openctemio/openctem/api/pkg/jwt"
+	"github.com/openctemio/openctem/api/pkg/licensekey"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/releasefeed"
 	"github.com/openctemio/openctem/api/pkg/version"
@@ -1052,6 +1054,8 @@ type Services struct {
 	SignupEvents *signupeventapp.Service
 	// Plans and limits.
 	Entitlement *entitlementapp.Service
+	// Subscription is the installation's signed license (grant keys only).
+	Subscription *subscriptionapp.Service
 	// Idle Free workspaces (reminder, read-only, warnings, deletion due).
 	IdleWorkspaces *lifecycleapp.Service
 	// OrganizationGate refuses every credential of a suspended organization;
@@ -1166,6 +1170,13 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// invitations are checked where the rows are inserted. No source beyond
 	// the operator's own rows unless the internal API is on.
 	s.Entitlement = entitlementapp.NewService(repos.Limits, repos.AdminAuditLog, log)
+	// The installation's signed license is the grant source: it only adds
+	// grant keys and is verified with the roots compiled into the build.
+	// No gate consults it yet.
+	if repos.Subscription != nil {
+		s.Subscription = subscriptionapp.NewService(repos.Subscription, licensekey.Default(), log)
+		s.Entitlement.SetGrantSources(s.Subscription)
+	}
 	if repos.PlatformSetting != nil {
 		s.StorageQuota = storagequota.NewService(repos.PlatformSetting, s.Entitlement, s.SettingRecorder, cfg.Storage.TenantQuotaMB)
 	}

@@ -538,6 +538,13 @@ func run() int {
 		return 0
 	}
 
+	// The license state stays fresh on every plane: reload when another
+	// replica stores a license, recompute time-based states, keep the time
+	// high-water mark. Reads only the database; no outbound call.
+	if services.Subscription != nil {
+		go services.Subscription.Run(ctx)
+	}
+
 	// ==========================================================================
 	// Workers (none on the admin plane)
 	// ==========================================================================

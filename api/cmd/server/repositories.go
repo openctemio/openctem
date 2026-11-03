@@ -262,6 +262,7 @@ type Repositories struct {
 	ScanApproval    *postgres.ScanApprovalRepository
 	AccessRequest   *postgres.AccessRequestRepository
 	Limits          *postgres.LimitsRepository
+	Subscription    *postgres.SubscriptionRepository
 	IdleLifecycle   *postgres.IdleLifecycleRepository
 	// OrganizationStatus: suspended organizations
 	// (docs/architecture/organization-suspension.md).
@@ -620,6 +621,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		AccessRequest:      postgres.NewAccessRequestRepository(db),
 		SignupEvent:        postgres.NewSignupEventRepository(db),
 		Limits:             postgres.NewLimitsRepository(db),
+		Subscription:       postgres.NewSubscriptionRepository(db),
 		IdleLifecycle:      postgres.NewIdleLifecycleRepository(db),
 		OrganizationStatus: postgres.NewOrganizationStatusRepository(db),
 		AdminAuditLog:      postgres.NewAuditLogRepository(db),

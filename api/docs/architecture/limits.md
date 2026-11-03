@@ -315,13 +315,46 @@ or a module id, and sign-in, SSO, MFA and audit are never grant keys
 - Every refusal has a stable reason code (`licensekey.Reason`) for the audit
   entry; the file content is never logged.
 
-Storage, the entitlement service entry point, the admin API and the
-enforcement seams follow the RFC's implementation plan.
+### Storage and the grant answer (`internal/app/subscription`)
+
+- Migration `subscription_licenses` adds two installation-wide tables with no
+  tenant data: `subscription_licenses` (every licence ever stored, append-only;
+  removal sets `removed_at`; the signed file plus its parsed claims for
+  display) and `subscription_state` (one row: the installation id created by
+  the migration, the time and key-set high-water marks, the revocations of
+  the newest key set seen, and a version bumped by every licence write).
+- `subscription.Service` re-verifies every stored file with
+  `licensekey.Default()` on each load, so a row written or edited in the
+  database grants nothing. The key-set rollback floor applies when a file is
+  added; stored licences keep working after a renewal brings a newer key
+  set, and the stored revocations apply to all of them.
+- The licence in force is the stored one in a granting state with the latest
+  `not_before`; licences are never merged, and a renewal uploaded early takes
+  over at its start with no gap. A key an earlier licence granted and the one
+  in force does not (it expired, was removed, or a renewal dropped it) is
+  `expired`, with its settings read-only for 30 days after that end; data is
+  always kept.
+- Each replica keeps an in-memory snapshot: it is dropped on a local write,
+  and `Run` reloads it every 30 seconds when the state version changed
+  (another replica wrote) and persists the time high-water mark at most
+  hourly. A failed reload keeps the previous state; before the first
+  successful load every grant is off. No outbound call is made.
+- `entitlement.Service.Addon(ctx, tenantID, key)` and `RequireAddon` are the
+  only entry points a gate calls (`limits.GrantSource`: the licence, and a
+  control plane later). `RequireAddon` returns `*limits.ErrGrantRequired`
+  with code `ADDON_NOT_LICENSED` or `ADDON_LICENSE_EXPIRED`; the most granting
+  source wins; when every source fails the key is off (fail-closed for
+  granted extras only). `subscription.Service.Has` and `Status` serve
+  installation-wide checks and banners. Organizations only ever see grant
+  states, never the licence. No gate calls these yet.
 
 ## Code map
 
 - `pkg/domain/limits/grants.go`: the grant key registry; `pkg/licensekey`:
-  the offline licence verifier and states (test keys in `licensekeytest`).
+  the offline licence verifier and states (test keys in `licensekeytest`);
+  `internal/app/subscription` + `internal/infra/postgres/subscription_repository.go`:
+  the licence store and the grant answer; `internal/app/entitlement/grants.go`:
+  `Addon` and `RequireAddon`.
 - `pkg/domain/limits`: keys, `Limits`, `Limit`, `FeatureDeny`, origins,
   `Source`, `NoneSource`, `AllowAddition`, `ErrLimitReached`, `GracePeriod`.
 - `internal/app/entitlement`: the service (`service.go`), feature denies and
