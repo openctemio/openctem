@@ -145,7 +145,7 @@ require (
 	github.com/klauspost/compress v1.20.3
 	github.com/lib/pq v1.12.3
 	github.com/mattermost/xml-roundtrip-validator v0.1.0
-	github.com/openctemio/ctis v1.6.5
+	github.com/openctemio/ctis v1.6.8-0.20261103015342-459d43b53b35
 	github.com/openctemio/ctis/transfer v0.1.0
 	github.com/pires/go-proxyproto v0.16.0
 	github.com/prometheus/client_golang v1.25.0
