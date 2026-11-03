@@ -31,6 +31,9 @@ import {
   Waypoints,
   type LucideIcon,
 } from 'lucide-react'
+import { extension } from '@extension/console'
+
+import { assertCompatible, mergeConsoleNav } from '@/lib/extension/merge'
 
 export interface AdminNavItem {
   /** English label; also the i18n fallback. */
@@ -67,7 +70,7 @@ export interface AdminNavSection {
  * listed: add an item together with its page, never ahead of it. The command
  * palette indexes the same list.
  */
-export const adminNav: AdminNavSection[] = [
+const coreAdminNav: AdminNavSection[] = [
   {
     items: [
       {
@@ -415,3 +418,8 @@ export const adminNav: AdminNavSection[] = [
     ],
   },
 ]
+
+assertCompatible('extension @extension/console', extension.apiVersion)
+
+/** The core rows plus the rows the build's extension adds (none by default). */
+export const adminNav: AdminNavSection[] = mergeConsoleNav(coreAdminNav, extension.navItems)

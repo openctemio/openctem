@@ -1,4 +1,7 @@
+import { existsSync } from 'node:fs'
 import { createRequire } from 'node:module'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 import type { NextConfig } from 'next'
 import { validateEnv } from './src/lib/env'
@@ -34,8 +37,32 @@ const DEPLOYMENT_ID = (
   ''
 ).trim()
 
+const webRoot = path.dirname(fileURLToPath(import.meta.url))
+const OVERLAY_ROOT = './src/ee'
+const STUB_ROOT = './src/extension-default'
+const OVERLAY_DIR = path.join(webRoot, 'src', 'ee')
+
+/**
+ * Edition switch (api/docs/development/editions.md, "Web"). The `@extension/*`
+ * modules resolve to the empty stub in src/extension-default, or with EDITION=ee to
+ * the overlay mounted at src/ee. A default production build refuses to run
+ * while an overlay is mounted, so a Community image can never carry
+ * overlay pages; an EDITION=ee build without the overlay fails to resolve.
+ */
+const EDITION = (process.env.EDITION || '').trim()
+if (EDITION !== '' && EDITION !== 'ee') {
+  throw new Error(`EDITION must be unset or "ee", got "${EDITION}"`)
+}
+if (EDITION !== 'ee' && process.env.NODE_ENV === 'production' && existsSync(OVERLAY_DIR)) {
+  throw new Error(`${OVERLAY_DIR} is mounted: build with EDITION=ee, or remove the overlay`)
+}
+const EDITION_ALIASES = {
+  '@extension/*': EDITION === 'ee' ? `${OVERLAY_ROOT}/*` : `${STUB_ROOT}/*`,
+}
+
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  turbopack: { resolveAlias: EDITION_ALIASES },
   // Version-skew protection: a tab opened before a deploy reloads the page on
   // its next navigation instead of calling server actions and chunks that no
   // longer exist (the login form's "Failed to find Server Action"). Set from the

@@ -10,8 +10,9 @@
 #      module) unless it carries the ee build tag;
 #   c. the ee build tag appears in exactly one file (the build switch);
 #   d. no web code imports the overlay directly (the default build reaches it
-#      only through the @ee alias, which points at the stub), and the overlay
-#      directory is named only in the one web build config;
+#      only through the @extension/* alias, which points at the empty
+#      default), and the overlay directory is named only in the web build
+#      configs (tenant app and console);
 #   e. no commercial brand name in any tracked text file or path.
 #
 # Output names file:line (or the path) and the rule, never the matched text of
@@ -39,8 +40,8 @@ ignore_lines=(
 )
 # The one file that may carry the ee build tag (the build switch).
 switch_file='api/cmd/server/edition_ee.go'
-# The one web build config that may name the overlay directory.
-web_switch_re='^web/next\.config\.(ts|mjs|js)$'
+# The web build configs (tenant app, console) that may name the overlay directory.
+web_switch_re='^web/(console/)?next\.config\.(ts|mjs|js)$'
 # Commercial brand words (case-insensitive). Kept here, not in docs.
 brand_words=(exploop)
 # Files that hold the list itself or test it.
@@ -66,6 +67,15 @@ if [[ -f .gitignore ]]; then
 else
   fail ".gitignore missing (rule a)"
 fi
+# a (nested). Overlay route groups may sit under a core layout group, e.g.
+# web/src/app/(dashboard)/(ee)/: none may be tracked, and both are ignored.
+nested_re='^web/(console/)?src/app/(.*/)?\(ee\)/'
+for f in "${tracked[@]}"; do
+  [[ "$f" =~ $nested_re ]] && fail "$f: Enterprise overlay route group is tracked (rule a); the overlay lives only in the private repository"
+done
+for l in '/web/src/app/**/(ee)/' '/web/console/src/app/**/(ee)/'; do
+  [[ -f .gitignore ]] && ! grep -qxF -- "$l" .gitignore && fail ".gitignore: missing '$l' (rule a)"
+done
 
 # b + c. Go: overlay imports and the ee build tag.
 tag_re='^//[[:space:]]*(go:build|\+build).*(^|[^A-Za-z0-9_])ee([^A-Za-z0-9_]|$)'
@@ -94,7 +104,7 @@ for f in "${tracked[@]}"; do
   esac
   [[ "$f" == web/src/lib/i18n/dictionaries/* ]] && continue
   if grep -Eq "$direct_re" "$f"; then
-    fail "$f: imports the Enterprise overlay directly; use the @ee alias (rule d)"
+    fail "$f: imports the Enterprise overlay directly; use the @extension/* alias (rule d)"
   fi
   if grep -Eq "$cfg_re" "$f" && ! [[ "$f" =~ $web_switch_re ]]; then
     fail "$f: names the Enterprise overlay directory; only the web build config may (rule d)"
