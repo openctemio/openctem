@@ -50,6 +50,7 @@ var EdgeOverrides = []EdgeOverride{
 	{Prefix: "/ready", Edge: EdgeInternal, Why: "readiness detail"},
 	{Prefix: "/api/v1/auth/saml", Edge: EdgeAPI, Why: "SAML metadata, login redirect and the IdP's form POST to the ACS"},
 	{Prefix: "/api/v1/auth/backchannel-logout", Edge: EdgeAPI, Why: "OIDC back-channel logout, called by the IdP"},
+	{Prefix: "/api/v1/ci/oidc/exchange", Edge: EdgeAPI, Why: "CI job token exchange: no session cookie and no Authorization header (the OIDC token is in the body), so the web app's CSRF check refuses it; the API verifies the token and rate-limits the route"},
 	{Prefix: "/api/v1/ws", Edge: EdgeAPI, Why: "browser WebSocket (same origin, session cookie); the web BFF does not proxy upgrades"},
 }
 
