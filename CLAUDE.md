@@ -36,8 +36,8 @@ modules), `migration` (database migrations), `web-change` (web console).
   entitlement keys only (`api/docs/development/editions.md`). The Community
   build never imports overlay code and no file names the commercial brand;
   `.github/scripts/check-edition-fence.sh` enforces it in CI and pre-commit.
-  Overlay organization, the versioned extension contract, compatibility across
-  releases and Community/Enterprise upgrades: `api/docs/development/editions-overlay.md`.
+  The public extension API (Enterprise is one extension built on it), its versioning,
+  compatibility across releases and moving between editions: `api/docs/development/extension-api.md`.
 - No AI attribution lines in commits or PRs (enforced by `.githooks/commit-msg`).
 - Changelog: never edit `api/CHANGELOG.md` for a change; add one file
   `api/changelog.d/<short-slug>.md` (format in `api/changelog.d/README.md`).
