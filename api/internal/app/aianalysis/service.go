@@ -14,6 +14,7 @@ import (
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	aidom "github.com/openctemio/openctem/api/pkg/domain/aianalysis"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
+	moduledom "github.com/openctemio/openctem/api/pkg/domain/module"
 	"github.com/openctemio/openctem/api/pkg/domain/serviceaccount"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/tenant"
@@ -62,9 +63,18 @@ type Service struct {
 	scope    FindingScope
 	consent  ConsentReader
 	audit    *auditapp.AuditService
+	modules  ModuleGuard
 	now      func() time.Time
 	logger   *logger.Logger
 }
+
+// ModuleGuard reports the modules a tenant has off (*module.ModuleService).
+type ModuleGuard interface {
+	TenantDisabledModules(ctx context.Context, tenantID string) map[string]bool
+}
+
+// SetModuleGuard makes the sweep skip a tenant with the ai_triage module off.
+func (s *Service) SetModuleGuard(g ModuleGuard) { s.modules = g }
 
 // New wires the service.
 func New(aiAgents aidom.AIAgentRepository, runs aidom.RunRepository, holder PermissionHolder,
@@ -535,7 +545,19 @@ func (s *Service) Sweep(ctx context.Context) (int, error) {
 		return 0, err
 	}
 	paused := 0
+	off := map[string]bool{}
 	for _, a := range list {
+		tid := a.TenantID.String()
+		if s.modules != nil {
+			d, ok := off[tid]
+			if !ok {
+				d = s.modules.TenantDisabledModules(ctx, tid)[moduledom.ModuleAITriage]
+				off[tid] = d
+			}
+			if d {
+				continue
+			}
+		}
 		people, err := s.aiAgents.PeopleOf(ctx, a.TenantID, a.Owners, s.now())
 		if err != nil {
 			s.logger.Error("AI agent sweep: owners lookup failed", "ai_agent_id", a.ID.String(), "error", err)
