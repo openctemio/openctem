@@ -87,7 +87,7 @@ type Repository interface {
 	SaveSync(ctx context.Context, p *Program) error
 	// SyncDue lists active programs with a source not synced since
 	// olderThan (all tenants: the controller).
-	SyncDue(ctx context.Context, olderThan time.Time, limit int) ([]ProgramRef, error)
+	SyncDue(ctx context.Context, olderThan time.Time, limit int, skipTenants []shared.ID) ([]ProgramRef, error)
 	// Attest records a person's acceptance of a program's terms
 	// (RFC-065 §15.3); it replaces their earlier one.
 	Attest(ctx context.Context, a Attestation) error

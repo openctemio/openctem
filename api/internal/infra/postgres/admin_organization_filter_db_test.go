@@ -100,6 +100,30 @@ func TestAdminOrganizationListFilters_DB(t *testing.T) {
 	if _, ok := present[owned]; len(present) != 1 || !ok {
 		t.Fatalf("owner=present = %v", present)
 	}
+
+	// Last member sign-in: the latest of the active members only; nil when
+	// none signed in.
+	recent := time.Now().Add(-2 * time.Hour).UTC().Truncate(time.Second)
+	exec(`UPDATE users SET last_login_at = $2 WHERE id IN
+		(SELECT user_id FROM tenant_members WHERE tenant_id = $1)`, owned, recent)
+	exec(`UPDATE users SET last_login_at = now() WHERE id IN
+		(SELECT user_id FROM tenant_members WHERE tenant_id = $1)`, suspended) // suspended member: not counted
+	orgs, _, err := repo.ListOrganizations(ctx, admin.OrganizationFilter{Search: marker, Limit: 50})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, o := range orgs {
+		switch o.ID.String() {
+		case owned:
+			if o.LastMemberSignInAt == nil || !o.LastMemberSignInAt.Equal(recent) {
+				t.Fatalf("owned: last member sign-in = %v, want %v", o.LastMemberSignInAt, recent)
+			}
+		case suspended, empty:
+			if o.LastMemberSignInAt != nil {
+				t.Fatalf("%s: last member sign-in = %v, want none", o.Name, o.LastMemberSignInAt)
+			}
+		}
+	}
 }
 
 // The platform system tenant is internal: the console list and its total
