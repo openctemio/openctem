@@ -112,6 +112,7 @@ decides which organizations get them.
 | `sso.enforcement` | turning SSO enforcement on (`TenantService.UpdateSecuritySettings`) | enforcement stays during the grace, then the `sso-enforcement-entitlement` controller (hourly) turns it off and tells the owners and administrators: members sign in with a password (and 2FA where required) again |
 | `scim` | minting a SCIM token (`TokenService.Mint`) and the SCIM API (`middleware.SCIMFeatureGate`, after the token is authenticated) | existing tokens keep working during the grace (`Usable`), then 403; no new token |
 | `sso.group_links` | changing SCIM group to role mappings (`GroupService.SetRoleMappings`) | existing mappings keep applying |
+| `active_scanning` | sending active or intrusive probes (tier above passive) from any sensor, the platform's shared ones or the organization's own: refused at scan create, run and update (`ACTIVE_SCANNING_NOT_ENTITLED`) and at every dispatch (re-check at claim, grant gate); see "Passive only" below | queued active jobs fail with `ACTIVE_SCANNING_NOT_ENTITLED` or wait with a withheld reason; passive work (certificate logs, passive DNS, registration data, intel matching, imports) keeps running |
 | `ldap` | reserved: there is no LDAP sign-in yet | — |
 | `content_sources.webhook` | setting a rule source's webhook secret (`contentsource.Service.RotateWebhookSecret`); webhook calls check `Usable` | calls keep queuing syncs during the grace, then they are refused; scheduled syncs go on |
 | `content_sources.review_policy` | switching a rule source to the review promotion policy (create, update) | sources already on review keep it |
@@ -123,6 +124,27 @@ less than the grace period ago. The grace of a named feature is a row in
 feature). A refused change answers
 `403 FEATURE_NOT_INCLUDED`, or `503` when the limits could not be read; every
 seam fails closed.
+
+### Passive only (`active_scanning`)
+
+An organization whose entitlements deny `active_scanning` runs passive work
+only (tier 0). The server enforces it, a hidden control is not enough:
+
+- **Dispatch.** Every path that hands a command to a sensor (the poll, the
+  claim by id, the claim-N poll and the shared sensors' claim) re-checks the
+  command (`command.Service.recheck`). The tier is computed on the server
+  from the stored dispatch record and the command type and tool
+  (`sensor.CommandTierFor`), never read from a request or a payload field.
+  Above tier 0 the job fails with `ACTIVE_SCANNING_NOT_ENTITLED`. The
+  sensor-side gate adds the tier the sensor's own tool contract gives the
+  job (a contract only raises it) and withholds the command with the rule
+  `active_scanning`. The lookup is by the command's own organization id.
+- **Create and run.** Scan create, update and trigger refuse a scan whose
+  tier (its intensity, or the tier of its tools when higher) is above
+  passive with `ACTIVE_SCANNING_NOT_ENTITLED`, in addition to the dispatch
+  check.
+- **Failure mode.** A lookup that cannot be read refuses tier above 0 (the job
+  stays queued and is retried at the next poll); tier 0 is never affected.
 
 ### Counting usage
 

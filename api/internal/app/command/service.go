@@ -67,6 +67,9 @@ type Service struct {
 	// sharedLimits reads each organization's limit of shared jobs in flight
 	// (shared_claim.go); nil: the shared claim hands out nothing.
 	sharedLimits SharedLimitSource
+	// activeScan reads the organization's active scanning entitlement
+	// (active_scanning.go); nil allows.
+	activeScan FeatureAllower
 	// sharedAccess is the shared sensor access policy applied at claim
 	// time (shared_claim.go); nil: the shared claim hands out nothing.
 	sharedAccess SharedAccessPolicy

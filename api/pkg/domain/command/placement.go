@@ -104,6 +104,10 @@ const (
 	// PlacementIntensity: on this sensor the job's tier is above the
 	// scan's intensity.
 	PlacementIntensity = "intensity"
+	// PlacementActiveScanning: the organization's entitlements deny active
+	// scanning (passive only) and the job probes above passive on this
+	// sensor (or the entitlement could not be read).
+	PlacementActiveScanning = "active_scanning_not_entitled"
 	// PlacementPolicyUnavailable: the sensor's grant or policy could not be
 	// read; nothing is dispatched to it until it can (fail closed).
 	PlacementPolicyUnavailable = "policy_unavailable"
@@ -220,6 +224,7 @@ type PlacementReader interface {
 // dimension).
 var withheldText = map[string]string{
 	PlacementIntensity:          "the job's tier is above the scan's intensity",
+	PlacementActiveScanning:     "the organization's plan allows passive scanning only",
 	PlacementPolicyUnavailable:  "the sensor's policy could not be read",
 	PlacementPrivateNeedsPolicy: "private targets need a sensor with a local policy",
 	PlacementOptInDisabled:      "the organization has not enabled this sensor opt-in",

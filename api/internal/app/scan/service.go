@@ -219,6 +219,7 @@ type Service struct {
 	zones               ZoneDirectory                                                     // optional; nil = zone routing off (RFC-023)
 	instanceZones       InstanceZones                                                     // instance scan zones for shared sensors (instance_zones.go); nil: none
 	sharedUse           SharedUseObserver                                                 // anomaly signals of shared sensor use (shared_signals.go); nil: none
+	activeScan          FeatureAllower                                                    // active_scanning (active_scanning.go); nil: allowed
 	sharedLimits        SharedScanLimits                                                  // platform_scans_per_day (shared_limits.go); nil: never shared
 	zoneResolver        scanzone.Resolver                                                 // resolves hostname targets for zone routing
 	windows             WindowLoader                                                      // optional; nil = no trigger-time scan window check (windows.go)

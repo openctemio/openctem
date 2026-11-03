@@ -82,11 +82,24 @@ claim     scope_recheck.go: recorded tier > intensity -> INTENSITY_EXCEEDED (com
   confirmed (or first seen without a record) since the previous successful
   run; the active gate still refuses needs_review and rejected names.
 
+## Passive only by entitlement
+
+An organization whose entitlements deny the named feature `active_scanning`
+(`limits.FeatureActiveScanning`) is held to passive work whatever intensity a
+scan asks for, on every sensor, shared or its own. The server computes the
+tier (the stored dispatch record, then the command type and tool) and refuses
+anything above tier 0 at scan create, update and run (`ACTIVE_SCANNING_NOT_ENTITLED`)
+and at every claim: the re-check fails the job, and the sensor-side gate
+withholds a job the sensor's tool contract lifts above passive (placement
+`active_scanning_not_entitled`). Details and failure modes:
+[limits](limits.md#passive-only-active_scanning).
+
 ## Tests
 
 `pkg/domain/stage/network_test.go`, `internal/app/scan/intensity_test.go`,
 `internal/app/scanrun/step_intensity_test.go`,
-`internal/app/command/intensity_test.go`,
+`internal/app/command/intensity_test.go`, `internal/app/command/active_scanning_test.go`,
+`internal/app/scan/active_scanning_test.go`,
 `tests/unit/command_scope_recheck_test.go` (`JobAboveIntensityIsFailed`),
 `internal/app/easm/active_gate_test.go` (`UncoveredTargets`, cross-tenant),
 `internal/infra/postgres/scan_intensity_db_test.go` (round trip, cross-tenant
