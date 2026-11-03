@@ -99,12 +99,13 @@ test-load-bench:
 	@echo "Running load test benchmarks..."
 	$(GOTEST) -v -bench=. -benchmem -timeout=10m ./tests/load/...
 
-# golangci-lint is pinned to v1.64.8: the repo's .golangci.yml is v1-format, and
-# the current v2.x releases both reject that config AND panic analyzing this
-# codebase under Go 1.26. `go run @version` ignores whatever is on PATH, so the
-# target works regardless of any globally-installed (v2) binary.
-GOLANGCI_LINT_VERSION ?= v1.64.8
-GOLANGCI_LINT := go run github.com/golangci/golangci-lint/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
+# golangci-lint is pinned to v2.14.0, the first release whose binary reads Go 1.27
+# export data (v2.13.x and v1.64.8 fail with "export data version 5 is greater
+# than maximum supported"). The repo's .golangci.yml is v2 format. `go run
+# @version` ignores whatever is on PATH, so the target works regardless of any
+# globally-installed binary.
+GOLANGCI_LINT_VERSION ?= v2.14.0
+GOLANGCI_LINT := go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
 
 ## lint: Run linter (golangci-lint, pinned) over the whole tree.
 lint:
@@ -440,7 +441,7 @@ dev:
 ## install-tools: Install development tools
 install-tools:
 	@echo "Installing development tools..."
-	go install github.com/golangci/golangci-lint/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
+	go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
 	go install honnef.co/go/tools/cmd/staticcheck@latest
 	go install github.com/air-verse/air@latest
 	go install go.uber.org/mock/mockgen@latest

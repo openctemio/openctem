@@ -99,7 +99,7 @@ var Registry = []Definition{
 		UserFacing: true,
 		Permission: "findings:read",
 		MCP:        []string{"list_findings", "get_finding", "finding_stats", "list_active_cves", "explain_finding_priority", "list_finding_transitions", "list_remediation_groups"},
-		Jobs:       []string{"ApprovalExpirationController", "ApprovalMaterialChangeController", "VEXRequestNoticeController", "ApprovalDigestController", "FindingPriorityController", "FindingPriorityReconcileController", "PriorityAuditRetentionController", "EvidenceRetentionController", "AttachmentRetentionController", "AttachmentScanController", "ReportFileMigrationController", "ScannerOutputRetentionController", "RiskSnapshotController", "IngestWorkerController", "IngestReceiptRetentionController", "IngestQueueRetentionController", "JobRecoveryController", "RetestScheduler", "ThreatIntelRefreshController", "KEVRefreshController", "VulnMatchController", "VulnFeedImportController"},
+		Jobs:       []string{"ApprovalExpirationController", "ApprovalMaterialChangeController", "VEXRequestNoticeController", "ApprovalDigestController", "FindingPriorityController", "FindingPriorityReconcileController", "PriorityAuditRetentionController", "EvidenceRetentionController", "AttachmentRetentionController", "AttachmentScanController", "ReportFileMigrationController", "ScannerOutputRetentionController", "RiskSnapshotController", "IngestWorkerController", "IngestReceiptRetentionController", "IngestQueueRetentionController", "JobRecoveryController", "RetestScheduler", "ThreatIntelRefreshController", "KEVRefreshController", "VulnMatchController", "VulnFeedImportController", "FeedRelayController", "VEXStatementExpiryController"},
 	},
 	{
 		ID: ModuleScans, Slug: "scans", Name: "Scans",
@@ -109,7 +109,7 @@ var Registry = []Definition{
 		Core:       true,
 		UserFacing: true,
 		Permission: "scans:read",
-		Jobs:       []string{"CoverageScheduler", "OneOffScanArchiveController", "QueuePriorityController", "ScanRetryController", "ScanTimeoutController", "ScanWindowClosingController", "StalledRunRepairController", "CIAlertsController", "CIDecorationController", "CIRetentionController", "CISweepController", "CommandEventRetentionController", "CommandLogRetentionController", "WebSurfaceRetentionController", "WebVerifyController"},
+		Jobs:       []string{"CoverageScheduler", "OneOffScanArchiveController", "QueuePriorityController", "ScanRetryController", "ScanTimeoutController", "ScanWindowClosingController", "StalledRunRepairController", "CIAlertsController", "CIDecorationController", "CIRetentionController", "CISweepController", "CommandEventRetentionController", "CommandLogRetentionController", "WebSurfaceRetentionController", "WebVerifyController", "AssetEnrichmentController", "AssetCoverageController", "WebEvidenceRetentionController"},
 	},
 	{
 		ID: ModuleAttackSurface, Slug: "attack-surface", Name: "Attack Surface",
@@ -123,7 +123,7 @@ var Registry = []Definition{
 		},
 		Routes: []string{"/api/v1/attack-surface", "/api/v1/easm", "/api/v1/assets/{id}/web-evidence"},
 		MCP:    []string{"get_exposure_chains"},
-		Jobs:   []string{"AssetEnrichmentController", "AssetCoverageController", "CertMonitorController", "EASMDNSController", "EASMLookalikeController", "PageMonitorController", "EASMNetworkSeedController", "WebEvidenceRetentionController", "EASMWeeklyDigestController", "EASMPostureController", "GraphEnrichmentController", "ScopeJoinController"},
+		Jobs:   []string{"CertMonitorController", "EASMDNSController", "EASMLookalikeController", "PageMonitorController", "EASMNetworkSeedController", "EASMWeeklyDigestController", "EASMPostureController", "GraphEnrichmentController", "ScopeJoinController"},
 	},
 	{
 		ID: ModuleScopeConfig, Slug: "scope-config", Name: "Scope Config",
@@ -136,7 +136,7 @@ var Registry = []Definition{
 			{ModuleID: ModuleAssets, Type: DependencyHard, Reason: "scope rules select assets"},
 		},
 		Routes: []string{"/api/v1/scope", "/api/v1/programs"},
-		Jobs:   []string{"ProgramAssignmentController", "ProgramFeedController", "ProgramSyncController", "ScopeAttestationController", "ScopeEffectsController", "ScopePendingController"},
+		Jobs:   []string{"ProgramAssignmentController", "ProgramFeedController", "ProgramSyncController"},
 	},
 	{
 		ID: ModuleBusinessServices, Slug: "business-services", Name: "Business Services",
@@ -231,7 +231,6 @@ var Registry = []Definition{
 			{ModuleID: ModuleAssets, Type: DependencyHard, Reason: "components belong to assets (repos, images, runtimes)"},
 		},
 		Routes: []string{"/api/v1/components", "/api/v1/assets/{}/components", "/api/v1/assets/{}/dependency-paths", "/api/v1/assets/{}/dependency-graph", "/api/v1/vex-statements"},
-		Jobs:   []string{"VEXStatementExpiryController"},
 	},
 	{
 		ID: ModuleTemplateSources, Slug: "template-sources", Name: "Rule Sources",
@@ -332,7 +331,7 @@ var Registry = []Definition{
 			{ModuleID: ModuleThreatIntel, Type: DependencySoft, Reason: "triage uses KEV/EPSS context when scoring"},
 		},
 		Routes: []string{"/api/v1/findings/{}/ai-triage", "/api/v1/findings/ai-triage", "/api/v1/findings/{}/ai", "/api/v1/ai"},
-		Jobs:   []string{"AIAgentSweepController", "AIUseCaseDowngradeController"},
+		Jobs:   []string{"AIAgentSweepController"},
 	},
 	{
 		ID: ModuleSLA, Slug: "sla", Name: "SLA Management",
@@ -478,7 +477,6 @@ var Registry = []Definition{
 			{ModuleID: ModuleIntegrations, Type: DependencySoft, Reason: "most workflow actions route through integrations (Jira, Slack)"},
 		},
 		Routes: []string{"/api/v1/workflows", "/api/v1/workflow-runs"},
-		Jobs:   []string{"AutomationRunReaper", "AutomationRunRetention"},
 	},
 	{
 		ID: ModuleReports, Slug: "reports", Name: "Reports",
@@ -643,7 +641,7 @@ var Registry = []Definition{
 		Category:    "settings", DisplayOrder: 63, Release: ReleaseStatusReleased,
 		Core:       true,
 		Permission: "team:groups:read",
-		Jobs:       []string{"ScopeReconciliationController"},
+		Jobs:       []string{"ScopeReconciliationController", "ScopeAttestationController", "ScopeEffectsController", "ScopePendingController"},
 	},
 	{
 		ID: ModuleRoles, Slug: "roles", Name: "Roles",
@@ -662,6 +660,7 @@ var Registry = []Definition{
 		Core:       true,
 		UserFacing: true,
 		Permission: "settings:read",
+		Jobs:       []string{"AIUseCaseDowngradeController", "AutomationRunReaper", "AutomationRunRetention"},
 	},
 	{
 		ID: ModuleAPIKeys, Slug: "api_keys", Name: "API Keys",

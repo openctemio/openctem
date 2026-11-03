@@ -82,6 +82,9 @@ export const env = {
     tenant: 'app_tenant',
     userInfo: 'app_user_info',
     pendingTenants: 'app_pending_tenants',
+    // Set while the session is account-only (no organization): routing hint
+    // for the proxy and the layout; the API enforces what the token reaches.
+    accountOnly: 'app_account_only',
   },
 
   // Application
