@@ -94,7 +94,7 @@ export function DeleteOrganizationItem() {
       }
     } else {
       removeCookie(env.cookies.tenant)
-      target = '/onboarding/create-team'
+      target = '/welcome'
     }
     window.location.replace(target)
   }

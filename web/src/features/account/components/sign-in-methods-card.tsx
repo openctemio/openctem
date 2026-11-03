@@ -151,7 +151,7 @@ export function SignInMethodsCard() {
   }
 
   return (
-    <Card data-testid="sign-in-methods-card">
+    <Card id="sign-in-methods" className="scroll-mt-4" data-testid="sign-in-methods-card">
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Link2 className="h-5 w-5" />
