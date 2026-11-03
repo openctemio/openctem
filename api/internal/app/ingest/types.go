@@ -149,7 +149,7 @@ type Options struct {
 	// data (a certificate promotion), so the properties it set are its own
 	// and are kept. Every other report, a person's upload and a connector's
 	// conversion included, loses the property keys the receiver interprets
-	// (adoptCTIS2Members). Honoured only for a server-side ingest: no
+	// (adoptCTIS2Members). Honored only for a server-side ingest: no
 	// sensor, no CI run, no uploader.
 	ServerBuilt bool
 }
