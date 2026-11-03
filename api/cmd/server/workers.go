@@ -4,8 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"fmt"
-	"net/url"
 	"sync"
 	"time"
 
@@ -36,7 +34,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/sla"
 	webverifyapp "github.com/openctemio/openctem/api/internal/app/webverify"
 	"github.com/openctemio/openctem/api/internal/config"
-	"github.com/openctemio/openctem/api/internal/infra/auditsink"
+	"github.com/openctemio/openctem/api/internal/extension"
 	"github.com/openctemio/openctem/api/internal/infra/controller"
 	"github.com/openctemio/openctem/api/internal/infra/jobs"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
@@ -124,19 +122,6 @@ type WorkerDeps struct {
 	DB       *sql.DB
 	Repos    *Repositories
 	Services *Services
-}
-
-// adminAuditSinkForwarder builds the off-box admin audit forwarder for
-// ADMIN_AUDIT_SINK. A destination that cannot be used is an error: an operator
-// who asked for an off-box copy must not silently run without.
-func adminAuditSinkForwarder(cfg config.AdminAuditSinkConfig, repo *postgres.AuditLogRepository, log *logger.Logger) (*auditsink.Forwarder, error) {
-	sink, err := auditsink.New(cfg.URL, auditsink.Options{
-		Secret: cfg.Secret, CAFile: cfg.SyslogCAFile, ClientCert: cfg.SyslogClientCert, ClientKey: cfg.SyslogClientKey,
-	})
-	if err != nil {
-		return nil, err
-	}
-	return auditsink.NewForwarder(repo, repo, sink, auditsink.Config{HeadInterval: cfg.HeadInterval, Logger: log})
 }
 
 // adminAuditRetentionConfig maps the operator-facing ADMIN_AUDIT_RETENTION_*
@@ -1303,15 +1288,15 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		)
 	}
 
-	// Off-box copy of the administrators' audit log. Off unless a sink is
-	// configured; a bad sink fails the boot, never silently.
-	if cfg.AdminAuditSink.URL != "" {
-		fwd, err := adminAuditSinkForwarder(cfg.AdminAuditSink, repos.AdminAuditLog, log)
-		if err != nil {
-			return nil, fmt.Errorf("admin audit sink: %w", err)
-		}
-		w.ControllerManager.Register(fwd)
-		log.Info("administrators' audit log streamed off the box", "sink", redactSinkURL(cfg.AdminAuditSink.URL))
+	// Controllers of a build's extension (none in the Community build). A
+	// controller the operator configured and the extension cannot start
+	// fails the boot, like a core controller's bad configuration.
+	extCtrls, err := extension.Controllers(context.Background(), extension.Deps{DB: &postgres.DB{DB: deps.DB}, Log: log, Config: cfg})
+	if err != nil {
+		return nil, err
+	}
+	for _, c := range extCtrls {
+		w.ControllerManager.Register(c)
 	}
 
 	// Audit hash-chain integrity verification. The admin endpoint
@@ -1675,13 +1660,4 @@ func dnsFollowUp(s *easmdnsapp.Service) controller.EASMDNSChecker {
 		return nil
 	}
 	return s
-}
-
-// redactSinkURL keeps the scheme and host of the sink for the log line.
-func redactSinkURL(raw string) string {
-	u, err := url.Parse(raw)
-	if err != nil {
-		return "(invalid)"
-	}
-	return fmt.Sprintf("%s://%s", u.Scheme, u.Host)
 }

@@ -60,6 +60,19 @@ CODEOWNERS entries exist already.
   ([RFC-145](../rfcs/RFC-145-enterprise-licence-and-entitlements.md)).
 - **A provider that keeps itself fresh** implements `extension.Runner`; the
   server runs it in the background on every plane until shutdown.
+- **Controllers.** `Edition.Controllers` returns background controllers the
+  core registers with its controller manager where it runs its own. An error
+  stops the boot: it means a controller the operator configured cannot start.
+- **Settings of extension features.** A Community server refuses to start
+  when a setting that only an extension understands is set
+  (`cmd/server/edition_guard.go`, today `ADMIN_AUDIT_SINK`), so an operator
+  never loses such a feature unnoticed when changing images.
+
+## Features that live in the overlay
+
+| Feature | What stays here |
+|---|---|
+| Off-box administrators' audit stream (`ADMIN_AUDIT_SINK*`) | the hash chain, its verification (API, `bootstrap-admin verify-audit`, hourly controller), audit views and exports, `AuditLogRepository.ReadForwardRows`/`ChainHead`, table `admin_audit_forward_cursor` |
 
 ## Overlay migrations
 

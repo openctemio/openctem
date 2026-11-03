@@ -120,6 +120,12 @@ func run() int {
 		return 1
 	}
 
+	if err := checkExtensionOnlyEnv(os.Getenv, extension.Name()); err != nil {
+		log := logger.NewDefault()
+		log.Error("refusing to start", "error", err)
+		return 1
+	}
+
 	brand.SetInstance(cfg.Brand)
 	// A hosted service holds organization mail relays to the managed rules
 	// (submission port, AUTH, TLS).
