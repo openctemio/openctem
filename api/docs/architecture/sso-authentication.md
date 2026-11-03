@@ -470,7 +470,7 @@ SAML linking is a follow-up.
 | `GET /api/v1/me/sso-links` | signed in; the caller's own active memberships only |
 | `POST /api/v1/me/sso-links/{provider}/start` | proof typed for it, CSRF, rate limit |
 | `POST /api/v1/me/sso-links/{provider}/complete` | signed in, rate limit; state bound to account, session, organization and browser, single use, expires |
-| `DELETE /api/v1/me/sso-links/{id}` | proof typed for it, CSRF, rate limit |
+| `DELETE /api/v1/me/sso-links/identities/{identity}` | proof typed for it, CSRF, rate limit |
 
 Flow:
 
