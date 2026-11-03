@@ -107,7 +107,7 @@ ingest, after validation:
   `web_content` from `extensions["io.openctem"]`.
 
 Only a report the platform builds from its own data keeps its properties:
-the certificate promotion, which marks its ingest `ServerBuilt` (honoured
+the certificate promotion, which marks its ingest `ServerBuilt` (honored
 only with no sensor, no CI run and no uploader). Every other report loses
 the interpreted keys: every sensor report, a CI run, a person's upload
 (restricted or not), a connector's conversion (DefectDojo) and program
