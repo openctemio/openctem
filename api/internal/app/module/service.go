@@ -998,10 +998,10 @@ type ModulePresetOutput struct {
 
 // PresetDiffOutput describes what would change if a preset were applied.
 type PresetDiffOutput struct {
-	PresetID    string            `json:"preset_id"`
-	PresetName  string            `json:"preset_name"`
-	ToEnable    []ModuleRefOutput `json:"to_enable"`
-	ToDisable   []ModuleRefOutput `json:"to_disable"`
+	PresetID   string            `json:"preset_id"`
+	PresetName string            `json:"preset_name"`
+	ToEnable   []ModuleRefOutput `json:"to_enable"`
+	ToDisable  []ModuleRefOutput `json:"to_disable"`
 	// Unavailable lists modules the preset names that this organization is
 	// not entitled to: the preset leaves them off instead of failing.
 	Unavailable []ModuleRefOutput `json:"unavailable,omitempty"`
