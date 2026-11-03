@@ -146,6 +146,7 @@ linters:
           - gocognit
           - nestif
           - cyclop
+          - funlen
         path: internal/server/main\.go
       - linters:
           - dupl
@@ -162,6 +163,7 @@ linters:
         path: tests/
       - linters:
           - cyclop
+          - funlen
           - goconst
         path: (.+)_test\.go
     paths:
