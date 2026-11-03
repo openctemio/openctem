@@ -175,10 +175,8 @@ func (b Branding) FooterHTMLFor(locale string) template.HTML {
 func templateFuncs() template.FuncMap {
 	return template.FuncMap{
 		"lang": NormalizeLocale,
-		"t": func(locale, key string, args ...any) string {
-			return Text(locale, key, args...)
-		},
-		"th": TextHTML,
+		"t":    Text,
+		"th":   TextHTML,
 		"footer": func(locale string, b Branding) template.HTML {
 			return b.footer(locale)
 		},
