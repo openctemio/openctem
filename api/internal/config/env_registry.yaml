@@ -2046,6 +2046,11 @@ vars:
     group: "Administration tools"
     type: string
     description: "`bootstrap-admin`: `false` turns STARTTLS off (default on)."
+  - name: BOOTSTRAP_SMTP_CA_FILE
+    component: tool
+    group: "Administration tools"
+    type: string
+    description: "`bootstrap-admin`: path of a PEM file with the internal CA certificate that signed the SMTP server's certificate, stored with the platform e-mail setting and used only to verify that server. Certificates only; a private key is refused."
   - name: ADMIN_BACKUP_EMAIL
     component: tool
     group: "Administration tools"
