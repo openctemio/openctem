@@ -313,6 +313,10 @@ func TestReconcile_NoDuplicates(t *testing.T) {
 			s.openCVEs = map[shared.ID]map[string]bool{asset: {"CVE-2021-23017": true}}
 		},
 		"identity owned by another tool": func(s *fakeStore) { s.taken = map[string]bool{fp(m): true} },
+		"identity owned under its version-2 key (not re-keyed yet)": func(s *fakeStore) {
+			k, _, _ := MatchIdentity(m)
+			s.taken = map[string]bool{k.AtVersion(2).Fingerprint(): true}
+		},
 		"already open": func(s *fakeStore) {
 			s.existing = []softwarematch.MatcherFinding{{ID: shared.NewID(), Fingerprint: fp(m), Status: "new"}}
 		},
@@ -583,5 +587,30 @@ func TestReconcile_RecordsPlatformReceipt(t *testing.T) {
 		d.Tool != softwarematch.ToolName || d.Instance.Kind != ingestreceipt.InstancePlatform || d.Received != 1 ||
 		len(d.Created) != 1 || d.Created[0] != w.created[0].ID() {
 		t.Fatalf("delta %+v", d)
+	}
+}
+
+// A matcher finding still stored under its version-2 key (the re-key to the
+// current identity version has not reached it) is the same finding: it is
+// not closed as "no longer matched".
+func TestReconcile_Version2KeyedFindingIsNotClosed(t *testing.T) {
+	asset := shared.NewID()
+	m := match(asset, "CVE-2021-23017", 80)
+	k, _, _ := MatchIdentity(m)
+	store := newFakeStore()
+	store.matches = []softwarematch.Match{m}
+	store.existing = []softwarematch.MatcherFinding{{ID: shared.NewID(), AssetID: asset, Fingerprint: k.AtVersion(2).Fingerprint(),
+		Status: "new", ProductID: &m.ProductID, VersionID: &m.VersionID, Location: "tcp/443"}}
+	// Its link reads as upgraded: only the match decides that it stays.
+	store.links[softwarematch.LinkKey{AssetID: asset, ProductID: m.ProductID, VersionID: m.VersionID, Location: "tcp/443"}] =
+		softwarematch.LinkInfo{State: softwarematch.LinkUpgraded}
+	store.taken = map[string]bool{k.AtVersion(2).Fingerprint(): true}
+	svc, w := newSvc(store, true)
+	var st Stats
+	if err := svc.ReconcileTenant(context.Background(), shared.NewID(), &st); err != nil {
+		t.Fatal(err)
+	}
+	if len(store.closed) != 0 || len(w.created) != 0 {
+		t.Fatalf("closed %v, created %d: the version-2 finding was treated as gone", store.closed, len(w.created))
 	}
 }
