@@ -464,7 +464,7 @@ func buildHTTPProperties(h *ctis.HTTPTechnical) map[string]any {
 		props["status_code"] = h.StatusCode
 	}
 	for k, v := range map[string]string{
-		"title": h.Title, "server": h.WebServer, "content_type": h.ContentType,
+		"title": h.Title, propServer: h.WebServer, "content_type": h.ContentType,
 		"redirect_url": h.RedirectURL, "cdn": h.CDN, "waf": h.WAF, "jarm": h.JARM,
 		"favicon_mmh3": h.FaviconMMH3, "tls_version": string(h.TLSVersion),
 	} {
