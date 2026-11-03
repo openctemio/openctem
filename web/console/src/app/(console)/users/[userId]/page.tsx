@@ -30,7 +30,12 @@ export default function AdminUserPage({ params }: { params: Promise<{ userId: st
   const admin = useAdmin()
   const { t } = useTranslation()
   const { data: user, error, isLoading, mutate } = usePlatformUser(userId)
-  const activity = useAdminAuditLogs({ page: 1, resourceId: userId, perPage: 10 })
+  const activity = useAdminAuditLogs({
+    page: 1,
+    resourceId: userId,
+    perPage: 10,
+    kind: 'changes',
+  })
   const refresh = () => {
     void mutate()
     void activity.mutate()
@@ -240,6 +245,15 @@ export default function AdminUserPage({ params }: { params: Promise<{ userId: st
                 isLoading={activity.isLoading}
               />
             </section>
+
+            {adminHas(admin, 'platform.users.support') && (
+              <PlatformUserActions
+                part="danger"
+                user={user}
+                onDone={refresh}
+                isSuperAdmin={adminHas(admin, 'platform.users.credentials')}
+              />
+            )}
           </>
         )}
       </PageStack>

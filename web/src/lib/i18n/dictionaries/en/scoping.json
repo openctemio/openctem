@@ -48,6 +48,7 @@
   "scoping.charter.timelinePlaceholder": "e.g. 90-day cycle, weekly triage",
   "scoping.charter.title": "Cycle charter",
   "scoping.charter.untitled": "Untitled",
+  "scoping.compliance.errorTitle": "controls",
   "scoping.compliance.search": "Search controls…",
   "scoping.cycle.dateRange": "{start} to {end}",
   "scoping.cycle.dayOf": "Day {day} of {total}",

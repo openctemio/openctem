@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+import userEvent from '@testing-library/user-event'
 import { render, screen } from '@testing-library/react'
 import type { ColumnDef } from '@tanstack/react-table'
 import { DataTable } from '../data-table'
@@ -25,5 +26,32 @@ describe('DataTable empty and error states', () => {
     expect(screen.getByLabelText('my search')).toBeInTheDocument()
     expect(screen.getAllByRole('alert').length).toBeGreaterThan(0)
     expect(screen.queryByText(/Showing/)).not.toBeInTheDocument()
+  })
+})
+
+describe('DataTable error prop', () => {
+  it('error with no rows shows the shared error state, Retry calls onRetry, the toolbar stays', async () => {
+    const onRetry = vi.fn()
+    render(
+      <DataTable
+        columns={columns}
+        data={[]}
+        toolbarStart={<input aria-label="my search" />}
+        error={new Error('boom')}
+        onRetry={onRetry}
+        errorTitle="things"
+      />
+    )
+    expect(screen.getAllByRole('alert').length).toBeGreaterThan(0)
+    expect(screen.getByText('Failed to load things')).toBeInTheDocument()
+    expect(screen.getByLabelText('my search')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: /retry/i }))
+    expect(onRetry).toHaveBeenCalledTimes(1)
+  })
+
+  it('error with rows already loaded keeps the rows and shows no alert', () => {
+    render(<DataTable columns={columns} data={[{ name: 'kept row' }]} error={new Error('boom')} />)
+    expect(screen.getByText('kept row')).toBeInTheDocument()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 })

@@ -54,6 +54,8 @@ vi.mock('@/features/notifications/api/use-notification-api', () => ({
 }))
 vi.mock('@/features/account', async (orig) => ({
   ...(await orig<object>()),
+  // Covered by its own test; it needs the organization switcher's context.
+  OwnershipInvitationsCard: () => null,
   useProfile: () => ({
     profile: h.profile,
     isLoading: false,

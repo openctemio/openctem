@@ -25,9 +25,15 @@ vi.mock('@/context/tenant-provider', () => ({
 vi.mock('@/hooks/use-display-user', () => ({ useDisplayUser: () => ({ id: 'u-self' }) }))
 vi.mock('@/lib/permissions', () => ({
   Can: ({ children }: { children: ReactNode }) => <>{children}</>,
-  usePermissions: () => ({ isOwner: () => true, isAtLeast: () => true }),
+  Permission: { MembersInvite: 'members:invite', MembersManage: 'members:manage' },
+  usePermissions: () => ({
+    isOwner: () => true,
+    isAtLeast: () => true,
+    canAny: () => permState.canInvite,
+  }),
   useCanMutate: () => true,
 }))
+const permState = vi.hoisted(() => ({ canInvite: true }))
 vi.mock('@/features/access-control', () => ({
   useUserRoles: () => ({ roles: [], isLoading: false, mutate: vi.fn() }),
   useRoles: () => ({ roles: [], isLoading: false }),

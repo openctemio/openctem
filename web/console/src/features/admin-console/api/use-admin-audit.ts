@@ -18,6 +18,11 @@ export function useAdminAuditLogs(query: {
   /** RFC 3339 bounds of created_at. */
   from?: string
   to?: string
+  /**
+   * changes: writes, sign-ins, elevations and refusals (no page views, no
+   * write-ahead rows); all: every row of the chain.
+   */
+  kind?: 'changes' | 'all'
 }) {
   const q = new URLSearchParams({
     page: String(query.page ?? 1),
@@ -29,6 +34,7 @@ export function useAdminAuditLogs(query: {
   if (query.to) q.set('to', query.to)
   if (query.resourceId) q.set('resource_id', query.resourceId)
   if (query.outcome) q.set('success', query.outcome === 'success' ? 'true' : 'false')
+  if (query.kind === 'changes') q.set('kind', 'changes')
   return useSWR<Paged<AdminAuditEntry>>(`/audit-logs?${q.toString()}`, adminFetcher, {
     keepPreviousData: true,
   })
