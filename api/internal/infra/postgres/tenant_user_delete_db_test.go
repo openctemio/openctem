@@ -52,7 +52,8 @@ var auditTables = map[string]bool{
 // to outlive the tenant: audit evidence, or a deletion queue that must
 // outlive it to remove stored files.
 var orphanAllowlist = map[string]string{
-	"audit_log_chain":                "hash chain of audit_logs; audit_logs keep their rows (tenant_id SET NULL) and the chain must stay verifiable",
+	"audit_log_chain":                "hash chain of audit_logs; audit evidence, no FK to tenants by design",
+	"audit_logs":                     "audit evidence: rows keep their tenant_id and actor_id as recorded and age out by retention; no FK to tenants or users by design",
 	"audit_chain_rebaselines":        "record of an admin re-signing the audit chain; evidence, no FK to tenants by design",
 	"audit_chain_rebaseline_entries": "hashes a chain rebaseline overwrote; evidence, no FK to tenants by design",
 	"audit_chain_anchors":            "chain head left by an audit retention prune; evidence, no FK to tenants by design",
@@ -328,9 +329,6 @@ var seedOverrides = map[string]func(s *schemaSeeder) map[string]any{
 			s.t.Fatalf("insert second asset: %v", err)
 		}
 		return map[string]any{"target_asset_id": second}
-	},
-	"audit_log_chain": func(*schemaSeeder) map[string]any {
-		return map[string]any{"hash": strings.Repeat("ab", 32), "prev_hash": ""}
 	},
 	"audit_chain_anchors": func(*schemaSeeder) map[string]any {
 		h := strings.Repeat("ab", 32)
@@ -806,6 +804,24 @@ func asText(v any) string {
 // FK to an unseeded table empty, so the first passes wire up as many
 // relations (and so as many cascade paths) as possible.
 func (s *schemaSeeder) trySeed(st *seedTable, strict bool) bool {
+	// The database writes the chain row of every audit row (trigger
+	// audit_log_chain_append): take that one instead of inserting another.
+	if st.name == "audit_log_chain" {
+		lg := s.rows["audit_logs"]
+		if lg == nil {
+			return false
+		}
+		var raw []byte
+		if err := s.tx.QueryRowContext(s.ctx, `SELECT to_jsonb(c) FROM audit_log_chain c WHERE audit_log_id = $1`,
+			asText(lg["id"])).Scan(&raw); err != nil {
+			s.lastErr[st.name] = err.Error()
+			return false
+		}
+		var m map[string]any
+		_ = json.Unmarshal(raw, &m)
+		s.rows[st.name] = m
+		return true
+	}
 	fkVal, ok := s.fkValues(st, strict)
 	if !ok {
 		return false
