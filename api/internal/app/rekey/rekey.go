@@ -34,6 +34,9 @@
 // failure rolls the whole transaction back. A sweep over every text, bytea
 // and jsonb column also reports OLD-key ciphertext found anywhere this list
 // does not cover, so a location added later cannot be silently left behind.
+// The sweep covers every schema of the database, an extension's own schema
+// included: an extension stores no app-key-encrypted value until a rekey
+// seam lists its columns, and the sweep refuses the rotation if one does.
 package rekey
 
 import (
@@ -575,14 +578,20 @@ const minCipherBytes = 28
 // so every registered value is already under NEW and anything the OLD key
 // still opens is in a place the registry does not cover.
 func sweep(ctx context.Context, tx *sql.Tx, ks *keyset) ([]Failure, error) {
-	type colRef struct{ table, col, typ string }
+	// Every schema of the database, not only the core one: an extension's
+	// own schema (pkg/extension) is swept too, so a value it encrypted with
+	// the app key is reported (and the run refused) instead of being left
+	// unreadable after the rotation. information_schema lists only what
+	// the role may access; a table it may not read is reported below.
+	type colRef struct{ schema, table, col, typ string }
 	listCols := func() ([]colRef, error) {
-		rows, err := tx.QueryContext(ctx, `SELECT c.table_name, c.column_name, c.data_type
+		rows, err := tx.QueryContext(ctx, `SELECT c.table_schema, c.table_name, c.column_name, c.data_type
 			FROM information_schema.columns c
 			JOIN information_schema.tables t ON t.table_schema = c.table_schema AND t.table_name = c.table_name
-			WHERE c.table_schema = current_schema() AND t.table_type = 'BASE TABLE'
+			WHERE c.table_schema NOT IN ('pg_catalog', 'information_schema') AND c.table_schema NOT LIKE 'pg\_%'
+			  AND t.table_type = 'BASE TABLE'
 			  AND c.data_type IN ('text', 'character varying', 'bytea', 'jsonb', 'json')
-			ORDER BY 1, 2`)
+			ORDER BY 1, 2, 3`)
 		if err != nil {
 			return nil, err
 		}
@@ -590,7 +599,7 @@ func sweep(ctx context.Context, tx *sql.Tx, ks *keyset) ([]Failure, error) {
 		var cols []colRef
 		for rows.Next() {
 			var c colRef
-			if err := rows.Scan(&c.table, &c.col, &c.typ); err != nil {
+			if err := rows.Scan(&c.schema, &c.table, &c.col, &c.typ); err != nil {
 				return nil, err
 			}
 			cols = append(cols, c)
@@ -601,20 +610,32 @@ func sweep(ctx context.Context, tx *sql.Tx, ks *keyset) ([]Failure, error) {
 	if err != nil {
 		return nil, err
 	}
+	var current string
+	if err := tx.QueryRowContext(ctx, `SELECT current_schema()`).Scan(&current); err != nil {
+		return nil, err
+	}
+	unreadable, err := unreadableTables(ctx, tx)
+	if err != nil {
+		return nil, err
+	}
 
 	found := map[string]int{}
 	for _, c := range cols {
+		loc, from := c.table+"."+c.col, pgIdent(c.schema)+"."+pgIdent(c.table)
+		if c.schema != current {
+			loc = c.schema + "." + loc
+		}
 		// Identifiers come from information_schema and are quoted.
 		//nolint:gosec // G201: quoted catalog identifiers, no user input
-		q := fmt.Sprintf(`SELECT '', %s::text FROM %s WHERE %s IS NOT NULL`, pgIdent(c.col), pgIdent(c.table), pgIdent(c.col))
+		q := fmt.Sprintf(`SELECT '', %s::text FROM %s WHERE %s IS NOT NULL`, pgIdent(c.col), from, pgIdent(c.col))
 		if c.typ == "bytea" {
 			//nolint:gosec // G201: quoted catalog identifiers, no user input
 			q = fmt.Sprintf(`SELECT '', %s FROM %s WHERE length(%s) >= %d`,
-				pgIdent(c.col), pgIdent(c.table), pgIdent(c.col), minCipherBytes)
+				pgIdent(c.col), from, pgIdent(c.col), minCipherBytes)
 		}
 		vals, err := collect(ctx, tx, q)
 		if err != nil {
-			return nil, fmt.Errorf("%s.%s: %w", c.table, c.col, err)
+			return nil, fmt.Errorf("%s: %w", loc, err)
 		}
 		for _, r := range vals {
 			n := 0
@@ -633,10 +654,14 @@ func sweep(ctx context.Context, tx *sql.Tx, ks *keyset) ([]Failure, error) {
 					n = 1
 				}
 			}
-			found[c.table+"."+c.col] += n
+			found[loc] += n
 		}
 	}
-	out := make([]Failure, 0, len(found))
+	out := make([]Failure, 0, len(found)+len(unreadable))
+	for _, t := range unreadable {
+		out = append(out, Failure{Location: t, Key: "table",
+			Reason: "not readable by this database role, so OLD-key ciphertext there cannot be ruled out; grant SELECT or run as the owner"})
+	}
 	for loc, n := range found {
 		if n == 0 {
 			continue
@@ -685,4 +710,28 @@ func countOldInJSON(doc any, ks *keyset) int {
 		return n
 	}
 	return 0
+}
+
+// unreadableTables lists the base tables outside the system schemas that the
+// role may not read (information_schema hides them from the sweep).
+func unreadableTables(ctx context.Context, tx *sql.Tx) ([]string, error) {
+	rows, err := tx.QueryContext(ctx, `SELECT n.nspname || '.' || c.relname
+		FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+		WHERE c.relkind IN ('r', 'p') AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+		  AND n.nspname NOT LIKE 'pg\_%'
+		  AND NOT (has_schema_privilege(n.oid, 'USAGE') AND has_table_privilege(c.oid, 'SELECT'))
+		ORDER BY 1`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var t string
+		if err := rows.Scan(&t); err != nil {
+			return nil, err
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
 }
