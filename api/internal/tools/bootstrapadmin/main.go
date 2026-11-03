@@ -306,7 +306,7 @@ func (m rosterMailer) NotifyRosterChange(ctx context.Context, c adminconsole.Ros
 // organization owner's set-password link and tells the other administrators
 // what the run changed (admin console, Settings > E-mail). For a headless
 // install, BOOTSTRAP_SMTP_HOST (with _PORT, _USER, _PASSWORD, _FROM,
-// _FROM_NAME, _STARTTLS) stores those settings first, when none are stored,
+// _FROM_NAME, _STARTTLS, _CA_FILE) stores those settings first, when none are stored,
 // encrypted with APP_ENCRYPTION_KEY. Without e-mail it returns nil, and the
 // link is printed instead.
 func setupMailer(ctx context.Context, db *sql.DB, getEnv func(string) string, out io.Writer, log *logger.Logger) (*authapp.EmailService, error) {
@@ -329,9 +329,18 @@ func setupMailer(ctx context.Context, db *sql.DB, getEnv func(string) string, ou
 			password = &p
 		}
 		startTLS := getEnv("BOOTSTRAP_SMTP_STARTTLS") != "false"
+		var caPEM *string
+		if f := getEnv("BOOTSTRAP_SMTP_CA_FILE"); f != "" {
+			raw, err := os.ReadFile(f) //nolint:gosec // G304: operator-chosen path inside the one-shot tool container
+			if err != nil {
+				return nil, errors.New("BOOTSTRAP_SMTP_CA_FILE cannot be read")
+			}
+			t := string(raw)
+			caPEM = &t
+		}
 		created, err := svc.Seed(ctx, platformemail.Input{
 			Host: host, Port: port, Username: getEnv("BOOTSTRAP_SMTP_USER"), Password: password,
-			From: getEnv("BOOTSTRAP_SMTP_FROM"), FromName: firstNonEmpty(getEnv("BOOTSTRAP_SMTP_FROM_NAME"), getEnv("BRAND_NAME"), brand.DefaultName), StartTLS: startTLS,
+			From: getEnv("BOOTSTRAP_SMTP_FROM"), FromName: firstNonEmpty(getEnv("BOOTSTRAP_SMTP_FROM_NAME"), getEnv("BRAND_NAME"), brand.DefaultName), StartTLS: startTLS, CAPEM: caPEM,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("BOOTSTRAP_SMTP_*: %w", err)

@@ -301,12 +301,13 @@ func (r *RemediationTaskRepository) PrimaryHolders(ctx context.Context, tenantID
 
 // DueAutoQueryTasksForPlatform lists auto-mode tasks (every tenant) whose
 // query last ran before olderThan, least recently run first.
-func (r *RemediationTaskRepository) DueAutoQueryTasksForPlatform(ctx context.Context, olderThan time.Time, limit int) ([]remediation.DueQueryTask, error) {
+func (r *RemediationTaskRepository) DueAutoQueryTasksForPlatform(ctx context.Context, olderThan time.Time, limit int, skipTenants []shared.ID) ([]remediation.DueQueryTask, error) {
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT tenant_id, task_id FROM remediation_task_queries
 		WHERE mode = 'auto' AND auto_state = 'active' AND (last_run_at IS NULL OR last_run_at < $1)
+		  AND NOT (tenant_id = ANY($3::uuid[]))
 		ORDER BY last_run_at NULLS FIRST
-		LIMIT $2`, olderThan, limit)
+		LIMIT $2`, olderThan, limit, pq.Array(tenantIDStrings(skipTenants)))
 	if err != nil {
 		return nil, fmt.Errorf("list due query tasks: %w", err)
 	}

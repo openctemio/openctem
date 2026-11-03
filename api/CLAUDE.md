@@ -49,7 +49,7 @@ go test -cover ./...                         # With coverage
 
 ## Tech Stack & Structure
 
-- **Go 1.26+**, strict linting via golangci-lint
+- **Go 1.27+**, strict linting via golangci-lint
 - **PostgreSQL** persistence, **Chi Router**, **DDD architecture**
 
 ```
@@ -83,8 +83,8 @@ api/
 
 ```bash
 # 1. Lint the code this branch adds (what CI gates on). golangci-lint is
-#    pinned to v1.64.8: .golangci.yml is v1 format and a global v2 binary
-#    rejects it. Findings in files you did not touch mean the branch lags
+#    pinned to v2.14.0 (the first release that reads Go 1.27); a different
+#    global binary may disagree with it. Findings in files you did not touch mean the branch lags
 #    develop: merge develop and rerun.
 make lint-new
 
