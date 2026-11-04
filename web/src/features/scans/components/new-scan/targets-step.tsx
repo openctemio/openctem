@@ -7,8 +7,9 @@
  * one readiness line and the refused targets grouped by reason with the
  * server's ranked remedies (the same component as the Review step); the
  * coverage level and how dynamic targets resolve sit in a collapsed
- * disclosure with a one-line summary. Desktop: two columns, the result
- * column sticky. Research: research/85-new-scan.md.
+ * disclosure with a one-line summary. Desktop: the field and the preview
+ * (ready targets, what a wildcard or coverage level includes, refusals) side
+ * by side, the options below across the full width. Research: research/85-new-scan.md.
  */
 
 'use client'
@@ -46,6 +47,7 @@ import { useTargetsCheck } from '../../hooks/use-targets-check'
 import { useScanWorkflow } from '@/lib/api/scan-workflow-hooks'
 import { TargetChipsField, type TargetChip } from './target-chips-field'
 import { ReadinessLine, RefusalGroups } from './refusal-groups'
+import { TargetPreview } from './target-preview'
 
 const EXAMPLES = ['example.com', '*.example.com', '203.0.113.0/24', 'https://app.example.com']
 
@@ -240,9 +242,12 @@ export function TargetsStep({
   const canLower = (tier: ProbeTier) => lowerIntensityAllowed(data, chosenWorkflow?.steps, tier)
 
   return (
-    <div className="grid min-w-0 gap-6 p-4 sm:p-6 lg:grid-cols-2 lg:grid-rows-[auto_1fr] lg:gap-8">
+    <div className="grid min-w-0 gap-6 p-4 sm:p-6 lg:grid-cols-2 lg:gap-x-8">
       {/* 1. What you type */}
-      <section className="min-w-0 space-y-2 lg:col-start-1" aria-labelledby={`${fieldId}-label`}>
+      <section
+        className="min-w-0 space-y-2 lg:col-start-1 lg:row-start-1"
+        aria-labelledby={`${fieldId}-label`}
+      >
         <label id={`${fieldId}-label`} htmlFor={fieldId} className="text-sm font-medium">
           {t('scans.targetsStep.label')}
         </label>
@@ -305,7 +310,7 @@ export function TargetsStep({
 
       {/* 2. What happens, 3. how to fix it */}
       <section
-        className="min-w-0 space-y-3 lg:sticky lg:top-0 lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:self-start"
+        className="min-w-0 space-y-3 lg:col-start-2 lg:row-start-1"
         aria-label={t('scans.summary.label')}
         data-testid="targets-result"
       >
@@ -333,6 +338,14 @@ export function TargetsStep({
         {check.error && (
           <p className="text-xs text-muted-foreground">{t('scans.scope.unavailable')}</p>
         )}
+        <TargetPreview
+          ready={results.filter((r) => r.allowed && r.target).map((r) => r.target as string)}
+          wildcards={sent.filter(isWildcardTarget)}
+          coverage={coverage}
+          nameCount={expansion.nameCount}
+          addresses={coverage === 'subdomains_ips' ? expansion.added : []}
+          lookingUp={expansion.isLoading}
+        />
         <RefusalGroups
           results={results}
           probeTier={check.tier}
@@ -350,7 +363,7 @@ export function TargetsStep({
         <Collapsible
           open={optionsOpen}
           onOpenChange={setOptionsOpen}
-          className="min-w-0 lg:col-start-1 lg:self-start"
+          className="min-w-0 lg:col-span-2"
         >
           <CollapsibleTrigger asChild>
             <button
@@ -377,7 +390,7 @@ export function TargetsStep({
               </span>
             </button>
           </CollapsibleTrigger>
-          <CollapsibleContent className="space-y-4 pt-3">
+          <CollapsibleContent className="grid min-w-0 gap-4 pt-3 lg:grid-cols-2 lg:gap-8">
             {offerCoverage && (
               <fieldset className="min-w-0 space-y-2">
                 <legend className="text-sm font-medium">{t('scans.targets.coverage')}</legend>
@@ -418,9 +431,12 @@ export function TargetsStep({
                         : expansion.isLoading
                           ? t('scans.targets.lookingUp')
                           : expansion.added.length === 0
-                            ? t('scans.targets.noRecordedAddresses', undefined, {
-                                roots: rootsLabel,
-                              })
+                            ? expansion.nameCount === 0
+                              ? t('scans.targets.noNamesBelow', undefined, { roots: rootsLabel })
+                              : t('scans.targets.noRecordedAddresses', undefined, {
+                                  roots: rootsLabel,
+                                  count: expansion.nameCount,
+                                })
                             : expansion.added.length === 1
                               ? t('scans.targets.addsOne', undefined, { roots: rootsLabel })
                               : t('scans.targets.addsMany', undefined, {
