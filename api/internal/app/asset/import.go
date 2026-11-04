@@ -10,6 +10,7 @@ import (
 
 	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	tagdom "github.com/openctemio/openctem/api/pkg/domain/tag"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
@@ -109,10 +110,19 @@ func (s *AssetImportService) ImportCSVAssets(ctx context.Context, tenantID strin
 			a.UpdateDescription(strings.TrimSpace(record[idx]))
 		}
 		if idx, ok := colIndex["tags"]; ok && idx < len(record) {
+			var raw []string
 			for _, t := range strings.Split(record[idx], ";") {
 				if t = strings.TrimSpace(t); t != "" {
-					a.AddTag(t)
+					raw = append(raw, t)
 				}
+			}
+			tags, tagErr := tagdom.ValidateNew(nil, raw)
+			if tagErr != nil {
+				result.Errors = append(result.Errors, fmt.Sprintf("invalid tags for %s: %v", name, tagErr))
+				continue
+			}
+			for _, t := range tags {
+				a.AddTag(t)
 			}
 		}
 		if idx, ok := colIndex["properties"]; ok && idx < len(record) {

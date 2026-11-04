@@ -497,6 +497,15 @@ ras_asset = {
 
 Future versions will maintain backward compatibility where possible.
 
+## Asset tags
+
+Tags are free labels or `key:value` pairs stored in `assets.tags`. One validator (`pkg/domain/tag`) checks them on every write path: the create, update, repository-create and CSV import APIs, and CTIS ingest (sensor reports, connectors, importers).
+
+- 1 to 50 characters (the console's own limit), at most 50 tags per asset, at most 20 set by one import.
+- No control, bidirectional, zero-width or newline characters; no `<` or `>`; no leading `=`, `+`, `-` or `@` (CSV formula injection).
+- Reserved namespaces only the platform writes: `sys:`, `system:`, `program:`, `source:`, `platform:`, `bug-bounty`, `dangling_cname`.
+- A person gets a validation error; an import drops the tag and counts it in `openctem_ingest_asset_tags_dropped_total{reason}`. A tag an asset already carries is never re-checked, so it cannot make the asset unsavable.
+
 ## Related Documentation
 
 - [Data Sources Architecture](./data-sources.md)
