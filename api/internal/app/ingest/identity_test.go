@@ -3,7 +3,7 @@ package ingest
 import (
 	"testing"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 )
@@ -58,7 +58,7 @@ func TestIdentifiersFor_RepositoryAndDomain(t *testing.T) {
 	if got := kinds(identifiersFor(repo, asset.AssetTypeRepository, "github.com/acme/r")); len(got[asset.IdentifierMAC]) != 0 {
 		t.Errorf("repository got a MAC: %v", got)
 	}
-	dom := &ctis.Asset{Type: ctis.AssetTypeDomain, Value: "example.com", Properties: ctis.Properties{"instance_id": "i-1"}}
+	dom := &ctis.Asset{Type: ctis.AssetTypeDomainName, Value: "example.com", Properties: ctis.Properties{"instance_id": "i-1"}}
 	if got := identifiersFor(dom, asset.AssetTypeDomain, "example.com"); len(got) != 0 {
 		t.Errorf("domains stay keyed by name, got %v", got)
 	}
@@ -114,7 +114,7 @@ func TestIdentifiersFor_DirectoryObjectID(t *testing.T) {
 	if v := got[asset.IdentifierDirectoryObjectID]; len(v) != 1 || v[0] != "6f9619ff-8b86-d011-b42d-00c04fc964ff" {
 		t.Fatalf("directory_object_id = %v", v)
 	}
-	dom := &ctis.Asset{Type: ctis.AssetTypeDomain, Value: "corp.example.com",
+	dom := &ctis.Asset{Type: ctis.AssetTypeDomainName, Value: "corp.example.com",
 		Properties: ctis.Properties{"ad_object_guid": "6f9619ff-8b86-d011-b42d-00c04fc964ff"}}
 	if v := kinds(identifiersFor(dom, asset.AssetTypeDomain, "corp.example.com"))[asset.IdentifierDirectoryObjectID]; len(v) != 0 {
 		t.Fatalf("a domain got directory_object_id %v", v)

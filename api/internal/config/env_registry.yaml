@@ -1508,7 +1508,7 @@ vars:
     group: "Discovery feeds and background jobs"
     type: path
     default: "<system temp dir>/openctem-feeds"
-    description: "Directory holding verified feed chunks between imports."
+    description: "Directory holding verified feed chunks between imports, and the feed relay's local working copy of its spool (`relay/`; pod-local, rebuilt from the database)."
   - name: PROGRAMFEED_DIR
     component: api
     group: "Discovery feeds and background jobs"
@@ -1615,6 +1615,17 @@ vars:
     group: "Integrations"
     type: string
     description: "Comma-separated private ranges that outbound calls of the API (webhook and notification channels, self-hosted Jira or GitLab, an SMTP relay) may reach, for example `10.20.0.0/16`. Each entry must be a CIDR inside `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16` or `fc00::/7`, otherwise the API refuses to start. The list applies to every organization, so name only the subnets of your own services; the API refuses to start when it is set together with `SIGNUP_MODE=open`. Loopback, link-local, CGNAT and cloud metadata addresses stay blocked whatever the list says."
+  - name: OPENCTEM_HTTPSEC_FEED_PROXY
+    component: api
+    group: "Integrations"
+    type: url
+    secret: true
+    description: "HTTPS proxy for the platform's own feed fetchers only (vulnerability bundles, CISA KEV, EPSS, CTEM-ID catalog, public program feed, release feed), for a network whose only way out is a proxy: `http://[user:password@]proxy.corp:3128` or `https://...`, no path or query. Requests to an https destination go through it with CONNECT (TLS stays end to end); the destination is still checked first (blocked address literals, dangerous names and names whose local answers are in a blocked range are refused; a name the local resolver cannot answer is left to the proxy). The proxy may be on a private address; loopback, link-local and metadata addresses are refused. Webhooks, integrations, identity providers and anything an organization configures never use it, and `HTTPS_PROXY`/`HTTP_PROXY` are not read. The API refuses to start on a value that is not a proxy URL. Empty (the default): direct connections."
+  - name: OPENCTEM_HTTPSEC_FEED_NO_PROXY
+    component: api
+    group: "Integrations"
+    type: string
+    description: "Comma-separated hosts or domains (`mirror.corp.example`, `.corp.example`) that the feed fetchers reach directly even when `OPENCTEM_HTTPSEC_FEED_PROXY` is set, for example an internal bundle mirror (its private range still needs `OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS`)."
   - name: ACCOUNT_PORTAL_URL
     component: api
     group: "Internal entitlements API"
@@ -2035,6 +2046,11 @@ vars:
     group: "Administration tools"
     type: string
     description: "`bootstrap-admin`: `false` turns STARTTLS off (default on)."
+  - name: BOOTSTRAP_SMTP_CA_FILE
+    component: tool
+    group: "Administration tools"
+    type: string
+    description: "`bootstrap-admin`: path of a PEM file with the internal CA certificate that signed the SMTP server's certificate, stored with the platform e-mail setting and used only to verify that server. Certificates only; a private key is refused."
   - name: ADMIN_BACKUP_EMAIL
     component: tool
     group: "Administration tools"

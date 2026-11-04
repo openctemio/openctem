@@ -1,7 +1,7 @@
 /**
  * useSettingsNav hides what the user cannot open, with the main sidebar's
  * rules: permission, tenant module (fail-open when the API sends no module
- * list), and integration sub-modules.
+ * list).
  */
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { renderHook } from '@testing-library/react'
@@ -77,11 +77,11 @@ describe('useSettingsNav', () => {
 
   it('hides items of a disabled module, keeps the rest (Modules page stays)', () => {
     state.perms = new Set([Permission.TeamUpdate, Permission.SLARead, Permission.IntegrationsRead])
-    state.moduleIds = ['sla'] // integrations and risk_scoring are off
+    state.moduleIds = ['sla'] // integrations is off
     const visible = ids()
     expect(visible).toContain('sla-policies')
     expect(visible).toContain('modules')
-    expect(visible).not.toContain('risk-scoring')
+    expect(visible).toContain('risk-scoring') // always on: no module
     expect(visible.filter((i) => ['all-integrations', 'siem', 'api-keys'].includes(i))).toEqual([])
   })
 
@@ -89,18 +89,6 @@ describe('useSettingsNav', () => {
     state.perms = new Set([Permission.IntegrationsRead, Permission.TeamUpdate])
     expect(ids()).toContain('risk-scoring')
     expect(ids()).toContain('siem')
-  })
-
-  it('hides an integration whose sub-module is off', () => {
-    state.perms = new Set([Permission.IntegrationsRead])
-    state.subModules = {
-      integrations: [{ slug: 'scm' }, { slug: 'siem', release_status: 'disabled' }],
-    }
-    const visible = ids()
-    expect(visible).toContain('source-control')
-    expect(visible).toContain('all-integrations') // no sub-module key
-    expect(visible).not.toContain('siem') // disabled
-    expect(visible).not.toContain('ticketing') // absent
   })
 
   it('lists Usage & limits only while a limit applies to the organization', () => {

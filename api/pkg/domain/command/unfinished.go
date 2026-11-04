@@ -11,7 +11,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/openctemio/ctis/outcome"
+	"github.com/openctemio/contract/outcome"
 )
 
 // UnfinishedTargets reads a completed command's result against its own

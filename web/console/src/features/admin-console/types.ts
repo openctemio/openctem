@@ -108,6 +108,11 @@ export interface AdminOrganization {
   created_at: string
   active_members: number
   /**
+   * The latest sign-in of any active member (per account, so a sign-in for
+   * another organization counts); absent when nobody signed in yet.
+   */
+  last_member_sign_in_at?: string
+  /**
    * Owners' addresses: only on the organization's own page, for ops_admin and
    * above (that view is audited). Empty in the list and for read-only.
    */
@@ -128,6 +133,28 @@ export interface AdminOrganization {
   suspended_reason?: string
   /** An owner scheduled the deletion for this time. */
   deletion_due_at?: string
+  /**
+   * The ownership invitation of an organization created for an existing
+   * account and waiting for that account to accept (absent once accepted).
+   */
+  owner_invitation?: AdminOwnerInvitation
+}
+
+/** pending | expired | declined | canceled */
+export type AdminOwnerInvitationStatus = 'pending' | 'expired' | 'declined' | 'canceled'
+
+export interface AdminOwnerInvitation {
+  status: AdminOwnerInvitationStatus
+  /** ops_admin and above only. */
+  invitee_email?: string
+  send_count: number
+  resends_left: number
+  /** Earliest next send (absent when no send is left). */
+  resend_available_at?: string
+  expires_at: string
+  last_sent_at: string
+  created_at: string
+  responded_at?: string
 }
 
 export interface AdminOrganizationList {
@@ -155,6 +182,13 @@ export interface CreateOrganizationInput {
  */
 export interface CreatedOrganization extends AdminOrganization {
   owner_setup?: SetupLinkOutcome
+  /** The owner email already had an account: it was invited to own the organization. */
+  owner_invited?: boolean
+}
+
+/** Answer of a request that invited an existing account to own an organization. */
+export interface AdminOwnerInvitationResult {
+  owner_invitation: AdminOwnerInvitation
 }
 
 /** Membership level an admin can give someone they add to an organization. */
@@ -292,6 +326,25 @@ export function elevationChoices(admin: AdminIdentity): string[] {
   const held = new Set(admin.roles)
   if (held.has('platform_owner')) held.add('platform_admin')
   return PLATFORM_ROLE_KEYS.filter((k) => k !== 'platform_viewer' && held.has(k))
+}
+
+/**
+ * What the session acts as now, as a dictionary key and English name, in the
+ * platform role names the elevation dialog offers (RFC-134): the role it is
+ * elevated as, "read-only" while an elevation would add something, else the
+ * first role it holds. The legacy tier names are only a fallback for an
+ * identity that carries no roles.
+ */
+export function actingRoleLabel(admin: AdminIdentity): { key: string; fallback: string } {
+  if (admin.elevated_as) {
+    return { key: `admin.platformRole.${admin.elevated_as}`, fallback: admin.elevated_as }
+  }
+  if (adminCanElevate(admin)) {
+    return { key: 'admin.shell.actingReadOnly', fallback: 'Read-only until you elevate' }
+  }
+  const held = PLATFORM_ROLE_KEYS.find((k) => admin.roles?.includes(k))
+  if (held) return { key: `admin.platformRole.${held}`, fallback: held }
+  return { key: `admin.role.${admin.role}`, fallback: ADMIN_ROLE_LABELS[admin.role] }
 }
 
 /** super_admin > ops_admin > readonly. */

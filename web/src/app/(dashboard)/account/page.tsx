@@ -12,15 +12,18 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { User, Mail, Phone, Save, Loader2, AlertCircle, Check } from 'lucide-react'
 import { toast } from 'sonner'
-import { useProfile, useUpdateProfile } from '@/features/account'
+import { OwnershipInvitationsCard, useProfile, useUpdateProfile } from '@/features/account'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { safeAvatarSrc } from '@/lib/safe-href'
 import { identityProviderLabel } from '@/lib/identity-provider-label'
 import { LeaveOrganization } from '@/features/organization/components/leave-organization'
 import { useTranslation } from '@/context/i18n-provider'
+import { useAccountSpace } from '@/context/account-space-provider'
 
 export default function ProfilePage() {
   const { t } = useTranslation()
+  // No organization open: there is nothing to leave.
+  const accountOnly = useAccountSpace()
   const { profile, isLoading, isError, error, mutate } = useProfile()
   const { updateProfile, isUpdating } = useUpdateProfile()
 
@@ -103,6 +106,8 @@ export default function ProfilePage() {
 
   return (
     <PageStack>
+      {/* Organizations a platform administrator created for this account. */}
+      <OwnershipInvitationsCard hideWhenEmpty />
       {/* Profile Card */}
       <Card>
         <CardHeader>
@@ -245,7 +250,7 @@ export default function ProfilePage() {
       </Card>
 
       {/* Every member can leave; the only owner sees why they cannot. */}
-      <LeaveOrganization />
+      {!accountOnly && <LeaveOrganization />}
     </PageStack>
   )
 }

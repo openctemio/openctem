@@ -5,7 +5,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/openctemio/ctis/politeness"
+	"github.com/openctemio/contract/politeness"
 
 	"github.com/openctemio/openctem/api/pkg/domain/stage"
 )

@@ -12,7 +12,9 @@ info:
     the registered /api/v2/sensor routes disagree.
 
     Sensors send CTIS only, chosen by Content-Type
-    (application/vnd.openctem.ctis.v1+json). Every PUT needs Content-Length
+    (application/vnd.ctis+json; version=2.0). The version parameter is
+    required and any 2.x minor is accepted (charset=utf-8 may follow); the
+    pre-2.0 vendor type and a missing or other-major version get 415. Every PUT needs Content-Length
     and Content-Digest (RFC 9530, over the bytes as sent, i.e. compressed when
     Content-Encoding is gzip or zstd). The report id is a lower-case UUID the
     sensor chooses; it is the idempotency key. Errors are RFC 9457 problems.
@@ -48,9 +50,9 @@ paths:
       requestBody: &ctisBody
         required: true
         content:
-          application/vnd.openctem.ctis.v1+json:
+          application/vnd.ctis+json:
             schema:
-              description: A complete CTIS v1 report (schemas/ctis/v1/report.json). tool is required; metadata.id is empty or the report id.
+              description: A complete CTIS 2.0 report, sent as application/vnd.ctis+json; version=2.<minor>. version is "2.<minor>", metadata.id is a UUIDv7 (the report id) and metadata.generated_at and metadata.channel are set; every finding names its asset by asset_ref.
               type: object
       responses: &putResponses
         "200": { $ref: "#/components/responses/StatusReplay" }
@@ -451,6 +453,70 @@ paths:
         "401": { $ref: "#/components/responses/Problem" }
         "403": { $ref: "#/components/responses/Problem" }
         "429": { $ref: "#/components/responses/Problem" }
+  /api/v2/sensor/feed-relay-rounds/next:
+    get:
+      summary: Claim the next feed relay round (platform relay sensor only)
+      description: Served only to a platform (shared) sensor designated as a feed relay; any other sensor gets 403.
+      operationId: sensorV2FeedRelayNext
+      responses:
+        "200":
+          description: The claimed round with its exact payload bytes and the signed statement.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FeedRelayRound" }
+        "204":
+          description: No round. Retry-After gives the seconds to wait before asking again.
+          headers:
+            Retry-After: { schema: { type: integer } }
+        "401": { $ref: "#/components/responses/Problem" }
+        "403": { $ref: "#/components/responses/Problem" }
+        "429": { $ref: "#/components/responses/Problem" }
+  /api/v2/sensor/feed-relay-rounds/{round_id}/files/{name}:
+    parameters:
+      - $ref: "#/components/parameters/FeedRelayRoundID"
+      - name: name
+        in: path
+        required: true
+        schema: { type: string }
+    put:
+      summary: Upload one relayed feed file into the round's spool
+      operationId: sensorV2FeedRelayPutFile
+      parameters:
+        - $ref: "#/components/parameters/ContentDigest"
+      requestBody:
+        required: true
+        description: The file's bytes. Content-Length and a sha-256 Content-Digest are required; the file is verified and streamed to the spool.
+        content:
+          application/octet-stream:
+            schema: { type: string, format: binary }
+      responses:
+        "204": { description: Stored. }
+        "400": { $ref: "#/components/responses/Problem" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "403": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "411": { $ref: "#/components/responses/Problem" }
+        "413": { $ref: "#/components/responses/Problem" }
+        "422": { $ref: "#/components/responses/Problem" }
+        "429": { $ref: "#/components/responses/Problem" }
+  /api/v2/sensor/feed-relay-rounds/{round_id}/done:
+    parameters:
+      - $ref: "#/components/parameters/FeedRelayRoundID"
+    post:
+      summary: Report the outcome of a round
+      operationId: sensorV2FeedRelayDone
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/FeedRelayReport" }
+      responses:
+        "204": { description: Recorded. }
+        "400": { $ref: "#/components/responses/Problem" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "403": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "429": { $ref: "#/components/responses/Problem" }
   /api/v2/sensor/fingerprints/check:
     post:
       summary: Which fingerprints already exist (read-only)
@@ -681,6 +747,12 @@ components:
       in: path
       required: true
       schema: { type: string, pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$" }
+    FeedRelayRoundID:
+      name: round_id
+      in: path
+      required: true
+      description: A round claimed by this relay sensor. A closed or foreign round is 404.
+      schema: { type: string, pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$" }
     ReportID:
       name: report_id
       in: path
@@ -812,6 +884,44 @@ components:
         pointer: { type: string, description: RFC 6901 pointer built from indices and field names only. }
         code: { type: string }
         detail: { type: string, description: A fixed template; never quotes the sensor's bytes. }
+    FeedRelayRound:
+      type: object
+      required: [id, payload, signed_job]
+      properties:
+        id: { type: string }
+        payload:
+          type: object
+          description: The signed payload, byte-exact as signed.
+          properties:
+            feed: { type: string }
+            targets: { type: array, items: { type: string } }
+            files:
+              type: array
+              items:
+                type: object
+                required: [name, max_bytes]
+                properties:
+                  name: { type: string }
+                  sha256: { type: string }
+                  size: { type: integer, format: int64 }
+                  max_bytes: { type: integer, format: int64 }
+        signed_job: { type: object, description: The platform's signed statement over the payload. }
+    FeedRelayReport:
+      type: object
+      required: [files]
+      properties:
+        files:
+          type: array
+          items:
+            type: object
+            required: [name, status]
+            properties:
+              name: { type: string }
+              status: { type: string }
+              code: { type: string }
+              bytes: { type: integer, format: int64 }
+              sha256: { type: string }
+        refused: { type: string }
     Problem:
       type: object
       required: [type, title, status, detail, retryable]

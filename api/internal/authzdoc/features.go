@@ -54,7 +54,7 @@ var Features = []Feature{
 			"registerAssetIdentifierRoutes", "registerAssetAttributionRoutes", "registerAssetImportRoutes",
 			"registerAssetDedupRoutes", "registerAssetRelationshipRoutes", "registerRelationshipSuggestionRoutes",
 			"registerAssetServiceRoutes", "registerAssetStateHistoryRoutes", "registerAssetSoftwareRoutes", "registerAssetTechnologyRoutes", "registerComponentRoutes", "registerVEXStatementRoutes",
-			"registerBranchRoutes", "registerAPISpecRoutes", "registerWebEndpointRoutes", "registerCertificateRoutes", "registerTechnologyRoutes",
+			"registerBranchRoutes", "registerAPISpecRoutes", "registerWebEndpointRoutes", "registerCertificateRoutes", "registerTechnologyRoutes", "registerEASMPostureRoutes",
 		},
 	},
 	{
@@ -199,7 +199,7 @@ var Features = []Feature{
 		ID: "account", Title: "Sign-in and own account",
 		Description: "Authentication, the caller's own account, notifications, platform announcements, bootstrap data and the real-time socket.",
 		Registers: []string{
-			"registerAuthRoutes", "registerUserRoutes", "registerIdentityLinkRoutes", "registerNotificationRoutes", "registerBootstrapRoutes",
+			"registerAuthRoutes", "registerUserRoutes", "registerIdentityLinkRoutes", "registerSSOLinkRoutes", "registerNotificationRoutes", "registerBootstrapRoutes",
 			"registerWebSocketRoutes", "registerAnnouncementRoute",
 		},
 	},
@@ -212,7 +212,7 @@ var Features = []Feature{
 		ID: "system", Title: "System endpoints",
 		Description: "Health, metrics, version, API documentation and client error reports.",
 		Registers: []string{
-			"registerHealthRoutes", "registerDocsRoutes", "registerVersionRoute", "registerClientErrorRoute", "registerLegalRoute", "registerBrandRoutes",
+			"registerHealthRoutes", "registerDocsRoutes", "registerVersionRoute", "registerLicensesRoute", "registerClientErrorRoute", "registerLegalRoute", "registerBrandRoutes",
 		},
 	},
 }

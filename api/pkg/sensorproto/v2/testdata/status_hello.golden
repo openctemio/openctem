@@ -63,7 +63,7 @@
     "results_manifest"
   ],
   "media_types": [
-    "application/vnd.openctem.ctis.v1+json"
+    "application/vnd.ctis+json; version=2.0"
   ],
   "encodings": [
     "gzip",
@@ -116,7 +116,7 @@
     "logs"
   ],
   "media_types": [
-    "application/vnd.openctem.ctis.v1+json"
+    "application/vnd.ctis+json; version=2.0"
   ],
   "encodings": [
     "gzip",

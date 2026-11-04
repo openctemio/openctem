@@ -123,3 +123,5 @@ Betterleaks also finds secrets inside archives (`bundle.zip!deploy.env`).
   switch; protocol v2 (RFC-026) carries a report ID. The verification above
   set the ID on the sensor-produced report to exercise auto-resolve.
 - Betterleaks v2 (envelope report, credential analysis) when it is released.
+
+> (CTIS 2.0, 2026-11-03: `metadata.id` is now a producer UUIDv7 idempotency key and the report id comes from the transport; see docs/architecture/ctis-receiver.md)

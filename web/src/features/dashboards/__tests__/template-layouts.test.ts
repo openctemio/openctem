@@ -1,72 +1,98 @@
 import { describe, expect, it } from 'vitest'
-import { colSpanFor, phoneSpan } from '../layout'
+import { phoneSpan } from '../layout'
+import { templateDefects } from '../template-rules'
 import { DASHBOARD_TEMPLATES, type DashboardTemplate } from '../templates'
 
 /**
- * Every template fills its rows without holes and keeps one height per row,
- * at each width the grid has: four columns (from 1280px), two (640-1279px)
- * and the phone's two (single figures pair up, everything else spans the
- * row). The grid places widgets in reading order without back-filling, so a
- * half-width widget followed by a full-width one leaves a hole.
+ * Every template follows the layout rules (template-rules.ts): allowed sizes
+ * per visualization, headline first and the sections in order, at most ten
+ * widgets, no two widgets with the same figures, full rows of one height and
+ * one height band at four columns, and no hole at two columns or on a phone.
  */
 
-type Row = Array<{ id: string; span: number; h: number }>
-
-function rows(tpl: DashboardTemplate, cols: number, spanOf: (w: number, h: number) => number) {
-  const out: Row[] = []
-  let row: Row = []
-  let used = 0
-  for (const w of tpl.widgets) {
-    const span = spanOf(w.w, w.h)
-    if (used + span > cols) {
-      out.push(row)
-      row = []
-      used = 0
-    }
-    row.push({ id: String((w.config as { id: string }).id), span, h: w.h })
-    used += span
-  }
-  if (row.length) out.push(row)
-  return out
-}
-
-function defects(tpl: DashboardTemplate, cols: number, spanOf: (w: number, h: number) => number) {
-  return rows(tpl, cols, spanOf).flatMap((row) => {
-    const filled = row.reduce((n, x) => n + x.span, 0)
-    const out: string[] = []
-    if (filled < cols) out.push(`hole after ${row.map((x) => x.id).join('+')}`)
-    if (new Set(row.map((x) => x.h)).size > 1)
-      out.push(`mixed heights in ${row.map((x) => `${x.id}:${x.h}`).join('+')}`)
-    return out
-  })
-}
+const metricOf = (tpl: DashboardTemplate, i: number) =>
+  (tpl.widgets[i].config as { data: { metric: string } }).data.metric
 
 describe('template layouts', () => {
+  it('has the five persona templates, CTEM first', () => {
+    expect(DASHBOARD_TEMPLATES.map((t) => t.key)).toEqual([
+      'ctem',
+      'executive',
+      'surface',
+      'program',
+      'triage',
+    ])
+  })
+
   for (const tpl of DASHBOARD_TEMPLATES) {
-    it(`${tpl.key}: no holes and one height per row at four columns`, () => {
-      expect(defects(tpl, 4, (w) => colSpanFor(w, tpl.columns))).toEqual([])
+    it(`${tpl.key} follows the layout rules`, () => {
+      expect(templateDefects(tpl)).toEqual([])
     })
-    it(`${tpl.key}: no holes at two columns`, () => {
-      const spanOf = (w: number) => Math.min(2, colSpanFor(w, tpl.columns))
-      expect(defects(tpl, 2, spanOf).filter((d) => d.startsWith('hole'))).toEqual([])
-    })
-    it(`${tpl.key}: no holes on a phone`, () => {
-      const spanOf = (w: number, h: number) =>
-        phoneSpan(w, h, tpl.columns).startsWith('span 1') ? 1 : 2
-      expect(defects(tpl, 2, spanOf).filter((d) => d.startsWith('hole'))).toEqual([])
+
+    it(`${tpl.key}: the phone order is the template order, figures two by two`, () => {
+      // The phone grid places widgets in the stored order; single figures
+      // pair up, so they come in even runs and every other widget spans.
+      let run = 0
+      for (let i = 0; i < tpl.widgets.length; i++) {
+        const w = tpl.widgets[i]
+        if (phoneSpan(w.w, w.h, tpl.columns).startsWith('span 1')) run++
+        else {
+          expect(run % 2, `odd run of figures before ${metricOf(tpl, i)}`).toBe(0)
+          run = 0
+        }
+      }
+      expect(run % 2).toBe(0)
     })
   }
 
-  it('each template opens on its headline figures, never on a tall diagram', () => {
-    const first = (key: string) =>
-      (
-        DASHBOARD_TEMPLATES.find((t) => t.key === key)!.widgets[0].config as {
-          data: { metric: string }
-        }
-      ).data.metric
-    expect(first('ctem')).toBe('exposure.kpis')
-    expect(first('overview')).toBe('exposure.kpis')
-    expect(first('executive')).toBe('exposure.kpis')
-    for (const tpl of DASHBOARD_TEMPLATES) expect(tpl.widgets[0].h).toBe(1)
+  it('the strip-led templates open on the key figures, then their hero', () => {
+    const ctem = DASHBOARD_TEMPLATES.find((t) => t.key === 'ctem')!
+    expect([metricOf(ctem, 0), metricOf(ctem, 1)]).toEqual(['exposure.kpis', 'exposure.flow'])
+    const exec = DASHBOARD_TEMPLATES.find((t) => t.key === 'executive')!
+    expect([metricOf(exec, 0), metricOf(exec, 1)]).toEqual([
+      'exposure.kpis',
+      'exposure.open_by_priority',
+    ])
+  })
+})
+
+describe('the rules catch a messy template', () => {
+  const w = (id: string, metric: string, viz: string, ww: number, h: number) => ({
+    widget_type: 'metric',
+    w: ww,
+    h,
+    config: {
+      v: 2,
+      id,
+      data: { kind: 'metric', metric, filter: {}, time: {} },
+      viz: { type: viz },
+    },
+  })
+  const messy: DashboardTemplate = {
+    key: 'ctem',
+    columns: 4,
+    widgets: [
+      w('a', 'exposure.flow', 'flow', 12, 4),
+      w('b', 'exposure.kpis', 'kpi', 12, 1),
+      w('c', 'fix.time_to_fix', 'bar', 6, 2),
+      w('d', 'flow.new_vs_fixed', 'diverging', 6, 2),
+      w('e', 'intel.kev_open', 'stat', 3, 1),
+      w('f', 'brief.weekly', 'brief', 12, 1),
+      w('g', 'exposure.levers', 'levers', 12, 1),
+      w('h', 'flow.new_vs_fixed', 'column', 12, 2),
+    ],
+  }
+  const defects = templateDefects(messy)
+  it.each([
+    'opens on a, not the headline figures',
+    'c: bar at 6x2, allowed 6x1',
+    'mixed bands in c+d',
+    'hole after e',
+    'h repeats d',
+    'exposure.kpis and intel.kev_open show the same figures',
+    'brief.weekly and exposure.levers show the same figures',
+    'hole on a phone after e',
+  ])('%s', (want) => {
+    expect(defects).toContain(want)
   })
 })

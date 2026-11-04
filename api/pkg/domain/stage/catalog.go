@@ -20,7 +20,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/openctemio/ctis/capability"
+	"github.com/openctemio/contract/capability"
 
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 )
@@ -150,7 +150,7 @@ type Stage struct {
 	// never as a workflow node.
 	CrossCutting bool `json:"cross_cutting,omitempty"`
 
-	// From the capability taxonomy (ctis/capability): the engagement phase
+	// From the capability taxonomy (contract/capability): the engagement phase
 	// and its CTEM stage, the MITRE ATT&CK techniques and D3FEND functions
 	// of the act, and the required-output rules a report is checked
 	// against.

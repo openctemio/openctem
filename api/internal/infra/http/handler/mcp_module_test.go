@@ -10,9 +10,17 @@ import (
 )
 
 // fakeModuleGate turns modules off per tenant.
-type fakeModuleGate struct{ off map[string]map[string]bool }
+type fakeModuleGate struct {
+	off map[string]map[string]bool
+	// grace lists modules in read-only grace: readable, not enabled.
+	grace map[string]map[string]bool
+}
 
 func (g fakeModuleGate) IsEnabled(_ context.Context, tenantID, moduleID string) bool {
+	return !g.off[tenantID][moduleID] && !g.grace[tenantID][moduleID]
+}
+
+func (g fakeModuleGate) IsReadable(_ context.Context, tenantID, moduleID string) bool {
 	return !g.off[tenantID][moduleID]
 }
 
@@ -126,5 +134,31 @@ func TestMCP_ModuleOffHidesAndRefuses(t *testing.T) {
 	_, resp = doRPCScoped(t, h, tenantOn, "user-1", scopes, body)
 	if resp.Error != nil || strings.Contains(string(resp.Result), `"isError":true`) {
 		t.Errorf("tools/call with module on: %+v %s", resp.Error, resp.Result)
+	}
+}
+
+// In the read-only grace of a module the read tools and prompts still work
+// (as the GET routes of the same data do) while a tool that changes data is
+// refused.
+func TestMCP_ReadToolsWorkInReadOnlyGrace(t *testing.T) {
+	const tenantGrace = testTenantUUID
+	pr := &fakePentestReader{campaign: newTestCampaign(t)}
+	h := newTestMCPWithPentest(&fakeFindingReader{}, pr)
+	h.SetModuleGate(fakeModuleGate{grace: map[string]map[string]bool{
+		tenantGrace: {moduledom.ModulePentest: true},
+	}})
+	ctx := context.Background()
+	if !h.moduleEnabled(ctx, tenantGrace, moduledom.ModulePentest, false) {
+		t.Error("a read tool or prompt must work in the read-only grace")
+	}
+	if h.moduleEnabled(ctx, tenantGrace, moduledom.ModulePentest, true) {
+		t.Error("a tool that changes data must be refused in the read-only grace")
+	}
+
+	scopes := append([]string{"pentest:campaigns:read", "pentest:findings:read"}, allReadScopes...)
+	body := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_campaign","arguments":{"id":"018f5a1e-0000-7000-8000-0000000000cc"}}}`
+	_, resp := doRPCScoped(t, h, tenantGrace, "user-1", scopes, body)
+	if resp.Error != nil || strings.Contains(string(resp.Result), `"isError":true`) {
+		t.Errorf("a read tool in the read-only grace: %+v %s", resp.Error, resp.Result)
 	}
 }

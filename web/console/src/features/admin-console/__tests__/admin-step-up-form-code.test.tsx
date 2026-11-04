@@ -100,7 +100,7 @@ describe('a console form whose step-up code is refused', () => {
     const user = userEvent.setup()
     const onSaved = renderPage()
     await user.type(screen.getByLabelText('Password'), 'n3w-pass')
-    await user.click(screen.getByRole('button', { name: 'Save' }))
+    await user.click(screen.getByRole('button', { name: 'Save changes' }))
 
     putAnswers = [refusedCode()]
     await confirmWith(user, '123456')
@@ -133,19 +133,19 @@ describe('a console form whose step-up code is refused', () => {
     const user = userEvent.setup()
     renderPage()
     await user.type(screen.getByLabelText('Password'), 'first')
-    await user.click(screen.getByRole('button', { name: 'Save' }))
+    await user.click(screen.getByRole('button', { name: 'Save changes' }))
     await confirmWith(user, '111111')
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull())
 
     await user.type(screen.getByLabelText('Password'), 'second')
-    await user.click(screen.getByRole('button', { name: 'Save' }))
+    await user.click(screen.getByRole('button', { name: 'Save changes' }))
     await user.click(
       within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Cancel' })
     )
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull())
     expect(document.body.style.pointerEvents).not.toBe('none')
 
-    await user.click(screen.getByRole('button', { name: 'Save' }))
+    await user.click(screen.getByRole('button', { name: 'Save changes' }))
     putAnswers = [refusedCode()]
     await confirmWith(user, '111111')
     expect(await within(screen.getByRole('alertdialog')).findByRole('alert')).toBeInTheDocument()

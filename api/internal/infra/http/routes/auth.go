@@ -183,9 +183,12 @@ func registerAuthRoutes(router Router, h Handlers, cfg *config.Config, authCfg A
 			// session for sensitive routes (requireStepUp). Its own rate-limit
 			// bucket per IP; wrong proofs also count towards the account
 			// lockout. CSRF is enforced by authMiddleware for cookie sessions.
-			stepUpRL := newAuthRateLimiter("step-up").LoginMiddleware()
+			// The limit runs after authentication so a refusal can be
+			// audited for the person (reason rate_limited); a request
+			// without a valid session is refused by authMiddleware first.
+			stepUpRL := h.LocalAuth.AuditStepUpRateLimit(newAuthRateLimiter("step-up").LoginMiddleware())
 			r.GET("/step-up", ChainFunc(h.LocalAuth.GetStepUp, authMiddleware).ServeHTTP)
-			r.POST("/step-up", ChainFunc(h.LocalAuth.StepUp, stepUpRL, authMiddleware).ServeHTTP)
+			r.POST("/step-up", ChainFunc(h.LocalAuth.StepUp, authMiddleware, stepUpRL).ServeHTTP)
 
 		}
 
@@ -257,6 +260,15 @@ func registerUserRoutes(
 	router.Group("/api/v1/me/account", func(r Router) {
 		r.DELETE("/", h.DeleteMe, requireOwnSignIn(), requireStepUp())
 		r.GET("/deletion", h.GetMyDeletion)
+	}, middlewares...)
+
+	// Ownership invitations addressed to this account
+	// (docs/architecture/organization-ownership-invitations.md). Accepting
+	// makes the caller an organization's owner: step-up.
+	router.Group("/api/v1/me/ownership-invitations", func(r Router) {
+		r.GET("/", h.ListMyOwnerInvitations)
+		r.POST("/{id}/accept", h.AcceptOwnerInvitation, requireStepUp())
+		r.POST("/{id}/decline", h.DeclineOwnerInvitation)
 	}, middlewares...)
 
 	// Moving two-factor to a new authenticator (My account > Security). New
@@ -360,6 +372,35 @@ func registerIdentityLinkRoutes(router Router, h *handler.OAuthHandler, authMidd
 		r.POST("/describe", h.DescribePendingLink, withCSRF(linkRL)...)
 		r.POST("/complete", h.ConfirmPendingLink, withCSRF(linkRL)...)
 		r.POST("/cancel", h.CancelPendingLink, withCSRF(linkRL)...)
+	}, middlewares...)
+}
+
+// registerSSOLinkRoutes registers Account > Security, "Organization sign-in"
+// (auth/sso_link.go): link or unlink an organization's single sign-on on the
+// caller's own account. Start and unlink carry the CSRF check and a proof
+// typed for that request (checked by the service; deliberately not behind
+// requireStepUp, as for the social links). The completion is called by the
+// web server with the session token after the identity provider's redirect:
+// its state is bound to this account and this session, single use, expires,
+// and is accepted only with the browser binding the start gave the starting
+// browser.
+func registerSSOLinkRoutes(router Router, h *handler.SSOHandler, authMiddleware, userSyncMiddleware Middleware) {
+	middlewares := []Middleware{authMiddleware}
+	if userSyncMiddleware != nil {
+		middlewares = append(middlewares, userSyncMiddleware)
+	}
+	linkRL := newAuthRateLimiter("sso-links").PasswordMiddleware()
+	withCSRF := func(mws ...Middleware) []Middleware {
+		if csrfProtectionMiddleware != nil {
+			return append([]Middleware{csrfProtectionMiddleware}, mws...)
+		}
+		return mws
+	}
+	router.Group("/api/v1/me/sso-links", func(r Router) {
+		r.GET("/", h.ListSSOLinks)
+		r.POST("/{provider}/start", h.StartSSOLink, withCSRF(linkRL)...)
+		r.POST("/{provider}/complete", h.CompleteSSOLink, linkRL)
+		r.DELETE("/identities/{identity}", h.UnlinkSSOIdentity, withCSRF(linkRL)...)
 	}, middlewares...)
 }
 

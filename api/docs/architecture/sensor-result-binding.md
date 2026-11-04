@@ -66,7 +66,9 @@ inventory a collector owns:
   ones are demoted to `stale` (never a manual status override, never
   deleted), with a `disappeared` state-history row. Nothing is marked when
   the report is empty, when any segment refused, quarantined or failed an
-  asset, or when the share would blind the inventory (the auto-resolve
+  asset (an asset a scope exclusion of the organization kept out is not a
+  refusal: it gets the item error `asset_excluded` and is counted neither
+  as accepted nor as rejected), or when the share would blind the inventory (the auto-resolve
   `BlindingGuard`: more than 100 and more than half of the source's assets).
   A partial or incremental report never marks anything, and a report
   replayed with an older time neither overwrites newer values nor marks
@@ -93,7 +95,7 @@ are left to the output contract.
 **Channel.** The channel a sensor's findings are filed under
 (`findings.ingest_channel`) is `collector` for a collector sensor and
 `scanner` for any other, bound or not, also after a person accepts a
-quarantined report; the report's `metadata.source_type` is ignored. Only
+quarantined report; the document names no channel (CTIS 2.0 has `channel` only as a producer hint; it is ignored). Only
 server-side ingests without a sensor and CI runs keep their own value.
 
 **Coverage.** A command covers an existing asset when one of its payload
@@ -192,8 +194,8 @@ quarantine at the bearer-key sunset.
 
 ## The quarantine
 
-`sensor_result_quarantine` stores the CTIS report (one row per v1 request or
-v2 segment) as JSON, with the sensor, route, report id, tool and counts. At
+`sensor_result_quarantine` stores the CTIS report (one row per request or
+v2 segment; a 1.x report held from before the CTIS 2.0 switch can no longer be accepted) as JSON, with the sensor, route, report id, tool and counts. At
 most 1000 pending items per tenant, 200 per sensor, 16 MiB per item and 512 MiB
 of pending payload per tenant; beyond that the report is refused (`422 RESULTS_QUARANTINE_FULL`, v2 item error
 `quarantine_full`), so a stolen key cannot fill the database.

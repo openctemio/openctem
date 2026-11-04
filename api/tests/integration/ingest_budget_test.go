@@ -23,7 +23,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
@@ -108,8 +108,8 @@ func cloneReport(t *testing.T, rep *ctis.Report, mutate func(*ctis.Report)) *cti
 	if err := json.Unmarshal(raw, &out); err != nil {
 		t.Fatal(err)
 	}
-	out.Metadata.ID = shared.NewID().String()
-	out.Metadata.Timestamp = time.Now().UTC()
+	out.Metadata.ID = ctis.NewReportID()
+	out.Metadata.GeneratedAt = time.Now().UTC()
 	if mutate != nil {
 		mutate(&out)
 	}
@@ -187,7 +187,10 @@ func TestIngestQueryBudget(t *testing.T) {
 		// The audit entry and the sensor counters are written by goroutines the
 		// call leaves behind: wait for them so they count in this phase.
 		snap := counter.Settle(400*time.Millisecond, 15*time.Second)
-		if err != nil || len(out.Errors) > 0 {
+		if err != nil {
+			t.Fatalf("ingest: %v", err)
+		}
+		if len(out.Errors) > 0 {
 			t.Fatalf("%s: ingest: %v %v", name, err, out.Errors)
 		}
 		if got := countFindings(); got != p.findings {

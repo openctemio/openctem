@@ -28,6 +28,7 @@ type EmailService struct {
 	config     config.SMTPConfig
 	appName    string
 	branding   emaildom.Branding
+	locales    EmailLocaleResolver
 	logger     *logger.Logger
 }
 
@@ -157,11 +158,13 @@ func (s *EmailService) SendVerificationEmail(ctx context.Context, userEmail, use
 	// never sends it to a server. The web app's /verify-email page reads it.
 	verificationURL := fmt.Sprintf("%s/verify-email#token=%s", strings.TrimSuffix(s.config.BaseURL, "/"), url.QueryEscape(token))
 
+	loc := s.localeForEmail(ctx, userEmail, "")
 	data := emaildom.VerifyEmailData{
+		Lang:            emaildom.Lang{Locale: loc},
 		UserName:        userName,
 		Email:           userEmail,
 		VerificationURL: verificationURL,
-		ExpiresIn:       formatDuration(expiresIn),
+		ExpiresIn:       emaildom.FormatDuration(loc, expiresIn),
 		AppName:         s.appName,
 		Branding:        s.branding,
 	}
@@ -194,15 +197,17 @@ func (s *EmailService) SendPasswordResetEmail(ctx context.Context, userEmail, us
 	// logs and Referer headers.
 	resetURL := fmt.Sprintf("%s/reset-password#token=%s", strings.TrimSuffix(s.config.BaseURL, "/"), url.QueryEscape(token))
 
+	loc := s.localeForEmail(ctx, userEmail, "")
 	data := emaildom.PasswordResetData{
+		Lang:        emaildom.Lang{Locale: loc},
 		UserName:    userName,
 		Email:       userEmail,
 		ResetURL:    resetURL,
-		ExpiresIn:   formatDuration(expiresIn),
+		ExpiresIn:   emaildom.FormatDuration(loc, expiresIn),
 		AppName:     s.appName,
 		Branding:    s.branding,
 		IPAddress:   ipAddress,
-		RequestedAt: time.Now().Format("January 2, 2006 at 3:04 PM MST"),
+		RequestedAt: emaildom.FormatTime(loc, time.Now()),
 	}
 
 	if err := s.sender.SendTemplate(ctx, userEmail, emaildom.TemplatePasswordReset, data); err != nil {
@@ -228,10 +233,12 @@ func (s *EmailService) SendPasswordChangedEmail(ctx context.Context, userEmail, 
 		return nil
 	}
 
+	loc := s.localeForEmail(ctx, userEmail, "")
 	data := emaildom.PasswordChangedData{
+		Lang:      emaildom.Lang{Locale: loc},
 		UserName:  userName,
 		Email:     userEmail,
-		ChangedAt: time.Now().Format("January 2, 2006 at 3:04 PM MST"),
+		ChangedAt: emaildom.FormatTime(loc, time.Now()),
 		IPAddress: ipAddress,
 		AppName:   s.appName,
 		Branding:  s.branding,
@@ -263,6 +270,7 @@ func (s *EmailService) SendWelcomeEmail(ctx context.Context, userEmail, userName
 	loginURL := fmt.Sprintf("%s/login", strings.TrimSuffix(s.config.BaseURL, "/"))
 
 	data := emaildom.WelcomeData{
+		Lang:     emaildom.Lang{Locale: s.localeForEmail(ctx, userEmail, "")},
 		UserName: userName,
 		Email:    userEmail,
 		LoginURL: loginURL,
@@ -304,6 +312,7 @@ func (s *EmailService) SendMemberSuspendedEmail(
 	}
 
 	data := emaildom.MemberStatusChangeData{
+		Lang:      emaildom.Lang{Locale: s.localeForEmail(ctx, recipientEmail, tenantID)},
 		UserName:  recipientName,
 		TeamName:  teamName,
 		ActorName: actorName,
@@ -341,6 +350,7 @@ func (s *EmailService) SendMemberReactivatedEmail(
 	}
 
 	data := emaildom.MemberStatusChangeData{
+		Lang:      emaildom.Lang{Locale: s.localeForEmail(ctx, recipientEmail, tenantID)},
 		UserName:  recipientName,
 		TeamName:  teamName,
 		ActorName: actorName,
@@ -392,11 +402,13 @@ func (s *EmailService) SendAccountSetupEmail(ctx context.Context, tenantID, reci
 	if sender == nil || !sender.IsConfigured() {
 		return fmt.Errorf("email: no SMTP sender configured")
 	}
+	loc := s.localeForEmail(ctx, recipientEmail, tenantID)
 	data := emaildom.AccountSetupData{
+		Lang:      emaildom.Lang{Locale: loc},
 		UserName:  recipientName,
 		TeamName:  teamName,
 		SetupURL:  s.AccountSetupURL(token),
-		ExpiresIn: formatDuration(expiresIn),
+		ExpiresIn: emaildom.FormatDuration(loc, expiresIn),
 		AppName:   s.appName,
 		Branding:  s.branding,
 	}
@@ -411,10 +423,6 @@ func (s *EmailService) SendAccountSetupEmail(ctx context.Context, tenantID, reci
 	return nil
 }
 
-// adminInvitationScope names what a platform administrator's invitation is for
-// ("Your OpenCTEM account for platform administration is ready").
-const adminInvitationScope = "platform administration"
-
 // CanDeliverSystem reports whether the system SMTP sender can send mail.
 func (s *EmailService) CanDeliverSystem() bool { return s.IsConfigured() }
 
@@ -426,11 +434,13 @@ func (s *EmailService) SendAdminInvitationEmail(ctx context.Context, recipientEm
 	if !s.IsConfigured() {
 		return fmt.Errorf("email: no SMTP sender configured")
 	}
+	loc := s.localeForEmail(ctx, recipientEmail, "")
 	data := emaildom.AccountSetupData{
+		Lang:      emaildom.Lang{Locale: loc},
 		UserName:  recipientName,
-		TeamName:  adminInvitationScope,
+		TeamName:  emaildom.Text(loc, "setup.scopePlatformAdmin"),
 		SetupURL:  s.AccountSetupURL(token),
-		ExpiresIn: formatDuration(expiresIn),
+		ExpiresIn: emaildom.FormatDuration(loc, expiresIn),
 		AppName:   s.appName,
 		Branding:  s.branding,
 	}
@@ -463,11 +473,17 @@ func (s *EmailService) SendTeamInvitationEmail(ctx context.Context, recipientEma
 	// (RFC-041). The web app reads it from the fragment and removes it.
 	invitationURL := fmt.Sprintf("%s/invitations#token=%s", s.config.BaseURL, url.QueryEscape(token))
 
+	tenant := ""
+	if len(tenantID) > 0 {
+		tenant = tenantID[0]
+	}
+	loc := s.localeForEmail(ctx, recipientEmail, tenant)
 	data := emaildom.TeamInvitationData{
+		Lang:          emaildom.Lang{Locale: loc},
 		InviterName:   inviterName,
 		TeamName:      teamName,
 		InvitationURL: invitationURL,
-		ExpiresIn:     formatDuration(expiresIn),
+		ExpiresIn:     emaildom.FormatDuration(loc, expiresIn),
 		AppName:       s.appName,
 		Branding:      s.branding,
 	}
@@ -488,61 +504,40 @@ func (s *EmailService) SendTeamInvitationEmail(ctx context.Context, recipientEma
 	return nil
 }
 
-// formatDuration formats a duration into a human-readable string.
-func formatDuration(d time.Duration) string {
-	if d >= 24*time.Hour {
-		days := int(d.Hours() / 24)
-		if days == 1 {
-			return "24 hours"
-		}
-		return fmt.Sprintf("%d days", days)
-	}
-	if d >= time.Hour {
-		hours := int(d.Hours())
-		if hours == 1 {
-			return "1 hour"
-		}
-		return fmt.Sprintf("%d hours", hours)
-	}
-	if d >= time.Minute {
-		minutes := int(d.Minutes())
-		if minutes == 1 {
-			return "1 minute"
-		}
-		return fmt.Sprintf("%d minutes", minutes)
-	}
-	return d.String()
-}
-
 // The methods below make EmailService an auth.SecurityNotifier. They send in
 // the background (the change they report is already committed) and only log
 // failures, so a slow or broken SMTP server never fails the user's request.
 
 // NotifyMFADisabled tells the user 2FA was turned off on their account.
 func (s *EmailService) NotifyMFADisabled(ctx context.Context, userEmail, userName, ipAddress string) {
-	s.sendSecurityNotice(ctx, userEmail, userName, ipAddress,
-		"Two-factor authentication was turned off",
-		"Two-factor authentication was just turned off for your account. Signing in now needs only your password.")
+	loc := s.localeForEmail(ctx, userEmail, "")
+	s.sendSecurityNotice(ctx, loc, userEmail, userName, ipAddress,
+		emaildom.Text(loc, "notice.mfaOff.subject"),
+		emaildom.Text(loc, "notice.mfaOff.message"))
 }
 
 // NotifyRecoveryCodeUsed tells the user a recovery code was used to sign in.
 func (s *EmailService) NotifyRecoveryCodeUsed(ctx context.Context, userEmail, userName, ipAddress string, remaining int) {
-	s.sendSecurityNotice(ctx, userEmail, userName, ipAddress,
-		"A recovery code was used to sign in",
-		fmt.Sprintf("One of your two-factor recovery codes was just used to sign in to your account. You have %d unused recovery codes left; generate new ones from your account settings if you are running low.", remaining))
+	loc := s.localeForEmail(ctx, userEmail, "")
+	s.sendSecurityNotice(ctx, loc, userEmail, userName, ipAddress,
+		emaildom.Text(loc, "notice.recovery.subject"),
+		emaildom.Text(loc, "notice.recovery.message", remaining))
 }
 
 // NotifyIdentityLinked tells the user a social sign-in method was linked.
 func (s *EmailService) NotifyIdentityLinked(ctx context.Context, userEmail, userName, ipAddress, provider string) {
-	msg := "Sign-in with " + provider + " was just linked to your account. You can now sign in with it; your second factor, if you have one, is still asked."
-	s.sendSecurityNotice(ctx, userEmail, userName, ipAddress, "Sign-in with "+provider+" was linked to your account",
-		msg+" If this was not you, change your password and unlink "+provider+" under Account > Security.")
+	loc := s.localeForEmail(ctx, userEmail, "")
+	s.sendSecurityNotice(ctx, loc, userEmail, userName, ipAddress,
+		emaildom.Text(loc, "notice.idLinked.subject", provider),
+		emaildom.Text(loc, "notice.idLinked.message", provider))
 }
 
 // NotifyIdentityUnlinked tells the user a social sign-in method was removed.
 func (s *EmailService) NotifyIdentityUnlinked(ctx context.Context, userEmail, userName, ipAddress, provider string) {
-	s.sendSecurityNotice(ctx, userEmail, userName, ipAddress, "Sign-in with "+provider+" was removed from your account",
-		"Sign-in with "+provider+" was just removed from your account. If this was not you, change your password now.")
+	loc := s.localeForEmail(ctx, userEmail, "")
+	s.sendSecurityNotice(ctx, loc, userEmail, userName, ipAddress,
+		emaildom.Text(loc, "notice.idUnlinked.subject", provider),
+		emaildom.Text(loc, "notice.idUnlinked.message", provider))
 }
 
 // NotifyPasswordChanged sends the existing password-changed email.
@@ -558,46 +553,61 @@ func (s *EmailService) NotifyPasswordChanged(ctx context.Context, userEmail, use
 // administrator proposed an SSO change that waits for their approval. summary
 // never contains a secret.
 func (s *EmailService) NotifySSOChangePending(ctx context.Context, ownerEmail, ownerName, orgName, summary string) {
-	s.sendSecurityNotice(ctx, ownerEmail, ownerName, "",
-		"An SSO change for "+orgName+" is waiting for your approval",
-		summary+" Review it under Settings > SSO approvals. If you did not expect this change, reject it.")
+	loc := s.localeForEmail(ctx, ownerEmail, "")
+	s.sendSecurityNotice(ctx, loc, ownerEmail, ownerName, "",
+		emaildom.Text(loc, "notice.ssoPending.subject", orgName),
+		summary+" "+emaildom.Text(loc, "notice.ssoPending.suffix"))
 }
 
 // NotifySAMLCertificateExpiry tells an organization owner that the SAML
 // identity provider's signing certificate expires soon or has expired.
 func (s *EmailService) NotifySAMLCertificateExpiry(ctx context.Context, ownerEmail, ownerName, subject, message string) {
-	s.sendSecurityNotice(ctx, ownerEmail, ownerName, "", subject, message)
+	s.sendSecurityNotice(ctx, s.localeForEmail(ctx, ownerEmail, ""), ownerEmail, ownerName, "", subject, message)
 }
 
 // NotifyEmailRelayStopped tells an organization owner that an e-mail channel
 // was stopped because its mail server no longer meets the service rules. It
 // goes through the platform relay, never the organization's.
 func (s *EmailService) NotifyEmailRelayStopped(ctx context.Context, ownerEmail, ownerName, subject, message string) {
-	s.sendSecurityNotice(ctx, ownerEmail, ownerName, "", subject, message)
+	s.sendSecurityNotice(ctx, s.localeForEmail(ctx, ownerEmail, ""), ownerEmail, ownerName, "", subject, message)
 }
 
 // NotifySupportAccess tells an organization owner about support access:
 // a grant, a revocation, a support session opened or ended.
 func (s *EmailService) NotifySupportAccess(ctx context.Context, email, name, subject, message string) {
-	s.sendSecurityNotice(ctx, email, name, "", subject, message)
+	s.sendSecurityNotice(ctx, s.localeForEmail(ctx, email, ""), email, name, "", subject, message)
 }
 
 // NotifyOwnershipTransfer tells one of the two people in an ownership
 // transfer what happened (requested, canceled, declined, accepted).
 func (s *EmailService) NotifyOwnershipTransfer(ctx context.Context, email, name, subject, message string) {
-	s.sendSecurityNotice(ctx, email, name, "", subject, message)
+	s.sendSecurityNotice(ctx, s.localeForEmail(ctx, email, ""), email, name, "", subject, message)
 }
 
-func (s *EmailService) sendSecurityNotice(ctx context.Context, userEmail, userName, ipAddress, subject, message string) {
+// SendOwnershipInvitation tells an existing account that a platform
+// administrator created organizationName for it and invites it to be the
+// owner. The message links to the page where the person accepts or declines
+// after signing in; it carries no token (the invitation is bound to the
+// account).
+func (s *EmailService) SendOwnershipInvitation(ctx context.Context, email, name, organizationName string, expiresAt time.Time) {
+	link := fmt.Sprintf("%s/ownership-invitations", strings.TrimSuffix(s.config.BaseURL, "/"))
+	loc := s.localeForEmail(ctx, email, "")
+	s.sendSecurityNotice(ctx, loc, email, name, "",
+		emaildom.Text(loc, "notice.ownership.subject"),
+		emaildom.Text(loc, "notice.ownership.message", organizationName, link, emaildom.FormatDate(loc, expiresAt.UTC())))
+}
+
+func (s *EmailService) sendSecurityNotice(ctx context.Context, loc, userEmail, userName, ipAddress, subject, message string) {
 	if !s.IsConfigured() {
 		return
 	}
 	data := emaildom.SecurityNoticeData{
+		Lang:       emaildom.Lang{Locale: loc},
 		UserName:   userName,
 		Email:      userEmail,
 		Subject:    subject,
 		Message:    message,
-		OccurredAt: time.Now().UTC().Format("January 2, 2006 at 3:04 PM MST"),
+		OccurredAt: emaildom.FormatTime(loc, time.Now().UTC()),
 		IPAddress:  ipAddress,
 		AppName:    s.appName,
 		Branding:   s.branding,
@@ -628,13 +638,13 @@ func (s *EmailService) SendDomainManagedEmail(ctx context.Context, userEmail, do
 		return fmt.Errorf("email: no SMTP sender configured")
 	}
 	loginURL := fmt.Sprintf("%s/login", strings.TrimSuffix(s.config.BaseURL, "/"))
-	d := html.EscapeString(domain)
-	body := fmt.Sprintf(`<p>The organization that verified <strong>%s</strong> on %s now manages accounts on this domain.</p>
-<p>Your next sign-in with this address may go through your organization's single sign-on, and creating new organizations with it may be turned off. Your account, and any organization you already belong to, stay yours: nothing is moved or shared with that organization.</p>
-<p><a href="%s">Sign in</a></p>`, d, html.EscapeString(s.appName), html.EscapeString(loginURL))
+	loc := s.localeForEmail(ctx, userEmail, "")
+	body := "<p>" + string(emaildom.TextHTML(loc, "domainManaged.body1", domain, s.appName)) + "</p>\n" +
+		"<p>" + emaildom.Text(loc, "domainManaged.body2") + "</p>\n" +
+		"<p><a href=\"" + html.EscapeString(loginURL) + "\">" + emaildom.Text(loc, "domainManaged.signIn") + "</a></p>"
 	return s.sender.Send(ctx, &emaildom.Message{
 		To:      []string{userEmail},
-		Subject: fmt.Sprintf("[%s] Accounts on %s are now managed by your organization", s.appName, domain),
+		Subject: emaildom.Text(loc, "domainManaged.subject", s.appName, domain),
 		Body:    body,
 		IsHTML:  true,
 	})

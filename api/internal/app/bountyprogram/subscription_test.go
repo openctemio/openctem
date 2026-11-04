@@ -32,7 +32,7 @@ func (f *fakeCatalog) GetPublic(_ context.Context, id shared.ID) (*bp.PublicProg
 	cp := *p
 	return &cp, nil
 }
-func (f *fakeCatalog) StaleSubscriptions(context.Context, int) ([]bp.ProgramRef, error) {
+func (f *fakeCatalog) StaleSubscriptions(context.Context, int, []shared.ID) ([]bp.ProgramRef, error) {
 	return nil, nil
 }
 

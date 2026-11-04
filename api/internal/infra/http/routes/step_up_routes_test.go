@@ -9,6 +9,7 @@ package routes
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -45,12 +46,30 @@ func (s steppedUpAt) RecentAuthAt(context.Context, string, string) (time.Time, e
 }
 
 // withStepUpChecker sets the package checker for routes registered by this
-// test (registration captures it) and restores it afterwards.
+// test (registration captures it) and restores it afterwards. It also clears
+// the own-sign-in checker: a test that wired the whole router leaves a checker
+// backed by its (by now closed) database in that package variable, and the
+// account routes would answer 500 instead of the step-up refusal under test.
 func withStepUpChecker(t *testing.T, c middleware.RecentAuthChecker) {
 	t.Helper()
-	saved := stepUpChecker
-	stepUpChecker = c
-	t.Cleanup(func() { stepUpChecker = saved })
+	saved, savedOwn := stepUpChecker, ownSignInChecker
+	stepUpChecker, ownSignInChecker = c, nil
+	t.Cleanup(func() { stepUpChecker, ownSignInChecker = saved, savedOwn })
+}
+
+type failingOwnSignIn struct{}
+
+func (failingOwnSignIn) OwnSignInRequired(context.Context, string, string) (bool, error) {
+	return false, errors.New("sql: database is closed")
+}
+
+// A checker left in the package variable by an earlier test must not change
+// what the step-up route test sees (it flaked on shards where such a test ran first).
+func TestStepUpRoutes_IgnoreLeakedOwnSignInChecker(t *testing.T) {
+	saved := ownSignInChecker
+	t.Cleanup(func() { ownSignInChecker = saved })
+	ownSignInChecker = failingOwnSignIn{}
+	TestStepUpRoutes_RequireRecentAuth(t)
 }
 
 // stubCISettings answers the CI settings routes so that reaching the handler
@@ -118,6 +137,8 @@ var stepUpRoutes = []string{
 	"DELETE /api/v1/tenants/acme",
 	// Deleting one's own account (RFC-104).
 	"DELETE /api/v1/me/account",
+	// Accepting an ownership invitation makes the caller an owner.
+	"POST /api/v1/me/ownership-invitations/{id}/accept",
 	"POST /api/v1/organization/leave",
 	"DELETE /api/v1/organization/members/{id}/mfa",
 	"POST /api/v1/organization/members/{id}/offboard",

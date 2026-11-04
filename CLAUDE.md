@@ -31,6 +31,12 @@ modules), `migration` (database migrations), `web-change` (web console).
   `api/docs/development/repositories.md`.
 - Never add the `security-ack` label: it is the maintainer's own decision on a
   `security-sensitive` pull request (`api/docs/development/ci-cd.md#security-gate`).
+- Paid feature code is written only in its own extension repository, never
+  here: this repository gets generic extension points (`api/pkg/extension`,
+  `web/src/lib/extension`) and the grant seam only
+  (`api/docs/development/editions.md`). The core never imports extension code
+  and builds from public sources only; `.github/scripts/check-edition-fence.sh`
+  enforces it in CI and pre-commit.
 - No AI attribution lines in commits or PRs (enforced by `.githooks/commit-msg`).
 - Changelog: never edit `api/CHANGELOG.md` for a change; add one file
   `api/changelog.d/<short-slug>.md` (format in `api/changelog.d/README.md`).

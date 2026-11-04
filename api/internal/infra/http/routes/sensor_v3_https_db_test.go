@@ -106,7 +106,7 @@ func newV3HarnessWith(t *testing.T, opts []command.Option, recheck ...time.Durat
 	ch := handler.NewCommandHandler(cmdSvc, validator.New(), log)
 	ch.SetCommandLogs(commandlog.NewService(postgres.NewCommandLogRepository(db)))
 	sh := handler.NewSuppressionHandler(suppression.NewService(postgres.NewSuppressionRepository(db), log), log)
-	ctl := handler.NewSensorControlV2Handler(ih, ch, sh, nil, log)
+	ctl := handler.NewSensorControlV2Handler(ih, ch, sh, log)
 	receiver := ingest.NewV2Receiver(postgres.NewIngestReportRepository(db), parkedJobs{postgres.NewIngestJobRepository(db)},
 		postgres.NewIngestJobRepository(db), cmdRepo, protov2.DefaultLimits(), 100, log)
 	receiver.SetPayloadSealer(testSegmentSealer(t))
@@ -395,7 +395,7 @@ func TestSensorV3HTTPS_ResultsAreIdempotent(t *testing.T) {
 	c := h.client(s, true)
 
 	report := shared.NewID().String()
-	body := v2Segment("semgrep", "1.6", "r1")
+	body := v2Segment("semgrep", "2.0", "r1")
 	put := func(content []byte) (*connect.Response[sensorv3.PutResultResponse], error) {
 		return c.PutResult(ctx, connect.NewRequest(&sensorv3.PutResultRequest{
 			ReportId: report, Content: content, ContentType: protov2.MediaTypeCTIS, ContentDigest: digestOf(content)}))
@@ -420,7 +420,7 @@ func TestSensorV3HTTPS_ResultsAreIdempotent(t *testing.T) {
 		t.Fatalf("%d reports, want 1", n)
 	}
 	// The same report id with other content is a conflict.
-	_, err = put(v2Segment("semgrep", "1.6", "r2"))
+	_, err = put(v2Segment("semgrep", "2.0", "r2"))
 	wantCode(t, err, connect.CodeAborted)
 
 	// A wrong digest never reaches the receiver.

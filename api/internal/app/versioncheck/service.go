@@ -25,6 +25,9 @@ import (
 const (
 	OriginOnline = "online"
 	OriginImport = "import"
+	// OriginRelay: the release feed came through the feed relay sensor
+	// (docs/rfcs/RFC-142-feed-relay.md).
+	OriginRelay = "relay"
 )
 
 // Error codes stored and shown in the console (never raw upstream text).
@@ -95,8 +98,9 @@ type Config struct {
 	// URL is the feed location (VERSION_CHECK_URL, https; validated by the
 	// configuration).
 	URL string
-	// Keys are the pinned feed keys (releasefeed.PinnedKeys in production).
-	Keys []string
+	// Verifier checks the feed's Sigstore signature offline; nil: no feed is
+	// accepted (the server builds it from the embedded trusted root).
+	Verifier releasefeed.SignatureVerifier
 	// Running is the running version.
 	Running string
 	// OnFeed receives the applied feed (nil when none) whenever the
@@ -106,6 +110,10 @@ type Config struct {
 	OnFeed func(*releasefeed.Feed)
 	// Client fetches the feed; nil: the SSRF-guarded client.
 	Client *http.Client
+	// Offline reports whether the platform receives its feeds through the
+	// feed relay (then the online check never runs; the relay delivers the
+	// file). nil: never.
+	Offline func(ctx context.Context) bool
 	// Now and Jitter are for tests.
 	Now    func() time.Time
 	Jitter func(max time.Duration) time.Duration
@@ -156,7 +164,7 @@ func New(repo Repository, cfg Config, log *logger.Logger) *Service {
 // newClient is the SSRF-guarded client with a redirect cap; it never follows
 // a redirect to plain http.
 func newClient() *http.Client {
-	c := httpsec.SafeHTTPClient(FetchTimeout)
+	c := httpsec.FeedHTTPClient(FetchTimeout)
 	c.CheckRedirect = func(req *http.Request, via []*http.Request) error {
 		if len(via) >= MaxRedirects {
 			return errors.New("too many redirects")
@@ -170,12 +178,12 @@ func newClient() *http.Client {
 }
 
 // Configured reports whether this build pins a release feed root.
-func (s *Service) Configured() bool { return len(s.cfg.Keys) > 0 }
+func (s *Service) Configured() bool { return s.cfg.Verifier != nil }
 
 // RunDue runs the online check when it is due. It never returns an upstream
 // failure: an offline or air-gapped instance only records it and backs off.
 func (s *Service) RunDue(ctx context.Context) error {
-	if !s.Configured() || !s.enabled(ctx) {
+	if !s.Configured() || !s.enabled(ctx) || (s.cfg.Offline != nil && s.cfg.Offline(ctx)) {
 		return nil
 	}
 	now := s.cfg.Now()
@@ -256,7 +264,7 @@ func (s *Service) fetch(ctx context.Context) ([]byte, string, error) {
 // apply verifies raw against the stored state and stores it.
 func (s *Service) apply(ctx context.Context, st State, raw []byte, origin string) (*releasefeed.Verified, string, error) {
 	now := s.cfg.Now()
-	v, err := releasefeed.Verify(raw, releasefeed.Trust{Keys: s.cfg.Keys, MinSequence: st.AppliedSequence}, now)
+	v, err := releasefeed.Verify(raw, releasefeed.Trust{Verifier: s.cfg.Verifier, MinSequence: st.AppliedSequence}, now)
 	if err != nil {
 		return nil, codeOf(err), err
 	}
@@ -302,6 +310,29 @@ func (e *ImportError) Unwrap() error { return e.Err }
 // Import applies an administrator's copy of the release feed file. It is
 // verified exactly like a fetched one, rollback and expiry included.
 func (s *Service) Import(ctx context.Context, raw []byte) (*releasefeed.Verified, error) {
+	return s.importFrom(ctx, raw, OriginImport)
+}
+
+// ImportRelayed applies the release feed file the feed relay delivered,
+// verified exactly like a fetched one. The relay fetches the file every
+// day; the feed already applied, byte for byte, applies again without an
+// error (the store accepts the same sequence with the same digest).
+func (s *Service) ImportRelayed(ctx context.Context, raw []byte) error {
+	_, err := s.importFrom(ctx, raw, OriginRelay)
+	return err
+}
+
+// Applied returns the applied release feed's sequence and issue time (zero
+// when none was applied).
+func (s *Service) Applied(ctx context.Context) (uint64, time.Time, error) {
+	st, err := s.repo.Get(ctx)
+	if err != nil || st.Feed == nil {
+		return 0, time.Time{}, err
+	}
+	return st.AppliedSequence, st.Feed.IssuedAt, nil
+}
+
+func (s *Service) importFrom(ctx context.Context, raw []byte, origin string) (*releasefeed.Verified, error) {
 	if !s.Configured() {
 		return nil, &ImportError{Code: ErrCodeNoKey, Err: releasefeed.ErrNoKey}
 	}
@@ -312,7 +343,7 @@ func (s *Service) Import(ctx context.Context, raw []byte) (*releasefeed.Verified
 	if err != nil {
 		return nil, fmt.Errorf("version check: state: %w", err)
 	}
-	v, code, err := s.apply(ctx, st, raw, OriginImport)
+	v, code, err := s.apply(ctx, st, raw, origin)
 	if err != nil {
 		if code == ErrCodeUnreachable { // the store failed, not the file
 			return nil, err

@@ -3,20 +3,13 @@
 import { useEffect, useMemo, useState } from 'react'
 import { usePathname } from 'next/navigation'
 import { ArrowLeft, Search } from 'lucide-react'
-import {
-  SidebarInput,
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
-  useSidebarActions,
-} from '@/components/ui/sidebar'
+import { SidebarInput, SidebarMenu, SidebarMenuItem } from '@/components/ui/sidebar'
 import { useTranslation } from '@/context/i18n-provider'
 import { settingsSections, useSettingsNav } from '@/hooks/use-settings-nav'
 import { activeSettingsItem, isSettingsShellPath } from '@/config/settings-nav'
 import { searchSettings } from '@/config/settings-search'
 import { GroupedNav, type GroupedNavSection } from './grouped-nav'
-import { NAV_BUTTON_CLASS } from './nav-group'
-import { NavPendingHint, SidebarLink } from './sidebar-link'
+import { SidebarViewSwitch } from './sidebar-nav-view'
 
 const RETURN_KEY = 'openctem:settings-return-to'
 
@@ -52,7 +45,9 @@ function readReturnPath(): string {
  * The settings rail: rendered in the left sidebar on every settings route
  * (see isSettingsShellPath), in place of the CTEM navigation.
  *
- * "Back to app", a search box that finds pages and the settings inside them
+ * "Back to app" (on a phone it shows the app navigation in the open drawer;
+ * on desktop it returns to the last app page, see SidebarViewSwitch), a
+ * search box that finds pages and the settings inside them
  * (src/config/settings-search.ts), then the groups from
  * src/config/settings-nav.ts, hidden per permission and module.
  */
@@ -62,7 +57,6 @@ export function SettingsSidebarNav() {
   const groups = useSettingsNav()
   const [query, setQuery] = useState('')
   const [backHref, setBackHref] = useState('/')
-  const { setOpenMobile } = useSidebarActions()
 
   // Read after mount: sessionStorage does not exist during server rendering.
   useEffect(() => {
@@ -123,15 +117,12 @@ export function SettingsSidebarNav() {
     <nav aria-label={t('nav.item.settings', 'Settings')} className="flex flex-col gap-1">
       <SidebarMenu>
         <SidebarMenuItem>
-          <SidebarMenuButton asChild tooltip={backLabel} className={NAV_BUTTON_CLASS}>
-            <SidebarLink href={backHref} onClick={() => setOpenMobile(false)}>
-              <ArrowLeft className="rtl:rotate-180" />
-              <span>
-                {backLabel}
-                <NavPendingHint />
-              </span>
-            </SidebarLink>
-          </SidebarMenuButton>
+          <SidebarViewSwitch
+            view="app"
+            href={backHref}
+            label={backLabel}
+            icon={<ArrowLeft className="rtl:rotate-180" />}
+          />
         </SidebarMenuItem>
       </SidebarMenu>
       {/* The filter needs room to type; on the icon rail it is hidden. */}

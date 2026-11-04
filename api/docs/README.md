@@ -37,8 +37,8 @@ or use OpenCTEM, see [docs.openctem.io](https://docs.openctem.io)
 
 **Foundations**
 - [Overview](architecture/overview.md), [clean architecture](architecture/clean-arch.md), [project structure](architecture/project-structure.md)
-- [Dashboards: organization and personal](architecture/dashboards.md), [module coupling](architecture/module-coupling-and-decoupling.md), [limits and feature denies](architecture/limits.md), [idle-organization policy](architecture/idle-workspaces.md), [organization suspension and account block](architecture/organization-suspension.md) ([runbook](operations/suspension.md)), [organization deletion grace](architecture/organization-deletion.md), [account space for a person with no organization](architecture/tenantless-account-space.md)
-- [Organization settings](architecture/organization-settings.md), [product brand](architecture/brand.md), [database notes](architecture/database-notes.md), [row-level security rollout](architecture/rls-rollout.md), [modules](architecture/modules.md), [platform settings in the admin console](architecture/platform-settings.md), [sidebar pins](architecture/sidebar-pins.md), [system actors](architecture/system-actors.md)
+- [Dashboards: organization and personal](architecture/dashboards.md), [module coupling](architecture/module-coupling-and-decoupling.md), [limits and feature denies](architecture/limits.md), [edition model and Community build guard rails](architecture/edition-model.md), [idle-organization policy](architecture/idle-workspaces.md), [organization suspension and account block](architecture/organization-suspension.md) ([runbook](operations/suspension.md)), [organization deletion grace](architecture/organization-deletion.md), [ownership invitations for an organization created for an existing account](architecture/organization-ownership-invitations.md), [account space for a person with no organization](architecture/tenantless-account-space.md)
+- [Organization settings](architecture/organization-settings.md), [product brand](architecture/brand.md), [third-party notices](architecture/third-party-notices.md), [database notes](architecture/database-notes.md), [row-level security rollout](architecture/rls-rollout.md), [modules](architecture/modules.md), [platform settings in the admin console](architecture/platform-settings.md), [sidebar pins](architecture/sidebar-pins.md), [system actors](architecture/system-actors.md)
 - Decisions: [ADR-001 standard net/http](architecture/decisions/001-use-stdlib-http.md), [ADR-002 protocols](architecture/decisions/002-multi-protocol.md), [ADR-003 connectors](architecture/decisions/003-connector-pattern.md), [ADR-004 finding provenance](architecture/decisions/004-finding-provenance.md)
 
 **Identity and access**
@@ -67,6 +67,7 @@ or use OpenCTEM, see [docs.openctem.io](https://docs.openctem.io)
 - [Platform contracts](architecture/platform-contracts.md): the platform depends on contracts only, never on a sensor or the SDK
 - [CI runner identity and gate](architecture/ci-runner-identity.md), [shift-left CI scanning](architecture/shift-left-ci-scanning.md), [branch-only findings](architecture/branch-only-findings.md)
 - [Scan coverage (Tenable)](architecture/scan-coverage.md), [Tenable.sc connector](architecture/tenable-sc-connector.md)
+- [Connector framework and run modes](architecture/connector-framework.md): sensor-run pull, platform request/response and push-in connectors, the shared kit, matching and precedence, signed connector packs
 
 **Findings and prioritization**
 - [Vulnerability model](architecture/vulnerability-model.md), [vulnerability page](architecture/vulnerability-page.md), [emerging-threat alerts](architecture/emerging-threat-alerts.md), [finding import](architecture/finding-import.md), [import and run receipts](architecture/ingest-receipts.md), [import mappings](architecture/import-mappings.md), [bug-bounty and disclosure reports](architecture/bounty-reports.md), [finding source interop](architecture/finding-source-interop.md), [finding evidence](architecture/finding-evidence.md), [finding lifecycles (sub-statuses and schemes)](architecture/finding-lifecycles.md), [file storage](architecture/file-storage.md), [`not_observed` status](architecture/finding-status-not-observed.md), [finding write concurrency (row_version)](architecture/finding-row-version.md)
@@ -79,14 +80,16 @@ or use OpenCTEM, see [docs.openctem.io](https://docs.openctem.io)
 - [Automations](architecture/automations.md), [notification system](architecture/notification-system.md), [durable jobs](architecture/durable-jobs.md), [SIEM ingest](architecture/siem-ingest.md)
 - [Dashboards: fact layer](architecture/dashboards.md), [CTEM program metrics](architecture/program-metrics.md), [CTEM definition of done](architecture/ctem-dod-checklist.md), [report PDF export](architecture/report-pdf-export.md), [pentest report templates](architecture/pentest-report-templates.md), [pentest remediation and retest](architecture/pentest-remediation.md), [pentest campaign phases, delivery and sign-off](architecture/pentest-campaign-completion.md), [pentest campaign profile](architecture/pentest-campaign-profile.md), [pentest methodology checklists](architecture/pentest-checklists.md)
 - [API ↔ CTIS decoupling](architecture/api-ctis-decoupling.md)
+- [CTIS 2.0 receiver](architecture/ctis-receiver.md)
 
 ## How-to (integrations and features)
 
 - [Pair a sensor](how-to/pair-a-sensor.md), [fix a sensor's setup checklist](how-to/fix-sensor-setup-checklist.md), [sensors behind a private CA](how-to/sensors-behind-a-private-ca.md)
-- [Connect CI pipelines](how-to/connect-ci-pipelines.md), [GitLab CI](how-to/gitlab-ci.md)
+- [Connect CI pipelines](how-to/connect-ci-pipelines.md), [GitLab CI](how-to/gitlab-ci.md), [post the CI gate to GitLab merge requests](how-to/gitlab-merge-request-feedback.md), [register the OpenCTEM GitHub App](how-to/github-app.md)
 - [Verify a domain for EASM](how-to/verify-a-domain-for-easm.md), [EASM monitoring settings](how-to/easm-monitoring-settings.md)
 - [Mark things out of scope, and how it reaches sensors](how-to/mark-out-of-scope.md)
-- [Configure Microsoft Entra ID](how-to/configure-entraid.md), [SCIM provisioning](how-to/configure-scim-provisioning.md)
+- [Send mail without an online provider](how-to/send-mail-without-online-smtp.md)
+- [Configure Microsoft Entra ID](how-to/configure-entraid.md), [SCIM provisioning](how-to/configure-scim-provisioning.md), [give a team access](how-to/give-a-team-access.md)
 - [Configure Jira ticketing](how-to/configure-jira-ticketing.md), [SIEM forwarding](how-to/configure-siem.md)
 
 ## Deployment and operations (repository runbooks)
@@ -96,7 +99,9 @@ Install and day-to-day operation are documented at
 because they change with it:
 
 - [Upgrading from v0.8 to v0.9](operations/upgrade-v0.8-to-v0.9.md)
+- [Upgrading to CTIS 2.0](operations/ctis-2-upgrade.md)
 - [Monitoring and alerting](operations/monitoring.md)
+- [Hotfix and incident response](operations/hotfix-and-incident-response.md): severity, containment, hotfix release, deploy, rollback, disclosure
 - [Environment variable reference](configuration/environment-variables.md) (generated from `internal/config/env_registry.yaml` by `make env-docs`)
 - [Safe deploy and migrations](deployment/safe-deploy-and-migrations.md)
 - [Least-privilege database roles](deployment/database-roles.md)

@@ -233,6 +233,8 @@ var assetMergeLeftAlone = map[string]string{
 	"asset_state_history.asset_id":               "immutable audit log (UPDATE is blocked by a trigger); removed with the merged asset",
 	"asset_merge_log.kept_asset_id":              "the merge record itself",
 	"asset_merge_log.merged_asset_id":            "the merge record itself",
+	"asset_canonical_changes.asset_id":           "journal of the CTIS 2.0 name migration: names the asset as it was, kept as history",
+	"asset_canonical_changes.kept_asset_id":      "journal of the CTIS 2.0 name migration: the asset a merge kept, kept as history",
 	"ctem_cycle_scope_snapshots.asset_id":        "historical snapshot of a closed scope",
 	"ingest_reports.touched_asset_ids":           "historical record of one report",
 	"ingest_receipt_items.asset_id":              "historical record of what one receipt did with an item; it names the asset as it was at ingest and is not part of the asset's live data",
@@ -240,6 +242,7 @@ var assetMergeLeftAlone = map[string]string{
 	"asset_technology_backfill_removed.asset_id": "audit record of a link the technology backfill deleted; it describes the asset as it was and is not part of the asset's live data",
 	"asset_resolution.asset_id":                  "a merged name's resolution state goes with it; the kept name keeps its own and the next resolution checks it again",
 	"asset_wildcard_dns.asset_id":                "a merged name's wildcard-only mark goes with it; the kept name keeps its own and the next filtered resolution marks it again",
+	"easm_posture_assets.asset_id":               "derived posture facts: rebuilt on the next posture refresh, and reads skip assets that no longer exist",
 }
 
 // mergeAssetReferences moves everything that references mergeIDs onto keepID.

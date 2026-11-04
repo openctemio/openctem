@@ -14,8 +14,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/ctis"
-	"github.com/openctemio/ctis/importer"
+	"github.com/openctemio/ctis/v2"
+	"github.com/openctemio/ctis/v2/importer"
 
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/pkg/domain/ingestreceipt"
@@ -124,7 +124,7 @@ func (o onlyAssets) AssetsInScope(_ context.Context, ids []shared.ID) ([]shared.
 // golden inputs), from the module cache.
 func ctisFixture(t *testing.T, rel string) string {
 	t.Helper()
-	out, err := exec.Command("go", "list", "-m", "-f", "{{.Dir}}", "github.com/openctemio/ctis").Output()
+	out, err := exec.CommandContext(context.Background(), "go", "list", "-m", "-f", "{{.Dir}}", "github.com/openctemio/ctis/v2").Output()
 	if err != nil {
 		t.Skipf("ctis module not resolvable: %v", err)
 	}
@@ -153,7 +153,7 @@ func TestImportFile_PreviewWritesNothing(t *testing.T) {
 	if fr.Error != nil {
 		t.Fatal(fr.Error.Message)
 	}
-	if fr.Format != importer.FormatNessus || fr.Stats.Findings != 2 || fr.Stats.Assets != 1 {
+	if fr.Format != importer.FormatNessus || fr.Stats.Findings != 2 || fr.Stats.Assets != 2 { // host + its ssh service asset
 		t.Fatalf("stats = %+v format %s", fr.Stats, fr.Format)
 	}
 	if len(ing.calls) != 0 || len(repo.applies) != 0 || fr.Ingest != nil {
@@ -173,7 +173,7 @@ func TestImportFile_CommitIsPartialWithTheUploadersScope(t *testing.T) {
 		t.Fatalf("ingest calls = %d", len(ing.calls))
 	}
 	in := ing.calls[0]
-	if in.CoverageType != ingest.CoverageTypePartial || in.Report.Metadata.CoverageType != "partial" || in.Report.Metadata.Branch != nil {
+	if in.CoverageType != ingest.CoverageTypePartial || in.Report.Metadata.CoverageType != ctis.CoveragePartial || in.Report.Metadata.Branch != nil {
 		t.Fatal("an upload must never be full coverage (no auto-resolve)")
 	}
 	if in.Options.Actor == nil {
@@ -182,8 +182,13 @@ func TestImportFile_CommitIsPartialWithTheUploadersScope(t *testing.T) {
 	if *ing.sensors[0].TenantID != tid {
 		t.Fatal("ingest ran for another tenant")
 	}
-	if in.Report.Metadata.ID != fr.ImportID || fr.ImportID == "" {
-		t.Fatalf("report id = %q", in.Report.Metadata.ID)
+	// The import id is the receiver's report id (Input.ReportID); the
+	// document carries only its own producer-generated UUIDv7.
+	if in.ReportID != fr.ImportID || fr.ImportID == "" {
+		t.Fatalf("report id = %q, import id %q", in.ReportID, fr.ImportID)
+	}
+	if !ctis.IsReportID(in.Report.Metadata.ID) || in.Report.Metadata.ID == fr.ImportID {
+		t.Fatalf("metadata.id = %q, want a producer UUIDv7 that is not the import id", in.Report.Metadata.ID)
 	}
 	if len(in.Report.Findings) != 1 || fr.Stats.Skipped != 1 {
 		t.Fatalf("min severity not applied: %d findings, %d skipped", len(in.Report.Findings), fr.Stats.Skipped)
@@ -446,15 +451,15 @@ func TestImportFile_RecordsTheProducer(t *testing.T) {
 	if len(rec.FilenameSHA256) != 64 || strings.Contains(rec.FilenameSHA256, "secret") {
 		t.Fatalf("file name not hashed: %q", rec.FilenameSHA256)
 	}
-	if ing.calls[0].Report.Metadata.ID != fr.ImportID {
-		t.Fatalf("report id %q is not the import id", ing.calls[0].Report.Metadata.ID)
+	if ing.calls[0].ReportID != fr.ImportID {
+		t.Fatalf("report id %q is not the import id", ing.calls[0].ReportID)
 	}
 	// The ingest counts toward the upload's receipt; the receipt is
 	// finished with the file-level counts.
 	if src := ing.calls[0].Options.Receipt; src == nil || src.Kind != ingestreceipt.SourceUpload || src.Ref != fr.ImportID {
 		t.Fatalf("ingest receipt source = %+v", ing.calls[0].Options.Receipt)
 	}
-	if len(repo.stamped) != 1 || len(repo.finished) != 1 || repo.finished[0].Format != "nessus" ||
+	if len(repo.stamped) != 2 || len(repo.finished) != 1 || repo.finished[0].Format != "nessus" ||
 		repo.finished[0].Status != ingestreceipt.StatusCompleted {
 		t.Fatalf("stamped %v finished %+v", repo.stamped, repo.finished)
 	}

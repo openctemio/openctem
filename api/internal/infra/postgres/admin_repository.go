@@ -639,6 +639,14 @@ func (r *AuditLogRepository) buildAuditWhereClause(filter admin.AuditLogFilter) 
 		argIndex++
 	}
 
+	if filter.ChangesOnly {
+		conditions = append(conditions, fmt.Sprintf(
+			"action <> $%d AND (COALESCE(request_method, '') NOT IN ('GET', 'HEAD') OR success = FALSE)",
+			argIndex))
+		args = append(args, admin.AuditActionWriteStarted)
+		argIndex++
+	}
+
 	if filter.ResourceType != "" {
 		conditions = append(conditions, fmt.Sprintf("resource_type = $%d", argIndex))
 		args = append(args, filter.ResourceType)
@@ -881,6 +889,9 @@ func (r *AuditLogRepository) VerifyChain(ctx context.Context) (*admin.AuditChain
 			return nil, err
 		}
 		if n < adminAuditVerifyBatch {
+			if after > 0 {
+				report.Head = &admin.AuditChainHead{Position: after, Hash: prevHash}
+			}
 			return report, nil
 		}
 		if err := ctx.Err(); err != nil {

@@ -70,6 +70,7 @@ var dataSurfaceRegistry = map[string]dataSurface{
 	"/api/v1/oauth/requests/{id}/deny":            {classSeparate, "the caller's own MCP consent decision (RFC-062)"},
 	"/api/v1/oauth/requests/{id}/access-request":  {classSeparate, "the caller's own blocked MCP consent: asks administrators to approve its publisher (RFC-062)"},
 	"/api/v1/oauth/requests/{id}/allow-publisher": {classConfig, "organization MCP policy: approves the publisher of the caller's consent request (RFC-062)"},
+	"/api/v1/licenses":                            {classSystem, "third-party notices of the build"},
 	"/api/v1/version":                             {classSystem, "build identity"},
 	"/api/v1/announcements":                       {classSystem, "platform operator notices (plain text); no tenant data"},
 	"/api/v1/proxy-test-echoes":                   {classSystem, "the proxy test's echo: answers the caller's own address for the token of one live test command; no tenant data"},

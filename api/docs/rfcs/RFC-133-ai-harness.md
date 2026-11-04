@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| Status | Accepted (2026-10-28). Shipped in sdk-go (in review): the harness core (`pkg/harness`), pinned copies of the `openctem.analyze/v1` schemas, the playbook format `openctem.io/playbook/v1` with a sample, the eval harness and `openctem playbook init\|test`. The worker lives in the private repository `openctemio/ai-worker` (scaffold: configuration, playbooks with their golden sets, the eval gate in CI, a signed image). In review in `openctemio/ai-worker`: the model provider core and adapters for five wire families (§6a). Designed: the sensorkit ai-worker role, the platform AI worker pool, the agent manifest and routing, safe rollout, the AI's own tool sandbox, memory and knowledge retrieval, inbound channels |
-| Scope | sdk-go (harness, contract copies, playbooks, evals, CLI, ai-worker role), api (analyze command, grant builder, lanes and affinity, limits, routing, rollout, playbook content), `openctemio/ai-worker` (the AI worker image) and sensor, web (playbook editor, agent comparison), docs |
+| Status | Accepted (2026-10-28). Shipped in sdk-go (in review): the harness core (`pkg/harness`), pinned copies of the `openctem.analyze/v1` schemas, the playbook format `openctem.io/playbook/v1` with a sample, the eval harness and `openctem playbook init\|test`. The AI worker is distributed separately from the core (it is not part of this repository); the open parts are sdk-go `pkg/harness`, the `ai-worker` sensor role and the job, grant and result contract, so anyone can build a worker against them. The worker has its scaffold (configuration, playbooks with their golden sets, the eval gate in CI, a signed image) and the model provider core with adapters for five wire families (§6a). Designed: the sensorkit ai-worker role, the platform AI worker pool, the agent manifest and routing, safe rollout, the AI's own tool sandbox, memory and knowledge retrieval, inbound channels |
+| Scope | sdk-go (harness, contract copies, playbooks, evals, CLI, ai-worker role), api (analyze command, grant builder, lanes and affinity, limits, routing, rollout, playbook content), the separately distributed AI worker and sensor, web (playbook editor, agent comparison), docs |
 | Architecture | [ai-harness.md](../architecture/ai-harness.md), [ai-analyze-contract.md](../architecture/ai-analyze-contract.md) |
 | Related | RFC-135 (AI agents that organizations build: revisions, lifecycle, registry, console), RFC-131 (AI analysis, analyze contract), RFC-132 (the AI agent as a service account with accountable owners), RFC-030 (scan work distribution), RFC-129 (shared fleet scheduling), RFC-040 (mutual distrust, signed jobs), RFC-094 (the platform depends on contracts only), RFC-099 (signed content catalog) |
 
@@ -43,7 +43,7 @@ routing) run on the same loop. The analyst is the first role, not the name of th
 | AI agent | the platform principal (a service account with accountable owners, RFC-132) with a role |
 | Role | what the agent does: `analyst` first; `remediator`, `reporter` and `hunter` later |
 | Harness | the loop in sdk-go `pkg/harness` (with `contract`, `playbook`, `eval`) |
-| AI worker | a sensor in the `ai-worker` role that runs the harness; the repository is `openctemio/ai-worker` |
+| AI worker | a sensor in the `ai-worker` role that runs the harness; distributed separately from the core; anyone can build one against sdk-go `pkg/harness` and the job, grant and result contract |
 | CLI | `openctem playbook init\|test` builds and tests a playbook (the artifact, like `openctem tool`); `openctem aiagent run\|build\|sign\|publish` builds an own agent (L2) |
 | Naming convention | UI and docs say "AI agent" (two words, always with "AI", so it never reads as the retired sensor name). Data, API and audit use `ai_agent` (`actor_kind = ai_agent`). Code identifiers use `aiagent` / `AIAgent`. sdk-go's vocabulary check keeps banning a bare "agent" and the legacy sensor forms (`AGENT_*`, `agent_id`, `X-Agent-*`), and allows only the `ai` prefixed forms, so the CLI word is `aiagent` too and no exception is needed |
 | Playbook | the instructions and checks of one kind of job; the sample `web-vuln-triage` is an analyst playbook |
@@ -119,7 +119,7 @@ flowchart LR
 - `pkg/harness` stays in sdk-go. It shares the grant, scope, tool tiers, tool packs, claim and lease, the egress
   forwarder and the governor with the sensor runtime, so there is one compatibility range and one place for security
   fixes.
-- Model-provider adapters do not go into sdk-go. They live in `openctemio/ai-worker` as plain HTTP clients, or later in
+- Model-provider adapters do not go into sdk-go. They live in the AI worker, which is distributed separately, as plain HTTP clients, or later in
   a nested Go module, so sensor builds never pull vendor AI SDKs.
 - Split `pkg/harness` into a nested module (a `go.mod` inside sdk-go, not a new repository) when one of these happens:
   an outside consumer needs the harness without the sensor runtime, the release cadences conflict, the dependency
@@ -213,7 +213,7 @@ stateDiagram-v2
 
 ## 6a. Model providers
 
-The adapters live in `openctemio/ai-worker` (`internal/llm`), on top of the sdk-go `harness.Provider` interface,
+The adapters live in the AI worker (distributed separately), on top of the sdk-go `harness.Provider` interface,
 which stays unchanged. They are plain HTTP clients. A vendor library is used only where it saves real work and only
 inside one adapter: the AWS SDK for credentials and SigV4, and `golang.org/x/oauth2/google` for Google identities.
 
@@ -649,7 +649,7 @@ The full list D1-D36 is in research/327 §14. These are the ones that bind imple
 - shared schemas and formats, not shared code;
 - host key + unique index for one run per subject;
 - provider token bucket and tenant limit keys;
-- model provider adapters in `openctemio/ai-worker`, policy in the platform, credentials per job (platform-managed,
+- model provider adapters in the AI worker, policy in the platform, credentials per job (platform-managed,
   worker-held or platform-provided), policy-safe fallback chains with shared circuit breakers (§6a);
 - `openctem.io/agent/v1` in the sensor manifest;
 - routing, shadow, canary and rollback in the platform;
@@ -665,8 +665,8 @@ The full list D1-D36 is in research/327 §14. These are the ones that bind imple
 - **Shipped (sdk-go, in review):**
   - harness core, contract copies, playbook format and sample;
   - eval harness and `openctem playbook init|test` with a golden set.
-- **Scaffolded:** `openctemio/ai-worker` (private): `cmd/ai-worker` wires configuration and playbook pin checks and marks where the claim and lease, the signed grant and the result plug in; `playbooks/` with golden sets and the CI eval gate; distroless non-root multi-arch image, signed (cosign keyless) with SBOM; security gate and release pipeline as in sensor.
-- **In review (`openctemio/ai-worker`):** the model provider core (settings, presets, credentials, hardened client,
+- **Scaffolded:** the AI worker, distributed separately: it wires configuration and playbook pin checks and marks where the claim and lease, the signed grant and the result plug in; `playbooks/` with golden sets and the CI eval gate; distroless non-root multi-arch image, signed (cosign keyless) with SBOM; security gate and release pipeline as in sensor.
+- **In review (AI worker):** the model provider core (settings, presets, credentials, hardened client,
   retries, prices, degradation, policy-safe fallback with circuit breakers, conformance kit) and the OpenAI-family,
   Anthropic, Gemini, Bedrock and Cohere adapters (§6a).
 - **Next:**

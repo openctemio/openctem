@@ -1,15 +1,15 @@
 'use client'
 
-import { useEffect, useId, useState } from 'react'
+import { useCallback, useEffect, useId, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { ConfirmDialog } from '@/components/confirm-dialog'
-import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { useTranslation } from '@/context/i18n-provider'
+import { SettingsSaveBar } from '@/features/shared/components/settings-save-bar'
 import type { LegalSettingsResponse } from '@/lib/api/generated'
 import { AdminApiError } from '@console/lib/admin-api/client'
 import { saveLegalSettings } from '../api/use-legal-settings'
@@ -28,6 +28,8 @@ type TextKey =
   | 'effective_date'
   | 'security_contact'
   | 'security_policy_url'
+  | 'help_bug_url'
+  | 'help_feedback_url'
 
 const TEXT_KEYS: TextKey[] = [
   'terms_url',
@@ -42,17 +44,21 @@ const TEXT_KEYS: TextKey[] = [
   'effective_date',
   'security_contact',
   'security_policy_url',
+  'help_bug_url',
+  'help_feedback_url',
 ]
 
 interface FormState extends Record<TextKey, string> {
   pages_enabled: boolean
   security_txt_disabled: boolean
+  help_links_disabled: boolean
 }
 
 function toForm(s: LegalSettingsResponse): FormState {
   const f = {
     pages_enabled: !!s.pages_enabled,
     security_txt_disabled: !!s.security_txt_disabled,
+    help_links_disabled: !!s.help_links_disabled,
   } as FormState
   for (const k of TEXT_KEYS) f[k] = (s[k] as string | undefined) ?? ''
   return f
@@ -79,7 +85,9 @@ export function LegalSettingsForm({ settings, canEdit, onSaved }: LegalSettingsF
   const [codeError, setCodeError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
-  useEffect(() => setForm(toForm(settings)), [settings])
+  // The saved values: on load, after a save and on Discard.
+  const reset = useCallback(() => setForm(toForm(settings)), [settings])
+  useEffect(reset, [reset])
 
   const original = toForm(settings)
   const dirty = (Object.keys(form) as (keyof FormState)[]).some((k) => form[k] !== original[k])
@@ -97,6 +105,8 @@ export function LegalSettingsForm({ settings, canEdit, onSaved }: LegalSettingsF
     effective_date: t('admin.legal.effectiveDate', 'Effective date'),
     security_contact: t('admin.legal.securityContact', 'Security contact (e-mail or https URL)'),
     security_policy_url: t('admin.legal.securityPolicyUrl', 'Security policy link (https)'),
+    help_bug_url: t('admin.legal.helpBugUrl', 'Report a bug link (https)'),
+    help_feedback_url: t('admin.legal.helpFeedbackUrl', 'Send feedback link (https)'),
   }
 
   const save = async () => {
@@ -221,18 +231,53 @@ export function LegalSettingsForm({ settings, canEdit, onSaved }: LegalSettingsF
             />
           </div>
 
+          <div className="space-y-4">
+            <div className="grid gap-1">
+              <h3 className="text-sm font-medium">{t('admin.legal.helpTitle', 'Help links')}</h3>
+              <p className="text-sm text-muted-foreground">
+                {t(
+                  'admin.legal.helpDescription',
+                  'Where Help > Report a bug and Send feedback lead. Empty fields use the project issue forms. Reports of a security vulnerability always go to the security contact and policy above.'
+                )}
+              </p>
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              {(['help_bug_url', 'help_feedback_url'] as TextKey[]).map(text)}
+            </div>
+            <div className="flex items-start justify-between gap-4 rounded-lg border p-4">
+              <Label htmlFor={`${id}-helphide`} className="grid gap-1 font-normal">
+                <span className="font-medium">
+                  {t('admin.legal.helpLinksShown', 'Show Report a bug and Send feedback')}
+                </span>
+                <span className="text-sm text-muted-foreground">
+                  {t(
+                    'admin.legal.helpLinksShownHelp',
+                    'Off hides both entries, and the Report this problem link on error pages. Copy diagnostics stays.'
+                  )}
+                </span>
+              </Label>
+              <Switch
+                id={`${id}-helphide`}
+                checked={!form.help_links_disabled}
+                onCheckedChange={(v) => setForm((f) => ({ ...f, help_links_disabled: !v }))}
+                disabled={!canEdit}
+              />
+            </div>
+          </div>
+
           <div className="flex justify-end">
             {canEdit && (
-              <Button
-                onClick={() => {
+              <SettingsSaveBar
+                className="basis-full"
+                dirty={dirty}
+                saving={busy}
+                onSave={() => {
                   setCode('')
                   setCodeError(null)
                   setConfirmOpen(true)
                 }}
-                disabled={!dirty || busy}
-              >
-                {t('admin.legal.save', 'Save')}
-              </Button>
+                onDiscard={reset}
+              />
             )}
           </div>
           {!canEdit && (

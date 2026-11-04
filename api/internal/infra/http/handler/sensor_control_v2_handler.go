@@ -41,23 +41,22 @@ import (
 // SensorControlV2Handler serves the v2 control-plane routes. Any of its
 // collaborators may be nil; Features lists only what is wired.
 type SensorControlV2Handler struct {
-	ingest              *IngestHandler
-	commands            *CommandHandler
-	suppressions        *SuppressionHandler
-	suppressionsEnabled func(ctx context.Context, tenantID string) bool
-	content             *SensorContentV2Handler
-	egress              *proxypoolapp.Service
-	limits              protov2.Limits
-	logger              *logger.Logger
+	ingest       *IngestHandler
+	commands     *CommandHandler
+	suppressions *SuppressionHandler
+	content      *SensorContentV2Handler
+	feedRelay    *FeedRelayHandler
+	egress       *proxypoolapp.Service
+	limits       protov2.Limits
+	logger       *logger.Logger
 }
 
-// NewSensorControlV2Handler builds the handler. suppressionsEnabled reports
-// whether the suppressions module is on for a tenant (nil: always on).
+// NewSensorControlV2Handler builds the handler.
 func NewSensorControlV2Handler(ih *IngestHandler, ch *CommandHandler, sh *SuppressionHandler,
-	suppressionsEnabled func(ctx context.Context, tenantID string) bool, log *logger.Logger,
+	log *logger.Logger,
 ) *SensorControlV2Handler {
 	return &SensorControlV2Handler{
-		ingest: ih, commands: ch, suppressions: sh, suppressionsEnabled: suppressionsEnabled,
+		ingest: ih, commands: ch, suppressions: sh,
 		limits: protov2.DefaultLimits(), logger: log.With("handler", "sensor-control-v2"),
 	}
 }
@@ -122,6 +121,12 @@ func (h *SensorControlV2Handler) SetContent(c *SensorContentV2Handler) { h.conte
 
 // Content is the content delivery handler, nil when not served.
 func (h *SensorControlV2Handler) Content() *SensorContentV2Handler { return h.content }
+
+// SetFeedRelay serves the feed relay routes (RFC-142) on this control plane.
+func (h *SensorControlV2Handler) SetFeedRelay(f *FeedRelayHandler) { h.feedRelay = f }
+
+// FeedRelay is the feed relay handler (nil: not served).
+func (h *SensorControlV2Handler) FeedRelay() *FeedRelayHandler { return h.feedRelay }
 
 // HasSuppressions reports whether the suppressions route is served.
 func (h *SensorControlV2Handler) HasSuppressions() bool { return h.suppressions != nil }
@@ -893,32 +898,30 @@ func (h *SensorControlV2Handler) Suppressions(w http.ResponseWriter, r *http.Req
 		return
 	}
 	list := protov2.SuppressionList{Rules: []protov2.SuppressionRule{}}
-	if h.suppressionsEnabled == nil || h.suppressionsEnabled(r.Context(), s.TenantID.String()) {
-		rules, err := h.suppressions.service.ListActiveRules(r.Context(), *s.TenantID)
-		if err != nil {
-			h.internal(w, "suppressions", err)
-			return
+	rules, err := h.suppressions.service.ListActiveRules(r.Context(), *s.TenantID)
+	if err != nil {
+		h.internal(w, "suppressions", err)
+		return
+	}
+	reachable, err := h.reachableRuleAssets(r, s, rules)
+	if err != nil {
+		h.internal(w, "suppressions", err)
+		return
+	}
+	for _, rule := range rules {
+		if rule.AssetID() != nil && !reachable[*rule.AssetID()] {
+			continue
 		}
-		reachable, err := h.reachableRuleAssets(r, s, rules)
-		if err != nil {
-			h.internal(w, "suppressions", err)
-			return
+		item := protov2.SuppressionRule{RuleID: rule.RuleID(), ToolName: rule.ToolName(), PathPattern: rule.PathPattern()}
+		if rule.AssetID() != nil {
+			a := rule.AssetID().String()
+			item.AssetID = &a
 		}
-		for _, rule := range rules {
-			if rule.AssetID() != nil && !reachable[*rule.AssetID()] {
-				continue
-			}
-			item := protov2.SuppressionRule{RuleID: rule.RuleID(), ToolName: rule.ToolName(), PathPattern: rule.PathPattern()}
-			if rule.AssetID() != nil {
-				a := rule.AssetID().String()
-				item.AssetID = &a
-			}
-			if rule.ExpiresAt() != nil {
-				e := rule.ExpiresAt().UTC().Format(time.RFC3339)
-				item.ExpiresAt = &e
-			}
-			list.Rules = append(list.Rules, item)
+		if rule.ExpiresAt() != nil {
+			e := rule.ExpiresAt().UTC().Format(time.RFC3339)
+			item.ExpiresAt = &e
 		}
+		list.Rules = append(list.Rules, item)
 	}
 	list.Count = len(list.Rules)
 

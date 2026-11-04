@@ -52,8 +52,8 @@
 # The scanning sensor (openctemio/sensor).
 sensor:
   product: openctemio-sensor
-  latest: v0.29.1
-  min: v0.9.0
+  latest: v0.36.0
+  min: v0.36.0
   image: ghcr.io/openctemio/sensor
   install: sensor
   release_identity: https://github.com/openctemio/sensor/.github/workflows/docker-publish.yml
@@ -61,8 +61,8 @@ sensor:
 # The Tenable.sc connector (openctemio/connector-tenable).
 connector-tenable:
   product: openctemio-connector-tenable
-  latest: v0.1.0
-  min: ""
+  latest: v0.2.0
+  min: v0.2.0
   image: ghcr.io/openctemio/connector-tenable
   install: connector-tenable
   release_identity: https://github.com/openctemio/connector-tenable/.github/workflows/images.yml
@@ -80,8 +80,8 @@ connector-tenable:
 # advisory, separated by spaces; a sensor built with one is degraded with a
 # warning. "" = none.
 sdk:
-  latest: v0.41.0
-  min: ""
+  latest: v0.46.1
+  min: v0.46.0
   advisories: ""
 
 # CI runner (openctemio/ci: the openctem-ci action, image and templates). Its

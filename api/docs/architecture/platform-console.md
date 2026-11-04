@@ -23,30 +23,48 @@ port 8443 means only the console.
 
 The sidebar (`web/console/src/features/admin-console/config/admin-nav.ts`,
 also the command palette's index) groups the pages by what an operator is
-doing:
+doing, and ends with one Settings entry:
 
 | Group | Pages |
 |-------|-------|
 | (top) | Overview |
-| Customers | Organizations, Users, Access requests, Sign-ups, Support access |
-| Scanning | Scan approval, Platform scanning (policy, fleet, queue, zones, egress, anomalies), Target mappings, Content packs, Content catalog, Threat intelligence |
-| Security | Administrators, Sessions, Approvals, Admin sign-in, Admin activity |
-| Settings | Configuration, Sign-up, Limits, CAPTCHA, E-mail, Legal, Announcements, Alerts, AI provider, AI applications |
-| Monitoring | Health (services, storage, backup, certificates, schema, version, queues, sensors, jobs), Software updates |
+| Customers | Organizations, Users, Access requests, Sign-ups, Support access, Announcements |
+| Sensors and scanning | Target mappings, Content packs, Content catalog, Threat intelligence (and the platform sensors page) |
+| Security and audit | Admin activity, Approvals, Administrators, Sessions, Roles, AI applications |
+| Monitoring | Health (tabs: Summary with services, storage, backup, certificates, schema and version; Queues and sensors; Background jobs, the stopped or failing ones first), Software updates |
+| Settings | one entry; opens the settings rail |
+
+On a settings page the sidebar shows the settings rail instead (sections with
+`rail: 'settings'`), led by "Back to console" (the last console page outside
+the rail, same-origin only): General (Configuration, Legal), Sign-in and
+sign-up (Sign-up, Social login, CAPTCHA, Admin sign-in), Organizations
+(Limits, Two-factor), Scanning (Scan approval, Scan identification, Platform
+scanning), Notifications (E-mail, Alerts), AI (AI provider). The palette lists
+them under "Settings › <section>". URLs did not move.
 
 The administrator's own security keys open from the sidebar footer, next to
 their name (the palette still finds them). Pages are listed by the
-administrator's own role, not the session's acting one: a super admin acting
-read-only sees every page, and a page that needs more shows "Elevate to see
-this page" with the elevate dialog one click away
-(`RoleRequiredNotice`). An administrator whose own role is too low is told
-which role it takes. The API enforces the acting role either way.
+administrator's own platform roles, not the session's acting ones: an owner
+acting read-only sees every page, and a page that needs more shows "Elevate to
+see this page" with the elevate dialog one click away (`RoleRequiredNotice`).
+An administrator whose roles do not include it is told so; no retired tier
+name is shown. The sidebar header and the elevation bar name what the session
+acts as in platform role words (`actingRoleLabel`). The API enforces the
+acting permissions either way.
 
 The Overview's "Needs attention" list includes the installation's own state
 from the Health page: a service that does not answer, a volume below 20%
 (warning) or 10% (critical) free, a failed, stale or unreported backup, a
 certificate close to expiry, and a newer release (a warning when it fixes
 security advisories).
+The Overview opens with an Installation strip built from the same two reads
+(`/overview`, `/system`; `lib/installation-health.ts`): services, storage
+(the lowest volume), backups, platform sensors (linked to their page) and the
+database schema, each a state in words with a link. "Needs attention" follows
+as one compact list (volumes of one filesystem are one item; "No sensor is
+online" when every connected sensor stopped reporting), then the customer and
+administrator numbers. A page whose read needs a permission the session does
+not act with does not send it and shows the elevation notice instead.
 Suspending an organization and blocking an account (the console's kill
 switches): [organization-suspension.md](organization-suspension.md).
 
@@ -119,6 +137,12 @@ session must not be able to read a secret, redirect evidence or audit, or
 widen who can reach the console.
 
 ## Settings moved from the environment
+
+Every settings form saves from the shared `SettingsSaveBar`
+(`web/src/features/shared`): it shows with the first unsaved change (Discard,
+Save changes, Ctrl+S), asks before leaving the page with unsaved changes, and
+its Save opens the form's confirmation (reason, and the code where the
+setting needs one). Discard restores the values last read from the API.
 
 These settings used to need a server edit and a restart; they are now
 console settings (RFC-079), stored in `platform_settings`, read through a
@@ -214,6 +238,13 @@ recommended production setup. Details: [Docker deployment](../deployment/docker.
   `recovery_codes`. An address (a key `url`, ending in `url`, or naming a
   webhook) keeps only its scheme and host: a webhook path or query works as
   a bearer secret.
+- Reading the log: Admin activity and an organization's Activity tab open on
+  "Changes" (`GET /admin/audit-logs?kind=changes`): rows of non-GET requests
+  (writes, sign-ins, elevations), rows without a request (host commands) and
+  every refused or failed row; successful page views and the
+  `admin.write_started` rows are under "All events". It is a view of the same
+  chain: nothing is dropped, and the chain status, export and verification
+  cover every row.
 - One identity (RFC-134): the account an administrator signs in with may also
   sign in on the main site and be an ordinary member of organizations, where
   it acts with its tenant role only. The main site never reads the platform
@@ -272,6 +303,9 @@ roster with `bootstrap-admin` on the server. Resetting an administrator's
 console second factor needs another super admin too: an administrator who lost
 their authenticator signs in with a recovery code, or the operator re-creates
 the account with `bootstrap-admin -force` on the server.
+A new authenticator entry is labeled with the console host (for example
+"OpenCTEM Admin (admin.example.com)", from `ADMIN_PUBLIC_URL`) so entries of two
+installations differ; existing entries keep their label and secret.
 That command is not a silent side door: every administrator it creates,
 replaces (`-force`, `-force-backup`) or links (`-link`) is written in the same
 transaction as a high-severity entry in the administrators' audit log
@@ -327,6 +361,11 @@ named owners exist. Navigation and actions hide by permission
 
 ## Tests
 
+- `web/console/e2e` (Playwright, `web/playwright.console.config.ts`, workflow
+  `console-e2e.yml`): every console page at 1440 and 390 px (page files and the
+  navigation config give the routes), axe WCAG 2.2 AA, page anatomy shared with
+  the tenant app's suite, and the elevation flow with a real authenticator code.
+  See `web/console/e2e/README.md`.
 - `web/console/src/__tests__/app-split.test.ts`: route lists of both apps, no
   cross-imports.
 - `web/console/src/__tests__/console-csrf-cookie.test.ts`: the console sets

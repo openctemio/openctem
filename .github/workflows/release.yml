@@ -171,6 +171,9 @@ jobs:
   release-feed:
     name: Release feed
     needs: [release]
+    # id-token: the feed is signed keyless (Sigstore); release-feed.yml gives
+    # it to its sign job only.
     permissions:
       contents: write
+      id-token: write
     uses: ./.github/workflows/release-feed.yml

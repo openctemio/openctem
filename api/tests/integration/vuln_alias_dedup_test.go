@@ -16,12 +16,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 )
 
@@ -85,8 +84,8 @@ func (a *aliasRig) scan(t *testing.T, tn v2Tenant, tool, asset string, fs ...cti
 	for i := range fs {
 		fs[i].AssetRef = "a"
 	}
-	rep := &ctis.Report{Version: "1.0", Tool: &ctis.Tool{Name: tool},
-		Metadata: ctis.ReportMetadata{ID: shared.NewID().String(), Timestamp: time.Now().UTC()},
+	rep := &ctis.Report{Version: ctis.SchemaVersion, Tool: &ctis.Tool{Name: tool},
+		Metadata: ctis.ReportMetadata{ID: ctis.NewReportID(), GeneratedAt: time.Now().UTC()},
 		Assets:   []ctis.Asset{{ID: "a", Type: ctis.AssetTypeRepository, Value: "github.com/acme/" + asset + "-" + tn.tenant.String()[:8]}},
 		Findings: fs}
 	if out, err := a.r.svc.Ingest(context.Background(), agt, ingest.Input{Report: rep}); err != nil || len(out.Errors) > 0 {
@@ -97,13 +96,13 @@ func (a *aliasRig) scan(t *testing.T, tn v2Tenant, tool, asset string, fs ...cti
 // ghsaOnly is an SCA finding that names only an advisory id.
 func ghsaOnly(ghsa string) ctis.Finding {
 	return ctis.Finding{Type: ctis.FindingTypeVulnerability, Title: "lodash prototype pollution", Severity: ctis.SeverityHigh, RuleID: ghsa,
-		Vulnerability: &ctis.VulnerabilityDetails{Package: "lodash", PURL: "pkg:npm/lodash@4.17.15", Ecosystem: "npm",
+		Vulnerability: &ctis.VulnerabilityDetails{PackageName: "lodash", PURL: "pkg:npm/lodash@4.17.15",
 			IDs: []ctis.VulnerabilityID{{Type: ctis.VulnerabilityIDGHSA, ID: ghsa}}}}
 }
 
 func cveSCA(cve string) ctis.Finding {
 	return ctis.Finding{Type: ctis.FindingTypeVulnerability, Title: cve + " in lodash", Severity: ctis.SeverityHigh, RuleID: cve,
-		Vulnerability: &ctis.VulnerabilityDetails{Package: "lodash", PURL: "pkg:npm/lodash@4.17.15", Ecosystem: "npm", CVEID: cve}}
+		Vulnerability: &ctis.VulnerabilityDetails{PackageName: "lodash", PURL: "pkg:npm/lodash@4.17.15", IDs: cveIDsOf(cve)}}
 }
 
 type aliasRow struct{ id, status, cve, vuln string }

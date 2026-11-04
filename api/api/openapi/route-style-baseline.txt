@@ -13,6 +13,7 @@
 #
 # Format: RULE METHOD /path   (path as registered, parameter names included)
 R2 POST /oauth/device_authorization
+R3 DELETE /api/v1/admin/tenants/{tenantId}/owner-invitation
 R3 DELETE /api/v1/admin/tenants/{tenantId}/sso/identity-providers/{id}
 R3 DELETE /api/v1/admin/tenants/{tenantId}/sso/saml
 R3 DELETE /api/v1/admin/tenants/{tenantId}/sso/verified-domains/{id}
@@ -94,6 +95,7 @@ R3 PATCH /api/v1/pentest/campaigns/{id}/members/{userId}
 R3 PATCH /api/v1/pentest/findings/{findingId}/status
 R3 PATCH /api/v1/tenants/{tenant}/members/{userId}
 R3 POST /api/v1/admin/tenants/{tenantId}/audit-chain/rebaseline
+R3 POST /api/v1/admin/tenants/{tenantId}/owner-invitation/resend
 R3 POST /api/v1/admin/tenants/{tenantId}/sso/identity-providers
 R3 POST /api/v1/admin/tenants/{tenantId}/sso/verified-domains
 R3 POST /api/v1/admin/tenants/{tenantId}/sso/verified-domains/{id}/verify
@@ -176,6 +178,7 @@ R5 PATCH /api/v1/reports/schedules/{id}/toggle
 R5 POST /api/v1/admin/auth/login
 R5 POST /api/v1/admin/auth/logout
 R5 POST /api/v1/admin/tenants/{tenantId}/audit-chain/rebaseline
+R5 POST /api/v1/admin/tenants/{tenantId}/owner-invitation/resend
 R5 POST /api/v1/assets/{id}/activate
 R5 POST /api/v1/assets/{id}/archive
 R5 POST /api/v1/assets/{id}/deactivate
@@ -196,6 +199,8 @@ R5 POST /api/v1/findings/{id}/unassign
 R5 POST /api/v1/findings/{id}/validate
 R5 POST /api/v1/groups/{groupId}/scope-rules/reconcile
 R5 POST /api/v1/integrations/{id}/test-notification
+R5 POST /api/v1/me/ownership-invitations/{id}/accept
+R5 POST /api/v1/me/ownership-invitations/{id}/decline
 R5 POST /api/v1/notifications/read-all
 R5 POST /api/v1/scan-workflows/{id}/activate
 R5 POST /api/v1/scan-workflows/{id}/clone
@@ -372,3 +377,6 @@ R3 DELETE /api/v1/groups/{groupId}/roles/{roleId}
 R3 GET /api/v1/groups/{groupId}/roles
 R3 POST /api/v1/groups/{groupId}/roles
 R3 DELETE /api/v1/service-accounts/{id}/api-keys/{key_id}
+# SAML metadata (download SP, read IdP) sit under the /admin/tenants/{tenantId} group.
+R3 GET /api/v1/admin/tenants/{tenantId}/sso/saml/sp-metadata
+R3 POST /api/v1/admin/tenants/{tenantId}/sso/saml/idp-metadata

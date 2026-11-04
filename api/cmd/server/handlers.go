@@ -78,6 +78,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/httpsec"
 	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/notices"
 	"github.com/openctemio/openctem/api/pkg/oidc"
 	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
 	"github.com/openctemio/openctem/api/pkg/validator"
@@ -218,6 +219,8 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	middleware.SetAdminCSRFSecret(cfg.Auth.JWTSecret)
 	adminConsoleSvc := adminconsole.NewService(repos.Admin, repos.AdminConsole, repos.AdminAuditLog, svc.Encryptor,
 		adminAccountDirectory{auth: svc.Auth}, log)
+	// New console authenticator entries carry the console host.
+	adminConsoleSvc.SetEnrolmentIssuer(adminconsole.EnrolmentIssuer(cfg.Brand.DisplayName()+" Admin", cfg.AdminPublicURL))
 	// Administrators' platform identity provider (RFC-022 revision 4): every
 	// discovery, JWKS and token request goes through the SSRF-safe client.
 	adminConsoleSvc.SetPlatformIdP(repos.PlatformIdP, newPlatformIdPClient())
@@ -479,7 +482,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// Per-tenant module route gating (module-coupling plan Phase 1). Fail-open:
 	// only an explicitly-disabled non-core module is blocked. Wired back into the
 	// module service so a toggle invalidates the gate cache immediately.
-	moduleGate := middleware.NewModuleGate(svc.Module, time.Minute)
+	moduleGate := svc.ModuleGate
 	// Dashboard widgets of a module read "module_off" while it is off, and
 	// the widget catalog leaves them out.
 	svc.DashboardWidgets.SetModules(moduleGate)
@@ -647,6 +650,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		AssetService:           handler.NewAssetServiceHandler(repos.AssetService, repos.Asset, v, log).SetDataScope(svc.DataScope),
 		Certificate:            handler.NewCertificateHandler(certificateapp.NewService(postgres.NewCertificateReadRepository(deps.DB), svc.DataScope), log),
 		Technology:             handler.NewTechnologyHandler(technologyapp.NewService(postgres.NewTechnologyReadRepository(deps.DB), svc.DataScope), log),
+		EASMPosture:            handler.NewEASMPostureHandler(svc.Posture, svc.Audit, log),
 		WebEndpoint:            handler.NewWebEndpointHandler(webendpointapp.NewService(repos.WebEndpoint, svc.DataScope), svc.Audit, log),
 		Query:                  newQueryHandler(deps.DB, svc, log),
 		APISpec:                handler.NewAPISpecHandler(apispecapp.NewService(repos.APISpec, repos.Asset, svc.DataScope), svc.Audit, log),
@@ -757,6 +761,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		ContentCatalog:      handler.NewContentCatalogHandler(svc.ContentCatalog, log),
 		AdminContentCatalog: handler.NewAdminContentCatalogHandler(svc.ContentCatalog, adminConsoleSvc, repos.AdminAuditLog, log),
 		SensorContentV2:     handler.NewSensorContentV2Handler(svc.ContentDelivery, log),
+		FeedRelay:           newFeedRelayHandler(svc, log),
 		AdminVersionCheck:   handler.NewAdminVersionCheckHandler(svc.VersionCheck, repos.AdminAuditLog, log),
 		AdminConfiguration: handler.NewAdminConfigurationHandler(
 			configoverview.NewBuilder(cfg, platformSettings(repos), repos.Admin, os.LookupEnv), log),
@@ -868,8 +873,11 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 			WithLinkBase(cfg.SMTP.BaseURL),
 		AdminOperations:         newAdminOperationsHandler(deps, cfg, log),
 		Announcement:            handler.NewAnnouncementHandler(postgres.NewPlatformAnnouncementRepository(deps.DB), log),
+		Licenses:                handler.NewLicensesHandler(notices.DefaultPath, log),
 		AdminSession:            handler.NewAdminSessionHandler(postgres.NewAdminSessionDirectory(adminDBOf(repos, deps.DB)), adminConsoleSvc, log),
 		AdminSupportRateLimiter: middleware.NewAdminMappingRateLimiter(middleware.AdminMappingRateLimitConfig{WriteRequestsPerMin: 20}, log),
+		// A test e-mail goes out through the real SMTP server: a handful a minute is plenty.
+		AdminEmailTestLimiter: middleware.NewAdminMappingRateLimiter(middleware.AdminMappingRateLimitConfig{WriteRequestsPerMin: 5}, log),
 		// Searching and opening accounts: generous for a person, a wall for a script.
 		AdminDirectoryReadLimiter: middleware.NewAdminMappingRateLimiter(middleware.AdminMappingRateLimitConfig{WriteRequestsPerMin: 120}, log),
 		AdminConsole:              handler.NewAdminConsoleHandler(adminConsoleSvc, cfg.Auth.CookieSecure, log).WithApprovals(adminApprovals),
@@ -1959,11 +1967,7 @@ func newCIRunService(cfg *config.Config, repos *Repositories, svc *Services, log
 	// No CI run token is issued or accepted for a suspended organization.
 	ciSvc.SetOrganizationGate(svc.OrganizationGate)
 	if svc.Suppression != nil {
-		var mg cirunapp.ModuleGuard
-		if svc.Module != nil {
-			mg = svc.Module
-		}
-		ciSvc.SetSuppressionRules(svc.Suppression, mg)
+		ciSvc.SetSuppressionRules(svc.Suppression)
 	}
 	if repos.RepoIdentity != nil {
 		ciSvc.SetRepositoryIdentity(repos.RepoIdentity)
