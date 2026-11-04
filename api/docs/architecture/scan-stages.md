@@ -328,6 +328,16 @@ workflow preview). Every step reacts to it:
   every save against the contract: standard params only, never tool extras
   (`x`) or executor keys, each with its type and bounds, and the config at
   each depth valid as a whole. A step outside the catalog may not set them.
+- **Capability depth defaults** (`stage.DepthDefaults`): the lowest layer,
+  under the step's config and its depth's params, filled once the tool is
+  resolved and only for params that tool takes (a default never makes a tool
+  ineligible). `vuln.templates`: severity low to critical at `standard`,
+  info to critical at `deep` (research 426 decision OD-1). Info matches are
+  filed as info exposures, not findings (exposure-taxonomy.md, "Template
+  scanner info matches"). The built-in recon workflows' template steps carry
+  the same values in their depth params (migration 20261104164815, which also
+  updated tenant copies still holding the earlier built-in values). The
+  workflow preview shows the defaults with the depth's params.
 - `depths.<depth>.max_targets` caps what the hop router hands the step
   (lower-only: it never raises the stage or run cap); the rest are recorded
   `over_cap`.
