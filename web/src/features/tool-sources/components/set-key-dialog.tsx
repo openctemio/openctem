@@ -69,6 +69,7 @@ export function SetKeyDialog({ source, open, onOpenChange, onSaved }: SetKeyDial
     empty: t('toolSources.error.empty', 'Enter the key.'),
     whitespace: t('toolSources.error.whitespace', 'The key cannot contain spaces or line breaks.'),
     tooLong: t('toolSources.error.tooLong', 'The key is too long (at most 1024 characters).'),
+    tooShort: t('toolSources.error.tooShort', 'The key is too short (at least 8 characters).'),
     pairFormat: t(
       'toolSources.error.pairFormat',
       'Enter two parts joined by one colon, both parts filled in.'
@@ -102,7 +103,7 @@ export function SetKeyDialog({ source, open, onOpenChange, onSaved }: SetKeyDial
             <Input
               id="tool-source-key"
               type="password"
-              autoComplete="off"
+              autoComplete="new-password"
               spellCheck={false}
               value={value}
               onChange={(e) => setValue(e.target.value)}
