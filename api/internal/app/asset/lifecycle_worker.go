@@ -11,6 +11,7 @@ import (
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
+	"github.com/openctemio/openctem/api/pkg/domain/exposure"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -437,6 +438,11 @@ const maxTransitionsPerRun = 50_000
 //     its provenance category or its raw discovery_source is excluded.
 //     Assets with no discovery_source were created by hand or through the
 //     API, so they count as "manual" and are left alone by default.
+//   - A name with an open dangling_cname, dangling_ns or subdomain_takeover
+//     is never demoted: a dangling name is exactly a name no scan "sees" any
+//     more, yet it is still the organization's and must stay in inventory and
+//     in scans until it points into the organization again
+//     (docs/architecture/easm.md, "Dangling DNS lifecycle").
 //
 // The clock is assets.last_seen, which only ingest and integrations move forward
 // (Asset.MarkSeen, the ingest upsert's GREATEST(last_seen, ...)): any source
@@ -452,6 +458,10 @@ const lifecycleCandidateClauses = `
 	  AND COALESCE(last_seen, created_at) < NOW() - make_interval(days => $2)
 	  AND NOT (` + assetProvenanceSQL + ` = ANY($4::text[]))
 	  AND NOT (COALESCE(NULLIF(discovery_source, ''), 'manual') = ANY($4::text[]))
+	  AND NOT EXISTS (SELECT 1 FROM exposure_events ee
+	       WHERE ee.tenant_id = $1 AND ee.asset_id = assets.id
+	         AND ee.event_type IN ('dangling_cname', 'dangling_ns', 'subdomain_takeover')
+	         AND ee.state IN ` + exposure.OpenStatesSQL + `)
 `
 
 // assetProvenanceSQL maps assets.discovery_source to the provenance

@@ -19,3 +19,13 @@ are unused.
 To update: replace the file with a newer `fingerprints.json`, update the
 commit and date above, and run `go test ./internal/app/easmdns/...` (the
 loader test pins the structure).
+
+## The project's own list
+
+`openctem-providers.json` is written by this project (same licence as the
+code). Same fields as above plus `hosted` (the provider serves every customer
+name from shared front ends, so a name it no longer serves still resolves),
+`unclaimed_marker` (the text of the provider's page for a name nobody claims,
+for the sensor template) and `basis` (how the entry was measured). An entry
+there wins over the same suffix in the list above. Add a provider only after
+measuring its answer for an unclaimed name; never try to claim one.
