@@ -1,0 +1,3 @@
+### Added: a Playwright suite for the platform console
+- `web/console/e2e` checks every console page (read from the app directory and the navigation config, so a new or moved page is covered without editing the suite) at 1440 and 390 px: one h1, no sideways scroll, no console error, axe WCAG 2.2 AA with no critical or serious violation, no " · " or em dash in the text, and the same page-anatomy checks as the tenant app's suite. A second spec covers the elevation flow.
+- The workflow `console-e2e.yml` builds the API and the console in the job and runs the suite on a pull request that changes the console, nightly, and on demand.

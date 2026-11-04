@@ -8,7 +8,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/pkg/domain/cirun"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -24,7 +24,7 @@ func TestCIRunEvidenceUnion_GateRetryCannotPassOnNothing(t *testing.T) {
 	r := newCIRig(t)
 	ctx := context.Background()
 	cfg := r.trust(r.tenant, cirun.Rules{Owners: []string{"acme"}})
-	repoName := strings.ToLower(strings.TrimPrefix(r.idp.srv.URL, "https://")) + "/acme/union"
+	repoName := strings.ToLower(strings.TrimPrefix(r.idp.url, "https://")) + "/acme/union"
 	const sha = "5555555555555555555555555555555555555555"
 	high := ciFinding("SQL injection", "go.sqli", "high", ctis.FindingTypeVulnerability, "db.go", 7)
 
@@ -135,13 +135,13 @@ func TestCIRunEvidenceUnion_ReopenKeepsTheVerdict(t *testing.T) {
 	r := newCIRig(t)
 	ctx := context.Background()
 	cfg := r.trust(r.tenant, cirun.Rules{Owners: []string{"acme"}})
-	repoName := strings.ToLower(strings.TrimPrefix(r.idp.srv.URL, "https://")) + "/acme/twopipes"
+	repoName := strings.ToLower(strings.TrimPrefix(r.idp.url, "https://")) + "/acme/twopipes"
 	const sha = "7777777777777777777777777777777777777770"
 	join := func(workflow, pipeline, job string) map[string]any {
 		t.Helper()
 		resp, out := r.post("/api/v1/ci/oidc/exchange", "", map[string]any{"tenant_id": r.tenant.String(),
 			"id_token": r.idp.token(t, cfg.Audience, "acme/twopipes", "feature/x", sha,
-				map[string]any{"job_id": job, "pipeline_id": pipeline, "ci_config_ref_uri": strings.TrimPrefix(r.idp.srv.URL, "https://") + "/acme/twopipes//" + workflow + "@refs/heads/feature/x"}),
+				map[string]any{"job_id": job, "pipeline_id": pipeline, "ci_config_ref_uri": strings.TrimPrefix(r.idp.url, "https://") + "/acme/twopipes//" + workflow + "@refs/heads/feature/x"}),
 			"aggregate": true})
 		if resp.StatusCode != http.StatusCreated {
 			t.Fatalf("join: %d %v", resp.StatusCode, out)
@@ -209,7 +209,7 @@ func TestCIRunEvidenceUnion_ReopenKeepsTheVerdict(t *testing.T) {
 func TestCIRunEvidenceUnion_FailedCapabilityCarriedUntilItReports(t *testing.T) {
 	r := newCIRig(t)
 	cfg := r.trust(r.tenant, cirun.Rules{Owners: []string{"acme"}})
-	repoName := strings.ToLower(strings.TrimPrefix(r.idp.srv.URL, "https://")) + "/acme/caps"
+	repoName := strings.ToLower(strings.TrimPrefix(r.idp.url, "https://")) + "/acme/caps"
 	const sha = "8888888888888888888888888888888888888880"
 	join := func(job string) (string, string) {
 		t.Helper()
@@ -224,7 +224,7 @@ func TestCIRunEvidenceUnion_FailedCapabilityCarriedUntilItReports(t *testing.T) 
 	upload := func(run, tok, tool string) {
 		t.Helper()
 		rep := ciReport(repoName)
-		rep["report"].(ctis.Report).Tool.Name = tool
+		rep.Tool.Name = tool
 		if resp, out := r.upload(run, tok, rep); resp.StatusCode != http.StatusAccepted {
 			t.Fatalf("upload %s: %d %v", tool, resp.StatusCode, out)
 		}

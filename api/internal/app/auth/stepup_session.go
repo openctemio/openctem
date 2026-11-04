@@ -129,10 +129,11 @@ func (s *AuthService) StepUp(ctx context.Context, actx auditapp.AuditContext, us
 	}
 
 	if err := s.VerifyStepUp(ctx, userID, sessionID, proof); err != nil {
-		if errors.Is(err, ErrStepUpFailed) || errors.Is(err, ErrAccountLocked) {
+		if reason := StepUpFailureReason(err, method); reason != "" {
 			s.audit(ctx, actx, auditapp.NewFailureEvent(auditdom.ActionAuthStepUpFailed, auditdom.ResourceTypeUser, userID, err).
 				WithMessage("Step-up re-authentication failed").
-				WithMetadata("method", string(method)))
+				WithMetadata("method", string(method)).
+				WithMetadata("reason", reason))
 		}
 		return time.Time{}, err
 	}
@@ -152,6 +153,17 @@ func (s *AuthService) StepUp(ctx context.Context, actx auditapp.AuditContext, us
 		WithMetadata("valid_until", until.UTC().Format(time.RFC3339)))
 	return until, nil
 }
+
+// AuditStepUpRateLimited records a step-up refused by the rate limit before
+// any proof was checked (reason rate_limited). The caller limits how often it
+// is called per user, so a flood of refused requests is not a flood of rows.
+func (s *AuthService) AuditStepUpRateLimited(ctx context.Context, actx auditapp.AuditContext, userID string) {
+	s.audit(ctx, actx, auditapp.NewFailureEvent(auditdom.ActionAuthStepUpFailed, auditdom.ResourceTypeUser, userID, errStepUpRateLimited).
+		WithMessage("Step-up re-authentication refused: too many attempts").
+		WithMetadata("reason", StepUpReasonRateLimited))
+}
+
+var errStepUpRateLimited = errors.New("step-up rate limited")
 
 // stampProviderAuthentication opens the step-up window of a session created
 // by the organization's identity provider when the provider authenticated

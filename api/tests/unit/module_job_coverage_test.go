@@ -132,7 +132,7 @@ func TestEveryModuleJobSkipsADisabledTenant(t *testing.T) {
 // module that can be switched off is a decision, not an accident (RFC-064 R2).
 func TestEveryJobBelongsToAModule(t *testing.T) {
 	root := repoRoot(t)
-	dir := filepath.Join(root, "cmd", "server")
+	dir := filepath.Join(root, "internal", "server")
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		t.Fatal(err)

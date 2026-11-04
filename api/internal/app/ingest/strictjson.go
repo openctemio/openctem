@@ -23,7 +23,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
 )
@@ -323,30 +323,94 @@ func hex4(data []byte, at int) (rune, bool) {
 	return r, true
 }
 
-// ErrUnknownField: the document has a member CTIS v1 does not define.
+// ErrUnknownField: the document has a member its declared CTIS minor does
+// not define (a newer 2.x minor's unknown members are ignored instead).
 var ErrUnknownField = errors.New("unknown field")
 
 // ErrSchemaType: a member has the wrong JSON type for its CTIS field (a
 // string where a number is expected, an unparsable timestamp).
 var ErrSchemaType = errors.New("member has the wrong type")
 
-// DecodeStrictReport runs the I-JSON pre-pass with bounds b, then decodes
-// the flat CTIS report (no {"report": …} wrapper on v2) rejecting unknown
-// fields. Nothing is decoded before the bounds hold.
+// ErrCTISVersion: the document declares no CTIS version, a malformed one, or
+// another major. This receiver reads CTIS 2.x only; a 1.x document is refused
+// and its producer must be upgraded (there is no conversion between majors).
+var ErrCTISVersion = errors.New("unsupported CTIS version: this platform accepts CTIS 2.x only, upgrade the sensor, connector or CI integration")
+
+// ErrInvalidReport: the decoded document breaks a CTIS 2.0 invariant
+// (ctis.Report.Validate): a metadata.id that is not a UUIDv7, a UUID-shaped
+// document reference, a non-canonical asset value, a finding whose asset_ref
+// names no asset of the document, a URL member that is not http(s), ...
+var ErrInvalidReport = errors.New("invalid CTIS 2.0 report")
+
+// DecodeStrictReport runs the I-JSON pre-pass with bounds b, then decodes the
+// flat CTIS report with ctis.Decode (CTIS 2.x only: strict for this module's
+// minor or older, version-gated must-ignore for a newer 2.x minor) and checks
+// it with ctis.Report.Validate. Nothing is decoded before the bounds hold.
+// The ctis error text is not returned to the caller (it can quote input); it
+// is wrapped so the cause stays available to logs.
 func DecodeStrictReport(data []byte, maxDepth int, b JSONBounds) (*ctis.Report, error) {
+	report, err := decodeCTIS(data, maxDepth, b)
+	if err != nil {
+		return nil, err
+	}
+	if err := report.Validate(); err != nil {
+		return nil, withCause(ErrInvalidReport, err)
+	}
+	return report, nil
+}
+
+// causeError is a refusal whose text is the fixed sentinel's: the validator's
+// message can quote the document, so it is kept only as the cause (errors.As,
+// server logs) and never becomes what a caller or a person reads.
+type causeError struct {
+	sentinel error
+	cause    error
+}
+
+func (e *causeError) Error() string   { return e.sentinel.Error() }
+func (e *causeError) Unwrap() []error { return []error{e.sentinel, e.cause} }
+
+// withCause returns sentinel carrying cause without exposing its text.
+func withCause(sentinel, cause error) error { return &causeError{sentinel: sentinel, cause: cause} }
+
+// DecodeReportShape is DecodeStrictReport without the semantic Validate pass:
+// the bounded pre-pass and ctis.Decode only. For reading a document this
+// platform stored earlier (a quarantine preview), never for accepting one.
+func DecodeReportShape(data []byte, maxDepth int, b JSONBounds) (*ctis.Report, error) {
+	return decodeCTIS(data, maxDepth, b)
+}
+
+func decodeCTIS(data []byte, maxDepth int, b JSONBounds) (*ctis.Report, error) {
 	if err := CheckIJSONBounded(data, maxDepth, b); err != nil {
 		return nil, err
 	}
-	var report ctis.Report
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&report); err != nil {
-		if strings.HasPrefix(err.Error(), "json: unknown field ") {
+	if err := checkCTISVersion(data); err != nil {
+		return nil, err
+	}
+	report, _, err := ctis.Decode(bytes.NewReader(data))
+	if err != nil {
+		if strings.Contains(err.Error(), "json: unknown field ") {
 			return nil, ErrUnknownField
 		}
-		return nil, fmt.Errorf("%w", ErrSchemaType)
+		return nil, ErrSchemaType
 	}
 	return &report, nil
+}
+
+// checkCTISVersion refuses a document whose "version" is missing, malformed
+// or of another major before the full decode, so the caller can tell a
+// producer to upgrade apart from a malformed document.
+func checkCTISVersion(data []byte) error {
+	var head struct {
+		Version *string `json:"version"`
+	}
+	if err := json.Unmarshal(data, &head); err != nil {
+		return ErrSchemaType
+	}
+	if head.Version == nil || !ctis.IsCompatibleVersion(strings.TrimSpace(*head.Version)) {
+		return ErrCTISVersion
+	}
+	return nil
 }
 
 // V2ReportError is a whole-report refusal: the problem type and, for
@@ -357,6 +421,9 @@ type V2ReportError struct {
 	// RetryAfter, when set, is the server's advised delay for a retryable
 	// refusal (queue-full: from the tenant's drain rate).
 	RetryAfter time.Duration
+	// Cause is the decoder's or validator's own message, for the server log
+	// only: it can quote the document and is never sent to the sensor.
+	Cause error
 }
 
 func (e *V2ReportError) Error() string {
@@ -364,14 +431,19 @@ func (e *V2ReportError) Error() string {
 }
 
 // ParseV2Report decodes and structurally validates one v2 segment. A nil
-// error means the segment is a complete, independently valid CTIS document
-// for this report; a *V2ReportError names the problem otherwise.
-func ParseV2Report(data []byte, reportID string, limits protov2.Limits) (*ctis.Report, error) {
-	report, err := DecodeStrictReport(data, limits.MaxJSONDepth, ReportBounds(limits))
+// error means the segment is a complete, independently valid CTIS 2.0
+// document; a *V2ReportError names the problem otherwise. metadata.id is the
+// producer's idempotency key and is never compared with, or replaced by, the
+// receiver's report id (the URL path binds the segment to the report).
+func ParseV2Report(data []byte, limits protov2.Limits) (*ctis.Report, error) {
+	report, err := decodeCTIS(data, limits.MaxJSONDepth, ReportBounds(limits))
 	switch {
 	case errors.Is(err, ErrJSONTooManyItems):
 		return nil, &V2ReportError{Problem: protov2.ProblemReportTooLarge, Errors: []protov2.ItemError{
 			item("", protov2.CodeTooMany, protov2.DetailTooMany)}}
+	case errors.Is(err, ErrCTISVersion):
+		return nil, &V2ReportError{Problem: protov2.ProblemVersionMismatch, Errors: []protov2.ItemError{
+			item("/version", protov2.CodeInvalidValue, protov2.DetailCTISVersion)}}
 	case errors.Is(err, ErrUnknownField):
 		return nil, &V2ReportError{Problem: protov2.ProblemSchemaInvalid, Errors: []protov2.ItemError{{
 			Pointer: "", Code: protov2.CodeUnknownField, Detail: protov2.DetailUnknownField}}}
@@ -381,24 +453,27 @@ func ParseV2Report(data []byte, reportID string, limits protov2.Limits) (*ctis.R
 	case err != nil:
 		return nil, &V2ReportError{Problem: protov2.ProblemInvalidJSON}
 	}
-	if verr := ValidateReportV2(report, reportID, limits); verr != nil {
+	if verr := ValidateReportV2(report, limits); verr != nil {
 		return nil, verr
 	}
 	return report, nil
 }
 
-// ValidateReportV2 is the whole-report structural check of a v2 segment
-// (RFC-026 §3.3 step 8): the body's CTIS major matches the media type, the
-// tool is named, metadata.id is empty or the report id, the per-segment item
-// limits, and the CTIS required fields and enums with a pointer per problem.
+// ValidateReportV2 is the whole-report check of a v2 segment (RFC-026 §3.3
+// step 8): the per-segment item limits, the platform's own requirements (a
+// named tool) with a pointer per problem, then the CTIS 2.0 invariants
+// (ctis.Report.Validate: UUIDv7 metadata.id, document references that are
+// never UUID-shaped, canonical asset values, resolvable asset_ref, http(s)
+// URL members, enums).
 //
 //nolint:cyclop // a flat list of independent checks
-func ValidateReportV2(r *ctis.Report, reportID string, limits protov2.Limits) *V2ReportError {
+func ValidateReportV2(r *ctis.Report, limits protov2.Limits) *V2ReportError {
 	if !protov2.CTISVersionMajorMatches(r.Version) {
 		if strings.TrimSpace(r.Version) == "" {
 			return schemaInvalid([]protov2.ItemError{item("/version", protov2.CodeRequired, protov2.DetailRequired)})
 		}
-		return &V2ReportError{Problem: protov2.ProblemVersionMismatch}
+		return &V2ReportError{Problem: protov2.ProblemVersionMismatch, Errors: []protov2.ItemError{
+			item("/version", protov2.CodeInvalidValue, protov2.DetailCTISVersion)}}
 	}
 	if len(r.Findings) > limits.MaxFindingsPerSegment {
 		return &V2ReportError{Problem: protov2.ProblemReportTooLarge, Errors: []protov2.ItemError{
@@ -418,11 +493,13 @@ func ValidateReportV2(r *ctis.Report, reportID string, limits protov2.Limits) *V
 	if r.Tool == nil || strings.TrimSpace(r.Tool.Name) == "" {
 		add(item("/tool/name", protov2.CodeRequired, protov2.DetailRequired))
 	}
-	if r.Metadata.ID != "" && r.Metadata.ID != reportID {
-		add(item("/metadata/id", protov2.CodeMismatch, protov2.DetailMetadataID))
+	if r.Metadata.ID == "" {
+		add(item("/metadata/id", protov2.CodeRequired, protov2.DetailRequired))
+	} else if !ctis.IsReportID(r.Metadata.ID) {
+		add(item("/metadata/id", protov2.CodeInvalidValue, protov2.DetailMetadataID))
 	}
-	if r.Metadata.Timestamp.IsZero() {
-		add(item("/metadata/timestamp", protov2.CodeRequired, protov2.DetailRequired))
+	if r.Metadata.GeneratedAt.IsZero() {
+		add(item("/metadata/generated_at", protov2.CodeRequired, protov2.DetailRequired))
 	}
 
 	assetIDs := make(map[string]struct{}, len(r.Assets))
@@ -438,7 +515,13 @@ func ValidateReportV2(r *ctis.Report, reportID string, limits protov2.Limits) *V
 		if a.Criticality != "" && !a.Criticality.IsValid() {
 			add(item(p+"/criticality", protov2.CodeInvalidValue, protov2.DetailInvalidValue))
 		}
-		if a.ID != "" {
+		switch {
+		case a.ID == "":
+			add(item(p+"/id", protov2.CodeRequired, protov2.DetailRequired))
+		case ctis.IsUUIDShaped(a.ID) || !ctis.IsDocumentRef(a.ID):
+			// A document reference is never a receiver's database key.
+			add(item(p+"/id", protov2.CodeInvalidValue, protov2.DetailInvalidValue))
+		default:
 			if _, dup := assetIDs[a.ID]; dup {
 				// Two assets with one id make every reference to it ambiguous.
 				add(item(p+"/id", protov2.CodeInvalidValue, protov2.DetailInvalidValue))
@@ -461,9 +544,19 @@ func ValidateReportV2(r *ctis.Report, reportID string, limits protov2.Limits) *V
 		if f.Status != "" && !f.Status.IsValid() {
 			add(item(p+"/status", protov2.CodeInvalidValue, protov2.DetailInvalidValue))
 		}
+		if _, ok := assetIDs[f.AssetRef]; !ok {
+			add(item(p+"/asset_ref", protov2.CodeInvalidValue, protov2.DetailInvalidValue))
+		}
 	}
 	if len(errs) > 0 {
 		return schemaInvalid(errs)
+	}
+	// Everything else CTIS 2.0 requires. Its message can quote the document,
+	// so the sensor gets the fixed detail and the server log the cause.
+	if err := r.Validate(); err != nil {
+		v := schemaInvalid([]protov2.ItemError{item("", protov2.CodeInvalidValue, protov2.DetailInvalidValue)})
+		v.Cause = err
+		return v
 	}
 	return nil
 }

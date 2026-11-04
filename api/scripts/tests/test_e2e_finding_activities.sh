@@ -23,6 +23,15 @@ set -euo pipefail
 
 API_URL="${1:-${API_URL:-http://localhost:8080}}"
 TIMESTAMP=$(date +%s)
+
+# A fresh lowercase UUIDv7: CTIS 2.0 metadata.id, the producer's idempotency
+# key (a retry re-sends the same id). The receiver's scan id is its own.
+new_report_id() {
+    local ms; ms=$(( $(date +%s%N) / 1000000 ))
+    printf '%08x-%04x-7%03x-%x%03x-%04x%08x' \
+        $(( ms >> 16 )) $(( ms & 0xffff )) $(( RANDOM % 4096 )) $(( 8 + RANDOM % 4 )) $(( RANDOM % 4096 )) $RANDOM $(( (RANDOM << 15) | RANDOM ))
+}
+CTIS_MEDIA_TYPE="application/vnd.ctis+json; version=2.0"
 TEST_EMAIL="e2e-activity-${TIMESTAMP}@openctem-test.local"
 TEST_PASSWORD="TestP@ss123!"
 TEST_NAME="E2E Activity User ${TIMESTAMP}"
@@ -107,8 +116,12 @@ do_request() {
     local data="$3"
     shift 3
 
+    # CTIS 2.0 documents carry their media type; everything else is JSON.
+    local ctype="application/json"
+    case "$endpoint" in */ingest/ctis) ctype="$CTIS_MEDIA_TYPE" ;; esac
+
     local curl_args=(-s -w "\n%{http_code}" -X "$method" "${API_URL}${endpoint}"
-        -H "Content-Type: application/json"
+        -H "Content-Type: $ctype"
         -c "$COOKIE_JAR" -b "$COOKIE_JAR")
     # CSRF: send the X-CSRF-Token double-submit header on state-changing methods,
     # read from the csrf_token cookie login set (added by e2e CSRF retrofit).
@@ -278,21 +291,21 @@ if ! check_critical "First CTIS ingest"; then :; else
 
     CTIS_REPORT=$(cat <<EOF
 {
-    "version": "1.0",
+    "version": "2.0",
     "metadata": {
-        "id": "e2e-ctis-report-1-${TIMESTAMP}",
-        "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-        "tool": {
-            "name": "nuclei",
-            "version": "3.0.0"
-        },
-        "scan_id": "${SCAN_ID_1}",
-        "scan_type": "full"
+        "id": "$(new_report_id)",
+        "generated_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+        "channel": "scanner",
+        "coverage_type": "full"
     },
-    "target": {
-        "identifier": "e2e-target-${TIMESTAMP}.example.com",
-        "type": "domain"
+    "tool": {
+        "name": "nuclei",
+        "version": "3.0.0",
+        "techniques": ["dast"]
     },
+    "assets": [
+        {"id": "target-1", "type": "domain_name", "value": "e2e-target-${TIMESTAMP}.example.com"}
+    ],
     "findings": [
         {
             "id": "finding-1-${TIMESTAMP}",
@@ -301,9 +314,10 @@ if ! check_critical "First CTIS ingest"; then :; else
             "type": "vulnerability",
             "description": "SQL injection vulnerability found in login form",
             "fingerprint": "fp-sqli-login-${TIMESTAMP}",
+            "asset_ref": "target-1",
             "location": {
                 "path": "/login",
-                "line_start": 42
+                "start_line": 42
             }
         },
         {
@@ -313,9 +327,10 @@ if ! check_critical "First CTIS ingest"; then :; else
             "type": "vulnerability",
             "description": "Cross-site scripting in search parameter",
             "fingerprint": "fp-xss-search-${TIMESTAMP}",
+            "asset_ref": "target-1",
             "location": {
                 "path": "/search",
-                "line_start": 88
+                "start_line": 88
             }
         },
         {
@@ -325,9 +340,10 @@ if ! check_critical "First CTIS ingest"; then :; else
             "type": "vulnerability",
             "description": "Open redirect vulnerability in callback URL",
             "fingerprint": "fp-redirect-${TIMESTAMP}",
+            "asset_ref": "target-1",
             "location": {
                 "path": "/callback",
-                "line_start": 15
+                "start_line": 15
             }
         }
     ]
@@ -387,21 +403,21 @@ if ! check_critical "Second CTIS ingest"; then :; else
 
     CTIS_REPORT_2=$(cat <<EOF
 {
-    "version": "1.0",
+    "version": "2.0",
     "metadata": {
-        "id": "e2e-ctis-report-2-${TIMESTAMP}",
-        "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-        "tool": {
-            "name": "nuclei",
-            "version": "3.0.0"
-        },
-        "scan_id": "${SCAN_ID_2}",
-        "scan_type": "full"
+        "id": "$(new_report_id)",
+        "generated_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+        "channel": "scanner",
+        "coverage_type": "full"
     },
-    "target": {
-        "identifier": "e2e-target-${TIMESTAMP}.example.com",
-        "type": "domain"
+    "tool": {
+        "name": "nuclei",
+        "version": "3.0.0",
+        "techniques": ["dast"]
     },
+    "assets": [
+        {"id": "target-1", "type": "domain_name", "value": "e2e-target-${TIMESTAMP}.example.com"}
+    ],
     "findings": [
         {
             "id": "finding-1-rescan-${TIMESTAMP}",
@@ -410,9 +426,10 @@ if ! check_critical "Second CTIS ingest"; then :; else
             "type": "vulnerability",
             "description": "SQL injection vulnerability found in login form (re-detected)",
             "fingerprint": "fp-sqli-login-${TIMESTAMP}",
+            "asset_ref": "target-1",
             "location": {
                 "path": "/login",
-                "line_start": 42
+                "start_line": 42
             }
         }
     ]
@@ -476,21 +493,21 @@ if ! check_critical "Third CTIS ingest"; then :; else
 
     CTIS_REPORT_3=$(cat <<EOF
 {
-    "version": "1.0",
+    "version": "2.0",
     "metadata": {
-        "id": "e2e-ctis-report-3-${TIMESTAMP}",
-        "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-        "tool": {
-            "name": "nuclei",
-            "version": "3.0.0"
-        },
-        "scan_id": "${SCAN_ID_3}",
-        "scan_type": "full"
+        "id": "$(new_report_id)",
+        "generated_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+        "channel": "scanner",
+        "coverage_type": "full"
     },
-    "target": {
-        "identifier": "e2e-target-${TIMESTAMP}.example.com",
-        "type": "domain"
+    "tool": {
+        "name": "nuclei",
+        "version": "3.0.0",
+        "techniques": ["dast"]
     },
+    "assets": [
+        {"id": "target-1", "type": "domain_name", "value": "e2e-target-${TIMESTAMP}.example.com"}
+    ],
     "findings": [
         {
             "id": "finding-1-scan3-${TIMESTAMP}",
@@ -499,9 +516,10 @@ if ! check_critical "Third CTIS ingest"; then :; else
             "type": "vulnerability",
             "description": "SQL injection re-detected again",
             "fingerprint": "fp-sqli-login-${TIMESTAMP}",
+            "asset_ref": "target-1",
             "location": {
                 "path": "/login",
-                "line_start": 42
+                "start_line": 42
             }
         },
         {
@@ -511,9 +529,10 @@ if ! check_critical "Third CTIS ingest"; then :; else
             "type": "vulnerability",
             "description": "XSS re-detected (should auto-reopen)",
             "fingerprint": "fp-xss-search-${TIMESTAMP}",
+            "asset_ref": "target-1",
             "location": {
                 "path": "/search",
-                "line_start": 88
+                "start_line": 88
             }
         },
         {
@@ -523,9 +542,10 @@ if ! check_critical "Third CTIS ingest"; then :; else
             "type": "vulnerability",
             "description": "Open redirect re-detected (should auto-reopen)",
             "fingerprint": "fp-redirect-${TIMESTAMP}",
+            "asset_ref": "target-1",
             "location": {
                 "path": "/callback",
-                "line_start": 15
+                "start_line": 15
             }
         }
     ]
@@ -612,42 +632,40 @@ if ! check_critical "Web3 CTIS ingest"; then :; else
 
     CTIS_WEB3=$(cat <<EOF
 {
-    "version": "1.0",
+    "version": "2.0",
     "metadata": {
-        "id": "e2e-ctis-web3-${TIMESTAMP}",
-        "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-        "tool": {
-            "name": "slither",
-            "version": "0.10.0"
-        },
-        "scan_id": "${SCAN_ID_WEB3}",
-        "scan_type": "full"
+        "id": "$(new_report_id)",
+        "generated_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+        "channel": "scanner",
+        "coverage_type": "full"
     },
-    "target": {
-        "identifier": "0xContractAddr${TIMESTAMP}",
-        "type": "smart_contract"
+    "tool": {
+        "name": "slither",
+        "version": "0.10.0",
+        "techniques": ["va"]
     },
+    "assets": [
+        {"id": "target-1", "type": "smart_contract", "value": "0xabababababababababababababababababababab"}
+    ],
     "findings": [
         {
             "id": "web3-finding-${TIMESTAMP}",
             "title": "Reentrancy in Withdraw Function",
             "severity": "critical",
-            "type": "web3",
+            "type": "vulnerability",
             "description": "Reentrancy vulnerability in withdraw function",
             "fingerprint": "fp-web3-reentrancy-${TIMESTAMP}",
+            "asset_ref": "target-1",
             "web3": {
                 "chain": "ethereum",
                 "chain_id": 1,
-                "contract_address": "0xdeadbeef1234567890",
+                "contract_address": "0xabababababababababababababababababababab",
                 "function_signature": "withdraw(uint256)",
                 "swc_id": "SWC-107",
-                "related_tx_hashes": ["0xabc123", "0xdef456"],
                 "vulnerable_pattern": "delegatecall in loop",
-                "exploitable_on_mainnet": true,
+                "is_exploitable_on_mainnet": true,
                 "estimated_impact_usd": 1500000.50,
-                "attack_vector": "flash_loan",
-                "detection_tool": "slither",
-                "detection_confidence": "high"
+                "attack_vector": "flash_loan"
             }
         }
     ]

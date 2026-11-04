@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"testing"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
@@ -152,10 +152,10 @@ func TestAssetIdentity_DHCPReuseAfterWindow(t *testing.T) {
 func TestAssetIdentity_TwoScannersOneHost(t *testing.T) {
 	f := newIdentityFixture(t, "ident-2scan")
 	f.ingest(t, "nessus", host("web01.corp.example", ctis.Properties{"ip_address": "10.70.2.10"}, nil))
-	// Vuls names the host by short name and sends the IP as the value.
-	f.ingest(t, "vuls", ctis.Asset{ID: "v", Type: ctis.AssetTypeHost, Name: "web01", Value: "10.70.2.10"})
+	// Vuls names the host by short name and reports the IP it scanned.
+	f.ingest(t, "vuls", ctis.Asset{ID: "v", Type: ctis.AssetTypeHost, Value: "web01", Properties: ctis.Properties{"ip_address": "10.70.2.10"}})
 	// Later it reports from a new IP: matched by the hostname it was seen with.
-	f.ingest(t, "vuls", ctis.Asset{ID: "v", Type: ctis.AssetTypeHost, Name: "web01", Value: "10.70.2.11"})
+	f.ingest(t, "vuls", ctis.Asset{ID: "v", Type: ctis.AssetTypeHost, Value: "web01", Properties: ctis.Properties{"ip_address": "10.70.2.11"}})
 	if got := f.names(t); len(got) != 1 || got[0] != "web01.corp.example" {
 		t.Fatalf("assets = %v, want one asset keeping its FQDN", got)
 	}

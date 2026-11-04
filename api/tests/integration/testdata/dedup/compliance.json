@@ -1,26 +1,75 @@
 {
   "tool": "checkov",
-  "asset": {"type": "repository", "value": "github.com/acme/infra"},
+  "asset": {
+    "type": "repository",
+    "value": "github.com/acme/infra"
+  },
   "cases": [
     {
       "name": "a control re-assessed with another title",
       "expect": "same",
-      "before": {"type": "compliance", "title": "S3 bucket logging", "severity": "medium", "rule_id": "CKV_AWS_18",
-        "location": {"path": "s3/main.tf", "start_line": 4},
-        "compliance": {"framework": "cis-aws", "control_id": "2.1.1", "result": "fail"}},
-      "after": {"type": "compliance", "title": "Ensure S3 bucket access logging", "severity": "medium", "rule_id": "CKV_AWS_18",
-        "location": {"path": "s3/main.tf", "start_line": 9},
-        "compliance": {"framework": "cis-aws", "control_id": "2.1.1", "result": "fail"}}
+      "before": {
+        "type": "compliance",
+        "title": "S3 bucket logging",
+        "severity": "medium",
+        "rule_id": "CKV_AWS_18",
+        "location": {
+          "path": "s3/main.tf",
+          "start_line": 4
+        },
+        "compliance": {
+          "framework": "cis-aws",
+          "control_id": "2.1.1"
+        },
+        "kind": "fail"
+      },
+      "after": {
+        "type": "compliance",
+        "title": "Ensure S3 bucket access logging",
+        "severity": "medium",
+        "rule_id": "CKV_AWS_18",
+        "location": {
+          "path": "s3/main.tf",
+          "start_line": 9
+        },
+        "compliance": {
+          "framework": "cis-aws",
+          "control_id": "2.1.1"
+        },
+        "kind": "fail"
+      }
     },
     {
       "name": "another control",
       "expect": "different",
-      "before": {"type": "compliance", "title": "S3 bucket logging", "severity": "medium", "rule_id": "CKV_AWS_18",
-        "location": {"path": "s3/main.tf"},
-        "compliance": {"framework": "cis-aws", "control_id": "2.1.1", "result": "fail"}},
-      "after": {"type": "compliance", "title": "S3 bucket versioning", "severity": "medium", "rule_id": "CKV_AWS_21",
-        "location": {"path": "s3/main.tf"},
-        "compliance": {"framework": "cis-aws", "control_id": "2.1.3", "result": "fail"}}
+      "before": {
+        "type": "compliance",
+        "title": "S3 bucket logging",
+        "severity": "medium",
+        "rule_id": "CKV_AWS_18",
+        "location": {
+          "path": "s3/main.tf"
+        },
+        "compliance": {
+          "framework": "cis-aws",
+          "control_id": "2.1.1"
+        },
+        "kind": "fail"
+      },
+      "after": {
+        "type": "compliance",
+        "title": "S3 bucket versioning",
+        "severity": "medium",
+        "rule_id": "CKV_AWS_21",
+        "location": {
+          "path": "s3/main.tf"
+        },
+        "compliance": {
+          "framework": "cis-aws",
+          "control_id": "2.1.3"
+        },
+        "kind": "fail"
+      }
     }
   ]
 }

@@ -60,7 +60,7 @@ CONTRACT_PATHS = [
     "api/pkg/sensorproto/*",
     "api/pkg/sensorproto/**/*",
 ]
-CTIS_REQUIRE = re.compile(r"^[+-]\s*github\.com/openctemio/ctis\s")
+CTIS_REQUIRE = re.compile(r"^[+-]\s*github\.com/openctemio/(ctis(/v2)?|contract)\s")
 
 
 def is_test(path):

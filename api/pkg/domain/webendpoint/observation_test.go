@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 )
 
 func TestObserve_TemplatesAndDropsQueryValues(t *testing.T) {
@@ -75,7 +75,7 @@ func TestObserve_MasksTokenSegmentsInExample(t *testing.T) {
 func TestObserve_ParamsAreNamesOnlyBoundedAndClassified(t *testing.T) {
 	params := []ctis.EndpointParam{
 		{Location: ctis.ParamLocationQuery, Name: "redirect_uri"},
-		{Location: ctis.ParamLocationForm, Name: "password", Required: true},
+		{Location: ctis.ParamLocationForm, Name: "password", IsRequired: true},
 		{Location: ctis.ParamLocationPath, Name: "user_id", TypeHint: "INT"},
 		{Location: "body", Name: "unknown-location"},
 		{Location: ctis.ParamLocationQuery, Name: "bad\nname"},

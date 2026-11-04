@@ -6,7 +6,6 @@
   icon: TrendingUp
   category: prioritization
   order: 27
+  core: true
   user_facing: true
   permission: "settings:read"
-  depends:
-    - {id: findings, kind: hard, reason: "risk scoring operates on findings"}

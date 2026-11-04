@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/ctis/importer"
+	"github.com/openctemio/ctis/v2/importer"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
@@ -24,7 +24,7 @@ func TestNessusImport_NetworkIdentity(t *testing.T) {
 <ReportItem port="0" svc_name="general" protocol="tcp" severity="2" pluginID="57582" pluginName="Self-signed" pluginFamily="General"/>
 <ReportItem port="0" svc_name="general" protocol="icmp" severity="1" pluginID="10114" pluginName="ICMP timestamp" pluginFamily="General"><cve>CVE-1999-0524</cve></ReportItem>
 </ReportHost></Report></NessusClientData_v2>`
-	res, err := importer.Parse(context.Background(), strings.NewReader(doc), importer.Options{ReportID: "r"})
+	res, err := importer.Parse(context.Background(), strings.NewReader(doc), importer.Options{ReportID: testReportID})
 	if err != nil {
 		t.Fatal(err)
 	}

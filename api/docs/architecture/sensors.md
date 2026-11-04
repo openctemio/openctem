@@ -787,7 +787,7 @@ the platform admin console (RFC-022); on the tenant plane they do not exist:
   `platform_settings['shared_sensors_egress']`): IP addresses or CIDR ranges
   for every region and per region label (sensor region tokens, at most 32
   regions and 64 entries per list). Only public addresses: any entry that is,
-  or overlaps, an internal range of ctis `addrscope` (private, loopback,
+  or overlaps, an internal range of contract `addrscope` (private, loopback,
   link-local, metadata, CGNAT, multicast, IPv6 forms that carry such an IPv4
   address) is refused with 400, so the list never discloses the operator's
   internal network. Any administrator reads; a super admin replaces the list
@@ -1260,8 +1260,10 @@ replaces bearer keys.
 
 [RFC-026](../rfcs/RFC-026-sensor-results-ingest.md) (decisions in its §10.1).
 Sensors push results as CTIS only, declared by
-`Content-Type: application/vnd.openctem.ctis.v1+json`, to a resource they
-name. It is the only results path (protocol v1 ingest is retired). The wire vocabulary
+`Content-Type: application/vnd.ctis+json; version=2.0` (CTIS 2.x only; a 1.x
+document or the old media type is refused), to a resource they
+name. The command a result answers is bound by the URL path, never by the
+document. It is the only results path (protocol v1 ingest is retired). The wire vocabulary
 lives in `pkg/sensorproto/v2` (golden files pin it); the contract is
 `api/openapi/sensor-protocol-v2.yaml`.
 
@@ -1304,7 +1306,7 @@ verified, bounded body. Then the strict decoder
 (`internal/app/ingest/strictjson.go`): I-JSON (no duplicate member names,
 valid UTF-8, no lone surrogates, depth ≤ 64, nothing after the value) and no
 unknown fields (`422`), and the v2 report rules: body major version equals
-the media type's, `tool.name` present, `metadata.id` empty or the report id,
+the media type's, `tool.name` present, `metadata.id` a producer UUIDv7 (an idempotency key, never the report id; the report id comes from the URL path),
 ≤ 10,000 findings and assets per segment.
 
 The digest without a signature detects corruption and buggy proxies; it is
@@ -1342,7 +1344,7 @@ with the server-stamped provenance (tenant from the key, sensor, command,
 zone from the command, protocol, media type, user agent, receive time), and
 one RFC-005 `ingest_jobs` row per segment plus one for the commit.
 
-**Text caps on every ingest path** (v1 CTIS, v2 segments, SARIF and the
+**Text caps on every ingest path** (CTIS 2.x, v2 segments, SARIF and the
 other converted formats; `internal/app/ingest/text_caps.go`, RFC-040 §5.4).
 Before anything is stored or fingerprinted, `Service.Ingest` cuts oversized
 finding text to a cap, ending it with `…[truncated]`, and makes it valid
@@ -1735,10 +1737,10 @@ the fields the platform plans and binds output with.
   `GET /api/v1/sensors/{id}/manifest[s]`.
 - **Tool options.** The stored descriptor carries the tool's configuration
   schema (`config`, the closed JSON Schema subset of the CTIS settings
-  contract, `github.com/openctemio/ctis/settings`). The Manifest tab lists
+  contract, `github.com/openctemio/contract/settings`). The Manifest tab lists
   each tool's options read-only under "Options (N)": common options first
   (`x-octm-common`: `timeout`, `rate`, `concurrency`, `retries`, defined
-  once in `ctis/tooloption`), then the tool's own, each with its default,
+  once in `contract/tooloption`), then the tool's own, each with its default,
   range or values, who may set it (`x-octm-scope`: the sensor's
   configuration only, or a scan too), its safety class (`x-octm-tier`: T0
   safe, T1 impact, T2 dangerous) and the native flag it maps to
@@ -1865,8 +1867,8 @@ image `ghcr.io/openctemio/asset-collector`, formerly `asset-inventory`).
   heartbeat with control block, manifest, results ingest, durable outbox,
   key renewal), with commands off. Reports go to
   `PUT /api/v2/sensor/results/{report_id}` (unbound to a command) with
-  `metadata.source_type = "collector"` and the collector type as
-  `tool.name`.
+  the collector type as `tool.name`; the channel (`collector`) comes from the
+  authenticated sensor, not from the document.
 - **Tools.** It reports one tool per configured collector type, of kind
   `collector` (`sensor.ToolKindCollector`): `gcp-dns`, `vcenter`, `ldap`,
   `splunk` and `prtg`. The platform keeps only tool names in its catalog, so
@@ -1888,7 +1890,7 @@ inside the reporting organization.
 
 | Report data | Stored as | Rule |
 |---|---|---|
-| `relationships` (CTIS) | Asset relationships | `hosted_by` becomes `runs_on` (a virtual machine on its hypervisor host) or, for an address, the host `contains` it; `subdomain_of` is stored parent first; the other types keep their name. Only pairs the relationship registry allows; only when the report may change the edge's source asset (`report_relationships.go`). |
+| `relationships` (CTIS 2.0; was `related_assets`) | Asset relationships | `hosted_by` becomes `runs_on` (a virtual machine on its hypervisor host) or, for an address, the host `contains` it; `subdomain_of` is stored parent first; the other types keep their name. Only pairs the relationship registry allows; only when the report may change the edge's source asset (`report_relationships.go`). |
 | `esxi_host` on a virtual machine | `runs_on` edge to the hypervisor host | The host must be in the report or already in the organization. The vSphere cluster and datacenter stay properties: there is no asset type for them. |
 | `ip_addresses` on a host | `contains` edges to address assets | Only to address assets that already exist, at most 32 per host; addresses are never created from a host's properties. |
 | `ad_object_guid` | Identifier `directory_object_id` | Strong and single-valued: a computer renamed or moved in the directory stays the same asset ([asset-identity-resolution.md](asset-identity-resolution.md)). The vCenter instance UUID is the `cloud_id` identifier. |
@@ -1983,8 +1985,7 @@ an online sensor becomes `degraded`:
   mismatch. Scans use v10.4.8."
 
 **Per-scan provenance.** The sensor stamps the content a scan used on the
-report's `tool.properties.content` (CTIS `properties` is free-form, no schema
-change). For protocol v2 the tool is part of the report header, stored
+report's `tool.content[]` (CTIS 2.0 typed member; `properties` carries no meaning). For protocol v2 the tool is part of the report header, stored
 verbatim in `ingest_reports.header`; findings carry the report id as
 `scan_id`. Protocol v1 ingest keeps no report header.
 
@@ -2709,7 +2710,7 @@ and its source (tool default, organization or this sensor).
   descriptor (Tool Contract v1), which the sensor already reports in its
   manifest and the platform stores in the sensor's current manifest version
   (tenant-scoped). It is parsed with the CTIS settings contract
-  (`github.com/openctemio/ctis/settings`, `ParseSchema`): a closed JSON Schema
+  (`github.com/openctemio/contract/settings`, `ParseSchema`): a closed JSON Schema
   subset with `x-octm-*` annotations (scope, tier, common option, native
   flag, sensitive, group). A descriptor without `config` means the tool has
   no settings; a schema the contract refuses is ignored (logged). There is

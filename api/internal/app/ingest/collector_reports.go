@@ -28,7 +28,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/ingestreport"
@@ -93,7 +93,7 @@ func (s *Service) SetCollectorAssets(store CollectorAssetStore) { s.collectorAss
 // source has: coverage_type "full". Partial, incremental and unset are not
 // complete.
 func completeCoverage(md ctis.ReportMetadata) bool {
-	return strings.EqualFold(strings.TrimSpace(md.CoverageType), "full")
+	return md.CoverageType == ctis.CoverageFull
 }
 
 // collectorSourceOf is the collector source of a report from a trusted
@@ -102,7 +102,11 @@ func collectorSourceOf(tenantID, sensorID shared.ID, tool *ctis.Tool, md ctis.Re
 	if tool == nil || strings.TrimSpace(tool.Name) == "" {
 		return nil
 	}
-	ref := strings.TrimSpace(md.SourceRef)
+	// The collector's own reference of the system it read (source_refs).
+	ref := ""
+	if len(md.SourceRefs) > 0 {
+		ref = strings.TrimSpace(md.SourceRefs[0].System + ":" + md.SourceRefs[0].ID)
+	}
 	if len(ref) > maxCollectorSourceRef {
 		ref = ref[:maxCollectorSourceRef]
 	}

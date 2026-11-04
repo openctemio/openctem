@@ -179,6 +179,7 @@ session, no permission). `public`: a sign-in step before a session exists.
 | `PUT /api/v1/admin/instance-scan-zones/{zone_id}` | `platform.sensors.manage` |
 | `PUT /api/v1/admin/instance-scan-zones/{zone_id}/organizations` | `platform.sensors.manage` |
 | `PUT /api/v1/admin/instance-scan-zones/{zone_id}/sensors` | `platform.sensors.manage` |
+| `GET /api/v1/admin/licenses` | `platform.console.read` |
 | `GET /api/v1/admin/mcp-clients/` | `platform.settings.read` |
 | `POST /api/v1/admin/mcp-clients/{id}/block` | `platform.ai_clients.manage` |
 | `POST /api/v1/admin/mcp-clients/{id}/unblock` | `platform.ai_clients.manage` |

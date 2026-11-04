@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	assetapp "github.com/openctemio/openctem/api/internal/app/asset"
 	contentruleapp "github.com/openctemio/openctem/api/internal/app/contentrule"
@@ -96,13 +96,13 @@ func TestDetectionRules_Ingest(t *testing.T) {
 	const name = "https://" + host
 	password := "Zq8" + "vN4pLm2"
 	svc := func(at time.Time) ctis.Asset {
-		return ctis.Asset{ID: "h", Type: ctis.AssetTypeHTTPService, Value: name, Name: host,
-			Properties: ctis.Properties{
-				"web_server":   "nginx/1.25.3",
-				"title":        "Grafana",
-				"redirect_url": "https://admin:" + password + "@" + host + "/login",
-				"http_posture": map[string]any{"cookies": []any{map[string]any{"name": "PHPSESSID"}}},
-			}}
+		return ctis.Asset{ID: "h", Type: ctis.AssetTypeWebOrigin, Value: name,
+			Technical: &ctis.AssetTechnical{HTTP: &ctis.HTTPTechnical{
+				WebServer:       "nginx/1.25.3",
+				Title:           "Grafana",
+				RedirectURL:     "https://admin:" + password + "@" + host + "/login",
+				SecurityHeaders: &ctis.SecurityHeaders{Cookies: []ctis.CookieFlags{{Name: "PHPSESSID"}}},
+			}}}
 	}
 	now := time.Now().UTC()
 	g.send(g.tn, "httpx", now.Add(-20*time.Minute), "", svc(now))

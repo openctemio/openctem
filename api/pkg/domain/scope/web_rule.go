@@ -20,7 +20,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openctemio/ctis/weburl"
+	"github.com/openctemio/ctis/v2/weburl"
 )
 
 // Testing is the testing mode of a path exclusion.

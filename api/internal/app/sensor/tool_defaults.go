@@ -19,7 +19,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openctemio/ctis/settings"
+	"github.com/openctemio/contract/settings"
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"

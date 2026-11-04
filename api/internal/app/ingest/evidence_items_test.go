@@ -3,25 +3,29 @@ package ingest
 import (
 	"testing"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	evidencedom "github.com/openctemio/openctem/api/pkg/domain/evidence"
 )
 
-func TestFindingEvidenceFromNucleiProperties(t *testing.T) {
+func TestFindingEvidenceFromEvidenceItems(t *testing.T) {
 	cf := &ctis.Finding{
 		Type:     ctis.FindingTypeVulnerability,
 		RuleID:   "wordpress-click2shell",
+		RuleRef:  "r1",
 		Location: &ctis.FindingLocation{Path: "https://shop.example.com/wp-admin/js/theme.js"},
-		Properties: ctis.Properties{
-			"request":         "GET /wp-admin/js/theme.js HTTP/1.1\r\nHost: shop.example.com\r\n\r\n",
-			"response":        "HTTP/1.1 200 OK\r\nContent-Type: text/javascript\r\n\r\nslug + '\"]' ).trigger( 'click' );",
-			"curl_command":    "curl 'https://shop.example.com/wp-admin/js/theme.js'",
-			"matcher_name":    "word-1",
-			"template_digest": "sha256:" + "ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12",
+		EvidenceItems: []ctis.EvidenceItem{
+			{Kind: ctis.EvidenceKindHTTPExchange, Label: "nuclei wordpress-click2shell", HTTP: &ctis.EvidenceHTTP{
+				Request:  &ctis.EvidenceRequest{Method: "GET", URL: "https://shop.example.com/wp-admin/js/theme.js"},
+				Response: &ctis.EvidenceResponse{Status: 200, Body: "slug + '\"]' ).trigger( 'click' );"},
+			}},
+			{Kind: ctis.EvidenceKindCurl, Text: "curl 'https://shop.example.com/wp-admin/js/theme.js'"},
 		},
+		// properties carry no meaning: these produce no evidence.
+		Properties: ctis.Properties{"request": "GET / HTTP/1.1\r\n\r\n", "curl_command": "curl x"},
 	}
-	d, ok := findingEvidence("fp1", cf, &ctis.Tool{Name: "nuclei"})
+	report := &ctis.Report{Tool: &ctis.Tool{Name: "nuclei"}, Rules: []ctis.Rule{{ID: "r1", RuleID: "wordpress-click2shell", ContentSHA256: hexDigest("a")}}}
+	d, ok := findingEvidence("fp1", cf, report)
 	if !ok || d.Fingerprint != "fp1" || len(d.Items) != 2 {
 		t.Fatalf("detection = %+v %v", d, ok)
 	}
@@ -36,15 +40,15 @@ func TestFindingEvidenceFromNucleiProperties(t *testing.T) {
 }
 
 func TestFindingEvidenceSkipsSecretsAndEmpty(t *testing.T) {
-	secret := &ctis.Finding{Type: ctis.FindingTypeSecret, Properties: ctis.Properties{"request": "GET / HTTP/1.1\r\n\r\n"}}
+	secret := &ctis.Finding{Type: ctis.FindingTypeSecret, EvidenceItems: []ctis.EvidenceItem{{Kind: ctis.EvidenceKindRawText, Text: "leaked"}}}
 	if _, ok := findingEvidence("fp", secret, nil); ok {
 		t.Error("a secret finding must keep no evidence (its evidence is the leaked value)")
 	}
 	if _, ok := findingEvidence("fp", &ctis.Finding{Type: ctis.FindingTypeVulnerability}, nil); ok {
-		t.Error("no properties, no evidence")
+		t.Error("no evidence items, no evidence")
 	}
 	if _, ok := findingEvidence("fp", &ctis.Finding{Type: ctis.FindingTypeVulnerability, Properties: ctis.Properties{"cvss": 5}}, nil); ok {
-		t.Error("properties without an exchange, no evidence")
+		t.Error("properties alone are no evidence")
 	}
 }
 
