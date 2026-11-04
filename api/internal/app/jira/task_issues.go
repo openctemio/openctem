@@ -14,6 +14,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/ticketmap"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/safetext"
+	"github.com/openctemio/openctem/api/pkg/weblink"
 )
 
 // Task issues (research 157 P1-1, one issue per remediation task by default;
@@ -390,7 +391,7 @@ func (s *SyncService) taskIssueDescription(t *remediation.Task) string {
 		b.WriteString("\n")
 	}
 	if s.webBase != "" {
-		fmt.Fprintf(&b, "\nOpen the task in OpenCTEM: %s/remediation/tasks/%s\n", s.webBase, t.ID.String())
+		fmt.Fprintf(&b, "\nOpen the task in OpenCTEM: %s\n", weblink.Console(s.webBase, "/remediation/tasks/"+t.ID.String(), t.TenantID.String()))
 	}
 	b.WriteString("\nMoving this issue to Done claims the fix of the task's open findings; OpenCTEM verifies each of them (a retest, a covered scan or a reviewer).")
 	return b.String()

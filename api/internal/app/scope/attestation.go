@@ -26,6 +26,7 @@ import (
 	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/weblink"
 )
 
 // attestationStore is the persistence the attestation job needs
@@ -267,7 +268,7 @@ func (s *Service) mailApprovers(ctx context.Context, t *scopedom.Target, subject
 // attestationMailBody is the "keep T2?" email. Values are escaped; the link
 // opens the page only (sign-in and the approval permission authorize).
 func (s *Service) attestationMailBody(t *scopedom.Target, deadline string) string {
-	link := s.webBaseURL + "/scope"
+	link := weblink.Console(s.webBaseURL, "/scope", t.TenantID().String())
 	return fmt.Sprintf(`<p>The scope entry <strong>%s</strong> (%s) allows intrusive (T2) probes.</p>
 <p>Reason on record: %s</p>
 <p>Confirm by %s that it should keep T2, or it falls back to non-intrusive (T1) probes. Nothing is removed.</p>
