@@ -10,10 +10,11 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"strings"
 	"testing"
 	"time"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -71,8 +72,8 @@ func ingestFindings(t *testing.T, svc *ingest.Service, tn v2Tenant, tool string,
 	for i := range findings {
 		findings[i].AssetRef = "a"
 	}
-	rep := &ctis.Report{Version: "1.0", Tool: &ctis.Tool{Name: tool},
-		Metadata: ctis.ReportMetadata{ID: shared.NewID().String(), Timestamp: time.Now().UTC()},
+	rep := &ctis.Report{Version: ctis.SchemaVersion, Tool: &ctis.Tool{Name: tool},
+		Metadata: ctis.ReportMetadata{ID: ctis.NewReportID(), GeneratedAt: time.Now().UTC()},
 		Assets:   []ctis.Asset{{ID: "a", Type: ctis.AssetTypeRepository, Value: tn.repo}},
 		Findings: findings}
 	out, err := svc.Ingest(context.Background(), agt, ingest.Input{Report: rep})
@@ -83,8 +84,8 @@ func ingestFindings(t *testing.T, svc *ingest.Service, tn v2Tenant, tool string,
 func scaFinding(cve, version, fixed string) ctis.Finding {
 	return ctis.Finding{Type: ctis.FindingTypeVulnerability, Title: "django: " + cve, Severity: ctis.SeverityHigh,
 		RuleID: cve, Location: &ctis.FindingLocation{Path: "requirements.txt"},
-		Vulnerability: &ctis.VulnerabilityDetails{CVEID: cve, Package: "django", PURL: "pkg:pypi/django@" + version,
-			AffectedVersion: version, FixedVersion: fixed}}
+		Vulnerability: &ctis.VulnerabilityDetails{IDs: cveIDsOf(cve), PackageName: "django", PURL: "pkg:pypi/django@" + version,
+			InstalledVersion: version, FixedVersions: strings.Split(fixed, ", ")}}
 }
 
 // secretFinding is a secret the producer masked; raw, when set, is the value
@@ -102,7 +103,7 @@ func secretFindingMasked(rule, path, value string) ctis.Finding {
 	return ctis.Finding{Type: ctis.FindingTypeSecret, Title: "Leaked key", Severity: ctis.SeverityCritical,
 		RuleID: rule, Location: &ctis.FindingLocation{Path: path, StartLine: 3},
 		Remediation: &ctis.Remediation{Recommendation: "Rotate the secret"},
-		Secret:      &ctis.SecretDetails{SecretType: "aws_access_key", MaskedValue: value}}
+		Secret:      &ctis.SecretDetails{Type: "aws_access_key", MaskedValue: value}}
 }
 
 func TestRemediationKeys_ThroughIngest(t *testing.T) {

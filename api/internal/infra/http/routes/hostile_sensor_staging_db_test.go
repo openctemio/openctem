@@ -25,7 +25,7 @@ func TestHostileSensor_AbandonedReportsDoNotKeepPayloads(t *testing.T) {
 
 	// Fill a report with one segment, then abandon it.
 	rid := newReportID()
-	resp, raw := h.do(http.MethodPut, "/api/v2/sensor/results/"+rid+"/segments/0", v2Segment("semgrep", "1.0", "a", "b"))
+	resp, raw := h.do(http.MethodPut, "/api/v2/sensor/results/"+rid+"/segments/0", v2Segment("semgrep", "2.0", "a", "b"))
 	if resp.StatusCode/100 != 2 {
 		t.Fatalf("segment: %d %s", resp.StatusCode, raw)
 	}
@@ -69,7 +69,7 @@ func TestHostileSensor_AbandonedReportsDoNotKeepPayloads(t *testing.T) {
 func TestHostileSensor_OversizedHeaderRefused(t *testing.T) {
 	h := newV2Harness(t, v2HarnessOpts{})
 	big := strings.Repeat("x", ingest.MaxV2HeaderBytes)
-	body := bytes.Replace(v2Segment("semgrep", "1.0", "a"), []byte(`"coverage_type":"full"`),
+	body := bytes.Replace(v2Segment("semgrep", "2.0", "a"), []byte(`"coverage_type":"full"`),
 		[]byte(`"coverage_type":"full","properties":{"pad":"`+big+`"}`), 1)
 	resp, raw := h.do(http.MethodPut, "/api/v2/sensor/results/"+newReportID(), body)
 	h.expect(resp, raw, http.StatusRequestEntityTooLarge, "report-too-large")

@@ -145,7 +145,6 @@ export const BUSINESS_CONTEXT_SECTION_TABS: readonly SectionTab[] = [
     labelKey: 'nav.tab.crownJewels',
     href: '/crown-jewels',
     icon: Crown,
-    module: 'crown_jewels',
     permission: Permission.AssetsRead,
   },
   {

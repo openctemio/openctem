@@ -303,6 +303,9 @@ roster with `bootstrap-admin` on the server. Resetting an administrator's
 console second factor needs another super admin too: an administrator who lost
 their authenticator signs in with a recovery code, or the operator re-creates
 the account with `bootstrap-admin -force` on the server.
+A new authenticator entry is labeled with the console host (for example
+"OpenCTEM Admin (admin.example.com)", from `ADMIN_PUBLIC_URL`) so entries of two
+installations differ; existing entries keep their label and secret.
 That command is not a silent side door: every administrator it creates,
 replaces (`-force`, `-force-backup`) or links (`-link`) is written in the same
 transaction as a high-severity entry in the administrators' audit log
@@ -358,6 +361,11 @@ named owners exist. Navigation and actions hide by permission
 
 ## Tests
 
+- `web/console/e2e` (Playwright, `web/playwright.console.config.ts`, workflow
+  `console-e2e.yml`): every console page at 1440 and 390 px (page files and the
+  navigation config give the routes), axe WCAG 2.2 AA, page anatomy shared with
+  the tenant app's suite, and the elevation flow with a real authenticator code.
+  See `web/console/e2e/README.md`.
 - `web/console/src/__tests__/app-split.test.ts`: route lists of both apps, no
   cross-imports.
 - `web/console/src/__tests__/console-csrf-cookie.test.ts`: the console sets

@@ -75,7 +75,14 @@ is named by or records one of its addresses
 (`AssetRepository.FindNetworkDevicesByIPs`). The same trust window as hosts
 applies, and several matching devices are ambiguous: no match, and a dedup
 review. Only devices match devices: segments (VPCs, subnets, VLANs) and
-hosts or address assets with the same IP are never matched this way.
+hosts or address assets with the same IP are never matched this way. A
+device's recorded addresses come from its CTIS `has_address` relationships
+(the receiver ignores a producer's `ip_addresses` property). Those
+relationships also store each address as an `ip_address` asset, which holds
+the address as its name; a device reported under that address (a log
+collector naming it by IP) is still matched to the one device that records
+it, before the name lookup, and lands on the address asset only when no
+single device does.
 
 **Veto.** A candidate found by a strong identifier is skipped when it holds a
 different value of a single-valued kind ranked above the one that matched,

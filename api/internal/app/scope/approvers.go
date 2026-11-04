@@ -28,6 +28,7 @@ import (
 	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/weblink"
 )
 
 // ApproverDirectory lists the organization's scope approvers
@@ -298,7 +299,7 @@ func (s *Service) notifyApprovers(ctx context.Context, t *scopedom.Target, title
 // organization is escaped; the link only opens the page (sign-in and the
 // approval permission authorize), so a forwarded email grants nothing.
 func (s *Service) approvalMailBody(t *scopedom.Target) string {
-	link := s.webBaseURL + "/scope"
+	link := weblink.Console(s.webBaseURL, "/scope", t.TenantID().String())
 	return fmt.Sprintf(`<p>A scope entry is waiting for your approval.</p>
 <p><strong>%s</strong> (%s), %s, deepest probe %s.</p>
 <p>Reason: %s</p>

@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
@@ -65,8 +65,16 @@ func TestFindingRuleProvenance(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	finding := func(ruleID string, props ctis.Properties) *ctis.Report {
-		rep := provenanceReport(host, props, "")
+	finding := func(ruleID, digest string, tenantMark bool) *ctis.Report {
+		rep := provenanceReport(host, digest, "", "")
+		if rep.Rules == nil {
+			rep.Rules = []ctis.Rule{{ID: "r1", RuleID: ruleID}}
+			rep.Findings[0].RuleRef = "r1"
+		}
+		rep.Rules[0].RuleID = ruleID
+		if tenantMark {
+			rep.Rules[0].Extensions.Set(ctis.OpenCTEMNamespace, "rule_source", "tenant")
+		}
 		rep.Findings[0].RuleID = ruleID
 		rep.Findings[0].Title = "finding " + ruleID
 		return rep
@@ -81,7 +89,7 @@ func TestFindingRuleProvenance(t *testing.T) {
 
 	// The organization's nuclei template (marked by the sensor): its
 	// template and version are linked by the digest.
-	ingestAs(finding("tenant:login-panel", ctis.Properties{"template_digest": "sha256:" + hashA, "rule_source": "tenant"}))
+	ingestAs(finding("tenant:login-panel", "sha256:"+hashA, true))
 	_, p := ruleProvenanceOf(t, r.db, tn.tenant, "tenant:login-panel")
 	if p.source.String != "tenant" || p.templateID.String != nucleiTpl.String() || p.version.String != "1.2.0" {
 		t.Fatalf("organization nuclei finding: %+v", p)
@@ -89,7 +97,7 @@ func TestFindingRuleProvenance(t *testing.T) {
 
 	// A platform template: platform, no template, even though another
 	// tenant has a template with that exact content.
-	ingestAs(finding("exposed-admin-panel", ctis.Properties{"template_digest": "sha256:" + hashOther}))
+	ingestAs(finding("exposed-admin-panel", "sha256:"+hashOther, false))
 	_, p = ruleProvenanceOf(t, r.db, tn.tenant, "exposed-admin-panel")
 	if p.source.String != "platform" || p.templateID.Valid {
 		t.Fatalf("platform finding linked another tenant's template: %+v", p)
@@ -97,7 +105,7 @@ func TestFindingRuleProvenance(t *testing.T) {
 
 	// An organization rule without a digest (semgrep): the template that
 	// defines the rule id.
-	ingestAs(finding("tenant:weak-hash", nil))
+	ingestAs(finding("tenant:weak-hash", "", false))
 	semgrepFinding, p := ruleProvenanceOf(t, r.db, tn.tenant, "tenant:weak-hash")
 	if p.source.String != "tenant" || p.templateID.String != semgrepTpl.String() {
 		t.Fatalf("organization semgrep finding: %+v", p)
@@ -105,7 +113,7 @@ func TestFindingRuleProvenance(t *testing.T) {
 
 	// An older sensor (no mark, no prefix) running the organization's
 	// template: the digest still says whose rules they are.
-	ingestAs(finding("login-panel", ctis.Properties{"template_digest": "sha256:" + hashA}))
+	ingestAs(finding("login-panel", "sha256:"+hashA, false))
 	if _, p = ruleProvenanceOf(t, r.db, tn.tenant, "login-panel"); p.source.String != "tenant" || p.templateID.String != nucleiTpl.String() {
 		t.Fatalf("older sensor's organization finding: %+v", p)
 	}

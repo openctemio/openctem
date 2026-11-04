@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/internal/app/refingerprint"
@@ -97,8 +97,8 @@ func TestIdentityV3_OldKeyFindingsOfANewKindConvergeOnIngest(t *testing.T) {
 				agt := &sensor.Sensor{ID: tn.sensor, TenantID: &tid, Type: sensor.SensorTypeWorker, Status: sensor.SensorStatusActive}
 				a, b := freshFinding(t, f1), freshFinding(t, f2)
 				a.AssetRef, b.AssetRef = "a", "a"
-				rep := &ctis.Report{Version: "1.0", Tool: &ctis.Tool{Name: file.Tool},
-					Metadata: ctis.ReportMetadata{ID: shared.NewID().String(), Timestamp: time.Now().UTC()},
+				rep := &ctis.Report{Version: ctis.SchemaVersion, Tool: &ctis.Tool{Name: file.Tool},
+					Metadata: ctis.ReportMetadata{ID: ctis.NewReportID(), GeneratedAt: time.Now().UTC()},
 					Assets:   []ctis.Asset{{ID: "a", Type: file.Asset.Type, Value: tn.tenant.String()[:8] + "." + file.Asset.Value}},
 					Findings: []ctis.Finding{a, b}}
 				if out, err := g.svc.Ingest(context.Background(), agt, ingest.Input{Report: rep}); err != nil || len(out.Errors) > 0 {
@@ -114,7 +114,7 @@ func TestIdentityV3_OldKeyFindingsOfANewKindConvergeOnIngest(t *testing.T) {
 				t.Fatalf("%d live findings after the sightings, want 1 (%v)", len(live), live)
 			}
 			surv, ok := live[id1]
-			if !ok || surv.status != "accepted" || surv.version != 3 || surv.fingerprint != key {
+			if !ok || surv.status != "accepted" || surv.version != vulnerability.IdentityVersion || surv.fingerprint != key {
 				t.Fatalf("survivor %+v, want the older finding, accepted, on key %s", live, key)
 			}
 			var status string

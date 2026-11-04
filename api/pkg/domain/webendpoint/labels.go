@@ -4,7 +4,7 @@ import (
 	"path"
 	"strings"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 )
 
 // Labels the platform sets on an endpoint when it stores it (research: web

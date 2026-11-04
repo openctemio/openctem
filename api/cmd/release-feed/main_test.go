@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -21,23 +20,11 @@ func runOK(t *testing.T, args ...string) string {
 	return out.String()
 }
 
-func TestKeygenBuildVerify(t *testing.T) {
+// build writes the payload to sign, assemble joins it with a Sigstore bundle,
+// and verify refuses a bundle the embedded trusted root does not know.
+func TestBuildAssembleVerify(t *testing.T) {
 	dir := t.TempDir()
 	p := func(n string) string { return filepath.Join(dir, n) }
-
-	onlineOut := runOK(t, "keygen", "-out", p("online.key"))
-	seed, _ := os.ReadFile(p("online.key"))
-	if strings.Contains(onlineOut, strings.TrimSpace(string(seed))) {
-		t.Fatal("keygen printed the private seed")
-	}
-	if st, _ := os.Stat(p("online.key")); st.Mode().Perm() != 0o600 {
-		t.Fatalf("key file mode %v", st.Mode().Perm())
-	}
-	if err := run([]string{"keygen", "-out", p("online.key")}, &bytes.Buffer{}, now); err == nil {
-		t.Fatal("keygen overwrote a key")
-	}
-	onlinePub := regexp.MustCompile(`public key:\s+(\S+)`).FindStringSubmatch(onlineOut)[1]
-
 	releases := `[
 	  {"tagName":"v0.9.8","publishedAt":"2026-10-15T10:00:00Z","isDraft":false,"isPrerelease":false},
 	  {"tagName":"v0.9.9-rc.1","publishedAt":"2026-10-15T11:00:00Z","isDraft":false,"isPrerelease":true},
@@ -47,26 +34,24 @@ func TestKeygenBuildVerify(t *testing.T) {
 	]`
 	_ = os.WriteFile(p("releases.json"), []byte(releases), 0o600)
 	_ = os.WriteFile(p("advisories.json"), []byte(`{"advisories":[{"id":"OCTEM-2026-0001","severity":"high","title":"t","fixed_in":"v0.9.8","published_at":"2026-10-15T10:00:00Z"}]}`), 0o600)
-
-	t.Setenv("TEST_RELEASE_FEED_KEY", strings.TrimSpace(string(seed)))
-	runOK(t, "build", "-key-env", "TEST_RELEASE_FEED_KEY",
-		"-releases", p("releases.json"), "-advisories", p("advisories.json"), "-out", p("feed.json"))
-	got := runOK(t, "verify", "-key", onlinePub, p("feed.json"))
-	if !strings.Contains(got, "2 releases, 1 advisories") {
-		t.Fatalf("verify: %s", got)
+	runOK(t, "build", "-releases", p("releases.json"), "-advisories", p("advisories.json"), "-out", p("feed.json"))
+	payload, _ := os.ReadFile(p("feed.json"))
+	if !strings.Contains(string(payload), `"v0.9.8"`) || strings.Contains(string(payload), "rc.1") || strings.Contains(string(payload), "ui/") {
+		t.Fatalf("payload: %s", payload)
 	}
-	if err := run([]string{"verify", "-key", strings.Repeat("0", 64), p("feed.json")}, &bytes.Buffer{}, now); err == nil {
-		t.Fatal("verified against another key")
+	// A bundle that is not a valid Sigstore bundle assembles (the builder
+	// only joins) but verify refuses it: nothing but the trusted root decides.
+	_ = os.WriteFile(p("bundle.json"), []byte(`{"mediaType":"application/vnd.dev.sigstore.bundle.v0.3+json"}`), 0o600)
+	runOK(t, "assemble", "-feed", p("feed.json"), "-bundle", p("bundle.json"), "-out", p("openctem-releases.json"))
+	if err := run([]string{"verify", p("openctem-releases.json")}, &bytes.Buffer{}, now); err == nil {
+		t.Fatal("verified a feed with an empty bundle")
 	}
-	// With no key pinned in this build (and none given), verify refuses.
-	if err := run([]string{"verify", p("feed.json")}, &bytes.Buffer{}, now); err == nil {
-		t.Fatal("verified with no pinned key")
+	_ = os.WriteFile(p("notjson.json"), []byte(`nope`), 0o600)
+	if err := run([]string{"assemble", "-feed", p("feed.json"), "-bundle", p("notjson.json"), "-out", p("x.json")}, &bytes.Buffer{}, now); err == nil {
+		t.Fatal("assembled a bundle that is not JSON")
 	}
-	// The file builds with a key file too, and refuses both key sources.
-	runOK(t, "build", "-key", p("online.key"), "-releases", p("releases.json"), "-out", p("feed2.json"))
-	if err := run([]string{"build", "-key", p("online.key"), "-key-env", "TEST_RELEASE_FEED_KEY",
-		"-releases", p("releases.json")}, &bytes.Buffer{}, now); err == nil {
-		t.Fatal("accepted two key sources")
+	if err := run([]string{"keygen", "-out", p("k")}, &bytes.Buffer{}, now); err == nil {
+		t.Fatal("the keygen command still exists: the feed has no signing key")
 	}
 }
 
@@ -76,7 +61,7 @@ func TestBuildRefusals(t *testing.T) {
 	cases := map[string][]string{
 		"days over 45": {"build", "-days", "46"},
 		"foreign repo": {"build", "-repo", "someone/else"},
-		"no key":       {"build", "-releases", filepath.Join(dir, "empty.json")},
+		"no releases":  {"build", "-releases", filepath.Join(dir, "empty.json")},
 		"unknown":      {"nope"},
 		"keyset gone":  {"keyset", "-root", filepath.Join(dir, "missing")},
 	}
@@ -108,24 +93,22 @@ func TestComponents(t *testing.T) {
 	}
 }
 
-// A components file goes into the signed feed; an invalid or unknown-field
+// A components file goes into the feed payload; an invalid or unknown-field
 // one is refused.
 func TestBuildWithComponents(t *testing.T) {
 	dir := t.TempDir()
 	p := func(n string) string { return filepath.Join(dir, n) }
-	out := runOK(t, "keygen", "-out", p("online.key"))
-	pub := regexp.MustCompile(`public key:\s+(\S+)`).FindStringSubmatch(out)[1]
 	_ = os.WriteFile(p("releases.json"), []byte(`[{"tagName":"v0.9.8","publishedAt":"2026-10-15T10:00:00Z"}]`), 0o600)
 	digest := "sha256:" + strings.Repeat("0a", 32)
 	_ = os.WriteFile(p("components.json"), []byte(`[
 	  {"component":"sensor","version":"v0.23.2","published_at":"2026-10-15T10:00:00Z",
 	   "notes_url":"https://github.com/openctemio/sensor/releases/tag/v0.23.2","digest":"`+digest+`"},
 	  {"component":"sdk","version":"v0.34.0","published_at":"2026-10-15T10:00:00Z"}]`), 0o600)
-	runOK(t, "build", "-key", p("online.key"), "-releases", p("releases.json"),
+	runOK(t, "build", "-releases", p("releases.json"),
 		"-components", p("components.json"), "-out", p("feed.json"))
-	got := runOK(t, "verify", "-key", pub, p("feed.json"))
-	if !strings.Contains(got, "2 components") || !strings.Contains(got, "sensor v0.23.2 "+digest) {
-		t.Fatalf("verify: %s", got)
+	payload, _ := os.ReadFile(p("feed.json"))
+	if !strings.Contains(string(payload), `"sensor"`) || !strings.Contains(string(payload), digest) {
+		t.Fatalf("payload: %s", payload)
 	}
 
 	for name, body := range map[string]string{
@@ -135,7 +118,7 @@ func TestBuildWithComponents(t *testing.T) {
 		"not an array":  `{"component":"sensor"}`,
 	} {
 		_ = os.WriteFile(p("bad.json"), []byte(body), 0o600)
-		if err := run([]string{"build", "-key", p("online.key"), "-releases", p("releases.json"),
+		if err := run([]string{"build", "-releases", p("releases.json"),
 			"-components", p("bad.json"), "-out", p("bad-feed.json")}, &bytes.Buffer{}, now); err == nil {
 			t.Fatalf("%s: accepted", name)
 		}

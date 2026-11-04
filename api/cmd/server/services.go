@@ -1506,7 +1506,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	}
 	s.VersionCheck = versioncheck.New(postgres.NewVersionCheckRepository(&postgres.DB{DB: deps.DB}), versioncheck.Config{
 		Enabled: cfg.Worker.VersionCheckEnabled, URL: cfg.Worker.VersionCheckURL,
-		Keys: releasefeed.PinnedKeys, Running: version.Get().Version,
+		Verifier: releaseFeedVerifier(cfg, log), Running: version.Get().Version,
 		OnFeed: learnComponentReleases,
 		// In relay mode the release feed comes through the relay sensor.
 		Offline: relayMode(s),
@@ -2226,6 +2226,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// channels (RFC-065 §15.4): one rule for every integration provider.
 	s.Outbox.SetDeliveryResolver(postgres.NewProgramDeliveryRepository(&postgres.DB{DB: deps.DB}))
 	s.Outbox.SetBrand(cfg.Brand)
+	// Delivered links are absolute and name their organization (pkg/weblink).
+	s.Outbox.SetLinkBase(cfg.SMTP.BaseURL)
 	// An e-mail channel whose relay the managed service rules refuse is
 	// stopped with a visible status and its owners are told.
 	s.Outbox.SetRelayRefusedHandler(s.Integration)
@@ -3315,9 +3317,6 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// through the change bus, on every replica): the route gate, the dashboard
 	// and the threat-alert planner all read it, so none keeps an old answer.
 	s.ModuleGate = middleware.NewModuleGate(s.Module, time.Minute)
-	// Ingest honors the suppressions module toggle: with the module off (or
-	// left out of the tenant's bundles) findings land as reported.
-	s.Ingest.SetSuppressionModuleGuard(s.Module)
 	// Events start no automation for a tenant with the workflows module off.
 	if s.WorkflowDispatcher != nil {
 		s.WorkflowDispatcher.SetModuleGuard(s.Module)
@@ -3521,8 +3520,9 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	s.Auth.SetPermissionVersionService(s.PermVersion)
 
 	// Two-factor authentication (TOTP). Secrets are encrypted with the same
-	// AES-GCM key as integration credentials.
-	s.Auth.SetMFA(repos.UserMFA, s.Encryptor, cfg.Brand.DisplayName())
+	// AES-GCM key as integration credentials. New authenticator entries are
+	// labeled with the product name and this installation's host.
+	s.Auth.SetMFA(repos.UserMFA, s.Encryptor, auth.MFAIssuer(cfg.Brand.DisplayName(), cfg.App.URL))
 	s.Session.SetMFAChallengeCleanup(repos.UserMFA)
 	// The platform two-factor floor (setting auth.mfa) and the lookup that
 	// tells an administrator by effective grants. Without the settings store
@@ -3665,6 +3665,11 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	s.Auth.SetBreakGlassNotifier(s.Tenant)
 	ssoEnforcement := repos.SSOEnforcement
 	s.SSO.SetSSOSignInRecorder(ssoEnforcement)
+	// Linking an organization's sign-in to an existing account needs a code
+	// or password typed for it and revokes the account's other sessions
+	// (auth/sso_link.go).
+	s.SSO.SetLinkProofVerifier(s.Auth)
+	s.SSO.SetSessionRevoker(s.Session)
 	s.Tenant.SetSSOEnforcementStore(ssoEnforcement)
 	s.Role.SetPrivilegeNotifier(s.Tenant)
 	s.Auth.SetInvitationAcceptor(s.Tenant)

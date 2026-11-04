@@ -11,7 +11,6 @@
  */
 
 import { useEffect, useRef, useState } from 'react'
-import { formatDistanceToNow } from 'date-fns'
 import {
   Bot,
   ChevronDown,
@@ -50,6 +49,7 @@ import { collapsedLabel, dayLabel } from '../lib/activity-feed'
 import { QUICK_REACTIONS, type ReactionViewer } from '../lib/reactions'
 import { ReactionPicker, ReactionPills } from './comment-reactions'
 import { useTranslation } from '@/context/i18n-provider'
+import { RelativeTime } from '@/features/shared/components/relative-time'
 import { AIBadge } from '@/features/shared/components/ai-badge'
 import { confirmName } from '@/lib/confirm-name'
 
@@ -103,13 +103,10 @@ export function ActivityTime({ at, className }: { at: string; className?: string
   const d = new Date(at)
   if (Number.isNaN(d.getTime())) return null
   return (
-    <time
-      dateTime={d.toISOString()}
-      title={d.toLocaleString()}
+    <RelativeTime
+      date={d}
       className={cn('text-xs whitespace-nowrap text-muted-foreground tabular-nums', className)}
-    >
-      {formatDistanceToNow(d, { addSuffix: true })}
-    </time>
+    />
   )
 }
 

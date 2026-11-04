@@ -128,10 +128,12 @@ the right field.
 
 ## Explicit linking (Account > Security)
 
-"Connected sign-in methods" lists the password (when the account has one), the
-linked providers and the organization SSO identities (read only, shown as
-managed by the organization: any identity whose source is `sso`, including an
-Entra ID or Google Workspace sign-on identity).
+"Connected sign-in methods" lists the password (when the account has one) and
+the linked providers. Organization SSO identities (any identity whose source
+is `sso`, including an Entra ID or Google Workspace sign-on identity) are
+listed by "Organization sign-in", where a password account links and unlinks
+its organization's sign-in with the same proof rule
+([sso-authentication.md](sso-authentication.md), "Linking an existing account").
 
 | Route | Gate |
 |---|---|
@@ -182,7 +184,9 @@ sign-in method is never removed (`409 LAST_SIGN_IN_METHOD`): an account without
 a password keeps at least one identity, and the check runs with the account row
 locked so two concurrent unlinks cannot remove the last two. Organization SSO
 identities, SAML or OIDC, Entra ID and Google Workspace included (source
-`sso`), are managed by the organization (`409 IDENTITY_MANAGED_BY_ORGANIZATION`).
+`sso`), are not unlinked here (`409 IDENTITY_MANAGED_BY_ORGANIZATION`); a
+password account unlinks an organization OIDC identity under "Organization
+sign-in".
 After the proof, and before the identity is removed, every other session of
 the account is revoked (keeping the one that proved the unlink), so a session
 opened through the provider does not outlive the unlink. When the revoke fails

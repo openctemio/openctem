@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
@@ -108,7 +108,7 @@ func TestIngestFinding_PartialData_SecretFields(t *testing.T) {
 			Title:    "AWS Access Key Detected",
 			Severity: ctis.SeverityHigh,
 			Secret: &ctis.SecretDetails{
-				SecretType:  "aws_key",
+				Type:        "aws_key",
 				MaskedValue: "AKIA****XXXX",
 				// No valid, revoked, scopes, expires_at, verified_at
 			},
@@ -124,7 +124,7 @@ func TestIngestFinding_PartialData_SecretFields(t *testing.T) {
 		if ctisFinding.Severity != ctis.SeverityHigh {
 			t.Error("Severity should be high")
 		}
-		if ctisFinding.Secret.SecretType != "aws_key" {
+		if ctisFinding.Secret.Type != "aws_key" {
 			t.Error("SecretType should be set")
 		}
 		if ctisFinding.Secret.MaskedValue != "AKIA****XXXX" {
@@ -132,10 +132,10 @@ func TestIngestFinding_PartialData_SecretFields(t *testing.T) {
 		}
 
 		// These should be nil/zero - tool didn't verify
-		if ctisFinding.Secret.Valid != nil {
+		if ctisFinding.Secret.IsValid != nil {
 			t.Error("Valid should be nil when not verified")
 		}
-		if ctisFinding.Secret.Revoked {
+		if ctisFinding.Secret.IsRevoked {
 			t.Error("Revoked should be false by default")
 		}
 		if len(ctisFinding.Secret.Scopes) > 0 {
@@ -152,10 +152,10 @@ func TestIngestFinding_PartialData_SecretFields(t *testing.T) {
 			Title:    "AWS Access Key Detected",
 			Severity: ctis.SeverityCritical, // Escalated because valid
 			Secret: &ctis.SecretDetails{
-				SecretType:  "aws_key",
+				Type:        "aws_key",
 				Service:     "aws",
 				MaskedValue: "AKIA****XXXX",
-				Valid:       &valid,
+				IsValid:     &valid,
 				VerifiedAt:  &now,
 				Scopes:      []string{"s3:*", "ec2:DescribeInstances"},
 				ExpiresAt:   nil, // AWS keys don't expire
@@ -172,7 +172,7 @@ func TestIngestFinding_PartialData_SecretFields(t *testing.T) {
 		if ctisFinding.Severity != ctis.SeverityCritical {
 			t.Error("Severity should be critical for valid secret")
 		}
-		if ctisFinding.Secret.Valid == nil || !*ctisFinding.Secret.Valid {
+		if ctisFinding.Secret.IsValid == nil || !*ctisFinding.Secret.IsValid {
 			t.Error("Valid should be true after verification")
 		}
 		if ctisFinding.Secret.VerifiedAt == nil {
@@ -302,14 +302,14 @@ func TestIngestFinding_PartialData_Web3Fields(t *testing.T) {
 			Title:    "Reentrancy Vulnerability",
 			Severity: ctis.SeverityCritical,
 			Web3: &ctis.Web3VulnerabilityDetails{
-				Chain:                "ethereum",
-				SWCID:                "SWC-107",
-				ContractAddress:      "0x1234567890123456789012345678901234567890",
-				FunctionSignature:    "withdraw(uint256)",
-				EstimatedImpactUSD:   1500000.0,
-				AffectedValueUSD:     5000000.0,
-				AttackVector:         "Flash loan → manipulate oracle → drain funds",
-				ExploitableOnMainnet: true,
+				Chain:                  "ethereum",
+				SWCID:                  "SWC-107",
+				ContractAddress:        "0x1234567890123456789012345678901234567890",
+				FunctionSignature:      "withdraw(uint256)",
+				EstimatedImpactUSD:     1500000.0,
+				AffectedValueUSD:       5000000.0,
+				AttackVector:           "Flash loan → manipulate oracle → drain funds",
+				IsExploitableOnMainnet: true,
 			},
 		}
 
@@ -326,8 +326,8 @@ func TestIngestFinding_PartialData_Web3Fields(t *testing.T) {
 		if ctisFinding.Web3.EstimatedImpactUSD != 1500000.0 {
 			t.Error("EstimatedImpactUSD should be set")
 		}
-		if !ctisFinding.Web3.ExploitableOnMainnet {
-			t.Error("ExploitableOnMainnet should be true")
+		if !ctisFinding.Web3.IsExploitableOnMainnet {
+			t.Error("IsExploitableOnMainnet should be true")
 		}
 	})
 
@@ -376,7 +376,6 @@ func TestIngestFinding_PartialData_ComplianceFields(t *testing.T) {
 			Compliance: &ctis.ComplianceDetails{
 				Framework: "cis",
 				ControlID: "1.1.1",
-				Result:    "fail",
 				// No framework_version, control_name, control_description
 			},
 		}
@@ -419,7 +418,6 @@ func TestIngestFinding_PartialData_ComplianceFields(t *testing.T) {
 				ControlID:          "8.3.1",
 				ControlName:        "Password Length",
 				ControlDescription: "All user passwords must be at least 12 characters",
-				Result:             "fail",
 			},
 		}
 
@@ -605,7 +603,9 @@ func TestIngestFinding_PartialData_NilSafety(t *testing.T) {
 		// Should not panic when accessing nil nested object
 		var cveID string
 		if ctisFinding.Vulnerability != nil {
-			cveID = ctisFinding.Vulnerability.CVEID
+			if c := ctis.CVEs(ctisFinding.Vulnerability); len(c) > 0 {
+				cveID = c[0]
+			}
 		}
 		if cveID != "" {
 			t.Error("CVE should be empty when Vulnerability is nil")

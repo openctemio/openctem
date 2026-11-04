@@ -9,7 +9,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/pkg/domain/assettech"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -67,9 +67,9 @@ func (s *Service) recordTechnologies(ctx context.Context, tenantID shared.ID, sc
 }
 
 // technologyObservations reads the technologies a CTIS asset states: the
-// typed list (with the tool's categories, confidence and CPE) and the loose
-// report properties.technologies strings ("Name:version"), at most
-// assettech.MaxPerAsset, each sanitized and classified.
+// typed list (with the tool's categories, confidence and CPE), at most
+// assettech.MaxPerAsset, each sanitized and classified. properties carry no
+// meaning in CTIS 2.0.
 func technologyObservations(id shared.ID, a *ctis.Asset, source string, seen time.Time) []assettech.Technology {
 	out := make([]assettech.Technology, 0, len(a.Technologies))
 	add := func(t assettech.Technology, ok bool) bool {
@@ -82,14 +82,6 @@ func technologyObservations(id shared.ID, a *ctis.Asset, source string, seen tim
 		tech, ok := assettech.Observation(id, t.Name, t.Version, t.Categories, t.Confidence, source, seen)
 		if !add(tech.WithCPE(t.CPE), ok) {
 			return out
-		}
-	}
-	for _, key := range []string{"technologies", "technology"} {
-		for _, el := range stringList(a.Properties[key]) {
-			name, version := assettech.Split(el)
-			if !add(assettech.Observation(id, name, version, nil, 0, source, seen)) {
-				return out
-			}
 		}
 	}
 	return out

@@ -13,7 +13,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
@@ -44,18 +44,19 @@ func identityKind(f *ctis.Finding) string {
 	case f.Type == ctis.FindingTypeSecret || f.Secret != nil:
 		return vulnerability.IdentityKindSecret
 	case f.Type == ctis.FindingTypeCompliance:
-		if c := f.Compliance; c != nil && (strings.TrimSpace(c.Framework) != "" || strings.TrimSpace(c.ControlID) != "") {
+		if c := f.Compliance; c != nil && (strings.TrimSpace(string(c.Framework)) != "" || strings.TrimSpace(c.ControlID) != "") {
 			return vulnerability.IdentityKindCompliance
 		}
 		return ""
-	case f.Type == ctis.FindingTypeWeb3:
-		if w := f.Web3; w != nil && strings.TrimSpace(w.ContractAddress) != "" {
+	case f.Web3 != nil:
+		// CTIS 2.0 has no web3 finding type: the web3 profile marks one.
+		if strings.TrimSpace(f.Web3.ContractAddress) != "" {
 			return vulnerability.IdentityKindWeb3
 		}
 		return ""
 	case f.Type == ctis.FindingTypeMisconfiguration || f.Misconfiguration != nil:
 		return vulnerability.IdentityKindMisconfig
-	case f.Vulnerability != nil && (strings.TrimSpace(f.Vulnerability.Package) != "" || strings.TrimSpace(f.Vulnerability.PURL) != ""):
+	case f.Vulnerability != nil && (strings.TrimSpace(f.Vulnerability.PackageName) != "" || strings.TrimSpace(f.Vulnerability.PURL) != ""):
 		return vulnerability.IdentityKindSCA
 	}
 	if _, _, ok := networkVACVEKey(f); ok {
@@ -104,7 +105,7 @@ func identityV2(assetID shared.ID, f *ctis.Finding, secretHMAC string, occurrenc
 		return vulnerability.MisconfigIdentity(asset, policy, rtype, rname, locationPath(f))
 	case vulnerability.IdentityKindSCA:
 		v := f.Vulnerability
-		return vulnerability.SCAIdentity(asset, v.PURL, v.Ecosystem, v.Package, v.CVEID, f.RuleID)
+		return vulnerability.SCAIdentity(asset, v.PURL, purlEcosystem(v.PURL), v.PackageName, primaryCVE(v), f.RuleID)
 	case vulnerability.IdentityKindNetwork:
 		cve := ""
 		if c, _, ok := networkVACVEKey(f); ok {
@@ -112,7 +113,7 @@ func identityV2(assetID shared.ID, f *ctis.Finding, secretHMAC string, occurrenc
 		}
 		port, proto := 0, ""
 		if f.Network != nil {
-			port, proto = f.Network.Port, f.Network.Protocol
+			port, proto = f.Network.Port, string(f.Network.Transport)
 		}
 		return vulnerability.NetworkIdentity(asset, cve, f.RuleID, port, proto)
 	case vulnerability.IdentityKindDAST:
@@ -120,7 +121,7 @@ func identityV2(assetID shared.ID, f *ctis.Finding, secretHMAC string, occurrenc
 	case vulnerability.IdentityKindSAST:
 		return vulnerability.SASTIdentity(sastInput(asset, f, occurrence))
 	case vulnerability.IdentityKindCompliance:
-		return vulnerability.ComplianceIdentity(asset, f.Compliance.Framework, f.Compliance.ControlID, locationPath(f))
+		return vulnerability.ComplianceIdentity(asset, string(f.Compliance.Framework), f.Compliance.ControlID, locationPath(f))
 	case vulnerability.IdentityKindWeb3:
 		w := f.Web3
 		rule := w.SWCID
@@ -246,44 +247,27 @@ func startLine(f *ctis.Finding) int {
 // dastRule is the rule a DAST key names: the CVE of a CVE template, else the
 // rule id.
 func dastRule(f *ctis.Finding) string {
-	if f.Vulnerability != nil && strings.TrimSpace(f.Vulnerability.CVEID) != "" {
-		return vulnerability.CanonicalVulnID(f.Vulnerability.CVEID) // a CVE template is the CVE
+	if c := primaryCVE(f.Vulnerability); c != "" {
+		return vulnerability.CanonicalVulnID(c) // a CVE template is the CVE
 	}
 	return f.RuleID
 }
 
-// dastMethod is the HTTP method of a DAST result, from wherever the producer
-// put it: a "method" property, the CTIS web location, else the first word of
-// a recorded request. "" when none says; DASTIdentity reads that as GET, so a
+// dastMethod is the HTTP method of a DAST result: the CTIS web location's
+// method. "" when it names none; DASTIdentity reads that as GET, so a
 // producer that stops reporting the method never forks a finding.
 func dastMethod(f *ctis.Finding) string {
-	if m, ok := f.Properties["method"].(string); ok && strings.TrimSpace(m) != "" {
-		return m
-	}
 	if f.Web != nil && strings.TrimSpace(f.Web.Method) != "" {
 		return f.Web.Method
-	}
-	if req, ok := f.Properties["request"].(string); ok {
-		if i := strings.IndexAny(req, " \t"); i > 0 && i <= 10 {
-			m := req[:i]
-			if strings.ToUpper(m) == m && strings.Trim(m, "ABCDEFGHIJKLMNOPQRSTUVWXYZ") == "" {
-				return m
-			}
-		}
 	}
 	return ""
 }
 
 // dastParams are the parameter names a DAST result names besides the query
-// string (a fuzzed body or header parameter): a property, or the CTIS web
-// location's parameter.
+// string (a fuzzed body or header parameter): the CTIS web location's
+// parameter.
 func dastParams(f *ctis.Finding) []string {
 	var out []string
-	for _, key := range []string{"parameter", "param"} {
-		if p, ok := f.Properties[key].(string); ok && strings.TrimSpace(p) != "" {
-			out = append(out, p)
-		}
-	}
 	if f.Web != nil && f.Web.Parameter != nil && strings.TrimSpace(f.Web.Parameter.Name) != "" {
 		out = append(out, f.Web.Parameter.Name)
 	}
@@ -369,7 +353,7 @@ func splitMultiCVEFinding(f ctis.Finding) []ctis.Finding {
 	}
 	seen := map[string]bool{}
 	var cves []string
-	for _, c := range append([]string{f.Vulnerability.CVEID}, f.Vulnerability.CVEIDs...) {
+	for _, c := range findingCVEs(f.Vulnerability) {
 		c = vulnerability.CanonicalVulnID(c)
 		if c != "" && !seen[c] {
 			seen[c] = true
@@ -384,10 +368,21 @@ func splitMultiCVEFinding(f ctis.Finding) []ctis.Finding {
 	for _, c := range cves {
 		cp := f
 		v := *f.Vulnerability
-		v.CVEID = c
-		v.CVEIDs = []string{c}
+		v.IDs = withOnlyCVE(v.IDs, c)
 		cp.Vulnerability = &v
 		out = append(out, cp)
 	}
 	return out
+}
+
+// purlEcosystem is the ecosystem of a package URL: its type ("npm" of
+// "pkg:npm/lodash@4"), lower case, or "" without a purl. CTIS 2.0 carries the
+// ecosystem only as the purl type.
+func purlEcosystem(purl string) string {
+	rest, ok := strings.CutPrefix(strings.TrimSpace(purl), "pkg:")
+	if !ok {
+		return ""
+	}
+	t, _, _ := strings.Cut(rest, "/")
+	return strings.ToLower(t)
 }

@@ -1450,8 +1450,45 @@ func TestNotify_AllFields(t *testing.T) {
 		if n.ActorID() == nil || !n.ActorID().Equals(actorID) {
 			t.Errorf("expected actorID %s, got %v", actorID, n.ActorID())
 		}
-		if n.URL() != "/findings/abc" {
-			t.Errorf("expected URL '/findings/abc', got %s", n.URL())
+		// The link names its organization (pkg/weblink).
+		if want := "/findings/abc?org=" + tenantID.String(); n.URL() != want {
+			t.Errorf("expected URL %q, got %s", want, n.URL())
+		}
+	}
+}
+
+// A notification link names the organization it belongs to, so a member of
+// several organizations who opens it while another one is selected lands on
+// it; an unsafe link is still dropped before the organization is added.
+func TestNotify_LinkNamesOrganization(t *testing.T) {
+	cases := map[string]string{
+		"/emerging-threats/abc":             "/emerging-threats/abc?org=",
+		"/emerging-threats?level=immediate": "/emerging-threats?level=immediate&org=",
+		"/findings/1?org=forged":            "/findings/1?org=",
+		"https://evil.example/x":            "",
+		"//evil.example/x":                  "",
+		"/findings/../admin":                "",
+		"":                                  "",
+	}
+	for in, prefix := range cases {
+		repo := newMockNotificationRepo()
+		svc := newTestNotificationService(repo, newMockWSBroadcaster())
+		tenantID := shared.NewID()
+		userID := shared.NewID()
+		if err := svc.Notify(context.Background(), notification.NotificationParams{
+			TenantID: tenantID, Audience: notification.AudienceUser, AudienceID: &userID,
+			NotificationType: notification.TypeEmergingThreat, Title: "t", Severity: notification.SeverityCritical, URL: in,
+		}); err != nil {
+			t.Fatalf("%q: %v", in, err)
+		}
+		want := ""
+		if prefix != "" {
+			want = prefix + tenantID.String()
+		}
+		for _, n := range repo.notifications {
+			if n.URL() != want {
+				t.Errorf("link %q stored as %q, want %q", in, n.URL(), want)
+			}
 		}
 	}
 }

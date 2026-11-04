@@ -17,8 +17,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openctemio/ctis"
-	"github.com/openctemio/ctis/importer/mapping"
+	"github.com/openctemio/ctis/v2"
+	"github.com/openctemio/ctis/v2/importer/mapping"
 
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	dom "github.com/openctemio/openctem/api/pkg/domain/importmapping"
@@ -512,9 +512,17 @@ func runPreview(ctx context.Context, m *mapping.Mapping, name string, sample io.
 	ident := m.Identity()
 	keys := map[string]int{}
 	collided := 0
+	byRef := make(map[string]*ctis.Asset, len(report.Assets))
+	for i := range report.Assets {
+		byRef[report.Assets[i].ID] = &report.Assets[i]
+	}
 	for i := range report.Findings {
 		f := &report.Findings[i]
-		key := ingest.PreviewFingerprint(ingest.PreviewAssetID(string(f.AssetType), f.AssetValue), f, tool)
+		atype, avalue := "", ""
+		if a := byRef[f.AssetRef]; a != nil {
+			atype, avalue = string(a.Type), a.Value
+		}
+		key := ingest.PreviewFingerprint(ingest.PreviewAssetID(atype, avalue), f, tool)
 		if keys[key]++; keys[key] == 2 {
 			collided += 2
 		} else if keys[key] > 2 {
@@ -522,7 +530,7 @@ func runPreview(ctx context.Context, m *mapping.Mapping, name string, sample io.
 		}
 		if len(p.Items) < PreviewItems {
 			p.Items = append(p.Items, PreviewItem{Index: len(p.Items), Kind: mapping.KindFinding, Record: f,
-				IdentityKey: key, Identity: identityValues(f, ident)})
+				IdentityKey: key, Identity: identityValues(f, byRef[f.AssetRef], ident)})
 		}
 	}
 	for i := range report.Assets {
@@ -547,9 +555,23 @@ func runPreview(ctx context.Context, m *mapping.Mapping, name string, sample io.
 	return p, nil
 }
 
+// assetIdentityValue is the asset_value or asset_type identity member of a
+// finding's asset ("" without an asset).
+func assetIdentityValue(a *ctis.Asset, member string) string {
+	switch {
+	case a == nil:
+		return ""
+	case member == mapping.TargetAssetType:
+		return string(a.Type)
+	default:
+		return a.Value
+	}
+}
+
 // identityValues reads the declared identity members of a finding through
-// its JSON form.
-func identityValues(f *ctis.Finding, ident []string) map[string]string {
+// its JSON form. The finding's asset is named by asset_ref in CTIS 2.0; a
+// mapping still declares it as asset_value and asset_type, read from a.
+func identityValues(f *ctis.Finding, a *ctis.Asset, ident []string) map[string]string {
 	if len(ident) == 0 {
 		return nil
 	}
@@ -563,6 +585,10 @@ func identityValues(f *ctis.Finding, ident []string) map[string]string {
 	}
 	out := make(map[string]string, len(ident))
 	for _, member := range ident {
+		if member == mapping.TargetAssetValue || member == mapping.TargetAssetType {
+			out[member] = assetIdentityValue(a, member)
+			continue
+		}
 		var cur any = tree
 		for _, seg := range strings.Split(member, ".") {
 			m, ok := cur.(map[string]any)

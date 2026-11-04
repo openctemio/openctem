@@ -56,7 +56,7 @@ func TestLoggerRedactsURLCredentials(t *testing.T) {
 		l.Warn("vulnerability bundle not imported", "error", wrapped)
 		l.WithError(wrapped).Info("with error")
 		l.Info("fetch "+presigned, "url", presigned)
-		l.Stdlib().Info("library logger", "err", ue) // what ctis/transfer receives
+		l.Stdlib().Info("library logger", "err", ue) // what contract/transfer receives
 		out := buf.String()
 		assertNoSecrets(t, format, out)
 		if !strings.Contains(out, "release-assets.githubusercontent.com/github-production-release-asset/1412195454/2029b8c5") {
