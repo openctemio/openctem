@@ -14,6 +14,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/cirun"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/weblink"
 )
 
 // EvaluateInput is what the runner tells the gate about its own run.
@@ -188,11 +189,11 @@ func (s *Service) judge(ctx context.Context, run *cirun.Run, in EvaluateInput, p
 		FindingsOverCap:     overCap,
 		MissingCapabilities: missing,
 		DefaultBranch:       run.IsDefaultBranch,
-		Override:            override, Now: now, FindingURL: s.findingURL,
+		Override:            override, Now: now, FindingURL: func(id shared.ID) string { return s.findingURL(run.TenantID, id) },
 	})
 	v := &Verdict{RunID: run.ID.String(), GateVerdict: gv, RepoFile: repoFile, Links: VerdictLinks{
-		Run:      s.webURL(RunPath(run.ID)),
-		Findings: s.webURL(gateFindingsPath(run)),
+		Run:      s.webURL(run.TenantID, RunPath(run.ID)),
+		Findings: s.webURL(run.TenantID, gateFindingsPath(run)),
 	}}
 	detail, err := json.Marshal(v)
 	if err != nil {
@@ -503,11 +504,14 @@ func (s *Service) gitlabTargetBranch(ctx context.Context, run *cirun.Run) string
 	return cirun.CleanBranchName(mr.TargetBranch)
 }
 
-func (s *Service) webURL(path string) string {
-	return strings.TrimRight(s.cfg.WebBaseURL, "/") + path
+// webURL is the console link to path for the organization (pkg/weblink).
+func (s *Service) webURL(tenantID shared.ID, path string) string {
+	return strings.TrimRight(s.cfg.WebBaseURL, "/") + weblink.WithOrg(path, tenantID.String())
 }
 
-func (s *Service) findingURL(id shared.ID) string { return s.webURL("/findings/" + id.String()) }
+func (s *Service) findingURL(tenantID, id shared.ID) string {
+	return s.webURL(tenantID, "/findings/"+id.String())
+}
 
 func (s *Service) auditVerdict(ctx context.Context, run *cirun.Run, in EvaluateInput, v *Verdict) {
 	actor := Actor{Email: ciActor(cirun.Claims{Provider: run.Provider, Actor: run.Actor}), IP: in.ClientIP, UserAgent: in.UserAgent}
