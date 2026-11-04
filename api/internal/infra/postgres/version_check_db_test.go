@@ -70,7 +70,7 @@ func TestVersionCheckRepository_DB(t *testing.T) {
 	}
 
 	feed := func(seq uint64) *releasefeed.Verified {
-		return &releasefeed.Verified{KeyID: "SHA256:test", Digest: strings.Repeat("a", 64), Feed: releasefeed.Feed{Kind: releasefeed.FeedKind, Sequence: seq, IssuedAt: now, ExpiresAt: now.Add(time.Hour),
+		return &releasefeed.Verified{SignedAt: now, Digest: strings.Repeat("a", 64), Feed: releasefeed.Feed{Kind: releasefeed.FeedKind, Sequence: seq, IssuedAt: now, ExpiresAt: now.Add(time.Hour),
 			Releases: []releasefeed.Release{{Version: "v1.2.3", PublishedAt: now}}, Advisories: []releasefeed.Advisory{}}}
 	}
 	if ok, err := repo.Apply(ctx, feed(100), "online", later); err != nil || !ok {

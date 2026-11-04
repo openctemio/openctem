@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/sigstore/sigstore-go/pkg/bundle"
@@ -47,6 +48,11 @@ func New(path string) (*Verifier, error) {
 	if err != nil {
 		return nil, fmt.Errorf("sigstore trusted root: %w", err)
 	}
+	return NewFromTrustedRoot(tr)
+}
+
+// NewFromTrustedRoot builds the verifier on trusted material (a loaded root; tests pass a virtual one).
+func NewFromTrustedRoot(tr root.TrustedMaterial) (*Verifier, error) {
 	v, err := verify.NewVerifier(tr, verify.WithTransparencyLog(1), verify.WithObserverTimestamps(1))
 	if err != nil {
 		return nil, fmt.Errorf("sigstore verifier: %w", err)
@@ -54,25 +60,47 @@ func New(path string) (*Verifier, error) {
 	return &Verifier{v: v}, nil
 }
 
-// MaxSignatureBytes bounds publisher.sigstore.json.
+// MaxSignatureBytes bounds a Sigstore bundle.
 const MaxSignatureBytes = 64 << 10
 
 // Verify checks that signature is a Sigstore bundle over artifact, issued to
 // exactly identity by exactly issuer, and returns when it was signed. It does
 // not know about content packages: contentpkg.PublisherVerifierFunc adapts it.
 func (s *Verifier) Verify(signature, artifact []byte, identity, issuer string) (time.Time, error) {
-	if len(signature) == 0 || len(signature) > MaxSignatureBytes {
-		return time.Time{}, fmt.Errorf("missing or over %d bytes", MaxSignatureBytes)
-	}
 	if identity == "" || issuer == "" {
 		return time.Time{}, errors.New("no publisher identity to check")
 	}
-	var b bundle.Bundle
-	if err := b.UnmarshalJSON(signature); err != nil {
-		return time.Time{}, err
-	}
 	id, err := verify.NewShortCertificateIdentity(issuer, "", identity, "")
 	if err != nil {
+		return time.Time{}, err
+	}
+	return s.verify(signature, artifact, id)
+}
+
+// VerifyPattern is Verify for a signer whose identity varies in one part (a
+// workflow on a branch or a tag): identityPattern is an anchored regular
+// expression over the whole certificate identity (^...$ is required), the
+// issuer stays exact.
+func (s *Verifier) VerifyPattern(signature, artifact []byte, identityPattern, issuer string) (time.Time, error) {
+	if identityPattern == "" || issuer == "" {
+		return time.Time{}, errors.New("no signer identity to check")
+	}
+	if !strings.HasPrefix(identityPattern, "^") || !strings.HasSuffix(identityPattern, "$") {
+		return time.Time{}, errors.New("the signer identity pattern must be anchored with ^ and $")
+	}
+	id, err := verify.NewShortCertificateIdentity(issuer, "", "", identityPattern)
+	if err != nil {
+		return time.Time{}, err
+	}
+	return s.verify(signature, artifact, id)
+}
+
+func (s *Verifier) verify(signature, artifact []byte, id verify.CertificateIdentity) (time.Time, error) {
+	if len(signature) == 0 || len(signature) > MaxSignatureBytes {
+		return time.Time{}, fmt.Errorf("missing or over %d bytes", MaxSignatureBytes)
+	}
+	var b bundle.Bundle
+	if err := b.UnmarshalJSON(signature); err != nil {
 		return time.Time{}, err
 	}
 	res, err := s.v.Verify(&b, verify.NewPolicy(verify.WithArtifact(bytes.NewReader(artifact)), verify.WithCertificateIdentity(id)))
