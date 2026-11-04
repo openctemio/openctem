@@ -174,10 +174,14 @@ func (w *world) seedResources(t testing.TB, ten *tenant) {
 // scoped asset, one on the out-of-scope asset and one to delete.
 func (w *world) ingest(t testing.TB, ten *tenant, key credential) {
 	t.Helper()
-	id := uuid.NewString()
+	uid, err := uuid.NewV7()
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := uid.String()
 	report := map[string]any{
-		"version":  "1.0",
-		"metadata": map[string]any{"id": id, "timestamp": time.Now().UTC().Format(time.RFC3339), "source_type": "scanner"},
+		"version":  "2.0",
+		"metadata": map[string]any{"id": id, "generated_at": time.Now().UTC().Format(time.RFC3339), "channel": "scanner"},
 		"tool":     map[string]any{"name": "nuclei", "version": "3.3.0"},
 		"assets": []map[string]any{
 			{"id": "a1", "type": "domain", "value": "scoped-asset." + ten.Slug + ".example.com"},
@@ -198,7 +202,7 @@ func (w *world) ingest(t testing.TB, ten *tenant, key credential) {
 	}
 	req := func(r *http.Request) {
 		cred(r)
-		r.Header.Set("Content-Type", "application/vnd.openctem.ctis.v1+json")
+		r.Header.Set("Content-Type", "application/vnd.ctis+json; version=2.0")
 	}
 	resp, err := w.c.doRaw(req, "PUT", "/api/v2/sensor/results/"+id, raw)
 	must(t, ten.Name+": ingest", 200, 201, 202)(resp, err)

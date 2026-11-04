@@ -105,7 +105,7 @@ func TestFeedRelayRoutes(t *testing.T) {
 		postgres.NewVulnerabilityRepository(db), postgres.NewComponentRepository(db),
 		sensorRepo, postgres.NewBranchRepository(db), postgres.NewTenantRepository(db),
 		postgres.NewAuditRepository(db), log)
-	ctl := handler.NewSensorControlV2Handler(handler.NewIngestHandler(ingestSvc, sensorSvc, log), nil, nil, nil, log)
+	ctl := handler.NewSensorControlV2Handler(handler.NewIngestHandler(ingestSvc, sensorSvc, log), nil, nil, log)
 	repo := postgres.NewFeedRelayRoundRepository(db)
 	var importedA, importedB string
 	dirA, dirB := t.TempDir(), t.TempDir()

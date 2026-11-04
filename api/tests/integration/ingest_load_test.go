@@ -29,7 +29,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/internal/infra/controller"
 	"github.com/openctemio/openctem/api/pkg/domain/cirun"
@@ -99,7 +99,7 @@ type upload struct{ token, run, repo string }
 // requests in flight, default 50: the API's own connection pool is the
 // production bound) and returns the accept latencies and the failures
 // (anything but 202).
-func (h *loadHarness) acceptAll(ups []upload, bodies []map[string]any) ([]time.Duration, int) {
+func (h *loadHarness) acceptAll(ups []upload, bodies []ctis.Report) ([]time.Duration, int) {
 	lat := make([]time.Duration, len(ups))
 	codes := make([]int, len(ups))
 	slots := make(chan struct{}, loadEnv("LOAD_ACCEPT_PARALLEL", 50))
@@ -175,7 +175,7 @@ func TestIngestLoad(t *testing.T) {
 	// headroom for the harness's own reads.
 	r.db.SetMaxOpenConns(loadEnv("LOAD_DB_CONNS", 60))
 	h := &loadHarness{t: t, r: r, workers: loadEnv("LOAD_WORKERS", 4), trusts: map[shared.ID]*cirun.TrustConfig{},
-		host: strings.ToLower(strings.TrimPrefix(r.idp.srv.URL, "https://"))}
+		host: strings.ToLower(strings.TrimPrefix(r.idp.url, "https://"))}
 	ctx := context.Background()
 	tenants := []shared.ID{r.tenant, r.other}
 	for len(tenants) < loadEnv("LOAD_TENANTS", 10) {
@@ -194,7 +194,7 @@ func TestIngestLoad(t *testing.T) {
 		repos[i] = repoRef{tenants[i%len(tenants)], fmt.Sprintf("acme/load-%d", i)}
 	}
 	seed := make([]upload, conc)
-	seedBodies := make([]map[string]any, conc)
+	seedBodies := make([]ctis.Report, conc)
 	for i, rr := range repos {
 		tok, run, repo := h.openRun(rr.tenant, rr.project)
 		seed[i] = upload{tok, run, repo}
@@ -205,7 +205,7 @@ func TestIngestLoad(t *testing.T) {
 	}
 	h.drain(ctx)
 	ups := make([]upload, conc)
-	bodies := make([]map[string]any, conc)
+	bodies := make([]ctis.Report, conc)
 	for i, rr := range repos {
 		tok, run, repo := h.openRun(rr.tenant, rr.project)
 		ups[i] = upload{tok, run, repo}
@@ -228,7 +228,7 @@ func TestIngestLoad(t *testing.T) {
 	// --- T4: an urgent report while bulk jobs wait ---
 	bulk := loadEnv("LOAD_BULK", 500)
 	bulkUps := make([]upload, bulk)
-	bulkBodies := make([]map[string]any, bulk)
+	bulkBodies := make([]ctis.Report, bulk)
 	for i := range bulkUps {
 		tok, run, repo := h.openRun(tenants[i%len(tenants)], fmt.Sprintf("acme/bulk-%d", i))
 		bulkUps[i] = upload{tok, run, repo}
@@ -274,7 +274,7 @@ func TestIngestLoad(t *testing.T) {
 	// --- T3: the same findings to one repository from many runs at once ---
 	same, sameN := loadEnv("LOAD_SAME", 20), loadEnv("LOAD_SAME_FINDINGS", 500)
 	sameUps := make([]upload, same)
-	sameBodies := make([]map[string]any, same)
+	sameBodies := make([]ctis.Report, same)
 	for i := range sameUps {
 		tok, run, repo := h.openRun(tenants[0], "acme/matrix")
 		sameUps[i] = upload{tok, run, repo}

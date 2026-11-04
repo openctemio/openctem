@@ -58,6 +58,8 @@ next-env.d.ts
 /templates
 
 # sentry configs (temporary, until package installed)
-/sentry-configs
+/sentry-configs/
+/test-results-console
+/.console-e2e-auth
 # third-party notices, generated at image build (scripts/third-party-notices.mjs)
 /third-party-notices.json

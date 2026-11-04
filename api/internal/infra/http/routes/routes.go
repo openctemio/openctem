@@ -1190,7 +1190,7 @@ func Register(
 
 	// Suppression routes (tenant from JWT token)
 	if h.Suppression != nil {
-		registerSuppressionRoutes(router, h.Suppression, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleSuppressions))
+		registerSuppressionRoutes(router, h.Suppression, authMiddleware, userSync)
 	}
 
 	// Exposure routes (tenant from JWT token)

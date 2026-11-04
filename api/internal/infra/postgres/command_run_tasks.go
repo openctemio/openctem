@@ -14,7 +14,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/scanwindow"
 
 	"github.com/lib/pq"
-	"github.com/openctemio/ctis/outcome"
+	"github.com/openctemio/contract/outcome"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )

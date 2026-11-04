@@ -13,6 +13,7 @@ import (
 	cryptopkg "github.com/openctemio/openctem/api/pkg/crypto"
 	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/httpsec"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/pagination"
 )
@@ -86,15 +87,19 @@ func (s *AuditService) LogEvent(ctx context.Context, actx AuditContext, event Au
 		log.WithActor(shared.ID{}, actx.ActorEmail)
 	}
 
-	// Set request context
-	if actx.ActorIP != "" {
-		log.WithActorIP(actx.ActorIP)
+	// Set request context. Most callers build AuditContext by hand and leave
+	// the request id and client address out; the HTTP middleware has already
+	// put both on the request context (request id, and the client IP derived
+	// with the trusted-proxy rule), so fall back to them. A caller's explicit
+	// value wins. Background work has neither and records neither.
+	if ip := firstNonEmpty(actx.ActorIP, httpsec.ClientIPFromContext(ctx)); ip != "" {
+		log.WithActorIP(ip)
 	}
 	if actx.UserAgent != "" {
 		log.WithActorUserAgent(actx.UserAgent)
 	}
-	if actx.RequestID != "" {
-		log.WithRequestID(actx.RequestID)
+	if rid := firstNonEmpty(actx.RequestID, requestIDFromContext(ctx)); rid != "" {
+		log.WithRequestID(rid)
 	}
 	if actx.SessionID != "" {
 		log.WithSessionID(actx.SessionID)
@@ -154,11 +159,12 @@ func (s *AuditService) LogEvent(ctx context.Context, actx AuditContext, event Au
 		return err
 	}
 
-	// Append to the tamper-evident hash-chain (migration 000154).
-	// Best-effort: a chain failure does not roll back the audit log.
-	// Verification would detect the missing row as a chain gap, which
-	// is strictly better than dropping the audit entry altogether.
-	s.appendChainEntry(ctx, log)
+	// The Postgres repository's database chains the row in the same
+	// transaction (migration audit_log_db_chain), so a stored row is always
+	// chained. Other repositories (tests) get the application chain.
+	if dc, ok := s.auditRepo.(databaseChainer); !ok || !dc.ChainsInDatabase() {
+		s.appendChainEntry(ctx, log)
+	}
 
 	// Log to structured logger as well for immediate visibility
 	s.logger.Info("audit event",
@@ -286,13 +292,7 @@ func (s *AuditService) VerifyChain(ctx context.Context, tenantID shared.ID, limi
 		}
 
 		// 2. Recompute hash from the audit_log fields + stored prev_hash.
-		payload := fmt.Sprintf("%s|%s|%s|%s",
-			log.Action().String(),
-			log.ResourceType().String(),
-			log.ResourceID(),
-			log.Result().String(),
-		)
-		expected := cryptopkg.ComputeAuditChainHash(e.PrevHash, log.ID().String(), payload, log.Timestamp())
+		expected := chainclassify.Hash(e.PrevHash, chainRow(e, log))
 
 		if expected != e.Hash {
 			res.Breaks = append(res.Breaks, ChainBreak{
@@ -521,13 +521,7 @@ func (s *AuditService) rebaselineLocked(ctx context.Context, tenantID shared.ID,
 		if classify != nil {
 			classify.Add(chainRow(e, log))
 		}
-		payload := chainclassify.Payload(
-			log.Action().String(),
-			log.ResourceType().String(),
-			log.ResourceID(),
-			log.Result().String(),
-		)
-		newHash := cryptopkg.ComputeAuditChainHash(prev, log.ID().String(), payload, log.Timestamp())
+		newHash := chainclassify.Hash(prev, chainRow(e, log))
 		if e.PrevHash != prev || e.Hash != newHash {
 			rb.Rewrites = append(rb.Rewrites, auditdom.ChainRewrite{
 				AuditLogID:    e.AuditLogID,
@@ -586,7 +580,16 @@ func chainRow(e auditdom.ChainEntry, log *auditdom.AuditLog) chainclassify.Row {
 		ResourceID:   log.ResourceID(),
 		Result:       log.Result().String(),
 		LoggedAt:     log.Timestamp(),
+		HashVersion:  e.HashVersion,
+		RowPayload:   e.RowPayload,
 	}
+}
+
+// databaseChainer is implemented by a repository whose database chains every
+// audit row in the transaction that stores it (the Postgres repository). The
+// service then appends nothing itself.
+type databaseChainer interface {
+	ChainsInDatabase() bool
 }
 
 // chainAppender is implemented by a repository that extends a chain
@@ -1310,4 +1313,23 @@ func (s *AuditService) LogSensorDisconnected(ctx context.Context, actx AuditCont
 		WithResourceName(sensorName).
 		WithMessage(fmt.Sprintf("Sensor '%s' disconnected (heartbeat timeout)", sensorName))
 	return s.LogEvent(ctx, actx, event)
+}
+
+// requestIDFromContext returns the request id the HTTP request-id middleware
+// stored on the context (the logger's context key), or "".
+func requestIDFromContext(ctx context.Context) string {
+	if ctx == nil {
+		return ""
+	}
+	v, _ := ctx.Value(logger.ContextKeyRequestID).(string)
+	return v
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
 }

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/pkg/domain/cirun"
 )
@@ -19,7 +19,7 @@ import (
 func TestCIGateFailsOnCapabilityStates(t *testing.T) {
 	r := newCIRig(t)
 	cfg := r.trust(r.tenant, cirun.Rules{Owners: []string{"acme"}})
-	host := strings.TrimPrefix(r.idp.srv.URL, "https://")
+	host := strings.TrimPrefix(r.idp.url, "https://")
 	repoName := strings.ToLower(host) + "/acme/api"
 	low := ciFinding("Low", "go.low", "low", ctis.FindingTypeVulnerability, "a.go", 1)
 

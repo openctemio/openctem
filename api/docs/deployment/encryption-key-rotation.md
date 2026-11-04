@@ -54,8 +54,11 @@ Each value gets exactly one of these outcomes:
   rolls the whole run back.
 
 The run also sweeps every text, bytea and jsonb column for values the old key
-still opens. If it finds any, the column is a location this list does not
-cover, and the run fails and nothing is committed.
+still opens, in every schema of the database (an extension's own schema
+included, not only the core one). If it finds any, the column is a location
+this list does not cover, and the run fails and nothing is committed. A table
+the connecting role may not read is reported the same way, since it cannot be
+proved free of old-key values: run `rekey` as the schema owner.
 
 Plaintext values left over from before encryption was configured count as
 failures. Run `cmd/encrypt-credentials` first if there are any.

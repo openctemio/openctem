@@ -22,8 +22,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/openctemio/ctis"
-	"github.com/openctemio/ctis/importer"
+	"github.com/openctemio/ctis/v2"
+	"github.com/openctemio/ctis/v2/importer"
 
 	"github.com/openctemio/openctem/api/internal/app/findingimport"
 	appimportmapping "github.com/openctemio/openctem/api/internal/app/importmapping"
@@ -64,6 +64,10 @@ var (
 	ErrUploadsUnavailable = errors.New("CI result uploads are not available")
 	// ErrInvalidReport: the body is neither a CTIS report nor a tool export.
 	ErrInvalidReport = fmt.Errorf("%w: invalid CTIS report", shared.ErrValidation)
+	// ErrReportUpgrade: a CTIS 1.x document or the {"report": ...} envelope
+	// of the 1.x CI integration; the platform reads the CTIS 2.0 document
+	// itself only.
+	ErrReportUpgrade = fmt.Errorf("%w: not a CTIS 2.0 document", shared.ErrValidation)
 	// ErrUploadsPending: the run still has uploads being applied; ask for
 	// the verdict again shortly.
 	ErrUploadsPending = errors.New("the run's uploads are still being applied")
@@ -156,32 +160,32 @@ type UploadReceipt struct {
 	Result *UploadResult
 }
 
-// DecodeReport accepts {"report": {...}} or a bare CTIS report, refusing
-// fields outside the contract. The bounded I-JSON pre-pass runs first:
-// nothing is decoded until the document's item counts are within
-// ingest.CIReportBounds.
-func DecodeReport(body []byte) (*ctis.Report, bool) {
-	if ingest.CheckIJSONBounded(body, protov2.DefaultMaxJSONDepth, ingest.CIReportBounds) != nil {
-		return nil, false
+// DecodeReport reads a CTIS 2.0 document, the body itself (no envelope),
+// refusing fields outside the contract. The bounded I-JSON pre-pass runs
+// first: nothing is decoded until the document's item counts are within
+// ingest.CIReportBounds. A CTIS 1.x document, or the {"report": ...} envelope
+// of the 1.x CI integration, is ErrReportUpgrade; anything else that does not
+// decode and validate is ErrInvalidReport.
+func DecodeReport(body []byte) (*ctis.Report, error) {
+	// Depth and item counts first: no parse, not even of the top level,
+	// before the body is within bounds.
+	if err := ingest.CheckIJSONBounded(body, protov2.DefaultMaxJSONDepth, ingest.CIReportBounds); err != nil {
+		return nil, ErrInvalidReport
 	}
-	var wrapped struct {
-		Report ctis.Report `json:"report"`
+	var top map[string]json.RawMessage
+	if json.Unmarshal(body, &top) == nil {
+		if _, wrapped := top["report"]; wrapped {
+			return nil, ErrReportUpgrade
+		}
 	}
-	dec := json.NewDecoder(bytes.NewReader(body))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&wrapped); err == nil && wrapped.Report.Version != "" {
-		return &wrapped.Report, true
+	report, err := ingest.DecodeStrictReport(body, protov2.DefaultMaxJSONDepth, ingest.CIReportBounds)
+	switch {
+	case errors.Is(err, ingest.ErrCTISVersion):
+		return nil, ErrReportUpgrade
+	case err != nil:
+		return nil, ErrInvalidReport
 	}
-	var report ctis.Report
-	dec = json.NewDecoder(bytes.NewReader(body))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&report); err != nil {
-		return nil, false
-	}
-	if report.Version == "" {
-		report.Version = "1.0"
-	}
-	return &report, true
+	return report, nil
 }
 
 // uploadPrincipal names a run as the submitter of its uploads.
@@ -205,9 +209,9 @@ func (s *Service) AcceptUpload(ctx context.Context, run *cirun.Run, body []byte,
 		export = true
 	}
 	if !export {
-		report, ok := DecodeReport(body)
-		if !ok {
-			return nil, ErrInvalidReport
+		report, err := DecodeReport(body)
+		if err != nil {
+			return nil, err
 		}
 		if err := ScopeReport(report, run); err != nil {
 			return nil, err
@@ -389,7 +393,7 @@ func classifyUploadError(err error) error {
 		return ingestjob.Permanent(UploadErrorRunEvaluated, err)
 	case errors.Is(err, cirun.ErrRunNotFound):
 		return ingestjob.Permanent(UploadErrorRunGone, err)
-	case errors.Is(err, ErrInvalidReport):
+	case errors.Is(err, ErrInvalidReport), errors.Is(err, ErrReportUpgrade):
 		return ingestjob.Permanent(UploadErrorUnreadable, err)
 	case errors.As(err, &de) && de.Code == ingest.CodePayloadTooLarge:
 		return ingestjob.Permanent(UploadErrorTooLarge, err)
@@ -402,9 +406,9 @@ func classifyUploadError(err error) error {
 // applyCTIS applies a CTIS report of the run (its slot was reserved when
 // it was accepted).
 func (s *Service) applyCTIS(ctx context.Context, run *cirun.Run, body []byte) (*UploadResult, error) {
-	report, ok := DecodeReport(body)
-	if !ok {
-		return nil, ErrInvalidReport
+	report, err := DecodeReport(body)
+	if err != nil {
+		return nil, err
 	}
 	out, err := s.applyReport(ctx, run, report)
 	if err != nil {
@@ -445,7 +449,7 @@ func (s *Service) applyExportSlots(ctx context.Context, run *cirun.Run, body []b
 	var refusedFile *findingimport.FileError
 	reports := 0
 	_, refused := findingimport.Convert(ctx, findingimport.Upload{
-		Name: "results", Body: bytes.NewReader(body), ReportIDPrefix: run.ID.String(),
+		Name: "results", Body: bytes.NewReader(body),
 		// Code reports are filed on the run's repository, whatever the file
 		// names; ScopeImported then drops anything still elsewhere.
 		Repository: run.Repository, Branch: run.Branch, CommitSHA: run.CommitSHA,

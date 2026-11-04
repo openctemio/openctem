@@ -116,7 +116,7 @@ Jobs are created when work is triggered, not when a sensor asks:
 Each command records at creation: `tenant_id`, `type`, `priority`
 (`low`/`normal`/`high`/`critical`), `payload`, the routing decision
 (`is_platform_job`, `sensor_id` when pinned, `scan_zone_id`), `host_keys` (the
-per-host politeness keys from `github.com/openctemio/ctis/politeness`; an empty
+per-host politeness keys from `github.com/openctemio/contract/politeness`; an empty
 list for a passive tool that reaches no target host, such as DNS resolution,
 subdomain discovery, RDAP and ASN lookups, whether it runs as a workflow
 stage or as a single-scanner or coverage command, so it never waits behind

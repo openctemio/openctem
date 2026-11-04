@@ -6,7 +6,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/openctemio/ctis/edgeprotect"
+	"github.com/openctemio/contract/edgeprotect"
 
 	"github.com/openctemio/openctem/api/pkg/domain/evidence"
 )

@@ -5,17 +5,17 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/openctemio/ctis/capability"
+	"github.com/openctemio/contract/capability"
 )
 
-// Every capability contract is the taxonomy entry of ctis/capability: ports,
+// Every capability contract is the taxonomy entry of contract/capability: ports,
 // params, tier floor, phase and ATT\&CK ids come from there, never from a
 // second copy here.
 func TestContractsComeFromTheTaxonomy(t *testing.T) {
 	for _, s := range Taxonomy() {
 		c, ok := capability.Lookup(s.ID())
 		if !ok {
-			t.Fatalf("%s is not in ctis/capability", s.ID())
+			t.Fatalf("%s is not in contract/capability", s.ID())
 		}
 		if s.Tier != Tier(c.TierFloor) {
 			t.Errorf("%s: tier %s, floor T%d", s.Key, s.Tier, c.TierFloor)

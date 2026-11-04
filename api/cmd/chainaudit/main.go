@@ -35,6 +35,8 @@ type row struct {
 	resID      sql.NullString
 	result     string
 	loggedAt   time.Time
+	version    int
+	payload    sql.NullString
 }
 
 func main() {
@@ -61,7 +63,8 @@ func main() {
 	// chain key anyway.
 	rows, err := db.Query(`
 		SELECT c.audit_log_id, c.chain_position, c.prev_hash, c.hash,
-		       c.tenant_id, l.action, l.resource_type, l.resource_id, l.result, l.logged_at
+		       c.tenant_id, l.action, l.resource_type, l.resource_id, l.result, l.logged_at,
+		       c.hash_version, CASE WHEN c.hash_version = 2 THEN audit_log_row_payload(l) END
 		FROM audit_log_chain c
 		JOIN audit_logs l ON l.id = c.audit_log_id
 		ORDER BY c.tenant_id, c.chain_position`)
@@ -81,7 +84,8 @@ func main() {
 	for rows.Next() {
 		var r row
 		if err := rows.Scan(&r.auditLogID, &r.position, &r.prevHash, &r.hash,
-			&r.tenantID, &r.action, &r.resType, &r.resID, &r.result, &r.loggedAt); err != nil {
+			&r.tenantID, &r.action, &r.resType, &r.resID, &r.result, &r.loggedAt,
+			&r.version, &r.payload); err != nil {
 			fmt.Fprintln(os.Stderr, "scan:", err)
 			os.Exit(1)
 		}
@@ -97,6 +101,8 @@ func main() {
 			ResourceID:   r.resID.String,
 			Result:       r.result,
 			LoggedAt:     r.loggedAt,
+			HashVersion:  r.version,
+			RowPayload:   r.payload.String,
 		})
 
 		c := perTenant[r.tenantID]

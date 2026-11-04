@@ -9,8 +9,8 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/openctemio/ctis"
-	"github.com/openctemio/ctis/weburl"
+	"github.com/openctemio/ctis/v2"
+	"github.com/openctemio/ctis/v2/weburl"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
@@ -241,7 +241,7 @@ func observeParams(declared []ctis.EndpointParam, queryNames []string) []ParamOb
 	}
 	for _, p := range declared {
 		if validLocation(p.Location) {
-			add(string(p.Location), p.Name, p.TypeHint, p.Required)
+			add(string(p.Location), p.Name, p.TypeHint, p.IsRequired)
 		}
 	}
 	for _, n := range queryNames {

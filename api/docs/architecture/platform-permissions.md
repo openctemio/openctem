@@ -314,6 +314,8 @@ session, no permission). `public`: a sign-in step before a session exists.
 | `DELETE /api/v1/admin/tenants/{tenantId}/sso/saml` | `platform.tenants.sso.write` |
 | `GET /api/v1/admin/tenants/{tenantId}/sso/saml` | `platform.tenants.read` |
 | `PUT /api/v1/admin/tenants/{tenantId}/sso/saml` | `platform.tenants.sso.write` |
+| `POST /api/v1/admin/tenants/{tenantId}/sso/saml/idp-metadata` | `platform.tenants.sso.write` |
+| `GET /api/v1/admin/tenants/{tenantId}/sso/saml/sp-metadata` | `platform.tenants.read` |
 | `GET /api/v1/admin/tenants/{tenantId}/sso/verified-domains` | `platform.tenants.read` |
 | `POST /api/v1/admin/tenants/{tenantId}/sso/verified-domains` | `platform.tenants.sso.write` |
 | `DELETE /api/v1/admin/tenants/{tenantId}/sso/verified-domains/{id}` | `platform.tenants.sso.write` |

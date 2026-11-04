@@ -34,7 +34,7 @@ func TestHostileSensor_SameReportIDAcrossSensorsDoesNotCollide(t *testing.T) {
 
 	rid := newReportID()
 	base := "/api/v2/sensor/results/" + rid
-	body := v2Segment("semgrep", "1.0", "a")
+	body := v2Segment("semgrep", "2.0", "a")
 	commit, _ := json.Marshal(protov2.CommitRequest{SegmentCount: 1, SegmentDigests: []string{digestOf(body)}})
 	for _, key := range []string{h.key, out.APIKey} {
 		h.key = key
