@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	scmappsvc "github.com/openctemio/openctem/api/internal/app/scmapp"
 	"github.com/openctemio/openctem/api/internal/infra/scm/gitlabapi"
@@ -57,7 +57,7 @@ func TestCIBaselineIsVerifiedNeverJobChosen(t *testing.T) {
 	r := newCIRig(t)
 	ctx := context.Background()
 	cfg := r.trust(r.tenant, cirun.Rules{Owners: []string{"acme"}})
-	host := strings.ToLower(strings.TrimPrefix(r.idp.srv.URL, "https://"))
+	host := strings.ToLower(strings.TrimPrefix(r.idp.url, "https://"))
 	repoName := host + "/acme/api"
 	const sha = "5555555555555555555555555555555555555555"
 

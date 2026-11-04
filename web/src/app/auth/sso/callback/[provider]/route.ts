@@ -14,6 +14,7 @@ import { cookies } from 'next/headers'
 import type { NextRequest } from 'next/server'
 
 import { bindingCookieName } from '@/features/auth/lib/browser-binding'
+import { SSO_LINK_INTENT_COOKIE } from '@/features/auth/lib/oauth-cookies'
 import { loginErrorCodeFor } from '@/features/auth/lib/auth-error-codes'
 import { loginErrorHref } from '@/features/auth/lib/login-error'
 import { handleSSOCallback } from '@/features/sso/actions/sso-auth-actions'
@@ -42,6 +43,17 @@ export async function GET(
   const orgSlug = cookieStore.get('sso_org')?.value || ''
   const org = orgSlug ? { org: orgSlug } : undefined
   const redirectTo = validateRedirectUrl(cookieStore.get('sso_redirect')?.value, '/')
+
+  // Linking the organization's sign-in to the signed-in account (Account >
+  // Security): the link route finishes it, so hand over before anything here
+  // consumes the attempt's cookies.
+  if (isValidProvider(provider) && cookieStore.get(SSO_LINK_INTENT_COOKIE)?.value === provider) {
+    const forward = new URLSearchParams()
+    if (code) forward.set('code', code)
+    if (state) forward.set('state', state)
+    if (search.get('error')) forward.set('error', '1')
+    redirect(`/auth/sso/link/${provider}?${forward.toString()}`)
+  }
 
   // These exits come before the callback action, which clears the attempt's
   // single-use cookies itself, so clear them here.

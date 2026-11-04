@@ -145,7 +145,7 @@ func (r *memRepo) Delete(_ context.Context, tid, id shared.ID) error {
 	return nil
 }
 
-const csvDoc = `{"apiVersion": "openctem.io/mapping/v1", "source": "csv", "identity": ["title", "asset_value"],
+const csvDoc = `{"apiVersion": "openctem.io/mapping/v2", "source": "csv", "identity": ["title", "asset_value"],
   "records": [{"kind": "finding", "set": {"title": "/title", "severity": {"path": "/severity", "lower": true}, "asset_value": "/host", "description": "/note"}}]}`
 
 func TestCreateVersionsAndIdentityConfirm(t *testing.T) {
@@ -185,7 +185,7 @@ func TestCreateVersionsAndIdentityConfirm(t *testing.T) {
 		t.Fatalf("confirmed: %+v %v", v3, err)
 	}
 	// Another source is another mapping.
-	xml := `{"apiVersion": "openctem.io/mapping/v1", "source": "xml", "each": "//i", "identity": ["title"], "records": [{"kind": "finding", "set": {"title": "/@n", "severity": {"const": "low"}}}]}`
+	xml := `{"apiVersion": "openctem.io/mapping/v2", "source": "xml", "each": "//i", "identity": ["title"], "records": [{"kind": "finding", "set": {"title": "/@n", "severity": {"const": "low"}}}]}`
 	if _, _, err := svc.AddVersion(ctx, AddVersionInput{TenantID: tid, ID: m.ID, Document: json.RawMessage(xml), ConfirmIdentityChange: true}); !errors.Is(err, shared.ErrValidation) {
 		t.Fatalf("source change: %v", err)
 	}
@@ -257,9 +257,17 @@ func TestPreview(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if p.Stats.Findings != 4 || len(p.Items) != 4 {
-		t.Fatalf("stats %+v", p.Stats)
+	// The preview lists the assets the file names beside the findings.
+	var items []PreviewItem
+	for _, it := range p.Items {
+		if it.Kind == "finding" {
+			items = append(items, it)
+		}
 	}
+	if p.Stats.Findings != 4 || len(items) != 4 {
+		t.Fatalf("stats %+v finding items %d", p.Stats, len(items))
+	}
+	p.Items = items
 	if p.Items[0].IdentityKey == "" || p.Items[0].IdentityKey != p.Items[1].IdentityKey || p.Items[0].IdentityKey == p.Items[2].IdentityKey {
 		t.Fatalf("identity keys %q %q %q", p.Items[0].IdentityKey, p.Items[1].IdentityKey, p.Items[2].IdentityKey)
 	}
@@ -279,7 +287,7 @@ func TestPreview(t *testing.T) {
 
 	// Hostile samples are refused, never stored: XML with a DTD, and a
 	// sample over the cap.
-	xmlDoc := `{"apiVersion": "openctem.io/mapping/v1", "source": "xml", "each": "//i", "identity": ["title"], "records": [{"kind": "finding", "set": {"title": "/@n", "severity": {"const": "low"}}}]}`
+	xmlDoc := `{"apiVersion": "openctem.io/mapping/v2", "source": "xml", "each": "//i", "identity": ["title"], "records": [{"kind": "finding", "set": {"title": "/@n", "severity": {"const": "low"}}}]}`
 	laughs := `<?xml version="1.0"?><!DOCTYPE l [<!ENTITY a "aaaa"><!ENTITY b "&a;&a;&a;&a;">]><r><i n="&b;"/></r>`
 	var ve *ValidationError
 	if _, err := svc.PreviewDocument(ctx, json.RawMessage(xmlDoc), strings.NewReader(laughs)); !errors.As(err, &ve) {

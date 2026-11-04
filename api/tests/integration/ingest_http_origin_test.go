@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
@@ -28,7 +28,10 @@ func TestIngest_HTTPProbeCreatesOrigins(t *testing.T) {
 		rep.Tool = &ctis.Tool{Name: tool}
 		bind := ingest.Binding{Kind: ingest.BindingCommand, Targets: targets}
 		out, err := r.svc.Ingest(ctx, agt, ingest.Input{Report: rep, Options: ingest.Options{Binding: bind}})
-		if err != nil || len(out.Errors) > 0 {
+		if err != nil {
+			t.Fatalf("ingest: %v", err)
+		}
+		if len(out.Errors) > 0 {
 			t.Fatalf("Ingest %s: %v %v", tool, err, out.Errors)
 		}
 	}

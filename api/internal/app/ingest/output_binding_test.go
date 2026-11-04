@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/sensorresult"
@@ -36,7 +36,7 @@ func dnsxReport() *ctis.Report {
 		Metadata: ctis.ReportMetadata{ID: "r1"},
 		Tool:     &ctis.Tool{Name: "dnsx"},
 		Assets: []ctis.Asset{
-			{ID: "a1", Type: ctis.AssetTypeDomain, Value: "acme.test"},
+			{ID: "a1", Type: ctis.AssetTypeDomainName, Value: "acme.test"},
 			{ID: "a2", Type: ctis.AssetTypeIPAddress, Value: "203.0.113.4"},
 			{ID: "a3", Type: ctis.AssetTypeRepository, Value: "github.com/evil/planted"},
 		},
@@ -114,8 +114,8 @@ func TestBindOutputTypes_NoContract(t *testing.T) {
 func TestBindOutputTypes_ReobservedInputsAndUnclassified(t *testing.T) {
 	s := &Service{logger: logger.NewNop(), results: &policyResults{mode: sensorresult.ModeQuarantine}}
 	r := &ctis.Report{Tool: &ctis.Tool{Name: "httpx"}, Assets: []ctis.Asset{
-		{ID: "s", Type: ctis.AssetTypeHTTPService, Value: "https://acme.test"},
-		{ID: "d", Type: ctis.AssetTypeDomain, Value: "acme.test"},
+		{ID: "s", Type: ctis.AssetTypeWebOrigin, Value: "https://acme.test"},
+		{ID: "d", Type: ctis.AssetTypeDomainName, Value: "acme.test"},
 		{ID: "u", Type: "made_up_type", Value: "x"},
 	}}
 	got := s.bindOutputTypes(context.Background(), &sensor.Sensor{ID: shared.NewID()}, shared.NewID(), boundCommand("httpx"), r, Options{})

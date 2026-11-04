@@ -4,7 +4,7 @@
 
 ## Overview
 
-API imports CTIS types from a standalone lightweight module (`github.com/openctemio/ctis`) instead of the full SDK-Go (50K lines). This eliminates unnecessary dependency coupling between the backend and client library.
+API imports CTIS types from a standalone lightweight module (`github.com/openctemio/ctis/v2`) instead of the full SDK-Go (50K lines). This eliminates unnecessary dependency coupling between the backend and client library.
 
 ## Architecture
 
@@ -28,7 +28,7 @@ AFTER:
 | 90% of SDK-Go code unused by API | Bloated dependency tree |
 | Sensor bug fix → API forced to retest | Wrong dependency direction |
 
-## CTIS Module (`github.com/openctemio/ctis`)
+## CTIS Module (`github.com/openctemio/ctis/v2`)
 
 **Zero external dependencies** — stdlib only.
 
@@ -37,15 +37,22 @@ AFTER:
 | `ctis` (root) | Report, Asset, Finding, DataFlow structs (60+) | 2,416 |
 | `ctis/severity` | Severity enum, parsing, comparison | 217 |
 | `ctis/fingerprint` | SHA256 finding dedup hash | 429 |
-| `schemas/v1/` | JSON Schema definitions (6 files) | N/A |
+| `schemas/v2/` | JSON Schema definitions | N/A |
+
+The orchestration packages that used to sit in this module (`capability`,
+`tooloption`, `settings`, `outcome`, `politeness`, `edgeprotect`, `addrscope`,
+`source`, and `transfer`, its own module) moved to `github.com/openctemio/contract`
+when CTIS 2.0 shipped. The platform accepts CTIS 2.x only (media type
+`application/vnd.ctis+json; version=2.0`); see
+[ctis-receiver.md](ctis-receiver.md).
 
 ### Installation
 
 ```go
 import (
-    "github.com/openctemio/ctis"
-    "github.com/openctemio/ctis/severity"
-    "github.com/openctemio/ctis/fingerprint"
+    "github.com/openctemio/ctis/v2"
+    "github.com/openctemio/ctis/v2/severity"
+    "github.com/openctemio/ctis/v2/fingerprint"
 )
 ```
 
@@ -55,7 +62,7 @@ import (
 
 ```
 BEFORE: "github.com/openctemio/sdk-go/pkg/ctis"
-AFTER:  "github.com/openctemio/ctis"
+AFTER:  "github.com/openctemio/ctis" (v2 since CTIS 2.0: "github.com/openctemio/ctis/v2")
 
 BEFORE: "github.com/openctemio/sdk-go/pkg/shared/severity"
 AFTER:  "github.com/openctemio/ctis/severity"
@@ -74,7 +81,8 @@ receives CTIS reports over the sensor protocol v2 and file imports through
 
 ```
 // api/go.mod: no sdk-go
-require github.com/openctemio/ctis vX.Y.Z
+require github.com/openctemio/ctis/v2 vX.Y.Z
+require github.com/openctemio/contract vX.Y.Z
 // NO github.com/openctemio/sdk-go
 ```
 
@@ -82,8 +90,8 @@ require github.com/openctemio/ctis vX.Y.Z
 
 | Version bump | Meaning | API action |
 |---|---|---|
-| Patch (v1.0.x) | Bug fix, no struct changes | `go get ctis@latest` |
-| Minor (v1.x.0) | New fields/types added | `go get ctis@latest` (backward compatible) |
+| Patch (v2.0.x) | Bug fix, no struct changes | `go get ctis@latest` |
+| Minor (v2.x.0) | New fields/types added | `go get ctis@latest` (backward compatible) |
 | Major (vX.0.0) | Breaking: fields renamed/removed | Coordinate with a sensor and sdk-go release |
 
 **Key rule**: Fingerprint algorithm NEVER changes in minor/patch (would break dedup).

@@ -12,7 +12,9 @@ repository, renamed 2026-10-02; RFC-020). The repository holds two components:
 
 Separate repositories: [sensor](https://github.com/openctemio/sensor) (formerly
 agent), [sdk-go](https://github.com/openctemio/sdk-go),
-[ctis](https://github.com/openctemio/ctis),
+[ctis](https://github.com/openctemio/ctis) (CTIS 2.0 format, module
+`github.com/openctemio/ctis/v2`), [contract](https://github.com/openctemio/contract)
+(orchestration contracts),
 [helm-charts](https://github.com/openctemio/helm-charts) and the public
 [docs](https://github.com/openctemio/docs) site. Map:
 `docs/development/repositories.md`.

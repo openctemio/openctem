@@ -8,15 +8,15 @@ package integration
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 func TestIngest_ObservationOrder(t *testing.T) {
@@ -27,28 +27,37 @@ func TestIngest_ObservationOrder(t *testing.T) {
 	ctx := context.Background()
 	tid := tn.tenant
 	agt := &sensor.Sensor{ID: tn.sensor, TenantID: &tid, Type: sensor.SensorTypeWorker, Status: sensor.SensorStatusActive}
-	send := func(tool string, observed time.Time, bind ingest.Binding, a ctis.Asset) {
+	var sendWith func(tool string, observed time.Time, bind ingest.Binding, rels []ctis.Relationship, a ...ctis.Asset)
+	send := func(tool string, observed time.Time, bind ingest.Binding, a ...ctis.Asset) {
 		t.Helper()
-		rep := &ctis.Report{Version: "1.0", Tool: &ctis.Tool{Name: tool}, Assets: []ctis.Asset{a},
-			Metadata: ctis.ReportMetadata{ID: "rep-" + shared.NewID().String(), Timestamp: observed}}
+		sendWith(tool, observed, bind, nil, a...)
+	}
+	sendWith = func(tool string, observed time.Time, bind ingest.Binding, rels []ctis.Relationship, a ...ctis.Asset) {
+		t.Helper()
+		rep := &ctis.Report{Version: ctis.SchemaVersion, Tool: &ctis.Tool{Name: tool}, Assets: a, Relationships: rels,
+			Metadata: ctis.ReportMetadata{ID: ctis.NewReportID(), GeneratedAt: observed}}
 		out, err := r.svc.Ingest(ctx, agt, ingest.Input{Report: rep, Options: ingest.Options{Binding: bind}})
-		if err != nil || len(out.Errors) > 0 {
+		if err != nil {
+			t.Fatalf("ingest: %v", err)
+		}
+		if len(out.Errors) > 0 {
 			t.Fatalf("Ingest: %v %v", err, out.Errors)
 		}
 	}
 	now := time.Now().UTC()
 
 	t.Run("properties and last_seen keep the newer observation", func(t *testing.T) {
-		const name = "web.order.example.com"
-		bind := ingest.Binding{Kind: ingest.BindingCommand, Targets: []string{name}, Tool: "httpx"}
-		send("httpx", now.Add(-time.Hour), bind, ctis.Asset{ID: "w", Type: ctis.AssetTypeDomain, Value: name,
-			Properties: ctis.Properties{"title": "New portal"}})
+		const host = "web.order.example.com"
+		const name = "https://" + host
+		bind := ingest.Binding{Kind: ingest.BindingCommand, Targets: []string{host}, Tool: "httpx"}
+		send("httpx", now.Add(-time.Hour), bind, ctis.Asset{ID: "w", Type: ctis.AssetTypeWebOrigin, Value: name,
+			Technical: &ctis.AssetTechnical{HTTP: &ctis.HTTPTechnical{Title: "New portal"}}})
 		// Delivered later, observed earlier.
-		send("httpx", now.Add(-5*time.Hour), bind, ctis.Asset{ID: "w", Type: ctis.AssetTypeDomain, Value: name,
-			Properties: ctis.Properties{"title": "Old portal", "x_note": "filled"}})
+		send("httpx", now.Add(-5*time.Hour), bind, ctis.Asset{ID: "w", Type: ctis.AssetTypeWebOrigin, Value: name,
+			Technical: &ctis.AssetTechnical{HTTP: &ctis.HTTPTechnical{Title: "Old portal", WebServer: "filled"}}})
 		var title, code string
 		var lastSeen time.Time
-		if err := r.db.QueryRowContext(ctx, `SELECT properties->>'title', COALESCE(properties->>'x_note', ''), last_seen
+		if err := r.db.QueryRowContext(ctx, `SELECT properties->>'title', COALESCE(properties->>'server', ''), last_seen
 			FROM assets WHERE tenant_id = $1 AND name = $2`, tid.String(), name).Scan(&title, &code, &lastSeen); err != nil {
 			t.Fatal(err)
 		}
@@ -56,7 +65,7 @@ func TestIngest_ObservationOrder(t *testing.T) {
 			t.Errorf("title = %q: an older report overwrote a newer value", title)
 		}
 		if code != "filled" {
-			t.Errorf("x_note = %q: an older report must still fill a gap", code)
+			t.Errorf("server = %q: an older report must still fill a gap", code)
 		}
 		if d := lastSeen.Sub(now.Add(-time.Hour)); d < -time.Second || d > time.Second {
 			t.Errorf("last_seen = %s, want the newer observation %s", lastSeen, now.Add(-time.Hour))
@@ -66,11 +75,11 @@ func TestIngest_ObservationOrder(t *testing.T) {
 	t.Run("a re-observed stale asset is active again", func(t *testing.T) {
 		const name = "stale.order.example.com"
 		bind := ingest.Binding{Kind: ingest.BindingCommand, Targets: []string{name}, Tool: "httpx"}
-		send("httpx", now.Add(-time.Minute), bind, ctis.Asset{ID: "s", Type: ctis.AssetTypeDomain, Value: name})
+		send("httpx", now.Add(-time.Minute), bind, ctis.Asset{ID: "s", Type: ctis.AssetTypeDomainName, Value: name})
 		if _, err := r.db.ExecContext(ctx, `UPDATE assets SET status = 'stale' WHERE tenant_id = $1 AND name = $2`, tid.String(), name); err != nil {
 			t.Fatal(err)
 		}
-		send("httpx", now, bind, ctis.Asset{ID: "s", Type: ctis.AssetTypeDomain, Value: name})
+		send("httpx", now, bind, ctis.Asset{ID: "s", Type: ctis.AssetTypeDomainName, Value: name})
 		var status string
 		_ = r.db.QueryRowContext(ctx, `SELECT status FROM assets WHERE tenant_id = $1 AND name = $2`, tid.String(), name).Scan(&status)
 		if status != "active" {
@@ -83,12 +92,15 @@ func TestIngest_ObservationOrder(t *testing.T) {
 		bind := ingest.Binding{Kind: ingest.BindingCommand, Targets: []string{ip}, Tool: "naabu"}
 		scan := func(observed time.Time, ports ...int) {
 			t.Helper()
-			list := make([]ctis.PortInfo, 0, len(ports))
+			list := []ctis.Asset{{ID: "ip", Type: ctis.AssetTypeIPAddress, Value: ip}}
+			var rels []ctis.Relationship
 			for _, p := range ports {
-				list = append(list, ctis.PortInfo{Port: p, Protocol: "tcp", State: "open"})
+				id := fmt.Sprintf("p%d", p)
+				list = append(list, ctis.Asset{ID: id, Type: ctis.AssetTypeService, Value: fmt.Sprintf("%s:%d/tcp", ip, p),
+					Technical: &ctis.AssetTechnical{Service: &ctis.ServiceTechnical{Port: p, Transport: ctis.TransportTCP, State: ctis.PortOpen}}})
+				rels = append(rels, ctis.Relationship{Type: ctis.RelExposes, FromRef: "ip", ToRef: id})
 			}
-			send("naabu", observed, bind, ctis.Asset{ID: "ip", Type: ctis.AssetTypeIPAddress, Value: ip,
-				Technical: &ctis.AssetTechnical{IPAddress: &ctis.IPAddressTechnical{Ports: list}}})
+			sendWith("naabu", observed, bind, rels, list...)
 		}
 		active := func() int {
 			var n int

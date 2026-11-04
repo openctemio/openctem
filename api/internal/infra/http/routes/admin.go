@@ -292,6 +292,8 @@ func registerAdminRoutes(
 
 	// Build identity for the console's Help > About (any admin role).
 	router.GET("/api/v1/admin/version", handler.Version, adminMiddlewares...)
+	// Third-party notices for the console's About > Open-source licenses.
+	router.GET("/api/v1/admin/licenses", licensesHandler(h).List, adminMiddlewares...)
 
 	// The console overview's attention queue (any admin role): counts only,
 	// no tenant content and no administrator emails.

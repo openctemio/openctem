@@ -99,7 +99,7 @@ func TestDecorateGitHub(t *testing.T) {
 	}
 	c := p.checks[0]
 	if c.Name != CheckName || c.HeadSHA != "head1" || c.Conclusion != "failure" || len(c.Annotations) != 1 ||
-		c.Annotations[0].Path != "db.go" || !strings.HasPrefix(c.DetailsURL, "https://console.example/ci-cd?view=runs&run=") {
+		c.Annotations[0].Path != "db.go" || !strings.HasPrefix(c.DetailsURL, "https://console.example/ci-cd?org="+tenant.String()+"&run=") {
 		t.Fatalf("check = %+v", c)
 	}
 	if len(p.comments) != 1 || !strings.Contains(p.comments[0], p.markers[0]) || !strings.Contains(p.markers[0], pid.String()) {

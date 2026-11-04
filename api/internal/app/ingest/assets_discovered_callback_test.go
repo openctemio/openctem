@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -90,7 +90,7 @@ func reconReport(names ...string) *ctis.Report {
 	for i, n := range names {
 		r.Assets = append(r.Assets, ctis.Asset{
 			ID:    "a" + string(rune('0'+i)),
-			Type:  ctis.AssetTypeDomain,
+			Type:  ctis.AssetTypeDomainName,
 			Value: n,
 			Name:  n,
 		})
@@ -222,7 +222,7 @@ func TestAssetsDiscovered_DerivedRootDomainInSameBatch(t *testing.T) {
 	repo := newMemAssetRepo()
 	p, calls := newDiscoveryProcessor(repo)
 	report := &ctis.Report{Assets: []ctis.Asset{{
-		ID: "s1", Type: ctis.AssetTypeSubdomain, Value: "api.acme-example.com", Name: "api.acme-example.com",
+		ID: "s1", Type: ctis.AssetTypeDomainName, Value: "api.acme-example.com", Name: "api.acme-example.com",
 		Properties: ctis.Properties{"root_domain": "acme-example.com"},
 	}}}
 
@@ -252,7 +252,7 @@ func TestAssetsExposed_ExistingAssetBecomesInternetFacing(t *testing.T) {
 	})
 	tenant := shared.NewID()
 	host := func(internet bool) *ctis.Report {
-		return &ctis.Report{Assets: []ctis.Asset{{ID: "h", Type: ctis.AssetTypeHost, Value: "10.1.2.3", Name: "10.1.2.3", IsInternetAccessible: internet}}}
+		return &ctis.Report{Assets: []ctis.Asset{{ID: "h", Type: ctis.AssetTypeHost, Value: "10.1.2.3", Name: "10.1.2.3", IsInternetAccessible: ctis.Bool(internet)}}}
 	}
 
 	if _, err := p.ProcessBatch(context.Background(), tenant, host(false), &Output{}, nil); err != nil {
@@ -289,7 +289,7 @@ func TestExposureTransitions_RecordedOnRescan(t *testing.T) {
 	var recovered []shared.ID
 	var exposed []*asset.Asset
 
-	changes := p.mergeTrackingExposure(tenant, a, &ctis.Asset{IsInternetAccessible: true}, nil, time.Time{}, &recovered, &exposed)
+	changes := p.mergeTrackingExposure(tenant, a, &ctis.Asset{IsInternetAccessible: ctis.Bool(true)}, nil, time.Time{}, &recovered, &exposed)
 	if len(exposed) != 1 || exposed[0] != a {
 		t.Fatalf("asset that became internet-facing not reported (got %d)", len(exposed))
 	}
@@ -308,7 +308,7 @@ func TestExposureTransitions_RecordedOnRescan(t *testing.T) {
 	}
 
 	// Same signal again: no transition, no rows.
-	if again := p.mergeTrackingExposure(tenant, a, &ctis.Asset{IsInternetAccessible: true}, nil, time.Time{}, &recovered, &exposed); len(again) != 0 {
+	if again := p.mergeTrackingExposure(tenant, a, &ctis.Asset{IsInternetAccessible: ctis.Bool(true)}, nil, time.Time{}, &recovered, &exposed); len(again) != 0 {
 		t.Fatalf("unchanged exposure produced %d rows", len(again))
 	}
 	if len(exposed) != 1 {

@@ -1,7 +1,7 @@
 'use client'
 
 /**
- * What the finding's source knew (CTIS 1.4), as of its latest sighting:
+ * What the finding's source knew (CTIS interop members), as of its latest sighting:
  *
  *   Scores          every score with its system, version, source and date
  *   VEX             the latest exploitability statement and who made it

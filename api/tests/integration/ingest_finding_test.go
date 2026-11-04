@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/pkg/domain/branch"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -88,20 +88,18 @@ func (m *MockFindingRepositoryForIngest) GetAll() []*vulnerability.Finding {
 func TestIngestFinding_SemgrepFieldMapping(t *testing.T) {
 	// Create a CTIS finding that simulates parsed semgrep output
 	ctisFinding := &ctis.Finding{
-		ID:                 "finding-1",
-		Type:               ctis.FindingTypeVulnerability,
-		Title:              "SQL Injection at /app/db.go:42",
-		Description:        "User input flows directly to SQL query without sanitization",
-		Severity:           ctis.SeverityCritical,
-		Confidence:         90,
-		Impact:             "HIGH",
-		Likelihood:         "MEDIUM",
-		Category:           "SQL Injection",
-		VulnerabilityClass: []string{"SQL Injection"},
-		Subcategory:        []string{"vuln"},
-		RuleID:             "go.lang.security.audit.sqli.taint-sql-string-format",
-		RuleName:           "Tainted SQL String Format",
-		Fingerprint:        "abc123fingerprint",
+		ID:                   "finding-1",
+		Type:                 ctis.FindingTypeVulnerability,
+		Title:                "SQL Injection at /app/db.go:42",
+		Description:          "User input flows directly to SQL query without sanitization",
+		Severity:             ctis.SeverityCritical,
+		Confidence:           90,
+		Category:             "SQL Injection",
+		VulnerabilityClasses: []string{"SQL Injection"},
+		Subcategories:        []string{"vuln"},
+		RuleID:               "go.lang.security.audit.sqli.taint-sql-string-format",
+		RuleName:             "Tainted SQL String Format",
+		Fingerprint:          "abc123fingerprint",
 		Vulnerability: &ctis.VulnerabilityDetails{
 			CWEIDs:   []string{"CWE-89"},
 			OWASPIDs: []string{"A01:2017 - Injection", "A03:2021 - Injection"},
@@ -129,16 +127,10 @@ func TestIngestFinding_SemgrepFieldMapping(t *testing.T) {
 		if ctisFinding.Description == "" {
 			t.Error("Description should not be empty")
 		}
-		if ctisFinding.Impact == "" {
-			t.Error("Impact should not be empty")
-		}
-		if ctisFinding.Likelihood == "" {
-			t.Error("Likelihood should not be empty")
-		}
-		if len(ctisFinding.VulnerabilityClass) == 0 {
+		if len(ctisFinding.VulnerabilityClasses) == 0 {
 			t.Error("VulnerabilityClass should not be empty")
 		}
-		if len(ctisFinding.Subcategory) == 0 {
+		if len(ctisFinding.Subcategories) == 0 {
 			t.Error("Subcategory should not be empty")
 		}
 		if ctisFinding.Vulnerability == nil {
@@ -380,9 +372,8 @@ func TestIngestFinding_FullCTISReportProcessing(t *testing.T) {
 	// Create a complete CTIS report
 	report := &ctis.Report{
 		Metadata: ctis.ReportMetadata{
-			ID:         "scan-001",
-			Timestamp:  time.Now(),
-			SourceType: "scanner",
+			ID: ctis.NewReportID(), GeneratedAt: time.Now(),
+			Channel: ctis.ChannelScanner,
 		},
 		Tool: &ctis.Tool{
 			Name:    "semgrep",
@@ -399,21 +390,19 @@ func TestIngestFinding_FullCTISReportProcessing(t *testing.T) {
 		},
 		Findings: []ctis.Finding{
 			{
-				ID:                 "finding-1",
-				Type:               ctis.FindingTypeVulnerability,
-				Title:              "SQL Injection at db.go:42",
-				Description:        "Tainted data flows to SQL query",
-				Severity:           ctis.SeverityCritical,
-				Confidence:         90,
-				Impact:             "HIGH",
-				Likelihood:         "MEDIUM",
-				Category:           "SQL Injection",
-				VulnerabilityClass: []string{"SQL Injection"},
-				Subcategory:        []string{"vuln"},
-				RuleID:             "go.sqli",
-				RuleName:           "SQL Injection",
-				AssetRef:           "asset-1",
-				Fingerprint:        "fp-sqli-001",
+				ID:                   "finding-1",
+				Type:                 ctis.FindingTypeVulnerability,
+				Title:                "SQL Injection at db.go:42",
+				Description:          "Tainted data flows to SQL query",
+				Severity:             ctis.SeverityCritical,
+				Confidence:           90,
+				Category:             "SQL Injection",
+				VulnerabilityClasses: []string{"SQL Injection"},
+				Subcategories:        []string{"vuln"},
+				RuleID:               "go.sqli",
+				RuleName:             "SQL Injection",
+				AssetRef:             "asset-1",
+				Fingerprint:          "fp-sqli-001",
 				Vulnerability: &ctis.VulnerabilityDetails{
 					CWEIDs:   []string{"CWE-89"},
 					OWASPIDs: []string{"A03:2021"},
@@ -425,21 +414,19 @@ func TestIngestFinding_FullCTISReportProcessing(t *testing.T) {
 				},
 			},
 			{
-				ID:                 "finding-2",
-				Type:               ctis.FindingTypeVulnerability,
-				Title:              "XSS at template.go:100",
-				Description:        "User input rendered without escaping",
-				Severity:           ctis.SeverityHigh,
-				Confidence:         85,
-				Impact:             "MEDIUM",
-				Likelihood:         "HIGH",
-				Category:           "Cross-Site Scripting",
-				VulnerabilityClass: []string{"Cross-Site-Scripting (XSS)"},
-				Subcategory:        []string{"vuln"},
-				RuleID:             "go.xss",
-				RuleName:           "XSS",
-				AssetRef:           "asset-1",
-				Fingerprint:        "fp-xss-001",
+				ID:                   "finding-2",
+				Type:                 ctis.FindingTypeVulnerability,
+				Title:                "XSS at template.go:100",
+				Description:          "User input rendered without escaping",
+				Severity:             ctis.SeverityHigh,
+				Confidence:           85,
+				Category:             "Cross-Site Scripting",
+				VulnerabilityClasses: []string{"Cross-Site-Scripting (XSS)"},
+				Subcategories:        []string{"vuln"},
+				RuleID:               "go.xss",
+				RuleName:             "XSS",
+				AssetRef:             "asset-1",
+				Fingerprint:          "fp-xss-001",
 				Vulnerability: &ctis.VulnerabilityDetails{
 					CWEIDs:   []string{"CWE-79"},
 					OWASPIDs: []string{"A03:2021", "A07:2017"},
@@ -479,13 +466,7 @@ func TestIngestFinding_FullCTISReportProcessing(t *testing.T) {
 			if f.Description == "" {
 				t.Errorf("Finding %d: Description should not be empty", i)
 			}
-			if f.Impact == "" {
-				t.Errorf("Finding %d: Impact should not be empty", i)
-			}
-			if f.Likelihood == "" {
-				t.Errorf("Finding %d: Likelihood should not be empty", i)
-			}
-			if len(f.VulnerabilityClass) == 0 {
+			if len(f.VulnerabilityClasses) == 0 {
 				t.Errorf("Finding %d: VulnerabilityClass should not be empty", i)
 			}
 			if f.Vulnerability == nil {

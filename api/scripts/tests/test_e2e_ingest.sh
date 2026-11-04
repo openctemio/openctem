@@ -28,6 +28,15 @@ NC='\033[0m' # No Color
 # Configuration
 API_URL="${1:-${API_URL:-http://localhost:8080}}"
 TIMESTAMP=$(date +%s)
+
+# A fresh lowercase UUIDv7: CTIS 2.0 metadata.id, the producer's idempotency
+# key (a retry re-sends the same id). The receiver's scan id is its own.
+new_report_id() {
+    local ms; ms=$(( $(date +%s%N) / 1000000 ))
+    printf '%08x-%04x-7%03x-%x%03x-%04x%08x' \
+        $(( ms >> 16 )) $(( ms & 0xffff )) $(( RANDOM % 4096 )) $(( 8 + RANDOM % 4 )) $(( RANDOM % 4096 )) $RANDOM $(( (RANDOM << 15) | RANDOM ))
+}
+CTIS_MEDIA_TYPE="application/vnd.ctis+json; version=2.0"
 TEST_EMAIL="e2e-test-${TIMESTAMP}@openctem-test.local"
 TEST_PASSWORD="TestP@ss123!"
 TEST_NAME="E2E Test User ${TIMESTAMP}"
@@ -105,8 +114,12 @@ do_request() {
     local data="$3"
     shift 3
 
+    # CTIS 2.0 documents carry their media type; everything else is JSON.
+    local ctype="application/json"
+    case "$endpoint" in */ingest/ctis) ctype="$CTIS_MEDIA_TYPE" ;; esac
+
     local curl_args=(-s -w "\n%{http_code}" -X "$method" "${API_URL}${endpoint}"
-        -H "Content-Type: application/json"
+        -H "Content-Type: $ctype"
         -c "$COOKIE_JAR" -b "$COOKIE_JAR")
     # CSRF: send the X-CSRF-Token double-submit header on state-changing methods,
     # read from the csrf_token cookie login set (added by e2e CSRF retrofit).
@@ -425,15 +438,16 @@ print_test "Ingest CTIS report (2 assets, 2 findings)"
 
 CTIS_REPORT=$(cat <<EOF
 {
-    "version": "1.0",
+    "version": "2.0",
     "metadata": {
-        "id": "e2e-ctis-report-${TIMESTAMP}",
-        "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-        "source_type": "scanner"
+        "id": "$(new_report_id)",
+        "generated_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+        "channel": "scanner"
     },
     "tool": {
         "name": "e2e-test-scanner",
-        "version": "1.0.0"
+        "version": "1.0.0",
+        "techniques": ["sast"]
     },
     "assets": [
         {
@@ -445,7 +459,7 @@ CTIS_REPORT=$(cat <<EOF
         },
         {
             "id": "asset-domain-1",
-            "type": "domain",
+            "type": "domain_name",
             "value": "e2e-test-${TIMESTAMP}.example.com",
             "name": "E2E Test Domain"
         }
@@ -467,9 +481,11 @@ CTIS_REPORT=$(cat <<EOF
                 "snippet": "db.Query(userInput)"
             },
             "vulnerability": {
-                "cwe_ids": ["CWE-89"],
-                "cvss_score": 9.8
-            }
+                "cwe_ids": ["CWE-89"]
+            },
+            "scores": [
+                {"system": "cvss", "version": "3.1", "vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H", "value": 9.8, "source": "e2e-test-scanner"}
+            ]
         },
         {
             "id": "finding-secret-1",

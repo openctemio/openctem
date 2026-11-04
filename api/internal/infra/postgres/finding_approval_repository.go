@@ -597,6 +597,9 @@ func (r *FindingApprovalRepository) ExpireOverdueRequests(ctx context.Context) (
 			       jsonb_build_object('finding_id', e.finding_id, 'requested_status', e.requested_status,
 			                          'decide_by', e.decide_by), NOW()
 			FROM ended e
+			-- Tenants ascending, then id: concurrent sweeps take the per-tenant
+			-- audit chain locks in one order, so they cannot deadlock.
+			ORDER BY e.tenant_id, e.id
 		)
 		SELECT COUNT(*) FROM ended`).Scan(&n)
 	if err != nil {
