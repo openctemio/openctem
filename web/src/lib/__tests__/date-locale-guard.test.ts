@@ -32,6 +32,9 @@ function sources(dir: string): string[] {
 }
 
 export function distanceCallsWithoutLocale(fileName: string, source: string): number[] {
+  // Parsing every file in src is the slow part and is wasted on the vast
+  // majority, which never name a distance function.
+  if (!/formatDistance/.test(source)) return []
   const sf = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
   const lines: number[] = []
   const visit = (node: ts.Node) => {
@@ -62,7 +65,7 @@ describe('dates follow the console language', () => {
   it('passes a locale to every date-fns distance call', () => {
     const bad = files.flatMap(([f, s]) => distanceCallsWithoutLocale(f, s).map((l) => `${f}:${l}`))
     expect(bad, 'use <RelativeTime>, or pass { locale: dateFnsLocaleFor(locale) }').toEqual([])
-  })
+  }, 60_000)
 
   it('does not add bare toLocaleDateString() / toLocaleTimeString() calls', () => {
     const n = files.reduce(
