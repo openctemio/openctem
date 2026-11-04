@@ -292,6 +292,10 @@ func (h *SCIMHandler) ReplaceUser(w http.ResponseWriter, r *http.Request) {
 	if req.Active != nil {
 		active = *req.Active
 	}
+	if active && middleware.SCIMLeaveOnly(r.Context()) {
+		h.scimError(w, http.StatusForbidden, "", "SCIM provisioning is not available for this organization: only deactivation is accepted")
+		return
+	}
 	res, err := h.provisioning.SetActive(r.Context(), tenantID, userID, active)
 	if err != nil {
 		h.writeProvisionError(w, err)
@@ -321,6 +325,10 @@ func (h *SCIMHandler) PatchUser(w http.ResponseWriter, r *http.Request) {
 	active, found := activeFromPatch(req.Operations)
 	if !found {
 		h.scimError(w, http.StatusBadRequest, "invalidPath", "only 'active' replace is supported")
+		return
+	}
+	if active && middleware.SCIMLeaveOnly(r.Context()) {
+		h.scimError(w, http.StatusForbidden, "", "SCIM provisioning is not available for this organization: only deactivation is accepted")
 		return
 	}
 	res, err := h.provisioning.SetActive(r.Context(), tenantID, userID, active)

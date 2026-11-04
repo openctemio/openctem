@@ -93,6 +93,7 @@ func MCPCredentialAuth(apiKeyAuth func(http.Handler) http.Handler, tokens MCPTok
 			ctx = context.WithValue(ctx, AuthProviderKey, AuthProviderMCPOAuth)
 			ctx = scangov.WithOrigin(ctx, scangov.OriginMCP)
 			ctx = context.WithValue(ctx, MCPPrincipalKey, p)
+			notePrincipal(ctx)
 			if ctxLogger := logger.FromContext(ctx); ctxLogger != nil {
 				ctx = logger.ToContext(ctx, ctxLogger.WithContext(ctx))
 			}
