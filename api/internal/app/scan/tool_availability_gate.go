@@ -1,10 +1,11 @@
 package scan
 
-// Trigger-time refusal of a scan no sensor can run
-// (docs/architecture/tool-availability.md): a trigger whose scanner, or the
-// tool of one of its workflow steps, is on no online sensor that may run it
-// is refused with NO_SENSOR_FOR_TOOL and the counts behind it, instead of
-// queueing jobs that wait until they expire. Zone-pinned scans are judged
+// Trigger-time check of a scan no sensor can run
+// (docs/architecture/tool-availability.md): a single scan whose scanner is
+// on no online sensor that may run it is refused with NO_SENSOR_FOR_TOOL
+// and the counts behind it, instead of queueing jobs that wait until they
+// expire. A workflow step whose tool no sensor may run is skipped with the
+// same reason (step_support.go); the run goes on with the other steps. Zone-pinned scans are judged
 // on the zone's sensors. The answer comes from the sensors' manifests and
 // only narrows: dispatch still checks every job at claim time.
 
@@ -56,8 +57,9 @@ type ToolUnavailableError struct {
 func (e *ToolUnavailableError) Error() string { return e.Domain.Error() }
 func (e *ToolUnavailableError) Unwrap() error { return e.Domain }
 
-// checkScanToolsDispatchable refuses the trigger when a tool the scan needs
-// is on no online sensor that may run it. Without the availability source,
+// checkScanToolsDispatchable refuses the trigger of a single scan whose
+// scanner is on no online sensor that may run it (a workflow step's tool is
+// checked by workflowStepSkips, which skips the step instead). Without the availability source,
 // or when it cannot be read, it lets the trigger through (the sensor
 // availability check that follows still applies).
 func (s *Service) checkScanToolsDispatchable(ctx context.Context, sc *scan.Scan) error {
@@ -76,28 +78,6 @@ func (s *Service) checkScanToolsDispatchable(ctx context.Context, sc *scan.Scan)
 			return nil
 		}
 		return s.checkToolDispatchable(ctx, sc, sc.ScannerName, "")
-	case scan.ScanTypeWorkflow:
-		if sc.ScanWorkflowID == nil {
-			return nil
-		}
-		steps, err := s.stepRepo.GetByScanWorkflowID(ctx, *sc.ScanWorkflowID)
-		if err != nil {
-			return fmt.Errorf("failed to get scan workflow steps: %w", err)
-		}
-		seen := map[string]bool{}
-		for _, step := range steps {
-			if stepNotRunBy(sc, step) {
-				continue
-			}
-			name := s.stepToolName(ctx, sc.TenantID, step)
-			if name == "" || seen[name] {
-				continue
-			}
-			seen[name] = true
-			if err := s.checkToolDispatchable(ctx, sc, name, step.StepKey); err != nil {
-				return err
-			}
-		}
 	}
 	return nil
 }

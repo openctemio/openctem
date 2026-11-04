@@ -111,6 +111,12 @@ export function RunStepPanel({
         {!result && node.reason && FAILED_STATES.has(node.state ?? '') ? (
           <StepFailureHelp code={node.reason} errorClass={node.error_class} />
         ) : null}
+        {node.state === 'skipped' && node.skip_reason ? (
+          <div data-slot="step-skip-reason">
+            <p className="font-medium text-foreground">{t('scans.step.skipReason')}</p>
+            <p className="whitespace-pre-wrap">{toDisplayText(node.skip_reason)}</p>
+          </div>
+        ) : null}
         <StepOutcome outcome={node.outcome} />
         {node.error_message && showSensorText(node.reason) ? (
           <div>
