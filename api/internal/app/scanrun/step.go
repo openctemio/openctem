@@ -6,99 +6,76 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
 	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
 
 	scanapp "github.com/openctemio/openctem/api/internal/app/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
-// ValidateToolReferences validates that all tools referenced by workflow steps are available and active.
-// This should be called before triggering a scan workflow or activating it to ensure all required tools are present.
-// Returns an error with details if any tool is missing or inactive.
-//
-// Validation rules:
-// 1. If step has Tool specified → Tool must exist and be active
-// 2. If step has no Tool but has Capabilities → At least one active tool must match those capabilities
-// 3. If step has no Tool AND no Capabilities → Step is invalid (cannot execute)
+// ValidateToolReferences refuses a workflow whose steps cannot be planned at
+// all: a step with neither a tool nor capabilities, or with capabilities
+// that name more than one kind of scan. A tool that is missing, turned off
+// or that no tool implements never refuses the workflow (activating it, or
+// running it): the run skips that step with the reason (StepToolSkips) and
+// goes on with the others.
 func (s *Service) ValidateToolReferences(ctx context.Context, template *scanworkflow.Workflow, tenantID shared.ID) error {
-	if template == nil || len(template.Steps) == 0 {
-		return nil
-	}
+	_, err := s.StepToolSkips(ctx, template, tenantID)
+	return err
+}
 
+// StepToolSkips is the steps of a workflow that no tool of the organization
+// runs, with the reason each is skipped: a pinned tool that is not
+// installed (TOOL_NOT_INSTALLED) or turned off (TOOL_DISABLED), or a
+// capability no active tool implements (NO_MATCHING_TOOL). The tool lookups
+// are scoped to the tenant (its own tools and platform tools), so another
+// organization's tool never counts. A step that cannot be planned at all is
+// the error (see ValidateToolReferences).
+func (s *Service) StepToolSkips(ctx context.Context, template *scanworkflow.Workflow, tenantID shared.ID) (map[string]scanapp.StepSkip, error) {
+	skips := map[string]scanapp.StepSkip{}
+	if template == nil || len(template.Steps) == 0 {
+		return skips, nil
+	}
 	if s.toolRepo == nil {
 		s.logger.Warn("tool repository not available, skipping tool validation")
-		return nil
+		return skips, nil
 	}
 
-	var missingTools []string
-	var inactiveTools []string
-	stepsWithoutExecutor := make([]string, 0, len(template.Steps))
-	var stepsWithNoMatchingCapabilities []string
-
+	var invalid []string
 	for _, step := range template.Steps {
-		// An optional step waits for a tool: without one it is skipped at
-		// dispatch with the reason, so it never refuses the workflow.
-		if step.RunPolicy.Optional {
-			continue
-		}
-		// Case 1: Step has explicit tool specified
-		if step.Tool != "" {
-			// Try to find the tool (platform first, then tenant-specific)
+		switch {
+		case step.Tool != "":
+			// The tool: platform first, then the organization's own.
 			t, err := s.toolRepo.GetByName(ctx, tenantID, step.Tool)
 			if err != nil {
-				// Try tenant-specific tool
 				t, err = s.toolRepo.GetByTenantAndName(ctx, tenantID, step.Tool)
 			}
-
-			if err != nil {
-				missingTools = append(missingTools, fmt.Sprintf("%s (step: %s)", step.Tool, step.StepKey))
-				continue
+			switch {
+			case err != nil || t == nil:
+				skips[step.StepKey] = scanapp.StepSkip{Code: scanrun.FailureToolNotInstalled,
+					Reason: fmt.Sprintf("skipped: tool %s is not installed in this organization", step.Tool)}
+			case !t.IsActive:
+				skips[step.StepKey] = scanapp.StepSkip{Code: scanrun.FailureToolDisabled,
+					Reason: fmt.Sprintf("skipped: tool %s is turned off", step.Tool)}
 			}
-
-			if !t.IsActive {
-				inactiveTools = append(inactiveTools, fmt.Sprintf("%s (step: %s)", step.Tool, step.StepKey))
-			}
-			continue
-		}
-
-		// Case 2: Step has no tool but has capabilities: the planner's own
-		// rule (scan.ResolveStepTool), so a step that validates is a step
-		// the dispatcher names a scanner for (research/27 F1).
-		if len(step.Capabilities) > 0 {
+		case len(step.Capabilities) > 0:
+			// The planner's own rule (scan.ResolveStepTool), so a step that
+			// passes is a step the dispatcher names a scanner for.
 			if _, err := scanapp.ResolveStepTool(ctx, s.toolRepo, tenantID, step); err != nil {
-				stepsWithNoMatchingCapabilities = append(stepsWithNoMatchingCapabilities,
-					fmt.Sprintf("step '%s' with capabilities %v (%s)", step.StepKey, step.Capabilities, resolveReason(err)))
+				if skip, ok := scanapp.UnsupportedStepSkip(step, err); ok {
+					skips[step.StepKey] = skip
+					continue
+				}
+				invalid = append(invalid, fmt.Sprintf("step '%s' (%s)", step.StepKey, resolveReason(err)))
 			}
-			continue
+		default:
+			invalid = append(invalid, fmt.Sprintf("step '%s' has no tool or capabilities", step.StepKey))
 		}
-
-		// Case 3: Step has neither tool nor capabilities - invalid step
-		stepsWithoutExecutor = append(stepsWithoutExecutor, step.StepKey)
 	}
-
-	// Build error message if there are issues
-	var errParts []string
-
-	if len(stepsWithoutExecutor) > 0 {
-		errParts = append(errParts,
-			fmt.Sprintf("steps without tool or capabilities: %v", stepsWithoutExecutor))
+	if len(invalid) > 0 {
+		return nil, shared.NewDomainError("TOOL_UNAVAILABLE", "steps that cannot run: "+strings.Join(invalid, "; "), shared.ErrValidation)
 	}
-	if len(missingTools) > 0 {
-		errParts = append(errParts, fmt.Sprintf("tools not found: %v", missingTools))
-	}
-	if len(inactiveTools) > 0 {
-		errParts = append(errParts, fmt.Sprintf("tools not active: %v", inactiveTools))
-	}
-	if len(stepsWithNoMatchingCapabilities) > 0 {
-		errParts = append(errParts,
-			fmt.Sprintf("no active tools match capabilities: %v", stepsWithNoMatchingCapabilities))
-	}
-
-	if len(errParts) > 0 {
-		return shared.NewDomainError("TOOL_UNAVAILABLE", strings.Join(errParts, "; "), shared.ErrValidation)
-	}
-
-	return nil
+	return skips, nil
 }
 
 // DeactivateScanWorkflowsByTool deactivates all active scan workflows that use a specific tool.
