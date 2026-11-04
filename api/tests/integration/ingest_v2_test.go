@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"github.com/lib/pq"
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
@@ -106,10 +106,11 @@ type v2Finding struct {
 // the metadata of a full default-branch scan, and the given findings.
 func (tn v2Tenant) segment(tool string, withAsset bool, findings ...v2Finding) *ctis.Report {
 	r := &ctis.Report{
-		Version: "1.0",
+		Version: ctis.SchemaVersion,
 		Metadata: ctis.ReportMetadata{
-			Timestamp:    time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC),
-			CoverageType: "full",
+			ID:           ctis.NewReportID(),
+			GeneratedAt:  time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC),
+			CoverageType: ctis.CoverageFull,
 			Branch:       &ctis.BranchInfo{Name: "main", IsDefaultBranch: true, RepositoryURL: "https://" + tn.repo},
 		},
 		Tool: &ctis.Tool{Name: tool},
@@ -122,7 +123,8 @@ func (tn v2Tenant) segment(tool string, withAsset bool, findings ...v2Finding) *
 			RuleID: f.rule, AssetRef: f.assetRef, Description: "sensor-supplied description " + f.rule,
 			Location: &ctis.FindingLocation{Path: "src/" + f.rule + ".go", StartLine: 10}}
 		if f.cve != "" {
-			cf.Vulnerability = &ctis.VulnerabilityDetails{CVEID: f.cve, CVSSScore: 9.9}
+			cf.Vulnerability = &ctis.VulnerabilityDetails{IDs: cveIDsOf(f.cve)}
+			cf.Scores = []ctis.Score{cvssScoreOf("3.1", 9.9)}
 		}
 		r.Findings = append(r.Findings, cf)
 	}
@@ -268,7 +270,7 @@ func TestIngestV2_SegmentsOutOfOrderAutoResolveOnlyOnCommit(t *testing.T) {
 	rep := r.openAs(tn, "0192a3b4-0000-7000-8000-000000000002", "worker", &nextCmd, tn.segment("semgrep", true))
 	r.put(tn, rep, 2, tn.segment("semgrep", true, v2Finding{rule: "c", assetRef: "repo"}))
 	r.put(tn, rep, 0, tn.segment("semgrep", true, v2Finding{rule: "a", assetRef: "repo"}))
-	r.put(tn, rep, 1, tn.segment("semgrep", true, v2Finding{rule: "b"})) // no asset_ref: the single asset
+	r.put(tn, rep, 1, tn.segment("semgrep", true, v2Finding{rule: "b", assetRef: "repo"}))
 	for _, seq := range []int{2, 0, 1} {
 		r.process(rep, seq)
 	}
@@ -324,30 +326,33 @@ func TestIngestV2_ExpiredReportNeverResolves(t *testing.T) {
 	}
 }
 
-// A finding with no resolvable asset is rejected, and no fallback asset is
-// created for it.
+// A segment holding a finding with no asset_ref, or one naming an asset that
+// is not in its own segment, is not a valid CTIS 2.0 document: it is refused
+// whole (nothing of it is written) and no fallback asset is created. A
+// segment of valid documents beside it is unaffected.
 func TestIngestV2_AssetlessFindingRejectedNoFallbackAsset(t *testing.T) {
 	r := newV2Rig(t, ingest.DefaultBlindingGuard())
 	tn := r.newTenant("semgrep")
 	rep := r.open(tn, "0192a3b4-0000-7000-8000-000000000021", tn.segment("semgrep", false))
-	// Segment 0: findings, no asset at all (v1 would invent one from the
-	// branch metadata). Segment 1: one finding names an asset that is not in
-	// its segment, one resolves.
+	// Segment 0: findings, no asset at all. Segment 1: one finding names an
+	// asset that is not in its segment. Segment 2: valid.
 	r.put(tn, rep, 0, tn.segment("semgrep", false, v2Finding{rule: "x"}, v2Finding{rule: "y"}))
-	r.put(tn, rep, 1, tn.segment("semgrep", true, v2Finding{rule: "z", assetRef: "elsewhere"}, v2Finding{rule: "ok", assetRef: "repo"}))
+	r.put(tn, rep, 1, tn.segment("semgrep", true, v2Finding{rule: "z", assetRef: "elsewhere"}, v2Finding{rule: "w", assetRef: "repo"}))
+	r.put(tn, rep, 2, tn.segment("semgrep", true, v2Finding{rule: "ok", assetRef: "repo"}))
 	r.process(rep, 0)
 	r.process(rep, 1)
-	r.commit(tn, rep, 2)
+	r.process(rep, 2)
+	r.commit(tn, rep, 3)
 
 	st := r.status(rep)
-	if st.Accepted.Findings != 1 || st.Rejected.Findings != 3 || st.Accepted.Assets != 1 {
+	if st.Accepted.Findings != 1 || st.Accepted.Assets != 1 {
 		t.Fatalf("status %+v", st)
 	}
-	if len(st.Errors) != 3 {
+	if len(st.Errors) != 2 {
 		t.Fatalf("errors %+v", st.Errors)
 	}
 	for _, e := range st.Errors {
-		if e.Code != protov2.CodeAssetUnresolved || e.Segment == nil {
+		if e.Code != protov2.CodeProcessingFailed || e.Segment == nil {
 			t.Fatalf("error %+v", e)
 		}
 	}

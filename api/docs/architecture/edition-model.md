@@ -61,54 +61,39 @@ day one and add a licence later.
 
 | Kind | Where | Why |
 |---|---|---|
-| In-process Enterprise features | A private overlay module, mounted into the module tree at build time at `api/ee/` and the web `(ee)` folders, compiled with the `ee` build tag (API) or `EDITION=ee` (web) | They need core transactions, authorization, tenant scope, audit and the read engine. A separate service would duplicate the tenant-isolation surface |
-| Components with their own runtime | Separate private components on open protocols (sdk-go, CTIS), verifying the licence themselves | No GPL question, no second authorization surface |
-| Billing, sign-up, metering | Separate private services of the hosted service | Not part of the product a customer installs |
-| Generic seams, the entitlement key registry and the licence verifier | This repository | Seams are plain, documented interfaces with a Community default |
+| In-process paid features | An extension in its own repository; the paid build is its own Go module that requires `github.com/openctemio/openctem/api`, imports the extension and calls `api/pkg/server.Main()` | They need core transactions, authorization, tenant scope, audit and the read engine. A separate service would duplicate the tenant-isolation surface |
+| Components with their own runtime | Separate components on open protocols (sdk-go, CTIS), verifying their licence themselves | No second authorization surface |
+| Billing, sign-up, metering | Separate services of the hosted service | Not part of the product a customer installs |
+| The public extension API, the grant seam and the guarantees of any grant provider | This repository | Plain, documented, versioned interfaces with a Community default |
 
-The overlay has to compile **inside** the `github.com/openctemio/openctem/api` module, because Go's
-`internal` rule stops any other module from importing the core's `internal` packages.
+A paid build is one custom build of OpenCTEM, made the way anyone can make one. Because it is a
+separate Go module, Go's `internal` rule lets it import only the public `api/pkg/...` packages: the
+compiler enforces "public API only", and the extension's dependencies stay in its own `go.mod`.
 
-### Extension points (designed)
+### Extension points
 
-`api/internal/extension` holds a registry and the seam interfaces; the overlay registers into it from
-`init()` and nothing in the Community build imports the overlay.
-
-- A module implements `Key() string` and `Register(*Registry) error`.
-- The registry accepts routes, controllers, permission ids, audit event types, settings keys, a
-  migrations file system and tenant-data hooks. The core mounts every route under `/api/v1/...`
-  **wrapped with tenant middleware, the module's permission and `RequireAddon(key)`**, and wraps
-  controllers with the same entitlement and module guards, so an overlay route cannot be mounted
-  without an entitlement key and a permission.
-- Tenant-data hooks (organization deletion, personal-data export and erasure, retention) make the
-  existing privacy duties cover overlay tables.
-- Behaviour seams inside core flows (for example a retention guard or a report brand) default to no-op
-  in Community. Each seam is generic, documented and has a test of the Community behaviour.
-- Dependencies handed to a module are core interfaces only: a tenant-scoped transaction helper, the
-  entitlement service, the audit recorder, authorization, the outbox and the `pkg/httpsec` client. No
-  raw database pool and no global state.
-- `internal/server/edition_ee.go` (build tag `ee`) is the only file that imports the overlay;
-  `edition_ce.go` (tag `!ee`) sets the edition to `community`. The version endpoint reports it.
-- Generated contracts (OpenAPI, route permissions) are produced per edition: Community artefacts never
-  contain overlay routes.
+`api/pkg/extension` is the public back-end API: one `Extension` value per extension, several per
+build, each field optional with a tested Community default. Routes are mounted only behind
+authentication, the organization from the credential, membership, CSRF, the declared permission and
+grant; dependencies handed to an extension are interfaces (a tenant-scoped store, declared settings,
+grants, the audit recorder, the logger), never a raw pool. Each point lands with its first user.
+`/version` lists the extensions a build contains. The guide is
+[editions](../development/editions.md).
 
 ### Web
 
-`next.config.ts` aliases `@ee` to the overlay folder when `EDITION=ee` and to an empty stub
-(`src/ee-stub`: empty `navItems`, `settingsEntries`, `widgets`, `consolePages`) otherwise. Overlay
-pages live in an `(ee)` route group present only in Enterprise builds. Each overlay navigation,
-settings or widget entry names its entitlement key and is hidden unless the entitlements endpoint
-grants it. Community shows no plan wording or upsell. Overlay i18n catalogs (en and vi) merge at build
-time, and overlay pages use the same shared components as the rest of the console.
+The web app reaches extension code only through the `@extension/*` alias: the empty modules in
+`src/extension-default` by default, or an extension's code copied to `src/extensions` and its pages to
+`(extensions)` route groups when built with `EXTENSIONS=on`. Each navigation or settings row names
+its module, permission and grant, so a build without a grant renders exactly the Community UI: no plan
+wording, no locked items, no upsell.
 
 ### Database
 
-The overlay has its own migration set, tracked in `ee_schema_migrations`, applied by the same
-`openctem-migrate` after the core set. Overlay tables are prefixed `ee_`, carry `tenant_id` with
-`ON DELETE CASCADE` and the same RLS policy pattern. Core migrations never reference `ee_` tables;
-overlay migrations may reference core tables and are exercised against core `develop` nightly. Moving
-back from Enterprise to Community leaves the `ee_` tables unused and breaks nothing. A capability that
-moves keeps its existing tables in the core schema, so data returns when a licence is applied.
+Each extension owns one Postgres schema with its own migration tracker, applied by the core migration
+runner after the core set. Extension tables reference only core primary keys and `tenant_id` with
+`ON DELETE CASCADE`; core migrations never reference an extension schema. Moving back to Community
+leaves the extension schema unused and breaks nothing.
 
 ## Entitlements
 
@@ -122,28 +107,14 @@ tier field) are removed. See [limits and feature denies](limits.md) and RFC-145.
 
 ## Guard rails for the Community build
 
-These keep commercial code out of this repository. They are the first work item, before any seam.
-
-1. `.gitignore` ignores `api/ee/*` (only `api/ee/README.md` is tracked), `web/src/ee/`,
-   `web/src/app/(ee)/` and `web/console/src/app/(ee)/`.
-2. A required CI check `edition-fence` fails when: a tracked file exists under those paths other than the
-   README; `go list -deps ./...` without tags contains an `api/ee` package or any module of the
-   private overlay; the `ee` build tag appears outside `internal/server/edition_ee.go` and the test fixture;
-   a commercial brand string appears in the diff; or web code imports `@ee/` other than through the
-   alias.
-3. A pre-commit hook in `.githooks` runs the path and brand checks locally.
-4. CODEOWNERS requires a maintainer for `api/internal/extension/`, `web/src/ee-stub/`,
-   `api/pkg/domain/limits/`, `.gitignore` and `cmd/server/edition_*.go`, and the same paths are listed in
-   `.github/security-paths.yml`, because seams wrap authorization.
-5. The pull request template has a "paid capability?" checklist: the tier from the rules above; for a
-   non-Community capability only a generic seam and a registry key land here; no plan words; no brand
-   strings; security baseline untouched.
-6. A small fixture overlay under `api/internal/extension/testdata` is mounted and built with the `ee`
-   tag in CI, so a core change that breaks a seam fails in the open pull request without any commercial
-   code being present.
-7. Contributor and agent rule: commercial code is written only in the private overlay's repository and
-   is never pushed here, not even on a branch. If it happens: delete the branch and treat the content
-   as published.
+1. The web mount points (`web/src/extensions/`, `(extensions)` route groups) are git-ignored and
+   empty here; no extension Go code is ever placed in a checkout of this repository.
+2. The required check **Edition fence** fails on a tracked mount-point file, a direct import of a mount
+   point, a `replace` directive in `api/go.mod`, or a restricted word (the list is kept out of this
+   repository). The pre-commit hook runs the same script.
+3. CODEOWNERS requires a maintainer for `api/pkg/extension/`, `api/pkg/server/`,
+   `api/pkg/domain/limits/`, `web/src/lib/extension/` and the fence.
+4. The pull request template has an "Extension point?" checklist.
 
 ## Day-to-day workflow
 

@@ -59,24 +59,24 @@ func TestUpdateTenantModules_BlockerReturnsToggleError(t *testing.T) {
 // error. "Required" field populated instead of "Blockers".
 func TestUpdateTenantModules_MissingHardDepReturnsToggleError(t *testing.T) {
 	repo := newModuleMockRepo()
-	repo.addModule(makeModule("findings", "Findings", true, false))
-	repo.addModule(makeModule("ai_triage", "AI Triage", true, false))
+	repo.addModule(makeModule("compensating_controls", "Compensating Controls", true, false))
+	repo.addModule(makeModule("control_testing", "Control Testing", true, false))
 
 	tenantRepo := newModuleTenantMockRepo()
-	// Pre-disable findings using the existing mock helper.
+	// Pre-disable the dependency using the existing mock helper.
 	tid := validTenantID()
 	tidParsed, _ := shared.IDFromString(tid)
-	tenantRepo.addOverride(tidParsed, "findings", false)
+	tenantRepo.addOverride(tidParsed, "compensating_controls", false)
 
 	svc := newTestModuleServiceWithTenant(repo, tenantRepo)
 
 	_, err := svc.UpdateTenantModules(context.Background(), tid,
 		[]moduledom.TenantModuleUpdate{
-			{ModuleID: "ai_triage", IsEnabled: true},
+			{ModuleID: "control_testing", IsEnabled: true},
 		}, audit.AuditContext{ActorID: validActorID()},
 	)
 	if err == nil {
-		t.Fatal("expected error when enabling ai_triage with findings disabled")
+		t.Fatal("expected error when enabling control_testing with compensating_controls disabled")
 	}
 	var toggle *module.ToggleError
 	if !errors.As(err, &toggle) {
@@ -87,13 +87,13 @@ func TestUpdateTenantModules_MissingHardDepReturnsToggleError(t *testing.T) {
 	}
 	found := false
 	for _, r := range toggle.Required {
-		if r.ModuleID == "findings" {
+		if r.ModuleID == "compensating_controls" {
 			found = true
 			break
 		}
 	}
 	if !found {
-		t.Fatalf("findings should appear as required, got %+v", toggle.Required)
+		t.Fatalf("compensating_controls should appear as required, got %+v", toggle.Required)
 	}
 }
 

@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 )
 
 func TestSanitizePostureKeepsOnlyAllowListedTypedKeys(t *testing.T) {

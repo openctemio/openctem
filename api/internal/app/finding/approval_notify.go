@@ -25,6 +25,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/weblink"
 )
 
 // FindingApprover is a member who may approve finding status requests
@@ -269,7 +270,7 @@ func approvalSummary(a *vulnerability.Approval, findingTitle string) string {
 // organization is escaped; the link only opens the inbox (sign-in, the
 // approve permission and the data scope authorize).
 func (s *VulnerabilityService) approvalMailBody(a *vulnerability.Approval, findingTitle string) string {
-	link := s.webBaseURL + approvalInboxURL
+	link := weblink.Console(s.webBaseURL, approvalInboxURL, a.TenantID.String())
 	return fmt.Sprintf(`<p>A finding request is waiting for your decision.</p>
 <p>%s</p>
 <p>Another person must approve or reject it; the requester cannot. Review it: <a href="%s">%s</a> (sign-in required).</p>`,
@@ -398,7 +399,7 @@ func (s *VulnerabilityService) NotifyVEXRequests(ctx context.Context, tenantID s
 		}
 		if s.approvalMail != nil && ap.Email != "" {
 			s.approvalMail.SendFindingApprovalMail(ctx, tenantID.String(), []string{ap.Email}, "[Findings] "+title,
-				s.vexMailBody(len(visible), names))
+				s.vexMailBody(tenantID, len(visible), names))
 		}
 	}
 }
@@ -431,8 +432,8 @@ func (s *VulnerabilityService) findingsVisibleTo(ctx context.Context, tenantID, 
 
 // vexMailBody is the email of a VEX batch: the count and the titles the
 // approver can see, escaped; the link only opens the inbox.
-func (s *VulnerabilityService) vexMailBody(n int, titles []string) string {
-	link := s.webBaseURL + approvalInboxURL
+func (s *VulnerabilityService) vexMailBody(tenantID shared.ID, n int, titles []string) string {
+	link := weblink.Console(s.webBaseURL, approvalInboxURL, tenantID.String())
 	var items strings.Builder
 	for _, t := range titles {
 		items.WriteString("<li>" + html.EscapeString(t) + "</li>")

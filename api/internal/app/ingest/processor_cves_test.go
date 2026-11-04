@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -60,9 +60,9 @@ func TestCVEProcessor_DedupesCVEsAcrossFindings(t *testing.T) {
 	p := NewCVEProcessor(repo, logger.NewDefault())
 	report := &ctis.Report{
 		Findings: []ctis.Finding{
-			{Severity: ctis.SeverityHigh, Vulnerability: &ctis.VulnerabilityDetails{CVEID: "CVE-2099-2001"}},
-			{Severity: ctis.SeverityMedium, Vulnerability: &ctis.VulnerabilityDetails{CVEID: "CVE-2099-2001"}},
-			{Severity: ctis.SeverityCritical, Vulnerability: &ctis.VulnerabilityDetails{CVEID: "CVE-2099-2002"}},
+			{Severity: ctis.SeverityHigh, Vulnerability: &ctis.VulnerabilityDetails{IDs: cveIDs("CVE-2099-2001")}},
+			{Severity: ctis.SeverityMedium, Vulnerability: &ctis.VulnerabilityDetails{IDs: cveIDs("CVE-2099-2001")}},
+			{Severity: ctis.SeverityCritical, Vulnerability: &ctis.VulnerabilityDetails{IDs: cveIDs("CVE-2099-2002")}},
 		},
 	}
 	output := &Output{}
@@ -87,10 +87,15 @@ func TestCVEProcessor_SendsOnlyTheCVEIdentityToTheCatalog(t *testing.T) {
 			{
 				Severity: ctis.SeverityCritical, Title: "crafted title", Description: "tenant secret in description",
 				Vulnerability: &ctis.VulnerabilityDetails{
-					CVEID: "CVE-2099-2010", CVSSScore: 0.1, CVSSVector: "CVSS:3.1/AV:P/AC:H/PR:H/UI:R/S:U/C:N/I:N/A:N",
-					Advisories: []string{"https://attacker.example.com/x"}, FixedVersion: "9.9.9", EPSSScore: 0.9,
-					ExploitAvailable: true, ExploitMaturity: "weaponized",
+					IDs:           cveIDs("CVE-2099-2010"),
+					FixedVersions: []string{"9.9.9"},
+					ThreatSignals: []ctis.ThreatSignal{{Type: ctis.ThreatSignalKEV, Source: "attacker"}, {Type: ctis.ThreatSignalWeaponized, Source: "attacker"}},
 				},
+				Scores: []ctis.Score{
+					cvssScore("3.1", "CVSS:3.1/AV:P/AC:H/PR:H/UI:R/S:U/C:N/I:N/A:N", 0.1, "attacker"),
+					{System: ctis.ScoreSystemEPSS, Value: ptrF(0.9)},
+				},
+				Remediation: &ctis.Remediation{Advisories: []ctis.Advisory{{ID: "X", URL: "https://attacker.example.com/x"}}},
 			},
 		},
 	}
@@ -115,10 +120,10 @@ func TestCVEProcessor_SkipsInvalidCVEIDs(t *testing.T) {
 	p := NewCVEProcessor(repo, logger.NewDefault())
 	report := &ctis.Report{
 		Findings: []ctis.Finding{
-			{Vulnerability: &ctis.VulnerabilityDetails{CVEID: ""}},
-			{Vulnerability: &ctis.VulnerabilityDetails{CVEID: "not-a-cve"}},
+			{Vulnerability: &ctis.VulnerabilityDetails{}},
+			{Vulnerability: &ctis.VulnerabilityDetails{IDs: []ctis.VulnerabilityID{{Type: ctis.VulnerabilityIDCVE, ID: "not-a-cve"}}}},
 			{Vulnerability: nil},
-			{Severity: ctis.SeverityHigh, Vulnerability: &ctis.VulnerabilityDetails{CVEID: "CVE-2099-2020"}},
+			{Severity: ctis.SeverityHigh, Vulnerability: &ctis.VulnerabilityDetails{IDs: cveIDs("CVE-2099-2020")}},
 		},
 	}
 	output := &Output{}
@@ -135,7 +140,7 @@ func TestCVEProcessor_RepoErrorReturnsEmptyMap(t *testing.T) {
 	p := NewCVEProcessor(repo, logger.NewDefault())
 	report := &ctis.Report{
 		Findings: []ctis.Finding{
-			{Severity: ctis.SeverityHigh, Vulnerability: &ctis.VulnerabilityDetails{CVEID: "CVE-2099-2030"}},
+			{Severity: ctis.SeverityHigh, Vulnerability: &ctis.VulnerabilityDetails{IDs: cveIDs("CVE-2099-2030")}},
 		},
 	}
 	output := &Output{}
@@ -172,7 +177,7 @@ func TestCVEProcessor_NormalizesCaseAndLinksStoredFindings(t *testing.T) {
 	repo := &linkingFakeVulnRepo{fakeVulnRepo: newFakeRepo()}
 	p := NewCVEProcessor(repo, logger.NewNop())
 	report := &ctis.Report{Findings: []ctis.Finding{
-		{Severity: ctis.SeverityHigh, Vulnerability: &ctis.VulnerabilityDetails{CVEID: " cve-2099-3001"}},
+		{Severity: ctis.SeverityHigh, Vulnerability: &ctis.VulnerabilityDetails{IDs: []ctis.VulnerabilityID{{Type: ctis.VulnerabilityIDCVE, ID: " cve-2099-3001"}}}},
 	}}
 
 	m, err := p.ProcessBatch(context.Background(), report, &Output{})

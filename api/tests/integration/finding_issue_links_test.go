@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
@@ -45,8 +45,8 @@ func (l *linkRig) scan(t *testing.T, tn v2Tenant, tool, repo string, fs ...ctis.
 	for i := range fs {
 		fs[i].AssetRef = "a"
 	}
-	rep := &ctis.Report{Version: "1.0", Tool: &ctis.Tool{Name: tool},
-		Metadata: ctis.ReportMetadata{ID: shared.NewID().String(), Timestamp: time.Now().UTC()},
+	rep := &ctis.Report{Version: ctis.SchemaVersion, Tool: &ctis.Tool{Name: tool},
+		Metadata: ctis.ReportMetadata{ID: ctis.NewReportID(), GeneratedAt: time.Now().UTC()},
 		Assets:   []ctis.Asset{{ID: "a", Type: ctis.AssetTypeRepository, Value: "github.com/acme/" + repo + "-" + tn.tenant.String()[:8]}},
 		Findings: fs}
 	if out, err := l.r.svc.Ingest(context.Background(), agt, ingest.Input{Report: rep}); err != nil || len(out.Errors) > 0 {
@@ -63,7 +63,7 @@ func sastAt(rule, path string, start, end int, snippet string, cwes ...string) c
 func secretAt(path, raw string) ctis.Finding {
 	return ctis.Finding{Type: ctis.FindingTypeSecret, Title: "AWS key", Severity: ctis.SeverityHigh, RuleID: "aws-access-key",
 		Location: &ctis.FindingLocation{Path: path, StartLine: 3},
-		Secret:   &ctis.SecretDetails{SecretType: "aws", MaskedValue: raw}}
+		Secret:   &ctis.SecretDetails{Type: "aws", MaskedValue: raw}}
 }
 
 func (l *linkRig) idOf(t *testing.T, tn v2Tenant, rule, path string) string {
@@ -104,7 +104,7 @@ func TestIssueLinks_SASTTwoEnginesSameLineSameWeakness(t *testing.T) {
 		t.Fatal(err)
 	}
 	l.scan(t, tn, "codeql", "shop",
-		sastAt("py/sql-injection", "app/views.py", 40, 45, "", "cwe-089"),
+		sastAt("py/sql-injection", "app/views.py", 40, 45, "", "CWE-89"),
 		sastAt("py/sql-injection", "app/models.py", 30, 31, "", "CWE-89"))
 
 	semgrepSQL := l.idOf(t, tn, "python.django.security.injection.sql", "app/views.py")

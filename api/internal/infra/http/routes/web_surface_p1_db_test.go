@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
@@ -31,7 +31,8 @@ func TestWebEndpointEventsAndRetention_DB(t *testing.T) {
 		for _, p := range params {
 			ep.Params = append(ep.Params, ctis.EndpointParam{Location: ctis.ParamLocationQuery, Name: p})
 		}
-		return &ctis.Report{Version: "1.0", Metadata: ctis.ReportMetadata{ID: "ev"}, Tool: &ctis.Tool{Name: "katana"},
+		return &ctis.Report{Version: ctis.SchemaVersion, Tool: &ctis.Tool{Name: "katana", Techniques: []ctis.Technique{ctis.TechniqueDAST}},
+			Metadata:  ctis.ReportMetadata{ID: ctis.NewReportID(), GeneratedAt: time.Now().UTC(), Channel: ctis.ChannelScanner},
 			Endpoints: []ctis.Endpoint{ep}}
 	}
 	kinds := func() []string {

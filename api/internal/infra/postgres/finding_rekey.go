@@ -113,7 +113,7 @@ func (r *FindingRekeyRepository) ListCandidates(ctx context.Context, tenantID sh
 		       COALESCE(f.type_details->'secret'->>'fingerprint', ''),
 		       COALESCE(f.misconfig_policy_id, ''), COALESCE(f.misconfig_resource_type, ''),
 		       COALESCE(f.misconfig_resource_name, ''), COALESCE(f.partial_fingerprints, '{}'::jsonb),
-		       f.identity_key
+		       f.identity_key, COALESCE(f.compliance_framework, ''), COALESCE(f.compliance_control_id, '')
 		FROM findings f
 		LEFT JOIN software_versions c ON c.id = f.component_id
 		WHERE f.tenant_id = $1 AND f.fingerprint_version < $2 AND f.status <> 'duplicate'
@@ -131,7 +131,8 @@ func (r *FindingRekeyRepository) ListCandidates(ctx context.Context, tenantID sh
 		in := &c.Input
 		if err := rows.Scan(&c.ID, &c.Fingerprint, &c.CreatedAt, &in.AssetID, &in.Source, &in.FindingType,
 			&in.ToolName, &in.RuleID, &in.FilePath, &in.CVEID, &in.ComponentPURL, &in.SecretHMAC,
-			&in.MisconfigPolicyID, &in.ResourceType, &in.ResourceName, &partial, &in.StoredKey); err != nil {
+			&in.MisconfigPolicyID, &in.ResourceType, &in.ResourceName, &partial, &in.StoredKey,
+			&in.ComplianceFramework, &in.ComplianceControlID); err != nil {
 			return nil, fmt.Errorf("scan finding to re-key: %w", err)
 		}
 		_ = json.Unmarshal(partial, &in.PartialFingerprints)

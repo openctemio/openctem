@@ -3,7 +3,7 @@ package webendpoint
 import (
 	"testing"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 )
 
 func TestCatalog_MostSpecificMatch(t *testing.T) {

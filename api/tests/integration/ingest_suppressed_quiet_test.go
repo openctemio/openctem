@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
@@ -75,8 +75,8 @@ func TestIngest_SuppressedAtIngestIsQuiet(t *testing.T) {
 		return ctis.Finding{AssetRef: "a", Type: ctis.FindingTypeVulnerability, Title: rule, RuleID: rule, Severity: "high",
 			Location: &ctis.FindingLocation{Path: "app/run.py", StartLine: line, Snippet: rule + "()"}}
 	}
-	rep := &ctis.Report{Version: "1.0", Tool: &ctis.Tool{Name: "semgrep"},
-		Metadata: ctis.ReportMetadata{ID: shared.NewID().String(), Timestamp: time.Now().UTC()},
+	rep := &ctis.Report{Version: ctis.SchemaVersion, Tool: &ctis.Tool{Name: "semgrep"},
+		Metadata: ctis.ReportMetadata{ID: ctis.NewReportID(), GeneratedAt: time.Now().UTC()},
 		Assets:   []ctis.Asset{{ID: "a", Type: ctis.AssetTypeRepository, Value: "github.com/acme/quiet-" + tn.tenant.String()[:8]}},
 		Findings: []ctis.Finding{mk("py.md5", 3), mk("py.cmdi", 9)}}
 	if out, err := r.svc.Ingest(ctx, agt, ingest.Input{Report: rep}); err != nil || len(out.Errors) > 0 {

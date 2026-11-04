@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
@@ -36,8 +36,8 @@ func TestIngest_ConcurrentUploadsCreateOneRepository(t *testing.T) {
 
 	const uploads, perUpload = 20, 25
 	report := func(i int) *ctis.Report {
-		rep := &ctis.Report{Version: "1.0", Tool: &ctis.Tool{Name: "semgrep"},
-			Metadata: ctis.ReportMetadata{Timestamp: time.Now().UTC(),
+		rep := &ctis.Report{Version: ctis.SchemaVersion, Tool: &ctis.Tool{Name: "semgrep"},
+			Metadata: ctis.ReportMetadata{ID: ctis.NewReportID(), GeneratedAt: time.Now().UTC(),
 				Branch: &ctis.BranchInfo{Name: "main", IsDefaultBranch: true, RepositoryURL: "https://" + repoName}},
 			Assets: []ctis.Asset{{ID: "repo", Type: ctis.AssetTypeRepository, Value: repoName}}}
 		for j := 0; j < perUpload; j++ {

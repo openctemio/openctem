@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/openctemio/ctis/transfer"
+	"github.com/openctemio/contract/transfer"
 
 	bp "github.com/openctemio/openctem/api/pkg/domain/bountyprogram"
 	moduledom "github.com/openctemio/openctem/api/pkg/domain/module"

@@ -72,9 +72,10 @@ The ETag of `/me/modules`, `/settings/modules` and the event-type catalog is `Mo
 
 ```
 on(org, module) = core(module)
-               || (entitled(org, module) && !explicit_off(org, module))
+               || (!platform_off(module) && entitled(org, module) && !explicit_off(org, module))
 
 entitled(org, module) = !deny(org, module)   # a deny of any origin
+explicit_off          = an org switch, counted only for a module Settings > Modules lists
 ```
 
 The set is closed over hard dependencies: a module whose hard dependency (or
@@ -84,9 +85,25 @@ turns control testing off on every surface, and a dependent of a module in its
 read-only grace is read-only until the same date.
 
 - **Core** (`CoreModuleIDs`, and `modules.is_core`, which a parity test keeps
-  equal): dashboard, assets, findings, scans, SLA, team, roles, audit,
-  settings, sensors, groups, API keys, notification settings, integrations,
-  integrations.notifications.
+  equal): dashboard, assets, findings, scans, SLA, risk scoring, suppressions,
+  team, roles, audit, settings, sensors, groups, API keys, notification
+  settings, integrations. Risk scoring applies to every finding and an approved
+  suppression rule always mutes what it matches, so neither can be switched off.
+- **Platform scope** (`scope: platform` in the registry, never core): an
+  installation switch, such as the vulnerability catalog (RFC-143). Its state
+  comes from platform configuration (`PlatformModules`) and is folded into the
+  state as the reason `disabled_by_platform` for every organization, before the
+  plan and the organization's own switch, failing closed (a switch that cannot
+  be read, or no provider wired, is off). The answer is `403 MODULE_NOT_ENABLED`
+  with `reason: disabled_by_platform` ("This module is disabled by the
+  platform"), not a 404. The organization cannot switch it on.
+- **Retired and folded modules:** `risk_analysis`, `sbom_export`, `tools`,
+  `scan_profiles` and the `integrations.*` sub-modules gated nothing and are
+  gone. `business_impact`, `crown_jewels`, `ctem_maturity`, `executive_summary`
+  and `mitre_coverage` hid a console page only: the page follows its parent
+  (`business_services`, `assets`, `ctem_cycles`, `reports`, `threat_intel`).
+  `ai_triage` is not on Settings > Modules: Settings > AI owns whether AI runs,
+  with its consent dialog; the module stays as an entitlement only.
 - **Explicit overrides:** `tenant_modules`, written by Settings > Modules
   (team admin with `settings:write`). Every change is audited as
   `tenant.modules_updated`.
@@ -116,13 +133,15 @@ read-only grace is read-only until the same date.
   session's module list (pages render with a "Read-only until" banner) and in
   `read_only_modules`; it cannot be switched on. After grace the reason is
   `not_entitled`. Data is never deleted.
-- **Failures:** a preference read error fails open (nothing disabled); an
-  entitlement read error fails closed: every non-core module is
+- **MCP:** a tool that only reads, and a prompt, work during the read-only
+  grace (as the GET routes do); a tool that changes data needs the module on.
+- **Failures:** a preference read error fails open (nothing disabled, the
+  answer is not cached); an entitlement read error fails closed: every non-core module is
   `unavailable` and the gate answers 503 until it can be read again.
 
 Each off module has a reason, returned in `MODULE_NOT_ENABLED` details:
-`not_entitled`, `disabled_by_admin`, `read_only_grace` (writes only; 403) or
-`unavailable` (503). The console
+`not_entitled`, `disabled_by_admin`, `disabled_by_platform`, `read_only_grace`
+(writes only; 403) or `unavailable` (503). The console
 says "Not available for this organization" (with no way to turn it on) or "Turned off for your
 organization" (with Settings > Modules for an administrator).
 

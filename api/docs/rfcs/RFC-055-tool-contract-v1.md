@@ -7,6 +7,8 @@
 | Architecture | [tool-contract.md](../architecture/tool-contract.md), [scan-stages.md](../architecture/scan-stages.md) |
 | Related | RFC-033 (sensor manifest), RFC-038 (tool config schema), RFC-040 (mutual distrust), RFC-046 (scans redesign, stage catalogue), RFC-049 (connector framework), RFC-052 (grants and tier ceilings), RFC-054 (scope authority); sdk-go `docs/rfcs/sensor-sdk-v2.md` (the tool contract runtime this RFC extends) |
 
+> (CTIS 2.0, 2026-11-03: the capability taxonomy is `github.com/openctemio/contract/capability`; mapping documents are `openctem.io/mapping/v2`; `tool.capabilities` is `tool.techniques`; see docs/architecture/ctis-receiver.md)
+
 ## 1. Summary
 
 The facts about a scan tool have been declared in about fourteen places. They

@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -68,23 +68,23 @@ func clampReportTimestamp(report *ctis.Report, b Binding, now time.Time) {
 	if report == nil {
 		return
 	}
-	ts := report.Metadata.Timestamp
+	ts := report.Metadata.GeneratedAt
 	if ts.IsZero() || ts.After(now) {
 		ts = now
 	}
 	if !b.DispatchedAt.IsZero() && ts.Before(b.DispatchedAt) && !b.DispatchedAt.After(now) {
 		ts = b.DispatchedAt
 	}
-	report.Metadata.Timestamp = ts
+	report.Metadata.GeneratedAt = ts
 }
 
 // reportObservedAt is when the report's source saw what it reports: its
 // timestamp, never later than now.
 func reportObservedAt(report *ctis.Report, now time.Time) time.Time {
-	if report == nil || report.Metadata.Timestamp.IsZero() || report.Metadata.Timestamp.After(now) {
+	if report == nil || report.Metadata.GeneratedAt.IsZero() || report.Metadata.GeneratedAt.After(now) {
 		return now
 	}
-	return report.Metadata.Timestamp
+	return report.Metadata.GeneratedAt
 }
 
 // untrustedAttributes are the tracked attributes the policy does not let
@@ -113,13 +113,16 @@ func (p *AssetProcessor) attributeClaims(a *ctis.Asset) map[asset.TrackedAttribu
 		// A name in a private DNS zone is not internet-facing, whatever
 		// else the report says.
 		out[asset.AttrExposure] = asset.ExposurePrivate.String()
-	} else if a.IsInternetAccessible {
-		out[asset.AttrExposure] = asset.ExposurePublic.String()
-	} else if e, ok := a.Properties["exposure"].(string); ok && strings.TrimSpace(e) != "" {
-		out[asset.AttrExposure] = e
+	} else if a.IsInternetAccessible != nil {
+		// Absent is unknown; false is a verified "not reachable".
+		if *a.IsInternetAccessible {
+			out[asset.AttrExposure] = asset.ExposurePublic.String()
+		} else {
+			out[asset.AttrExposure] = asset.ExposurePrivate.String()
+		}
 	}
-	if a.Compliance != nil && strings.TrimSpace(a.Compliance.DataClassification) != "" {
-		out[asset.AttrDataClassification] = a.Compliance.DataClassification
+	if a.Compliance != nil && a.Compliance.DataClassification != "" {
+		out[asset.AttrDataClassification] = string(a.Compliance.DataClassification)
 	}
 	return out
 }

@@ -68,6 +68,11 @@ other stored secrets.
 - `internal/app/platformlegal`; Console > Settings > Legal
   (`GET/PUT /api/v1/admin/settings/legal`, super admin + fresh authenticator
   code to save, critical audit with the values).
+- Help links: `help_bug_url` and `help_feedback_url` repoint the Help menu's
+  "Report a bug" and "Send feedback" (https URLs; empty uses the project's
+  issue forms), `help_links_disabled` hides both and the error pages' "Report
+  this problem". Diagnostics are prefilled only for the default issue forms
+  (`web/src/lib/report-problem.ts`); an operator URL gets no parameters.
 - Public read `GET /api/v1/legal` (cached 60 s): the web console renders the
   sign-in and sign-up notice links, the built-in legal pages and
   `/.well-known/security.txt` from it on the server (`web/src/lib/legal-settings.ts`);

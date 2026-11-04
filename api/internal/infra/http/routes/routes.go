@@ -31,6 +31,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/jwt"
 	"github.com/openctemio/openctem/api/pkg/keycloak"
 	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/notices"
 )
 
 // Middleware is an alias to the http package's Middleware type.
@@ -312,6 +313,9 @@ type Handlers struct {
 	AdminOperations   *handler.AdminOperationsHandler
 	AdminSystem       *handler.AdminSystemHandler
 	Announcement      *handler.AnnouncementHandler
+	// Licenses serves the third-party notices (About > Open-source licenses).
+	// Always registered: nil falls back to the image's notices file.
+	Licenses *handler.LicensesHandler
 	// AdminSupportRateLimiter caps console support actions per administrator.
 	AdminSupportRateLimiter *middleware.AdminMappingRateLimiter
 	// AdminEmailTestLimiter caps the platform test e-mail per administrator.
@@ -643,6 +647,7 @@ func Register(
 
 	// Build identity for Help > About (any signed-in user).
 	registerVersionRoute(router, authMiddleware)
+	registerLicensesRoute(router, licensesHandler(h), authMiddleware)
 	registerLegalRoute(router, h.AdminLegal)
 	registerBrandRoutes(router, h.Brand)
 	// API documentation: public outside production; in production the spec
@@ -669,6 +674,11 @@ func Register(
 	// Linked sign-in methods exist only where social sign-in is configured.
 	if h.OAuth != nil {
 		registerIdentityLinkRoutes(router, h.OAuth, authMiddleware, userSync)
+	}
+	// Linking an organization's single sign-on to an existing account
+	// (Account > Security) exists wherever SSO does, social sign-in or not.
+	if h.SSO != nil {
+		registerSSOLinkRoutes(router, h.SSO, authMiddleware, userSync)
 	}
 
 	// Tenant routes (protected with user sync)
@@ -1190,7 +1200,7 @@ func Register(
 
 	// Suppression routes (tenant from JWT token)
 	if h.Suppression != nil {
-		registerSuppressionRoutes(router, h.Suppression, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleSuppressions))
+		registerSuppressionRoutes(router, h.Suppression, authMiddleware, userSync)
 	}
 
 	// Exposure routes (tenant from JWT token)
@@ -1683,4 +1693,13 @@ func registerVerificationChecklistRoutes(router Router, vc *handler.Verification
 		r.GET("/{findingId}", vc.Get, middleware.Require(permission.VerificationChecklistsRead))
 		r.PUT("/{findingId}", vc.Update, middleware.Require(permission.VerificationChecklistsWrite))
 	}, mws...)
+}
+
+// licensesHandler is h.Licenses, or the handler of the image's notices file
+// when none was wired: the licenses page is always present.
+func licensesHandler(h Handlers) *handler.LicensesHandler {
+	if h.Licenses != nil {
+		return h.Licenses
+	}
+	return handler.NewLicensesHandler(notices.DefaultPath, nil)
 }

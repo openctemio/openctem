@@ -33,6 +33,15 @@ func TestValidateRefusesBrokenRegistries(t *testing.T) {
 	if err := validate(base()); err != nil {
 		t.Fatalf("valid registry refused: %v", err)
 	}
+	// A platform-scoped module (an installation switch) is valid and renders.
+	pm := base()
+	pm[1].Scope = "platform"
+	if err := validate(pm); err != nil {
+		t.Fatalf("platform module refused: %v", err)
+	}
+	if src, err := renderGo(pm); err != nil || !strings.Contains(string(src), "Scope: ScopePlatform") {
+		t.Fatalf("a platform module's scope is not rendered: %v", err)
+	}
 	cases := map[string]func([]module) []module{
 		"duplicate id":           func(m []module) []module { return append(m, m[0]) },
 		"unknown parent":         func(m []module) []module { m[2].Parent = "nope"; return m },
@@ -46,6 +55,9 @@ func TestValidateRefusesBrokenRegistries(t *testing.T) {
 		"core with dependencies": func(m []module) []module { m[0].Depends = m[1].Depends; return m },
 		"release":                func(m []module) []module { m[1].Release = "soon"; return m },
 		"const":                  func(m []module) []module { m[1].Const = "pentest"; return m },
+		"unknown scope":          func(m []module) []module { m[1].Scope = "region"; return m },
+		"core platform module":   func(m []module) []module { m[0].Scope = "platform"; return m },
+		"platform sub-module":    func(m []module) []module { m[2].Scope = "platform"; return m },
 	}
 	for name, mutate := range cases {
 		if err := validate(mutate(base())); err == nil {
