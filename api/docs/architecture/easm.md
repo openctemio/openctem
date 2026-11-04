@@ -993,6 +993,49 @@ what a visitor opens and what the tenant fixes:
   summary variants `ssl_issue.foreign_certificate`, `.name_mismatch`,
   `.not_yet_valid`.
 
+## 4p. Dangling DNS lifecycle (built)
+
+Design: research note 422 (internal). Code: `internal/app/easmdns/lifecycle.go`, `service.go`,
+`takeover.go`; repository `internal/infra/postgres/easm_dns_repository.go`.
+
+A dangling name is still the organization's asset. The daily DNS check (coverage ledger `dns.dangling`) and
+every tenant scan that runs `check.takeover` re-check it; the check keeps its `dangling_cname` open and the
+asset tag `dangling_cname` on it until the name points into the organization again.
+
+| Response class (`details.response_class`) | Evidence | Severity | Confirmation |
+|---|---|---|---|
+| `nxdomain_target` | the CNAME target does not exist | low; medium for a provider where anyone can claim the name; high when the target's domain is unregistered | pending until a takeover template confirms it |
+| `provider_unclaimed_page` | a takeover template matched (tenant scan) and the platform resolver shows the name's CNAME chain ending at a provider of the lists, outside the name's registrable domain | high, with `subdomain_takeover` | confirmed |
+| `provider_refuses` | the chain ends at a listed provider and the tenant's scans hold an open host-certificate exposure on the name (expired, `foreign_certificate`, `name_mismatch`; `details.tls_state`) | high when the list says anyone can claim names there, else medium | pending (needs review) |
+
+Details also carry `cname_chain`, `target`, `provider`, `provider_claimable` (`yes` or `unknown`).
+
+**Into the organization** (the only automatic resolution): the chain ends under the checked name's registrable
+domain or a root domain the tenant has confirmed; with no CNAME, every address is an address asset of the tenant,
+attribution confirmed, outside provider space (edge labels); or the name points nowhere (no CNAME, no address).
+`provider_refuses` also resolves when the certificate exposures on the name are resolved.
+
+**Suspected takeover:** an open `dangling_cname` whose name now answers from a third party (the missing target
+now exists, or the chain moved to another third-party target) is never resolved by the check. It raises
+`subdomain_takeover` (high, `check: target_changed`, `confirmation: suspected`, previous and current target);
+only a person resolves it, after checking that the content is the organization's.
+
+**Kept in inventory and scans:** the asset lifecycle worker never demotes an asset with an open
+`dangling_cname`, `dangling_ns` or `subdomain_takeover`, so scans keep targeting it.
+
+**Provider lists:** the can-i-take-over-xyz list (CC BY 4.0) and the project's own list
+`easmdns/fingerprints/openctem-providers.json` (wins on the same suffix). `hosted: true` marks a provider
+that serves every customer name from shared front ends, where a name it no longer serves still resolves.
+LadiPage (`ladipage.com`) is measured: a name pointed at it that no page uses gets the provider's page asking
+to publish a landing page with that domain, so anyone with an account can claim it. The fingerprints are only
+ever read; no request tries to claim a name.
+
+**Isolation:** every read and write carries the tenant id; ownership comes from the tenant's own assets and
+attributions only (the same address or root in another tenant proves nothing); the takeover confirmation still
+takes only command-bound reports on assets the command covered. The DNS reads go through the platform's
+configured resolver (passive); HTTP fingerprints come only from the tenant's sensor in a gated scan.
+Per-tenant switch: the EASM DNS check setting.
+
 ## 5. Data model (planned)
 
 - **Graph.** Reuse `assets` + `asset_relationships`. Add asset types `asn` and
