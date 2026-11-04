@@ -744,6 +744,7 @@ tests that cover the console's most user-visible flows.
 | `50-asset-detail-no-shift.spec.ts`          | Asset page: no layout shift while its panels load (390px, 1440px)                                          |
 | `52-team-outside-members.spec.ts`           | A team with outside members turns full-data roles off up front and names them (390px too)                  |
 | `53-asset-discovery-lineage.spec.ts`        | Asset page: how a subdomain was found (chain, link to its domain), 1280/390px, no sideways scroll          |
+| `54-asset-neighborhood-graph.spec.ts`       | Asset sheet graph: an address reaches its root domain, sibling addresses grouped then expanded             |
 | `53-sensors-phone.spec.ts`                  | Sensors at 390/1440px: strip never overlaps, tabs and search fit, legend, figures agree                    |
 | Spec file (`specs/`)                        | What it covers                                                                                             |
 | ------------------------------------------- | ----------------------------------------------------------------------------------------                   |

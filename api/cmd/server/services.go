@@ -1366,6 +1366,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.ThreatModel.SetDataScope(s.DataScope)
 	s.AssetRelationship = asset.NewAssetRelationshipService(repos.AssetRelationship, repos.Asset, log)
 	s.AssetRelationship.SetDataScope(s.DataScope)
+	s.AssetRelationship.SetGraphReader(repos.AssetRelationship)
 	s.RelationshipSuggestion = asset.NewRelationshipSuggestionService(repos.RelationshipSuggestion, repos.Asset, repos.AssetRelationship, log)
 	s.RelationshipSuggestion.SetDataScope(s.DataScope)
 	s.AssetImport = asset.NewAssetImportService(repos.Asset, log)
