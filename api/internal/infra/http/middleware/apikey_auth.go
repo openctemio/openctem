@@ -232,6 +232,7 @@ func (m *APIKeyAuthMiddleware) authenticate(w http.ResponseWriter, r *http.Reque
 	ctx = context.WithValue(ctx, PermissionsKey, perms)
 	ctx = context.WithValue(ctx, IsAdminKey, false)
 	ctx = auditapp.WithAPIKeyActor(ctx, key.ID().String(), key.KeyPrefix())
+	notePrincipal(ctx)
 
 	if ctxLogger := logger.FromContext(ctx); ctxLogger != nil {
 		ctx = logger.ToContext(ctx, ctxLogger.WithContext(ctx))

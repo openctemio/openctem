@@ -150,7 +150,21 @@ type ChainEntry struct {
 	Hash          string // SHA-256 hex (64 chars)
 	ChainPosition int64  // monotonic per tenant
 	CreatedAt     time.Time
+	// HashVersion is how Hash was computed: ChainHashV1 (the application hash
+	// over action, resource type, resource id, result and time) or ChainHashV2
+	// (the database hash over the whole row, see RowPayload).
+	HashVersion int
+	// RowPayload is the canonical text of the audit row a version 2 hash
+	// covers (database function audit_log_row_payload), read with the entry.
+	// Empty for version 1 entries and when the audit row is gone.
+	RowPayload string
 }
+
+// Chain hash versions (audit_log_chain.hash_version).
+const (
+	ChainHashV1 = 1
+	ChainHashV2 = 2
+)
 
 // Filter defines criteria for filtering audit logs.
 type Filter struct {

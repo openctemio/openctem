@@ -467,6 +467,8 @@ func gateReason(r *sensordom.DispatchRefusal) string {
 	switch {
 	case r.Layer == RefusalLayerGrant && r.Rule == RuleIntensity:
 		return commanddom.PlacementIntensity
+	case r.Layer == RefusalLayerEntitlement && r.Rule == RuleActiveScanning:
+		return commanddom.PlacementActiveScanning
 	case r.Layer == RefusalLayerGrant:
 		return commanddom.PlacementGrantPrefix + r.Rule
 	case r.Layer == sensordom.RefusalLayerManaged && r.Rule == "unavailable":

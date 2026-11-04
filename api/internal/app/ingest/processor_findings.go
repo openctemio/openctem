@@ -285,15 +285,17 @@ func (p *FindingProcessor) processBatch(
 		// identity is the version-2 identity (RFC-043 §4.2), nil when no
 		// recipe applies and the finding keeps its version-1 key.
 		identity *vulnerability.IdentityKey
-		// formers are the version-2 keys the finding may still be stored
-		// under (sastFormerLineKey, a secret's mask keys), oldest last.
+		// formers are the keys the finding may still be stored under: its
+		// version-2 key, and the keys of earlier forms of its recipe
+		// (sastFormerLineKey, a secret's mask keys).
 		formers []string
 		// legacy is the key the old ingest built from the report's own
 		// fingerprint (legacyClientFingerprint), "" when none.
 		legacy string
-		// aliasFormer is the version-2 key the finding had before its
-		// advisory ids were replaced by the CVE the feed aliases them to.
-		aliasFormer string
+		// aliasFormer are the keys (current and version-2 form) the finding
+		// had before its advisory ids were replaced by the CVE the feed
+		// aliases them to.
+		aliasFormer []string
 	}
 
 	// Helper to create FailedFinding from findingMeta
@@ -428,7 +430,7 @@ func (p *FindingProcessor) processBatch(
 	// Step 1a0: a finding that names only advisory ids is keyed on the CVE
 	// the signed feed ties them to (RFC-043 §17.2).
 	canonicalVulnIDsOf(ctx, p, candidates, func(fm *findingMeta) (shared.ID, *ctis.Finding) { return fm.assetID, &fm.finding },
-		func(fm *findingMeta, former string) { fm.aliasFormer = former })
+		func(fm *findingMeta, former []string) { fm.aliasFormer = former })
 
 	// Step 1a: the version-2 identity, computed on the server (RFC-043 §4.2).
 	applyIdentityV2Of(p, tenantID, candidates, func(fm *findingMeta) (shared.ID, *ctis.Finding) { return fm.assetID, &fm.finding },
@@ -437,8 +439,10 @@ func (p *FindingProcessor) processBatch(
 			fm.fingerprint = k.Fingerprint()
 			fm.base = ""
 			fm.formers = formers
-			if fm.aliasFormer != "" && fm.aliasFormer != fm.fingerprint {
-				fm.formers = append(fm.formers, fm.aliasFormer)
+			for _, a := range fm.aliasFormer {
+				if a != fm.fingerprint {
+					fm.formers = append(fm.formers, a)
+				}
 			}
 		})
 
@@ -467,15 +471,9 @@ func (p *FindingProcessor) processBatch(
 	// A SAST finding stored under its line-anchored key takes its
 	// code-anchored key once a report carries the code (a producer that
 	// started sending the snippet or its hash), keeping its triage.
-	for i := range 3 {
-		adoptFormerKeysOf(ctx, p, tenantID, candidates, func(fm findingMeta) adoptKeys {
-			ak := adoptKeys{identity: fm.identity, guard: adoptGuardOf(fm.assetID, &fm.finding, report)}
-			if i < len(fm.formers) {
-				ak.from = fm.formers[i]
-			}
-			return ak
-		})
-	}
+	adoptFormerKeysOf(ctx, p, tenantID, candidates, func(fm findingMeta) adoptKeys {
+		return adoptKeys{froms: fm.formers, identity: fm.identity, guard: adoptGuardOf(fm.assetID, &fm.finding, report)}
+	})
 
 	// Step 1c: a key a finding gave up (an asset merge, a duplicate folded
 	// into another finding, an older recipe) is an alias of the finding that
@@ -944,8 +942,10 @@ func (p *FindingProcessor) processBatch(
 	// holds the CVE key the feed gives it: the two are linked, not merged.
 	var collisions []AliasCollision
 	for i := range validFindings {
-		if f := validFindings[i].aliasFormer; f != "" && f != validFindings[i].fingerprint {
-			collisions = append(collisions, AliasCollision{Former: f, Canonical: validFindings[i].fingerprint})
+		for _, f := range validFindings[i].aliasFormer {
+			if f != "" && f != validFindings[i].fingerprint {
+				collisions = append(collisions, AliasCollision{Former: f, Canonical: validFindings[i].fingerprint})
+			}
 		}
 	}
 	p.linkAliasCollisions(ctx, tenantID, collisions)
@@ -1024,12 +1024,14 @@ func (p *FindingProcessor) knownFingerprints(
 	return known, nil
 }
 
-// generateFindingFingerprint generates a fingerprint for a CTIS finding.
-// The fingerprint includes assetID to ensure findings are unique per-asset.
-// This prevents the same vulnerability on different assets from being deduplicated incorrectly.
-// It returns both the composite fingerprint (stored on the finding) and the
-// pre-composite base, so the base can be persisted (see FingerprintBaseKey) and
-// the composite recomputed for a new asset_id after an asset merge.
+// generateFindingFingerprint is the version-1 key of a CTIS finding: the
+// composite of the asset and a base from the CTIS recipe v1 helpers. A
+// finding is keyed with it only when no identity recipe applies (no rule id,
+// no recipe input); for every other finding it is the key a finding stored
+// before version 2 may still carry, which ingest re-keys on this sighting
+// (adoptV1KeysOf). It returns the composite and the base, so the base can be
+// persisted (see FingerprintBaseKey) and the composite recomputed for a new
+// asset_id after an asset merge.
 func generateFindingFingerprint(assetID shared.ID, ctisFinding *ctis.Finding, tool *ctis.Tool) (composite, base string) {
 	// Generate base fingerprint
 	var baseFingerprint string
@@ -1094,6 +1096,7 @@ func generateFindingFingerprint(assetID shared.ID, ctisFinding *ctis.Finding, to
 		// GenerateAuto detects the type from the populated fields above and
 		// applies the matching type-aware algorithm (plain Generate would key
 		// everything by the generic location-based scheme).
+		//lint:ignore SA1019 the version-1 key must stay reproducible to find findings stored under it
 		baseFingerprint = fingerprint.GenerateAuto(input)
 
 		// The generic recipe has no port: one scanner plugin without a CVE on
