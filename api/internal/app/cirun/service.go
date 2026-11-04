@@ -181,7 +181,6 @@ type Service struct {
 	images    ImageLinker
 	stepUp    shared.RecentAuthGate
 	rules     SuppressionRules
-	modules   ModuleGuard
 	scope     ScopeLinker
 	gitlab    GitLabClients
 	identity  RepositoryIdentity
