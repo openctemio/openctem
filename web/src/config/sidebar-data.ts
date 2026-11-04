@@ -66,6 +66,9 @@ import {
   Stamp,
 } from 'lucide-react'
 import { type SidebarData } from '@/components/types'
+import { webExtension } from '@/lib/extension'
+import { mergeNavGroups } from '@/lib/extension/merge'
+import { isGrantOn } from '@/lib/extension/grants'
 import { Permission, Role } from '@/lib/permissions'
 import {
   ASSETS_SECTION_TABS,
@@ -81,7 +84,7 @@ import {
 // Re-export Permission and Role for convenience
 export { Permission, Role }
 
-export const sidebarData: SidebarData = {
+const coreSidebarData: SidebarData = {
   user: {
     name: 'User',
     email: 'user@openctem.io',
@@ -596,4 +599,10 @@ export const sidebarData: SidebarData = {
     // footer (src/components/layout/sidebar-footer-links.tsx). Every settings
     // page lives in the settings shell (src/config/settings-nav.ts).
   ],
+}
+
+/** The core rows plus the rows the build's extension adds (none by default). */
+export const sidebarData: SidebarData = {
+  ...coreSidebarData,
+  navGroups: mergeNavGroups(coreSidebarData.navGroups, webExtension.navItems, isGrantOn),
 }
