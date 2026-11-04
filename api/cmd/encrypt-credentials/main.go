@@ -4,6 +4,11 @@
 //
 //	DATABASE_URL="postgres://..." APP_ENCRYPTION_KEY="your-hex-key" go run ./cmd/encrypt-credentials
 //
+// It also keys leaked-credential secret fingerprints per organization (the
+// server does the same on start); -dry-run counts the rows. To roll back to
+// a build that only knows the install-wide fingerprint, run it with
+// -revert-credential-fingerprints after stopping the newer servers.
+//
 // The database URL and the key are read from the environment only: a flag would
 // put the database password or the master key in argv and the shell history.
 package main
@@ -29,6 +34,8 @@ func main() {
 	// Parse flags
 	keyFormat := flag.String("key-format", "", "Key format: hex, base64, raw (auto-detected if not specified)")
 	dryRun := flag.Bool("dry-run", false, "Show what would be encrypted without making changes")
+	revertFP := flag.Bool("revert-credential-fingerprints", false,
+		"Only put back the install-wide leaked-credential fingerprints (rollback of the per-organization re-key)")
 	flag.Parse()
 
 	// Get database URL
@@ -70,6 +77,16 @@ func main() {
 	}
 	fmt.Println("Connected to database")
 
+	if *revertFP {
+		rep, err := postgres.RevertLeakedCredentialFingerprints(ctx, db, credential.NewSecretProtector(cipher, []byte(keyStr)))
+		if err != nil {
+			fmt.Printf("Error reverting leaked credential fingerprints: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("Leaked credential fingerprints reverted: %d (unrecomputable: %d)\n", rep.Rekeyed, rep.Unrecomputable)
+		return
+	}
+
 	if *dryRun {
 		fmt.Println("\n=== DRY RUN MODE - No changes will be made ===")
 		fmt.Println()
@@ -98,11 +115,18 @@ func main() {
 		os.Exit(1)
 	}
 
+	fpCount, fpSkipped, err := rekeyLeakedCredentialFingerprints(ctx, db, cipher, keyStr, *dryRun)
+	if err != nil {
+		fmt.Printf("Error re-keying leaked credential fingerprints: %v\n", err)
+		os.Exit(1)
+	}
+
 	// Print summary
 	fmt.Println("\n=== Summary ===")
 	fmt.Printf("Integrations encrypted: %d\n", integrationsCount)
 	fmt.Printf("SCM Connections encrypted: %d\n", scmCount)
 	fmt.Printf("Leaked credential secrets encrypted: %d\n", leakedCount)
+	fmt.Printf("Leaked credential fingerprints keyed per organization: %d (unrecomputable: %d)\n", fpCount, fpSkipped)
 
 	if *dryRun {
 		fmt.Println("\nDry run complete. Run without -dry-run to apply changes.")
@@ -126,6 +150,20 @@ func encryptLeakedCredentialSecrets(ctx context.Context, db *sql.DB, cipher *cry
 		return n, nil
 	}
 	return postgres.BackfillLeakedCredentialSecrets(ctx, db, credential.NewSecretProtector(cipher, []byte(keyStr)))
+}
+
+func rekeyLeakedCredentialFingerprints(ctx context.Context, db *sql.DB, cipher *crypto.Cipher, keyStr string, dryRun bool) (int, int, error) {
+	fmt.Println("Processing leaked credential fingerprints (exposure_events)...")
+	if dryRun {
+		n, err := postgres.CountLeakedCredentialFingerprintsToRekey(ctx, db)
+		if err != nil {
+			return 0, 0, err
+		}
+		fmt.Printf("  %d leaked credential fingerprints would be keyed per organization\n", n)
+		return n, 0, nil
+	}
+	rep, err := postgres.RekeyLeakedCredentialFingerprints(ctx, db, credential.NewSecretProtector(cipher, []byte(keyStr)))
+	return rep.Rekeyed, rep.Unrecomputable, err
 }
 
 func createCipher(keyStr, format string) (*crypto.Cipher, error) {

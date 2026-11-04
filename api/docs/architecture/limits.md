@@ -145,6 +145,13 @@ only (tier 0). The server enforces it, a hidden control is not enough:
   check.
 - **Failure mode.** A lookup that cannot be read refuses tier above 0 (the job
   stays queued and is retried at the next poll); tier 0 is never affected.
+- **Console.** `GET /api/v1/scans/capabilities` (`scans:read`, the
+  organization from the credential) answers `{"active_scanning": bool}`, so
+  the scan wizard offers a passive-only organization Passive intensity only
+  (and with it only passive tools and workflows), with one line saying the
+  organization runs passive scans only and no plan or upgrade text. It is
+  advice: the checks above still decide. A failed lookup answers 500 and
+  the console then hides nothing.
 
 ### Counting usage
 

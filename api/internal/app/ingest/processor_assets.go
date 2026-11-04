@@ -890,7 +890,7 @@ func (p *AssetProcessor) processBatch(
 
 	// Step 9: Ports: address → port edges, host name → address, and ports a
 	// port scan no longer sees are closed (research/22 P0-6).
-	p.surfacePorts(ctx, tenantID, report, existingMap, mayChange)
+	p.surfacePorts(ctx, tenantID, report, existingMap, mayChange, scope.mayLinkName)
 
 	// Step 10: Web evidence (status, title, snippet, optional screenshot) of
 	// the assets this report may change (RFC-081).

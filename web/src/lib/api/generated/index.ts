@@ -200,6 +200,8 @@ export type EffectiveLimit =
 export type DeniedFeature =
   Schemas['github_com_openctemio_openctem_api_internal_app_entitlement.DeniedFeature']
 export type SetLimitRequest = Schemas['internal_infra_http_handler.SetLimitRequest']
+export type ScanCapabilitiesResponse =
+  Schemas['internal_infra_http_handler.ScanCapabilitiesResponse']
 export type OrganizationLimitsResponse =
   Schemas['internal_infra_http_handler.OrganizationLimitsResponse']
 export type OrganizationLimit = Schemas['internal_infra_http_handler.OrganizationLimit']

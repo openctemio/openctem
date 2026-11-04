@@ -213,6 +213,11 @@ type StepSensorShare struct {
 	Running    int // acknowledged or running
 	Completed  int
 	Failed     int // failed, expired or canceled
+	// Of Queued: waiting while another task of the organization scans
+	// their hosts (per-host politeness), and, of the rest, refused by a
+	// sensor's local policy and waiting for another sensor.
+	QueuedHostsBusy int
+	QueuedRefused   int
 }
 
 // StepShareReader is implemented by the command repository (asserted where

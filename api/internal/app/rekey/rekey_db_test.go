@@ -18,6 +18,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/credential"
 	"github.com/openctemio/openctem/api/pkg/domain/scannertemplate"
 	"github.com/openctemio/openctem/api/pkg/domain/secretstore"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 func randomHexKey(t *testing.T) string {
@@ -153,7 +154,7 @@ func seedAll(t *testing.T, db *sql.DB, key string) map[string]string {
 
 	// Leaked credential, sealed by the production protector.
 	details := map[string]any{credential.DetailSecretValue: "hunter2-leaked", "credential_type": "password"}
-	if err := credential.NewSecretProtector(c, []byte(key)).Seal(details); err != nil {
+	if err := credential.NewSecretProtector(c, []byte(key)).Seal(shared.MustIDFromString(tenantID), details, true); err != nil {
 		t.Fatal(err)
 	}
 	plain["exposure_events.details.secret_value_enc"] = "hunter2-leaked"
@@ -235,11 +236,11 @@ func readAll(t *testing.T, db *sql.DB, key string) map[string]string {
 		out[loc] = dec(one(q))
 	}
 
-	var fp string
-	if err := db.QueryRow(`SELECT details->>'secret_fingerprint' FROM exposure_events`).Scan(&fp); err != nil {
+	var fp, fpTenant string
+	if err := db.QueryRowContext(context.Background(), `SELECT details->>'secret_fingerprint', tenant_id::text FROM exposure_events`).Scan(&fp, &fpTenant); err != nil {
 		t.Fatal(err)
 	}
-	if fp != credential.NewSecretProtector(c, []byte(key)).Fingerprint(out["exposure_events.details.secret_value_enc"]) {
+	if fp != credential.NewSecretProtector(c, []byte(key)).Fingerprint(shared.MustIDFromString(fpTenant), out["exposure_events.details.secret_value_enc"]) {
 		out["exposure_events.details.secret_fingerprint"] = "<stale>"
 	}
 

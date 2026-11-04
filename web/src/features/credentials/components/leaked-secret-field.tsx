@@ -15,7 +15,8 @@ import { useRevealCredentialApi } from '../api/use-credentials-api'
 export interface LeakedSecretFieldProps {
   /** The credential (credential_leaked exposure) id. */
   credentialId: string
-  /** Whether a secret is stored at all. */
+  /** Whether a secret value is stored (revealable). Without one, the mask
+   *  and fingerprint may still be shown (the organization keeps no values). */
   hasSecret: boolean
   /** Display-safe mask from the API (`secret_masked`). */
   masked?: string
@@ -62,9 +63,34 @@ export function LeakedSecretField({
           <Key className="h-4 w-4 text-muted-foreground" />
           <h4 className="text-sm font-medium">{heading}</h4>
         </div>
-        <p className="text-sm text-muted-foreground italic">
-          {t('credentials.secret.none', 'No secret value stored')}
-        </p>
+        {masked ? (
+          <>
+            <Input
+              type="text"
+              value={masked}
+              readOnly
+              aria-label={t('credentials.secret.maskedAria', 'Masked secret value')}
+              data-testid="leaked-secret-value"
+              className="font-mono text-sm tracking-wider"
+            />
+            <p className="mt-2 text-xs text-muted-foreground">
+              {t(
+                'credentials.secret.notKept',
+                'The value was not kept: your organization keeps only the masked form and the fingerprint.'
+              )}
+            </p>
+          </>
+        ) : (
+          <p className="text-sm text-muted-foreground italic">
+            {t('credentials.secret.none', 'No secret value stored')}
+          </p>
+        )}
+        {fingerprint && (
+          <p className="mt-2 flex items-center gap-1 text-xs text-muted-foreground">
+            <Fingerprint className="h-3 w-3" />
+            <span className="font-mono">{fingerprint}</span>
+          </p>
+        )}
       </div>
     )
   }

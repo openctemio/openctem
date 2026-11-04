@@ -102,5 +102,6 @@ func newAdminPlatformSettingsHandler(repos *Repositories, svc *Services, approva
 		h.Signup = svc.Signup
 	}
 	h.EmailRelay = svc.OrgRelay
+	h.LeakedSecretStorage = svc.LeakedSecretPolicy
 	return h
 }

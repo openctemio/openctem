@@ -32,9 +32,17 @@ The Credential Import API allows you to:
 
 | Field | Meaning |
 |-------|---------|
-| `has_secret` | A secret was stored for this credential |
+| `has_secret` | A secret value is stored (revealable) for this credential |
 | `secret_masked` | `********`; long API keys and tokens keep a 4-character vendor prefix (`AKIA********`) |
-| `secret_fingerprint` | HMAC-SHA256 of the secret keyed from `APP_ENCRYPTION_KEY` (32 hex chars). Equal fingerprints mean the same secret leaked twice; it cannot be brute-forced offline without the key |
+| `secret_fingerprint` | HMAC-SHA256 of the secret under the organization's own key, derived from `APP_ENCRYPTION_KEY` with HKDF and the organization id (32 hex chars). Equal fingerprints mean the same secret leaked twice in this organization; the same secret in another organization has an unrelated fingerprint, and it cannot be brute-forced offline without the key |
+
+Whether the value itself is kept is the organization's setting
+**Settings > Leaked credentials** (`GET/PUT /api/v1/organization/settings/credentials`,
+owners and administrators), with a default the platform administrator sets
+(console **System > Leaked credentials**; while unset: kept on a self-managed
+install, not kept on a managed service). When it is off, an import keeps only
+`secret_masked`, the credential type and `secret_fingerprint`: `has_secret` is
+false and reveal answers 404. Design: [credential leaks](../architecture/credential-leaks.md).
 
 `POST /api/v1/credentials/{id}/reveal` returns `{"id": "...", "secret_value": "..."}`
 with `Cache-Control: no-store`. It needs `findings:credentials:reveal` (owner and
