@@ -3,7 +3,7 @@
 import { useDocsHref } from '@/context/brand-provider'
 import { useState, type ReactNode } from 'react'
 import { usePathname } from 'next/navigation'
-import { Bug, BookOpen, CircleHelp, ExternalLink, Info, Keyboard, Settings } from 'lucide-react'
+import { BookOpen, CircleHelp, ExternalLink, Info, Keyboard, Settings } from 'lucide-react'
 import {
   SidebarFooter,
   SidebarMenu,
@@ -22,7 +22,8 @@ import {
 import { Separator } from '@/components/ui/separator'
 import { useTranslation } from '@/context/i18n-provider'
 import { isSettingsShellPath } from '@/config/settings-nav'
-import { REPORT_ISSUE_URL } from '@/config/help-links'
+import { SafeExternalLink } from '@/components/safe-external-link'
+import { useHelpEntries } from '@/hooks/use-help-entries'
 import { DOCS_URL } from '@/lib/docs-links'
 import type { ShortcutShell } from '@/config/keyboard-shortcuts'
 import { NAV_BUTTON_CLASS } from './nav-group'
@@ -93,9 +94,10 @@ export function SidebarFooterLinks({
   )
 }
 
-/** Help: documentation, keyboard shortcuts, issue tracker and version. */
+/** Help: documentation, keyboard shortcuts, the report entries (bug, feedback, security) and version. */
 function HelpMenu({ shell }: { shell: ShortcutShell }) {
   const docsHref = useDocsHref()
+  const reportEntries = useHelpEntries()
   const { t } = useTranslation()
   const { isMobile } = useSidebar()
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
@@ -132,14 +134,20 @@ function HelpMenu({ shell }: { shell: ShortcutShell }) {
             <Keyboard />
             <span>{t('help.shortcuts', 'Keyboard shortcuts')}</span>
           </DropdownMenuItem>
-          <DropdownMenuItem asChild>
-            <a href={REPORT_ISSUE_URL} target="_blank" rel="noopener noreferrer">
-              <Bug />
-              <span>{t('help.reportIssue', 'Report an issue')}</span>
-              <ExternalLink className="ms-auto size-3.5 text-muted-foreground" aria-hidden />
-              <span className="sr-only">{newTab}</span>
-            </a>
-          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          {reportEntries.map((entry) => (
+            <DropdownMenuItem key={entry.id} asChild>
+              <SafeExternalLink
+                href={entry.href}
+                urlOptions={{ allowRelative: false, allowMailto: entry.allowMailto }}
+              >
+                <entry.icon />
+                <span>{entry.label}</span>
+                <ExternalLink className="ms-auto size-3.5 text-muted-foreground" aria-hidden />
+                <span className="sr-only">{newTab}</span>
+              </SafeExternalLink>
+            </DropdownMenuItem>
+          ))}
           <DropdownMenuSeparator />
           <DropdownMenuItem onSelect={() => setAboutOpen(true)}>
             <Info />
