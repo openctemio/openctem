@@ -431,6 +431,7 @@ func (s *Service) triggerWorkflow(ctx context.Context, sc *scan.Scan, template *
 	// the trigger's context.
 	runContext[RunContextKeyIntensity] = string(sc.EffectiveIntensity())
 	runContext[scanrun.RunContextKeyDepth] = string(sc.EffectiveDepth())
+	setRunStepParams(runContext, sc)
 	if sc.TargetOptions.EffectiveCIDRMode() == scan.CIDRModeLiveness {
 		runContext[RunContextKeyCIDRMode] = string(scan.CIDRModeLiveness)
 	} else {
@@ -581,6 +582,7 @@ func (s *Service) triggerSingleScan(ctx context.Context, sc *scan.Scan, triggerT
 	runContext["scanner_name"] = sc.ScannerName
 	runContext[RunContextKeyIntensity] = string(sc.EffectiveIntensity())
 	runContext[scanrun.RunContextKeyDepth] = string(sc.EffectiveDepth())
+	setRunStepParams(runContext, sc)
 	runContext["scanner_config"] = sc.ScannerConfig
 	if sc.TargetOptions.EffectiveCIDRMode() == scan.CIDRModeLiveness {
 		runContext[RunContextKeyCIDRMode] = string(scan.CIDRModeLiveness)

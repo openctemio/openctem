@@ -106,14 +106,18 @@ type CreateScanRequest struct {
 	// Depth is how much of the workflow each run executes: passive (only
 	// steps that send nothing to the targets), standard (default) or deep.
 	// A depth at which no first step can run is refused (DEPTH_RUNS_NOTHING).
-	Depth          string         `json:"depth" validate:"omitempty,oneof=passive standard deep"`
-	ScanType       string         `json:"scan_type" validate:"required,oneof=workflow single"`
-	ScanWorkflowID string         `json:"scan_workflow_id" validate:"omitempty,uuid"`
-	ScannerName    string         `json:"scanner_name" validate:"max=100"`
-	ScannerConfig  map[string]any `json:"scanner_config"`
-	TargetsPerJob  int            `json:"targets_per_job"`
-	ScheduleType   string         `json:"schedule_type" validate:"omitempty,oneof=manual daily weekly monthly crontab rrule once"`
-	ScheduleCron   string         `json:"schedule_cron" validate:"max=100"`
+	Depth string `json:"depth" validate:"omitempty,oneof=passive standard deep"`
+	// StepParams override capability standard params per workflow step:
+	// {"<step_key>" or "*:<capability>": {"<param>": value}}. Standard
+	// params only (INVALID_STEP_PARAMS otherwise).
+	StepParams     scan.StepParams `json:"step_params"`
+	ScanType       string          `json:"scan_type" validate:"required,oneof=workflow single"`
+	ScanWorkflowID string          `json:"scan_workflow_id" validate:"omitempty,uuid"`
+	ScannerName    string          `json:"scanner_name" validate:"max=100"`
+	ScannerConfig  map[string]any  `json:"scanner_config"`
+	TargetsPerJob  int             `json:"targets_per_job"`
+	ScheduleType   string          `json:"schedule_type" validate:"omitempty,oneof=manual daily weekly monthly crontab rrule once"`
+	ScheduleCron   string          `json:"schedule_cron" validate:"max=100"`
 	// ScheduleRRule is an RFC 5545 rule (RRULE parts) for schedule_type rrule,
 	// evaluated in timezone; at most every 15 minutes.
 	ScheduleRRule string  `json:"schedule_rrule" validate:"max=500"`
@@ -160,9 +164,11 @@ type UpdateScanRequest struct {
 	// Intensity: omitted = unchanged.
 	Intensity string `json:"intensity" validate:"omitempty,oneof=passive active intrusive"`
 	// Depth: omitted = unchanged.
-	Depth        string `json:"depth" validate:"omitempty,oneof=passive standard deep"`
-	ScheduleType string `json:"schedule_type" validate:"omitempty,oneof=manual daily weekly monthly crontab rrule once"`
-	ScheduleCron string `json:"schedule_cron" validate:"max=100"`
+	Depth string `json:"depth" validate:"omitempty,oneof=passive standard deep"`
+	// StepParams: omitted = unchanged, {} clears.
+	StepParams   scan.StepParams `json:"step_params"`
+	ScheduleType string          `json:"schedule_type" validate:"omitempty,oneof=manual daily weekly monthly crontab rrule once"`
+	ScheduleCron string          `json:"schedule_cron" validate:"max=100"`
 	// ScheduleRRule is an RFC 5545 rule (RRULE parts) for schedule_type rrule,
 	// evaluated in timezone; at most every 15 minutes.
 	ScheduleRRule string  `json:"schedule_rrule" validate:"max=500"`
@@ -296,11 +302,13 @@ type ScanDetailResponse struct {
 	// intrusive.
 	Intensity string `json:"intensity" enums:"passive,active,intrusive"`
 	// Depth is how much of the workflow each run executes.
-	Depth          string         `json:"depth" enums:"passive,standard,deep"`
-	ScanType       string         `json:"scan_type"`
-	ScanWorkflowID *string        `json:"scan_workflow_id,omitempty"`
-	ScannerName    string         `json:"scanner_name,omitempty"`
-	ScannerConfig  map[string]any `json:"scanner_config,omitempty"`
+	Depth string `json:"depth" enums:"passive,standard,deep"`
+	// StepParams are the scan's per-step overrides of standard params.
+	StepParams     scan.StepParams `json:"step_params,omitempty"`
+	ScanType       string          `json:"scan_type"`
+	ScanWorkflowID *string         `json:"scan_workflow_id,omitempty"`
+	ScannerName    string          `json:"scanner_name,omitempty"`
+	ScannerConfig  map[string]any  `json:"scanner_config,omitempty"`
 	// ScannerConfigWarnings lists scanner_config values that look like
 	// secrets (a token, a password, an Authorization header). The config is
 	// sent to the sensor in clear inside every command, so a secret there
@@ -459,6 +467,7 @@ func (h *ScanHandler) CreateScan(w http.ResponseWriter, r *http.Request) {
 		TargetOptions:       req.TargetOptions,
 		Intensity:           req.Intensity,
 		Depth:               req.Depth,
+		StepParams:          req.StepParams,
 		ScanType:            req.ScanType,
 		ScanWorkflowID:      req.ScanWorkflowID,
 		ScannerName:         req.ScannerName,
@@ -689,6 +698,7 @@ func (h *ScanHandler) UpdateScan(w http.ResponseWriter, r *http.Request) {
 		TargetOptions:       req.TargetOptions,
 		Intensity:           req.Intensity,
 		Depth:               req.Depth,
+		StepParams:          req.StepParams,
 		ScheduleType:        req.ScheduleType,
 		ScheduleCron:        req.ScheduleCron,
 		ScheduleRRule:       req.ScheduleRRule,
@@ -1540,6 +1550,7 @@ func buildScanResponse(s *scan.Scan, createdByName *string, revealSecrets bool) 
 		SkippedTargets:        s.SkippedTargets,
 		Intensity:             string(s.EffectiveIntensity()),
 		Depth:                 string(s.EffectiveDepth()),
+		StepParams:            s.StepParams,
 		ScanType:              string(s.ScanType),
 		ScannerName:           s.ScannerName,
 		ScannerConfig:         scannerConfigFor(s.ScannerConfig, revealSecrets),

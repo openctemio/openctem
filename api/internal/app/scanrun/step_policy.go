@@ -32,15 +32,15 @@ func depthSkipReason(run *scanrun.Run, step *scanworkflow.Step) string {
 }
 
 // stepAtDepth is the step as it runs at the run's depth: its config with the
-// depth's standard params merged over it. The step itself is not changed.
+// depth's standard params merged over it, then the scan's own per-step
+// overrides (scan.StepParams) over both. The step itself is not changed.
 func stepAtDepth(run *scanrun.Run, step *scanworkflow.Step) *scanworkflow.Step {
-	cfg := step.RunPolicy.ConfigAt(step.Config, RunDepth(run))
-	if len(step.RunPolicy.Overlay(RunDepth(run)).Params) == 0 {
-		return step
+	if len(step.RunPolicy.Overlay(RunDepth(run)).Params) > 0 {
+		cp := *step
+		cp.Config = step.RunPolicy.ConfigAt(step.Config, RunDepth(run))
+		step = &cp
 	}
-	cp := *step
-	cp.Config = cfg
-	return &cp
+	return scanapp.StepWithScanParams(run, step)
 }
 
 // stepTargetCap is the step's target cap at the run's depth (0: the stage's
