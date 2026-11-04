@@ -3315,9 +3315,6 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// through the change bus, on every replica): the route gate, the dashboard
 	// and the threat-alert planner all read it, so none keeps an old answer.
 	s.ModuleGate = middleware.NewModuleGate(s.Module, time.Minute)
-	// Ingest honors the suppressions module toggle: with the module off (or
-	// left out of the tenant's bundles) findings land as reported.
-	s.Ingest.SetSuppressionModuleGuard(s.Module)
 	// Events start no automation for a tenant with the workflows module off.
 	if s.WorkflowDispatcher != nil {
 		s.WorkflowDispatcher.SetModuleGuard(s.Module)
@@ -3521,8 +3518,9 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	s.Auth.SetPermissionVersionService(s.PermVersion)
 
 	// Two-factor authentication (TOTP). Secrets are encrypted with the same
-	// AES-GCM key as integration credentials.
-	s.Auth.SetMFA(repos.UserMFA, s.Encryptor, cfg.Brand.DisplayName())
+	// AES-GCM key as integration credentials. New authenticator entries are
+	// labeled with the product name and this installation's host.
+	s.Auth.SetMFA(repos.UserMFA, s.Encryptor, auth.MFAIssuer(cfg.Brand.DisplayName(), cfg.App.URL))
 	s.Session.SetMFAChallengeCleanup(repos.UserMFA)
 	// The platform two-factor floor (setting auth.mfa) and the lookup that
 	// tells an administrator by effective grants. Without the settings store

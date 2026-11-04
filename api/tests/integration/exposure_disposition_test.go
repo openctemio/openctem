@@ -432,6 +432,8 @@ func TestExposureDisposition_SelfApprovalAfterRoleChange(t *testing.T) {
 		if out, err := f.call(f.solo, high, f.soloOwner, exposure.StateAccepted); err != nil || !out.Pending {
 			t.Fatalf("request: %v", err)
 		}
+		f.exec(t, `DELETE FROM audit_log_chain WHERE audit_log_id IN
+			(SELECT id FROM audit_logs WHERE tenant_id = $1 AND action = ANY($2))`, f.solo.String(), pq.Array(actions))
 		f.exec(t, `DELETE FROM audit_logs WHERE tenant_id = $1 AND action = ANY($2)`, f.solo.String(),
 			pq.Array(actions))
 		f.exec(t, `INSERT INTO audit_logs (id, tenant_id, action, resource_type, resource_id, result, severity, message, logged_at)
@@ -440,7 +442,12 @@ func TestExposureDisposition_SelfApprovalAfterRoleChange(t *testing.T) {
 		if !errors.Is(err, exposure.ErrDispositionSelfApprovalAfterRemoval) {
 			t.Fatalf("%d: 1 hour after %s: %v, want ErrDispositionSelfApprovalAfterRemoval", i, action, err)
 		}
-		f.exec(t, `UPDATE audit_logs SET logged_at = now() - interval '8 days' WHERE tenant_id = $1 AND action = $2`, f.solo.String(), action)
+		// Audit rows cannot be updated: replace the row with one eight days old.
+		f.exec(t, `DELETE FROM audit_log_chain WHERE audit_log_id IN
+			(SELECT id FROM audit_logs WHERE tenant_id = $1 AND action = $2)`, f.solo.String(), action)
+		f.exec(t, `DELETE FROM audit_logs WHERE tenant_id = $1 AND action = $2`, f.solo.String(), action)
+		f.exec(t, `INSERT INTO audit_logs (id, tenant_id, action, resource_type, resource_id, result, severity, message, logged_at)
+			VALUES (gen_random_uuid(), $1, $2, 'role', 'x', 'success', 'medium', 'changed', now() - interval '8 days')`, f.solo.String(), action)
 		if out, err := f.selfApprove(f.solo, high, f.soloOwner, exposure.StateAccepted, "only member", "246810"); err != nil || !out.SelfApproved {
 			t.Fatalf("%d: 8 days after %s: %v", i, action, err)
 		}

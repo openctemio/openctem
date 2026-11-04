@@ -1,7 +1,7 @@
 package stage
 
 // The capability contracts come from the OpenCTEM capability taxonomy
-// (github.com/openctemio/ctis/capability), the one copy the platform, the
+// (github.com/openctemio/contract/capability), the one copy the platform, the
 // SDK and the sensor read (RFC-055). This package keeps only what is
 // platform data: the stored asset pairs each port carries, the default and
 // alternative implementations, the fan-out caps and the display names of the
@@ -10,7 +10,7 @@ package stage
 import (
 	"fmt"
 
-	"github.com/openctemio/ctis/capability"
+	"github.com/openctemio/contract/capability"
 )
 
 // lookupCapability is the taxonomy entry of a stage key at the contract

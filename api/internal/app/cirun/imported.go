@@ -4,7 +4,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/cirun"
@@ -28,7 +28,14 @@ var repoLike = regexp.MustCompile(`^(?i)([a-z][a-z0-9+.-]*://)?[a-z0-9-]+(\.[a-z
 // the repository, a path inside it, or a value that names no repository at
 // all (a lockfile path, a package URL of the scanned project).
 func inRunRepository(a *ctis.Asset, run *cirun.Run) bool {
-	if a.Type != ctis.AssetTypeRepository {
+	switch a.Type {
+	case ctis.AssetTypeRepository:
+	case ctis.AssetTypeUnclassified, ctis.AssetTypePackage:
+		// A lockfile path or a package of the checkout (CTIS 2.0 importers
+		// type them so): part of the run's repository unless it names
+		// another repository.
+		return !repoLike.MatchString(strings.TrimSpace(a.Value))
+	default:
 		return false
 	}
 	v := strings.TrimSpace(a.Value)
@@ -56,12 +63,15 @@ func ScopeImported(report *ctis.Report, run *cirun.Run) (dropped int, err error)
 			dropped++
 			continue
 		}
-		f.AssetValue, f.AssetType = "", ""
 		findings = append(findings, f)
 	}
 	report.Findings = findings
 	// The run's repository is the only asset; every kept finding is on it.
-	report.Assets = []ctis.Asset{{ID: repoAssetRef, Type: ctis.AssetTypeRepository, Value: run.Repository}}
+	repo, err := ctis.CanonicalRepository(run.Repository)
+	if err != nil {
+		return dropped, ErrReportOutOfScope
+	}
+	report.Assets = []ctis.Asset{{ID: repoAssetRef, Type: ctis.AssetTypeRepository, Value: repo}}
 	for i := range report.Findings {
 		report.Findings[i].AssetRef = repoAssetRef
 	}

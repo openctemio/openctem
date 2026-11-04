@@ -9,7 +9,7 @@ package integration
 import (
 	"testing"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
@@ -163,7 +163,7 @@ func TestDedupSecrets_SameMaskDifferentSecretsAreTwoFindings(t *testing.T) {
 	secret := func(line int) ctis.Finding {
 		return ctis.Finding{Type: ctis.FindingTypeSecret, RuleID: "aws-access-key", Title: "AWS access key",
 			Severity: ctis.SeverityCritical, Location: &ctis.FindingLocation{Path: "deploy/.env", StartLine: line},
-			Secret: &ctis.SecretDetails{SecretType: "api_key", MaskedValue: "AKIA****"}}
+			Secret: &ctis.SecretDetails{Type: "api_key", MaskedValue: "AKIA****"}}
 	}
 	g.ingest(t, tn, file, file.Tool, secret(3))
 	g.ingest(t, tn, file, file.Tool, secret(7))
@@ -187,7 +187,7 @@ func TestDedupSecrets_MaskOnlyKeyedRowKeepsItsTriage(t *testing.T) {
 	file.Tool = "gitleaks"
 	f := ctis.Finding{Type: ctis.FindingTypeSecret, RuleID: "aws-access-key", Title: "AWS access key",
 		Severity: ctis.SeverityCritical, Location: &ctis.FindingLocation{Path: "deploy/.env", StartLine: 3},
-		Secret: &ctis.SecretDetails{SecretType: "api_key", MaskedValue: "AKIA****"}}
+		Secret: &ctis.SecretDetails{Type: "api_key", MaskedValue: "AKIA****"}}
 	g.ingest(t, tn, file, file.Tool, f)
 	rows := g.rows(t, tn)
 	if len(rows) != 1 {

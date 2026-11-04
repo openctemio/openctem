@@ -56,6 +56,14 @@ type Settings struct {
 	SecurityContact    string `json:"security_contact"`
 	SecurityPolicyURL  string `json:"security_policy_url"`
 	SecurityTxtDisable bool   `json:"security_txt_disabled"`
+	// HelpBugURL and HelpFeedbackURL repoint the console's Help menu entries
+	// "Report a bug" and "Send feedback" (an own tracker, helpdesk or portal).
+	// Empty: the project's issue forms. HelpLinksDisabled hides both entries
+	// and the "Report this problem" link of the error pages. The security
+	// entry is not hidden; it follows security_policy_url / security_contact.
+	HelpBugURL        string `json:"help_bug_url"`
+	HelpFeedbackURL   string `json:"help_feedback_url"`
+	HelpLinksDisabled bool   `json:"help_links_disabled"`
 }
 
 // State is the stored settings with their version.
@@ -67,7 +75,7 @@ type State struct {
 
 func trim(s *Settings) {
 	for _, p := range []*string{&s.TermsURL, &s.PrivacyURL, &s.OrganizationName, &s.ServiceName, &s.ContactEmail,
-		&s.WebsiteURL, &s.DocsURL, &s.Address, &s.Jurisdiction, &s.EffectiveDate, &s.SecurityContact, &s.SecurityPolicyURL} {
+		&s.WebsiteURL, &s.DocsURL, &s.Address, &s.Jurisdiction, &s.EffectiveDate, &s.SecurityContact, &s.SecurityPolicyURL, &s.HelpBugURL, &s.HelpFeedbackURL} {
 		*p = strings.TrimSpace(*p)
 	}
 }
@@ -88,7 +96,8 @@ func emailAddr(v string) bool {
 // one line of bounded length.
 func (s Settings) Validate() error {
 	for name, v := range map[string]string{"terms_url": s.TermsURL, "privacy_url": s.PrivacyURL, "website_url": s.WebsiteURL,
-		"docs_url": s.DocsURL, "security_policy_url": s.SecurityPolicyURL} {
+		"docs_url": s.DocsURL, "security_policy_url": s.SecurityPolicyURL,
+		"help_bug_url": s.HelpBugURL, "help_feedback_url": s.HelpFeedbackURL} {
 		if v != "" && !httpsURL(v) {
 			return fmt.Errorf("%w: %s must be an https URL", ErrInvalid, name)
 		}

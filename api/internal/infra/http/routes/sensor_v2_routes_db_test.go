@@ -186,8 +186,8 @@ func v2Segment(tool, version string, rules ...string) []byte {
 	for _, r := range rules {
 		f = append(f, fmt.Sprintf(`{"type":"vulnerability","title":"t %s","severity":"high","rule_id":%q,"asset_ref":"repo","location":{"path":"src/%s.go","start_line":3}}`, r, r, r))
 	}
-	return []byte(fmt.Sprintf(`{"version":%q,"metadata":{"timestamp":"2026-10-01T12:00:00Z","coverage_type":"full","branch":{"name":"main","is_default_branch":true}},`+
-		`"tool":{"name":%q},"assets":[{"id":"repo","type":"repository","value":"github.com/acme/v2-routes"}],"findings":[%s]}`,
+	return []byte(fmt.Sprintf(`{"version":%q,"metadata":{"id":"01936f4e-7b8c-7d4e-9f00-0123456789ab","generated_at":"2026-10-01T12:00:00Z","channel":"scanner","coverage_type":"full","branch":{"name":"main","is_default_branch":true}},`+
+		`"tool":{"name":%q,"techniques":["sast"]},"assets":[{"id":"repo","type":"repository","value":"github.com/acme/v2-routes"}],"findings":[%s]}`,
 		version, tool, strings.Join(f, ",")))
 }
 
@@ -282,7 +282,7 @@ func withHeader(k, v string) reqOpt { return func(r *http.Request) { r.Header.Se
 func TestSensorV2_WholeReportReplayConflict(t *testing.T) {
 	h := newV2Harness(t, v2HarnessOpts{})
 	id := newReportID()
-	body := v2Segment("semgrep", "1.0", "a", "b")
+	body := v2Segment("semgrep", "2.0", "a", "b")
 
 	resp, raw := h.do(http.MethodPut, "/api/v2/sensor/results/"+id, body)
 	h.expect(resp, raw, 202, "")
@@ -297,7 +297,7 @@ func TestSensorV2_WholeReportReplayConflict(t *testing.T) {
 	resp, raw = h.do(http.MethodPut, "/api/v2/sensor/results/"+id, body)
 	h.expect(resp, raw, 200, "")
 	// Different content under the same id: 409.
-	resp, raw = h.do(http.MethodPut, "/api/v2/sensor/results/"+id, v2Segment("semgrep", "1.0", "a"))
+	resp, raw = h.do(http.MethodPut, "/api/v2/sensor/results/"+id, v2Segment("semgrep", "2.0", "a"))
 	h.expect(resp, raw, 409, "report-conflict")
 
 	h.work(id)
@@ -318,7 +318,7 @@ func TestSensorV2_SegmentedReportAndCommit(t *testing.T) {
 	h := newV2Harness(t, v2HarnessOpts{})
 	id := newReportID()
 	base := "/api/v2/sensor/results/" + id
-	s0, s1 := v2Segment("semgrep", "1.0", "a"), v2Segment("semgrep", "1.0", "b", "c")
+	s0, s1 := v2Segment("semgrep", "2.0", "a"), v2Segment("semgrep", "2.0", "b", "c")
 
 	resp, raw := h.do(http.MethodPut, base+"/segments/1", s1) // any order
 	h.expect(resp, raw, 202, "")
@@ -332,7 +332,7 @@ func TestSensorV2_SegmentedReportAndCommit(t *testing.T) {
 
 	// A segment whose tool or metadata differ does not belong to the report.
 	resp, raw = h.do(http.MethodPut, base+"/segments/2",
-		bytes.Replace(v2Segment("semgrep", "1.0", "d"), []byte(`"full"`), []byte(`"incremental"`), 1))
+		bytes.Replace(v2Segment("semgrep", "2.0", "d"), []byte(`"full"`), []byte(`"incremental"`), 1))
 	h.expect(resp, raw, 409, "segment-header-mismatch")
 	// The same report through the command-bound form is a different binding.
 	resp, raw = h.do(http.MethodPut, "/api/v2/sensor/commands/"+newReportID()+"/results/"+id+"/segments/2", s0)
@@ -346,7 +346,7 @@ func TestSensorV2_SegmentedReportAndCommit(t *testing.T) {
 			r.Header.Set("Content-Type", "application/json")
 		})
 	}
-	resp, raw = commit(2, digestOf(s0), digestOf(v2Segment("semgrep", "1.0", "x")))
+	resp, raw = commit(2, digestOf(s0), digestOf(v2Segment("semgrep", "2.0", "x")))
 	h.expect(resp, raw, 409, "segment-set-mismatch")
 	resp, raw = commit(3, digestOf(s0), digestOf(s1), digestOf(s1))
 	h.expect(resp, raw, 409, "segment-set-mismatch")
@@ -356,7 +356,7 @@ func TestSensorV2_SegmentedReportAndCommit(t *testing.T) {
 	h.expect(resp, raw, 202, "")
 	resp, raw = commit(2, digestOf(s0), digestOf(s1)) // replayed commit
 	h.expect(resp, raw, 200, "")
-	resp, raw = h.do(http.MethodPut, base+"/segments/2", v2Segment("semgrep", "1.0", "late"))
+	resp, raw = h.do(http.MethodPut, base+"/segments/2", v2Segment("semgrep", "2.0", "late"))
 	h.expect(resp, raw, 409, "report-committed")
 
 	h.work(id)
@@ -374,7 +374,7 @@ func TestSensorV2_AbandonAndOpenReportCap(t *testing.T) {
 	limits := protov2.DefaultLimits()
 	limits.MaxOpenReportsPerSensor = 2
 	h := newV2Harness(t, v2HarnessOpts{limits: limits})
-	seg := v2Segment("semgrep", "1.0", "a")
+	seg := v2Segment("semgrep", "2.0", "a")
 	ids := []string{newReportID(), newReportID(), newReportID()}
 	for i, id := range ids {
 		resp, raw := h.do(http.MethodPut, "/api/v2/sensor/results/"+id+"/segments/0", seg)
@@ -410,7 +410,7 @@ func TestSensorV2_EdgeAndValidationProblems(t *testing.T) {
 	put := func(body []byte, opts ...reqOpt) (*http.Response, []byte) {
 		return h.do(http.MethodPut, "/api/v2/sensor/results/"+newReportID(), body, opts...)
 	}
-	good := v2Segment("semgrep", "1.0", "a")
+	good := v2Segment("semgrep", "2.0", "a")
 
 	cases := []struct {
 		name    string
@@ -423,13 +423,13 @@ func TestSensorV2_EdgeAndValidationProblems(t *testing.T) {
 		{"brotli", good, []reqOpt{withHeader("Content-Encoding", "br")}, 415, "unsupported-encoding"},
 		{"no digest", good, []reqOpt{func(r *http.Request) { r.Header.Del(protov2.HeaderContentDigest) }}, 400, "digest-required"},
 		{"bad digest", good, []reqOpt{withHeader(protov2.HeaderContentDigest, digestOf([]byte("x")))}, 400, "digest-mismatch"},
-		{"duplicate keys", []byte(`{"version":"1.0","version":"1.0"}`), nil, 422, "invalid-json"},
+		{"duplicate keys", []byte(`{"version":"2.0","version":"2.0"}`), nil, 422, "invalid-json"},
 		{"invalid utf-8", []byte("{\"version\":\"\xff\"}"), nil, 422, "invalid-json"},
 		{"unknown field", bytes.Replace(good, []byte(`"version"`), []byte(`"tenant_id":"x","version"`), 1), nil, 422, "schema-invalid"},
-		{"version 2", bytes.Replace(good, []byte(`"version":"1.0"`), []byte(`"version":"2.0"`), 1), nil, 422, "version-mismatch"},
-		{"undeclared tool", v2Segment("trivy", "1.0", "a"), nil, 422, "tool-not-permitted"},
-		{"reserved tool", v2Segment("pentest", "1.0", "a"), nil, 422, "tool-not-permitted"},
-		{"too many findings in a segment", v2Segment("semgrep", "1.0", "a", "b", "c", "d"), nil, 413, "report-too-large"},
+		{"version 1", bytes.Replace(good, []byte(`"version":"2.0"`), []byte(`"version":"1.6"`), 1), nil, 422, "version-mismatch"},
+		{"undeclared tool", v2Segment("trivy", "2.0", "a"), nil, 422, "tool-not-permitted"},
+		{"reserved tool", v2Segment("pentest", "2.0", "a"), nil, 422, "tool-not-permitted"},
+		{"too many findings in a segment", v2Segment("semgrep", "2.0", "a", "b", "c", "d"), nil, 413, "report-too-large"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -453,9 +453,9 @@ func TestSensorV2_EdgeAndValidationProblems(t *testing.T) {
 
 	// The report total (4) is enforced across segments.
 	id := newReportID()
-	resp, raw = h.do(http.MethodPut, "/api/v2/sensor/results/"+id+"/segments/0", v2Segment("semgrep", "1.0", "a", "b", "c"))
+	resp, raw = h.do(http.MethodPut, "/api/v2/sensor/results/"+id+"/segments/0", v2Segment("semgrep", "2.0", "a", "b", "c"))
 	h.expect(resp, raw, 202, "")
-	resp, raw = h.do(http.MethodPut, "/api/v2/sensor/results/"+id+"/segments/1", v2Segment("semgrep", "1.0", "d", "e"))
+	resp, raw = h.do(http.MethodPut, "/api/v2/sensor/results/"+id+"/segments/1", v2Segment("semgrep", "2.0", "d", "e"))
 	h.expect(resp, raw, 413, "report-too-large")
 
 	// Gzip: digest over the compressed bytes is accepted.
@@ -488,20 +488,18 @@ func TestSensorV2_EdgeAndValidationProblems(t *testing.T) {
 	})
 	h.expect(resp, raw, 411, "length-required")
 
-	// An asset-less finding is accepted as a report but rejected as an item.
+	// CTIS 2.0: a finding whose asset_ref names no asset of the document
+	// makes the whole document invalid (no partial success for it): the
+	// segment is refused with the pointer, nothing is stored.
 	id = newReportID()
-	partial := []byte(`{"version":"1.0","metadata":{"timestamp":"2026-10-01T12:00:00Z"},"tool":{"name":"semgrep"},` +
+	invalid := []byte(`{"version":"2.0","metadata":{"id":"01936f4e-7b8c-7d4e-9f00-0123456789ab","generated_at":"2026-10-01T12:00:00Z","channel":"scanner"},"tool":{"name":"semgrep","techniques":["sast"]},` +
 		`"assets":[{"id":"repo","type":"repository","value":"github.com/acme/v2-partial"}],` +
 		`"findings":[{"type":"vulnerability","title":"ok","severity":"low","asset_ref":"repo"},` +
 		`{"type":"vulnerability","title":"orphan","severity":"low","asset_ref":"nowhere"}]}`)
-	resp, raw = h.do(http.MethodPut, "/api/v2/sensor/results/"+id, partial)
-	h.expect(resp, raw, 202, "")
-	h.work(id)
-	_, raw = h.do(http.MethodGet, "/api/v2/sensor/results/"+id, nil)
-	st := h.status(raw)
-	if st.State != protov2.StateCompleted || st.Accepted.Findings != 1 || st.Rejected.Findings != 1 ||
-		len(st.Errors) != 1 || st.Errors[0].Pointer != "/findings/1/asset_ref" {
-		t.Fatalf("partial success %+v", st)
+	resp, raw = h.do(http.MethodPut, "/api/v2/sensor/results/"+id, invalid)
+	h.expect(resp, raw, 422, "schema-invalid")
+	if !bytes.Contains(raw, []byte(`"/findings/1/asset_ref"`)) {
+		t.Fatalf("problem does not point at the dangling asset_ref: %s", raw)
 	}
 }
 
@@ -517,7 +515,7 @@ func (zeroReader) Read(p []byte) (int, error) {
 // RFC-023 C-2 in both directions, and a disabled sensor.
 func TestSensorV2_RouteIsolation(t *testing.T) {
 	h := newV2Harness(t, v2HarnessOpts{})
-	good := v2Segment("semgrep", "1.0", "a")
+	good := v2Segment("semgrep", "2.0", "a")
 	path := "/api/v2/sensor/results/" + newReportID()
 
 	for name, opt := range map[string]reqOpt{
@@ -579,14 +577,14 @@ func TestSensorV2_CrossTenant(t *testing.T) {
 	a := newV2Harness(t, v2HarnessOpts{})
 	b := newV2Harness(t, v2HarnessOpts{})
 	id := newReportID()
-	resp, raw := a.do(http.MethodPut, "/api/v2/sensor/results/"+id, v2Segment("semgrep", "1.0", "a"))
+	resp, raw := a.do(http.MethodPut, "/api/v2/sensor/results/"+id, v2Segment("semgrep", "2.0", "a"))
 	a.expect(resp, raw, 202, "")
 
 	// b's sensor (another tenant) talks to a's server with its own key.
 	b.srv = a.srv
 	resp, raw = b.do(http.MethodGet, "/api/v2/sensor/results/"+id, nil)
 	b.expect(resp, raw, 404, "report-not-found")
-	resp, raw = b.do(http.MethodPut, "/api/v2/sensor/results/"+id, v2Segment("semgrep", "1.0", "zzz"))
+	resp, raw = b.do(http.MethodPut, "/api/v2/sensor/results/"+id, v2Segment("semgrep", "2.0", "zzz"))
 	b.expect(resp, raw, 202, "") // its own report, its own tenant
 	_, raw = a.do(http.MethodGet, "/api/v2/sensor/results/"+id, nil)
 	if st := a.status(raw); st.Segments.Received != 1 {
@@ -601,9 +599,9 @@ func TestSensorV2_CrossTenant(t *testing.T) {
 		t.Fatalf("seed command: %v", err)
 	}
 	path := "/api/v2/sensor/commands/" + strings.ToLower(cmdID) + "/results/" + newReportID()
-	resp, raw = b.do(http.MethodPut, path, v2Segment("semgrep", "1.0", "a"))
+	resp, raw = b.do(http.MethodPut, path, v2Segment("semgrep", "2.0", "a"))
 	b.expect(resp, raw, 404, "command-not-found")
-	resp, raw = a.do(http.MethodPut, path, v2Segment("semgrep", "1.0", "a"))
+	resp, raw = a.do(http.MethodPut, path, v2Segment("semgrep", "2.0", "a"))
 	a.expect(resp, raw, 202, "")
 	if st := a.status(raw); st.CommandID != strings.ToLower(cmdID) {
 		t.Fatalf("command binding %+v", st)
@@ -612,7 +610,7 @@ func TestSensorV2_CrossTenant(t *testing.T) {
 	if _, err := a.db.Exec(`UPDATE commands SET payload = '{"scanner":"trivy"}' WHERE id = $1`, cmdID); err != nil {
 		t.Fatal(err)
 	}
-	resp, raw = a.do(http.MethodPut, "/api/v2/sensor/commands/"+strings.ToLower(cmdID)+"/results/"+newReportID(), v2Segment("semgrep", "1.0", "a"))
+	resp, raw = a.do(http.MethodPut, "/api/v2/sensor/commands/"+strings.ToLower(cmdID)+"/results/"+newReportID(), v2Segment("semgrep", "2.0", "a"))
 	a.expect(resp, raw, 422, "tool-not-permitted")
 }
 
@@ -620,7 +618,7 @@ func TestSensorV2_RateLimitAndQueueFull(t *testing.T) {
 	limiter := middleware.NewTelemetryRateLimiter(0.001, 1, time.Minute, logger.NewNop())
 	defer limiter.Stop()
 	h := newV2Harness(t, v2HarnessOpts{tenantLimiter: limiter})
-	good := v2Segment("semgrep", "1.0", "a")
+	good := v2Segment("semgrep", "2.0", "a")
 	resp, raw := h.do(http.MethodPut, "/api/v2/sensor/results/"+newReportID(), good)
 	h.expect(resp, raw, 202, "")
 	resp, raw = h.do(http.MethodPut, "/api/v2/sensor/results/"+newReportID(), good)
@@ -650,7 +648,7 @@ func TestSensorV2_RateLimitAndQueueFull(t *testing.T) {
 // refusal carries a Retry-After within the advised bounds.
 func TestSensorV2_QueueFullAdmitsByReport(t *testing.T) {
 	h := newV2Harness(t, v2HarnessOpts{maxPending: 2})
-	seg := func(name string) []byte { return v2Segment("semgrep", "1.0", name) }
+	seg := func(name string) []byte { return v2Segment("semgrep", "2.0", name) }
 	base := "/api/v2/sensor/results/" + newReportID()
 
 	// Segments 0 and 1 fill the tenant's limit (2 unfinished jobs).
@@ -692,7 +690,7 @@ func TestSensorV2_BurstOfPushes(t *testing.T) {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			body := v2Segment("semgrep", "1.0", fmt.Sprint("burst-", i))
+			body := v2Segment("semgrep", "2.0", fmt.Sprint("burst-", i))
 			req, _ := http.NewRequestWithContext(context.Background(), http.MethodPut,
 				h.srv.URL+"/api/v2/sensor/results/"+newReportID(), bytes.NewReader(body))
 			req.Header.Set("Authorization", "Bearer "+h.key)
@@ -760,7 +758,7 @@ func TestSensorV2_CompletedReportCountsTowardSensorTotals(t *testing.T) {
 
 	id := newReportID()
 	base := "/api/v2/sensor/results/" + id
-	s0, s1 := v2Segment("semgrep", "1.0", "a"), v2Segment("semgrep", "1.0", "b", "c")
+	s0, s1 := v2Segment("semgrep", "2.0", "a"), v2Segment("semgrep", "2.0", "b", "c")
 	for seq, body := range [][]byte{s0, s1} {
 		resp, raw := h.do(http.MethodPut, fmt.Sprintf("%s/segments/%d", base, seq), body)
 		h.expect(resp, raw, 202, "")
@@ -793,7 +791,7 @@ func TestSensorV2_QueuedReportOfRevokedSensorIsDropped(t *testing.T) {
 		t.Run(action, func(t *testing.T) {
 			h := newV2Harness(t, v2HarnessOpts{})
 			id := newReportID()
-			resp, raw := h.do(http.MethodPut, "/api/v2/sensor/results/"+id, v2Segment("semgrep", "1.0", "a", "b"))
+			resp, raw := h.do(http.MethodPut, "/api/v2/sensor/results/"+id, v2Segment("semgrep", "2.0", "a", "b"))
 			h.expect(resp, raw, 202, "")
 
 			ctx := context.Background()
@@ -836,7 +834,7 @@ func TestIngestV1_QueuedReportOfRevokedSensorIsDropped(t *testing.T) {
 	h := newV2Harness(t, v2HarnessOpts{})
 	ctx := context.Background()
 	tenantID, sensorID := shared.MustIDFromString(h.tenantID), shared.MustIDFromString(h.sensorID)
-	report := []byte(`{"version":"1.0","metadata":{"id":"v1-queued","source_type":"scanner"},"tool":{"name":"semgrep"},` +
+	report := []byte(`{"version":"2.0","metadata":{"id":"01936f4e-7b8c-7d4e-9f00-0123456789ab","generated_at":"2026-10-01T12:00:00Z","channel":"scanner"},"tool":{"name":"semgrep","techniques":["sast"]},` +
 		`"assets":[{"id":"repo","type":"repository","value":"github.com/acme/v1-queued"}],` +
 		`"findings":[{"type":"vulnerability","title":"t","severity":"high","rule_id":"r1","asset_ref":"repo"}]}`)
 	proc := ingest.NewJobProcessor(h.ingest)
@@ -929,7 +927,7 @@ func (h *v2Harness) reportIntegrity(reportID string) (integrity string, root []b
 // report lists the segments the server holds.
 func TestSensorV2_CommitManifest(t *testing.T) {
 	h := newV2Harness(t, v2HarnessOpts{})
-	segs := [][]byte{v2Segment("semgrep", "1.0", "a", "b"), v2Segment("semgrep", "1.0", "c")}
+	segs := [][]byte{v2Segment("semgrep", "2.0", "a", "b"), v2Segment("semgrep", "2.0", "c")}
 	put := func(base string, seqs ...int) {
 		for _, seq := range seqs {
 			resp, raw := h.do(http.MethodPut, fmt.Sprintf("%s/segments/%d", base, seq), segs[seq])

@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	easmapp "github.com/openctemio/openctem/api/internal/app/easm"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
@@ -61,21 +61,28 @@ func TestImportRecon_CandidatesAreNeverTargeted(t *testing.T) {
 
 	importFor := func(tenant shared.ID, actor ingest.ActorScope, assets []ctis.Asset, eps []ctis.Endpoint) *ingest.Output {
 		t.Helper()
-		rep := &ctis.Report{Version: "1.0", Tool: &ctis.Tool{Name: "reconftw"}, Assets: assets, Endpoints: eps,
-			Metadata: ctis.ReportMetadata{ID: shared.NewID().String(), Timestamp: time.Now().UTC(), CoverageType: "partial"}}
+		rep := &ctis.Report{Version: ctis.SchemaVersion, Tool: &ctis.Tool{Name: "reconftw"}, Assets: assets, Endpoints: eps,
+			Metadata: ctis.ReportMetadata{ID: ctis.NewReportID(), GeneratedAt: time.Now().UTC(), CoverageType: "partial"}}
 		tid := tenant
 		out, err := ing.Ingest(ctx, &sensor.Sensor{TenantID: &tid, Status: sensor.SensorStatusActive}, ingest.Input{
 			Report: rep, CoverageType: ingest.CoverageTypePartial,
 			Options: ingest.Options{Actor: actor, SourceKind: "import", SourceName: "import:reconftw",
 				Receipt: &ingestreceipt.Source{Kind: ingestreceipt.SourceUpload, Ref: shared.NewID().String()}},
 		})
-		if err != nil || len(out.Errors) > 0 {
+		if err != nil {
+			t.Fatalf("ingest: %v", err)
+		}
+		if len(out.Errors) > 0 {
 			t.Fatalf("ingest: %v %v", err, out)
 		}
 		return out
 	}
 	host := func(id, name, scope string) ctis.Asset {
-		return ctis.Asset{ID: id, Type: ctis.AssetTypeSubdomain, Value: name, Properties: ctis.Properties{"import_scope": scope}}
+		// The import service's verdict travels in the io.openctem extension
+		// (findingimport judgeScope); properties carry no meaning.
+		a := ctis.Asset{ID: id, Type: ctis.AssetTypeDomainName, Value: name}
+		a.Extensions.Set(ctis.OpenCTEMNamespace, "import_scope", scope)
+		return a
 	}
 	idIn := func(tenant shared.ID, name string) string {
 		var id string
@@ -159,9 +166,9 @@ func TestImportRecon_EndpointsOnlyUnderOriginsTheUploaderMayChange(t *testing.T)
 		t.Fatal(err)
 	}
 	run := func(tid shared.ID, actor ingest.ActorScope, origin string) *ingest.Output {
-		rep := &ctis.Report{Version: "1.0", Tool: &ctis.Tool{Name: "reconftw"},
+		rep := &ctis.Report{Version: ctis.SchemaVersion, Tool: &ctis.Tool{Name: "reconftw"},
 			Endpoints: []ctis.Endpoint{{Origin: origin, Method: "GET", Path: "/a", Source: ctis.EndpointSourceImport}},
-			Metadata:  ctis.ReportMetadata{ID: shared.NewID().String(), Timestamp: time.Now().UTC(), CoverageType: "partial"}}
+			Metadata:  ctis.ReportMetadata{ID: ctis.NewReportID(), GeneratedAt: time.Now().UTC(), CoverageType: "partial"}}
 		tt := tid
 		out, err := ing.Ingest(ctx, &sensor.Sensor{TenantID: &tt, Status: sensor.SensorStatusActive}, ingest.Input{
 			Report: rep, CoverageType: ingest.CoverageTypePartial,

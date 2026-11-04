@@ -16,7 +16,7 @@ import (
 	"time"
 
 	"github.com/lib/pq"
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
@@ -220,13 +220,13 @@ func (r *bindingRig) findingStatus(rule string) string {
 // hostReport is a report about hosts, with the flags a sensor could try to
 // plant on them.
 func hostReport(tool string, flags bool, hosts ...string) *ctis.Report {
-	rep := &ctis.Report{Version: "1.0", Tool: &ctis.Tool{Name: tool},
-		Metadata: ctis.ReportMetadata{ID: "rep-" + shared.NewID().String(), Timestamp: time.Now().UTC()}}
+	rep := &ctis.Report{Version: ctis.SchemaVersion, Tool: &ctis.Tool{Name: tool},
+		Metadata: ctis.ReportMetadata{ID: ctis.NewReportID(), GeneratedAt: time.Now().UTC(), Channel: ctis.ChannelScanner}}
 	for i, h := range hosts {
 		a := ctis.Asset{ID: "h" + string(rune('a'+i)), Type: ctis.AssetTypeHost, Value: h}
 		if flags {
-			a.IsInternetAccessible = true
-			a.Compliance = &ctis.AssetCompliance{Frameworks: []string{"pci-dss"}, DataClassification: "restricted", PIIExposed: true}
+			a.IsInternetAccessible = ctis.Bool(true)
+			a.Compliance = &ctis.AssetCompliance{Frameworks: []ctis.ComplianceFramework{"pci_dss"}, DataClassification: "restricted", HasPII: true}
 		}
 		rep.Assets = append(rep.Assets, a)
 	}

@@ -249,6 +249,9 @@ func (r *FindingAcceptanceExpiryRepository) ExpireStaleRequests(ctx context.Cont
 			       'An accepted-risk request ended and was marked expired',
 			       jsonb_build_object('approval_id', e.id, 'reason', 'acceptance_request_ended'), NOW()
 			FROM ended e
+			-- Tenants ascending, then id: concurrent sweeps take the per-tenant
+			-- audit chain locks in one order, so they cannot deadlock.
+			ORDER BY e.tenant_id, e.id
 		)
 		SELECT COUNT(*) FROM ended`).Scan(&n)
 	if err != nil {

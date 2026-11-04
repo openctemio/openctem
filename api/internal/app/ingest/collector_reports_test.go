@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/ingestreport"
@@ -12,7 +12,7 @@ import (
 )
 
 func TestCompleteCoverage(t *testing.T) {
-	for cov, want := range map[string]bool{"full": true, " FULL ": true, "partial": false, "incremental": false, "": false} {
+	for cov, want := range map[ctis.CoverageType]bool{ctis.CoverageFull: true, ctis.CoveragePartial: false, ctis.CoverageIncremental: false, "": false} {
 		if got := completeCoverage(ctis.ReportMetadata{CoverageType: cov}); got != want {
 			t.Errorf("completeCoverage(%q) = %v, want %v", cov, got, want)
 		}
@@ -26,7 +26,7 @@ func TestCollectorSourceOf(t *testing.T) {
 	if collectorSourceOf(tenant, sensorID, nil, ctis.ReportMetadata{}) != nil {
 		t.Fatal("a report without a tool got a collector source")
 	}
-	src := collectorSourceOf(tenant, sensorID, &ctis.Tool{Name: " vCenter "}, ctis.ReportMetadata{SourceRef: strings.Repeat("x", 400)})
+	src := collectorSourceOf(tenant, sensorID, &ctis.Tool{Name: " vCenter "}, ctis.ReportMetadata{SourceRefs: []ctis.SourceRef{{System: "vcenter", ID: strings.Repeat("x", 400)}}})
 	if src == nil || src.Tool != "vcenter" || len(src.SourceRef) != maxCollectorSourceRef || src.TenantID != tenant || src.SensorID != sensorID {
 		t.Fatalf("source = %+v", src)
 	}

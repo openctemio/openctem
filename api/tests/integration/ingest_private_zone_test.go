@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
@@ -20,16 +20,25 @@ func TestIngest_PrivateDNSZoneExposure(t *testing.T) {
 	tn := r.newTenant("gcp-dns")
 	tid := tn.tenant
 	agt := &sensor.Sensor{ID: tn.sensor, TenantID: &tid, Type: sensor.SensorTypeCollector, Status: sensor.SensorStatusActive}
-	name := func(n, root, vis string) ctis.Asset {
-		return ctis.Asset{ID: n, Type: ctis.AssetTypeSubdomain, Value: n, Name: n,
-			Properties: ctis.Properties{"root_domain": root, "zone_visibility": vis, "dns_zone": "zone-" + vis, "ip_addresses": []any{"10.20.0.5"}}}
+	// A zone name is a domain_name marked reachable or not from the internet;
+	// its apex is a domain_name of the document, linked by subdomain_of.
+	name := func(n, vis string) ctis.Asset {
+		return ctis.Asset{ID: n, Type: ctis.AssetTypeDomainName, Value: n, IsInternetAccessible: ctis.Bool(vis == "public"),
+			Technical: dnsAddrs(n, "10.20.0.5")}
 	}
-	rep := &ctis.Report{Version: "1.0", Tool: &ctis.Tool{Name: "gcp-dns"},
-		Metadata: ctis.ReportMetadata{Timestamp: time.Now().UTC(), SourceType: "collector", CoverageType: "full"},
+	rep := &ctis.Report{Version: ctis.SchemaVersion, Tool: &ctis.Tool{Name: "gcp-dns"},
+		Metadata: ctis.ReportMetadata{ID: ctis.NewReportID(), GeneratedAt: time.Now().UTC(), Channel: ctis.ChannelCollector, CoverageType: ctis.CoverageFull},
 		Assets: []ctis.Asset{
-			name("db.internal-only.example", "internal-only.example", "private"),
-			name("www.example.org", "example.org", "public"),
-			name("vpn.example.org", "example.org", "private"),
+			name("db.internal-only.example", "private"),
+			name("www.example.org", "public"),
+			name("vpn.example.org", "private"),
+			{ID: "root-internal", Type: ctis.AssetTypeDomainName, Value: "internal-only.example", IsInternetAccessible: ctis.Bool(false)},
+			{ID: "root-public", Type: ctis.AssetTypeDomainName, Value: "example.org", IsInternetAccessible: ctis.Bool(true)},
+		},
+		Relationships: []ctis.Relationship{
+			{Type: ctis.RelSubdomainOf, FromRef: "db.internal-only.example", ToRef: "root-internal"},
+			{Type: ctis.RelSubdomainOf, FromRef: "www.example.org", ToRef: "root-public"},
+			{Type: ctis.RelSubdomainOf, FromRef: "vpn.example.org", ToRef: "root-public"},
 		}}
 	out, err := r.svc.Ingest(ctx, agt, ingest.Input{Report: rep, Options: ingest.Options{Admitted: true}})
 	if err != nil {
