@@ -10,7 +10,7 @@
 import type { DashboardWidget } from './api/dashboards.types'
 import raw from './templates.json'
 
-export type TemplateKey = 'ctem' | 'overview' | 'executive' | 'program' | 'triage'
+export type TemplateKey = 'ctem' | 'executive' | 'surface' | 'program' | 'triage'
 
 export interface DashboardTemplate {
   key: TemplateKey

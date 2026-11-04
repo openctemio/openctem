@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Status | Accepted (2026-10-28). Designed; nothing shipped yet |
-| Scope | api (AI agent principal with a role, revisions, eval gate, shadow, canary and rollback, golden sets, trusted publishers, vetted MCP servers for AI agents, permissions), web (AI agents pages, onboarding wizard, playbook editor, revisions and shadow views, owner digest), sdk-go (`openctem aiagent` CLI, conformance), `openctemio/ai-worker`, docs |
+| Scope | api (AI agent principal with a role, revisions, eval gate, shadow, canary and rollback, golden sets, trusted publishers, vetted MCP servers for AI agents, permissions), web (AI agents pages, onboarding wizard, playbook editor, revisions and shadow views, owner digest), sdk-go (`openctem aiagent` CLI, conformance), the separately distributed AI worker, docs |
 | Architecture | [ai-custom-agents.md](../architecture/ai-custom-agents.md), [ai-analyze-contract.md](../architecture/ai-analyze-contract.md) |
 | Related | RFC-132 (the AI agent as a service account with accountable owners), RFC-133 (the AI harness, the ai-worker pool, the DX ladder and the concept map in its section 10a), RFC-131 (analyze contract, masking), RFC-099 (signed content catalog), RFC-040 (mutual distrust, signed jobs), RFC-030 (scan work distribution) |
 

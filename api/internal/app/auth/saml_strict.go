@@ -166,7 +166,37 @@ func verifySAMLElementSignature(el *etree.Element, certs []*x509.Certificate, cl
 	if clock != nil {
 		vc.Clock = clock
 	}
-	_, err = vc.Validate(detached)
+	return validateSAMLSignature(vc, detached)
+}
+
+// validateSAMLSignature validates el's signature against vc's stored
+// certificates. The signature library falls back to the stored certificate
+// only when exactly one is configured, so an IdP that signs without an
+// embedded certificate would fail every sign-in once a second (rollover)
+// certificate is stored. With no embedded certificate and several stored
+// ones, each is tried in turn, each with its own validity check. A signature
+// that embeds a certificate is validated as before: that certificate must
+// exactly match a stored one.
+func validateSAMLSignature(vc *dsig.ValidationContext, el *etree.Element) error {
+	if el.FindElement("./Signature/KeyInfo/X509Data/X509Certificate") == nil {
+		roots, err := vc.CertificateStore.Certificates()
+		if err == nil && len(roots) > 1 {
+			var first error
+			for _, c := range roots {
+				one := *vc
+				one.CertificateStore = &dsig.MemoryX509CertificateStore{Roots: []*x509.Certificate{c}}
+				_, verr := one.Validate(el)
+				if verr == nil {
+					return nil
+				}
+				if first == nil {
+					first = verr
+				}
+			}
+			return first
+		}
+	}
+	_, err := vc.Validate(el)
 	return err
 }
 
@@ -179,7 +209,7 @@ func (samlNoWeakAlgorithmsVerifier) VerifySignature(vc *dsig.ValidationContext, 
 	if err := refuseWeakSignatureAlgorithms(el); err != nil {
 		return err
 	}
-	if _, err := vc.Validate(el); err != nil {
+	if err := validateSAMLSignature(vc, el); err != nil {
 		return fmt.Errorf("cannot validate signature on %s: %w", el.Tag, err)
 	}
 	return nil

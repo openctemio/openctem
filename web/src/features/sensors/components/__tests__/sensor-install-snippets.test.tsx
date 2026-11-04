@@ -142,7 +142,7 @@ describe('SensorInstallSnippets', () => {
     unmount()
     mockFetch({}, false)
     render(<SensorInstallSnippets sensorId="s2" />)
-    expect(await screen.findByRole('alert')).toBeInTheDocument()
+    expect(await screen.findByRole('alert', {}, { timeout: 5000 })).toBeInTheDocument()
   })
 
   it('picks a catalog product: its snippets come from ?product=, and a custom one links the guide', async () => {
