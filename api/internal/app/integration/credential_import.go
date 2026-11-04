@@ -25,6 +25,9 @@ type CredentialImportService struct {
 	// audited reveal. Never nil: the constructor installs a development
 	// (no-key) protector that SetSecretProtector replaces.
 	secrets *credential.SecretProtector
+	// storage says whether an organization keeps imported secret values
+	// (nil: kept, the behavior of an unwired service).
+	storage credential.StoragePolicy
 	// dataScope narrows every read and state change to leaks on assets in
 	// the caller's data scope (Layer 2). A leak with no asset is in nobody's
 	// asset scope, so only unrestricted callers see it. Nil: unrestricted.
@@ -101,6 +104,22 @@ func (s *CredentialImportService) SetSecretProtector(p *credential.SecretProtect
 	}
 }
 
+// SetStoragePolicy installs the per-organization decision whether imported
+// secret values are kept. nil is ignored.
+func (s *CredentialImportService) SetStoragePolicy(p credential.StoragePolicy) {
+	if p != nil {
+		s.storage = p
+	}
+}
+
+// storesValues reports whether tenantID keeps imported secret values.
+func (s *CredentialImportService) storesValues(ctx context.Context, tenantID shared.ID) bool {
+	if s.storage == nil {
+		return true
+	}
+	return s.storage.StoresSecretValues(ctx, tenantID)
+}
+
 // Import imports credentials with deduplication support.
 func (s *CredentialImportService) Import(
 	ctx context.Context,
@@ -131,9 +150,11 @@ func (s *CredentialImportService) Import(
 	}
 
 	criticalCount := 0
+	// Read once per import: one organization, one policy for the batch.
+	store := s.storesValues(ctx, parsedTenantID)
 
 	for i, cred := range req.Credentials {
-		itemResult, isCritical, err := s.processCredential(ctx, parsedTenantID, tenantID, cred, options, i)
+		itemResult, isCritical, err := s.processCredential(ctx, parsedTenantID, tenantID, cred, options, i, store)
 		if err != nil {
 			result.Errors = append(result.Errors, credential.ImportError{
 				Index:      i,
@@ -193,6 +214,7 @@ func (s *CredentialImportService) processCredential(
 	cred credential.CredentialImport,
 	options credential.ImportOptions,
 	index int,
+	store bool,
 ) (credential.ImportItemResult, bool, error) {
 	// Validate credential type
 	if !cred.CredentialType.IsValid() {
@@ -219,7 +241,7 @@ func (s *CredentialImportService) processCredential(
 	isCritical := severity == "critical"
 
 	if existing == nil {
-		res, critical, err := s.createCredentialExposure(ctx, tenantID, cred, fingerprint, severity, index)
+		res, critical, err := s.createCredentialExposure(ctx, tenantID, cred, fingerprint, severity, index, store)
 		if err == nil || !exposure.IsExposureEventExists(err) {
 			return res, critical, err
 		}
@@ -231,7 +253,7 @@ func (s *CredentialImportService) processCredential(
 	}
 
 	// Handle existing credential based on state and strategy
-	return s.handleExistingCredential(ctx, existing, cred, options, index, isCritical)
+	return s.handleExistingCredential(ctx, existing, cred, options, index, isCritical, store)
 }
 
 // findExistingCredential returns the stored credential with this fingerprint,
@@ -302,6 +324,7 @@ func (s *CredentialImportService) createCredentialExposure(
 	fingerprint string,
 	severity string,
 	index int,
+	store bool,
 ) (credential.ImportItemResult, bool, error) {
 	// Parse severity
 	sev, err := exposure.ParseSeverity(severity)
@@ -310,7 +333,7 @@ func (s *CredentialImportService) createCredentialExposure(
 	}
 
 	details := cred.ToDetails()
-	if err := s.secrets.Seal(details); err != nil {
+	if err := s.secrets.Seal(tenantID, details, store); err != nil {
 		return credential.ImportItemResult{}, false, err
 	}
 
@@ -358,6 +381,7 @@ func (s *CredentialImportService) handleExistingCredential(
 	options credential.ImportOptions,
 	index int,
 	isCritical bool,
+	store bool,
 ) (credential.ImportItemResult, bool, error) {
 	switch existing.State() {
 	case exposure.StateFalsePositive:
@@ -386,7 +410,7 @@ func (s *CredentialImportService) handleExistingCredential(
 
 	case exposure.StateActive, exposure.StateInProgress, exposure.StateAccepted:
 		// Update based on strategy
-		return s.updateExistingCredential(ctx, existing, cred, options, index)
+		return s.updateExistingCredential(ctx, existing, cred, options, index, store)
 
 	default:
 		return credential.ImportItemResult{
@@ -456,6 +480,7 @@ func (s *CredentialImportService) updateExistingCredential(
 	cred credential.CredentialImport,
 	options credential.ImportOptions,
 	index int,
+	store bool,
 ) (credential.ImportItemResult, bool, error) {
 	switch options.DedupStrategy {
 	case credential.DedupStrategySkip:
@@ -489,15 +514,20 @@ func (s *CredentialImportService) updateExistingCredential(
 		}
 		// Update details
 		newDetails := cred.ToDetails()
-		if err := s.secrets.Seal(newDetails); err != nil {
+		if err := s.secrets.Seal(existing.TenantID(), newDetails, store); err != nil {
 			return credential.ImportItemResult{}, false, err
 		}
 		for k, v := range newDetails {
 			existing.SetDetail(k, v)
 		}
-		if _, sealed := newDetails[credential.DetailSecretCiphertext]; sealed {
-			// A legacy row's plaintext must not survive next to the new ciphertext.
+		if _, sealed := newDetails[credential.DetailSecretMasked]; sealed {
+			// A legacy row's plaintext must not survive next to the new value.
 			existing.RemoveDetail(credential.DetailSecretValue)
+			if _, kept := newDetails[credential.DetailSecretCiphertext]; !kept {
+				// Not kept now: the stored ciphertext belongs to the old value.
+				existing.RemoveDetail(credential.DetailSecretCiphertext)
+				existing.RemoveDetail(credential.DetailSecretScheme)
+			}
 		}
 		if err := s.exposureRepo.Update(ctx, existing); err != nil {
 			return credential.ImportItemResult{}, false, fmt.Errorf("failed to update: %w", err)

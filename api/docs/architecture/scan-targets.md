@@ -319,6 +319,29 @@ scope: `GET /assets?under=<root>` for a wildcard and
 name, sample). The run resolves under the scan actor's act scope, so the
 numbers are what the caller can see now, not a promise.
 
+### Typing and pasting targets in the wizard
+
+The New and Edit Scan wizards (`web/src/features/scans/components/new-scan`)
+take a list typed, pasted or read from a `.txt` / `.csv` file in the browser
+(at most 1 MB and 10,000 entries; a CSV keeps the columns that hold targets
+and drops a header row). Entries are separated by new lines, commas,
+semicolons or spaces, and `#` starts a comment. Each entry is classified and
+normalised before it is added (`web/src/features/scans/lib/target-format.ts`)
+with the rules of the API target validator, so nothing the wizard accepts is
+refused at create:
+
+- domain, wildcard, IPv4, IPv6, CIDR, URL and `host:port` (also `[v6]:port`
+  and `host:port/tcp`); a Unicode domain is sent in its ASCII form;
+- refused with the reason: a range of more than 65,536 addresses, a
+  top-level domain in punycode, a path or repository reference (scanned from
+  repository assets instead), anything else that is not a target;
+- repeats are folded after normalisation (`Example.COM.` is `example.com`).
+
+Format is the only thing decided in the browser. Whether each target may be
+scanned is `POST /scope/check` (the caller's scope, batches of 200, up to the
+1,000 direct targets a scan takes), shown per target with its reason. The
+paste panel says how many targets still fit before anything is added.
+
 ### Quick Scan
 
 A Quick Scan stores the typed targets on the ad-hoc scan's target list and

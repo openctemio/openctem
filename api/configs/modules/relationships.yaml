@@ -13,3 +13,4 @@
   routes:
     - /api/v1/relationships
     - "/api/v1/assets/{}/relationships"
+    - "/api/v1/assets/{}/neighborhood"

@@ -54,6 +54,9 @@ const (
 	// ActionTenantEvidenceUpdated records a change to the tenant's evidence
 	// settings (how long revealable secret values are kept).
 	ActionTenantEvidenceUpdated Action = "tenant.evidence_updated"
+	// ActionTenantCredentialSettingsUpdated records a change to the
+	// organization's leaked-credential policy (whether secret values are kept).
+	ActionTenantCredentialSettingsUpdated Action = "tenant.credential_settings_updated"
 	// ActionTenantCyclePolicyUpdated records a change to the organization's
 	// CTEM cycle policy (whether the coverage SLO blocks closing a cycle).
 	ActionTenantCyclePolicyUpdated Action = "tenant.cycle_policy_updated"
@@ -867,7 +870,7 @@ func (a Action) IsValid() bool {
 		ActionUserLogin, ActionUserLogout,
 		ActionTenantCreated, ActionTenantUpdated, ActionTenantDeleted, ActionTenantSettingsUpdated, ActionTenantModulesUpdated,
 		ActionTenantRiskScoringUpdated, ActionTenantRiskScoresRecalculated, ActionTenantAssetSourceUpdated,
-		ActionTenantAssetLifecycleUpdated, ActionTenantRetestUpdated, ActionTenantClosureUpdated, ActionTenantEvidenceUpdated, ActionTenantVulnMatchingUpdated, ActionTenantCyclePolicyUpdated,
+		ActionTenantAssetLifecycleUpdated, ActionTenantRetestUpdated, ActionTenantClosureUpdated, ActionTenantEvidenceUpdated, ActionTenantCredentialSettingsUpdated, ActionTenantVulnMatchingUpdated, ActionTenantCyclePolicyUpdated,
 		ActionTenantSharedSensorsUpdated,
 		ActionTenantIdleReminded, ActionTenantIdleReadOnly, ActionTenantIdleFinalWarning,
 		ActionTenantIdleDeletionDue, ActionTenantIdleReactivated, ActionTenantIdlePolicyChanged,
@@ -1375,7 +1378,9 @@ func SeverityForAction(a Action) Severity {
 		ActionSuppressionRuleSelfApprovalRefused, ActionExposureDispositionSelfApprovalRefused,
 		// Findings closed because their assets went out of scope (an insider
 		// could use it to hide findings: it is reviewed like a deletion).
-		ActionScopeEffectsApplied:
+		ActionScopeEffectsApplied,
+		// Whether leaked secret values are kept.
+		ActionTenantCredentialSettingsUpdated:
 		return SeverityHigh
 
 	// Medium - important changes

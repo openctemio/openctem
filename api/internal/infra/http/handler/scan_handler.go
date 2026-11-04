@@ -39,6 +39,8 @@ type ScanHandler struct {
 	approvals *ScanApprovalHandler
 	// dataScope narrows the coverage figures to the caller's data scope.
 	dataScope *datascope.Enforcer
+	// capabilities answers GET /scans/capabilities; nil reads the service.
+	capabilities scanCapabilityReader
 }
 
 // SetDataScope wires the enforcer that narrows the rolling coverage figures
