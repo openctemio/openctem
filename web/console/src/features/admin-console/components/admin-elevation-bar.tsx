@@ -26,7 +26,7 @@ import {
 import { Textarea } from '@/components/ui/textarea'
 import { useTranslation } from '@/context/i18n-provider'
 import { adminElevate, adminEndElevation } from '../api/use-admin-session'
-import { adminCanElevate, elevationChoices, type AdminIdentity } from '../types'
+import { actingRoleLabel, adminCanElevate, elevationChoices, type AdminIdentity } from '../types'
 import { REASON_MAX, REASON_MIN, stepUpErrorMessage } from './admin-confirm-dialog'
 
 const DURATIONS = [15, 30, 60] as const
@@ -83,6 +83,7 @@ export function AdminElevationBar({
     }
   }
 
+  const acting = actingRoleLabel(admin)
   const until = admin.elevated_until
     ? new Date(admin.elevated_until).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     : ''
@@ -95,7 +96,7 @@ export function AdminElevationBar({
           <AlertDescription className="flex flex-wrap items-center justify-between gap-2">
             <span>
               {t('admin.elevation.active', 'Acting as {role} until {until}.', {
-                role: t(`admin.role.${admin.role}`, admin.role),
+                role: t(acting.key, acting.fallback),
                 until,
               })}
             </span>

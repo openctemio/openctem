@@ -1282,6 +1282,9 @@ func TestScanService_CreateScan_ScannerNotFound(t *testing.T) {
 	}
 }
 
+// A disabled scanner never refuses saving the scan (a missing tool is not a
+// wrong definition); its run is refused with TOOL_DISABLED, a blocked run,
+// until the tool is enabled.
 func TestScanService_CreateScan_DisabledScanner(t *testing.T) {
 	svc, deps := newTestScanService()
 	tenantID := shared.NewID()
@@ -1300,9 +1303,16 @@ func TestScanService_CreateScan_DisabledScanner(t *testing.T) {
 		ScannerName:  "disabled-scanner",
 	}
 
-	_, err := svc.CreateScan(context.Background(), input)
-	if err == nil {
-		t.Fatal("expected error for disabled scanner")
+	sc, err := svc.CreateScan(context.Background(), input)
+	if err != nil {
+		t.Fatalf("a disabled scanner refused the save: %v", err)
+	}
+	_, err = svc.TriggerScan(context.Background(), scanservice.TriggerScanExecInput{
+		TenantID: tenantID.String(), ScanID: sc.ID.String(), Interactive: true,
+	})
+	var de *shared.DomainError
+	if !errors.As(err, &de) || de.Code != "TOOL_DISABLED" {
+		t.Fatalf("trigger: %v, want TOOL_DISABLED", err)
 	}
 }
 
