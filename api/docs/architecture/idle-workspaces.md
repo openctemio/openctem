@@ -68,4 +68,4 @@ boundary, and must never take an organization down.
   (`tenant_idle_lifecycle`) and `idle_policy_opt_in` (`policy_enabled`),
   every query scoped by `tenant_id`.
 - `internal/infra/controller/idle_workspaces.go`: the sweep every 6 hours.
-- `cmd/server/idle_workspace_mailer.go`: the emails.
+- `internal/server/idle_workspace_mailer.go`: the emails.

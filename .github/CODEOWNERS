@@ -7,6 +7,8 @@
 # Go API
 /api/                               @0xmanhnv
 /api/migrations/                    @0xmanhnv
+/api/internal/extensionhost/       @0xmanhnv
+/api/pkg/server/                   @0xmanhnv
 
 # Next.js web app
 /web/                               @0xmanhnv

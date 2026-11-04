@@ -17,7 +17,7 @@ import (
 
 // findingApprovalHarness is the authorization-policy harness with the
 // finding routes wired to the real finding service, approval repository and
-// audit service, as in cmd/server.
+// audit service, as in internal/server.
 type findingApprovalHarness struct {
 	*authzPolicyHarness
 	svc *finding.VulnerabilityService

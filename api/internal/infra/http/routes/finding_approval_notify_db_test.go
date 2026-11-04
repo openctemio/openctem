@@ -59,7 +59,7 @@ func (r *approvalNoticeRecorder) recipients() []string {
 	return out
 }
 
-// withDataScope wires the data-scope enforcer as in cmd/server (the caller
+// withDataScope wires the data-scope enforcer as in internal/server (the caller
 // from the request context).
 func withDataScope(svc *finding.VulnerabilityService, _ *handler.VulnerabilityHandler, db *postgres.DB) {
 	svc.SetDataScope(datascope.New(postgres.NewDataScopeRepository(db),
