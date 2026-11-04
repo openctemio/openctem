@@ -156,6 +156,7 @@ RFC-003 (asset source priority) was withdrawn on 2026-10-05; see
 | [RFC-145](RFC-145-enterprise-licence-and-entitlements.md) | Grants and the guarantees of any grant provider | Accepted (2026-11-02; re-scoped 2026-11-03: the open core holds the grant seam and the guarantees; licence files, their verifier and storage belong to the extension that provides grants) |
 | [RFC-146](RFC-146-connector-framework-and-run-modes.md) | Connector framework and run modes | Proposed (2026-11-02). |
 | [RFC-147](RFC-147-managed-scanning-fleet.md) | Managed scanning fleet: demand scaling, owned egress proxies, proxy selection | Proposed (2026-11-02); nothing here is built unless a section says "shipped" |
+| [RFC-148](RFC-148-asset-neighborhood.md) | Asset neighborhood and lineage graph read | Implemented (2026-11-04) |
 <!-- END RFC INDEX -->
 
 > Status legend: **Proposed** = under review · **Phase N done** = that phase shipped to `develop` · **Implemented** = fully landed.

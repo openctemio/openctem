@@ -675,6 +675,16 @@ func registerAssetRelationshipRoutes(
 		r.POST("/batch", h.BatchCreate, middleware.Require(permission.AssetsWrite))
 	}, tenantMiddlewares...)
 
+	// The neighborhood walks up to three hops and several hundred assets
+	// per call: a per-user rate limit on top of its node cap and statement
+	// timeout (docs/architecture/asset-relationships.md, "Neighborhood").
+	neighborhoodRL := middleware.NewRateLimiter(&config.RateLimitConfig{
+		Enabled: true, RequestsPerSec: 2, Burst: 30, CleanupInterval: 5 * time.Minute,
+	}, nil)
+	router.Group("/api/v1/assets/{id}/neighborhood", func(r Router) {
+		r.GET("/", h.Neighborhood, middleware.Require(permission.AssetsRead), neighborhoodRL.UserMiddleware())
+	}, tenantMiddlewares...)
+
 	// Standalone relationship routes (direct CRUD by relationship ID).
 	router.Group("/api/v1/relationships", func(r Router) {
 		r.GET("/{relationshipId}", h.Get, middleware.Require(permission.AssetsRead))
