@@ -468,7 +468,7 @@ function ChoiceCard({
           </span>
         )}
         {skipped.length > 0 && (
-          <span className="block text-[11px] text-muted-foreground" data-testid="skipped-note">
+          <span className="block text-xs text-muted-foreground" data-testid="skipped-note">
             {t('scans.readiness.skippedSome', undefined, {
               count: skipped.length,
               capabilities: skipped.map((x) => x.capability ?? x.name).join(', '),
