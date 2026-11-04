@@ -344,7 +344,9 @@ step, as a warning (`CAPABILITY_WAITS_FOR_TOOL`), and still types its
 connections. At dispatch, when no tool implements its capability
 (`NO_MATCHING_TOOL`), the step is skipped with "available when a tool that
 runs <capability> is installed", never failed and never silent; the trigger
-does not refuse a run for it. A tool that exists but has no online sensor
+does not refuse a run for it. "No tool" is the same answer whether the
+catalog lists implementations or the capability falls back to the tool
+registry lookup (a planned capability), whose no-match is never an error. A tool that exists but has no online sensor
 refuses the run like any step.
 
 Workflow readiness (`GET /scan-workflows?include=readiness`, the New Scan

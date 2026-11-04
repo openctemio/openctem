@@ -1662,6 +1662,12 @@ func (h *ScanHandler) handleServiceError(w http.ResponseWriter, err error) {
 		// The scan's workflow, not the scan, is missing (or another
 		// organization's): say so.
 		apierror.New(http.StatusNotFound, apierror.Code(scanworkflow.ErrScanWorkflowNotFound.Code), "Scan workflow not found").WriteJSON(w)
+	case scanReferenceNotFoundCode(err) != "":
+		// The scan was found; something it uses was not (its workflow, a
+		// step's tool): say which, never "Scan not found".
+		code := scanReferenceNotFoundCode(err)
+		spec, _ := apierror.Lookup(code)
+		apierror.New(spec.Status, code, cleanErrorMessage(err, spec.Message)).WriteJSON(w)
 	case errors.Is(err, shared.ErrNotFound):
 		apierror.NotFound("Scan").WriteJSON(w)
 	case errors.Is(err, shared.ErrAlreadyExists):
@@ -1702,6 +1708,25 @@ func (h *ScanHandler) handleServiceError(w http.ResponseWriter, err error) {
 		h.logger.Error("service error", "error", err)
 		apierror.InternalError(err).WriteJSON(w)
 	}
+}
+
+// scanReferenceNotFoundCode is the registered code of a not-found error that
+// is about a reference of a loaded scan (scan trigger), or "".
+func scanReferenceNotFoundCode(err error) apierror.Code {
+	if !errors.Is(err, shared.ErrNotFound) {
+		return ""
+	}
+	var de *shared.DomainError
+	if !errors.As(err, &de) {
+		return ""
+	}
+	switch de.Code {
+	case scansvc.CodePipelineNotFound:
+		return apierror.CodePipelineNotFound
+	case scansvc.CodeScanDependencyMissing:
+		return apierror.CodeScanDependencyMissing
+	}
+	return ""
 }
 
 // cleanErrorMessage extracts a user-friendly message from an error.
