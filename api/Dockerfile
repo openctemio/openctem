@@ -54,8 +54,9 @@ RUN apk add --no-cache git ca-certificates tzdata
 # Copy go mod files (context is api/ folder)
 COPY go.mod go.sum ./
 
-# Download dependencies
-RUN go mod download
+# Download dependencies. Retried: the module proxy sometimes resets the
+# HTTP/2 stream on hosted runners, which failed whole merge groups.
+RUN for i in 1 2 3; do go mod download && exit 0; echo "go mod download failed (attempt $i); retrying" >&2; sleep $((i * 10)); done; exit 1
 
 # -----------------------------------------------------------------------------
 # OpenAPI spec stage
@@ -74,7 +75,7 @@ ENV GOWORK=off
 ENV CGO_ENABLED=0
 RUN go install github.com/swaggo/swag/cmd/swag@${SWAG_VERSION}
 COPY go.mod go.sum ./
-RUN go mod download
+RUN for i in 1 2 3; do go mod download && exit 0; echo "go mod download failed (attempt $i); retrying" >&2; sleep $((i * 10)); done; exit 1
 COPY . .
 RUN swag init --generalInfo cmd/server/main.go --output api/openapi --outputTypes yaml --parseDependency --quiet \
  && test -s api/openapi/swagger.yaml
@@ -116,6 +117,8 @@ ARG BUILD_TIME=""
 #                          default)
 #     ci-trust-scope-plan  dry run for adding existing CI trusts' repositories
 #                          to scope (read-only)
+#     asset-canonical      moves stored asset names to the CTIS 2.0 canonical
+#                          form (a dry run by default; -revert undoes renames)
 #   openctem-signer  the job signer (RFC-040 §5.6); runs as its own container
 #                    from this image, see deploy/docker-compose.job-signer.yml.
 #                    A binary of its own: it holds the signing key and links
@@ -132,6 +135,18 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
       -X github.com/openctemio/openctem/api/pkg/version.BuildTime=${BUILD_TIME}" \
     -o /app/bin/ ./cmd/server ./cmd/signer ./cmd/openctem-migrate \
  && mv /app/bin/signer /app/bin/openctem-signer
+
+# Third-party notices (About > Open-source licenses): every module linked
+# into the server, its license and license text, read from the module cache
+# downloaded above (no network). Served read-only at GET /api/v1/licenses and
+# /api/v1/admin/licenses (docs/architecture/third-party-notices.md). Listed
+# for the target platform, like the build.
+# The tool runs on this machine; GOOS/GOARCH only tell its `go list` which
+# platform's files the server is built from.
+RUN --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 go build -o /tmp/third-party-notices ./cmd/third-party-notices \
+ && CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-$(go env GOARCH)} \
+    /tmp/third-party-notices -o /app/bin/third-party-notices.json
 
 
 # -----------------------------------------------------------------------------
@@ -153,7 +168,7 @@ RUN echo 'openctem:x:1000:1000:openctem:/app:/sbin/nologin' >> /out/etc/passwd \
  && chmod 0770 /out/signer-run \
  && chmod 0755 /out/signer-pub \
  && mkdir -p /out/tool-links \
- && for t in bootstrap-admin refingerprint repomerge ci-trust-scope-plan; do ln -s server /out/tool-links/$t; done
+ && for t in bootstrap-admin refingerprint repomerge ci-trust-scope-plan asset-canonical; do ln -s server /out/tool-links/$t; done
 
 # -----------------------------------------------------------------------------
 # Production stage
@@ -177,6 +192,10 @@ COPY --from=runtime-fs /out/tool-links/ ./
 # The OpenAPI spec served at /openapi.yaml (path relative to WORKDIR, see
 # cmd/server/handlers.go NewDocsHandler).
 COPY --from=openapi /app/api/openapi/swagger.yaml ./api/openapi/swagger.yaml
+
+# The third-party notices the API serves (path relative to WORKDIR, see
+# pkg/notices DefaultPath).
+COPY --from=builder /app/bin/third-party-notices.json ./third-party-notices.json
 
 COPY --from=builder /app/migrations ./migrations
 

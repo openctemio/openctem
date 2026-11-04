@@ -4,7 +4,7 @@ import (
 	"context"
 	"strings"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/pkg/domain/cirun"
 )
@@ -22,9 +22,9 @@ const maxInlineRequests = 20
 // inlineRequestDays is how long a request asks for.
 const inlineRequestDays = 90
 
-// propIgnoreFilePaths is the report property in which the CI job lists the
-// path patterns of the repository's scanner ignore file.
-const propIgnoreFilePaths = "ignore_file_paths"
+// extIgnoreFilePaths is the io.openctem metadata extension key in which the
+// CI job lists the path patterns of the repository's scanner ignore file.
+const extIgnoreFilePaths = "ignore_file_paths"
 
 // requestInlineIgnores turns the in-source suppressions and ignore-file
 // patterns of an uploaded report into pending requests.
@@ -54,7 +54,8 @@ func (s *Service) requestInlineIgnores(ctx context.Context, run *cirun.Run, repo
 				Reason: "an inline ignore comment marks this result", Source: cirun.ExceptionSourceInline})
 		}
 	}
-	if raw, ok := report.Metadata.Properties[propIgnoreFilePaths].([]any); ok {
+	ext, _ := report.Metadata.Extensions.Get(ctis.OpenCTEMNamespace, extIgnoreFilePaths)
+	if raw, ok := ext.([]any); ok {
 		for _, v := range raw {
 			p, _ := v.(string)
 			p = strings.TrimSpace(p)

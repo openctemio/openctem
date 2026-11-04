@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/pkg/domain/assettech"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -41,9 +41,13 @@ func TestRecordTechnologies_CategoriesAndScope(t *testing.T) {
 	report := &ctis.Report{
 		Tool: &ctis.Tool{Name: "httpx"},
 		Assets: []ctis.Asset{
-			{ID: "a", Properties: ctis.Properties{"technologies": []any{"HSTS", "Vercel", "Next.js:13.4.1", "bad\x1bname"}},
-				Technologies: []ctis.Technology{{Name: "Acme Edge", Categories: []string{"CDN"}, Confidence: 75}}},
-			{ID: "b", Properties: ctis.Properties{"technologies": []any{"nginx:1.20.0"}}},
+			// properties.technologies carries no meaning: only the typed list counts.
+			{ID: "a", Properties: ctis.Properties{"technologies": []any{"Ignored:1.0"}},
+				Technologies: []ctis.Technology{
+					{Name: "HSTS"}, {Name: "Vercel"}, {Name: "Next.js", Version: "13.4.1"}, {Name: "bad\x1bname"},
+					{Name: "Acme Edge", Categories: []string{"CDN"}, Confidence: 75},
+				}},
+			{ID: "b", Technologies: []ctis.Technology{{Name: "nginx", Version: "1.20.0"}}},
 		},
 	}
 	scope := &alterScope{allowed: map[shared.ID]bool{allowed: true}}

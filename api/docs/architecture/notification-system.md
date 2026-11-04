@@ -442,7 +442,7 @@ per-plan defaults. The e-mail notification channel's own alerts are not yet subj
   "title": "New finding (high)",
   "body": "Open the link to see the details.",
   "severity": "high",
-  "url": "https://console.example.com/findings/…",
+  "url": "https://console.example.com/findings/…?org=<organization id>",
   "source": "openctem.io"
 }
 ```
@@ -458,6 +458,41 @@ per-plan defaults. The e-mail notification channel's own alerts are not yet subj
   across retries of one event, so a receiver can drop a duplicate.
 - `occurred_at` is when the event was recorded; `timestamp` is when this
   attempt was sent.
+
+### Links back to the console
+
+Every link the platform sends to a console page names the organization it
+belongs to in the `org` query parameter, the organization ID
+(`api/pkg/weblink`). One rule covers every sender:
+
+- in-app notifications: `NotificationService.Notify` adds it to the stored
+  (relative) link;
+- channel deliveries (e-mail, Slack, Teams, Telegram, webhook): the outbox adds
+  it when the message is built, and joins the link to the console base URL
+  (`SMTP_BASE_URL`), so a chat button or an e-mail gets an absolute address.
+  Pending events and redeliveries get it too. A link that is not a console
+  path (another host) is sent unchanged: the organization ID never goes to
+  another host;
+- direct e-mails (emerging-threat digest, finding approvals, scope approvals
+  and attestations, CI trust alerts), CI check runs and commit statuses, Jira
+  task descriptions and ticket field `finding.url`, and the links in AI agent
+  tool results use `weblink.Console`.
+
+The organization ID is used rather than the slug: it never changes, so a
+renamed organization keeps working links. The console accepts a slug too.
+
+The console reads the parameter on every page (`OrgLinkGate` in the dashboard
+layout). When the signed-in person is a member of that organization and it is
+not the selected one, it switches through the organization switcher's own flow
+(`POST /api/auth/switch-team`: the API checks the membership and issues the
+new session), says so in a toast, removes the parameter from the address and
+then loads the page. Only the person's own membership list is consulted: for
+an organization the person does not belong to, or an unknown one, the page
+loads in the selected organization and answers with the same "not found" as
+without the parameter, so a link tells nothing about whether a record or an
+organization exists. The parameter grants nothing; every request is still
+authorized against the session's organization and the person's data scope.
+Copy-link buttons build their links the same way (`shareableLink`).
 
 ### Webhook signing
 

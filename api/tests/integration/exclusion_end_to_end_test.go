@@ -17,7 +17,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	scansvc "github.com/openctemio/openctem/api/internal/app/scan"
@@ -168,8 +168,8 @@ func TestExclusions_EndToEnd(t *testing.T) {
 	sensorID := shared.NewID()
 	agt := &sensor.Sensor{ID: sensorID, TenantID: &tid, Type: sensor.SensorTypeWorker, Status: sensor.SensorStatusActive}
 	cmdID := shared.NewID()
-	rep := &ctis.Report{Version: "1.0", Tool: &ctis.Tool{Name: "naabu"},
-		Metadata: ctis.ReportMetadata{ID: "rep-" + cmdID.String(), Timestamp: time.Now().UTC()},
+	rep := &ctis.Report{Version: ctis.SchemaVersion, Tool: &ctis.Tool{Name: "naabu"},
+		Metadata: ctis.ReportMetadata{ID: ctis.NewReportID(), GeneratedAt: time.Now().UTC()},
 		Assets: []ctis.Asset{
 			{ID: "in", Type: ctis.AssetTypeIPAddress, Value: "198.51.100.2"},
 			{ID: "out", Type: ctis.AssetTypeIPAddress, Value: excludedAddr},

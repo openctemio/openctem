@@ -1,6 +1,7 @@
 'use client'
 
 import { useDocsHref } from '@/context/brand-provider'
+import Link from '@/components/link'
 import { ExternalLink } from 'lucide-react'
 import {
   Dialog,
@@ -31,6 +32,9 @@ interface AboutDialogProps {
  * Release builds show their tag; development deployments show
  * "<highest tag>-dev+<commit>", read from the checkout. A row that cannot
  * be determined says "unavailable" and the dialog still renders.
+ *
+ * The Open-source licenses link is part of the core in both shells: no brand
+ * pack, setting or extension hides it (about-licenses-always-present.test.tsx).
  */
 export function AboutDialog({ open, onOpenChange, shell = 'app' }: AboutDialogProps) {
   const docsHref = useDocsHref()
@@ -55,16 +59,26 @@ export function AboutDialog({ open, onOpenChange, shell = 'app' }: AboutDialogPr
             />
             <VersionRow label={t('help.about.api', 'API')} info={api} testId="about-api-version" />
           </dl>
-          <a
-            href={docsHref(DOCS_URL)}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1.5 text-sm text-primary underline-offset-4 hover:underline"
-          >
-            {t('help.documentation', 'Documentation')}
-            <ExternalLink className="size-3.5" aria-hidden />
-            <span className="sr-only">{t('help.opensInNewTab', '(opens in a new tab)')}</span>
-          </a>
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+            <Link
+              href="/about/licenses"
+              onClick={() => onOpenChange(false)}
+              className="text-sm text-primary underline-offset-4 hover:underline"
+              data-testid="about-licenses-link"
+            >
+              {t('help.licenses.title', 'Open-source licenses')}
+            </Link>
+            <a
+              href={docsHref(DOCS_URL)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 text-sm text-primary underline-offset-4 hover:underline"
+            >
+              {t('help.documentation', 'Documentation')}
+              <ExternalLink className="size-3.5" aria-hidden />
+              <span className="sr-only">{t('help.opensInNewTab', '(opens in a new tab)')}</span>
+            </a>
+          </div>
         </DialogBody>
       </DialogContent>
     </Dialog>

@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/internal/app/exposurebridge"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
@@ -19,22 +19,20 @@ import (
 // the certificate it served (another party's expired default certificate).
 func resetHostReport(fp string, leaf *ctis.CertificateTechnical, status int) *ctis.Report {
 	return &ctis.Report{
-		Version:  "1.0",
+		Version:  ctis.SchemaVersion,
 		Tool:     &ctis.Tool{Name: "httpx"},
-		Metadata: ctis.ReportMetadata{Timestamp: time.Now().UTC()},
+		Metadata: ctis.ReportMetadata{ID: ctis.NewReportID(), GeneratedAt: time.Now().UTC()},
 		Assets: []ctis.Asset{
 			{
-				ID: "http-promo", Type: ctis.AssetTypeHTTPService, Value: "https://promo.example.com", Name: "promo.example.com",
-				Technical:     &ctis.AssetTechnical{Service: &ctis.ServiceTechnical{Port: 443, Protocol: "https", TLS: true, Transport: "tcp"}},
-				Properties:    ctis.Properties{"tls_fingerprint": fp, "status_code": status},
-				RelatedAssets: []string{"cert-" + fp[:16]},
+				ID: "http-promo", Type: ctis.AssetTypeWebOrigin, Value: "https://promo.example.com",
+				Technical: &ctis.AssetTechnical{HTTP: &ctis.HTTPTechnical{StatusCode: status, TLSVersion: ctis.TLSVersionTLS13}},
 			},
 			{
-				ID: "cert-" + fp[:16], Type: ctis.AssetTypeCertificate, Value: fp, Name: fp,
-				Technical:  &ctis.AssetTechnical{Certificate: leaf},
-				Properties: ctis.Properties{"fingerprint": fp, "subject_cn": leaf.SubjectCN},
+				ID: "cert-" + fp[:16], Type: ctis.AssetTypeCertificate, Value: fp,
+				Technical: &ctis.AssetTechnical{Certificate: leaf},
 			},
 		},
+		Relationships: []ctis.Relationship{{Type: ctis.RelServesCertificate, FromRef: "http-promo", ToRef: "cert-" + fp[:16]}},
 	}
 }
 
@@ -55,7 +53,10 @@ func TestIngest_HostCertificateExposures(t *testing.T) {
 		agt := &sensor.Sensor{ID: tn.sensor, TenantID: &tid, Type: sensor.SensorTypeWorker, Status: sensor.SensorStatusActive}
 		bind := ingest.Binding{Kind: ingest.BindingCommand, Targets: []string{"promo.example.com"}}
 		out, err := r.svc.Ingest(ctx, agt, ingest.Input{Report: rep, Options: ingest.Options{Binding: bind}})
-		if err != nil || len(out.Errors) > 0 {
+		if err != nil {
+			t.Fatalf("ingest: %v", err)
+		}
+		if len(out.Errors) > 0 {
 			t.Fatalf("Ingest: %v %v", err, out.Errors)
 		}
 	}
@@ -87,11 +88,11 @@ func TestIngest_HostCertificateExposures(t *testing.T) {
 	const badFP = "aa11223344556677889900aabbccddeeff00112233445566778899aabbccddee"
 	const goodFP = "bb11223344556677889900aabbccddeeff00112233445566778899aabbccddee"
 	nb, na := time.Now().Add(-800*24*time.Hour).UTC(), time.Now().Add(-400*24*time.Hour).UTC()
-	bad := &ctis.CertificateTechnical{SubjectCN: "ssl.default.hosting.example.net", SANs: []string{"ssl.default.hosting.example.net"},
-		IssuerCN: "Example CA", NotBefore: &nb, NotAfter: &na, Fingerprint: badFP, Expired: true}
+	bad := &ctis.CertificateTechnical{SubjectCN: "ssl.default.hosting.example.net", SubjectAltNames: []string{"ssl.default.hosting.example.net"},
+		IssuerCN: "Example CA", NotBefore: &nb, NotAfter: &na, SHA256Fingerprint: badFP}
 	gnb, gna := time.Now().Add(-24*time.Hour).UTC(), time.Now().Add(200*24*time.Hour).UTC()
-	good := &ctis.CertificateTechnical{SubjectCN: "promo.example.com", SANs: []string{"promo.example.com"},
-		IssuerCN: "Example CA", NotBefore: &gnb, NotAfter: &gna, Fingerprint: goodFP}
+	good := &ctis.CertificateTechnical{SubjectCN: "promo.example.com", SubjectAltNames: []string{"promo.example.com"},
+		IssuerCN: "Example CA", NotBefore: &gnb, NotAfter: &gna, SHA256Fingerprint: goodFP}
 
 	a, b := r.newTenant("httpx"), r.newTenant("httpx")
 	ingestAs(a, resetHostReport(badFP, bad, 0))

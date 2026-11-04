@@ -9,7 +9,7 @@
 
 ## Model
 
-One **item** is one piece of proof, tool-agnostic (the CTIS 1.6
+One **item** is one piece of proof, tool-agnostic (the CTIS 2.0
 `evidence_items[]` shape, `pkg/domain/evidence.Item`):
 
 | Kind | Body |
@@ -27,12 +27,12 @@ body byte range; the matcher name), `extracted[]`, `label`, `captured_at`,
 the tool's `content_sha256` and `sensitive[]` (spans the tool marked, by JSON
 pointer and byte range).
 
-A tool sends its proof as CTIS 1.6 `finding.evidence_items` (any tool, the
+A tool sends its proof as CTIS 2.0 `finding.evidence_items` (any tool, the
 third-party tier included; the ctis importers fill them for nuclei, SARIF
 `webRequest`/`webResponse`, HAR and ZAP files). An unknown kind is kept with
 its fields as text. A tool that predates them sends finding properties
 (`request`, `response`, `curl_command`, `extracted_results`,
-`matcher_name`, the nuclei sensor before CTIS 1.6); ingest turns those into
+`matcher_name`, the nuclei sensor before CTIS 1.6, which became `evidence_items` in 2.0); ingest turns those into
 an `http_exchange` (raw HTTP parsed, the URL made absolute from the
 matched-at) and a `curl` item, and highlights the extracted values in the
 response body. When a finding carries both, `evidence_items` wins.

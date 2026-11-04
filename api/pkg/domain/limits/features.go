@@ -45,11 +45,21 @@ const (
 	FeatureContentPrivateGit = "content_sources.private_git"
 )
 
+// Named feature of active scanning (docs/architecture/limits.md). Allowed
+// unless denied; denied, the organization runs passive work only (tier 0:
+// certificate logs, passive DNS, registration data, intel matching, imports)
+// and no active or intrusive probe goes to any sensor, shared or its own.
+const (
+	// FeatureActiveScanning: sending active or intrusive probes (scan tiers
+	// above passive) from any sensor.
+	FeatureActiveScanning = "active_scanning"
+)
+
 // NamedFeatures are the deniable features below module level, each checked
 // with entitlement.Service.Allowed (or Usable) at its own seam. Add a key
 // here, check it at the seam, and list it in docs/architecture/limits.md (a
 // test compares them).
-var NamedFeatures = []string{FeatureContentPrivateGit, FeatureContentReviewPolicy, FeatureContentWebhook, FeatureLDAP, FeatureSCIM, FeatureSSOConnections, FeatureSSOEnforcement, FeatureSSOGroupLinks}
+var NamedFeatures = []string{FeatureActiveScanning, FeatureContentPrivateGit, FeatureContentReviewPolicy, FeatureContentWebhook, FeatureLDAP, FeatureSCIM, FeatureSSOConnections, FeatureSSOEnforcement, FeatureSSOGroupLinks}
 
 // ErrFeatureDenied refuses a change that needs a feature the organization's
 // plan does not include. Unavailable: the entitlement could not be read, so

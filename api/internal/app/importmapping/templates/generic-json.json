@@ -1,9 +1,9 @@
 {
-  "apiVersion": "openctem.io/mapping/v1",
+  "apiVersion": "openctem.io/mapping/v2",
   "source": "json",
   "each": "/findings",
   "notes": "Starter: a document with a findings list; each item has title, severity, asset, cve, rule_id, description and references.",
-  "identity": ["rule_id", "title", "asset_value", "vulnerability.cve_id"],
+  "identity": ["rule_id", "title", "asset_value", "vulnerability.ids"],
   "records": [
     {
       "when": {"path": "/title", "exists": true},
@@ -14,7 +14,7 @@
         "rule_id": "/rule_id",
         "asset_value": {"path": "/asset", "trim": true},
         "asset_type": {"path": "/asset_type", "trim": true, "lower": true, "default": "host"},
-        "vulnerability.cve_id": {"path": "/cve", "trim": true, "upper": true},
+        "vulnerability.ids": {"path": "/cve", "trim": true, "upper": true},
         "description": "/description",
         "references": "/references"
       }

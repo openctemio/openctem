@@ -5,7 +5,7 @@ package scanrun
 // chunks of a step therefore never hold the same host, and one never waits
 // for its own sibling (live: a nuclei chunk of 23 targets waited behind a
 // sibling holding one address its own "address:port" target shared, while a
-// sensor slot sat free). One host is what github.com/openctemio/ctis/politeness
+// sensor slot sat free). One host is what github.com/openctemio/contract/politeness
 // says it is (politeness.GroupKeys): a name and its URLs and services; an
 // address and its "address:port" forms; a range and the addresses of its
 // buckets. A name also joins the addresses the inventory says it resolves
@@ -17,7 +17,7 @@ import (
 	"net/netip"
 	"slices"
 
-	"github.com/openctemio/ctis/politeness"
+	"github.com/openctemio/contract/politeness"
 
 	scanapp "github.com/openctemio/openctem/api/internal/app/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"

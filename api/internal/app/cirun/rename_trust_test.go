@@ -86,7 +86,7 @@ func TestRenamedRepositoryAlertsAdminsOnceWithTrustLink(t *testing.T) {
 		t.Fatalf("alerts = %d, want 1", len(al.got))
 	}
 	a := al.got[0]
-	if !a.Email || a.URL != "/ci-cd?tab=setup" || a.EmailLink != "https://app.example.com/ci-cd?tab=setup" {
+	if !a.Email || a.URL != "/ci-cd?tab=setup" || a.EmailLink != "https://app.example.com/ci-cd?org="+tenant.String()+"&tab=setup" {
 		t.Fatalf("alert must be in-app + email with the trust settings link: %+v", a)
 	}
 	if !strings.Contains(a.Body, "old-name") || !strings.Contains(a.Body, "new-name") || !strings.Contains(a.Body, `"acme repos"`) {

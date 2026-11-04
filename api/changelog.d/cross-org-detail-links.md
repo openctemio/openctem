@@ -1,0 +1,4 @@
+### Fixed: links from notifications open in the right organization
+
+- Every link the platform sends to a console page (in-app notifications, e-mail digests and notification e-mails, Slack, Teams, Telegram and webhook deliveries, CI check runs, Jira descriptions and ticket fields, AI agent tool results, copy-link buttons) now names its organization (`?org=<organization id>`). A person who belongs to several organizations and opens such a link while another one is selected is switched to it through the normal organization switch (the API still checks the membership) before the page loads, instead of seeing "not found". A person who is not a member gets the same "not found" as before.
+- Links in channel deliveries (e-mail, Slack, Teams, Telegram, webhook) are now absolute, joined to `SMTP_BASE_URL`; they were sent as console-relative paths.

@@ -210,6 +210,11 @@ func (s *Service) triggerLoadedScan(ctx context.Context, sc *scan.Scan, input Tr
 		}
 	}
 
+	// Passive only: no run above passive without active scanning.
+	if err := s.requireActiveScanning(ctx, sc); err != nil {
+		return nil, err
+	}
+
 	// Scan approval (RFC-073): a scan the organization's rules hold runs only
 	// under an approval of its current definition.
 	if err := s.requireApproval(ctx, sc, input.TriggeredBy); err != nil {
