@@ -328,6 +328,25 @@ export function elevationChoices(admin: AdminIdentity): string[] {
   return PLATFORM_ROLE_KEYS.filter((k) => k !== 'platform_viewer' && held.has(k))
 }
 
+/**
+ * What the session acts as now, as a dictionary key and English name, in the
+ * platform role names the elevation dialog offers (RFC-134): the role it is
+ * elevated as, "read-only" while an elevation would add something, else the
+ * first role it holds. The legacy tier names are only a fallback for an
+ * identity that carries no roles.
+ */
+export function actingRoleLabel(admin: AdminIdentity): { key: string; fallback: string } {
+  if (admin.elevated_as) {
+    return { key: `admin.platformRole.${admin.elevated_as}`, fallback: admin.elevated_as }
+  }
+  if (adminCanElevate(admin)) {
+    return { key: 'admin.shell.actingReadOnly', fallback: 'Read-only until you elevate' }
+  }
+  const held = PLATFORM_ROLE_KEYS.find((k) => admin.roles?.includes(k))
+  if (held) return { key: `admin.platformRole.${held}`, fallback: held }
+  return { key: `admin.role.${admin.role}`, fallback: ADMIN_ROLE_LABELS[admin.role] }
+}
+
 /** super_admin > ops_admin > readonly. */
 export function adminCan(role: AdminRole | undefined, needed: AdminRole): boolean {
   const rank: Record<AdminRole, number> = { readonly: 0, ops_admin: 1, super_admin: 2 }

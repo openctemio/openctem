@@ -112,7 +112,9 @@ describe('Console support access', () => {
     route(['findings', 'assets'])
     renderPanel(false)
     expect(
-      await screen.findByText('This needs the Operations admin role.', { exact: false })
+      await screen.findByText(
+        'Your platform roles do not include this. A platform owner can grant it under Roles.'
+      )
     ).toBeInTheDocument()
     expect(screen.queryByTestId('support-grant')).not.toBeInTheDocument()
     expect(screen.queryByText(/could not be loaded/i)).not.toBeInTheDocument()

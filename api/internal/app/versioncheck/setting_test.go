@@ -62,7 +62,7 @@ func switchService(t *testing.T, envEnabled bool) (*Service, *server, *clock, *m
 	t.Helper()
 	k, srv, c := newKeys(t), newServer(t), &clock{now: t0}
 	srv.body = k.feed(t, 1, t0, "v0.9.8")
-	svc := New(&memRepo{}, Config{Enabled: envEnabled, URL: srv.srv.URL, Keys: []string{k.pinned()}, Running: "v0.9.7",
+	svc := New(&memRepo{}, Config{Enabled: envEnabled, URL: srv.srv.URL, Verifier: k.verifier(t), Running: "v0.9.7",
 		Client: http.DefaultClient, Now: c.Now, Jitter: func(time.Duration) time.Duration { return 0 }}, logger.NewNop())
 	settings := &memSettings{}
 	svc.SetSettings(settings)

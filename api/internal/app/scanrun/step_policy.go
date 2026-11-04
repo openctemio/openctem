@@ -2,7 +2,8 @@ package scanrun
 
 // Step run policies at dispatch: the run's depth decides whether a step
 // runs and with which standard params, and an optional step that waits for
-// a tool is skipped with the reason. Design: docs/architecture/scan-stages.md
+// a tool is skipped with the reason (so is a required one: a run goes as
+// far as the organization's tools support). Design: docs/architecture/scan-stages.md
 // §1.5 (depth, run policies, optional steps).
 
 import (
@@ -16,10 +17,6 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/stage"
 )
-
-// CodeToolNotInstalled is the code of an optional step skipped because no
-// tool that runs its capability is installed.
-const CodeToolNotInstalled = "TOOL_NOT_INSTALLED"
 
 // codeNoMatchingTool is scan.ResolveStepTool's refusal when no active tool
 // runs the step's capability.
@@ -73,29 +70,19 @@ func checkStepDepth(run *scanrun.Run, resolved scanapp.StepTool) error {
 	return nil
 }
 
-// optionalSkipMessage is the message of an optional step that cannot run
-// because no tool implements its capability; "" when err is something else
-// (or the step is not optional), which then fails the step as before.
-func optionalSkipMessage(step *scanworkflow.Step, err error) string {
-	if step == nil || !step.RunPolicy.Optional || err == nil {
-		return ""
+// noToolSkip is the skip of a step, required or optional, that cannot run
+// because no tool implements its capability (the planner's
+// NO_MATCHING_TOOL): the run goes on without it and ends partial. ok is
+// false when err is something else, which then fails the step as before.
+func noToolSkip(step *scanworkflow.Step, err error) (reason, code string, ok bool) {
+	if step == nil || err == nil {
+		return "", "", false
 	}
 	var de *shared.DomainError
 	if !errors.As(err, &de) || de.Code != codeNoMatchingTool {
-		return ""
+		return "", "", false
 	}
-	return fmt.Sprintf("skipped: available when a tool that runs %s is installed", optionalCapabilityName(step))
-}
-
-// optionalCapabilityName names the step's capability for the message.
-func optionalCapabilityName(step *scanworkflow.Step) string {
-	if st, ok := stage.ForStep(step.Tool, step.Capabilities); ok {
-		return string(st.Key)
-	}
-	if len(step.Capabilities) > 0 {
-		return step.Capabilities[0]
-	}
-	return step.Tool
+	return scanapp.NoToolSkipReason(step), scanrun.FailureNoMatchingTool, true
 }
 
 // hasDepthParams reports whether the policy sets standard params at any

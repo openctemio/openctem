@@ -3,8 +3,11 @@ package scanrun
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"slices"
 	"testing"
+
+	scanapp "github.com/openctemio/openctem/api/internal/app/scan"
 
 	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
 	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
@@ -115,11 +118,13 @@ func TestQueueRunStep(t *testing.T) {
 	s.toolRepo = platformTools{names: map[string]bool{}}
 	store.rows["a"] = *scanrun.NewStepRun(run.ID, bad.ID, "a", 1, 0)
 	run.StepRuns = nil
-	if err := s.QueueRunStep(context.Background(), run, bad); err == nil {
-		t.Fatal("an unresolvable step was queued")
+	// No tool runs it: skipped with the code (a run goes as far as the
+	// tools support), settled for the caller to advance; nothing queued.
+	if err := s.QueueRunStep(context.Background(), run, bad); !errors.Is(err, scanapp.ErrStepSettled) {
+		t.Fatalf("an unresolvable step: err = %v, want ErrStepSettled", err)
 	}
-	if a := store.rows["a"]; a.Status != scanrun.StepRunStatusFailed || a.ErrorCode != "NO_MATCHING_TOOL" {
-		t.Fatalf("step a = %s/%s", a.Status, a.ErrorCode)
+	if a := store.rows["a"]; a.Status != scanrun.StepRunStatusSkipped || a.ErrorCode != "NO_MATCHING_TOOL" || len(cmds.created) != 1 {
+		t.Fatalf("step a = %s/%s, commands %d", a.Status, a.ErrorCode, len(cmds.created))
 	}
 }
 

@@ -80,7 +80,8 @@ func TestDepth_MinDepthAndParams(t *testing.T) {
 }
 
 // An optional step whose capability no tool implements is skipped with the
-// reason, never failed; the same step without optional fails as before.
+// reason, never failed; so is the same step when it is required (a run goes
+// as far as the organization's tools support).
 func TestOptionalStep_SkippedWithoutTool(t *testing.T) {
 	s, run, tpl, store, cmds := policyFixture("capture.screenshot", scanworkflow.DepthStandard, scanworkflow.RunPolicy{Optional: true})
 	if err := s.scheduleRunnableSteps(context.Background(), run, tpl); err != nil {
@@ -96,8 +97,9 @@ func TestOptionalStep_SkippedWithoutTool(t *testing.T) {
 	if err := s.scheduleRunnableSteps(context.Background(), run, tpl); err != nil {
 		t.Fatal(err)
 	}
-	if a := store.rows["a"]; a.Status != scanrun.StepRunStatusFailed || a.ErrorCode != codeNoMatchingTool {
-		t.Fatalf("not optional: a = %s/%s", a.Status, a.ErrorCode)
+	if a := store.rows["a"]; a.Status != scanrun.StepRunStatusSkipped || a.ErrorCode != codeNoMatchingTool ||
+		!strings.Contains(a.SkipReason, "capture.screenshot") {
+		t.Fatalf("not optional: a = %s/%s (%q)", a.Status, a.ErrorCode, a.SkipReason)
 	}
 }
 
