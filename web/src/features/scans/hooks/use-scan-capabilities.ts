@@ -2,7 +2,8 @@
 
 /**
  * What the organization may scan (GET /api/v1/scans/capabilities,
- * scans:read; the organization comes from the credential). The wizard offers
+ * scans:read; the organization comes from the credential, and a tenant
+ * switch drops the cached answer). The wizard offers
  * only passive intensity, and so only passive tools and workflows, to a
  * passive-only organization. Advice only: the API refuses a scan above
  * passive for such an organization whatever the console sends. While the
@@ -19,8 +20,8 @@ export const SCAN_CAPABILITIES_URL = '/api/v1/scans/capabilities'
 export function useScanCapabilities(enabled = true) {
   const { currentTenant } = useTenant()
   const { data } = useSWR<ScanCapabilitiesResponse>(
-    enabled && currentTenant ? [SCAN_CAPABILITIES_URL, currentTenant.id] : null,
-    ([url]: [string, string]) => fetcher<ScanCapabilitiesResponse>(url),
+    enabled && currentTenant ? SCAN_CAPABILITIES_URL : null,
+    (url: string) => fetcher<ScanCapabilitiesResponse>(url),
     { revalidateOnFocus: false, shouldRetryOnError: false }
   )
   return { passiveOnly: data?.active_scanning === false }
