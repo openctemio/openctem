@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	"github.com/lib/pq"
-	"github.com/openctemio/ctis/politeness"
+	"github.com/openctemio/contract/politeness"
 
 	commandapp "github.com/openctemio/openctem/api/internal/app/command"
 	"github.com/openctemio/openctem/api/pkg/domain/command"

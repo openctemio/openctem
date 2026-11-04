@@ -1,5 +1,5 @@
 
-.PHONY: platform-authz-docs
+.PHONY: platform-authz-docs sigstore-root-refresh
 .PHONY: all build run test test-db budgets-update lint clean docker-build docker-dev docker-prod docker-down migrate generate seed help seed-required docker-seed docker-seed-required db-setup db-setup-dev swagger contract swagger-check swagger-install env-docs authz-matrix migration-new migration-renumber migrations-released migrate-up migrate-down migrate-status migrate-force
 
 # Variables
@@ -170,7 +170,8 @@ swagger: swagger-install
 	@# machine emits, with the same swag, the same Go and a warm cache. That is
 	@# why the gate compares sets of operations rather than bytes. See
 	@# tools/lint/openapicontract.
-	@GOWORK=off go mod download
+	@# Retried: the module proxy sometimes resets the HTTP/2 stream on CI runners.
+	@for i in 1 2 3; do GOWORK=off go mod download && exit 0; echo "go mod download failed (attempt $$i); retrying" >&2; sleep $$((i * 10)); done; exit 1
 	@# The list query params come from the field registries (RFC-048).
 	@GOWORK=off go run ./tools/gen/filterparams
 	@GOWORK=off $(SWAG) init --generalInfo cmd/server/main.go --output api/openapi --outputTypes yaml --parseDependency
@@ -382,6 +383,14 @@ generate-relationships:
 ## whose body is `make modules-sql`.
 generate-modules:
 	@GOWORK=off $(GOCMD) run ./cmd/gen-modules
+
+## sigstore-root-refresh: Refresh the embedded Sigstore trusted root (release feed + content publishers) from Sigstore's TUF repository; needs cosign and internet. Commit the result.
+sigstore-root-refresh:
+	@command -v cosign >/dev/null || { echo "cosign is required"; exit 1; }
+	@cosign initialize
+	@test -s $(HOME)/.sigstore/root/tuf-repo-cdn.sigstore.dev/targets/trusted_root.json || { echo "trusted_root.json not found in the cosign TUF cache"; exit 1; }
+	@cp $(HOME)/.sigstore/root/tuf-repo-cdn.sigstore.dev/targets/trusted_root.json pkg/contentpkg/sigstore/trusted_root.json
+	@GOWORK=off $(GOCMD) test ./pkg/contentpkg/sigstore/ ./pkg/releasefeed/...
 
 ## modules-sql: Print the SQL block that writes the modules rows (the body of a registry migration)
 modules-sql:

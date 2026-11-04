@@ -16,6 +16,7 @@ COPY rootfs/api/etc/passwd rootfs/api/etc/group /etc/
 COPY dist/${TARGETARCH}/server/bin/ /app/
 COPY links/ /app/
 COPY dist/${TARGETARCH}/server/api/openapi/swagger.yaml /app/api/openapi/swagger.yaml
+COPY dist/${TARGETARCH}/server/third-party-notices.json /app/third-party-notices.json
 COPY dist/${TARGETARCH}/server/migrations /app/migrations
 COPY dist/${TARGETARCH}/server/configs /app/configs
 # The writable paths and their owners (see the official image).

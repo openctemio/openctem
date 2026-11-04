@@ -2,7 +2,7 @@
   const: ModuleScannerTemplates
   slug: "scanner-templates"
   name: Scanner Templates
-  description: Catalogue of Nuclei / Betterleaks / Semgrep templates
+  description: Catalogue of Nuclei, Betterleaks and Opengrep templates
   icon: FileCode
   category: settings
   order: 10

@@ -20,7 +20,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/pkg/domain/ingestreport"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
@@ -101,9 +101,6 @@ func (s *Service) IngestV2Segment(ctx context.Context, prov Provenance, report *
 	if report == nil {
 		return nil, shared.NewDomainError("INVALID_INPUT", "report is required", nil)
 	}
-	// The report id is the scan identity of every finding of every segment,
-	// which is what lets the commit tell seen from stale.
-	report.Metadata.ID = prov.ReportID
 
 	kept, keptIdx, assetIdx, itemErrs := resolveV2Assets(report)
 	filtered := *report
@@ -123,7 +120,10 @@ func (s *Service) IngestV2Segment(ctx context.Context, prov Provenance, report *
 	// its command covers.
 	opts.Binding = s.bindingFromCommandID(ctx, prov.TenantID, prov.CommandID)
 	opts.Admitted = true
-	out, err := s.Ingest(ctx, agt, Input{Report: &filtered, Options: opts})
+	// The report id of the URL path is the scan identity of every finding
+	// of every segment, which is what lets the commit tell seen from stale.
+	// metadata.id stays the producer's idempotency key.
+	out, err := s.Ingest(ctx, agt, Input{Report: &filtered, ReportID: prov.ReportID, Options: opts})
 	if err != nil {
 		return nil, err
 	}
@@ -179,6 +179,13 @@ func assetOutcomes(o *ingestreport.SegmentOutcome, assets []ctis.Asset, assetIdx
 	for i := range assets {
 		id, ok := stored[assets[i].ID]
 		if !ok || id.IsZero() {
+			if i >= len(assetIdx) {
+				// An asset the platform derived during ingest (a web origin of
+				// an endpoint, appended after the producer's assets): it has no
+				// position in the producer's document, so it is neither the
+				// producer's error nor counted against its assets.
+				continue
+			}
 			code, detail := protov2.CodeAssetInvalid, protov2.DetailAssetInvalid
 			if excluded[assets[i].ID] {
 				code, detail = protov2.CodeAssetExcluded, protov2.DetailAssetExcluded
@@ -194,7 +201,7 @@ func assetOutcomes(o *ingestreport.SegmentOutcome, assets []ctis.Asset, assetIdx
 			touched = append(touched, id)
 		}
 	}
-	o.AcceptedAssets = len(assets) - o.RejectedAssets - skipped
+	o.AcceptedAssets = min(len(assets), len(assetIdx)) - o.RejectedAssets - skipped
 	return touched
 }
 
@@ -341,8 +348,7 @@ func (s *Service) CommitV2Report(ctx context.Context, prov Provenance, header V2
 	}
 	toolName := header.Tool.Name
 	md := header.Metadata
-	md.ID = prov.ReportID
-	input := Input{Report: &ctis.Report{Metadata: md, Tool: header.Tool}}
+	input := Input{Report: &ctis.Report{Metadata: md, Tool: header.Tool}, ReportID: prov.ReportID}
 
 	var tools []string
 	if s.sensorRepo != nil {

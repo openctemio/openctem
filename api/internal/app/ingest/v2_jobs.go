@@ -193,7 +193,7 @@ func (p *V2JobProcessor) processSegment(ctx context.Context, rep *ingestreport.R
 			Pointer: "", Code: protov2.CodeProcessingFailed, Detail: protov2.DetailProcessingFailed}}}
 		return o, p.reports.RecordSegmentOutcome(ctx, rep.ID, seq, o, nil)
 	}
-	report, err := ParseV2Report(payload, rep.ReportID, p.limits)
+	report, err := ParseV2Report(payload, p.limits)
 	if err != nil {
 		// The payload was validated before it was accepted; failing now
 		// means it is unusable, and retrying will not change that. Record it

@@ -4,7 +4,7 @@ import (
 	"context"
 	"strings"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/pkg/domain/ingestjob"
 )
@@ -37,10 +37,7 @@ func (s *Service) uploadLane(ctx context.Context, report *ctis.Report) ingestjob
 			return ingestjob.LaneUrgent
 		}
 		if v := f.Vulnerability; v != nil && len(cves) < maxLaneCVEs {
-			if id := strings.ToUpper(strings.TrimSpace(v.CVEID)); strings.HasPrefix(id, "CVE-") {
-				cves = append(cves, id)
-			}
-			for _, raw := range v.CVEIDs {
+			for _, raw := range ctis.CVEs(v) {
 				if id := strings.ToUpper(strings.TrimSpace(raw)); strings.HasPrefix(id, "CVE-") && len(cves) < maxLaneCVEs {
 					cves = append(cves, id)
 				}

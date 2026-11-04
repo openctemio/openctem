@@ -8,10 +8,11 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/openctemio/ctis"
-	"github.com/openctemio/ctis/importer"
+	"github.com/openctemio/ctis/v2"
+	"github.com/openctemio/ctis/v2/importer"
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
+	_ "github.com/openctemio/openctem/api/internal/app/ctisformats" // the standard-format adapters of importer.Parse
 	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/software"

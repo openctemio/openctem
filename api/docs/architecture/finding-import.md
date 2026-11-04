@@ -1,7 +1,7 @@
 # Finding import: results exported by other tools
 
 `POST /api/v1/findings/imports` takes a file another security tool exported,
-converts it to a CTIS 1.4 report with the ctis `importer` package, and ingests
+converts it to a CTIS 2.0 report with the ctis `importer` package, and ingests
 it with the uploader's rights. VEX documents are applied to the tenant's
 matching findings. The web console's **Findings → Import results** dialog
 drives it.

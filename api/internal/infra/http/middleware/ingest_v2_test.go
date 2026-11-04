@@ -98,7 +98,7 @@ func problemType(t *testing.T, rec *httptest.ResponseRecorder) string {
 
 func TestV2Edge_Gates(t *testing.T) {
 	limits := protov2.DefaultLimits()
-	body := []byte(`{"version":"1.0"}`)
+	body := []byte(`{"version":"2.0"}`)
 	gz := gzipBytes(t, body)
 
 	cases := []struct {

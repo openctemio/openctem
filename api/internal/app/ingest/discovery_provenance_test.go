@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -19,9 +19,9 @@ func TestIngest_SensorCannotClaimProvenance(t *testing.T) {
 	future := time.Now().Add(100 * 365 * 24 * time.Hour)
 	report := func() *ctis.Report {
 		return &ctis.Report{Assets: []ctis.Asset{{
-			ID: "a1", Type: ctis.AssetTypeDomain, Value: "planted.example.com", Name: "planted.example.com",
-			DiscoveredAt: &future,
-			Properties:   ctis.Properties{asset.PropKeyDiscoverySource: "manual"},
+			ID: "a1", Type: ctis.AssetTypeDomainName, Value: "planted.example.com", Name: "planted.example.com",
+			FirstSeenAt: &future,
+			Properties:  ctis.Properties{asset.PropKeyDiscoverySource: "manual"},
 		}}}
 	}
 	run := func(scope *alterScope) *asset.Asset {

@@ -54,7 +54,7 @@ step runs.
             │
             ▼
    ctis importer (.nessus)  ──►  *ctis.Report   (github.com/openctemio/ctis/importer)
-            │   tool=tenable · metadata.id=session · coverage=full · synthetic default branch
+            │   tool=tenable · report id=session · coverage=full · synthetic default branch
             ▼
    ingest pipeline (RFC-005 async)
             │   coverage auto-resolve (command's assets, tool, full coverage)
@@ -77,7 +77,7 @@ asset IDs) × (this run)** and needs full coverage. So:
 - a Tenable scan cannot resolve sensor-scanner (nuclei/trivy) findings.
 
 The requirement on the converter is therefore narrow: emit **one report per
-batch** with `tool.name="tenable"`, a unique `metadata.id` (the scan session),
+batch** with `tool.name="tenable"`, a unique report id from the transport (the scan session; `metadata.id` is only the producer's UUIDv7 idempotency key),
 `coverage_type="full"`, and only that batch's hosts.
 
 > **Not working today (verified 2026-10):** ingest's auto-resolve requires a

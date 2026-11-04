@@ -59,14 +59,7 @@ const LIVE: ScopingSummary = {
   cycles: { total: 1 },
 }
 
-const ALL = [
-  'ctem_cycles',
-  'crown_jewels',
-  'business_services',
-  'business_units',
-  'scope_config',
-  'threat_model',
-]
+const ALL = ['ctem_cycles', 'business_services', 'business_units', 'scope_config', 'threat_model']
 
 const wrap = (ui: ReactNode) =>
   render(<SWRConfig value={{ provider: () => new Map(), dedupingInterval: 0 }}>{ui}</SWRConfig>)
@@ -133,7 +126,7 @@ describe('ScopingOverview', () => {
   })
 
   it('hides rows and the cycle card for modules that are off', async () => {
-    modules = ['crown_jewels', 'scope_config']
+    modules = ['scope_config']
     wrap(<ScopingOverview />)
     expect(await screen.findByText('2 of 3 ready')).toBeInTheDocument()
     expect(screen.queryByText('Current cycle')).toBeNull()

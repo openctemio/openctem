@@ -33,7 +33,7 @@ import (
 	"context"
 	"strings"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
@@ -43,67 +43,27 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 )
 
-// fillFromInterop completes the normalized members of f from its CTIS 1.4
-// members, only where the producer left them empty:
-//
-//   - vulnerability.cve_id / cve_ids from vulnerability.ids of type cve
-//     (with a cve_id already set, the other CVEs join cve_ids, so a
-//     multi-CVE network or SCA finding splits per CVE);
-//   - rule_id from native.vuln_id, else from the preferred non-CVE
-//     vulnerability id (GHSA, OSV, vendor) when there is no CVE.
-//
-// A finding that already names a CVE or a rule keeps them, so its identity
-// key does not change.
+// fillFromInterop completes rule_id of f, only where the producer left it
+// empty: from native.vuln_id, else from the preferred non-CVE vulnerability
+// id (GHSA, OSV, vendor) when the finding names no CVE. A finding that names
+// a CVE is keyed on it (vulnerability.ids), and one that names a rule keeps
+// it, so its identity key does not change.
 func fillFromInterop(f *ctis.Finding) {
-	if f == nil {
-		return
-	}
-	v := f.Vulnerability
-	if v != nil && strings.TrimSpace(v.CVEID) != "" && len(v.IDs) > 0 {
-		// A finding that names a CVE keeps it as its key; the other CVEs
-		// among its typed ids join cve_ids, so a multi-CVE network or SCA
-		// finding splits per CVE (RFC-043 D3, D20).
-		var cves []string
-		for _, id := range ctis.VulnerabilityIDs(v) {
-			if id.Type == ctis.VulnerabilityIDCVE {
-				cves = append(cves, id.ID)
-			}
-		}
-		if len(cves) > 1 {
-			v.CVEIDs = cves
-		}
-	}
-	if v != nil && strings.TrimSpace(v.CVEID) == "" && len(v.CVEIDs) == 0 && len(v.IDs) > 0 {
-		var cves []string
-		for _, id := range ctis.VulnerabilityIDs(v) {
-			if id.Type == ctis.VulnerabilityIDCVE {
-				cves = append(cves, id.ID)
-			}
-		}
-		if len(cves) > 0 {
-			if p, ok := ctis.PreferredVulnerabilityID(v); ok && p.Type == ctis.VulnerabilityIDCVE {
-				v.CVEID = p.ID
-			}
-			v.CVEIDs = cves
-		}
-	}
-	if strings.TrimSpace(f.RuleID) != "" {
+	if f == nil || strings.TrimSpace(f.RuleID) != "" {
 		return
 	}
 	if f.Native != nil && strings.TrimSpace(f.Native.VulnID) != "" {
 		f.RuleID = strings.TrimSpace(f.Native.VulnID)
 		return
 	}
-	if v != nil && strings.TrimSpace(v.CVEID) == "" && len(v.CVEIDs) == 0 {
+	if v := f.Vulnerability; v != nil && len(findingCVEs(v)) == 0 {
 		if p, ok := ctis.PreferredVulnerabilityID(v); ok {
 			f.RuleID = p.ID
 		}
 	}
 }
 
-// interopUpdate is a sighting's interop data. Scores include the legacy
-// single-valued members (ctis.AllScores), so the detail view shows one list
-// whatever minor the producer wrote.
+// interopUpdate is a sighting's interop data.
 func interopUpdate(fingerprint string, f *ctis.Finding) vulnerability.InteropUpdate {
 	u := vulnerability.InteropUpdate{Fingerprint: fingerprint}
 	d := &u.Data
@@ -111,10 +71,10 @@ func interopUpdate(fingerprint string, f *ctis.Finding) vulnerability.InteropUpd
 		d.Native = &vulnerability.InteropNative{
 			Scheme: string(n.Scheme), VulnID: n.VulnID, InstanceID: n.InstanceID, Family: n.Family,
 			Severity: n.Severity, Status: n.Status, DetectionType: string(n.DetectionType),
-			Credentialed: n.Credentialed, RawRef: n.RawRef,
+			Credentialed: n.IsCredentialed, RawRef: n.RawRef,
 		}
 	}
-	for _, s := range ctis.AllScores(f) {
+	for _, s := range f.Scores {
 		d.Scores = append(d.Scores, vulnerability.InteropScore{
 			System: string(s.System), Version: s.Version, Vector: s.Vector, Value: s.Value,
 			Label: s.Label, Source: s.Source, AsOf: s.AsOf,
@@ -125,7 +85,7 @@ func interopUpdate(fingerprint string, f *ctis.Finding) vulnerability.InteropUpd
 	}
 	if l := f.SourceLifecycle; l != nil {
 		d.Lifecycle = &vulnerability.InteropLifecycle{
-			FirstFound: l.FirstFound, LastFound: l.LastFound, LastFixed: l.LastFixed,
+			FirstFound: l.FirstFoundAt, LastFound: l.LastFoundAt, LastFixed: l.LastFixedAt,
 			TimesFound: l.TimesFound, State: string(l.State),
 		}
 	}

@@ -98,8 +98,9 @@ type Config struct {
 	// URL is the feed location (VERSION_CHECK_URL, https; validated by the
 	// configuration).
 	URL string
-	// Keys are the pinned feed keys (releasefeed.PinnedKeys in production).
-	Keys []string
+	// Verifier checks the feed's Sigstore signature offline; nil: no feed is
+	// accepted (the server builds it from the embedded trusted root).
+	Verifier releasefeed.SignatureVerifier
 	// Running is the running version.
 	Running string
 	// OnFeed receives the applied feed (nil when none) whenever the
@@ -177,7 +178,7 @@ func newClient() *http.Client {
 }
 
 // Configured reports whether this build pins a release feed root.
-func (s *Service) Configured() bool { return len(s.cfg.Keys) > 0 }
+func (s *Service) Configured() bool { return s.cfg.Verifier != nil }
 
 // RunDue runs the online check when it is due. It never returns an upstream
 // failure: an offline or air-gapped instance only records it and backs off.
@@ -263,7 +264,7 @@ func (s *Service) fetch(ctx context.Context) ([]byte, string, error) {
 // apply verifies raw against the stored state and stores it.
 func (s *Service) apply(ctx context.Context, st State, raw []byte, origin string) (*releasefeed.Verified, string, error) {
 	now := s.cfg.Now()
-	v, err := releasefeed.Verify(raw, releasefeed.Trust{Keys: s.cfg.Keys, MinSequence: st.AppliedSequence}, now)
+	v, err := releasefeed.Verify(raw, releasefeed.Trust{Verifier: s.cfg.Verifier, MinSequence: st.AppliedSequence}, now)
 	if err != nil {
 		return nil, codeOf(err), err
 	}

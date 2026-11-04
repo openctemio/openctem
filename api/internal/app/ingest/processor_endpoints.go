@@ -25,8 +25,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/openctemio/ctis"
-	"github.com/openctemio/ctis/weburl"
+	"github.com/openctemio/ctis/v2"
+	"github.com/openctemio/ctis/v2/weburl"
 
 	scopeapp "github.com/openctemio/openctem/api/internal/app/scope"
 
@@ -67,11 +67,10 @@ type endpointPlan struct {
 
 const syntheticOriginRefPrefix = "openctem-web-origin-"
 
-// planEndpoints folds legacy discovered_url assets into endpoints, normalises
-// every endpoint, and makes sure each origin is an http_service asset of the
-// report. It returns the report to process (a copy when anything changed).
+// planEndpoints normalises every endpoint and makes sure each origin is a
+// web_origin asset of the report. It returns the report to process (a copy when anything changed).
 func (s *Service) planEndpoints(report *ctis.Report, binding Binding, output *Output) (*ctis.Report, *endpointPlan) {
-	if report == nil || (len(report.Endpoints) == 0 && !hasLegacyURLs(report)) {
+	if report == nil || len(report.Endpoints) == 0 {
 		return report, nil
 	}
 	r := *report
@@ -79,7 +78,6 @@ func (s *Service) planEndpoints(report *ctis.Report, binding Binding, output *Ou
 	r.Findings = append([]ctis.Finding(nil), report.Findings...)
 	r.Endpoints = append([]ctis.Endpoint(nil), report.Endpoints...)
 
-	legacyOrigin := foldLegacyURLs(&r, output)
 	refs := newOriginRefs(&r)
 
 	var targets []coverTarget
@@ -102,77 +100,8 @@ func (s *Service) planEndpoints(report *ctis.Report, binding Binding, output *Ou
 		plan.byOrigin[ref] = append(plan.byOrigin[ref], obs)
 		plan.origins[ref] = obs.Origin
 	}
-	// A finding on a folded URL lands on the URL's origin.
-	for i := range r.Findings {
-		if o, ok := legacyOrigin[r.Findings[i].AssetRef]; ok {
-			if ref, ok := refs.byOrigin[o]; ok {
-				r.Findings[i].AssetRef = ref
-			}
-		}
-	}
 	r.Endpoints = nil // stored through the plan only
 	return &r, plan
-}
-
-func hasLegacyURLs(r *ctis.Report) bool {
-	for i := range r.Assets {
-		if r.Assets[i].Type == ctis.AssetTypeDiscoveredURL {
-			return true
-		}
-	}
-	return false
-}
-
-// foldLegacyURLs turns the report's discovered_url assets into endpoints and
-// removes them; it returns the origin of each folded asset ref.
-func foldLegacyURLs(r *ctis.Report, output *Output) map[string]string {
-	legacyOrigin := map[string]string{}
-	keep := r.Assets[:0]
-	for _, a := range r.Assets {
-		if a.Type != ctis.AssetTypeDiscoveredURL {
-			keep = append(keep, a)
-			continue
-		}
-		output.LegacyURLAssetsFolded++
-		ep, ok := legacyEndpoint(a)
-		if !ok {
-			continue
-		}
-		r.Endpoints = append(r.Endpoints, ep)
-		if a.ID != "" {
-			legacyOrigin[a.ID] = ep.Origin
-		}
-	}
-	r.Assets = keep
-	return legacyOrigin
-}
-
-// legacyEndpoint is the endpoint of a discovered_url asset: its URL's origin
-// and path, its query parameter NAMES, never their values.
-func legacyEndpoint(a ctis.Asset) (ctis.Endpoint, bool) {
-	raw := a.Value
-	if raw == "" {
-		raw = a.Name
-	}
-	u, err := weburl.Parse(raw)
-	if err != nil {
-		return ctis.Endpoint{}, false
-	}
-	method, _ := a.Properties["method"].(string)
-	if m, ok := weburl.NormalizeMethod(method); !ok || m == weburl.MethodAny {
-		method = "GET"
-	}
-	ep := ctis.Endpoint{Origin: u.Origin(), Method: method, Path: u.Path, Source: ctis.EndpointSourceCrawl}
-	if sc, ok := a.Properties["status_code"].(float64); ok {
-		ep.StatusCode = int(sc)
-	}
-	if ct, ok := a.Properties["content_type"].(string); ok {
-		ep.ContentType = ct
-	}
-	for _, n := range u.Params {
-		ep.Params = append(ep.Params, ctis.EndpointParam{Location: ctis.ParamLocationQuery, Name: n})
-	}
-	return ep, true
 }
 
 func targetsCoverOrigin(targets []coverTarget, origin string) bool {
@@ -192,8 +121,8 @@ type originRefs struct {
 	next     int
 }
 
-// newOriginRefs indexes the report's http_service assets that are origins
-// (no path), giving an id to one that has none.
+// newOriginRefs indexes the report's web_origin assets, giving an id to one
+// that has none.
 func newOriginRefs(r *ctis.Report) *originRefs {
 	o := &originRefs{byOrigin: map[string]string{}, used: map[string]bool{}}
 	for i := range r.Assets {
@@ -203,7 +132,7 @@ func newOriginRefs(r *ctis.Report) *originRefs {
 	}
 	for i := range r.Assets {
 		a := &r.Assets[i]
-		if a.Type != ctis.AssetTypeHTTPService {
+		if a.Type != ctis.AssetTypeWebOrigin {
 			continue
 		}
 		u, err := weburl.Parse(a.Value)
@@ -233,15 +162,15 @@ func (o *originRefs) fresh() string {
 	}
 }
 
-// refFor returns the asset ref of origin, adding an http_service asset for
-// it to the report when it has none.
+// refFor returns the asset ref of origin, adding a web_origin asset for it
+// to the report when it has none.
 func (o *originRefs) refFor(r *ctis.Report, origin string) string {
 	if ref, ok := o.byOrigin[origin]; ok {
 		return ref
 	}
 	ref := o.fresh()
 	o.byOrigin[origin] = ref
-	r.Assets = append(r.Assets, ctis.Asset{ID: ref, Type: ctis.AssetTypeHTTPService, Value: origin, Name: origin})
+	r.Assets = append(r.Assets, ctis.Asset{ID: ref, Type: ctis.AssetTypeWebOrigin, Value: origin})
 	return ref
 }
 

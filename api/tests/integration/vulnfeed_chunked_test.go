@@ -20,7 +20,7 @@ import (
 	"time"
 
 	"github.com/lib/pq"
-	"github.com/openctemio/ctis/transfer/bundle"
+	"github.com/openctemio/contract/transfer/bundle"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 

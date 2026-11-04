@@ -440,6 +440,11 @@ virtual_types:
 # Legacy type names still accepted on input that are no type of their own
 # (RFC-042 §6.3.8). `web_application` is stored as (application, website):
 # one web sub-type, labelled "Web application" (owner decision O3).
+#
+# The CTIS 2.0 wire types that are no stored type (domain_name, web_origin,
+# service, ip_range, container_image, kubernetes_workload, endpoint_device,
+# identity, network_device) are placed by the CTIS receiver
+# (internal/app/ingest/mappers.go), not here: these are the REST API's inputs.
 type_inputs:
   web_application: { type: application, sub_type: website }
 

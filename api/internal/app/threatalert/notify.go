@@ -16,6 +16,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 	"github.com/openctemio/openctem/api/pkg/domain/threatalert"
 	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/weblink"
 )
 
 // Console paths of the alerts.
@@ -374,12 +375,12 @@ func (p *Planner) mailDigests(ctx context.Context, tenantID shared.ID, local tim
 			continue
 		}
 		title, _ := digestText(d, baseline)
-		p.mail.SendEmergingThreatMail(ctx, tenantID.String(), []string{rc.Email}, "[Emerging threats] "+title, p.digestMail(d, baseline))
+		p.mail.SendEmergingThreatMail(ctx, tenantID.String(), []string{rc.Email}, "[Emerging threats] "+title, p.digestMail(tenantID, d, baseline))
 	}
 }
 
-func (p *Planner) digestMail(d threatalert.Digest, baseline bool) string {
-	link := html.EscapeString(p.webBase + alertsPath)
+func (p *Planner) digestMail(tenantID shared.ID, d threatalert.Digest, baseline bool) string {
+	link := html.EscapeString(weblink.Console(p.webBase, alertsPath, tenantID.String()))
 	var b strings.Builder
 	if baseline {
 		fmt.Fprintf(&b, "<p>%d actively exploited vulnerabilities affect assets you can see today. From now on you are told only about new ones.</p>", d.Exploited)

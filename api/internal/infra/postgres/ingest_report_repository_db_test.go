@@ -111,7 +111,7 @@ func TestIngestReportRepository_Lifecycle(t *testing.T) {
 		s := seq
 		job := ingestjob.NewV2Job(tenantID, &sensorID, reportID, ingestjob.V2Segment{
 			ReportRef: rep.ID, Seq: &s, ContentDigest: "sha-256=:seg" + string(rune('0'+s)) + ":", MediaType: protov2.MediaTypeCTIS,
-		}, []byte(`{"version":"1.0"}`))
+		}, []byte(`{"version":"2.0"}`))
 		job.DelayUntil(now.Add(24 * time.Hour)) // never claimable by a parallel test
 		stored, created, err := jobs.EnqueueV2(ctx, job)
 		if err != nil || !created || stored.V2() == nil || *stored.V2().Seq != s {
