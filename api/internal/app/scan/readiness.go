@@ -4,7 +4,9 @@ package scan
 // why not, step by step. One computation from the same sources the
 // dispatch gate reads (the tenant's tool availability: catalog, sensors,
 // grants, manifests, zones; and the platform scanning offer), so the New
-// Scan picker, the workflow list and the server-side refusal agree.
+// Scan picker and the workflow list agree with what a run does. Readiness
+// is information, never a gate: a scan of a blocked workflow can be saved
+// and run, and its run skips the steps nothing here runs (step_support.go).
 //
 // States, per step and for the workflow:
 //   - ready: a tool that runs the step is on an online sensor that may run it;
@@ -17,7 +19,7 @@ package scan
 //   - blocked: no enabled tool runs the step, or no sensor may run one.
 //   - skipped (steps only): an optional step (run_policy.optional) that no
 //     installed tool implements. The run skips it with the reason
-//     (scanrun optionalSkipMessage), so it never blocks the workflow; it is
+//     (scanrun noToolSkip), so it never blocks the workflow; it is
 //     reported so the list can say which step is left out and how to add
 //     it. A workflow whose every step is skipped is blocked.
 //
@@ -64,9 +66,6 @@ const (
 	ReasonNoSensor         = "no_sensor"
 )
 
-// CodeWorkflowNotRunnable refuses a scan of a workflow that cannot run.
-const CodeWorkflowNotRunnable = "WORKFLOW_NOT_RUNNABLE"
-
 // ciCapabilities run in the CI images (openctemio/ci): code analysis on a
 // repository checkout.
 var ciCapabilities = map[stage.Key]bool{
@@ -98,7 +97,8 @@ type WorkflowReadiness struct {
 	Steps []StepReadiness `json:"steps"`
 }
 
-// Runnable reports whether a scan may be created for the workflow.
+// Runnable reports whether every step the workflow runs can run now
+// (ready or waiting). Information only: a scan is saved and run either way.
 func (r *WorkflowReadiness) Runnable() bool {
 	return r == nil || r.State == ReadinessReady || r.State == ReadinessWaiting
 }
@@ -348,37 +348,4 @@ func lowerFirst(s string) string {
 		return s
 	}
 	return strings.ToLower(s[:1]) + s[1:]
-}
-
-// requireWorkflowRunnable refuses a workflow that is blocked or runs only
-// in CI, naming the steps and why. Unknown readiness lets it through (the
-// trigger-time checks still apply).
-func (s *Service) requireWorkflowRunnable(ctx context.Context, tenantID shared.ID, w *scanworkflow.Workflow) error {
-	if s.readiness == nil || w == nil {
-		return nil
-	}
-	m, err := s.WorkflowReadiness(ctx, tenantID, []*scanworkflow.Workflow{w})
-	if err != nil {
-		s.logger.Warn("workflow readiness unreadable; not refusing", "scan_workflow_id", w.ID.String(), "error", err)
-		return nil
-	}
-	r := m[w.ID]
-	if r.Runnable() {
-		return nil
-	}
-	var parts []string
-	for _, st := range r.Steps {
-		if st.State == ReadinessBlocked || st.State == ReadinessCIOnly {
-			parts = append(parts, fmt.Sprintf("%s: %s", st.Name, st.Reason))
-		}
-	}
-	if len(parts) == 0 && len(r.Steps) > 0 {
-		parts = append(parts, "every step is optional and no installed tool runs one")
-	}
-	if len(parts) == 0 {
-		parts = append(parts, "it has no steps")
-	}
-	return shared.NewDomainError(CodeWorkflowNotRunnable,
-		fmt.Sprintf("Workflow %q cannot run here: %s", w.Name, strings.Join(parts, "; ")),
-		shared.ErrValidation)
 }

@@ -75,7 +75,7 @@ describe('Sessions page', () => {
     } as unknown as ReturnType<typeof useAdminSessions>)
     await renderPage('ops_admin')
     expect(useAdminSessions).toHaveBeenCalledWith(false)
-    expect(screen.getByText(/needs the Super admin role/i)).toBeInTheDocument()
+    expect(screen.getByText(/platform roles do not include this/i)).toBeInTheDocument()
   })
 
   it('cannot end the current session, and ends another with a reason and a code', async () => {

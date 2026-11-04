@@ -2,7 +2,6 @@ package scan
 
 import (
 	"context"
-	"errors"
 	"strings"
 	"testing"
 
@@ -104,25 +103,6 @@ func TestWorkflowReadiness_PlatformScanning(t *testing.T) {
 	}
 }
 
-func TestRequireWorkflowRunnable(t *testing.T) {
-	s := readinessService(map[string]sensordom.ToolStatus{"dnsx": sensordom.ToolOfflineOnly}, false, false, nil)
-	ctx := context.Background()
-	tenant := shared.NewID()
-	// Waiting may be scheduled.
-	if err := s.requireWorkflowRunnable(ctx, tenant, rwf("", rstep("dns", "", "resolve.dns"))); err != nil {
-		t.Fatalf("waiting refused: %v", err)
-	}
-	err := s.requireWorkflowRunnable(ctx, tenant, rwf("", rstep("dns", "", "resolve.dns"), rstep("ports", "", "scan.ports")))
-	var de *shared.DomainError
-	if !errors.As(err, &de) || de.Code != CodeWorkflowNotRunnable || !errors.Is(err, shared.ErrValidation) || !strings.Contains(err.Error(), "ports") {
-		t.Fatalf("blocked workflow: %v", err)
-	}
-	// Without the sources nothing is refused (the trigger checks still apply).
-	if err := (&Service{logger: logger.NewNop()}).requireWorkflowRunnable(ctx, tenant, rwf("")); err != nil {
-		t.Fatalf("no sources: %v", err)
-	}
-}
-
 // Each organization reads its own sources: the per-tenant cache never
 // answers one organization with another one's sensors.
 func TestWorkflowReadiness_TenantIsolatedCache(t *testing.T) {
@@ -146,18 +126,14 @@ func TestWorkflowReadiness_TenantIsolatedCache(t *testing.T) {
 
 // A new organization has no sensor yet: the probing scan of continuous
 // discovery (port scan, HTTP probe) is saved waiting, becomes ready when a
-// sensor with the tools registers, and is still refused when a tool is off.
-func TestRequireWorkflowRunnable_NoSensorYetThenReady(t *testing.T) {
-	ctx := context.Background()
-	tenant := shared.NewID()
+// sensor with the tools registers, and reads blocked when a tool is off
+// (information only: the run skips that step).
+func TestWorkflowReadiness_NoSensorYetThenReady(t *testing.T) {
 	probe := func() *scanworkflow.Workflow {
 		return rwf("", rstep("ports", "", "scan.ports"), rstep("http", "", "probe.http"))
 	}
 	empty := map[string]sensordom.ToolStatus{"naabu": sensordom.ToolNoSensor, "httpx": sensordom.ToolNoSensor}
 	s := readinessService(empty, false, false, nil)
-	if err := s.requireWorkflowRunnable(ctx, tenant, probe()); err != nil {
-		t.Fatalf("no sensor yet must be saved: %v", err)
-	}
 	r := readinessOf(t, s, probe())
 	if r.State != ReadinessWaiting || !strings.Contains(r.Steps[0].Reason, "Waits for a sensor with") {
 		t.Fatalf("want waiting: %+v", r)
@@ -167,8 +143,8 @@ func TestRequireWorkflowRunnable_NoSensorYetThenReady(t *testing.T) {
 		t.Fatalf("sensor registered: %s", r.State)
 	}
 	off := readinessService(map[string]sensordom.ToolStatus{"naabu": sensordom.ToolNoSensor, "httpx": sensordom.ToolDisabled}, false, false, nil)
-	if err := off.requireWorkflowRunnable(ctx, tenant, probe()); err == nil {
-		t.Fatal("a disabled tool must still be refused")
+	if r := readinessOf(t, off, probe()); r.State != ReadinessBlocked || r.Runnable() {
+		t.Fatalf("a disabled tool reads blocked: %s", r.State)
 	}
 }
 
@@ -218,10 +194,6 @@ func TestWorkflowReadiness_OptionalStepSkipped(t *testing.T) {
 	only := rwf("", optStep("shots", "", "capture.screenshot"))
 	if r := readinessOf(t, s, only); r.State != ReadinessBlocked {
 		t.Fatalf("only optional steps: %s", r.State)
-	}
-	err := s.requireWorkflowRunnable(context.Background(), shared.NewID(), only)
-	if err == nil || !strings.Contains(err.Error(), "every step is optional") {
-		t.Fatalf("refusal of a workflow of skipped steps: %v", err)
 	}
 }
 

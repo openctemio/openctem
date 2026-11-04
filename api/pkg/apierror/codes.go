@@ -82,6 +82,11 @@ var registry = map[Code]Spec{
 	CodeDiscoveryCoverageOff:      {http.StatusConflict, "Automatic coverage is off for your organization. Turn it on in the scope settings first."},
 	CodeDiscoveryBudgetSpent:      {http.StatusConflict, "Today's coverage budget is used up. Try again tomorrow."},
 	CodeDiscoveryRunTooSoon:       {http.StatusTooManyRequests, "This stage was run less than a minute ago. Try again shortly."},
+
+	// Scan trigger: the scan was found, something it uses was not.
+	CodePipelineNotFound:      {http.StatusNotFound, "This scan's workflow was not found: it may have been deleted. Edit the scan and choose another workflow."},
+	CodeScanDependencyMissing: {http.StatusNotFound, "Something this scan uses was not found, for example the tool of a workflow step. Check the scan and its workflow, then run it again."},
+
 	// Retest of a finding (docs/architecture/finding-retest-strategy.md);
 	// details.reason carries the retest reason code.
 	CodeRetestNotAvailable:     {http.StatusUnprocessableEntity, "This finding cannot be retested automatically. The retest panel says why."},
@@ -154,6 +159,12 @@ const (
 	CodeDiscoveryCoverageOff      Code = "DISCOVERY_COVERAGE_OFF"
 	CodeDiscoveryBudgetSpent      Code = "DISCOVERY_BUDGET_SPENT"
 	CodeDiscoveryRunTooSoon       Code = "DISCOVERY_RUN_TOO_SOON"
+	// CodePipelineNotFound: a workflow scan's workflow is gone, or is not
+	// one the scan's organization may run.
+	CodePipelineNotFound Code = "PIPELINE_NOT_FOUND"
+	// CodeScanDependencyMissing: a reference of the scan (a workflow step's
+	// tool, ...) was not found when it was triggered.
+	CodeScanDependencyMissing Code = "SCAN_DEPENDENCY_MISSING"
 )
 
 // statusMessages is the fallback when a code is not registered.

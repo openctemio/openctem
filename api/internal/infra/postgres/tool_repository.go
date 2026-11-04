@@ -297,8 +297,12 @@ func (r *ToolRepository) FindByCapabilities(ctx context.Context, tenantID shared
 
 	t, err := r.scanTool(row)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, nil // No matching tool found
+		// scanTool turns sql.ErrNoRows into shared.ErrNotFound: no matching
+		// tool is the documented nil, nil (the planner answers
+		// NO_MATCHING_TOOL), never an error a caller reads as "the scan was
+		// not found".
+		if errors.Is(err, shared.ErrNotFound) || errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
 		}
 		return nil, fmt.Errorf("failed to find tool by capabilities: %w", err)
 	}

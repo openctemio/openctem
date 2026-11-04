@@ -59,7 +59,8 @@ func TestScanHandler_TriggerRefusalKeepsItsCode(t *testing.T) {
 	h := &ScanHandler{logger: logger.NewNop()}
 	for _, c := range []string{"NO_ZONE_COVERAGE", "ZONE_SPLIT_REQUIRED", "TOO_MANY_JOBS", "NO_TARGETS",
 		"ALL_TARGETS_EXCLUDED", "PLATFORM_SENSOR_REFUSED", "SCAN_ZONE_NOT_FOUND",
-		"NO_SENSOR_FOR_TOOL", "NO_SENSOR_AVAILABLE", "TOOL_NOT_FOUND", "TOOL_DISABLED", "TOOL_NOT_SCANNER"} {
+		"NO_SENSOR_FOR_TOOL", "NO_SENSOR_AVAILABLE", "TOOL_NOT_FOUND", "TOOL_DISABLED", "TOOL_NOT_SCANNER",
+		"NO_RUNNABLE_STEPS"} {
 		rec := httptest.NewRecorder()
 		h.handleServiceError(rec, shared.NewDomainError(c, "refused: "+c, shared.ErrValidation))
 		code, msg := errorBody(t, rec)
