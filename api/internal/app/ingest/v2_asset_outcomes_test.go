@@ -54,3 +54,24 @@ func TestAssetOutcomes_UnstoredWithoutExclusionIsRejected(t *testing.T) {
 		t.Fatalf("rejected=%d lost=%v, want 1 and true", o.RejectedAssets, reportLostAssets(rep))
 	}
 }
+
+// Ingest appends assets the platform derives (a web origin per endpoint)
+// after the producer's: they have no producer position. Before, an unstored
+// derived asset indexed past assetIdx and panicked, which killed the API.
+func TestAssetOutcomes_DerivedAssetsPastProducerList(t *testing.T) {
+	stored, derived := shared.NewID(), shared.NewID()
+	assets := []ctis.Asset{{ID: "a"}, {ID: "b"}, {ID: "origin-stored"}, {ID: "origin-unstored"}}
+	o := &ingestreport.SegmentOutcome{}
+	touched := assetOutcomes(o, assets, []int{0, 1},
+		map[string]shared.ID{"a": stored, "origin-stored": derived}, nil)
+
+	if o.AcceptedAssets != 1 || o.RejectedAssets != 1 {
+		t.Fatalf("accepted=%d rejected=%d, want the producer's own counts only (1 and 1)", o.AcceptedAssets, o.RejectedAssets)
+	}
+	if len(o.Errors) != 1 || o.Errors[0].Pointer != "/assets/1" {
+		t.Fatalf("item errors = %+v, want one for the producer's asset b and none for derived assets", o.Errors)
+	}
+	if len(touched) != 2 {
+		t.Fatalf("touched = %v, want the stored producer asset and the stored derived one", touched)
+	}
+}

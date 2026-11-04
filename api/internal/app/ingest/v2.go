@@ -179,6 +179,13 @@ func assetOutcomes(o *ingestreport.SegmentOutcome, assets []ctis.Asset, assetIdx
 	for i := range assets {
 		id, ok := stored[assets[i].ID]
 		if !ok || id.IsZero() {
+			if i >= len(assetIdx) {
+				// An asset the platform derived during ingest (a web origin of
+				// an endpoint, appended after the producer's assets): it has no
+				// position in the producer's document, so it is neither the
+				// producer's error nor counted against its assets.
+				continue
+			}
 			code, detail := protov2.CodeAssetInvalid, protov2.DetailAssetInvalid
 			if excluded[assets[i].ID] {
 				code, detail = protov2.CodeAssetExcluded, protov2.DetailAssetExcluded
@@ -194,7 +201,7 @@ func assetOutcomes(o *ingestreport.SegmentOutcome, assets []ctis.Asset, assetIdx
 			touched = append(touched, id)
 		}
 	}
-	o.AcceptedAssets = len(assets) - o.RejectedAssets - skipped
+	o.AcceptedAssets = min(len(assets), len(assetIdx)) - o.RejectedAssets - skipped
 	return touched
 }
 
