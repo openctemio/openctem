@@ -123,7 +123,7 @@ func (h *ToolSourceHandler) SetKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	actx := buildScanZoneAuditContext(r)
-	v, err := h.service.SetKey(r.Context(), actx.TenantID, chi.URLParam(r, "source"), req.Value, actx)
+	v, err := h.service.StoreKey(r.Context(), actx.TenantID, chi.URLParam(r, "source"), req.Value, actx)
 	if err != nil {
 		h.handleError(w, err)
 		return
@@ -156,7 +156,7 @@ func (h *ToolSourceHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	actx := buildScanZoneAuditContext(r)
-	v, err := h.service.SetEnabled(r.Context(), actx.TenantID, chi.URLParam(r, "source"), *req.Enabled, actx)
+	v, err := h.service.SwitchKey(r.Context(), actx.TenantID, chi.URLParam(r, "source"), *req.Enabled, actx)
 	if err != nil {
 		h.handleError(w, err)
 		return
