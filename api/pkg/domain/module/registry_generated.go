@@ -4,66 +4,49 @@ package module
 
 // Module ids (configs/modules.yaml).
 const (
-	ModuleDashboard                 = "dashboard"
-	ModuleAssets                    = "assets"
-	ModuleFindings                  = "findings"
-	ModuleScans                     = "scans"
-	ModuleAttackSurface             = "attack_surface"
-	ModuleScopeConfig               = "scope_config"
-	ModuleBusinessServices          = "business_services"
-	ModuleCTEMCycles                = "ctem_cycles"
-	ModuleAttackerProfiles          = "attacker_profiles"
-	ModuleCredentials               = "credentials"
-	ModuleRelationships             = "relationships"
-	ModuleScannerTemplates          = "scanner_templates"
-	ModuleBusinessUnits             = "business_units"
-	ModuleComponents                = "components"
-	ModuleTemplateSources           = "template_sources"
-	ModuleBranches                  = "branches"
-	ModuleCrownJewels               = "crown_jewels"
-	ModuleScanWorkflows             = "scan_workflows"
-	ModuleThreatModel               = "threat_model"
-	ModuleThreatIntel               = "threat_intel"
-	ModuleExposures                 = "exposures"
-	ModuleAITriage                  = "ai_triage"
-	ModuleSLA                       = "sla"
-	ModulePriorityRules             = "priority_rules"
-	ModuleRiskAnalysis              = "risk_analysis"
-	ModuleBusinessImpact            = "business_impact"
-	ModuleRiskScoring               = "risk_scoring"
-	ModulePentest                   = "pentest"
-	ModuleAttackSimulation          = "attack_simulation"
-	ModuleControlTesting            = "control_testing"
-	ModuleCompensatingControls      = "compensating_controls"
-	ModuleRemediation               = "remediation"
-	ModuleSuppressions              = "suppressions"
-	ModuleWorkflows                 = "workflows"
-	ModuleReports                   = "reports"
-	ModuleAudit                     = "audit"
-	ModuleCTEMMaturity              = "ctem_maturity"
-	ModuleExecutiveSummary          = "executive_summary"
-	ModuleMITRECoverage             = "mitre_coverage"
-	ModuleSBOMExport                = "sbom_export"
-	ModuleIntegrations              = "integrations"
-	ModuleIntegrationsSCM           = "integrations.scm"
-	ModuleIntegrationsNotifications = "integrations.notifications"
-	ModuleIntegrationsTicketing     = "integrations.ticketing"
-	ModuleIntegrationsCloud         = "integrations.cloud"
-	ModuleIntegrationsSIEM          = "integrations.siem"
-	ModuleIntegrationsScanners      = "integrations.scanners"
-	ModuleIntegrationsAPI           = "integrations.api"
-	ModuleIntegrationsPipelines     = "integrations.pipelines"
-	ModuleSensors                   = "sensors"
-	ModuleTeam                      = "team"
-	ModuleGroups                    = "groups"
-	ModuleRoles                     = "roles"
-	ModuleSettings                  = "settings"
-	ModuleAPIKeys                   = "api_keys"
-	ModuleNotificationSettings      = "notification_settings"
-	ModuleTools                     = "tools"
-	ModuleScanProfiles              = "scan_profiles"
-	ModuleIOCs                      = "iocs"
-	ModuleCompliance                = "compliance"
+	ModuleDashboard            = "dashboard"
+	ModuleAssets               = "assets"
+	ModuleFindings             = "findings"
+	ModuleScans                = "scans"
+	ModuleAttackSurface        = "attack_surface"
+	ModuleScopeConfig          = "scope_config"
+	ModuleBusinessServices     = "business_services"
+	ModuleCTEMCycles           = "ctem_cycles"
+	ModuleAttackerProfiles     = "attacker_profiles"
+	ModuleCredentials          = "credentials"
+	ModuleRelationships        = "relationships"
+	ModuleScannerTemplates     = "scanner_templates"
+	ModuleBusinessUnits        = "business_units"
+	ModuleComponents           = "components"
+	ModuleTemplateSources      = "template_sources"
+	ModuleBranches             = "branches"
+	ModuleScanWorkflows        = "scan_workflows"
+	ModuleThreatModel          = "threat_model"
+	ModuleThreatIntel          = "threat_intel"
+	ModuleExposures            = "exposures"
+	ModuleAITriage             = "ai_triage"
+	ModuleSLA                  = "sla"
+	ModulePriorityRules        = "priority_rules"
+	ModuleRiskScoring          = "risk_scoring"
+	ModulePentest              = "pentest"
+	ModuleAttackSimulation     = "attack_simulation"
+	ModuleControlTesting       = "control_testing"
+	ModuleCompensatingControls = "compensating_controls"
+	ModuleRemediation          = "remediation"
+	ModuleSuppressions         = "suppressions"
+	ModuleWorkflows            = "workflows"
+	ModuleReports              = "reports"
+	ModuleAudit                = "audit"
+	ModuleIntegrations         = "integrations"
+	ModuleSensors              = "sensors"
+	ModuleTeam                 = "team"
+	ModuleGroups               = "groups"
+	ModuleRoles                = "roles"
+	ModuleSettings             = "settings"
+	ModuleAPIKeys              = "api_keys"
+	ModuleNotificationSettings = "notification_settings"
+	ModuleIOCs                 = "iocs"
+	ModuleCompliance           = "compliance"
 )
 
 // Registry is every module, top-level modules in display order, each
@@ -198,7 +181,7 @@ var Registry = []Definition{
 	},
 	{
 		ID: ModuleScannerTemplates, Slug: "scanner-templates", Name: "Scanner Templates",
-		Description: "Catalogue of Nuclei / Betterleaks / Semgrep templates",
+		Description: "Catalogue of Nuclei, Betterleaks and Opengrep templates",
 		Icon:        "FileCode",
 		Category:    "settings", DisplayOrder: 10, Release: ReleaseStatusReleased,
 		UserFacing: true,
@@ -256,17 +239,6 @@ var Registry = []Definition{
 			{ModuleID: ModuleComponents, Type: DependencySoft, Reason: "branch views surface component inventories per branch"},
 		},
 		Routes: []string{"/api/v1/repositories/{}/branches"},
-	},
-	{
-		ID: ModuleCrownJewels, Slug: "crown-jewels", Name: "Crown Jewels",
-		Description: "Business-critical assets flagged for heightened prioritisation and monitoring",
-		Icon:        "Crown",
-		Category:    "scoping", DisplayOrder: 12, Release: ReleaseStatusReleased,
-		UserFacing: true,
-		Permission: "assets:read",
-		Depends: []Dependency{
-			{ModuleID: ModuleAssets, Type: DependencyHard, Reason: "crown jewels are assets flagged as business-critical"},
-		},
 	},
 	{
 		ID: ModuleScanWorkflows, Slug: "scan-workflows", Name: "Scan Workflows",
@@ -357,39 +329,13 @@ var Registry = []Definition{
 		Routes: []string{"/api/v1/priority-rules"},
 	},
 	{
-		ID: ModuleRiskAnalysis, Slug: "risk-analysis", Name: "Risk Analysis",
-		Description: "Aggregate risk dashboards across assets + findings",
-		Icon:        "BarChart",
-		Category:    "prioritization", DisplayOrder: 25, Release: ReleaseStatusReleased,
-		UserFacing: true,
-		Permission: "findings:read",
-		Depends: []Dependency{
-			{ModuleID: ModuleFindings, Type: DependencyHard, Reason: "risk scoring reads finding severity + exposure"},
-			{ModuleID: ModuleAssets, Type: DependencyHard, Reason: "per-asset risk requires the asset inventory"},
-		},
-	},
-	{
-		ID: ModuleBusinessImpact, Slug: "business-impact", Name: "Business Impact",
-		Description: "Business impact scoring weighted by business-services mapping",
-		Icon:        "Building",
-		Category:    "prioritization", DisplayOrder: 26, Release: ReleaseStatusReleased,
-		UserFacing: true,
-		Permission: "ctem:business_services:read",
-		Depends: []Dependency{
-			{ModuleID: ModuleBusinessServices, Type: DependencyHard, Reason: "impact scoring is weighted by business-service mapping"},
-			{ModuleID: ModuleFindings, Type: DependencyHard, Reason: "impact is computed from finding severity × service weight"},
-		},
-	},
-	{
 		ID: ModuleRiskScoring, Slug: "risk-scoring", Name: "Risk Scoring",
 		Description: "Risk scoring config — CVSS / EPSS / KEV / custom weights",
 		Icon:        "TrendingUp",
 		Category:    "prioritization", DisplayOrder: 27, Release: ReleaseStatusReleased,
+		Core:       true,
 		UserFacing: true,
 		Permission: "settings:read",
-		Depends: []Dependency{
-			{ModuleID: ModuleFindings, Type: DependencyHard, Reason: "risk scoring operates on findings"},
-		},
 	},
 	{
 		ID: ModulePentest, Slug: "pentest", Name: "Penetration Testing",
@@ -458,12 +404,9 @@ var Registry = []Definition{
 		Description: "Finding suppression rules to mute known false positives",
 		Icon:        "EyeOff",
 		Category:    "mobilization", DisplayOrder: 41, Release: ReleaseStatusReleased,
+		Core:       true,
 		UserFacing: true,
 		Permission: "findings:suppressions:read",
-		Depends: []Dependency{
-			{ModuleID: ModuleFindings, Type: DependencyHard, Reason: "suppressions suppress findings"},
-		},
-		Routes: []string{"/api/v1/suppressions"},
 	},
 	{
 		ID: ModuleWorkflows, Slug: "workflows", Name: "Workflows",
@@ -502,53 +445,6 @@ var Registry = []Definition{
 		Jobs:       []string{"AuditChainVerifyController", "AuditRetentionController"},
 	},
 	{
-		ID: ModuleCTEMMaturity, Slug: "ctem-maturity", Name: "CTEM Maturity",
-		Description: "Per-tenant CTEM invariant health — F1-F4, B1-B7, O1-O3",
-		Icon:        "ShieldCheck",
-		Category:    "insights", DisplayOrder: 52, Release: ReleaseStatusReleased,
-		UserFacing: true,
-		Permission: "dashboard:read",
-		Depends: []Dependency{
-			{ModuleID: ModuleCTEMCycles, Type: DependencyHard, Reason: "maturity is computed across CTEM cycles"},
-			{ModuleID: ModuleFindings, Type: DependencySoft, Reason: "F3/B4 invariants rely on finding SLA data"},
-		},
-	},
-	{
-		ID: ModuleExecutiveSummary, Slug: "executive-summary", Name: "Executive Summary",
-		Description: "Board-ready PDF rollup of risk, breaches, SLAs",
-		Icon:        "FileText",
-		Category:    "insights", DisplayOrder: 53, Release: ReleaseStatusReleased,
-		UserFacing: true,
-		Permission: "reports:read",
-		Depends: []Dependency{
-			{ModuleID: ModuleFindings, Type: DependencyHard, Reason: "exec summary rolls up finding metrics"},
-			{ModuleID: ModuleScans, Type: DependencySoft, Reason: "scan coverage metrics appear on the summary"},
-		},
-	},
-	{
-		ID: ModuleMITRECoverage, Slug: "mitre-coverage", Name: "MITRE Coverage",
-		Description: "MITRE ATT&CK technique coverage across detections + controls",
-		Icon:        "Shield",
-		Category:    "insights", DisplayOrder: 54, Release: ReleaseStatusReleased,
-		UserFacing: true,
-		Permission: "threat_intel:read",
-		Depends: []Dependency{
-			{ModuleID: ModuleThreatIntel, Type: DependencyHard, Reason: "coverage maps detections to MITRE techniques"},
-			{ModuleID: ModuleCompensatingControls, Type: DependencySoft, Reason: "control coverage appears on the heatmap"},
-		},
-	},
-	{
-		ID: ModuleSBOMExport, Slug: "sbom-export", Name: "SBOM Export",
-		Description: "Export Software Bill of Materials in CycloneDX / SPDX",
-		Icon:        "Download",
-		Category:    "insights", DisplayOrder: 55, Release: ReleaseStatusReleased,
-		UserFacing: true,
-		Permission: "assets:components:read",
-		Depends: []Dependency{
-			{ModuleID: ModuleComponents, Type: DependencyHard, Reason: "SBOM is generated from the component inventory"},
-		},
-	},
-	{
 		ID: ModuleIntegrations, Slug: "integrations", Name: "Integrations",
 		Description: "Integrations (SCM, Notifications, CI/CD, Ticketing, SIEM)",
 		Icon:        "Plug",
@@ -557,63 +453,6 @@ var Registry = []Definition{
 		UserFacing: true,
 		Permission: "integrations:read",
 		Jobs:       []string{"SCMSyncController", "DefectDojoSyncController", "TenableSCSyncController", "TicketHoldReleaseController"},
-	},
-	{
-		ID: ModuleIntegrationsSCM, Slug: "scm", Name: "SCM Integrations",
-		Description: "Source code management integrations",
-		Icon:        "GitBranch",
-		Category:    "settings", DisplayOrder: 1, Release: ReleaseStatusReleased,
-		Parent: ModuleIntegrations,
-	},
-	{
-		ID: ModuleIntegrationsNotifications, Slug: "notifications", Name: "Notification Channels",
-		Description: "Notification channel integrations",
-		Icon:        "Bell",
-		Category:    "settings", DisplayOrder: 2, Release: ReleaseStatusReleased,
-		Core:   true,
-		Parent: ModuleIntegrations,
-	},
-	{
-		ID: ModuleIntegrationsTicketing, Slug: "ticketing", Name: "Ticketing",
-		Description: "Issue tracking integrations",
-		Icon:        "Ticket",
-		Category:    "settings", DisplayOrder: 3, Release: ReleaseStatusReleased,
-		Parent: ModuleIntegrations,
-	},
-	{
-		ID: ModuleIntegrationsCloud, Slug: "cloud", Name: "Cloud Providers",
-		Description: "Cloud provider integrations",
-		Icon:        "Cloud",
-		Category:    "settings", DisplayOrder: 4, Release: ReleaseStatusReleased,
-		Parent: ModuleIntegrations,
-	},
-	{
-		ID: ModuleIntegrationsSIEM, Slug: "siem", Name: "SIEM",
-		Description: "SIEM integrations",
-		Icon:        "Shield",
-		Category:    "settings", DisplayOrder: 5, Release: ReleaseStatusReleased,
-		Parent: ModuleIntegrations,
-	},
-	{
-		ID: ModuleIntegrationsScanners, Slug: "scanners", Name: "Scanners",
-		Description: "External scanner integrations",
-		Icon:        "Search",
-		Category:    "settings", DisplayOrder: 6, Release: ReleaseStatusReleased,
-		Parent: ModuleIntegrations,
-	},
-	{
-		ID: ModuleIntegrationsAPI, Slug: "api_int", Name: "API Integrations",
-		Description: "API integrations",
-		Icon:        "Zap",
-		Category:    "settings", DisplayOrder: 8, Release: ReleaseStatusReleased,
-		Parent: ModuleIntegrations,
-	},
-	{
-		ID: ModuleIntegrationsPipelines, Slug: "pipelines_int", Name: "Pipeline Integrations",
-		Description: "CI/CD pipeline integrations",
-		Icon:        "GitPullRequest",
-		Category:    "settings", DisplayOrder: 9, Release: ReleaseStatusReleased,
-		Parent: ModuleIntegrations,
 	},
 	{
 		ID: ModuleSensors, Slug: "sensors", Name: "Sensors",
@@ -678,23 +517,6 @@ var Registry = []Definition{
 		Category:    "settings", DisplayOrder: 68, Release: ReleaseStatusReleased,
 		Core:       true,
 		Permission: "integrations:notifications:read",
-	},
-	{
-		ID: ModuleTools, Slug: "tools", Name: "Tools",
-		Description: "Security tools and capabilities management",
-		Icon:        "Wrench",
-		Category:    "operations", DisplayOrder: 81, Release: ReleaseStatusReleased,
-		Permission: "scans:tools:read",
-	},
-	{
-		ID: ModuleScanProfiles, Slug: "scan_profiles", Name: "Scan Profiles",
-		Description: "Scan configuration profiles",
-		Icon:        "Sliders",
-		Category:    "operations", DisplayOrder: 83, Release: ReleaseStatusReleased,
-		Permission: "scans:profiles:read",
-		Depends: []Dependency{
-			{ModuleID: ModuleScans, Type: DependencyHard, Reason: "profiles are parameterised scan configurations"},
-		},
 	},
 	{
 		ID: ModuleIOCs, Slug: "iocs", Name: "IOCs",

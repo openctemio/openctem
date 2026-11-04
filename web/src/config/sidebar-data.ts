@@ -411,7 +411,7 @@ export const sidebarData: SidebarData = {
           url: '/business-impact',
           icon: Building2,
           permission: Permission.VulnerabilitiesRead,
-          module: 'business_impact',
+          module: 'business_services',
         },
         {
           // Compensating controls lower a finding's priority, so they sit with
@@ -481,13 +481,12 @@ export const sidebarData: SidebarData = {
           module: 'pentest',
         },
         {
-          // Its own module (post-000161), so turning mitre_coverage off hides
-          // it rather than leading to "Feature Not Available".
+          // Follows the threat intel module, like its route.
           title: 'ATT&CK coverage',
           url: '/validation/attack-coverage',
           icon: LayoutGrid,
           permission: Permission.PentestRead,
-          module: 'mitre_coverage',
+          module: 'threat_intel',
         },
       ],
     },
@@ -565,14 +564,14 @@ export const sidebarData: SidebarData = {
           url: '/insights/executive',
           icon: TrendingUp,
           permission: Permission.DashboardRead,
-          module: 'executive_summary',
+          module: 'reports',
         },
         {
           title: 'CTEM maturity',
           url: '/insights/ctem-maturity',
           icon: ShieldCheck,
           permission: Permission.DashboardRead,
-          module: 'ctem_maturity',
+          module: 'ctem_cycles',
         },
         {
           title: 'Reports',

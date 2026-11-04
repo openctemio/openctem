@@ -13,7 +13,6 @@
 import { describe, expect, it } from 'vitest'
 import { matchRoutePermission } from '../route-permissions'
 import { sidebarData } from '../sidebar-data'
-import { settingsNavItems } from '../settings-nav'
 import { Permission } from '@/lib/permissions'
 import type { NavCollapsible, NavItem } from '@/components/types'
 
@@ -100,35 +99,4 @@ describe('sidebar entries ask for the permission their route enforces', () => {
       ).toContain(guard.permission)
     })
   }
-})
-
-describe('sub-module keys exist', () => {
-  // Sub-modules the API defines under `integrations` (api migrations/000004
-  // and later: GET /api/v1/me/modules -> sub_modules.integrations). A key
-  // that is not in this list hides its entry for every tenant, which is what
-  // a `scim` key did to SCIM Provisioning.
-  const INTEGRATIONS_SUB_MODULES = [
-    'scm',
-    'notifications',
-    'ticketing',
-    'cloud',
-    'siem',
-    'scanners',
-    'webhooks_int',
-    'api_int',
-    'pipelines_int',
-  ]
-
-  it('every sidebar and settings-rail subModuleKey is a real integrations sub-module', () => {
-    const keys: string[] = settingsNavItems.flatMap((i) => (i.subModuleKey ? [i.subModuleKey] : []))
-    expect(keys.length).toBeGreaterThan(3)
-    for (const group of sidebarData.navGroups) {
-      for (const item of group.items) {
-        if (isCollapsible(item)) {
-          for (const child of item.items) if (child.subModuleKey) keys.push(child.subModuleKey)
-        }
-      }
-    }
-    expect(keys.filter((k) => !INTEGRATIONS_SUB_MODULES.includes(k))).toEqual([])
-  })
 })
