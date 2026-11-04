@@ -132,6 +132,7 @@ var adminRoutePermissions = map[string]platformauthz.Permission{
 	"GET /api/v1/admin/users/":                                               platformauthz.AdminsRead,
 	"GET /api/v1/admin/users/{id}":                                           platformauthz.AdminsRead,
 	"GET /api/v1/admin/version":                                              platformauthz.ConsoleRead,
+	"GET /api/v1/admin/licenses":                                             platformauthz.ConsoleRead,
 	"GET /api/v1/admin/version-check/":                                       platformauthz.SettingsRead,
 	"PATCH /api/v1/admin/auth/webauthn/credentials/{id}":                     routeSelf,
 	"PATCH /api/v1/admin/target-mappings/{id}":                               platformauthz.ContentManage,
