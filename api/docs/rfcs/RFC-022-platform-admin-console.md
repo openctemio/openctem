@@ -1323,3 +1323,32 @@ line `alert=signup_burst`, a high admin audit row `platform.signup_burst` and
 an email to every administrator. A super admin changes the thresholds and the
 ignored domains with a reason and a fresh authenticator code (audited
 critical). Details: `docs/architecture/signup-activity.md`.
+
+## Revision 26: navigation by task and a settings rail
+
+The sidebar had grown to 35 entries in six groups, 13 of them peer settings pages.
+It now has four groups and one Settings entry:
+
+- **Customers**: Organizations, Users, Access requests, Sign-ups, Support access,
+  Announcements (it talks to customers, so it is no longer a setting).
+- **Sensors and scanning**: what the platform runs and ships (target mappings,
+  content packs, content catalog, threat intelligence; platform sensors join it).
+- **Security and audit**: Admin activity and Approvals first, then
+  Administrators, Sessions, Roles and AI applications (a registry of what may
+  connect, with block).
+- **Monitoring**: Health, Software updates.
+- **Settings**: one entry. On any settings page the sidebar shows the settings
+  rail instead, led by "Back to console" (the last console page, same-origin
+  only): General (Configuration, Legal), Sign-in and sign-up (Sign-up, Social
+  login, CAPTCHA, Admin sign-in), Organizations (Limits, Two-factor), Scanning
+  (Scan approval, Scan identification, Platform scanning), Notifications
+  (E-mail, Alerts), AI (AI provider). It is the model the tenant app uses for
+  its settings.
+
+URLs do not change. The command palette indexes every entry, settings under
+"Settings › <section>". The sidebar header and the elevation bar name what the
+session acts as in platform role words (RFC-134): the role it is elevated as,
+"Read-only until you elevate", or the role it holds. A page or action the
+session cannot use says "Elevate to use this" when an elevation would allow it,
+and otherwise that the administrator's roles do not include it; it no longer
+names the retired tier names. Hiding stays a convenience: the API decides.
