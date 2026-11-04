@@ -751,6 +751,11 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
   '/settings/vulnerability-matching': {
     permission: Permission.TeamUpdate,
   },
+  // Leaked-credential policy (whether secret values are kept): owners and admins.
+  '/settings/leaked-credentials': {
+    permission: Permission.TeamUpdate,
+    module: Module.Credentials,
+  },
   // Emerging-threat alert policy: owners and admins.
   '/settings/emerging-threats': {
     permission: Permission.TeamUpdate,
