@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -505,7 +506,7 @@ func (r *SoftwareMatchRepository) LinkStates(ctx context.Context, tenantID share
 		var vid string
 		err = r.db.QueryRowContext(ctx, `
 			SELECT s.software_version_id, v.raw, s.source, s.evidence_class, s.confidence, s.sightings,
-				s.first_seen_at, s.last_seen_at
+				s.first_seen_at, s.last_seen_at, v.matched_at IS NOT NULL
 			FROM asset_software s
 			JOIN software_versions v ON v.id = s.software_version_id AND (v.tenant_id IS NULL OR v.tenant_id = s.tenant_id)
 			WHERE s.tenant_id = $1 AND s.asset_id = $2 AND s.product_id = $3 AND s.software_version_id <> $4
@@ -513,7 +514,7 @@ func (r *SoftwareMatchRepository) LinkStates(ctx context.Context, tenantID share
 			ORDER BY s.last_seen_at DESC
 			LIMIT 1`,
 			tenantID.String(), k.AssetID.String(), k.ProductID.String(), k.VersionID.String(), k.Location, currentSince).
-			Scan(&vid, &now.Version, &now.Source, &now.Class, &now.Confidence, &now.Sightings, &now.FirstSeen, &now.LastSeen)
+			Scan(&vid, &now.Version, &now.Source, &now.Class, &now.Confidence, &now.Sightings, &now.FirstSeen, &now.LastSeen, &now.Evaluated)
 		switch {
 		case errors.Is(err, sql.ErrNoRows):
 		case err != nil:
@@ -525,6 +526,39 @@ func (r *SoftwareMatchRepository) LinkStates(ctx context.Context, tenantID share
 		out[k] = info
 	}
 	return out, nil
+}
+
+// UpdateObservedVersion (see softwarematch.Store). Only the version fields
+// of the finding's version_match evidence and its component change; the
+// status, closure and timestamps of the finding do not.
+func (r *SoftwareMatchRepository) UpdateObservedVersion(ctx context.Context, tenantID shared.ID, refs []softwarematch.ObservedVersionRef) (int, error) {
+	total := 0
+	for _, ref := range refs {
+		if ref.FindingID.IsZero() || ref.ProductID.IsZero() || ref.VersionID.IsZero() {
+			continue
+		}
+		patch, err := json.Marshal(map[string]string{
+			"product_id": ref.ProductID.String(), "version_id": ref.VersionID.String(),
+			"version": ref.Version, "qualifier": ref.Qualifier,
+		})
+		if err != nil {
+			return total, fmt.Errorf("observed version: %w", err)
+		}
+		res, err := r.db.ExecContext(ctx, `
+			UPDATE findings f
+			SET metadata = jsonb_set(f.metadata, '{version_match}', COALESCE(f.metadata->'version_match', '{}'::jsonb) || $3::jsonb),
+			    component_id = $4, updated_at = NOW()
+			WHERE f.tenant_id = $1 AND f.id = $2 AND `+matcherOwnedSQL+`
+			  AND `+vulnerability.OpenStatusSQL("f.status")+`
+			  AND f.metadata->'version_match'->>'version_id' IS DISTINCT FROM $5`,
+			tenantID.String(), ref.FindingID.String(), string(patch), ref.VersionID.String(), ref.VersionID.String())
+		if err != nil {
+			return total, fmt.Errorf("observed version: %w", err)
+		}
+		n, _ := res.RowsAffected()
+		total += int(n)
+	}
+	return total, nil
 }
 
 // CancelVersionProposals (see softwarematch.Store).

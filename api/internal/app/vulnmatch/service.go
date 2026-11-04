@@ -370,8 +370,16 @@ func (s *Service) ReconcileTenant(ctx context.Context, tenantID shared.ID, st *S
 
 	var reopen []shared.ID
 	var create []*candidate
+	var refresh []softwarematch.ObservedVersionRef
 	for fp, c := range desired {
 		f, ok := byFP[fp]
+		if ok && f.VersionID != nil && *f.VersionID != c.m.VersionID && isOpen(f.Status) {
+			// The product moved to another version that this CVE still
+			// matches: the finding stays open and records the version it is
+			// observed on now (the identity is the same for every version).
+			refresh = append(refresh, softwarematch.ObservedVersionRef{FindingID: f.ID, ProductID: c.m.ProductID,
+				VersionID: c.m.VersionID, Version: c.m.Version, Qualifier: c.m.Qualifier})
+		}
 		switch {
 		case !ok:
 			create = append(create, c)
@@ -387,6 +395,11 @@ func (s *Service) ReconcileTenant(ctx context.Context, tenantID shared.ID, st *S
 			return err
 		}
 		st.Reopened += len(done)
+	}
+	if len(refresh) > 0 {
+		if _, err := s.store.UpdateObservedVersion(ctx, tenantID, refresh); err != nil {
+			return err
+		}
 	}
 	created, err := s.create(ctx, tenantID, create, st)
 	if err != nil {
@@ -758,6 +771,11 @@ func (s *Service) close(ctx context.Context, tenantID shared.ID, existing []soft
 	for k, ids := range byKey {
 		info := states[k]
 		switch {
+		case info.State == softwarematch.LinkUpgraded && (info.Now == nil || !info.Now.Evaluated):
+			// The displacing version has no evaluated matches yet, so the
+			// missing match says nothing about a fix: it may still be
+			// vulnerable. Keep the finding open until the version has been
+			// evaluated (the next pass either matches it again or closes).
 		case info.State == softwarematch.LinkUpgraded:
 			toClose[softwarematch.CloseVersionChanged] = append(toClose[softwarematch.CloseVersionChanged], ids...)
 			for _, id := range ids {
