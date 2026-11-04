@@ -199,7 +199,7 @@ func readAll(t *testing.T, db *sql.DB, key string) map[string]string {
 	one := func(q string) string {
 		t.Helper()
 		var v sql.NullString
-		if err := db.QueryRow(q).Scan(&v); err != nil {
+		if err := db.QueryRowContext(context.Background(), q).Scan(&v); err != nil {
 			t.Fatalf("read %q: %v", q, err)
 		}
 		return v.String
@@ -248,7 +248,7 @@ func readAll(t *testing.T, db *sql.DB, key string) map[string]string {
 	}
 
 	var data []byte
-	if err := db.QueryRow(`SELECT encrypted_data FROM credentials`).Scan(&data); err != nil {
+	if err := db.QueryRowContext(context.Background(), `SELECT encrypted_data FROM credentials`).Scan(&data); err != nil {
 		t.Fatal(err)
 	}
 	store, _ := secretstore.NewEncryptor(secretstore.KeyFromConfig(key))
@@ -260,7 +260,7 @@ func readAll(t *testing.T, db *sql.DB, key string) map[string]string {
 
 	var content []byte
 	var sig string
-	if err := db.QueryRow(`SELECT content, signature_hash FROM scanner_templates`).Scan(&content, &sig); err != nil {
+	if err := db.QueryRowContext(context.Background(), `SELECT content, signature_hash FROM scanner_templates`).Scan(&content, &sig); err != nil {
 		t.Fatal(err)
 	}
 	if scannertemplate.VerifySignature(content, key, sig) {
@@ -414,7 +414,7 @@ func TestRekey_PlaceholderIsNotCiphertext(t *testing.T) {
 		t.Fatalf("expected the placeholder listed as not ciphertext, got %+v", rep.NotCipher)
 	}
 	var raw []byte
-	if err := db.QueryRow(`SELECT encrypted_data FROM credentials WHERE name = 'placeholder'`).Scan(&raw); err != nil {
+	if err := db.QueryRowContext(context.Background(), `SELECT encrypted_data FROM credentials WHERE name = 'placeholder'`).Scan(&raw); err != nil {
 		t.Fatal(err)
 	}
 	if hex.EncodeToString(raw) != "deadbeef0a" {
