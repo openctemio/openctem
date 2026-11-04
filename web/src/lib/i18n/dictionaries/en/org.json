@@ -84,7 +84,7 @@
   "org.assignmentRules.col.priority": "Priority",
   "org.assignmentRules.col.rule": "Rule",
   "org.assignmentRules.col.targetTeam": "Target team",
-  "org.assignmentRules.cond.asset_tags": "Tags",
+  "org.assignmentRules.cond.asset_tags": "Asset tags",
   "org.assignmentRules.cond.asset_type": "Asset type",
   "org.assignmentRules.cond.file_path_pattern": "File path",
   "org.assignmentRules.cond.finding_severity": "Severity",

@@ -84,7 +84,7 @@
   "org.assignmentRules.col.priority": "Mức ưu tiên",
   "org.assignmentRules.col.rule": "Quy tắc",
   "org.assignmentRules.col.targetTeam": "Nhóm đích",
-  "org.assignmentRules.cond.asset_tags": "Thẻ",
+  "org.assignmentRules.cond.asset_tags": "Thẻ của tài sản",
   "org.assignmentRules.cond.asset_type": "Loại tài sản",
   "org.assignmentRules.cond.file_path_pattern": "Đường dẫn tệp",
   "org.assignmentRules.cond.finding_severity": "Mức độ nghiêm trọng",
