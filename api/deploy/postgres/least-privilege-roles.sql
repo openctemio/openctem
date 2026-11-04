@@ -219,6 +219,15 @@ SELECT format('REVOKE UPDATE, DELETE, TRUNCATE ON public.admin_audit_logs FROM %
 WHERE to_regclass('public.admin_audit_logs') IS NOT NULL \gexec
 SELECT format('REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON public.admin_audit_chain_anchors FROM %I', :'app_user')
 WHERE to_regclass('public.admin_audit_chain_anchors') IS NOT NULL \gexec
+-- The tenant audit log is never updated (its rows are chained by a trigger;
+-- retention deletes the oldest prefix). The chain evidence tables are never
+-- updated either; only a rebaseline rewrites audit_log_chain hashes.
+SELECT format('REVOKE UPDATE, TRUNCATE ON public.%I FROM %I', t, :'app_user')
+FROM unnest(ARRAY['audit_logs', 'audit_chain_anchors', 'audit_chain_rebaselines',
+                  'audit_chain_rebaseline_entries']) AS t
+WHERE to_regclass('public.' || t) IS NOT NULL \gexec
+SELECT format('REVOKE TRUNCATE ON public.audit_log_chain FROM %I', :'app_user')
+WHERE to_regclass('public.audit_log_chain') IS NOT NULL \gexec
 -- The EPSS and KEV feeds replace their whole global catalog with TRUNCATE.
 SELECT format('GRANT TRUNCATE ON public.%I TO %I', t, :'app_user')
 FROM unnest(ARRAY['epss_scores', 'kev_catalog']) AS t
