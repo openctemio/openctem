@@ -10,9 +10,10 @@
  *
  * IMPORTANT: This component uses the same access control logic as the sidebar
  * filtering (useFilteredSidebarData) to ensure consistency:
- * - Owner/Admin bypass both module and permission checks
- * - Module check uses fail-open for Owner/Admin when API fails
- * - Permission check uses `can()` from hooks which includes Owner/Admin bypass
+ * - There is no Owner/Admin bypass: an owner of an organization that switched a
+ *   module off, or is not entitled to it, gets the same "not available" page
+ *   (the API answers 403 MODULE_NOT_ENABLED to them too)
+ * - Permissions come from the API; a role without the permission is refused
  *
  * @example
  * ```tsx

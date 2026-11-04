@@ -18,7 +18,7 @@ to trust it?
 
 | Piece | Where | Owner | Trusted for |
 |---|---|---|---|
-| Capability taxonomy | `github.com/openctemio/ctis/capability` (`taxonomy.json`, embedded) | platform vocabulary, code-reviewed | phase, CTEM stage, tier floor, ports, standard params, required output, ATT&CK/D3FEND/CAPEC |
+| Capability taxonomy | `github.com/openctemio/contract/capability` (`taxonomy.json`, embedded) | platform vocabulary, code-reviewed | phase, CTEM stage, tier floor, ports, standard params, required output, ATT&CK/D3FEND/CAPEC |
 | Tool descriptor | `tool.yaml` (`openctem.io/tool/v1`) next to the tool; built-ins embedded in the sensor | the tool author | narrowing only: what the tool implements, consumes and produces; its config schema, batch shape, permissions, safety |
 | Measured state | sensor manifest (RFC-033) | the sensor runtime | engine version, self-test result, signature verification |
 | Platform overlay | `tools` and the tenant's descriptor cache | the platform and tenant admins | enablement, tier classification, trust level, preference order |
@@ -194,7 +194,7 @@ Most third-party tools are a directory and need no Go:
 ```
 acme-portscan/
   tool.yaml            # implements scan.ports@1; run.profile exec; output jsonl + mapping
-  mapping.json         # openctem.io/mapping/v1 (YAML accepted by the SDK and converted)
+  mapping.json         # openctem.io/mapping/v2 (YAML accepted by the SDK and converted)
   fixtures/task.json
   fixtures/expect.ctis.json
 ```
@@ -227,11 +227,11 @@ lints, runs offline through the real runtime, and runs the conformance kit:
   filters its results. The conformance kit's `crawl.web` and `dast.web`
   suites point a tool at a site that links to denied paths in every
   spelling and fail it on any request to one.
-- **Endpoints.** CTIS 1.6 `endpoints[]` travel as the `endpoint` record kind
+- **Endpoints.** CTIS 2.0 `endpoints[]` travel as the `endpoint` record kind
   (adapter protocol, exec output, importer formats). A tool declares
   `endpoint` in `produces`; `crawl.web@1`, `dast.web@1` and
   `import.api_spec@1` may emit them.
-- **Evidence.** Findings and retest verdicts carry CTIS 1.6
+- **Evidence.** Findings and retest verdicts carry CTIS 2.0
   `evidence_items`, raw, with sensitive values marked in `sensitive[]`; the
   platform masks them. A networked tool's `fixed` stands only with the
   attempt's answered `http_exchange`; nuclei retests run with `-ms` so the

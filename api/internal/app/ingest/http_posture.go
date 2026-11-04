@@ -1,16 +1,15 @@
 package ingest
 
 // The response header posture of a web origin (docs/architecture/web-content-pipeline.md):
-// a producer may attach `http_posture` to an http_service asset. The platform
-// keeps only the allow-listed, typed keys (webendpoint.SanitizePosture);
-// everything else, and the key on any other asset type, is dropped, so a
-// header or cookie value can never be stored through it. A report without
-// the key changes nothing (producers add it at their own pace).
+// a CTIS 2.0 producer reports the security headers of a web_origin in
+// technical.http.security_headers. The platform keeps only the allow-listed,
+// typed posture derived from them (webendpoint.PostureFromSecurityHeaders):
+// flags and enums, never a header or cookie value. properties carry no
+// meaning, so a producer's properties.http_posture is dropped.
 
 import (
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
-	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/webendpoint"
 )
 
@@ -20,16 +19,15 @@ func sanitizeHTTPPosture(report *ctis.Report) {
 	}
 	for i := range report.Assets {
 		a := &report.Assets[i]
-		raw, ok := a.Properties[webendpoint.PostureKey]
-		if !ok {
-			continue
-		}
-		stored := resolveCTISAssetType(a).stored
-		isHTTP := stored.Type == asset.AssetTypeService && stored.SubType == "http"
-		if clean := webendpoint.SanitizePosture(raw); isHTTP && clean != nil {
-			a.Properties[webendpoint.PostureKey] = clean
-			continue
-		}
 		delete(a.Properties, webendpoint.PostureKey)
+		if a.Type != ctis.AssetTypeWebOrigin || a.Technical == nil || a.Technical.HTTP == nil {
+			continue
+		}
+		if p := webendpoint.PostureFromSecurityHeaders(a.Technical.HTTP.SecurityHeaders); p != nil {
+			if a.Properties == nil {
+				a.Properties = ctis.Properties{}
+			}
+			a.Properties[webendpoint.PostureKey] = p
+		}
 	}
 }

@@ -25,7 +25,7 @@ import (
 	"time"
 
 	"github.com/lib/pq"
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
@@ -87,8 +87,8 @@ func TestIngest_ConcurrentFindingWritersTakeNoDeadlock(t *testing.T) {
 	repoName := "github.com/acme/locks-" + tid.String()[:8]
 
 	report := func(n int, order []int) *ctis.Report {
-		rep := &ctis.Report{Version: "1.0", Tool: &ctis.Tool{Name: "semgrep"},
-			Metadata: ctis.ReportMetadata{Timestamp: time.Now().UTC(),
+		rep := &ctis.Report{Version: ctis.SchemaVersion, Tool: &ctis.Tool{Name: "semgrep"},
+			Metadata: ctis.ReportMetadata{ID: ctis.NewReportID(), GeneratedAt: time.Now().UTC(),
 				Branch: &ctis.BranchInfo{Name: "main", IsDefaultBranch: true, RepositoryURL: "https://" + repoName}},
 			Assets: []ctis.Asset{{ID: "repo", Type: ctis.AssetTypeRepository, Value: repoName}}}
 		if order == nil {
@@ -286,14 +286,14 @@ func TestIngest_FailedBranchOccurrenceWriteSkipsTheSweep(t *testing.T) {
 	tid := tn.tenant
 	ctx := context.Background()
 	scan := func(id string) (*ingest.Output, error) {
-		rep := &ctis.Report{Version: "1.0", Tool: &ctis.Tool{Name: "semgrep"},
-			Metadata: ctis.ReportMetadata{ID: id, Timestamp: time.Now().UTC(), CoverageType: "full",
+		rep := &ctis.Report{Version: ctis.SchemaVersion, Tool: &ctis.Tool{Name: "semgrep"},
+			Metadata: ctis.ReportMetadata{ID: ctis.NewReportID(), GeneratedAt: time.Now().UTC(), CoverageType: ctis.CoverageFull,
 				Branch: &ctis.BranchInfo{Name: "main", IsDefaultBranch: true, RepositoryURL: "https://" + tn.repo}},
 			Assets: []ctis.Asset{{ID: "repo", Type: ctis.AssetTypeRepository, Value: tn.repo}},
 			Findings: []ctis.Finding{{Type: ctis.FindingTypeVulnerability, Title: "Injection sink", Severity: ctis.SeverityHigh,
 				RuleID: "rule.1", AssetRef: "repo", Location: &ctis.FindingLocation{Path: "src/a.go", StartLine: 10}}}}
 		agt := &sensor.Sensor{ID: tn.sensor, TenantID: &tid, Name: "ci-run", Status: sensor.SensorStatusActive}
-		return svc.Ingest(ctx, agt, ingest.Input{Report: rep, Options: ingest.Options{
+		return svc.Ingest(ctx, agt, ingest.Input{Report: rep, ReportID: id, Options: ingest.Options{
 			Route: "ci", RequireAssetForFindings: true, NoCatalogWrites: true, DeferSensorStats: true}})
 	}
 	occurrence := func() (status, lastScan string) {

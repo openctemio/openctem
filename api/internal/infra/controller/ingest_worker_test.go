@@ -80,7 +80,7 @@ func (p *stubProcessor) Process(_ context.Context, _ *ingestjob.Job) ([]byte, er
 
 func newJob(t *testing.T) *ingestjob.Job {
 	t.Helper()
-	return ingestjob.NewJob(shared.NewID(), nil, "scan-1", "trivy", []byte(`{"version":"1.0"}`))
+	return ingestjob.NewJob(shared.NewID(), nil, "scan-1", "trivy", []byte(`{"version":"2.0"}`))
 }
 
 func TestIngestWorker_Success_Completes(t *testing.T) {

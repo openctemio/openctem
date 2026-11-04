@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -140,6 +140,7 @@ func (s *Service) recordSets(ctx context.Context, tenantID shared.ID, scope *alt
 			ObservedAt: observedAt, Coverage: cov, Elements: elems, Created: made,
 		})
 	}
+	portsByHost := servicePortsByHost(report)
 	for i := range report.Assets {
 		a := &report.Assets[i]
 		id, ok := assetMap[a.ID]
@@ -153,10 +154,10 @@ func (s *Service) recordSets(ctx context.Context, tenantID shared.ID, scope *alt
 			add(id, asset.SetAttrTechnologies, techs, setCoverageFor(asset.SetAttrTechnologies, src.kind, tool, report, b), nil)
 		}
 		if host := reportHost(a); host != "" && a.Type == ctis.AssetTypeIPAddress {
-			ports := openPortsOf(a)
+			ports := portsByHost[host]
 			elems := make([]string, 0, len(ports))
 			for _, p := range ports {
-				elems = append(elems, strconv.Itoa(p.Port)+"/"+p.Protocol)
+				elems = append(elems, strconv.Itoa(p.Port)+"/"+p.Transport)
 			}
 			cov := setCoverageFor(asset.SetAttrOpenPorts, src.kind, tool, report, b)
 			if len(ports) >= maxPortsPerHost {

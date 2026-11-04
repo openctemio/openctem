@@ -7,6 +7,8 @@
 | Architecture | [tool-contract.md](../architecture/tool-contract.md), [sensors.md](../architecture/sensors.md), [scan-orchestration.md](../architecture/scan-orchestration.md) |
 | Related | RFC-033 (sensor manifest), RFC-040 (mutual distrust, signed jobs, credentials by reference), RFC-055 (tool contract v1), RFC-074 (adaptive control), RFC-084 (file storage), RFC-090 (work pool), RFC-092 (tool-agnostic platform), RFC-094 (contracts only), RFC-100 (shared sensors); sdk-go `docs/rfcs/sensor-sdk-v2.md` and `docs/adapter-protocol.md` |
 
+> (CTIS 2.0, 2026-11-03: the `outcome` package is `github.com/openctemio/contract/outcome`; the `execution` block is part of CTIS 2.0; see docs/architecture/ctis-receiver.md)
+
 ## 1. Summary
 
 A third party that wants its tool to run on OpenCTEM sensors should write one

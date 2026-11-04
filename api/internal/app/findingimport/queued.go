@@ -21,8 +21,8 @@ import (
 	"slices"
 	"time"
 
-	"github.com/openctemio/ctis"
-	"github.com/openctemio/ctis/importer"
+	"github.com/openctemio/ctis/v2"
+	"github.com/openctemio/ctis/v2/importer"
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/app/datascope"
@@ -435,7 +435,7 @@ func (s *Service) ProcessImportJob(ctx context.Context, job *ingestjob.Job) ([]b
 	}
 	var kb []byte
 	var results []FileResult
-	for i, ep := range env.Parts {
+	for _, ep := range env.Parts {
 		body, ok := byPart[ep.Part]
 		if !ok {
 			return nil, ingestjob.Permanent(ingestqueue.ErrorPayloadMissing, fmt.Errorf("part %d missing", ep.Part))
@@ -446,7 +446,7 @@ func (s *Service) ProcessImportJob(ctx context.Context, job *ingestjob.Job) ([]b
 		}
 		res, archive, refused := s.ImportUpload(ctx, req, Upload{
 			Name: ep.Name, Body: bytes.NewReader(body), KnowledgeBase: kb,
-			ReportIDPrefix: fmt.Sprintf("%s-%d", req.SessionID, i), TempDir: s.tempDir,
+			TempDir: s.tempDir,
 		})
 		switch {
 		case refused != nil:

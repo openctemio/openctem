@@ -14,7 +14,7 @@ import (
 	"fmt"
 
 	"github.com/lib/pq"
-	"github.com/openctemio/ctis/transfer/bundle"
+	"github.com/openctemio/contract/transfer/bundle"
 
 	"github.com/openctemio/openctem/api/pkg/domain/bountyprogram"
 )

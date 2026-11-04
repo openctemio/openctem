@@ -37,3 +37,24 @@ export function readLinkResult(params: URLSearchParams): LinkResult {
   }
   return null
 }
+
+/**
+ * Where the SSO link route sends the browser after linking an organization's
+ * sign-in: `?sso_linked=1` or `?sso_link_error=<CODE>`.
+ */
+export function ssoLinkResultHref(errorCode?: string): string {
+  const params = new URLSearchParams(
+    errorCode ? { sso_link_error: errorCode } : { sso_linked: '1' }
+  )
+  return `${ACCOUNT_SECURITY_PATH}?${params.toString()}`
+}
+
+export type SSOLinkResult = { kind: 'linked' } | { kind: 'error'; code: string } | null
+
+/** Reads the organization sign-in link result from the page's query. */
+export function readSSOLinkResult(params: URLSearchParams): SSOLinkResult {
+  if (params.get('sso_linked') === '1') return { kind: 'linked' }
+  const code = params.get('sso_link_error')
+  if (code && /^[A-Z_]{1,64}$/.test(code)) return { kind: 'error', code }
+  return null
+}

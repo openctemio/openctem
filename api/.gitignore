@@ -97,3 +97,6 @@ scripts/tests/.e2e_results.tsv
 scripts/tests/.e2e_results.tsv.fails
 scripts/tests/.e2e_runlog.txt
 .proto-tools/
+
+# Third-party notices, generated at image build (cmd/third-party-notices)
+/third-party-notices.json

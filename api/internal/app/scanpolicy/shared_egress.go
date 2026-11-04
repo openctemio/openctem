@@ -28,7 +28,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openctemio/ctis/addrscope"
+	"github.com/openctemio/contract/addrscope"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )

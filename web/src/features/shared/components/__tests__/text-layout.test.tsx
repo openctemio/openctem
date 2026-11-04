@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
+import { I18nProvider } from '@/context/i18n-provider'
 import { RelativeTime } from '../relative-time'
 import {
   KeyValueList,
@@ -25,6 +26,19 @@ describe('type scale', () => {
     const el = screen.getByText(/ago/)
     expect(el.className).not.toMatch(/text-(xs|sm|base)/)
     expect(el).toHaveAttribute('title')
+  })
+
+  it('writes RelativeTime in the console language without a prop', async () => {
+    const at = new Date(Date.now() - 3 * 86_400_000)
+    render(
+      <I18nProvider locale="vi">
+        <RelativeTime date={at.toISOString()} />
+      </I18nProvider>
+    )
+    const el = await screen.findByText(/trước/)
+    expect(el.tagName).toBe('TIME')
+    expect(el).toHaveAttribute('dateTime', at.toISOString())
+    expect(el.getAttribute('title')).toMatch(/thg/)
   })
 })
 
