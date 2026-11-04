@@ -13,6 +13,7 @@ import {
   type Edge,
   type EdgeTypes,
   type Node,
+  type NodeChange,
   type NodeTypes,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
@@ -63,6 +64,10 @@ export interface FlowCanvasProps<N extends Node, E extends Edge> {
   onActiveChange?: (id: string | null) => void
   /** Enter on a node. */
   onOpen?: (id: string) => void
+  /** A click (or tap) on a node. */
+  onNodeClick?: (id: string) => void
+  /** The view fits the graph again whenever this changes (nodes were added). */
+  fitKey?: string | number
   /** Escape. */
   onClear?: () => void
   /** Extra keys for the page (path cycling), called before the graph keys. */
@@ -116,6 +121,8 @@ function FlowCanvasInner<N extends Node, E extends Edge>({
   help,
   onActiveChange,
   onOpen,
+  onNodeClick,
+  fitKey,
   onClear,
   onKey,
   className,
@@ -128,6 +135,50 @@ function FlowCanvasInner<N extends Node, E extends Edge>({
   const stop =
     tabStop && focusable.some((n) => n.id === tabStop) ? tabStop : (focusable[0]?.id ?? null)
   const rf = useReactFlow()
+
+  // The canvas is controlled and read-only, so the page hands it new node
+  // objects on every highlight change. Without their measured size React
+  // Flow hides them until they are measured again, and a node whose size did
+  // not change is never measured again. Keep the last measured size per node
+  // and hand it back with the page's nodes.
+  const [measured, setMeasured] = React.useState(
+    () => new Map<string, { width: number; height: number }>()
+  )
+  const onNodesChange = React.useCallback((changes: NodeChange<N>[]) => {
+    setMeasured((prev) => {
+      let next: Map<string, { width: number; height: number }> | null = null
+      for (const c of changes) {
+        if (c.type !== 'dimensions' || !c.dimensions) continue
+        const cur = (next ?? prev).get(c.id)
+        if (cur?.width === c.dimensions.width && cur?.height === c.dimensions.height) continue
+        next ??= new Map(prev)
+        next.set(c.id, c.dimensions)
+      }
+      return next ?? prev
+    })
+  }, [])
+  const drawn = React.useMemo(
+    () =>
+      nodes.map((n) => {
+        const m = measured.get(n.id)
+        return m && !n.measured ? { ...n, measured: m } : n
+      }),
+    [nodes, measured]
+  )
+
+  const firstFit = React.useRef(true)
+  React.useEffect(() => {
+    if (firstFit.current) {
+      // The first fit is the fitView prop's.
+      firstFit.current = false
+      return
+    }
+    const id = window.setTimeout(
+      () => void rf.fitView({ padding: 0.03, maxZoom: 1, duration: 200 }),
+      50
+    )
+    return () => window.clearTimeout(id)
+  }, [fitKey, rf])
 
   const keyNodes = React.useMemo(
     () => focusable.map((n) => ({ id: n.id, x: n.position.x, y: n.position.y })),
@@ -200,7 +251,8 @@ function FlowCanvasInner<N extends Node, E extends Edge>({
         </p>
         <FlowMarkers />
         <ReactFlow
-          nodes={nodes}
+          nodes={drawn}
+          onNodesChange={onNodesChange}
           edges={edges}
           nodeTypes={nodeTypes}
           edgeTypes={edgeTypes}
@@ -212,6 +264,7 @@ function FlowCanvasInner<N extends Node, E extends Edge>({
           // Node hover handlers also keep pointer events on read-only nodes.
           onNodeMouseEnter={(_, n) => onActiveChange?.(n.id)}
           onNodeMouseLeave={() => onActiveChange?.(null)}
+          onNodeClick={onNodeClick ? (_, n) => onNodeClick(n.id) : undefined}
           zoomOnScroll={false}
           preventScrolling={false}
           zoomOnDoubleClick={false}
@@ -262,6 +315,8 @@ export interface FlowNodeCardProps {
   /** Ports: a target handle on the left, a source handle on the right. */
   input?: boolean
   output?: boolean
+  /** Ports on the top and bottom instead (a graph laid out top to bottom). */
+  vertical?: boolean
   className?: string
 }
 
@@ -283,6 +338,7 @@ export function FlowNodeCard({
   dashed,
   input = true,
   output = true,
+  vertical = false,
   className,
 }: FlowNodeCardProps) {
   const focus = useFlowFocus()
@@ -314,7 +370,7 @@ export function FlowNodeCard({
       {input && (
         <Handle
           type="target"
-          position={Position.Left}
+          position={vertical ? Position.Top : Position.Left}
           isConnectable={false}
           className="!size-2 !border-border-strong !bg-card"
         />
@@ -343,7 +399,7 @@ export function FlowNodeCard({
       {output && (
         <Handle
           type="source"
-          position={Position.Right}
+          position={vertical ? Position.Bottom : Position.Right}
           isConnectable={false}
           className="!size-2 !border-border-strong !bg-card"
         />
