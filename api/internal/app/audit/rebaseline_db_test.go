@@ -118,11 +118,11 @@ func TestRebaselineChain_ArchivesOldHashesAndAudits(t *testing.T) {
 		t.Fatalf("tenant A chain has %d entries, want 3", len(chainA))
 	}
 	bogus := strings.Repeat("0", 64)
-	if _, err := db.ExecContext(ctx, `UPDATE audit_log_chain SET hash = $2 WHERE audit_log_id = $1`,
+	if err := tamperChain(ctx, db, `UPDATE audit_log_chain SET hash = $2 WHERE audit_log_id = $1`,
 		chainA[1].AuditLogID, bogus); err != nil {
 		t.Fatalf("corrupt entry 2: %v", err)
 	}
-	if _, err := db.ExecContext(ctx, `UPDATE audit_log_chain SET prev_hash = $2 WHERE audit_log_id = $1`,
+	if err := tamperChain(ctx, db, `UPDATE audit_log_chain SET prev_hash = $2 WHERE audit_log_id = $1`,
 		chainA[2].AuditLogID, bogus); err != nil {
 		t.Fatalf("relink entry 3: %v", err)
 	}
@@ -387,4 +387,22 @@ func TestApplyChainRebaseline_IsAtomic(t *testing.T) {
 		}
 		assertUnchanged(t, rb.ID)
 	})
+}
+
+// tamperChain rewrites chain hashes the way an attacker with the database
+// role would: the table refuses UPDATE unless the transaction declares a
+// rebaseline, so the forgery has to declare one too.
+func tamperChain(ctx context.Context, db *postgres.DB, q string, args ...any) error {
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx, `SET LOCAL openctem.audit_rebaseline = 'on'`); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, q, args...); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
