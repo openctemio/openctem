@@ -83,13 +83,16 @@ export function adminChangePassword(currentPassword: string, newPassword: string
 
 /**
  * Elevates the console session to `role` (not above the administrator's own)
- * for `minutes` (15-60), with a reason. The route asks for a fresh code
- * (adminFetch's step-up dialog).
+ * for `minutes` (15-60), with a reason and a fresh code.
  */
-export function adminElevate(role: string, minutes: number, reason: string) {
+export function adminElevate(role: string, minutes: number, reason: string, code = '') {
+  // The code typed in the elevate dialog rides in the step-up header, so the
+  // route confirms it at once and no second dialog opens. Without one (a
+  // security key confirms), the route refuses and the step-up dialog asks.
   return adminFetch<{ role: string; elevated_until: string }>('/auth/elevate', {
     method: 'POST',
     body: { role, minutes, reason },
+    stepUpCode: code || undefined,
   })
 }
 

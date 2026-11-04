@@ -353,6 +353,70 @@ describe('SensorDetailSheet', () => {
       expect(within(stats).getByText('Not taking jobs')).toBeInTheDocument()
     })
 
+    it('says how many slots are free, as dispatch counts them', () => {
+      open({ sensor: { ...healthy, current_jobs: 2, available_slots: 6 } })
+      const stats = screen.getByLabelText('Key numbers')
+      expect(within(stats).getByText('/ 8')).toBeInTheDocument()
+      expect(within(stats).getByText('6 slots free')).toBeInTheDocument()
+    })
+
+    it('a host under pressure: fewer free slots than capacity minus running, and why', () => {
+      open({
+        sensor: {
+          ...healthy,
+          current_jobs: 2,
+          available_slots: 1,
+          load: {
+            capacity: { slots_total: 8, slots_free: 6, active_jobs: 2 },
+            resources: {
+              pressure: {
+                level: 'elevated',
+                reasons: ['cpu'],
+                level_seconds: 60,
+                psi: true,
+                cpu_some_avg10: 40,
+                mem_some_avg10: 0,
+                mem_full_avg10: 0,
+                io_some_avg10: 0,
+                io_full_avg10: 0,
+                load_per_cpu: 1.2,
+                fd_used_pct: 1,
+                host_cpu_busy_pct: 95,
+                foreign_cpu_pct: 60,
+                noisy_neighbor: true,
+              },
+            },
+            reported_at: new Date().toISOString(),
+            fresh: true,
+          },
+        },
+      })
+      const stats = screen.getByLabelText('Key numbers')
+      expect(within(stats).getByText('1 slots free, host busy')).toBeInTheDocument()
+    })
+
+    it('more jobs than the capacity it reports now is said as over capacity, never "0 slots free"', () => {
+      // The prod case: the sensor holds 2 jobs, then sizes its slots to 1
+      // because its host got busier.
+      open({
+        sensor: {
+          ...healthy,
+          effective: { tools: ['nuclei'], capabilities: [], max_concurrent_jobs: 1 },
+          current_jobs: 2,
+          available_slots: 0,
+        },
+      })
+      const stats = screen.getByLabelText('Key numbers')
+      expect(within(stats).getByText('/ 1')).toBeInTheDocument()
+      expect(within(stats).getByText('Over capacity by 1, no new jobs')).toBeInTheDocument()
+      expect(within(stats).queryByText(/slots free/)).toBeNull()
+      // The meter fills to the jobs held, not past its end.
+      const meter = within(stats).getByRole('meter', { name: 'Job slots in use' })
+      expect(meter).toHaveAttribute('aria-valuenow', '2')
+      expect(meter).toHaveAttribute('aria-valuemax', '2')
+      expect(within(stats).getByTitle(/now fits 1\./)).toBeInTheDocument()
+    })
+
     it('a CI sensor has no job slots', () => {
       open({
         sensor: { ...healthy, type: 'worker', execution_mode: 'standalone' },

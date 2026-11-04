@@ -7,6 +7,7 @@ import {
   dispatchTools,
   hasReportedTools,
   sensorCapacity,
+  sensorJobLoad,
   sensorToolRows,
 } from '../capabilities'
 import { TEST_SENSOR_KEY_PREFIX } from '@/test/sensor-keys'
@@ -178,5 +179,57 @@ describe('fleet capacity', () => {
         ],
       }).jobSlots
     ).toBe(2)
+  })
+})
+
+describe('sensorJobLoad', () => {
+  const eff = (n: number): Sensor['effective'] => ({
+    tools: [],
+    capabilities: [],
+    max_concurrent_jobs: n,
+  })
+
+  it('free is capacity minus running when the API gives no available_slots (older API)', () => {
+    expect(sensorJobLoad({ ...base(), effective: eff(4), current_jobs: 1 })).toEqual({
+      running: 1,
+      capacity: 4,
+      free: 3,
+      over: 0,
+      pressure: null,
+    })
+  })
+
+  it('free follows the dispatch rule (available_slots) and never exceeds capacity minus running', () => {
+    expect(
+      sensorJobLoad({ ...base(), effective: eff(4), current_jobs: 1, available_slots: 1 }).free
+    ).toBe(1)
+    expect(
+      sensorJobLoad({ ...base(), effective: eff(4), current_jobs: 3, available_slots: 9 }).free
+    ).toBe(1)
+  })
+
+  it('running above capacity is over capacity with nothing free', () => {
+    expect(
+      sensorJobLoad({ ...base(), effective: eff(1), current_jobs: 2, available_slots: 0 })
+    ).toMatchObject({ running: 2, capacity: 1, free: 0, over: 1 })
+  })
+
+  it('reads host pressure only from a fresh report', () => {
+    const load = (fresh: boolean): Sensor['load'] => ({
+      capacity: null,
+      resources: { pressure: { level: 'overloaded' } as never },
+      reported_at: null,
+      fresh,
+    })
+    expect(sensorJobLoad({ ...base(), current_jobs: 0, load: load(true) }).pressure).toBe(
+      'overloaded'
+    )
+    expect(sensorJobLoad({ ...base(), current_jobs: 0, load: load(false) }).pressure).toBeNull()
+  })
+
+  it('a sensor without a capacity limit counts one free slot, never over', () => {
+    expect(
+      sensorJobLoad({ ...base({ max_concurrent_jobs: 0 }), effective: eff(0), current_jobs: 3 })
+    ).toMatchObject({ capacity: 0, free: 1, over: 0 })
   })
 })

@@ -9,13 +9,17 @@
  * coverage level and how dynamic targets resolve sit in a collapsed
  * disclosure with a one-line summary. Desktop: the field and the preview
  * (ready targets, what a wildcard or coverage level includes, refusals) side
- * by side, the options below across the full width. Research: research/85-new-scan.md.
+ * by side, the options below across the full width. A list is pasted or
+ * uploaded in the "Paste a list" panel, which shows what will be added
+ * before it lands; past a few entries the typed targets move from chips to a
+ * searchable list with each one's scope answer. Research:
+ * research/85-new-scan.md, research/418.
  */
 
 'use client'
 
 import { useEffect, useEffectEvent, useId, useMemo, useState } from 'react'
-import { ChevronDown, FolderOpen, Plus, Target } from 'lucide-react'
+import { ChevronDown, ClipboardList, FolderOpen, Plus, Target } from 'lucide-react'
 import { Tabs, TabsContent, TabsCount, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
@@ -34,7 +38,16 @@ import { cn } from '@/lib/utils'
 import type { NewScanFormData } from '../../types'
 import { COVERAGE_LEVELS, type CoverageLevel } from '../../lib/coverage-expansion'
 import { useCoverageExpansion } from '../../hooks/use-coverage-expansion'
-import { parsePastedTargets } from '../../lib/target-format'
+import {
+  parsePastedTargets,
+  withoutTargets,
+  replaceEntryInLines,
+  isRefusedKind,
+  TARGET_KIND_LABELS,
+  targetKey,
+  type ClassifiedTarget,
+  type TargetKind,
+} from '../../lib/target-format'
 import { MAX_DIRECT_TARGETS } from '../../lib/scan-form'
 import { hasCidrTarget, hasDynamicTargets, isWildcardTarget } from '../../lib/dynamic-targets'
 import { DynamicTargetsPanel } from './dynamic-targets-panel'
@@ -47,6 +60,11 @@ import { useTargetsCheck } from '../../hooks/use-targets-check'
 import { useScanWorkflow } from '@/lib/api/scan-workflow-hooks'
 import { TargetChipsField, type TargetChip } from './target-chips-field'
 import { ReadinessLine, RefusalGroups } from './refusal-groups'
+import { TargetList } from './target-list'
+import { BulkTargetsPanel } from './bulk-targets-panel'
+
+/** Typed targets shown as chips; past this they move to the list. */
+export const CHIP_LIMIT = 20
 import { TargetPreview } from './target-preview'
 
 const EXAMPLES = ['example.com', '*.example.com', '203.0.113.0/24', 'https://app.example.com']
@@ -82,6 +100,7 @@ export function TargetsStep({
     targets.assetGroupIds.length > 0 && targets.assetIds.length === 0 ? 'groups' : 'assets'
   )
   const [optionsOpen, setOptionsOpen] = useState(false)
+  const [bulkOpen, setBulkOpen] = useState(false)
   const groupNames = useMemo(() => targets.assetGroupNames ?? {}, [targets.assetGroupNames])
   const pickedGroups = useMemo(
     () =>
@@ -130,18 +149,37 @@ export function TargetsStep({
   }
   const setTyped = (lines: string[]) => onChange({ targets: { ...targets, customTargets: lines } })
   const addTyped = (added: string[]) => {
-    const seen = new Set(targets.customTargets.map((l) => l.trim().toLowerCase()))
+    const seen = new Set(pasted.lines.map((l) => targetKey(l.input)))
     const next = [...targets.customTargets]
     for (const a of added) {
-      const k = a.trim().toLowerCase()
+      const k = a.trim() ? targetKey(a) : ''
       if (!k || seen.has(k)) continue
       seen.add(k)
       next.push(a.trim())
     }
     setTyped(next)
   }
-  const removeTyped = (line: string) =>
-    setTyped(targets.customTargets.filter((l) => l.trim().toLowerCase() !== line.toLowerCase()))
+  const removeTyped = (entry: string) =>
+    setTyped(withoutTargets(targets.customTargets, [targetKey(entry)]))
+  const replaceTyped = (entry: ClassifiedTarget, next: string) =>
+    setTyped(replaceEntryInLines(targets.customTargets, entry.input, next))
+  // One row per target (repeats folded), the entries that are not added after.
+  const listEntries = useMemo(() => {
+    const seen = new Set<string>()
+    const valid: ClassifiedTarget[] = []
+    const bad: ClassifiedTarget[] = []
+    for (const l of pasted.lines) {
+      if (isRefusedKind(l.kind)) {
+        bad.push(l)
+        continue
+      }
+      if (seen.has(l.value)) continue
+      seen.add(l.value)
+      valid.push(l)
+    }
+    return [...bad, ...valid]
+  }, [pasted.lines])
+  const asList = listEntries.length > CHIP_LIMIT
   // Remove targets the scope check refused: typed lines, and picked assets by name.
   const removeTargets = (names: string[]) => {
     const drop = new Set(names.map((n) => n.trim().toLowerCase()))
@@ -154,7 +192,7 @@ export function TargetsStep({
     onChange({
       targets: {
         ...targets,
-        customTargets: targets.customTargets.filter((l) => !drop.has(l.trim().toLowerCase())),
+        customTargets: withoutTargets(targets.customTargets, [...drop]),
         assetIds: keepAssets,
         assetNames: names2,
       },
@@ -205,23 +243,28 @@ export function TargetsStep({
       kind: 'asset' as const,
       onRemove: () => setAssets([{ id, name: pickedAssets[id] }], false),
     })),
-    ...pasted.targets.map((target) => ({
-      key: `t:${target}`,
-      label: target,
-      kind: 'typed' as const,
-      onRemove: () => removeTyped(target),
-    })),
-    ...pasted.invalid.map((bad, i) => ({
-      key: `i:${i}:${bad.input}`,
-      label: bad.input,
-      kind: 'invalid' as const,
-      title: bad.reasonKey ? t(bad.reasonKey, bad.reason) : bad.reason,
-      onRemove: () => removeTyped(bad.input),
-    })),
+    ...(asList
+      ? []
+      : listEntries.map((entry, i) =>
+          isRefusedKind(entry.kind)
+            ? {
+                key: `i:${i}:${entry.input}`,
+                label: entry.input,
+                kind: 'invalid' as const,
+                title: entry.reasonKey ? t(entry.reasonKey, entry.reason) : entry.reason,
+                onRemove: () => removeTyped(entry.input),
+              }
+            : {
+                key: `t:${entry.value}`,
+                label: entry.value,
+                kind: 'typed' as const,
+                onRemove: () => removeTyped(entry.input),
+              }
+        )),
     // The *.domain targets the coverage level made of typed or picked
     // domains, and the addresses of `subdomains_ips`.
     ...sent
-      .filter((x) => isWildcardTarget(x) && !pasted.targets.includes(x))
+      .filter((x) => !asList && isWildcardTarget(x) && !pasted.targets.includes(x))
       .map((x) => ({ key: `w:${x}`, label: x, kind: 'expanded' as const })),
     ...(coverage === 'subdomains_ips' ? expansion.added : []).map((x) => ({
       key: `e:${x}`,
@@ -229,7 +272,10 @@ export function TargetsStep({
       kind: 'expanded' as const,
     })),
   ]
-  const lastTyped = targets.customTargets.at(-1)
+  const lastTyped = asList ? undefined : pasted.lines.at(-1)?.input
+  const kindCounts = (Object.entries(pasted.byKind) as [TargetKind, number][]).filter(
+    ([k]) => !isRefusedKind(k)
+  )
 
   const offerCoverage = showCoverage && typedTargets.length > 0
   const offerDynamic = hasDynamicTargets(sent, targets.targetOptions) || hasCidrTarget(sent)
@@ -296,16 +342,63 @@ export function TargetsStep({
             ))}
           </div>
         )}
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          className="-ms-2 h-9 max-sm:min-h-11"
-          onClick={() => setPickerOpen(true)}
-        >
-          <Plus className="me-1.5 h-4 w-4" aria-hidden />
-          {t('scans.targetsStep.fromInventory')}
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-9 max-sm:min-h-11"
+            onClick={() => setBulkOpen((o) => !o)}
+            aria-expanded={bulkOpen}
+            aria-controls={`${fieldId}-bulk`}
+            data-testid="bulk-open"
+          >
+            <ClipboardList className="me-1.5 h-4 w-4" aria-hidden />
+            {t('scans.targetsStep.pasteList')}
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-9 max-sm:min-h-11"
+            onClick={() => setPickerOpen(true)}
+          >
+            <Plus className="me-1.5 h-4 w-4" aria-hidden />
+            {t('scans.targetsStep.fromInventory')}
+          </Button>
+        </div>
+        {bulkOpen && (
+          <BulkTargetsPanel
+            id={`${fieldId}-bulk`}
+            present={pasted.lines.map((l) => targetKey(l.input))}
+            capacity={Math.max(0, MAX_DIRECT_TARGETS - sent.length)}
+            onAdd={(added) => {
+              addTyped(added)
+              setBulkOpen(false)
+            }}
+            onCancel={() => setBulkOpen(false)}
+          />
+        )}
+        {kindCounts.length > 0 && (
+          <p className="text-xs text-muted-foreground" data-testid="kind-counts">
+            {t('scans.targetsStep.kindCounts', undefined, {
+              count: pasted.targets.length,
+              kinds: kindCounts
+                .map(([k, n]) => `${n} ${t(`scans.kind.${k}`, TARGET_KIND_LABELS[k])}`)
+                .join(', '),
+            })}
+          </p>
+        )}
+        {asList && (
+          <TargetList
+            entries={listEntries}
+            resultFor={check.resultFor}
+            checking={check.isLoading}
+            checkAvailable={check.available}
+            onRemove={(entry) => removeTyped(entry.input)}
+            onReplace={replaceTyped}
+          />
+        )}
       </section>
 
       {/* 2. What happens, 3. how to fix it */}
