@@ -12,17 +12,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/pkg/domain/cirun"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 func TestCIInlineIgnores_BecomePendingRequests(t *testing.T) {
 	r := newCIRig(t)
 	ctx := context.Background()
 	cfg := r.trust(r.tenant, cirun.Rules{Owners: []string{"acme"}})
-	host := strings.TrimPrefix(r.idp.srv.URL, "https://")
+	host := strings.TrimPrefix(r.idp.url, "https://")
 	repoName := strings.ToLower(host) + "/acme/api"
 
 	ignored := ciFinding("Command injection", "py.cmdi", "high", ctis.FindingTypeVulnerability, "app/run.py", 4)
@@ -34,13 +33,13 @@ func TestCIInlineIgnores_BecomePendingRequests(t *testing.T) {
 		_, ex := r.post("/api/v1/ci/oidc/exchange", "", map[string]string{"tenant_id": r.tenant.String(),
 			"id_token": r.idp.token(t, cfg.Audience, "acme/api", ref, strings.Repeat(job, 40), map[string]any{"job_id": job})})
 		id, tok := ex["run_id"].(string), ex["token"].(string)
-		rep := ctis.Report{Version: "1.0",
-			Metadata: ctis.ReportMetadata{ID: shared.NewID().String(), Timestamp: time.Now().UTC(), SourceType: "scanner",
-				Properties: ctis.Properties{"ignore_file_paths": []any{"generated/**", "legacy/"}}},
+		rep := ctis.Report{Version: ctis.SchemaVersion,
+			Metadata: ctis.ReportMetadata{ID: ctis.NewReportID(), GeneratedAt: time.Now().UTC(), Channel: ctis.ChannelScanner,
+				Extensions: ctis.Extensions{ctis.OpenCTEMNamespace: {"ignore_file_paths": []any{"generated/**", "legacy/"}}}},
 			Tool:     &ctis.Tool{Name: "semgrep"},
 			Assets:   []ctis.Asset{{ID: "repo", Type: ctis.AssetTypeRepository, Value: repoName}},
 			Findings: []ctis.Finding{ignored}}
-		if resp, out := r.upload(id, tok, map[string]any{"report": rep}); resp.StatusCode != http.StatusAccepted {
+		if resp, out := r.upload(id, tok, rep); resp.StatusCode != http.StatusAccepted {
 			t.Fatalf("upload: %d %v", resp.StatusCode, out)
 		}
 		_, v := r.post("/api/v1/ci/runs/"+id+"/evaluate", tok, nil)

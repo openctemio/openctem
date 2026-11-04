@@ -1,7 +1,7 @@
 /**
  * The form of a tool's settings on a sensor, generated from its settings
- * schema (`descriptor.config`, the closed JSON Schema subset of the CTIS
- * settings contract) as the API returns it from the sensor's current
+ * schema (`descriptor.config`, the closed JSON Schema subset of the settings
+ * contract of the contract module) as the API returns it from the sensor's current
  * manifest. The schema is a claim from the sensor: every field is checked for
  * its type here, unknown or malformed parts are skipped, and every string is
  * rendered as text. The API validates every save with the same contract the

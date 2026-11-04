@@ -27,7 +27,7 @@ This makes the "scan 500 → store → free 500 → next 500" loop a **safe, fir
 Reusable building blocks already in the codebase:
 
 - **Scan domain** (`pkg/domain/scan`, `internal/app/scan`): `Scan` entity with `Targets`/`AssetGroupIDs`, **`TargetsPerJob`** (batch size!), full **scheduler** (cron/daily/weekly/monthly, `NextRunAt`), **retry/backoff**, **timeout**, agent routing, profiles, runs/sessions (`run.go`, `session.go`, `scheduler.go`, `trigger.go`). Controllers `scan_retry`, `scan_timeout` already exist.
-- **The partial-coverage safety invariant is ALREADY enforced.** The ingest path computes `toolName := report.Tool.Name` + `scanID := report.Metadata.ID` and calls `AutoResolveStaleByAssets(tenantID, assetIDs, toolName, scanID, nil)` (`internal/app/ingest/service.go:271`) — auto-resolve is scoped to **(this tool) × (these asset IDs) × (this scan)**. A batch of 500 cannot resolve the other 2500, *and* a Tenable scan cannot resolve nuclei/trivy findings. The requirement reduces to: **the .nessus→CTIS adapter must emit one report per batch carrying `tool.name="tenable"`, a unique per-batch `metadata.id` (scan session), and only that batch's assets.**
+- **The partial-coverage safety invariant is ALREADY enforced.** The ingest path computes `toolName := report.Tool.Name` + `scanID := report.Metadata.ID` and calls `AutoResolveStaleByAssets(tenantID, assetIDs, toolName, scanID, nil)` (`internal/app/ingest/service.go:271`) — auto-resolve is scoped to **(this tool) × (these asset IDs) × (this scan)**. A batch of 500 cannot resolve the other 2500, *and* a Tenable scan cannot resolve nuclei/trivy findings. The requirement reduces to: **the .nessus→CTIS adapter must emit one report per batch carrying `tool.name="tenable"`, a unique per-batch `metadata.id` (scan session), and only that batch's assets.** (CTIS 2.0, 2026-11-03: `metadata.id` is now a producer idempotency key; the scan identity comes from the transport; see docs/architecture/ctis-receiver.md)
 - **Nessus XML parser scaffold** (`internal/app/asset/import.go`): parses `NessusClientData_v2 → ReportHost → ReportItem` (already models `pluginName`/`severity`) — but **only creates host assets, discards vulnerabilities**. No findings ingestion from .nessus yet. *Both* Pro and .sc export the same `.nessus` format, so one adapter serves both.
 - **Async ingest** (RFC-005): queue + worker, multi-row insert, dedup/correlation, idempotency.
 - **Integration model**: `ProviderTenable` enum present, AES-256-GCM encrypted credentials, `Config()`/`Metadata()` JSONB, and the **per-tenant client-resolver pattern** just shipped for Jira (RFC-006 Phase 0) — the exact precedent for a per-tenant Tenable engine resolver.
@@ -161,7 +161,7 @@ mapping, and tenant isolation. Only *where the Tenable REST calls happen* differ
   - `AgentRunner` (api): creates a scan job/command for an agent advertising the
     `tenable` capability, carrying `{engine, base_url, targets, session_id,
     credential_ref}`. The agent runs L1→L2 and `PushCTIS` back to the api ingest
-    endpoint, stamping `metadata.id = session_id` so the scheduler correlates the
+    endpoint, stamping the session id as the report id (transport; CTIS 2.0, 2026-11-03: `metadata.id` is now a producer UUIDv7, see docs/architecture/ctis-receiver.md) so the scheduler correlates the
     result to the batch.
 
 ### Code ownership (respects the RFC-002 api↔sdk-go decoupling)

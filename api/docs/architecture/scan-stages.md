@@ -137,7 +137,7 @@ implementations, plus `port_types` and `adapters`.
 
 **Tool Contract v1** ([RFC-055](../rfcs/RFC-055-tool-contract-v1.md),
 [tool-contract.md](tool-contract.md)) moves the contracts to one shared
-source, the `github.com/openctemio/ctis/capability` taxonomy, which the SDK
+source, the `github.com/openctemio/contract/capability` taxonomy, which the SDK
 and the sensor read too. The taxonomy keeps every id above. It adds:
 - phase and CTEM stage;
 - ATT&CK, D3FEND and CAPEC references;
@@ -516,7 +516,7 @@ payload comes from one builder, `scan.StepCommandPayload`.
   queued. Only `Create`, the follow-up and the window-hold copy
   insert commands (a test fails on any other `INSERT INTO commands`).
   **One key function on both sides** (RFC-090): the keys are computed by
-  `github.com/openctemio/ctis/politeness` (the CTIS contract), which the sensor runtime
+  `github.com/openctemio/contract/politeness` (the CTIS contract), which the sensor runtime
   uses too, and every catalog-stage chunk carries the keys the platform
   holds for it in its payload (`host_keys`; an empty list for a passive
   stage). The sensor's local per-host limit (`limits.per_host_concurrency`,

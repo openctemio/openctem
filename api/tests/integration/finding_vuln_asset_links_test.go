@@ -17,7 +17,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
@@ -99,9 +99,9 @@ func (v *vaRig) scan(t *testing.T, tn vaTenant, tool string, fs ...ctis.Finding)
 	for i := range fs {
 		fs[i].AssetRef = "a"
 	}
-	rep := &ctis.Report{Version: "1.0", Tool: &ctis.Tool{Name: tool},
-		Metadata: ctis.ReportMetadata{ID: shared.NewID().String(), Timestamp: time.Now().UTC()},
-		Assets:   []ctis.Asset{{ID: "a", Type: ctis.AssetTypeDomain, Value: tn.host}},
+	rep := &ctis.Report{Version: ctis.SchemaVersion, Tool: &ctis.Tool{Name: tool},
+		Metadata: ctis.ReportMetadata{ID: ctis.NewReportID(), GeneratedAt: time.Now().UTC()},
+		Assets:   []ctis.Asset{{ID: "a", Type: ctis.AssetTypeDomainName, Value: tn.host}},
 		Findings: fs}
 	out, err := v.r.svc.Ingest(context.Background(), agt, ingest.Input{Report: rep})
 	require.NoError(t, err)
@@ -110,21 +110,21 @@ func (v *vaRig) scan(t *testing.T, tn vaTenant, tool string, fs ...ctis.Finding)
 
 func nucleiCVE(cve, url string) ctis.Finding {
 	return ctis.Finding{Type: ctis.FindingTypeVulnerability, Title: "CVE template " + cve, Severity: ctis.SeverityHigh,
-		RuleID: cve, Location: &ctis.FindingLocation{Path: url}, Vulnerability: &ctis.VulnerabilityDetails{CVEID: cve}}
+		RuleID: cve, Location: &ctis.FindingLocation{Path: url}, Vulnerability: &ctis.VulnerabilityDetails{IDs: cveIDsOf(cve)}}
 }
 
 func networkCVE(cve string, port int) ctis.Finding {
 	f := ctis.Finding{Type: ctis.FindingTypeVulnerability, Title: "Scanner plugin " + cve, Severity: ctis.SeverityHigh,
-		RuleID: "plugin-" + cve, Vulnerability: &ctis.VulnerabilityDetails{CVEID: cve}}
+		RuleID: "plugin-" + cve, Vulnerability: &ctis.VulnerabilityDetails{IDs: cveIDsOf(cve)}}
 	if port > 0 {
-		f.Network = &ctis.NetworkLocation{Port: port, Protocol: "tcp"}
+		f.Network = &ctis.NetworkLocation{Port: port, Transport: ctis.TransportTCP}
 	}
 	return f
 }
 
 func scaCVE(cve string) ctis.Finding {
 	return ctis.Finding{Type: ctis.FindingTypeVulnerability, Title: "Vulnerable package", Severity: ctis.SeverityHigh,
-		RuleID: cve, Vulnerability: &ctis.VulnerabilityDetails{CVEID: cve, Package: "widget", PURL: "pkg:generic/widget@1.4.2"}}
+		RuleID: cve, Vulnerability: &ctis.VulnerabilityDetails{IDs: cveIDsOf(cve), PackageName: "widget", PURL: "pkg:generic/widget@1.4.2"}}
 }
 
 func (v *vaRig) count(t *testing.T, q string, args ...any) int {
@@ -295,7 +295,7 @@ func TestVulnAssetLinks_DifferentPortOrAssetOrCVEIsNotLinked(t *testing.T) {
 		WHERE a.asset_id <> b.asset_id AND l.rule = 'vuln_asset'`))
 
 	// Another CVE on the same asset and port.
-	v.scan(t, tn, "nessus", networkCVE("CVE-2099-1", 443))
+	v.scan(t, tn, "nessus", networkCVE("CVE-2099-0001", 443))
 	require.Equal(t, 0, v.links(t, tn))
 }
 

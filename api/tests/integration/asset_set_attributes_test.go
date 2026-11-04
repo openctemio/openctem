@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/lib/pq"
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	assetapp "github.com/openctemio/openctem/api/internal/app/asset"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
@@ -55,33 +55,38 @@ func newSetRig(t *testing.T) *setRig {
 // given port settings, as the tenant's sensor.
 func (g *setRig) send(tn v2Tenant, tool string, observed time.Time, jobPorts string, a ctis.Asset) {
 	g.t.Helper()
+	g.sendWith(tn, tool, observed, jobPorts, nil, a)
+}
+
+func (g *setRig) sendWith(tn v2Tenant, tool string, observed time.Time, jobPorts string, rels []ctis.Relationship, as ...ctis.Asset) {
+	g.t.Helper()
+	a := as[0]
 	tid := tn.tenant
 	agt := &sensor.Sensor{ID: tn.sensor, TenantID: &tid, Type: sensor.SensorTypeWorker, Status: sensor.SensorStatusActive}
 	cmd := shared.NewID()
 	bind := ingest.Binding{Kind: ingest.BindingCommand, CommandID: &cmd, Targets: []string{a.Value}, Tool: tool, JobPorts: jobPorts}
-	rep := &ctis.Report{Version: "1.0", Tool: &ctis.Tool{Name: tool}, Assets: []ctis.Asset{a},
-		Metadata: ctis.ReportMetadata{ID: "rep-" + shared.NewID().String(), Timestamp: observed}}
+	rep := &ctis.Report{Version: ctis.SchemaVersion, Tool: &ctis.Tool{Name: tool}, Assets: as, Relationships: rels,
+		Metadata: ctis.ReportMetadata{ID: ctis.NewReportID(), GeneratedAt: observed}}
 	out, err := g.r.svc.Ingest(context.Background(), agt, ingest.Input{Report: rep, Options: ingest.Options{Binding: bind}})
-	if err != nil || len(out.Errors) > 0 {
+	if err != nil {
+		g.t.Fatalf("ingest: %v", err)
+	}
+	if len(out.Errors) > 0 {
 		g.t.Fatalf("Ingest: %v %v", err, out.Errors)
 	}
 }
 
 func (g *setRig) portScan(tn v2Tenant, tool, ip string, observed time.Time, jobPorts string, ports ...int) {
 	g.t.Helper()
-	list := make([]ctis.PortInfo, 0, len(ports))
-	for _, p := range ports {
-		list = append(list, ctis.PortInfo{Port: p, Protocol: "tcp", State: "open"})
-	}
-	g.send(tn, tool, observed, jobPorts, ctis.Asset{ID: "ip", Type: ctis.AssetTypeIPAddress, Value: ip,
-		Technical: &ctis.AssetTechnical{IPAddress: &ctis.IPAddressTechnical{Ports: list}}})
+	assets, rels := withOpenPorts(ctis.Asset{ID: "ip", Type: ctis.AssetTypeIPAddress, Value: ip}, ports...)
+	g.sendWith(tn, tool, observed, jobPorts, rels, assets...)
 }
 
 func (g *setRig) activePorts(tn v2Tenant, ip string) map[string]bool {
 	g.t.Helper()
 	rows, err := g.r.db.QueryContext(context.Background(), `
 		SELECT name FROM assets WHERE tenant_id = $1 AND sub_type = 'open_port' AND status = 'active'
-		   AND properties->>'host' = $2`, tn.tenant.String(), ip)
+		   AND name LIKE $2`, tn.tenant.String(), ip+":%")
 	if err != nil {
 		g.t.Fatal(err)
 	}
@@ -219,12 +224,8 @@ func TestAssetSets_IPAddresses(t *testing.T) {
 	now := time.Now().UTC()
 	resolve := func(tool string, at time.Time, ips ...string) {
 		t.Helper()
-		list := make([]any, 0, len(ips))
-		for _, ip := range ips {
-			list = append(list, ip)
-		}
-		g.send(g.tn, tool, at, "", ctis.Asset{ID: "d", Type: ctis.AssetTypeDomain, Value: name,
-			Properties: ctis.Properties{"ip_addresses": list}})
+		g.send(g.tn, tool, at, "", ctis.Asset{ID: "d", Type: ctis.AssetTypeDomainName, Value: name,
+			Technical: dnsAddrs(name, ips...)})
 	}
 	elementRows := func() (n int, maxUpdated time.Time) {
 		t.Helper()
