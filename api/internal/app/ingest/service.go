@@ -1238,3 +1238,7 @@ func (s *Service) loadTenantIngestConfig(ctx context.Context, tenantID shared.ID
 	}
 	return tenantRules, assetIdentityCfg, reconcilePolicy
 }
+
+// SetTagGovernor wires the check that keeps a report from setting a tag that
+// a team access rule, approval rule, scan window or assignment rule reads.
+func (s *Service) SetTagGovernor(g TagGovernor) { s.assetProcessor.SetTagGovernor(g) }

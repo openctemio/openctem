@@ -40,6 +40,16 @@ type AssetImportResult struct {
 // ImportCSVAssets imports assets from CSV data.
 // Expected columns: name, type, sub_type, description, tags, properties (JSON)
 func (s *AssetImportService) ImportCSVAssets(ctx context.Context, tenantID string, reader io.Reader) (*AssetImportResult, error) {
+	return s.ImportCSVAssetsGuarded(ctx, tenantID, reader, nil)
+}
+
+// TagGuard decides whether the caller may set these tags on assets; a
+// non-nil error refuses the row that carries them.
+type TagGuard func(tags []string) error
+
+// ImportCSVAssetsGuarded is ImportCSVAssets with a guard for the tags of each
+// row (tags that rules read need the permission of the rule).
+func (s *AssetImportService) ImportCSVAssetsGuarded(ctx context.Context, tenantID string, reader io.Reader, guard TagGuard) (*AssetImportResult, error) {
 	tid, err := shared.IDFromString(tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid tenant ID", shared.ErrValidation)
@@ -117,6 +127,9 @@ func (s *AssetImportService) ImportCSVAssets(ctx context.Context, tenantID strin
 				}
 			}
 			tags, tagErr := tagdom.ValidateNew(nil, raw)
+			if tagErr == nil && guard != nil {
+				tagErr = guard(tags)
+			}
 			if tagErr != nil {
 				result.Errors = append(result.Errors, fmt.Sprintf("invalid tags for %s: %v", name, tagErr))
 				continue

@@ -131,6 +131,7 @@ import (
 	signupapp "github.com/openctemio/openctem/api/internal/app/signup"
 	"github.com/openctemio/openctem/api/internal/app/sla"
 	"github.com/openctemio/openctem/api/internal/app/storagequota"
+	"github.com/openctemio/openctem/api/internal/app/taggov"
 	"github.com/openctemio/openctem/api/internal/app/template"
 	tenantapp "github.com/openctemio/openctem/api/internal/app/tenant"
 	"github.com/openctemio/openctem/api/internal/app/tenantai"
@@ -663,6 +664,7 @@ type Services struct {
 	AuditArchive audit.ArchiveStore
 	User         *tenantapp.UserService
 	Tenant       *tenantapp.TenantService
+	TagGovernor  *taggov.Governor
 	// UserProvisioning creates accounts on behalf of administrators.
 	UserProvisioning *tenantapp.UserProvisioningService
 
@@ -2552,7 +2554,17 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		ingVuln, ingComp = postgres.NewVulnerabilityRepository(deps.IngestDB), postgres.NewComponentRepository(deps.IngestDB)
 		ingBranch = postgres.NewBranchRepository(deps.IngestDB)
 	}
+	// Tags that rules read (team access, scan approval, scan windows,
+	// assignment) are changed only by people holding the rule's permission,
+	// and never by an import.
+	s.TagGovernor = taggov.NewGovernor(15*time.Second,
+		taggov.ScopeRuleSource(repos.AccessControl),
+		taggov.AssignmentRuleSource(repos.AccessControl),
+		taggov.ScanWindowSource(repos.ScanWindowPolicy),
+		taggov.ApprovalRuleSource(s.Tenant),
+	)
 	s.Ingest = ingest.NewService(ingAsset, ingFinding, ingVuln, ingComp, repos.Sensor, ingBranch, repos.Tenant, repos.Audit, log)
+	s.Ingest.SetTagGovernor(s.TagGovernor)
 	// Policies are applied from a per-tenant snapshot, reloaded when their
 	// version changes.
 	s.Ingest.SetPolicyVersions(repos.IngestPolicyVersions)
