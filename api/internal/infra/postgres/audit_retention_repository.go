@@ -93,7 +93,8 @@ func (r *AuditRepository) ChainPrefixOlderThan(ctx context.Context, tenantID sha
 			 WHERE c.tenant_id = $1 AND l.logged_at >= $2
 		)
 		SELECT c.audit_log_id, c.tenant_id, c.prev_hash, c.hash, c.chain_position, c.created_at,
-		       l.logged_at, row_to_json(l)::text
+		       l.logged_at, row_to_json(l)::text, c.hash_version,
+		       CASE WHEN c.hash_version = 2 THEN audit_log_row_payload(l) END
 		  FROM audit_log_chain c
 		  JOIN audit_logs l ON l.id = c.audit_log_id
 		 CROSS JOIN stop
@@ -110,14 +111,16 @@ func (r *AuditRepository) ChainPrefixOlderThan(ctx context.Context, tenantID sha
 		var (
 			e                   audit.PrunableEntry
 			logID, tid, rowJSON string
+			payload             sql.NullString
 		)
 		if err := rows.Scan(&logID, &tid, &e.Entry.PrevHash, &e.Entry.Hash, &e.Entry.ChainPosition,
-			&e.Entry.CreatedAt, &e.LoggedAt, &rowJSON); err != nil {
+			&e.Entry.CreatedAt, &e.LoggedAt, &rowJSON, &e.Entry.HashVersion, &payload); err != nil {
 			return nil, fmt.Errorf("scan chain prefix: %w", err)
 		}
 		e.Entry.AuditLogID, _ = shared.IDFromString(logID)
 		e.Entry.TenantID, _ = shared.IDFromString(tid)
 		e.Row = []byte(rowJSON)
+		e.Entry.RowPayload = payload.String
 		out = append(out, e)
 	}
 	return out, rows.Err()
