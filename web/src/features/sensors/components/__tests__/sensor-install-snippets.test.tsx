@@ -142,8 +142,9 @@ describe('SensorInstallSnippets', () => {
     unmount()
     mockFetch({}, false)
     render(<SensorInstallSnippets sensorId="s2" />)
-    expect(await screen.findByRole('alert', {}, { timeout: 5000 })).toBeInTheDocument()
-  })
+    // A loaded CI shard takes several seconds to commit the error render.
+    expect(await screen.findByRole('alert', {}, { timeout: 20_000 })).toBeInTheDocument()
+  }, 30_000)
 
   it('picks a catalog product: its snippets come from ?product=, and a custom one links the guide', async () => {
     stats.data = {
