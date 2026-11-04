@@ -1366,6 +1366,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.ThreatModel.SetDataScope(s.DataScope)
 	s.AssetRelationship = asset.NewAssetRelationshipService(repos.AssetRelationship, repos.Asset, log)
 	s.AssetRelationship.SetDataScope(s.DataScope)
+	s.AssetRelationship.SetGraphReader(repos.AssetRelationship)
 	s.RelationshipSuggestion = asset.NewRelationshipSuggestionService(repos.RelationshipSuggestion, repos.Asset, repos.AssetRelationship, log)
 	s.RelationshipSuggestion.SetDataScope(s.DataScope)
 	s.AssetImport = asset.NewAssetImportService(repos.Asset, log)
@@ -2588,7 +2589,16 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// A nuclei takeover-template match from a tenant scan confirms an open
 	// dangling_cname as subdomain_takeover (RFC-036 P1).
 	if repos.EASMDNS != nil && repos.Exposure != nil {
-		s.Ingest.SetTakeoverConfirmer(easmdnsapp.NewTakeoverConfirmer(repos.EASMDNS, postgres.NewEASMExposureWriter(&postgres.DB{DB: deps.DB}, postgres.NewEASMAlerter(&postgres.DB{DB: deps.DB})), log))
+		confirmer := easmdnsapp.NewTakeoverConfirmer(repos.EASMDNS, postgres.NewEASMExposureWriter(&postgres.DB{DB: deps.DB}, postgres.NewEASMAlerter(&postgres.DB{DB: deps.DB})), log)
+		// A takeover match on a name hosted by a listed provider (its CNAME
+		// target always resolves) is confirmed from the name's CNAME chain,
+		// read through the platform's resolver (DNS only).
+		if d, err := dnsprobe.New(dnsprobe.Config{Server: cfg.Worker.EASMDNSResolver, QPS: 5}); err != nil {
+			log.Warn("takeover confirmation limited to open dangling CNAMEs: no resolver", "error", err)
+		} else {
+			confirmer.SetResolver(d)
+		}
+		s.Ingest.SetTakeoverConfirmer(confirmer)
 	}
 	// CT names become inventory assets through this same ingest path, with
 	// attribution evidence (RFC-036 P0). Wired here because the CT monitor is
