@@ -13,10 +13,11 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/openctemio/ctis"
-	"github.com/openctemio/ctis/importer"
-	"github.com/openctemio/ctis/importer/mapping"
+	"github.com/openctemio/ctis/v2"
+	"github.com/openctemio/ctis/v2/importer"
+	"github.com/openctemio/ctis/v2/importer/mapping"
 
+	_ "github.com/openctemio/openctem/api/internal/app/ctisformats" // the standard-format adapters of importer.Parse
 	appimportmapping "github.com/openctemio/openctem/api/internal/app/importmapping"
 )
 
@@ -38,9 +39,6 @@ type Upload struct {
 	Mapping *appimportmapping.Resolved
 	// MinSeverity drops findings below it (empty keeps all).
 	MinSeverity ctis.Severity
-	// ReportIDPrefix names the reports: "<prefix>-<n>". A caller that
-	// stores the results replaces it with its own producer id.
-	ReportIDPrefix string
 	// TempDir is where a ZIP is spooled ("" = os.TempDir()).
 	TempDir string
 	// NoBundle refuses a ZIP that is a multi-file bundle (a recon
@@ -120,15 +118,14 @@ func convertOne(ctx context.Context, up Upload, name string, r io.Reader, kb []b
 	opts := importer.Options{
 		Format:              format,
 		Limits:              FileLimits,
-		ReportID:            fmt.Sprintf("%s-%d", up.ReportIDPrefix, n),
 		MinSeverity:         up.MinSeverity,
 		QualysKnowledgeBase: kbr,
 		Repository:          up.Repository,
 		Branch:              up.Branch,
 		CommitSHA:           up.CommitSHA,
 	}
-	if up.Repository != "" {
-		opts.DefaultAsset = &ctis.Asset{Type: ctis.AssetTypeRepository, Value: up.Repository}
+	if repo, err := ctis.CanonicalRepository(up.Repository); err == nil {
+		opts.DefaultAsset = &ctis.Asset{Type: ctis.AssetTypeRepository, Value: repo}
 	}
 	res, err := importer.Parse(ctx, r, opts)
 	if err != nil {
@@ -143,14 +140,21 @@ func convertOne(ctx context.Context, up Upload, name string, r io.Reader, kb []b
 // repository is the asset of every record that names none.
 func convertMapped(ctx context.Context, up Upload, name string, r io.Reader, n int) Converted {
 	m := up.Mapping
-	report, st, err := m.Compiled.Apply(ctx, r, appimportmapping.ApplyOptions(m, FileLimits.MaxInputBytes))
+	opts := appimportmapping.ApplyOptions(m, FileLimits.MaxInputBytes)
+	// A CI run's repository is the asset of every record that names none.
+	if repo, err := ctis.CanonicalRepository(up.Repository); err == nil {
+		opts.DefaultAsset = &ctis.Asset{Type: ctis.AssetTypeRepository, Value: repo}
+	}
+	report, st, err := m.Compiled.Apply(ctx, r, opts)
 	if err != nil {
 		return Converted{Name: name, Error: mappedError(err)}
 	}
-	report.Metadata.ID = fmt.Sprintf("%s-%d", up.ReportIDPrefix, n)
-	report.Metadata.SourceType = "manual"
+	// No receiver key in the document (CTIS 2.0): the receipt binds the
+	// upload when it is ingested (Input.ReportID).
+	report.Metadata.ID = ctis.NewReportID()
+	report.Metadata.Channel = ctis.ChannelManual
 	// A mapped file never proves what it did not report.
-	report.Metadata.CoverageType = "partial"
+	report.Metadata.CoverageType = ctis.CoveragePartial
 	res := &importer.Result{
 		Format: importer.Format(m.Format()),
 		Report: report,
@@ -163,9 +167,6 @@ func convertMapped(ctx context.Context, up Upload, name string, r io.Reader, n i
 			res.Stats.Skipped++
 			res.Stats.Findings--
 			continue
-		}
-		if up.Repository != "" && strings.TrimSpace(f.AssetValue) == "" {
-			f.AssetType, f.AssetValue = ctis.AssetTypeRepository, up.Repository
 		}
 		res.Stats.BySeverity[f.Severity]++
 		kept = append(kept, f)
@@ -306,7 +307,6 @@ func convertBundle(ctx context.Context, up Upload, tmp io.ReaderAt, size int64, 
 	res, err := importer.ParseBundle(ctx, files, importer.Options{
 		Limits:      BundleRecordLimits,
 		Bundle:      BundleLimits,
-		ReportID:    fmt.Sprintf("%s-0", up.ReportIDPrefix),
 		MinSeverity: up.MinSeverity,
 	})
 	label := SafeName(up.Name)

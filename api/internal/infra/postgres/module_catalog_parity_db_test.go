@@ -485,7 +485,9 @@ func TestModuleCatalog_SubModuleParentsResolve(t *testing.T) {
 			missingParents[parent] = append([]string{"parent of " + id}, refs...)
 		}
 	}
-	requireDerivedNonEmpty(t, "code-referenced sub-module", subReferenced)
+	// The registry declares no sub-module now (the integrations.* ones were
+	// retired), so nothing may be referenced; a reference must still resolve.
+	_ = subReferenced
 	failMissing(t, "are the parent of a sub-module referenced in Go but have no row "+
 		"in the `modules` table", missingParents)
 
@@ -508,7 +510,7 @@ func TestModuleCatalog_SubModuleParentsResolve(t *testing.T) {
 			broken = append(broken, fmt.Sprintf("%s: parent_module_id = %s, expected %q", id, got, parent))
 		}
 	}
-	requireDerivedNonEmpty(t, "seeded sub-module row", subRows)
+	_ = subRows
 
 	if len(broken) > 0 {
 		sort.Strings(broken)

@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
@@ -36,8 +36,8 @@ func (c *crossToolRig) fullScan(t *testing.T, tool string, fs ...ctis.Finding) {
 	for i := range fs {
 		fs[i].AssetRef = "repo"
 	}
-	rep := &ctis.Report{Version: "1.0", Tool: &ctis.Tool{Name: tool},
-		Metadata: ctis.ReportMetadata{Timestamp: time.Now().UTC(), CoverageType: "full",
+	rep := &ctis.Report{Version: ctis.SchemaVersion, Tool: &ctis.Tool{Name: tool},
+		Metadata: ctis.ReportMetadata{ID: ctis.NewReportID(), GeneratedAt: time.Now().UTC(), CoverageType: "full",
 			Branch: &ctis.BranchInfo{Name: "main", IsDefaultBranch: true, RepositoryURL: "https://" + c.tn.repo}},
 		Assets:   []ctis.Asset{{ID: "repo", Type: ctis.AssetTypeRepository, Value: c.tn.repo}},
 		Findings: fs}
@@ -61,7 +61,7 @@ func (c *crossToolRig) status(t *testing.T, ruleID string) string {
 func lodashFinding() ctis.Finding {
 	return ctis.Finding{Type: ctis.FindingTypeVulnerability, Title: "lodash prototype pollution", Severity: ctis.SeverityHigh,
 		RuleID:        "CVE-2021-23337",
-		Vulnerability: &ctis.VulnerabilityDetails{CVEID: "CVE-2021-23337", Package: "lodash", AffectedVersion: "4.17.15"}}
+		Vulnerability: &ctis.VulnerabilityDetails{IDs: cveIDsOf("CVE-2021-23337"), PackageName: "lodash", InstalledVersion: "4.17.15"}}
 }
 
 func anchorFinding() ctis.Finding {

@@ -15,11 +15,14 @@ package ingest
 // applied as before).
 
 import (
+	"context"
+	"encoding/json"
+
 	"fmt"
 	"slices"
 
-	"github.com/openctemio/ctis"
-	"github.com/openctemio/ctis/capability"
+	"github.com/openctemio/contract/capability"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/internal/metrics"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
@@ -72,8 +75,8 @@ func boundCapability(rules outputRules, claimed, tool string) string {
 
 // checkCapabilityContract logs and counts a report that misses the required
 // output of its capability. It never changes the report.
-func (s *Service) checkCapabilityContract(agt *sensor.Sensor, tenantID shared.ID, tool string, report *ctis.Report) {
-	ref := report.Metadata.Capability
+func (s *Service) checkCapabilityContract(ctx context.Context, agt *sensor.Sensor, tenantID shared.ID, tool string, report *ctis.Report) {
+	ref := reportCapability(report)
 	if ref == "" {
 		return
 	}
@@ -81,7 +84,11 @@ func (s *Service) checkCapabilityContract(agt *sensor.Sensor, tenantID shared.ID
 	if !ok {
 		return
 	}
-	violations, err := c.Check(report, capability.CheckOptions{})
+	doc, err := reportJSONMap(report)
+	if err != nil {
+		return
+	}
+	violations, err := c.Check(doc, capability.CheckOptions{})
 	if err != nil || len(violations) == 0 {
 		return
 	}
@@ -93,5 +100,19 @@ func (s *Service) checkCapabilityContract(agt *sensor.Sensor, tenantID shared.ID
 	s.logger.Warn("sensor report misses the output contract of its capability; applied (warn)",
 		"sensor_id", agt.ID.String(), "tenant_id", tenantID.String(), "tool", sanitizeIngestLogField(tool),
 		"capability", sanitizeIngestLogField(ref), "violations", len(violations), "first", shown,
-		"report_id", sanitizeIngestLogField(report.Metadata.ID))
+		"report_id", reportIDOf(ctx))
+}
+
+// reportJSONMap is the decoded JSON form of a report, what the contract
+// module's checks read (they take no CTIS Go types).
+func reportJSONMap(report *ctis.Report) (map[string]any, error) {
+	raw, err := json.Marshal(report)
+	if err != nil {
+		return nil, err
+	}
+	var doc map[string]any
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		return nil, err
+	}
+	return doc, nil
 }

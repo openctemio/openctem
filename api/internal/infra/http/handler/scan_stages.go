@@ -65,7 +65,7 @@ type ScanStageResponse struct {
 	// Phase is the engagement phase of the capability (discover.passive,
 	// discover.active, assess, validate, collect) and CTEMStage its CTEM
 	// stage; Attack and D3FEND are the MITRE ATT&CK techniques the act
-	// emulates and the D3FEND functions it performs (ctis/capability).
+	// emulates and the D3FEND functions it performs (contract/capability).
 	Phase     string   `json:"phase,omitempty"`
 	CTEMStage string   `json:"ctem_stage,omitempty"`
 	Attack    []string `json:"attack,omitempty"`

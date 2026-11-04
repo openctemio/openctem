@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
@@ -61,15 +61,15 @@ func (u *upsertRig) report(fs ...ctis.Finding) *ctis.Report {
 	for i := range fs {
 		fs[i].AssetRef = "h"
 	}
-	return &ctis.Report{Version: "1.0", Tool: &ctis.Tool{Name: "nessus"},
-		Metadata: ctis.ReportMetadata{ID: shared.NewID().String(), Timestamp: time.Now().UTC()},
+	return &ctis.Report{Version: ctis.SchemaVersion, Tool: &ctis.Tool{Name: "nessus"},
+		Metadata: ctis.ReportMetadata{ID: ctis.NewReportID(), GeneratedAt: time.Now().UTC()},
 		Assets:   []ctis.Asset{{ID: "h", Type: ctis.AssetTypeHost, Value: "upsert-" + u.tn.tenant.String()[:8] + ".example.com"}},
 		Findings: fs}
 }
 
 func sshFinding() ctis.Finding {
 	return ctis.Finding{Type: ctis.FindingTypeVulnerability, Title: "OpenSSH regreSSHion", Severity: ctis.SeverityHigh,
-		RuleID: "201194", Vulnerability: &ctis.VulnerabilityDetails{CVEID: "CVE-2024-6387"},
+		RuleID: "201194", Vulnerability: &ctis.VulnerabilityDetails{IDs: cveIDsOf("CVE-2024-6387")},
 		Network: &ctis.NetworkLocation{Port: 22}}
 }
 

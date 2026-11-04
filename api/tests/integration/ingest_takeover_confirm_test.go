@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/internal/app/easmdns"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
@@ -41,16 +41,19 @@ func TestIngest_TakeoverConfirmation(t *testing.T) {
 		return &sensor.Sensor{ID: v.sensor, TenantID: &tid, Type: sensor.SensorTypeWorker, Status: sensor.SensorStatusActive}
 	}
 	report := func(host string) *ctis.Report {
-		return &ctis.Report{Version: "1.0", Tool: &ctis.Tool{Name: "nuclei"},
-			Assets: []ctis.Asset{{ID: "a", Type: ctis.AssetTypeDomain, Value: host}},
+		return &ctis.Report{Version: ctis.SchemaVersion, Tool: &ctis.Tool{Name: "nuclei"},
+			Assets: []ctis.Asset{{ID: "a", Type: ctis.AssetTypeDomainName, Value: host}},
 			Findings: []ctis.Finding{{Type: ctis.FindingTypeVulnerability, Title: "Azure takeover", Severity: ctis.SeverityHigh,
-				RuleID: "azure-takeover-detection", Tags: []string{"takeover"}, AssetRef: "a", Evidence: "404 Web Site not found"}},
-			Metadata: ctis.ReportMetadata{Timestamp: time.Now().UTC()}}
+				RuleID: "azure-takeover-detection", Tags: []string{"takeover"}, AssetRef: "a", EvidenceItems: []ctis.EvidenceItem{{Kind: ctis.EvidenceKindRawText, Text: "404 Web Site not found"}}}},
+			Metadata: ctis.ReportMetadata{ID: ctis.NewReportID(), GeneratedAt: time.Now().UTC()}}
 	}
 	run := func(v v2Tenant, bind ingest.Binding, host string) {
 		t.Helper()
 		out, err := svc.Ingest(ctx, sensorOf(v), ingest.Input{Report: report(host), Options: ingest.Options{Binding: bind}})
-		if err != nil || len(out.Errors) > 0 {
+		if err != nil {
+			t.Fatalf("ingest: %v", err)
+		}
+		if len(out.Errors) > 0 {
 			t.Fatalf("Ingest: %v %v", err, out.Errors)
 		}
 	}

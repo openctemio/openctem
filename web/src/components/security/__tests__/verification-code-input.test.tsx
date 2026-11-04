@@ -58,7 +58,7 @@ describe('formatCodeGroups', () => {
 })
 
 describe('VerificationCodeInput', () => {
-  it('is one labelled text field with one-time-code autofill and a numeric keypad', () => {
+  it('is one labeled text field with one-time-code autofill and a numeric keypad', () => {
     render(<Harness />)
     const input = screen.getByRole('textbox', { name: 'Code from your authenticator app' })
     expect(input).toHaveAttribute('autocomplete', 'one-time-code')
@@ -197,5 +197,30 @@ describe('VerificationCodeInput accessible name', () => {
   it('keeps the name when the label is visually hidden', () => {
     render(<Harness label="Authentication code" hideLabel />)
     expect(screen.getByLabelText('Authentication code')).toBeInTheDocument()
+  })
+})
+
+describe('VerificationCodeInput layout', () => {
+  it('centers the numeric cells, the label and the messages', () => {
+    render(<Harness error="Wrong code" hint="hint" />)
+    const input = screen.getByRole('textbox', { name: 'Code from your authenticator app' })
+    const cells = input.parentElement as HTMLElement
+    expect(cells.className).toContain('mx-auto')
+    expect(cells.className).toContain('w-fit')
+    const root = cells.parentElement as HTMLElement
+    expect(root).toHaveAttribute('data-align', 'center')
+    expect(root.className).toContain('text-center')
+    expect(screen.getByText('Code from your authenticator app').className).toContain(
+      'justify-center'
+    )
+    // Accessibility of the one real field is unchanged.
+    expect(input).toHaveAttribute('autocomplete', 'one-time-code')
+    expect(input).toHaveAttribute('inputmode', 'numeric')
+  })
+
+  it('leaves an alphanumeric (recovery) field aligned with the form', () => {
+    render(<Harness mode="alphanumeric" length={10} groups={[5, 5]} />)
+    const input = screen.getByRole('textbox')
+    expect(input.parentElement).not.toHaveAttribute('data-align')
   })
 })

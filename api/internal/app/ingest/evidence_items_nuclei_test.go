@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/ctis/importer"
+	"github.com/openctemio/ctis/v2/importer"
 
 	evidencedom "github.com/openctemio/openctem/api/pkg/domain/evidence"
 )
@@ -33,7 +33,7 @@ func TestFindingEvidenceFromRealNucleiImport(t *testing.T) {
 	if len(cf.EvidenceItems) == 0 {
 		t.Fatal("the importer attached no evidence_items")
 	}
-	d, ok := findingEvidence("fp", cf, res.Report.Tool)
+	d, ok := findingEvidence("fp", cf, res.Report)
 	if !ok {
 		t.Fatal("no evidence read")
 	}

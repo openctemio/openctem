@@ -40,7 +40,7 @@ function scopingRow(title: string): NavLink | undefined {
 describe('GatedSectionTabs', () => {
   beforeEach(() => {
     pathname = '/business-services'
-    moduleIds = ['crown_jewels', 'business_services', 'business_units']
+    moduleIds = ['business_services', 'business_units']
     perms = ALL_PERMS
   })
 
@@ -54,11 +54,11 @@ describe('GatedSectionTabs', () => {
     expect(screen.getByRole('link', { name: 'Services' })).toHaveAttribute('aria-current', 'page')
   })
 
-  it('hides a tab whose module is off', () => {
-    moduleIds = ['business_services', 'business_units']
+  it('hides a tab whose module is off; crown jewels needs no module', () => {
+    moduleIds = ['business_units']
     render(<GatedSectionTabs tabs={BUSINESS_CONTEXT_SECTION_TABS} />)
-    expect(screen.queryByRole('link', { name: 'Crown jewels' })).toBeNull()
-    expect(screen.getAllByRole('link')).toHaveLength(2)
+    expect(screen.queryByRole('link', { name: 'Services' })).toBeNull()
+    expect(screen.getAllByRole('link').map((a) => a.textContent)).toEqual(['Crown jewels', 'Units'])
   })
 
   it('hides a tab the user lacks the permission for', () => {
@@ -68,7 +68,7 @@ describe('GatedSectionTabs', () => {
   })
 
   it('draws no strip when one tab is left', () => {
-    moduleIds = ['business_units']
+    moduleIds = ['ctem_cycles']
     const { container } = render(<GatedSectionTabs tabs={BUSINESS_CONTEXT_SECTION_TABS} />)
     expect(container).toBeEmptyDOMElement()
   })
@@ -76,7 +76,7 @@ describe('GatedSectionTabs', () => {
 
 describe('sidebar row with gated tabs', () => {
   beforeEach(() => {
-    moduleIds = ['crown_jewels', 'business_services', 'business_units', 'ctem_cycles']
+    moduleIds = ['business_services', 'business_units', 'ctem_cycles']
     perms = ALL_PERMS
   })
 
@@ -86,16 +86,16 @@ describe('sidebar row with gated tabs', () => {
     expect(r?.sections?.map((s) => s.label)).toEqual(['Crown jewels', 'Services', 'Units'])
   })
 
-  it('links to the first tab left when its own tab is off', () => {
-    moduleIds = ['business_services', 'business_units']
+  it('keeps its own url and drops the tabs whose module is off', () => {
+    moduleIds = ['business_units']
     const r = scopingRow('Business context')
-    expect(r?.url).toBe('/business-services')
+    expect(r?.url).toBe('/crown-jewels')
     // The command palette reads the filtered sections: no hidden tab in search.
-    expect(r?.sections?.map((s) => s.label)).toEqual(['Services', 'Units'])
+    expect(r?.sections?.map((s) => s.label)).toEqual(['Crown jewels', 'Units'])
   })
 
   it('hides the row when no tab is left', () => {
-    moduleIds = ['ctem_cycles']
+    perms = ['ctem:cycles:read']
     expect(scopingRow('Business context')).toBeUndefined()
     expect(scopingRow('Cycles')).toBeDefined()
   })
@@ -111,7 +111,7 @@ describe('sidebar row with gated tabs', () => {
   })
 
   it('the Cycles row follows the ctem_cycles module', () => {
-    moduleIds = ['crown_jewels']
+    moduleIds = ['business_units']
     expect(scopingRow('Cycles')).toBeUndefined()
   })
 })

@@ -24,7 +24,7 @@ import (
 // decoded.
 func itemFlood(n int) []byte {
 	var b bytes.Buffer
-	b.WriteString(`{"version":"1.0","metadata":{"timestamp":"2026-10-01T12:00:00Z"},"tool":{"name":"semgrep"},"findings":[`)
+	b.WriteString(`{"version":"2.0","metadata":{"id":"01936f4e-7b8c-7d4e-9f00-0123456789ab","generated_at":"2026-10-01T12:00:00Z","channel":"scanner"},"tool":{"name":"semgrep","techniques":["sast"]},"findings":[`)
 	for i := range n {
 		if i > 0 {
 			b.WriteByte(',')

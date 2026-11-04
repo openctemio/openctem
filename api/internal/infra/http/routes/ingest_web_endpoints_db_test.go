@@ -10,9 +10,10 @@ import (
 	"database/sql"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/lib/pq"
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
@@ -41,15 +42,17 @@ func newWebEndpointHarness(t *testing.T) (*v2Harness, *sensor.Sensor) {
 
 func katanaLikeReport() *ctis.Report {
 	return &ctis.Report{
-		Version:  "1.0",
-		Metadata: ctis.ReportMetadata{ID: "web-ep-1", SourceType: "scanner"},
-		Tool:     &ctis.Tool{Name: "katana"},
-		Assets: []ctis.Asset{
-			// A legacy crawl asset with secrets in its query: folded, never stored.
-			{ID: "u1", Type: ctis.AssetTypeDiscoveredURL,
-				Value: "https://shop.web-ep.test/account/reset?token=" + webSecret + "&sig=" + webSecret},
-		},
+		Version:  ctis.SchemaVersion,
+		Metadata: ctis.ReportMetadata{ID: ctis.NewReportID(), GeneratedAt: time.Now().UTC(), Channel: ctis.ChannelScanner},
+		Tool:     &ctis.Tool{Name: "katana", Techniques: []ctis.Technique{ctis.TechniqueDAST}},
 		Endpoints: []ctis.Endpoint{
+			// Query names only (a CTIS 2.0 endpoint carries no value): the
+			// secrets a crawl saw in the query never reach the document.
+			{Origin: "https://shop.web-ep.test", Method: "GET", Path: "/account/reset",
+				Params: []ctis.EndpointParam{
+					{Location: ctis.ParamLocationQuery, Name: "token"},
+					{Location: ctis.ParamLocationQuery, Name: "sig"},
+				}},
 			{Origin: "https://shop.web-ep.test", Method: "GET", Path: "/products/42", Kind: ctis.EndpointKindPage,
 				Source: ctis.EndpointSourceCrawl, StatusCode: 200, ContentType: "text/html",
 				Params: []ctis.EndpointParam{{Location: ctis.ParamLocationQuery, Name: "ref"}}},
@@ -57,7 +60,7 @@ func katanaLikeReport() *ctis.Report {
 			{Origin: "https://shop.web-ep.test", Method: "POST", Path: "/login", Kind: ctis.EndpointKindForm,
 				Params: []ctis.EndpointParam{
 					{Location: ctis.ParamLocationForm, Name: "username"},
-					{Location: ctis.ParamLocationForm, Name: "password", Required: true},
+					{Location: ctis.ParamLocationForm, Name: "password", IsRequired: true},
 				}},
 			{Origin: "https://shop.web-ep.test", Method: "GET", Path: "/reset/" + webSecret + "Ab12CdEf34GhIj56"},
 			{Origin: "https://shop.web-ep.test", Method: "GET", Path: "/static/logo.png", Kind: ctis.EndpointKindStatic},
@@ -80,8 +83,8 @@ func TestIngest_WebEndpoints_SubInventoryNotAssets_DB(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if out.EndpointsCreated != 4 || out.EndpointsStatic != 1 || out.LegacyURLAssetsFolded != 1 {
-		t.Fatalf("created %d static %d folded %d (errors %v)", out.EndpointsCreated, out.EndpointsStatic, out.LegacyURLAssetsFolded, out.Errors)
+	if out.EndpointsCreated != 4 || out.EndpointsStatic != 1 {
+		t.Fatalf("created %d static %d (errors %v)", out.EndpointsCreated, out.EndpointsStatic, out.Errors)
 	}
 
 	// No asset per URL: the origin is the only asset the crawl wrote.
@@ -100,8 +103,7 @@ func TestIngest_WebEndpoints_SubInventoryNotAssets_DB(t *testing.T) {
 		t.Fatalf("origin asset is %s/%s", originType, originSub)
 	}
 
-	// The two product pages are one endpoint; the legacy URL and the token
-	// path are templated.
+	// The two product pages are one endpoint; the token path is templated.
 	rows, err := h.db.Query(`SELECT method, path_template, COALESCE(example_path, ''), sources, origin_asset_id, tenant_id, param_count
 		FROM web_endpoints WHERE tenant_id = $1 ORDER BY path_template, method`, h.tenantID)
 	if err != nil {

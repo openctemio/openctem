@@ -3,7 +3,7 @@ package ingest
 import (
 	"strings"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
@@ -82,7 +82,7 @@ func redactReportSecrets(report *ctis.Report) {
 		return
 	}
 	secretTool := false
-	if report.Tool != nil || report.Metadata.Capability != "" {
+	if report.Tool != nil || reportCapability(report) != "" {
 		secretTool = reportFindingSource(report) == vulnerability.FindingSourceSecret
 	}
 	for i := range report.Findings {

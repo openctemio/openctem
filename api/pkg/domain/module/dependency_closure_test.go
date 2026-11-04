@@ -10,9 +10,8 @@ func TestInheritOffFromHardDependencies(t *testing.T) {
 	from := InheritOffFromHardDependencies(off)
 
 	want := map[string]struct{ reason, from string }{
-		// scope_config -> ctem_cycles -> ctem_maturity: the chain takes the root's reason.
+		// scope_config -> ctem_cycles: the dependent takes the root's reason.
 		ModuleCTEMCycles:      {"not_entitled", ModuleScopeConfig},
-		ModuleCTEMMaturity:    {"not_entitled", ModuleScopeConfig},
 		ModuleTemplateSources: {"read_only_grace", ModuleScannerTemplates},
 	}
 	for id, w := range want {
@@ -26,14 +25,14 @@ func TestInheritOffFromHardDependencies(t *testing.T) {
 		}
 	}
 	// A soft dependency does not switch a module off: priority_rules only
-	// softly needs threat_intel, mitre_coverage hard-needs it.
-	off2 := map[string]string{ModuleThreatIntel: "not_entitled"}
+	// softly needs threat_intel; control_testing hard-needs compensating_controls.
+	off2 := map[string]string{ModuleThreatIntel: "not_entitled", ModuleCompensatingControls: "not_entitled"}
 	InheritOffFromHardDependencies(off2)
 	if off2[ModulePriorityRules] != "" {
 		t.Errorf("priority_rules off through a soft dependency: %q", off2[ModulePriorityRules])
 	}
-	if off2[ModuleMITRECoverage] != "not_entitled" {
-		t.Errorf("mitre_coverage: %q, want not_entitled", off2[ModuleMITRECoverage])
+	if off2[ModuleControlTesting] != "not_entitled" {
+		t.Errorf("control_testing: %q, want not_entitled", off2[ModuleControlTesting])
 	}
 }
 

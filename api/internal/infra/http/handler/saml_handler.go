@@ -446,3 +446,145 @@ func (h *SAMLHandler) DeleteConfig(w http.ResponseWriter, r *http.Request) {
 		WithMessage("SAML single sign-on configuration deleted"))
 	w.WriteHeader(http.StatusNoContent)
 }
+
+// samlIdPMetadataRequest names the IdP metadata to read: the IdP's metadata
+// URL (https) or the metadata document itself, exactly one.
+type samlIdPMetadataRequest struct {
+	MetadataURL string `json:"metadata_url"`
+	MetadataXML string `json:"metadata_xml"`
+}
+
+// samlIdPMetadataCertificate is one unexpired signing certificate read from
+// the metadata.
+type samlIdPMetadataCertificate struct {
+	PEM      string `json:"pem"`
+	Subject  string `json:"subject"`
+	NotAfter string `json:"not_after"`
+	SHA256   string `json:"sha256"`
+}
+
+// samlIdPMetadataView is the IdP side of a SAML configuration read from
+// metadata. idp_certificate is the certificates joined as the configuration
+// stores them, ready for the save call.
+type samlIdPMetadataView struct {
+	IDPEntityID    string                       `json:"idp_entity_id"`
+	IDPSSOURL      string                       `json:"idp_sso_url"`
+	IDPSSOBinding  string                       `json:"idp_sso_binding"`
+	IDPCertificate string                       `json:"idp_certificate"`
+	Certificates   []samlIdPMetadataCertificate `json:"certificates"`
+}
+
+// maxSAMLIdPMetadataRequest bounds the JSON body: the document (at most
+// auth.MaxIdPMetadataBytes) can grow when escaped as a JSON string.
+const maxSAMLIdPMetadataRequest = 2*auth.MaxIdPMetadataBytes + 4096
+
+// samlRefusalDetailReason is the error detail naming why metadata was refused.
+const samlRefusalDetailReason = "reason"
+
+// ImportIdPMetadata handles POST /api/v1/admin/tenants/{tenantId}/sso/saml/idp-metadata.
+// It reads the IdP side of a SAML configuration from the IdP's metadata URL or
+// an uploaded metadata document and returns it. Nothing is stored: the
+// administrator saves through PUT /sso/saml, which waits for an owner.
+// @Summary Read an identity provider's SAML metadata
+// @Description Platform admin console: reads the entity ID, sign-in URL and signing certificates from the IdP's federation metadata (URL or document) for the SAML form. Stores nothing.
+// @Tags Admin Organization SSO
+// @Produce json
+// @Param tenantId path string true "Organization ID"
+// @Security BearerAuth
+// @Router /admin/tenants/{tenantId}/sso/saml/idp-metadata [post]
+func (h *SAMLHandler) ImportIdPMetadata(w http.ResponseWriter, r *http.Request) {
+	if _, err := shared.IDFromString(middleware.MustGetTenantID(r.Context())); err != nil {
+		apierror.Unauthorized("invalid tenant context").WriteJSON(w)
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxSAMLIdPMetadataRequest)
+	var body samlIdPMetadataRequest
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		apierror.BadRequest("invalid JSON body").WriteJSON(w)
+		return
+	}
+	md, err := h.svc.ImportIdPMetadata(r.Context(), auth.IdPMetadataImportInput{URL: body.MetadataURL, XML: body.MetadataXML})
+	if err != nil {
+		var me *auth.SAMLMetadataError
+		if errors.As(err, &me) {
+			code, shown := samlMetadataRefusalForResponse(me.Reason, strings.TrimSpace(body.MetadataURL) != "")
+			h.logger.Info("saml idp metadata refused", "reason", me.Reason)
+			apierror.FromCode(code).WithDetails(map[string]any{samlRefusalDetailReason: shown}).WriteJSON(w)
+			return
+		}
+		h.logger.Error("read saml idp metadata failed", "error", err)
+		apierror.InternalServerError("failed to read the metadata").WriteJSON(w)
+		return
+	}
+	view := samlIdPMetadataView{
+		IDPEntityID:    md.EntityID,
+		IDPSSOURL:      md.SSOURL,
+		IDPSSOBinding:  md.SSOBinding,
+		IDPCertificate: md.CertificatesPEM(),
+		Certificates:   make([]samlIdPMetadataCertificate, 0, len(md.Certificates)),
+	}
+	for _, c := range md.Certificates {
+		view.Certificates = append(view.Certificates, samlIdPMetadataCertificate{
+			PEM: c.PEM, Subject: c.Subject, NotAfter: c.NotAfter.Format(time.RFC3339), SHA256: c.SHA256,
+		})
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, view)
+}
+
+// samlSPMetadataView is the organization's SP metadata for download.
+type samlSPMetadataView struct {
+	Filename string `json:"filename"`
+	XML      string `json:"xml"`
+	// BaseURL is the public origin the SP URLs are built on (APP_URL).
+	BaseURL string `json:"base_url"`
+}
+
+// SPMetadata handles GET /api/v1/admin/tenants/{tenantId}/sso/saml/sp-metadata.
+// It returns the organization's SP metadata (the file to upload in the IdP's
+// SAML application), built on the configured public origin only: the console
+// reaches the API through its own site, so the request's host is not the
+// address the IdP must post to.
+// @Summary Download an organization's SAML service provider metadata
+// @Description Platform admin console: the SP metadata XML built on APP_URL. 409 SAML_PUBLIC_URL_UNSET when APP_URL is not set.
+// @Tags Admin Organization SSO
+// @Produce json
+// @Param tenantId path string true "Organization ID"
+// @Security BearerAuth
+// @Router /admin/tenants/{tenantId}/sso/saml/sp-metadata [get]
+func (h *SAMLHandler) SPMetadata(w http.ResponseWriter, r *http.Request) {
+	tenantID, err := shared.IDFromString(middleware.MustGetTenantID(r.Context()))
+	if err != nil {
+		apierror.Unauthorized("invalid tenant context").WriteJSON(w)
+		return
+	}
+	base, ok := originOf(h.publicURL)
+	if !ok {
+		apierror.FromCode(apierror.CodeSAMLPublicURLUnset).WriteJSON(w)
+		return
+	}
+	doc, slug, err := h.svc.SPMetadataForTenant(r.Context(), tenantID, base)
+	if err != nil {
+		apierror.NotFound("organization").WriteJSON(w)
+		return
+	}
+	writeJSON(w, http.StatusOK, samlSPMetadataView{
+		Filename: "openctem-" + slug + "-sp-metadata.xml",
+		XML:      doc,
+		BaseURL:  base,
+	})
+}
+
+// samlMetadataRefusalForResponse picks the API code and the reason shown for
+// a refused metadata import. A fetched URL must not tell the caller whether
+// the host answered, or what it answered (a probe of internal hosts):
+// unreachable, malformed and not-metadata are one reason there; the detail
+// stays in the server log. A pasted document is the admin's own, so its
+// reason is shown.
+func samlMetadataRefusalForResponse(reason string, fromURL bool) (code apierror.Code, shown string) {
+	if reason == auth.SAMLMetadataReasonUnreachable ||
+		(fromURL && (reason == auth.SAMLMetadataReasonMalformed || reason == auth.SAMLMetadataReasonNotMetadata)) {
+		return apierror.CodeSAMLMetadataUnreachable, auth.SAMLMetadataReasonUnreachable
+	}
+	return apierror.CodeSAMLMetadataInvalid, reason
+}

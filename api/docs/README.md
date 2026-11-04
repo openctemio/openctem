@@ -80,6 +80,7 @@ or use OpenCTEM, see [docs.openctem.io](https://docs.openctem.io)
 - [Automations](architecture/automations.md), [notification system](architecture/notification-system.md), [durable jobs](architecture/durable-jobs.md), [SIEM ingest](architecture/siem-ingest.md)
 - [Dashboards: fact layer](architecture/dashboards.md), [CTEM program metrics](architecture/program-metrics.md), [CTEM definition of done](architecture/ctem-dod-checklist.md), [report PDF export](architecture/report-pdf-export.md), [pentest report templates](architecture/pentest-report-templates.md), [pentest remediation and retest](architecture/pentest-remediation.md), [pentest campaign phases, delivery and sign-off](architecture/pentest-campaign-completion.md), [pentest campaign profile](architecture/pentest-campaign-profile.md), [pentest methodology checklists](architecture/pentest-checklists.md)
 - [API ↔ CTIS decoupling](architecture/api-ctis-decoupling.md)
+- [CTIS 2.0 receiver](architecture/ctis-receiver.md)
 
 ## How-to (integrations and features)
 
@@ -98,6 +99,7 @@ Install and day-to-day operation are documented at
 because they change with it:
 
 - [Upgrading from v0.8 to v0.9](operations/upgrade-v0.8-to-v0.9.md)
+- [Upgrading to CTIS 2.0](operations/ctis-2-upgrade.md)
 - [Monitoring and alerting](operations/monitoring.md)
 - [Environment variable reference](configuration/environment-variables.md) (generated from `internal/config/env_registry.yaml` by `make env-docs`)
 - [Safe deploy and migrations](deployment/safe-deploy-and-migrations.md)

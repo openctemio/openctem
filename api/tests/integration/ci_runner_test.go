@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"math/big"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -15,7 +16,7 @@ import (
 	"time"
 
 	jwtv5 "github.com/golang-jwt/jwt/v5"
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	cirunapp "github.com/openctemio/openctem/api/internal/app/cirun"
@@ -39,6 +40,11 @@ import (
 type ciIdP struct {
 	srv *httptest.Server
 	key *rsa.PrivateKey
+	// url is the issuer the tokens name: a DNS name on the default port, since a
+	// CTIS 2.0 repository value is host/owner/name with a domain host and no
+	// port. client reaches it by dialing the test server.
+	url    string
+	client *http.Client
 }
 
 func newCIIdP(t *testing.T) *ciIdP {
@@ -50,7 +56,7 @@ func newCIIdP(t *testing.T) *ciIdP {
 	p := &ciIdP{key: key}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/.well-known/openid-configuration", func(w http.ResponseWriter, _ *http.Request) {
-		_ = json.NewEncoder(w).Encode(map[string]any{"issuer": p.srv.URL, "jwks_uri": p.srv.URL + "/oauth/discovery/keys"})
+		_ = json.NewEncoder(w).Encode(map[string]any{"issuer": p.url, "jwks_uri": p.url + "/oauth/discovery/keys"})
 	})
 	mux.HandleFunc("/oauth/discovery/keys", func(w http.ResponseWriter, _ *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{"keys": []map[string]string{{
@@ -61,6 +67,13 @@ func newCIIdP(t *testing.T) *ciIdP {
 	})
 	p.srv = httptest.NewTLSServer(mux)
 	t.Cleanup(p.srv.Close)
+	p.url = "https://example.com"
+	tr := p.srv.Client().Transport.(*http.Transport).Clone()
+	addr := p.srv.Listener.Addr().String()
+	tr.DialContext = func(ctx context.Context, network, _ string) (net.Conn, error) {
+		return (&net.Dialer{}).DialContext(ctx, network, addr)
+	}
+	p.client = &http.Client{Transport: tr}
 	return p
 }
 
@@ -69,7 +82,7 @@ func (p *ciIdP) token(t *testing.T, aud, project, ref, sha string, over map[stri
 	t.Helper()
 	now := time.Now()
 	c := jwtv5.MapClaims{
-		"iss": p.srv.URL, "sub": "project_path:" + project + ":ref_type:branch:ref:" + ref, "aud": aud,
+		"iss": p.url, "sub": "project_path:" + project + ":ref_type:branch:ref:" + ref, "aud": aud,
 		"exp": now.Add(5 * time.Minute).Unix(), "iat": now.Unix(), "nbf": now.Unix(), "jti": shared.NewID().String(),
 		"project_path": project, "project_id": "7", "namespace_path": strings.Split(project, "/")[0],
 		"ref": ref, "ref_type": "branch", "ref_protected": "false", "sha": sha, "user_login": "dev",
@@ -132,7 +145,7 @@ func newCIRigWith(t *testing.T, cfg cirunapp.Config, deps ...func(*cirunapp.Deps
 	idp := newCIIdP(t)
 	repo := postgres.NewCIRunRepository(db)
 	d := cirunapp.Deps{
-		Repo: repo, Verifier: oidc.NewClient(idp.srv.Client(), nil), Assets: postgres.NewAssetRepository(db),
+		Repo: repo, Verifier: oidc.NewClient(idp.client, nil), Assets: postgres.NewAssetRepository(db),
 		Branches: postgres.NewBranchRepository(db), Baseline: postgres.NewFindingRepository(db), Ingester: ing,
 		Units: repo, Audit: auditapp.NewAuditService(postgres.NewAuditRepository(db), log),
 	}
@@ -233,7 +246,7 @@ func (r *ciRig) newTenant() shared.ID {
 func (r *ciRig) trust(tenant shared.ID, rules cirun.Rules) *cirun.TrustConfig {
 	r.t.Helper()
 	c, err := r.svc.CreateTrustConfig(context.Background(), tenant, cirunapp.TrustConfigInput{
-		Name: "gitlab-" + shared.NewID().String()[28:], Provider: "gitlab", Issuer: r.idp.srv.URL, Rules: rules,
+		Name: "gitlab-" + shared.NewID().String()[28:], Provider: "gitlab", Issuer: r.idp.url, Rules: rules,
 	}, cirunapp.Actor{Email: "admin@acme.test"})
 	if err != nil {
 		r.t.Fatalf("create trust config: %v", err)
@@ -277,18 +290,19 @@ func (r *ciRig) auditCount(tenant shared.ID, action, needle string) int {
 }
 
 func ciFinding(title, rule, sev string, typ ctis.FindingType, path string, line int) ctis.Finding {
-	return ctis.Finding{Type: typ, Title: title, RuleID: rule, Severity: ctis.Severity(sev),
+	return ctis.Finding{AssetRef: "repo", Type: typ, Title: title, RuleID: rule, Severity: ctis.Severity(sev),
 		Location: &ctis.FindingLocation{Path: path, StartLine: line}}
 }
 
-func ciReport(repo string, findings ...ctis.Finding) map[string]any {
-	return map[string]any{"report": ctis.Report{
-		Version:  "1.0",
-		Metadata: ctis.ReportMetadata{ID: shared.NewID().String(), Timestamp: time.Now().UTC(), SourceType: "scanner"},
+// ciReport is a CI upload body: the CTIS 2.0 document itself.
+func ciReport(repo string, findings ...ctis.Finding) ctis.Report {
+	return ctis.Report{
+		Version:  ctis.SchemaVersion,
+		Metadata: ctis.ReportMetadata{ID: ctis.NewReportID(), GeneratedAt: time.Now().UTC(), Channel: ctis.ChannelScanner},
 		Tool:     &ctis.Tool{Name: "semgrep"},
 		Assets:   []ctis.Asset{{ID: "repo", Type: ctis.AssetTypeRepository, Value: repo}},
 		Findings: findings,
-	}}
+	}
 }
 
 // TestCIRunner_ExchangeUploadEvaluate is the R1+R2 acceptance, end to end
@@ -300,7 +314,7 @@ func TestCIRunner_ExchangeUploadEvaluate(t *testing.T) {
 	aud := cfg.Audience
 	const sha1 = "1111111111111111111111111111111111111111"
 	const sha2 = "2222222222222222222222222222222222222222"
-	host := strings.TrimPrefix(r.idp.srv.URL, "https://")
+	host := strings.TrimPrefix(r.idp.url, "https://")
 	repoName := strings.ToLower(host) + "/acme/api"
 
 	// --- R1: identity ---------------------------------------------------
