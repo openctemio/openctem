@@ -15,6 +15,7 @@ import {
   domainRoots,
   expandTargets,
   MAX_EXPANDED_TARGETS,
+  namesUnder,
   type CoverageLevel,
   type InventoryName,
 } from '../lib/coverage-expansion'
@@ -58,9 +59,9 @@ export function useCoverageExpansion(typed: string[], level: CoverageLevel) {
   const { can } = usePermissions()
   const roots = useMemo(() => domainRoots(typed).slice(0, MAX_COVERAGE_ROOTS), [typed])
   // Only the addresses are listed: subdomains are a *.domain target the API
-  // resolves at every run (RFC-068).
+  // resolves at every run (RFC-068); their count is read for the preview.
   const key =
-    level === 'subdomains_ips' && currentTenant && can(Permission.AssetsRead) && roots.length > 0
+    level !== 'host' && currentTenant && can(Permission.AssetsRead) && roots.length > 0
       ? coverageURL(roots, 1)
       : null
   const { data, isLoading, error } = useSWR<InventoryName[]>(key, () => loadUnder(roots), {
@@ -72,5 +73,10 @@ export function useCoverageExpansion(typed: string[], level: CoverageLevel) {
     () => (enabled ? expandTargets(typed, level, data ?? []) : []),
     [enabled, typed, level, data]
   )
-  return { added, roots, isLoading: enabled && isLoading, error }
+  // Names at or below the roots the inventory holds now (0 until loaded).
+  const nameCount = useMemo(
+    () => (enabled ? namesUnder(typed, data ?? []).length : 0),
+    [enabled, typed, data]
+  )
+  return { added, roots, nameCount, isLoading: enabled && isLoading, error }
 }
