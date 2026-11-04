@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 import { StepUpDialog, type StepUpDialogProps } from '../step-up-dialog'
@@ -22,6 +22,58 @@ describe('StepUpDialog', () => {
     )
     await waitFor(() => expect(onSubmit).toHaveBeenCalledWith({ kind: 'totp', code: '123456' }))
     expect(onSubmit).toHaveBeenCalledTimes(1)
+  })
+
+  it('a code completed while Confirm is pressed is sent once', async () => {
+    const user = userEvent.setup()
+    let release: () => void = () => {}
+    const onSubmit = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          release = resolve
+        })
+    )
+    renderDialog({ onSubmit })
+    const input = screen.getByRole('textbox')
+    await user.type(input, '12345')
+    const confirm = screen.getByRole('button', { name: 'Confirm' })
+    // Autofill completes the code and the form is submitted in the same tick.
+    act(() => {
+      fireEvent.change(input, { target: { value: '123456' } })
+      fireEvent.submit(confirm.closest('form') as HTMLFormElement)
+    })
+    expect(onSubmit).toHaveBeenCalledTimes(1)
+    await act(async () => release())
+  })
+
+  it('the same code is not sent twice; the person is asked for the next one', async () => {
+    const user = userEvent.setup()
+    const onSubmit = vi
+      .fn()
+      .mockRejectedValue({ statusCode: 403, message: 'Re-authentication failed' })
+    renderDialog({ onSubmit })
+    const input = screen.getByRole('textbox')
+    await user.type(input, '123456')
+    expect(await screen.findByRole('alert')).toHaveTextContent('Re-authentication failed')
+    await user.type(input, '123456')
+    expect(await screen.findByRole('alert')).toHaveTextContent('This code was already sent')
+    expect(onSubmit).toHaveBeenCalledTimes(1)
+    await user.type(input, '654321')
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(2))
+  })
+
+  it('a code that never reached a decision (network error) may be sent again', async () => {
+    const user = userEvent.setup()
+    const onSubmit = vi
+      .fn()
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockResolvedValue(undefined)
+    renderDialog({ onSubmit })
+    const input = screen.getByRole('textbox')
+    await user.type(input, '123456')
+    await screen.findByRole('alert')
+    await user.type(input, '123456')
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(2))
   })
 
   it('waits for the other fields before submitting, then submits from the button', async () => {

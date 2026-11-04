@@ -3518,8 +3518,9 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	s.Auth.SetPermissionVersionService(s.PermVersion)
 
 	// Two-factor authentication (TOTP). Secrets are encrypted with the same
-	// AES-GCM key as integration credentials.
-	s.Auth.SetMFA(repos.UserMFA, s.Encryptor, cfg.Brand.DisplayName())
+	// AES-GCM key as integration credentials. New authenticator entries are
+	// labeled with the product name and this installation's host.
+	s.Auth.SetMFA(repos.UserMFA, s.Encryptor, auth.MFAIssuer(cfg.Brand.DisplayName(), cfg.App.URL))
 	s.Session.SetMFAChallengeCleanup(repos.UserMFA)
 	// The platform two-factor floor (setting auth.mfa) and the lookup that
 	// tells an administrator by effective grants. Without the settings store
