@@ -232,6 +232,7 @@ check and answers `403 STEP_UP_REQUIRED` (outside the window) or
 - `PATCH /api/v1/tenants/{tenant}/settings/security` (MFA, IP allowlist, allowed domains)
 - `PATCH /api/v1/tenants/{tenant}/settings/modules`, `POST .../settings/modules/reset`, `POST .../settings/modules/presets/{presetId}/apply`
 - `POST /api/v1/secret-store`, `PUT`/`DELETE /api/v1/secret-store/{id}`, `POST .../{id}/rotate`
+- `PUT`/`DELETE /api/v1/tool-sources/{source}/key`, `PATCH /api/v1/tool-sources/{source}`
 - `POST /api/v1/tenants/{tenant}/settings/sso/changes/{id}/approve`
 - `PUT /api/v1/organization/settings/domains/{domain_id}/signup-policy`
 - `DELETE /api/v1/tenants/{tenant}`
@@ -783,6 +784,7 @@ the billing page in the UI.
 | `POST /{id}/snapshots/{snapshot_id}/reject` | `scans:sources:approve` |
 | `POST /hooks/content-sources/{id}` | public: the source's own webhook secret (constant-time compare); only queues a sync |
 | Secret store `GET` / `POST`,`PUT`,`POST /{id}/rotate` / `DELETE` | `scans:secret_store:read` / `:write` and owner/admin / `:delete`; every write also needs **step-up** |
+| Tool source keys `GET /api/v1/tool-sources` / `PUT /{source}/key`,`PATCH /{source}` / `DELETE /{source}/key` ([tool-source-keys.md](tool-source-keys.md)) | `scans:secret_store:read` / `:write` and owner/admin / `:delete` and owner/admin; every write also needs **step-up**. A key is never returned |
 
 > **Rule sources** ([content-sources.md](content-sources.md)). Owners and
 > administrators hold every `scans:sources:*` permission (migration

@@ -242,6 +242,26 @@ func registerScanZoneRoutes(
 // sensors:egress:read; pools, endpoints, credentials and the network path of
 // sensors need sensors:egress:write; deleting a pool needs
 // sensors:egress:delete. Write and delete are owner/admin only.
+// registerToolSourceRoutes mounts the organization's tool source keys
+// (docs/architecture/tool-source-keys.md). A key authenticates the
+// organization to a paid outside service, so every change is gated like a
+// secret store write: administrator, fresh step-up, credential factor.
+func registerToolSourceRoutes(
+	router Router,
+	h *handler.ToolSourceHandler,
+	authMiddleware Middleware,
+	userSyncMiddleware Middleware,
+) {
+	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
+
+	router.Group("/api/v1/tool-sources", func(r Router) {
+		r.GET("/", h.List, middleware.Require(permission.SecretStoreRead))
+		r.PUT("/{source}/key", h.SetKey, middleware.Require(permission.SecretStoreWrite), middleware.RequireAdmin(), requireStepUp(), requireCredentialFactor())
+		r.PATCH("/{source}", h.Update, middleware.Require(permission.SecretStoreWrite), middleware.RequireAdmin(), requireStepUp(), requireCredentialFactor())
+		r.DELETE("/{source}/key", h.DeleteKey, middleware.Require(permission.SecretStoreDelete), middleware.RequireAdmin(), requireStepUp())
+	}, tenantMiddlewares...)
+}
+
 func registerProxyPoolRoutes(
 	router Router,
 	h *handler.ProxyPoolHandler,

@@ -138,6 +138,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/threatsource"
 	"github.com/openctemio/openctem/api/internal/app/ticketing"
 	appticketmap "github.com/openctemio/openctem/api/internal/app/ticketmap"
+	toolsourceapp "github.com/openctemio/openctem/api/internal/app/toolsource"
 	"github.com/openctemio/openctem/api/internal/app/validation"
 	"github.com/openctemio/openctem/api/internal/app/versioncheck"
 	vexapp "github.com/openctemio/openctem/api/internal/app/vex"
@@ -768,6 +769,8 @@ type Services struct {
 	SensorGrant *sensorgrant.Service
 	ScanZone    *scanzoneapp.Service
 	ProxyPool   *proxypoolapp.Service
+	// ToolSource holds the organization keys of third-party tool sources.
+	ToolSource *toolsourceapp.Service
 	// ScanWindow manages scan window policies and overrides (RFC-067);
 	// ScanWindowResolver finds what governs targets for the claim, the
 	// trigger and the API.
@@ -2411,6 +2414,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Proxy pools for scan traffic: credentials encrypted with the
 	// credentials key, never stored in clear.
 	s.ProxyPool = proxypoolapp.NewService(repos.ProxyPool, s.Encryptor, s.Audit, log)
+	// Tool source keys: encrypted with the credentials key, write-only,
+	// delivered only to the sensor holding a task of the organization's job.
+	s.ToolSource = toolsourceapp.NewService(repos.ToolSourceKey, s.Encryptor, s.Audit, log)
 	// The Test button: sensors test the endpoints, the platform never
 	// connects to a proxy. Disabled when no https address is known for the
 	// echo (PROXY_TEST_ECHO_URL, SENSOR_PUBLIC_API_URL or APP_URL).
