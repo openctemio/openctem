@@ -5,29 +5,54 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/pkg/domain/webendpoint"
 )
 
+func originWithHeaders(id, value string, h *ctis.SecurityHeaders) ctis.Asset {
+	a := ctis.Asset{ID: id, Type: ctis.AssetTypeWebOrigin, Value: value}
+	if h != nil {
+		a.Technical = &ctis.AssetTechnical{HTTP: &ctis.HTTPTechnical{SecurityHeaders: h}}
+	}
+	return a
+}
+
+// The posture is derived from technical.http.security_headers: flags and
+// enums only, never a header or cookie value; a producer's own
+// properties.http_posture is dropped (properties carry no meaning).
 func TestSanitizeHTTPPosture(t *testing.T) {
 	r := &ctis.Report{Assets: []ctis.Asset{
-		{Type: ctis.AssetTypeHTTPService, Value: "https://a.example.com", Properties: ctis.Properties{
-			webendpoint.PostureKey: map[string]any{"hsts": true, "set_cookie": "sid=SECRET", "cookies": []any{map[string]any{"name": "sid", "secure": true, "value": "SECRET"}}}}},
-		{Type: ctis.AssetTypeHTTPService, Value: "https://b.example.com", Properties: ctis.Properties{
-			webendpoint.PostureKey: map[string]any{"only_unknown": "SECRET"}}},
-		{Type: ctis.AssetTypeHTTPService, Value: "https://c.example.com"}, // an older producer: no posture
-		{Type: ctis.AssetTypeDomain, Value: "example.com", Properties: ctis.Properties{webendpoint.PostureKey: map[string]any{"hsts": true}}},
+		originWithHeaders("a1", "https://a.example.com", &ctis.SecurityHeaders{
+			StrictTransportSecurity: "max-age=31536000; includeSubDomains",
+			ContentSecurityPolicy:   "default-src 'self' 'unsafe-inline' https://SECRET.example",
+			XFrameOptions:           "DENY",
+			Cookies:                 []ctis.CookieFlags{{Name: "sid", IsSecure: true, IsHTTPOnly: true}},
+		}),
+		originWithHeaders("a2", "https://b.example.com", &ctis.SecurityHeaders{}),
+		originWithHeaders("a3", "https://c.example.com", nil), // an older producer: no headers
+		{ID: "a4", Type: ctis.AssetTypeDomainName, Value: "example.com", Properties: ctis.Properties{webendpoint.PostureKey: map[string]any{"hsts": true}}},
+		{ID: "a5", Type: ctis.AssetTypeWebOrigin, Value: "https://d.example.com", Properties: ctis.Properties{
+			webendpoint.PostureKey: map[string]any{"hsts": true, "set_cookie": "sid=SECRET"}}}, // producer posture dropped
 	}}
 	sanitizeHTTPPosture(r)
-	b, _ := json.Marshal(r.Assets)
-	if strings.Contains(string(b), "SECRET") {
-		t.Fatalf("a value was kept: %s", b)
+
+	var props []ctis.Properties
+	for i := range r.Assets {
+		props = append(props, r.Assets[i].Properties)
 	}
-	if r.Assets[0].Properties[webendpoint.PostureKey].(map[string]any)["hsts"] != true {
-		t.Fatalf("allow-listed key lost: %s", b)
+	b, _ := json.Marshal(props)
+	if strings.Contains(string(b), "SECRET") || strings.Contains(string(b), "default-src") || strings.Contains(string(b), "sid=") {
+		t.Fatalf("a header or cookie value was kept in the stored properties: %s", b)
 	}
-	for _, i := range []int{1, 3} {
+	p, ok := r.Assets[0].Properties[webendpoint.PostureKey].(map[string]any)
+	if !ok {
+		t.Fatalf("posture missing: %s", b)
+	}
+	if p["hsts"] != true || p["hsts_include_subdomains"] != true || p["csp"] != true || p["csp_unsafe_inline"] != true || p["frame_options"] != "deny" {
+		t.Fatalf("flags = %v", p)
+	}
+	for _, i := range []int{2, 3, 4} {
 		if _, ok := r.Assets[i].Properties[webendpoint.PostureKey]; ok {
 			t.Fatalf("asset %d kept a posture it must not", i)
 		}

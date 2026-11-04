@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
@@ -185,7 +185,7 @@ func ingestReport() *ctis.Report {
 	return &ctis.Report{
 		Tool: &ctis.Tool{Name: "trivy"},
 		Metadata: ctis.ReportMetadata{
-			SourceType: "sca",
+			Channel: ctis.ChannelScanner,
 		},
 	}
 }

@@ -70,9 +70,9 @@ func TestSensorResults_ChannelAndJobTargetsArePlatformAssigned(t *testing.T) {
 	}
 
 	cmd := h.heldReconCommand(h.tenantID, s.id, root)
-	body := []byte(fmt.Sprintf(`{"version":"1.4","metadata":{"timestamp":%q,"source_type":"manual"},`+
-		`"tool":{"name":"subfinder"},"assets":[`+
-		`{"id":"root","type":"domain","value":%q},{"id":"sub","type":"subdomain","value":%q},{"id":"evil","type":"domain","value":%q}],`+
+	body := []byte(fmt.Sprintf(`{"version":"2.0","metadata":{"id":"01936f4e-7b8c-7d4e-9f00-0123456789ab","generated_at":%q,"channel":"scanner"},`+
+		`"tool":{"name":"subfinder","techniques":["easm"]},"assets":[`+
+		`{"id":"root","type":"domain_name","value":%q},{"id":"sub","type":"domain_name","value":%q},{"id":"evil","type":"domain_name","value":%q}],`+
 		`"findings":[{"type":"misconfiguration","title":"planted on a host outside the job","severity":"high","rule_id":"jb-evil-%s","asset_ref":"evil"},`+
 		`{"type":"misconfiguration","title":"on the target","severity":"low","rule_id":"jb-sub-%s","asset_ref":"sub"}]}`,
 		time.Now().UTC().Format(time.RFC3339), root, sub, evil, label, label))

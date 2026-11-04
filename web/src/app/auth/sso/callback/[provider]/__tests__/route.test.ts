@@ -117,4 +117,18 @@ describe('organization SSO callback route handler', () => {
       expect.arrayContaining(['sso_state', 'sso_redirect', bindingCookieName('sso')])
     )
   })
+
+  it('hands a link round trip to the link route without consuming the attempt cookies', async () => {
+    cookieJar.set('sso_link_intent', 'entra_id')
+    const to = await callback('entra_id', 'code=c&state=s')
+    expect(to).toBe('/auth/sso/link/entra_id?code=c&state=s')
+    expect(handleSSOCallback).not.toHaveBeenCalled()
+    expect(deleted).not.toContain('sso_state')
+  })
+
+  it('does not hand over when the link intent is for another provider', async () => {
+    cookieJar.set('sso_link_intent', 'okta')
+    await callback('entra_id', 'code=c&state=s')
+    expect(handleSSOCallback).toHaveBeenCalled()
+  })
 })

@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/pkg/domain/assettech"
 	"github.com/openctemio/openctem/api/pkg/domain/contentrule"
@@ -72,7 +72,7 @@ func (s *Service) matchDetectionRules(ctx context.Context, tenantID shared.ID, r
 	docs, stopped := 0, 0
 	for i := range report.Assets {
 		a := &report.Assets[i]
-		if a.Type != ctis.AssetTypeHTTPService || a.ID == "" {
+		if a.Type != ctis.AssetTypeWebOrigin || a.ID == "" {
 			continue
 		}
 		if docs >= maxRuleDocsPerReport {
@@ -168,12 +168,6 @@ func newTechnologies(a *ctis.Asset, ms []contentrule.TechMatch) []contentrule.Te
 	for _, t := range a.Technologies {
 		have[assettech.Key(t.Name)] = true
 	}
-	for _, key := range []string{"technologies", "technology"} {
-		for _, el := range stringList(a.Properties[key]) {
-			name, _ := assettech.Split(el)
-			have[assettech.Key(name)] = true
-		}
-	}
 	out := make([]contentrule.TechMatch, 0, len(ms))
 	for _, m := range ms {
 		k := assettech.Key(m.Name)
@@ -199,25 +193,17 @@ func categories(c string) []string {
 // found under its origin. No value of a cookie or other header is ever
 // present in a report.
 func webDocument(a *ctis.Asset, endpoints []ctis.Endpoint) contentrule.Document {
-	doc := contentrule.Document{
-		URL:      a.Value,
-		FinalURL: stringProperty(a.Properties, []string{"redirect_url", "final_url"}),
-		Title:    stringProperty(a.Properties, []string{"title"}),
-		Favicon:  stringProperty(a.Properties, []string{"favicon_mmh3"}),
-	}
-	if doc.URL == "" {
-		doc.URL = stringProperty(a.Properties, []string{"url"})
-	}
-	if srv := stringProperty(a.Properties, []string{"web_server", "server"}); srv != "" {
-		doc.Headers = map[string]string{"server": srv}
-	}
-	if posture, ok := a.Properties[ctis.HTTPPostureProperty].(map[string]any); ok {
-		if cookies, ok := posture["cookies"].([]any); ok {
-			for _, c := range cookies {
-				if m, ok := c.(map[string]any); ok {
-					if n, ok := m["name"].(string); ok && n != "" {
-						doc.Cookies = append(doc.Cookies, n)
-					}
+	doc := contentrule.Document{URL: a.Value}
+	if a.Technical != nil && a.Technical.HTTP != nil {
+		h := a.Technical.HTTP
+		doc.FinalURL, doc.Title, doc.Favicon = h.RedirectURL, h.Title, h.FaviconMMH3
+		if h.WebServer != "" {
+			doc.Headers = map[string]string{"server": h.WebServer}
+		}
+		if h.SecurityHeaders != nil {
+			for _, c := range h.SecurityHeaders.Cookies {
+				if c.Name != "" {
+					doc.Cookies = append(doc.Cookies, c.Name)
 				}
 			}
 		}

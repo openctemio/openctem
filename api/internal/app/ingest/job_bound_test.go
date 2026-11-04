@@ -2,9 +2,10 @@ package ingest
 
 import (
 	"context"
+	"strings"
 	"testing"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/pkg/domain/branch"
 	"github.com/openctemio/openctem/api/pkg/domain/command"
@@ -26,6 +27,9 @@ func runJobBound(t *testing.T, repo *memAssetRepo, tenant shared.ID, b Binding, 
 	t.Helper()
 	p, _ := newDiscoveryProcessor(repo)
 	out := &Output{}
+	// Service.Ingest strips the producer's properties and derives the stored
+	// keys from typed members before the processors read the report.
+	adoptCTIS2Members(report, false)
 	if _, err := p.processBatch(context.Background(), tenant, report, out, nil, false, newAlterScope(b)); err != nil {
 		t.Fatal(err)
 	}
@@ -60,11 +64,11 @@ func TestJobBound_SubdomainDiscoveryStaysUnderTheRoot(t *testing.T) {
 	report := &ctis.Report{
 		Tool: &ctis.Tool{Name: "subfinder"},
 		Assets: []ctis.Asset{
-			{ID: "root", Type: ctis.AssetTypeDomain, Value: "example.com"},
-			{ID: "sub", Type: ctis.AssetTypeSubdomain, Value: "api.example.com"},
-			{ID: "deep", Type: ctis.AssetTypeSubdomain, Value: "a.b.example.com"},
-			{ID: "evil", Type: ctis.AssetTypeDomain, Value: "evil-example.net"},
-			{ID: "suffix", Type: ctis.AssetTypeSubdomain, Value: "notexample.com"},
+			{ID: "root", Type: ctis.AssetTypeDomainName, Value: "example.com"},
+			{ID: "sub", Type: ctis.AssetTypeDomainName, Value: "api.example.com"},
+			{ID: "deep", Type: ctis.AssetTypeDomainName, Value: "a.b.example.com"},
+			{ID: "evil", Type: ctis.AssetTypeDomainName, Value: "evil-example.net"},
+			{ID: "suffix", Type: ctis.AssetTypeDomainName, Value: "notexample.com"},
 		},
 	}
 	got, out := runJobBound(t, newMemAssetRepo(), shared.NewID(), jobCmd("subfinder", command.CommandTypeScan, "example.com"), report)
@@ -83,20 +87,24 @@ func TestJobBound_PortScanKeepsServicesOnTargetHosts(t *testing.T) {
 		Tool: &ctis.Tool{Name: "naabu"},
 		Assets: []ctis.Asset{
 			{ID: "ip", Type: ctis.AssetTypeIPAddress, Value: "198.51.100.10", Technical: &ctis.AssetTechnical{IPAddress: &ctis.IPAddressTechnical{
-				Hostname: "app.example.com", Ports: []ctis.PortInfo{{Port: 443, Protocol: "tcp", State: "open"}},
+				Hostname: "app.example.com",
 			}}},
+			{ID: "svc", Type: ctis.AssetTypeService, Value: "198.51.100.10:443/tcp"},
 			{ID: "host", Type: ctis.AssetTypeHost, Value: "app.example.com"},
-			{ID: "stray", Type: ctis.AssetTypeIPAddress, Value: "203.0.113.77", Technical: &ctis.AssetTechnical{IPAddress: &ctis.IPAddressTechnical{
-				Ports: []ctis.PortInfo{{Port: 22, Protocol: "tcp", State: "open"}},
-			}}},
+			{ID: "stray", Type: ctis.AssetTypeIPAddress, Value: "203.0.113.77"},
+			{ID: "straysvc", Type: ctis.AssetTypeService, Value: "203.0.113.77:22/tcp"},
 			{ID: "other", Type: ctis.AssetTypeHost, Value: "victim.example.org"},
+		},
+		Relationships: []ctis.Relationship{
+			{Type: ctis.RelExposes, FromRef: "ip", ToRef: "svc"},
+			{Type: ctis.RelExposes, FromRef: "stray", ToRef: "straysvc"},
 		},
 	}
 	got, out := runJobBound(t, newMemAssetRepo(), shared.NewID(), jobCmd("naabu", command.CommandTypeScan, "app.example.com"), report)
 	wantKept(t, got, "198.51.100.10", "app.example.com")
 	wantDropped(t, got, "203.0.113.77", "victim.example.org")
 	for name := range got {
-		if name == "203.0.113.77:22" || name == "203.0.113.77:22/tcp" {
+		if strings.HasPrefix(name, "203.0.113.77:22") {
 			t.Errorf("a port on an unvouched address was created: %s", name)
 		}
 	}
@@ -112,12 +120,16 @@ func TestJobBound_ResolutionVouchesOnlyStatedAddresses(t *testing.T) {
 	report := &ctis.Report{
 		Tool: &ctis.Tool{Name: "dnsx"},
 		Assets: []ctis.Asset{
-			{ID: "name", Type: ctis.AssetTypeDomain, Value: "www.example.com", Technical: &ctis.AssetTechnical{Domain: &ctis.DomainTechnical{
+			{ID: "name", Type: ctis.AssetTypeDomainName, Value: "www.example.com", Technical: &ctis.AssetTechnical{Domain: &ctis.DomainTechnical{
 				DNSRecords: []ctis.DNSRecord{{Type: "A", Name: "www.example.com", Value: "192.0.2.10"}},
 			}}},
-			{ID: "a", Type: ctis.AssetTypeIPAddress, Value: "192.0.2.10", Properties: ctis.Properties{"hostname": "attacker.example.net"}},
+			{ID: "a", Type: ctis.AssetTypeIPAddress, Value: "192.0.2.10", Technical: &ctis.AssetTechnical{IPAddress: &ctis.IPAddressTechnical{Hostname: "attacker.example.net"}}},
 			{ID: "b", Type: ctis.AssetTypeIPAddress, Value: "192.0.2.99"},
-			{ID: "chain", Type: ctis.AssetTypeDomain, Value: "attacker.example.net", Properties: ctis.Properties{"ip_addresses": []any{"192.0.2.10"}}},
+			{ID: "chain", Type: ctis.AssetTypeDomainName, Value: "attacker.example.net", Technical: &ctis.AssetTechnical{Domain: &ctis.DomainTechnical{
+				DNSRecords: []ctis.DNSRecord{{Type: "A", Name: "attacker.example.net", Value: "192.0.2.10"}},
+			}}},
+			// Properties carry no meaning: a planted address list vouches for nothing.
+			{ID: "planted", Type: ctis.AssetTypeDomainName, Value: "www.example.com", Properties: ctis.Properties{"ip_addresses": []any{"192.0.2.99"}}},
 		},
 	}
 	got, _ := runJobBound(t, newMemAssetRepo(), shared.NewID(), jobCmd("dnsx", command.CommandTypeScan, "www.example.com"), report)
@@ -131,8 +143,8 @@ func TestJobBound_ProbeKeepsOnlyTargetServices(t *testing.T) {
 	report := &ctis.Report{
 		Tool: &ctis.Tool{Name: "httpx"},
 		Assets: []ctis.Asset{
-			{ID: "svc", Type: ctis.AssetTypeHTTPService, Name: "app.example.com", Value: "https://app.example.com"},
-			{ID: "evil", Type: ctis.AssetTypeHTTPService, Name: "evil.example.net", Value: "https://evil.example.net"},
+			{ID: "svc", Type: ctis.AssetTypeWebOrigin, Name: "app.example.com", Value: "https://app.example.com"},
+			{ID: "evil", Type: ctis.AssetTypeWebOrigin, Name: "evil.example.net", Value: "https://evil.example.net"},
 			{ID: "cert", Type: ctis.AssetTypeCertificate, Value: "sha256:0123456789abcdef"},
 		},
 	}
@@ -143,26 +155,11 @@ func TestJobBound_ProbeKeepsOnlyTargetServices(t *testing.T) {
 	}
 }
 
-// A report with findings and no assets makes its asset from the metadata:
-// that asset is checked like any other.
-func TestJobBound_AssetMadeFromMetadataIsChecked(t *testing.T) {
-	report := &ctis.Report{
-		Tool:     &ctis.Tool{Name: "nuclei"},
-		Metadata: ctis.ReportMetadata{Scope: &ctis.Scope{Name: "victim.example.org", Type: "domain"}},
-		Findings: []ctis.Finding{{ID: "f", Title: "planted", Severity: ctis.SeverityHigh, Type: ctis.FindingTypeVulnerability}},
-	}
-	got, out := runJobBound(t, newMemAssetRepo(), shared.NewID(), jobCmd("nuclei", command.CommandTypeScan, "app.example.com"), report)
-	wantDropped(t, got, "victim.example.org")
-	if len(got) != 0 || out.AssetsOutsideJob != 1 {
-		t.Fatalf("stored %v, outside job %d", got, out.AssetsOutsideJob)
-	}
-}
-
 // Retests are bound too; address chunks keep their own rule; trusted,
 // unsolicited and CI-run reports are not job-bound.
 func TestJobBound_WhichBindingsAreBound(t *testing.T) {
 	report := func() *ctis.Report {
-		return &ctis.Report{Assets: []ctis.Asset{{ID: "x", Type: ctis.AssetTypeDomain, Value: "elsewhere.example.org"}}}
+		return &ctis.Report{Assets: []ctis.Asset{{ID: "x", Type: ctis.AssetTypeDomainName, Value: "elsewhere.example.org"}}}
 	}
 	_, out := runJobBound(t, newMemAssetRepo(), shared.NewID(), jobCmd("nuclei", command.CommandTypeRetest, "app.example.com"), report())
 	if out.AssetsOutsideJob != 1 {
@@ -187,13 +184,13 @@ func TestJobBound_CrossTenant(t *testing.T) {
 	repo := newMemAssetRepo()
 	tenantA, tenantB := shared.NewID(), shared.NewID()
 	if got, _ := runJobBound(t, repo, tenantB, TrustedBinding(), &ctis.Report{Assets: []ctis.Asset{
-		{ID: "b", Type: ctis.AssetTypeDomain, Value: "victim.example.org"},
+		{ID: "b", Type: ctis.AssetTypeDomainName, Value: "victim.example.org"},
 	}}); !got["victim.example.org"] {
 		t.Fatal("seed asset of tenant B missing")
 	}
 	before := repo.rows[tenantB]["victim.example.org"].LastSeen()
 	got, out := runJobBound(t, repo, tenantA, jobCmd("subfinder", command.CommandTypeScan, "example.com"), &ctis.Report{Assets: []ctis.Asset{
-		{ID: "v", Type: ctis.AssetTypeDomain, Value: "victim.example.org"},
+		{ID: "v", Type: ctis.AssetTypeDomainName, Value: "victim.example.org"},
 	}})
 	if len(got) != 0 || out.AssetsOutsideJob != 1 {
 		t.Fatalf("tenant A stored %v, outside job %d", got, out.AssetsOutsideJob)
@@ -210,7 +207,7 @@ func TestJobBound_FindingsOnDroppedAssetsAreSkipped(t *testing.T) {
 	repo := &interopRepo{}
 	p := NewFindingProcessor(repo, nil, nil, logger.NewNop())
 	out := &Output{OutsideJobAssetRefs: map[string]bool{"evil": true}, AssetsOutsideJob: 1}
-	report := &ctis.Report{Version: "1.4", Tool: &ctis.Tool{Name: "nuclei"}, Findings: []ctis.Finding{
+	report := &ctis.Report{Version: ctis.SchemaVersion, Tool: &ctis.Tool{Name: "nuclei"}, Findings: []ctis.Finding{
 		{Type: ctis.FindingTypeVulnerability, Title: "planted", Severity: ctis.SeverityHigh, AssetRef: "evil", RuleID: "r1"},
 		{Type: ctis.FindingTypeVulnerability, Title: "no ref", Severity: ctis.SeverityHigh, RuleID: "r2"},
 	}}

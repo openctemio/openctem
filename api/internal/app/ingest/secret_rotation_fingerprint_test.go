@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
@@ -30,7 +30,7 @@ func TestSetSecretFields_MaskNeverBecomesTheRotationFingerprint(t *testing.T) {
 	p.SetSecretFingerprinter(vulnerability.NewSecretFingerprinter([]byte("server-secret-0123456789")))
 	for _, mask := range []string{"REDACTED", "AKIA********", "ghp_********", "••••••••"} {
 		f := secretFindingFor(t, tenant)
-		p.setSecretFields(f, &ctis.Finding{Secret: &ctis.SecretDetails{SecretType: "x", MaskedValue: mask}})
+		p.setSecretFields(f, &ctis.Finding{Secret: &ctis.SecretDetails{Type: "x", MaskedValue: mask}})
 		if f.SecretFingerprint() != "" {
 			t.Errorf("mask %q produced fingerprint %q", mask, f.SecretFingerprint())
 		}
@@ -47,7 +47,7 @@ func TestSetSecretFields_FingerprintFromRawHashOnly(t *testing.T) {
 	fp := func(tenant shared.ID, hash string) string {
 		f := secretFindingFor(t, tenant)
 		p.setSecretFields(f, &ctis.Finding{
-			Secret:              &ctis.SecretDetails{SecretType: "aws", MaskedValue: "AKIA************"},
+			Secret:              &ctis.SecretDetails{Type: "aws", MaskedValue: "AKIA************"},
 			PartialFingerprints: map[string]string{partialSecretHMAC: hash}})
 		return f.SecretFingerprint()
 	}

@@ -181,6 +181,7 @@ jobs:
         with:
           persist-credentials: false
           repository: openctemio/sdk-go
+          ref: v0.46.0 # the first CTIS 2.0 release; security-lint reads its sources
           path: sdk-go
 
       - name: Setup Go

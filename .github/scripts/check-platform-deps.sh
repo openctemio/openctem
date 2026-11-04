@@ -2,9 +2,9 @@
 # Fails when the platform (api/ or web/) depends on a sensor implementation
 # instead of on contracts (api/docs/rfcs/RFC-094-platform-contracts-only.md).
 #
-# The platform may depend on ctis (schemas, importers and the contract
-# packages, including ctis/transfer), the versioned sensor protocol and
-# signed manifests. It must never require, import or vendor the sensor SDK
+# The platform may depend on ctis (github.com/openctemio/ctis/v2: the CTIS 2.0
+# schema and importers), contract (github.com/openctemio/contract and
+# contract/transfer), the versioned sensor protocol and signed manifests. It must never require, import or vendor the sensor SDK
 # (github.com/openctemio/sdk-go) or a sensor (github.com/openctemio/sensor,
 # or any other sensor product repository): every sensor, ours or a
 # customer's, is treated the same, so none may be compiled in.
@@ -66,8 +66,8 @@ if [[ -d web/src ]]; then
 fi
 
 if [[ "$fail" -ne 0 ]]; then
-  echo "The platform depends on contracts only: ctis, the sensor protocol and signed manifests."
-  echo "Move the shared code into ctis (see RFC-094) instead of importing a sensor or the SDK."
+  echo "The platform depends on contracts only: ctis, contract, the sensor protocol and signed manifests."
+  echo "Move the shared code into ctis or contract (see RFC-094) instead of importing a sensor or the SDK."
   exit 1
 fi
 echo "OK: api and web depend on no sensor module or SDK."

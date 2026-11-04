@@ -265,7 +265,7 @@ message PutResultRequest {
   optional uint32 segment = 3;
   // The content as sent: CTIS JSON, possibly compressed.
   bytes content = 4;
-  // application/vnd.openctem.ctis.v1+json
+  // application/vnd.ctis+json; version=2.0
   string content_type = 5;
   // "", "gzip" or "zstd".
   string content_encoding = 6;

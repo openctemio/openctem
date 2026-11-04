@@ -8,11 +8,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 )
 
@@ -52,12 +51,15 @@ func (g *goldenRig) ingestAll(t *testing.T, tn v2Tenant, tool string, fs []ctis.
 		cp[i] = fs[i]
 		cp[i].AssetRef = "a"
 	}
-	rep := &ctis.Report{Version: "1.0", Tool: &ctis.Tool{Name: tool, Capabilities: []string{"sast"}},
-		Metadata: ctis.ReportMetadata{ID: shared.NewID().String(), Timestamp: time.Now().UTC()},
+	rep := &ctis.Report{Version: ctis.SchemaVersion, Tool: &ctis.Tool{Name: tool, Techniques: []ctis.Technique{ctis.TechniqueSAST}},
+		Metadata: ctis.ReportMetadata{ID: ctis.NewReportID(), GeneratedAt: time.Now().UTC()},
 		Assets:   []ctis.Asset{{ID: "a", Type: ctis.AssetTypeRepository, Value: "github.com/acme/shop"}},
 		Findings: cp}
 	out, err := g.svc.Ingest(context.Background(), agt, ingest.Input{Report: rep})
-	if err != nil || len(out.Errors) > 0 {
+	if err != nil {
+		t.Fatalf("ingest: %v", err)
+	}
+	if len(out.Errors) > 0 {
 		t.Fatalf("ingest %s: %v %v", tool, err, out.Errors)
 	}
 }

@@ -8,6 +8,7 @@
  *
  * This file is the one place in the console that names the default brand.
  */
+import { DEFAULT_HELP_LINKS, type HelpLinks } from '@/config/help-links'
 
 export interface Brand {
   name: string
@@ -26,6 +27,8 @@ export interface Brand {
   logoLightUrl: string
   logoDarkUrl: string
   faviconUrl: string
+  /** Where Help sends bug, feedback and security reports (operator settings; src/lib/help-links.ts). */
+  help: HelpLinks
 }
 
 /** The upstream product, also the name a "Powered by" credit names. */
@@ -48,6 +51,7 @@ export const DEFAULT_BRAND: Brand = {
   logoLightUrl: '',
   logoDarkUrl: '',
   faviconUrl: '',
+  help: DEFAULT_HELP_LINKS,
 }
 
 /** The API's JSON (snake_case). */
@@ -122,6 +126,7 @@ export function toBrand(r: BrandResponse | null | undefined): Brand {
     logoLightUrl: light,
     logoDarkUrl: asset(r.logo_dark_url) || light,
     faviconUrl: asset(r.favicon_url),
+    help: DEFAULT_HELP_LINKS,
   }
 }
 

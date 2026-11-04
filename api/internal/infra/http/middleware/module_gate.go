@@ -172,6 +172,9 @@ const (
 	// ModuleReasonNotEntitled: the module is not available for this
 	// organization (denied by the instance operator or a source).
 	ModuleReasonNotEntitled = "not_entitled"
+	// ModuleReasonDisabledByPlatform: an installation-wide module the platform
+	// administrator has off.
+	ModuleReasonDisabledByPlatform = "disabled_by_platform"
 	// ModuleReasonUnavailable: the entitlement could not be read (503).
 	ModuleReasonUnavailable = "unavailable"
 	// ModuleReasonReadOnlyGrace: the organization lost the module recently:
@@ -210,6 +213,8 @@ func (g *ModuleGate) RequireModule(moduleID string) func(http.Handler) http.Hand
 				switch reason {
 				case ModuleReasonNotEntitled:
 					msg = "This module is not available for this organization"
+				case ModuleReasonDisabledByPlatform:
+					msg = "This module is disabled by the platform"
 				case ModuleReasonReadOnlyGrace:
 					msg = "This module is no longer available for this organization: it is read-only for now"
 				}

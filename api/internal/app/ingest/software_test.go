@@ -5,7 +5,7 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/software"
@@ -15,24 +15,22 @@ import (
 func TestSoftwareObservations(t *testing.T) {
 	a := &ctis.Asset{
 		ID:   "a1",
-		Type: ctis.AssetTypeHTTPService,
+		Type: ctis.AssetTypeWebOrigin,
 		Technologies: []ctis.Technology{
 			{Name: "WordPress", Version: "6.1.1", Confidence: 90},
 			{Name: "nginx", CPE: "cpe:2.3:a:f5:nginx:1.18.0:*:*:*:*:*:*:*"},
 			{Name: "HSTS", Categories: []string{"Security"}},
 			{Name: "Acme Pages", Version: "3", Categories: []string{"PaaS"}},
-		},
-		Services: []ctis.ServiceInfo{
-			{Port: 22, Protocol: "tcp", Banner: "OpenSSH_8.2p1 Ubuntu-4ubuntu0.5"},
-			{Port: 3306, Product: "MySQL", Version: "5.7.33"},
-		},
-		IdentityHints: &ctis.IdentityHints{OSCPE: "cpe:/o:canonical:ubuntu_linux:20.04"},
-		Properties: ctis.Properties{
 			// Only a product with a version is a component: a CDN, a
 			// hosting platform, a security header or a bare name is not.
-			"technologies": []any{"PHP:7.4.3", "Cloudflare", "HSTS", "Vercel", "jQuery", "Cloudflare:2"},
-			"server":       "Apache/2.4.6 (CentOS) OpenSSL/1.0.2k-fips",
+			{Name: "PHP", Version: "7.4.3"},
+			{Name: "Cloudflare"},
+			{Name: "jQuery"},
 		},
+		Technical:     &ctis.AssetTechnical{HTTP: &ctis.HTTPTechnical{WebServer: "Apache/2.4.6 (CentOS) OpenSSL/1.0.2k-fips"}},
+		IdentityHints: &ctis.IdentityHints{OSCPE: "cpe:/o:canonical:ubuntu_linux:20.04"},
+		// properties carry no meaning: these add no components.
+		Properties: ctis.Properties{"technologies": []any{"Redis:7.0.0"}, "server": "lighttpd/1.4.55"},
 	}
 	got := softwareObservations(a)
 	type row struct{ name, version, cpe, source, location string }
@@ -43,12 +41,10 @@ func TestSoftwareObservations(t *testing.T) {
 	want := []row{
 		{"WordPress", "6.1.1", "", software.SourceTechnology, ""},
 		{"nginx", "", "cpe:2.3:a:f5:nginx:1.18.0:*:*:*:*:*:*:*", software.SourceTechnology, ""},
-		{"OpenSSH", "8.2p1 Ubuntu-4ubuntu0.5", "", software.SourceService, "tcp/22"},
-		{"MySQL", "5.7.33", "", software.SourceService, "tcp/3306"},
-		{"", "", "cpe:/o:canonical:ubuntu_linux:20.04", software.SourceOS, ""},
 		{"PHP", "7.4.3", "", software.SourceTechnology, ""},
 		{"Apache", "2.4.6 (CentOS)", "", software.SourceService, ""},
 		{"OpenSSL", "1.0.2k-fips", "", software.SourceService, ""},
+		{"", "", "cpe:/o:canonical:ubuntu_linux:20.04", software.SourceOS, ""},
 	}
 	if len(rows) != len(want) {
 		t.Fatalf("got %d observations: %+v", len(rows), rows)
@@ -63,22 +59,33 @@ func TestSoftwareObservations(t *testing.T) {
 	}
 }
 
-func TestSoftwareObservations_OpenPort(t *testing.T) {
-	withBanner := &ctis.Asset{Type: ctis.AssetTypeOpenPort, Properties: ctis.Properties{
-		"service": "ssh", "version": "OpenSSH 8.2p1 Ubuntu 4ubuntu0.5", "protocol": "tcp",
-	}}
-	got := softwareObservations(withBanner)
-	if len(got) != 1 || got[0].Name != "OpenSSH" || got[0].Version != "8.2p1 Ubuntu 4ubuntu0.5" || got[0].Source != software.SourceOpenPort {
-		t.Fatalf("got %+v", got)
+// A service asset of an open port names its product from its banner or from
+// its product and version.
+func TestSoftwareObservations_ServiceAssets(t *testing.T) {
+	banner := &ctis.Asset{Type: ctis.AssetTypeService, Value: "203.0.113.5:22/tcp", Technical: &ctis.AssetTechnical{Service: &ctis.ServiceTechnical{
+		Port: 22, Transport: ctis.TransportTCP, Banner: "OpenSSH_8.2p1 Ubuntu-4ubuntu0.5"}}}
+	got := softwareObservations(banner)
+	if len(got) != 1 || got[0].Name != "OpenSSH" || got[0].Version != "8.2p1 Ubuntu-4ubuntu0.5" || got[0].Source != software.SourceOpenPort || got[0].Location != "tcp/22" {
+		t.Fatalf("banner: %+v", got)
 	}
-	// A bare version with a generic service name parses to nothing usable.
-	bare := &ctis.Asset{Type: ctis.AssetTypeOpenPort, Properties: ctis.Properties{"service": "ssh", "version": "8.2p1"}}
-	obs := softwareObservations(bare)
-	if len(obs) != 1 {
-		t.Fatalf("got %+v", obs)
+	product := &ctis.Asset{Type: ctis.AssetTypeService, Value: "203.0.113.5:3306/tcp", Technical: &ctis.AssetTechnical{Service: &ctis.ServiceTechnical{
+		Port: 3306, Transport: ctis.TransportTCP, Product: "MySQL", Version: "5.7.33"}}}
+	got = softwareObservations(product)
+	if len(got) != 1 || got[0].Name != "MySQL" || got[0].Version != "5.7.33" || got[0].Location != "tcp/3306" {
+		t.Fatalf("product: %+v", got)
 	}
-	if _, ok := software.Parse(obs[0]); ok {
-		t.Fatal("generic service name became a product")
+	// A bare version with a generic app protocol parses to nothing usable.
+	bare := &ctis.Asset{Type: ctis.AssetTypeService, Value: "203.0.113.5:22/tcp", Technical: &ctis.AssetTechnical{Service: &ctis.ServiceTechnical{
+		Port: 22, Transport: ctis.TransportTCP, AppProtocol: "ssh", Version: "8.2p1"}}}
+	for _, o := range softwareObservations(bare) {
+		if _, ok := software.Parse(o); ok {
+			t.Fatal("generic service name became a product")
+		}
+	}
+	// properties.service / properties.version carry no meaning.
+	legacy := &ctis.Asset{Type: ctis.AssetTypeService, Properties: ctis.Properties{"service": "ssh", "version": "OpenSSH 8.2p1"}}
+	if got := softwareObservations(legacy); len(got) != 0 {
+		t.Fatalf("properties gave observations: %+v", got)
 	}
 }
 
@@ -131,9 +138,9 @@ func TestRecordSoftware_ScopeAndSink(t *testing.T) {
 
 	allowed, denied := shared.NewID(), shared.NewID()
 	report := &ctis.Report{Assets: []ctis.Asset{
-		{ID: "a", Properties: ctis.Properties{"technologies": []any{"nginx:1.18.0"}}},
-		{ID: "b", Properties: ctis.Properties{"technologies": []any{"nginx:1.20.0"}}},
-		{ID: "c", Properties: ctis.Properties{"technologies": []any{"nginx:1.22.0"}}}, // not in the map
+		{ID: "a", Technologies: []ctis.Technology{{Name: "nginx", Version: "1.18.0"}}},
+		{ID: "b", Technologies: []ctis.Technology{{Name: "nginx", Version: "1.20.0"}}},
+		{ID: "c", Technologies: []ctis.Technology{{Name: "nginx", Version: "1.22.0"}}}, // not in the map
 	}}
 	scope := &alterScope{allowed: map[shared.ID]bool{allowed: true}}
 	s.recordSoftware(context.Background(), shared.NewID(), scope, report, map[string]shared.ID{"a": allowed, "b": denied})
@@ -157,15 +164,15 @@ func TestRecordSoftware_Caps(t *testing.T) {
 	repo := &fakeSoftwareRepo{}
 	s := &Service{logger: logger.NewNop()}
 	s.SetSoftwareRepository(repo)
-	techs := make([]any, 0, 300)
+	techs := make([]ctis.Technology, 0, 300)
 	for i := 0; i < 300; i++ {
-		techs = append(techs, "product"+string(rune('a'+i%26))+string(rune('a'+i/26))+":1.0.0")
+		techs = append(techs, ctis.Technology{Name: "product" + string(rune('a'+i%26)) + string(rune('a'+i/26)), Version: "1.0.0"})
 	}
 	assetMap := map[string]shared.ID{}
 	report := &ctis.Report{}
 	for i := 0; i < 30; i++ {
 		ref := "asset" + string(rune('a'+i))
-		report.Assets = append(report.Assets, ctis.Asset{ID: ref, Properties: ctis.Properties{"technologies": techs}})
+		report.Assets = append(report.Assets, ctis.Asset{ID: ref, Technologies: techs})
 		assetMap[ref] = shared.NewID()
 	}
 	s.recordSoftware(context.Background(), shared.NewID(), &alterScope{all: true}, report, assetMap)

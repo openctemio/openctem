@@ -17,7 +17,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/internal/app/bountyprogram"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
@@ -107,12 +107,17 @@ func Report(programID shared.ID, src bountyprogram.TargetSource, assets []bp.Tar
 	if observed.IsZero() || observed.After(now) {
 		observed = now
 	}
-	r := ctis.NewReport()
-	r.Metadata.ID = "program:" + programID.String()
-	r.Metadata.Timestamp = observed
-	r.Metadata.SourceType = "integration"
-	r.Metadata.SourceRef = src.Run
-	r.Metadata.CoverageType = string(ingest.CoverageTypePartial)
+	// No receiver key in the document (CTIS 2.0): the program binds through
+	// the caller (ReplaceTargetAssets), metadata.id is an idempotency key
+	// and the source's run is a producer reference.
+	r := &ctis.Report{Version: ctis.SchemaVersion}
+	r.Metadata.ID = ctis.NewReportID()
+	r.Metadata.GeneratedAt = observed
+	r.Metadata.Channel = ctis.ChannelIntegration
+	if src.Run != "" {
+		r.Metadata.SourceRefs = []ctis.SourceRef{{System: src.Name, ID: src.Run}}
+	}
+	r.Metadata.CoverageType = ctis.CoveragePartial
 	r.Tool = &ctis.Tool{Name: src.Name}
 	keys := make(map[string]string, len(assets))
 	for i, a := range assets {
@@ -121,7 +126,27 @@ func Report(programID shared.ID, src bountyprogram.TargetSource, assets []bp.Tar
 		// A program publishes its network targets as reachable from the
 		// internet (exposure, a tracked attribute with this source).
 		public := a.Type != bp.TargetAssetMobileApp && a.Type != bp.TargetAssetRepo
-		r.Assets = append(r.Assets, ctis.Asset{ID: id, Type: ctis.AssetType(a.Type), Value: a.Value, IsInternetAccessible: public})
+		typ := wireAssetType(a.Type)
+		value, err := ctis.CanonicalAssetValue(typ, a.Value)
+		if err != nil {
+			delete(keys, id)
+			continue // no canonical CTIS form (a wildcard remnant, a malformed range)
+		}
+		r.Assets = append(r.Assets, ctis.Asset{ID: id, Type: typ, Value: value, IsInternetAccessible: ctis.Bool(public)})
 	}
 	return r, keys
+}
+
+// wireAssetType is the CTIS 2.0 wire type of a program target asset type.
+func wireAssetType(t string) ctis.AssetType {
+	switch t {
+	case bp.TargetAssetDomain:
+		return ctis.AssetTypeDomainName
+	case bp.TargetAssetNetwork:
+		return ctis.AssetTypeIPRange
+	default:
+		// ip_address, service, web_application, api, mobile_app,
+		// repository and host are CTIS 2.0 types of the same name.
+		return ctis.AssetType(t)
+	}
 }
