@@ -19,7 +19,6 @@ audit-id internal/app/integration/secretstore.go:SecretStoreService.DeleteCreden
 audit-id internal/app/threatalert/service.go:Service.ChangeState 1
 audit-id internal/app/vex/service.go:Service.auditStatement 1
 audit-id internal/tools/toolaudit/toolaudit.go:Record 1
-domain-id internal/app/scan/trigger.go:Service.triggerWorkflow 1
 domain-id pkg/domain/component/errors.go:NotFoundError 1
 domain-id pkg/domain/vulnerability/errors.go:FindingNotFoundError 1
 domain-id pkg/domain/vulnerability/errors.go:VulnerabilityAlreadyExistsError 1

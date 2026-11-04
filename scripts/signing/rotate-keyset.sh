@@ -5,8 +5,7 @@
 #
 #   scripts/signing/rotate-keyset.sh [key-directory]   default ./openctem-signing-keys
 #
-# The catalog online public key is read from catalog-online.pub (never the
-# release feed key, online.pub). To add a second catalog online key (rotation
+# The catalog online public key is read from catalog-online.pub. To add a second catalog online key (rotation
 # overlap) or drop one, list the keys: ONLINE_PUBS=<hex>,<hex> ...
 #
 # Prints only public material. The old key set stays in keyset.dsse.json.prev.
