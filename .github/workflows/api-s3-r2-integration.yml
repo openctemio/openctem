@@ -1,0 +1,55 @@
+name: API S3 R2 integration
+
+# Runs the S3 driver's integration test against a real Cloudflare R2 bucket.
+# Push to develop, schedule and manual runs only: never on pull requests (a
+# fork PR must not reach the repository secrets). Skips cleanly when the
+# secrets are not configured. The token is bucket-scoped (Object Read & Write)
+# on a dedicated test bucket; every test erases the prefixes it wrote.
+
+on:
+  push:
+    branches: [develop]
+    paths:
+      - 'api/internal/infra/storage/**'
+      - 'api/pkg/domain/attachment/**'
+      - '.github/workflows/api-s3-r2-integration.yml'
+  schedule:
+    - cron: '41 4 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  r2:
+    name: S3 driver against R2
+    if: github.repository == 'openctemio/openctem'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GOWORK: 'off'
+      OPENCTEM_TEST_S3_ENDPOINT: ${{ secrets.OPENCTEM_TEST_R2_ENDPOINT }}
+      OPENCTEM_TEST_S3_ACCESS_KEY: ${{ secrets.OPENCTEM_TEST_R2_ACCESS_KEY }}
+      OPENCTEM_TEST_S3_SECRET_KEY: ${{ secrets.OPENCTEM_TEST_R2_SECRET_KEY }}
+      OPENCTEM_TEST_S3_BUCKET: ${{ secrets.OPENCTEM_TEST_R2_BUCKET }}
+      OPENCTEM_TEST_S3_REGION: auto
+    defaults:
+      run:
+        working-directory: api
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # A schedule runs the default branch's copy of this file: test develop.
+          ref: ${{ github.event_name == 'schedule' && 'develop' || '' }}
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: api/go.mod
+          cache: true
+          cache-dependency-path: api/go.sum
+      - name: Integration test (skips when the secrets are unset)
+        run: go test ./internal/infra/storage -run 'TestS3Integration' -count=1 -v
