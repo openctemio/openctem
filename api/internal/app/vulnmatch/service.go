@@ -13,6 +13,7 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app/closuremode"
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/api/pkg/domain/edgeaddr"
 	"github.com/openctemio/openctem/api/pkg/domain/ingestreceipt"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/softwarematch"
@@ -351,6 +352,7 @@ func (s *Service) ReconcileTenant(ctx context.Context, tenantID shared.ID, st *S
 		s.logger.Error("vulnerability matching: tenant has more matches than one pass reads; nothing is closed until it fits",
 			"tenant_id", tenantID.String(), "limit", s.maxRows)
 	}
+	s.attributeHosting(ctx, tenantID, matches)
 	desired, matched := s.plan(tenantID, policy, matches)
 
 	existing, err := s.store.MatcherFindings(ctx, tenantID)
@@ -635,6 +637,7 @@ func (s *Service) enrich(ctx context.Context, tenantID shared.ID, findings []*vu
 	}
 	for _, f := range findings {
 		CapPotentialPriority(f)
+		CapSharedHostingPriority(f)
 	}
 	if s.sla != nil {
 		if err := s.sla.ApplyBatch(ctx, tenantID, findings); err != nil {
@@ -653,6 +656,66 @@ func Confirmed(f *vulnerability.Finding) bool {
 	}
 	_, ok = vm["confirmed_by"]
 	return ok
+}
+
+// HostingReader reads where the tenant's matched assets are served from
+// (softwarematch.HostFacts). Optional: without it nothing is attributed to a
+// provider.
+type HostingReader interface {
+	HostingFacts(ctx context.Context, tenantID shared.ID, assetIDs []shared.ID) (map[shared.ID]softwarematch.HostFacts, error)
+}
+
+// attributeHosting sets HostedBy on the matches whose asset a provider's
+// shared front end serves. Best effort: a failed read attributes nothing
+// (the matches stay the organization's, the safe side for raising them).
+func (s *Service) attributeHosting(ctx context.Context, tenantID shared.ID, matches []softwarematch.Match) {
+	hr, ok := s.store.(HostingReader)
+	if !ok || len(matches) == 0 {
+		return
+	}
+	seen := map[shared.ID]bool{}
+	ids := make([]shared.ID, 0, 64)
+	for _, m := range matches {
+		if !seen[m.AssetID] {
+			seen[m.AssetID] = true
+			ids = append(ids, m.AssetID)
+		}
+	}
+	facts, err := hr.HostingFacts(ctx, tenantID, ids)
+	if err != nil {
+		s.logger.Warn("vulnerability matching: hosting facts not read", "tenant_id", tenantID.String(), "error", err)
+		return
+	}
+	c := edgeaddr.Default()
+	hosted := map[shared.ID]string{}
+	for id, f := range facts {
+		if p := softwarematch.HostedBy(c, f); p != "" {
+			hosted[id] = p
+		}
+	}
+	for i := range matches {
+		matches[i].HostedBy = hosted[matches[i].AssetID]
+	}
+}
+
+// SharedHostingCapReason is the priority reason of a match on a provider's
+// shared front end.
+const SharedHostingCapReason = "Version-based match on a host the provider's shared front end serves: attributed to the provider, shown as context"
+
+// CapSharedHostingPriority lowers a version match on a provider's shared
+// front end to P3: the software belongs to the provider, so it is context for
+// the organization, never its own P0-P2.
+func CapSharedHostingPriority(f *vulnerability.Finding) {
+	vm, ok := f.Metadata()["version_match"].(map[string]any)
+	if !ok {
+		return
+	}
+	if p, _ := vm["hosted_by"].(string); p == "" || Confirmed(f) {
+		return
+	}
+	if p := f.PriorityClass(); p == nil || *p == vulnerability.PriorityP0 || *p == vulnerability.PriorityP1 || *p == vulnerability.PriorityP2 {
+		f.SetPriorityClassification(vulnerability.PriorityP3, SharedHostingCapReason)
+	}
 }
 
 // CapPotentialPriority lowers a P0/P1 version match below the likely

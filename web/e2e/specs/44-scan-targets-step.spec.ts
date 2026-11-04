@@ -98,11 +98,11 @@ for (const width of [390, 1440]) {
       await expect(fixes.first()).toHaveText(/run on my sensor/i)
       await expect(fixes.nth(1)).toHaveText(/verify acme-e2e\.example/i)
 
-      // One footer row: Back left, Next right, disabled with its reason; no Cancel.
+      // One footer row: Back left, Next right; Next never locks (every step
+      // can be looked at), the blocked targets stop Create instead; no Cancel.
       const back = dialog.getByTestId('wizard-back')
       const next = dialog.getByTestId('wizard-next')
-      await expect(next).toBeDisabled()
-      await expect(dialog.getByTestId('wizard-note')).toHaveText(/blocked target/i)
+      await expect(next).toBeEnabled()
       const b = (await back.boundingBox())!
       const n = (await next.boundingBox())!
       expect(Math.abs(b.y - n.y)).toBeLessThan(4)

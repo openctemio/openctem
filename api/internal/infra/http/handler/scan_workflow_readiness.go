@@ -30,15 +30,17 @@ type WorkflowReadinessResponse struct {
 // reason code and Tools the tools it names, for a localized reason; Reason
 // and Fix are the English text.
 type StepReadinessResponse struct {
-	StepKey    string   `json:"step_key"`
-	Name       string   `json:"name"`
-	Capability string   `json:"capability,omitempty"`
-	State      string   `json:"state"`
-	Optional   bool     `json:"optional,omitempty"`
-	Code       string   `json:"code,omitempty"`
-	Tools      []string `json:"tools,omitempty"`
-	Reason     string   `json:"reason,omitempty"`
-	Fix        string   `json:"fix,omitempty"`
+	StepKey    string `json:"step_key"`
+	Name       string `json:"name"`
+	Capability string `json:"capability,omitempty"`
+	State      string `json:"state"`
+	Optional   bool   `json:"optional,omitempty"`
+	// Tool is the tool a ready step runs with.
+	Tool   string   `json:"tool,omitempty"`
+	Code   string   `json:"code,omitempty"`
+	Tools  []string `json:"tools,omitempty"`
+	Reason string   `json:"reason,omitempty"`
+	Fix    string   `json:"fix,omitempty"`
 }
 
 // wantsReadiness reports whether the request asked for readiness.
