@@ -10,6 +10,16 @@ OpenCTEM uses Go's standard library `log/slog` for structured logging. The logge
 - **Log sampling** for high-traffic production environments
 - **Configurable HTTP request logging** with skip paths
 
+Every record carries the identity of the process that wrote it: `service`
+(`api`), `version` (the build version) and `env` (`APP_ENV`), so records stay
+attributable once several services' logs are shipped to one store.
+
+Audit rows written during a request carry its `request_id` and the client
+address (trusted-proxy rule applied) even when the caller did not set them:
+`AuditService.LogEvent` falls back to the request context. Search the
+application log by an audit row's `request_id` to find what else the request
+did.
+
 ## Configuration
 
 ### Environment Variables
@@ -76,6 +86,14 @@ log.Error("user created", "id", 3) // Group: "ERROR:user created" (different)
 ```
 
 ## HTTP Request Logging
+
+Each request line has `method`, `path` (invitation tokens redacted, no query
+string), `status`, `duration`, `request_id`, `remote_addr`, `client_ip`,
+`user_agent` and, once the request authenticated, who it authenticated as:
+`user_id` and `tenant_id` (or `admin_id` on the platform admin plane).
+Identifiers only, never an e-mail. A `401`/`403` line therefore says which
+account was refused, so access-control failures can be counted per account and
+organization.
 
 ### Skip Paths
 
