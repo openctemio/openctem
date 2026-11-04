@@ -18,9 +18,17 @@ platform itself never calls a source.
   source id is the credential name the tool's manifest declares
   (`permissions.credentials` in its tool.yaml), with its format (`key`, or a
   `pair` such as `TOKEN:ORG_ID` for censys). Only catalog sources are stored.
-- A key is 1 to 1024 visible ASCII characters without spaces; a pair has
-  exactly one colon between two non-empty parts. Error messages never repeat
-  the value.
+- A key is 1 to 1024 visible ASCII characters without spaces, with a secret
+  part of at least 8; a pair has exactly one colon between two non-empty
+  parts. Error messages never repeat the value. Only the tail of the secret
+  part is shown (never a user name or app id).
+- Sources whose first part names where the tool connects accept their own
+  service only: intelx `HOST:KEY` with HOST under `intelx.io`, zoomeye
+  `HOST:KEY` with HOST `zoomeye.ai|hk|org`, redhuntlabs
+  `https://HOST/PATH:KEY` with HOST under `redhuntlabs.com` (https, no port,
+  user information, query or fragment). IP addresses and any other host are
+  refused, so a tenant cannot point a shared sensor at an address of its
+  choice; the sensor checks the same rule again before it writes the file.
 
 ## Console API
 
@@ -81,6 +89,9 @@ its command line or in its environment.
 | Keys in logs, results or the job | Not in the signed job, payload, outbox or result; redaction list; no-store; write-only API |
 | An untrusted sensor receives keys | Only trusted organization sensors; unreadable grant gives none |
 | Database dump | AES-GCM ciphertext; rekey registry |
+| A tenant points a sensor at an internal address through a key | Host and URL parts restricted to the source's own service, checked on save and again on the sensor |
+| A compromised trusted organization sensor | It can fetch its own organization's keys for the commands it holds, nothing more; revoke or distrust the sensor and rotate the keys |
+| Ciphertext moved between rows | Accepted: like every stored secret today the ciphertext is not bound to its row (no associated data) |
 
 Not yet: per-source usage reports and quota, a Test button (run by a sensor),
 platform-held keys for organizations that opt in, and keys for other tools

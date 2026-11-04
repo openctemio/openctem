@@ -155,7 +155,7 @@ func (s *Service) StoreKey(ctx context.Context, tenantID, sourceID, value string
 	_, getErr := s.repo.Get(ctx, tid, src.ID)
 	rotated := getErr == nil
 	by := actorID(actx)
-	k := &dom.Key{TenantID: tid, Source: src.ID, KeyEnc: enc, Last4: dom.Last4(value), Enabled: true,
+	k := &dom.Key{TenantID: tid, Source: src.ID, KeyEnc: enc, Last4: src.Last4(value), Enabled: true,
 		CreatedBy: by, UpdatedBy: by, UpdatedAt: s.now()}
 	if err := s.repo.Upsert(ctx, k); err != nil {
 		return SourceView{}, err

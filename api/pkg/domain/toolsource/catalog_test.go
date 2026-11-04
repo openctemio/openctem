@@ -47,17 +47,19 @@ func TestValidateValue(t *testing.T) {
 	}{
 		{single, "abcDEF0123456789", true},
 		{single, "with:colon:ok", true},
+		{single, "short7c", false},
 		{single, "", false},
 		{single, "has space", false},
 		{single, "line\nbreak", false},
 		{single, "tab\tkey", false},
 		{single, "ünicode", false},
 		{single, strings.Repeat("a", MaxValueLen+1), false},
-		{pairSrc, "token:org", true},
+		{pairSrc, "token:org-0001", true},
+		{pairSrc, "token:org", false}, // secret part shorter than 8
 		{pairSrc, "token", false},
-		{pairSrc, ":org", false},
+		{pairSrc, ":org-0001", false},
 		{pairSrc, "token:", false},
-		{pairSrc, "a:b:c", false},
+		{pairSrc, "a:b:c-0001", false},
 	} {
 		err := c.src.ValidateValue(c.v)
 		if (err == nil) != c.ok {
@@ -73,8 +75,69 @@ func TestValidateValue(t *testing.T) {
 }
 
 func TestLast4(t *testing.T) {
-	if Last4("short-key") != "" || Last4("0123456789abcdef") != "cdef" {
-		t.Fatal("Last4")
+	single, _ := Lookup("shodan")
+	pairSrc, _ := Lookup("domainsproject")
+	if single.Last4("short-key-01") != "y-01" || single.Last4("short-key") != "" || single.Last4("0123456789abcdef") != "cdef" {
+		t.Fatal("Last4 of a key")
+	}
+	// A pair shows only the tail of its secret part, and only a long one.
+	if got := pairSrc.Last4("someuser-name-long:pass-word"); got != "" {
+		t.Fatalf("short secret part shown: %q", got)
+	}
+	if got := pairSrc.Last4("u:0123456789abcdef"); got != "cdef" {
+		t.Fatalf("pair Last4 %q", got)
+	}
+	if got := pairSrc.Last4("long-user-name-1234:x2345678"); got != "" {
+		t.Fatalf("user name tail shown: %q", got)
+	}
+}
+
+// Sources whose first part names where the tool connects accept their own
+// service only: never an IP address, a port, user information or another
+// host (a shared sensor must not be pointed at an address of a tenant's
+// choice).
+func TestEndpointSources(t *testing.T) {
+	intelx, _ := Lookup("intelx")
+	zoomeye, _ := Lookup("zoomeyeapi")
+	rhl, _ := Lookup("redhuntlabs")
+	const k = "abcdef0123456789"
+	for _, c := range []struct {
+		src Source
+		v   string
+		ok  bool
+	}{
+		{intelx, "2.intelx.io:" + k, true},
+		{intelx, "free.intelx.io:" + k, true},
+		{intelx, "intelx.io:" + k, true},
+		{intelx, "10.0.0.5:" + k, false},
+		{intelx, "127.0.0.1:" + k, false},
+		{intelx, "[::1]:" + k, false},
+		{intelx, "169.254.169.254:" + k, false},
+		{intelx, "evil.com:" + k, false},
+		{intelx, "intelx.io.evil.com:" + k, false},
+		{intelx, "evilintelx.io:" + k, false},
+		{intelx, "user@2.intelx.io:" + k, false},
+		{intelx, "2.intelx.io:8443:" + k, false},
+		{intelx, "2.INTELX.IO:" + k, false},
+		{intelx, "localhost:" + k, false},
+		{zoomeye, "zoomeye.ai:" + k, true},
+		{zoomeye, "zoomeye.hk:" + k, true},
+		{zoomeye, "evil.zoomeye.ai:" + k, false},
+		{zoomeye, "10.0.0.5:" + k, false},
+		{rhl, "https://reconapi.redhuntlabs.com/community/v1/domains/subdomains:" + k, true},
+		{rhl, "http://reconapi.redhuntlabs.com/x:" + k, false},
+		{rhl, "https://10.0.0.5/x:" + k, false},
+		{rhl, "https://evil.com/x:" + k, false},
+		{rhl, "https://reconapi.redhuntlabs.com.evil.com/x:" + k, false},
+		{rhl, "https://reconapi.redhuntlabs.com:8443/x:" + k, false},
+		{rhl, "https://user@reconapi.redhuntlabs.com/x:" + k, false},
+		{rhl, "https://reconapi.redhuntlabs.com/x?u=1:" + k, false},
+		{rhl, "https://reconapi.redhuntlabs.com/x#f:" + k, false},
+		{rhl, "https://reconapi.redhuntlabs.com/x", false},
+	} {
+		if err := c.src.ValidateValue(c.v); (err == nil) != c.ok {
+			t.Errorf("%s %q: %v", c.src.ID, c.v, err)
+		}
 	}
 }
 

@@ -148,12 +148,19 @@ func TestToolCredentials_OrganizationKeysOnlyForItsOwnLeasedTask(t *testing.T) {
 		}
 	}
 
-	// A finished job gets nothing.
-	if _, err := h.db.ExecContext(context.Background(), `UPDATE commands SET status = 'completed', completed_at = now() WHERE id = $1`, jobA); err != nil {
-		t.Fatal(err)
-	}
-	if resp, _ := h.fetch(sA.key, jobA, "subfinder", "3"); resp.StatusCode != http.StatusNotFound {
-		t.Fatalf("finished job: %d", resp.StatusCode)
+	// No replay after the lease ends: a completed or failed job, asked by
+	// the same sensor under the same lease epoch, gets nothing.
+	for _, end := range []string{"completed", "failed"} {
+		job := h.runningJob(tenantA, sA.id, subfinderJob, false)
+		if resp, _ := h.fetch(sA.key, job, "subfinder", "3"); resp.StatusCode != http.StatusOK {
+			t.Fatalf("running job before %s: %d", end, resp.StatusCode)
+		}
+		if _, err := h.db.ExecContext(context.Background(), `UPDATE commands SET status = $2, completed_at = now() WHERE id = $1`, job, end); err != nil {
+			t.Fatal(err)
+		}
+		if resp, out := h.fetch(sA.key, job, "subfinder", "3"); resp.StatusCode != http.StatusNotFound || len(out.Credentials) != 0 {
+			t.Fatalf("%s job, same sensor and epoch: %d %v", end, resp.StatusCode, credValues(out))
+		}
 	}
 
 	// A disabled key is not delivered.
