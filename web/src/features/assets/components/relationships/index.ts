@@ -3,5 +3,5 @@
  */
 
 export * from './add-relationship-dialog'
-export * from './relationship-graph'
 export * from './related-assets-list'
+export * from './neighborhood-graph'

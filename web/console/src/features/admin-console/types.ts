@@ -981,6 +981,19 @@ export interface EmailRelaySettings extends SettingChange {
   version: number
 }
 
+/**
+ * System > Leaked credentials: whether imported leaked secret values are kept
+ * for organizations that never chose (GET/PUT /admin/settings/leaked-secret-storage).
+ */
+export interface LeakedSecretStorageSettings extends SettingChange {
+  store_by_default: boolean
+  /** console or default */
+  source: string
+  /** the value while nothing is stored: on self-managed, off on a managed service */
+  default: boolean
+  version: number
+}
+
 /** Settings > CAPTCHA: the Turnstile keys; the secret is never returned. */
 export interface CaptchaSettings extends SettingChange {
   site_key: string

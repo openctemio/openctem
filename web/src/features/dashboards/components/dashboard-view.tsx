@@ -85,7 +85,10 @@ export function DashboardView({ dashboard, data, loading, failed, onRetry }: Das
         const state = value ? widgetModel(value, specOf(w), false).state : undefined
         const compact =
           (state === 'no_data_yet' || state === 'not_measured') && colSpanFor(w.w, cols) === cols
-        const rows = compact ? 1 : w.h
+        // The key figures strip is one row of tiles: a taller stored height
+        // (older layouts, the editor's former default) only left blank space
+        // under it, so it always takes one row and is as tall as its tiles.
+        const rows = compact || value?.shape === 'kpis' ? 1 : w.h
         return (
           <div
             key={spec?.id ?? `${w.widget_type}-${i}`}

@@ -639,8 +639,12 @@ func run() int {
 		}
 
 		// Seal leaked-credential secrets still stored in plaintext (rows written
-		// before secrets were encrypted, or without a key). Idempotent, batched,
-		// SKIP LOCKED: safe on every start and across replicas.
+		// before secrets were encrypted, or without a key), then move every
+		// leaked-secret fingerprint from the install-wide key to its
+		// organization's key, recomputed from the sealed value. Both are
+		// idempotent, batched and resumable: safe on every start and across
+		// replicas. The re-key's reversal: encrypt-credentials
+		// -revert-credential-fingerprints.
 		go func() {
 			n, err := postgres.BackfillLeakedCredentialSecrets(ctx, db.DB, services.CredentialSecrets)
 			if err != nil {
@@ -649,6 +653,15 @@ func run() int {
 			}
 			if n > 0 {
 				log.Info("leaked credential secrets sealed", "count", n, "aes_gcm", services.CredentialSecrets.Encrypts())
+			}
+			rep, err := postgres.RekeyLeakedCredentialFingerprints(ctx, db.DB, services.CredentialSecrets)
+			if err != nil {
+				log.Error("leaked credential fingerprint re-key failed", "error", err, "rekeyed", rep.Rekeyed)
+				return
+			}
+			if rep.Rekeyed > 0 || rep.Unrecomputable > 0 {
+				log.Info("leaked credential fingerprints keyed per organization",
+					"rekeyed", rep.Rekeyed, "unrecomputable", rep.Unrecomputable)
 			}
 		}()
 

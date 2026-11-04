@@ -22,7 +22,8 @@
 //	AES-256-GCM, raw bytes (pkg/domain/secretstore, key = hex-decoded key):
 //	  credentials.encrypted_data                      secret store (template sources, ...)
 //	Keyed hashes that are recomputed from the plaintext:
-//	  exposure_events.details.secret_fingerprint      HMAC keyed from the key
+//	  exposure_events.details.secret_fingerprint      HMAC under a per-organization
+//	                                                  key derived from the key
 //	  scanner_templates.signature_hash                HMAC(key, content)
 //
 // Token hashes peppered with the key (oct_ API keys, SCIM tokens, sensor
@@ -53,6 +54,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/credential"
 	"github.com/openctemio/openctem/api/pkg/domain/scannertemplate"
 	"github.com/openctemio/openctem/api/pkg/domain/secretstore"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // Keys holds both keys in the APP_ENCRYPTION_KEY string form.
@@ -440,9 +442,7 @@ func (l leakedSecret) run(ctx context.Context, tx *sql.Tx, ks *keyset) (Count, [
 		cnt.Absent = !ok
 		return cnt, nil, err
 	}
-	rows, err := collect(ctx, tx, `SELECT id::text, details->>'secret_value_enc' FROM exposure_events
-		WHERE details->>'secret_value_enc' IS NOT NULL AND details->>'secret_enc_scheme' = $1 FOR UPDATE`,
-		credential.SecretSchemeAESGCM)
+	rows, err := collectLeakedSecrets(ctx, tx)
 	if err != nil {
 		return cnt, nil, err
 	}
@@ -459,7 +459,7 @@ func (l leakedSecret) run(ctx context.Context, tx *sql.Tx, ks *keyset) (Count, [
 				if out, err = ks.newC.EncryptString(p); err != nil {
 					return cnt, nil, err
 				}
-				fp, oc = ks.newProtector.Fingerprint(p), rekeyed
+				fp, oc = ks.newProtector.Fingerprint(r.tenantID, p), rekeyed
 			} else if _, err := ks.newC.DecryptString(v); err == nil {
 				oc = already
 			}
@@ -467,14 +467,45 @@ func (l leakedSecret) run(ctx context.Context, tx *sql.Tx, ks *keyset) (Count, [
 		tally(&cnt, &fails, l.name(), r.pk, oc)
 		if oc == rekeyed {
 			if _, err := tx.ExecContext(ctx, `UPDATE exposure_events
-				SET details = jsonb_set(jsonb_set(details, '{secret_value_enc}', to_jsonb($1::text)),
-				                        '{secret_fingerprint}', to_jsonb($2::text))
-				WHERE id::text = $3`, out, fp, r.pk); err != nil {
+				SET details = jsonb_set(jsonb_set(jsonb_set(details, '{secret_value_enc}', to_jsonb($1::text)),
+				                        '{secret_fingerprint}', to_jsonb($2::text)),
+				                        '{secret_fingerprint_version}', to_jsonb($4::int))
+				WHERE id::text = $3 AND tenant_id = $5`, out, fp, r.pk, credential.FingerprintVersionTenant, r.tenantID.String()); err != nil {
 				return cnt, nil, err
 			}
 		}
 	}
 	return cnt, fails, nil
+}
+
+// leakedRow is one sealed leaked secret and its organization, which keys the
+// recomputed fingerprint.
+type leakedRow struct {
+	keyed
+	tenantID shared.ID
+}
+
+func collectLeakedSecrets(ctx context.Context, tx *sql.Tx) ([]leakedRow, error) {
+	rows, err := tx.QueryContext(ctx, `SELECT id::text, tenant_id::text, details->>'secret_value_enc' FROM exposure_events
+		WHERE details->>'secret_value_enc' IS NOT NULL AND details->>'secret_enc_scheme' = $1 FOR UPDATE`,
+		credential.SecretSchemeAESGCM)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []leakedRow
+	for rows.Next() {
+		var r leakedRow
+		var tid string
+		if err := rows.Scan(&r.pk, &tid, &r.v); err != nil {
+			return nil, err
+		}
+		if r.tenantID, err = shared.IDFromString(tid); err != nil {
+			return nil, fmt.Errorf("exposure %s: tenant id: %w", r.pk, err)
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
 }
 
 // secretStore is credentials.encrypted_data (raw AES-GCM bytes).
