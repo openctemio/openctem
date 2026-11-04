@@ -422,6 +422,19 @@ func (s *alterScope) mayAlter(a *asset.Asset) bool {
 	return false
 }
 
+// mayLinkName reports whether this report may add an edge from a stored DNS
+// name it only mentions (a port scan's host name, linked to the address it
+// scanned): whenever it may change the name, and for a report bound to a
+// command assigned to its sensor, which reports the name it was given or
+// resolved. An unsolicited report, or an upload whose actor may not change
+// the name, adds none (RFC-040 §5.3).
+func (s *alterScope) mayLinkName(a *asset.Asset) bool {
+	if a == nil || s.actorDenies(a.ID()) {
+		return false
+	}
+	return s.mayAlter(a) || (s != nil && s.commandBound)
+}
+
 // primeCollector looks up, in one call, whether the report's collector
 // source owns these existing assets.
 func (s *alterScope) primeCollector(existing map[string]*asset.Asset) {
