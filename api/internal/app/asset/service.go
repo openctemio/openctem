@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -23,6 +24,7 @@ import (
 	covdom "github.com/openctemio/openctem/api/pkg/domain/coverage"
 	"github.com/openctemio/openctem/api/pkg/domain/scoring"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	tagdom "github.com/openctemio/openctem/api/pkg/domain/tag"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/pagination"
 )
@@ -494,7 +496,11 @@ func (s *AssetService) CreateAsset(ctx context.Context, input CreateAssetInput) 
 	if input.Description != "" {
 		a.UpdateDescription(input.Description)
 	}
-	for _, tag := range input.Tags {
+	tags, tagErr := tagdom.ValidateNew(nil, input.Tags)
+	if tagErr != nil {
+		return nil, fmt.Errorf("%w: %w", shared.ErrValidation, tagErr)
+	}
+	for _, tag := range tags {
 		a.AddTag(tag)
 	}
 
@@ -1164,11 +1170,21 @@ func (s *AssetService) updateAsset(ctx context.Context, assetID string, tenantID
 		oldTags = make([]string, len(a.Tags()))
 		copy(oldTags, a.Tags())
 
-		for _, tag := range a.Tags() {
-			a.RemoveTag(tag)
+		// Only the tags a person adds are checked: a tag the asset already
+		// carries (a scanner's, an older limit's) never blocks a save.
+		next, tagErr := tagdom.ValidateNew(oldTags, input.Tags)
+		if tagErr != nil {
+			return nil, nil, fmt.Errorf("%w: %w", shared.ErrValidation, tagErr)
 		}
-		for _, tag := range input.Tags {
-			a.AddTag(tag)
+		for _, tag := range oldTags {
+			if !slices.Contains(next, tag) {
+				a.RemoveTag(tag)
+			}
+		}
+		for _, tag := range next {
+			if !slices.Contains(oldTags, tag) {
+				a.AddTag(tag)
+			}
 		}
 	}
 
@@ -2180,7 +2196,11 @@ func (s *AssetService) CreateRepositoryAssetWithOutcome(ctx context.Context, inp
 	if input.Description != "" {
 		a.UpdateDescription(input.Description)
 	}
-	for _, tag := range input.Tags {
+	repoTags, tagErr := tagdom.ValidateNew(nil, input.Tags)
+	if tagErr != nil {
+		return nil, nil, none, fmt.Errorf("%w: %w", shared.ErrValidation, tagErr)
+	}
+	for _, tag := range repoTags {
 		a.AddTag(tag)
 	}
 
@@ -2750,8 +2770,12 @@ func (s *AssetService) updateExistingRepositoryAsset(
 		existingAsset.SetClassification(classification)
 	}
 
-	// Add new tags
-	for _, tag := range input.Tags {
+	// Add new tags (checked like a create; a tag the asset carries stays)
+	addTags, tagErr := tagdom.ValidateNew(existingAsset.Tags(), input.Tags)
+	if tagErr != nil {
+		return nil, nil, fmt.Errorf("%w: %w", shared.ErrValidation, tagErr)
+	}
+	for _, tag := range addTags {
 		existingAsset.AddTag(tag)
 	}
 

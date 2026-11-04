@@ -1485,18 +1485,10 @@ func (p *AssetProcessor) createAssetFromCTIS(
 		newAsset.UpdateDescription(desc)
 	}
 
-	// Set tags (with limit) - log if truncated
-	tags := ctisAsset.Tags
-	if len(tags) > MaxTagsPerAsset {
-		p.logger.Warn("asset tags truncated",
-			"original_count", len(tags),
-			"max_count", MaxTagsPerAsset,
-			"asset_id", ctisAsset.ID,
-		)
-		tags = tags[:MaxTagsPerAsset]
-	}
-	for _, tag := range tags {
-		newAsset.AddTag(tag)
+	// Tags: the shared validator and the per-import cap (a report is not
+	// trusted with arbitrary strings: see importTags).
+	for _, t := range p.importTags(ctisAsset.Tags, ctisAsset.ID, nil) {
+		newAsset.AddTag(t)
 	}
 
 	// Discovery info: the report's tool, unless a server-side report (the
@@ -1644,9 +1636,9 @@ func (p *AssetProcessor) mergeCTISIntoAsset(existing *asset.Asset, ctisAsset *ct
 	// owner_ref and data classification of an existing asset are decided
 	// by attribute reconciliation (attributes.go, RFC-069), not here.
 
-	// Merge tags
-	for _, tag := range ctisAsset.Tags {
-		existing.AddTag(tag)
+	// Merge tags (validated like a first sight)
+	for _, t := range p.importTags(ctisAsset.Tags, ctisAsset.ID, nil) {
+		existing.AddTag(t)
 	}
 
 	// Merge properties using deep merge
