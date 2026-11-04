@@ -87,7 +87,7 @@ The overlay has to compile **inside** the `github.com/openctemio/openctem/api` m
 - Dependencies handed to a module are core interfaces only: a tenant-scoped transaction helper, the
   entitlement service, the audit recorder, authorization, the outbox and the `pkg/httpsec` client. No
   raw database pool and no global state.
-- `internal/server/edition_ee.go` (build tag `ee`) is the only file that imports the overlay;
+- `cmd/server/edition_ee.go` (build tag `ee`) is the only file that imports the overlay;
   `edition_ce.go` (tag `!ee`) sets the edition to `community`. The version endpoint reports it.
 - Generated contracts (OpenAPI, route permissions) are produced per edition: Community artefacts never
   contain overlay routes.
@@ -128,7 +128,7 @@ These keep commercial code out of this repository. They are the first work item,
    `web/src/app/(ee)/` and `web/console/src/app/(ee)/`.
 2. A required CI check `edition-fence` fails when: a tracked file exists under those paths other than the
    README; `go list -deps ./...` without tags contains an `api/ee` package or any module of the
-   private overlay; the `ee` build tag appears outside `internal/server/edition_ee.go` and the test fixture;
+   private overlay; the `ee` build tag appears outside `cmd/server/edition_ee.go` and the test fixture;
    a commercial brand string appears in the diff; or web code imports `@ee/` other than through the
    alias.
 3. A pre-commit hook in `.githooks` runs the path and brand checks locally.
