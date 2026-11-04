@@ -129,3 +129,10 @@ nodes, a legend by asset type, and a breadcrumb of the lineage above the
 canvas. Selecting a node (click, or arrow keys then Enter) opens a panel to
 open the asset, show its related assets (a depth-1 neighborhood merged into
 the graph) or draw a cluster's members 50 at a time.
+
+**Full screen** (the shared `FlowFullscreen`, also on the attack-path
+canvas): the canvas's "Full screen" button or `f` opens the same view in a
+full-viewport dialog (a full-screen sheet on a phone) with the hops selector,
+legend, lineage trail, zoom and fit controls and the node panel; the page
+state (hops, expansions, selection) carries over and the graph fits the
+screen on open. Escape, the close button or `f` again leave it.

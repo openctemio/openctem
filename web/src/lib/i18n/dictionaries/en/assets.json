@@ -494,6 +494,7 @@
   "assets.graph.errorTitle": "related assets",
   "assets.graph.expand": "Show related assets",
   "assets.graph.expandFailed": "Could not load the related assets",
+  "assets.graph.fullTitle": "Related assets of {name}",
   "assets.graph.hiddenDetail": "Outside your data scope",
   "assets.graph.hiddenNeighbors": "{n} outside your access",
   "assets.graph.legend": "Asset types",
