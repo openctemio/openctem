@@ -5,13 +5,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/ctis/importer/mapping"
+	"github.com/openctemio/ctis/v2/importer/mapping"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 func findingDoc(identity, sets string) string {
-	return `{"apiVersion": "openctem.io/mapping/v1", "source": "csv", "identity": ` + identity + `,
+	return `{"apiVersion": "openctem.io/mapping/v2", "source": "csv", "identity": ` + identity + `,
 	  "records": [{"kind": "finding", "set": {"title": "/title", "severity": {"const": "low"}, "asset_value": "/host"` + sets + `}}]}`
 }
 
@@ -25,22 +25,22 @@ func mustCompile(t *testing.T, doc string) *mapping.Mapping {
 }
 
 func TestCompilePolicy(t *testing.T) {
-	ok := findingDoc(`["title", "asset_value"]`, `, "vulnerability.cve_id": "/cve", "type": {"const": "misconfiguration"}`)
+	ok := findingDoc(`["title", "asset_value"]`, `, "vulnerability.ids": "/cve", "type": {"const": "misconfiguration"}`)
 	mustCompile(t, ok)
 
 	refused := map[string]struct{ doc, want string }{
-		"reserved fingerprint":  {findingDoc(`["title"]`, `, "fingerprint": "/id"`), `"fingerprint" is reserved`},
-		"reserved partial fp":   {findingDoc(`["title"]`, `, "partial_fingerprints.x": "/id"`), "reserved"},
-		"reserved baseline":     {findingDoc(`["title"]`, `, "baseline_state": "/s"`), "reserved"},
-		"reserved kev":          {findingDoc(`["title"]`, `, "vulnerability.in_cisa_kev": {"const": true}`), "reserved"},
-		"reserved branch":       {findingDoc(`["title"]`, `, "location.branch": "/b"`), "reserved"},
-		"reserved source extra": {findingDoc(`["title"]`, `, "source_extra.plugin_type": "/p"`), "reserved"},
-		"secret type":           {findingDoc(`["title"]`, `, "type": {"const": "secret"}`), "type must be one of"},
-		"type from path":        {findingDoc(`["title"]`, `, "type": "/kind"`), "type must be one of"},
-		"type map escapes":      {findingDoc(`["title"]`, `, "type": {"path": "/kind", "map": {"a": "vulnerability", "b": "secret"}}`), "type must be one of"},
-		"no identity":           {strings.Replace(findingDoc(`["title"]`, ``), `"identity": ["title"],`, ``, 1), "declares its identity"},
-		"identity not member":   {findingDoc(`["description"]`, `, "description": "/d"`), "not an identity member"},
-		"constant identity":     {findingDoc(`["rule_id"]`, `, "rule_id": {"const": "X"}`), "constant"},
+		"reserved fingerprint":   {findingDoc(`["title"]`, `, "fingerprint": "/id"`), `"fingerprint" is reserved`},
+		"reserved partial fp":    {findingDoc(`["title"]`, `, "partial_fingerprints.x": "/id"`), "reserved"},
+		"reserved baseline":      {findingDoc(`["title"]`, `, "baseline_state": "/s"`), "reserved"},
+		"reserved threat signal": {findingDoc(`["title"]`, `, "vulnerability.modified_at": "/m"`), "reserved"},
+		"reserved branch":        {findingDoc(`["title"]`, `, "location.branch": "/b"`), "reserved"},
+		"reserved source extra":  {findingDoc(`["title"]`, `, "source_extra.plugin_type": "/p"`), "reserved"},
+		"secret type":            {findingDoc(`["title"]`, `, "type": {"const": "secret"}`), "type must be one of"},
+		"type from path":         {findingDoc(`["title"]`, `, "type": "/kind"`), "type must be one of"},
+		"type map escapes":       {findingDoc(`["title"]`, `, "type": {"path": "/kind", "map": {"a": "vulnerability", "b": "secret"}}`), "type must be one of"},
+		"no identity":            {strings.Replace(findingDoc(`["title"]`, ``), `"identity": ["title"],`, ``, 1), "declares its identity"},
+		"identity not member":    {findingDoc(`["description"]`, `, "description": "/d"`), "not an identity member"},
+		"constant identity":      {findingDoc(`["rule_id"]`, `, "rule_id": {"const": "X"}`), "constant"},
 		// A const passes through the map, so the map decides the type.
 		"type const remapped":    {findingDoc(`["title"]`, `, "type": {"const": "vulnerability", "map": {"vulnerability": "secret"}}`), "type must be one of"},
 		"type const default":     {findingDoc(`["title"]`, `, "type": {"const": "vulnerability", "map": {"x": "misconfiguration"}, "default": "secret"}`), "type must be one of"},
@@ -49,13 +49,13 @@ func TestCompilePolicy(t *testing.T) {
 		// value shares, or a map with one output.
 		"identity default":       {findingDoc(`["title", "rule_id"]`, `, "rule_id": {"path": "/never", "default": "X"}`), "has a default"},
 		"identity one-value map": {findingDoc(`["title", "rule_id"]`, `, "rule_id": {"path": "/r", "map": {"a": "X", "b": "X"}}`), "same output"},
-		"asset criticality": {`{"apiVersion": "openctem.io/mapping/v1", "source": "csv", "records": [
+		"asset criticality": {`{"apiVersion": "openctem.io/mapping/v2", "source": "csv", "records": [
 		  {"kind": "asset", "set": {"type": {"const": "host"}, "value": "/h", "criticality": {"const": "critical"}}}]}`, `"criticality" is reserved`},
-		"asset properties": {`{"apiVersion": "openctem.io/mapping/v1", "source": "csv", "records": [
+		"asset properties": {`{"apiVersion": "openctem.io/mapping/v2", "source": "csv", "records": [
 		  {"kind": "asset", "set": {"type": {"const": "host"}, "value": "/h", "properties.owner": "/o"}}]}`, "reserved"},
-		"asset identity hints": {`{"apiVersion": "openctem.io/mapping/v1", "source": "csv", "records": [
+		"asset identity hints": {`{"apiVersion": "openctem.io/mapping/v2", "source": "csv", "records": [
 		  {"kind": "asset", "set": {"type": {"const": "host"}, "value": "/h", "identity_hints.hostname": "/o"}}]}`, ""},
-		"dependency": {`{"apiVersion": "openctem.io/mapping/v1", "source": "csv", "records": [
+		"dependency": {`{"apiVersion": "openctem.io/mapping/v2", "source": "csv", "records": [
 		  {"kind": "dependency", "set": {"name": "/n"}}]}`, "not available for imports"},
 		"language error": {`{"apiVersion": "v0"}`, "apiVersion"},
 	}
@@ -71,7 +71,7 @@ func TestCompilePolicy(t *testing.T) {
 		})
 	}
 	// An asset-only mapping needs no identity.
-	mustCompile(t, `{"apiVersion": "openctem.io/mapping/v1", "source": "csv", "records": [
+	mustCompile(t, `{"apiVersion": "openctem.io/mapping/v2", "source": "csv", "records": [
 	  {"kind": "asset", "set": {"type": {"const": "host"}, "value": "/h", "name": "/n", "tags": "/t"}}]}`)
 }
 
@@ -89,11 +89,11 @@ func TestIdentityChanged(t *testing.T) {
 		"asset type added":       {findingDoc(`["title", "asset_value"]`, `, "description": "/d", "asset_type": {"const": "ip_address"}`), true},
 		// Members the server keys findings on change the identity even when
 		// the mapping does not declare them.
-		"undeclared key member": {findingDoc(`["title", "asset_value"]`, `, "description": "/d", "vulnerability.package": "/pkg"`), true},
+		"undeclared key member": {findingDoc(`["title", "asset_value"]`, `, "description": "/d", "vulnerability.package_name": "/pkg"`), true},
 		"rule id source":        {findingDoc(`["title", "asset_value"]`, `, "description": "/d", "rule_id": "/rule"`), true},
 		"type changed":          {findingDoc(`["title", "asset_value"]`, `, "description": "/d", "type": {"const": "misconfiguration"}`), true},
-		"recipe block added":    {findingDoc(`["title", "asset_value"]`, `, "description": "/d", "network.service": "/svc"`), true},
-		"cosmetic block member": {findingDoc(`["title", "asset_value"]`, `, "description": "/d", "vulnerability.fixed_version": "/fix"`), false},
+		"recipe block added":    {findingDoc(`["title", "asset_value"]`, `, "description": "/d", "network.app_protocol": "/svc"`), true},
+		"cosmetic block member": {findingDoc(`["title", "asset_value"]`, `, "description": "/d", "vulnerability.fixed_versions": "/fix"`), false},
 	}
 	for name, c := range cases {
 		if got := IdentityChanged(base, mustCompile(t, c.doc)); got != c.changed {

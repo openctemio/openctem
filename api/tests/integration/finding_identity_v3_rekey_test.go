@@ -25,7 +25,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/internal/app/refingerprint"
@@ -152,9 +152,9 @@ func toPreviousRelease(t *testing.T, g *goldenRig, tn v2Tenant, file goldenFile,
 			t.Fatal(err)
 		}
 	}
-	// Nor does a version-2 row have its version-3 alias.
+	// Nor does a version-2 row have an alias of a later version.
 	if _, err := g.r.db.Exec(`DELETE FROM finding_fingerprints a USING findings f
-		WHERE a.finding_id = f.id AND f.tenant_id = $1 AND a.version = 3`, tn.tenant.String()); err != nil {
+		WHERE a.finding_id = f.id AND f.tenant_id = $1 AND a.version >= 3`, tn.tenant.String()); err != nil {
 		t.Fatal(err)
 	}
 }

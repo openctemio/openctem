@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/pkg/domain/command"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -21,7 +21,7 @@ func TestIngest_DropsAddressesOutsideTheChunk(t *testing.T) {
 				{ID: "edge", Type: ctis.AssetTypeIPAddress, Value: "198.51.100.200"},
 				{ID: "out", Type: ctis.AssetTypeIPAddress, Value: "203.0.113.9"},
 				{ID: "svc", Type: ctis.AssetTypeHost, Value: "203.0.113.10", Properties: ctis.Properties{"ip_addresses": []any{"203.0.113.10"}}},
-				{ID: "name", Type: ctis.AssetTypeSubdomain, Value: "www.example.com"},
+				{ID: "name", Type: ctis.AssetTypeDomainName, Value: "www.example.com"},
 			},
 			Findings: []ctis.Finding{{ID: "f1", AssetRef: "out", Title: "planted", Severity: ctis.SeverityHigh, Type: ctis.FindingTypeVulnerability}},
 		}

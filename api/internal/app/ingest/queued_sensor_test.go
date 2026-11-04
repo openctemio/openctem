@@ -94,7 +94,7 @@ func TestJobProcessor_DropsWorkOfSensorsTakenOutOfService(t *testing.T) {
 			p := &JobProcessor{service: ing, sensors: svc}
 
 			out, err := p.Process(context.Background(),
-				ingestjob.NewJob(tenantID, tc.sensorID, "scan-7", "trivy", []byte(`{"version":"1.0"}`)))
+				ingestjob.NewJob(tenantID, tc.sensorID, "scan-7", "trivy", []byte(minimalDoc)))
 			if err != nil {
 				t.Fatalf("a dropped job must complete, not be retried: %v", err)
 			}
@@ -126,7 +126,7 @@ func TestJobProcessor_ActiveSensorIngestsAsTheStoredSensor(t *testing.T) {
 	p := &JobProcessor{service: ingesterFunc(func(agt *sensor.Sensor) { got = agt }), sensors: svc}
 
 	if _, err := p.Process(context.Background(),
-		ingestjob.NewJob(tenantID, &active.ID, "scan-8", "trivy", []byte(`{"version":"1.0"}`))); err != nil {
+		ingestjob.NewJob(tenantID, &active.ID, "scan-8", "trivy", []byte(minimalDoc))); err != nil {
 		t.Fatal(err)
 	}
 	if got != active {
@@ -143,7 +143,7 @@ func TestJobProcessor_SensorLookupFailureRetries(t *testing.T) {
 	sensorID := shared.NewID()
 	p := &JobProcessor{service: ing, sensors: svc}
 	if _, err := p.Process(context.Background(),
-		ingestjob.NewJob(shared.NewID(), &sensorID, "scan-9", "trivy", []byte(`{"version":"1.0"}`))); err == nil {
+		ingestjob.NewJob(shared.NewID(), &sensorID, "scan-9", "trivy", []byte(minimalDoc))); err == nil {
 		t.Fatal("lookup failure: job completed, want an error (retry)")
 	}
 	if ing.called {
@@ -153,7 +153,7 @@ func TestJobProcessor_SensorLookupFailureRetries(t *testing.T) {
 	// Not wired at all: fail closed.
 	p = &JobProcessor{service: ing}
 	if _, err := p.Process(context.Background(),
-		ingestjob.NewJob(shared.NewID(), &sensorID, "scan-9", "trivy", []byte(`{"version":"1.0"}`))); err == nil || ing.called {
+		ingestjob.NewJob(shared.NewID(), &sensorID, "scan-9", "trivy", []byte(minimalDoc))); err == nil || ing.called {
 		t.Fatal("no sensor check wired: job processed, want an error")
 	}
 }

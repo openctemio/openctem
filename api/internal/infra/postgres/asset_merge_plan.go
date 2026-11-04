@@ -233,6 +233,8 @@ var assetMergeLeftAlone = map[string]string{
 	"asset_state_history.asset_id":               "immutable audit log (UPDATE is blocked by a trigger); removed with the merged asset",
 	"asset_merge_log.kept_asset_id":              "the merge record itself",
 	"asset_merge_log.merged_asset_id":            "the merge record itself",
+	"asset_canonical_changes.asset_id":           "journal of the CTIS 2.0 name migration: names the asset as it was, kept as history",
+	"asset_canonical_changes.kept_asset_id":      "journal of the CTIS 2.0 name migration: the asset a merge kept, kept as history",
 	"ctem_cycle_scope_snapshots.asset_id":        "historical snapshot of a closed scope",
 	"ingest_reports.touched_asset_ids":           "historical record of one report",
 	"ingest_receipt_items.asset_id":              "historical record of what one receipt did with an item; it names the asset as it was at ingest and is not part of the asset's live data",

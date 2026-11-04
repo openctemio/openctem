@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
@@ -37,15 +37,18 @@ func TestIngest_OutputTypeBinding(t *testing.T) {
 	ingestDNSX := func(domain, repo string) {
 		t.Helper()
 		cmd := shared.NewID()
-		rep := &ctis.Report{Version: "1.0", Tool: &ctis.Tool{Name: "dnsx"},
-			Metadata: ctis.ReportMetadata{ID: "rep-" + cmd.String(), Timestamp: time.Now().UTC()},
+		rep := &ctis.Report{Version: ctis.SchemaVersion, Tool: &ctis.Tool{Name: "dnsx"},
+			Metadata: ctis.ReportMetadata{ID: ctis.NewReportID(), GeneratedAt: time.Now().UTC()},
 			Assets: []ctis.Asset{
-				{ID: "d", Type: ctis.AssetTypeDomain, Value: domain},
+				{ID: "d", Type: ctis.AssetTypeDomainName, Value: domain},
 				{ID: "r", Type: ctis.AssetTypeRepository, Value: repo},
 			}}
 		bind := ingest.Binding{Kind: ingest.BindingCommand, CommandID: &cmd, Tool: "dnsx", Targets: []string{domain}}
 		out, err := svc.Ingest(ctx, agt, ingest.Input{Report: rep, Options: ingest.Options{Binding: bind, Route: "ctis"}})
-		if err != nil || len(out.Errors) > 0 {
+		if err != nil {
+			t.Fatalf("ingest: %v", err)
+		}
+		if len(out.Errors) > 0 {
 			t.Fatalf("Ingest: %v %v", err, out.Errors)
 		}
 	}

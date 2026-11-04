@@ -6,7 +6,7 @@ import (
 	"encoding/hex"
 	"testing"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
@@ -27,7 +27,7 @@ func TestSetSecretFields_FingerprintIsKeyedByServerSecret(t *testing.T) {
 		}
 		return f
 	}
-	ctisFinding := &ctis.Finding{Secret: &ctis.SecretDetails{SecretType: "api_key", MaskedValue: reported},
+	ctisFinding := &ctis.Finding{Secret: &ctis.SecretDetails{Type: "api_key", MaskedValue: reported},
 		PartialFingerprints: map[string]string{partialServerSecretHMAC: "rawhash"}}
 
 	unwired := NewFindingProcessor(nil, nil, nil, logger.NewNop())
@@ -62,7 +62,7 @@ func TestSetSecretFieldsIgnoresReportedValidity(t *testing.T) {
 		t.Fatal(err)
 	}
 	p := NewFindingProcessor(nil, nil, nil, logger.NewNop())
-	p.setSecretFields(f, &ctis.Finding{Secret: &ctis.SecretDetails{SecretType: "api_key", Valid: &no}})
+	p.setSecretFields(f, &ctis.Finding{Secret: &ctis.SecretDetails{Type: "api_key", IsValid: &no}})
 	if f.SecretValid() != nil {
 		t.Fatalf("reported secret.valid stored: %v", *f.SecretValid())
 	}

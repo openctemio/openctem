@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/ctis/settings"
+	"github.com/openctemio/contract/settings"
 )
 
 // testToolSettingsConfig is a tool settings schema with a common option, a
