@@ -39,10 +39,10 @@ const MinSecretLen = 8
 // tool connects there from the sensor, so the part must name the source's
 // own service and nothing else (a tenant must never point a shared sensor at
 // an address of its choice).
+// The zero value: the key names no endpoint.
 const (
-	endpointNone = iota
 	// endpointHost: "HOST:KEY", HOST a DNS name the rule accepts.
-	endpointHost
+	endpointHost = iota + 1
 	// endpointURL: "https://HOST/PATH:KEY", HOST a DNS name the rule
 	// accepts, no port, user information, query or fragment.
 	endpointURL
