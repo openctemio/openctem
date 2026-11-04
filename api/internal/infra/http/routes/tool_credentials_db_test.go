@@ -48,7 +48,7 @@ func newToolKeyHarness(t *testing.T) *toolKeyHarness {
 
 func (h *toolKeyHarness) setKey(tenantID, source, value string) {
 	h.t.Helper()
-	if _, err := h.keys.SetKey(context.Background(), tenantID, source, value, auditapp.AuditContext{TenantID: tenantID}); err != nil {
+	if _, err := h.keys.StoreKey(context.Background(), tenantID, source, value, auditapp.AuditContext{TenantID: tenantID}); err != nil {
 		h.t.Fatalf("set key: %v", err)
 	}
 }
@@ -157,7 +157,7 @@ func TestToolCredentials_OrganizationKeysOnlyForItsOwnLeasedTask(t *testing.T) {
 	}
 
 	// A disabled key is not delivered.
-	if _, err := h.keys.SetEnabled(context.Background(), tenantA, "shodan", false, auditapp.AuditContext{TenantID: tenantA}); err != nil {
+	if _, err := h.keys.SwitchKey(context.Background(), tenantA, "shodan", false, auditapp.AuditContext{TenantID: tenantA}); err != nil {
 		t.Fatal(err)
 	}
 	jobA2 := h.runningJob(tenantA, sA.id, subfinderJob, false)

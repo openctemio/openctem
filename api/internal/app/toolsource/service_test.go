@@ -130,11 +130,11 @@ func TestKeysAreTheOrganizationsOwn(t *testing.T) {
 	ctx := context.Background()
 	a, b := shared.NewID(), shared.NewID()
 	actx := auditapp.AuditContext{TenantID: a.String(), ActorID: shared.NewID().String()}
-	v, err := svc.SetKey(ctx, a.String(), "securitytrails", secretA, actx)
+	v, err := svc.StoreKey(ctx, a.String(), "securitytrails", secretA, actx)
 	if err != nil || v.Key == nil || v.Key.Last4 != "0001" || !v.Key.Enabled {
 		t.Fatalf("set: %+v %v", v, err)
 	}
-	if _, err := svc.SetKey(ctx, b.String(), "securitytrails", secretB, auditapp.AuditContext{TenantID: b.String()}); err != nil {
+	if _, err := svc.StoreKey(ctx, b.String(), "securitytrails", secretB, auditapp.AuditContext{TenantID: b.String()}); err != nil {
 		t.Fatal(err)
 	}
 	// Stored as ciphertext only.
@@ -193,20 +193,20 @@ func TestRotateDisableDelete(t *testing.T) {
 	ctx := context.Background()
 	a := shared.NewID()
 	actx := auditapp.AuditContext{TenantID: a.String()}
-	if _, err := svc.SetKey(ctx, a.String(), "shodan", secretA, actx); err != nil {
+	if _, err := svc.StoreKey(ctx, a.String(), "shodan", secretA, actx); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svc.SetEnabled(ctx, a.String(), "shodan", false, actx); err != nil {
+	if _, err := svc.SwitchKey(ctx, a.String(), "shodan", false, actx); err != nil {
 		t.Fatal(err)
 	}
 	if c, _ := svc.ForTask(ctx, a, "subfinder", Delivery{}); len(c) != 0 {
 		t.Fatal("disabled key delivered")
 	}
 	// A rotation keeps the switch off.
-	if v, err := svc.SetKey(ctx, a.String(), "shodan", secretB, actx); err != nil || v.Key.Enabled || v.Key.Last4 != "0002" {
+	if v, err := svc.StoreKey(ctx, a.String(), "shodan", secretB, actx); err != nil || v.Key.Enabled || v.Key.Last4 != "0002" {
 		t.Fatalf("rotate: %+v %v", v.Key, err)
 	}
-	if _, err := svc.SetEnabled(ctx, a.String(), "shodan", true, actx); err != nil {
+	if _, err := svc.SwitchKey(ctx, a.String(), "shodan", true, actx); err != nil {
 		t.Fatal(err)
 	}
 	if c, _ := svc.ForTask(ctx, a, "subfinder", Delivery{}); len(c) != 1 || c[0].Value != secretB {
@@ -222,11 +222,11 @@ func TestRotateDisableDelete(t *testing.T) {
 		t.Fatalf("second delete: %v", err)
 	}
 	// Another organization cannot switch or remove A's key.
-	if _, err := svc.SetKey(ctx, a.String(), "shodan", secretA, actx); err != nil {
+	if _, err := svc.StoreKey(ctx, a.String(), "shodan", secretA, actx); err != nil {
 		t.Fatal(err)
 	}
 	b := shared.NewID().String()
-	if _, err := svc.SetEnabled(ctx, b, "shodan", false, auditapp.AuditContext{TenantID: b}); !errors.Is(err, shared.ErrNotFound) {
+	if _, err := svc.SwitchKey(ctx, b, "shodan", false, auditapp.AuditContext{TenantID: b}); !errors.Is(err, shared.ErrNotFound) {
 		t.Fatalf("cross-tenant switch: %v", err)
 	}
 	if err := svc.DeleteKey(ctx, b, "shodan", auditapp.AuditContext{TenantID: b}); !errors.Is(err, shared.ErrNotFound) {
@@ -239,14 +239,14 @@ func TestRefusals(t *testing.T) {
 	ctx := context.Background()
 	a := shared.NewID()
 	actx := auditapp.AuditContext{TenantID: a.String()}
-	if _, err := svc.SetKey(ctx, a.String(), "no-such-source", secretA, actx); !errors.Is(err, shared.ErrNotFound) {
+	if _, err := svc.StoreKey(ctx, a.String(), "no-such-source", secretA, actx); !errors.Is(err, shared.ErrNotFound) {
 		t.Fatalf("unknown source: %v", err)
 	}
-	if _, err := svc.SetKey(ctx, a.String(), "shodan", "has space", actx); !errors.Is(err, shared.ErrValidation) {
+	if _, err := svc.StoreKey(ctx, a.String(), "shodan", "has space", actx); !errors.Is(err, shared.ErrValidation) {
 		t.Fatalf("invalid value: %v", err)
 	}
 	noop := NewService(repo, &crypto.NoOpEncryptor{}, nil, logger.NewNop())
-	if _, err := noop.SetKey(ctx, a.String(), "shodan", secretA, actx); !errors.Is(err, ErrUnavailable) {
+	if _, err := noop.StoreKey(ctx, a.String(), "shodan", secretA, actx); !errors.Is(err, ErrUnavailable) {
 		t.Fatalf("no encryption: %v", err)
 	}
 	// An undecryptable key is skipped, never delivered as stored.

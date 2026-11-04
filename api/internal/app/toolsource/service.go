@@ -132,8 +132,8 @@ func (s *Service) view(ctx context.Context, tid shared.ID, src dom.Source) (Sour
 	return SourceView{Source: src, Key: factsOf(k)}, nil
 }
 
-// SetKey stores or replaces (rotates) the organization's key of a source.
-func (s *Service) SetKey(ctx context.Context, tenantID, sourceID, value string, actx auditapp.AuditContext) (SourceView, error) {
+// StoreKey stores or replaces (rotates) the organization's key of a source.
+func (s *Service) StoreKey(ctx context.Context, tenantID, sourceID, value string, actx auditapp.AuditContext) (SourceView, error) {
 	tid, err := parseTenant(tenantID)
 	if err != nil {
 		return SourceView{}, err
@@ -169,8 +169,8 @@ func (s *Service) SetKey(ctx context.Context, tenantID, sourceID, value string, 
 	return s.view(ctx, tid, src)
 }
 
-// SetEnabled switches the organization's key of a source on or off.
-func (s *Service) SetEnabled(ctx context.Context, tenantID, sourceID string, enabled bool, actx auditapp.AuditContext) (SourceView, error) {
+// SwitchKey switches the organization's key of a source on or off.
+func (s *Service) SwitchKey(ctx context.Context, tenantID, sourceID string, enabled bool, actx auditapp.AuditContext) (SourceView, error) {
 	tid, err := parseTenant(tenantID)
 	if err != nil {
 		return SourceView{}, err
