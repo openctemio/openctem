@@ -103,6 +103,47 @@ describe('DashboardView', () => {
   })
 })
 
+describe('DashboardView key figures height', () => {
+  it('a key figures strip takes one row whatever height the layout stored', () => {
+    const strip = { ...stat('w_kpi', 'exposure.kpis'), w: 12, h: 2 }
+    const other = { ...stat('w_other', 'findings.open'), w: 12, h: 2 }
+    const data = {
+      dashboard_id: 'd',
+      scope: 'personal',
+      restricted: true,
+      facts_built_at: 'x',
+      computed_at: new Date().toISOString(),
+      stale: false,
+      widgets: [
+        {
+          id: 'w_kpi',
+          index: 0,
+          widget_type: 'metric',
+          state: 'ready',
+          shape: 'kpis',
+          metric: 'exposure.kpis',
+          kpis: { tiles: [] },
+        },
+        { id: 'w_other', index: 1, widget_type: 'metric', state: 'ready', shape: 'scalar' },
+      ],
+    } as unknown as DashboardData
+    const { container } = render(
+      <DashboardView
+        dashboard={{ layout: [strip, other], columns: 2 }}
+        data={data}
+        loading={false}
+      />
+    )
+    const rowSpan = (i: number) =>
+      (container.querySelector(`[data-widget-index="${i}"]`) as HTMLElement).style.getPropertyValue(
+        '--row-span'
+      )
+    expect(rowSpan(0)).toBe('span 1 / span 1')
+    // Other widgets keep their stored height.
+    expect(rowSpan(1)).toBe('span 2 / span 2')
+  })
+})
+
 describe('DashboardView CTEM widgets without anything to measure', () => {
   it('crown jewels exposed and attack paths explain why, never a green 0', () => {
     const data = {
