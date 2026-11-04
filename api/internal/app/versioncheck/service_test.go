@@ -3,8 +3,6 @@ package versioncheck
 import (
 	"bytes"
 	"context"
-	"crypto/ed25519"
-	"encoding/hex"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -14,9 +12,11 @@ import (
 
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/releasefeed"
+	"github.com/openctemio/openctem/api/pkg/releasefeed/testdata/releasefeedtest"
 )
 
-var t0 = time.Date(2026, 10, 16, 12, 0, 0, 0, time.UTC)
+// Real time: the virtual Sigstore certificate is valid from the moment the test starts.
+var t0 = time.Now().UTC().Truncate(time.Second)
 
 // memRepo is Repository in memory, with the same conditional semantics as
 // the Postgres one.
@@ -73,25 +73,34 @@ func (m *memRepo) RecordFailure(_ context.Context, code string, now time.Time, n
 }
 
 type keys struct {
-	online ed25519.PrivateKey
+	sig *releasefeedtest.Sigstore
 }
 
 func newKeys(t *testing.T) keys {
 	t.Helper()
-	return keys{online: ed25519.NewKeyFromSeed(bytes.Repeat([]byte{2}, 32))}
+	return keys{sig: releasefeedtest.New(t)}
 }
 
-// pinned is the hex public key a build pins for this key.
-func (k keys) pinned() string { return hex.EncodeToString(k.online.Public().(ed25519.PublicKey)) }
+// verifier is what a build trusts for this virtual Sigstore.
+func (k keys) verifier(t *testing.T) releasefeed.SignatureVerifier { return k.sig.Verifier(t) }
 
 func (k keys) feed(t *testing.T, seq uint64, issued time.Time, latest string) []byte {
 	t.Helper()
-	raw, err := releasefeed.Build(k.online, releasefeed.Feed{
+	payload, err := releasefeed.Payload(releasefeed.Feed{
 		Sequence: seq, IssuedAt: issued, ExpiresAt: issued.Add(30 * 24 * time.Hour),
 		Releases: []releasefeed.Release{{Version: latest, PublishedAt: issued}},
 		Advisories: []releasefeed.Advisory{{ID: "OCTEM-2026-0001", Severity: "critical", Title: "t",
 			FixedIn: latest, PublishedAt: issued}},
 	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return k.sign(t, payload)
+}
+
+func (k keys) sign(t *testing.T, payload []byte) []byte {
+	t.Helper()
+	raw, err := releasefeed.Assemble(payload, k.sig.Sign(t, payload, releasefeedtest.GoodIdentityMain, releasefeedtest.GitHubIssuer, t0.Add(time.Minute), false))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -125,15 +134,15 @@ type clock struct{ now time.Time }
 
 func (c *clock) Now() time.Time { return c.now }
 
-func newService(repo Repository, roots []string, url string, c *clock, running string) *Service {
-	return New(repo, Config{Enabled: true, URL: url, Keys: roots, Running: running, Client: http.DefaultClient,
+func newService(repo Repository, v releasefeed.SignatureVerifier, url string, c *clock, running string) *Service {
+	return New(repo, Config{Enabled: true, URL: url, Verifier: v, Running: running, Client: http.DefaultClient,
 		Now: c.Now, Jitter: func(time.Duration) time.Duration { return 0 }}, logger.NewNop())
 }
 
 func TestRunDue_FetchVerifyApply(t *testing.T) {
 	k, srv, repo, c := newKeys(t), newServer(t), &memRepo{}, &clock{now: t0}
 	srv.body = k.feed(t, 100, t0.Add(-time.Hour), "v0.9.8")
-	svc := newService(repo, []string{k.pinned()}, srv.srv.URL+"/openctem-releases.json", c, "v0.9.7")
+	svc := newService(repo, k.verifier(t), srv.srv.URL+"/openctem-releases.json", c, "v0.9.7")
 	ctx := context.Background()
 
 	// First call creates the schedule only: the first check waits a while
@@ -174,7 +183,7 @@ func TestRunDue_FetchVerifyApply(t *testing.T) {
 func TestRunDue_DisabledOrUnconfiguredSendsNothing(t *testing.T) {
 	k, srv, c := newKeys(t), newServer(t), &clock{now: t0}
 	srv.body = k.feed(t, 1, t0, "v0.9.8")
-	off := New(&memRepo{}, Config{Enabled: false, URL: srv.srv.URL, Keys: []string{k.pinned()}, Client: http.DefaultClient, Now: c.Now}, logger.NewNop())
+	off := New(&memRepo{}, Config{Enabled: false, URL: srv.srv.URL, Verifier: k.verifier(t), Client: http.DefaultClient, Now: c.Now}, logger.NewNop())
 	noKey := newService(&memRepo{}, nil, srv.srv.URL, c, "v0.9.7")
 	for i := 0; i < 3; i++ {
 		c.now = c.now.Add(48 * time.Hour)
@@ -194,7 +203,7 @@ func TestRunDue_DisabledOrUnconfiguredSendsNothing(t *testing.T) {
 // three the check backs off to weekly.
 func TestRunDue_OfflineBacksOff(t *testing.T) {
 	k, repo, c := newKeys(t), &memRepo{}, &clock{now: t0}
-	svc := newService(repo, []string{k.pinned()}, "http://127.0.0.1:1/unreachable", c, "v0.9.7")
+	svc := newService(repo, k.verifier(t), "http://127.0.0.1:1/unreachable", c, "v0.9.7")
 	ctx := context.Background()
 	_ = svc.RunDue(ctx)
 	for i := 1; i <= 4; i++ {
@@ -216,24 +225,23 @@ func TestRunDue_OfflineBacksOff(t *testing.T) {
 func TestRunDue_RefusedAnswers(t *testing.T) {
 	k := newKeys(t)
 	other := newKeys(t)
-	other.online = ed25519.NewKeyFromSeed(bytes.Repeat([]byte{7}, 32))
 	cases := map[string]struct {
 		status int
 		body   func(t *testing.T) []byte
 		code   string
 	}{
-		"not published": {http.StatusNotFound, func(*testing.T) []byte { return nil }, ErrCodeNotPublished},
-		"http error":    {http.StatusBadGateway, func(*testing.T) []byte { return nil }, ErrCodeHTTPStatus},
-		"oversize":      {http.StatusOK, func(*testing.T) []byte { return bytes.Repeat([]byte("a"), releasefeed.MaxBundleBytes+1) }, ErrCodeTooLarge},
-		"garbage":       {http.StatusOK, func(*testing.T) []byte { return []byte("<html>") }, ErrCodeInvalid},
-		"unpinned key":  {http.StatusOK, func(t *testing.T) []byte { return other.feed(t, 5, t0, "v0.9.8") }, ErrCodeInvalid},
-		"expired":       {http.StatusOK, func(t *testing.T) []byte { return k.feed(t, 5, t0.Add(-31*24*time.Hour), "v0.9.8") }, ErrCodeExpired},
+		"not published":    {http.StatusNotFound, func(*testing.T) []byte { return nil }, ErrCodeNotPublished},
+		"http error":       {http.StatusBadGateway, func(*testing.T) []byte { return nil }, ErrCodeHTTPStatus},
+		"oversize":         {http.StatusOK, func(*testing.T) []byte { return bytes.Repeat([]byte("a"), releasefeed.MaxBundleBytes+1) }, ErrCodeTooLarge},
+		"garbage":          {http.StatusOK, func(*testing.T) []byte { return []byte("<html>") }, ErrCodeInvalid},
+		"foreign Sigstore": {http.StatusOK, func(t *testing.T) []byte { return other.feed(t, 5, t0, "v0.9.8") }, ErrCodeInvalid},
+		"expired":          {http.StatusOK, func(t *testing.T) []byte { return k.feed(t, 5, t0.Add(-31*24*time.Hour), "v0.9.8") }, ErrCodeExpired},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
 			srv, repo, c := newServer(t), &memRepo{}, &clock{now: t0}
 			srv.status, srv.body = tc.status, tc.body(t)
-			svc := newService(repo, []string{k.pinned()}, srv.srv.URL, c, "v0.9.7")
+			svc := newService(repo, k.verifier(t), srv.srv.URL, c, "v0.9.7")
 			_ = svc.RunDue(context.Background())
 			c.now = *repo.st.NextCheckAt
 			if err := svc.RunDue(context.Background()); err != nil {
@@ -249,7 +257,7 @@ func TestRunDue_RefusedAnswers(t *testing.T) {
 // An older feed never replaces a newer one, online or imported.
 func TestRollbackRefused(t *testing.T) {
 	k, srv, repo, c := newKeys(t), newServer(t), &memRepo{}, &clock{now: t0}
-	svc := newService(repo, []string{k.pinned()}, srv.srv.URL, c, "v0.9.7")
+	svc := newService(repo, k.verifier(t), srv.srv.URL, c, "v0.9.7")
 	ctx := context.Background()
 	if _, err := svc.Import(ctx, k.feed(t, 200, t0.Add(-time.Hour), "v0.9.9")); err != nil {
 		t.Fatal(err)
@@ -275,7 +283,7 @@ func TestRollbackRefused(t *testing.T) {
 // feed under an applied sequence is a replay or a signing fault.
 func TestSameSequenceOtherBytesRefused(t *testing.T) {
 	k, srv, repo, c := newKeys(t), newServer(t), &memRepo{}, &clock{now: t0}
-	svc := newService(repo, []string{k.pinned()}, srv.srv.URL, c, "v0.9.7")
+	svc := newService(repo, k.verifier(t), srv.srv.URL, c, "v0.9.7")
 	ctx := context.Background()
 	if _, err := svc.Import(ctx, k.feed(t, 300, t0.Add(-time.Hour), "v0.9.8")); err != nil {
 		t.Fatal(err)
@@ -301,11 +309,11 @@ func TestImport(t *testing.T) {
 	if _, err := newService(&memRepo{}, nil, "", c, "v0.9.7").Import(ctx, k.feed(t, 1, t0, "v0.9.8")); !errors.As(err, &ie) || ie.Code != ErrCodeNoKey {
 		t.Fatalf("no key: %v", err)
 	}
-	svc := newService(&memRepo{}, []string{k.pinned()}, "", c, "v0.9.8")
+	svc := newService(&memRepo{}, k.verifier(t), "", c, "v0.9.8")
 	if _, err := svc.Import(ctx, bytes.Repeat([]byte("a"), releasefeed.MaxBundleBytes+1)); !errors.As(err, &ie) || ie.Code != ErrCodeTooLarge {
 		t.Fatalf("oversize: %v", err)
 	}
-	tampered := bytes.Replace(k.feed(t, 1, t0, "v0.9.8"), []byte(`"payload": "`), []byte(`"payload": "A`), 1)
+	tampered := bytes.Replace(k.feed(t, 1, t0, "v0.9.8"), []byte(`"feed": "`), []byte(`"feed": "A`), 1)
 	if _, err := svc.Import(ctx, tampered); !errors.As(err, &ie) || ie.Code != ErrCodeInvalid {
 		t.Fatalf("tampered: %v", err)
 	}
@@ -317,7 +325,7 @@ func TestImport(t *testing.T) {
 		t.Fatalf("view = %+v", v)
 	}
 	// Offline import works with the online check disabled.
-	off := New(&memRepo{}, Config{Enabled: false, Keys: []string{k.pinned()}, Running: "v0.9.7", Now: c.Now}, logger.NewNop())
+	off := New(&memRepo{}, Config{Enabled: false, Verifier: k.verifier(t), Running: "v0.9.7", Now: c.Now}, logger.NewNop())
 	if _, err := off.Import(ctx, k.feed(t, 1, t0, "v0.9.8")); err != nil {
 		t.Fatal(err)
 	}
@@ -349,7 +357,7 @@ func TestClientRedirectPolicy(t *testing.T) {
 // componentFeed is a feed that lists one sensor release.
 func (k keys) componentFeed(t *testing.T, seq uint64, issued time.Time, sensorVersion string) []byte {
 	t.Helper()
-	raw, err := releasefeed.Build(k.online, releasefeed.Feed{
+	payload, err := releasefeed.Payload(releasefeed.Feed{
 		Sequence: seq, IssuedAt: issued, ExpiresAt: issued.Add(30 * 24 * time.Hour),
 		Releases:   []releasefeed.Release{{Version: "v0.9.8", PublishedAt: issued}},
 		Advisories: []releasefeed.Advisory{},
@@ -358,7 +366,7 @@ func (k keys) componentFeed(t *testing.T, seq uint64, issued time.Time, sensorVe
 	if err != nil {
 		t.Fatal(err)
 	}
-	return raw
+	return k.sign(t, payload)
 }
 
 // OnFeed receives the feed after an online check stores it, after an import,
@@ -374,7 +382,7 @@ func TestOnFeed_OnlineImportRefresh(t *testing.T) {
 		}
 		got = append(got, f.ComponentVersions()["sensor"].Version)
 	}
-	svc := New(repo, Config{Enabled: true, URL: srv.srv.URL, Keys: []string{k.pinned()}, Running: "v0.9.7",
+	svc := New(repo, Config{Enabled: true, URL: srv.srv.URL, Verifier: k.verifier(t), Running: "v0.9.7",
 		Client: http.DefaultClient, Now: c.Now, Jitter: func(time.Duration) time.Duration { return 0 }, OnFeed: onFeed}, logger.NewNop())
 	ctx := context.Background()
 
@@ -413,7 +421,7 @@ func TestOnFeed_OnlineImportRefresh(t *testing.T) {
 		t.Fatalf("view components = %+v (%v)", v.Components, err)
 	}
 	// Without a hook, Refresh is a no-op.
-	if err := newService(repo, []string{k.pinned()}, "", c, "v0.9.7").Refresh(ctx); err != nil {
+	if err := newService(repo, k.verifier(t), "", c, "v0.9.7").Refresh(ctx); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -422,7 +430,7 @@ func TestOnFeed_OnlineImportRefresh(t *testing.T) {
 // not a failed import, and Applied reports its sequence and issue time.
 func TestImportRelayedSameFileDaily(t *testing.T) {
 	k, srv, repo, c := newKeys(t), newServer(t), &memRepo{}, &clock{now: t0}
-	svc := newService(repo, []string{k.pinned()}, srv.srv.URL, c, "v0.9.7")
+	svc := newService(repo, k.verifier(t), srv.srv.URL, c, "v0.9.7")
 	ctx := context.Background()
 	raw := k.feed(t, 400, t0.Add(-time.Hour), "v0.9.8")
 	for day := 0; day < 3; day++ {

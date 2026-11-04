@@ -458,6 +458,8 @@ var scanZoneErrorCodes = map[string]bool{
 	"TOOL_NOT_FOUND":      true,
 	"TOOL_DISABLED":       true,
 	"TOOL_NOT_SCANNER":    true,
+	// No step of a workflow can run (docs/architecture/scan-stages.md).
+	"NO_RUNNABLE_STEPS": true,
 	// Scan ownership (docs/architecture/scan-ownership.md).
 	"SCAN_HAS_NO_OWNER":   true,
 	"SCAN_OWNER_INACTIVE": true,

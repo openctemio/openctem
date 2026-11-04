@@ -218,7 +218,35 @@ const (
 	// two sensors, so the work was not moved to more of them (fleet stop
 	// rule).
 	FailureFleetToolFailure = "FLEET_TOOL_FAILURE"
+
+	// Steps a run skips because nothing here runs them (a scan runs as far
+	// as the organization's tools and sensors support; the run ends
+	// partial). The step run is skipped, never failed; NO_MATCHING_TOOL and
+	// NO_SENSOR_FOR_TOOL are the other two reasons.
+	//
+	// FailureToolNotInstalled: the step's pinned tool is not installed in
+	// the organization.
+	FailureToolNotInstalled = "TOOL_NOT_INSTALLED"
+	// FailureToolDisabled: the step's tool is turned off (for the platform
+	// or by the organization).
+	FailureToolDisabled = "TOOL_DISABLED"
+	// FailureDependencySkipped: a step this step needs the results of was
+	// skipped, so this one has nothing to work on.
+	FailureDependencySkipped = "DEPENDENCY_SKIPPED"
 )
+
+// unsupportedSkipCodes are the codes of a step skipped because no tool or
+// sensor of the organization runs it.
+var unsupportedSkipCodes = map[string]bool{
+	FailureNoMatchingTool:   true,
+	FailureToolNotInstalled: true,
+	FailureToolDisabled:     true,
+	FailureNoSensorForTool:  true,
+}
+
+// IsUnsupportedSkipCode reports whether code is the reason of a step skipped
+// because no tool or sensor of the organization runs it.
+func IsUnsupportedSkipCode(code string) bool { return unsupportedSkipCodes[code] }
 
 // FailureCodeForInfra is the step failure code of a command that ended on
 // the infrastructure class class (command.FailureClass spelling). An
@@ -282,6 +310,9 @@ var failureClasses = map[string]FailureClass{
 	FailureContentUnavailable:        FailureClassTransient,
 	FailureSensorLost:                FailureClassTransient,
 	FailureFleetToolFailure:          FailureClassTool,
+	FailureToolNotInstalled:          FailureClassConfig,
+	FailureToolDisabled:              FailureClassConfig,
+	FailureDependencySkipped:         FailureClassConfig,
 }
 
 // ClassOf returns the class of a step failure code. An unknown code is a
