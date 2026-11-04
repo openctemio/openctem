@@ -1,11 +1,9 @@
 'use client'
 
-import { AlertCircle } from 'lucide-react'
 import { Main } from '@/components/layout'
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useTranslation } from '@/context/i18n-provider'
-import { ErrorState, PageHeader, PageStack } from '@/features/shared'
+import { ErrorState, NoAccessState, PageHeader, PageStack } from '@/features/shared'
 import { CredentialStorageSettingsForm, useCredentialSettings } from '@/features/credentials'
 import { usePermissions, Permission } from '@/lib/permissions'
 
@@ -30,16 +28,10 @@ export default function LeakedCredentialSettingsPage() {
           )}
         />
         {!canManage ? (
-          <Alert variant="destructive">
-            <AlertCircle className="h-4 w-4" />
-            <AlertTitle>{t('credentials.settings.noPermissionTitle', 'No access')}</AlertTitle>
-            <AlertDescription>
-              {t(
-                'credentials.settings.noPermission',
-                'Only owners and administrators can change this setting.'
-              )}
-            </AlertDescription>
-          </Alert>
+          <NoAccessState
+            title={t('credentials.settings.loadError', 'the leaked credential settings')}
+            permission={Permission.TeamUpdate}
+          />
         ) : error ? (
           <ErrorState
             title={t('credentials.settings.loadError', 'the leaked credential settings')}
