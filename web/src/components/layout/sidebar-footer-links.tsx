@@ -10,7 +10,6 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
   useSidebar,
-  useSidebarActions,
 } from '@/components/ui/sidebar'
 import {
   DropdownMenu,
@@ -26,7 +25,7 @@ import { REPORT_ISSUE_URL } from '@/config/help-links'
 import { DOCS_URL } from '@/lib/docs-links'
 import type { ShortcutShell } from '@/config/keyboard-shortcuts'
 import { NAV_BUTTON_CLASS } from './nav-group'
-import { NavPendingHint, SidebarLink } from './sidebar-link'
+import { SidebarViewSwitch } from './sidebar-nav-view'
 import { KeyboardShortcutsDialog } from './keyboard-shortcuts-dialog'
 import { AboutDialog } from './about-dialog'
 
@@ -54,7 +53,6 @@ export function SidebarFooterLinks({
 }: SidebarFooterLinksProps) {
   const { t } = useTranslation()
   const pathname = usePathname()
-  const { setOpenMobile } = useSidebarActions()
   const settingsActive = isSettingsShellPath(pathname)
   const settingsLabel = t('nav.item.settings', 'Settings')
 
@@ -64,24 +62,16 @@ export function SidebarFooterLinks({
       <SidebarMenu>
         {showSettings && (
           <SidebarMenuItem>
-            <SidebarMenuButton
-              asChild
+            {/* On a phone, Settings shows the settings rail in the open drawer;
+                elsewhere it is the link to the /settings overview. */}
+            <SidebarViewSwitch
+              view="settings"
+              href="/settings"
+              label={settingsLabel}
+              icon={<Settings />}
               isActive={settingsActive}
-              tooltip={settingsLabel}
-              className={NAV_BUTTON_CLASS}
-            >
-              <SidebarLink
-                href="/settings"
-                aria-current={pathname === '/settings' ? 'page' : undefined}
-                onClick={() => setOpenMobile(false)}
-              >
-                <Settings />
-                <span>
-                  {settingsLabel}
-                  <NavPendingHint />
-                </span>
-              </SidebarLink>
-            </SidebarMenuButton>
+              aria-current={pathname === '/settings' ? 'page' : undefined}
+            />
           </SidebarMenuItem>
         )}
         <SidebarMenuItem>
