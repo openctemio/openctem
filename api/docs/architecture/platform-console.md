@@ -23,24 +23,34 @@ port 8443 means only the console.
 
 The sidebar (`web/console/src/features/admin-console/config/admin-nav.ts`,
 also the command palette's index) groups the pages by what an operator is
-doing:
+doing, and ends with one Settings entry:
 
 | Group | Pages |
 |-------|-------|
 | (top) | Overview |
-| Customers | Organizations, Users, Access requests, Sign-ups, Support access |
-| Scanning | Scan approval, Platform scanning (policy, fleet, queue, zones, egress, anomalies), Target mappings, Content packs, Content catalog, Threat intelligence |
-| Security | Administrators, Sessions, Approvals, Admin sign-in, Admin activity |
-| Settings | Configuration, Sign-up, Limits, CAPTCHA, E-mail, Legal, Announcements, Alerts, AI provider, AI applications |
+| Customers | Organizations, Users, Access requests, Sign-ups, Support access, Announcements |
+| Sensors and scanning | Target mappings, Content packs, Content catalog, Threat intelligence (and the platform sensors page) |
+| Security and audit | Admin activity, Approvals, Administrators, Sessions, Roles, AI applications |
 | Monitoring | Health (tabs: Summary with services, storage, backup, certificates, schema and version; Queues and sensors; Background jobs, the stopped or failing ones first), Software updates |
+| Settings | one entry; opens the settings rail |
+
+On a settings page the sidebar shows the settings rail instead (sections with
+`rail: 'settings'`), led by "Back to console" (the last console page outside
+the rail, same-origin only): General (Configuration, Legal), Sign-in and
+sign-up (Sign-up, Social login, CAPTCHA, Admin sign-in), Organizations
+(Limits, Two-factor), Scanning (Scan approval, Scan identification, Platform
+scanning), Notifications (E-mail, Alerts), AI (AI provider). The palette lists
+them under "Settings › <section>". URLs did not move.
 
 The administrator's own security keys open from the sidebar footer, next to
 their name (the palette still finds them). Pages are listed by the
-administrator's own role, not the session's acting one: a super admin acting
-read-only sees every page, and a page that needs more shows "Elevate to see
-this page" with the elevate dialog one click away
-(`RoleRequiredNotice`). An administrator whose own role is too low is told
-which role it takes. The API enforces the acting role either way.
+administrator's own platform roles, not the session's acting ones: an owner
+acting read-only sees every page, and a page that needs more shows "Elevate to
+see this page" with the elevate dialog one click away (`RoleRequiredNotice`).
+An administrator whose roles do not include it is told so; no retired tier
+name is shown. The sidebar header and the elevation bar name what the session
+acts as in platform role words (`actingRoleLabel`). The API enforces the
+acting permissions either way.
 
 The Overview's "Needs attention" list includes the installation's own state
 from the Health page: a service that does not answer, a volume below 20%
