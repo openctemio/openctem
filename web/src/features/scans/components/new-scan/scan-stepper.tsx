@@ -1,17 +1,21 @@
 /**
  * Scan Wizard Stepper
  *
- * Desktop: every step with its label. Phone: "Step N of M: Name" and a
- * progress bar; tapping it opens the step list, where finished steps can be
- * revisited.
+ * A map of the wizard, not a gate: every step is a button, so a person can
+ * look at any step before the earlier ones are complete. Each step shows its
+ * state: a check when complete, a warning with the number of problems, or its
+ * number when not visited yet. Desktop: every step with its label. Phone:
+ * "Step N of M: Name" and a progress bar; tapping it opens the step list.
+ * Design: research/418.
  */
 
 'use client'
 
 import { useState } from 'react'
 import { cn } from '@/lib/utils'
-import { Check, ChevronDown } from 'lucide-react'
+import { AlertTriangle, Check, ChevronDown } from 'lucide-react'
 import { useTranslation } from '@/context/i18n-provider'
+import type { StepStatus } from '../../lib/wizard-validity'
 
 export type ScanWizardStep = 'basic' | 'targets' | 'options' | 'schedule' | 'review'
 
@@ -20,6 +24,8 @@ interface ScanStepperProps {
   onStepClick?: (step: ScanWizardStep) => void
   /** The steps shown, in order (New adds Review). */
   steps?: ScanWizardStep[]
+  /** Each step's state; a step without one shows its number. */
+  status?: Partial<Record<ScanWizardStep, StepStatus>>
   className?: string
 }
 
@@ -31,12 +37,63 @@ const LABEL_KEYS: Record<ScanWizardStep, string> = {
   review: 'scans.step.review',
 }
 
+export function stepLabelKey(step: ScanWizardStep): string {
+  return LABEL_KEYS[step]
+}
+
 const DEFAULT_STEPS: ScanWizardStep[] = ['basic', 'targets', 'options', 'schedule']
+
+function StepMark({
+  index,
+  status,
+  current,
+}: {
+  index: number
+  status?: StepStatus
+  current: boolean
+}) {
+  if (status?.state === 'invalid') {
+    return (
+      <span
+        className={cn(
+          'flex h-5 min-w-5 shrink-0 items-center justify-center gap-0.5 rounded-full px-1 text-xs',
+          current ? 'bg-primary-foreground/20' : 'bg-warning/15 text-warning'
+        )}
+      >
+        <AlertTriangle className="h-3 w-3" aria-hidden />
+        {status.count}
+      </span>
+    )
+  }
+  if (status?.state === 'valid') {
+    return (
+      <span
+        className={cn(
+          'flex h-5 w-5 shrink-0 items-center justify-center rounded-full',
+          current ? 'bg-primary-foreground/20' : 'bg-primary/10'
+        )}
+      >
+        <Check className="h-3 w-3" aria-hidden />
+      </span>
+    )
+  }
+  return (
+    <span
+      className={cn(
+        'flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-xs',
+        current ? 'bg-primary-foreground/20' : 'bg-muted-foreground/20'
+      )}
+    >
+      {index + 1}
+    </span>
+  )
+}
 
 export function ScanStepper({
   currentStep,
   onStepClick,
   steps = DEFAULT_STEPS,
+  status = {},
   className,
 }: ScanStepperProps) {
   const { t } = useTranslation()
@@ -46,9 +103,21 @@ export function ScanStepper({
   const [listOpen, setListOpen] = useState(false)
   const current = STEPS[currentIndex]
   const progress = STEPS.length > 0 ? ((currentIndex + 1) / STEPS.length) * 100 : 0
+  // The accessible name says the state too ("Targets, 2 problems").
+  const nameOf = (step: { id: ScanWizardStep; label: string }) => {
+    const s = status[step.id]
+    if (s?.state === 'invalid')
+      return t('scans.wizard.stepProblems', undefined, { name: step.label, count: s.count })
+    if (s?.state === 'valid') return t('scans.wizard.stepValid', undefined, { name: step.label })
+    return step.label
+  }
+  const currentStatus = status[currentStep]
 
   return (
-    <div className={cn('min-w-0 px-4 py-3 sm:px-6', className)}>
+    <nav
+      className={cn('min-w-0 px-4 py-3 sm:px-6', className)}
+      aria-label={t('scans.wizard.steps')}
+    >
       {/* Phone */}
       <div className="sm:hidden">
         <button
@@ -66,6 +135,9 @@ export function ScanStepper({
               name: current?.label ?? '',
             })}
           </span>
+          {currentStatus?.state === 'invalid' && (
+            <AlertTriangle className="h-4 w-4 shrink-0 text-warning" aria-hidden />
+          )}
           <ChevronDown
             className={cn(
               'h-4 w-4 shrink-0 text-muted-foreground transition-transform',
@@ -86,85 +158,61 @@ export function ScanStepper({
         </div>
         {listOpen && (
           <ol id="scan-stepper-list" className="mt-2 divide-y text-sm">
-            {STEPS.map((step, index) => {
-              const done = index < currentIndex
-              return (
-                <li key={step.id}>
-                  <button
-                    type="button"
-                    disabled={!done}
-                    onClick={() => {
-                      setListOpen(false)
-                      onStepClick?.(step.id)
-                    }}
-                    aria-current={index === currentIndex ? 'step' : undefined}
-                    className={cn(
-                      'flex min-h-11 w-full items-center gap-2 text-start',
-                      index === currentIndex && 'font-medium',
-                      index > currentIndex && 'text-muted-foreground'
-                    )}
-                  >
-                    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-muted text-xs">
-                      {done ? <Check className="h-3 w-3" aria-hidden /> : index + 1}
-                    </span>
-                    {step.label}
-                  </button>
-                </li>
-              )
-            })}
+            {STEPS.map((step, index) => (
+              <li key={step.id}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setListOpen(false)
+                    onStepClick?.(step.id)
+                  }}
+                  aria-current={index === currentIndex ? 'step' : undefined}
+                  aria-label={nameOf(step)}
+                  data-state={status[step.id]?.state ?? 'idle'}
+                  className={cn(
+                    'flex min-h-11 w-full items-center gap-2 text-start',
+                    index === currentIndex && 'font-medium'
+                  )}
+                >
+                  <StepMark index={index} status={status[step.id]} current={false} />
+                  {step.label}
+                </button>
+              </li>
+            ))}
           </ol>
         )}
       </div>
 
       {/* Desktop */}
-      <div className="hidden min-w-0 items-center justify-between sm:flex">
+      <ol className="hidden min-w-0 items-center justify-between sm:flex">
         {STEPS.map((step, index) => {
-          const isCompleted = index < currentIndex
           const isCurrent = index === currentIndex
-          const isPending = index > currentIndex
-
           return (
-            <div key={step.id} className="flex flex-1 items-center last:flex-none">
+            <li key={step.id} className="flex flex-1 items-center last:flex-none">
               <button
                 type="button"
-                onClick={() => isCompleted && onStepClick?.(step.id)}
-                disabled={!isCompleted}
+                onClick={() => onStepClick?.(step.id)}
                 aria-current={isCurrent ? 'step' : undefined}
+                aria-label={nameOf(step)}
+                data-state={status[step.id]?.state ?? 'idle'}
                 className={cn(
-                  'flex items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-1.5 text-xs font-medium transition-colors',
-                  isCompleted && 'cursor-pointer bg-primary/10 text-primary hover:bg-primary/20',
-                  isCurrent && 'bg-primary text-primary-foreground',
-                  isPending && 'bg-muted/50 text-muted-foreground'
+                  'flex min-h-9 items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-1.5 text-xs font-medium transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden',
+                  isCurrent
+                    ? 'bg-primary text-primary-foreground'
+                    : 'text-foreground hover:bg-muted'
                 )}
               >
-                {isCompleted ? (
-                  <Check className="h-3.5 w-3.5" aria-hidden />
-                ) : (
-                  <span
-                    className={cn(
-                      'flex h-5 w-5 items-center justify-center rounded-full text-xs',
-                      isCurrent && 'bg-primary-foreground/20',
-                      isPending && 'bg-muted-foreground/20'
-                    )}
-                  >
-                    {index + 1}
-                  </span>
-                )}
+                <StepMark index={index} status={status[step.id]} current={isCurrent} />
                 <span>{step.label}</span>
               </button>
 
               {index < STEPS.length - 1 && (
-                <div
-                  className={cn(
-                    'mx-2 h-0.5 min-w-[12px] flex-1',
-                    index < currentIndex ? 'bg-primary' : 'bg-muted'
-                  )}
-                />
+                <div className="mx-2 h-px min-w-[12px] flex-1 bg-border" aria-hidden />
               )}
-            </div>
+            </li>
           )
         })}
-      </div>
-    </div>
+      </ol>
+    </nav>
   )
 }
