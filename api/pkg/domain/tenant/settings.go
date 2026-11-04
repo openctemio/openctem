@@ -67,6 +67,8 @@ type Settings struct {
 	FindingViews FindingViewSettings `json:"finding_views,omitempty"`
 	// APIKeys is the API key policy (maximum lifetime of a new key).
 	APIKeys APIKeySettings `json:"api_keys,omitempty"`
+	// Credentials is the leaked-credential policy (whether secret values are kept).
+	Credentials CredentialSettings `json:"credentials,omitempty"`
 }
 
 // FindingCorrelationSettings are the per-organization kill switches of

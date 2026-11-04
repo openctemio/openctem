@@ -367,6 +367,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	if svc.ScanIdentity != nil {
 		tenantHandler.SetScanIdentity(svc.ScanIdentity)
 	}
+	if svc.LeakedSecretPolicy != nil {
+		tenantHandler.SetLeakedSecretDefault(svc.LeakedSecretPolicy)
+	}
 	if svc.Entitlement != nil {
 		tenantHandler.SetSelfServiceLimits(svc.Entitlement)
 	}

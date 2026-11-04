@@ -10,7 +10,7 @@
 
 import useSWR, { type SWRConfiguration } from 'swr'
 import useSWRMutation from 'swr/mutation'
-import { get, post } from '@/lib/api/client'
+import { get, post, put } from '@/lib/api/client'
 import { handleApiError } from '@/lib/api/error-handler'
 import { useTenant } from '@/context/tenant-provider'
 import type {
@@ -21,6 +21,7 @@ import type {
   CredentialApiFilters,
   ApiIdentityListResponse,
   ApiRevealCredentialResponse,
+  ApiCredentialSettings,
 } from './credential-api.types'
 
 // ============================================
@@ -358,4 +359,24 @@ export async function invalidateCredentialsCache() {
   await mutate((key) => typeof key === 'string' && key.includes('/credentials'), undefined, {
     revalidate: true,
   })
+}
+
+// ============================================
+// ORGANIZATION SETTINGS
+// ============================================
+
+export const CREDENTIAL_SETTINGS_ENDPOINT = '/api/v1/organization/settings/credentials'
+
+/** Whether the organization keeps imported leaked secret values (owners and admins). */
+export function useCredentialSettings(config?: SWRConfiguration) {
+  return useSWR<ApiCredentialSettings>(
+    CREDENTIAL_SETTINGS_ENDPOINT,
+    (url: string) => get<ApiCredentialSettings>(url),
+    { ...defaultConfig, ...config }
+  )
+}
+
+/** Omit `store_secret_values` to follow the platform default. */
+export function updateCredentialSettings(body: { store_secret_values?: boolean }) {
+  return put<ApiCredentialSettings>(CREDENTIAL_SETTINGS_ENDPOINT, body)
 }

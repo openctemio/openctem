@@ -5,9 +5,9 @@
 1. **It encrypts stored secrets** (AES-256-GCM). `cmd/rekey` re-encrypts all
    of them with the new key in one transaction.
 2. **It keys hashes.**
-   - The leaked-credential fingerprint and the scanner-template signature can
-     be recomputed from data the database holds, so `cmd/rekey` recomputes
-     them too.
+   - The leaked-credential fingerprint (keyed per organization from the key)
+     and the scanner-template signature can be recomputed from data the
+     database holds, so `cmd/rekey` recomputes them too.
    - The hashes of `oct_` API keys, SCIM tokens and sensor keys are one-way
      and cannot be recomputed without the token. The server keeps verifying
      them with the old key while it is listed in

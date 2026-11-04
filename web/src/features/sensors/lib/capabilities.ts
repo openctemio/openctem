@@ -103,6 +103,48 @@ export function sensorCapacity(sensor: CapacitySource): SensorCapacity {
   return { effective, reported, slots, limit }
 }
 
+/** The jobs a sensor holds against its capacity, as dispatch sees them. */
+export interface SensorJobLoad {
+  /** Scan jobs the sensor holds now, counted by the platform. */
+  running: number
+  /** The concurrent jobs dispatch allows now (the effective capacity). */
+  capacity: number
+  /**
+   * How many more jobs dispatch may hand it now: the platform's own rule
+   * (available_slots: capacity minus running, a fresh report's free slots,
+   * host pressure), never more than capacity minus running.
+   */
+  free: number
+  /**
+   * How many jobs it holds above its capacity: the sensor sizes its slots
+   * from the CPU and memory free now, and they can drop below the jobs it
+   * already runs when the host gets busier. 0 when not over.
+   */
+  over: number
+  /** The host pressure of a fresh load report, when above normal. */
+  pressure: 'elevated' | 'overloaded' | null
+}
+
+type JobLoadSource = CapacitySource & Pick<Sensor, 'current_jobs' | 'available_slots'>
+
+/**
+ * The sensor's jobs against its capacity: running, capacity, free and how
+ * far over capacity it is. One reading for the detail card, the table cell
+ * and the mobile facts, so they never disagree.
+ */
+export function sensorJobLoad(sensor: JobLoadSource): SensorJobLoad {
+  const capacity = Math.max(0, sensorCapacity(sensor).effective || 0)
+  const running = Math.max(0, sensor.current_jobs ?? 0)
+  // No capacity limit: dispatch counts one free slot (Sensor.FreeSlots).
+  const byCapacity = capacity > 0 ? Math.max(0, capacity - running) : 1
+  const reportedFree = sensor.available_slots
+  const free = reportedFree != null ? Math.max(0, Math.min(reportedFree, byCapacity)) : byCapacity
+  const over = capacity > 0 ? Math.max(0, running - capacity) : 0
+  const level = sensor.load?.fresh ? sensor.load.resources?.pressure?.level : undefined
+  const pressure = level === 'elevated' || level === 'overloaded' ? level : null
+  return { running, capacity, free, over, pressure }
+}
+
 /**
  * "Runs 4 at once now · operator cap 64 · your limit 5": each number that is
  * known; "your limit 5" alone when the sensor reports neither.

@@ -12,7 +12,7 @@ import { DetailChipList } from '@/features/shared/components/detail-sheet'
 import type { Sensor, SensorSdkStatus, SensorVersionStatus } from '@/lib/api/sensor-types'
 
 import { configHealthMeta, configHealthNeedsAttention } from '../lib/config-report'
-import { capacityLabel, sensorCapacity, type SensorToolRow } from '../lib/capabilities'
+import { capacityLabel, sensorJobLoad, type SensorToolRow } from '../lib/capabilities'
 import { formatDurationShort, keyExpiry, type Tr } from '../lib/format'
 import { postureIssues } from '../lib/posture'
 import { isOneShotSensor } from '../lib/sensor-state'
@@ -455,18 +455,27 @@ export function SensorJobsCell({ sensor }: { sensor: Sensor }) {
   if (isOneShotSensor(sensor) || sensor.status !== 'active') {
     return <span className={muted}>—</span>
   }
-  const current = sensor.current_jobs ?? 0
-  // The capacity dispatch uses: the smallest of the sensor's slots, its
-  // operator's cap and the limit set on it.
-  const max = sensorCapacity(sensor).effective || 0
-  const pct = max > 0 ? Math.min(100, (current / max) * 100) : 0
+  // Running against the capacity dispatch uses: the smallest of the
+  // sensor's slots, its operator's cap and the limit set on it.
+  const jobs = sensorJobLoad(sensor)
+  const over = jobs.over > 0
+  const pct =
+    jobs.capacity > 0
+      ? Math.min(100, (jobs.running / Math.max(jobs.capacity, jobs.running)) * 100)
+      : 0
+  const title = over
+    ? `${t('sensors.detail.overCapacity', undefined, { count: jobs.over })}. ${capacityLabel(sensor, t)}`
+    : capacityLabel(sensor, t)
   return (
-    <span className="inline-flex items-center gap-2 tabular-nums" title={capacityLabel(sensor, t)}>
+    <span className="inline-flex items-center gap-2 tabular-nums" title={title}>
       <span className="h-1.5 w-11 overflow-hidden rounded-full bg-muted" aria-hidden>
-        <span className="block h-full bg-info" style={{ width: `${pct}%` }} />
+        <span
+          className={cn('block h-full', over ? 'bg-warning' : 'bg-info')}
+          style={{ width: `${pct}%` }}
+        />
       </span>
-      <span className="text-sm">
-        {current}/{max}
+      <span className={cn('text-sm', over && 'text-warning')}>
+        {jobs.running}/{jobs.capacity}
       </span>
     </span>
   )
