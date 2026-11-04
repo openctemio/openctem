@@ -395,11 +395,11 @@ func TestSensitiveActionRefusals_CredentialReveal_DB(t *testing.T) {
 	o := h.org()
 	const secret = "Refusal-Test-Leaked-Pa55!"
 	details := map[string]any{"credential_type": "password", credential.DetailSecretValue: secret}
-	if err := h.secrets.Seal(details); err != nil {
+	tid := shared.MustIDFromString(o.tid)
+	if err := h.secrets.Seal(tid, details, true); err != nil {
 		t.Fatal(err)
 	}
 	now := time.Now().UTC()
-	tid := shared.MustIDFromString(o.tid)
 	ev := exposure.Reconstitute(shared.NewID(), tid, nil,
 		exposure.EventTypeCredentialLeaked, exposure.SeverityHigh, exposure.StateActive,
 		"alice@refusal.test", "", details, "fp-"+uuid.NewString()[:8], "data_breach", now, now, nil, nil, "", now, now)
