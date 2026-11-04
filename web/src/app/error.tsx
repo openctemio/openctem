@@ -1,5 +1,6 @@
 'use client'
 
+import { ReportProblem } from '@/features/shared/components/report-problem'
 import { useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { reportRouteError } from '@/lib/error-reporting'
@@ -26,11 +27,12 @@ export default function GlobalError({ error, reset }: ErrorProps) {
           <p className="text-muted-foreground mt-1 text-sm">Error ID: {error.digest}</p>
         )}
       </div>
-      <div className="flex gap-2">
+      <div className="flex flex-wrap justify-center gap-2">
         <Button onClick={reset}>Try again</Button>
         <Button variant="outline" onClick={() => (window.location.href = '/')}>
           Go home
         </Button>
+        <ReportProblem error={error} />
       </div>
     </div>
   )

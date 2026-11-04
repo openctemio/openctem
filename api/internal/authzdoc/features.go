@@ -199,7 +199,7 @@ var Features = []Feature{
 		ID: "account", Title: "Sign-in and own account",
 		Description: "Authentication, the caller's own account, notifications, platform announcements, bootstrap data and the real-time socket.",
 		Registers: []string{
-			"registerAuthRoutes", "registerUserRoutes", "registerIdentityLinkRoutes", "registerNotificationRoutes", "registerBootstrapRoutes",
+			"registerAuthRoutes", "registerUserRoutes", "registerIdentityLinkRoutes", "registerSSOLinkRoutes", "registerNotificationRoutes", "registerBootstrapRoutes",
 			"registerWebSocketRoutes", "registerAnnouncementRoute",
 		},
 	},

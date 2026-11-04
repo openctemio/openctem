@@ -11,6 +11,8 @@ import { LEGACY_SETTINGS_ROUTE_REDIRECTS } from '../../src/config/legacy-routes'
  *      a page with one h1, the rail, and no access-denied page.
  *   2. Every moved settings URL answers 308 to its new home, query kept.
  *   3. Cmd+K finds settings pages.
+ *   On a phone, "Back to app" and "Settings" switch the open drawer between
+ *   the two navigation sets in place; picking a page navigates and closes it.
  *   4. As a member or viewer (E2E_LIMITED_EMAIL / E2E_LIMITED_PASSWORD): the
  *      user menu's settings link and the user's own notifications open, and
  *      admin-only entries are not in the rail.
@@ -116,6 +118,41 @@ for (const vp of [
     }
   )
 }
+
+test(
+  'on a phone, Back to app and Settings switch the drawer in place (390x844)',
+  { tag: ['@settings', '@shell', '@phone', '@smoke'] },
+  async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 })
+    await page.goto('/settings/members')
+    await page.locator('[data-sidebar="trigger"]').first().click()
+    const drawer = page.locator('[data-mobile="true"]')
+    await expect(drawer.locator('[data-nav-view="settings"]')).toBeVisible({ timeout: 45_000 })
+
+    // Back to app: the drawer stays open on the app navigation, the page stays.
+    await drawer.getByRole('button', { name: 'Back to app' }).click()
+    await expect(drawer.locator('[data-nav-view="app"]')).toBeVisible()
+    await expect(drawer).toBeVisible()
+    await expect(page).toHaveURL(/\/settings\/members$/)
+    // Focus moved into the new set, inside the drawer.
+    expect(
+      await drawer.evaluate((d) =>
+        d.querySelector('[data-nav-view]')!.contains(document.activeElement)
+      )
+    ).toBe(true)
+
+    // Settings: back to the settings rail, still open.
+    await drawer.getByRole('button', { name: 'Settings', exact: true }).click()
+    await expect(drawer.locator('[data-nav-view="settings"]')).toBeVisible()
+    await expect(drawer.getByRole('button', { name: 'Back to app' })).toBeFocused()
+
+    // Picking a page navigates and closes the drawer.
+    await drawer.getByRole('button', { name: 'Back to app' }).click()
+    await drawer.getByRole('link', { name: 'Findings', exact: true }).first().click()
+    await expect(page).toHaveURL(/\/findings/)
+    await expect(drawer).toBeHidden()
+  }
+)
 
 test(
   'moved settings URLs answer 308 with the query kept',

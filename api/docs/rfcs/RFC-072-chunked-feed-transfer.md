@@ -324,6 +324,8 @@ F1/F2 and F3 are independent; F4 needs F1 and F3; F5 needs F2 and F3.
 | D7 | Push side: adopt protocol v2 segments + outbox as the chunker and spool; no second spool | yes |
 | D8 | v1 and v2 side by side for one release, then v1 removed | yes |
 
+> (CTIS 2.0, 2026-11-03: the transfer module is now `github.com/openctemio/contract/transfer`; see docs/architecture/ctis-receiver.md)
+
 ## 13. Alternatives considered
 
 - **Whole-file download with Range resume only.** Fixes dropped

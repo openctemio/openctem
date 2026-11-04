@@ -1,4 +1,7 @@
+import { existsSync } from 'node:fs'
 import { createRequire } from 'node:module'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 import type { NextConfig } from 'next'
 import { validateEnv } from './src/lib/env'
@@ -34,8 +37,33 @@ const DEPLOYMENT_ID = (
   ''
 ).trim()
 
+const webRoot = path.dirname(fileURLToPath(import.meta.url))
+const EXTENSION_ROOT = './src/extensions'
+const DEFAULT_ROOT = './src/extension-default'
+const EXTENSION_DIR = path.join(webRoot, 'src', 'extensions')
+
+/**
+ * Extension switch (api/docs/development/editions.md, "Web"). The `@extension/*`
+ * modules resolve to the empty default in src/extension-default, or with
+ * EXTENSIONS=on to the extension mounted at src/extensions. Any other value
+ * than unset or "on" is refused. A production build without the switch
+ * refuses to run while an extension is mounted, so a default image can never
+ * carry extension pages; an EXTENSIONS=on build without one fails to resolve.
+ */
+const EXTENSIONS = (process.env.EXTENSIONS || '').trim()
+if (EXTENSIONS !== '' && EXTENSIONS !== 'on') {
+  throw new Error(`EXTENSIONS must be unset or "on", got "${EXTENSIONS}"`)
+}
+if (EXTENSIONS !== 'on' && process.env.NODE_ENV === 'production' && existsSync(EXTENSION_DIR)) {
+  throw new Error(`${EXTENSION_DIR} is mounted: build with EXTENSIONS=on, or remove it`)
+}
+const EXTENSION_ALIASES = {
+  '@extension/*': EXTENSIONS === 'on' ? `${EXTENSION_ROOT}/*` : `${DEFAULT_ROOT}/*`,
+}
+
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  turbopack: { resolveAlias: EXTENSION_ALIASES },
   // Version-skew protection: a tab opened before a deploy reloads the page on
   // its next navigation instead of calling server actions and chunks that no
   // longer exist (the login form's "Failed to find Server Action"). Set from the

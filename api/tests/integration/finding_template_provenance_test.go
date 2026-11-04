@@ -10,10 +10,11 @@ package integration
 import (
 	"context"
 	"database/sql"
+	"strings"
 	"testing"
 	"time"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
@@ -28,18 +29,28 @@ const (
 	provReleaseV1 = "sha256:1111111111111111111111111111111111111111111111111111111111111111"
 )
 
-func provenanceReport(host string, props ctis.Properties, release string) *ctis.Report {
+// bareHex is the lowercase hex of a "sha256:<hex>" digest: CTIS 2.0 carries
+// content hashes without the algorithm prefix.
+func bareHex(d string) string { return strings.TrimPrefix(d, "sha256:") }
+
+// provenanceReport is a nuclei report whose finding names a rule (rule_ref)
+// with the template digest and path, and whose tool lists the template
+// release (tool.content).
+func provenanceReport(host, digest, path, release string) *ctis.Report {
 	tool := &ctis.Tool{Name: "nuclei", Version: "3.11.1"}
 	if release != "" {
-		tool.Properties = ctis.Properties{"content": []any{
-			map[string]any{"name": "nuclei-templates", "version": "v10.4.9", "digest": release, "managed": true},
-		}}
+		tool.Content = []ctis.ToolContent{{Name: "nuclei-templates", Version: "v10.4.9", SHA256: bareHex(release)}}
 	}
-	return &ctis.Report{Version: "1.0", Tool: tool,
-		Metadata: ctis.ReportMetadata{ID: shared.NewID().String(), Timestamp: time.Now().UTC()},
-		Assets:   []ctis.Asset{{ID: "h", Type: ctis.AssetTypeDomain, Value: host}},
+	rep := &ctis.Report{Version: ctis.SchemaVersion, Tool: tool,
+		Metadata: ctis.ReportMetadata{ID: ctis.NewReportID(), GeneratedAt: time.Now().UTC()},
+		Assets:   []ctis.Asset{{ID: "h", Type: ctis.AssetTypeDomainName, Value: host}},
 		Findings: []ctis.Finding{{Type: ctis.FindingTypeVulnerability, Title: "Exposed admin panel", Severity: ctis.SeverityHigh,
-			RuleID: "exposed-admin-panel", AssetRef: "h", Properties: props}}}
+			RuleID: "exposed-admin-panel", AssetRef: "h"}}}
+	if digest != "" || path != "" {
+		rep.Rules = []ctis.Rule{{ID: "r1", RuleID: "exposed-admin-panel", ContentSHA256: bareHex(digest), ContentPath: path}}
+		rep.Findings[0].RuleRef = "r1"
+	}
+	return rep
 }
 
 type provRow struct{ digest, path, version, release sql.NullString }
@@ -70,38 +81,47 @@ func TestFindingTemplateProvenance_KeptAndRebaselined(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	// hostileAs sends a report a producer could forge: ingest may refuse it
+	// (the document is invalid) or store it with the hostile value dropped;
+	// either way the baseline must not change.
+	hostileAs := func(tn v2Tenant, rep *ctis.Report) {
+		t.Helper()
+		tid := tn.tenant
+		agt := &sensor.Sensor{ID: tn.sensor, TenantID: &tid, Type: sensor.SensorTypeWorker, Status: sensor.SensorStatusActive}
+		_, _ = svc.Ingest(context.Background(), agt, ingest.Input{Report: rep})
+	}
 	tn := r.newTenant("nuclei")
 	other := r.newTenant("nuclei")
 	host := "prov-" + tn.tenant.String()[:8] + ".example.com"
 
 	// First sighting: digest, path and release kept.
-	ingestAs(tn, provenanceReport(host, ctis.Properties{"template_digest": provDigestA, "template_path": "http/exposures/admin.yaml"}, provReleaseV1))
+	ingestAs(tn, provenanceReport(host, provDigestA, "http/exposures/admin.yaml", provReleaseV1))
 	p := provenanceOf(t, r, tn.tenant)
 	if p.digest.String != provDigestA || p.path.String != "http/exposures/admin.yaml" || p.version.String != "v10.4.9" || p.release.String != provReleaseV1 {
 		t.Fatalf("first sighting stored %+v", p)
 	}
 
 	// A sighting without a digest (an older sensor) keeps the baseline.
-	ingestAs(tn, provenanceReport(host, nil, ""))
+	ingestAs(tn, provenanceReport(host, "", "", ""))
 	if p := provenanceOf(t, r, tn.tenant); p.digest.String != provDigestA {
 		t.Fatalf("a sighting without a digest changed the baseline: %+v", p)
 	}
 
 	// Hostile values are dropped, the baseline stays.
-	ingestAs(tn, provenanceReport(host, ctis.Properties{"template_digest": "sha256:ZZZ'; DROP TABLE findings; --", "template_path": "../../etc/passwd"}, "md5:nope"))
+	hostileAs(tn, provenanceReport(host, "sha256:ZZZ'; DROP TABLE findings; --", "../../etc/passwd", "md5:nope"))
 	if p := provenanceOf(t, r, tn.tenant); p.digest.String != provDigestA || p.path.String != "http/exposures/admin.yaml" {
 		t.Fatalf("hostile values reached the row: %+v", p)
 	}
 
 	// A new digest re-baselines; a hostile path is dropped, not stored.
-	ingestAs(tn, provenanceReport(host, ctis.Properties{"template_digest": provDigestB, "template_path": "/abs/path.yaml"}, ""))
+	ingestAs(tn, provenanceReport(host, provDigestB, "/abs/path.yaml", ""))
 	p = provenanceOf(t, r, tn.tenant)
 	if p.digest.String != provDigestB || p.path.Valid || p.release.Valid {
 		t.Fatalf("re-baseline stored %+v", p)
 	}
 
 	// Another tenant's ingest of the same host never touches this tenant.
-	ingestAs(other, provenanceReport(host, ctis.Properties{"template_digest": provDigestA}, provReleaseV1))
+	ingestAs(other, provenanceReport(host, provDigestA, "", provReleaseV1))
 	if p := provenanceOf(t, r, tn.tenant); p.digest.String != provDigestB {
 		t.Fatalf("another tenant's sighting re-baselined this tenant: %+v", p)
 	}

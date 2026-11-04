@@ -21,7 +21,7 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/openctemio/ctis/capability"
+	"github.com/openctemio/contract/capability"
 
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 )
@@ -177,7 +177,7 @@ type contract struct {
 
 // requiredFields are the display names of the fields a report of each
 // routed capability must carry. The checked rules are the capability's
-// required output in ctis/capability (RequiredOutput).
+// required output in contract/capability (RequiredOutput).
 var requiredFields = map[Key][]string{
 	DiscoverSubdomains:  []string{"name", "root_domain", "discovery_method"},
 	EnumerateSubdomains: []string{"name"},

@@ -10,47 +10,48 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
-// interopSegment is a CTIS 1.4 report as a Nessus import would send it: the
+// interopSegment is a CTIS 2.0 report as a Nessus import would send it: the
 // CVE only in vulnerability.ids, the plugin ID only in native.vuln_id, CVSS
 // v3.1 and v4.0 together, VPR, EPSS and SSVC, the source lifecycle, solution
 // metadata, unmapped fields, identity hints and a VEX statement.
 const interopSegment = `{
-  "version": "1.4",
-  "metadata": {"timestamp": "2026-10-05T08:00:00Z"},
+  "version": "2.0",
+  "metadata": {"id": "01936f4e-7b8c-7d4e-9f00-0123456789ab", "generated_at": "2026-10-05T08:00:00Z", "channel": "integration"},
   "tool": {"name": "nessus"},
   "assets": [{"id": "db01", "type": "host", "value": "10.20.0.15",
     "identity_hints": {"fqdn": "db01.corp.example.com", "netbios_name": "DB01",
       "os_cpe": "cpe:/o:canonical:ubuntu_linux:22.04", "agent_id": "9f3c2a1e-6d7b-4b8e-a1f0-2c4d5e6f7a8b"}}],
   "findings": [
     {"type": "vulnerability", "title": "OpenSSH regreSSHion", "severity": "high", "asset_ref": "db01",
-     "network": {"port": 22, "protocol": "tcp", "service": "ssh"},
-     "vulnerability": {"cvss_version": "3.1", "cvss_score": 8.1, "cvss_vector": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:H/A:H", "cvss_source": "nvd",
+     "network": {"port": 22, "transport": "tcp", "app_protocol": "ssh"},
+     "vulnerability": {
        "ids": [{"type": "cve", "id": "CVE-2024-6387"}, {"type": "vendor", "id": "USN-6859-1", "source": "ubuntu"}]},
      "native": {"scheme": "nessus", "vuln_id": "201194", "family": "Misc.", "severity": "3", "status": "reopened",
-       "detection_type": "confirmed", "credentialed": true, "raw_ref": "ReportHost[10.20.0.15]/ReportItem[201194:22:tcp]"},
+       "detection_type": "confirmed", "is_credentialed": true, "raw_ref": "ReportHost[10.20.0.15]/ReportItem[201194:22:tcp]"},
      "scores": [
+       {"system": "cvss", "version": "3.1", "vector": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:H/A:H", "value": 8.1, "source": "nvd"},
        {"system": "cvss", "version": "4.0", "vector": "CVSS:4.0/AV:N/AC:H/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N", "value": 9.2, "source": "vendor"},
-       {"system": "vpr", "value": 7.4, "source": "tenable"},
+       {"system": "vendor", "value": 7.4, "source": "tenable"},
        {"system": "epss", "value": 0.42, "source": "first"},
        {"system": "ssvc", "version": "2", "vector": "SSVCv2/E:P/A:N/T:T/", "label": "Attend", "source": "cisa"}],
-     "source_lifecycle": {"first_found": "2024-07-03T10:00:00Z", "last_found": "2026-10-05T07:55:00Z", "times_found": 41, "state": "reopened"},
+     "source_lifecycle": {"first_found_at": "2024-07-03T10:00:00Z", "last_found_at": "2026-10-05T07:55:00Z", "times_found": 41, "state": "reopened"},
      "remediation": {"recommendation": "Upgrade OpenSSH.", "solution_type": "upgrade", "patch_published_at": "2024-07-01T00:00:00Z",
        "advisories": [{"id": "USN-6859-1", "url": "https://ubuntu.com/security/notices/USN-6859-1"}]},
      "source_extra": {"plugin_type": "remote"}},
     {"type": "vulnerability", "title": "liblzma backdoor", "severity": "critical", "asset_ref": "db01",
-     "vulnerability": {"package": "xz-utils", "purl": "pkg:deb/ubuntu/xz-utils@5.6.0", "ids": [{"type": "cve", "id": "CVE-2024-3094"}]},
+     "vulnerability": {"package_name": "xz-utils", "purl": "pkg:deb/ubuntu/xz-utils@5.6.0", "ids": [{"type": "cve", "id": "CVE-2024-3094"}]},
      "vex": {"status": "not_affected", "justification": "vulnerable_code_not_in_execute_path", "native_justification": "code_not_reachable",
        "statement": "sshd is not linked against liblzma.", "source": "https://vex.example.com/xz.cdx.json"}}
   ]
 }`
 
-// A CTIS 1.4 report goes through the real protocol v2 receiver and worker
+// A CTIS 2.0 report goes through the real protocol v2 receiver and worker
 // into the database: the CVE from vulnerability.ids keys and labels the
 // finding, the native id becomes its rule, every score and the VEX statement
 // are stored, the asset keeps its identity hints, and the default VEX mode
-// (dry_run, report not command-bound) closes nothing. Then a 1.3 report of
+// (dry_run, report not command-bound) closes nothing. Then a plain report of
 // the same CVE from another tool lands on the same finding.
-func TestIngest_CTIS14Interop_DB(t *testing.T) {
+func TestIngest_CTIS2Interop_DB(t *testing.T) {
 	h := newV2Harness(t, v2HarnessOpts{})
 	ctx := context.Background()
 	t.Cleanup(func() {
@@ -92,13 +93,13 @@ func TestIngest_CTIS14Interop_DB(t *testing.T) {
 	var gotScores []map[string]any
 	_ = json.Unmarshal(scores, &gotScores)
 	if len(gotScores) != 5 {
-		t.Fatalf("scores = %s (want 4 sent + the legacy CVSS 3.1)", scores)
+		t.Fatalf("scores = %s (want the 5 sent)", scores)
 	}
 	systems := map[string]bool{}
 	for _, s := range gotScores {
 		systems[s["system"].(string)+":"+stringOr(s["version"])] = true
 	}
-	for _, want := range []string{"cvss:4.0", "cvss:3.1", "vpr:", "epss:", "ssvc:2"} {
+	for _, want := range []string{"cvss:4.0", "cvss:3.1", "vendor:", "epss:", "ssvc:2"} {
 		if !systems[want] {
 			t.Errorf("score %s missing from %s", want, scores)
 		}
@@ -146,12 +147,12 @@ func TestIngest_CTIS14Interop_DB(t *testing.T) {
 		t.Errorf("the FQDN hint was not recorded as an identifier (%d rows)", fqdnIDs)
 	}
 
-	// Another tool (1.3, no interop members) reports the same CVE on the same
+	// Another tool (no interop members) reports the same CVE on the same
 	// host and port: one finding, not two.
-	legacy := `{"version": "1.3", "metadata": {"timestamp": "2026-10-05T09:00:00Z"}, "tool": {"name": "openvas"},
+	legacy := `{"version": "2.0", "metadata": {"id": "01936f4e-7b8c-7d4e-9f00-0123456789ac", "generated_at": "2026-10-05T09:00:00Z", "channel": "scanner"}, "tool": {"name": "openvas", "techniques": ["va"]},
 	  "assets": [{"id": "h", "type": "host", "value": "10.20.0.15"}],
 	  "findings": [{"type": "vulnerability", "title": "OpenSSH race", "severity": "high", "asset_ref": "h", "rule_id": "1.3.6.1.4.1.25623",
-	    "network": {"port": 22, "protocol": "tcp"}, "vulnerability": {"cve_id": "CVE-2024-6387"}}]}`
+	    "network": {"port": 22, "transport": "tcp"}, "vulnerability": {"ids": [{"type": "cve", "id": "CVE-2024-6387"}]}}]}`
 	id2 := newReportID()
 	resp, raw = h.do(http.MethodPut, "/api/v2/sensor/results/"+id2, []byte(legacy))
 	h.expect(resp, raw, 202, "")
@@ -165,7 +166,7 @@ func TestIngest_CTIS14Interop_DB(t *testing.T) {
 	}
 	// The second sighting carried no native identity; the first one's stays.
 	if err := h.db.QueryRow(`SELECT COALESCE(native_vuln_id, '') FROM findings WHERE id = $1`, findingID).Scan(&nativeID); err != nil || nativeID != "201194" {
-		t.Errorf("native id after a 1.3 sighting: %q %v", nativeID, err)
+		t.Errorf("native id after a second-tool sighting: %q %v", nativeID, err)
 	}
 }
 

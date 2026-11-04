@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/pkg/domain/assettech"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -223,7 +223,7 @@ func (s *Service) resolveSoftware(ctx context.Context, tenantID shared.ID, work 
 
 // softwareObservations reads every product a CTIS asset says it runs.
 func softwareObservations(a *ctis.Asset) []software.Observation {
-	out := make([]software.Observation, 0, len(a.Technologies)+len(a.Services)+2)
+	out := make([]software.Observation, 0, len(a.Technologies)+3)
 	for _, t := range a.Technologies {
 		// A detection is a component only when it names a real product
 		// with a version or CPE (RFC-112); the rest stay asset technologies.
@@ -235,24 +235,30 @@ func softwareObservations(a *ctis.Asset) []software.Observation {
 			Evidence: evidenceOf(t.Name, t.Version), ToolConfidence: t.Confidence,
 		})
 	}
-	for _, sv := range a.Services {
-		transport := normTransport(sv.Protocol)
-		loc := ""
-		if sv.Port > 0 && sv.Port <= 65535 {
-			loc = transport + "/" + strconv.Itoa(sv.Port)
-		}
-		base := software.Observation{Port: sv.Port, Transport: transport, Location: loc, Source: software.SourceService}
-		out = append(out, productObservations(base, sv.Product, sv.Version, sv.CPE, sv.Banner)...)
-	}
 	if a.Technical != nil && a.Technical.Service != nil {
 		svc := a.Technical.Service
-		base := software.Observation{Port: svc.Port, Transport: normTransport(svc.Transport), Source: software.SourceService}
+		transport := normTransport(string(svc.Transport))
+		loc := ""
+		if svc.Port > 0 && svc.Port <= 65535 {
+			loc = transport + "/" + strconv.Itoa(svc.Port)
+		}
+		base := software.Observation{Port: svc.Port, Transport: transport, Location: loc, Source: software.SourceService}
+		if a.Type == ctis.AssetTypeService {
+			// The service asset of an open port.
+			base.Source = software.SourceOpenPort
+		}
 		out = append(out, productObservations(base, svc.Product, svc.Version, svc.CPE, svc.Banner)...)
+	}
+	// The HTTP Server header of a web origin.
+	if a.Technical != nil && a.Technical.HTTP != nil && strings.TrimSpace(a.Technical.HTTP.WebServer) != "" {
+		v := a.Technical.HTTP.WebServer
+		for _, b := range software.ParseBanner(v) {
+			out = append(out, software.Observation{Name: b.Name, Version: b.Version, Source: software.SourceService, Evidence: v})
+		}
 	}
 	if a.IdentityHints != nil && a.IdentityHints.OSCPE != "" {
 		out = append(out, software.Observation{CPE: a.IdentityHints.OSCPE, Source: software.SourceOS, Evidence: a.IdentityHints.OSCPE})
 	}
-	out = append(out, propertyObservations(a)...)
 	return out
 }
 
@@ -279,54 +285,6 @@ func productObservations(base software.Observation, product, version, cpe, banne
 		return out
 	}
 	return nil
-}
-
-// propertyObservations reads the loose property keys producers use:
-// technologies ("Name:version"), the HTTP Server header, and an open port's
-// service and version.
-func propertyObservations(a *ctis.Asset) []software.Observation {
-	if len(a.Properties) == 0 {
-		return nil
-	}
-	out := make([]software.Observation, 0, 4)
-	for _, key := range []string{"technologies", "technology"} {
-		for _, t := range stringList(a.Properties[key]) {
-			name, version := software.SplitTechnology(t)
-			if !assettech.IsSoftwareCandidate(name, version, "", nil) {
-				continue
-			}
-			out = append(out, software.Observation{Name: name, Version: version, Source: software.SourceTechnology, Evidence: t})
-		}
-	}
-	for _, key := range []string{"server", "web_server"} {
-		if v, ok := a.Properties[key].(string); ok && strings.TrimSpace(v) != "" {
-			for _, b := range software.ParseBanner(v) {
-				out = append(out, software.Observation{Name: b.Name, Version: b.Version, Source: software.SourceService, Evidence: v})
-			}
-		}
-	}
-	if a.Type == ctis.AssetTypeOpenPort {
-		version, _ := a.Properties["version"].(string)
-		service, _ := a.Properties["service"].(string)
-		transport := ""
-		if p, ok := a.Properties["protocol"].(string); ok {
-			transport = normTransport(p)
-		}
-		base := software.Observation{Transport: transport, Source: software.SourceOpenPort}
-		switch banners := software.ParseBanner(version); {
-		case len(banners) > 0:
-			for _, b := range banners {
-				o := base
-				o.Name, o.Version, o.Evidence = b.Name, b.Version, version
-				out = append(out, o)
-			}
-		case service != "":
-			o := base
-			o.Name, o.Version, o.Evidence = service, version, evidenceOf(service, version)
-			out = append(out, o)
-		}
-	}
-	return out
 }
 
 func stringList(v any) []string {

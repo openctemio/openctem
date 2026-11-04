@@ -17,7 +17,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/internal/app/outbox"
@@ -150,8 +150,8 @@ func (r *regRig) scanAt(t *testing.T, coverage string, observed time.Time, fs ..
 	for i := range fs {
 		fs[i].AssetRef = "repo"
 	}
-	rep := &ctis.Report{Version: "1.0", Tool: &ctis.Tool{Name: "trivy"},
-		Metadata: ctis.ReportMetadata{Timestamp: observed, CoverageType: coverage,
+	rep := &ctis.Report{Version: ctis.SchemaVersion, Tool: &ctis.Tool{Name: "trivy"},
+		Metadata: ctis.ReportMetadata{ID: ctis.NewReportID(), GeneratedAt: observed, CoverageType: ctis.CoverageType(coverage),
 			Branch: &ctis.BranchInfo{Name: "main", IsDefaultBranch: true, RepositoryURL: "https://" + r.tn.repo}},
 		Assets:   []ctis.Asset{{ID: "repo", Type: ctis.AssetTypeRepository, Value: r.tn.repo}},
 		Findings: fs}
@@ -307,8 +307,8 @@ func TestRegressionSemantics_NoCoverageProofNoAutoResolve(t *testing.T) {
 		t.Fatalf("other tool's full scan without it: %s, want it left open", got)
 	}
 	// A run that did not complete cleanly is no proof.
-	rep := &ctis.Report{Version: "1.0", Tool: &ctis.Tool{Name: "trivy"},
-		Metadata: ctis.ReportMetadata{Timestamp: time.Now().UTC(), CoverageType: "full",
+	rep := &ctis.Report{Version: ctis.SchemaVersion, Tool: &ctis.Tool{Name: "trivy"},
+		Metadata: ctis.ReportMetadata{ID: ctis.NewReportID(), GeneratedAt: time.Now().UTC(), CoverageType: "full",
 			Branch: &ctis.BranchInfo{Name: "main", IsDefaultBranch: true, RepositoryURL: "https://" + r.tn.repo}},
 		Assets:   []ctis.Asset{{ID: "repo", Type: ctis.AssetTypeRepository, Value: r.tn.repo}},
 		Findings: []ctis.Finding{func() ctis.Finding { f := anchorFinding(); f.AssetRef = "repo"; return f }()}}

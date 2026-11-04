@@ -25,7 +25,7 @@ export interface ToolSettingsProblem {
 export interface SensorToolSettings {
   tool: string
   schema_digest: string
-  /** The tool's settings schema (CTIS settings contract). */
+  /** The tool's settings schema (contract module settings). */
   schema: Record<string, unknown>
   /** Stored values; keys left out take their defaults. */
   values: Record<string, unknown>

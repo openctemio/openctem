@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	cirunapp "github.com/openctemio/openctem/api/internal/app/cirun"
 	"github.com/openctemio/openctem/api/pkg/domain/cirun"
@@ -26,7 +26,7 @@ func TestCIGateBaseline_DefaultBranchRerunCannotWhitewash(t *testing.T) {
 	r := newCIRigWith(t, cirunapp.Config{WebBaseURL: "https://console.example"}, func(d *cirunapp.Deps) { d.Alerts = alerts })
 	ctx := context.Background()
 	cfg := r.trust(r.tenant, cirun.Rules{Owners: []string{"acme"}})
-	host := strings.TrimPrefix(r.idp.srv.URL, "https://")
+	host := strings.TrimPrefix(r.idp.url, "https://")
 	repoName := strings.ToLower(host) + "/acme/rerun"
 	const sha = "9999999999999999999999999999999999999999"
 	legacy := ciFinding("SQL injection", "go.sqli", "high", ctis.FindingTypeVulnerability, "db.go", 12)

@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
@@ -50,8 +50,8 @@ type noAssets struct{}
 func (noAssets) AssetsInScope(context.Context, []shared.ID) ([]shared.ID, error) { return nil, nil }
 
 func dispReport(repo string, findings ...ctis.Finding) *ctis.Report {
-	return &ctis.Report{Version: "1.0", Tool: &ctis.Tool{Name: "semgrep"},
-		Metadata: ctis.ReportMetadata{ID: shared.NewID().String(), Timestamp: time.Now().UTC()},
+	return &ctis.Report{Version: ctis.SchemaVersion, Tool: &ctis.Tool{Name: "semgrep"},
+		Metadata: ctis.ReportMetadata{ID: ctis.NewReportID(), GeneratedAt: time.Now().UTC()},
 		Assets: []ctis.Asset{{ID: "a", Type: ctis.AssetTypeRepository, Value: repo},
 			{ID: "b", Type: ctis.AssetTypeRepository, Value: repo + "-second"}},
 		Findings: findings}
@@ -89,7 +89,7 @@ func TestIngest_DispositionsAndPolicyVersions(t *testing.T) {
 	}
 	tid := tn.tenant
 	agt := &sensor.Sensor{ID: tn.sensor, TenantID: &tid, Type: sensor.SensorTypeWorker, Status: sensor.SensorStatusActive}
-	rep := dispReport(tn.repo, dispFinding("py.md5", "a", 3), dispFinding("py.cmdi", "a", 9), dispFinding("py.lost", "nope", 1))
+	rep := dispReport(tn.repo, dispFinding("py.md5", "a", 3), dispFinding("py.cmdi", "a", 9))
 	out, err := r.svc.Ingest(ctx, agt, ingest.Input{Report: rep})
 	if err != nil {
 		t.Fatalf("ingest: %v", err)
@@ -115,23 +115,14 @@ func TestIngest_DispositionsAndPolicyVersions(t *testing.T) {
 	if actions["py.cmdi"].Action != ingestreceipt.ActionCreated || actions["py.cmdi"].Policy != "" {
 		t.Fatalf("created row = %+v", actions["py.cmdi"])
 	}
-	// The finding without a target asset is a rejected item, decided by
-	// validation, with no evidence.
-	items, total, err := repo.ListItems(ctx, tn.tenant, receipt, "", nil, pagination.New(1, 100))
-	if err != nil || total != 1 {
-		t.Fatalf("items %d %v", total, err)
+	// A finding without a target asset no longer reaches ingest as an item:
+	// the document is invalid and refused whole (CTIS 2.0).
+	noAsset := dispReport(tn.repo, dispFinding("py.lost", "", 1))
+	if _, err := r.svc.Ingest(ctx, agt, ingest.Input{Report: noAsset}); err == nil {
+		t.Fatal("a finding without asset_ref was accepted")
 	}
-	if it := items[0]; it.Disposition != ingestreceipt.DispositionRejected || it.ReasonCode != ingestreceipt.ReasonNoTargetAsset ||
-		it.Policy != ingestreceipt.PolicyValidation || it.PolicyVersion != v1 || it.Title != "py.lost" || it.Tool != "semgrep" {
-		t.Fatalf("item = %+v", it)
-	}
-	// A restricted reader does not see an item without an asset.
-	scoped := &shared.DataScope{TenantID: tn.tenant, UserID: shared.NewID()}
-	if _, n, _ := repo.ListItems(ctx, tn.tenant, receipt, "", scoped, pagination.New(1, 100)); n != 0 {
-		t.Fatalf("a restricted reader saw %d items without an asset", n)
-	}
-	if counts, _ := repo.ItemCounts(ctx, tn.tenant, receipt, nil); counts["rejected"] != 1 {
-		t.Fatalf("counts %v", counts)
+	if _, n, _ := repo.ListItems(ctx, tn.tenant, receipt, "", nil, pagination.New(1, 100)); n != 0 {
+		t.Fatalf("receipt of a clean report lists %d rejected items", n)
 	}
 	// Another tenant reads nothing of the receipt.
 	if _, n, _ := repo.ListItems(ctx, shared.NewID(), receipt, "", nil, pagination.New(1, 100)); n != 0 {
@@ -146,7 +137,7 @@ func TestIngest_DispositionsAndPolicyVersions(t *testing.T) {
 		t.Fatal(err)
 	}
 	r2, _ := shared.IDFromString(out2.ReceiptID)
-	items, _, _ = repo.ListItems(ctx, tn.tenant, r2, ingestreceipt.DispositionOutOfScope, nil, pagination.New(1, 100))
+	items, _, _ := repo.ListItems(ctx, tn.tenant, r2, ingestreceipt.DispositionOutOfScope, nil, pagination.New(1, 100))
 	if len(items) != 1 || items[0].Policy != ingestreceipt.PolicyUploaderScope || items[0].ReasonCode != ingestreceipt.ReasonOutsideScope {
 		t.Fatalf("out of scope items = %+v", items)
 	}

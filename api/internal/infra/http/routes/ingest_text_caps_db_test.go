@@ -7,8 +7,9 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
@@ -87,16 +88,18 @@ func TestIngest_OversizedFindingTextIsCappedOnEveryPath_DB(t *testing.T) {
 	// Direct ingest (the async worker and server-side uploads run this).
 	title, desc := hugeText("v1 title ", 100_000), hugeText("v1 description ", 1_000_000)
 	report := &ctis.Report{
-		Version:  "1.0",
-		Metadata: ctis.ReportMetadata{ID: "caps-v1", SourceType: "scanner"},
-		Tool:     &ctis.Tool{Name: "semgrep"},
+		Version:  ctis.SchemaVersion,
+		Metadata: ctis.ReportMetadata{ID: ctis.NewReportID(), GeneratedAt: time.Now().UTC(), Channel: ctis.ChannelScanner},
+		Tool:     &ctis.Tool{Name: "semgrep", Techniques: []ctis.Technique{ctis.TechniqueSAST}},
 		Assets:   []ctis.Asset{{ID: "repo", Type: ctis.AssetTypeRepository, Value: "github.com/acme/caps-v1"}},
 		Findings: []ctis.Finding{{
 			Type: ctis.FindingTypeVulnerability, Severity: ctis.SeverityHigh, RuleID: "caps-v1", AssetRef: "repo",
 			Title: title, Description: desc, Message: desc,
 			Tags:        manyStrings("tag", 500),
-			Remediation: &ctis.Remediation{Recommendation: desc, References: manyStrings("https://example.com/ref", 5000)},
-			Location:    &ctis.FindingLocation{Path: "src/a.go", StartLine: 3, Snippet: desc},
+			Remediation: &ctis.Remediation{Recommendation: desc},
+			// CTIS 2.0 bounds references at ctis.MaxReferences, the receiver's own cap.
+			References: manyStrings("https://example.com/ref", ctis.MaxReferences),
+			Location:   &ctis.FindingLocation{Path: "src/a.go", StartLine: 3, Snippet: desc},
 		}},
 	}
 	out, err := h.ingest.Ingest(ctx, agt, ingest.Input{Report: report})
@@ -110,9 +113,9 @@ func TestIngest_OversizedFindingTextIsCappedOnEveryPath_DB(t *testing.T) {
 
 	// Protocol v2 (PUT /api/v2/sensor/results/{id}, then the worker).
 	seg, _ := json.Marshal(map[string]any{
-		"version":  "1.0",
-		"metadata": map[string]any{"timestamp": "2026-10-01T12:00:00Z"},
-		"tool":     map[string]any{"name": "semgrep"},
+		"version":  "2.0",
+		"metadata": map[string]any{"id": ctis.NewReportID(), "generated_at": "2026-10-01T12:00:00Z", "channel": "scanner"},
+		"tool":     map[string]any{"name": "semgrep", "techniques": []string{"sast"}},
 		"assets":   []any{map[string]any{"id": "repo", "type": "repository", "value": "github.com/acme/caps-v2"}},
 		"findings": []any{map[string]any{
 			"type": "vulnerability", "severity": "high", "rule_id": "caps-v2", "asset_ref": "repo",

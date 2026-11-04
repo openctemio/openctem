@@ -13,7 +13,7 @@ import (
 	"context"
 	"strings"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/pkg/domain/correlation"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -58,11 +58,6 @@ func dastPoint(f *ctis.Finding) (correlation.InjectionPoint, string, bool) {
 	var params []string
 	if f.Web != nil && f.Web.Parameter != nil && strings.TrimSpace(f.Web.Parameter.Name) != "" {
 		params = append(params, string(f.Web.Parameter.Location)+":"+strings.TrimSpace(f.Web.Parameter.Name))
-	}
-	for _, key := range []string{"parameter", "param"} {
-		if v, ok := f.Properties[key].(string); ok && strings.TrimSpace(v) != "" {
-			params = append(params, "unknown:"+strings.TrimSpace(v))
-		}
 	}
 	p, ok := correlation.Point(correlation.PointInput{MatchedURL: matched, Method: dastMethod(f), Params: params,
 		Payloads: evidencePayloads(f.EvidenceItems)})

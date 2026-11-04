@@ -1,5 +1,6 @@
 import { env } from '@/lib/env'
 import { DEFAULT_BRAND, toBrand, type Brand, type BrandResponse } from '@/lib/brand'
+import { resolveHelpLinks, type HelpSettingsResponse } from '@/lib/help-links'
 
 /**
  * Fetches the instance brand from the API's public GET /api/v1/brand, on the
@@ -8,6 +9,11 @@ import { DEFAULT_BRAND, toBrand, type Brand, type BrandResponse } from '@/lib/br
  * checked again by toBrand before it reaches a page.
  */
 export async function brandSettings(): Promise<Brand> {
+  const [brand, help] = await Promise.all([instanceBrand(), helpSettings()])
+  return { ...brand, help: resolveHelpLinks(help) }
+}
+
+async function instanceBrand(): Promise<Brand> {
   try {
     const res = await fetch(`${env.api.url}/api/v1/brand`, {
       headers: { Accept: 'application/json' },
@@ -18,6 +24,20 @@ export async function brandSettings(): Promise<Brand> {
     return toBrand((await res.json()) as BrandResponse)
   } catch {
     return DEFAULT_BRAND
+  }
+}
+
+/** The operator's help links and security contact (public GET /api/v1/legal); null on any failure. */
+async function helpSettings(): Promise<HelpSettingsResponse | null> {
+  try {
+    const res = await fetch(`${env.api.url}/api/v1/legal`, {
+      headers: { Accept: 'application/json' },
+      next: { revalidate: 60 },
+      signal: AbortSignal.timeout(3000),
+    })
+    return res.ok ? ((await res.json()) as HelpSettingsResponse) : null
+  } catch {
+    return null
   }
 }
 

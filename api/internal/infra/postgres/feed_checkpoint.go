@@ -13,7 +13,7 @@ import (
 	"math"
 	"time"
 
-	"github.com/openctemio/ctis/transfer/bundle"
+	"github.com/openctemio/contract/transfer/bundle"
 )
 
 // Feed checkpoint rows.

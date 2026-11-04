@@ -73,6 +73,13 @@ commits = [
     # History cannot be rewritten on a reviewed PR, so that one commit is
     # named here and nothing else is.
     "699b17fb19838426b079baaec61bb3e8691d72a4",
+    # web/console/e2e: the first two commits of the console e2e stack script
+    # (it lived in e2e/ci/, now e2e/scripts/, which the dev-script allowlist
+    # above covers). The generic password rule matched the variable names
+    # DB_PASSWORD and TEMP_PASSWORD; no secret is in either commit (the values
+    # are generated per run). History cannot be rewritten on a reviewed PR.
+    "ed5dbed78a8f23495b8571225a7284f627b61db2",
+    "37260e0eb43b1797845e55fff49546541f589360",
 ]
 
 # Additional rules

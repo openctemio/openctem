@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/command"
@@ -51,9 +51,9 @@ func TestDecideCoverage(t *testing.T) {
 		want   string
 	}{
 		{"completed full run", func(*ingestreport.CommandCoverage) {}, coverageEligible},
-		{"explicit full coverage, any case", func(c *ingestreport.CommandCoverage) {
-			c.Reports[0].Header = coverageHeader(t, "nuclei", ctis.ReportMetadata{CoverageType: " Full "})
-		}, coverageEligible},
+		{"the coverage type is a closed enum: Full is not full", func(c *ingestreport.CommandCoverage) {
+			c.Reports[0].Header = coverageHeader(t, "nuclei", ctis.ReportMetadata{CoverageType: "Full"})
+		}, coveragePartial},
 		// An older sensor sends no coverage_type. Absent is not full (CTIS
 		// spec 4.5): such a run closes nothing.
 		{"coverage not declared", func(c *ingestreport.CommandCoverage) {

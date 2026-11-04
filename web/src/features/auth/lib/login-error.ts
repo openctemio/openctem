@@ -77,7 +77,7 @@ const FALLBACKS: Record<LoginErrorCode | 'generic', string> = {
   no_seat: 'This organization has no free seat for you. Contact your administrator.',
   domain_not_allowed: 'Your email domain is not allowed for this organization.',
   link_required:
-    'An account with this email already exists. Sign in with your existing credentials first, then link this identity provider.',
+    'An account with this email already exists. Sign in with your password, then link this sign-in under Account > Security.',
   sso_required:
     'Your organization requires single sign-on. Sign in through your identity provider.',
   different_method:

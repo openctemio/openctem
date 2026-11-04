@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
@@ -701,17 +701,14 @@ func TestEnrichment_CTISToFindingWorkflow(t *testing.T) {
 		Description: "User input passed directly to shell command",
 		Severity:    ctis.SeverityCritical,
 		Confidence:  95,
-		Impact:      "HIGH",
-		Likelihood:  "HIGH",
 		RuleID:      "go.lang.security.audit.command-injection",
 		RuleName:    "Command Injection",
 		Fingerprint: "unique-fp-001",
 		Vulnerability: &ctis.VulnerabilityDetails{
-			CVSSScore:  9.8,
-			CVSSVector: "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:C/C:H/I:H/A:H",
-			CWEIDs:     []string{"CWE-78", "CWE-77"},
-			OWASPIDs:   []string{"A03:2021"},
+			CWEIDs:   []string{"CWE-78", "CWE-77"},
+			OWASPIDs: []string{"A03:2021"},
 		},
+		Scores: []ctis.Score{{System: ctis.ScoreSystemCVSS, Version: "3.1", Vector: "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:C/C:H/I:H/A:H", Value: f64p(9.8)}},
 		Location: &ctis.FindingLocation{
 			Path:        "/app/executor.go",
 			StartLine:   88,
@@ -729,12 +726,6 @@ func TestEnrichment_CTISToFindingWorkflow(t *testing.T) {
 	}
 	if ctisFinding.Confidence != 95 {
 		t.Error("CTIS Confidence should be 95")
-	}
-	if ctisFinding.Impact != "HIGH" {
-		t.Error("CTIS Impact should be HIGH")
-	}
-	if ctisFinding.Likelihood != "HIGH" {
-		t.Error("CTIS Likelihood should be HIGH")
 	}
 
 	// Create domain finding from CTIS
@@ -770,11 +761,22 @@ func TestEnrichment_CTISToFindingWorkflow(t *testing.T) {
 	}
 
 	if ctisFinding.Vulnerability != nil {
-		cvss := ctisFinding.Vulnerability.CVSSScore
+		var cvss float64
+		var cvssVector string
+		if sc, ok := ctis.PrimaryCVSS(ctisFinding); ok {
+			if sc.Value != nil {
+				cvss = *sc.Value
+			}
+			cvssVector = sc.Vector
+		}
+		var cveID string
+		if c := ctis.CVEs(ctisFinding.Vulnerability); len(c) > 0 {
+			cveID = c[0]
+		}
 		err = finding.SetClassification(
-			ctisFinding.Vulnerability.CVEID,
+			cveID,
 			&cvss,
-			ctisFinding.Vulnerability.CVSSVector,
+			cvssVector,
 			ctisFinding.Vulnerability.CWEIDs,
 			ctisFinding.Vulnerability.OWASPIDs,
 		)

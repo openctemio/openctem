@@ -8,8 +8,9 @@ package routes
 import (
 	"context"
 	"testing"
+	"time"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	scopeapp "github.com/openctemio/openctem/api/internal/app/scope"
@@ -37,7 +38,8 @@ func TestIngest_WebEndpointsUnderAPathExclusion_DB(t *testing.T) {
 	h.ingest.SetExclusionSource(scopeapp.NewService(postgres.NewScopeTargetRepository(db), postgres.NewScopeExclusionRepository(db),
 		postgres.NewAssetRepository(db), logger.NewNop()))
 	report := &ctis.Report{
-		Version: "1.0", Metadata: ctis.ReportMetadata{ID: "web-ex-1", SourceType: "scanner"}, Tool: &ctis.Tool{Name: "katana"},
+		Version: ctis.SchemaVersion, Metadata: ctis.ReportMetadata{ID: ctis.NewReportID(), GeneratedAt: time.Now().UTC(), Channel: ctis.ChannelScanner},
+		Tool: &ctis.Tool{Name: "katana", Techniques: []ctis.Technique{ctis.TechniqueDAST}},
 		Endpoints: []ctis.Endpoint{
 			{Origin: "https://shop.web-ex.test", Method: "GET", Path: "/admin/debug/vars", Source: ctis.EndpointSourceJS},
 			{Origin: "https://shop.web-ex.test", Method: "GET", Path: "/orders/1"},

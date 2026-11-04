@@ -27,9 +27,9 @@ import (
 // route and of format=mapping:<ref> on import, and an import through a
 // mapping landing partial-coverage findings recorded under its name.
 
-const dbMappingDoc = `{"apiVersion": "openctem.io/mapping/v1", "source": "csv", "identity": ["title", "asset_value"],
+const dbMappingDoc = `{"apiVersion": "openctem.io/mapping/v2", "source": "csv", "identity": ["title", "asset_value"],
   "records": [{"kind": "finding", "set": {"title": "/title", "severity": {"path": "/severity", "lower": true},
-    "asset_value": "/host", "asset_type": {"const": "domain"}, "description": "/note"}}]}`
+    "asset_value": "/host", "asset_type": {"const": "domain_name"}, "description": "/note"}}]}`
 
 type mappingHarness struct {
 	*importHarness
@@ -173,7 +173,16 @@ func TestImportMappings_DB(t *testing.T) {
 	// organization by id answers 404.
 	prev := previewRequest(t, map[string]string{"mapping_id": id}, csv)
 	rec, out = m.callRaw(t, m.tenant, m.mh.Preview, prev)
-	if rec.Code != http.StatusOK || len(out["items"].([]any)) != 2 {
+	// The preview lists the two findings and then the assets they name.
+	findingItems := 0
+	if items, ok := out["items"].([]any); ok {
+		for _, it := range items {
+			if m, _ := it.(map[string]any); m["kind"] == "finding" {
+				findingItems++
+			}
+		}
+	}
+	if rec.Code != http.StatusOK || findingItems != 2 {
 		t.Fatalf("preview: %d %s", rec.Code, rec.Body)
 	}
 	if rec, _ := m.callRaw(t, m.other, m.mh.Preview, previewRequest(t, map[string]string{"mapping_id": id}, csv)); rec.Code != http.StatusNotFound {

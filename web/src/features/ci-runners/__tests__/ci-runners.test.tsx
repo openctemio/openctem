@@ -32,6 +32,7 @@ Element.prototype.scrollIntoView ??= () => {}
 const mockSaveTrust = vi.fn()
 const mockPreview = vi.fn()
 const mockSaveSettings = vi.fn()
+let scmLoading = false
 let ciSettings: { require_oidc: boolean } | undefined = { require_oidc: true }
 let runs: unknown[] = []
 let runDetail: unknown
@@ -83,7 +84,7 @@ vi.mock('../api/use-ci', async (importOriginal) => ({
   useCreateGateOverride: () => ({ trigger: vi.fn(), isMutating: false }),
   useRevokeGateOverride: () => ({ trigger: mockRevokeOverride, isMutating: false }),
   useTrustRefusals: () => ({ data: { data: refusals }, isLoading: false, mutate: vi.fn() }),
-  useSCMApps: () => ({ data: { data: [], gitlab: [] }, isLoading: false, mutate: vi.fn() }),
+  useSCMApps: () => ({ data: { data: [], gitlab: [] }, isLoading: scmLoading, mutate: vi.fn() }),
 }))
 
 vi.mock('@/context/tenant-provider', () => ({
@@ -589,6 +590,24 @@ describe('CITrustSettings sections', () => {
       'Pull request feedback',
       'Break-glass',
     ])
+  })
+
+  it('waits for the code-host apps above break-glass before it scrolls', () => {
+    const scrolled: string[] = []
+    const spy = vi.spyOn(Element.prototype, 'scrollIntoView').mockImplementation(function (
+      this: Element
+    ) {
+      scrolled.push(this.id)
+    })
+    window.history.replaceState({}, '', '/?section=break-glass')
+    scmLoading = true
+    const { rerender } = render(<CITrustSettings />)
+    expect(scrolled).toEqual([])
+    scmLoading = false
+    rerender(<CITrustSettings />)
+    expect(scrolled).toEqual(['ci-setup-break-glass'])
+    spy.mockRestore()
+    window.history.replaceState({}, '', '/')
   })
 
   it('scrolls to the section a link names (?section=)', () => {
