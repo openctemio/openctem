@@ -15,6 +15,7 @@ import type { Node, NodeProps } from '@xyflow/react'
 import { ChevronRight, EyeOff, Layers } from 'lucide-react'
 import { toast } from 'sonner'
 import { FlowCanvas, FlowNodeCard, type FlowNodeState } from '@/components/flow/flow-canvas'
+import { FlowFullscreen } from '@/components/flow/flow-fullscreen'
 import type { FlowEdgeType } from '@/components/flow/flow-edge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -151,6 +152,7 @@ export function NeighborhoodGraphView({
   const { t } = useTranslation()
   const labels = useGraphLabels()
   const [depth, setDepth] = React.useState<NeighborhoodDepth>(2)
+  const depthLabelId = React.useId()
   const { data, error, isLoading, mutate } = useAssetNeighborhood(assetId, depth)
 
   // The drawn graph: the answer, then every expansion merged into it. A new
@@ -286,16 +288,17 @@ export function NeighborhoodGraphView({
       )
     : 0
 
-  return (
-    <div className={cn('space-y-3', className)}>
+  const selfName = data?.lineage?.nodes?.find((n) => n.depth === 0)?.name
+  const renderView = (full: boolean) => (
+    <div className={cn(full ? 'flex min-h-0 flex-1 flex-col gap-3' : 'space-y-3')}>
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
         <div className="flex items-center gap-2">
-          <span id="nb-depth-label" className="text-xs text-muted-foreground">
+          <span id={depthLabelId} className="text-xs text-muted-foreground">
             {t('assets.graph.depth', 'Hops')}
           </span>
           <div
             role="group"
-            aria-labelledby="nb-depth-label"
+            aria-labelledby={depthLabelId}
             className="inline-flex rounded-md border p-0.5"
           >
             {DEPTHS.map((d) => (
@@ -373,7 +376,13 @@ export function NeighborhoodGraphView({
           onRetry={() => mutate()}
         />
       ) : graph ? (
-        <div className="h-[360px] overflow-hidden rounded-md border sm:h-[480px]" aria-busy={busy}>
+        <div
+          className={cn(
+            'overflow-hidden rounded-md border',
+            full ? 'min-h-[320px] flex-1' : 'h-[360px] sm:h-[480px]'
+          )}
+          aria-busy={busy}
+        >
           <FlowCanvas
             nodes={nodes}
             edges={edges}
@@ -472,5 +481,18 @@ export function NeighborhoodGraphView({
         )}
       </p>
     </div>
+  )
+
+  return (
+    <FlowFullscreen
+      className={className}
+      title={
+        selfName
+          ? t('assets.graph.fullTitle', 'Related assets of {name}', { name: selfName })
+          : t('assets.graph.canvasLabel', 'Related assets graph')
+      }
+    >
+      {renderView}
+    </FlowFullscreen>
   )
 }
