@@ -1,25 +1,21 @@
 /**
  * New Scan Dialog
  *
- * Multi-step wizard dialog for creating new scans.
- * Connects to the scan configuration API to create and optionally trigger scans.
+ * Creates a scan through the shared scan wizard (scan-wizard.tsx): every
+ * step can be opened at any time, the live summary sits beside each step,
+ * Create stays disabled until every step is valid and names the first
+ * problem as a link to it, and Ctrl/Cmd+Enter creates. The draft is kept per
+ * organization and user while the tab lives; closing with changes offers to
+ * keep it. Design: research/418.
  */
 
 'use client'
 
 import { useEffect, useMemo, useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import {
-  Dialog,
-  DialogBody,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { toast } from 'sonner'
-import { ChevronRight, Clock, Loader2, Play, ShieldCheck } from 'lucide-react'
+import { Clock, Loader2, Play, RotateCcw, ShieldCheck } from 'lucide-react'
 import { submitScanApproval, useScanApprovalPreview } from '@/lib/api/scan-approval-hooks'
 import { ApprovalRequirement, missingEvidence } from '../approval/approval-requirement'
 import { toZonePreviewRequest, triggerErrorHint } from '@/features/scan-zones'
@@ -28,22 +24,19 @@ import { useScanReview } from '../../hooks/use-scan-review'
 import { useScanWorkflow, useScanWorkflows } from '@/lib/api/scan-workflow-hooks'
 import { useScanZones } from '@/lib/api/scan-zone-hooks'
 import { Permission, useHasPermission } from '@/lib/permissions'
+import { useAuthStore } from '@/stores/auth-store'
+import { useDebounce } from '@/hooks/use-debounce'
 
-import { ScanStepper, type ScanWizardStep } from './scan-stepper'
+import { type ScanWizardStep } from './scan-stepper'
+import { ScanWizard, useWizardSteps } from './scan-wizard'
+import { ScanSummaryContent, summaryLine } from './scan-summary'
 import { BasicInfoStep } from './basic-info-step'
 import { TargetsStep } from './targets-step'
 import { OptionsStep } from './options-step'
 import { ScheduleStep } from './schedule-step'
 import { DEFAULT_NEW_SCAN, type NewScanFormData } from '../../types'
-import {
-  basicInfoError,
-  optionsError,
-  directTargets,
-  formDataToCreateRequest,
-  targetsError,
-  onceRunAt,
-  scheduleError,
-} from '../../lib/scan-form'
+import { directTargets, formDataToCreateRequest, onceRunAt } from '../../lib/scan-form'
+import { issueCount, scanStepIssues } from '../../lib/wizard-validity'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { post } from '@/lib/api/client'
 import { scanEndpoints } from '@/lib/api/endpoints'
@@ -63,9 +56,9 @@ import {
   type ScopeRefusal,
 } from '@/features/scope'
 import { useTargetsCheck } from '../../hooks/use-targets-check'
-import { targetsNextBlock } from '../../lib/targets-step'
+import { useWorkflowReadiness } from '../../hooks/use-workflow-readiness'
 import { isFormDirty } from '../../lib/form-dirty'
-import { useDiscardPrompt, WizardFooter } from './wizard-chrome'
+import { useDiscardPrompt } from './wizard-chrome'
 import { useTenant } from '@/context/tenant-provider'
 import {
   clearNewScanDraft,
@@ -82,19 +75,39 @@ interface NewScanDialogProps {
 
 const STEPS: ScanWizardStep[] = ['basic', 'targets', 'options', 'schedule', 'review']
 
+/** What the approval preview is asked about this scan. */
+function approvalRequestOf(form: NewScanFormData) {
+  const req = formDataToCreateRequest(form)
+  return {
+    targets: directTargets(form),
+    asset_group_ids: req.asset_group_ids ?? [],
+    scan_type: req.scan_type,
+    scanner_name: req.scanner_name,
+    scan_workflow_id: req.scan_workflow_id,
+    schedule_type: req.schedule_type,
+    sensor_preference: req.sensor_preference,
+    scan_zone_id: req.scan_zone_id ?? undefined,
+  }
+}
+
 export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogProps) {
-  const [currentStep, setCurrentStep] = useState<ScanWizardStep>('basic')
+  const nav = useWizardSteps('basic')
+  const currentStep = nav.step
+  const setCurrentStep = nav.setStep
   const [formData, setFormData] = useState<NewScanFormData>(DEFAULT_NEW_SCAN)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [restoredDraft, setRestoredDraft] = useState(false)
   // Targets the server refused on create (TARGET_OUT_OF_SCOPE details).
   const [refused, setRefused] = useState<ScopeRefusal[]>([])
   const { t } = useTranslation()
   const { currentTenant } = useTenant()
   const tenantId = currentTenant?.id
+  const userId = useAuthStore((s) => s.user?.id)
 
   // Keep the wizard while the user leaves it (to approve a scope entry,
   // verify a domain) and give it back on the next open.
   const restored = useRef(false)
+  const restartNav = nav.reset
   useEffect(() => {
     if (!open) {
       restored.current = false
@@ -102,22 +115,23 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
     }
     if (restored.current) return
     restored.current = true
-    const draft = loadNewScanDraft(tenantId)
+    const draft = loadNewScanDraft(tenantId, userId)
     if (draft && STEPS.includes(draft.step as ScanWizardStep)) {
-      setFormData({ ...DEFAULT_NEW_SCAN, ...draft.form })
-      setCurrentStep(draft.step as ScanWizardStep)
+      const form = { ...DEFAULT_NEW_SCAN, ...draft.form }
+      setFormData(form)
+      restartNav(draft.step as ScanWizardStep)
+      setRestoredDraft(isFormDirty(form, DEFAULT_NEW_SCAN))
     }
-  }, [open, tenantId])
+  }, [open, tenantId, userId, restartNav])
   useEffect(() => {
     if (open && restored.current && formData !== DEFAULT_NEW_SCAN)
-      saveNewScanDraft(tenantId, { form: formData, step: currentStep })
-  }, [open, tenantId, formData, currentStep])
+      saveNewScanDraft(tenantId, { form: formData, step: currentStep }, userId)
+  }, [open, tenantId, userId, formData, currentStep])
 
-  // The same check the Targets step shows (one cached request): Next on the
-  // Targets step waits while nothing can run, and when every refused target
-  // only waits for a scope approval, the scan can be saved to start once it
-  // is approved.
-  const { check: scopeCheck, readiness } = useTargetsCheck(formData, open)
+  // The same check the Targets step shows (one cached request); when every
+  // refused target only waits for a scope approval, the scan can be saved to
+  // start once it is approved.
+  const { check: scopeCheck, readiness, sent } = useTargetsCheck(formData, open)
   const awaitingApproval = onlyAwaitingApproval(scopeCheck.results)
 
   // Store created scan config ID for triggering
@@ -160,7 +174,18 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
     }),
     [formData.workflowId, formData.scanZoneId, previewRequest]
   )
-  const review = useScanReview(formData, workflowRequest, open && currentStep === 'review')
+
+  // Every step's problems, from the same checks the API repeats on create.
+  const workflowReadiness = useWorkflowReadiness(formData, open)
+  const issues = useMemo(() => scanStepIssues(formData, { readiness, t }), [formData, readiness, t])
+  const stepProblems = issueCount(issues, STEPS)
+  // The Review's answers (scope, workflow preview) once the form is complete,
+  // so Create and Ctrl/Cmd+Enter know from any step whether the scan may start.
+  const review = useScanReview(
+    formData,
+    workflowRequest,
+    open && (currentStep === 'review' || stepProblems === 0)
+  )
   // Scope changes elsewhere (an entry approved, a domain verified, a sensor
   // online): the Review answers from a fresh check each time it opens.
   const recheckScope = review.scope.recheck
@@ -168,24 +193,25 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
     if (open && currentStep === 'review') void recheckScope()
   }, [open, currentStep, recheckScope])
 
-  // Scan approval (RFC-073): what the organization's rules ask of this scan,
-  // shown on the review step; the scan is then saved and submitted.
+  // Scan approval (RFC-073): what the organization's rules ask of this scan.
+  // Asked as soon as there is something to scan (debounced), so the summary
+  // says before Review whether an approval is needed; the form is on Review.
   const [approvalJustification, setApprovalJustification] = useState('')
   const [approvalTicket, setApprovalTicket] = useState('')
-  const approvalInput = useMemo(() => {
-    if (!open || currentStep !== 'review') return null
-    const req = formDataToCreateRequest(formData)
-    return {
-      targets: directTargets(formData),
-      asset_group_ids: req.asset_group_ids ?? [],
-      scan_type: req.scan_type,
-      scanner_name: req.scanner_name,
-      scan_workflow_id: req.scan_workflow_id,
-      schedule_type: req.schedule_type,
-      sensor_preference: req.sensor_preference,
-      scan_zone_id: req.scan_zone_id ?? undefined,
-    }
-  }, [open, currentStep, formData])
+  const hasTargets =
+    formData.targets.customTargets.length +
+      formData.targets.assetIds.length +
+      formData.targets.assetGroupIds.length >
+    0
+  const approvalJSON = useDebounce(
+    open && hasTargets ? JSON.stringify(approvalRequestOf(formData)) : '',
+    600
+  )
+  const approvalInput = useMemo(
+    () =>
+      approvalJSON ? (JSON.parse(approvalJSON) as ReturnType<typeof approvalRequestOf>) : null,
+    [approvalJSON]
+  )
   const { data: approval } = useScanApprovalPreview(approvalInput)
   const needsApproval = !!approval?.required
   const approvalLack = missingEvidence(t, approval, approvalJustification, approvalTicket)
@@ -205,78 +231,19 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
   // and some are allowed. The server re-checks and records the skipped ones.
   const canSkipRefused =
     review.refused.length > 0 && review.allowedCount > 0 && review.otherBlockers.length === 0
-
-  const currentStepIndex = STEPS.indexOf(currentStep)
-  const isFirstStep = currentStepIndex === 0
-  const isLastStep = currentStepIndex === STEPS.length - 1
+  // The review's answers are on their way: Create waits for them.
+  const reviewPending = review.scope.isLoading && !review.scope.results
+  const canCreate =
+    stepProblems === 0 &&
+    !reviewPending &&
+    !approvalLack &&
+    (awaitingApproval ? !waitBlocked : !blocked)
 
   const handleDataChange = (data: Partial<NewScanFormData>) => {
     setFormData((prev) => ({ ...prev, ...data }))
     if (data.targets) setRefused([])
   }
 
-  const validateCurrentStep = (): boolean => {
-    switch (currentStep) {
-      case 'basic': {
-        const problem = basicInfoError(formData, t)
-        if (problem) {
-          toast.error(problem)
-          return false
-        }
-        return true
-      }
-      case 'targets': {
-        const problem = targetsError(formData, t)
-        if (problem) {
-          toast.error(problem)
-          return false
-        }
-        return true
-      }
-      case 'options': {
-        const problem = optionsError(formData, t)
-        if (problem) {
-          toast.error(problem)
-          return false
-        }
-        return true
-      }
-      case 'schedule': {
-        const problem = scheduleError(formData, undefined, t)
-        if (problem) {
-          toast.error(problem)
-          return false
-        }
-        return true
-      }
-      default:
-        return true
-    }
-  }
-
-  const nextBlock = currentStep === 'targets' ? targetsNextBlock(readiness, t) : null
-
-  const handleNext = () => {
-    if (nextBlock) return
-    if (!validateCurrentStep()) return
-
-    if (!isLastStep) {
-      setCurrentStep(STEPS[currentStepIndex + 1])
-    }
-  }
-
-  const handleBack = () => {
-    if (!isFirstStep) {
-      setCurrentStep(STEPS[currentStepIndex - 1])
-    }
-  }
-
-  const handleStepClick = (step: ScanWizardStep) => {
-    const stepIndex = STEPS.indexOf(step)
-    if (stepIndex < currentStepIndex) {
-      setCurrentStep(step)
-    }
-  }
   const startLabel =
     formData.schedule.runImmediately && canExecute
       ? t('scans.new.startScan')
@@ -284,21 +251,24 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
         ? t('scans.new.saveScan')
         : t('scans.new.scheduleScan')
 
+  const startOver = () => {
+    clearNewScanDraft(tenantId, userId)
+    setRefused([])
+    setFormData(DEFAULT_NEW_SCAN)
+    setRestoredDraft(false)
+    nav.reset()
+    createdConfigIdRef.current = null
+  }
+
   const handleSubmit = async (opts: { waitForScope?: boolean; skipRefused?: boolean } = {}) => {
-    if (!validateCurrentStep()) return
+    nav.setAttempted(true)
+    if (stepProblems > 0) return
     if (opts.skipRefused ? !canSkipRefused : opts.waitForScope ? waitBlocked : blocked) {
       toast.error(review.blockers[0])
       return
     }
     if (approvalLack) {
-      toast.error(approvalLack)
-      return
-    }
-
-    const targetProblem = targetsError(formData, t)
-    if (targetProblem) {
-      toast.error(targetProblem)
-      setCurrentStep('targets')
+      setCurrentStep('review')
       return
     }
 
@@ -426,11 +396,11 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
           )
 
           // Still close dialog and refresh - the scan was created successfully
-          clearNewScanDraft(tenantId)
+          clearNewScanDraft(tenantId, userId)
           await invalidateScanConfigsCache()
           onSubmit?.(formData)
           setFormData(DEFAULT_NEW_SCAN)
-          setCurrentStep('basic')
+          nav.reset()
           createdConfigIdRef.current = null
           onOpenChange(false)
           return
@@ -456,9 +426,9 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
       onSubmit?.(formData)
 
       // Reset and close
-      clearNewScanDraft(tenantId)
+      clearNewScanDraft(tenantId, userId)
       setFormData(DEFAULT_NEW_SCAN)
-      setCurrentStep('basic')
+      nav.reset()
       createdConfigIdRef.current = null
       onOpenChange(false)
     } catch (error) {
@@ -479,20 +449,16 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
   const isLoading = isSubmitting || isCreating
 
   const close = () => {
-    clearNewScanDraft(tenantId)
-    setRefused([])
-    setFormData(DEFAULT_NEW_SCAN)
-    setCurrentStep('basic')
-    createdConfigIdRef.current = null
+    startOver()
     onOpenChange(false)
   }
+  // Keep as draft: closes; the draft stays for the next open in this tab.
+  const keep = () => onOpenChange(false)
   const { requestClose, prompt: discardPrompt } = useDiscardPrompt(
     () => isFormDirty(formData, DEFAULT_NEW_SCAN),
-    close
+    close,
+    keep
   )
-  const handleOpenChange = (next: boolean) => {
-    if (!next && !isLoading) requestClose()
-  }
 
   const renderStep = () => {
     switch (currentStep) {
@@ -540,45 +506,72 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
     }
   }
 
+  const results = scopeCheck.results ?? []
+  const refusedCount = results.filter((r) => !r.allowed).length
+  const summaryFacts = {
+    data: formData,
+    whatLabel,
+    directCount: sent.length,
+    ready: scopeCheck.results ? results.length - refusedCount : undefined,
+    blocked: scopeCheck.results ? refusedCount : undefined,
+    checking: scopeCheck.available && scopeCheck.isLoading && !scopeCheck.results,
+    approval,
+    workflowReadiness,
+    issues,
+    steps: STEPS,
+    shownSteps: nav.attempted ? new Set(STEPS) : nav.seen,
+    onGo: setCurrentStep,
+  }
+
+  // Why Create is disabled when no step has a problem (the Review's answers).
+  const isLast = currentStep === 'review'
+  const reviewNote =
+    stepProblems > 0 || !isLast
+      ? undefined
+      : awaitingApproval
+        ? t('scans.new.waitNotice')
+        : blocked
+          ? review.blockers[0]
+          : approvalLack || undefined
+
   return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent size="xl">
-        <DialogHeader className="pb-0">
-          <DialogTitle>{t('scans.new.title')}</DialogTitle>
-          <DialogDescription className="max-sm:sr-only">
-            {t('scans.new.description')}
-          </DialogDescription>
-          <ScanStepper
-            className="px-0 pt-1 pb-2 sm:px-0"
-            currentStep={currentStep}
-            onStepClick={handleStepClick}
-            steps={STEPS}
-          />
-        </DialogHeader>
-
-        <DialogBody className="px-0 py-0 sm:px-0">{renderStep()}</DialogBody>
-
-        <WizardFooter
-          onBack={isFirstStep ? undefined : handleBack}
-          disabled={isLoading}
-          noteId={nextBlock ? 'targets-next-blocked' : isLastStep ? 'review-blocked' : undefined}
-          noteTone={
-            nextBlock || (isLastStep && !awaitingApproval && (blocked || approvalLack))
-              ? 'destructive'
-              : 'muted'
-          }
-          note={
-            nextBlock ??
-            (isLastStep
-              ? awaitingApproval
-                ? t('scans.new.waitNotice')
-                : blocked
-                  ? review.blockers[0]
-                  : approvalLack || undefined
-              : undefined)
-          }
-        >
-          {isLastStep && !awaitingApproval && blocked && canSkipRefused && (
+    <ScanWizard
+      open={open}
+      onRequestClose={requestClose}
+      title={t('scans.new.title')}
+      description={t('scans.new.description')}
+      steps={STEPS}
+      step={currentStep}
+      onStepChange={setCurrentStep}
+      issues={issues}
+      attempted={nav.attempted}
+      seen={nav.seen}
+      summary={<ScanSummaryContent {...summaryFacts} />}
+      summaryLine={summaryLine(summaryFacts, t)}
+      banner={
+        restoredDraft ? (
+          <div
+            className="mx-4 mt-4 flex flex-wrap items-center justify-between gap-2 rounded-md border px-3 py-2 text-sm sm:mx-6"
+            role="status"
+            data-testid="draft-restored"
+          >
+            <span>{t('scans.wizard.draftRestored')}</span>
+            <Button type="button" variant="ghost" size="sm" onClick={startOver}>
+              <RotateCcw className="me-1.5 h-4 w-4" aria-hidden />
+              {t('scans.wizard.startOver')}
+            </Button>
+          </div>
+        ) : null
+      }
+      canSubmit={canCreate}
+      onSubmit={() => void handleSubmit(awaitingApproval ? { waitForScope: true } : {})}
+      note={reviewNote}
+      noteTone={!awaitingApproval && (blocked || approvalLack) ? 'destructive' : 'muted'}
+      isLoading={isLoading}
+      after={discardPrompt}
+      primary={
+        <>
+          {!awaitingApproval && blocked && canSkipRefused && stepProblems === 0 && (
             <Button
               type="button"
               variant="secondary"
@@ -592,13 +585,14 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
               })}
             </Button>
           )}
-          {isLastStep && awaitingApproval ? (
+          {awaitingApproval ? (
             <Button
               type="button"
               onClick={() => void handleSubmit({ waitForScope: true })}
-              disabled={isLoading || waitBlocked}
-              title={waitBlocked ? review.blockers[0] : undefined}
+              disabled={isLoading || !canCreate}
               className="h-auto whitespace-normal py-2"
+              aria-describedby="wizard-note"
+              data-testid="wizard-create"
             >
               {isLoading ? (
                 <Loader2 className="me-2 h-4 w-4 shrink-0 animate-spin" />
@@ -607,13 +601,14 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
               )}
               {t('scans.new.createWhenApproved')}
             </Button>
-          ) : isLastStep ? (
+          ) : (
             <Button
               type="button"
               onClick={() => void handleSubmit()}
-              disabled={isLoading || blocked || !!approvalLack}
-              title={blocked ? review.blockers[0] : approvalLack || undefined}
-              aria-describedby={blocked ? 'review-blocked' : undefined}
+              disabled={isLoading || !canCreate}
+              aria-describedby="wizard-note"
+              aria-keyshortcuts="Control+Enter Meta+Enter"
+              data-testid="wizard-create"
             >
               {isLoading ? (
                 <>
@@ -634,21 +629,11 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
                 </>
               )}
             </Button>
-          ) : (
-            <Button
-              type="button"
-              onClick={handleNext}
-              disabled={!!nextBlock}
-              aria-describedby={nextBlock ? 'targets-next-blocked' : undefined}
-              data-testid="wizard-next"
-            >
-              {t('scans.common.next')}
-              <ChevronRight className="ms-1 h-4 w-4" />
-            </Button>
           )}
-        </WizardFooter>
-      </DialogContent>
-      {discardPrompt}
-    </Dialog>
+        </>
+      }
+    >
+      {renderStep()}
+    </ScanWizard>
   )
 }

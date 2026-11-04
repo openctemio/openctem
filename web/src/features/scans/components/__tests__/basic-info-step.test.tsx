@@ -47,6 +47,20 @@ vi.mock('@/lib/api/scan-workflow-hooks', () => ({
                 description: 'Subdomains from passive sources, then DNS.',
                 is_system_template: true,
                 tags: ['starter', 'discovery', 'passive'],
+                readiness: {
+                  state: 'ready',
+                  steps: [
+                    { step_key: 'subdomains', name: 'Passive subdomains', state: 'ready' },
+                    { step_key: 'dns', name: 'Passive DNS', state: 'ready' },
+                    {
+                      step_key: 'shots',
+                      name: 'Screenshots',
+                      state: 'skipped',
+                      optional: true,
+                      capability: 'capture.screenshot',
+                    },
+                  ],
+                },
                 steps: [
                   {
                     id: 'pd1',
@@ -382,5 +396,15 @@ describe('BasicInfoStep', () => {
         })
       )
     })
+  })
+
+  it('marks a starter whose optional steps no tool runs yet, so a run without them is expected', () => {
+    render(<BasicInfoStep data={{ ...DEFAULT_NEW_SCAN, name: 'x' }} onChange={vi.fn()} />)
+    const notes = screen.getAllByTestId('skipped-note')
+    expect(notes.length).toBeGreaterThan(0)
+    expect(notes[0]).toHaveTextContent(
+      '1 optional step is skipped until a tool for it is installed: capture.screenshot'
+    )
+    expect(screen.getByRole('radio', { name: 'Passive discovery' })).toBeEnabled()
   })
 })
