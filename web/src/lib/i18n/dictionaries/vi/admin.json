@@ -1892,6 +1892,7 @@
   "admin.shell.actingReadOnly": "Chỉ đọc cho đến khi nâng quyền",
   "admin.shell.breakGlassBody": "Bạn đã đăng nhập bằng tài khoản truy cập khẩn cấp. Mọi quản trị viên khác đã được cảnh báo. Chỉ dùng để khôi phục truy cập bình thường, sau đó đăng xuất.",
   "admin.shell.breakGlassTitle": "Phiên truy cập khẩn cấp",
+  "admin.shell.contentRegion": "Nội dung trang",
   "admin.shell.contextRow": "Trang quản trị nền tảng",
   "admin.shell.search": "Tìm trong trang quản trị",
   "admin.shell.signOut": "Đăng xuất",
