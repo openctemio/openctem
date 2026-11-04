@@ -24,6 +24,7 @@ import { ApiClientError } from '@/lib/api/error-handler'
 import {
   registerStepUpHandler,
   STEP_UP_ENDPOINT,
+  STEP_UP_CODE_USED_CODE,
   STEP_UP_FAILED_CODE,
   STEP_UP_UNAVAILABLE_CODE,
   type StepUpMethod,
@@ -34,6 +35,10 @@ import { endSessionAndSignIn } from '@/stores/auth-store'
 
 type Translate = ReturnType<typeof useTranslation>['t']
 
+function currentHost(): string {
+  return typeof window === 'undefined' ? '' : window.location.hostname
+}
+
 /** The message to show for a failed POST /auth/step-up. */
 export function stepUpErrorMessage(
   t: Translate,
@@ -41,11 +46,20 @@ export function stepUpErrorMessage(
   method: StepUpMethod | null
 ): string {
   if (err instanceof ApiClientError) {
+    if (err.code === STEP_UP_CODE_USED_CODE) {
+      return t(
+        'components.stepUp.codeUsed',
+        'That code was already used. Wait for the next code in your authenticator app.'
+      )
+    }
     if (err.code === STEP_UP_FAILED_CODE) {
+      // Name this installation's host: a person with an account on two
+      // installations has two look-alike authenticator entries.
       return method === 'totp'
         ? t(
-            'components.stepUp.badCode',
-            'That code is not valid or was already used. Enter the current code.'
+            'components.stepUp.invalidCode',
+            'That code is not valid. Use the current code from the authenticator entry for {host}.',
+            { host: currentHost() }
           )
         : t('components.stepUp.badPassword', 'Incorrect password.')
     }
