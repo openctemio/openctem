@@ -524,5 +524,5 @@ internal/infra/jira/asset_route_resolver.go   AssetRouteResolver: asset scope/cr
 internal/infra/jobs/durable_jobs.go           durable-job handlers (status sync, invitation e-mail)
 internal/infra/http/handler/jira_webhook_handler.go   create-ticket + inbound webhook
 internal/app/finding/vulnerability_service.go  status writes queue the outbound sync (EnableTicketStatusSync)
-cmd/server/{services,workers,main}.go          wiring (resolvers, worker handler, enqueue hook)
+internal/server/{services,workers,main}.go         wiring (resolvers, worker handler, enqueue hook)
 ```

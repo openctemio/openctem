@@ -668,7 +668,7 @@ catalog but has no emitter: nothing in the platform sets a sensor's health to
 ## Wiring in Main
 
 ```go
-// cmd/server/main.go
+// internal/server/main.go
 
 // Initialize repositories
 notificationOutboxRepo := postgres.NewNotificationOutboxRepository(db)

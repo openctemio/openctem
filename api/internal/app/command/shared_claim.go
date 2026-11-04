@@ -55,7 +55,12 @@ func WithSharedAccess(p SharedAccessPolicy) Option {
 // flight (platform_scans_concurrent). Without it the shared claim hands out
 // nothing (fail closed).
 func WithSharedLimits(l SharedLimitSource) Option {
-	return func(s *Service) { s.sharedLimits = l }
+	return func(s *Service) {
+		s.sharedLimits = l
+		if f, ok := l.(FeatureAllower); ok {
+			s.activeScan = f
+		}
+	}
 }
 
 // ErrNotSharedSensor: the shared claim path was asked for by a sensor that

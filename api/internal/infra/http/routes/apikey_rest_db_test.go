@@ -129,7 +129,7 @@ func newKeyRESTHarness(t *testing.T, extra ...func(*Handlers)) *keyRESTHarness {
 	handlers := Handlers{
 		APIKey:     handler.NewAPIKeyHandler(keys, validator.New(), log),
 		APIKeyAuth: keyAuth,
-		// The real MCP mount, as cmd/server wires it (one authenticator for
+		// The real MCP mount, as internal/server wires it (one authenticator for
 		// REST and MCP). No data services: the tests only call initialize.
 		MCP:     handler.NewMCPHandler(nil, nil, nil, nil, nil, nil, nil, log),
 		MCPAuth: keyAuth.Handler,

@@ -3,6 +3,7 @@ package version
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -38,8 +39,8 @@ func resetFallback(t *testing.T, v, c, bt string) {
 func TestGet_ReleaseLdflags(t *testing.T) {
 	resetFallback(t, "v0.9.0", shaA, "2026-10-02T10:00:00Z")
 	got := Get()
-	want := Info{Version: "v0.9.0", Commit: "4d2f4b02", BuildTime: "2026-10-02T10:00:00Z", Channel: ChannelRelease}
-	if got != want {
+	want := Info{Version: "v0.9.0", Commit: "4d2f4b02", BuildTime: "2026-10-02T10:00:00Z", Channel: ChannelRelease, Extensions: []Extension{}, ExtensionAPI: ExtensionAPI}
+	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("Get() = %+v, want %+v", got, want)
 	}
 }
@@ -61,8 +62,8 @@ func TestGet_NoLdflagsFallsBackToCheckout(t *testing.T) {
 
 	resetFallback(t, "", "", "")
 	got := Get()
-	want := Info{Version: "v0.8.0-dev+4d2f4b02", Commit: "4d2f4b02", Channel: ChannelDev}
-	if got != want {
+	want := Info{Version: "v0.8.0-dev+4d2f4b02", Commit: "4d2f4b02", Channel: ChannelDev, Extensions: []Extension{}, ExtensionAPI: ExtensionAPI}
+	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("Get() = %+v, want %+v", got, want)
 	}
 }
@@ -71,8 +72,8 @@ func TestGet_NoLdflagsNoGit(t *testing.T) {
 	t.Chdir(t.TempDir())
 	resetFallback(t, "", "", "")
 	got := Get()
-	want := Info{Version: DevVersion, Commit: UnknownCommit, Channel: ChannelDev}
-	if got != want {
+	want := Info{Version: DevVersion, Commit: UnknownCommit, Channel: ChannelDev, Extensions: []Extension{}, ExtensionAPI: ExtensionAPI}
+	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("Get() = %+v, want %+v", got, want)
 	}
 }
@@ -229,7 +230,7 @@ func TestReadGit_UnbornBranch(t *testing.T) {
 	if !ok || got.Head != "" {
 		t.Fatalf("ReadGit = %+v, %v", got, ok)
 	}
-	if fromCheckout(dir) != (Info{Version: DevVersion, Commit: UnknownCommit}) {
+	if !reflect.DeepEqual(fromCheckout(dir), Info{Version: DevVersion, Commit: UnknownCommit}) {
 		t.Fatalf("fromCheckout = %+v", fromCheckout(dir))
 	}
 }
@@ -241,5 +242,22 @@ func TestInfoString(t *testing.T) {
 	}
 	if got := (Info{Version: "dev", Commit: "unknown"}).String(); got != "dev (commit unknown)" {
 		t.Fatalf("String() without build time = %q", got)
+	}
+}
+
+func TestExtensionsAreReported(t *testing.T) {
+	t.Cleanup(func() { SetExtensions(nil) })
+	if got := Get().Extensions; got == nil || len(got) != 0 {
+		t.Fatalf("Community build: Extensions = %#v, want an empty list", got)
+	}
+	in := []Extension{{Name: "example", Version: "v1.2.3"}}
+	SetExtensions(in)
+	in[0].Name = "changed"
+	got := Get()
+	if len(got.Extensions) != 1 || got.Extensions[0].Name != "example" || got.ExtensionAPI != ExtensionAPI {
+		t.Fatalf("Get() = %+v", got)
+	}
+	if s := got.String(); !strings.Contains(s, "extension example v1.2.3") {
+		t.Fatalf("String() = %q", s)
 	}
 }
