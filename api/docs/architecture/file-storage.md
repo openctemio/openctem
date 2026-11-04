@@ -85,6 +85,53 @@ the store) or `STORAGE_SSE=aws:kms` with an optional
 `kms:Decrypt` for the API's key). Unset, the bucket's default encryption
 applies.
 
+### Cloudflare R2
+
+R2 speaks the S3 API, so `STORAGE_PROVIDER=s3` with the account endpoint works:
+
+```env
+STORAGE_PROVIDER=s3
+STORAGE_BUCKET=openctem-attachments
+STORAGE_REGION=auto                  # auto or us-east-1 (both accepted)
+STORAGE_ENDPOINT=https://<account-id>.r2.cloudflarestorage.com
+STORAGE_ACCESS_KEY=...               # R2 API token's access key id
+STORAGE_SECRET_KEY=...
+```
+
+- **Endpoint forms**: `https://<account-id>.r2.cloudflarestorage.com`, and for
+  a bucket created in a jurisdiction `https://<account-id>.eu.r2.cloudflarestorage.com`
+  or `https://<account-id>.fedramp.r2.cloudflarestorage.com`. Use the form that
+  matches the bucket; a mismatch answers 403 or 404.
+- **Client behaviour**: for any custom endpoint the driver computes and
+  validates request checksums only where an operation requires them. The
+  SDK default (a trailing CRC32 in an aws-chunked body over HTTPS) is
+  rejected by R2 and by other S3-compatible stores. AWS S3 keeps the SDK
+  defaults.
+- **Token**: create an R2 API token with permission *Object Read & Write*,
+  scoped to this one bucket (not account-wide). It cannot create buckets, so
+  create the bucket first. Listing, used only when an organization is erased,
+  is part of that permission.
+- **No SSE setting**: R2 always encrypts at rest and does not accept the
+  server-side encryption header. `STORAGE_SSE` and `STORAGE_SSE_KMS_KEY_ID`
+  are refused at start-up when the endpoint is an R2 endpoint; leave them empty.
+- **Erase** stays one `DeleteObject` per object; nothing needs the batch
+  delete call.
+- **Location**: a bucket's data location is chosen when it is created (a
+  location hint such as `weur`, or a jurisdiction `eu` / `fedramp`); it cannot be
+  changed later. Pick the one your data residency needs before the first upload.
+- **Audit archive immutability**: audit chain archives are written under the
+  `audit-archive/` prefix of the same bucket. To keep them from being
+  deleted or overwritten, add a bucket lock rule on that prefix with a
+  retention age at least as long as the audit retention you configured. Limits: a lock applies to
+  every object under the prefix, so the API's own erase of an organization's
+  archive (organization deletion) fails until the retention has passed, and a
+  lock is not a substitute for restricting who can change bucket settings.
+- **Hosted use and content**: the provider's terms allow it to remove content
+  that breaks them, and evidence files can contain exploit material. For a
+  hosted multi-organization install, encrypt files on the client side before
+  they reach the bucket (an organization-held key) or keep evidence in a bucket
+  you control.
+
 ### Moving between local and S3
 
 Rows record `local` for the server storage whatever its driver, so switching
