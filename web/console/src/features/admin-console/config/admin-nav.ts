@@ -384,6 +384,13 @@ const coreAdminNav: AdminNavSection[] = [
         icon: ShieldCheck,
         keywords: ['mfa', '2fa', 'two-factor', 'floor', 'totp', 'organizations'],
       },
+      {
+        title: 'Leaked credentials',
+        i18nKey: 'admin.nav.leakedCredentials',
+        url: '/system/leaked-credentials',
+        icon: KeyRound,
+        keywords: ['credentials', 'leak', 'breach', 'password', 'secret', 'store', 'privacy'],
+      },
     ],
   },
   {

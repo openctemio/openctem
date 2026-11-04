@@ -543,6 +543,8 @@ func registerScanRoutes(
 		r.GET("/sensor-opt-in-impact", h.SensorOptInImpact, middleware.Require(permission.ScansRead))
 		// Next occurrences of a schedule (stateless; the wizard and the scan page)
 		r.POST("/schedule-preview", h.PreviewSchedule, middleware.Require(permission.ScansRead))
+		// What the organization may scan (passive only or not), for the wizard
+		r.GET("/capabilities", h.GetCapabilities, middleware.Require(permission.ScansRead))
 		// What a workflow scan would do, before it is saved or started
 		r.POST("/workflow-preview", h.PreviewWorkflow, middleware.Require(permission.ScansWrite))
 		// What a quick scan of the typed targets would do (read-only)
