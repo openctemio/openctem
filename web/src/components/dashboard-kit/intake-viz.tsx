@@ -32,13 +32,11 @@ import {
   FlowTip,
   tCount,
   dimClass,
-  focusGlow,
   useElementWidth,
   useFlowFocus,
   useWireAnchors,
+  FlowWire,
   wirePath,
-  wireStroke,
-  wireWidth,
   type FlowTipContent,
 } from './flow-parts'
 import { RankedBars } from './ranked-bars'
@@ -51,7 +49,7 @@ import {
   useSourceView,
 } from './source-view'
 import { StackedBar } from './stacked-bar'
-import { ChartOrTable, usePrefersReducedMotion } from './viz-parts'
+import { ChartOrTable } from './viz-parts'
 import type { IntakeData, IntakeResult, IntakeSourceRow } from './types'
 
 const ORIGIN_ICON: Record<string, React.ReactNode> = {
@@ -141,7 +139,6 @@ function ConnectorPanel({ data }: { data: IntakeData }) {
   const { t, locale } = useTranslation()
   const n = (v: number) => formatCount(v, locale)
   const ref = useRef<HTMLDivElement>(null)
-  const reduced = usePrefersReducedMotion()
   const { active, anchor, tipId, bind, containerProps } = useFlowFocus(ref)
   const band = useElementWidth(ref) >= INTAKE_SIDE ? 'side' : 'narrow'
   const [measure, group, setMeasure, setGroup] = useSourceView()
@@ -156,7 +153,12 @@ function ConnectorPanel({ data }: { data: IntakeData }) {
       }),
     [t, locale, data.sources, instances, m, g]
   )
-  const layout = useWireAnchors(ref, `${band}:${m}:${g}:${rows.length}`)
+  const layout = useWireAnchors(
+    ref,
+    // Rows change height with their health (a stale note line) and place with
+    // their figure: any change of the data re-measures.
+    `${band}:${m}:${g}:${rows.map((r) => `${r.key}=${r.value}/${r.health ?? 'ok'}`).join(',')}`
+  )
   const max = Math.max(1, ...rows.map((r) => r.value))
   const periodLabel = t('dashboardKit.flow.period', '{days} days', { days: data.days })
   const lit = (k: string) => !!active && (k === active || k === 'summary' || k === `w:${active}`)
@@ -275,37 +277,17 @@ function ConnectorPanel({ data }: { data: IntakeData }) {
                 const to = layout.in.summary
                 if (!from || !to) return null
                 const k = `w:${r.key}`
-                const w = wireStroke(r.health ?? 'ok')
-                const path = wirePath(from.x + FRAME_INSET, from.y, to.x, to.y)
-                const on = lit(k)
                 return (
-                  <g
+                  <FlowWire
                     key={k}
-                    className={dimClass(active, on)}
-                    data-wire={r.health ?? 'ok'}
-                    data-wire-key={k}
-                  >
-                    <path
-                      d={path}
-                      fill="none"
-                      stroke={on ? 'var(--signal)' : w.stroke}
-                      style={on ? { filter: focusGlow('var(--signal)') } : undefined}
-                      strokeWidth={wireWidth(r.value, max)}
-                      strokeDasharray={w.dash}
-                      strokeLinecap="round"
-                    />
-                    {(r.health ?? 'ok') === 'ok' && !reduced && (
-                      <path
-                        d={path}
-                        fill="none"
-                        stroke="var(--card, #fff)"
-                        strokeOpacity={0.55}
-                        strokeWidth={Math.max(1, wireWidth(r.value, max) - 0.5)}
-                        strokeDasharray="3 7"
-                        className="animate-flow-dash"
-                      />
-                    )}
-                  </g>
+                    wireKey={k}
+                    d={wirePath(from.x + FRAME_INSET, from.y, to.x, to.y)}
+                    value={r.value}
+                    max={max}
+                    health={r.health ?? 'ok'}
+                    focused={lit(k)}
+                    className={dimClass(active, lit(k))}
+                  />
                 )
               })}
             </svg>

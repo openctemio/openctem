@@ -180,6 +180,7 @@ type Handlers struct {
 	ContentCatalog      *handler.ContentCatalogHandler      // nil if not initialized (no database)
 	AdminContentCatalog *handler.AdminContentCatalogHandler // nil if not initialized (no database)
 	SensorContentV2     *handler.SensorContentV2Handler     // content delivery to sensors; nil if not initialized
+	FeedRelay           *handler.FeedRelayHandler           // feed relay (RFC-142): sensor and admin routes; nil if not initialized
 	AdminVersionCheck   *handler.AdminVersionCheckHandler   // release feed status and offline import (RFC-105)
 	AdminConfiguration  *handler.AdminConfigurationHandler  // Configuration page: setting sources (RFC-022 rev. 22)
 	// AdminPlatformSettings serves the settings moved from the environment
@@ -312,6 +313,8 @@ type Handlers struct {
 	Announcement      *handler.AnnouncementHandler
 	// AdminSupportRateLimiter caps console support actions per administrator.
 	AdminSupportRateLimiter *middleware.AdminMappingRateLimiter
+	// AdminEmailTestLimiter caps the platform test e-mail per administrator.
+	AdminEmailTestLimiter *middleware.AdminMappingRateLimiter
 	// AdminDirectoryReadLimiter caps reads of the cross-organization user
 	// directory per administrator (bulk harvesting of accounts).
 	AdminDirectoryReadLimiter *middleware.AdminMappingRateLimiter
@@ -1066,6 +1069,9 @@ func Register(
 		ctl := sensorControlV2Handler(h, log)
 		if ctl != nil && h.SensorContentV2 != nil {
 			ctl.SetContent(h.SensorContentV2)
+		}
+		if ctl != nil && h.FeedRelay != nil {
+			ctl.SetFeedRelay(h.FeedRelay)
 		}
 		budgets := newSensorV2Budgets(ingestRateLimiter, log)
 		mountSensorV2(router, h.SensorResultsV2, ctl, budgets, h.SensorResultsV2.Authenticate)

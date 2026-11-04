@@ -88,7 +88,20 @@ var registry = map[Code]Spec{
 	CodeRetestNoSensor:         {http.StatusUnprocessableEntity, "No online sensor of your organization can re-check this finding."},
 	CodeRetestNoCheckSensor:    {http.StatusUnprocessableEntity, "No online sensor of your organization can run custom retest checks. Update a sensor, then retest."},
 	CodeRetestNoTemplateSensor: {http.StatusUnprocessableEntity, "No online sensor has the template release this finding was found with. Update the sensor's templates, then retest."},
+
+	// SAML identity provider metadata import (platform admin console);
+	// details.reason says what is wrong with the document or the address.
+	CodeSAMLMetadataInvalid:     {http.StatusUnprocessableEntity, "The identity provider metadata cannot be used. Check that it is the SAML federation metadata of the application, then try again."},
+	CodeSAMLMetadataUnreachable: {http.StatusBadGateway, "The metadata address did not answer with a document. Check the address, or upload the metadata file instead."},
+	CodeSAMLPublicURLUnset:      {http.StatusConflict, "The public address of the app is not set. Set APP_URL on the API to get the service provider metadata."},
 }
+
+// SAML metadata import codes, registered above.
+const (
+	CodeSAMLMetadataInvalid     Code = "SAML_METADATA_INVALID"
+	CodeSAMLMetadataUnreachable Code = "SAML_METADATA_UNREACHABLE"
+	CodeSAMLPublicURLUnset      Code = "SAML_PUBLIC_URL_UNSET"
+)
 
 // Retest codes, registered above.
 const (

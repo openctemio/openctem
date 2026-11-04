@@ -57,6 +57,14 @@ from the Health page: a service that does not answer, a volume below 20%
 (warning) or 10% (critical) free, a failed, stale or unreported backup, a
 certificate close to expiry, and a newer release (a warning when it fixes
 security advisories).
+The Overview opens with an Installation strip built from the same two reads
+(`/overview`, `/system`; `lib/installation-health.ts`): services, storage
+(the lowest volume), backups, platform sensors (linked to their page) and the
+database schema, each a state in words with a link. "Needs attention" follows
+as one compact list (volumes of one filesystem are one item; "No sensor is
+online" when every connected sensor stopped reporting), then the customer and
+administrator numbers. A page whose read needs a permission the session does
+not act with does not send it and shows the elevation notice instead.
 Suspending an organization and blocking an account (the console's kill
 switches): [organization-suspension.md](organization-suspension.md).
 

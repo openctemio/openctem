@@ -220,6 +220,8 @@ session, no permission). `public`: a sign-in step before a session exists.
 | `GET /api/v1/admin/settings/email/` | `platform.settings.read` |
 | `PUT /api/v1/admin/settings/email/` | `platform.settings.email.write` |
 | `POST /api/v1/admin/settings/email/test` | `platform.settings.email.write` |
+| `GET /api/v1/admin/settings/feed-relay/` | `platform.settings.read` |
+| `PUT /api/v1/admin/settings/feed-relay/` | `platform.settings.general.write` |
 | `GET /api/v1/admin/settings/legal/` | `platform.settings.read` |
 | `PUT /api/v1/admin/settings/legal/` | `platform.settings.legal.write` |
 | `GET /api/v1/admin/settings/limits/` | `platform.settings.read` |
@@ -311,6 +313,8 @@ session, no permission). `public`: a sign-in step before a session exists.
 | `DELETE /api/v1/admin/tenants/{tenantId}/sso/saml` | `platform.tenants.sso.write` |
 | `GET /api/v1/admin/tenants/{tenantId}/sso/saml` | `platform.tenants.read` |
 | `PUT /api/v1/admin/tenants/{tenantId}/sso/saml` | `platform.tenants.sso.write` |
+| `POST /api/v1/admin/tenants/{tenantId}/sso/saml/idp-metadata` | `platform.tenants.sso.write` |
+| `GET /api/v1/admin/tenants/{tenantId}/sso/saml/sp-metadata` | `platform.tenants.read` |
 | `GET /api/v1/admin/tenants/{tenantId}/sso/verified-domains` | `platform.tenants.read` |
 | `POST /api/v1/admin/tenants/{tenantId}/sso/verified-domains` | `platform.tenants.sso.write` |
 | `DELETE /api/v1/admin/tenants/{tenantId}/sso/verified-domains/{id}` | `platform.tenants.sso.write` |

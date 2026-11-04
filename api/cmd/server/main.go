@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"log/slog"
 	nethttp "net/http"
 	"os"
 	"os/signal"
@@ -344,6 +345,7 @@ func run() int {
 			domains = repos.VerifiedDomain
 		}
 		services.Email.SetTenantSMTPResolver(auth.NewIntegrationSMTPResolver(repos.Integration, services.Encryptor.DecryptString, mode, domains, log))
+		services.Email.SetLocaleResolver(auth.NewRepoEmailLocaleResolver(repos.User, repos.Tenant, log))
 	}
 
 	// ==========================================================================
@@ -600,6 +602,15 @@ func run() int {
 			}()
 		}
 
+		// Stored findings follow the current identity recipe (version 3, the
+		// CTIS fingerprint recipe v2): re-keyed per tenant in batches, merges
+		// through the finding merge, old keys kept as aliases, scan
+		// auto-resolve paused per tenant while its run is open. Idempotent
+		// and resumable; one replica at a time (advisory lock). Ingest also
+		// re-keys a finding on its next sighting, so nothing is split while
+		// this runs. Down step: refingerprint -down -apply.
+		go runFindingRekeyOnStart(ctx, db, log)
+
 		// Host keys for commands queued before every command got them at
 		// create (research/130). Idempotent and SKIP LOCKED: safe on every
 		// start and across replicas.
@@ -731,6 +742,11 @@ func loggerConfig(cfg *config.Config) logger.Config {
 		Level:  cfg.Log.Level,
 		Format: cfg.Log.Format,
 		Output: os.Stdout,
+		Attrs: []slog.Attr{
+			slog.String("service", "api"),
+			slog.String("version", version.Get().Version),
+			slog.String("env", cfg.App.Env),
+		},
 		Sampling: logger.SamplingConfig{
 			Enabled:   cfg.Log.SamplingEnabled,
 			Tick:      time.Second,
