@@ -1,0 +1,11 @@
+--- a/.github/scripts/release/tests/test_cut_release.sh
++++ b/.github/scripts/release/tests/test_cut_release.sh
+@@ -113,7 +113,7 @@
+ assert_contains "hotfix: cherry-picked with -x" "cherry picked from commit $fix" "$(git -C "$w" log -1 --format=%B "$head~1")"
+ assert_eq "hotfix: head has one parent" 2 "$(git -C "$w" rev-list --parents -n 1 "$head" | wc -w)"
+ assert_eq "hotfix: the checkout installs the hotfix" "v0.2.1" "$(git -C "$w" show "$head:server/deploy/VERSION")"
+-assert_eq "hotfix: no latest refresh (only VERSION and the pick change)" "server/deploy/VERSION d.txt" "$(git -C "$w" diff --name-only "v0.2.0" "$head" | tr '\n' ' ' | sed 's/ $//')"
++assert_eq "hotfix: no latest refresh (only VERSION and the pick change)" "d.txt server/deploy/VERSION" "$(git -C "$w" diff --name-only "v0.2.0" "$head" | tr '\n' ' ' | sed 's/ $//')"
+ assert_rc "hotfix: still has gone.txt (no develop changes leak in)" 0 git -C "$w" cat-file -e "$head:gone.txt"
+ assert_rc "hotfix: wrong version refused" 1 bash "$CUT" --repo "$w" --version v0.3.0 --mode hotfix --picks "$fix"
+ assert_rc "hotfix: needs picks" 2 bash "$CUT" --repo "$w" --version v0.2.2 --mode hotfix

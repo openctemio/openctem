@@ -1,0 +1,15 @@
+diff --git a/.githooks/pre-commit b/.githooks/pre-commit
+index 707989cbd9..c04a9436d4 100755
+--- a/.githooks/pre-commit
++++ b/.githooks/pre-commit
+@@ -28,8 +28,9 @@ fi
+ 
+ gofiles=$(printf '%s\n' "$staged" | grep '^server/.*\.go$' || true)
+ if [ -n "$gofiles" ]; then
++  # Generated files stay as their generator wrote them (some are not gofmt-clean).
+   # shellcheck disable=SC2086
+-  bad=$(cd "$top" && gofmt -l $gofiles)
++  bad=$(cd "$top" && for f in $gofiles; do head -n 20 "$f" | grep -q 'Code generated .* DO NOT EDIT' || gofmt -l "$f"; done)
+   if [ -n "$bad" ]; then
+     echo "pre-commit: gofmt needed:" >&2; echo "$bad" >&2; exit 1
+   fi
