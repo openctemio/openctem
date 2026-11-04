@@ -6,6 +6,10 @@ import { BasicInfoStep } from '../new-scan/basic-info-step'
 import { DEFAULT_NEW_SCAN } from '../../types'
 
 const workflowCalls: unknown[] = []
+vi.mock('../../hooks/use-scan-capabilities', () => ({
+  useScanCapabilities: () => ({ passiveOnly: false }),
+}))
+
 vi.mock('@/lib/api/scan-workflow-hooks', () => ({
   useScanWorkflows: (filters: unknown) => {
     workflowCalls.push(filters)
