@@ -57,10 +57,10 @@ function StepMark({
       <span
         className={cn(
           'flex h-5 min-w-5 shrink-0 items-center justify-center gap-0.5 rounded-full px-1 text-xs',
-          current ? 'bg-primary-foreground/20' : 'bg-warning/15 text-warning'
+          current ? 'bg-primary-foreground/20' : 'bg-warning/15 text-foreground'
         )}
       >
-        <AlertTriangle className="h-3 w-3" aria-hidden />
+        <AlertTriangle className={cn('h-3 w-3', !current && 'text-warning')} aria-hidden />
         {status.count}
       </span>
     )
