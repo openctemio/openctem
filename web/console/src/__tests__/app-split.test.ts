@@ -77,8 +77,11 @@ describe('the console app', () => {
       /^\/ (layout|page)$/,
       /^\/login(\/callback)? (layout|page)$/,
       /^\/(organizations|users|security|health|system|scanning|sensors|requests|support)(\/[^ ]+)? (layout|page)$/,
+      // About > Open-source licenses and the console build's notices.
+      /^\/about\/licenses page$/,
       /^\/api\/health route$/,
       /^\/api\/v1\/admin\/\[\.\.\.path\] route$/,
+      /^\/api\/v1\/admin\/web-licenses route$/,
     ]
     expect(consoleRoutes.filter((r) => !allowed.some((re) => re.test(r)))).toEqual([])
     expect(consoleRoutes).toContain('/ page')

@@ -170,7 +170,8 @@ swagger: swagger-install
 	@# machine emits, with the same swag, the same Go and a warm cache. That is
 	@# why the gate compares sets of operations rather than bytes. See
 	@# tools/lint/openapicontract.
-	@GOWORK=off go mod download
+	@# Retried: the module proxy sometimes resets the HTTP/2 stream on CI runners.
+	@for i in 1 2 3; do GOWORK=off go mod download && exit 0; echo "go mod download failed (attempt $$i); retrying" >&2; sleep $$((i * 10)); done; exit 1
 	@# The list query params come from the field registries (RFC-048).
 	@GOWORK=off go run ./tools/gen/filterparams
 	@GOWORK=off $(SWAG) init --generalInfo cmd/server/main.go --output api/openapi --outputTypes yaml --parseDependency

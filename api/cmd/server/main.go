@@ -305,6 +305,9 @@ func run() int {
 	if services.OAuth != nil && services.Email != nil {
 		services.OAuth.SetIdentityNotifier(services.Email)
 	}
+	if services.SSO != nil && services.Email != nil {
+		services.SSO.SetIdentityNotifier(services.Email)
+	}
 
 	// Owners of an organization whose e-mail channel was stopped by the
 	// managed service rules are told in-app and through the system SMTP.

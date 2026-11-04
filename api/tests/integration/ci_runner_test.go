@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -481,7 +482,12 @@ func TestCIRunner_ExchangeUploadEvaluate(t *testing.T) {
 		t.Fatalf("summary = %v", sum)
 	}
 	links, _ := v["links"].(map[string]any)
-	if !strings.HasPrefix(links["run"].(string), "https://console.example/ci-cd?view=runs&run=") {
+	runLink, err := url.Parse(links["run"].(string))
+	if err != nil {
+		t.Fatalf("links = %v: %v", links, err)
+	}
+	if q := runLink.Query(); runLink.Host != "console.example" || runLink.Path != "/ci-cd" ||
+		q.Get("view") != "runs" || q.Get("run") == "" || q.Get("org") != r.tenant.String() {
 		t.Fatalf("links = %v", links)
 	}
 	// The first verdict is final: evaluating again returns it unchanged and

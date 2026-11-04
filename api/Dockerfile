@@ -54,8 +54,9 @@ RUN apk add --no-cache git ca-certificates tzdata
 # Copy go mod files (context is api/ folder)
 COPY go.mod go.sum ./
 
-# Download dependencies
-RUN go mod download
+# Download dependencies. Retried: the module proxy sometimes resets the
+# HTTP/2 stream on hosted runners, which failed whole merge groups.
+RUN for i in 1 2 3; do go mod download && exit 0; echo "go mod download failed (attempt $i); retrying" >&2; sleep $((i * 10)); done; exit 1
 
 # -----------------------------------------------------------------------------
 # OpenAPI spec stage
@@ -74,7 +75,7 @@ ENV GOWORK=off
 ENV CGO_ENABLED=0
 RUN go install github.com/swaggo/swag/cmd/swag@${SWAG_VERSION}
 COPY go.mod go.sum ./
-RUN go mod download
+RUN for i in 1 2 3; do go mod download && exit 0; echo "go mod download failed (attempt $i); retrying" >&2; sleep $((i * 10)); done; exit 1
 COPY . .
 RUN swag init --generalInfo cmd/server/main.go --output api/openapi --outputTypes yaml --parseDependency --quiet \
  && test -s api/openapi/swagger.yaml
@@ -135,6 +136,18 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
     -o /app/bin/ ./cmd/server ./cmd/signer ./cmd/openctem-migrate \
  && mv /app/bin/signer /app/bin/openctem-signer
 
+# Third-party notices (About > Open-source licenses): every module linked
+# into the server, its license and license text, read from the module cache
+# downloaded above (no network). Served read-only at GET /api/v1/licenses and
+# /api/v1/admin/licenses (docs/architecture/third-party-notices.md). Listed
+# for the target platform, like the build.
+# The tool runs on this machine; GOOS/GOARCH only tell its `go list` which
+# platform's files the server is built from.
+RUN --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 go build -o /tmp/third-party-notices ./cmd/third-party-notices \
+ && CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-$(go env GOARCH)} \
+    /tmp/third-party-notices -o /app/bin/third-party-notices.json
+
 
 # -----------------------------------------------------------------------------
 # Runtime filesystem additions: the users and the writable directories, made
@@ -179,6 +192,10 @@ COPY --from=runtime-fs /out/tool-links/ ./
 # The OpenAPI spec served at /openapi.yaml (path relative to WORKDIR, see
 # cmd/server/handlers.go NewDocsHandler).
 COPY --from=openapi /app/api/openapi/swagger.yaml ./api/openapi/swagger.yaml
+
+# The third-party notices the API serves (path relative to WORKDIR, see
+# pkg/notices DefaultPath).
+COPY --from=builder /app/bin/third-party-notices.json ./third-party-notices.json
 
 COPY --from=builder /app/migrations ./migrations
 
