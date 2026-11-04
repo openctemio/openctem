@@ -24,13 +24,17 @@ func TestResolveStepTool_NotFoundLookupIsNoMatchingTool(t *testing.T) {
 	if domainCode(err) != codeNoMatchingTool {
 		t.Fatalf("got %v, want %s", err, codeNoMatchingTool)
 	}
-	if !optionalWithoutTool(step, err) {
-		t.Fatal("an optional step without a tool must be skippable")
+	if skip, ok := UnsupportedStepSkip(step, err); !ok || skip.Code != codeNoMatchingTool {
+		t.Fatal("an optional step without a tool must be skipped")
 	}
+	// A required step without a tool is skipped the same way (a run goes as
+	// far as the tools support).
 	required := *step
 	required.RunPolicy.Optional = false
-	if _, err := ResolveStepTool(context.Background(), tools, shared.NewID(), &required); optionalWithoutTool(&required, err) || domainCode(err) != codeNoMatchingTool {
-		t.Fatalf("a required step must refuse with NO_MATCHING_TOOL: %v", err)
+	if _, err := ResolveStepTool(context.Background(), tools, shared.NewID(), &required); domainCode(err) != codeNoMatchingTool {
+		t.Fatalf("a required step: %v, want NO_MATCHING_TOOL", err)
+	} else if _, ok := UnsupportedStepSkip(&required, err); !ok {
+		t.Fatal("a required step without a tool must be skipped")
 	}
 }
 
