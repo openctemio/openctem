@@ -7,7 +7,7 @@ package middleware
 // cheaper than the next:
 //
 //	V2Throttle          per-tenant + per-sensor rate, per-tenant concurrency  429
-//	V2ContentType       exactly application/vnd.openctem.ctis.v1+json        415
+//	V2ContentType       application/vnd.ctis+json; version=2.<minor>          415
 //	V2ContentEncoding   absent, gzip or zstd; one coding                     415
 //	V2ReadVerified      Content-Length required and bounded            411 / 413
 //	                    Content-Digest present, verified on the wire bytes   400
@@ -71,7 +71,7 @@ func WithV2Body(ctx context.Context, b *V2Body) context.Context {
 	return context.WithValue(ctx, v2BodyKey{}, b)
 }
 
-// V2ContentType refuses any Content-Type but the CTIS v1 media type (415 with
+// V2ContentType refuses any Content-Type but the CTIS 2.0 media type (415 with
 // Accept).
 func V2ContentType() func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {

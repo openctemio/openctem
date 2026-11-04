@@ -4,7 +4,7 @@ package sensor
 // what an owner or administrator configured for one tool of one of the
 // organization's own sensors. The schema is the "config" object of the tool
 // descriptor the sensor reported in its current manifest (Tool Contract v1),
-// parsed and enforced with the CTIS settings contract (ctis/settings), the
+// parsed and enforced with the settings contract (contract/settings), the
 // same code the sensor validates with. The values travel to the sensor only
 // inside a signed job's payload (settings_layers.sensor).
 
@@ -18,7 +18,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openctemio/ctis/settings"
+	"github.com/openctemio/contract/settings"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )

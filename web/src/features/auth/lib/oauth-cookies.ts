@@ -15,6 +15,15 @@ export const MFA_CHALLENGE_COOKIE = 'mfa_challenge'
  */
 export const OAUTH_LINK_INTENT_COOKIE = 'oauth_link_intent'
 
+/**
+ * Set when the SSO round trip links an organization's sign-in to the
+ * signed-in account (Account > Security) instead of signing in. Its value is
+ * the provider; the SSO callback then hands the code to the link route. The
+ * API refuses a link state on the sign-in callback and a sign-in state on the
+ * link callback, so a wrong value only fails the round trip.
+ */
+export const SSO_LINK_INTENT_COOKIE = 'sso_link_intent'
+
 /** The second steps the sign-in page knows; anything else is ignored. */
 export const MFA_PURPOSES = ['verify', 'enroll'] as const
 

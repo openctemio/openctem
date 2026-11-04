@@ -1,6 +1,6 @@
 package routes
 
-// A third-party tool pushes CTIS 1.6 evidence_items of every kind (and one
+// A third-party tool pushes CTIS 2.0 evidence_items of every kind (and one
 // kind the platform does not know) through sensor protocol v2: every item is
 // stored, masked by the platform's own detector (even where the tool marked
 // nothing), and the unknown kind is kept as text, never refused
@@ -11,6 +11,8 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+
+	"github.com/openctemio/ctis/v2"
 
 	evidenceapp "github.com/openctemio/openctem/api/internal/app/evidence"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
@@ -55,10 +57,10 @@ func TestIngest_ThirdPartyEvidenceItemsOfEveryKind_DB(t *testing.T) {
 		map[string]any{"kind": "grpc_call", "data": map[string]any{"service": "acme.Auth", "method": "Login"}},
 	}
 	seg, _ := json.Marshal(map[string]any{
-		"version":  "1.6",
-		"metadata": map[string]any{"timestamp": "2026-10-07T12:00:00Z"},
+		"version":  "2.0",
+		"metadata": map[string]any{"id": ctis.NewReportID(), "generated_at": "2026-10-07T12:00:00Z", "channel": "integration"},
 		"tool":     map[string]any{"name": "tp-scanner"},
-		"assets":   []any{map[string]any{"id": "web", "type": "domain", "value": "tp.example.com"}},
+		"assets":   []any{map[string]any{"id": "web", "type": "domain_name", "value": "tp.example.com"}},
 		"findings": []any{map[string]any{
 			"type": "vulnerability", "severity": "high", "rule_id": "tp-login-check", "asset_ref": "web",
 			"title": "Login exposes admin", "evidence_items": items,

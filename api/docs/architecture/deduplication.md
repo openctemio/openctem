@@ -63,8 +63,11 @@ boundary can be moved to forge a collision. Recipes:
 | Misconfig | asset, policy id, resource type/name, path | message |
 
 **Since identity version 3 (CTIS fingerprint recipe v2, RFC-043 §20):** the
-tuple above is unchanged; only its hash is. `IdentityVersion` is 3, stored rows
-say `fingerprint_version = 3` and `identity_algo = v3/<kind>`. The key is
+tuple above is unchanged; only its hash is. **Version 4** (RFC-043 §21) is
+version 3 with a compliance framework written as its CTIS registry token
+(`NormalizeComplianceFramework`: `PCI-DSS`, `PCI DSS` -> `pci_dss`, ...);
+every other tuple hashes exactly as in version 3. `IdentityVersion` is 4,
+stored rows say `fingerprint_version = 4` and `identity_algo = v4/<kind>`. The key is
 computed in two steps (`pkg/domain/vulnerability/identity_ctis.go`):
 
 1. base = the CTIS recipe v2 fingerprint (`ctis-fp/2:` + hex SHA-256 of the

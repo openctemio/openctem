@@ -2,6 +2,7 @@
 
 import {
   DeleteAccountCard,
+  OrganizationSignInCard,
   PasswordCard,
   SessionsCard,
   SignInMethodsCard,
@@ -13,8 +14,8 @@ import { PageStack } from '@/features/shared'
 
 /**
  * My account → Security: password, two-factor authentication, the linked
- * Google/GitHub/Microsoft sign-in methods and the devices signed in to the
- * account.
+ * Google/GitHub/Microsoft sign-in methods, the organization single sign-on
+ * links and the devices signed in to the account.
  */
 export default function SecurityPage() {
   const { profile } = useProfile()
@@ -29,6 +30,7 @@ export default function SecurityPage() {
       />
       <TwoFactorCard email={profile?.email} onOtherSessionsSignedOut={() => mutateSessions()} />
       <SignInMethodsCard />
+      <OrganizationSignInCard />
       <SessionsCard
         sessions={sessions}
         isLoading={isLoading}

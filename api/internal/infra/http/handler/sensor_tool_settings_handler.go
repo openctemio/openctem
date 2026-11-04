@@ -16,7 +16,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/openctemio/ctis/settings"
+	"github.com/openctemio/contract/settings"
 
 	authapp "github.com/openctemio/openctem/api/internal/app/auth"
 	sensorapp "github.com/openctemio/openctem/api/internal/app/sensor"

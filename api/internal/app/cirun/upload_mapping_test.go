@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	appimportmapping "github.com/openctemio/openctem/api/internal/app/importmapping"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
@@ -21,7 +21,7 @@ import (
 // A CI upload through an import mapping pins the version resolved at accept
 // and the worker applies exactly it, in the job's organization.
 
-const ciMapDoc = `{"apiVersion": "openctem.io/mapping/v1", "source": "csv", "identity": ["title"],
+const ciMapDoc = `{"apiVersion": "openctem.io/mapping/v2", "source": "csv", "identity": ["title"],
   "records": [{"kind": "finding", "set": {"title": "/title", "severity": {"const": "SEV"}}}]}`
 
 type memMappings struct {
@@ -139,7 +139,7 @@ type ciMapFixture struct {
 func newCIMapFixture(t *testing.T) *ciMapFixture {
 	t.Helper()
 	tenant := shared.NewID()
-	run := &cirun.Run{ID: shared.NewID(), TenantID: tenant, Repository: "acme/web", RepositoryAssetID: shared.NewID()}
+	run := &cirun.Run{ID: shared.NewID(), TenantID: tenant, Repository: "github.com/acme/web", RepositoryAssetID: shared.NewID()}
 	ing := &recIngester{}
 	svc := NewService(Deps{Repo: &memRuns{run: run}, Ingester: ing}, Config{}, nil)
 	q := &memQueue{parts: map[shared.ID][]byte{}}
@@ -193,7 +193,7 @@ func TestCIUpload_MappingAppliesThePinnedVersion(t *testing.T) {
 	if rep.Findings[0].Severity != ctis.SeverityLow || rep.Tool == nil || rep.Tool.Version != "v1" {
 		t.Fatalf("applied %q by %+v, want the pinned version 1 (low)", rep.Findings[0].Severity, rep.Tool)
 	}
-	if len(rep.Assets) != 1 || rep.Assets[0].Value != "acme/web" {
+	if len(rep.Assets) != 1 || rep.Assets[0].Value != "github.com/acme/web" {
 		t.Fatalf("assets %+v, want the run's repository", rep.Assets)
 	}
 }

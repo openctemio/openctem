@@ -20,6 +20,7 @@ import (
 	outboxdom "github.com/openctemio/openctem/api/pkg/domain/outbox"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	emailpkg "github.com/openctemio/openctem/api/pkg/email"
+	"github.com/openctemio/openctem/api/pkg/weblink"
 )
 
 // Status constants for notification results.
@@ -51,7 +52,15 @@ type Service struct {
 	// relayRefused stops an e-mail channel whose relay the managed service
 	// rules refuse and tells the owners (nil: the failure is only recorded).
 	relayRefused RelayRefusedHandler
+
+	// linkBase is the console's base URL: the console-relative link of an
+	// event is sent out absolute (empty: sent as stored).
+	linkBase string
 }
+
+// SetLinkBase sets the console base URL the links of delivered events are
+// joined to.
+func (s *Service) SetLinkBase(base string) { s.linkBase = base }
 
 // RelayRefusedHandler is told when a delivery was refused because an
 // organization's e-mail relay does not meet the managed service rules.
@@ -567,7 +576,7 @@ func (s *Service) buildMessage(intg *integration.IntegrationWithNotification, en
 		Title:          delivery.Scrub(intg.Integration.ID(), entry.Title()),
 		Body:           delivery.Scrub(intg.Integration.ID(), entry.Body()),
 		Severity:       entry.Severity().String(),
-		URL:            entry.URL(),
+		URL:            deliveryLink(s.linkBase, entry),
 		IdempotencyKey: idempotencyKey(entry),
 		EventType:      entry.EventType(),
 		EventVersion:   integration.EventPayloadVersion(integration.EventType(entry.EventType())),
@@ -584,6 +593,24 @@ func (s *Service) buildMessage(intg *integration.IntegrationWithNotification, en
 		msg = s.applyTemplate(msg, ext.MessageTemplate())
 	}
 	return msg
+}
+
+// deliveryLink is the event's console link as a channel receives it:
+// absolute (a chat button or an e-mail needs the host) and naming the
+// event's organization (pkg/weblink), so a member of several organizations
+// lands on it whichever one is selected. Applied at delivery, so pending
+// events and redeliveries get it too.
+func deliveryLink(base string, entry *outboxdom.Outbox) string {
+	link := entry.URL()
+	if !strings.HasPrefix(link, "/") || strings.HasPrefix(link, "//") {
+		// Not a console link (empty, or an outside address): the
+		// organization ID never goes to another host.
+		return link
+	}
+	if !entry.TenantID().IsZero() {
+		link = weblink.WithOrg(link, entry.TenantID().String())
+	}
+	return weblink.Absolute(base, link)
 }
 
 // idempotencyKey is "outbox-<event id>": stable across the retries of one

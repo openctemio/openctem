@@ -5,7 +5,7 @@ import (
 	"testing"
 	"unicode/utf8"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 )
 
 func TestTextCapper_Str(t *testing.T) {
@@ -45,10 +45,10 @@ func TestCapReportText_EveryFieldAndList(t *testing.T) {
 		return out
 	}
 	report := &ctis.Report{Findings: []ctis.Finding{{
-		Title: huge, Description: huge, Message: huge, Evidence: huge, RuleName: huge, Category: huge,
-		References: many(1000), Tags: many(1000), VulnerabilityClass: many(1000), Subcategory: many(1000),
+		Title: huge, Description: huge, Message: huge, EvidenceItems: []ctis.EvidenceItem{{Kind: ctis.EvidenceKindRawText, Text: huge}}, RuleName: huge, Category: huge,
+		References: many(1000), Tags: many(1000), VulnerabilityClasses: many(1000), Subcategories: many(1000),
 		Location:         &ctis.FindingLocation{Snippet: huge, ContextSnippet: huge},
-		Remediation:      &ctis.Remediation{Recommendation: huge, FixCode: huge, Steps: many(1000), References: many(1000)},
+		Remediation:      &ctis.Remediation{Recommendation: huge, FixCode: huge, Steps: many(1000)},
 		Misconfiguration: &ctis.MisconfigurationDetails{Expected: huge, Actual: huge, Cause: huge, Query: huge},
 	}, {Title: "untouched", Tags: []string{"a"}}}}
 
@@ -61,7 +61,7 @@ func TestCapReportText_EveryFieldAndList(t *testing.T) {
 		max int
 	}{
 		"title": {f.Title, MaxFindingTitleLen}, "description": {f.Description, MaxFindingDescriptionLen},
-		"message": {f.Message, MaxFindingMessageLen}, "evidence": {f.Evidence, MaxFindingEvidenceLen},
+		"message": {f.Message, MaxFindingMessageLen}, "evidence": {f.EvidenceItems[0].Text, MaxFindingEvidenceLen},
 		"rule_name": {f.RuleName, MaxFindingRuleNameLen}, "category": {f.Category, MaxFindingCategoryLen},
 		"snippet": {f.Location.Snippet, MaxFindingSnippetLen}, "context_snippet": {f.Location.ContextSnippet, MaxFindingSnippetLen},
 		"recommendation": {f.Remediation.Recommendation, MaxRemediationTextLen}, "fix_code": {f.Remediation.FixCode, MaxRemediationTextLen},
@@ -78,10 +78,9 @@ func TestCapReportText_EveryFieldAndList(t *testing.T) {
 	}{
 		"references": {f.References, MaxFindingReferences, MaxFindingReferenceLen},
 		"tags":       {f.Tags, MaxFindingTags, MaxFindingTagLen},
-		"classes":    {f.VulnerabilityClass, MaxFindingClasses, MaxFindingClassLen},
-		"subcats":    {f.Subcategory, MaxFindingClasses, MaxFindingClassLen},
+		"classes":    {f.VulnerabilityClasses, MaxFindingClasses, MaxFindingClassLen},
+		"subcats":    {f.Subcategories, MaxFindingClasses, MaxFindingClassLen},
 		"steps":      {f.Remediation.Steps, MaxRemediationSteps, MaxRemediationStepLen},
-		"rem refs":   {f.Remediation.References, MaxFindingReferences, MaxFindingReferenceLen},
 	} {
 		if len(c.v) != c.items {
 			t.Errorf("%s: %d items, want %d", name, len(c.v), c.items)

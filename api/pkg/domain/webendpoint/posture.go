@@ -3,7 +3,10 @@ package webendpoint
 import (
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
+
+	"github.com/openctemio/ctis/v2"
 )
 
 // HTTP response header posture of an origin (research: web content
@@ -138,4 +141,78 @@ func containsStr(list []string, s string) bool {
 		}
 	}
 	return false
+}
+
+// PostureFromSecurityHeaders reduces the CTIS 2.0 security headers of a web
+// origin (technical.http.security_headers) to the stored posture: flags and
+// enums derived from the header values, never a value itself. The result
+// goes through SanitizePosture like any other input; nil when nothing is
+// left.
+func PostureFromSecurityHeaders(h *ctis.SecurityHeaders) map[string]any {
+	if h == nil {
+		return nil
+	}
+	raw := map[string]any{}
+	if hsts := strings.ToLower(strings.TrimSpace(h.StrictTransportSecurity)); hsts != "" {
+		raw["hsts"] = true
+		raw["hsts_include_subdomains"] = strings.Contains(hsts, "includesubdomains")
+		raw["hsts_preload"] = strings.Contains(hsts, "preload")
+		for _, part := range strings.Split(hsts, ";") {
+			k, v, ok := strings.Cut(strings.TrimSpace(part), "=")
+			if ok && strings.TrimSpace(k) == "max-age" {
+				if n, err := strconv.Atoi(strings.Trim(strings.TrimSpace(v), `"`)); err == nil {
+					raw["hsts_max_age"] = n
+				}
+			}
+		}
+	}
+	if csp := strings.ToLower(strings.TrimSpace(h.ContentSecurityPolicy)); csp != "" {
+		raw["csp"] = true
+		raw["csp_unsafe_inline"] = strings.Contains(csp, "'unsafe-inline'")
+		raw["csp_unsafe_eval"] = strings.Contains(csp, "'unsafe-eval'")
+	}
+	if strings.EqualFold(strings.TrimSpace(h.XContentTypeOptions), "nosniff") {
+		raw["nosniff"] = true
+	}
+	if strings.TrimSpace(h.PermissionsPolicy) != "" {
+		raw["permissions_policy"] = true
+	}
+	if fo := strings.ToLower(strings.TrimSpace(h.XFrameOptions)); fo != "" {
+		switch {
+		case fo == "deny", fo == "sameorigin":
+			raw["frame_options"] = fo
+		case strings.HasPrefix(fo, "allow-from"):
+			raw["frame_options"] = "allow_from"
+		default:
+			raw["frame_options"] = "other"
+		}
+	}
+	if rp := strings.ToLower(strings.TrimSpace(h.ReferrerPolicy)); rp != "" {
+		if !containsStr(postureEnums["referrer_policy"], rp) {
+			rp = "other"
+		}
+		raw["referrer_policy"] = rp
+	}
+	switch origin := strings.TrimSpace(h.AccessControlAllowOrigin); origin {
+	case "":
+	case "*":
+		raw["cors_origin"] = "wildcard"
+	default:
+		raw["cors_origin"] = "specific"
+	}
+	if strings.EqualFold(strings.TrimSpace(h.AccessControlAllowCredentials), "true") {
+		raw["cors_credentials"] = true
+	}
+	if len(h.Cookies) > 0 {
+		cookies := make([]any, 0, len(h.Cookies))
+		for _, c := range h.Cookies {
+			m := map[string]any{"name": c.Name, "secure": c.IsSecure, "httponly": c.IsHTTPOnly}
+			if c.SameSite != "" {
+				m["samesite"] = c.SameSite
+			}
+			cookies = append(cookies, m)
+		}
+		raw["cookies"] = cookies
+	}
+	return SanitizePosture(raw)
 }

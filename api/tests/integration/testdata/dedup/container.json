@@ -1,14 +1,47 @@
 {
   "tool": "trivy",
-  "asset": {"type": "container_image", "value": "registry.example.com/acme/api"},
+  "asset": {
+    "type": "container_image",
+    "value": "registry.example.com/acme/api"
+  },
   "cases": [
     {
       "name": "an image package still vulnerable after a rebuild",
       "expect": "same",
-      "before": {"type": "vulnerability", "title": "openssl: buffer overread", "severity": "high", "rule_id": "CVE-2024-5535",
-        "vulnerability": {"cve_id": "CVE-2024-5535", "package": "libssl3", "purl": "pkg:deb/debian/libssl3@3.0.13-1?distro=debian-12", "affected_version": "3.0.13-1"}},
-      "after": {"type": "vulnerability", "title": "openssl (rebuilt image)", "severity": "high", "rule_id": "CVE-2024-5535",
-        "vulnerability": {"cve_id": "CVE-2024-5535", "package": "libssl3", "purl": "pkg:deb/debian/libssl3@3.0.14-1?distro=debian-12", "affected_version": "3.0.14-1"}}
+      "before": {
+        "type": "vulnerability",
+        "title": "openssl: buffer overread",
+        "severity": "high",
+        "rule_id": "CVE-2024-5535",
+        "vulnerability": {
+          "ids": [
+            {
+              "type": "cve",
+              "id": "CVE-2024-5535"
+            }
+          ],
+          "package_name": "libssl3",
+          "purl": "pkg:deb/debian/libssl3@3.0.13-1?distro=debian-12",
+          "installed_version": "3.0.13-1"
+        }
+      },
+      "after": {
+        "type": "vulnerability",
+        "title": "openssl (rebuilt image)",
+        "severity": "high",
+        "rule_id": "CVE-2024-5535",
+        "vulnerability": {
+          "ids": [
+            {
+              "type": "cve",
+              "id": "CVE-2024-5535"
+            }
+          ],
+          "package_name": "libssl3",
+          "purl": "pkg:deb/debian/libssl3@3.0.14-1?distro=debian-12",
+          "installed_version": "3.0.14-1"
+        }
+      }
     }
   ]
 }

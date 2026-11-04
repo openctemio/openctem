@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	assetapp "github.com/openctemio/openctem/api/internal/app/asset"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
@@ -49,8 +49,8 @@ func newReconcileRig(t *testing.T) *reconcileRig {
 func (g *reconcileRig) report(kind asset.SourceKind, observed time.Time, a ctis.Asset) {
 	g.t.Helper()
 	tid := g.tn.tenant
-	rep := &ctis.Report{Version: "1.0", Tool: &ctis.Tool{Name: "nmap"}, Assets: []ctis.Asset{a},
-		Metadata: ctis.ReportMetadata{Timestamp: observed}}
+	rep := &ctis.Report{Version: ctis.SchemaVersion, Tool: &ctis.Tool{Name: "nmap"}, Assets: []ctis.Asset{a},
+		Metadata: ctis.ReportMetadata{ID: ctis.NewReportID(), GeneratedAt: observed}}
 	var agt *sensor.Sensor
 	var opts ingest.Options
 	if kind == "" {
@@ -61,7 +61,10 @@ func (g *reconcileRig) report(kind asset.SourceKind, observed time.Time, a ctis.
 		opts = ingest.Options{SourceKind: kind, SourceName: string(kind) + "-feed"}
 	}
 	out, err := g.r.svc.Ingest(context.Background(), agt, ingest.Input{Report: rep, Options: opts})
-	if err != nil || len(out.Errors) > 0 {
+	if err != nil {
+		g.t.Fatalf("ingest: %v", err)
+	}
+	if len(out.Errors) > 0 {
 		g.t.Fatalf("Ingest: %v %v", err, out.Errors)
 	}
 }
@@ -93,12 +96,11 @@ func reconHost(name string) ctis.Asset {
 
 func withClaims(a ctis.Asset, crit, owner, dc string) ctis.Asset {
 	a.Criticality = ctis.Criticality(crit)
-	a.Properties = ctis.Properties{}
 	if owner != "" {
-		a.Properties["owner"] = owner
+		a.Owners = []ctis.AssetOwner{{Kind: ctis.OwnerKindPerson, Ref: owner, Role: ctis.OwnerRoleTechnical}}
 	}
 	if dc != "" {
-		a.Compliance = &ctis.AssetCompliance{DataClassification: dc}
+		a.Compliance = &ctis.AssetCompliance{DataClassification: ctis.DataClassification(dc)}
 	}
 	return a
 }
@@ -164,7 +166,8 @@ func TestAttributeReconciliation_ScanDecidesExposureButNotOwner(t *testing.T) {
 	now := time.Now().UTC()
 
 	inv := reconHost(name)
-	inv.Properties = ctis.Properties{"exposure": "private", "owner": "ops@example.com"}
+	inv.IsInternetAccessible = ctis.Bool(false)
+	inv.Owners = []ctis.AssetOwner{{Kind: ctis.OwnerKindPerson, Ref: "ops@example.com", Role: ctis.OwnerRoleTechnical}}
 	g.report(asset.SourceKindIntegration, now.Add(-time.Hour), inv)
 	if _, owner, exp, _ := g.attrs(name); exp != "private" || owner != "ops@example.com" {
 		t.Fatalf("inventory: exposure %q owner %q", exp, owner)
@@ -173,8 +176,8 @@ func TestAttributeReconciliation_ScanDecidesExposureButNotOwner(t *testing.T) {
 	// A scan that reached the host from the internet outranks the inventory
 	// for exposure; its owner claim changes nothing.
 	scan := reconHost(name)
-	scan.IsInternetAccessible = true
-	scan.Properties = ctis.Properties{"owner": "evil@attacker.test"}
+	scan.IsInternetAccessible = ctis.Bool(true)
+	scan.Owners = []ctis.AssetOwner{{Kind: ctis.OwnerKindPerson, Ref: "evil@attacker.test", Role: ctis.OwnerRoleTechnical}}
 	g.report("", now, scan)
 	if _, owner, exp, _ := g.attrs(name); exp != "public" || owner != "ops@example.com" {
 		t.Fatalf("after scan: exposure %q owner %q", exp, owner)

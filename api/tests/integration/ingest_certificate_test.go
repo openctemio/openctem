@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
@@ -21,22 +21,20 @@ const certFP = "85ca6ab068e9bcce88b6c4aa3c47f7d17228134a457f870d3800e6223a0df07a
 // certificate, named by its SHA-256 fingerprint.
 func certProbeReport(leaf *ctis.CertificateTechnical) *ctis.Report {
 	return &ctis.Report{
-		Version:  "1.0",
+		Version:  ctis.SchemaVersion,
 		Tool:     &ctis.Tool{Name: "httpx"},
-		Metadata: ctis.ReportMetadata{Timestamp: time.Now().UTC()},
+		Metadata: ctis.ReportMetadata{ID: ctis.NewReportID(), GeneratedAt: time.Now().UTC()},
 		Assets: []ctis.Asset{
 			{
-				ID: "http-example", Type: ctis.AssetTypeHTTPService, Value: "https://example.com", Name: "https://example.com",
-				Technical:     &ctis.AssetTechnical{Service: &ctis.ServiceTechnical{Port: 443, Protocol: "https", TLS: true, Transport: "tcp"}},
-				Properties:    ctis.Properties{"tls_fingerprint": certFP, "cdn": "cloudflare", "hosted_by": "cloudflare", "jarm": "27d40d40d00040d1dc42d43d00041d6183ff1bfae51ebd88d70384363d525c"},
-				RelatedAssets: []string{"cert-" + certFP[:16]},
+				ID: "http-example", Type: ctis.AssetTypeWebOrigin, Value: "https://example.com",
+				Technical: &ctis.AssetTechnical{HTTP: &ctis.HTTPTechnical{CDN: "cloudflare", JARM: "27d40d40d00040d1dc42d43d00041d6183ff1bfae51ebd88d70384363d525c"}},
 			},
 			{
-				ID: "cert-" + certFP[:16], Type: ctis.AssetTypeCertificate, Value: certFP, Name: certFP,
-				Technical:  &ctis.AssetTechnical{Certificate: leaf},
-				Properties: ctis.Properties{"fingerprint": certFP, "subject_cn": leaf.SubjectCN},
+				ID: "cert-" + certFP[:16], Type: ctis.AssetTypeCertificate, Value: certFP,
+				Technical: &ctis.AssetTechnical{Certificate: leaf},
 			},
 		},
+		Relationships: []ctis.Relationship{{Type: ctis.RelServesCertificate, FromRef: "http-example", ToRef: "cert-" + certFP[:16]}},
 	}
 }
 
@@ -44,9 +42,9 @@ func testLeafCert() *ctis.CertificateTechnical {
 	na := time.Now().Add(20 * 24 * time.Hour).UTC().Truncate(time.Second)
 	nb := time.Now().Add(-60 * 24 * time.Hour).UTC().Truncate(time.Second)
 	return &ctis.CertificateTechnical{
-		SubjectCN: "example.com", SANs: []string{"example.com", "*.example.com"},
+		SubjectCN: "example.com", SubjectAltNames: []string{"example.com", "*.example.com"},
 		IssuerCN: "Cloudflare TLS Issuing ECC CA 3", IssuerOrg: "SSL Corporation",
-		NotBefore: &nb, NotAfter: &na, Fingerprint: certFP, Wildcard: true,
+		NotBefore: &nb, NotAfter: &na, SHA256Fingerprint: certFP, IsWildcard: true,
 	}
 }
 
@@ -66,7 +64,10 @@ func TestIngest_HTTPProbeCertificate(t *testing.T) {
 		agt := &sensor.Sensor{ID: tn.sensor, TenantID: &tid, Type: sensor.SensorTypeWorker, Status: sensor.SensorStatusActive}
 		bind := ingest.Binding{Kind: ingest.BindingCommand, Targets: []string{"example.com"}}
 		out, err := r.svc.Ingest(ctx, agt, ingest.Input{Report: rep, Options: ingest.Options{Binding: bind}})
-		if err != nil || len(out.Errors) > 0 {
+		if err != nil {
+			t.Fatalf("ingest: %v", err)
+		}
+		if len(out.Errors) > 0 {
 			t.Fatalf("Ingest: %v %v", err, out.Errors)
 		}
 	}
@@ -132,10 +133,10 @@ func TestIngest_HTTPProbeCertificate(t *testing.T) {
 	if e := edges(a); len(e) != 1 || e[0][1] != aCerts[0] || e[0][0] != "service" {
 		t.Fatalf("tenant A edges = %v, want one service -> %s", e, aCerts[0])
 	}
-	var hostedBy string
-	if err := r.db.QueryRowContext(ctx, `SELECT properties->>'hosted_by' FROM assets WHERE tenant_id = $1 AND asset_type = 'service'`,
-		a.tenant.String()).Scan(&hostedBy); err != nil || hostedBy != "cloudflare" {
-		t.Errorf("service hosted_by = %q (%v)", hostedBy, err)
+	var cdnName string
+	if err := r.db.QueryRowContext(ctx, `SELECT properties->>'cdn' FROM assets WHERE tenant_id = $1 AND asset_type = 'service'`,
+		a.tenant.String()).Scan(&cdnName); err != nil || cdnName != "cloudflare" {
+		t.Errorf("service cdn = %q (%v)", cdnName, err)
 	}
 
 	// A re-scan: no duplicate certificate, no duplicate edge.
@@ -167,9 +168,9 @@ func TestIngest_HTTPProbeCertificate(t *testing.T) {
 	leaf := testLeafCert()
 	leaf.SubjectCN = strings.Repeat("x", 100_000) + "\x1b[31m"
 	leaf.IssuerCN = "evil\nINFO forged"
-	leaf.SANs = make([]string, 10_000)
-	for i := range leaf.SANs {
-		leaf.SANs[i] = fmt.Sprintf("h%d.example.com", i)
+	leaf.SubjectAltNames = make([]string, 10_000)
+	for i := range leaf.SubjectAltNames {
+		leaf.SubjectAltNames[i] = fmt.Sprintf("h%d.example.com", i)
 	}
 	ingestAs(c, certProbeReport(leaf))
 	var cnLen, sanCount int

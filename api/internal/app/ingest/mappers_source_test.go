@@ -3,6 +3,8 @@ package ingest
 import (
 	"testing"
 
+	"github.com/openctemio/ctis/v2"
+
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 )
 
@@ -17,13 +19,13 @@ func TestDetectFindingSource_UnknownToolIsNotClaimedToBeSAST(t *testing.T) {
 	// case instead — an unknown-tool test needs names that are genuinely
 	// unknown.
 	for _, tool := range []string{"", "some-new-scanner", "acme-appsec", "internal-thing-2024"} {
-		got := detectFindingSource(tool, nil)
+		got := detectFindingSource(tool)
 		if got == vulnerability.FindingSourceSAST {
-			t.Errorf("detectFindingSource(%q, nil) = %q; an unrecognized tool must not be "+
+			t.Errorf("detectFindingSource(%q) = %q; an unrecognized tool must not be "+
 				"reported as static code analysis", tool, got)
 		}
 		if got != vulnerability.FindingSourceExternal {
-			t.Errorf("detectFindingSource(%q, nil) = %q, want %q",
+			t.Errorf("detectFindingSource(%q) = %q, want %q",
 				tool, got, vulnerability.FindingSourceExternal)
 		}
 	}
@@ -61,37 +63,35 @@ func TestDetectFindingSource_ByToolName(t *testing.T) {
 	}
 
 	for _, c := range cases {
-		if got := detectFindingSource(c.tool, nil); got != c.want {
-			t.Errorf("detectFindingSource(%q, nil) = %q, want %q", c.tool, got, c.want)
+		if got := detectFindingSource(c.tool); got != c.want {
+			t.Errorf("detectFindingSource(%q) = %q, want %q", c.tool, got, c.want)
 		}
 	}
 }
 
-// Capabilities win over the tool name. This is the mechanism the importers now
-// use, and it matters because `?tool=` is caller-controlled: naming an upload
-// "trivy" must not be able to steer a Tenable report into the container bucket
-// once the importer has declared what it actually is.
-func TestDetectFindingSource_CapabilitiesOutrankToolName(t *testing.T) {
+// Techniques win over the tool name. This is the mechanism producers use, and
+// it matters because `?tool=` is caller-controlled: naming an upload "trivy"
+// must not be able to steer a Tenable report into the container bucket once
+// the producer has declared what it actually is.
+func TestDetectFindingSource_TechniquesOutrankToolName(t *testing.T) {
 	cases := []struct {
 		name string
 		tool string
-		caps []string
+		tech []ctis.Technique
 		want vulnerability.FindingSource
 	}{
-		{"nessus converter", "trivy", []string{"va"}, vulnerability.FindingSourceVA},
-		{"defectdojo converter", "trivy", []string{"external"}, vulnerability.FindingSourceExternal},
-		// "recon" was an invented capability. The sensor's discovery executor
-		// emits subdomain/dns/portscan/crawler/tech-detect, so those are what
-		// the map carries; asserting a token nobody produces tested nothing.
-		{"recon token the sensor actually emits", "semgrep", []string{"portscan"}, vulnerability.FindingSourceEASM},
-		{"cloud", "semgrep", []string{"cspm"}, vulnerability.FindingSourceCSPM},
-		{"sast still works", "tenable", []string{"sast"}, vulnerability.FindingSourceSAST},
+		{"nessus converter", "trivy", []ctis.Technique{ctis.TechniqueVA}, vulnerability.FindingSourceVA},
+		{"easm producer", "semgrep", []ctis.Technique{ctis.TechniqueEASM}, vulnerability.FindingSourceEASM},
+		{"cloud", "semgrep", []ctis.Technique{ctis.TechniqueCSPM}, vulnerability.FindingSourceCSPM},
+		{"sast still works", "tenable", []ctis.Technique{ctis.TechniqueSAST}, vulnerability.FindingSourceSAST},
+		// An old capability token is no technique: the name decides.
+		{"old token is ignored", "tenable", []ctis.Technique{"portscan"}, vulnerability.FindingSourceVA},
 	}
 
 	for _, c := range cases {
-		if got := detectFindingSource(c.tool, c.caps); got != c.want {
+		if got := detectFindingSource(c.tool, c.tech...); got != c.want {
 			t.Errorf("%s: detectFindingSource(%q, %v) = %q, want %q",
-				c.name, c.tool, c.caps, got, c.want)
+				c.name, c.tool, c.tech, got, c.want)
 		}
 	}
 }
@@ -100,11 +100,11 @@ func TestDetectFindingSource_CapabilitiesOutrankToolName(t *testing.T) {
 // constraint violation rather than a validation error.
 func TestDetectFindingSource_AlwaysReturnsAValidSource(t *testing.T) {
 	tools := []string{"", "tenable", "semgrep", "trivy", "nmap", "prowler", "who-knows"}
-	capSets := [][]string{nil, {}, {"unrecognized"}, {"va"}, {"external"}}
+	capSets := [][]ctis.Technique{nil, {}, {"unrecognized"}, {ctis.TechniqueVA}, {ctis.TechniqueBAS}}
 
 	for _, tool := range tools {
 		for _, caps := range capSets {
-			got := detectFindingSource(tool, caps)
+			got := detectFindingSource(tool, caps...)
 			if !got.IsValid() {
 				t.Errorf("detectFindingSource(%q, %v) returned %q, which fails IsValid()",
 					tool, caps, got)
@@ -113,7 +113,7 @@ func TestDetectFindingSource_AlwaysReturnsAValidSource(t *testing.T) {
 	}
 }
 
-// The provenance channel comes from ctis.ReportMetadata.SourceType, which the
+// The provenance channel comes from ctis.ReportMetadata.Channel, which the
 // scan workflow already carried and the processor discarded. Unrecognized values
 // must not be guessed: the column stays NULL, which reads as "unrecorded"
 // rather than as a confident wrong answer.

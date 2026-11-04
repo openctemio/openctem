@@ -6,7 +6,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/sensorresult"
@@ -66,7 +66,7 @@ func probeReport(tool string) *ctis.Report {
 		Metadata: ctis.ReportMetadata{ID: "r-probe"},
 		Tool:     &ctis.Tool{Name: tool},
 		Assets: []ctis.Asset{
-			{ID: "a1", Type: ctis.AssetTypeDomain, Value: "acme.test"},
+			{ID: "a1", Type: ctis.AssetTypeDomainName, Value: "acme.test"},
 			{ID: "a2", Type: ctis.AssetTypeRepository, Value: "github.com/evil/planted"},
 		},
 		Findings: []ctis.Finding{
@@ -89,7 +89,7 @@ func tenantSensor() *sensor.Sensor {
 func TestBindOutputTypes_DeclaredProducesQuarantine(t *testing.T) {
 	agt := tenantSensor()
 	src := &fakeContracts{byKey: map[manifestKey]sensor.Manifest{
-		{tenantKey(agt.TenantID), agt.ID}: contractManifest("acme-probe", "asset:domain", "finding:misconfiguration"),
+		{tenantKey(agt.TenantID), agt.ID}: contractManifest("acme-probe", "asset:domain_name", "finding:misconfiguration"),
 	}}
 	res := &policyResults{mode: sensorresult.ModeQuarantine}
 	s := &Service{logger: logger.NewNop(), results: res}
@@ -126,7 +126,7 @@ func TestBindOutputTypes_DeclaredProducesQuarantine(t *testing.T) {
 func TestBindOutputTypes_DeclarationNeverWidens(t *testing.T) {
 	agt := tenantSensor()
 	src := &fakeContracts{byKey: map[manifestKey]sensor.Manifest{
-		{tenantKey(agt.TenantID), agt.ID}: contractManifest("dnsx", "asset:domain", "asset:ip_address", "asset:repository"),
+		{tenantKey(agt.TenantID), agt.ID}: contractManifest("dnsx", "asset:domain_name", "asset:ip_address", "asset:repository"),
 	}}
 	res := &policyResults{mode: sensorresult.ModeQuarantine}
 	s := &Service{logger: logger.NewNop(), results: res, contracts: src}
@@ -149,14 +149,14 @@ func TestBindOutputTypes_DeclarationIsTenantScoped(t *testing.T) {
 	other := tenantSensor()
 	// Tenant B's sensor declares a wide contract; tenant A's declares none.
 	src := &fakeContracts{byKey: map[manifestKey]sensor.Manifest{
-		{tenantKey(other.TenantID), other.ID}:   contractManifest("acme-probe", "asset:domain", "asset:repository", "finding:secret", "finding:misconfiguration", "dependency"),
+		{tenantKey(other.TenantID), other.ID}:   contractManifest("acme-probe", "asset:domain_name", "asset:repository", "finding:secret", "finding:misconfiguration", "dependency"),
 		{tenantKey(other.TenantID), victim.ID}:  contractManifest("acme-probe", "asset:repository"),
-		{tenantKey(victim.TenantID), victim.ID}: contractManifest("acme-probe", "asset:domain"),
+		{tenantKey(victim.TenantID), victim.ID}: contractManifest("acme-probe", "asset:domain_name"),
 	}}
 	res := &policyResults{mode: sensorresult.ModeQuarantine}
 	s := &Service{logger: logger.NewNop(), results: res, contracts: src}
 	got := s.bindOutputTypes(context.Background(), victim, *victim.TenantID, boundCommand("acme-probe"), probeReport("acme-probe"), Options{})
-	if len(got.Assets) != 1 || got.Assets[0].Type != ctis.AssetTypeDomain || len(got.Findings) != 0 {
+	if len(got.Assets) != 1 || got.Assets[0].Type != ctis.AssetTypeDomainName || len(got.Findings) != 0 {
 		t.Fatalf("tenant A applied %+v / %+v: another tenant's contract was used", got.Assets, got.Findings)
 	}
 }
@@ -169,7 +169,7 @@ func TestBindOutputTypes_NoDeclarationUnchanged(t *testing.T) {
 		"no manifest":     {byKey: map[manifestKey]sensor.Manifest{}},
 		"no contract":     {byKey: map[manifestKey]sensor.Manifest{{tenantKey(agt.TenantID), agt.ID}: {Schema: 1, Tools: []sensor.ManifestTool{{Name: "dnsx"}}}}},
 		"store error":     {err: errors.New("db down")},
-		"other tool only": {byKey: map[manifestKey]sensor.Manifest{{tenantKey(agt.TenantID), agt.ID}: contractManifest("httpx", "asset:http_service")}},
+		"other tool only": {byKey: map[manifestKey]sensor.Manifest{{tenantKey(agt.TenantID), agt.ID}: contractManifest("httpx", "asset:web_origin")}},
 	} {
 		res := &policyResults{mode: sensorresult.ModeQuarantine}
 		s := &Service{logger: logger.NewNop(), results: res, contracts: src}

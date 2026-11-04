@@ -24,6 +24,7 @@ import (
 	notificationdom "github.com/openctemio/openctem/api/pkg/domain/notification"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/weblink"
 )
 
 const (
@@ -85,7 +86,7 @@ func (s *Service) noteRenamedRepository(ctx context.Context, tenantID shared.ID,
 		Email: true,
 	}
 	if base := strings.TrimRight(s.cfg.WebBaseURL, "/"); base != "" {
-		alert.EmailLink = base + trustSettingsPath
+		alert.EmailLink = weblink.Console(base, trustSettingsPath, tenantID.String())
 	}
 	s.alertAdmins(ctx, tenantID, alert)
 	s.log.Info("ci exchange refused: repository renamed, trust configuration does not admit the new name",

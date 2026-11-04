@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/ctis/transfer/bundle"
+	"github.com/openctemio/contract/transfer/bundle"
 
 	"github.com/openctemio/openctem/api/internal/app/consolesetting/consolesettingtest"
 	dom "github.com/openctemio/openctem/api/pkg/domain/feedrelay"

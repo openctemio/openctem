@@ -12,7 +12,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/internal/metrics"
 	"github.com/openctemio/openctem/api/pkg/domain/ingestreceipt"
@@ -36,13 +36,10 @@ type coverageUntouchedRepo interface {
 }
 
 // receiptSource is the receipt an ingest counts toward.
-func receiptSource(agt *sensor.Sensor, binding Binding, opts Options, report *ctis.Report) ingestreceipt.Source {
+// reportID is the receiver's report id (never metadata.id).
+func receiptSource(agt *sensor.Sensor, binding Binding, opts Options, reportID string) ingestreceipt.Source {
 	if opts.Receipt != nil {
 		return *opts.Receipt
-	}
-	reportID := ""
-	if report != nil {
-		reportID = report.Metadata.ID
 	}
 	switch binding.Kind {
 	case BindingCommand:
@@ -114,7 +111,7 @@ func (s *Service) recordReceipt(ctx context.Context, agt *sensor.Sensor, tenantI
 	}
 	d := &ingestreceipt.Delta{
 		TenantID:      tenantID,
-		Source:        receiptSource(agt, binding, opts, report),
+		Source:        receiptSource(agt, binding, opts, reportIDOf(ctx)),
 		Instance:      receiptInstance(agt, binding, opts, report),
 		Reports:       1,
 		AssetsCreated: output.AssetsCreated,

@@ -154,7 +154,7 @@ func TestFindingIdentity_AdminSeesRecipeSourcesAndMerged(t *testing.T) {
 		t.Fatalf("status %d: %s", code, body)
 	}
 	r := decodeFindingIdentity(t, body)
-	if r.Algo != "v3/sca" || r.Version != vulnerability.IdentityVersion || r.Derived || r.Legacy ||
+	if r.Algo != "v4/sca" || r.Version != vulnerability.IdentityVersion || r.Derived || r.Legacy ||
 		!reflect.DeepEqual(r.Fields, []string{"asset", "component", "vuln"}) {
 		t.Errorf("recipe = %+v", r)
 	}
@@ -239,8 +239,8 @@ func TestFindingIdentity_RecipeSurvivesUpsertAndFillsLegacyRow(t *testing.T) {
 	if _, err := f.repo.CreateBatchWithResult(ctx, []*vulnerability.Finding{again}); err != nil {
 		t.Fatalf("upsert: %v", err)
 	}
-	if algo, fields := readFindingRecipe(t, f.db, f.tenant, f.survivor); algo.String != "v3/sca" || !reflect.DeepEqual(fields, []string{"asset", "component", "vuln"}) {
-		t.Errorf("after upsert: %v %v, want v3/sca kept", algo, fields)
+	if algo, fields := readFindingRecipe(t, f.db, f.tenant, f.survivor); algo.String != "v4/sca" || !reflect.DeepEqual(fields, []string{"asset", "component", "vuln"}) {
+		t.Errorf("after upsert: %v %v, want v4/sca kept", algo, fields)
 	}
 
 	// A version-1 row from before the columns: a version-1 sighting fills it.
@@ -279,7 +279,7 @@ func TestFindingIdentity_RecipeSurvivesUpsertAndFillsLegacyRow(t *testing.T) {
 		t.Errorf("version-2 row labeled %v by a version-1 sighting", algo)
 	}
 	code, body = f.get(t, f.tenant, f.admin, true, f.survivor)
-	if r := decodeFindingIdentity(t, body); code != http.StatusOK || !r.Derived || r.Algo != "v3/sca" {
+	if r := decodeFindingIdentity(t, body); code != http.StatusOK || !r.Derived || r.Algo != "v4/sca" {
 		t.Errorf("derived explanation: %d %+v", code, r)
 	}
 }
@@ -305,7 +305,7 @@ func TestFindingIdentity_RekeySetsRecipe(t *testing.T) {
 	if err != nil || res.Outcome != vulnerability.RekeyOutcomeRekeyed {
 		t.Fatalf("rekey: %+v %v", res, err)
 	}
-	if algo, fields := readFindingRecipe(t, f.db, f.tenant, old.ID()); algo.String != "v3/sca" || !reflect.DeepEqual(fields, []string{"asset", "component", "vuln"}) {
+	if algo, fields := readFindingRecipe(t, f.db, f.tenant, old.ID()); algo.String != "v4/sca" || !reflect.DeepEqual(fields, []string{"asset", "component", "vuln"}) {
 		t.Errorf("after re-key: %v %v", algo, fields)
 	}
 }
