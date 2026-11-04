@@ -34,13 +34,50 @@ export function mapStateLabel(state: string, t: Translate = enTranslate): string
   return MAP_STATES.has(state) ? t(`scans.map.state.${state}`) : state
 }
 
+/** The state label of a waiting node whose queued chunks one gate holds. */
+const WAIT_LABELS: Record<string, string> = {
+  waiting_for_hosts: 'scans.map.state.waitingForHosts',
+  waiting_after_refusal: 'scans.map.state.waitingAfterRefusal',
+}
+
+/**
+ * A node's state as a person reads it: a waiting node whose queued chunks
+ * one gate holds says which ("Waiting for its hosts: another task is
+ * scanning them") instead of "Waiting for a sensor".
+ */
+export function nodeStateLabel(n: RunMapNode, t: Translate = enTranslate): string {
+  const waitAll = n.state === 'waiting' ? WAIT_LABELS[n.reason ?? ''] : undefined
+  return waitAll ? t(waitAll) : mapStateLabel(n.state ?? 'pending', t)
+}
+
+/**
+ * Why some of a node's queued chunks wait, when the state label does not
+ * already say it for all of them: hosts another task is scanning (one task
+ * per host at a time) and refusals by a sensor's local policy.
+ */
+export function queuedWaitLines(n: RunMapNode, t: Translate = enTranslate): string[] {
+  const queued = n.chunks?.queued ?? 0
+  const hosts = n.chunks?.hosts_busy ?? 0
+  const refused = n.chunks?.refused ?? 0
+  const all = n.state === 'waiting' ? n.reason : undefined
+  const lines: string[] = []
+  if (queued <= 0) return lines
+  if (hosts > 0 && all !== 'waiting_for_hosts') {
+    lines.push(t('scans.map.waitHosts', undefined, { count: hosts }))
+  }
+  if (refused > 0 && all !== 'waiting_after_refusal') {
+    lines.push(t('scans.map.waitRefused', undefined, { count: refused }))
+  }
+  return lines
+}
+
 /**
  * The badge lines of a node: its state (with why it waits or failed), its
  * chunks while it has any, and what it produced and found.
  */
 export function nodeBadgeLines(n: RunMapNode, t: Translate = enTranslate): string[] {
   const lines: string[] = []
-  let state = mapStateLabel(n.state ?? 'pending', t)
+  let state = nodeStateLabel(n, t)
   if ((n.state === 'failed' || n.state === 'partial' || n.state === 'skipped') && n.reason) {
     state += ` (${n.reason.toLowerCase().replace(/_/g, ' ')})`
   }
@@ -54,6 +91,7 @@ export function nodeBadgeLines(n: RunMapNode, t: Translate = enTranslate): strin
         (failed ? t('scans.map.chunksFailed', undefined, { count: failed }) : '')
     )
   }
+  lines.push(...queuedWaitLines(n, t))
   const produced = n.outputs?.total ?? 0
   const parts: string[] = []
   if (produced > 0) parts.push(t('scans.map.outputs', undefined, { count: compactCount(produced) }))
