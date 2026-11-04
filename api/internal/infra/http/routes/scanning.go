@@ -237,11 +237,6 @@ func registerScanZoneRoutes(
 	}, tenantMiddlewares...)
 }
 
-// registerProxyPoolRoutes registers the proxy pool API for sensor scan
-// traffic (docs/architecture/sensor-proxies.md). Reads need
-// sensors:egress:read; pools, endpoints, credentials and the network path of
-// sensors need sensors:egress:write; deleting a pool needs
-// sensors:egress:delete. Write and delete are owner/admin only.
 // registerToolSourceRoutes mounts the organization's tool source keys
 // (docs/architecture/tool-source-keys.md). A key authenticates the
 // organization to a paid outside service, so every change is gated like a
@@ -262,6 +257,11 @@ func registerToolSourceRoutes(
 	}, tenantMiddlewares...)
 }
 
+// registerProxyPoolRoutes registers the proxy pool API for sensor scan
+// traffic (docs/architecture/sensor-proxies.md). Reads need
+// sensors:egress:read; pools, endpoints, credentials and the network path of
+// sensors need sensors:egress:write; deleting a pool needs
+// sensors:egress:delete. Write and delete are owner/admin only.
 func registerProxyPoolRoutes(
 	router Router,
 	h *handler.ProxyPoolHandler,

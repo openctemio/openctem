@@ -47,7 +47,6 @@ type ToolSourceResponse struct {
 	Tools      []string               `json:"tools"`
 	Format     string                 `json:"format" enums:"key,pair"`
 	FormatHint string                 `json:"format_hint"`
-	DocsURL    string                 `json:"docs_url"`
 	Key        *ToolSourceKeyResponse `json:"key"`
 }
 

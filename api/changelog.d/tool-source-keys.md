@@ -11,3 +11,7 @@
   sensors must be trusted; a shared sensor gets the keys of the job it holds
   and nothing else. Each delivery is audited.
 - Design: `docs/architecture/tool-source-keys.md`.
+- A key whose first part names where the tool connects (intelx and zoomeye
+  `HOST:KEY`, redhuntlabs `ENDPOINT_URL:KEY`) is accepted only for the
+  source's own service (no IP address, port or other host). Keys are at least
+  8 characters; only the tail of a pair's secret part is shown.
