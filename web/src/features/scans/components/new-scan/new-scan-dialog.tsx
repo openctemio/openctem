@@ -171,8 +171,9 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
       targets: previewRequest.targets,
       asset_group_ids: previewRequest.asset_group_ids,
       scan_zone_id: formData.scanZoneId ?? undefined,
+      depth: formData.depth,
     }),
-    [formData.workflowId, formData.scanZoneId, previewRequest]
+    [formData.workflowId, formData.scanZoneId, formData.depth, previewRequest]
   )
 
   // Every step's problems, from the same checks the API repeats on create.
@@ -240,7 +241,12 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
     (awaitingApproval ? !waitBlocked : !blocked)
 
   const handleDataChange = (data: Partial<NewScanFormData>) => {
-    setFormData((prev) => ({ ...prev, ...data }))
+    // Step settings belong to the workflow they were made for.
+    setFormData((prev) => ({
+      ...prev,
+      ...data,
+      ...('workflowId' in data && data.workflowId !== prev.workflowId ? { stepParams: {} } : {}),
+    }))
     if (data.targets) setRefused([])
   }
 
@@ -474,7 +480,12 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
           </>
         )
       case 'options':
-        return <OptionsStep data={formData} onChange={handleDataChange} showProfile />
+        return <OptionsStep
+            data={formData}
+            onChange={handleDataChange}
+            showProfile
+            workflowRequest={workflowRequest}
+          />
       case 'schedule':
         return <ScheduleStep data={formData} onChange={handleDataChange} offerSaveOnly />
       case 'review':
