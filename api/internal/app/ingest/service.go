@@ -81,15 +81,9 @@ type Service struct {
 	auditRepo    audit.Repository
 
 	// auditSvc is the SHARED application audit service. Ingest audit
-	// events are tenant-scoped, so they must go through it rather than
-	// writing audit_logs directly: LogEvent also extends the per-tenant
-	// tamper-evident hash chain (audit_log_chain). Writing via auditRepo
-	// alone persists the log but leaves it unchained, which the hourly
-	// chain verifier cannot distinguish from a deleted entry.
-	//
-	// It must be the same *AuditService instance the rest of the process
-	// uses — its chainMu is what serializes chain extension, and a second
-	// instance would have its own mutex and could interleave appends.
+	// events go through it so they carry the service's actor and API-key
+	// attribution. The database chains every stored row itself (trigger
+	// audit_log_chain_append), whichever path wrote it.
 	auditSvc *auditapp.AuditService
 
 	// assetExposureProjector promotes recon-discovered assets (open ports,
@@ -1149,21 +1143,18 @@ func (s *Service) createIngestAuditLog(ctx context.Context, agt *sensor.Sensor, 
 
 // writeIngestAuditLog persists one ingest audit event.
 //
-// Preferred path is the shared audit service, which persists the log AND
-// extends the tenant's tamper-evident hash chain. The direct-repository
-// path is a degraded fallback for callers that never wired the service; it
-// leaves the row unchained, so it warns loudly rather than failing silently
-// (an unchained tenant-scoped row is indistinguishable from a deleted one
-// when the hourly verifier walks the chain).
+// Preferred path is the shared audit service. The direct-repository path is
+// a fallback for callers that never wired the service; the database chains
+// the row either way (trigger audit_log_chain_append), but the fallback
+// skips the service's actor and API-key attribution, so it still warns.
 func (s *Service) writeIngestAuditLog(ctx context.Context, actx auditapp.AuditContext, event auditapp.AuditEvent) error {
 	if s.auditSvc != nil {
 		return s.auditSvc.LogEvent(ctx, actx, event)
 	}
 
-	s.logger.Warn("ingest audit service not wired; audit log will bypass the tamper-evident hash chain",
+	s.logger.Warn("ingest audit service not wired; audit log written without actor attribution",
 		"action", event.Action.String(),
 		"tenant_id", actx.TenantID,
-		"alert", "audit_chain_bypassed",
 	)
 
 	auditLog, err := audit.NewAuditLog(event.Action, event.ResourceType, event.ResourceID, event.Result)

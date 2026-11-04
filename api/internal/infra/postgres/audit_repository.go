@@ -27,6 +27,11 @@ func NewAuditRepository(db *DB) *AuditRepository {
 }
 
 // Create persists a new audit log entry.
+// ChainsInDatabase reports that the database chains every audit row it
+// stores (trigger audit_log_chain_append, in the inserting transaction), so
+// the service does not append chain entries itself.
+func (r *AuditRepository) ChainsInDatabase() bool { return true }
+
 func (r *AuditRepository) Create(ctx context.Context, log *audit.AuditLog) error {
 	var changesJSON any // Use any to allow nil for JSON column
 	var err error
@@ -744,6 +749,11 @@ func (r *AuditRepository) ApplyChainRebaseline(ctx context.Context, rb audit.Cha
 		return fmt.Errorf("begin rebaseline: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
+	// The chain rows are closed to UPDATE (migration audit_log_db_chain)
+	// except for prev_hash and hash in a transaction that declares a rebaseline.
+	if _, err := tx.ExecContext(ctx, `SET LOCAL openctem.audit_rebaseline = 'on'`); err != nil {
+		return fmt.Errorf("declare rebaseline: %w", err)
+	}
 
 	// Lock the tenant's chain for the duration, then make sure its tail is
 	// where the rebaseline stopped walking. A different tail means an entry
@@ -847,15 +857,23 @@ func (r *AuditRepository) ListChainEntries(ctx context.Context, tenantID shared.
 	} else if limit > maxChainEntriesLimit {
 		limit = maxChainEntriesLimit
 	}
+	// The audit row is joined only within the chain's own tenant (or the
+	// tenant-less rows of the system chain), so a version 2 payload can never
+	// be read from another tenant's row.
 	const q = `
-		SELECT audit_log_id, tenant_id, prev_hash, hash, chain_position, created_at
-		  FROM audit_log_chain
-		 WHERE tenant_id = $1
-		   AND chain_position > $2
-		 ORDER BY chain_position ASC
+		SELECT c.audit_log_id, c.tenant_id, c.prev_hash, c.hash, c.chain_position, c.created_at,
+		       c.hash_version,
+		       CASE WHEN c.hash_version = 2 AND l.id IS NOT NULL THEN audit_log_row_payload(l) END
+		  FROM audit_log_chain c
+		  LEFT JOIN audit_logs l
+		    ON l.id = c.audit_log_id
+		   AND (l.tenant_id = c.tenant_id OR (l.tenant_id IS NULL AND c.tenant_id = $4::uuid))
+		 WHERE c.tenant_id = $1
+		   AND c.chain_position > $2
+		 ORDER BY c.chain_position ASC
 		 LIMIT $3
 	`
-	rows, err := r.db.QueryContext(ctx, q, tenantID.String(), afterPosition, limit)
+	rows, err := r.db.QueryContext(ctx, q, tenantID.String(), afterPosition, limit, audit.SystemChainTenantID.String())
 	if err != nil {
 		return nil, fmt.Errorf("list chain entries: %w", err)
 	}
@@ -865,11 +883,14 @@ func (r *AuditRepository) ListChainEntries(ctx context.Context, tenantID shared.
 	for rows.Next() {
 		var (
 			auditLogID, tid string
+			payload         sql.NullString
 			e               audit.ChainEntry
 		)
-		if err := rows.Scan(&auditLogID, &tid, &e.PrevHash, &e.Hash, &e.ChainPosition, &e.CreatedAt); err != nil {
+		if err := rows.Scan(&auditLogID, &tid, &e.PrevHash, &e.Hash, &e.ChainPosition, &e.CreatedAt,
+			&e.HashVersion, &payload); err != nil {
 			return nil, fmt.Errorf("scan chain entry: %w", err)
 		}
+		e.RowPayload = payload.String
 		if id, err := shared.IDFromString(auditLogID); err == nil {
 			e.AuditLogID = id
 		}

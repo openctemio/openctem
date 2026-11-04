@@ -14,15 +14,15 @@ const w = (id: string, metric: string): DashboardWidget => ({
 
 describe('layout hint', () => {
   it('a current copy of each offered template has nothing missing', () => {
-    for (const key of ['overview', 'ctem', 'executive', 'program', 'triage'] as const) {
+    for (const key of ['ctem', 'executive', 'surface', 'program', 'triage'] as const) {
       const layout = templateLayout(templateByKey(key))
       expect(layoutHintFor({ layout, kind: 'personal' })).toBeNull()
     }
   })
 
   it('an older CTEM copy is offered what it lacks, in template order', () => {
-    // A copy of the previous CTEM template: four stat tiles and coverage
-    // where the KPI strip is now, no levers and no brief.
+    // A copy of an earlier CTEM template: four stat tiles and coverage
+    // where the KPI strip is now, no levers.
     const layout = [
       w('w_ct20', 'exposure.flow'),
       w('w_ct1', 'exposure.priority_open'),
@@ -45,44 +45,39 @@ describe('layout hint', () => {
       'exposure.levers',
       'surface.new_assets',
       'certificates.expiry',
-      'brief.weekly',
     ])
     const next = withTemplateWidgets(layout, templateByKey('ctem'), hint!.missing)
     const metrics = next.map((x) => (x.config as { data: { metric: string } }).data.metric)
     // Nothing removed, nothing duplicated, the person's extra widget kept.
     expect(new Set(metrics).size).toBe(metrics.length)
     expect(metrics).toContain('crown_jewels.exposed')
-    expect(metrics.length).toBe(layout.length + 5)
-    // The key figures and the levers lead, then the flow; the brief sits
-    // beside the attack paths.
-    expect(metrics.slice(0, 3)).toEqual(['exposure.kpis', 'exposure.levers', 'exposure.flow'])
-    expect(
-      Math.abs(metrics.indexOf('brief.weekly') - metrics.indexOf('attack_paths.to_crown_jewels'))
-    ).toBe(1)
+    expect(metrics.length).toBe(layout.length + 4)
+    // The key figures lead, then the flow and the levers after it.
+    expect(metrics.slice(0, 3)).toEqual(['exposure.kpis', 'exposure.flow', 'exposure.levers'])
     expect(next.map((x) => x.y)).toEqual(next.map((_, i) => i))
   })
 
   it('a widget id already taken gets a fresh one', () => {
     const layout = [
-      w('w_ov1', 'exposure.priority_open'),
-      w('w_ov2', 'intel.kev_open'),
-      w('w_ov12', 'findings.open'),
+      w('w_ct1', 'exposure.priority_open'),
+      w('w_ct2', 'intel.kev_open'),
+      w('w_ct12', 'findings.open'),
     ]
     const hint = layoutHintFor({ layout, kind: 'personal' })!
-    const next = withTemplateWidgets(layout, templateByKey('overview'), hint.missing)
+    const next = withTemplateWidgets(layout, templateByKey('ctem'), hint.missing)
     const ids = next.map((x) => (x.config as { id: string }).id)
     expect(new Set(ids).size).toBe(ids.length)
-    expect(ids).toContain('w_ov12_2')
+    expect(ids).toContain('w_ct12_2')
   })
 
   it('organization dashboards and non-template layouts get no hint', () => {
-    const tpl = templateLayout(templateByKey('overview')).slice(0, 4)
+    const tpl = templateLayout(templateByKey('ctem')).slice(0, 4)
     expect(layoutHintFor({ layout: tpl, kind: 'organization' })).toBeNull()
     expect(layoutHintFor({ layout: [w('a', 'findings.open')], kind: 'personal' })).toBeNull()
   })
 
   it('a full copy in the earlier order or sizes is offered the new arrangement, nothing to add', () => {
-    for (const key of ['ctem', 'executive', 'program', 'triage'] as const) {
+    for (const key of ['ctem', 'executive', 'surface', 'program', 'triage'] as const) {
       const tpl = templateLayout(templateByKey(key))
       const moved = [tpl[2], ...tpl.slice(0, 2), ...tpl.slice(3)]
       expect(layoutHintFor({ layout: moved, kind: 'personal' })).toMatchObject({

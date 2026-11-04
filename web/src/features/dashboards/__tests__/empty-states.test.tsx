@@ -25,11 +25,11 @@ const cfg = (metric: string, viz: string) => ({
   data: { kind: 'metric' as const, metric, filter: {}, time: {} },
   viz: { type: viz, options: {} },
 })
-const widget = (metric: string, viz: string, h = 1) => ({
+const widget = (metric: string, viz: string, h = 1, w = 6) => ({
   widget_type: 'metric',
   x: 0,
   y: 0,
-  w: 6,
+  w,
   h,
   config: cfg(metric, viz),
 })
@@ -80,7 +80,7 @@ describe('the one compact empty state', () => {
     expect(widgetModel(v, undefined, false).state).toBe('not_measured')
   })
 
-  it('a widget with no figure takes one row of the grid, a measured one keeps its height', () => {
+  it('a full-width widget with no figure takes one row; a narrower one keeps its row height', () => {
     const data = {
       dashboard_id: 'd',
       scope: 'organization',
@@ -111,9 +111,9 @@ describe('the one compact empty state', () => {
       <DashboardView
         dashboard={{
           layout: [
-            widget('fix.next', 'table', 4),
+            widget('fix.next', 'table', 4, 12),
             widget('intel.kev_open', 'stat', 2),
-            widget('attack_paths.to_crown_jewels', 'paths', 4),
+            widget('attack_paths.to_crown_jewels', 'paths', 2),
           ],
           columns: 2,
         }}
@@ -125,8 +125,10 @@ describe('the one compact empty state', () => {
     expect(cells[0].style.getPropertyValue('--row-span')).toBe('span 1 / span 1')
     expect(cells[0].dataset.compact).toBe('true')
     expect(cells[1].style.getPropertyValue('--row-span')).toBe('span 2 / span 2')
-    // Not measured: the dash and its reason, in one row too.
-    expect(cells[2].style.getPropertyValue('--row-span')).toBe('span 1 / span 1')
+    // Not measured beside a measured widget: it keeps the row's height (its
+    // message centred), so no hole opens under it.
+    expect(cells[2].style.getPropertyValue('--row-span')).toBe('span 2 / span 2')
+    expect(cells[2].dataset.compact).toBeUndefined()
   })
 })
 

@@ -49,7 +49,9 @@ const poweredByName = "OpenCTEM"
 
 // FooterHTML renders the footer line and the credit, escaped; "" when
 // neither is set.
-func (b Branding) FooterHTML() template.HTML {
+func (b Branding) FooterHTML() template.HTML { return b.footer(DefaultLocale) }
+
+func (b Branding) footer(locale string) template.HTML {
 	var buf bytes.Buffer
 	if t := strings.TrimSpace(b.FooterText); t != "" {
 		buf.WriteString("<p>")
@@ -62,7 +64,7 @@ func (b Branding) FooterHTML() template.HTML {
 		buf.WriteString("</p>")
 	}
 	if b.PoweredBy {
-		buf.WriteString("<p>Powered by " + poweredByName + "</p>")
+		buf.WriteString("<p>" + template.HTMLEscapeString(Text(locale, "common.poweredBy", poweredByName)) + "</p>")
 	}
 	return template.HTML(buf.String()) // #nosec G203 -- every part is escaped above
 }
@@ -77,6 +79,7 @@ type SecurityNoticeData struct {
 	IPAddress  string
 	AppName    string
 	Branding
+	Lang
 }
 
 // VerifyEmailData holds data for the email verification template.
@@ -87,6 +90,7 @@ type VerifyEmailData struct {
 	ExpiresIn       string
 	AppName         string
 	Branding
+	Lang
 }
 
 // PasswordResetData holds data for the password reset template.
@@ -99,6 +103,7 @@ type PasswordResetData struct {
 	IPAddress   string
 	RequestedAt string
 	Branding
+	Lang
 }
 
 // PasswordChangedData holds data for the password changed notification.
@@ -109,6 +114,7 @@ type PasswordChangedData struct {
 	IPAddress string
 	AppName   string
 	Branding
+	Lang
 }
 
 // WelcomeData holds data for the welcome email template.
@@ -118,6 +124,7 @@ type WelcomeData struct {
 	LoginURL string
 	AppName  string
 	Branding
+	Lang
 }
 
 // TeamInvitationData holds data for the team invitation template.
@@ -128,6 +135,7 @@ type TeamInvitationData struct {
 	ExpiresIn     string
 	AppName       string
 	Branding
+	Lang
 }
 
 // AccountSetupData holds data for the account-setup (set your password) email.
@@ -138,6 +146,7 @@ type AccountSetupData struct {
 	ExpiresIn string
 	AppName   string
 	Branding
+	Lang
 }
 
 // MemberStatusChangeData holds data for the suspend/reactivate notifications.
@@ -148,6 +157,7 @@ type MemberStatusChangeData struct {
 	AppURL    string // Where the user can go to see status (login page)
 	AppName   string
 	Branding
+	Lang
 }
 
 // TemplateEngine handles email template rendering.
@@ -156,8 +166,10 @@ type TemplateEngine struct {
 }
 
 type templateDef struct {
-	subjectTmpl *template.Template
-	bodyTmpl    *template.Template
+	// subject returns the subject line in the locale; values are plain text
+	// (the message layer strips line breaks and encodes the header).
+	subject  func(locale string, data any) string
+	bodyTmpl *template.Template
 }
 
 // NewTemplateEngine creates a new template engine with all predefined templates.
@@ -176,11 +188,11 @@ func (e *TemplateEngine) Render(tmpl Template, data any) (subject string, body s
 		return "", "", fmt.Errorf("template %s not found", tmpl)
 	}
 
-	// Render subject template
-	var subjectBuf bytes.Buffer
-	if err := def.subjectTmpl.Execute(&subjectBuf, data); err != nil {
-		return "", "", fmt.Errorf("failed to execute subject template: %w", err)
+	locale := DefaultLocale
+	if c, ok := data.(localeCarrier); ok {
+		locale = c.LocaleCode()
 	}
+	subject = def.subject(locale, data)
 
 	// Render body template
 	var bodyBuf bytes.Buffer
@@ -188,68 +200,71 @@ func (e *TemplateEngine) Render(tmpl Template, data any) (subject string, body s
 		return "", "", fmt.Errorf("failed to execute body template: %w", err)
 	}
 
-	return subjectBuf.String(), bodyBuf.String(), nil
+	return subject, bodyBuf.String(), nil
 }
 
 // registerTemplates registers all predefined email templates.
 func (e *TemplateEngine) registerTemplates() {
-	// Verify Email
 	e.templates[TemplateVerifyEmail] = &templateDef{
-		subjectTmpl: template.Must(template.New("verify_email_subject").Parse("Verify your email address")),
-		bodyTmpl:    bodyTemplate("verify_email", verifyEmailTemplate),
+		subject:  func(l string, _ any) string { return Text(l, "verify.subject") },
+		bodyTmpl: bodyTemplate("verify_email", verifyEmailTemplate),
 	}
-
-	// Password Reset
 	e.templates[TemplatePasswordReset] = &templateDef{
-		subjectTmpl: template.Must(template.New("password_reset_subject").Parse("Reset your password")),
-		bodyTmpl:    bodyTemplate("password_reset", passwordResetTemplate),
+		subject:  func(l string, _ any) string { return Text(l, "pwreset.subject") },
+		bodyTmpl: bodyTemplate("password_reset", passwordResetTemplate),
 	}
-
-	// Password Changed
 	e.templates[TemplatePasswordChanged] = &templateDef{
-		subjectTmpl: template.Must(template.New("password_changed_subject").Parse("Your password has been changed")),
-		bodyTmpl:    bodyTemplate("password_changed", passwordChangedTemplate),
+		subject:  func(l string, _ any) string { return Text(l, "pwchanged.subject") },
+		bodyTmpl: bodyTemplate("password_changed", passwordChangedTemplate),
 	}
-
-	// Welcome
 	e.templates[TemplateWelcome] = &templateDef{
-		subjectTmpl: template.Must(template.New("welcome_subject").Parse("Welcome to {{.AppName}}")),
-		bodyTmpl:    bodyTemplate("welcome", welcomeTemplate, template.FuncMap{"docsURL": func() string { return brand.Instance().Docs() + "/" }}),
+		subject: func(l string, d any) string {
+			w, _ := d.(WelcomeData)
+			return Text(l, "welcome.subject", w.AppName)
+		},
+		bodyTmpl: bodyTemplate("welcome", welcomeTemplate, template.FuncMap{"docsURL": func() string { return brand.Instance().Docs() + "/" }}),
 	}
-
-	// Team Invitation
 	e.templates[TemplateTeamInvitation] = &templateDef{
-		subjectTmpl: template.Must(template.New("team_invitation_subject").Parse("You've been invited to join {{.TeamName}}")),
-		bodyTmpl:    bodyTemplate("team_invitation", teamInvitationTemplate),
+		subject: func(l string, d any) string {
+			t, _ := d.(TeamInvitationData)
+			return Text(l, "invite.subject", t.TeamName)
+		},
+		bodyTmpl: bodyTemplate("team_invitation", teamInvitationTemplate),
 	}
-
-	// Member Suspended
 	e.templates[TemplateMemberSuspended] = &templateDef{
-		subjectTmpl: template.Must(template.New("member_suspended_subject").Parse("Your access to {{.TeamName}} has been suspended")),
-		bodyTmpl:    bodyTemplate("member_suspended", memberSuspendedTemplate),
+		subject: func(l string, d any) string {
+			m, _ := d.(MemberStatusChangeData)
+			return Text(l, "suspended.subject", m.TeamName)
+		},
+		bodyTmpl: bodyTemplate("member_suspended", memberSuspendedTemplate),
 	}
-
-	// Member Reactivated
 	e.templates[TemplateMemberReactivated] = &templateDef{
-		subjectTmpl: template.Must(template.New("member_reactivated_subject").Parse("Your access to {{.TeamName}} has been restored")),
-		bodyTmpl:    bodyTemplate("member_reactivated", memberReactivatedTemplate),
+		subject: func(l string, d any) string {
+			m, _ := d.(MemberStatusChangeData)
+			return Text(l, "reactivated.subject", m.TeamName)
+		},
+		bodyTmpl: bodyTemplate("member_reactivated", memberReactivatedTemplate),
 	}
-
-	// Account security notice
+	// The security notice's subject and message arrive already in the
+	// recipient's language (the caller picks them from the catalog).
 	e.templates[TemplateSecurityNotice] = &templateDef{
-		subjectTmpl: template.Must(template.New("security_notice_subject").Parse("{{.Subject}}")),
-		bodyTmpl:    bodyTemplate("security_notice", securityNoticeTemplate),
+		subject: func(_ string, d any) string {
+			n, _ := d.(SecurityNoticeData)
+			return n.Subject
+		},
+		bodyTmpl: bodyTemplate("security_notice", securityNoticeTemplate),
 	}
-
-	// Account Setup (administrator-created account)
 	e.templates[TemplateAccountSetup] = &templateDef{
-		subjectTmpl: template.Must(template.New("account_setup_subject").Parse("Your {{.AppName}} account for {{.TeamName}} is ready")),
-		bodyTmpl:    bodyTemplate("account_setup", accountSetupTemplate),
+		subject: func(l string, d any) string {
+			a, _ := d.(AccountSetupData)
+			return Text(l, "setup.subject", a.AppName, a.TeamName)
+		},
+		bodyTmpl: bodyTemplate("account_setup", accountSetupTemplate),
 	}
 }
 
 const securityNoticeTemplate = `<!DOCTYPE html>
-<html>
+<html lang="{{lang .Locale}}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -272,24 +287,24 @@ const securityNoticeTemplate = `<!DOCTYPE html>
 
         <h2>{{.Subject}}</h2>
 
-        <p>Hi{{if .UserName}} {{.UserName}}{{end}},</p>
+        <p>{{if .UserName}}{{t .Locale "common.hiName" .UserName}}{{else}}{{t .Locale "common.hi"}}{{end}}</p>
 
         <p>{{.Message}}</p>
 
         <div class="security-info">
-            {{if .OccurredAt}}Time: {{.OccurredAt}}<br>{{end}}
-            {{if .IPAddress}}IP Address: {{.IPAddress}}{{end}}
+            {{if .OccurredAt}}{{t .Locale "common.time" .OccurredAt}}<br>{{end}}
+            {{if .IPAddress}}{{t .Locale "common.ipAddress" .IPAddress}}{{end}}
         </div>
 
         <div class="warning">
-            <strong>Wasn't you?</strong><br>
-            Change your password and sign out all other sessions from your account settings, then contact your administrator.
+            <strong>{{t .Locale "notice.wasntYou"}}</strong><br>
+            {{t .Locale "notice.wasntYouBody"}}
         </div>
 
         <div class="footer">
-            <p>This email was sent to {{.Email}}</p>
-            <p>&copy; {{.AppName}}. All rights reserved.</p>
-            {{.FooterHTML}}
+            <p>{{t .Locale "common.sentTo" .Email}}</p>
+            <p>{{t .Locale "common.copyright" .AppName}}</p>
+            {{footer .Locale .Branding}}
         </div>
     </div>
 </body>
@@ -298,11 +313,11 @@ const securityNoticeTemplate = `<!DOCTYPE html>
 // Email Templates (HTML)
 
 const verifyEmailTemplate = `<!DOCTYPE html>
-<html>
+<html lang="{{lang .Locale}}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Verify Your Email</title>
+    <title>{{t .Locale "verify.title"}}</title>
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px; }
         .container { background: #ffffff; border-radius: 8px; padding: 40px; border: 1px solid #e0e0e0; }
@@ -320,40 +335,40 @@ const verifyEmailTemplate = `<!DOCTYPE html>
             {{template "brandHeader" .AppName}}
         </div>
 
-        <h2>Verify your email address</h2>
+        <h2>{{t .Locale "verify.heading"}}</h2>
 
-        <p>Hi{{if .UserName}} {{.UserName}}{{end}},</p>
+        <p>{{if .UserName}}{{t .Locale "common.hiName" .UserName}}{{else}}{{t .Locale "common.hi"}}{{end}}</p>
 
-        <p>Thanks for signing up! Please verify your email address by clicking the button below:</p>
+        <p>{{t .Locale "verify.body"}}</p>
 
         <div style="text-align: center;">
-            <a href="{{.VerificationURL}}" class="button">Verify Email Address</a>
+            <a href="{{.VerificationURL}}" class="button">{{t .Locale "verify.button"}}</a>
         </div>
 
         <div class="warning">
-            This link will expire in <strong>{{.ExpiresIn}}</strong>.
+            {{th .Locale "verify.expires" .ExpiresIn}}
         </div>
 
-        <p>If you didn't create an account with {{.AppName}}, you can safely ignore this email.</p>
+        <p>{{t .Locale "verify.ignore" .AppName}}</p>
 
-        <p>If the button doesn't work, copy and paste this link into your browser:</p>
+        <p>{{t .Locale "common.linkFallback"}}</p>
         <p style="word-break: break-all; font-size: 12px; color: #666;">{{.VerificationURL}}</p>
 
         <div class="footer">
-            <p>This email was sent to {{.Email}}</p>
-            <p>&copy; {{.AppName}}. All rights reserved.</p>
-            {{.FooterHTML}}
+            <p>{{t .Locale "common.sentTo" .Email}}</p>
+            <p>{{t .Locale "common.copyright" .AppName}}</p>
+            {{footer .Locale .Branding}}
         </div>
     </div>
 </body>
 </html>`
 
 const passwordResetTemplate = `<!DOCTYPE html>
-<html>
+<html lang="{{lang .Locale}}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Reset Your Password</title>
+    <title>{{t .Locale "pwreset.title"}}</title>
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px; }
         .container { background: #ffffff; border-radius: 8px; padding: 40px; border: 1px solid #e0e0e0; }
@@ -372,48 +387,48 @@ const passwordResetTemplate = `<!DOCTYPE html>
             {{template "brandHeader" .AppName}}
         </div>
 
-        <h2>Reset your password</h2>
+        <h2>{{t .Locale "pwreset.heading"}}</h2>
 
-        <p>Hi{{if .UserName}} {{.UserName}}{{end}},</p>
+        <p>{{if .UserName}}{{t .Locale "common.hiName" .UserName}}{{else}}{{t .Locale "common.hi"}}{{end}}</p>
 
-        <p>We received a request to reset your password. Click the button below to create a new password:</p>
+        <p>{{t .Locale "pwreset.body"}}</p>
 
         <div style="text-align: center;">
-            <a href="{{.ResetURL}}" class="button">Reset Password</a>
+            <a href="{{.ResetURL}}" class="button">{{t .Locale "pwreset.button"}}</a>
         </div>
 
         <div class="warning">
-            This link will expire in <strong>{{.ExpiresIn}}</strong>.
+            {{th .Locale "pwreset.expires" .ExpiresIn}}
         </div>
 
         {{if .IPAddress}}
         <div class="security-info">
-            <strong>Request details:</strong><br>
-            IP Address: {{.IPAddress}}<br>
-            {{if .RequestedAt}}Time: {{.RequestedAt}}{{end}}
+            <strong>{{t .Locale "pwreset.details"}}</strong><br>
+            {{t .Locale "common.ipAddress" .IPAddress}}<br>
+            {{if .RequestedAt}}{{t .Locale "common.time" .RequestedAt}}{{end}}
         </div>
         {{end}}
 
-        <p>If you didn't request a password reset, you can safely ignore this email. Your password will remain unchanged.</p>
+        <p>{{t .Locale "pwreset.ignore"}}</p>
 
-        <p>If the button doesn't work, copy and paste this link into your browser:</p>
+        <p>{{t .Locale "common.linkFallback"}}</p>
         <p style="word-break: break-all; font-size: 12px; color: #666;">{{.ResetURL}}</p>
 
         <div class="footer">
-            <p>This email was sent to {{.Email}}</p>
-            <p>&copy; {{.AppName}}. All rights reserved.</p>
-            {{.FooterHTML}}
+            <p>{{t .Locale "common.sentTo" .Email}}</p>
+            <p>{{t .Locale "common.copyright" .AppName}}</p>
+            {{footer .Locale .Branding}}
         </div>
     </div>
 </body>
 </html>`
 
 const passwordChangedTemplate = `<!DOCTYPE html>
-<html>
+<html lang="{{lang .Locale}}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Password Changed</title>
+    <title>{{t .Locale "pwchanged.title"}}</title>
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px; }
         .container { background: #ffffff; border-radius: 8px; padding: 40px; border: 1px solid #e0e0e0; }
@@ -431,42 +446,42 @@ const passwordChangedTemplate = `<!DOCTYPE html>
             {{template "brandHeader" .AppName}}
         </div>
 
-        <h2>Your password has been changed</h2>
+        <h2>{{t .Locale "pwchanged.heading"}}</h2>
 
-        <p>Hi{{if .UserName}} {{.UserName}}{{end}},</p>
+        <p>{{if .UserName}}{{t .Locale "common.hiName" .UserName}}{{else}}{{t .Locale "common.hi"}}{{end}}</p>
 
         <div class="alert">
-            Your password was successfully changed{{if .ChangedAt}} on {{.ChangedAt}}{{end}}.
+            {{if .ChangedAt}}{{t .Locale "pwchanged.alertAt" .ChangedAt}}{{else}}{{t .Locale "pwchanged.alert"}}{{end}}
         </div>
 
         {{if .IPAddress}}
         <div class="security-info">
-            <strong>Change details:</strong><br>
-            IP Address: {{.IPAddress}}<br>
-            {{if .ChangedAt}}Time: {{.ChangedAt}}{{end}}
+            <strong>{{t .Locale "pwchanged.details"}}</strong><br>
+            {{t .Locale "common.ipAddress" .IPAddress}}<br>
+            {{if .ChangedAt}}{{t .Locale "common.time" .ChangedAt}}{{end}}
         </div>
         {{end}}
 
         <div class="warning">
-            <strong>Didn't make this change?</strong><br>
-            If you didn't change your password, your account may have been compromised. Please contact your administrator immediately.
+            <strong>{{t .Locale "pwchanged.didnt"}}</strong><br>
+            {{t .Locale "pwchanged.didntBody"}}
         </div>
 
         <div class="footer">
-            <p>This email was sent to {{.Email}}</p>
-            <p>&copy; {{.AppName}}. All rights reserved.</p>
-            {{.FooterHTML}}
+            <p>{{t .Locale "common.sentTo" .Email}}</p>
+            <p>{{t .Locale "common.copyright" .AppName}}</p>
+            {{footer .Locale .Branding}}
         </div>
     </div>
 </body>
 </html>`
 
 const welcomeTemplate = `<!DOCTYPE html>
-<html>
+<html lang="{{lang .Locale}}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Welcome</title>
+    <title>{{t .Locale "welcome.title"}}</title>
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px; }
         .container { background: #ffffff; border-radius: 8px; padding: 40px; border: 1px solid #e0e0e0; }
@@ -485,43 +500,43 @@ const welcomeTemplate = `<!DOCTYPE html>
             {{template "brandHeader" .AppName}}
         </div>
 
-        <h2>Welcome to {{.AppName}}!</h2>
+        <h2>{{t .Locale "welcome.heading" .AppName}}</h2>
 
-        <p>Hi{{if .UserName}} {{.UserName}}{{end}},</p>
+        <p>{{if .UserName}}{{t .Locale "common.hiName" .UserName}}{{else}}{{t .Locale "common.hi"}}{{end}}</p>
 
-        <p>Thank you for joining {{.AppName}}! Your account has been created and you're ready to get started.</p>
+        <p>{{t .Locale "welcome.intro" .AppName}}</p>
 
         <div class="features">
-            <strong>What you can do:</strong>
+            <strong>{{t .Locale "welcome.features"}}</strong>
             <ul>
-                <li>Discover and inventory your assets</li>
-                <li>Track vulnerabilities and findings</li>
-                <li>Manage remediation workflows</li>
-                <li>Generate compliance reports</li>
+                <li>{{t .Locale "welcome.feature1"}}</li>
+                <li>{{t .Locale "welcome.feature2"}}</li>
+                <li>{{t .Locale "welcome.feature3"}}</li>
+                <li>{{t .Locale "welcome.feature4"}}</li>
             </ul>
         </div>
 
         <div style="text-align: center;">
-            <a href="{{.LoginURL}}" class="button">Go to Dashboard</a>
+            <a href="{{.LoginURL}}" class="button">{{t .Locale "welcome.button"}}</a>
         </div>
 
-        <p>Need help getting started? Read the {{.AppName}} documentation at <a href="{{docsURL}}">{{docsURL}}</a> or contact your administrator.</p>
+        <p>{{th .Locale "welcome.docs" .AppName docsURL}}</p>
 
         <div class="footer">
-            <p>This email was sent to {{.Email}}</p>
-            <p>&copy; {{.AppName}}. All rights reserved.</p>
-            {{.FooterHTML}}
+            <p>{{t .Locale "common.sentTo" .Email}}</p>
+            <p>{{t .Locale "common.copyright" .AppName}}</p>
+            {{footer .Locale .Branding}}
         </div>
     </div>
 </body>
 </html>`
 
 const teamInvitationTemplate = `<!DOCTYPE html>
-<html>
+<html lang="{{lang .Locale}}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Team Invitation</title>
+    <title>{{t .Locale "invite.title"}}</title>
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px; }
         .container { background: #ffffff; border-radius: 8px; padding: 40px; border: 1px solid #e0e0e0; }
@@ -540,43 +555,43 @@ const teamInvitationTemplate = `<!DOCTYPE html>
             {{template "brandHeader" .AppName}}
         </div>
 
-        <h2>You've been invited to join a team</h2>
+        <h2>{{t .Locale "invite.heading"}}</h2>
 
-        <p>Hi there,</p>
+        <p>{{t .Locale "common.hiThere"}}</p>
 
-        <p><strong>{{.InviterName}}</strong> has invited you to join their team on {{.AppName}}:</p>
+        <p>{{th .Locale "invite.line" .InviterName .AppName}}</p>
 
         <div class="invite-box">
             <div class="team-name">{{.TeamName}}</div>
         </div>
 
         <div style="text-align: center;">
-            <a href="{{.InvitationURL}}" class="button">Accept Invitation</a>
+            <a href="{{.InvitationURL}}" class="button">{{t .Locale "invite.accept"}}</a>
         </div>
 
         <div class="warning">
-            This invitation will expire in <strong>{{.ExpiresIn}}</strong>.
+            {{th .Locale "invite.expires" .ExpiresIn}}
         </div>
 
-        <p>If you don't want to join this team, you can safely ignore this email.</p>
+        <p>{{t .Locale "invite.ignore"}}</p>
 
-        <p>If the button doesn't work, copy and paste this link into your browser:</p>
+        <p>{{t .Locale "common.linkFallback"}}</p>
         <p style="word-break: break-all; font-size: 12px; color: #666;">{{.InvitationURL}}</p>
 
         <div class="footer">
-            <p>&copy; {{.AppName}}. All rights reserved.</p>
-            {{.FooterHTML}}
+            <p>{{t .Locale "common.copyright" .AppName}}</p>
+            {{footer .Locale .Branding}}
         </div>
     </div>
 </body>
 </html>`
 
 const accountSetupTemplate = `<!DOCTYPE html>
-<html>
+<html lang="{{lang .Locale}}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Set Your Password</title>
+    <title>{{t .Locale "setup.title"}}</title>
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px; }
         .container { background: #ffffff; border-radius: 8px; padding: 40px; border: 1px solid #e0e0e0; }
@@ -593,39 +608,39 @@ const accountSetupTemplate = `<!DOCTYPE html>
             {{template "brandHeader" .AppName}}
         </div>
 
-        <h2>Your account is ready</h2>
+        <h2>{{t .Locale "setup.heading"}}</h2>
 
-        <p>Hi{{if .UserName}} {{.UserName}}{{end}},</p>
+        <p>{{if .UserName}}{{t .Locale "common.hiName" .UserName}}{{else}}{{t .Locale "common.hi"}}{{end}}</p>
 
-        <p>An administrator of <strong>{{.TeamName}}</strong> created an {{.AppName}} account for you. Set your password to sign in:</p>
+        <p>{{th .Locale "setup.body" .TeamName .AppName}}</p>
 
         <div style="text-align: center;">
-            <a href="{{.SetupURL}}" class="button">Set your password</a>
+            <a href="{{.SetupURL}}" class="button">{{t .Locale "setup.button"}}</a>
         </div>
 
         <div class="warning">
-            This link works once and expires in <strong>{{.ExpiresIn}}</strong>. If it expires, ask your administrator for a new one.
+            {{th .Locale "setup.expires" .ExpiresIn}}
         </div>
 
-        <p>If you were not expecting this account, you can ignore this email.</p>
+        <p>{{t .Locale "setup.ignore"}}</p>
 
-        <p>If the button does not work, copy and paste this link into your browser:</p>
+        <p>{{t .Locale "setup.linkFallback"}}</p>
         <p style="word-break: break-all; font-size: 12px; color: #666;">{{.SetupURL}}</p>
 
         <div class="footer">
-            <p>&copy; {{.AppName}}. All rights reserved.</p>
-            {{.FooterHTML}}
+            <p>{{t .Locale "common.copyright" .AppName}}</p>
+            {{footer .Locale .Branding}}
         </div>
     </div>
 </body>
 </html>`
 
 const memberSuspendedTemplate = `<!DOCTYPE html>
-<html>
+<html lang="{{lang .Locale}}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Access Suspended</title>
+    <title>{{t .Locale "suspended.title"}}</title>
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px; }
         .container { background: #ffffff; border-radius: 8px; padding: 40px; border: 1px solid #e0e0e0; }
@@ -643,37 +658,37 @@ const memberSuspendedTemplate = `<!DOCTYPE html>
             {{template "brandHeader" .AppName}}
         </div>
 
-        <h2>Your access has been suspended</h2>
+        <h2>{{t .Locale "suspended.heading"}}</h2>
 
-        <p>Hi {{.UserName}},</p>
+        <p>{{if .UserName}}{{t .Locale "common.hiName" .UserName}}{{else}}{{t .Locale "common.hi"}}{{end}}</p>
 
         <div class="alert">
-            <div class="alert-title">Access to <span class="team-name">{{.TeamName}}</span> has been suspended</div>
-            <p style="margin: 0;">An administrator has paused your access to this team. Your active sessions have been signed out and you will not be able to sign in to {{.TeamName}} until your access is restored.</p>
+            <div class="alert-title">{{th .Locale "suspended.alertTitle" .TeamName}}</div>
+            <p style="margin: 0;">{{t .Locale "suspended.alertBody" .TeamName}}</p>
         </div>
 
         {{if .ActorName}}
-        <p>This action was performed by <strong>{{.ActorName}}</strong>.</p>
+        <p>{{th .Locale "suspended.actor" .ActorName}}</p>
         {{end}}
 
-        <p><strong>Your data is preserved.</strong> The membership row, your role assignments, and any history of your work in this team remain in place. Reactivation will restore your access exactly as it was.</p>
+        <p>{{th .Locale "suspended.data"}}</p>
 
-        <p>If you believe this was a mistake, please contact your team administrator. {{.AppName}} support cannot reverse a tenant administrator's decision on your behalf.</p>
+        <p>{{t .Locale "suspended.help" .AppName}}</p>
 
         <div class="footer">
-            <p>&copy; {{.AppName}}. All rights reserved.</p>
-            {{.FooterHTML}}
+            <p>{{t .Locale "common.copyright" .AppName}}</p>
+            {{footer .Locale .Branding}}
         </div>
     </div>
 </body>
 </html>`
 
 const memberReactivatedTemplate = `<!DOCTYPE html>
-<html>
+<html lang="{{lang .Locale}}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Access Restored</title>
+    <title>{{t .Locale "reactivated.title"}}</title>
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px; }
         .container { background: #ffffff; border-radius: 8px; padding: 40px; border: 1px solid #e0e0e0; }
@@ -692,28 +707,28 @@ const memberReactivatedTemplate = `<!DOCTYPE html>
             {{template "brandHeader" .AppName}}
         </div>
 
-        <h2>Welcome back</h2>
+        <h2>{{t .Locale "reactivated.heading"}}</h2>
 
-        <p>Hi {{.UserName}},</p>
+        <p>{{if .UserName}}{{t .Locale "common.hiName" .UserName}}{{else}}{{t .Locale "common.hi"}}{{end}}</p>
 
         <div class="alert">
-            <div class="alert-title">Access to <span class="team-name">{{.TeamName}}</span> has been restored</div>
-            <p style="margin: 0;">You can sign in again and pick up where you left off. Your role and permissions are exactly as they were before the suspension.</p>
+            <div class="alert-title">{{th .Locale "reactivated.alertTitle" .TeamName}}</div>
+            <p style="margin: 0;">{{t .Locale "reactivated.alertBody"}}</p>
         </div>
 
         {{if .ActorName}}
-        <p>This action was performed by <strong>{{.ActorName}}</strong>.</p>
+        <p>{{th .Locale "reactivated.actor" .ActorName}}</p>
         {{end}}
 
         <div style="text-align: center;">
-            <a href="{{.AppURL}}" class="button">Sign in to {{.AppName}}</a>
+            <a href="{{.AppURL}}" class="button">{{t .Locale "reactivated.button" .AppName}}</a>
         </div>
 
-        <p>If you weren't expecting this email or if you can't sign in, please contact your team administrator.</p>
+        <p>{{t .Locale "reactivated.help"}}</p>
 
         <div class="footer">
-            <p>&copy; {{.AppName}}. All rights reserved.</p>
-            {{.FooterHTML}}
+            <p>{{t .Locale "common.copyright" .AppName}}</p>
+            {{footer .Locale .Branding}}
         </div>
     </div>
 </body>
