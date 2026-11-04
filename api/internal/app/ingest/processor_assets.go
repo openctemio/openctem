@@ -33,6 +33,7 @@ type DedupReviewEnqueuer interface {
 // AssetProcessor handles batch asset processing.
 type AssetProcessor struct {
 	repo          asset.Repository
+	tagGovernor   TagGovernor // optional: governing tags an import may not set (nil = validator only)
 	repoExtRepo   asset.RepositoryExtensionRepository
 	relRepo       asset.RelationshipRepository
 	stateHistory  asset.StateHistoryRepository // optional: records appeared/recovered on discovery (nil = disabled)
@@ -370,6 +371,10 @@ func (p *AssetProcessor) processBatch(
 	// The response header posture of an origin keeps its allow-listed keys
 	// only (names and flags, never a header or cookie value).
 	sanitizeHTTPPosture(report)
+
+	// Tags a rule reads (team access, approvals, scan windows, assignment)
+	// are set by people with the rule's permission, never by a report.
+	p.dropGoverningTags(ctx, tenantID, report)
 	p.logger.Debug("starting asset processing",
 		"explicit_assets_count", len(report.Assets),
 		"findings_count", len(report.Findings),

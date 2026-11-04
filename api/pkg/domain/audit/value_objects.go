@@ -138,6 +138,11 @@ const (
 	// /assets no longer merges (a duplicate is a 409); older rows from it
 	// keep this action. Metadata lists the changed field names.
 	ActionAssetCreateMerged Action = "asset.create_merged"
+	// ActionAssetGovernedTagsChanged: a person changed a tag that a team
+	// access rule, scan approval rule, scan window or assignment rule reads.
+	// A refused attempt is recorded with the result "denied". Metadata names
+	// the tags and the kinds of rule.
+	ActionAssetGovernedTagsChanged Action = "asset.governed_tags_changed"
 
 	// Human changes to assets (API/UI). Metadata carries the names of the
 	// changed fields, counts and ids, never field values.
@@ -887,7 +892,7 @@ func (a Action) IsValid() bool {
 		ActionScopeLetterUploaded, ActionScopeLetterRevoked,
 		ActionScopeTargetSelfApproved, ActionScopeTargetApproversReminded,
 		ActionScopeTargetAttested, ActionScopeTargetAttestationRequested, ActionScopeTargetT2Downgraded,
-		ActionAssetCreateMerged,
+		ActionAssetCreateMerged, ActionAssetGovernedTagsChanged,
 		ActionAssetCreated, ActionAssetUpdated, ActionAssetDeleted, ActionAssetStatusChanged,
 		ActionAssetBulkStatusChanged, ActionAssetCrownJewelChanged, ActionAssetImported, ActionAssetRenamed,
 		ActionMemberAdded, ActionMemberRemoved, ActionMemberRoleChanged, ActionOwnerRoleDriftRemoved,
@@ -1393,7 +1398,7 @@ func SeverityForAction(a Action) Severity {
 		ActionAssetLifecycleRun, ActionAssetMarkedStale, ActionAssetReactivated,
 		ActionAssetLifecycleSnoozed, ActionAssetLifecycleUnsnoozed, ActionAssetAttributionDecided,
 		ActionAssetAttributionAutoConfirmed, ActionAssetAttributionChildrenLinked,
-		ActionAssetCreateMerged, ActionFindingsRefingerprinted, ActionAssetsMerged,
+		ActionAssetCreateMerged, ActionAssetGovernedTagsChanged, ActionFindingsRefingerprinted, ActionAssetsMerged,
 		ActionAssetBulkStatusChanged, ActionAssetCrownJewelChanged, ActionAssetImported, ActionAssetRenamed,
 		ActionMemberAdded, ActionInvitationAccepted,
 		ActionCampaignCreated, ActionCampaignUpdated, ActionCampaignStatusChanged,
