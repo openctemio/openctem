@@ -78,6 +78,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/httpsec"
 	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/notices"
 	"github.com/openctemio/openctem/api/pkg/oidc"
 	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
 	"github.com/openctemio/openctem/api/pkg/validator"
@@ -872,6 +873,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 			WithLinkBase(cfg.SMTP.BaseURL),
 		AdminOperations:         newAdminOperationsHandler(deps, cfg, log),
 		Announcement:            handler.NewAnnouncementHandler(postgres.NewPlatformAnnouncementRepository(deps.DB), log),
+		Licenses:                handler.NewLicensesHandler(notices.DefaultPath, log),
 		AdminSession:            handler.NewAdminSessionHandler(postgres.NewAdminSessionDirectory(adminDBOf(repos, deps.DB)), adminConsoleSvc, log),
 		AdminSupportRateLimiter: middleware.NewAdminMappingRateLimiter(middleware.AdminMappingRateLimitConfig{WriteRequestsPerMin: 20}, log),
 		// A test e-mail goes out through the real SMTP server: a handful a minute is plenty.
