@@ -1008,6 +1008,8 @@ func (h *CommandHandler) triggerScanRunProgression(ctx context.Context, cmd *com
 			Reach               json.RawMessage `json:"reach"`
 			UnreachedTargets    json.RawMessage `json:"unreached_targets"`
 			UnreachedTotal      int             `json:"unreached_targets_total"`
+			EffectiveSettings   json.RawMessage `json:"effective_settings"`
+			IgnoredConfigKeys   json.RawMessage `json:"ignored_config_keys"`
 		} `json:"metadata"`
 	}
 
@@ -1022,6 +1024,8 @@ func (h *CommandHandler) triggerScanRunProgression(ctx context.Context, cmd *com
 	partial := scanrun.Partial{Skipped: skippedTotal, SkippedSummary: skippedSummary,
 		Unresolvable: scanrundom.UnresolvableCount(skipped, skippedTotal),
 		Gaps:         gapsTotal, GapSummary: scanrundom.CoverageGapSummary(gaps, gapsTotal), GapList: gaps}
+	// What the sensor ran with (display only; sensor-supplied, bounded).
+	partial.Sensor = scanrundom.ParseSensorSettings(result.Metadata.EffectiveSettings, result.Metadata.IgnoredConfigKeys)
 	// Targets the sensor could not reach (RFC-089): none reached fails the
 	// step as unreachable, some unreached ends it partial. A result without
 	// a reach summary (an older sensor) keeps the outcome above.

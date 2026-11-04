@@ -19,7 +19,17 @@ import { Switch } from '@/components/ui/switch'
 import { useTranslation } from '@/context/i18n-provider'
 import type { ScanWorkflowStep } from '@/lib/api'
 import type { Capability, CapabilityParam, GraphIssue } from '../lib/capability-graph'
-import { paramValue, selectionOf, toolsMissingParams, withParam } from '../lib/step-settings'
+import {
+  OVERLAY_DEPTHS,
+  depthParams,
+  depthsOverriding,
+  paramValue,
+  selectionOf,
+  toolsMissingParams,
+  withDepthParam,
+  withParam,
+  type OverlayDepth,
+} from '../lib/step-settings'
 import { ToolSelectionField } from './tool-selection-field'
 
 /**
@@ -133,18 +143,41 @@ export function NodeInspector({
                     {t('workflowStages.inspector.noSettings')}
                   </p>
                 )}
-                {capability.params.map((p) => (
-                  <ParamField
-                    key={`${step.id}-${p.name}`}
-                    param={p}
-                    value={step.config?.[p.name]}
-                    readOnly={readOnly}
-                    onChange={(v) =>
-                      onChange({ ...step, config: withParam(step.config, p.name, v) })
-                    }
-                  />
-                ))}
+                {capability.params.map((p) => {
+                  const overridden = depthsOverriding(step, p.name)
+                  return (
+                    <div key={`${step.id}-${p.name}`} className="space-y-1">
+                      <ParamField
+                        param={p}
+                        value={step.config?.[p.name]}
+                        readOnly={readOnly}
+                        onChange={(v) =>
+                          onChange({ ...step, config: withParam(step.config, p.name, v) })
+                        }
+                      />
+                      {overridden.length > 0 && (
+                        <p className="text-xs text-warning">
+                          {t(
+                            'workflowStages.inspector.overriddenAt',
+                            'Replaced at {depths} depth by the depth values below.',
+                            {
+                              depths: overridden
+                                .map((d) => t(`workflowStages.inspector.depth.${d}`))
+                                .join(', '),
+                            }
+                          )}
+                        </p>
+                      )}
+                    </div>
+                  )
+                })}
               </section>
+              <DepthOverlays
+                step={step}
+                capability={capability}
+                readOnly={readOnly}
+                onChange={onChange}
+              />
               {extra.length > 0 && (
                 <section className="space-y-2">
                   <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -204,20 +237,129 @@ export function NodeInspector({
   )
 }
 
+/**
+ * The values the step runs with at standard and deep depth. A depth value
+ * replaces the step's own value of the same param at that depth, so it is
+ * shown and edited here, per depth (the API checks them on save).
+ */
+function DepthOverlays({
+  step,
+  capability,
+  readOnly,
+  onChange,
+}: {
+  step: ScanWorkflowStep
+  capability: Capability
+  readOnly?: boolean
+  onChange: (step: ScanWorkflowStep) => void
+}) {
+  const { t } = useTranslation()
+  const [adding, setAdding] = useState<Record<string, string>>({})
+  const shown = OVERLAY_DEPTHS.map((d) => ({ depth: d, params: depthParams(step, d) }))
+  if (readOnly && shown.every((s) => Object.keys(s.params).length === 0)) return null
+  const show = (depth: OverlayDepth) => (
+    <div key={depth} className="space-y-2">
+      <h4 className="text-xs font-medium">{t(`workflowStages.inspector.depth.${depth}`)}</h4>
+      {capability.params
+        .filter((p) => p.name in depthParams(step, depth))
+        .map((p) => (
+          <div key={p.name} className="space-y-1">
+            <ParamField
+              idPrefix={`depth-${depth}`}
+              param={p}
+              value={depthParams(step, depth)[p.name]}
+              readOnly={readOnly}
+              onChange={(v) => onChange(withDepthParam(step, depth, p.name, v))}
+            />
+            {!readOnly && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-6 px-2 text-xs"
+                onClick={() => onChange(withDepthParam(step, depth, p.name, undefined))}
+              >
+                {t('workflowStages.inspector.depthRemove')}
+              </Button>
+            )}
+          </div>
+        ))}
+      {!readOnly && (
+        <Select
+          value={adding[depth] ?? ''}
+          onValueChange={(name) => {
+            const param = capability.params.find((p) => p.name === name)
+            if (!param) return
+            setAdding({ ...adding, [depth]: '' })
+            const current = step.config?.[name]
+            // Start from the step's own value, or an empty list/off switch
+            // the author then edits.
+            const start =
+              current !== undefined ? current : param.type === 'boolean' ? false : undefined
+            onChange(withDepthParam(step, depth, name, start ?? defaultOverlayValue(param)))
+          }}
+        >
+          <SelectTrigger
+            className="h-8 text-xs"
+            aria-label={t('workflowStages.inspector.depthAdd')}
+          >
+            <SelectValue placeholder={t('workflowStages.inspector.depthAdd')} />
+          </SelectTrigger>
+          <SelectContent>
+            {capability.params
+              .filter((p) => !(p.name in depthParams(step, depth)))
+              .map((p) => (
+                <SelectItem key={p.name} value={p.name}>
+                  {p.name}
+                </SelectItem>
+              ))}
+          </SelectContent>
+        </Select>
+      )}
+    </div>
+  )
+  return (
+    <section className="space-y-3" data-slot="depth-overlays">
+      <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        {t('workflowStages.inspector.depthValues')}
+      </h3>
+      <p className="text-xs text-muted-foreground">{t('workflowStages.inspector.depthHint')}</p>
+      {OVERLAY_DEPTHS.map(show)}
+    </section>
+  )
+}
+
+/** A value to start an overlay param from when the step has none. */
+function defaultOverlayValue(param: CapabilityParam): unknown {
+  switch (param.type) {
+    case 'string_list':
+      return param.enum.length > 0 ? [param.enum[0]] : []
+    case 'integer':
+      return param.min ?? 0
+    case 'boolean':
+      return false
+    default:
+      return param.enum[0] ?? ''
+  }
+}
+
 function ParamField({
   param,
   value,
   readOnly,
+  idPrefix = 'param',
   onChange,
 }: {
   param: CapabilityParam
   value: unknown
   readOnly?: boolean
+  /** Distinguishes the same param shown at several depths. */
+  idPrefix?: string
   onChange: (value: unknown) => void
 }) {
   const { t } = useTranslation()
   const [error, setError] = useState<string | undefined>()
-  const id = `param-${param.name}`
+  const id = `${idPrefix}-${param.name}`
   const set = (raw: string | boolean | string[]) => {
     const r = paramValue(param, raw)
     setError(r.error)
