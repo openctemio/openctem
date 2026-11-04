@@ -4,71 +4,56 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 )
 
-func ipAsset(value string, ports ...ctis.PortInfo) ctis.Asset {
-	return ctis.Asset{ID: "ip", Type: ctis.AssetTypeIPAddress, Value: value,
-		Technical: &ctis.AssetTechnical{IPAddress: &ctis.IPAddressTechnical{Ports: ports}}}
+func svcAsset(id, value string, state ctis.PortState) ctis.Asset {
+	a := ctis.Asset{ID: id, Type: ctis.AssetTypeService, Value: value}
+	if state != "" {
+		a.Technical = &ctis.AssetTechnical{Service: &ctis.ServiceTechnical{State: state}}
+	}
+	return a
 }
 
-// research/22 P0-6: open ports on an address become open_port assets; the
-// sensor's port list is hostile input (bad numbers, closed or filtered
-// states, duplicates, non-address values, floods are bounded).
-func TestExpandOpenPorts(t *testing.T) {
+// Open ports come from the service assets of the report: a port scanner's
+// output is hostile input (closed or filtered states, duplicates, non-address
+// hosts, floods are bounded).
+func TestServicePortsByHost(t *testing.T) {
 	rep := &ctis.Report{Tool: &ctis.Tool{Name: "naabu"}, Assets: []ctis.Asset{
-		ipAsset("203.0.113.5",
-			ctis.PortInfo{Port: 80, Protocol: "TCP", State: "open", Service: "http"},
-			ctis.PortInfo{Port: 80, Protocol: "tcp"},   // duplicate
-			ctis.PortInfo{Port: 443},                   // protocol defaults to tcp
-			ctis.PortInfo{Port: 0},                     // invalid
-			ctis.PortInfo{Port: 70000},                 // invalid
-			ctis.PortInfo{Port: 22, State: "closed"},   // not open
-			ctis.PortInfo{Port: 25, State: "filtered"}, // not open
-		),
-		ipAsset("not-an-ip", ctis.PortInfo{Port: 80}), // a name is never expanded
-		ipAsset("2001:db8::1", ctis.PortInfo{Port: 8443}, ctis.PortInfo{Port: 9000}),
-		{ID: "p", Type: ctis.AssetTypeOpenPort, Value: "[2001:db8::1]:9000:tcp"}, // already reported
+		svcAsset("s1", "203.0.113.5:80/tcp", ctis.PortOpen),
+		svcAsset("s2", "203.0.113.5:443/tcp", ""), // unset state counts as open
+		svcAsset("s3", "203.0.113.5:80/tcp", ""),  // duplicate
+		svcAsset("s4", "203.0.113.5:22/tcp", ctis.PortClosed),
+		svcAsset("s5", "203.0.113.5:25/tcp", ctis.PortFiltered),
+		svcAsset("s6", "[2001:db8::1]:8443/tcp", ""),
+		svcAsset("s7", "[2001:db8::1]:53/udp", ""),
+		svcAsset("s8", "example.com:80/tcp", ""), // a name is not an address
+		{ID: "ip", Type: ctis.AssetTypeIPAddress, Value: "203.0.113.5"},
 	}}
-	added := expandOpenPorts(rep)
-	got := map[string]ctis.Properties{}
-	for _, a := range rep.Assets {
-		if a.Type == ctis.AssetTypeOpenPort {
-			got[a.Value] = a.Properties
-		}
+	got := servicePortsByHost(rep)
+	v4 := got["203.0.113.5"]
+	if len(v4) != 2 || v4[0] != (reportPort{80, "tcp"}) || v4[1] != (reportPort{443, "tcp"}) {
+		t.Fatalf("v4 ports = %v (closed, filtered and duplicate ports must be skipped)", v4)
 	}
-	for _, want := range []string{"203.0.113.5:80/tcp", "203.0.113.5:443/tcp", "[2001:db8::1]:8443/tcp"} {
-		if _, ok := got[want]; !ok {
-			t.Errorf("missing %s in %v", want, got)
-		}
+	v6 := got["2001:db8::1"]
+	if len(v6) != 2 || v6[0] != (reportPort{8443, "tcp"}) || v6[1] != (reportPort{53, "udp"}) {
+		t.Fatalf("v6 ports = %v", v6)
 	}
-	if added != 3 {
-		t.Fatalf("added = %d, want 3 (%v)", added, got)
+	if _, ok := got["example.com"]; ok {
+		t.Fatalf("a name must not be grouped: %v", got)
 	}
-	p := got["203.0.113.5:80/tcp"]
-	if p["port"] != 80 || p["protocol"] != "tcp" || p["service"] != "http" || p["host"] != "203.0.113.5" || p["discovery_tool"] != "naabu" {
-		t.Fatalf("properties = %v", p)
-	}
-	if expandOpenPorts(rep) != 0 {
-		t.Fatal("expanding twice added port assets again")
+	if len(servicePortsByHost(nil)) != 0 {
+		t.Fatal("nil report must give no ports")
 	}
 }
 
-func TestExpandOpenPorts_Bounded(t *testing.T) {
-	var ports []ctis.PortInfo
-	for i := 1; i <= 5000; i++ {
-		ports = append(ports, ctis.PortInfo{Port: i})
+func TestServicePortsByHost_Bounded(t *testing.T) {
+	rep := &ctis.Report{}
+	for i := 1; i <= maxPortsPerHost+500; i++ {
+		rep.Assets = append(rep.Assets, svcAsset(fmt.Sprintf("s%d", i), fmt.Sprintf("198.51.100.1:%d/tcp", i), ""))
 	}
-	rep := &ctis.Report{Assets: []ctis.Asset{ipAsset("198.51.100.1", ports...)}}
-	if n := expandOpenPorts(rep); n != maxPortsPerHost {
-		t.Fatalf("one host expanded to %d ports, want %d", n, maxPortsPerHost)
-	}
-	rep = &ctis.Report{}
-	for h := 0; h < 20; h++ {
-		rep.Assets = append(rep.Assets, ipAsset(fmt.Sprintf("198.51.100.%d", h+1), ports[:maxPortsPerHost]...))
-	}
-	if n := expandOpenPorts(rep); n != maxPortsPerReport {
-		t.Fatalf("report expanded to %d ports, want %d", n, maxPortsPerReport)
+	if n := len(servicePortsByHost(rep)["198.51.100.1"]); n != maxPortsPerHost {
+		t.Fatalf("one host listed %d ports, want %d", n, maxPortsPerHost)
 	}
 }
 

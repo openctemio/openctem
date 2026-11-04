@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
@@ -23,8 +23,8 @@ import (
 )
 
 func flowReport(repo string, df *ctis.DataFlow) *ctis.Report {
-	return &ctis.Report{Version: "1.0", Tool: &ctis.Tool{Name: "semgrep", Version: "1.90.0"},
-		Metadata: ctis.ReportMetadata{ID: shared.NewID().String(), Timestamp: time.Now().UTC()},
+	return &ctis.Report{Version: ctis.SchemaVersion, Tool: &ctis.Tool{Name: "semgrep", Version: "1.90.0"},
+		Metadata: ctis.ReportMetadata{ID: ctis.NewReportID(), GeneratedAt: time.Now().UTC()},
 		Assets:   []ctis.Asset{{ID: "r", Type: ctis.AssetTypeRepository, Value: repo}},
 		Findings: []ctis.Finding{{Type: ctis.FindingTypeVulnerability, Title: "SQL injection", Severity: ctis.SeverityHigh,
 			RuleID: "js.sqli", AssetRef: "r",
@@ -126,7 +126,7 @@ func TestFindingDataFlows_ReplacedOnlyWhenChanged(t *testing.T) {
 	// A changed path: the trace is replaced, still one flow, with the
 	// commit it was reported for.
 	changedRep := flowReport(repo, flowOf("src/api/orders.js", 4))
-	changedRep.Findings[0].Location.CommitSHA = "0123456789abcdef0123456789abcdef01234567"
+	changedRep.Findings[0].Location.Commit = &ctis.CommitInfo{SHA: "0123456789abcdef0123456789abcdef01234567"}
 	ingestAs(tn, changedRep)
 	changed := storedFlowOf(t, r, tn.tenant)
 	if changed.flowID == first.flowID || changed.sourcePath != "src/api/orders.js" || changed.hash == first.hash || changed.steps != 5 {

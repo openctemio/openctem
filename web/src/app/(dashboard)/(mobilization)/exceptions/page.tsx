@@ -2,7 +2,6 @@
 
 import { useState, useCallback, useMemo } from 'react'
 import { type ColumnDef } from '@tanstack/react-table'
-import { formatDistanceToNow } from 'date-fns'
 import {
   Plus,
   MoreHorizontal,
@@ -66,17 +65,15 @@ import {
   type SuppressionStatus,
 } from '@/features/exceptions'
 import { useTranslation } from '@/context/i18n-provider'
+import { formatRelative } from '@/lib/format-date'
 import { useAuthStore } from '@/stores/auth-store'
 import { SelfApproveDialog } from '@/features/shared/components/self-approve-dialog'
 
 // Approve action accent in the row menu.
 const MENU_APPROVE_ICON = 'text-success'
 
-function relative(iso?: string | null): string {
-  if (!iso) return '—'
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return '—'
-  return formatDistanceToNow(d, { addSuffix: true })
+function relative(iso: string | null | undefined, locale: string): string {
+  return formatRelative(iso, '—', locale)
 }
 
 type TabValue = 'all' | SuppressionStatus
@@ -97,7 +94,7 @@ function TableSkeleton() {
 const STATUS_VALUES: TabValue[] = ['all', 'pending', 'approved', 'rejected', 'expired']
 
 export default function ExceptionsPage() {
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
   // The status filter lives in the URL so a filtered view survives reload and
   // can be shared (e.g. a link straight to the pending-approval queue).
   const [statusParam, setStatusParam] = useUrlFilter('status', 'all')
@@ -369,7 +366,7 @@ export default function ExceptionsPage() {
         cell: ({ row }) => (
           <span className="text-sm text-muted-foreground whitespace-nowrap">
             {row.original.expires_at
-              ? relative(row.original.expires_at)
+              ? relative(row.original.expires_at, locale)
               : t('exceptions.page.never', 'Never')}
           </span>
         ),
@@ -385,7 +382,7 @@ export default function ExceptionsPage() {
         ),
         cell: ({ row }) => (
           <span className="text-sm text-muted-foreground whitespace-nowrap">
-            {relative(row.original.created_at)}
+            {relative(row.original.created_at, locale)}
           </span>
         ),
         enableSorting: true,

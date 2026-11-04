@@ -52,7 +52,7 @@ import { PageStack } from '@/features/shared/components/page-stack'
 import { RelativeTime } from '@/features/shared/components/relative-time'
 import { RemovableFilterChip } from '@/features/shared/components/removable-filter-chip'
 import { SeverityBadge } from '@/features/shared/components/severity-badge'
-import { dateFnsLocaleFor } from '@/features/shared/components/activity-timeline'
+import { dateFnsLocaleFor } from '@/lib/format-date'
 import { useSearchQuery } from '@/hooks/use-search-query'
 import { replaceUrlSearch, useUrlParams, useUrlSettled } from '@/hooks/use-url-param'
 import { useSeverityLabel } from '@/hooks/use-scale-labels'
@@ -665,11 +665,7 @@ function VulnerabilitiesListBody() {
         header: t('vulnPage.list.col.firstSeen', 'First seen'),
         enableSorting: true,
         cell: ({ row }) => (
-          <RelativeTime
-            date={row.original.first_seen_at}
-            locale={dateLocale}
-            className="whitespace-nowrap"
-          />
+          <RelativeTime date={row.original.first_seen_at} className="whitespace-nowrap" />
         ),
       },
       {
@@ -677,11 +673,7 @@ function VulnerabilitiesListBody() {
         header: t('vulnPage.list.col.lastSeen', 'Last seen'),
         enableSorting: true,
         cell: ({ row }) => (
-          <RelativeTime
-            date={row.original.last_seen_at}
-            locale={dateLocale}
-            className="whitespace-nowrap"
-          />
+          <RelativeTime date={row.original.last_seen_at} className="whitespace-nowrap" />
         ),
       },
     ],

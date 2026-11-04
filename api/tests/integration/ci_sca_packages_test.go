@@ -13,7 +13,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/pkg/domain/cirun"
@@ -22,7 +22,7 @@ import (
 )
 
 // ciSCAReport is the trimmed trivy npm fixture as a CI upload body for repo.
-func ciSCAReport(t *testing.T, repo string) map[string]any {
+func ciSCAReport(t *testing.T, repo string) ctis.Report {
 	t.Helper()
 	b, err := os.ReadFile("testdata/ci_sca/trivy-npm-trimmed.json")
 	if err != nil {
@@ -32,9 +32,9 @@ func ciSCAReport(t *testing.T, repo string) map[string]any {
 	if err := json.Unmarshal(b, &rep); err != nil {
 		t.Fatal(err)
 	}
-	rep.Metadata.ID = shared.NewID().String()
+	rep.Metadata.ID = ctis.NewReportID()
 	rep.Assets[0].Value = repo
-	return map[string]any{"report": rep}
+	return rep
 }
 
 // ciSCAUpload exchanges a token for a run on acme/api and uploads the
@@ -79,7 +79,7 @@ func TestCISCAUpload_KeepsAnotherProducersPackageList(t *testing.T) {
 	r := newCIRig(t)
 	ctx := context.Background()
 	cfg := r.trust(r.tenant, cirun.Rules{Owners: []string{"acme"}})
-	repoName := strings.ToLower(strings.TrimPrefix(r.idp.srv.URL, "https://")) + "/acme/api"
+	repoName := strings.ToLower(strings.TrimPrefix(r.idp.url, "https://")) + "/acme/api"
 
 	asset := ciSCAUpload(t, r, r.tenant, cfg, repoName)
 	if got := assetPackageChannels(t, r, r.tenant, asset); len(got) != 4 || got["pkg:npm/express@4.17.1"] != software.ChannelCI {

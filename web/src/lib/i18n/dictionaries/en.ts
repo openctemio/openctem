@@ -2,6 +2,8 @@
 // Its own module so the browser loads only the active locale's catalog:
 // src/lib/i18n.ts imports it on demand, and the bundler gives it its own chunk.
 
+import { messages } from '@extension/messages'
+import { assertCompatible, mergeMessages } from '@/lib/extension/merge'
 import en_account from './en/account.json'
 import en_activity from './en/activity.json'
 import en_auditLog from './en/auditLog.json'
@@ -202,4 +204,11 @@ export const enNamespaces: Record<string, Dictionary> = {
   crownJewels: en_crownJewels,
 }
 
-export const en: Dictionary = Object.assign({}, ...Object.values(enNamespaces)) as Dictionary
+assertCompatible('extension @extension/messages', messages.apiVersion)
+
+// The core catalog plus the entries of the build's extension (none by
+// default); an extension may add keys, never replace one.
+export const en: Dictionary = mergeMessages(
+  Object.assign({}, ...Object.values(enNamespaces)) as Dictionary,
+  messages.en
+)

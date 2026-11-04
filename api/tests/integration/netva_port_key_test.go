@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
@@ -34,19 +34,22 @@ func netPortIngest(t *testing.T) (r *v2Rig, tn v2Tenant, scan func(ports ...int)
 	agt := &sensor.Sensor{ID: tn.sensor, TenantID: &tid, Type: sensor.SensorTypeWorker, Status: sensor.SensorStatusActive}
 	scan = func(ports ...int) {
 		t.Helper()
-		rep := &ctis.Report{Version: "1.0", Tool: &ctis.Tool{Name: "nessus"},
-			Metadata: ctis.ReportMetadata{ID: shared.NewID().String(), Timestamp: time.Now().UTC()},
+		rep := &ctis.Report{Version: ctis.SchemaVersion, Tool: &ctis.Tool{Name: "nessus"},
+			Metadata: ctis.ReportMetadata{ID: ctis.NewReportID(), GeneratedAt: time.Now().UTC()},
 			Assets:   []ctis.Asset{{ID: "h", Type: ctis.AssetTypeHost, Value: "tls-" + tn.tenant.String()[:8] + ".example.com"}}}
 		for _, p := range ports {
 			f := ctis.Finding{Type: ctis.FindingTypeVulnerability, Title: "SSL Certificate Cannot Be Trusted",
 				Severity: ctis.SeverityMedium, RuleID: "51192", AssetRef: "h"}
 			if p > 0 {
-				f.Network = &ctis.NetworkLocation{Port: p, Protocol: "tcp"}
+				f.Network = &ctis.NetworkLocation{Port: p, Transport: ctis.TransportTCP}
 			}
 			rep.Findings = append(rep.Findings, f)
 		}
 		out, err := svc.Ingest(context.Background(), agt, ingest.Input{Report: rep})
-		if err != nil || len(out.Errors) > 0 {
+		if err != nil {
+			t.Fatalf("ingest: %v", err)
+		}
+		if len(out.Errors) > 0 {
 			t.Fatalf("ingest: %v %v", err, out.Errors)
 		}
 	}

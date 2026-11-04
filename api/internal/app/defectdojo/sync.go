@@ -105,7 +105,8 @@ func (s *SyncService) SyncTenant(ctx context.Context, tenantID shared.ID) (*Sync
 	}
 
 	report := ddimport.Convert(findings, ddimport.ConvertOptions{
-		SourceRef:   "defectdojo:" + intg.ID().String(),
+		// No OpenCTEM id goes into the document (CTIS 2.0): the integration
+		// binds through the ingest call, not the report.
 		ProductName: configString(intg, "product_name"),
 		Now:         time.Now().UTC(),
 	})

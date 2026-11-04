@@ -12,7 +12,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/metrics"
@@ -301,7 +301,11 @@ func (s *Service) admitUnsolicited(ctx context.Context, agt *sensor.Sensor, tena
 			item.ToolName = sub.Report.Tool.Name
 		}
 		if item.ReportID == "" {
-			item.ReportID = sub.Report.Metadata.ID
+			// The receiver's own id: metadata.id is the producer's key.
+			item.ReportID = reportIDOf(ctx)
+		}
+		if item.ReportID == "" {
+			item.ReportID = shared.NewID().String()
 		}
 	}
 	if err := s.results.Create(ctx, item, s.resultLimits); err != nil {
@@ -414,7 +418,7 @@ func (s *Service) AcceptQuarantined(ctx context.Context, actx auditapp.AuditCont
 	opts := Options{Binding: TrustedBinding(), Admitted: true, DeferAutoResolve: true, DeferSensorStats: true,
 		RequireAssetForFindings: true, NoCatalogWrites: true}
 	agt := &sensor.Sensor{ID: item.SensorID, TenantID: &tenantID, Type: sensor.SensorType(item.SensorType), Status: sensor.SensorStatusActive}
-	out, ingErr := s.Ingest(ctx, agt, Input{Report: &report, Options: opts})
+	out, ingErr := s.Ingest(ctx, agt, Input{Report: &report, ReportID: item.ReportID, Options: opts})
 	if ingErr == nil {
 		if err := s.results.Review(context.WithoutCancel(ctx), tenantID, id, sensorresult.StatusAccepted, by); err != nil {
 			s.logger.Error("quarantined report applied but not marked accepted", "quarantine_id", id.String(), "error", err)
@@ -548,12 +552,12 @@ func (s *Service) admitV2Segment(ctx context.Context, prov Provenance, report *c
 // about to queue (INGEST_MODE=async): nil lets it be queued, a
 // *QuarantinedError means it was stored for review instead, and
 // sensorresult.ErrFull that it was refused.
-func (s *Service) AdmitQueued(ctx context.Context, agt *sensor.Sensor, report *ctis.Report) error {
+func (s *Service) AdmitQueued(ctx context.Context, agt *sensor.Sensor, reportID string, report *ctis.Report) error {
 	if err := s.validateSensor(agt); err != nil {
 		return err
 	}
 	_, err := s.admitUnsolicited(ctx, agt, *agt.TenantID, unsolicitedSubmission{
-		Protocol: sensorresult.ProtocolV1, Route: "ctis", ReportID: report.Metadata.ID, Report: report,
+		Protocol: sensorresult.ProtocolV1, Route: "ctis", ReportID: reportID, Report: report,
 	})
 	return err
 }
@@ -598,7 +602,7 @@ func (s *Service) recordQuarantined(ctx context.Context, agt *sensor.Sensor, ten
 		addItem(out, report, &report.Findings[i], ingestreceipt.DispositionQuarantined, ingestreceipt.ReasonNoCommand,
 			ingestreceipt.PolicyQuarantine, nil)
 	}
-	d := &ingestreceipt.Delta{TenantID: tenantID, Source: receiptSource(agt, Binding{Kind: BindingUnsolicited}, Options{}, report),
+	d := &ingestreceipt.Delta{TenantID: tenantID, Source: receiptSource(agt, Binding{Kind: BindingUnsolicited}, Options{}, reportIDOf(ctx)),
 		Instance: receiptInstance(agt, Binding{Kind: BindingUnsolicited}, Options{}, report),
 		Received: len(report.Findings), Items: out.Items, At: time.Now()}
 	if report.Tool != nil {

@@ -37,7 +37,7 @@ import (
 // importers (every format the pin ships), from the module cache.
 func ctisImporterFixtures(t *testing.T) []string {
 	t.Helper()
-	out, err := exec.Command("go", "list", "-m", "-f", "{{.Dir}}", "github.com/openctemio/ctis").Output()
+	out, err := exec.CommandContext(context.Background(), "go", "list", "-m", "-f", "{{.Dir}}", "github.com/openctemio/ctis/v2").Output()
 	if err != nil {
 		t.Skipf("ctis module not resolvable: %v", err)
 	}
@@ -437,7 +437,7 @@ func TestFindingImport_RecordsTheProducer_DB(t *testing.T) {
 		t.Fatalf("file name stored: %q", rec.FilenameSHA256)
 	}
 	if n := ih.count(t, `SELECT count(*) FROM findings WHERE tenant_id = $1 AND scan_id = $2`, ih.tenantID, importID); n != rec.Counts.Created {
-		t.Fatalf("%d findings carry the import id, want %d", n, rec.Counts.Created)
+		t.Fatalf("%d findings carry the import id %s, want %d (scan ids %v)", n, importID, rec.Counts.Created, ih.scanIDs(t))
 	}
 	if n := ih.count(t, `SELECT count(*) FROM assets WHERE tenant_id = $1 AND import_id = $2`, ih.tenantID, importID); n != rec.AssetsCreated {
 		t.Fatalf("%d assets carry the import id, want %d", n, rec.AssetsCreated)
@@ -445,4 +445,24 @@ func TestFindingImport_RecordsTheProducer_DB(t *testing.T) {
 	if _, err := repo.Get(ctx, shared.NewID(), shared.MustIDFromString(importID)); !errors.Is(err, shared.ErrNotFound) {
 		t.Fatalf("another tenant read the import record: %v", err)
 	}
+}
+
+func (ih *importHarness) scanIDs(t *testing.T) []string {
+	rows, err := ih.db.QueryContext(context.Background(), `SELECT DISTINCT COALESCE(scan_id,'') FROM findings WHERE tenant_id = $1`, ih.tenantID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []string
+	for rows.Next() {
+		var s string
+		if err := rows.Scan(&s); err != nil {
+			t.Fatal(err)
+		}
+		out = append(out, s)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	return out
 }

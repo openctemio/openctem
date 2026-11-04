@@ -1,6 +1,8 @@
 package v2
 
 import (
+	"strconv"
+
 	"bytes"
 	"crypto/sha256"
 	"crypto/sha512"
@@ -14,17 +16,20 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	ctis "github.com/openctemio/ctis/v2"
 )
 
 var update = flag.Bool("update", false, "rewrite the golden files")
 
 func TestParseResultsContentType(t *testing.T) {
 	ok := []string{
-		"application/vnd.openctem.ctis.v1+json",
-		"Application/VND.OpenCTEM.CTIS.v1+JSON",
-		"application/vnd.openctem.ctis.v1+json; charset=utf-8",
-		"application/vnd.openctem.ctis.v1+json;charset=UTF-8",
-		`application/vnd.openctem.ctis.v1+json; charset="utf-8"`,
+		"application/vnd.ctis+json; version=2.0",
+		"application/vnd.ctis+json;version=2.3",
+		"Application/VND.CTIS+JSON; Version=2.0",
+		"application/vnd.ctis+json; version=2.0; charset=utf-8",
+		"application/vnd.ctis+json;charset=UTF-8;version=2.1",
+		`application/vnd.ctis+json; version="2.0"; charset="utf-8"`,
 	}
 	for _, v := range ok {
 		if err := ParseResultsContentType(v); err != nil {
@@ -37,14 +42,20 @@ func TestParseResultsContentType(t *testing.T) {
 		"application/json; charset=utf-8",
 		"text/plain",
 		"application/sarif+json",
-		"application/vnd.openctem.ctis+json",
-		"application/vnd.openctem.ctis+json; version=1",
-		"application/vnd.openctem.ctis.v2+json",
-		"application/vnd.openctem.ctis.v1+json; charset=latin1",
-		"application/vnd.openctem.ctis.v1+json; version=1",
-		"application/vnd.openctem.ctis.v1+json; charset=utf-8; x=y",
-		"application/vnd.openctem.ctis.v1+json,application/json",
-		"application/vnd.openctem.ctis.v1+json;;",
+		"application/vnd.openctem.ctis.v1+json",
+		"application/vnd.openctem.ctis.v1+json; version=2.0",
+		"application/vnd.ctis+json",
+		"application/vnd.ctis+json; charset=utf-8",
+		"application/vnd.ctis+json; version=1.6",
+		"application/vnd.ctis+json; version=2",
+		"application/vnd.ctis+json; version=3.0",
+		"application/vnd.ctis+json; version=2.x",
+		"application/vnd.ctis+json; version=2.",
+		"application/vnd.ctis+json; version=2.0; version=2.1",
+		"application/vnd.ctis+json; version=2.0; charset=latin1",
+		"application/vnd.ctis+json; version=2.0; x=y",
+		"application/vnd.ctis+json; version=2.0,application/json",
+		"application/vnd.ctis+json; version=2.0;;",
 	}
 	for _, v := range bad {
 		if err := ParseResultsContentType(v); err == nil {
@@ -160,12 +171,12 @@ func TestHasFeatureAndVersion(t *testing.T) {
 	if HasFeature([]string{"doorbell"}, FeatureResults) {
 		t.Error("feature found")
 	}
-	for _, v := range []string{"1", "1.0", "1.3"} {
+	for _, v := range []string{"2.0", "2.3", " 2.1"} {
 		if !CTISVersionMajorMatches(v) {
 			t.Errorf("%q", v)
 		}
 	}
-	for _, v := range []string{"", "2", "2.0", "10.1", "v1", " .1"} {
+	for _, v := range []string{"", "1", "1.6", "2", "3.0", "20.1", "v2", " .1"} {
 		if CTISVersionMajorMatches(v) {
 			t.Errorf("%q matched", v)
 		}
@@ -283,5 +294,17 @@ func golden(t *testing.T, name string, got []byte) {
 	}
 	if !bytes.Equal(want, got) {
 		t.Fatalf("%s differs from golden (a v2 wire change; rerun with -update only if intended)\n--- got ---\n%s", name, got)
+	}
+}
+
+func TestMediaTypeMatchesCTIS(t *testing.T) {
+	if MediaTypeCTISBase != ctis.MediaType || MediaTypeCTIS != ctis.MediaTypeVersioned {
+		t.Fatalf("wire constants drifted from ctis: %q %q", MediaTypeCTISBase, MediaTypeCTIS)
+	}
+	if CTISMajorVersion != strconv.Itoa(ctis.SchemaMajor) {
+		t.Fatalf("CTISMajorVersion %q != %d", CTISMajorVersion, ctis.SchemaMajor)
+	}
+	if err := ParseResultsContentType(ctis.MediaTypeVersioned); err != nil {
+		t.Fatal(err)
 	}
 }

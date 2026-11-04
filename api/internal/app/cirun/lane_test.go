@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/pkg/domain/ingestjob"
 )
@@ -29,7 +29,7 @@ func (k kevSet) AnyKEV(_ context.Context, ids []string) (bool, error) {
 // lookup failure never promotes.
 func TestUploadLane(t *testing.T) {
 	vuln := func(sev ctis.Severity, cve string) ctis.Finding {
-		return ctis.Finding{Type: ctis.FindingTypeVulnerability, Severity: sev, Vulnerability: &ctis.VulnerabilityDetails{CVEID: cve}}
+		return ctis.Finding{Type: ctis.FindingTypeVulnerability, Severity: sev, Vulnerability: vulnWithCVE(cve)}
 	}
 	cases := []struct {
 		name string
@@ -50,4 +50,12 @@ func TestUploadLane(t *testing.T) {
 			t.Errorf("%s: lane %s, want %s", c.name, got, c.want)
 		}
 	}
+}
+
+func vulnWithCVE(cve string) *ctis.VulnerabilityDetails {
+	v := &ctis.VulnerabilityDetails{}
+	if cve != "" {
+		v.AddID(cve, "test")
+	}
+	return v
 }

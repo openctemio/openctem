@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
@@ -57,8 +57,8 @@ func (g *reconcileRig) events(name, attribute string) []timelineEvent {
 func (g *reconcileRig) importReport(kind asset.SourceKind, run string, observed time.Time, a ctis.Asset) {
 	g.t.Helper()
 	tid := g.tn.tenant
-	rep := &ctis.Report{Version: "1.0", Tool: &ctis.Tool{Name: "feed"}, Assets: []ctis.Asset{a},
-		Metadata: ctis.ReportMetadata{Timestamp: observed}}
+	rep := &ctis.Report{Version: ctis.SchemaVersion, Tool: &ctis.Tool{Name: "feed"}, Assets: []ctis.Asset{a},
+		Metadata: ctis.ReportMetadata{ID: ctis.NewReportID(), GeneratedAt: observed}}
 	agt := &sensor.Sensor{TenantID: &tid, Status: sensor.SensorStatusActive}
 	opts := ingest.Options{SourceKind: kind, SourceName: string(kind) + "-feed", SourceRun: run}
 	if out, err := g.r.svc.Ingest(context.Background(), agt, ingest.Input{Report: rep, Options: opts}); err != nil || len(out.Errors) > 0 {
@@ -224,10 +224,10 @@ func TestAssetTimeline_SensorClockIsClamped(t *testing.T) {
 	tid := g.tn.tenant
 	dispatched := time.Now().UTC().Add(-time.Hour).Truncate(time.Millisecond)
 	a := reconHost(name)
-	a.IsInternetAccessible = true
-	rep := &ctis.Report{Version: "1.0", Tool: &ctis.Tool{Name: "nmap"}, Assets: []ctis.Asset{a},
+	a.IsInternetAccessible = ctis.Bool(true)
+	rep := &ctis.Report{Version: ctis.SchemaVersion, Tool: &ctis.Tool{Name: "nmap"}, Assets: []ctis.Asset{a},
 		// The sensor claims it saw this two days ago, before it was given the job.
-		Metadata: ctis.ReportMetadata{Timestamp: dispatched.Add(-48 * time.Hour)}}
+		Metadata: ctis.ReportMetadata{ID: ctis.NewReportID(), GeneratedAt: dispatched.Add(-48 * time.Hour)}}
 	agt := &sensor.Sensor{ID: g.tn.sensor, TenantID: &tid, Type: sensor.SensorTypeWorker, Status: sensor.SensorStatusActive}
 	cmdID := shared.NewID()
 	opts := ingest.Options{Binding: ingest.Binding{Kind: ingest.BindingCommand, CommandID: &cmdID, Targets: []string{name}, DispatchedAt: dispatched}}
@@ -351,7 +351,7 @@ func TestAssetTimeline_FeedSourceKind(t *testing.T) {
 	now := time.Now().UTC()
 	g.importReport(asset.SourceKindImport, "", now.Add(-time.Hour), withClaims(reconHost(name), "low", "", ""))
 	a := withClaims(reconHost(name), "critical", "", "")
-	a.IsInternetAccessible = true
+	a.IsInternetAccessible = ctis.Bool(true)
 	g.importReport(asset.SourceKindFeed, "seq-42", now, a)
 	crit, _, exp, _ := g.attrs(name)
 	if crit != "low" || exp != "public" {

@@ -44,7 +44,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/openctemio/ctis/transfer/bundle"
+	"github.com/openctemio/contract/transfer/bundle"
 
 	"github.com/openctemio/openctem/api/internal/app/consolesetting"
 	"github.com/openctemio/openctem/api/pkg/domain/admin"

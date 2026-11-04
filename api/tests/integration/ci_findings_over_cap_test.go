@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/pkg/domain/cirun"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -23,7 +23,7 @@ func TestCIRunOverFindingsCapFailsClosed(t *testing.T) {
 	r := newCIRig(t)
 	ctx := context.Background()
 	cfg := r.trust(r.tenant, cirun.Rules{Owners: []string{"acme"}})
-	host := strings.TrimPrefix(r.idp.srv.URL, "https://")
+	host := strings.TrimPrefix(r.idp.url, "https://")
 	repoName := strings.ToLower(host) + "/acme/api"
 	const sha = "6666666666666666666666666666666666666666"
 

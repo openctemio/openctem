@@ -17,7 +17,7 @@ import {
 } from '@/features/validation/lib/overview-queries'
 
 const state = {
-  moduleIds: ['findings', 'pentest', 'attack_simulation', 'control_testing', 'mitre_coverage'],
+  moduleIds: ['findings', 'pentest', 'attack_simulation', 'control_testing'],
   notEntitled: [] as string[],
   perms: new Set<string>(),
   counts: {} as Record<string, number>,
@@ -88,13 +88,7 @@ vi.mock('@/features/pentest/api/use-pentest-api', () => ({
   },
 }))
 
-const ALL_MODULES = [
-  'findings',
-  'pentest',
-  'attack_simulation',
-  'control_testing',
-  'mitre_coverage',
-]
+const ALL_MODULES = ['findings', 'pentest', 'attack_simulation', 'control_testing']
 
 beforeEach(() => {
   state.moduleIds = [...ALL_MODULES]
@@ -196,7 +190,7 @@ describe('Validation overview', () => {
   })
 
   it('with pentest off: no pentest request, its rows leave, awaiting counts pentest findings too', () => {
-    state.moduleIds = ['findings', 'mitre_coverage']
+    state.moduleIds = ['findings', 'attack_simulation', 'control_testing']
     state.counts[findingsHref(awaitingValidationQuery(false))] = 7
     render(<ValidationOverviewPage />)
     expect(pentestQueries.every((q) => q === null)).toBe(true)
@@ -210,7 +204,7 @@ describe('Validation overview', () => {
   })
 
   it('tells owners and admins which modules are off, and nobody else', () => {
-    state.moduleIds = ['findings', 'pentest', 'mitre_coverage']
+    state.moduleIds = ['findings', 'pentest']
     const { unmount } = render(<ValidationOverviewPage />)
     expect(screen.queryByTestId('validation-modules-off')).toBeNull()
     unmount()
@@ -228,9 +222,8 @@ describe('Validation overview', () => {
 
 describe('switchedOffModules', () => {
   it('names entitled modules that are off', () => {
-    expect(switchedOffModules(['findings', 'pentest'], ['mitre_coverage'], false)).toEqual([
+    expect(switchedOffModules(['findings', 'pentest'], ['control_testing'], false)).toEqual([
       'attack_simulation',
-      'control_testing',
     ])
   })
   it('names none while loading or when the API reports no module list', () => {

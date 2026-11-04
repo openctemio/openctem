@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
@@ -189,15 +189,18 @@ func TestIngest_FormerKeyLandsOnTheFinding(t *testing.T) {
 	agt := &sensor.Sensor{ID: tn.sensor, TenantID: &tid, Type: sensor.SensorTypeWorker, Status: sensor.SensorStatusActive}
 	scan := func() {
 		t.Helper()
-		rep := &ctis.Report{Version: "1.0", Tool: &ctis.Tool{Name: "trivy"},
-			Metadata: ctis.ReportMetadata{ID: shared.NewID().String(), Timestamp: time.Now().UTC()},
+		rep := &ctis.Report{Version: ctis.SchemaVersion, Tool: &ctis.Tool{Name: "trivy"},
+			Metadata: ctis.ReportMetadata{ID: ctis.NewReportID(), GeneratedAt: time.Now().UTC()},
 			Assets:   []ctis.Asset{{ID: "h", Type: ctis.AssetTypeHost, Value: "alias-" + tn.tenant.String()[:8] + ".example.com"}},
 			Findings: []ctis.Finding{{Type: ctis.FindingTypeVulnerability, Title: "OpenSSH regreSSHion",
 				Severity: ctis.SeverityHigh, RuleID: "CVE-2024-6387", AssetRef: "h",
-				Vulnerability: &ctis.VulnerabilityDetails{CVEID: "CVE-2024-6387"},
-				Network:       &ctis.NetworkLocation{Port: 22, Protocol: "tcp"}}}}
+				Vulnerability: &ctis.VulnerabilityDetails{IDs: cveIDsOf("CVE-2024-6387")},
+				Network:       &ctis.NetworkLocation{Port: 22, Transport: ctis.TransportTCP}}}}
 		out, err := svc.Ingest(context.Background(), agt, ingest.Input{Report: rep})
-		if err != nil || len(out.Errors) > 0 {
+		if err != nil {
+			t.Fatalf("ingest: %v", err)
+		}
+		if len(out.Errors) > 0 {
 			t.Fatalf("ingest: %v %v", err, out.Errors)
 		}
 	}

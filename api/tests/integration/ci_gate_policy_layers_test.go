@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	cirunapp "github.com/openctemio/openctem/api/internal/app/cirun"
 	"github.com/openctemio/openctem/api/pkg/domain/cirun"
@@ -26,7 +26,7 @@ func TestCIGatePolicyLayers(t *testing.T) {
 	r := newCIRig(t)
 	ctx := context.Background()
 	cfg := r.trust(r.tenant, cirun.Rules{Owners: []string{"acme"}})
-	host := strings.TrimPrefix(r.idp.srv.URL, "https://")
+	host := strings.TrimPrefix(r.idp.url, "https://")
 	repoName := strings.ToLower(host) + "/acme/layers"
 	const sha = "8888888888888888888888888888888888888888"
 	medium := ciFinding("Weak hash", "go.weak-hash", "medium", ctis.FindingTypeVulnerability, "hash.go", 10)
@@ -233,7 +233,7 @@ func TestCIGatePolicyLayers_BaselineSettings(t *testing.T) {
 	r := newCIRig(t)
 	ctx := context.Background()
 	cfg := r.trust(r.tenant, cirun.Rules{Owners: []string{"acme"}})
-	host := strings.TrimPrefix(r.idp.srv.URL, "https://")
+	host := strings.TrimPrefix(r.idp.url, "https://")
 	repoName := strings.ToLower(host) + "/acme/graced"
 	const sha = "6666666666666666666666666666666666666666"
 	high := ciFinding("SQL injection", "go.sqli", "high", ctis.FindingTypeVulnerability, "db.go", 7)
@@ -322,7 +322,7 @@ func TestCIGateBaseline_FirstRunIsAnnounced(t *testing.T) {
 	alerts := &alertRecorder{}
 	r := newCIRigWith(t, cirunapp.Config{WebBaseURL: "https://console.example"}, func(d *cirunapp.Deps) { d.Alerts = alerts })
 	cfg := r.trust(r.tenant, cirun.Rules{Owners: []string{"acme"}})
-	repoName := strings.ToLower(strings.TrimPrefix(r.idp.srv.URL, "https://")) + "/acme/announced"
+	repoName := strings.ToLower(strings.TrimPrefix(r.idp.url, "https://")) + "/acme/announced"
 	const sha = "6666666666666666666666666666666666666661"
 	run := func(job string) map[string]any {
 		t.Helper()

@@ -1,0 +1,5 @@
+### Added: report a bug, send feedback or report a vulnerability from the Help menu
+
+- The Help menu (app and admin console) and the command palette now separate "Report a bug", "Send feedback" and "Report a security vulnerability". A vulnerability never goes to a public issue: it opens the security policy, or the operator's security contact.
+- Error pages and failed-to-load states get "Report this problem" and "Copy diagnostics". The diagnostics are the version, the channel, the browser, the error code and request ID, and the route with ids and query stripped. They never include organization names, e-mail addresses, domains or data. The link only opens the project's issue form in the user's browser (the platform makes no outbound call); "Copy diagnostics" serves installs without internet access.
+- Console > System > Legal can repoint "Report a bug" and "Send feedback" to the operator's own tracker or helpdesk, or hide them (with the error pages' report link). The change is audited like the other legal settings. The security entry follows the existing security contact and policy link.
