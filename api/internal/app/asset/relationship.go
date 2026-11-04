@@ -22,6 +22,9 @@ type AssetRelationshipService struct {
 	// its assets, so a scoped member sees and changes only relationships
 	// whose source and target are both in scope.
 	dataScope *datascope.Enforcer
+
+	// graph reads neighborhoods and lineages (nil = the asset alone).
+	graph assetdom.GraphReader
 }
 
 // SetDataScope wires the Layer 2 data-scope enforcer.

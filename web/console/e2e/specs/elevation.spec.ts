@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test'
+import { test, expect, type Locator, type Page } from '@playwright/test'
 import { STATE_FILE, credentials } from '../helpers/session'
 import { freshTotp } from '../helpers/totp'
 
@@ -34,6 +34,16 @@ async function endElevation(page: Page) {
   }, s.csrf_token)
 }
 
+/** Clicks a submit button unless the form already submitted itself. */
+async function clickIfEnabled(button: Locator) {
+  try {
+    await expect(button).toBeEnabled({ timeout: 2_000 })
+  } catch {
+    return // disabled: submitting already, or the dialog has closed
+  }
+  await button.click({ timeout: 5_000 }).catch(() => undefined)
+}
+
 test('read-only, elevate with a code, then a protected page renders', async ({ page }) => {
   await page.goto('/')
   await endElevation(page)
@@ -51,13 +61,23 @@ test('read-only, elevate with a code, then a protected page renders', async ({ p
     .click()
   const dialog = page.getByRole('dialog')
   await dialog.getByLabel('Reason').fill('console e2e elevation flow')
-  await dialog.getByRole('button', { name: /^Elevate/ }).click()
 
-  // The authenticator code: asked in this dialog or the step-up one that follows.
+  // The dialog asks for the authenticator code next to the reason, and its
+  // Elevate button stays disabled until the code is complete. The code field
+  // may submit the form itself on the last digit, so Elevate is clicked only
+  // while it is still there and enabled. A key-only console has no code field
+  // here: Elevate comes first and the step-up dialog asks for the code.
   const code = page.locator('input[autocomplete="one-time-code"]').first()
-  await code.waitFor({ timeout: 15_000 })
-  await code.fill(await freshTotp(credentials().totpSecret))
-  await page.keyboard.press('Enter')
+  const submit = dialog.getByRole('button', { name: /^Elevate/ })
+  if (await code.isVisible()) {
+    await code.fill(await freshTotp(credentials().totpSecret))
+    await clickIfEnabled(submit)
+  } else {
+    await submit.click()
+    await code.waitFor({ timeout: 15_000 })
+    await code.fill(await freshTotp(credentials().totpSecret))
+    await page.keyboard.press('Enter')
+  }
 
   await expect
     .poll(async () => (await identity(page)).elevated_as, { timeout: 20_000 })

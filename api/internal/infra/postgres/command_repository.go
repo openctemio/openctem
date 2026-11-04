@@ -1898,23 +1898,28 @@ func (r *CommandRepository) StepBatchState(ctx context.Context, tenantID, stepRu
 // sensor that holds or ran them, with their states. Tenant-scoped on the
 // commands, the run and the sensor; a platform job is counted as platform
 // without naming the platform sensor; a command nobody holds counts under no
-// sensor.
+// sensor. Of the pending ones it counts why they wait: hosts another task of
+// the tenant holds (hostFreePredicate, the claim's own gate), and, of the
+// rest, a refusal by a sensor's local policy.
 func (r *CommandRepository) StepSensorShares(ctx context.Context, tenantID, runID shared.ID) ([]command.StepSensorShare, error) {
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT sr.step_key,
-		       CASE WHEN c.is_platform_job THEN NULL ELSE s.id END,
-		       CASE WHEN c.is_platform_job THEN '' ELSE COALESCE(s.name, '') END,
-		       c.is_platform_job,
+		       CASE WHEN commands.is_platform_job THEN NULL ELSE s.id END,
+		       CASE WHEN commands.is_platform_job THEN '' ELSE COALESCE(s.name, '') END,
+		       commands.is_platform_job,
 		       count(*),
-		       count(*) FILTER (WHERE c.status = 'pending'),
-		       count(*) FILTER (WHERE c.status IN ('acknowledged', 'running')),
-		       count(*) FILTER (WHERE c.status = 'completed'),
-		       count(*) FILTER (WHERE c.status IN ('failed', 'expired', 'canceled'))
-		FROM commands c
-		JOIN scan_run_steps sr ON sr.id = c.scan_run_step_id
-		JOIN scan_runs pr ON pr.id = sr.scan_run_id AND pr.tenant_id = c.tenant_id
-		LEFT JOIN sensors s ON s.id = c.sensor_id AND s.tenant_id = c.tenant_id
-		WHERE c.tenant_id = $1 AND pr.id = $2
+		       count(*) FILTER (WHERE commands.status = 'pending'),
+		       count(*) FILTER (WHERE commands.status IN ('acknowledged', 'running')),
+		       count(*) FILTER (WHERE commands.status = 'completed'),
+		       count(*) FILTER (WHERE commands.status IN ('failed', 'expired', 'canceled')),
+		       count(*) FILTER (WHERE commands.status = 'pending' AND NOT `+hostFreePredicate+`),
+		       count(*) FILTER (WHERE commands.status = 'pending' AND COALESCE(cardinality(commands.refused_by), 0) > 0
+		                          AND `+hostFreePredicate+`)
+		FROM commands
+		JOIN scan_run_steps sr ON sr.id = commands.scan_run_step_id
+		JOIN scan_runs pr ON pr.id = sr.scan_run_id AND pr.tenant_id = commands.tenant_id
+		LEFT JOIN sensors s ON s.id = commands.sensor_id AND s.tenant_id = commands.tenant_id
+		WHERE commands.tenant_id = $1 AND pr.id = $2
 		GROUP BY 1, 2, 3, 4
 		ORDER BY 1, 3`,
 		tenantID.String(), runID.String())
@@ -1927,7 +1932,8 @@ func (r *CommandRepository) StepSensorShares(ctx context.Context, tenantID, runI
 		var sh command.StepSensorShare
 		var sensorID sql.NullString
 		if err := rows.Scan(&sh.StepKey, &sensorID, &sh.SensorName, &sh.Platform,
-			&sh.Total, &sh.Queued, &sh.Running, &sh.Completed, &sh.Failed); err != nil {
+			&sh.Total, &sh.Queued, &sh.Running, &sh.Completed, &sh.Failed,
+			&sh.QueuedHostsBusy, &sh.QueuedRefused); err != nil {
 			return nil, fmt.Errorf("step sensor shares: %w", err)
 		}
 		if sensorID.Valid {
