@@ -29,7 +29,7 @@ func (r *ciScopeRig) legacyTrust(tenantID shared.ID, owners ...string) *cirun.Tr
 	r.t.Helper()
 	now := time.Now().UTC()
 	c := &cirun.TrustConfig{ID: shared.NewID(), TenantID: tenantID, Name: "legacy-" + shared.NewID().String()[28:],
-		Provider: cirun.ProviderGitLab, Issuer: r.idp.srv.URL, Rules: cirun.Rules{Owners: owners}, Enabled: true,
+		Provider: cirun.ProviderGitLab, Issuer: r.idp.url, Rules: cirun.Rules{Owners: owners}, Enabled: true,
 		CreatedAt: now, UpdatedAt: now}
 	c.Normalize()
 	if err := c.Validate(); err != nil {

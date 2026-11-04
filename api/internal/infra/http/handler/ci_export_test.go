@@ -41,7 +41,7 @@ const ddExport = `{"findings": [
 // export and a CTIS report are told apart before they are queued (the
 // worker converts an export).
 func TestCIUpload_AcceptedWithLocation(t *testing.T) {
-	ctisBody := `{"version":"1.4","metadata":{"timestamp":"2026-10-05T00:00:00Z"},"assets":[{"id":"r","type":"repository","value":"github.com/acme/api"}],"findings":[]}`
+	ctisBody := `{"version":"2.0","metadata":{"id":"01936f4e-7b8c-7d4e-9f00-0123456789ab","generated_at":"2026-10-05T00:00:00Z","channel":"scanner"},"tool":{"name":"semgrep","techniques":["sast"]},"assets":[{"id":"r","type":"repository","value":"github.com/acme/api"}],"findings":[]}`
 	for name, tc := range map[string]struct {
 		body   string
 		export bool

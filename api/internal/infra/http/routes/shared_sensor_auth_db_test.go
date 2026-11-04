@@ -73,12 +73,12 @@ func TestSharedSensor_AuthenticatesWithoutTenant_DB(t *testing.T) {
 	// results routes answer 403 scope-denied, for its own report id and for
 	// an organization sensor's report alike.
 	theirs := newReportID()
-	resp, raw := h.do(http.MethodPut, "/api/v2/sensor/results/"+theirs, v2Segment("semgrep", "1.0", "a"))
+	resp, raw := h.do(http.MethodPut, "/api/v2/sensor/results/"+theirs, v2Segment("semgrep", "2.0", "a"))
 	h.expect(resp, raw, 202, "")
 	tenantKey := h.key
 	h.key = key
 	for _, path := range []string{"/api/v2/sensor/results/" + theirs, "/api/v2/sensor/results/" + newReportID()} {
-		resp, raw = h.do(http.MethodPut, path, v2Segment("semgrep", "1.0", "zzz"))
+		resp, raw = h.do(http.MethodPut, path, v2Segment("semgrep", "2.0", "zzz"))
 		h.expect(resp, raw, http.StatusForbidden, "scope-denied")
 		resp, raw = h.do(http.MethodGet, path, nil)
 		h.expect(resp, raw, http.StatusForbidden, "scope-denied")

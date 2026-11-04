@@ -15,7 +15,10 @@ vi.mock('next-themes', () => ({ useTheme: () => ({ setTheme: vi.fn() }) }))
 vi.mock('@/context/search-provider', () => ({
   useSearch: () => ({ open: true, setOpen: vi.fn() }),
 }))
-vi.mock('@/context/brand-provider', () => ({ useDocsHref: () => (u: string) => u }))
+vi.mock('@/context/brand-provider', async (orig) => ({
+  ...(await orig<typeof import('@/context/brand-provider')>()),
+  useDocsHref: () => (u: string) => u,
+}))
 vi.mock('@/lib/permissions', async (orig) => ({
   ...(await orig<typeof import('@/lib/permissions')>()),
   useFilteredSidebarData: () => ({

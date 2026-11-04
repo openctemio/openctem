@@ -168,11 +168,11 @@ func TestRequiredToEnable_SoftDepsNotReported(t *testing.T) {
 }
 
 // TestTransitiveDependencies_WalksHardEdges — enabling
-// `business_impact` transitively requires business_services then
-// assets (business_services hard-deps assets).
+// `ctem_cycles` transitively requires scope_config then assets
+// (scope_config hard-deps assets).
 func TestTransitiveDependencies_WalksHardEdges(t *testing.T) {
-	deps := TransitiveDependencies("business_impact")
-	want := map[string]bool{"business_services": true, "assets": true}
+	deps := TransitiveDependencies("ctem_cycles")
+	want := map[string]bool{"scope_config": true, "assets": true}
 	for _, d := range deps {
 		delete(want, d)
 	}

@@ -72,7 +72,7 @@ func newSensorHarness(t *testing.T) *sensorHarness {
 	doorbell.QueryTimeout = time.Minute
 	ih.SetDoorbell(sensor.NewDoorbell(cmdRepo, doorbell.Normalized(5*time.Minute, 0), log))
 	ch := NewCommandHandler(command.NewService(cmdRepo, log), validator.New(), log)
-	ctl := NewSensorControlV2Handler(ih, ch, nil, nil, log)
+	ctl := NewSensorControlV2Handler(ih, ch, nil, log)
 
 	r := chi.NewRouter()
 	r.With(ih.AuthenticateSource).Post(heartbeatPath, ctl.Heartbeat)

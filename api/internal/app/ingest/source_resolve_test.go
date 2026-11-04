@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -38,19 +38,19 @@ func (r *sourceResolveRepo) ResolveSourceMitigated(_ context.Context, tenantID s
 func tenableReport(mitigated bool) *ctis.Report {
 	open := ctis.Finding{Type: ctis.FindingTypeVulnerability, Title: "OpenSSH", Severity: ctis.SeverityHigh,
 		RuleID: "187201", AssetRef: "host-10.0.0.5",
-		Vulnerability: &ctis.VulnerabilityDetails{CVEID: "CVE-2024-6387", CVEIDs: []string{"CVE-2024-6387"}},
-		Network:       &ctis.NetworkLocation{Host: "10.0.0.5", Port: 22, Protocol: "tcp"},
+		Vulnerability: &ctis.VulnerabilityDetails{IDs: cveIDs("CVE-2024-6387")},
+		Network:       &ctis.NetworkLocation{Host: "10.0.0.5", Port: 22, Transport: "tcp"},
 		Properties:    ctis.Properties{"tenable_state": "open"}}
 	findings := []ctis.Finding{open}
 	if mitigated {
 		m := open
 		m.RuleID = "11111"
-		m.Vulnerability = &ctis.VulnerabilityDetails{CVEID: "CVE-2023-0001", CVEIDs: []string{"CVE-2023-0001"}}
+		m.Vulnerability = &ctis.VulnerabilityDetails{IDs: cveIDs("CVE-2023-0001")}
 		m.Status = ctis.FindingStatusResolved
 		m.Properties = ctis.Properties{"tenable_state": "mitigated", "tenable_last_mitigated": "2026-10-01T08:00:00Z"}
 		findings = append(findings, m)
 	}
-	return &ctis.Report{Version: "1.0", Tool: &ctis.Tool{Name: "tenable_sc"}, Findings: findings}
+	return &ctis.Report{Version: ctis.SchemaVersion, Tool: &ctis.Tool{Name: "tenable_sc"}, Findings: findings}
 }
 
 func runTenable(t *testing.T, mode SourceResolveMode, scope *alterScope, report *ctis.Report, repo *sourceResolveRepo) *Output {

@@ -3,6 +3,7 @@ package integration
 import (
 	"context"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -65,10 +66,7 @@ func TestCIRunner_VerdictSeesConcurrentReport(t *testing.T) {
 	}
 
 	// After the verdict an upload is refused (409), never recorded unseen.
-	resp, body := r.upload(runID, token, map[string]any{
-		"version": "1.0", "metadata": map[string]any{"source_type": "scanner"},
-		"tool": map[string]any{"name": "semgrep"},
-	})
+	resp, body := r.upload(runID, token, ciReport(strings.ToLower(strings.TrimPrefix(r.idp.url, "https://"))+"/acme/api"))
 	if resp.StatusCode != http.StatusConflict {
 		t.Fatalf("upload after the verdict: %d %v", resp.StatusCode, body)
 	}

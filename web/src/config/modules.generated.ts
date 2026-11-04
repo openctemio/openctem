@@ -11,6 +11,7 @@ export interface ModuleDefinition {
   release: ModuleRelease
   userFacing: boolean
   permission?: string
+  scope?: 'platform'
 }
 
 export const MODULE_REGISTRY: readonly ModuleDefinition[] = [
@@ -30,7 +31,6 @@ export const MODULE_REGISTRY: readonly ModuleDefinition[] = [
   { id: 'components', name: 'Components', core: false, release: 'released', userFacing: true, permission: 'assets:components:read' },
   { id: 'template_sources', name: 'Rule Sources', core: false, release: 'released', userFacing: true, permission: 'scans:sources:read' },
   { id: 'branches', name: 'Branches', core: false, release: 'released', userFacing: false, permission: 'assets:read' },
-  { id: 'crown_jewels', name: 'Crown Jewels', core: false, release: 'released', userFacing: true, permission: 'assets:read' },
   { id: 'scan_workflows', name: 'Scan Workflows', core: false, release: 'released', userFacing: true, permission: 'scans:workflows:read' },
   { id: 'threat_model', name: 'Threat Model', core: false, release: 'released', userFacing: true, permission: 'assets:read' },
   { id: 'threat_intel', name: 'Threat Intel', core: false, release: 'released', userFacing: true, permission: 'threat_intel:read' },
@@ -38,31 +38,17 @@ export const MODULE_REGISTRY: readonly ModuleDefinition[] = [
   { id: 'ai_triage', name: 'AI Triage', core: false, release: 'released', userFacing: false, permission: 'ai_triage:read' },
   { id: 'sla', name: 'SLA Management', core: true, release: 'released', userFacing: true, permission: 'settings:sla:read' },
   { id: 'priority_rules', name: 'Priority Rules', core: false, release: 'released', userFacing: true, permission: 'findings:read' },
-  { id: 'risk_analysis', name: 'Risk Analysis', core: false, release: 'released', userFacing: true, permission: 'findings:read' },
-  { id: 'business_impact', name: 'Business Impact', core: false, release: 'released', userFacing: true, permission: 'ctem:business_services:read' },
-  { id: 'risk_scoring', name: 'Risk Scoring', core: false, release: 'released', userFacing: true, permission: 'settings:read' },
+  { id: 'risk_scoring', name: 'Risk Scoring', core: true, release: 'released', userFacing: true, permission: 'settings:read' },
   { id: 'pentest', name: 'Penetration Testing', core: false, release: 'released', userFacing: true, permission: 'pentest:campaigns:read' },
   { id: 'attack_simulation', name: 'Attack Simulation', core: false, release: 'beta', userFacing: true },
   { id: 'control_testing', name: 'Control Testing', core: false, release: 'beta', userFacing: true },
   { id: 'compensating_controls', name: 'Compensating Controls', core: false, release: 'released', userFacing: true, permission: 'ctem:compensating_controls:read' },
   { id: 'remediation', name: 'Remediation', core: false, release: 'released', userFacing: true, permission: 'findings:remediation:read' },
-  { id: 'suppressions', name: 'Suppressions', core: false, release: 'released', userFacing: true, permission: 'findings:suppressions:read' },
+  { id: 'suppressions', name: 'Suppressions', core: true, release: 'released', userFacing: true, permission: 'findings:suppressions:read' },
   { id: 'workflows', name: 'Workflows', core: false, release: 'released', userFacing: true, permission: 'automations:read' },
   { id: 'reports', name: 'Reports', core: false, release: 'released', userFacing: true, permission: 'reports:read' },
   { id: 'audit', name: 'Audit', core: true, release: 'released', userFacing: true, permission: 'audit:read' },
-  { id: 'ctem_maturity', name: 'CTEM Maturity', core: false, release: 'released', userFacing: true, permission: 'dashboard:read' },
-  { id: 'executive_summary', name: 'Executive Summary', core: false, release: 'released', userFacing: true, permission: 'reports:read' },
-  { id: 'mitre_coverage', name: 'MITRE Coverage', core: false, release: 'released', userFacing: true, permission: 'threat_intel:read' },
-  { id: 'sbom_export', name: 'SBOM Export', core: false, release: 'released', userFacing: true, permission: 'assets:components:read' },
   { id: 'integrations', name: 'Integrations', core: true, release: 'released', userFacing: true, permission: 'integrations:read' },
-  { id: 'integrations.scm', name: 'SCM Integrations', core: false, parent: 'integrations', release: 'released', userFacing: false },
-  { id: 'integrations.notifications', name: 'Notification Channels', core: true, parent: 'integrations', release: 'released', userFacing: false },
-  { id: 'integrations.ticketing', name: 'Ticketing', core: false, parent: 'integrations', release: 'released', userFacing: false },
-  { id: 'integrations.cloud', name: 'Cloud Providers', core: false, parent: 'integrations', release: 'released', userFacing: false },
-  { id: 'integrations.siem', name: 'SIEM', core: false, parent: 'integrations', release: 'released', userFacing: false },
-  { id: 'integrations.scanners', name: 'Scanners', core: false, parent: 'integrations', release: 'released', userFacing: false },
-  { id: 'integrations.api', name: 'API Integrations', core: false, parent: 'integrations', release: 'released', userFacing: false },
-  { id: 'integrations.pipelines', name: 'Pipeline Integrations', core: false, parent: 'integrations', release: 'released', userFacing: false },
   { id: 'sensors', name: 'Sensors', core: true, release: 'released', userFacing: false, permission: 'sensors:read' },
   { id: 'team', name: 'Team', core: true, release: 'released', userFacing: true, permission: 'team:read' },
   { id: 'groups', name: 'Groups', core: true, release: 'released', userFacing: false, permission: 'team:groups:read' },
@@ -70,8 +56,6 @@ export const MODULE_REGISTRY: readonly ModuleDefinition[] = [
   { id: 'settings', name: 'Settings', core: true, release: 'released', userFacing: true, permission: 'settings:read' },
   { id: 'api_keys', name: 'API Keys', core: true, release: 'released', userFacing: false, permission: 'integrations:api_keys:read' },
   { id: 'notification_settings', name: 'Notifications', core: true, release: 'released', userFacing: false, permission: 'integrations:notifications:read' },
-  { id: 'tools', name: 'Tools', core: false, release: 'released', userFacing: false, permission: 'scans:tools:read' },
-  { id: 'scan_profiles', name: 'Scan Profiles', core: false, release: 'released', userFacing: false, permission: 'scans:profiles:read' },
   { id: 'iocs', name: 'IOCs', core: false, release: 'released', userFacing: true, permission: 'threat_intel:read' },
   { id: 'compliance', name: 'Compliance', core: false, release: 'released', userFacing: true, permission: 'compliance:frameworks:read' },
 ]
@@ -93,7 +77,6 @@ export type ModuleId =
   | 'components'
   | 'template_sources'
   | 'branches'
-  | 'crown_jewels'
   | 'scan_workflows'
   | 'threat_model'
   | 'threat_intel'
@@ -101,8 +84,6 @@ export type ModuleId =
   | 'ai_triage'
   | 'sla'
   | 'priority_rules'
-  | 'risk_analysis'
-  | 'business_impact'
   | 'risk_scoring'
   | 'pentest'
   | 'attack_simulation'
@@ -113,19 +94,7 @@ export type ModuleId =
   | 'workflows'
   | 'reports'
   | 'audit'
-  | 'ctem_maturity'
-  | 'executive_summary'
-  | 'mitre_coverage'
-  | 'sbom_export'
   | 'integrations'
-  | 'integrations.scm'
-  | 'integrations.notifications'
-  | 'integrations.ticketing'
-  | 'integrations.cloud'
-  | 'integrations.siem'
-  | 'integrations.scanners'
-  | 'integrations.api'
-  | 'integrations.pipelines'
   | 'sensors'
   | 'team'
   | 'groups'
@@ -133,13 +102,58 @@ export type ModuleId =
   | 'settings'
   | 'api_keys'
   | 'notification_settings'
-  | 'tools'
-  | 'scan_profiles'
   | 'iocs'
   | 'compliance'
 
 /** Every module id of the registry. */
 export const MODULE_IDS: ReadonlySet<string> = new Set(MODULE_REGISTRY.map((m) => m.id))
+
+/** Module ids by name, for route guards and navigation: Module.Findings === 'findings'. */
+export const Module = {
+  Dashboard: 'dashboard',
+  Assets: 'assets',
+  Findings: 'findings',
+  Scans: 'scans',
+  AttackSurface: 'attack_surface',
+  ScopeConfig: 'scope_config',
+  BusinessServices: 'business_services',
+  CTEMCycles: 'ctem_cycles',
+  AttackerProfiles: 'attacker_profiles',
+  Credentials: 'credentials',
+  Relationships: 'relationships',
+  ScannerTemplates: 'scanner_templates',
+  BusinessUnits: 'business_units',
+  Components: 'components',
+  TemplateSources: 'template_sources',
+  Branches: 'branches',
+  ScanWorkflows: 'scan_workflows',
+  ThreatModel: 'threat_model',
+  ThreatIntel: 'threat_intel',
+  Exposures: 'exposures',
+  AITriage: 'ai_triage',
+  SLA: 'sla',
+  PriorityRules: 'priority_rules',
+  RiskScoring: 'risk_scoring',
+  Pentest: 'pentest',
+  AttackSimulation: 'attack_simulation',
+  ControlTesting: 'control_testing',
+  CompensatingControls: 'compensating_controls',
+  Remediation: 'remediation',
+  Suppressions: 'suppressions',
+  Workflows: 'workflows',
+  Reports: 'reports',
+  Audit: 'audit',
+  Integrations: 'integrations',
+  Sensors: 'sensors',
+  Team: 'team',
+  Groups: 'groups',
+  Roles: 'roles',
+  Settings: 'settings',
+  APIKeys: 'api_keys',
+  NotificationSettings: 'notification_settings',
+  IOCs: 'iocs',
+  Compliance: 'compliance',
+} as const
 
 /** Modules that are always on. */
 export const CORE_MODULE_IDS: ReadonlySet<string> = new Set(

@@ -19,7 +19,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openctemio/ctis/importer"
+	"github.com/openctemio/ctis/v2"
+	"github.com/openctemio/ctis/v2/importer"
 
 	cirunapp "github.com/openctemio/openctem/api/internal/app/cirun"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
@@ -285,12 +286,12 @@ func (h *CIRunnerHandler) AuthenticateRun(next http.Handler) http.Handler {
 
 // UploadResults handles POST /api/v1/ci/runs/{id}/results
 // @Summary      Upload a CI run's results
-// @Description  A CTIS report from the run, or a file a tool wrote in a format the importers read (SARIF, an SBOM, OSV results, ...; detected from the content, a ZIP of them too). The upload is stored and applied by the ingest worker: the answer is 202 with the upload id and its Location, as soon as the upload is stored. A CTIS report is checked first: it may name only the run's repository (else 400 REPORT_OUT_OF_SCOPE). A tool export is converted when it is applied; its findings on any other asset are dropped and counted. The branch, commit and pull request come from the verified OIDC token, not from the report. GET the Location (with ?wait=10 to wait) for the counts and, for a CTIS report, known: the report's results that carry a decision the gate honors, by index (at most 10,000, lowest first; known_total counts them all). The same body uploaded to the run again is the same upload (Idempotent-Replayed: true). The verdict waits for the run's uploads and fails a run whose upload could not be applied.
+// @Description  A CTIS 2.0 document from the run (the body is the document itself; a {"report": ...} envelope or a CTIS 1.x document is 400), or a file a tool wrote in a format the importers read (SARIF, an SBOM, OSV results, ...; detected from the content, a ZIP of them too). The upload is stored and applied by the ingest worker: the answer is 202 with the upload id and its Location, as soon as the upload is stored. A CTIS report is checked first: it may name only the run's repository (else 400 REPORT_OUT_OF_SCOPE). A tool export is converted when it is applied; its findings on any other asset are dropped and counted. The branch, commit and pull request come from the verified OIDC token, not from the report. GET the Location (with ?wait=10 to wait) for the counts and, for a CTIS report, known: the report's results that carry a decision the gate honors, by index (at most 10,000, lowest first; known_total counts them all). The same body uploaded to the run again is the same upload (Idempotent-Replayed: true). The verdict waits for the run's uploads and fails a run whose upload could not be applied.
 // @Tags         CI
 // @Accept       json
 // @Produce      json
 // @Param        id   path string true "Run ID"
-// @Param        body body CTISIngestRequest true "CTIS report"
+// @Param        body body ctis.Report true "CTIS 2.0 document: the body itself, without an envelope"
 // @Param        format query string false "mapping:<name>[@<version>]: convert the file through the organization's import mapping (always partial coverage). The version is pinned when the upload is accepted; if that version is gone when the upload is applied, it fails with mapping_unavailable"
 // @Param        Idempotency-Key header string false "Retry key: the same key and body replays the first answer (stored 24 hours); the same key with another body is 422"
 // @Success      202  {object}  CIUploadAccepted
@@ -358,6 +359,10 @@ func (h *CIRunnerHandler) UploadResults(w http.ResponseWriter, r *http.Request) 
 	}
 	rec, err := h.svc.AcceptUpload(r.Context(), run, body, isToolExport(body, r.Header.Get("Content-Type")), pin)
 	if err != nil {
+		if errors.Is(err, cirunapp.ErrReportUpgrade) {
+			apierror.BadRequest("Not a CTIS 2.0 document: send the CTIS 2.0 document itself, without a {\"report\"} envelope (upgrade the CI integration)").WriteJSON(w)
+			return
+		}
 		if errors.Is(err, cirunapp.ErrInvalidReport) {
 			apierror.BadRequest("Invalid JSON request body").WriteJSON(w)
 			return
@@ -627,11 +632,16 @@ func (h *CIRunnerHandler) writeErr(w http.ResponseWriter, what string, err error
 
 // isToolExport reports whether a run's upload is a file a tool wrote rather
 // than a CTIS report: an archive, or a format the importers detect. A JSON
-// document that is a CTIS report (it has "version" or "report") stays on the
-// CTIS path even when a detector would also accept it.
+// document that is a CTIS report (it has "version") stays on the CTIS path
+// even when a detector would also accept it; so does a 1.x {"report": ...}
+// envelope, which the CTIS path refuses with a 400 naming the upgrade.
 func isToolExport(body []byte, contentType string) bool {
-	if mt, _, _ := mime.ParseMediaType(contentType); mt == "application/sarif+json" {
+	switch mt, _, _ := mime.ParseMediaType(contentType); mt {
+	case "application/sarif+json":
 		return true
+	case ctis.MediaType:
+		// The CTIS media type names a CTIS document, never a tool export.
+		return false
 	}
 	head := body
 	if len(head) > importer.SniffLen {
@@ -643,7 +653,7 @@ func isToolExport(body []byte, contentType string) bool {
 	if _, ok := importer.Detect(head); !ok {
 		return false
 	}
-	// A CTIS report (bare or as {"report": ...}) has a version and a
+	// A CTIS report has a version and a
 	// metadata object; tool formats that also have a "version" (SARIF,
 	// semgrep, trivy) have no metadata object, or carry SARIF runs.
 	var top map[string]json.RawMessage

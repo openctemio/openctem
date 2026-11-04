@@ -188,7 +188,7 @@ func (h *ImportMappingHandler) Templates(w http.ResponseWriter, _ *http.Request)
 // Create handles POST /api/v1/import-mappings.
 //
 //	@Summary		Create an import mapping
-//	@Description	Stores a mapping document (openctem.io/mapping/v1) as version 1. The document must pass the language and the organization policy: finding and asset rules only, no reserved member, an identity of identity members when it makes findings. integrations:manage. Audited.
+//	@Description	Stores a mapping document (openctem.io/mapping/v2) as version 1. The document must pass the language and the organization policy: finding and asset rules only, no reserved member, an identity of identity members when it makes findings. integrations:manage. Audited.
 //	@Tags			Imports
 //	@Accept			json
 //	@Produce		json

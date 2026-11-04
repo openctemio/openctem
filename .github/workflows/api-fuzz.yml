@@ -1,7 +1,7 @@
 name: API Fuzz
 
 # Nightly fuzzing of the parsers that read untrusted sensor bytes (the strict
-# CTIS decoder of protocol v2 results). Schedule + manual only, never on pull
+# CTIS 2.0 decoder of protocol v2 results). Schedule + manual only, never on pull
 # requests. Schedules run from the default branch (main).
 
 on:

@@ -35,7 +35,7 @@ func TestIngestJobRepository_Lifecycle(t *testing.T) {
 	repo := NewIngestJobRepository(&DB{DB: db})
 	tenantID := newIngestJobTestTenant(t, db)
 
-	payload := []byte(`{"version":"1.0","findings":[]}`)
+	payload := []byte(`{"version":"2.0","findings":[]}`)
 
 	// Enqueue → created.
 	job := ingestjob.NewJob(tenantID, nil, "scan-1", "trivy", payload)
@@ -96,7 +96,7 @@ func TestIngestJobRepository_Lifecycle(t *testing.T) {
 	}
 
 	// Fail with future backoff → pending but not immediately claimable.
-	job2 := ingestjob.NewJob(tenantID, nil, "scan-2", "trivy", []byte(`{"version":"1.0"}`))
+	job2 := ingestjob.NewJob(tenantID, nil, "scan-2", "trivy", []byte(`{"version":"2.0"}`))
 	stored2, _, err := repo.Enqueue(ctx, job2)
 	if err != nil {
 		t.Fatalf("Enqueue job2: %v", err)
@@ -156,12 +156,12 @@ func TestIngestJobRepository_FairClaim(t *testing.T) {
 
 	// Tenant A floods with 3 jobs; tenant B has 1.
 	for i := 0; i < 3; i++ {
-		_, _, err := repo.Enqueue(ctx, ingestjob.NewJob(tenantA, nil, "a-"+string(rune('0'+i)), "trivy", []byte(`{"version":"1.0"}`)))
+		_, _, err := repo.Enqueue(ctx, ingestjob.NewJob(tenantA, nil, "a-"+string(rune('0'+i)), "trivy", []byte(`{"version":"2.0"}`)))
 		if err != nil {
 			t.Fatalf("enqueue A: %v", err)
 		}
 	}
-	if _, _, err := repo.Enqueue(ctx, ingestjob.NewJob(tenantB, nil, "b-0", "trivy", []byte(`{"version":"1.0"}`))); err != nil {
+	if _, _, err := repo.Enqueue(ctx, ingestjob.NewJob(tenantB, nil, "b-0", "trivy", []byte(`{"version":"2.0"}`))); err != nil {
 		t.Fatalf("enqueue B: %v", err)
 	}
 

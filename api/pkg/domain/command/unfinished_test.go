@@ -6,7 +6,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/openctemio/ctis/outcome"
+	"github.com/openctemio/contract/outcome"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )

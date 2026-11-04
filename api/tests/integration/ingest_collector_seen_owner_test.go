@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
@@ -54,8 +54,8 @@ func (r *v2Rig) collect(tenant, sensorID shared.ID, rep *ctis.Report) {
 }
 
 func collectorReport(tool string, assets ...ctis.Asset) *ctis.Report {
-	return &ctis.Report{Version: "1.0", Tool: &ctis.Tool{Name: tool},
-		Metadata: ctis.ReportMetadata{Timestamp: time.Now().UTC(), SourceType: "collector", CoverageType: "full"}, Assets: assets}
+	return &ctis.Report{Version: ctis.SchemaVersion, Tool: &ctis.Tool{Name: tool},
+		Metadata: ctis.ReportMetadata{ID: ctis.NewReportID(), GeneratedAt: time.Now().UTC(), Channel: ctis.ChannelCollector, CoverageType: "full"}, Assets: assets}
 }
 
 // A source's per-asset last_seen is the asset's last-seen time: earlier
@@ -66,9 +66,8 @@ func TestIngest_CollectorLastSeen(t *testing.T) {
 	ctx := context.Background()
 	tn := r.newTenant()
 	col := r.addCollector(tn, sensor.TrustNew)
-	seen := func(lastSeen any) ctis.Asset {
-		return ctis.Asset{ID: "h", Type: ctis.AssetTypeHost, Value: "web01.example.com", Name: "web01.example.com",
-			Properties: ctis.Properties{"last_seen": lastSeen, "source_index": "os"}}
+	seen := func(lastSeen time.Time) ctis.Asset {
+		return ctis.Asset{ID: "h", Type: ctis.AssetTypeHost, Value: "web01.example.com", LastSeenAt: &lastSeen}
 	}
 	stored := func() (time.Time, string) {
 		t.Helper()
@@ -83,13 +82,13 @@ func TestIngest_CollectorLastSeen(t *testing.T) {
 	near := func(a, b time.Time) bool { d := a.Sub(b); return d < 2*time.Second && d > -2*time.Second }
 
 	threeDays := time.Now().Add(-72 * time.Hour).UTC().Truncate(time.Second)
-	r.collect(tn.tenant, col, collectorReport("splunk", seen(threeDays.Format(time.RFC3339))))
+	r.collect(tn.tenant, col, collectorReport("splunk", seen(threeDays)))
 	if at, _ := stored(); !near(at, threeDays) {
 		t.Fatalf("last_seen = %v, want the reported %v", at, threeDays)
 	}
 
 	// An older observation never moves it backwards.
-	r.collect(tn.tenant, col, collectorReport("splunk", seen(float64(time.Now().Add(-240*time.Hour).Unix()))))
+	r.collect(tn.tenant, col, collectorReport("splunk", seen(time.Now().Add(-240*time.Hour).UTC())))
 	if at, _ := stored(); !near(at, threeDays) {
 		t.Fatalf("last_seen moved to %v, want it kept at %v", at, threeDays)
 	}
@@ -98,7 +97,7 @@ func TestIngest_CollectorLastSeen(t *testing.T) {
 	if _, err := r.db.ExecContext(ctx, `UPDATE assets SET status = 'stale' WHERE tenant_id = $1`, tn.tenant.String()); err != nil {
 		t.Fatal(err)
 	}
-	r.collect(tn.tenant, col, collectorReport("splunk", seen(time.Now().Add(-100*time.Hour).Format(time.RFC3339))))
+	r.collect(tn.tenant, col, collectorReport("splunk", seen(time.Now().Add(-100*time.Hour).UTC())))
 	if at, status := stored(); status != "stale" || !near(at, threeDays) {
 		t.Fatalf("after an older observation: status %s last_seen %v, want stale at %v", status, at, threeDays)
 	}
@@ -107,7 +106,7 @@ func TestIngest_CollectorLastSeen(t *testing.T) {
 	if _, err := r.db.ExecContext(ctx, `UPDATE assets SET status = 'active' WHERE tenant_id = $1`, tn.tenant.String()); err != nil {
 		t.Fatal(err)
 	}
-	r.collect(tn.tenant, col, collectorReport("splunk", seen(time.Now().Add(240*time.Hour).Format(time.RFC3339))))
+	r.collect(tn.tenant, col, collectorReport("splunk", seen(time.Now().Add(240*time.Hour).UTC())))
 	if at, _ := stored(); !near(at, time.Now()) {
 		t.Fatalf("last_seen = %v after a future value, want about now", at)
 	}
@@ -125,8 +124,8 @@ func TestIngest_TrustedCollectorOwner(t *testing.T) {
 	untrusted := r.addCollector(a, sensor.TrustNew)
 
 	pc := func(name string) ctis.Asset {
-		return ctis.Asset{ID: name, Type: ctis.AssetTypeHost, Value: name, Name: name,
-			Properties: ctis.Properties{"owner": "alice@example.com", "ad_object_guid": "6f9619ff-8b86-d011-b42d-00c04fc964ff"}}
+		return ctis.Asset{ID: name, Type: ctis.AssetTypeHost, Value: name,
+			Owners: []ctis.AssetOwner{{Kind: ctis.OwnerKindPerson, Ref: "alice@example.com", Role: ctis.OwnerRoleTechnical}}}
 	}
 	ownerRef := func(tenant shared.ID, name string) string {
 		t.Helper()

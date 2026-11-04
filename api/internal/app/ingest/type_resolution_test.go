@@ -3,7 +3,7 @@ package ingest
 import (
 	"testing"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -13,22 +13,26 @@ import (
 // RFC-042 §6.3.8: ingest stores only core types; machine input is resolved
 // leniently (an unknown sub-type is kept, never refused).
 func TestResolveCTISAssetType(t *testing.T) {
+	ident := func(k ctis.IdentityKind) ctis.Asset {
+		return ctis.Asset{Type: ctis.AssetTypeIdentity, Technical: &ctis.AssetTechnical{Identity: &ctis.IdentityTechnical{Kind: k}}}
+	}
 	cases := []struct {
 		name      string
 		in        ctis.Asset
 		wantType  asset.AssetType
 		wantSub   string
-		wantNorm  string
 		wantNativ string
 	}{
-		{"alias", ctis.Asset{Type: ctis.AssetTypeWebsite}, asset.AssetTypeApplication, "website", "website", ""},
-		{"kubernetes without kind is a cluster", ctis.Asset{Type: ctis.AssetTypeKubernetes}, asset.AssetTypeKubernetes, "cluster", "", ""},
-		{"kubernetes namespace", ctis.Asset{Type: ctis.AssetTypeKubernetes, Properties: map[string]any{"kind": "Namespace"}}, asset.AssetTypeKubernetes, "namespace", "", ""},
-		{"kubernetes workload", ctis.Asset{Type: ctis.AssetTypeKubernetes, Properties: map[string]any{"kind": "Deployment"}}, asset.AssetTypeKubernetes, "workload", "", ""},
-		{"legacy sub-type", ctis.Asset{Type: ctis.AssetTypeDatabase, Properties: map[string]any{"sub_type": "postgresql"}}, asset.AssetTypeDatabase, "relational", "", ""},
-		{"unknown sub-type is kept", ctis.Asset{Type: ctis.AssetTypeNetwork, Properties: map[string]any{"sub_type": "lan"}}, asset.AssetTypeNetwork, "", "", "lan"},
-		{"unknown type", ctis.Asset{Type: "web3_wallet"}, asset.AssetTypeUnclassified, "", "", ""},
-		{"server", ctis.Asset{Type: ctis.AssetTypeServer}, asset.AssetTypeHost, "", "", ""},
+		{"web origin", ctis.Asset{Type: ctis.AssetTypeWebOrigin}, asset.AssetTypeService, "http", ""},
+		{"kubernetes cluster", ctis.Asset{Type: ctis.AssetTypeKubernetesCluster}, asset.AssetTypeKubernetes, "cluster", ""},
+		{"kubernetes workload", ctis.Asset{Type: ctis.AssetTypeKubernetesWorkload}, asset.AssetTypeKubernetes, "workload", ""},
+		// properties carry no meaning: a kind or sub_type there moves nothing.
+		{"kind property ignored", ctis.Asset{Type: ctis.AssetTypeKubernetesCluster, Properties: map[string]any{"kind": "Namespace"}}, asset.AssetTypeKubernetes, "cluster", ""},
+		{"sub_type property ignored", ctis.Asset{Type: ctis.AssetTypeDatabase, Properties: map[string]any{"sub_type": "postgresql"}}, asset.AssetTypeDatabase, "", ""},
+		{"ip range", ctis.Asset{Type: ctis.AssetTypeIPRange, Properties: map[string]any{"sub_type": "lan"}}, asset.AssetTypeNetwork, "", ""},
+		{"unknown type", ctis.Asset{Type: "web3_wallet"}, asset.AssetTypeUnclassified, "", ""},
+		{"host", ctis.Asset{Type: ctis.AssetTypeHost}, asset.AssetTypeHost, "", ""},
+		{"identity user", ident(ctis.IdentityUser), asset.AssetTypeIdentity, "iam_user", ""},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -36,8 +40,8 @@ func TestResolveCTISAssetType(t *testing.T) {
 			if got.stored.Type != c.wantType || got.stored.SubType != c.wantSub || got.stored.NativeSubType != c.wantNativ {
 				t.Errorf("stored = %+v, want (%s, %q, native %q)", got.stored, c.wantType, c.wantSub, c.wantNativ)
 			}
-			if got.normType != c.wantType || got.normSubType != c.wantNorm {
-				t.Errorf("normalization key = (%s, %q), want (%s, %q)", got.normType, got.normSubType, c.wantType, c.wantNorm)
+			if got.normType != c.wantType || got.normSubType != c.wantSub {
+				t.Errorf("normalization key = (%s, %q), want (%s, %q)", got.normType, got.normSubType, c.wantType, c.wantSub)
 			}
 			if !got.stored.Type.IsStored() {
 				t.Errorf("non-core type %s", got.stored.Type)
@@ -55,22 +59,15 @@ func TestCreateAssetFromCTIS_StoresCoreTypes(t *testing.T) {
 		check    func(t *testing.T, a *asset.Asset)
 	}{
 		{ctis.Asset{Type: ctis.AssetTypeFirewall, Value: "fw-1"}, asset.AssetTypeNetwork, "firewall", nil},
-		{ctis.Asset{Type: ctis.AssetTypeDatabase, Value: "orders", Properties: map[string]any{"sub_type": "mongodb"}}, asset.AssetTypeDatabase, "document",
+		// properties.sub_type / properties.kind carry no meaning in CTIS 2.0.
+		{ctis.Asset{Type: ctis.AssetTypeDatabase, Value: "orders", Properties: map[string]any{"sub_type": "mongodb"}}, asset.AssetTypeDatabase, "",
 			func(t *testing.T, a *asset.Asset) {
-				if a.Properties()["engine"] != "mongodb" {
-					t.Errorf("engine = %v", a.Properties()["engine"])
-				}
-				if _, ok := a.Properties()["sub_type"]; ok {
-					t.Error("sub_type kept as a property")
+				if a.SubType() != "" {
+					t.Errorf("sub_type property moved the sub-type to %q", a.SubType())
 				}
 			}},
-		{ctis.Asset{Type: ctis.AssetTypeNetwork, Value: "lan-1", Properties: map[string]any{"sub_type": "lan"}}, asset.AssetTypeNetwork, "",
-			func(t *testing.T, a *asset.Asset) {
-				if a.Properties()[asset.PropKeyNativeSubType] != "lan" {
-					t.Errorf("native sub-type not kept: %v", a.Properties())
-				}
-			}},
-		{ctis.Asset{Type: ctis.AssetTypeKubernetes, Value: "shop/web", Properties: map[string]any{"kind": "deployment"}}, asset.AssetTypeKubernetes, "workload", nil},
+		{ctis.Asset{Type: ctis.AssetTypeIPRange, Value: "10.0.0.0/24"}, asset.AssetTypeNetwork, "", nil},
+		{ctis.Asset{Type: ctis.AssetTypeKubernetesWorkload, Value: "shop/web"}, asset.AssetTypeKubernetes, "workload", nil},
 	}
 	tenant := shared.NewID()
 	for _, c := range cases {

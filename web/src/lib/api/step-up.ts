@@ -15,6 +15,8 @@
 export const STEP_UP_REQUIRED_CODE = 'STEP_UP_REQUIRED'
 export const STEP_UP_UNAVAILABLE_CODE = 'STEP_UP_UNAVAILABLE'
 export const STEP_UP_FAILED_CODE = 'STEP_UP_FAILED'
+/** The authenticator code is from a time step already used: wait for the next code. */
+export const STEP_UP_CODE_USED_CODE = 'STEP_UP_CODE_USED'
 
 export const STEP_UP_ENDPOINT = '/api/v1/auth/step-up'
 

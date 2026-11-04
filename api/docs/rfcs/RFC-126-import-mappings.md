@@ -13,7 +13,7 @@ Organizations hold findings in exports that no importer reads: a legacy
 vulnerability-management tool's CSV, a spreadsheet kept by hand, an in-house
 scanner's JSON, a check runner's JUnit XML. An **import mapping** turns any
 such CSV, JSON, JSON Lines or XML file into CTIS with no code. It is a
-document in the CTIS mapping language (`openctem.io/mapping/v1`, ctis
+document in the CTIS mapping language (`openctem.io/mapping/v2` since CTIS 2.0, ctis
 `docs/mapping.md`). The organization writes it in the console on a sample,
 sees the result and each finding's identity before saving, and keeps it in
 immutable versions. An import names the mapping in its format,

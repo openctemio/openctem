@@ -91,6 +91,9 @@ import {
 } from 'lucide-react'
 import { Permission } from '@/lib/permissions'
 import { matchesAllWords } from './settings-search'
+import { webExtension } from '@/lib/extension'
+import { mergeSettingsGroups } from '@/lib/extension/merge'
+import { isGrantOn } from '@/lib/extension/grants'
 
 /**
  * One setting inside a page, so search finds the setting and not only its page.
@@ -146,7 +149,7 @@ export interface SettingsNavGroup {
   items: SettingsNavItem[]
 }
 
-export const settingsNav: SettingsNavGroup[] = [
+const coreSettingsNav: SettingsNavGroup[] = [
   {
     id: 'account',
     title: 'My account',
@@ -598,7 +601,6 @@ export const settingsNav: SettingsNavGroup[] = [
         url: '/settings/risk-scoring',
         icon: Scale,
         permission: Permission.TeamUpdate,
-        module: 'risk_scoring',
         keywords: ['score', 'weights', 'presets'],
         anchors: [
           {
@@ -964,7 +966,6 @@ export const settingsNav: SettingsNavGroup[] = [
         icon: GitBranch,
         permission: Permission.IntegrationsRead,
         module: 'integrations',
-        subModuleKey: 'scm',
         keywords: ['scm', 'github', 'gitlab', 'bitbucket', 'azure devops'],
       },
       {
@@ -975,7 +976,6 @@ export const settingsNav: SettingsNavGroup[] = [
         icon: ShieldCheck,
         permission: Permission.IntegrationsRead,
         module: 'integrations',
-        subModuleKey: 'scanners',
         keywords: ['tenable', 'nessus', 'import'],
       },
       {
@@ -986,7 +986,6 @@ export const settingsNav: SettingsNavGroup[] = [
         icon: ListChecks,
         permission: Permission.IntegrationsRead,
         module: 'integrations',
-        subModuleKey: 'ticketing',
         keywords: ['jira', 'servicenow', 'tickets'],
       },
       {
@@ -997,7 +996,6 @@ export const settingsNav: SettingsNavGroup[] = [
         icon: ArrowLeftRight,
         permission: Permission.IntegrationsRead,
         module: 'integrations',
-        subModuleKey: 'ticketing',
         keywords: ['jira', 'fields', 'mapping', 'workflow', 'status'],
       },
       {
@@ -1018,7 +1016,6 @@ export const settingsNav: SettingsNavGroup[] = [
         icon: MessageSquare,
         permission: Permission.IntegrationsRead,
         module: 'integrations',
-        subModuleKey: 'notifications',
         keywords: ['slack', 'teams', 'telegram', 'webhook', 'outbox'],
       },
       {
@@ -1029,7 +1026,6 @@ export const settingsNav: SettingsNavGroup[] = [
         icon: Shield,
         permission: Permission.IntegrationsRead,
         module: 'integrations',
-        subModuleKey: 'siem',
         keywords: ['splunk', 'hec', 'events'],
       },
     ],
@@ -1037,6 +1033,13 @@ export const settingsNav: SettingsNavGroup[] = [
 ]
 
 /** Every item, in rail order. */
+/** The core pages plus the pages the build's extension adds (none by default). */
+export const settingsNav: SettingsNavGroup[] = mergeSettingsGroups(
+  coreSettingsNav,
+  webExtension.settingsItems,
+  isGrantOn
+)
+
 export const settingsNavItems: SettingsNavItem[] = settingsNav.flatMap((g) => g.items)
 
 /**

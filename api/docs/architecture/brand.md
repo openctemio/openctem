@@ -203,3 +203,9 @@ show it.
 - **E-mail:** every template starts with the lockup as an embedded `cid:logo`
   part (`pkg/email/logo.go`), never a remote image, with the name as alt text.
   Operator brands get their name as escaped text in brand ink.
+
+## What a brand never changes
+
+About > Open-source licenses (the third-party notices of the build) is part of
+the core: no brand, white-label setting or extension removes or replaces it
+([third-party notices](third-party-notices.md)).

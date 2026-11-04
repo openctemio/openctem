@@ -54,6 +54,7 @@ import { getErrorMessage } from '@/lib/api/error-handler'
 import { toast } from 'sonner'
 import { usePermissions } from '@/lib/permissions'
 import { useTranslation } from '@/context/i18n-provider'
+import { ExtensionSlot } from '@/lib/extension/slot'
 
 function scimOwnerOnlyReason(tr: ReturnType<typeof useTranslation>['t']): string {
   return tr(
@@ -574,6 +575,8 @@ export default function ScimTokensPage() {
             </div>
           </>
         )}
+
+        <ExtensionSlot id="settings.scim.sections" />
 
         <GenerateTokenDialog
           open={genOpen}

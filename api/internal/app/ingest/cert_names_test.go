@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -37,7 +37,7 @@ func TestReportCertificateNames(t *testing.T) {
 	}
 	report := &ctis.Report{Assets: []ctis.Asset{
 		{ID: "c1", Type: ctis.AssetTypeCertificate, Value: "fp1", Technical: &ctis.AssetTechnical{Certificate: &ctis.CertificateTechnical{
-			SubjectCN: "www.example.com", SANs: []string{"www.example.com", "api.example.com"}, IssuerOrg: "CA", NotAfter: &na,
+			SubjectCN: "www.example.com", SubjectAltNames: []string{"www.example.com", "api.example.com"}, IssuerOrg: "CA", NotAfter: &na,
 		}}},
 		{ID: "c2", Type: ctis.AssetTypeCertificate, Value: "fp2", Properties: ctis.Properties{
 			"subject_cn": "mail.example.com", "sans": []any{"mail.example.com", "smtp.example.com", 7},
@@ -45,7 +45,7 @@ func TestReportCertificateNames(t *testing.T) {
 		}},
 		{ID: "c3", Type: ctis.AssetTypeCertificate, Value: "fp3", Properties: ctis.Properties{"sans": many}},
 		{ID: "refused", Type: ctis.AssetTypeCertificate, Value: "fp4", Properties: ctis.Properties{"sans": []string{"x.example.com"}}},
-		{ID: "sub", Type: ctis.AssetTypeSubdomain, Value: "y.example.com"},
+		{ID: "sub", Type: ctis.AssetTypeDomainName, Value: "y.example.com"},
 		{ID: "empty", Type: ctis.AssetTypeCertificate, Value: "fp5"},
 	}}
 	ids := map[string]shared.ID{"c1": shared.NewID(), "c2": shared.NewID(), "c3": shared.NewID(), "sub": shared.NewID(), "empty": shared.NewID()}
