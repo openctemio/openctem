@@ -1269,6 +1269,7 @@
   "scans.intensity.label": "Intensity",
   "scans.intensity.passive": "Passive",
   "scans.intensity.passiveHint": "Nothing is sent to your hosts. Uses third-party sources (certificate logs, passive DNS) and DNS through public resolvers. Safe for names you have not confirmed yet.",
+  "scans.intensity.passiveOnly": "This organization runs passive scans only.",
   "scans.kind.cidr": "CIDR",
   "scans.kind.domain": "Domain",
   "scans.kind.host:port": "Host:port",

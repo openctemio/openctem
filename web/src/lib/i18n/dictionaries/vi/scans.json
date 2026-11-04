@@ -1269,6 +1269,7 @@
   "scans.intensity.label": "Mức độ quét",
   "scans.intensity.passive": "Thụ động",
   "scans.intensity.passiveHint": "Không gửi gì tới máy chủ của bạn. Dùng nguồn bên thứ ba (nhật ký chứng chỉ, DNS thụ động) và truy vấn DNS qua resolver công cộng. An toàn với cả những tên miền chưa được xác nhận.",
+  "scans.intensity.passiveOnly": "Tổ chức này chỉ chạy quét thụ động.",
   "scans.kind.cidr": "CIDR",
   "scans.kind.domain": "Tên miền",
   "scans.kind.host:port": "Host:port",
