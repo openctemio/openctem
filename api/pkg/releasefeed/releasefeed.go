@@ -5,21 +5,21 @@
 // which an instance uses instead of the version built into it
 // (docs/rfcs/RFC-037-versioning-and-release-train.md §12).
 //
-// The feed is one DSSE envelope (the shared signed-feed envelope, pkg/feedsign)
-// signed directly by one online Ed25519 key whose public key is pinned in this
-// release (PinnedKeys, two entries at most so a rotation can overlap).
-// Verification: a pinned key signed it, the feed sequence never below the one
-// applied, the feed not expired and valid for at most 45 days, every field
-// bounded and every link under our own hosts. The feed is information only:
-// nothing is downloaded or run because of it.
-//
-// The feed has its own DSSE payload type (FeedPayloadType), so the same online
-// key may also sign other content (the content catalog) without a signature
-// over one ever being valid as the other.
+// The published file holds the feed payload and a keyless Sigstore bundle
+// over its exact bytes (`cosign sign-blob --bundle`), made by the release-feed
+// workflow with its GitHub OIDC identity: there is no long-lived signing key.
+// An instance verifies offline (SignatureVerifier, backed by the Sigstore trusted
+// root embedded in the release): the certificate chain to the Fulcio roots, a
+// transparency log entry, the issuer (GitHub Actions) and the exact signer
+// identity (SignerIdentityPattern: the release-feed workflow of this
+// repository on main or a release tag).
+// Then: the feed sequence never below the one applied, the feed not expired and
+// valid for at most 45 days, the signature made inside the feed's validity,
+// every field bounded and every link under our own hosts. The feed is
+// information only: nothing is downloaded or run because of it.
 package releasefeed
 
 import (
-	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -35,14 +35,12 @@ import (
 	"golang.org/x/mod/semver"
 
 	"github.com/openctemio/openctem/api/pkg/feedsign"
-	"github.com/openctemio/openctem/api/pkg/jobsign"
 )
 
 // Format constants (must match the builder, cmd/release-feed).
 const (
-	BundleSchema    = "openctem.io/release-bundle/v1"
-	FeedPayloadType = "application/vnd.openctem.release-feed+json"
-	FeedKind        = "openctem.io/release-feed/v1"
+	BundleSchema = "openctem.io/release-bundle/v2"
+	FeedKind     = "openctem.io/release-feed/v1"
 	// FileName is the published file.
 	FileName = "openctem-releases.json"
 )
@@ -51,7 +49,6 @@ const (
 const (
 	MaxBundleBytes  = 256 << 10
 	MaxFeedValidity = 45 * 24 * time.Hour
-	MaxPinnedKeys   = 2
 	MaxReleases     = 200
 	MaxAdvisories   = 200
 	MaxComponents   = 32
@@ -62,18 +59,24 @@ const (
 // Severities of an advisory, lowest first.
 var Severities = []string{"low", "medium", "high", "critical"}
 
-// PinnedKeys are the Ed25519 public keys (hex, 64 characters) this release
-// trusts to sign the release feed: the online key, plus the next one while a
-// rotation overlaps (at most MaxPinnedKeys). Changed only by a reviewed
-// commit, never by configuration; TestPinnedKeysShipped keeps it non-empty.
-var PinnedKeys = []string{
-	// Online key, added 2026-10-26.
-	"2caf362457a357643b6745fe0605d6c88853c538a2fea178a0f0a493599ec170",
+// Who may sign the feed: the release-feed workflow of this repository, run
+// from main or a release tag, authenticated by GitHub Actions' OIDC issuer. A
+// workflow of another repository, another file, a fork or another branch is
+// refused whatever it signs. Changed only by a reviewed commit.
+const (
+	SignerIssuer          = "https://token.actions.githubusercontent.com"
+	SignerIdentityPattern = `^https://github\.com/openctemio/openctem/\.github/workflows/release-feed\.yml@refs/(heads/main|tags/v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?)$`
+)
+
+// SignatureVerifier checks a keyless Sigstore bundle over artifact offline and
+// returns when it was signed (contentpkg/sigstore.Verifier).
+type SignatureVerifier interface {
+	VerifyPattern(signature, artifact []byte, identityPattern, issuer string) (time.Time, error)
 }
 
 // Errors a caller tells apart.
 var (
-	ErrNoKey    = errors.New("no release feed key is pinned in this build")
+	ErrNoKey    = errors.New("no Sigstore trusted root is loaded to verify the release feed")
 	ErrRollback = errors.New("older than the release feed already applied")
 	ErrExpired  = errors.New("the release feed has expired")
 )
@@ -134,54 +137,35 @@ func (f *Feed) ComponentVersions() map[string]Component {
 	return out
 }
 
-// Bundle is the published file: the signed feed envelope.
+// Bundle is the published file: the feed payload (base64 of its exact bytes,
+// which the signature covers) and the Sigstore bundle over them.
 type Bundle struct {
-	Schema string          `json:"schema"`
-	Feed   json.RawMessage `json:"feed"`
+	Schema    string          `json:"schema"`
+	Feed      []byte          `json:"feed"`
+	Signature json.RawMessage `json:"signature"`
 }
 
-// Trust is what an instance pins and has applied.
+// Trust is what an instance trusts and has applied.
 type Trust struct {
-	// Keys are the pinned public keys, hex (releasefeed.PinnedKeys in production).
-	Keys        []string
+	// Verifier checks the Sigstore bundle; nil refuses every feed (ErrNoKey).
+	Verifier    SignatureVerifier
 	MinSequence uint64
 }
 
 // Verified is a feed that passed every check. Digest is the SHA-256 (hex)
 // of the signed feed payload: an instance accepts the same sequence again
-// only with the same digest.
+// only with the same digest. SignedAt is the transparency log time of the
+// signature.
 type Verified struct {
-	Feed Feed
-	// KeyID is the id (jobsign.KeyID) of the pinned key that signed it.
-	KeyID  string
-	Digest string
-}
-
-// pinnedKeys decodes the pinned keys; a malformed or surplus entry is an
-// error (a bad pin must not silently verify less than intended).
-func pinnedKeys(hexKeys []string) ([]ed25519.PublicKey, error) {
-	if len(hexKeys) > MaxPinnedKeys {
-		return nil, fmt.Errorf("release feed: more than %d pinned keys", MaxPinnedKeys)
-	}
-	out := make([]ed25519.PublicKey, 0, len(hexKeys))
-	for _, h := range hexKeys {
-		b, err := hex.DecodeString(h)
-		if err != nil || len(b) != ed25519.PublicKeySize {
-			return nil, errors.New("release feed: a pinned key is not a hex Ed25519 public key")
-		}
-		out = append(out, b)
-	}
-	return out, nil
+	Feed     Feed
+	SignedAt time.Time
+	Digest   string
 }
 
 // Verify checks a published file at now and returns its feed.
 func Verify(raw []byte, t Trust, now time.Time) (*Verified, error) {
-	if len(t.Keys) == 0 {
+	if t.Verifier == nil {
 		return nil, ErrNoKey
-	}
-	keys, err := pinnedKeys(t.Keys)
-	if err != nil {
-		return nil, err
 	}
 	if len(raw) == 0 || len(raw) > MaxBundleBytes {
 		return nil, fmt.Errorf("release feed: empty or over %d bytes", MaxBundleBytes)
@@ -193,22 +177,12 @@ func Verify(raw []byte, t Trust, now time.Time) (*Verified, error) {
 	if b.Schema != BundleSchema {
 		return nil, fmt.Errorf("release feed: schema %q", b.Schema)
 	}
-	env, err := feedsign.Open(b.Feed, FeedPayloadType, MaxBundleBytes)
+	signedAt, err := t.Verifier.VerifyPattern(b.Signature, b.Feed, SignerIdentityPattern, SignerIssuer)
 	if err != nil {
-		return nil, fmt.Errorf("release feed: %w", err)
-	}
-	var signer ed25519.PublicKey
-	for _, k := range keys {
-		if feedsign.VerifiedBy(env, k) {
-			signer = k
-			break
-		}
-	}
-	if signer == nil {
-		return nil, errors.New("release feed: not signed by a pinned key")
+		return nil, fmt.Errorf("release feed: signature: %w", err)
 	}
 	var f Feed
-	if err := feedsign.DecodeStrict(env.Payload, &f); err != nil {
+	if err := feedsign.DecodeStrict(b.Feed, &f); err != nil {
 		return nil, fmt.Errorf("release feed: %w", err)
 	}
 	if err := f.Validate(); err != nil {
@@ -223,8 +197,13 @@ func Verify(raw []byte, t Trust, now time.Time) (*Verified, error) {
 	if !f.ExpiresAt.After(now) {
 		return nil, fmt.Errorf("%w at %s", ErrExpired, f.ExpiresAt.UTC().Format(time.RFC3339))
 	}
-	sum := sha256.Sum256(env.Payload)
-	return &Verified{Feed: f, KeyID: jobsign.KeyID(signer), Digest: hex.EncodeToString(sum[:])}, nil
+	// The signature was made while the feed was current: a signature older
+	// than the feed, or after it expired, is not the publisher's.
+	if signedAt.Before(f.IssuedAt.Add(-feedsign.MaxClockSkew)) || signedAt.After(f.ExpiresAt) {
+		return nil, errors.New("release feed: signed outside the feed's validity")
+	}
+	sum := sha256.Sum256(b.Feed)
+	return &Verified{Feed: f, SignedAt: signedAt, Digest: hex.EncodeToString(sum[:])}, nil
 }
 
 var (
@@ -340,22 +319,22 @@ func checkURL(raw string) error {
 	return fmt.Errorf("link host %q is not allowed", u.Host)
 }
 
-// Build signs f with the online key and returns the file to publish (the
-// builder and tests; an instance never holds a feed key).
-func Build(online ed25519.PrivateKey, f Feed) ([]byte, error) {
+// Payload validates f and returns the exact bytes the workflow signs with
+// cosign (the builder and tests; an instance never produces a feed).
+func Payload(f Feed) ([]byte, error) {
 	f.Kind = FeedKind
 	if err := f.Validate(); err != nil {
 		return nil, err
 	}
-	payload, err := json.Marshal(f)
-	if err != nil {
-		return nil, err
+	return json.Marshal(f)
+}
+
+// Assemble returns the file to publish: payload with its Sigstore bundle.
+func Assemble(payload, sigstoreBundle []byte) ([]byte, error) {
+	if !json.Valid(sigstoreBundle) {
+		return nil, errors.New("release feed: the Sigstore bundle is not JSON")
 	}
-	env, err := feedsign.Sign(online, FeedPayloadType, payload)
-	if err != nil {
-		return nil, err
-	}
-	out, err := json.MarshalIndent(Bundle{Schema: BundleSchema, Feed: env}, "", "  ")
+	out, err := json.MarshalIndent(Bundle{Schema: BundleSchema, Feed: payload, Signature: sigstoreBundle}, "", "  ")
 	if err != nil {
 		return nil, err
 	}
