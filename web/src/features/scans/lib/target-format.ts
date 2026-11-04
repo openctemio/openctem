@@ -2,19 +2,24 @@
  * The format of a typed scan target: domain, wildcard, IP, CIDR, URL or
  * host:port. Format only: whether a target may be scanned (scope, zones,
  * private ranges, tiers) is the API's answer (POST /scope/check), never
- * decided here.
+ * decided here. The rules mirror the API's target validator
+ * (api/pkg/validator/target.go) so that nothing accepted here is refused at
+ * create: CIDRs of at most 2^16 addresses, `[v6]:port`, service names
+ * (`host:25/tcp`), and paths or repositories refused as network targets.
+ * Unicode domain names are sent in their ASCII (punycode) form.
+ * Design: research/418.
  */
 
 export type TargetKind =
-  'domain' | 'wildcard' | 'ipv4' | 'ipv6' | 'cidr' | 'url' | 'host:port' | 'invalid'
+  'domain' | 'wildcard' | 'ipv4' | 'ipv6' | 'cidr' | 'url' | 'host:port' | 'repo' | 'invalid'
 
 export interface ClassifiedTarget {
-  /** The line as typed (trimmed). */
+  /** The entry as typed (trimmed). */
   input: string
-  /** The form sent to the API (lower-case host, no trailing dot). */
+  /** The form sent to the API (lower-case host, no trailing dot, ASCII). */
   value: string
   kind: TargetKind
-  /** Why an invalid line is invalid (English; the UI shows `reasonKey`). */
+  /** Why an entry is not added (English; the UI shows `reasonKey`). */
   reason?: string
   /** i18n key of the reason. */
   reasonKey?: string
@@ -28,7 +33,13 @@ export const TARGET_KIND_LABELS: Record<TargetKind, string> = {
   cidr: 'CIDR',
   url: 'URL',
   'host:port': 'Host:port',
+  repo: 'Path or repository',
   invalid: 'Invalid',
+}
+
+/** Kinds that are never added as a typed target. */
+export function isRefusedKind(kind: TargetKind): boolean {
+  return kind === 'invalid' || kind === 'repo'
 }
 
 const REASONS = {
@@ -39,7 +50,10 @@ const REASONS = {
   targetChars: 'Contains characters a target cannot have',
   wildcardForm: 'A wildcard is *. followed by a domain',
   badCidr: 'Not a valid CIDR range',
+  cidrTooLarge: 'The range is larger than 65,536 addresses (/16 for IPv4, /112 for IPv6)',
   badHostPort: 'Not a valid host:port',
+  idnTld: 'A top-level domain in punycode (xn--) is not accepted yet',
+  repo: 'Not a network target: a path or a repository. Add http:// or https:// for a web address; repositories are scanned from repository assets',
   unknown: 'Not a domain, IP address, CIDR range, URL or host:port',
 } as const
 
@@ -49,6 +63,8 @@ const OCTET = '(?:25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)'
 const IPV4 = new RegExp(`^${OCTET}(?:\\.${OCTET}){3}$`)
 // Shell and markup characters never appear in a target.
 const UNSAFE = /[;&|`$(){}<>\\'"!\s]/
+// Largest range the API takes: 2^16 addresses.
+const MAX_HOST_BITS = 16
 
 function isIPv6(s: string): boolean {
   if (!s.includes(':') || !/^[0-9a-f:.]+$/i.test(s)) return false
@@ -59,100 +75,277 @@ function isIPv6(s: string): boolean {
   }
 }
 
-/** The format of one typed line. */
+function validPort(p: string): boolean {
+  const n = Number(p)
+  return /^\d{1,5}$/.test(p) && n >= 1 && n <= 65535
+}
+
+/**
+ * A Unicode domain in its ASCII form (`bücher.de` -> `xn--bcher-kva.de`),
+ * through the browser's own IDNA mapping; ASCII input is returned lower-cased.
+ */
+function toAsciiHost(host: string): string | null {
+  const lower = host.toLowerCase()
+  if (/^[\x00-\x7f]*$/.test(lower)) return lower
+  try {
+    const ascii = new URL(`http://${lower}/`).hostname
+    return ascii && !ascii.includes('%') ? ascii : null
+  } catch {
+    return null
+  }
+}
+
+function punycodeTld(host: string): boolean {
+  return /\.xn--[a-z0-9-]+$/.test(host)
+}
+
+/** A repository reference or a path: never a network target. */
+function looksLikeRepo(input: string): boolean {
+  if (/^git@[^\s:]+:\S+$/i.test(input)) return true
+  if (/^(ssh|git|git\+ssh):\/\//i.test(input)) return true
+  if (/^https?:\/\/\S+\.git\/?$/i.test(input)) return true
+  return false
+}
+
+/** The format of one typed entry. */
 export function classifyTarget(raw: string): ClassifiedTarget {
   const input = raw.trim()
-  const invalid = (id: keyof typeof REASONS): ClassifiedTarget => ({
+  const refuse = (id: keyof typeof REASONS, kind: TargetKind = 'invalid'): ClassifiedTarget => ({
     input,
     value: input,
-    kind: 'invalid',
+    kind,
     reason: REASONS[id],
     reasonKey: `scans.targetReason.${id}`,
   })
-  if (!input) return invalid('empty')
+  if (!input) return refuse('empty')
+  if (looksLikeRepo(input)) return refuse('repo', 'repo')
 
   if (/^https?:\/\//i.test(input)) {
-    if (/[\s<>"'`\\]/.test(input)) return invalid('urlChars')
+    if (/[\s<>"'`\\]/.test(input)) return refuse('urlChars')
     try {
       const url = new URL(input)
-      if (!url.hostname) return invalid('noHost')
+      if (!url.hostname) return refuse('noHost')
       return { input, value: input, kind: 'url' }
     } catch {
-      return invalid('badUrl')
+      return refuse('badUrl')
     }
   }
+
+  // [v6]:port, the one place a bracket belongs.
+  const v6Port = /^\[([^\]]+)\]:(\d{1,7})$/.exec(input)
+  if (v6Port) {
+    if (!isIPv6(v6Port[1])) return refuse('targetChars')
+    if (!validPort(v6Port[2])) return refuse('badHostPort')
+    return { input, value: input.toLowerCase(), kind: 'host:port' }
+  }
   if (UNSAFE.test(input) || input.includes('[') || input.includes(']')) {
-    return invalid('targetChars')
+    return refuse('targetChars')
   }
 
-  const lower = input.toLowerCase().replace(/\.$/, '')
-  if (lower.startsWith('*.')) {
-    return DOMAIN.test(lower.slice(2))
-      ? { input, value: lower, kind: 'wildcard' }
-      : invalid('wildcardForm')
+  const trimmedDot = input.replace(/\.$/, '')
+  // A service name: host:port/tcp or host:port/udp.
+  const service = /^(.+):(\d{1,5})\/(tcp|udp)$/i.exec(trimmedDot)
+  if (service) {
+    const host = toAsciiHost(service[1])
+    if (host && validPort(service[2]) && (DOMAIN.test(host) || IPV4.test(host))) {
+      return {
+        input,
+        value: `${host}:${service[2]}/${service[3].toLowerCase()}`,
+        kind: 'host:port',
+      }
+    }
+    return refuse('badHostPort')
   }
+
+  if (trimmedDot.startsWith('*.')) {
+    const host = toAsciiHost(trimmedDot.slice(2))
+    if (host && punycodeTld(host)) return refuse('idnTld')
+    return host && DOMAIN.test(host)
+      ? { input, value: `*.${host}`, kind: 'wildcard' }
+      : refuse('wildcardForm')
+  }
+
+  const lower = trimmedDot.toLowerCase()
   if (IPV4.test(lower)) return { input, value: lower, kind: 'ipv4' }
   if (lower.includes('/')) {
     const [addr, bits, ...rest] = lower.split('/')
-    const n = Number(bits)
     if (rest.length === 0 && /^\d{1,3}$/.test(bits ?? '')) {
-      if (IPV4.test(addr) && n <= 32) return { input, value: lower, kind: 'cidr' }
-      if (isIPv6(addr) && n <= 128) return { input, value: lower, kind: 'cidr' }
+      const n = Number(bits)
+      if (IPV4.test(addr) && n <= 32) {
+        return 32 - n > MAX_HOST_BITS
+          ? refuse('cidrTooLarge')
+          : { input, value: lower, kind: 'cidr' }
+      }
+      if (isIPv6(addr) && n <= 128) {
+        return 128 - n > MAX_HOST_BITS
+          ? refuse('cidrTooLarge')
+          : { input, value: lower, kind: 'cidr' }
+      }
+      return refuse('badCidr')
     }
-    return invalid('badCidr')
+    // More than one slash, or one that is not a prefix length after an
+    // address: a path or a repository (the API refuses it the same way).
+    if (lower.split('/').length > 2 || !IPV4.test(addr)) return refuse('repo', 'repo')
+    return refuse('badCidr')
   }
   if (isIPv6(lower)) return { input, value: lower, kind: 'ipv6' }
   const hp = /^(.+):(\d{1,5})$/.exec(lower)
   if (hp) {
-    const port = Number(hp[2])
-    const host = hp[1]
+    const host = toAsciiHost(hp[1])
     if (
-      port >= 1 &&
-      port <= 65535 &&
+      host &&
+      validPort(hp[2]) &&
       (DOMAIN.test(host) || IPV4.test(host) || host === 'localhost')
     ) {
-      return { input, value: lower, kind: 'host:port' }
+      return { input, value: `${host}:${hp[2]}`, kind: 'host:port' }
     }
-    return invalid('badHostPort')
+    return refuse('badHostPort')
   }
-  if (DOMAIN.test(lower)) return { input, value: lower, kind: 'domain' }
-  return invalid('unknown')
+  const host = toAsciiHost(lower)
+  if (host && punycodeTld(host)) return refuse('idnTld')
+  if (host && DOMAIN.test(host)) return { input, value: host, kind: 'domain' }
+  return refuse('unknown')
+}
+
+/** The key two entries are the same target by: the sent form, or the typed one lower-cased. */
+export function targetKey(raw: string): string {
+  const c = classifyTarget(raw)
+  return isRefusedKind(c.kind) ? c.input.toLowerCase() : c.value.toLowerCase()
 }
 
 export interface PastedTargets {
-  /** Every non-empty line, classified, in order. */
+  /** Every non-empty entry, classified, in order. */
   lines: ClassifiedTarget[]
   /** Valid targets, normalized, without repeats. */
   targets: string[]
+  /** Entries that are not added: invalid ones and paths or repositories. */
   invalid: ClassifiedTarget[]
-  /** Lines that repeat an earlier target. */
+  /** Entries that repeat an earlier target. */
   duplicates: number
+  /** Those entries, as typed. */
+  duplicateInputs: string[]
+  /** Targets of each kind (repeats counted once), and entries not added by kind. */
   byKind: Partial<Record<TargetKind, number>>
 }
 
+/** A `#` starts a comment at the start of a line or after a space (not inside a URL). */
+function withoutComment(line: string): string {
+  const i = line.search(/(^|\s)#/)
+  return i < 0 ? line : line.slice(0, i)
+}
+
+/** The entries of typed or pasted lines: comments removed, split on commas, semicolons and spaces. */
+export function splitEntries(lines: readonly string[]): string[] {
+  return lines
+    .flatMap((line) => withoutComment(line).split(/[,;\s]+/))
+    .map((s) => s.trim())
+    .filter(Boolean)
+}
+
 /** Classify, normalize and de-duplicate typed lines. */
-export function parsePastedTargets(lines: string[]): PastedTargets {
-  const out: PastedTargets = { lines: [], targets: [], invalid: [], duplicates: 0, byKind: {} }
+export function parsePastedTargets(lines: readonly string[]): PastedTargets {
+  const out: PastedTargets = {
+    lines: [],
+    targets: [],
+    invalid: [],
+    duplicates: 0,
+    duplicateInputs: [],
+    byKind: {},
+  }
   const seen = new Set<string>()
-  // A target never holds a comma, a semicolon or a space: a pasted list may
-  // use any of them between targets.
-  const tokens = lines.flatMap((line) => line.split(/[,;\s]+/))
-  for (const raw of tokens) {
-    if (!raw.trim()) continue
+  for (const raw of splitEntries(lines)) {
     const c = classifyTarget(raw)
     out.lines.push(c)
-    out.byKind[c.kind] = (out.byKind[c.kind] ?? 0) + 1
-    if (c.kind === 'invalid') {
+    if (isRefusedKind(c.kind)) {
+      out.byKind[c.kind] = (out.byKind[c.kind] ?? 0) + 1
       out.invalid.push(c)
       continue
     }
     const key = c.value.toLowerCase()
     if (seen.has(key)) {
       out.duplicates++
+      out.duplicateInputs.push(c.input)
       continue
     }
     seen.add(key)
+    out.byKind[c.kind] = (out.byKind[c.kind] ?? 0) + 1
     out.targets.push(c.value)
   }
   return out
+}
+
+/**
+ * The lines with every entry whose key (targetKey) is in `keys` removed; an
+ * entry inside a line of several stays with its neighbours. Lines left empty
+ * are dropped.
+ */
+export function withoutTargets(lines: readonly string[], keys: readonly string[]): string[] {
+  const drop = new Set(keys.map((k) => k.trim().toLowerCase()))
+  const out: string[] = []
+  for (const line of lines) {
+    const entries = splitEntries([line])
+    const kept = entries.filter((e) => !drop.has(targetKey(e)))
+    if (kept.length === entries.length) {
+      if (entries.length > 0) out.push(line)
+    } else if (kept.length > 0) {
+      out.push(kept.join(', '))
+    }
+  }
+  return out
+}
+
+/** The text of a CSV cell, quotes removed. */
+function csvCell(cell: string): string {
+  const c = cell.trim()
+  return c.length >= 2 && c.startsWith('"') && c.endsWith('"')
+    ? c.slice(1, -1).replace(/""/g, '"').trim()
+    : c
+}
+
+function isTarget(entry: string): boolean {
+  return entry !== '' && !isRefusedKind(classifyTarget(entry).kind)
+}
+
+/**
+ * The entries of an uploaded `.txt` or `.csv` file. A text file is read line
+ * by line. A CSV keeps the columns that mostly hold targets (other columns,
+ * such as an owner or a note, are left out), and drops a first row with no
+ * target in it (a header).
+ */
+export function targetFileLines(text: string, fileName: string): string[] {
+  const rows = text.split(/\r?\n/).filter((r) => r.trim() !== '')
+  if (!/\.csv$/i.test(fileName)) return rows.map((r) => r.trim())
+  let cells = rows.map((r) => r.split(',').map(csvCell))
+  if (cells.length > 1 && !cells[0].some(isTarget)) cells = cells.slice(1)
+  const width = Math.max(0, ...cells.map((r) => r.length))
+  const columns: number[] = []
+  for (let col = 0; col < width; col++) {
+    const filled = cells.map((r) => r[col] ?? '').filter(Boolean)
+    const good = filled.filter(isTarget).length
+    if (filled.length > 0 && good * 2 >= filled.length) columns.push(col)
+  }
+  const use = columns.length > 0 ? columns : Array.from({ length: width }, (_, i) => i)
+  return cells.flatMap((r) => use.map((col) => r[col] ?? '')).filter(Boolean)
+}
+
+/**
+ * The lines with the first entry typed exactly as `input` replaced by `next`
+ * (an entry inside a line of several stays with its neighbours).
+ */
+export function replaceEntryInLines(
+  lines: readonly string[],
+  input: string,
+  next: string
+): string[] {
+  let done = false
+  return lines.map((line) => {
+    if (done) return line
+    const entries = splitEntries([line])
+    const i = entries.indexOf(input)
+    if (i < 0) return line
+    done = true
+    if (entries.length === 1) return next
+    entries[i] = next
+    return entries.join(', ')
+  })
 }
