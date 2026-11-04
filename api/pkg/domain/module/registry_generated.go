@@ -177,7 +177,7 @@ var Registry = []Definition{
 		Depends: []Dependency{
 			{ModuleID: ModuleAssets, Type: DependencyHard, Reason: "relationships are between assets"},
 		},
-		Routes: []string{"/api/v1/relationships", "/api/v1/assets/{}/relationships"},
+		Routes: []string{"/api/v1/relationships", "/api/v1/assets/{}/relationships", "/api/v1/assets/{}/neighborhood"},
 	},
 	{
 		ID: ModuleScannerTemplates, Slug: "scanner-templates", Name: "Scanner Templates",
