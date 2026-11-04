@@ -450,7 +450,7 @@ func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *sc
 	if err != nil {
 		return fmt.Errorf("step %s: %w", step.StepKey, err)
 	}
-	step = resolved.WithTool(step)
+	step = resolved.WithTool(resolved.WithDepthDefaults(step, RunDepth(run)))
 	if err := checkStepIntensity(run, step, resolved); err != nil {
 		return fmt.Errorf("step %s: %w", step.StepKey, err)
 	}
