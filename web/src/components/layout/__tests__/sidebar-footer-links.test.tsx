@@ -4,7 +4,10 @@ import userEvent from '@testing-library/user-event'
 import { usePathname } from 'next/navigation'
 import { SidebarProvider } from '@/components/ui/sidebar'
 import { SidebarFooterLinks } from '../sidebar-footer-links'
-import { REPORT_ISSUE_URL } from '@/config/help-links'
+import { BrandProvider } from '@/context/brand-provider'
+import { DEFAULT_BRAND } from '@/lib/brand'
+import { DEFAULT_HELP_LINKS, type HelpLinks } from '@/config/help-links'
+import { DEFAULT_BUG_URL, DEFAULT_FEEDBACK_URL, DEFAULT_SECURITY_URL } from '@/config/help-links'
 import { DOCS_URL } from '@/lib/docs-links'
 import { KEYBOARD_SHORTCUTS, shortcutsForShell } from '@/config/keyboard-shortcuts'
 
@@ -92,7 +95,7 @@ describe('SidebarFooterLinks', () => {
     expect(screen.getByText('Sign out row')).toBeInTheDocument()
   })
 
-  it('Help opens a menu with docs, shortcuts, issue tracker and about', async () => {
+  it('Help opens a menu with docs, shortcuts, the three report entries and about', async () => {
     const user = userEvent.setup()
     renderFooter({ shell: 'app', showSettings: true })
     await user.click(screen.getByRole('button', { name: 'Help' }))
@@ -101,7 +104,9 @@ describe('SidebarFooterLinks', () => {
     expect(items.map((i) => i.textContent?.replace('(opens in a new tab)', '').trim())).toEqual([
       'Documentation',
       'Keyboard shortcuts',
-      'Report an issue',
+      'Report a bug',
+      'Send feedback or request a feature',
+      'Report a security vulnerability',
       'About OpenCTEM',
     ])
 
@@ -110,10 +115,18 @@ describe('SidebarFooterLinks', () => {
     expect(docs).toHaveAttribute('target', '_blank')
     expect(docs.getAttribute('rel')).toContain('noopener')
 
-    const issue = within(menu).getByRole('menuitem', { name: /Report an issue/ })
-    expect(issue).toHaveAttribute('href', REPORT_ISSUE_URL)
-    expect(issue).toHaveAttribute('target', '_blank')
-    expect(issue.getAttribute('rel')).toContain('noopener')
+    for (const [name, href] of [
+      [/Report a bug/, DEFAULT_BUG_URL],
+      [/Send feedback/, DEFAULT_FEEDBACK_URL],
+      [/security vulnerability/, DEFAULT_SECURITY_URL],
+    ] as const) {
+      const item = within(menu).getByRole('menuitem', { name })
+      expect(item).toHaveAttribute('href', href)
+      expect(item).toHaveAttribute('target', '_blank')
+      expect(item.getAttribute('rel')).toContain('noopener')
+    }
+    // A vulnerability is never filed as a public issue.
+    expect(DEFAULT_SECURITY_URL).not.toContain('/issues')
   })
 
   it('Keyboard shortcuts lists exactly the configured shortcuts for the shell', async () => {
@@ -162,5 +175,50 @@ describe('SidebarFooterLinks', () => {
     await user.click(await screen.findByRole('menuitem', { name: 'About OpenCTEM' }))
     const dialog = await screen.findByRole('dialog', { name: 'About OpenCTEM' })
     expect(within(dialog).getByTestId('about-api-version')).toHaveTextContent('unavailable')
+  })
+})
+
+describe('SidebarFooterLinks help links set by the operator', () => {
+  const help = (over: Partial<HelpLinks>) => ({ ...DEFAULT_HELP_LINKS, ...over })
+  const open = async (brandHelp: HelpLinks) => {
+    const user = userEvent.setup()
+    render(
+      <BrandProvider brand={{ ...DEFAULT_BRAND, help: brandHelp }}>
+        <SidebarProvider>
+          <SidebarFooterLinks shell="app" />
+        </SidebarProvider>
+      </BrandProvider>
+    )
+    await user.click(screen.getByRole('button', { name: 'Help' }))
+    return within(await screen.findByRole('menu'))
+  }
+
+  it('repoints the bug and feedback entries and the security entry', async () => {
+    const menu = await open(
+      help({
+        bugUrl: 'https://jira.corp.example/bug',
+        feedbackUrl: 'https://jira.corp.example/idea',
+        securityUrl: 'mailto:secops@corp.example',
+      })
+    )
+    expect(menu.getByRole('menuitem', { name: /Report a bug/ })).toHaveAttribute(
+      'href',
+      'https://jira.corp.example/bug'
+    )
+    expect(menu.getByRole('menuitem', { name: /Send feedback/ })).toHaveAttribute(
+      'href',
+      'https://jira.corp.example/idea'
+    )
+    expect(menu.getByRole('menuitem', { name: /security vulnerability/ })).toHaveAttribute(
+      'href',
+      'mailto:secops@corp.example'
+    )
+  })
+
+  it('hides bug and feedback but keeps the security entry', async () => {
+    const menu = await open(help({ hidden: true }))
+    expect(menu.queryByRole('menuitem', { name: /Report a bug/ })).toBeNull()
+    expect(menu.queryByRole('menuitem', { name: /Send feedback/ })).toBeNull()
+    expect(menu.getByRole('menuitem', { name: /security vulnerability/ })).toBeInTheDocument()
   })
 })

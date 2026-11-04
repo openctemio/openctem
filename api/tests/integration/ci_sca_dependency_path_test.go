@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/pkg/domain/cirun"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -29,7 +29,7 @@ func ciSCAFixture(t *testing.T, repo string) ctis.Report {
 	if err := json.Unmarshal(b, &rep); err != nil {
 		t.Fatal(err)
 	}
-	rep.Metadata.ID = shared.NewID().String()
+	rep.Metadata.ID = ctis.NewReportID()
 	rep.Assets[0].Value = repo
 	return rep
 }
@@ -40,8 +40,7 @@ func ciSCAUploadReport(t *testing.T, r *ciRig, tenant shared.ID, cfg *cirun.Trus
 	if code != http.StatusCreated {
 		t.Fatalf("exchange: %d %v", code, ex)
 	}
-	if resp, out := r.upload(ex["run_id"].(string), ex["token"].(string),
-		map[string]any{"report": rep}); resp.StatusCode != http.StatusAccepted {
+	if resp, out := r.upload(ex["run_id"].(string), ex["token"].(string), rep); resp.StatusCode != http.StatusAccepted {
 		t.Fatalf("upload: %d %v", resp.StatusCode, out)
 	}
 }
@@ -67,7 +66,7 @@ func TestCISCAUpload_PersistsDependencyPath(t *testing.T) {
 	r := newCIRig(t)
 	cfgA := r.trust(r.tenant, cirun.Rules{Owners: []string{"acme"}})
 	cfgB := r.trust(r.other, cirun.Rules{Owners: []string{"acme"}})
-	repoName := strings.ToLower(strings.TrimPrefix(r.idp.srv.URL, "https://")) + "/acme/api"
+	repoName := strings.ToLower(strings.TrimPrefix(r.idp.url, "https://")) + "/acme/api"
 
 	ciSCAUploadReport(t, r, r.tenant, cfgA, ciSCAFixture(t, repoName))
 

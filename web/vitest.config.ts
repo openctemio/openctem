@@ -52,9 +52,15 @@ export default defineConfig({
     ],
   },
   resolve: {
-    alias: {
-      '@': path.resolve(__dirname, './src'),
-      '@console': path.resolve(__dirname, './console/src'),
-    },
+    // `@extension/*` is the empty stub here; an extension's own test run points it
+    // at the overlay with its own config (docs/development/editions.md).
+    alias: [
+      {
+        find: /^@extension\/(.*)$/,
+        replacement: path.resolve(__dirname, './src/extension-default/$1'),
+      },
+      { find: '@', replacement: path.resolve(__dirname, './src') },
+      { find: '@console', replacement: path.resolve(__dirname, './console/src') },
+    ],
   },
 })

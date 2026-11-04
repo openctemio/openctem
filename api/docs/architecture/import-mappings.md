@@ -1,7 +1,7 @@
 # Import mappings
 
 Design: [RFC-126](../rfcs/RFC-126-import-mappings.md). The language: ctis
-`docs/mapping.md` (`openctem.io/mapping/v1`).
+`docs/mapping.md` (`openctem.io/mapping/v2`).
 
 ## What is shipped
 

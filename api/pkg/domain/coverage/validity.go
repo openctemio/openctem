@@ -15,7 +15,7 @@ import (
 	"context"
 	"slices"
 
-	"github.com/openctemio/ctis/outcome"
+	"github.com/openctemio/contract/outcome"
 )
 
 // observedOutcomes are the failure outcomes that are observations of the

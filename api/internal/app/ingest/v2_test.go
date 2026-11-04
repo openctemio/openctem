@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
 )
@@ -101,7 +101,7 @@ func TestResolveV2Assets(t *testing.T) {
 
 func TestV2HeaderOf(t *testing.T) {
 	r := &ctis.Report{
-		Metadata: ctis.ReportMetadata{ID: "x", Timestamp: time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)},
+		Metadata: ctis.ReportMetadata{ID: testReportID, GeneratedAt: time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)},
 		Tool:     &ctis.Tool{Name: "semgrep"},
 		Findings: []ctis.Finding{{Title: "a"}},
 	}

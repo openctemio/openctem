@@ -70,6 +70,7 @@ import {
   useRevokeGateOverride,
   useSaveGatePolicy,
   useSaveTrustConfig,
+  useSCMApps,
   useTrustConfigs,
   useTrustRefusals,
 } from '../api/use-ci'
@@ -131,7 +132,11 @@ export function CITrustSettings({ embedded = false }: { embedded?: boolean } = {
   const trusts = useTrustConfigs()
   const policies = useGatePolicies()
   const refusals = useTrustRefusals({ enabled: canWrite })
-  const settled = !trusts.isLoading && !policies.isLoading && !refusals.isLoading
+  // The pull request feedback section sits above break-glass and grows when
+  // its code-host apps arrive: wait for them too, or the scroll lands short.
+  const scmApps = useSCMApps()
+  const settled =
+    !trusts.isLoading && !policies.isLoading && !refusals.isLoading && !scmApps.isLoading
   useEffect(() => {
     if (!sectionParam || !settled) return
     const el = document.getElementById(sectionHeadingId(setupSection(sectionParam)))

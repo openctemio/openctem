@@ -68,7 +68,7 @@ func TestProgramTargets_IngestedThroughTheStandardPath(t *testing.T) {
 	types := assetTypesByName(t, db, tenant)
 	for name, typ := range map[string]string{
 		"www.t" + suffix + ".example":              "domain",
-		"api.t" + suffix + ".example":              "domain",
+		"api.t" + suffix + ".example":              "subdomain", // below its registrable apex
 		"com.t" + suffix + ".app":                  "application/mobile_app",
 		"https://shop.t" + suffix + ".example/api": "application/website", // the standard path classifies a site URL
 	} {

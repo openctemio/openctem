@@ -32,6 +32,7 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"net/url"
 	"strings"
 	"time"
 
@@ -50,6 +51,30 @@ import (
 
 // DefaultMFAIssuer is the issuer label shown by authenticator apps.
 const DefaultMFAIssuer = brand.DefaultName
+
+// MFAIssuer is the issuer label of a new authenticator entry: the product
+// name and the host people sign in to, e.g. "OpenCTEM (app.example.com)". A
+// person with an account on two installations (a staging and a production
+// one) then sees two entries they can tell apart; with the name alone both
+// entries look the same and the code of the other one is refused. Only new
+// enrolments use it: an existing entry keeps the label it was created with,
+// and the secret is untouched. The host is the hostname only (no port: a
+// colon would split the otpauth label).
+func MFAIssuer(name, appURL string) string {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		name = DefaultMFAIssuer
+	}
+	u, err := url.Parse(strings.TrimSpace(appURL))
+	if err != nil {
+		return name
+	}
+	host := strings.TrimSuffix(strings.ToLower(u.Hostname()), ".")
+	if host == "" || strings.ContainsAny(host, ":()") {
+		return name
+	}
+	return name + " (" + host + ")"
+}
 
 // recoveryCodeAlphabet omits look-alike characters (0/o, 1/l/i).
 const recoveryCodeAlphabet = "abcdefghjkmnpqrstuvwxyz23456789"
@@ -943,18 +968,46 @@ func (s *AuthService) activatePending(ctx context.Context, u *userdom.User, code
 // checkTOTP verifies a code against the active secret and records its time
 // step; a code from a step already used is rejected (replay).
 func (s *AuthService) checkTOTP(ctx context.Context, f *mfa.Factor, code string) (bool, error) {
+	out, err := s.verifyTOTP(ctx, f, code)
+	return out == totpAccepted, err
+}
+
+// totpOutcome is why a TOTP code was accepted or refused.
+type totpOutcome int
+
+const (
+	totpInvalid  totpOutcome = iota // no secret, or the code matches no step in the window
+	totpReplayed                    // the code matches a step already used (or an older one)
+	totpAccepted
+)
+
+// errTOTPDecrypt: the stored secret could not be decrypted (the encryption
+// key changed or the row is damaged). Not the person's fault: it is not a
+// refused code and does not count towards the lockout.
+var errTOTPDecrypt = errors.New("decrypt mfa secret")
+
+// verifyTOTP is checkTOTP with the reason for a refusal. A code from a step
+// already used is totpReplayed; errTOTPDecrypt when the secret is unreadable.
+func (s *AuthService) verifyTOTP(ctx context.Context, f *mfa.Factor, code string) (totpOutcome, error) {
 	if f.SecretEncrypted == "" {
-		return false, nil
+		return totpInvalid, nil
 	}
 	secret, err := s.mfaEncryptor.DecryptString(f.SecretEncrypted)
 	if err != nil {
-		return false, fmt.Errorf("decrypt mfa secret: %w", err)
+		return totpInvalid, fmt.Errorf("%w: %w", errTOTPDecrypt, err)
 	}
 	step, ok := totp.Verify(secret, normalizeTOTPCode(code), time.Now())
 	if !ok {
-		return false, nil
+		return totpInvalid, nil
 	}
-	return s.mfaRepo.AdvanceStep(ctx, f.UserID, step)
+	advanced, err := s.mfaRepo.AdvanceStep(ctx, f.UserID, step)
+	if err != nil {
+		return totpInvalid, err
+	}
+	if !advanced {
+		return totpReplayed, nil
+	}
+	return totpAccepted, nil
 }
 
 // checkTOTPOrRecovery accepts either kind of code: a 6-digit value is checked
@@ -1039,8 +1092,11 @@ func normalizeRecoveryCode(code string) string {
 	return strings.ReplaceAll(code, " ", "")
 }
 
+// normalizeTOTPCode drops the separators people type or paste ("123 456",
+// "123-456").
 func normalizeTOTPCode(code string) string {
-	return strings.ReplaceAll(strings.TrimSpace(code), " ", "")
+	code = strings.ReplaceAll(strings.TrimSpace(code), " ", "")
+	return strings.ReplaceAll(code, "-", "")
 }
 
 func isDigits(s string) bool {

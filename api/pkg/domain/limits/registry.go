@@ -31,6 +31,7 @@ var KeyDescriptions = map[Key]string{
 
 // NamedFeatureDescriptions describes every named feature below module level.
 var NamedFeatureDescriptions = map[string]string{
+	FeatureActiveScanning:      "sending active or intrusive probes (scan tiers above passive) from any sensor",
 	FeatureSSOConnections:      "configuring per-organization SAML and OIDC connections",
 	FeatureSSOEnforcement:      "requiring SSO sign-in for members",
 	FeatureSCIM:                "SCIM provisioning (tokens and the SCIM API)",

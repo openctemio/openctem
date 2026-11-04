@@ -220,3 +220,7 @@ organization, so this can be layered on later.
 | M3 | Entitlements: grants and denies, admin console pages, organization view, reasons in the console (revised 2026-10-15: denies only, per origin) | #1635 |
 | M4 | Downgrade grace: 30 days read-only (reads and GET exports pass, writes 403 `read_only_grace`, jobs stop); schedules are skipped while off and resume on the next tick | #1643 |
 | M5 | Organization bundles retired (presets remain for preferences) | with M3 |
+| M6 | Closure over hard dependencies; presets within reach (2026-11-02) | #3562 |
+| M7 | Every job of a module that can be switched off skips an organization that has it off, proven by one test per job; sweeps leave a disabled organization out of their query | #3566 |
+| M8 | State cache and ETag follow every change of the effective state: grace and timed-deny ends, failed reads never cached, hash of the state in the ETag | #3568 |
+| M9 | No switch without an effect: no-op modules retired, page-only modules folded into their parent, risk scoring and suppressions core, AI triage off the page, `scope: platform` modules answered as `disabled_by_platform`, MCP reads during grace | this change |

@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	appimportmapping "github.com/openctemio/openctem/api/internal/app/importmapping"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
@@ -15,7 +15,7 @@ import (
 
 func resolvedCSV(t *testing.T) *appimportmapping.Resolved {
 	t.Helper()
-	doc := `{"apiVersion": "openctem.io/mapping/v1", "source": "csv", "identity": ["title", "asset_value"],
+	doc := `{"apiVersion": "openctem.io/mapping/v2", "source": "csv", "identity": ["title", "asset_value"],
 	  "records": [{"kind": "finding", "set": {"title": "/title", "severity": {"path": "/severity", "lower": true}, "asset_value": "/host", "asset_type": {"const": "host"}}}]}`
 	m, problems := dom.Compile([]byte(doc))
 	if len(problems) > 0 {
@@ -46,14 +46,19 @@ func TestImportFile_Mapping(t *testing.T) {
 		t.Fatalf("ingest calls %d", len(ing.calls))
 	}
 	call := ing.calls[0]
-	if call.CoverageType != ingest.CoverageTypePartial || call.Report.Metadata.CoverageType != string(ingest.CoverageTypePartial) {
+	if call.CoverageType != ingest.CoverageTypePartial || call.Report.Metadata.CoverageType != ctis.CoveragePartial {
 		t.Fatalf("coverage %q / %q", call.CoverageType, call.Report.Metadata.CoverageType)
 	}
 	if call.Options.SourceName != "mapped:legacy-vm" || call.Report.Tool == nil || call.Report.Tool.Name != "mapped:legacy-vm" {
 		t.Fatalf("source %q tool %+v", call.Options.SourceName, call.Report.Tool)
 	}
-	if f := call.Report.Findings[0]; f.Title != "OpenSSL" || f.AssetValue != "web-01.example.com" {
-		t.Fatalf("finding %+v", f)
+	f := call.Report.Findings[0]
+	a := assetOf(call.Report, f.AssetRef)
+	if f.Title != "OpenSSL" || a == nil || a.Type != ctis.AssetTypeHost || a.Value != "web-01.example.com" {
+		t.Fatalf("finding %+v asset %+v", f, a)
+	}
+	if !ctis.IsReportID(call.Report.Metadata.ID) {
+		t.Fatalf("metadata.id %q is not a UUIDv7", call.Report.Metadata.ID)
 	}
 }
 
@@ -78,16 +83,30 @@ func TestConvert_MappingRepositoryDefault(t *testing.T) {
 	mp := resolvedCSV(t)
 	var got *Converted
 	_, refused := Convert(context.Background(), Upload{Name: "r", Body: strings.NewReader("title,severity\nX,high\n"), Mapping: mp,
-		ReportIDPrefix: "run", Repository: "github.com/example/app"}, func(c Converted) { got = &c })
+		Repository: "github.com/example/app"}, func(c Converted) { got = &c })
 	if refused != nil || got == nil || got.Error != nil {
 		t.Fatalf("refused %+v got %+v", refused, got)
 	}
 	// A CI upload reads coverage from the report: a mapped one is partial.
-	if cov := got.Result.Report.Metadata.CoverageType; cov != string(ingest.CoverageTypePartial) {
+	if cov := got.Result.Report.Metadata.CoverageType; cov != ctis.CoveragePartial {
 		t.Fatalf("coverage %q", cov)
 	}
-	f := got.Result.Report.Findings[0]
-	if f.AssetValue != "github.com/example/app" || f.AssetType != ctis.AssetTypeRepository {
-		t.Fatalf("finding %+v", f)
+	rep := got.Result.Report
+	if !ctis.IsReportID(rep.Metadata.ID) {
+		t.Fatalf("metadata.id %q is not a UUIDv7", rep.Metadata.ID)
 	}
+	f := rep.Findings[0]
+	a := assetOf(rep, f.AssetRef)
+	if a == nil || a.Value != "github.com/example/app" || a.Type != ctis.AssetTypeRepository {
+		t.Fatalf("finding %+v asset %+v", f, a)
+	}
+}
+
+func assetOf(r *ctis.Report, id string) *ctis.Asset {
+	for i := range r.Assets {
+		if r.Assets[i].ID == id {
+			return &r.Assets[i]
+		}
+	}
+	return nil
 }

@@ -20,7 +20,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/openctemio/ctis/capability"
+	"github.com/openctemio/contract/capability"
 )
 
 // ToolContractAPIVersion is the tool manifest format the platform reads.
@@ -56,7 +56,7 @@ type ToolContract struct {
 	Network    string   `json:"network,omitempty" enums:"none,targets,resolver,egress-proxy,vendor"`
 	Consumes   []string `json:"consumes,omitempty"`
 	Produces   []string `json:"produces"`
-	// Implements are the capabilities (ctis/capability references,
+	// Implements are the capabilities (contract/capability references,
 	// "scan.ports@1") the tool's descriptor implements. Only references
 	// the taxonomy knows are kept.
 	Implements []string `json:"implements,omitempty"`

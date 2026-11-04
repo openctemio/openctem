@@ -2,15 +2,13 @@ package ingest
 
 // Port and service results surfaced (research/22 P0-6, bug 22c B6).
 //
-// A port scanner (naabu, nmap, masscan, rustscan) reports an IP address with
-// the open ports it found. Those ports used to land only in the address's
-// properties: no service row, no port_open exposure, no relationship and no
-// history, so a newly opened port was recorded and never surfaced. Now:
+// A port scanner (naabu, nmap, masscan, rustscan) reports, in CTIS 2.0, an
+// IP address and one `service` asset per open port ("<ip>:<port>/<transport>",
+// linked from the address by an `exposes` relationship). Each is stored as an
+// open_port service asset and goes through the same exclusions, attribution
+// and scope rules as any reported asset; the exposure bridge projects it to
+// port_open. Then:
 //
-//   - each open port becomes an open_port service asset "<ip>:<port>"
-//     (expandOpenPorts adds it to the report, so it goes through the same
-//     exclusions, attribution and scope rules as any reported asset, and the
-//     exposure bridge projects it to port_open);
 //   - the address gets an `exposes` edge to each port, and a host name the
 //     scanner reported gets a `resolves_to` edge to the address when the
 //     tenant already has that name as a domain or subdomain asset (a sensor
@@ -28,10 +26,11 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"strconv"
 	"strings"
 
-	"github.com/openctemio/ctis"
-	"github.com/openctemio/ctis/capability"
+	"github.com/openctemio/contract/capability"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -57,7 +56,7 @@ func isPortScanReport(report *ctis.Report) bool {
 	if report == nil {
 		return false
 	}
-	if id, _, ok := capability.ParseRef(report.Metadata.Capability); ok && id == string(stage.ScanPorts) {
+	if id, _, ok := capability.ParseRef(reportCapability(report)); ok && id == string(stage.ScanPorts) {
 		return true
 	}
 	if report.Tool == nil {
@@ -71,10 +70,10 @@ func isPortScanReport(report *ctis.Report) bool {
 	return false
 }
 
-// portAssetName is the reported name of the open_port asset of host, port
-// and protocol ("203.0.113.5:443/tcp", "[2001:db8::1]:443/tcp").
+// portAssetName is the CTIS 2.0 value of the service asset of host, port
+// and transport ("203.0.113.5:443/tcp", "[2001:db8::1]:443/tcp").
 func portAssetName(host string, port int, proto string) string {
-	return net.JoinHostPort(host, fmt.Sprint(port)) + "/" + proto
+	return net.JoinHostPort(host, strconv.Itoa(port)) + "/" + proto
 }
 
 // portKey is the name an open_port asset is stored under (the inventory's
@@ -83,111 +82,70 @@ func portKey(name string) string {
 	return asset.NormalizeName(name, asset.AssetTypeService, "open_port")
 }
 
-// openPortsOf returns the open ports an IP address asset of the report lists
-// (state open or unset), deduplicated, at most maxPortsPerHost.
-func openPortsOf(a *ctis.Asset) []ctis.PortInfo {
-	if a == nil || a.Type != ctis.AssetTypeIPAddress || a.Technical == nil || a.Technical.IPAddress == nil {
-		return nil
+// reportPort is one open port a service asset of the report names.
+type reportPort struct {
+	Port      int
+	Transport string
+}
+
+// servicePortsByHost groups the report's service assets by the address in
+// their value: the open ports (state open or unset) each address exposes,
+// deduplicated, at most maxPortsPerHost per address.
+func servicePortsByHost(report *ctis.Report) map[string][]reportPort {
+	out := map[string][]reportPort{}
+	if report == nil {
+		return out
 	}
 	seen := map[string]bool{}
-	out := make([]ctis.PortInfo, 0, len(a.Technical.IPAddress.Ports))
-	for _, p := range a.Technical.IPAddress.Ports {
-		if p.Port <= 0 || p.Port > 65535 {
+	for i := range report.Assets {
+		a := &report.Assets[i]
+		if a.Type != ctis.AssetTypeService {
 			continue
 		}
-		if st := strings.ToLower(strings.TrimSpace(p.State)); st != "" && st != "open" {
+		if a.Technical != nil && a.Technical.Service != nil {
+			if st := a.Technical.Service.State; st != "" && st != ctis.PortOpen {
+				continue
+			}
+		}
+		host, port, transport, ok := splitServiceValue(a.Value)
+		if !ok || net.ParseIP(host) == nil {
 			continue
 		}
-		proto := strings.ToLower(strings.TrimSpace(p.Protocol))
-		if proto == "" {
-			proto = "tcp"
-		}
-		key := fmt.Sprintf("%d/%s", p.Port, proto)
-		if seen[key] {
+		key := host + " " + strconv.Itoa(port) + "/" + transport
+		if seen[key] || len(out[host]) >= maxPortsPerHost {
 			continue
 		}
 		seen[key] = true
-		p.Protocol = proto
-		out = append(out, p)
-		if len(out) >= maxPortsPerHost {
-			break
-		}
+		out[host] = append(out[host], reportPort{Port: port, Transport: transport})
 	}
 	return out
+}
+
+// splitServiceValue parses a CTIS 2.0 service value "host:port/transport"
+// ("[v6]:port/transport").
+func splitServiceValue(v string) (host string, port int, transport string, ok bool) {
+	hp, tr, found := strings.Cut(strings.TrimSpace(v), "/")
+	if !found || tr == "" {
+		return "", 0, "", false
+	}
+	h, ps, err := net.SplitHostPort(hp)
+	if err != nil {
+		return "", 0, "", false
+	}
+	n, err := strconv.Atoi(ps)
+	if err != nil || n <= 0 || n > 65535 {
+		return "", 0, "", false
+	}
+	return h, n, strings.ToLower(tr), true
 }
 
 // reportHost is the address an IP asset of the report names.
 func reportHost(a *ctis.Asset) string {
 	h := strings.TrimSpace(a.Value)
-	if h == "" {
-		h = strings.TrimSpace(a.Name)
-	}
 	if net.ParseIP(h) == nil {
 		return ""
 	}
 	return h
-}
-
-// expandOpenPorts adds an open_port asset for every open port an IP address
-// asset of the report lists, unless the report already has one of that name.
-// It returns how many it added.
-func expandOpenPorts(report *ctis.Report) int {
-	if report == nil {
-		return 0
-	}
-	present := map[string]bool{}
-	for i := range report.Assets {
-		if report.Assets[i].Type == ctis.AssetTypeOpenPort {
-			present[portKey(getAssetName(&report.Assets[i]))] = true
-		}
-	}
-	tool := ""
-	if report.Tool != nil {
-		tool = report.Tool.Name
-	}
-	added := 0
-	n := len(report.Assets)
-	for i := 0; i < n && added < maxPortsPerReport; i++ {
-		ip := &report.Assets[i]
-		host := reportHost(ip)
-		if host == "" {
-			continue
-		}
-		for _, p := range openPortsOf(ip) {
-			name := portAssetName(host, p.Port, p.Protocol)
-			if present[portKey(name)] {
-				continue
-			}
-			present[portKey(name)] = true
-			props := ctis.Properties{
-				"host":           host,
-				"port":           p.Port,
-				"protocol":       p.Protocol,
-				"discovery_tool": tool,
-			}
-			if p.Service != "" {
-				props["service"] = p.Service
-			}
-			if p.Version != "" {
-				props["version"] = p.Version
-			}
-			report.Assets = append(report.Assets, ctis.Asset{
-				ID:           "port-" + strings.NewReplacer(":", "-", "/", "-", "[", "", "]", "").Replace(name),
-				Type:         ctis.AssetTypeOpenPort,
-				Value:        name,
-				Name:         name,
-				Criticality:  ip.Criticality,
-				Confidence:   ip.Confidence,
-				DiscoveredAt: ip.DiscoveredAt,
-				Properties:   props,
-			})
-			added++
-			if added >= maxPortsPerReport {
-				break
-			}
-		}
-	}
-	return added
 }
 
 // portHost is one address of the report and the ports seen open on it now.
@@ -204,6 +162,7 @@ type portHost struct {
 func (p *AssetProcessor) surfacePorts(ctx context.Context, tenantID shared.ID, report *ctis.Report,
 	existingMap map[string]*asset.Asset, mayChange func(shared.ID) bool,
 ) {
+	byHost := servicePortsByHost(report)
 	hosts := make([]portHost, 0, len(report.Assets))
 	for i := range report.Assets {
 		a := &report.Assets[i]
@@ -215,8 +174,8 @@ func (p *AssetProcessor) surfacePorts(ctx context.Context, tenantID shared.ID, r
 		if a.Technical != nil && a.Technical.IPAddress != nil {
 			hp.hostname = strings.ToLower(strings.TrimSuffix(strings.TrimSpace(a.Technical.IPAddress.Hostname), "."))
 		}
-		for _, port := range openPortsOf(a) {
-			hp.ports[portKey(portAssetName(host, port.Port, port.Protocol))] = true
+		for _, port := range byHost[host] {
+			hp.ports[portKey(portAssetName(host, port.Port, port.Transport))] = true
 		}
 		hosts = append(hosts, hp)
 	}

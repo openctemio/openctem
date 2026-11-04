@@ -305,6 +305,9 @@ func run() int {
 	if services.OAuth != nil && services.Email != nil {
 		services.OAuth.SetIdentityNotifier(services.Email)
 	}
+	if services.SSO != nil && services.Email != nil {
+		services.SSO.SetIdentityNotifier(services.Email)
+	}
 
 	// Owners of an organization whose e-mail channel was stopped by the
 	// managed service rules are told in-app and through the system SMTP.
@@ -602,14 +605,19 @@ func run() int {
 			}()
 		}
 
-		// Stored findings follow the current identity recipe (version 3, the
-		// CTIS fingerprint recipe v2): re-keyed per tenant in batches, merges
-		// through the finding merge, old keys kept as aliases, scan
-		// auto-resolve paused per tenant while its run is open. Idempotent
-		// and resumable; one replica at a time (advisory lock). Ingest also
-		// re-keys a finding on its next sighting, so nothing is split while
-		// this runs. Down step: refingerprint -down -apply.
-		go runFindingRekeyOnStart(ctx, db, log)
+		// Stored asset names to the CTIS 2.0 canonical form first
+		// (asset_canonical.go), then stored findings to the current identity
+		// recipe (version 4, the CTIS fingerprint recipe v2; finding_rekey.go).
+		// In this order, in one goroutine: an asset merge moves findings,
+		// which the re-key then keys once, and the two never contend for the
+		// same rows. Both are idempotent and resumable; the re-key runs on one
+		// replica at a time (advisory lock), and ingest re-keys a finding on
+		// its next sighting, so nothing is split while they run. Down steps:
+		// asset-canonical -revert, refingerprint -down -apply.
+		go func() {
+			runAssetCanonicalOnStart(ctx, db, log)
+			runFindingRekeyOnStart(ctx, db, log)
+		}()
 
 		// Host keys for commands queued before every command got them at
 		// create (research/130). Idempotent and SKIP LOCKED: safe on every
