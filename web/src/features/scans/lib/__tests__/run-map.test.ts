@@ -215,3 +215,46 @@ describe('comparison with the previous run', () => {
     ])
   })
 })
+
+describe('waiting reasons', () => {
+  const chunks = (over: Partial<RunMapNode['chunks']>) =>
+    ({ total: 0, queued: 0, running: 0, completed: 0, failed: 0, ...over }) as RunMapNode['chunks']
+
+  it('names the gate when one holds every queued chunk', () => {
+    const hosts = node({
+      state: 'waiting',
+      reason: 'waiting_for_hosts',
+      chunks: chunks({ total: 5, queued: 5, hosts_busy: 5 }),
+    })
+    expect(nodeBadgeLines(hosts)[0]).toBe('Waiting for its hosts: another task is scanning them')
+    expect(nodeBadgeLines(hosts).join('\n')).not.toContain('queued:')
+    const refused = node({
+      state: 'waiting',
+      reason: 'waiting_after_refusal',
+      chunks: chunks({ total: 4, queued: 4, refused: 4 }),
+    })
+    expect(nodeBadgeLines(refused)[0]).toBe('Waiting for a sensor whose local policy allows it')
+  })
+
+  it('counts each gate when they are mixed', () => {
+    const lines = nodeBadgeLines(
+      node({
+        state: 'waiting',
+        reason: 'waiting_for_sensor',
+        chunks: chunks({ total: 9, queued: 9, hosts_busy: 5, refused: 4 }),
+      })
+    )
+    expect(lines[0]).toBe('Waiting for a sensor')
+    expect(lines).toContain('5 queued: their hosts are being scanned by another task')
+    expect(lines).toContain(
+      "4 queued: refused by a sensor's local policy, waiting for another sensor"
+    )
+  })
+
+  it('explains the queued chunks of a running step too', () => {
+    const lines = nodeBadgeLines(
+      node({ state: 'running', chunks: chunks({ total: 4, queued: 2, running: 2, hosts_busy: 2 }) })
+    )
+    expect(lines).toContain('2 queued: their hosts are being scanned by another task')
+  })
+})
