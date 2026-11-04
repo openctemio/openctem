@@ -665,6 +665,11 @@ func Register(
 	if h.OAuth != nil {
 		registerIdentityLinkRoutes(router, h.OAuth, authMiddleware, userSync)
 	}
+	// Linking an organization's single sign-on to an existing account
+	// (Account > Security) exists wherever SSO does, social sign-in or not.
+	if h.SSO != nil {
+		registerSSOLinkRoutes(router, h.SSO, authMiddleware, userSync)
+	}
 
 	// Tenant routes (protected with user sync)
 	if h.Tenant != nil {
