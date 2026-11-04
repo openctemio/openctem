@@ -472,8 +472,11 @@ Compatibility and availability are separate:
     release that is neither a draft nor a pre-release and whose image tag is
     published, reading its digest from the registry. A component that cannot
     be resolved fails the run, so a published feed never drops one. The
-    sensor and sdk-go repositories do nothing and need no secret.
-  - The instance verifies the feed as before (pinned key, rollback, expiry),
+    sensor and sdk-go repositories do nothing and need no secret, and the feed
+    itself needs no signing key or secret either: the workflow signs keyless.
+  - The instance verifies the feed (keyless Sigstore signature of the
+    release-feed workflow, checked offline against the embedded trusted root;
+    rollback; expiry; see the release feed architecture doc),
     stores it in `version_check_state`, and hands its components to
     `internal/versions` at start-up, after each online check or import, and on
     every hourly controller tick on every replica. The effective latest
@@ -497,7 +500,7 @@ Compatibility and availability are separate:
 
 ### 12.3 Offline and air-gapped instances
 
-Without the feed (no pinned key, `VERSION_CHECK_ENABLED=false`, no outbound
+Without the feed (no trusted root, `VERSION_CHECK_ENABLED=false`, no outbound
 access) the built-in versions apply, marked as such. The override is the
 existing import of the signed feed file in the console (System > Software
 updates > Import): one file updates the platform and component releases
@@ -520,10 +523,12 @@ gates and gain only the `latest_source` field.
 
 ### 12.5 Maintainer setup
 
-The runtime path is inert until a release feed key is pinned
-(`releasefeed.PinnedKeys`) and the `RELEASE_FEED_SIGNING_KEY` secret exists
-([version check](../architecture/version-check.md#setup-maintainers)).
-`RELEASE_TOKEN` is not needed for any of this.
+No setup (2026-11-03): the release feed is signed keyless by the release-feed
+workflow, so there is no key to pin and no secret to create
+([version check](../architecture/version-check.md#setup-maintainers)). Before
+each release the embedded Sigstore trusted root is refreshed
+(`make -C api sigstore-root-refresh`). `RELEASE_TOKEN` is not needed for any
+of this.
 
 ## 13. Product-agnostic compatibility and organizations' own products (2026-10-18)
 
