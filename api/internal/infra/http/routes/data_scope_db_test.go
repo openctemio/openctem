@@ -256,6 +256,7 @@ func newDSHarness(t *testing.T) *dsHarness {
 	historyHandler := handler.NewAssetStateHistoryHandler(postgres.NewAssetStateHistoryRepository(db), assetRepo, v, log).SetDataScope(enforcer)
 	relSvc := asset.NewAssetRelationshipService(relRepo, assetRepo, log)
 	relSvc.SetDataScope(enforcer)
+	relSvc.SetGraphReader(relRepo)
 	suggSvc := asset.NewRelationshipSuggestionService(postgres.NewRelationshipSuggestionRepository(db), assetRepo, relRepo, log)
 	suggSvc.SetDataScope(enforcer)
 	dedupHandler := handler.NewAdminDedupHandler(postgres.NewAssetDedupRepository(db), log).SetDataScope(enforcer)
