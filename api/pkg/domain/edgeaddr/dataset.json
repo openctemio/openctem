@@ -1,5 +1,5 @@
 {
- "version": "2026-10-25.1",
+ "version": "2026-11-04.1",
  "ranges": [
   {
    "provider": "Cloudflare",
@@ -294,6 +294,11 @@
    "suffix": "trafficmanager.net",
    "provider": "Microsoft",
    "class": "cloud_shared"
+  },
+  {
+   "suffix": "ladipage.com",
+   "provider": "LadiPage",
+   "class": "saas_hosting"
   },
   {
    "suffix": "azurewebsites.net",
