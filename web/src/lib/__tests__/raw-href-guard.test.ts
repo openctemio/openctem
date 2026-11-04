@@ -107,7 +107,10 @@ const REVIEWED = new Set([
   'components/layout/nav-pinned.tsx|SidebarLink|href={r.href}',
   'components/layout/top-nav.tsx|Link|href={href}',
   'components/layout/breadcrumb-nav.tsx|Link|href={item.path}',
-  'components/layout/settings-sidebar-nav.tsx|SidebarLink|href={backHref}',
+  // readReturnPath(): only a same-app path ("/x", never "//x" or a URL).
+  'components/layout/settings-sidebar-nav.tsx|SidebarViewSwitch|href={backHref}',
+  // The prop of the shared Settings / Back to app row; its callers are listed here.
+  'components/layout/sidebar-nav-view.tsx|SidebarLink|href={href}',
   'components/layout/sidebar-brand.tsx|Link|href={href}',
   'components/layout/module-gate.tsx|Link|href={backUrl}',
   'components/layout/org-card.tsx|Link|href={membersLink.url}',
