@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/pkg/domain/cirun"
 )
@@ -23,7 +23,7 @@ func TestCIRunner_AggregateRun(t *testing.T) {
 	aud := cfg.Audience
 	const sha = "3333333333333333333333333333333333333333"
 	const sha2 = "4444444444444444444444444444444444444444"
-	repoName := strings.ToLower(strings.TrimPrefix(r.idp.srv.URL, "https://")) + "/acme/api"
+	repoName := strings.ToLower(strings.TrimPrefix(r.idp.url, "https://")) + "/acme/api"
 
 	join := func(over map[string]any, commit string) (int, map[string]any) {
 		t.Helper()

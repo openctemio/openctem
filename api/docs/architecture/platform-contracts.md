@@ -9,8 +9,9 @@ customers build on sdk-go) is handled by the same code.
 
 | the platform may depend on | where |
 |---|---|
-| ctis: schemas, importers, `capability`, `settings`, `tooloption`, `politeness`, `source`, `outcome`, `fingerprint` | `github.com/openctemio/ctis` |
-| ctis feed transfer (bundle format, fetcher) | `github.com/openctemio/ctis/transfer` (its own module) |
+| ctis: schemas (`schemas/v2`, media type `application/vnd.ctis+json; version=2.0`), importers, `fingerprint`, `severity` | `github.com/openctemio/ctis/v2` |
+| orchestration contracts: `capability`, `settings`, `tooloption`, `politeness`, `edgeprotect`, `addrscope`, `source`, `outcome` | `github.com/openctemio/contract` |
+| feed transfer (bundle format, fetcher) | `github.com/openctemio/contract/transfer` (its own module) |
 | the sensor protocol (versioned) | `api/pkg/sensorproto` |
 | what a sensor reports under its signed key: manifest, tool descriptors, config report, checks | stored per sensor |
 | catalog data: sensor products and their release lines | `versions.yaml` |
@@ -34,7 +35,7 @@ lint rules out of this repository: RFC-094 §6.
 
 ## Adding shared code
 
-Code that both the platform and a sensor need is a contract: add it to ctis
+Code that both the platform and a sensor need is a contract: add it to ctis (a data format) or to contract (an orchestration contract)
 (a new package, or its own module when it needs a dependency), release it,
 and import it from both sides. Never import it from sdk-go into the
 platform.

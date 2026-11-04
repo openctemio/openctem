@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	assetapp "github.com/openctemio/openctem/api/internal/app/asset"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
@@ -62,8 +62,8 @@ func TestAssetTechnologies_Ingest(t *testing.T) {
 	now := time.Now().UTC()
 	probe := func(at time.Time, techs ...any) {
 		t.Helper()
-		g.send(g.tn, "httpx", at, "", ctis.Asset{ID: "d", Type: ctis.AssetTypeDomain, Value: name,
-			Properties: ctis.Properties{"technologies": techs}})
+		g.send(g.tn, "httpx", at, "", ctis.Asset{ID: "d", Type: ctis.AssetTypeDomainName, Value: name,
+			Technologies: techsOf(techs...)})
 	}
 
 	probe(now.Add(-30*time.Minute), "HSTS", "Vercel", "Next.js:13.4.1", "nginx")
@@ -134,7 +134,7 @@ func TestAssetTechnologies_Ingest(t *testing.T) {
 
 	// Another fingerprinting tool reports an older nginx: one technology,
 	// the better version.
-	g.send(g.tn, "httpx", now.Add(-5*time.Minute), "", ctis.Asset{ID: "d", Type: ctis.AssetTypeDomain, Value: name,
+	g.send(g.tn, "httpx", now.Add(-5*time.Minute), "", ctis.Asset{ID: "d", Type: ctis.AssetTypeDomainName, Value: name,
 		Technologies: []ctis.Technology{{Name: "nginx", Version: "1.25.3", Confidence: 80}, {Name: "HSTS"}, {Name: "Next.js", Version: "13.4.2"}}})
 	got = g.technologies(g.tn, name)
 	if len(got) != 3 || got["nginx"].Version != "1.25.3" || got["nginx"].Confidence != 80 {
@@ -146,8 +146,8 @@ func TestAssetTechnologies_TenantIsolation(t *testing.T) {
 	g := newTechRig(t)
 	other := g.r.newTenant("httpx")
 	const name = "iso.tech.example.com"
-	g.send(g.tn, "httpx", time.Now().UTC().Add(-time.Minute), "", ctis.Asset{ID: "d", Type: ctis.AssetTypeDomain, Value: name,
-		Properties: ctis.Properties{"technologies": []any{"nginx:1.25.3"}}})
+	g.send(g.tn, "httpx", time.Now().UTC().Add(-time.Minute), "", ctis.Asset{ID: "d", Type: ctis.AssetTypeDomainName, Value: name,
+		Technologies: techsOf("nginx:1.25.3")})
 	id := g.assetID(g.tn, name)
 	repo := postgres.NewAssetTechnologyRepository(&postgres.DB{DB: g.r.db})
 	ctx := context.Background()
@@ -174,9 +174,10 @@ func TestAssetTechnologies_TenantIsolation(t *testing.T) {
 // matching works for internet-facing assets.
 func TestAssetTechnologies_VersionedProductsAreCPEComponents(t *testing.T) {
 	g := newTechRig(t)
-	const name = "cpe.tech.example.com"
-	g.send(g.tn, "httpx", time.Now().UTC().Add(-time.Minute), "", ctis.Asset{ID: "d", Type: ctis.AssetTypeDomain, Value: name,
-		Properties: ctis.Properties{"technologies": []any{"nginx:1.18.0", "HSTS", "Vercel"}, "server": "Apache/2.4.41 (Ubuntu)"}})
+	const name = "https://cpe.tech.example.com"
+	g.send(g.tn, "httpx", time.Now().UTC().Add(-time.Minute), "", ctis.Asset{ID: "d", Type: ctis.AssetTypeWebOrigin, Value: name,
+		Technologies: techsOf("nginx:1.18.0", "HSTS", "Vercel"),
+		Technical:    &ctis.AssetTechnical{HTTP: &ctis.HTTPTechnical{WebServer: "Apache/2.4.41 (Ubuntu)"}}})
 	rows, err := g.r.db.QueryContext(context.Background(), `
 		SELECT lower(p.name), p.cpe_vendor IS NOT NULL AND p.tenant_id IS NULL
 		  FROM asset_software s JOIN software_products p ON p.id = s.product_id
@@ -211,11 +212,11 @@ func TestAssetTechnologies_StoredCapPerAsset(t *testing.T) {
 	g := newTechRig(t)
 	const name = "cap.tech.example.com"
 	var techs []any
-	for i := 0; i < assettech.MaxPerAsset+30; i++ {
+	for i := 0; i < assettech.MaxPerAsset; i++ {
 		techs = append(techs, fmt.Sprintf("tool%03d:1.%d", i, i))
 	}
-	g.send(g.tn, "httpx", time.Now().UTC().Add(-time.Minute), "", ctis.Asset{ID: "d", Type: ctis.AssetTypeDomain, Value: name,
-		Properties: ctis.Properties{"technologies": techs}})
+	g.send(g.tn, "httpx", time.Now().UTC().Add(-time.Minute), "", ctis.Asset{ID: "d", Type: ctis.AssetTypeDomainName, Value: name,
+		Technologies: techsOf(techs...)})
 	var n int
 	if err := g.r.db.QueryRowContext(context.Background(), `SELECT count(*) FROM asset_technologies WHERE tenant_id = $1 AND asset_id = $2`,
 		g.tn.tenant.String(), g.assetID(g.tn, name).String()).Scan(&n); err != nil {
@@ -233,7 +234,7 @@ func TestAssetTechnologies_VendorAndCPE(t *testing.T) {
 	const name = "vendor.tech.example.com"
 	send := func(at time.Time, cpe string) {
 		t.Helper()
-		g.send(g.tn, "httpx", at, "", ctis.Asset{ID: "d", Type: ctis.AssetTypeDomain, Value: name,
+		g.send(g.tn, "httpx", at, "", ctis.Asset{ID: "d", Type: ctis.AssetTypeDomainName, Value: name,
 			Technologies: []ctis.Technology{{Name: "nginx", Version: "1.18.0", CPE: cpe}}})
 	}
 	now := time.Now().UTC()

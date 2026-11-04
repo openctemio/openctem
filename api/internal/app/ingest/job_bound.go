@@ -26,7 +26,7 @@ import (
 	"net/netip"
 	"strings"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/metrics"
@@ -237,10 +237,7 @@ func (s *Service) reportOutsideJob(agt *sensor.Sensor, tenantID shared.ID, bindi
 	if report != nil && report.Tool != nil {
 		tool = report.Tool.Name
 	}
-	reportID := ""
-	if report != nil {
-		reportID = report.Metadata.ID
-	}
+	reportID := output.ReportID // the receiver's id, never metadata.id
 	s.logger.Warn("sensor report named hosts outside its command's targets; dropped",
 		"sensor_id", agt.ID.String(), "tenant_id", tenantID.String(), "tool", sanitizeIngestLogField(tool),
 		"assets", output.AssetsOutsideJob, "findings", output.FindingsOutsideJob,

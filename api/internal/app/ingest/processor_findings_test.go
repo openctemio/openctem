@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -176,7 +176,7 @@ func TestGenerateFindingFingerprint_WithCVEID(t *testing.T) {
 		RuleID: "sca-check",
 		Title:  "Vulnerable Dependency",
 		Vulnerability: &ctis.VulnerabilityDetails{
-			CVEID: "CVE-2023-12345",
+			IDs: cveIDs("CVE-2023-12345"),
 		},
 	}
 
@@ -268,9 +268,9 @@ func TestGenerateFindingFingerprint_SCAStableAcrossLocationNoise(t *testing.T) {
 				StartLine: startLine,
 			},
 			Vulnerability: &ctis.VulnerabilityDetails{
-				Package:         "lodash",
-				AffectedVersion: "4.17.20",
-				CVEID:           "CVE-2021-23337",
+				PackageName:      "lodash",
+				InstalledVersion: "4.17.20",
+				IDs:              cveIDs("CVE-2021-23337"),
 			},
 		}
 	}
@@ -292,9 +292,9 @@ func TestGenerateFindingFingerprint_SCADistinctPackages(t *testing.T) {
 			RuleID: "sca-check",
 			Title:  "Vulnerable Dependency",
 			Vulnerability: &ctis.VulnerabilityDetails{
-				Package:         pkg,
-				AffectedVersion: ver,
-				CVEID:           "CVE-2021-23337",
+				PackageName:      pkg,
+				InstalledVersion: ver,
+				IDs:              cveIDs("CVE-2021-23337"),
 			},
 		}
 	}
@@ -323,7 +323,7 @@ func TestGenerateFindingFingerprint_SecretByMaskedValue(t *testing.T) {
 				StartLine: line,
 			},
 			Secret: &ctis.SecretDetails{
-				SecretType:  "aws_access_key",
+				Type:        "aws_access_key",
 				MaskedValue: masked,
 			},
 		}
@@ -572,7 +572,7 @@ func TestMapCTISLocationToDomain_AllFieldsMapped(t *testing.T) {
 		Snippet:        "password = 'secret'",
 		ContextSnippet: "func main() {\n  password = 'secret'\n}",
 		Branch:         "main",
-		CommitSHA:      "abc123def456",
+		Commit:         &ctis.CommitInfo{SHA: "abc123def456"},
 	}
 
 	result := mapCTISLocationToDomain(loc)
@@ -1134,7 +1134,7 @@ func TestMapCTISLocationToDomain_PreservesAllFields(t *testing.T) {
 		Snippet:        "code here",
 		ContextSnippet: "context here",
 		Branch:         "feature-branch",
-		CommitSHA:      "deadbeef12345678",
+		Commit:         &ctis.CommitInfo{SHA: "deadbeef12345678"},
 		LogicalLocation: &ctis.LogicalLocation{
 			Name:               "myFunc",
 			Kind:               "method",
@@ -1153,7 +1153,7 @@ func TestMapCTISLocationToDomain_PreservesAllFields(t *testing.T) {
 	assert.Equal(t, loc.Snippet, result.Snippet)
 	assert.Equal(t, loc.ContextSnippet, result.ContextSnippet)
 	assert.Equal(t, loc.Branch, result.Branch)
-	assert.Equal(t, loc.CommitSHA, result.CommitSHA)
+	assert.Equal(t, loc.Commit.SHA, result.CommitSHA)
 	require.NotNil(t, result.LogicalLocation)
 	assert.Equal(t, loc.LogicalLocation.Name, result.LogicalLocation.Name)
 	assert.Equal(t, loc.LogicalLocation.Kind, result.LogicalLocation.Kind)
@@ -1166,7 +1166,7 @@ func TestMapCTISDataFlowToDomain_SanitizersKeptInStepOrder(t *testing.T) {
 		Intermediates: []ctis.DataFlowLocation{{Path: "src/a.go", Line: 9, Index: 2}},
 		Sanitizers:    []ctis.DataFlowLocation{{Path: "src/sanitize.go", Line: 50, Index: 1, Function: "clean"}},
 		Sinks:         []ctis.DataFlowLocation{{Path: "src/b.go", Line: 100, EndLine: 101, Column: 3, EndColumn: 9, Index: 3}},
-		Tainted:       true,
+		IsTainted:     true,
 	}
 
 	result := mapCTISDataFlowToDomain(df)
@@ -1444,15 +1444,16 @@ func newTestFindingProcessor(t *testing.T) (*FindingProcessor, *stubFindingRepos
 // buildMinimalReport returns a *ctis.Report with a single finding that has the given CVE ID.
 func buildMinimalReport(cveID string) *ctis.Report {
 	return &ctis.Report{
-		Metadata: ctis.ReportMetadata{ID: "scan-test-001"},
+		Metadata: ctis.ReportMetadata{ID: testReportID},
 		Tool:     &ctis.Tool{Name: "test-tool"},
 		Findings: []ctis.Finding{
 			{
+				AssetRef: "asset-ref",
 				RuleID:   "SCA-001",
 				Title:    "Vulnerable dependency",
 				Severity: "high",
 				Vulnerability: &ctis.VulnerabilityDetails{
-					CVEID: cveID,
+					IDs: cveIDs(cveID),
 				},
 			},
 		},
@@ -1462,10 +1463,11 @@ func buildMinimalReport(cveID string) *ctis.Report {
 // buildMinimalReportNoVuln returns a *ctis.Report with a single finding that has no Vulnerability block.
 func buildMinimalReportNoVuln() *ctis.Report {
 	return &ctis.Report{
-		Metadata: ctis.ReportMetadata{ID: "scan-test-002"},
+		Metadata: ctis.ReportMetadata{ID: testReportID},
 		Tool:     &ctis.Tool{Name: "test-tool"},
 		Findings: []ctis.Finding{
 			{
+				AssetRef: "asset-ref",
 				RuleID:   "SAST-001",
 				Title:    "XSS vulnerability",
 				Severity: "medium",
@@ -1746,32 +1748,30 @@ func TestBuildFinding_EnumFieldsNeverViolateCheckConstraints(t *testing.T) {
 	cf := base()
 	cf.Kind = "notApplicable"
 	cf.BaselineState = "Unchanged"
-	cf.Impact = "High"
-	cf.Likelihood = "LOW"
 	f := build(cf)
 	require.Equal(t, "not_applicable", f.Kind())
 	require.Equal(t, "unchanged", f.BaselineState())
-	require.Equal(t, "high", f.Impact())
-	require.Equal(t, "low", f.Likelihood())
 
 	// Values outside the vocabulary are dropped, not stored.
 	cf = base()
 	cf.Kind = "warning"
 	cf.BaselineState = "modified"
-	cf.Impact = "info"
-	cf.Likelihood = "critical"
 	f = build(cf)
 	require.Empty(t, f.Kind())
 	require.Empty(t, f.BaselineState())
-	require.Empty(t, f.Impact())
-	require.Empty(t, f.Likelihood())
 
-	// Compliance result: same rule.
+	// The evaluation of a control is the finding's kind in CTIS 2.0.
+	for kind, want := range map[string]string{"pass": "pass", "fail": "fail", "not_applicable": "not_applicable", "review": string(vulnerability.ComplianceResultManual)} {
+		cf = base()
+		cf.Type = ctis.FindingTypeCompliance
+		cf.Compliance = &ctis.ComplianceDetails{Framework: "cis", ControlID: "1.1"}
+		cf.Kind = kind
+		require.Equal(t, want, build(cf).ComplianceResult(), kind)
+	}
 	cf = base()
 	cf.Type = ctis.FindingTypeCompliance
-	cf.Compliance = &ctis.ComplianceDetails{Framework: "cis", ControlID: "1.1", Result: "notApplicable"}
-	require.Equal(t, "not_applicable", build(cf).ComplianceResult())
-	cf.Compliance.Result = "skipped"
+	cf.Compliance = &ctis.ComplianceDetails{Framework: "cis", ControlID: "1.1"}
+	cf.Kind = "skipped"
 	require.Empty(t, build(cf).ComplianceResult())
 }
 
@@ -1785,8 +1785,8 @@ func TestBuildFinding_KeepsScannerFixedVersions(t *testing.T) {
 		ID: "f1", Type: ctis.FindingTypeVulnerability, Title: "django: Django SQL injection",
 		Severity: ctis.SeverityCritical, RuleID: "CVE-2025-64459",
 		Vulnerability: &ctis.VulnerabilityDetails{
-			CVEID: "CVE-2025-64459", Package: "Django", PURL: "pkg:pypi/django@4.2.20",
-			AffectedVersion: "4.2.20", FixedVersion: "5.2.8, 5.1.14, 4.2.26",
+			IDs: cveIDs("CVE-2025-64459"), PackageName: "Django", PURL: "pkg:pypi/django@4.2.20",
+			InstalledVersion: "4.2.20", FixedVersions: []string{"5.2.8", "5.1.14", "4.2.26"},
 		},
 	}
 	report := &ctis.Report{Metadata: ctis.ReportMetadata{ID: "scan-1"}, Tool: &ctis.Tool{Name: "trivy"}}
@@ -1809,8 +1809,9 @@ func TestBuildFinding_KeepsAdvisoryFacts(t *testing.T) {
 		Severity: ctis.SeverityCritical, RuleID: "CVE-2025-64459",
 		References: []string{"https://github.com/advisories/GHSA-frmv-pr5f-9mcr", "javascript:alert(1)"},
 		Vulnerability: &ctis.VulnerabilityDetails{
-			CVEID: "CVE-2025-64459", PublishedAt: &pub, CVSSSource: "ghsa",
+			IDs: cveIDs("CVE-2025-64459"), PublishedAt: &pub,
 		},
+		Scores: []ctis.Score{cvssScore("3.1", "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H", 9.8, "ghsa")},
 	}
 	report := &ctis.Report{Metadata: ctis.ReportMetadata{ID: "scan-1"}, Tool: &ctis.Tool{Name: "trivy"}}
 	fp, base := generateFindingFingerprint(assetID, cf, report.Tool)

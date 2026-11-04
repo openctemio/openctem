@@ -2,6 +2,8 @@
 // Its own module so the browser loads only the active locale's catalog:
 // src/lib/i18n.ts imports it on demand, and the bundler gives it its own chunk.
 
+import { messages } from '@extension/messages'
+import { assertCompatible, mergeMessages } from '@/lib/extension/merge'
 import vi_account from './vi/account.json'
 import vi_activity from './vi/activity.json'
 import vi_auditLog from './vi/auditLog.json'
@@ -202,4 +204,11 @@ export const viNamespaces: Record<string, Dictionary> = {
   crownJewels: vi_crownJewels,
 }
 
-export const vi: Dictionary = Object.assign({}, ...Object.values(viNamespaces)) as Dictionary
+assertCompatible('extension @extension/messages', messages.apiVersion)
+
+// The core catalog plus the entries of the build's extension (none by
+// default); an extension may add keys, never replace one.
+export const vi: Dictionary = mergeMessages(
+  Object.assign({}, ...Object.values(viNamespaces)) as Dictionary,
+  messages.vi
+)

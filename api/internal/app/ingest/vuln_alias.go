@@ -14,9 +14,8 @@ package ingest
 
 import (
 	"context"
-	"strings"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
@@ -58,15 +57,7 @@ func namesCVE(f *ctis.Finding) bool {
 	if v == nil {
 		return false
 	}
-	if strings.TrimSpace(v.CVEID) != "" {
-		return true
-	}
-	for _, c := range v.CVEIDs {
-		if strings.TrimSpace(c) != "" {
-			return true
-		}
-	}
-	return false
+	return len(findingCVEs(v)) > 0
 }
 
 // findingAdvisoryIDs are the advisory ids a finding names: its typed ids
@@ -85,7 +76,7 @@ func findingAdvisoryIDs(f *ctis.Finding) []string {
 // the CVE its advisory ids alias, when the feed ties all of them to one
 // CVE, and hands set the key the item had before (its former key).
 func canonicalVulnIDsOf[T any](ctx context.Context, p *FindingProcessor, items []T,
-	get func(*T) (shared.ID, *ctis.Finding), set func(item *T, former string),
+	get func(*T) (shared.ID, *ctis.Finding), set func(item *T, former []string),
 ) {
 	if p.vulnAliases == nil {
 		return
@@ -124,16 +115,15 @@ func canonicalVulnIDsOf[T any](ctx context.Context, p *FindingProcessor, items [
 			continue
 		}
 		a, f := get(&items[i])
-		former := ""
+		var former []string
 		if k, ok := identityV2(a, f, "", 0); ok {
-			former = k.Fingerprint()
+			former = k.KeyForms()
 		}
 		v := ctis.VulnerabilityDetails{}
 		if f.Vulnerability != nil {
 			v = *f.Vulnerability
 		}
-		v.CVEID = cve
-		v.CVEIDs = []string{cve}
+		v.IDs = withOnlyCVE(v.IDs, cve)
 		f.Vulnerability = &v
 		set(&items[i], former)
 	}

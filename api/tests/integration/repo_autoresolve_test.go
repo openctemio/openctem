@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
@@ -149,8 +149,8 @@ func TestRepoAutoResolve_UploadsAndV1NeverClose(t *testing.T) {
 	rr := newRepoRun(t)
 	tid := rr.tn.tenant
 	report := func(rules ...string) *ctis.Report {
-		rep := &ctis.Report{Version: "1.0", Tool: &ctis.Tool{Name: "semgrep"},
-			Metadata: ctis.ReportMetadata{ID: shared.NewID().String(), Timestamp: time.Now().UTC(), CoverageType: "full",
+		rep := &ctis.Report{Version: ctis.SchemaVersion, Tool: &ctis.Tool{Name: "semgrep"},
+			Metadata: ctis.ReportMetadata{ID: ctis.NewReportID(), GeneratedAt: time.Now().UTC(), CoverageType: "full",
 				Branch: &ctis.BranchInfo{Name: "main", IsDefaultBranch: true, RepositoryURL: "https://" + rr.tn.repo}},
 			Assets: []ctis.Asset{{ID: "repo", Type: ctis.AssetTypeRepository, Value: rr.tn.repo}}}
 		for _, rule := range rules {

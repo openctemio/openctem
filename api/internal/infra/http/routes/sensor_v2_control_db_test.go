@@ -113,7 +113,7 @@ func newCtlHarnessWith(t *testing.T, egress bool, opts ...command.Option) *ctlHa
 	ch := handler.NewCommandHandler(cmdSvc, validator.New(), log)
 	ch.SetCommandLogs(commandlog.NewService(postgres.NewCommandLogRepository(db)))
 	sh := handler.NewSuppressionHandler(suppression.NewService(postgres.NewSuppressionRepository(db), log), log)
-	ctl := handler.NewSensorControlV2Handler(ih, ch, sh, nil, log)
+	ctl := handler.NewSensorControlV2Handler(ih, ch, sh, log)
 	if poolSvc != nil {
 		ctl.SetEgress(poolSvc)
 	}

@@ -133,6 +133,8 @@ Already served (RFC-026). Extended **additively**:
 }
 ```
 
+(CTIS 2.0, 2026-11-03: the media type is now `application/vnd.ctis+json; version=2.0`; see docs/architecture/ctis-receiver.md.)
+
 `features` is the negotiation (D6). A feature is listed only when every route
 of that feature is mounted. Feature names are a closed, append-only set.
 `200`; `401`; `403 scope-denied` (platform sensor); `429`.

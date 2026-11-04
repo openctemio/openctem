@@ -7,7 +7,6 @@ package scan
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	"github.com/openctemio/openctem/api/pkg/domain/scan"
@@ -15,14 +14,6 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
-
-// optionalWithoutTool reports whether err is the refusal of an optional step
-// that no installed tool implements: the step is skipped at dispatch with
-// the reason, so it never refuses a run.
-func optionalWithoutTool(step *scanworkflow.Step, err error) bool {
-	var de *shared.DomainError
-	return step != nil && step.RunPolicy.Optional && errors.As(err, &de) && de.Code == codeNoMatchingTool
-}
 
 // CodeDepthRunsNothing refuses a workflow scan whose depth leaves no step
 // of the workflow able to start.

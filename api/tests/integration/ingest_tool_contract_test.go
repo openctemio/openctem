@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
@@ -54,8 +54,8 @@ func TestIngest_ToolContractProduces(t *testing.T) {
 			t.Fatalf("SaveManifest: %v saved=%v", err, saved)
 		}
 	}
-	save(a, "a", "asset:domain")
-	save(b, "b", "asset:domain", "asset:repository")
+	save(a, "a", "asset:domain_name")
+	save(b, "b", "asset:domain_name", "asset:repository")
 
 	// Stored and read back under the owning tenant only.
 	aTID, bTID := a.tenant, b.tenant
@@ -75,15 +75,18 @@ func TestIngest_ToolContractProduces(t *testing.T) {
 		tid := tn.tenant
 		agt := &sensor.Sensor{ID: tn.sensor, TenantID: &tid, Type: sensor.SensorTypeWorker, Status: sensor.SensorStatusActive}
 		cmd := shared.NewID()
-		rep := &ctis.Report{Version: "1.0", Tool: &ctis.Tool{Name: "acme-probe"},
-			Metadata: ctis.ReportMetadata{ID: "rep-" + cmd.String(), Timestamp: time.Now().UTC()},
+		rep := &ctis.Report{Version: ctis.SchemaVersion, Tool: &ctis.Tool{Name: "acme-probe"},
+			Metadata: ctis.ReportMetadata{ID: ctis.NewReportID(), GeneratedAt: time.Now().UTC()},
 			Assets: []ctis.Asset{
-				{ID: "d", Type: ctis.AssetTypeDomain, Value: domain},
+				{ID: "d", Type: ctis.AssetTypeDomainName, Value: domain},
 				{ID: "r", Type: ctis.AssetTypeRepository, Value: repo},
 			}}
 		bind := ingest.Binding{Kind: ingest.BindingCommand, CommandID: &cmd, Tool: "acme-probe", Targets: []string{domain}}
 		out, err := svc.Ingest(ctx, agt, ingest.Input{Report: rep, Options: ingest.Options{Binding: bind, Route: "ctis"}})
-		if err != nil || len(out.Errors) > 0 {
+		if err != nil {
+			t.Fatalf("ingest: %v", err)
+		}
+		if len(out.Errors) > 0 {
 			t.Fatalf("Ingest: %v %v", err, out.Errors)
 		}
 	}

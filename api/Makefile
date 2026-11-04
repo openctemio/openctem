@@ -1,5 +1,5 @@
 
-.PHONY: platform-authz-docs
+.PHONY: platform-authz-docs sigstore-root-refresh
 .PHONY: all build run test test-db budgets-update lint clean docker-build docker-dev docker-prod docker-down migrate generate seed help seed-required docker-seed docker-seed-required db-setup db-setup-dev swagger contract swagger-check swagger-install env-docs authz-matrix migration-new migration-renumber migrations-released migrate-up migrate-down migrate-status migrate-force
 
 # Variables
@@ -99,12 +99,13 @@ test-load-bench:
 	@echo "Running load test benchmarks..."
 	$(GOTEST) -v -bench=. -benchmem -timeout=10m ./tests/load/...
 
-# golangci-lint is pinned to v1.64.8: the repo's .golangci.yml is v1-format, and
-# the current v2.x releases both reject that config AND panic analyzing this
-# codebase under Go 1.26. `go run @version` ignores whatever is on PATH, so the
-# target works regardless of any globally-installed (v2) binary.
-GOLANGCI_LINT_VERSION ?= v1.64.8
-GOLANGCI_LINT := go run github.com/golangci/golangci-lint/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
+# golangci-lint is pinned to v2.14.0, the first release whose binary reads Go 1.27
+# export data (v2.13.x and v1.64.8 fail with "export data version 5 is greater
+# than maximum supported"). The repo's .golangci.yml is v2 format. `go run
+# @version` ignores whatever is on PATH, so the target works regardless of any
+# globally-installed binary.
+GOLANGCI_LINT_VERSION ?= v2.14.0
+GOLANGCI_LINT := go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
 
 ## lint: Run linter (golangci-lint, pinned) over the whole tree.
 lint:
@@ -169,7 +170,8 @@ swagger: swagger-install
 	@# machine emits, with the same swag, the same Go and a warm cache. That is
 	@# why the gate compares sets of operations rather than bytes. See
 	@# tools/lint/openapicontract.
-	@GOWORK=off go mod download
+	@# Retried: the module proxy sometimes resets the HTTP/2 stream on CI runners.
+	@for i in 1 2 3; do GOWORK=off go mod download && exit 0; echo "go mod download failed (attempt $$i); retrying" >&2; sleep $$((i * 10)); done; exit 1
 	@# The list query params come from the field registries (RFC-048).
 	@GOWORK=off go run ./tools/gen/filterparams
 	@GOWORK=off $(SWAG) init --generalInfo cmd/server/main.go --output api/openapi --outputTypes yaml --parseDependency
@@ -382,6 +384,14 @@ generate-relationships:
 generate-modules:
 	@GOWORK=off $(GOCMD) run ./cmd/gen-modules
 
+## sigstore-root-refresh: Refresh the embedded Sigstore trusted root (release feed + content publishers) from Sigstore's TUF repository; needs cosign and internet. Commit the result.
+sigstore-root-refresh:
+	@command -v cosign >/dev/null || { echo "cosign is required"; exit 1; }
+	@cosign initialize
+	@test -s $(HOME)/.sigstore/root/tuf-repo-cdn.sigstore.dev/targets/trusted_root.json || { echo "trusted_root.json not found in the cosign TUF cache"; exit 1; }
+	@cp $(HOME)/.sigstore/root/tuf-repo-cdn.sigstore.dev/targets/trusted_root.json pkg/contentpkg/sigstore/trusted_root.json
+	@GOWORK=off $(GOCMD) test ./pkg/contentpkg/sigstore/ ./pkg/releasefeed/...
+
 ## modules-sql: Print the SQL block that writes the modules rows (the body of a registry migration)
 modules-sql:
 	@GOWORK=off $(GOCMD) run ./cmd/gen-modules -sql
@@ -440,7 +450,7 @@ dev:
 ## install-tools: Install development tools
 install-tools:
 	@echo "Installing development tools..."
-	go install github.com/golangci/golangci-lint/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
+	go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
 	go install honnef.co/go/tools/cmd/staticcheck@latest
 	go install github.com/air-verse/air@latest
 	go install go.uber.org/mock/mockgen@latest

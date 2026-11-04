@@ -205,11 +205,12 @@ func consoleAddress(adminPublicURL string) string {
 }
 
 // CheckSchema refuses to run against a database missing the migrations this
-// tool writes to.
+// tool writes to. Every probe is limited to the core schema, so a table of
+// the same name in another schema (an extension's) never answers for it.
 func CheckSchema(ctx context.Context, db *sql.DB) error {
 	var tableExists bool
 	if err := db.QueryRowContext(ctx, `
-		SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'admin_users')
+		SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_schema = current_schema() AND table_name = 'admin_users')
 	`).Scan(&tableExists); err != nil {
 		return fmt.Errorf("checking schema: %w", err)
 	}
@@ -223,7 +224,7 @@ func CheckSchema(ctx context.Context, db *sql.DB) error {
 		var ok bool
 		if err := db.QueryRowContext(ctx, `
 			SELECT EXISTS (SELECT 1 FROM information_schema.columns
-			WHERE table_name = 'admin_users' AND column_name = $1)`, c.column).Scan(&ok); err != nil {
+			WHERE table_schema = current_schema() AND table_name = 'admin_users' AND column_name = $1)`, c.column).Scan(&ok); err != nil {
 			return fmt.Errorf("checking schema: %w", err)
 		}
 		if !ok {
@@ -234,7 +235,7 @@ func CheckSchema(ctx context.Context, db *sql.DB) error {
 	var keyRequired bool
 	if err := db.QueryRowContext(ctx, `
 		SELECT EXISTS (SELECT 1 FROM information_schema.columns
-		WHERE table_name = 'admin_users' AND column_name = 'api_key_hash' AND is_nullable = 'NO')
+		WHERE table_schema = current_schema() AND table_name = 'admin_users' AND column_name = 'api_key_hash' AND is_nullable = 'NO')
 	`).Scan(&keyRequired); err != nil {
 		return fmt.Errorf("checking schema: %w", err)
 	}

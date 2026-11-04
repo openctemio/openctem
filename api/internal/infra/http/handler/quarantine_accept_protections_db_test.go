@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strconv"
 	"testing"
+	"time"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
@@ -21,8 +23,8 @@ import (
 func TestQuarantineAccept_KeepsV2Protections(t *testing.T) {
 	r := newBindingRig(t, "")
 	ctx := context.Background()
-	report := ctis.Report{Version: "1.0", Tool: &ctis.Tool{Name: "nuclei"},
-		Metadata: ctis.ReportMetadata{Scope: &ctis.Scope{Name: "invented.corp.example"}},
+	report := ctis.Report{Version: ctis.SchemaVersion, Tool: &ctis.Tool{Name: "nuclei"},
+		Metadata: ctis.ReportMetadata{ID: ctis.NewReportID(), GeneratedAt: time.Now().UTC(), Channel: ctis.ChannelScanner},
 		Findings: []ctis.Finding{{Type: ctis.FindingTypeVulnerability, Title: "t", Severity: ctis.SeverityHigh, RuleID: "orphan-rule"}}}
 	payload, err := json.Marshal(report)
 	if err != nil {
@@ -35,15 +37,19 @@ func TestQuarantineAccept_KeepsV2Protections(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// CTIS 2.0: a finding names an asset of its document; one without is
+	// an invalid report, refused before anything is stored, and no asset is
+	// invented for it.
+	assetsBefore := r.count(`SELECT COUNT(*) FROM assets WHERE tenant_id = $1`, r.tenant.String())
 	out, err := r.svc.AcceptQuarantined(ctx, auditapp.AuditContext{}, r.tenant, item.ID, r.seedUser())
-	if err != nil {
-		t.Fatalf("accept: %v", err)
+	if err == nil {
+		t.Fatalf("a report with an asset-less finding was accepted (%+v)", out)
 	}
-	if out.FindingsCreated != 0 {
-		t.Fatalf("an accepted finding without an asset was applied (%d created)", out.FindingsCreated)
+	if n := r.count(`SELECT COUNT(*) FROM findings WHERE tenant_id = $1`, r.tenant.String()); n != 0 {
+		t.Fatalf("an accepted finding without an asset was applied (%d findings)", n)
 	}
-	if n := r.count(`SELECT COUNT(*) FROM assets WHERE tenant_id = $1 AND name = 'invented.corp.example'`, r.tenant.String()); n != 0 {
-		t.Fatal("an asset was invented from the quarantined report's metadata")
+	if n := r.count(`SELECT COUNT(*) FROM assets WHERE tenant_id = $1`, r.tenant.String()); n != assetsBefore {
+		t.Fatalf("%d assets were invented for the quarantined report", n-assetsBefore)
 	}
 }
 
@@ -58,9 +64,11 @@ func (o oversizedResults) Get(ctx context.Context, tenantID, id shared.ID) (*sen
 	if err != nil {
 		return nil, err
 	}
-	rep := ctis.Report{Version: "1.0", Tool: &ctis.Tool{Name: "nuclei"}, Assets: make([]ctis.Asset, 100_001)}
+	rep := ctis.Report{Version: ctis.SchemaVersion, Tool: &ctis.Tool{Name: "nuclei"},
+		Metadata: ctis.ReportMetadata{ID: ctis.NewReportID(), GeneratedAt: time.Now().UTC(), Channel: ctis.ChannelScanner},
+		Assets:   make([]ctis.Asset, 100_001)}
 	for i := range rep.Assets {
-		rep.Assets[i] = ctis.Asset{Type: ctis.AssetTypeDomain, Value: "x.example.com"}
+		rep.Assets[i] = ctis.Asset{ID: "a" + strconv.Itoa(i), Type: ctis.AssetTypeDomainName, Value: "x.example.com"}
 	}
 	item.Payload, _ = json.Marshal(rep)
 	return item, nil
@@ -73,8 +81,9 @@ func (o oversizedResults) Get(ctx context.Context, tenantID, id shared.ID) (*sen
 func TestQuarantineAccept_AcceptedOnlyAfterApply(t *testing.T) {
 	r := newBindingRig(t, "")
 	ctx := context.Background()
-	report := ctis.Report{Version: "1.0", Tool: &ctis.Tool{Name: "nuclei"},
-		Assets:   []ctis.Asset{{ID: "a", Type: ctis.AssetTypeDomain, Value: "apply.example.com"}},
+	report := ctis.Report{Version: ctis.SchemaVersion, Tool: &ctis.Tool{Name: "nuclei"},
+		Metadata: ctis.ReportMetadata{ID: ctis.NewReportID(), GeneratedAt: time.Now().UTC(), Channel: ctis.ChannelScanner},
+		Assets:   []ctis.Asset{{ID: "a", Type: ctis.AssetTypeDomainName, Value: "apply.example.com"}},
 		Findings: []ctis.Finding{{Type: ctis.FindingTypeVulnerability, Title: "t", Severity: ctis.SeverityHigh, RuleID: "r", AssetRef: "a"}}}
 	payload, _ := json.Marshal(report)
 	item := &sensorresult.Item{TenantID: r.tenant, SensorID: r.ids["worker"], SensorType: "worker",

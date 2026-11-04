@@ -68,7 +68,6 @@ export function readinessRows(s: ScopingSummary, t: Translate): ReadinessRow[] {
         cj.total > 0
           ? t('scoping.readiness.action.review', 'Review')
           : t('scoping.readiness.action.designate', 'Designate'),
-      module: 'crown_jewels',
     },
     {
       key: 'crown_jewel_owners',
@@ -77,7 +76,6 @@ export function readinessRows(s: ScopingSummary, t: Translate): ReadinessRow[] {
       value: of(cj.with_owner, cj.total),
       href: '/assets?is_crown_jewel=true&has_owner=false',
       action: t('scoping.readiness.action.assign', 'Assign'),
-      module: 'crown_jewels',
     },
     {
       key: 'services',

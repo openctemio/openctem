@@ -15,6 +15,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/pkg/domain/admin"
 	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/releasefeed/testdata/releasefeedtest"
 )
 
 // The version check switch over the console routes: a super admin with the
@@ -25,7 +26,7 @@ func TestAdminVersionCheckSwitch_Routes_DB(t *testing.T) {
 	for _, envOn := range []bool{true, false} {
 		h := newChainHarness(t, func(hs *Handlers, db *postgres.DB, _ *adminconsole.Service) {
 			svc := versioncheck.New(postgres.NewVersionCheckRepository(db), versioncheck.Config{Enabled: envOn,
-				Keys: []string{"00"}, Running: "v1.0.0"}, logger.NewNop())
+				Verifier: releasefeedtest.New(t).Verifier(t), Running: "v1.0.0"}, logger.NewNop())
 			svc.SetSettings(postgres.NewPlatformSettingRepository(db))
 			hs.AdminVersionCheck = handler.NewAdminVersionCheckHandler(svc, postgres.NewAuditLogRepository(db), logger.NewNop())
 		})

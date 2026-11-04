@@ -13,6 +13,8 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/openctemio/ctis/v2"
+
 	scopeapp "github.com/openctemio/openctem/api/internal/app/scope"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -42,12 +44,14 @@ func TestWebSurface_EndToEndOverTheSensorWire_DB(t *testing.T) {
 
 	const secret = "tok3nSECRETvalue99"
 	report := map[string]any{
-		"version":  "1.6",
-		"metadata": map[string]any{"timestamp": "2026-10-07T12:00:00Z"},
-		"tool":     map[string]any{"name": "katana"},
-		"assets": []any{map[string]any{"id": "u1", "type": "discovered_url",
-			"value": "https://e2e.web-wire.test/reset?token=" + secret}},
+		"version":  "2.0",
+		"metadata": map[string]any{"id": ctis.NewReportID(), "generated_at": "2026-10-07T12:00:00Z", "channel": "scanner"},
+		"tool":     map[string]any{"name": "katana", "techniques": []string{"dast"}},
 		"endpoints": []any{
+			// Query names only (CTIS 2.0 carries no value): the secret a
+			// crawl saw in the query never reaches the document.
+			map[string]any{"origin": "https://e2e.web-wire.test", "method": "GET", "path": "/reset",
+				"params": []any{map[string]any{"location": "query", "name": "token"}}},
 			map[string]any{"origin": "https://e2e.web-wire.test", "method": "GET", "path": "/products/42",
 				"source": "crawl", "status_code": 200, "params": []any{map[string]any{"location": "query", "name": "ref"}}},
 			map[string]any{"origin": "https://e2e.web-wire.test", "method": "GET", "path": "/admin/debug/vars", "source": "js"},

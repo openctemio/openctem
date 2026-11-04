@@ -3,7 +3,7 @@ package ingest
 import (
 	"testing"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2/interop/sarif"
 
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 )
@@ -22,20 +22,20 @@ const betterleaksSARIF = `{
   }]
 }`
 
-// A betterleaks SARIF report goes through ctis.FromSARIF, which does not
+// A betterleaks SARIF report goes through the SARIF adapter (sarif.Import), which does not
 // recognize betterleaks as a secret scanner and writes the generic type
 // "vulnerability". The finding used to be stored as a vulnerability and skip
 // the secret handling (snippet redaction included); on live 13 of the 14
 // betterleaks findings were typed vulnerability.
 func TestBetterleaksSARIF_IsTypedSecret(t *testing.T) {
-	report, err := ctis.FromSARIF([]byte(betterleaksSARIF), nil)
+	report, err := sarif.Import([]byte(betterleaksSARIF), nil)
 	if err != nil {
-		t.Fatalf("FromSARIF: %v", err)
+		t.Fatalf("sarif.Import: %v", err)
 	}
 	if len(report.Findings) != 1 || report.Tool == nil {
 		t.Fatalf("want 1 finding and a tool, got %d findings, tool %v", len(report.Findings), report.Tool)
 	}
-	source := detectFindingSource(report.Tool.Name, report.Tool.Capabilities)
+	source := detectFindingSource(report.Tool.Name, report.Tool.Techniques...)
 	if source != vulnerability.FindingSourceSecret {
 		t.Fatalf("source %q, want secret", source)
 	}

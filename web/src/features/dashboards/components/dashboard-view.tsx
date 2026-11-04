@@ -78,10 +78,13 @@ export function DashboardView({ dashboard, data, loading, failed, onRetry }: Das
         const value = failed
           ? { id: '', index: i, widget_type: w.widget_type, state: 'error' as const }
           : valueAt(data, i)
-        // A widget with no figure (nothing yet, or not measured) takes one
-        // row: its message never holds a tall card of blank space.
+        // A full-width widget with no figure (nothing yet, or not measured)
+        // takes one row: its message never holds a tall card of blank space.
+        // A narrower one keeps its height: shrinking it would leave a hole
+        // under it beside the taller widget of its row.
         const state = value ? widgetModel(value, specOf(w), false).state : undefined
-        const compact = state === 'no_data_yet' || state === 'not_measured'
+        const compact =
+          (state === 'no_data_yet' || state === 'not_measured') && colSpanFor(w.w, cols) === cols
         const rows = compact ? 1 : w.h
         return (
           <div
