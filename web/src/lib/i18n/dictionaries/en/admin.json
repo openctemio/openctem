@@ -1892,6 +1892,7 @@
   "admin.shell.actingReadOnly": "Read-only until you elevate",
   "admin.shell.breakGlassBody": "You signed in with an emergency-access account. Every other administrator was alerted. Use it only to restore normal access, then sign out.",
   "admin.shell.breakGlassTitle": "Break-glass session",
+  "admin.shell.contentRegion": "Page content",
   "admin.shell.contextRow": "Platform administration",
   "admin.shell.search": "Search the console",
   "admin.shell.signOut": "Sign out",
