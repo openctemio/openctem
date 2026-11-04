@@ -196,6 +196,28 @@ Migration `remediation_campaigns_hold_tasks` (docs/architecture/remediation-camp
   reported. Idempotent. Not called by Go: the migration runs it, the contract step runs it once more and drops both
   functions.
 
+## Vulnerability catalog key functions
+
+Design: [RFC-143](../rfcs/RFC-143-vulnerability-catalog.md) §6. Global products and versions get
+deterministic ids, so a catalog rebuilt anywhere gives the same keys and tenant rows never need remapping.
+Go computes them when it inserts a global row (`vulncatalog.ProductID`, `vulncatalog.VersionID`); the
+database functions compute the same values (for rekey migrations and checks). A golden test pins both.
+
+| Function | Returns |
+|---|---|
+| `vuln_catalog_key_escape(v)` | `v` with backslash, colon and slash escaped |
+| `vuln_catalog_product_key(part, cpe_vendor, cpe_product, purl_type, purl_namespace, purl_name)` | `cpe:<part>:<vendor>:<product>`, else `purl:<type>/<namespace>/<name>`, else NULL |
+| `vuln_catalog_product_id(...)` (same arguments) | `uuidv5(d0cdc07f-60f4-4ede-bd53-0791837a5d49, product key)` |
+| `vuln_catalog_version_id(product_id, scheme, normalized, raw, qualifier, edition)` | `uuidv5(4217cc2b-7a83-41b5-9bce-0806b01c2b2e, product_id:scheme:(normalized or raw:<raw>):qualifier:edition)`, each part escaped |
+
+```sql
+SELECT count(*) FROM software_products
+WHERE tenant_id IS NULL
+  AND id <> vuln_catalog_product_id(part::text, cpe_vendor, cpe_product, purl_type, purl_namespace, purl_name);
+```
+
+Tenant-private products and versions keep random ids.
+
 ## Best Practices
 
 1. **Never add a `finding_count` column** - Keep it calculated dynamically

@@ -11,6 +11,7 @@ import (
 	"github.com/lib/pq"
 
 	"github.com/openctemio/openctem/api/pkg/domain/cvecorpus"
+	"github.com/openctemio/openctem/api/pkg/domain/vulncatalog"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnmatch"
 )
 
@@ -228,11 +229,12 @@ func (r *CVECorpusRepository) globalProduct(ctx context.Context, tx *sql.Tx, c v
 		WHERE a.tenant_id IS NULL AND a.kind = 'cpe' AND a.value = $1`, key).Scan(&id)
 	if errors.Is(err, sql.ErrNoRows) {
 		err = tx.QueryRowContext(ctx, `
-			INSERT INTO software_products (part, vendor, name, cpe_vendor, cpe_product, source)
-			VALUES ($1, $2, $3, $2, $4, 'nvd')
+			INSERT INTO software_products (id, part, vendor, name, cpe_vendor, cpe_product, source)
+			VALUES ($5, $1, $2, $3, $2, $4, 'nvd')
 			ON CONFLICT (part, cpe_vendor, cpe_product) WHERE tenant_id IS NULL AND cpe_vendor IS NOT NULL
 			DO UPDATE SET updated_at = software_products.updated_at
-			RETURNING id`, c.Part, c.Vendor, displayName(c.Product), c.Product).Scan(&id)
+			RETURNING id`, c.Part, c.Vendor, displayName(c.Product), c.Product,
+			vulncatalog.ProductID(vulncatalog.ProductKeyCPE(c.Part, c.Vendor, c.Product)).String()).Scan(&id)
 	}
 	if err != nil {
 		return "", fmt.Errorf("product %s: %w", key, err)

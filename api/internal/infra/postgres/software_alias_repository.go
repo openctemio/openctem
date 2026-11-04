@@ -13,6 +13,7 @@ import (
 	"github.com/lib/pq"
 
 	"github.com/openctemio/openctem/api/pkg/domain/software"
+	"github.com/openctemio/openctem/api/pkg/domain/vulncatalog"
 )
 
 const (
@@ -289,11 +290,12 @@ func canonicalProduct(ctx context.Context, tx *sql.Tx, k software.CPEKey) (strin
 		WHERE tenant_id IS NULL AND kind = 'cpe' AND value = $1`, k.String()).Scan(&id)
 	if errors.Is(err, sql.ErrNoRows) {
 		err = tx.QueryRowContext(ctx, `
-			INSERT INTO software_products (part, vendor, name, cpe_vendor, cpe_product, source)
-			VALUES ($1, $2, $3, $2, $4, 'nvd')
+			INSERT INTO software_products (id, part, vendor, name, cpe_vendor, cpe_product, source)
+			VALUES ($5, $1, $2, $3, $2, $4, 'nvd')
 			ON CONFLICT (part, cpe_vendor, cpe_product) WHERE tenant_id IS NULL AND cpe_vendor IS NOT NULL
 			DO UPDATE SET updated_at = software_products.updated_at
-			RETURNING id`, k.Part, k.Vendor, displayName(k.Product), k.Product).Scan(&id)
+			RETURNING id`, k.Part, k.Vendor, displayName(k.Product), k.Product,
+			vulncatalog.ProductID(vulncatalog.ProductKeyCPE(k.Part, k.Vendor, k.Product)).String()).Scan(&id)
 	}
 	if err != nil {
 		return "", fmt.Errorf("product %s: %w", k, err)
