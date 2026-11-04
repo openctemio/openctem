@@ -63,6 +63,19 @@ EXPOSE 3000
 # Start development server with Turbopack
 CMD ["npm", "run", "dev"]
 
+# -----------------------------------------------------------------------------
+# Third-party notices (About > Open-source licenses): every production package
+# the web app and the console ship, with its license and license text, read
+# from the installed node_modules (no network). Both apps serve the file
+# read-only (api/docs/architecture/third-party-notices.md).
+# -----------------------------------------------------------------------------
+FROM base AS notices
+WORKDIR /app
+COPY --from=deps /app/node_modules ./node_modules
+COPY package.json package-lock.json ./
+COPY scripts/third-party-notices.mjs ./scripts/
+RUN node scripts/third-party-notices.mjs --out /app/third-party-notices.json
+
 # ==============================================================================
 # BUILDER STAGE - Build production application
 # ==============================================================================
@@ -147,6 +160,8 @@ RUN addgroup -S -g 1001 nodejs && \
 # (and /tmp), as for the tenant image.
 COPY --from=console-builder /app/console/.next/standalone ./
 COPY --from=console-builder /app/console/.next/static ./console/.next/static
+# The console server runs in console/ (standalone server.js changes into it).
+COPY --from=notices /app/third-party-notices.json ./console/third-party-notices.json
 # The self-hosted fonts (src/styles/fonts.css loads /fonts/*.woff2). The console
 # app has no public/ of its own, so without these the browser got 404 and fell
 # back to a system font, unlike the tenant console.
@@ -210,6 +225,7 @@ COPY --from=builder /app/.next/static ./.next/static
 # Production entry: the standalone server plus same-origin WebSocket forwarding
 # of /api/v1/ws to BACKEND_API_URL (read at start, not frozen into the build).
 COPY --from=builder /app/server-with-ws.mjs ./server-with-ws.mjs
+COPY --from=notices /app/third-party-notices.json ./third-party-notices.json
 RUN mkdir -p .next/cache && chown nextjs:nodejs .next/cache
 
 LABEL org.opencontainers.image.title="OpenCTEM web console" \
