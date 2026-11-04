@@ -71,8 +71,12 @@ type RunMapNode struct {
 	Reason       string `json:"reason,omitempty"`
 	ErrorClass   string `json:"error_class,omitempty"`
 	ErrorMessage string `json:"error_message,omitempty"`
-	StartedAt    string `json:"started_at,omitempty"`
-	CompletedAt  string `json:"completed_at,omitempty"`
+	// SkipReason says, in English, why a skipped step did not run; Reason
+	// carries its code when it has one (a step no tool or sensor here runs,
+	// or one whose needed step was skipped), which the console words.
+	SkipReason  string `json:"skip_reason,omitempty"`
+	StartedAt   string `json:"started_at,omitempty"`
+	CompletedAt string `json:"completed_at,omitempty"`
 	// TimeoutSeconds is the step's timeout in the run's workflow version.
 	TimeoutSeconds int           `json:"timeout_seconds,omitempty"`
 	Findings       int           `json:"findings"`
@@ -387,6 +391,9 @@ func fillNodeFromStepRun(n *RunMapNode, sr *scanrundom.StepRun, platform bool) {
 		n.Reason = sr.ErrorCode
 		n.ErrorClass = stepErrorClass(sr.ErrorCode)
 		n.ErrorMessage = platformText(platform, sr.ErrorMessage)
+	}
+	if n.State == mapStateSkipped {
+		n.SkipReason = platformText(platform, sr.SkipReason)
 	}
 	n.Outcome = stepOutcome(sr.Output)
 	if kind, _ := sr.Output[scanrunapp.StepOutputResultKind].(string); kind != "" {

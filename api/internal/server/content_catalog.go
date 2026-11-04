@@ -22,6 +22,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/contentcatalog"
 	contentpackdom "github.com/openctemio/openctem/api/pkg/domain/contentpack"
 	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/releasefeed"
 )
 
 // AdminActionContentTrustOverride records that the operator added catalog
@@ -94,4 +95,17 @@ func recordTrustOverride(adminAudit admin.AuditLogRepository, roots []string, pa
 	if err := adminAudit.Create(ctx, entry.Build()); err != nil {
 		log.Error("write admin audit for the content trust override", "error", err)
 	}
+}
+
+// releaseFeedVerifier verifies the release feed's keyless Sigstore signature
+// offline with the same trusted root as the content catalog (the embedded one,
+// or CONTENT_SIGSTORE_TRUSTED_ROOT). Nil when the root does not load: the
+// version check then refuses every feed (fail closed).
+func releaseFeedVerifier(cfg *config.Config, log *logger.Logger) releasefeed.SignatureVerifier {
+	v, err := cpsigstore.New(cfg.Encryption.ContentSigstoreTrustedRoot)
+	if err != nil {
+		log.Error("release feed: the Sigstore trusted root does not load; feeds are refused", "error", err)
+		return nil
+	}
+	return v
 }

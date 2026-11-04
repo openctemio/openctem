@@ -1524,7 +1524,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	}
 	s.VersionCheck = versioncheck.New(postgres.NewVersionCheckRepository(&postgres.DB{DB: deps.DB}), versioncheck.Config{
 		Enabled: cfg.Worker.VersionCheckEnabled, URL: cfg.Worker.VersionCheckURL,
-		Keys: releasefeed.PinnedKeys, Running: version.Get().Version,
+		Verifier: releaseFeedVerifier(cfg, log), Running: version.Get().Version,
 		OnFeed: learnComponentReleases,
 		// In relay mode the release feed comes through the relay sensor.
 		Offline: relayMode(s),

@@ -3,6 +3,8 @@ package controller
 import (
 	"context"
 	"errors"
+	"fmt"
+	"runtime/debug"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -196,6 +198,21 @@ func (c *IngestWorkerController) Reconcile(ctx context.Context) (int, error) {
 	return int(processed.Load()), firstErr
 }
 
+// processGuarded runs the processor and turns a panic into a permanent job
+// failure. A panic is a bug in one job's processing: left alone it would kill
+// the whole process, and the queue would hand the same job out again after
+// the restart, so every replica would crash in a loop.
+func (c *IngestWorkerController) processGuarded(ctx context.Context, job *ingestjob.Job) (result []byte, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			c.logger.Error("ingest: job processing panicked; the job is marked dead",
+				"job_id", job.ID().String(), "kind", string(job.Kind()), "panic", fmt.Sprint(r), "stack", string(debug.Stack()))
+			result, err = nil, &ingestjob.PermanentError{Code: ingestjob.ErrorApplyFailed, Err: fmt.Errorf("ingest job panicked: %v", r)}
+		}
+	}()
+	return c.processor.Process(ctx, job)
+}
+
 // processOne runs a single job and records the outcome. While the job runs
 // its lease is renewed; a lost lease cancels the work and nothing is written.
 func (c *IngestWorkerController) processOne(ctx context.Context, job *ingestjob.Job) {
@@ -207,7 +224,7 @@ func (c *IngestWorkerController) processOne(ctx context.Context, job *ingestjob.
 		defer close(renewDone)
 		c.renewLoop(jobCtx, cancelCause, job)
 	}()
-	result, err := c.processor.Process(jobCtx, job)
+	result, err := c.processGuarded(jobCtx, job)
 	lost := errors.Is(context.Cause(jobCtx), ingestjob.ErrLeaseLost)
 	cancelCause(nil)
 	cancel()

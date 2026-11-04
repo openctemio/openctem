@@ -128,9 +128,13 @@ export function AdminCommandMenu() {
             <CommandGroup
               key={section.title ?? `top-${i}`}
               heading={
-                section.i18nKey
-                  ? t(section.i18nKey, section.title)
-                  : t('admin.palette.pages', 'Pages')
+                !section.i18nKey
+                  ? t('admin.palette.pages', 'Pages')
+                  : section.rail === 'settings'
+                    ? t('admin.nav.settings.heading', 'Settings › {section}', {
+                        section: t(section.i18nKey, section.title),
+                      })
+                    : t(section.i18nKey, section.title)
               }
             >
               {section.items.map((item) => {
@@ -139,7 +143,12 @@ export function AdminCommandMenu() {
                   <CommandItem
                     key={item.url}
                     value={label}
-                    keywords={[item.title, section.title ?? '', ...(item.keywords ?? [])]}
+                    keywords={[
+                      item.title,
+                      section.title ?? '',
+                      ...(section.rail === 'settings' ? ['settings'] : []),
+                      ...(item.keywords ?? []),
+                    ]}
                     onSelect={() => run(() => router.push(item.url))}
                   >
                     <div className="flex size-4 items-center justify-center">
