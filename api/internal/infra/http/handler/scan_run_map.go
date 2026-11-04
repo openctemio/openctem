@@ -115,6 +115,9 @@ type RunMapOutcome struct {
 	Unfinished       int                 `json:"unfinished_target_count,omitempty"`
 	Unreachable      int                 `json:"unreachable_target_count,omitempty"`
 	Skipped          int                 `json:"skipped_target_count,omitempty"`
+	// NotResolvingSkipped counts the names the platform knows do not
+	// resolve that an active step left out (passive steps still take them).
+	NotResolvingSkipped int `json:"not_resolving_skipped_count,omitempty"`
 }
 
 // RunMapCoverageGap is one host and why it was not fully covered
@@ -492,6 +495,8 @@ func stepOutcome(output map[string]any) *RunMapOutcome {
 		Unfinished:       num(scanrunapp.StepOutputUnfinished),
 		Unreachable:      num(scanrunapp.StepOutputUnreachable),
 		Skipped:          num(scanrunapp.StepOutputSkipped),
+
+		NotResolvingSkipped: num(scanrunapp.StepOutputNotResolvingSkipped),
 	}
 	appendGap := func(host, reason, cause, cert, edge, vendor any) {
 		h, _ := host.(string)
@@ -520,7 +525,7 @@ func stepOutcome(output map[string]any) *RunMapOutcome {
 	if o.CoverageGapCount < len(o.CoverageGaps) {
 		o.CoverageGapCount = len(o.CoverageGaps)
 	}
-	if o.CoverageGapCount == 0 && o.Unfinished == 0 && o.Unreachable == 0 && o.Skipped == 0 {
+	if o.CoverageGapCount == 0 && o.Unfinished == 0 && o.Unreachable == 0 && o.Skipped == 0 && o.NotResolvingSkipped == 0 {
 		return nil
 	}
 	return &o
