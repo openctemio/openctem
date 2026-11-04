@@ -19,6 +19,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -62,6 +63,29 @@ const StatusSignedIn LoginStatus = "signed_in"
 // Issuer is the account label shown in authenticator apps.
 var Issuer = brand.DefaultName + " Admin"
 
+// EnrolmentIssuer is the issuer label of a NEW console authenticator entry:
+// the console label and the host administrators sign in to, e.g.
+// "OpenCTEM Admin (admin.example.com)". Someone who administers two
+// installations then sees two entries they can tell apart. Existing entries
+// keep the label they were created with and their secret is untouched. Only
+// the hostname is used (a port or colon would split the otpauth label); an
+// empty or unusable URL leaves the plain label.
+func EnrolmentIssuer(label, consoleURL string) string {
+	label = strings.TrimSpace(label)
+	if label == "" {
+		label = Issuer
+	}
+	u, err := url.Parse(strings.TrimSpace(consoleURL))
+	if err != nil {
+		return label
+	}
+	host := strings.TrimSuffix(strings.ToLower(u.Hostname()), ".")
+	if host == "" || strings.ContainsAny(host, ":()") {
+		return label
+	}
+	return label + " (" + host + ")"
+}
+
 // touchInterval throttles last_seen_at writes to one per minute per session.
 const touchInterval = time.Minute
 
@@ -103,6 +127,8 @@ type Service struct {
 	log       *logger.Logger
 	accounts  AccountDirectory
 	now       func() time.Time
+	// enrolIssuer labels new authenticator entries ("" = Issuer).
+	enrolIssuer string
 	// invites delivers a new administrator's set-password link (invitation.go).
 	invites InvitationMailer
 
@@ -338,10 +364,21 @@ func (s *Service) beginSecondFactorBinding(ctx context.Context, a *admin.AdminUs
 	return &LoginResult{
 		Status:       StatusMFAEnrollment,
 		PendingToken: pending,
-		OTPAuthURI:   totp.URI(secret, Issuer, a.Email()),
+		OTPAuthURI:   totp.URI(secret, s.enrolmentIssuer(), a.Email()),
 		Secret:       secret,
 		Methods:      []string{MethodTOTP},
 	}, nil
+}
+
+// SetEnrolmentIssuer sets the label of new authenticator entries (see
+// EnrolmentIssuer). Existing entries are not affected.
+func (s *Service) SetEnrolmentIssuer(label string) { s.enrolIssuer = label }
+
+func (s *Service) enrolmentIssuer() string {
+	if s.enrolIssuer == "" {
+		return Issuer
+	}
+	return s.enrolIssuer
 }
 
 // VerifyMFA completes a login: it checks the TOTP code against the pending
