@@ -81,6 +81,9 @@ type StepReadiness struct {
 	State      string `json:"state"`
 	// Optional: the step is skipped by a run when no tool implements it.
 	Optional bool `json:"optional,omitempty"`
+	// Tool is the tool a ready step runs with (the first candidate that can
+	// run now), so the console can say "runs with <tool>".
+	Tool string `json:"tool,omitempty"`
 	// Code is the stable reason code (Reason* constants); Tools are the
 	// tools the reason and the fix name.
 	Code   string   `json:"code,omitempty"`
@@ -276,6 +279,7 @@ func (s *Service) stepReadiness(ctx context.Context, tenantID shared.ID, step *s
 		switch {
 		case state == ReadinessReady:
 			best = ReadinessReady
+			sr.Tool = name
 		case state == ReadinessWaiting && best == "":
 			best = ReadinessWaiting
 		case state == "":

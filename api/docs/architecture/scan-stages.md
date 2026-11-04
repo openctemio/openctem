@@ -358,7 +358,9 @@ step carries a stable reason `code` (`sensor_offline`, `no_sensor_yet`,
 `ci_only`, `no_tool`, `tool_disabled`, `tool_not_installed`,
 `no_sensor`) and the `tools` it names, which the web app renders in the
 reader's language; the workflow list badge opens the steps, their reasons
-and the fix link.
+and the fix link. A `ready` step also names the `tool` it runs with (the
+first candidate that can run now), so the scan wizard summary says "runs
+with <tool>" per step.
 
 **Run rules** (workflow settings, both off for existing workflows; omitted on
 an update means unchanged):
