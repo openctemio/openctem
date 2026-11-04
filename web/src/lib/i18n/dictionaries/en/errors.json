@@ -72,7 +72,7 @@
   "errors.UPSTREAM_ERROR": "A service this depends on did not answer correctly. Try again later.",
   "errors.VALIDATION_FAILED": "Some values are not valid.",
   "errors.auth.ACCOUNT_CANNOT_JOIN_ORGANIZATION": "This account cannot be a member of an organization.",
-  "errors.auth.ACCOUNT_LINK_REQUIRED": "An account with this email already exists. Sign in with your existing credentials first, then link this identity provider.",
+  "errors.auth.ACCOUNT_LINK_REQUIRED": "An account with this email already exists. Sign in with your password, then link this sign-in under Account > Security.",
   "errors.auth.ACCOUNT_LOCKED": "This account is locked after too many failed attempts. Try again later or reset your password.",
   "errors.auth.ACCOUNT_SUSPENDED": "This account is suspended. Contact your administrator.",
   "errors.auth.CAPTCHA_REQUIRED": "Complete the security check and try again.",

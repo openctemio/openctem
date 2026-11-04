@@ -2226,6 +2226,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// channels (RFC-065 §15.4): one rule for every integration provider.
 	s.Outbox.SetDeliveryResolver(postgres.NewProgramDeliveryRepository(&postgres.DB{DB: deps.DB}))
 	s.Outbox.SetBrand(cfg.Brand)
+	// Delivered links are absolute and name their organization (pkg/weblink).
+	s.Outbox.SetLinkBase(cfg.SMTP.BaseURL)
 	// An e-mail channel whose relay the managed service rules refuse is
 	// stopped with a visible status and its owners are told.
 	s.Outbox.SetRelayRefusedHandler(s.Integration)
@@ -3663,6 +3665,11 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	s.Auth.SetBreakGlassNotifier(s.Tenant)
 	ssoEnforcement := repos.SSOEnforcement
 	s.SSO.SetSSOSignInRecorder(ssoEnforcement)
+	// Linking an organization's sign-in to an existing account needs a code
+	// or password typed for it and revokes the account's other sessions
+	// (auth/sso_link.go).
+	s.SSO.SetLinkProofVerifier(s.Auth)
+	s.SSO.SetSessionRevoker(s.Session)
 	s.Tenant.SetSSOEnforcementStore(ssoEnforcement)
 	s.Role.SetPrivilegeNotifier(s.Tenant)
 	s.Auth.SetInvitationAcceptor(s.Tenant)

@@ -11,7 +11,7 @@ import { EmptyState } from '@/features/shared/components/empty-state'
 import { RunStatusBadge } from '@/features/shared/components/run-status-badge'
 import { cn } from '@/lib/utils'
 import { useTranslation } from '@/context/i18n-provider'
-import { dateFnsLocaleFor } from '@/features/shared/components/activity-timeline'
+import { dateFnsLocaleFor } from '@/lib/format-date'
 import {
   RefreshCw,
   Check,

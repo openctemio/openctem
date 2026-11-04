@@ -8,7 +8,7 @@ import { SeverityBadge } from '@/features/shared/components/severity-badge'
 import { MetaLine } from '@/features/shared/components/text-layout'
 import { RelativeTime } from '@/features/shared/components/relative-time'
 import { useTranslation } from '@/context/i18n-provider'
-import { dateFnsLocaleFor } from '@/features/shared/components/activity-timeline'
+import { dateFnsLocaleFor } from '@/lib/format-date'
 import { toDisplayText } from '@/lib/untrusted-text'
 import { cn } from '@/lib/utils'
 import { approvalRequester } from '@/features/findings/lib/approvals'
@@ -112,7 +112,7 @@ export function ApprovalRow({
             <span key="by">
               {t('myWork.requestedBy', 'Requested by {name}', { name: requesterName })}
             </span>,
-            <RelativeTime key="at" date={approval.created_at} locale={dateLocale} />,
+            <RelativeTime key="at" date={approval.created_at} />,
             reason ? (
               <q key="why" dir="auto" className="text-foreground [unicode-bidi:isolate]">
                 {reason}
@@ -142,8 +142,7 @@ export function ApprovalRow({
           )}
           {approval.decide_by && (
             <span className="text-meta text-muted-foreground">
-              {t('myWork.decideBy', 'Expires undecided')}{' '}
-              <RelativeTime date={approval.decide_by} locale={dateLocale} />
+              {t('myWork.decideBy', 'Expires undecided')} <RelativeTime date={approval.decide_by} />
             </span>
           )}
           {status}
