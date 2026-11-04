@@ -368,6 +368,12 @@ jobs:
       - name: Platform depends on contracts only (no sensor module or SDK in api/ or web/)
         run: bash .github/scripts/check-platform-deps.sh
 
+      - name: Backend directory name (self-test)
+        run: bash .github/scripts/check-backend-dir-name.test.sh
+
+      - name: Backend directory name (no tracked file names the old backend directory or module path)
+        run: bash .github/scripts/check-backend-dir-name.sh
+
       - name: Tool pin freshness self-test
         run: bash .github/scripts/tool-pins.test.sh
 
