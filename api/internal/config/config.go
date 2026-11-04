@@ -20,6 +20,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/versions"
 	"github.com/openctemio/openctem/api/pkg/brand"
 	"github.com/openctemio/openctem/api/pkg/crypto"
+	"github.com/openctemio/openctem/api/pkg/domain/attachment"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/httpsec"
 )
@@ -2089,6 +2090,9 @@ func (c *Config) validateStorage() error {
 	}
 	if c.Storage.SSEKMSKeyID != "" && c.Storage.SSE != "aws:kms" {
 		return fmt.Errorf("STORAGE_SSE_KMS_KEY_ID needs STORAGE_SSE=aws:kms")
+	}
+	if (c.Storage.SSE != "" || c.Storage.SSEKMSKeyID != "") && attachment.IsR2Endpoint(c.Storage.Endpoint) {
+		return errors.New(attachment.ErrR2SSE)
 	}
 	switch c.Storage.Provider {
 	case "", "local":
