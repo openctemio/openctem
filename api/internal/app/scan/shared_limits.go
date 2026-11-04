@@ -24,8 +24,17 @@ type SharedScanLimits interface {
 
 // WithSharedScanLimits wires the limit check. Without it no scan goes to
 // shared sensors (fail closed).
+//
+// The same entitlement service also decides active scanning
+// (active_scanning.go): when l reads named features (FeatureAllower), a
+// scan above passive is refused for an organization without it.
 func WithSharedScanLimits(l SharedScanLimits) ServiceOption {
-	return func(s *Service) { s.sharedLimits = l }
+	return func(s *Service) {
+		s.sharedLimits = l
+		if f, ok := l.(FeatureAllower); ok {
+			s.activeScan = f
+		}
+	}
 }
 
 // sharedLimitRefusal is nil when one more scan may go to shared sensors
