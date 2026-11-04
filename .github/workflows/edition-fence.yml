@@ -1,10 +1,12 @@
 name: Edition fence
 
-# The Community build must never contain Enterprise code and the open core
-# never names the commercial brand (api/docs/development/editions.md). The
-# check reads only the tracked tree, needs no secrets and no toolchain, so it
-# runs on every pull request, merge-queue group and push with no path filter
-# and can be a required check ("Edition fence").
+# The Community build never contains extension code and the core builds from
+# public sources only (api/docs/development/editions.md). The check reads only
+# the tracked tree and needs no toolchain, so it runs on every pull request,
+# merge-queue group and push with no path filter and can be a required check
+# ("Edition fence"). The restricted-word list comes from the secret
+# FENCE_RESTRICTED_WORDS; where secrets are not available (pull requests from
+# forks) that one rule is skipped, and the merge-queue run still applies it.
 
 on:
   push:
@@ -33,4 +35,6 @@ jobs:
       - name: Edition fence (self-test)
         run: bash .github/scripts/check-edition-fence.test.sh >/dev/null
       - name: Edition fence
+        env:
+          FENCE_RESTRICTED_WORDS: ${{ secrets.FENCE_RESTRICTED_WORDS }}
         run: bash .github/scripts/check-edition-fence.sh
