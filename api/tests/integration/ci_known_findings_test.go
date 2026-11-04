@@ -48,7 +48,7 @@ func knownCount(t *testing.T, out map[string]any) int { return len(knownIndexes(
 
 func TestCIKnownFindings_DecisionsHoldOnTheNextRun(t *testing.T) {
 	r := newCIRig(t)
-	r.svc.SetSuppressionRules(suppression.NewService(postgres.NewSuppressionRepository(r.db), logger.NewNop()), nil)
+	r.svc.SetSuppressionRules(suppression.NewService(postgres.NewSuppressionRepository(r.db), logger.NewNop()))
 	ctx := context.Background()
 	cfg := r.trust(r.tenant, cirun.Rules{Owners: []string{"acme"}})
 	host := strings.TrimPrefix(r.idp.srv.URL, "https://")
