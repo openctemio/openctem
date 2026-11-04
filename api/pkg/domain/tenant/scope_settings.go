@@ -21,6 +21,15 @@ const (
 	UnclassifiedFull      = "full"
 )
 
+// What happens to an address the organization's in-scope names resolve to
+// (research/425): added automatically when the organization's own declared
+// networks hold it (default), offered to a person, or never suggested.
+const (
+	AddressAutoStrong = "auto_strong"
+	AddressAsk        = "ask"
+	AddressNever      = "never"
+)
+
 // Scope settings bounds.
 const (
 	MaxScopeOneOffDays     = 30
@@ -69,6 +78,12 @@ type ScopeSettings struct {
 	// full (the scan's own tier). The platform guardrails apply in every
 	// mode; under the Strict scan approval mode it is off whatever is set.
 	UnclassifiedScans string `json:"unclassified_scans,omitempty"`
+	// AddressAutoAdd is what happens to an address in-scope names resolve
+	// to: auto_strong (default: added as an exact entry when the evidence is
+	// strong, through the approval policy), ask (a person decides each) or
+	// never (not suggested). Under the Strict scan approval mode nothing is
+	// added automatically whatever is set.
+	AddressAutoAdd string `json:"address_auto_add,omitempty"`
 	// AutoCoverage turns automatic coverage (RFC-093) on or off: the
 	// coverage loop starts the capabilities each in-scope asset needs. Nil is
 	// the default: on, except while the Strict scan approval mode is in force
@@ -170,6 +185,11 @@ func (s ScopeSettings) Validate() error {
 	default:
 		return fmt.Errorf("%w: unclassified_scans must be off, low_impact or full", shared.ErrValidation)
 	}
+	switch s.AddressAutoAdd {
+	case "", AddressAutoStrong, AddressAsk, AddressNever:
+	default:
+		return fmt.Errorf("%w: address_auto_add must be auto_strong, ask or never", shared.ErrValidation)
+	}
 	switch s.DefaultMaxTier {
 	case "", "t0", "t1":
 	default:
@@ -214,6 +234,26 @@ func (s ScopeSettings) Unclassified() string {
 		return UnclassifiedLowImpact
 	}
 	return s.UnclassifiedScans
+}
+
+// AddressMode returns the address setting with its default (auto_strong).
+// The Strict scan approval mode stops automatic adds; AddressModeIn applies
+// it.
+func (s ScopeSettings) AddressMode() string {
+	if s.AddressAutoAdd == "" {
+		return AddressAutoStrong
+	}
+	return s.AddressAutoAdd
+}
+
+// AddressModeIn is the address mode in force: auto_strong becomes ask while
+// the Strict scan approval mode is in force.
+func (s ScopeSettings) AddressModeIn(strict bool) string {
+	m := s.AddressMode()
+	if strict && m == AddressAutoStrong {
+		return AddressAsk
+	}
+	return m
 }
 
 // AutoCoverageOn reports whether automatic coverage runs: the explicit

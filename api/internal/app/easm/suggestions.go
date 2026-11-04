@@ -41,6 +41,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/edgeaddr"
 	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 )
 
 // Suggestion card kinds.
@@ -184,6 +185,11 @@ type SuggestionCards struct {
 	NameRules int `json:"name_rules"`
 	// CanAdd: the caller may accept a card (scope write permission).
 	CanAdd bool `json:"can_add"`
+	// AddressMode is the organization's address setting in force
+	// (auto_strong, ask or never): with auto_strong, addresses with strong
+	// evidence are added automatically (AddressAutoAdd) and the card holds
+	// the rest.
+	AddressMode string `json:"address_mode,omitempty" enums:"auto_strong,ask,never"`
 }
 
 // AddressBehindNames is one stored address and the names that resolve to it.
@@ -226,8 +232,29 @@ type SuggestionService struct {
 	// unclassified answers the organization's unclassified-scans mode; nil
 	// or unreadable means off (every offered address waits).
 	unclassified UnclassifiedPolicy
+	// addressMode answers the organization's address setting in force; nil
+	// or unreadable means ask (the card is shown, nothing is automatic).
+	addressMode AddressModeReader
 	// now is the clock (tests set it); nil means time.Now.
 	now func() time.Time
+}
+
+// AddressModeReader answers the organization's address setting in force
+// (tenant.ScopeSettings.AddressModeIn).
+type AddressModeReader func(ctx context.Context, tenantID shared.ID) (string, error)
+
+// SetAddressMode lets the cards follow the organization's address setting.
+func (s *SuggestionService) SetAddressMode(f AddressModeReader) { s.addressMode = f }
+
+func (s *SuggestionService) addressModeOf(ctx context.Context, tenantID shared.ID) string {
+	if s.addressMode == nil {
+		return tenant.AddressAsk
+	}
+	m, err := s.addressMode(ctx, tenantID)
+	if err != nil || m == "" {
+		return tenant.AddressAsk
+	}
+	return m
 }
 
 func (s *SuggestionService) clock() time.Time {
@@ -292,12 +319,15 @@ func (s *SuggestionService) Cards(ctx context.Context, tenantID shared.ID, canAd
 		}
 		view = sc
 	}
-	addrCard, err := s.addressCard(ctx, tenantID, view)
-	if err != nil {
-		return nil, err
-	}
-	if addrCard != nil {
-		out.Cards = append(out.Cards, *addrCard)
+	out.AddressMode = s.addressModeOf(ctx, tenantID)
+	if out.AddressMode != tenant.AddressNever {
+		addrCard, err := s.addressCard(ctx, tenantID, view)
+		if err != nil {
+			return nil, err
+		}
+		if addrCard != nil {
+			out.Cards = append(out.Cards, *addrCard)
+		}
 	}
 	confCard, err := s.confirmedCard(ctx, tenantID, view)
 	if err != nil {

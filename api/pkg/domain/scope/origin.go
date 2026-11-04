@@ -20,13 +20,14 @@ const (
 	OriginProgram       Origin = "program"         // imported from a bug-bounty program (RFC-065)
 	OriginConfirmed     Origin = "confirmed_asset" // a person confirmed the asset as the organization's (research/117)
 	OriginConnector     Origin = "connector"       // synced by one of the organization's connectors (research/117)
+	OriginAutoAddress   Origin = "auto_address"    // an address in-scope names resolve to that the organization's own network holds (research/425)
 )
 
 // Valid reports whether o is a known origin.
 func (o Origin) Valid() bool {
 	switch o {
 	case OriginManual, OriginRequest, OriginImport, OriginReviewRule, OriginRefusalFix,
-		OriginSeed, OriginSeedMigration, OriginSystem, OriginProgram, OriginConfirmed, OriginConnector, OriginCITrust:
+		OriginSeed, OriginSeedMigration, OriginSystem, OriginProgram, OriginConfirmed, OriginConnector, OriginCITrust, OriginAutoAddress:
 		return true
 	}
 	return false
