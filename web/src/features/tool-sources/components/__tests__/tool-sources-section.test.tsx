@@ -11,6 +11,7 @@ const removeKey = vi.fn()
 const mutate = vi.fn()
 const toastError = vi.fn()
 let perms: string[] = []
+let admin = true
 let sources: ToolSource[] = []
 
 vi.mock('sonner', () => ({
@@ -18,7 +19,7 @@ vi.mock('sonner', () => ({
 }))
 vi.mock('@/lib/permissions', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/permissions')>()),
-  usePermissions: () => ({ can: (p: string) => perms.includes(p) }),
+  usePermissions: () => ({ can: (p: string) => perms.includes(p), isAdmin: () => admin }),
 }))
 vi.mock('../../api/use-tool-sources', () => ({
   useToolSources: () => ({ data: { sources }, isLoading: false, error: undefined, mutate }),
@@ -32,13 +33,13 @@ const ALL = ['scans:secret_store:read', 'scans:secret_store:write', 'scans:secre
 beforeEach(() => {
   vi.clearAllMocks()
   perms = ALL
+  admin = true
   sources = [
     {
       id: 'securitytrails',
       name: 'SecurityTrails',
       tools: ['subfinder'],
       format: 'key',
-      docs_url: 'https://example.com/st',
       key: { set: true, last4: 'ab12', enabled: true, updated_by_name: 'Jane' },
     },
     {
@@ -69,7 +70,7 @@ describe('Tool source keys', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Rotate key' }))
     const input = screen.getByLabelText('Key')
     expect(input).toHaveAttribute('type', 'password')
-    expect(input).toHaveAttribute('autocomplete', 'off')
+    expect(input).toHaveAttribute('autocomplete', 'new-password')
     await userEvent.type(input, 'secretvalue99')
     await userEvent.click(screen.getByRole('button', { name: 'Save key' }))
     await waitFor(() => expect(setKey).toHaveBeenCalledWith('securitytrails', 'secretvalue99'))
@@ -92,7 +93,7 @@ describe('Tool source keys', () => {
     setKey.mockRejectedValueOnce(new Error('Sign in again'))
     render(<ToolSourcesSection />)
     await userEvent.click(screen.getByRole('button', { name: 'Rotate key' }))
-    await userEvent.type(screen.getByLabelText('Key'), 'abc')
+    await userEvent.type(screen.getByLabelText('Key'), 'abcdefgh1')
     await userEvent.click(screen.getByRole('button', { name: 'Save key' }))
     await waitFor(() => expect(toastError).toHaveBeenCalled())
     expect(screen.getByLabelText('Key')).toBeInTheDocument()
@@ -127,5 +128,13 @@ describe('Tool source keys', () => {
     render(<ToolSourcesSection />)
     expect(screen.getByRole('button', { name: 'Rotate key' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Remove key' })).not.toBeInTheDocument()
+  })
+
+  it('hides every change from a member who holds the permissions (the API needs an owner or administrator)', () => {
+    admin = false
+    render(<ToolSourcesSection />)
+    expect(screen.queryByRole('button', { name: 'Rotate key' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Remove key' })).not.toBeInTheDocument()
+    expect(screen.getByRole('switch', { name: 'Use the key for SecurityTrails' })).toBeDisabled()
   })
 })

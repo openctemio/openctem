@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { ExternalLink, KeyRound } from 'lucide-react'
+import { KeyRound } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { ConfirmDialog } from '@/components/confirm-dialog'
@@ -26,9 +26,11 @@ import { SetKeyDialog } from './set-key-dialog'
 
 export function ToolSourcesSection() {
   const { t } = useTranslation()
-  const { can } = usePermissions()
-  const canWrite = can(Permission.SecretStoreWrite)
-  const canDelete = can(Permission.SecretStoreDelete)
+  const { can, isAdmin } = usePermissions()
+  // The API also requires an owner or administrator for every change.
+  const admin = isAdmin()
+  const canWrite = admin && can(Permission.SecretStoreWrite)
+  const canDelete = admin && can(Permission.SecretStoreDelete)
   const { data, error, isLoading, mutate } = useToolSources()
   const [editing, setEditing] = useState<ToolSource | null>(null)
   const [removing, setRemoving] = useState<ToolSource | null>(null)
@@ -101,17 +103,6 @@ export function ToolSourcesSection() {
               <TableRow key={s.id}>
                 <TableCell>
                   <div className="font-medium">{s.name}</div>
-                  {s.docs_url && (
-                    <a
-                      href={s.docs_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:underline"
-                    >
-                      {t('toolSources.docs', 'Get a key')}
-                      <ExternalLink className="h-3 w-3" aria-hidden />
-                    </a>
-                  )}
                 </TableCell>
                 <TableCell className="text-sm">{s.tools.join(', ')}</TableCell>
                 <TableCell className="text-sm">

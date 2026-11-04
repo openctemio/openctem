@@ -16,7 +16,6 @@ export interface ToolSource {
   /** "key" is one value; "pair" is two parts joined by ":". */
   format: 'key' | 'pair'
   format_hint?: string
-  docs_url?: string
   key?: ToolSourceKey | null
 }
 
