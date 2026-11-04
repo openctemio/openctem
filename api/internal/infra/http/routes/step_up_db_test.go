@@ -348,8 +348,8 @@ func TestStepUp_TOTPReplayAndRecoveryCodesAreRefused_DB(t *testing.T) {
 	}
 	first := h.stepUpAt(sess)
 
-	// Replay: the same code again is refused and does not move the window.
-	if code, body := h.stepUp(tok, `{"totp":"`+code6+`"}`); code != http.StatusForbidden || body != "STEP_UP_FAILED" {
+	// Replay: the same code again is refused as already used and does not move the window.
+	if code, body := h.stepUp(tok, `{"totp":"`+code6+`"}`); code != http.StatusForbidden || body != "STEP_UP_CODE_USED" {
 		t.Fatalf("replayed code: %d %s", code, body)
 	}
 	if again := h.stepUpAt(sess); !again.Time.Equal(first.Time) {
