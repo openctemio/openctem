@@ -1,5 +1,6 @@
 'use client'
 
+import { ReportProblem } from '@/features/shared/components/report-problem'
 import { useEffect } from 'react'
 import { AlertCircle, Target } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -43,11 +44,12 @@ export default function ScopingError({ error, reset }: ErrorProps) {
             <p className="text-muted-foreground text-sm">Error ID: {error.digest}</p>
           )}
         </CardContent>
-        <CardFooter className="flex justify-center gap-2">
+        <CardFooter className="flex flex-wrap justify-center gap-2">
           <Button onClick={reset}>Retry</Button>
           <Button variant="outline" onClick={() => window.history.back()}>
             Go back
           </Button>
+          <ReportProblem error={error} />
         </CardFooter>
       </Card>
     </div>

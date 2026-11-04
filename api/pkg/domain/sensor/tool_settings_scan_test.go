@@ -5,7 +5,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/openctemio/ctis/settings"
+	"github.com/openctemio/contract/settings"
 )
 
 // scanTestConfig: a scan-scope common option (retries), a sensor-scope key

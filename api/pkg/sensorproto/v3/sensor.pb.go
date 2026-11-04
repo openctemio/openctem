@@ -969,7 +969,7 @@ type PutResultRequest struct {
 	Segment *uint32 `protobuf:"varint,3,opt,name=segment,proto3,oneof" json:"segment,omitempty"`
 	// The content as sent: CTIS JSON, possibly compressed.
 	Content []byte `protobuf:"bytes,4,opt,name=content,proto3" json:"content,omitempty"`
-	// application/vnd.openctem.ctis.v1+json
+	// application/vnd.ctis+json; version=2.0
 	ContentType string `protobuf:"bytes,5,opt,name=content_type,json=contentType,proto3" json:"content_type,omitempty"`
 	// "", "gzip" or "zstd".
 	ContentEncoding string `protobuf:"bytes,6,opt,name=content_encoding,json=contentEncoding,proto3" json:"content_encoding,omitempty"`

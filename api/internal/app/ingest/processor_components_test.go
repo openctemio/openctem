@@ -6,7 +6,7 @@ import (
 	"log/slog"
 	"testing"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/software"
@@ -38,14 +38,14 @@ func (f *fakePackageWriter) EnsurePackageVersion(context.Context, shared.ID, sof
 
 func TestDependencyNodes(t *testing.T) {
 	deps := []ctis.Dependency{
-		{ID: "app", Name: "app", Relationship: "root", DependsOn: []string{"express-id"}},
+		{ID: "app", Name: "app", Relationship: ctis.DependencyRoot, DependsOn: []string{"express-id"}},
 		{ID: "express-id", Name: "express", Version: "4.18.0", PURL: "pkg:npm/express@4.18.0",
-			Licenses: []string{"MIT"}, DependsOn: []string{"pkg:npm/debug@2.6.9"}, Path: "package-lock.json"},
-		{ID: "debug-id", Name: "debug", Version: "2.6.9", PURL: "pkg:npm/debug@2.6.9", Relationship: "indirect",
+			Licenses: []string{"MIT"}, DependsOn: []string{"pkg:npm/debug@2.6.9"}, Locations: []ctis.DependencyLocation{{Path: "package-lock.json"}}},
+		{ID: "debug-id", Name: "debug", Version: "2.6.9", PURL: "pkg:npm/debug@2.6.9", Relationship: ctis.DependencyTransitive,
 			Properties: ctis.Properties{"dev": true}},
-		{Name: "requests", Version: "2.31.0", Ecosystem: "pip", Relationship: "direct"},
+		{Name: "requests", Version: "2.31.0", Relationship: ctis.DependencyDirect},
 		{Name: "", Version: "1"},
-		{Name: "bad", PURL: "pkg:/nope", Ecosystem: ""},
+		{Name: "bad", PURL: "pkg:/nope"},
 	}
 	nodes, ok := DependencyNodes(deps)
 	if ok[0] {
@@ -60,8 +60,8 @@ func TestDependencyNodes(t *testing.T) {
 	if nodes[2].Relationship != software.RelationshipTransitive || nodes[2].Scope != software.ScopeDevelopment {
 		t.Fatalf("debug: %+v", nodes[2])
 	}
-	if !ok[3] || !nodes[3].Synthetic || nodes[3].PURL.String() != "pkg:pypi/requests@2.31.0" {
-		t.Fatalf("requests without a purl: %+v", nodes[3])
+	if !ok[3] || !nodes[3].Synthetic || nodes[3].PURL.Type != "generic" {
+		t.Fatalf("requests without a purl (no ecosystem in CTIS 2.0: generic identity): %+v", nodes[3])
 	}
 	if ok[4] {
 		t.Fatal("an entry without a name must be skipped")
@@ -79,9 +79,9 @@ func TestComponentProcessor_ProcessBatch_PerAsset(t *testing.T) {
 	report := &ctis.Report{
 		Assets: []ctis.Asset{{ID: "r1", Value: "svc-one"}, {ID: "r2", Value: "svc-two"}},
 		Dependencies: []ctis.Dependency{
-			{Name: "lodash", Version: "4.17.21", PURL: "pkg:npm/lodash@4.17.21", Path: "svc-one/package-lock.json"},
-			{Name: "flask", Version: "3.0.0", PURL: "pkg:pypi/flask@3.0.0", Path: "svc-two/requirements.txt"},
-			{Name: "chalk", Version: "5.0.0", PURL: "pkg:npm/chalk@5.0.0", Path: "svc-one/package-lock.json"},
+			{Name: "lodash", Version: "4.17.21", PURL: "pkg:npm/lodash@4.17.21", Locations: []ctis.DependencyLocation{{Path: "svc-one/package-lock.json"}}},
+			{Name: "flask", Version: "3.0.0", PURL: "pkg:pypi/flask@3.0.0", Locations: []ctis.DependencyLocation{{Path: "svc-two/requirements.txt"}}},
+			{Name: "chalk", Version: "5.0.0", PURL: "pkg:npm/chalk@5.0.0", Locations: []ctis.DependencyLocation{{Path: "svc-one/package-lock.json"}}},
 		},
 	}
 	out := &Output{}
@@ -195,8 +195,8 @@ func TestComponentProcessor_QueuesMatcherForChangedAssets(t *testing.T) {
 	report := &ctis.Report{
 		Assets: []ctis.Asset{{ID: "r1", Value: "svc-one"}, {ID: "r2", Value: "svc-two"}},
 		Dependencies: []ctis.Dependency{
-			{Name: "lodash", Version: "4.17.21", PURL: "pkg:npm/lodash@4.17.21", Path: "svc-one/package-lock.json"},
-			{Name: "flask", Version: "3.0.0", PURL: "pkg:pypi/flask@3.0.0", Path: "svc-two/requirements.txt"},
+			{Name: "lodash", Version: "4.17.21", PURL: "pkg:npm/lodash@4.17.21", Locations: []ctis.DependencyLocation{{Path: "svc-one/package-lock.json"}}},
+			{Name: "flask", Version: "3.0.0", PURL: "pkg:pypi/flask@3.0.0", Locations: []ctis.DependencyLocation{{Path: "svc-two/requirements.txt"}}},
 		},
 	}
 	assets := map[string]shared.ID{"r1": a1, "r2": a2}

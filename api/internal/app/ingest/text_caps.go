@@ -16,7 +16,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 )
 
 // TruncationMarker ends a value cut by a length cap.
@@ -122,13 +122,13 @@ func capCertificateText(c *textCapper, ct *ctis.CertificateTechnical) {
 	ct.IssuerCN = c.str(stripControl(c, ct.IssuerCN), MaxCertNameLen)
 	ct.IssuerOrg = c.str(stripControl(c, ct.IssuerOrg), MaxCertNameLen)
 	ct.SerialNumber = c.str(stripControl(c, ct.SerialNumber), MaxCertSerialLen)
-	ct.Fingerprint = c.str(stripControl(c, ct.Fingerprint), MaxCertFingerprint)
+	ct.SHA256Fingerprint = c.str(stripControl(c, ct.SHA256Fingerprint), MaxCertFingerprint)
 	ct.SignatureAlgorithm = c.str(stripControl(c, ct.SignatureAlgorithm), MaxCertAlgorithmLen)
 	ct.KeyAlgorithm = c.str(stripControl(c, ct.KeyAlgorithm), MaxCertAlgorithmLen)
-	for i := range ct.SANs {
-		ct.SANs[i] = stripControl(c, ct.SANs[i])
+	for i := range ct.SubjectAltNames {
+		ct.SubjectAltNames[i] = stripControl(c, ct.SubjectAltNames[i])
 	}
-	ct.SANs = c.list(ct.SANs, MaxCertSANs, MaxCertSANLen)
+	ct.SubjectAltNames = c.list(ct.SubjectAltNames, MaxCertSANs, MaxCertSANLen)
 }
 
 // stripControl removes control characters (newlines included): certificate
@@ -150,13 +150,17 @@ func capFindingText(c *textCapper, f *ctis.Finding) {
 	f.Title = c.str(f.Title, MaxFindingTitleLen)
 	f.Description = c.str(f.Description, MaxFindingDescriptionLen)
 	f.Message = c.str(f.Message, MaxFindingMessageLen)
-	f.Evidence = c.str(f.Evidence, MaxFindingEvidenceLen)
+	for i := range f.EvidenceItems {
+		if f.EvidenceItems[i].Kind == ctis.EvidenceKindRawText {
+			f.EvidenceItems[i].Text = c.str(f.EvidenceItems[i].Text, MaxFindingEvidenceLen)
+		}
+	}
 	f.RuleName = c.str(f.RuleName, MaxFindingRuleNameLen)
 	f.Category = c.str(f.Category, MaxFindingCategoryLen)
 	f.References = c.list(f.References, MaxFindingReferences, MaxFindingReferenceLen)
 	f.Tags = c.list(f.Tags, MaxFindingTags, MaxFindingTagLen)
-	f.VulnerabilityClass = c.list(f.VulnerabilityClass, MaxFindingClasses, MaxFindingClassLen)
-	f.Subcategory = c.list(f.Subcategory, MaxFindingClasses, MaxFindingClassLen)
+	f.VulnerabilityClasses = c.list(f.VulnerabilityClasses, MaxFindingClasses, MaxFindingClassLen)
+	f.Subcategories = c.list(f.Subcategories, MaxFindingClasses, MaxFindingClassLen)
 
 	if l := f.Location; l != nil {
 		l.Snippet = c.str(l.Snippet, MaxFindingSnippetLen)
@@ -166,7 +170,6 @@ func capFindingText(c *textCapper, f *ctis.Finding) {
 		r.Recommendation = c.str(r.Recommendation, MaxRemediationTextLen)
 		r.FixCode = c.str(r.FixCode, MaxRemediationTextLen)
 		r.Steps = c.list(r.Steps, MaxRemediationSteps, MaxRemediationStepLen)
-		r.References = c.list(r.References, MaxFindingReferences, MaxFindingReferenceLen)
 	}
 	if m := f.Misconfiguration; m != nil {
 		m.Expected = c.str(m.Expected, MaxMisconfigTextLen)

@@ -78,10 +78,14 @@ jobs:
         run: |
           go install golang.org/x/vuln/cmd/govulncheck@v1.7.0
           govulncheck ./...
+      - name: Set up trivy
+        if: ${{ !cancelled() }}
+        uses: ./.github/actions/setup-trivy
       - name: Trivy Vulnerability Scanner (api)
         if: ${{ !cancelled() }}
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
+          skip-setup-trivy: true
           scan-type: 'fs'
           scan-ref: 'api'
           trivy-config: 'api/trivy.yaml'
@@ -200,9 +204,12 @@ jobs:
           push: false
           load: true
           tags: openctem-api:scan
+      - name: Set up trivy
+        uses: ./.github/actions/setup-trivy
       - name: Run Trivy on the image
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
+          skip-setup-trivy: true
           image-ref: 'openctem-api:scan'
           format: 'sarif'
           output: 'trivy-docker-api.sarif'

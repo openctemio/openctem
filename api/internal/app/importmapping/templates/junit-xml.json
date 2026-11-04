@@ -1,5 +1,5 @@
 {
-  "apiVersion": "openctem.io/mapping/v1",
+  "apiVersion": "openctem.io/mapping/v2",
   "source": "xml",
   "each": "//testcase",
   "notes": "Starter: JUnit-style results of a check runner; a failed case is a medium finding, an errored case a low one, a passed or skipped case nothing.",

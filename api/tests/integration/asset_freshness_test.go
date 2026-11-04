@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	assetapp "github.com/openctemio/openctem/api/internal/app/asset"
 	freshapp "github.com/openctemio/openctem/api/internal/app/assetfreshness"
@@ -51,8 +51,8 @@ func newFreshRig(t *testing.T) *freshRig {
 func (g *freshRig) importAs(tn v2Tenant, tool string, observed time.Time, a ctis.Asset) {
 	g.t.Helper()
 	tid := tn.tenant
-	rep := &ctis.Report{Version: "1.0", Tool: &ctis.Tool{Name: tool}, Assets: []ctis.Asset{a},
-		Metadata: ctis.ReportMetadata{Timestamp: observed}}
+	rep := &ctis.Report{Version: ctis.SchemaVersion, Tool: &ctis.Tool{Name: tool}, Assets: []ctis.Asset{a},
+		Metadata: ctis.ReportMetadata{ID: ctis.NewReportID(), GeneratedAt: observed}}
 	agt := &sensor.Sensor{TenantID: &tid, Status: sensor.SensorStatusActive}
 	opts := ingest.Options{SourceKind: asset.SourceKindImport, SourceName: "test-import"}
 	if out, err := g.r.svc.Ingest(context.Background(), agt, ingest.Input{Report: rep, Options: opts}); err != nil || len(out.Errors) > 0 {
@@ -81,7 +81,7 @@ func classOf(v *assetfreshness.AssetView, c assetfreshness.Class) *assetfreshnes
 }
 
 func subdomainAsset(name string) ctis.Asset {
-	return ctis.Asset{ID: "s", Type: ctis.AssetTypeSubdomain, Value: name}
+	return ctis.Asset{ID: "s", Type: ctis.AssetTypeDomainName, Value: name}
 }
 
 func TestAssetFreshness_IngestRecordsAndNeverRegresses(t *testing.T) {

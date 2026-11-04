@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/lib/pq"
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
@@ -42,8 +42,8 @@ func TestIngest_RawSecretStoredNowhere(t *testing.T) {
 	token := "ghp_" + "9fK2xLq7RzT4mWv8Np3Yb6Hc"
 	key := "AKIA" + "Q3EGRZ7X2MNVBP4L"
 	report := func(id string) *ctis.Report {
-		return &ctis.Report{Version: "1.0", Tool: &ctis.Tool{Name: "betterleaks", Capabilities: []string{"secret"}},
-			Metadata: ctis.ReportMetadata{ID: id, Timestamp: time.Now().UTC()},
+		return &ctis.Report{Version: ctis.SchemaVersion, Tool: &ctis.Tool{Name: "betterleaks", Techniques: []ctis.Technique{ctis.TechniqueSecret}},
+			Metadata: ctis.ReportMetadata{ID: ctis.NewReportID(), GeneratedAt: time.Now().UTC()},
 			Assets:   []ctis.Asset{{ID: "repo", Type: ctis.AssetTypeRepository, Value: tn.repo}},
 			Findings: []ctis.Finding{
 				{
@@ -52,7 +52,7 @@ func TestIngest_RawSecretStoredNowhere(t *testing.T) {
 					Title:       "GitHub token " + token + " in ci.yml",
 					Description: "token " + token, Message: "found " + token,
 					Location:    &ctis.FindingLocation{Path: "ci.yml", StartLine: 4, Snippet: "token: " + token},
-					Secret:      &ctis.SecretDetails{SecretType: "token", MaskedValue: token},
+					Secret:      &ctis.SecretDetails{Type: "token", MaskedValue: token},
 					Remediation: &ctis.Remediation{Recommendation: "revoke " + token},
 					Tags:        []string{"secret", token},
 					Properties:  ctis.Properties{"commit_message": "add " + token},

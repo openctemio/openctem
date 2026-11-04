@@ -3,6 +3,7 @@ package main
 import (
 	"path/filepath"
 
+	"github.com/openctemio/openctem/api/internal/tools/assetcanoncmd"
 	"github.com/openctemio/openctem/api/internal/tools/bootstrapadmin"
 	"github.com/openctemio/openctem/api/internal/tools/citrustscopeplan"
 	"github.com/openctemio/openctem/api/internal/tools/refingerprintcmd"
@@ -17,6 +18,7 @@ import (
 // whoever starts them: this changes how they are packaged, not who may run
 // them.
 var tools = map[string]func(){
+	"asset-canonical":     assetcanoncmd.Main,
 	"bootstrap-admin":     bootstrapadmin.Main,
 	"refingerprint":       refingerprintcmd.Main,
 	"repomerge":           repomerge.Main,
