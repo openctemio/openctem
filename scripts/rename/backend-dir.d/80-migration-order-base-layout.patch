@@ -1,0 +1,17 @@
+--- a/.github/scripts/migration-order-check.sh
++++ b/.github/scripts/migration-order-check.sh
+@@ -37,8 +37,12 @@
+     exit 0
+   fi
+   mkdir -p "$work/base"
+-  git archive "$base" "$dir" | tar -x -C "$work/base"
+-  base_dir="$work/base/$dir"
++  # A base from before the backend directory rename has its migrations in the
++  # old directory.
++  bdir="$dir"
++  git cat-file -e "$base:$bdir" 2>/dev/null || bdir="api/migrations" # rename-guard: allow
++  git archive "$base" "$bdir" | tar -x -C "$work/base"
++  base_dir="$work/base/$bdir"
+ fi
+ 
+ # url_for <db>: SUPER_URL pointed at another database of the same server.

@@ -1,0 +1,20 @@
+--- a/server/scripts/released-migrations.sh
++++ b/server/scripts/released-migrations.sh
+@@ -26,10 +26,13 @@
+ generate() {
+   local t
+   git -C "$root" tag -l 'v*' | sort -V | while IFS= read -r t; do
+-    git -C "$root" cat-file -e "$t:server/migrations" 2>/dev/null || continue
+-    if git -C "$root" cat-file -e "$t:server/cmd/openctem-migrate" 2>/dev/null; then continue; fi
+-    vs="$(git -C "$root" ls-tree --name-only "$t" server/migrations/ \
+-      | sed -n 's#^server/migrations/\([0-9]\{1,13\}\)_.*\.up\.sql$#\1#p' \
++    # Tags from before the backend directory rename keep the old directory name.
++    d=server
++    git -C "$root" cat-file -e "$t:$d/migrations" 2>/dev/null || d=api
++    git -C "$root" cat-file -e "$t:$d/migrations" 2>/dev/null || continue
++    if git -C "$root" cat-file -e "$t:$d/cmd/openctem-migrate" 2>/dev/null; then continue; fi
++    vs="$(git -C "$root" ls-tree --name-only "$t" "$d/migrations/" \
++      | sed -n "s#^$d/migrations/\([0-9]\{1,13\}\)_.*\.up\.sql\$#\1#p" \
+       | sed 's/^0*//' | sort -n | paste -sd, -)"
+     [[ -n "$vs" ]] && echo "$t $vs"
+   done | awk '

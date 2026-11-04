@@ -1,0 +1,50 @@
+diff --git a/.github/scripts/upgrade-test.sh b/.github/scripts/upgrade-test.sh
+index d2a3321345..084a994a62 100755
+--- a/.github/scripts/upgrade-test.sh
++++ b/.github/scripts/upgrade-test.sh
+@@ -93,14 +93,18 @@ max_version() {
+ 
+ echo "== Previous release: $PREV ($(git rev-parse --short "$PREV"))"
+ mkdir -p "$work/prev"
++# The previous release may predate the backend directory rename: use the
++# directory that holds its migrations.
++prev_dir=api
++if git cat-file -e "$PREV:server/migrations" 2>/dev/null; then prev_dir=server; fi
+ # One archive per path: `git archive` fails as a whole when one path is
+ # missing, and a release older than the roles script has no server/deploy/postgres.
+-for p in server/migrations server/deploy/postgres; do
++for p in "$prev_dir/migrations" "$prev_dir/deploy/postgres"; do
+   if git cat-file -e "$PREV:$p" 2>/dev/null; then git archive "$PREV" "$p" | tar -x -C "$work/prev"; fi
+ done
+-prev_migrations="$work/prev/api/migrations"
+-[ -d "$prev_migrations" ] || fail "$PREV has no server/migrations"
+-prev_roles="$work/prev/api/deploy/postgres/least-privilege-roles.sql"
++prev_migrations="$work/prev/$prev_dir/migrations"
++[ -d "$prev_migrations" ] || fail "$PREV has no $prev_dir/migrations"
++prev_roles="$work/prev/$prev_dir/deploy/postgres/least-privilege-roles.sql"
+ [ -f "$prev_roles" ] || prev_roles="server/deploy/postgres/least-privilege-roles.sql" # a release older than the roles script
+ prev_max="$(max_version "$prev_migrations")"
+ new_max="$(max_version server/migrations)"
+@@ -113,7 +117,7 @@ echo "   its migrations end at $prev_max; this tree's end at $new_max"
+ # release ending there, and runs every other one (a legacy-numbered file
+ # merged below that version after the release was cut included). So the
+ # previous release must be listed, with exactly the versions it shipped.
+-if ! git cat-file -e "$PREV:server/cmd/openctem-migrate" 2>/dev/null; then
++if ! git cat-file -e "$PREV:$prev_dir/cmd/openctem-migrate" 2>/dev/null; then
+   want="$(find "$prev_migrations" -maxdepth 1 -name '*.up.sql' -printf '%f\n' | sed -n 's/^\([0-9]\{1,13\}\)_.*/\1/p' | sed 's/^0*//' | sort -n | paste -sd, -)"
+   grep -F "\"$PREV\"" server/migrations/released.json | grep -qF "\"versions\": [$want]" \
+     || fail "server/migrations/released.json does not list $PREV with the migrations it shipped: regenerate it (make -C server migrations-released)"
+@@ -128,10 +132,10 @@ fi
+ # The previous release's own migration tool: its openctem-migrate, built from
+ # the tag, or golang-migrate for a release before it.
+ prev_migrate=migrate
+-if git cat-file -e "$PREV:server/cmd/openctem-migrate/main.go" 2>/dev/null; then
++if git cat-file -e "$PREV:$prev_dir/cmd/openctem-migrate/main.go" 2>/dev/null; then
+   mkdir -p "$work/prev-src"
+-  git archive "$PREV" api | tar -x -C "$work/prev-src"
+-  (cd "$work/prev-src/api" && GOWORK=off go build -o "$work/prev-migrate" ./cmd/openctem-migrate)
++  git archive "$PREV" "$prev_dir" | tar -x -C "$work/prev-src"
++  (cd "$work/prev-src/$prev_dir" && GOWORK=off go build -o "$work/prev-migrate" ./cmd/openctem-migrate)
+   prev_migrate="$work/prev-migrate"
+ fi
+ 
