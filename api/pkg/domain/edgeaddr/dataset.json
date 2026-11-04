@@ -4064,6 +4064,11 @@
    "class": "cloud_shared"
   },
   {
+   "suffix": "ladipage.com",
+   "provider": "LadiPage",
+   "class": "saas_hosting"
+  },
+  {
    "suffix": "azurewebsites.net",
    "provider": "Microsoft",
    "class": "saas_hosting"

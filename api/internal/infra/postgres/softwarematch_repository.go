@@ -3,8 +3,11 @@ package postgres
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
+	"net/netip"
 	"sort"
 	"strings"
 	"time"
@@ -503,7 +506,7 @@ func (r *SoftwareMatchRepository) LinkStates(ctx context.Context, tenantID share
 		var vid string
 		err = r.db.QueryRowContext(ctx, `
 			SELECT s.software_version_id, v.raw, s.source, s.evidence_class, s.confidence, s.sightings,
-				s.first_seen_at, s.last_seen_at
+				s.first_seen_at, s.last_seen_at, v.matched_at IS NOT NULL
 			FROM asset_software s
 			JOIN software_versions v ON v.id = s.software_version_id AND (v.tenant_id IS NULL OR v.tenant_id = s.tenant_id)
 			WHERE s.tenant_id = $1 AND s.asset_id = $2 AND s.product_id = $3 AND s.software_version_id <> $4
@@ -511,7 +514,7 @@ func (r *SoftwareMatchRepository) LinkStates(ctx context.Context, tenantID share
 			ORDER BY s.last_seen_at DESC
 			LIMIT 1`,
 			tenantID.String(), k.AssetID.String(), k.ProductID.String(), k.VersionID.String(), k.Location, currentSince).
-			Scan(&vid, &now.Version, &now.Source, &now.Class, &now.Confidence, &now.Sightings, &now.FirstSeen, &now.LastSeen)
+			Scan(&vid, &now.Version, &now.Source, &now.Class, &now.Confidence, &now.Sightings, &now.FirstSeen, &now.LastSeen, &now.Evaluated)
 		switch {
 		case errors.Is(err, sql.ErrNoRows):
 		case err != nil:
@@ -523,6 +526,39 @@ func (r *SoftwareMatchRepository) LinkStates(ctx context.Context, tenantID share
 		out[k] = info
 	}
 	return out, nil
+}
+
+// UpdateObservedVersion (see softwarematch.Store). Only the version fields
+// of the finding's version_match evidence and its component change; the
+// status, closure and timestamps of the finding do not.
+func (r *SoftwareMatchRepository) UpdateObservedVersion(ctx context.Context, tenantID shared.ID, refs []softwarematch.ObservedVersionRef) (int, error) {
+	total := 0
+	for _, ref := range refs {
+		if ref.FindingID.IsZero() || ref.ProductID.IsZero() || ref.VersionID.IsZero() {
+			continue
+		}
+		patch, err := json.Marshal(map[string]string{
+			"product_id": ref.ProductID.String(), "version_id": ref.VersionID.String(),
+			"version": ref.Version, "qualifier": ref.Qualifier,
+		})
+		if err != nil {
+			return total, fmt.Errorf("observed version: %w", err)
+		}
+		res, err := r.db.ExecContext(ctx, `
+			UPDATE findings f
+			SET metadata = jsonb_set(f.metadata, '{version_match}', COALESCE(f.metadata->'version_match', '{}'::jsonb) || $3::jsonb),
+			    component_id = $4, updated_at = NOW()
+			WHERE f.tenant_id = $1 AND f.id = $2 AND `+matcherOwnedSQL+`
+			  AND `+vulnerability.OpenStatusSQL("f.status")+`
+			  AND f.metadata->'version_match'->>'version_id' IS DISTINCT FROM $5`,
+			tenantID.String(), ref.FindingID.String(), string(patch), ref.VersionID.String(), ref.VersionID.String())
+		if err != nil {
+			return total, fmt.Errorf("observed version: %w", err)
+		}
+		n, _ := res.RowsAffected()
+		total += int(n)
+	}
+	return total, nil
 }
 
 // CancelVersionProposals (see softwarematch.Store).
@@ -737,4 +773,117 @@ func (r *SoftwareMatchRepository) ObservedSince(ctx context.Context, tenantID, a
 		out = append(out, o)
 	}
 	return out, rows.Err()
+}
+
+// jsonTextArraySQL reads a JSONB property that should be an array of strings
+// as text[] (anything else reads as empty).
+func jsonTextArraySQL(expr string) string {
+	return `ARRAY(SELECT jsonb_array_elements_text(CASE WHEN jsonb_typeof(` + expr + `) = 'array' THEN ` + expr + ` ELSE '[]'::jsonb END))`
+}
+
+// HostingFacts returns, for the tenant's assets among ids, what the inventory
+// holds about where each is served from (softwarematch.HostFacts): its name,
+// host, CNAME target, addresses, network holder and CDN, and for an address
+// the CNAME targets of the tenant's names that resolve to it. Tenant-scoped:
+// names of another tenant never attribute an address.
+func (r *SoftwareMatchRepository) HostingFacts(ctx context.Context, tenantID shared.ID, ids []shared.ID) (map[shared.ID]softwarematch.HostFacts, error) {
+	out := make(map[shared.ID]softwarematch.HostFacts, len(ids))
+	if len(ids) == 0 {
+		return out, nil
+	}
+	strs := make([]string, 0, len(ids))
+	for _, id := range ids {
+		strs = append(strs, id.String())
+	}
+	addrs, err := r.hostingAssets(ctx, tenantID, strs, out)
+	if err != nil {
+		return nil, err
+	}
+	if len(addrs) == 0 {
+		return out, nil
+	}
+	keys := make([]string, 0, len(addrs))
+	for k := range addrs {
+		keys = append(keys, k)
+	}
+	nrows, err := r.db.QueryContext(ctx, `
+		SELECT ip, COALESCE(n.properties->>'cname_target', '')
+		FROM assets n, unnest(`+jsonTextArraySQL("n.properties->'ip_addresses'")+`) AS ip
+		WHERE n.tenant_id = $1 AND n.deleted_at IS NULL AND n.asset_type IN ('domain', 'subdomain')
+		  AND ip = ANY($2)
+		LIMIT 10000`, tenantID.String(), pq.Array(keys))
+	if err != nil {
+		return nil, fmt.Errorf("hosting names: %w", err)
+	}
+	defer nrows.Close()
+	for nrows.Next() {
+		var ip, cname string
+		if err := nrows.Scan(&ip, &cname); err != nil {
+			return nil, fmt.Errorf("hosting names: %w", err)
+		}
+		for _, aid := range addrs[ip] {
+			f := out[aid]
+			f.NameCNAMEs = append(f.NameCNAMEs, cname)
+			out[aid] = f
+		}
+	}
+	return out, nrows.Err()
+}
+
+// hostingAssets fills out with the facts of the tenant's assets among ids and
+// returns, per address an asset names as its host, the assets naming it.
+func (r *SoftwareMatchRepository) hostingAssets(ctx context.Context, tenantID shared.ID, ids []string,
+	out map[shared.ID]softwarematch.HostFacts,
+) (map[string][]shared.ID, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT a.id, a.name, COALESCE(a.properties->>'host', ''), COALESCE(a.properties->>'cname_target', ''),
+			`+jsonTextArraySQL("a.properties->'ip_addresses'")+`,
+			COALESCE(a.properties->>'asn_org', a.properties->'ip_address'->>'asn_org', ''),
+			COALESCE(a.properties->>'cdn', '')
+		FROM assets a
+		WHERE a.tenant_id = $1 AND a.id = ANY($2::uuid[])`, tenantID.String(), pq.Array(ids))
+	if err != nil {
+		return nil, fmt.Errorf("hosting facts: %w", err)
+	}
+	defer rows.Close()
+	addrs := map[string][]shared.ID{}
+	for rows.Next() {
+		var (
+			id string
+			f  softwarematch.HostFacts
+		)
+		if err := rows.Scan(&id, &f.Name, &f.Host, &f.CNAME, pq.Array(&f.Addresses), &f.ASNOrg, &f.CDN); err != nil {
+			return nil, fmt.Errorf("hosting facts: %w", err)
+		}
+		aid := shared.MustIDFromString(id)
+		out[aid] = f
+		host := f.Host
+		if host == "" {
+			host = f.Name
+		}
+		if ip := hostAddress(host); ip != "" {
+			addrs[ip] = append(addrs[ip], aid)
+		}
+	}
+	return addrs, rows.Err()
+}
+
+// hostAddress returns the address a "host[:port][/transport]" value names,
+// or "" when it names a host name.
+func hostAddress(v string) string {
+	v = strings.TrimSpace(v)
+	if i := strings.Index(v, "://"); i >= 0 {
+		v = v[i+3:]
+	}
+	if i := strings.Index(v, "/"); i >= 0 {
+		v = v[:i]
+	}
+	if h, _, err := net.SplitHostPort(v); err == nil {
+		v = h
+	}
+	a, err := netip.ParseAddr(strings.Trim(v, "[]"))
+	if err != nil {
+		return ""
+	}
+	return a.Unmap().String()
 }
