@@ -247,9 +247,7 @@ jobs:
           REDIS_HOST: localhost
         run: bash .github/scripts/smoke-allinone.sh local/openctem:ci
       - name: Set up trivy (image guard)
-        uses: aquasecurity/setup-trivy@81e514348e19b6112ce2a7e3ecbafe19c1e1f567 # v0.3.1
-        with:
-          version: v0.75.0
+        uses: ./.github/actions/setup-trivy
       # Size budget, non-root user, no setuid file, no fixable HIGH/CRITICAL
       # advisory in OS packages (.github/scripts/image-guard.sh).
       - name: Image guard

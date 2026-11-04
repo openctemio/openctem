@@ -55,6 +55,12 @@ func TestAdminAuditChain_DB(t *testing.T) {
 	if !r.OK() || r.Entries != 4 || r.FirstPosition != 1 || r.LastPosition != 4 {
 		t.Fatalf("fresh chain: %+v", r)
 	}
+	// The report carries the chain head, so a copy of the rows verifies
+	// offline and an earlier copy's head can be compared in every edition.
+	hp, hh, herr := repo.ChainHead(ctx)
+	if herr != nil || r.Head == nil || r.Head.Position != 4 || r.Head.Position != hp || r.Head.Hash == "" || r.Head.Hash != hh {
+		t.Fatalf("report head %+v; chain head %d %q %v", r.Head, hp, hh, herr)
+	}
 
 	// The writer cannot choose its own chain values.
 	if _, err := db.ExecContext(ctx, `INSERT INTO admin_audit_logs (admin_email, action, chain_position, prev_hash, hash)

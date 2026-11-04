@@ -1021,10 +1021,11 @@ func (r *RemediationTaskRepository) recomputeInTx(ctx context.Context, tx *sql.T
 // StaleTasksForPlatform lists, across tenants, live tasks with a member
 // finding changed since the task was last recomputed (oldest first). Only the
 // background reconcile calls it.
-func (r *RemediationTaskRepository) StaleTasksForPlatform(ctx context.Context, limit int) ([]remediation.StaleTaskRef, error) {
+func (r *RemediationTaskRepository) StaleTasksForPlatform(ctx context.Context, limit int, skipTenants []shared.ID) ([]remediation.StaleTaskRef, error) {
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT t.tenant_id, t.id FROM remediation_tasks t
 		WHERE t.state NOT IN ('canceled', 'archived')
+		  AND NOT (t.tenant_id = ANY($2::uuid[]))
 		  AND (EXISTS (SELECT 1 FROM remediation_task_members tm
 		              JOIN findings f ON f.id = tm.finding_id AND f.tenant_id = tm.tenant_id
 		              WHERE tm.tenant_id = t.tenant_id AND tm.task_id = t.id AND tm.left_at IS NULL
@@ -1038,7 +1039,7 @@ func (r *RemediationTaskRepository) StaleTasksForPlatform(ctx context.Context, l
 		       JOIN findings f ON f.id = tm.finding_id AND f.tenant_id = tm.tenant_id
 		       WHERE tm.tenant_id = t.tenant_id AND tm.task_id = t.id AND tm.left_at IS NULL))
 		ORDER BY t.recomputed_at
-		LIMIT $1`, limit)
+		LIMIT $1`, limit, pq.Array(tenantIDStrings(skipTenants)))
 	if err != nil {
 		return nil, fmt.Errorf("list stale tasks: %w", err)
 	}
@@ -1286,4 +1287,14 @@ func (r *RemediationTaskRepository) taskIDs(ctx context.Context, q string, args 
 		out = append(out, id)
 	}
 	return out, rows.Err()
+}
+
+// tenantIDStrings renders tenant ids for a `<> ALL`/`= ANY` uuid[] parameter
+// (a nil list is an empty array, so the clause keeps every row).
+func tenantIDStrings(ids []shared.ID) []string {
+	out := make([]string, 0, len(ids))
+	for _, id := range ids {
+		out = append(out, id.String())
+	}
+	return out
 }

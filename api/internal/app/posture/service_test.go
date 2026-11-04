@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	moduledom "github.com/openctemio/openctem/api/pkg/domain/module"
 	"github.com/openctemio/openctem/api/pkg/domain/posture"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/filterspec"
@@ -174,5 +175,23 @@ func TestReadRefusesMemberWithoutEnforcer(t *testing.T) {
 	_, err := newSvc(r).Read(context.Background(), Caller{TenantID: shared.NewID().String(), UserID: shared.NewID().String()}, &filterspec.Spec{})
 	if err == nil {
 		t.Fatal("a member read without a data scope enforcer must fail closed")
+	}
+}
+
+type attackSurfaceOff map[string]bool
+
+func (m attackSurfaceOff) TenantDisabledModules(_ context.Context, tenantID string) map[string]bool {
+	return map[string]bool{moduledom.ModuleAttackSurface: m[tenantID]}
+}
+
+// A tenant with attack_surface off is not refreshed; another one is.
+func TestRefreshDue_SkipsTenantWithAttackSurfaceOff(t *testing.T) {
+	off, on := shared.NewID(), shared.NewID()
+	r := &fakeRepo{state: posture.State{RefreshEvery: posture.Schedule6h}, due: []shared.ID{off, on}}
+	s := newSvc(r)
+	s.SetModuleGuard(attackSurfaceOff{off.String(): true})
+	n, err := s.RefreshDue(context.Background(), 10)
+	if err != nil || n != 1 {
+		t.Fatalf("refresh due = %d %v, want 1 (only the tenant with the module on)", n, err)
 	}
 }

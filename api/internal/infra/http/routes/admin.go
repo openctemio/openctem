@@ -384,7 +384,13 @@ func registerAdminRoutes(
 		router.Group("/api/v1/admin/settings/email", func(r Router) {
 			r.GET("/", h.AdminEmail.Get)
 			r.PUT("/", h.AdminEmail.Update, freshStepUp("settings.email"))
-			r.POST("/test", h.AdminEmail.SendTest)
+			// Each call sends a real message through the stored server:
+			// bounded per administrator.
+			testMW := []Middleware{}
+			if h.AdminEmailTestLimiter != nil {
+				testMW = append(testMW, h.AdminEmailTestLimiter.WriteMiddleware())
+			}
+			r.POST("/test", h.AdminEmail.SendTest, testMW...)
 		}, adminMiddlewares...)
 	}
 
@@ -670,8 +676,12 @@ func registerAdminRoutes(
 
 			if h.SAML != nil {
 				r.GET("/{tenantId}/sso/saml", h.SAML.GetConfig, read...)
+				r.GET("/{tenantId}/sso/saml/sp-metadata", h.SAML.SPMetadata, read...)
 				r.PUT("/{tenantId}/sso/saml", h.SAML.SetConfig, write("organization.saml_update")...)
 				r.DELETE("/{tenantId}/sso/saml", h.SAML.DeleteConfig, write("organization.saml_delete")...)
+				// Reads the IdP's metadata for the form (fetches the URL under
+				// the SSRF guard); stores nothing, the save above does.
+				r.POST("/{tenantId}/sso/saml/idp-metadata", h.SAML.ImportIdPMetadata, write("organization.saml_metadata_import")...)
 			}
 			// SAML and identity-provider creates/updates from here wait for an
 			// owner of the organization (unless it has no owner yet); the
