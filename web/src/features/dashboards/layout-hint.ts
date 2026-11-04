@@ -11,16 +11,16 @@ import type { Dashboard, DashboardWidget } from './api/dashboards.types'
 import { templateByKey, type DashboardTemplate, type TemplateKey } from './templates'
 
 /** Bump when a template offered here gains widgets, so the hint shows again. */
-export const LAYOUT_HINT_VERSION = '6'
+export const LAYOUT_HINT_VERSION = '7'
 export const LAYOUT_HINT_DISMISSED_KEY = 'openctem:layout-hint-dismissed'
 
 /** Templates whose copies are offered their new widgets, by widget id prefix. */
 const OFFERED: ReadonlyArray<{ key: TemplateKey; prefix: string }> = [
-  { key: 'overview', prefix: 'w_ov' },
   { key: 'ctem', prefix: 'w_ct' },
   { key: 'executive', prefix: 'w_ex' },
   { key: 'program', prefix: 'w_pr' },
   { key: 'triage', prefix: 'w_tr' },
+  { key: 'surface', prefix: 'w_as' },
 ]
 
 type Shaped = Pick<DashboardWidget, 'widget_type' | 'w' | 'h' | 'config'>

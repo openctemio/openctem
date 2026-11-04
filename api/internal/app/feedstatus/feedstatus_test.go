@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/ctis/transfer/bundle"
+	"github.com/openctemio/contract/transfer/bundle"
 
 	"github.com/openctemio/openctem/api/pkg/domain/threatintel"
 	"github.com/openctemio/openctem/api/pkg/feedsign"

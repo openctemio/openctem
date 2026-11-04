@@ -43,14 +43,36 @@ other stored secrets.
   through `httpsec.ResolveSafeHost` (private addresses only when allowed by
   `OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS`), TLS 1.2 or later, no certificate
   verification switch.
-- Headless installs: `bootstrap-admin` stores `BOOTSTRAP_SMTP_*` when nothing
-  is stored. The former `SMTP_*` server variables are refused at startup.
+- Internal CA: the setting can carry a PEM bundle of the certificate authority
+  that signed the relay's certificate (`ca_pem`, certificates only: any other
+  PEM block, trailing text, more than 16 certificates or 64 KB is refused). It
+  is write-only (reads return `ca_set` and the SHA-256 `ca_fingerprint`),
+  replaces the system roots for this connection only (`email.Config.RootCAs`),
+  is part of the relay approval target (a changed bundle needs a second super
+  admin like a new host), is audited by fingerprint only, and an unparsable
+  stored bundle turns e-mail off rather than falling back to the system roots.
+- The test e-mail is limited to 5 per minute per administrator (`429` beyond that); each call sends a real
+  message through the stored server. Clients must not retry a `429` automatically.
+- A failed test e-mail returns `EMAIL_TEST_FAILED` with `details.reason` from a
+  fixed set (`email.ClassifySendError`: unknown_authority, hostname_mismatch,
+  certificate_invalid, tls_failed, auth_failed, auth_required, sender_rejected,
+  relay_denied, host_rejected, connect_failed, timeout, not_configured,
+  no_address, unknown), never server text; the console maps each to a fix.
+- Headless installs: `bootstrap-admin` stores `BOOTSTRAP_SMTP_*` (including
+  `BOOTSTRAP_SMTP_CA_FILE`) when nothing is stored. The former `SMTP_*` server
+  variables are refused at startup.
+- Running without an online provider: `how-to/send-mail-without-online-smtp.md`.
 
 ## Legal information (`legal`)
 
 - `internal/app/platformlegal`; Console > Settings > Legal
   (`GET/PUT /api/v1/admin/settings/legal`, super admin + fresh authenticator
   code to save, critical audit with the values).
+- Help links: `help_bug_url` and `help_feedback_url` repoint the Help menu's
+  "Report a bug" and "Send feedback" (https URLs; empty uses the project's
+  issue forms), `help_links_disabled` hides both and the error pages' "Report
+  this problem". Diagnostics are prefilled only for the default issue forms
+  (`web/src/lib/report-problem.ts`); an operator URL gets no parameters.
 - Public read `GET /api/v1/legal` (cached 60 s): the web console renders the
   sign-in and sign-up notice links, the built-in legal pages and
   `/.well-known/security.txt` from it on the server (`web/src/lib/legal-settings.ts`);

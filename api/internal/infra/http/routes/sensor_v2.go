@@ -1,7 +1,6 @@
 package routes
 
 import (
-	"context"
 	"net/http"
 	"time"
 
@@ -10,7 +9,6 @@ import (
 	infrahttp "github.com/openctemio/openctem/api/internal/infra/http"
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
-	moduledom "github.com/openctemio/openctem/api/pkg/domain/module"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
 )
@@ -197,6 +195,14 @@ func mountSensorV2(router Router, h *handler.SensorResultsV2Handler, ctl *handle
 			r.GET(protov2.ContentPath+"/packs/{digest}/index", c.Index, controlRead...)
 			r.GET(protov2.ContentPath+"/packs/{digest}/files/{sha256}", c.File, controlRead...)
 		}
+		if f := ctl.FeedRelay(); f != nil {
+			// Feed relay (RFC-142): only the designated platform relay sensor
+			// is served. A file upload replaces the global body limit with
+			// the relay's per-file cap and is streamed to the spool.
+			r.GET("/feed-relay-rounds/next", f.Next, controlRead...)
+			r.PUT("/feed-relay-rounds/{round_id}/files/{name}", f.Upload, controlWrite[0], middleware.BodyLimit(handler.FeedRelayUploadLimit))
+			r.POST("/feed-relay-rounds/{round_id}/done", f.Done, controlWrite[0], middleware.BodyLimit(1<<20))
+		}
 	}, middleware.V2Observe(v2RouteName), authenticate)
 }
 
@@ -249,13 +255,7 @@ func sensorControlV2Handler(h Handlers, log *logger.Logger) *handler.SensorContr
 	if h.Ingest == nil && h.Command == nil {
 		return nil
 	}
-	var suppressionsEnabled func(ctx context.Context, tenantID string) bool
-	if h.ModuleGate != nil {
-		suppressionsEnabled = func(ctx context.Context, tenantID string) bool {
-			return h.ModuleGate.IsEnabled(ctx, tenantID, moduledom.ModuleSuppressions)
-		}
-	}
-	ctl := handler.NewSensorControlV2Handler(h.Ingest, h.Command, h.Suppression, suppressionsEnabled, log)
+	ctl := handler.NewSensorControlV2Handler(h.Ingest, h.Command, h.Suppression, log)
 	if h.ProxyPool != nil {
 		ctl.SetEgress(h.ProxyPool.Service())
 	}

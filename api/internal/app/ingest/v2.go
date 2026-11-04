@@ -20,7 +20,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/pkg/domain/ingestreport"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
@@ -101,9 +101,6 @@ func (s *Service) IngestV2Segment(ctx context.Context, prov Provenance, report *
 	if report == nil {
 		return nil, shared.NewDomainError("INVALID_INPUT", "report is required", nil)
 	}
-	// The report id is the scan identity of every finding of every segment,
-	// which is what lets the commit tell seen from stale.
-	report.Metadata.ID = prov.ReportID
 
 	kept, keptIdx, assetIdx, itemErrs := resolveV2Assets(report)
 	filtered := *report
@@ -123,7 +120,10 @@ func (s *Service) IngestV2Segment(ctx context.Context, prov Provenance, report *
 	// its command covers.
 	opts.Binding = s.bindingFromCommandID(ctx, prov.TenantID, prov.CommandID)
 	opts.Admitted = true
-	out, err := s.Ingest(ctx, agt, Input{Report: &filtered, Options: opts})
+	// The report id of the URL path is the scan identity of every finding
+	// of every segment, which is what lets the commit tell seen from stale.
+	// metadata.id stays the producer's idempotency key.
+	out, err := s.Ingest(ctx, agt, Input{Report: &filtered, ReportID: prov.ReportID, Options: opts})
 	if err != nil {
 		return nil, err
 	}
@@ -140,22 +140,7 @@ func (s *Service) IngestV2Segment(ctx context.Context, prov Provenance, report *
 	o.RejectedFindings = len(report.Findings) - len(kept)
 	o.Errors = itemErrs
 
-	// Assets: accepted when persisted, rejected otherwise.
-	seen := map[shared.ID]bool{}
-	for i := range filtered.Assets {
-		id, ok := out.AssetMap[filtered.Assets[i].ID]
-		if !ok || id.IsZero() {
-			o.RejectedAssets++
-			addItemError(o, protov2.ItemError{Pointer: "/assets/" + strconv.Itoa(assetIdx[i]),
-				Code: protov2.CodeAssetInvalid, Detail: protov2.DetailAssetInvalid})
-			continue
-		}
-		if !seen[id] {
-			seen[id] = true
-			res.Touched = append(res.Touched, id)
-		}
-	}
-	o.AcceptedAssets = len(filtered.Assets) - o.RejectedAssets
+	res.Touched = assetOutcomes(o, filtered.Assets, assetIdx, out.AssetMap, out.ExcludedAssetRefs)
 
 	// Findings: rejected when their asset was not stored or the store failed.
 	failed := map[int]bool{}
@@ -177,6 +162,47 @@ func (s *Service) IngestV2Segment(ctx context.Context, prov Provenance, report *
 	o.RejectedFindings += len(failed)
 	o.AcceptedFindings = len(kept) - len(failed)
 	return res, nil
+}
+
+// assetOutcomes counts the segment's assets and returns the persisted ones
+// (each once). An asset is accepted when it was persisted. One a scope
+// exclusion of the organization kept out is neither accepted nor rejected:
+// the organization chose not to track it, the sensor did nothing wrong, and
+// counting it as rejected made every complete collector report look like it
+// lost assets, so its source's not-seen sweep never ran. Anything else that
+// was not persisted is rejected.
+func assetOutcomes(o *ingestreport.SegmentOutcome, assets []ctis.Asset, assetIdx []int,
+	stored map[string]shared.ID, excluded map[string]bool) []shared.ID {
+	var touched []shared.ID
+	seen := map[shared.ID]bool{}
+	skipped := 0
+	for i := range assets {
+		id, ok := stored[assets[i].ID]
+		if !ok || id.IsZero() {
+			if i >= len(assetIdx) {
+				// An asset the platform derived during ingest (a web origin of
+				// an endpoint, appended after the producer's assets): it has no
+				// position in the producer's document, so it is neither the
+				// producer's error nor counted against its assets.
+				continue
+			}
+			code, detail := protov2.CodeAssetInvalid, protov2.DetailAssetInvalid
+			if excluded[assets[i].ID] {
+				code, detail = protov2.CodeAssetExcluded, protov2.DetailAssetExcluded
+				skipped++
+			} else {
+				o.RejectedAssets++
+			}
+			addItemError(o, protov2.ItemError{Pointer: "/assets/" + strconv.Itoa(assetIdx[i]), Code: code, Detail: detail})
+			continue
+		}
+		if !seen[id] {
+			seen[id] = true
+			touched = append(touched, id)
+		}
+	}
+	o.AcceptedAssets = min(len(assets), len(assetIdx)) - o.RejectedAssets - skipped
+	return touched
 }
 
 // addItemError appends an item error, capped at protov2.MaxItemErrors.
@@ -322,8 +348,7 @@ func (s *Service) CommitV2Report(ctx context.Context, prov Provenance, header V2
 	}
 	toolName := header.Tool.Name
 	md := header.Metadata
-	md.ID = prov.ReportID
-	input := Input{Report: &ctis.Report{Metadata: md, Tool: header.Tool}}
+	input := Input{Report: &ctis.Report{Metadata: md, Tool: header.Tool}, ReportID: prov.ReportID}
 
 	var tools []string
 	if s.sensorRepo != nil {

@@ -59,6 +59,7 @@ jobs:
       api: ${{ steps.f.outputs.api == 'true' && (steps.scope.outputs.api_code == 'true' || steps.scope.outputs.ci_self == 'true') && steps.tree.outputs.verified != 'true' }}
       build: ${{ steps.b.outputs.build == 'true' && steps.tree.outputs.verified != 'true' }}
       full: ${{ steps.f.outputs.full }}
+      test_shards: ${{ steps.shards.outputs.shards }}
       tree_note: ${{ steps.tree.outputs.note }}
       verified: ${{ steps.queue.outputs.verified }}
     steps:
@@ -135,6 +136,16 @@ jobs:
           REPO: ${{ github.repository }}
           GH_TOKEN: ${{ github.token }}
         run: bash .github/scripts/queue-verified.sh
+
+      # One Vitest shard for a pull request whose tests web-select.sh can
+      # narrow; three for the merge queue, push, `ci:full` and anything else.
+      - id: shards
+        working-directory: .
+        env:
+          EVENT: ${{ github.event_name }}
+          FULL: ${{ steps.f.outputs.full }}
+          BASE_REF: ${{ github.base_ref }}
+        run: bash .github/scripts/web-test-shards.sh
 
   # Generates the contract files for this commit (artifact `contract`) and, for
   # an API change, compares them with the base's.
@@ -361,6 +372,7 @@ jobs:
         working-directory: .
         run: |
           bash .github/scripts/web-select.test.sh
+          bash .github/scripts/web-test-shards.test.sh
           bash .github/scripts/web-build-needed.test.sh
 
       # The TypeScript incremental state and the ESLint results, restored from
@@ -533,7 +545,9 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        shard: [1, 2, 3]
+        # One shard for a narrowed pull request; the contract job widens it
+        # when the API contract changed (every test then runs).
+        shard: ${{ fromJSON(needs.contract.outputs.changed == 'true' && '[1,2,3]' || needs.changes.outputs.test_shards) }}
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -572,17 +586,18 @@ jobs:
       # of each file (vitest.sequencer.ts); without it Vitest splits by count.
       # A Vitest worker (jsdom + v8 coverage) ran out of its default heap and
       # failed a shard; 4 GB per worker fits the hosted runner's 16 GB.
-      - name: Run tests (shard ${{ matrix.shard }}/3)
+      - name: Run tests (shard ${{ matrix.shard }}/${{ strategy.job-total }})
         id: vitest
         env:
           NODE_OPTIONS: --max-old-space-size=4096
           SHARD: ${{ matrix.shard }}
+          SHARDS: ${{ strategy.job-total }}
           EVENT: ${{ github.event_name }}
           BASE_REF: ${{ github.base_ref }}
           CONTRACT_CHANGED: ${{ needs.contract.outputs.changed }}
           FULL: ${{ needs.changes.outputs.full }}
         run: |
-          args=(--run --passWithNoTests --shard="$SHARD/3")
+          args=(--run --passWithNoTests --shard="$SHARD/$SHARDS")
           files=() narrow=false
           if [ "$EVENT" = pull_request ] && [ "$CONTRACT_CHANGED" != true ] && [ "$FULL" != true ]; then
             git fetch --no-tags --quiet origin "$BASE_REF"

@@ -331,6 +331,7 @@ func withAdmin(ctx context.Context, a *admin.AdminUser, method string) context.C
 	ctx = context.WithValue(ctx, AdminIDKey, a.ID().String())
 	ctx = context.WithValue(ctx, AdminRoleKey, string(a.EffectiveRole()))
 	ctx = context.WithValue(ctx, AdminAuthMethodKey, method)
+	noteAdminPrincipal(ctx, a.ID().String())
 	// Logger context for request tracing.
 	return context.WithValue(ctx, logger.ContextKeyUserID, a.ID().String())
 }

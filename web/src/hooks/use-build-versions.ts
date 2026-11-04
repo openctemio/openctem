@@ -26,6 +26,11 @@ let adminApiVersion: (() => Promise<unknown>) | null = null
 export function setAdminApiVersionFetcher(fetcher: (() => Promise<unknown>) | null) {
   adminApiVersion = fetcher
 }
+/** True in the admin console (it registered its API reader), false in the tenant app. */
+export function currentShell(): ShortcutShell {
+  return adminApiVersion ? 'admin' : 'app'
+}
+
 export const WEB_VERSION_PATH = '/api/version'
 
 export interface BuildVersions {

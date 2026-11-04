@@ -115,6 +115,7 @@ import {
   triageHref,
 } from '@/features/findings/lib/triage-session'
 import { useRouter } from 'next/navigation'
+import { shareableLink } from '@/lib/org-link'
 import {
   FilterBar,
   InvalidFilterNotice,
@@ -1423,7 +1424,7 @@ function FindingsContent() {
           )
           break
         case 'copy_link':
-          void copyToClipboard(`${window.location.origin}/findings/${finding.id}`).then((ok) =>
+          void copyToClipboard(shareableLink(`/findings/${finding.id}`)).then((ok) =>
             ok
               ? toast.success(t('findings.toast.linkCopied', 'Link copied to clipboard'))
               : toast.error(t('findings.toast.copyFailed', 'Could not copy to the clipboard'))

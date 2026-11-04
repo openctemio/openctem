@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	cirunapp "github.com/openctemio/openctem/api/internal/app/cirun"
 	"github.com/openctemio/openctem/api/pkg/domain/cirun"
@@ -62,7 +62,7 @@ func TestCIPipelines(t *testing.T) {
 	ctx := context.Background()
 	cfg := r.trust(r.tenant, cirun.Rules{Owners: []string{"acme"}, AllowForkPullRequests: true})
 	aud := cfg.Audience
-	host := strings.TrimPrefix(r.idp.srv.URL, "https://")
+	host := strings.TrimPrefix(r.idp.url, "https://")
 	const sha = "3333333333333333333333333333333333333333"
 	const email = "dev.person@private-mail.example"
 
@@ -180,11 +180,7 @@ func TestCIPipelines(t *testing.T) {
 	}
 	mtok, mrun := mx["token"].(string), mx["run_id"].(string)
 	rep := ciReport(mx["repository"].(string))
-	rep["report"] = func() ctis.Report {
-		rp := rep["report"].(ctis.Report)
-		rp.Tool = &ctis.Tool{Name: "Sem<grep>\u202e", Version: "1.2.3\x00evil"}
-		return rp
-	}()
+	rep.Tool = &ctis.Tool{Name: "Sem<grep>\u202e", Version: "1.2.3\x00evil"}
 	if resp, out := r.upload(mrun, mtok, rep); resp.StatusCode != http.StatusAccepted {
 		t.Fatalf("upload: %d %v", resp.StatusCode, out)
 	}

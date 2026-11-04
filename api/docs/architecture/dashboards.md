@@ -247,6 +247,7 @@ widget has `widget_type` `metric` or `note` and a `config` of this form
   | `ingest.intake` | intake (receipts per source, noise, health) | none | `ingest_receipts`, see "Exposure flow and intake" |
   | `surface.new_assets` | category: assets added in the window by asset type, with the previous window | none | `assets`, see "Attack surface and accepted risk" |
   | `certificates.expiry` | category: certificates expired, or expiring within 7, 8-30 and 31-90 days | none | `assets` |
+  | `surface.posture` | posture: grade A to F, score, the six category deductions, the next grade and how many fix-plan steps reach it; building until the first computation, not measured with no surface asset; module `attack_surface`, `assets:read` on a personal read; opens `/attack-surface/posture` | none | `easm_posture_assets`, see [easm-posture.md](easm-posture.md) |
   | `exceptions.expiring` | category: accepted findings whose acceptance ends within 7, 8-30 days or later | none | `findings` |
   | `intel.emerging_threats` | category: open emerging-threat alerts affecting the scope, by level (immediate, digest, listed); module `threat_intel` | none | `threat_alerts` + `threat_alert_assets`, see "Emerging threats" |
 
@@ -254,7 +255,7 @@ widget has `widget_type` `metric` or `note` and a `config` of this form
   stat; duration: stat; category: bar, column, table, donut, stat; time
   series: area, line, column, table (a flow: diverging, column, table, never
   an area); matrix: heatmap, table, column; items: list, table; stages: loop, table;
-  paths: paths, table; flow: flow, table; intake: intake, table. The first is
+  paths: paths, table; flow: flow, table; intake: intake, table; posture: posture, table. The first is
   the default; a widget without `viz.type` gets it.
 - **Validation** (`ParseWidgetSpec`, on every create, update and copy of a
   personal or organization dashboard): the config is decoded with unknown
@@ -282,9 +283,22 @@ widget has `widget_type` `metric` or `note` and a `config` of this form
 
 | Route | Who | Numbers |
 |---|---|---|
+| `GET /api/v1/me/dashboards/home` | any signed-in member; the organization list only with `dashboards:org:view` or `:manage`, the figures only with `dashboard:read` | the same lists and the same figures as the per-dashboard routes, for the same caller (no query path of its own) |
 | `GET /api/v1/me/dashboards/{id}/data` | `dashboard:read` and the dashboard's owner (another person's dashboard is 404) | the caller's own data scope; per-metric permission applies (below) |
 | `GET /api/v1/organization/dashboards/{id}/data` | `dashboards:org:view` (403 without), inside the audience (404 outside) | the whole organization |
 | `POST /api/v1/me/dashboards/widget-preview` | `dashboard:read` | one spec, the caller's own data scope (400 when the spec would be refused on save) |
+
+The dashboard home opens with `GET /api/v1/me/dashboards/home?choice=<kind>:<id>`:
+one response with `personal`, `organization` (absent when the caller cannot
+read organization dashboards), `landing` and the landing dashboard's `data`.
+The server applies the landing rule: the remembered `choice` while it is in
+the caller's lists, else the caller's own default, else the organization
+default (or its first dashboard), else the caller's first own dashboard. A
+malformed, deleted, foreign or out-of-audience `choice` is ignored without a
+word, so it tells nothing about what exists. When the figures cannot be read
+at that moment (busy, no `dashboard:read`) `data` is left out and the page
+reads the dashboard's `/data` route, which reports why. The page seeds its
+cache from the response and does not wait for the bootstrap.
 
 A personal read also needs the permission of what a metric counts:
 `findings:read` for finding metrics, `assets:read` for asset metrics
@@ -1180,7 +1194,7 @@ widget kit's frame, with its own error boundary.
   template, created once and computed for their own access, with a hint to
   customize it or choose another template.
 - **New layout offer**: a personal copy of a template (three or more of its
-  `w_ov*` / `w_ct*` / `w_ex*` / `w_pr*` / `w_tr*` widget ids) is offered the
+  `w_ct*` / `w_ex*` / `w_as*` / `w_pr*` / `w_tr*` widget ids) is offered the
   template's changes. When it lacks some of the template's widgets (by
   metric) the hint names them: "Add them to this dashboard" (each missing
   widget is inserted where the template has it: a single figure after its
@@ -1198,30 +1212,51 @@ widget kit's frame, with its own error boundary.
 - **Templates** are typed widget configs in
   `web/src/features/dashboards/templates.json`, in reading order (the grid
   places widgets in that order without back-filling, so the order is the
-  layout). Every template opens on its headline figures, then the decision
-  widget, then the story, and ends with diagnostics:
-  - CTEM (first-visit default): key figures; levers; exposure flow (the five
-    CTEM stages); new on the attack surface (7 days) beside certificate
-    expiry; attack paths to crown jewels beside the weekly brief; fix next;
-    open exposure by priority (90 days); new vs fixed beside open by age;
-    intake and noise reduction.
-  - Overview: key figures; levers; exposure flow; open exposure by priority
-    beside new vs fixed; new on the attack surface beside certificate
-    expiry; weekly brief beside attack paths; fix next.
-  - Executive: key figures; weekly brief; open exposure by priority over 12
-    months; new vs fixed beside time to fix by priority; new on the attack
-    surface (30 days) beside accepted risks ending; levers.
-  - Vulnerability program: within SLA, P0-P1 open, KEV open and time to fix;
-    SLA at risk beside new vs fixed; time to fix by priority beside open by
-    age; accepted risks ending beside open findings by SLA state.
-  - Triage: P0-P1 open, KEV open, open findings and within SLA; fix next;
-    open findings by severity beside open findings by SLA state; new vs
-    fixed per day over 30 days.
-  `web/src/features/dashboards/__tests__/template-layouts.test.ts` checks
-  that each template fills its rows with one height per row at four columns
-  and leaves no hole at two columns or on a phone, and that each opens on a
-  one-row headline. `/dashboards` copies one into a personal dashboard ("Use
-  template"); the copy is a stored dashboard like any other.
+  layout). There is one template per persona:
+  - CTEM (first-visit default, the program lead): key figures; exposure flow
+    (the five CTEM stages); levers; fix next; attack paths to crown jewels
+    beside open exposure by priority (90 days); new vs fixed beside open by
+    age; new on the attack surface (7 days) beside certificate expiry.
+  - Executive (leadership): key figures; open exposure by priority over 12
+    months; weekly brief; attack paths beside new vs fixed (12 months); time
+    to fix by priority beside accepted risks ending; new on the attack
+    surface (30 days) beside remediation campaign progress.
+  - Attack surface: discovery coverage, crown jewels exposed, KEV open and
+    P0-P1 open; posture beside attack paths; fix next; new on the attack
+    surface (30 days) beside certificate expiry.
+  - Vulnerability program (VM lead): within SLA, P0-P1 open, KEV open and
+    time to fix; SLA at risk; new vs fixed beside open by age; time to fix by
+    priority beside accepted risks ending.
+  - Triage (analyst): P0-P1 open, KEV open, open findings and within SLA;
+    fix next; new vs fixed per day beside open by age; open findings by
+    severity beside open findings by SLA state.
+- **Template layout rules** (`web/src/features/dashboards/template-rules.ts`,
+  checked for every template by `__tests__/template-layouts.test.ts`):
+  - Four columns; each visualization has a fixed set of sizes: single
+    figures 3x1 (in runs of four), the key figures strip, levers and brief
+    12x1, bar lists 6x1, charts 6x2 or 12x2, heatmap, posture and attack
+    paths 6x2, lists 12x3, the flow and tables 12x4.
+  - Rows are full at four columns, hold one height and one height band
+    (single figures, short bar lists, charts and lists, or a full-width
+    widget alone): rows grow to their tallest widget, so a bar list beside a
+    chart would stretch into blank space. No hole at two columns or on a
+    phone.
+  - Sections in order: headline figures first (strip or four figures), the
+    hero visual (flow, posture or a full-width chart), what to act on
+    (levers, brief, lists, attack paths), trends, then breakdowns.
+  - At most ten widgets; never the same metric, grouping and filter twice;
+    never two widgets with the same figures (the strip and a single figure
+    it carries, the brief and the levers, the flow and intake or the loop).
+  - The phone shows the template order; single figures pair up.
+  - Module-gated widgets go only in a template whose persona needs the
+    module (posture in Attack surface).
+  - A full-width widget with no figure yet takes one row; a narrower one
+    keeps its row height with its message centred, so no hole opens beside
+    a taller neighbour.
+  `/dashboards` copies one into a personal dashboard ("Use
+  template"); the copy is a stored dashboard like any other. Stored
+  dashboards are never rearranged when a template changes: copies get the
+  new layout offer above.
   `api/pkg/domain/dashboard/templates_test.go` parses every template widget
   with the server's spec validation, so a template is never refused on save.
   Names and descriptions are in the `dashboards` i18n namespace.
@@ -1414,8 +1449,8 @@ its ends sit side by side, and the rows it joins exist before it is measured.
 
 | Band (visual width) | Exposure flow | Intake panel |
 |---|---|---|
-| narrow, under 660 px | one column in reading order: the first three sources and "N more", the received to actionable figures, the ring (at most 18 rem, 78 % of the width), the stages (three then two per row under 420 px, five in a row above), the outcomes; no wires | sources, then the summary; the health note under each source's name; no wires |
-| mid, 660 to 899 px | the first three sources in one row above; the core (figures, ring, stages) beside the outcomes, wires from the ring to the outcomes | sources (`clamp(15rem, 34cqi, 52rem)`) at the left edge and summary (`clamp(14rem, 30cqi, 44rem)`) at the right edge, the wires across the space between |
+| narrow, under 660 px | one column in reading order: the first three sources and "N more", the received to actionable figures, the ring (at most 18 rem, 78 % of the width), the stages (three then two per row under 420 px, five in a row above), the outcomes; no wires | under 560 px: sources, then the summary; the health note under each source's name; no wires |
+| mid, 660 to 899 px | the first three sources in one row above; the core (figures, ring, stages) beside the outcomes, wires from the ring to the outcomes | from 560 px (`INTAKE_SIDE`, a full-width card in a 1024 px window): the source rows in a dashed frame at a fixed 20 rem at the left edge, so each row (kind icon, name, kind chip, figure, bar) is one unit and its figure never drifts from its name; the summary in a dashed frame at the right edge (`clamp(13rem, 22cqi, 18rem)`); the curves take every pixel between (`minmax(2.5rem, 1fr)`) and grow with the card |
 | wide, 900 px and more (a full-width card from a 1280 px window with the sidebar open) | three columns that fill the card: sources in a thin dashed frame (`border-border-strong`, `rounded-lg`, `p-1.5`) flush with the left padding at a reading width (`clamp(16rem, 24cqi, 19rem)`, so a source's name, kind and figure fit and its status wraps under it, never cut off), outcomes in the same dashed frame flush with the right padding (`clamp(13rem, 17cqi, 16rem)`), each outcome a box with its label above its figure (the phone's tile), the core taking every pixel between (`minmax(0, 1fr)`); the rings grow with the core and the wires span the rest, from the sources frame to the outer ring and from the ring to the outcomes frame | same as mid |
 
 The rings are `clamp(15rem, min(100% - 6rem, 34cqi), 30rem)` from the mid
@@ -1431,6 +1466,15 @@ and is the only wire with a glow (`focusGlow`, shared with the ring
 segments). The DOM order is the reading and focus
 order in every band (no visual reordering). The noise and per-source panels
 of the intake widget sit side by side from 1100 px of widget width.
+
+Both widgets draw their sources with the same pieces (`source-view.tsx` and
+`RankedBars`): rank by findings or assets and group by tool or by instance
+(one remembered view for both), an instance row listing the tools it ran
+under its name (instance, then tools), a discovery tool with assets but no
+findings showing its assets ("412 assets") instead of 0 and ordered by them,
+and healthy sources with nothing in the period folded into "+N sources with
+nothing in 30 days". The intake's per-source table adds an Assets column
+when a source reported assets.
 
 Widget titles are `h2` (the page title is the `h1`), so the sections inside a
 widget (`h3`) keep the heading order.

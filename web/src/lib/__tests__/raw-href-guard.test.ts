@@ -69,6 +69,9 @@ const SAFE_TAGS = new Set(['SafeExternalLink'])
  * route builder or a constant.
  */
 const REVIEWED = new Set([
+  // Account space links: NAV and ACCOUNT_LINKS are constant same-origin paths in the same file.
+  'features/account/components/account-shell.tsx|Link|href={item.href}',
+  'features/account/components/welcome-hub.tsx|Link|href={item.href}',
   // Exception batch source link: batchSourceHref() is a fixed same-origin path (/vulnerabilities or
   // /remediation/tasks) with the id or CVE ids passed through encodeURIComponent.
   'features/findings/components/group-exceptions-panel.tsx|Link|href={batchSourceHref(row.original)}',
@@ -104,7 +107,10 @@ const REVIEWED = new Set([
   'components/layout/nav-pinned.tsx|SidebarLink|href={r.href}',
   'components/layout/top-nav.tsx|Link|href={href}',
   'components/layout/breadcrumb-nav.tsx|Link|href={item.path}',
-  'components/layout/settings-sidebar-nav.tsx|SidebarLink|href={backHref}',
+  // readReturnPath(): only a same-app path ("/x", never "//x" or a URL).
+  'components/layout/settings-sidebar-nav.tsx|SidebarViewSwitch|href={backHref}',
+  // The prop of the shared Settings / Back to app row; its callers are listed here.
+  'components/layout/sidebar-nav-view.tsx|SidebarLink|href={href}',
   'components/layout/sidebar-brand.tsx|Link|href={href}',
   'components/layout/module-gate.tsx|Link|href={backUrl}',
   'components/layout/org-card.tsx|Link|href={membersLink.url}',
@@ -126,7 +132,6 @@ const REVIEWED = new Set([
   'features/validation/components/validation-overview.tsx|Link|href={item.href}',
   'features/validation/components/validation-overview.tsx|Link|href={s.href}',
   // Build-time constants (process.env / literals in the module).
-  'components/layout/sidebar-footer-links.tsx|a|href={REPORT_ISSUE_URL}',
   'features/auth/components/legal-notice.tsx|a|href={termsUrl}',
   'features/auth/components/legal-notice.tsx|a|href={privacyUrl}',
   // Same-origin paths built in the component from route builders/literals.

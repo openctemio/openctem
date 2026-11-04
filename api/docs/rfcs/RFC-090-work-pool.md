@@ -352,6 +352,8 @@ One key function lives in the CTIS contract,
 platform and the sensor SDK both import (the platform never depends on the
 SDK):
 
+> (CTIS 2.0, 2026-11-03: politeness now lives in `github.com/openctemio/contract/politeness`; see docs/architecture/ctis-receiver.md)
+
 - a name, and the host of a URL or a service: the lower-case name without
   a trailing dot;
 - an address: canonical form and the `in:` marker of its /24 (/120) bucket;

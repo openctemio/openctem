@@ -15,6 +15,7 @@ import (
 	"time"
 
 	bp "github.com/openctemio/openctem/api/pkg/domain/bountyprogram"
+	moduledom "github.com/openctemio/openctem/api/pkg/domain/module"
 	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
@@ -102,7 +103,16 @@ func (s *Service) Sync(ctx context.Context, tenantID, actor, id shared.ID) (*Syn
 
 // SyncDue syncs the programs not synced for interval (the controller).
 func (s *Service) SyncDue(ctx context.Context, interval time.Duration, limit int) (int, error) {
-	refs, err := s.repo.SyncDue(ctx, s.now().Add(-interval), limit)
+	// Tenants with the scope module off are left out of the query, so their
+	// due programs (always the oldest) cannot fill the batch (CollectEnabled).
+	refs, err := moduledom.CollectEnabled(ctx, limit,
+		func(skip []shared.ID) ([]bp.ProgramRef, error) {
+			return s.repo.SyncDue(ctx, s.now().Add(-interval), limit, skip)
+		},
+		func(r bp.ProgramRef) shared.ID { return r.TenantID },
+		func(ctx context.Context, t shared.ID) bool {
+			return s.modules != nil && s.modules.TenantDisabledModules(ctx, t.String())[moduledom.ModuleScopeConfig]
+		})
 	if err != nil {
 		return 0, err
 	}

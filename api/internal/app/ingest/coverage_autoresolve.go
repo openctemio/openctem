@@ -210,7 +210,7 @@ func decideRunCoverage(c *ingestreport.CommandCoverage, repo bool) coverageDecis
 		// not full (CTIS spec 4.5), the same as the report-level path
 		// (Input.ShouldAutoResolve): a sensor that does not say it covered
 		// everything closes nothing.
-		switch strings.ToLower(strings.TrimSpace(header.Metadata.CoverageType)) {
+		switch string(header.Metadata.CoverageType) {
 		case string(CoverageTypeFull):
 		case "":
 			return coverageDecision{reason: coverageUndeclared}

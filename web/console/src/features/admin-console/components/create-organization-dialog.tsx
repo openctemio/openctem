@@ -23,6 +23,7 @@ import { SetupLinkResult } from '@/features/shared/components/one-time-setup-lin
 import { createOrganization } from '../api/use-admin-organizations'
 import { AdminApiError } from '@console/lib/admin-api/client'
 import type { AdminOrganization, CreatedOrganization } from '../types'
+import { OwnerInvitationSentNotice } from './owner-invitation'
 
 /** "Acme Corp" -> "acme-corp" (the API requires lowercase letters, digits, hyphens). */
 function slugify(name: string): string {
@@ -87,6 +88,11 @@ export function CreateOrganizationDialog({
       toast.success(
         t('admin.createOrganizationDialog.created', '{name} created', { name: org.name })
       )
+      if (org.owner_invited) {
+        // An existing account: the organization waits for them to accept.
+        setCreated(org)
+        return
+      }
       if (org.owner_setup?.setup_token || org.owner_setup?.email_failed) {
         // No email could be sent: show the owner's one-time link before
         // leaving. A failed send (SMTP configured) returns no link; say so.
@@ -129,7 +135,30 @@ export function CreateOrganizationDialog({
         </Button>
       </DialogTrigger>
       <DialogContent size="sm">
-        {created?.owner_setup ? (
+        {created?.owner_invited ? (
+          <>
+            <DialogHeader>
+              <DialogTitle>
+                {t('admin.createOrganizationDialog.created', '{name} created', {
+                  name: created.name,
+                })}
+              </DialogTitle>
+            </DialogHeader>
+            <DialogBody>
+              <div className="py-2">
+                <OwnerInvitationSentNotice
+                  email={owner.trim()}
+                  invitation={created.owner_invitation}
+                />
+              </div>
+            </DialogBody>
+            <DialogFooter>
+              <Button onClick={() => finish(created)}>
+                {t('admin.createOrganizationDialog.done', 'Done')}
+              </Button>
+            </DialogFooter>
+          </>
+        ) : created?.owner_setup ? (
           <>
             <DialogHeader>
               <DialogTitle>
@@ -164,8 +193,8 @@ export function CreateOrganizationDialog({
               </DialogTitle>
               <DialogDescription>
                 {t(
-                  'admin.createOrganizationDialog.theOwnerBecomesTheOrganization',
-                  "The owner becomes the organization's first owner. If they have no account yet, one is created and they get a link to set their password."
+                  'admin.createOrganizationDialog.ownerAccountOrInvitation',
+                  'If the owner has no account yet, one is created and they get a link to set their password. Someone who already has an account gets an invitation and becomes the owner when they accept.'
                 )}
               </DialogDescription>
             </DialogHeader>
@@ -227,8 +256,8 @@ export function CreateOrganizationDialog({
                   />
                   <p className="text-xs text-muted-foreground">
                     {t(
-                      'admin.createOrganizationDialog.anExistingAccountOrA',
-                      'An existing account, or a new person (an account is created for them).'
+                      'admin.createOrganizationDialog.existingInvitedOrNew',
+                      'An existing account (they are invited to accept), or a new person (an account is created for them).'
                     )}
                   </p>
                 </div>

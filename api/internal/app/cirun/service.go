@@ -26,7 +26,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/oidc"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 )
 
 // ErrExchangeRefused is the only error a caller of Exchange sees for a token
@@ -181,7 +181,6 @@ type Service struct {
 	images    ImageLinker
 	stepUp    shared.RecentAuthGate
 	rules     SuppressionRules
-	modules   ModuleGuard
 	scope     ScopeLinker
 	gitlab    GitLabClients
 	identity  RepositoryIdentity
@@ -1098,6 +1097,7 @@ func (s *Service) applyReport(ctx context.Context, run *cirun.Run, report *ctis.
 	if report == nil {
 		return nil, fmt.Errorf("%w: report is required", shared.ErrValidation)
 	}
+	image := scannedImage(report) // before scoping keeps only the repository
 	if err := ScopeReport(report, run); err != nil {
 		return nil, err
 	}
@@ -1128,7 +1128,7 @@ func (s *Service) applyReport(ctx context.Context, run *cirun.Run, report *ctis.
 		}
 		s.refreshPipeline(ctx, run.TenantID, run.PipelineID)
 	}
-	s.suggestImageLinks(ctx, run, report)
+	s.suggestImageLinks(ctx, run, image)
 	s.requestInlineIgnores(ctx, run, report)
 	s.raiseSecretExposure(ctx, run, report, out)
 	s.auditUpload(ctx, run, report, out)
@@ -1166,36 +1166,53 @@ func nonEmptyPrefix(prefix, s string) string {
 const repoAssetRef = "ci-repository"
 
 // ScopeReport limits a report to the run's repository: every asset must be
-// that repository (else ErrReportOutOfScope), every finding is attached to
-// it, and the branch information is the run's.
+// that repository, or the container image the run scanned (else
+// ErrReportOutOfScope); every finding is attached to the repository, the
+// only asset left, and the branch information is the run's.
 func ScopeReport(report *ctis.Report, run *cirun.Run) error {
 	want := asset.NormalizeName(run.Repository, asset.AssetTypeRepository, "")
+	repoValue, err := ctis.CanonicalRepository(run.Repository)
+	if err != nil {
+		return ErrReportOutOfScope
+	}
 	refs := map[string]bool{}
-	repoAsset := ctis.Asset{Type: ctis.AssetTypeRepository, Value: run.Repository}
+	repoAsset := ctis.Asset{Type: ctis.AssetTypeRepository}
+	first := true
 	for i := range report.Assets {
 		a := &report.Assets[i]
+		if a.Type == ctis.AssetTypeContainerImage {
+			// The image a CI job scanned: its findings belong to the
+			// repository that builds it.
+			refs[a.ID] = true
+			continue
+		}
 		if a.Type != ctis.AssetTypeRepository || asset.NormalizeName(a.Value, asset.AssetTypeRepository, "") != want {
 			return ErrReportOutOfScope
 		}
 		if a.ID != "" {
 			refs[a.ID] = true
 		}
-		if i == 0 {
-			repoAsset = *a
+		if first {
+			repoAsset, first = *a, false
 		}
 	}
-	repoAsset.ID, repoAsset.Value = repoAssetRef, run.Repository
+	repoAsset.ID, repoAsset.Type, repoAsset.Value = repoAssetRef, ctis.AssetTypeRepository, repoValue
 	for i := range report.Findings {
 		f := &report.Findings[i]
 		if f.AssetRef != "" && !refs[f.AssetRef] {
 			return ErrReportOutOfScope
 		}
-		if f.AssetValue != "" && asset.NormalizeName(f.AssetValue, asset.AssetTypeRepository, "") != want {
-			return ErrReportOutOfScope
-		}
-		f.AssetRef, f.AssetValue, f.AssetType = repoAssetRef, "", ""
+		f.AssetRef = repoAssetRef
 	}
 	report.Assets = []ctis.Asset{repoAsset}
+	// Only the repository is left: links between the dropped assets go, and
+	// the packages of the build are the repository's.
+	report.Relationships = nil
+	for i := range report.Dependencies {
+		if report.Dependencies[i].AssetRef != "" {
+			report.Dependencies[i].AssetRef = repoAssetRef
+		}
+	}
 	report.Metadata.Branch = &ctis.BranchInfo{
 		Name:            cirun.ReportBranchName(run.Branch, run.Event, run.PullRequest, run.Fork),
 		IsDefaultBranch: run.IsDefaultBranch && !run.Fork,
@@ -1285,4 +1302,18 @@ func (s *Service) raiseSecretExposure(ctx context.Context, run *cirun.Run, repor
 				WithMessage(fmt.Sprintf("Rotation task %q opened for a secret CI run on %s found", r.Title, run.Repository)).
 				WithMetadata("finding_id", r.FindingID.String()).WithMetadata("source", "ci_secret"))
 	}
+}
+
+// scannedImage is the container image a CI report scanned: the value of its
+// first container_image asset (registry/repository@sha256:digest), or "".
+func scannedImage(report *ctis.Report) string {
+	if report == nil {
+		return ""
+	}
+	for i := range report.Assets {
+		if report.Assets[i].Type == ctis.AssetTypeContainerImage {
+			return report.Assets[i].Value
+		}
+	}
+	return ""
 }

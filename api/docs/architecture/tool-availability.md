@@ -161,6 +161,15 @@ The trigger codes `NO_SENSOR_FOR_TOOL`, `NO_SENSOR_AVAILABLE`, `TOOL_NOT_FOUND`,
 `TOOL_DISABLED` and `TOOL_NOT_SCANNER` now reach the client in the error body's
 `code`. They used to be reported as `BAD_REQUEST`.
 
+A trigger never answers "Scan not found" for something other than the scan:
+the scan is loaded first, scoped to the caller's organization, so a missing
+workflow is `PIPELINE_NOT_FOUND` and any other missing reference (a step's
+tool, ...) is `SCAN_DEPENDENCY_MISSING`, both 404 and recorded as a blocked
+run. The workflow is looked up scoped to the scan's organization, or as a
+shared system template (stored under the platform's system tenant and run by
+every organization); another organization's private workflow reads as
+`PIPELINE_NOT_FOUND`, like a deleted one.
+
 ## Web console
 
 Every screen that shows or picks a tool reads this one endpoint, through `useToolAvailability`

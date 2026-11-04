@@ -11,7 +11,7 @@ import (
 	"context"
 	"strings"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/internal/app/easmdns"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
@@ -52,7 +52,7 @@ func takeoverSightings(agt *sensor.Sensor, binding Binding, scope *alterScope, r
 		out = append(out, easmdns.TakeoverSighting{
 			AssetID:    id,
 			TemplateID: strings.TrimSpace(f.RuleID),
-			Matched:    f.Evidence,
+			Matched:    rawTextEvidence(f.EvidenceItems),
 			SensorID:   agt.ID,
 			CommandID:  binding.CommandID,
 		})

@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/ctis/outcome"
+	"github.com/openctemio/contract/outcome"
 )
 
 func TestFailureClass_MovableAndTargetSide(t *testing.T) {

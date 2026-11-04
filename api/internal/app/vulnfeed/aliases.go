@@ -11,7 +11,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/openctemio/ctis/transfer"
+	"github.com/openctemio/contract/transfer"
 
 	"github.com/openctemio/openctem/api/pkg/vulnbundle"
 )

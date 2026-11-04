@@ -182,7 +182,7 @@ func TestSharedResults_BoundToCommandTenant(t *testing.T) {
 
 	rule := "shared-bind-" + shared.NewID().String()
 	rid := newReportID()
-	resp, raw := h.putBound(a.key, jobX, rid+"?tenant_id="+tenantY+"&organization_id="+tenantY, 3, v2Segment("semgrep", "1.0", rule),
+	resp, raw := h.putBound(a.key, jobX, rid+"?tenant_id="+tenantY+"&organization_id="+tenantY, 3, v2Segment("semgrep", "2.0", rule),
 		"X-Tenant-ID", tenantY, "X-OpenCTEM-Tenant", tenantY)
 	h.want(resp, raw, 202, "")
 	if tenant, n := h.reportTenant(a.id, rid); n != 1 || tenant != tenantX {
@@ -221,7 +221,7 @@ func TestSharedResults_RefusedForJobNotHeld(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	body := v2Segment("semgrep", "1.0", "refused")
+	body := v2Segment("semgrep", "2.0", "refused")
 	notFound := ingestProblem(string(protov2.ProblemCommandNotFound))
 	for name, c := range map[string]struct {
 		cmd   string
@@ -263,7 +263,7 @@ func TestSharedResults_DroppedWhenNoLongerHeld(t *testing.T) {
 	job := h.sharedJob(h.tenantID, a.id, 3)
 	rule := "shared-drop-" + shared.NewID().String()
 	rid := newReportID()
-	resp, raw := h.putBound(a.key, job, rid, 3, v2Segment("semgrep", "1.0", rule))
+	resp, raw := h.putBound(a.key, job, rid, 3, v2Segment("semgrep", "2.0", rule))
 	h.want(resp, raw, 202, "")
 	if _, err := h.db.ExecContext(context.Background(),
 		`UPDATE commands SET sensor_id = $2, lease_epoch = 4 WHERE id = $1`, job, b.id); err != nil {
@@ -294,7 +294,7 @@ func TestOrganizationSensor_CannotPostSharedJobResults(t *testing.T) {
 	heldByShared := h.sharedJob(h.tenantID, a.id, 1)
 	namesOrg := h.sharedJob(h.tenantID, org.id, 1)
 
-	body := v2Segment("semgrep", "1.0", "org-shared")
+	body := v2Segment("semgrep", "2.0", "org-shared")
 	notFound := ingestProblem(string(protov2.ProblemCommandNotFound))
 	for _, id := range []string{heldByShared, namesOrg} {
 		rid := newReportID()

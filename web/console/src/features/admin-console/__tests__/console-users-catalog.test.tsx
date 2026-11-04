@@ -124,17 +124,17 @@ describe('Users list', () => {
   it('browses without a search, with a count on every state tab and no names', async () => {
     render(<UsersPage />)
     expect(mocks.usersCalls[0]).toEqual(['', 'all', 1, 25])
-    expect(screen.getByRole('tab', { name: /All\s*40/ })).toBeInTheDocument()
-    expect(screen.getByRole('tab', { name: /Blocked\s*1/ })).toBeInTheDocument()
-    expect(screen.getAllByText('person@corp.test').length).toBeGreaterThan(0)
-    await userEvent.click(screen.getByRole('tab', { name: /Blocked/ }))
+    await userEvent.click(screen.getByRole('button', { name: 'State: All' }))
+    expect(screen.getByRole('menuitemradio', { name: /All\s*40/ })).toBeInTheDocument()
+    expect(screen.getByRole('menuitemradio', { name: /Blocked\s*1/ })).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('menuitemradio', { name: /Blocked/ }))
     await waitFor(() => expect(mocks.usersCalls.at(-1)?.[1]).toBe('blocked'))
   })
 
   it('is not shown to a read-only administrator', () => {
     mocks.role = 'readonly'
     render(<UsersPage />)
-    expect(screen.queryByRole('tab', { name: /All/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /State/ })).not.toBeInTheDocument()
   })
 })
 

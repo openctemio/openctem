@@ -3,7 +3,7 @@
 # explains the columns. A bump is a human or agent pull request, so CI runs on it.
 #
 # name	repository	source	highest major	file	regex (one group)	flags
-golangci-lint	golangci/golangci-lint	releases	1	api/Makefile	^GOLANGCI_LINT_VERSION \?= (v[0-9.]+)	
+golangci-lint	golangci/golangci-lint	releases	2	api/Makefile	^GOLANGCI_LINT_VERSION \?= (v[0-9.]+)	
 govulncheck	golang/vuln	tags	-	.github/workflows/api-security.yml	govulncheck@(v[0-9.]+)	
 go-licenses	google/go-licenses	releases	-	.github/workflows/api-security.yml	go-licenses@(v[0-9.]+)	
 staticcheck	dominikh/go-tools	tags	-	.github/workflows/api-ci.yml	STATICCHECK_VERSION=(v[0-9.]+)	
@@ -16,7 +16,7 @@ betterleaks (workflow)	betterleaks/betterleaks	releases	-	.github/workflows/repo
 betterleaks (Makefile)	betterleaks/betterleaks	releases	-	api/Makefile	betterleaks@(v[0-9.]+)	
 actionlint	rhysd/actionlint	releases	-	.github/workflows/repo-security.yml	ACTIONLINT_VERSION: ([0-9.]+)	checksum
 zizmor	zizmorcore/zizmor	releases	-	.github/workflows/repo-security.yml	ZIZMOR_VERSION: ([0-9.]+)	optional,checksum
-trivy (workflows)	aquasecurity/trivy	releases	-	.github/workflows/allinone-ci.yml	version: (v[0-9.]+)	
+trivy (workflows)	aquasecurity/trivy	releases	-	.github/actions/setup-trivy/action.yml	TRIVY_VERSION: "([0-9.]+)"	checksum
 trivy (air-gap tools image)	aquasecurity/trivy	releases	-	deploy/airgap/gitlab/Dockerfile.ci-tools	^ARG TRIVY_VERSION=([0-9.]+)	checksum
 cosign (air-gap tools image)	sigstore/cosign	releases	-	deploy/airgap/gitlab/Dockerfile.ci-tools	^ARG COSIGN_VERSION=(v[0-9.]+)	checksum
 crane (workflow)	google/go-containerregistry	releases	-	.github/workflows/ci-image-mirror.yml	CRANE_VERSION: (v[0-9.]+)	checksum

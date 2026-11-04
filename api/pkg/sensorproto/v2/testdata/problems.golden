@@ -184,10 +184,10 @@ Content-Type: application/problem+json
 Openctem-Protocol: 2
 {"type":"https://openctem.io/problems/ingest/unsupported-encoding","title":"Unsupported content encoding","status":415,"detail":"The accepted Content-Encoding values are gzip and zstd, one coding at most.","retryable":false}
 ## unsupported-media-type
-Accept: application/vnd.openctem.ctis.v1+json
+Accept: application/vnd.ctis+json; version=2.0
 Content-Type: application/problem+json
 Openctem-Protocol: 2
-{"type":"https://openctem.io/problems/ingest/unsupported-media-type","title":"Unsupported media type","status":415,"detail":"The only accepted Content-Type is application/vnd.openctem.ctis.v1+json.","retryable":false}
+{"type":"https://openctem.io/problems/ingest/unsupported-media-type","title":"Unsupported media type","status":415,"detail":"The only accepted Content-Type is application/vnd.ctis+json; version=2.0.","retryable":false}
 ## version-mismatch
 Content-Type: application/problem+json
 Openctem-Protocol: 2

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/pkg/domain/ingestjob"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
@@ -38,14 +38,16 @@ func (activeSensors) QueuedWorkSensor(_ context.Context, tenantID shared.ID, sen
 	return &sensor.Sensor{ID: *sensorID, TenantID: &tenantID, Status: sensor.SensorStatusActive}, nil, nil
 }
 
-func TestParseReport_FlatAndWrapped(t *testing.T) {
-	flat := []byte(`{"version":"1.0"}`)
-	if r, err := ParseReport(flat); err != nil || r.Version != "1.0" {
+// A job result is the CTIS 2.0 document itself; the 1.x {"report": ...}
+// envelope is refused.
+func TestParseReport_DocumentOnly(t *testing.T) {
+	flat := []byte(minimalDoc)
+	if r, err := ParseReport(flat); err != nil || r.Version != "2.0" {
 		t.Fatalf("flat parse: r=%v err=%v", r, err)
 	}
-	wrapped := []byte(`{"report":{"version":"1.0"}}`)
-	if r, err := ParseReport(wrapped); err != nil || r.Version != "1.0" {
-		t.Fatalf("wrapped parse: r=%v err=%v", r, err)
+	wrapped := []byte(`{"report":` + minimalDoc + `}`)
+	if _, err := ParseReport(wrapped); err == nil {
+		t.Fatal("a wrapped report was parsed")
 	}
 	if _, err := ParseReport([]byte(`not json`)); err == nil {
 		t.Fatal("expected error for invalid payload")
@@ -63,7 +65,7 @@ func TestJobProcessor_Process_IngestsAndReturnsCounts(t *testing.T) {
 	}}
 	p := &JobProcessor{service: ing, sensors: activeSensors{}}
 
-	job := ingestjob.NewJob(tenantID, &sensorID, "scan-9", "trivy", []byte(`{"version":"1.0"}`))
+	job := ingestjob.NewJob(tenantID, &sensorID, "scan-9", "trivy", []byte(minimalDoc))
 	out, err := p.Process(context.Background(), job)
 	if err != nil {
 		t.Fatalf("Process: %v", err)
@@ -72,7 +74,7 @@ func TestJobProcessor_Process_IngestsAndReturnsCounts(t *testing.T) {
 	if ing.gotTenant != tenantID {
 		t.Fatalf("ingest got tenant %s, want %s", ing.gotTenant, tenantID)
 	}
-	if ing.gotReport == nil || ing.gotReport.Version != "1.0" {
+	if ing.gotReport == nil || ing.gotReport.Version != "2.0" {
 		t.Fatalf("ingest got wrong report: %+v", ing.gotReport)
 	}
 
@@ -96,7 +98,7 @@ func TestJobProcessor_Process_ParseError(t *testing.T) {
 func TestJobProcessor_Process_IngestError(t *testing.T) {
 	sensorID := shared.NewID()
 	p := &JobProcessor{service: &stubIngester{err: errors.New("db down")}, sensors: activeSensors{}}
-	job := ingestjob.NewJob(shared.NewID(), &sensorID, "scan-1", "trivy", []byte(`{"version":"1.0"}`))
+	job := ingestjob.NewJob(shared.NewID(), &sensorID, "scan-1", "trivy", []byte(minimalDoc))
 	if _, err := p.Process(context.Background(), job); err == nil {
 		t.Fatal("expected ingest error to propagate")
 	}
@@ -106,7 +108,7 @@ func TestJobProcessor_Process_IngestError(t *testing.T) {
 // job it cannot open waits (no sealer) or fails for good (wrong key).
 func TestJobProcessor_Process_ReadsSealedAndLegacyV1Jobs(t *testing.T) {
 	tenantID, sensorID := shared.NewID(), shared.NewID()
-	body := []byte(`{"version":"1.0","metadata":{"id":"x"}}`)
+	body := []byte(minimalDoc)
 	sealer := segSealer(t, 1)
 
 	newJob := func() *ingestjob.Job { return ingestjob.NewJob(tenantID, &sensorID, "scan-1", "trivy", body) }
@@ -133,7 +135,7 @@ func TestJobProcessor_Process_ReadsSealedAndLegacyV1Jobs(t *testing.T) {
 		}
 		_, err := p.Process(context.Background(), tc.job)
 		if tc.err == "" {
-			if err != nil || !ing.called || ing.gotReport.Version != "1.0" {
+			if err != nil || !ing.called || ing.gotReport.Version != "2.0" {
 				t.Errorf("%s: err=%v called=%v", name, err, ing.called)
 			}
 			continue

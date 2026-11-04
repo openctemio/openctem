@@ -19,6 +19,7 @@
  */
 
 import { Permission } from '@/lib/permissions'
+import { Module } from './modules.generated'
 
 export interface RoutePermissionConfig {
   /** Required permission to access this route (RBAC layer) */
@@ -27,77 +28,14 @@ export interface RoutePermissionConfig {
   module?: string
   /** Optional: Redirect to this path if permission denied (default: show access denied) */
   redirectTo?: string
-  /** Optional: Custom message to show when access denied */
-  message?: string
 }
 
 /**
- * Module IDs (matches backend licensing module IDs)
- *
- * NOTE: Only include modules that are actually in the licensing system.
- * Core features like "team", "billing" are NOT licensed modules - they're
- * always available and only controlled by RBAC permissions.
+ * Module ids. Generated from the API registry (api/configs/modules/*.yaml), the
+ * one list of modules: a name here that the registry does not have fails the
+ * type check.
  */
-export const Module = {
-  Dashboard: 'dashboard',
-  Assets: 'assets',
-  Findings: 'findings',
-  Scans: 'scans',
-  Sensors: 'sensors',
-  Reports: 'reports',
-  Audit: 'audit',
-  Components: 'components',
-  Pentest: 'pentest',
-  Credentials: 'credentials',
-  // Exposures (non-CVE security issues) is its own toggleable module. The API
-  // gates /api/v1/exposures on ModuleExposures, so the route guard + sidebar
-  // must key off the same module — not `findings`, which used to be a stale
-  // mirror that let the toggle 403 the API while leaving the nav visible.
-  Exposures: 'exposures',
-  Remediation: 'remediation',
-  Suppressions: 'suppressions',
-  ThreatIntel: 'threat_intel',
-  // IOC catalogue — its own backend module (`iocs`, migration 000156)
-  // that gates /api/v1/iocs. Distinct from `threat_intel` so an operator
-  // can run threat-intel enrichment without exposing the runtime IOC
-  // catalogue, and so the ModuleIOCs toggle gates a real page.
-  Iocs: 'iocs',
-  // SLA is a real optional module (api gates registerSLARoutes on ModuleSLA).
-  Sla: 'sla',
-  Integrations: 'integrations',
-  Compliance: 'compliance',
-  // Migration 000161 additions — these need their own constants so
-  // the route guard checks the same module the sidebar binds to.
-  // Mismatched module names → "Feature Not Available" while sidebar
-  // shows the entry (the bug this list was extended for).
-  AttackSurface: 'attack_surface',
-  ScopeConfig: 'scope_config',
-  BusinessServices: 'business_services',
-  CTEMCycles: 'ctem_cycles',
-  AttackerProfiles: 'attacker_profiles',
-  Relationships: 'relationships',
-  // Scoping split-outs (api migration 000214) — each toggleable on its
-  // own instead of sharing scope_config / attack_surface.
-  BusinessUnits: 'business_units',
-  CrownJewels: 'crown_jewels',
-  ThreatModel: 'threat_model',
-  PriorityRules: 'priority_rules',
-  RiskAnalysis: 'risk_analysis',
-  RiskScoring: 'risk_scoring',
-  BusinessImpact: 'business_impact',
-  CompensatingControls: 'compensating_controls',
-  Workflows: 'workflows',
-  ExecutiveSummary: 'executive_summary',
-  CTEMMaturity: 'ctem_maturity',
-  MITRECoverage: 'mitre_coverage',
-  SBOMExport: 'sbom_export',
-  ScannerTemplates: 'scanner_templates',
-  TemplateSources: 'template_sources',
-  ScanWorkflows: 'scan_workflows',
-  AttackSimulation: 'attack_simulation',
-  ControlTesting: 'control_testing',
-  AITriage: 'ai_triage',
-} as const
+export { Module }
 
 /**
  * Route to permission mapping
@@ -170,6 +108,11 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     permission: Permission.AssetsRead,
     module: Module.Assets,
   },
+  // The posture score of the external surface, scoped per asset by the API.
+  '/attack-surface/posture': {
+    permission: Permission.AssetsRead,
+    module: Module.AttackSurface,
+  },
   // Exposure items: the exposures of the external surface (research/333 D1);
   // the API also needs findings:read.
   '/attack-surface/exposures': {
@@ -196,7 +139,6 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
   },
   '/crown-jewels': {
     permission: Permission.AssetsRead,
-    module: Module.CrownJewels,
   },
   '/scope': {
     permission: Permission.ScopeRead,
@@ -359,13 +301,13 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
   // matching what the backend enforces on /api/v1/iocs.
   '/threat-intel/iocs': {
     permission: Permission.ThreatIntelRead,
-    module: Module.Iocs,
+    module: Module.IOCs,
   },
   // Detections (Detect & Respond) — tenant-wide IOC match feed. Same `iocs`
   // module + threat_intel:read as the catalogue; backend gates /api/v1/iocs/matches.
   '/threat-intel/detections': {
     permission: Permission.ThreatIntelRead,
-    module: Module.Iocs,
+    module: Module.IOCs,
   },
   '/threat-intel/**': {
     permission: Permission.VulnerabilitiesRead,
@@ -382,7 +324,7 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
   },
   '/business-impact': {
     permission: Permission.VulnerabilitiesRead,
-    module: Module.BusinessImpact,
+    module: Module.BusinessServices,
   },
   // A CTEM working object in Prioritization (was /settings/priority-rules).
   '/priority-rules': {
@@ -422,7 +364,7 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
   },
   '/validation/attack-coverage': {
     permission: Permission.PentestRead,
-    module: Module.MITRECoverage,
+    module: Module.ThreatIntel,
   },
   // Finding library (finding templates), under Settings › Pentest methodology.
   // Longer patterns win over '/settings/pentest'.
@@ -478,11 +420,10 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
   },
   '/sla': {
     permission: Permission.SLARead,
-    module: Module.Sla,
+    module: Module.SLA,
   },
   '/exceptions': {
     permission: Permission.SuppressionsRead,
-    module: Module.Suppressions,
   },
 
   // ========================================
@@ -547,11 +488,11 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
   },
   '/insights/executive': {
     permission: Permission.DashboardRead,
-    module: Module.ExecutiveSummary,
+    module: Module.Reports,
   },
   '/insights/ctem-maturity': {
     permission: Permission.DashboardRead,
-    module: Module.CTEMMaturity,
+    module: Module.CTEMCycles,
   },
 
   // ========================================
@@ -641,21 +582,18 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
   '/settings/scanning/proxies': {
     permission: Permission.SensorEgressRead,
     module: Module.Sensors,
-    message: 'You need permission to view sensor proxies.',
   },
   // The sensor scan-job part of the security settings: read like
   // Authentication (team:update), changed by the owner only (the API).
   '/settings/scanning/sensor-safety': {
     permission: Permission.TeamUpdate,
     module: Module.Sensors,
-    message: 'You need admin privileges to access sensor job settings.',
   },
   // The scan identification part of the security settings: read like
   // Sensor job safety (team:update), changed by the owner only (the API).
   '/settings/scanning/identification': {
     permission: Permission.TeamUpdate,
     module: Module.Sensors,
-    message: 'You need admin privileges to access scan identification settings.',
   },
 
   // ========================================
@@ -667,36 +605,29 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
   // the page.
   '/settings/general': {
     permission: Permission.TeamUpdate,
-    message: 'You need admin privileges to access organization settings.',
   },
   '/settings/authentication': {
     permission: Permission.TeamUpdate,
-    message: 'You need admin privileges to access authentication settings.',
   },
   // Owner only in the API (RequireTeamOwner); admins see an "owners only" note.
   '/settings/sso-approvals': {
     permission: Permission.TeamUpdate,
-    message: 'Only an owner can approve or reject SSO changes.',
   },
   // Owners and admins see support access; granting is owner only (api RFC-063).
   '/settings/support-access': {
     permission: Permission.TeamUpdate,
-    message: 'Only owners and admins can manage support access.',
   },
   // Owners and admins read the security overview (api: RequireAdmin).
   '/settings/security': {
     permission: Permission.TeamUpdate,
-    message: 'Only owners and admins can see the security overview.',
   },
   // Owners and admins read domain policies; changes are owner only (api RFC-104).
   '/settings/domains': {
     permission: Permission.TeamUpdate,
-    message: 'Only owners and admins can see domain settings.',
   },
   // Owners and admins read trusts; changes are owner only (api RFC-058).
   '/settings/trusted-organizations': {
     permission: Permission.TeamUpdate,
-    message: 'Only owners and admins can see trusted organizations.',
   },
   '/settings/modules': {
     permission: Permission.TeamUpdate,
@@ -712,7 +643,7 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
   // stay gated by the integrations entries below.
   '/settings/sla-policies': {
     permission: Permission.SLARead,
-    module: Module.Sla,
+    module: Module.SLA,
   },
   // Readable by anyone with pentest access; the page itself is read-only
   // unless the caller may PATCH the settings (organization administrators).
@@ -740,7 +671,6 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
   // ========================================
   '/settings/audit-log': {
     permission: Permission.AuditRead,
-    message: 'Audit logs require admin or owner privileges.',
   },
 
   // ========================================
@@ -792,12 +722,10 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
   '/settings/integrations/notifications/history': {
     permission: Permission.IntegrationsManage,
     module: Module.Integrations,
-    message: 'Only people who manage notification channels can see delivery history.',
   },
   '/settings/integrations/notifications/outbox': {
     permission: Permission.IntegrationsManage,
     module: Module.Integrations,
-    message: 'Only people who manage notification channels can see the delivery queue.',
   },
 
   // ========================================
@@ -808,10 +736,9 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     module: Module.ScannerTemplates,
   },
 
-  // Risk scoring config — its own module
+  // Risk scoring is always on: a settings page, no module
   '/settings/risk-scoring': {
     permission: Permission.TeamUpdate,
-    module: Module.RiskScoring,
   },
 
   // Asset lifecycle settings — no dedicated module, gated purely on

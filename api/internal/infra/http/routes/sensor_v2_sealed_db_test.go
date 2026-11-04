@@ -68,7 +68,7 @@ func (h *v2Harness) reportState(reportID string) protov2.Status {
 }
 
 func sealedSegment() []byte {
-	return v2Segment("semgrep", "1.0", secretMarker+"a", secretMarker+"b")
+	return v2Segment("semgrep", "2.0", secretMarker+"a", secretMarker+"b")
 }
 
 func assertSealed(t *testing.T, r segRow, plain []byte) {
@@ -316,7 +316,7 @@ func TestSensorV2_PlaintextSegmentsSealedInPlace(t *testing.T) {
 // length.
 func TestSensorV2_ManifestCommitOnSealedAndPlaintextSegments(t *testing.T) {
 	h := newV2Harness(t, v2HarnessOpts{})
-	segs := [][]byte{v2Segment("semgrep", "1.0", "a", "b"), v2Segment("semgrep", "1.0", "c")}
+	segs := [][]byte{v2Segment("semgrep", "2.0", "a", "b"), v2Segment("semgrep", "2.0", "c")}
 	id := newReportID()
 	base := "/api/v2/sensor/results/" + id
 	for seq, s := range segs {

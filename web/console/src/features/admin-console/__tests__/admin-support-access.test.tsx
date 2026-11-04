@@ -100,13 +100,25 @@ describe('Console support access', () => {
     window.history.replaceState(null, '', '/support')
   })
 
-  it('lists the grants naming the caller; a read-only administrator cannot open a session', async () => {
+  it('lists the grants naming the caller', async () => {
     route(['findings', 'assets'])
-    renderPanel(false)
+    renderPanel()
     const item = await screen.findByTestId('support-grant')
     expect(within(item).getByText('Acme Corp')).toBeInTheDocument()
     expect(within(item).getByText(/case CASE-42/)).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Open support session' })).not.toBeInTheDocument()
+  })
+
+  it('without support access: says so, and never reads the grants (the API would refuse)', async () => {
+    route(['findings', 'assets'])
+    renderPanel(false)
+    expect(
+      await screen.findByText(
+        'Your platform roles do not include this. A platform owner can grant it under Roles.'
+      )
+    ).toBeInTheDocument()
+    expect(screen.queryByTestId('support-grant')).not.toBeInTheDocument()
+    expect(screen.queryByText(/could not be loaded/i)).not.toBeInTheDocument()
+    expect(adminFetch.mock.calls.some((c) => c[0] === '/support/grants')).toBe(false)
   })
 
   it('opens a session, reads findings, and leaves when the access ends', async () => {

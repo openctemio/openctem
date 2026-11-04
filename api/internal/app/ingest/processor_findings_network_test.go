@@ -3,7 +3,7 @@ package ingest
 import (
 	"testing"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
@@ -11,16 +11,16 @@ import (
 
 // goldenNetworkFindings are CTIS findings that carry Finding.Network.
 func goldenNetworkFindings() []*ctis.Finding {
-	net := &ctis.NetworkLocation{Host: "10.0.0.5", Port: 8443, Protocol: "tcp", Service: "https"}
+	net := &ctis.NetworkLocation{Host: "10.0.0.5", Port: 8443, Transport: "tcp", AppProtocol: "https"}
 	return []*ctis.Finding{
 		// network VA: the port is in the fingerprint (netva:<port>:<cve>)
 		{Type: ctis.FindingTypeVulnerability, Title: "OpenSSL RCE", RuleID: "nessus-118987",
-			Vulnerability: &ctis.VulnerabilityDetails{CVEID: "CVE-2022-3602"}, Network: net},
+			Vulnerability: &ctis.VulnerabilityDetails{IDs: cveIDs("CVE-2022-3602")}, Network: net},
 		// no CVE: keyed on port and transport since #920 (RFC-043)
 		{Type: ctis.FindingTypeVulnerability, Title: "SSL Certificate Cannot Be Trusted", RuleID: "nessus-51192", Network: net},
 		// host-level network VA (no port)
 		{Type: ctis.FindingTypeVulnerability, Title: "Host-level CVE", RuleID: "nessus-1",
-			Vulnerability: &ctis.VulnerabilityDetails{CVEID: "CVE-2023-44487"}, Network: &ctis.NetworkLocation{Host: "10.0.0.5"}},
+			Vulnerability: &ctis.VulnerabilityDetails{IDs: cveIDs("CVE-2023-44487")}, Network: &ctis.NetworkLocation{Host: "10.0.0.5"}},
 	}
 }
 

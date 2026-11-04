@@ -91,15 +91,34 @@ func assertPresetState(t *testing.T, s *ModuleService, p *moduledom.ModulePreset
 	got := enabledSet(s)
 	for _, m := range cat {
 		id := m.ID()
+		if !moduledom.IsUserFacing(id) {
+			// Not on Settings > Modules: a preset leaves it as it was (on,
+			// since every test tenant starts with all modules on).
+			if !got[id] {
+				t.Errorf("preset %s switched off %s, which Settings > Modules does not list", p.ID, id)
+			}
+			continue
+		}
 		if want[id] != got[id] && !m.IsCore() {
 			t.Errorf("preset %s: module %s enabled=%v, want %v", p.ID, id, got[id], want[id])
 		}
 	}
 }
 
+// lowerUpdateCap makes the per-request toggle cap smaller than the catalog
+// (the registry no longer has more modules than the production cap), so the
+// tests that need a diff larger than the cap stay meaningful.
+func lowerUpdateCap(t *testing.T) {
+	t.Helper()
+	old := maxModuleUpdatesPerRequest
+	maxModuleUpdatesPerRequest = 15
+	t.Cleanup(func() { maxModuleUpdatesPerRequest = old })
+}
+
 // Every preset applies on a fresh (all modules on) tenant, including the
 // presets whose diff is larger than the per-request toggle cap.
 func TestApplyPreset_EveryPresetAppliesFromAllOn(t *testing.T) {
+	lowerUpdateCap(t)
 	if n := len(fullCatalogue()); n <= maxModuleUpdatesPerRequest {
 		t.Fatalf("catalog has %d modules; the test needs more than the cap (%d) to be meaningful", n, maxModuleUpdatesPerRequest)
 	}
@@ -158,6 +177,7 @@ func TestApplyPreset_NotSubjectToRequestCap(t *testing.T) {
 
 // A caller-supplied toggle batch is still capped.
 func TestUpdateTenantModules_CallerBatchStillCapped(t *testing.T) {
+	lowerUpdateCap(t)
 	s, repo := newPresetService()
 	updates := make([]moduledom.TenantModuleUpdate, 0, maxModuleUpdatesPerRequest+1)
 	for _, m := range fullCatalogue() {

@@ -1,48 +1,31 @@
 package ingest
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/pkg/domain/ingestjob"
 	"github.com/openctemio/openctem/api/pkg/domain/ingestpayload"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/logger"
+	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
 )
 
-// ctisIngestEnvelope is the wrapped ingest payload shape: { "report": { ... } }.
-type ctisIngestEnvelope struct {
-	Report ctis.Report `json:"report"`
-}
-
-// ParseReport decodes a raw ingest body into a CTIS report. It accepts both the
-// wrapped form ({"report": {...}}) and the flat SDK form ({"version": ...}),
-// rejecting unknown fields so a sensor cannot smuggle extra keys. This is the
-// single parser shared by the synchronous accept handler and the async worker.
+// ParseReport decodes a raw ingest body: one CTIS 2.0 document, the body
+// itself (no envelope), through the bounded I-JSON pre-pass, ctis.Decode
+// (CTIS 2.x only) and ctis.Report.Validate (DecodeStrictReport).
 func ParseReport(body []byte) (*ctis.Report, error) {
-	// Wrapped form first.
-	var env ctisIngestEnvelope
-	wrapped := json.NewDecoder(bytes.NewReader(body))
-	wrapped.DisallowUnknownFields()
-	if err := wrapped.Decode(&env); err == nil && env.Report.Version != "" {
-		report := env.Report
-		return &report, nil
-	}
-
-	// Flat form.
-	var report ctis.Report
-	flat := json.NewDecoder(bytes.NewReader(body))
-	flat.DisallowUnknownFields()
-	if err := flat.Decode(&report); err != nil {
+	limits := protov2.DefaultLimits()
+	report, err := DecodeStrictReport(body, limits.MaxJSONDepth, ReportBounds(limits))
+	if err != nil {
 		return nil, fmt.Errorf("invalid CTIS payload: %w", err)
 	}
-	return &report, nil
+	return report, nil
 }
 
 // JobResult is the compact counts summary stored on a completed ingest job.
@@ -212,10 +195,9 @@ func (p *JobProcessor) Process(ctx context.Context, job *ingestjob.Job) ([]byte,
 	}
 	report, err := ParseReport(body)
 	if err != nil {
-		return nil, err
-	}
-	if report.Version == "" {
-		report.Version = "1.0"
+		// A queued 1.x report (accepted before the CTIS 2.0 switch) or a
+		// document that no longer validates: retrying cannot change it.
+		return nil, ingestjob.Permanent(ingestjob.ErrorApplyFailed, err)
 	}
 
 	if p.sensors == nil {
@@ -233,7 +215,7 @@ func (p *JobProcessor) Process(ctx context.Context, job *ingestjob.Job) ([]byte,
 	// before queuing; a v1 report bound to a command is never queued (it is
 	// processed synchronously), so a queued report applies with the
 	// unsolicited limits.
-	output, err := p.service.Ingest(ctx, agt, Input{Report: report, Options: Options{Admitted: true, Route: "ctis"}})
+	output, err := p.service.Ingest(ctx, agt, Input{Report: report, ReportID: job.ReportID(), Options: Options{Admitted: true, Route: "ctis"}})
 	if err != nil {
 		return nil, err
 	}

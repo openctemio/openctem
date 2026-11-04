@@ -54,3 +54,10 @@ __pycache__/
 
 # Local editor/agent permission files (machine-specific paths)
 **/.claude/settings.local.json
+
+# Extension mount points: an extension's web code is copied in by its own
+# build and never tracked here. The edition fence check
+# (.github/scripts/check-edition-fence.sh) fails when any of this is tracked.
+/web/src/extensions/
+/web/src/app/**/(extensions)/
+/web/console/src/app/**/(extensions)/

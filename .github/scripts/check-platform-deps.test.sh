@@ -17,16 +17,17 @@ module github.com/openctemio/openctem/api
 go 1.26.0
 
 require (
-	github.com/openctemio/ctis v1.6.0
-	github.com/openctemio/ctis/transfer v0.1.0
+	github.com/openctemio/ctis/v2 v2.0.0
+	github.com/openctemio/contract v1.0.0
+	github.com/openctemio/contract/transfer v1.0.1
 )
 EOF
-  printf 'github.com/openctemio/ctis v1.6.0 h1:x=\n' >"$d/api/go.sum"
+  printf 'github.com/openctemio/ctis/v2 v2.0.0 h1:x=\n' >"$d/api/go.sum"
   cat >"$d/api/internal/x/x.go" <<'EOF'
 package x
 
 import (
-	"github.com/openctemio/ctis/transfer"
+	"github.com/openctemio/contract/transfer"
 )
 
 // A comment naming github.com/openctemio/sdk-go is not an import.

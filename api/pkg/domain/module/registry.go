@@ -32,6 +32,27 @@ type Definition struct {
 	MCP []string
 	// Jobs lists the background controllers the module owns.
 	Jobs []string
+	// Scope is ScopeTenant (default) or ScopePlatform: a platform module is an
+	// installation switch, off for every organization while the platform has
+	// it off. It is never core.
+	Scope string
+}
+
+// Module scopes.
+const (
+	ScopeTenant   = "tenant"
+	ScopePlatform = "platform"
+)
+
+// PlatformModuleIDs returns the modules that are installation switches.
+func PlatformModuleIDs() []string {
+	var ids []string
+	for _, d := range Registry {
+		if d.Scope == ScopePlatform {
+			ids = append(ids, d.ID)
+		}
+	}
+	return ids
 }
 
 // Lookup returns the registry definition of a module id.

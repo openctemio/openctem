@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useId, useState } from 'react'
+import { useCallback, useEffect, useId, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useTranslation } from '@/context/i18n-provider'
+import { SettingsSaveBar } from '@/features/shared/components/settings-save-bar'
 import { TonePill } from '@/features/shared/components/tone-pill'
 import { saveCaptcha, verifyCaptchaSecret } from '../api/use-platform-settings'
 import type { CaptchaSettings } from '../types'
@@ -44,11 +45,13 @@ export function CaptchaSettingsForm({ settings, canEdit, onSaved }: CaptchaSetti
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [checking, setChecking] = useState(false)
 
-  useEffect(() => {
+  // The saved values: on load, after a save and on Discard.
+  const reset = useCallback(() => {
     setSiteKey(settings.site_key)
     setSecret('')
     setClearSecret(false)
   }, [settings])
+  useEffect(reset, [reset])
 
   const dirty = siteKey.trim() !== settings.site_key || secret !== '' || clearSecret
   const turningOff = clearSecret && siteKey.trim() === ''
@@ -174,9 +177,12 @@ export function CaptchaSettingsForm({ settings, canEdit, onSaved }: CaptchaSetti
                 {t('admin.captcha.check', 'Check the secret key')}
               </Button>
               {!locked && (
-                <Button onClick={() => setConfirmOpen(true)} disabled={!dirty}>
-                  {t('admin.settings.save', 'Save')}
-                </Button>
+                <SettingsSaveBar
+                  className="basis-full"
+                  dirty={dirty}
+                  onSave={() => setConfirmOpen(true)}
+                  onDiscard={reset}
+                />
               )}
             </div>
           )}

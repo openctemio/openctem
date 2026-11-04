@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
-import { Building2, KeyRound, Link2, Loader2 } from 'lucide-react'
+import { KeyRound, Link2, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { IconGithub, IconGoogle, IconMicrosoft } from '@/assets/brand-icons'
@@ -24,6 +24,7 @@ import {
 } from '../api/use-sign-in-methods'
 import { LINK_PROVIDERS, readLinkResult, type LinkProvider } from '../lib/link-result'
 import { linkProofFrom } from '../lib/link-proof'
+import { SignInMethodRow } from './sign-in-method-row'
 
 const PROVIDER_ICON: Record<LinkProvider, typeof IconGoogle> = {
   google: IconGoogle,
@@ -49,7 +50,8 @@ function errorCode(err: unknown): string | undefined {
  * authentication is off); a recent sign-in does not count. An account with
  * neither is told to turn on two-factor authentication first. The account's
  * last way to sign in cannot be removed. Hidden when the platform offers no
- * social sign-in.
+ * social sign-in. An organization's single sign-on is listed by
+ * OrganizationSignInCard.
  */
 export function SignInMethodsCard() {
   const { t } = useTranslation()
@@ -93,7 +95,6 @@ export function SignInMethodsCard() {
 
   if (isError || (!isLoading && !methods)) return null
   const social = methods?.identities.filter((m) => m.provider !== 'organization') ?? []
-  const organization = methods?.identities.filter((m) => m.provider === 'organization') ?? []
   const shown = LINK_PROVIDERS.filter(
     (p) => methods?.available.includes(p) || social.some((m) => m.provider === p)
   )
@@ -151,7 +152,7 @@ export function SignInMethodsCard() {
   }
 
   return (
-    <Card data-testid="sign-in-methods-card">
+    <Card id="sign-in-methods" className="scroll-mt-4" data-testid="sign-in-methods-card">
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Link2 className="h-5 w-5" />
@@ -173,95 +174,72 @@ export function SignInMethodsCard() {
         ) : (
           <ul className="divide-y rounded-md border">
             {methods?.password && (
-              <li className="flex items-center justify-between gap-4 p-4">
-                <div className="flex items-center gap-3">
-                  <KeyRound className="h-5 w-5 text-muted-foreground" />
-                  <span className="font-medium">
-                    {t('account.signInMethods.password', 'Password')}
-                  </span>
-                </div>
-                <Badge variant="secondary">{t('account.signInMethods.inUse', 'In use')}</Badge>
-              </li>
+              <SignInMethodRow
+                icon={<KeyRound className="text-muted-foreground" />}
+                title={t('account.signInMethods.password', 'Password')}
+                action={
+                  <Badge variant="secondary">{t('account.signInMethods.inUse', 'In use')}</Badge>
+                }
+              />
             )}
             {shown.map((provider) => {
               const Icon = PROVIDER_ICON[provider]
               const linked = social.find((m) => m.provider === provider)
+              const lines = [
+                linked
+                  ? t('account.signInMethods.linkedOn', 'Linked {date}', {
+                      date: formatDateSafe(linked.created_at),
+                    })
+                  : t('account.signInMethods.notLinked', 'Not linked'),
+              ]
+              if (linked && !linked.unlinkable) {
+                lines.push(
+                  t(
+                    'account.signInMethods.onlyMethod',
+                    'This is your only way to sign in, so it cannot be removed.'
+                  )
+                )
+              }
               return (
-                <li
+                <SignInMethodRow
                   key={provider}
-                  className="flex items-center justify-between gap-4 p-4"
-                  data-testid={`sign-in-method-${provider}`}
-                >
-                  <div className="flex min-w-0 items-center gap-3">
-                    <Icon className="h-5 w-5 shrink-0" />
-                    <div className="min-w-0 space-y-0.5">
-                      <span className="font-medium">{PROVIDER_NAME[provider]}</span>
-                      <p className="text-sm text-muted-foreground">
-                        {linked
-                          ? t('account.signInMethods.linkedOn', 'Linked {date}', {
-                              date: formatDateSafe(linked.created_at),
-                            })
-                          : t('account.signInMethods.notLinked', 'Not linked')}
-                      </p>
-                      {linked && !linked.unlinkable && (
-                        <p className="text-sm text-muted-foreground">
-                          {t(
-                            'account.signInMethods.onlyMethod',
-                            'This is your only way to sign in, so it cannot be removed.'
-                          )}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                  {linked ? (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="shrink-0 text-destructive hover:text-destructive"
-                      disabled={!linked.unlinkable}
-                      onClick={() => setToUnlink(linked)}
-                      aria-label={t('account.signInMethods.unlinkProvider', 'Unlink {provider}', {
-                        provider: PROVIDER_NAME[provider],
-                      })}
-                    >
-                      {t('account.signInMethods.unlink', 'Unlink')}
-                    </Button>
-                  ) : (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="shrink-0"
-                      disabled={linking !== null}
-                      onClick={() => setToLink(provider)}
-                      aria-label={t('account.signInMethods.linkProvider', 'Link {provider}', {
-                        provider: PROVIDER_NAME[provider],
-                      })}
-                    >
-                      {linking === provider && <Loader2 className="h-4 w-4 animate-spin" />}
-                      {t('account.signInMethods.link', 'Link')}
-                    </Button>
-                  )}
-                </li>
+                  testId={`sign-in-method-${provider}`}
+                  icon={<Icon />}
+                  title={PROVIDER_NAME[provider]}
+                  lines={lines}
+                  action={
+                    linked ? (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="shrink-0 text-destructive hover:text-destructive"
+                        disabled={!linked.unlinkable}
+                        onClick={() => setToUnlink(linked)}
+                        aria-label={t('account.signInMethods.unlinkProvider', 'Unlink {provider}', {
+                          provider: PROVIDER_NAME[provider],
+                        })}
+                      >
+                        {t('account.signInMethods.unlink', 'Unlink')}
+                      </Button>
+                    ) : (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="shrink-0"
+                        disabled={linking !== null}
+                        onClick={() => setToLink(provider)}
+                        aria-label={t('account.signInMethods.linkProvider', 'Link {provider}', {
+                          provider: PROVIDER_NAME[provider],
+                        })}
+                      >
+                        {linking === provider && <Loader2 className="h-4 w-4 animate-spin" />}
+                        {t('account.signInMethods.link', 'Link')}
+                      </Button>
+                    )
+                  }
+                />
               )
             })}
-            {organization.map((m) => (
-              <li key={m.id} className="flex items-center justify-between gap-4 p-4">
-                <div className="flex items-center gap-3">
-                  <Building2 className="h-5 w-5 text-muted-foreground" />
-                  <div className="space-y-0.5">
-                    <span className="font-medium">
-                      {t('account.signInMethods.organization', 'Organization single sign-on')}
-                    </span>
-                    <p className="text-sm text-muted-foreground">
-                      {t(
-                        'account.signInMethods.organizationManaged',
-                        'Managed by your organization'
-                      )}
-                    </p>
-                  </div>
-                </div>
-              </li>
-            ))}
           </ul>
         )}
       </CardContent>

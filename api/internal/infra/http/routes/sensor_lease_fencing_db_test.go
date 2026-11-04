@@ -48,19 +48,19 @@ func TestOrgResults_StatedEpochMustBeCurrent(t *testing.T) {
 
 	notFound := ingestProblem(string(protov2.ProblemCommandNotFound))
 	rid := newReportID()
-	resp, raw := h.putBound(s.key, cmd, rid, 1, v2Segment("semgrep", "1.0", "epoch-old"))
+	resp, raw := h.putBound(s.key, cmd, rid, 1, v2Segment("semgrep", "2.0", "epoch-old"))
 	h.want(resp, raw, http.StatusNotFound, notFound)
 	if _, n := h.reportTenant(s.id, rid); n != 0 {
 		t.Fatal("a report of an old epoch was stored")
 	}
-	resp, raw = h.putBound(s.key, cmd, newReportID(), 2, v2Segment("semgrep", "1.0", "epoch-current"))
+	resp, raw = h.putBound(s.key, cmd, newReportID(), 2, v2Segment("semgrep", "2.0", "epoch-current"))
 	h.want(resp, raw, 202, "")
-	resp, raw = h.putBound(s.key, cmd, newReportID(), -1, v2Segment("semgrep", "1.0", "epoch-none"))
+	resp, raw = h.putBound(s.key, cmd, newReportID(), -1, v2Segment("semgrep", "2.0", "epoch-none"))
 	h.want(resp, raw, 202, "")
 
 	// Another tenant's sensor stating the right epoch gets nothing either.
 	other := h.newSensor(h.newTenant(), "other")
-	resp, raw = h.putBound(other.key, cmd, newReportID(), 2, v2Segment("semgrep", "1.0", "epoch-cross"))
+	resp, raw = h.putBound(other.key, cmd, newReportID(), 2, v2Segment("semgrep", "2.0", "epoch-cross"))
 	h.want(resp, raw, http.StatusNotFound, notFound)
 }
 
@@ -93,7 +93,7 @@ func TestOrgResults_QueuedReportOfATakenBackRunIsDropped(t *testing.T) {
 			h.holdCommand(cmd, a.id, 3)
 			rule := "fence-" + shared.NewID().String()
 			rid := newReportID()
-			resp, raw := h.putBound(a.key, cmd, rid, -1, v2Segment("semgrep", "1.0", rule))
+			resp, raw := h.putBound(a.key, cmd, rid, -1, v2Segment("semgrep", "2.0", rule))
 			h.want(resp, raw, 202, "")
 			c.after(cmd)
 			h.processReports(a.id)
@@ -174,7 +174,7 @@ func TestSharedResults_QueuedReportOfAnOlderEpochIsDropped(t *testing.T) {
 	job := h.sharedJob(h.tenantID, a.id, 3)
 	rule := "shared-epoch-" + shared.NewID().String()
 	rid := newReportID()
-	resp, raw := h.putBound(a.key, job, rid, 3, v2Segment("semgrep", "1.0", rule))
+	resp, raw := h.putBound(a.key, job, rid, 3, v2Segment("semgrep", "2.0", rule))
 	h.want(resp, raw, 202, "")
 	if _, err := h.db.ExecContext(context.Background(), `UPDATE commands SET lease_epoch = 4 WHERE id = $1`, job); err != nil {
 		t.Fatal(err)

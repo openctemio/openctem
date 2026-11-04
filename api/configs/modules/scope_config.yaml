@@ -17,6 +17,3 @@
     - ProgramAssignmentController
     - ProgramFeedController
     - ProgramSyncController
-    - ScopeAttestationController
-    - ScopeEffectsController
-    - ScopePendingController

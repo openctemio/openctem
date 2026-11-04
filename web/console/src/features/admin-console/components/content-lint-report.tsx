@@ -58,9 +58,13 @@ export function ContentLintReportView({ report }: { report: ContentLintReport })
         })}
         {(report.excluded ?? 0) > 0 && (
           <span className="ms-1 font-medium text-warning">
-            {t('admin.cp.excluded', '{count} file(s) left out because they failed lint.', {
-              count: report.excluded ?? 0,
-            })}
+            {t(
+              'admin.cp.excluded',
+              '{count, plural, one {# file} other {# files}} left out because they failed lint.',
+              {
+                count: report.excluded ?? 0,
+              }
+            )}
           </span>
         )}
       </p>

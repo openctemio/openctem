@@ -145,7 +145,6 @@ export const BUSINESS_CONTEXT_SECTION_TABS: readonly SectionTab[] = [
     labelKey: 'nav.tab.crownJewels',
     href: '/crown-jewels',
     icon: Crown,
-    module: 'crown_jewels',
     permission: Permission.AssetsRead,
   },
   {
@@ -430,6 +429,16 @@ export const ATTACK_SURFACE_SECTION_TABS: readonly SectionTab[] = [
     labelKey: 'nav.tab.overview',
     href: '/attack-surface',
     icon: Globe,
+    module: 'attack_surface',
+    permission: Permission.AssetsRead,
+  },
+  {
+    // The posture grade of the external surface, what takes points away and
+    // what to fix to reach the next grade (api/docs/architecture/easm-posture.md).
+    label: 'Posture',
+    labelKey: 'nav.tab.posture',
+    href: '/attack-surface/posture',
+    icon: Gauge,
     module: 'attack_surface',
     permission: Permission.AssetsRead,
   },

@@ -1,16 +1,16 @@
 'use client'
 
-import { useEffect, useId, useState } from 'react'
+import { useCallback, useEffect, useId, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { ConfirmDialog } from '@/components/confirm-dialog'
-import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Switch } from '@/components/ui/switch'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { useTranslation } from '@/context/i18n-provider'
+import { SettingsSaveBar } from '@/features/shared/components/settings-save-bar'
 import { RelativeTime } from '@/features/shared'
 import type { SignupPolicyResponse } from '@/lib/api/generated'
 import { AdminApiError } from '@console/lib/admin-api/client'
@@ -72,11 +72,13 @@ export function SignupPolicyForm({ policy, canEdit, onSaved }: SignupPolicyFormP
   const [busy, setBusy] = useState(false)
   const codeId = useId()
 
-  useEffect(() => {
+  // The saved values: on load, after a save and on Discard.
+  const reset = useCallback(() => {
     setMode((policy.mode as Mode) ?? 'admin_only')
     setAccounts((policy.accounts as Accounts) ?? 'closed')
     setRequestAccess(!!policy.request_access)
-  }, [policy.mode, policy.accounts, policy.request_access, policy.version])
+  }, [policy])
+  useEffect(reset, [reset])
 
   // Organization self-service needs open account sign-up.
   const chooseAccounts = (a: Accounts) => {
@@ -252,9 +254,13 @@ export function SignupPolicyForm({ policy, canEdit, onSaved }: SignupPolicyFormP
               )}
             </p>
             {canEdit && (
-              <Button onClick={openConfirm} disabled={!dirty || busy}>
-                {t('admin.signup.save')}
-              </Button>
+              <SettingsSaveBar
+                className="basis-full"
+                dirty={dirty}
+                saving={busy}
+                onSave={openConfirm}
+                onDiscard={reset}
+              />
             )}
           </div>
           {!canEdit && (

@@ -235,3 +235,41 @@ func DetectCycle() []string {
 	}
 	return nil
 }
+
+// InheritOffFromHardDependencies marks off every module that hard-requires a
+// module that is off, and every sub-module of a parent that is off, until
+// nothing changes: a module cannot be on while what it needs is off (RFC-064:
+// the effective set is closed over hard dependencies). off maps a module id to
+// the reason it is off and is updated in place; a module inherits the reason of
+// the module it needs. Core modules are never marked. It returns, for every
+// module it marked, the module whose state it took.
+func InheritOffFromHardDependencies(off map[string]string) map[string]string {
+	from := map[string]string{}
+	for changed := true; changed; {
+		changed = false
+		for _, d := range Registry {
+			if d.Core || off[d.ID] != "" {
+				continue
+			}
+			src := ""
+			if d.Parent != "" && off[d.Parent] != "" {
+				src = d.Parent
+			}
+			for _, dep := range d.Depends {
+				if src == "" && dep.Type == DependencyHard && off[dep.ModuleID] != "" {
+					src = dep.ModuleID
+				}
+			}
+			if src == "" {
+				continue
+			}
+			off[d.ID] = off[src]
+			if root, ok := from[src]; ok {
+				src = root
+			}
+			from[d.ID] = src
+			changed = true
+		}
+	}
+	return from
+}

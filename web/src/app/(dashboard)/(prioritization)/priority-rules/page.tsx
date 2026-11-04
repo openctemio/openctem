@@ -3,7 +3,6 @@
 import Link from '@/components/link'
 import { Scale } from 'lucide-react'
 import { useHasPermission } from '@/lib/permissions'
-import { useModuleEnabled } from '@/features/integrations/api/use-tenant-modules'
 
 import { useCallback, useMemo, useState } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
@@ -43,10 +42,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Plus, Pencil, Trash2, Info, X, FlaskConical, AlertCircle, Loader2 } from 'lucide-react'
+import { Plus, Pencil, Trash2, Info, X, FlaskConical, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { get, post, put, del } from '@/lib/api/client'
-import { getErrorMessage } from '@/lib/api/error-handler'
 import { Can, Permission } from '@/lib/permissions'
 import { PriorityClassBadge } from '@/features/findings/components/priority-class-badge'
 import type { PriorityClass } from '@/features/findings/types/finding.types'
@@ -175,8 +173,8 @@ const emptyForm: FormState = {
 export default function PriorityRulesPage() {
   const { t } = useTranslation()
   const mayRiskScoring = useHasPermission(Permission.TeamUpdate)
-  const riskScoringOn = useModuleEnabled('risk_scoring')
-  const canSeeRiskScoring = mayRiskScoring && riskScoringOn
+  // Risk scoring is always on: only the permission decides.
+  const canSeeRiskScoring = mayRiskScoring
   const { data, error, mutate, isLoading } = useSWR<ListResponse>(
     '/api/v1/priority-rules',
     (url: string) => get<ListResponse>(url)
@@ -638,25 +636,7 @@ export default function PriorityRulesPage() {
           </AlertDescription>
         </Alert>
 
-        {error ? (
-          <Alert variant="destructive">
-            <AlertCircle className="h-4 w-4" />
-            <AlertTitle>
-              {t('prioritization.rules.loadFailed', 'Failed to load priority rules')}
-            </AlertTitle>
-            <AlertDescription>
-              <p>
-                {getErrorMessage(
-                  error,
-                  t('prioritization.rules.loadFailedDesc', 'The priority rules request failed.')
-                )}
-              </p>
-              <Button variant="outline" size="sm" className="mt-2" onClick={() => void mutate()}>
-                {t('common.retry', 'Retry')}
-              </Button>
-            </AlertDescription>
-          </Alert>
-        ) : isLoading ? (
+        {isLoading ? (
           <div className="space-y-2">
             <Skeleton className="h-9 w-full max-w-sm" />
             <Skeleton className="h-64 w-full rounded-md" />
@@ -665,6 +645,9 @@ export default function PriorityRulesPage() {
           <DataTable
             columns={columns}
             data={rules}
+            error={error}
+            onRetry={() => void mutate()}
+            errorTitle={t('prioritization.rules.errorTitle', 'priority rules')}
             searchPlaceholder={t('prioritization.rules.search', 'Search rules…')}
             emptyMessage={t('prioritization.rules.empty.title', 'No priority rules yet')}
             emptyDescription={t(

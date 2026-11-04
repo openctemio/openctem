@@ -60,7 +60,9 @@ import (
 //	                                            reject; audited)
 //	/admin/tenants            any admin         create: ops_admin+ + step-up;
 //	                                            first owner: ops_admin+ + fresh
-//	                                            step-up (recovery: super_admin +
+//	                                            step-up; owner invitation resend
+//	                                            or cancel: ops_admin+ + step-up
+//	                                            (recovery: super_admin +
 //	                                            reason + fresh code in the body);
 //	                                            SSO writes: super_admin + step-up
 //	                                            (audited)
@@ -290,6 +292,8 @@ func registerAdminRoutes(
 
 	// Build identity for the console's Help > About (any admin role).
 	router.GET("/api/v1/admin/version", handler.Version, adminMiddlewares...)
+	// Third-party notices for the console's About > Open-source licenses.
+	router.GET("/api/v1/admin/licenses", licensesHandler(h).List, adminMiddlewares...)
 
 	// The console overview's attention queue (any admin role): counts only,
 	// no tenant content and no administrator emails.
@@ -382,7 +386,13 @@ func registerAdminRoutes(
 		router.Group("/api/v1/admin/settings/email", func(r Router) {
 			r.GET("/", h.AdminEmail.Get)
 			r.PUT("/", h.AdminEmail.Update, freshStepUp("settings.email"))
-			r.POST("/test", h.AdminEmail.SendTest)
+			// Each call sends a real message through the stored server:
+			// bounded per administrator.
+			testMW := []Middleware{}
+			if h.AdminEmailTestLimiter != nil {
+				testMW = append(testMW, h.AdminEmailTestLimiter.WriteMiddleware())
+			}
+			r.POST("/test", h.AdminEmail.SendTest, testMW...)
 		}, adminMiddlewares...)
 	}
 
@@ -640,6 +650,14 @@ func registerAdminRoutes(
 			// organization to a person: step-up.
 			r.POST("/{tenantId}/users", h.AdminOrganization.CreateUser,
 				with([]Middleware{freshStepUp("organization.owner_create"), scope}, bypass("owner create or recovery", false), audit("organization.user_create"))...)
+			// The ownership invitation of an organization waiting for its
+			// first owner: send again or withdraw (step-up, audited). The
+			// invitation itself is created with the organization, or by the
+			// first-owner route above for an existing account.
+			r.POST("/{tenantId}/owner-invitation/resend", h.AdminOrganization.ResendOwnerInvitation,
+				with([]Middleware{stepUp("organization.owner_invitation"), scope}, audit("organization.owner_invitation_resend"))...)
+			r.DELETE("/{tenantId}/owner-invitation", h.AdminOrganization.CancelOwnerInvitation,
+				with([]Middleware{stepUp("organization.owner_invitation"), scope}, audit("organization.owner_invitation_cancel"))...)
 
 			// Suspend / lift (docs/architecture/organization-suspension.md):
 			// cuts or restores every credential of the organization at once.
@@ -660,8 +678,12 @@ func registerAdminRoutes(
 
 			if h.SAML != nil {
 				r.GET("/{tenantId}/sso/saml", h.SAML.GetConfig, read...)
+				r.GET("/{tenantId}/sso/saml/sp-metadata", h.SAML.SPMetadata, read...)
 				r.PUT("/{tenantId}/sso/saml", h.SAML.SetConfig, write("organization.saml_update")...)
 				r.DELETE("/{tenantId}/sso/saml", h.SAML.DeleteConfig, write("organization.saml_delete")...)
+				// Reads the IdP's metadata for the form (fetches the URL under
+				// the SSRF guard); stores nothing, the save above does.
+				r.POST("/{tenantId}/sso/saml/idp-metadata", h.SAML.ImportIdPMetadata, write("organization.saml_metadata_import")...)
 			}
 			// SAML and identity-provider creates/updates from here wait for an
 			// owner of the organization (unless it has no owner yet); the

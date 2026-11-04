@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/internal/app/certmonitor"
 	"github.com/openctemio/openctem/api/internal/app/easm"
@@ -74,12 +74,12 @@ func TestIngest_CertificateSANPromotion(t *testing.T) {
 
 	report := func() *ctis.Report {
 		na := time.Now().Add(120 * 24 * time.Hour).UTC()
-		return &ctis.Report{Version: "1.0", Tool: &ctis.Tool{Name: "httpx"},
-			Metadata: ctis.ReportMetadata{ID: "rep-san-" + shared.NewID().String(), Timestamp: time.Now().UTC()},
-			Assets: []ctis.Asset{{ID: "cert", Type: ctis.AssetTypeCertificate, Value: "aa:bb:cc:" + shared.NewID().String()[:8],
+		return &ctis.Report{Version: ctis.SchemaVersion, Tool: &ctis.Tool{Name: "httpx"},
+			Metadata: ctis.ReportMetadata{ID: ctis.NewReportID(), GeneratedAt: time.Now().UTC()},
+			Assets: []ctis.Asset{{ID: "cert", Type: ctis.AssetTypeCertificate, Value: certFingerprintOf(shared.NewID().String()),
 				Technical: &ctis.AssetTechnical{Certificate: &ctis.CertificateTechnical{
 					SubjectCN: "WWW." + root + ".",
-					SANs: []string{"www." + root, "*.wild." + root, "cdn.foreign-cdn.net", root, "198.51.100.1",
+					SubjectAltNames: []string{"www." + root, "*.wild." + root, "cdn.foreign-cdn.net", root, "198.51.100.1",
 						"keep." + root, "vpn." + root, "secret." + root, "dead." + root},
 					IssuerOrg: "Test CA", NotAfter: &na,
 				}}}}}
@@ -88,7 +88,10 @@ func TestIngest_CertificateSANPromotion(t *testing.T) {
 		t.Helper()
 		agt := &sensor.Sensor{ID: sensorID, TenantID: &tenant, Type: sensor.SensorTypeWorker, Status: sensor.SensorStatusActive}
 		out, err := svc.Ingest(ctx, agt, ingest.Input{Report: report()})
-		if err != nil || len(out.Errors) > 0 {
+		if err != nil {
+			t.Fatalf("ingest: %v", err)
+		}
+		if len(out.Errors) > 0 {
 			t.Fatalf("Ingest: %v %v", err, out.Errors)
 		}
 	}

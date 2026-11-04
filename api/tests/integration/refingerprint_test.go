@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/internal/app/refingerprint"
@@ -100,7 +100,7 @@ func TestRefingerprint_DryRunEqualsRunAndMergesKeepState(t *testing.T) {
 		}
 	}
 	var version int
-	if err := f.db.QueryRow(`SELECT fingerprint_version FROM findings WHERE id = $1`, old.String()).Scan(&version); err != nil || version != 2 {
+	if err := f.db.QueryRow(`SELECT fingerprint_version FROM findings WHERE id = $1`, old.String()).Scan(&version); err != nil || version != vulnerability.IdentityVersion {
 		t.Fatalf("survivor version %d (%v)", version, err)
 	}
 	if f.state(other).fingerprint == "v1-"+other.String() {
@@ -181,7 +181,7 @@ func TestRefingerprint_ResumableAndPausesAutoResolve(t *testing.T) {
 	}
 	for _, id := range ids {
 		var v int
-		if err := f.db.QueryRow(`SELECT fingerprint_version FROM findings WHERE id = $1`, id.String()).Scan(&v); err != nil || v != 2 {
+		if err := f.db.QueryRow(`SELECT fingerprint_version FROM findings WHERE id = $1`, id.String()).Scan(&v); err != nil || v != vulnerability.IdentityVersion {
 			t.Fatalf("finding %s at version %d", id, v)
 		}
 	}

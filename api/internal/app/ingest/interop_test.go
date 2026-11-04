@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -47,56 +47,58 @@ func nessusInteropFinding() ctis.Finding {
 	cred := true
 	return ctis.Finding{
 		Type: ctis.FindingTypeVulnerability, Title: "OpenSSH regreSSHion", Severity: ctis.SeverityHigh,
-		AssetRef: "h", Network: &ctis.NetworkLocation{Port: 22, Protocol: "tcp"},
+		AssetRef: "h", Network: &ctis.NetworkLocation{Port: 22, Transport: "tcp"},
 		Vulnerability: &ctis.VulnerabilityDetails{
-			CVSSScore: 8.1, CVSSVersion: "3.1", CVSSVector: "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:H/A:H", CVSSSource: "nvd",
 			IDs: []ctis.VulnerabilityID{{Type: ctis.VulnerabilityIDCVE, ID: "cve-2024-6387"}, {Type: ctis.VulnerabilityIDVendor, ID: "USN-6859-1"}},
 		},
-		Native: &ctis.NativeIdentity{Scheme: ctis.NativeSchemeNessus, VulnID: "201194", Severity: "3", Credentialed: &cred},
-		Scores: []ctis.Score{{System: ctis.ScoreSystemCVSS, Version: "4.0", Vector: "CVSS:4.0/AV:N", Value: &v, Source: "vendor"}},
+		Native: &ctis.NativeIdentity{Scheme: ctis.NativeSchemeNessus, VulnID: "201194", Severity: "3", IsCredentialed: &cred},
+		Scores: []ctis.Score{{System: ctis.ScoreSystemCVSS, Version: "4.0", Vector: "CVSS:4.0/AV:N", Value: &v, Source: "vendor"},
+			cvssScore("3.1", "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:H/A:H", 8.1, "nvd")},
 	}
 }
 
 func TestFillFromInterop(t *testing.T) {
+	// The rule comes from the native id; the CVE stays in the typed ids.
 	f := nessusInteropFinding()
 	fillFromInterop(&f)
-	assert.Equal(t, "CVE-2024-6387", f.Vulnerability.CVEID, "the CVE comes from the typed ids")
-	assert.Equal(t, []string{"CVE-2024-6387"}, f.Vulnerability.CVEIDs)
 	assert.Equal(t, "201194", f.RuleID, "the rule comes from the native id")
+	assert.Equal(t, []string{"CVE-2024-6387"}, findingCVEs(f.Vulnerability), "the CVE comes from the typed ids")
 
-	// A finding that already names its CVE and rule keeps them; the other
-	// CVEs of its typed ids join cve_ids, so it splits per CVE (D3, D20)
-	// and the copy for its own CVE keeps its key.
+	// A finding that already names its rule keeps it.
 	g := nessusInteropFinding()
 	g.RuleID = "nessus-201194"
-	g.Vulnerability.CVEID = "CVE-2023-0001"
 	fillFromInterop(&g)
-	assert.Equal(t, "CVE-2023-0001", g.Vulnerability.CVEID)
-	assert.Equal(t, []string{"CVE-2023-0001", "CVE-2024-6387"}, g.Vulnerability.CVEIDs)
 	assert.Equal(t, "nessus-201194", g.RuleID)
 
 	// No CVE and no native id: the preferred other id is the rule.
-	h := ctis.Finding{Vulnerability: &ctis.VulnerabilityDetails{Package: "x", IDs: []ctis.VulnerabilityID{{Type: ctis.VulnerabilityIDGHSA, ID: "GHSA-JFH8-C2JP-5V3Q"}}}}
+	h := ctis.Finding{Vulnerability: &ctis.VulnerabilityDetails{PackageName: "x", IDs: []ctis.VulnerabilityID{{Type: ctis.VulnerabilityIDGHSA, ID: "GHSA-JFH8-C2JP-5V3Q"}}}}
 	fillFromInterop(&h)
 	assert.Equal(t, "GHSA-jfh8-c2jp-5v3q", h.RuleID)
+
+	// A finding that names a CVE and no native id is keyed on the CVE: no rule.
+	c := ctis.Finding{Vulnerability: cveVuln("CVE-2024-1111")}
+	fillFromInterop(&c)
+	assert.Empty(t, c.RuleID)
 	fillFromInterop(nil)
 }
 
-// A report that already sets cve_id and rule_id keeps exactly its identity
-// key when it also sends the CTIS 1.4 members, so no stored fingerprint
-// changes; and a report that sends the CVE only in vulnerability.ids gets
-// the same key as one that sends it in cve_id.
+// A report that already sets rule_id and its CVE keeps exactly its identity
+// key when it also sends the interop members, so no stored fingerprint
+// changes; and a report that sends the CVE in a different spelling gets the
+// same key.
 func TestInterop_IdentityUnchanged(t *testing.T) {
 	assetID := shared.NewID()
 	legacy := ctis.Finding{Type: ctis.FindingTypeVulnerability, Title: "OpenSSH", Severity: ctis.SeverityHigh,
-		RuleID: "201194", Network: &ctis.NetworkLocation{Port: 22, Protocol: "tcp"},
-		Vulnerability: &ctis.VulnerabilityDetails{CVEID: "CVE-2024-6387"}}
+		RuleID: "201194", Network: &ctis.NetworkLocation{Port: 22, Transport: "tcp"},
+		Vulnerability: cveVuln("CVE-2024-6387")}
 	withInterop := legacy
 	vv := *legacy.Vulnerability
 	withInterop.Vulnerability = &vv
-	withInterop.Vulnerability.IDs = []ctis.VulnerabilityID{{Type: ctis.VulnerabilityIDCVE, ID: "CVE-2024-9999"}}
+	withInterop.Vulnerability.IDs = append(append([]ctis.VulnerabilityID{}, vv.IDs...),
+		ctis.VulnerabilityID{Type: ctis.VulnerabilityIDVendor, ID: "USN-6859-1", Source: "ubuntu"})
 	withInterop.Native = &ctis.NativeIdentity{VulnID: "999999"}
 	fillFromInterop(&withInterop)
+	assert.Equal(t, "201194", withInterop.RuleID)
 
 	k1, ok1 := identityV2(assetID, &legacy, "", 0)
 	k2, ok2 := identityV2(assetID, &withInterop, "", 0)
@@ -112,7 +114,7 @@ func TestInterop_IdentityUnchanged(t *testing.T) {
 	fillFromInterop(&onlyIDs)
 	k3, ok3 := identityV2(assetID, &onlyIDs, "", 0)
 	require.True(t, ok3)
-	assert.Equal(t, k1.Fingerprint(), k3.Fingerprint(), "the CVE from ids keys the finding like cve_id")
+	assert.Equal(t, k1.Fingerprint(), k3.Fingerprint(), "the CVE from ids keys the finding the same whatever its spelling")
 }
 
 func TestInteropUpdate(t *testing.T) {
@@ -123,7 +125,7 @@ func TestInteropUpdate(t *testing.T) {
 	require.False(t, u.Data.IsEmpty())
 	require.NotNil(t, u.Data.Native)
 	assert.Equal(t, "201194", u.Data.Native.VulnID)
-	require.Len(t, u.Data.Scores, 2, "the 4.0 score and the legacy 3.1 score")
+	require.Len(t, u.Data.Scores, 2, "the 4.0 score and the 3.1 score")
 	assert.Equal(t, "4.0", u.Data.Scores[0].Version)
 	assert.Equal(t, "3.1", u.Data.Scores[1].Version)
 	assert.Equal(t, "nvd", u.Data.Scores[1].Source)
@@ -133,9 +135,12 @@ func TestInteropUpdate(t *testing.T) {
 	assert.Equal(t, "remote", u.Data.SourceExtra["plugin_type"])
 	assert.Equal(t, "affected", u.Data.VEX.Status)
 
-	// A legacy finding still gets its single scores as a list.
-	legacy := ctis.Finding{Vulnerability: &ctis.VulnerabilityDetails{CVSSScore: 7.5, CVSSVersion: "3.1", VPRScore: 6.1}}
-	u = interopUpdate("fp", &legacy)
+	// Several scores of one finding are all kept.
+	multi := ctis.Finding{Scores: []ctis.Score{
+		cvssScore("3.1", "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H", 7.5, "nvd"),
+		{System: ctis.ScoreSystemVendor, Value: ptrF(6.1), Source: "tenable"},
+	}}
+	u = interopUpdate("fp", &multi)
 	assert.Len(t, u.Data.Scores, 2)
 }
 
@@ -155,7 +160,7 @@ func runInterop(t *testing.T, mode VEXMode, scope *alterScope, findings []ctis.F
 	p := NewFindingProcessor(repo, nil, nil, logger.NewNop())
 	p.vexMode = mode
 	out := &Output{}
-	report := &ctis.Report{Version: "1.4", Tool: &ctis.Tool{Name: "trivy"}, Findings: findings}
+	report := &ctis.Report{Version: ctis.SchemaVersion, Tool: &ctis.Tool{Name: "trivy"}, Findings: findings}
 	err := p.processBatch(context.Background(), newTestSensor(t, tenantID), tenantID, report,
 		map[string]shared.ID{"h": interopHost}, branch.BranchTypeRules{}, out, map[string]shared.ID{}, false, scope)
 	require.NoError(t, err)
@@ -165,7 +170,7 @@ func runInterop(t *testing.T, mode VEXMode, scope *alterScope, findings []ctis.F
 func vexFinding(status ctis.VEXStatus, justification ctis.VEXJustification) ctis.Finding {
 	return ctis.Finding{
 		Type: ctis.FindingTypeVulnerability, Title: "xz backdoor", Severity: ctis.SeverityCritical, AssetRef: "h",
-		Vulnerability: &ctis.VulnerabilityDetails{Package: "xz-utils", PURL: "pkg:deb/ubuntu/xz-utils@5.6.0", CVEID: "CVE-2024-3094"},
+		Vulnerability: &ctis.VulnerabilityDetails{PackageName: "xz-utils", PURL: "pkg:deb/ubuntu/xz-utils@5.6.0", IDs: cveIDs("CVE-2024-3094")},
 		VEX:           &ctis.VEX{Status: status, Justification: justification, Source: "https://vex.example/doc.json"},
 	}
 }

@@ -355,7 +355,7 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 | `ASSET_COVERAGE_ENABLED` | bool | `true` |  |  | The asset coverage loop, platform-wide: every asset gets the capabilities its type needs. |
 | `ASSET_COVERAGE_DAILY_BUDGET` | int | `5000` |  |  | Most asset and capability pairs one organization's automatic coverage attempts per 24 hours. |
 | `ASSET_COVERAGE_INTERVAL` | duration | `1m` |  |  | How often the asset coverage loop runs. |
-| `FEED_CACHE_DIR` | path | `<system temp dir>/openctem-feeds` |  |  | Directory holding verified feed chunks between imports. |
+| `FEED_CACHE_DIR` | path | `<system temp dir>/openctem-feeds` |  |  | Directory holding verified feed chunks between imports, and the feed relay's local working copy of its spool (`relay/`; pod-local, rebuilt from the database). |
 | `PROGRAMFEED_DIR` | path | empty |  |  | Directory holding the newest signed public program feed bundle (a mirror or an upload). Needs `PROGRAMFEED_ROOT_KEY_ID`. |
 | `PROGRAMFEED_LOCAL_BUNDLE_DIR` | path | empty |  |  | Directory of the operator's own unsigned local-only program bundle (`programfeed build --local-only`). Read only while a platform administrator has that source enabled. |
 | `PROGRAMFEED_MIRRORS` | list | empty |  |  | Comma-separated https mirrors of the chunked program feed, tried after `PROGRAMFEED_URL`. |
@@ -381,6 +381,8 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 | `GITHUB_APP_WEB_URL` | url | empty |  |  | GitHub web base URL for GitHub Enterprise Server. Unset: github.com. |
 | `OPENCTEM_HTTPSEC_ALLOW_PRIVATE` | string | `unset` |  |  | `1` opens every private range. Honored only with `APP_ENV=development`: with any other `APP_ENV` (or none) the API refuses to start, because it would open the platform's own network to every organization. Use `OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS` instead. Any value other than empty, `0` or `1` is refused. |
 | `OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS` | string | empty |  |  | Comma-separated private ranges that outbound calls of the API (webhook and notification channels, self-hosted Jira or GitLab, an SMTP relay) may reach, for example `10.20.0.0/16`. Each entry must be a CIDR inside `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16` or `fc00::/7`, otherwise the API refuses to start. The list applies to every organization, so name only the subnets of your own services; the API refuses to start when it is set together with `SIGNUP_MODE=open`. Loopback, link-local, CGNAT and cloud metadata addresses stay blocked whatever the list says. |
+| `OPENCTEM_HTTPSEC_FEED_PROXY` | url | empty |  | yes | HTTPS proxy for the platform's own feed fetchers only (vulnerability bundles, CISA KEV, EPSS, CTEM-ID catalog, public program feed, release feed), for a network whose only way out is a proxy: `http://[user:password@]proxy.corp:3128` or `https://...`, no path or query. Requests to an https destination go through it with CONNECT (TLS stays end to end); the destination is still checked first (blocked address literals, dangerous names and names whose local answers are in a blocked range are refused; a name the local resolver cannot answer is left to the proxy). The proxy may be on a private address; loopback, link-local and metadata addresses are refused. Webhooks, integrations, identity providers and anything an organization configures never use it, and `HTTPS_PROXY`/`HTTP_PROXY` are not read. The API refuses to start on a value that is not a proxy URL. Empty (the default): direct connections. |
+| `OPENCTEM_HTTPSEC_FEED_NO_PROXY` | string | empty |  |  | Comma-separated hosts or domains (`mirror.corp.example`, `.corp.example`) that the feed fetchers reach directly even when `OPENCTEM_HTTPSEC_FEED_PROXY` is set, for example an internal bundle mirror (its private range still needs `OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS`). |
 
 ### Internal entitlements API
 
@@ -505,6 +507,7 @@ Read by the command-line tools shipped with the server (`bootstrap-admin`, `reke
 | `CONNECTOR_API_URL` | url | empty | yes |  | `openctem-sensor-relay connector`: URL of the API on the private network the opened requests are sent to. |
 | `BOOTSTRAP_SMTP_FROM_NAME` | string | empty |  |  | `bootstrap-admin`: sender name (default `BRAND_NAME`, else OpenCTEM). |
 | `BOOTSTRAP_SMTP_STARTTLS` | string | empty |  |  | `bootstrap-admin`: `false` turns STARTTLS off (default on). |
+| `BOOTSTRAP_SMTP_CA_FILE` | string | empty |  |  | `bootstrap-admin`: path of a PEM file with the internal CA certificate that signed the SMTP server's certificate, stored with the platform e-mail setting and used only to verify that server. Certificates only; a private key is refused. |
 | `ADMIN_BACKUP_EMAIL` | string | empty |  |  | `bootstrap-admin`: e-mail of the break-glass backup administrator. |
 | `ADMIN_BACKUP_NAME` | string | empty |  |  | `bootstrap-admin`: display name of the backup administrator. |
 | `SUDO_USER` | string | empty |  |  | `bootstrap-admin`: set by sudo; recorded as the OS user in its audit entries (else `USER`). |

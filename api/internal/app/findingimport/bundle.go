@@ -24,9 +24,9 @@ import (
 	"net"
 	"slices"
 
-	"github.com/openctemio/ctis"
-	"github.com/openctemio/ctis/importer"
-	"github.com/openctemio/ctis/weburl"
+	"github.com/openctemio/ctis/v2"
+	"github.com/openctemio/ctis/v2/importer"
+	"github.com/openctemio/ctis/v2/weburl"
 
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/internal/app/scopeauth"
@@ -52,7 +52,7 @@ func bundleFormat(f importer.Format) bool { return f == importer.FormatReconFTW 
 
 // assetHost is the host an imported asset names ("" for none).
 func assetHost(a *ctis.Asset) string {
-	if a.Type == ctis.AssetTypeHTTPService {
+	if a.Type == ctis.AssetTypeWebOrigin {
 		if u, err := weburl.Parse(a.Value); err == nil {
 			return u.Host
 		}
@@ -61,7 +61,8 @@ func assetHost(a *ctis.Asset) string {
 	return a.Value
 }
 
-// judgeScope sets properties.import_scope of every host asset of the bundle
+// judgeScope sets extensions["io.openctem"].import_scope of every host asset
+// of the bundle
 // from the organization's scope and returns how many are candidates. The
 // importer's own verdict (relative to the file's claimed target) is
 // replaced: only the organization's scope entries make a host in_target. A
@@ -75,7 +76,7 @@ func (s *Service) judgeScope(ctx context.Context, tenantID shared.ID, res *impor
 	seen := map[string]bool{}
 	for i := range res.Report.Assets {
 		a := &res.Report.Assets[i]
-		if _, ok := a.Properties[ingest.PropImportScope]; !ok {
+		if _, ok := a.Extensions.Get(ctis.OpenCTEMNamespace, ingest.PropImportScope); !ok {
 			continue
 		}
 		if h := assetHost(a); h != "" && !seen[h] {
@@ -96,7 +97,7 @@ func (s *Service) judgeScope(ctx context.Context, tenantID shared.ID, res *impor
 	held := map[string]bool{}
 	for i := range res.Report.Assets {
 		a := &res.Report.Assets[i]
-		if _, ok := a.Properties[ingest.PropImportScope]; !ok {
+		if _, ok := a.Extensions.Get(ctis.OpenCTEMNamespace, ingest.PropImportScope); !ok {
 			continue
 		}
 		host := assetHost(a)
@@ -107,7 +108,7 @@ func (s *Service) judgeScope(ctx context.Context, tenantID shared.ID, res *impor
 		case net.ParseIP(host) != nil:
 			verdict = ingest.ImportScopeUnknown
 		}
-		a.Properties[ingest.PropImportScope] = verdict
+		a.Extensions.Set(ctis.OpenCTEMNamespace, ingest.PropImportScope, verdict)
 		if verdict != ingest.ImportScopeIn {
 			candidates++
 			held[a.ID] = true

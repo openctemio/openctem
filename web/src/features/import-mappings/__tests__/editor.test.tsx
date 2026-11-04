@@ -55,7 +55,7 @@ const detail: ImportMappingDetail = {
     note: '',
     created_at: '2026-10-02T00:00:00Z',
     mapping: {
-      apiVersion: 'openctem.io/mapping/v1',
+      apiVersion: 'openctem.io/mapping/v2',
       source: 'csv',
       csv: { delimiter: 'auto' },
       identity: ['title'],

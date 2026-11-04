@@ -34,9 +34,13 @@ export const SUPPORT_PAGE_SIZE = 25
 
 const s = (id: string) => `/support/sessions/${encodeURIComponent(id)}`
 
-/** The live grants naming the caller. */
-export function useAdminSupportGrants() {
-  return useSWR<AdminSupportGrantList>('/support/grants', adminFetcher, {
+/**
+ * The live grants naming the caller. Not read at all while the session does
+ * not act with support access (`enabled` false): the API would refuse it and
+ * audit a refused action.
+ */
+export function useAdminSupportGrants(enabled = true) {
+  return useSWR<AdminSupportGrantList>(enabled ? '/support/grants' : null, adminFetcher, {
     revalidateOnFocus: true,
   })
 }

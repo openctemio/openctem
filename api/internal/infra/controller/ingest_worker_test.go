@@ -80,7 +80,7 @@ func (p *stubProcessor) Process(_ context.Context, _ *ingestjob.Job) ([]byte, er
 
 func newJob(t *testing.T) *ingestjob.Job {
 	t.Helper()
-	return ingestjob.NewJob(shared.NewID(), nil, "scan-1", "trivy", []byte(`{"version":"1.0"}`))
+	return ingestjob.NewJob(shared.NewID(), nil, "scan-1", "trivy", []byte(`{"version":"2.0"}`))
 }
 
 func TestIngestWorker_Success_Completes(t *testing.T) {
@@ -315,5 +315,22 @@ func TestIngestWorker_HardCapCancelsTheJob(t *testing.T) {
 	}
 	if q.renews == 0 {
 		t.Fatal("the lease was not renewed while the job ran")
+	}
+}
+
+// A panic while processing one job marks that job dead with apply_failed and
+// leaves the worker (and the process) running: before, the panic killed the
+// API and the queue handed the same job out again after every restart.
+func TestIngestWorker_PanicIsDeadNotACrash(t *testing.T) {
+	q := &stubQueue{batches: [][]*ingestjob.Job{{newJob(t)}}}
+	p := funcProcessor(func(context.Context, *ingestjob.Job) ([]byte, error) {
+		panic("runtime error: index out of range [3] with length 3") // the production crash
+	})
+	c := NewIngestWorkerController(q, p, &IngestWorkerControllerConfig{})
+	if _, err := c.Reconcile(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(q.fails) != 1 || !q.fails[0].dead || q.fails[0].public != ingestjob.ErrorApplyFailed {
+		t.Fatalf("fails = %+v, want the job dead with apply_failed", q.fails)
 	}
 }

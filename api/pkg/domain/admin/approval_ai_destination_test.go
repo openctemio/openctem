@@ -62,3 +62,20 @@ func TestPlatformEmailRelayTarget(t *testing.T) {
 		t.Fatalf("label = %q", got)
 	}
 }
+
+func TestPlatformEmailRelayTargetBindsTheCA(t *testing.T) {
+	none := PlatformEmailRelayTarget("m.example.com", 587, true, "u")
+	if none != PlatformEmailRelayTargetCA("m.example.com", 587, true, "u", "") || strings.Contains(none, "ca_fp") {
+		t.Fatalf("no CA must keep the existing target form: %s", none)
+	}
+	a := PlatformEmailRelayTargetCA("m.example.com", 587, true, "u", "AABBCC")
+	if a == none || a == PlatformEmailRelayTargetCA("m.example.com", 587, true, "u", "DDEEFF") {
+		t.Fatal("the CA fingerprint must be part of the target")
+	}
+	if !ApprovalPlatformEmailRelay.ValidTarget(a) {
+		t.Fatal("own CA target must validate")
+	}
+	if got := PlatformEmailRelayLabel(a); !strings.Contains(got, "internal CA bundle (aabbcc)") {
+		t.Fatalf("label = %q", got)
+	}
+}

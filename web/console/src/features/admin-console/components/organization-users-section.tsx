@@ -11,8 +11,9 @@ import {
   StackedCell,
 } from '@/features/shared'
 import { useOrganizationUsers } from '../api/use-admin-organizations'
-import type { AdminOrganizationUser } from '../types'
+import type { AdminOrganizationUser, AdminOwnerInvitation } from '../types'
 import { CreateFirstOwnerDialog } from './create-first-owner-dialog'
+import { OwnerInvitationPanel } from './owner-invitation'
 import { OwnerRecoveryDialog } from './owner-recovery-dialog'
 
 function useUserColumns(): ColumnDef<AdminOrganizationUser>[] {
@@ -73,6 +74,7 @@ export function OrganizationUsersSection({
   orgName,
   canManage,
   canRecover = false,
+  ownerInvitation,
   onChanged,
 }: {
   tenantId: string
@@ -80,6 +82,8 @@ export function OrganizationUsersSection({
   canManage: boolean
   /** Super admin: may run an owner recovery when every owner is suspended. */
   canRecover?: boolean
+  /** The organization's ownership invitation, while it waits for its first owner. */
+  ownerInvitation?: AdminOwnerInvitation
   /** The organization's member count changed. */
   onChanged?: () => void
 }) {
@@ -100,6 +104,11 @@ export function OrganizationUsersSection({
       ? data.active_owner_count === 0
       : !users.some((u) => u.role === 'owner' && u.status === 'active'))
   const canBootstrap = canManage && !isLoading && !error && !hasOwner
+  const invitation = !isLoading && !hasOwner ? ownerInvitation : undefined
+  const changed = () => {
+    refresh()
+    onChanged?.()
+  }
 
   return (
     <section className="space-y-3">
@@ -114,15 +123,20 @@ export function OrganizationUsersSection({
                   'admin.organizationUsersSection.everyOwnerOfThisOrganization',
                   'Every owner of this organization is suspended, blocked or erased. Such an owner still owns the organization, so the console cannot create another one; a super admin can recover ownership (with a reason and an authenticator code; the new owner gets a set-password link by email only).'
                 )
-              : hasOwner
+              : invitation
                 ? t(
-                    'admin.organizationUsersSection.peopleWithAnAccountIn',
-                    "People with an account in this organization. The organization's owner and administrators invite or create users; the platform console only creates an organization's first owner."
+                    'admin.ownerInvitation.usersHelp',
+                    'This organization was created for someone who already has an account. It has no owner until they accept the invitation.'
                   )
-                : t(
-                    'admin.organizationUsersSection.thisOrganizationHasNoOwner',
-                    'This organization has no owner yet. Create its first owner; they add everyone else.'
-                  )}
+                : hasOwner
+                  ? t(
+                      'admin.organizationUsersSection.peopleWithAnAccountIn',
+                      "People with an account in this organization. The organization's owner and administrators invite or create users; the platform console only creates an organization's first owner."
+                    )
+                  : t(
+                      'admin.organizationUsersSection.thisOrganizationHasNoOwner',
+                      'This organization has no owner yet. Create its first owner; they add everyone else.'
+                    )}
           </p>
         </div>
         {canRecover && ownersAllSuspended && (
@@ -135,7 +149,7 @@ export function OrganizationUsersSection({
             }}
           />
         )}
-        {canBootstrap && (
+        {canBootstrap && !invitation && (
           <CreateFirstOwnerDialog
             tenantId={tenantId}
             onCreated={() => {
@@ -145,6 +159,19 @@ export function OrganizationUsersSection({
           />
         )}
       </div>
+      {invitation && (
+        <OwnerInvitationPanel
+          tenantId={tenantId}
+          invitation={invitation}
+          canManage={canManage}
+          onChanged={changed}
+          changeInvitee={
+            canBootstrap ? (
+              <CreateFirstOwnerDialog tenantId={tenantId} changeInvitee onCreated={changed} />
+            ) : undefined
+          }
+        />
+      )}
       {error ? (
         <ErrorState
           title={t('admin.organizationUsersSection.users2', 'users')}
@@ -188,7 +215,7 @@ function RedactedMemberCounts({
       <p className="text-muted-foreground">
         {t(
           'admin.org.users.redacted',
-          'Your console role sees how many members there are, not who they are. {count} member(s) in total.',
+          'Your console role sees how many members there are, not who they are. {count, plural, one {# member} other {# members}} in total.',
           { count: total }
         )}
       </p>

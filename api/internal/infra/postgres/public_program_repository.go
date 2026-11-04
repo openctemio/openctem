@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/lib/pq"
-	"github.com/openctemio/ctis/transfer/bundle"
+	"github.com/openctemio/contract/transfer/bundle"
 
 	"github.com/openctemio/openctem/api/pkg/domain/bountyprogram"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -281,7 +281,7 @@ func (r *PublicProgramRepository) GetPublic(ctx context.Context, id shared.ID) (
 // since they were brought up to date, or that are still active while it is
 // closed, paused or archived (system pass across tenants; each program is
 // then handled in its own tenant).
-func (r *PublicProgramRepository) StaleSubscriptions(ctx context.Context, limit int) ([]bountyprogram.ProgramRef, error) {
+func (r *PublicProgramRepository) StaleSubscriptions(ctx context.Context, limit int, skipTenants []shared.ID) ([]bountyprogram.ProgramRef, error) {
 	if limit <= 0 || limit > 1000 {
 		limit = 200
 	}
@@ -289,9 +289,10 @@ func (r *PublicProgramRepository) StaleSubscriptions(ctx context.Context, limit 
 		SELECT b.tenant_id, b.id FROM bounty_programs b
 		JOIN public_programs p ON p.id = b.public_program_id
 		WHERE b.status <> 'ended'
+		  AND NOT (b.tenant_id = ANY($2::uuid[]))
 		  AND (b.public_synced_sha256 <> p.content_sha256
 		       OR (b.status = 'active' AND (p.removed_at IS NOT NULL OR p.status <> 'open')))
-		ORDER BY b.updated_at LIMIT $1`, limit)
+		ORDER BY b.updated_at LIMIT $1`, limit, pq.Array(tenantIDStrings(skipTenants)))
 	if err != nil {
 		return nil, fmt.Errorf("list stale subscriptions: %w", err)
 	}

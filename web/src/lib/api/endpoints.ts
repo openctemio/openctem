@@ -124,6 +124,13 @@ export const authEndpoints = {
    */
   onboardingOptions: () => `${API_BASE.AUTH}/onboarding/options`,
   onboardingAccept: () => `${API_BASE.AUTH}/onboarding/accept`,
+  onboardingDecline: () => `${API_BASE.AUTH}/onboarding/decline`,
+
+  /**
+   * An access token without an organization for an account that has none it
+   * can open (409 when it has one). It reaches only the account routes.
+   */
+  accountToken: () => `${API_BASE.AUTH}/account-token`,
 
   /**
    * Second login step: verify a TOTP or recovery code against the challenge
@@ -262,6 +269,17 @@ export const userEndpoints = {
   identityLinkCallback: (provider: string) =>
     `/api/v1/me/sign-in-method-links/${encodeURIComponent(provider)}/complete`,
   identity: (id: string) => `/api/v1/me/sign-in-methods/${encodeURIComponent(id)}`,
+  /**
+   * Organization sign-in links (Account > Security): the member's
+   * organizations with single sign-on, link start and unlink (each with the
+   * code or password typed for it), and the link completion called by the
+   * SSO link route after the identity provider's redirect.
+   */
+  ssoLinks: () => '/api/v1/me/sso-links',
+  ssoLinkStart: (provider: string) => `/api/v1/me/sso-links/${encodeURIComponent(provider)}/start`,
+  ssoLinkComplete: (provider: string) =>
+    `/api/v1/me/sso-links/${encodeURIComponent(provider)}/complete`,
+  ssoLink: (id: string) => `/api/v1/me/sso-links/identities/${encodeURIComponent(id)}`,
   /**
    * The pending link a refused social sign-in left, confirmed after signing
    * in (describe, confirm with the typed code or password, cancel). Called by server actions

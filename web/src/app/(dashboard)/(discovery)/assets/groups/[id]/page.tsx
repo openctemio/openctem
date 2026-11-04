@@ -92,6 +92,7 @@ import { SEVERITY_LEVELS, normalizeSeverity, type SeverityLevel } from '@/lib/se
 import { useTranslation } from '@/context/i18n-provider'
 import { useAssetTypeRegistry } from '@/features/asset-types/api/use-asset-type-registry'
 import { confirmName } from '@/lib/confirm-name'
+import { shareableLink } from '@/lib/org-link'
 
 /** Most severe first when sorted descending. */
 const SEVERITY_RANK: Record<string, number> = { critical: 5, high: 4, medium: 3, low: 2, info: 1 }
@@ -605,7 +606,7 @@ function AssetGroupDetailContent({ params }: PageProps) {
   }
 
   const handleCopyLink = () => {
-    copyToClipboard(window.location.href)
+    copyToClipboard(shareableLink(`/assets/groups/${group.id}`))
     toast.success(t('assetGroups.linkCopied', 'Link copied'))
   }
 

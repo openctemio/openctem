@@ -68,6 +68,11 @@ type archiveLine struct {
 	Hash          string          `json:"hash"`
 	ChainedAt     time.Time       `json:"chained_at"`
 	Row           json.RawMessage `json:"row"`
+	// HashVersion and RowPayload let a pruned version 2 entry be checked
+	// offline: hash = hex(SHA-256(prev_hash + "|" + row_payload)), and
+	// row_payload is the row's canonical text (compare it with row).
+	HashVersion int    `json:"hash_version"`
+	RowPayload  string `json:"row_payload,omitempty"`
 }
 
 // EffectiveRetentionDays applies the platform minimum.
@@ -225,6 +230,8 @@ func encodeAuditArchive(tenantID shared.ID, entries []auditdom.PrunableEntry) ([
 			Hash:          e.Entry.Hash,
 			ChainedAt:     e.Entry.CreatedAt,
 			Row:           e.Row,
+			HashVersion:   e.Entry.HashVersion,
+			RowPayload:    e.Entry.RowPayload,
 		}); err != nil {
 			return nil, "", fmt.Errorf("encode archive: %w", err)
 		}

@@ -1118,6 +1118,7 @@
   "assets.software.viewComponents": "View components",
   "assets.suggestions.approve": "Approve",
   "assets.suggestions.approveAll": "Approve all ({count})",
+  "assets.suggestions.errorTitle": "suggestions",
   "assets.suggestions.search.label": "Search suggestions",
   "assets.suggestions.search.placeholder": "Search by asset name…",
   "assets.tabs.aria": "Assets sections",
