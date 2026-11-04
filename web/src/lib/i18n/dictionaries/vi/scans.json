@@ -2223,6 +2223,7 @@
   "scans.step.options": "Tùy chọn",
   "scans.step.outcome.gaps": "{count} máy chủ chưa được quét hết",
   "scans.step.outcome.more": "và {count} máy chủ khác, liệt kê ở các tác vụ",
+  "scans.step.outcome.notResolvingSkipped": "{count} tên không còn phân giải, bị các bước chủ động bỏ qua",
   "scans.step.outcome.seeTasks": "Danh sách máy chủ nằm ở các tác vụ của bước.",
   "scans.step.outcome.skipped": "{count} mục tiêu bị bỏ qua theo chính sách của sensor",
   "scans.step.outcome.unfinished": "{count} mục tiêu chưa hoàn tất",
