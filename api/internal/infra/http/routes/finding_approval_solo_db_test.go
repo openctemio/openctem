@@ -239,7 +239,7 @@ func TestFindingApprovals_SoloRefusedAfterRecentMemberRemoval_DB(t *testing.T) {
 		VALUES (gen_random_uuid(), $1, 'member.removed', 'membership', 'x', 'success', 'medium', 'removed', now() - interval '3 days')`, org)
 	h.selfApprove(owner, a, "111111", http.StatusForbidden)
 	// Eight days later the path opens.
-	h.exec(`UPDATE audit_logs SET logged_at = now() - interval '8 days' WHERE tenant_id = $1 AND action = 'member.removed'`, org)
+	backdateAudit(h.exec, org, "member.removed", "x")
 	if !h.listSelfApprovalAvailable(owner) {
 		t.Fatal("self-approval still closed after 7 days")
 	}
@@ -266,6 +266,18 @@ func TestFindingApprovals_SoloRefusedAfterDemotion_DB(t *testing.T) {
 	if out := h.selfApprove(owner, a, "111111", http.StatusForbidden); out["code"] != "SELF_APPROVAL_AFTER_MEMBER_REMOVAL" {
 		t.Fatalf("refusal: %v", out)
 	}
-	h.exec(`UPDATE audit_logs SET logged_at = now() - interval '8 days' WHERE tenant_id = $1 AND action = 'member.role_changed'`, org)
+	backdateAudit(h.exec, org, "member.role_changed", demoted.id)
 	h.selfApprove(owner, a, "222222", http.StatusOK)
+}
+
+// backdateAudit moves the tenant's audit rows for action eight days back.
+// Audit rows cannot be updated (the database refuses), so the rows and their
+// chain entries are removed and one row is written again with the old time.
+func backdateAudit(exec func(q string, args ...any), tenant, action, resourceID string) {
+	exec(`DELETE FROM audit_log_chain WHERE audit_log_id IN
+		(SELECT id FROM audit_logs WHERE tenant_id = $1 AND action = $2)`, tenant, action)
+	exec(`DELETE FROM audit_logs WHERE tenant_id = $1 AND action = $2`, tenant, action)
+	exec(`INSERT INTO audit_logs (id, tenant_id, action, resource_type, resource_id, result, severity, message, logged_at)
+		VALUES (gen_random_uuid(), $1, $2, 'membership', $3, 'success', 'medium', 'backdated', now() - interval '8 days')`,
+		tenant, action, resourceID)
 }
