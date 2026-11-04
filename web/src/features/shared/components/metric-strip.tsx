@@ -102,12 +102,21 @@ export function MetricStrip({
   items,
   loading = false,
   error,
+  embedded = false,
   className,
 }: {
   items: MetricStripItem[]
   loading?: boolean
   /** The numbers could not be read: the reason, shown as each value's tooltip. */
   error?: string
+  /**
+   * The strip sits inside another frame (a dashboard widget) that already
+   * draws the border, fill and padding: no outer border or fill, the strip
+   * bleeds into the frame padding by the cell padding so the first figure
+   * lines up with the frame's title, and cells are shorter. Dividers between
+   * tiles stay.
+   */
+  embedded?: boolean
   className?: string
 }) {
   if (process.env.NODE_ENV !== 'production' && items.length > METRIC_STRIP_MAX) {
@@ -121,7 +130,8 @@ export function MetricStrip({
       data-slot="metric-strip"
       data-detailed={detailed || undefined}
       className={cn(
-        'grid grid-cols-6 overflow-hidden rounded-lg border bg-card',
+        'grid grid-cols-6 overflow-hidden',
+        embedded ? '-mx-3 sm:-mx-4' : 'rounded-lg border bg-card',
         'sm:grid-cols-[repeat(var(--metric-cols-sm),minmax(0,1fr))] lg:grid-cols-[repeat(var(--metric-cols),minmax(0,1fr))]',
         className
       )}
@@ -215,7 +225,8 @@ export function MetricStrip({
           </>
         )
         const cellClass = cn(
-          'flex min-w-0 flex-col items-stretch justify-start -ms-px -mt-px border-s border-t px-3 py-2 text-start sm:col-span-1 sm:px-4 sm:py-2.5',
+          'flex min-w-0 flex-col items-stretch justify-start -ms-px -mt-px border-s border-t px-3 text-start sm:col-span-1 sm:px-4',
+          embedded ? 'py-1.5 sm:py-2' : 'py-2 sm:py-2.5',
           PHONE_SPAN_CLASS[span],
           item.active && 'bg-accent'
         )

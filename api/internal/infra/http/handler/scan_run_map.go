@@ -42,6 +42,13 @@ type RunMapChunks struct {
 	Running   int `json:"running"`
 	Completed int `json:"completed"`
 	Failed    int `json:"failed"`
+	// Of Queued: HostsBusy wait while another task of the organization
+	// scans their hosts (one task per host at a time); Refused, of the
+	// rest, were refused by a sensor's local policy and wait for a sensor
+	// that accepts them. The remaining queued chunks wait for a free
+	// sensor that has the tool.
+	HostsBusy int `json:"hosts_busy,omitempty"`
+	Refused   int `json:"refused,omitempty"`
 }
 
 // RunMapOutputs counts what a step produced, by asset type, in the caller's
@@ -67,7 +74,10 @@ type RunMapNode struct {
 	// skipped or canceled.
 	State string `json:"state"`
 	// Reason says why a waiting, skipped or failed step is so: for a
-	// waiting step "waiting_for_sensor"; otherwise the step's error code.
+	// waiting step waiting_for_hosts (every queued chunk waits for hosts
+	// another task scans), waiting_after_refusal (every one was refused by
+	// a sensor's local policy) or waiting_for_sensor; otherwise the step's
+	// error code.
 	Reason       string `json:"reason,omitempty"`
 	ErrorClass   string `json:"error_class,omitempty"`
 	ErrorMessage string `json:"error_message,omitempty"`
@@ -239,6 +249,8 @@ func toRunMapResponse(m *scanrunapp.RunMap) RunMapResponse {
 		c.Queued += sh.Queued
 		c.Running += sh.Running
 		c.Completed += sh.Completed
+		c.HostsBusy += sh.QueuedHostsBusy
+		c.Refused += sh.QueuedRefused
 		c.Failed += sh.Failed
 		chunks[sh.StepKey] = c
 	}
@@ -428,7 +440,7 @@ func fillNodeFromStepRun(n *RunMapNode, sr *scanrundom.StepRun, platform bool) {
 	n.State = mapNodeState(sr.Status, n.Chunks)
 	switch n.State {
 	case mapStateWaiting:
-		n.Reason = "waiting_for_sensor"
+		n.Reason = waitingReason(n.Chunks)
 	case mapStateFailed, mapStatePartial, mapStateSkipped, mapStateCanceled:
 		n.Reason = sr.ErrorCode
 		n.ErrorClass = stepErrorClass(sr.ErrorCode)
@@ -447,6 +459,32 @@ func fillNodeFromStepRun(n *RunMapNode, sr *scanrundom.StepRun, platform bool) {
 	}
 	if sr.CompletedAt != nil {
 		n.CompletedAt = sr.CompletedAt.Format("2006-01-02T15:04:05Z07:00")
+	}
+}
+
+// Reasons of a waiting node (RunMapNode.Reason).
+const (
+	// waitReasonSensor: its chunks wait for a free sensor with the tool.
+	waitReasonSensor = "waiting_for_sensor"
+	// waitReasonHosts: every queued chunk waits while another task of the
+	// organization scans its hosts.
+	waitReasonHosts = "waiting_for_hosts"
+	// waitReasonRefused: every queued chunk was refused by a sensor's
+	// local policy and waits for a sensor that accepts it.
+	waitReasonRefused = "waiting_after_refusal"
+)
+
+// waitingReason says why a waiting node's queued chunks wait: one gate when
+// it holds them all, else waiting for a sensor (the chunk counts say how
+// many each gate holds).
+func waitingReason(c RunMapChunks) string {
+	switch {
+	case c.Queued > 0 && c.HostsBusy == c.Queued:
+		return waitReasonHosts
+	case c.Queued > 0 && c.Refused == c.Queued:
+		return waitReasonRefused
+	default:
+		return waitReasonSensor
 	}
 }
 
