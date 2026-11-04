@@ -26,14 +26,13 @@
 /api/deploy/                        @0xmanhnv
 /deploy/                            @0xmanhnv
 
-# Edition seams: where an Enterprise overlay plugs into the open core, the build
-# switch, the overlay fence and the entitlement registry. Maintainer review.
-/api/internal/extension/            @0xmanhnv
+# Extension seams: the public extension API, the custom-build entry point,
+# the fence and the entitlement registry. Maintainer review.
+/api/pkg/extension/                 @0xmanhnv
+/api/pkg/server/                    @0xmanhnv
 /api/pkg/domain/limits/             @0xmanhnv
-/api/cmd/server/edition_*.go        @0xmanhnv
-/api/ee/                            @0xmanhnv
-/web/src/extension-default/        @0xmanhnv
-/web/src/lib/extension/            @0xmanhnv
+/web/src/lib/extension/             @0xmanhnv
+/web/src/extension-default/         @0xmanhnv
 /.gitignore                         @0xmanhnv
 /.github/scripts/check-edition-fence* @0xmanhnv
 /.github/workflows/edition-fence.yml @0xmanhnv
