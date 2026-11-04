@@ -134,16 +134,27 @@ asks the same rules admission applies to a scan job for that tool. An administra
 Excluded sensors are listed with the reason. They count in `sensors_excluded`,
 not in `sensors_total`.
 
-## Trigger-time refusal
+## Trigger time
 
-A trigger (manual, scheduled, or a quick scan) is refused with
-`NO_SENSOR_FOR_TOOL` (400) when a tool it needs has no online sensor that may
-run it. The tool is the scan's scanner, or the tool of each workflow step
-(including tools resolved from a step's capabilities). This replaces queueing
-jobs that nobody claims and that sit pending until they expire. A scan pinned
-to a scan zone is judged on that zone's sensors only. Automatic routing still
-refuses a zone without a sensor for the tool with `NO_ZONE_COVERAGE` when it
-plans the batches.
+A scan runs as far as the organization's tools and sensors support
+([scan stages §1.6](scan-stages.md#16-steps-nothing-here-runs)). Creating or
+saving a scan never refuses it for a missing tool or sensor.
+
+- **Workflow scan.** Each step the run would start is checked against the
+  tool registry and against availability: a step whose tool has no online
+  sensor that may run it is skipped with `NO_SENSOR_FOR_TOOL` and the
+  message below as its reason, required or optional; the run goes on with
+  the other steps and ends `partial`. Only when no step can run is the
+  trigger refused, as a blocked run with `NO_RUNNABLE_STEPS` (400) naming
+  each missing step and why.
+- **Single scan.** Its scanner is the scan's one step: a trigger is refused
+  with `NO_SENSOR_FOR_TOOL` (400) when the scanner has no online sensor that
+  may run it, instead of queueing jobs that nobody claims and that sit
+  pending until they expire.
+
+A scan pinned to a scan zone is judged on that zone's sensors only.
+Automatic routing still refuses a zone without a sensor for the tool with
+`NO_ZONE_COVERAGE` when it plans the batches.
 
 The error body carries `details`:
 `{tool, step, status, sensors_total, sensors_online, sensors_excluded, zone_id}`.
@@ -158,8 +169,8 @@ Some cases are left to the checks that already own them:
   sensor availability check (`NO_SENSOR_AVAILABLE`).
 
 The trigger codes `NO_SENSOR_FOR_TOOL`, `NO_SENSOR_AVAILABLE`, `TOOL_NOT_FOUND`,
-`TOOL_DISABLED` and `TOOL_NOT_SCANNER` now reach the client in the error body's
-`code`. They used to be reported as `BAD_REQUEST`.
+`TOOL_DISABLED`, `TOOL_NOT_SCANNER` and `NO_RUNNABLE_STEPS` reach the client in
+the error body's `code`.
 
 A trigger never answers "Scan not found" for something other than the scan:
 the scan is loaded first, scoped to the caller's organization, so a missing
@@ -205,8 +216,13 @@ with its sensor popover, and the sensor list.
 - **Least privilege.** Sensor names and zones are listed only to holders of
   `sensors:read`. The scan builder needs only the counts.
 - **Fail-open for pickers.** If availability cannot be read, `is_available` is
-  `true`, so a picker is never blocked by an outage. Trigger time still refuses
-  work no sensor can run.
+  `true`, so a picker is never blocked by an outage. Trigger time still skips
+  (workflow step) or refuses (single scan) work no sensor can run.
+- **No cross-tenant counting.** Every trigger-time lookup is scoped to the
+  scan's organization: its own and platform tools, its own sensors and the
+  platform scanning it is offered. Another organization's tool or sensor never
+  makes a step runnable (`TestSupported_OtherTenantsSensorNeverCounts`,
+  `TestWorkflowStepSkips_OtherTenantsToolNeverCounts`).
 
 ## Per-operation memo
 
@@ -222,6 +238,6 @@ offline is seen by the next decision.
 | Layer | Where |
 |---|---|
 | Domain | `pkg/domain/sensor/tool_availability.go` (`ComputeToolAvailability`, statuses, exclusions), `fleet_health.go` (`TakesJobs`, `CanTakeJobs`), `version.go` (`CompareVersions`) |
-| App | `internal/app/tool/availability.go` (`ToolAvailability`, `ToolAvailabilityFor`, `RunnableToolNames`), `internal/app/scan/tool_availability_gate.go` (trigger refusal) |
+| App | `internal/app/tool/availability.go` (`ToolAvailability`, `ToolAvailabilityFor`, `RunnableToolNames`), `internal/app/scan/tool_availability_gate.go` (single-scan refusal), `internal/app/scan/step_support.go` (workflow step skips, `NO_RUNNABLE_STEPS`) |
 | Infra | `SensorGrantRepository.ListByTenant`, `ScanZoneRepository.List`, `SensorService.ListAllSensors` |
 | HTTP | `internal/infra/http/handler/tool_availability_handler.go` |

@@ -302,15 +302,27 @@ func (s *Service) triggerLoadedScan(ctx context.Context, sc *scan.Scan, input Tr
 		return nil, err
 	}
 
-	// Validate tools are still available and active before triggering
-	// (Tools may have been disabled or removed since scan was created)
-	if err := s.validateToolsAtTriggerTime(ctx, sc); err != nil {
-		return nil, err
-	}
-	// A tool no online sensor may run refuses the trigger with the reason,
-	// rather than queueing jobs nobody claims.
-	if err := s.checkScanToolsDispatchable(ctx, sc); err != nil {
-		return nil, err
+	// A workflow runs as far as the organization's tools and sensors
+	// support (step_support.go): a step nothing here runs is skipped with
+	// its reason, and only a trigger in which no step can run is refused
+	// (NO_RUNNABLE_STEPS). A single scanner is the scan's one step: a tool
+	// that is gone or off, or that no online sensor may run, refuses it.
+	var stepSkips map[string]StepSkip
+	if sc.ScanType == scan.ScanTypeWorkflow {
+		steps, serr := s.stepRepo.GetByScanWorkflowID(ctx, workflow.ID)
+		if serr != nil {
+			return nil, fmt.Errorf("failed to get scan workflow steps: %w", serr)
+		}
+		if stepSkips, err = s.workflowStepSkips(ctx, sc, workflow, steps); err != nil {
+			return nil, err
+		}
+	} else {
+		if err := s.validateToolsAtTriggerTime(ctx, sc); err != nil {
+			return nil, err
+		}
+		if err := s.checkScanToolsDispatchable(ctx, sc); err != nil {
+			return nil, err
+		}
 	}
 
 	// A wildcard pattern: its root domain for a discovery tool, refused for
@@ -336,7 +348,7 @@ func (s *Service) triggerLoadedScan(ctx context.Context, sc *scan.Scan, input Tr
 
 	// Execute based on scan type
 	if sc.ScanType == scan.ScanTypeWorkflow {
-		return s.triggerWorkflow(ctx, sc, workflow, triggerType, input.TriggeredBy, input.Context, input.RetryAttempt, input.ScheduledFor)
+		return s.triggerWorkflow(ctx, sc, workflow, stepSkips, triggerType, input.TriggeredBy, input.Context, input.RetryAttempt, input.ScheduledFor)
 	}
 	return s.triggerSingleScan(ctx, sc, triggerType, input.TriggeredBy, input.Context, input.RetryAttempt, input.ScheduledFor)
 }
@@ -386,8 +398,9 @@ func (s *Service) runnableWorkflow(ctx context.Context, sc *scan.Scan) (*scanwor
 }
 
 // triggerWorkflow starts a run of a workflow scan; template is the scan's
-// workflow from runnableWorkflow.
-func (s *Service) triggerWorkflow(ctx context.Context, sc *scan.Scan, template *scanworkflow.Workflow, triggerType scanworkflow.TriggerType, triggeredBy string, runContext map[string]any, retryAttempt int, scheduledFor *time.Time) (*scanrun.Run, error) {
+// workflow from runnableWorkflow; skips are the steps nothing here runs
+// (workflowStepSkips), recorded as skipped with their reasons.
+func (s *Service) triggerWorkflow(ctx context.Context, sc *scan.Scan, template *scanworkflow.Workflow, skips map[string]StepSkip, triggerType scanworkflow.TriggerType, triggeredBy string, runContext map[string]any, retryAttempt int, scheduledFor *time.Time) (*scanrun.Run, error) {
 	if template == nil {
 		return nil, errPipelineNotFound
 	}
@@ -396,13 +409,6 @@ func (s *Service) triggerWorkflow(ctx context.Context, sc *scan.Scan, template *
 	steps, err := s.stepRepo.GetByScanWorkflowID(ctx, template.ID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get scan workflow steps: %w", err)
-	}
-
-	// Re-evaluated at run start: sensors can go away after the scan was
-	// created.
-	template.Steps = steps
-	if err := s.requireWorkflowRunnable(ctx, sc.TenantID, template); err != nil {
-		return nil, err
 	}
 
 	// Validate scan workflow has steps
@@ -511,6 +517,10 @@ func (s *Service) triggerWorkflow(ctx context.Context, sc *scan.Scan, template *
 	// Create step runs
 	for _, step := range steps {
 		stepRun := scanrun.NewStepRunForStep(run.ID, step)
+		if skip, ok := skips[step.StepKey]; ok {
+			// Nothing here runs it: skipped with the reason, never queued.
+			stepRun.SkipWithCode(skip.Reason, skip.Code)
+		}
 		if err := s.stepRunRepo.Create(ctx, stepRun); err != nil {
 			s.logger.Warn("failed to create step run", "error", err)
 		}
@@ -783,6 +793,12 @@ func (s *Service) scheduleWorkflowSteps(ctx context.Context, run *scanrun.Run, s
 			continue
 		}
 		roots++
+		if sr := run.GetStepRun(step.StepKey); sr != nil && !sr.IsPending() {
+			// Skipped at trigger (no tool or sensor runs it): the run is
+			// advanced so the steps after it settle or start.
+			settled = true
+			continue
+		}
 		if !step.ConditionMet(run) {
 			s.skipWorkflowStep(ctx, run, step, step.ConditionSkipReason())
 			continue
@@ -1374,16 +1390,15 @@ func (s *Service) calculateInitialPriority(priority command.CommandPriority) int
 	}
 }
 
-// validateToolsAtTriggerTime validates that all tools required by the scan are still available.
-// This catches cases where tools have been disabled or removed between scan creation and trigger.
+// validateToolsAtTriggerTime checks that a single scan's scanner is still
+// available and active (it may have been disabled or removed since the scan
+// was saved). A workflow's step tools are checked by workflowStepSkips,
+// which skips a step instead of refusing the run.
 func (s *Service) validateToolsAtTriggerTime(ctx context.Context, sc *scan.Scan) error {
-	switch sc.ScanType {
-	case scan.ScanTypeSingle:
-		return s.validateSingleScanTool(ctx, sc.TenantID, sc.ScannerName)
-	case scan.ScanTypeWorkflow:
-		return s.validateWorkflowStepTools(ctx, sc)
+	if sc.ScanType != scan.ScanTypeSingle {
+		return nil
 	}
-	return nil
+	return s.validateSingleScanTool(ctx, sc.TenantID, sc.ScannerName)
 }
 
 // validateSingleScanTool checks that the scanner tool is available and active.
@@ -1419,36 +1434,6 @@ func (s *Service) validateSingleScanTool(ctx context.Context, tenantID shared.ID
 	}
 
 	return s.checkTenantToolEnabled(ctx, tenantID, tool)
-}
-
-// validateWorkflowStepTools validates all tools required by workflow workflow steps.
-func (s *Service) validateWorkflowStepTools(ctx context.Context, sc *scan.Scan) error {
-	if sc.ScanWorkflowID == nil {
-		return shared.NewDomainError(
-			"PIPELINE_NOT_SET",
-			"Workflow scan has no scan workflow configured",
-			shared.ErrValidation,
-		)
-	}
-
-	steps, err := s.stepRepo.GetByScanWorkflowID(ctx, *sc.ScanWorkflowID)
-	if err != nil {
-		return fmt.Errorf("failed to get scan workflow steps: %w", err)
-	}
-
-	for _, step := range steps {
-		if stepNotRunBy(sc, step) {
-			continue
-		}
-		if err := s.validateStepTool(ctx, sc.TenantID, step); err != nil {
-			if optionalWithoutTool(step, err) {
-				continue
-			}
-			return err
-		}
-	}
-
-	return nil
 }
 
 // validateStepTool validates a single workflow step's tool configuration.
