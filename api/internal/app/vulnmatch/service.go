@@ -13,6 +13,7 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app/closuremode"
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/api/pkg/domain/edgeaddr"
 	"github.com/openctemio/openctem/api/pkg/domain/ingestreceipt"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/softwarematch"
@@ -351,6 +352,7 @@ func (s *Service) ReconcileTenant(ctx context.Context, tenantID shared.ID, st *S
 		s.logger.Error("vulnerability matching: tenant has more matches than one pass reads; nothing is closed until it fits",
 			"tenant_id", tenantID.String(), "limit", s.maxRows)
 	}
+	s.attributeHosting(ctx, tenantID, matches)
 	desired, matched := s.plan(tenantID, policy, matches)
 
 	existing, err := s.store.MatcherFindings(ctx, tenantID)
@@ -368,8 +370,16 @@ func (s *Service) ReconcileTenant(ctx context.Context, tenantID shared.ID, st *S
 
 	var reopen []shared.ID
 	var create []*candidate
+	var refresh []softwarematch.ObservedVersionRef
 	for fp, c := range desired {
 		f, ok := byFP[fp]
+		if ok && f.VersionID != nil && *f.VersionID != c.m.VersionID && isOpen(f.Status) {
+			// The product moved to another version that this CVE still
+			// matches: the finding stays open and records the version it is
+			// observed on now (the identity is the same for every version).
+			refresh = append(refresh, softwarematch.ObservedVersionRef{FindingID: f.ID, ProductID: c.m.ProductID,
+				VersionID: c.m.VersionID, Version: c.m.Version, Qualifier: c.m.Qualifier})
+		}
 		switch {
 		case !ok:
 			create = append(create, c)
@@ -385,6 +395,11 @@ func (s *Service) ReconcileTenant(ctx context.Context, tenantID shared.ID, st *S
 			return err
 		}
 		st.Reopened += len(done)
+	}
+	if len(refresh) > 0 {
+		if _, err := s.store.UpdateObservedVersion(ctx, tenantID, refresh); err != nil {
+			return err
+		}
 	}
 	created, err := s.create(ctx, tenantID, create, st)
 	if err != nil {
@@ -634,7 +649,7 @@ func (s *Service) enrich(ctx context.Context, tenantID shared.ID, findings []*vu
 		}
 	}
 	for _, f := range findings {
-		CapPotentialPriority(f)
+		vulnerability.CapVersionMatchPriority(f)
 	}
 	if s.sla != nil {
 		if err := s.sla.ApplyBatch(ctx, tenantID, findings); err != nil {
@@ -643,28 +658,43 @@ func (s *Service) enrich(ctx context.Context, tenantID shared.ID, findings []*vu
 	}
 }
 
-// Confirmed reports whether an active check (a template or a network scanner
-// report of the same CVE on the same asset) confirmed the version match: the
-// same-issue link step records it as version_match.confirmed_by.
-func Confirmed(f *vulnerability.Finding) bool {
-	vm, ok := f.Metadata()["version_match"].(map[string]any)
-	if !ok {
-		return false
-	}
-	_, ok = vm["confirmed_by"]
-	return ok
+// HostingReader reads where the tenant's matched assets are served from
+// (softwarematch.HostFacts). Optional: without it nothing is attributed to a
+// provider.
+type HostingReader interface {
+	HostingFacts(ctx context.Context, tenantID shared.ID, assetIDs []shared.ID) (map[shared.ID]softwarematch.HostFacts, error)
 }
 
-// CapPotentialPriority lowers a P0/P1 version match below the likely
-// threshold to P2 unless the CVE is in KEV.
-func CapPotentialPriority(f *vulnerability.Finding) {
-	c := f.Confidence()
-	if c == nil || *c >= vulnmatch.LikelyThreshold || f.IsInKEV() || Confirmed(f) {
+// attributeHosting sets HostedBy on the matches whose asset a provider's
+// shared front end serves. Best effort: a failed read attributes nothing
+// (the matches stay the organization's, the safe side for raising them).
+func (s *Service) attributeHosting(ctx context.Context, tenantID shared.ID, matches []softwarematch.Match) {
+	hr, ok := s.store.(HostingReader)
+	if !ok || len(matches) == 0 {
 		return
 	}
-	if p := f.PriorityClass(); p != nil && (*p == vulnerability.PriorityP0 || *p == vulnerability.PriorityP1) {
-		f.SetPriorityClassification(vulnerability.PriorityP2,
-			"Version-based match below 80% confidence and not known exploited: capped at P2 until a scan or validation confirms it")
+	seen := map[shared.ID]bool{}
+	ids := make([]shared.ID, 0, 64)
+	for _, m := range matches {
+		if !seen[m.AssetID] {
+			seen[m.AssetID] = true
+			ids = append(ids, m.AssetID)
+		}
+	}
+	facts, err := hr.HostingFacts(ctx, tenantID, ids)
+	if err != nil {
+		s.logger.Warn("vulnerability matching: hosting facts not read", "tenant_id", tenantID.String(), "error", err)
+		return
+	}
+	c := edgeaddr.Default()
+	hosted := map[shared.ID]string{}
+	for id, f := range facts {
+		if p := softwarematch.HostedBy(c, f); p != "" {
+			hosted[id] = p
+		}
+	}
+	for i := range matches {
+		matches[i].HostedBy = hosted[matches[i].AssetID]
 	}
 }
 
@@ -695,6 +725,11 @@ func (s *Service) close(ctx context.Context, tenantID shared.ID, existing []soft
 	for k, ids := range byKey {
 		info := states[k]
 		switch {
+		case info.State == softwarematch.LinkUpgraded && (info.Now == nil || !info.Now.Evaluated):
+			// The displacing version has no evaluated matches yet, so the
+			// missing match says nothing about a fix: it may still be
+			// vulnerable. Keep the finding open until the version has been
+			// evaluated (the next pass either matches it again or closes).
 		case info.State == softwarematch.LinkUpgraded:
 			toClose[softwarematch.CloseVersionChanged] = append(toClose[softwarematch.CloseVersionChanged], ids...)
 			for _, id := range ids {
