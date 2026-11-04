@@ -294,6 +294,8 @@
   "attackSurface.external.type.subdomain": "Subdomain",
   "attackSurface.external.updateFailed": "Failed to update external asset",
   "attackSurface.external.updated": "External asset updated.",
+  "attackSurface.infoMatches.description": "Template scans also report info matches: the technology a host runs, login pages, TLS and header posture. By default they are kept as info exposures of the asset and counted on the scan run, so they add context without adding findings. Turn this on to file them as info findings instead.",
+  "attackSurface.infoMatches.title": "Info matches of template scans as findings",
   "attackSurface.kind.cert_changed": "New certificate",
   "attackSurface.kind.cert_expiring": "Certificate expiring",
   "attackSurface.kind.dns_changed": "DNS changed",
