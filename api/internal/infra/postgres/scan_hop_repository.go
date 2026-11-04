@@ -566,3 +566,21 @@ func (r *ScanHopRepository) UnchangedSince(ctx context.Context, tenantID, previo
 	}
 	return out, rows.Err()
 }
+
+// AddStepInfoObservations adds n to the info_observations count of a step
+// run of the tenant (a step run of another tenant is not changed).
+func (r *ScanHopRepository) AddStepInfoObservations(ctx context.Context, tenantID, stepRunID shared.ID, n int) error {
+	if n <= 0 || stepRunID.IsZero() {
+		return nil
+	}
+	_, err := r.db.ExecContext(ctx, `
+		UPDATE scan_run_steps sr
+		SET info_observations = sr.info_observations + $3
+		FROM scan_runs pr
+		WHERE sr.id = $2 AND pr.id = sr.scan_run_id AND pr.tenant_id = $1`,
+		tenantID.String(), stepRunID.String(), n)
+	if err != nil {
+		return fmt.Errorf("add step info observations: %w", err)
+	}
+	return nil
+}

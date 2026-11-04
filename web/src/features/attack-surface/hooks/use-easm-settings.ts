@@ -41,6 +41,8 @@ export interface EASMSettingsInput {
   network_lookups_enabled?: boolean
   /** Keep screenshots sent with web evidence (RFC-081); omitted keeps it. */
   web_screenshots_enabled?: boolean
+  /** File info matches of template scans as findings, not info exposures; omitted keeps it. */
+  info_matches_as_findings?: boolean
   /** Weekly "what changed" digest (RFC-080); omitted keeps the stored value. */
   weekly_digest_enabled?: boolean
   /** Weekday of the digest, 1..7 = Monday..Sunday; omitted keeps it. */
