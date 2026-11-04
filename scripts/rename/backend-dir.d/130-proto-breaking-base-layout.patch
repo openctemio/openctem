@@ -1,0 +1,23 @@
+--- a/server/scripts/check-proto.sh
++++ b/server/scripts/check-proto.sh
+@@ -52,9 +52,18 @@
+ (cd proto && buf lint)
+ 
+ echo "== buf breaking against $base"
+-if git cat-file -e "$base:server/proto/buf.yaml" 2>/dev/null; then
++# The base in its own layout: the base of the backend directory rename keeps
++# the module under the old directory name. Only there the Go package path changes (the
++# module path moved, the wire format did not), so that one rule is excused.
++bsub=server/proto
++breaking_config=()
++if ! git cat-file -e "$base:$bsub/buf.yaml" 2>/dev/null && git cat-file -e "$base:api/proto/buf.yaml" 2>/dev/null; then # rename-guard: allow
++  bsub=api/proto # rename-guard: allow
++  breaking_config=(--config '{"version":"v2","modules":[{"path":"."}],"lint":{"use":["STANDARD"]},"breaking":{"use":["FILE"],"except":["FILE_SAME_GO_PACKAGE"]}}')
++fi
++if git cat-file -e "$base:$bsub/buf.yaml" 2>/dev/null; then
+   root="$(git rev-parse --show-toplevel)"
+-  (cd proto && buf breaking --against "$root/.git#ref=$base,subdir=server/proto")
++  (cd proto && buf breaking "${breaking_config[@]}" --against "$root/.git#ref=$base,subdir=$bsub")
+ else
+   echo "base has no server/proto module yet; nothing to compare"
+ fi

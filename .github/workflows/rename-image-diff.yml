@@ -1,0 +1,45 @@
+name: Rename image diff
+
+# The image-diff gate of the backend directory rename (old directory api to server/,
+# research 414 section 5): the API and migrations images
+# built from the pull request's base and from its head, with the same build
+# arguments, must be identical apart from the Go binaries' bytes and the
+# OpenAPI description texts that cite a repository path. The script skips
+# unless the base still has the old layout and the head has server/go.mod, so
+# the job is a no-op on every other pull request. The base is the first parent
+# of the pull request's merge commit (the develop commit it was merged onto).
+
+on:
+  pull_request:
+    branches: [develop]
+    paths:
+      - "server/go.mod"
+      - "scripts/rename/**"
+      - ".github/workflows/rename-image-diff.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  image-diff:
+    name: Rename image diff
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: server/go.mod
+          cache: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Image diff (base layout against head layout)
+        run: |
+          python3 -c 'import yaml' 2>/dev/null || python3 -m pip install --quiet pyyaml
+          bash scripts/rename/image-diff-ci.sh "$(git rev-parse HEAD^1)"
