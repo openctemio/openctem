@@ -54,8 +54,9 @@ RUN apk add --no-cache git ca-certificates tzdata
 # Copy go mod files (context is api/ folder)
 COPY go.mod go.sum ./
 
-# Download dependencies
-RUN go mod download
+# Download dependencies. Retried: the module proxy sometimes resets the
+# HTTP/2 stream on hosted runners, which failed whole merge groups.
+RUN for i in 1 2 3; do go mod download && exit 0; echo "go mod download failed (attempt $i); retrying" >&2; sleep $((i * 10)); done; exit 1
 
 # -----------------------------------------------------------------------------
 # OpenAPI spec stage
@@ -74,7 +75,7 @@ ENV GOWORK=off
 ENV CGO_ENABLED=0
 RUN go install github.com/swaggo/swag/cmd/swag@${SWAG_VERSION}
 COPY go.mod go.sum ./
-RUN go mod download
+RUN for i in 1 2 3; do go mod download && exit 0; echo "go mod download failed (attempt $i); retrying" >&2; sleep $((i * 10)); done; exit 1
 COPY . .
 RUN swag init --generalInfo cmd/server/main.go --output api/openapi --outputTypes yaml --parseDependency --quiet \
  && test -s api/openapi/swagger.yaml
