@@ -114,7 +114,6 @@ export function ModulesOffHint({ modules }: { modules: ValidationModule[] }) {
     pentest: t('validation.overview.module.pentest', 'Pentest campaigns'),
     attack_simulation: t('validation.overview.module.attack_simulation', 'Attack simulation'),
     control_testing: t('validation.overview.module.control_testing', 'Control testing'),
-    mitre_coverage: t('validation.overview.module.mitre_coverage', 'ATT&CK coverage'),
   }
   const parts = modules.map((m) => names[m])
   let list: string

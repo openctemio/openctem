@@ -106,7 +106,7 @@ func newV3HarnessWith(t *testing.T, opts []command.Option, recheck ...time.Durat
 	ch := handler.NewCommandHandler(cmdSvc, validator.New(), log)
 	ch.SetCommandLogs(commandlog.NewService(postgres.NewCommandLogRepository(db)))
 	sh := handler.NewSuppressionHandler(suppression.NewService(postgres.NewSuppressionRepository(db), log), log)
-	ctl := handler.NewSensorControlV2Handler(ih, ch, sh, nil, log)
+	ctl := handler.NewSensorControlV2Handler(ih, ch, sh, log)
 	receiver := ingest.NewV2Receiver(postgres.NewIngestReportRepository(db), parkedJobs{postgres.NewIngestJobRepository(db)},
 		postgres.NewIngestJobRepository(db), cmdRepo, protov2.DefaultLimits(), 100, log)
 	receiver.SetPayloadSealer(testSegmentSealer(t))

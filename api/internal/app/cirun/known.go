@@ -22,20 +22,12 @@ type SuppressionRules interface {
 	ListActiveRules(ctx context.Context, tenantID shared.ID) ([]*suppression.Rule, error)
 }
 
-// ModuleGuard tells which modules a tenant has turned off.
-type ModuleGuard interface {
-	TenantDisabledModules(ctx context.Context, tenantID string) map[string]bool
-}
-
-// suppressionsModule is the module whose rules the gate applies.
-const suppressionsModule = "suppressions"
-
 // SetSuppressionRules makes the gate apply approved suppression rules to the
 // findings a run reports, including findings that existed before the rule was
 // approved (ingest stamps only new ones). Nil leaves rules to the ingest
 // stamp alone.
-func (s *Service) SetSuppressionRules(rules SuppressionRules, modules ModuleGuard) {
-	s.rules, s.modules = rules, modules
+func (s *Service) SetSuppressionRules(rules SuppressionRules) {
+	s.rules = rules
 }
 
 // applyActiveRules marks as suppressed every finding an active suppression
@@ -44,9 +36,6 @@ func (s *Service) SetSuppressionRules(rules SuppressionRules, modules ModuleGuar
 // are (they then count: fail closed).
 func (s *Service) applyActiveRules(ctx context.Context, tenantID shared.ID, findings []cirun.RunFinding, assetID shared.ID) {
 	if s.rules == nil || len(findings) == 0 {
-		return
-	}
-	if s.modules != nil && s.modules.TenantDisabledModules(ctx, tenantID.String())[suppressionsModule] {
 		return
 	}
 	rules, err := s.rules.ListActiveRules(ctx, tenantID)

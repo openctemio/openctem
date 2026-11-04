@@ -99,10 +99,6 @@ type FindingProcessor struct {
 	issueLinks   IssueLinkStore
 	vulnAliases  VulnAliasResolver
 
-	// suppressionModules, when wired, turns ingest suppression off for a
-	// tenant whose suppressions module is disabled.
-	suppressionModules ModuleGuard
-
 	// secretFingerprinter keys the fingerprint of a reported secret with a
 	// server-held secret. Nil-safe: when unwired, no fingerprint is stored.
 	secretFingerprinter *vulnerability.SecretFingerprinter

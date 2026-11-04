@@ -3317,9 +3317,6 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// through the change bus, on every replica): the route gate, the dashboard
 	// and the threat-alert planner all read it, so none keeps an old answer.
 	s.ModuleGate = middleware.NewModuleGate(s.Module, time.Minute)
-	// Ingest honors the suppressions module toggle: with the module off (or
-	// left out of the tenant's bundles) findings land as reported.
-	s.Ingest.SetSuppressionModuleGuard(s.Module)
 	// Events start no automation for a tenant with the workflows module off.
 	if s.WorkflowDispatcher != nil {
 		s.WorkflowDispatcher.SetModuleGuard(s.Module)
