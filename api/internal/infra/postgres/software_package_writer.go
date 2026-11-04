@@ -12,6 +12,7 @@ import (
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/software"
+	"github.com/openctemio/openctem/api/pkg/domain/vulncatalog"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 )
 
@@ -140,20 +141,28 @@ func ensurePackageVersions(ctx context.Context, q pkgQueryer, tenantID shared.ID
 		return out, 0, nil
 	}
 	n := len(keys)
-	products, tenants, raws, schemes, quals, purlCol := make([]string, n), make([]sql.NullString, n),
-		make([]string, n), make([]string, n), make([]string, n), make([]string, n)
+	products, tenants, raws, schemes, quals, purlCol, ids := make([]string, n), make([]sql.NullString, n),
+		make([]string, n), make([]string, n), make([]string, n), make([]string, n), make([]string, n)
 	for i, k := range keys {
 		products[i], raws[i], schemes[i], quals[i], purlCol[i] = k.product, k.raw, k.scheme, k.qualifier, purls[k]
 		if !global[k.product] {
 			tenants[i] = sql.NullString{String: tenantID.String(), Valid: true}
+			ids[i] = shared.NewID().String()
+			continue
 		}
+		// A global version's id is deterministic (normalized = raw here, edition empty).
+		pid, err := shared.IDFromString(k.product)
+		if err != nil {
+			return nil, 0, fmt.Errorf("package version product id: %w", err)
+		}
+		ids[i] = vulncatalog.VersionID(pid, k.scheme, k.raw, k.raw, k.qualifier, "").String()
 	}
 	res, err := q.ExecContext(ctx, `
-		INSERT INTO software_versions (product_id, tenant_id, raw, normalized, scheme, qualifier, purl)
-		SELECT k.p::uuid, k.t::uuid, k.r, NULLIF(k.r, ''), k.s, k.q, NULLIF(k.u, '')
-		FROM unnest($1::text[], $2::text[], $3::text[], $4::text[], $5::text[], $6::text[]) AS k(p, t, r, s, q, u)
+		INSERT INTO software_versions (id, product_id, tenant_id, raw, normalized, scheme, qualifier, purl)
+		SELECT k.i::uuid, k.p::uuid, k.t::uuid, k.r, NULLIF(k.r, ''), k.s, k.q, NULLIF(k.u, '')
+		FROM unnest($1::text[], $2::text[], $3::text[], $4::text[], $5::text[], $6::text[], $7::text[]) AS k(p, t, r, s, q, u, i)
 		ON CONFLICT (product_id, scheme, COALESCE(normalized, 'raw:' || raw), qualifier, edition) DO NOTHING`,
-		pq.Array(products), pq.Array(tenants), pq.Array(raws), pq.Array(schemes), pq.Array(quals), pq.Array(purlCol))
+		pq.Array(products), pq.Array(tenants), pq.Array(raws), pq.Array(schemes), pq.Array(quals), pq.Array(purlCol), pq.Array(ids))
 	if err != nil {
 		return nil, 0, fmt.Errorf("create package versions: %w", err)
 	}

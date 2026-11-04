@@ -10,6 +10,7 @@ import (
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/software"
+	"github.com/openctemio/openctem/api/pkg/domain/vulncatalog"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnmatch"
 )
 
@@ -43,11 +44,12 @@ func (r *SoftwareRepository) EnsureCurated(ctx context.Context, products []softw
 	for _, p := range products {
 		var id string
 		err := tx.QueryRowContext(ctx, `
-			INSERT INTO software_products (part, vendor, name, cpe_vendor, cpe_product, source)
-			VALUES ($1, $2, $3, $4, $5, 'curated')
+			INSERT INTO software_products (id, part, vendor, name, cpe_vendor, cpe_product, source)
+			VALUES ($6, $1, $2, $3, $4, $5, 'curated')
 			ON CONFLICT (part, cpe_vendor, cpe_product) WHERE tenant_id IS NULL AND cpe_vendor IS NOT NULL
 			DO UPDATE SET vendor = EXCLUDED.vendor, name = EXCLUDED.name, source = 'curated', updated_at = now()
-			RETURNING id`, p.Part, p.Vendor, p.Name, p.CPEVendor, p.CPEProduct).Scan(&id)
+			RETURNING id`, p.Part, p.Vendor, p.Name, p.CPEVendor, p.CPEProduct,
+			vulncatalog.ProductID(vulncatalog.ProductKeyCPE(p.Part, p.CPEVendor, p.CPEProduct)).String()).Scan(&id)
 		if err != nil {
 			return fmt.Errorf("curated product %s:%s: %w", p.CPEVendor, p.CPEProduct, err)
 		}
@@ -215,6 +217,15 @@ func (r *SoftwareRepository) createPrivate(ctx context.Context, tenantID shared.
 	return software.ProductRef{ID: shared.MustIDFromString(pid)}, nil
 }
 
+// newVersionID is the id a new version row gets: deterministic for a version
+// of a global product (vulncatalog.VersionID), random for a private one.
+func newVersionID(product software.ProductRef, scheme, normalized, raw, qualifier, edition string) shared.ID {
+	if !product.Global {
+		return shared.NewID()
+	}
+	return vulncatalog.VersionID(product.ID, scheme, normalized, raw, qualifier, edition)
+}
+
 func refOf(pid string, tenant sql.NullString) (software.ProductRef, error) {
 	id, err := shared.IDFromString(pid)
 	if err != nil {
@@ -241,10 +252,11 @@ func (r *SoftwareRepository) EnsureVersion(ctx context.Context, tenantID shared.
 	}
 	var id string
 	err := r.db.QueryRowContext(ctx, `
-		INSERT INTO software_versions (product_id, tenant_id, raw, normalized, scheme, qualifier, edition)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		INSERT INTO software_versions (id, product_id, tenant_id, raw, normalized, scheme, qualifier, edition)
+		VALUES ($8, $1, $2, $3, $4, $5, $6, $7)
 		ON CONFLICT (product_id, scheme, COALESCE(normalized, 'raw:' || raw), qualifier, edition) DO NOTHING
-		RETURNING id`, product.ID.String(), tenant, v.Raw, normalized, scheme, v.Qualifier, v.Edition).Scan(&id)
+		RETURNING id`, product.ID.String(), tenant, v.Raw, normalized, scheme, v.Qualifier, v.Edition,
+		newVersionID(product, scheme, v.Normalized, v.Raw, v.Qualifier, v.Edition).String()).Scan(&id)
 	if errors.Is(err, sql.ErrNoRows) {
 		err = r.db.QueryRowContext(ctx, `
 			SELECT id FROM software_versions
