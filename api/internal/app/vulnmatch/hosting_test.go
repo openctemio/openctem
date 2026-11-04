@@ -100,14 +100,14 @@ func TestCapSharedHostingPriority(t *testing.T) {
 	f, _ := vulnerability.NewFinding(shared.NewID(), shared.NewID(), vulnerability.FindingSourceVA, softwarematch.ToolName, vulnerability.SeverityCritical, "m")
 	f.SetPriorityClassification(vulnerability.PriorityP0, "x")
 	f.SetMetadata("version_match", map[string]any{"hosted_by": "LadiPage"})
-	CapSharedHostingPriority(f)
+	vulnerability.CapSharedHostingPriority(f)
 	if *f.PriorityClass() != vulnerability.PriorityP3 {
 		t.Fatalf("priority %s", *f.PriorityClass())
 	}
 	g, _ := vulnerability.NewFinding(shared.NewID(), shared.NewID(), vulnerability.FindingSourceVA, softwarematch.ToolName, vulnerability.SeverityCritical, "m")
 	g.SetPriorityClassification(vulnerability.PriorityP0, "x")
 	g.SetMetadata("version_match", map[string]any{"label": "likely"})
-	CapSharedHostingPriority(g)
+	vulnerability.CapSharedHostingPriority(g)
 	if *g.PriorityClass() != vulnerability.PriorityP0 {
 		t.Fatal("an own match was capped")
 	}
