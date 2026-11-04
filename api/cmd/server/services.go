@@ -47,6 +47,7 @@ import (
 	easmapp "github.com/openctemio/openctem/api/internal/app/easm"
 	"github.com/openctemio/openctem/api/internal/app/finding"
 	"github.com/openctemio/openctem/api/internal/app/integration"
+	"github.com/openctemio/openctem/api/internal/app/leakedsecretpolicy"
 	"github.com/openctemio/openctem/api/internal/app/module"
 	"github.com/openctemio/openctem/api/internal/app/orgrelay"
 	"github.com/openctemio/openctem/api/internal/app/sensorgrant"
@@ -1033,7 +1034,10 @@ type Services struct {
 	PlatformAlert *platformalert.Service
 	PlatformAI    *platformai.Service
 	OrgRelay      *orgrelay.Service
-	PlatformMFA   *platformmfa.Service
+	// LeakedSecretPolicy is the platform default of whether imported leaked
+	// secret values are kept (organizations may override it).
+	LeakedSecretPolicy *leakedsecretpolicy.Service
+	PlatformMFA        *platformmfa.Service
 	// TenantAI is the organizations' AI settings (consent, source, own provider).
 	TenantAI *tenantai.Service
 	// AIMasking is the organization's AI masking policy and its preview.
@@ -1172,6 +1176,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	if repos.PlatformSetting != nil {
 		s.PlatformMFA = platformmfa.NewService(repos.PlatformSetting, s.SettingRecorder, cfg.App.ManagedService, cfg.Auth.MFAFloor)
 		s.OrgRelay = orgrelay.NewService(repos.PlatformSetting, s.SettingRecorder, cfg.App.ManagedService, cfg.App.OrgEmailRelayMode, log)
+		s.LeakedSecretPolicy = leakedsecretpolicy.NewService(repos.PlatformSetting, s.SettingRecorder, cfg.App.ManagedService, log)
 	}
 	s.IdleWorkspaces = lifecycleapp.NewService(repos.IdleLifecycle, s.Audit, repos.AdminAuditLog, repos.Admin, nil, log)
 	// Suspended organizations: one access gate every credential path asks,
@@ -1592,10 +1597,17 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.CredentialImport.SetDataScope(s.DataScope)
 	s.CredentialImport.SetDispositionGate(exposureDispositions)
 	// Leaked-credential secrets are sealed with the platform credential key
-	// on every write path, and the fingerprint HMAC is keyed from it.
+	// on every write path, and the fingerprint HMAC is keyed per organization
+	// from it.
 	s.CredentialSecrets = credential.NewSecretProtector(s.Encryptor, []byte(cfg.Encryption.Key))
 	s.CredentialImport.SetSecretProtector(s.CredentialSecrets)
 	s.Exposure.SetSecretProtector(s.CredentialSecrets)
+	// Whether a secret value is kept at all: the organization's choice, else
+	// the platform default. Without the console settings store nothing is
+	// kept (fail closed).
+	secretStorage := leakedsecretpolicy.NewResolver(s.LeakedSecretPolicy, repos.Tenant, log)
+	s.CredentialImport.SetStoragePolicy(secretStorage)
+	s.Exposure.SetStoragePolicy(secretStorage)
 
 	// Initialize dashboard service
 	s.Dashboard = module.NewDashboardService(repos.Dashboard, log)

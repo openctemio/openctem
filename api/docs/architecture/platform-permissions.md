@@ -223,6 +223,8 @@ session, no permission). `public`: a sign-in step before a session exists.
 | `POST /api/v1/admin/settings/email/test` | `platform.settings.email.write` |
 | `GET /api/v1/admin/settings/feed-relay/` | `platform.settings.read` |
 | `PUT /api/v1/admin/settings/feed-relay/` | `platform.settings.general.write` |
+| `GET /api/v1/admin/settings/leaked-secret-storage/` | `platform.settings.read` |
+| `PUT /api/v1/admin/settings/leaked-secret-storage/` | `platform.settings.general.write` |
 | `GET /api/v1/admin/settings/legal/` | `platform.settings.read` |
 | `PUT /api/v1/admin/settings/legal/` | `platform.settings.legal.write` |
 | `GET /api/v1/admin/settings/limits/` | `platform.settings.read` |
