@@ -142,9 +142,8 @@ describe('SensorInstallSnippets', () => {
     unmount()
     mockFetch({}, false)
     render(<SensorInstallSnippets sensorId="s2" />)
-    // A loaded CI shard takes several seconds to commit the error render.
-    expect(await screen.findByRole('alert', {}, { timeout: 20_000 })).toBeInTheDocument()
-  }, 30_000)
+    expect(await screen.findByRole('alert')).toBeInTheDocument()
+  })
 
   it('picks a catalog product: its snippets come from ?product=, and a custom one links the guide', async () => {
     stats.data = {

@@ -99,17 +99,22 @@ function LoadedI18nProvider({
   return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>
 }
 
+// The translator outside a provider, built once: a new `t` on every render
+// would re-run every effect that lists it as a dependency (a fetch effect
+// would abort and restart forever).
+const fallbackTranslation = {
+  locale: defaultLocale,
+  t: ((key, fallback, vars) =>
+    translate(getDictionary(defaultLocale), key, fallback, vars)) as TranslateFn,
+}
+
 /** Access the `t()` translator and active locale. */
 export function useTranslation() {
   const ctx = useContext(I18nContext)
   if (!ctx) {
     // Graceful fallback outside a provider (e.g. isolated component tests):
     // resolve against the default catalog rather than throwing.
-    const dict = getDictionary(defaultLocale)
-    return {
-      locale: defaultLocale,
-      t: ((key, fallback, vars) => translate(dict, key, fallback, vars)) as TranslateFn,
-    }
+    return fallbackTranslation
   }
   return ctx
 }
