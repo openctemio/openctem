@@ -636,26 +636,13 @@ func (s *Service) enrich(ctx context.Context, tenantID shared.ID, findings []*vu
 		}
 	}
 	for _, f := range findings {
-		CapPotentialPriority(f)
-		CapSharedHostingPriority(f)
+		vulnerability.CapVersionMatchPriority(f)
 	}
 	if s.sla != nil {
 		if err := s.sla.ApplyBatch(ctx, tenantID, findings); err != nil {
 			s.logger.Warn("vulnerability matching: sla not applied", "error", err)
 		}
 	}
-}
-
-// Confirmed reports whether an active check (a template or a network scanner
-// report of the same CVE on the same asset) confirmed the version match: the
-// same-issue link step records it as version_match.confirmed_by.
-func Confirmed(f *vulnerability.Finding) bool {
-	vm, ok := f.Metadata()["version_match"].(map[string]any)
-	if !ok {
-		return false
-	}
-	_, ok = vm["confirmed_by"]
-	return ok
 }
 
 // HostingReader reads where the tenant's matched assets are served from
@@ -695,39 +682,6 @@ func (s *Service) attributeHosting(ctx context.Context, tenantID shared.ID, matc
 	}
 	for i := range matches {
 		matches[i].HostedBy = hosted[matches[i].AssetID]
-	}
-}
-
-// SharedHostingCapReason is the priority reason of a match on a provider's
-// shared front end.
-const SharedHostingCapReason = "Version-based match on a host the provider's shared front end serves: attributed to the provider, shown as context"
-
-// CapSharedHostingPriority lowers a version match on a provider's shared
-// front end to P3: the software belongs to the provider, so it is context for
-// the organization, never its own P0-P2.
-func CapSharedHostingPriority(f *vulnerability.Finding) {
-	vm, ok := f.Metadata()["version_match"].(map[string]any)
-	if !ok {
-		return
-	}
-	if p, _ := vm["hosted_by"].(string); p == "" || Confirmed(f) {
-		return
-	}
-	if p := f.PriorityClass(); p == nil || *p == vulnerability.PriorityP0 || *p == vulnerability.PriorityP1 || *p == vulnerability.PriorityP2 {
-		f.SetPriorityClassification(vulnerability.PriorityP3, SharedHostingCapReason)
-	}
-}
-
-// CapPotentialPriority lowers a P0/P1 version match below the likely
-// threshold to P2 unless the CVE is in KEV.
-func CapPotentialPriority(f *vulnerability.Finding) {
-	c := f.Confidence()
-	if c == nil || *c >= vulnmatch.LikelyThreshold || f.IsInKEV() || Confirmed(f) {
-		return
-	}
-	if p := f.PriorityClass(); p != nil && (*p == vulnerability.PriorityP0 || *p == vulnerability.PriorityP1) {
-		f.SetPriorityClassification(vulnerability.PriorityP2,
-			"Version-based match below 80% confidence and not known exploited: capped at P2 until a scan or validation confirms it")
 	}
 }
 

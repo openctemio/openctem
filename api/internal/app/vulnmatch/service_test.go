@@ -85,58 +85,6 @@ func TestEvaluateVersion(t *testing.T) {
 	}
 }
 
-func TestCapPotentialPriority(t *testing.T) {
-	mk := func(conf int, class vulnerability.PriorityClass, kev bool) *vulnerability.Finding {
-		f, _ := vulnerability.NewFinding(shared.NewID(), shared.NewID(), vulnerability.FindingSourceVA, softwarematch.ToolName, vulnerability.SeverityHigh, "m")
-		c := conf
-		_ = f.SetConfidence(&c)
-		f.SetPriorityClassification(class, "x")
-		if kev {
-			f.SetIsInKEV(true)
-		}
-		return f
-	}
-	cases := []struct {
-		conf  int
-		class vulnerability.PriorityClass
-		kev   bool
-		want  vulnerability.PriorityClass
-	}{
-		{65, vulnerability.PriorityP0, false, vulnerability.PriorityP2},
-		{65, vulnerability.PriorityP1, false, vulnerability.PriorityP2},
-		{65, vulnerability.PriorityP3, false, vulnerability.PriorityP3},
-		{65, vulnerability.PriorityP0, true, vulnerability.PriorityP0},
-		{80, vulnerability.PriorityP0, false, vulnerability.PriorityP0},
-	}
-	for i, c := range cases {
-		f := mk(c.conf, c.class, c.kev)
-		CapPotentialPriority(f)
-		if got := *f.PriorityClass(); got != c.want {
-			t.Errorf("case %d: %s, want %s", i, got, c.want)
-		}
-	}
-}
-
-func TestCapPotentialPriority_ConfirmedMatchIsNotCapped(t *testing.T) {
-	f, _ := vulnerability.NewFinding(shared.NewID(), shared.NewID(), vulnerability.FindingSourceVA, softwarematch.ToolName, vulnerability.SeverityHigh, "m")
-	c := 65
-	_ = f.SetConfidence(&c)
-	f.SetPriorityClassification(vulnerability.PriorityP0, "x")
-	f.SetMetadata("version_match", map[string]any{"confirmed_by": map[string]any{"tool": "nuclei"}})
-	if !Confirmed(f) {
-		t.Fatal("a version match with confirmed_by is confirmed")
-	}
-	CapPotentialPriority(f)
-	if got := *f.PriorityClass(); got != vulnerability.PriorityP0 {
-		t.Errorf("a confirmed match was capped to %s", got)
-	}
-	g, _ := vulnerability.NewFinding(shared.NewID(), shared.NewID(), vulnerability.FindingSourceVA, softwarematch.ToolName, vulnerability.SeverityHigh, "m")
-	g.SetMetadata("version_match", map[string]any{"label": "potential"})
-	if Confirmed(g) {
-		t.Error("an unconfirmed match reads as confirmed")
-	}
-}
-
 // fakeStore is an in-memory softwarematch.Store for the reconcile logic.
 type fakeStore struct {
 	matches    []softwarematch.Match
