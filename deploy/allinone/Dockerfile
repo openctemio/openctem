@@ -51,7 +51,7 @@ FROM ${CONSOLE_IMAGE} AS console
 # advisory since then with it. CADDY_DEPS raises dependencies that have
 # security fixes newer than the Caddy release; drop an entry once a Caddy
 # release requires that version itself.
-FROM golang:1.27.3-alpine@sha256:b8c9b82affbbb82a020bbcf998dad2ba9516944ac7e883524642a481a9505e9c AS caddy
+FROM golang:1.27.3-alpine@sha256:d200d2dd76b03a99b52651fd1325aff7dcd35422c35c01bac56571b0507f3deb AS caddy
 ARG CADDY_VERSION=v2.11.4
 ARG CADDY_DEPS="golang.org/x/net@v0.60.0 google.golang.org/grpc@v1.83.2"
 WORKDIR /src
@@ -110,6 +110,8 @@ COPY --from=api --chown=0:0 /app/migrations /opt/openctem/api/migrations
 COPY --from=api --chown=0:0 /app/configs /opt/openctem/api/configs
 # The OpenAPI spec the API serves at /openapi.yaml (relative to its working dir).
 COPY --from=api --chown=0:0 /app/api/openapi/swagger.yaml /opt/openctem/api/api/openapi/swagger.yaml
+# The third-party notices the API serves (About > Open-source licenses).
+COPY --from=api --chown=0:0 /app/third-party-notices.json /opt/openctem/api/third-party-notices.json
 # The migration runner (api/cmd/openctem-migrate), run by supervise.sh.
 COPY --from=api --chown=0:0 /app/openctem-migrate /usr/local/bin/openctem-migrate
 # Bind :443 (and the optional :80 redirect) as non-root, on Kubernetes too:

@@ -30,6 +30,9 @@ interface LegalSettingsResponse {
   security_contact?: string
   security_policy_url?: string
   security_txt_disabled?: boolean
+  help_bug_url?: string
+  help_feedback_url?: string
+  help_links_disabled?: boolean
 }
 
 export function toLegalRecord(s: LegalSettingsResponse): LegalRecord {

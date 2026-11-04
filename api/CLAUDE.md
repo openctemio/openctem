@@ -12,7 +12,9 @@ repository, renamed 2026-10-02; RFC-020). The repository holds two components:
 
 Separate repositories: [sensor](https://github.com/openctemio/sensor) (formerly
 agent), [sdk-go](https://github.com/openctemio/sdk-go),
-[ctis](https://github.com/openctemio/ctis),
+[ctis](https://github.com/openctemio/ctis) (CTIS 2.0 format, module
+`github.com/openctemio/ctis/v2`), [contract](https://github.com/openctemio/contract)
+(orchestration contracts),
 [helm-charts](https://github.com/openctemio/helm-charts) and the public
 [docs](https://github.com/openctemio/docs) site. Map:
 `docs/development/repositories.md`.
@@ -49,7 +51,7 @@ go test -cover ./...                         # With coverage
 
 ## Tech Stack & Structure
 
-- **Go 1.26+**, strict linting via golangci-lint
+- **Go 1.27+**, strict linting via golangci-lint
 - **PostgreSQL** persistence, **Chi Router**, **DDD architecture**
 
 ```
@@ -83,8 +85,8 @@ api/
 
 ```bash
 # 1. Lint the code this branch adds (what CI gates on). golangci-lint is
-#    pinned to v1.64.8: .golangci.yml is v1 format and a global v2 binary
-#    rejects it. Findings in files you did not touch mean the branch lags
+#    pinned to v2.14.0 (the first release that reads Go 1.27); a different
+#    global binary may disagree with it. Findings in files you did not touch mean the branch lags
 #    develop: merge develop and rerun.
 make lint-new
 

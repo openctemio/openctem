@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"log/slog"
 	nethttp "net/http"
 	"os"
 	"os/signal"
@@ -304,6 +305,9 @@ func run() int {
 	if services.OAuth != nil && services.Email != nil {
 		services.OAuth.SetIdentityNotifier(services.Email)
 	}
+	if services.SSO != nil && services.Email != nil {
+		services.SSO.SetIdentityNotifier(services.Email)
+	}
 
 	// Owners of an organization whose e-mail channel was stopped by the
 	// managed service rules are told in-app and through the system SMTP.
@@ -344,6 +348,7 @@ func run() int {
 			domains = repos.VerifiedDomain
 		}
 		services.Email.SetTenantSMTPResolver(auth.NewIntegrationSMTPResolver(repos.Integration, services.Encryptor.DecryptString, mode, domains, log))
+		services.Email.SetLocaleResolver(auth.NewRepoEmailLocaleResolver(repos.User, repos.Tenant, log))
 	}
 
 	// ==========================================================================
@@ -600,6 +605,20 @@ func run() int {
 			}()
 		}
 
+		// Stored asset names to the CTIS 2.0 canonical form first
+		// (asset_canonical.go), then stored findings to the current identity
+		// recipe (version 4, the CTIS fingerprint recipe v2; finding_rekey.go).
+		// In this order, in one goroutine: an asset merge moves findings,
+		// which the re-key then keys once, and the two never contend for the
+		// same rows. Both are idempotent and resumable; the re-key runs on one
+		// replica at a time (advisory lock), and ingest re-keys a finding on
+		// its next sighting, so nothing is split while they run. Down steps:
+		// asset-canonical -revert, refingerprint -down -apply.
+		go func() {
+			runAssetCanonicalOnStart(ctx, db, log)
+			runFindingRekeyOnStart(ctx, db, log)
+		}()
+
 		// Host keys for commands queued before every command got them at
 		// create (research/130). Idempotent and SKIP LOCKED: safe on every
 		// start and across replicas.
@@ -731,6 +750,11 @@ func loggerConfig(cfg *config.Config) logger.Config {
 		Level:  cfg.Log.Level,
 		Format: cfg.Log.Format,
 		Output: os.Stdout,
+		Attrs: []slog.Attr{
+			slog.String("service", "api"),
+			slog.String("version", version.Get().Version),
+			slog.String("env", cfg.App.Env),
+		},
 		Sampling: logger.SamplingConfig{
 			Enabled:   cfg.Log.SamplingEnabled,
 			Tick:      time.Second,

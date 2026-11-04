@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/pkg/domain/cirun"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -24,7 +24,7 @@ func TestCIToken_ReExchange(t *testing.T) {
 	ctx := context.Background()
 	cfg := r.trust(r.tenant, cirun.Rules{Owners: []string{"acme"}, Refs: []string{"main"}})
 	const sha = "5555555555555555555555555555555555555555"
-	repoName := strings.ToLower(strings.TrimPrefix(r.idp.srv.URL, "https://")) + "/acme/api"
+	repoName := strings.ToLower(strings.TrimPrefix(r.idp.url, "https://")) + "/acme/api"
 	exchange := func(tenant shared.ID, tok string, aggregate bool) (int, map[string]any) {
 		t.Helper()
 		resp, out := r.post("/api/v1/ci/oidc/exchange", "", map[string]any{"tenant_id": tenant.String(), "id_token": tok, "aggregate": aggregate})
@@ -166,7 +166,7 @@ func TestCIToken_ReExchangeAfterLostCreation(t *testing.T) {
 	tok := r.idp.token(t, cfg.Audience, "acme/api", "main", sha, map[string]any{"jti": jti})
 	planned := shared.NewID()
 	sum := sha256.Sum256([]byte(tok))
-	if ok, _, err := r.repo.ClaimReplay(ctx, cirun.Replay{Issuer: r.idp.srv.URL, JTI: jti, TenantID: &r.tenant,
+	if ok, _, err := r.repo.ClaimReplay(ctx, cirun.Replay{Issuer: r.idp.url, JTI: jti, TenantID: &r.tenant,
 		TokenSHA256: sum[:], RunID: &planned, ExpiresAt: time.Now().Add(time.Hour)}); err != nil || !ok {
 		t.Fatalf("seed the lost first exchange: %v %v", ok, err)
 	}

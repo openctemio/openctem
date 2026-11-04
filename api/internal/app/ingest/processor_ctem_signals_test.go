@@ -3,7 +3,7 @@ package ingest
 import (
 	"testing"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -21,12 +21,12 @@ func TestApplyCTEMSignals_CarriesScannerSignals(t *testing.T) {
 	}
 
 	p.applyCTEMSignals(a, &ctis.Asset{
-		IsInternetAccessible: true,
+		IsInternetAccessible: ctis.Bool(true),
 		Compliance: &ctis.AssetCompliance{
-			Frameworks:         []string{"PCI-DSS", "SOC2"},
-			DataClassification: "confidential",
-			PIIExposed:         true,
-			PHIExposed:         true,
+			Frameworks:         []ctis.ComplianceFramework{"pci_dss", "soc2"},
+			DataClassification: ctis.DataClassification("confidential"),
+			HasPII:             true,
+			HasPHI:             true,
 		},
 	}, true)
 
@@ -73,8 +73,8 @@ func TestApplyCTEMSignals_InvalidClassificationSkipped(t *testing.T) {
 	a, _ := asset.NewAsset("example.com", asset.AssetTypeDomain, asset.CriticalityMedium)
 
 	p.applyCTEMSignals(a, &ctis.Asset{
-		IsInternetAccessible: true,
-		Compliance:           &ctis.AssetCompliance{DataClassification: "not-a-level", PIIExposed: true},
+		IsInternetAccessible: ctis.Bool(true),
+		Compliance:           &ctis.AssetCompliance{DataClassification: ctis.DataClassification("not-a-level"), HasPII: true},
 	}, true)
 
 	if string(a.DataClassification()) == "not-a-level" {

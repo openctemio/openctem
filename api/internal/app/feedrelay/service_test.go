@@ -16,7 +16,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/ctis/transfer/bundle"
+	"github.com/openctemio/contract/transfer/bundle"
 
 	"github.com/openctemio/openctem/api/internal/app/threatsource"
 	"github.com/openctemio/openctem/api/pkg/domain/admin"
@@ -365,6 +365,9 @@ type fakeFeed struct {
 	keep    []string
 	dirs    []string
 	seen    map[string]string // what the working directory held at Plan
+	// publishedAt overrides the freshness stamp (default: tNow-1h) for tests
+	// that run on the wall clock.
+	publishedAt *time.Time
 }
 
 func (f *fakeFeed) Name() string            { return dom.FeedVulnFeed }
@@ -389,6 +392,9 @@ func (f *fakeFeed) Import(context.Context, string) ([]string, error) {
 }
 func (f *fakeFeed) Freshness(context.Context) (Freshness, error) {
 	at := tNow.Add(-time.Hour)
+	if f.publishedAt != nil {
+		at = *f.publishedAt
+	}
 	return Freshness{Sequence: 7, PublishedAt: &at}, nil
 }
 

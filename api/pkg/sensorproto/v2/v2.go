@@ -61,17 +61,23 @@ func ReportLocation(reportID string) string {
 
 // Media types and encodings.
 const (
-	// MediaTypeCTIS is the one content type the results resource accepts. The
-	// CTIS major version is part of the type; the minor travels in the body.
-	MediaTypeCTIS = "application/vnd.openctem.ctis.v1+json"
+	// MediaTypeCTISBase is the CTIS 2.0 media type without parameters. The
+	// results resource requires the version parameter on top of it.
+	MediaTypeCTISBase = "application/vnd.ctis+json"
+	// MediaTypeCTIS is the content type a sensor sends, and the value the
+	// server advertises in Accept and the hello document: the base type with
+	// the version parameter at the CTIS version this platform speaks. Any 2.x
+	// minor is accepted on input.
+	MediaTypeCTIS = MediaTypeCTISBase + "; version=2.0"
 	// MediaTypeProblem is RFC 9457 problem details.
 	MediaTypeProblem = "application/problem+json"
 	// MediaTypeJSON is the content type of every successful v2 response body.
 	MediaTypeJSON = "application/json"
 
-	// CTISMajorVersion is the CTIS major version MediaTypeCTIS carries. The
-	// body's "version" must have the same major (anti-differential).
-	CTISMajorVersion = "1"
+	// CTISMajorVersion is the CTIS major version the media type's version
+	// parameter carries. The body's "version" must have the same major
+	// (anti-differential).
+	CTISMajorVersion = "2"
 
 	EncodingIdentity = "identity"
 	EncodingGzip     = "gzip"
@@ -107,10 +113,12 @@ var (
 	ErrUnsupportedEncoding  = errors.New("unsupported content encoding")
 )
 
-// ParseResultsContentType accepts exactly MediaTypeCTIS: type and subtype
-// compared case-insensitively, no parameter except charset=utf-8. Everything
-// else, application/json included, is ErrUnsupportedMediaType, so the server
-// never sniffs a body to decide how to parse it.
+// ParseResultsContentType accepts MediaTypeCTISBase with a required
+// version=2.<minor> parameter: type and subtype compared case-insensitively,
+// charset=utf-8 the only other parameter, no duplicates. Everything else,
+// application/json and the pre-2.0 vendor type included, is
+// ErrUnsupportedMediaType, so the server never sniffs a body to decide how to
+// parse it.
 func ParseResultsContentType(v string) error {
 	if strings.TrimSpace(v) == "" {
 		return ErrUnsupportedMediaType
@@ -119,16 +127,41 @@ func ParseResultsContentType(v string) error {
 	if err != nil {
 		return ErrUnsupportedMediaType
 	}
-	// mime.ParseMediaType lower-cases the type and the parameter names.
-	if mt != MediaTypeCTIS {
+	// mime.ParseMediaType lower-cases the type and the parameter names, and
+	// refuses duplicate parameters.
+	if mt != MediaTypeCTISBase {
+		return ErrUnsupportedMediaType
+	}
+	version, hasVersion := params["version"]
+	if !hasVersion || !isCTISMinorVersion(version) {
 		return ErrUnsupportedMediaType
 	}
 	for k, val := range params {
-		if k != "charset" || !strings.EqualFold(val, "utf-8") {
+		switch k {
+		case "version":
+		case "charset":
+			if !strings.EqualFold(val, "utf-8") {
+				return ErrUnsupportedMediaType
+			}
+		default:
 			return ErrUnsupportedMediaType
 		}
 	}
 	return nil
+}
+
+// isCTISMinorVersion reports whether v is "2.<minor>" with a decimal minor.
+func isCTISMinorVersion(v string) bool {
+	major, minor, ok := strings.Cut(v, ".")
+	if !ok || major != CTISMajorVersion || minor == "" || len(minor) > 4 {
+		return false
+	}
+	for _, c := range minor {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 // ParseContentEncoding returns the one content coding of a request: "" for an
@@ -166,10 +199,9 @@ func HasFeature(values []string, feature string) bool {
 	return false
 }
 
-// CTISVersionMajorMatches reports whether a body "version" ("1", "1.0",
-// "1.3") has the major version the media type names. An empty version is not
-// a match: v2 requires the body to state it.
+// CTISVersionMajorMatches reports whether a body "version" ("2.0",
+// "2.3") has the major version the media type names. An empty version is not
+// a match: v2 requires the body to state it, as "2.<minor>".
 func CTISVersionMajorMatches(version string) bool {
-	major, _, _ := strings.Cut(strings.TrimSpace(version), ".")
-	return major == CTISMajorVersion
+	return isCTISMinorVersion(strings.TrimSpace(version))
 }

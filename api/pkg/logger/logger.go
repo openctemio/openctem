@@ -26,6 +26,10 @@ type Config struct {
 
 	// Async configuration for non-blocking logging
 	Async AsyncConfig
+	// Attrs are added to every record: the identity of the emitting process
+	// (service, version, env), so records stay attributable once several
+	// services' logs are shipped to one store.
+	Attrs []slog.Attr
 }
 
 // DefaultConfig returns the default logger configuration.
@@ -66,6 +70,10 @@ func New(cfg Config) *Logger {
 
 	// Count WARN/ERROR records before sampling can drop them.
 	handler = newCountingHandler(handler)
+
+	if len(cfg.Attrs) > 0 {
+		handler = handler.WithAttrs(cfg.Attrs)
+	}
 
 	return &Logger{
 		Logger: slog.New(handler),

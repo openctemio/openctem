@@ -654,7 +654,13 @@ type StepRunResponse struct {
 	ErrorCode    string  `json:"error_code,omitempty"`
 	// ErrorClass groups the code by what can fix it: config, scope,
 	// placement, policy, transient, tool, timeout or canceled.
-	ErrorClass    string `json:"error_class,omitempty"`
+	ErrorClass string `json:"error_class,omitempty"`
+	// SkipReason says why a skipped step did not run (no tool or sensor
+	// here runs it, a step it needs was skipped, its condition, depth or
+	// intensity); ErrorCode is the reason's code when it has one
+	// (NO_MATCHING_TOOL, TOOL_NOT_INSTALLED, TOOL_DISABLED,
+	// NO_SENSOR_FOR_TOOL, DEPENDENCY_SKIPPED).
+	SkipReason    string `json:"skip_reason,omitempty"`
 	Attempt       int    `json:"attempt"`
 	MaxAttempts   int    `json:"max_attempts"`
 	FindingsCount int    `json:"findings_count"`
@@ -1840,6 +1846,7 @@ func toStepRunResponse(sr *scanrundom.StepRun) StepRunResponse {
 		ErrorMessage:  sr.ErrorMessage,
 		ErrorCode:     sr.ErrorCode,
 		ErrorClass:    stepErrorClass(sr.ErrorCode),
+		SkipReason:    sr.SkipReason,
 		Attempt:       sr.Attempt,
 		MaxAttempts:   sr.MaxAttempts,
 		FindingsCount: sr.FindingsCount,

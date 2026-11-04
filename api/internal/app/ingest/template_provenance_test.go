@@ -7,65 +7,89 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/pkg/domain/ingestreport"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
 )
 
+// hexDigest is a CTIS 2.0 content digest: 64 lower-case hex characters.
+func hexDigest(c string) string { return strings.Repeat(c, 64) }
+
 func toolWithRelease(digest string) *ctis.Tool {
-	return &ctis.Tool{Name: "nuclei", Properties: ctis.Properties{"content": []any{
-		map[string]any{"name": "trivy-db", "digest": "sha256:" + strings.Repeat("0", 64)},
-		map[string]any{"name": "nuclei-templates", "version": "v10.4.9", "digest": digest},
-	}}}
+	return &ctis.Tool{Name: "nuclei", Content: []ctis.ToolContent{
+		{Name: "trivy-db", SHA256: hexDigest("0")},
+		{Name: "nuclei-templates", Version: "v10.4.9", SHA256: digest},
+	}}
+}
+
+// ruleReport is a report whose rule catalog holds one template rule and one
+// finding naming it.
+func ruleReport(tool *ctis.Tool, rule ctis.Rule, f ctis.Finding) (*ctis.Report, *ctis.Finding) {
+	rule.ID = "r1"
+	f.RuleRef = "r1"
+	r := &ctis.Report{Tool: tool, Rules: []ctis.Rule{rule}, Findings: []ctis.Finding{f}}
+	return r, &r.Findings[0]
 }
 
 func TestFindingTemplateProvenance(t *testing.T) {
-	d := "sha256:" + strings.Repeat("c", 64)
-	rel := "sha256:" + strings.Repeat("d", 64)
-	got := findingTemplateProvenance(&ctis.Finding{Properties: ctis.Properties{"template_digest": d, "template_path": "http/x.yaml"}}, toolWithRelease(rel))
-	if got.TemplateDigest != d || got.TemplatePath != "http/x.yaml" || got.TemplatesVersion != "v10.4.9" || got.TemplatesDigest != rel {
+	d := hexDigest("c")
+	rel := hexDigest("d")
+	r, f := ruleReport(toolWithRelease(rel), ctis.Rule{RuleID: "x", ContentSHA256: d, ContentPath: "http/x.yaml"}, ctis.Finding{})
+	got := findingTemplateProvenance(f, r)
+	if got.TemplateDigest != "sha256:"+d || got.TemplatePath != "http/x.yaml" || got.TemplatesVersion != "v10.4.9" || got.TemplatesDigest != "sha256:"+rel {
 		t.Fatalf("provenance %+v", got)
 	}
-	if !findingTemplateProvenance(&ctis.Finding{}, toolWithRelease(rel)).Empty() {
+	if !findingTemplateProvenance(&ctis.Finding{}, &ctis.Report{Tool: toolWithRelease(rel)}).Empty() {
 		t.Error("a finding without a digest has provenance")
 	}
-	if v, dg := reportTemplateRelease(&ctis.Tool{Name: "nuclei", Properties: ctis.Properties{"content": "garbage"}}); v != "" || dg != "" {
-		t.Error("malformed content read")
+	// The properties of a finding carry no meaning: a planted digest is ignored.
+	planted := &ctis.Finding{Properties: ctis.Properties{"template_digest": "sha256:" + d, "template_path": "http/x.yaml"}}
+	if !findingTemplateProvenance(planted, &ctis.Report{Tool: toolWithRelease(rel)}).Empty() {
+		t.Error("properties.template_digest set provenance")
+	}
+	if v, dg := reportTemplateRelease(&ctis.Tool{Name: "nuclei", Content: []ctis.ToolContent{{Name: "other", SHA256: d}}}); v != "" || dg != "" {
+		t.Error("another content name read as the template release")
+	}
+	if v, dg := reportTemplateRelease(nil); v != "" || dg != "" {
+		t.Error("nil tool read")
 	}
 }
 
 // The exposure class comes from the template's tags as the sensor reported
 // them, and an attacking tag wins over an exposure tag.
 func TestFindingTemplateProvenance_ExposureClass(t *testing.T) {
-	d := "sha256:" + strings.Repeat("c", 64)
-	props := ctis.Properties{"template_digest": d}
-	if !findingTemplateProvenance(&ctis.Finding{Properties: props, Tags: []string{"exposure", "swagger"}}, nil).ExposureClass {
+	rule := ctis.Rule{RuleID: "x", ContentSHA256: hexDigest("c")}
+	r, f := ruleReport(nil, rule, ctis.Finding{Tags: []string{"exposure", "swagger"}})
+	if !findingTemplateProvenance(f, r).ExposureClass {
 		t.Error("an exposure template is not marked")
 	}
-	if findingTemplateProvenance(&ctis.Finding{Properties: props, Tags: []string{"exposure", "sqli"}}, nil).ExposureClass {
+	r, f = ruleReport(nil, rule, ctis.Finding{Tags: []string{"exposure", "sqli"}})
+	if findingTemplateProvenance(f, r).ExposureClass {
 		t.Error("an attacking template is marked exposure")
 	}
-	own := ctis.Properties{"template_digest": d, "rule_source": "tenant"}
-	if findingTemplateProvenance(&ctis.Finding{Properties: own, Tags: []string{"exposure"}}, nil).ExposureClass {
+	own := ctis.Rule{RuleID: "x", ContentSHA256: hexDigest("c")}
+	own.Extensions.Set(ctis.OpenCTEMNamespace, "rule_source", "tenant")
+	r, f = ruleReport(nil, own, ctis.Finding{Tags: []string{"exposure"}})
+	if findingTemplateProvenance(f, r).ExposureClass {
 		t.Error("an organization's own rule is marked exposure")
 	}
 }
 
 // The run's template release is one value across its reports, else unknown.
 func TestDecideRunCoverage_TemplatesDigest(t *testing.T) {
-	rel1 := "sha256:" + strings.Repeat("1", 64)
-	rel2 := "sha256:" + strings.Repeat("2", 64)
+	rel1 := hexDigest("1")
+	rel2 := hexDigest("2")
 	report := func(rel string) ingestreport.CoverageReport {
-		h, _ := json.Marshal(V2Header{Tool: toolWithRelease(rel), Metadata: ctis.ReportMetadata{CoverageType: "full"}})
+		h, _ := json.Marshal(V2Header{Tool: toolWithRelease(rel), Metadata: ctis.ReportMetadata{CoverageType: ctis.CoverageFull}})
 		return ingestreport.CoverageReport{Integrity: protov2.IntegritySingle, ReportID: shared.NewID().String(), State: protov2.StateCompleted, ToolName: "nuclei",
 			Header: h, TouchedAssetIDs: []shared.ID{shared.NewID()}}
 	}
 	cov := func(rs ...ingestreport.CoverageReport) *ingestreport.CommandCoverage {
 		return &ingestreport.CommandCoverage{CommandType: "scan", CommandStatus: "completed", Reports: rs}
 	}
-	if d := decideCoverage(cov(report(rel1), report(rel1))); !d.eligible() || d.query.TemplatesDigest != rel1 {
+	if d := decideCoverage(cov(report(rel1), report(rel1))); !d.eligible() || d.query.TemplatesDigest != "sha256:"+rel1 {
 		t.Fatalf("agreeing reports: %+v", d)
 	}
 	if d := decideCoverage(cov(report(rel1), report(rel2))); d.query.TemplatesDigest != "" {
@@ -141,9 +165,9 @@ func TestEvaluateCommandCoverage_TemplateDriftIsNotObserved(t *testing.T) {
 // A sensor that reports the template file on its own disk gets only the
 // path inside the pack stored.
 func TestFindingTemplateProvenance_SensorLocalPath(t *testing.T) {
-	d := "sha256:" + strings.Repeat("c", 64)
 	abs := "/var/lib/openctem/content/nuclei-templates/versions/20261005T083220.302831790Z-7ae245/http/x.yaml"
-	got := findingTemplateProvenance(&ctis.Finding{Properties: ctis.Properties{"template_digest": d, "template_path": abs}}, nil)
+	r, f := ruleReport(nil, ctis.Rule{RuleID: "x", ContentSHA256: hexDigest("c"), ContentPath: abs}, ctis.Finding{})
+	got := findingTemplateProvenance(f, r)
 	if got.TemplatePath != "http/x.yaml" {
 		t.Fatalf("template path = %q", got.TemplatePath)
 	}
@@ -152,10 +176,11 @@ func TestFindingTemplateProvenance_SensorLocalPath(t *testing.T) {
 // An absolute path outside the content store names no pack template: it is
 // dropped, never stored as its last segments.
 func TestFindingTemplateProvenance_OtherAbsolutePathDropped(t *testing.T) {
-	d := "sha256:" + strings.Repeat("c", 64)
+	d := hexDigest("c")
 	for _, abs := range []string{"/abs/path.yaml", "/tmp/nuclei-signed-123/x.yaml", "/var/lib/openctem/workspaces/t/j-1/x.yaml"} {
-		got := findingTemplateProvenance(&ctis.Finding{Properties: ctis.Properties{"template_digest": d, "template_path": abs}}, nil)
-		if got.TemplatePath != "" || got.TemplateDigest != d {
+		r, f := ruleReport(nil, ctis.Rule{RuleID: "x", ContentSHA256: d, ContentPath: abs}, ctis.Finding{})
+		got := findingTemplateProvenance(f, r)
+		if got.TemplatePath != "" || got.TemplateDigest != "sha256:"+d {
 			t.Fatalf("%s: provenance = %+v, want the digest kept and no path", abs, got)
 		}
 	}
@@ -208,13 +233,12 @@ func TestEvaluateCommandCoverage_SecretsAreMarkedNotResolved(t *testing.T) {
 // An import that is not the result of a command the platform dispatched (API,
 // CTIS or CI upload) cannot set the exposure class, whatever tags it carries.
 func TestSightingProvenance_ExposureOnlyForCommandBoundResults(t *testing.T) {
-	f := &ctis.Finding{Properties: map[string]any{"template_digest": "sha256:" + strings.Repeat("a", 64)},
-		Tags: []string{"exposure", "swagger"}}
-	if !sightingProvenance(f, nil, &alterScope{commandBound: true}).ExposureClass {
+	r, f := ruleReport(nil, ctis.Rule{RuleID: "x", ContentSHA256: hexDigest("a")}, ctis.Finding{Tags: []string{"exposure", "swagger"}})
+	if !sightingProvenance(f, r, &alterScope{commandBound: true}).ExposureClass {
 		t.Fatal("a command-bound result must keep the exposure class")
 	}
 	for name, sc := range map[string]*alterScope{"nil scope": nil, "unbound import": {}} {
-		if sightingProvenance(f, nil, sc).ExposureClass {
+		if sightingProvenance(f, r, sc).ExposureClass {
 			t.Errorf("%s set the exposure class", name)
 		}
 	}

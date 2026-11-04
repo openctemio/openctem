@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -194,6 +195,11 @@ func (s *Service) CreateScan(ctx context.Context, input CreateScanInput) (*scan.
 	}
 	// The probe ceiling: nothing in the scan may probe above it.
 	if err := s.applyIntensity(ctx, sc, input.Intensity); err != nil {
+		return nil, err
+	}
+	// Passive only: an organization without active scanning saves no scan
+	// above passive (the dispatch re-check enforces it again).
+	if err := s.requireActiveScanning(ctx, sc); err != nil {
 		return nil, err
 	}
 	// The depth: at least one first step of the workflow must run at it.
@@ -518,22 +524,18 @@ func (s *Service) configureWorkflowScan(ctx context.Context, sc *scan.Scan, tena
 	if err != nil {
 		return fmt.Errorf("failed to get scan workflow steps: %w", err)
 	}
-	// A workflow no sensor here can run (or that runs only in CI) is
-	// refused, naming the steps and why.
-	pipelineTemplate.Steps = steps
-	if err := s.requireWorkflowRunnable(ctx, tenantID, pipelineTemplate); err != nil {
-		return err
-	}
+	// A missing, disabled or sensor-less tool never refuses the scan: its
+	// step is skipped with the reason when the scan runs (step_support.go).
+	// A tool that cannot be a workflow step (a collector or a connector) is
+	// a wrong definition and is refused.
 	for _, step := range steps {
 		if step.Tool != "" {
 			stepTool, err := s.toolRepo.GetByName(ctx, tenantID, step.Tool)
-			if err != nil || stepTool == nil {
-				return fmt.Errorf("%w: workflow step '%s' uses tool '%s' which is not found",
-					shared.ErrValidation, step.StepKey, step.Tool)
+			if errors.Is(err, shared.ErrNotFound) || (err == nil && stepTool == nil) {
+				continue
 			}
-			if !stepTool.IsActive {
-				return fmt.Errorf("%w: workflow step '%s' uses tool '%s' which is disabled",
-					shared.ErrValidation, step.StepKey, step.Tool)
+			if err != nil {
+				return fmt.Errorf("look up the tool of workflow step '%s': %w", step.StepKey, err)
 			}
 			if stepTool.IsCollector() {
 				return fmt.Errorf("%w: workflow step '%s' uses '%s', an asset collector: collectors run on their collector sensor's own schedule and cannot be scanned with",
@@ -559,9 +561,8 @@ func (s *Service) configureSingleScan(ctx context.Context, sc *scan.Scan, scanne
 	if err != nil || scannerTool == nil {
 		return fmt.Errorf("%w: scanner '%s' not found in tool registry", shared.ErrValidation, scannerName)
 	}
-	if !scannerTool.IsActive {
-		return fmt.Errorf("%w: scanner '%s' is disabled", shared.ErrValidation, scannerName)
-	}
+	// A disabled scanner does not refuse the scan: a run is refused with
+	// TOOL_DISABLED (a blocked run) until the tool is enabled again.
 	if scannerTool.IsCollector() {
 		return fmt.Errorf("%w: '%s' is an asset collector, not a scanner: collectors run on their collector sensor's own schedule and cannot be scanned with", shared.ErrValidation, scannerName)
 	}
@@ -975,6 +976,9 @@ func (s *Service) UpdateScan(ctx context.Context, input UpdateScanInput) (*scan.
 			requested = string(sc.EffectiveIntensity())
 		}
 		if err := s.applyIntensity(ctx, sc, requested); err != nil {
+			return nil, err
+		}
+		if err := s.requireActiveScanning(ctx, sc); err != nil {
 			return nil, err
 		}
 	}

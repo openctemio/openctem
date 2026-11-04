@@ -1,5 +1,5 @@
 // Package importmapping is an organization's declarative import mapping: a
-// document in the CTIS mapping language (openctem.io/mapping/v1) that turns a
+// document in the CTIS mapping language (openctem.io/mapping/v2) that turns a
 // CSV, JSON, JSON Lines or XML export into CTIS, kept in immutable versions.
 //
 // Design: docs/rfcs/RFC-126-import-mappings.md.
@@ -16,7 +16,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openctemio/ctis/importer/mapping"
+	"github.com/openctemio/ctis/v2/importer/mapping"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
@@ -110,22 +110,19 @@ func ValidateText(description, note string) error {
 // channels, never by a file an organization member maps.
 var allowedTargets = map[string]map[string]bool{
 	mapping.KindFinding: setOf(
-		"type", "title", "description", "message", "severity", "confidence", "impact", "likelihood",
-		"category", "vulnerability_class", "subcategory", "rule_id", "rule_name", "asset_value", "asset_type",
+		"type", "title", "description", "message", "severity", "confidence",
+		"category", "vulnerability_classes", "subcategories", "rule_id", "rule_name", "asset_value", "asset_type",
 		"evidence", "references", "tags",
 		"location.path", "location.start_line", "location.end_line", "location.start_column", "location.end_column",
 		"location.snippet", "location.context_snippet",
-		"network.host", "network.port", "network.protocol", "network.service",
-		"vulnerability.cve_id", "vulnerability.cve_ids", "vulnerability.cwe_ids", "vulnerability.cwe_id",
-		"vulnerability.owasp_ids", "vulnerability.cvss_version", "vulnerability.cvss_score", "vulnerability.cvss_vector",
-		"vulnerability.package", "vulnerability.purl", "vulnerability.affected_version", "vulnerability.affected_version_range",
-		"vulnerability.fixed_version", "vulnerability.fixed_versions", "vulnerability.ecosystem", "vulnerability.published_at",
-		"vulnerability.cpe", "vulnerability.advisories", "vulnerability.vendor_severity",
+		"network.host", "network.port", "network.transport", "network.app_protocol",
+		"vulnerability.ids", "vulnerability.cwe_ids", "vulnerability.owasp_ids",
+		"vulnerability.package_name", "vulnerability.purl", "vulnerability.installed_version", "vulnerability.affected_version_range",
+		"vulnerability.fixed_versions", "vulnerability.published_at", "vulnerability.cpe",
 		"misconfiguration.policy_id", "misconfiguration.policy_name", "misconfiguration.resource_type",
 		"misconfiguration.resource_name", "misconfiguration.provider", "misconfiguration.service",
 		"misconfiguration.namespace", "misconfiguration.expected", "misconfiguration.actual", "misconfiguration.cause",
-		"remediation.recommendation", "remediation.steps", "remediation.effort", "remediation.fix_available",
-		"remediation.references",
+		"remediation.recommendation", "remediation.steps", "remediation.effort", "remediation.is_fix_available",
 	),
 	mapping.KindAsset: setOf("type", "value", "name", "description", "tags"),
 }
@@ -136,8 +133,8 @@ var allowedTargets = map[string]map[string]bool{
 // use, and findings that differ only there would merge.
 var IdentityMembers = []string{
 	"title", "rule_id", "asset_value", "location.path", "location.start_line",
-	"vulnerability.cve_id", "vulnerability.package", "vulnerability.purl",
-	"network.host", "network.port", "network.protocol",
+	"vulnerability.ids", "vulnerability.package_name", "vulnerability.purl",
+	"network.host", "network.port", "network.transport",
 	"misconfiguration.policy_id", "misconfiguration.resource_type", "misconfiguration.resource_name",
 }
 
@@ -294,9 +291,9 @@ func checkIdentitySpec(member string, v specView) string {
 var fingerprintInputs = []string{
 	"type", "rule_id", "title",
 	"location.path", "location.start_line", "location.end_line", "location.start_column", "location.end_column", "location.snippet",
-	"network.port", "network.protocol",
-	"vulnerability.cve_id", "vulnerability.cve_ids", "vulnerability.package", "vulnerability.purl",
-	"vulnerability.ecosystem", "vulnerability.affected_version",
+	"network.port", "network.transport",
+	"vulnerability.ids", "vulnerability.package_name", "vulnerability.purl",
+	"vulnerability.installed_version",
 	"misconfiguration.policy_id", "misconfiguration.resource_type", "misconfiguration.resource_name",
 }
 

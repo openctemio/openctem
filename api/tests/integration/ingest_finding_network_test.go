@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
@@ -34,15 +34,18 @@ func TestIngest_FindingStoresNetworkPort(t *testing.T) {
 
 	send := func(findings ...ctis.Finding) {
 		t.Helper()
-		rep := &ctis.Report{Version: "1.0", Tool: &ctis.Tool{Name: "nessus"},
-			Metadata: ctis.ReportMetadata{Timestamp: time.Now().UTC()},
+		rep := &ctis.Report{Version: ctis.SchemaVersion, Tool: &ctis.Tool{Name: "nessus"},
+			Metadata: ctis.ReportMetadata{ID: ctis.NewReportID(), GeneratedAt: time.Now().UTC()},
 			Assets:   []ctis.Asset{{ID: "h", Type: ctis.AssetTypeHost, Value: "web-1.example.com"}},
 			Findings: findings}
 		for i := range rep.Findings {
 			rep.Findings[i].AssetRef = "h"
 		}
 		out, err := svc.Ingest(ctx, agt, ingest.Input{Report: rep})
-		if err != nil || len(out.Errors) > 0 {
+		if err != nil {
+			t.Fatalf("ingest: %v", err)
+		}
+		if len(out.Errors) > 0 {
 			t.Fatalf("Ingest: %v %v", err, out.Errors)
 		}
 	}
@@ -66,7 +69,7 @@ func TestIngest_FindingStoresNetworkPort(t *testing.T) {
 
 	tls := ctis.Finding{Type: ctis.FindingTypeVulnerability, Severity: ctis.SeverityMedium,
 		Title: "SSL Certificate Cannot Be Trusted", RuleID: "nessus-51192",
-		Network: &ctis.NetworkLocation{Host: "web-1.example.com", Port: 8443, Protocol: "TCP", Service: "https"}}
+		Network: &ctis.NetworkLocation{Host: "web-1.example.com", Port: 8443, Transport: ctis.TransportTCP, AppProtocol: "https"}}
 	hostLevel := ctis.Finding{Type: ctis.FindingTypeVulnerability, Severity: ctis.SeverityLow,
 		Title: "OS end of life", RuleID: "nessus-33850"}
 	send(tls, hostLevel)
@@ -100,7 +103,7 @@ func TestIngest_FindingStoresNetworkPort(t *testing.T) {
 	// The same plugin on another port is another finding (RFC-043 #920: a
 	// network finding without a CVE is keyed on port and transport).
 	other := tls
-	other.Network = &ctis.NetworkLocation{Port: 443, Protocol: "tcp", Service: "https"}
+	other.Network = &ctis.NetworkLocation{Port: 443, Transport: ctis.TransportTCP, AppProtocol: "https"}
 	send(other)
 	var ports []int64
 	rows, err := r.db.QueryContext(ctx, `SELECT network_port FROM findings

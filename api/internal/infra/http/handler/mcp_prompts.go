@@ -148,7 +148,7 @@ func (h *MCPHandler) promptsListResult(ctx context.Context) map[string]any {
 		if p.RequiredPerm != "" && !middleware.HasPermission(ctx, p.RequiredPerm) {
 			continue
 		}
-		if !h.moduleEnabled(ctx, tenantID, p.Module) {
+		if !h.moduleEnabled(ctx, tenantID, p.Module, false) {
 			continue
 		}
 		list = append(list, map[string]any{
@@ -187,7 +187,7 @@ func (h *MCPHandler) handlePromptsGet(w http.ResponseWriter, r *http.Request, re
 
 	// A prompt of a module the organization has off answers as the REST
 	// routes of that module do.
-	if !h.moduleEnabled(ctx, tenantID, prompt.Module) {
+	if !h.moduleEnabled(ctx, tenantID, prompt.Module, false) {
 		h.auditPromptGet(r, tenantID, prompt.Name, rawArgs, auditdom.ResultDenied, true)
 		h.writeError(w, req.ID, rpcInvalidParams, promptErrorText(mcpError{Code: mcpErrModuleDisabled, Message: mcpModuleNotEnabled}))
 		return

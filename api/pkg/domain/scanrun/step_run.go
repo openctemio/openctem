@@ -208,6 +208,20 @@ func (sr *StepRun) Skip(reason string) {
 	sr.SkipReason = reason
 }
 
+// SkipWithCode marks the step as skipped with the code of the reason
+// (TOOL_NOT_INSTALLED, NO_SENSOR_FOR_TOOL, DEPENDENCY_SKIPPED, ...), so the
+// run view can explain it in the reader's language.
+func (sr *StepRun) SkipWithCode(reason, code string) {
+	sr.Skip(reason)
+	sr.ErrorCode = code
+}
+
+// SkippedUnsupported reports whether the step was skipped because no tool or
+// sensor of the organization runs it (the run then ends partial).
+func (sr *StepRun) SkippedUnsupported() bool {
+	return sr != nil && sr.Status == StepRunStatusSkipped && IsUnsupportedSkipCode(sr.ErrorCode)
+}
+
 // Cancel marks the step as canceled.
 func (sr *StepRun) Cancel() {
 	now := time.Now()

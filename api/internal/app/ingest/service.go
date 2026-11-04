@@ -5,10 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/internal/app/assetdiscovery"
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
@@ -81,15 +82,9 @@ type Service struct {
 	auditRepo    audit.Repository
 
 	// auditSvc is the SHARED application audit service. Ingest audit
-	// events are tenant-scoped, so they must go through it rather than
-	// writing audit_logs directly: LogEvent also extends the per-tenant
-	// tamper-evident hash chain (audit_log_chain). Writing via auditRepo
-	// alone persists the log but leaves it unchained, which the hourly
-	// chain verifier cannot distinguish from a deleted entry.
-	//
-	// It must be the same *AuditService instance the rest of the process
-	// uses — its chainMu is what serializes chain extension, and a second
-	// instance would have its own mutex and could interleave appends.
+	// events go through it so they carry the service's actor and API-key
+	// attribution. The database chains every stored row itself (trigger
+	// audit_log_chain_append), whichever path wrote it.
 	auditSvc *auditapp.AuditService
 
 	// assetExposureProjector promotes recon-discovered assets (open ports,
@@ -381,12 +376,6 @@ func (s *Service) SetSuppressionChecker(checker SuppressionChecker) {
 	s.findingProcessor.SetSuppressionChecker(checker)
 }
 
-// SetSuppressionModuleGuard makes ingest suppression honor the tenant's
-// suppressions module toggle (off = findings land as reported).
-func (s *Service) SetSuppressionModuleGuard(guard ModuleGuard) {
-	s.findingProcessor.SetSuppressionModuleGuard(guard)
-}
-
 // SetAssetExposureProjector wires the post-insert recon-asset → exposure-store
 // projector so open ports, exposed services and weak/expiring TLS certificates
 // surface continuously in the Exposure Register (CTEM Discovery). Nil-safe:
@@ -419,6 +408,14 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	if report == nil {
 		return nil, shared.NewDomainError("INVALID_INPUT", "report is required", nil)
 	}
+	// The receiver's own id of this delivery: from the transport (a v2
+	// report id, an import receipt, a job), else a new one. metadata.id is
+	// the producer's idempotency key and never becomes one of our ids.
+	reportID := strings.TrimSpace(input.ReportID)
+	if reportID == "" {
+		reportID = shared.NewID().String()
+	}
+	ctx = withReportID(ctx, reportID)
 	// One name per tool from here on: a sensor released before a tool was
 	// replaced still reports the old name (gitleaks -> betterleaks).
 	if report.Tool != nil {
@@ -429,6 +426,18 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	if err := s.validator.ValidateReport(report); err != nil {
 		return nil, err
 	}
+	// Every path (sensor, CI, import, connector, quarantine accept) applies
+	// only a valid CTIS 2.0 document: canonical asset values, document
+	// references that are never UUID-shaped, every finding on an asset of
+	// the document. The protocol v2 receiver ran this already; the rest of
+	// the paths meet it here, before anything is changed or stored.
+	if err := report.Validate(); err != nil {
+		return nil, shared.NewDomainError("INVALID_INPUT", "the report is not a valid CTIS 2.0 document",
+			withCause(shared.ErrValidation, err))
+	}
+	// properties carry no meaning in CTIS 2.0: the keys the stored model
+	// keeps come from typed members and the io.openctem extension.
+	adoptCTIS2Members(report, keepsOwnProperties(agt, input.Options))
 	// The policies this ingest applies, before anything is written: no
 	// snapshot, no ingest (the caller retries).
 	policy, err := s.loadPolicySnapshot(ctx, tenantID)
@@ -457,7 +466,7 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	if n := capReportText(report); n > 0 {
 		s.logger.Warn("ingest: capped oversized finding text",
 			"sensor_id", agt.ID.String(), "tenant_id", tenantID.String(),
-			"report_id", sanitizeIngestLogField(report.Metadata.ID), "values_capped", n)
+			"report_id", reportID, "values_capped", n)
 	}
 
 	// Result binding (RFC-040 §5.3). A server-side ingest (synthetic sensor,
@@ -465,11 +474,9 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	// unsolicited gate unless the accept side ran it already: quarantined
 	// (stored, not applied) or applied with the unsolicited limits.
 	opts := input.Options
-	if opts.Actor != nil {
-		// An upload's findings land only on the assets its rows name, never
-		// on an asset made up from the metadata or on "the only asset".
-		opts.RequireAssetForFindings = true
-	}
+	// CTIS 2.0: a finding names its asset (asset_ref, required); it never
+	// lands on an asset made up from the metadata or on "the only asset".
+	opts.RequireAssetForFindings = true
 	binding := opts.Binding
 	// A server-side ingest (synthetic sensor, zero id) is trusted, except a
 	// CI run's report: it has no sensor row either, and keeps its binding.
@@ -483,7 +490,7 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	unsolicitedWarned := false
 	if binding.Kind == BindingUnsolicited && !opts.Admitted {
 		warned, err := s.admitUnsolicited(ctx, agt, tenantID, unsolicitedSubmission{
-			Protocol: sensorresult.ProtocolV1, Route: opts.Route, ReportID: report.Metadata.ID, Report: report,
+			Protocol: sensorresult.ProtocolV1, Route: opts.Route, ReportID: reportID, Report: report,
 		})
 		if err != nil {
 			return nil, err
@@ -501,24 +508,25 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	// Which channel reported the findings is the platform's to say, from
 	// the principal: a sensor's metadata.source_type is ignored, so it can
 	// never file its findings as a person's or an integration's.
-	report.Metadata.SourceType = principalSourceType(agt, binding, report.Metadata.SourceType)
+	report.Metadata.Channel = ctis.Channel(principalSourceType(agt, binding, string(report.Metadata.Channel)))
 	scope := newAlterScope(binding).withActor(ctx, opts.Actor)
 
-	// report.Metadata.ID and SourceType come from the CTIS payload
-	// submitted by the sensor. A compromised/malicious sensor can
-	// embed CR/LF in those fields to forge log lines downstream
-	// (CodeQL go/log-injection). Strip control chars before logging.
+	// metadata.id and channel come from the CTIS payload submitted by the
+	// sensor. A compromised/malicious sensor can embed CR/LF in those
+	// fields to forge log lines downstream (CodeQL go/log-injection).
+	// Strip control chars before logging.
 	s.logger.Info("ingesting report",
 		"sensor_id", agt.ID.String(),
 		"tenant_id", tenantID.String(),
-		"report_id", sanitizeIngestLogField(report.Metadata.ID),
-		"source_type", sanitizeIngestLogField(report.Metadata.SourceType),
+		"report_id", reportID,
+		"producer_report_id", sanitizeIngestLogField(report.Metadata.ID),
+		"channel", sanitizeIngestLogField(string(report.Metadata.Channel)),
 		"assets_count", len(report.Assets),
 		"findings_count", len(report.Findings),
 	)
 
 	output := &Output{
-		ReportID:          report.Metadata.ID,
+		ReportID:          reportID,
 		Binding:           binding.String(),
 		UnsolicitedWarned: unsolicitedWarned,
 		policy:            policy,
@@ -609,7 +617,7 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 		if report.Tool != nil {
 			toolName = report.Tool.Name
 		}
-		s.stampScanAttribution(ctx, agt, tenantID, binding, scope, toolName, report.Metadata.ID, assetMap)
+		s.stampScanAttribution(ctx, agt, tenantID, binding, scope, toolName, reportID, assetMap)
 	}
 	// What a workflow step's report wrote, for the stages chained after it.
 	s.recordStepOutputs(ctx, tenantID, binding, scope)
@@ -635,7 +643,7 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	// Step 2: Process dependencies/components (SBOM)
 	if s.compRepo != nil && s.componentProcessor != nil && len(report.Dependencies) > 0 {
 		if err := s.componentProcessor.ProcessBatch(ctx, tenantID, report, assetMap,
-			PackageChannel(!agt.ID.IsZero() && binding.Kind != BindingCIRun, report.Metadata.SourceType), output); err != nil {
+			PackageChannel(!agt.ID.IsZero() && binding.Kind != BindingCIRun, string(report.Metadata.Channel)), output); err != nil {
 			s.logger.Error("failed to process components batch", "error", err)
 			// Continue with partial results
 		}
@@ -713,10 +721,10 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	// Skipped when this ingest could not record its occurrences: the sweep
 	// would mark the findings it did see as gone from the branch.
 	if !opts.DeferAutoResolve && unsolicitedMayResolve && !output.BranchOccurrencesFailed && !scope.actorRestricted() && input.IsFullCoverage() && s.findingRepo != nil && s.branchRepo != nil &&
-		report.Tool != nil && report.Metadata.ID != "" &&
+		report.Tool != nil &&
 		report.Metadata.Branch != nil && report.Metadata.Branch.Name != "" {
 		toolName := report.Tool.Name
-		scanID := report.Metadata.ID
+		scanID := reportID
 		branchName := report.Metadata.Branch.Name
 		for _, assetID := range assetMap {
 			if (binding.Kind == BindingCommand || binding.Kind == BindingCIRun) && !scope.allowedAsset(assetID) {
@@ -783,7 +791,7 @@ func (s *Service) projectAssetExposures(ctx context.Context, tenantID shared.ID,
 	ids := make([]shared.ID, 0)
 	for i := range report.Assets {
 		switch report.Assets[i].Type {
-		case ctis.AssetTypeOpenPort, ctis.AssetTypeService, ctis.AssetTypeHTTPService, ctis.AssetTypeCertificate:
+		case ctis.AssetTypeService, ctis.AssetTypeWebOrigin, ctis.AssetTypeCertificate:
 			id, ok := assetMap[report.Assets[i].ID]
 			if !ok || id.IsZero() || seen[id] {
 				continue
@@ -1052,7 +1060,7 @@ func (s *Service) createIngestAuditLog(ctx context.Context, agt *sensor.Sensor, 
 		"sensor_id":              agt.ID.String(),
 		"sensor_name":            agt.Name,
 		"report_id":              output.ReportID,
-		"source_type":            report.Metadata.SourceType,
+		"channel":                string(report.Metadata.Channel),
 		"findings_count":         len(report.Findings),
 		"findings_created":       output.FindingsCreated,
 		"findings_updated":       output.FindingsUpdated,
@@ -1149,21 +1157,18 @@ func (s *Service) createIngestAuditLog(ctx context.Context, agt *sensor.Sensor, 
 
 // writeIngestAuditLog persists one ingest audit event.
 //
-// Preferred path is the shared audit service, which persists the log AND
-// extends the tenant's tamper-evident hash chain. The direct-repository
-// path is a degraded fallback for callers that never wired the service; it
-// leaves the row unchained, so it warns loudly rather than failing silently
-// (an unchained tenant-scoped row is indistinguishable from a deleted one
-// when the hourly verifier walks the chain).
+// Preferred path is the shared audit service. The direct-repository path is
+// a fallback for callers that never wired the service; the database chains
+// the row either way (trigger audit_log_chain_append), but the fallback
+// skips the service's actor and API-key attribution, so it still warns.
 func (s *Service) writeIngestAuditLog(ctx context.Context, actx auditapp.AuditContext, event auditapp.AuditEvent) error {
 	if s.auditSvc != nil {
 		return s.auditSvc.LogEvent(ctx, actx, event)
 	}
 
-	s.logger.Warn("ingest audit service not wired; audit log will bypass the tamper-evident hash chain",
+	s.logger.Warn("ingest audit service not wired; audit log written without actor attribution",
 		"action", event.Action.String(),
 		"tenant_id", actx.TenantID,
-		"alert", "audit_chain_bypassed",
 	)
 
 	auditLog, err := audit.NewAuditLog(event.Action, event.ResourceType, event.ResourceID, event.Result)

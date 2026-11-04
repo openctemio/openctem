@@ -83,6 +83,22 @@ type Row struct {
 	ResourceID   string
 	Result       string
 	LoggedAt     time.Time
+	// HashVersion is the chain row's hash_version (0 is read as 1).
+	HashVersion int
+	// RowPayload is the canonical row text a version 2 hash covers.
+	RowPayload string
+}
+
+// Hash is the hash the current code gives r when it links to prevHash:
+// version 2 over the canonical row text, version 1 over
+// action|resource_type|resource_id|result and the time. Verify, classify and
+// rebaseline all use it, so they cannot disagree on a row.
+func Hash(prevHash string, r Row) string {
+	if r.HashVersion == 2 {
+		return cryptopkg.ComputeAuditRowHash(prevHash, r.RowPayload)
+	}
+	return cryptopkg.ComputeAuditChainHash(prevHash, r.AuditLogID,
+		Payload(r.Action, r.ResourceType, r.ResourceID, r.Result), r.LoggedAt)
 }
 
 // Payload is the chain hash's payload field for an audit log; it must match
@@ -101,10 +117,15 @@ type Result struct {
 // Classify explains one row's stored hash against its own stored prev_hash.
 // It never returns SourceMissing or LinkBroken; those need the walk.
 func Classify(r Row) Result {
-	payload := Payload(r.Action, r.ResourceType, r.ResourceID, r.Result)
-	if cryptopkg.ComputeAuditChainHash(r.PrevHash, r.AuditLogID, payload, r.LoggedAt) == r.Hash {
+	if Hash(r.PrevHash, r) == r.Hash {
 		return Result{Class: Verifies}
 	}
+	// The database writes version 2 hashes; no known defect produced them,
+	// so a version 2 row that does not verify is unexplained.
+	if r.HashVersion == 2 {
+		return Result{Class: Unexplained}
+	}
+	payload := Payload(r.Action, r.ResourceType, r.ResourceID, r.Result)
 	if LegacyMatch(r.PrevHash, r.AuditLogID, payload, r.Hash, r.LoggedAt) {
 		return Result{Class: LegacyTruncate}
 	}
@@ -289,17 +310,17 @@ func (b *Builder) Add(r Row) Result {
 	if !res.Class.Blocking() && r.PrevHash != b.prevStored {
 		res = Result{Class: LinkBroken}
 	}
-	b.record(r.Position, r.AuditLogID, r.PrevHash, r.Hash, res, r.Action, r.ResourceType, r.ResourceID, r.Result, r.LoggedAt)
+	b.record(r.Position, r.AuditLogID, r.PrevHash, r.Hash, res, r.Action, r.ResourceType, r.ResourceID, r.Result, r.LoggedAt, r.RowPayload)
 	return res
 }
 
 // AddMissing records a chain row whose audit_logs row could not be found.
 func (b *Builder) AddMissing(position int64, auditLogID, prevHash, storedHash string) {
-	b.record(position, auditLogID, prevHash, storedHash, Result{Class: SourceMissing}, "", "", "", "", time.Time{})
+	b.record(position, auditLogID, prevHash, storedHash, Result{Class: SourceMissing}, "", "", "", "", time.Time{}, "")
 }
 
 func (b *Builder) record(position int64, auditLogID, prevHash, storedHash string, res Result,
-	action, resourceType, resourceID, result string, loggedAt time.Time,
+	action, resourceType, resourceID, result string, loggedAt time.Time, rowPayload string,
 ) {
 	b.report.Total++
 	b.report.Counts.add(res.Class)
@@ -312,7 +333,7 @@ func (b *Builder) record(position int64, auditLogID, prevHash, storedHash string
 	}
 	for _, f := range []string{
 		fmt.Sprint(position), auditLogID, prevHash, storedHash, string(res.Class),
-		Payload(action, resourceType, resourceID, result), ts,
+		Payload(action, resourceType, resourceID, result), ts, rowPayload,
 	} {
 		_, _ = fmt.Fprintf(b.fp, "%d:", len(f))
 		_, _ = b.fp.Write([]byte(f))

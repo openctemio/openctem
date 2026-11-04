@@ -11,6 +11,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/pagination"
+	"github.com/openctemio/openctem/api/pkg/weblink"
 )
 
 // =============================================================================
@@ -233,6 +234,11 @@ func (s *NotificationService) Notify(ctx context.Context, params notificationdom
 			strings.Contains(params.URL, "..") {
 			params.URL = ""
 		}
+	}
+	// The link names its organization, so a member of several organizations
+	// who opens it while another one is selected lands on it (pkg/weblink).
+	if params.URL != "" && !params.TenantID.IsZero() {
+		params.URL = weblink.WithOrg(params.URL, params.TenantID.String())
 	}
 
 	n := notificationdom.NewNotification(params)

@@ -70,7 +70,7 @@ func TestSigningScripts(t *testing.T) {
 		t.Fatalf("init-keys: %v\n%s", err, out)
 	}
 	var seeds []string
-	for _, f := range []string{"catalog-root.key", "online.key", "catalog-online.key"} {
+	for _, f := range []string{"catalog-root.key", "catalog-online.key"} {
 		raw, err := os.ReadFile(filepath.Join(dir, f))
 		if err != nil {
 			t.Fatal(err)
@@ -87,14 +87,16 @@ func TestSigningScripts(t *testing.T) {
 	if st, _ := os.Stat(dir); st.Mode().Perm() != 0o700 {
 		t.Fatalf("directory mode %v", st.Mode().Perm())
 	}
-	pub, _ := os.ReadFile(filepath.Join(dir, "online.pub"))
 	catalogPub, _ := os.ReadFile(filepath.Join(dir, "catalog-online.pub"))
-	if strings.TrimSpace(string(pub)) == strings.TrimSpace(string(catalogPub)) {
-		t.Fatal("the release feed key and the catalog key are the same key")
+	// The release feed is signed keyless: no release feed key is created here.
+	for _, f := range []string{"online.key", "online.pub"} {
+		if _, err := os.Stat(filepath.Join(dir, f)); err == nil {
+			t.Fatalf("init-keys created %s: the release feed has no key", f)
+		}
 	}
-	for _, want := range []string{"keyset.dsse.json", "--env release-feed", "< \"" + filepath.Join(dir, "online.key") + "\"",
+	for _, want := range []string{"keyset.dsse.json",
 		"--env content-catalog", "CONTENT_CATALOG_SIGNING_KEY", "< \"" + filepath.Join(dir, "catalog-online.key") + "\"",
-		strings.TrimSpace(string(pub)), strings.TrimSpace(string(catalogPub)), "SHA256:"} {
+		strings.TrimSpace(string(catalogPub)), "SHA256:"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output lacks %q:\n%s", want, out)
 		}
@@ -103,7 +105,7 @@ func TestSigningScripts(t *testing.T) {
 		t.Fatalf("key set version %v", v)
 	}
 
-	// The catalog key set lists the catalog online key and not the release feed key.
+	// The catalog key set lists the catalog online key only.
 	ksRaw, _ := os.ReadFile(filepath.Join(dir, "keyset.dsse.json"))
 	var ksEnv struct{ Payload string }
 	_ = json.Unmarshal(ksRaw, &ksEnv)
@@ -123,15 +125,10 @@ func TestSigningScripts(t *testing.T) {
 	}
 
 	// Existing keys are never overwritten, and the refusal prints no secret.
-	before, _ := os.ReadFile(filepath.Join(dir, "online.key"))
 	beforeCatalog, _ := os.ReadFile(filepath.Join(dir, "catalog-online.key"))
 	out2, err := signingScript(t, bin, "init-keys.sh", dir)
 	if err == nil {
 		t.Fatal("init-keys overwrote existing keys")
-	}
-	after, _ := os.ReadFile(filepath.Join(dir, "online.key"))
-	if !bytes.Equal(before, after) {
-		t.Fatal("the online key changed")
 	}
 	if afterCatalog, _ := os.ReadFile(filepath.Join(dir, "catalog-online.key")); !bytes.Equal(beforeCatalog, afterCatalog) {
 		t.Fatal("the catalog online key changed")

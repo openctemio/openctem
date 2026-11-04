@@ -9,6 +9,7 @@ import {
   createSharedSensorEnrollmentToken,
   useSharedSensorsSetting,
 } from '@console/features/admin-console/api/use-scan-policy'
+import { useSharedFleet } from '@console/features/admin-console/api/use-shared-fleet'
 import { useInstanceScanZones } from '@console/features/admin-console/api/use-instance-scan-zones'
 import { useAdmin } from '@console/features/admin-console/components/admin-console-shell'
 import { InstanceScanZonesCard } from '@console/features/admin-console/components/instance-scan-zones-card'
@@ -17,8 +18,8 @@ import { SharedFleetPanel } from '@console/features/admin-console/components/sha
 import { adminHas } from '@console/features/admin-console/types'
 
 /**
- * Platform sensors: the sensors the platform itself owns (feed relay, passive
- * discovery, AI worker, shared scanners), their enrollment, state and scan
+ * Platform sensors: the sensors the platform itself owns (passive discovery, AI
+ * worker, shared scanners and, where the server has it, the feed relay), their enrollment, state and scan
  * zones. It is not behind the shared-scanning rollout gate: that gate only
  * decides whether organizations may use these sensors, so a platform sensor
  * can be connected and watched before shared scanning is turned on. Any
@@ -32,6 +33,10 @@ export default function PlatformSensorsPage() {
   const canEdit = adminHas(me, 'platform.sensors.manage')
   const shared = useSharedSensorsSetting()
   const zones = useInstanceScanZones()
+  // The feed relay role is named only once the server reports it: a platform
+  // sensor advertising the relay tool (a release without the feature never does).
+  const fleet = useSharedFleet()
+  const relayPresent = !!fleet.data?.sensors?.some((s) => s.tools?.includes('feed.relay'))
   const gateClosed = !!shared.data && !shared.data.ready
   return (
     <Main>
@@ -49,10 +54,15 @@ export default function PlatformSensorsPage() {
             data-testid="sensors-shared-scanning-closed"
           >
             <Info className="mt-0.5 size-4 shrink-0" aria-hidden />
-            {t(
-              'admin.sensors.sharedClosed',
-              'Organizations cannot use shared scanning in this release yet. Sensors connected now serve platform roles (feed relay, passive discovery, AI worker) and start scanning for organizations when shared scanning is turned on.'
-            )}
+            {relayPresent
+              ? t(
+                  'admin.sensors.sharedClosed',
+                  'Organizations cannot use shared scanning in this release yet. Sensors connected now serve platform roles (feed relay, passive discovery, AI worker) and start scanning for organizations when shared scanning is turned on.'
+                )
+              : t(
+                  'admin.sensors.sharedClosedNoRelay',
+                  'Organizations cannot use shared scanning in this release yet. Sensors connected now serve platform roles (passive discovery, AI worker) and start scanning for organizations when shared scanning is turned on.'
+                )}
           </p>
         )}
         <SharedSensorEnrollCard

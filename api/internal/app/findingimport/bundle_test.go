@@ -10,7 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/ctis/importer"
+	"github.com/openctemio/ctis/v2"
+	"github.com/openctemio/ctis/v2/importer"
 
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/internal/app/scopeauth"
@@ -92,7 +93,8 @@ func scopeOf(t *testing.T, in ingest.Input) map[string]string {
 	t.Helper()
 	out := map[string]string{}
 	for _, a := range in.Report.Assets {
-		if v, ok := a.Properties[ingest.PropImportScope].(string); ok {
+		if raw, ok := a.Extensions.Get(ctis.OpenCTEMNamespace, ingest.PropImportScope); ok {
+			v, _ := raw.(string)
 			out[a.Value] = v
 		}
 	}

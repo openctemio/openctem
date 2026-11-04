@@ -28,6 +28,7 @@ import { KeyValueList } from '@/features/shared/components/text-layout'
 import { safeInternalHref } from '@/lib/safe-href'
 import { cn } from '@/lib/utils'
 import type { SourceHealth } from './types'
+import { usePrefersReducedMotion } from './viz-parts'
 
 /** A cubic wire from (x1, y1) to (x2, y2), leaving and entering horizontally. */
 export function wirePath(x1: number, y1: number, x2: number, y2: number): string {
@@ -63,6 +64,73 @@ export function wireStroke(health: SourceHealth | 'neutral' | 'bad'): {
     default:
       return { stroke: 'var(--border-strong, var(--border))' }
   }
+}
+
+/**
+ * One wire of a connected visual, the same in every widget: a line from its
+ * source row to its target, its width the volume.
+ *
+ * - healthy with data: a travelling light (a short bright dash) runs along the
+ *   wire from source to target; the speed is the same on every wire;
+ * - nothing received: a thin dashed line, still;
+ * - stale: dotted amber, failed: dotted red, both still (the row says why);
+ * - no motion at all under prefers-reduced-motion or data-motion="off".
+ * The light is a CSS animation of the dash offset (no per-frame script).
+ */
+export function FlowWire({
+  d,
+  value,
+  max,
+  health,
+  focused,
+  focusColor = 'var(--signal)',
+  className,
+  wireKey,
+}: {
+  d: string
+  value: number
+  max: number
+  health: SourceHealth | 'neutral' | 'bad'
+  focused?: boolean
+  focusColor?: string
+  className?: string
+  wireKey: string
+}) {
+  const reduced = usePrefersReducedMotion()
+  const silent = health === 'ok' && value <= 0
+  const base = silent
+    ? { stroke: 'var(--border-strong, var(--border))', dash: '4 4' as string | undefined }
+    : wireStroke(health)
+  const width = silent ? 1 : wireWidth(value, max)
+  const travelling = health === 'ok' && !silent && !reduced
+  return (
+    <g
+      className={className}
+      data-wire={health}
+      data-wire-key={wireKey}
+      data-wire-motion={travelling ? 'on' : 'off'}
+    >
+      <path
+        d={d}
+        fill="none"
+        stroke={focused ? focusColor : base.stroke}
+        style={focused ? { filter: focusGlow(focusColor) } : undefined}
+        strokeWidth={width}
+        strokeDasharray={base.dash}
+        strokeLinecap="round"
+      />
+      {travelling && (
+        <path
+          d={d}
+          fill="none"
+          stroke="var(--signal)"
+          strokeOpacity={0.9}
+          strokeWidth={Math.max(2, width)}
+          className="animate-flow-light"
+        />
+      )}
+    </g>
+  )
 }
 
 /**
@@ -145,13 +213,35 @@ export function useWireAnchors(
     if (box.width === 0) return null
     const out: Record<string, Anchor> = {}
     const inn: Record<string, Anchor> = {}
+    // A row's wire leaves from its main line (name and bar), never from the
+    // middle of the whole row: a note line under the name (stale, failed) makes
+    // the row taller without moving the line the wire belongs to.
+    const centreY = (n: HTMLElement, r: DOMRect) => {
+      const main = [...n.querySelectorAll<HTMLElement>('[data-wire-main]')]
+        .map((m) => m.getBoundingClientRect())
+        .filter((m) => m.width > 0 || m.height > 0)
+      if (main.length === 0) return r.top + r.height / 2 - box.top
+      const top = Math.min(...main.map((m) => m.top))
+      const bottom = Math.max(...main.map((m) => m.bottom))
+      return (top + bottom) / 2 - box.top
+    }
+    // An anchor outside the card (a row scrolled or clipped out, a stale
+    // measurement) has no wire: a wire never runs off the card.
+    const inside = (y: number) => y >= 0 && y <= box.height
     el.querySelectorAll<HTMLElement>('[data-wire-out]').forEach((n) => {
       const r = n.getBoundingClientRect()
-      out[n.dataset.wireOut ?? ''] = { x: r.right - box.left, y: r.top + r.height / 2 - box.top }
+      // A row that is not laid out (no size) has no anchor: no wire, never a default point.
+      if (r.width === 0 && r.height === 0) return
+      const y = centreY(n, r)
+      if (!inside(y)) return
+      out[n.dataset.wireOut ?? ''] = { x: r.right - box.left, y }
     })
     el.querySelectorAll<HTMLElement>('[data-wire-in]').forEach((n) => {
       const r = n.getBoundingClientRect()
-      inn[n.dataset.wireIn ?? ''] = { x: r.left - box.left, y: r.top + r.height / 2 - box.top }
+      if (r.width === 0 && r.height === 0) return
+      const y = r.top + r.height / 2 - box.top
+      if (!inside(y)) return
+      inn[n.dataset.wireIn ?? ''] = { x: r.left - box.left, y }
     })
     return { width: box.width, height: box.height, out, in: inn }
   }, [ref])
@@ -159,11 +249,62 @@ export function useWireAnchors(
   useLayoutEffect(() => {
     // contentKey is a re-measure trigger, not read here.
     void contentKey
-    setLayout(measure())
     const el = ref.current
-    if (!el || typeof ResizeObserver === 'undefined') return
-    const ro = new ResizeObserver(() => setLayout(measure()))
+    let gone = false
+    // Rows that slide to a new place (the ranked bars' FLIP) are measured where
+    // the slide starts, not where they settle: measure again when every script
+    // animation under the container has finished (CSS animations, such as the
+    // wires' own dash, never end and never move a row).
+    const settle = () => {
+      const running = (el?.getAnimations?.({ subtree: true }) ?? []).filter(
+        (a) => !(typeof CSSAnimation !== 'undefined' && a instanceof CSSAnimation)
+      )
+      if (running.length === 0) return
+      void Promise.allSettled(running.map((a) => a.finished)).then(() => {
+        if (!gone) setLayout(measure())
+      })
+    }
+    // Every anchor row is watched too: a row that grows or shrinks (a stale
+    // note line appears on a data refresh) moves the rows below it without
+    // changing the container's size, which the container's observer misses.
+    const watched = new Set<Element>()
+    const roRef: { current: ResizeObserver | null } = { current: null }
+    const watchAnchors = () => {
+      const ro = roRef.current
+      if (!el || !ro) return
+      const now = new Set(el.querySelectorAll('[data-wire-out],[data-wire-in],[data-wire-main]'))
+      watched.forEach((n) => {
+        if (!now.has(n)) {
+          ro.unobserve(n)
+          watched.delete(n)
+        }
+      })
+      now.forEach((n) => {
+        if (!watched.has(n)) {
+          ro.observe(n)
+          watched.add(n)
+        }
+      })
+    }
+    const remeasure = () => {
+      setLayout(measure())
+      watchAnchors()
+      settle()
+    }
+    // Web fonts change text height and width once loaded.
+    void document.fonts?.ready?.then(() => {
+      if (!gone) remeasure()
+    })
+    remeasure()
+    if (!el || typeof ResizeObserver === 'undefined') {
+      return () => {
+        gone = true
+      }
+    }
+    const ro = new ResizeObserver(remeasure)
+    roRef.current = ro
     ro.observe(el)
+    watchAnchors()
     // The anchors are the rows rendered right now: a row folded or listed by
     // the user (ranked bars' "with nothing" line) changes them without
     // changing the container's width, so a change of the anchor set re-measures.
@@ -180,10 +321,11 @@ export function useWireAnchors(
             const next = sig()
             if (next === last) return
             last = next
-            setLayout(measure())
+            remeasure()
           })
     mo?.observe(el, { childList: true, subtree: true })
     return () => {
+      gone = true
       ro.disconnect()
       mo?.disconnect()
     }

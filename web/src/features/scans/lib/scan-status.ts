@@ -65,6 +65,7 @@ const REFUSAL_CODES = new Set([
   'NO_COMPATIBLE_TARGETS',
   'NO_SENSOR_AVAILABLE',
   'NO_SENSOR_FOR_TOOL',
+  'NO_RUNNABLE_STEPS',
   'NO_ZONE_COVERAGE',
   'NO_RESOLVING_TARGETS',
   'SCAN_WINDOW_NEVER_OPENS',
@@ -88,6 +89,7 @@ const REFUSAL_FIX: Record<string, { href: string; labelKey: string }> = {
   ALL_TARGETS_EXCLUDED: { href: '/scope?tab=out', labelKey: 'scans.fix.exclusions' },
   NO_SENSOR_AVAILABLE: { href: '/sensors', labelKey: 'scans.fix.sensors' },
   NO_SENSOR_FOR_TOOL: { href: '/sensors', labelKey: 'scans.fix.sensors' },
+  NO_RUNNABLE_STEPS: { href: '/settings/scanning/tools', labelKey: 'scans.fix.tools' },
   NO_ZONE_COVERAGE: { href: '/sensors', labelKey: 'scans.fix.sensors' },
   SCAN_WINDOW_NEVER_OPENS: {
     href: '/settings/scanning/scan-windows',

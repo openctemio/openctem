@@ -20,7 +20,7 @@ import (
 //     earlier row invalidates every subsequent hash.
 //   - auditLogID ties the chain row to a specific audit_logs PK, so
 //     reinserting an audit log with a new id cannot slot in silently.
-//   - payload should be a deterministic serialisation of the audit_log
+//   - payload should be a deterministic serialization of the audit_log
 //     row contents (actor, action, resource, changes, etc.). Callers
 //     normally pass a canonical JSON of the log or a concatenation of
 //     the scalar columns.
@@ -60,4 +60,15 @@ func writeField(h interface {
 	_, _ = fmt.Fprintf(h, "%d:", len(s))
 	_, _ = h.Write([]byte(s))
 	_, _ = h.Write([]byte{'|'})
+}
+
+// ComputeAuditRowHash returns the version 2 chain hash of an audit row:
+// hex(SHA-256(prevHash + "|" + payload)), where payload is the canonical row
+// text the database function audit_log_row_payload produces. The database
+// computes the same value when it chains the row (audit_log_row_hash), so the
+// serialization of the row has one definition, in SQL, and this function only
+// has to agree on the hash around it.
+func ComputeAuditRowHash(prevHash, payload string) string {
+	sum := sha256.Sum256([]byte(prevHash + "|" + payload))
+	return hex.EncodeToString(sum[:])
 }

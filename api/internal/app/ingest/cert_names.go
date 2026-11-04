@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -98,7 +98,7 @@ func reportCertificateNames(report *ctis.Report, assetMap map[string]shared.ID) 
 		if t := a.Technical; t != nil && t.Certificate != nil {
 			cert := t.Certificate
 			raw = append(raw, cert.SubjectCN)
-			raw = append(raw, cert.SANs...)
+			raw = append(raw, cert.SubjectAltNames...)
 			c.Issuer = firstNonEmptyStr(cert.IssuerOrg, cert.IssuerCN)
 			c.NotBefore, c.NotAfter = cert.NotBefore, cert.NotAfter
 		}

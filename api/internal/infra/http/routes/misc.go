@@ -77,6 +77,15 @@ func registerVersionRoute(router Router, authMiddleware Middleware) {
 	router.GET("/api/v1/version", handler.Version, authMiddleware)
 }
 
+// registerLicensesRoute registers GET /api/v1/licenses: the third-party
+// notices of the API build, for About > Open-source licenses. Any signed-in
+// user, like /version (the exact dependency versions are not handed to
+// anonymous clients); no tenant data. The page is part of the core: no brand
+// pack, setting or extension removes it.
+func registerLicensesRoute(router Router, h *handler.LicensesHandler, authMiddleware Middleware) {
+	router.GET("/api/v1/licenses", h.List, authMiddleware)
+}
+
 // registerLegalRoute registers GET /api/v1/legal: the operator's legal
 // information (links to the terms and privacy policy, the built-in legal
 // pages' values, the security.txt contact), public on purpose because the web

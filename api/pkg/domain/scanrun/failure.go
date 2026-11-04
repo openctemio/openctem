@@ -169,6 +169,10 @@ const (
 	// FailureIntensityExceeded: the job probes above the intensity of the
 	// scan it belongs to (RFC-071); refused at claim.
 	FailureIntensityExceeded = "INTENSITY_EXCEEDED"
+	// FailureActiveScanningNotEntitled: the organization's entitlements
+	// deny active scanning (passive only) and the job probes above
+	// passive; refused at claim, never sent to any sensor.
+	FailureActiveScanningNotEntitled = "ACTIVE_SCANNING_NOT_ENTITLED"
 	// FailureWebScopeUnsupported: the job has a web scope (the tenant
 	// excluded a path on a target host) and the sensor's tool cannot keep
 	// to it: the tool does not declare features.web_scope, or it keeps to
@@ -214,7 +218,35 @@ const (
 	// two sensors, so the work was not moved to more of them (fleet stop
 	// rule).
 	FailureFleetToolFailure = "FLEET_TOOL_FAILURE"
+
+	// Steps a run skips because nothing here runs them (a scan runs as far
+	// as the organization's tools and sensors support; the run ends
+	// partial). The step run is skipped, never failed; NO_MATCHING_TOOL and
+	// NO_SENSOR_FOR_TOOL are the other two reasons.
+	//
+	// FailureToolNotInstalled: the step's pinned tool is not installed in
+	// the organization.
+	FailureToolNotInstalled = "TOOL_NOT_INSTALLED"
+	// FailureToolDisabled: the step's tool is turned off (for the platform
+	// or by the organization).
+	FailureToolDisabled = "TOOL_DISABLED"
+	// FailureDependencySkipped: a step this step needs the results of was
+	// skipped, so this one has nothing to work on.
+	FailureDependencySkipped = "DEPENDENCY_SKIPPED"
 )
+
+// unsupportedSkipCodes are the codes of a step skipped because no tool or
+// sensor of the organization runs it.
+var unsupportedSkipCodes = map[string]bool{
+	FailureNoMatchingTool:   true,
+	FailureToolNotInstalled: true,
+	FailureToolDisabled:     true,
+	FailureNoSensorForTool:  true,
+}
+
+// IsUnsupportedSkipCode reports whether code is the reason of a step skipped
+// because no tool or sensor of the organization runs it.
+func IsUnsupportedSkipCode(code string) bool { return unsupportedSkipCodes[code] }
 
 // FailureCodeForInfra is the step failure code of a command that ended on
 // the infrastructure class class (command.FailureClass spelling). An
@@ -236,47 +268,51 @@ func FailureCodeForInfra(class string) string {
 }
 
 var failureClasses = map[string]FailureClass{
-	FailureNoMatchingTool:      FailureClassConfig,
-	FailureCapabilityAmbiguous: FailureClassConfig,
-	FailureIncompatibleTargets: FailureClassConfig,
-	FailureStageNotChainable:   FailureClassConfig,
-	FailureScannerNotFound:     FailureClassPlacement,
-	FailureTargetRefused:       FailureClassScope,
-	FailureNoTargets:           FailureClassScope,
-	FailureStepTargetsRefused:  FailureClassScope,
-	FailureAllTargetsExcluded:  FailureClassScope,
-	FailureAllTargetsUnconfirm: FailureClassScope,
-	FailureScopeChanged:        FailureClassScope,
-	FailureGateRecordMissing:   FailureClassScope,
-	FailureIntensityExceeded:   FailureClassScope,
-	FailureSignerRefused:       FailureClassScope,
-	FailureNoSensor:            FailureClassPlacement,
-	FailureNoSensorForTool:     FailureClassPlacement,
-	FailureNoSensorAvailable:   FailureClassPlacement,
-	FailureWebScopeUnsupported: FailureClassPlacement,
-	FailureTargetUnreachable:   FailureClassPlacement,
-	FailureNoConfinedSensor:    FailureClassPlacement,
-	FailurePolicyRefused:       FailureClassPolicy,
-	FailureFreezeWindow:        FailureClassPolicy,
-	FailureDeadlineTooClose:    FailureClassPolicy,
-	FailureCommandExhausted:    FailureClassTransient,
-	FailureCommandExpired:      FailureClassTransient,
-	FailureLeaseLost:           FailureClassTransient,
-	FailureQueueError:          FailureClassTransient,
-	FailureCommandFailed:       FailureClassTool,
-	FailureToolExit:            FailureClassTool,
-	FailureParseError:          FailureClassTool,
-	FailureBatchFailed:         FailureClassTool,
-	FailureTimeout:             FailureClassTimeout,
-	FailureCanceled:            FailureClassCanceled,
-	FailureCoverageGaps:        FailureClassPartial,
-	FailureNoResolvingTargets:  FailureClassTarget,
-	FailureToolUnavailable:     FailureClassTool,
-	FailureToolCrashedOnInput:  FailureClassTool,
-	FailureResourceExhausted:   FailureClassTransient,
-	FailureContentUnavailable:  FailureClassTransient,
-	FailureSensorLost:          FailureClassTransient,
-	FailureFleetToolFailure:    FailureClassTool,
+	FailureNoMatchingTool:            FailureClassConfig,
+	FailureCapabilityAmbiguous:       FailureClassConfig,
+	FailureIncompatibleTargets:       FailureClassConfig,
+	FailureStageNotChainable:         FailureClassConfig,
+	FailureScannerNotFound:           FailureClassPlacement,
+	FailureTargetRefused:             FailureClassScope,
+	FailureNoTargets:                 FailureClassScope,
+	FailureStepTargetsRefused:        FailureClassScope,
+	FailureAllTargetsExcluded:        FailureClassScope,
+	FailureAllTargetsUnconfirm:       FailureClassScope,
+	FailureScopeChanged:              FailureClassScope,
+	FailureGateRecordMissing:         FailureClassScope,
+	FailureIntensityExceeded:         FailureClassScope,
+	FailureActiveScanningNotEntitled: FailureClassScope,
+	FailureSignerRefused:             FailureClassScope,
+	FailureNoSensor:                  FailureClassPlacement,
+	FailureNoSensorForTool:           FailureClassPlacement,
+	FailureNoSensorAvailable:         FailureClassPlacement,
+	FailureWebScopeUnsupported:       FailureClassPlacement,
+	FailureTargetUnreachable:         FailureClassPlacement,
+	FailureNoConfinedSensor:          FailureClassPlacement,
+	FailurePolicyRefused:             FailureClassPolicy,
+	FailureFreezeWindow:              FailureClassPolicy,
+	FailureDeadlineTooClose:          FailureClassPolicy,
+	FailureCommandExhausted:          FailureClassTransient,
+	FailureCommandExpired:            FailureClassTransient,
+	FailureLeaseLost:                 FailureClassTransient,
+	FailureQueueError:                FailureClassTransient,
+	FailureCommandFailed:             FailureClassTool,
+	FailureToolExit:                  FailureClassTool,
+	FailureParseError:                FailureClassTool,
+	FailureBatchFailed:               FailureClassTool,
+	FailureTimeout:                   FailureClassTimeout,
+	FailureCanceled:                  FailureClassCanceled,
+	FailureCoverageGaps:              FailureClassPartial,
+	FailureNoResolvingTargets:        FailureClassTarget,
+	FailureToolUnavailable:           FailureClassTool,
+	FailureToolCrashedOnInput:        FailureClassTool,
+	FailureResourceExhausted:         FailureClassTransient,
+	FailureContentUnavailable:        FailureClassTransient,
+	FailureSensorLost:                FailureClassTransient,
+	FailureFleetToolFailure:          FailureClassTool,
+	FailureToolNotInstalled:          FailureClassConfig,
+	FailureToolDisabled:              FailureClassConfig,
+	FailureDependencySkipped:         FailureClassConfig,
 }
 
 // ClassOf returns the class of a step failure code. An unknown code is a

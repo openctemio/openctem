@@ -20,7 +20,7 @@ func TestV2ReadVerified_DecodeBudget(t *testing.T) {
 	old := V2DecodeBudgetBytes
 	t.Cleanup(func() { SetV2DecodeBudget(old) })
 	limits := protov2.DefaultLimits()
-	body := []byte(`{"version":"1.0"}`)
+	body := []byte(`{"version":"2.0"}`)
 
 	SetV2DecodeBudget(int64(len(body)))
 	rec := httptest.NewRecorder()
@@ -64,7 +64,7 @@ func TestV2ReadVerified_BudgetSharePerOwner(t *testing.T) {
 	old := V2DecodeBudgetBytes
 	t.Cleanup(func() { SetV2DecodeBudget(old) })
 	limits := protov2.DefaultLimits()
-	body := []byte(`{"version":"1.0"}`)
+	body := []byte(`{"version":"2.0"}`)
 	SetV2DecodeBudget(int64(len(body)) * 8) // share: 2 bodies
 	as := func(tenant string) func(*http.Request) {
 		return func(r *http.Request) {

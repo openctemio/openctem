@@ -51,6 +51,8 @@ other stored secrets.
   is part of the relay approval target (a changed bundle needs a second super
   admin like a new host), is audited by fingerprint only, and an unparsable
   stored bundle turns e-mail off rather than falling back to the system roots.
+- The test e-mail is limited to 5 per minute per administrator (`429` beyond that); each call sends a real
+  message through the stored server. Clients must not retry a `429` automatically.
 - A failed test e-mail returns `EMAIL_TEST_FAILED` with `details.reason` from a
   fixed set (`email.ClassifySendError`: unknown_authority, hostname_mismatch,
   certificate_invalid, tls_failed, auth_failed, auth_required, sender_rejected,
@@ -66,6 +68,11 @@ other stored secrets.
 - `internal/app/platformlegal`; Console > Settings > Legal
   (`GET/PUT /api/v1/admin/settings/legal`, super admin + fresh authenticator
   code to save, critical audit with the values).
+- Help links: `help_bug_url` and `help_feedback_url` repoint the Help menu's
+  "Report a bug" and "Send feedback" (https URLs; empty uses the project's
+  issue forms), `help_links_disabled` hides both and the error pages' "Report
+  this problem". Diagnostics are prefilled only for the default issue forms
+  (`web/src/lib/report-problem.ts`); an operator URL gets no parameters.
 - Public read `GET /api/v1/legal` (cached 60 s): the web console renders the
   sign-in and sign-up notice links, the built-in legal pages and
   `/.well-known/security.txt` from it on the server (`web/src/lib/legal-settings.ts`);
