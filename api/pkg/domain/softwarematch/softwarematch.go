@@ -72,6 +72,9 @@ type Match struct {
 	// (software_versions.purl, with its version, without qualifiers).
 	Package bool
 	PURL    string
+	// HostedBy is the provider whose shared front end serves the asset
+	// (hosting.go); empty when the asset may be the organization's own.
+	HostedBy string
 }
 
 // CVEInfo is the corpus data a finding carries.
