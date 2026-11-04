@@ -343,15 +343,14 @@ tool. The graph check accepts a planned capability (§1.1) only on such a
 step, as a warning (`CAPABILITY_WAITS_FOR_TOOL`), and still types its
 connections. At dispatch, when no tool implements its capability
 (`NO_MATCHING_TOOL`), the step is skipped with "available when a tool that
-runs <capability> is installed", never failed and never silent; the trigger
-does not refuse a run for it. "No tool" is the same answer whether the
-catalog lists implementations or the capability falls back to the tool
-registry lookup (a planned capability), whose no-match is never an error. A tool that exists but has no online sensor
-refuses the run like any step.
+runs <capability> is installed", never failed and never silent. "No tool"
+is the same answer whether the catalog lists implementations or the
+capability falls back to the tool registry lookup (a planned capability),
+whose no-match is never an error. Since §1.6 a required step without a tool
+is skipped the same way; `optional` still decides what readiness reports.
 
-Workflow readiness (`GET /scan-workflows?include=readiness`, the New Scan
-picker and the server-side refusal `WORKFLOW_NOT_RUNNABLE`) follows the
-same rule: an optional step that no installed and enabled tool implements
+Workflow readiness (`GET /scan-workflows?include=readiness` and the New Scan
+picker; information only, never a refusal, §1.6) follows this rule: an optional step that no installed and enabled tool implements
 is reported with step state `skipped` and its reason, and does not count
 toward the workflow's state, so the workflow stays `ready` or `waiting`. An
 optional step whose tool is installed keeps its sensor state (the run
@@ -393,6 +392,68 @@ policies and prefer lists.
 **Preview.** `POST /api/v1/scans/workflow-preview` takes `depth` and returns
 per step `skipped` (`DEPTH_SKIPPED` or `TOOL_NOT_INSTALLED`; a skipped step
 never blocks), `depth_params` and `max_targets`.
+
+### 1.6 Steps nothing here runs
+
+A scan runs as far as the organization's tools and sensors support. A
+workflow is usable before every step has a tool: coverage grows as tools and
+sensors are added, and a run does the work it can.
+
+**Create and save never refuse for tools or sensors.** Saving a scan, or
+saving or activating a workflow, is not refused because a step's tool is
+not installed, is turned off, has no sensor, or because no tool implements a
+step's capability. What still refuses is a definition that is wrong in
+itself: a step with neither a tool nor capabilities, capabilities that name
+more than one kind of scan, a collector or connector as a workflow step, an
+unknown tool name or a setting the validator refuses. Readiness keeps
+reporting each step's state so the person sees what will run.
+
+**At trigger time** (manual, scheduled or retried, the same path), after the
+safety gates, each step the run would start at its depth is checked, all
+lookups scoped to the scan's organization:
+
+| Why the step does not run | Step run code |
+|---|---|
+| No active tool implements its capability | `NO_MATCHING_TOOL` |
+| Its pinned tool is not installed | `TOOL_NOT_INSTALLED` |
+| Its tool is turned off (platform or organization) | `TOOL_DISABLED` |
+| No online sensor may run its tool (in the scan's zone when pinned) | `NO_SENSOR_FOR_TOOL` |
+| It needs the results of a skipped step | `DEPENDENCY_SKIPPED` |
+
+Such a step run is created `skipped` with the code (`error_code`) and the
+reason in words (`skip_reason`); it is never queued and dispatches nothing.
+`DEPENDENCY_SKIPPED` follows `depends_on` transitively, except in a workflow
+with `continue_on_failed_dependency`, whose dependents run on the scan's
+targets. The run starts with every other step. When every step it would
+start is skipped the trigger is refused as a blocked run with
+`NO_RUNNABLE_STEPS` (400), whose message names each missing step and why
+(at most five, then "N more").
+
+**During the run** a step whose capability no tool implements when its turn
+comes (a tool was turned off meanwhile) is skipped with `NO_MATCHING_TOOL`
+instead of failed, and its dependents are skipped with `DEPENDENCY_SKIPPED`.
+
+**Outcome.** A run in which a step was skipped for a missing tool or sensor
+ends `partial` ("N of M steps were skipped because no tool or sensor here
+runs them"), never `completed`; it is `failed` only when steps failed and
+none produced results. A step skipped for its condition, depth or intensity
+is a choice, not a gap, and does not make a run partial.
+
+**Safety gates are not bypassed.** Scope (exclusions, ownership, act scope),
+intensity, approvals and the passive-only entitlement run before the step
+check and refuse as before. The entitlement and approval checks read the
+whole workflow, skipped steps included, so a skip never lowers what they
+judge; a skip only narrows what is dispatched, and claim-time gates still
+check every job.
+
+**Run view.** `GET /scan-runs/{id}` lists each step run with `status`,
+`error_code` and `skip_reason`; the run map node carries `reason` (the code)
+and `skip_reason`. The console explains each code in the reader's language
+with its fix (scans.failure.* keys).
+
+Code: `internal/app/scan/step_support.go` (trigger), `internal/app/scanrun/run.go`
+(`noToolSkip`, `skipBlockedSteps`, run outcome), `internal/app/scanrun/step.go`
+(`StepToolSkips` for a workflow run started without a scan).
 
 ## 2. The planner: one dispatcher, capability → tool
 
