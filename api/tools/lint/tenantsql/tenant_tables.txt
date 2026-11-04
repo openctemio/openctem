@@ -20,6 +20,7 @@ asset_attribute_freshness
 asset_attribute_set_elements
 asset_attribute_sources
 asset_attributions
+asset_canonical_changes
 asset_change_events
 asset_coverage
 asset_coverage_alerts

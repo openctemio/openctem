@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -44,8 +44,8 @@ func TestVulnMatching_ThroughIngest(t *testing.T) {
 
 	ingestReport := func(tool string, rep *ctis.Report) *ingest.Output {
 		t.Helper()
-		rep.Version, rep.Tool = "1.0", &ctis.Tool{Name: tool}
-		rep.Metadata = ctis.ReportMetadata{ID: "rep-" + shared.NewID().String(), Timestamp: time.Now().UTC()}
+		rep.Version, rep.Tool = ctis.SchemaVersion, &ctis.Tool{Name: tool}
+		rep.Metadata = ctis.ReportMetadata{ID: ctis.NewReportID(), GeneratedAt: time.Now().UTC()}
 		out, err := svc.Ingest(ctx, agt, ingest.Input{Report: rep, Options: ingest.Options{Binding: ingest.TrustedBinding()}})
 		require.NoError(t, err)
 		return out
@@ -53,9 +53,9 @@ func TestVulnMatching_ThroughIngest(t *testing.T) {
 
 	host := "vm-" + shared.NewID().String()[:8] + ".example.com"
 	out := ingestReport("httpx", &ctis.Report{Assets: []ctis.Asset{{
-		ID: "a1", Type: ctis.AssetTypeDomain, Value: host, Name: host,
-		Technologies: []ctis.Technology{{Name: "widget", CPE: "cpe:2.3:a:" + e.vendor + ":widget:1.4.2:*:*:*:*:*:*:*"}},
-		Properties:   ctis.Properties{"technologies": []any{"Nginx:1.18.0", "Cloudflare"}, "server": "nginx/1.18.0 (Ubuntu)"},
+		ID: "a1", Type: ctis.AssetTypeDomainName, Value: host,
+		Technologies: append([]ctis.Technology{{Name: "widget", CPE: "cpe:2.3:a:" + e.vendor + ":widget:1.4.2:*:*:*:*:*:*:*"}}, techsOf("Nginx:1.18.0", "Cloudflare")...),
+		Technical:    &ctis.AssetTechnical{HTTP: &ctis.HTTPTechnical{WebServer: "nginx/1.18.0 (Ubuntu)"}},
 	}}})
 	require.Empty(t, out.Errors)
 
@@ -87,7 +87,7 @@ func TestVulnMatching_ThroughIngest(t *testing.T) {
 
 	// A report may not claim the matcher's tool name.
 	out = ingestReport("version-match", &ctis.Report{
-		Assets:   []ctis.Asset{{ID: "a1", Type: ctis.AssetTypeDomain, Value: host, Name: host}},
+		Assets:   []ctis.Asset{{ID: "a1", Type: ctis.AssetTypeDomainName, Value: host, Name: host}},
 		Findings: []ctis.Finding{{Type: ctis.FindingTypeVulnerability, Title: "forged", Severity: ctis.SeverityHigh, AssetRef: "a1"}},
 	})
 	require.NotEmpty(t, out.Errors)

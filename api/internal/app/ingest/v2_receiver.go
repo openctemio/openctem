@@ -240,8 +240,13 @@ func (v *V2Receiver) Put(ctx context.Context, t V2Target, seq int, whole bool, b
 		}
 	}
 
-	report, err := ParseV2Report(body.Decoded, t.ReportID, v.limits)
+	report, err := ParseV2Report(body.Decoded, v.limits)
 	if err != nil {
+		var verr *V2ReportError
+		if errors.As(err, &verr) && verr.Cause != nil {
+			v.logger.Info("v2: segment refused by CTIS 2.0 validation",
+				"sensor_id", t.Sensor.ID.String(), "error", logger.SanitizeError(verr.Cause))
+		}
 		return nil, err
 	}
 	// Canonical before the checks and the header digest, so every segment

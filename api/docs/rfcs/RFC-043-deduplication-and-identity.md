@@ -847,3 +847,32 @@ instead of a recipe of its own. The identity tuple of §4.2 does not change.
 Implemented: ingest, re-key on start, `refingerprint -down`, tests (per-kind
 golden corpus through the re-key, collision merge, tenant isolation, down and
 up), rehearsal on a restored production backup.
+
+## 21. Identity version 4: compliance framework as its registry token (amendment 2026-11-03)
+
+CTIS 2.0 writes a compliance framework as a registry token (`pci_dss`,
+`hipaa`, `soc2`, `iso27001`, `nist_csf`, `nist_800_53`, `cis`, `gdpr`,
+`fedramp`, `owasp_asvs`; an open token otherwise) and refuses free text. A
+finding stored from a 1.x report kept the producer's spelling (`PCI-DSS`), so
+version 3 would have keyed it apart from the same control reported by a CTIS
+2.0 producer.
+
+- Version 4 = version 3 with the `framework` field of a compliance tuple
+  normalised (`NormalizeComplianceFramework`): case-insensitive, any run of
+  non-alphanumerics is `_`, and the known spellings of a registry framework
+  map onto its token (`PCI DSS`, `pci-dss` -> `pci_dss`; `ISO 27001` ->
+  `iso27001`; `NIST SP 800-53` -> `nist_800_53`; `SOC 2` -> `soc2`;
+  `OWASP ASVS` -> `owasp_asvs`). Any other tuple hashes exactly as in
+  version 3, so the re-key to version 4 moves only compliance findings with
+  a non-token spelling; the rest only change `fingerprint_version`.
+- The start-up runner re-keys to version 4 like it did to version 3 (aliases
+  kept, triage preserved, idempotent, resumable, tenant-scoped). A
+  compliance row with no tuple (stored by a 1.x release) is now recomputed
+  from its stored framework, control and path instead of being skipped.
+- `refingerprint -down -apply` is unchanged: it restores the version-2 key,
+  or the newest older alias for kinds without one.
+- Tests: `TestIdentityV4_ComplianceFrameworkIsTheRegistryToken`, the stored
+  compliance case of `TestIdentityFromStored`, and
+  `TestIdentityV4_FreeTextFrameworkMeetsTheRegistryToken` (a version-1 and a
+  version-3 `PCI-DSS` row and a CTIS 2.0 `pci_dss` report land on one finding
+  id with its triage; another tenant's finding is untouched).

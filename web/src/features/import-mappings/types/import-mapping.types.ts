@@ -1,11 +1,11 @@
 /**
  * Tenant import mappings: a declarative mapping document
- * (`openctem.io/mapping/v1`, see the ctis docs/mapping.md) that turns a CSV,
+ * (`openctem.io/mapping/v2`, see the ctis docs/mapping.md) that turns a CSV,
  * JSON, JSON Lines or XML export into CTIS findings and assets.
  * Wire types of /api/v1/import-mappings, hand-written in the feature.
  */
 
-export const MAPPING_API_VERSION = 'openctem.io/mapping/v1'
+export const MAPPING_API_VERSION = 'openctem.io/mapping/v2'
 
 export type MappingSource = 'csv' | 'json' | 'jsonl' | 'xml'
 export const MAPPING_SOURCES: MappingSource[] = ['csv', 'json', 'jsonl', 'xml']

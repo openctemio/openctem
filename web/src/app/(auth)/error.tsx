@@ -1,5 +1,6 @@
 'use client'
 
+import { ReportProblem } from '@/features/shared/components/report-problem'
 import { useEffect, useState } from 'react'
 import { devLog } from '@/lib/logger'
 import { reportRouteError } from '@/lib/error-reporting'
@@ -115,11 +116,12 @@ export default function AuthError({ error, reset }: ErrorProps) {
             </p>
           )}
         </CardContent>
-        <CardFooter className="flex justify-center gap-2">
+        <CardFooter className="flex flex-wrap justify-center gap-2">
           <Button onClick={reset}>{t('auth.error.tryAgain', 'Try again')}</Button>
           <Button variant="outline" asChild>
             <Link href="/login">{t('auth.error.backToSignIn', 'Back to sign in')}</Link>
           </Button>
+          <ReportProblem error={error} />
         </CardFooter>
       </Card>
     </div>

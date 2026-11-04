@@ -1,54 +1,361 @@
 {
   "tool": "nuclei",
-  "asset": {"type": "domain", "value": "shop.example.com"},
+  "asset": {
+    "type": "domain_name",
+    "value": "shop.example.com"
+  },
   "cases": [
     {
       "name": "query values and id segments churn",
       "expect": "same",
-      "before": {"type": "vulnerability", "title": "SQL error disclosure", "severity": "high", "rule_id": "sqli-error-based",
+      "before": {
+        "type": "vulnerability",
+        "title": "SQL error disclosure",
+        "severity": "high",
+        "rule_id": "sqli-error-based",
         "fingerprint": "9d3a3f0b6a1c4e8f9d3a3f0b6a1c4e8f",
-        "location": {"path": "https://shop.example.com/api/items/42?id=42&sort=asc"},
-        "properties": {"request": "GET /api/items/42?id=42&sort=asc HTTP/1.1"}},
-      "after": {"type": "vulnerability", "title": "SQL error disclosure", "severity": "high", "rule_id": "sqli-error-based",
+        "location": {
+          "path": "https://shop.example.com/api/items/42?id=42&sort=asc"
+        },
+        "properties": {
+          "request": "GET /api/items/42?id=42&sort=asc HTTP/1.1"
+        }
+      },
+      "after": {
+        "type": "vulnerability",
+        "title": "SQL error disclosure",
+        "severity": "high",
+        "rule_id": "sqli-error-based",
         "fingerprint": "0e2b4f6a8c1d3e5f0e2b4f6a8c1d3e5f",
-        "location": {"path": "https://SHOP.example.com:443/api/items/977?sort=desc&id=977"},
-        "properties": {"request": "GET /api/items/977?sort=desc&id=977 HTTP/1.1"}}
+        "location": {
+          "path": "https://SHOP.example.com:443/api/items/977?sort=desc&id=977"
+        },
+        "properties": {
+          "request": "GET /api/items/977?sort=desc&id=977 HTTP/1.1"
+        }
+      }
     },
     {
       "name": "the same template on two endpoints (B11)",
       "expect": "different",
-      "before": {"type": "vulnerability", "title": "SQL error disclosure", "severity": "high", "rule_id": "sqli-error-based",
-        "location": {"path": "https://shop.example.com/api/items?id=1"}},
-      "after": {"type": "vulnerability", "title": "SQL error disclosure", "severity": "high", "rule_id": "sqli-error-based",
-        "location": {"path": "https://shop.example.com/api/orders?id=1"}}
+      "before": {
+        "type": "vulnerability",
+        "title": "SQL error disclosure",
+        "severity": "high",
+        "rule_id": "sqli-error-based",
+        "location": {
+          "path": "https://shop.example.com/api/items?id=1"
+        }
+      },
+      "after": {
+        "type": "vulnerability",
+        "title": "SQL error disclosure",
+        "severity": "high",
+        "rule_id": "sqli-error-based",
+        "location": {
+          "path": "https://shop.example.com/api/orders?id=1"
+        }
+      }
     },
     {
       "name": "a CVE template keys on the CVE",
       "expect": "same",
-      "before": {"type": "vulnerability", "title": "Confluence OGNL", "severity": "critical", "rule_id": "CVE-2022-26134",
-        "location": {"path": "https://shop.example.com/"},
-        "vulnerability": {"cve_id": "CVE-2022-26134"}},
-      "after": {"type": "vulnerability", "title": "Confluence OGNL injection", "severity": "critical", "rule_id": "cve-2022-26134-confluence",
-        "location": {"path": "https://shop.example.com"},
-        "vulnerability": {"cve_id": "cve-2022-26134"}}
+      "before": {
+        "type": "vulnerability",
+        "title": "Confluence OGNL",
+        "severity": "critical",
+        "rule_id": "CVE-2022-26134",
+        "location": {
+          "path": "https://shop.example.com/"
+        },
+        "vulnerability": {
+          "ids": [
+            {
+              "type": "cve",
+              "id": "CVE-2022-26134"
+            }
+          ]
+        }
+      },
+      "after": {
+        "type": "vulnerability",
+        "title": "Confluence OGNL injection",
+        "severity": "critical",
+        "rule_id": "cve-2022-26134-confluence",
+        "location": {
+          "path": "https://shop.example.com"
+        },
+        "vulnerability": {
+          "ids": [
+            {
+              "type": "cve",
+              "id": "CVE-2022-26134"
+            }
+          ]
+        }
+      }
     },
     {
       "name": "a CVE template and a network scanner report of the same CVE and port stay two findings, linked as one issue",
       "expect": "different",
-      "before": {"type": "vulnerability", "title": "HTTP/2 Rapid Reset", "severity": "high", "rule_id": "CVE-2023-44487",
-        "location": {"path": "https://shop.example.com/"},
-        "vulnerability": {"cve_id": "CVE-2023-44487"}},
+      "before": {
+        "type": "vulnerability",
+        "title": "HTTP/2 Rapid Reset",
+        "severity": "high",
+        "rule_id": "CVE-2023-44487",
+        "location": {
+          "path": "https://shop.example.com/"
+        },
+        "vulnerability": {
+          "ids": [
+            {
+              "type": "cve",
+              "id": "CVE-2023-44487"
+            }
+          ]
+        }
+      },
       "after_tool": "nessus",
-      "after": {"type": "vulnerability", "title": "HTTP/2 Rapid Reset Attack", "severity": "high", "rule_id": "182837",
-        "network": {"port": 443, "protocol": "tcp"},
-        "vulnerability": {"cve_id": "CVE-2023-44487"}}
+      "after": {
+        "type": "vulnerability",
+        "title": "HTTP/2 Rapid Reset Attack",
+        "severity": "high",
+        "rule_id": "182837",
+        "network": {
+          "port": 443,
+          "transport": "tcp"
+        },
+        "vulnerability": {
+          "ids": [
+            {
+              "type": "cve",
+              "id": "CVE-2023-44487"
+            }
+          ]
+        }
+      }
     },
-    {"name": "a newer producer that reports the method only in the web location keeps the finding", "expect": "same", "before": {"type": "vulnerability", "title": "t", "severity": "medium", "rule_id": "exposed-env", "location": {"path": "https://shop.example.com/.env"}, "properties": {"request": "GET /.env HTTP/1.1"}}, "after": {"type": "vulnerability", "title": "t", "severity": "medium", "rule_id": "exposed-env", "location": {"path": "https://shop.example.com/.env"}, "web": {"url": "https://shop.example.com/.env", "method": "GET"}}},
-    {"name": "a producer that reports no method keeps the GET finding", "expect": "same", "before": {"type": "vulnerability", "title": "t", "severity": "medium", "rule_id": "exposed-git", "location": {"path": "https://shop.example.com/.git/config"}, "properties": {"request": "GET /.git/config HTTP/1.1"}}, "after": {"type": "vulnerability", "title": "t", "severity": "medium", "rule_id": "exposed-git", "location": {"path": "https://shop.example.com/.git/config"}}},
-    {"name": "a template that matches two of its own fixed paths on one target is one finding", "expect": "same", "before": {"type": "vulnerability", "title": "t", "severity": "medium", "rule_id": "wp-user-enum", "location": {"path": "https://shop.example.com/wp-json/wp/v2/users"}, "source_extra": {"target": "https://shop.example.com"}, "web": {"url": "https://shop.example.com/wp-json/wp/v2/users", "method": "GET"}}, "after": {"type": "vulnerability", "title": "t", "severity": "medium", "rule_id": "wp-user-enum", "location": {"path": "https://shop.example.com/?rest_route=/wp/v2/users"}, "source_extra": {"target": "shop.example.com"}, "web": {"url": "https://shop.example.com/", "method": "GET"}}},
-    {"name": "the same fixed-path template on two targets of one asset is two findings", "expect": "different", "before": {"type": "vulnerability", "title": "t", "severity": "medium", "rule_id": "wp-user-enum", "location": {"path": "https://shop.example.com/blog/wp-json/wp/v2/users"}, "source_extra": {"target": "https://shop.example.com/blog"}}, "after": {"type": "vulnerability", "title": "t", "severity": "medium", "rule_id": "wp-user-enum", "location": {"path": "https://shop.example.com/news/wp-json/wp/v2/users"}, "source_extra": {"target": "https://shop.example.com/news"}}},
-    {"name": "endpoints given as targets stay one finding per endpoint", "expect": "different", "before": {"type": "vulnerability", "title": "t", "severity": "medium", "rule_id": "reflected-xss", "location": {"path": "https://shop.example.com/search"}, "source_extra": {"target": "https://shop.example.com/search"}}, "after": {"type": "vulnerability", "title": "t", "severity": "medium", "rule_id": "reflected-xss", "location": {"path": "https://shop.example.com/profile"}, "source_extra": {"target": "https://shop.example.com/profile"}}},
-    {"name": "a fuzzed parameter is keyed per endpoint and parameter, not on the target", "expect": "different", "before": {"type": "vulnerability", "title": "t", "severity": "medium", "rule_id": "sqli-dast", "location": {"path": "https://shop.example.com/a"}, "source_extra": {"target": "https://shop.example.com"}, "web": {"url": "https://shop.example.com/a", "method": "GET", "parameter": {"location": "query", "name": "id"}}}, "after": {"type": "vulnerability", "title": "t", "severity": "medium", "rule_id": "sqli-dast", "location": {"path": "https://shop.example.com/b"}, "source_extra": {"target": "https://shop.example.com"}, "web": {"url": "https://shop.example.com/b", "method": "GET", "parameter": {"location": "query", "name": "id"}}}},
-    {"name": "a fixed-path finding keyed on its matched URL before the target was reported keeps its row", "expect": "same", "before": {"type": "vulnerability", "title": "t", "severity": "medium", "rule_id": "wp-user-enum", "location": {"path": "https://shop.example.com/wp-json/wp/v2/users"}, "properties": {"request": "GET /wp-json/wp/v2/users HTTP/1.1"}}, "after": {"type": "vulnerability", "title": "t", "severity": "medium", "rule_id": "wp-user-enum", "location": {"path": "https://shop.example.com/wp-json/wp/v2/users"}, "source_extra": {"target": "https://shop.example.com"}, "web": {"url": "https://shop.example.com/wp-json/wp/v2/users", "method": "GET"}}}
+    {
+      "name": "a newer producer that reports the method only in the web location keeps the finding",
+      "expect": "same",
+      "before": {
+        "type": "vulnerability",
+        "title": "t",
+        "severity": "medium",
+        "rule_id": "exposed-env",
+        "location": {
+          "path": "https://shop.example.com/.env"
+        },
+        "properties": {
+          "request": "GET /.env HTTP/1.1"
+        }
+      },
+      "after": {
+        "type": "vulnerability",
+        "title": "t",
+        "severity": "medium",
+        "rule_id": "exposed-env",
+        "location": {
+          "path": "https://shop.example.com/.env"
+        },
+        "web": {
+          "url": "https://shop.example.com/.env",
+          "method": "GET"
+        }
+      }
+    },
+    {
+      "name": "a producer that reports no method keeps the GET finding",
+      "expect": "same",
+      "before": {
+        "type": "vulnerability",
+        "title": "t",
+        "severity": "medium",
+        "rule_id": "exposed-git",
+        "location": {
+          "path": "https://shop.example.com/.git/config"
+        },
+        "properties": {
+          "request": "GET /.git/config HTTP/1.1"
+        }
+      },
+      "after": {
+        "type": "vulnerability",
+        "title": "t",
+        "severity": "medium",
+        "rule_id": "exposed-git",
+        "location": {
+          "path": "https://shop.example.com/.git/config"
+        }
+      }
+    },
+    {
+      "name": "a template that matches two of its own fixed paths on one target is one finding",
+      "expect": "same",
+      "before": {
+        "type": "vulnerability",
+        "title": "t",
+        "severity": "medium",
+        "rule_id": "wp-user-enum",
+        "location": {
+          "path": "https://shop.example.com/wp-json/wp/v2/users"
+        },
+        "source_extra": {
+          "target": "https://shop.example.com"
+        },
+        "web": {
+          "url": "https://shop.example.com/wp-json/wp/v2/users",
+          "method": "GET"
+        }
+      },
+      "after": {
+        "type": "vulnerability",
+        "title": "t",
+        "severity": "medium",
+        "rule_id": "wp-user-enum",
+        "location": {
+          "path": "https://shop.example.com/?rest_route=/wp/v2/users"
+        },
+        "source_extra": {
+          "target": "shop.example.com"
+        },
+        "web": {
+          "url": "https://shop.example.com/",
+          "method": "GET"
+        }
+      }
+    },
+    {
+      "name": "the same fixed-path template on two targets of one asset is two findings",
+      "expect": "different",
+      "before": {
+        "type": "vulnerability",
+        "title": "t",
+        "severity": "medium",
+        "rule_id": "wp-user-enum",
+        "location": {
+          "path": "https://shop.example.com/blog/wp-json/wp/v2/users"
+        },
+        "source_extra": {
+          "target": "https://shop.example.com/blog"
+        }
+      },
+      "after": {
+        "type": "vulnerability",
+        "title": "t",
+        "severity": "medium",
+        "rule_id": "wp-user-enum",
+        "location": {
+          "path": "https://shop.example.com/news/wp-json/wp/v2/users"
+        },
+        "source_extra": {
+          "target": "https://shop.example.com/news"
+        }
+      }
+    },
+    {
+      "name": "endpoints given as targets stay one finding per endpoint",
+      "expect": "different",
+      "before": {
+        "type": "vulnerability",
+        "title": "t",
+        "severity": "medium",
+        "rule_id": "reflected-xss",
+        "location": {
+          "path": "https://shop.example.com/search"
+        },
+        "source_extra": {
+          "target": "https://shop.example.com/search"
+        }
+      },
+      "after": {
+        "type": "vulnerability",
+        "title": "t",
+        "severity": "medium",
+        "rule_id": "reflected-xss",
+        "location": {
+          "path": "https://shop.example.com/profile"
+        },
+        "source_extra": {
+          "target": "https://shop.example.com/profile"
+        }
+      }
+    },
+    {
+      "name": "a fuzzed parameter is keyed per endpoint and parameter, not on the target",
+      "expect": "different",
+      "before": {
+        "type": "vulnerability",
+        "title": "t",
+        "severity": "medium",
+        "rule_id": "sqli-dast",
+        "location": {
+          "path": "https://shop.example.com/a"
+        },
+        "source_extra": {
+          "target": "https://shop.example.com"
+        },
+        "web": {
+          "url": "https://shop.example.com/a",
+          "method": "GET",
+          "parameter": {
+            "location": "query",
+            "name": "id"
+          }
+        }
+      },
+      "after": {
+        "type": "vulnerability",
+        "title": "t",
+        "severity": "medium",
+        "rule_id": "sqli-dast",
+        "location": {
+          "path": "https://shop.example.com/b"
+        },
+        "source_extra": {
+          "target": "https://shop.example.com"
+        },
+        "web": {
+          "url": "https://shop.example.com/b",
+          "method": "GET",
+          "parameter": {
+            "location": "query",
+            "name": "id"
+          }
+        }
+      }
+    },
+    {
+      "name": "a fixed-path finding keyed on its matched URL before the target was reported keeps its row",
+      "expect": "same",
+      "before": {
+        "type": "vulnerability",
+        "title": "t",
+        "severity": "medium",
+        "rule_id": "wp-user-enum",
+        "location": {
+          "path": "https://shop.example.com/wp-json/wp/v2/users"
+        },
+        "properties": {
+          "request": "GET /wp-json/wp/v2/users HTTP/1.1"
+        }
+      },
+      "after": {
+        "type": "vulnerability",
+        "title": "t",
+        "severity": "medium",
+        "rule_id": "wp-user-enum",
+        "location": {
+          "path": "https://shop.example.com/wp-json/wp/v2/users"
+        },
+        "source_extra": {
+          "target": "https://shop.example.com"
+        },
+        "web": {
+          "url": "https://shop.example.com/wp-json/wp/v2/users",
+          "method": "GET"
+        }
+      }
+    }
   ]
 }

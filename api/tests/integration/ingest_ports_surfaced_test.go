@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/internal/app/exposurebridge"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
@@ -59,16 +59,16 @@ func TestIngest_PortsSurfaced(t *testing.T) {
 	bound := ingest.Binding{Kind: ingest.BindingCommand, CommandID: &cmd, Targets: []string{ip}, Tool: "naabu"}
 	scanAs := func(a *sensor.Sensor, bind ingest.Binding, ports ...int) {
 		t.Helper()
-		var list []ctis.PortInfo
-		for _, p := range ports {
-			list = append(list, ctis.PortInfo{Port: p, Protocol: "tcp", State: "open"})
-		}
-		rep := &ctis.Report{Version: "1.0", Tool: &ctis.Tool{Name: "naabu"},
-			Assets: []ctis.Asset{{ID: "ip-1", Type: ctis.AssetTypeIPAddress, Value: ip,
-				Technical: &ctis.AssetTechnical{IPAddress: &ctis.IPAddressTechnical{Hostname: "www.ports.example.com", Ports: list}}}},
-			Metadata: ctis.ReportMetadata{ID: "rep-" + shared.NewID().String(), Timestamp: time.Now().UTC()}}
+		assets, rels := withOpenPorts(ctis.Asset{ID: "ip-1", Type: ctis.AssetTypeIPAddress, Value: ip,
+			Technical: &ctis.AssetTechnical{IPAddress: &ctis.IPAddressTechnical{Hostname: "www.ports.example.com"}}}, ports...)
+		rep := &ctis.Report{Version: ctis.SchemaVersion, Tool: &ctis.Tool{Name: "naabu"},
+			Assets: assets, Relationships: rels,
+			Metadata: ctis.ReportMetadata{ID: ctis.NewReportID(), GeneratedAt: time.Now().UTC()}}
 		out, err := svc.Ingest(ctx, a, ingest.Input{Report: rep, Options: ingest.Options{Binding: bind}})
-		if err != nil || len(out.Errors) > 0 {
+		if err != nil {
+			t.Fatalf("ingest: %v", err)
+		}
+		if len(out.Errors) > 0 {
 			t.Fatalf("Ingest: %v %v", err, out.Errors)
 		}
 	}

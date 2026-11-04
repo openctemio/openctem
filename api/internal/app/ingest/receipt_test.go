@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/pkg/domain/ingestreceipt"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
@@ -26,7 +26,7 @@ func (f *fakeReceipts) Record(_ context.Context, d *ingestreceipt.Delta) (shared
 // sent).
 func TestReceiptSource(t *testing.T) {
 	cmd, ci, sensorID := shared.NewID(), shared.NewID(), shared.NewID()
-	report := &ctis.Report{Metadata: ctis.ReportMetadata{ID: "r-1"}}
+	report := "r-1" // the receiver's report id
 	agt := &sensor.Sensor{ID: sensorID}
 	upload := ingestreceipt.Source{Kind: ingestreceipt.SourceUpload, Ref: "u"}
 

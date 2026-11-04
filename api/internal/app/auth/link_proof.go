@@ -117,7 +117,8 @@ func (s *AuthService) VerifyLinkProof(ctx context.Context, actx auditapp.AuditCo
 		s.audit(ctx, actx, auditapp.NewFailureEvent(auditdom.ActionAuthStepUpFailed, auditdom.ResourceTypeUser, userID, err).
 			WithMessage("Identity confirmation to change sign-in methods failed").
 			WithMetadata("method", string(method)).
-			WithMetadata("purpose", purpose))
+			WithMetadata("purpose", purpose).
+			WithMetadata("reason", StepUpFailureReason(err, method)))
 		if errors.Is(err, ErrAccountLocked) {
 			return method, ErrAccountLocked
 		}

@@ -20,7 +20,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openctemio/ctis/politeness"
+	"github.com/openctemio/contract/politeness"
 
 	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
@@ -467,6 +467,8 @@ func gateReason(r *sensordom.DispatchRefusal) string {
 	switch {
 	case r.Layer == RefusalLayerGrant && r.Rule == RuleIntensity:
 		return commanddom.PlacementIntensity
+	case r.Layer == RefusalLayerEntitlement && r.Rule == RuleActiveScanning:
+		return commanddom.PlacementActiveScanning
 	case r.Layer == RefusalLayerGrant:
 		return commanddom.PlacementGrantPrefix + r.Rule
 	case r.Layer == sensordom.RefusalLayerManaged && r.Rule == "unavailable":

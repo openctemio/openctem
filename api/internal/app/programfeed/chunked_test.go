@@ -16,7 +16,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/ctis/transfer/bundle"
+	"github.com/openctemio/contract/transfer/bundle"
 
 	bp "github.com/openctemio/openctem/api/pkg/domain/bountyprogram"
 	"github.com/openctemio/openctem/api/pkg/feedsign"

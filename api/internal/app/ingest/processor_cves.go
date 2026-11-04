@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
@@ -55,7 +55,7 @@ func (p *CVEProcessor) ProcessBatch(
 		if f.Vulnerability == nil {
 			continue
 		}
-		cveID := vulnerability.NormalizeCVEID(f.Vulnerability.CVEID)
+		cveID := vulnerability.NormalizeCVEID(primaryCVE(f.Vulnerability))
 		if cveID == "" || !vulnerability.IsValidCVE(cveID) {
 			continue
 		}
@@ -152,7 +152,7 @@ func (p *CVEProcessor) LookupBatch(ctx context.Context, report *ctis.Report) (ma
 		if f.Vulnerability == nil {
 			continue
 		}
-		cveID := vulnerability.NormalizeCVEID(f.Vulnerability.CVEID)
+		cveID := vulnerability.NormalizeCVEID(primaryCVE(f.Vulnerability))
 		if cveID == "" || seen[cveID] || !vulnerability.IsValidCVE(cveID) {
 			continue
 		}

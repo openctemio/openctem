@@ -83,7 +83,7 @@ func newContentHarness(t *testing.T) *contentHarness {
 		sensorRepo, postgres.NewBranchRepository(db), postgres.NewTenantRepository(db),
 		postgres.NewAuditRepository(db), log)
 	ih := handler.NewIngestHandler(ingestSvc, sensorSvc, log)
-	ctl := handler.NewSensorControlV2Handler(ih, nil, nil, nil, log)
+	ctl := handler.NewSensorControlV2Handler(ih, nil, nil, log)
 	signer, _ := contentpack.NewSigner(bytes.Repeat([]byte{7}, 32))
 	packs := contentpackapp.NewService(postgres.NewContentPackRepository(db), storage.NewLocalStorage(t.TempDir()), signer, nil, log)
 	platform := contentpackapp.NewPlatformService(postgres.NewPlatformContentPackRepository(db), storage.NewLocalStorage(t.TempDir()), signer, log)

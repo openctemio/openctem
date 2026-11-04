@@ -36,7 +36,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/metrics"
@@ -264,7 +264,7 @@ func (s *Service) bindOutputTypes(ctx context.Context, agt *sensor.Sensor, tenan
 	if report != nil && binding.Kind != BindingCommand {
 		// Only a command binds a report to a capability; a claim alone
 		// never drives capability-specific handling.
-		report.Metadata.Capability = ""
+		setReportCapability(report, "")
 	}
 	if binding.Kind != BindingCommand || report == nil ||
 		(len(report.Assets) == 0 && len(report.Findings) == 0 && len(report.Dependencies) == 0 && len(report.Endpoints) == 0) {
@@ -277,8 +277,8 @@ func (s *Service) bindOutputTypes(ctx context.Context, agt *sensor.Sensor, tenan
 	rules := outputRules{stages: outputContract(tool), declared: s.declaredContract(ctx, agt, tool)}
 	// The capability the report answers is the platform's, from the
 	// command's tool: the sensor's metadata.capability is only a hint.
-	report.Metadata.Capability = boundCapability(rules, report.Metadata.Capability, tool)
-	s.checkCapabilityContract(agt, tenantID, tool, report)
+	setReportCapability(report, boundCapability(rules, reportCapability(report), tool))
+	s.checkCapabilityContract(ctx, agt, tenantID, tool, report)
 	if rules.empty() {
 		return report // no contract: a tool the catalog does not know, without a declaration
 	}
@@ -292,7 +292,7 @@ func (s *Service) bindOutputTypes(ctx context.Context, agt *sensor.Sensor, tenan
 		WithSeverity(audit.SeverityMedium).
 		WithMetadata("reason", string(sensorresult.ReasonOutOfContract)).
 		WithMetadata("tool_name", tool).
-		WithMetadata("report_id", report.Metadata.ID).
+		WithMetadata("report_id", reportIDOf(ctx)).
 		WithMetadata("out_of_contract_assets", sp.heldCount()).
 		WithMetadata("out_of_contract_findings", sp.heldFindings).
 		WithMetadata("out_of_contract_dependencies", sp.heldDependencies).
@@ -308,7 +308,7 @@ func (s *Service) bindOutputTypes(ctx context.Context, agt *sensor.Sensor, tenan
 		s.logger.Warn("sensor report carries output types its tool does not produce; applied (tenant mode warn)",
 			"sensor_id", agt.ID.String(), "tenant_id", tenantID.String(), "tool", sanitizeIngestLogField(tool),
 			"assets", sp.heldCount(), "findings", sp.heldFindings, "dependencies", sp.heldDependencies,
-			"report_id", sanitizeIngestLogField(report.Metadata.ID))
+			"report_id", reportIDOf(ctx))
 		s.auditAsync(auditapp.AuditContext{TenantID: tenantID.String()},
 			event.WithMessage(fmt.Sprintf("Sensor report applied with %d asset(s), %d finding(s) and %d dependency(ies) its tool does not produce (warn mode)",
 				sp.heldCount(), sp.heldFindings, sp.heldDependencies)))
@@ -321,7 +321,7 @@ func (s *Service) bindOutputTypes(ctx context.Context, agt *sensor.Sensor, tenan
 		if err == nil {
 			item := &sensorresult.Item{
 				TenantID: tenantID, SensorID: agt.ID, SensorType: string(s.sensorTypeOf(ctx, agt)),
-				Protocol: sensorresult.ProtocolV2, Route: opts.Route, ReportID: report.Metadata.ID,
+				Protocol: sensorresult.ProtocolV2, Route: opts.Route, ReportID: reportIDOf(ctx),
 				Reason: sensorresult.ReasonOutOfContract, Payload: payload,
 				AssetsCount: len(sp.held.Assets), FindingsCount: len(sp.held.Findings), ToolName: tool,
 			}

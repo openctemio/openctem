@@ -16,7 +16,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/openctemio/ctis/addrscope"
+	"github.com/openctemio/contract/addrscope"
 
 	"github.com/openctemio/openctem/api/internal/app/actscope"
 	"github.com/openctemio/openctem/api/internal/app/scope"
