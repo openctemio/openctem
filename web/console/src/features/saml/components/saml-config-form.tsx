@@ -1,8 +1,8 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import { Trash2, Loader2, RotateCcw } from 'lucide-react'
+import { Trash2, Loader2, RotateCcw, Download, Upload } from 'lucide-react'
 import { ErrorState } from '@/features/shared'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -32,6 +32,15 @@ import {
   PENDING_SSO_MESSAGE,
 } from '@/features/sso-approvals/api/use-sso-changes'
 import { CopyableUrl } from '@console/features/sso/components/copyable-url'
+import { useOrgIdentityProviders } from '@console/features/sso/api/use-org-identity-providers'
+import {
+  downloadSpMetadata,
+  importIdPMetadata,
+  readMetadataFile,
+  type IdPMetadata,
+  type IdPMetadataSource,
+} from '@console/features/saml/lib/saml-metadata'
+import { AdminApiError } from '@console/lib/admin-api/client'
 import { emptySamlConfig, type SamlConfig } from '@console/features/saml/types/saml.types'
 import { useTranslation } from '@/context/i18n-provider'
 
@@ -65,6 +74,14 @@ export function SamlConfigForm({
   const [form, setForm] = useState<SamlConfig>(emptySamlConfig)
   const [domainsText, setDomainsText] = useState('')
   const [removeOpen, setRemoveOpen] = useState(false)
+  const [metadataUrl, setMetadataUrl] = useState('')
+  const [isImporting, setIsImporting] = useState(false)
+  const [isDownloading, setIsDownloading] = useState(false)
+  const [imported, setImported] = useState<IdPMetadata | null>(null)
+  const fileInput = useRef<HTMLInputElement>(null)
+  // The SP URLs are built on the API's public address (APP_URL), the same
+  // one the API puts in the SP metadata, never on this console's address.
+  const { appUrl } = useOrgIdentityProviders(tenantId)
 
   const resetToSaved = () => {
     setForm(data ?? emptySamlConfig)
@@ -86,14 +103,14 @@ export function SamlConfigForm({
 
   const spURLs = useMemo(() => {
     const slug = tenantSlug
-    if (!slug || typeof window === 'undefined') return null
-    const base = `${window.location.origin}/api/v1/auth/saml/${slug}`
+    if (!slug || !appUrl) return null
+    const base = `${appUrl.replace(/\/+$/, '')}/api/v1/auth/saml/${slug}`
     return {
       metadata: `${base}/metadata`,
       acs: `${base}/acs`,
       login: `${base}/login`,
     }
-  }, [tenantSlug])
+  }, [tenantSlug, appUrl])
 
   const set = <K extends keyof SamlConfig>(key: K, value: SamlConfig[K]) =>
     setForm((f) => ({ ...f, [key]: value }))
@@ -128,6 +145,73 @@ export function SamlConfigForm({
           )
         )
       )
+    }
+  }
+
+  // Fills the IdP fields from the IdP's metadata. Nothing is saved until the
+  // administrator saves the form (an owner then approves the change).
+  const runImport = async (source: IdPMetadataSource) => {
+    setIsImporting(true)
+    try {
+      const md = await importIdPMetadata(tenantId, source)
+      setForm((f) => ({
+        ...f,
+        idp_entity_id: md.idp_entity_id,
+        idp_sso_url: md.idp_sso_url,
+        idp_certificate: md.idp_certificate,
+      }))
+      setImported(md)
+      toast.success(
+        t(
+          'admin.samlConfigForm.metadataImported',
+          'Filled in from the metadata. Review the values, then save.'
+        )
+      )
+    } catch (e) {
+      setImported(null)
+      toast.error(metadataErrorMessage(e, t))
+    } finally {
+      setIsImporting(false)
+    }
+  }
+
+  const handleImportUrl = () => {
+    const u = metadataUrl.trim()
+    if (u) void runImport({ metadata_url: u })
+  }
+
+  const handleImportFile = async (file: File | undefined) => {
+    if (fileInput.current) fileInput.current.value = ''
+    if (!file) return
+    const xml = await readMetadataFile(file)
+    if (xml === null) {
+      toast.error(
+        t(
+          'admin.samlConfigForm.metadataReason.too_large',
+          'The metadata is larger than 1 MB. Check that it is the federation metadata file.'
+        )
+      )
+      return
+    }
+    void runImport({ metadata_xml: xml })
+  }
+
+  const handleDownload = async () => {
+    setIsDownloading(true)
+    try {
+      await downloadSpMetadata(tenantId)
+    } catch (e) {
+      toast.error(
+        getErrorMessage(
+          e,
+          t(
+            'admin.samlConfigForm.spMetadataDownloadFailed',
+            'Could not download the service provider metadata'
+          )
+        )
+      )
+    } finally {
+      setIsDownloading(false)
     }
   }
 
@@ -215,6 +299,82 @@ export function SamlConfigForm({
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
+                  {canManage && (
+                    <div className="space-y-3 rounded-md border p-3">
+                      <div>
+                        <p className="text-sm font-medium">
+                          {t('admin.samlConfigForm.importFromMetadata', 'Import from metadata')}
+                        </p>
+                        <p className="text-muted-foreground text-xs">
+                          {t(
+                            'admin.samlConfigForm.importFromMetadataHint',
+                            "Paste the IdP's federation metadata URL (in Microsoft Entra ID: App Federation Metadata Url) or upload its metadata file. The fields below are filled in; nothing is saved until you save."
+                          )}
+                        </p>
+                      </div>
+                      <div className="flex flex-col gap-2 sm:flex-row">
+                        <Label htmlFor="idp_metadata_url" className="sr-only">
+                          {t('admin.samlConfigForm.metadataUrl', 'Metadata URL')}
+                        </Label>
+                        <Input
+                          id="idp_metadata_url"
+                          type="url"
+                          inputMode="url"
+                          value={metadataUrl}
+                          onChange={(e) => setMetadataUrl(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault()
+                              handleImportUrl()
+                            }
+                          }}
+                          placeholder="https://login.microsoftonline.com/.../federationmetadata/2007-06/federationmetadata.xml?appid=..."
+                          disabled={isImporting}
+                        />
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="shrink-0"
+                          onClick={handleImportUrl}
+                          disabled={isImporting || !metadataUrl.trim()}
+                        >
+                          {isImporting && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
+                          {t('admin.samlConfigForm.import', 'Import')}
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="shrink-0"
+                          onClick={() => fileInput.current?.click()}
+                          disabled={isImporting}
+                        >
+                          <Upload className="me-2 h-4 w-4" />
+                          {t('admin.samlConfigForm.uploadMetadataFile', 'Upload file')}
+                        </Button>
+                        <input
+                          ref={fileInput}
+                          type="file"
+                          accept=".xml,application/xml,text/xml,application/samlmetadata+xml"
+                          className="hidden"
+                          data-testid="idp-metadata-file"
+                          aria-label={t('admin.samlConfigForm.uploadMetadataFile', 'Upload file')}
+                          onChange={(e) => void handleImportFile(e.target.files?.[0])}
+                        />
+                      </div>
+                      {imported && (
+                        <p className="text-muted-foreground text-xs" role="status">
+                          {t(
+                            'admin.samlConfigForm.metadataImportedCertificates',
+                            'Signing certificates read: {count}. The first expires on {date}.',
+                            {
+                              count: imported.certificates.length,
+                              date: firstExpiry(imported),
+                            }
+                          )}
+                        </p>
+                      )}
+                    </div>
+                  )}
                   <div className="space-y-2">
                     <Label htmlFor="idp_entity_id">
                       {t('admin.samlConfigForm.idpEntityIdIssuer', 'IdP entity ID (issuer)')}
@@ -242,8 +402,8 @@ export function SamlConfigForm({
                   <div className="space-y-2">
                     <Label htmlFor="idp_certificate">
                       {t(
-                        'admin.samlConfigForm.idpSigningCertificatePem',
-                        'IdP signing certificate (PEM)'
+                        'admin.samlConfigForm.idpSigningCertificatesPem',
+                        'IdP signing certificates (PEM, one or more)'
                       )}
                     </Label>
                     <Textarea
@@ -365,8 +525,8 @@ export function SamlConfigForm({
                   </CardTitle>
                   <CardDescription>
                     {t(
-                      'admin.samlConfigForm.registerTheseUrlsInYour',
-                      "Register these URLs in your IdP's SAML application."
+                      'admin.samlConfigForm.registerTheseUrlsInYourOrUpload',
+                      "Upload the metadata file in your IdP's SAML application, or register these URLs there."
                     )}
                   </CardDescription>
                 </CardHeader>
@@ -389,12 +549,27 @@ export function SamlConfigForm({
                         )}
                         url={spURLs.login}
                       />
+                      <Separator />
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="w-full"
+                        onClick={() => void handleDownload()}
+                        disabled={isDownloading}
+                      >
+                        {isDownloading ? (
+                          <Loader2 className="me-2 h-4 w-4 animate-spin" />
+                        ) : (
+                          <Download className="me-2 h-4 w-4" />
+                        )}
+                        {t('admin.samlConfigForm.downloadSpMetadata', 'Download SP metadata (XML)')}
+                      </Button>
                     </>
                   ) : (
                     <p className="text-muted-foreground text-sm">
                       {t(
-                        'admin.samlConfigForm.serviceProviderUrlsAppearOnce',
-                        'Service provider URLs appear once a tenant is selected.'
+                        'admin.ssoSetupGuide.noAppUrl',
+                        'The public address of the app is not set. Set APP_URL on the API to see the addresses to register.'
                       )}
                     </p>
                   )}
@@ -420,6 +595,100 @@ export function SamlConfigForm({
         handleConfirm={() => void handleDelete()}
       />
     </div>
+  )
+}
+
+type Translate = ReturnType<typeof useTranslation>['t']
+
+/** The soonest expiry among the imported certificates (YYYY-MM-DD). */
+function firstExpiry(md: IdPMetadata): string {
+  const dates = md.certificates
+    .map((c) => new Date(c.not_after))
+    .filter((d) => !Number.isNaN(d.getTime()))
+    .sort((a, b) => a.getTime() - b.getTime())
+  return dates.length ? dates[0].toISOString().slice(0, 10) : ''
+}
+
+/**
+ * The refusal of a metadata import, by the API's reason: what is wrong with
+ * the document or the address, and what to do.
+ */
+export function metadataErrorMessage(e: unknown, t: Translate): string {
+  const reason =
+    e instanceof AdminApiError && e.details && typeof e.details === 'object'
+      ? (e.details as { reason?: unknown }).reason
+      : undefined
+  const messages: Record<string, () => string> = {
+    empty: () => t('admin.samlConfigForm.metadataReason.empty', 'The metadata is empty.'),
+    too_large: () =>
+      t(
+        'admin.samlConfigForm.metadataReason.too_large',
+        'The metadata is larger than 1 MB. Check that it is the federation metadata file.'
+      ),
+    doctype: () =>
+      t(
+        'admin.samlConfigForm.metadataReason.doctype',
+        'The metadata declares a document type or entities, which is not accepted.'
+      ),
+    malformed: () =>
+      t('admin.samlConfigForm.metadataReason.malformed', 'The metadata is not valid XML.'),
+    not_metadata: () =>
+      t(
+        'admin.samlConfigForm.metadataReason.not_metadata',
+        'This is not the SAML metadata of one identity provider.'
+      ),
+    no_idp: () =>
+      t(
+        'admin.samlConfigForm.metadataReason.no_idp',
+        'The metadata describes no SAML identity provider. Use the IdP metadata, not a service provider file.'
+      ),
+    no_entity_id: () =>
+      t('admin.samlConfigForm.metadataReason.no_entity_id', 'The metadata has no entity ID.'),
+    no_sso_url: () =>
+      t(
+        'admin.samlConfigForm.metadataReason.no_sso_url',
+        'The metadata has no https sign-in URL for the redirect or POST binding.'
+      ),
+    no_signing_certificate: () =>
+      t(
+        'admin.samlConfigForm.metadataReason.no_signing_certificate',
+        'The metadata has no signing certificate.'
+      ),
+    invalid_certificate: () =>
+      t(
+        'admin.samlConfigForm.metadataReason.invalid_certificate',
+        'A signing certificate in the metadata cannot be read.'
+      ),
+    certificate_expired: () =>
+      t(
+        'admin.samlConfigForm.metadataReason.certificate_expired',
+        'Every signing certificate in the metadata has expired. Create a new one at the IdP.'
+      ),
+    too_many_certificates: () =>
+      t(
+        'admin.samlConfigForm.metadataReason.too_many_certificates',
+        'The metadata has more than 5 signing certificates.'
+      ),
+    invalid_url: () =>
+      t(
+        'admin.samlConfigForm.metadataReason.invalid_url',
+        'Enter the full https address of the metadata.'
+      ),
+    url_blocked: () =>
+      t(
+        'admin.samlConfigForm.metadataReason.url_blocked',
+        'This address is not allowed: it points to a private or internal network, or redirects there or to plain http.'
+      ),
+    unreachable: () =>
+      t(
+        'admin.samlConfigForm.metadataReason.unreachable',
+        'The address did not answer with a document. Check it, or upload the metadata file instead.'
+      ),
+  }
+  if (typeof reason === 'string' && messages[reason]) return messages[reason]()
+  return getErrorMessage(
+    e,
+    t('admin.samlConfigForm.metadataImportFailed', 'Could not read the metadata')
   )
 }
 

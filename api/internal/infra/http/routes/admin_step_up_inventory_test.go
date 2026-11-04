@@ -93,6 +93,7 @@ var adminWriteInventory = map[string]struct {
 	"PUT /api/v1/admin/tenants/{tenantId}/sso/enforcement":                   {stepUpRoute, "organization sign-in trust"},
 	"PUT /api/v1/admin/tenants/{tenantId}/sso/saml":                          {stepUpRoute, "organization sign-in trust"},
 	"DELETE /api/v1/admin/tenants/{tenantId}/sso/saml":                       {stepUpRoute, "organization sign-in trust"},
+	"POST /api/v1/admin/tenants/{tenantId}/sso/saml/idp-metadata":            {stepUpRoute, "organization sign-in trust"},
 	"POST /api/v1/admin/tenants/{tenantId}/sso/identity-providers":           {stepUpRoute, "organization sign-in trust"},
 	"PUT /api/v1/admin/tenants/{tenantId}/sso/identity-providers/{id}":       {stepUpRoute, "organization sign-in trust"},
 	"DELETE /api/v1/admin/tenants/{tenantId}/sso/identity-providers/{id}":    {stepUpRoute, "organization sign-in trust"},

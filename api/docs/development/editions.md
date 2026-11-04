@@ -53,6 +53,23 @@ index and fails when:
 Run it by hand: `bash .github/scripts/check-edition-fence.sh`; its tests:
 `bash .github/scripts/check-edition-fence.test.sh`.
 
+## Extension data in the database
+
+An extension keeps its tables in its own schema. The core is written so that a
+Community build runs unchanged on a database that also holds such a schema (a
+rollback, or a restored backup): every core probe of the catalog is limited to
+the core schema, and nothing in the core reads another schema
+(`internal/migrate/extension_schema_db_test.go` proves migrate up and down, the
+start-up schema check and the administrator bootstrap with clashing table
+names).
+
+Key rotation (`cmd/rekey`) re-encrypts only the locations it lists, all in
+the core schema. Until a rekey seam lets an extension list its own encrypted
+columns, **an extension stores no value encrypted with `APP_ENCRYPTION_KEY`**.
+The rotation's sweep covers every schema, so a value that breaks this rule
+stops the rotation (named, nothing committed) instead of being left unreadable
+under the new key (`TestRekey_SweepCoversExtensionSchemas`).
+
 ## Paid-feature checklist
 
 The pull request template carries the same list: key registered, gated through

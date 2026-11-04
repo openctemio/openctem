@@ -164,9 +164,7 @@ jobs:
       - name: Smoke test on the native arch
         run: bash .github/scripts/smoke-image.sh ${{ matrix.image.name }} smoke/${{ matrix.image.name }}:${{ matrix.platform.arch }} ${{ matrix.platform.arch }}
       - name: Set up trivy (image guard)
-        uses: aquasecurity/setup-trivy@81e514348e19b6112ce2a7e3ecbafe19c1e1f567 # v0.3.1
-        with:
-          version: v0.75.0
+        uses: ./.github/actions/setup-trivy
       - name: Image guard (size budget, non-root, no setuid, OS advisories)
         env:
           TRIVY_DB_REPOSITORY: public.ecr.aws/aquasecurity/trivy-db:2,mirror.gcr.io/aquasec/trivy-db:2
@@ -356,9 +354,7 @@ jobs:
           bash .github/scripts/smoke-image.sh openctem smoke/openctem:${{ matrix.arch }} ${{ matrix.arch }}
           bash .github/scripts/smoke-allinone.sh smoke/openctem:${{ matrix.arch }}
       - name: Set up trivy (image guard)
-        uses: aquasecurity/setup-trivy@81e514348e19b6112ce2a7e3ecbafe19c1e1f567 # v0.3.1
-        with:
-          version: v0.75.0
+        uses: ./.github/actions/setup-trivy
       - name: Image guard (size budget, non-root, no setuid, OS advisories)
         env:
           TRIVY_DB_REPOSITORY: public.ecr.aws/aquasecurity/trivy-db:2,mirror.gcr.io/aquasec/trivy-db:2
