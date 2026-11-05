@@ -1209,9 +1209,6 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// The user service lets AddMember enforce Security.AllowedDomains and lets
 	// the suspend/reactivate notifier resolve the recipient.
 	s.Tenant.SetUserService(s.User)
-	// Requiring SSO needs sso.enforcement for the organization; the sweep turns it off
-	// after the grace once the organization lost it.
-	s.Tenant.SetSSOFeatureGate(s.Entitlement, repos.Tenant)
 
 	// Initialize asset services
 	s.Asset = asset.NewAssetService(repos.Asset, log)
@@ -3620,9 +3617,9 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	} else {
 		log.Warn("sso: no Redis client; sign-in state kept in process (single-replica only)")
 	}
-	// Configuring SSO connections needs sso.connections for the organization; sign-in
-	// through a configured connection is never gated.
-	s.SSO.SetFeatureGate(s.Entitlement)
+	// Creating another SSO connection is capped by sso_connections; sign-in
+	// through a configured connection and requiring SSO are never limited.
+	s.SSO.SetLimits(s.Entitlement)
 
 	// SSO P1: DNS-TXT domain-ownership verification. Wired as the PRIMARY JIT
 	// auto-provisioning gate — a non-member is auto-joined only when the email
