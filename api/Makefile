@@ -120,7 +120,8 @@ lint-new:
 	@echo "Running golangci-lint $(GOLANGCI_LINT_VERSION) against $(BASE_REF)..."
 	@# A private TMPDIR per run: golangci-lint takes a lock file in it, so
 	@# parallel runs (several worktrees, agents) would wait on or fail each other.
-	@t=$$(mktemp -d); GOWORK=off TMPDIR=$$t $(GOLANGCI_LINT) run --new-from-rev=$(BASE_REF) ./...; rc=$$?; rm -rf "$$t"; exit $$rc
+	@# The trap removes it on an interrupt or a kill too, not only on a normal exit.
+	@t=$$(mktemp -d); trap 'rm -rf "$$t"' EXIT INT TERM HUP; GOWORK=off TMPDIR=$$t $(GOLANGCI_LINT) run --new-from-rev=$(BASE_REF) ./...
 
 ## platform-authz-docs: Rewrite the generated platform (console) permission reference (RFC-134)
 platform-authz-docs:

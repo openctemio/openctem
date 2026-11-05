@@ -63,6 +63,9 @@ type AttributeDefinition struct {
 	Values []string      `json:"values,omitempty"`
 	Facet  bool          `json:"facet"`
 	Group  bool          `json:"group"`
+	// Derived: the platform sets the key (service_kind); no form edits
+	// it and a client value is refused.
+	Derived bool `json:"derived,omitempty"`
 }
 
 // TypeRef names a stored (type, sub_type) pair. SubType is empty when any
@@ -192,6 +195,10 @@ type Registry struct {
 	// every type may hold besides its attributes.
 	Properties       []PropertyDefinition `json:"properties"`
 	CommonProperties []string             `json:"common_properties"`
+	// Service kinds (servicekind.go).
+	ServiceCategories []ServiceCategoryDefinition `json:"service_categories"`
+	KindSources       []KindSourceDefinition      `json:"kind_sources"`
+	ServiceKinds      []ServiceKindDefinition     `json:"service_kinds"`
 }
 
 type legacyCategoryDefinition struct {
@@ -246,6 +253,10 @@ func RegistryDocument() Registry {
 
 		Properties:       registryProperties,
 		CommonProperties: registryCommonProperties,
+
+		ServiceCategories: registryServiceCategories,
+		KindSources:       registryKindSources,
+		ServiceKinds:      registryServiceKinds,
 	}
 }
 
