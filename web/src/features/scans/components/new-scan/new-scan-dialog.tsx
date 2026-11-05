@@ -480,12 +480,14 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
           </>
         )
       case 'options':
-        return <OptionsStep
+        return (
+          <OptionsStep
             data={formData}
             onChange={handleDataChange}
             showProfile
             workflowRequest={workflowRequest}
           />
+        )
       case 'schedule':
         return <ScheduleStep data={formData} onChange={handleDataChange} offerSaveOnly />
       case 'review':
