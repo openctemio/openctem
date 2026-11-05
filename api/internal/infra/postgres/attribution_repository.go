@@ -141,7 +141,7 @@ func (r *AttributionRepository) Records(ctx context.Context, tenantID shared.ID,
 // (settings.scope.review_before_inventory). The setting is read in the same
 // statement, from the asset's own tenant.
 func (r *AttributionRepository) SaveAutomatic(ctx context.Context, tenantID shared.ID, assetID string, d attribution.Decision) error {
-	if !d.State.Valid() || !d.State.Automatic() {
+	if !d.State.Valid() || !d.AutomaticAllowed() {
 		return fmt.Errorf("%w: invalid automatic attribution state %q", shared.ErrValidation, d.State)
 	}
 	tx, err := r.db.BeginTx(ctx, nil)

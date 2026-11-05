@@ -15,9 +15,10 @@
 //	go run ./cmd/release-feed assemble -feed feed.json -bundle feed.sigstore.json -out openctem-releases.json
 //	go run ./cmd/release-feed verify [-trusted-root trusted_root.json] openctem-releases.json
 //
-// The components are the first-party sensor products of versions.yaml and the
-// SDK: the feed carries the newest stable release of each, so an instance
-// learns a sensor or SDK release without an OpenCTEM release
+// The components are the first-party sensor products of versions.yaml, the
+// SDK and the CI runner: the feed carries the newest stable release of each,
+// so an instance learns a sensor, SDK or CI runner release without an
+// OpenCTEM release
 // (docs/rfcs/RFC-037-versioning-and-release-train.md §12).
 package main
 
@@ -81,10 +82,15 @@ var (
 )
 
 // SDKComponent is the SDK's component name (its versions.yaml section) and
-// SDKRepository its repository.
+// SDKRepository its repository. CIComponent is the CI runner's, with its
+// repository and image: a CI runner release counts once its image is
+// published, since the console's snippets for most CI systems run it.
 const (
 	SDKComponent  = "sdk"
 	SDKRepository = "openctemio/sdk-go"
+	CIComponent   = versions.CIKey
+	CIRepository  = "openctemio/ci"
+	CIImage       = "ghcr.io/openctemio/ci"
 )
 
 // identityRepo extracts the repository from a release identity
@@ -93,7 +99,7 @@ var identityRepo = regexp.MustCompile(`^https://github\.com/(openctemio/[A-Za-z0
 
 // components prints the first-party components the feed lists, one per line:
 // the component name, its repository and its image repository ("-" for
-// none). The publishing script resolves each one's newest release.
+// none): the sensor products, the SDK and the CI runner. The publishing script resolves each one's newest release.
 func components(out io.Writer) error {
 	for _, p := range versions.Embedded().Products {
 		m := identityRepo.FindStringSubmatch(p.ReleaseIdentity)
@@ -104,7 +110,10 @@ func components(out io.Writer) error {
 			return err
 		}
 	}
-	_, err := fmt.Fprintf(out, "%s %s -\n", SDKComponent, SDKRepository)
+	if _, err := fmt.Fprintf(out, "%s %s -\n", SDKComponent, SDKRepository); err != nil {
+		return err
+	}
+	_, err := fmt.Fprintf(out, "%s %s %s\n", CIComponent, CIRepository, CIImage)
 	return err
 }
 

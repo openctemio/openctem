@@ -16,15 +16,11 @@ import (
 // Core modules can never be denied.
 
 // Named features of sign-in (research/232 D16). Security controls (MFA,
-// passkeys, session policy, audit, break-glass) are never features: they are
-// free everywhere. These are allowed unless the operator or a source (the
+// passkeys, session policy, audit, break-glass, SSO sign-in and its
+// enforcement) are never features: they are free everywhere. How many SSO
+// connections an organization holds is the count limit sso_connections. These are allowed unless the operator or a source (the
 // hosted control plane) denies them, so a self-managed instance keeps them.
 const (
-	// FeatureSSOConnections: configuring per-organization SAML and OIDC
-	// connections (create or change; delete always works).
-	FeatureSSOConnections = "sso.connections"
-	// FeatureSSOEnforcement: requiring SSO sign-in for members.
-	FeatureSSOEnforcement = "sso.enforcement"
 	// FeatureSCIM: SCIM provisioning (tokens and the SCIM API).
 	FeatureSCIM = "scim"
 	// FeatureSSOGroupLinks: identity-provider group to role links.
@@ -59,7 +55,7 @@ const (
 // with entitlement.Service.Allowed (or Usable) at its own seam. Add a key
 // here, check it at the seam, and list it in docs/architecture/limits.md (a
 // test compares them).
-var NamedFeatures = []string{FeatureActiveScanning, FeatureContentPrivateGit, FeatureContentReviewPolicy, FeatureContentWebhook, FeatureLDAP, FeatureSCIM, FeatureSSOConnections, FeatureSSOEnforcement, FeatureSSOGroupLinks}
+var NamedFeatures = []string{FeatureActiveScanning, FeatureContentPrivateGit, FeatureContentReviewPolicy, FeatureContentWebhook, FeatureLDAP, FeatureSCIM, FeatureSSOGroupLinks}
 
 // ErrFeatureDenied refuses a change that needs a feature the organization's
 // plan does not include. Unavailable: the entitlement could not be read, so

@@ -136,14 +136,15 @@ func TestInfoMatchesBecomeExposuresNotFindings(t *testing.T) {
 	}
 }
 
-// Matches the finding pipeline would refuse (asset excluded, outside the
-// job or the uploader's scope, or not resolved) stay findings, refused there
+// Matches the finding pipeline would refuse (asset excluded, refused over
+// the outside-targets cap, outside the uploader's scope, or not resolved)
+// stay findings, refused there
 // with their receipt item; a scanner that does not run templates keeps its
 // info findings.
 func TestInfoMatchesOnlyFromAcceptedAssetsOfTemplateScanners(t *testing.T) {
 	for name, mutate := range map[string]func(*ctis.Report, *Output, map[string]shared.ID){
 		"excluded":     func(r *ctis.Report, o *Output, _ map[string]shared.ID) { o.ExcludedAssetRefs = refs(r) },
-		"outside job":  func(r *ctis.Report, o *Output, _ map[string]shared.ID) { o.OutsideJobAssetRefs = refs(r) },
+		"over cap":     func(r *ctis.Report, o *Output, _ map[string]shared.ID) { o.OverCapAssetRefs = refs(r) },
 		"out of scope": func(r *ctis.Report, o *Output, _ map[string]shared.ID) { o.OutOfScopeAssetRefs = refs(r) },
 		"unresolved":   func(r *ctis.Report, _ *Output, m map[string]shared.ID) { clear(m) },
 		"other tool":   func(r *ctis.Report, _ *Output, _ map[string]shared.ID) { r.Tool.Name = "trivy" },

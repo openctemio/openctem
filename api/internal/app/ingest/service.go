@@ -460,6 +460,9 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	// stay two findings.
 	s.findingProcessor.keyRawSecrets(tenantID, report)
 	redactReportSecrets(report)
+	// PRIVACY: e-mail addresses in any tool's finding text and evidence are
+	// masked (local part), before anything is stored (email_mask.go).
+	maskReportEmails(report)
 	// Fill the normalized members a CTIS 1.4 report left empty from its
 	// typed ids and native identity (interop.go), before the CVE catalog
 	// step and the identity recipes read them.
@@ -512,7 +515,8 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	// Output-type binding (research/27 G12): a command-bound report may
 	// carry only the asset types its tool produces or takes.
 	sentFindings := len(report.Findings)
-	report, findingsHeld, findingsLost := s.bindOutputTypes(ctx, agt, tenantID, binding, report, opts)
+	sent := report
+	report, findingsHeld, findingsLost, holds := s.bindOutputTypesHolds(ctx, agt, tenantID, binding, report, opts)
 	outOfContract := sentFindings - len(report.Findings)
 	// Which channel reported the findings is the platform's to say, from
 	// the principal: a sensor's metadata.source_type is ignored, so it can
@@ -545,6 +549,10 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	}
 	output.addOutcome(ingestreceipt.OutcomeUnresolvedRef, opts.FindingsRefusedBeforeIngest)
 	output.addOutcome(ingestreceipt.OutcomeOutOfContract, outOfContract)
+	if holds != nil {
+		output.HeldAssetRefs, output.HeldFindings, output.HoldLost = holds.assetRefs, holds.findings, holds.lost
+	}
+	addRefusedItems(output, sent, holds, opts.RefusedItems)
 	// Web endpoints (and legacy discovered_url assets) go to the web surface
 	// sub-inventory under their origin asset, never one asset per URL.
 	// Detection rules read the web services before anything is stored

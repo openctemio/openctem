@@ -372,10 +372,10 @@ or an integration's, which retest and closure treat differently.
   target root, resolution and port scans add the target names' addresses
   and their services, probes add services on target hosts. A vouched
   address never vouches for anything else, so a report cannot chain its way
-  out. Everything else is dropped with its findings (receipt reason
+  out. Everything else was dropped with its findings (receipt reason
   `outside_job_targets`), counted (`sensor_results_outside_job_total{kind}`)
-  and audited (`sensor.results_outside_job`, severity high); it never
-  creates an asset, whatever the tenant's result policy mode. Assets that
+  and audited (`sensor.results_outside_job`, severity high); amended by
+  §5.3.2: it is now recorded as a discovery that grants nothing. Assets that
   name no host (certificates, repositories, cloud resources) keep the other
   checks. This replaces the "candidates" bullet above for bound reports: a
   name outside the target roots is not a candidate the job could have been
@@ -393,6 +393,47 @@ or an integration's, which retest and closure treat differently.
 state that a target name resolves to any address, and that address is then
 accepted. It cannot add a name outside the target roots, and the address is
 attributed to the sensor and the command.
+
+#### 5.3.2 Amendment (2026-11-05): what lies outside the targets is recorded, not dropped
+
+**Why.** Owner decision of 2026-11-05: ingest never throws away what a scan
+saw; a person removes what is not the organization's. On production the
+location binding dropped a port scanner's services on its own target hosts
+(the stored service name `host:port:transport` was not split, so every
+service read as outside the targets) and the hosts template scanners reached
+after a redirect, with their findings; the address-chunk rule dropped
+addresses silently (no audit, and its findings were labelled as outside the
+uploader's scope).
+
+**Decision.**
+
+- A located asset outside the targets of a host-bound command, and an asset
+  outside the addresses of an address-chunk command, is **recorded**: a new
+  one is created as a scan discovery (the command and tool in its
+  attribution evidence, never `tenant_scanned`), an existing one is only
+  marked seen (§5.3: a bound report changes only what its command covers),
+  and its relationships and findings are kept.
+- Recording grants nothing. Whether anything may probe the asset is the
+  active-scan gate's decision (RFC-054 §4.2, §15, §16): a name under none of
+  the organization's domains and an address on a shared or unknown network
+  stay passive until a person puts them in scope.
+- New findings on such an asset run no new-finding automations
+  (notifications, ticket rules, group routing) and the asset is not counted
+  as covered by the run, so its other findings are never closed by absence.
+- A report records at most 1000 such assets. The rest are refused with their
+  findings: the item error `too_many` to the sensor, the receipt item
+  `over_cap` (policy `binding`), `assets_over_cap` and `findings_over_cap` on
+  the response.
+- `sensor.results_outside_job` is audited per report with the counts
+  recorded and refused: severity medium, high when the cap refused some.
+  `sensor_results_outside_job_total{kind}` counts `asset` and `finding`
+  (recorded) and `asset_refused` and `finding_refused`.
+
+**Threats.** A hostile sensor can add names and addresses to the
+organization's discovered inventory, labelled with its command, at most 1000
+per report; it cannot make the platform probe them, page anyone, close
+findings or change an existing asset. It writes only into the tenant of its
+own sensor row. Design study: research/436 (local).
 
 ### 5.4 Hostile-results pipeline
 

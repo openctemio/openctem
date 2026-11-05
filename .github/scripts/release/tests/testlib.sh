@@ -136,6 +136,35 @@ YAML
     image: x:${API_VERSION:-${OPENCTEM_VERSION:?run setup.sh}}
     image: ${SENSOR_IMAGE:-ghcr.io/openctemio/sensor}:${SENSOR_VERSION:-v0.6.4}
 YAML
-  echo "export const CI_RELEASE = 'v0.2.0'" >"$d/web/src/features/ci-runners/lib/ci.ts"
+  echo "export const CI_RELEASE_FALLBACK = 'v0.2.0'" >"$d/web/src/features/ci-runners/lib/ci.ts"
   printf '{\n  "name": "w",\n  "version": "0.0.0",\n  "private": true\n}\n' >"$d/web/package.json"
+}
+
+# stub_release_lists DIR: gh and docker stubs on PATH for refresh-latest.sh, so
+# a cut never reads the real release lists. `gh release list -R <repo>` prints
+# DIR/releases/<repo name>.json ("[]" when absent: no release); `docker buildx
+# imagetools inspect <image:tag>` answers with the digest in
+# DIR/images/<image:tag with / and : as _>. Any other gh command fails.
+stub_release_lists() {
+  local d="$1"
+  mkdir -p "$d/bin" "$d/releases" "$d/images"
+  cat >"$d/bin/gh" <<'STUB'
+#!/usr/bin/env bash
+[[ "${1:-}" == release && "${2:-}" == list ]] || exit 1
+repo=""
+while [[ $# -gt 0 ]]; do
+  if [[ "$1" == "-R" ]]; then repo="$2"; shift; fi
+  shift
+done
+f="$STUB_DIR/releases/${repo#openctemio/}.json"
+if [[ -f "$f" ]]; then cat "$f"; else echo '[]'; fi
+STUB
+  cat >"$d/bin/docker" <<'STUB'
+#!/usr/bin/env bash
+f="$STUB_DIR/images/$(tr '/:' '__' <<<"${4:-}")"
+[[ -f "$f" ]] || exit 1
+printf '{"digest":"%s"}\n' "$(cat "$f")"
+STUB
+  chmod +x "$d/bin/gh" "$d/bin/docker"
+  export STUB_DIR="$d" PATH="$d/bin:$PATH" GH_RETRY_ATTEMPTS=1
 }
