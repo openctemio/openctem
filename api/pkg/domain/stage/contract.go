@@ -191,6 +191,7 @@ var requiredFields = map[Key][]string{
 	VulnTemplates:       []string{"rule_id", "severity", "location", "evidence"},
 	CheckTakeover:       []string{"host", "provider", "evidence"},
 	MonitorWebContent:   []string{"url", "sha256"},
+	CaptureScreenshot:   []string{"web_evidence"},
 	DASTWeb:             []string{"rule_id", "severity", "url", "evidence"},
 	SecretsCode:         []string{"rule_id", "file", "line", "masked_value"},
 	SASTCode:            []string{"rule_id", "file", "line", "severity"},
@@ -217,6 +218,9 @@ var chunkSizes = map[Key]int{
 	CheckTakeover:       100,
 	// Each capture carries a body of up to 512 KiB.
 	MonitorWebContent: 25,
+	// Each capture is an image of up to about 1 MiB and the platform keeps
+	// at most 20 screenshots per report.
+	CaptureScreenshot: 10,
 	DASTWeb:           10,
 }
 
@@ -315,11 +319,14 @@ var toolParams = map[string]map[string]string{
 	"dnsx-enum": {"method": "method", "max_queries": "max_queries"},
 }
 
+// toolWebshot is the sensor tool that implements capture.screenshot.
+const toolWebshot = "webshot"
+
 // batchTools take a list of targets in one task (the sensor executor reads
 // the payload's `targets`); every other tool takes one target per task.
 var batchTools = map[string]bool{
 	"nuclei": true, "subfinder": true, "dnsx": true, "naabu": true, "httpx": true, "katana": true,
-	"rdap": true, "asn": true,
+	"rdap": true, "asn": true, toolWebshot: true,
 }
 
 // capabilityJobTools run capability jobs on the sensor (their embedded
@@ -331,7 +338,7 @@ var batchTools = map[string]bool{
 var capabilityJobTools = map[string]bool{
 	"subfinder": true, "dnsx": true, "naabu": true, "httpx": true, "katana": true,
 	"nuclei": true, "trivy": true, "semgrep": true, "opengrep": true, "codeql": true, "betterleaks": true, "gitleaks": true,
-	"rdap": true, "asn": true,
+	"rdap": true, "asn": true, toolWebshot: true,
 }
 
 // WordlistRequest is one wordlist a tool's job asks the platform for: the
@@ -497,7 +504,6 @@ var plannedFields = []struct {
 	{"detect.services", []string{"port", "protocol", "service_name"}},
 	{"fingerprint.tech", []string{"technologies"}},
 	{"check.tls", []string{"fingerprint", "not_after", "issuer"}},
-	{"capture.screenshot", []string{"artifact_sha256", "media_type"}},
 	{"host.credentialed", []string{"host", "plugin_id"}},
 	{"cloud.posture", []string{"rule_id", "resource_id", "severity"}},
 	{"verify.finding", []string{"finding_id", "status"}},

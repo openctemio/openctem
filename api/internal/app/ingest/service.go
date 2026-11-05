@@ -140,6 +140,9 @@ type Service struct {
 	nameProber      NameProber
 	resolutionStore assetresolution.Store
 	results         sensorresult.Repository
+	// release is the progress of the out-of-contract release sweeps
+	// (quarantine_release.go).
+	release releaseState
 	// policyVersions and policies: the versioned policy snapshots.
 	policyVersions PolicyVersionReader
 	policies       policyCache
@@ -282,6 +285,12 @@ func (s *Service) SetWebContentRecorder(r WebContentRecorder) {
 // SetWebEvidenceRecorder enables web evidence captures (RFC-081).
 func (s *Service) SetWebEvidenceRecorder(r WebEvidenceRecorder) {
 	s.assetProcessor.SetWebEvidenceRecorder(r)
+}
+
+// SetPageChangeNotifier schedules a new capture of a web service whose page
+// changed (RFC-081).
+func (s *Service) SetPageChangeNotifier(n PageChangeNotifier) {
+	s.assetProcessor.SetPageChangeNotifier(n)
 }
 
 // SetAssetsObservedCallback sets the callback for every asset an ingest
@@ -459,6 +468,9 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	// stay two findings.
 	s.findingProcessor.keyRawSecrets(tenantID, report)
 	redactReportSecrets(report)
+	// PRIVACY: e-mail addresses in any tool's finding text and evidence are
+	// masked (local part), before anything is stored (email_mask.go).
+	maskReportEmails(report)
 	// Fill the normalized members a CTIS 1.4 report left empty from its
 	// typed ids and native identity (interop.go), before the CVE catalog
 	// step and the identity recipes read them.

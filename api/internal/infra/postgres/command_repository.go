@@ -43,6 +43,9 @@ type CommandRepository struct {
 	// guard completes every command before it is stored: the web scope of
 	// a web job (command_web_scope.go).
 	guard command.CreateGuard
+	// strongTools says which tools need strong isolation (their jobs carry
+	// required_features isolation.strong@1); nil: none does.
+	strongTools command.StrongIsolationTools
 }
 
 // NewCommandRepository creates a new CommandRepository.
