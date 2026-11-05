@@ -39,8 +39,10 @@ of token used to clone the organization's repositories is a target credential.
    The member belongs to the platform: one a command's creator put in the
    payload is replaced (or removed on every other command). The refs are
    recorded in `command_secret_grants` for the claim (command, lease epoch,
-   sensor) with `max_fetches`. A claim whose grant cannot be recorded is
-   handed back.
+   sensor) with `max_fetches` and the ids of the endpoints of the egress
+   block the job was signed with (`egress_endpoints`; the stored command
+   never carries the egress block, it is stamped on the copy the sensor
+   receives). A claim whose grant cannot be recorded is handed back.
 2. **Fetch, per task.** `POST /api/v2/sensor/commands/{command_id}/secrets`
    (v2 HTTPS only; protocol v3 does not carry it). The body is a
    `secretref.FetchRequest`: `lease_epoch`, `task` (audit only), `refs`, and
@@ -90,7 +92,9 @@ most 256.
 Values are read at fetch, so a key disabled, rotated or removed after the
 claim is answered as it is now. Proxy credentials are those of the recorded
 pool (never the sensor's current pool): the endpoints that may carry traffic
-now, none for a disabled pool; a proxy test gets every endpoint of its pool
+now and are in the grant's `egress_endpoints` (an endpoint added to the pool
+or recovered since the claim is not part of the job), none for a disabled
+pool; a proxy test gets every endpoint of its pool
 with credentials. A stored value that no longer meets its kind's rules is not
 sent.
 

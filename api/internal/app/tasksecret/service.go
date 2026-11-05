@@ -225,6 +225,12 @@ func (s *Service) GrantSecrets(ctx context.Context, cmd *commanddom.Command, sen
 	}
 	g := &dom.Grant{TenantID: cmd.TenantID, CommandID: cmd.ID, SensorID: sensorID, LeaseEpoch: cmd.LeaseEpoch,
 		Set: set, MaxFetches: dom.MaxFetches(tasks)}
+	if cmd.Type != commanddom.CommandTypeProxyTest {
+		// The endpoints the job was signed with, kept with the grant: the
+		// stored command never carries the egress block (it is stamped on the
+		// copy handed to the sensor), so a fetch cannot read it from there.
+		g.EgressEndpoints = signedEndpointIDs(cmd.Payload)
+	}
 	if err := s.grants.Record(ctx, g); err != nil {
 		return secretref.Set{}, err
 	}
@@ -374,7 +380,7 @@ func (s *Service) Fetch(ctx context.Context, in FetchInput) (*secretref.SealedAn
 		return nil, refuse(reasonMaxFetches)
 	}
 
-	answer, delivered, err := s.values(ctx, cmd, req, asked)
+	answer, delivered, err := s.values(ctx, cmd, g, req, asked)
 	if err != nil {
 		return nil, err
 	}
@@ -503,7 +509,7 @@ func classAllowed(r secretref.Ref, sn *sensordom.Sensor, eff sensordom.Grant) bo
 
 // values resolves the asked refs. It returns the answer and the provider
 // ids whose keys it holds (marked used once the answer is sealed).
-func (s *Service) values(ctx context.Context, cmd *commanddom.Command, req secretref.FetchRequest, asked []secretref.Ref,
+func (s *Service) values(ctx context.Context, cmd *commanddom.Command, g *dom.Grant, req secretref.FetchRequest, asked []secretref.Ref,
 ) (secretref.Answer, []string, error) {
 	ans := secretref.Answer{CommandID: cmd.ID.String(), LeaseEpoch: req.LeaseEpoch,
 		IssuedAt: s.now().UTC().Truncate(time.Second), Secrets: []secretref.Secret{}}
@@ -541,7 +547,7 @@ func (s *Service) values(ctx context.Context, cmd *commanddom.Command, req secre
 			}
 			raw = b
 		case secretref.KindEgressProxy:
-			v, ok, err := s.poolValue(ctx, cmd, r.Ref)
+			v, ok, err := s.poolValue(ctx, cmd, g.EgressEndpoints, r.Ref)
 			if err != nil {
 				return ans, nil, err
 			}
@@ -591,7 +597,7 @@ func signedEndpointIDs(payload json.RawMessage) []string {
 // own pool (every endpoint with credentials), or a job's pool (the endpoints
 // that may carry traffic now; a disabled pool gives none). ok is false when
 // the pool is gone.
-func (s *Service) poolValue(ctx context.Context, cmd *commanddom.Command, poolID string) (json.RawMessage, bool, error) {
+func (s *Service) poolValue(ctx context.Context, cmd *commanddom.Command, signed []string, poolID string) (json.RawMessage, bool, error) {
 	if s.pools == nil {
 		return nil, false, nil
 	}
@@ -602,7 +608,7 @@ func (s *Service) poolValue(ctx context.Context, cmd *commanddom.Command, poolID
 	if cmd.Type == commanddom.CommandTypeProxyTest {
 		creds, err = s.pools.TestCredentialsFor(ctx, cmd, poolID)
 	} else {
-		creds, err = s.pools.PoolCredentials(ctx, cmd.TenantID, poolID, signedEndpointIDs(cmd.Payload))
+		creds, err = s.pools.PoolCredentials(ctx, cmd.TenantID, poolID, signed)
 	}
 	if errors.Is(err, shared.ErrNotFound) {
 		return nil, false, nil
