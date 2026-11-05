@@ -57,7 +57,10 @@ func TestSummaryOfPortOpen(t *testing.T) {
 		want    string
 		variant string
 	}{
-		{"known port from number", map[string]any{"port": float64(6379)}, "Port 6379 (Redis) is open to the internet", ""},
+		// A port number alone names no service: a guess is only shown as one.
+		{"a port alone names no service", map[string]any{"port": float64(6379)}, "Port 6379 is open to the internet", "port"},
+		{"a guess is shown as a guess", map[string]any{"port": float64(6379), "service_guess": "Redis"}, "Port 6379 is open to the internet (probably Redis)", "guess"},
+		{"a measured kind is named", map[string]any{"port": float64(6379), "service_label": "Redis"}, "Port 6379 (Redis) is open to the internet", ""},
 		{"named service wins", map[string]any{"port": "8080", "service": "Jenkins"}, "Port 8080 (Jenkins) is open to the internet", ""},
 		{"unknown port", map[string]any{"port": 31337}, "Port 31337 is open to the internet", "port"},
 		{"no port falls back to title", map[string]any{}, "Open port found", "title"},
