@@ -90,6 +90,13 @@ export function StepOutcome({ outcome }: { outcome?: RunMapNode['outcome'] }) {
   if (outcome.skipped_target_count) {
     counts.push(t('scans.step.outcome.skipped', undefined, { count: outcome.skipped_target_count }))
   }
+  if (outcome.not_resolving_skipped_count) {
+    counts.push(
+      t('scans.step.outcome.notResolvingSkipped', undefined, {
+        count: outcome.not_resolving_skipped_count,
+      })
+    )
+  }
   if (gapTotal === 0 && counts.length === 0) return null
   return (
     <div className="space-y-1 text-xs" data-testid="step-outcome">

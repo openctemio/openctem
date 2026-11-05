@@ -116,3 +116,83 @@ func IsSynthesizedUnresolvable(result json.RawMessage) bool {
 	b, _ := r.Metadata[MetaSynthesizedUnresolvable].(bool)
 	return b
 }
+
+// A sensor that refuses a whole task under its local policy reports the
+// refused targets in the refusal's detail (sdk-go refusedSummary):
+//
+//	21 target(s) refused: "a.example.com" (unresolvable), "b.example.com" (denied_by_policy), and 19 more
+//
+// RefusedSummaryEntry is one listed target and the reason the sensor gave.
+type RefusedSummaryEntry struct {
+	Target string
+	Reason string
+}
+
+var (
+	refusedSummaryRE = regexp.MustCompile(`(\d+) target\(s\) refused: `)
+	// "<target>" (<reason>)
+	refusedSummaryEntryRE = regexp.MustCompile(`^"((?:[^"\\]|\\.)+)" \(([a-z_]+)\)$`)
+	refusedSummaryMoreRE  = regexp.MustCompile(`^and (\d+) more$`)
+)
+
+// ParseRefusedSummary reads a refusal's detail (or a failure message that
+// carries it): the listed targets with their reasons and the number of
+// refused targets. ok is false unless the text has that shape and the listed
+// entries plus the "and N more" account for the declared count. The text is
+// sensor-supplied: bounded, parsed defensively, never trusted beyond the
+// reasons it states.
+func ParseRefusedSummary(text string) (entries []RefusedSummaryEntry, total int, ok bool) {
+	if len(text) > 64<<10 {
+		return nil, 0, false
+	}
+	loc := refusedSummaryRE.FindStringSubmatchIndex(text)
+	if loc == nil {
+		return nil, 0, false
+	}
+	declared, err := strconv.Atoi(text[loc[2]:loc[3]])
+	if err != nil || declared < 1 || declared > MaxSkippedTargetsTotal {
+		return nil, 0, false
+	}
+	more := 0
+	for _, part := range strings.Split(text[loc[1]:], ", ") {
+		if m := refusedSummaryMoreRE.FindStringSubmatch(part); m != nil {
+			more, _ = strconv.Atoi(m[1])
+			continue
+		}
+		m := refusedSummaryEntryRE.FindStringSubmatch(part)
+		if m == nil {
+			return nil, 0, false
+		}
+		if t := safetext.SingleLine(m[1], maxSkippedTargetRunes); t != "" {
+			entries = append(entries, RefusedSummaryEntry{Target: strings.ToLower(strings.TrimSuffix(t, ".")), Reason: m[2]})
+		}
+	}
+	if len(entries) == 0 || len(entries)+more != declared {
+		return nil, 0, false
+	}
+	return entries, declared, true
+}
+
+// UnresolvableRefusal reports whether every target a refusal's detail lists
+// is a name that does not resolve, and returns the names. An entry counts
+// when the sensor reported it unresolvable, or reported it denied by policy
+// while the platform's own resolution state (notResolving, tenant-scoped)
+// says the name does not resolve: a sensor that predates the unresolvable
+// reason for a name its allow list could not match reports it denied. An
+// entry denied for any other reason, or a refusal whose unlisted rest cannot
+// be told (listed entries fewer than the total) keeps the refusal as it is.
+func UnresolvableRefusal(entries []RefusedSummaryEntry, total int, notResolving map[string]bool) (hosts []string, ok bool) {
+	if len(entries) == 0 || len(entries) != total {
+		return nil, false
+	}
+	for _, e := range entries {
+		switch {
+		case e.Reason == SkipReasonUnresolvable:
+		case e.Reason == SkipReasonDenied && notResolving[e.Target]:
+		default:
+			return nil, false
+		}
+		hosts = append(hosts, e.Target)
+	}
+	return hosts, true
+}

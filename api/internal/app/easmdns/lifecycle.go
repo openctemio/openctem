@@ -192,7 +192,7 @@ func suspectedTakeoverEvent(tenantID shared.ID, t Target, o OpenDangling, d Dang
 		"previous_target":      o.Target,
 		"target":               d.Target,
 		"cname_chain":          d.Chain,
-		"addresses":            d.Addresses,
+		"ip_addresses":         d.Addresses,
 		"dangling_exposure_id": o.ExposureID,
 	}
 	if d.Provider != nil {
