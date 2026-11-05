@@ -220,7 +220,7 @@ the caller's data scope.
 ## 9. Amendment 2026-11-05: guessed endpoints and response evidence
 
 Path discovery (`enumerate.web_paths@1`, architecture:
-[web-discovery.md](../architecture/web-discovery.md)) requests candidate
+[web-surface.md](../architecture/web-surface.md)) requests candidate
 paths on an origin and reports the ones whose answer differs from the
 origin's not-found answer. Its rows join this store with three rules.
 
