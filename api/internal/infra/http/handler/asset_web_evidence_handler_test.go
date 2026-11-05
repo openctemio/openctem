@@ -105,6 +105,67 @@ func TestAssetWebEvidenceHandler(t *testing.T) {
 	}
 }
 
+// scopedEvidence keeps one capture of one asset of one tenant, like the
+// repository (every read matches tenant, asset and capture id).
+type scopedEvidence struct {
+	tenant, asset shared.ID
+	png           []byte
+}
+
+func (f *scopedEvidence) List(context.Context, shared.ID, shared.ID) ([]webevidence.Record, error) {
+	return nil, nil
+}
+
+func (f *scopedEvidence) Screenshot(_ context.Context, tenantID, assetID shared.ID, id string) (io.ReadCloser, *webevidence.Record, error) {
+	if tenantID != f.tenant || assetID != f.asset || id != "e1" {
+		return nil, nil, shared.ErrNotFound
+	}
+	// The page said it was HTML; the handler never repeats that.
+	rec := &webevidence.Record{ScreenshotSize: len(f.png), Capture: webevidence.Capture{ContentType: "text/html"}}
+	return io.NopCloser(bytes.NewReader(f.png)), rec, nil
+}
+
+// The screenshot route answers 404 (never the picture) for another tenant
+// that guesses the ids, for a valid capture id under another asset, and for
+// a member whose data scope lacks the asset; it always serves a fixed PNG
+// type, not anything the page or sensor sent, uncached.
+func TestAssetWebEvidenceScreenshot_Isolation(t *testing.T) {
+	tenantA, tenantB := shared.NewID(), shared.NewID()
+	mine, _ := assetdom.NewAsset("https://app.example.com", assetdom.AssetTypeService, assetdom.CriticalityMedium)
+	sibling, _ := assetdom.NewAsset("https://www.example.com", assetdom.AssetTypeService, assetdom.CriticalityMedium)
+	svc := &scopedEvidence{tenant: tenantA, asset: mine.ID(), png: []byte("\x89PNG\r\n\x1a\nfake")}
+	get := func(scope *fakeWebEvidenceAssets, tenant shared.ID, assetID, evidence string) *httptest.ResponseRecorder {
+		w := httptest.NewRecorder()
+		NewAssetWebEvidenceHandler(scope, svc, logger.NewNop()).Screenshot(w,
+			webEvidenceReq(t, "/", tenant, map[string]string{"id": assetID, "evidence_id": evidence}))
+		return w
+	}
+
+	w := get(&fakeWebEvidenceAssets{visible: mine}, tenantA, mine.ID().String(), "e1")
+	if w.Code != http.StatusOK || w.Header().Get("Content-Type") != "image/png" ||
+		w.Header().Get("Cache-Control") != "private, no-store" || w.Header().Get("X-Content-Type-Options") != "nosniff" ||
+		!strings.Contains(w.Header().Get("Content-Security-Policy"), "sandbox") {
+		t.Fatalf("own screenshot: %d %v", w.Code, w.Header())
+	}
+	// Tenant B guesses tenant A's asset and capture ids: the asset does not
+	// resolve in B's tenant.
+	if w := get(&fakeWebEvidenceAssets{}, tenantB, mine.ID().String(), "e1"); w.Code != http.StatusNotFound || w.Body.Len() > 400 {
+		t.Fatalf("cross-tenant: %d", w.Code)
+	}
+	// Even if the asset resolved, the capture is read in the caller's tenant.
+	if w := get(&fakeWebEvidenceAssets{visible: mine}, tenantB, mine.ID().String(), "e1"); w.Code != http.StatusNotFound {
+		t.Fatalf("cross-tenant capture: %d", w.Code)
+	}
+	// A valid capture id under another visible asset of the same tenant.
+	if w := get(&fakeWebEvidenceAssets{visible: sibling}, tenantA, sibling.ID().String(), "e1"); w.Code != http.StatusNotFound {
+		t.Fatalf("capture of another asset: %d", w.Code)
+	}
+	// A member outside the data scope: the asset is not visible.
+	if w := get(&fakeWebEvidenceAssets{}, tenantA, mine.ID().String(), "e1"); w.Code != http.StatusNotFound {
+		t.Fatalf("out of data scope: %d", w.Code)
+	}
+}
+
 // The screenshot switch is off by default and omitted keeps it.
 func TestEASMSettingsWebScreenshots(t *testing.T) {
 	tenantID := shared.NewID()
