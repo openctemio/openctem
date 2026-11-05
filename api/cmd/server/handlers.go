@@ -329,6 +329,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// Gated actions (rotate_key) ring only when the sensor's grant lists
 	// them (RFC-052 §5.3).
 	doorbell.SetGrants(repos.SensorGrant)
+	// Commands whose hosts are only partly busy start their free targets
+	// when a sensor claims (host split): the doorbell rings for them too.
+	doorbell.SetHostSplits(svc.Command)
 	// A new job-signing key set changes config_version, so sensors re-read
 	// hello and pick it up (RFC-040 §5.6).
 	if svc.JobSigner != nil {
@@ -366,6 +369,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	}
 	if svc.ScanIdentity != nil {
 		tenantHandler.SetScanIdentity(svc.ScanIdentity)
+	}
+	if svc.LeakedSecretPolicy != nil {
+		tenantHandler.SetLeakedSecretDefault(svc.LeakedSecretPolicy)
 	}
 	if svc.Entitlement != nil {
 		tenantHandler.SetSelfServiceLimits(svc.Entitlement)

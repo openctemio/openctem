@@ -12,6 +12,16 @@ import { ChevronLeft } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { DialogFooter } from '@/components/ui/dialog'
 import { ConfirmDialog } from '@/components/confirm-dialog'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { useTranslation } from '@/context/i18n-provider'
 
 interface WizardFooterProps {
@@ -24,6 +34,8 @@ interface WizardFooterProps {
   note?: ReactNode
   noteId?: string
   noteTone?: 'muted' | 'destructive'
+  /** Above the row, inside the footer (the phone summary bar). */
+  before?: ReactNode
 }
 
 export function WizardFooter({
@@ -33,10 +45,12 @@ export function WizardFooter({
   note,
   noteId,
   noteTone = 'muted',
+  before,
 }: WizardFooterProps) {
   const { t } = useTranslation()
   return (
     <DialogFooter className="flex-col gap-1.5 sm:flex-col sm:justify-start">
+      {before}
       <div className="flex w-full min-w-0 items-center justify-between gap-2">
         {onBack ? (
           <Button
@@ -72,17 +86,49 @@ export function WizardFooter({
 }
 
 /**
- * Closing with unsaved changes asks first (isDirty is read when closing). `requestClose` is what the header
- * X (the dialog's onOpenChange(false)) calls; `prompt` renders the question.
+ * Closing with unsaved changes asks first (isDirty is read when closing).
+ * `requestClose` is what the header X (the dialog's onOpenChange(false))
+ * calls; `prompt` renders the question. With `keep`, the question also offers
+ * "Keep as draft", which closes and keeps the draft for the next open.
  */
-export function useDiscardPrompt(isDirty: () => boolean, close: () => void) {
+export function useDiscardPrompt(isDirty: () => boolean, close: () => void, keep?: () => void) {
   const { t } = useTranslation()
   const [asking, setAsking] = useState(false)
   const requestClose = () => {
     if (isDirty()) setAsking(true)
     else close()
   }
-  const prompt = (
+  const prompt = keep ? (
+    <AlertDialog open={asking} onOpenChange={setAsking}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>{t('scans.wizard.closeTitle')}</AlertDialogTitle>
+          <AlertDialogDescription>{t('scans.wizard.closeDesc')}</AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>{t('confirm.keepEditing', 'Keep editing')}</AlertDialogCancel>
+          <Button
+            type="button"
+            variant="destructive"
+            onClick={() => {
+              setAsking(false)
+              close()
+            }}
+          >
+            {t('confirm.discard', 'Discard')}
+          </Button>
+          <AlertDialogAction
+            onClick={() => {
+              setAsking(false)
+              keep()
+            }}
+          >
+            {t('scans.wizard.keepDraft')}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  ) : (
     <ConfirmDialog
       open={asking}
       onOpenChange={setAsking}

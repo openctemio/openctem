@@ -47,6 +47,7 @@ import (
 	easmapp "github.com/openctemio/openctem/api/internal/app/easm"
 	"github.com/openctemio/openctem/api/internal/app/finding"
 	"github.com/openctemio/openctem/api/internal/app/integration"
+	"github.com/openctemio/openctem/api/internal/app/leakedsecretpolicy"
 	"github.com/openctemio/openctem/api/internal/app/module"
 	"github.com/openctemio/openctem/api/internal/app/orgrelay"
 	"github.com/openctemio/openctem/api/internal/app/sensorgrant"
@@ -1033,7 +1034,10 @@ type Services struct {
 	PlatformAlert *platformalert.Service
 	PlatformAI    *platformai.Service
 	OrgRelay      *orgrelay.Service
-	PlatformMFA   *platformmfa.Service
+	// LeakedSecretPolicy is the platform default of whether imported leaked
+	// secret values are kept (organizations may override it).
+	LeakedSecretPolicy *leakedsecretpolicy.Service
+	PlatformMFA        *platformmfa.Service
 	// TenantAI is the organizations' AI settings (consent, source, own provider).
 	TenantAI *tenantai.Service
 	// AIMasking is the organization's AI masking policy and its preview.
@@ -1172,6 +1176,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	if repos.PlatformSetting != nil {
 		s.PlatformMFA = platformmfa.NewService(repos.PlatformSetting, s.SettingRecorder, cfg.App.ManagedService, cfg.Auth.MFAFloor)
 		s.OrgRelay = orgrelay.NewService(repos.PlatformSetting, s.SettingRecorder, cfg.App.ManagedService, cfg.App.OrgEmailRelayMode, log)
+		s.LeakedSecretPolicy = leakedsecretpolicy.NewService(repos.PlatformSetting, s.SettingRecorder, cfg.App.ManagedService, log)
 	}
 	s.IdleWorkspaces = lifecycleapp.NewService(repos.IdleLifecycle, s.Audit, repos.AdminAuditLog, repos.Admin, nil, log)
 	// Suspended organizations: one access gate every credential path asks,
@@ -1361,6 +1366,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.ThreatModel.SetDataScope(s.DataScope)
 	s.AssetRelationship = asset.NewAssetRelationshipService(repos.AssetRelationship, repos.Asset, log)
 	s.AssetRelationship.SetDataScope(s.DataScope)
+	s.AssetRelationship.SetGraphReader(repos.AssetRelationship)
 	s.RelationshipSuggestion = asset.NewRelationshipSuggestionService(repos.RelationshipSuggestion, repos.Asset, repos.AssetRelationship, log)
 	s.RelationshipSuggestion.SetDataScope(s.DataScope)
 	s.AssetImport = asset.NewAssetImportService(repos.Asset, log)
@@ -1592,10 +1598,17 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.CredentialImport.SetDataScope(s.DataScope)
 	s.CredentialImport.SetDispositionGate(exposureDispositions)
 	// Leaked-credential secrets are sealed with the platform credential key
-	// on every write path, and the fingerprint HMAC is keyed from it.
+	// on every write path, and the fingerprint HMAC is keyed per organization
+	// from it.
 	s.CredentialSecrets = credential.NewSecretProtector(s.Encryptor, []byte(cfg.Encryption.Key))
 	s.CredentialImport.SetSecretProtector(s.CredentialSecrets)
 	s.Exposure.SetSecretProtector(s.CredentialSecrets)
+	// Whether a secret value is kept at all: the organization's choice, else
+	// the platform default. Without the console settings store nothing is
+	// kept (fail closed).
+	secretStorage := leakedsecretpolicy.NewResolver(s.LeakedSecretPolicy, repos.Tenant, log)
+	s.CredentialImport.SetStoragePolicy(secretStorage)
+	s.Exposure.SetStoragePolicy(secretStorage)
 
 	// Initialize dashboard service
 	s.Dashboard = module.NewDashboardService(repos.Dashboard, log)
@@ -2576,7 +2589,16 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// A nuclei takeover-template match from a tenant scan confirms an open
 	// dangling_cname as subdomain_takeover (RFC-036 P1).
 	if repos.EASMDNS != nil && repos.Exposure != nil {
-		s.Ingest.SetTakeoverConfirmer(easmdnsapp.NewTakeoverConfirmer(repos.EASMDNS, postgres.NewEASMExposureWriter(&postgres.DB{DB: deps.DB}, postgres.NewEASMAlerter(&postgres.DB{DB: deps.DB})), log))
+		confirmer := easmdnsapp.NewTakeoverConfirmer(repos.EASMDNS, postgres.NewEASMExposureWriter(&postgres.DB{DB: deps.DB}, postgres.NewEASMAlerter(&postgres.DB{DB: deps.DB})), log)
+		// A takeover match on a name hosted by a listed provider (its CNAME
+		// target always resolves) is confirmed from the name's CNAME chain,
+		// read through the platform's resolver (DNS only).
+		if d, err := dnsprobe.New(dnsprobe.Config{Server: cfg.Worker.EASMDNSResolver, QPS: 5}); err != nil {
+			log.Warn("takeover confirmation limited to open dangling CNAMEs: no resolver", "error", err)
+		} else {
+			confirmer.SetResolver(d)
+		}
+		s.Ingest.SetTakeoverConfirmer(confirmer)
 	}
 	// CT names become inventory assets through this same ingest path, with
 	// attribution evidence (RFC-036 P0). Wired here because the CT monitor is

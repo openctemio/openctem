@@ -104,16 +104,22 @@ func TestCheckScanToolsDispatchable(t *testing.T) {
 		t.Errorf("zoned refusal = %+v (%s), asked zone %v", tu, tu.Domain.Message, avail.lastZone)
 	}
 
-	// Workflow: the first step whose tool no sensor may run refuses, named.
-	pid := shared.NewID()
-	svc.stepRepo = stubSteps{steps: []*scanworkflow.Step{
-		{StepKey: "discover", Tool: "nuclei"},
-		{StepKey: "iac", Tool: "checkov"},
+	// Workflow: a step whose tool no sensor may run is skipped with the
+	// reason (NO_SENSOR_FOR_TOOL); the other step runs.
+	wfTools := &stubTools{tools: map[string]*tool.Tool{
+		"nuclei":  {Name: "nuclei", IsActive: true},
+		"checkov": {Name: "checkov", IsActive: true},
 	}}
+	wfSvc := &Service{toolRepo: wfTools, toolAvailability: avail, logger: logger.NewNop()}
+	steps := []*scanworkflow.Step{{StepKey: "discover", Tool: "nuclei"}, {StepKey: "iac", Tool: "checkov"}}
+	pid := shared.NewID()
 	wf := &scan.Scan{ID: shared.NewID(), TenantID: tenant, ScanType: scan.ScanTypeWorkflow, ScanWorkflowID: &pid}
-	tu = asToolUnavailable(t, svc.checkScanToolsDispatchable(ctx, wf))
-	if tu.Step != "iac" || tu.Tool != "checkov" || !strings.HasPrefix(tu.Domain.Message, `Step "iac": `) {
-		t.Errorf("workflow refusal = %+v (%s)", tu, tu.Domain.Message)
+	skips, err := wfSvc.workflowStepSkips(ctx, wf, &scanworkflow.Workflow{Name: "w"}, steps)
+	if err != nil {
+		t.Fatalf("workflow with one runnable step refused: %v", err)
+	}
+	if _, ok := skips["discover"]; ok || skips["iac"].Code != CodeNoSensorForTool || !strings.Contains(skips["iac"].Reason, "no sensor has checkov") {
+		t.Errorf("workflow skips = %+v", skips)
 	}
 
 	// Availability unreadable: the trigger goes on (sensor checks follow).
@@ -127,8 +133,9 @@ func TestCheckScanToolsDispatchable(t *testing.T) {
 	}
 }
 
-// Parity: a preview reports for a step exactly what the trigger refuses it
-// with (same code, same message), and nothing where the trigger passes.
+// Parity: a preview reports for a step exactly what the trigger's
+// availability check finds (same code, same message; the trigger skips the
+// step with it), and nothing where the check passes.
 func TestPreviewStep_SameVerdictAsTrigger(t *testing.T) {
 	ctx := context.Background()
 	tenant := shared.NewID()
@@ -141,9 +148,8 @@ func TestPreviewStep_SameVerdictAsTrigger(t *testing.T) {
 	pid := shared.NewID()
 	for _, name := range []string{"nuclei", "checkov", "semgrep"} {
 		step := &scanworkflow.Step{StepKey: "s-" + name, Name: name, Tool: name}
-		svc.stepRepo = stubSteps{steps: []*scanworkflow.Step{step}}
 		wf := &scan.Scan{ID: shared.NewID(), TenantID: tenant, ScanType: scan.ScanTypeWorkflow, ScanWorkflowID: &pid}
-		triggerErr := svc.checkScanToolsDispatchable(ctx, wf)
+		triggerErr := svc.checkToolDispatchable(ctx, wf, name, step.StepKey)
 		node := svc.previewStep(ctx, tenant, nil, step)
 		if triggerErr == nil {
 			if node.Blocking != nil {

@@ -76,6 +76,9 @@ type TenantHandler struct {
 	// scanIdentity answers the platform layer of the scan identification
 	// markers the settings page shows (optional).
 	scanIdentity PlatformScanIdentitySource
+	// leakedSecretDefault answers the platform default of leaked secret
+	// value storage the credential settings page shows (optional).
+	leakedSecretDefault LeakedSecretDefaultSource
 	// selfServiceLimits: the instance's self-service default limits and the
 	// per-person organization cap (none unless an operator set them).
 	selfServiceLimits auth.SelfServiceLimits

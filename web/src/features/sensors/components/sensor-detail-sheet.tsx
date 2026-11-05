@@ -103,7 +103,9 @@ import {
   capacityLabel,
   hasReportedTools,
   sensorCapacity,
+  sensorJobLoad,
   sensorToolRows,
+  type SensorJobLoad,
 } from '../lib/capabilities'
 import { configHealthNeedsAttention } from '../lib/config-report'
 import { agoShort, exactTime, formatDurationShort, type Tr } from '../lib/format'
@@ -390,6 +392,66 @@ function clockAnchor(ms: number, now: number, t: Tr, bare = false): string {
 }
 
 /**
+ * Jobs running against the capacity dispatch uses. Over capacity (the
+ * sensor's slots dropped below the jobs it holds because its host got
+ * busier) is said in words and in the warning tone, never shown as a plain
+ * "2 / 1".
+ */
+function JobsStat({
+  jobs,
+  takesJobs = true,
+  label,
+  withFreeCaption = true,
+}: {
+  jobs: SensorJobLoad
+  takesJobs?: boolean
+  label?: string
+  withFreeCaption?: boolean
+}) {
+  const { t } = useTranslation()
+  const over = jobs.over > 0
+  let caption: string | undefined
+  if (over) {
+    caption = t('sensors.detail.overCapacity', 'Over capacity by {count}, no new jobs', {
+      count: jobs.over,
+    })
+  } else if (!withFreeCaption) {
+    caption = undefined
+  } else if (!takesJobs) {
+    caption = t('sensors.detail.notTakingJobs', 'Not taking jobs')
+  } else if (jobs.pressure && jobs.free < jobs.capacity - jobs.running) {
+    caption = t('sensors.detail.slotsFreeBusy', '{count} slots free, host busy', {
+      count: jobs.free,
+    })
+  } else {
+    caption = t('sensors.detail.slotsFree', '{count} slots free', { count: jobs.free })
+  }
+  return (
+    <DetailStat
+      label={label ?? t('sensors.detail.jobsRunning', 'Jobs running')}
+      value={jobs.running}
+      unit={`/ ${jobs.capacity}`}
+      tone={over ? 'warning' : 'default'}
+      title={
+        over
+          ? t(
+              'sensors.detail.overCapacityHint',
+              'The sensor sizes its slots from the CPU and memory free on its host. The host got busier after these jobs started, so it now fits {capacity}. It takes no new jobs until running ones finish.',
+              { capacity: jobs.capacity }
+            )
+          : undefined
+      }
+      meter={{
+        value: jobs.running,
+        max: Math.max(jobs.capacity, jobs.running),
+        label: t('sensors.detail.slotsInUse', 'Job slots in use'),
+      }}
+      caption={caption}
+    />
+  )
+}
+
+/**
  * The headline numbers. A number the sensor has not reported is left out,
  * never shown as zero.
  */
@@ -406,32 +468,13 @@ function SensorStats({
   const state = sensorState(sensor, now, thresholds)
   const oneShot = isOneShotSensor(sensor)
   const running = stateIsHeartbeating(state)
-  const cap = sensorCapacity(sensor)
-  const current = sensor.current_jobs ?? 0
+  const jobs = sensorJobLoad(sensor)
   const takesJobs = canTakeJobs(sensor, now, thresholds)
   const started = sensor.started_at ? new Date(sensor.started_at).getTime() : NaN
 
   return (
     <DetailStatGrid aria-label={t('sensors.detail.keyNumbers', 'Key numbers')}>
-      {!oneShot && (
-        <DetailStat
-          label={t('sensors.detail.jobsRunning', 'Jobs running')}
-          value={current}
-          unit={`/ ${cap.effective}`}
-          meter={{
-            value: current,
-            max: cap.effective,
-            label: t('sensors.detail.slotsInUse', 'Job slots in use'),
-          }}
-          caption={
-            takesJobs
-              ? t('sensors.detail.slotsFree', '{count} slots free', {
-                  count: Math.max(0, cap.effective - current),
-                })
-              : t('sensors.detail.notTakingJobs', 'Not taking jobs')
-          }
-        />
-      )}
+      {!oneShot && <JobsStat jobs={jobs} takesJobs={takesJobs} />}
       {sensor.last_seen_at && (
         <DetailStat
           label={
@@ -883,21 +926,15 @@ function SensorJobs({ sensor }: { sensor: Sensor }) {
   }
   const jobs = data?.data ?? []
   const oneShot = isOneShotSensor(sensor)
-  const cap = sensorCapacity(sensor)
-  const current = sensor.current_jobs ?? 0
+  const load = sensorJobLoad(sensor)
   return (
     <div className="space-y-4">
       <DetailStatGrid aria-label={t('sensors.detail.jobs.numbers', 'Job numbers')}>
         {!oneShot && (
-          <DetailStat
+          <JobsStat
+            jobs={load}
             label={t('sensors.detail.jobs.running', 'Running')}
-            value={current}
-            unit={`/ ${cap.effective}`}
-            meter={{
-              value: current,
-              max: cap.effective,
-              label: t('sensors.detail.slotsInUse', 'Job slots in use'),
-            }}
+            withFreeCaption={false}
           />
         )}
         <DetailStat

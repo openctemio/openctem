@@ -226,6 +226,24 @@ an ownership or scope decision.
   unresolvable and the counts add up, the platform completes the command
   with the same skips (only for the command's own, running sensor). A mixed
   refusal stays a failure.
+- **Refusals under a local policy.** A name the sensor's `targets.allow`
+  list cannot match because it does not resolve is refused as `unresolvable`
+  (rule `targets.allow`), not `denied_by_policy`; `denied_by_policy` is for
+  a name or address that resolves outside the allowed ranges or matches
+  `targets.deny`. A task refused as a whole whose refusal detail
+  (`N target(s) refused: "a" (unresolvable), ...`) lists only unresolvable
+  names completes with per-target skips like the case above, and is not
+  re-queued to this sensor or another (`scanrun.ParseRefusedSummary`,
+  `scanrun.UnresolvableRefusal`). A sensor that predates the reason reports
+  such a name `denied_by_policy`: the platform counts it unresolvable only
+  when its own resolution state of the same tenant says the name is
+  `not_resolving`.
+- **Run map.** A step that leaves not-resolving names out records the count
+  (`not_resolving_skipped_count` in its outcome) and the console shows "N
+  names no longer resolve, skipped by active steps". Passive steps and the
+  DNS resolution step still take the names, so dangling-DNS checks keep
+  working. The scan's include-unresolved option lets a name without evidence
+  through; it never hands an active step a name known to be dead.
 - **Console.** Run: the skip group "No longer resolve" (info tone) and the
   run note. Assets: filter `resolution=not_resolving` (`GET /assets`), the
   bulk bar's archive acts on the selection; the asset detail shows the last
@@ -318,6 +336,29 @@ scope: `GET /assets?under=<root>` for a wildcard and
 `GET /assets?in_cidr=<range>` for an inventory-mode CIDR (count, freshest
 name, sample). The run resolves under the scan actor's act scope, so the
 numbers are what the caller can see now, not a promise.
+
+### Typing and pasting targets in the wizard
+
+The New and Edit Scan wizards (`web/src/features/scans/components/new-scan`)
+take a list typed, pasted or read from a `.txt` / `.csv` file in the browser
+(at most 1 MB and 10,000 entries; a CSV keeps the columns that hold targets
+and drops a header row). Entries are separated by new lines, commas,
+semicolons or spaces, and `#` starts a comment. Each entry is classified and
+normalised before it is added (`web/src/features/scans/lib/target-format.ts`)
+with the rules of the API target validator, so nothing the wizard accepts is
+refused at create:
+
+- domain, wildcard, IPv4, IPv6, CIDR, URL and `host:port` (also `[v6]:port`
+  and `host:port/tcp`); a Unicode domain is sent in its ASCII form;
+- refused with the reason: a range of more than 65,536 addresses, a
+  top-level domain in punycode, a path or repository reference (scanned from
+  repository assets instead), anything else that is not a target;
+- repeats are folded after normalisation (`Example.COM.` is `example.com`).
+
+Format is the only thing decided in the browser. Whether each target may be
+scanned is `POST /scope/check` (the caller's scope, batches of 200, up to the
+1,000 direct targets a scan takes), shown per target with its reason. The
+paste panel says how many targets still fit before anything is added.
 
 ### Quick Scan
 

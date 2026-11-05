@@ -24,8 +24,9 @@ import {
   compactCount,
   egressRefusedText,
   guardRefusedText,
-  mapStateLabel,
+  nodeStateLabel,
   outputsDeltaLabel,
+  queuedWaitLines,
   stepEgressRefused,
   stepGuardRefused,
   type EgressCountedTask,
@@ -488,7 +489,8 @@ function StepCard({
   const tone = warned && flowTone(node.state) === 'done' ? 'partial' : flowTone(node.state)
   const style = warned ? { ...TONE[tone], Icon: ShieldAlert } : TONE[tone]
   const name = node.name || node.step_key || ''
-  const state = mapStateLabel(node.state ?? 'pending', t)
+  const state = nodeStateLabel(node, t)
+  const waits = queuedWaitLines(node, t)
   const progress = stepProgress(node)
   const total = node.chunks?.total ?? 0
   const failedChunks = node.chunks?.failed ?? 0
@@ -572,6 +574,11 @@ function StepCard({
           {guarded}
         </span>
       ) : null}
+      {waits.map((line) => (
+        <span key={line} className="mt-1 block text-muted-foreground">
+          {line}
+        </span>
+      ))}
       {skipped ? <span className="mt-1 block text-muted-foreground">{skipped}</span> : null}
       {failure ? <span className="mt-1 block text-destructive">{failure}</span> : null}
     </button>

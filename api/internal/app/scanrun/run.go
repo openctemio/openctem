@@ -143,12 +143,20 @@ func (s *Service) TriggerPipeline(ctx context.Context, input TriggerRunInput) (*
 
 	tenantID, _ := shared.IDFromString(input.TenantID)
 
-	// Validate tool references - ensure all required tools are available and active
-	if err := s.ValidateToolReferences(ctx, template, tenantID); err != nil {
+	// The steps no tool here runs are skipped with their reasons and the run
+	// goes on with the others; only a run in which no step can run is
+	// refused (NO_RUNNABLE_STEPS). A step that cannot be planned at all
+	// still refuses.
+	skips, err := s.StepToolSkips(ctx, template, tenantID)
+	if err != nil {
 		s.logger.Warn("scan workflow tool validation failed",
 			"template_id", template.ID.String(),
 			"error", err)
 		return nil, err
+	}
+	scanapp.SkipDependents(template.Steps, skips, template.Settings.ContinueOnFailedDependency, nil)
+	if len(skips) > 0 && len(skips) >= len(template.Steps) {
+		return nil, scanapp.NoRunnableStepsError(template.Name, template.Steps, skips)
 	}
 
 	// The run's asset_id is stored on the run and copied into every step
@@ -207,6 +215,9 @@ func (s *Service) TriggerPipeline(ctx context.Context, input TriggerRunInput) (*
 	// Create step runs
 	for _, step := range template.Steps {
 		stepRun := scanrun.NewStepRunForStep(run.ID, step)
+		if skip, ok := skips[step.StepKey]; ok {
+			stepRun.SkipWithCode(skip.Reason, skip.Code)
+		}
 		if err := s.stepRunRepo.Create(ctx, stepRun); err != nil {
 			return nil, err
 		}
@@ -378,12 +389,13 @@ func (s *Service) scheduleRunnableSteps(ctx context.Context, run *scanrun.Run, t
 			s.settleNoInputs(ctx, stepRun, step.StepKey, noInputs)
 			settledInline = true
 		default:
-			if msg := optionalSkipMessage(step, err); msg != "" {
-				// An optional step waits for a tool: skipped with the
-				// reason, never failed and never silent.
-				stepRun.Skip(msg)
+			if reason, code, ok := noToolSkip(step, err); ok {
+				// No tool runs the step (required or optional): skipped
+				// with the reason, never failed and never silent; the
+				// run goes on with the other steps and ends partial.
+				stepRun.SkipWithCode(reason, code)
 				if uerr := s.stepRunRepo.Update(ctx, stepRun); uerr != nil {
-					s.logger.Error("failed to skip an optional step", "step_key", step.StepKey, "error", uerr)
+					s.logger.Error("failed to skip a step no tool runs", "step_key", step.StepKey, "error", uerr)
 				}
 				settledInline = true
 				continue
@@ -513,7 +525,7 @@ func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *sc
 
 	// Resolve before active: an active stage skips the names the platform's
 	// freshest evidence says have not resolved for a week (RFC-088 A5).
-	stepTargets, err = s.dropStaleSeeds(ctx, run, step, resolved, stepTargets, chained)
+	stepTargets, err = s.dropStaleSeeds(ctx, run, step, resolved, stepRun, stepTargets, chained)
 	if err != nil {
 		return err
 	}
@@ -657,20 +669,41 @@ func (s *Service) filterStepSeeds(ctx context.Context, run *scanrun.Run, step *s
 // dropStaleSeeds leaves out of an active step the names without recent
 // resolution evidence. A step left with nothing (and no predecessor to feed
 // it) has no inputs.
+//
+// A name the platform knows does not resolve (the not_resolving state) is
+// always left out, whatever the scan's include-unresolved option says: that
+// option lets a name without evidence through, never one known to be dead.
+// The step run records how many such names it left out
+// (StepOutputNotResolvingSkipped), for the run map.
 func (s *Service) dropStaleSeeds(ctx context.Context, run *scanrun.Run, step *scanworkflow.Step, resolved scanapp.StepTool,
-	stepTargets *scanapp.StepTargets, chained bool,
+	stepRun *scanrun.StepRun, stepTargets *scanapp.StepTargets, chained bool,
 ) (*scanapp.StepTargets, error) {
 	f, ok := s.targetGate.(StaleNameFilter)
 	if !ok || !activeStep(resolved) {
 		return stepTargets, nil
 	}
 	seeds := chunkTargets(stepTargets, run.Context)
-	kept, stale, serr := f.DropStaleNames(ctx, run.TenantID, seeds)
+	var (
+		kept, stale []string
+		gone        int
+		serr        error
+	)
+	if c, ok := s.targetGate.(StaleNameCounter); ok {
+		kept, stale, gone, serr = c.DropStaleNamesCounted(ctx, run.TenantID, seeds)
+	} else {
+		kept, stale, serr = f.DropStaleNames(ctx, run.TenantID, seeds)
+	}
 	if serr != nil {
 		return nil, fmt.Errorf("step %s: %w", step.StepKey, serr)
 	}
 	if len(stale) == 0 {
 		return stepTargets, nil
+	}
+	if gone > 0 && stepRun != nil {
+		if stepRun.Output == nil {
+			stepRun.Output = map[string]any{}
+		}
+		stepRun.Output[StepOutputNotResolvingSkipped] = gone
 	}
 	out := &scanapp.StepTargets{Targets: kept, Refused: len(stale), Reason: scanapp.ReasonNotResolving}
 	if stepTargets != nil {
@@ -694,6 +727,12 @@ func findsNoHosts(resolved scanapp.StepTool, err error) bool {
 	var de *shared.DomainError
 	return resolved.HasStage && resolved.Stage.Key == stage.DiscoverHosts &&
 		errors.As(err, &de) && de.Code == "INCOMPATIBLE_TARGETS"
+}
+
+// StaleNameCounter is a StaleNameFilter that also counts the names left out
+// because the platform knows they do not resolve (*scan.Service).
+type StaleNameCounter interface {
+	DropStaleNamesCounted(ctx context.Context, tenantID shared.ID, targets []string) (kept, stale []string, notResolving int, err error)
 }
 
 // StaleNameFilter drops the names without recent resolution evidence
@@ -1012,7 +1051,14 @@ func (s *Service) skipBlockedSteps(ctx context.Context, run *scanrun.Run, templa
 			if dep == "" {
 				continue
 			}
-			sr.Skip(fmt.Sprintf("dependency %q did not succeed", dep))
+			if d := run.GetStepRun(dep); d != nil && d.Status == scanrun.StepRunStatusSkipped {
+				// The step it needs was skipped (no tool or sensor runs
+				// it, its condition, depth or intensity): nothing to
+				// work on.
+				sr.SkipWithCode(fmt.Sprintf("skipped: it needs the results of step %q, which was skipped", dep), scanrun.FailureDependencySkipped)
+			} else {
+				sr.Skip(fmt.Sprintf("dependency %q did not succeed", dep))
+			}
 			if err := s.stepRunRepo.Update(ctx, sr); err != nil {
 				s.logger.Error("failed to skip blocked step", "step_key", step.StepKey, "error", err)
 			}
@@ -1183,6 +1229,10 @@ const (
 	// StepOutputNoLongerResolve counts the skipped targets that are names
 	// that no longer resolve (a part of StepOutputSkipped).
 	StepOutputNoLongerResolve = "no_longer_resolve_count"
+	// StepOutputNotResolvingSkipped counts the names an active step left
+	// out because the platform knows they do not resolve (not_resolving),
+	// recorded when the step is queued.
+	StepOutputNotResolvingSkipped = "not_resolving_skipped_count"
 	// StepOutputCoverageGapCount counts the hosts not fully covered, and
 	// StepOutputCoverageGaps lists them as {host, reason, edge, vendor} (single-command
 	// steps; a batched step's tasks hold the lists).
@@ -1527,6 +1577,9 @@ func (s *Service) settleRun(ctx context.Context, run *scanrun.Run, st runStats) 
 	outcome := st.outcome()
 	uncovered := uncoveredTargetCount(run.Context)
 	partialMsg := fmt.Sprintf("Scan run completed partially: %d of %d steps did not finish all their work", st.failed+st.partial, run.TotalSteps)
+	if st.failed+st.partial == 0 && st.unsupported > 0 {
+		partialMsg = fmt.Sprintf("Scan run completed partially: %d of %d steps were skipped because no tool or sensor here runs them (each step says why)", st.unsupported, run.TotalSteps)
+	}
 	if outcome == scanrun.RunStatusCompleted && uncovered > 0 {
 		outcome = scanrun.RunStatusPartial
 		partialMsg = fmt.Sprintf("Scan run completed, but %d target(s) were not scanned: no scan zone or sensor could reach them (see uncovered_targets)", uncovered)
@@ -1738,6 +1791,9 @@ func (s *Service) checkStepBatches(ctx context.Context, run *scanrun.Run, stepRu
 // runStats counts a run's step runs by outcome.
 type runStats struct {
 	completed, partial, failed, skipped, findings int
+	// unsupported: skipped steps no tool or sensor of the organization runs
+	// (counted in skipped too); the run is then partial, never completed.
+	unsupported int
 }
 
 // settled is how many steps reached an outcome that counts towards the run
@@ -1747,12 +1803,14 @@ func (st runStats) settled() int {
 }
 
 // outcome is the run's status once every step settled: completed when no
-// step failed or ended partial, failed when no step produced results,
-// partial otherwise.
+// step failed, ended partial or was skipped for want of a tool or sensor,
+// failed when steps failed and none produced results, partial otherwise.
 func (st runStats) outcome() scanrun.RunStatus {
 	switch {
-	case st.failed == 0 && st.partial == 0:
+	case st.failed == 0 && st.partial == 0 && st.unsupported == 0:
 		return scanrun.RunStatusCompleted
+	case st.failed == 0 && st.partial == 0:
+		return scanrun.RunStatusPartial
 	case st.completed == 0 && st.partial == 0:
 		return scanrun.RunStatusFailed
 	default:
@@ -1775,6 +1833,9 @@ func (s *Service) calculateRunStats(run *scanrun.Run) runStats {
 			st.failed++
 		case scanrun.StepRunStatusSkipped:
 			st.skipped++
+			if sr.SkippedUnsupported() {
+				st.unsupported++
+			}
 		}
 	}
 	return st
@@ -2331,12 +2392,12 @@ func (s *Service) QueueRunStep(ctx context.Context, run *scanrun.Run, step *scan
 			s.notifyRun(run.TenantID, run.ID)
 			return scanapp.ErrStepSettled
 		}
-		if msg := optionalSkipMessage(step, qerr); msg != "" && stepRun != nil {
-			// An optional first step waits for a tool: skipped with the
-			// reason; the caller advances the run.
-			stepRun.Skip(msg)
+		if reason, code, ok := noToolSkip(step, qerr); ok && stepRun != nil {
+			// A first step no tool runs: skipped with the reason; the
+			// caller advances the run.
+			stepRun.SkipWithCode(reason, code)
 			if err := s.stepRunRepo.Update(ctx, stepRun); err != nil {
-				s.logger.Error("failed to skip an optional step", "step_key", step.StepKey, "error", err)
+				s.logger.Error("failed to skip a step no tool runs", "step_key", step.StepKey, "error", err)
 			}
 			s.notifyRun(run.TenantID, run.ID)
 			return scanapp.ErrStepSettled

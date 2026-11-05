@@ -10,6 +10,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/scoring"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/softwarematch"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/pagination"
@@ -339,4 +340,91 @@ func (r *perAssetRepo) List(_ context.Context, f vulnerability.FindingFilter, _ 
 		return pagination.Result[*vulnerability.Finding]{}, nil
 	}
 	return pagination.Result[*vulnerability.Finding]{Data: r.byAsset[*f.AssetID]}, nil
+}
+
+// classAtSLA records the class each finding had when the SLA step ran.
+type classAtSLA struct {
+	got map[shared.ID]vulnerability.PriorityClass
+}
+
+func (s *classAtSLA) ApplyBatch(_ context.Context, _ shared.ID, fs []*vulnerability.Finding) error {
+	for _, f := range fs {
+		s.got[f.ID()] = *f.PriorityClass()
+	}
+	return nil
+}
+
+func newMatch(t *testing.T, assetID shared.ID, tool string, conf int) *vulnerability.Finding {
+	t.Helper()
+	f, err := vulnerability.NewFinding(shared.NewID(), assetID, vulnerability.FindingSourceVA, tool, vulnerability.SeverityHigh, "f")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.SetConfidence(&conf); err != nil {
+		t.Fatal(err)
+	}
+	return f
+}
+
+// The classifier puts every finding at P1. A potential version match (below
+// 80, not KEV, not confirmed) must come out at P2, and a stored P1 (the state
+// the uncapped pass left in production) is brought back and persisted: the
+// next pass is the data fix. Other findings keep what the classifier gave.
+func TestReclassify_AppliesPotentialMatchCap(t *testing.T) {
+	assetID := shared.NewID()
+	potential := newMatch(t, assetID, softwarematch.ToolName, 65)
+	potential.SetPriorityClassification(vulnerability.PriorityP1, "uncapped by an earlier pass")
+	likely := newMatch(t, assetID, softwarematch.ToolName, 85)
+	kev := newMatch(t, assetID, softwarematch.ToolName, 65)
+	kev.SetIsInKEV(true)
+	other := newMatch(t, assetID, "trivy", 65)
+	hosted := newMatch(t, assetID, softwarematch.ToolName, 90)
+	hosted.SetMetadata("version_match", map[string]any{"hosted_by": "LadiPage"})
+	for _, f := range []*vulnerability.Finding{likely, kev, other, hosted} {
+		f.SetPriorityClassification(vulnerability.PriorityP1, "fake")
+	}
+
+	repo := &fakeFindingRepo{findings: []*vulnerability.Finding{potential, likely, kev, other, hosted}}
+	sla := &classAtSLA{got: map[shared.ID]vulnerability.PriorityClass{}}
+	r := NewReclassifier(repo, &fakeAssetRepo{a: newAsset(t)}, &fakeClassifier{}, logger.NewNop())
+	r.SetSLARecomputer(sla)
+
+	_, impact, err := r.reclassifyAsset(context.Background(), shared.NewID(), assetID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[*vulnerability.Finding]vulnerability.PriorityClass{
+		potential: vulnerability.PriorityP2, likely: vulnerability.PriorityP1,
+		kev: vulnerability.PriorityP1, other: vulnerability.PriorityP1, hosted: vulnerability.PriorityP3,
+	}
+	for f, c := range want {
+		if got := *f.PriorityClass(); got != c {
+			t.Errorf("finding %s: class %s, want %s", f.ToolName(), got, c)
+		}
+	}
+	if got := sla.got[potential.ID()]; got != vulnerability.PriorityP2 {
+		t.Errorf("SLA step saw %s for the potential match, want P2 (cap before SLA)", got)
+	}
+	if impact.Lowered != 2 || impact.Changed != 2 {
+		t.Errorf("impact = %+v, want two lowered", impact)
+	}
+	if len(repo.updated) != 2 {
+		t.Errorf("persisted %v, want the potential and the hosted match only", repo.updated)
+	}
+}
+
+// A second pass finds nothing to change: the cap is stable, not a flip-flop.
+func TestReclassify_PotentialMatchCapIsStable(t *testing.T) {
+	assetID := shared.NewID()
+	potential := newMatch(t, assetID, softwarematch.ToolName, 65)
+	repo := &fakeFindingRepo{findings: []*vulnerability.Finding{potential}}
+	r := NewReclassifier(repo, &fakeAssetRepo{a: newAsset(t)}, &fakeClassifier{}, logger.NewNop())
+	for i := 0; i < 2; i++ {
+		if _, _, err := r.reclassifyAsset(context.Background(), shared.NewID(), assetID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(repo.updated) != 1 {
+		t.Fatalf("persisted %d times, want 1 (second pass unchanged)", len(repo.updated))
+	}
 }
