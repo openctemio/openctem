@@ -160,9 +160,9 @@ type Handlers struct {
 	ProxyPool     *handler.ProxyPoolHandler     // nil if not initialized (no database)
 	// ToolSource serves the organization's tool source keys; nil without a database.
 	ToolSource *handler.ToolSourceHandler
-	// SensorGrants reads sensor grants for the tool source key delivery; nil: organization sensors get none.
-	SensorGrants handler.SensorGrantReader
-	ScanWindow   *handler.ScanWindowHandler // nil if not initialized (no database)
+	// TaskSecrets serves the sealed task secrets fetch of sensors; nil: not mounted.
+	TaskSecrets handler.TaskSecrets
+	ScanWindow  *handler.ScanWindowHandler // nil if not initialized (no database)
 	// FindingLifecycle serves sub-statuses and lifecycle schemes (RFC-110); nil without a database.
 	FindingLifecycle *handler.FindingLifecycleHandler
 	ScanWorkflow     *handler.ScanWorkflowHandler // nil if not initialized (no database)

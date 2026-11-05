@@ -735,7 +735,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		ScanZone:         handler.NewScanZoneHandler(svc.ScanZone, svc.Scan, log),
 		ProxyPool:        handler.NewProxyPoolHandler(svc.ProxyPool, log),
 		ToolSource:       handler.NewToolSourceHandler(svc.ToolSource, log),
-		SensorGrants:     repos.SensorGrant,
+		TaskSecrets:      svc.TaskSecrets,
 		ScanWindow:       newScanWindowHandler(svc, log),
 		FindingLifecycle: handler.NewFindingLifecycleHandler(svc.FindingLifecycle, log),
 		Ingest:           ingestHandler,

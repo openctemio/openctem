@@ -1,7 +1,7 @@
 -- Organization keys of the third-party sources scan tools query (subfinder's
 -- passive sources, for one): one write-only key per organization and source,
--- delivered to a sensor only for a task of that organization's job.
--- Design: docs/architecture/tool-source-keys.md.
+-- delivered to a sensor only for a task of that organization's job, through
+-- the sealed task secrets fetch. Design: docs/architecture/task-secrets.md.
 --
 -- Live impact: a new, empty table; no lock on existing tables.
 
@@ -21,4 +21,4 @@ CREATE TABLE tool_source_keys (
 );
 
 COMMENT ON TABLE tool_source_keys IS 'Per-organization keys of third-party sources that scan tools query; delivered only to the sensor holding a task of the organization''s job.';
-COMMENT ON COLUMN tool_source_keys.key_enc IS 'AES-GCM ciphertext (base64, APP_ENCRYPTION_KEY, in the rekey registry); write-only, never returned by the API.';
+COMMENT ON COLUMN tool_source_keys.key_enc IS 'AES-GCM ciphertext (base64, APP_ENCRYPTION_KEY, in the rekey registry) of {"v":1,"tid":<tenant>,"source":<source>,"value":<key>}: opens only for its own row; write-only, never returned by the API.';

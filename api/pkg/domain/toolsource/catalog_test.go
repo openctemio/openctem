@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/openctemio/contract/secretref"
+
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
@@ -158,5 +160,39 @@ func TestJobMayUse(t *testing.T) {
 		if got := JobMayUse(c.jobTool, c.capability, c.tool); got != c.want {
 			t.Errorf("JobMayUse(%q, %q, %q) = %v", c.jobTool, c.capability, c.tool, got)
 		}
+	}
+}
+
+// The catalog is the contract registry: every provider, with the
+// contract's own validation, and the contract's refusal codes mapped to the
+// platform's.
+func TestCatalogIsTheContractRegistry(t *testing.T) {
+	if len(Catalog()) != len(secretref.Providers()) {
+		t.Fatal("catalog and registry differ")
+	}
+	single, _ := Lookup("shodan")
+	for v, code := range map[string]string{
+		"":                        "TOOL_SOURCE_KEY_EMPTY",
+		"short1":                  "TOOL_SOURCE_KEY_TOO_SHORT",
+		"has space 12345678":      "TOOL_SOURCE_KEY_INVALID",
+		strings.Repeat("a", 1025): "TOOL_SOURCE_KEY_TOO_LONG",
+	} {
+		err := single.ValidateValue(v)
+		var de *shared.DomainError
+		if !errors.As(err, &de) || de.Code != code || !errors.Is(err, shared.ErrValidation) {
+			t.Errorf("%q: %v, want %s", v, err, code)
+		}
+		if v != "" && err != nil && strings.Contains(err.Error(), v) {
+			t.Errorf("error repeats the value")
+		}
+	}
+	if got := ProvidersForJob("subfinder", ""); len(got) != len(ForTool(ToolSubfinder)) {
+		t.Fatalf("subfinder job providers: %v", got)
+	}
+	if got := ProvidersForJob("", "discover.subdomains@1"); len(got) != len(ForTool(ToolSubfinder)) {
+		t.Fatalf("capability job providers: %v", got)
+	}
+	if got := ProvidersForJob("nuclei", ""); len(got) != 0 {
+		t.Fatalf("nuclei job providers: %v", got)
 	}
 }
