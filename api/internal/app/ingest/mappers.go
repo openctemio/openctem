@@ -163,7 +163,9 @@ func mapSDKSeverity(sev severity.Level) vulnerability.Severity {
 	case severity.Low:
 		return vulnerability.SeverityLow
 	case severity.Info:
-		return vulnerability.SeverityNone
+		// An informational finding is info, not none: none is a CVSS score of
+		// zero, and a list filtered on info must show it.
+		return vulnerability.SeverityInfo
 	default:
 		return vulnerability.SeverityMedium
 	}

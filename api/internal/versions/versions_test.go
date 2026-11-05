@@ -337,3 +337,42 @@ func TestPlatformReleaseFromBuild(t *testing.T) {
 		t.Error("versions.yaml must not carry a platform section")
 	}
 }
+
+// The CI runner's effective latest release: the verified feed raises the
+// built-in ci.latest and never lowers it; an invalid learned value is dropped;
+// ci.min never comes from the feed.
+func TestCIRunnerLatest_Overlay(t *testing.T) {
+	t.Cleanup(func() { SetLearned(nil) })
+	base := CIRunnerBaseline()
+	if CIRunnerLatest() != base {
+		t.Fatalf("without a feed: %s, want the baseline %s", CIRunnerLatest(), base)
+	}
+
+	SetLearned(map[string]Learned{CIKey: {Version: "v99.1.0"}})
+	if got := CIRunnerLatest(); got != "v99.1.0" {
+		t.Fatalf("feed newer than the baseline: %s", got)
+	}
+	if CIRunnerBaseline() != base || CIRunnerMin() != Embedded().CIRunnerMin {
+		t.Fatalf("baseline or min changed by the feed: %s %s", CIRunnerBaseline(), CIRunnerMin())
+	}
+
+	// SECURITY: a stale or replayed feed never lowers the baseline.
+	SetLearned(map[string]Learned{CIKey: {Version: "v0.0.1"}})
+	if got := CIRunnerLatest(); got != base {
+		t.Fatalf("older learned release lowered the baseline: %s", got)
+	}
+
+	// Invalid values are dropped, so the baseline applies.
+	for _, bad := range []string{"latest", "v1.2", "1.2.3", "v1.2.3-rc.1", "v9.9.9; rm -rf /"} {
+		SetLearned(map[string]Learned{CIKey: {Version: bad}})
+		if got := CIRunnerLatest(); got != base {
+			t.Fatalf("invalid learned %q used: %s", bad, got)
+		}
+	}
+
+	// Another component's release never moves the CI runner's.
+	SetLearned(map[string]Learned{"sensor": {Version: "v99.0.0"}, SDKKey: {Version: "v99.0.0"}})
+	if got := CIRunnerLatest(); got != base {
+		t.Fatalf("other components moved ci: %s", got)
+	}
+}

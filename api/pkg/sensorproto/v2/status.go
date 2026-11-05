@@ -72,25 +72,36 @@ const (
 	// exclusions and was not added. Not an error of the sensor: the asset is
 	// counted neither as accepted nor as rejected.
 	CodeAssetExcluded = "asset_excluded"
+	// CodeHeldForReview: the item is of a type the command's tool does not
+	// produce; it is held for review in the results quarantine, not applied.
+	// Counted as quarantined, never as rejected.
+	CodeHeldForReview = "held_for_review"
+	// CodeOutOfScope: the upload's actor may not change the asset (their
+	// data scope); it was not applied.
+	CodeOutOfScope = "out_of_scope"
 )
 
 // Fixed item error details. Details never quote sensor bytes.
 const (
-	DetailAssetUnresolved  = "finding references no asset in this segment"
-	DetailAssetAmbiguous   = "finding has no asset_ref and the segment has more than one asset"
-	DetailAssetNotStored   = "the asset this finding references was not stored"
-	DetailAssetInvalid     = "asset has no usable value"
-	DetailAssetExcluded    = "asset matches a scope exclusion of the organization and was not added"
-	DetailFindingNotStored = "the finding could not be stored"
-	DetailRequired         = "a required field is missing"
-	DetailInvalidValue     = "the value is not allowed here"
-	DetailMetadataID       = "metadata.id must be a lowercase UUIDv7 the producer generated"
-	DetailUnknownField     = "the field is not part of the CTIS version the document declares"
-	DetailCTISVersion      = "this platform accepts CTIS 2.x only: upgrade the sensor, connector or CI integration"
-	DetailTooMany          = "the array exceeds the per-segment limit"
-	DetailProcessingFailed = "the segment could not be processed"
-	DetailQuarantined      = "the report names no command and this sensor's role may not send results on its own: held for review, not applied"
-	DetailQuarantineFull   = "the report names no command and the results quarantine is full: not kept"
+	DetailAssetUnresolved       = "finding references no asset in this segment"
+	DetailAssetAmbiguous        = "finding has no asset_ref and the segment has more than one asset"
+	DetailAssetNotStored        = "the asset this finding references was not stored"
+	DetailAssetInvalid          = "asset has no usable value"
+	DetailAssetExcluded         = "asset matches a scope exclusion of the organization and was not added"
+	DetailHeldForReview         = "the command's tool does not produce this type: held for review in the results quarantine, not applied"
+	DetailHeldNotKept           = "the command's tool does not produce this type and the results quarantine could not keep it: not applied"
+	DetailOutsideTargetsOverCap = "the report already recorded as many assets outside its command's targets as one report may: not added"
+	DetailOutOfScope            = "outside the data scope of the upload's actor: not applied"
+	DetailFindingNotStored      = "the finding could not be stored"
+	DetailRequired              = "a required field is missing"
+	DetailInvalidValue          = "the value is not allowed here"
+	DetailMetadataID            = "metadata.id must be a lowercase UUIDv7 the producer generated"
+	DetailUnknownField          = "the field is not part of the CTIS version the document declares"
+	DetailCTISVersion           = "this platform accepts CTIS 2.x only: upgrade the sensor, connector or CI integration"
+	DetailTooMany               = "the array exceeds the per-segment limit"
+	DetailProcessingFailed      = "the segment could not be processed"
+	DetailQuarantined           = "the report names no command and this sensor's role may not send results on its own: held for review, not applied"
+	DetailQuarantineFull        = "the report names no command and the results quarantine is full: not kept"
 	// DetailPushIngestNotGranted goes with CodePushIngestNotGranted.
 	DetailPushIngestNotGranted = "the report names no command and this sensor's grant does not allow results without a job (push ingest is off in its grant): not kept"
 	// DetailPushIngestUntrusted goes with CodePushIngestNotGranted when the
