@@ -4,6 +4,8 @@
  * findings can say what it looked for. The values are the platform's record
  * at dispatch; the ignored keys are what the sensor reported (shown as text).
  */
+import { SEVERITY_LEVELS } from '@/lib/severity'
+
 import type { Translate } from './translate'
 
 export interface RanWithParam {
@@ -19,7 +21,8 @@ export interface RanWith {
   sensor_ignored_keys?: string[]
 }
 
-const SEVERITY_ORDER = ['info', 'low', 'medium', 'high', 'critical']
+// Lowest to highest (SEVERITY_LEVELS is highest first).
+const SEVERITY_ORDER: string[] = [...SEVERITY_LEVELS].reverse()
 const SOURCES = new Set([
   'capability_default',
   'template_step',
