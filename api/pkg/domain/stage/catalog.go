@@ -41,7 +41,10 @@ const (
 	ScanPorts           Key = "scan.ports"
 	ProbeHTTP           Key = "probe.http"
 	CrawlWeb            Key = "crawl.web"
-	VulnTemplates       Key = "vuln.templates"
+	// EnumerateWebPaths requests candidate paths the platform lists on a
+	// web origin, GET and HEAD only (path discovery).
+	EnumerateWebPaths Key = "enumerate.web_paths"
+	VulnTemplates     Key = "vuln.templates"
 	// CheckTakeover finds names whose alias points at an unclaimed
 	// third-party resource (nuclei's takeover templates).
 	CheckTakeover Key = "check.takeover"
@@ -56,6 +59,9 @@ const (
 	ContainerImage     Key = "container.image"
 	NetworkVAConnector Key = "network_va.connector"
 )
+
+// toolWebguess runs path discovery.
+const toolWebguess = "webguess"
 
 // Tier is how intrusive a stage is toward its targets.
 type Tier int
@@ -319,6 +325,23 @@ var catalog = []Stage{
 		},
 		MaxFanout: webFanoutCap,
 		Legacy:    []string{"crawler", "url_discovery"},
+	},
+	{
+		// Active (T1): GET and HEAD only, locked by the job's web scope,
+		// which also carries the per-origin request cap the sensor's
+		// forwarder enforces. The candidates are the platform's: a list
+		// derived from the organization's own inventory (contentpin), never
+		// the tool's own; the tool never recurses or follows redirects.
+		Key: EnumerateWebPaths, Name: "Web path discovery",
+		Description: "Request candidate paths the platform lists on a web origin with GET or HEAD, keeping the ones that answer differently from the origin's not-found response.",
+		Inputs:      []asset.TypeRef{tHTTPService},
+		Outputs:     []asset.TypeRef{tHTTPService},
+		Endpoints:   true,
+		Tier:        TierActive,
+		Implementations: []Implementation{
+			{Tool: toolWebguess, Default: true},
+		},
+		MaxFanout: webFanoutCap,
 	},
 	{
 		Key: VulnTemplates, Name: "Vulnerability templates",

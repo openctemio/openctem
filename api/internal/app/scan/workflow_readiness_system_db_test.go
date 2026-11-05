@@ -100,7 +100,11 @@ func TestSystemWorkflows_ReadyOnStandardSensor(t *testing.T) {
 		}
 		var want []string
 		for _, st := range w.Steps {
-			if st.RunPolicy.Optional && len(st.Capabilities) == 1 && stage.IsPlanned(stage.Key(st.Capabilities[0])) {
+			// Optional steps whose capability has no tool on the standard
+			// sensor: planned capabilities, and path discovery until a
+			// sensor release ships its tool.
+			if st.RunPolicy.Optional && len(st.Capabilities) == 1 &&
+				(stage.IsPlanned(stage.Key(st.Capabilities[0])) || st.Capabilities[0] == string(stage.EnumerateWebPaths)) {
 				want = append(want, st.StepKey)
 			}
 		}

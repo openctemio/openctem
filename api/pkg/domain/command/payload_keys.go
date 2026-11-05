@@ -31,6 +31,34 @@ func PayloadTool(payload json.RawMessage) string {
 	return p.PreferredTool
 }
 
+// PayloadKeyDiscoveryMaxRequests is the scanner config key of a path
+// discovery job's per-origin request budget (the webguess mapping of the
+// contract's max_requests_per_origin).
+const PayloadKeyDiscoveryMaxRequests = "max_requests"
+
+// PayloadDiscoveryMaxRequests is a path discovery job's per-origin request
+// budget from its "config" or "scanner_config" (0 when it names none).
+func PayloadDiscoveryMaxRequests(payload json.RawMessage) int {
+	var p struct {
+		Config        map[string]any `json:"config"`
+		ScannerConfig map[string]any `json:"scanner_config"`
+	}
+	if json.Unmarshal(payload, &p) != nil {
+		return 0
+	}
+	for _, cfg := range []map[string]any{p.ScannerConfig, p.Config} {
+		switch v := cfg[PayloadKeyDiscoveryMaxRequests].(type) {
+		case float64:
+			if v > 0 && v <= 1e9 {
+				return int(v)
+			}
+		case int:
+			return v
+		}
+	}
+	return 0
+}
+
 // PayloadTargets are the targets a command payload names ("targets" and
 // "target", the keys sensors read), trimmed and de-duplicated, in order.
 func PayloadTargets(payload json.RawMessage) []string {

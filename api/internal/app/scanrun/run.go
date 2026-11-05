@@ -364,6 +364,15 @@ func (s *Service) scheduleRunnableSteps(ctx context.Context, run *scanrun.Run, t
 			settledInline = true
 			continue
 		}
+		// Path discovery runs only while the organization has it on.
+		if reason := s.pathDiscoverySkipReason(ctx, run, step); reason != "" {
+			stepRun.Skip(reason)
+			if err := s.stepRunRepo.Update(ctx, stepRun); err != nil {
+				s.logger.Error("failed to skip a path discovery step", "step_key", step.StepKey, "error", err)
+			}
+			settledInline = true
+			continue
+		}
 
 		// Queue the step - create a command that sensors can poll
 		err := s.queueStepForExecutionWithSettings(ctx, run, step, stepRun, template.Settings, predecessorsOf(template, step),

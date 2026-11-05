@@ -77,6 +77,25 @@ type JobRules struct {
 	RateLimit int
 	// Programs names the programs (for logs).
 	Programs []string
+	// Forbidden is every technique any covering program forbids.
+	Forbidden []string
+}
+
+// EnumerationRefusal is why a job that enumerates (guesses names or paths:
+// any enumerate.* capability, a brute force) may not run on targets the
+// rules cover: a program forbids brute force or automated scanning. "" when
+// it may. A nil receiver allows everything.
+func (r *JobRules) EnumerationRefusal() string {
+	if r == nil {
+		return ""
+	}
+	for _, t := range []string{ForbidBruteforce, ForbidAutomatedScanning} {
+		if slices.Contains(r.Forbidden, t) {
+			return fmt.Sprintf("a bug bounty program covering these targets forbids %s (%s); enumeration does not run on them",
+				strings.ReplaceAll(t, "_", " "), strings.Join(r.Programs, ", "))
+		}
+	}
+	return ""
 }
 
 // MergeJobRules combines the rules of the programs covering one job. A
@@ -107,6 +126,11 @@ func MergeJobRules(programs []*Program) (*JobRules, error) {
 				return nil, ErrRulesConflict
 			}
 			out.UserAgent = r.UserAgent
+		}
+		for _, f := range r.Forbidden {
+			if !slices.Contains(out.Forbidden, f) {
+				out.Forbidden = append(out.Forbidden, f)
+			}
 		}
 		if r.RateLimitRPS > 0 && (out.RateLimit == 0 || r.RateLimitRPS < out.RateLimit) {
 			out.RateLimit = r.RateLimitRPS

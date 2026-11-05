@@ -1497,6 +1497,18 @@ vars:
     type: int
     default: "5000"
     description: "Most asset and capability pairs one organization's automatic coverage attempts per 24 hours."
+  - name: PATH_DISCOVERY_REQUESTS_PER_ORIGIN
+    component: api
+    group: "Discovery feeds and background jobs"
+    type: int
+    default: "300"
+    description: "Request cap of one origin's path discovery job (50 to 100000), signed into the job and enforced by the sensor; at most one run per origin per 30 days."
+  - name: PATH_DISCOVERY_DAILY_REQUESTS
+    component: api
+    group: "Discovery feeds and background jobs"
+    type: int
+    default: "50000"
+    description: "Path discovery requests one organization may plan per 24 hours; origins that do not fit are deferred, never marked covered."
   - name: ASSET_COVERAGE_INTERVAL
     component: api
     group: "Discovery feeds and background jobs"

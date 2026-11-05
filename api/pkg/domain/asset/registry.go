@@ -132,7 +132,13 @@ type CoverageRule struct {
 	// or web origin was seen on the name, or no port scan has finished on
 	// it or its addresses yet), "scope_entry" (an active scope entry covers
 	// the asset), "no_named_twin" (a web service reached by IP is not also
-	// served, same address and port, by a service reached by a host name).
+	// served, same address and port, by a service reached by a host name),
+	// "origin_scope_entry" (an active scope entry names the web service's
+	// host: a domain entry for a host name, an exact address entry for an
+	// address), "inventory_changed" (the web service has endpoints first
+	// seen since the capability last succeeded on it), "edge_clear" (the
+	// last probe of the web service was not challenged or blocked by an edge
+	// protection).
 	Requires []string `json:"requires,omitempty"`
 	// Expects names the type a successful run must produce for the asset
 	// ("" = no output is expected): the output check of the coverage gap

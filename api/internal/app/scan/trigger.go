@@ -460,7 +460,7 @@ func (s *Service) triggerWorkflow(ctx context.Context, sc *scan.Scan, template *
 	}
 	// Program rules (RFC-065 §12): conflicting programs, or outside a
 	// program's testing windows, refuse the run.
-	if err := s.refuseProgramRules(ctx, sc.TenantID, resolved.Targets); err != nil {
+	if err := s.refuseProgramRulesFor(ctx, sc.TenantID, resolved.Targets, scanEnumerates(sc)); err != nil {
 		return nil, err
 	}
 	s.planRolloverFirst(ctx, sc, triggerType, resolved, runContext)
@@ -626,7 +626,7 @@ func (s *Service) triggerSingleScan(ctx context.Context, sc *scan.Scan, triggerT
 	}
 	// Program rules (RFC-065 §12): conflicting programs, or outside a
 	// program's testing windows, refuse the run.
-	if err := s.refuseProgramRules(ctx, sc.TenantID, resolved.Targets); err != nil {
+	if err := s.refuseProgramRulesFor(ctx, sc.TenantID, resolved.Targets, scanEnumerates(sc)); err != nil {
 		return nil, err
 	}
 	s.planRolloverFirst(ctx, sc, triggerType, resolved, runContext)
@@ -997,6 +997,12 @@ func (s *Service) scannerPayload(
 	}
 	if c := withWildcardFilter(sc.ScannerName, scannerConfig); c != nil {
 		payloadMap["config"] = c
+	}
+	// A path discovery job names its capability: ingest stores its
+	// endpoints as guessed from it, and the web job guard gives it the
+	// strict web scope.
+	if stg, ok := stage.ForStep(sc.ScannerName, nil); ok && stg.Key == stage.EnumerateWebPaths {
+		payloadMap[PayloadKeyCapability] = stg.ID()
 	}
 	// The command handler reads `scan_run_id` + `step_key` to route a
 	// finished command back into the scan workflow; a payload carrying only `run_id`

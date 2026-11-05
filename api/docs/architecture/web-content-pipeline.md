@@ -63,6 +63,12 @@ controller (one replica at a time).
 5. The run files findings only through the normal ingest of the template
    hits. The planner itself writes no finding and no exposure.
 
+Endpoints found by path discovery ([web-discovery.md](web-discovery.md),
+source `guess`) are candidates like crawled ones when their catalog entry
+has a `verify` block. A guessed backup, dump, source or config file is
+labelled (`ext:*`) and never filed: its magic-byte verification template is
+planned (RFC-149 §5).
+
 A depth never raises the tier: passive verifies nothing, standard and deep
 are T1 (deep doubles the budget). `dast.web` (T2) is never planned here.
 

@@ -43,6 +43,29 @@ type WebJob struct {
 	Bindable bool
 	// Verify: a validate or retest job (it re-checks a finding).
 	Verify bool
+	// Discovery: a path discovery job (enumerate.web_paths). Its web scope
+	// is the strict one (GET and HEAD, every non-allowed exclusion denied,
+	// a per-host request cap) and is attached even with no exclusion.
+	Discovery bool
+}
+
+// DiscoveryCapability is the capability of a path discovery job.
+const DiscoveryCapability = "enumerate.web_paths"
+
+// DiscoveryTool is the tool that runs path discovery.
+const DiscoveryTool = "webguess"
+
+// IsDiscoveryJob reports whether a scan payload runs path discovery: its
+// capability names enumerate.web_paths, or its tool is the discovery tool.
+func IsDiscoveryJob(payload json.RawMessage) bool {
+	var p struct {
+		Capability string `json:"capability"`
+	}
+	_ = json.Unmarshal(payload, &p)
+	if w, _, _ := strings.Cut(strings.ToLower(strings.TrimSpace(p.Capability)), "@"); w == DiscoveryCapability {
+		return true
+	}
+	return strings.EqualFold(strings.TrimSpace(PayloadTool(payload)), DiscoveryTool)
 }
 
 // verifyBindsWebScope are the tools whose validate and retest jobs the
@@ -68,7 +91,7 @@ func WebJobOf(cmd *Command) (WebJob, bool) {
 		if !stage.WebTool(tool) && !webCapabilityPayload(cmd.Payload) {
 			return WebJob{}, false
 		}
-		return WebJob{Tool: tool, Targets: PayloadTargets(cmd.Payload), Bindable: true}, true
+		return WebJob{Tool: tool, Targets: PayloadTargets(cmd.Payload), Bindable: true, Discovery: IsDiscoveryJob(cmd.Payload)}, true
 	case CommandTypeRetest:
 		tool := strings.ToLower(strings.TrimSpace(PayloadTool(cmd.Payload)))
 		if !stage.WebTool(tool) {
