@@ -494,6 +494,7 @@
   "assets.graph.errorTitle": "tài sản liên quan",
   "assets.graph.expand": "Hiện tài sản liên quan",
   "assets.graph.expandFailed": "Không tải được các tài sản liên quan",
+  "assets.graph.fullTitle": "Tài sản liên quan của {name}",
   "assets.graph.hiddenDetail": "Ngoài phạm vi dữ liệu của bạn",
   "assets.graph.hiddenNeighbors": "{n} ngoài quyền truy cập của bạn",
   "assets.graph.legend": "Loại tài sản",

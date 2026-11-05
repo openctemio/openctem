@@ -41,6 +41,7 @@ import {
 } from '@/features/shared'
 import { useExposureChains } from '@/features/attack-surface'
 import { useAttackPathDetail } from '@/features/attack-surface/hooks/use-attack-path-detail'
+import { FlowFullscreen } from '@/components/flow/flow-fullscreen'
 import { AttackPathCanvas } from '@/features/attack-surface/components/attack-path-canvas'
 import {
   AttackPathLegend,
@@ -357,26 +358,34 @@ export default function AttackPathsPage() {
           className="min-w-0 overflow-hidden rounded-lg border bg-card"
           aria-label={t('prioritization.attackPath.canvasLabel', 'Attack path graph')}
         >
-          {view === 'canvas' && (
-            <div className="border-b border-border-subtle px-4 py-2.5">
-              <AttackPathLegend />
-            </div>
-          )}
           {view === 'canvas' ? (
-            <div
-              className="h-[520px] border-b border-border-subtle"
-              data-testid="attack-path-canvas"
-            >
-              <AttackPathCanvas
-                detail={detail}
-                shown={shown}
-                selected={selected}
-                focus={focus}
-                onFocusChange={setFocus}
-                onOpenNode={openNode}
-                onCyclePath={cycle}
-              />
-            </div>
+            <FlowFullscreen title={t('prioritization.attackPath.canvasLabel', 'Attack path graph')}>
+              {(full) => (
+                <div
+                  className={full ? 'flex min-h-0 flex-1 flex-col rounded-md border' : undefined}
+                >
+                  <div className="border-b border-border-subtle px-4 py-2.5">
+                    <AttackPathLegend />
+                  </div>
+                  <div
+                    className={
+                      full ? 'min-h-[320px] flex-1' : 'h-[520px] border-b border-border-subtle'
+                    }
+                    data-testid={full ? 'attack-path-canvas-full' : 'attack-path-canvas'}
+                  >
+                    <AttackPathCanvas
+                      detail={detail}
+                      shown={shown}
+                      selected={selected}
+                      focus={focus}
+                      onFocusChange={setFocus}
+                      onOpenNode={openNode}
+                      onCyclePath={cycle}
+                    />
+                  </div>
+                </div>
+              )}
+            </FlowFullscreen>
           ) : (
             <div className="border-b border-border-subtle">
               <AttackPathList

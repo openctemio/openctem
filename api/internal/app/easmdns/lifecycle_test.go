@@ -219,3 +219,19 @@ func TestOwnProviderList_LadiPage(t *testing.T) {
 		t.Fatalf("azure = %+v %v", p, ok)
 	}
 }
+
+func TestSuspectedTakeoverEvent_UsesCanonicalAddressesKey(t *testing.T) {
+	ev, err := suspectedTakeoverEvent(shared.NewID(), Target{AssetID: shared.NewID(), Name: "a.example.com"},
+		OpenDangling{Target: "old.example.net"},
+		Dangling{Target: "new.example.net", Addresses: []string{"192.0.2.1"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	d := ev.Details()
+	if _, ok := d["ip_addresses"]; !ok {
+		t.Errorf("details lack ip_addresses: %v", d)
+	}
+	if _, ok := d["addresses"]; ok {
+		t.Errorf("details still carry the synonym key addresses")
+	}
+}
