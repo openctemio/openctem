@@ -40,6 +40,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/controller"
 	"github.com/openctemio/openctem/api/internal/infra/jobs"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
+	"github.com/openctemio/openctem/api/pkg/domain/cirun"
 	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
 	"github.com/openctemio/openctem/api/pkg/domain/durablejob"
 	"github.com/openctemio/openctem/api/pkg/domain/ingestjob"
@@ -414,7 +415,8 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		if svc.Audit != nil {
 			auditor = svc.Audit
 		}
-		job := cirunapp.NewAlertJob(repos.CIRun, notifier, auditor, ciRunnerVersionPolicy(deps.Config, log), log)
+		job := cirunapp.NewAlertJob(repos.CIRun, notifier, auditor, cirun.StatusPolicy{}, log)
+		job.SetVersionSource(ciRunnerVersionPolicy(deps.Config, log))
 		w.ControllerManager.Register(controller.NewCIAlertsController(job, 0))
 		// Retention: expired run token hashes, run findings after 90 days,
 		// runs after 400 days (each scan workflow keeps its latest runs).
