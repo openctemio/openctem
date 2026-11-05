@@ -22,10 +22,53 @@ type memStore struct {
 	exposure map[string]*exposuredom.ExposureEvent
 	state    map[string]string // fingerprint -> active/resolved/auto-resolved/accepted
 	locked   bool
+	// lifecycle facts
+	trouble   map[string][]CertTrouble // name -> open certificate trouble
+	rootOwned map[string]bool          // registrable domain -> confirmed root of the tenant
+	addrs     map[string]AddressFact   // address -> inventory fact
+	tags      map[shared.ID]bool
+}
+
+func (m *memStore) OpenDanglingCNAMEs(_ context.Context, _ shared.ID, ids []shared.ID) ([]OpenDangling, error) {
+	var out []OpenDangling
+	for fp, e := range m.exposure {
+		if e.EventType() != exposuredom.EventTypeDanglingCNAME || m.state[fp] != "active" || e.AssetID() == nil {
+			continue
+		}
+		for _, id := range ids {
+			if *e.AssetID() == id {
+				d := e.Details()
+				rc, _ := d["response_class"].(string)
+				tg, _ := d["target"].(string)
+				out = append(out, OpenDangling{ExposureID: fp, AssetID: id, Name: d["domain"].(string), Target: tg, ResponseClass: rc})
+			}
+		}
+	}
+	return out, nil
+}
+
+func (m *memStore) HostCertificateTrouble(_ context.Context, _ shared.ID, name string) ([]CertTrouble, error) {
+	return m.trouble[name], nil
+}
+
+func (m *memStore) Ownership(_ context.Context, _ shared.ID, root string, addrs []string) (Ownership, error) {
+	o := Ownership{RootOwned: m.rootOwned[root], Addresses: map[string]AddressFact{}}
+	for _, a := range addrs {
+		if f, ok := m.addrs[a]; ok {
+			o.Addresses[a] = f
+		}
+	}
+	return o, nil
+}
+
+func (m *memStore) SetDanglingTag(_ context.Context, _, assetID shared.ID, on bool) error {
+	m.tags[assetID] = on
+	return nil
 }
 
 func newMemStore(targets ...Target) *memStore {
-	return &memStore{targets: targets, states: map[string]string{}, exposure: map[string]*exposuredom.ExposureEvent{}, state: map[string]string{}}
+	return &memStore{targets: targets, states: map[string]string{}, exposure: map[string]*exposuredom.ExposureEvent{}, state: map[string]string{},
+		trouble: map[string][]CertTrouble{}, rootOwned: map[string]bool{}, addrs: map[string]AddressFact{}, tags: map[shared.ID]bool{}}
 }
 
 func (m *memStore) DueTargets(context.Context, shared.ID, string, time.Time, int) ([]Target, error) {
@@ -129,7 +172,8 @@ func TestMonitorTenant_Lifecycle(t *testing.T) {
 		t.Fatalf("servfail run: %+v state=%s", res, store.state[fp])
 	}
 
-	// Fixed: the record now resolves.
+	// Fixed: the record now points at the organization's own address.
+	store.addrs["192.0.2.9"] = AddressFact{Confirmed: true}
 	srv.Set(map[string]dnstest.Entry{"shop.acme.example.com": {A: []string{"192.0.2.9"}}})
 	res, _ = svc.MonitorTenant(ctx, tenant)
 	if res.Resolved != 1 || store.state[fp] != "auto-resolved" {

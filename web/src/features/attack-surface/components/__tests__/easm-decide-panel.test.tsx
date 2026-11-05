@@ -53,12 +53,14 @@ const cards = (canAdd: boolean) => ({
           ports: [22, 443],
           other_names: ['old.acme.example'],
           prefix: '203.0.113.0/24',
+          ownership: { band: 'high', score: 90, signals: [] },
         },
         {
           asset_id: 'a2',
           address: '203.0.113.12',
           resolved_from: ['api.acme.example'],
           network: { known: true, asn: 'AS64500', org: 'Acme' },
+          ownership: { band: 'low', score: 20, signals: [] },
         },
       ],
       prefix_rules: [{ prefix: '203.0.113.0/24', addresses: 1 }],
@@ -116,7 +118,7 @@ describe('EASMDecidePanel', () => {
     ).toBeInTheDocument()
     expect(screen.getByText('Network unknown for 1: check it is yours')).toBeInTheDocument()
     expect(screen.getByText('1 asset you confirmed is not in scope')).toBeInTheDocument()
-    await user.click(screen.getAllByRole('button', { name: 'View list' })[0])
+    await user.click(screen.getByRole('button', { name: 'Review 1 address' }))
     expect(screen.getByText('Network unknown')).toBeInTheDocument()
     // The shared address is not on the card: one quiet line, its own list.
     expect(screen.queryByText('CDN edge range (Cloudflare)')).not.toBeInTheDocument()
@@ -131,29 +133,56 @@ describe('EASMDecidePanel', () => {
     expect(api.post).not.toHaveBeenCalled()
   })
 
-  it('adds exactly the offered addresses on a click, never the shared ones', async () => {
+  it('one click adds only the addresses with strong evidence, never the shared ones', async () => {
     api.get.mockImplementation(byUrl(cards(true)))
-    api.post.mockResolvedValue({ created: 2, existing: 0, refused: 0, results: [] })
+    api.post.mockResolvedValue({ created: 1, existing: 0, refused: 0, results: [] })
     const user = userEvent.setup()
     wrap(<EASMDecidePanel />)
     await screen.findByText('2 addresses your in-scope names resolve to')
-    await user.click(screen.getAllByRole('button', { name: 'Add 2 to scope' })[0])
+    expect(screen.queryByRole('button', { name: 'Add 2 to scope' })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Add 1 likely yours' }))
     await user.click(screen.getByRole('button', { name: 'Add to scope' }))
     await waitFor(() => expect(api.post).toHaveBeenCalledTimes(1))
     const [url, body] = api.post.mock.calls[0]
     expect(url).toBe('/api/v1/scope/targets/bulk')
-    expect(body.items).toEqual([
-      { target_type: 'ip_address', pattern: '203.0.113.10' },
+    expect(body.items).toEqual([{ target_type: 'ip_address', pattern: '203.0.113.10' }])
+    expect(body.reason).toContain('www.acme.example')
+  })
+
+  it('an address without strong evidence is added on its own, from its row', async () => {
+    api.get.mockImplementation(byUrl(cards(true)))
+    api.post.mockResolvedValue({ created: 1, existing: 0, refused: 0, results: [] })
+    const user = userEvent.setup()
+    wrap(<EASMDecidePanel />)
+    await screen.findByText('2 addresses your in-scope names resolve to')
+    expect(screen.getByTestId('decide-review-note')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Review 1 address' }))
+    await user.click(screen.getByRole('button', { name: 'Add 203.0.113.12 to scope' }))
+    await user.click(screen.getByRole('button', { name: 'Add to scope' }))
+    await waitFor(() => expect(api.post).toHaveBeenCalledTimes(1))
+    expect(api.post.mock.calls[0][1].items).toEqual([
       { target_type: 'ip_address', pattern: '203.0.113.12' },
     ])
-    expect(body.reason).toContain('www.acme.example')
+  })
+
+  it('with no strong evidence anywhere there is no one-click add of every address', async () => {
+    const c = cards(true)
+    for (const a of c.cards[0].addresses!) a.ownership = { band: 'unknown', score: 0, signals: [] }
+    api.get.mockImplementation(byUrl(c))
+    wrap(<EASMDecidePanel />)
+    await screen.findByText('2 addresses your in-scope names resolve to')
+    expect(
+      screen.queryByRole('button', { name: /likely yours|Add 2 to scope/ })
+    ).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Review 2 addresses' })).toBeInTheDocument()
   })
 
   it('offers no add without scope write', async () => {
     api.get.mockImplementation(byUrl(cards(false)))
     wrap(<EASMDecidePanel />)
     await screen.findByText('2 addresses your in-scope names resolve to')
-    expect(screen.queryByRole('button', { name: /Add \d to scope/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Add \d|likely yours/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^Add .* to scope$/ })).not.toBeInTheDocument()
     expect(screen.getByText('Adding to scope needs permission to edit scope.')).toBeInTheDocument()
   })
 
@@ -178,7 +207,7 @@ describe('EASMDecidePanel', () => {
     wrap(<EASMDecidePanel />)
     await screen.findByText('2 addresses your in-scope names resolve to')
     expect(screen.getByText(/Today only the names are scanned/)).toBeInTheDocument()
-    await user.click(screen.getAllByRole('button', { name: 'View list' })[0])
+    await user.click(screen.getByRole('button', { name: 'Review 1 address' }))
     expect(screen.getByText(/Open ports seen: 22, 443/)).toBeInTheDocument()
     expect(screen.getByText(/Also named old.acme.example \(not in scope\)/)).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Add 203.0.113.0/24' }))
@@ -194,8 +223,9 @@ describe('EASMDecidePanel', () => {
     const user = userEvent.setup()
     wrap(<EASMDecidePanel />)
     expect(await screen.findByText('1 address your in-scope names resolve to')).toBeInTheDocument()
-    // One on the addresses card, one on the confirmed-assets card.
-    expect(screen.getAllByRole('button', { name: 'Add 1 to scope' })).toHaveLength(2)
+    // The strong address on the addresses card, the confirmed-assets card.
+    expect(screen.getByRole('button', { name: 'Add 1 likely yours' })).toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: 'Add 1 to scope' })).toHaveLength(1)
     const note = screen.getByTestId('decide-no-decision')
     expect(note).toHaveTextContent('1 address already gets low-impact checks.')
     await user.click(within(note).getByRole('button', { name: 'View list' }))
@@ -217,7 +247,8 @@ describe('EASMDecidePanel', () => {
     wrap(<EASMDecidePanel />)
     expect(await screen.findByText('Nothing to decide')).toBeInTheDocument()
     expect(screen.queryByTestId('decide-card-addresses')).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /Add \d to scope/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Add \d|likely yours/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^Add .* to scope$/ })).not.toBeInTheDocument()
     expect(screen.getByTestId('decide-no-decision')).toBeInTheDocument()
   })
 
