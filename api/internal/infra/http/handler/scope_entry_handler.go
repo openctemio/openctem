@@ -122,6 +122,13 @@ type ScopeSettingsResponse struct {
 	// UnclassifiedScansEffective is the mode in force: off under the
 	// Strict scan approval mode, else the setting (read-only).
 	UnclassifiedScansEffective string `json:"unclassified_scans_effective" enums:"off,low_impact,full"`
+	// AddressAutoAdd is the setting for addresses in-scope names resolve
+	// to: auto_strong (default: added automatically when the organization's
+	// own network holds them, through the approval policy), ask or never.
+	AddressAutoAdd string `json:"address_auto_add" enums:"auto_strong,ask,never"`
+	// AddressAutoAddEffective is the mode in force: ask instead of
+	// auto_strong under the Strict scan approval mode (read-only).
+	AddressAutoAddEffective string `json:"address_auto_add_effective" enums:"auto_strong,ask,never"`
 	// AutoCoverage is the organization's choice for automatic coverage:
 	// true, false, or null for the default (on unless Strict).
 	AutoCoverage *bool `json:"auto_coverage"`
@@ -185,6 +192,9 @@ type ScopeSettingsRequest struct {
 	// UnclassifiedScans: off, low_impact or full; omitted keeps the stored
 	// value.
 	UnclassifiedScans string `json:"unclassified_scans" validate:"omitempty,oneof=off low_impact full"`
+	// AddressAutoAdd: auto_strong, ask or never; omitted keeps the stored
+	// value.
+	AddressAutoAdd string `json:"address_auto_add" validate:"omitempty,oneof=auto_strong ask never"`
 	// AutoCoverage: true or false; omitted keeps the stored choice.
 	AutoCoverage *bool `json:"auto_coverage"`
 	// CIScopeRequiresProof: true or false; omitted keeps the stored value.
@@ -208,6 +218,7 @@ func (h *ScopeHandler) settingsResponse(ctx context.Context, tenantID string, ss
 		AutoCoverage:          ss.AutoCoverage, AutoCoverageEffective: ss.AutoCoverageOn(mode == scangov.ModeStrict),
 		CIScopeRequiresProof: ss.CIScopeRequiresProof,
 		UnclassifiedScans:    ss.Unclassified(), UnclassifiedScansEffective: scangov.UnclassifiedMode(mode, ss.Unclassified()),
+		AddressAutoAdd: ss.AddressMode(), AddressAutoAddEffective: ss.AddressModeIn(mode.Normalized() == scangov.ModeStrict),
 		OneOffTargets: ss.OneOffPolicy(), OneOffMaxDays: ss.MaxDays(),
 		WideningApprovals: ss.WideningApprovals, DefaultMaxTier: ss.Tier(),
 		EffectiveWideningApprovals: approvals, AdminCount: admins,
@@ -293,6 +304,7 @@ func (h *ScopeHandler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 		OneOffTargets:              req.OneOffTargets, OneOffMaxDays: req.OneOffMaxDays,
 		WideningApprovals: req.WideningApprovals, DefaultMaxTier: req.DefaultMaxTier,
 		UnclassifiedScans: req.UnclassifiedScans, AutoCoverage: req.AutoCoverage,
+		AddressAutoAdd: req.AddressAutoAdd,
 	}
 	if req.ReviewBeforeInventory != nil {
 		ss.ReviewBeforeInventory = *req.ReviewBeforeInventory
@@ -304,7 +316,7 @@ func (h *ScopeHandler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 	// review_before_inventory or unclassified_scans keeps the stored value
 	// instead of resetting it.
 	if req.ConfirmAddsToScope == nil || req.ReviewBeforeInventory == nil || req.UnclassifiedScans == "" || req.AutoCoverage == nil ||
-		req.CIScopeRequiresProof == nil {
+		req.CIScopeRequiresProof == nil || req.AddressAutoAdd == "" {
 		before, err := h.settings.GetScopeSettings(ctx, tenantID)
 		if err != nil {
 			h.logger.Error("scope settings: read", "error", logger.SanitizeError(err))
@@ -325,6 +337,9 @@ func (h *ScopeHandler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 		}
 		if req.CIScopeRequiresProof == nil {
 			ss.CIScopeRequiresProof = before.CIScopeRequiresProof
+		}
+		if req.AddressAutoAdd == "" {
+			ss.AddressAutoAdd = before.AddressAutoAdd
 		}
 
 	}

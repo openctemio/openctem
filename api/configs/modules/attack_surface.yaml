@@ -22,6 +22,7 @@
     - EASMLookalikeController
     - PageMonitorController
     - EASMNetworkSeedController
+    - EASMAddressAutoAddController
     - EASMWeeklyDigestController
     - EASMPostureController
     - GraphEnrichmentController

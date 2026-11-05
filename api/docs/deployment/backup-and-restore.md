@@ -21,6 +21,43 @@ It is **off by default**: without the overlay the stack is unchanged. The tool i
 | Scope | the database. Uploaded files, the job-signer volumes, the gateway CA and `.env` stay in `backup.sh`; keep running it. Point-in-time recovery does not replace those. |
 | Retention | `BACKUP_RETENTION_FULL` full backups (4) and `BACKUP_RETENTION_DIFF` differential backups (7); WAL is kept for the oldest retained full backup. State this in your privacy policy: erased personal data stays in backups until it ages out. |
 
+## Flow: `backup.sh` and its restore
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor O as Operator or cron
+    participant B as api/deploy/backup.sh
+    participant PG as postgres container
+    participant V as Volumes api-data, gateway-data, signer-keys, signer-state
+    participant OUT as BACKUP_DIR/UTC (0700, files 0600, KEEP 14)
+    O->>B: ./backup.sh
+    B->>PG: pg_dump -Fc --no-owner, checked with pg_restore --list through tee
+    B->>V: tar each volume, .env into env.tar.gz, VERSION
+    alt BACKUP_AGE_RECIPIENT set
+        B->>OUT: every file streamed through age (.age), no plaintext on disk
+    else
+        B->>OUT: plaintext, warning every run
+    end
+    B->>B: status file for the Health page, metrics textfile
+    O->>B: ./backup.sh verify - newest dump into a throwaway postgres, row counts per table, volume tars
+    O->>B: ./backup.sh restore DIR --yes (BACKUP_AGE_IDENTITY for .age)
+    B->>B: VERSION mismatch warning, stop gateway, web, console, api (and signer when it runs)
+    B->>PG: terminate sessions, pg_restore --clean --if-exists --no-owner --exit-on-error
+    B->>PG: compose up -d --no-deps db-roles
+    B->>V: wipe and untar api-data, gateway-data, signer-keys, signer-state
+    B->>B: compose up -d (migrate runs for an older dump)
+```
+
+The restore leaves `.env` alone (restore `env.tar.gz` by hand on a new host)
+and stops the `signer` container, when it runs, before its volumes are
+replaced. The
+Ansible kit's `openctem-backup` adds a manifest signed with the host key
+(`ssh-keygen -Y sign -n openctem-backup`), and `openctem-restore` verifies it,
+refuses a version mismatch unless allowed, dumps the current database first
+and restores secrets with `--with-secrets`. The Helm `backup-cronjob` dumps
+the database only.
+
 ## What is protected, and from whom
 
 - Everything is encrypted with AES-256 **on this host, before upload**. Whoever reads the

@@ -51,6 +51,12 @@ type EASMSettings struct {
 	// evidence (docs/rfcs/RFC-081-web-evidence-screenshots.md); off by
 	// default: a screenshot can show whatever the page shows.
 	WebScreenshotsEnabled bool `json:"web_screenshots_enabled,omitempty"`
+	// InfoMatchesAsFindings files the info-severity matches of template
+	// scanners (nuclei: technology, panels, TLS and header posture) as
+	// findings. Off by default: they become info exposures of the asset
+	// (docs/architecture/exposure-taxonomy.md), counted on the step run, so
+	// they give context without adding finding noise.
+	InfoMatchesAsFindings bool `json:"info_matches_as_findings,omitempty"`
 	// WeeklyDigestDisabled stops the weekly "what changed" digest of the
 	// attack surface (docs/rfcs/RFC-080-attack-surface-changes-and-digest.md);
 	// on by default.

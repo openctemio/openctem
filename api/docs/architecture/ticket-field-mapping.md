@@ -14,14 +14,43 @@ Design: [RFC-097](../rfcs/RFC-097-ticket-field-mapping.md). Related: [ticketing 
 
 ## Flow
 
+Authoring (all routes under `/api/v1/integrations/ticket-mappings`, reads
+`integrations:read`, changes `integrations:manage`; publish, delete and dry run
+also need step-up):
+
+```mermaid
+stateDiagram-v2
+  [*] --> Draft: POST (preset) creates draft v1
+  Draft --> Draft: PUT draft, import, copy, suggest
+  Draft --> Draft: verify against live Jira metadata
+  Draft --> Published: publish (no errors, step-up), snapshot kept
+  Published --> Draft: next draft
+  Published --> Published: rollback to an earlier version
+  Published --> Drifted: drift check, snapshot differs from Jira now
+  Drifted --> Draft: fix the mapping
 ```
-admin ── create profile (preset) ──► draft v1 ──► edit / import / copy ──► verify (live metadata)
-                                                                   │
-                                     publish (no errors, step-up) ◄┘──► published vN (snapshot kept)
-                                                                         │
-                     drift check: snapshot vs tracker now ──► drifted flag ┘
-preview: object (in caller scope) ──► values ──► render (tier filter → template → redact → encode) ──► fields
-simulate: state ──► BFS path + screen values      tracker status (+resolution) ──► intent ──► decision
+
+Runtime (findings and tasks):
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant S as jira.SyncService
+  participant P as ticketmap.Service (ProfileSource)
+  participant J as Jira
+  S->>P: RenderFindingCreate(integration, project, issue type)
+  P->>P: object values, tier filter, template, redact, encode
+  P-->>S: fields, or no profile (built-in fields), or dry run (log, built-in)
+  S->>J: POST /rest/api/2/issue with the rendered fields
+  Note over S,J: status push
+  S->>P: FindingStatusTarget(state)
+  S->>J: current status and available transitions
+  S->>S: runStatusPath: shortest path of the published workflow
+  S->>J: each transition with required screen values, resolution last
+  Note over S,J: inbound
+  J->>S: status (and resolution) of the delivery
+  S->>P: profile of the issue's own type and kind
+  P-->>S: intent: in progress, reopen, fix claim, request accept or FP, suggest duplicate
 ```
 
 ## Invariants
@@ -46,5 +75,7 @@ simulate: state ──► BFS path + screen values      tracker status (+resolut
   read the current status and the transitions available now, follow the shortest path of the published workflow
   (or only a direct transition when the site exposes no workflow), fill required screen fields (the resolution on
   the final step), comment on the final step. A path that does not exist is an error, never a guess.
-- Tracker 4xx and impossible paths are permanent: the job is not retried (`asynq.SkipRetry`); 429 carries
-  `Retry-After`.
+- Tracker 4xx (`PermanentError`) and impossible paths (`pathError`) report `Permanent()`: the durable-job
+  runner (`internal/infra/controller/durable_jobs.go`) buries the status-sync job without a retry. A 429
+  surfaces as `RateLimitedError` with the `Retry-After` value, but the runner ignores it and retries on its own
+  backoff (30 s doubling to 1 h, 8 attempts).

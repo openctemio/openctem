@@ -97,6 +97,7 @@ var sqlProfiles = map[string]SQLProfile{
 	"EASMLookalikeController":             SQLBatched,
 	"PageMonitorController":               SQLBatched,
 	"EASMNetworkSeedController":           SQLBatched,
+	"EASMAddressAutoAddController":        SQLBatched,
 	"TenableSCSyncController":             SQLBatched,
 	"DefectDojoSyncController":            SQLBatched,
 	"SCMSyncController":                   SQLBatched,
