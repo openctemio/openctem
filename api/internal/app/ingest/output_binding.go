@@ -258,9 +258,11 @@ func (sp *contractSplit) anyHeld() bool {
 // sensor report and returns the report to apply. In quarantine mode the
 // out-of-contract part is stored for review (never applied, even when the
 // quarantine cannot take it); in warn mode the report is applied whole.
+// held counts the findings kept for review in the quarantine; lost those
+// the quarantine could not take (they are not applied either).
 func (s *Service) bindOutputTypes(ctx context.Context, agt *sensor.Sensor, tenantID shared.ID, binding Binding,
 	report *ctis.Report, opts Options,
-) *ctis.Report {
+) (kept *ctis.Report, held, lost int) {
 	if report != nil && binding.Kind != BindingCommand {
 		// Only a command binds a report to a capability; a claim alone
 		// never drives capability-specific handling.
@@ -268,7 +270,7 @@ func (s *Service) bindOutputTypes(ctx context.Context, agt *sensor.Sensor, tenan
 	}
 	if binding.Kind != BindingCommand || report == nil ||
 		(len(report.Assets) == 0 && len(report.Findings) == 0 && len(report.Dependencies) == 0 && len(report.Endpoints) == 0) {
-		return report
+		return report, 0, 0
 	}
 	tool := binding.Tool
 	if tool == "" && report.Tool != nil {
@@ -280,11 +282,11 @@ func (s *Service) bindOutputTypes(ctx context.Context, agt *sensor.Sensor, tenan
 	setReportCapability(report, boundCapability(rules, reportCapability(report), tool))
 	s.checkCapabilityContract(ctx, agt, tenantID, tool, report)
 	if rules.empty() {
-		return report // no contract: a tool the catalog does not know, without a declaration
+		return report, 0, 0 // no contract: a tool the catalog does not know, without a declaration
 	}
 	sp := splitByContract(report, rules)
 	if !sp.anyHeld() {
-		return report
+		return report, 0, 0
 	}
 	mode := s.ResultPolicy(ctx, tenantID).Mode
 	event := auditapp.NewSuccessEvent(audit.ActionSensorResultsQuarantined, audit.ResourceTypeSensor, agt.ID.String()).
@@ -312,7 +314,7 @@ func (s *Service) bindOutputTypes(ctx context.Context, agt *sensor.Sensor, tenan
 		s.auditAsync(auditapp.AuditContext{TenantID: tenantID.String()},
 			event.WithMessage(fmt.Sprintf("Sensor report applied with %d asset(s), %d finding(s) and %d dependency(ies) its tool does not produce (warn mode)",
 				sp.heldCount(), sp.heldFindings, sp.heldDependencies)))
-		return report
+		return report, 0, 0
 	}
 
 	quarantineID := ""
@@ -342,5 +344,8 @@ func (s *Service) bindOutputTypes(ctx context.Context, agt *sensor.Sensor, tenan
 		event.WithMetadata("quarantine_id", quarantineID).
 			WithMessage(fmt.Sprintf("%d asset(s), %d finding(s) and %d dependency(ies) of types the tool does not produce were held for review, not applied",
 				sp.heldCount(), sp.heldFindings, sp.heldDependencies)))
-	return sp.kept
+	if quarantineID == "" {
+		return sp.kept, 0, sp.heldFindings
+	}
+	return sp.kept, sp.heldFindings, 0
 }
