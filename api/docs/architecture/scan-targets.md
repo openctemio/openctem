@@ -226,6 +226,24 @@ an ownership or scope decision.
   unresolvable and the counts add up, the platform completes the command
   with the same skips (only for the command's own, running sensor). A mixed
   refusal stays a failure.
+- **Refusals under a local policy.** A name the sensor's `targets.allow`
+  list cannot match because it does not resolve is refused as `unresolvable`
+  (rule `targets.allow`), not `denied_by_policy`; `denied_by_policy` is for
+  a name or address that resolves outside the allowed ranges or matches
+  `targets.deny`. A task refused as a whole whose refusal detail
+  (`N target(s) refused: "a" (unresolvable), ...`) lists only unresolvable
+  names completes with per-target skips like the case above, and is not
+  re-queued to this sensor or another (`scanrun.ParseRefusedSummary`,
+  `scanrun.UnresolvableRefusal`). A sensor that predates the reason reports
+  such a name `denied_by_policy`: the platform counts it unresolvable only
+  when its own resolution state of the same tenant says the name is
+  `not_resolving`.
+- **Run map.** A step that leaves not-resolving names out records the count
+  (`not_resolving_skipped_count` in its outcome) and the console shows "N
+  names no longer resolve, skipped by active steps". Passive steps and the
+  DNS resolution step still take the names, so dangling-DNS checks keep
+  working. The scan's include-unresolved option lets a name without evidence
+  through; it never hands an active step a name known to be dead.
 - **Console.** Run: the skip group "No longer resolve" (info tone) and the
   run note. Assets: filter `resolution=not_resolving` (`GET /assets`), the
   bulk bar's archive acts on the selection; the asset detail shows the last

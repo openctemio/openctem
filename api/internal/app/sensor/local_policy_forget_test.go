@@ -13,7 +13,7 @@ type recordingForgetter struct {
 	calls []shared.ID
 }
 
-func (f *recordingForgetter) ForgetRefusalsOf(_ context.Context, tenantID, _ shared.ID) (int64, error) {
+func (f *recordingForgetter) ForgetRefusalsOf(_ context.Context, tenantID, _ shared.ID, _ string) (int64, error) {
 	f.calls = append(f.calls, tenantID)
 	return 1, nil
 }

@@ -17,6 +17,14 @@ func TestAddress(t *testing.T) {
 		{"cloudflare v6 range", "2606:4700::1", "", "", Edge, "Cloudflare", BasisRange},
 		{"mapped v4 in range", "::ffff:104.16.1.1", "", "", Edge, "Cloudflare", BasisRange},
 		{"fastly published range", "151.101.1.1", "", "", Edge, "Fastly", BasisRange},
+		// Published edge ranges with no network data at all: a name resolving
+		// there is served by the provider's shared edge, never offered.
+		{"cloudfront v6 edge, no network data", "2600:9000:26b8:1a00:12:3a5:40:93a1", "", "", Edge, "Amazon CloudFront", BasisRange},
+		{"cloudfront v4 edge", "13.32.1.1", "", "", Edge, "Amazon CloudFront", BasisRange},
+		{"cloudfront wins over the amazon network name", "13.32.1.2", "", "AMAZON-02", Edge, "Amazon CloudFront", BasisRange},
+		{"azure front door", "13.107.246.1", "", "", Edge, "Azure Front Door", BasisRange},
+		{"imperva range", "45.60.1.1", "", "", Edge, "Imperva", BasisRange},
+		{"google front end", "142.250.1.1", "", "", CloudShared, "Google", BasisRange},
 		{"range wins over the network name", "151.101.2.2", "", "Amazon.com, Inc.", Edge, "Fastly", BasisRange},
 		{"record names a CDN", "198.51.100.1", "cloudflare", "", Edge, "Cloudflare", BasisCDN},
 		{"record names an unknown CDN", "198.51.100.1", "examplecdn", "", Edge, "examplecdn", BasisCDN},
@@ -143,6 +151,7 @@ func TestSharedFrontEnd(t *testing.T) {
 		{"104.16.1.1", true},
 		{"[2606:4700::1]", true},
 		{"::ffff:151.101.1.1", true},
+		{"2600:9000:26b8:1a00:12:3a5:40:93a1", true}, // Amazon CloudFront edge
 		{"203.0.113.7", false},
 		{"23.192.0.1", false}, // an Akamai address: no published range in the dataset
 		{"not-an-ip", false},

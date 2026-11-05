@@ -2245,6 +2245,7 @@
   "scans.step.options": "Options",
   "scans.step.outcome.gaps": "{count, plural, one {# host not fully covered} other {# hosts not fully covered}}",
   "scans.step.outcome.more": "{count, plural, one {and # more host, listed on the tasks} other {and # more hosts, listed on the tasks}}",
+  "scans.step.outcome.notResolvingSkipped": "{count, plural, one {# name no longer resolves, skipped by active steps} other {# names no longer resolve, skipped by active steps}}",
   "scans.step.outcome.seeTasks": "The hosts are listed on the step's tasks.",
   "scans.step.outcome.skipped": "{count, plural, one {# target skipped by the sensor's policy} other {# targets skipped by the sensor's policy}}",
   "scans.step.outcome.unfinished": "{count, plural, one {# target not finished} other {# targets not finished}}",
