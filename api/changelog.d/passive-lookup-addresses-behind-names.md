@@ -1,0 +1,3 @@
+### Fixed: addresses your in-scope names resolve to get their network looked up
+
+- The weekly network lookup (`lookup.asn`) of the asset coverage loop refused every address no scope entry covered and whose network was unknown, so the addresses on Attack surface > Discovery > Decisions stayed "Network unknown" for good. A passive step may now take a bare public address that one of the organization's names in scope resolves to: it sends nothing to the address and reads public routing data only. Active checks are unchanged; exclusions, the deny list and rejections still refuse first, another organization's names never count, and a failed lookup leaves the address refused.
