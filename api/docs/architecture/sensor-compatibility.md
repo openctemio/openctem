@@ -14,6 +14,38 @@ first-party sensors and an organization's own.
   for first-party products and from the organization itself for its own
   products.
 
+## Flow
+
+```mermaid
+sequenceDiagram
+    autonumber
+    box Sensor host
+    participant S as Sensor (sdk-go)
+    end
+    box Platform
+    participant H as heartbeat handler
+    participant B as sensordom.ResolveBuild
+    participant V as release lines
+    participant UI as Sensors page (fleet health)
+    end
+    S->>H: POST /api/v2/sensor/heartbeat: version, sensor and sdk members, User-Agent
+    H->>B: ResolveBuild - product, version and SDK reduced to safe tokens
+    B-->>H: stored on the sensor row
+    V-->>UI: latest from the signed release feed (or versions.yaml), minimum from versions.yaml or the organization's sensor product
+    UI->>UI: ClassifyVersion - latest, update_available, unsupported, unknown
+    UI->>UI: SDK status - current, outdated, advisory, unsupported
+    Note over UI: unsupported version and SDK advisory or unsupported are health reasons, never a refusal
+    Note over S: the operator replaces the image or binary, the same state volume keeps the identity
+```
+
+Code: `pkg/domain/sensor/build.go` (`ResolveBuild`, SDK status),
+`pkg/domain/sensor/version.go:ClassifyVersion`,
+`pkg/domain/sensor/fleet_health.go`. Nothing in this flow reaches the sensor:
+the doorbell's `update` action is defined but never sent
+(`pkg/domain/sensor/doorbell.go`), and sdk-go only logs it. A requirement a
+sensor must meet is a capability or `required_features` that the claim
+checks, so an older sensor is not offered that work.
+
 ## What a sensor declares
 
 | Declared | Where | Used for |

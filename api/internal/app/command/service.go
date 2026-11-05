@@ -92,6 +92,8 @@ type Service struct {
 	proxyRequired ProxyRequirement
 	// toolSettings is the per-sensor tool settings layer (WithToolSettings).
 	toolSettings ToolSettingsSource
+	// secrets lists a claimed job's secret refs (WithTaskSecrets).
+	secrets SecretsGranter
 	// balanceWindow is how long a fresh job is left to less-loaded sensors
 	// (claim_balance.go); balanceSet: WithClaimBalanceWindow was given.
 	balanceWindow time.Duration
@@ -497,6 +499,11 @@ func (s *Service) Claim(ctx context.Context, input ClaimInput) ([]*commanddom.Co
 		return handBack(err)
 	}
 	s.recordEgress(ctx, out)
+	// The job's secret refs (task_secrets.go) go in last, so the signature
+	// covers them.
+	if delivered, err = s.stampSecrets(ctx, input.SensorID, delivered); err != nil {
+		return handBack(err)
+	}
 	return s.signClaimed(ctx, tenantID, input.SensorID, delivered, pinned), nil
 }
 

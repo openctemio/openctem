@@ -72,6 +72,9 @@ type Match struct {
 	// (software_versions.purl, with its version, without qualifiers).
 	Package bool
 	PURL    string
+	// HostedBy is the provider whose shared front end serves the asset
+	// (hosting.go); empty when the asset may be the organization's own.
+	HostedBy string
 }
 
 // CVEInfo is the corpus data a finding carries.
@@ -161,6 +164,21 @@ type VersionSighting struct {
 	Sightings  int
 	FirstSeen  time.Time
 	LastSeen   time.Time
+	// Evaluated: this version's matches are up to date (it has been
+	// evaluated against the current ranges). A version not evaluated yet
+	// has no matches, which says nothing about whether it is fixed.
+	Evaluated bool
+}
+
+// ObservedVersionRef refreshes the version a matcher finding is recorded on
+// when the product at its location changed to another version that the same
+// CVE still matches.
+type ObservedVersionRef struct {
+	FindingID shared.ID
+	ProductID shared.ID
+	VersionID shared.ID
+	Version   string
+	Qualifier string
 }
 
 // CloseKind is why the matcher closes a finding.
@@ -227,6 +245,11 @@ type Store interface {
 	// proposals (method source_reported, from the software inventory) of
 	// these findings of the tenant: their version matches again.
 	CancelVersionProposals(ctx context.Context, tenantID shared.ID, findingIDs []shared.ID) (int, error)
+	// UpdateObservedVersion records, on open matcher-owned findings of the
+	// tenant, the version the CVE matches now (a product upgraded to another
+	// version that is still affected). It changes nothing else, and only a
+	// finding that still has the status it was read with is touched.
+	UpdateObservedVersion(ctx context.Context, tenantID shared.ID, refs []ObservedVersionRef) (int, error)
 	// ReopenFindings reopens matcher-owned findings the matcher had closed.
 	ReopenFindings(ctx context.Context, tenantID shared.ID, ids []shared.ID) ([]shared.ID, error)
 	// EnsureDefinitions makes sure each CVE has its global catalog row and

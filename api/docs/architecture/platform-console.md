@@ -206,6 +206,47 @@ chart, the Ansible kit): mode (`port` | `host` | `off`), host name, port
 (default 8443) and client networks (private by default). Host mode is the
 recommended production setup. Details: [Docker deployment](../deployment/docker.md#platform-console).
 
+## Sign-in, elevation and break-glass flow
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant B as Console browser (own site, ADMIN_LISTEN_ADDR)
+    box API, admin plane
+    participant H as AdminConsoleHandler
+    participant S as adminconsole.Service
+    participant L as admin_audit_logs (hash-chained)
+    end
+    participant DB as Postgres users, admin_users, admin_sessions
+    B->>H: POST /api/v1/admin/auth/login {email, password} (crossSite, 5/min, CAPTCHA after 3 failures per IP in 15 min)
+    H->>S: Start - same password and lockout counter as the account
+    alt unknown, wrong, not an administrator, inactive, locked, IdP required (non break-glass)
+        S-->>B: 401 Wrong email or password, audit console.login_failed
+    else
+        S-->>B: cookie admin_mfa (HttpOnly, Strict, path /api/v1/admin/auth, 5 min), methods
+        B->>H: POST /admin/auth/mfa {code} or WebAuthn assertion (403 WEBAUTHN_REQUIRED by policy)
+        S->>DB: openVerifiedSession - 8 h, 15 min idle, at most 3, cookies admin_session + admin_csrf
+        S->>L: console.login, or console.break_glass_sign_in (high) and an alert to the other administrators
+    end
+    B->>H: POST /admin/auth/elevate {role, reason, 15-60 min} (freshStepUpOpensWindow)
+    H->>L: console.elevated first, 503 AUDIT_UNAVAILABLE when it cannot be written
+    B->>H: any write (X-Admin-Step-Up when the route needs it)
+    H->>L: admin.write_started, then the handler, four-eyes routes answer 428 SECOND_APPROVAL_REQUIRED
+```
+
+Break-glass accounts come only from the `bootstrap-admin` CLI
+(`internal/tools/bootstrapadmin`, `internal/adminbootstrap`): `-email` makes
+the primary super administrator, and `-backup-email` (or an explicit
+`-no-backup`) a break-glass super administrator with its own `users` row and
+a 16-character temporary password; one-time credentials print only to a
+terminal (`-print-secrets` otherwise). A break-glass account keeps the
+password path when an IdP is required, still needs its second factor, cannot
+sign in on the main site (`platform_admin_gate.go`, also refused at refresh
+and token exchange), cannot join an organization (409
+`ACCOUNT_CANNOT_JOIN_ORGANIZATION`) and cannot approve a four-eyes request.
+Other administrators may also be members on the main site (one identity);
+only break-glass accounts are console-only.
+
 ## Security controls
 
 - Separate origin and process: the browser keeps tenant pages from reading

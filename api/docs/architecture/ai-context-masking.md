@@ -5,7 +5,12 @@ and preview API). Planned: the AI analysis executor that uses the bundle and
 the run map for every AI result, the console page, and resolution at the tool
 boundary of an analyst worker's sandbox.
 
-Every context the platform sends to an AI model is pseudonymised. The model
+Every context bundle the platform builds for an AI agent's analysis
+(`internal/app/aianalysis`) is pseudonymised, and so is the AI triage prompt
+(`aitriage.buildTriagePromptSafe`, see [ai-triage.md](ai-triage.md)): it keeps
+its own layout but masks its free-text fields with a masker made by
+`aibundle.NewMasker` from the same input (policy, organization and asset names)
+an AI agent's run uses. The model
 sees typed placeholders instead of hosts, addresses, e-mail addresses, user
 and organization names, URL parameters and ticket ids; secrets never reach it
 at all. The platform alone keeps the mapping and turns the model's output
@@ -83,6 +88,10 @@ rekey registry). Rows are scoped by organization (a run id of another
 organization is not found), expire after `AI_MASK_MAP_TTL` (default 7 days)
 and are purged hourly by `ai-mask-map-purge`; they go with the organization.
 Secrets are never in the map. Nothing sends a map to a model or a worker.
+
+AI triage keeps no run map row: its masker lives in memory for one request
+(a fresh key each time, so a retry gets new placeholders), the answer is
+unmasked before it is validated and stored, and the map is dropped.
 
 ## Turning output back into real values
 

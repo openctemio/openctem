@@ -64,11 +64,20 @@ On `release/vX.Y.Z` (and on `main` right after it merges) it runs with
 |---|---|
 | `api/internal/versions/versions.yaml`: the API's embedded copy, byte for byte (`go:embed` cannot reach outside the `api/` module); every Go default reads it | all |
 | `api/deploy/docker-compose.sensor.yml` `SENSOR_VERSION` default | sensor.latest |
-| `web/src/features/ci-runners/lib/ci.ts` `CI_RELEASE` | ci.latest |
+| `web/src/features/ci-runners/lib/ci.ts` `CI_RELEASE_FALLBACK` | ci.latest (the console uses it only when the API names no CI runner release) |
 
 No Go file holds a version, so bumping a sensor product, the SDK or the CI
 runner changes `versions.yaml` and its embedded copy only (a shell test runs
 the bump on a fixture and checks the changed files).
+
+Nobody bumps a `latest` by hand or by a pull request: when a train is cut,
+`cut-release.sh` moves each component's `latest` forward to its newest
+published release (`refresh-latest.sh`) in the version commit, and running
+instances learn newer releases from the signed release feed
+([version-check.md](version-check.md#component-releases)). A `min` changes
+only with a protocol change, by hand. The release preflight reports a stale
+`latest` and blocks only on a `latest` or `min` that is not a published
+release.
 
 ## Proposed version
 
@@ -117,6 +126,46 @@ the last tag (nor from `ui/<last tag>`, the imported web history):
    - `helm-charts`: `appVersion` and the chart version.
 6. If the release needs release notes or an upgrade page, write it in
    `openctemio/docs`.
+
+### Signing and verification
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant T as Tag vX.Y.Z on main
+    box GitHub Actions (OIDC issuer token.actions.githubusercontent.com)
+    participant DP as docker-publish.yml
+    participant RL as release.yml, release-dist.yml
+    end
+    participant SG as Sigstore (Fulcio, Rekor)
+    participant R as ghcr.io and the GitHub Release
+    participant OP as Operator, Ansible signatures.yml, airgap mirror-images.sh
+    T->>DP: build api, web, console, openctem, gateway, migrations, seed
+    DP->>SG: keyless certificate for docker-publish.yml@refs/tags/vX.Y.Z
+    DP->>R: cosign sign digest, SLSA provenance, SPDX SBOM attestation
+    DP->>R: offline-bundle OCI archives with referrers, openctem-images-vX.Y.Z.txt + .sigstore.json
+    T->>RL: binary archives, per-archive SBOM, checksums-sha256.txt
+    RL->>R: cosign sign-blob bundle (verified at once), provenance
+    OP->>R: pull by digest
+    OP->>OP: cosign verify - identity .../docker-publish.yml@refs/tags/vX.Y.Z, issuer GitHub
+    alt any check fails
+        OP->>OP: stop before compose pull or registry push
+    end
+```
+
+| Artifact | Signature | Verified automatically by |
+|---|---|---|
+| The seven images above | cosign keyless, provenance, SBOM attestation | Ansible `roles/openctem/tasks/signatures.yml` before pull (api, web, gateway, migrations, console); `deploy/airgap/mirror-images.sh` before and after the copy |
+| Binary archives | via the signed `checksums-sha256.txt` | `image-kit/unpack.sh` |
+| `openctem-images-vX.Y.Z.txt` | sign-blob bundle | `mirror-images.sh bundle` |
+| Release feed `openctem-releases.json` | sign-blob, re-signed every 6 h, valid 30 d | the API's update check ([signing keys](signing-keys.md)) |
+| develop and PR images (`build-images.yml`) | provenance only, no cosign signature | none |
+| Helm chart package, Ansible kit, compose files | not signed | none |
+
+The Docker Hub copies are made with `crane copy` per tag; whether the
+signature and attestation referrers travel with them is not verified, so
+verify against ghcr.io. A `workflow_dispatch` build signs with a branch ref
+and does not satisfy the tag identity.
 
 ### Hotfix
 

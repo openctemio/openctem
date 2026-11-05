@@ -56,7 +56,7 @@ func TestReconcile_VersionChangeClosesUnderClosingMode(t *testing.T) {
 			store.existing = []softwarematch.MatcherFinding{{ID: id, AssetID: asset, CVEID: "CVE-1", Fingerprint: "gone",
 				Status: "new", ProductID: &product, VersionID: &v, Location: "tcp/443"}}
 			store.links[softwarematch.LinkKey{AssetID: asset, ProductID: product, VersionID: v, Location: "tcp/443"}] =
-				softwarematch.LinkInfo{State: softwarematch.LinkUpgraded, VersionEvaluated: true}
+				softwarematch.LinkInfo{State: softwarematch.LinkUpgraded, VersionEvaluated: true, Now: &softwarematch.VersionSighting{Evaluated: true}}
 			w := &proposalWriter{}
 			svc := NewService(store, fakePolicy{tenant.VulnMatchingSettings{Enabled: true}}, w, logger.NewNop())
 			if !c.unwired {
@@ -94,7 +94,7 @@ func TestReconcile_VersionChangeProposalCarriesEvidence(t *testing.T) {
 	store.links[softwarematch.LinkKey{AssetID: asset, ProductID: product, VersionID: v}] = softwarematch.LinkInfo{
 		State: softwarematch.LinkUpgraded, VersionEvaluated: true, Product: "WordPress", FromVersion: "7.1.3",
 		Now: &softwarematch.VersionSighting{VersionID: shared.NewID(), Version: "7.1.4", Source: "technology",
-			Class: "probe", Confidence: 85, Sightings: 3, FirstSeen: last.Add(-36 * time.Hour), LastSeen: last},
+			Class: "probe", Confidence: 85, Sightings: 3, Evaluated: true, FirstSeen: last.Add(-36 * time.Hour), LastSeen: last},
 	}
 	w := &proposalWriter{}
 	svc := NewService(store, fakePolicy{tenant.VulnMatchingSettings{Enabled: true}}, w, logger.NewNop())

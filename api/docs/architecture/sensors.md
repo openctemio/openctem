@@ -6,6 +6,8 @@
 > [RFC-029](../rfcs/RFC-029-sensor-protocol-v2-and-sdk-stability.md) (everything else; protocol v1 retired 2026-10-05).
 > Routing of scanners by network: [scan-zones.md](scan-zones.md).
 > How scan traffic identifies itself to targets (User-Agent and headers, merged platform and organization layers): [scan-identification.md](scan-identification.md).
+> Secrets a sensor's tools use (provider keys, proxy pool credentials; refs in
+> the signed job, values from a sealed per-task fetch): [task-secrets.md](task-secrets.md).
 > Proxies for scan traffic (proxy pools, built): [sensor-proxies.md](sensor-proxies.md);
 > the wider egress design: [RFC-034](../rfcs/RFC-034-sensor-network-egress.md),
 > section [Network egress and proxies](#network-egress-and-proxies-rfc-034-proposed).
@@ -118,6 +120,45 @@ ranges, one for the assets of the known fingerprints and one for those
 assets' names and addresses.
 
 ## Heartbeat doorbell
+
+```mermaid
+sequenceDiagram
+    autonumber
+    box Sensor host
+    participant S as sdk-go BaseSensor + Doorbell
+    end
+    box Platform
+    participant MW as V2Throttle + Authenticate
+    participant HD as SensorControlV2Handler.Heartbeat
+    participant DB as doorbell.Ring
+    participant SV as SensorService.UpdateHeartbeat
+    end
+    S->>MW: POST /api/v2/sensor/heartbeat (signed), running ids, load, manifest_digest, local_policy, outbox, instance_id
+    alt over budget (10/s per sensor, 500/s per tenant)
+        MW-->>S: 429 rate-limited, jittered Retry-After
+    else signature, key or sensor refused
+        MW-->>S: 401 unauthenticated (AuthGate backs off 30 s to 10 min)
+    end
+    MW->>HD: sensor and tenant from the key
+    HD->>DB: pending_jobs, next_heartbeat_seconds, actions, config_version, content_version
+    alt sensor disabled (paused)
+        HD-->>S: status paused, actions pause (no write)
+    else active
+        HD->>SV: guarded write WHERE status active - last seen, deadline, instance id, renew held leases below the threshold
+        SV->>SV: ObserveInstance - three alternations in 15 min set identity_cloned_at
+        HD->>HD: cancel_command_ids, stop_command_ids, send_manifest when the digest is unknown or a recheck is due
+        HD-->>S: 200 answer
+    end
+    S->>S: clamp interval to 5 s to 5 min, act on actions, ring the poller when pending_jobs > 0, sync content on a new content_version
+```
+
+Code: `internal/infra/http/routes/sensor_v2.go` (budgets),
+`handler/sensor_results_v2_handler.go:Authenticate`,
+`handler/sensor_control_v2_handler.go` (heartbeat), `internal/app/sensor/doorbell.go:Ring`,
+`internal/app/sensor/service.go:UpdateHeartbeat`, sdk-go `core/doorbell.go:Handle`,
+`core/auth_gate.go`. A network error or 5xx makes the sensor send the next
+heartbeat after about 10 s (sdk-go `core/base_sensor.go`); the stale report is
+not retried.
 
 `POST /api/v2/sensor/heartbeat` is also a doorbell (RFC-023 §9.2a): it tells
 the sensor *that* something is waiting for it and when to ring again. It never
@@ -1559,6 +1600,16 @@ command past its expiry reads `expired`); a lost claim race is `409
 command-claimed`; another sensor's or tenant's command is `404
 command-not-found`. The state rules and the atomic claim live in the command service.
 
+**Task secrets** ([task-secrets.md](task-secrets.md)). A claimed scan,
+retest, validate or proxy test job carries the payload member `secrets`
+(names only, covered by the job signature). The values come from
+`POST /api/v2/sensor/commands/{id}/secrets`: a body signed by the sensor's
+key-bound identity with the lease epoch and a single-use reply key, answered
+`application/vnd.openctem.secrets+sealed` (HPKE-sealed to that key,
+`Cache-Control: no-store`) only to the trusted lease holder for refs
+recorded at claim, at most `max_fetches` times; every refusal is `404
+command-not-found`. v2 HTTPS only.
+
 **Hello** lists `results` plus the control features (`heartbeat`,
 `commands`, `suppressions`, `fingerprints`, `keys`). `deprecations` is
 empty.
@@ -1653,6 +1704,41 @@ report), `effective`, and `capability_mismatch` (`tools_not_installed`,
 limit.
 
 ## Sensor manifest
+
+```mermaid
+sequenceDiagram
+    autonumber
+    box Sensor host
+    participant S as sdk-go BaseSensor
+    end
+    box Platform
+    participant H as SensorControlV2Handler
+    participant M as SensorService.RegisterManifest
+    participant C as tool catalog
+    end
+    S->>S: ToolRegistry probes (LookPath, --version, cache 10 min), local policy tools.allow filter
+    S->>S: manifest schema 1, digest sha256 of canonical JSON
+    S->>H: PUT /api/v2/sensor/manifest (signed, at most 256 KiB)
+    H->>M: RegisterManifest(tenant from the key)
+    M->>C: add declared tools to the organization's catalog, keep only known tools and capabilities
+    alt digest unchanged and nothing newly known
+        M->>M: touch only
+    else changed
+        M->>M: store, effective_tools and effective_capabilities regenerate, timeline events
+    end
+    H-->>S: policy - allowed tools, capabilities, max jobs
+    loop every heartbeat
+        S->>H: manifest_digest only
+        H-->>S: send_manifest when the platform needs it again
+    end
+```
+
+Code: `internal/app/sensor/manifest.go` (`RegisterManifest`,
+`LoadManifestRechecks`), `internal/app/sensor/declared_tools.go`,
+`internal/app/sensor/service.go` (catalog filter), sdk-go `core/manifest.go`,
+`core/tool_registry.go`, `core/base_sensor.go`. A failed `PUT` is retried
+after a minute. The sensor runs no digest check of the tool binaries; image
+builds pin tool versions and checksums.
 
 [RFC-033](../rfcs/RFC-033-sensor-manifest.md). A manifest is what a sensor
 *is*, as opposed to its load. It contains:
@@ -1899,6 +1985,8 @@ inside the reporting organization.
 | `zone_visibility: private` on a DNS name | Exposure `private`, not internet-accessible | Also a root domain that only private-zone names name (`private_zone.go`). |
 | A network device's address (PRTG, Splunk) | Matched to the existing device | Network devices only (not segments, hosts or address assets), in the IP trust window, one candidate only ([asset-identity-resolution.md](asset-identity-resolution.md)). |
 | An asset that matches a scope exclusion | Not added | Item error `asset_excluded`, counted neither as accepted nor as rejected, so it does not stop the not-seen sweep of a complete report. |
+| An asset or finding of a type the command's tool does not produce | Held for review in the results quarantine | Item error `held_for_review`, counted as quarantined (a finding held for its own type too, even when its asset was applied); `quarantine_full` and rejected when the quarantine could not keep it. |
+| An asset beyond the cap on assets recorded outside the command's targets (see above), or outside the upload actor's data scope | Not applied | Item error `too_many` or `out_of_scope` on the asset and on its findings, counted as rejected. `asset_invalid` is left for an asset ingest could not store for any other reason. |
 | `coverage_type: full` from a trusted collector | Refresh of its own assets, unlisted ones marked not seen | RFC-040 §12, [sensor-result-binding.md](sensor-result-binding.md). Partial and incremental reports keep the unsolicited limits and never mark anything. |
 
 ## Result binding and the results quarantine (RFC-040)
@@ -2267,6 +2355,40 @@ anywhere. Each scan command carries a layered budget in its payload
   since a target last finished.
 
 ## Sensor-local policy (RFC-040 §5.7)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor O as Host owner
+    box Sensor host
+    participant S as sdk-go core.LocalPolicy
+    end
+    box Platform
+    participant HB as heartbeat and manifest
+    participant G as command dispatch gate
+    participant RF as command refusal handling
+    end
+    O->>S: policy file, SIGHUP or restart (strict load, exit 2 at start on error)
+    S->>HB: local_policy - state, required, source, digest, kill_switch, summary (never the ranges)
+    HB->>HB: sanitize and store, a changed policy lifts the sensor's refusal exclusions
+    G->>G: grant, active scanning, intensity, sensordom.Accepts(report) - else local_policy_refuses
+    G-->>S: signed job within the organization's scope
+    S->>S: AdmitCommandTargets - remove refused targets, or refuse the whole job
+    alt whole job refused
+        S->>RF: POST .../fail with refusal layer, rule, detail
+        RF->>RF: routed work re-queued without this sensor, fails after 3 refusals or 6 h
+    else partial
+        S->>HB: complete with refused_targets (at most 100) and refused_targets_total
+    end
+```
+
+Code: sdk-go `core/local_policy.go`, `core/local_policy_enforce.go`,
+`core/refusal.go`; `internal/app/sensor/local_policy.go`,
+`internal/app/command/local_policy.go`, `internal/app/command/refusal.go`.
+From v0.20.0: the refusal records `PolicyKey(digest, state)`;
+`ForgetRefusalsOf` keeps the exclusion of a sensor that already refused under
+the same policy, and a refusal whose targets all fail to resolve completes the
+task with per-target skips (`handler/sensor_control_v2_handler.go`).
 
 > **Version requirement.** Enforcement is in sdk-go#140 and sensor#119, merged
 > after sensor v0.8.0. Sensor v0.8.0 and older ignore `SENSOR_LOCAL_POLICY`,

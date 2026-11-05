@@ -88,9 +88,15 @@ func (s *Service) handleRefusal(ctx context.Context, cmd *commanddom.Command, in
 		return nil, false, nil
 	}
 	rec := commanddom.RefusalRecord{SensorID: input.SensorID, Layer: ref.Layer, Rule: ref.Rule, Detail: ref.Detail, At: s.now()}
-	if !cmd.IsPlatformJob {
-		// A shared sensor is never named to the organization.
-		rec.SensorName = s.sensorName(ctx, cmd.TenantID, input.SensorID)
+	sensorRow := s.sensorRow(ctx, cmd.TenantID, input.SensorID)
+	if sensorRow != nil {
+		if lp := sensorRow.LocalPolicy; lp != nil {
+			rec.PolicyDigest = commanddom.PolicyKey(lp.Digest, lp.State)
+		}
+		if !cmd.IsPlatformJob {
+			// A shared sensor is never named to the organization.
+			rec.SensorName = sensorRow.Name
+		}
 	}
 	prior, err := store.CommandRefusals(ctx, cmd.TenantID, cmd.ID)
 	if err != nil {
@@ -146,18 +152,18 @@ func (s *Service) handleRefusal(ctx context.Context, cmd *commanddom.Command, in
 	return cmd, true, nil
 }
 
-// sensorName is the name of the tenant's sensor id for a refusal record
-// ("" when it cannot be read; the record keeps the id).
-func (s *Service) sensorName(ctx context.Context, tenantID shared.ID, id string) string {
+// sensorRow is the tenant's sensor id (nil when it cannot be read; the
+// record keeps the id).
+func (s *Service) sensorRow(ctx context.Context, tenantID shared.ID, id string) *sensordom.Sensor {
 	sid, err := shared.IDFromString(id)
 	if s.sensors == nil || err != nil {
-		return ""
+		return nil
 	}
 	a, err := s.sensors.GetByTenantAndID(ctx, tenantID, sid)
-	if err != nil || a == nil {
-		return ""
+	if err != nil {
+		return nil
 	}
-	return a.Name
+	return a
 }
 
 // anotherSensorAccepts reports whether a sensor that has not refused cmd

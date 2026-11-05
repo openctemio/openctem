@@ -132,6 +132,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/sla"
 	"github.com/openctemio/openctem/api/internal/app/storagequota"
 	"github.com/openctemio/openctem/api/internal/app/taggov"
+	tasksecretapp "github.com/openctemio/openctem/api/internal/app/tasksecret"
 	"github.com/openctemio/openctem/api/internal/app/template"
 	tenantapp "github.com/openctemio/openctem/api/internal/app/tenant"
 	"github.com/openctemio/openctem/api/internal/app/tenantai"
@@ -139,6 +140,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/threatsource"
 	"github.com/openctemio/openctem/api/internal/app/ticketing"
 	appticketmap "github.com/openctemio/openctem/api/internal/app/ticketmap"
+	toolsourceapp "github.com/openctemio/openctem/api/internal/app/toolsource"
 	"github.com/openctemio/openctem/api/internal/app/validation"
 	"github.com/openctemio/openctem/api/internal/app/versioncheck"
 	vexapp "github.com/openctemio/openctem/api/internal/app/vex"
@@ -770,6 +772,11 @@ type Services struct {
 	SensorGrant *sensorgrant.Service
 	ScanZone    *scanzoneapp.Service
 	ProxyPool   *proxypoolapp.Service
+	// ToolSource holds the organization keys of third-party tool sources.
+	ToolSource *toolsourceapp.Service
+	// TaskSecrets lists a claimed job's secret refs and answers the sealed
+	// per-task fetch.
+	TaskSecrets *tasksecretapp.Service
 	// ScanWindow manages scan window policies and overrides (RFC-067);
 	// ScanWindowResolver finds what governs targets for the claim, the
 	// trigger and the API.
@@ -1211,9 +1218,6 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// The user service lets AddMember enforce Security.AllowedDomains and lets
 	// the suspend/reactivate notifier resolve the recipient.
 	s.Tenant.SetUserService(s.User)
-	// Requiring SSO needs sso.enforcement for the organization; the sweep turns it off
-	// after the grace once the organization lost it.
-	s.Tenant.SetSSOFeatureGate(s.Entitlement, repos.Tenant)
 
 	// Initialize asset services
 	s.Asset = asset.NewAssetService(repos.Asset, log)
@@ -1368,6 +1372,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.ThreatModel.SetDataScope(s.DataScope)
 	s.AssetRelationship = asset.NewAssetRelationshipService(repos.AssetRelationship, repos.Asset, log)
 	s.AssetRelationship.SetDataScope(s.DataScope)
+	s.AssetRelationship.SetGraphReader(repos.AssetRelationship)
 	s.RelationshipSuggestion = asset.NewRelationshipSuggestionService(repos.RelationshipSuggestion, repos.Asset, repos.AssetRelationship, log)
 	s.RelationshipSuggestion.SetDataScope(s.DataScope)
 	s.AssetImport = asset.NewAssetImportService(repos.Asset, log)
@@ -1942,6 +1947,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Retest.SetAuditLogger(s.Audit)
 	// RFC-057 R2: a confirmed fix resolves only when the tenant opted in.
 	s.Retest.SetPolicy(retestapp.TenantPolicy{Tenants: repos.Tenant})
+	s.Retest.SetClosureSettings(s.Tenant) // the organization's closing mode decides a confirmed fix's close
 
 	// Finding evidence (docs/architecture/finding-evidence.md): secret values
 	// are sealed with the platform key (re-keyed by cmd/rekey).
@@ -2057,6 +2063,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// (docs/architecture/ai-context-masking.md).
 		s.AIMasking = tenantai.NewMaskingService(repos.TenantAISettings, s.Vulnerability, repos.Asset, repos.Tenant,
 			aibundle.NewBuilder(aiEgress), s.Audit, log)
+		// AI triage masks its prompt under the same policy and seeded names.
+		s.AITriage.SetMaskingInputs(s.AIMasking)
 		s.AIMaskMaps = aimaskmap.NewStore(repos.AIMaskMaps, s.Encryptor, cfg.AITriage.MaskMapTTL)
 		// A confident false-positive verdict on a medium or low finding is
 		// recorded as a pending approval for a person; never applied.
@@ -2413,6 +2421,13 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Proxy pools for scan traffic: credentials encrypted with the
 	// credentials key, never stored in clear.
 	s.ProxyPool = proxypoolapp.NewService(repos.ProxyPool, s.Encryptor, s.Audit, log)
+	// Tool source keys: encrypted with the credentials key, write-only,
+	// delivered only to the sensor holding a task of the organization's job.
+	s.ToolSource = toolsourceapp.NewService(repos.ToolSourceKey, s.Encryptor, s.Audit, log)
+	// Task secrets: the refs a claimed job may use (in its signed payload)
+	// and the sealed per-task fetch. The command reader is set once the
+	// command service exists.
+	s.TaskSecrets = tasksecretapp.NewService(repos.CommandSecretGrant, nil, repos.SensorGrant, s.ToolSource, s.ProxyPool, s.Audit, log)
 	// The Test button: sensors test the endpoints, the platform never
 	// connects to a proxy. Disabled when no https address is known for the
 	// echo (PROXY_TEST_ECHO_URL, SENSOR_PUBLIC_API_URL or APP_URL).
@@ -2474,6 +2489,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// Per-sensor tool settings ride on every scan job, inside the signed
 		// payload (settings_layers.sensor).
 		command.WithToolSettings(s.Sensor),
+		// The job's secret refs ride in the signed payload (secrets).
+		command.WithTaskSecrets(s.TaskSecrets),
 		// RFC-052 §5: each sensor's grant, before every other gate.
 		command.WithGrants(repos.SensorGrant, s.Sensor),
 		// RFC-055 §6.3: the tier is assigned from the tool contract.
@@ -2528,6 +2545,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// that lost access or opted out keeps its queued shared jobs waiting).
 	cmdOpts = append(cmdOpts, command.WithSharedAccess(s.SharedSensorsAllowed))
 	s.Command = command.NewService(repos.Command, log, cmdOpts...)
+	s.TaskSecrets.SetCommands(s.Command)
 	s.SensorContent = sensorapp.NewContentService(repos.Sensor, s.Sensor, repos.SensorContentPolicy, repos.Command, s.Audit, log)
 	// Tenable.sc sensor connector (RFC-047): connector_sync commands pinned to
 	// the integration's sensor, followed to keep the sync cursor.
@@ -2600,7 +2618,16 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// A nuclei takeover-template match from a tenant scan confirms an open
 	// dangling_cname as subdomain_takeover (RFC-036 P1).
 	if repos.EASMDNS != nil && repos.Exposure != nil {
-		s.Ingest.SetTakeoverConfirmer(easmdnsapp.NewTakeoverConfirmer(repos.EASMDNS, postgres.NewEASMExposureWriter(&postgres.DB{DB: deps.DB}, postgres.NewEASMAlerter(&postgres.DB{DB: deps.DB})), log))
+		confirmer := easmdnsapp.NewTakeoverConfirmer(repos.EASMDNS, postgres.NewEASMExposureWriter(&postgres.DB{DB: deps.DB}, postgres.NewEASMAlerter(&postgres.DB{DB: deps.DB})), log)
+		// A takeover match on a name hosted by a listed provider (its CNAME
+		// target always resolves) is confirmed from the name's CNAME chain,
+		// read through the platform's resolver (DNS only).
+		if d, err := dnsprobe.New(dnsprobe.Config{Server: cfg.Worker.EASMDNSResolver, QPS: 5}); err != nil {
+			log.Warn("takeover confirmation limited to open dangling CNAMEs: no resolver", "error", err)
+		} else {
+			confirmer.SetResolver(d)
+		}
+		s.Ingest.SetTakeoverConfirmer(confirmer)
 	}
 	// CT names become inventory assets through this same ingest path, with
 	// attribution evidence (RFC-036 P0). Wired here because the CT monitor is
@@ -2621,6 +2648,11 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// A tool ported to the tool contract declares what it produces in its
 	// sensor's manifest; that narrows what its reports may carry.
 	s.Ingest.SetToolContractSource(repos.Sensor)
+	// A new descriptor can declare what held reports carry: re-check this
+	// sensor's held items (quarantine_release.go).
+	s.Sensor.SetManifestChangedHook(func(tenantID, sensorID shared.ID) {
+		s.Ingest.ReleaseHeldForSensor(tenantID, sensorID, quarantineRetention(cfg))
+	})
 	s.Ingest.SetDataFlowRepository(repos.DataFlow)          // Wire data flow persistence
 	s.Ingest.SetComponentRepository(repos.Component)        // Wire component linking for SCA findings
 	s.Ingest.SetLicenseEvaluator(s.LicensePolicy)           // License policy on every package write
@@ -3000,6 +3032,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// service when a v2 report of a command finished, so a chained step
 	// waiting for it is planned.
 	s.Ingest.SetStepOutputRecorder(scanHops)
+	s.Ingest.SetStepInfoRecorder(scanHops)
+	s.Ingest.SetStepDispositionRecorder(scanHops)
 	s.Ingest.SetCommandIngestedHook(s.ScanRun.OnCommandIngested)
 
 	// Wire up scan workflow deactivator to tool service for cascade deactivation
@@ -3215,7 +3249,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// manual import. Labeled discovery_source=secret_scan so it stays distinct
 	// from an external breach import. Reuses the same exposure repo + state
 	// history as the credential-import service.
-	s.Ingest.SetExposureBridge(exposurebridge.NewBridge(repos.Exposure, repos.ExposureStateHistory, log))
+	exposureBridge := exposurebridge.NewBridge(repos.Exposure, repos.ExposureStateHistory, log)
+	s.Ingest.SetExposureBridge(exposureBridge)
+	s.Ingest.SetTemplateMatchProjector(exposureBridge)
 
 	// Continuous attack-surface discovery: project recon-discovered assets (open
 	// ports, exposed services, weak/expiring TLS certificates) into the Exposure
@@ -3622,9 +3658,9 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	} else {
 		log.Warn("sso: no Redis client; sign-in state kept in process (single-replica only)")
 	}
-	// Configuring SSO connections needs sso.connections for the organization; sign-in
-	// through a configured connection is never gated.
-	s.SSO.SetFeatureGate(s.Entitlement)
+	// Creating another SSO connection is capped by sso_connections; sign-in
+	// through a configured connection and requiring SSO are never limited.
+	s.SSO.SetLimits(s.Entitlement)
 
 	// SSO P1: DNS-TXT domain-ownership verification. Wired as the PRIMARY JIT
 	// auto-provisioning gate — a non-member is auto-joined only when the email

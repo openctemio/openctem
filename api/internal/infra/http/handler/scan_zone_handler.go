@@ -481,6 +481,8 @@ var scanZoneErrorCodes = map[string]bool{
 	// governed scan's run is refused until it is approved.
 	"SCAN_APPROVAL_REQUIRED": true,
 	"SCAN_APPROVAL_PENDING":  true,
+	// A trigger context that sets a platform-owned key.
+	"TRIGGER_CONTEXT_REFUSED": true,
 }
 
 // scanZoneErrorCode returns the contract code carried by err, or fallback.
