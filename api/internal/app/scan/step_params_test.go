@@ -126,3 +126,18 @@ func TestSetRunStepParams(t *testing.T) {
 		t.Fatal("not copied")
 	}
 }
+
+// The override is checked on top of the step's own settings: a step whose
+// settings are not valid as a whole refuses the entry that would run on it.
+func TestApplyStepParams_RefusesWhenMergedConfigIsInvalid(t *testing.T) {
+	s, sc := stepParamsFixture()
+	steps := s.stepRepo.(fakeSteps).steps
+	steps[0].Config = map[string]any{"not_a_setting": 1} // an auto step with a key no capability takes
+	err := s.applyStepParams(context.Background(), sc, scan.StepParams{"ports": {"ports": "80"}})
+	if !errors.Is(err, shared.ErrValidation) {
+		t.Fatalf("err = %v, want a validation refusal", err)
+	}
+	if sc.StepParams != nil {
+		t.Fatal("refused params were stored")
+	}
+}
