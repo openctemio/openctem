@@ -123,7 +123,12 @@ func (s *Service) Transition(ctx context.Context, t Transition, in TransitionInp
 				return nil, err
 			}
 			s.recordEgress(ctx, []*commanddom.Command{delivered})
-			cmd = delivered
+			// The secret refs of this claim, recorded again (same epoch).
+			stamped, err := s.stampSecrets(ctx, in.SensorID, []*commanddom.Command{delivered})
+			if err != nil {
+				return nil, err
+			}
+			cmd = stamped[0]
 			if s.jobs != nil {
 				signed, err := s.signJob(ctx, in.SensorID, cmd, s.enforcesLimitsFor(ctx, cmd.TenantID, in.SensorID))
 				if err != nil {
@@ -172,6 +177,11 @@ func (s *Service) Transition(ctx context.Context, t Transition, in TransitionInp
 		}
 		if err == nil {
 			s.recordEgress(ctx, []*commanddom.Command{out})
+			// The job's secret refs (task_secrets.go), before the signature.
+			var stamped []*commanddom.Command
+			if stamped, err = s.stampSecrets(ctx, in.SensorID, []*commanddom.Command{out}); err == nil {
+				out = stamped[0]
+			}
 		}
 		if err == nil && s.jobs != nil {
 			out, err = s.signJob(ctx, in.SensorID, out, s.enforcesLimitsFor(ctx, stored.TenantID, in.SensorID))

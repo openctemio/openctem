@@ -82,6 +82,22 @@ const (
 	ActionEASMNetworkSeedExpanded Action = "easm_network_seed.expanded"
 )
 
+// Bulk decisions on the Decisions card (research/425): one event per
+// decision, listing its items; each scope entry it adds is audited too.
+const (
+	ActionEASMAddressesAdded       Action = "easm_address_decision.added"
+	ActionEASMAddressesRejected    Action = "easm_address_decision.rejected"
+	ActionEASMNetworkDeclined      Action = "easm_declined_network.added"
+	ActionEASMNetworkDeclineUndone Action = "easm_declined_network.deleted"
+)
+
+var _ = registerActions("easm", map[Action]Severity{
+	ActionEASMAddressesAdded:       SeverityHigh,
+	ActionEASMAddressesRejected:    SeverityMedium,
+	ActionEASMNetworkDeclined:      SeverityMedium,
+	ActionEASMNetworkDeclineUndone: SeverityMedium,
+})
+
 var _ = registerActions("easm", map[Action]Severity{
 	ActionEASMNetworkSeedAdded:    SeverityMedium,
 	ActionEASMNetworkSeedDeleted:  SeverityMedium,

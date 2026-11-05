@@ -16,28 +16,28 @@ import (
 )
 
 // An unstored asset names its reason. Held for review is quarantined, not
-// rejected; outside the targets, outside the addresses and outside the
-// actor's scope are rejected with their own codes; only an asset with no
-// recorded reason is asset_invalid.
+// rejected; one over the outside-targets cap and one outside the actor's
+// scope are rejected with their own codes; only an asset with no recorded
+// reason is asset_invalid. (An asset outside the targets is recorded, not
+// refused.)
 func TestAssetOutcomes_EveryUnstoredAssetSaysWhy(t *testing.T) {
 	stored := shared.NewID()
-	assets := []ctis.Asset{{ID: "ok"}, {ID: "held"}, {ID: "job"}, {ID: "chunk"}, {ID: "scope"}, {ID: "excl"}, {ID: "bad"}}
+	assets := []ctis.Asset{{ID: "ok"}, {ID: "held"}, {ID: "cap"}, {ID: "chunk"}, {ID: "scope"}, {ID: "excl"}, {ID: "bad"}}
 	why := notStoredReasons{
-		held:         map[string]bool{"held": true},
-		outsideJob:   map[string]bool{"job": true},
-		outsideChunk: map[string]bool{"chunk": true},
-		outOfScope:   map[string]bool{"chunk": true, "scope": true},
-		excluded:     map[string]bool{"excl": true},
+		held:       map[string]bool{"held": true},
+		overCap:    map[string]bool{"cap": true},
+		outOfScope: map[string]bool{"chunk": true, "scope": true},
+		excluded:   map[string]bool{"excl": true},
 	}
 	o := &ingestreport.SegmentOutcome{}
-	assetOutcomesWhy(o, assets, []int{0, 1, 2, 3, 4, 5, 6}, map[string]shared.ID{"ok": stored}, why)
+	assetOutcomes(o, assets, []int{0, 1, 2, 3, 4, 5, 6}, map[string]shared.ID{"ok": stored}, why, nil)
 	if o.AcceptedAssets != 1 || o.QuarantinedAssets != 1 || o.RejectedAssets != 4 {
 		t.Fatalf("accepted=%d quarantined=%d rejected=%d, want 1, 1, 4", o.AcceptedAssets, o.QuarantinedAssets, o.RejectedAssets)
 	}
 	want := map[string]string{
 		"/assets/1": protov2.CodeHeldForReview,
-		"/assets/2": protov2.CodeOutsideTargets,
-		"/assets/3": protov2.CodeOutsideTargets,
+		"/assets/2": protov2.CodeTooMany,
+		"/assets/3": protov2.CodeOutOfScope,
 		"/assets/4": protov2.CodeOutOfScope,
 		"/assets/5": protov2.CodeAssetExcluded,
 		"/assets/6": protov2.CodeAssetInvalid,
@@ -55,14 +55,15 @@ func TestAssetOutcomes_EveryUnstoredAssetSaysWhy(t *testing.T) {
 	// A quarantine that could not keep the held asset rejects it.
 	lost := &ingestreport.SegmentOutcome{}
 	why.holdLost = true
-	assetOutcomesWhy(lost, assets[1:2], []int{0}, nil, why)
+	assetOutcomes(lost, assets[1:2], []int{0}, nil, why, nil)
 	if lost.RejectedAssets != 1 || lost.QuarantinedAssets != 0 || lost.Errors[0].Code != protov2.CodeQuarantineFull {
 		t.Fatalf("lost hold: %+v", lost)
 	}
 }
 
 // Findings: held ones (by their asset or by their own type) are quarantined
-// with held_for_review; one on an asset outside the targets says so; one on
+// with held_for_review; one on an asset over the outside-targets cap says
+// so; one on
 // an unstored asset without a reason stays asset_unresolved.
 func TestFindingOutcomes_HeldAndOutsideAreNamed(t *testing.T) {
 	stored := shared.NewID()
@@ -70,14 +71,14 @@ func TestFindingOutcomes_HeldAndOutsideAreNamed(t *testing.T) {
 		{AssetRef: "ok"},    // applied
 		{AssetRef: "held"},  // its asset was held
 		{AssetRef: "ok"},    // held by its own type (index 2)
-		{AssetRef: "job"},   // asset outside the job
+		{AssetRef: "job"},   // asset over the outside-targets cap
 		{AssetRef: "gone"},  // asset not stored, no reason
 		{AssetRef: "scope"}, // asset outside the actor's scope
 	}
 	out := &Output{AssetMap: map[string]shared.ID{"ok": stored}}
 	why := notStoredReasons{
 		held: map[string]bool{"held": true}, heldFindings: map[int]bool{2: true},
-		outsideJob: map[string]bool{"job": true}, outOfScope: map[string]bool{"scope": true},
+		overCap: map[string]bool{"job": true}, outOfScope: map[string]bool{"scope": true},
 	}
 	o := &ingestreport.SegmentOutcome{}
 	findingOutcomes(o, kept, []int{0, 1, 2, 3, 4, 5}, out, why)
@@ -90,7 +91,7 @@ func TestFindingOutcomes_HeldAndOutsideAreNamed(t *testing.T) {
 	}
 	want := map[string]string{
 		"/findings/1": protov2.CodeHeldForReview, "/findings/2": protov2.CodeHeldForReview,
-		"/findings/3": protov2.CodeOutsideTargets, "/findings/4": protov2.CodeAssetUnresolved,
+		"/findings/3": protov2.CodeTooMany, "/findings/4": protov2.CodeAssetUnresolved,
 		"/findings/5": protov2.CodeOutOfScope,
 	}
 	for p, c := range want {
