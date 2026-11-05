@@ -10,9 +10,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/openctemio/contract/secretref"
+
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/pkg/crypto"
-	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	dom "github.com/openctemio/openctem/api/pkg/domain/toolsource"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -142,17 +143,18 @@ func TestKeysAreTheOrganizationsOwn(t *testing.T) {
 		t.Fatalf("stored %q", k.KeyEnc)
 	}
 	// Each organization's task gets its own key, never the other's.
-	credsA, _ := svc.ForTask(ctx, a, "subfinder", Delivery{})
-	credsB, _ := svc.ForTask(ctx, b, "subfinder", Delivery{})
-	if len(credsA) != 1 || credsA[0].Value != secretA || len(credsB) != 1 || credsB[0].Value != secretB {
-		t.Fatalf("A %+v B %+v", credsA, credsB)
+	credsA, _ := svc.ForDelivery(ctx, a, []string{"securitytrails"})
+	credsB, _ := svc.ForDelivery(ctx, b, []string{"securitytrails"})
+	if credsA["securitytrails"].Value != secretA || credsB["securitytrails"].Value != secretB {
+		t.Fatal("each organization does not get its own key")
 	}
-	// An organization without keys gets none; a tool without sources none.
-	if c, _ := svc.ForTask(ctx, shared.NewID(), "subfinder", Delivery{}); len(c) != 0 {
-		t.Fatalf("stranger got %+v", c)
+	// An organization without keys gets none.
+	if c, _ := svc.ForDelivery(ctx, shared.NewID(), []string{"securitytrails"}); c["securitytrails"].Value != "" ||
+		c["securitytrails"].Missing != secretref.MissingNotSet {
+		t.Fatalf("stranger got %+v", c["securitytrails"].Missing)
 	}
-	if c, _ := svc.ForTask(ctx, a, "nuclei", Delivery{}); len(c) != 0 {
-		t.Fatalf("nuclei got %+v", c)
+	if got, _ := svc.EnabledSources(ctx, a, []string{"shodan", "securitytrails"}); !slices.Equal(got, []string{"securitytrails"}) {
+		t.Fatalf("enabled sources: %v", got)
 	}
 	// The list never carries a value.
 	views, err := svc.List(ctx, a.String())
@@ -172,19 +174,10 @@ func TestKeysAreTheOrganizationsOwn(t *testing.T) {
 	if set != 1 {
 		t.Fatalf("tenant A sees %d keys", set)
 	}
-	// Audit: no event carries a value; the delivery names its sources.
+	// Audit: no event carries a value.
 	raw, _ = json.Marshal(aud.events)
 	if strings.Contains(string(raw), secretA) || strings.Contains(string(raw), secretB) {
 		t.Fatalf("audit carries a key: %s", raw)
-	}
-	var delivered int
-	for _, ev := range aud.events {
-		if ev.Action == auditdom.ActionToolSourceKeyDelivered {
-			delivered++
-		}
-	}
-	if delivered != 2 {
-		t.Fatalf("%d delivery events", delivered)
 	}
 }
 
@@ -199,7 +192,7 @@ func TestRotateDisableDelete(t *testing.T) {
 	if _, err := svc.SwitchKey(ctx, a.String(), "shodan", false, actx); err != nil {
 		t.Fatal(err)
 	}
-	if c, _ := svc.ForTask(ctx, a, "subfinder", Delivery{}); len(c) != 0 {
+	if c, _ := svc.ForDelivery(ctx, a, []string{"shodan"}); c["shodan"].Value != "" || c["shodan"].Missing != secretref.MissingDisabled {
 		t.Fatal("disabled key delivered")
 	}
 	// A rotation keeps the switch off.
@@ -209,8 +202,8 @@ func TestRotateDisableDelete(t *testing.T) {
 	if _, err := svc.SwitchKey(ctx, a.String(), "shodan", true, actx); err != nil {
 		t.Fatal(err)
 	}
-	if c, _ := svc.ForTask(ctx, a, "subfinder", Delivery{}); len(c) != 1 || c[0].Value != secretB {
-		t.Fatalf("after rotation: %+v", c)
+	if c, _ := svc.ForDelivery(ctx, a, []string{"shodan"}); c["shodan"].Value != secretB {
+		t.Fatal("rotated key not delivered")
 	}
 	if err := svc.DeleteKey(ctx, a.String(), "shodan", actx); err != nil {
 		t.Fatal(err)
@@ -251,7 +244,37 @@ func TestRefusals(t *testing.T) {
 	}
 	// An undecryptable key is skipped, never delivered as stored.
 	repo.keys[rk(a, "shodan")] = dom.Key{TenantID: a, Source: "shodan", KeyEnc: "not-ciphertext", Enabled: true}
-	if c, err := svc.ForTask(ctx, a, "subfinder", Delivery{}); err != nil || len(c) != 0 {
-		t.Fatalf("undecryptable: %+v %v", c, err)
+	if c, err := svc.ForDelivery(ctx, a, []string{"shodan"}); err != nil || c["shodan"].Value != "" ||
+		c["shodan"].Missing != secretref.MissingUndecryptable {
+		t.Fatalf("undecryptable: %v", err)
+	}
+}
+
+// A stored ciphertext opens only for its own row: copied to another
+// organization's row, or to another source's row, it is undecryptable
+// there (an attacker who can write rows but has no key cannot move a key).
+func TestStorageBinding(t *testing.T) {
+	svc, repo, _ := newTestService(t)
+	ctx := context.Background()
+	a, b := shared.NewID(), shared.NewID()
+	if _, err := svc.StoreKey(ctx, a.String(), "shodan", secretA, auditapp.AuditContext{TenantID: a.String()}); err != nil {
+		t.Fatal(err)
+	}
+	stolen := repo.keys[rk(a, "shodan")].KeyEnc
+	repo.keys[rk(b, "shodan")] = dom.Key{TenantID: b, Source: "shodan", KeyEnc: stolen, Enabled: true}
+	repo.keys[rk(a, "securitytrails")] = dom.Key{TenantID: a, Source: "securitytrails", KeyEnc: stolen, Enabled: true}
+	if c, _ := svc.ForDelivery(ctx, b, []string{"shodan"}); c["shodan"].Value != "" || c["shodan"].Missing != secretref.MissingUndecryptable {
+		t.Fatal("ciphertext opened on another organization's row")
+	}
+	if c, _ := svc.ForDelivery(ctx, a, []string{"securitytrails", "shodan"}); c["securitytrails"].Value != "" ||
+		c["securitytrails"].Missing != secretref.MissingUndecryptable || c["shodan"].Value != secretA {
+		t.Fatal("ciphertext opened on another source's row")
+	}
+	// A plain (unbound) ciphertext of the value does not open either.
+	enc, _ := crypto.NewCipher([]byte("0123456789abcdef0123456789abcdef"))
+	plain, _ := enc.EncryptString(secretA)
+	repo.keys[rk(a, "shodan")] = dom.Key{TenantID: a, Source: "shodan", KeyEnc: plain, Enabled: true}
+	if c, _ := svc.ForDelivery(ctx, a, []string{"shodan"}); c["shodan"].Value != "" {
+		t.Fatal("an unbound ciphertext opened")
 	}
 }

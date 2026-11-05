@@ -1,15 +1,18 @@
 // Package toolsource is the application service of the organization keys
 // of third-party tool sources: write-only storage (encrypted with the
-// credentials key), the console's list and changes, and the delivery of an
-// organization's keys to the sensor holding a task of its job.
-// Design: docs/architecture/tool-source-keys.md.
+// credentials key, bound to the organization and the source), the console's
+// list and changes, and the values the task secrets fetch delivers.
+// Design: docs/architecture/task-secrets.md.
 package toolsource
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
+
+	"github.com/openctemio/contract/secretref"
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/pkg/crypto"
@@ -23,9 +26,6 @@ import (
 type AuditLogger interface {
 	LogEvent(ctx context.Context, actx auditapp.AuditContext, event auditapp.AuditEvent) error
 }
-
-// sensorAuditActor names the sensor channel as the actor of a delivery.
-const sensorAuditActor = "sensor"
 
 // ErrUnavailable: keys cannot be stored because no credentials key is
 // configured (nothing is ever stored in clear).
@@ -148,9 +148,9 @@ func (s *Service) StoreKey(ctx context.Context, tenantID, sourceID, value string
 	if !s.canEncrypt() {
 		return SourceView{}, ErrUnavailable
 	}
-	enc, err := s.enc.EncryptString(value)
+	enc, err := s.sealKey(tid, src.ID, value)
 	if err != nil {
-		return SourceView{}, fmt.Errorf("encrypt tool source key: %w", err)
+		return SourceView{}, err
 	}
 	_, getErr := s.repo.Get(ctx, tid, src.ID)
 	rotated := getErr == nil
@@ -209,26 +209,56 @@ func (s *Service) DeleteKey(ctx context.Context, tenantID, sourceID string, actx
 	return nil
 }
 
-// Credential is one key delivered to a task, by the credential name the
-// tool's manifest declares.
-type Credential struct {
-	Name  string
-	Value string
+// boundKey is the plaintext a key's ciphertext holds. The organization and
+// the source bind it to its row: a ciphertext copied onto another
+// organization's row, or another source's, does not open there.
+type boundKey struct {
+	V      int    `json:"v"`
+	Tenant string `json:"tid"`
+	Source string `json:"source"`
+	Value  string `json:"value"`
 }
 
-// Delivery names who receives the keys, for the audit trail.
-type Delivery struct {
-	SensorID  shared.ID
-	CommandID shared.ID
+// boundKeyVersion is boundKey.V.
+const boundKeyVersion = 1
+
+func (s *Service) sealKey(tid shared.ID, source, value string) (string, error) {
+	b, err := json.Marshal(boundKey{V: boundKeyVersion, Tenant: tid.String(), Source: source, Value: value})
+	if err != nil {
+		return "", err
+	}
+	ct, err := s.enc.EncryptString(string(b))
+	if err != nil {
+		return "", fmt.Errorf("encrypt tool source key: %w", err)
+	}
+	return ct, nil
 }
 
-// ForTask returns the organization's enabled keys of tool for one task of
-// its job. tenantID is the job's organization, read from the command by the
-// caller, never from the sensor. A key that cannot be decrypted is skipped
-// (never used as stored). Every delivery is audited (sources only) and
-// marks the keys used.
-func (s *Service) ForTask(ctx context.Context, tenantID shared.ID, tool string, d Delivery) ([]Credential, error) {
-	sources := dom.ForTool(tool)
+// errKeyUnreadable: a stored key does not open for its row.
+var errKeyUnreadable = errors.New("tool source key does not open")
+
+// openKey returns the value of k, only when its ciphertext opens and names
+// k's organization and source.
+func (s *Service) openKey(k *dom.Key) (string, error) {
+	if !s.canEncrypt() {
+		return "", errKeyUnreadable
+	}
+	pt, err := s.enc.DecryptString(k.KeyEnc)
+	if err != nil {
+		return "", errKeyUnreadable
+	}
+	var b boundKey
+	if json.Unmarshal([]byte(pt), &b) != nil || b.V != boundKeyVersion || b.Tenant != k.TenantID.String() ||
+		b.Source != k.Source || b.Value == "" {
+		return "", errKeyUnreadable
+	}
+	return b.Value, nil
+}
+
+// EnabledSources returns which of sources the organization holds an enabled
+// key for, in sources order. tenantID is the job's organization (the
+// claim reads it from the command).
+func (s *Service) EnabledSources(ctx context.Context, tenantID shared.ID, sources []string) ([]string, error) {
 	if len(sources) == 0 || tenantID.IsZero() || !s.canEncrypt() {
 		return nil, nil
 	}
@@ -236,30 +266,74 @@ func (s *Service) ForTask(ctx context.Context, tenantID shared.ID, tool string, 
 	if err != nil {
 		return nil, err
 	}
-	out := make([]Credential, 0, len(keys))
-	names := make([]string, 0, len(keys))
+	have := make(map[string]bool, len(keys))
 	for _, k := range keys {
-		v, err := s.enc.DecryptString(k.KeyEnc)
-		if err != nil || v == "" {
-			s.logger.Warn("tool source key cannot be decrypted; not delivered", "tenant_id", tenantID.String(), "source", k.Source)
-			continue
-		}
-		out = append(out, Credential{Name: k.Source, Value: v})
-		names = append(names, k.Source)
+		have[k.Source] = true
 	}
-	if len(names) == 0 {
+	var out []string
+	for _, src := range sources {
+		if have[src] {
+			out = append(out, src)
+		}
+	}
+	return out, nil
+}
+
+// Resolved is the state of one source's key at a delivery: the value, or
+// why there is none (secretref.Missing*).
+type Resolved struct {
+	Value   string
+	Missing string
+}
+
+// ForDelivery returns the organization's key of each of sources for a task
+// of its job: the value, or the reason it has none (absent: not_set;
+// switched off: disabled; does not open for its row: undecryptable, never
+// used as stored). tenantID is read from the command by the caller, never
+// from the sensor. Nothing is audited here: the caller audits the delivery
+// and calls MarkDelivered for what it sent.
+func (s *Service) ForDelivery(ctx context.Context, tenantID shared.ID, sources []string) (map[string]Resolved, error) {
+	out := make(map[string]Resolved, len(sources))
+	for _, src := range sources {
+		out[src] = Resolved{Missing: secretref.MissingNotSet}
+	}
+	if len(sources) == 0 || tenantID.IsZero() {
 		return out, nil
 	}
-	if err := s.repo.MarkUsed(ctx, tenantID, names, s.now()); err != nil {
+	keys, err := s.repo.List(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	for i := range keys {
+		k := &keys[i]
+		if _, asked := out[k.Source]; !asked || !k.TenantID.Equals(tenantID) {
+			continue
+		}
+		if !k.Enabled {
+			out[k.Source] = Resolved{Missing: secretref.MissingDisabled}
+			continue
+		}
+		v, err := s.openKey(k)
+		if err != nil {
+			// Never sent, never logged with its value.
+			s.logger.Warn("tool source key does not open for its row; not delivered", "tenant_id", tenantID.String(), "source", k.Source)
+			out[k.Source] = Resolved{Missing: secretref.MissingUndecryptable}
+			continue
+		}
+		out[k.Source] = Resolved{Value: v}
+	}
+	return out, nil
+}
+
+// MarkDelivered records that the organization's keys of sources were
+// delivered (last used). A failure is logged: the delivery stands.
+func (s *Service) MarkDelivered(ctx context.Context, tenantID shared.ID, sources []string) {
+	if len(sources) == 0 {
+		return
+	}
+	if err := s.repo.MarkUsed(ctx, tenantID, sources, s.now()); err != nil {
 		s.logger.Warn("cannot record tool source key use", "tenant_id", tenantID.String(), "error", err)
 	}
-	s.logAudit(ctx, auditapp.AuditContext{TenantID: tenantID.String(), ActorEmail: sensorAuditActor},
-		auditapp.NewSuccessEvent(auditdom.ActionToolSourceKeyDelivered, auditdom.ResourceTypeToolSourceKey, tool).
-			WithResourceName(tool).
-			WithMessage(fmt.Sprintf("%d tool source keys delivered to a sensor for a %s task", len(names), tool)).
-			WithMetadata("sources", names).WithMetadata("sensor_id", d.SensorID.String()).
-			WithMetadata("command_id", d.CommandID.String()))
-	return out, nil
 }
 
 func (s *Service) logAudit(ctx context.Context, actx auditapp.AuditContext, ev auditapp.AuditEvent) {

@@ -90,6 +90,7 @@ code_scan_settings
 collector_assets
 command_events
 command_logs
+command_secret_grants
 commands
 comment_reactions
 compensating_controls

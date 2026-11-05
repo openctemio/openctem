@@ -2,12 +2,15 @@ package scan
 
 // Secrets in scanner_config (RFC-032 Phase 0, G7).
 //
-// A scan's scanner_config is passed to the sensor verbatim inside the
-// command, and it is stored in the scans and commands tables. A token,
-// password or Authorization header typed into it therefore travels and rests
-// in clear. Until sealed credentials (RFC-032 Phase 3) give such values a
-// proper home, the platform warns when a value looks like a secret. It never
-// blocks the save and never echoes the value.
+// A scan's scanner_config is passed to the sensor inside the command, and it
+// is stored in the scans and commands tables. A token, password or
+// Authorization header typed into it would therefore travel and rest in
+// clear. Secrets reach a sensor's tools only as task secrets
+// (docs/architecture/task-secrets.md), so a value that is certainly a
+// credential is refused (RefusedConfigSecrets): on scan create and update,
+// and at trigger, before it is copied into a command. Values that only
+// look random (high entropy) are warned about, never refused: identifiers
+// and names reach that bar too. Neither path echoes the value.
 
 import (
 	"math"
@@ -16,6 +19,8 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // ConfigSecretWarning is one scanner_config value that looks like a secret.
@@ -105,6 +110,44 @@ func DetectConfigSecrets(cfg map[string]any) []ConfigSecretWarning {
 
 type secretDetector struct {
 	out []ConfigSecretWarning
+	// refuse keeps only the values RefusedConfigSecrets refuses.
+	refuse bool
+}
+
+// RefusedConfigSecrets returns the scanner_config values that are
+// credentials beyond doubt, in a stable order, without the values: a known
+// credential format (a bearer or basic header, a private key block, a
+// provider token, credentials in a URL), or a value under a credential key
+// name ("password", "api_key", "authorization", ...) unless the value is a
+// plain setting word ("basic", "bearer", "none"), which such keys also hold
+// to name a mode. High-entropy values are not refused.
+func RefusedConfigSecrets(cfg map[string]any) []ConfigSecretWarning {
+	if len(cfg) == 0 {
+		return nil
+	}
+	d := &secretDetector{refuse: true}
+	d.walkMap("", cfg, 0)
+	slices.SortFunc(d.out, func(a, b ConfigSecretWarning) int { return strings.Compare(a.Path, b.Path) })
+	if len(d.out) > maxSecretWarnings {
+		d.out = d.out[:maxSecretWarnings]
+	}
+	return d.out
+}
+
+// settingWord is a value a credential-named key holds to name a mode
+// ("auth": "basic"), not a credential: one lower-case word of letters.
+var settingWord = regexp.MustCompile(`^[a-z][a-z_-]{0,15}$`)
+
+// refused reports whether a flagged value is refused, not only warned
+// about.
+func refused(reason ConfigSecretReason, value string) bool {
+	switch reason {
+	case SecretReasonKnownFormat:
+		return true
+	case SecretReasonKeyName:
+		return !settingWord.MatchString(strings.TrimSpace(value))
+	}
+	return false
 }
 
 func (d *secretDetector) walkMap(prefix string, m map[string]any, depth int) {
@@ -136,7 +179,7 @@ func (d *secretDetector) walk(path, key string, v any, depth int) {
 			d.walk(path+"["+strconv.Itoa(i)+"]", key, item, depth+1)
 		}
 	case string:
-		if reason, ok := secretReason(key, val); ok {
+		if reason, ok := secretReason(key, val); ok && (!d.refuse || refused(reason, val)) {
 			d.out = append(d.out, ConfigSecretWarning{Path: path, Reason: reason})
 		}
 	}
@@ -299,4 +342,26 @@ func shannonBitsPerChar(s string) float64 {
 		h -= p * math.Log2(p)
 	}
 	return h
+}
+
+// CodeScannerConfigSecret refuses a scanner_config that holds a credential
+// (on save), and blocks a run of a scan whose stored scanner_config still
+// holds one (at trigger): the value is never copied into a command.
+const CodeScannerConfigSecret = "SCANNER_CONFIG_SECRET"
+
+// RefuseConfigSecrets is the validation error for a scanner_config that
+// RefusedConfigSecrets flags, naming the keys only; nil when none.
+func RefuseConfigSecrets(cfg map[string]any) error {
+	found := RefusedConfigSecrets(cfg)
+	if len(found) == 0 {
+		return nil
+	}
+	paths := make([]string, 0, len(found))
+	for _, f := range found {
+		paths = append(paths, f.Path)
+	}
+	return shared.NewDomainError(CodeScannerConfigSecret,
+		"the scan settings hold a credential at "+strings.Join(paths, ", ")+
+			": remove it; credentials reach scan tools only as organization keys or sensor-local values, never in scan settings",
+		shared.ErrValidation)
 }

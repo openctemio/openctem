@@ -1,18 +1,24 @@
 // Package toolsource holds the organization keys of the third-party sources
-// scan tools query (subfinder's passive sources, for one): the catalog of
-// sources the platform stores keys for, the rules a key must meet, and the
-// stored key. A key is the organization's own; it is delivered only to the
-// sensor holding a task of that organization's job, for the job's tool.
+// scan tools query (subfinder's passive sources, for one): the platform's
+// view of the provider registry, the rules a key must meet, and the stored
+// key. A key is the organization's own; it reaches only the sensor holding a
+// task of that organization's job, through the sealed task secrets fetch.
 //
-// Design: docs/architecture/tool-source-keys.md.
+// The registry itself (ids, formats, hosts, the tools that use each source)
+// is the contract's (github.com/openctemio/contract/secretref): the platform
+// validates a key on save with the same code the sensor uses when it receives
+// one. This package maps the contract's refusals to the platform's error
+// codes.
+//
+// Design: docs/architecture/task-secrets.md.
 package toolsource
 
 import (
-	"fmt"
-	"net/url"
-	"regexp"
+	"errors"
 	"slices"
 	"strings"
+
+	"github.com/openctemio/contract/secretref"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
@@ -22,44 +28,32 @@ type Format string
 
 const (
 	// FormatKey is a single key or token.
-	FormatKey Format = "key"
+	FormatKey Format = secretref.FormatKey
 	// FormatPair is two parts joined by one colon (PairHint names them).
-	FormatPair Format = "pair"
+	FormatPair Format = secretref.FormatPair
 )
 
 // MaxValueLen bounds a key.
-const MaxValueLen = 1024
+const MaxValueLen = secretref.MaxKeyLen
 
-// MinSecretLen is the shortest secret part of a key: shorter values are not
-// real keys, and the sensor redacts only values of at least this length
-// reliably.
-const MinSecretLen = 8
-
-// Endpoint kinds: a key whose first part names where the tool sends it. The
-// tool connects there from the sensor, so the part must name the source's
-// own service and nothing else (a tenant must never point a shared sensor at
-// an address of its choice).
-// The zero value: the key names no endpoint.
-const (
-	// endpointHost: "HOST:KEY", HOST a DNS name the rule accepts.
-	endpointHost = iota + 1
-	// endpointURL: "https://HOST/PATH:KEY", HOST a DNS name the rule
-	// accepts, no port, user information, query or fragment.
-	endpointURL
-)
+// MinSecretLen is the shortest secret part of a key.
+const MinSecretLen = secretref.MinSecretLen
 
 // Source is a third-party source a tool queries with a key. ID is the
-// credential name the tool's manifest declares (permissions.credentials).
+// provider id of the registry and the credential name the tool's manifest
+// declares.
 type Source struct {
 	ID       string
 	Name     string
 	Tools    []string
 	Format   Format
 	PairHint string
-	// endpoint and hostRule restrict a first part that names a host or URL
-	// (endpointHost, endpointURL).
-	endpoint int
-	hostRule *regexp.Regexp
+
+	p secretref.Provider
+}
+
+func sourceOf(p secretref.Provider) Source {
+	return Source{ID: p.ID, Name: p.Display, Tools: slices.Clone(p.Tools), Format: Format(p.Format), PairHint: p.PairHint, p: p}
 }
 
 // ToolSubfinder is the tool of the passive subdomain sources.
@@ -70,6 +64,20 @@ const ToolSubfinder = "subfinder"
 // keys of a tool that implements it.
 var toolCapabilities = map[string][]string{
 	ToolSubfinder: {"discover.subdomains"},
+}
+
+// KeyedTools are the tools the registry lists keys for, sorted.
+func KeyedTools() []string {
+	var out []string
+	for _, p := range secretref.Providers() {
+		for _, t := range p.Tools {
+			if !slices.Contains(out, t) {
+				out = append(out, t)
+			}
+		}
+	}
+	slices.Sort(out)
+	return out
 }
 
 // JobMayUse reports whether a job whose tool is jobTool (empty when the
@@ -86,210 +94,74 @@ func JobMayUse(jobTool, capability, tool string) bool {
 	return name != "" && slices.Contains(toolCapabilities[tool], name)
 }
 
-func key(id, name string) Source {
-	return Source{ID: id, Name: name, Tools: []string{ToolSubfinder}, Format: FormatKey}
-}
-
-func pair(id, name, hint string) Source {
-	return Source{ID: id, Name: name, Tools: []string{ToolSubfinder}, Format: FormatPair, PairHint: hint}
-}
-
-// hostKey is a "HOST:KEY" source whose HOST must match rule.
-func hostKey(id, name, hint string, rule *regexp.Regexp) Source {
-	s := pair(id, name, hint)
-	s.endpoint, s.hostRule = endpointHost, rule
-	return s
-}
-
-// urlKey is a "https://HOST/PATH:KEY" source whose HOST must match rule.
-func urlKey(id, name, hint string, rule *regexp.Regexp) Source {
-	s := pair(id, name, hint)
-	s.endpoint, s.hostRule = endpointURL, rule
-	return s
-}
-
-var (
-	// intelx: subfinder calls https://HOST/phonebook/... (2.intelx.io and
-	// the like).
-	intelxHost = regexp.MustCompile(`^([a-z0-9-]+\.)*intelx\.io$`)
-	// zoomeye: subfinder calls https://api.HOST/...; the service's own
-	// domains only.
-	zoomeyeHost = regexp.MustCompile(`^zoomeye\.(ai|hk|org)$`)
-	// redhuntlabs: the endpoint URL the account was given.
-	redhuntlabsHost = regexp.MustCompile(`^([a-z0-9-]+\.)*redhuntlabs\.com$`)
-	// urlPath is the path of an endpoint URL.
-	urlPath = regexp.MustCompile(`^(/[A-Za-z0-9._~-]+)*/?$`)
-)
-
-// catalog is every source the platform keeps keys for, by id. The ids are
-// subfinder's source names (its provider configuration keys).
-var catalog = []Source{
-	key("alienvault", "AlienVault OTX"),
-	key("bevigil", "BeVigil"),
-	key("bufferover", "BufferOver"),
-	key("builtwith", "BuiltWith"),
-	key("c99", "C99"),
-	pair("censys", "Censys", "TOKEN:ORG_ID"),
-	key("certspotter", "Cert Spotter"),
-	key("chaos", "Chaos"),
-	key("chinaz", "Chinaz"),
-	key("digitalyama", "DigitalYama"),
-	key("dnsdb", "DNSDB"),
-	key("dnsdumpster", "DNSDumpster"),
-	pair("dnsrepo", "DNSRepo", "TOKEN:API_KEY"),
-	pair("domainsproject", "Domains Project", "USERNAME:PASSWORD"),
-	key("driftnet", "Driftnet"),
-	pair("facebook", "Facebook CT", "APP_ID:APP_SECRET"),
-	pair("fofa", "FOFA", "EMAIL:KEY"),
-	key("fullhunt", "FullHunt"),
-	key("github", "GitHub"),
-	key("gitlab", "GitLab"),
-	key("hackertarget", "HackerTarget"),
-	hostKey("intelx", "Intelligence X", "HOST:KEY", intelxHost),
-	key("leakix", "LeakIX"),
-	key("merklemap", "MerkleMap"),
-	key("netlas", "Netlas"),
-	key("onyphe", "Onyphe"),
-	key("profundis", "Profundis"),
-	key("pugrecon", "PugRecon"),
-	key("quake", "Quake"),
-	key("reconeer", "Reconeer"),
-	urlKey("redhuntlabs", "RedHunt Labs", "ENDPOINT_URL:KEY", redhuntlabsHost),
-	key("robtex", "Robtex"),
-	key("rsecloud", "RSECloud"),
-	key("securitytrails", "SecurityTrails"),
-	key("shodan", "Shodan"),
-	key("threatbook", "ThreatBook"),
-	key("urlscan", "urlscan.io"),
-	key("virustotal", "VirusTotal"),
-	key("whoisxmlapi", "WhoisXML API"),
-	key("windvane", "Windvane"),
-	hostKey("zoomeyeapi", "ZoomEye", "HOST:KEY", zoomeyeHost),
+// ProvidersForJob returns the provider ids whose keys a job may use (the
+// union over the keyed tools the job may run), sorted.
+func ProvidersForJob(jobTool, capability string) []string {
+	var out []string
+	for _, tool := range KeyedTools() {
+		if !JobMayUse(jobTool, capability, tool) {
+			continue
+		}
+		for _, id := range ForTool(tool) {
+			if !slices.Contains(out, id) {
+				out = append(out, id)
+			}
+		}
+	}
+	slices.Sort(out)
+	return out
 }
 
 // Catalog returns every source, ordered by id.
 func Catalog() []Source {
-	out := make([]Source, len(catalog))
-	for i, s := range catalog {
-		s.Tools = slices.Clone(s.Tools)
-		out[i] = s
+	ps := secretref.Providers()
+	out := make([]Source, len(ps))
+	for i, p := range ps {
+		out[i] = sourceOf(p)
 	}
 	return out
 }
 
 // Lookup returns the source id names.
 func Lookup(id string) (Source, bool) {
-	i := slices.IndexFunc(catalog, func(s Source) bool { return s.ID == id })
-	if i < 0 {
+	p, ok := secretref.LookupProvider(id)
+	if !ok {
 		return Source{}, false
 	}
-	s := catalog[i]
-	s.Tools = slices.Clone(s.Tools)
-	return s, true
+	return sourceOf(p), true
 }
 
 // ForTool returns the ids of the sources tool queries with a key.
-func ForTool(tool string) []string {
-	var out []string
-	for _, s := range catalog {
-		if slices.Contains(s.Tools, tool) {
-			out = append(out, s.ID)
-		}
-	}
-	return out
+func ForTool(tool string) []string { return secretref.ProvidersForTool(tool) }
+
+// keyErrorCodes map the contract's key refusals to the platform's codes.
+var keyErrorCodes = map[string]string{
+	secretref.KeyEmpty:    "TOOL_SOURCE_KEY_EMPTY",
+	secretref.KeyTooLong:  "TOOL_SOURCE_KEY_TOO_LONG",
+	secretref.KeyInvalid:  "TOOL_SOURCE_KEY_INVALID",
+	secretref.KeyFormat:   "TOOL_SOURCE_KEY_FORMAT",
+	secretref.KeyEndpoint: "TOOL_SOURCE_KEY_ENDPOINT",
+	secretref.KeyTooShort: "TOOL_SOURCE_KEY_TOO_SHORT",
 }
 
-// ValidateValue checks a key before it is stored: 1 to MaxValueLen visible
-// ASCII characters (no spaces, no line breaks: a key reaches a tool's
-// configuration file and never a command line), a secret part of at least
-// MinSecretLen characters, for a pair exactly one colon between two
-// non-empty parts, and for a source whose first part names where the tool
-// connects, that host or URL on the source's own service only (no IP
-// address, port, user information or other host). Errors never repeat the
-// value.
+// ValidateValue checks a key before it is stored, with the registry's rules
+// (secretref.Provider.ValidateKey): visible ASCII without spaces, bounded,
+// a long enough secret part, the pair format, and an endpoint on the
+// source's own service only. Errors never repeat the value.
 func (s Source) ValidateValue(v string) error {
-	if v == "" {
-		return valueError("TOOL_SOURCE_KEY_EMPTY", "the key is empty")
+	err := s.p.ValidateKey(v)
+	if err == nil {
+		return nil
 	}
-	if len(v) > MaxValueLen {
-		return valueError("TOOL_SOURCE_KEY_TOO_LONG", fmt.Sprintf("the key is longer than %d characters", MaxValueLen))
-	}
-	for i := 0; i < len(v); i++ {
-		if v[i] < 0x21 || v[i] > 0x7e {
-			return valueError("TOOL_SOURCE_KEY_INVALID", "the key may contain only visible ASCII characters, without spaces")
+	var ke *secretref.KeyError
+	if errors.As(err, &ke) {
+		if code, ok := keyErrorCodes[ke.Code]; ok {
+			return shared.NewDomainError(code, ke.Msg, shared.ErrValidation)
 		}
 	}
-	formatErr := valueError("TOOL_SOURCE_KEY_FORMAT", "the key must be written as "+s.PairHint)
-	switch {
-	case s.Format != FormatPair:
-		// a single key
-	case s.endpoint == endpointURL:
-		// "https://HOST/PATH:KEY": exactly the scheme's colon and the
-		// separator (subfinder splits the value on every colon).
-		parts := strings.Split(v, ":")
-		if len(parts) != 3 || parts[0] != "https" || parts[2] == "" {
-			return formatErr
-		}
-		if !s.endpointURLAllowed("https:" + parts[1]) {
-			return valueError("TOOL_SOURCE_KEY_ENDPOINT", "the endpoint must be an https URL on the "+s.Name+" service")
-		}
-	default:
-		a, b, ok := strings.Cut(v, ":")
-		if !ok || a == "" || b == "" || strings.Contains(b, ":") {
-			return formatErr
-		}
-		if s.endpoint == endpointHost && !s.hostAllowed(a) {
-			return valueError("TOOL_SOURCE_KEY_ENDPOINT", "the host must be a "+s.Name+" host name")
-		}
-	}
-	if len(s.secretPart(v)) < MinSecretLen {
-		return valueError("TOOL_SOURCE_KEY_TOO_SHORT", fmt.Sprintf("the key is shorter than %d characters", MinSecretLen))
-	}
-	return nil
-}
-
-func valueError(code, msg string) error {
-	return shared.NewDomainError(code, msg, shared.ErrValidation)
-}
-
-// hostAllowed reports whether host is a DNS name the source's rule accepts
-// (never an IP literal, a port or user information: the rule is anchored
-// and allows letters, digits, hyphens and dots only).
-func (s Source) hostAllowed(host string) bool {
-	return s.hostRule != nil && s.hostRule.MatchString(host)
-}
-
-func (s Source) endpointURLAllowed(raw string) bool {
-	u, err := url.Parse(raw)
-	if err != nil || u.Scheme != "https" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || u.Opaque != "" {
-		return false
-	}
-	if u.Port() != "" || u.Host != u.Hostname() || !s.hostAllowed(u.Hostname()) {
-		return false
-	}
-	return urlPath.MatchString(u.EscapedPath())
-}
-
-// secretPart is the part of a value that is the secret: the whole key, or
-// the last part of a pair.
-func (s Source) secretPart(v string) string {
-	if s.Format != FormatPair {
-		return v
-	}
-	if i := strings.LastIndexByte(v, ':'); i >= 0 {
-		return v[i+1:]
-	}
-	return v
+	return shared.NewDomainError("TOOL_SOURCE_KEY_INVALID", "the key is not valid for this source", shared.ErrValidation)
 }
 
 // Last4 is the part of a key shown after it is saved: the last four
-// characters of its secret part (the second part of a pair, never a user
-// name or app id), nothing when that part is shorter than 12 (too much of
-// it).
-func (s Source) Last4(v string) string {
-	sec := s.secretPart(v)
-	if len(sec) < 12 {
-		return ""
-	}
-	return sec[len(sec)-4:]
-}
+// characters of its secret part, nothing when that part is shorter than 12.
+func (s Source) Last4(v string) string { return s.p.Last4(v) }
