@@ -2,7 +2,8 @@
 //
 //   node web-affected-count.mjs <base-ref>     (run from the repository root)
 //
-// Walks the import graph of web/src and web/console/src backwards from the
+// Walks the import graph (TypeScript, JavaScript and JSON files, so a changed
+// i18n dictionary reaches every test that imports the catalogs) of web/src and web/console/src backwards from the
 // changed files and prints the number of test files reached. It over-counts on
 // purpose (any import, mocked or dynamic, is an edge): a high count only buys
 // an extra shard. Prints a large number when it cannot tell.
@@ -21,7 +22,7 @@ const walk = (d) => {
   for (const n of readdirSync(d)) {
     const p = join(d, n);
     if (statSync(p).isDirectory()) walk(p);
-    else if (/\.(tsx?|jsx?|mjs)$/.test(n)) files.push(p);
+    else if (/\.(tsx?|jsx?|mjs|json)$/.test(n)) files.push(p);
   }
 };
 roots.forEach(walk);
