@@ -79,8 +79,57 @@ func (s *Service) applyStepParams(ctx context.Context, sc *scan.Scan, in scan.St
 		if err := checkStepParamValues(st, in[key]); err != nil {
 			return invalidStepParams("%q: %s", key, strings.TrimPrefix(err.Error(), "invalid step settings: "))
 		}
+		// The override on top of the step's own settings, at every depth,
+		// must be valid as a whole (as a workflow save checks its depths).
+		for _, step := range stepsOfParamsKey(key, st, byKey, steps) {
+			if err := checkMergedStepParams(st, step, in[key]); err != nil {
+				return invalidStepParams("%q: step '%s': %s", key, step.StepKey, strings.TrimPrefix(err.Error(), "invalid step settings: "))
+			}
+		}
 	}
 	return sc.SetStepParams(in)
+}
+
+// stepsOfParamsKey is the steps an entry applies to: the named step, or
+// every step of the capability.
+func stepsOfParamsKey(key string, st stage.Stage, byKey map[string]*scanworkflow.Step, steps []*scanworkflow.Step) []*scanworkflow.Step {
+	if scan.CapabilityKey(key) == "" {
+		if step, ok := byKey[key]; ok {
+			return []*scanworkflow.Step{step}
+		}
+		return nil
+	}
+	var out []*scanworkflow.Step
+	for _, step := range steps {
+		if got, ok := stage.ForStep(step.Tool, step.Capabilities); ok && got.Key == st.Key {
+			out = append(out, step)
+		}
+	}
+	return out
+}
+
+// checkMergedStepParams validates the step's settings with the override over
+// them, at no depth overlay and at each depth.
+func checkMergedStepParams(st stage.Stage, step *scanworkflow.Step, over map[string]any) error {
+	merge := func(base map[string]any) map[string]any {
+		cfg := make(map[string]any, len(base)+len(over))
+		for k, v := range base {
+			cfg[k] = v
+		}
+		for k, v := range over {
+			cfg[k] = v
+		}
+		return cfg
+	}
+	if err := stage.ValidateParams(st, merge(step.Config), step.Tool); err != nil {
+		return err
+	}
+	for _, d := range scanworkflow.Depths() {
+		if err := stage.ValidateParams(st, merge(step.RunPolicy.ConfigAt(step.Config, d)), step.Tool); err != nil {
+			return fmt.Errorf("at %s depth: %w", d, err)
+		}
+	}
+	return nil
 }
 
 func workflowHasCapability(steps []*scanworkflow.Step, st stage.Stage) bool {
