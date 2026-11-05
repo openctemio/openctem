@@ -95,6 +95,10 @@ type Input struct {
 // docs/rfcs/RFC-026-sensor-results-ingest.md). Each is off in the zero value,
 // so v1 ingest is unchanged.
 type Options struct {
+	// RefusedItems are findings the caller refused before ingest (protocol
+	// v2: a finding that names no asset of its segment). They are booked on
+	// the receipt's item log with the rest of the report.
+	RefusedItems []ingestreceipt.Item
 	// RequireAssetForFindings: no fallback asset. A report with findings but
 	// no assets gets no asset made up from its metadata, and a finding is
 	// attached only to the asset its asset_ref names, never to "the only
@@ -350,6 +354,14 @@ type Output struct {
 	// because the upload's actor may not change them (Options.Actor). Their
 	// findings are skipped, never attached to another asset of the report.
 	OutOfScopeAssetRefs map[string]bool `json:"-"`
+
+	// HeldAssetRefs are the CTIS asset ids, and HeldFindings the indices of
+	// the input findings, that the output-type binding took out of the
+	// report (output_binding.go). HoldLost says the quarantine could not
+	// keep them: they were neither applied nor held.
+	HeldAssetRefs map[string]bool `json:"-"`
+	HeldFindings  map[int]bool    `json:"-"`
+	HoldLost      bool            `json:"-"`
 
 	// Decided are the new findings a policy decided (suppressed, held),
 	// and Items the reported items that did not become findings, with the
