@@ -566,5 +566,9 @@ func skipOutsideChunk(output *Output, ref string) {
 			output.OutOfScopeAssetRefs = map[string]bool{}
 		}
 		output.OutOfScopeAssetRefs[ref] = true
+		if output.OutsideChunkAssetRefs == nil {
+			output.OutsideChunkAssetRefs = map[string]bool{}
+		}
+		output.OutsideChunkAssetRefs[ref] = true
 	}
 }

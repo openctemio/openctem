@@ -208,6 +208,14 @@ func (s *alterScope) outsideJobTargets(normalizedName string, t asset.AssetType)
 		return false
 	}
 	host, _ := parseLocator(normalizedName)
+	// A stored service name is host:port:transport, which the locator
+	// parser does not split: without this every service on a target host
+	// read as outside the targets.
+	if t == asset.AssetTypeService {
+		if h, _, _, ok := asset.SplitServiceName(normalizedName); ok {
+			host = h
+		}
+	}
 	return !s.jobCoversHost(host)
 }
 
