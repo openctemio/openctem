@@ -76,21 +76,23 @@ const (
 
 // Fixed item error details. Details never quote sensor bytes.
 const (
-	DetailAssetUnresolved  = "finding references no asset in this segment"
-	DetailAssetAmbiguous   = "finding has no asset_ref and the segment has more than one asset"
-	DetailAssetNotStored   = "the asset this finding references was not stored"
-	DetailAssetInvalid     = "asset has no usable value"
-	DetailAssetExcluded    = "asset matches a scope exclusion of the organization and was not added"
-	DetailFindingNotStored = "the finding could not be stored"
-	DetailRequired         = "a required field is missing"
-	DetailInvalidValue     = "the value is not allowed here"
-	DetailMetadataID       = "metadata.id must be a lowercase UUIDv7 the producer generated"
-	DetailUnknownField     = "the field is not part of the CTIS version the document declares"
-	DetailCTISVersion      = "this platform accepts CTIS 2.x only: upgrade the sensor, connector or CI integration"
-	DetailTooMany          = "the array exceeds the per-segment limit"
-	DetailProcessingFailed = "the segment could not be processed"
-	DetailQuarantined      = "the report names no command and this sensor's role may not send results on its own: held for review, not applied"
-	DetailQuarantineFull   = "the report names no command and the results quarantine is full: not kept"
+	DetailAssetUnresolved = "finding references no asset in this segment"
+	DetailAssetAmbiguous  = "finding has no asset_ref and the segment has more than one asset"
+	DetailAssetNotStored  = "the asset this finding references was not stored"
+	DetailAssetInvalid    = "asset has no usable value"
+	DetailAssetExcluded   = "asset matches a scope exclusion of the organization and was not added"
+	// DetailOutsideTargetsOverCap goes with CodeTooMany on an asset.
+	DetailOutsideTargetsOverCap = "the report already recorded as many assets outside its command's targets as one report may: not added"
+	DetailFindingNotStored      = "the finding could not be stored"
+	DetailRequired              = "a required field is missing"
+	DetailInvalidValue          = "the value is not allowed here"
+	DetailMetadataID            = "metadata.id must be a lowercase UUIDv7 the producer generated"
+	DetailUnknownField          = "the field is not part of the CTIS version the document declares"
+	DetailCTISVersion           = "this platform accepts CTIS 2.x only: upgrade the sensor, connector or CI integration"
+	DetailTooMany               = "the array exceeds the per-segment limit"
+	DetailProcessingFailed      = "the segment could not be processed"
+	DetailQuarantined           = "the report names no command and this sensor's role may not send results on its own: held for review, not applied"
+	DetailQuarantineFull        = "the report names no command and the results quarantine is full: not kept"
 	// DetailPushIngestNotGranted goes with CodePushIngestNotGranted.
 	DetailPushIngestNotGranted = "the report names no command and this sensor's grant does not allow results without a job (push ingest is off in its grant): not kept"
 	// DetailPushIngestUntrusted goes with CodePushIngestNotGranted when the
