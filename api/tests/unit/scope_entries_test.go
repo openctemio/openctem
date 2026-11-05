@@ -438,3 +438,53 @@ func TestScopeEntry_ActivateRefusesLegacyRows(t *testing.T) {
 		}
 	}
 }
+
+// An automatic add (research/425: an address the organization's own network
+// holds) follows the organization's approval policy like a person's add: in
+// a tenant whose policy needs an approval the entry waits for an approver,
+// never effective on the platform's word; with no approval required it is
+// effective at once. The plain system path (an upgrade) is unchanged.
+func TestScopeEntry_AutomaticAddFollowsTheApprovalPolicy(t *testing.T) {
+	auto := scope.Actor{Automatic: true}
+	svc, tr, notes := entryService(t, 2, tenant.ScopeSettings{})
+	tenantID := shared.NewID()
+	got, err := svc.CreateTarget(context.Background(), scope.CreateTargetInput{
+		TenantID: tenantID.String(), TargetType: "ip_address", Pattern: "203.0.113.7",
+		Actor: auto, Origin: scopedom.OriginAutoAddress, Reason: "auto",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status() != scopedom.StatusPending || got.ApprovalsRequired() != 1 || got.InEffect(time.Now()) {
+		t.Fatalf("status %s approvals %d, want pending/1", got.Status(), got.ApprovalsRequired())
+	}
+	if got.Origin() != scopedom.OriginAutoAddress {
+		t.Fatalf("origin %s", got.Origin())
+	}
+	if active, _ := tr.ListActive(context.Background(), tenantID); len(active) != 0 {
+		t.Fatal("a pending automatic entry authorizes probes")
+	}
+	if len(notes.titles) == 0 {
+		t.Fatal("the approvers were not told")
+	}
+	if _, eff, err := svc.ApproveTarget(context.Background(), got.ID().String(), tenantID.String(), approverA); err != nil || !eff {
+		t.Fatalf("an approver approves the automatic entry: eff=%v err=%v", eff, err)
+	}
+
+	one, _, _ := entryService(t, 1, tenant.ScopeSettings{})
+	direct, err := one.CreateTarget(context.Background(), scope.CreateTargetInput{
+		TenantID: shared.NewID().String(), TargetType: "ip_address", Pattern: "203.0.113.8",
+		Actor: auto, Origin: scopedom.OriginAutoAddress,
+	})
+	if err != nil || !direct.InEffect(time.Now()) {
+		t.Fatalf("no approval required: err=%v status=%s", err, direct.Status())
+	}
+
+	sys, _, _ := entryService(t, 2, tenant.ScopeSettings{})
+	upgrade, err := sys.CreateTarget(context.Background(), scope.CreateTargetInput{
+		TenantID: shared.NewID().String(), TargetType: "ip_address", Pattern: "203.0.113.9",
+	})
+	if err != nil || !upgrade.InEffect(time.Now()) {
+		t.Fatalf("the system path changed: err=%v status=%s", err, upgrade.Status())
+	}
+}

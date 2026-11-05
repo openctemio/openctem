@@ -15,20 +15,22 @@ graph TD
     P --> R
   end
   subgraph API["api"]
-    H1["handler.CIRunnerHandler<br/>Exchange · AuthenticateRun · UploadResults · Evaluate"]
-    H2["handler.CIAdminHandler<br/>trust configs · runs · policies · overrides"]
+    H1["handler.CIRunnerHandler<br/>Exchange, AuthenticateRun, UploadResults, UploadStatus, Evaluate"]
+    H2["handler.CIAdminHandler<br/>trust configs, runs, policies, overrides"]
     S["app/cirun.Service"]
     V["pkg/oidc.VerifyWorkloadToken<br/>(SSRF-guarded discovery + JWKS)"]
+    Q["app/ingestqueue<br/>ingest_jobs kind ci_results,<br/>sealed ingest_payloads"]
     I["app/ingest.IngestForCIRun<br/>binding ci_run"]
     G["pkg/domain/cirun.Evaluate"]
-    DB[("ci_trust_configs · ci_runs · ci_run_findings<br/>ci_oidc_replay · ci_gate_policies · ci_gate_overrides")]
+    DB[("ci_trust_configs, ci_runs, ci_run_tokens, ci_run_findings<br/>ci_oidc_replay, ci_gate_policies, ci_gate_overrides")]
   end
   R -- "POST /ci/oidc/exchange" --> H1
   R -- "Bearer octci_: results, evaluate" --> H1
   H1 --> S
   H2 --> S
   S --> V
-  S --> I
+  S --> Q
+  Q -- "ingest worker:<br/>ProcessUploadJob" --> I
   S --> G
   S --> DB
 ```
@@ -47,10 +49,140 @@ graph TD
 | Pipelines: identity, status | `pkg/domain/cirun/pipeline.go`, `internal/app/cirun/pipelines.go`, `internal/infra/postgres/ci_pipeline_repository.go`, `handler/ci_pipeline_handler.go` |
 | Coverage, expectations, retirement | `pkg/domain/cirun/coverage.go`, `internal/app/cirun/coverage.go`, `internal/infra/postgres/ci_coverage_repository.go`, `handler/ci_coverage_handler.go` |
 | Alerts and stale sources (every 15 minutes, one replica) | `internal/app/cirun/alerts.go`, `internal/infra/controller/ci_alerts.go` |
-| Migration | `001077_ci_runner_identity`, `001084_ci_pipelines`, `001099_ci_coverage_alerts`, `001144_ci_db_model`, `001145_ci_db_model_validate` |
+| Migrations | the tables up to `001145` are in `001146_baseline` (migrations were squashed); later: `001220_ci_aggregate_runs`, `001261_ci_oidc_providers`, `001990_ci_runs_base_ref`, `002034_ci_trust_owner_pins`, `002040_ci_gate_policy_modes`, `002046_ci_runs_decoration`, `002049_ci_gate_policy_allow_repo_policy`, `002112_ci_gate_fixable_only`, `002125_ci_policy_permission`, `002127_ci_tenant_bound_audience`, `002137_ci_token_reexchange`, `002140_ci_run_findings_over_cap`, `002157_ci_gate_baselines`, `002184_ci_run_evidence_union`, `002196_ci_gate_policy_layers`, `002839_ci_pipelines_repository_archived` |
 | Retention (hourly, one replica) | `internal/app/cirun/retention.go`, `internal/infra/postgres/ci_retention_repository.go`, `internal/infra/controller/ci_retention.go` |
 | Break-glass notices to administrators (in-app and `ci.break_glass`) | `internal/app/cirun/admin_alerts.go` |
-| Migration | `001077_ci_runner_identity`, `001084_ci_pipelines`, `001099_ci_coverage_alerts` |
+
+## Flow
+
+The three calls a CI job makes, as of v0.19.1 (unchanged on develop since).
+Every query below is tenant-scoped: the exchange takes the tenant from the
+request body and trusts it only after a configuration of that tenant
+admitted the token, and the run routes take it from the run the token
+resolves to (`AuthenticateRun` sets `middleware.TenantIDKey` from
+`run.TenantID`).
+
+### Token exchange (`POST /api/v1/ci/oidc/exchange`)
+
+```mermaid
+sequenceDiagram
+  autonumber
+  box CI provider
+    participant J as openctem-ci (internal/platform.Run)
+    participant I as OIDC issuer
+  end
+  box api
+    participant H as handler.CIRunnerHandler.Exchange
+    participant S as cirunapp.Service.Exchange
+    participant V as pkg/oidc.VerifyWorkloadToken
+    participant DB as Postgres
+  end
+  J->>H: tenant_id, id_token, run_id or aggregate, hints (32 KB, unknown fields 400)
+  Note over H: CIExchangeRateLimiter 600/min per address, 60/min per tenant+iss at that address
+  H->>S: ExchangeInput
+  S->>DB: EnabledTrustConfigs(tenant, unverified iss)
+  alt none
+    S-->>H: ErrExchangeRefused (nothing audited)
+  end
+  S->>V: per distinct provider and audience
+  V->>I: discovery + JWKS (SSRF-guarded, same host, TTL 1 h, stale up to 6 h, refetch at most every 30 s)
+  V-->>S: claims (sig, iss, aud, exp, nbf, iat, leeway 1 min, lifetime 24 h max, sub, jti)
+  alt keys unavailable
+    S-->>H: ErrIssuerUnavailable, 503 Retry-After 30
+  end
+  S->>S: admit - Rules.Admit (owners, repos, refs, envs, events, forks, protected ref, workflow_refs)
+  alt not admitted
+    S->>DB: audit ci_run.token_refused
+    S->>S: noteRenamedRepository (admin alert, once a day per name)
+    S-->>H: ErrExchangeRefused, 401 CI_TOKEN_NOT_TRUSTED
+  end
+  S->>DB: organizationOpen, RepositoryBoundElsewhere, PinOwner
+  S->>S: PipelineKeyFromClaims, checkLegacyAudience, runnerRefusal (CI_RUNNER_MIN_VERSION)
+  S->>DB: ClaimReplay (issuer, jti) - the same token again at most 5 times, same run only
+  S->>DB: resolveRepositoryAsset (repo id, then host/path), UpsertPipeline (advisory lock per tenant, caps)
+  S->>DB: CountPipelineRunsSince 1 h (300 max), CreateRun or OpenAggregateRun + AddRunToken
+  S->>DB: audit ci_run.token_issued, CITrustSeen
+  H-->>J: 201 run_id, octci_ token (TTL 15 min, SHA-256 stored), secret_key
+```
+
+Refusals before `admit` returned a configuration are one uniform 401 and are
+not detailed to the caller; refusals after admission are
+`CI_TOKEN_<CODE>` (`RefusedError`, `publicRefusal` in `reexchange.go`).
+The handler maps `ErrRunnerOutdated` to `403 RUNNER_OUTDATED` and a
+suspended organization to the shared suspension answer.
+
+### Upload (`POST /api/v1/ci/runs/{id}/results`)
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant J as openctem-ci
+  participant H as CIRunnerHandler (AuthenticateRun, UploadResults)
+  participant S as cirunapp.Service
+  participant Q as ingestqueue.Queue
+  participant W as ingest worker
+  participant G as ingest.IngestForCIRun
+  J->>H: Bearer octci_, body (gzip from 4 KB, parts of at most 24 MB or 10,000 findings)
+  H->>S: Authenticate (token hash in ci_runs or ci_run_tokens, unexpired)
+  H->>H: path id equals run id else 404, Idempotency-Key claim (24 h)
+  H->>S: AcceptUpload(run, body, isToolExport, mapping pin)
+  S->>S: CTIS - DecodeReport (bounded, 2.0 only) + ScopeReport, else 400
+  S->>Q: Admit (tenant back-pressure), StagePart sealed per tenant
+  S->>Q: Commit job ci_results, route per repository, ReserveRunReport (200 max, not evaluated)
+  H-->>J: 202 upload_id, Location
+  W->>S: ProcessUploadJob
+  S->>G: applyReport - ScopeReport again, binding ci_run, RequireAssetForFindings
+  G-->>S: Output (sighted fingerprints)
+  S->>S: RecordRunReport, tools, carried capabilities, image links, inline ignores, secret exposure, audit
+  J->>H: GET results/<upload>?wait=10
+  H-->>J: queued, processing, applied (counts, known) or failed (error_code)
+```
+
+`ScopeReport` moves every finding onto the run's repository (a scanned
+container image's findings included), drops relationships, and replaces the
+branch block with the run's: `cirun.ReportBranchName` (`pull/<n>`,
+`merge-requests/<n>`, `fork/pr-<n>`), `is_default_branch` only for a
+non-fork default-branch run, commit and base from the run. The ci_run
+binding then writes `findings` (one per tenant and fingerprint) and
+`finding_branch_occurrences` (see [shift-left-ci-scanning.md](shift-left-ci-scanning.md)
+and [branch-only-findings.md](branch-only-findings.md)); a CI run never
+resolves a finding. A tool export is converted by the worker
+(`applyExport`, each further converted report takes its own slot, given
+back if the attempt fails). Permanent worker errors become fixed codes
+(`classifyUploadError`); transient ones are retried by the queue.
+
+### Verdict (`POST /api/v1/ci/runs/{id}/evaluate`)
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant J as openctem-ci gate
+  participant S as cirunapp.Service.Evaluate
+  participant DB as Postgres
+  participant D as CIDecorationController (15 s)
+  J->>S: scan_failures, capabilities, repo_policy
+  alt run.Status evaluated
+    S-->>J: storedVerdict (the first verdict is final)
+  end
+  S->>DB: ResolvePolicy (repository, strictest business unit, tenant, default, locks)
+  S->>S: RepoPolicy.Validate + Tighten, requestRepoExceptions (default branch, verified, not fork)
+  S->>DB: waitForUploads - SourceState every 250 ms, up to GateUploadWait 10 s
+  alt uploads pending
+    S-->>J: 503 INGEST_PENDING Retry-After 3
+  end
+  S->>DB: RunFindings, applyActiveRules, GateBaseline or baselineBranch occurrences
+  S->>DB: ActiveOverride (only when run.CommitVerified), MissingExpectedCapabilities, RunFindingsOverCap
+  S->>S: cirun.Evaluate (GateInput)
+  S->>DB: SaveVerdict (refused if a report landed or an upload is pending - judge again, 3 attempts)
+  S->>DB: RecordRunOutcome, RefreshPipeline, audit ci_run.evaluated (+ ci_gate_override.used, admin alert)
+  S-->>J: verdict, reasons, links
+  D->>DB: pending decorations (8 attempts max)
+  D->>D: GitHub check run OpenCTEM gate + comment, or GitLab commit status
+```
+
+The job exits 0 on pass, 1 on fail and 2 when it cannot trust the result
+(gate unreachable without `--fail-on`, or a local failure). The job asks again
+on `INGEST_PENDING` within `OPENCTEM_GATE_WAIT` (default 10 minutes).
 
 ## Request chains
 
@@ -58,9 +190,10 @@ graph TD
 |---|---|
 | `POST /api/v1/ci/oidc/exchange` | per-address backstop (600/min) → per pipeline identity limit (60/min per organization + token issuer at one address; claims read unverified, only to pick the bucket) → handler (32 KB body, unknown fields refused). Both in the shared store; see "Exchange rate limit" below |
 | `POST /api/v1/ci/trust-configs/preview` | session tenant chain → `scans` module → `scans:ci:write` → per-person limit (10/min) |
-| `POST /api/v1/ci/runs/{id}/results` | per-IP limit → `AuthenticateRun` (token hash lookup, path id = run) → per-run limit → ingest per-tenant limit and concurrency cap → 50 MB body → decompression → stored sealed, `202` (see "Uploads are applied by the ingest worker") |
-| `GET /api/v1/ci/runs/{id}/results/{report_id}` | per-IP limit → `AuthenticateRun` → per-run limit |
+| `POST /api/v1/ci/runs/{id}/results` | per-IP limit (10/s, burst 100) → `AuthenticateRun` (token hash lookup, path id = run) → per-run limit (2/s, burst 30) → ingest per-tenant limit (20/s, burst 40, when rate limiting is on) and concurrency cap (8 per tenant) → body 50 MB as sent → decompression (`gzip`/`zstd`, at most 20 MB compressed, 100 MB decompressed, ratio 200) → stored sealed, `202` (see "Uploads are applied by the ingest worker") |
+| `GET /api/v1/ci/runs/{id}/results/{report_id}` | per-IP limit → `AuthenticateRun` → per-run limit; `wait` at most 10 s (`ingestqueue.MaxWait`) |
 | `POST /api/v1/ci/runs/{id}/baseline-diff`, `/evaluate` | per-IP limit → `AuthenticateRun` → per-run limit |
+| `/api/v1/ci/{settings,trust-configs,runs,pipelines,coverage,gate-policies,gate-settings,gate-baselines,gate-overrides,trust-refusals,code-scanning}` | session tenant chain (`buildTokenTenantMiddlewares`) → `scans` module → `scans:ci:*`; `PUT /settings`, `POST`/`PUT /trust-configs`, `PUT /gate-baselines/{id}` and `POST /gate-overrides` add step-up |
 
 ### Uploads are applied by the ingest worker
 
@@ -115,7 +248,6 @@ findings per run (`cirun.MaxRunFindings`). A run that sights more is marked
 `ci_runs.findings_over_cap` and its gate fails with `too_many_findings`; it is
 never judged on the first 100,000 only. Warn mode and a break-glass still apply
 to it like any other blocking reason.
-| `/api/v1/ci/{trust-configs,runs,pipelines,gate-policies,gate-overrides}` | session tenant chain → `scans` module → `scans:ci:*` |
 
 ## Data model
 
@@ -125,15 +257,15 @@ to it like any other blocking reason.
   (cascade) and to its trust configuration (`(tenant_id, trust_config_id)`,
   `SET NULL (trust_config_id)`: deleting a configuration keeps its runs as
   history). Token hash (unique) and expiry; verdict and its JSON detail; the
-  provider's run id, attempt and job id (`external_job_id`, migration
-  `001137`) from the verified claims.
+  provider's run id, attempt and job id (`external_job_id`, now in
+  `001146_baseline`) from the verified claims.
 - `ci_run_findings`: `(run_id, fingerprint)`; the gate joins it to `findings`
   of the run's asset.
 - Aggregate runs (RFC-051 §4.1, migration `001220`): `ci_runs.aggregate`
   marks the run shared by the parallel capability jobs of one pipeline run:
   one per pipeline, external run id and commit, whatever the attempt
   (`evidence_union`, `idx_ci_runs_pipeline_run`, migration
-  `ci_run_evidence_union`). It is the only unique index matching these rows:
+  `002184_ci_run_evidence_union`). It is the only unique index matching these rows:
   the older attempt-keyed `idx_ci_runs_aggregate_open` covers only runs from
   before it (`NOT evidence_union`), so concurrent joins fall back to
   `ON CONFLICT DO NOTHING` instead of a unique violation. A later attempt re-opens it and carries the
@@ -161,7 +293,7 @@ to it like any other blocking reason.
   `repository_asset_id`, a business-unit policy `business_unit_id`, each a
   composite FK (cascade); the repository's policy follows it on asset merge
   (the kept repository's own wins). The API keeps `scope_type` + `scope_id`.
-  Per-field layering (RFC-096, migration `ci_gate_policy_layers`): `fields`
+  Per-field layering (RFC-096, migration `002196_ci_gate_policy_layers`): `fields`
   lists what a business unit or repository policy sets (the rest is
   inherited; the organization sets all), `locked_fields` (organization and
   business unit) are fields no layer below may loosen, and a repository
@@ -190,7 +322,7 @@ to it like any other blocking reason.
 - `ci_alert_state`: one row per `(tenant, subject, kind)` while the alert's
   condition holds; the notification is sent when the row is created.
 - `ci_pipelines.trust_config_id` carries the tenant like `ci_runs`
-  (migrations `001144`, validated by `001145`).
+  (migrations `001144` and `001145`, now in `001146_baseline`).
 
 ### Retention
 
@@ -269,19 +401,26 @@ repomerge -apply -resolve  # also merge repositories with several gate policies,
 
 ### Exchange and pipeline flow
 
+How `createRun` (`internal/app/cirun/service.go`) registers the pipeline and
+opens the run once `Exchange` admitted the token (the full exchange is under
+"Flow" above):
+
 ```mermaid
 sequenceDiagram
-  participant J as CI job
-  participant S as cirun.Service
+  participant S as cirunapp.Service.createRun
   participant DB as Postgres
-  J->>S: OIDC token
-  S->>S: verify, admit (trust rules)
-  S->>S: PipelineKeyFromClaims (repository id + workflow path)
-  S->>DB: claim jti
-  S->>DB: UpsertPipeline (advisory lock per tenant, caps, legacy adoption)
-  S->>DB: CreateRun (scan_workflow_id, runner version)
-  S->>DB: RefreshPipeline (summary from runs; fork runs excluded)
-  S-->>J: run + octci_ token
+  S->>S: PipelineKeyFromClaims (provider, issuer, repository id, workflow path)
+  S->>DB: resolveRepositoryAsset (pipeline of that repo id, asset_repositories.repo_id on the host, host/path, else create)
+  S->>DB: GetDefaultBranch of the asset (else the trust default branch)
+  S->>DB: UpsertPipeline (pg_advisory_xact_lock per tenant, caps, adopts a legacy pipeline)
+  S->>DB: CountPipelineRunsSince 1 h, refuse pipeline_rate at 300
+  alt aggregate
+    S->>DB: OpenAggregateRun + AddRunToken (ci_run_tokens)
+  else single job
+    S->>DB: CreateRun (pipeline_id, sensor_version from User-Agent, token hash)
+  end
+  S->>DB: RefreshPipeline (summary from its runs, fork runs excluded)
+  S-->>S: ExchangeOutput (run, octci_ token)
 ```
 
 ### Inline ignore comments and scanner ignore files

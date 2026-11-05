@@ -8,7 +8,7 @@ OpenCTEM's notification system provides real-time alerts when security findings 
 
 | Component | Technology |
 |-----------|------------|
-| Providers | Slack, Microsoft Teams, Telegram, Email (SMTP), Generic Webhook |
+| Providers | Slack, Microsoft Teams, Telegram, Email (SMTP), Generic Webhook, Splunk HEC |
 | Encryption | AES-256-GCM for credentials |
 | Async Pattern | **Transactional Outbox** (PostgreSQL) + Polling scheduler |
 | Rate Limiting | In-memory with sync.RWMutex |
@@ -59,6 +59,70 @@ TRIGGER SOURCES              TRANSACTIONAL OUTBOX           ARCHIVE
                              └─────────────────────────┘
 ```
 
+## Flow
+
+Same in v0.19.1 and on develop. Outgoing webhooks are a provider of this
+system (there is no separate webhook sender): see "Generic webhook payload",
+"Webhook signing" and "Redelivery" below.
+
+### Enqueue and deliver
+
+```mermaid
+sequenceDiagram
+  autonumber
+  box Platform (tenant on every row)
+    participant P as Producer service
+    participant O as notification_outbox
+    participant W as outbox.Scheduler and outbox.Service
+    participant B as bountyprogram DeliveryResolver
+    participant N as notifier.ClientFactory client
+  end
+  participant X as Slack, Teams, Telegram, SMTP, webhook, Splunk HEC
+  P->>O: EnqueueInTx(tx, EnqueueParams) or Enqueue after the write
+  loop every 5 s (processLoop)
+    W->>O: FetchPendingBatch: status pending AND scheduled_at <= now,<br/>LIMIT 50 FOR UPDATE SKIP LOCKED, set processing
+  end
+  W->>W: ListIntegrationsWithNotification(tenant), connected only
+  W->>B: Resolve(tenant, subject). Error: MarkFailed, retried
+  W->>W: first pass: shouldSendToIntegration and delivery.Allows,<br/>SetDeliveries (fixed for later passes)
+  W->>W: per due channel: decrypt credentials, configure, buildMessage<br/>(Scrub, minimal unless include_details, template, weblink)
+  W->>N: Send (30 s context)
+  N->>X: SafeHTTPClient, redirects refused, Message.Cleaned
+  X-->>N: 2xx success, anything else failure
+  W->>W: RecordSuccess or RecordFailure (DeliveryBackoff), Abandon if routing changed
+  alt a channel still pending
+    W->>O: SettleDeliveries false: pending, scheduled at the earliest retry
+  else every channel delivered or dead
+    W->>O: archive to notification_events, then DELETE the outbox row
+  end
+```
+
+Background loops of `outbox.Scheduler` (`DefaultSchedulerConfig`): process
+every 5 s (batch 50, at most 100, 2 min per batch), unlock entries locked for
+more than 10 minutes every minute (`UnlockStaleEntries`), clean up every
+24 hours (5 min budget). Every API process runs the scheduler; `FOR UPDATE
+SKIP LOCKED` keeps one worker per entry.
+
+### Channel delivery state
+
+```mermaid
+stateDiagram-v2
+  [*] --> pending: first pass picks the channel
+  pending --> success: 2xx (RecordSuccess)
+  pending --> pending: failure, next_attempt_at from DeliveryBackoff
+  pending --> dead: 8th failed attempt (RecordFailure)
+  pending --> dead: routing no longer allows it (Abandon, no attempt counted)
+  success --> [*]
+  dead --> [*]
+```
+
+A channel whose integration is gone, disabled or disconnected records a
+failed attempt ("integration is not connected"). An entry whose channels
+cannot be resolved (integration list or routing lookup failed) takes the
+entry-level path instead: `MarkFailed` retries it after 2 and then 4 minutes,
+and the third failure leaves it `failed` in the outbox (kept 30 days,
+**Retry** in the console queue).
+
 ## Data Flow
 
 ### 1. Transactional Outbox (Queue)
@@ -93,7 +157,8 @@ CREATE TABLE notification_outbox (
 ```
 pending → processing → pending (a channel is due for a retry)
                     ↳ [archived + DELETED once every channel is delivered or dead]
-                    ↳ failed (the channels could not be resolved; entry-level retry)
+                    ↳ pending again after 2 then 4 min, then failed
+                      (the channels could not be resolved; entry-level retry)
 ```
 
 ### Delivery per channel
@@ -125,8 +190,17 @@ next_attempt_at, last_attempt_at, last_error, message_id}` with status
   redirect (redirects are never followed, see Security). Before this, the
   HTTP clients reported a refused delivery as a result rather than an error
   and it was archived as a success.
-- A manual retry (`POST /api/v1/notification-outbox/{id}/retry`) gives the
-  dead channels a fresh budget and leaves delivered ones alone.
+- A manual retry (`POST /api/v1/notification-outbox/{id}/retry`) is accepted
+  only for an entry in status `failed` or `dead`. `ResetForRetry` gives dead
+  channels a fresh budget and leaves delivered ones alone, but an entry whose
+  channels all ended is archived and deleted at once (`SettleDeliveries`
+  marks it `completed`, never `dead`), so in practice a retry applies to
+  entries that failed before their channels were resolved. A channel that
+  gave up is sent again with a redelivery (below).
+- When a channel ends dead, one ERROR per channel is logged ("notification
+  channel dead-lettered after exhausting retries"). `alertIfDeadLettered`
+  checks for an entry in status `dead`, which the per-channel path never
+  sets, so it does not fire.
 
 ### 2. Notification Events (Archive)
 
@@ -192,19 +266,25 @@ CREATE TABLE notification_events (
 
 ### Step 1: Enqueue in Transaction
 
+The new-finding event is written in the finding's transaction
+(`internal/app/finding/vulnerability_service.go`). Other producers
+use `EnqueueInTx` where they hold the transaction, or call `Enqueue` right
+after their own write, where a crash between the two can lose that one
+event.
+
 ```go
-// internal/app/finding/vulnerability_service.go
+// internal/app/finding/vulnerability_service.go (shape)
 
 tx, err := s.db.BeginTx(ctx, nil)
-defer tx.Rollback()
+defer func() { _ = tx.Rollback() }()
 
 // 1. Create finding in transaction
 if err := s.findingRepo.CreateInTx(ctx, tx, f); err != nil {
     return err
 }
 
-// 2. Enqueue notification in the SAME transaction
-err = s.notificationService.EnqueueNotificationInTx(ctx, tx, EnqueueNotificationParams{
+// 2. Enqueue notification in the SAME transaction (outbox.Service)
+err = s.notificationService.EnqueueInTx(ctx, tx, outbox.EnqueueParams{
     TenantID:      f.TenantID(),
     EventType:     "new_finding",
     AggregateType: "finding",
@@ -226,7 +306,7 @@ The scheduler polls every 5 seconds:
 ```go
 // internal/app/outbox/scheduler.go
 
-func (s *NotificationScheduler) processBatch() {
+func (s *Scheduler) processBatch() {
     // 1. Fetch and lock pending entries (FOR UPDATE SKIP LOCKED)
     entries, _ := s.service.ProcessOutboxBatch(ctx, workerID, batchSize)
 
@@ -255,11 +335,12 @@ The scheduler runs cleanup daily:
 ```go
 // internal/app/outbox/scheduler.go
 
-type NotificationSchedulerConfig struct {
+type SchedulerConfig struct {
     ProcessInterval        time.Duration  // 5 seconds
     CleanupInterval        time.Duration  // 24 hours
-    BatchSize              int            // 50
-    CompletedRetentionDays int            // 7 (for failed archives)
+    UnlockInterval         time.Duration  // 1 minute
+    BatchSize              int            // 50 (the repository caps it at 100)
+    CompletedRetentionDays int            // 7
     FailedRetentionDays    int            // 30
     EventRetentionDays     int            // 90 (set to 0 for unlimited)
     StaleMinutes           int            // 10 (for unlocking)
@@ -326,6 +407,7 @@ func (f *ClientFactory) CreateClient(config Config) (Client, error) {
     case ProviderTelegram: return NewTelegramClient(config)
     case ProviderEmail:    return NewEmailClient(config)
     case ProviderWebhook:  return NewWebhookClient(config)
+    case ProviderSplunk:   return NewSplunkClient(config)
     }
 }
 ```
@@ -338,7 +420,8 @@ func (f *ClientFactory) CreateClient(config Config) (Client, error) {
 | **Teams** | Webhook URL | Adaptive Cards | Container styles (attention/warning) |
 | **Telegram** | Bot Token + Chat ID | Markdown + Inline Buttons | URL buttons, markdown escaping |
 | **Email** | SMTP config | HTML with CSS, plain-text alternative | TLS/STARTTLS, multiple recipients |
-| **Webhook** | Custom URL | JSON payload | Flexible, any endpoint |
+| **Webhook** | Custom URL | JSON payload | Signed (Standard Webhooks), any endpoint |
+| **Splunk** | HEC URL + token | HEC event | Index and sourcetype from metadata |
 
 ### Message format and the one SMTP stack
 
@@ -527,6 +610,11 @@ Every generic webhook delivery carries the Standard Webhooks headers
   verifies.
 - **Test delivery.** `POST .../test-notification` is signed the same way, so
   the receiver's check can be tried before real events flow.
+- **Console.** The signing secret and redelivery have no console control yet
+  (API only); the console shows the delivery history (**View events**) and
+  the queue.
+- **No auto-disable.** A failing endpoint is never disabled: each event is
+  retried on the channel backoff and then given up for that channel.
 - **Receiver.** Recompute the HMAC over the raw body with the key decoded
   from the secret, compare in constant time with each `v1` signature, refuse a
   timestamp more than 5 minutes from the receiver's clock (replay window),
@@ -620,11 +708,10 @@ template, so a template can only use what the channel is allowed to send.
 
 ### Rate Limiting
 
-Test notifications are rate-limited to prevent spam:
-
-```go
-const testNotificationRateLimit = 30 * time.Second
-```
+Test notifications (`POST /integrations/{id}/test-notification`) are limited
+to 5 a minute per user and integration (`testNotificationRateLimiter` in
+`internal/infra/http/handler/integration_handler.go`, in memory per process).
+Redelivery is limited to 30 a minute per organization (burst 10).
 
 ## Private program events
 
@@ -703,32 +790,23 @@ catalog but has no emitter: nothing in the platform sets a sensor's health to
 ## Wiring in Main
 
 ```go
-// internal/server/main.go
-
-// Initialize repositories
-notificationOutboxRepo := postgres.NewNotificationOutboxRepository(db)
-notificationEventRepo := postgres.NewNotificationEventRepository(db)
-integrationNotificationExtRepo := postgres.NewIntegrationNotificationExtensionRepository(db, integrationRepo)
-
-// Initialize notification service
-notificationService := app.NewNotificationService(
-    notificationOutboxRepo,
-    notificationEventRepo,
-    integrationNotificationExtRepo,
-    credentialsEncryptor.DecryptString,
+// internal/server/services.go
+s.Outbox = outbox.NewService(
+    repos.Outbox,
+    repos.OutboxEvent,
+    repos.IntegrationNotificationExt,
+    s.Encryptor.DecryptString,
     log.Logger,
 )
+s.Outbox.SetDeliveryResolver(postgres.NewProgramDeliveryRepository(...)) // private programs
+s.Outbox.SetBrand(cfg.Brand)
+s.Outbox.SetLinkBase(cfg.SMTP.BaseURL)          // absolute links naming the organization
+s.Outbox.SetRelayRefusedHandler(s.Integration)  // stop-and-notify for e-mail relays
+s.Vulnerability.SetOutboxService(deps.DB, s.Outbox)
+s.Exposure.SetOutboxService(deps.DB, s.Outbox)
 
-// Initialize scheduler
-notificationScheduler := app.NewNotificationScheduler(
-    notificationService,
-    app.DefaultNotificationSchedulerConfig(),
-    log,
-)
-
-// Wire up to other services
-vulnerabilityService.SetNotificationService(db.DB, notificationService)
-exposureService.SetNotificationService(db.DB, notificationService)
+// cmd/server/workers.go
+w.OutboxScheduler = outbox.NewScheduler(svc.Outbox, outbox.DefaultSchedulerConfig(), log)
 ```
 
 ## In-App Inbox (user notifications)

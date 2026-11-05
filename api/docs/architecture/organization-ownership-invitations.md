@@ -41,30 +41,38 @@ sequenceDiagram
     participant DB as Database
     actor Person as Invited account (web app)
 
-    Admin->>API: POST /admin/tenants {name, slug, owner_email}
+    Admin->>API: POST /api/v1/admin/tenants {name, slug, owner_email}, console step-up
     API->>DB: owner_email has an account?
     alt no account
         API->>DB: create account + organization + owner membership
-        API-->>Admin: 201, owner_setup (set-password link emailed)
+        API-->>Admin: 201, owner_setup (set-password link emailed, or returned once without mail)
     else existing account
-        API->>DB: one transaction: organization (no member) + pending invitation bound to the account id
+        API->>DB: one transaction - organization (no member) + pending invitation bound to the account id
         API-->>Admin: 201, owner_invited, owner_invitation
-        API-->>Person: email: "you are invited to own <name>" (link to /ownership-invitations)
+        opt platform or organization mail configured
+            API-->>Person: email - you are invited to own the organization (link to /ownership-invitations)
+        end
     end
-    Person->>API: GET /me/ownership-invitations
+    Person->>API: GET /api/v1/me/ownership-invitations (account-only token allowed)
     alt accept
-        Person->>API: POST /me/ownership-invitations/{id}/accept
-        API-->>Person: 403 STEP_UP_REQUIRED (unless signed in recently)
-        Person->>API: step-up (password or authenticator code), retry
-        API->>DB: under the first-owner lock: invitation is the caller's, pending, not expired; organization has no owner; caller active, person, email verified
-        API->>DB: owner membership + owner role; invitation accepted
+        Person->>API: POST /api/v1/me/ownership-invitations/{id}/accept
+        API-->>Person: 403 STEP_UP_REQUIRED (unless signed in recently), STEP_UP_UNAVAILABLE for SSO-only accounts
+        Person->>API: POST /api/v1/auth/step-up (authenticator code, or password without TOTP), retry
+        API->>API: AcceptOwnerInvitation - step-up again, email verified (else 400)
+        API->>DB: under the first-owner lock - invitation is the caller's, pending, not expired, organization has no owner, checkOwnerInviteeTx (active, not service, not break-glass)
+        API->>DB: owner membership + owner role, invitation accepted, audit member.owner_invitation_accepted
         API-->>Person: 200 organization_id (the app switches to it)
     else decline
-        Person->>API: POST /me/ownership-invitations/{id}/decline
+        Person->>API: POST /api/v1/me/ownership-invitations/{id}/decline
         API->>DB: invitation declined (organization stays, no owner)
     end
-    Admin->>API: resend / cancel / change invitee (console, step-up)
+    Admin->>API: resend, cancel (step-up), change invitee via POST /api/v1/admin/tenants/{id}/users (fresh step-up, 202)
 ```
+
+The email is skipped silently when no mail server is configured
+(`EmailService.SendOwnershipInvitation` returns early); the invitation still
+shows under **My account** after sign-in, and the console answer carries no
+`email_sent` flag.
 
 States of an invitation: `pending` → `accepted` | `declined` | `canceled`. A
 pending invitation past its expiry is shown as `expired`; a resend renews it.
