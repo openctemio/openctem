@@ -71,7 +71,6 @@ func TestNormalizePathPrefixDecodes(t *testing.T) {
 		"/%61dmin/":         "/admin",
 		"/tenants/*/admin":  "/tenants/*/admin",
 		"/tenants/%2A/x":    "/tenants/*/x",
-		"/100%25":           "/100%",
 		"/files/My Docs/":   "/files/My Docs",
 		"/caf%C3%A9/menu/*": "/café/menu",
 	}
@@ -81,7 +80,7 @@ func TestNormalizePathPrefixDecodes(t *testing.T) {
 			t.Errorf("NormalizePathPrefix(%q) = %q, %v; want %q", in, got, err, want)
 		}
 	}
-	for _, bad := range []string{"/a/%2e%2e/b", "/a/%2E/b", "/a%zz", "/a%0d%0a", "/adm%2An", "/a%FF"} {
+	for _, bad := range []string{"/a/%2e%2e/b", "/a/%2E/b", "/a%zz", "/a%0d%0a", "/adm%2An", "/a%FF", "/100%25", "/x/%2561"} {
 		if _, err := NormalizePathPrefix(bad); err == nil {
 			t.Errorf("NormalizePathPrefix(%q) accepted", bad)
 		}
@@ -96,6 +95,7 @@ func TestJobDenyPaths(t *testing.T) {
 		"/files/My%20Docs":  {"/files/My%20Docs", "/files/My Docs"},
 		"/files/My Docs":    {"/files/My Docs"},
 		"/100%":             {"/100%"},
+		"/x/%2561":          {"/x/%2561"},
 		"/a%2Fb":            {"/a%2Fb"},
 		"/x/100%41/*/admin": {"/x/100%41/", "/x/100A/"},
 	}
