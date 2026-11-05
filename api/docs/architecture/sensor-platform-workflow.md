@@ -111,22 +111,33 @@ credentials on their own.
 sequenceDiagram
     autonumber
     actor A as Admin (console)
+    box Platform
     participant P as Platform
+    end
+    box Sensor host
     participant S as Sensor
-    A->>P: POST /sensor-pairings/expectations (sensors:pair)
+    end
+    A->>P: POST /api/v1/sensor-pairings/expectations (sensors:pair)
     P-->>A: code K7QM-4ZTD (single use, 10 min) and the install command
-    A->>S: run the command (SENSOR_PAIRING_CODE)
-    S->>P: POST /api/v2/sensor/pairings (signed with its new key, commitment)
-    P-->>S: 201, request id, user code, platform signature (same answer for unknown codes)
-    S->>P: reveal nonce
-    P-->>S: fingerprint (SAS) computed from both keys and nonces
+    A->>S: run the command (SENSOR_PAIRING_CODE, SENSOR_JOB_SIGNING_ROOT)
+    S->>P: POST /api/v2/sensor/pairings/ (signed with its new key, commitment)
+    P-->>S: 201, pairing id, user code, platform signature (same answer for unknown codes)
+    S->>P: PUT /api/v2/sensor/pairings/{id}/nonce (reveal)
+    P->>P: fingerprint (SAS) computed from both keys and nonces
     S-->>A: prints the fingerprint on the host
-    A->>P: approve: fingerprint, organization echo, step-up (sensors:approve)
+    A->>P: POST /api/v1/sensor-pairings/{id}/approve: fingerprint, organization echo, step-up (sensors:approve)
     P->>P: sensor row (trust New), key pending, grant from the profile
-    S->>P: poll status, then confirm (signed transcript)
+    S->>P: GET /api/v2/sensor/pairings/{id} until approved: identity and content keys
+    S->>P: POST /api/v2/sensor/pairings/{id}/complete (signed transcript)
     P->>P: key active, request completed
-    P-->>S: identity, job-signing and content keys
+    S->>P: GET /api/v2/sensor/hello: job signer key set, checked against the root
 ```
+
+The pairing answer carries no job-signing key: the sensor reads the job
+signer's key set from `hello` after confirming and keeps it only when it
+verifies against `SENSOR_JOB_SIGNING_ROOT`, or pins it on first use without
+one (sdk-go `identity/pair.go`). Exact handlers and states:
+[sensor pairing](sensor-pairing.md#flow).
 
 ### 3.2 The sensor shows a code
 
@@ -352,13 +363,17 @@ Reason codes and their meaning: [placement](placement.md).
 
 **Sensor-local policy** (owner decision 2026-10-31): the platform's signed
 scope is the default; a host owner may add a local allow list that only
-narrows it, and the platform never writes it; the kill switch stays. Today a
-newly paired sensor without a policy refuses jobs with network targets (sdk-go
-`ResolveRequireLocalPolicy`), and a refused routed task is re-queued for
-another sensor whose reported policy accepts it
-(`internal/app/command/refusal.go:handleRefusal`). The move to an optional,
-narrow-only policy and policy-aware routing is in progress; this section
-changes with it.
+narrows it, and the platform never writes it; the kill switch stays. A sensor
+without a policy follows the signed scope (built-in deny list and kill switch
+still apply); `SENSOR_REQUIRE_LOCAL_POLICY=true` makes it refuse jobs with
+network targets instead (sdk-go `sensorkit/kit.go:ResolveRequireLocalPolicy`,
+`core/local_policy.go`). The dispatch gate reads the reported summary
+(`internal/app/command/local_policy.go`, `sensordom.Accepts`), and a refused
+routed task is re-queued for another sensor, at most 3 refusals or 6 hours
+(`internal/app/command/refusal.go:handleRefusal`). From v0.20.0: a refusal
+records the policy digest, a sensor that refused under the same policy is not
+offered the task again, and a refusal whose targets all fail to resolve
+completes with per-target skips. Flow: [sensors](sensors.md#sensor-local-policy-rfc-040-57).
 
 ## 10. The job loop
 
@@ -398,7 +413,7 @@ sequenceDiagram
 | Confinement | per-task network namespace with a relay on 127.0.0.1:1080 and DNS on :53, Landlock, seccomp, cgroup envelope | `sensorkit/executor` |
 | Rate | per-host AIMD with a breaker, `Retry-After` honoured; floors, blocks and breaker trips become coverage gaps | `adapt/hostrate.go:HostRate` |
 | Kill switch | policy flag or file, checked every 2 s; running jobs canceled and failed `kill_switch` | `core/command_poller.go:checkKillSwitch` |
-| Disk | outbox capped (1 GiB or half the free space), room kept for command results; a full store stops claiming and says so on the heartbeat | `outbox/outbox.go`, `sensorkit/store.go:acceptsWork` |
+| Disk | outbox capped (1 GiB, or half of used plus free space when smaller), claiming stops at 85 %, 2 % kept for command results; a full store stops claiming and says so on the heartbeat | `outbox/outbox.go`, `sensorkit/store.go:acceptsWork` |
 | Cancel and stop | `cancel_command_ids` stops and hands back; `stop_command_ids` stops and delivers what finished | `core/command_poller.go:CancelCommands`, `StopCommands` |
 
 ## 11. Results, binding and ingest
@@ -473,7 +488,35 @@ expressed as a capability or feature the claim checks (`required_features`),
 so an older sensor simply is not offered that work and the task says why.
 `sensors.sh upgrade` verifies the image signature before it pulls.
 
+Nothing upgrades a sensor from the platform: the doorbell's `update` action
+is defined (`pkg/domain/sensor/doorbell.go`) but never sent, and the sensor
+only logs it (sdk-go `core/doorbell.go`). Tools ship in the sensor image or
+come from the operator's adapter directories (`SENSOR_ADAPTER_DIRS`); there
+is no host tool pin or update mechanism in code yet. Flow and version
+classification: [sensor compatibility](sensor-compatibility.md#flow).
+
 ## 14. Decommission
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor A as Admin
+    box Platform
+    participant SV as SensorService
+    participant CMD as command_lease
+    participant ST as v3 streams
+    end
+    box Sensor host
+    participant S as Sensor
+    end
+    A->>SV: POST /api/v1/sensors/{id}/revoke (sensors:write or sensors:revoke)
+    SV->>SV: status revoked WHERE tenant_id, every sensor_keys row revoked
+    SV->>CMD: ReleaseHeldBySensor - routed work re-queued, the rest failed, late writes fenced by the epoch
+    SV->>ST: SetStatusNotifier wake - streams re-resolve and end UNAUTHENTICATED
+    S->>SV: next signed request
+    SV-->>S: 401 unauthenticated, the same as an unknown key
+    S->>S: AuthGate - stop polling, heartbeat backoff 30 s to 10 min, log pair again, identity files kept
+```
 
 | Action | Effect | Code |
 |---|---|---|

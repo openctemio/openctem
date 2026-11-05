@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from '@/context/i18n-provider'
 import useSWR from 'swr'
-import { AlertCircle, CheckCircle2 } from 'lucide-react'
+import { AlertCircle, CheckCircle2, SkipForward } from 'lucide-react'
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
@@ -25,6 +25,27 @@ const STATUS_KEYS: Record<string, string> = {
   offline_only: 'scans.wfPreview.offline_only',
   no_sensor: 'scans.wfPreview.no_sensor',
   disabled: 'scans.wfPreview.disabled',
+}
+
+/** Skip codes the API returns for a step the run will not start (RFC-054 skip codes). */
+const SKIP_KEYS: Record<string, string> = {
+  DEPTH_SKIPPED: 'scans.wfPreview.skipped.DEPTH_SKIPPED',
+  NO_MATCHING_TOOL: 'scans.wfPreview.skipped.NO_MATCHING_TOOL',
+  TOOL_NOT_INSTALLED: 'scans.wfPreview.skipped.NO_MATCHING_TOOL',
+  TOOL_DISABLED: 'scans.wfPreview.skipped.TOOL_DISABLED',
+  NO_SENSOR_FOR_TOOL: 'scans.wfPreview.skipped.NO_SENSOR_FOR_TOOL',
+  DEPENDENCY_SKIPPED: 'scans.wfPreview.skipped.DEPENDENCY_SKIPPED',
+}
+
+/** The line shown under a skipped step: translated by code, the server text as fallback. */
+export function skipText(
+  t: (key: string, fallback?: string, vars?: Record<string, string | number>) => string,
+  skipped: { code?: string; message?: string },
+  capability?: string
+): string {
+  const key = skipped.code ? SKIP_KEYS[skipped.code] : undefined
+  if (!key) return skipped.message ?? ''
+  return t(key, skipped.message, { capability: capability ?? '' })
 }
 
 function useDebounced<T>(value: T, ms: number): T {
@@ -160,6 +181,15 @@ export function WorkflowPreviewBody({ preview }: { preview: WorkflowPreview }) {
                   size: n.chunk_size ?? 0,
                   sensors: n.max_parallel_sensors ?? 0,
                 })}
+              </p>
+            )}
+            {n.skipped && (
+              <p
+                className="mt-1 flex items-start gap-1.5 text-xs text-warning break-words"
+                data-testid="preview-skipped"
+              >
+                <SkipForward className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+                <span className="min-w-0">{skipText(t, n.skipped, n.capability)}</span>
               </p>
             )}
             {n.blocking?.message && (

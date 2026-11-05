@@ -18,6 +18,56 @@ is built, where it lives and how to work on it.
 | Gateway SNI passthrough (Compose), PROXY protocol | built | `deploy/gateway/Dockerfile`, `deploy/gateway/sensors/*.wrappers`, `deploy/docker-compose.sensor-passthrough.yml`; `SENSOR_MTLS_TRUSTED_PROXIES` |
 | One port without a gateway: the API terminates TLS and splits by ALPN (`SERVER_TLS_CERT_FILE`) | built | `sensortransport/native.go` (`SplitTLS`), `internal/infra/http/tls.go` |
 
+## Flow
+
+Negotiation, certificate and the control stream, as the sensor (sdk-go
+`pkg/client/transport_v3_manager.go`) and the platform
+(`internal/infra/sensortransport`) run them:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    box Sensor host
+    participant S as sdk-go transport manager
+    end
+    box Platform
+    participant V2 as v2 routes /api/v2/sensor
+    participant H as HTTPS binding /api/v3/sensor
+    participant G as mTLS listener (gRPC)
+    end
+    S->>V2: GET /hello (signed RFC 9421)
+    V2-->>S: features, transport_v3 (endpoints) when SENSOR_TRANSPORT_V3 is not off
+    S->>H: IssueCertificate (signed request, no CSR)
+    H->>H: key-bound, not paused, not shared, budget 5 then 1 per 10 min
+    H-->>S: cert for the registered key, CN sensor id, SPIFFE URI, 7 d, renew_after at 2/3, CA bundle, gRPC endpoint
+    S->>S: persist 0600, refuse a CA bundle that changed over an unpinned channel
+    S->>G: TLS 1.3, ALPN h2 + openctem-sensor/3, client cert = identity key
+    G->>G: SigningIdentity(thumbprint of the cert key), SAN must match the key row, cached 5 s
+    alt handshake or identity refused
+        G-->>S: refused, the sensor blocks (identity) or falls back to HTTPS, then v2
+    else accepted
+        S->>G: Subscribe (server stream)
+        loop until 30 min max age
+            G-->>S: hints - status, pending_jobs, actions, cancel ids, config_version
+            G->>G: keepalive 25 s, identity re-check 30 s and on every status wake
+        end
+        S->>G: unary RPCs (heartbeat, claim, results) replayed in process through the v2 routes
+    end
+```
+
+- A shared sensor (no tenant) gets no certificate and is refused on every v3
+  RPC (`issuer.go`, `server.go`, `handler/sensor_v3_bridge.go`); it stays on
+  v2.
+- The sensor prefers gRPC, then the HTTPS binding, then v2; an identity
+  refusal never falls back (sdk-go `transport_v3_manager.go`). A gRPC failure
+  backs off from 30 minutes, doubling to 4 hours
+  (`transport_v3_select.go`).
+- The stream's hints carry no `content_version`, `stop_command_ids` or
+  `next_heartbeat_seconds`: those reach the sensor only on the heartbeat
+  answer (`subscribe.go`, sdk-go `transport_v3_manager.go:hintsOf`).
+- Key renewal, source and egress credentials and the egress report stay on
+  v2 HTTPS (sdk-go `client/transport_v3.go:v3Carries`).
+
 ## How a call is served
 
 ```
