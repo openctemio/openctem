@@ -14,7 +14,7 @@ import (
 // self-managed instance keeps them.
 func TestSignInFeaturesAreNamedAndAllowedByDefault(t *testing.T) {
 	svc := NewService(&memRepo{}, nil, nil)
-	for _, f := range []string{limits.FeatureSSOConnections, limits.FeatureSSOEnforcement, limits.FeatureSCIM,
+	for _, f := range []string{limits.FeatureSCIM,
 		limits.FeatureSSOGroupLinks, limits.FeatureLDAP} {
 		if !limits.IsFeature(f) {
 			t.Fatalf("%s must be a deniable feature", f)
@@ -30,26 +30,26 @@ func TestSignInFeaturesAreNamedAndAllowedByDefault(t *testing.T) {
 func TestUsableDuringGraceOnly(t *testing.T) {
 	tid, other := shared.NewID(), shared.NewID()
 	now := time.Now()
-	repo := &memRepo{denies: []limits.FeatureDeny{{TenantID: tid, Feature: limits.FeatureSSOEnforcement, Origin: limits.OriginOperator}}}
+	repo := &memRepo{denies: []limits.FeatureDeny{{TenantID: tid, Feature: limits.FeatureSCIM, Origin: limits.OriginOperator}}}
 	svc := NewService(repo, nil, nil)
 	svc.now = func() time.Time { return now }
 	ctx := context.Background()
 
-	if ok, _ := svc.Usable(ctx, tid, limits.FeatureSSOEnforcement); ok {
+	if ok, _ := svc.Usable(ctx, tid, limits.FeatureSCIM); ok {
 		t.Fatal("denied without a grace must not be usable")
 	}
-	_ = repo.StartGrace(ctx, tid, []string{limits.FeatureSSOEnforcement}, now.Add(time.Hour))
-	if ok, _ := svc.Usable(ctx, tid, limits.FeatureSSOEnforcement); !ok {
+	_ = repo.StartGrace(ctx, tid, []string{limits.FeatureSCIM}, now.Add(time.Hour))
+	if ok, _ := svc.Usable(ctx, tid, limits.FeatureSCIM); !ok {
 		t.Fatal("denied inside the grace must stay usable")
 	}
-	if ok, _ := svc.Allowed(ctx, tid, limits.FeatureSSOEnforcement); ok {
+	if ok, _ := svc.Allowed(ctx, tid, limits.FeatureSCIM); ok {
 		t.Fatal("denied inside the grace is still not allowed for new configuration")
 	}
 	svc.now = func() time.Time { return now.Add(2 * time.Hour) }
-	if ok, _ := svc.Usable(ctx, tid, limits.FeatureSSOEnforcement); ok {
+	if ok, _ := svc.Usable(ctx, tid, limits.FeatureSCIM); ok {
 		t.Fatal("after the grace the feature is not usable")
 	}
-	if ok, _ := svc.Usable(ctx, other, limits.FeatureSSOEnforcement); !ok {
+	if ok, _ := svc.Usable(ctx, other, limits.FeatureSCIM); !ok {
 		t.Fatal("another organization's deny must not apply")
 	}
 }

@@ -108,19 +108,25 @@ inventory a collector owns:
 - Assets collectors created before the migration have no rows, so no
   collector changes or marks them until it creates them again.
 
-**Hostname-scoped jobs** (RFC-040 §5.3.1). A report bound to a `scan` or
-`retest` command whose targets name a host creates or changes a located
-asset (domain, subdomain, address, host, service, web application) only
-inside the job: at or under a target name, at a target address or range, or
-at an address an in-bound asset of the same report states (its A or AAAA
-records, `resolved_ips`, address properties, or an address asset whose host
-name is in bounds). Anything else is dropped with its findings, never
-created, in every result-policy mode: the response counts
-`assets_outside_job` and `findings_outside_job`, the receipt names
-`outside_job_targets`, `sensor_results_outside_job_total{kind}` counts it,
-and `sensor.results_outside_job` is audited. Commands whose targets are all
-addresses and ranges keep the address-chunk rule; assets that name no host
-are left to the output contract.
+**Hostname-scoped jobs** (RFC-040 §5.3.1, §5.3.2). A report bound to a
+`scan` or `retest` command whose targets name a host is inside the job for a
+located asset (domain, subdomain, address, host, service, web application)
+at or under a target name, at a target address or range, or at an address
+an in-bound asset of the same report states (its A or AAAA records,
+`resolved_ips`, address properties, or an address asset whose host name is
+in bounds); a service is judged by its host. An asset outside the job is
+recorded, never dropped: a new one is created as a scan discovery (it grants
+nothing; the active-scan gate decides what may be probed), an existing one
+is only marked seen, and its findings are stored but run no new-finding
+automations and the asset does not count as covered by the run. The
+response counts `assets_outside_job` and `findings_outside_job`,
+`sensor_results_outside_job_total{kind}` counts it, and
+`sensor.results_outside_job` is audited (medium). One report records at most
+1000 such assets; the rest are refused with their findings (`assets_over_cap`,
+`findings_over_cap`, item error `too_many`, receipt item `over_cap`, audit
+severity high). Commands whose targets are all addresses and ranges use the
+address-chunk rule the same way (`assets_outside_chunk`); assets that name
+no host are left to the output contract.
 
 **Channel.** The channel a sensor's findings are filed under
 (`findings.ingest_channel`) is `collector` for a collector sensor and
@@ -289,3 +295,18 @@ pending items are never purged. `SENSOR_RESULT_QUARANTINE_RETENTION` (default
   platform does not resolve the name itself (RFC-040 §5.3.1).
 - `simulation_run_id` and `target.asset_id` on validation evidence, telemetry
   `correlation_id` and credential ingest are not yet bound (RFC-040 S3e, S3f).
+
+## What a step run shows
+
+A step run's `findings_count` is what its sensor reported (the findings of
+every report it pushed). Ingest does not store all of them, so each
+command-bound segment also tells the step run what became of the rest:
+`findings_held` (the findings of out-of-contract assets, kept in the results
+quarantine for review; a full quarantine keeps nothing and counts them as
+refused), `findings_refused` (the finding's asset was not stored: outside the
+command's targets, excluded, invalid, or the store failed; the segment's item
+errors say which) and, for template scanners, `info_observations`
+(exposures, see [exposure-taxonomy.md](exposure-taxonomy.md)). The run map
+shows each next to the findings count, so a step never reads "N findings"
+while the findings list shows none of them. Columns:
+`scan_run_steps.findings_held` and `findings_refused`.

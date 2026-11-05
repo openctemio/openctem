@@ -167,7 +167,7 @@ sequenceDiagram
 
 The token is used only by the platform's fetcher. No sensor route carries
 it; sensors receive signed packs by digest
-([secrets for sensor tasks](task-secrets-delivery.md)).
+([task secrets](task-secrets.md)).
 
 - **Write-only credential.** `PUT /{id}/credential` takes a username and a token; the token is sealed with the installation key (`APP_ENCRYPTION_KEY`, rotated by `cmd/rekey`) together with the source id, the organization and the host, and is never returned: responses carry only whether one is set, the username, the last four characters and the time. A sealed value copied to another row, or used after the host changed, does not open, and the sync fails.
 - **Username by token type.** Without a username: a GitLab deploy token (`gldt-`) is refused (it needs the username it was created with), other GitLab tokens use `oauth2`, GitHub tokens `x-access-token`, anything else `oauth2`.

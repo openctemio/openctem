@@ -263,6 +263,17 @@ func (p *FindingProcessor) processBatch(
 		return nil
 	}
 
+	// The persisted assets the report recorded outside its command's
+	// targets: their new findings run no automations.
+	for ref := range output.OutsideJobAssetRefs {
+		if id, ok := assetMap[ref]; ok && !id.IsZero() {
+			if output.OutsideTargetAssetIDs == nil {
+				output.OutsideTargetAssetIDs = map[shared.ID]bool{}
+			}
+			output.OutsideTargetAssetIDs[id] = true
+		}
+	}
+
 	// Step 0: Lookup/create branch record if branch info is available
 	// This maps assetID -> branchID for setting findings.branch_id FK
 	branchMap := p.resolveBranches(ctx, tenantID, report, assetMap, tenantRules)
@@ -337,13 +348,19 @@ func (p *FindingProcessor) processBatch(
 					ingestreceipt.PolicyScopeExclusion, nil)
 				continue
 			}
-			if output.OutsideJobAssetRefs[ctisFinding.AssetRef] {
-				// Its asset lies outside the bound command's targets.
+			if output.OverCapAssetRefs[ctisFinding.AssetRef] {
+				// Its asset lies outside the bound command's targets and the
+				// report had recorded as many of those as one report may.
 				output.FindingsSkipped++
-				output.FindingsOutsideJob++
-				addItem(output, report, &ctisFinding, ingestreceipt.DispositionOutOfScope, ingestreceipt.ReasonOutsideJob,
+				output.FindingsOverCap++
+				addItem(output, report, &ctisFinding, ingestreceipt.DispositionRejected, ingestreceipt.ReasonOverCap,
 					ingestreceipt.PolicyBinding, nil)
 				continue
+			}
+			if output.OutsideJobAssetRefs[ctisFinding.AssetRef] {
+				// Its asset was recorded outside the bound command's targets:
+				// the finding is kept (research 436) and runs no automations.
+				output.FindingsOutsideJob++
 			}
 			if output.OutOfScopeAssetRefs[ctisFinding.AssetRef] {
 				// The upload's actor may not change its asset.
@@ -2318,6 +2335,24 @@ func (p *FindingProcessor) enrichAndClassify(ctx context.Context, tenantID share
 // suppression rule set them to false positive or accepted before insert.
 // They raise no created event (notifications, tickets), get no SLA deadline
 // and are not promoted into the exposure store.
+// withoutOutsideTargets leaves out the findings on assets the report
+// recorded outside its command's targets (job_bound.go): what a scan saw
+// beyond its job is kept, but it notifies nobody, opens no ticket and is
+// routed to no group until a person looks at it.
+func withoutOutsideTargets(findings []*vulnerability.Finding, output *Output) []*vulnerability.Finding {
+	if output == nil || len(output.OutsideTargetAssetIDs) == 0 {
+		return findings
+	}
+	out := make([]*vulnerability.Finding, 0, len(findings))
+	for _, f := range findings {
+		if output.OutsideTargetAssetIDs[f.AssetID()] {
+			continue
+		}
+		out = append(out, f)
+	}
+	return out
+}
+
 func withoutDecided(findings []*vulnerability.Finding) []*vulnerability.Finding {
 	out := make([]*vulnerability.Finding, 0, len(findings))
 	for _, f := range findings {
@@ -2676,7 +2711,7 @@ func (p *FindingProcessor) afterCreate(
 	// created findings. A branch-only finding is not exposure yet: its
 	// workflows run when a counting branch sees it (promoteBranchOnly).
 	if p.findingCreatedCallback != nil || p.sideEffects != nil {
-		if counting := p.withoutReported(ctx, tenantID, p.withoutBranchOnly(ctx, tenantID, withoutDecided(created))); len(counting) > 0 {
+		if counting := p.withoutReported(ctx, tenantID, p.withoutBranchOnly(ctx, tenantID, withoutDecided(withoutOutsideTargets(created, output)))); len(counting) > 0 {
 			switch {
 			case p.sideEffects != nil:
 				p.enqueueCreated(ctx, tenantID, counting)
@@ -2689,7 +2724,7 @@ func (p *FindingProcessor) afterCreate(
 	// Route newly-created findings to groups via assignment rules
 	// (post-insert: FGA records need persisted finding IDs). Best-effort.
 	if p.assignmentApplier != nil {
-		if assigned, err := p.assignmentApplier.ApplyBatch(ctx, tenantID, created); err != nil {
+		if assigned, err := p.assignmentApplier.ApplyBatch(ctx, tenantID, withoutOutsideTargets(created, output)); err != nil {
 			p.logger.Warn("failed to auto-route findings to groups", "error", err, "count", len(created))
 		} else if assigned > 0 {
 			p.logger.Info("auto-routed findings to groups", "assignments", assigned)

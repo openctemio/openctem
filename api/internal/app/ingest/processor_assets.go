@@ -495,19 +495,18 @@ func (p *AssetProcessor) processBatch(
 		if normalizedName == "" {
 			continue
 		}
-		// A scan command whose targets are all addresses and ranges reports
-		// only on them: an asset naming only other addresses is dropped,
-		// with its findings (RFC-088 output binding).
+		// An asset outside its command's addresses (an address-only scan)
+		// or outside its targets (a hostname-scoped scan) is recorded as a
+		// scan discovery, never dropped; past the per-report cap it is
+		// refused with its findings (job_bound.go).
 		if scope.outsideAddressChunk(normalizedName, ctisAsset.Properties) {
-			skipOutsideChunk(output, ctisAsset.ID)
-			continue
-		}
-		// A hostname-scoped command reports only at or under its target
-		// names, its target addresses and the addresses those names state:
-		// anything else is dropped with its findings (job_bound.go).
-		if scope.outsideJobTargets(normalizedName, coreType) {
-			skipOutsideJob(output, ctisAsset.ID)
-			continue
+			if !recordOutsideTargets(output, ctisAsset.ID, true) {
+				continue
+			}
+		} else if scope.outsideJobTargets(normalizedName, coreType) {
+			if !recordOutsideTargets(output, ctisAsset.ID, false) {
+				continue
+			}
 		}
 
 		// When the source last saw this asset (its last_seen, never later

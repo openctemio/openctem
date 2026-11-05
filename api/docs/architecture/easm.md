@@ -325,8 +325,8 @@ the scope decisions that still need a person, one card each
 | `addresses_behind_names` | address assets that in-scope names of the caller resolve to (`resolves_to`) and no entry covers, with `resolved_from` (up to 10 in-scope names), the network we hold and `names_count`; `unknown_network_count` counts the offered addresses we know nothing about (shown as "network unknown", never as "not shared") | `shared_addresses` with the reason: `cdn` (the address record says CDN), `provider` (a CDN or cloud provider network), `edge_range` (a published CDN edge range embedded in the code), `many_domains` (names of 3+ registrable domains of the organization resolve to it), `other_network` (its known network is announced by another organization and is not one of the organization's network seeds); addresses a person rejected, set to dependency or monitor only, or sent back to review |
 | `confirmed_out_of_scope` | domain, subdomain and public address assets a person confirmed that no active entry covers (confirmations made before a confirmation added its own entry) | private or internal names, wildcards |
 
-`total` is the number of decisions waiting: one per card, plus one per
-suggested rule about names and one for the names no rule groups (address rules
+`total` is the number of decisions waiting: one per address group with
+waiting addresses, one per other card, plus one per suggested rule about names and one for the names no rule groups (address rules
 belong to the addresses card). It is the Review tab and sidebar badge
 (`GET /easm/suggestions?view=count`, seeded by the session bootstrap as
 `badges.easm_review`). The web console shows the cards in the Decide panel
@@ -368,6 +368,57 @@ Each offered or already-checked address carries `ownership` (band
 with their parameters), computed by `pkg/domain/addrowner` from the rows the
 card already reads; the card lists addresses strongest first and counts them
 in `bands`. Rules and threats: RFC-054 §21. It authorizes nothing.
+
+**Groups and bulk decisions** (research/425 §5.4-5.5,
+`internal/app/easm/suggestion_groups.go`, `address_decisions.go`). The
+addresses card carries `groups`: every offered, already-checked and shared
+address in exactly one group, keyed `<kind>:<network>`: `own_prefix` (inside
+the organization's own announced prefix the guardrails accept; `range` offers
+that prefix as one `cidr` entry, never a computed supernet), `own_network`
+(a seeded network), `network` (a known AS or holder that is not seeded),
+`block` (no network data; the /24 or /48, for reading only, never an entry),
+`other_network` (shared: another organization announces it), `declined`,
+`provider` and `shared_hosting`. A group carries its addresses, `waiting` and
+`checked` counts, up to 10 in-scope names behind it, the ownership signals with
+how many addresses carry each (`evidence`), and `ask_network` when "is this
+network yours?" may be answered (`network`, `other_network`). `total` counts
+one decision per group with waiting addresses (plus the other cards and name
+rules), so the badge no longer reads 1 for 25 addresses.
+
+| Route | Gate | What it does |
+|---|---|---|
+| `POST /easm/suggestions/addresses/add` | `attack_surface:scope:write` | adds addresses and own ranges as scope entries in one decision (origin `confirmed_asset`, the person as actor: guardrails, deny list, step-up, the approval policy, the signer ledger); a shared address only alone with `include_shared` |
+| `POST /easm/suggestions/addresses/reject` | `assets:write` | attribution `rejected` for the addresses (data scope applies) |
+| `POST /easm/suggestions/networks/ours` | `attack_surface:scope:write` + step-up | the group's AS (or holder name) becomes a network seed; with `address_auto_add` the addresses it makes strong are added at once through the approval policy |
+| `POST /easm/suggestions/networks/not-ours` | `assets:write` | records the network in `easm_declined_networks` and rejects the group's addresses; its addresses are classified `declined` from then on and the question is not asked again |
+| `DELETE /easm/suggestions/declined-networks/{id}` | `assets:write` | undoes a "not ours" network answer |
+
+The server never trusts the posted list: it rebuilds the caller's own card
+(tenant from the session, the caller's data scope) and refuses the whole
+request (`400 DECISION_NOT_PENDING`, nothing written) when any address or
+range is not on it: another tenant's address, one outside the caller's data
+scope, one already covered, a computed block, a prefix the guardrails refuse.
+A shared, CDN or provider address in a bulk is `400 DECISION_SHARED`. At most
+200 items. Each decision writes one audit event listing its items
+(`easm_address_decision.added` / `.rejected`, `easm_declined_network.added` /
+`.deleted`, or `easm_network_seed.added` with `via=decisions_card`), and each
+entry it adds is audited as `scope_target.created`. Every decision is
+reversible: remove the entries, undo the rejection (state `automatic`),
+remove the seed, or remove the declined network. Rate limits are those of
+other scope writes. With approvals on, each added entry is pending for the
+named approvers (one administrator notice per decision); there is no
+batch approval yet.
+
+**Where an address's network data comes from.** Only from what a sensor
+reports in CTIS (`asn`, `asn_org`, `hostname` on the address asset): the
+`lookup.asn` stage of a discovery run, and the asset coverage loop, which
+plans `lookup.asn` for every address asset each week. An address created
+from DNS resolution carries none until then. The coverage loop's passive
+dispatch admits a bare public address that one of the organization's names
+in scope resolves to, even when no scope entry covers it (RFC-071 §6,
+`internal/app/easm/passive_address.go`): before that rule, an address with
+no network data was held by the unknown-network guardrail, so its lookup was
+refused (`no_entry`) and the Decisions card showed "Network unknown" for good.
 
 ## 4b3. Inventory triage (built, research/124)
 

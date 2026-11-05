@@ -91,9 +91,13 @@ type RunMapNode struct {
 	TimeoutSeconds int `json:"timeout_seconds,omitempty"`
 	Findings       int `json:"findings"`
 	// InfoObservations: template scanner info matches filed as exposures.
-	InfoObservations int           `json:"info_observations,omitempty"`
-	Chunks           RunMapChunks  `json:"chunks"`
-	Outputs          RunMapOutputs `json:"outputs"`
+	InfoObservations int `json:"info_observations,omitempty"`
+	// FindingsHeld: reported findings held for review; FindingsRefused:
+	// reported findings not stored.
+	FindingsHeld    int           `json:"findings_held,omitempty"`
+	FindingsRefused int           `json:"findings_refused,omitempty"`
+	Chunks          RunMapChunks  `json:"chunks"`
+	Outputs         RunMapOutputs `json:"outputs"`
 	// Inputs and Planned: how many targets the stage considered and was
 	// handed (absent before the stage is planned).
 	Inputs  *int `json:"inputs,omitempty"`
@@ -117,6 +121,9 @@ type RunMapOutcome struct {
 	Unfinished       int                 `json:"unfinished_target_count,omitempty"`
 	Unreachable      int                 `json:"unreachable_target_count,omitempty"`
 	Skipped          int                 `json:"skipped_target_count,omitempty"`
+	// NoLongerResolve is how many of the skipped targets are names that do
+	// not resolve (a part of Skipped).
+	NoLongerResolve int `json:"no_longer_resolve_count,omitempty"`
 	// NotResolvingSkipped counts the names the platform knows do not
 	// resolve that an active step left out (passive steps still take them).
 	NotResolvingSkipped int `json:"not_resolving_skipped_count,omitempty"`
@@ -401,6 +408,8 @@ func fillNodeFromStepRun(n *RunMapNode, sr *scanrundom.StepRun, platform bool) {
 	}
 	n.Findings = sr.FindingsCount
 	n.InfoObservations = sr.InfoObservations
+	n.FindingsHeld = sr.FindingsHeld
+	n.FindingsRefused = sr.FindingsRefused
 	n.State = mapNodeState(sr.Status, n.Chunks)
 	switch n.State {
 	case mapStateWaiting:
@@ -498,6 +507,7 @@ func stepOutcome(output map[string]any) *RunMapOutcome {
 		Unfinished:       num(scanrunapp.StepOutputUnfinished),
 		Unreachable:      num(scanrunapp.StepOutputUnreachable),
 		Skipped:          num(scanrunapp.StepOutputSkipped),
+		NoLongerResolve:  min(num(scanrunapp.StepOutputNoLongerResolve), num(scanrunapp.StepOutputSkipped)),
 
 		NotResolvingSkipped: num(scanrunapp.StepOutputNotResolvingSkipped),
 	}

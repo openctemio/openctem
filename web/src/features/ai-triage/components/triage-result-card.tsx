@@ -58,12 +58,20 @@ export function TriageResultCard({ result, className }: TriageResultCardProps) {
           <div className="flex flex-col items-center justify-center py-8 text-center">
             <Bot className="h-12 w-12 text-muted-foreground mb-4 animate-pulse" />
             <h3 className="text-lg font-medium mb-2">
-              {result.status === 'pending' ? 'Triage Pending' : 'Analyzing Finding...'}
+              {result.status === 'pending'
+                ? t('findings.aiTriage.card.pendingTitle', 'Triage pending')
+                : t('findings.aiTriage.card.analyzingTitle', 'Analyzing finding...')}
             </h3>
             <p className="text-sm text-muted-foreground">
               {result.status === 'pending'
-                ? 'AI triage has been queued and will start shortly.'
-                : 'Our AI is analyzing this finding. This may take a moment.'}
+                ? t(
+                    'findings.aiTriage.card.pendingBody',
+                    'AI triage has been queued and will start shortly.'
+                  )
+                : t(
+                    'findings.aiTriage.card.analyzingBody',
+                    'The AI is analyzing this finding. This may take a moment.'
+                  )}
             </p>
             <TriageStatusBadge status={result.status} className="mt-4" />
           </div>
@@ -78,7 +86,9 @@ export function TriageResultCard({ result, className }: TriageResultCardProps) {
         <CardContent className="pt-6">
           <div className="flex flex-col items-center justify-center py-8 text-center">
             <XCircle className="h-12 w-12 text-destructive mb-4" />
-            <h3 className="text-lg font-medium mb-2">Triage Failed</h3>
+            <h3 className="text-lg font-medium mb-2">
+              {t('findings.aiTriage.card.failedTitle', 'Triage failed')}
+            </h3>
             <p className="text-sm text-muted-foreground mb-4">
               {triageFailureMessage(t, result.errorCode)}
             </p>
@@ -95,7 +105,7 @@ export function TriageResultCard({ result, className }: TriageResultCardProps) {
         <div className="flex items-center justify-between">
           <CardTitle className="text-lg flex items-center gap-2">
             <Bot className="h-5 w-5" />
-            AI Triage Analysis
+            {t('findings.aiTriage.card.title', 'AI triage analysis')}
           </CardTitle>
           <div className="flex items-center gap-2">
             <AIBadge source="ai_builtin" />
@@ -131,10 +141,10 @@ export function TriageResultCard({ result, className }: TriageResultCardProps) {
           <div className="space-y-1">
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
               <AlertTriangle className="h-3.5 w-3.5" />
-              Severity
+              {t('findings.aiTriage.card.severity', 'Severity')}
             </div>
             <Badge className={cn('capitalize', getSeverityColor(result.severityAssessment))}>
-              {result.severityAssessment || 'Unknown'}
+              {result.severityAssessment || t('findings.aiTriage.card.unknown', 'Unknown')}
             </Badge>
           </div>
 
@@ -142,7 +152,7 @@ export function TriageResultCard({ result, className }: TriageResultCardProps) {
           <div className="space-y-1">
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
               <Target className="h-3.5 w-3.5" />
-              Risk Score
+              {t('findings.aiTriage.card.riskScore', 'Risk score')}
             </div>
             <div className="flex items-center gap-2">
               <span className={cn('text-xl font-bold', getRiskScoreColor(result.riskScore || 0))}>
@@ -156,7 +166,7 @@ export function TriageResultCard({ result, className }: TriageResultCardProps) {
           <div className="space-y-1">
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
               <Shield className="h-3.5 w-3.5" />
-              Exploitability
+              {t('findings.aiTriage.card.exploitability', 'Exploitability')}
             </div>
             {result.exploitability && (
               <Tag
@@ -175,7 +185,7 @@ export function TriageResultCard({ result, className }: TriageResultCardProps) {
           <div className="space-y-1">
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
               <FileWarning className="h-3.5 w-3.5" />
-              False Positive
+              {t('findings.aiTriage.card.falsePositive', 'False positive')}
             </div>
             {result.falsePositiveLikelihood !== undefined && (
               <span
@@ -191,7 +201,9 @@ export function TriageResultCard({ result, className }: TriageResultCardProps) {
         {result.priorityRank !== undefined && (
           <div className="space-y-2">
             <div className="flex items-center justify-between text-sm">
-              <span className="text-muted-foreground">Priority Rank</span>
+              <span className="text-muted-foreground">
+                {t('findings.aiTriage.card.priorityRank', 'Priority rank')}
+              </span>
               <span className="font-medium">{result.priorityRank}/100</span>
             </div>
             <Progress value={result.priorityRank} className="h-2" />
@@ -201,7 +213,9 @@ export function TriageResultCard({ result, className }: TriageResultCardProps) {
         {/* Justification */}
         {result.severityJustification && (
           <div className="space-y-2">
-            <h4 className="text-sm font-medium">Severity Justification</h4>
+            <h4 className="text-sm font-medium">
+              {t('findings.aiTriage.card.severityJustification', 'Severity justification')}
+            </h4>
             <p className="text-sm text-muted-foreground leading-relaxed">
               {result.severityJustification}
             </p>
@@ -211,7 +225,9 @@ export function TriageResultCard({ result, className }: TriageResultCardProps) {
         {/* Business Impact */}
         {result.businessImpact && (
           <div className="space-y-2">
-            <h4 className="text-sm font-medium">Business Impact</h4>
+            <h4 className="text-sm font-medium">
+              {t('findings.aiTriage.card.businessImpact', 'Business impact')}
+            </h4>
             <p className="text-sm text-muted-foreground leading-relaxed">{result.businessImpact}</p>
           </div>
         )}
@@ -219,7 +235,9 @@ export function TriageResultCard({ result, className }: TriageResultCardProps) {
         {/* Remediation Steps */}
         {result.remediationSteps && result.remediationSteps.length > 0 && (
           <div className="space-y-3">
-            <h4 className="text-sm font-medium">Remediation Steps</h4>
+            <h4 className="text-sm font-medium">
+              {t('findings.aiTriage.card.remediationSteps', 'Remediation steps')}
+            </h4>
             <div className="space-y-2">
               {result.remediationSteps.map((step, index) => (
                 <div key={index} className="flex gap-3 text-sm">
@@ -261,8 +279,15 @@ export function TriageResultCard({ result, className }: TriageResultCardProps) {
         {/* Token Usage (Collapsed) */}
         {(result.promptTokens || result.completionTokens) && (
           <div className="text-xs text-muted-foreground border-t pt-3">
-            Tokens used: {result.promptTokens} input + {result.completionTokens} output ={' '}
-            {(result.promptTokens || 0) + (result.completionTokens || 0)} total
+            {t(
+              'findings.aiTriage.card.tokensUsed',
+              'Tokens used: {input} input + {output} output = {total} total',
+              {
+                input: result.promptTokens ?? 0,
+                output: result.completionTokens ?? 0,
+                total: (result.promptTokens || 0) + (result.completionTokens || 0),
+              }
+            )}
           </div>
         )}
       </CardContent>
