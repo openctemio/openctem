@@ -1941,6 +1941,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Retest.SetAuditLogger(s.Audit)
 	// RFC-057 R2: a confirmed fix resolves only when the tenant opted in.
 	s.Retest.SetPolicy(retestapp.TenantPolicy{Tenants: repos.Tenant})
+	s.Retest.SetClosureSettings(s.Tenant) // the organization's closing mode decides a confirmed fix's close
 
 	// Finding evidence (docs/architecture/finding-evidence.md): secret values
 	// are sealed with the platform key (re-keyed by cmd/rekey).
