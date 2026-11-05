@@ -656,7 +656,7 @@ RFC-093) and adds no scheduler.
 | Asset discovery (`asset_discovery`) | `discover.subdomains`, `enumerate.subdomains` (`discover.hosts` when a rule plans it) |
 | Exposure scan (`exposure_scan`) | `scan.ports`, `vuln.templates` (`check.takeover`) |
 | Validation & scoping (`validation_scoping`) | `resolve.dns`, `lookup.rdap`, `lookup.asn`: the facts attribution and scope decisions read |
-| Technology discovery (`technology_discovery`) | `probe.http` (`crawl.web`): the HTTP probe reports each service's technologies |
+| Technology discovery (`technology_discovery`) | `probe.http` (`crawl.web`, `capture.screenshot`): the HTTP probe reports each service's technologies; screenshots only while the organization turned them on |
 
 The mapping is one table in `pkg/domain/coverage/discovery_stage.go`: the capability
 taxonomy's phases do not separate the four stages (`resolve.dns` and
@@ -1002,8 +1002,13 @@ queued by a trigger). Routes: `GET /api/v1/assets/{id}/web-evidence` and
 `.../{evidence_id}/screenshot` (`assets:read`, the asset's data scope, 404
 otherwise; the PNG is served sandboxed and nosniff). Web: the **Web
 evidence** card on the asset page and the screenshot switch on the
-monitoring card. The `screenshot` tool is an optional sensor image (sensor
-repository).
+monitoring card. The sensor tool `webshot` (the sensor's `browser` image)
+implements the capability `capture.screenshot`, which the platform plans as a
+coverage rule on `http_service` every 30 days, and again when the page changes
+(title, status, redirect, favicon; at most daily per asset). While the
+organization's switch is off the capability is paused with readiness reason
+`feature_off` and nothing is dispatched; see
+[asset-coverage.md](asset-coverage.md).
 
 ## 4i. Typed changes and the weekly digest (built)
 
