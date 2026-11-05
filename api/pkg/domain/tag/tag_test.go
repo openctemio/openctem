@@ -20,8 +20,8 @@ func TestCheck(t *testing.T) {
 		{strings.Repeat("a", MaxLength), ""},
 		{strings.Repeat("a", MaxLength+1), ReasonTooLong},
 		{strings.Repeat("é", MaxLength), ""},
-		{"a‮b", ReasonHidden},      // bidi override
-		{"a​b", ReasonHidden},      // zero width space
+		{"a\u202eb", ReasonHidden}, // bidi override
+		{"a\u200bb", ReasonHidden}, // zero width space
 		{"a\x00b", ReasonHidden},   // NUL
 		{"a\nb", ReasonHidden},     // newline
 		{"a\tb", ReasonHidden},     // tab
@@ -62,7 +62,7 @@ func TestValidateNewKeepsLegacyTags(t *testing.T) {
 		t.Fatalf("got %v", out)
 	}
 	// Adding a new long or reserved tag is refused.
-	for _, bad := range []string{strings.Repeat("y", 80), "sys:x", "a‮b"} {
+	for _, bad := range []string{strings.Repeat("y", 80), "sys:x", "a\u202eb"} {
 		_, err = ValidateNew(cur, []string{long, bad})
 		var te *Error
 		if !errors.As(err, &te) {
@@ -92,7 +92,7 @@ func TestFilterImport(t *testing.T) {
 		}
 		return "", true
 	}
-	in := []string{"ok", "OK", "ok", strings.Repeat("z", 200), "bug-bounty", "env:prod", "a​b", "<b>", "fine:1"}
+	in := []string{"ok", "OK", "ok", strings.Repeat("z", 200), "bug-bounty", "env:prod", "a\u200bb", "<b>", "fine:1"}
 	got, dropped := FilterImport(in, protected)
 	want := []string{"ok", "OK", "fine:1"}
 	if strings.Join(got, ",") != strings.Join(want, ",") {

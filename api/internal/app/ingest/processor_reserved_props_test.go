@@ -77,7 +77,7 @@ func TestMergeCTISIntoAsset_DropsHostileTags(t *testing.T) {
 	a.AddTag("team:payments") // set by a person
 
 	hostile := []string{
-		strings.Repeat("x", 200), "bug-bounty", "sys:admin", "a‮b", "<img src=x>", "=HYPERLINK(1)", "env:prod",
+		strings.Repeat("x", 200), "bug-bounty", "sys:admin", "a\u202eb", "<img src=x>", "=HYPERLINK(1)", "env:prod",
 	}
 	p.mergeCTISIntoAsset(a, &ctis.Asset{Value: "h.example.com", Type: "host", Tags: hostile}, nil, time.Time{}, nil)
 	for _, tg := range a.Tags() {
