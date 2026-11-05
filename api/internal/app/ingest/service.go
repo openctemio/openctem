@@ -459,6 +459,9 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	// stay two findings.
 	s.findingProcessor.keyRawSecrets(tenantID, report)
 	redactReportSecrets(report)
+	// PRIVACY: e-mail addresses in any tool's finding text and evidence are
+	// masked (local part), before anything is stored (email_mask.go).
+	maskReportEmails(report)
 	// Fill the normalized members a CTIS 1.4 report left empty from its
 	// typed ids and native identity (interop.go), before the CVE catalog
 	// step and the identity recipes read them.
