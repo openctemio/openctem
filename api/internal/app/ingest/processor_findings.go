@@ -329,7 +329,9 @@ func (p *FindingProcessor) processBatch(
 	for i, reported := range report.Findings {
 		// A network or SCA finding that names several CVEs is one finding
 		// per CVE (RFC-043 decisions D3, D20).
-		for _, ctisFinding := range splitMultiCVEFinding(reported) {
+		parts := splitMultiCVEFinding(reported)
+		output.addOutcome(ingestreceipt.OutcomeSplit, len(parts)-1)
+		for _, ctisFinding := range parts {
 			if output.ExcludedAssetRefs[ctisFinding.AssetRef] {
 				// Its asset matches a scope exclusion and was not added.
 				output.FindingsSkipped++
@@ -477,6 +479,7 @@ func (p *FindingProcessor) processBatch(
 				AssetID:     fm.assetID,
 				MitigatedAt: mitigatedAt(&fm.finding, mitigatedNow),
 			})
+			output.addOutcome(ingestreceipt.OutcomeSourceMitigated, 1)
 			continue
 		}
 		// One report naming the same finding twice (the same package in two
@@ -486,6 +489,7 @@ func (p *FindingProcessor) processBatch(
 		// findings (RFC-043 B2).
 		if _, dup := seenFingerprints[fm.fingerprint]; dup {
 			duplicatesInReport++
+			output.addOutcome(ingestreceipt.OutcomeMerged, 1)
 			continue
 		}
 		seenFingerprints[fm.fingerprint] = struct{}{}

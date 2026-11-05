@@ -49,6 +49,26 @@ const receipt = (over: Partial<ReceiptResponse> = {}): ReceiptResponse =>
 beforeEach(() => getMock.mockReset())
 
 describe('ReceiptSummary', () => {
+  it('says where the other received findings went, and nothing when none', () => {
+    const { unmount } = render(
+      <ReceiptSummary
+        receipt={receipt({
+          outcomes: { merged: 2, exposure: 12, unresolved_ref: 1, unknown_code: 9 },
+        } as Partial<ReceiptResponse>)}
+      />
+    )
+    const box = screen.getByTestId('receipt-outcomes')
+    expect(box).toHaveTextContent('Where the other findings went')
+    expect(screen.getByTestId('receipt-outcome-merged')).toHaveTextContent('Repeats merged2')
+    expect(screen.getByTestId('receipt-outcome-exposure')).toHaveTextContent('Filed as exposures12')
+    expect(screen.getByTestId('receipt-outcome-unresolved_ref')).toHaveTextContent('1')
+    expect(box).not.toHaveTextContent('unknown_code')
+    expect(screen.queryByTestId('receipt-outcome-split')).toBeNull()
+    unmount()
+    render(<ReceiptSummary receipt={receipt({ outcomes: {} } as Partial<ReceiptResponse>)} />)
+    expect(screen.queryByTestId('receipt-outcomes')).toBeNull()
+  })
+
   it('shows every count and that full coverage could close', () => {
     render(<ReceiptSummary receipt={receipt()} />)
     const box = screen.getByTestId('receipt-summary')

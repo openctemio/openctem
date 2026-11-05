@@ -95,6 +95,11 @@ type Input struct {
 // docs/rfcs/RFC-026-sensor-results-ingest.md). Each is off in the zero value,
 // so v1 ingest is unchanged.
 type Options struct {
+	// FindingsRefusedBeforeIngest counts the producer's findings a caller
+	// refused before calling Ingest (protocol v2: a finding that names no
+	// asset of its segment). They count as received, with the outcome
+	// unresolved_ref, so the receipt reconciles with what the producer sent.
+	FindingsRefusedBeforeIngest int
 	// RequireAssetForFindings: no fallback asset. A report with findings but
 	// no assets gets no asset made up from its metadata, and a finding is
 	// attached only to the asset its asset_ref names, never to "the only
@@ -341,6 +346,11 @@ type Output struct {
 	// policy and version that decided them: the receipt records both.
 	Decided []ingestreceipt.PolicyAction `json:"-"`
 	Items   []ingestreceipt.Item         `json:"-"`
+	// FindingsReceived is what the producer sent (before any filter, with
+	// Options.FindingsRefusedBeforeIngest); Outcomes counts where the
+	// findings went beyond the action counts (ingestreceipt.Outcome*).
+	FindingsReceived int            `json:"-"`
+	Outcomes         map[string]int `json:"-"`
 
 	// policy is the snapshot this ingest applies.
 	policy *PolicySnapshot
@@ -403,4 +413,15 @@ func withReportID(ctx context.Context, id string) context.Context {
 func reportIDOf(ctx context.Context) string {
 	id, _ := ctx.Value(reportIDKey{}).(string)
 	return id
+}
+
+// addOutcome counts n received findings under an outcome code.
+func (o *Output) addOutcome(code string, n int) {
+	if o == nil || n <= 0 {
+		return
+	}
+	if o.Outcomes == nil {
+		o.Outcomes = map[string]int{}
+	}
+	o.Outcomes[code] += n
 }

@@ -19,6 +19,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/assettech"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/branch"
+	"github.com/openctemio/openctem/api/pkg/domain/ingestreceipt"
 	"github.com/openctemio/openctem/api/pkg/domain/ingestreport"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/sensorresult"
@@ -508,7 +509,9 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 		s.ResultPolicy(ctx, tenantID).Mode == sensorresult.ModeWarn
 	// Output-type binding (research/27 G12): a command-bound report may
 	// carry only the asset types its tool produces or takes.
+	sentFindings := len(report.Findings)
 	report = s.bindOutputTypes(ctx, agt, tenantID, binding, report, opts)
+	outOfContract := sentFindings - len(report.Findings)
 	// Which channel reported the findings is the platform's to say, from
 	// the principal: a sensor's metadata.source_type is ignored, so it can
 	// never file its findings as a person's or an integration's.
@@ -530,11 +533,14 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	)
 
 	output := &Output{
+		FindingsReceived:  sentFindings + max(opts.FindingsRefusedBeforeIngest, 0),
 		ReportID:          reportID,
 		Binding:           binding.String(),
 		UnsolicitedWarned: unsolicitedWarned,
 		policy:            policy,
 	}
+	output.addOutcome(ingestreceipt.OutcomeUnresolvedRef, opts.FindingsRefusedBeforeIngest)
+	output.addOutcome(ingestreceipt.OutcomeOutOfContract, outOfContract)
 	// Web endpoints (and legacy discovered_url assets) go to the web surface
 	// sub-inventory under their origin asset, never one asset per URL.
 	// Detection rules read the web services before anything is stored
@@ -681,6 +687,7 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	// closed when software changes. A report claiming it is refused.
 	if report.Tool != nil && tooldom.SameTool(report.Tool.Name, softwarematch.ToolName) && len(report.Findings) > 0 {
 		addError(output, "findings: the tool name "+softwarematch.ToolName+" is reserved")
+		output.addOutcome(ingestreceipt.OutcomeReservedTool, len(report.Findings))
 		report.Findings = nil
 	}
 
