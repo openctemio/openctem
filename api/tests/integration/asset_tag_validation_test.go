@@ -18,7 +18,7 @@ import (
 func storedTags(t *testing.T, f *renameFixture, tenant shared.ID, name string) []string {
 	t.Helper()
 	var tags pq.StringArray
-	if err := f.db.QueryRow(`SELECT tags FROM assets WHERE tenant_id=$1 AND name=$2`, tenant.String(), name).Scan(&tags); err != nil {
+	if err := f.db.QueryRowContext(context.Background(), `SELECT tags FROM assets WHERE tenant_id=$1 AND name=$2`, tenant.String(), name).Scan(&tags); err != nil {
 		t.Fatalf("read tags: %v", err)
 	}
 	return tags
@@ -35,7 +35,7 @@ func TestAssetTags_SharedValidatorOnEveryWritePath(t *testing.T) {
 	tid := f.tenant.String()
 
 	// create: refused
-	for _, bad := range []string{strings.Repeat("a", 51), "bug-bounty", "sys:x", "a‮b", "<b>"} {
+	for _, bad := range []string{strings.Repeat("a", 51), "bug-bounty", "sys:x", "a\u202eb", "<b>"} {
 		_, err := svc.CreateAsset(ctx, asset.CreateAssetInput{TenantID: tid, Name: "bad-" + "x.example.internal", Type: "host", Criticality: "low", Tags: []string{bad}})
 		if !errors.Is(err, shared.ErrValidation) {
 			t.Fatalf("create with tag %q: want validation error, got %v", bad, err)
@@ -56,7 +56,7 @@ func TestAssetTags_SharedValidatorOnEveryWritePath(t *testing.T) {
 
 	// legacy tag (over the limit) written directly stays savable
 	long := strings.Repeat("L", 80)
-	if _, err := f.db.Exec(`UPDATE assets SET tags = tags || $3::text WHERE tenant_id=$1 AND name=$2`, tid, "ok.example.internal", long); err != nil {
+	if _, err := f.db.ExecContext(context.Background(), `UPDATE assets SET tags = tags || $3::text WHERE tenant_id=$1 AND name=$2`, tid, "ok.example.internal", long); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := svc.UpdateAsset(ctx, a.ID().String(), tid, asset.UpdateAssetInput{Tags: []string{"team:payments", "env:prod", long, "extra"}}); err != nil {
@@ -65,7 +65,7 @@ func TestAssetTags_SharedValidatorOnEveryWritePath(t *testing.T) {
 
 	// ingest: hostile tags dropped, good kept
 	f.ingest(t, ctis.Asset{ID: "h1", Type: ctis.AssetTypeHost, Value: "ing.example.internal", Name: "ing.example.internal",
-		Tags: []string{strings.Repeat("z", 200), "bug-bounty", "a​b", "fine"}})
+		Tags: []string{strings.Repeat("z", 200), "bug-bounty", "a\u200bb", "fine"}})
 	got := storedTags(t, f, f.tenant, "ing.example.internal")
 	if len(got) != 1 || got[0] != "fine" {
 		t.Fatalf("ingest stored %v, want [fine]", got)
@@ -74,10 +74,10 @@ func TestAssetTags_SharedValidatorOnEveryWritePath(t *testing.T) {
 	// another tenant's asset of the same name is untouched
 	other := createTestTenant(t, f.db, "tag-validator-other")
 	t.Cleanup(func() {
-		_, _ = f.db.Exec(`DELETE FROM assets WHERE tenant_id=$1`, other.String())
-		_, _ = f.db.Exec(`DELETE FROM tenants WHERE id=$1`, other.String())
+		_, _ = f.db.ExecContext(context.Background(), `DELETE FROM assets WHERE tenant_id=$1`, other.String())
+		_, _ = f.db.ExecContext(context.Background(), `DELETE FROM tenants WHERE id=$1`, other.String())
 	})
-	if _, err := f.db.Exec(`INSERT INTO assets (id, tenant_id, name, asset_type, criticality, status, tags) VALUES ($1,$2,'ing.example.internal','host','low','active',ARRAY['theirs'])`, shared.NewID().String(), other.String()); err != nil {
+	if _, err := f.db.ExecContext(context.Background(), `INSERT INTO assets (id, tenant_id, name, asset_type, criticality, status, tags) VALUES ($1,$2,'ing.example.internal','host','low','active',ARRAY['theirs'])`, shared.NewID().String(), other.String()); err != nil {
 		t.Fatal(err)
 	}
 	f.ingest(t, ctis.Asset{ID: "h1", Type: ctis.AssetTypeHost, Value: "ing.example.internal", Name: "ing.example.internal", Tags: []string{"more"}})

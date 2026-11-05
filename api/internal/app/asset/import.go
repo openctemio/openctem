@@ -49,6 +49,8 @@ type TagGuard func(tags []string) error
 
 // ImportCSVAssetsGuarded is ImportCSVAssets with a guard for the tags of each
 // row (tags that rules read need the permission of the rule).
+//
+//nolint:gocognit // the row loop was one function before the guard; splitting it is a separate refactor
 func (s *AssetImportService) ImportCSVAssetsGuarded(ctx context.Context, tenantID string, reader io.Reader, guard TagGuard) (*AssetImportResult, error) {
 	tid, err := shared.IDFromString(tenantID)
 	if err != nil {
