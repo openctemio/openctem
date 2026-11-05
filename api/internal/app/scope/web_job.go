@@ -24,7 +24,12 @@ import (
 // WebScopeBuilder builds a web job's scope (*Service).
 type WebScopeBuilder interface {
 	BuildWebScope(ctx context.Context, tenantID shared.ID, targets []string) (*WebScope, error)
+	BuildDiscoveryWebScope(ctx context.Context, tenantID shared.ID, targets []string, maxRequestsPerHost int) (*WebScope, error)
 }
+
+// DefaultDiscoveryRequestsPerHost is a path discovery job's per-host cap
+// when its config names none (the derived list's per-origin budget).
+const DefaultDiscoveryRequestsPerHost = 300
 
 // ConfinedSensors says whether the organization has an active sensor that
 // reported net.confined@1 (the sensor repository).
@@ -75,7 +80,18 @@ func (g *WebJobGuard) GuardCreate(ctx context.Context, cmd *commanddom.Command) 
 	if g == nil || g.scope == nil {
 		return commanddom.GuardUnwired(cmd)
 	}
-	ws, err := g.scope.BuildWebScope(ctx, cmd.TenantID, job.Targets)
+	var ws *WebScope
+	var err error
+	if job.Discovery {
+		// Path discovery: always the strict scope, with its request cap.
+		limit := commanddom.PayloadDiscoveryMaxRequests(cmd.Payload)
+		if limit <= 0 {
+			limit = DefaultDiscoveryRequestsPerHost
+		}
+		ws, err = g.scope.BuildDiscoveryWebScope(ctx, cmd.TenantID, job.Targets, limit)
+	} else {
+		ws, err = g.scope.BuildWebScope(ctx, cmd.TenantID, job.Targets)
+	}
 	if err != nil {
 		return fmt.Errorf("web scope: %w", err)
 	}

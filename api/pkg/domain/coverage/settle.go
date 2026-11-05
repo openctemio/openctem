@@ -482,7 +482,8 @@ func readGaps(raw json.RawMessage) resultGaps {
 			g.short = true
 			continue
 		}
-		gap := scanrun.CoverageGap{Host: one.Host, Reason: one.Reason}
+		reason, _, _ := scanrun.NormalizeGapReason(one.Reason, "")
+		gap := scanrun.CoverageGap{Host: one.Host, Reason: reason}
 		if one.Reason == scanrun.GapReasonBlocked {
 			if one.Edge == scanrun.EdgeChallenged || one.Edge == scanrun.EdgeBlocked {
 				gap.Edge = one.Edge
@@ -498,12 +499,18 @@ func readGaps(raw json.RawMessage) resultGaps {
 	return g
 }
 
-// gapRank orders two gaps of one host: an edge answer is the most telling.
+// gapRank orders two gaps of one host: an edge answer is the most telling,
+// and a gap that leaves the host uncovered outranks one that does not.
 func gapRank(g scanrun.CoverageGap) int {
-	if g.Reason == scanrun.GapReasonBlocked {
-		return 2
+	switch g.Reason {
+	case scanrun.GapReasonBlocked:
+		return 3
+	case scanrun.GapReasonCatchAll, scanrun.GapReasonAuthWall, scanrun.GapReasonUnstableBaseline, scanrun.GapReasonScopeFiltered:
+		// A reason that leaves the host covered never hides one that
+		// does not.
+		return 1
 	}
-	return 1
+	return 2
 }
 
 // gapHostKey is the comparison form of a host or a target: its host name
@@ -560,6 +567,19 @@ func (g resultGaps) verdict(target string) (Verdict, bool) {
 	case scanrun.GapReasonProxyUnavailable:
 		return Verdict{Kind: VerdictFailed, Outcome: string(outcome.SensorNetworkFault),
 			Error: "the scan's proxy failed, so the host was not judged"}, true
+	case scanrun.GapReasonEdgeProtected:
+		return Verdict{Kind: VerdictFailed, Outcome: string(outcome.EdgeChallenged),
+			Error: edgeError(string(outcome.EdgeChallenged))}, true
+	case scanrun.GapReasonThrottled:
+		return Verdict{Kind: VerdictFailed, Outcome: string(outcome.RateLimited),
+			Error: "the origin kept slowing the requests down"}, true
+	case scanrun.GapReasonBudget:
+		return Verdict{Kind: VerdictFailed, Outcome: OutcomeUnfinished,
+			Error: "the request budget ran out before every candidate was checked"}, true
+	case scanrun.GapReasonCatchAll, scanrun.GapReasonAuthWall, scanrun.GapReasonUnstableBaseline, scanrun.GapReasonScopeFiltered:
+		// The origin was checked; the reason says what the result means
+		// (it stays on the run's coverage gaps).
+		return Verdict{Kind: VerdictCovered, Outcome: OutcomeOK}, true
 	}
 	return Verdict{Kind: VerdictFailed, Outcome: OutcomeUnfinished,
 		Error: "the sensor listed the host as a coverage gap"}, true

@@ -56,6 +56,7 @@ var discoveryStageOf = map[string]DiscoveryStage{
 	"discover.hosts":       StageAssetDiscovery,
 	"scan.ports":           StageExposureScan,
 	"vuln.templates":       StageExposureScan,
+	"enumerate.web_paths":  StageExposureScan,
 	"check.takeover":       StageExposureScan,
 	"resolve.dns":          StageValidation,
 	"lookup.rdap":          StageValidation,

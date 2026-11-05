@@ -185,8 +185,45 @@ func coveragePredicateSQL(p string) string {
 			  AND (st.expires_at IS NULL OR st.expires_at > now())
 			  AND st.target_type IN ('domain', 'subdomain')
 			  AND ` + dnsScopeMatch("st.pattern") + `)`
+	case coverage.RequiresOriginScopeEntry:
+		// The URL host of the web service: a host name needs a domain or
+		// subdomain entry covering it, an address an exact address entry.
+		host := `lower(substring(a.name from '^https?://\[?([^/\]:]+)'))`
+		return `(CASE WHEN ` + host + ` ~ '^[0-9.]+$' OR ` + host + ` LIKE '%:%'
+			THEN EXISTS (SELECT 1 FROM scope_targets st
+				WHERE st.tenant_id = a.tenant_id AND st.status = 'active'
+				  AND (st.expires_at IS NULL OR st.expires_at > now())
+				  AND st.target_type = 'ip_address' AND lower(trim(st.pattern)) = ` + host + `)
+			ELSE EXISTS (SELECT 1 FROM scope_targets st
+				WHERE st.tenant_id = a.tenant_id AND st.status = 'active'
+				  AND (st.expires_at IS NULL OR st.expires_at > now())
+				  AND st.target_type IN ('domain', 'subdomain')
+				  AND ` + hostScopeMatch("st.pattern", host) + `) END)`
+	case coverage.RequiresInventoryChanged:
+		// Endpoints first seen since the last success of path discovery on
+		// the origin, other than the ones discovery itself added.
+		return `EXISTS (SELECT 1 FROM web_endpoints e
+			WHERE e.tenant_id = a.tenant_id AND e.origin_asset_id = a.id AND e.state = 'active'
+			  AND e.sources <> '{guess}'
+			  AND e.first_seen_at > COALESCE((SELECT c.last_success_at FROM asset_coverage c
+				WHERE c.tenant_id = a.tenant_id AND c.asset_id = a.id AND c.vantage = ''
+				  AND c.capability = '` + coverage.CapabilityEnumerateWebPaths + `'), '-infinity'::timestamptz))`
+	case coverage.RequiresEdgeClear:
+		return `NOT EXISTS (SELECT 1 FROM asset_coverage pe
+			WHERE pe.tenant_id = a.tenant_id AND pe.asset_id = a.id AND pe.vantage = ''
+			  AND pe.capability IN ('probe.http', 'vuln.templates')
+			  AND pe.last_outcome IN ('edge_challenged', 'edge_blocked'))`
 	}
 	return "false"
+}
+
+// hostScopeMatch is dnsScopeMatch on a host expression instead of the
+// asset's name.
+func hostScopeMatch(pattern, host string) string {
+	p := "lower(rtrim(trim(" + pattern + "), '.'))"
+	root := "regexp_replace(" + p + ", '^\\*\\*?\\.', '')"
+	return "(" + host + " = " + p + " OR ((" + p + " LIKE '*.%' OR " + p + " LIKE '**.%') AND (" +
+		host + " = " + root + " OR right(" + host + ", length(" + root + ") + 1) = '.' || " + root + ")))"
 }
 
 // webPlausibleSQL is the condition that the open port asset "alias" may
@@ -220,7 +257,8 @@ func webPortsSQL() string {
 // rulePredicates are the reasons reconcile itself sets. Only those flip
 // back to due when the precondition holds again: a pair a capability found
 // not applicable (a DNS check on a name that is not registrable) stays so.
-var rulePredicates = []string{coverage.RequiresResolves, coverage.RequiresWebPort, coverage.RequiresWebPortOrUnscanned, coverage.RequiresScopeEntry, coverage.RequiresNoNamedTwin}
+var rulePredicates = []string{coverage.RequiresResolves, coverage.RequiresWebPort, coverage.RequiresWebPortOrUnscanned, coverage.RequiresScopeEntry, coverage.RequiresNoNamedTwin,
+	coverage.RequiresOriginScopeEntry, coverage.RequiresInventoryChanged, coverage.RequiresEdgeClear}
 
 // coverageRuleSQL returns the applicability and reason expressions of a rule.
 func coverageRuleSQL(rule coverage.Rule) (ok, reason string) {

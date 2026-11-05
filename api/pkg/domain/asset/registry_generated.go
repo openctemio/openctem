@@ -7,7 +7,7 @@ package asset
 
 // RegistryVersion identifies this registry. It changes whenever the
 // registry content changes.
-const RegistryVersion = "98a73e498b7d7ad0"
+const RegistryVersion = "7b46faf31aa05502"
 
 // Lenses.
 const (
@@ -386,6 +386,7 @@ var registryTypes = []TypeDefinition{
 		ScannableBy: []string{"url", "service", "port"},
 		Coverage: []CoverageRule{
 			{Capability: "vuln.templates", EverySeconds: 604800, Requires: []string{"no_named_twin"}},
+			{Capability: "enumerate.web_paths", EverySeconds: 2592000, Requires: []string{"origin_scope_entry", "inventory_changed", "edge_clear"}},
 		},
 	},
 	{
@@ -1906,9 +1907,9 @@ var registryInputs = map[TypeRef]TypeInput{
 	{Type: "network", SubType: "ids"}:                 {Type: "network", SubType: "ids_ips"},
 	{Type: "network", SubType: "ips"}:                 {Type: "network", SubType: "ids_ips"},
 	{Type: "network", SubType: "wireless_ap"}:         {Type: "network", SubType: "access_point"},
-	{Type: "vpc"}:                                     {Type: "network", SubType: "vpc"},
-	{Type: "subnet"}:                                  {Type: "network", SubType: "subnet"},
-	{Type: "firewall"}:                                {Type: "network", SubType: "firewall"},
-	{Type: "load_balancer"}:                           {Type: "network", SubType: "load_balancer"},
-	{Type: "web_application"}:                         {Type: "application", SubType: "website"},
+	{Type: "vpc"}:             {Type: "network", SubType: "vpc"},
+	{Type: "subnet"}:          {Type: "network", SubType: "subnet"},
+	{Type: "firewall"}:        {Type: "network", SubType: "firewall"},
+	{Type: "load_balancer"}:   {Type: "network", SubType: "load_balancer"},
+	{Type: "web_application"}: {Type: "application", SubType: "website"},
 }

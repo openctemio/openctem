@@ -31,6 +31,37 @@ const (
 	GapReasonProxyUnavailable = "proxy_unavailable"
 )
 
+// Coverage-gap reasons of path discovery (enumerate.web_paths,
+// docs/architecture/web-discovery.md): why an origin was not, or not fully,
+// checked. Edge protection, throttling and a spent budget leave the origin
+// not covered; the others say what the result means and the origin counts
+// as covered (coverage.ResultGapCovers).
+const (
+	// GapReasonCatchAll: every path answered like the origin's not-found
+	// page (an application shell); only file shapes were judged.
+	GapReasonCatchAll = "catch_all"
+	// GapReasonAuthWall: every path redirected to a login.
+	GapReasonAuthWall = "auth_wall"
+	// GapReasonEdgeProtected: an edge protection challenged or blocked the
+	// requests.
+	GapReasonEdgeProtected = "edge_protected"
+	// GapReasonThrottled: the origin kept slowing the requests down.
+	GapReasonThrottled = "throttled"
+	// GapReasonUnstableBaseline: the not-found answer changed between
+	// samples, so no candidate could be judged against it.
+	GapReasonUnstableBaseline = "unstable_baseline"
+	// GapReasonBudget: the job's request cap ran out before the list did.
+	GapReasonBudget = "budget"
+	// GapReasonHostileResponse: a response broke a safety bound (size,
+	// ratio, time); the origin was left.
+	GapReasonHostileResponse = "hostile_response"
+	// GapReasonProtocol: the origin did not speak HTTP/1.1.
+	GapReasonProtocol = "protocol"
+	// GapReasonScopeFiltered: candidates the web scope refused; the count is
+	// the detail (a sensor may send "scope_filtered:<n>").
+	GapReasonScopeFiltered = "scope_filtered"
+)
+
 // Bounds of a task's coverage gaps.
 const (
 	// MaxTaskCoverageGaps is how many gaps a task lists.
@@ -48,7 +79,28 @@ const ErrCodeCoverageGaps = FailureCoverageGaps
 
 // GapReasons lists the coverage-gap reasons the platform accepts, in a
 // stable order (the console has words for each; a test checks it).
-var GapReasons = []string{GapReasonBreakerOpen, GapReasonRateFloor, GapReasonBlocked, GapReasonProxyUnavailable}
+var GapReasons = []string{GapReasonBreakerOpen, GapReasonRateFloor, GapReasonBlocked, GapReasonProxyUnavailable,
+	GapReasonCatchAll, GapReasonAuthWall, GapReasonEdgeProtected, GapReasonThrottled, GapReasonUnstableBaseline,
+	GapReasonBudget, GapReasonHostileResponse, GapReasonProtocol, GapReasonScopeFiltered}
+
+// NormalizeGapReason returns a known reason and the detail it carries: the
+// path discovery form "scope_filtered:<n>" is the reason scope_filtered with
+// the count as its detail. An unknown reason returns ok false.
+func NormalizeGapReason(reason, detail string) (string, string, bool) {
+	if r, n, found := strings.Cut(reason, ":"); found {
+		if r != GapReasonScopeFiltered || n == "" || strings.Trim(n, "0123456789") != "" || len(n) > 9 {
+			return "", "", false
+		}
+		if detail == "" {
+			detail = n
+		}
+		reason = r
+	}
+	if !slices.Contains(GapReasons, reason) {
+		return "", "", false
+	}
+	return reason, detail, true
+}
 
 // Gap causes: what a recheck of a breaker_open host found (sdk-go
 // adapt.GapCause values). An unknown value is dropped, the gap kept.
@@ -141,14 +193,15 @@ func ParseCoverageGaps(list json.RawMessage, total int) ([]CoverageGap, int) {
 		host, _ := e["host"].(string)
 		host = safetext.SingleLine(host, maxGapHostRunes)
 		reason, _ := e["reason"].(string)
-		if host == "" || !knownGapReason(reason) {
+		detail, _ := e["detail"].(string)
+		reason, detail, known := NormalizeGapReason(reason, detail)
+		if host == "" || !known {
 			continue
 		}
 		seen++
 		if len(out) >= MaxTaskCoverageGaps {
 			continue
 		}
-		detail, _ := e["detail"].(string)
 		cause, _ := e["cause"].(string)
 		cert, _ := e["cert"].(string)
 		g := CoverageGap{Host: host, Reason: reason, Detail: safetext.SingleLine(detail, maxGapDetailRunes),
@@ -168,14 +221,6 @@ func ParseCoverageGaps(list json.RawMessage, total int) ([]CoverageGap, int) {
 	total = max(total, seen)
 	total = min(total, MaxCoverageGapsTotal)
 	return out, total
-}
-
-func knownGapReason(r string) bool {
-	switch r {
-	case GapReasonBreakerOpen, GapReasonRateFloor, GapReasonBlocked, GapReasonProxyUnavailable:
-		return true
-	}
-	return false
 }
 
 // CoverageGapSummary is the step message of a task that completed with

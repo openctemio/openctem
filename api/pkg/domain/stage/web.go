@@ -5,7 +5,7 @@ import "strings"
 // webStages are the stages whose tools request web paths: a job of theirs
 // keeps to the tenant's path exclusions through its web scope
 // (docs/rfcs/RFC-056-web-attack-surface.md §5, RFC-055 §6.1).
-var webStages = map[Key]bool{CrawlWeb: true, VulnTemplates: true, DASTWeb: true}
+var webStages = map[Key]bool{CrawlWeb: true, EnumerateWebPaths: true, VulnTemplates: true, DASTWeb: true}
 
 // IsWebStage reports whether a stage's tools request web paths.
 func IsWebStage(k Key) bool { return webStages[k] }

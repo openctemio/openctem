@@ -201,7 +201,8 @@ type Service struct {
 	commandRepo       command.Repository
 	toolRepo          tool.Repository // For deriving capabilities from tools
 	securityValidator SecurityValidator
-	sensorSelector    SensorSelector // Optional: for platform sensor support
+	sensorSelector    SensorSelector      // Optional: for platform sensor support
+	pathSwitch        PathDiscoverySwitch // nil: path discovery steps are skipped (path_discovery.go)
 	auditService      AuditService
 	scanDeactivator   ScanDeactivator           // Optional: for cascade scan deactivation
 	scanRunRecorder   ScanRunRecorder           // Optional: records run outcome back onto the scan
