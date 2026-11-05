@@ -111,7 +111,7 @@ func (r *WebPathLedgerRepository) PathRequestsGrantedSince(ctx context.Context, 
 }
 
 // ClaimPathOrigin records a dispatch on one origin, atomically per tenant
-// (an advisory lock serialises the claims, so concurrent callers cannot spend
+// (an advisory lock serializes the claims, so concurrent callers cannot spend
 // the daily budget twice or both dispatch the same origin).
 func (r *WebPathLedgerRepository) ClaimPathOrigin(ctx context.Context, c coverage.PathClaim) (int, string, error) {
 	origin, host, ok := coverage.PathOrigin(c.Origin)

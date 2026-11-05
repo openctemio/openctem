@@ -160,16 +160,15 @@ func (r *WebDiscoveryRepository) siblingPaths(ctx context.Context, tenantID shar
 	if err != nil {
 		return nil, fmt.Errorf("derived: own path hashes: %w", err)
 	}
+	defer func() { _ = rows.Close() }()
 	own := map[string]bool{}
 	for rows.Next() {
 		var h string
 		if err := rows.Scan(&h); err != nil {
-			_ = rows.Close()
 			return nil, fmt.Errorf("derived: scan own path hash: %w", err)
 		}
 		own[h] = true
 	}
-	_ = rows.Close()
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
