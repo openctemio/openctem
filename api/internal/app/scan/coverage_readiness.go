@@ -36,6 +36,10 @@ func (s *Service) CoverageReadiness(ctx context.Context, tenantID shared.ID, cap
 		if !ok {
 			continue
 		}
+		if st.Key == stage.CaptureScreenshot && !s.screenshotsOn(ctx, tenantID) {
+			out[c] = covdom.ReadyFeatureOff
+			continue
+		}
 		tool := st.DefaultTool()
 		if tool == "" {
 			out[c] = covdom.ReadyToolMissing
@@ -49,6 +53,40 @@ func (s *Service) CoverageReadiness(ctx context.Context, tenantID shared.ID, cap
 		out[c] = r
 	}
 	return out
+}
+
+// screenshotsOn reports whether the organization switched web screenshots
+// on (RFC-081). A switch that cannot be read, or no reader, is off: the
+// picture is not taken (fail closed).
+func (s *Service) screenshotsOn(ctx context.Context, tenantID shared.ID) bool {
+	if s.coverageSettings == nil {
+		return false
+	}
+	es, err := s.coverageSettings.GetEASMSettings(ctx, tenantID.String())
+	if err != nil {
+		s.logger.Warn("coverage readiness: screenshot switch unreadable; not planned",
+			"tenant_id", tenantID.String(), "error", err)
+		return false
+	}
+	return es != nil && es.WebScreenshotsEnabled
+}
+
+// StepSkipReason says why a workflow step must not run for the tenant: it
+// takes screenshots and the organization has them off (or the switch cannot
+// be read). "" otherwise. It lets the barrier and stream paths skip the step
+// before any job exists.
+func (s *Service) StepSkipReason(ctx context.Context, tenantID shared.ID, step *scanworkflow.Step) string {
+	if step == nil {
+		return ""
+	}
+	takes := step.Tool == "webshot"
+	for _, c := range step.Capabilities {
+		takes = takes || c == string(stage.CaptureScreenshot)
+	}
+	if takes && !s.screenshotsOn(ctx, tenantID) {
+		return "skipped: " + covdom.ReadinessText(covdom.ReadyFeatureOff)
+	}
+	return ""
 }
 
 // toolReadiness is the readiness of one tool for the tenant.

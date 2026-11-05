@@ -75,6 +75,15 @@ const CapabilityScopeLimits = "scope.limits@1"
 // declares never counts.
 const CapabilityNetConfined = "net.confined@1"
 
+// CapabilityIsolationStrong is the capability of a sensor that proved a
+// strong isolation backend at start-up (sdk-go executor.
+// CapabilityIsolationStrong): a task of a tool whose manifest says
+// `isolation: strong` runs on it. A job of such a tool
+// (command.PayloadKeyRequiredFeatures) is claimable only by a sensor that
+// reported it, and waits otherwise; what an administrator declares never
+// counts.
+const CapabilityIsolationStrong = "isolation.strong@1"
+
 // CapabilityEgressUpstream is the capability of a sensor that runs a job's
 // tool connections through the job's proxy pool (the "egress" member) from
 // its per-task forwarder, and never directly. A sensor whose jobs use a pool

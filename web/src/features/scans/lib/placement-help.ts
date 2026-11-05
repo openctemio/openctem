@@ -99,6 +99,7 @@ export const PLACEMENT_FIX: Record<string, FixTarget | null> = {
   capability_missing: 'sensors',
   not_confined: 'sensors',
   rule_sources_unsupported: 'sensors',
+  strong_isolation_missing: 'sensors',
   grant: 'sensors',
   intensity: 'workflows',
   active_scanning_not_entitled: null,
