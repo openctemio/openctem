@@ -134,7 +134,7 @@ func TestPageSignature(t *testing.T) {
 		"title":    {"title": "Login", "status_code": 200},
 		"status":   {"title": "Home", "status_code": 500},
 		"redirect": {"title": "Home", "status_code": 200, "redirect_url": "https://x.example.com/"},
-		"favicon":  {"title": "Home", "status_code": 200, "favicon_mmh3": "123"},
+		"favicon":  {"title": "Home", "status_code": 200, propFaviconMMH3: "123"},
 	} {
 		if pageSignature(svc(props)) == pageSignature(base) {
 			t.Errorf("%s change not seen", name)

@@ -25,7 +25,9 @@ func (p *AssetProcessor) SetPageChangeNotifier(n PageChangeNotifier) { p.pageCha
 
 // pageWatchedKeys are the stored http_service properties whose change means
 // the page looks different.
-var pageWatchedKeys = []string{"title", "status_code", "redirect_url", "favicon_mmh3"}
+const propFaviconMMH3 = "favicon_mmh3"
+
+var pageWatchedKeys = []string{"title", "status_code", "redirect_url", propFaviconMMH3}
 
 // pageSignature is the watched values of a web service ("" for any other
 // asset, and for a service with none of them yet).
