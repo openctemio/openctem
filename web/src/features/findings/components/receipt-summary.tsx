@@ -12,6 +12,7 @@ import Link from '@/components/link'
 import { Skeleton } from '@/components/ui/skeleton'
 import { RelativeTime } from '@/features/shared/components/relative-time'
 import { DetailSection } from '@/features/shared/components/detail-sheet'
+import { KeyValueList } from '@/features/shared/components/text-layout'
 import { cn } from '@/lib/utils'
 import {
   useFindingReceipts,
@@ -226,18 +227,18 @@ export function ReceiptOutcomes({ outcomes }: { outcomes?: Record<string, number
       <p className="text-muted-foreground text-xs font-medium">
         {t('findings.receipts.outcomesTitle', 'Where the other findings went')}
       </p>
-      <dl className="grid grid-cols-1 gap-x-4 gap-y-1 text-xs sm:grid-cols-2">
-        {rows.map((code) => (
-          <div
-            key={code}
-            className="flex justify-between gap-2"
-            data-testid={`receipt-outcome-${code}`}
-          >
-            <dt className="text-muted-foreground">{outcomeLabel(t, code)}</dt>
-            <dd className="tabular-nums">{outcomes?.[code] ?? 0}</dd>
-          </div>
-        ))}
-      </dl>
+      <KeyValueList
+        size="meta"
+        items={rows.map((code) => ({
+          key: code,
+          label: outcomeLabel(t, code),
+          value: (
+            <span className="tabular-nums" data-testid={`receipt-outcome-${code}`}>
+              {outcomes?.[code] ?? 0}
+            </span>
+          ),
+        }))}
+      />
     </div>
   )
 }
