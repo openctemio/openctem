@@ -47,6 +47,8 @@ type SensorControlV2Handler struct {
 	content      *SensorContentV2Handler
 	feedRelay    *FeedRelayHandler
 	egress       *proxypoolapp.Service
+	toolKeys     ToolKeySource
+	toolGrants   SensorGrantReader
 	limits       protov2.Limits
 	logger       *logger.Logger
 }

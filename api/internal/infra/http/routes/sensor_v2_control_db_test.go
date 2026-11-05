@@ -70,6 +70,19 @@ func newCtlHarness(t *testing.T, opts ...command.Option) *ctlHarness {
 // the command service and the v2 routes when egress is true.
 func newCtlHarnessWith(t *testing.T, egress bool, opts ...command.Option) *ctlHarness {
 	t.Helper()
+	return newCtlHarnessConfig(t, ctlHarnessConfig{egress: egress}, opts...)
+}
+
+// ctlHarnessConfig wires optional services into the v2 routes.
+type ctlHarnessConfig struct {
+	egress bool
+	// toolKeys builds the tool source key delivery (nil: not mounted).
+	toolKeys func(db *postgres.DB) (handler.ToolKeySource, handler.SensorGrantReader)
+}
+
+func newCtlHarnessConfig(t *testing.T, cfg ctlHarnessConfig, opts ...command.Option) *ctlHarness {
+	t.Helper()
+	egress := cfg.egress
 	dbURL := testdb.URL()
 	if dbURL == "" {
 		t.Skip("DATABASE_URL not set; skipping protocol v2 control-plane test")
@@ -116,6 +129,9 @@ func newCtlHarnessWith(t *testing.T, egress bool, opts ...command.Option) *ctlHa
 	ctl := handler.NewSensorControlV2Handler(ih, ch, sh, log)
 	if poolSvc != nil {
 		ctl.SetEgress(poolSvc)
+	}
+	if cfg.toolKeys != nil {
+		ctl.SetToolSources(cfg.toolKeys(db))
 	}
 	receiver := ingest.NewV2Receiver(postgres.NewIngestReportRepository(db), postgres.NewIngestJobRepository(db),
 		postgres.NewIngestJobRepository(db), cmdRepo, protov2.DefaultLimits(), 100, log)
