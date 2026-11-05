@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/openctemio/openctem/api/pkg/domain/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
 
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
@@ -135,6 +136,10 @@ func constructStep(templateID shared.ID, input AddStepInput, capabilities []stri
 		step.SetTool(input.Tool)
 	}
 	if input.Config != nil {
+		// A credential never goes in a step's settings (task secrets carry them).
+		if err := scan.RefuseConfigSecrets(input.Config); err != nil {
+			return nil, err
+		}
 		step.SetConfig(input.Config)
 	}
 	if input.TimeoutSeconds > 0 {
@@ -561,6 +566,9 @@ func applyStepUpdate(step *scanworkflow.Step, input AddStepInput) error {
 		step.Capabilities = input.Capabilities
 	}
 	if input.Config != nil {
+		if err := scan.RefuseConfigSecrets(input.Config); err != nil {
+			return err
+		}
 		step.SetConfig(input.Config)
 	}
 	if input.TimeoutSeconds > 0 {

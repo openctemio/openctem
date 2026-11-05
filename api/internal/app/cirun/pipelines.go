@@ -108,7 +108,7 @@ func (s *Service) AssessPipelines(ctx context.Context, tenantID shared.ID, f cir
 	now := s.now().UTC()
 	out := make([]PipelineView, 0, len(all))
 	for i := range all {
-		out = append(out, PipelineView{Pipeline: all[i], Assessment: all[i].Assess(now, s.cfg.Versions)})
+		out = append(out, PipelineView{Pipeline: all[i], Assessment: all[i].Assess(now, s.versions())})
 	}
 	return out, nil
 }
@@ -120,7 +120,7 @@ func (s *Service) GetPipeline(ctx context.Context, tenantID, id shared.ID) (*Pip
 	if err != nil {
 		return nil, err
 	}
-	return &PipelineView{Pipeline: *p, Assessment: p.Assess(s.now().UTC(), s.cfg.Versions)}, nil
+	return &PipelineView{Pipeline: *p, Assessment: p.Assess(s.now().UTC(), s.versions())}, nil
 }
 
 // PipelineBranches returns the pipeline's branches (runs per branch).

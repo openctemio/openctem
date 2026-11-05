@@ -574,6 +574,11 @@ func (s *Service) configureSingleScan(ctx context.Context, sc *scan.Scan, scanne
 		}
 	}
 
+	// A credential never goes in a scan's settings (task secrets carry
+	// them): refused, naming the keys only.
+	if err := scan.RefuseConfigSecrets(scannerConfig); err != nil {
+		return err
+	}
 	if err := s.refuseDisabledOptIns(ctx, sc.TenantID, scannerConfig); err != nil {
 		return err
 	}
@@ -942,6 +947,11 @@ func (s *Service) UpdateScan(ctx context.Context, input UpdateScanInput) (*scan.
 		// A config saved back as it was shown masked keeps the stored
 		// secrets instead of storing the mask (scan.RedactConfigSecrets).
 		cfg := scan.RestoreRedactedConfigSecrets(input.ScannerConfig, sc.ScannerConfig)
+		// A credential never goes in a scan's settings, nor stays there
+		// through an edit that saves the masked form back.
+		if err := scan.RefuseConfigSecrets(cfg); err != nil {
+			return nil, err
+		}
 		if err := s.refuseDisabledOptIns(ctx, sc.TenantID, cfg); err != nil {
 			return nil, err
 		}
@@ -1285,6 +1295,10 @@ func (s *Service) CloneScan(ctx context.Context, tenantID, scanID, newName, acto
 		return nil, err
 	}
 	if err := s.refuseOutOfActScope(ctx, sc.TenantID, &actor, sc.Targets); err != nil {
+		return nil, err
+	}
+	// A stored credential is never copied into a new scan.
+	if err := scan.RefuseConfigSecrets(sc.ScannerConfig); err != nil {
 		return nil, err
 	}
 

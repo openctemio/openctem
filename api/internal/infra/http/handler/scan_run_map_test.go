@@ -208,9 +208,10 @@ func TestRunMap_StepOutcomeFromOutput(t *testing.T) {
 		"coverage_gaps":           []any{map[string]any{"host": "a.example.com", "reason": "rate_floor"}, map[string]any{"reason": "blocked"}},
 		"unfinished_target_count": float64(2),
 		"skipped_target_count":    float64(1),
+		"no_longer_resolve_count": float64(5), // never more than the skipped
 	})
 	if out == nil || out.CoverageGapCount != 3 || len(out.CoverageGaps) != 1 || out.CoverageGaps[0].Host != "a.example.com" ||
-		out.Unfinished != 2 || out.Skipped != 1 {
+		out.Unfinished != 2 || out.Skipped != 1 || out.NoLongerResolve != 1 {
 		t.Fatalf("outcome %+v", out)
 	}
 	out = stepOutcome(map[string]any{"coverage_gaps": []any{
