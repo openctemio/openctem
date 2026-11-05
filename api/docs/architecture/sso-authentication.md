@@ -31,8 +31,10 @@ Flow (`SSOService`):
 1. `GET /api/v1/auth/sso/providers?org={slug}` → active providers for the org's
    login page.
 2. `GET /api/v1/auth/sso/{provider}/authorize?org={slug}&redirect_uri=…` →
-   builds the IdP authorize URL with a signed **state** (HMAC over org+provider+
-   nonce) for CSRF/replay protection.
+   builds the IdP authorize URL. The **state** is an opaque handle (24 random
+   bytes) signed with HMAC-SHA256; the organization, provider, nonce, PKCE
+   verifier, browser-binding hash and redirect URI live in a server-side record
+   `sso_state:<sha256(handle)>` for 10 minutes, taken once at the callback.
 3. `POST /api/v1/auth/sso/{provider}/callback` → validates state, exchanges the
    code for tokens, fetches userinfo, enforces the email-domain allow-list,
    finds/creates the user, auto-provisions tenant membership (if enabled), and
@@ -47,8 +49,47 @@ organization's `Security.AllowedDomains` (if any) contains it. This is checked
 before an account is created; a refused login gets a generic 403 and leaves no
 account behind. It does not depend on the sign-up policy's mode (which still
 governs the global social sign-in buttons). JIT members get the provider's
-`default_role` (`admin|member|viewer`, default **viewer**, set by the platform
-administrator); only the display name is re-synced on later logins.
+`default_role` (`member` or `viewer`, default **viewer**, set by the platform
+administrator; `admin` is refused); only the display name is re-synced on later logins.
+
+### Flow
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant W as Web sso-auth-actions and /auth/sso/callback route
+    box API /api/v1/auth/sso
+    participant S as SSOService
+    participant R as State store (Redis, in-process without Redis)
+    participant DB as Postgres
+    end
+    box Identity provider
+    participant I as Entra ID, Okta or Google
+    end
+    W->>S: GET /{provider}/authorize?org&redirect_uri (loginRL)
+    S->>S: redirect_uri exact match on AllowedRedirectURIs else 400 SSO_INVALID_REDIRECT
+    S->>DB: tenant by slug, resolveProvider (tenant row, else env fallback for opted-in slugs), decrypt client secret
+    S->>R: sso_state record - org, provider, nonce, PKCE verifier, sha256(binding), 10 min
+    S-->>W: authorization_url, HMAC-signed state handle, browser_binding (no-store)
+    W->>W: cookies sso_state, binding, sso_org, sso_redirect - HttpOnly, Lax, 600 s
+    W->>I: authorize - response_type code, nonce, S256 challenge, openid
+    I-->>W: code and state
+    W->>S: POST /{provider}/callback {code, state, redirect_uri, browser_binding} (crossSite, loginRL)
+    S->>R: consumeState - HMAC, GetDel (single use), binding constant-time, provider = path
+    S->>I: token request with client_secret and code_verifier
+    S->>S: verifyIDToken - JWKS, RS256 PS256 ES256, aud, azp, iss, nonce, 2 min leeway, Entra tid pin
+    S->>DB: user_identities by (issuer, subject), adoptExistingUser, ensureTenantMembership (JIT gates)
+    S->>DB: createSession(auth_method sso, idp_tenant, federated binding), refresh token, audit auth.login
+    S-->>W: access_token, refresh_token, tenant, then HttpOnly cookies, or /login?error=code
+```
+
+Endpoints are fixed per provider type (`identityprovider.AuthEndpoints`,
+`JWKSURL`); no discovery document is fetched for organization SSO. Roles are
+never read from IdP claims or groups: a just-in-time member gets the
+provider's `default_role`, and SCIM groups or administrators give more.
+Identity-provider rows are per organization (`tenant_identity_providers`,
+`saml_providers`); there is no installation-wide provider shared by several
+organizations other than the env fallback above.
 
 ### Email-first sign-in
 
@@ -193,9 +234,10 @@ tenant's own `entra_id` provider suppresses the fallback entry.
 | `SSO_ENTRA_CLIENT_ID` | — | App (client) ID of the shared Entra app registration. |
 | `SSO_ENTRA_CLIENT_SECRET` | — | Client secret (plaintext; env is the trust boundary — no DB encryption). |
 | `SSO_ENTRA_TENANT_ID` | `common` | Entra **directory** id. `common` = multi-tenant Microsoft sign-in. |
-| `SSO_ENTRA_ALLOWED_DOMAINS` | _(empty = any)_ | CSV email-domain allow-list — important when `TENANT_ID=common`. |
+| `SSO_ENTRA_ALLOWED_TENANTS` | _(empty = none)_ | CSV of organization slugs that opted in. An organization not listed gets no env button and no env login. |
+| `SSO_ENTRA_ALLOWED_DOMAINS` | _(empty)_ | CSV email-domain allow-list. **Required** with a multi-tenant authority (`common`, `organizations`, `consumers`): empty means the fallback is refused. |
 | `SSO_ENTRA_DEFAULT_ROLE` | `viewer` | Role granted to auto-provisioned users (least privilege). |
-| `SSO_ENTRA_AUTO_PROVISION` | `true` | Create tenant membership on first login. |
+| `SSO_ENTRA_AUTO_PROVISION` | `true` | Create tenant membership on first login. Forced off with a multi-tenant authority. |
 | `SSO_ENTRA_DISPLAY_NAME` | `Microsoft Entra ID` | Button label. |
 
 `EntraSSOConfig.IsConfigured()` requires `Enabled` + a client id + a client
@@ -203,8 +245,9 @@ secret.
 
 > The fallback only supplies **credentials and endpoints**. The login is still
 > initiated for a specific org (slug); the user is provisioned into *that*
-> tenant. With `SSO_ENTRA_TENANT_ID=common`, set `SSO_ENTRA_ALLOWED_DOMAINS` to
-> avoid letting arbitrary Microsoft accounts in.
+> tenant. With `SSO_ENTRA_TENANT_ID=common` the fallback is refused unless
+> `SSO_ENTRA_ALLOWED_DOMAINS` is set, and it never auto-provisions
+> (`SSOService.envProvider`).
 
 ## Layering
 
