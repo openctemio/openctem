@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/openctemio/contract/outcome"
+
 	scanapp "github.com/openctemio/openctem/api/internal/app/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	covdom "github.com/openctemio/openctem/api/pkg/domain/coverage"
