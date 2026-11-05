@@ -644,9 +644,6 @@ func approvalsResponse(list []scopedom.Approval) []ScopeApprovalResponse {
 	return out
 }
 
-// writeScopeEntryError answers the errors of the scope entry path (step-up
-// and the coded entry errors, RFC-054 §6.1) and reports whether it did. Every
-// route that creates or widens a scope entry answers them the same way.
 // ScopeCriticalClosuresDetails is the details of a 409
 // EXCLUSION_CLOSES_CRITICAL_FINDINGS: how many open critical, P0 or KEV
 // findings the exclusion would close; resend with confirm_critical.
@@ -654,6 +651,9 @@ type ScopeCriticalClosuresDetails struct {
 	CriticalFindings int `json:"critical_findings"`
 }
 
+// writeScopeEntryError answers the errors of the scope entry path (step-up
+// and the coded entry errors, RFC-054 §6.1) and reports whether it did. Every
+// route that creates or widens a scope entry answers them the same way.
 func writeScopeEntryError(w http.ResponseWriter, err error) bool {
 	if middleware.WriteStepUpError(w, err, authapp.StepUpWindow) {
 		return true
@@ -671,7 +671,8 @@ func writeScopeEntryError(w http.ResponseWriter, err error) bool {
 	// lets the client ask for it (research/438).
 	var crit *scope.CriticalClosuresError
 	if errors.As(err, &crit) {
-		apierror.New(http.StatusConflict, apierror.Code(scope.CodeClosesCriticalFindings), crit.Error()).
+		apierror.New(http.StatusConflict, apierror.Code(scope.CodeClosesCriticalFindings),
+			"This would close critical, P0 or KEV findings as out of scope; confirm to continue").
 			WithDetails(ScopeCriticalClosuresDetails{CriticalFindings: crit.Count}).
 			WriteJSON(w)
 		return true
