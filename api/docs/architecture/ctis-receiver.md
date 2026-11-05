@@ -10,6 +10,58 @@
 > `github.com/openctemio/ctis/v2/interop/<format>`, registered with the CTIS
 > importer in one place (`internal/app/ctisformats`).
 
+## Flow
+
+Checked against the code of v0.19.1 and develop on 2026-11-05. The sensor
+path is drawn; CI uploads (`POST /api/v1/ci/runs/{id}/results`, run token,
+50 MiB) and file imports (`POST /api/v1/findings/imports`, `findings:write` +
+`assets:write` + `assets:import`, 6 per minute) join it at the queue, and
+connectors (DefectDojo, program targets, certificate promotion) call
+`ingest.Service.Ingest` directly.
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant S as Sensor
+  participant E as Edge middleware (ingest_v2.go)
+  participant R as V2Receiver
+  participant Q as ingest_jobs (Postgres)
+  participant W as Ingest worker (4 workers, 2 s)
+  participant I as ingest.Service.Ingest
+  S->>E: PUT /api/v2/sensor/commands/{cid}/results/{rid}[/segments/{n}]<br/>sensor key or signed request, Content-Digest, X-OpenCTEM-Lease-Epoch
+  E->>E: throttle 10/s per sensor, length known (411), at most 16 MiB (413),<br/>digest on the bytes sent, bounded gzip or zstd decode (64 MiB)
+  E->>R: tenant from the sensor row only
+  R->>R: OpenCommand: same tenant, not a shared job, held by this sensor,<br/>open or finished under 15 min, epoch equal when sent
+  alt not bound
+    R-->>S: command-not-found (nothing about other commands)
+  end
+  R->>R: decode CTIS 2.x (I-JSON bounds, major 2), validate,<br/>tool declared by the sensor and the command's tool
+  R->>R: back-pressure: 100 jobs or 1 GiB queued per tenant
+  alt queue full or depth unknown
+    R-->>S: 429 queue-full with Retry-After (5 s to 5 min), or unavailable
+  end
+  R->>Q: ingest_reports row (records the lease epoch), sealed segment,<br/>job keyed by report and segment (idempotent)
+  R-->>S: 202 stored (200 on replay)
+  S->>R: POST .../commit (segmented reports, 1 to 256 digests)
+  W->>Q: claim: lane, fair across tenants, 2 running per tenant
+  W->>W: QueuedWorkSensor: sensor still valid, still holds the command<br/>under the recorded epoch (else report failed, audited)
+  W->>I: open the sealed payload, tenant from the stored report row
+  I->>I: assets, relationships, exposures, findings, receipt
+  alt error
+    W->>Q: retry with backoff (30 s doubling to 10 min), dead after 5 attempts
+  end
+```
+
+- Every stage commits on its own; there is no transaction around a whole
+  report. A command-bound segment whose receipt write fails is retried whole.
+- Protocol v3 `PutResult` and `CommitResult` replay the same v2 routes in
+  process (`internal/infra/sensortransport/rpc.go`), but do not pass the lease
+  epoch: a shared sensor's v3 result is refused (`OpenSharedCommand` requires
+  the epoch), and an organization sensor's v3 result gets no accept-time
+  epoch check (the worker still checks the epoch recorded at accept).
+- An unsolicited report (no command) goes through the results quarantine gate
+  ([sensor result binding](sensor-result-binding.md)).
+
 ## What the platform accepts
 
 Every path that applies a CTIS document — sensor protocol v2 results, a
@@ -51,9 +103,14 @@ A document carries canonical natural keys and the producer's own references
   (`ingest.Input.ReportID`; empty means a new id for the ingest).
 - The command or delivery a document answers is bound by the transport
   (`/commands/{command_id}/results/{delivery_id}`), not by the document.
-- Asset and finding ids are resolved from natural keys at ingest: assets by
-  (tenant, stored type, canonical name), findings by the platform's own
-  recomputed fingerprint. A producer's `fingerprint` is a hint only.
+- Asset and finding ids are resolved from natural keys at ingest: assets
+  through the identity cascade (strong identifiers, then the canonical name,
+  aliases and correlators;
+  [asset identity resolution](asset-identity-resolution.md)). The name lookup and the unique
+  key are (tenant, name), not the type: the exact-name step merges into
+  whatever asset holds the name (`GetByNames`, `UpsertBatch`). Findings are
+  resolved by the platform's own recomputed fingerprint. A producer's
+  `fingerprint` is a hint only.
 - The platform's own producers follow the same rule: the DefectDojo
   converter, the certificate promotion and the program target ingester put a
   fresh UUIDv7 in `metadata.id` and no tenant, program, integration or import
