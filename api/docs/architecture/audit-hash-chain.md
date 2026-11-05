@@ -6,6 +6,34 @@ inserts the audit row, so no write path can leave a row unchained, and it
 refuses to update audit rows at all. Editing or deleting an audit row after the
 fact breaks the chain from that point on, and the break is detectable.
 
+## Flow
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant S as Service (audit.Service, any writer)
+    box Postgres
+    participant AL as audit_logs
+    participant TR as trigger audit_log_chain_append (AFTER INSERT)
+    participant CH as audit_log_chain, audit_chain_anchors
+    end
+    participant V as AuditChainVerifyController (hourly) and GET /api/v1/audit-logs/verify
+    participant RT as data-expiration controller (retention)
+    S->>AL: INSERT audit row
+    AL->>TR: same transaction
+    TR->>TR: pg_advisory_xact_lock(chain), chain = tenant_id or the system chain
+    TR->>CH: prev = last chain hash, else newest anchor, else empty
+    TR->>CH: hash = sha256(prev | audit_log_row_payload(row)), hash_version 2
+    Note over AL,CH: UPDATE and TRUNCATE refused by audit_log_refuse_change, UNIQUE (tenant_id, prev_hash) deferred
+    V->>CH: walk from the newest anchor, recompute with the same SQL payload
+    alt mismatch, link broken, position missing
+        V->>V: 409 with breaks (API), metric and log (controller)
+    end
+    RT->>CH: oldest contiguous prefix past AUDIT_RETENTION_DAYS (at least 365)
+    RT->>RT: archive gz JSONL to audit-archive storage
+    RT->>CH: one tx under the same lock - insert anchor = last pruned hash, delete the prefix
+```
+
 ## How it works
 
 | Piece | Where |
@@ -63,6 +91,8 @@ a rebaseline re-signs each row in its own version.
   role. The triggers protect against the application and anything speaking
   with its credentials; an operator with the table owner role can still
   rewrite history, which only an off-database copy of the chain head detects.
+  For the organization chains no such copy is exported today (the head export
+  and the forwarding sink exist for the administrators' log only, below).
 
 ## Retention
 

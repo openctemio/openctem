@@ -5,6 +5,66 @@ A signed-in browser holds a short-lived access token (`AUTH_ACCESS_TOKEN_DURATIO
 session (`AUTH_SESSION_DURATION`, 30 days). `POST /api/v1/auth/refresh` trades the
 refresh token for a new tenant-scoped access token and a new refresh token.
 
+## Flow
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant B as Browser (Web Lock across tabs)
+    participant N as Next server-refresh (single flight, 20 s)
+    box API
+    participant A as AuthService.RefreshToken
+    end
+    participant DB as Postgres refresh_tokens, sessions
+    participant R as Redis revocation store
+    B->>N: refresh
+    N->>A: POST /api/v1/auth/refresh {tenant_id}, refresh_token cookie + CheckDoubleSubmit (crossSite, 20/min)
+    A->>DB: JWT signature, lookup by SHA-256
+    alt token already used
+        A->>A: rotationGraceSuccessor - grace 30 s, same successor, session, family, UA fingerprint
+        alt inside grace
+            A-->>N: the same derived successor, no new row
+        else
+            A->>DB: onRefreshTokenReuse - revoke family, session tokens, session
+            A->>R: blacklist session, audit auth.session_revoked reason refresh_token_reuse
+            A-->>N: 401 REFRESH_TOKEN_REUSED
+        end
+    else valid
+        A->>A: session active, user active, not break-glass, organizationOpen, membership, policy chain
+        A->>DB: RotateIfUnused - exactly one winner, successor same family, 7 d
+        A-->>N: 200 access_token 900 s, rotated refresh_token cookie, new csrf_token cookie
+    end
+```
+
+Only `/auth/refresh` has the grace. `/auth/token` (organization switch),
+`/auth/account-token`, `/auth/create-first-team`,
+`/invitations/accept-with-refresh` and `/auth/mfa/enroll/session` spend the
+token with `spendRefreshToken` (`MarkUsedIfUnused`), so two tabs switching
+organization at the same moment end the session as a reuse.
+
+## CSRF
+
+```mermaid
+flowchart TD
+    R["Unsafe request"] --> T{"Credential source"}
+    T -- "Authorization Bearer JWT, oct_ key, sensor or CI credential" --> P["No CSRF check"]
+    T -- "auth_token cookie (UnifiedAuth)" --> D{"X-CSRF-Token == csrf_token cookie, constant time"}
+    T -- "refresh_token cookie on refresh-token routes" --> D
+    T -- "pre-session POST (login, register, verify, MFA, SSO callback)" --> O{"RejectCrossSiteBrowser - Origin is Host or CORS_ALLOWED_ORIGINS, or Sec-Fetch-Site same-origin"}
+    T -- "SAML ACS, back-channel logout" --> SIG["Signed by the IdP, no CSRF"]
+    D -- "yes" --> OK["Allowed"]
+    D -- "no" --> X["403 CSRF token invalid"]
+    O -- "yes" --> OK
+    O -- "no" --> XO["403 Cross-origin request refused"]
+```
+
+`csrf_token` is not HttpOnly (the page copies it into the header), SameSite
+from `AUTH_COOKIE_SAMESITE` (default Lax), max age the refresh lifetime; it is
+set at login and replaced at every refresh (`middleware/csrf.go`,
+`middleware/unified_auth.go`, `middleware/cross_site.go`). The platform
+console uses its own `admin_csrf` cookie, HttpOnly, SameSite Strict, bound to
+the console session by HMAC.
+
 ## Rotation and reuse detection
 
 Every refresh spends the presented token and issues its successor in the same

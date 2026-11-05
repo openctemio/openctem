@@ -55,6 +55,7 @@ import {
   RiskScoreBadge,
   riskScoreState,
   type DataTableSearch,
+  type FilterPanelToggleProps,
 } from '@/features/shared'
 import { AssetStatusBadge } from '@/features/asset-lifecycle'
 import { useAssetTypeRegistry } from '@/features/asset-types/api/use-asset-type-registry'
@@ -142,8 +143,8 @@ interface InventoryTableProps {
   errorState?: ReactNode
   /** The list's search box (the toolbar draws it). */
   search?: DataTableSearch
-  /** The phone filter-sheet trigger, joined to the search. */
-  filter?: ReactNode
+  /** The facet panel's trigger (side panel from lg, sheet below), joined to the search. */
+  filterToggle?: FilterPanelToggleProps
   toolbarStart?: ReactNode
   toolbarEnd?: ReactNode
   /** A full-width row under the toolbar: the filter chips. */
@@ -179,7 +180,7 @@ export function InventoryTable({
   emptyState,
   errorState,
   search,
-  filter,
+  filterToggle,
   toolbarStart,
   toolbarEnd,
   toolbarBelow,
@@ -663,7 +664,7 @@ export function InventoryTable({
         data={assets}
         showSearch={false}
         search={search}
-        filter={filter}
+        filterToggle={filterToggle}
         emptyState={emptyState}
         errorState={errorState}
         toolbarStart={toolbarStart}

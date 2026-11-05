@@ -302,10 +302,10 @@ type ScanDetailResponse struct {
 	ScannerName    string         `json:"scanner_name,omitempty"`
 	ScannerConfig  map[string]any `json:"scanner_config,omitempty"`
 	// ScannerConfigWarnings lists scanner_config values that look like
-	// secrets (a token, a password, an Authorization header). The config is
-	// sent to the sensor in clear inside every command, so a secret there
-	// travels and rests unprotected. A warning, never a refusal; the value
-	// itself is never echoed.
+	// secrets. A certain credential is refused on save and blocks a run
+	// (SCANNER_CONFIG_SECRET); what is listed here is what only looks like
+	// one (a random-looking value), or a scan stored before the refusal.
+	// The value itself is never echoed.
 	ScannerConfigWarnings []scan.ConfigSecretWarning `json:"scanner_config_warnings,omitempty"`
 	TargetsPerJob         int                        `json:"targets_per_job"`
 	ScheduleType          string                     `json:"schedule_type"`
@@ -964,9 +964,9 @@ func formatBulkMessage(action string, successful, failed int) string {
 // @Accept       json
 // @Produce      json
 // @Param        id       path      string                  true   "Scan ID"
-// @Param        request  body      TriggerScanExecRequest  false  "Trigger context"
+// @Param        request  body      TriggerScanExecRequest  false  "Trigger context: only the key reason (text, at most 500 characters); any other key is refused with TRIGGER_CONTEXT_REFUSED"
 // @Success      201  {object}  RunResponse
-// @Failure      400  {object}  apierror.Error
+// @Failure      400  {object}  apierror.Error  "TRIGGER_CONTEXT_REFUSED: the context sets a key a caller may not set"
 // @Failure      403  {object}  apierror.Error  "caller may not start this scan"
 // @Failure      404  {object}  apierror.Error
 // @Failure      409  {object}  apierror.Error  "SCAN_WINDOW_NEVER_OPENS: a target's scan window never opens"
@@ -981,6 +981,12 @@ func (h *ScanHandler) TriggerScan(w http.ResponseWriter, r *http.Request) {
 	var req TriggerScanExecRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err.Error() != "EOF" {
 		apierror.BadRequest("Invalid request body").WriteJSON(w)
+		return
+	}
+	// The run context reaches the run's sensor jobs and decides its outcome:
+	// a caller may only set the allow-listed keys.
+	if err := scansvc.ValidateCallerTriggerContext(req.Context); err != nil {
+		h.handleServiceError(w, err)
 		return
 	}
 

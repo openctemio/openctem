@@ -88,10 +88,16 @@ type RunMapNode struct {
 	StartedAt   string `json:"started_at,omitempty"`
 	CompletedAt string `json:"completed_at,omitempty"`
 	// TimeoutSeconds is the step's timeout in the run's workflow version.
-	TimeoutSeconds int           `json:"timeout_seconds,omitempty"`
-	Findings       int           `json:"findings"`
-	Chunks         RunMapChunks  `json:"chunks"`
-	Outputs        RunMapOutputs `json:"outputs"`
+	TimeoutSeconds int `json:"timeout_seconds,omitempty"`
+	Findings       int `json:"findings"`
+	// InfoObservations: template scanner info matches filed as exposures.
+	InfoObservations int `json:"info_observations,omitempty"`
+	// FindingsHeld: reported findings held for review; FindingsRefused:
+	// reported findings not stored.
+	FindingsHeld    int           `json:"findings_held,omitempty"`
+	FindingsRefused int           `json:"findings_refused,omitempty"`
+	Chunks          RunMapChunks  `json:"chunks"`
+	Outputs         RunMapOutputs `json:"outputs"`
 	// Inputs and Planned: how many targets the stage considered and was
 	// handed (absent before the stage is planned).
 	Inputs  *int `json:"inputs,omitempty"`
@@ -156,6 +162,12 @@ type RunMapOutcome struct {
 	Unfinished       int                 `json:"unfinished_target_count,omitempty"`
 	Unreachable      int                 `json:"unreachable_target_count,omitempty"`
 	Skipped          int                 `json:"skipped_target_count,omitempty"`
+	// NoLongerResolve is how many of the skipped targets are names that do
+	// not resolve (a part of Skipped).
+	NoLongerResolve int `json:"no_longer_resolve_count,omitempty"`
+	// NotResolvingSkipped counts the names the platform knows do not
+	// resolve that an active step left out (passive steps still take them).
+	NotResolvingSkipped int `json:"not_resolving_skipped_count,omitempty"`
 }
 
 // RunMapCoverageGap is one host and why it was not fully covered
@@ -437,6 +449,9 @@ func fillNodeFromStepRun(n *RunMapNode, sr *scanrundom.StepRun, platform bool) {
 		n.Name = sr.StepName
 	}
 	n.Findings = sr.FindingsCount
+	n.InfoObservations = sr.InfoObservations
+	n.FindingsHeld = sr.FindingsHeld
+	n.FindingsRefused = sr.FindingsRefused
 	n.State = mapNodeState(sr.Status, n.Chunks)
 	switch n.State {
 	case mapStateWaiting:
@@ -534,6 +549,9 @@ func stepOutcome(output map[string]any) *RunMapOutcome {
 		Unfinished:       num(scanrunapp.StepOutputUnfinished),
 		Unreachable:      num(scanrunapp.StepOutputUnreachable),
 		Skipped:          num(scanrunapp.StepOutputSkipped),
+		NoLongerResolve:  min(num(scanrunapp.StepOutputNoLongerResolve), num(scanrunapp.StepOutputSkipped)),
+
+		NotResolvingSkipped: num(scanrunapp.StepOutputNotResolvingSkipped),
 	}
 	appendGap := func(host, reason, cause, cert, edge, vendor any) {
 		h, _ := host.(string)
@@ -562,7 +580,7 @@ func stepOutcome(output map[string]any) *RunMapOutcome {
 	if o.CoverageGapCount < len(o.CoverageGaps) {
 		o.CoverageGapCount = len(o.CoverageGaps)
 	}
-	if o.CoverageGapCount == 0 && o.Unfinished == 0 && o.Unreachable == 0 && o.Skipped == 0 {
+	if o.CoverageGapCount == 0 && o.Unfinished == 0 && o.Unreachable == 0 && o.Skipped == 0 && o.NotResolvingSkipped == 0 {
 		return nil
 	}
 	return &o

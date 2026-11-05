@@ -392,6 +392,25 @@ export function EASMMonitoringCard() {
             )}
           </p>
         </section>
+        <section
+          className="space-y-3 md:col-span-2"
+          aria-label={t('attackSurface.infoMatches.title')}
+        >
+          <div className="flex items-center justify-between gap-3">
+            <Label htmlFor="easm-info-matches" className="font-medium">
+              {t('attackSurface.infoMatches.title')}
+            </Label>
+            <Switch
+              id="easm-info-matches"
+              checked={!!settings.info_matches_as_findings}
+              disabled={!canSettings || busy}
+              onCheckedChange={(on) => void save({ info_matches_as_findings: on })}
+            />
+          </div>
+          <p className="text-xs text-muted-foreground">
+            {t('attackSurface.infoMatches.description')}
+          </p>
+        </section>
         <DigestSection settings={settings} disabled={!canSettings || busy} onSave={save} />
       </CardContent>
       <ConfirmDialog

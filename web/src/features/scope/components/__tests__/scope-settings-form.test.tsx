@@ -163,6 +163,50 @@ describe('ScopeSettingsForm', () => {
     )
   })
 
+  it('sets what happens to addresses your names resolve to (research/425)', async () => {
+    Element.prototype.scrollIntoView ??= () => {}
+    api.put.mockResolvedValue({ ...settings, address_auto_add: 'ask' })
+    const user = userEvent.setup()
+    wrap(
+      <ScopeSettingsForm
+        settings={
+          {
+            ...settings,
+            address_auto_add: 'auto_strong',
+            address_auto_add_effective: 'auto_strong',
+          } as typeof settings
+        }
+      />
+    )
+    const select = screen.getByRole('combobox', { name: 'Addresses your names resolve to' })
+    expect(select).toHaveTextContent('Add automatically when the evidence is strong (default)')
+    expect(screen.getByText(/Shared, CDN and hosting addresses never are/)).toBeInTheDocument()
+    await user.click(select)
+    await user.click(await screen.findByRole('option', { name: 'Ask for each' }))
+    await user.click(screen.getByRole('button', { name: /Save changes/ }))
+    await waitFor(() =>
+      expect(api.put).toHaveBeenCalledWith(
+        '/api/v1/scope/settings',
+        expect.objectContaining({ address_auto_add: 'ask' })
+      )
+    )
+  })
+
+  it('says nothing is added automatically while Strict scan approval is in force', () => {
+    wrap(
+      <ScopeSettingsForm
+        settings={
+          {
+            ...settings,
+            address_auto_add: 'auto_strong',
+            address_auto_add_effective: 'ask',
+          } as typeof settings
+        }
+      />
+    )
+    expect(screen.getByText(/so nothing is added automatically for now/)).toBeInTheDocument()
+  })
+
   it('says the setting is off while Strict scan approval is in force', () => {
     wrap(
       <ScopeSettingsForm

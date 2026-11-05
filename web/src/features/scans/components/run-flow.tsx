@@ -499,6 +499,9 @@ function StepCard({
   const duration = stepDurationLabel(node, now)
   const outputs = node.outputs?.total ?? 0
   const findings = node.findings ?? 0
+  const infoObservations = node.info_observations ?? 0
+  const findingsHeld = node.findings_held ?? 0
+  const findingsRefused = node.findings_refused ?? 0
   const delta = outputsDeltaLabel(node, t)
   const ranSeverity = ranWithSeverityLine(node.ran_with, t)
   const skipped = skippedReasonText(node, byKey, t)
@@ -510,6 +513,14 @@ function StepCard({
   if (outputs > 0) counts.push(t('scans.map.outputs', undefined, { count: compactCount(outputs) }))
   if (findings > 0)
     counts.push(t('scans.map.findings', undefined, { count: compactCount(findings) }))
+  if (findingsHeld > 0)
+    counts.push(t('scans.map.findingsHeld', undefined, { count: compactCount(findingsHeld) }))
+  if (findingsRefused > 0)
+    counts.push(t('scans.map.findingsRefused', undefined, { count: compactCount(findingsRefused) }))
+  if (infoObservations > 0)
+    counts.push(
+      t('scans.map.infoObservations', undefined, { count: compactCount(infoObservations) })
+    )
 
   return (
     <button

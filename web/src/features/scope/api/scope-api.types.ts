@@ -147,6 +147,12 @@ export interface UpdateScopeSettingsInput {
    */
   unclassified_scans?: UnclassifiedScans
   /**
+   * Addresses in-scope names resolve to (research/425): added automatically
+   * when the organization's own network holds them (default), asked for, or
+   * never suggested; sent only when the API reports it.
+   */
+  address_auto_add?: AddressAutoAdd
+  /**
    * Automatic coverage (RFC-093): the organization's explicit choice; omitted
    * keeps the stored one (the default is on, except under Strict approval).
    */
@@ -157,6 +163,9 @@ export interface UpdateScopeSettingsInput {
    */
   ci_scope_requires_proof?: boolean
 }
+
+/** The address setting: what happens to addresses in-scope names resolve to. */
+export type AddressAutoAdd = 'auto_strong' | 'ask' | 'never'
 
 /** The unclassified-scans setting (RFC-054 §16). */
 export type UnclassifiedScans = 'off' | 'low_impact' | 'full'

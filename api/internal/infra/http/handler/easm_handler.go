@@ -33,9 +33,11 @@ type EASMHandler struct {
 	rules  EASMRuleService
 	// suggestions: the attack surface suggestion cards.
 	suggestions EASMSuggester
-	audit       AttributionAuditor
-	changes     EASMChangeLister
-	logger      *logger.Logger
+	// decisions: bulk decisions on the addresses card.
+	decisions EASMAddressDecider
+	audit     AttributionAuditor
+	changes   EASMChangeLister
+	logger    *logger.Logger
 }
 
 // NewEASMHandler creates the handler.
