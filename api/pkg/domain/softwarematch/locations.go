@@ -134,9 +134,9 @@ func Locatable(m Match) bool {
 	if m.Package {
 		return false
 	}
-	switch asset.AssetType(m.AssetType) {
-	case asset.AssetTypeService, asset.AssetTypeHTTPService, asset.AssetTypeOpenPort:
-	default:
+	// A service is stored as type service (its sub type says http, open
+	// port, ...); the legacy http_service and open_port names are input-only.
+	if asset.AssetType(m.AssetType) != asset.AssetTypeService {
 		return false
 	}
 	return ServiceHost(m.AssetName) != ""

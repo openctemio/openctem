@@ -8,7 +8,7 @@ package postgres
 // origin of a host is its own service asset, so one web server answering on
 // http:80 and https:443 had two findings. Findings of one tenant with the
 // same host, product, version and CVE are one finding now: the oldest
-// survives with its status, history, comments, tickets and SLA deadline;
+// survives (taking the strongest open status of the group), with its history, comments, tickets and SLA deadline;
 // each other one becomes a location of it (with the state its status says)
 // and a tombstone (status duplicate, duplicate_of) whose comments, timeline,
 // tickets, evidence and other references move to the survivor. Nothing is
@@ -78,6 +78,10 @@ type LocationMergeGroup struct {
 	// Reopen: the survivor was closed as fixed by the matcher while another
 	// service is still affected; it reopens (as the matcher would).
 	Reopen bool `json:"reopen,omitempty"`
+	// RaiseTo is the strongest open triage status (new, confirmed, in
+	// progress or fix applied) among the affected rows of the group, set
+	// only when it outranks the status the survivor ends with.
+	RaiseTo string `json:"raise_to,omitempty"`
 	// Skipped names why the group is left alone; empty when it merges.
 	Skipped string `json:"skipped,omitempty"`
 	// Notes are facts a reviewer may want (a loser with a stronger open
@@ -185,7 +189,7 @@ const mergeCandidateSQL = `
 	JOIN assets a ON a.id = f.asset_id AND a.tenant_id = f.tenant_id
 	WHERE f.tenant_id = $1 AND ` + matcherOwnedSQL + `
 	  AND f.status <> 'duplicate'
-	  AND a.asset_type IN ('service', 'http_service', 'open_port')
+	  AND a.asset_type = 'service'
 	  AND NOT (COALESCE(f.metadata->'version_match', '{}'::jsonb) ? 'purl')
 	  AND COALESCE(f.cve_id, '') <> ''`
 
@@ -285,10 +289,26 @@ func planGroup(g []mergeCandidate, sigs map[shared.ID]string, pending map[string
 		}
 		if findingStatusRank(c.status) > findingStatusRank(s.status) && locationStateOf(c) == softwarematch.LocationAffected &&
 			locationStateOf(s) == softwarematch.LocationAffected {
-			plan.Notes = append(plan.Notes, "loser "+c.id+" has the stronger open status "+c.status+"; the survivor keeps "+s.status)
+			plan.Notes = append(plan.Notes, "loser "+c.id+" has the stronger open status "+c.status+"; the survivor takes it")
 		}
 		if c.sla.Valid && (!s.sla.Valid || c.sla.Time.Before(s.sla.Time)) && locationStateOf(c) == softwarematch.LocationAffected {
 			plan.Notes = append(plan.Notes, "loser "+c.id+" has an earlier SLA deadline; the survivor takes it")
+		}
+	}
+	// The survivor takes the strongest open triage status of the rows that
+	// are still affected: a confirmed finding is not demoted to new by
+	// folding into it. A reopened survivor starts at confirmed.
+	end := s.status
+	if locationStateOf(s) == softwarematch.LocationFixed && anyAffected {
+		end = string(vulnerability.FindingStatusConfirmed)
+	}
+	best := findingStatusRank(end)
+	for _, c := range g {
+		if locationStateOf(c) != softwarematch.LocationAffected {
+			continue
+		}
+		if r := findingStatusRank(c.status); r >= 2 && r <= 4 && r > best {
+			best, plan.RaiseTo = r, c.status
 		}
 	}
 	switch locationStateOf(s) {
@@ -389,6 +409,13 @@ func (r *LocationMergeRepository) applyGroup(ctx context.Context, tenant, runID 
 					observation_state = 'present', updated_at = NOW()
 				WHERE tenant_id = $1 AND id = $2 AND status = 'resolved'`, tenant, survivor.id); err != nil {
 				return fmt.Errorf("reopen survivor: %w", err)
+			}
+		}
+		if plan.RaiseTo != "" {
+			// The survivor's pre-merge status is journaled (sBefore), so -down restores it.
+			if _, err := tx.ExecContext(ctx, `UPDATE findings SET status = $3, updated_at = NOW() WHERE tenant_id = $1 AND id = $2`,
+				tenant, survivor.id, plan.RaiseTo); err != nil {
+				return fmt.Errorf("raise survivor status: %w", err)
 			}
 		}
 		var events []locationEvent
@@ -550,8 +577,8 @@ func foldLoser(ctx context.Context, tx *sql.Tx, tenant, runID string, survivor, 
 			to: string(locationStateOf(l)), reason: softwarematch.ReasonMerged, version: l.version}
 	}
 	// Tickets and tags are unioned, the earliest detection and SLA deadline
-	// of an affected service win, the latest sighting wins. Status and
-	// assignee stay the survivor's.
+	// of an affected service win, the latest sighting wins. The assignee
+	// stays the survivor's; the status is raised in applyGroup.
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE findings s SET
 			work_item_uris = COALESCE(s.work_item_uris, '{}') || ARRAY(
@@ -970,7 +997,7 @@ func moveBack(ctx context.Context, tx *sql.Tx, ref mergeRef, tenant, survivorID,
 // service assets (merge) or open journal entries (revert).
 func (r *LocationMergeRepository) LocationMergeTenants(ctx context.Context, revert bool) ([]shared.ID, error) {
 	q := `SELECT DISTINCT f.tenant_id::text FROM findings f JOIN assets a ON a.id = f.asset_id AND a.tenant_id = f.tenant_id
-		WHERE ` + matcherOwnedSQL + ` AND f.status <> 'duplicate' AND a.asset_type IN ('service', 'http_service', 'open_port')
+		WHERE ` + matcherOwnedSQL + ` AND f.status <> 'duplicate' AND a.asset_type = 'service'
 		ORDER BY 1`
 	if revert {
 		q = `SELECT DISTINCT tenant_id::text FROM finding_location_merges WHERE reverted_at IS NULL ORDER BY 1`
