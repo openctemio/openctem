@@ -1527,15 +1527,23 @@ func sensorHealthPolicy(cfg *config.Config) sensordom.HealthPolicy {
 // judged against at the token exchange and in pipeline health. It is their
 // own line, never the sensor's: the two are versioned apart, and the sensor
 // minimum would refuse every CI runner release.
-func ciRunnerVersionPolicy(cfg *config.Config, log *logger.Logger) cirun.StatusPolicy {
+//
+// The returned function resolves the line per use: the latest release is the
+// built-in ci.latest raised by the verified release feed
+// (versions.CIRunnerLatest), so a CI runner release reaches the snippets,
+// the "update available" verdicts and the alerts without a restart. An
+// operator's CI_RUNNER_LATEST_VERSION keeps winning when set ("none" turns
+// the comparison off). The settings are validated (and a bad one logged)
+// once, here.
+func ciRunnerVersionPolicy(cfg *config.Config, log *logger.Logger) func() cirun.StatusPolicy {
 	sc := cfg.SensorConfig
-	var pol cirun.StatusPolicy
+	var fixed cirun.StatusPolicy
 	for _, s := range []struct {
 		name, value string
 		dst         *string
 	}{
-		{"CI_RUNNER_LATEST_VERSION", sc.CIRunnerLatestVersion, &pol.LatestVersion},
-		{"CI_RUNNER_MIN_VERSION", sc.CIRunnerMinVersion, &pol.MinVersion},
+		{"CI_RUNNER_LATEST_VERSION", sc.CIRunnerLatestVersion, &fixed.LatestVersion},
+		{"CI_RUNNER_MIN_VERSION", sc.CIRunnerMinVersion, &fixed.MinVersion},
 	} {
 		if s.value == "" {
 			continue
@@ -1548,7 +1556,14 @@ func ciRunnerVersionPolicy(cfg *config.Config, log *logger.Logger) cirun.StatusP
 		}
 		*s.dst = v
 	}
-	return pol
+	if sc.CIRunnerLatestPinned {
+		return func() cirun.StatusPolicy { return fixed }
+	}
+	return func() cirun.StatusPolicy {
+		pol := fixed
+		pol.LatestVersion = versions.CIRunnerLatest()
+		return pol
+	}
 }
 
 // newAttachmentHandlerWithAccessCheck creates an AttachmentHandler with campaign
@@ -2010,7 +2025,7 @@ func newCIRunService(cfg *config.Config, repos *Repositories, svc *Services, log
 		Units:    repos.CIRun,
 		Audit:    audit,
 		Alerts:   ciAlerts,
-	}, cirunapp.Config{WebBaseURL: cfg.SMTP.BaseURL, Versions: ciRunnerVersionPolicy(cfg, log)}, log)
+	}, cirunapp.Config{WebBaseURL: cfg.SMTP.BaseURL, VersionSource: ciRunnerVersionPolicy(cfg, log)}, log)
 	// No CI run token is issued or accepted for a suspended organization.
 	ciSvc.SetOrganizationGate(svc.OrganizationGate)
 	if svc.Suppression != nil {
