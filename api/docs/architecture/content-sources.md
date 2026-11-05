@@ -140,6 +140,35 @@ older than an hour).
 
 ## Credentials, CA and private hosts
 
+```mermaid
+sequenceDiagram
+    autonumber
+    actor A as Admin (scans:sources:write)
+    box Platform
+    participant H as ContentSourceHandler
+    participant SV as contentsource.Service
+    participant DB as Postgres content_sources
+    participant SY as content-source-sync controller
+    end
+    box Internet
+    participant G as Git host
+    end
+    A->>H: PUT /api/v1/content-sources/{id}/credential (username, token), requireStepUp
+    H->>SV: SetCredential(actor, id, username, token)
+    SV->>SV: seal - JSON v, sid, tid, host, token, then APP_ENCRYPTION_KEY AES-256-GCM
+    SV->>DB: credential_encrypted, credential_updated_at WHERE tenant_id
+    SV-->>A: set, username, last 4, audit content_source.credential_set
+    SY->>DB: claim one due source FOR UPDATE SKIP LOCKED, 15 min lease
+    SY->>SV: unseal - refuse when sid, tid or host differ
+    SY->>G: https clone through the guarded dialer, credential never on a cross-host redirect
+    G-->>SY: ref and blobs
+    SY->>SY: archive, lint, sign as a content pack, store snapshot
+```
+
+The token is used only by the platform's fetcher. No sensor route carries
+it; sensors receive signed packs by digest
+([secrets for sensor tasks](task-secrets-delivery.md)).
+
 - **Write-only credential.** `PUT /{id}/credential` takes a username and a token; the token is sealed with the installation key (`APP_ENCRYPTION_KEY`, rotated by `cmd/rekey`) together with the source id, the organization and the host, and is never returned: responses carry only whether one is set, the username, the last four characters and the time. A sealed value copied to another row, or used after the host changed, does not open, and the sync fails.
 - **Username by token type.** Without a username: a GitLab deploy token (`gldt-`) is refused (it needs the username it was created with), other GitLab tokens use `oauth2`, GitHub tokens `x-access-token`, anything else `oauth2`.
 - **Host change clears the credential**, so a stored token is only ever sent to the host it was entered for (audited as `content_source.credential_cleared`).
