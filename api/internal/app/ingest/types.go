@@ -95,6 +95,10 @@ type Input struct {
 // docs/rfcs/RFC-026-sensor-results-ingest.md). Each is off in the zero value,
 // so v1 ingest is unchanged.
 type Options struct {
+	// RefusedItems are findings the caller refused before ingest (protocol
+	// v2: a finding that names no asset of its segment). They are booked on
+	// the receipt's item log with the rest of the report.
+	RefusedItems []ingestreceipt.Item
 	// RequireAssetForFindings: no fallback asset. A report with findings but
 	// no assets gets no asset made up from its metadata, and a finding is
 	// attached only to the asset its asset_ref names, never to "the only
