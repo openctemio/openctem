@@ -452,7 +452,7 @@ func registerEASMRoutes(
 			r.POST("/suggestions/addresses/reject", h.RejectAddresses, middleware.Require(permission.AssetsWrite))
 			r.POST("/suggestions/networks/ours", h.NetworkIsOurs, middleware.Require(permission.ScopeWrite), requireStepUp())
 			r.POST("/suggestions/networks/not-ours", h.NetworkNotOurs, middleware.Require(permission.AssetsWrite))
-			r.DELETE("/suggestions/networks/declined/{id}", h.UndeclineNetwork, middleware.Require(permission.AssetsWrite))
+			r.DELETE("/suggestions/declined-networks/{id}", h.UndeclineNetwork, middleware.Require(permission.AssetsWrite))
 		}
 		if h.HasRules() {
 			r.GET("/candidates/suggestions", h.Suggestions, middleware.Require(permission.AssetsRead))
