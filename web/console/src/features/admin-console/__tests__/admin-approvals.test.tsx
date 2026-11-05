@@ -81,15 +81,15 @@ describe('Approvals page', () => {
     mockList({})
     renderPage('ops_admin')
     expect(useAdminApprovals).toHaveBeenCalledWith(false)
-    expect(screen.getByText(/only a super admin/i)).toBeInTheDocument()
+    expect(screen.getByText(/only a platform owner/i)).toBeInTheDocument()
   })
 
-  it('explains how to turn approvals on when no other super admin can approve', () => {
+  it('explains how to turn approvals on when no other platform owner can approve', () => {
     mockList({ four_eyes: { active: false, approvers: 1, can_approve: true } })
     renderPage('super_admin')
     expect(screen.getByText('Approvals are off')).toBeInTheDocument()
     expect(screen.getByText(/break-glass accounts do not count/i)).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Add a super admin' })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: 'Add a platform owner' })).toHaveAttribute(
       'href',
       '/security/administrators'
     )
@@ -114,7 +114,7 @@ describe('Approvals page', () => {
 
     await user.click(screen.getByRole('button', { name: /^approve$/i }))
     const dialog = screen.getByRole('dialog')
-    expect(within(dialog).getByText(/other@op.test asks: Make a super admin/)).toBeInTheDocument()
+    expect(within(dialog).getByText(/other@op.test asks: Make a platform owner/)).toBeInTheDocument()
     await user.type(within(dialog).getByLabelText(/^reason$/i), 'Confirmed by phone call')
     await user.click(within(dialog).getByRole('button', { name: /^approve$/i }))
     await waitFor(() =>
