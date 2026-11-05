@@ -341,6 +341,10 @@ github.com/opencontainers/go-digest v1.0.0 h1:apOUWs51W5PlhuyGyz9FCeeBIOUDA/6nW8
 github.com/opencontainers/go-digest v1.0.0/go.mod h1:0JzlMkj0TRzQZfJkVvzbP0HBR3IKzErnv2BNG4W4MAM=
 github.com/openctemio/contract v1.1.1 h1:qe8Q57KVuM2FNngk2vBXwzATgUvoe44oORUBbBeqdMY=
 github.com/openctemio/contract v1.1.1/go.mod h1:HxX5pwiijz4RjtUWUjbqsFMIUPMOPx4kyPnsoXVhwW4=
+github.com/openctemio/contract v1.2.0 h1:Pp625hizYUcoXRhQE3DNPTnOXMpng9sPCbNI7UZsp/o=
+github.com/openctemio/contract v1.2.0/go.mod h1:HxX5pwiijz4RjtUWUjbqsFMIUPMOPx4kyPnsoXVhwW4=
+github.com/openctemio/contract v1.3.1 h1:rdV7b5gPwJmtxK2EIJQYu8Wc+JzgLIC5dPIrfMRKKsc=
+github.com/openctemio/contract v1.3.1/go.mod h1:HxX5pwiijz4RjtUWUjbqsFMIUPMOPx4kyPnsoXVhwW4=
 github.com/openctemio/contract/transfer v1.0.1 h1:d7Od6Lmd2rqdd9HwiWnQy8u518vFj4eUOBxFe7+C4BA=
 github.com/openctemio/contract/transfer v1.0.1/go.mod h1:pNJPUtGJBhm+DfBxgeUz2tGSfW1KSUF+Ry7fV0BJnWg=
 github.com/openctemio/ctis/v2 v2.0.1 h1:KGRtKPLTuo1yl9QU1lxAnhuKpb7RPwRukEdvWfzI8HE=

@@ -20,6 +20,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/versions"
 	"github.com/openctemio/openctem/api/pkg/brand"
 	"github.com/openctemio/openctem/api/pkg/crypto"
+	"github.com/openctemio/openctem/api/pkg/domain/attachment"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/httpsec"
 )
@@ -641,8 +642,14 @@ type SensorConfigConfig struct {
 	// the openctem-ci action and image; CI_RUNNER_LATEST_VERSION, default
 	// versions.yaml ci.latest). CI runners have their own release line,
 	// so a pipeline's runner is compared with this, never with the sensor's.
-	// Empty turns the "update available" comparison off.
+	// Empty turns the "update available" comparison off. Unless
+	// CIRunnerLatestPinned, it is only the start-up value: the server
+	// resolves the effective release (raised by the verified release feed)
+	// per use.
 	CIRunnerLatestVersion string
+	// CIRunnerLatestPinned is true when CI_RUNNER_LATEST_VERSION is set: the
+	// operator's value then wins over the release feed.
+	CIRunnerLatestPinned bool
 	// CIRunnerMinVersion is the oldest CI runner release still accepted
 	// (CI_RUNNER_MIN_VERSION, default versions.yaml ci.min; empty = no
 	// minimum). An older runner is refused at the token exchange and its
@@ -1635,6 +1642,7 @@ func Load() (*Config, error) {
 			CollectorImage:        getEnv("SENSOR_COLLECTOR_IMAGE", DefaultCollectorImage),
 			CACertFile:            platformCACertFile(),
 			CIRunnerLatestVersion: sensorVersionSetting(getEnv("CI_RUNNER_LATEST_VERSION", versions.CIRunnerLatest())),
+			CIRunnerLatestPinned:  strings.TrimSpace(os.Getenv("CI_RUNNER_LATEST_VERSION")) != "",
 			CIRunnerMinVersion:    sensorVersionSetting(getEnv("CI_RUNNER_MIN_VERSION", versions.CIRunnerMin())),
 		},
 		Storage: StorageConfig{
@@ -2089,6 +2097,9 @@ func (c *Config) validateStorage() error {
 	}
 	if c.Storage.SSEKMSKeyID != "" && c.Storage.SSE != "aws:kms" {
 		return fmt.Errorf("STORAGE_SSE_KMS_KEY_ID needs STORAGE_SSE=aws:kms")
+	}
+	if (c.Storage.SSE != "" || c.Storage.SSEKMSKeyID != "") && attachment.IsR2Endpoint(c.Storage.Endpoint) {
+		return errors.New(attachment.ErrR2SSE)
 	}
 	switch c.Storage.Provider {
 	case "", "local":

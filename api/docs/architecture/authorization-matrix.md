@@ -232,6 +232,7 @@ check and answers `403 STEP_UP_REQUIRED` (outside the window) or
 - `PATCH /api/v1/tenants/{tenant}/settings/security` (MFA, IP allowlist, allowed domains)
 - `PATCH /api/v1/tenants/{tenant}/settings/modules`, `POST .../settings/modules/reset`, `POST .../settings/modules/presets/{presetId}/apply`
 - `POST /api/v1/secret-store`, `PUT`/`DELETE /api/v1/secret-store/{id}`, `POST .../{id}/rotate`
+- `PUT`/`DELETE /api/v1/tool-sources/{source}/key`, `PATCH /api/v1/tool-sources/{source}`
 - `POST /api/v1/tenants/{tenant}/settings/sso/changes/{id}/approve`
 - `PUT /api/v1/organization/settings/domains/{domain_id}/signup-policy`
 - `DELETE /api/v1/tenants/{tenant}`
@@ -568,8 +569,10 @@ create's target validator, exclusions, zone routing) in one call.
 > keys `(tenant_id, pool_id)` and `(tenant_id, sensor_id)`, so a pool or
 > sensor of another tenant, or a shared sensor, cannot be linked. No response
 > carries a credential. The sensor side
-> (`POST /api/v2/sensor/commands/{id}/egress-credentials` and `/egress-report`)
-> answers only the sensor holding the command's lease. See
+> (`POST /api/v2/sensor/commands/{id}/egress-report`) answers only the sensor
+> holding the command's lease under the epoch in its body; the pool's
+> credentials are a task secret (`POST /api/v2/sensor/commands/{id}/secrets`:
+> trusted, key-bound lease holder only, sealed; [task-secrets.md](task-secrets.md)). See
 > [sensor-proxies.md](sensor-proxies.md).
 
 #### Content catalog (`/api/v1/content`, RFC-099)
@@ -783,6 +786,7 @@ the billing page in the UI.
 | `POST /{id}/snapshots/{snapshot_id}/reject` | `scans:sources:approve` |
 | `POST /hooks/content-sources/{id}` | public: the source's own webhook secret (constant-time compare); only queues a sync |
 | Secret store `GET` / `POST`,`PUT`,`POST /{id}/rotate` / `DELETE` | `scans:secret_store:read` / `:write` and owner/admin / `:delete`; every write also needs **step-up** |
+| Tool source keys `GET /api/v1/tool-sources` / `PUT /{source}/key`,`PATCH /{source}` / `DELETE /{source}/key` ([task-secrets.md](task-secrets.md)) | `scans:secret_store:read` / `:write` and owner/admin / `:delete` and owner/admin; every write also needs **step-up**. A key is never returned |
 
 > **Rule sources** ([content-sources.md](content-sources.md)). Owners and
 > administrators hold every `scans:sources:*` permission (migration

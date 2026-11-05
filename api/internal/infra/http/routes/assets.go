@@ -442,6 +442,18 @@ func registerEASMRoutes(
 		if h.HasSuggestions() {
 			r.GET("/suggestions", h.SuggestionCards, middleware.Require(permission.AssetsRead))
 		}
+		// Bulk decisions on the addresses card (research/425): each item is
+		// checked against the caller's own card. Adding is a scope write
+		// (step-up and approvals in the scope service); "not ours" is an
+		// attribution decision; "this network is ours" declares a network
+		// seed, with step-up.
+		if h.HasAddressDecisions() {
+			r.POST("/suggestions/addresses/add", h.AddAddresses, middleware.Require(permission.ScopeWrite))
+			r.POST("/suggestions/addresses/reject", h.RejectAddresses, middleware.Require(permission.AssetsWrite))
+			r.POST("/suggestions/networks/ours", h.NetworkIsOurs, middleware.Require(permission.ScopeWrite), requireStepUp())
+			r.POST("/suggestions/networks/not-ours", h.NetworkNotOurs, middleware.Require(permission.AssetsWrite))
+			r.DELETE("/suggestions/declined-networks/{id}", h.UndeclineNetwork, middleware.Require(permission.AssetsWrite))
+		}
 		if h.HasRules() {
 			r.GET("/candidates/suggestions", h.Suggestions, middleware.Require(permission.AssetsRead))
 			r.POST("/candidates/rules/preview", h.PreviewRule, middleware.Require(permission.AssetsRead))
@@ -673,6 +685,16 @@ func registerAssetRelationshipRoutes(
 		// in a single round trip. Source asset validation runs ONCE
 		// for the whole batch instead of per-item.
 		r.POST("/batch", h.BatchCreate, middleware.Require(permission.AssetsWrite))
+	}, tenantMiddlewares...)
+
+	// The neighborhood walks up to three hops and several hundred assets
+	// per call: a per-user rate limit on top of its node cap and statement
+	// timeout (docs/architecture/asset-relationships.md, "Neighborhood").
+	neighborhoodRL := middleware.NewRateLimiter(&config.RateLimitConfig{
+		Enabled: true, RequestsPerSec: 2, Burst: 30, CleanupInterval: 5 * time.Minute,
+	}, nil)
+	router.Group("/api/v1/assets/{id}/neighborhood", func(r Router) {
+		r.GET("/", h.Neighborhood, middleware.Require(permission.AssetsRead), neighborhoodRL.UserMiddleware())
 	}, tenantMiddlewares...)
 
 	// Standalone relationship routes (direct CRUD by relationship ID).

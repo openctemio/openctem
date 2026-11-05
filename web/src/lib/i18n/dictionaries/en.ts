@@ -23,6 +23,7 @@ import en_brand from './en/brand.json'
 import en_businessContext from './en/businessContext.json'
 import en_easmReview from './en/easmReview.json'
 import en_threatIntel from './en/threatIntel.json'
+import en_toolSources from './en/toolSources.json'
 import en_emergingThreats from './en/emergingThreats.json'
 import en_auth from './en/auth.json'
 import en_automations from './en/automations.json'
@@ -124,6 +125,7 @@ export const enNamespaces: Record<string, Dictionary> = {
   businessContext: en_businessContext,
   easmReview: en_easmReview,
   threatIntel: en_threatIntel,
+  toolSources: en_toolSources,
   emergingThreats: en_emergingThreats,
   auth: en_auth,
   automations: en_automations,

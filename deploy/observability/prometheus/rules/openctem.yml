@@ -282,7 +282,7 @@ groups:
           runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#outboxlagging
 
       - alert: OutboxDeadLetters
-        expr: max(delta(openctem_outbox_entries{status="dead"}[1h])) > 0
+        expr: sum(increase(openctem_notification_dead_letters_total[1h])) > 0
         labels: {severity: warning, component: api}
         annotations:
           summary: '{{ $value | humanize }} notification(s) gave up in the last hour'

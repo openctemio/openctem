@@ -424,11 +424,16 @@ const (
 	ActionSensorResultsAccepted Action = "sensor.results_accepted"
 	// ActionSensorResultsDiscarded records a person discarding one.
 	ActionSensorResultsDiscarded Action = "sensor.results_discarded"
+	// ActionSensorResultAutoAccepted records the platform releasing a held
+	// (out of contract) report because its tool's verified descriptor now
+	// declares what the report carries. The actor is the system.
+	ActionSensorResultAutoAccepted Action = "sensor_result.auto_accepted"
 	// ActionSensorResultPolicyUpdated records a change of the tenant's
 	// policy for unsolicited sensor results.
 	ActionSensorResultPolicyUpdated Action = "sensor.result_policy_updated"
 	// ActionSensorResultsOutsideJob records report items a sensor sent for a
-	// command that lie outside the command's targets: dropped, not applied.
+	// command that lie outside the command's targets: recorded as
+	// discoveries that grant nothing, and refused past the per-report cap.
 	ActionSensorResultsOutsideJob Action = "sensor.results_outside_job"
 
 	// Pairing and key-bound identity (RFC-052). Expected: an administrator
@@ -928,7 +933,7 @@ func (a Action) IsValid() bool {
 		ActionSensorKeyRenewalRefused, ActionSensorIdentityCloned, ActionSensorJobRefusedByLocalPolicy, ActionSensorOptInChanged,
 		ActionSensorContentRefreshRequested, ActionSensorContentPolicyUpdated, ActionSensorCommandsReleased,
 		ActionSensorResultsQuarantined, ActionSensorResultsAccepted, ActionSensorResultsDiscarded,
-		ActionSensorResultPolicyUpdated, ActionSensorResultsOutsideJob,
+		ActionSensorResultPolicyUpdated, ActionSensorResultsOutsideJob, ActionSensorResultAutoAccepted,
 		ActionSensorPairingExpected, ActionSensorPairingApproved, ActionSensorPairingDenied, ActionSensorPairingCompleted, ActionSensorPairingSuperseded, ActionSensorPairingLookupLocked,
 		ActionSensorRepaired, ActionSensorKeyRevoked, ActionSensorIdentityPolicySet, ActionSensorKeyBound, ActionSensorKeyBindRefused,
 		ActionSensorEnrollmentTokenCreated, ActionSensorEnrollmentTokenRevoked, ActionSensorEnrolled, ActionSensorEnrollmentRefused,
