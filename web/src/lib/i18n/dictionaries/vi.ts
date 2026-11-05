@@ -23,6 +23,7 @@ import vi_brand from './vi/brand.json'
 import vi_businessContext from './vi/businessContext.json'
 import vi_easmReview from './vi/easmReview.json'
 import vi_threatIntel from './vi/threatIntel.json'
+import vi_toolSources from './vi/toolSources.json'
 import vi_emergingThreats from './vi/emergingThreats.json'
 import vi_auth from './vi/auth.json'
 import vi_automations from './vi/automations.json'
@@ -124,6 +125,7 @@ export const viNamespaces: Record<string, Dictionary> = {
   businessContext: vi_businessContext,
   easmReview: vi_easmReview,
   threatIntel: vi_threatIntel,
+  toolSources: vi_toolSources,
   emergingThreats: vi_emergingThreats,
   auth: vi_auth,
   automations: vi_automations,
