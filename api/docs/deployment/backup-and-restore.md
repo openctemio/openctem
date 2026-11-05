@@ -42,7 +42,7 @@ sequenceDiagram
     B->>B: status file for the Health page, metrics textfile
     O->>B: ./backup.sh verify - newest dump into a throwaway postgres, row counts per table, volume tars
     O->>B: ./backup.sh restore DIR --yes (BACKUP_AGE_IDENTITY for .age)
-    B->>B: VERSION mismatch warning, stop gateway, web, console, api
+    B->>B: VERSION mismatch warning, stop gateway, web, console, api (and signer when it runs)
     B->>PG: terminate sessions, pg_restore --clean --if-exists --no-owner --exit-on-error
     B->>PG: compose up -d --no-deps db-roles
     B->>V: wipe and untar api-data, gateway-data, signer-keys, signer-state
@@ -50,7 +50,8 @@ sequenceDiagram
 ```
 
 The restore leaves `.env` alone (restore `env.tar.gz` by hand on a new host)
-and does not stop the `signer` container while its volumes are replaced. The
+and stops the `signer` container, when it runs, before its volumes are
+replaced. The
 Ansible kit's `openctem-backup` adds a manifest signed with the host key
 (`ssh-keygen -Y sign -n openctem-backup`), and `openctem-restore` verifies it,
 refuses a version mismatch unless allowed, dumps the current database first
