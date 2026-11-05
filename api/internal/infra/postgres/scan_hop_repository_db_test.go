@@ -241,3 +241,27 @@ func TestAddStepInfoObservations(t *testing.T) {
 		t.Fatalf("step run InfoObservations = %d", sr.InfoObservations)
 	}
 }
+
+// A step run's held and refused finding counts add up, and another tenant
+// cannot change them.
+func TestAddStepFindingDispositions(t *testing.T) {
+	db := openHopDB(t)
+	repo := NewScanHopRepository(&DB{DB: db})
+	ctx := context.Background()
+	a, b := newHopTenant(t, db, 0), newHopTenant(t, db, 0)
+	for _, d := range [][2]int{{10, 2}, {3, 0}, {0, 0}, {-4, -1}} {
+		if err := repo.AddStepFindingDispositions(ctx, a.tenant, a.stepRun, d[0], d[1]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := repo.AddStepFindingDispositions(ctx, b.tenant, a.stepRun, 100, 100); err != nil {
+		t.Fatal(err)
+	}
+	sr, err := NewStepRunRepository(&DB{DB: db}).GetByID(ctx, a.stepRun)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sr.FindingsHeld != 13 || sr.FindingsRefused != 2 {
+		t.Fatalf("held %d refused %d, want 13 and 2 (another tenant's 100 must not count)", sr.FindingsHeld, sr.FindingsRefused)
+	}
+}

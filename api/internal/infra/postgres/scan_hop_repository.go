@@ -567,6 +567,26 @@ func (r *ScanHopRepository) UnchangedSince(ctx context.Context, tenantID, previo
 	return out, rows.Err()
 }
 
+// AddStepFindingDispositions adds the findings a step run's reports left
+// unstored: held for review and refused. Tenant-scoped like
+// AddStepInfoObservations.
+func (r *ScanHopRepository) AddStepFindingDispositions(ctx context.Context, tenantID, stepRunID shared.ID, held, refused int) error {
+	if (held <= 0 && refused <= 0) || stepRunID.IsZero() {
+		return nil
+	}
+	_, err := r.db.ExecContext(ctx, `
+		UPDATE scan_run_steps sr
+		SET findings_held = sr.findings_held + GREATEST($3, 0),
+		    findings_refused = sr.findings_refused + GREATEST($4, 0)
+		FROM scan_runs pr
+		WHERE sr.id = $2 AND pr.id = sr.scan_run_id AND pr.tenant_id = $1`,
+		tenantID.String(), stepRunID.String(), held, refused)
+	if err != nil {
+		return fmt.Errorf("add step finding dispositions: %w", err)
+	}
+	return nil
+}
+
 // AddStepInfoObservations adds n to the info_observations count of a step
 // run of the tenant (a step run of another tenant is not changed).
 func (r *ScanHopRepository) AddStepInfoObservations(ctx context.Context, tenantID, stepRunID shared.ID, n int) error {
