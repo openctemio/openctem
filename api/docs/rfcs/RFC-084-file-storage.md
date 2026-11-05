@@ -288,6 +288,18 @@ upload with a validating finalize step, envelope encryption for local
 storage, keeping original SBOM documents, compliance control evidence, ticket
 attachment sync.
 
+**Cloudflare R2 as the S3 target**: the S3 driver sets request checksums to
+"when required" and response validation to "when required" for every custom
+endpoint (the SDK default trailing checksum is rejected by R2 and other
+S3-compatible stores), and refuses `STORAGE_SSE` / `STORAGE_SSE_KMS_KEY_ID` on
+an R2 endpoint (`*.r2.cloudflarestorage.com`, including the `eu` and `fedramp`
+forms) because R2 always encrypts at rest. The section "Cloudflare R2" of
+[file-storage.md](../architecture/file-storage.md) covers endpoints, the
+bucket-scoped token, the bucket lock recipe for `audit-archive/` and its limits,
+location hints and jurisdictions, and client-side encryption for hosted use.
+The integration test runs against an existing bucket with
+`OPENCTEM_TEST_S3_BUCKET`.
+
 ## 7. Not built
 
 A second storage abstraction or a generic blob table; a resumable upload

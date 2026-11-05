@@ -28,6 +28,41 @@ password or TOTP; SSO users re-authenticate at their identity provider).
   or a client flag, so it cannot be replayed from another browser, another
   session of the same user, or by another user naming the session id.
 
+## Flow
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant W as Web (shared dialog "Confirm it is you")
+    box API
+    participant G as middleware.RequireRecentAuth (requireStepUp, after the permission check)
+    participant S as auth step-up service
+    end
+    participant DB as Postgres sessions
+    participant I as Organization IdP
+    W->>G: protected request (session from JWT)
+    G->>DB: GREATEST(created_at, step_up_at), or step_up_at only for an idp_tenant session
+    alt within 600 s
+        G-->>W: handler runs
+    else API key, no session
+        G-->>W: 403 STEP_UP_UNAVAILABLE
+    else stale
+        G-->>W: 403 STEP_UP_REQUIRED, details.window_seconds 600
+        W->>S: GET /api/v1/auth/step-up - method totp, password or fresh_sign_in
+        alt totp or password
+            W->>S: POST /api/v1/auth/step-up {totp or password} (stepUpRL 5/min, CSRF for cookie sessions)
+            S->>S: TOTP only when enrolled (no password, no recovery code, replay refused)
+            S-->>W: 403 STEP_UP_FAILED (lockout counter, audit auth.step_up_failed) or STEP_UP_CODE_USED
+            S->>DB: step_up_at = now, audit auth.step_up
+        else fresh_sign_in (SSO without TOTP)
+            W->>I: authorize with prompt=login and max_age=0, or SAML ForceAuthn (reauth)
+            I-->>S: auth_time or AuthnInstant at most 5 min old
+            S->>DB: step_up_at = IdP time
+        end
+        W->>G: retry within the window
+    end
+```
+
 ## API
 
 | Route | What it does |
@@ -188,9 +223,11 @@ the web dialog appears and the request is retried.
 
 The gate judges only the user making the request: a grant authorized
 earlier and applied for someone else (an invitation accepted by the invitee,
-SCIM, SSO just-in-time provisioning) is not asked again. There is no separate
-ownership-transfer action: making someone an owner is the owner-role grant
-above.
+SCIM, SSO just-in-time provisioning) is not asked again. Ownership transfer
+(`POST /api/v1/organization/ownership-transfer` and `/approve`) is a separate
+action behind `requireStepUp()` on its routes; so are
+`POST /api/v1/organization/leave`, `DELETE /api/v1/me/account` and
+`POST /api/v1/me/ownership-invitations/{id}/accept`.
 
 Sensor pairing approval (`POST /api/v1/sensor-pairings/{id}/approve`, RFC-052)
 checks a step-up proof inside the request body with the same

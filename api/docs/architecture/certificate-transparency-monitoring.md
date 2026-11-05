@@ -19,11 +19,48 @@ domain the tenant watches it queries CT and emits:
   30 days and nothing replaced it (older lapses are retired hosts and are not
   raised).
 
+## Flow
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant CT as controller cert-monitor, hourly tick
+  box API
+  participant S as certmonitor.Service
+  participant DB as Postgres, tenant-scoped
+  participant P as promote.go, ingest path
+  end
+  box Internet, httpsec.SafeDialContext
+  participant A as crt.sh
+  participant B as Cert Spotter
+  end
+  CT->>S: tenant run, attack_surface module on, ct_enabled read (unreadable: skip)
+  S->>DB: lease ct_monitor:tenant
+  S->>DB: gatherRoots: approved domain assets, verified domains, discovery-on domain or subdomain entries
+  S->>DB: exclusions (failed lookup: skip the tenant), ct_monitor_state: due names, 50 max
+  loop each due name, 1 s apart, 30 min budget
+    S->>A: q=%.name, 3 attempts, 2 s to 30 s backoff or Retry-After
+    alt crt.sh failed
+      S->>B: issuances, up to 10 pages, 429 stops it for the sweep
+    end
+    alt both failed
+      S->>DB: failure, back off 12 h doubling to 7 d
+    else answer
+      S->>S: keep valid host names at or below the name, drop excluded and rejected
+    end
+  end
+  S->>P: promote names on a cert not lapsed over 90 days, 500 new per run, evidence rows
+  S->>DB: subdomain_discovered, certificate_expiring, certificate_expired, relink to host assets
+```
+
 ## Which domains, and in what order
 
-The watched set is the union of the tenant's **domain assets**, **verified
-domains** (status `verified`) and **active domain scope targets** (`domain`,
-`subdomain`, `email_domain`; `*.` is stripped). Names are normalised and
+The watched set (`gatherRoots`, `service.go`) is the union of the tenant's
+**approved domain assets** (attribution confirmed, dependency, monitor only
+or no record: a domain a scan or sensor found and nobody approved never
+widens the watch list), **verified domains** (status `verified`) and
+**active scope targets with discovery on** of type `domain` or `subdomain`
+(`*.` is stripped; one-off entries never discover). Names are normalised and
 de-duplicated; a name whose parent is also watched is not queried separately
 (the parent's `%.parent` query already returns it), except a verified child
 under an unverified parent. Names without an ICANN public suffix (`.local`,
@@ -170,11 +207,11 @@ never scanned.
 - **Assurance:** use cases, edge cases and the threat model with their tests
   are in [RFC-036 appendix](../rfcs/RFC-036-appendix-assurance.md).
 
-## Not yet built (RFC-019 Phase 2)
+## Lookalike domains
 
-Lookalike / typosquat detection is scoped but not implemented (RFC-036 P6,
-passive only per O5). Promotion of discovered subdomains into assets is built
-(see above).
+Lookalike detection is built, passive only (O5): see
+[easm.md](easm.md#4l-lookalike-domains-built) and RFC-083. Promotion of
+discovered subdomains into assets is built (see above).
 
 ## Related
 
