@@ -164,6 +164,22 @@ first so the masking can read it) and structured (`method`, `url`,
      (`internal/app/ingest/email_mask.go`), moving marked spans and match
      ranges with the text; this step covers every other writer (retests,
      uploads).
+   - **Masking existing rows.** Findings and evidence stored before this
+     masking keep their addresses until `refingerprint -mask-emails` runs
+     (`internal/infra/postgres/finding_email_scrub.go`). It applies the same
+     rule: every evidence item through `evidence.MaskItemEmails` (the function
+     this step calls; a base64 body that is text with an address is decoded,
+     as this step stores it), `size_bytes` recomputed, `content_sha256` and
+     the finding's evidence version kept; and the descriptive columns of
+     tool-reported findings (title, message, description, snippets, tags,
+     remediation, metadata, source extras, type details, related locations,
+     stacks, scanner output, misconfiguration and prerequisite text), jsonb
+     values only. Identifiers are never touched, and findings a person
+     reported are left as written (counted). Tenant by tenant
+     (`-tenant <id>[,<id>...]` or `-all-tenants`), a dry run by default with
+     counts only, batched with short row locks, idempotent; an applying run
+     writes one `findings.emails_masked` audit entry per changed tenant.
+     Runbook: `docs/operations/mask-stored-emails.md`.
 4. **Encrypt**: each value is AES-256-GCM encrypted with the platform key
    (`APP_ENCRYPTION_KEY`, re-keyed by `cmd/rekey`). The plaintext is bound to
    tenant, item and placeholder (`evidence:v1|tenant|item|placeholder|value`):
@@ -278,11 +294,17 @@ response never appeared there.
 | Recorded request/responses | `pkg/domain/evidence/manual.go`, `internal/app/evidence/manual.go`, `internal/infra/postgres/finding_evidence_manual.go` |
 | Routes / handler | `internal/infra/http/routes/finding_evidence_items.go`, `internal/infra/http/handler/finding_evidence_items_handler.go` |
 | Retention | `internal/infra/controller/finding_evidence_retention.go` |
+| Masking stored rows | `internal/infra/postgres/finding_email_scrub.go`, `internal/tools/refingerprintcmd/email_scrub.go` (`refingerprint -mask-emails`) |
 | Settings | `pkg/domain/tenant/evidence_settings.go` |
 | Web | `web/src/features/findings/components/detail/finding-evidence-items.tsx`, `web/src/features/findings/lib/evidence-view.ts` |
 
 ## Tests
 
+- `internal/infra/postgres/finding_email_scrub_db_test.go` (Postgres): the
+  scrub of stored rows masks one tenant's findings and evidence only, dry run
+  writes nothing, identifiers and person-reported findings stay, match ranges
+  move, a second run changes nothing; `pkg/domain/evidence/mask_email_test.go`
+  and `pkg/safetext/email_json_test.go` cover the masking itself.
 - `pkg/domain/evidence/evidence_test.go`: every secret masked everywhere
   (headers, cookies, URL query, form and JSON bodies, base64 text bodies,
   echoes, curl), names and schemes kept, tool-marked spans, caps and the
