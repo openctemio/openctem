@@ -10,6 +10,7 @@
   "assetCoverage.capability.resolve.dns": "DNS resolution",
   "assetCoverage.capability.scan.ports": "Port scan",
   "assetCoverage.capability.vuln.templates": "Vulnerability templates",
+  "assetCoverage.capability.vuln.templates_info": "Vulnerability templates (info level)",
   "assetCoverage.edge.edge_blocked": "Not covered: stopped by edge protection",
   "assetCoverage.edge.edge_blocked_vendor": "Not covered: stopped by edge protection ({vendor})",
   "assetCoverage.edge.edge_challenged": "Not covered: challenged by edge protection",

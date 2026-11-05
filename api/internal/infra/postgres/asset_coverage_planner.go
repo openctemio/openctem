@@ -64,6 +64,21 @@ const plannableStatesSQL = `('due', 'failed', 'covered', 'blocked')`
 // waiting this long).
 const maxWaitedSecs = 1e9
 
+// infoChangeSQL is true for a covered info pair whose asset changed (its
+// technologies, or an endpoint of its web surface appeared) after the pair's
+// last success, when the last attempt is older than $5 seconds.
+const infoChangeSQL = `(c.state = 'covered' AND c.last_success_at IS NOT NULL
+	AND c.last_attempt_at <= now() - make_interval(secs => $5::float8)
+	AND (EXISTS (SELECT 1 FROM asset_change_events e
+	             WHERE e.tenant_id = c.tenant_id AND e.asset_id = c.asset_id
+	               AND e.attribute = 'technologies' AND e.at > c.last_success_at)
+	  OR EXISTS (SELECT 1 FROM web_endpoint_events w
+	             WHERE w.tenant_id = c.tenant_id AND w.origin_asset_id = c.asset_id
+	               AND w.kind IN ('appeared', 'returned') AND w.at > c.last_success_at)))`
+
+// noInfoChangeSQL is the change condition of every capability but the info pass.
+const noInfoChangeSQL = "(1 = 0)"
+
 // DueBatch returns the pairs of a capability whose time has come: due,
 // failed, covered past its cadence, blocked past its recheck and paused for
 // a target-side outcome past its recheck. When at
@@ -77,19 +92,29 @@ func (r *AssetCoverageRepository) DueBatch(ctx context.Context, tenantID shared.
 	if lookahead < 0 {
 		lookahead = 0
 	}
+	args := []any{tenantID.String(), capability, limit, lookahead.Seconds()}
+	// The info pass is also due when the asset's technologies or web surface
+	// changed since its last success, at most once per
+	// coverage.InfoChangeMinSpacing (the existing change events; no new
+	// detector). Both tables are read for this tenant only.
+	changed := noInfoChangeSQL
+	if coverage.IsInfoCapability(capability) {
+		changed = infoChangeSQL
+		args = append(args, coverage.InfoChangeMinSpacing.Seconds())
+	}
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT a.id, a.name, a.asset_type, COALESCE(a.sub_type, ''), c.fail_streak,
 		       c.platform_fail_streak, c.last_success_at IS NULL,
-		       (c.next_due_at IS NULL OR c.next_due_at <= now()),
+		       (c.next_due_at IS NULL OR c.next_due_at <= now() OR `+changed+`),
 		       COALESCE(greatest(extract(epoch FROM now() - c.next_due_at), 0), 1e9)::float8
 		FROM asset_coverage c
 		JOIN assets a ON a.tenant_id = c.tenant_id AND a.id = c.asset_id
 		WHERE c.tenant_id = $1 AND c.capability = $2 AND c.vantage = ''
 		  AND `+plannableSQL+`
-		  AND (c.next_due_at IS NULL OR c.next_due_at <= now() + make_interval(secs => $4))
+		  AND (c.next_due_at IS NULL OR c.next_due_at <= now() + make_interval(secs => $4) OR `+changed+`)
 		  AND a.deleted_at IS NULL AND a.status = 'active'
 		ORDER BY c.priority DESC, c.next_due_at ASC NULLS FIRST, a.id
-		LIMIT $3`, tenantID.String(), capability, limit, lookahead.Seconds())
+		LIMIT $3`, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list due coverage: %w", err)
 	}

@@ -1346,6 +1346,8 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		// Planning: due pairs become runs through the scope gate, as the
 		// system; off for a tenant whose scan approval mode is Strict.
 		if svc.Scan != nil && svc.ScanPolicy != nil {
+			// The organization's info pass setting (scope settings).
+			svc.AssetCoverage.EnableInfoPass(coverageapp.GovernanceSwitch{Modes: svc.ScanPolicy, Settings: svc.Tenant})
 			svc.AssetCoverage.EnablePlanning(repos.AssetCoverage, svc.Scan,
 				coverageapp.GovernanceSwitch{Modes: svc.ScanPolicy, Settings: svc.Tenant},
 				// A due batch waits until it fills one task of its tool or

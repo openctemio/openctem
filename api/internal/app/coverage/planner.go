@@ -71,7 +71,7 @@ func plannedCapabilities(rules []covdom.Rule) []string {
 	seen := map[string]bool{}
 	out := make([]string, 0, len(rules))
 	for _, r := range rules {
-		st, ok := stage.Lookup(stage.Key(r.Capability))
+		st, ok := stage.Lookup(stage.Key(covdom.StageKeyOf(r.Capability)))
 		if !ok || st.Tier >= stage.TierIntrusive || seen[r.Capability] {
 			continue
 		}
@@ -84,8 +84,8 @@ func plannedCapabilities(rules []covdom.Rule) []string {
 // ruleOf returns the rule of a capability (the first: cadences of one
 // capability are the same across types in the default policy; settlement
 // uses it for the next due time and the output check).
-func (s *Service) ruleOf(capability string) covdom.Rule {
-	for _, r := range s.rules {
+func ruleOf(rules []covdom.Rule, capability string) covdom.Rule {
+	for _, r := range rules {
 		if r.Capability == capability {
 			return r
 		}
@@ -100,7 +100,7 @@ func (s *Service) ruleOf(capability string) covdom.Rule {
 // run's error; a run unfinished after a day fails its pairs as stalled.
 // parked is how many names the pass found without an address (resolve.dns
 // no answer).
-func (s *Service) settle(ctx context.Context, tenantID shared.ID) (total, parked int, err error) {
+func (s *Service) settle(ctx context.Context, tenantID shared.ID, rules []covdom.Rule) (total, parked int, err error) {
 	runs, err := s.planner.QueuedRuns(ctx, tenantID)
 	if err != nil {
 		return 0, 0, err
@@ -115,7 +115,7 @@ func (s *Service) settle(ctx context.Context, tenantID shared.ID) (total, parked
 			}
 			stalled = true
 		}
-		n, p, err := s.settleRun(ctx, tenantID, rs, stalled)
+		n, p, err := s.settleRun(ctx, tenantID, rules, rs, stalled)
 		total += n
 		parked += p
 		if err != nil {
@@ -125,8 +125,8 @@ func (s *Service) settle(ctx context.Context, tenantID shared.ID) (total, parked
 	return total, parked, nil
 }
 
-func (s *Service) settleRun(ctx context.Context, tenantID shared.ID, rs covdom.RunState, stalled bool) (n, parked int, err error) {
-	rule := s.ruleOf(rs.Capability)
+func (s *Service) settleRun(ctx context.Context, tenantID shared.ID, rules []covdom.Rule, rs covdom.RunState, stalled bool) (n, parked int, err error) {
+	rule := ruleOf(rules, rs.Capability)
 	queued, err := s.planner.QueuedTargets(ctx, tenantID, rs.RunID, rs.Capability)
 	if err != nil {
 		return 0, 0, err
@@ -313,7 +313,7 @@ const ReasonRepositoryCodeOnly = "repository_code_only"
 // gives repositories no network capability; this keeps a stray ledger row
 // from ever sending one to a network tool.
 func (s *Service) blockRepositories(ctx context.Context, tenantID shared.ID, capability string, due []covdom.DueTarget) ([]covdom.DueTarget, error) {
-	st, ok := stage.Lookup(stage.Key(capability))
+	st, ok := stage.Lookup(stage.Key(covdom.StageKeyOf(capability)))
 	if !ok || !st.TakesNetworkKinds() || len(due) == 0 {
 		return due, nil
 	}
@@ -341,13 +341,13 @@ func (s *Service) blockRepositories(ctx context.Context, tenantID shared.ID, cap
 // tenant's daily budget. A capability that cannot run for the tenant now
 // (readiness) gets no run: its pairs are paused with the reason, and resume
 // on the first pass where it is ready again.
-func (s *Service) plan(ctx context.Context, tenantID shared.ID) (int, error) {
+func (s *Service) plan(ctx context.Context, tenantID shared.ID, rules []covdom.Rule) (int, error) {
 	used, err := s.planner.AttemptsSince(ctx, tenantID, s.now().Add(-24*time.Hour))
 	if err != nil {
 		return 0, err
 	}
 	left := s.cfg.DailyBudget - used
-	capabilities := plannedCapabilities(s.rules)
+	capabilities := plannedCapabilities(rules)
 	rd := s.newReadinessPass(tenantID, capabilities)
 	holds, err := s.planner.Holds(ctx, tenantID)
 	if err != nil {
@@ -358,7 +358,7 @@ func (s *Service) plan(ctx context.Context, tenantID shared.ID) (int, error) {
 		if left <= 0 {
 			break
 		}
-		lookahead := covdom.Lookahead(s.ruleOf(capability).Every)
+		lookahead := covdom.Lookahead(ruleOf(rules, capability).Every)
 		due, err := s.dueBatch(ctx, tenantID, capability, min(s.cfg.Batch, left), lookahead)
 		if err != nil {
 			return total, err
@@ -406,7 +406,7 @@ func (s *Service) plan(ctx context.Context, tenantID shared.ID) (int, error) {
 				}
 			}
 		}
-		if len(due) == 0 || !s.batchReady(capability, due, min(s.cfg.Batch, left)) {
+		if len(due) == 0 || !s.batchReady(rules, capability, due, min(s.cfg.Batch, left)) {
 			continue
 		}
 		batch, depth := onboardingBatch(capability, due)
@@ -425,7 +425,7 @@ func (s *Service) plan(ctx context.Context, tenantID shared.ID) (int, error) {
 // pairs: the daily budget may leave fewer), or its oldest pair has waited
 // a tenth of the cadence, at most covdom.MaxBatchWait. A batch that is not
 // ready stays due and collects the pairs that fall due meanwhile.
-func (s *Service) batchReady(capability string, due []covdom.DueTarget, limit int) bool {
+func (s *Service) batchReady(rules []covdom.Rule, capability string, due []covdom.DueTarget, limit int) bool {
 	if !s.cfg.FillBatches {
 		return true
 	}
@@ -434,7 +434,7 @@ func (s *Service) batchReady(capability string, due []covdom.DueTarget, limit in
 		oldest = max(oldest, d.Waited)
 	}
 	minBatch := min(scanapp.CoverageChunkSize(capability), limit)
-	return covdom.BatchReady(len(due), minBatch, oldest, s.ruleOf(capability).Every)
+	return covdom.BatchReady(len(due), minBatch, oldest, ruleOf(rules, capability).Every)
 }
 
 // dueBatch is the planner's due batch with repositories taken out (and

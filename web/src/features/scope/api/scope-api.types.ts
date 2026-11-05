@@ -157,6 +157,10 @@ export interface UpdateScopeSettingsInput {
    * keeps the stored one (the default is on, except under Strict approval).
    */
   auto_coverage?: boolean
+  /** Info pass of continuous coverage on or off (default on); omitted keeps the stored one. */
+  info_coverage?: boolean
+  /** Interval of the info pass in days, 7 to 90 (default 30); omitted keeps the stored one. */
+  info_coverage_days?: number
   /**
    * A CI trust's new repository entries wait for a verified pipeline run
    * (opt-in, default off); omitted keeps the stored value.

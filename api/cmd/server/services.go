@@ -1246,6 +1246,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Asset.SetFreshness(repos.AssetFreshness)
 	s.Asset.SetResolution(repos.AssetResolution)
 	s.Asset.SetCoverage(repos.AssetCoverage)
+	s.Asset.SetCoverageInfoPolicy(coverageapp.GovernanceSwitch{Settings: s.Tenant})
 	s.Asset.SetResolvedPorts(repos.AssetRelationship)
 	// How an asset was found: its ancestor chain (docs/architecture/easm.md).
 	s.Asset.SetLineage(repos.AssetRelationship)
