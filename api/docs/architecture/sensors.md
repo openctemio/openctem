@@ -6,6 +6,8 @@
 > [RFC-029](../rfcs/RFC-029-sensor-protocol-v2-and-sdk-stability.md) (everything else; protocol v1 retired 2026-10-05).
 > Routing of scanners by network: [scan-zones.md](scan-zones.md).
 > How scan traffic identifies itself to targets (User-Agent and headers, merged platform and organization layers): [scan-identification.md](scan-identification.md).
+> Secrets a sensor's tools use (provider keys, proxy pool credentials; refs in
+> the signed job, values from a sealed per-task fetch): [task-secrets.md](task-secrets.md).
 > Proxies for scan traffic (proxy pools, built): [sensor-proxies.md](sensor-proxies.md);
 > the wider egress design: [RFC-034](../rfcs/RFC-034-sensor-network-egress.md),
 > section [Network egress and proxies](#network-egress-and-proxies-rfc-034-proposed).
@@ -1597,6 +1599,16 @@ Any other state is `409 invalid-transition` with `"state"` (a pending
 command past its expiry reads `expired`); a lost claim race is `409
 command-claimed`; another sensor's or tenant's command is `404
 command-not-found`. The state rules and the atomic claim live in the command service.
+
+**Task secrets** ([task-secrets.md](task-secrets.md)). A claimed scan,
+retest, validate or proxy test job carries the payload member `secrets`
+(names only, covered by the job signature). The values come from
+`POST /api/v2/sensor/commands/{id}/secrets`: a body signed by the sensor's
+key-bound identity with the lease epoch and a single-use reply key, answered
+`application/vnd.openctem.secrets+sealed` (HPKE-sealed to that key,
+`Cache-Control: no-store`) only to the trusted lease holder for refs
+recorded at claim, at most `max_fetches` times; every refusal is `404
+command-not-found`. v2 HTTPS only.
 
 **Hello** lists `results` plus the control features (`heartbeat`,
 `commands`, `suppressions`, `fingerprints`, `keys`). `deprecations` is

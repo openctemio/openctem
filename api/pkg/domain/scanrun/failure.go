@@ -233,6 +233,9 @@ const (
 	// FailureDependencySkipped: a step this step needs the results of was
 	// skipped, so this one has nothing to work on.
 	FailureDependencySkipped = "DEPENDENCY_SKIPPED"
+	// FailureScannerConfigSecret: the scan's stored settings hold a
+	// credential, which never reaches a command (scan.CodeScannerConfigSecret).
+	FailureScannerConfigSecret = "SCANNER_CONFIG_SECRET"
 )
 
 // unsupportedSkipCodes are the codes of a step skipped because no tool or
@@ -313,6 +316,7 @@ var failureClasses = map[string]FailureClass{
 	FailureToolNotInstalled:          FailureClassConfig,
 	FailureToolDisabled:              FailureClassConfig,
 	FailureDependencySkipped:         FailureClassConfig,
+	FailureScannerConfigSecret:       FailureClassConfig,
 }
 
 // ClassOf returns the class of a step failure code. An unknown code is a
