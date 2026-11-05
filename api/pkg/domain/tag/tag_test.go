@@ -4,6 +4,8 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 func TestCheck(t *testing.T) {
@@ -113,5 +115,20 @@ func TestFilterImportCap(t *testing.T) {
 	got, dropped := FilterImport(in, nil)
 	if len(got) != MaxPerImport || dropped[ReasonOverCap] != 5 {
 		t.Fatalf("got %d dropped %v", len(got), dropped)
+	}
+}
+
+func TestRefusal_IsAValidationErrorWithAFixedSentence(t *testing.T) {
+	_, err := ValidateNew(nil, []string{"sys:x"})
+	got := Refusal(err)
+	if !errors.Is(got, shared.ErrValidation) {
+		t.Fatalf("not a validation error: %v", got)
+	}
+	var de *shared.DomainError
+	if !errors.As(got, &de) || de.Code != CodeInvalidTag || !strings.Contains(de.Message, "reserved") {
+		t.Fatalf("got %+v", got)
+	}
+	if Refusal(errors.New("pq: connection refused")).(*shared.DomainError).Message != "a tag is not allowed" {
+		t.Fatal("a lower error's text reached the message")
 	}
 }

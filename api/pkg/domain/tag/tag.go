@@ -6,6 +6,7 @@
 package tag
 
 import (
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -13,6 +14,7 @@ import (
 
 	"golang.org/x/text/unicode/norm"
 
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/safetext"
 )
 
@@ -151,6 +153,20 @@ func (e *Error) Error() string {
 	default:
 		return fmt.Sprintf("tag %q is not allowed (%s)", clip(e.Tag), e.Reason)
 	}
+}
+
+// CodeInvalidTag is the code of a refused tag in an API answer.
+const CodeInvalidTag = "INVALID_TAG"
+
+// Refusal is the validation error an API answers for a refused tag: a
+// fixed sentence that names the tag (clipped) and the reason, never a lower
+// error's text.
+func Refusal(err error) error {
+	var te *Error
+	if errors.As(err, &te) {
+		return shared.NewDomainError(CodeInvalidTag, te.Error(), shared.ErrValidation)
+	}
+	return shared.NewDomainError(CodeInvalidTag, "a tag is not allowed", shared.ErrValidation)
 }
 
 func clip(s string) string {
