@@ -936,7 +936,7 @@ export interface SensorLocalPolicySummary {
 
 /** Why the platform flags a sensor as unhardened (api RFC-040 §11.4). */
 export type SensorUnhardenedReason =
-  'policy_none' | 'pin_none' | 'network_unenforced' | 'bearer_key'
+  'policy_none' | 'pin_none' | 'tools_unconfined' | 'network_unenforced' | 'bearer_key'
 
 /**
  * A sensor's security posture as the API derives it from what the sensor
@@ -947,6 +947,13 @@ export interface SensorPosture {
   platform_pin: 'fingerprint' | 'ca_file' | 'none' | 'unknown' | (string & {})
   /** null when the sensor did not report its sandbox. */
   network_enforced: boolean | null
+  /**
+   * The sensor runs its tools without the sandbox: refused (no sandbox on
+   * its host, tools that contact their targets are refused there) or
+   * acknowledged (its operator turned the sandbox off). Absent when
+   * sandboxed or not reported.
+   */
+  tools_unconfined?: 'refused' | 'acknowledged' | (string & {})
   unhardened: (SensorUnhardenedReason | (string & {}))[]
 }
 
