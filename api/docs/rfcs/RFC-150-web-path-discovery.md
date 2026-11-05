@@ -28,7 +28,7 @@ when, and the sensor must not be able to widen any of it.
 | D7 | Planned origins: live web services in scope by an active scope entry that names their host (inherited standing does not count); an address origin only with an address entry naming it, and labelled `shared_edge_address` (not refused as out of scope) on a shared edge network; an origin whose last probe an edge protection challenged or blocked is not planned. |
 | D8 | A bug bounty program that forbids `bruteforce` or `automated_scanning` gets no enumeration job (any `enumerate.*` capability or brute force), with the reason, on every dispatch path. |
 | D9 | The platform sets the stored source `guess` from the bound capability and requires response evidence (RFC-056 §9). A guessed row is an observation; a finding comes only from a platform-planned verification. |
-| D10 | Per-origin outcomes are coverage gap reasons on the run: `catch_all`, `auth_wall`, `edge_protected`, `throttled`, `blocked`, `unstable_baseline`, `budget`, `hostile_response`, `protocol`, `scope_filtered`. The ledger never marks an origin covered on `edge_protected`, `throttled` or `budget`. |
+| D10 | Per-origin outcomes are coverage gap reasons on the run: `catch_all`, `auth_wall`, `edge_protected`, `throttled`, `blocked`, `unstable_baseline`, `budget`, `hostile_response`, `protocol`, `scope_filtered`, `no_candidates` (no request was sent; the ledger claim is released). The ledger never marks an origin covered on `edge_protected`, `throttled` or `budget`. |
 
 ## 3. Design
 

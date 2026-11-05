@@ -60,6 +60,7 @@ func (r *CommandRepository) Create(ctx context.Context, cmd *command.Command) er
 	// ...and its host keys: the hosts it holds while it runs, sent to the
 	// sensor in its payload so both sides admit it under the same keys.
 	if err := command.AssignHostKeys(cmd); err != nil {
+		r.releaseGuard(ctx, cmd)
 		return err
 	}
 	query := `
@@ -108,6 +109,7 @@ func (r *CommandRepository) Create(ctx context.Context, cmd *command.Command) er
 	)
 
 	if err != nil {
+		r.releaseGuard(ctx, cmd)
 		if isUniqueViolation(err) {
 			return shared.NewDomainError("ALREADY_EXISTS", "command already exists", shared.ErrAlreadyExists)
 		}

@@ -87,7 +87,16 @@ the workflow step check it; the claim is made by the web job guard every
 command passes before it is stored (`scope.WebJobGuard`, under a
 per-organization advisory lock), so two callers cannot both dispatch an origin
 and the 300 requests per origin per 30 days hold across scans and the planner.
-A retried task is refused the same way. The workflow step keeps only the
+A retried task is refused the same way. The claim is the guard's LAST step:
+after the switch and origin refusals, the strict scope, the confined-sensor
+check and the payload are settled, so a job refused for any of those spends
+nothing. It is all or nothing across the job's origins, and the row each claim
+replaces is kept with the claiming command (`claim_command_id`, `prev_*`):
+when the job is refused after the claim, or the repository cannot store it, or
+the sensor reports the gap `no_candidates` for an origin (no request was sent:
+the list held nothing the scope leaves to request), the claim is released and
+the previous row restored, so the origin is not held for 30 days and the daily
+budget is not spent. A claim a later job has overwritten is left alone. The workflow step keeps only the
 origins that pass and settles as "no inputs" when none does. A scan started
 by a person is refused at trigger when the switch is off or the gate refuses its
 origins (`PATH_DISCOVERY_OFF`, `PATH_DISCOVERY_REFUSED`), and passes the same
@@ -145,6 +154,7 @@ scope_filtered=3`; `scope_filtered:<n>` is also accepted). Settlement:
 | `throttled` | failed, rate limited |
 | `blocked` | failed, edge blocked |
 | `budget`, `hostile_response`, `protocol` | failed, unfinished |
+| `no_candidates` | failed, unfinished; the ledger claim is released |
 | `catch_all`, `auth_wall`, `unstable_baseline`, `scope_filtered` | covered; the reason stays on the run |
 
 When one origin lists several gaps, a reason that leaves it uncovered wins.

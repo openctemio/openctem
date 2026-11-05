@@ -138,16 +138,23 @@ func (r *WebPathLedgerRepository) ClaimPathOrigin(ctx context.Context, c coverag
 	if err != nil {
 		return 0, "", fmt.Errorf("path discovery: claim origin: %w", err)
 	}
-	// The origin's own ledger row, if any: the 30 day floor.
-	var last sql.NullTime
-	err = tx.QueryRowContext(ctx, `SELECT last_dispatch_at FROM web_path_discovery_runs
-		WHERE tenant_id = $1 AND origin_asset_id = $2`, tenant, assetID).Scan(&last)
+	// The origin's own ledger row, if any: the 30 day floor, and what a
+	// release gives back.
+	var (
+		last, prevAt sql.NullTime
+		prevRun      sql.NullString
+		prevGranted  sql.NullInt64
+		prevHost     sql.NullString
+	)
+	err = tx.QueryRowContext(ctx, `SELECT last_dispatch_at, run_id::text, granted, host FROM web_path_discovery_runs
+		WHERE tenant_id = $1 AND origin_asset_id = $2`, tenant, assetID).Scan(&last, &prevRun, &prevGranted, &prevHost)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return 0, "", fmt.Errorf("path discovery: claim ledger: %w", err)
 	}
 	if last.Valid && time.Since(last.Time) < coverage.PathEvery {
 		return 0, coverage.ReasonPathRanRecently, nil
 	}
+	prevAt = last
 	granted := c.Requested
 	var spentDay int
 	if err := tx.QueryRowContext(ctx, `SELECT COALESCE(sum(granted), 0) FROM web_path_discovery_runs
@@ -179,16 +186,69 @@ func (r *WebPathLedgerRepository) ClaimPathOrigin(ctx context.Context, c coverag
 	if c.RunID != nil {
 		run = c.RunID.String()
 	}
+	var command any
+	if !c.CommandID.IsZero() {
+		command = c.CommandID.String()
+	}
 	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO web_path_discovery_runs (tenant_id, origin_asset_id, host, run_id, granted, last_dispatch_at)
-		VALUES ($1, $2, $3, $4, $5, now())
+		INSERT INTO web_path_discovery_runs (tenant_id, origin_asset_id, host, run_id, granted, last_dispatch_at,
+		                                     claim_command_id, prev_dispatch_at, prev_run_id, prev_granted, prev_host)
+		VALUES ($1, $2, $3, $4, $5, now(), $6, $7, $8, $9, $10)
 		ON CONFLICT (tenant_id, origin_asset_id) DO UPDATE
-		   SET host = EXCLUDED.host, run_id = EXCLUDED.run_id, granted = EXCLUDED.granted, last_dispatch_at = now()`,
-		tenant, assetID, coverage.Clip(host, 255), run, granted); err != nil {
+		   SET host = EXCLUDED.host, run_id = EXCLUDED.run_id, granted = EXCLUDED.granted, last_dispatch_at = now(),
+		       claim_command_id = EXCLUDED.claim_command_id, prev_dispatch_at = EXCLUDED.prev_dispatch_at,
+		       prev_run_id = EXCLUDED.prev_run_id, prev_granted = EXCLUDED.prev_granted, prev_host = EXCLUDED.prev_host`,
+		tenant, assetID, coverage.Clip(host, 255), run, granted, command,
+		prevAt, prevRun, prevGranted, prevHost); err != nil {
 		return 0, "", fmt.Errorf("path discovery: claim record: %w", err)
 	}
 	if err := tx.Commit(); err != nil {
 		return 0, "", fmt.Errorf("path discovery: claim commit: %w", err)
 	}
 	return granted, "", nil
+}
+
+// ReleasePathClaim gives back the origins the command claimed: the row each
+// one replaced is restored, or removed when the origin had none. It takes the
+// same per-tenant lock as a claim, and a row another dispatch has since
+// claimed (a different claim_command_id) is not touched.
+func (r *WebPathLedgerRepository) ReleasePathClaim(ctx context.Context, tenantID, commandID shared.ID, origins []string) error {
+	if commandID.IsZero() {
+		return nil
+	}
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("path discovery: release: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	tenant := tenantID.String()
+	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtext('openctem.web_path_discovery:' || $1::text))`, tenant); err != nil {
+		return fmt.Errorf("path discovery: release lock: %w", err)
+	}
+	var names any
+	if origins != nil {
+		list := make([]string, 0, len(origins))
+		for _, o := range origins {
+			list = append(list, strings.ToLower(strings.TrimSuffix(strings.TrimSpace(o), "/")))
+		}
+		names = pq.Array(list)
+	}
+	// An origin filter of NULL is every origin of the command.
+	const scope = ` WHERE tenant_id = $1 AND claim_command_id = $2
+		  AND ($3::text[] IS NULL OR origin_asset_id IN (
+		        SELECT a.id FROM assets a WHERE a.tenant_id = $1 AND ` + originNameSQL + ` = ANY($3::text[])))`
+	if _, err := tx.ExecContext(ctx, `UPDATE web_path_discovery_runs
+		SET last_dispatch_at = prev_dispatch_at, run_id = prev_run_id, granted = prev_granted, host = prev_host,
+		    claim_command_id = NULL, prev_dispatch_at = NULL, prev_run_id = NULL, prev_granted = NULL, prev_host = NULL`+
+		scope+` AND prev_dispatch_at IS NOT NULL`, tenant, commandID.String(), names); err != nil {
+		return fmt.Errorf("path discovery: release restore: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM web_path_discovery_runs`+scope+` AND prev_dispatch_at IS NULL`,
+		tenant, commandID.String(), names); err != nil {
+		return fmt.Errorf("path discovery: release remove: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("path discovery: release commit: %w", err)
+	}
+	return nil
 }

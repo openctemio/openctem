@@ -583,6 +583,9 @@ func (g resultGaps) verdict(target string) (Verdict, bool) {
 	case scanrun.GapReasonBudget:
 		return Verdict{Kind: VerdictFailed, Outcome: OutcomeUnfinished,
 			Error: "the request budget ran out before every candidate was checked"}, true
+	case scanrun.GapReasonNoCandidates:
+		return Verdict{Kind: VerdictFailed, Outcome: OutcomeUnfinished,
+			Error: "no candidate was left to request on the origin"}, true
 	case scanrun.GapReasonCatchAll, scanrun.GapReasonAuthWall, scanrun.GapReasonUnstableBaseline, scanrun.GapReasonScopeFiltered:
 		// The origin was checked; the reason says what the result means
 		// (it stays on the run's coverage gaps).

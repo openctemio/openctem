@@ -60,6 +60,11 @@ const (
 	// GapReasonScopeFiltered: candidates the web scope refused; the count is
 	// the detail (a sensor may send "scope_filtered:<n>").
 	GapReasonScopeFiltered = "scope_filtered"
+	// GapReasonNoCandidates: the origin was probed with no candidate left
+	// to request (an empty list, or every candidate refused by the scope),
+	// so no request was sent. The platform gives the origin's ledger claim
+	// back; the origin counts as not checked.
+	GapReasonNoCandidates = "no_candidates"
 )
 
 // Bounds of a task's coverage gaps.
@@ -81,7 +86,7 @@ const ErrCodeCoverageGaps = FailureCoverageGaps
 // stable order (the console has words for each; a test checks it).
 var GapReasons = []string{GapReasonBreakerOpen, GapReasonRateFloor, GapReasonBlocked, GapReasonProxyUnavailable,
 	GapReasonCatchAll, GapReasonAuthWall, GapReasonEdgeProtected, GapReasonThrottled, GapReasonUnstableBaseline,
-	GapReasonBudget, GapReasonHostileResponse, GapReasonProtocol, GapReasonScopeFiltered}
+	GapReasonBudget, GapReasonHostileResponse, GapReasonProtocol, GapReasonScopeFiltered, GapReasonNoCandidates}
 
 // NormalizeGapReason returns a known reason and the detail it carries: the
 // path discovery form "scope_filtered:<n>" is the reason scope_filtered with

@@ -3,6 +3,7 @@ package coverage
 import (
 	"context"
 	"errors"
+	"slices"
 	"testing"
 	"time"
 
@@ -205,6 +206,17 @@ type fakeLedger struct {
 	hosts   map[string]string
 	runs    map[string]shared.ID
 	claims  int
+	// undo is what ReleasePathClaim restores, per origin: the row the claim
+	// replaced (ok false: none) and the command that claimed.
+	undo map[string]fakeUndo
+}
+
+type fakeUndo struct {
+	command shared.ID
+	had     bool
+	at      time.Time
+	granted int
+	host    string
 }
 
 func (l *fakeLedger) PathOriginFacts(_ context.Context, _ shared.ID, origins []string) (map[string]covdom.PathOriginFacts, error) {
@@ -261,8 +273,40 @@ func (l *fakeLedger) ClaimPathOrigin(_ context.Context, c covdom.PathClaim) (int
 		}
 		l.runs[origin] = *c.RunID
 	}
+	u := fakeUndo{command: c.CommandID}
+	u.at, u.had = l.claimed[origin]
+	u.granted, u.host = l.granted[origin], l.hosts[origin]
+	if l.undo == nil {
+		l.undo = map[string]fakeUndo{}
+	}
+	l.undo[origin] = u
 	l.claimed[origin], l.granted[origin], l.hosts[origin] = time.Now(), granted, host
 	return granted, "", nil
+}
+
+func (l *fakeLedger) ReleasePathClaim(_ context.Context, _, commandID shared.ID, origins []string) error {
+	for o, u := range l.undo {
+		if u.command != commandID || (origins != nil && !slices.Contains(origins, o)) {
+			continue
+		}
+		if u.had {
+			l.claimed[o], l.granted[o], l.hosts[o] = u.at, u.granted, u.host
+		} else {
+			delete(l.claimed, o)
+			delete(l.granted, o)
+			delete(l.hosts, o)
+		}
+		delete(l.undo, o)
+	}
+	return nil
+}
+
+// admit is the guard's two calls in its order: the checks, then the claim.
+func admit(p PathDiscoveryPolicy, ctx context.Context, tenantID shared.ID, run *shared.ID, targets []string, requested int) (int, error) {
+	if err := p.CheckPathDispatch(ctx, tenantID, targets); err != nil {
+		return 0, err
+	}
+	return p.ClaimPathDispatch(ctx, tenantID, shared.NewID(), run, targets, requested)
 }
 
 func newFakeLedger(origins ...string) *fakeLedger {
@@ -329,19 +373,19 @@ func TestAdmitPathDispatch(t *testing.T) {
 	l := newFakeLedger("https://a.example.com", "https://b.example.com")
 	pol := policyWith(l)
 
-	got, err := pol.AdmitPathDispatch(ctx, tenantID, nil, []string{"https://a.example.com"}, 99999)
+	got, err := admit(pol, ctx, tenantID, nil, []string{"https://a.example.com"}, 99999)
 	if err != nil || got != 300 {
 		t.Fatalf("granted %d err %v, want the per-origin budget of 300 whatever the job asked for", got, err)
 	}
 	// The same origin again (another caller, a retry): refused, nothing more spent.
-	if _, err := pol.AdmitPathDispatch(ctx, tenantID, nil, []string{"https://a.example.com"}, 100); err == nil {
+	if _, err := admit(pol, ctx, tenantID, nil, []string{"https://a.example.com"}, 100); err == nil {
 		t.Fatal("a second dispatch within 30 days was admitted")
 	}
 	if l.granted["https://a.example.com"] != 300 {
 		t.Fatalf("ledger granted %v", l.granted)
 	}
 	// A smaller request is honored.
-	got, err = pol.AdmitPathDispatch(ctx, tenantID, nil, []string{"https://b.example.com"}, 120)
+	got, err = admit(pol, ctx, tenantID, nil, []string{"https://b.example.com"}, 120)
 	if err != nil || got != 120 {
 		t.Fatalf("granted %d err %v, want 120", got, err)
 	}
@@ -350,7 +394,7 @@ func TestAdmitPathDispatch(t *testing.T) {
 	off := false
 	offPol := policyWith(newFakeLedger("https://c.example.com"))
 	offPol.Settings = fakeScopeSettings{ss: &tenant.ScopeSettings{PathDiscovery: &off}}
-	_, err = offPol.AdmitPathDispatch(ctx, tenantID, nil, []string{"https://c.example.com"}, 0)
+	_, err = admit(offPol, ctx, tenantID, nil, []string{"https://c.example.com"}, 0)
 	var de *shared.DomainError
 	if !errors.As(err, &de) || de.Code != CodePathDiscoveryOff {
 		t.Fatalf("switch off: %v", err)
@@ -364,7 +408,7 @@ func TestAdmitPathDispatch(t *testing.T) {
 	f := l2.facts["https://d.example.com"]
 	f.ScopeEntry = false
 	l2.facts["https://d.example.com"] = f
-	if _, err := policyWith(l2).AdmitPathDispatch(ctx, tenantID, nil, []string{"https://d.example.com"}, 0); err == nil || l2.claims != 0 {
+	if _, err := admit(policyWith(l2), ctx, tenantID, nil, []string{"https://d.example.com"}, 0); err == nil || l2.claims != 0 {
 		t.Fatalf("an origin without a scope entry was admitted (claims %d, err %v)", l2.claims, err)
 	}
 }
@@ -379,25 +423,25 @@ func TestAdmitPathDispatch_Budgets(t *testing.T) {
 	pol.Budget = PathBudget{PerOrigin: 300, Daily: 700}
 	run := shared.NewID()
 
-	if got, err := pol.AdmitPathDispatch(ctx, tenantID, &run, []string{"https://a.example.com"}, 0); err != nil || got != 300 {
+	if got, err := admit(pol, ctx, tenantID, &run, []string{"https://a.example.com"}, 0); err != nil || got != 300 {
 		t.Fatalf("first origin: %d %v", got, err)
 	}
 	// Another port of the same host in the same run: the host's budget of
 	// 300 is spent by the first task.
-	_, err := pol.AdmitPathDispatch(ctx, tenantID, &run, []string{"https://a.example.com:8443"}, 0)
+	_, err := admit(pol, ctx, tenantID, &run, []string{"https://a.example.com:8443"}, 0)
 	if err == nil {
 		t.Fatal("the host's per-run budget was spent twice")
 	}
-	if got, err := pol.AdmitPathDispatch(ctx, tenantID, &run, []string{"https://b.example.com"}, 0); err != nil || got != 300 {
+	if got, err := admit(pol, ctx, tenantID, &run, []string{"https://b.example.com"}, 0); err != nil || got != 300 {
 		t.Fatalf("other host: %d %v", got, err)
 	}
 	// 600 of 700 spent: the next origin gets what is left (100), and the one
 	// after that nothing.
-	if got, err := pol.AdmitPathDispatch(ctx, tenantID, &run, []string{"https://c.example.com"}, 0); err != nil || got != 100 {
+	if got, err := admit(pol, ctx, tenantID, &run, []string{"https://c.example.com"}, 0); err != nil || got != 100 {
 		t.Fatalf("daily budget left: %d %v, want 100", got, err)
 	}
 	l.facts["https://d.example.com"] = covdom.PathOriginFacts{AssetID: shared.NewID(), Host: "d.example.com", ScopeEntry: true, InventoryChanged: true, EdgeClear: true}
-	if _, err := pol.AdmitPathDispatch(ctx, tenantID, &run, []string{"https://d.example.com"}, 0); err == nil {
+	if _, err := admit(pol, ctx, tenantID, &run, []string{"https://d.example.com"}, 0); err == nil {
 		t.Fatal("the daily budget was exceeded")
 	}
 }
@@ -410,5 +454,63 @@ func TestPathDiscoveryFit(t *testing.T) {
 	pol := policyWith(l)
 	if got, err := pol.PathDiscoveryFit(context.Background(), shared.NewID()); err != nil || got != 2 {
 		t.Fatalf("fit %d err %v, want 2", got, err)
+	}
+}
+
+// SECURITY: a job with several origins claims all of them or none. When a
+// later origin is refused, the origins already claimed for the command are
+// given back, so no origin is held for 30 days by a job that never ran.
+func TestClaimPathDispatch_AllOrNothing(t *testing.T) {
+	ctx := context.Background()
+	tenantID := shared.NewID()
+	l := newFakeLedger("https://a.example.com", "https://b.example.com")
+	l.claimed["https://b.example.com"] = time.Now().Add(-time.Hour) // b ran recently
+	l.granted["https://b.example.com"] = 50
+	pol := policyWith(l)
+	cmd := shared.NewID()
+	_, err := pol.ClaimPathDispatch(ctx, tenantID, cmd, nil, []string{"https://a.example.com", "https://b.example.com"}, 0)
+	var de *shared.DomainError
+	if !errors.As(err, &de) || de.Code != CodePathDiscoveryRefused {
+		t.Fatalf("a job with a refused origin: %v", err)
+	}
+	if _, held := l.claimed["https://a.example.com"]; held || l.granted["https://a.example.com"] != 0 {
+		t.Fatalf("the origin claimed before the refusal is still held: %v %v", l.claimed, l.granted)
+	}
+	// b keeps its own earlier row.
+	if l.granted["https://b.example.com"] != 50 {
+		t.Fatalf("the refused origin's row changed: %v", l.granted)
+	}
+}
+
+// A release restores the row the claim replaced (or removes it), and touches
+// only the command's own claims.
+func TestReleasePathDispatch(t *testing.T) {
+	ctx := context.Background()
+	tenantID := shared.NewID()
+	l := newFakeLedger("https://a.example.com", "https://b.example.com")
+	old := time.Now().Add(-40 * 24 * time.Hour)
+	l.claimed["https://a.example.com"], l.granted["https://a.example.com"], l.hosts["https://a.example.com"] = old, 120, "a.example.com"
+	pol := policyWith(l)
+	cmd, other := shared.NewID(), shared.NewID()
+	if _, err := pol.ClaimPathDispatch(ctx, tenantID, cmd, nil, []string{"https://a.example.com"}, 0); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pol.ClaimPathDispatch(ctx, tenantID, other, nil, []string{"https://b.example.com"}, 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := pol.ReleasePathDispatch(ctx, tenantID, cmd, nil); err != nil {
+		t.Fatal(err)
+	}
+	if !l.claimed["https://a.example.com"].Equal(old) || l.granted["https://a.example.com"] != 120 {
+		t.Fatalf("the previous row was not restored: %v %v", l.claimed, l.granted)
+	}
+	if _, held := l.claimed["https://b.example.com"]; !held {
+		t.Fatal("another command's claim was released")
+	}
+	if err := pol.ReleasePathDispatch(ctx, tenantID, other, []string{"https://b.example.com"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, held := l.claimed["https://b.example.com"]; held {
+		t.Fatal("a claim on an origin without a previous row was not removed")
 	}
 }

@@ -79,6 +79,10 @@ type PathClaim struct {
 	TenantID shared.ID
 	// Origin is a normalised origin (PathOrigin).
 	Origin string
+	// CommandID is the job the claim is for (zero: none). The claim keeps
+	// it with the row it replaced, so ReleasePathClaim can give the origin
+	// back when the job is refused after the claim or does nothing.
+	CommandID shared.ID
 	// RunID is the run the dispatch belongs to (nil: none known).
 	RunID *shared.ID
 	// Requested is the request cap the job would carry.
@@ -104,4 +108,10 @@ type PathLedger interface {
 	// not hold the request cap, or when the run's host budget is spent. It
 	// returns the request cap granted (at most Requested).
 	ClaimPathOrigin(ctx context.Context, c PathClaim) (granted int, reason string, err error)
+	// ReleasePathClaim undoes the claims of the command (on origins; nil is
+	// every origin it claimed): the row each one replaced is restored, or
+	// removed when the origin had none, so a job that never sent a request
+	// does not spend the origin's 30 days or the daily budget. A claim a
+	// later dispatch has overwritten is left alone. Idempotent.
+	ReleasePathClaim(ctx context.Context, tenantID, commandID shared.ID, origins []string) error
 }
