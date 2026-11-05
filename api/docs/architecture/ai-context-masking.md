@@ -5,7 +5,11 @@ and preview API). Planned: the AI analysis executor that uses the bundle and
 the run map for every AI result, the console page, and resolution at the tool
 boundary of an analyst worker's sandbox.
 
-Every context the platform sends to an AI model is pseudonymised. The model
+Every context bundle the platform builds for an AI agent's analysis
+(`internal/app/aianalysis`) is pseudonymised. AI triage does not use the bundle
+today: `aitriage.buildTriagePromptSafe` sends the finding fields its data class
+ceiling allows, fenced and with a secret finding's description redacted, but
+not masked (see [ai-triage.md](ai-triage.md)). The model
 sees typed placeholders instead of hosts, addresses, e-mail addresses, user
 and organization names, URL parameters and ticket ids; secrets never reach it
 at all. The platform alone keeps the mapping and turns the model's output
