@@ -208,8 +208,11 @@ func TestParseCoverageAutoResolveMode(t *testing.T) {
 // any other call panics via the nil embedded interface.
 type coverageFindingRepo struct {
 	vulnerability.FindingRepository
-	cov      *ingestreport.CommandCoverage
-	tiers    map[shared.ID]vulnerability.RiskTier // absent: standard
+	cov   *ingestreport.CommandCoverage
+	tiers map[shared.ID]vulnerability.RiskTier // absent: standard
+	// unknown ids the tenant-scoped tier read does not return (another
+	// tenant's finding, or deleted).
+	unknown  map[shared.ID]bool
 	stale    []shared.ID
 	open     int
 	query    ingestreport.CoverageQuery
