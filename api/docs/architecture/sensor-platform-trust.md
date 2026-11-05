@@ -14,6 +14,65 @@ exploit the other.
 - A compromised platform (web, API or database) must not be able to weaponize
   sensors against targets their network owner did not allow.
 
+## Flow
+
+What each side signs and checks, and where the trust boundaries are:
+
+```mermaid
+flowchart LR
+    subgraph HOST["Sensor host (trusted by its network owner, not by the platform)"]
+        ID["identity key Ed25519<br/>state volume, 0600"]
+        LP["local policy file<br/>read-only, narrow-only"]
+        EX["executor + egress forwarder"]
+    end
+    subgraph PLAT["Platform (trusted by the organization, not by the sensor)"]
+        API["API sensor routes<br/>/api/v2/sensor/*"]
+        SIG["signer process<br/>SIGNER_SOCKET"]
+        ING["ingest workers"]
+    end
+    ROOT["offline root key<br/>job signer key set"]
+    ID -- "every request signed RFC 9421<br/>keyid, nonce, Content-Digest" --> API
+    API -- "pairing answers signed by the<br/>platform pairing key" --> ID
+    SIG -- "jobs as DSSE envelopes<br/>tenant, sensor, command, epoch, targets" --> EX
+    ROOT -. "pins the key set<br/>SENSOR_JOB_SIGNING_ROOT" .-> EX
+    LP -- "narrows every signed job" --> EX
+    EX -- "results bound to command and epoch,<br/>hostile input" --> ING
+```
+
+A signed sensor request (`internal/infra/http/handler/sensor_signature.go:authenticateSigned`,
+called by `SensorResultsV2Handler.Authenticate`, the v1 ingest authenticator and
+the v3 bridge):
+
+```mermaid
+flowchart TD
+    R["Request on /api/v2/sensor/*"] --> P{"Signature headers present?"}
+    P -- "no" --> B["bearer key path, legacy octs_ keys"]
+    P -- "yes" --> W{"sensorsig.Parse and CheckWindow:<br/>profile ok, window at most 5 min?"}
+    W -- "no" --> U401["401 unauthenticated, generic problem"]
+    W -- "yes or only outside skew" --> K{"SigningIdentity:<br/>active key by keyid, key-bound sensor,<br/>not revoked, org not suspended"}
+    K -- "revoked, unknown key, org suspended" --> U401
+    K -- "ok, disabled = paused" --> V{"Ed25519 verify over the signature base"}
+    V -- "no" --> U401
+    V -- "yes" --> CS{"inside 2 min clock skew?"}
+    CS -- "no" --> SKEW["401 clock-skew problem with server_time and offset, WARN log"]
+    CS -- "yes" --> RL{"X-Relay-Sensor set and not this sensor?"}
+    RL -- "yes" --> U401
+    RL -- "no" --> N{"UseNonce: Redis SET NX, TTL 9 min,<br/>per-replica store when Redis fails"}
+    N -- "replay" --> U401
+    N -- "fresh" --> D{"body at most the limit and<br/>matches Content-Digest?"}
+    D -- "no" --> U401
+    D -- "yes" --> PZ{"paused and not POST heartbeat or GET hello?"}
+    PZ -- "yes" --> U401
+    PZ -- "no" --> OK["context: sensor, tenant from the key's sensor,<br/>no tenant for a shared sensor"]
+```
+
+The tenant of every later query comes from the key's sensor row
+(`keybound.go:keyOwner`: a tenant key loads `GetByTenantAndID`; a key without
+a tenant must belong to a shared sensor). Request bodies never name the
+tenant. A revoked sensor gets the same generic `401` as an unknown key
+(`checkSensorStatus` in `internal/app/sensor/service.go`, mapped to
+`errSignedUnauthorized`).
+
 ## Controls
 
 The controls are grouped as in RFC-040. Each row names where the control lives;
