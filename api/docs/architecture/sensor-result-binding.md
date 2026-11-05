@@ -261,6 +261,44 @@ Reviewed items (accepted or discarded) are deleted 30 days after review by the
 pending items are never purged. `SENSOR_RESULT_QUARANTINE_RETENTION` (default
 `720h`) and `SENSOR_RESULT_QUARANTINE_PURGE_INTERVAL` (default `24h`) change it.
 
+### A verified first-party tool that lags its descriptor is ingested
+
+A bound report may carry only the types its tool's descriptor declares
+(`output_binding.go`); the rest used to be held for review. A descriptor that
+lags its importer is a tool bug, not a risk, so findings the tool was asked to
+produce are no longer parked (`app/ingest/contract_mismatch.go`). The part of
+the report the platform catalog allows for the tool and the command's targets
+cover is ingested normally and flagged, when ALL of these hold:
+
+- the tool is one a released sensor compiles in and its contract claims origin
+  `builtin` (`sensor.ToolTrust` is `builtin`);
+- the sensor's grant is `trusted`;
+- the sensor's current manifest was sent by the sensor, and its descriptor for
+  the tool hashes to the contract digest;
+- the asset has a located type (name, address, service, web application) and a
+  target of the bound command covers it (the same target matching as the
+  job-target binding above; a command with no targets covers nothing).
+
+Flagged: the receipt gets an error entry `contract_mismatch` for each finding
+of an undeclared-type asset, the audit gets `sensor_result.contract_mismatch`
+(tool, tool version, types, descriptor digest), the platform administrators
+get one notice per (tool, type, tool version) per 24 hours (in memory, the
+coverage operator's notifier), and
+`sensor_unsolicited_results_total{outcome="contract_mismatch_ingested"}` counts
+it.
+
+Still held (or refused), unchanged: a third-party, unsigned or untrusted
+descriptor or tool; an unverified sensor; an asset outside the command's
+targets or with no location to check; dependencies and endpoints; anything the
+catalog does not allow for the tool; and every quarantine cap. Another tenant's
+sensor never reaches this path.
+
+Not done: held items already in the quarantine from a first-party tool are not
+released by this rule, because a held item does not store its command's
+targets, so the scope check cannot be repeated at release time. They are
+released by the descriptor rule below once the tool's descriptor declares the
+types. A signed-release check of the descriptor is a follow-up.
+
 ### Automatic release of out-of-contract holds
 
 A report held as `out_of_contract` usually means the tool's descriptor lags
