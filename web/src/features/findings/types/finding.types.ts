@@ -1164,8 +1164,22 @@ export interface FindingSourceData {
   locationKey?: string
 }
 
+/** One service a version-match finding is observed on, with its own state. */
+export interface FindingServiceLocation {
+  assetId: string
+  assetName: string
+  /** Scheme (or transport) and port: "https:443". */
+  label: string
+  state: 'affected' | 'fixed' | 'not_affected'
+  stateAt: string
+  version?: string
+  lastSeenAt: string
+}
+
 export interface FindingDetail extends Finding {
   activities: Activity[]
+  /** Version-match findings: the services of the host it is observed on. */
+  locations?: FindingServiceLocation[]
   scannerFacts?: FindingScannerFacts
   scannerOutput?: FindingScannerOutput
   sourceData?: FindingSourceData

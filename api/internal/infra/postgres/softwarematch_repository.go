@@ -310,7 +310,8 @@ func (r *SoftwareMatchRepository) matches(ctx context.Context, where string, lim
 				  AND c.product_id = m.condition_product_id AND c.superseded_at IS NULL)),
 			r.description, COALESCE(r.severity, ''), r.cvss_score, COALESCE(r.cvss_vector, ''), r.cwes,
 			(k.cve_id IS NOT NULL), COALESCE(e.epss_score, 0),
-			s.source = 'package', COALESCE(v.purl, '')
+			s.source = 'package', COALESCE(v.purl, ''),
+			a.name, a.asset_type, a.created_at
 		FROM asset_software s
 		JOIN assets a ON a.id = s.asset_id AND a.tenant_id = s.tenant_id
 		JOIN software_products p ON p.id = s.product_id
@@ -339,7 +340,8 @@ func (r *SoftwareMatchRepository) matches(ctx context.Context, where string, lim
 			&m.Result.CVEID, &m.Result.AffectedID, &m.Result.RangeText, &m.Result.AllVersions, &m.Result.Adjustment,
 			pq.Array(&reasons), &cond, &m.ConditionMet,
 			&desc, &m.CVE.Severity, &score, &m.CVE.CVSSVector, pq.Array(&cwes),
-			&m.CVE.InKEV, &m.CVE.EPSS, &m.Package, &m.PURL); err != nil {
+			&m.CVE.InKEV, &m.CVE.EPSS, &m.Package, &m.PURL,
+			&m.AssetName, &m.AssetType, &m.AssetCreatedAt); err != nil {
 			return nil, fmt.Errorf("tenant matches: %w", err)
 		}
 		m.AssetID, m.ProductID, m.VersionID = shared.MustIDFromString(asset), shared.MustIDFromString(pid), shared.MustIDFromString(vid)
@@ -365,7 +367,7 @@ func (r *SoftwareMatchRepository) MatcherFindings(ctx context.Context, tenantID 
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT f.id, f.asset_id, COALESCE(f.cve_id, ''), f.fingerprint, f.status, f.observation_state = 'stale',
 			f.metadata->'version_match'->>'product_id', f.metadata->'version_match'->>'version_id',
-			COALESCE(f.metadata->'version_match'->>'location', ''), COALESCE(r.status = 'Rejected', false)
+			COALESCE(f.metadata->'version_match'->>'location', ''), COALESCE(r.status = 'Rejected', false), f.created_at
 		FROM findings f
 		LEFT JOIN cve_records r ON r.cve_id = f.cve_id
 		WHERE f.tenant_id = $1 AND `+matcherOwnedSQL+` AND f.asset_id IS NOT NULL
@@ -379,7 +381,7 @@ func (r *SoftwareMatchRepository) MatcherFindings(ctx context.Context, tenantID 
 		var f softwarematch.MatcherFinding
 		var id, asset string
 		var pid, vid sql.NullString
-		if err := rows.Scan(&id, &asset, &f.CVEID, &f.Fingerprint, &f.Status, &f.Stale, &pid, &vid, &f.Location, &f.CVERejected); err != nil {
+		if err := rows.Scan(&id, &asset, &f.CVEID, &f.Fingerprint, &f.Status, &f.Stale, &pid, &vid, &f.Location, &f.CVERejected, &f.CreatedAt); err != nil {
 			return nil, fmt.Errorf("matcher findings: %w", err)
 		}
 		f.ID, f.AssetID = shared.MustIDFromString(id), shared.MustIDFromString(asset)
