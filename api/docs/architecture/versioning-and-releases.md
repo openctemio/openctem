@@ -64,11 +64,20 @@ On `release/vX.Y.Z` (and on `main` right after it merges) it runs with
 |---|---|
 | `api/internal/versions/versions.yaml`: the API's embedded copy, byte for byte (`go:embed` cannot reach outside the `api/` module); every Go default reads it | all |
 | `api/deploy/docker-compose.sensor.yml` `SENSOR_VERSION` default | sensor.latest |
-| `web/src/features/ci-runners/lib/ci.ts` `CI_RELEASE` | ci.latest |
+| `web/src/features/ci-runners/lib/ci.ts` `CI_RELEASE_FALLBACK` | ci.latest (the console uses it only when the API names no CI runner release) |
 
 No Go file holds a version, so bumping a sensor product, the SDK or the CI
 runner changes `versions.yaml` and its embedded copy only (a shell test runs
 the bump on a fixture and checks the changed files).
+
+Nobody bumps a `latest` by hand or by a pull request: when a train is cut,
+`cut-release.sh` moves each component's `latest` forward to its newest
+published release (`refresh-latest.sh`) in the version commit, and running
+instances learn newer releases from the signed release feed
+([version-check.md](version-check.md#component-releases)). A `min` changes
+only with a protocol change, by hand. The release preflight reports a stale
+`latest` and blocks only on a `latest` or `min` that is not a published
+release.
 
 ## Proposed version
 

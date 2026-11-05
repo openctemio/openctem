@@ -1059,7 +1059,7 @@ session could do more, or last longer, than intended. Each is closed here.
   (password, second-factor completion, token exchange, social and SSO
   sign-in) with the wrong-password answer, so the endpoint is no password
   oracle and does not reveal which emails are administrators; the attempt is
-  logged (`alert=platform_admin_main_site_sign_in`). The sign-in page says
+  logged (`alert=break_glass_main_site_sign_in`). The sign-in page says
   where administrators sign in; it no longer gets a `platform_admin` flag.
 - **Own pre-session cookie.** The console's sign-in steps echo `console_csrf`
   instead of the tenant site's `csrf_token`, which a same-host tenant site on
