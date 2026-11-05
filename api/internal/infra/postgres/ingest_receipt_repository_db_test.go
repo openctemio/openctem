@@ -357,3 +357,38 @@ func TestIngestReceipt_RunTotalFindingsLive_DB(t *testing.T) {
 		t.Fatalf("other tenant's run total_findings = %d", n)
 	}
 }
+
+// A run's receipt row is created as completed by the first report, but the
+// receipt reads as processing while its run is still going and completed once
+// the run settled; another tenant never sees the run's state.
+func TestIngestReceipt_RunReceiptStatusFollowsRun_DB(t *testing.T) {
+	f := newReceiptFixture(t)
+	run, step, cmd := shared.NewID(), shared.NewID(), shared.NewID()
+	if _, err := f.db.ExecContext(f.ctx, `INSERT INTO scan_runs (id, tenant_id, trigger_type, status, kind) VALUES ($1, $2, 'manual', 'running', 'system')`,
+		run.String(), f.tenant.String()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.db.ExecContext(f.ctx, `INSERT INTO scan_run_steps (id, scan_run_id, step_key, step_order, status) VALUES ($1, $2, 's', 1, 'running')`,
+		step.String(), run.String()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.db.ExecContext(f.ctx, `INSERT INTO commands (id, tenant_id, type, status, payload, scan_run_step_id)
+			VALUES ($1, $2, 'scan', 'running', '{}', $3)`, cmd.String(), f.tenant.String(), step.String()); err != nil {
+		t.Fatal(err)
+	}
+	rec := f.record(&ingestreceipt.Delta{TenantID: f.tenant, Tool: "nuclei", Reports: 1,
+		Source: ingestreceipt.Source{Kind: ingestreceipt.SourceCommand, CommandID: &cmd}})
+	if rec.Status != ingestreceipt.StatusProcessing {
+		t.Fatalf("status while the run is running = %q, want processing", rec.Status)
+	}
+	if _, err := f.db.ExecContext(f.ctx, `UPDATE scan_runs SET status = 'completed' WHERE id = $1`, run.String()); err != nil {
+		t.Fatal(err)
+	}
+	got, err := f.repo.Get(f.ctx, f.tenant, rec.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != ingestreceipt.StatusCompleted {
+		t.Fatalf("status after the run completed = %q, want completed", got.Status)
+	}
+}
