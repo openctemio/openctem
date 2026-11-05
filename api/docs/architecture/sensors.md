@@ -1973,6 +1973,8 @@ inside the reporting organization.
 | `zone_visibility: private` on a DNS name | Exposure `private`, not internet-accessible | Also a root domain that only private-zone names name (`private_zone.go`). |
 | A network device's address (PRTG, Splunk) | Matched to the existing device | Network devices only (not segments, hosts or address assets), in the IP trust window, one candidate only ([asset-identity-resolution.md](asset-identity-resolution.md)). |
 | An asset that matches a scope exclusion | Not added | Item error `asset_excluded`, counted neither as accepted nor as rejected, so it does not stop the not-seen sweep of a complete report. |
+| An asset or finding of a type the command's tool does not produce | Held for review in the results quarantine | Item error `held_for_review`, counted as quarantined (a finding held for its own type too, even when its asset was applied); `quarantine_full` and rejected when the quarantine could not keep it. |
+| An asset outside the command's targets or addresses, or outside the upload actor's data scope | Not applied | Item error `outside_targets` or `out_of_scope` on the asset and on its findings, counted as rejected. `asset_invalid` is left for an asset ingest could not store for any other reason. |
 | `coverage_type: full` from a trusted collector | Refresh of its own assets, unlisted ones marked not seen | RFC-040 §12, [sensor-result-binding.md](sensor-result-binding.md). Partial and incremental reports keep the unsolicited limits and never mark anything. |
 
 ## Result binding and the results quarantine (RFC-040)

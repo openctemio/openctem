@@ -342,6 +342,19 @@ type Output struct {
 	// are skipped, never attached to another asset of the report.
 	OutOfScopeAssetRefs map[string]bool `json:"-"`
 
+	// OutsideChunkAssetRefs are the refs of OutOfScopeAssetRefs that lie
+	// outside their command's addresses (not the actor's data scope), so the
+	// segment outcome names the right reason.
+	OutsideChunkAssetRefs map[string]bool `json:"-"`
+
+	// HeldAssetRefs are the CTIS asset ids, and HeldFindings the indices of
+	// the input findings, that the output-type binding took out of the
+	// report (output_binding.go). HoldLost says the quarantine could not
+	// keep them: they were neither applied nor held.
+	HeldAssetRefs map[string]bool `json:"-"`
+	HeldFindings  map[int]bool    `json:"-"`
+	HoldLost      bool            `json:"-"`
+
 	// Decided are the new findings a policy decided (suppressed, held),
 	// and Items the reported items that did not become findings, with the
 	// policy and version that decided them: the receipt records both.
