@@ -90,13 +90,14 @@ stops requests, not knowledge:
 | `method`, `path_template` | `GET`…`ANY`; the template (`/api/v1/users/{int}/orders`) |
 | `template_hash` | `ctis/weburl.PathHash(method, template)`: the dedup key within the origin |
 | `path_hash` | sha256 of the template alone: the path-pattern key within the tenant |
-| `kind`, `sources` | page, api, script, form, graphql, websocket, other; how it was found (crawl, js, sitemap, robots, spec, har, archive, dast, probe) |
+| `kind`, `sources` | page, api, script, form, graphql, websocket, other; how it was found (crawl, js, sitemap, robots, spec, har, archive, dast, probe, import; `guess` is set only by the platform, see §9) |
 | `example_path` | one concrete path, token-like segments masked, never a query |
 | `last_status`, `content_type`, `auth_state` | the last response seen (`auth_state` none, required, redirect_login, unknown) |
 | `technologies`, `labels`, `catalog_key` | technology names; labels; the sensitive-path catalog id when matched |
 | `response_sig`, `last_changed_at` | hash of status, content type and auth state; stamped when it changes (the incremental selector reads it) |
 | `state`, `in_scope` | active, gone, ignored; `in_scope = false` is *excluded, untested* |
 | `first_seen_at`, `last_seen_at`, `last_run_id`, `last_sensor_id`, `last_tool` | provenance, from the server-side binding of the report, never from its body |
+| `resp_size`, `resp_hash` | response evidence of a path discovery hit: body size in bytes and the first 16 hex characters of the sha-256 of the normalised body; NULL for rows discovery never confirmed; not part of `response_sig` (§9) |
 
 `web_endpoint_params` (one row per endpoint, location and name): `location`
 (query, path, header, cookie, form, json, multipart, graphql_arg), `name`,
@@ -142,6 +143,8 @@ A re-sighting rewrites a row at most hourly unless something changed.
 4. Endpoints under a path exclusion are stored with `in_scope = false`.
 5. The rows are upserted per origin in one transaction, serialised by an
    advisory lock so concurrent reports cannot pass the caps.
+6. The source of each endpoint is set from the capability of the command the
+   report is bound to, not from the report (§9).
 
 A crawl now hands the chained stage its origin asset, not one asset per URL.
 
@@ -212,3 +215,39 @@ the caller's data scope.
 | W-OC6 | api | sensitive-path catalog, `catalog_key`, path-pattern routes |
 | W-OC7 | api | `web_endpoint_events`, change feed, retention, incremental selector |
 | W-OC8 | api | spec store, upload, drift |
+| W-OC9 | api | source `guess` set from the bound capability, response evidence columns, `source=guess` filter (§9) |
+
+## 9. Amendment 2026-11-05: guessed endpoints and response evidence
+
+Path discovery (`enumerate.web_paths@1`, architecture:
+[web-discovery.md](../architecture/web-discovery.md)) requests candidate
+paths on an origin and reports the ones whose answer differs from the
+origin's not-found answer. Its rows join this store with three rules.
+
+1. **The platform sets the source.** Ingest reads the capability of the
+   command the report is bound to (`webendpoint.BindSource`):
+   - `enumerate.web_paths` and `enumerate.web_params`: `guess`, whatever the
+     report claims;
+   - `crawl.web`: the claimed `crawl`, `js`, `sitemap` or `robots`, else
+     `crawl`;
+   - anything else, and a report bound to no capability: the claimed CTIS
+     source, never `guess`.
+
+   A hostile or buggy tool can therefore neither dress a guess as a crawl nor
+   a crawl as a guess. CTIS is unchanged: `guess` is a stored value only.
+2. **Evidence is required.** A guessed endpoint carries
+   `extensions["io.openctem"].response = {"size": int, "hash": "16 lowercase
+   hex"}`. Without it, or with a malformed value, the endpoint is refused and
+   counted (`endpoints_refused`, `endpoints_no_evidence` on the ingest
+   output); it is never stored. The body never leaves the sensor.
+3. **Evidence is stored, not signed into the change signature.**
+   `resp_size` and `resp_hash` (migration `20261105051408`) keep the last
+   confirmed hit; a later crawl sighting merges its source (`{crawl, guess}`)
+   and keeps the evidence. They are not part of `response_sig`, so a dynamic
+   page does not re-plan its verification on every sighting.
+
+A guessed row is still only an observation: a finding comes only from a
+platform-planned verification (the web content pipeline). The API returns
+`resp_size` and `resp_hash` on every endpoint, and `GET /web-endpoints`
+accepts `source=guess`, under the same tenant and data-scope filter as every
+other field.

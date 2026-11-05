@@ -57,6 +57,10 @@ type Binding struct {
 	Tool string
 	// CommandType is the bound command's type (BindingCommand only).
 	CommandType command.CommandType
+	// Capability is the capability the bound command runs ("" when its
+	// payload names none). The platform sets the source of the report's web
+	// endpoints from it (webendpoint.BindSource), never from the report.
+	Capability string
 	// StepRunID is the workflow step run the bound command belongs to (nil
 	// for a command outside a scan run): the scan run its results came from.
 	StepRunID *shared.ID
@@ -92,7 +96,8 @@ func CommandBinding(cmd *command.Command) Binding {
 	}
 	ports, top := command.PayloadPortSettings(cmd.Payload)
 	return Binding{Kind: BindingCommand, CommandID: &id, Targets: CommandTargets(cmd), Tool: commandTool(cmd),
-		CommandType: cmd.Type, StepRunID: cmd.StepRunID, DispatchedAt: dispatched, JobPorts: ports, JobTopPorts: top}
+		CommandType: cmd.Type, Capability: command.PayloadCapability(cmd.Payload), StepRunID: cmd.StepRunID,
+		DispatchedAt: dispatched, JobPorts: ports, JobTopPorts: top}
 }
 
 // TrustedBinding is the binding of a server-side ingest.
