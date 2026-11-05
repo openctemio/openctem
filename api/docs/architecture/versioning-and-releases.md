@@ -118,6 +118,46 @@ the last tag (nor from `ui/<last tag>`, the imported web history):
 6. If the release needs release notes or an upgrade page, write it in
    `openctemio/docs`.
 
+### Signing and verification
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant T as Tag vX.Y.Z on main
+    box GitHub Actions (OIDC issuer token.actions.githubusercontent.com)
+    participant DP as docker-publish.yml
+    participant RL as release.yml, release-dist.yml
+    end
+    participant SG as Sigstore (Fulcio, Rekor)
+    participant R as ghcr.io and the GitHub Release
+    participant OP as Operator, Ansible signatures.yml, airgap mirror-images.sh
+    T->>DP: build api, web, console, openctem, gateway, migrations, seed
+    DP->>SG: keyless certificate for docker-publish.yml@refs/tags/vX.Y.Z
+    DP->>R: cosign sign digest, SLSA provenance, SPDX SBOM attestation
+    DP->>R: offline-bundle OCI archives with referrers, openctem-images-vX.Y.Z.txt + .sigstore.json
+    T->>RL: binary archives, per-archive SBOM, checksums-sha256.txt
+    RL->>R: cosign sign-blob bundle (verified at once), provenance
+    OP->>R: pull by digest
+    OP->>OP: cosign verify - identity .../docker-publish.yml@refs/tags/vX.Y.Z, issuer GitHub
+    alt any check fails
+        OP->>OP: stop before compose pull or registry push
+    end
+```
+
+| Artifact | Signature | Verified automatically by |
+|---|---|---|
+| The seven images above | cosign keyless, provenance, SBOM attestation | Ansible `roles/openctem/tasks/signatures.yml` before pull (api, web, gateway, migrations, console); `deploy/airgap/mirror-images.sh` before and after the copy |
+| Binary archives | via the signed `checksums-sha256.txt` | `image-kit/unpack.sh` |
+| `openctem-images-vX.Y.Z.txt` | sign-blob bundle | `mirror-images.sh bundle` |
+| Release feed `openctem-releases.json` | sign-blob, re-signed every 6 h, valid 30 d | the API's update check ([signing keys](signing-keys.md)) |
+| develop and PR images (`build-images.yml`) | provenance only, no cosign signature | none |
+| Helm chart package, Ansible kit, compose files | not signed | none |
+
+The Docker Hub copies are made with `crane copy` per tag; whether the
+signature and attestation referrers travel with them is not verified, so
+verify against ghcr.io. A `workflow_dispatch` build signs with a branch ref
+and does not satisfy the tag identity.
+
 ### Hotfix
 
 Merge the fix into `develop`, then run Release Train with `mode: hotfix` and
