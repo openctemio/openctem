@@ -1356,6 +1356,8 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 			// it gets no run; its pairs pause with the reason and resume by
 			// themselves.
 			svc.AssetCoverage.EnableReadiness(svc.Scan)
+			// A port scan that carried a name's addresses settles the name.
+			svc.AssetCoverage.WithAddressReader(repos.Attribution)
 			// Gaps, output drops and repeated failures alert the tenant's
 			// administrators (in-app and integrations) at most once a day.
 			svc.AssetCoverage.EnableAlerts(repos.AssetCoverage, repos.MemberLifecycle, svc.Notification, svc.Outbox)
