@@ -237,6 +237,39 @@ func registerPurgeControllers(m *controller.Manager, cfg *config.Config, repos *
 	}
 }
 
+// quarantineRetention is how long a pending quarantined result stays eligible
+// for the automatic release.
+func quarantineRetention(cfg *config.Config) time.Duration {
+	if cfg != nil && cfg.Worker.QuarantineRetention > 0 {
+		return cfg.Worker.QuarantineRetention
+	}
+	return 30 * 24 * time.Hour
+}
+
+// heldReleaseInterval is how often held out-of-contract results are
+// re-checked against their tools' current descriptors.
+const heldReleaseInterval = 5 * time.Minute
+
+// registerHeldResultRelease re-evaluates held out-of-contract results on a
+// schedule (ingest.ReleaseOutOfContract), a bounded number per run.
+func registerHeldResultRelease(m *controller.Manager, svc *Services, cfg *config.Config, log *logger.Logger) {
+	if svc.Ingest == nil {
+		return
+	}
+	ing := svc.Ingest
+	retention := quarantineRetention(cfg)
+	m.Register(controller.NewPurgeController("sensor-result-auto-release", heldReleaseInterval,
+		func(ctx context.Context) (int64, error) {
+			st, err := ing.ReleaseOutOfContract(ctx, ingest.ReleaseOptions{Retention: retention})
+			if st.Released > 0 || st.Failed > 0 {
+				log.Info("held sensor results re-checked", "groups", st.Groups, "examined", st.Examined,
+					"released", st.Released, "kept", st.Kept, "failed", st.Failed)
+			}
+			return int64(st.Released), err
+		},
+		log.With("controller", "sensor-result-auto-release")))
+}
+
 // signerLedgerSyncInterval is how often the job signer's ledger is narrowed
 // to the database (RFC-040 P2).
 const signerLedgerSyncInterval = 10 * time.Minute
@@ -698,6 +731,7 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	registerPurgeControllers(w.ControllerManager, cfg, repos, svc, log)
 	registerAddressAutoAdd(w.ControllerManager, repos, svc, log)
 	registerSignerLedgerSync(w.ControllerManager, svc, log)
+	registerHeldResultRelease(w.ControllerManager, svc, cfg, log)
 
 	approvalExpiry := controller.NewApprovalExpirationController(
 		repos.FindingAcceptanceExpiry,
