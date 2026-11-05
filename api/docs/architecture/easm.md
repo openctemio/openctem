@@ -113,7 +113,7 @@ API connector already uses (`pkg/httpsec`).
 | Relationships `contains` (root → subdomain), `resolves_to` (domain → IP); inferred `exposes`, `runs_on` | Built | `internal/app/ingest/processor_assets.go`, `internal/app/asset/relationship_inference.go` |
 | HTTP probe server fields: the TLS leaf certificate becomes a `certificate` asset named by its SHA-256 fingerprint (tenant-scoped, deduplicated by name and fingerprint) linked from the service with `serves_certificate` (migration `001026`); the service keeps `favicon_mmh3`, `jarm`, `cdn`, `cdn_type`, `waf`, `hosted_by` and, when the sensor asks httpx for it, `asn`/`asn_org`/`asn_country`. Certificate text is capped on every ingest path (`text_caps.go`); a `related_assets` link becomes an edge only for a known type pair and only when the report may change the source asset (RFC-040 §5.3) | Built (api); sensor + sdk-go + ctis PRs open | `internal/app/ingest/related_assets.go`, `internal/app/ingest/text_caps.go`; ctis `ConvertReconToCTIS`, sensor `internal/recon/httpx` |
 | Identity resolution (strong identifiers, 7-day IP window, conflicts to dedup review) | Built | RFC-001, RFC-028, [asset-identity-resolution.md](asset-identity-resolution.md) |
-| CT monitoring: crt.sh, `subdomain_discovered` + `certificate_expiring` exposures | Built, with two limits (§6) | `internal/app/certmonitor`, [certificate-transparency-monitoring.md](certificate-transparency-monitoring.md) |
+| CT monitoring: crt.sh, `subdomain_discovered` + `certificate_expiring` exposures | Built, with two limits (§6); **off until a platform sensor carries its requests** (`ct_unavailable_reason: needs_platform_sensor`): the platform makes no CT request itself. CT names keep arriving through `discover.subdomains` (subfinder's crt.sh and Cert Spotter sources) on sensors | `internal/app/certmonitor`, [certificate-transparency-monitoring.md](certificate-transparency-monitoring.md) |
 | Certificate assets → `certificate_expiring` / `certificate_expired` / `ssl_issue` exposures; service assets → `port_open` / `service_detected` | Built | `internal/app/exposurebridge/asset_bridge.go` |
 | KEV + EPSS (global, daily), P0–P3 priority with internet-accessible and criticality | Built | `internal/app/threat`, `pkg/domain/vulnerability/priority.go` |
 | Attack paths and exposure chains from public entry points | Built | `internal/app/attack/path_scoring.go`, `exposure_chains.go` |
@@ -854,7 +854,9 @@ domain scope entry or a verified domain; at most 20) for registered
 lookalikes: candidates are generated locally (typos, keyboard neighbours,
 hyphens, bit flips, homoglyphs incl. IDN, other TLDs; default 300 per root)
 and checked passively only (decision O5): NS/A/AAAA/MX through the platform
-resolver and crt.sh through the SSRF guard; no candidate host is contacted.
+resolver; no candidate host is contacted. The crt.sh certificate count waits
+for a platform sensor to carry CT lookups (the platform makes no CT request
+itself), so candidates carry no certificate count for now.
 A registered candidate becomes a `lookalike_domain` exposure (medium with
 mail servers, or addresses plus a certificate; low otherwise) through the
 EASM alert writer; a lapsed one is resolved. Triage: accept (ours or benign),

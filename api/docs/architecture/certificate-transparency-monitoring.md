@@ -1,11 +1,25 @@
 # Certificate-Transparency (CT) Monitoring
 
-> The first fully-built external-exposure connector: a scheduled, per-tenant
-> poller that queries the **public crt.sh** Certificate-Transparency log
-> aggregator (with **Cert Spotter** as the fallback) for a tenant's own domains
-> and emits first-class `ExposureEvent`s — no credentials, no sensor, no
-> traffic to the tenant's hosts. RFC-019; rotation, retries and fallback from
-> RFC-036 P0.
+> A scheduled, per-tenant poller that queries the **public crt.sh**
+> Certificate-Transparency log aggregator (with **Cert Spotter** as the
+> fallback) for a tenant's own domains and emits first-class `ExposureEvent`s,
+> with no credentials and no traffic to the tenant's hosts. RFC-019; rotation,
+> retries and fallback from RFC-036 P0.
+>
+> **Zero platform egress.** The platform makes no CT request itself: every
+> query goes through a `certmonitor.Fetcher` that a platform-owned sensor
+> carries. No such fetcher is wired yet, so the sweep is off and the EASM
+> settings report `ct_available: false` with
+> `ct_unavailable_reason: needs_platform_sensor` (the console says so on the
+> monitoring card). Certificate Transparency **names** still reach the
+> inventory through the passive subdomain discovery (`discover.subdomains`)
+> that runs on sensors: its subfinder queries crt.sh and Cert Spotter (with
+> the organization's or the operator's Cert Spotter key, when one is set)
+> through the sensor's forwarder. What waits for the platform-sensor fetcher
+> is the CT-specific part below: the `subdomain_discovered`,
+> `certificate_expiring` and `certificate_expired` exposures and their
+> rotation state. The lookalike certificate count (RFC-083) waits for the same
+> route.
 
 ## What it does
 
@@ -151,13 +165,14 @@ Current behaviour:
 | Step | Behaviour |
 |---|---|
 | crt.sh | `GET /?q=%.<domain>&output=json&deduplicate=Y`; up to 3 attempts on network errors, 408, 429 and 5xx, waiting 2 s → 30 s with jitter or the server's `Retry-After` (≤ 60 s). A 50 s response-header timeout (crt.sh is slow for busy domains) |
-| Cert Spotter | Used when crt.sh still fails: `GET /v1/issuances?domain=<d>&include_subdomains=true&expand=dns_names&expand=issuer`, unauthenticated free tier, up to 10 pages. A 429 stops Cert Spotter for the rest of that sweep. It lists only unexpired certificates, so it never yields `certificate_expired` |
+| Cert Spotter | Used when crt.sh still fails: `GET /v1/issuances?domain=<d>&include_subdomains=true&expand=dns_names&expand=issuer`, with `Authorization: Bearer <CERT_MONITOR_CERTSPOTTER_KEY>` when a commercial key is set (else the unauthenticated tier), up to 10 pages. A 429 stops Cert Spotter for the rest of that sweep. It lists only unexpired certificates, so it never yields `certificate_expired` |
 | Both fail | The failure and error are stored on the domain's state row and it backs off |
 
 Configuration: `CERT_MONITOR_ENABLED` (default true), `CERT_MONITOR_INTERVAL`
 (24h), `CERT_MONITOR_FEED_URL` (`https://crt.sh`),
 `CERT_MONITOR_CERTSPOTTER_URL` (`https://api.certspotter.com`, `off`
-disables), `CERT_MONITOR_MAX_DOMAINS_PER_RUN` (50).
+disables), `CERT_MONITOR_CERTSPOTTER_KEY` (commercial key for SaaS, sent only
+through the platform sensor; none is bought yet), `CERT_MONITOR_MAX_DOMAINS_PER_RUN` (50).
 `CERT_MONITOR_INTERVAL` is the platform default
 interval: the controller ticks hourly, a domain is re-queried once its window
 passed, and a tenant may set its own interval (6 h to 168 h) or turn the
@@ -165,9 +180,9 @@ monitor off (`/api/v1/easm/settings`; then its names are not sent to crt.sh
 or Cert Spotter).
 
 Data-source note (RFC-036 O1): only the watched domain names are sent to crt.sh
-and Cert Spotter. Both are free public services; heavy commercial use of
-Cert Spotter needs an SSLMate key, which belongs to the per-tenant paid
-sources of P5.
+and Cert Spotter, and only from a platform sensor. crt.sh publishes no terms of
+use, and Cert Spotter's unauthenticated tier is for personal use: a commercial
+service (SaaS) uses a Cert Spotter key (`CERT_MONITOR_CERTSPOTTER_KEY`).
 
 Source tag on everything emitted: `cert_transparency`
 (`internal/app/certmonitor/service.go`, `Source`).
@@ -179,11 +194,11 @@ never scanned.
 
 ## Safety & isolation
 
-- **SSRF-guarded egress:** every CT query dials through
-  `httpsec.SafeDialContext` — it refuses RFC1918 / link-local / metadata
-  addresses even though the sources are public (defense against DNS rebinding
-  of the configurable URLs). Bodies are capped at 48 MiB and the sweep waits
-  1 s between domains.
+- **No platform egress:** the service holds no HTTP client or dialer
+  (`TestNoOutboundClientInTheService`); every query goes through the
+  platform-sensor `Fetcher`, which receives the URL, headers and the 48 MiB
+  body cap. A body over the cap is refused whole. The sweep waits 1 s between
+  domains.
 - **Untrusted names:** a CT name is kept only if it is a syntactically valid
   hostname at or below the queried domain; markup, control characters and
   over-long labels are dropped before they reach an exposure.
@@ -194,8 +209,8 @@ never scanned.
 
 ## Wiring
 
-- **Service:** `internal/app/certmonitor/service.go` (crt.sh client + parser +
-  exposure emission).
+- **Service:** `internal/app/certmonitor/service.go` (query building, parser
+  and exposure emission; requests through `Fetcher`, `ctlog.go`).
 - **Controller:** `internal/infra/controller/cert_monitor_refresh.go` — a
   background sweep across all active tenants on a **24-hour** default cadence (CT
   data changes on the order of days). Each tenant is handled serially; a
