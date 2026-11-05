@@ -1938,6 +1938,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Retest.SetAuditLogger(s.Audit)
 	// RFC-057 R2: a confirmed fix resolves only when the tenant opted in.
 	s.Retest.SetPolicy(retestapp.TenantPolicy{Tenants: repos.Tenant})
+	s.Retest.SetClosureSettings(s.Tenant) // the organization's closing mode decides a confirmed fix's close
 
 	// Finding evidence (docs/architecture/finding-evidence.md): secret values
 	// are sealed with the platform key (re-keyed by cmd/rekey).
@@ -2053,6 +2054,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// (docs/architecture/ai-context-masking.md).
 		s.AIMasking = tenantai.NewMaskingService(repos.TenantAISettings, s.Vulnerability, repos.Asset, repos.Tenant,
 			aibundle.NewBuilder(aiEgress), s.Audit, log)
+		// AI triage masks its prompt under the same policy and seeded names.
+		s.AITriage.SetMaskingInputs(s.AIMasking)
 		s.AIMaskMaps = aimaskmap.NewStore(repos.AIMaskMaps, s.Encryptor, cfg.AITriage.MaskMapTTL)
 		// A confident false-positive verdict on a medium or low finding is
 		// recorded as a pending approval for a person; never applied.
