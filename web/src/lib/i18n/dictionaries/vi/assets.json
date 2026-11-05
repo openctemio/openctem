@@ -1050,6 +1050,7 @@
   "assets.scanning.tenableScan": "Quét bằng Tenable.sc",
   "assets.scanning.tenableScanTitle": "Quét tài sản này ngay qua bộ kết nối Tenable.sc của tổ chức",
   "assets.scanning.title": "Phạm vi và quét",
+  "assets.serviceKind.guess": "Phỏng đoán",
   "assets.sheet.copyId": "Sao chép ID",
   "assets.sheet.delete": "Xóa {type}",
   "assets.sheet.description": "Mô tả",
