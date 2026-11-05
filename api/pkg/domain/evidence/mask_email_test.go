@@ -105,7 +105,7 @@ func TestMaskItemEmailsOnAStoredItem(t *testing.T) {
 			t.Errorf("%q missing from %s", kept, all)
 		}
 	}
-	if q := it.HTTP.Request; q.BodyEncoding != "" || q.Body != "reply-to: ***@example.net" {
+	if q := it.HTTP.Request; q.BodyEncoding != "" || q.Body != "reply-to: b***@example.net" {
 		t.Errorf("text base64 body = %q (%q)", q.Body, q.BodyEncoding)
 	}
 	if m := it.Match[0]; it.HTTP.Response.Body[*m.Start:*m.End] != before {

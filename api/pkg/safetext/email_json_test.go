@@ -22,7 +22,7 @@ func TestMaskEmailsJSON(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := map[string]any{"jane@example.com": "key stays", "f": 1.5, "b": true, "z": nil,
-		"nested": map[string]any{"list": []any{"***@Example.org", "lib@1.2.3", map[string]any{"q": "u=***%40example.com"}}, "html": "<a>***@example.net</a>"}}
+		"nested": map[string]any{"list": []any{"O***@Example.org", "lib@1.2.3", map[string]any{"q": "u=j***%40example.com"}}, "html": "<a>b***@example.net</a>"}}
 	delete(got, "n")
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("got %s", out)
