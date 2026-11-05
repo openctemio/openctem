@@ -74,8 +74,12 @@ const (
 // Outcomes recorded on pairs settled per target, besides OutcomeOK and
 // OutcomeFailed.
 const (
-	OutcomeUnfinished    = "unfinished"
+	OutcomeUnfinished = "unfinished"
+	// OutcomeNotDispatched: the run planned no task at all (platform side).
 	OutcomeNotDispatched = "not_dispatched"
+	// OutcomeNotScanned: the run's tasks ran but none carried the target
+	// or an address it resolves to (organization side: a coverage gap).
+	OutcomeNotScanned = "not_scanned"
 )
 
 // Verdict is how one target ended across a run's tasks.
@@ -90,6 +94,9 @@ type Verdict struct {
 	// edge_challenged outcome (a token), "" when unknown.
 	Vendor string
 }
+
+// VerdictBetter reports whether a outranks b.
+func VerdictBetter(a, b Verdict) bool { return a.rank() > b.rank() }
 
 func (v Verdict) rank() int {
 	switch {
