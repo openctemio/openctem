@@ -13,7 +13,6 @@
 //   - surface: web surface entries (the matched path, or paths the
 //     template extracted, such as the entries of robots.txt);
 //   - exposure: an info exposure of the asset (panels, exposed consoles);
-//   - discard: nothing is stored (personal data, noise), only counted.
 //
 // A match no entry names stays a generic info exposure and is counted, so a
 // new template is reviewed and mapped.
@@ -48,22 +47,21 @@ const (
 	ClassPosture    Class = "posture"
 	ClassSurface    Class = "surface"
 	ClassExposure   Class = "exposure"
-	ClassDiscard    Class = "discard"
 )
 
 // IsValid reports whether c is a known class.
 func (c Class) IsValid() bool {
 	switch c {
-	case ClassTechnology, ClassPosture, ClassSurface, ClassExposure, ClassDiscard:
+	case ClassTechnology, ClassPosture, ClassSurface, ClassExposure:
 		return true
 	}
 	return false
 }
 
-// IsFact reports whether a match of class c is stored as an asset fact (or
-// dropped) instead of an exposure.
+// IsFact reports whether a match of class c is stored as an asset fact instead of
+// an exposure.
 func (c Class) IsFact() bool {
-	return c == ClassTechnology || c == ClassPosture || c == ClassSurface || c == ClassDiscard
+	return c == ClassTechnology || c == ClassPosture || c == ClassSurface
 }
 
 // Limits.
@@ -220,7 +218,7 @@ func (e *Entry) Validate() error {
 		add("id must be 2-64 of a-z 0-9 . _ - and start with a letter or digit")
 	}
 	if !e.Class.IsValid() {
-		add("class must be technology, posture, surface, exposure or discard")
+		add("class must be technology, posture, surface or exposure")
 	}
 	if !cleanText(e.Reason, MaxReasonLen) {
 		add("reason must be one line of at most %d bytes", MaxReasonLen)
@@ -438,7 +436,7 @@ func Compile(origin string, entries []Entry) (*Map, error) {
 			return nil, fmt.Errorf("entry %s: %w", e.ID, err)
 		}
 		if seen[e.ID] {
-			return nil, fmt.Errorf("%w: entry id %s appears twice", ErrInvalid, e.ID)
+			return nil, fmt.Errorf("%w: an entry id appears twice", ErrInvalid)
 		}
 		seen[e.ID] = true
 		c := compiled{Entry: e}

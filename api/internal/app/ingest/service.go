@@ -557,11 +557,12 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	// sub-inventory under their origin asset, never one asset per URL.
 	// Detection rules read the web services before anything is stored
 	// (fingerprints join the assets' technologies).
-	// The facts template info matches prove (technologies, header posture,
-	// web surface) join their report assets first (info_facts.go).
+	// Detection rules run first, so a technology a rule detects keeps its
+	// rule source; the facts template info matches prove (technologies,
+	// header posture, web surface) then join their report assets without
+	// repeating it (info_facts.go).
 	factsMap := s.templateFactsMap(ctx)
-	report = applyInfoFacts(report, factsMap, scope)
-	report, detections := s.matchDetectionRules(ctx, tenantID, report)
+	report, detections := s.detectThenApplyFacts(ctx, tenantID, report, factsMap, scope)
 	report, endpoints := s.planEndpoints(report, binding, output)
 
 	// Load tenant settings once for both asset processing and finding processing

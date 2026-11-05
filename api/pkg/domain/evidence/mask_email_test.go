@@ -50,10 +50,10 @@ func TestMaskMasksEmailAddressesEverywhere(t *testing.T) {
 		}
 		if name == "no secret" {
 			m := masked.Match[0]
-			if got := masked.HTTP.Response.Body[*m.Start:*m.End]; got != "***@example.com" {
+			if got := masked.HTTP.Response.Body[*m.Start:*m.End]; got != "j***@example.com" {
 				t.Errorf("match points at %q", got)
 			}
-			if !strings.Contains(all, "***@example.org") {
+			if !strings.Contains(all, "o***@example.org") {
 				t.Errorf("domain not kept: %s", all)
 			}
 		}

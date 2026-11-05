@@ -6,13 +6,17 @@ import (
 	"strings"
 )
 
-// E-mail addresses are personal data the platform never stores
-// (research/292). MaskEmails replaces the local part of every address in a
+// E-mail addresses are personal data the platform stores masked only
+// (research/292, 446). MaskEmails replaces all but the first character of
+// the local part of every address in a
 // text with EmailMask and keeps the domain, which says whose address it was
 // (the organization's, a provider's) without naming the person:
-// "jane.doe@example.com" becomes "***@example.com". A URL-encoded address
+// "jane.doe@example.com" becomes "j***@example.com". A URL-encoded address
 // ("jane%40example.com", a query value in a request line) is masked the same
 // way. The mask contains no local-part character, so masking is idempotent.
+// The owner rule (research/446): an address is kept, masked, not dropped; the
+// first character stays so a person can tell addresses of one domain apart
+// ("j***@example.com").
 
 // EmailMask replaces the local part of an e-mail address.
 const EmailMask = "***"
@@ -78,6 +82,19 @@ func movedOffset(o int, locals [][2]int) int {
 // emailLocals returns the byte ranges of the local parts of the addresses
 // in s, sorted and not overlapping.
 func emailLocals(s string) [][2]int {
+	out := emailLocalsFull(s)
+	for i := range out {
+		// The first character stays: "jane.doe@example.com" becomes
+		// "j***@example.com" (the replaced range starts one byte in; local
+		// parts are ASCII).
+		out[i][0]++
+	}
+	return out
+}
+
+// emailLocalsFull is emailLocals with each range starting at the first
+// character of the local part.
+func emailLocalsFull(s string) [][2]int {
 	var out [][2]int
 	if strings.Contains(s, "@") {
 		for _, m := range emailRE.FindAllStringSubmatchIndex(s, -1) {

@@ -157,8 +157,8 @@ first so the masking can read it) and structured (`method`, `url`,
    placeholder; body match ranges move to where the matched text sits after
    masking.
    - E-mail addresses (personal data, research/292) are masked last, in every
-     free string and header value: the local part becomes `***`, the domain
-     is kept (`***@example.com`, URL-encoded `***%40example.com`;
+     free string and header value: all but the first character of the local part becomes `***`, the domain
+     is kept (`j***@example.com`, URL-encoded `j***%40example.com`;
      `safetext.MaskEmails`). They are never stored, not even encrypted. Ingest
      already masks them in the whole CTIS finding before anything is stored
      (`internal/app/ingest/email_mask.go`), moving marked spans and match
