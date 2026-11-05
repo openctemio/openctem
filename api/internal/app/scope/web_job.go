@@ -37,11 +37,25 @@ type ConfinedSensors interface {
 	HasConfinedSensor(ctx context.Context, tenantID shared.ID) (bool, error)
 }
 
+// PathDispatchGate is the gate every path discovery job passes before it is
+// stored (coverage.PathDiscoveryPolicy): the organization's switch, the
+// origin refusals, the claim in the path discovery ledger. It returns the
+// request cap the job carries (at most requested; 0 requested: the
+// platform's per-origin budget).
+type PathDispatchGate interface {
+	AdmitPathDispatch(ctx context.Context, tenantID shared.ID, runID *shared.ID, targets []string, requested int) (int, error)
+}
+
 // WebJobGuard attaches the web scope to a web job, or refuses the job.
 type WebJobGuard struct {
-	scope    WebScopeBuilder
-	confined ConfinedSensors
+	scope     WebScopeBuilder
+	confined  ConfinedSensors
+	discovery PathDispatchGate
 }
+
+// SetDiscoveryGate wires the dispatch gate of path discovery jobs. Without
+// it a path discovery job is refused (fail closed).
+func (g *WebJobGuard) SetDiscoveryGate(d PathDispatchGate) { g.discovery = d }
 
 // NewWebJobGuard returns the guard. confined may be nil: a web-scoped job
 // that needs a confined sensor then waits for one instead of being refused
@@ -66,6 +80,10 @@ var webScopeNeedsConfinement = map[string]bool{"nuclei": true}
 // validate or retest job of a tool whose finding check does not keep to a
 // web scope).
 //
+// A path discovery job requires net.confined@1 too: its candidate paths come
+// from a list, and only the confined forwarder holds the tool to the scope and
+// to the request cap whatever it does.
+//
 // A validate or retest job that keeps to its scope (nuclei) requires
 // net.confined@1, like a nuclei scan: the finding check keeps to the scope
 // only in a confined sandbox, and a sensor that reports the feature (v0.19.0
@@ -83,8 +101,20 @@ func (g *WebJobGuard) GuardCreate(ctx context.Context, cmd *commanddom.Command) 
 	var ws *WebScope
 	var err error
 	if job.Discovery {
-		// Path discovery: always the strict scope, with its request cap.
-		limit := commanddom.PayloadDiscoveryMaxRequests(cmd.Payload)
+		// Path discovery: the same gate for every caller (the switch, the
+		// origin refusals, the ledger claim), then always the strict scope
+		// with the request cap the gate granted.
+		if g.discovery == nil {
+			return commanddom.GuardUnwired(cmd)
+		}
+		var runID *shared.ID
+		if id, perr := shared.IDFromString(commanddom.PayloadScanRunID(cmd.Payload)); perr == nil {
+			runID = &id
+		}
+		limit, gerr := g.discovery.AdmitPathDispatch(ctx, cmd.TenantID, runID, job.Targets, commanddom.PayloadDiscoveryMaxRequests(cmd.Payload))
+		if gerr != nil {
+			return gerr
+		}
 		if limit <= 0 {
 			limit = DefaultDiscoveryRequestsPerHost
 		}
@@ -116,7 +146,7 @@ func (g *WebJobGuard) GuardCreate(ctx context.Context, cmd *commanddom.Command) 
 			cmd.Type, cmd.Type, job.Tool), shared.ErrValidation)
 	}
 	fields[commanddom.PayloadKeyWebScope] = ws
-	if webScopeNeedsConfinement[job.Tool] || job.Verify {
+	if webScopeNeedsConfinement[job.Tool] || job.Verify || job.Discovery {
 		fields[commanddom.PayloadKeyRequiredFeatures] = withFeature(fields[commanddom.PayloadKeyRequiredFeatures], sensordom.CapabilityNetConfined)
 		if err := g.requireConfinedSensor(ctx, cmd.TenantID); err != nil {
 			return err

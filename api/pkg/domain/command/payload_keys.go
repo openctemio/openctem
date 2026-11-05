@@ -36,8 +36,26 @@ func PayloadTool(payload json.RawMessage) string {
 // contract's max_requests_per_origin).
 const PayloadKeyDiscoveryMaxRequests = "max_requests"
 
+// MaxDiscoveryRequests bounds what a payload may ask for as a path discovery
+// request budget; the platform's per-origin budget bounds it further when the
+// job is dispatched (the web job guard).
+const MaxDiscoveryRequests = 100_000
+
+// PayloadScanRunID is the scan run a command payload belongs to (the
+// "scan_run_id" key), or "" when it names none.
+func PayloadScanRunID(payload json.RawMessage) string {
+	var p struct {
+		RunID string `json:"scan_run_id"`
+	}
+	if json.Unmarshal(payload, &p) != nil {
+		return ""
+	}
+	return strings.TrimSpace(p.RunID)
+}
+
 // PayloadDiscoveryMaxRequests is a path discovery job's per-origin request
-// budget from its "config" or "scanner_config" (0 when it names none).
+// budget from its "config" or "scanner_config" (0 when it names none; at
+// most MaxDiscoveryRequests).
 func PayloadDiscoveryMaxRequests(payload json.RawMessage) int {
 	var p struct {
 		Config        map[string]any `json:"config"`
@@ -49,11 +67,13 @@ func PayloadDiscoveryMaxRequests(payload json.RawMessage) int {
 	for _, cfg := range []map[string]any{p.ScannerConfig, p.Config} {
 		switch v := cfg[PayloadKeyDiscoveryMaxRequests].(type) {
 		case float64:
-			if v > 0 && v <= 1e9 {
-				return int(v)
+			if v > 0 {
+				return int(min(v, MaxDiscoveryRequests))
 			}
 		case int:
-			return v
+			if v > 0 {
+				return min(v, MaxDiscoveryRequests)
+			}
 		}
 	}
 	return 0

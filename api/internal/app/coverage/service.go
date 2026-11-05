@@ -24,15 +24,14 @@ type Service struct {
 	starter      RunStarter
 	readiness    ReadinessChecker
 	tenantSwitch TenantSwitch
-	// pathGate and pathAttempts decide path discovery (path_discovery.go);
-	// nil: it is never planned.
-	pathGate     PathDiscoveryGate
-	pathAttempts AttemptCounter
-	cfg          Config
-	alerts       *alerting
-	operator     *operatorAlerts
-	now          func() time.Time
-	logger       *logger.Logger
+	// pathGate decides path discovery (path_discovery.go); nil: it is never
+	// planned.
+	pathGate PathDiscoveryGate
+	cfg      Config
+	alerts   *alerting
+	operator *operatorAlerts
+	now      func() time.Time
+	logger   *logger.Logger
 }
 
 // NewService creates the service with the registry's policy.

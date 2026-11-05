@@ -15,6 +15,15 @@ package coverage
 //     automated scanning, or an address origin on a shared edge network, is
 //     blocked with the reason (labeled, rechecked later), never dispatched.
 //
+// The same gate (PathDiscoveryPolicy) serves every caller of path discovery:
+// the planner here, a workflow's paths step (scanrun) and the web job guard
+// every job passes before it is stored (scope.WebJobGuard), which is also
+// where the dispatch is claimed in the path discovery ledger. The checks are
+// the switch, the daily request budget, an active scope entry naming the
+// origin's host, the shared edge and program refusals, an edge that did not
+// challenge the last probe, new inventory, and the per-origin 30 day floor of
+// the ledger, so the request cap per origin holds whoever asks.
+//
 // Fail closed: without the gate wired the capability is never planned.
 
 import (
@@ -62,27 +71,23 @@ type PathBudget struct {
 type PathDiscoveryGate interface {
 	PathDiscoveryEnabled(ctx context.Context, tenantID shared.ID) (bool, error)
 	PathDiscoveryBudget(ctx context.Context, tenantID shared.ID) (PathBudget, error)
+	// PathDiscoveryFit is how many more origins the organization's daily
+	// request budget holds at the per-origin cap.
+	PathDiscoveryFit(ctx context.Context, tenantID shared.ID) (int, error)
 	// PathDiscoveryRefusals maps the targets that may not be dispatched to
 	// the reason (the rest are absent).
 	PathDiscoveryRefusals(ctx context.Context, tenantID shared.ID, targets []string) (map[string]string, error)
 }
 
-// AttemptCounter counts a capability's pairs attempted since t.
-type AttemptCounter interface {
-	CapabilityAttemptsSince(ctx context.Context, tenantID shared.ID, capability string, t time.Time) (int, error)
-}
-
-// SetPathDiscovery wires path discovery's gate and the attempt counter its
-// daily budget reads. Unwired, path discovery is never planned.
-func (s *Service) SetPathDiscovery(g PathDiscoveryGate, attempts AttemptCounter) {
-	s.pathGate, s.pathAttempts = g, attempts
-}
+// SetPathDiscovery wires path discovery's gate. Unwired, path discovery is
+// never planned.
+func (s *Service) SetPathDiscovery(g PathDiscoveryGate) { s.pathGate = g }
 
 // pathDiscoveryLimit is how many origins the next path discovery batch may
 // hold (stop: none this pass; the pairs were paused with the reason when
 // that applies).
 func (s *Service) pathDiscoveryLimit(ctx context.Context, tenantID shared.ID, limit int) (int, bool, error) {
-	if s.pathGate == nil || s.pathAttempts == nil {
+	if s.pathGate == nil {
 		return 0, true, nil
 	}
 	on, err := s.pathGate.PathDiscoveryEnabled(ctx, tenantID)
@@ -99,11 +104,10 @@ func (s *Service) pathDiscoveryLimit(ctx context.Context, tenantID shared.ID, li
 	if b.PerOrigin <= 0 || b.Daily <= 0 {
 		return 0, true, s.pauseCapability(ctx, tenantID, covdom.CapabilityEnumerateWebPaths, covdom.ReadyBudgetSpent, pathBudgetRetry)
 	}
-	used, err := s.pathAttempts.CapabilityAttemptsSince(ctx, tenantID, covdom.CapabilityEnumerateWebPaths, s.now().Add(-24*time.Hour))
+	fit, err := s.pathGate.PathDiscoveryFit(ctx, tenantID)
 	if err != nil {
 		return 0, true, err
 	}
-	fit := (b.Daily - used*b.PerOrigin) / b.PerOrigin
 	if fit <= 0 {
 		return 0, true, s.pauseCapability(ctx, tenantID, covdom.CapabilityEnumerateWebPaths, covdom.ReadyBudgetSpent, pathBudgetRetry)
 	}
@@ -148,13 +152,26 @@ type ProgramRuleSource interface {
 
 // PathDiscoveryPolicy is the server's PathDiscoveryGate: the switch from the
 // organization's scope settings, the budget from the platform default, the
-// program rules and the shared edge classification.
+// program rules, the shared edge classification and the ledger with the
+// origin facts. It is also the web job guard's dispatch gate
+// (AdmitPathDispatch) and the workflow step's (PathDiscoveryRefusals).
 type PathDiscoveryPolicy struct {
 	Settings ScopeSettingsReader
 	Programs ProgramRuleSource // nil: no program applies
 	Edge     *edgeaddr.Classifier
 	Budget   PathBudget
-	Log      *logger.Logger
+	// Ledger holds the origin facts and the dispatch record; nil refuses
+	// every origin (fail closed).
+	Ledger covdom.PathLedger
+	Log    *logger.Logger
+	Now    func() time.Time // nil: time.Now
+}
+
+func (p PathDiscoveryPolicy) now() time.Time {
+	if p.Now != nil {
+		return p.Now()
+	}
+	return time.Now()
 }
 
 // PathDiscoveryEnabled reads the organization's switch (default on). A read
@@ -185,9 +202,82 @@ func (p PathDiscoveryPolicy) PathDiscoveryBudget(context.Context, shared.ID) (Pa
 	return b, nil
 }
 
-// PathDiscoveryRefusals refuses a target a covering program forbids
-// enumeration on, and an address origin on a shared edge network.
+// PathDiscoveryFit is how many more origins the daily request budget holds
+// at the per-origin cap.
+func (p PathDiscoveryPolicy) PathDiscoveryFit(ctx context.Context, tenantID shared.ID) (int, error) {
+	if p.Ledger == nil {
+		return 0, nil
+	}
+	b, _ := p.PathDiscoveryBudget(ctx, tenantID)
+	granted, err := p.Ledger.PathRequestsGrantedSince(ctx, tenantID, p.now().Add(-24*time.Hour))
+	if err != nil {
+		return 0, err
+	}
+	return max((b.Daily-granted)/b.PerOrigin, 0), nil
+}
+
+// PathDiscoveryRefusals maps each target path discovery may not run on now
+// to the reason: no live web service of the organization, no active scope
+// entry naming its host, an edge that challenged the last probe, nothing new
+// in the inventory, a run within the last 30 days (from any caller), a
+// covering program that forbids enumeration, an address on a shared edge
+// network. A read error refuses the whole call (fail closed).
 func (p PathDiscoveryPolicy) PathDiscoveryRefusals(ctx context.Context, tenantID shared.ID, targets []string) (map[string]string, error) {
+	if p.Ledger == nil {
+		return nil, errors.New("path discovery ledger is not configured")
+	}
+	out := map[string]string{}
+	origins := make([]string, 0, len(targets))
+	keyOf := make(map[string]string, len(targets))
+	for _, t := range targets {
+		o, _, ok := covdom.PathOrigin(t)
+		if !ok {
+			out[t] = covdom.ReasonNotAnOrigin
+			continue
+		}
+		keyOf[t] = o
+		origins = append(origins, o)
+	}
+	facts, err := p.Ledger.PathOriginFacts(ctx, tenantID, origins)
+	if err != nil {
+		return nil, err
+	}
+	now := p.now()
+	var rest []string
+	for _, t := range targets {
+		o, ok := keyOf[t]
+		if !ok {
+			continue
+		}
+		f, known := facts[o]
+		switch {
+		case !known:
+			out[t] = covdom.ReasonNotAnOrigin
+		case !f.ScopeEntry:
+			out[t] = covdom.ReasonNoOriginScopeEntry
+		case !f.EdgeClear:
+			out[t] = covdom.ReasonEdgeChallenged
+		case !f.LastDispatch.IsZero() && now.Sub(f.LastDispatch) < covdom.PathEvery:
+			out[t] = covdom.ReasonPathRanRecently
+		case !f.InventoryChanged:
+			out[t] = covdom.ReasonInventoryUnchanged
+		default:
+			rest = append(rest, t)
+		}
+	}
+	targetsRefused, err := p.targetRefusals(ctx, tenantID, rest)
+	if err != nil {
+		return nil, err
+	}
+	for t, why := range targetsRefused {
+		out[t] = why
+	}
+	return out, nil
+}
+
+// targetRefusals refuses a target a covering program forbids enumeration on,
+// and an address origin on a shared edge network.
+func (p PathDiscoveryPolicy) targetRefusals(ctx context.Context, tenantID shared.ID, targets []string) (map[string]string, error) {
 	out := map[string]string{}
 	edge := p.Edge
 	if edge == nil {
@@ -227,4 +317,57 @@ func addressHost(target string) (netip.Addr, bool) {
 	}
 	a, err := netip.ParseAddr(u.Hostname())
 	return a, err == nil
+}
+
+// Codes of a refused path discovery dispatch (the web job guard's refusals).
+const (
+	CodePathDiscoveryOff     = "PATH_DISCOVERY_OFF"
+	CodePathDiscoveryRefused = "PATH_DISCOVERY_REFUSED"
+)
+
+// AdmitPathDispatch is the dispatch gate of every path discovery job
+// (scope.WebJobGuard, which every command passes before it is stored): the
+// organization's switch, then every refusal of PathDiscoveryRefusals, then
+// the claim in the ledger (the per-origin 30 day floor, the daily request
+// budget, the run's per-host budget). It returns the request cap the job
+// carries: the requested one (0: the per-origin budget), at most the
+// per-origin budget and at most what the budgets left. Nothing is recorded
+// for a refused job.
+func (p PathDiscoveryPolicy) AdmitPathDispatch(ctx context.Context, tenantID shared.ID, runID *shared.ID, targets []string, requested int) (int, error) {
+	on, err := p.PathDiscoveryEnabled(ctx, tenantID)
+	if err != nil {
+		return 0, fmt.Errorf("path discovery switch: %w", err)
+	}
+	if !on {
+		return 0, shared.NewDomainError(CodePathDiscoveryOff, "Path discovery is turned off for the organization (scope settings).", shared.ErrValidation)
+	}
+	b, _ := p.PathDiscoveryBudget(ctx, tenantID)
+	refused, err := p.PathDiscoveryRefusals(ctx, tenantID, targets)
+	if err != nil {
+		return 0, fmt.Errorf("path discovery gate: %w", err)
+	}
+	for _, t := range targets {
+		if why, ok := refused[t]; ok {
+			return 0, shared.NewDomainError(CodePathDiscoveryRefused,
+				"Path discovery does not run on this origin now: "+why+".", shared.ErrValidation)
+		}
+	}
+	if requested <= 0 {
+		requested = b.PerOrigin
+	}
+	requested = min(requested, b.PerOrigin)
+	granted := requested
+	for _, t := range targets {
+		got, why, err := p.Ledger.ClaimPathOrigin(ctx, covdom.PathClaim{TenantID: tenantID, Origin: t, RunID: runID,
+			Requested: requested, PerHost: b.PerOrigin, Daily: b.Daily})
+		if err != nil {
+			return 0, fmt.Errorf("path discovery claim: %w", err)
+		}
+		if why != "" {
+			return 0, shared.NewDomainError(CodePathDiscoveryRefused,
+				"Path discovery does not run on this origin now: "+why+".", shared.ErrValidation)
+		}
+		granted = min(granted, got)
+	}
+	return granted, nil
 }

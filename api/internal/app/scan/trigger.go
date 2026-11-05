@@ -635,6 +635,10 @@ func (s *Service) triggerSingleScan(ctx context.Context, sc *scan.Scan, triggerT
 	if err := s.refuseProgramRulesFor(ctx, sc.TenantID, resolved.Targets, scanEnumerates(sc)); err != nil {
 		return nil, err
 	}
+	// Path discovery: the organization's switch and the shared gate.
+	if err := s.refusePathDiscovery(ctx, sc, resolved.Targets); err != nil {
+		return nil, err
+	}
 	s.planRolloverFirst(ctx, sc, triggerType, resolved, runContext)
 
 	// A connector scan (RFC-047) is one command for the connector's sensor;

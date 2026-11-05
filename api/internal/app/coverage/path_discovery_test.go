@@ -2,6 +2,7 @@ package coverage
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -42,8 +43,11 @@ func (p *pathPlanner) MarkBlocked(_ context.Context, _ shared.ID, _ string, reas
 type fakePathGate struct {
 	on      bool
 	budget  PathBudget
+	fit     int
 	refused map[string]string
 }
+
+func (g fakePathGate) PathDiscoveryFit(context.Context, shared.ID) (int, error) { return g.fit, nil }
 
 func (g fakePathGate) PathDiscoveryEnabled(context.Context, shared.ID) (bool, error) {
 	return g.on, nil
@@ -54,12 +58,6 @@ func (g fakePathGate) PathDiscoveryBudget(context.Context, shared.ID) (PathBudge
 
 func (g fakePathGate) PathDiscoveryRefusals(context.Context, shared.ID, []string) (map[string]string, error) {
 	return g.refused, nil
-}
-
-type fakeAttempts struct{ n int }
-
-func (f fakeAttempts) CapabilityAttemptsSince(context.Context, shared.ID, string, time.Time) (int, error) {
-	return f.n, nil
 }
 
 func pathService(p *pathPlanner) *Service {
@@ -78,7 +76,7 @@ func TestPathDiscoveryLimit_UnwiredNeverPlans(t *testing.T) {
 func TestPathDiscoveryLimit_SwitchOffPauses(t *testing.T) {
 	p := &pathPlanner{}
 	s := pathService(p)
-	s.SetPathDiscovery(fakePathGate{on: false, budget: PathBudget{PerOrigin: 300, Daily: 50000}}, fakeAttempts{})
+	s.SetPathDiscovery(fakePathGate{on: false, budget: PathBudget{PerOrigin: 300, Daily: 50000}})
 	if _, stop, err := s.pathDiscoveryLimit(context.Background(), shared.NewID(), 100); err != nil || !stop {
 		t.Fatalf("stop %v err %v", stop, err)
 	}
@@ -92,12 +90,12 @@ func TestPathDiscoveryLimit_SwitchOffPauses(t *testing.T) {
 func TestPathDiscoveryLimit_BudgetDefersNotCovers(t *testing.T) {
 	p := &pathPlanner{}
 	s := pathService(p)
-	s.SetPathDiscovery(fakePathGate{on: true, budget: PathBudget{PerOrigin: 300, Daily: 1000}}, fakeAttempts{n: 2})
+	s.SetPathDiscovery(fakePathGate{on: true, budget: PathBudget{PerOrigin: 300, Daily: 1000}, fit: 1})
 	n, stop, err := s.pathDiscoveryLimit(context.Background(), shared.NewID(), 100)
 	if err != nil || stop || n != 1 {
 		t.Fatalf("limit %d stop %v err %v, want 1 origin left in the budget", n, stop, err)
 	}
-	s.SetPathDiscovery(fakePathGate{on: true, budget: PathBudget{PerOrigin: 300, Daily: 1000}}, fakeAttempts{n: 4})
+	s.SetPathDiscovery(fakePathGate{on: true, budget: PathBudget{PerOrigin: 300, Daily: 1000}, fit: 0})
 	if _, stop, err := s.pathDiscoveryLimit(context.Background(), shared.NewID(), 100); err != nil || !stop {
 		t.Fatalf("spent budget: stop %v err %v", stop, err)
 	}
@@ -117,7 +115,7 @@ func TestPathDiscoveryRefuse_BlocksWithReason(t *testing.T) {
 		{AssetID: ok, Name: "https://app.example.com", Type: "service", SubType: "http"},
 	}
 	s.SetPathDiscovery(fakePathGate{on: true, refused: map[string]string{
-		"https://bounty.example.com": ReasonProgramForbidsEnumeration, "https://192.0.2.10": ReasonSharedEdgeAddress}}, fakeAttempts{})
+		"https://bounty.example.com": ReasonProgramForbidsEnumeration, "https://192.0.2.10": ReasonSharedEdgeAddress}})
 	kept, err := s.pathDiscoveryRefuse(context.Background(), shared.NewID(), due)
 	if err != nil || len(kept) != 1 || kept[0].AssetID != ok {
 		t.Fatalf("kept %+v err %v", kept, err)
@@ -157,7 +155,7 @@ func TestPathDiscoveryPolicy_Refusals(t *testing.T) {
 		"https://auto.example.com":  {bp.ForbidAutomatedScanning},
 		"https://dos.example.com":   {bp.ForbidDoS},
 	}}}
-	got, err := pol.PathDiscoveryRefusals(context.Background(), shared.NewID(), []string{
+	got, err := pol.targetRefusals(context.Background(), shared.NewID(), []string{
 		"https://brute.example.com", "https://auto.example.com", "https://dos.example.com",
 		"https://192.0.2.10", "https://cdn-fronted.example.com"})
 	if err != nil {
@@ -194,5 +192,223 @@ func TestPathDiscoveryPolicy_Switch(t *testing.T) {
 		if err != nil || got != c.want {
 			t.Errorf("%s: %v %v, want %v", name, got, err, c.want)
 		}
+	}
+}
+
+// fakeLedger is the path discovery ledger in memory: the facts of origins and
+// the claims, with the ledger's own rules (30 day floor per origin, daily
+// budget, per-host budget of one run).
+type fakeLedger struct {
+	facts   map[string]covdom.PathOriginFacts
+	claimed map[string]time.Time
+	granted map[string]int
+	hosts   map[string]string
+	runs    map[string]shared.ID
+	claims  int
+}
+
+func (l *fakeLedger) PathOriginFacts(_ context.Context, _ shared.ID, origins []string) (map[string]covdom.PathOriginFacts, error) {
+	out := map[string]covdom.PathOriginFacts{}
+	for _, o := range origins {
+		if f, ok := l.facts[o]; ok {
+			if t, ok := l.claimed[o]; ok {
+				f.LastDispatch = t
+			}
+			out[o] = f
+		}
+	}
+	return out, nil
+}
+
+func (l *fakeLedger) PathRequestsGrantedSince(_ context.Context, _ shared.ID, _ time.Time) (int, error) {
+	n := 0
+	for _, g := range l.granted {
+		n += g
+	}
+	return n, nil
+}
+
+func (l *fakeLedger) ClaimPathOrigin(_ context.Context, c covdom.PathClaim) (int, string, error) {
+	l.claims++
+	origin, host, ok := covdom.PathOrigin(c.Origin)
+	if !ok {
+		return 0, covdom.ReasonNotAnOrigin, nil
+	}
+	if t, ok := l.claimed[origin]; ok && time.Since(t) < covdom.PathEvery {
+		return 0, covdom.ReasonPathRanRecently, nil
+	}
+	granted := c.Requested
+	spent := 0
+	for o, g := range l.granted {
+		if o != origin {
+			spent += g
+		}
+	}
+	granted = min(granted, c.Daily-spent)
+	if granted < covdom.MinPathGrant {
+		return 0, covdom.ReasonDailyBudgetSpent, nil
+	}
+	if c.RunID != nil {
+		hostSpent := 0
+		for o, g := range l.granted {
+			if o != origin && l.hosts[o] == host && l.runs[o] == *c.RunID {
+				hostSpent += g
+			}
+		}
+		granted = min(granted, c.PerHost-hostSpent)
+		if granted < covdom.MinPathGrant {
+			return 0, covdom.ReasonHostBudgetSpent, nil
+		}
+		l.runs[origin] = *c.RunID
+	}
+	l.claimed[origin], l.granted[origin], l.hosts[origin] = time.Now(), granted, host
+	return granted, "", nil
+}
+
+func newFakeLedger(origins ...string) *fakeLedger {
+	l := &fakeLedger{facts: map[string]covdom.PathOriginFacts{}, claimed: map[string]time.Time{},
+		granted: map[string]int{}, hosts: map[string]string{}, runs: map[string]shared.ID{}}
+	for _, o := range origins {
+		_, host, _ := covdom.PathOrigin(o)
+		l.facts[o] = covdom.PathOriginFacts{AssetID: shared.NewID(), Host: host, ScopeEntry: true, InventoryChanged: true, EdgeClear: true}
+	}
+	return l
+}
+
+func policyWith(l covdom.PathLedger) PathDiscoveryPolicy {
+	return PathDiscoveryPolicy{Settings: fakeScopeSettings{}, Ledger: l, Budget: PathBudget{PerOrigin: 300, Daily: 1000}}
+}
+
+// SECURITY: every caller reads the same gate. An origin with no active scope
+// entry naming its host, behind an edge that challenged the last probe, with
+// nothing new in the inventory, run within 30 days, or no web service of the
+// organization at all is refused with the reason; the others pass.
+func TestPathDiscoveryRefusals_OriginFacts(t *testing.T) {
+	l := newFakeLedger("https://ok.example.com", "https://noscope.example.com", "https://edge.example.com",
+		"https://same.example.com", "https://recent.example.com")
+	set := func(o string, f func(*covdom.PathOriginFacts)) { v := l.facts[o]; f(&v); l.facts[o] = v }
+	set("https://noscope.example.com", func(f *covdom.PathOriginFacts) { f.ScopeEntry = false })
+	set("https://edge.example.com", func(f *covdom.PathOriginFacts) { f.EdgeClear = false })
+	set("https://same.example.com", func(f *covdom.PathOriginFacts) { f.InventoryChanged = false })
+	l.claimed["https://recent.example.com"] = time.Now().Add(-48 * time.Hour)
+	got, err := policyWith(l).PathDiscoveryRefusals(context.Background(), shared.NewID(), []string{
+		"https://ok.example.com", "https://noscope.example.com", "https://edge.example.com",
+		"https://same.example.com", "https://recent.example.com", "https://other-tenant.example.com", "not a url"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{
+		"https://noscope.example.com":      covdom.ReasonNoOriginScopeEntry,
+		"https://edge.example.com":         covdom.ReasonEdgeChallenged,
+		"https://same.example.com":         covdom.ReasonInventoryUnchanged,
+		"https://recent.example.com":       covdom.ReasonPathRanRecently,
+		"https://other-tenant.example.com": covdom.ReasonNotAnOrigin,
+		"not a url":                        covdom.ReasonNotAnOrigin,
+	}
+	if len(got) != len(want) {
+		t.Fatalf("refusals %v, want %v", got, want)
+	}
+	for k, v := range want {
+		if got[k] != v {
+			t.Errorf("%s: %q, want %q", k, got[k], v)
+		}
+	}
+	// Without a ledger every origin is refused: an error, never a pass.
+	if _, err := (PathDiscoveryPolicy{}).PathDiscoveryRefusals(context.Background(), shared.NewID(), []string{"https://ok.example.com"}); err == nil {
+		t.Fatal("a policy without a ledger let an origin through")
+	}
+}
+
+// SECURITY: the dispatch gate. The 300 requests per origin per 30 days hold
+// across callers: a second dispatch of the same origin, from the planner or a
+// workflow step or a scan, is refused; the switch and the budgets bind too;
+// the cap is the platform's, whatever the job asks for.
+func TestAdmitPathDispatch(t *testing.T) {
+	ctx := context.Background()
+	tenantID := shared.NewID()
+	l := newFakeLedger("https://a.example.com", "https://b.example.com")
+	pol := policyWith(l)
+
+	got, err := pol.AdmitPathDispatch(ctx, tenantID, nil, []string{"https://a.example.com"}, 99999)
+	if err != nil || got != 300 {
+		t.Fatalf("granted %d err %v, want the per-origin budget of 300 whatever the job asked for", got, err)
+	}
+	// The same origin again (another caller, a retry): refused, nothing more spent.
+	if _, err := pol.AdmitPathDispatch(ctx, tenantID, nil, []string{"https://a.example.com"}, 100); err == nil {
+		t.Fatal("a second dispatch within 30 days was admitted")
+	}
+	if l.granted["https://a.example.com"] != 300 {
+		t.Fatalf("ledger granted %v", l.granted)
+	}
+	// A smaller request is honoured.
+	got, err = pol.AdmitPathDispatch(ctx, tenantID, nil, []string{"https://b.example.com"}, 120)
+	if err != nil || got != 120 {
+		t.Fatalf("granted %d err %v, want 120", got, err)
+	}
+
+	// The switch off refuses before anything is claimed.
+	off := false
+	offPol := policyWith(newFakeLedger("https://c.example.com"))
+	offPol.Settings = fakeScopeSettings{ss: &tenant.ScopeSettings{PathDiscovery: &off}}
+	_, err = offPol.AdmitPathDispatch(ctx, tenantID, nil, []string{"https://c.example.com"}, 0)
+	var de *shared.DomainError
+	if !errors.As(err, &de) || de.Code != CodePathDiscoveryOff {
+		t.Fatalf("switch off: %v", err)
+	}
+	if offPol.Ledger.(*fakeLedger).claims != 0 {
+		t.Fatal("a refused job was recorded in the ledger")
+	}
+
+	// A refused origin (no scope entry) is never claimed.
+	l2 := newFakeLedger("https://d.example.com")
+	f := l2.facts["https://d.example.com"]
+	f.ScopeEntry = false
+	l2.facts["https://d.example.com"] = f
+	if _, err := policyWith(l2).AdmitPathDispatch(ctx, tenantID, nil, []string{"https://d.example.com"}, 0); err == nil || l2.claims != 0 {
+		t.Fatalf("an origin without a scope entry was admitted (claims %d, err %v)", l2.claims, err)
+	}
+}
+
+// The organization's daily budget caps the sum of the caps granted, and the
+// per-host budget of a run is shared by the run's origins on one host.
+func TestAdmitPathDispatch_Budgets(t *testing.T) {
+	ctx := context.Background()
+	tenantID := shared.NewID()
+	l := newFakeLedger("https://a.example.com", "https://a.example.com:8443", "https://b.example.com", "https://c.example.com")
+	pol := policyWith(l)
+	pol.Budget = PathBudget{PerOrigin: 300, Daily: 700}
+	run := shared.NewID()
+
+	if got, err := pol.AdmitPathDispatch(ctx, tenantID, &run, []string{"https://a.example.com"}, 0); err != nil || got != 300 {
+		t.Fatalf("first origin: %d %v", got, err)
+	}
+	// Another port of the same host in the same run: the host's budget of
+	// 300 is spent by the first task.
+	_, err := pol.AdmitPathDispatch(ctx, tenantID, &run, []string{"https://a.example.com:8443"}, 0)
+	if err == nil {
+		t.Fatal("the host's per-run budget was spent twice")
+	}
+	if got, err := pol.AdmitPathDispatch(ctx, tenantID, &run, []string{"https://b.example.com"}, 0); err != nil || got != 300 {
+		t.Fatalf("other host: %d %v", got, err)
+	}
+	// 600 of 700 spent: the next origin gets what is left (100), and the one
+	// after that nothing.
+	if got, err := pol.AdmitPathDispatch(ctx, tenantID, &run, []string{"https://c.example.com"}, 0); err != nil || got != 100 {
+		t.Fatalf("daily budget left: %d %v, want 100", got, err)
+	}
+	l.facts["https://d.example.com"] = covdom.PathOriginFacts{AssetID: shared.NewID(), Host: "d.example.com", ScopeEntry: true, InventoryChanged: true, EdgeClear: true}
+	if _, err := pol.AdmitPathDispatch(ctx, tenantID, &run, []string{"https://d.example.com"}, 0); err == nil {
+		t.Fatal("the daily budget was exceeded")
+	}
+}
+
+// The fit is what the daily budget holds at the per-origin cap, counting
+// every caller's grants.
+func TestPathDiscoveryFit(t *testing.T) {
+	l := newFakeLedger()
+	l.granted["x"] = 300
+	pol := policyWith(l)
+	if got, err := pol.PathDiscoveryFit(context.Background(), shared.NewID()); err != nil || got != 2 {
+		t.Fatalf("fit %d err %v, want 2", got, err)
 	}
 }

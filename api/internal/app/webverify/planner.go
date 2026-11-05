@@ -22,6 +22,11 @@
 //   - budgeted: a daily cap per tenant and a cap per pass, so a large
 //     first crawl cannot flood a tenant's targets;
 //   - never intrusive: the stage is T1 for every depth.
+//
+// A guessed backup, archive or dump file (found by path discovery, source
+// guess, with an ext label) is a candidate without a catalog entry: it is
+// checked with the sensor's own compiled-in signature template, which reads
+// the exact URL once and matches only on the file's own magic bytes.
 package webverify
 
 import (
@@ -29,6 +34,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -64,6 +70,10 @@ type Candidate struct {
 	ExamplePath  string
 	CatalogKey   string
 	ResponseSig  string
+	// Guessed: the endpoint was found by path discovery (source guess). One
+	// with a backup, archive or dump extension and no catalog templates is
+	// checked with the sensor's backup signature template.
+	Guessed bool
 }
 
 // Planned is a ledger row to write.
@@ -266,6 +276,11 @@ func (p *Planner) RunTenant(ctx context.Context, tenantID shared.ID) (Result, er
 			continue
 		}
 		tpls := p.tmpl[c.CatalogKey]
+		if len(tpls) == 0 && c.Guessed && isBackupClass(c.PathTemplate) {
+			// A guessed backup, archive or dump file: the sensor's own
+			// signature check of the exact URL (never a status alone).
+			tpls, c.CatalogKey = []string{webendpoint.BackupSignatureTemplate}, webendpoint.GuessedVerifyKey
+		}
 		if len(tpls) == 0 {
 			res.Invalid++
 			continue
@@ -317,6 +332,12 @@ func (p *Planner) RunTenant(ctx context.Context, tenantID shared.ID) (Result, er
 		return res, err
 	}
 	return res, nil
+}
+
+// isBackupClass reports whether a path's extension label is one the backup
+// signature check verifies (webendpoint.GuessedVerifyLabels).
+func isBackupClass(template string) bool {
+	return slices.Contains(webendpoint.GuessedVerifyLabels, webendpoint.ExtLabel(template))
 }
 
 // targetURL joins an origin and a path into a request URL, or false when it

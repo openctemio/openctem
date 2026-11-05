@@ -1356,12 +1356,7 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 			// Path discovery (enumerate.web_paths): the organization's
 			// switch, the daily request budget and the per-target program
 			// and shared-edge refusals (docs/architecture/web-discovery.md).
-			pathPolicy := coverageapp.PathDiscoveryPolicy{Settings: svc.Tenant, Log: log,
-				Budget: coverageapp.PathBudget{PerOrigin: cfg.Worker.PathDiscoveryRequestsPerOrigin, Daily: cfg.Worker.PathDiscoveryDailyRequests}}
-			if svc.BountyProgram != nil {
-				pathPolicy.Programs = svc.BountyProgram
-			}
-			svc.AssetCoverage.SetPathDiscovery(pathPolicy, repos.AssetCoverage)
+			svc.AssetCoverage.SetPathDiscovery(svc.PathDiscovery)
 			// Gaps, output drops and repeated failures alert the tenant's
 			// administrators (in-app and integrations) at most once a day.
 			svc.AssetCoverage.EnableAlerts(repos.AssetCoverage, repos.MemberLifecycle, svc.Notification, svc.Outbox)
