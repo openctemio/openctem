@@ -2145,7 +2145,7 @@ func (r *StepRunRepository) selectQuery() string {
 		       sensor_id, command_id, condition_evaluated, condition_result, skip_reason,
 		       findings_count, output, attempt, max_attempts,
 		       queued_at, started_at, completed_at, error_message, error_code, created_at,
-		       step_name, tool, capability
+		       step_name, tool, capability, info_observations
 		FROM scan_run_steps
 	`
 }
@@ -2196,6 +2196,7 @@ func (r *StepRunRepository) scanStepRun(rows *sql.Rows) (*scanrun.StepRun, error
 		&stepName,
 		&stepTool,
 		&stepCapability,
+		&sr.InfoObservations,
 	)
 
 	if err != nil {
