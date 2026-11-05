@@ -6,16 +6,34 @@ console has its own TOTP (RFC-022) and does not use this.
 
 ## Login flow
 
-```
-POST /api/v1/auth/login {email,password}
-  ├─ password wrong ............................ 401 (counts toward lockout)
-  ├─ 2FA enabled ............................... 200 {mfa_required, mfa_token, mfa_purpose:"verify", expires_in}
-  ├─ an org requires 2FA, user not enrolled .... 200 {mfa_required, mfa_token, mfa_purpose:"enroll", expires_in}
-  └─ otherwise ................................. 200 login response + refresh_token cookie (unchanged)
-
-POST /api/v1/auth/mfa/verify          {mfa_token, code | recovery_code} → login response + cookie
-POST /api/v1/auth/mfa/enroll/start    {mfa_token}                       → {secret, otpauth_uri}
-POST /api/v1/auth/mfa/enroll/confirm  {mfa_token, code}                 → login response + recovery_codes + cookie
+```mermaid
+sequenceDiagram
+    autonumber
+    participant W as Web (cookie mfa_challenge, HttpOnly, Strict, 5 min)
+    box API /api/v1/auth
+    participant A as AuthService loginMFAChallenge and mfa.go
+    end
+    participant DB as Postgres user_mfa, user_mfa_challenges, users
+    W->>A: POST /login {email, password}
+    A->>A: password ok, mfaRequirementFor - required now (grace excluded)?
+    alt 2FA enabled
+        A->>DB: challenge SHA-256, purpose verify, 5 min
+        A-->>W: 200 mfa_required, mfa_token, mfa_purpose verify
+        W->>A: POST /mfa/verify {mfa_token, code or recovery_code} (crossSite, 10/min per challenge, 30/min per IP)
+        A->>A: TOTP SHA-1, 6 digits, 30 s, skew 1, AdvanceStep compare-and-set (replay)
+    else required, not enrolled
+        A->>DB: challenge, purpose enroll
+        A-->>W: 200 mfa_required, mfa_purpose enroll
+        W->>A: POST /mfa/enroll/start {mfa_token} - secret, otpauth_uri
+        W->>A: POST /mfa/enroll/confirm {mfa_token, code} - 10 recovery codes (bcrypt), audit auth.mfa_enabled via organization_policy
+    end
+    alt wrong code
+        A->>DB: failed_login_attempts + 1 (lockout), challenge tries + 1 (burned at 5), audit auth.mfa_failed
+        A-->>W: 401 MFA_CODE_INVALID, or 401 MFA_CHALLENGE_INVALID, or 403 ACCOUNT_LOCKED
+    else accepted
+        A->>A: completeLogin - same response as a password login, counter reset
+        A-->>W: 200 + refresh_token and csrf_token cookies
+    end
 ```
 
 After a successful second step the response is the same as a plain password login, so
@@ -30,7 +48,8 @@ The `mfa_token`:
 
 Wrong codes increment `users.failed_login_attempts`. After `AUTH_MAX_LOGIN_ATTEMPTS`
 the account is locked for `AUTH_LOCKOUT_DURATION`, the same lockout as wrong
-passwords. The counter is reset only after the second step succeeds. The
+passwords; each further run of failures doubles the lock, capped at 24 hours
+(`user.LockoutAfter`). The counter is reset only after the second step succeeds. The
 `/auth/mfa/*` routes have their own rate-limit buckets (10/min per challenge,
 30/min per IP), counted in Redis so every API replica shares them (see
 [Authentication rate limits](../redis-production-guide.md#authentication-rate-limits)).

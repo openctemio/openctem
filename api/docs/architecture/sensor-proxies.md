@@ -206,6 +206,13 @@ still goes out with an empty list and the sensor fails the job
 
 ## Sensor API
 
+The credential fetch and its refusals are drawn in
+[secrets for sensor tasks](task-secrets-delivery.md#proxy-logins), with the
+known gaps (no grant check, pool resolved at fetch time, answer not sealed)
+and the decided replacement (`egress-credentials` folds into one sealed
+`/secrets` endpoint).
+
+
 Both under `/api/v2/sensor/commands/{command_id}/`, header
 `X-OpenCTEM-Lease-Epoch`, v2 HTTPS only (protocol v3 does not carry them):
 
