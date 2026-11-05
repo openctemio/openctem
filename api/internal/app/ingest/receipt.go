@@ -129,6 +129,7 @@ func (s *Service) recordReceipt(ctx context.Context, agt *sensor.Sensor, tenantI
 		d.Received = len(report.Findings)
 		if report.Tool != nil {
 			d.Tool = report.Tool.Name
+			d.ToolVersion = report.Tool.Version
 		}
 	}
 	// Skipped counts the findings not stored for a reason (scope,

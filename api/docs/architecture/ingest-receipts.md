@@ -84,6 +84,13 @@ output says so (`Output.ReceiptFailed`). A segment of a command's run is
 retried instead (`IngestV2Segment`), because that run's receipt decides absence
 (below), and re-ingesting a segment is idempotent.
 
+## Sightings
+
+In the same transaction, `Record` upserts the delta's sightings: who reported
+each created, reopened, decided or still-detected finding (channel, the
+tenant's sensor, sender, tool, scan), one row per finding and source. See
+[finding-sightings.md](finding-sightings.md).
+
 ## The run's findings figure
 
 `scan_runs.total_findings` is the number of findings the run's receipt holds

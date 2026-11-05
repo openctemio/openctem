@@ -134,6 +134,11 @@ func (h *FindingActionsHandler) findingGroupsRoute() filterquery.Route {
 // @Param  rule_id_not  query  []string  false  "rule id: none of (comma list)"  collectionFormat(csv)
 // @Param  scan_id  query  []string  false  "scan id: any of (comma list)"  collectionFormat(csv)
 // @Param  scan_id_not  query  []string  false  "scan id: none of (comma list)"  collectionFormat(csv)
+// @Param  seen_by_sensor_id  query  []string  false  "seen by sensor id: any of (comma list)"  collectionFormat(csv)
+// @Param  seen_by_scan_id  query  []string  false  "seen by scan id: any of (comma list)"  collectionFormat(csv)
+// @Param  seen_in_run_id  query  []string  false  "seen in run id: any of (comma list)"  collectionFormat(csv)
+// @Param  seen_by_tool  query  []string  false  "seen by tool: any of (comma list)"  collectionFormat(csv)
+// @Param  seen_by_channel  query  []string  false  "seen by channel: any of (comma list)"  collectionFormat(csv)  Enums(scan, task, sensor, upload, ci, connector, platform, unknown)
 // @Param  file_path  query  string  false  "file path contains"
 // @Param  file_path_contains  query  string  false  "file path contains"
 // @Param  description  query  string  false  "description contains"
@@ -310,6 +315,11 @@ func (h *FindingActionsHandler) ListFindingGroups(w http.ResponseWriter, r *http
 // @Param  rule_id_not  query  []string  false  "rule id: none of (comma list)"  collectionFormat(csv)
 // @Param  scan_id  query  []string  false  "scan id: any of (comma list)"  collectionFormat(csv)
 // @Param  scan_id_not  query  []string  false  "scan id: none of (comma list)"  collectionFormat(csv)
+// @Param  seen_by_sensor_id  query  []string  false  "seen by sensor id: any of (comma list)"  collectionFormat(csv)
+// @Param  seen_by_scan_id  query  []string  false  "seen by scan id: any of (comma list)"  collectionFormat(csv)
+// @Param  seen_in_run_id  query  []string  false  "seen in run id: any of (comma list)"  collectionFormat(csv)
+// @Param  seen_by_tool  query  []string  false  "seen by tool: any of (comma list)"  collectionFormat(csv)
+// @Param  seen_by_channel  query  []string  false  "seen by channel: any of (comma list)"  collectionFormat(csv)  Enums(scan, task, sensor, upload, ci, connector, platform, unknown)
 // @Param  file_path  query  string  false  "file path contains"
 // @Param  file_path_contains  query  string  false  "file path contains"
 // @Param  description  query  string  false  "description contains"
