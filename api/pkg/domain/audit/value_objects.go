@@ -434,6 +434,10 @@ const (
 	// ActionSensorResultsOutsideJob records report items a sensor sent for a
 	// command that lie outside the command's targets: dropped, not applied.
 	ActionSensorResultsOutsideJob Action = "sensor.results_outside_job"
+	// ActionSensorResultContractMismatch records a verified first-party
+	// tool reporting a type its signed descriptor does not declare: the
+	// in-scope part was ingested and flagged.
+	ActionSensorResultContractMismatch Action = "sensor_result.contract_mismatch"
 
 	// Pairing and key-bound identity (RFC-052). Expected: an administrator
 	// created a reverse-mode code. Approved: a key was bound to the
@@ -933,6 +937,7 @@ func (a Action) IsValid() bool {
 		ActionSensorContentRefreshRequested, ActionSensorContentPolicyUpdated, ActionSensorCommandsReleased,
 		ActionSensorResultsQuarantined, ActionSensorResultsAccepted, ActionSensorResultsDiscarded,
 		ActionSensorResultPolicyUpdated, ActionSensorResultsOutsideJob, ActionSensorResultAutoAccepted,
+		ActionSensorResultContractMismatch,
 		ActionSensorPairingExpected, ActionSensorPairingApproved, ActionSensorPairingDenied, ActionSensorPairingCompleted, ActionSensorPairingSuperseded, ActionSensorPairingLookupLocked,
 		ActionSensorRepaired, ActionSensorKeyRevoked, ActionSensorIdentityPolicySet, ActionSensorKeyBound, ActionSensorKeyBindRefused,
 		ActionSensorEnrollmentTokenCreated, ActionSensorEnrollmentTokenRevoked, ActionSensorEnrolled, ActionSensorEnrollmentRefused,

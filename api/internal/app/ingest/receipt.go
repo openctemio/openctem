@@ -143,6 +143,18 @@ func (s *Service) recordReceipt(ctx context.Context, agt *sensor.Sensor, tenantI
 		}
 		d.Errors = append(d.Errors, ingestreceipt.ErrorEntry{Index: ff.Index, Code: ingestreceipt.ErrorStoreFailed})
 	}
+	// A finding of a tool that reported a type it does not declare is
+	// ingested and flagged (contract_mismatch.go).
+	if report != nil && len(output.ContractMismatchTypes) > 0 {
+		for i := range report.Findings {
+			if len(d.Errors) >= ingestreceipt.MaxErrors {
+				break
+			}
+			if output.ContractMismatchRefs[report.Findings[i].AssetRef] {
+				d.Errors = append(d.Errors, ingestreceipt.ErrorEntry{Index: i, Code: ingestreceipt.ErrorContractMismatch})
+			}
+		}
+	}
 	id, err := s.receipts.Record(ctx, d)
 	if err != nil {
 		output.ReceiptFailed = true

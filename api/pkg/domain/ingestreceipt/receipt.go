@@ -221,6 +221,9 @@ const (
 const (
 	ErrorStoreFailed  = "store_failed"
 	ErrorFileRejected = "file_rejected"
+	// ErrorContractMismatch: the finding's tool reported a type its signed
+	// descriptor does not declare; the finding was ingested and flagged.
+	ErrorContractMismatch = "contract_mismatch"
 )
 
 // ErrorEntry is one problem of a receipt: the index of the finding (or of
