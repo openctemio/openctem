@@ -27,6 +27,7 @@ package ingest
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -159,8 +160,11 @@ func (s *Service) ReleaseOutOfContract(ctx context.Context, o ReleaseOptions) (R
 func (s *Service) releaseGroup(ctx context.Context, g sensorresult.HeldGroup, notBefore time.Time, budget int, st *ReleaseStats) (int, error) {
 	// Tenant-scoped read of the sensor's CURRENT manifest.
 	mv, err := s.contracts.CurrentManifest(ctx, &g.TenantID, g.SensorID)
-	if err != nil {
+	if errors.Is(err, shared.ErrNotFound) {
 		return 0, nil // no manifest: nothing can be declared
+	}
+	if err != nil {
+		return 0, err
 	}
 	contract := verifiedContract(mv, g.ToolName)
 	if contract == nil {
