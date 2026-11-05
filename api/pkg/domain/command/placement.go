@@ -78,6 +78,11 @@ const (
 	// PlacementNotConfined: the command needs network confinement
 	// (PayloadKeyRequiredFeatures) and the sensor did not report it.
 	PlacementNotConfined = "not_confined"
+	// PlacementStrongIsolationMissing: the command's tool needs strong
+	// isolation (PayloadKeyRequiredFeatures) and the sensor did not report
+	// a proven strong isolation backend; the job waits for one and is never
+	// run on the process sandbox.
+	PlacementStrongIsolationMissing = "strong_isolation_missing"
 	// PlacementRuleSourcesUnsupported: the command runs only the
 	// organization's templates and the sensor did not report that its
 	// scanners honor rule sources (an older sensor would also run the
