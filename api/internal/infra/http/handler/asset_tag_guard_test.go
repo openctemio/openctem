@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/openctemio/openctem/api/internal/app/taggov"
@@ -74,5 +75,43 @@ func TestCheckTagChange(t *testing.T) {
 	// No governor wired (tests, stubs): no extra check.
 	if _, ref := checkTagChange(writer, nil, ta.String(), []string{"production"}, nil); ref != nil {
 		t.Fatal("nil governor")
+	}
+}
+
+// A case change of a governing tag is a change: it needs the rule's permission.
+func TestCheckTagChange_CaseChangeOfAGoverningTag(t *testing.T) {
+	ta := shared.NewID()
+	g := govByTenant{sets: map[shared.ID]taggov.Set{ta: taggov.NewSet([]taggov.Ref{
+		{Tag: "env:prod", Req: taggov.Requirement{Rule: taggov.RuleAccessScope, Permission: "team:groups:write"}},
+	})}}
+	if _, ref := checkTagChange(callerCtx(false, "assets:write"), g, ta.String(), []string{"env:prod"}, []string{"Env:Prod"}); ref == nil || ref.status != http.StatusForbidden {
+		t.Fatalf("a case change slipped past the check: %+v", ref)
+	}
+}
+
+// An API key or an MCP token never sets a tag a rule reads, whatever
+// permissions or role its user holds; a session of the same user may.
+func TestCheckTagChange_DelegatedCredentialIsRefused(t *testing.T) {
+	ta := shared.NewID()
+	g := govByTenant{sets: map[shared.ID]taggov.Set{ta: taggov.NewSet([]taggov.Ref{
+		{Tag: "team:payments", Req: taggov.Requirement{Rule: taggov.RuleAccessScope, Permission: "team:groups:write"}},
+	})}}
+	session := callerCtx(true, "assets:write", "team:groups:write")
+	if _, ref := checkTagChange(session, g, ta.String(), nil, []string{"team:payments"}); ref != nil {
+		t.Fatalf("a signed-in administrator is allowed: %+v", ref)
+	}
+	for _, provider := range []string{middleware.AuthProviderAPIKey, middleware.AuthProviderMCPOAuth} {
+		ctx := context.WithValue(session, middleware.AuthProviderKey, provider)
+		_, ref := checkTagChange(ctx, g, ta.String(), nil, []string{"team:payments"})
+		if ref == nil || ref.status != http.StatusForbidden {
+			t.Fatalf("%s credential set a governing tag: %+v", provider, ref)
+		}
+		if strings.Contains(ref.message, "team:payments") {
+			t.Fatalf("the refusal names the tag: %q", ref.message)
+		}
+		// An ungoverned change is still fine for the credential.
+		if _, ref := checkTagChange(ctx, g, ta.String(), nil, []string{"free"}); ref != nil {
+			t.Fatalf("%s credential refused for an ungoverned tag: %+v", provider, ref)
+		}
 	}
 }

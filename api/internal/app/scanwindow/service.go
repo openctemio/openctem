@@ -73,6 +73,7 @@ type HoldReleaser interface {
 // Service manages a tenant's scan window policies and overrides and answers
 // what the windows mean for targets.
 type Service struct {
+	tagRules  TagRulesInvalidator
 	repo      swdom.Repository
 	refs      ReferenceChecker
 	overrides swdom.OverrideRepository
@@ -172,6 +173,7 @@ func (s *Service) Get(ctx context.Context, tenantID shared.ID, id string) (Polic
 
 // Create validates and stores a policy.
 func (s *Service) Create(ctx context.Context, tenantID shared.ID, spec swdom.Spec, actx auditapp.AuditContext) (PolicyView, error) {
+	defer s.tagRulesChanged(tenantID)
 	var createdBy *shared.ID
 	if uid, err := shared.IDFromString(actx.ActorID); err == nil {
 		createdBy = &uid
@@ -203,6 +205,7 @@ func (s *Service) Create(ctx context.Context, tenantID shared.ID, spec swdom.Spe
 
 // Update applies mutate to the policy's settings and stores them.
 func (s *Service) Update(ctx context.Context, tenantID shared.ID, id string, mutate func(*swdom.Spec), actx auditapp.AuditContext) (PolicyView, error) {
+	defer s.tagRulesChanged(tenantID)
 	pid, err := parseID(id, swdom.ErrNotFound)
 	if err != nil {
 		return PolicyView{}, err
@@ -234,6 +237,7 @@ func (s *Service) Update(ctx context.Context, tenantID shared.ID, id string, mut
 
 // Delete removes a policy.
 func (s *Service) Delete(ctx context.Context, tenantID shared.ID, id string, actx auditapp.AuditContext) error {
+	defer s.tagRulesChanged(tenantID)
 	pid, err := parseID(id, swdom.ErrNotFound)
 	if err != nil {
 		return err
@@ -638,5 +642,18 @@ func (s *Service) logAudit(ctx context.Context, actx auditapp.AuditContext, even
 	}
 	if err := s.audit.LogEvent(ctx, actx, event); err != nil {
 		s.logger.Warn("failed to record audit event", "action", string(event.Action), "error", err)
+	}
+}
+
+// TagRulesInvalidator is told when a rule that decides which asset tags are
+// governing was saved, so the governing-tag set is not stale (taggov).
+type TagRulesInvalidator interface{ Invalidate(tenantID shared.ID) }
+
+// SetTagRulesInvalidator wires it.
+func (s *Service) SetTagRulesInvalidator(i TagRulesInvalidator) { s.tagRules = i }
+
+func (s *Service) tagRulesChanged(tenantID shared.ID) {
+	if s.tagRules != nil {
+		s.tagRules.Invalidate(tenantID)
 	}
 }

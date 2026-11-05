@@ -166,3 +166,16 @@ func TestSourcesCoverEveryRuleKind(t *testing.T) {
 		t.Error("a disabled rule governs nothing")
 	}
 }
+
+// A change of case is a remove plus an add: "Env:Prod" for "env:prod" is not
+// "no change" (a rule matches the exact string), so it is checked like any
+// other change of a governing tag.
+func TestDiffIsExact(t *testing.T) {
+	added, removed := Diff([]string{"env:prod", "keep"}, []string{"Env:Prod", "keep"})
+	if len(added) != 1 || added[0] != "Env:Prod" || len(removed) != 1 || removed[0] != "env:prod" {
+		t.Fatalf("added %v removed %v", added, removed)
+	}
+	if a, r := Diff([]string{"a", "b"}, []string{"b", "a"}); len(a)+len(r) != 0 {
+		t.Fatalf("order is not a change: %v %v", a, r)
+	}
+}
