@@ -15,7 +15,7 @@ import (
 // feature in words; an unreadable plan answers 503; other errors pass.
 func TestWriteFeatureDenied(t *testing.T) {
 	w := httptest.NewRecorder()
-	if !WriteFeatureDenied(w, &limits.ErrFeatureDenied{Feature: limits.FeatureSSOConnections}) {
+	if !WriteFeatureDenied(w, &limits.ErrFeatureDenied{Feature: limits.FeatureSCIM}) {
 		t.Fatal("a feature refusal must be written")
 	}
 	var body struct {
@@ -23,7 +23,7 @@ func TestWriteFeatureDenied(t *testing.T) {
 		Message string `json:"message"`
 	}
 	_ = json.Unmarshal(w.Body.Bytes(), &body)
-	if w.Code != http.StatusForbidden || body.Code != "FEATURE_NOT_INCLUDED" || !strings.Contains(body.Message, "Single sign-on connections") {
+	if w.Code != http.StatusForbidden || body.Code != "FEATURE_NOT_INCLUDED" || !strings.Contains(body.Message, "SCIM provisioning") {
 		t.Fatalf("got %d %+v", w.Code, body)
 	}
 	w = httptest.NewRecorder()
