@@ -1345,7 +1345,7 @@ allow_custom_templates: false
 
 # Out-of-band callbacks (nuclei interactsh) follow the platform: they run only
 # when the organization turned them on, and only with this sensor's own
-# interaction server (SENSOR_OOB_SERVER), never a public one. Uncomment to
+# interaction server, never a public one. Uncomment to
 # never use them on this sensor (a job that asks then runs without them):
 # allow_interactsh: false
 
