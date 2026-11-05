@@ -360,6 +360,41 @@ scanned is `POST /scope/check` (the caller's scope, batches of 200, up to the
 1,000 direct targets a scan takes), shown per target with its reason. The
 paste panel says how many targets still fit before anything is added.
 
+### Targets step layout and the scope source
+
+The Targets step has two columns at desktop width (one on a phone, same
+order). Left: what is scanned, as chips (a searchable list past 20 typed
+entries), "Paste or upload a list", and the picker sheet with three sources:
+assets, asset groups, and the organization's scope. Right: what the scan
+probes, grouped by kind (domains, wildcards, address ranges, IP addresses,
+URLs, assets, asset groups), each row with its `POST /scope/check` answer,
+then the refused targets with their remedies. A setting sits next to the
+group it applies to and only when that group exists: the coverage level by
+the domains (by the picked assets when no domain was typed; new scans
+only), how ranges are scanned by the ranges, and the freshness options of
+what a run resolves again (wildcards, inventory ranges) under the groups,
+collapsed with a one-line summary.
+
+The ranges choice shown is the mode the scan runs (`effectiveCidrMode`,
+`web/src/features/scans/lib/liveness.ts`, the rule of "CIDR mode and live
+hosts first" above): a chosen mode; a saved scan without one sweeps; a new
+scan finds live hosts first unless its workflow has no Host discovery step,
+then it sweeps and live hosts first is disabled with the reason. Without a
+choice no mode is sent and the API applies the same rule on save.
+
+"From scope" lists the active in-scope entries a scan can take
+(`GET /scope/targets?statuses=active&types=domain,subdomain,ip_address,ip_range`,
+searched on the server) and is shown only to callers with
+`attack_surface:scope:read`, the permission the endpoint enforces; the
+tenant is the session's. Out of scope entries (`/scope/exclusions`) are never
+read. A wildcard entry (or a domain entry that covers its subdomains)
+becomes a `*.domain` target, an address or CIDR itself; a name pattern or an
+address span is listed but not pickable. Entries expiring within 7 days are
+flagged, since later runs of a saved scan will be refused once they lapse.
+"Add all in-scope entries" reads every page up to the 1,000 direct targets a
+scan takes. A picked entry is an ordinary typed target: it goes through the
+scope check like anything typed, so the picker grants nothing.
+
 ### Quick Scan
 
 A Quick Scan stores the typed targets on the ad-hoc scan's target list and

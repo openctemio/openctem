@@ -23,7 +23,18 @@ export function canFindLiveHosts(
   return (workflow.steps ?? []).some((s) => (s.capabilities ?? []).includes(HOST_DISCOVERY))
 }
 
-/** The mode a scan runs: a saved scan without one sweeps; a new one defaults to liveness. */
-export function effectiveCidrMode(mode: CidrMode | undefined, saved: boolean): CidrMode {
-  return mode ?? (saved ? 'sweep' : 'liveness')
+/**
+ * The mode a scan runs, by the rule the API applies on save: a chosen mode is
+ * kept; a saved scan without one sweeps; a new scan finds live hosts first
+ * unless its scan cannot (a workflow without Host discovery), then it sweeps.
+ * livenessAvailable undefined (the workflow still loading) reads as able.
+ * The choice shown, the summary and the request all read this one answer.
+ */
+export function effectiveCidrMode(
+  mode: CidrMode | undefined,
+  saved: boolean,
+  livenessAvailable?: boolean
+): CidrMode {
+  if (mode) return mode
+  return saved || livenessAvailable === false ? 'sweep' : 'liveness'
 }
