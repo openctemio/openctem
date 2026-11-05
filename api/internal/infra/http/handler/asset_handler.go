@@ -670,6 +670,7 @@ func (h *AssetHandler) handleServiceError(w http.ResponseWriter, err error) {
 // @Param        min_confidence        query int    false "Lowest attribution confidence (0-100; no record counts as 100)"
 // @Param        max_confidence        query int    false "Highest attribution confidence (0-100)"
 // @Param        first_seen_after      query string false "First seen (added to the inventory) at/after this time (RFC3339 or YYYY-MM-DD)"
+// @Param        first_seen_before     query string false "First seen (added to the inventory) at/before this time (RFC3339 or YYYY-MM-DD)"
 // @Param        with_triage           query bool   false "Add each row's attribution, what an active scan would do with it now (triage) and its monitoring state"
 // @Param        monitoring_state      query string false "Monitoring state (comma-separated): monitored, not_monitored, pending_decision, unvalidated, irrelevant, inactive, out_of_scope"
 // @Param        primary               query bool   false "Only primary assets: the organization's root domains (a domain named like a permanent domain scope entry's root or a verified domain)"
@@ -737,6 +738,7 @@ func (h *AssetHandler) List(w http.ResponseWriter, r *http.Request) {
 		MinConfidence:        parseQueryIntPtr(query.Get("min_confidence")),
 		MaxConfidence:        parseQueryIntPtr(query.Get("max_confidence")),
 		FirstSeenAfter:       parseQueryTimePtr(query.Get("first_seen_after")),
+		FirstSeenBefore:      parseQueryTimePtr(query.Get("first_seen_before")),
 		ProgramAssets:        query.Get("program_assets"),
 		Freshness:            query.Get("freshness"),
 		Resolution:           query.Get("resolution"),

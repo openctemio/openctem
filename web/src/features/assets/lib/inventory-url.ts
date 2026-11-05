@@ -60,6 +60,7 @@ export type InventoryFilters = Pick<
   | 'monitoringState'
   | 'discoveredBy'
   | 'firstSeenAfter'
+  | 'firstSeenBefore'
   | 'sort'
   | 'page'
   | 'pageSize'
@@ -129,6 +130,7 @@ const STRING_PARAMS = {
   freshness: 'freshness',
   resolution: 'resolution',
   firstSeenAfter: 'first_seen_after',
+  firstSeenBefore: 'first_seen_before',
 } as const
 
 type ArrayKey = keyof typeof ARRAY_PARAMS

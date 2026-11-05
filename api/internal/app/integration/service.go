@@ -11,6 +11,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/openctemio/openctem/api/pkg/notifymsg"
+
 	"github.com/openctemio/openctem/api/internal/app/jira"
 	"github.com/openctemio/openctem/api/internal/app/scancoverage"
 	"github.com/openctemio/openctem/api/internal/infra/notifier"
@@ -2108,12 +2110,14 @@ type CreateNotificationIntegrationInput struct {
 	Credentials string // Webhook URL, Bot Token, etc.
 
 	// Notification-specific fields
-	ChannelID          string
-	ChannelName        string
-	EnabledSeverities  []string // Severity levels to notify on (critical, high, medium, low, info, none)
-	EnabledEventTypes  []string // Event types to receive notifications for (new_finding, sla_breach, etc.)
-	MessageTemplate    string
-	IncludeDetails     bool
+	ChannelID         string
+	ChannelName       string
+	EnabledSeverities []string // Severity levels to notify on (critical, high, medium, low, info, none)
+	EnabledEventTypes []string // Event types to receive notifications for (new_finding, sla_breach, etc.)
+	MessageTemplate   string
+	// DetailLevel is minimal, standard or full; empty means the default
+	// (standard).
+	DetailLevel        string
 	MinIntervalMinutes int
 
 	// Metadata holds non-sensitive provider config (e.g. Splunk HEC
@@ -2133,6 +2137,13 @@ func (s *IntegrationService) CreateNotificationIntegration(ctx context.Context, 
 	tenantID, err := shared.IDFromString(input.TenantID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid tenant ID", shared.ErrValidation)
+	}
+	level := string(notifymsg.DefaultLevel)
+	if input.DetailLevel != "" {
+		level = input.DetailLevel
+	}
+	if err := validateMessageSettings(&input.MessageTemplate, &level); err != nil {
+		return nil, err
 	}
 
 	// Validate provider
@@ -2255,10 +2266,9 @@ func (s *IntegrationService) CreateNotificationIntegration(ctx context.Context, 
 			}
 			notifExt.SetEnabledEventTypes(eventTypes)
 		}
-		if input.MessageTemplate != "" {
-			notifExt.SetMessageTemplate(input.MessageTemplate)
-		}
-		notifExt.SetIncludeDetails(input.IncludeDetails)
+		// Both validated above.
+		_ = notifExt.SetMessageTemplate(input.MessageTemplate)
+		_ = notifExt.SetDetailLevel(notifymsg.Level(level))
 		if input.MinIntervalMinutes > 0 {
 			notifExt.SetMinIntervalMinutes(input.MinIntervalMinutes)
 		}
@@ -2297,7 +2307,7 @@ type UpdateNotificationIntegrationInput struct {
 	EnabledSeverities  []string // Severity levels to notify on (nil = no change)
 	EnabledEventTypes  []string // Event types to receive notifications for (nil = no change)
 	MessageTemplate    *string
-	IncludeDetails     *bool
+	DetailLevel        *string
 	MinIntervalMinutes *int
 
 	// Metadata, when non-nil, is merged onto the integration's non-sensitive
@@ -2307,6 +2317,23 @@ type UpdateNotificationIntegrationInput struct {
 	// CanEnableOrgMail is set by the caller's layer when the actor is an
 	// owner or administrator of the organization.
 	CanEnableOrgMail bool
+}
+
+// validateMessageSettings refuses a message template outside the closed
+// variable set (notifymsg) and an unknown detail level, before anything is
+// written. Nil means "not changed".
+func validateMessageSettings(template, level *string) error {
+	if template != nil {
+		if err := notifymsg.ValidateTemplate(*template); err != nil {
+			return fmt.Errorf("%w: %w", shared.ErrValidation, err)
+		}
+	}
+	if level != nil {
+		if _, err := notifymsg.ParseLevel(*level); err != nil {
+			return fmt.Errorf("%w: %w", shared.ErrValidation, err)
+		}
+	}
+	return nil
 }
 
 // applyNotificationExtensionUpdates applies updates to a notification extension.
@@ -2326,11 +2353,13 @@ func applyNotificationExtensionUpdates(ext *integrationdom.NotificationExtension
 		}
 		ext.SetEnabledEventTypes(eventTypes)
 	}
+	// Template and level were validated before any write
+	// (validateMessageSettings).
 	if input.MessageTemplate != nil {
-		ext.SetMessageTemplate(*input.MessageTemplate)
+		_ = ext.SetMessageTemplate(*input.MessageTemplate)
 	}
-	if input.IncludeDetails != nil {
-		ext.SetIncludeDetails(*input.IncludeDetails)
+	if input.DetailLevel != nil {
+		_ = ext.SetDetailLevel(notifymsg.Level(*input.DetailLevel))
 	}
 	if input.MinIntervalMinutes != nil {
 		ext.SetMinIntervalMinutes(*input.MinIntervalMinutes)
@@ -2344,6 +2373,10 @@ func (s *IntegrationService) UpdateNotificationIntegration(ctx context.Context, 
 	intgID, err := shared.IDFromString(id)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid ID", shared.ErrValidation)
+	}
+
+	if err := validateMessageSettings(input.MessageTemplate, input.DetailLevel); err != nil {
+		return nil, err
 	}
 
 	intg, err := s.repo.GetByID(ctx, intgID)
