@@ -192,6 +192,7 @@
   "attackSurface.discovery.reason.content_missing": "A wordlist is missing",
   "attackSurface.discovery.reason.coverage_off": "Automatic coverage is off",
   "attackSurface.discovery.reason.credentials_missing": "A credential is missing",
+  "attackSurface.discovery.reason.feature_off": "Screenshots are off",
   "attackSurface.discovery.reason.no_eligible_sensor": "No sensor can take the run",
   "attackSurface.discovery.reason.no_scope": "No active scope entry",
   "attackSurface.discovery.reason.not_claimed": "No sensor took the last runs",
