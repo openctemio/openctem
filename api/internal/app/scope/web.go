@@ -206,7 +206,8 @@ var allMethods = []string{"GET", "HEAD", "OPTIONS", "POST", "PUT", "PATCH", "DEL
 // BuildWebScope returns the web scope for a web job on targets, from the
 // path exclusions in effect whose host pattern covers a target host:
 //
-//   - a rule that blocks GET or HEAD denies its path prefix;
+//   - a rule that blocks GET or HEAD denies its path prefix, as stored and
+//     decoded, cut before a "*" segment (scopedom.JobDenyPaths);
 //   - a rule that blocks only other methods (read_only, or a method-scoped
 //     rule such as POST/PUT/DELETE on /admin) limits the whole job to GET
 //     and HEAD, so read-only checks still run there;
@@ -239,8 +240,10 @@ func (s *Service) BuildWebScope(ctx context.Context, tenantID shared.ID, targets
 			continue
 		}
 		if slices.ContainsFunc(readMethods, func(m string) bool { return slices.Contains(blocked, m) }) {
-			if !slices.Contains(ws.DenyPaths, web.PathPrefix) {
-				ws.DenyPaths = append(ws.DenyPaths, web.PathPrefix)
+			for _, d := range scopedom.JobDenyPaths(web.PathPrefix) {
+				if !slices.Contains(ws.DenyPaths, d) {
+					ws.DenyPaths = append(ws.DenyPaths, d)
+				}
 			}
 			continue
 		}
