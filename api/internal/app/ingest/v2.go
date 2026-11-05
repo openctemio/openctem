@@ -140,15 +140,40 @@ func (s *Service) IngestV2Segment(ctx context.Context, prov Provenance, report *
 	o.RejectedFindings = len(report.Findings) - len(kept)
 	o.Errors = itemErrs
 
-	res.Touched = assetOutcomes(o, filtered.Assets, assetIdx, out.AssetMap, out.ExcludedAssetRefs)
+	why := notStoredReasonsOf(out)
+	res.Touched = assetOutcomesWhy(o, filtered.Assets, assetIdx, out.AssetMap, why)
 
-	// Findings: rejected when their asset was not stored or the store failed.
+	findingOutcomes(o, kept, keptIdx, out, why)
+	return res, nil
+}
+
+// findingOutcomes counts the segment's ingested findings. A finding is held
+// for review when the output-type binding held it or its asset (quarantined,
+// not rejected); rejected when its asset was not stored or its store failed.
+// Every one that is not applied gets an item error that says why: none is
+// lost silently.
+func findingOutcomes(o *ingestreport.SegmentOutcome, kept []ctis.Finding, keptIdx []int, out *Output, why notStoredReasons) {
 	failed := map[int]bool{}
+	held := 0
 	for i := range kept {
-		if id, ok := out.AssetMap[kept[i].AssetRef]; !ok || id.IsZero() {
+		ref := kept[i].AssetRef
+		if why.heldFinding(i, ref) {
 			failed[i] = true
+			if why.holdLost {
+				addItemError(o, protov2.ItemError{Pointer: "/findings/" + strconv.Itoa(keptIdx[i]),
+					Code: protov2.CodeQuarantineFull, Detail: protov2.DetailHeldNotKept})
+				continue
+			}
+			held++
+			addItemError(o, protov2.ItemError{Pointer: "/findings/" + strconv.Itoa(keptIdx[i]),
+				Code: protov2.CodeHeldForReview, Detail: protov2.DetailHeldForReview})
+			continue
+		}
+		if id, ok := out.AssetMap[ref]; !ok || id.IsZero() {
+			failed[i] = true
+			code, detail := why.findingCode(ref)
 			addItemError(o, protov2.ItemError{Pointer: "/findings/" + strconv.Itoa(keptIdx[i]) + "/asset_ref",
-				Code: protov2.CodeAssetUnresolved, Detail: protov2.DetailAssetNotStored})
+				Code: code, Detail: detail})
 		}
 	}
 	for _, ff := range out.FailedFindings {
@@ -159,9 +184,60 @@ func (s *Service) IngestV2Segment(ctx context.Context, prov Provenance, report *
 		addItemError(o, protov2.ItemError{Pointer: "/findings/" + strconv.Itoa(keptIdx[ff.Index]),
 			Code: protov2.CodeFindingNotStored, Detail: protov2.DetailFindingNotStored})
 	}
-	o.RejectedFindings += len(failed)
+	o.QuarantinedFindings += held
+	o.RejectedFindings += len(failed) - held
 	o.AcceptedFindings = len(kept) - len(failed)
-	return res, nil
+}
+
+// notStoredReasons says why an item of a segment was not applied, from what
+// the ingest recorded about it (Output).
+type notStoredReasons struct {
+	excluded, held, outsideJob, outsideChunk, outOfScope map[string]bool
+	heldFindings                                         map[int]bool
+	holdLost                                             bool
+}
+
+func notStoredReasonsOf(out *Output) notStoredReasons {
+	if out == nil {
+		return notStoredReasons{}
+	}
+	return notStoredReasons{
+		excluded: out.ExcludedAssetRefs, held: out.HeldAssetRefs, outsideJob: out.OutsideJobAssetRefs,
+		outsideChunk: out.OutsideChunkAssetRefs, outOfScope: out.OutOfScopeAssetRefs,
+		heldFindings: out.HeldFindings, holdLost: out.HoldLost,
+	}
+}
+
+// heldFinding reports whether the output-type binding held the finding at
+// index i of the ingested findings, or the asset it names.
+func (r notStoredReasons) heldFinding(i int, assetRef string) bool {
+	return r.heldFindings[i] || (assetRef != "" && r.held[assetRef])
+}
+
+// assetCode is the item error of an asset that was not stored.
+func (r notStoredReasons) assetCode(ref string) (code, detail string) {
+	switch {
+	case r.excluded[ref]:
+		return protov2.CodeAssetExcluded, protov2.DetailAssetExcluded
+	case r.held[ref] && r.holdLost:
+		return protov2.CodeQuarantineFull, protov2.DetailHeldNotKept
+	case r.held[ref]:
+		return protov2.CodeHeldForReview, protov2.DetailHeldForReview
+	case r.outsideJob[ref], r.outsideChunk[ref]:
+		return protov2.CodeOutsideTargets, protov2.DetailOutsideTargets
+	case r.outOfScope[ref]:
+		return protov2.CodeOutOfScope, protov2.DetailOutOfScope
+	}
+	return protov2.CodeAssetInvalid, protov2.DetailAssetInvalid
+}
+
+// findingCode is the item error of a finding whose asset was not stored.
+func (r notStoredReasons) findingCode(assetRef string) (code, detail string) {
+	switch c, d := r.assetCode(assetRef); c {
+	case protov2.CodeOutsideTargets, protov2.CodeOutOfScope:
+		return c, d
+	}
+	return protov2.CodeAssetUnresolved, protov2.DetailAssetNotStored
 }
 
 // assetOutcomes counts the segment's assets and returns the persisted ones
@@ -173,6 +249,14 @@ func (s *Service) IngestV2Segment(ctx context.Context, prov Provenance, report *
 // was not persisted is rejected.
 func assetOutcomes(o *ingestreport.SegmentOutcome, assets []ctis.Asset, assetIdx []int,
 	stored map[string]shared.ID, excluded map[string]bool) []shared.ID {
+	return assetOutcomesWhy(o, assets, assetIdx, stored, notStoredReasons{excluded: excluded})
+}
+
+// assetOutcomesWhy is assetOutcomes with every reason an asset was not
+// stored: one held for review is quarantined (not rejected), and each
+// unstored asset's item error names its reason.
+func assetOutcomesWhy(o *ingestreport.SegmentOutcome, assets []ctis.Asset, assetIdx []int,
+	stored map[string]shared.ID, why notStoredReasons) []shared.ID {
 	var touched []shared.ID
 	seen := map[shared.ID]bool{}
 	skipped := 0
@@ -186,11 +270,13 @@ func assetOutcomes(o *ingestreport.SegmentOutcome, assets []ctis.Asset, assetIdx
 				// producer's error nor counted against its assets.
 				continue
 			}
-			code, detail := protov2.CodeAssetInvalid, protov2.DetailAssetInvalid
-			if excluded[assets[i].ID] {
-				code, detail = protov2.CodeAssetExcluded, protov2.DetailAssetExcluded
+			code, detail := why.assetCode(assets[i].ID)
+			switch code {
+			case protov2.CodeAssetExcluded:
 				skipped++
-			} else {
+			case protov2.CodeHeldForReview:
+				o.QuarantinedAssets++
+			default:
 				o.RejectedAssets++
 			}
 			addItemError(o, protov2.ItemError{Pointer: "/assets/" + strconv.Itoa(assetIdx[i]), Code: code, Detail: detail})
@@ -201,7 +287,7 @@ func assetOutcomes(o *ingestreport.SegmentOutcome, assets []ctis.Asset, assetIdx
 			touched = append(touched, id)
 		}
 	}
-	o.AcceptedAssets = min(len(assets), len(assetIdx)) - o.RejectedAssets - skipped
+	o.AcceptedAssets = min(len(assets), len(assetIdx)) - o.RejectedAssets - o.QuarantinedAssets - skipped
 	return touched
 }
 
