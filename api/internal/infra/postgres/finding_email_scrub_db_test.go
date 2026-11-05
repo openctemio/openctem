@@ -158,10 +158,10 @@ func TestScrubStoredEmails_DB(t *testing.T) {
 		t.Fatal(err)
 	}
 	checks := map[string]string{
-		title: "Contact ***@Example.COM", message: "GET /?u=***%40example.com",
-		description: "Staff: ***@example.org, lib@1.2.3, image@sha256:abc", tags: `{owner:***@example.org,lib@1.2.3,NULL}`,
-		remediation: `{"steps": ["x"], "recommendation": "mail ***@example.com"}`, sourceExtra: `{"contact": "u=***%40example.com"}`,
-		metadata: `{"a": {"b": ["***@example.com", 1]}, "n": 12345678901234567890, "jane@example.com": "key stays"}`,
+		title: "Contact J***@Example.COM", message: "GET /?u=j***%40example.com",
+		description: "Staff: o***@example.org, lib@1.2.3, image@sha256:abc", tags: `{owner:o***@example.org,lib@1.2.3,NULL}`,
+		remediation: `{"steps": ["x"], "recommendation": "mail s***@example.com"}`, sourceExtra: `{"contact": "u=j***%40example.com"}`,
+		metadata: `{"a": {"b": ["d***@example.com", 1]}, "n": 12345678901234567890, "jane@example.com": "key stays"}`,
 	}
 	for got, want := range checks {
 		if got != want {
@@ -208,7 +208,7 @@ func TestScrubStoredEmails_DB(t *testing.T) {
 	if sha != "sha-before-masking" || size != len(enc(got)) {
 		t.Errorf("sha %q size %d (want %d)", sha, size, len(enc(got)))
 	}
-	if q := got.HTTP.Request; q.Body != "to=***@example.net" || q.BodyEncoding != "" || q.Headers[0].Value != "***@example.com" {
+	if q := got.HTTP.Request; q.Body != "to=b***@example.net" || q.BodyEncoding != "" || q.Headers[0].Value != "j***@example.com" {
 		t.Errorf("request = %+v", q)
 	}
 	if m := got.Match[0]; got.HTTP.Response.Body[*m.Start:*m.End] != "<b>matched" {
