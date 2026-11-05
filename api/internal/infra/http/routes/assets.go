@@ -442,6 +442,18 @@ func registerEASMRoutes(
 		if h.HasSuggestions() {
 			r.GET("/suggestions", h.SuggestionCards, middleware.Require(permission.AssetsRead))
 		}
+		// Bulk decisions on the addresses card (research/425): each item is
+		// checked against the caller's own card. Adding is a scope write
+		// (step-up and approvals in the scope service); "not ours" is an
+		// attribution decision; "this network is ours" declares a network
+		// seed, with step-up.
+		if h.HasAddressDecisions() {
+			r.POST("/suggestions/addresses/add", h.AddAddresses, middleware.Require(permission.ScopeWrite))
+			r.POST("/suggestions/addresses/reject", h.RejectAddresses, middleware.Require(permission.AssetsWrite))
+			r.POST("/suggestions/networks/ours", h.NetworkIsOurs, middleware.Require(permission.ScopeWrite), requireStepUp())
+			r.POST("/suggestions/networks/not-ours", h.NetworkNotOurs, middleware.Require(permission.AssetsWrite))
+			r.DELETE("/suggestions/networks/declined/{id}", h.UndeclineNetwork, middleware.Require(permission.AssetsWrite))
+		}
 		if h.HasRules() {
 			r.GET("/candidates/suggestions", h.Suggestions, middleware.Require(permission.AssetsRead))
 			r.POST("/candidates/rules/preview", h.PreviewRule, middleware.Require(permission.AssetsRead))

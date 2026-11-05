@@ -232,11 +232,13 @@ func TestSuggestionCards_UnclassifiedChecksAndTotal(t *testing.T) {
 	for _, tc := range []struct {
 		mode               string
 		count, checked, sh int
+		// total: the name rules plus one per address group that waits.
+		total int
 	}{
-		{"low_impact", 1, 1, 1},
-		{"full", 1, 1, 1},
-		{"off", 2, 0, 1},
-		{"garbage", 2, 0, 1},
+		{"low_impact", 1, 1, 1, 3},
+		{"full", 1, 1, 1, 3},
+		{"off", 2, 0, 1, 4},
+		{"garbage", 2, 0, 1, 4},
 	} {
 		svc := NewSuggestionService(store, cover, nil, org, nil)
 		mode := tc.mode
@@ -253,7 +255,7 @@ func TestSuggestionCards_UnclassifiedChecksAndTotal(t *testing.T) {
 			t.Errorf("%s: checked %v", tc.mode, c.CheckedAddresses)
 		}
 		out.Finish(2)
-		if out.Total != 3 || out.NameRules != 2 {
+		if out.Total != tc.total || out.NameRules != 2 {
 			t.Errorf("%s: total %d name rules %d", tc.mode, out.Total, out.NameRules)
 		}
 	}
