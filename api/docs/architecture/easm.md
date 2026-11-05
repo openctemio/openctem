@@ -409,6 +409,17 @@ other scope writes. With approvals on, each added entry is pending for the
 named approvers (one administrator notice per decision); there is no
 batch approval yet.
 
+**Where an address's network data comes from.** Only from what a sensor
+reports in CTIS (`asn`, `asn_org`, `hostname` on the address asset): the
+`lookup.asn` stage of a discovery run, and the asset coverage loop, which
+plans `lookup.asn` for every address asset each week. An address created
+from DNS resolution carries none until then. The coverage loop's passive
+dispatch admits a bare public address that one of the organization's names
+in scope resolves to, even when no scope entry covers it (RFC-071 §6,
+`internal/app/easm/passive_address.go`): before that rule, an address with
+no network data was held by the unknown-network guardrail, so its lookup was
+refused (`no_entry`) and the Decisions card showed "Network unknown" for good.
+
 ## 4b3. Inventory triage (built, research/124)
 
 Discovered assets are triaged after the fact, in the inventory, in bulk
