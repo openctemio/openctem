@@ -66,9 +66,19 @@ func TestFindingLocations_DataScopeAndTenant(t *testing.T) {
 	assert.Equal(t, []int{80, 443}, ports(both.String(), false))
 	assert.Equal(t, []int{80, 443}, ports(shared.NewID().String(), true), "an administrator sees every service")
 
+	// Without a data-scope filter wired, only the finding's own asset shows.
+	bare := finding.NewVulnerabilityService(postgres.NewVulnerabilityRepository(db), postgres.NewFindingRepository(db), log)
+	bare.SetLocationReader(postgres.NewSoftwareMatchRepository(db))
+	gotF, err := svc.GetFindingWithScope(ctx, f.tenant.String(), fid.String(), "", true)
+	require.NoError(t, err)
+	bareLocs, err := bare.GetFindingLocations(ctx, gotF, "", true)
+	require.NoError(t, err)
+	require.Len(t, bareLocs, 1)
+	assert.Equal(t, 80, bareLocs[0].Port, "no scope filter: never every service of the host")
+
 	// Another tenant reads nothing of it, by finding id or through its own
 	// location reader.
-	_, err := svc.GetFindingWithScope(ctx, other.tenant.String(), fid.String(), "", true)
+	_, err = svc.GetFindingWithScope(ctx, other.tenant.String(), fid.String(), "", true)
 	require.Error(t, err)
 	locs, err := postgres.NewSoftwareMatchRepository(db).FindingLocations(ctx, other.tenant, fid)
 	require.NoError(t, err)

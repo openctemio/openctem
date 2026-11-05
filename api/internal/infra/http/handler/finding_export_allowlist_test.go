@@ -29,7 +29,7 @@ var findingExportExcluded = map[string]string{
 	"secret_age_in_days": "secret", "secret_commit_count": "secret", "secret_in_history_only": "secret",
 	"secret_verified_at": "secret",
 	// Embedded objects and single-finding extras (ids are exported).
-	"asset": "embedded (asset_name, asset_type exported)", "component": "embedded", "provenance": "embedded",
+	"asset": "embedded (asset_name, asset_type exported)", "locations": "embedded (per-service state; scope-filtered, detail only)", "component": "embedded", "provenance": "embedded",
 	"package_fix": "embedded", "intel": "embedded", "vulnerability": "embedded", "assigned_to_user": "embedded",
 	"severity_override": "embedded", "pending_severity_request": "embedded",
 	// A bug-bounty report carries the researcher's text and handle: it leaves

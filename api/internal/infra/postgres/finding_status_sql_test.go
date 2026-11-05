@@ -64,6 +64,7 @@ var findingStatusWriters = map[string]int{
 	"finding_closure_proposal_repository.go": 2, // confirm: open -> resolved (proposalEligibleSQL, under lock); reopen of an auto-closed finding (auto_fixed only)
 	"finding_import_coverage.go":             1, // autoResolveFromSQL (full-coverage upload)
 	"finding_group_repository.go":            1, // UserFromStatuses($6)
+	"finding_location_merge.go":              4, // location merge: fixed survivor reopens (guarded by status), survivor raised to the strongest open status of the group, loser -> duplicate, -down restores the journaled status
 	"finding_material_change.go":             1, // false_positive -> confirmed when the approved fields changed (guarded by status under lock)
 	"finding_pentest_duplicate.go":           2, // pentest duplicate: draft/in_review -> duplicate, duplicate -> draft (guarded by status)
 	"finding_repo_coverage_autoresolve.go":   1, // autoResolveFromSQL

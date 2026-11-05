@@ -34,7 +34,15 @@ func (s *VulnerabilityService) GetFindingLocations(ctx context.Context, f *vulne
 		return nil, err
 	}
 	if s.dataScope == nil {
-		return locs, nil
+		// No scope filter wired: only the finding's own asset, which the
+		// caller already reads; never every service of the host.
+		own := locs[:0]
+		for _, l := range locs {
+			if l.AssetID == f.AssetID() {
+				own = append(own, l)
+			}
+		}
+		return own, nil
 	}
 	scope, err := s.dataScope.ResolveActing(ctx, f.TenantID(), actingUserID, isAdmin)
 	if err != nil {

@@ -140,10 +140,11 @@ func TestLocationMerge_FoldsOriginsAndDownRestores(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 2, rep.Merged)
 
-	// The survivor keeps its status and asset, and takes the earlier SLA
+	// The survivor keeps its asset and takes the strongest open status of the
+	// group (confirmed), the earlier SLA
 	// deadline of an affected service, the loser's comment, ticket, work
 	// item and history.
-	assert.Equal(t, "new", f.scalar(`SELECT status FROM findings WHERE id = $1`, survivor.String()))
+	assert.Equal(t, "confirmed", f.scalar(`SELECT status FROM findings WHERE id = $1`, survivor.String()))
 	assert.Equal(t, http80.String(), f.scalar(`SELECT asset_id FROM findings WHERE id = $1`, survivor.String()))
 	var gotSLA time.Time
 	require.NoError(t, f.db.QueryRowContext(context.Background(), `SELECT sla_deadline FROM findings WHERE id = $1`, survivor.String()).Scan(&gotSLA))
@@ -203,6 +204,7 @@ func TestLocationMerge_FoldsOriginsAndDownRestores(t *testing.T) {
 	drep, err = f.repo.RevertLocationMerges(ctx, f.tenant, run, true)
 	require.NoError(t, err)
 	assert.Equal(t, 2, drep.Reverted)
+	assert.Equal(t, "new", f.scalar(`SELECT status FROM findings WHERE id = $1`, survivor.String()), "-down restores the survivor status")
 	assert.Equal(t, "confirmed", f.scalar(`SELECT status FROM findings WHERE id = $1`, loserTLS.String()))
 	assert.Equal(t, "resolved", f.scalar(`SELECT status FROM findings WHERE id = $1`, loserAlt.String()))
 	assert.Equal(t, "vm:"+loserTLS.String(), f.scalar(`SELECT fingerprint FROM findings WHERE id = $1`, loserTLS.String()))
@@ -248,6 +250,29 @@ func TestLocationMerge_SkipsAndReopen(t *testing.T) {
 		_, err = f.repo.RevertLocationMerges(ctx, f.tenant, run, true)
 		require.NoError(t, err)
 		assert.Equal(t, "resolved", f.scalar(`SELECT status FROM findings WHERE id = $1`, s.String()), "-down restores the closed survivor")
+	})
+	t.Run("survivor takes the strongest open status and -down restores it", func(t *testing.T) {
+		f := newLocMergeFixture(t, "locstatus")
+		s := f.finding(f.service("http://"+f.host, old), 80, "new", old, sla)
+		l := f.finding(f.service("https://"+f.host, old), 443, "confirmed", old.Add(time.Hour), sla)
+		run := shared.NewID().String()
+		rep, err := f.repo.PlanLocationMerges(ctx, f.tenant, false, "")
+		require.NoError(t, err)
+		require.Len(t, rep.Groups, 1)
+		assert.Equal(t, "confirmed", rep.Groups[0].RaiseTo)
+		assert.Equal(t, "new", f.scalar(`SELECT status FROM findings WHERE id = $1`, s.String()), "dry run writes nothing")
+		_, err = f.repo.PlanLocationMerges(ctx, f.tenant, true, run)
+		require.NoError(t, err)
+		assert.Equal(t, "confirmed", f.scalar(`SELECT status FROM findings WHERE id = $1`, s.String()))
+		assert.Equal(t, "duplicate", f.scalar(`SELECT status FROM findings WHERE id = $1`, l.String()))
+		// A second run finds nothing to fold.
+		again, err := f.repo.PlanLocationMerges(ctx, f.tenant, true, shared.NewID().String())
+		require.NoError(t, err)
+		assert.Zero(t, again.Merged)
+		_, err = f.repo.RevertLocationMerges(ctx, f.tenant, run, true)
+		require.NoError(t, err)
+		assert.Equal(t, "new", f.scalar(`SELECT status FROM findings WHERE id = $1`, s.String()), "-down restores the survivor's status")
+		assert.Equal(t, "confirmed", f.scalar(`SELECT status FROM findings WHERE id = $1`, l.String()))
 	})
 	t.Run("accepted loser is a person decision", func(t *testing.T) {
 		f := newLocMergeFixture(t, "locaccepted")
