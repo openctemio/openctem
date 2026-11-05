@@ -106,24 +106,42 @@ func TestWebJobGuard_DiscoveryJobStrict(t *testing.T) {
 }
 
 // fakeDispatchGate is the dispatch gate of path discovery: it grants the
-// requested cap up to per, or refuses with err.
+// requested cap up to per, or refuses with err (check refuses at the checks,
+// err at the claim). It records the order of its calls.
 type fakeDispatchGate struct {
-	per   int
-	err   error
-	calls int
-	run   *shared.ID
+	per      int
+	err      error
+	checkErr error
+	calls    int
+	run      *shared.ID
+	order    []string
+	claimed  shared.ID
+	released []shared.ID
 }
 
-func (f *fakeDispatchGate) AdmitPathDispatch(_ context.Context, _ shared.ID, run *shared.ID, _ []string, requested int) (int, error) {
+func (f *fakeDispatchGate) CheckPathDispatch(context.Context, shared.ID, []string) error {
+	f.order = append(f.order, "check")
+	return f.checkErr
+}
+
+func (f *fakeDispatchGate) ClaimPathDispatch(_ context.Context, _, cmd shared.ID, run *shared.ID, _ []string, requested int) (int, error) {
 	f.calls++
 	f.run = run
+	f.order = append(f.order, "claim")
 	if f.err != nil {
 		return 0, f.err
 	}
+	f.claimed = cmd
 	if requested <= 0 {
 		requested = f.per
 	}
 	return min(requested, f.per), nil
+}
+
+func (f *fakeDispatchGate) ReleasePathDispatch(_ context.Context, _, cmd shared.ID, _ []string) error {
+	f.order = append(f.order, "release")
+	f.released = append(f.released, cmd)
+	return nil
 }
 
 // SECURITY: every path discovery job passes the one dispatch gate before it
@@ -148,7 +166,7 @@ func TestWebJobGuard_DiscoveryUsesTheDispatchGate(t *testing.T) {
 		t.Fatalf("no gate: %v", err)
 	}
 	// A refusal of the gate refuses the job; nothing is stored.
-	refusing := &fakeDispatchGate{err: shared.NewDomainError("PATH_DISCOVERY_REFUSED", "ran recently", shared.ErrValidation)}
+	refusing := &fakeDispatchGate{checkErr: shared.NewDomainError("PATH_DISCOVERY_REFUSED", "ran recently", shared.ErrValidation)}
 	g := NewWebJobGuard(svc, nil)
 	g.SetDiscoveryGate(refusing)
 	cmd := job(nil, "")
@@ -198,5 +216,84 @@ func TestWebJobGuard_DiscoveryRequiresConfinement(t *testing.T) {
 	feats, _ := payloadOf(t, cmd)[commanddom.PayloadKeyRequiredFeatures].([]any)
 	if len(feats) != 1 || feats[0] != "net.confined@1" {
 		t.Fatalf("required features %v", feats)
+	}
+}
+
+// SECURITY: the ledger claim is the LAST step of the guard. A job refused for
+// the lack of a confined sensor never reaches the claim, so it spends no
+// origin's 30 days; a job that is accepted claims once, for its own command.
+func TestWebJobGuard_DiscoveryClaimsLast(t *testing.T) {
+	tenantID := shared.NewID()
+	svc := newFilterService(&fakeExclusionRepo{})
+	mk := func() *commanddom.Command {
+		c := newCmd(t, commanddom.CommandTypeScan, map[string]any{"scanner": "webguess", "targets": []string{"https://app.example.com"}})
+		c.TenantID = tenantID
+		return c
+	}
+	gate := &fakeDispatchGate{per: 300}
+	g := NewWebJobGuard(svc, fakeConfined{})
+	g.SetDiscoveryGate(gate)
+	if err := g.GuardCreate(context.Background(), mk()); err == nil {
+		t.Fatal("a job without a confined sensor was accepted")
+	}
+	if gate.calls != 0 || slices.Contains(gate.order, "claim") {
+		t.Fatalf("the ledger was claimed for a refused job: %v", gate.order)
+	}
+	gate = &fakeDispatchGate{per: 300}
+	g = NewWebJobGuard(svc, nil)
+	g.SetDiscoveryGate(gate)
+	cmd := mk()
+	if err := g.GuardCreate(context.Background(), cmd); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(gate.order, []string{"check", "claim"}) || gate.claimed != cmd.ID {
+		t.Fatalf("order %v, claimed for %v (command %v)", gate.order, gate.claimed, cmd.ID)
+	}
+	// The repository could not store the command: the claim is given back.
+	g.ReleaseCreate(context.Background(), cmd)
+	if len(gate.released) != 1 || gate.released[0] != cmd.ID {
+		t.Fatalf("released %v", gate.released)
+	}
+	// Any other job is left alone.
+	other := newCmd(t, commanddom.CommandTypeScan, map[string]any{"scanner": "nuclei", "targets": []string{"https://app.example.com"}})
+	g.ReleaseCreate(context.Background(), other)
+	if len(gate.released) != 1 {
+		t.Fatal("a job that is not path discovery released a claim")
+	}
+}
+
+// SECURITY: the deny paths of a discovery job are written the way every
+// other web job's are (scopedom.JobDenyPaths): a "*" segment is cut so a
+// sensor before webpath 1.3.1 still holds it, and an escaped path also
+// carries its decoded form. Both builders agree on every exclusion.
+func TestBuildDiscoveryWebScope_DenyPathsMatchTheJobForm(t *testing.T) {
+	tenantID := shared.NewID()
+	svc := newFilterService(&fakeExclusionRepo{active: []*scopedom.Exclusion{
+		pathExclusion(t, tenantID, "*", "/tenants/*/admin", nil, scopedom.TestingBlocked, nil),
+		pathExclusion(t, tenantID, "*", "/files/My%20Docs", nil, scopedom.TestingBlocked, nil),
+	}})
+	targets := []string{"https://app.example.com"}
+	disc, err := svc.BuildDiscoveryWebScope(context.Background(), tenantID, targets, 300)
+	if err != nil {
+		t.Fatal(err)
+	}
+	job, err := svc.BuildWebScope(context.Background(), tenantID, targets)
+	if err != nil || job == nil {
+		t.Fatalf("%+v %v", job, err)
+	}
+	if !slices.Equal(disc.DenyPaths, job.DenyPaths) {
+		t.Fatalf("discovery denies %v, an ordinary web job %v", disc.DenyPaths, job.DenyPaths)
+	}
+	if !slices.Contains(disc.DenyPaths, "/tenants/") {
+		t.Fatalf("the wildcard rule was not cut: %v", disc.DenyPaths)
+	}
+	for _, p := range []string{"/tenants/7/admin", "/files/My Docs/a.bak", "/files/My%20Docs/a.bak"} {
+		clean, err := webpath.CleanPath(p)
+		if err != nil {
+			t.Fatalf("%s: %v", p, err)
+		}
+		if _, denied := webpath.Denied(clean, disc.DenyPaths); !denied {
+			t.Errorf("%s passes %v", p, disc.DenyPaths)
+		}
 	}
 }

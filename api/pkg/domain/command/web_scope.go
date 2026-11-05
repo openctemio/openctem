@@ -26,6 +26,14 @@ type CreateGuard interface {
 	GuardCreate(ctx context.Context, cmd *Command) error
 }
 
+// CreateReleaser is implemented by a guard that records something while it
+// checks a command (the path discovery ledger claim): the repository calls
+// ReleaseCreate when it could not store the command after the guard accepted
+// it, so the record is given back.
+type CreateReleaser interface {
+	ReleaseCreate(ctx context.Context, cmd *Command)
+}
+
 // ErrWebScopeUnwired refuses a web job when no web scope guard is wired:
 // its path exclusions could not be attached (fail closed).
 var ErrWebScopeUnwired = errors.New("web scope is not configured; a web job is not dispatched")

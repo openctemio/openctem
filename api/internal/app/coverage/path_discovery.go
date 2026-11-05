@@ -325,49 +325,86 @@ const (
 	CodePathDiscoveryRefused = "PATH_DISCOVERY_REFUSED"
 )
 
-// AdmitPathDispatch is the dispatch gate of every path discovery job
-// (scope.WebJobGuard, which every command passes before it is stored): the
-// organization's switch, then every refusal of PathDiscoveryRefusals, then
-// the claim in the ledger (the per-origin 30 day floor, the daily request
-// budget, the run's per-host budget). It returns the request cap the job
-// carries: the requested one (0: the per-origin budget), at most the
-// per-origin budget and at most what the budgets left. Nothing is recorded
-// for a refused job.
-func (p PathDiscoveryPolicy) AdmitPathDispatch(ctx context.Context, tenantID shared.ID, runID *shared.ID, targets []string, requested int) (int, error) {
+// CheckPathDispatch is the first half of the dispatch gate of every path
+// discovery job (scope.WebJobGuard, which every command passes before it is
+// stored): the organization's switch, then every refusal of
+// PathDiscoveryRefusals. It records nothing.
+func (p PathDiscoveryPolicy) CheckPathDispatch(ctx context.Context, tenantID shared.ID, targets []string) error {
 	on, err := p.PathDiscoveryEnabled(ctx, tenantID)
 	if err != nil {
-		return 0, fmt.Errorf("path discovery switch: %w", err)
+		return fmt.Errorf("path discovery switch: %w", err)
 	}
 	if !on {
-		return 0, shared.NewDomainError(CodePathDiscoveryOff, "Path discovery is turned off for the organization (scope settings).", shared.ErrValidation)
+		return shared.NewDomainError(CodePathDiscoveryOff, "Path discovery is turned off for the organization (scope settings).", shared.ErrValidation)
 	}
-	b, _ := p.PathDiscoveryBudget(ctx, tenantID)
 	refused, err := p.PathDiscoveryRefusals(ctx, tenantID, targets)
 	if err != nil {
-		return 0, fmt.Errorf("path discovery gate: %w", err)
+		return fmt.Errorf("path discovery gate: %w", err)
 	}
 	for _, t := range targets {
 		if why, ok := refused[t]; ok {
-			return 0, shared.NewDomainError(CodePathDiscoveryRefused,
+			return shared.NewDomainError(CodePathDiscoveryRefused,
 				"Path discovery does not run on this origin now: "+why+".", shared.ErrValidation)
 		}
 	}
+	return nil
+}
+
+// ClaimPathDispatch is the second half, run LAST by the guard (after the
+// refusals that follow the checks, the confined sensor and the scope build):
+// the claim in the ledger (the per-origin 30 day floor, the daily request
+// budget, the run's per-host budget). It returns the request cap the job
+// carries: the requested one (0: the per-origin budget), at most the
+// per-origin budget and at most what the budgets left. It is all or nothing:
+// when an origin of the job is refused, or the claim fails, the origins
+// already claimed for the command are given back before the error returns.
+func (p PathDiscoveryPolicy) ClaimPathDispatch(ctx context.Context, tenantID, commandID shared.ID, runID *shared.ID, targets []string, requested int) (int, error) {
+	if p.Ledger == nil {
+		return 0, shared.NewDomainError(CodePathDiscoveryRefused, "Path discovery is not configured on this server.", shared.ErrValidation)
+	}
+	b, _ := p.PathDiscoveryBudget(ctx, tenantID)
 	if requested <= 0 {
 		requested = b.PerOrigin
 	}
 	requested = min(requested, b.PerOrigin)
 	granted := requested
 	for _, t := range targets {
-		got, why, err := p.Ledger.ClaimPathOrigin(ctx, covdom.PathClaim{TenantID: tenantID, Origin: t, RunID: runID,
+		got, why, err := p.Ledger.ClaimPathOrigin(ctx, covdom.PathClaim{TenantID: tenantID, Origin: t, CommandID: commandID, RunID: runID,
 			Requested: requested, PerHost: b.PerOrigin, Daily: b.Daily})
+		if err == nil && why == "" {
+			granted = min(granted, got)
+			continue
+		}
+		// Not the origins claimed so far (the context may be the reason).
+		p.releaseAfterRefusal(tenantID, commandID)
 		if err != nil {
 			return 0, fmt.Errorf("path discovery claim: %w", err)
 		}
-		if why != "" {
-			return 0, shared.NewDomainError(CodePathDiscoveryRefused,
-				"Path discovery does not run on this origin now: "+why+".", shared.ErrValidation)
-		}
-		granted = min(granted, got)
+		return 0, shared.NewDomainError(CodePathDiscoveryRefused,
+			"Path discovery does not run on this origin now: "+why+".", shared.ErrValidation)
 	}
 	return granted, nil
 }
+
+// ReleasePathDispatch gives back the origins a command claimed (all of them
+// when origins is nil): the job was refused after the claim, or it sent no
+// request.
+func (p PathDiscoveryPolicy) ReleasePathDispatch(ctx context.Context, tenantID, commandID shared.ID, origins []string) error {
+	if p.Ledger == nil {
+		return nil
+	}
+	return p.Ledger.ReleasePathClaim(ctx, tenantID, commandID, origins)
+}
+
+// releaseAfterRefusal releases on a context that survives the caller's
+// cancellation (the claim that failed may have been cut short by it).
+func (p PathDiscoveryPolicy) releaseAfterRefusal(tenantID, commandID shared.ID) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(context.Background()), releaseTimeout)
+	defer cancel()
+	if err := p.ReleasePathDispatch(ctx, tenantID, commandID, nil); err != nil && p.Log != nil {
+		p.Log.Warn("path discovery: claims of a refused job not released", "command_id", commandID.String(), "error", logger.SanitizeError(err))
+	}
+}
+
+// releaseTimeout bounds a release after a refusal.
+const releaseTimeout = 10 * time.Second

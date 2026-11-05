@@ -3406,6 +3406,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	}
 	s.ScanRun.SetPathDiscoveryGate(s.PathDiscovery)
 	webJobGuard.SetDiscoveryGate(s.PathDiscovery)
+	s.Command.SetPathClaimReleaser(s.PathDiscovery)
 	s.Scan.SetPathDiscoveryGate(s.PathDiscovery)
 	// A role assigned, removed or redefined, or a membership removed or
 	// suspended, closes the user's live sockets in that tenant; the client

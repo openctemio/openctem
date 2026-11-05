@@ -165,6 +165,9 @@ func (s *Service) BuildDiscoveryWebScope(ctx context.Context, tenantID shared.ID
 // target host and whose testing mode is not allowed at this moment. They are
 // matched with contract/webpath semantics (decoded, dot segments resolved,
 // case-insensitive prefix) by the candidate list, the tool and the sensor.
+// Each is written as BuildWebScope writes it (scopedom.JobDenyPaths: the
+// decoded form too, and cut before a "*" segment, which a sensor before
+// webpath 1.3.1 compares literally).
 func (s *Service) DiscoveryDenyPaths(ctx context.Context, tenantID shared.ID, targets []string) ([]string, error) {
 	exclusions, err := s.effectiveExclusions(ctx, tenantID)
 	if err != nil {
@@ -186,8 +189,10 @@ func (s *Service) DiscoveryDenyPaths(ctx context.Context, tenantID shared.ID, ta
 		if !slices.ContainsFunc(hosts, func(h string) bool { return scopedom.HostPatternMatches(e.HostPattern(), h) }) {
 			continue
 		}
-		if !slices.Contains(deny, web.PathPrefix) {
-			deny = append(deny, web.PathPrefix)
+		for _, d := range scopedom.JobDenyPaths(web.PathPrefix) {
+			if !slices.Contains(deny, d) {
+				deny = append(deny, d)
+			}
 		}
 	}
 	slices.Sort(deny)

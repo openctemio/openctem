@@ -295,3 +295,83 @@ func TestWebVerifyCandidates_GuessedBackupFiles(t *testing.T) {
 		t.Fatalf("candidates %v, want the guessed backup files of this organization only", got)
 	}
 }
+
+// SECURITY: a release gives back what a claim took: the replaced row is
+// restored (an origin that last ran 40 days ago keeps that date), an origin
+// with no earlier row is removed, only the claiming command's rows are
+// touched, another organization's rows never are, and a claim a later job
+// overwrote is left alone.
+func TestWebPathLedger_ReleaseRestores(t *testing.T) {
+	f := newWebFixture(t)
+	ctx := context.Background()
+	repo := NewWebPathLedgerRepository(f.db)
+	other := seedTestTenant(ctx, t, f.sqlDB)
+	a := f.httpOrigin(t, f.tenant, "https://a.example.com")
+	b := f.httpOrigin(t, f.tenant, "https://b.example.com")
+	c := f.httpOrigin(t, f.tenant, "https://c.example.com")
+	otherA := f.httpOrigin(t, other, "https://a.example.com")
+	old := time.Now().Add(-40 * 24 * time.Hour).UTC().Truncate(time.Second)
+	if _, err := f.sqlDB.ExecContext(ctx, `INSERT INTO web_path_discovery_runs (tenant_id, origin_asset_id, host, granted, last_dispatch_at)
+		VALUES ($1, $2, 'a.example.com', 120, $3)`, f.tenant.String(), a.String(), old); err != nil {
+		t.Fatal(err)
+	}
+	row := func(tenant, asset shared.ID) (granted int, at time.Time, ok bool) {
+		err := f.sqlDB.QueryRowContext(ctx, `SELECT granted, last_dispatch_at FROM web_path_discovery_runs
+			WHERE tenant_id = $1 AND origin_asset_id = $2`, tenant.String(), asset.String()).Scan(&granted, &at)
+		return granted, at.UTC().Truncate(time.Second), err == nil
+	}
+	cmd, laterCmd := shared.NewID(), shared.NewID()
+	claim := func(tenant, cmdID shared.ID, origin string) {
+		t.Helper()
+		g, why, err := repo.ClaimPathOrigin(ctx, coverage.PathClaim{TenantID: tenant, Origin: origin, CommandID: cmdID, Requested: 300, PerHost: 300, Daily: 5000})
+		if err != nil || why != "" || g != 300 {
+			t.Fatalf("claim %s: %d %q %v", origin, g, why, err)
+		}
+	}
+	claim(f.tenant, cmd, "https://a.example.com")
+	claim(f.tenant, cmd, "https://b.example.com")
+	claim(f.tenant, laterCmd, "https://c.example.com")
+	claim(other, cmd, "https://a.example.com") // another organization, even the same command id
+
+	// Only origin a first.
+	if err := repo.ReleasePathClaim(ctx, f.tenant, cmd, []string{"https://a.example.com"}); err != nil {
+		t.Fatal(err)
+	}
+	if g, at, ok := row(f.tenant, a); !ok || g != 120 || !at.Equal(old) {
+		t.Fatalf("a was not restored: %d %v %v", g, at, ok)
+	}
+	if _, _, ok := row(f.tenant, b); !ok {
+		t.Fatal("b was released with a")
+	}
+	// The rest of the command's claims; idempotent.
+	for range 2 {
+		if err := repo.ReleasePathClaim(ctx, f.tenant, cmd, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, _, ok := row(f.tenant, b); ok {
+		t.Fatal("b had no earlier row and was not removed")
+	}
+	if _, _, ok := row(f.tenant, c); !ok {
+		t.Fatal("another command's claim was released")
+	}
+	if _, _, ok := row(other, otherA); !ok {
+		t.Fatal("another organization's claim was released")
+	}
+	// A claim a later job overwrote is not undone by the earlier command.
+	if _, err := f.sqlDB.ExecContext(ctx, `UPDATE web_path_discovery_runs SET last_dispatch_at = now() - interval '31 days' WHERE tenant_id = $1 AND origin_asset_id = $2`, f.tenant.String(), c.String()); err != nil {
+		t.Fatal(err)
+	}
+	third := shared.NewID()
+	claim(f.tenant, third, "https://c.example.com")
+	if err := repo.ReleasePathClaim(ctx, f.tenant, laterCmd, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, ok := row(f.tenant, c); !ok {
+		t.Fatal("a later job's claim was undone by the earlier command's release")
+	}
+	// The daily budget counts only what is still claimed.
+	if n, err := repo.PathRequestsGrantedSince(ctx, f.tenant, f.nowMinusDay()); err != nil || n != 300 {
+		t.Fatalf("granted %d %v, want only c's 300", n, err)
+	}
+}

@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 
 	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
 	scanrundom "github.com/openctemio/openctem/api/pkg/domain/scanrun"
@@ -38,12 +39,16 @@ type ConfinedSensors interface {
 }
 
 // PathDispatchGate is the gate every path discovery job passes before it is
-// stored (coverage.PathDiscoveryPolicy): the organization's switch, the
-// origin refusals, the claim in the path discovery ledger. It returns the
-// request cap the job carries (at most requested; 0 requested: the
-// platform's per-origin budget).
+// stored (coverage.PathDiscoveryPolicy): the organization's switch and the
+// origin refusals (CheckPathDispatch, which records nothing), and, last, the
+// claim in the path discovery ledger (ClaimPathDispatch: all or nothing; it
+// returns the request cap the job carries, at most requested, 0 requested
+// meaning the platform's per-origin budget). ReleasePathDispatch gives the
+// claim back.
 type PathDispatchGate interface {
-	AdmitPathDispatch(ctx context.Context, tenantID shared.ID, runID *shared.ID, targets []string, requested int) (int, error)
+	CheckPathDispatch(ctx context.Context, tenantID shared.ID, targets []string) error
+	ClaimPathDispatch(ctx context.Context, tenantID, commandID shared.ID, runID *shared.ID, targets []string, requested int) (int, error)
+	ReleasePathDispatch(ctx context.Context, tenantID, commandID shared.ID, origins []string) error
 }
 
 // WebJobGuard attaches the web scope to a web job, or refuses the job.
@@ -100,25 +105,19 @@ func (g *WebJobGuard) GuardCreate(ctx context.Context, cmd *commanddom.Command) 
 	}
 	var ws *WebScope
 	var err error
+	requested := 0
 	if job.Discovery {
-		// Path discovery: the same gate for every caller (the switch, the
-		// origin refusals, the ledger claim), then always the strict scope
-		// with the request cap the gate granted.
+		// Path discovery: the same gate for every caller. The switch and
+		// the origin refusals come first, then the strict scope; the ledger
+		// is claimed last (below), once nothing else can refuse the job.
 		if g.discovery == nil {
 			return commanddom.GuardUnwired(cmd)
 		}
-		var runID *shared.ID
-		if id, perr := shared.IDFromString(commanddom.PayloadScanRunID(cmd.Payload)); perr == nil {
-			runID = &id
-		}
-		limit, gerr := g.discovery.AdmitPathDispatch(ctx, cmd.TenantID, runID, job.Targets, commanddom.PayloadDiscoveryMaxRequests(cmd.Payload))
-		if gerr != nil {
+		if gerr := g.discovery.CheckPathDispatch(ctx, cmd.TenantID, job.Targets); gerr != nil {
 			return gerr
 		}
-		if limit <= 0 {
-			limit = DefaultDiscoveryRequestsPerHost
-		}
-		ws, err = g.scope.BuildDiscoveryWebScope(ctx, cmd.TenantID, job.Targets, limit)
+		requested = commanddom.PayloadDiscoveryMaxRequests(cmd.Payload)
+		ws, err = g.scope.BuildDiscoveryWebScope(ctx, cmd.TenantID, job.Targets, discoveryLimit(requested))
 	} else {
 		ws, err = g.scope.BuildWebScope(ctx, cmd.TenantID, job.Targets)
 	}
@@ -152,7 +151,49 @@ func (g *WebJobGuard) GuardCreate(ctx context.Context, cmd *commanddom.Command) 
 			return err
 		}
 	}
+	if job.Discovery {
+		// The claim comes last: the job the ledger charges for is one that
+		// is stored. Anything after it that fails gives the claim back.
+		var runID *shared.ID
+		if id, perr := shared.IDFromString(commanddom.PayloadScanRunID(cmd.Payload)); perr == nil {
+			runID = &id
+		}
+		limit, gerr := g.discovery.ClaimPathDispatch(ctx, cmd.TenantID, cmd.ID, runID, job.Targets, requested)
+		if gerr != nil {
+			return gerr
+		}
+		ws.MaxRequestsPerHost = discoveryLimit(limit)
+		if err := setPayload(cmd, fields); err != nil {
+			g.ReleaseCreate(ctx, cmd)
+			return err
+		}
+		return nil
+	}
 	return setPayload(cmd, fields)
+}
+
+// ReleaseCreate gives back the ledger claim GuardCreate made for the command
+// when the repository could not store it (command.CreateReleaser). It is
+// idempotent and releases on a context that survives the caller's.
+func (g *WebJobGuard) ReleaseCreate(ctx context.Context, cmd *commanddom.Command) {
+	if g == nil || g.discovery == nil || cmd == nil {
+		return
+	}
+	if job, ok := commanddom.WebJobOf(cmd); !ok || !job.Discovery {
+		return
+	}
+	rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+	defer cancel()
+	_ = g.discovery.ReleasePathDispatch(rctx, cmd.TenantID, cmd.ID, nil)
+}
+
+// discoveryLimit is the per-host cap of a path discovery job: the default
+// when none is asked for, within the platform's bounds.
+func discoveryLimit(n int) int {
+	if n <= 0 {
+		n = DefaultDiscoveryRequestsPerHost
+	}
+	return min(max(n, MinDiscoveryRequestsPerHost), MaxDiscoveryRequestsPerHost)
 }
 
 // requireConfinedSensor refuses a job that needs a confined sensor when the

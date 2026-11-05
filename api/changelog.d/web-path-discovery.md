@@ -20,3 +20,9 @@
 ### Added: guessed backup, archive and dump files are verified
 
 - A guessed backup, archive or dump file is checked with the sensor's own `openctem-backup-file-signature` template, requested by id; a finding comes only from its hit.
+
+### Fixed: a path discovery job that does nothing no longer holds its origin for 30 days
+
+- The ledger claim is made last by the web job guard, after the confined-sensor check and the scope build, and is all or nothing across a job's origins. A job refused after the claim, one the repository cannot store, and an origin the sensor reports as `no_candidates` (no request sent) give the claim back and restore the previous row (migration column `claim_command_id`, `prev_*` of `web_path_discovery_runs`).
+- Discovery deny paths are built with the same rule as every other web job (decoded forms, a `*` segment cut for sensors before webpath 1.3.1).
+- New coverage gap reason `no_candidates` (en and vi words in the run view).
