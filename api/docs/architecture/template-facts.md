@@ -61,8 +61,7 @@ and a version pattern that is not RE2 with a `version` group.
 | `technology` | the asset's technologies ([asset-technologies.md](asset-technologies.md)) and, with a version or CPE, the software history | WAF, CDN and hosting are technologies of those categories |
 | `posture` | the origin's `http_posture` ([web-content-pipeline.md](web-content-pipeline.md)) | header posture is an attribute, never one finding per header |
 | `surface` | web surface entries of the origin ([web-surface.md](web-surface.md)) | the matched path (source `probe`) or the paths it extracted (`robots`, `sitemap`) |
-| `exposure` | an info exposure ([exposure-taxonomy.md](exposure-taxonomy.md)), optionally of a set type | panels and exposed consoles |
-| `discard` | nothing | personal data (the email extractor), DOM heuristics |
+| `exposure` | an info exposure ([exposure-taxonomy.md](exposure-taxonomy.md)), optionally of a set type | panels and exposed consoles; the e-mail extractor and the DOM heuristics (no match is discarded) |
 | not named | a generic info exposure, counted as `info_unmapped` | a new template, kept visible until someone maps it |
 
 ## At ingest
@@ -86,7 +85,7 @@ and a version pattern that is not RE2 with a `version` group.
    (30 days) when no scan sees them again. `recordTechnologies` marks the
    scanner's rows as secondary. `recordSoftware` turns a technology with a
    version into a banner-class reading of the technology history.
-3. `routeInfoMatches` takes the fact and discard matches out of the
+3. `routeInfoMatches` takes the fact matches out of the
    findings and counts them in `info_observations` and in `info_facts` on
    the receipt, and on the step run. Exposure and unmapped matches become
    info exposures as before. If the organization files info matches as
@@ -106,9 +105,11 @@ and a version pattern that is not RE2 with a `version` group.
   12 hours, and it never overrides a stronger class
   ([RFC-066](../rfcs/RFC-066-inventory-vulnerability-matching.md), technology history).
   The inventory matcher builds findings from established versions only.
-- **Posture.** The newest reading of a key wins, which is the deep merge
-  every producer gets. A header the report itself carries beats a template
-  match in the same report. `frame_options` and `referrer_policy` take
+- **Posture.** A key a template match proves only fills a key the stored
+  `http_posture` lacks: a stored reading (the headers a probe such as httpx
+  reported) wins across reports, as a probe's technology source does. Other
+  producers keep the deep merge, where the newest reading of a key wins. A
+  header the report itself carries beats a template match in the same report. `frame_options` and `referrer_policy` take
   `none` for a header that was not sent. A header value is never read as
   `none`.
 
@@ -132,7 +133,7 @@ and a version pattern that is not RE2 with a `version` group.
 | A hostile target makes a template report a fake technology or version | names come from the signed mapping, or are one bounded token; a version is a dotted token read from the extracted values (each at most 256 bytes, at most 20), and a value marked sensitive is never read; banner class below 80, so no single match establishes a version, closes a finding or displaces another source |
 | Markup or control characters in extracted values or matcher names | token patterns (`[A-Za-z0-9][A-Za-z0-9 ._+-]{0,63}`), CPEs only as `cpe:2.3:` text; the console renders them as text |
 | Paths of another host injected through robots.txt | only paths of the match's own origin; wildcards, queries, fragments and spaces are refused; the endpoint plan checks the origin against the bound job's targets |
-| Personal data in extracted values (emails) | the email extractor is `discard`; no extracted value is stored except as a version or a path |
+| Personal data in extracted values (emails) | nothing is discarded (owner rule, research/446): the e-mail extractor is an info exposure, and every address in a finding's text, evidence and extracted values is masked (`j***@example.com`, `safetext.MaskEmails`) before anything is stored, whatever the path (exposure, `info_matches_as_findings`, out-of-scope asset); no extracted value is stored except as a version or a path |
 | A tenant forges matches (a custom template named like a known one) | the facts land only on the tenant's own assets, through the same admission as the report's assets; secondary and below 80, as above |
 | A forged mapping pack | platform packs only, signed, linted; organizations cannot upload the kind |
 | Cross-tenant | the router works on one report; every store it feeds is tenant-scoped (no new query) |

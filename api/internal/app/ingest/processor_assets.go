@@ -1658,6 +1658,11 @@ func (p *AssetProcessor) mergeCTISIntoAsset(existing *asset.Asset, ctisAsset *ct
 	existingProps := existing.Properties()
 	newProps := p.buildPropertiesFromCTIS(ctisAsset)
 	mergedProps := mergePropertiesDeep(existingProps, newProps)
+	if tool != nil && templateScanner(tool.Name) {
+		// A template scanner only fills the posture keys nothing stored
+		// decided (http_posture.go).
+		keepStoredPosture(existingProps, mergedProps)
+	}
 	// The stored asset's schema decides (the report asset may be of another
 	// type that landed here by name): technical blocks an older row still
 	// holds are promoted to flat keys, synonyms fold, and a key only another

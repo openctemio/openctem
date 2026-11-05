@@ -83,7 +83,7 @@ func templateScanner(tool string) bool {
 // splitInfoMatches splits the report's findings into those that stay
 // findings, the info matches of a template scanner that become exposures,
 // and the number of info matches the template facts mapping stored as
-// asset facts (or discards). Pure: the report is not changed.
+// asset facts. Pure: the report is not changed.
 func splitInfoMatches(report *ctis.Report, assetMap map[string]shared.ID, output *Output, stepRunID *shared.ID, facts *templatefact.Map) ([]ctis.Finding, []exposure.TemplateMatch, int) {
 	if report == nil || report.Tool == nil || !templateScanner(report.Tool.Name) {
 		return report.Findings, nil, 0

@@ -8,7 +8,9 @@ import (
 	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/internal/app/contentrule/builtin"
+	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/assettech"
+	"github.com/openctemio/openctem/api/pkg/domain/contentrule"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/templatefact"
 	"github.com/openctemio/openctem/api/pkg/domain/webendpoint"
@@ -217,4 +219,84 @@ type captureTechs struct {
 func (c *captureTechs) Enrich(_ context.Context, _ shared.ID, techs []assettech.Technology) error {
 	c.got = append(c.got, techs...)
 	return nil
+}
+
+type fakeRules struct{ e *contentrule.Engine }
+
+func (f fakeRules) Engine(context.Context, shared.ID) (*contentrule.Engine, error) { return f.e, nil }
+func (fakeRules) Fingerprinter(shared.ID) contentrule.Fingerprinter {
+	return func(v string) string { return v }
+}
+func (fakeRules) RecordAssetSecrets(context.Context, shared.ID, shared.ID, string, []contentrule.SecretMatch) error {
+	return nil
+}
+func (fakeRules) RecordPins(context.Context, shared.ID, shared.ID, *contentrule.Engine) {}
+
+// A technology both a detection rule and a template match state keeps the
+// rule's source: the rules run before the facts are added.
+func TestDetectionRuleKeepsItsSourceOverTemplateFact(t *testing.T) {
+	e, errs := contentrule.Compile([]contentrule.RuleSet{{
+		Kind:   contentrule.KindFingerprint,
+		Origin: contentrule.Origin{Scope: contentrule.ScopePlatform, Pack: "web-fingerprints-core", Version: "1"},
+		Rules: []contentrule.Rule{{ID: "nginx", Name: "nginx", Confidence: 90,
+			Technology: &contentrule.Technology{Name: "nginx", Category: "web_server"},
+			Matchers:   []contentrule.Matcher{{Location: contentrule.LocHeader, Header: "server", Keywords: []string{"nginx"}, Pattern: `(?i)^nginx`}}}},
+	}})
+	if len(errs) > 0 {
+		t.Fatal(errs)
+	}
+	rep := factReport(infoMatch("tech-detect", "nginx", "https://a.example/"))
+	rep.Assets[0].Technical = &ctis.AssetTechnical{HTTP: &ctis.HTTPTechnical{WebServer: "nginx/1.25.3"}}
+	s := &Service{logger: logger.NewNop(), rules: fakeRules{e}}
+	out, plan := s.detectThenApplyFacts(context.Background(), shared.NewID(), rep, builtinFacts(t), fullScope())
+	if plan == nil || len(plan.techs["o1"]) != 1 || plan.techs["o1"][0].Origin.Source() != "rules:web-fingerprints-core@1" {
+		t.Fatalf("the detection rule's technology was not kept for recording: %+v", plan)
+	}
+	n := 0
+	for _, tech := range out.Assets[0].Technologies {
+		if assettech.Key(tech.Name) == "nginx" {
+			n++
+		}
+	}
+	if n != 1 {
+		t.Fatalf("nginx stated %d times", n)
+	}
+}
+
+// A template match fills only the posture keys the stored http_posture
+// lacks; a probe's stored value wins across reports.
+func TestTemplatePostureKeepsStoredValues(t *testing.T) {
+	stored := map[string]any{webendpoint.PostureKey: map[string]any{"hsts": true, "nosniff": true}}
+	merged := map[string]any{webendpoint.PostureKey: map[string]any{"hsts": false, "frame_options": "none", "nosniff": true}}
+	keepStoredPosture(stored, merged)
+	got := merged[webendpoint.PostureKey].(map[string]any)
+	if got["hsts"] != true || got["frame_options"] != "none" || got["nosniff"] != true {
+		t.Fatalf("posture %v", got)
+	}
+
+	// Through the merge of an existing asset: a template report (nuclei)
+	// does not override, a probe's (httpx) does.
+	p := NewAssetProcessor(nil, logger.NewNop())
+	mk := func() *asset.Asset {
+		a, err := asset.NewAssetWithTenant(shared.NewID(), "https://a.example", asset.AssetTypeService, asset.CriticalityMedium)
+		if err != nil {
+			t.Fatal(err)
+		}
+		a.SetProperties(map[string]any{webendpoint.PostureKey: map[string]any{"hsts": true}})
+		return a
+	}
+	rep := ctis.Asset{ID: "o1", Type: ctis.AssetTypeWebOrigin, Value: "https://a.example",
+		Properties: ctis.Properties{webendpoint.PostureKey: map[string]any{"hsts": false, "frame_options": "none"}}}
+	a := mk()
+	p.mergeCTISIntoAsset(a, &rep, &ctis.Tool{Name: "nuclei"}, time.Time{}, nil)
+	pos, _ := a.Properties()[webendpoint.PostureKey].(map[string]any)
+	if pos["hsts"] != true || pos["frame_options"] != "none" {
+		t.Fatalf("template report overrode the stored posture: %v", a.Properties())
+	}
+	a = mk()
+	p.mergeCTISIntoAsset(a, &rep, &ctis.Tool{Name: "httpx"}, time.Time{}, nil)
+	pos, _ = a.Properties()[webendpoint.PostureKey].(map[string]any)
+	if pos["hsts"] != false {
+		t.Fatalf("a probe report no longer updates the posture: %v", a.Properties())
+	}
 }

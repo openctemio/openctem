@@ -9,8 +9,10 @@ package ingest
 //
 // The keys a template scanner's info matches prove (a missing header,
 // docs/architecture/template-facts.md) are added for the keys the report's
-// own headers do not decide; stored keys they do not name are kept by the
-// deep property merge.
+// own headers do not decide. Across reports they only fill the keys the
+// stored http_posture lacks: a stored reading (a probe's headers) wins over
+// a template match (keepStoredPosture); stored keys they do not name are
+// kept by the deep property merge.
 
 import (
 	"github.com/openctemio/ctis/v2"
@@ -49,4 +51,27 @@ func sanitizeHTTPPosture(report *ctis.Report, scope *alterScope) {
 			a.Properties[webendpoint.PostureKey] = p
 		}
 	}
+}
+
+// keepStoredPosture restores, in merged, every key the stored http_posture
+// already holds: the report is a template scanner's, whose keys only fill
+// the ones missing. The deep property merge lets the report's value win;
+// this puts the stored value back.
+func keepStoredPosture(stored, merged map[string]any) {
+	old, ok := stored[webendpoint.PostureKey].(map[string]any)
+	if !ok || len(old) == 0 {
+		return
+	}
+	cur, ok := merged[webendpoint.PostureKey].(map[string]any)
+	if !ok {
+		return
+	}
+	out := make(map[string]any, len(cur)+len(old))
+	for k, v := range cur {
+		out[k] = v
+	}
+	for k, v := range old {
+		out[k] = v
+	}
+	merged[webendpoint.PostureKey] = out
 }

@@ -16,7 +16,8 @@ package ingest
 //     attribute, never one finding per header).
 //   - surface: web surface entries of the origin (source probe, robots or
 //     sitemap), through the endpoint plan's target and scope checks.
-//   - discard: nothing is stored.
+//   - exposure: an info exposure of the asset; e-mail addresses in the
+//     match are masked (maskReportEmails) before anything is stored.
 //
 // routeInfoMatches then takes these matches out of the findings (counted
 // as info observations); exposure-class matches and the ones the mapping
@@ -32,6 +33,7 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app/contentrule/builtin"
 	"github.com/openctemio/openctem/api/pkg/domain/assettech"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/templatefact"
 )
 
@@ -55,6 +57,15 @@ func (s *Service) templateFactsMap(ctx context.Context) *templatefact.Map {
 	}
 	m, _ := builtin.TemplateFacts()
 	return m
+}
+
+// detectThenApplyFacts runs the detection rules, then adds the template
+// facts. The order matters: a technology both state is first the rule's, so
+// its rule source is recorded (newTechnologies skips what the asset already
+// states), and the template fact then finds it present (addFactTechnology).
+func (s *Service) detectThenApplyFacts(ctx context.Context, tenantID shared.ID, report *ctis.Report, m *templatefact.Map, scope *alterScope) (*ctis.Report, *detectionPlan) {
+	report, plan := s.matchDetectionRules(ctx, tenantID, report)
+	return applyInfoFacts(report, m, scope), plan
 }
 
 // maxFactEndpointsPerReport bounds the surface entries the mapping adds to

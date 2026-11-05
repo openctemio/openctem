@@ -143,12 +143,13 @@ entries:
     match: {templates: [springboot-actuator, springboot-health]}
     class: exposure
     exposure: {event_type: misconfiguration}
-  # Never stored: personal data and DOM heuristics that say nothing about the asset.
+  # Kept as info exposures. The e-mail extractor's addresses are masked
+  # before anything is stored (safetext.MaskEmails); nothing is discarded.
   - id: personal-data
     match: {templates: [email-extractor]}
-    class: discard
-    reason: extracted values are personal data
+    class: exposure
+    reason: extracted addresses are stored masked
   - id: dom-heuristics
     match: {templates: [addeventlistener-detect]}
-    class: discard
-    reason: a page uses message listeners; no fact about the asset
+    class: exposure
+    reason: a page uses message listeners

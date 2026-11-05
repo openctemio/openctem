@@ -42,7 +42,7 @@ entries:
     exposure: {event_type: web_interface_exposed}
   - id: pii
     match: {templates: [email-extractor]}
-    class: discard
+    class: exposure
 `
 
 func testMap(t *testing.T) *Map {
@@ -112,7 +112,7 @@ func TestClassifyMetadataPrefix(t *testing.T) {
 	}
 }
 
-func TestClassifyPostureSurfaceExposureDiscard(t *testing.T) {
+func TestClassifyPostureSurfaceExposure(t *testing.T) {
 	m := testMap(t)
 	f, _ := m.Classify(Input{TemplateID: "http-missing-security-headers", Matcher: "strict-transport-security"})
 	if f.Class != ClassPosture || f.Posture["hsts"] != false || f.Posture["hsts_max_age"] != 0 {
@@ -146,8 +146,8 @@ func TestClassifyPostureSurfaceExposureDiscard(t *testing.T) {
 		t.Fatalf("panel %+v", f)
 	}
 	f, _ = m.Classify(Input{TemplateID: "email-extractor"})
-	if f.Class != ClassDiscard || !f.Class.IsFact() {
-		t.Fatalf("discard %+v", f)
+	if f.Class != ClassExposure || f.Class.IsFact() {
+		t.Fatalf("email extractor %+v", f)
 	}
 	if _, ok := m.Classify(Input{TemplateID: "brand-new-template"}); ok {
 		t.Fatal("an unmapped template was classified")
@@ -156,10 +156,11 @@ func TestClassifyPostureSurfaceExposureDiscard(t *testing.T) {
 
 func TestValidateRefuses(t *testing.T) {
 	cases := map[string]string{
-		"schema":          "schema: 2\nentries: [{id: aa, match: {tags: [x]}, class: discard}]",
-		"unknown key":     "schema: 1\nentries: [{id: aa, match: {tags: [x]}, class: discard, extra: 1}]",
+		"schema":          "schema: 2\nentries: [{id: aa, match: {tags: [x]}, class: exposure}]",
+		"unknown key":     "schema: 1\nentries: [{id: aa, match: {tags: [x]}, class: exposure, extra: 1}]",
 		"class":           "schema: 1\nentries: [{id: aa, match: {tags: [x]}, class: finding}]",
-		"no match":        "schema: 1\nentries: [{id: aa, match: {}, class: discard}]",
+		"discard class":   "schema: 1\nentries: [{id: aa, match: {tags: [x]}, class: discard}]",
+		"no match":        "schema: 1\nentries: [{id: aa, match: {}, class: exposure}]",
 		"strong":          "schema: 1\nentries: [{id: aa, match: {tags: [x]}, class: technology, technology: {name: x, confidence: 80}}]",
 		"category":        "schema: 1\nentries: [{id: aa, match: {tags: [x]}, class: technology, technology: {name: x, category: cms}}]",
 		"posture key":     "schema: 1\nentries: [{id: aa, match: {tags: [x]}, class: posture, posture: {x: {server: nginx}}}]",
@@ -167,7 +168,7 @@ func TestValidateRefuses(t *testing.T) {
 		"surface source":  "schema: 1\nentries: [{id: aa, match: {tags: [x]}, class: surface, surface: {path_from: matched, source: crawl}}]",
 		"exposure type":   "schema: 1\nentries: [{id: aa, match: {tags: [x]}, class: exposure, exposure: {event_type: credential_leaked}}]",
 		"version pattern": "schema: 1\nentries: [{id: aa, match: {tags: [x]}, class: technology, technology: {name: x, version_from: extracted, version_pattern: '(\\d+)'}}]",
-		"wrong section":   "schema: 1\nentries: [{id: aa, match: {tags: [x]}, class: discard, surface: {path_from: matched, source: probe}}]",
+		"wrong section":   "schema: 1\nentries: [{id: aa, match: {tags: [x]}, class: exposure, surface: {path_from: matched, source: probe}}]",
 		"name markup":     "schema: 1\nentries: [{id: aa, match: {tags: [x]}, class: technology, technology: {name: '<b>'}}]",
 	}
 	for name, doc := range cases {
@@ -175,23 +176,27 @@ func TestValidateRefuses(t *testing.T) {
 			t.Errorf("%s: accepted", name)
 		}
 	}
-	dup := "schema: 1\nentries: [{id: aa, match: {tags: [x]}, class: discard}, {id: aa, match: {tags: [y]}, class: discard}]"
+	dup := "schema: 1\nentries: [{id: aa, match: {tags: [x]}, class: exposure}, {id: aa, match: {tags: [y]}, class: exposure}]"
 	entries, err := ParseFile([]byte(dup))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Compile("x", entries); err == nil {
-		t.Error("duplicate ids compiled")
+	_, err = Compile("x", entries)
+	if err == nil {
+		t.Fatal("duplicate ids compiled")
+	}
+	if strings.Contains(err.Error(), "aa") {
+		t.Errorf("the error names the id: %v", err)
 	}
 }
 
 func TestPrecedenceExactBeforePrefixBeforeTags(t *testing.T) {
 	doc := `schema: 1
 entries:
-  - {id: by-tag, match: {tags: [tech]}, class: discard}
-  - {id: short, match: {template_prefix: wor}, class: discard}
-  - {id: long, match: {template_prefix: wordpress-}, class: discard}
-  - {id: exact, match: {templates: [wordpress-x]}, class: discard}
+  - {id: by-tag, match: {tags: [tech]}, class: exposure}
+  - {id: short, match: {template_prefix: wor}, class: exposure}
+  - {id: long, match: {template_prefix: wordpress-}, class: exposure}
+  - {id: exact, match: {templates: [wordpress-x]}, class: exposure}
 `
 	entries, err := ParseFile([]byte(doc))
 	if err != nil {

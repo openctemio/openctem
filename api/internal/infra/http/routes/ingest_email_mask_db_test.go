@@ -78,7 +78,7 @@ func TestIngest_EmailAddressesNeverStored_DB(t *testing.T) {
 		}
 		var title string
 		_ = h.db.QueryRowContext(ctx, `SELECT title FROM findings WHERE tenant_id = $1 AND rule_id = $2`, h.tenantID, rule).Scan(&title)
-		if want := map[string]string{"email-v1": "Hard-coded address ***@example.com", "email-v2": "Address ***@example.com"}[rule]; title != want {
+		if want := map[string]string{"email-v1": "Hard-coded address j***@example.com", "email-v2": "Address j***@example.com"}[rule]; title != want {
 			t.Fatalf("%s: title %q, want %q", rule, title, want)
 		}
 	}
