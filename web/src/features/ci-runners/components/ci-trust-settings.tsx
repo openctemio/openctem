@@ -63,6 +63,7 @@ import { getErrorMessage } from '@/lib/api/error-handler'
 import { copyToClipboard } from '@/lib/clipboard'
 import { Permission, usePermissions } from '@/lib/permissions'
 import {
+  useCIRunnerRelease,
   useDeleteGatePolicy,
   useDeleteTrustConfig,
   useGateOverrides,
