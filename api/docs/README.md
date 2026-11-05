@@ -100,6 +100,7 @@ because they change with it:
 
 - [Upgrading from v0.8 to v0.9](operations/upgrade-v0.8-to-v0.9.md)
 - [Upgrading to CTIS 2.0](operations/ctis-2-upgrade.md)
+- [Masking e-mail addresses in stored findings](operations/mask-stored-emails.md): `refingerprint -mask-emails`, preview query, dry run, apply
 - [Monitoring and alerting](operations/monitoring.md)
 - [Hotfix and incident response](operations/hotfix-and-incident-response.md): severity, containment, hotfix release, deploy, rollback, disclosure
 - [Environment variable reference](configuration/environment-variables.md) (generated from `internal/config/env_registry.yaml` by `make env-docs`)
