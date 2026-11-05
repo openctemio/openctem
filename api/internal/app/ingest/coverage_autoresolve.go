@@ -520,7 +520,10 @@ func (s *Service) EvaluateCommandCoverage(ctx context.Context, tenantID, command
 		s.logger.Warn("coverage auto-resolve held for review (blinding guard)", logArgs...)
 		if mode == CoverageAutoResolveEnforce {
 			// A held run closes nothing; a person decides in Ready to close.
-			out.Proposed = s.proposeClosures(ctx, tenantID, commandID, cov, d.query, stale, true, vulnerability.ClosureMethodCoveredScan)
+			// The organization's closing mode still applies: off proposes
+			// nothing, and what it would close or propose is proposed.
+			closeIDs, proposed, _ := s.splitByClosureDecision(ctx, tenantID, stale, vulnerability.ClosureMethodCoveredScan)
+			out.Proposed = s.proposeClosures(ctx, tenantID, commandID, cov, d.query, append(closeIDs, proposed...), true, vulnerability.ClosureMethodCoveredScan)
 		}
 	case mode == CoverageAutoResolveDryRun:
 		metrics.FindingsCoverageAutoResolve.WithLabelValues(string(mode), "would_resolve").Add(float64(len(stale)))
