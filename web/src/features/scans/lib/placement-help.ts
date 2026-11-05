@@ -46,6 +46,10 @@ export const FAILURE_FIX: Record<string, FixTarget | null> = {
   CONTENT_UNAVAILABLE: 'tools',
   SENSOR_LOST: 'sensors',
   FLEET_TOOL_FAILURE: 'tools',
+  // A step nothing here runs is skipped (the run ends partial).
+  TOOL_NOT_INSTALLED: 'tools',
+  TOOL_DISABLED: 'tools',
+  DEPENDENCY_SKIPPED: null,
   TOOL_EXIT: null,
   PARSE_ERROR: null,
   TIMEOUT: 'workflows',

@@ -25,6 +25,8 @@ import (
 //	                                           (critical audit, admins told)
 //	/admin/settings/email-relay    any admin   PUT: super_admin + fresh step-up + reason
 //	                                           (critical audit, admins told)
+//	/admin/settings/leaked-secret-storage  any admin   PUT: super_admin + fresh step-up
+//	                                           + reason (critical audit, admins told)
 //	/admin/settings/ai             any admin   PUT: super_admin + fresh step-up + reason
 //	                                           (critical audit, admins told);
 //	                                           test: super_admin
@@ -92,6 +94,11 @@ func registerAdminPlatformSettingsRoutes(router Router, h Handlers, adminMiddlew
 	router.Group("/api/v1/admin/settings/email-relay", func(r Router) {
 		r.GET("/", on(emailRelay, ps.GetEmailRelay))
 		r.PUT("/", on(emailRelay, ps.UpdateEmailRelay), freshStepUp("settings.email_relay"))
+	}, adminMiddlewares...)
+	leakedSecrets := ps.LeakedSecretStorage != nil
+	router.Group("/api/v1/admin/settings/leaked-secret-storage", func(r Router) {
+		r.GET("/", on(leakedSecrets, ps.GetLeakedSecretStorage))
+		r.PUT("/", on(leakedSecrets, ps.UpdateLeakedSecretStorage), freshStepUp("settings.leaked_secret_storage"))
 	}, adminMiddlewares...)
 	router.Group("/api/v1/admin/settings/alerts", func(r Router) {
 		r.GET("/", on(alerts, ps.GetAlertWebhook))

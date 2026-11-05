@@ -68,6 +68,16 @@ describe('LeakedSecretField', () => {
     expect(screen.getByText(/no secret value stored/i)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /reveal/i })).not.toBeInTheDocument()
   })
+
+  it('shows the mask and fingerprint of a value the organization did not keep', () => {
+    render(
+      <LeakedSecretField credentialId="c1" hasSecret={false} masked="********" fingerprint="9a1b" />
+    )
+    expect(screen.getByTestId('leaked-secret-value')).toHaveValue('********')
+    expect(screen.getByText(/was not kept/i)).toBeInTheDocument()
+    expect(screen.getByText('9a1b')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /reveal/i })).not.toBeInTheDocument()
+  })
 })
 
 describe('mapCredentialToAsset', () => {

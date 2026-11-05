@@ -167,7 +167,7 @@ func TestVersionHistory_TenantIsolation(t *testing.T) {
 	store := postgres.NewSoftwareMatchRepository(e.pdb)
 	ctx := context.Background()
 	var fid, pid, vid string
-	require.NoError(t, e.pdb.QueryRow(`SELECT f.id, s.product_id, s.software_version_id FROM findings f
+	require.NoError(t, e.pdb.QueryRowContext(context.Background(), `SELECT f.id, s.product_id, s.software_version_id FROM findings f
 		JOIN asset_software s ON s.tenant_id = f.tenant_id AND s.asset_id = f.asset_id
 		JOIN software_versions v ON v.id = s.software_version_id AND v.raw = '1.4.2'
 		WHERE f.tenant_id = $1 AND f.cve_id = $2`, a.String(), e.cveID).Scan(&fid, &pid, &vid))
@@ -203,9 +203,72 @@ func TestVersionHistory_ListShowsEstablished(t *testing.T) {
 	assert.Equal(t, software.ClassBanner, links[0].Class)
 	var state string
 	var sightings int
-	require.NoError(t, e.pdb.QueryRow(`SELECT s.version_state, s.sightings FROM asset_software s
+	require.NoError(t, e.pdb.QueryRowContext(context.Background(), `SELECT s.version_state, s.sightings FROM asset_software s
 		JOIN software_versions v ON v.id = s.software_version_id WHERE s.tenant_id = $1 AND s.asset_id = $2 AND v.raw = '2.0.1'`,
 		org.String(), asset.String()).Scan(&state, &sightings))
 	assert.Equal(t, "candidate", state)
 	assert.Equal(t, 1, sightings)
+}
+
+// An upgrade to a version that is still affected keeps the one finding open
+// (no close and reopen) and records the version it is observed on; the
+// upgrade to a fixed one closes it.
+func TestVersionHistory_UpgradeStillVulnerableThenFixed(t *testing.T) {
+	e := newMatchEnv(t)
+	org := e.tenant("vh-still", true)
+	now := time.Now().UTC()
+	asset := e.observeAt(org, shared.ID{}, "1.4.2", software.ClassBanner, 65, now.Add(-72*time.Hour))
+	e.run()
+	e.observeAt(org, asset, "1.5.0", software.ClassProbe, 95, now.Add(-48*time.Hour))
+	e.run()
+	got := e.findings(org)
+	require.Len(t, got, 1)
+	assert.Equal(t, "new", got[0].Status, "1.5.0 is still affected")
+	var ver string
+	require.NoError(t, e.pdb.QueryRowContext(context.Background(), `SELECT metadata->'version_match'->>'version' FROM findings
+		WHERE tenant_id = $1 AND cve_id = $2`, org.String(), e.cveID).Scan(&ver))
+	assert.Equal(t, "1.5.0", ver, "the finding records the version it is observed on")
+
+	e.observeAt(org, asset, "2.0.1", software.ClassProbe, 95, now.Add(-24*time.Hour))
+	e.run()
+	got = e.findings(org)
+	require.Len(t, got, 1)
+	assert.Equal(t, "resolved", got[0].Status)
+	assert.Equal(t, "fixed/source_reported", got[0].Method)
+}
+
+// LinkStates reports whether the displacing version has been evaluated, and
+// UpdateObservedVersion only ever touches the tenant's own findings.
+func TestVersionHistory_UnevaluatedVersionAndObservedVersionTenantScope(t *testing.T) {
+	e := newMatchEnv(t)
+	a := e.tenant("vh-eval-a", true)
+	b := e.tenant("vh-eval-b", true)
+	now := time.Now().UTC()
+	asset := e.observeAt(a, shared.ID{}, "1.4.2", software.ClassBanner, 65, now.Add(-72*time.Hour))
+	e.run()
+	e.observeAt(a, asset, "2.0.1", software.ClassProbe, 95, now.Add(-24*time.Hour)) // not evaluated: no run yet
+
+	store := postgres.NewSoftwareMatchRepository(e.pdb)
+	ctx := context.Background()
+	var fid, pid, vid string
+	require.NoError(t, e.pdb.QueryRowContext(context.Background(), `SELECT f.id, f.metadata->'version_match'->>'product_id', f.metadata->'version_match'->>'version_id'
+		FROM findings f WHERE f.tenant_id = $1 AND f.cve_id = $2`, a.String(), e.cveID).Scan(&fid, &pid, &vid))
+	key := softwarematch.LinkKey{AssetID: asset, ProductID: shared.MustIDFromString(pid), VersionID: shared.MustIDFromString(vid), Location: "tcp/443"}
+	since := now.Add(-30 * 24 * time.Hour)
+	states, err := store.LinkStates(ctx, a, []softwarematch.LinkKey{key}, since)
+	require.NoError(t, err)
+	require.Equal(t, softwarematch.LinkUpgraded, states[key].State)
+	assert.False(t, states[key].Now.Evaluated, "2.0.1 has not been evaluated yet")
+	e.run()
+	assert.Equal(t, "resolved", e.findings(a)[0].Status)
+
+	// Another tenant cannot rewrite the finding's observed version.
+	n, err := store.UpdateObservedVersion(ctx, b, []softwarematch.ObservedVersionRef{{
+		FindingID: shared.MustIDFromString(fid), ProductID: shared.MustIDFromString(pid),
+		VersionID: shared.NewID(), Version: "9.9.9"}})
+	require.NoError(t, err)
+	assert.Zero(t, n)
+	var ver string
+	require.NoError(t, e.pdb.QueryRowContext(context.Background(), `SELECT metadata->'version_match'->>'version' FROM findings WHERE id = $1`, fid).Scan(&ver))
+	assert.NotEqual(t, "9.9.9", ver)
 }

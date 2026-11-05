@@ -113,6 +113,18 @@ function snoozeCard(tenantId: string | undefined, c: EASMSuggestionCard) {
   }
 }
 
+/**
+ * Whether one click may add the address together with others: only the high
+ * ownership band (an anchor the organization set, a network seed, plus more
+ * evidence, nothing holding it back). Every other address is added one at a
+ * time, after a person read its evidence: a name never makes an address
+ * yours, and a bulk add of addresses nobody looked at can put another
+ * organization's machines in scope.
+ */
+export function bulkAddable(a: EASMSuggestionAddress): boolean {
+  return !a.shared && a.ownership?.band === 'high'
+}
+
 /** One line about an address's network; unknown is said, never implied safe. */
 export function addressNetworkText(t: TFn, a: EASMSuggestionAddress): string {
   const n = a.network
@@ -255,6 +267,10 @@ function AddressesCard({
   const prefixes = card.prefix_rules ?? []
   const toItems = (as: EASMSuggestionAddress[]): ScopeItem[] =>
     as.map((a) => ({ target_type: 'ip_address', pattern: a.address ?? '' }))
+  // Only addresses with strong evidence go in the one-click add; the rest
+  // wait in the list, each with its own Add.
+  const likely = waiting.filter(bulkAddable)
+  const review = count - likely.length
   const reasonNames = Array.from(new Set(waiting.flatMap((a) => a.resolved_from ?? []))).slice(0, 5)
 
   const notOurs = async () => {
@@ -351,14 +367,14 @@ function AddressesCard({
             )}
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            {canAdd && count > 0 && (
-              <Button size="sm" onClick={() => setConfirming(toItems(waiting))}>
+            {canAdd && likely.length > 0 && (
+              <Button size="sm" onClick={() => setConfirming(toItems(likely))}>
                 {plural(
                   t,
-                  'attackSurface.decide.add',
-                  count,
-                  'Add 1 to scope',
-                  'Add {count} to scope'
+                  'attackSurface.decide.addLikely',
+                  likely.length,
+                  'Add 1 likely yours',
+                  'Add {count} likely yours'
                 )}
               </Button>
             )}
@@ -385,9 +401,25 @@ function AddressesCard({
               )}
               {open
                 ? t('attackSurface.decide.hideList', 'Hide list')
-                : t('attackSurface.decide.viewList', 'View list')}
+                : review > 0
+                  ? plural(
+                      t,
+                      'attackSurface.decide.reviewEach',
+                      review,
+                      'Review 1 address',
+                      'Review {count} addresses'
+                    )
+                  : t('attackSurface.decide.viewList', 'View list')}
             </Button>
           </div>
+          {canAdd && review > 0 && (
+            <p className="text-xs text-muted-foreground" data-testid="decide-review-note">
+              {t(
+                'attackSurface.decide.reviewNote',
+                'Addresses without strong evidence that they are yours are added one at a time, after you check them in the list.'
+              )}
+            </p>
+          )}
           {!canAdd && count > 0 && (
             <p className="text-xs text-muted-foreground">
               {t(
@@ -437,7 +469,12 @@ function AddressesCard({
           )}
           {open && (
             <div className="space-y-3">
-              {waiting.length > 0 && <AddressList addresses={waiting} />}
+              {waiting.length > 0 && (
+                <AddressList
+                  addresses={waiting}
+                  onAdd={canAdd ? (a) => setConfirming(toItems([a])) : undefined}
+                />
+              )}
             </div>
           )}
         </CardContent>
@@ -587,19 +624,26 @@ function NoDecisionNote({
 function AddressList({
   addresses,
   showPorts = true,
+  onAdd,
 }: {
   addresses: EASMSuggestionAddress[]
   /** Shared addresses never show ports: they are the provider's. */
   showPorts?: boolean
+  /** Adds one address (offered addresses, with scope write only). */
+  onAdd?: (a: EASMSuggestionAddress) => void
 }) {
   const { t } = useTranslation()
   return (
     <ul className="divide-y rounded-md border text-sm" data-testid="decide-address-list">
       {addresses.map((a) => (
         <li key={a.asset_id ?? a.address} className="space-y-0.5 px-3 py-2">
-          <div className="flex flex-col gap-0.5 sm:flex-row sm:items-baseline sm:gap-3">
-            <code className="shrink-0 font-mono text-xs sm:w-36">{a.address}</code>
-            <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+          {/* A grid, not a fixed-width column: an IPv6 address wraps in its
+              own cell instead of running over the names next to it. */}
+          <div className="flex flex-col gap-0.5 sm:grid sm:grid-cols-[minmax(0,16rem)_minmax(0,1fr)_auto_auto] sm:items-baseline sm:gap-3">
+            <code className="break-all font-mono text-xs" data-testid="decide-address">
+              {a.address}
+            </code>
+            <span className="min-w-0 truncate text-xs text-muted-foreground">
               {t('attackSurface.decide.from', 'From {names}', {
                 names: (a.resolved_from ?? []).join(', '),
               })}
@@ -613,6 +657,21 @@ function AddressList({
             >
               {addressNetworkText(t, a)}
             </span>
+            {onAdd ? (
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 justify-self-start sm:justify-self-end"
+                onClick={() => onAdd(a)}
+                aria-label={t('attackSurface.decide.addOneLabel', 'Add {address} to scope', {
+                  address: a.address ?? '',
+                })}
+              >
+                {t('attackSurface.decide.addOne', 'Add')}
+              </Button>
+            ) : (
+              <span aria-hidden />
+            )}
           </div>
           {showPorts && (a.ports ?? []).length > 0 && (
             <p className="text-xs text-muted-foreground">

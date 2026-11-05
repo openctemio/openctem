@@ -81,6 +81,18 @@ func TestTriggerWorkflow_SystemTemplateWithPlannedOptionalSteps(t *testing.T) {
 	if status != "running" && status != "pending" {
 		t.Errorf("run status %q, want started", status)
 	}
+	// The steps no tool here runs are recorded skipped with their code and
+	// reason, never failed (a run goes as far as the tools support).
+	var skipped, failed int
+	if err := db.QueryRowContext(ctx,
+		`SELECT count(*) FILTER (WHERE status = 'skipped' AND error_code = 'NO_MATCHING_TOOL' AND skip_reason <> ''),
+		        count(*) FILTER (WHERE status = 'failed')
+		   FROM scan_run_steps WHERE scan_run_id = $1`, run.ID.String()).Scan(&skipped, &failed); err != nil {
+		t.Fatalf("read the step runs: %v", err)
+	}
+	if skipped == 0 || failed != 0 {
+		t.Errorf("%d step(s) skipped with NO_MATCHING_TOOL and a reason, %d failed; want some skipped and none failed", skipped, failed)
+	}
 }
 
 // Another organization's private workflow is never run through a scan that
