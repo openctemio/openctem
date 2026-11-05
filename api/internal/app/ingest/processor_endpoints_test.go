@@ -6,6 +6,7 @@ import (
 
 	"github.com/openctemio/ctis/v2"
 
+	"github.com/openctemio/openctem/api/pkg/domain/command"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/stage"
 )
@@ -145,5 +146,58 @@ func TestSplitByContract_EndpointsOnlyFromToolsThatReportThem(t *testing.T) {
 	declared.declared.Produces = append(declared.declared.Produces, sensor.ProduceEndpoint)
 	if !declared.endpointsAllowed() {
 		t.Fatal("a declared endpoint output was refused")
+	}
+}
+
+// The source of a report's endpoints comes from the bound command's
+// capability: a path discovery job's endpoints are guess and are refused
+// without evidence; a crawl job claiming guess is stored as crawl.
+func TestPlanEndpoints_SourceFromTheBoundCapability(t *testing.T) {
+	s := &Service{}
+	ev := ctis.Extensions{}
+	ev.Set("io.openctem", "response", map[string]any{"size": float64(512), "hash": "00ff00ff00ff00ff"})
+	in := &ctis.Report{Endpoints: []ctis.Endpoint{
+		{Origin: "https://app.example.com", Method: "GET", Path: "/backup.zip", Source: "probe", Extensions: ev},
+		{Origin: "https://app.example.com", Method: "GET", Path: "/db.sql", Source: "probe"},
+	}}
+	cmd := &command.Command{Type: command.CommandTypeScan,
+		Payload: []byte(`{"capability":"enumerate.web_paths@1","targets":["https://app.example.com"]}`)}
+	b := CommandBinding(cmd)
+	if b.Capability != "enumerate.web_paths@1" {
+		t.Fatalf("binding capability %q", b.Capability)
+	}
+	out := &Output{}
+	_, plan := s.planEndpoints(in, b, out)
+	if out.EndpointsRefused != 1 || out.EndpointsNoEvidence != 1 {
+		t.Fatalf("refused %d (no evidence %d), want the endpoint without evidence refused", out.EndpointsRefused, out.EndpointsNoEvidence)
+	}
+	var got []string
+	for _, obs := range plan.byOrigin {
+		for _, o := range obs {
+			got = append(got, o.PathTemplate+"="+strings.Join(o.Sources, ","))
+			if o.Evidence == nil || o.Evidence.Size != 512 {
+				t.Fatalf("evidence not kept: %+v", o.Evidence)
+			}
+		}
+	}
+	if len(got) != 1 || got[0] != "/backup.zip=guess" {
+		t.Fatalf("planned %v, want [/backup.zip=guess]", got)
+	}
+
+	// A crawl job's report claiming guess, with evidence, is a crawl.
+	in.Endpoints[1].Source = "guess"
+	in.Endpoints[1].Extensions = ev
+	crawl := Binding{Kind: BindingCommand, Targets: []string{"https://app.example.com"}, Tool: "katana", Capability: "crawl.web@1"}
+	out = &Output{}
+	_, plan = s.planEndpoints(in, crawl, out)
+	for _, obs := range plan.byOrigin {
+		for _, o := range obs {
+			if strings.Join(o.Sources, ",") == "guess" || o.Evidence != nil {
+				t.Fatalf("a crawl produced %v with evidence %v", o.Sources, o.Evidence)
+			}
+		}
+	}
+	if out.EndpointsRefused != 0 {
+		t.Fatalf("crawl endpoints refused: %d", out.EndpointsRefused)
 	}
 }
