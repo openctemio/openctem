@@ -154,7 +154,20 @@ Scope entries with a path prefix (a grant limited to a path, for web tools
 only) follow in a later change.
 
 - The path match is a segment-aware prefix (`/admin/debug` matches itself
-  and `/admin/debug/x`, not `/admin/debugger`); no regular expression.
+  and `/admin/debug/x`, not `/admin/debugger`); no regular expression. A
+  segment `*` matches any one segment (`/tenants/*/admin`).
+- A prefix is stored decoded, as a server reads it (`/files/My%20Docs` is
+  stored `/files/My Docs`), because the sensor compares the decoded request
+  path. A prefix that decodes to a dot segment or a control character is
+  refused. Matching ignores ASCII case. The sensor
+  (contract `webpath.Denied`) also folds non-ASCII letters to ASCII, drops
+  trailing dots and spaces of a segment and reads a doubly encoded path.
+  The platform's `PathUnder` and the sensor's `Denied` are cross-tested on one
+  table: whatever the platform puts under an exclusion, the sensor refuses.
+- In the job's deny paths a prefix is sent as stored and decoded, cut
+  before its first `*` segment (`/tenants/*/admin` is sent as `/tenants/`):
+  a sensor before contract webpath 1.3.1 compares `*` literally, so the
+  cut over-blocks on purpose until every sensor reads `*` as a segment.
 - An exclusion without a host (`*` host) applies on every host in scope.
 - An entry with a path grants web tools only that prefix and never grants
   the host to network tools.
