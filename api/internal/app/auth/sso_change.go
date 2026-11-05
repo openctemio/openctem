@@ -183,7 +183,7 @@ func (s *SSOChangeService) SubmitCreateProvider(ctx context.Context, in CreatePr
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid organization id", shared.ErrValidation)
 	}
-	if err := s.sso.requireConnections(ctx, tenantID); err != nil {
+	if err := s.sso.requireRoomForConnection(ctx, tenantID); err != nil {
 		return nil, err
 	}
 	if _, err := s.sso.BuildProvider(in); err != nil {
@@ -483,10 +483,6 @@ func (s *SSOChangeService) decidable(ctx context.Context, tenantID, changeID sha
 // liveWrite rebuilds the live config from the stored change, re-running the
 // same validation the direct path runs.
 func (s *SSOChangeService) liveWrite(ctx context.Context, c *ssochange.Change) (ssochange.LiveWrite, error) {
-	// A change approved after the plan lost sso.connections is refused.
-	if err := s.sso.requireConnections(ctx, c.TenantID); err != nil {
-		return ssochange.LiveWrite{}, err
-	}
 	secret := ""
 	if c.SecretEncrypted != "" {
 		plain, err := s.sso.encryptor.DecryptString(c.SecretEncrypted)
@@ -510,6 +506,9 @@ func (s *SSOChangeService) liveWrite(ctx context.Context, c *ssochange.Change) (
 		var p IdPCreatePayload
 		if err := json.Unmarshal(c.Payload, &p); err != nil {
 			return ssochange.LiveWrite{}, fmt.Errorf("decode identity provider change: %w", err)
+		}
+		if err := s.sso.requireRoomForConnection(ctx, c.TenantID); err != nil {
+			return ssochange.LiveWrite{}, err
 		}
 		ip, err := s.sso.BuildProvider(CreateProviderInput{
 			TenantID: c.TenantID.String(), Provider: p.Provider, DisplayName: p.DisplayName,

@@ -190,6 +190,11 @@ func (s *Service) QuickScan(ctx context.Context, input QuickScanInput) (*QuickSc
 		return nil, fmt.Errorf("%w: invalid tenant_id", shared.ErrValidation)
 	}
 
+	// A credential in the settings is refused before anything is stored.
+	if err := scan.RefuseConfigSecrets(input.Config); err != nil {
+		return nil, err
+	}
+
 	// SECURITY: apply SSRF target validation (blocks internal/localhost/private
 	// IPs) to BOTH the single-scanner and workflow paths. The workflow path
 	// previously skipped this entirely, which both let internal targets through

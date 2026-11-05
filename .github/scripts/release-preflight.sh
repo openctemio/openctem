@@ -21,6 +21,10 @@
 #      for a duplicate number or one below the highest number of that tag
 #      (golang-migrate silently skips it on every migrated database), through
 #      check-migration-versions.sh.
+#   4. release lines: a versions.yaml "latest" or "min" that is not a
+#      published release is a blocker; a "latest" behind the published release
+#      is only reported (cut-release.sh refreshes it), and a changed "min" is
+#      listed for review.
 #
 # --ref is the commit to release (default origin/develop). Env: REPO (default
 # the origin remote), GH_TOKEN (security-events: read; actions: read for the
@@ -145,34 +149,58 @@ fi
 
 # 4. Release lines --------------------------------------------------------------------
 # versions.yaml's "latest" of each sensor product, the SDK and the CI runner is
-# what a platform release installs without the release feed: the bundled
-# sensor's Compose default, the chart's sensor tag and the install snippets of
-# an instance that cannot reach the feed. It moves forward when a platform
-# release is cut (versions.yaml header), so one behind the published release
-# is a blocker: the release would install an old sensor.
+# availability, not compatibility: cut-release.sh refreshes it from the
+# published releases on the release branch, and running instances learn newer
+# releases from the signed release feed. A "latest" behind the published
+# release is only reported, never a blocker. Only compatibility facts block:
+# a "latest" or "min" that names a version that is not a published release
+# (an install would pin, or the platform would demand, a release that does not
+# exist). A "min" that changed since the last release is listed: it is a
+# protocol floor and moves only with a protocol change, so the reviewer
+# confirms it.
 out ""
-out "### Release lines (versions.yaml latest vs the published releases)"
+out "### Release lines (versions.yaml vs the published releases)"
 manifest="$work/versions.yaml"
 if ! git show "${ref}:versions.yaml" >"$manifest" 2>/dev/null; then
   out "- no versions.yaml at $ref; skipped"
 else
+  last_manifest="$work/versions.last.yaml"
+  [[ -n "$last" ]] && git show "${last}:versions.yaml" >"$last_manifest" 2>/dev/null || : >"$last_manifest"
   # SECTION=REPO: every product section names its image (ghcr.io/openctemio/<repo>).
   lines="sdk=sdk-go ci=ci"
   while IFS= read -r section; do
     image="$(rel_yaml_get "$manifest" "$section.image" 2>/dev/null || true)"
     [[ "$image" == ghcr.io/openctemio/* ]] && lines="$lines $section=${image#ghcr.io/openctemio/}"
   done < <(grep -E '^[a-z0-9][a-z0-9-]*:[[:space:]]*(#.*)?$' "$manifest" | sed 's/:.*//')
+  # released REPO VERSION: VERSION is a published, stable release of REPO.
+  released() {
+    [[ "$(gh api "repos/openctemio/${1}/releases/tags/${2}" --jq '(.draft or .prerelease) | not' 2>/dev/null || true)" == "true" ]]
+  }
   for pair in $lines; do
     section="${pair%%=*}" product_repo="${pair#*=}"
     have="$(rel_yaml_get "$manifest" "$section.latest" 2>/dev/null || true)"
+    min="$(rel_yaml_get "$manifest" "$section.min" 2>/dev/null || true)"
     [[ -n "$have" ]] || continue
     published="$(gh api "repos/openctemio/${product_repo}/releases/latest" --jq .tag_name 2>/dev/null || true)"
     if ! rel_is_version "$published"; then
-      warning "${section}: the latest release of openctemio/${product_repo} could not be read; versions.yaml says ${have}"
-    elif rel_version_gt "$published" "$have"; then
-      blocker "${section}.latest is ${have}, openctemio/${product_repo} published ${published}: set it in versions.yaml and run .github/scripts/release/sync-versions.sh"
+      warning "${section}: the releases of openctemio/${product_repo} could not be read; latest ${have}, min ${min:-none} not checked"
+      continue
+    fi
+    for key in latest min; do
+      v="$have"; [[ "$key" == min ]] && v="$min"
+      [[ -n "$v" ]] || continue
+      if rel_version_gt "$v" "$published" || ! released "$product_repo" "$v"; then
+        blocker "${section}.${key} is ${v}, which openctemio/${product_repo} has not released (newest: ${published})"
+      fi
+    done
+    if rel_version_gt "$published" "$have"; then
+      out "- ${section}: built in ${have}, published ${published} (the release branch refreshes it; instances learn it from the feed)"
     else
       out "- ${section}: ${have} (current)"
+    fi
+    old_min="$(rel_yaml_get "$last_manifest" "$section.min" 2>/dev/null || true)"
+    if [[ -s "$last_manifest" && "$old_min" != "$min" ]]; then
+      out "- ${section}: min changed since ${last}: ${old_min:-none} -> ${min:-none} (a protocol floor: confirm the protocol changed)"
     fi
   done
 fi
