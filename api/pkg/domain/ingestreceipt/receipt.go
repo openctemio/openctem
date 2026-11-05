@@ -137,6 +137,10 @@ const (
 	// ReasonOutsideJob: the item's asset lies outside the targets of the
 	// command the report is bound to.
 	ReasonOutsideJob = "outside_job_targets"
+	// ReasonOverCap: the item's asset lies outside the bound command's
+	// targets and the report had already recorded as many such assets as
+	// one report may (research 436).
+	ReasonOverCap = "over_cap"
 )
 
 // Item is one item a receipt did not turn into a finding. Key is a stable
