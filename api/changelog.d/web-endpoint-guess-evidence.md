@@ -6,4 +6,4 @@
 ### Added: response evidence on web endpoints
 
 - Web endpoints return `resp_size` and `resp_hash` when path discovery confirmed them, and `GET /api/v1/web-endpoints` accepts `source=guess`.
-- Migration `20261105051408_web_endpoint_response_evidence` adds two nullable columns to `web_endpoints` (no rewrite, no backfill).
+- Migration `20261105051408_web_endpoint_response_evidence` adds two nullable columns to `web_endpoints` (no rewrite, no backfill); their CHECKs are added NOT VALID and validated by the next migration `20261105134252_web_endpoint_response_evidence_validate`, in its own transaction, with a lock timeout.
