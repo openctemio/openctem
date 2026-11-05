@@ -5,6 +5,85 @@ the existing Jira integration. A closed or reopened issue moves the linked
 findings through the same rules as a Jira status change (see
 [Inbound issue events](#inbound-issue-events)).
 
+## Flow
+
+Same in v0.19.1 and on develop.
+
+### Create
+
+```mermaid
+sequenceDiagram
+  autonumber
+  box Platform (tenant from the session)
+    participant H as JiraWebhookHandler.createGitHubTicket
+    participant G as ticketing.GitHubTicketService
+    participant E as ticketing.EgressGate
+  end
+  participant GH as GitHub REST
+  H->>G: CreateTicketFromFinding(owner, repo) after findings:write + data scope guard
+  G->>G: resolveCredential: ListByProvider(tenant, github), first connected,<br/>decrypt (undecryptable: skipped), none: 400
+  G->>G: findingRepo.GetByID(tenant, finding)
+  G->>E: Check(tenant, route, finding). Refused: 403 TICKET_EGRESS_REFUSED
+  G->>G: work_item_uris already has /owner/repo/issues/ : return it
+  G->>GH: GET /repos/owner/repo/issues labels=openctem state=all per_page=100
+  alt a body ends with this finding's marker
+    GH-->>G: adopt the oldest match
+  else none (lookup error: refused)
+    G->>GH: POST /repos/owner/repo/issues (title, encoded body + marker, labels)
+  end
+  G->>G: AddWorkItemURI + UpdateWorkItemURIs (failure logged only)
+  H-->>H: 201 with #number and URL
+```
+
+### Inbound issue event
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant GH as GitHub
+  box Platform (public route)
+    participant H as GitHubWebhookHandler
+    participant I as IntegrationService.VerifyGitHubDelivery
+    participant D as Redis delivery guard
+    participant G as GitHubTicketService.HandleIssueEvent
+    participant V as VulnerabilityService
+  end
+  GH->>H: POST /hooks/github-integrations/integration_id
+  H->>H: limits per IP 50/s and per URL 20/s, body at most 5 MiB
+  H->>I: GetByID unscoped, provider github, not disabled
+  I->>I: X-Hub-Signature-256 HMAC of the raw body, constant time
+  I-->>H: tenant and bound organization, or 401 (one message)
+  H->>H: organization access gate, X-GitHub-Delivery required
+  H->>H: issues or push: repository owner must be the bound organization, else 403
+  H->>D: body-sha256 and delivery id unseen for 24 h. Seen: 200. Down: 503
+  H->>G: action, issue URL, state_reason, sender login
+  G->>G: ListIDsByWorkItemURI(tenant, issue URL, 500)
+  G->>V: ApplyTicketStatus or RequestTicketDisposition, actor github
+  V-->>G: applied, refused (refusals logged)
+  G->>G: fix claim: proof-of-fix hook per applied finding
+  H-->>GH: 200. Failure: keys released, 500
+```
+
+### Outbound close and reopen
+
+A status change on a finding with a linked GitHub issue queues a
+`github_status_sync` durable job in the same transaction as the status write
+(`ticketSyncCtx`, skipped for a move made by a ticket webhook). The handler
+`GitHubTicketService.SyncFindingStatus` reads the finding, takes the first
+GitHub issue URL in its `work_item_uris`, asks the outbound gate on the
+status-sync route (refused: skipped and logged), and sends
+`PATCH /repos/{owner}/{repo}/issues/{number}` with `state: closed` when the
+finding is closed and `state: open` otherwise. Unlike Jira there is no opt-in
+switch and no read of the current state first: every status change of a
+linked finding is pushed. The credential is the first connected GitHub
+integration of the tenant. Failures retry on the durable-job backoff (30 s
+doubling to 1 h, 8 attempts).
+
+A push comes back as an `issues` delivery when the state changes: a close
+of a resolved finding arrives as `closed` (completed or no reason), whose fix claim the
+closed finding refuses (logged); a reopen arrives as `reopened` and moves the
+linked open findings to `in_progress`.
+
 ## Endpoint
 
 The provider is selected on the existing create-ticket endpoint via a
@@ -48,6 +127,7 @@ unchanged (uses `project_key` / `issue_type`).
 | Condition                                              | HTTP |
 |--------------------------------------------------------|------|
 | missing `owner`/`repo`, invalid id, bad credentials    | 400  |
+| outbound gate refusal (pentest, TLP)                   | 403 `TICKET_EGRESS_REFUSED` |
 | no connected GitHub integration for the tenant         | 400  |
 | `provider=github` but GitHub ticketing not wired       | 400  |
 | finding not found                                      | 404  |
@@ -60,10 +140,9 @@ Parallel to Jira, intentionally:
 - **Credential resolution is tenant-isolated.** The service lists the tenant's
   GitHub integrations via `integrationRepo.ListByProvider(ctx, tenantID,
   ProviderGitHub)`, picks the first `StatusConnected` one, and decrypts its
-  stored credential exactly as the SCM layer does
-  (`IntegrationService.decryptCredentials`): `CredentialsEncrypted()` →
-  `encryptor.DecryptString`, with plaintext fallback on decryption failure.
-  Credentials are never read from the request.
+  stored credential (`CredentialsEncrypted()` → `encryptor.DecryptString`).
+  A value that does not decrypt is never used: that integration is skipped
+  (fail closed). Credentials are never read from the request.
 - **Shared secret redaction.** Jira and GitHub route ticket text through one
   implementation, `safetext.RedactSecrets` (`pkg/safetext/redact.go`), so they
   cannot diverge. It removes whole private key blocks (header, base64 body and
@@ -184,5 +263,8 @@ without network access; `*scm.GitHubClient` satisfies it in production.
 ## Follow-ups
 
 - Comment refusals and the outcome of a not-planned close back on the issue.
+- Use the integration that received the issue's events (or created it) for
+  the outbound push, instead of the first connected GitHub integration.
+- A console control for the inbound webhook URL and secret (API only today).
 - A provider-abstraction interface so Jira/GitHub share one orchestration
   service instead of two.
