@@ -28,6 +28,7 @@ import (
 	"unicode"
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
+	"github.com/openctemio/openctem/api/internal/app/closuremode"
 	evidenceapp "github.com/openctemio/openctem/api/internal/app/evidence"
 	"github.com/openctemio/openctem/api/internal/app/validation"
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
@@ -218,6 +219,7 @@ type Service struct {
 	regressionSLA RegressionSLA
 	announcer     Announcer
 	policy        Policy
+	closure       closuremode.SettingsReader
 	evidence      EvidenceStore
 	runs          RunRecorder
 	checks        CheckSource
@@ -1339,6 +1341,14 @@ func (s *Service) settle(ctx context.Context, rt *retestdom.Retest, v retestdom.
 	if rt.SensorID != nil {
 		changes["sensor_id"] = rt.SensorID.String()
 	}
+	// A confirmed fix the tenant lets resolve still passes the organization's
+	// closing mode: review proposes it to a person, off keeps it open.
+	decision := ""
+	if autoResolve && outcome == retestdom.OutcomeConfirmedFixed {
+		decision = s.closureDecision(ctx, rt.TenantID, rt.FindingID)
+		autoResolve = decision == closureDecisionClose
+		changes["closure_decision"] = decision
+	}
 	source := activitySource(rt.Trigger)
 	var regression bool
 	res, err := s.store.Settle(ctx, retestdom.SettleInput{
@@ -1363,6 +1373,10 @@ func (s *Service) settle(ctx context.Context, rt *retestdom.Retest, v retestdom.
 		// recorded the attempt as inconclusive and moved nothing.
 		v = retestdom.StaleFixVerdict()
 		outcome = v.Outcome
+	}
+	if res.Applied && !res.Stale && !res.Moved && decision == closureDecisionPropose && retestdom.EligibleStatus(res.PriorStatus) &&
+		res.PriorStatus != vulnerability.FindingStatusResolved {
+		s.proposeFix(ctx, rt, checkedAt)
 	}
 	if res.Applied {
 		s.finishRun(ctx, rt, v)
