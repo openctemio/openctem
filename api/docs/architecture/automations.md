@@ -6,9 +6,64 @@ redesign (a durable event journal, versions, retries) is **Planned**. Who a run 
 [authorization-matrix.md](authorization-matrix.md), "Automation runs act as
 one person".
 
+## Flow
+
+### Event to run
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant P as Producers: ingest, VulnerabilityService,<br/>scanrun, aitriage, manual POST /workflows/{id}/runs
+  participant D as automation.WorkflowEventDispatcher
+  participant S as automation.WorkflowService.TriggerWorkflow
+  participant R as WorkflowRunRepository
+  participant X as automation.WorkflowExecutor
+  P->>D: DispatchFindingsCreated, DispatchFindingStatusChanged,<br/>DispatchAssetsDiscovered, DispatchScanCompleted, DispatchAITriageEvent
+  Note over D: async goroutine, panic recovery, 60 s dispatch context
+  D->>D: restrictedSubject / restrictedAssets: private program assets start nothing (fail closed)
+  D->>D: findMatchingWorkflows: module workflows on, ListActiveWithTriggerType(tenant)
+  D->>D: matchesTriggerFilters: severity_filter, tool_filter, source_filter
+  D->>D: loopBlocked(cause): same automation, depth over 3, not allow_automation_triggers
+  D->>S: TriggerWorkflow(subject, idempotency key, SubjectCooldown)
+  S->>S: GetWithGraph, tenant match else 404, is_active
+  S->>R: HasRecentSubjectRun (10 min) when cooldown applies
+  S->>S: runGraph: live = published version, simulate = draft
+  S->>R: CreateRunIfUnderLimit: automation row FOR UPDATE, hourly and active counts
+  alt over a limit
+    R-->>D: THROTTLED or MAX_CONCURRENT_RUNS, rest of the batch stops
+  else
+    S->>R: node runs created, audit workflow_run.triggered
+    S->>X: ExecuteAsyncWithTenant
+    X->>X: slot: 10 per tenant, 50 total, wait 30 min max
+    X->>X: ExecuteWithTenant: tenant check, pinned version, executeGraph
+  end
+```
+
+### Step execution
+
+```mermaid
+flowchart TD
+  T["trigger node"] --> N{"next ready node"}
+  N -->|"condition"| C["DefaultConditionEvaluator: path OP value, 500 chars max, depth 10"]
+  C -->|"yes/no edge not taken"| SK["skipped: condition_false"]
+  N -->|"action or notification"| CAP{"live and changes >= max_changes_per_run?"}
+  CAP -->|"yes"| PA["run paused: blast_radius"]
+  CAP -->|"no"| AZ["authorizeStep: principal holds the step permission,<br/>subject findings and assets in scope"]
+  AZ -->|"refused"| F["step failed: not authorized"]
+  AZ -->|"ok"| M{"run mode"}
+  M -->|"simulate"| EV["Evaluator: read-only, records trace and simulated delivery"]
+  M -->|"live"| H["action handler or notification handler,<br/>ctx carries AutomationCause, 30 s timeout"]
+  H --> D["delivery recorded for tickets and notifications"]
+  F --> DS["downstream steps skipped: unreachable"]
+```
+
+The principal (`runPrincipal`): the person who ran a manual run, else the automation's owner (`created_by`, set
+when it is published or switched on, `takeOwnership`). A finding batch larger than 500 (`maxFindingsPerDispatch`) is cut to its first 500 before
+`finding_created` runs are started; the rest start nothing and only a log warning records it.
+
 ## The catalog: what the engine runs
 
-`GET /api/v1/workflows/catalog` (`findings:workflows:read`) lists every
+`GET /api/v1/workflows/catalog` (`automations:read`) lists every
 trigger, action and notification type the engine runs, in builder order,
 with the permission each needs and whether the caller holds it. The console
 builds its palette from this answer, and the API refuses a node of any other
@@ -125,7 +180,7 @@ length): never a body, headers or a secret.
 ### Preview and validate
 
 Both take the draft in the body (`nodes`, `edges`) or, without one, the saved
-draft; both read only and need `findings:workflows:write`.
+draft; both read only and need `automations:write`.
 
 - `POST /workflows/{id}/preview {"limit": 1..100}` runs the draft against the
   latest subjects of its trigger's kind (findings, or assets for
@@ -240,8 +295,10 @@ waited 30 minutes fails with `not started: waited …`. Execution happens in
 memory, so a restart loses runs that are waiting or running. The
 `automation-run-reaper` controller fails those runs and their open steps. It
 runs on start and every 15 minutes, on one replica, and acts on runs more than
-an hour old. Each step gets at most 30 seconds. A step that runs out fails
-with `step timed out`, and the run goes on to its next step.
+an hour old. Each step gets at most 30 seconds and a whole run 5 minutes. A
+step that runs out fails with `step timed out`. A failed step never completes,
+so the steps downstream of it are skipped (`unreachable due to workflow path`);
+steps on other branches go on, and the run ends failed.
 
 ## Loop guard
 

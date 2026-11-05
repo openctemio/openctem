@@ -411,7 +411,7 @@ func (s *Service) planAndDispatchWave(ctx context.Context, run *scanrun.Run, tem
 	if err != nil {
 		return false, fmt.Errorf("resolve the step's tool: %w", err)
 	}
-	step = resolved.WithTool(step)
+	step = resolved.WithTool(resolved.WithDepthDefaults(step, RunDepth(run)))
 	if !resolved.HasStage {
 		return true, nil // nothing to stream into; the close settles the step
 	}

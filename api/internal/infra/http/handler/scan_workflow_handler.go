@@ -664,6 +664,9 @@ type StepRunResponse struct {
 	Attempt       int    `json:"attempt"`
 	MaxAttempts   int    `json:"max_attempts"`
 	FindingsCount int    `json:"findings_count"`
+	// InfoObservations: template scanner info matches filed as exposures
+	// instead of findings.
+	InfoObservations int `json:"info_observations"`
 }
 
 // --- Template Handlers ---
@@ -1837,19 +1840,20 @@ func toFilteringResultFromStruct(v any) *FilteringResultResponse {
 
 func toStepRunResponse(sr *scanrundom.StepRun) StepRunResponse {
 	resp := StepRunResponse{
-		ID:            sr.ID.String(),
-		StepKey:       sr.StepKey,
-		StepName:      sr.StepName,
-		Tool:          sr.Tool,
-		Capability:    sr.Capability,
-		Status:        string(sr.Status),
-		ErrorMessage:  sr.ErrorMessage,
-		ErrorCode:     sr.ErrorCode,
-		ErrorClass:    stepErrorClass(sr.ErrorCode),
-		SkipReason:    sr.SkipReason,
-		Attempt:       sr.Attempt,
-		MaxAttempts:   sr.MaxAttempts,
-		FindingsCount: sr.FindingsCount,
+		ID:               sr.ID.String(),
+		StepKey:          sr.StepKey,
+		StepName:         sr.StepName,
+		Tool:             sr.Tool,
+		Capability:       sr.Capability,
+		Status:           string(sr.Status),
+		ErrorMessage:     sr.ErrorMessage,
+		ErrorCode:        sr.ErrorCode,
+		ErrorClass:       stepErrorClass(sr.ErrorCode),
+		SkipReason:       sr.SkipReason,
+		Attempt:          sr.Attempt,
+		MaxAttempts:      sr.MaxAttempts,
+		FindingsCount:    sr.FindingsCount,
+		InfoObservations: sr.InfoObservations,
 	}
 	if !sr.StepID.IsZero() {
 		resp.StepID = sr.StepID.String()
