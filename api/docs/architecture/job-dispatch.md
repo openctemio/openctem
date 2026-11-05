@@ -350,13 +350,39 @@ doorbell and the claim by id):
 | Cloned identity | a sensor whose identity is held as cloned gets nothing |
 | Hosts | no other acknowledged or running command of the organization holds a conflicting host key (re-checked under advisory locks); a shared job also needs fewer than its limit (2, intrusive 1) of shared jobs of any organization holding one ([sensors.md](sensors.md#the-shared-claim-path)) |
 
-**Fair order** (`fairPendingQuery`): priority class (critical 1 … low 4,
-raised one class per 30 minutes waited, never into critical), then, within a
-class, round-robin across runs (the first pending command of every run before
-the second of any), then age. The ranking is computed over the first 1000
-candidates in (class, age) order, across all classes
-(`fairCandidateWindow`; the code comment above the constant says "of each
-class", which the query does not do).
+**Fair order** (`fairPendingQuery`, `command_claim_lanes.go`):
+
+1. Priority class: critical 1 … low 4, raised one class per 30 minutes
+   waited, never into critical.
+2. Short work before long work on the claiming sensor, while short work used
+   no more than half of that sensor's time. A job is *short* when its targets
+   at the sensor's measured speed for its tool (the fresh load report's
+   `per_tool.throughput_targets_per_min`) take at most 5 minutes; otherwise,
+   or with no fresh speed, it is *long*. The two lanes' time is the time their
+   scan jobs held the sensor in the last hour (claim to end, or to now while
+   held). While short work used no more than long work, a short job takes the
+   highest class aging gives (2, never critical) and goes first in its class;
+   once it used more, long jobs go first in each class. A discovery run's
+   lookups therefore start at the sensor's next free slot however long the
+   queue of long scans is, and long scans keep at least half of the sensor's
+   time however much short work arrives. A sensor without a fresh load report
+   sees one lane, the order below.
+3. Round-robin across runs: the first pending command of every run before the
+   second of any, where a run's commands already held by the organization's
+   sensors count as served. A run with nothing running goes before one that
+   has jobs running, also when a claim takes one command at a time (ranking
+   pending commands alone made that first-come-first-served).
+4. Age.
+
+The ranking is computed over the first 1000 candidates in (class, lane, age)
+order, across all classes (`fairCandidateWindow`). The order only ranks what
+the sensor may claim: every predicate above, the holds after the query, the
+slot cap and host politeness are unchanged. All reads are scoped to the
+claiming sensor's organization and to that sensor: another organization's
+jobs, runs or sensors never move the order. Measured case (2026-11-04): a
+four-step discovery run queued behind 22 vulnerability-scan jobs of earlier
+runs on a sensor with two slots waited 4 h 41 min for its first lookup; with
+this order it waits for the next free slot.
 
 **The claim-by-id replay.** A sensor that verifies signed jobs claims every
 command of a claim-N answer again by id (sdk-go `CommandPoller.claim`). The
