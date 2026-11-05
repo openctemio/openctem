@@ -294,7 +294,7 @@ func Accepts(r *LocalPolicyReport, job Job, opts DispatchOptions) *DispatchRefus
 		return &DispatchRefusal{Layer: RefusalLayerManaged, Rule: RulePrivateNeedsLocalPlcy,
 			Detail: "the organization sends jobs with private targets only to sensors that enforce a local policy"}
 	}
-	if r.FailsClosed() && (job.NetworkTarget || job.CustomTemplates > 0 || job.Interactsh) {
+	if r.FailsClosed() && (job.NetworkTarget || job.CustomTemplates > 0) {
 		return &DispatchRefusal{Layer: RefusalLayerLocal, Rule: RuleNoLocalPolicy,
 			Detail: "the sensor requires a local policy and has none, so it refuses every job with a network target; " + LocalPolicyFileHint}
 	}
@@ -324,10 +324,9 @@ func Accepts(r *LocalPolicyReport, job Job, opts DispatchOptions) *DispatchRefus
 		return &DispatchRefusal{Layer: RefusalLayerLocal, Rule: RuleAllowCustomTemplates,
 			Detail: "the job carries custom templates; this sensor's local policy does not allow them"}
 	}
-	if job.Interactsh && !s.AllowInteractsh {
-		return &DispatchRefusal{Layer: RefusalLayerLocal, Rule: RuleAllowInteractsh,
-			Detail: "the job asks for out-of-band callbacks (interactsh); this sensor's local policy does not allow them"}
-	}
+	// Out-of-band callbacks a sensor's local policy turns off are no reason
+	// to keep the job from it: the sensor runs the job without them and its
+	// result says why (oob state "unavailable", reason "local_policy").
 	if job.Ports != "" && s.Ports != "" {
 		if p, ok := firstPortOutside(job.Ports, s.Ports); ok {
 			return &DispatchRefusal{Layer: RefusalLayerLocal, Rule: RulePortsAllow,
