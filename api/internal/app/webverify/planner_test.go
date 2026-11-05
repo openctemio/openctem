@@ -246,6 +246,9 @@ func TestGuessedBackupIsVerifiedWithTheSensorsOwnCheck(t *testing.T) {
 			catalog = append(catalog, in)
 		}
 	}
+	if len(backup) == 1 && !slices.Equal(backup[0].Tags, []string{webendpoint.BackupSignatureTag}) {
+		t.Fatalf("tags %v: a sensor that ignores template_ids must load no template", backup[0].Tags)
+	}
 	if len(backup) != 1 || len(backup[0].Targets) != 3 {
 		t.Fatalf("backup calls %+v, want one run of 3 guessed files", d.calls)
 	}
@@ -254,7 +257,7 @@ func TestGuessedBackupIsVerifiedWithTheSensorsOwnCheck(t *testing.T) {
 			t.Errorf("%s is not a guessed backup file", u)
 		}
 	}
-	if len(catalog) != 1 || catalog[0].TemplateIDs[0] != "git-config" {
+	if len(catalog) != 1 || catalog[0].TemplateIDs[0] != "git-config" || len(catalog[0].Tags) != 0 {
 		t.Fatalf("catalog calls %+v", catalog)
 	}
 	if res.Planned != 4 || res.Invalid != 3 {

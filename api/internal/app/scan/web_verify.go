@@ -40,6 +40,12 @@ const maxWebVerifyTemplates = 20
 type WebVerifyInput struct {
 	TenantID    shared.ID
 	TemplateIDs []string
+	// Tags are template tags sent with the ids. For the sensor's own checks
+	// they are a safeguard for a sensor that predates template_ids: it
+	// ignores that setting and would run its default templates, but with the
+	// tag only the sensor's own check carries it loads none. A sensor that
+	// reads template_ids does not apply them.
+	Tags []string
 	// Targets are the endpoint URLs; Assets maps each (lower-case) URL to
 	// the origin asset id it is on, so the ownership gate checks the asset.
 	Targets []string
@@ -132,7 +138,11 @@ func (s *Service) StartWebVerification(ctx context.Context, in WebVerifyInput) (
 	}
 	ids := append([]string(nil), in.TemplateIDs...)
 	sort.Strings(ids)
-	if err := sc.SetSingleScanner(tool, map[string]any{"targets": res.Kept, "template_ids": ids}, perJob); err != nil {
+	cfg := map[string]any{"targets": res.Kept, "template_ids": ids}
+	if len(in.Tags) > 0 {
+		cfg["tags"] = append([]string(nil), in.Tags...)
+	}
+	if err := sc.SetSingleScanner(tool, cfg, perJob); err != nil {
 		return nil, fmt.Errorf("failed to set scanner: %w", err)
 	}
 	if err := s.applyIntensity(ctx, sc, string(scan.IntensityActive)); err != nil {

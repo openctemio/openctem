@@ -96,6 +96,12 @@ func platformLabels(template string, params []ParamObservation) []string {
 // template delivery is needed.
 const BackupSignatureTemplate = "openctem-backup-file-signature"
 
+// BackupSignatureTag is the tag of that template that no community template
+// carries. The platform sends it next to the id (scanner_config tags) as a
+// safeguard: a sensor that predates the template_ids setting ignores the id
+// and would run its default templates, but with this tag it loads none.
+const BackupSignatureTag = "openctem"
+
 // GuessedVerifyKey is the ledger key of a guessed file verified with
 // BackupSignatureTemplate (the verification ledger names a catalog key).
 const GuessedVerifyKey = "guess:backup"
