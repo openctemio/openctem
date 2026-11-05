@@ -64,29 +64,60 @@ export function ReceiptSummary({
   const c = receipt.counts
   const running = runState === 'running'
   const full = receipt.coverage?.type === 'full'
+  const noFindingsYet =
+    running &&
+    !c?.created &&
+    !c?.updated &&
+    !c?.reactivated &&
+    !c?.closed &&
+    !c?.skipped &&
+    !c?.failed
+  const reports = receipt.reports ?? 0
+  const received = receipt.received ?? 0
+  const assetsCreated = receipt.assets?.created ?? 0
+  const assetsUpdated = receipt.assets?.updated ?? 0
+  const hasActivity = reports > 0 || received > 0 || assetsCreated > 0 || assetsUpdated > 0
   return (
     <div className="space-y-2" data-testid="receipt-summary">
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-        <Cell label={t('findings.receipts.created', 'New')} value={c?.created ?? 0} />
-        <Cell label={t('findings.receipts.updated', 'Still detected')} value={c?.updated ?? 0} />
-        <Cell label={t('findings.receipts.reactivated', 'Reopened')} value={c?.reactivated ?? 0} />
-        <Cell label={t('findings.receipts.closed', 'Closed')} value={c?.closed ?? 0} />
-        <Cell
-          label={t('findings.receipts.untouched', 'Untouched')}
-          value={c?.untouched === undefined || c?.untouched === null ? null : c.untouched}
-          pending={
-            running
-              ? t('findings.receipts.pendingUntilEnd', 'Counted when the run finishes')
-              : undefined
-          }
-        />
-        <Cell label={t('findings.receipts.skipped', 'Skipped')} value={c?.skipped ?? 0} />
-        <Cell
-          label={t('findings.receipts.failed', 'Failed')}
-          value={c?.failed ?? 0}
-          tone="danger"
-        />
-      </div>
+      {hasActivity ? (
+        <p className="text-muted-foreground text-xs tabular-nums" data-testid="receipt-activity">
+          {t(
+            'findings.receipts.activity',
+            '{reports} reports and {received} findings received, {assetsCreated} assets created, {assetsUpdated} assets updated',
+            { reports, received, assetsCreated, assetsUpdated }
+          )}
+        </p>
+      ) : null}
+      {noFindingsYet ? (
+        <p className="text-sm" data-testid="receipt-no-findings-yet">
+          {t('findings.receipts.noFindingsYet', 'No findings yet')}
+        </p>
+      ) : (
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <Cell label={t('findings.receipts.created', 'New')} value={c?.created ?? 0} />
+          <Cell label={t('findings.receipts.updated', 'Still detected')} value={c?.updated ?? 0} />
+          <Cell
+            label={t('findings.receipts.reactivated', 'Reopened')}
+            value={c?.reactivated ?? 0}
+          />
+          <Cell label={t('findings.receipts.closed', 'Closed')} value={c?.closed ?? 0} />
+          <Cell
+            label={t('findings.receipts.untouched', 'Untouched')}
+            value={c?.untouched === undefined || c?.untouched === null ? null : c.untouched}
+            pending={
+              running
+                ? t('findings.receipts.pendingUntilEnd', 'Counted when the run finishes')
+                : undefined
+            }
+          />
+          <Cell label={t('findings.receipts.skipped', 'Skipped')} value={c?.skipped ?? 0} />
+          <Cell
+            label={t('findings.receipts.failed', 'Failed')}
+            value={c?.failed ?? 0}
+            tone="danger"
+          />
+        </div>
+      )}
       <p className="text-muted-foreground text-xs">
         {running
           ? t(
