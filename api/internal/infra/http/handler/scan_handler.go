@@ -302,10 +302,10 @@ type ScanDetailResponse struct {
 	ScannerName    string         `json:"scanner_name,omitempty"`
 	ScannerConfig  map[string]any `json:"scanner_config,omitempty"`
 	// ScannerConfigWarnings lists scanner_config values that look like
-	// secrets (a token, a password, an Authorization header). The config is
-	// sent to the sensor in clear inside every command, so a secret there
-	// travels and rests unprotected. A warning, never a refusal; the value
-	// itself is never echoed.
+	// secrets. A certain credential is refused on save and blocks a run
+	// (SCANNER_CONFIG_SECRET); what is listed here is what only looks like
+	// one (a random-looking value), or a scan stored before the refusal.
+	// The value itself is never echoed.
 	ScannerConfigWarnings []scan.ConfigSecretWarning `json:"scanner_config_warnings,omitempty"`
 	TargetsPerJob         int                        `json:"targets_per_job"`
 	ScheduleType          string                     `json:"schedule_type"`

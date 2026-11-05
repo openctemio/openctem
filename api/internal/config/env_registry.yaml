@@ -1049,7 +1049,7 @@ vars:
     group: "Sensors"
     type: string
     default: "`versions.yaml` ci.latest, built into the API"
-    description: "Newest CI runner release (openctemio/ci: the openctem-ci action and image). The console's pipeline snippets pin it, and a pipeline on an older runner shows an update. CI runners have their own release line; the sensor settings never apply to them. `none` or `off` turns the comparison off."
+    description: "Newest CI runner release (openctemio/ci: the openctem-ci action and image). The console's pipeline snippets pin it, and a pipeline on an older runner shows an update. Unset: the built-in ci.latest raised by the verified release feed, resolved per use; set, it wins over the feed. CI runners have their own release line; the sensor settings never apply to them. `none` or `off` turns the comparison off."
   - name: CI_RUNNER_MIN_VERSION
     component: api
     group: "Sensors"

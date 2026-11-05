@@ -294,6 +294,20 @@ export type EASMSuggestionCard =
   Schemas['github_com_openctemio_openctem_api_internal_app_easm.SuggestionCard']
 export type EASMSuggestionAddress =
   Schemas['github_com_openctemio_openctem_api_internal_app_easm.SuggestionAddress']
+/** A group of the addresses card: one decision covers its addresses (research/425). */
+export type EASMSuggestionGroup =
+  Schemas['github_com_openctemio_openctem_api_internal_app_easm.SuggestionGroup']
+export type EASMGroupEvidence =
+  Schemas['github_com_openctemio_openctem_api_internal_app_easm.GroupEvidence']
+/** POST /api/v1/easm/suggestions/addresses/add */
+export type EASMAddressAddResult =
+  Schemas['github_com_openctemio_openctem_api_internal_app_easm.AddressAddResult']
+/** POST /api/v1/easm/suggestions/addresses/reject */
+export type EASMAddressRejectResult =
+  Schemas['github_com_openctemio_openctem_api_internal_app_easm.AddressRejectResult']
+/** POST /api/v1/easm/suggestions/networks/{ours,not-ours} */
+export type EASMNetworkAnswerResult =
+  Schemas['github_com_openctemio_openctem_api_internal_app_easm.NetworkAnswerResult']
 /** GET/POST/PATCH /api/v1/easm/seeds — EASM seeds (RFC-036 §6.3). */
 export type EASMSettings = Schemas['internal_infra_http_handler.EASMSettingsResponse']
 export type EASMSweepTicket =

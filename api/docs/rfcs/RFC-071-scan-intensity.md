@@ -97,7 +97,12 @@ here; the dispatch gate and grants apply as before.
   refuses (`no_entry`) any internet name or address that no scope authority of
   the tenant covers (`UncoveredTargets`: no active scope target, root-domain
   seed or verified domain at or above it). Private and internal names stay
-  with the scan zones. A single-scanner T0 run already took the full gate.
+  with the scan zones. One exception (research/425): a bare public address
+  that one of the organization's names in scope resolves to is not
+  arbitrary, so a passive step (its network lookup: origin AS, holder,
+  announced prefix, from public routing data) may take it. Without it, an
+  address with no network data was held by the unknown-network guardrail and
+  so never got network data. A failed lookup of the names leaves it refused. A single-scanner T0 run already took the full gate.
 - **Non-target tools only.** The platform classifies each stage's network
   (`stage.Network`): `egress-proxy` (third-party sources), `resolver`
   (recursive DNS), `vendor` (code host, registry), `none`, or `targets`. Every

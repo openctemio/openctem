@@ -22,6 +22,8 @@ type FixTarget = keyof typeof FIX
 /** Step error codes (api pkg/domain/scanrun/failure.go) and their fix. */
 export const FAILURE_FIX: Record<string, FixTarget | null> = {
   SCANNER_NOT_FOUND: 'sensors',
+  // A scan whose tool configuration holds a credential is never dispatched.
+  SCANNER_CONFIG_SECRET: null,
   TARGET_REFUSED: 'scope',
   NO_TARGETS: 'scope',
   NO_SENSOR: 'sensors',

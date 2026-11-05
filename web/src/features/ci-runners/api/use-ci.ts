@@ -117,6 +117,17 @@ export function useCISettings({ enabled = true }: { enabled?: boolean } = {}) {
   )
 }
 
+/**
+ * The openctemio/ci release the pipeline snippets pin: the API's effective CI
+ * runner release (built in, raised by the signed release feed). Undefined
+ * while loading or when the API names none; the snippets then use their
+ * built-in fallback.
+ */
+export function useCIRunnerRelease(): string | undefined {
+  const { data } = useCISettings()
+  return data?.runner_release || undefined
+}
+
 export function useSaveCISettings() {
   const { currentTenant } = useTenant()
   return useSWRMutation(
