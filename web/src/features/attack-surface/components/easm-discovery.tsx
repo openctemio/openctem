@@ -91,6 +91,7 @@ const REASON_LABEL: Record<string, string> = {
   quota_exhausted: 'Shared scanning quota used up',
   not_claimed: 'No sensor took the last runs',
   content_missing: 'A wordlist is missing',
+  feature_off: 'Screenshots are off',
 }
 
 function useStageText() {
