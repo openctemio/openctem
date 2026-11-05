@@ -8,7 +8,7 @@ func TestValidateGraph_OptionalPlannedNode(t *testing.T) {
 	g := Graph{
 		Nodes: []GraphNode{
 			{ID: "http", Kind: NodeCapability, Capability: ProbeHTTP},
-			{ID: "shots", Kind: NodeCapability, Capability: "capture.screenshot", Optional: true},
+			{ID: "shots", Kind: NodeCapability, Capability: "fingerprint.tech", Optional: true},
 		},
 		Edges: []GraphEdge{{From: "http", To: "shots"}},
 	}
@@ -27,7 +27,7 @@ func TestValidateGraph_OptionalPlannedNode(t *testing.T) {
 	bad := Graph{
 		Nodes: []GraphNode{
 			{ID: "rdap", Kind: NodeCapability, Capability: LookupRDAP},
-			{ID: "shots", Kind: NodeCapability, Capability: "capture.screenshot", Optional: true},
+			{ID: "shots", Kind: NodeCapability, Capability: "fingerprint.tech", Optional: true},
 		},
 		Edges: []GraphEdge{{From: "rdap", To: "shots"}},
 	}
@@ -45,7 +45,7 @@ func TestValidateGraph_OptionalPlannedNode(t *testing.T) {
 	if rep := ValidateGraph(unk); rep.Valid() || rep.Errors[0].Code != IssueUnknownCapability {
 		t.Fatalf("unknown optional capability: %+v", rep.Errors)
 	}
-	if !IsPlanned("capture.screenshot") || IsPlanned("verify.finding") || IsPlanned(ScanPorts) {
+	if !IsPlanned("fingerprint.tech") || IsPlanned("verify.finding") || IsPlanned(ScanPorts) {
 		t.Fatal("IsPlanned")
 	}
 }
