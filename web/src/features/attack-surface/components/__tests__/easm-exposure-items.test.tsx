@@ -200,7 +200,7 @@ describe('exposure items lib', () => {
     const keys = lib.visibleCategories({ cloud_storage: 1 })
     expect(keys).toContain('cloud_storage')
     expect(keys).toContain('exposed_ports')
-    expect(keys).not.toContain('web_interfaces')
+    expect(keys).not.toContain('ai_services')
   })
 
   it('neutralizes formulas in scan-controlled cells', () => {

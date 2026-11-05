@@ -88,10 +88,12 @@ type RunMapNode struct {
 	StartedAt   string `json:"started_at,omitempty"`
 	CompletedAt string `json:"completed_at,omitempty"`
 	// TimeoutSeconds is the step's timeout in the run's workflow version.
-	TimeoutSeconds int           `json:"timeout_seconds,omitempty"`
-	Findings       int           `json:"findings"`
-	Chunks         RunMapChunks  `json:"chunks"`
-	Outputs        RunMapOutputs `json:"outputs"`
+	TimeoutSeconds int `json:"timeout_seconds,omitempty"`
+	Findings       int `json:"findings"`
+	// InfoObservations: template scanner info matches filed as exposures.
+	InfoObservations int           `json:"info_observations,omitempty"`
+	Chunks           RunMapChunks  `json:"chunks"`
+	Outputs          RunMapOutputs `json:"outputs"`
 	// Inputs and Planned: how many targets the stage considered and was
 	// handed (absent before the stage is planned).
 	Inputs  *int `json:"inputs,omitempty"`
@@ -398,6 +400,7 @@ func fillNodeFromStepRun(n *RunMapNode, sr *scanrundom.StepRun, platform bool) {
 		n.Name = sr.StepName
 	}
 	n.Findings = sr.FindingsCount
+	n.InfoObservations = sr.InfoObservations
 	n.State = mapNodeState(sr.Status, n.Chunks)
 	switch n.State {
 	case mapStateWaiting:

@@ -233,6 +233,10 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     permission: Permission.SecretStoreRead,
     module: Module.Scans,
   },
+  '/settings/scanning/tool-sources': {
+    permission: Permission.SecretStoreRead,
+    module: Module.Scans,
+  },
 
   // ========================================
   // Discovery Phase - Scans (Module: scans)

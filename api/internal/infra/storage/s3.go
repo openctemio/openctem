@@ -36,6 +36,9 @@ type S3Storage struct {
 // the bucket's default KMS key when empty); "" leaves it to the bucket's
 // default encryption.
 func (s *S3Storage) SetServerSideEncryption(mode, kmsKeyID string) error {
+	if (mode != "" || kmsKeyID != "") && attachment.IsR2Endpoint(s.endpoint) {
+		return errors.New(attachment.ErrR2SSE)
+	}
 	switch mode {
 	case "":
 		if kmsKeyID != "" {
@@ -103,6 +106,14 @@ func newS3Storage(bucket, region, endpoint, accessKey, secretKey string, httpCli
 	cfg := aws.Config{
 		Region:      region,
 		Credentials: aws.NewCredentialsCache(credentials.NewStaticCredentialsProvider(accessKey, secretKey, "")),
+	}
+	if endpoint != "" {
+		// S3-compatible stores (R2, MinIO, ...) reject the aws-chunked
+		// trailing CRC32 the SDK sends by default over HTTPS; compute and
+		// validate checksums only where an operation requires them. AWS
+		// S3 (no endpoint) keeps the SDK defaults.
+		cfg.RequestChecksumCalculation = aws.RequestChecksumCalculationWhenRequired
+		cfg.ResponseChecksumValidation = aws.ResponseChecksumValidationWhenRequired
 	}
 	if httpClient != nil {
 		cfg.HTTPClient = httpClient
