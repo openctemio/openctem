@@ -261,6 +261,39 @@ Reviewed items (accepted or discarded) are deleted 30 days after review by the
 pending items are never purged. `SENSOR_RESULT_QUARANTINE_RETENTION` (default
 `720h`) and `SENSOR_RESULT_QUARANTINE_PURGE_INTERVAL` (default `24h`) change it.
 
+### Automatic release of out-of-contract holds
+
+A report held as `out_of_contract` usually means the tool's descriptor lags
+its importer (the importer emits a type the descriptor does not declare yet).
+When the sensor's next release declares it, nobody should have to approve each
+item. The platform re-checks held items against the tool's CURRENT descriptor
+(`app/ingest/quarantine_release.go`):
+
+- When: every 5 minutes (`sensor-result-auto-release`, one replica at a time,
+  at most 100 items examined per run), and right after the sensor registers a
+  manifest that differs from its current one (only that tenant and sensor).
+- Which items: same tenant, same active sensor, same tool; reason
+  `out_of_contract`; pending; younger than `SENSOR_RESULT_QUARANTINE_RETENTION`;
+  not being applied.
+- Which descriptor counts: the sensor's current manifest, sent by the sensor
+  itself (a manifest the platform derived from a heartbeat declares nothing),
+  with a full descriptor kept for the tool (kept only when it hashes to the
+  contract digest). The descriptor can only narrow; the catalog stages still
+  apply as for a fresh report.
+- Release: the payload is split again by the same function a fresh report goes
+  through; only an item with nothing left out of contract is applied, by the
+  same path as a person's accept (the same scope and protections, nothing
+  auto-resolved). A failed apply leaves it pending.
+- Audit: `sensor_result.auto_accepted`, actor `system`, message "the tool's
+  signed descriptor now declares <types>"; the item's `result` carries
+  `auto_accepted` and the reason, `reviewed_by` is empty.
+- Everything else (other reasons, still-undeclared types, an unverified
+  descriptor, another tenant's or sensor's items) stays pending for a person.
+
+Follow-up: the descriptor is trusted as the sensor sent it (digest-checked, over
+the sensor's authenticated channel). A signed-release check of the descriptor
+is not part of it yet.
+
 ## Code
 
 | What | Where |
