@@ -244,7 +244,7 @@ func (h *EASMHandler) NetworkIsOurs(w http.ResponseWriter, r *http.Request) {
 
 // NetworkNotOurs handles POST /api/v1/easm/suggestions/networks/not-ours
 // @Summary      Answer "this network is not ours"
-// @Description  Records the network of one group of the caller's addresses card as not the organization's and marks the group's addresses not its own; addresses in that network are no longer offered and the question is not asked again. The group must ask the question (400 NETWORK_NOT_ASKED). Audited; undo with DELETE /easm/suggestions/networks/declined/{id} and the rejection's undo.
+// @Description  Records the network of one group of the caller's addresses card as not the organization's and marks the group's addresses not its own; addresses in that network are no longer offered and the question is not asked again. The group must ask the question (400 NETWORK_NOT_ASKED). Audited; undo with DELETE /easm/suggestions/declined-networks/{id} and the rejection's undo.
 // @Tags         Attack Surface
 // @Accept       json
 // @Produce      json
@@ -275,7 +275,7 @@ func (h *EASMHandler) NetworkNotOurs(w http.ResponseWriter, r *http.Request) {
 	writeDecisionJSON(w, res)
 }
 
-// UndeclineNetwork handles DELETE /api/v1/easm/suggestions/networks/declined/{id}
+// UndeclineNetwork handles DELETE /api/v1/easm/suggestions/declined-networks/{id}
 // @Summary      Undo "this network is not ours"
 // @Description  Removes one of the organization's "not ours" network answers: the question is asked again. The addresses it marked stay rejected until undone on their own. Audited.
 // @Tags         Attack Surface
@@ -283,7 +283,7 @@ func (h *EASMHandler) NetworkNotOurs(w http.ResponseWriter, r *http.Request) {
 // @Param        id   path  string  true  "Declined network ID"
 // @Success      204
 // @Failure      404  {object}  apierror.Error
-// @Router       /easm/suggestions/networks/declined/{id} [delete]
+// @Router       /easm/suggestions/declined-networks/{id} [delete]
 func (h *EASMHandler) UndeclineNetwork(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.decisionTenant(w, r)
 	if !ok {

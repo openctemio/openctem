@@ -396,13 +396,13 @@ func askedGroup(card *SuggestionCard, key string) (SuggestionGroup, easmseed.Kin
 		if g.ASN != "" {
 			v, err := easmseed.NormalizeASN(g.ASN)
 			if err != nil {
-				return g, "", "", fmt.Errorf("%w: %w", shared.ErrValidation, err)
+				return g, "", "", fmt.Errorf("%w: the network of this group is not valid", shared.ErrValidation)
 			}
 			return g, easmseed.KindASN, v, nil
 		}
 		v, err := easmseed.NormalizeOrgName(g.Org)
 		if err != nil {
-			return g, "", "", fmt.Errorf("%w: %w", shared.ErrValidation, err)
+			return g, "", "", fmt.Errorf("%w: the network of this group is not valid", shared.ErrValidation)
 		}
 		return g, easmseed.KindOrgName, v, nil
 	}

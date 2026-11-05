@@ -391,7 +391,7 @@ rules), so the badge no longer reads 1 for 25 addresses.
 | `POST /easm/suggestions/addresses/reject` | `assets:write` | attribution `rejected` for the addresses (data scope applies) |
 | `POST /easm/suggestions/networks/ours` | `attack_surface:scope:write` + step-up | the group's AS (or holder name) becomes a network seed; with `address_auto_add` the addresses it makes strong are added at once through the approval policy |
 | `POST /easm/suggestions/networks/not-ours` | `assets:write` | records the network in `easm_declined_networks` and rejects the group's addresses; its addresses are classified `declined` from then on and the question is not asked again |
-| `DELETE /easm/suggestions/networks/declined/{id}` | `assets:write` | undoes a "not ours" network answer |
+| `DELETE /easm/suggestions/declined-networks/{id}` | `assets:write` | undoes a "not ours" network answer |
 
 The server never trusts the posted list: it rebuilds the caller's own card
 (tenant from the session, the caller's data scope) and refuses the whole

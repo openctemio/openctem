@@ -116,8 +116,8 @@ func TestEASMAddressDecisions_DB(t *testing.T) {
 	if n := count(`SELECT COUNT(*) FROM asset_attributions WHERE tenant_id = $1 AND asset_id = '`+foreign+`' AND state = 'rejected'`, orgID); n != 1 {
 		t.Fatal("the network's address was not rejected")
 	}
-	h.expect(otherAdmin, http.MethodDelete, "/api/v1/easm/suggestions/networks/declined/"+ans.DeclinedID, "", http.StatusNotFound)
-	h.expect(admin, http.MethodDelete, "/api/v1/easm/suggestions/networks/declined/"+ans.DeclinedID, "", http.StatusNoContent)
+	h.expect(otherAdmin, http.MethodDelete, "/api/v1/easm/suggestions/declined-networks/"+ans.DeclinedID, "", http.StatusNotFound)
+	h.expect(admin, http.MethodDelete, "/api/v1/easm/suggestions/declined-networks/"+ans.DeclinedID, "", http.StatusNoContent)
 	if n := count(`SELECT COUNT(*) FROM easm_declined_networks WHERE tenant_id = $1`, orgID); n != 0 {
 		t.Fatalf("undo left %d rows", n)
 	}

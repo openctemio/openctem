@@ -37,7 +37,7 @@ export function answerNetwork(key: string, ours: boolean) {
 }
 
 export function undoDeclinedNetwork(id: string) {
-  return del<void>(`${BASE}/networks/declined/${encodeURIComponent(id)}`)
+  return del<void>(`${BASE}/declined-networks/${encodeURIComponent(id)}`)
 }
 
 export function removeNetworkSeed(id: string) {
