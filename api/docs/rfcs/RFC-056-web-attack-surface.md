@@ -158,8 +158,8 @@ only) follow in a later change.
   segment `*` matches any one segment (`/tenants/*/admin`).
 - A prefix is stored decoded, as a server reads it (`/files/My%20Docs` is
   stored `/files/My Docs`), because the sensor compares the decoded request
-  path. A prefix that decodes to a dot segment or a control character is
-  refused. Matching ignores ASCII case. The sensor
+  path. A prefix that decodes to a dot segment, a control character or a
+  `%` (an escaped `%25`, ambiguous to servers that decode twice) is refused. Matching ignores ASCII case. The sensor
   (contract `webpath.Denied`) also folds non-ASCII letters to ASCII, drops
   trailing dots and spaces of a segment and reads a doubly encoded path.
   The platform's `PathUnder` and the sensor's `Denied` are cross-tested on one

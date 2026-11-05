@@ -71,7 +71,8 @@ type WebRule struct {
 // NormalizePathPrefix checks and normalises a path prefix: absolute, no
 // query or fragment, no percent-encoded slash, backslash or NUL, decoded as
 // a server reads it ("/files/My%20Docs" is stored "/files/My Docs", the form
-// the sensor compares a request path with), no dot segment once decoded,
+// the sensor compares a request path with), no "%", dot segment or control
+// character once decoded,
 // "*" only as a whole segment, empty segments and a trailing "/" or "/*"
 // removed. "/" is the whole origin.
 func NormalizePathPrefix(p string) (string, error) {
@@ -86,6 +87,12 @@ func NormalizePathPrefix(p string) (string, error) {
 	dec, err := url.PathUnescape(p)
 	if err != nil || !utf8.ValidString(dec) {
 		return "", fmt.Errorf("%w: path prefix has an invalid percent-encoding", ErrInvalidPattern)
+	}
+	// An escaped percent sign ("%25") is refused: a stored prefix never
+	// holds a "%", so it is never read as escaped once more, and some
+	// servers decode twice.
+	if strings.Contains(dec, "%") {
+		return "", fmt.Errorf("%w: path prefix must not encode a percent sign", ErrInvalidPattern)
 	}
 	segs := make([]string, 0, strings.Count(dec, "/"))
 	for _, s := range strings.Split(dec, "/") {
