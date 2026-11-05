@@ -65,6 +65,8 @@ type AssetProcessor struct {
 
 	// webEvidence stores the reserved web_evidence captures (nil = dropped).
 	webEvidence WebEvidenceRecorder
+	// pageChange schedules a new capture of a web service whose page changed (nil = cadence only).
+	pageChange PageChangeNotifier
 	// webContent takes the reserved web_content fetches (nil = dropped).
 	webContent WebContentRecorder
 }
@@ -267,12 +269,17 @@ func (p *AssetProcessor) mergeTrackingExposure(
 	observedAt time.Time,
 	recovered *[]shared.ID,
 	becameExposed *[]*asset.Asset,
+	pageChanged *[]shared.ID,
 ) []*asset.AssetStateChange {
 	oldExposure := existing.Exposure()
 	oldInternet := existing.IsInternetAccessible()
 	wasFacing := oldInternet || oldExposure == asset.ExposurePublic
 
+	pageBefore := pageSignature(existing)
 	p.mergeCTISIntoAsset(existing, ctisAsset, tool, observedAt, recovered)
+	if pageChanged != nil && pageBefore != "" && pageSignature(existing) != pageBefore {
+		*pageChanged = append(*pageChanged, existing.ID())
+	}
 
 	if becameExposed != nil && !wasFacing &&
 		(existing.IsInternetAccessible() || existing.Exposure() == asset.ExposurePublic) {
@@ -461,6 +468,8 @@ func (p *AssetProcessor) processBatch(
 	// Set once the upsert persisted the merges, so a failed upsert never
 	// announces an exposure that was not saved.
 	var exposedPersisted []*asset.Asset
+	// Web services whose page changed (title, status, redirect, favicon).
+	var pageChanged []shared.ID
 
 	cfg := p.defaultCorrelationConfig()
 	if tenantCfg != nil {
@@ -527,7 +536,7 @@ func (p *AssetProcessor) processBatch(
 			}
 			alterable := isNew[id] || scope.mayAlter(existing)
 			if alterable {
-				exposureChanges = append(exposureChanges, p.mergeTrackingExposure(tenantID, existing, ctisAsset, report.Tool, seenAt, &recoveredIDs, &becameExposed)...)
+				exposureChanges = append(exposureChanges, p.mergeTrackingExposure(tenantID, existing, ctisAsset, report.Tool, seenAt, &recoveredIDs, &becameExposed, &pageChanged)...)
 				alterRefs[ctisAsset.ID] = true
 			} else {
 				output.AssetsLimited++
@@ -829,6 +838,7 @@ func (p *AssetProcessor) processBatch(
 		p.flushIdentity(ctx, idx, finalID)
 		discovered = append(discovered, inserted...)
 		exposedPersisted = becameExposed
+		p.notifyPagesChanged(ctx, tenantID, pageChanged)
 	}
 
 	// Step 5: Create/update repository extensions for repository assets
