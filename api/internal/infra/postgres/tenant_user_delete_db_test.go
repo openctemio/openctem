@@ -458,6 +458,10 @@ var seedOverrides = map[string]func(s *schemaSeeder) map[string]any{
 	"roles": func(*schemaSeeder) map[string]any {
 		return map[string]any{"managed_group_id": nil}
 	},
+	// A tool source key names a source id (format CHECK).
+	"tool_source_keys": func(*schemaSeeder) map[string]any {
+		return map[string]any{"source": "shodan", "key_enc": "probe-ciphertext"}
+	},
 	"scan_window_overrides": func(*schemaSeeder) map[string]any {
 		return map[string]any{"reason": "incident rescan now", "starts_at": "2026-10-05T10:00:00Z", "ends_at": "2026-10-05T11:00:00Z"}
 	},

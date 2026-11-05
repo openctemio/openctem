@@ -180,6 +180,8 @@ type Repositories struct {
 	ScanZone *postgres.ScanZoneRepository
 	// ProxyPool holds proxy pools, endpoints and sensor assignments.
 	ProxyPool *postgres.ProxyPoolRepository
+	// ToolSourceKey holds the organization keys of third-party tool sources.
+	ToolSourceKey *postgres.ToolSourceKeyRepository
 	// Scan window policies, overrides and the assets behind targets (RFC-067)
 	ScanWindowPolicy *postgres.ScanWindowPolicyRepository
 	// Finding lifecycles (RFC-110): the sub-status catalog and the schemes.
@@ -550,6 +552,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		// Scan zones (RFC-023)
 		ScanZone:            postgres.NewScanZoneRepository(db),
 		ProxyPool:           postgres.NewProxyPoolRepository(db),
+		ToolSourceKey:       postgres.NewToolSourceKeyRepository(db),
 		ScanWindowPolicy:    postgres.NewScanWindowPolicyRepository(db),
 		LifecycleSubStatus:  postgres.NewLifecycleSubStatusRepository(db),
 		LifecycleScheme:     postgres.NewLifecycleSchemeRepository(db),

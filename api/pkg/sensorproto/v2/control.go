@@ -375,6 +375,36 @@ type SuppressionList struct {
 	Rules []SuppressionRule `json:"rules"`
 }
 
+// ToolCredentialsAction: POST under CommandsPath + "/{command_id}", the keys
+// the command's organization stored for the third-party sources of the
+// command's tool (docs/architecture/tool-source-keys.md). Answered only to
+// the sensor holding the command's live lease (HeaderLeaseEpoch) and only
+// for the command's own tool; the organization is the command's, never
+// named by the sensor. Never logged, never stored with the command. Not
+// carried by protocol v3.
+const ToolCredentialsAction = "tool-credentials"
+
+// ToolCredentialsRequest is the body of POST /commands/{id}/tool-credentials.
+type ToolCredentialsRequest struct {
+	Tool string `json:"tool"`
+}
+
+// ToolCredential is one key, by the credential name the tool's manifest
+// declares.
+type ToolCredential struct {
+	Name  string `json:"name"`
+	Value string `json:"value"`
+}
+
+// ToolCredentialsResponse answers POST /commands/{id}/tool-credentials.
+// LocalFallback says whether keys the sensor's operator stored may fill the
+// names the organization left unset: true on the organization's own sensor,
+// false on a shared sensor.
+type ToolCredentialsResponse struct {
+	Credentials   []ToolCredential `json:"credentials"`
+	LocalFallback bool             `json:"local_fallback"`
+}
+
 // Proxy pools for scan traffic (docs/architecture/sensor-proxies.md). Both
 // actions live under CommandsPath + "/{command_id}" and are answered only to
 // the sensor holding the command's lease (HeaderLeaseEpoch). Protocol v3
