@@ -28,10 +28,15 @@ other key (and the key on any other asset type):
 |---|---|
 | `hsts`, `hsts_include_subdomains`, `hsts_preload`, `csp`, `csp_unsafe_inline`, `csp_unsafe_eval`, `nosniff`, `permissions_policy`, `cors_credentials` | boolean |
 | `hsts_max_age` | integer seconds, 0 to ten years |
-| `frame_options` | `deny`, `sameorigin`, `allow_from`, `other` |
-| `referrer_policy` | the standard policy tokens, or `other` |
+| `frame_options` | `deny`, `sameorigin`, `allow_from`, `other`, `none` (not sent) |
+| `referrer_policy` | the standard policy tokens, `other`, or `none` (not sent) |
 | `cors_origin` | `none`, `wildcard`, `specific`, `reflected` |
 | `cookies` | at most 20 entries `{name, secure, httponly, samesite}`; `name` matches `[A-Za-z0-9_.-]{1,64}`; `samesite` is `strict`, `lax` or `none` |
+
+`none` comes only from a template check that reports the header missing
+([template-facts.md](template-facts.md)); a header value is never read as
+`none`. A template's missing-header matches add the keys the report's own
+headers do not decide.
 
 Posture is never a finding by itself.
 

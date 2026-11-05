@@ -1,0 +1,6 @@
+### Added: template info matches become asset facts
+
+- A nuclei info match is now stored as what it is about the asset instead of an exposure: detected technologies (with the version a template extracts) join the asset's technologies and the software history, missing security headers fill the origin's header posture, and robots.txt, security.txt and app-link files join the web surface. Panels and exposed consoles stay exposures. Matches no mapping names stay generic info exposures and are counted (`info_unmapped` on the receipt) so new templates get reviewed.
+- The mapping is a signed platform content pack of the new kind `template-facts`. The built-in `template-facts-core@2026.11.1` is installed on first start, and a super admin can publish a new version on the stable channel. Organizations cannot upload this kind.
+- Template detections are secondary readings: they never replace the source, category, vendor or CPE a fingerprinting probe recorded for a technology, and with a confidence below 80 one detection never establishes a version.
+- `http_posture` accepts `none` for `frame_options` and `referrer_policy` (the header was not sent), and the console reads it as missing. The technologies tooltip names the kind of check that saw a technology (HTTP probe, template scan, detection rule pack).
