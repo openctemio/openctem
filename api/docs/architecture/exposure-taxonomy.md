@@ -25,7 +25,7 @@ category, so the "by type" counts on the Exposures view are stable:
 
 | Category | Event types | Producer today |
 |---|---|---|
-| `exposed_ports` | `port_open`, `port_closed`, `service_detected`, `service_changed` | port scans |
+| `exposed_ports` | `port_open`, `port_closed`, `service_detected`, `service_changed`, `risky_service_exposed` | port scans, service detection (`service-kinds.md`) |
 | `web_interfaces` | `web_interface_exposed` | template scanner info matches (panels) |
 | `exposed_apis` | `api_exposed`, `api_removed` | API discovery |
 | `ai_services` | `mcp_server_exposed` | planned |

@@ -83,22 +83,22 @@ func TestDepth_MinDepthAndParams(t *testing.T) {
 // reason, never failed; so is the same step when it is required (a run goes
 // as far as the organization's tools support).
 func TestOptionalStep_SkippedWithoutTool(t *testing.T) {
-	s, run, tpl, store, cmds := policyFixture("capture.screenshot", scanworkflow.DepthStandard, scanworkflow.RunPolicy{Optional: true})
+	s, run, tpl, store, cmds := policyFixture("fingerprint.tech", scanworkflow.DepthStandard, scanworkflow.RunPolicy{Optional: true})
 	if err := s.scheduleRunnableSteps(context.Background(), run, tpl); err != nil {
 		t.Fatal(err)
 	}
 	a := store.rows["a"]
 	if len(cmds.created) != 0 || a.Status != scanrun.StepRunStatusSkipped ||
-		!strings.Contains(a.SkipReason, "available when a tool that runs capture.screenshot is installed") {
+		!strings.Contains(a.SkipReason, "available when a tool that runs fingerprint.tech is installed") {
 		t.Fatalf("optional: commands %d, a = %s (%q)", len(cmds.created), a.Status, a.SkipReason)
 	}
 
-	s, run, tpl, store, _ = policyFixture("capture.screenshot", scanworkflow.DepthStandard, scanworkflow.RunPolicy{})
+	s, run, tpl, store, _ = policyFixture("fingerprint.tech", scanworkflow.DepthStandard, scanworkflow.RunPolicy{})
 	if err := s.scheduleRunnableSteps(context.Background(), run, tpl); err != nil {
 		t.Fatal(err)
 	}
 	if a := store.rows["a"]; a.Status != scanrun.StepRunStatusSkipped || a.ErrorCode != codeNoMatchingTool ||
-		!strings.Contains(a.SkipReason, "capture.screenshot") {
+		!strings.Contains(a.SkipReason, "fingerprint.tech") {
 		t.Fatalf("not optional: a = %s/%s (%q)", a.Status, a.ErrorCode, a.SkipReason)
 	}
 }
@@ -193,10 +193,10 @@ func TestCheckRunPolicyParams(t *testing.T) {
 // optional step's planned capability is left to the graph check.
 func TestValidatedCapabilities(t *testing.T) {
 	opt := &scanworkflow.RunPolicy{Optional: true}
-	if got := validatedCapabilities([]string{"capture.screenshot"}, opt); len(got) != 0 {
+	if got := validatedCapabilities([]string{"fingerprint.tech"}, opt); len(got) != 0 {
 		t.Fatalf("optional planned: %v", got)
 	}
-	if got := validatedCapabilities([]string{"capture.screenshot"}, &scanworkflow.RunPolicy{}); len(got) != 1 {
+	if got := validatedCapabilities([]string{"fingerprint.tech"}, &scanworkflow.RunPolicy{}); len(got) != 1 {
 		t.Fatalf("a step that is not optional must have its planned capability checked: %v", got)
 	}
 	if got := validatedCapabilities([]string{"scan.ports", "exploit.everything"}, opt); len(got) != 2 {
@@ -302,5 +302,38 @@ func TestCollapseRegistrable(t *testing.T) {
 	// No explicit target list: left as is.
 	if got := collapseRegistrable(resolved, nil, nil); got != nil {
 		t.Fatalf("got %+v", got)
+	}
+}
+
+type stepGateStub struct{ reason string }
+
+func (g stepGateStub) StepSkipReason(context.Context, shared.ID, *scanworkflow.Step) string {
+	return g.reason
+}
+
+// A step the organization's switch holds off (screenshots) is skipped with
+// the reason and no command exists, so the sensor never takes the picture;
+// with the switch on the same step is dispatched to the screenshot tool.
+func TestStepGate_SkipsScreenshotStepWhenOff(t *testing.T) {
+	s, run, tpl, store, cmds := policyFixture("capture.screenshot", scanworkflow.DepthStandard, scanworkflow.RunPolicy{Optional: true})
+	s.toolRepo = platformTools{names: map[string]bool{"webshot": true, "httpx": true}}
+	s.SetStepGate(stepGateStub{reason: "skipped: screenshots are off for this organization"})
+	if err := s.scheduleRunnableSteps(context.Background(), run, tpl); err != nil {
+		t.Fatal(err)
+	}
+	a := store.rows["a"]
+	if len(cmds.created) != 0 || a.Status != scanrun.StepRunStatusSkipped || !strings.Contains(a.SkipReason, "screenshots are off") {
+		t.Fatalf("switch off: commands %d, a = %s (%q)", len(cmds.created), a.Status, a.SkipReason)
+	}
+
+	s, run, tpl, store, cmds = policyFixture("capture.screenshot", scanworkflow.DepthStandard, scanworkflow.RunPolicy{Optional: true})
+	s.toolRepo = platformTools{names: map[string]bool{"webshot": true, "httpx": true}}
+	s.SetStepGate(stepGateStub{})
+	run.Context["targets"] = []string{"https://example.com"}
+	if err := s.scheduleRunnableSteps(context.Background(), run, tpl); err != nil {
+		t.Fatal(err)
+	}
+	if len(cmds.created) != 1 {
+		t.Fatalf("switch on: commands %d (a = %s %q)", len(cmds.created), store.rows["a"].Status, store.rows["a"].ErrorMessage)
 	}
 }

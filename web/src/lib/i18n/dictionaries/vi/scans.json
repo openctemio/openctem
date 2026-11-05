@@ -1541,6 +1541,8 @@
   "scans.placement.someCan": "Số sensor có thể nhận: {count} ({busy} đang bận). Tác vụ sẽ sớm bắt đầu.",
   "scans.placement.stopped_claiming.fix": "Giải phóng dung lượng trên máy chủ sensor (ngăn chi tiết sensor cho biết phần nào đầy). Sensor sẽ tự tiếp tục.",
   "scans.placement.stopped_claiming.text": "Sensor đã ngừng nhận việc mới: bộ lưu trữ cục bộ đã đầy (ổ đĩa sắp hết, vượt hạn mức, hoặc kết quả chưa được tải lên).",
+  "scans.placement.strong_isolation_missing.fix": "Dùng sensor đã chứng minh được backend cô lập mạnh (hiện chưa có, nên tác vụ sẽ chờ).",
+  "scans.placement.strong_isolation_missing.text": "Công cụ của tác vụ cần mức cô lập mạnh hơn sandbox tiến trình, và sensor này chưa báo có backend cô lập mạnh đã được kiểm chứng.",
   "scans.placement.tool_missing.fix": "Cài công cụ lên sensor.",
   "scans.placement.tool_missing.text": "Sensor chưa báo cáo đã cài công cụ.",
   "scans.placement.truncated": "Chỉ kiểm tra những sensor đầu tiên theo tên.",
