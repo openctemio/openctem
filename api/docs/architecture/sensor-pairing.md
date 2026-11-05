@@ -9,6 +9,104 @@ Trust boundaries and the remaining gaps: [sensor-platform-trust.md](sensor-platf
 This page is the map of the code: where each part lives, what it checks and
 which tests pin it. Status per part is in the table at the end.
 
+## Flow
+
+Code first (the console's **Add sensor**; the same sequence serves a code the
+sensor printed, entered with `POST /api/v1/sensor-pairings/lookup`).
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor A as Admin (console)
+    box Sensor host
+    participant S as sensorkit Pair (sdk-go)
+    end
+    box Platform
+    participant H as SensorPairingHandler
+    participant SV as sensorpairing.Service
+    participant DB as Postgres sensor_pairings, sensor_keys
+    end
+    A->>H: POST /api/v1/sensor-pairings/expectations (sensors:pair, per-user limit)
+    H->>SV: Expect - row expecting, tenant from the session, code HMAC-SHA256 with SENSOR_KEY_PEPPER
+    H-->>A: code (TTL 10 min) and the install command (SENSOR_JOB_SIGNING_ROOT when a root exists)
+    S->>H: POST /api/v2/sensor/pairings/ signed RFC 9421 with the key in the body, commitment = SHA-256 of the sensor nonce
+    H->>H: verifyWithKey, then pairingStartBudget (per address, per code)
+    H->>SV: Start - sweep, open cap (ErrCapacity 503), releaseKey supersedes the key's unapproved requests
+    SV->>DB: attach to the expectation (startWithCode), status pending
+    H-->>S: 201 pairing_id, platform_key, platform_nonce, Ed25519 platform signature over PlatformTranscript, poll_seconds 3
+    S->>H: PUT /api/v2/sensor/pairings/{id}/nonce (sensor nonce)
+    H->>SV: Reveal - CheckCommitment, SAS = ComputeSAS(sensor key, platform key, both nonces)
+    A->>H: POST /api/v1/sensor-pairings/{id}/approve (sensors:approve): fingerprint, organization_id, step_up
+    H->>SV: Approve - org echo (409 ORGANIZATION_MISMATCH), VerifyStepUp, claimable, sameFingerprint
+    SV->>DB: Approve under row lock - limit check, sensors row (trust New), sensor_keys pending, grant from the profile, confirm_by now+10 min
+    loop every poll_seconds
+        S->>H: GET /api/v2/sensor/pairings/{id} (signed by the same key)
+        H-->>S: status approved, identity (sensor_id, tenant_id, key_id, content_signing)
+    end
+    S->>H: POST /api/v2/sensor/pairings/{id}/complete (Ed25519 over ConfirmTranscript)
+    H->>SV: Confirm - verify transcript, ConfirmUnscoped
+    SV->>DB: sensor_keys pending to active, sensor_pairings completed
+    SV-->>A: audit sensor.pairing_completed, sensor event, admins notified
+```
+
+Code references: routes `internal/infra/http/routes/sensor_pairing.go`
+(`registerSensorPairingRoutes`), handler
+`internal/infra/http/handler/sensor_pairing_handler.go` (`Start`, `Reveal`,
+`Status`, `Confirm`, `Approve`), service `internal/app/sensorpairing/service.go`
+(`Start`, `Reveal`, `Status`, `Confirm`, `Approve`, `claimable`),
+`fingerprint.go:fingerprintMismatch` (a wrong pick denies the request, audits
+high and notifies the administrators), repository
+`internal/infra/postgres/sensor_pairing_repository.go` (`Approve`,
+`ConfirmUnscoped`). The confirm answer carries no job-signing key: the sensor
+fetches the job signer's key set and checks it against the root it got from
+the install command ([job signing](job-signing.md)).
+
+Enrollment token (organization scope; an instance token takes the same path in
+`instance.go` for a shared sensor):
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor A as Admin
+    participant S as Sensor
+    participant SV as sensorpairing.Service
+    participant DB as Postgres
+    A->>SV: POST /api/v1/sensor-pairings/enrollment-tokens (sensors:approve, step-up, credential factor)
+    SV->>DB: token hash, uses, expiry, profile, zones, labels, require_approval
+    S->>SV: POST /api/v2/sensor/pairings/ with enrollment_token, enrollment_scope organization
+    SV->>DB: StartWithEnrollmentTokenUnscoped - spend one use atomically
+    alt unknown, expired, used up, revoked, outside its ranges
+        SV-->>S: 401, the same body for every reason (audited when the token is known)
+    else accepted
+        SV-->>S: 201 as for a code
+    end
+    S->>SV: PUT .../nonce
+    alt require_approval
+        SV-->>A: in-app notification, approve as for a code
+    else auto
+        SV->>DB: Approve in the token creator's name (profile, zones, labels)
+    end
+    S->>SV: GET status, POST .../complete
+```
+
+States of a pairing row (`sensor_pairings.status`):
+
+```mermaid
+stateDiagram-v2
+    [*] --> expecting: console expectation (code, tenant, no key)
+    [*] --> pending: sensor start without a known code, or with a token
+    expecting --> pending: sensor start with the code (key filled in)
+    pending --> pending: reveal (sas set)
+    pending --> approved: approve (fingerprint, org, step-up) or token
+    pending --> denied: reject, or a wrong fingerprint pick
+    pending --> expired: TTL 10 min, or superseded by a new start of the same key
+    approved --> completed: confirm (key active)
+    approved --> expired: no confirm within 10 min (key revoked pairing_not_confirmed)
+    completed --> [*]
+    denied --> [*]
+    expired --> [*]
+```
+
 ## Identity: one key per sensor, every request signed
 
 A paired sensor holds an Ed25519 private key that never leaves its host. The
@@ -49,13 +147,7 @@ it.
 | Step-up | `AuthService.VerifyStepUp` (`internal/app/auth/stepup.go`): TOTP if enrolled, else password, else a session younger than 10 minutes |
 | Sensor side | `sdk-go/pkg/sensorkit` (`Pair`, identity store, auto-pair), `sensor` (`openctemio-sensor pair`) |
 
-States of a pairing row:
-
-```
-pending ──reveal──▶ pending (sas set) ──approve──▶ approved ──confirm──▶ completed
-   │                     │                            │
-   └──────expiry─────────┴──────deny───▶ denied       └──10 min──▶ expired (key revoked)
-```
+States of a pairing row: see the state diagram under [Flow](#flow).
 
 Reverse mode starts as an `expecting` row with a tenant and a code but no
 key; the sensor's start request fills in the key and turns it `pending`.
