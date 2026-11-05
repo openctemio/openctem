@@ -2056,6 +2056,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// (docs/architecture/ai-context-masking.md).
 		s.AIMasking = tenantai.NewMaskingService(repos.TenantAISettings, s.Vulnerability, repos.Asset, repos.Tenant,
 			aibundle.NewBuilder(aiEgress), s.Audit, log)
+		// AI triage masks its prompt under the same policy and seeded names.
+		s.AITriage.SetMaskingInputs(s.AIMasking)
 		s.AIMaskMaps = aimaskmap.NewStore(repos.AIMaskMaps, s.Encryptor, cfg.AITriage.MaskMapTTL)
 		// A confident false-positive verdict on a medium or low finding is
 		// recorded as a pending approval for a person; never applied.
