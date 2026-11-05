@@ -2325,12 +2325,12 @@ type UpdateNotificationIntegrationInput struct {
 func validateMessageSettings(template, level *string) error {
 	if template != nil {
 		if err := notifymsg.ValidateTemplate(*template); err != nil {
-			return fmt.Errorf("%w: %w", shared.ErrValidation, err)
+			return fmt.Errorf("%w: %s", shared.ErrValidation, notifymsg.ValidationMessage(err))
 		}
 	}
 	if level != nil {
 		if _, err := notifymsg.ParseLevel(*level); err != nil {
-			return fmt.Errorf("%w: %w", shared.ErrValidation, err)
+			return fmt.Errorf("%w: %s", shared.ErrValidation, notifymsg.ValidationMessage(err))
 		}
 	}
 	return nil
