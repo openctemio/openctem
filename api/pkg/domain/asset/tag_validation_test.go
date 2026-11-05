@@ -13,7 +13,7 @@ func TestAddTag_RefusesWhatTheValidatorRefuses(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, bad := range []string{
-		strings.Repeat("a", MaxTagLength+1), "a‮b", "<b>x</b>", "=1+1", "bug-bounty", "sys:owner", "program:x", "  ",
+		strings.Repeat("a", MaxTagLength+1), "a\u202eb", "<b>x</b>", "=1+1", "bug-bounty", "sys:owner", "program:x", "  ",
 	} {
 		a.AddTag(bad)
 	}
