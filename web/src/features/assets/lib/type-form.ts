@@ -58,7 +58,9 @@ function fieldFor(a: TypeAttribute, locale?: string): FormFieldConfig | null {
 
 /** The form fields of a type: name, description, its attributes, labels. */
 export function formFieldsForType(view: TypeView, locale?: string): FormFieldConfig[] {
+  // A derived attribute (a service's kind) is the platform's: never a field.
   const attributes = view.attributes
+    .filter((a) => !a.derived)
     .map((a) => fieldFor(a, locale))
     .filter((f): f is FormFieldConfig => f !== null)
   return [
@@ -127,7 +129,7 @@ export function propertiesFromForm(
 ): AssetMetadata {
   const out: Partial<Record<AssetPropertyKey, unknown>> = {}
   for (const a of view.attributes) {
-    if (a.kind === 'object' || !(a.key in data)) continue
+    if (a.kind === 'object' || a.derived || !(a.key in data)) continue
     const v = attributeFromForm(a, data[a.key])
     if (v !== undefined) out[a.key] = v
     else if (previous && !blank(previous[a.key])) out[a.key] = null

@@ -1050,6 +1050,7 @@
   "assets.scanning.tenableScan": "Scan with Tenable.sc",
   "assets.scanning.tenableScanTitle": "Scan this asset now through the organization's Tenable.sc connector",
   "assets.scanning.title": "Scope and scanning",
+  "assets.serviceKind.guess": "Guess",
   "assets.sheet.copyId": "Copy ID",
   "assets.sheet.delete": "Delete {type}",
   "assets.sheet.description": "Description",
