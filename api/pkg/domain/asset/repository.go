@@ -361,6 +361,7 @@ type Filter struct {
 	ExpiresAfter  *time.Time
 	ExpiresBefore *time.Time
 	CreatedAfter  *time.Time // Filter assets added to the inventory at/after this time
+	CreatedBefore *time.Time // Filter assets added to the inventory at/before this time
 	// ExposureChangedOrCreatedAfter keeps assets that were added, or whose
 	// exposure level last changed, at/after this time. Combined with an
 	// Exposures filter it answers "newly exposed since t".
@@ -774,5 +775,6 @@ func (f Filter) IsEmpty() bool {
 		f.ExpiresAfter == nil &&
 		f.ExpiresBefore == nil &&
 		f.CreatedAfter == nil &&
+		f.CreatedBefore == nil &&
 		f.ExposureChangedOrCreatedAfter == nil
 }
