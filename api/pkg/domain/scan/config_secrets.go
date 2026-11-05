@@ -46,6 +46,9 @@ const (
 	SecretReasonKnownFormat ConfigSecretReason = "known_format"
 	// SecretReasonHighEntropy: a long random-looking string.
 	SecretReasonHighEntropy ConfigSecretReason = "high_entropy"
+	// SecretReasonTooDeep: the value is nested deeper than the scan looks;
+	// what is below that depth cannot be checked, so it is refused.
+	SecretReasonTooDeep ConfigSecretReason = "too_deep"
 )
 
 // Detection limits.
@@ -119,8 +122,9 @@ type secretDetector struct {
 // credential format (a bearer or basic header, a private key block, a
 // provider token, credentials in a URL), or a value under a credential key
 // name ("password", "api_key", "authorization", ...) unless the value is a
-// plain setting word ("basic", "bearer", "none"), which such keys also hold
-// to name a mode. High-entropy values are not refused.
+// mode word from a short allowlist ("basic", "bearer", "none", ...), which such
+// keys also hold to name a mode. A value nested deeper than the scan looks is
+// refused, since it cannot be checked. High-entropy values are not refused.
 func RefusedConfigSecrets(cfg map[string]any) []ConfigSecretWarning {
 	if len(cfg) == 0 {
 		return nil
@@ -134,24 +138,44 @@ func RefusedConfigSecrets(cfg map[string]any) []ConfigSecretWarning {
 	return d.out
 }
 
-// settingWord is a value a credential-named key holds to name a mode
-// ("auth": "basic"), not a credential: one lower-case word of letters.
-var settingWord = regexp.MustCompile(`^[a-z][a-z_-]{0,15}$`)
+// modeWords are the values a credential-named key holds to name a mode
+// ("auth": "basic"), not a credential. The list is explicit and small: any
+// other value under such a key is refused.
+var modeWords = map[string]bool{
+	"basic": true, "bearer": true, "digest": true, "none": true, "oauth2": true,
+	"apikey": true, "header": true, "query": true, "cookie": true, "form": true,
+}
 
 // refused reports whether a flagged value is refused, not only warned
 // about.
 func refused(reason ConfigSecretReason, value string) bool {
 	switch reason {
-	case SecretReasonKnownFormat:
+	case SecretReasonKnownFormat, SecretReasonTooDeep:
 		return true
 	case SecretReasonKeyName:
-		return !settingWord.MatchString(strings.TrimSpace(value))
+		return !modeWords[strings.ToLower(strings.TrimSpace(value))]
 	}
 	return false
 }
 
+// isFileKey reports whether key names a file or a path (so a value that is
+// a path is a reference to a secret stored elsewhere, not the secret).
+func isFileKey(key string) bool {
+	lk := strings.ToLower(strings.TrimSpace(key))
+	if lk == "file" || lk == "path" {
+		return true
+	}
+	for _, suf := range []string{"_file", "_path", "-file", "-path"} {
+		if strings.HasSuffix(lk, suf) {
+			return true
+		}
+	}
+	return strings.HasSuffix(key, "File") || strings.HasSuffix(key, "Path")
+}
+
 func (d *secretDetector) walkMap(prefix string, m map[string]any, depth int) {
 	if depth > maxSecretScanDepth {
+		d.tooDeep(prefix)
 		return
 	}
 	for k, v := range m {
@@ -169,12 +193,17 @@ func (d *secretDetector) walk(path, key string, v any, depth int) {
 		d.walkMap(path, val, depth)
 	case []any:
 		if depth > maxSecretScanDepth {
+			d.tooDeep(path)
 			return
 		}
 		for i, item := range val {
 			d.walk(path+"["+strconv.Itoa(i)+"]", key, item, depth+1)
 		}
 	case []string:
+		if depth > maxSecretScanDepth {
+			d.tooDeep(path)
+			return
+		}
 		for i, item := range val {
 			d.walk(path+"["+strconv.Itoa(i)+"]", key, item, depth+1)
 		}
@@ -183,6 +212,10 @@ func (d *secretDetector) walk(path, key string, v any, depth int) {
 			d.out = append(d.out, ConfigSecretWarning{Path: path, Reason: reason})
 		}
 	}
+}
+
+func (d *secretDetector) tooDeep(path string) {
+	d.out = append(d.out, ConfigSecretWarning{Path: path, Reason: SecretReasonTooDeep})
 }
 
 // secretReason classifies one string value under its key.
@@ -202,7 +235,7 @@ func secretReason(key, value string) (ConfigSecretReason, bool) {
 		// and password in it) counts as a secret there.
 		return "", false
 	}
-	if isSecretKeyName(key) && !isPlaceholder(value) {
+	if isSecretKeyName(key) && !isPlaceholder(key, value) {
 		return SecretReasonKeyName, true
 	}
 	if looksHighEntropy(value) {
@@ -235,8 +268,8 @@ func isSecretKeyName(key string) bool {
 }
 
 // isPlaceholder reports values that are clearly not a secret: references to
-// one stored elsewhere (${VAR}, {{ .x }}, env:NAME, file paths) and booleans.
-func isPlaceholder(v string) bool {
+// one stored elsewhere (${VAR}, {{ .x }}, env:NAME, a path under a file key) and booleans.
+func isPlaceholder(key, v string) bool {
 	lv := strings.ToLower(v)
 	switch lv {
 	case "true", "false", "none", "null", "yes", "no", "on", "off":
@@ -244,7 +277,7 @@ func isPlaceholder(v string) bool {
 	}
 	return strings.HasPrefix(v, "${") || strings.HasPrefix(v, "{{") ||
 		strings.HasPrefix(lv, "env:") || strings.HasPrefix(lv, "file:") ||
-		strings.HasPrefix(v, "/") || strings.HasPrefix(v, "./")
+		(isFileKey(key) && (strings.HasPrefix(v, "/") || strings.HasPrefix(v, "./")))
 }
 
 // looksHighEntropy reports long, random-looking strings: no spaces, at least

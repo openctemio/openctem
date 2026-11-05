@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"slices"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/openctemio/contract/secretref"
@@ -86,7 +87,7 @@ type ProviderKeys interface {
 // ProxyPools reads proxy pool credentials (*proxypoolapp.Service).
 type ProxyPools interface {
 	PoolHasCredentials(ctx context.Context, tenantID shared.ID, poolID string) (bool, error)
-	PoolCredentials(ctx context.Context, tenantID shared.ID, poolID string) ([]proxypoolapp.Credential, error)
+	PoolCredentials(ctx context.Context, tenantID shared.ID, poolID string, signed []string) ([]proxypoolapp.Credential, error)
 	TestCredentialsFor(ctx context.Context, c *commanddom.Command, poolID string) ([]proxypoolapp.Credential, error)
 }
 
@@ -106,6 +107,54 @@ type Service struct {
 	audit    AuditLogger
 	logger   *logger.Logger
 	now      func() time.Time
+
+	// refMu guards refWin: the secret.refused audit window of each
+	// (sensor, reason).
+	refMu  sync.Mutex
+	refWin map[string]*refusalWindow
+}
+
+// Refusal audit aggregation: a sensor can be refused many times a minute, so
+// the first refusal of a (sensor, reason) pair in a window is written and
+// the later ones only count; the count is on the next row written.
+const (
+	refusalAuditWindow = 10 * time.Minute
+	maxRefusalWindow   = 4096
+)
+
+type refusalWindow struct {
+	start      time.Time
+	suppressed int
+}
+
+// auditRefusalNow reports whether a refusal of sensorID for reason is
+// written now, and how many were folded into the previous window.
+func (s *Service) auditRefusalNow(sensorID, reason string) (write bool, suppressed int) {
+	now := s.now()
+	key := sensorID + "|" + reason
+	s.refMu.Lock()
+	defer s.refMu.Unlock()
+	if s.refWin == nil {
+		s.refWin = map[string]*refusalWindow{}
+	}
+	if w, ok := s.refWin[key]; ok && now.Sub(w.start) < refusalAuditWindow {
+		w.suppressed++
+		return false, 0
+	} else if ok {
+		suppressed = w.suppressed
+	}
+	if len(s.refWin) >= maxRefusalWindow {
+		for k, w := range s.refWin {
+			if now.Sub(w.start) >= refusalAuditWindow {
+				delete(s.refWin, k)
+			}
+		}
+		if len(s.refWin) >= maxRefusalWindow {
+			return false, 0 // bounded memory: the log line above still records it
+		}
+	}
+	s.refWin[key] = &refusalWindow{start: now}
+	return true, suppressed
 }
 
 // NewService creates the service.
@@ -522,6 +571,22 @@ func (s *Service) values(ctx context.Context, cmd *commanddom.Command, req secre
 	return ans, delivered, nil
 }
 
+// signedEndpointIDs are the endpoint ids of the egress block the job was
+// signed with (none when the payload has no readable block).
+func signedEndpointIDs(payload json.RawMessage) []string {
+	var p struct {
+		Egress *proxypool.JobEgress `json:"egress"`
+	}
+	if json.Unmarshal(payload, &p) != nil || p.Egress == nil {
+		return nil
+	}
+	ids := make([]string, 0, len(p.Egress.Endpoints))
+	for _, e := range p.Egress.Endpoints {
+		ids = append(ids, e.ID)
+	}
+	return ids
+}
+
 // poolValue is the credentials of the recorded pool poolID: a proxy test's
 // own pool (every endpoint with credentials), or a job's pool (the endpoints
 // that may carry traffic now; a disabled pool gives none). ok is false when
@@ -537,7 +602,7 @@ func (s *Service) poolValue(ctx context.Context, cmd *commanddom.Command, poolID
 	if cmd.Type == commanddom.CommandTypeProxyTest {
 		creds, err = s.pools.TestCredentialsFor(ctx, cmd, poolID)
 	} else {
-		creds, err = s.pools.PoolCredentials(ctx, cmd.TenantID, poolID)
+		creds, err = s.pools.PoolCredentials(ctx, cmd.TenantID, poolID, signedEndpointIDs(cmd.Payload))
 	}
 	if errors.Is(err, shared.ErrNotFound) {
 		return nil, false, nil
@@ -596,10 +661,15 @@ func (s *Service) auditRefusal(ctx context.Context, sn *sensordom.Sensor, r *ref
 	if r.tenant == nil {
 		return
 	}
+	write, suppressed := s.auditRefusalNow(sn.ID.String(), r.reason)
+	if !write {
+		return
+	}
 	ev := auditapp.NewSuccessEvent(auditdom.ActionSecretRefused, auditdom.ResourceTypeCommand, r.cmd).
 		WithMessage("A sensor's task secrets fetch was refused").
 		WithMetadata("sensor_id", sn.ID.String()).WithMetadata("shared_sensor", sn.IsShared()).
-		WithMetadata("command_id", r.cmd).WithMetadata("reason", r.reason)
+		WithMetadata("command_id", r.cmd).WithMetadata("reason", r.reason).
+		WithMetadata("suppressed_before", suppressed).WithMetadata("window_seconds", int(refusalAuditWindow.Seconds()))
 	s.logAudit(ctx, *r.tenant, ev)
 }
 

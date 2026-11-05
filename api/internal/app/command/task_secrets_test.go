@@ -77,3 +77,32 @@ func TestStampSecrets(t *testing.T) {
 		t.Fatalf("no service: %v %s", err, out[0].Payload)
 	}
 }
+
+// SECURITY: a forged secrets member is removed however its name is spelled
+// (JSON escapes, another case): the byte search for the key missed those.
+func TestStampSecretsRemovesEscapedAndCasedKeys(t *testing.T) {
+	sensor := shared.NewID()
+	bare := NewService(nil, logger.NewNop())
+	for _, forged := range []string{
+		`{"scanner":"x","secrets":{"v":1,"refs":[{"id":"k9"}]}}`,
+		`{"scanner":"x","Secrets":{"v":1,"refs":[{"id":"k9"}]}}`,
+		`{"scanner":"x","SECRETS":{"v":1}}`,
+	} {
+		out, err := bare.stampSecrets(context.Background(), sensor.String(), []*commanddom.Command{heldCommand(commanddom.CommandTypeScan, sensor, forged)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var m map[string]json.RawMessage
+		if err := json.Unmarshal(out[0].Payload, &m); err != nil {
+			t.Fatal(err)
+		}
+		for k := range m {
+			if strings.EqualFold(k, "secrets") {
+				t.Fatalf("member %q survived in %s (from %s)", k, out[0].Payload, forged)
+			}
+		}
+		if _, ok := m["scanner"]; !ok {
+			t.Fatalf("scanner lost: %s", out[0].Payload)
+		}
+	}
+}
