@@ -351,6 +351,7 @@
   "attackSurface.kind.tech_changed": "Công nghệ thay đổi",
   "attackSurface.monitoring.ct": "Khám phá qua Certificate Transparency",
   "attackSurface.monitoring.ctDescription": "Tên miền của bạn được gửi tới crt.sh và Cert Spotter để tìm chứng chỉ cấp cho chúng. Hãy tắt để giữ riêng tư; khi đó không phát hiện thêm tên mới theo cách này.",
+  "attackSurface.monitoring.ctNeedsPlatformSensor": "Tra cứu Certificate Transparency chỉ chạy qua một sensor của nền tảng: nền tảng không bao giờ tự liên hệ crt.sh hay Cert Spotter, và hiện chưa có sensor nào được thiết lập để thực hiện. Tên từ nhật ký chứng chỉ vẫn được đưa vào kho tài sản qua việc khám phá tên miền con thụ động trên các sensor của bạn.",
   "attackSurface.monitoring.description": "Khám phá qua Certificate Transparency và kiểm tra DNS tự chạy; bạn cũng có thể chạy ngay.",
   "attackSurface.monitoring.dns": "Kiểm tra DNS",
   "attackSurface.monitoring.dnsDescription": "Bản ghi CNAME và NS bị treo, ủy quyền lỗi và bảo mật email (SPF, DMARC), chỉ tra cứu qua DNS.",

@@ -1551,6 +1551,15 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.CertMonitor.SetExclusions(s.Scope)
 	s.CertMonitor.SetStateStore(repos.CTMonitorState)
 	s.CertMonitor.SetCertSpotterFallback(cfg.Worker.CertMonitorCertSpotterURL)
+	// The commercial Cert Spotter key (SaaS), sent only with requests a
+	// platform sensor carries. No fetcher is wired: the platform makes no CT
+	// request itself (zero platform egress), so the sweep reports
+	// needs_platform_sensor until a platform sensor can carry CT lookups.
+	s.CertMonitor.SetCertSpotterKey(cfg.Worker.CertMonitorCertSpotterKey)
+	if cfg.Worker.CertMonitorEnabled && !s.CertMonitor.Available() {
+		log.Info("certificate transparency monitoring needs a platform sensor; the platform makes no CT request itself",
+			"reason", s.CertMonitor.UnavailableReason())
+	}
 	// Re-check a little under the sweep interval: the next scheduled run
 	// re-queries, an API restart in between does not.
 	s.CertMonitor.SetLimits(cfg.Worker.CertMonitorMaxDomainsPerRun, easmRecheck(cfg.Worker.CertMonitorInterval))
@@ -1570,7 +1579,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Run-now and seed-triggered sweeps (research/22 P0-11): CT then DNS
 	// checks for one tenant, each honoring the tenant's switches.
 	var sweepCT easmapp.SweepCT
-	if cfg.Worker.CertMonitorEnabled {
+	if cfg.Worker.CertMonitorEnabled && s.CertMonitor.Available() {
 		sweepCT = s.CertMonitor
 	}
 	var sweepDNS easmapp.SweepDNS
@@ -1578,8 +1587,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		sweepDNS = s.EASMDNS
 	}
 	// Passive lookalike-domain monitoring (RFC-083): its own resolver client
-	// (low rate), crt.sh through the SSRF guard, exposures through the EASM
-	// writer (alerts) and the DNS repository's auto-resolve.
+	// (low rate), exposures through the EASM writer (alerts) and the DNS
+	// repository's auto-resolve. No CT counter: the platform makes no CT
+	// request itself, so lookalike candidates carry no certificate count
+	// until a platform sensor can carry CT lookups.
 	var (
 		lookalikeDNS       easmapp.LookalikeDNS
 		lookalikeCT        easmapp.CTCounter
@@ -1590,12 +1601,12 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	if d, err := dnsprobe.New(dnsprobe.Config{Server: cfg.Worker.EASMDNSResolver, QPS: 5}); err != nil {
 		log.Warn("lookalike checks disabled: no resolver", "error", err)
 	} else {
-		lookalikeDNS, lookalikeCT, lookalikeExposures, lookalikeResolver = d, easmapp.NewCrtSh(), easmExposures, repos.EASMDNS
+		lookalikeDNS, lookalikeExposures, lookalikeResolver = d, easmExposures, repos.EASMDNS
 		lookalikeLog = log.With("service", "easm-lookalikes")
 	}
 	s.EASMLookalikes = easmapp.NewLookalikeService(repos.EASMLookalike, lookalikeDNS, lookalikeCT, lookalikeExposures, lookalikeResolver, lookalikeLog)
 	if lookalikeDNS != nil {
-		s.EASMLookalikes.SetSettings(s.Tenant) // per-organization opt-out of crt.sh queries
+		s.EASMLookalikes.SetSettings(s.Tenant) // per-organization opt-out of CT lookups
 	}
 	s.EASMSweep = easmapp.NewSweepService(sweepCT, sweepDNS, postgres.NewEASMSweepRepository(&postgres.DB{DB: deps.DB}), log)
 	s.CredentialImport = integration.NewCredentialImportService(repos.Exposure, repos.ExposureStateHistory, log)
