@@ -2999,6 +2999,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// waiting for it is planned.
 	s.Ingest.SetStepOutputRecorder(scanHops)
 	s.Ingest.SetStepInfoRecorder(scanHops)
+	s.Ingest.SetStepDispositionRecorder(scanHops)
 	s.Ingest.SetCommandIngestedHook(s.ScanRun.OnCommandIngested)
 
 	// Wire up scan workflow deactivator to tool service for cascade deactivation
