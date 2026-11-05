@@ -301,6 +301,8 @@
   "attackSurface.external.type.subdomain": "Tên miền phụ",
   "attackSurface.external.updateFailed": "Không cập nhật được tài sản bên ngoài",
   "attackSurface.external.updated": "Đã cập nhật tài sản bên ngoài.",
+  "attackSurface.infoMatches.description": "Quét mẫu cũng báo các kết quả mức thông tin: công nghệ máy chủ dùng, trang đăng nhập, cấu hình TLS và header. Mặc định chúng được lưu thành phơi nhiễm mức thông tin của tài sản và được đếm trên lượt quét, để bổ sung ngữ cảnh mà không thêm phát hiện. Bật tùy chọn này để ghi chúng thành phát hiện mức thông tin.",
+  "attackSurface.infoMatches.title": "Ghi kết quả mức thông tin của quét mẫu thành phát hiện",
   "attackSurface.kind.cert_changed": "Chứng chỉ mới",
   "attackSurface.kind.cert_expiring": "Chứng chỉ sắp hết hạn",
   "attackSurface.kind.dns_changed": "DNS thay đổi",

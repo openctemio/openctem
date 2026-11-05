@@ -1339,6 +1339,7 @@
   "scans.map.goneCount": "{count} biến mất",
   "scans.map.guardRefused": "{name}: {count} mục tiêu bị bộ kiểm tra mục tiêu của sensor từ chối (không chạy).",
   "scans.map.guardRefusedOne": "{name}: 1 mục tiêu bị bộ kiểm tra mục tiêu của sensor từ chối (không chạy).",
+  "scans.map.infoObservations": "{count} quan sát thông tin",
   "scans.map.loadFailed": "Không tải được sơ đồ lần chạy.",
   "scans.map.loading": "Đang tải sơ đồ lần chạy…",
   "scans.map.newCount": "+{count} mới",

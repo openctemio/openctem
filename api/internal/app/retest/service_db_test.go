@@ -24,6 +24,7 @@ import (
 	retestapp "github.com/openctemio/openctem/api/internal/app/retest"
 	scanapp "github.com/openctemio/openctem/api/internal/app/scan"
 	scopeapp "github.com/openctemio/openctem/api/internal/app/scope"
+	tenantapp "github.com/openctemio/openctem/api/internal/app/tenant"
 	"github.com/openctemio/openctem/api/internal/app/validation"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/internal/testdb"
@@ -103,7 +104,8 @@ func newFixture(t *testing.T) *fixture {
 	}
 	fx := &fixture{t: t, db: db, pg: &postgres.DB{DB: db}, tenant: shared.NewID(), user: shared.NewID()}
 	fx.repo = postgres.NewFindingRetestRepository(fx.pg)
-	fx.exec(`INSERT INTO tenants (id, name, slug) VALUES ($1, 'retest IT', $2)`, fx.tenant.String(), "retest-"+fx.tenant.String())
+	// New organizations start in the auto closing mode (tenant.NewTenant).
+	fx.exec(`INSERT INTO tenants (id, name, slug, settings) VALUES ($1, 'retest IT', $2, '{"closure":{"mode":"auto"}}')`, fx.tenant.String(), "retest-"+fx.tenant.String())
 	fx.exec(`INSERT INTO users (id, email, name) VALUES ($1, $2, 'analyst')`, fx.user.String(), fx.user.String()+"@retest.test")
 	t.Cleanup(func() {
 		bg := context.Background()
@@ -156,6 +158,7 @@ func (fx *fixture) serviceWith(sensors retestapp.SensorAvailability) *retestapp.
 		sensors, logger.NewNop())
 	// The production policy (settings.retest.auto_resolve) and evidence store.
 	svc.SetPolicy(retestapp.TenantPolicy{Tenants: postgres.NewTenantRepository(fx.pg)})
+	svc.SetClosureSettings(tenantapp.NewTenantService(postgres.NewTenantRepository(fx.pg), logger.NewNop()))
 	cipher, err := crypto.NewCipher([]byte("0123456789abcdef0123456789abcdef"))
 	if err != nil {
 		fx.t.Fatal(err)
@@ -210,6 +213,12 @@ func (fx *fixture) autoResolve(on bool) {
 	fx.exec(`UPDATE tenants SET settings = jsonb_set(COALESCE(settings, '{}'::jsonb), '{retest}',
 		COALESCE(settings->'retest', '{}'::jsonb) || jsonb_build_object('auto_resolve', $2::boolean)) WHERE id = $1`,
 		fx.tenant.String(), on)
+}
+
+// closingMode sets the organization's closing mode.
+func (fx *fixture) closingMode(mode string) {
+	fx.exec(`UPDATE tenants SET settings = jsonb_set(COALESCE(settings, '{}'::jsonb), '{closure}', jsonb_build_object('mode', $2::text)) WHERE id = $1`,
+		fx.tenant.String(), mode)
 }
 
 func (fx *fixture) findingState(id shared.ID) (status, method, resolvedBy string) {

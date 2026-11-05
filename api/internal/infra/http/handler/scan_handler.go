@@ -964,9 +964,9 @@ func formatBulkMessage(action string, successful, failed int) string {
 // @Accept       json
 // @Produce      json
 // @Param        id       path      string                  true   "Scan ID"
-// @Param        request  body      TriggerScanExecRequest  false  "Trigger context"
+// @Param        request  body      TriggerScanExecRequest  false  "Trigger context: only the key reason (text, at most 500 characters); any other key is refused with TRIGGER_CONTEXT_REFUSED"
 // @Success      201  {object}  RunResponse
-// @Failure      400  {object}  apierror.Error
+// @Failure      400  {object}  apierror.Error  "TRIGGER_CONTEXT_REFUSED: the context sets a key a caller may not set"
 // @Failure      403  {object}  apierror.Error  "caller may not start this scan"
 // @Failure      404  {object}  apierror.Error
 // @Failure      409  {object}  apierror.Error  "SCAN_WINDOW_NEVER_OPENS: a target's scan window never opens"
@@ -981,6 +981,12 @@ func (h *ScanHandler) TriggerScan(w http.ResponseWriter, r *http.Request) {
 	var req TriggerScanExecRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err.Error() != "EOF" {
 		apierror.BadRequest("Invalid request body").WriteJSON(w)
+		return
+	}
+	// The run context reaches the run's sensor jobs and decides its outcome:
+	// a caller may only set the allow-listed keys.
+	if err := scansvc.ValidateCallerTriggerContext(req.Context); err != nil {
+		h.handleServiceError(w, err)
 		return
 	}
 

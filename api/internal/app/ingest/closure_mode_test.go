@@ -29,6 +29,9 @@ func (failingClosure) GetClosureSettings(context.Context, string) (*tenant.Closu
 func (r *coverageFindingRepo) FindingRiskTiers(_ context.Context, _ shared.ID, ids []shared.ID) (map[shared.ID]vulnerability.RiskTier, error) {
 	out := make(map[shared.ID]vulnerability.RiskTier, len(ids))
 	for _, id := range ids {
+		if r.unknown[id] {
+			continue
+		}
 		if t, ok := r.tiers[id]; ok {
 			out[id] = t
 		} else {

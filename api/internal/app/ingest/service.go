@@ -112,7 +112,11 @@ type Service struct {
 	// stepOutputs records what command-bound reports of workflow steps
 	// wrote, for chained stages; commandIngested is told when a v2 report
 	// of a command finished (step_outputs.go). Nil-safe.
-	stepOutputs     StepOutputRecorder
+	stepOutputs StepOutputRecorder
+	// templateMatches files template info matches as exposures and
+	// stepInfo counts them on their step run (info_matches.go).
+	templateMatches TemplateMatchProjector
+	stepInfo        StepInfoRecorder
 	commandIngested CommandIngestedHook
 
 	// coverageMode and coverageGuard drive coverage-scoped auto-resolve of
@@ -679,6 +683,10 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 		addError(output, "findings: the tool name "+softwarematch.ToolName+" is reserved")
 		report.Findings = nil
 	}
+
+	// Step 2b: info matches of template scanners become exposures, not
+	// findings (info_matches.go).
+	s.routeInfoMatches(ctx, tenantID, report, assetMap, output, binding)
 
 	// Step 2c: Process findings using batch operations (if findingRepo is available)
 	if s.findingRepo != nil && len(report.Findings) > 0 {

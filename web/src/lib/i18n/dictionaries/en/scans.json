@@ -1339,6 +1339,7 @@
   "scans.map.goneCount": "{count} gone",
   "scans.map.guardRefused": "{name}: {count} targets refused by the sensor's target guard (not run).",
   "scans.map.guardRefusedOne": "{name}: 1 target refused by the sensor's target guard (not run).",
+  "scans.map.infoObservations": "{count} info observations",
   "scans.map.loadFailed": "The run map could not be loaded.",
   "scans.map.loading": "Loading the run map…",
   "scans.map.newCount": "+{count} new",

@@ -123,7 +123,7 @@ sequenceDiagram
   S-->>H: 202 job id, WebSocket triage_pending, activity, audit
   W->>DB: AcquireTriageSlot: row FOR UPDATE, pending to processing, token limit
   W->>W: settings and use case again, ceiling, GetByID, checkEgress,<br/>refuseUnrequested, CreateProviderForTenant
-  W->>W: buildTriagePromptSafe: fields under the ceiling, nonce fence,<br/>secret redaction, no aimask placeholders
+  W->>W: buildTriagePromptSafe: fields under the ceiling, nonce fence,<br/>masked under the organization's policy (aimask)
   W->>W: BudgetService.Check (estimate)
   W->>M: provider.Complete (JSON mode)
   alt transient failure with retries left
@@ -131,7 +131,7 @@ sequenceDiagram
   else other failure
     W->>DB: failTriage with a fixed code
   end
-  W->>W: ValidateAndSanitize, applyInjectionGuard, BudgetService.Record
+  W->>W: unmask the answer (unknown placeholder: needs review), ValidateAndSanitize, applyInjectionGuard, BudgetService.Record
   W->>DB: MarkCompleted (a save failure is final)
   W->>W: needs_review audit, activity, proposeFalsePositive (auto_apply only),<br/>audit completed, workflow event (not for bug bounty), WebSocket
 ```
@@ -162,14 +162,28 @@ so a campaign whose TLP was raised after the request is still kept back. A
 refused request answers `403 AI_POLICY_RESTRICTED`; a refused queued job
 fails with `ai_policy_restricted`; auto-triage simply does not queue it.
 
-AI triage is **not** masked: `buildTriagePromptSafe` writes the finding's
-own title, description, source, tool, file path and (under a `restricted`
-ceiling) code snippet into the prompt, so host names and addresses in that
-text reach the provider as written. Only a leaked secret's description is
-passed through `safetext.RedactSecrets`, and its snippet is never sent. The
-placeholder masking of [AI context masking](ai-context-masking.md)
-(`aibundle`, `aimask`) is used by AI agents' runs
-([AI agents](ai-analysis.md)), not by this path.
+AI triage is masked like an AI agent's run
+([AI context masking](ai-context-masking.md)). For each request the worker
+makes a masker with a fresh random key under the organization's masking
+policy (Settings > AI > Data masking), with the organization's and the
+asset's names seeded (`MaskingInputs`, the same `BundleInput` an AI agent's
+run uses; unwired, every class is masked). `buildTriagePromptSafe` masks the
+title, description and file path with the policy, and the code snippet
+(restricted) with every class; source, tool, CVE, CWE, OWASP and compliance
+ids go as written. Secrets always become `SECRET_n`, a leaked secret's
+description is also passed through `safetext.RedactSecrets`, and its snippet
+is never sent. The prompt carries the trusted placeholder facts (which masked
+address is in which masked network, a secret's type and length).
+
+The model's JSON answer is unmasked string by string before validation, so
+the stored result, its raw response, workflows and audit see real values.
+A placeholder the request never issued stays as text and adds a validation
+warning (the result needs review and never becomes a false-positive
+proposal). The map exists only in memory for that request: it is never
+stored, logged or sent; the log preview of an invalid answer shows the masked
+text. A failed policy or name lookup sends nothing (the queue retries).
+A class the organization leaves readable is sent as written, as for AI
+agents.
 
 ## What an AI reviewer may see
 
