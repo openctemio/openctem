@@ -70,6 +70,13 @@ func BuildFinding(tenantID shared.ID, m softwarematch.Match, confidence int, lab
 	if purl := PackageIdentityPURL(m); purl != "" {
 		meta["purl"] = purl
 	}
+	if m.HostedBy != "" {
+		// The provider's software on its shared front end: context for the
+		// organization (CapSharedHostingPriority), not its own finding.
+		meta["hosted_by"] = m.HostedBy
+		meta["attributed_to"] = "provider"
+		meta["reasons"] = append(append([]string{}, reasons...), "shared_hosting")
+	}
 	f.SetMetadata("version_match", meta)
 	return f, nil
 }

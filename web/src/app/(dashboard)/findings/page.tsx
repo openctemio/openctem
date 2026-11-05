@@ -56,6 +56,8 @@ import {
   DataTable,
   DataTableColumnHeader,
   FacetPanel,
+  FilterPanelSlot,
+  useFilterPanelOpen,
   FacetSection,
   FacetOption,
   FacetToggle,
@@ -692,25 +694,7 @@ function FindingsContent() {
   )
   // Filter panel: closed by default so the table gets the width; the viewer's
   // choice is remembered (a per-browser convenience, safe to lose).
-  const [filtersOpen, setFiltersOpenState] = useState(false)
-  useEffect(() => {
-    try {
-      if (window.localStorage.getItem(FILTERS_OPEN_KEY) === '1') setFiltersOpenState(true)
-    } catch {
-      // storage unavailable — stay closed
-    }
-  }, [])
-  const setFiltersOpen = useCallback((next: boolean | ((open: boolean) => boolean)) => {
-    setFiltersOpenState((prev) => {
-      const value = typeof next === 'function' ? next(prev) : next
-      try {
-        window.localStorage.setItem(FILTERS_OPEN_KEY, value ? '1' : '0')
-      } catch {
-        // best-effort
-      }
-      return value
-    })
-  }, [])
+  const [filtersOpen, setFiltersOpen] = useFilterPanelOpen(FILTERS_OPEN_KEY)
   const { t, locale } = useTranslation()
   const severityLabel = useSeverityLabel()
   // The sidebar's quick views with their counts; they also say whether this
@@ -1889,8 +1873,6 @@ function FindingsContent() {
     </FacetPanel>
   )
 
-  const facetPanelScrollable = <div className="flex min-h-0 flex-1 flex-col">{facetPanel}</div>
-
   // The grouped views do not load the flat page; the tab count is the same number.
   const total = findingsResponse?.total ?? 0
   // The view this list is: a built-in quick view when the URL is exactly one,
@@ -2492,29 +2474,13 @@ function FindingsContent() {
 
           <>
             <div className="flex items-start">
-              {/* Always mounted so opening and closing can animate: the slot's
-                width (and the gap after it) eases between 0 and the card's
-                width while the card fades, and the table beside it resizes in
-                step. The card keeps its own width, so its contents never
-                reflow mid-animation. */}
-              <div
-                inert={!filtersOpen}
-                className={cn(
-                  'sticky top-4 hidden shrink-0 overflow-hidden transition-[width,margin-inline-end,opacity] duration-300 ease-in-out motion-reduce:transition-none lg:block',
-                  filtersOpen ? 'me-5 w-64 opacity-100' : 'me-0 w-0 opacity-0'
-                )}
+              <FilterPanelSlot
+                open={filtersOpen}
+                id="finding-filters"
+                label={t('findings.filters.title', 'Finding filters')}
               >
-                <aside
-                  id="finding-filters"
-                  aria-label={t('findings.filters.title', 'Finding filters')}
-                  // A self-contained floating card, as tall as the viewport and
-                  // pinned while the page scrolls: its length no longer depends
-                  // on the table's, and long filter lists scroll inside it.
-                  className="flex h-[calc(100svh-7.5rem)] w-64 flex-col rounded-lg border bg-card p-4"
-                >
-                  {facetPanelScrollable}
-                </aside>
-              </div>
+                {facetPanel}
+              </FilterPanelSlot>
 
               <div className="min-w-0 flex-1 space-y-3">
                 {!urlSettled ? (

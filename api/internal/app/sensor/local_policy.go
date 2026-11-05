@@ -11,6 +11,7 @@ import (
 	"time"
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
+	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
@@ -24,7 +25,7 @@ type localPolicyWriter interface {
 // RefusalForgetter lifts a sensor's exclusion from the pending commands it
 // refused (postgres.CommandRepository.ForgetRefusalsOf).
 type RefusalForgetter interface {
-	ForgetRefusalsOf(ctx context.Context, tenantID, sensorID shared.ID) (int64, error)
+	ForgetRefusalsOf(ctx context.Context, tenantID, sensorID shared.ID, policyKey string) (int64, error)
 }
 
 // SetRefusalForgetter makes a change of a sensor's reported local policy
@@ -44,7 +45,7 @@ func (s *SensorService) localPolicyChanged(ctx context.Context, a *sensordom.Sen
 	if prev != nil && prev.State == next.State && prev.Digest == next.Digest && prev.KillSwitch == next.KillSwitch {
 		return
 	}
-	n, err := s.refusalForgetter.ForgetRefusalsOf(ctx, *a.TenantID, a.ID)
+	n, err := s.refusalForgetter.ForgetRefusalsOf(ctx, *a.TenantID, a.ID, commanddom.PolicyKey(next.Digest, next.State))
 	if err != nil {
 		s.logger.Warn("failed to offer refused commands again after a local policy change", "sensor_id", a.ID.String(), "error", err)
 		return
