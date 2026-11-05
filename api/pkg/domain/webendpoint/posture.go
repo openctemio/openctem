@@ -23,6 +23,10 @@ const PostureKey = "http_posture"
 // the response did not send.
 const PostureNotSent = "none"
 
+// postureOther is the enum value of a header sent with a value outside the
+// list.
+const postureOther = "other"
+
 // Bounds of the posture attribute.
 const (
 	// MaxPostureCookies caps the cookie flag list.
@@ -42,8 +46,8 @@ var (
 	postureEnums = map[string][]string{
 		// none: the response did not send the header (a template check
 		// that reports the missing header says so).
-		"frame_options":   {"deny", "sameorigin", "allow_from", "other", PostureNotSent},
-		"referrer_policy": {PostureNotSent, "no-referrer", "no-referrer-when-downgrade", "origin", "origin-when-cross-origin", "same-origin", "strict-origin", "strict-origin-when-cross-origin", "unsafe-url", "other"},
+		"frame_options":   {"deny", "sameorigin", "allow_from", postureOther, PostureNotSent},
+		"referrer_policy": {PostureNotSent, "no-referrer", "no-referrer-when-downgrade", "origin", "origin-when-cross-origin", "same-origin", "strict-origin", "strict-origin-when-cross-origin", "unsafe-url", postureOther},
 		"cors_origin":     {"none", "wildcard", "specific", "reflected"},
 	}
 	cookieNameRE   = regexp.MustCompile(`^[A-Za-z0-9_.\-]{1,64}$`)
@@ -190,13 +194,13 @@ func PostureFromSecurityHeaders(h *ctis.SecurityHeaders) map[string]any {
 		case strings.HasPrefix(fo, "allow-from"):
 			raw["frame_options"] = "allow_from"
 		default:
-			raw["frame_options"] = "other"
+			raw["frame_options"] = postureOther
 		}
 	}
 	if rp := strings.ToLower(strings.TrimSpace(h.ReferrerPolicy)); rp != "" {
 		// A sent header is never "none" (that value means not sent).
 		if rp == PostureNotSent || !containsStr(postureEnums["referrer_policy"], rp) {
-			rp = "other"
+			rp = postureOther
 		}
 		raw["referrer_policy"] = rp
 	}
