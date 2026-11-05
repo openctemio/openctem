@@ -10,6 +10,8 @@ tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 scenario "$tmp"
 w="$tmp/work"
+
+stub_release_lists "$tmp/stub"
 dev="$(git -C "$w" rev-parse develop)"
 
 # --- train -------------------------------------------------------------------
@@ -28,6 +30,35 @@ assert_eq "train: pushed" "$head" "$(git -C "$w" ls-remote origin refs/heads/rel
 # The PR merges into main without conflicts and yields the release branch's tree.
 merged_tree="$(git -C "$w" merge-tree --write-tree origin/main "$head")"
 assert_eq "train: merges into main cleanly to the branch's tree" "$(git -C "$w" rev-parse "$head^{tree}")" "$merged_tree"
+
+# The version commit refreshes each component's built-in latest from its
+# published releases and copies it to the consumers; min is never touched, a
+# component with an unpublished image keeps the previous release, and an
+# older published release never lowers a latest.
+digest="sha256:$(printf 'c%.0s' {1..64})"
+echo '[{"tagName":"v0.7.0","publishedAt":"2026-11-01T00:00:00Z"},{"tagName":"v0.6.9","publishedAt":"2026-10-30T00:00:00Z"}]' >"$tmp/stub/releases/sensor.json"
+echo "$digest" >"$tmp/stub/images/ghcr.io_openctemio_sensor_v0.6.9"
+echo '[{"tagName":"v0.4.0","publishedAt":"2026-11-05T00:00:00Z"}]' >"$tmp/stub/releases/ci.json"
+echo "$digest" >"$tmp/stub/images/ghcr.io_openctemio_ci_v0.4.0"
+echo '[{"tagName":"v0.1.0","publishedAt":"2026-11-05T00:00:00Z"}]' >"$tmp/stub/releases/sdk-go.json"
+out="$(bash "$CUT" --repo "$w" --version v0.6.0 --sha "$dev" 2>"$tmp/err")"; rc=$?
+assert_eq "refresh: exit 0 ($(cat "$tmp/err"))" 0 "$rc"
+rhead="$(sed -n 's/^HEAD=//p' <<<"$out")"
+manifest="$(git -C "$w" show "$rhead:versions.yaml")"
+assert_contains "refresh: sensor.latest = newest release with an image" "latest: v0.6.9" "$manifest"
+assert_contains "refresh: ci.latest raised" "$(printf 'ci:\n  latest: v0.4.0')" "$manifest"
+assert_contains "refresh: an older sdk release never lowers it" "$(printf 'sdk:\n  latest: v0.14.0')" "$manifest"
+assert_eq "refresh: min untouched" "$(git -C "$w" show "$dev:versions.yaml" | grep -c 'min:')" "$(grep -c 'min: ""' <<<"$manifest")"
+assert_eq "refresh: embedded copy follows" "$manifest" "$(git -C "$w" show "$rhead:api/internal/versions/versions.yaml")"
+assert_contains "refresh: console fallback follows" "CI_RELEASE_FALLBACK = 'v0.4.0'" "$(git -C "$w" show "$rhead:web/src/features/ci-runners/lib/ci.ts")"
+assert_contains "refresh: bundled sensor default follows" "SENSOR_VERSION:-v0.6.9" "$(git -C "$w" show "$rhead:api/deploy/docker-compose.sensor.yml")"
+assert_contains "refresh: unreadable component only warns" "connector-tenable.latest stays v0.1.0" "$(cat "$tmp/err")"
+git -C "$w" branch -q -D release/v0.6.0
+out="$(bash "$CUT" --repo "$w" --version v0.6.0 --sha "$dev" --no-refresh-latest 2>"$tmp/err")"; rc=$?
+assert_eq "no refresh: exit 0" 0 "$rc"
+assert_eq "no refresh: versions.yaml untouched" "$(git -C "$w" show "$dev:versions.yaml")" "$(git -C "$w" show "$(sed -n 's/^HEAD=//p' <<<"$out"):versions.yaml")"
+git -C "$w" branch -q -D release/v0.6.0
+find "$tmp/stub/releases" "$tmp/stub/images" -type f -delete
 
 assert_rc "train: branch exists -> refused" 1 bash "$CUT" --repo "$w" --version v0.3.0 --sha "$dev"
 assert_rc "train: not greater than the last tag -> refused" 1 bash "$CUT" --repo "$w" --version v0.2.0 --sha "$dev"
@@ -72,13 +103,17 @@ git -C "$w" switch -q develop
 
 # --- hotfix --------------------------------------------------------------------
 fix="$(git -C "$w" log --format=%H --grep '^fix(api): after release' -n 1 develop)"
+echo '[{"tagName":"v0.7.0","publishedAt":"2026-11-01T00:00:00Z"}]' >"$tmp/stub/releases/sensor.json"
+echo "sha256:$(printf 'e%.0s' {1..64})" >"$tmp/stub/images/ghcr.io_openctemio_sensor_v0.7.0"
 out="$(bash "$CUT" --repo "$w" --version v0.2.1 --mode hotfix --picks "$fix" --push 2>"$tmp/err")"; rc=$?
+find "$tmp/stub/releases" "$tmp/stub/images" -type f -delete
 assert_eq "hotfix: exit 0 ($(cat "$tmp/err"))" 0 "$rc"
 head="$(sed -n 's/^HEAD=//p' <<<"$out")"
 assert_eq "hotfix: built on the tag" "$(git -C "$w" rev-parse 'v0.2.0^{commit}')" "$(git -C "$w" rev-parse "$head~2")"
 assert_contains "hotfix: cherry-picked with -x" "cherry picked from commit $fix" "$(git -C "$w" log -1 --format=%B "$head~1")"
 assert_eq "hotfix: head has one parent" 2 "$(git -C "$w" rev-list --parents -n 1 "$head" | wc -w)"
 assert_eq "hotfix: the checkout installs the hotfix" "v0.2.1" "$(git -C "$w" show "$head:api/deploy/VERSION")"
+assert_eq "hotfix: no latest refresh (only VERSION and the pick change)" "api/deploy/VERSION d.txt" "$(git -C "$w" diff --name-only "v0.2.0" "$head" | tr '\n' ' ' | sed 's/ $//')"
 assert_rc "hotfix: still has gone.txt (no develop changes leak in)" 0 git -C "$w" cat-file -e "$head:gone.txt"
 assert_rc "hotfix: wrong version refused" 1 bash "$CUT" --repo "$w" --version v0.3.0 --mode hotfix --picks "$fix"
 assert_rc "hotfix: needs picks" 2 bash "$CUT" --repo "$w" --version v0.2.2 --mode hotfix

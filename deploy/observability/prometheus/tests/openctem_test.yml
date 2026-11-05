@@ -337,3 +337,24 @@ tests:
       - eval_time: 19m
         alertname: HostClockOffsetLarge
         exp_alerts: []
+
+  # A notification that gave up warns while it is within the last hour; the
+  # counter standing still does not.
+  - interval: 1m
+    input_series:
+      - series: 'openctem_notification_dead_letters_total{where="channel",job="openctem-api",instance="api:8080"}'
+        values: '0 0 0 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: OutboxDeadLetters
+        exp_alerts: []
+      - eval_time: 10m
+        alertname: OutboxDeadLetters
+        exp_alerts:
+          - exp_labels: {severity: warning, component: api}
+            exp_annotations:
+              summary: '1 notification(s) gave up in the last hour'
+              runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#outboxdeadletters
+      - eval_time: 75m
+        alertname: OutboxDeadLetters
+        exp_alerts: []
