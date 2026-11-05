@@ -192,6 +192,7 @@
   "attackSurface.discovery.reason.content_missing": "Thiếu danh sách từ",
   "attackSurface.discovery.reason.coverage_off": "Độ phủ tự động đang tắt",
   "attackSurface.discovery.reason.credentials_missing": "Thiếu thông tin xác thực",
+  "attackSurface.discovery.reason.feature_off": "Chụp ảnh đang tắt",
   "attackSurface.discovery.reason.no_eligible_sensor": "Không sensor nào nhận được lần chạy",
   "attackSurface.discovery.reason.no_scope": "Không có mục phạm vi đang hoạt động",
   "attackSurface.discovery.reason.not_claimed": "Không sensor nào nhận các lần chạy gần đây",
