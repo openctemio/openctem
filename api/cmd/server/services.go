@@ -131,6 +131,7 @@ import (
 	signupapp "github.com/openctemio/openctem/api/internal/app/signup"
 	"github.com/openctemio/openctem/api/internal/app/sla"
 	"github.com/openctemio/openctem/api/internal/app/storagequota"
+	tasksecretapp "github.com/openctemio/openctem/api/internal/app/tasksecret"
 	"github.com/openctemio/openctem/api/internal/app/template"
 	tenantapp "github.com/openctemio/openctem/api/internal/app/tenant"
 	"github.com/openctemio/openctem/api/internal/app/tenantai"
@@ -138,6 +139,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/threatsource"
 	"github.com/openctemio/openctem/api/internal/app/ticketing"
 	appticketmap "github.com/openctemio/openctem/api/internal/app/ticketmap"
+	toolsourceapp "github.com/openctemio/openctem/api/internal/app/toolsource"
 	"github.com/openctemio/openctem/api/internal/app/validation"
 	"github.com/openctemio/openctem/api/internal/app/versioncheck"
 	vexapp "github.com/openctemio/openctem/api/internal/app/vex"
@@ -768,6 +770,11 @@ type Services struct {
 	SensorGrant *sensorgrant.Service
 	ScanZone    *scanzoneapp.Service
 	ProxyPool   *proxypoolapp.Service
+	// ToolSource holds the organization keys of third-party tool sources.
+	ToolSource *toolsourceapp.Service
+	// TaskSecrets lists a claimed job's secret refs and answers the sealed
+	// per-task fetch.
+	TaskSecrets *tasksecretapp.Service
 	// ScanWindow manages scan window policies and overrides (RFC-067);
 	// ScanWindowResolver finds what governs targets for the claim, the
 	// trigger and the API.
@@ -2415,6 +2422,13 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Proxy pools for scan traffic: credentials encrypted with the
 	// credentials key, never stored in clear.
 	s.ProxyPool = proxypoolapp.NewService(repos.ProxyPool, s.Encryptor, s.Audit, log)
+	// Tool source keys: encrypted with the credentials key, write-only,
+	// delivered only to the sensor holding a task of the organization's job.
+	s.ToolSource = toolsourceapp.NewService(repos.ToolSourceKey, s.Encryptor, s.Audit, log)
+	// Task secrets: the refs a claimed job may use (in its signed payload)
+	// and the sealed per-task fetch. The command reader is set once the
+	// command service exists.
+	s.TaskSecrets = tasksecretapp.NewService(repos.CommandSecretGrant, nil, repos.SensorGrant, s.ToolSource, s.ProxyPool, s.Audit, log)
 	// The Test button: sensors test the endpoints, the platform never
 	// connects to a proxy. Disabled when no https address is known for the
 	// echo (PROXY_TEST_ECHO_URL, SENSOR_PUBLIC_API_URL or APP_URL).
@@ -2476,6 +2490,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// Per-sensor tool settings ride on every scan job, inside the signed
 		// payload (settings_layers.sensor).
 		command.WithToolSettings(s.Sensor),
+		// The job's secret refs ride in the signed payload (secrets).
+		command.WithTaskSecrets(s.TaskSecrets),
 		// RFC-052 §5: each sensor's grant, before every other gate.
 		command.WithGrants(repos.SensorGrant, s.Sensor),
 		// RFC-055 §6.3: the tier is assigned from the tool contract.
@@ -2530,6 +2546,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// that lost access or opted out keeps its queued shared jobs waiting).
 	cmdOpts = append(cmdOpts, command.WithSharedAccess(s.SharedSensorsAllowed))
 	s.Command = command.NewService(repos.Command, log, cmdOpts...)
+	s.TaskSecrets.SetCommands(s.Command)
 	s.SensorContent = sensorapp.NewContentService(repos.Sensor, s.Sensor, repos.SensorContentPolicy, repos.Command, s.Audit, log)
 	// Tenable.sc sensor connector (RFC-047): connector_sync commands pinned to
 	// the integration's sensor, followed to keep the sync cursor.
