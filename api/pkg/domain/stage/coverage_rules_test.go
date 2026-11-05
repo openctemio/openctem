@@ -10,6 +10,10 @@ import (
 // stage, no sensor): the DNS checks of the attack-surface module.
 var platformChecks = map[string]bool{"dns.dangling": true, "dns.email": true}
 
+// ledgerPasses are coverage capabilities that are a second pass of a stage
+// under their own ledger key: the info pass of vuln.templates.
+var ledgerPasses = map[string]Key{"vuln.templates_info": VulnTemplates}
+
 // Every coverage rule of the registry names a stage that takes the type, or
 // a platform check; a rule's expected output is something that stage may
 // produce. A rule that names a stage which cannot take the type would be a
@@ -26,7 +30,11 @@ func TestCoverageRules_NameStagesThatTakeTheType(t *testing.T) {
 			if platformChecks[r.Capability] {
 				continue
 			}
-			s, ok := Lookup(Key(r.Capability))
+			stageKey := Key(r.Capability)
+			if base, ok := ledgerPasses[r.Capability]; ok {
+				stageKey = base
+			}
+			s, ok := Lookup(stageKey)
 			if !ok {
 				t.Errorf("%s: coverage capability %q is not a stage or a platform check", d.Type, r.Capability)
 				continue
