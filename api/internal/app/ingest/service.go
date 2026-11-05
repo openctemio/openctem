@@ -287,6 +287,12 @@ func (s *Service) SetWebEvidenceRecorder(r WebEvidenceRecorder) {
 	s.assetProcessor.SetWebEvidenceRecorder(r)
 }
 
+// SetPageChangeNotifier schedules a new capture of a web service whose page
+// changed (RFC-081).
+func (s *Service) SetPageChangeNotifier(n PageChangeNotifier) {
+	s.assetProcessor.SetPageChangeNotifier(n)
+}
+
 // SetAssetsObservedCallback sets the callback for every asset an ingest
 // wrote, with the report's tool and observation time (asset freshness).
 func (s *Service) SetAssetsObservedCallback(callback AssetsObservedCallback) {

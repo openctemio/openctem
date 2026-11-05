@@ -2852,6 +2852,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// Coverage of a tool that reads a platform wordlist (enumerate.subdomains)
 		// pauses until the platform has the pack, instead of failing at claim.
 		scan.WithCoverageContent(contentPlanner),
+		// capture.screenshot is planned only for an organization that switched screenshots on.
+		scan.WithCoverageSettings(s.Tenant),
 		// Ownership of every actively scanned target (RFC-036 §6.3): confirmed,
 		// or unrecorded inside a scope target / under a seed; never rejected.
 		scan.WithAttributionGate(s.ActiveGate),
@@ -3010,6 +3012,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// A step's chunks keep a name with the addresses it resolves to.
 		scanrun.WithNameAddresses(repos.Attribution),
 	)
+	// A workflow step that takes screenshots is skipped while the organization has them off.
+	s.ScanRun.SetStepGate(s.Scan)
 
 	// One step dispatcher (research/27 P0-2): a workflow scan's first steps
 	// are queued by the scan run service, like every later step.
@@ -3522,6 +3526,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	}
 	s.WebEvidence = webevidenceapp.NewService(repos.AssetWebEvidence, blobs, s.Tenant, log.With("service", "web-evidence"))
 	s.Ingest.SetWebEvidenceRecorder(s.WebEvidence)
+	// A web service whose page changed is captured again (not only on the 30-day cadence).
+	s.Ingest.SetPageChangeNotifier(repos.AssetCoverage)
 	// Web page monitoring (RFC-138): fetch results of watched URLs are
 	// diffed server-side; a new third-party script host is an exposure
 	// through the EASM writer (alerts), resolved by the DNS repository's

@@ -498,7 +498,7 @@ func (s *AssetService) CreateAsset(ctx context.Context, input CreateAssetInput) 
 	}
 	tags, tagErr := tagdom.ValidateNew(nil, input.Tags)
 	if tagErr != nil {
-		return nil, fmt.Errorf("%w: %w", shared.ErrValidation, tagErr)
+		return nil, tagdom.Refusal(tagErr)
 	}
 	for _, tag := range tags {
 		a.AddTag(tag)
@@ -1177,7 +1177,7 @@ func (s *AssetService) updateAsset(ctx context.Context, assetID string, tenantID
 		// carries (a scanner's, an older limit's) never blocks a save.
 		next, tagErr := tagdom.ValidateNew(oldTags, input.Tags)
 		if tagErr != nil {
-			return nil, nil, fmt.Errorf("%w: %w", shared.ErrValidation, tagErr)
+			return nil, nil, tagdom.Refusal(tagErr)
 		}
 		for _, tag := range oldTags {
 			if !slices.Contains(next, tag) {
@@ -2202,7 +2202,7 @@ func (s *AssetService) CreateRepositoryAssetWithOutcome(ctx context.Context, inp
 	}
 	repoTags, tagErr := tagdom.ValidateNew(nil, input.Tags)
 	if tagErr != nil {
-		return nil, nil, none, fmt.Errorf("%w: %w", shared.ErrValidation, tagErr)
+		return nil, nil, none, tagdom.Refusal(tagErr)
 	}
 	for _, tag := range repoTags {
 		a.AddTag(tag)
@@ -2777,7 +2777,7 @@ func (s *AssetService) updateExistingRepositoryAsset(
 	// Add new tags (checked like a create; a tag the asset carries stays)
 	addTags, tagErr := tagdom.ValidateNew(existingAsset.Tags(), input.Tags)
 	if tagErr != nil {
-		return nil, nil, fmt.Errorf("%w: %w", shared.ErrValidation, tagErr)
+		return nil, nil, tagdom.Refusal(tagErr)
 	}
 	for _, tag := range addTags {
 		existingAsset.AddTag(tag)
