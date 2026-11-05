@@ -24,7 +24,7 @@ func (r *v2Rig) boundScanCommand(tn v2Tenant, tool string, targets ...string) sh
 	r.t.Helper()
 	cmdID := shared.NewID()
 	body, _ := json.Marshal(map[string]any{"scanner": tool, "targets": targets})
-	if _, err := r.db.Exec(`INSERT INTO commands (id, tenant_id, sensor_id, type, priority, payload, status, created_at, expires_at)
+	if _, err := r.db.ExecContext(context.Background(), `INSERT INTO commands (id, tenant_id, sensor_id, type, priority, payload, status, created_at, expires_at)
 		VALUES ($1, $2, $3, 'scan', 'normal', $4, 'running', NOW(), NOW() + interval '1 hour')`,
 		cmdID.String(), tn.tenant.String(), tn.sensor.String(), string(body)); err != nil {
 		r.t.Fatalf("seed command: %v", err)
@@ -61,7 +61,7 @@ func TestIngestOutsideTargets_RecordedInTheSendersTenantOnly(t *testing.T) {
 		t.Fatalf("seed other tenant's asset: %v", err)
 	}
 	var otherBefore time.Time
-	if err := r.db.QueryRow(`SELECT updated_at FROM assets WHERE tenant_id = $1 AND name = $2`, other.tenant.String(), redirect).Scan(&otherBefore); err != nil {
+	if err := r.db.QueryRowContext(ctx, `SELECT updated_at FROM assets WHERE tenant_id = $1 AND name = $2`, other.tenant.String(), redirect).Scan(&otherBefore); err != nil {
 		t.Fatal(err)
 	}
 
@@ -76,24 +76,24 @@ func TestIngestOutsideTargets_RecordedInTheSendersTenantOnly(t *testing.T) {
 		t.Fatalf("status %+v, want both findings and assets accepted", st)
 	}
 	var assetID string
-	if err := r.db.QueryRow(`SELECT id::text FROM assets WHERE tenant_id = $1 AND name = $2`, mine.tenant.String(), redirect).Scan(&assetID); err != nil {
+	if err := r.db.QueryRowContext(ctx, `SELECT id::text FROM assets WHERE tenant_id = $1 AND name = $2`, mine.tenant.String(), redirect).Scan(&assetID); err != nil {
 		t.Fatalf("the host outside the targets was not recorded: %v", err)
 	}
 	var onIt int
-	if err := r.db.QueryRow(`SELECT COUNT(*) FROM findings WHERE tenant_id = $1 AND asset_id = $2 AND rule_id = 'after-redirect'`,
+	if err := r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM findings WHERE tenant_id = $1 AND asset_id = $2 AND rule_id = 'after-redirect'`,
 		mine.tenant.String(), assetID).Scan(&onIt); err != nil || onIt != 1 {
 		t.Fatalf("finding on the recorded host: %d (%v)", onIt, err)
 	}
 	// Recording grants nothing: no confirmed attribution for it.
 	var confirmed int
-	if err := r.db.QueryRow(`SELECT COUNT(*) FROM asset_attributions WHERE tenant_id = $1 AND asset_id = $2 AND state = 'confirmed'`,
+	if err := r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM asset_attributions WHERE tenant_id = $1 AND asset_id = $2 AND state = 'confirmed'`,
 		mine.tenant.String(), assetID).Scan(&confirmed); err != nil || confirmed != 0 {
 		t.Fatalf("a host outside the targets was confirmed: %d (%v)", confirmed, err)
 	}
 
 	// Tenant isolation: the other tenant's asset and findings are untouched.
 	var otherAfter time.Time
-	if err := r.db.QueryRow(`SELECT updated_at FROM assets WHERE tenant_id = $1 AND name = $2`, other.tenant.String(), redirect).Scan(&otherAfter); err != nil {
+	if err := r.db.QueryRowContext(ctx, `SELECT updated_at FROM assets WHERE tenant_id = $1 AND name = $2`, other.tenant.String(), redirect).Scan(&otherAfter); err != nil {
 		t.Fatal(err)
 	}
 	if !otherAfter.Equal(otherBefore) || r.countFindings(other, "") != 0 {
