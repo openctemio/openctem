@@ -222,3 +222,19 @@ func TestSetExclusionTesting(t *testing.T) {
 		t.Errorf("another tenant: err = %v, want not found", err)
 	}
 }
+
+// An exclusion stored escaped (before prefixes were decoded) is sent decoded
+// as well, and one with a "*" segment is cut before it, so every sensor,
+// with or without segment wildcards, refuses what the exclusion covers.
+func TestBuildWebScope_EscapedAndWildcardPrefixes(t *testing.T) {
+	tenantID := shared.NewID()
+	svc := newFilterService(&fakeExclusionRepo{active: []*scopedom.Exclusion{
+		pathExclusion(t, tenantID, "*", "/files/My%20Docs", nil, scopedom.TestingBlocked, nil),
+		pathExclusion(t, tenantID, "*", "/tenants/*/admin", nil, scopedom.TestingBlocked, nil),
+	}})
+	ws, err := svc.BuildWebScope(context.Background(), tenantID, []string{"https://app.example.com"})
+	want := []string{"/files/My Docs", "/files/My%20Docs", "/tenants/"}
+	if err != nil || ws == nil || !slices.Equal(ws.DenyPaths, want) {
+		t.Fatalf("scope = %+v, %v; want deny paths %q", ws, err, want)
+	}
+}
