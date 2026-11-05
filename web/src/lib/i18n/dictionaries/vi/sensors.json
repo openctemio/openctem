@@ -406,6 +406,7 @@
   "sensors.detail.overCapacityHint": "Sensor tính số chỗ chạy từ CPU và bộ nhớ còn trống trên máy. Máy bận hơn sau khi các job này bắt đầu, nên giờ chỉ còn chứa được {capacity}. Sensor không nhận job mới cho đến khi các job đang chạy xong.",
   "sensors.detail.platformNotReported": "Chưa báo cáo nền tảng",
   "sensors.detail.problems": "{count} vấn đề cần xử lý",
+  "sensors.detail.reportedFindings": "Các phát hiện sensor này đã báo cáo",
   "sensors.detail.role.collector": "Collector",
   "sensors.detail.role.scanner": "Bộ quét",
   "sensors.detail.scansToDate": "Số lần quét đến nay",

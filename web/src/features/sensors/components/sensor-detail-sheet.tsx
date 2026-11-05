@@ -51,6 +51,8 @@ import {
   type DetailTab,
 } from '@/features/shared'
 import { useTranslation } from '@/context/i18n-provider'
+import { seenByFindingsHref } from '@/features/findings/api/receipts-api'
+import Link from '@/components/link'
 import { useNow } from '@/hooks/use-now'
 import type { ScanZone } from '@/lib/api/scan-zone-types'
 import {
@@ -1236,6 +1238,16 @@ export function SensorDetailSheet({
             />
 
             <SensorStats sensor={sensor} now={now} thresholds={thresholds} />
+
+            <p className="text-sm">
+              <Link
+                href={seenByFindingsHref('seen_by_sensor_id', sensor.id)}
+                className="font-medium underline-offset-2 hover:underline"
+                data-testid="sensor-reported-findings"
+              >
+                {t('sensors.detail.reportedFindings', 'Findings this sensor reported')}
+              </Link>
+            </p>
 
             <DetailSections>
               {(!oneShot || sensorToolRows(sensor).length > 0) && (

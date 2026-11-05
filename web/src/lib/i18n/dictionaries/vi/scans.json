@@ -1992,6 +1992,7 @@
   "scans.runDetail.noDispatch": "Lần chạy này không ghi chi tiết phân phối (lần chạy từ trước khi có định tuyến đích).",
   "scans.runDetail.noTasks": "Lần chạy này chưa phân phối tác vụ nào.",
   "scans.runDetail.partial": "Một số công việc chưa hoàn tất; kết quả đã nhận về vẫn được giữ lại",
+  "scans.runDetail.reportedFindings": "Các phát hiện lần chạy này đã báo cáo",
   "scans.runDetail.runId": "ID lần chạy",
   "scans.runDetail.runMap": "Sơ đồ lần chạy",
   "scans.runDetail.runNoun": "lần chạy",
