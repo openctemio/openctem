@@ -21,6 +21,7 @@ import {
   FacetOption,
   FilterSheet,
   MetaLine,
+  useFilterPanelOpen,
 } from '@/features/shared'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -154,33 +155,6 @@ const configScheduleFilters: { value: ConfigScheduleFilter; label: string }[] = 
 // ============================================
 
 const CONFIG_FILTERS_OPEN_KEY = 'openctem:scan-config-filters-open'
-
-/**
- * Whether the filter panel is open. Closed by default so the table gets the
- * width; the viewer's choice is remembered per browser (safe to lose).
- */
-function usePersistentFiltersOpen(key: string): [boolean, (open: boolean) => void] {
-  const [open, setOpenState] = useState(false)
-  useEffect(() => {
-    try {
-      if (window.localStorage.getItem(key) === '1') setOpenState(true)
-    } catch {
-      // storage unavailable — stay closed
-    }
-  }, [key])
-  const setOpen = useCallback(
-    (next: boolean) => {
-      setOpenState(next)
-      try {
-        window.localStorage.setItem(key, next ? '1' : '0')
-      } catch {
-        // best-effort
-      }
-    },
-    [key]
-  )
-  return [open, setOpen]
-}
 
 /** Shaped like the DataTable it stands in for: toolbar, then rows. */
 function TableSkeleton() {
@@ -360,7 +334,7 @@ function ConfigurationsTab() {
     setSelectedIds([])
     setSelectionEpoch((e) => e + 1)
   }, [])
-  const [filtersOpen, setFiltersOpen] = usePersistentFiltersOpen(CONFIG_FILTERS_OPEN_KEY)
+  const [filtersOpen, setFiltersOpen] = useFilterPanelOpen(CONFIG_FILTERS_OPEN_KEY)
   const [filterSheetOpen, setFilterSheetOpen] = useState(false)
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [bulkDeleteConfirmOpen, setBulkDeleteConfirmOpen] = useState(false)
@@ -926,7 +900,7 @@ function ConfigurationsTab() {
               }}
               filterToggle={{
                 open: filtersOpen,
-                onToggle: () => setFiltersOpen(!filtersOpen),
+                onToggle: () => setFiltersOpen((o) => !o),
                 onOpenSheet: () => setFilterSheetOpen(true),
                 activeCount: activeFiltersCount,
                 controlsId: 'scan-config-filters',

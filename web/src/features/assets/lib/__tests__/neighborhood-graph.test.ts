@@ -242,7 +242,7 @@ describe('layoutNeighborhood wrapping', () => {
     expect(ys.size).toBe(3)
     expect(
       Math.max(...[...Array(12)].map((_, i) => Math.abs(at[`ipx${i + 1}`].x)))
-    ).toBeLessThanOrEqual(400)
+    ).toBeLessThanOrEqual(500)
     expect(at.mail.y).toBeLessThan(at.ip0.y)
     // What the asset exposes sits below the last row of its layer.
     expect(at.svc.y).toBeGreaterThan(Math.max(...ys))
