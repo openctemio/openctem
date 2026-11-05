@@ -41,6 +41,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/edgeaddr"
 	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 )
 
 // Suggestion card kinds.
@@ -56,6 +57,7 @@ const (
 	SharedEdgeRange    = "edge_range"    // inside a published CDN edge range
 	SharedManyDomains  = "many_domains"  // names of 3+ registrable domains resolve to it
 	SharedOtherNetwork = "other_network" // its network is announced by another organization
+	SharedDeclined     = "declined"      // the organization said its network is not its own
 )
 
 // sharedDomainThreshold: an address names of this many registrable domains
@@ -167,6 +169,11 @@ type SuggestionCard struct {
 	// unknown), counted over every offered address, including those past
 	// the card's item limit.
 	Bands map[string]int `json:"bands,omitempty"`
+	// Groups: the card's addresses (offered, already checked and shared)
+	// grouped so one decision covers many (suggestion_groups.go): by the
+	// organization's own prefix, by network, else by /24 (IPv4) or /48
+	// (IPv6), and shared ones by provider. Each address is in one group.
+	Groups []SuggestionGroup `json:"groups,omitempty"`
 	// confirmed_out_of_scope only.
 	Assets []SuggestionAsset `json:"assets,omitempty"`
 }
@@ -175,15 +182,21 @@ type SuggestionCard struct {
 type SuggestionCards struct {
 	Cards []SuggestionCard `json:"cards"`
 	// Total: the decisions waiting (the Review tab and sidebar badge): one
-	// per card that offers something (Count > 0) plus NameRules. A card that
-	// only lists addresses needing no decision (shared, already checked) is
-	// returned for the page but never counted.
+	// per address group with addresses waiting, one per other card that
+	// offers something (Count > 0), plus NameRules. Addresses needing no
+	// decision (shared, already checked) are returned for the page but never
+	// counted.
 	Total int `json:"total"`
 	// NameRules: the review-by-rule cards about names over the names that
 	// wait for a decision (DecisionStates), as the Review tab lists them.
 	NameRules int `json:"name_rules"`
 	// CanAdd: the caller may accept a card (scope write permission).
 	CanAdd bool `json:"can_add"`
+	// AddressMode is the organization's address setting in force
+	// (auto_strong, ask or never): with auto_strong, addresses with strong
+	// evidence are added automatically (AddressAutoAdd) and the card holds
+	// the rest.
+	AddressMode string `json:"address_mode,omitempty" enums:"auto_strong,ask,never"`
 }
 
 // AddressBehindNames is one stored address and the names that resolve to it.
@@ -226,8 +239,41 @@ type SuggestionService struct {
 	// unclassified answers the organization's unclassified-scans mode; nil
 	// or unreadable means off (every offered address waits).
 	unclassified UnclassifiedPolicy
+	// addressMode answers the organization's address setting in force; nil
+	// or unreadable means ask (the card is shown, nothing is automatic).
+	addressMode AddressModeReader
+	// declined lists the networks the organization said are not its own;
+	// nil declines none.
+	declined DeclinedNetworks
 	// now is the clock (tests set it); nil means time.Now.
 	now func() time.Time
+}
+
+// DeclinedNetworks lists the networks a tenant declined
+// (*postgres.EASMDeclinedNetworkRepository).
+type DeclinedNetworks interface {
+	ListDeclined(ctx context.Context, tenantID shared.ID) ([]easmseed.Declined, error)
+}
+
+// SetDeclined lets the card leave out the networks the organization declined.
+func (s *SuggestionService) SetDeclined(d DeclinedNetworks) { s.declined = d }
+
+// AddressModeReader answers the organization's address setting in force
+// (tenant.ScopeSettings.AddressModeIn).
+type AddressModeReader func(ctx context.Context, tenantID shared.ID) (string, error)
+
+// SetAddressMode lets the cards follow the organization's address setting.
+func (s *SuggestionService) SetAddressMode(f AddressModeReader) { s.addressMode = f }
+
+func (s *SuggestionService) addressModeOf(ctx context.Context, tenantID shared.ID) string {
+	if s.addressMode == nil {
+		return tenant.AddressAsk
+	}
+	m, err := s.addressMode(ctx, tenantID)
+	if err != nil || m == "" {
+		return tenant.AddressAsk
+	}
+	return m
 }
 
 func (s *SuggestionService) clock() time.Time {
@@ -262,8 +308,17 @@ func (c *SuggestionCards) Finish(nameRules int) {
 	c.NameRules = nameRules
 	c.Total = nameRules
 	for _, card := range c.Cards {
-		if card.Count > 0 {
+		if card.Count == 0 {
+			continue
+		}
+		if card.Kind != CardAddressesBehindNames || len(card.Groups) == 0 {
 			c.Total++
+			continue
+		}
+		for _, g := range card.Groups {
+			if g.Waiting > 0 {
+				c.Total++
+			}
 		}
 	}
 }
@@ -292,12 +347,15 @@ func (s *SuggestionService) Cards(ctx context.Context, tenantID shared.ID, canAd
 		}
 		view = sc
 	}
-	addrCard, err := s.addressCard(ctx, tenantID, view)
-	if err != nil {
-		return nil, err
-	}
-	if addrCard != nil {
-		out.Cards = append(out.Cards, *addrCard)
+	out.AddressMode = s.addressModeOf(ctx, tenantID)
+	if out.AddressMode != tenant.AddressNever {
+		addrCard, err := s.addressCard(ctx, tenantID, view)
+		if err != nil {
+			return nil, err
+		}
+		if addrCard != nil {
+			out.Cards = append(out.Cards, *addrCard)
+		}
 	}
 	confCard, err := s.confirmedCard(ctx, tenantID, view)
 	if err != nil {
@@ -341,6 +399,12 @@ func (s *SuggestionService) addressCard(ctx context.Context, tenantID shared.ID,
 		}
 		seeds = &n
 	}
+	var declined []easmseed.Declined
+	if s.declined != nil {
+		if declined, err = s.declined.ListDeclined(ctx, tenantID); err != nil {
+			return nil, fmt.Errorf("declined networks: %w", err)
+		}
+	}
 	checks := s.checksUnclassified(ctx, tenantID)
 	now := s.clock()
 	offered := make([]SuggestionAddress, 0, len(rows))
@@ -368,6 +432,11 @@ func (s *SuggestionService) addressCard(ctx context.Context, tenantID shared.ID,
 		}
 		item := SuggestionAddress{AssetID: r.AssetID, Address: r.Address, ResolvedFrom: from}
 		item.Network, item.Shared = classifyAddress(r, org, seeds)
+		if item.Shared == "" || item.Shared == SharedOtherNetwork {
+			if declinedNetwork(declined, item.Network) != "" {
+				item.Shared = SharedDeclined
+			}
+		}
 		if item.Shared == "" {
 			// A shared address's open ports are its provider's: never shown.
 			item.Ports = addressPorts(r)
@@ -430,6 +499,7 @@ func (s *SuggestionService) addressCard(ctx context.Context, tenantID shared.ID,
 	card.NamesCount = len(names)
 	card.PrefixRules = prefixRules(card.Addresses)
 	card.Providers = providerList(providers)
+	card.Groups = groupAddresses(card, seeds, declined)
 
 	if card.Count == 0 && card.SharedCount == 0 && card.CheckedCount == 0 {
 		return nil, nil

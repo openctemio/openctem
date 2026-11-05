@@ -369,6 +369,38 @@ describe('RunMap', () => {
     })
   })
 
+  it('says on the step what became of the findings the sensor reported but ingest did not store', async () => {
+    const run = {
+      run_id: 'r1',
+      status: 'completed',
+      nodes: [
+        {
+          step_key: 'vuln',
+          name: 'Vulnerability templates',
+          tool: 'nuclei',
+          depends_on: [],
+          state: 'succeeded',
+          findings: 5,
+          findings_held: 3,
+          findings_refused: 1,
+          info_observations: 2,
+          chunks: { total: 1, queued: 0, running: 0, completed: 1, failed: 0 },
+          outputs: { total: 3, by_type: {} },
+        },
+      ],
+      edges: [],
+    } as RunMapData
+    get.mockResolvedValue(run)
+    renderMap()
+    await runFlow()
+    const card = stepButton('Vulnerability templates')
+    expect(
+      within(card).getByText(
+        '3 outputs, 5 findings, 3 held for review, 1 not stored, 2 info observations'
+      )
+    ).toBeInTheDocument()
+  })
+
   it('says when the map cannot be loaded', async () => {
     get.mockRejectedValue(new Error('boom'))
     renderMap()

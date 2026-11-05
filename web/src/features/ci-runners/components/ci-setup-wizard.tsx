@@ -32,6 +32,7 @@ import { getErrorMessage } from '@/lib/api/error-handler'
 import { copyToClipboard } from '@/lib/clipboard'
 import { cn } from '@/lib/utils'
 import {
+  useCIRunnerRelease,
   useCIRuns,
   useSCMApps,
   useSaveTrustConfig,
@@ -156,6 +157,7 @@ export function CISetupWizard({ open, onClose }: { open: boolean; onClose: () =>
   }
 
   const brand = useBrand()
+  const release = useCIRunnerRelease()
   const snippet = useMemo(
     () =>
       created
@@ -168,9 +170,10 @@ export function CISetupWizard({ open, onClose }: { open: boolean; onClose: () =>
             audience: created.audience ?? '',
             defaultBranch: created.default_branch,
             productName: brand.name,
+            release,
           })
         : '',
-    [created, provider, currentTenant, brand.name]
+    [created, provider, currentTenant, brand.name, release]
   )
 
   const stepIndex = STEPS.indexOf(step)

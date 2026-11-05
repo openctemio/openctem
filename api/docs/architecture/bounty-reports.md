@@ -15,21 +15,40 @@ pay rewards, hold researcher accounts or message researchers.
 
 ## Flow
 
+Checked against the code of v0.19.1 and develop on 2026-11-05 (no change
+between them in this area). Today a report becomes a `bug_bounty` finding
+only through `POST /api/v1/findings` (the console's Create finding with the
+source Bug bounty, or the API with the `bounty_report` object).
+
+```mermaid
+sequenceDiagram
+  autonumber
+  actor T as Triager
+  participant H as VulnerabilityHandler
+  participant S as finding.VulnerabilityService
+  participant DB as findings (idx_findings_bounty_report_ref)
+  participant A as aitriage
+  T->>H: POST /api/v1/findings {source bug_bounty, bounty_report}
+  H->>H: findings:write, CanTriage = findings:triage
+  H->>S: CreateFinding: asset in the caller's data scope
+  S->>S: applyBountyReportOnCreate: Normalized, Validate,<br/>reward or disclosure without findings:triage refused
+  S->>DB: insert, unique (tenant, intake, ref) WHERE source = bug_bounty
+  alt unique violation
+    DB-->>H: ErrBountyReportExists, 409 without the other finding
+  end
+  S->>S: audit finding.bounty_report_changed (old nil, new values)
+  S-->>A: autoTriageAllowed false: no auto-triage
+  T->>H: PUT /api/v1/findings/{id}/bounty-report (If-Match row_version)
+  H->>S: UpdateBountyReport: assertFindingScope, intake and ref fixed, audit changes
+  T->>H: GET /api/v1/findings/{id}/duplicate-candidates (findings:triage)
+  H->>S: seed in scope (404), candidates WHERE tenant_id, data scope SQL, at most 20
 ```
-report on the program's channel
-        │  (export file today; signed webhook later)
-        ▼
-ctis importer "bounty_report" (JSON / CSV, pure, no network)
-        │
-        ▼
-finding (source bug_bounty) + metadata.bounty_report
-        │  unique (tenant, intake, ref): a re-import updates the same row
-        ▼
-triage ── GET /findings/{id}/duplicate-candidates (caller's data scope)
-        │        "known internally since <first_detected_at>"
-        ├── mark duplicate of (existing, person decides)
-        └── confirm ─► remediation task ─► SLA ─► retest check ─► resolved
-```
+
+A `bounty_report` file uploaded to `POST /api/v1/findings/imports` is
+detected and converted by ctis v2.0.1, but ingest files its findings with the
+source `external` and does not read `extensions[io.openctem].bounty_report`:
+no report object, no (intake, ref) uniqueness and no human-source
+protections (see Status).
 
 ## The report object
 
@@ -158,7 +177,7 @@ omitted when there is nothing to compare. The person then uses
 | RFC and this page | Done |
 | Report value object and the unique index | Done (`pkg/domain/vulnerability/bounty_report.go`, migration `findings_bounty_report_ref_unique`) |
 | Report fields on create and update (triage gate, audit) | Done (`internal/app/finding/bounty_report.go`, `PUT /api/v1/findings/{id}/bounty-report`) |
-| ctis `bounty_report` converter (JSON, CSV) | Designed |
+| ctis `bounty_report` converter (JSON, CSV) | Shipped in ctis v2.0.1; read by `POST /findings/imports`, but ingest files the findings as `external` without the report object (the mapping into `bug_bounty` + `metadata.bounty_report` is not built) |
 | Duplicate candidates endpoint | Done (`GET /api/v1/findings/{id}/duplicate-candidates`) |
 | Web Report section and candidates panel | Designed |
 | Programme saved view and dashboard tiles | Designed |

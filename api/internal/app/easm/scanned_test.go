@@ -8,6 +8,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/attribution"
+	"github.com/openctemio/openctem/api/pkg/domain/edgeaddr"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
@@ -265,5 +266,56 @@ func TestScanStamper_ChildrenFollowTheirHost(t *testing.T) {
 		ingest.ScanProvenance{SensorID: shared.NewID(), Unsolicited: true})
 	if store.links != 2 {
 		t.Fatalf("links after an unsolicited report = %d, want 2", store.links)
+	}
+}
+
+// A new address inside a provider's published shared front-end range is
+// recorded as the provider's (dependency), never evaluated as the tenant's
+// own address, and a re-scan does not raise it; a name and an ordinary
+// address are attributed as before (research 436).
+func TestScanStamper_SharedFrontEndIsTheProviders(t *testing.T) {
+	edgeAddr := ""
+	for _, p := range edgeaddr.Default().SharedFrontEndPrefixes() {
+		if _, ok := edgeaddr.Default().SharedFrontEnd(p.Addr().Next().String()); ok {
+			edgeAddr = p.Addr().Next().String()
+			break
+		}
+	}
+	if edgeAddr == "" {
+		t.Fatal("the built-in dataset publishes no shared range")
+	}
+	edge := scanned(edgeAddr, asset.AssetTypeIPAddress, false, true)
+	own := scanned("203.0.113.9", asset.AssetTypeIPAddress, false, true)
+	name := scanned("www.example.com", asset.AssetTypeSubdomain, false, true)
+	store := newFakeScanStore()
+	cmd := shared.NewID()
+	prov := ingest.ScanProvenance{SensorID: shared.NewID(), CommandID: &cmd, Tool: "dnsx", ReportID: "r1", ObservedAt: time.Now()}
+	if err := NewScanStamper(store, nil).StampScanned(context.Background(), shared.NewID(),
+		[]ingest.ScannedAsset{edge, own, name}, prov); err != nil {
+		t.Fatal(err)
+	}
+	if d := store.saved[edge.ID.String()]; d.State != attribution.StateDependency || d.Reason != attribution.RuleProviderSharedFrontEnd {
+		t.Fatalf("shared front end = %+v, want dependency (provider shared)", d)
+	}
+	for _, a := range []ingest.ScannedAsset{own, name} {
+		if d := store.saved[a.ID.String()]; d.State == attribution.StateDependency {
+			t.Fatalf("%s was recorded as the provider's", a.Name)
+		}
+	}
+	// A later scan keeps it the provider's.
+	store.records[edge.ID.String()] = attribution.Record{State: attribution.StateDependency}
+	delete(store.saved, edge.ID.String())
+	again := edge
+	again.Created = false
+	if err := NewScanStamper(store, nil).StampScanned(context.Background(), shared.NewID(), []ingest.ScannedAsset{again}, prov); err != nil {
+		t.Fatal(err)
+	}
+	if d, ok := store.saved[edge.ID.String()]; ok {
+		t.Fatalf("a re-scan changed the provider's record: %+v", d)
+	}
+	if !(attribution.Decision{State: attribution.StateDependency, Reason: attribution.RuleProviderSharedFrontEnd}).AutomaticAllowed() ||
+		(attribution.Decision{State: attribution.StateDependency, Reason: attribution.RuleScanDiscovered}).AutomaticAllowed() ||
+		(attribution.Decision{State: attribution.StateMonitorOnly, Reason: attribution.RuleProviderSharedFrontEnd}).AutomaticAllowed() {
+		t.Fatal("automation may store dependency only for a shared front end")
 	}
 }

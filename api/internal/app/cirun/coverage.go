@@ -80,10 +80,10 @@ func (s *Service) Coverage(ctx context.Context, tenantID shared.ID, in CoverageI
 	if err != nil {
 		return nil, err
 	}
-	rows := cirun.ComputeCoverage(repos, obs, byID, exps, now, s.cfg.Versions)
+	rows := cirun.ComputeCoverage(repos, obs, byID, exps, now, s.versions())
 	cirun.SortCoverage(rows)
 	out.Summary = cirun.Summarize(rows)
-	out.Templates = cirun.ComputeTemplateDrift(pipes, now, s.cfg.Versions)
+	out.Templates = cirun.ComputeTemplateDrift(pipes, now, s.versions())
 
 	q := strings.ToLower(strings.TrimSpace(in.Search))
 	matched := rows[:0:0]

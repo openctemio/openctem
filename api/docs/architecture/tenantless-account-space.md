@@ -2,6 +2,51 @@
 
 Design: [RFC-141](../rfcs/RFC-141-tenantless-account-space.md).
 
+## Flow
+
+Password sign-in and the choice between an organization token and an
+account-only token (`internal/app/auth/service.go`, web
+`features/auth/actions/local-auth-actions.ts`):
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant W as Web loginAction
+    box API /api/v1/auth
+    participant A as AuthService
+    end
+    participant DB as Postgres users, sessions, refresh_tokens
+    W->>A: POST /login (crossSite, loginRL 5/min/IP, CAPTCHA after 3 failures per IP in 15 min)
+    A->>DB: authenticatePassword - dummy bcrypt for unknown, LockoutAfter
+    alt unknown, federated, wrong, locked, break-glass
+        A-->>W: 401 INVALID_CREDENTIALS, failure counted, audit auth.failed
+    else inactive or unverified
+        A-->>W: 403 ACCOUNT_SUSPENDED or EMAIL_NOT_VERIFIED
+    else second factor required now
+        A-->>W: 200 mfa_required, mfa_token (see user-two-factor-authentication.md)
+    else
+        A->>DB: completeLogin - revoke oldest above 10 sessions, sessions + refresh_tokens (new family)
+        A-->>W: 200 user, tenants, suspended_tenants, cookies refresh_token + csrf_token, audit auth.login
+    end
+    alt one open organization
+        W->>A: POST /token {tenant_id} (tokenExchangeRL 20/min)
+    else several
+        W->>W: /select-tenant, then POST /token
+    else none open
+        W->>A: POST /account-token - 409 when an open membership exists
+        A-->>W: access token without tenant claim, /welcome
+    end
+    A->>A: refreshForMint, membership (403 ORGANIZATION_ACCESS_DENIED), policy chain incl. organizationOpen (403 ORGANIZATION_SUSPENDED)
+    A-->>W: spend refresh token, successor in the family, tenant access token 15 min
+```
+
+Lockout (`user.LockoutAfter`, `user_repository.go`): the Nth consecutive
+failure (`AUTH_MAX_LOGIN_ATTEMPTS`, 5) locks for `AUTH_LOCKOUT_DURATION`
+(15 min); each further run of N failures doubles the lock, capped at 24 h.
+Wrong TOTP, step-up and password-change attempts share the counter, which is
+reset only by a complete sign-in. A locked account still answers
+`INVALID_CREDENTIALS` on `/login`.
+
 ## States
 
 | Session | Token | Reaches |
@@ -75,57 +120,6 @@ account-only token under each self-hosted setting and expects 403.
   with no tenant providers.
 - The browser's refresh renews the account-only token while no organization cookie exists.
 - The API client routes `401 TENANT_REQUIRED` to `/welcome` once.
-
-## What does not change
-
-Step-up for sensitive account changes (password change needs the current password, two-factor off
-needs password and code, account deletion needs step-up, sign-in method changes need a proof typed
-for the request), CSRF for cookie sessions, rate limits, session lifetimes and sign-out.
-# Account space for a person with no organization
-
-Design: [RFC-141](../rfcs/RFC-141-tenantless-account-space.md).
-
-## States
-
-| Session | Token | Reaches |
-|---|---|---|
-| In an organization | Access token with `tenant`, `role`, permissions | Every route its permissions allow |
-| Account only | Access token without `tenant` | The account allow-list only |
-| Signed out / refused sign-up | None | Public routes |
-
-## Getting an account-only token
-
-`POST /api/v1/auth/account-token` with the refresh token (httpOnly cookie plus the CSRF pair, or
-`refresh_token` in the body). It answers:
-
-- `200 {access_token, token_type, expires_in}` and a rotated refresh cookie, when the account has
-  no organization it can open (none, or every one suspended or closed);
-- `409` when the account can open an organization: exchange with `POST /auth/token` instead;
-- `401` for a refresh token that is unknown, spent (the family is revoked), expired, or for a
-  blocked account.
-
-Social and SSO sign-in return a token without a tenant at sign-in; the allow-list applies to it the
-same way.
-
-## The allow-list
-
-`internal/infra/http/middleware/tenantless.go` lists every route an account-only token may call,
-as `METHOD /path` with `{name}` for one segment. `UnifiedAuth` refuses any other route with
-`401 TENANT_REQUIRED` before the handler runs. 401 keeps the web client's behaviour for a member's
-social sign-in token (it exchanges on 401); the code tells an account-only client that exchanging
-will not help.
-
-To add a route: it must hold no tenant data and act only on the caller's own account. Add it to the
-list in the same pull request; `routes/tenantless_allowlist_test.go` fails until the list and the
-router agree.
-
-## Invitations
-
-| Route | Auth | Notes |
-|---|---|---|
-| `POST /auth/onboarding/options` | refresh token | Invitations for the verified address only; references are HMAC-bound to the account and expire |
-| `POST /auth/onboarding/accept` | refresh token | Re-checks the reference, verified address, pending state, the organization's policies; audited `invitation.accepted` |
-| `POST /auth/onboarding/decline` | refresh token | Invitation references only; verified address; pending; deletes the invitation; audited `invitation.deleted` with `declined: true` |
 
 ## What does not change
 

@@ -21,6 +21,59 @@ longer than asked. The connector does not rely on it: it stops the scan
 itself at `max_scan_seconds` plus 30 minutes for the import and reports it
 partial.
 
+## Flow
+
+As of v0.19.1 (unchanged on develop since) and openctemio/connector-tenable
+v0.2.0. Scheduled or manual sync (`tenablesc.Service.requestSync`,
+`internal/app/tenablesc/service.go`) and the connector's side
+(`internal/tenablesc/sync.go` in openctemio/connector-tenable):
+
+```mermaid
+sequenceDiagram
+  autonumber
+  box api (tenant-scoped)
+    participant H as IntegrationHandler.Sync / TenableSCSyncController
+    participant S as tenablesc.Service
+    participant DB as Postgres
+  end
+  box Customer network
+    participant C as connector-tenable (sensorkit)
+    participant T as Tenable.sc
+  end
+  H->>S: RequestSync (POST /api/v1/integrations/<id>/sync) or ScheduledSync (every 2 min)
+  S->>DB: GetByTenantAndID integration, reconcile the open sync first
+  alt an open sync
+    S-->>H: AlreadyOpen (the same command)
+  end
+  S->>DB: ClaimSyncDue - CAS on next_sync_at (schedule only)
+  S->>DB: sensors.GetByTenantAndID, not shared, active, reports tenable_sc
+  S->>S: syncWindow (full or incremental days), admitGrant connector_sync
+  S->>DB: commands insert connector_sync, sensor_id set, expires_at now + 6 h
+  S->>DB: metadata.tenable_sync.open_command_id, audit integration.sync_requested
+  C->>DB: poll commands every 30 s, dispatch gate re-checks the grant
+  C->>C: admit - payload 64 KB, known fields, instance configured, sync allowed, repositories allowed
+  C->>T: /rest/system, /rest/status, /rest/analysis (cumulative, patched), hosts, /rest/plugin
+  Note over C,T: 5 req/s default, 5 attempts, backoff 1 to 30 s, Retry-After at most 60 s
+  C->>DB: v2 reports of 2,000 findings max, tool tenable_sc, coverage incremental, bound to the command
+  C->>DB: command completed (counts, version, licence, catalog)
+  H->>S: next controller pass - reconcile
+  S->>DB: CommandCoverage - every report completed and tool tenable_sc?
+  alt settled
+    S->>DB: finish - cursor at command start, counts, catalog, ConnectorScope, SetConnected
+  else failed, expired or a report failed
+    S->>DB: RecordSyncFailure, next_sync_at at most now + 30 min
+  end
+```
+
+Manual sync answers `409` with the domain code for
+`CONNECTOR_SENSOR_UNAVAILABLE`, a disabled integration and a grant refusal
+(`IntegrationHandler.syncConnector`); a scheduled sync records a refusal the
+owner can fix on the integration and tries again at the next interval. The
+window: full when there was no successful or full sync yet, every
+`full_sync_days` (default 7, 1 to 90) or after a gap of more than 365 days;
+otherwise the days since the last successful sync plus one. The sync interval
+is `sync_interval_minutes` (default 360, at least 60).
+
 ## Shape
 
 ```
@@ -30,12 +83,12 @@ integration (provider tenable, engine tenable_sc, execution_mode sensor,
    │  or the tenable-sc-sync controller (every 2 min; due by sync_interval_minutes)
    ▼
 tenablesc.Service.RequestSync ── connector_sync command, pinned to sensor_id
-   │                              (payload: scanner=tenable_sc, instance, mode,
-   │                               window_days, include, min_severity, repositories)
+   │                              (payload: scanner=tenable_sc, instance, integration_id,
+   │                               mode, window_days, include, min_severity, repositories)
    ▼
 connector image ghcr.io/openctemio/connector-tenable (openctemio/connector-tenable):
 a sensor that runs nothing but the connector; keys and URL only there
-   │  Tenable.sc /rest/analysis, /rest/plugin, /rest/status
+   │  Tenable.sc /rest/system, /rest/status, /rest/analysis, /rest/plugin, /rest/repository
    ▼
 CTIS reports, tool tenable_sc, coverage incremental, bound to the command
    ▼
@@ -53,8 +106,8 @@ integration metadata.tenable_sync (cursor, counts, license), status connected
 | Schedule controller | `internal/infra/controller/tenable_sc_sync.go` |
 | Scheduled-sync claim (compare-and-set on `next_sync_at`) | `IntegrationRepository.ClaimSyncDue` |
 | Create/update validation (own sensor, no platform sensor, no credentials, engine `tenable_sc` + mode `sensor` only) | `IntegrationService` + `tenablesc.Service.ValidateConnector` |
-| Command types `connector_sync`, `connector_scan` | `pkg/domain/command`, migration `000496` |
-| Tool catalog row `tenable_sc` (kind `connector`, never scannable) | migration `000495`, `tool.Tool.IsConnector` |
+| Command types `connector_sync`, `connector_scan` | `pkg/domain/command` (migration `000496`, now in `001146_baseline`) |
+| Tool catalog row `tenable_sc` (kind `connector`, never scannable) | migration `000495` (now in `001146_baseline`), `tool.Tool.IsConnector` |
 | Source-asserted resolve | `internal/app/ingest/source_resolve.go`, `FindingRepository.ResolveSourceMitigated` |
 
 ## Install and grant
@@ -130,7 +183,7 @@ A scan whose `scanner_name` is `tenable_sc` is an ordinary OpenCTEM scan
   polls `scanResult`, stops it on cancel or timeout, pulls the individual
   result and deletes the definition it created.
 
-## Synced assets are in scope (research/117)
+## Synced assets are in scope
 
 The organization's own scanner is an ownership source: after a successful
 sync, the public names and addresses its reports wrote get their exact scope
@@ -163,9 +216,9 @@ Source-asserted resolve writes one audit entry per report:
 
 The coverage scheduler (`scancoverage`, claim-once across replicas, the target
 gate) drives the connector from the asset coverage ledger (RFC-093,
-capability `network_va.connector`). Design: research/143 §4; owner decisions
-D1 (rotation off by default, behind an acknowledgement) and D3 (recycling
-opt-in, administrator key only on the connector).
+capability `network_va.connector`). Decided: rotation is off by default and
+needs an acknowledgement; recycling is opt-in, with the Tenable.sc
+administrator key only on the connector.
 
 - **Opt-in per connector**: `coverage_enabled: true` with
   `coverage_policy_id` and `coverage_repository_id` (optional

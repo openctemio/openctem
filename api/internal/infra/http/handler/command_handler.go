@@ -112,6 +112,9 @@ func (h *CommandHandler) SetScanCommandGate(g scanCommandGate) {
 // (assetresolution.Store).
 type resolutionRecorder interface {
 	RecordFailedNames(ctx context.Context, tenantID shared.ID, names []string, at time.Time, source string) error
+	// NotResolving returns which of the (lower-case) names belong to an asset
+	// of the tenant the platform knows does not resolve.
+	NotResolving(ctx context.Context, tenantID shared.ID, names []string) (map[string]bool, error)
 }
 
 // SetResolutionRecorder wires the resolution states fed by sensor refusals.

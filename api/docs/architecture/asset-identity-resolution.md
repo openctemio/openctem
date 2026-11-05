@@ -10,32 +10,39 @@ Multi-layer deduplication system that ensures the same real-world entity maps to
 
 ## Architecture
 
+Checked against the code of v0.19.1 and develop on 2026-11-05
+(`internal/app/ingest/processor_assets.go`, `internal/app/ingest/identity.go`).
+The earlier text diagram here left out `directory_object_id` and the
+network-device step, and did not say that the exact-name step matches across
+types.
+
+```mermaid
+flowchart TD
+  IN["Incoming asset (sensor v2 result, import, connector)<br/>AssetProcessor.processBatch, tenant from the stored report"] --> N["Type mapped, name normalized,<br/>junk host names dropped, exclusions applied"]
+  N --> S1{"1. Strong identifier held by an asset?<br/>host_id, cloud_id, bios_uuid, serial_number,<br/>directory_object_id, mac, scm_repo_id"}
+  S1 -- "yes, not vetoed" --> M["Merge into that asset"]
+  S1 -- "other holders or the name<br/>held by another asset" --> RV1["identifier_conflict review"]
+  S1 -- none --> S2{"2. Network device named by an address<br/>that an ip_address asset holds?"}
+  S2 -- yes --> M
+  S2 -- no --> S3{"3. Exact name held?<br/>(tenant, name), any type"}
+  S3 -- yes --> M
+  S3 -- no --> S4{"4. Hostname or FQDN seen on exactly<br/>one asset of the family in 7 days?"}
+  S4 -- yes --> M
+  S4 -- no --> S5{"5. Correlators: host IP seen on one asset<br/>(at most 20 IPs, 7 days), device,<br/>repository, external id, certificate"}
+  S5 -- "one asset" --> M
+  S5 -- "several share the IP" --> RV2["shared_ip review"]
+  S5 -- none --> NEW["New asset"]
+  M --> MA{"May the report change this asset?"}
+  MA -- yes --> UP["UpsertBatch: properties by freshness,<br/>last_seen GREATEST, stale back to active,<br/>owner and exposure fill gaps only"]
+  MA -- no --> LS["Only last seen, while active"]
+  NEW --> UP
+  UP --> ID["Identifiers recorded, renames in state history"]
 ```
-Incoming asset (sensor protocol v2 or an import, AssetProcessor.processBatch)
-    │
-    ▼
-Normalize name (Layer 1)
-    │
-    ▼
-1. Strong identifiers, strongest first, with the conflict veto
-   host ID > cloud ID > BIOS UUID > serial > MAC   (repositories: SCM repo ID)
-    │ none
-    ▼
-2. Exact name (assets.name)
-    │ none
-    ▼
-3. Hostname / FQDN seen on exactly one asset in the last 7 days
-    │ none
-    ▼
-4. IP seen on exactly one asset in the last 7 days (hosts)
-   Other types: repository suffix, external ID, certificate fingerprint
-    │ none
-    ▼
-5. New asset
-    │
-    ▼
-Upsert assets → record identifiers, renames (state history), duplicate reviews
-```
+
+The trust window (7 days) and the IP limit (20) can be changed per
+organization (`tenant/settings.go`). Two report assets with the same name in
+one batch, and a concurrent create that lost the race, are remapped to the
+stored id.
 
 Nothing in this path merges two existing assets. Conflicts go to the dedup
 review queue for an operator. Design and decisions: `docs/rfcs/RFC-028-asset-identity-model.md`.

@@ -50,8 +50,12 @@ EOF
 echo "$d1" >"$tmp/images/ghcr.io_openctemio_sensor_v0.23.9"
 echo "$d2" >"$tmp/images/ghcr.io_openctemio_sensor_v0.23.2"
 
+echo '[{"tagName":"v0.4.0","publishedAt":"2026-11-05T01:37:33Z"},{"tagName":"v0.3.1","publishedAt":"2026-10-15T03:40:05Z"}]' >"$tmp/releases/ci.json"
+echo "$d2" >"$tmp/images/ghcr.io_openctemio_ci_v0.4.0"
+
 list="sensor openctemio/sensor ghcr.io/openctemio/sensor
-sdk openctemio/sdk-go -"
+sdk openctemio/sdk-go -
+ci openctemio/ci ghcr.io/openctemio/ci"
 out="$(printf '%s\n' "$list" | bash "$FC" 2>/dev/null)"; rc=$?
 assert_eq "resolves: exit 0" 0 "$rc"
 assert_eq "sensor: newest release with a published image" "v0.23.9" "$(jq -r '.[] | select(.component=="sensor") | .version' <<<"$out")"
@@ -59,6 +63,8 @@ assert_eq "sensor: its digest" "$d1" "$(jq -r '.[] | select(.component=="sensor"
 assert_eq "sensor: notes link" "https://github.com/openctemio/sensor/releases/tag/v0.23.9" "$(jq -r '.[] | select(.component=="sensor") | .notes_url' <<<"$out")"
 assert_eq "sensor: published_at" "2026-10-16T10:00:00Z" "$(jq -r '.[] | select(.component=="sensor") | .published_at' <<<"$out")"
 assert_eq "sdk: newest release" "v0.34.0" "$(jq -r '.[] | select(.component=="sdk") | .version' <<<"$out")"
+assert_eq "ci: newest release with a published image" "v0.4.0" "$(jq -r '.[] | select(.component=="ci") | .version' <<<"$out")"
+assert_eq "ci: its digest" "$d2" "$(jq -r '.[] | select(.component=="ci") | .digest' <<<"$out")"
 assert_eq "sdk: no digest key" "false" "$(jq -r '.[] | select(.component=="sdk") | has("digest")' <<<"$out")"
 
 # Only the newest FEED_CANDIDATES releases are tried.

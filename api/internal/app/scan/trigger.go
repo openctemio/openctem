@@ -220,6 +220,12 @@ func (s *Service) triggerLoadedScan(ctx context.Context, sc *scan.Scan, input Tr
 		}
 		return nil, shared.NewDomainError("SCAN_NOT_TRIGGERABLE", msg, shared.ErrValidation)
 	}
+	// A scanner_config stored with a credential (before the platform refused
+	// them) never reaches a command: the run is blocked with
+	// SCANNER_CONFIG_SECRET until the setting is removed.
+	if err := scan.RefuseConfigSecrets(sc.ScannerConfig); err != nil {
+		return nil, err
+	}
 
 	// The workflow a workflow scan runs, before any gate reads its steps:
 	// the organization's own or a shared system template, never another
