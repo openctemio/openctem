@@ -275,6 +275,10 @@ properties:
   has_tls: { label: TLS, label_vi: TLS, synonyms: [tls_enabled] }
   tls_version: { label: TLS version, label_vi: Phiên bản TLS }
   is_auth_required: { label: Authentication required, label_vi: Yêu cầu xác thực, synonyms: [auth_required] }
+  has_anonymous_access: { label: Anonymous access, label_vi: Truy cập ẩn danh, classes: [service] }
+  service_kind: { label: Service kind, label_vi: Loại dịch vụ, classes: [service] }
+  service_category: { label: Service category, label_vi: Nhóm dịch vụ, classes: [service] }
+  kind_source: { label: Kind identified by, label_vi: Nhận diện loại bằng, classes: [service] }
   response_time_ms: { label: "Response time (ms)", label_vi: "Thời gian phản hồi (ms)", classes: [service, web_endpoint, application] }
   url: { label: URL, label_vi: URL, format: url }
   host: { label: Host, label_vi: Máy chủ }
@@ -447,6 +451,193 @@ virtual_types:
 # (internal/app/ingest/mappers.go), not here: these are the REST API's inputs.
 type_inputs:
   web_application: { type: application, sub_type: website }
+
+# Service kinds (docs/architecture/service-kinds.md). A service's kind is its
+# application protocol, normalised: `service_kind`, its `service_category`
+# and the `kind_source` that says how the platform knows it. The three keys
+# are derived by the platform on every write (asset.ClassifyService); a
+# client or a report never sets them. TLS is not a kind: it is `has_tls`
+# (https is http with TLS, ldaps is ldap with TLS).
+#
+#   - kind_sources: the evidence behind a kind, highest first. A source
+#     never overwrites the kind of a higher one; an equal one does (the
+#     service may have changed). `confidence` is shown with the kind.
+#     `port_guess` is always shown as a guess: it never creates an exposure
+#     above the port's own, a finding or an active check.
+#   - service_kinds: `aliases` are the names producers use (IANA service
+#     names, scanner names) for the kind, `tls_aliases` the names that also
+#     say the service speaks TLS (a measured source sets has_tls from them).
+#     Names are matched lower case with `_` and spaces read as `-`; an
+#     `ssl/` or `tls/` prefix means TLS. `tcp` / `udp` are the IANA default
+#     ports a port guess uses: only ports with one well-known service (no
+#     5000, 9000, 7001). A port belongs to at most one kind per transport.
+#     `risk` is the severity of the exposure an internet-facing service of
+#     the kind raises when its kind was measured (risky_service_exposed);
+#     `risk_anonymous` the severity when anonymous access was observed.
+service_categories:
+  - { id: web, label: Web, label_vi: Web }
+  - { id: remote_access, label: Remote access, label_vi: Truy cập từ xa }
+  - { id: file_share, label: File sharing, label_vi: Chia sẻ tệp }
+  - { id: database, label: Database, label_vi: Cơ sở dữ liệu }
+  - { id: cache, label: Cache, label_vi: Bộ nhớ đệm }
+  - { id: search, label: Search, label_vi: Tìm kiếm }
+  - { id: mail, label: Mail, label_vi: Thư điện tử }
+  - { id: directory_auth, label: Directory and authentication, label_vi: Thư mục và xác thực }
+  - { id: network_mgmt, label: Network management, label_vi: Quản trị mạng }
+  - { id: messaging, label: Messaging, label_vi: Nhắn tin và hàng đợi }
+  - { id: container_orchestration, label: Containers and orchestration, label_vi: Container và điều phối }
+  - { id: vpn, label: VPN, label_vi: VPN }
+  - { id: voip_media, label: "VoIP, media and telecom", label_vi: "VoIP, đa phương tiện và viễn thông" }
+  - { id: industrial_ot, label: Industrial control (OT), label_vi: Điều khiển công nghiệp (OT) }
+  - { id: other, label: Other, label_vi: Khác }
+
+kind_sources:
+  - { id: fingerprint, label: Protocol fingerprint, label_vi: Nhận dạng giao thức, confidence: 95 }
+  - { id: tls_alpn, label: TLS negotiation, label_vi: Thương lượng TLS, confidence: 85 }
+  - { id: http_probe, label: HTTP probe, label_vi: Thăm dò HTTP, confidence: 80 }
+  - { id: reported, label: Reported by a scanner or import, label_vi: Theo báo cáo của trình quét hoặc dữ liệu nhập, confidence: 60 }
+  - { id: port_guess, label: Guessed from the port, label_vi: Đoán theo số cổng, confidence: 30 }
+
+service_kinds:
+  # Web
+  - { id: http, label: HTTP, category: web, tcp: [80, 443, 8000, 8008, 8080, 8443, 8888], aliases: [www, www-http, http-alt, http-proxy, http1, http2, h2c], tls_aliases: [https, https-alt, h2, http3, h3, quic, www-https] }
+  - { id: grpc, label: gRPC, category: web, tcp: [50051] }
+  # Remote access
+  - { id: ssh, label: SSH, category: remote_access, tcp: [22], aliases: [sftp, scp, openssh] }
+  - { id: rdp, label: RDP, category: remote_access, tcp: [3389], udp: [3389], aliases: [ms-wbt-server, ms-rdp, rdpeudp, ms-term-serv], risk: high }
+  - { id: vnc, label: VNC, category: remote_access, tcp: [5900, 5901], aliases: [rfb, vnc-http], risk: high, risk_anonymous: critical }
+  - { id: telnet, label: Telnet, category: remote_access, tcp: [23], risk: high }
+  - { id: x11, label: X11, category: remote_access, tcp: [6000], risk: high, risk_anonymous: critical }
+  - { id: winrm, label: WinRM, category: remote_access, tcp: [5985, 5986], aliases: [wsman], tls_aliases: [wsmans, winrms], risk: high }
+  - { id: ipmi, label: IPMI, category: remote_access, udp: [623], aliases: [asf-rmcp, rmcp], risk: high }
+  - { id: teamviewer, label: TeamViewer, category: remote_access, tcp: [5938], risk: medium }
+  - { id: anydesk, label: AnyDesk, category: remote_access, risk: medium }
+  - { id: pcanywhere, label: pcAnywhere, category: remote_access, tcp: [5631], udp: [5632], aliases: [pcanywheredata, pcanywherestat], risk: high }
+  - { id: citrix-ica, label: Citrix ICA, category: remote_access, tcp: [1494], aliases: [ica, citrixica, citrix], risk: medium }
+  - { id: rlogin, label: rlogin, category: remote_access, tcp: [513], risk: high }
+  - { id: rsh, label: rsh, category: remote_access, tcp: [514], aliases: [rexec], risk: high }
+  # File sharing
+  - { id: smb, label: SMB, category: file_share, tcp: [445, 139], aliases: [microsoft-ds, netbios-ssn, cifs, smb2, smb3, samba], risk: high }
+  - { id: netbios, label: NetBIOS, category: file_share, udp: [137, 138], aliases: [netbios-ns, netbios-dgm, smbudp, nbns], risk: medium }
+  - { id: ftp, label: FTP, category: file_share, tcp: [21], tls_aliases: [ftps, ftps-data], risk: medium, risk_anonymous: high }
+  - { id: tftp, label: TFTP, category: file_share, udp: [69], risk: medium }
+  - { id: nfs, label: NFS, category: file_share, tcp: [2049], udp: [2049], aliases: [nfsd, nfs3, nfs4], risk: high }
+  - { id: rsync, label: rsync, category: file_share, tcp: [873], risk: medium, risk_anonymous: high }
+  - { id: afp, label: AFP, category: file_share, tcp: [548], aliases: [afpovertcp], risk: medium }
+  # Databases
+  - { id: mysql, label: MySQL, category: database, tcp: [3306, 33060], aliases: [mariadb, mysqlx, mysql-x], risk: high, risk_anonymous: critical }
+  - { id: postgresql, label: PostgreSQL, category: database, tcp: [5432], aliases: [postgres, pgsql], risk: high, risk_anonymous: critical }
+  - { id: mssql, label: Microsoft SQL Server, category: database, tcp: [1433], udp: [1434], aliases: [ms-sql-s, ms-sql-m, ms-sql, sqlserver, tds], risk: high, risk_anonymous: critical }
+  - { id: oracle, label: Oracle Database, category: database, tcp: [1521], aliases: [oracle-tns, oracledb, tns], risk: high, risk_anonymous: critical }
+  - { id: mongodb, label: MongoDB, category: database, tcp: [27017, 27018], aliases: [mongod, mongo], risk: high, risk_anonymous: critical }
+  - { id: cassandra, label: Cassandra, category: database, tcp: [9042, 9160], aliases: [cql], risk: high, risk_anonymous: critical }
+  - { id: couchdb, label: CouchDB, category: database, tcp: [5984], risk: high, risk_anonymous: critical }
+  - { id: db2, label: IBM Db2, category: database, tcp: [50000], aliases: [ibm-db2, drda], risk: high, risk_anonymous: critical }
+  - { id: clickhouse, label: ClickHouse, category: database, tcp: [9440], aliases: [clickhouse-tls], risk: high, risk_anonymous: critical }
+  - { id: influxdb, label: InfluxDB, category: database, tcp: [8086], risk: high, risk_anonymous: critical }
+  - { id: neo4j, label: Neo4j, category: database, tcp: [7687], aliases: [bolt], risk: high, risk_anonymous: critical }
+  - { id: sybase, label: SAP ASE (Sybase), category: database, aliases: [sybase-ase], risk: high, risk_anonymous: critical }
+  - { id: firebird, label: Firebird, category: database, tcp: [3050], aliases: [gds-db, interbase], risk: high, risk_anonymous: critical }
+  - { id: milvus, label: Milvus, category: database, tcp: [19530], risk: high, risk_anonymous: critical }
+  - { id: qdrant, label: Qdrant, category: database, tcp: [6333, 6334], risk: high, risk_anonymous: critical }
+  # Cache
+  - { id: redis, label: Redis, category: cache, tcp: [6379, 26379], aliases: [redis-sentinel, redissentinel], tls_aliases: [rediss], risk: high, risk_anonymous: critical }
+  - { id: memcached, label: Memcached, category: cache, tcp: [11211], udp: [11211], aliases: [memcache], risk: high, risk_anonymous: critical }
+  # Search
+  - { id: elasticsearch, label: Elasticsearch, category: search, tcp: [9200, 9300], aliases: [opensearch, elastic], risk: high, risk_anonymous: critical }
+  - { id: solr, label: Solr, category: search, tcp: [8983], risk: high, risk_anonymous: critical }
+  # Mail
+  - { id: smtp, label: SMTP, category: mail, tcp: [25, 465, 587], aliases: [submission, esmtp], tls_aliases: [smtps, submissions] }
+  - { id: imap, label: IMAP, category: mail, tcp: [143, 993], aliases: [imap4, imap2], tls_aliases: [imaps] }
+  - { id: pop3, label: POP3, category: mail, tcp: [110, 995], aliases: [pop, pop2], tls_aliases: [pop3s] }
+  - { id: managesieve, label: ManageSieve, category: mail, tcp: [4190], aliases: [sieve] }
+  # Directory and authentication
+  - { id: ldap, label: LDAP, category: directory_auth, tcp: [389, 636, 3268, 3269], aliases: [msft-gc, globalcatldap, cldap], tls_aliases: [ldaps, msft-gc-ssl, globalcatldapssl], risk: medium, risk_anonymous: high }
+  - { id: kerberos, label: Kerberos, category: directory_auth, tcp: [88], udp: [88], aliases: [kerberos-sec, kerberos5, krb5, kpasswd], risk: medium }
+  - { id: radius, label: RADIUS, category: directory_auth, udp: [1812, 1813], aliases: [radius-acct] }
+  # Network management
+  - { id: dns, label: DNS, category: network_mgmt, tcp: [53], udp: [53], aliases: [domain], tls_aliases: [domain-s] }
+  - { id: snmp, label: SNMP, category: network_mgmt, udp: [161, 162], aliases: [snmptrap, snmp-trap], risk: medium }
+  - { id: ntp, label: NTP, category: network_mgmt, udp: [123] }
+  - { id: dhcp, label: DHCP, category: network_mgmt, udp: [67], aliases: [bootps, dhcps] }
+  - { id: bgp, label: BGP, category: network_mgmt, tcp: [179], risk: medium }
+  - { id: syslog, label: Syslog, category: network_mgmt, udp: [514], tls_aliases: [syslog-tls] }
+  - { id: winbox, label: MikroTik Winbox, category: network_mgmt, tcp: [8291], aliases: [mikrotik-winbox, mikrotikwinbox], risk: high }
+  - { id: cisco-smart-install, label: Cisco Smart Install, category: network_mgmt, tcp: [4786], aliases: [smart-install, smartinstall, smi], risk: high }
+  - { id: zabbix, label: Zabbix, category: network_mgmt, tcp: [10050, 10051], aliases: [zabbix-agent, zabbix-trapper], risk: medium }
+  - { id: nrpe, label: NRPE, category: network_mgmt, tcp: [5666], risk: medium }
+  - { id: rpcbind, label: RPC portmapper, category: network_mgmt, tcp: [111], udp: [111], aliases: [sunrpc, portmapper, linuxrpc], risk: medium }
+  # Messaging
+  - { id: mqtt, label: MQTT, category: messaging, tcp: [1883, 8883], tls_aliases: [mqtts, secure-mqtt], risk: medium, risk_anonymous: high }
+  - { id: amqp, label: AMQP, category: messaging, tcp: [5672, 5671], tls_aliases: [amqps], risk: medium, risk_anonymous: high }
+  - { id: kafka, label: Kafka, category: messaging, tcp: [9092], risk: medium, risk_anonymous: high }
+  - { id: nats, label: NATS, category: messaging, tcp: [4222], risk: medium, risk_anonymous: high }
+  - { id: pulsar, label: Pulsar, category: messaging, tcp: [6650], risk: medium, risk_anonymous: high }
+  - { id: openwire, label: ActiveMQ OpenWire, category: messaging, tcp: [61616], aliases: [activemq], risk: high }
+  - { id: zookeeper, label: ZooKeeper, category: messaging, tcp: [2181], risk: high, risk_anonymous: critical }
+  - { id: xmpp, label: XMPP, category: messaging, tcp: [5222, 5269], aliases: [xmpp-client, xmpp-server, jabber] }
+  - { id: irc, label: IRC, category: messaging, tcp: [6667], tls_aliases: [ircs, ircs-u] }
+  - { id: smpp, label: SMPP, category: messaging, tcp: [2775] }
+  # Containers and orchestration
+  - { id: docker-api, label: Docker API, category: container_orchestration, tcp: [2375, 2376], aliases: [docker], tls_aliases: [docker-s], risk: high, risk_anonymous: critical }
+  - { id: kubernetes-api, label: Kubernetes API, category: container_orchestration, tcp: [6443], aliases: [kubernetes, kube-apiserver, k8s], risk: high, risk_anonymous: critical }
+  - { id: kubelet, label: Kubelet, category: container_orchestration, tcp: [10250, 10255], risk: high, risk_anonymous: critical }
+  - { id: etcd, label: etcd, category: container_orchestration, tcp: [2379, 2380], aliases: [etcd-client, etcd-server], risk: high, risk_anonymous: critical }
+  - { id: consul, label: Consul, category: container_orchestration, tcp: [8500], risk: high, risk_anonymous: critical }
+  # VPN
+  - { id: ipsec, label: IPsec (IKE), category: vpn, udp: [500, 4500], aliases: [isakmp, ike, ikev2, ipsec-nat-t] }
+  - { id: openvpn, label: OpenVPN, category: vpn, tcp: [1194], udp: [1194] }
+  - { id: wireguard, label: WireGuard, category: vpn, udp: [51820] }
+  - { id: l2tp, label: L2TP, category: vpn, udp: [1701] }
+  - { id: sslvpn, label: SSL VPN, category: vpn, aliases: [ssl-vpn, sstp] }
+  - { id: pptp, label: PPTP, category: vpn, tcp: [1723], risk: medium }
+  # VoIP, media and telecom
+  - { id: sip, label: SIP, category: voip_media, tcp: [5060], udp: [5060], tls_aliases: [sips, sip-tls] }
+  - { id: rtsp, label: RTSP, category: voip_media, tcp: [554, 8554], risk: medium }
+  - { id: rtmp, label: RTMP, category: voip_media, tcp: [1935] }
+  - { id: h323, label: H.323, category: voip_media, tcp: [1720], aliases: [h323q931, h323hostcall] }
+  - { id: iax2, label: IAX2, category: voip_media, udp: [4569], aliases: [iax] }
+  - { id: mgcp, label: MGCP, category: voip_media, udp: [2427], aliases: [mgcp-gateway] }
+  - { id: stun, label: STUN/TURN, category: voip_media, udp: [3478], aliases: [turn, stun-turn] }
+  - { id: sccp, label: Skinny (SCCP), category: voip_media, aliases: [skinny, cisco-sccp] }
+  - { id: diameter, label: Diameter, category: voip_media, tcp: [3868], aliases: [diametersctp] }
+  - { id: gtp, label: GTP, category: voip_media, udp: [2123, 2152, 3386], aliases: [gtpc, gtpu, gtp-control, gtp-user, gtpprime, gtp-prime] }
+  - { id: sigtran, label: SIGTRAN, category: voip_media, aliases: [m2pa, m2ua, m3ua, sua, iua, x2ap, sgsap] }
+  - { id: pfcp, label: PFCP, category: voip_media, udp: [8805] }
+  # Industrial control (OT): reachable from the internet, every one is critical.
+  - { id: modbus, label: Modbus, category: industrial_ot, tcp: [502], aliases: [mbap, modbus-tcp], risk: critical }
+  - { id: s7, label: Siemens S7, category: industrial_ot, tcp: [102], aliases: [s7comm, s7comm-plus], risk: critical }
+  - { id: bacnet, label: BACnet, category: industrial_ot, udp: [47808], aliases: [bacnet-ip], risk: critical }
+  - { id: dnp3, label: DNP3, category: industrial_ot, tcp: [20000], aliases: [dnp, dnp-sec], risk: critical }
+  - { id: ethernet-ip, label: EtherNet/IP, category: industrial_ot, tcp: [44818], udp: [2222], aliases: [ethernetip, enip, cip], risk: critical }
+  - { id: iec104, label: IEC 60870-5-104, category: industrial_ot, tcp: [2404], aliases: [iec-104, iec-60870-5-104], risk: critical }
+  - { id: opcua, label: OPC UA, category: industrial_ot, tcp: [4840], aliases: [opc-ua, opcua-tcp], tls_aliases: [opcua-tls], risk: critical }
+  - { id: fox, label: Niagara Fox, category: industrial_ot, tcp: [1911, 4911], aliases: [niagara-fox], risk: critical }
+  - { id: profinet, label: PROFINET, category: industrial_ot, udp: [34964], aliases: [profinet-rt, profinet-cm, pn-dcp], risk: critical }
+  - { id: codesys, label: CODESYS, category: industrial_ot, tcp: [2455], risk: critical }
+  - { id: melsec, label: MELSEC, category: industrial_ot, aliases: [melsecq, melsec-q], risk: critical }
+  - { id: omron-fins, label: Omron FINS, category: industrial_ot, tcp: [9600], udp: [9600], aliases: [omronfins, fins], risk: critical }
+  - { id: knxip, label: KNXnet/IP, category: industrial_ot, udp: [3671], aliases: [knx, knxnet-ip], risk: critical }
+  - { id: hart-ip, label: HART-IP, category: industrial_ot, tcp: [5094], udp: [5094], aliases: [hartip], risk: critical }
+  - { id: ge-srtp, label: GE SRTP, category: industrial_ot, tcp: [18245], aliases: [gesrtp], risk: critical }
+  - { id: pcworx, label: PCWorx, category: industrial_ot, tcp: [1962], risk: critical }
+  - { id: proconos, label: ProConOS, category: industrial_ot, tcp: [20547], risk: critical }
+  - { id: atg, label: Tank gauge (ATG), category: industrial_ot, aliases: [veeder-root], risk: critical }
+  - { id: crimson-v3, label: Red Lion Crimson V3, category: industrial_ot, tcp: [789], aliases: [crimsonv3], risk: critical }
+  - { id: unitronics, label: Unitronics PCOM, category: industrial_ot, tcp: [20256], aliases: [unitronics-pcom, pcom], risk: critical }
+  - { id: ethercat, label: EtherCAT, category: industrial_ot, udp: [34980], risk: critical }
+  # Other
+  - { id: java-rmi, label: Java RMI, category: other, tcp: [1099], aliases: [rmiregistry, rmi, javarmi], risk: high }
+  - { id: jdwp, label: Java debug wire (JDWP), category: other, risk: critical }
+  - { id: ajp, label: AJP, category: other, tcp: [8009], aliases: [ajp13], risk: high }
+  - { id: socks, label: SOCKS proxy, category: other, tcp: [1080], aliases: [socks4, socks5, socks4a], risk: medium, risk_anonymous: high }
+  - { id: msrpc, label: Microsoft RPC, category: other, tcp: [135], aliases: [epmap, loc-srv, ms-rpc, dce-rpc, dcerpc], risk: high }
+  - { id: ipp, label: IPP (printing), category: other, tcp: [631], aliases: [cups], tls_aliases: [ipps], risk: medium }
+  - { id: jetdirect, label: Printer raw (JetDirect), category: other, tcp: [9100], aliases: [pdl-datastream], risk: medium }
+  - { id: svn, label: Subversion, category: other, tcp: [3690], aliases: [svnserve], risk: medium }
+  - { id: git, label: Git daemon, category: other, tcp: [9418], risk: medium }
+  - { id: coap, label: CoAP, category: other, udp: [5683], aliases: [lwm2m], tls_aliases: [coaps] }
+  - { id: echo, label: Echo, category: other, tcp: [7], udp: [7] }
 
 # Attribute types: string, int, number, bool, time, enum (needs values),
 # list (of strings) and object (opaque). Only string, int, enum and bool
@@ -624,6 +815,9 @@ types:
       port: { sub_type: open_port }
     identity_keys: [name]
     attributes:
+      - { name: service_kind, type: enum, values_from: service_kinds, facet: true, group: true, derived: true }
+      - { name: service_category, type: enum, values_from: service_categories, facet: true, group: true, derived: true }
+      - { name: kind_source, type: enum, values_from: kind_sources, facet: true, derived: true }
       - { name: ip_addresses, type: list }
       - { name: port, type: int, facet: true, group: true }
       - { name: protocol, type: string, facet: true, group: true }
@@ -636,8 +830,9 @@ types:
       - { name: has_tls, type: bool, facet: true }
       - { name: tls_version, type: string, facet: true }
       - { name: is_auth_required, type: bool, facet: true }
+      - { name: has_anonymous_access, type: bool, facet: true }
       - { name: response_time_ms, type: int }
-    columns: [name, port, protocol, product, findings.open, last_seen]
+    columns: [name, port, service_kind, product, findings.open, last_seen]
     card: service
     scannable_by: [service, port]
     sections: [overview, attributes, technologies, certificate, findings, relationships, owners, sources, history]
@@ -651,6 +846,9 @@ types:
     legacy_category: network
     identity_keys: [name]
     attributes:
+      - { name: service_kind, type: enum, values_from: service_kinds, facet: true, group: true, derived: true }
+      - { name: service_category, type: enum, values_from: service_categories, facet: true, group: true, derived: true }
+      - { name: kind_source, type: enum, values_from: kind_sources, facet: true, derived: true }
       - { name: ip_addresses, type: list }
       - { name: url, type: string }
       - { name: host, type: string, group: true }
@@ -688,17 +886,24 @@ types:
     legacy_category: network
     identity_keys: [name]
     attributes:
+      - { name: service_kind, type: enum, values_from: service_kinds, facet: true, group: true, derived: true }
+      - { name: service_category, type: enum, values_from: service_categories, facet: true, group: true, derived: true }
+      - { name: kind_source, type: enum, values_from: kind_sources, facet: true, derived: true }
       - { name: ip_addresses, type: list }
       - { name: host, type: string, group: true }
       - { name: port, type: int, facet: true, group: true }
-      - { name: protocol, type: enum, values: [tcp, udp], facet: true }
+      - { name: transport, type: enum, values: [tcp, udp, sctp], facet: true }
+      - { name: protocol, type: string, facet: true, group: true }
       - { name: state, type: enum, values: [open, filtered], facet: true }
       - { name: service, type: string, facet: true, group: true }
+      - { name: product, type: string, facet: true, group: true }
       - { name: version, type: string }
       - { name: banner, type: string }
       - { name: cpe, type: string }
+      - { name: has_tls, type: bool, facet: true }
+      - { name: has_anonymous_access, type: bool, facet: true }
       - { name: discovery_tool, type: string, facet: true }
-    columns: [name, port, protocol, service, findings.open, last_seen]
+    columns: [name, port, service_kind, product, findings.open, last_seen]
     card: service
     scannable_by: [port, service]
     coverage:
