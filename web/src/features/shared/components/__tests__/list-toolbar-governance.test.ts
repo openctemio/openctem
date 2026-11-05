@@ -111,8 +111,6 @@ const RAW_SEARCH_ALLOWED: Record<string, string> = {
     'finding picker in a dialog',
   'src/features/scans/components/target-picker/asset-source.tsx':
     'target picker in the new-scan form',
-  'src/features/scans/components/target-picker/group-source.tsx':
-    'target picker in the new-scan form',
   'src/features/scan-workflows/components/node-palette.tsx': 'node palette in the workflow editor',
   'src/features/scm-connections/components/sync-repositories-dialog.tsx':
     'repository picker in a dialog',
