@@ -168,9 +168,13 @@ func ParseSensorSettings(effective, ignored json.RawMessage) SensorSettings {
 			out.Effective[ck] = SensorSetting{Value: val, Source: safetext.Truncate(safetext.SingleLine(src, maxSensorSourceRunes), maxSensorSourceRunes)}
 		}
 	}
-	var keys []string
+	var keys []any
 	if len(ignored) > 0 && len(ignored) <= maxSensorSettingsBytes && json.Unmarshal(ignored, &keys) == nil {
-		for _, k := range keys {
+		for _, kv := range keys {
+			k, isStr := kv.(string)
+			if !isStr {
+				continue // one malformed entry does not hide the rest
+			}
 			if len(out.IgnoredConfigKeys) >= MaxIgnoredConfigKeys {
 				break
 			}
