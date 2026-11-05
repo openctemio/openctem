@@ -1121,6 +1121,8 @@
   "scans.failure.RESOURCE_EXHAUSTED.text": "The sensors that tried the task ran out of memory or disk space.",
   "scans.failure.RETEST_UNAVAILABLE.fix": "The finding is unchanged. Verify it by hand.",
   "scans.failure.RETEST_UNAVAILABLE.text": "The tool could not run this check, so there is nothing to retest with it.",
+  "scans.failure.SCANNER_CONFIG_SECRET.fix": "Edit the scan and remove the credential from the tool configuration. Store source keys under Settings, Integrations, Data source keys.",
+  "scans.failure.SCANNER_CONFIG_SECRET.text": "The scan's tool configuration holds a credential (a token, password or key). Credentials never travel in a scan's configuration.",
   "scans.failure.SCANNER_NOT_FOUND.fix": "Install the tool on a sensor, or pick a sensor that reports it.",
   "scans.failure.SCANNER_NOT_FOUND.text": "The sensor does not have the step's tool.",
   "scans.failure.SCAN_APPROVAL_PENDING.fix": "It runs once an approver approves it; see the approval panel on the scan's page.",
