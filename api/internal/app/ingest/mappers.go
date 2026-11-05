@@ -397,6 +397,11 @@ func buildServiceProperties(svc *ctis.ServiceTechnical) map[string]any {
 	if svc.IsAuthRequired {
 		props["auth_required"] = true
 	}
+	// Only an access the probe saw is recorded: false is also what an
+	// unmeasured report sends.
+	if svc.HasAnonymousAccess {
+		props[asset.PropKeyHasAnonymousAccess] = true
+	}
 	if len(svc.AuthMethods) > 0 {
 		props["auth_methods"] = svc.AuthMethods
 	}
