@@ -140,7 +140,7 @@ func (s *Service) IngestV2Segment(ctx context.Context, prov Provenance, report *
 	o.RejectedFindings = len(report.Findings) - len(kept)
 	o.Errors = itemErrs
 
-	res.Touched = assetOutcomes(o, filtered.Assets, assetIdx, out.AssetMap, out.ExcludedAssetRefs)
+	res.Touched = assetOutcomes(o, filtered.Assets, assetIdx, out.AssetMap, out.ExcludedAssetRefs, out.OverCapAssetRefs, out.OutsideTargetAssetIDs)
 
 	// Findings: rejected when their asset was not stored or the store failed.
 	failed := map[int]bool{}
@@ -169,10 +169,14 @@ func (s *Service) IngestV2Segment(ctx context.Context, prov Provenance, report *
 // exclusion of the organization kept out is neither accepted nor rejected:
 // the organization chose not to track it, the sensor did nothing wrong, and
 // counting it as rejected made every complete collector report look like it
-// lost assets, so its source's not-seen sweep never ran. Anything else that
-// was not persisted is rejected.
+// lost assets, so its source's not-seen sweep never ran. One refused because
+// the report recorded as many assets outside its command's targets as one
+// report may is rejected with too_many. Anything else that was not persisted
+// is rejected. An asset recorded outside the command's targets is accepted
+// but not returned as touched: the command did not cover it, so its run
+// proves nothing about the asset's other findings.
 func assetOutcomes(o *ingestreport.SegmentOutcome, assets []ctis.Asset, assetIdx []int,
-	stored map[string]shared.ID, excluded map[string]bool) []shared.ID {
+	stored map[string]shared.ID, excluded, overCap map[string]bool, outside map[shared.ID]bool) []shared.ID {
 	var touched []shared.ID
 	seen := map[shared.ID]bool{}
 	skipped := 0
@@ -187,16 +191,20 @@ func assetOutcomes(o *ingestreport.SegmentOutcome, assets []ctis.Asset, assetIdx
 				continue
 			}
 			code, detail := protov2.CodeAssetInvalid, protov2.DetailAssetInvalid
-			if excluded[assets[i].ID] {
+			switch {
+			case excluded[assets[i].ID]:
 				code, detail = protov2.CodeAssetExcluded, protov2.DetailAssetExcluded
 				skipped++
-			} else {
+			case overCap[assets[i].ID]:
+				code, detail = protov2.CodeTooMany, protov2.DetailOutsideTargetsOverCap
+				o.RejectedAssets++
+			default:
 				o.RejectedAssets++
 			}
 			addItemError(o, protov2.ItemError{Pointer: "/assets/" + strconv.Itoa(assetIdx[i]), Code: code, Detail: detail})
 			continue
 		}
-		if !seen[id] {
+		if !seen[id] && !outside[id] {
 			seen[id] = true
 			touched = append(touched, id)
 		}
