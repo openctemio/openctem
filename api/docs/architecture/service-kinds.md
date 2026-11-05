@@ -5,8 +5,8 @@ What a network service speaks: every service asset carries a normalised
 **source** the platform learned the kind from.
 
 Status: **shipped** (taxonomy, classification on every write, backfill,
-inventory facets). **Planned:** service detection (`detect.services@1`) on
-sensors, exposures for risky internet-facing kinds, per-kind capability
+inventory facets, exposures for risky internet-facing kinds). **Planned:**
+service detection (`detect.services@1`) on sensors, per-kind capability
 applicability, a dashboard tile, kind-weighted attack-graph edges and version
 matching on detected products.
 
@@ -85,6 +85,34 @@ the Services, HTTP services and Open ports views ("all remote-access
 services" is the category facet). Values show their registry labels in the
 viewer's language; the kind list offers only the kinds the tenant has.
 
+## Risky services
+
+An open port raises a `risky_service_exposed` exposure (display category
+`exposed_ports`, `internal/app/exposurebridge/risky_service.go`) when:
+
+- its kind has a `risk` in the registry (RDP, VNC, Telnet, SMB, NFS, every
+  database, cache and search engine, Docker, Kubernetes, kubelet and etcd
+  APIs, every industrial protocol, ...; SSH, web, mail and VPN have none);
+- the kind was measured: any source but `port_guess`;
+- the service is internet-facing: its exposure is public or it is marked
+  internet-accessible, or its address (host of its name, `host`,
+  `ip_addresses`) is public; an exposure of private, restricted or isolated
+  decides against;
+- its state is not closed or filtered.
+
+Severity is the kind's `risk`; `risk_anonymous` when a probe saw the service
+answer without credentials (`has_anonymous_access`), as its own exposure, so
+a severity someone reviewed never changes under them. Dedupe keys: port,
+transport and kind. When the kind changes, stops being risky, becomes a guess
+again or the anonymous state flips, the port's other risky exposures are
+resolved automatically; closing the port resolves them with `port_open`.
+
+`port_open` keeps its identity: its key is the transport (an older port scan
+filed it under `protocol`, which now holds the application protocol). It
+names a measured kind (`service_label`) and a guess only as a guess
+(`service_guess`: "Port 6379 is open to the internet (probably Redis)"); a
+port number alone no longer names a service in a summary.
+
 ## Threat model
 
 - *Producer raises its own confidence.* The source comes from the receiver's
@@ -97,3 +125,6 @@ viewer's language; the kind list offers only the kinds the tenant has.
   `TestMigrationServiceKindBackfill`).
 - *A guess drives action.* Guesses are labelled and excluded from exposures,
   findings and active checks.
+- *Exposure spam on reclassification.* Stable keys; a changed kind resolves
+  the old exposure; the port_open key never moves (`TestPortOpen_*`,
+  `TestRiskyService_*`, cross-tenant negative included).
