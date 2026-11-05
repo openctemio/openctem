@@ -102,7 +102,10 @@ type StepRun struct {
 
 	// Results
 	FindingsCount int
-	Output        map[string]any
+	// InfoObservations counts the template scanner info matches the step
+	// run's reports filed as exposures instead of findings.
+	InfoObservations int
+	Output           map[string]any
 
 	// Retry tracking
 	Attempt     int

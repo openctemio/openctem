@@ -18,9 +18,11 @@ fixture() {
 #!/usr/bin/env bash
 case "$1" in
 compose)
+	[ -n "${COMPOSE_LOG:-}" ] && echo "$*" >>"$COMPOSE_LOG"
 	case "$2" in
+	ps) [ -n "${WITH_SIGNER:-}" ] && printf 'api\nsigner\n' || printf 'api\n' ;;
 	config) if [ "${3:-}" = "--images" ]; then echo postgres:17; else echo '  "name": "stubproj",'; fi ;;
-	exec) case "$*" in *psql*) echo "t 1" ;; *) echo "PLAINTEXT-DUMP" ;; esac ;;
+	exec) case "$*" in *psql*) echo "t 1" ;; *pg_restore*) cat >/dev/null ;; *) echo "PLAINTEXT-DUMP" ;; esac ;;
 	esac ;;
 exec) case "$*" in *pg_restore*) cat >/dev/null ;; *psql*) echo "t 1" ;; esac ;;
 rm) ;;
@@ -32,6 +34,7 @@ run)
 		# --list stops after the table of contents: read one byte only.
 		head -c 1 >/dev/null
 		[ -z "${FAIL_DUMPCHECK:-}" ] ;;
+	*xzf*) cat >/dev/null ;;
 	*tar*)
 		[ -z "${FAIL_VOLUME:-}" ] || { echo boom >&2; exit 1; }
 		echo "PLAINTEXT-TAR" | gzip ;;
@@ -100,6 +103,22 @@ grep -q 'volume archives OK' "$d/vout" && ok "verify decrypts with the identity"
 d="$(fixture)"
 rc="$(run_backup "$d" FAIL_DUMPCHECK=1 BACKUP_AGE_RECIPIENT=age1testrecipient)"
 [ "$rc" != 0 ] && grep -q 'not a readable pg_dump archive' "$d/out" && ok "unreadable dump fails the run" || bad "unreadable dump: rc=$rc"
+
+# 7. restore stops the job signer before its volumes are replaced, and only
+#    when it runs.
+for with in 1 ""; do
+	d="$(fixture)"
+	run_backup "$d" WITH_SIGNER=1 >/dev/null
+	b="$(find "$d/backups" -mindepth 1 -maxdepth 1 -type d | head -1)"
+	rc=0; (cd "$d/deploy" && env PATH="$d/bin:$PATH" BACKUP_DIR="$d/backups" WITH_SIGNER="$with" COMPOSE_LOG="$d/compose.log" \
+		bash ./backup.sh restore "$b" --yes >"$d/rout" 2>&1) || rc=$?
+	stop="$(grep '^compose stop' "$d/compose.log" || true)"
+	if [ -n "$with" ]; then
+		[ "$rc" = 0 ] && [ "$stop" = "compose stop gateway web console api signer" ] && ok "restore stops a running signer" || bad "restore with signer: rc=$rc stop=[$stop] $(tail -3 "$d/rout")"
+	else
+		[ "$rc" = 0 ] && [ "$stop" = "compose stop gateway web console api" ] && ok "restore without a running signer stops the rest" || bad "restore without signer: rc=$rc stop=[$stop] $(tail -3 "$d/rout")"
+	fi
+done
 
 echo "passed: $pass failed: $failed"
 [ "$failed" = 0 ]
