@@ -314,7 +314,6 @@ var catalog = []Stage{
 		Key: CrawlWeb, Name: "Web crawl",
 		Description: "Crawl web services for URLs, staying on the same host.",
 		Inputs:      []asset.TypeRef{tHTTPService, tDiscoveredURL, tWebsite},
-		Outputs:     []asset.TypeRef{tHTTPService},
 		Endpoints:   true,
 		Tier:        TierActive,
 		Implementations: []Implementation{
@@ -369,8 +368,8 @@ var catalog = []Stage{
 	},
 	{
 		// Active (T1): one GET per origin in a headless browser. The result
-		// is the web_evidence property of the origin the sensor re-reports
-		// (the same service, annotated). While the organization
+		// is the web_evidence property of the origin the sensor re-reports,
+		// so the stage has no output port of its own. While the organization
 		// has screenshots off the capability is not planned for it (coverage
 		// readiness): no picture is taken.
 		Key: CaptureScreenshot, Name: "Screenshot",
