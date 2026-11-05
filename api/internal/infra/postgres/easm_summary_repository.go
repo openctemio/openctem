@@ -40,7 +40,7 @@ var EASMSurfaceTypes = []string{"domain", "subdomain", "ip_address", "certificat
 // subdomain_removed come back when they have a producer.
 var EASMExposureTypes = []string{
 	"subdomain_discovered", "certificate_expiring", "certificate_expired",
-	"port_open", "service_detected", "ssl_issue",
+	"port_open", "service_detected", "risky_service_exposed", "ssl_issue",
 	"dangling_cname", "dangling_ns", "email_security_weak", "subdomain_takeover",
 	"lookalike_domain", "third_party_script_added",
 }
