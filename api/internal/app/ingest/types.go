@@ -241,7 +241,13 @@ type Output struct {
 	FindingsSkipped     int             `json:"findings_skipped"`
 	// InfoObservations counts the template scanner info matches filed as
 	// exposures instead of findings (info_matches.go).
-	InfoObservations     int `json:"info_observations,omitempty"`
+	InfoObservations int `json:"info_observations,omitempty"`
+	// FindingsHeld counts findings held for review in the results quarantine
+	// (output_binding.go), not applied.
+	FindingsHeld int `json:"findings_held,omitempty"`
+	// FindingsLost counts findings of out-of-contract assets the full
+	// quarantine could not keep: neither applied nor held.
+	FindingsLost         int `json:"findings_lost,omitempty"`
 	FindingsAutoResolved int `json:"findings_auto_resolved,omitempty"`
 	FindingsAutoReopened int `json:"findings_auto_reopened,omitempty"`
 	// FindingsSourceResolved counts open findings resolved because their
