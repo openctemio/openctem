@@ -70,6 +70,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/command"
 	"github.com/openctemio/openctem/api/pkg/domain/platformsetting"
 	relationshipdom "github.com/openctemio/openctem/api/pkg/domain/relationship"
+	"github.com/openctemio/openctem/api/pkg/domain/scangov"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	signupdom "github.com/openctemio/openctem/api/pkg/domain/signup"
@@ -1675,21 +1676,7 @@ func newEASMHandler(repos *Repositories, svc *Services, log *logger.Logger) *han
 	h.SetReview(review, audit)
 	// Suggestion cards (research/117): addresses behind in-scope names and
 	// confirmed assets no entry covers; read only.
-	if svc.ActiveGate != nil {
-		suggestions := easmapp.NewSuggestionService(repos.Attribution, svc.ActiveGate, svc.DataScope,
-			func(ctx context.Context, tenantID shared.ID) (string, error) {
-				t, err := repos.Tenant.GetByID(ctx, tenantID)
-				if err != nil {
-					return "", err
-				}
-				return t.Name(), nil
-			}, seededNetworks(repos))
-		// The organization's own prefixes are offered only when the platform
-		// guardrails accept them as entries.
-		suggestions.SetGuardrails(svc.ScopeGuardrails)
-		// Addresses the unclassified-scans mode already checks need no
-		// decision: the same mode the active gate reads.
-		suggestions.SetUnclassified(svc.ActiveGate.UnclassifiedMode)
+	if suggestions := newEASMSuggestions(repos, svc); suggestions != nil {
 		h.SetSuggestions(suggestions)
 	}
 	// Review by rule (RFC-054 §6.7): rules are scope entries and exclusions.
@@ -1701,6 +1688,58 @@ func newEASMHandler(repos *Repositories, svc *Services, log *logger.Logger) *han
 
 // seededNetworks reads the organization's network seeds (RFC-082); nil
 // when they are not wired.
+// newEASMSuggestions builds the suggestion cards (nil without the active
+// gate): the Review tab reads them, and the address auto add works from the
+// same address card.
+func newEASMSuggestions(repos *Repositories, svc *Services) *easmapp.SuggestionService {
+	if svc.ActiveGate == nil {
+		return nil
+	}
+	suggestions := easmapp.NewSuggestionService(repos.Attribution, svc.ActiveGate, svc.DataScope,
+		func(ctx context.Context, tenantID shared.ID) (string, error) {
+			t, err := repos.Tenant.GetByID(ctx, tenantID)
+			if err != nil {
+				return "", err
+			}
+			return t.Name(), nil
+		}, seededNetworks(repos))
+	// The organization's own prefixes are offered only when the platform
+	// guardrails accept them as entries.
+	suggestions.SetGuardrails(svc.ScopeGuardrails)
+	// Addresses the unclassified-scans mode already checks need no
+	// decision: the same mode the active gate reads.
+	suggestions.SetUnclassified(svc.ActiveGate.UnclassifiedMode)
+	// The organization's address setting in force (never hides the card;
+	// Strict scan approval turns automatic adds into ask).
+	if svc.Tenant != nil && svc.Scope != nil {
+		suggestions.SetAddressMode(func(ctx context.Context, tenantID shared.ID) (string, error) {
+			ss, err := svc.Tenant.GetScopeSettings(ctx, tenantID.String())
+			if err != nil || ss == nil {
+				return "", err
+			}
+			mode, _ := svc.Scope.ApprovalPolicy(ctx, tenantID.String())
+			return ss.AddressModeIn(mode.Normalized() == scangov.ModeStrict), nil
+		})
+	}
+	return suggestions
+}
+
+// newAddressAutoAdd builds the address auto add (nil when a dependency is
+// missing): strong addresses behind in-scope names become scope entries
+// through the scope service (research/425).
+func newAddressAutoAdd(repos *Repositories, svc *Services, log *logger.Logger) *easmapp.AddressAutoAdd {
+	cards := newEASMSuggestions(repos, svc)
+	if cards == nil || svc.Scope == nil || svc.Tenant == nil || repos.EASMNetworkSeed == nil || repos.EASMAddressAutoAdd == nil {
+		return nil
+	}
+	var audit easmapp.ScopeJoinAudit
+	if svc.Audit != nil {
+		audit = svc.Audit
+	}
+	return easmapp.NewAddressAutoAdd(cards, svc.Scope, svc.Tenant, repos.EASMNetworkSeed,
+		repos.EASMAddressAutoAdd, svc.Scope, audit, log)
+}
+
 func seededNetworks(repos *Repositories) easmapp.SeededNetworks {
 	if repos.EASMNetworkSeed == nil {
 		return nil
