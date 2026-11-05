@@ -39,6 +39,28 @@ type StepInfoRecorder interface {
 	AddStepInfoObservations(ctx context.Context, tenantID, stepRunID shared.ID, n int) error
 }
 
+// StepDispositionRecorder adds the findings a step run's reports left
+// unstored (*postgres.ScanHopRepository): held for review and refused.
+type StepDispositionRecorder interface {
+	AddStepFindingDispositions(ctx context.Context, tenantID, stepRunID shared.ID, held, refused int) error
+}
+
+// SetStepDispositionRecorder wires the per-run held and refused counts. Nil-safe.
+func (s *Service) SetStepDispositionRecorder(r StepDispositionRecorder) { s.stepDispositions = r }
+
+// recordStepDispositions adds what a command-bound segment held or refused
+// to its step run, so the step's findings count (what the sensor reported)
+// reconciles with the findings list.
+func (s *Service) recordStepDispositions(ctx context.Context, tenantID shared.ID, binding Binding, held, refused int) {
+	if s.stepDispositions == nil || binding.Kind != BindingCommand || binding.StepRunID == nil {
+		return
+	}
+	if err := s.stepDispositions.AddStepFindingDispositions(ctx, tenantID, *binding.StepRunID, held, refused); err != nil {
+		s.logger.Warn("ingest: step run finding dispositions not counted",
+			"tenant_id", tenantID.String(), "scan_run_step_id", binding.StepRunID.String(), "error", logger.SanitizeError(err))
+	}
+}
+
 // SetTemplateMatchProjector wires the info match projection. Nil-safe:
 // unwired, info matches stay findings.
 func (s *Service) SetTemplateMatchProjector(p TemplateMatchProjector) { s.templateMatches = p }
@@ -70,7 +92,7 @@ func splitInfoMatches(report *ctis.Report, assetMap map[string]shared.ID, output
 		f := &report.Findings[i]
 		assetID, ok := assetMap[f.AssetRef]
 		if f.Severity != ctis.SeverityInfo || !ok || assetID.IsZero() ||
-			output.ExcludedAssetRefs[f.AssetRef] || output.OutsideJobAssetRefs[f.AssetRef] || output.OutOfScopeAssetRefs[f.AssetRef] {
+			output.ExcludedAssetRefs[f.AssetRef] || output.OverCapAssetRefs[f.AssetRef] || output.OutOfScopeAssetRefs[f.AssetRef] {
 			keep = append(keep, *f)
 			continue
 		}

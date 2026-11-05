@@ -1,8 +1,8 @@
-# RFC-149: Web path discovery
+# RFC-150: Web path discovery
 
 | | |
 |---|---|
-| Status | Partially implemented (2026-11-05): platform planning, derived list, strict job scope, budgets, program rules, coverage reasons and the workflow step; the verification template for guessed files is planned |
+| Status | Partially implemented (2026-11-05): platform planning, derived list, strict job scope, budgets, program rules, coverage reasons and the workflow step; the check for guessed files exists in the sensor, its wiring is planned |
 | Scope | api (`pkg/domain/webendpoint`, `internal/app/contentpin`, `internal/app/scope`, `internal/app/coverage`, `internal/app/scanrun`, `internal/app/command`, stage catalog, migrations), contract (`enumerate.web_paths@1`, `webpath`), sdk-go (forwarder request cap), sensor (`webguess`) |
 | Architecture | [web-discovery.md](../architecture/web-discovery.md) |
 | Related | RFC-056 (web surface store; §9 guessed endpoints and evidence), RFC-093 (asset coverage ledger), RFC-061 (job content), RFC-065 (bug bounty programs), RFC-074 (coverage gaps) |
@@ -85,12 +85,15 @@ reason on the run.
 
 ## 5. Not built yet
 
-- The verification template for guessed backup, dump, source and config
-  files (magic bytes on the exact URL). Templates the platform plans by id are
-  the sensor's signed template set; a platform-authored template needs a
-  delivery path of its own (a signed platform template, or one baked into the
-  sensor's set). Until then guessed files are labelled (`ext:*`) and listed,
-  never filed as findings.
+- Verifying guessed backup, dump, source and config files. The check itself
+  exists: the sensor carries the nuclei template `openctem-backup-file-signature`
+  in its own compiled-in, per-run signed set (one GET of the exact URL, a match
+  only on zip, gzip, tar or SQL dump bytes in a non-HTML 200), so no platform
+  template delivery is needed. Still to wire: the verification run must name it
+  (the sensor does not read `scanner_config.template_ids` of a scan yet; a
+  retest or validation request names it by `template_id` today), and the
+  catalog entries or `ext:*` labels that select it. Until then guessed files
+  are labelled (`ext:*`) and listed, never filed as findings.
 - Pack lists, platform-planned recursion, parameter discovery, authenticated
   discovery (target credentials through the sealed task secrets), the
   per-variant ledger.

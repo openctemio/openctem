@@ -154,14 +154,17 @@ export function selectorPreviewURL(
 export function describeTargetOptions(
   targets: readonly string[],
   o: ScanTargetOptions | undefined,
-  t: Translate = enTranslate
+  t: Translate = enTranslate,
+  /** The mode ranges run without a stored one (effectiveCidrMode); a saved scan sweeps. */
+  unsetMode: CidrMode = 'sweep'
 ): string[] {
   const out: string[] = []
   if (hasCidrTarget(targets)) {
+    const mode = o?.cidr_mode ?? unsetMode
     out.push(
-      o?.cidr_mode === 'inventory'
+      mode === 'inventory'
         ? t('scans.targetOptions.rangesInventory')
-        : o?.cidr_mode === 'liveness'
+        : mode === 'liveness'
           ? t('scans.targetOptions.rangesLiveness')
           : t('scans.targetOptions.rangesSweep')
     )

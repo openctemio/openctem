@@ -1,6 +1,6 @@
 # Web path discovery
 
-Design and decisions: [RFC-149](../rfcs/RFC-149-web-path-discovery.md). The
+Design and decisions: [RFC-150](../rfcs/RFC-150-web-path-discovery.md). The
 store side (source `guess`, response evidence) is
 [RFC-056 §9](../rfcs/RFC-056-web-attack-surface.md) and
 [web-surface.md](web-surface.md).
@@ -21,7 +21,7 @@ as endpoints with source `guess`.
 | Bug bounty `bruteforce` / `automated_scanning` enforcement for every enumeration job | shipped |
 | Coverage gap reasons of discovery and their settlement | shipped |
 | `paths` step in Standard recon, Web and Deep recon (optional, Standard depth) | shipped |
-| Verification template for guessed backup/dump/source/config files | planned (RFC-149 §5) |
+| Verification of guessed backup/dump/source/config files | the check is in the sensor (`openctem-backup-file-signature`); wiring planned (RFC-150 §5) |
 | Pack lists, recursion, parameter discovery, authenticated discovery | planned |
 
 ## How a run is planned

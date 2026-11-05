@@ -182,7 +182,7 @@ func TestTaxonomy_PlannedAreNeverRouted(t *testing.T) {
 	// sbom.generate and import.file (RFC-055), lookup.rdap and lookup.asn
 	// (RFC-071), discover.hosts (RFC-088), enumerate.subdomains (RFC-036),
 	// monitor.web_content (RFC-138), enumerate.web_paths (routed) and
-	// enumerate.web_params (later) (RFC-149).
+	// enumerate.web_params (later) (RFC-150).
 	if len(all) != 31 {
 		t.Fatalf("taxonomy v1: %d capabilities, want 31", len(all))
 	}

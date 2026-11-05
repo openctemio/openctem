@@ -117,7 +117,9 @@ type Service struct {
 	// stepInfo counts them on their step run (info_matches.go).
 	templateMatches TemplateMatchProjector
 	stepInfo        StepInfoRecorder
-	commandIngested CommandIngestedHook
+	// stepDispositions counts held and refused findings on their step run.
+	stepDispositions StepDispositionRecorder
+	commandIngested  CommandIngestedHook
 
 	// coverageMode and coverageGuard drive coverage-scoped auto-resolve of
 	// non-repository findings (coverage_autoresolve.go). The zero mode is
@@ -508,7 +510,7 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 		s.ResultPolicy(ctx, tenantID).Mode == sensorresult.ModeWarn
 	// Output-type binding (research/27 G12): a command-bound report may
 	// carry only the asset types its tool produces or takes.
-	report = s.bindOutputTypes(ctx, agt, tenantID, binding, report, opts)
+	report, findingsHeld, findingsLost, holds := s.bindOutputTypesHolds(ctx, agt, tenantID, binding, report, opts)
 	// Which channel reported the findings is the platform's to say, from
 	// the principal: a sensor's metadata.source_type is ignored, so it can
 	// never file its findings as a person's or an integration's.
@@ -534,6 +536,11 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 		Binding:           binding.String(),
 		UnsolicitedWarned: unsolicitedWarned,
 		policy:            policy,
+		FindingsHeld:      findingsHeld,
+		FindingsLost:      findingsLost,
+	}
+	if holds != nil {
+		output.HeldAssetRefs, output.HeldFindings, output.HoldLost = holds.assetRefs, holds.findings, holds.lost
 	}
 	// Web endpoints (and legacy discovered_url assets) go to the web surface
 	// sub-inventory under their origin asset, never one asset per URL.
