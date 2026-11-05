@@ -24,7 +24,7 @@ func TestTriagePrompt_NoSnippetForASecretFinding(t *testing.T) {
 		f.SetLocation("config/app.py", 12, 12, 0, 0)
 		f.SetSnippet(line)
 		f.SetContextSnippet("before()\n" + line + "\nafter()")
-		p, _, _ := s.buildTriagePromptSafe(f, aipolicy.ClassRestricted)
+		p, _, _ := s.buildTriagePromptSafe(f, aipolicy.ClassRestricted, nil)
 		return p
 	}
 	for name, p := range map[string]string{
@@ -47,7 +47,7 @@ func TestTriagePrompt_RedactsSecretFindingDescription(t *testing.T) {
 	require.NoError(t, err)
 	f.SetFindingType(vulnerability.FindingTypeSecret)
 	f.SetDescription("Found token " + tok + " in config")
-	p, _, _ := s.buildTriagePromptSafe(f, aipolicy.ClassRestricted)
+	p, _, _ := s.buildTriagePromptSafe(f, aipolicy.ClassRestricted, nil)
 	require.NotContains(t, p, "ghp_")
 	require.Contains(t, p, "Found token")
 }

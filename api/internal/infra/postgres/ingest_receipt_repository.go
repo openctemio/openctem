@@ -619,8 +619,13 @@ func (r *IngestReceiptRepository) Get(ctx context.Context, tenantID, id shared.I
 	return rec, err
 }
 
+// receiptColumns reads a scan run's receipt as processing while the run is
+// still going: the sensor-fed receipt row itself is created as completed.
 const receiptColumns = `id::text, tenant_id::text, source_kind, source_ref, actor_user_id::text,
-	COALESCE(tool_name, ''), COALESCE(format, ''), COALESCE(filename_sha256, ''), coverage, COALESCE(coverage_note, ''), status,
+	COALESCE(tool_name, ''), COALESCE(format, ''), COALESCE(filename_sha256, ''), coverage, COALESCE(coverage_note, ''),
+	CASE WHEN source_kind = 'scan_run' AND EXISTS (SELECT 1 FROM scan_runs sr
+		WHERE sr.tenant_id = ingest_receipts.tenant_id AND sr.id::text = ingest_receipts.source_ref
+		AND sr.status IN ('pending', 'running')) THEN 'processing' ELSE status END,
 	reports, findings_received, assets_created, assets_updated, components, statements, vex_stored, vex_closed,
 	findings_created, findings_updated, findings_reopened, findings_closed, findings_untouched,
 	skipped, findings_failed, findings_suppressed, actions_recorded, actions_truncated, errors,
