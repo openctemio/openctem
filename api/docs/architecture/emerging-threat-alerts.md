@@ -24,6 +24,74 @@ matcher creates findings ──────────────► threat_al
    + in-app (administrators)              outbox, in-app, e-mail       (the page)
 ```
 
+## Flow
+
+Verified against `develop` (2026-11-05); unchanged since v0.19.1.
+
+### Planner pass (`threatalert.Planner.Run`, controller `threat-alert-planner`)
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant C as controller (1 min, exclusive, 2 min budget)
+  participant P as threatalert.Planner
+  participant ST as PlannerStore (postgres)
+  participant N as outbox, in-app, mailer
+  C->>P: Run(ctx, 2m)
+  P->>ST: fanOut, PlannerCursor, EventsAfter(cursor, 500)
+  P->>P: stop at an id gap younger than 2 min
+  P->>ST: TenantsAffectedBy(page vuln ids), one query per page
+  P->>ST: Enqueue (tenant, vuln), ResolveVuln for rejected (rejected_upstream), SetPlannerCursor
+  P->>ST: baselines, TenantsWithoutBaseline(10), ActiveWindowVulns(30 d events, 90 d KEV)
+  loop Dequeue(200) until the deadline
+    P->>ST: plan, Vuln, AlertByVuln, AffectedAssets(tenant, vuln)
+    P->>P: Score, LevelFor(settings), state transitions
+    P->>ST: SaveAlert(alert, assets)
+  end
+  P->>ST: TenantsWithPendingImmediate(200)
+  P->>N: flush per touched tenant: quiet hours, override, 5 per hour, one N more per hour
+  P->>N: digests at digest_hour local, outbox emerging_threat_digest, in-app, e-mail in member scope
+```
+
+- A plan that fails is re-queued after the loop (not inside it), so a persistent failure cannot spin
+  until the deadline. Items left when the budget ends are put back.
+- `plan` skips a tenant whose module `threat_intel` is off or whose alerts are disabled, and a
+  tenant not yet baselined (the baseline covers it).
+
+### Alert lifecycle (`plan`, triage routes)
+
+```mermaid
+stateDiagram-v2
+  [*] --> Open: plan, affected asset inside the active window (state new)
+  Open --> Open: POST state new, acknowledged or remediating, permission findings triage
+  Open --> NotAffected: POST state, reason required, every asset in scope (else 409)
+  NotAffected --> Open: plan, suppression expired (180 d), possible became confirmed, or KEV added (ReopenedBy), state new
+  NotAffected --> Open: POST state new, acknowledged or remediating
+  Open --> Resolved: plan, no affected asset left (fixed), or ResolveVuln (rejected_upstream)
+  Resolved --> Open: plan, affected again (state new, NotifiedLevel reset), or POST state
+  note right of Open
+    new, acknowledged or remediating
+  end note
+```
+
+- `ValidateTransition` accepts `new`, `acknowledged`, `remediating` and `not_affected` from any
+  state (no source-state check); `resolved` is set only by the planner. A `not_affected` decision
+  on a KEV vulnerability is audited at high severity. The planner's `SaveAlert` refuses to
+  overwrite a triage decision made after it read the alert (`ErrStale`) and plans it again.
+
+### Level (`threatalert.LevelFor`)
+
+```mermaid
+flowchart TD
+  B["Score: (exploitation + severity + exposure + freshness) x confidence<br/>confidence 1.0 confirmed, 0.8 likely, 0.5 possible, max 100"] --> I{"Total >= immediate_threshold (70)<br/>and Exploitation >= 20 (KEV, or EPSS >= 0.5)?"}
+  I -- yes --> T{"tier confirmed, or include_possible_in_immediate,<br/>or KEV on an internet-facing possible asset?"}
+  T -- yes --> IM["immediate"]
+  T -- no --> D
+  I -- no --> D{"Total >= digest_threshold (35)<br/>or minimum severity passes the matching policy?"}
+  D -- yes --> DG["digest"]
+  D -- no --> L["listed"]
+```
+
 ## Vulnerability event log (shipped)
 
 - Table `vuln_events`; emitter state `vuln_event_state`; cursors

@@ -8,7 +8,7 @@ organization at once from the console.
 
 | | Owner request | Console "Delete now" |
 |---|---|---|
-| Route | `DELETE /api/v1/tenants/{tenant}` (owner, `team:delete`, recent sign-in) answers 202 with `deletion_due_at` | `POST /api/v1/admin/tenants/{tenantId}/purge` (super_admin, fresh authenticator code, reason) |
+| Route | `DELETE /api/v1/tenants/{tenant}` (owner, `team:delete`, recent sign-in) answers 202 with `deletion_due_at` | `POST /api/v1/admin/tenants/{tenantId}/purge` (super_admin, fresh authenticator code, reason, and a second super administrator's approval: 428 `SECOND_APPROVAL_REQUIRED` until given) |
 | Effect | `tenants.status = 'pending_deletion'`, `deletion_due_at = now + 14 days`; refused to every credential at once (the organization access gate, see `organization-suspension.md`); live connections close | deleted at once, whatever its status |
 | Audit | critical entry in the organization's log (`tenant.deletion_scheduled`); the deletion itself on the platform chain (`tenant.deleted`) | critical admin audit rows with the reason: `organization.purge_requested` before anything is deleted, `organization.purged` with the outcome, plus `tenant.deleted` |
 | Undo | `POST /api/v1/auth/organization-deletion/cancel` by any active owner until the due time (`tenant.deletion_canceled`) | none |
@@ -19,6 +19,28 @@ deletes the organizations whose grace ended through the same
 then the rows (cascade), then a record on the platform audit chain. A failure
 (storage down) leaves the organization pending and is retried on the next
 run; one failure does not stop the others. Member accounts are kept.
+
+## Flow
+
+```mermaid
+stateDiagram-v2
+    [*] --> active
+    active --> pending_deletion: DELETE /api/v1/tenants/{tenant} - owner, team delete, step-up, audit tenant.deletion_scheduled
+    pending_deletion --> active: POST /api/v1/auth/organization-deletion/cancel - active owner, audit tenant.deletion_canceled
+    pending_deletion --> deleted: organization-delete worker PurgeDue when deletion_due_at passed (14 d), DeleteTenant
+    pending_deletion --> deleted: console purge - fresh code, reason, four-eyes, purge_requested audited first
+    active --> deleted: console purge (any status)
+    suspended --> deleted: console purge
+    active --> suspended: console suspend
+    suspended --> active: console unsuspend
+    deleted --> [*]
+```
+
+`Schedule` updates only an `active` organization (a suspended one answers
+409). While pending, the suspension gate refuses every credential; the
+owner's sign-in lists the organization under `suspended_tenants` with
+`deletion_due_at`. The worker purges at most 50 due organizations per run,
+files first, and retries failures on the next run; accounts are kept.
 
 ## Cancelling
 
