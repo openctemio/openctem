@@ -50,7 +50,7 @@ type CategoryInfo struct {
 func Categories() []CategoryInfo {
 	return []CategoryInfo{
 		{CategoryExposedPorts, true},
-		{CategoryWebInterfaces, false},
+		{CategoryWebInterfaces, true},
 		{CategoryExposedAPIs, true},
 		{CategoryAIServices, false},
 		{CategoryWebApplication, true},
