@@ -65,6 +65,8 @@ func lint(ctx context.Context, kind string, files []dom.File, exclude bool) (dom
 			lintSemgrep(&fr, f)
 		case dom.KindWebFingerprints, dom.KindSecretRules:
 			lintRules(&fr, f, kind, ruleIDs)
+		case dom.KindTemplateFacts:
+			lintTemplateFacts(&fr, f, ruleIDs)
 		case dom.KindWordlist:
 			// The manifest and NOTICE are metadata, checked as a whole below.
 			if f.Path != WordlistManifestFile && f.Path != WordlistNoticeFile {

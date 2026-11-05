@@ -57,6 +57,12 @@ than what is wrong with it: the technology it runs, a login panel, its TLS and
 header posture, a WAF in front of it. Filed as findings they bury the
 vulnerabilities; not run at all, a scan of a well-kept host reports nothing.
 
+Most of these matches are facts about the asset: the template facts mapping
+([template-facts.md](template-facts.md)) stores technologies, header posture
+and web surface entries where they belong and takes those matches out of
+the findings. What is left (panels, exposed consoles, and templates the
+mapping does not name yet, counted as `info_unmapped`) is filed as follows.
+
 At ingest (`internal/app/ingest/info_matches.go`) the info-severity findings
 of a tool that implements `vuln.templates` or `dast.web` leave the report
 before finding ingest and become info exposures of their assets
@@ -69,7 +75,9 @@ before finding ingest and become info exposures of their assets
 | `headers`, `header`, an id with `security-headers` | `header_missing` |
 | `spf`, `dmarc`, `dkim`, `mail` | `email_security_weak` |
 | `misconfig`, `exposure`, `config` | `misconfiguration` |
-| anything else (technology, WAF detection) | `custom` |
+| anything else (a template the mapping does not name) | `custom` |
+
+A mapping entry of class `exposure` may set the type itself.
 
 One exposure per template, matcher and URL on an asset: the header template's
 ten matchers are ten exposures, and a match seen again bumps its exposure's

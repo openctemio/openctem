@@ -2677,6 +2677,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Secret findings: fingerprint keyed by the platform secret (RFC-043).
 	s.Ingest.SetSecretFingerprinter(vulnerability.NewSecretFingerprinter([]byte(cfg.FingerprintSecret())))
 	s.Ingest.SetDetectionRules(s.DetectionRules)
+	// Template info matches become asset facts by the stable template facts pack.
+	s.Ingest.SetTemplateFacts(s.DetectionRules)
 	// Receipts of uploads and sensor runs, with the daily ingest fact (RFC-122).
 	s.Ingest.SetReceiptRecorder(repos.IngestReceipt)
 	// Coverage-scoped auto-resolve of non-repository findings (default dry_run).

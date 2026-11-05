@@ -54,6 +54,17 @@ type TemplateMatch struct {
 	// StepRunID is the scan step run that reported it (nil outside a
 	// scan); recorded in the details, not part of the identity.
 	StepRunID *shared.ID
+	// EventType, when set, is the type the template facts mapping gives
+	// the match (docs/architecture/template-facts.md); only the info types
+	// a template match may take are used, any other value falls back to
+	// TemplateMatchType.
+	EventType EventType
+}
+
+// templateMatchTypes are the event types a template match may take.
+var templateMatchTypes = []EventType{
+	EventTypeWebInterfaceExposed, EventTypeSSLIssue, EventTypeHeaderMissing,
+	EventTypeEmailSecurityWeak, EventTypeMisconfiguration, EventTypeCustom, EventTypeAPIExposed,
 }
 
 // TemplateMatchType is the event type of a match, from its template's tags
@@ -118,6 +129,9 @@ func NewTemplateMatchEvent(tenantID shared.ID, m TemplateMatch) (*ExposureEvent,
 		details["tags"] = tags
 	}
 	t := TemplateMatchType(ruleID, tags)
+	if m.EventType != "" && slices.Contains(templateMatchTypes, m.EventType) {
+		t = m.EventType
+	}
 	switch t {
 	case EventTypeSSLIssue:
 		details["issue"] = firstNonEmpty(matcher, ruleID)

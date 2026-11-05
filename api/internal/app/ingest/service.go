@@ -117,6 +117,9 @@ type Service struct {
 	// stepInfo counts them on their step run (info_matches.go).
 	templateMatches TemplateMatchProjector
 	stepInfo        StepInfoRecorder
+	// templateFacts is the mapping of template info matches to asset facts
+	// (info_facts.go); nil: the embedded mapping.
+	templateFacts TemplateFactsSource
 	// stepDispositions counts held and refused findings on their step run.
 	stepDispositions StepDispositionRecorder
 	commandIngested  CommandIngestedHook
@@ -554,6 +557,10 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	// sub-inventory under their origin asset, never one asset per URL.
 	// Detection rules read the web services before anything is stored
 	// (fingerprints join the assets' technologies).
+	// The facts template info matches prove (technologies, header posture,
+	// web surface) join their report assets first (info_facts.go).
+	factsMap := s.templateFactsMap(ctx)
+	report = applyInfoFacts(report, factsMap, scope)
 	report, detections := s.matchDetectionRules(ctx, tenantID, report)
 	report, endpoints := s.planEndpoints(report, binding, output)
 
@@ -701,7 +708,7 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 
 	// Step 2b: info matches of template scanners become exposures, not
 	// findings (info_matches.go).
-	s.routeInfoMatches(ctx, tenantID, report, assetMap, output, binding)
+	s.routeInfoMatches(ctx, tenantID, report, assetMap, output, binding, factsMap)
 
 	// Step 2c: Process findings using batch operations (if findingRepo is available)
 	if s.findingRepo != nil && len(report.Findings) > 0 {

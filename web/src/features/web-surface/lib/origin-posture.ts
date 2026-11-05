@@ -65,7 +65,8 @@ function flag(v: unknown): boolean | null {
 
 function present(v: unknown): boolean {
   if (typeof v === 'boolean') return v
-  if (typeof v === 'string') return v.trim() !== ''
+  // "none": the response did not send the header (a template check said so).
+  if (typeof v === 'string') return v.trim() !== '' && v.trim().toLowerCase() !== 'none'
   if (typeof v === 'number') return v !== 0
   if (Array.isArray(v)) return v.length > 0
   return isRecord(v)

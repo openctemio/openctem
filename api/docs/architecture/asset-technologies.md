@@ -25,6 +25,13 @@ library, CDN, hosting, WAF or security service, analytics, security header, othe
 5. `recordSoftware` (`internal/app/ingest/software.go`) turns a technology into a software component
    only when `assettech.IsSoftwareCandidate` holds: software kind and a version or CPE.
 
+Template scanner info matches add technologies through the template facts
+mapping ([template-facts.md](template-facts.md)): source `nuclei`, confidence
+below 80. Their rows are secondary: a later write by a fingerprinting probe
+or a detection rule takes the row's source, category, vendor and CPE, and a
+secondary write fills only what is unknown, so a template detection never
+relabels what the probe saw.
+
 Detection rules ([rule-packs.md](rule-packs.md)) add technologies from what a report states about a web
 service (`Server` header, title, cookie names, favicon hash, script paths); their source is
 `rules:<pack>@<version>` or `rules:organization`, and a tool's own report of the same technology wins.

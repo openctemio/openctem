@@ -36,6 +36,10 @@ func (s *Service) recordTechnologies(ctx context.Context, tenantID shared.ID, sc
 	if report.Tool != nil && report.Tool.Name != "" {
 		source = report.Tool.Name
 	}
+	// A template scanner reports the technologies its matches prove
+	// (info_facts.go), not the asset's whole fingerprint: its detections
+	// never take a row over from a fingerprinting probe.
+	secondary := report.Tool != nil && templateScanner(report.Tool.Name)
 	if observedAt.IsZero() || observedAt.After(time.Now()) {
 		observedAt = time.Now()
 	}
@@ -49,6 +53,11 @@ func (s *Service) recordTechnologies(ctx context.Context, tenantID shared.ID, sc
 		obs := technologyObservations(id, a, source, observedAt)
 		if len(obs) == 0 {
 			continue
+		}
+		if secondary {
+			for k := range obs {
+				obs[k].Secondary = true
+			}
 		}
 		if room := assettech.MaxPerReport - len(techs); len(obs) > room {
 			obs = obs[:room]

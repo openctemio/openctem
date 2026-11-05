@@ -2,6 +2,14 @@ import { describe, expect, it } from 'vitest'
 import { readPosture } from '../lib/origin-posture'
 
 describe('readPosture', () => {
+  it('reads "none" as a header the response did not send', () => {
+    const p = readPosture({
+      http_posture: { frame_options: 'none', referrer_policy: 'none', hsts: false, nosniff: true },
+    })
+    const present = p?.headers.filter((h) => h.present).map((h) => h.key)
+    expect(present).toEqual(['x_content_type_options'])
+  })
+
   it('is null when the property is absent or unusable', () => {
     expect(readPosture(undefined)).toBeNull()
     expect(readPosture({})).toBeNull()

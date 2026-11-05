@@ -369,7 +369,7 @@ func (p *AssetProcessor) processBatch(
 
 	// The response header posture of an origin keeps its allow-listed keys
 	// only (names and flags, never a header or cookie value).
-	sanitizeHTTPPosture(report)
+	sanitizeHTTPPosture(report, scope)
 	p.logger.Debug("starting asset processing",
 		"explicit_assets_count", len(report.Assets),
 		"findings_count", len(report.Findings),

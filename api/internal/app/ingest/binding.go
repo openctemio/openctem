@@ -250,6 +250,10 @@ func (t coverTarget) namesLocator(host, path string) bool {
 // report's assets are processed.
 type alterScope struct {
 	all bool
+	// templatePosture is the http_posture each web origin's template info
+	// matches prove, by report asset ref (info_facts.go); applied by
+	// sanitizeHTTPPosture.
+	templatePosture map[string]map[string]any
 	// commandBound: the report names a command assigned to the submitting
 	// sensor (BindingCommand). Only such reports may resolve findings on a
 	// source's say-so (source_resolve.go).

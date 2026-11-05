@@ -35,7 +35,7 @@ func TestSanitizeHTTPPosture(t *testing.T) {
 		{ID: "a5", Type: ctis.AssetTypeWebOrigin, Value: "https://d.example.com", Properties: ctis.Properties{
 			webendpoint.PostureKey: map[string]any{"hsts": true, "set_cookie": "sid=SECRET"}}}, // producer posture dropped
 	}}
-	sanitizeHTTPPosture(r)
+	sanitizeHTTPPosture(r, nil)
 
 	var props []ctis.Properties
 	for i := range r.Assets {
@@ -60,5 +60,5 @@ func TestSanitizeHTTPPosture(t *testing.T) {
 	if r.Assets[2].Properties != nil {
 		t.Fatal("absence must change nothing")
 	}
-	sanitizeHTTPPosture(nil)
+	sanitizeHTTPPosture(nil, nil)
 }
