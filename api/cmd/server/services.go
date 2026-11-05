@@ -2619,6 +2619,11 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// A tool ported to the tool contract declares what it produces in its
 	// sensor's manifest; that narrows what its reports may carry.
 	s.Ingest.SetToolContractSource(repos.Sensor)
+	// A new descriptor can declare what held reports carry: re-check this
+	// sensor's held items (quarantine_release.go).
+	s.Sensor.SetManifestChangedHook(func(tenantID, sensorID shared.ID) {
+		s.Ingest.ReleaseHeldForSensor(tenantID, sensorID, quarantineRetention(cfg))
+	})
 	s.Ingest.SetDataFlowRepository(repos.DataFlow)          // Wire data flow persistence
 	s.Ingest.SetComponentRepository(repos.Component)        // Wire component linking for SCA findings
 	s.Ingest.SetLicenseEvaluator(s.LicensePolicy)           // License policy on every package write

@@ -134,6 +134,9 @@ type Service struct {
 	nameProber      NameProber
 	resolutionStore assetresolution.Store
 	results         sensorresult.Repository
+	// release is the progress of the out-of-contract release sweeps
+	// (quarantine_release.go).
+	release releaseState
 	// policyVersions and policies: the versioned policy snapshots.
 	policyVersions PolicyVersionReader
 	policies       policyCache
