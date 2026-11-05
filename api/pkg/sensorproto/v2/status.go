@@ -72,17 +72,26 @@ const (
 	// exclusions and was not added. Not an error of the sensor: the asset is
 	// counted neither as accepted nor as rejected.
 	CodeAssetExcluded = "asset_excluded"
+	// CodeHeldForReview: the item is of a type the command's tool does not
+	// produce; it is held for review in the results quarantine, not applied.
+	// Counted as quarantined, never as rejected.
+	CodeHeldForReview = "held_for_review"
+	// CodeOutOfScope: the upload's actor may not change the asset (their
+	// data scope); it was not applied.
+	CodeOutOfScope = "out_of_scope"
 )
 
 // Fixed item error details. Details never quote sensor bytes.
 const (
-	DetailAssetUnresolved = "finding references no asset in this segment"
-	DetailAssetAmbiguous  = "finding has no asset_ref and the segment has more than one asset"
-	DetailAssetNotStored  = "the asset this finding references was not stored"
-	DetailAssetInvalid    = "asset has no usable value"
-	DetailAssetExcluded   = "asset matches a scope exclusion of the organization and was not added"
-	// DetailOutsideTargetsOverCap goes with CodeTooMany on an asset.
+	DetailAssetUnresolved       = "finding references no asset in this segment"
+	DetailAssetAmbiguous        = "finding has no asset_ref and the segment has more than one asset"
+	DetailAssetNotStored        = "the asset this finding references was not stored"
+	DetailAssetInvalid          = "asset has no usable value"
+	DetailAssetExcluded         = "asset matches a scope exclusion of the organization and was not added"
+	DetailHeldForReview         = "the command's tool does not produce this type: held for review in the results quarantine, not applied"
+	DetailHeldNotKept           = "the command's tool does not produce this type and the results quarantine could not keep it: not applied"
 	DetailOutsideTargetsOverCap = "the report already recorded as many assets outside its command's targets as one report may: not added"
+	DetailOutOfScope            = "outside the data scope of the upload's actor: not applied"
 	DetailFindingNotStored      = "the finding could not be stored"
 	DetailRequired              = "a required field is missing"
 	DetailInvalidValue          = "the value is not allowed here"
