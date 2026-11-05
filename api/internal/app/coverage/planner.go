@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openctemio/contract/outcome"
+
 	scanapp "github.com/openctemio/openctem/api/internal/app/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	covdom "github.com/openctemio/openctem/api/pkg/domain/coverage"
@@ -62,6 +64,63 @@ func (s *Service) EnablePlanning(planner covdom.Planner, starter RunStarter, sw 
 		cfg.DailyBudget = DefaultDailyBudget
 	}
 	s.planner, s.starter, s.tenantSwitch, s.cfg = planner, starter, sw, cfg
+}
+
+// AddressReader maps names (lower-case) to the addresses the tenant's asset
+// of that name resolves to.
+type AddressReader interface {
+	AddressesOf(ctx context.Context, tenantID shared.ID, names []string) (map[string][]string, error)
+}
+
+// WithAddressReader lets a run's result for a resolved address count for the
+// name that resolves to it (a port scan may carry the addresses of a name).
+func (s *Service) WithAddressReader(r AddressReader) { s.addresses = r }
+
+// attributeAddresses gives a queued name without a verdict the best verdict
+// of the addresses it resolves to.
+func (s *Service) attributeAddresses(ctx context.Context, tenantID shared.ID, queued []covdom.DueTarget, verdicts map[string]covdom.Verdict) {
+	if s.addresses == nil || len(verdicts) == 0 {
+		return
+	}
+	var names []string
+	for _, d := range queued {
+		if _, ok := verdicts[covdom.TargetKey(d.Target())]; !ok {
+			names = append(names, covdom.TargetKey(d.Target()))
+		}
+	}
+	if len(names) == 0 {
+		return
+	}
+	addrs, err := s.addresses.AddressesOf(ctx, tenantID, names)
+	if err != nil {
+		s.logger.Warn("coverage: addresses of names not read", "tenant_id", tenantID.String(), "error", logger.SanitizeError(err))
+		return
+	}
+	for _, n := range names {
+		best, found := covdom.Verdict{}, false
+		for _, a := range addrs[n] {
+			if v, ok := verdicts[covdom.TargetKey(a)]; ok && (!found || covdom.VerdictBetter(v, best)) {
+				best, found = v, true
+			}
+		}
+		if found {
+			verdicts[n] = best
+		}
+	}
+}
+
+// unmatchedOutcome is the outcome of a pair no task carried: the sensor
+// reached none of the run's targets (the target's side), the run's tasks ran
+// without it (a gap of the organization's), or no task was planned at all
+// (the platform's).
+func unmatchedOutcome(rs covdom.RunState, tasks int) string {
+	switch {
+	case rs.Unreachable:
+		return string(outcome.Unreachable)
+	case tasks > 0 && (rs.Status == "completed" || rs.Status == "partial"):
+		return covdom.OutcomeNotScanned
+	}
+	return covdom.OutcomeNotDispatched
 }
 
 // plannedCapabilities are the capabilities of the policy the planner
@@ -132,12 +191,15 @@ func (s *Service) settleRun(ctx context.Context, tenantID shared.ID, rs covdom.R
 		return 0, 0, err
 	}
 	var verdicts map[string]covdom.Verdict
+	tasksRan := 0
 	if !stalled {
 		tasks, err := s.planner.RunTasks(ctx, tenantID, rs.RunID)
 		if err != nil {
 			return 0, 0, err
 		}
+		tasksRan = len(tasks)
 		verdicts = covdom.Verdicts(tasks, rs.Unfinished)
+		s.attributeAddresses(ctx, tenantID, queued, verdicts)
 	}
 	var covered, noAnswer []shared.ID
 	var failed, targetSide, unresolved []covdom.FailedPair
@@ -153,7 +215,12 @@ func (s *Service) settleRun(ctx context.Context, tenantID shared.ID, rs covdom.R
 			if msg == "" {
 				msg = "no task of the run carried this target"
 			}
-			failed = append(failed, covdom.FailedPair{AssetID: d.AssetID, Outcome: covdom.OutcomeNotDispatched, Error: msg})
+			fp := covdom.FailedPair{AssetID: d.AssetID, Outcome: unmatchedOutcome(rs, tasksRan), Error: msg}
+			if covdom.IsTargetSide(fp.Outcome) {
+				targetSide = append(targetSide, fp)
+				continue
+			}
+			failed = append(failed, fp)
 		case v.Kind == covdom.VerdictCovered:
 			covered = append(covered, d.AssetID)
 		case v.Kind == covdom.VerdictBlocked:
