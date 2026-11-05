@@ -375,7 +375,6 @@ var catalog = []Stage{
 		Key: CaptureScreenshot, Name: "Screenshot",
 		Description: "Take a picture of a web page and keep it as evidence on the web service.",
 		Inputs:      []asset.TypeRef{tHTTPService},
-		Outputs:     []asset.TypeRef{tHTTPService},
 		Tier:        TierActive,
 		Implementations: []Implementation{
 			{Tool: toolWebshot, Default: true},
