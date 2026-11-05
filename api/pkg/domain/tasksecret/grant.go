@@ -38,9 +38,13 @@ type Grant struct {
 	SensorID   shared.ID
 	LeaseEpoch int
 	Set        secretref.Set
-	Fetches    int
-	MaxFetches int
-	CreatedAt  time.Time
+	// EgressEndpoints are the ids of the endpoints of the egress block the
+	// job was signed with: the only pool endpoints whose credentials the
+	// job may fetch.
+	EgressEndpoints []string
+	Fetches         int
+	MaxFetches      int
+	CreatedAt       time.Time
 }
 
 // Repository stores grants. Every method is scoped by the tenant.

@@ -12,6 +12,8 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/lib/pq"
+
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/tasksecret"
 )
@@ -39,16 +41,16 @@ func (r *CommandSecretGrantRepository) Record(ctx context.Context, g *tasksecret
 	}
 	var one int
 	err = r.db.QueryRowContext(ctx, `
-		INSERT INTO command_secret_grants (command_id, lease_epoch, tenant_id, sensor_id, refs, max_fetches)
-		SELECT c.id, $2, c.tenant_id, $4, $5::jsonb, $6
+		INSERT INTO command_secret_grants (command_id, lease_epoch, tenant_id, sensor_id, refs, max_fetches, egress_endpoints)
+		SELECT c.id, $2, c.tenant_id, $4, $5::jsonb, $6, $7::text[]
 		  FROM commands c
 		 WHERE c.id = $1 AND c.tenant_id = $3 AND c.sensor_id = $4 AND c.lease_epoch = $2
 		ON CONFLICT (command_id, lease_epoch) DO UPDATE
-		   SET refs = EXCLUDED.refs, max_fetches = GREATEST(EXCLUDED.max_fetches, command_secret_grants.fetches)
+		   SET refs = EXCLUDED.refs, egress_endpoints = EXCLUDED.egress_endpoints, max_fetches = GREATEST(EXCLUDED.max_fetches, command_secret_grants.fetches)
 		 WHERE command_secret_grants.tenant_id = EXCLUDED.tenant_id
 		   AND command_secret_grants.sensor_id = EXCLUDED.sensor_id
 		RETURNING 1`,
-		g.CommandID.String(), g.LeaseEpoch, g.TenantID.String(), g.SensorID.String(), string(refs), g.MaxFetches).Scan(&one)
+		g.CommandID.String(), g.LeaseEpoch, g.TenantID.String(), g.SensorID.String(), string(refs), g.MaxFetches, pq.Array(nonNil(g.EgressEndpoints))).Scan(&one)
 	if errors.Is(err, sql.ErrNoRows) {
 		return fmt.Errorf("%w: the command is not held by the sensor under this lease", shared.ErrConflict)
 	}
@@ -65,10 +67,10 @@ func (r *CommandSecretGrantRepository) Get(ctx context.Context, tenantID, comman
 		sensor, refs string
 	)
 	err := r.db.QueryRowContext(ctx, `
-		SELECT sensor_id::text, refs::text, fetches, max_fetches, created_at
+		SELECT sensor_id::text, refs::text, egress_endpoints, fetches, max_fetches, created_at
 		  FROM command_secret_grants
 		 WHERE tenant_id = $1 AND command_id = $2 AND lease_epoch = $3`,
-		tenantID.String(), commandID.String(), leaseEpoch).Scan(&sensor, &refs, &g.Fetches, &g.MaxFetches, &g.CreatedAt)
+		tenantID.String(), commandID.String(), leaseEpoch).Scan(&sensor, &refs, pq.Array(&g.EgressEndpoints), &g.Fetches, &g.MaxFetches, &g.CreatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, shared.ErrNotFound
 	}

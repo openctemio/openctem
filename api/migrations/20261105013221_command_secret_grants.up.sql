@@ -14,6 +14,9 @@ CREATE TABLE command_secret_grants (
     refs        jsonb NOT NULL CHECK (jsonb_typeof(refs) = 'object'),
     fetches     integer NOT NULL DEFAULT 0 CHECK (fetches >= 0),
     max_fetches integer NOT NULL CHECK (max_fetches BETWEEN 1 AND 256),
+    -- The endpoint ids of the egress block the job was signed with: the only
+    -- pool endpoints whose credentials the fetch may return.
+    egress_endpoints text[] NOT NULL DEFAULT '{}',
     created_at  timestamptz NOT NULL DEFAULT now(),
     PRIMARY KEY (command_id, lease_epoch),
     CONSTRAINT chk_command_secret_grants_fetches CHECK (fetches <= max_fetches)
