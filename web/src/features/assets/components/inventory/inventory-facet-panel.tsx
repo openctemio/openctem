@@ -23,6 +23,7 @@
  * server-side (`properties=key:value`).
  */
 
+import { attributeValueLabel } from '@/features/asset-types/lib/attribute-values'
 import { useState } from 'react'
 import { Search } from 'lucide-react'
 import { Input } from '@/components/ui/input'
@@ -47,6 +48,9 @@ export interface AttributeFacet {
   /** Value → count among the type's assets (stats count_by). */
   counts: Record<string, number>
 }
+
+/** An enum with more values than this lists only the values present. */
+const LONG_ENUM = 20
 
 /** Text and number attributes list at most this many values. */
 const MAX_ATTRIBUTE_VALUES = 20
@@ -235,9 +239,10 @@ export function AttributeFacetSection({
   onChange: (next: InventoryFilters) => void
   defaultOpen?: boolean
 }) {
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
   const { attribute, label, counts } = facet
   const selected = filters.propertiesFilter?.[attribute.key] ?? []
+  const valueLabel = (v: string) => attributeValueLabel(attribute.key, v, locale)
   let options: { value: string; label: string }[]
   if (attribute.kind === 'bool') {
     options = [
@@ -245,7 +250,15 @@ export function AttributeFacetSection({
       { value: 'false', label: t('assets.properties.no', 'No') },
     ]
   } else if (attribute.kind === 'enum' && attribute.values) {
-    options = attribute.values.map((v) => ({ value: v, label: v }))
+    // A long closed list (service kinds) offers the values the tenant has,
+    // most common first; a short one offers every value in its order.
+    const values =
+      attribute.values.length > LONG_ENUM
+        ? attribute.values
+            .filter((v) => (counts[v] ?? 0) > 0)
+            .sort((a, b) => (counts[b] ?? 0) - (counts[a] ?? 0))
+        : attribute.values
+    options = values.map((v) => ({ value: v, label: valueLabel(v) }))
   } else {
     options = Object.keys(counts)
       .filter((v) => v !== 'null' && v !== '')
@@ -255,7 +268,7 @@ export function AttributeFacetSection({
   }
   // A value selected from the URL stays visible (and removable).
   for (const v of selected)
-    if (!options.some((o) => o.value === v)) options.push({ value: v, label: v })
+    if (!options.some((o) => o.value === v)) options.push({ value: v, label: valueLabel(v) })
 
   return (
     <FacetSection
