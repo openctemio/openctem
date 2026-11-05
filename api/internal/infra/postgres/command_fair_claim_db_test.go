@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"reflect"
 	"testing"
@@ -16,6 +17,7 @@ import (
 // commands for one sensor in one statement. Against the real SQL.
 
 type fairFixture struct {
+	db     *sql.DB
 	ctx    context.Context
 	cmds   *CommandRepository
 	tenant shared.ID
@@ -29,8 +31,8 @@ func newFairFixture(t *testing.T) *fairFixture {
 	sqlDB := openSensorDB(t)
 	ctx := context.Background()
 	tenant := seedTestTenant(ctx, t, sqlDB)
-	s := seedZoneSensor(ctx, t, sqlDB, &tenant, "fair", zoneSensorOpts{tools: []string{"nuclei"}})
-	return &fairFixture{ctx: ctx, cmds: NewCommandRepository(&DB{DB: sqlDB}), tenant: tenant, sensor: s, t: t}
+	s := seedZoneSensor(ctx, t, sqlDB, &tenant, "fair", zoneSensorOpts{tools: []string{"nuclei", "dnsx"}})
+	return &fairFixture{db: sqlDB, ctx: ctx, cmds: NewCommandRepository(&DB{DB: sqlDB}), tenant: tenant, sensor: s, t: t}
 }
 
 // add creates a pending nuclei command of run (any string; "" for none) at

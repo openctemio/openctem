@@ -24,7 +24,7 @@ decides:
 | Re-run | Attempt evidence | Outcome (`reason_code`) | Finding |
 |---|---|---|---|
 | matched | any | `still_vulnerable` (`matched`) | open: unchanged · `resolved` → `confirmed` (regression) · `fix_applied` → `in_progress`; validation `reproducible`, observation `present` |
-| no match | request to the finding's endpoint, answered 1xx–4xx except 401/403/407/429, with no edge marker | `confirmed_fixed` (`not_matched`) | status unchanged, validation `not_reproducible` ("verified fixed — awaiting confirmation"); → `resolved` (`fixed` / `retest`) only with `settings.retest.auto_resolve`; `resolved` stays |
+| no match | request to the finding's endpoint, answered 1xx–4xx except 401/403/407/429, with no edge marker | `confirmed_fixed` (`not_matched`) | status unchanged, validation `not_reproducible` ("verified fixed — awaiting confirmation"); → `resolved` (`fixed` / `retest`) only with `settings.retest.auto_resolve` and when the organization's closing mode closes a verified retest (`auto`; `review` records a Ready to close proposal, `off` keeps it); `resolved` stays |
 | no match | any answer carrying a CDN or WAF challenge or block marker (a vendor header or error page), or a throttle with a vendor marker | `inconclusive` (`edge_blocked`), never a fix | unchanged |
 | no match | origin 401 / 403 (no edge marker), exposure-class platform template, second sighting (the previous completed retest, at least an hour earlier, was the same origin refusal) | `confirmed_fixed` (`access_denied`), "access now denied by the server" | as for any confirmed fix |
 | no match | origin 401 / 403, exposure-class template, first sighting, or less than an hour after the first | `inconclusive` (`access_denied`) | unchanged |
@@ -159,7 +159,7 @@ sequenceDiagram
   CH->>RS: OnCommandFinished
   RS->>RS: trySettle: template drift and calibration checks
   RS->>DB: Settle (one transaction): lock retest and finding,<br/>seen by a scan after the check means inconclusive,<br/>stamp validation_outcome, NextStatus, move, closure
-  Note over RS,DB: confirmed_fixed resolves only with the retest setting auto_resolve.<br/>still_vulnerable: resolved to confirmed, fix_applied to in_progress.<br/>inconclusive and not_reproduced move nothing.
+  Note over RS,DB: confirmed_fixed resolves only with the retest setting auto_resolve<br/>and closing mode auto (review: proposal, off: kept).<br/>still_vulnerable: resolved to confirmed, fix_applied to in_progress.<br/>inconclusive and not_reproduced move nothing.
 ```
 
 The same flow in text, with the scheduler:
@@ -179,8 +179,9 @@ sensor completes / fails a command
        └─ retest.Service.OnCommandFinished → both checks terminal?
             └─ FindingRetestRepository.Settle (one transaction):
                  lock retest (pending?) → lock finding, read status → NextStatus
-                 → move finding → complete retest → activity retest_completed
-                   (actor_type system, actor_name "system: retest")
+                 → move finding + audit finding.status_changed → complete retest
+                 → activity retest_completed (actor_type system,
+                   actor_name "system: retest", closure_decision)
 
 RetestScheduler (controller, every minute, every replica)
   ├─ Sweep: settle retests whose checks ended or whose 30-min deadline passed
