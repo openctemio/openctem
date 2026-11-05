@@ -29,6 +29,7 @@
   "assetCoverage.reason.content_missing": "the platform has no wordlist pack for its tool yet; an instance administrator imports it",
   "assetCoverage.reason.credentials_missing": "an API key it needs is not configured",
   "assetCoverage.reason.excluded": "excluded from scope",
+  "assetCoverage.reason.feature_off": "screenshots are off for this organization; turn them on in the attack surface monitoring settings",
   "assetCoverage.reason.no_eligible_sensor": "no sensor can take the work",
   "assetCoverage.reason.no_named_twin": "the same address and port is served by a named web service, which is scanned instead",
   "assetCoverage.reason.no_scope": "the organization has no scope entry yet",

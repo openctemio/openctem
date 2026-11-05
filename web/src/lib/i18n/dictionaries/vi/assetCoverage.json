@@ -29,6 +29,7 @@
   "assetCoverage.reason.content_missing": "nền tảng chưa có gói danh sách từ cho công cụ này; quản trị viên hệ thống cần nhập gói",
   "assetCoverage.reason.credentials_missing": "chưa cấu hình khóa API cần thiết",
   "assetCoverage.reason.excluded": "bị loại khỏi phạm vi",
+  "assetCoverage.reason.feature_off": "tổ chức đang tắt chụp ảnh màn hình; bật trong phần giám sát bề mặt tấn công",
   "assetCoverage.reason.no_eligible_sensor": "không sensor nào nhận được công việc này",
   "assetCoverage.reason.no_named_twin": "cùng địa chỉ và cổng đã có dịch vụ web theo tên miền, dịch vụ đó được quét thay thế",
   "assetCoverage.reason.no_scope": "tổ chức chưa có mục phạm vi nào",
