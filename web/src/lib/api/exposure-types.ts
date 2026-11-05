@@ -60,7 +60,7 @@ export const OPEN_EXPOSURE_STATES: ExposureState[] = ['active', 'in_progress']
  */
 export const EXPOSURE_DISPLAY_CATEGORIES = [
   { key: 'exposed_ports', label: 'Exposed ports', produced: true },
-  { key: 'web_interfaces', label: 'Exposed web interfaces', produced: false },
+  { key: 'web_interfaces', label: 'Exposed web interfaces', produced: true },
   { key: 'exposed_apis', label: 'Exposed APIs', produced: true },
   { key: 'ai_services', label: 'Exposed AI services', produced: false },
   { key: 'web_application', label: 'Web application security', produced: true },

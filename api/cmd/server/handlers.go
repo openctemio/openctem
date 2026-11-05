@@ -70,6 +70,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/command"
 	"github.com/openctemio/openctem/api/pkg/domain/platformsetting"
 	relationshipdom "github.com/openctemio/openctem/api/pkg/domain/relationship"
+	"github.com/openctemio/openctem/api/pkg/domain/scangov"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	signupdom "github.com/openctemio/openctem/api/pkg/domain/signup"
@@ -735,6 +736,8 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		SensorResults:    handler.NewSensorResultHandler(svc.Ingest, sensorHandler, log),
 		ScanZone:         handler.NewScanZoneHandler(svc.ScanZone, svc.Scan, log),
 		ProxyPool:        handler.NewProxyPoolHandler(svc.ProxyPool, log),
+		ToolSource:       handler.NewToolSourceHandler(svc.ToolSource, log),
+		TaskSecrets:      svc.TaskSecrets,
 		ScanWindow:       newScanWindowHandler(svc, log),
 		FindingLifecycle: handler.NewFindingLifecycleHandler(svc.FindingLifecycle, log),
 		Ingest:           ingestHandler,
@@ -1525,15 +1528,23 @@ func sensorHealthPolicy(cfg *config.Config) sensordom.HealthPolicy {
 // judged against at the token exchange and in pipeline health. It is their
 // own line, never the sensor's: the two are versioned apart, and the sensor
 // minimum would refuse every CI runner release.
-func ciRunnerVersionPolicy(cfg *config.Config, log *logger.Logger) cirun.StatusPolicy {
+//
+// The returned function resolves the line per use: the latest release is the
+// built-in ci.latest raised by the verified release feed
+// (versions.CIRunnerLatest), so a CI runner release reaches the snippets,
+// the "update available" verdicts and the alerts without a restart. An
+// operator's CI_RUNNER_LATEST_VERSION keeps winning when set ("none" turns
+// the comparison off). The settings are validated (and a bad one logged)
+// once, here.
+func ciRunnerVersionPolicy(cfg *config.Config, log *logger.Logger) func() cirun.StatusPolicy {
 	sc := cfg.SensorConfig
-	var pol cirun.StatusPolicy
+	var fixed cirun.StatusPolicy
 	for _, s := range []struct {
 		name, value string
 		dst         *string
 	}{
-		{"CI_RUNNER_LATEST_VERSION", sc.CIRunnerLatestVersion, &pol.LatestVersion},
-		{"CI_RUNNER_MIN_VERSION", sc.CIRunnerMinVersion, &pol.MinVersion},
+		{"CI_RUNNER_LATEST_VERSION", sc.CIRunnerLatestVersion, &fixed.LatestVersion},
+		{"CI_RUNNER_MIN_VERSION", sc.CIRunnerMinVersion, &fixed.MinVersion},
 	} {
 		if s.value == "" {
 			continue
@@ -1546,7 +1557,14 @@ func ciRunnerVersionPolicy(cfg *config.Config, log *logger.Logger) cirun.StatusP
 		}
 		*s.dst = v
 	}
-	return pol
+	if sc.CIRunnerLatestPinned {
+		return func() cirun.StatusPolicy { return fixed }
+	}
+	return func() cirun.StatusPolicy {
+		pol := fixed
+		pol.LatestVersion = versions.CIRunnerLatest()
+		return pol
+	}
 }
 
 // newAttachmentHandlerWithAccessCheck creates an AttachmentHandler with campaign
@@ -1676,22 +1694,15 @@ func newEASMHandler(repos *Repositories, svc *Services, log *logger.Logger) *han
 	h.SetReview(review, audit)
 	// Suggestion cards (research/117): addresses behind in-scope names and
 	// confirmed assets no entry covers; read only.
-	if svc.ActiveGate != nil {
-		suggestions := easmapp.NewSuggestionService(repos.Attribution, svc.ActiveGate, svc.DataScope,
-			func(ctx context.Context, tenantID shared.ID) (string, error) {
-				t, err := repos.Tenant.GetByID(ctx, tenantID)
-				if err != nil {
-					return "", err
-				}
-				return t.Name(), nil
-			}, seededNetworks(repos))
-		// The organization's own prefixes are offered only when the platform
-		// guardrails accept them as entries.
-		suggestions.SetGuardrails(svc.ScopeGuardrails)
-		// Addresses the unclassified-scans mode already checks need no
-		// decision: the same mode the active gate reads.
-		suggestions.SetUnclassified(svc.ActiveGate.UnclassifiedMode)
+	if suggestions := newEASMSuggestions(repos, svc); suggestions != nil {
 		h.SetSuggestions(suggestions)
+		// Bulk decisions on the addresses card (research/425): checked
+		// against the caller's own card, applied through the scope, review
+		// and network seed services.
+		if svc.Scope != nil && svc.EASMNetworkSeeds != nil && repos.EASMDeclinedNetwork != nil {
+			h.SetAddressDecisions(easmapp.NewAddressDecisions(suggestions, svc.Scope, review,
+				svc.EASMNetworkSeeds, repos.EASMDeclinedNetwork, newAddressAutoAdd(repos, svc, log)))
+		}
 	}
 	// Review by rule (RFC-054 §6.7): rules are scope entries and exclusions.
 	if svc.ScopeJoin != nil && svc.ActiveGate != nil && svc.Scope != nil {
@@ -1702,6 +1713,62 @@ func newEASMHandler(repos *Repositories, svc *Services, log *logger.Logger) *han
 
 // seededNetworks reads the organization's network seeds (RFC-082); nil
 // when they are not wired.
+// newEASMSuggestions builds the suggestion cards (nil without the active
+// gate): the Review tab reads them, and the address auto add works from the
+// same address card.
+func newEASMSuggestions(repos *Repositories, svc *Services) *easmapp.SuggestionService {
+	if svc.ActiveGate == nil {
+		return nil
+	}
+	suggestions := easmapp.NewSuggestionService(repos.Attribution, svc.ActiveGate, svc.DataScope,
+		func(ctx context.Context, tenantID shared.ID) (string, error) {
+			t, err := repos.Tenant.GetByID(ctx, tenantID)
+			if err != nil {
+				return "", err
+			}
+			return t.Name(), nil
+		}, seededNetworks(repos))
+	// The organization's own prefixes are offered only when the platform
+	// guardrails accept them as entries.
+	suggestions.SetGuardrails(svc.ScopeGuardrails)
+	// Addresses the unclassified-scans mode already checks need no
+	// decision: the same mode the active gate reads.
+	suggestions.SetUnclassified(svc.ActiveGate.UnclassifiedMode)
+	// Networks the organization answered "not ours" are not offered again.
+	if repos.EASMDeclinedNetwork != nil {
+		suggestions.SetDeclined(repos.EASMDeclinedNetwork)
+	}
+	// The organization's address setting in force (never hides the card;
+	// Strict scan approval turns automatic adds into ask).
+	if svc.Tenant != nil && svc.Scope != nil {
+		suggestions.SetAddressMode(func(ctx context.Context, tenantID shared.ID) (string, error) {
+			ss, err := svc.Tenant.GetScopeSettings(ctx, tenantID.String())
+			if err != nil || ss == nil {
+				return "", err
+			}
+			mode, _ := svc.Scope.ApprovalPolicy(ctx, tenantID.String())
+			return ss.AddressModeIn(mode.Normalized() == scangov.ModeStrict), nil
+		})
+	}
+	return suggestions
+}
+
+// newAddressAutoAdd builds the address auto add (nil when a dependency is
+// missing): strong addresses behind in-scope names become scope entries
+// through the scope service (research/425).
+func newAddressAutoAdd(repos *Repositories, svc *Services, log *logger.Logger) *easmapp.AddressAutoAdd {
+	cards := newEASMSuggestions(repos, svc)
+	if cards == nil || svc.Scope == nil || svc.Tenant == nil || repos.EASMNetworkSeed == nil || repos.EASMAddressAutoAdd == nil {
+		return nil
+	}
+	var audit easmapp.ScopeJoinAudit
+	if svc.Audit != nil {
+		audit = svc.Audit
+	}
+	return easmapp.NewAddressAutoAdd(cards, svc.Scope, svc.Tenant, repos.EASMNetworkSeed,
+		repos.EASMAddressAutoAdd, svc.Scope, audit, log)
+}
+
 func seededNetworks(repos *Repositories) easmapp.SeededNetworks {
 	if repos.EASMNetworkSeed == nil {
 		return nil
@@ -1971,7 +2038,7 @@ func newCIRunService(cfg *config.Config, repos *Repositories, svc *Services, log
 		Units:    repos.CIRun,
 		Audit:    audit,
 		Alerts:   ciAlerts,
-	}, cirunapp.Config{WebBaseURL: cfg.SMTP.BaseURL, Versions: ciRunnerVersionPolicy(cfg, log)}, log)
+	}, cirunapp.Config{WebBaseURL: cfg.SMTP.BaseURL, VersionSource: ciRunnerVersionPolicy(cfg, log)}, log)
 	// No CI run token is issued or accepted for a suspended organization.
 	ciSvc.SetOrganizationGate(svc.OrganizationGate)
 	if svc.Suppression != nil {

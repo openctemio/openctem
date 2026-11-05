@@ -23,6 +23,19 @@ asset service/http (origin: https://api.example.com)
 
 ## Ingest (`internal/app/ingest/processor_endpoints.go`)
 
+```mermaid
+flowchart TD
+  R["CTIS report endpoints[], tenant from the sensor key"] --> B{"bindOutputTypes: stage reports<br/>endpoints and contract produces endpoint?"}
+  B -- no --> H["held, not stored"]
+  B -- yes --> P["planEndpoints: fold legacy discovered_url,<br/>webendpoint.Observe strict parse and template,<br/>refuse origins outside a command's targets"]
+  P --> A["asset ingest of origins as http_service:<br/>scope, exclusions, identity, attribution"]
+  A --> C{"recordEndpoints: persisted origin is an<br/>http_service the report may change?"}
+  C -- no --> REF["endpoints_refused"]
+  C -- yes --> X["markExcluded: path rule blocks the method,<br/>in_scope false with exclusion_id"]
+  X --> U["WebEndpointRepository.Record per origin:<br/>advisory lock, caps 5,000 endpoints,<br/>500 scripts, 100 params, hourly rewrite"]
+  U --> EV["web_endpoint_events in the same transaction"]
+```
+
 1. `bindOutputTypes` holds a report's `endpoints[]` unless the tool's stage
    reports endpoints (`stage.Stage.Endpoints`: `crawl.web`, `dast.web`) and,
    when the sensor declares a tool contract, its `produces` names `endpoint`.

@@ -140,16 +140,16 @@ func TestLimitsRepository(t *testing.T) {
 
 	// Grace.
 	until := now.Add(time.Hour)
-	if err := r.StartGrace(ctx, a, []string{"pentest", "not-a-module", limits.FeatureSSOEnforcement}, until); err != nil {
+	if err := r.StartGrace(ctx, a, []string{"pentest", "not-a-module", limits.FeatureSCIM}, until); err != nil {
 		t.Fatal(err)
 	}
-	if ga, _ := r.ListGrace(ctx, a); len(ga) != 2 || ga[limits.FeatureSSOEnforcement].IsZero() {
+	if ga, _ := r.ListGrace(ctx, a); len(ga) != 2 || ga[limits.FeatureSCIM].IsZero() {
 		t.Fatalf("grace a (modules and named features only): %v", ga)
 	}
 	if gb, _ := r.ListGrace(ctx, b); len(gb) != 0 {
 		t.Fatalf("grace b: %v", gb)
 	}
-	if err := r.EndGrace(ctx, a, []string{"pentest", limits.FeatureSSOEnforcement}); err != nil {
+	if err := r.EndGrace(ctx, a, []string{"pentest", limits.FeatureSCIM}); err != nil {
 		t.Fatal(err)
 	}
 

@@ -97,6 +97,7 @@ open and records nothing; `review` proposes every close; `auto` closes per the t
 | a clean full default-branch scan (repository findings) | `ci_default_branch` | `evaluateRepoCoverage` |
 | a full-coverage upload (`coverage=full`) | `covered_scan` | `findingimport/coverage.go` (receipt `coverage.note = proposed` when it only proposed) |
 | the software matcher sees another installed version (`version_changed`) | `source_reported` | `vulnmatch/service.go` |
+| a retest confirms the fix, with the retest setting `auto_resolve` on | `retest_verified` | `retest/closing_mode.go` (activity `closure_decision`) |
 
 The matcher's other kinds are not fix claims and stay outside the rule: `not_observed`
 only marks a finding stale, and `advisory_updated` reclassifies a finding as a detection
@@ -107,7 +108,8 @@ guard), template drift and secrets behave as before: a held run never closes, an
 under `off`) its findings are proposed for a person to decide. When the policy or the
 tiers cannot be read, nothing closes (review; tiers read as critical). The verification
 plan's `covered_scan` method uses the same rule. Confirming a `ci_default_branch` proposal
-records verification `covered_scan`; a `source_reported` one records `source_reported`.
+records verification `covered_scan`; a `source_reported` one records `source_reported`; a
+`retest_verified` one records `retest`.
 
 ## Ready to close
 

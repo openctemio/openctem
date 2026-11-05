@@ -21,6 +21,90 @@ inside the scope people approved, as the signer itself recorded it. Sensors veri
 with sdk-go (`pkg/jobsig`); until a sensor verifies, the envelope protects
 nothing on that sensor.
 
+## Flow
+
+Checked against the code of v0.19.1 and develop (2026-11-05). Two paths feed
+the signer: people approving scope (the ledger), and a sensor claiming a job.
+
+### Scope reaches the ledger
+
+```mermaid
+sequenceDiagram
+  autonumber
+  actor A as Approver (scope:approve)
+  participant API as API: scope.Service
+  participant DB as Postgres: scope entries
+  participant SG as Signer: ledger (own process)
+  A->>API: approve a scope entry (ApproveTarget, or owner SelfApproveTarget with TOTP)
+  API->>SG: commitEntry: widening with MaxTier, approver ids, required count
+  alt signer refuses (approval floor not met) or no answer
+    SG-->>API: refused
+    API-->>A: error, nothing saved (fail closed)
+  else accepted
+    SG->>SG: append to ledger.log (hash chain)
+    API->>DB: save the entry
+  end
+  Note over API,SG: A narrowing (exclusion, removal, lower tier) is saved first and sent best effort.<br/>Every 10 min the API syncs the ledger, and a sync can only narrow it.
+```
+
+Other writers of the ledger: bounty programs (`CommitEntries`), tier ceilings
+from scan governance and policy, approved template versions
+(`internal/app/scanner_template_ledger.go`) and instance zones
+(`internal/app/instancezone`). The operator's approval floors (for example a
+second approver for T2) are checked by the signer itself
+(`internal/signer/ledger.go`).
+
+### A job is signed and verified
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant S as Sensor: CommandPoller and jobsig (sdk-go)
+  participant API as API: command.Service
+  participant SG as Signer: POST /v1/jobs/sign
+  S->>API: claim-N, then claim by id per command
+  API->>API: deliver the payload: HTTP policy, program rules,<br/>settings_layers (tenant, sensor), template signatures
+  API->>API: statement: tenant, sensor, command, type, tool,<br/>payload_sha256, targets, templates, content, limits,<br/>zone, lease_epoch, iat, exp = min(now + 1 h, expires_at)
+  API->>SG: sign (Unix socket, 2 s timeout)
+  SG->>SG: validate, rate limits (tenant 50/s, sensor 20/s),<br/>zone or feed origin, ledger (enforce, audit or off)
+  alt outside the ledger or zone (403)
+    SG-->>API: refused with reason
+    API->>API: unclaim, fail the command with SIGNER_REFUSED
+  else signer down, 5xx or bad envelope
+    API->>API: unclaim this and later commands, retry on a later claim
+  else signed
+    SG->>SG: next seq for the sensor (persisted), nonce, sign,<br/>append to signing.log with fsync (no log, no signature)
+    SG-->>API: DSSE envelope
+    API-->>S: payload, lease_epoch, signed_job
+  end
+  S->>S: verify: key set against the pinned root, signature,<br/>tenant, sensor, command, type, issued within 2 min,<br/>not expired, TTL at most 1 h, lease_epoch, payload digest,<br/>tool, targets, templates, content, limits, nonce new,<br/>seq above the last for this key (persisted)
+  alt verification fails
+    S->>API: fail with a builtin refusal (job_signature or job_keyset)
+    Note over S,API: Not re-routed. The command fails closed.
+  else valid
+    S->>S: resolve settings: tenant, sensor, scan layers,<br/>job limits fitted below, local rate cap
+    S->>S: run within the signed targets and limits
+  end
+```
+
+- The settings layers (`settings_layers`: the organization's tool defaults and
+  the sensor's override) are added to the payload before signing
+  (`withToolSettings`, `internal/app/command/tool_settings.go`), so the
+  payload digest covers them. There is no platform or caps layer and no
+  separate key for settings; a creator-supplied `settings_layers` is replaced
+  or removed. The organization layer is sent only to the organization's own
+  sensors. A value the sensor's current schema refuses fails the command with
+  `TOOL_SETTINGS_INVALID`; an error reading the settings leaves it pending.
+- On the sensor, `resolveScanSettings` (sdk-go `pkg/core/scan_settings.go`)
+  applies tenant, then sensor, then scan values (only keys the tool's schema
+  declares), fits the job's rate and concurrency below the value in force, then
+  applies the local `rate.max_rps` cap. Profile, scan and job layers may only
+  set scan-scoped keys and may only lower narrow-down options
+  (`github.com/openctemio/contract/settings`).
+- Each job is signed twice for a verifying sensor: once in the claim-N answer
+  and again in the claim-by-id replay, whose envelope the sensor verifies (see
+  [job dispatch](job-dispatch.md#the-claim)).
+
 ## Process boundary
 
 ```

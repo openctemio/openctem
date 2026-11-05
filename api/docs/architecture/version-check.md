@@ -82,6 +82,46 @@ console says the feed cannot be verified.
   build with no version (`dev`) is not compared.
 - A stored feed past its expiry is shown as out of date with its date.
 
+## Component releases
+
+The feed lists the newest stable release of each first-party component: the
+sensor products of `versions.yaml` (`sensor`, `connector-tenable`), the SDK
+(`sdk`, openctemio/sdk-go) and the CI runner (`ci`, openctemio/ci, image
+`ghcr.io/openctemio/ci`). A component release never needs a change to this
+repository:
+
+- **Effective latest.** Each component's `latest` in `versions.yaml` is the
+  built-in baseline, the release this platform release was built with. The
+  instance overlays the verified feed (`internal/versions`): the learned
+  release counts only when it is a `vX.Y.Z` release not older than the
+  baseline, so a stale or replayed feed never lowers it and an invalid value
+  is dropped. The getters (`Products`, `SensorLatest`, `SDKLatest`,
+  `CIRunnerLatest`) return the effective value and are read per use, so a
+  feed refresh applies without a restart.
+- **CI runner.** The token exchange (refusal below `ci.min`), pipeline health
+  ("update available"), the CI alerts job and the console's pipeline snippets
+  use the effective CI runner release. `GET /api/v1/ci/settings` answers it as
+  `runner_release` (read-only, instance-wide, gated by `ci:read`); the console
+  pins it in every snippet and falls back to the release it was built with
+  (`CI_RELEASE_FALLBACK`, copied from `ci.latest`) only when the API names
+  none. `CI_RUNNER_LATEST_VERSION` set by the operator wins over the feed
+  (`none` turns the comparison off).
+- **Baseline refresh.** `cut-release.sh` moves every component's `latest`
+  forward on the release branch of a train, from the same public release
+  lists (`refresh-latest.sh`, the rule of `feed-components.sh`), and copies it
+  to its consumers (`sync-versions.sh`); the post-release merge brings it to
+  develop. Nobody opens a pull request to bump a `latest`. A component that
+  cannot be read keeps its value with a warning. A hotfix keeps its tag's
+  values.
+- **Compatibility stays in the repository.** `min` (and `sdk.advisories`) is
+  this platform's compatibility floor: it never comes from the feed and
+  changes only with a protocol change. `ci.min` is v0.4.0, the first runner
+  that speaks CTIS 2.0 (this platform refuses CTIS 1.x runners).
+- **Release preflight.** A `latest` behind the published release is reported,
+  never a blocker. Only compatibility facts block: a `latest` or `min` that
+  names a version that is not a published release. A `min` changed since the
+  last release is listed for review.
+
 ## Air-gapped and offline instances
 
 An instance without internet access records the failure (`unreachable`),
@@ -130,7 +170,7 @@ comes from cosign:
 ```bash
 # Release pipeline (the workflow runs these in three jobs):
 gh release list --json tagName,publishedAt,isDraft,isPrerelease --limit 200 > releases.json
-go run ./cmd/release-feed components > components.txt   # sensor products + sdk-go, from versions.yaml
+go run ./cmd/release-feed components > components.txt   # sensor products, sdk-go, the CI runner
 bash ../.github/scripts/release/feed-components.sh components.txt > components.json
 go run ./cmd/release-feed build -releases releases.json \
     -advisories ../.github/release-feed/advisories.json -components components.json \
@@ -141,12 +181,12 @@ go run ./cmd/release-feed verify openctem-releases.json  # offline, embedded tru
 ```
 
 The workflow `.github/workflows/release-feed.yml` runs on every release (called
-by `release.yml`, which grants it `id-token: write`), every 6 hours (new sensor and SDK releases reach the feed
+by `release.yml`, which grants it `id-token: write`), every 6 hours (new sensor, SDK and CI runner releases reach the feed
 within that time, and the feed never expires between releases) and by hand.
 `feed-components.sh` picks, for each component, the newest stable release
 whose image tag is published and records the image digest; it reads only
-public release lists and public images, so the sensor and sdk-go
-repositories need no step and no secret. A component it cannot resolve fails
+public release lists and public images, so the sensor, connector,
+sdk-go and ci repositories need no step and no secret. A component it cannot resolve fails
 the run (the previous feed stays published). Three jobs: `build` (read-only: the payload), `sign` (the only job with
 `id-token: write`; it checks out nothing and runs only cosign) and `publish`
 (verifies the assembled file with the code of the checkout, as an instance
