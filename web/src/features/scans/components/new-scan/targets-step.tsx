@@ -1,26 +1,26 @@
 /**
  * Targets Step
  *
- * Laid out in the order a person works: what you type, what happens, how to
- * fix it, then options. One field holds the selection as chips (type or
- * paste to add; assets and asset groups come from a picker sheet); under it
- * one readiness line and the refused targets grouped by reason with the
- * server's ranked remedies (the same component as the Review step); the
- * coverage level and how dynamic targets resolve sit in a collapsed
- * disclosure with a one-line summary. Desktop: two columns, the result
- * column sticky. A list is pasted or uploaded in the "Paste a list" panel,
- * which shows what will be added before it lands; past a few entries the
- * typed targets move from chips to a searchable list with each one's scope
- * answer. Research: research/85-new-scan.md, research/418.
+ * Two columns at desktop width: on the left what you scan (one field of chips
+ * to type or paste into, "Paste a list", and the picker sheet with assets,
+ * asset groups and the organization's in-scope entries); on the right what
+ * the scan will probe, grouped by kind with each target's scope answer and
+ * the setting that applies to that kind next to it (the coverage level by
+ * the domains, how ranges are scanned by the ranges, the freshness of what a
+ * run resolves again under the groups), then the refused targets with the
+ * server's ranked remedies. A setting is shown only when what was entered
+ * uses it. Phone: one column in the same order. Past a few entries the typed
+ * targets move from chips to a searchable list. Research:
+ * research/85-new-scan.md, research/418.
  */
 
 'use client'
 
 import { useEffect, useEffectEvent, useId, useMemo, useState } from 'react'
-import { ChevronDown, ClipboardList, FolderOpen, Plus, Target } from 'lucide-react'
+import { ClipboardList, FolderOpen, Plus, ShieldCheck, Target } from 'lucide-react'
 import { Tabs, TabsContent, TabsCount, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
+import { ChoiceGroup } from '@/components/ui/choice-group'
 import {
   Sheet,
   SheetBody,
@@ -31,8 +31,7 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet'
 import { useTranslation } from '@/context/i18n-provider'
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
-import { cn } from '@/lib/utils'
+import { Permission, usePermissions } from '@/lib/permissions'
 import type { NewScanFormData } from '../../types'
 import { COVERAGE_LEVELS, type CoverageLevel } from '../../lib/coverage-expansion'
 import { useCoverageExpansion } from '../../hooks/use-coverage-expansion'
@@ -47,13 +46,27 @@ import {
   type TargetKind,
 } from '../../lib/target-format'
 import { MAX_DIRECT_TARGETS } from '../../lib/scan-form'
-import { hasCidrTarget, hasDynamicTargets, isWildcardTarget } from '../../lib/dynamic-targets'
-import { DynamicTargetsPanel } from './dynamic-targets-panel'
+import {
+  hasCidrTarget,
+  hasDynamicTargets,
+  isWildcardTarget,
+  selectorsOf,
+} from '../../lib/dynamic-targets'
+import {
+  CidrModeChoice,
+  recentNamesText,
+  SelectorOptions,
+  selectorPreviewText,
+} from './dynamic-target-controls'
+import { useSelectorPreview } from '../../hooks/use-selector-preview'
+import { groupTargets } from '../../lib/target-groups'
+import { TargetGroups } from './target-groups'
+import { ScopeSource } from '../target-picker/scope-source'
 import { AssetSource, type PickedAsset } from '../target-picker/asset-source'
 import { GroupSource } from '../target-picker/group-source'
 import { canFindLiveHosts } from '../../lib/liveness'
 import { intensityForTier, type ProbeTier } from '../../lib/scan-intensity'
-import { lowerIntensityAllowed, targetOptionsSummary } from '../../lib/targets-step'
+import { lowerIntensityAllowed } from '../../lib/targets-step'
 import { useTargetsCheck } from '../../hooks/use-targets-check'
 import { useScanWorkflow } from '@/lib/api/scan-workflow-hooks'
 import { TargetChipsField, type TargetChip } from './target-chips-field'
@@ -75,7 +88,7 @@ interface TargetsStepProps {
   savedScan?: boolean
 }
 
-type PickerSource = 'assets' | 'groups'
+type PickerSource = 'assets' | 'groups' | 'scope'
 
 export function TargetsStep({
   data,
@@ -90,13 +103,16 @@ export function TargetsStep({
     data.mode === 'workflow' && data.workflowId ? data.workflowId : null,
     { revalidateOnFocus: false }
   )
-  const livenessAvailable = canFindLiveHosts(data.mode, chosenWorkflow) === true
+  // undefined while the workflow loads; the ranges choice shows live hosts
+  // first until then, which is what the API saves for a scan that can run it.
+  const livenessAvailable = canFindLiveHosts(data.mode, chosenWorkflow)
   const targets = data.targets
   const [pickerOpen, setPickerOpen] = useState(false)
   const [pickerSource, setPickerSource] = useState<PickerSource>(() =>
     targets.assetGroupIds.length > 0 && targets.assetIds.length === 0 ? 'groups' : 'assets'
   )
-  const [optionsOpen, setOptionsOpen] = useState(false)
+  const { can } = usePermissions()
+  const canReadScope = can(Permission.ScopeRead)
   const [bulkOpen, setBulkOpen] = useState(false)
   const groupNames = useMemo(() => targets.assetGroupNames ?? {}, [targets.assetGroupNames])
   const pickedGroups = useMemo(
@@ -274,20 +290,133 @@ export function TargetsStep({
     ([k]) => !isRefusedKind(k)
   )
 
-  const offerCoverage = showCoverage && typedTargets.length > 0
-  const offerDynamic = hasDynamicTargets(sent, targets.targetOptions) || hasCidrTarget(sent)
-  const optionsSummary = targetOptionsSummary(t, {
-    coverage: offerCoverage ? coverage : undefined,
-    targets: sent,
-    options: targets.targetOptions,
-  })
+  const typedKeys = useMemo(
+    () => new Set(pasted.lines.map((l) => targetKey(l.input))),
+    [pasted.lines]
+  )
+  const pickFromScope = (picked: string[], add: boolean) =>
+    add
+      ? addTyped(picked)
+      : setTyped(
+          withoutTargets(
+            targets.customTargets,
+            picked.map((x) => targetKey(x))
+          )
+        )
+
+  // What the scan probes, by kind, each kind's setting next to it.
+  const groups = useMemo(
+    () =>
+      groupTargets({
+        typed: listEntries,
+        coverage,
+        assets: targets.assetIds.map((id) => ({ id, name: pickedAssets[id] })),
+        groups: targets.assetGroupIds.map((id) => ({ id, name: pickedGroups[id] })),
+        addedAddresses: coverage === 'subdomains_ips' ? expansion.added : [],
+      }),
+    [
+      listEntries,
+      coverage,
+      targets.assetIds,
+      targets.assetGroupIds,
+      pickedAssets,
+      pickedGroups,
+      expansion.added,
+    ]
+  )
+  // sent is rebuilt every render: key the selectors on its text.
+  const sentText = sent.join('\n')
+  const selectors = useMemo(
+    () => selectorsOf(sentText ? sentText.split('\n') : [], targets.targetOptions),
+    [sentText, targets.targetOptions]
+  )
+  const selectorPreview = useSelectorPreview(selectors, targets.targetOptions)
+  const rowNote = (checkAs: string) => {
+    const sel = selectors.find((x) => x.target === checkAs)
+    if (!sel) return undefined
+    const p = selectorPreview.previews.find(
+      (x) => x.selector.kind === sel.kind && x.selector.value === sel.value
+    )
+    const text = selectorPreviewText(t, sel, p, selectorPreview)
+    return p && p.recent.length > 0 ? `${text} ${recentNamesText(t, p.recent)}` : text
+  }
+
+  // The coverage level applies to domain names: typed, else picked assets.
+  const coverageGroup = !showCoverage
+    ? null
+    : groups.some((g) => g.kind === 'domains')
+      ? ('domains' as const)
+      : expansion.roots.length > 0 && targets.assetIds.length > 0
+        ? ('assets' as const)
+        : null
+  const coverageNote =
+    coverage === 'host'
+      ? null
+      : coverage === 'subdomains'
+        ? t('scans.targets.subdomainsNote', undefined, { roots: rootsLabel })
+        : expansion.isLoading
+          ? t('scans.targets.lookingUp')
+          : expansion.added.length === 0
+            ? expansion.nameCount === 0
+              ? t('scans.targets.noNamesBelow', undefined, { roots: rootsLabel })
+              : t('scans.targets.noRecordedAddresses', undefined, {
+                  roots: rootsLabel,
+                  count: expansion.nameCount,
+                })
+            : expansion.added.length === 1
+              ? t('scans.targets.addsOne', undefined, { roots: rootsLabel })
+              : t('scans.targets.addsMany', undefined, {
+                  roots: rootsLabel,
+                  count: expansion.added.length,
+                })
+  const coverageSetting = coverageGroup && (
+    <div className="min-w-0 space-y-1.5">
+      <ChoiceGroup<CoverageLevel>
+        label={t('scans.targets.coverage')}
+        value={coverage}
+        onValueChange={(v) => onChange({ targets: { ...targets, coverage: v } })}
+        data-testid="coverage-choice"
+        options={COVERAGE_LEVELS.map((lvl) => ({
+          value: lvl.id,
+          label: t(`scans.coverage.${lvl.id}.short`, lvl.label),
+          hint: t(`scans.coverage.${lvl.id}.hint`, lvl.hint),
+        }))}
+      />
+      {coverageNote && (
+        <p className="text-xs text-muted-foreground" aria-live="polite">
+          {coverageNote}
+        </p>
+      )}
+    </div>
+  )
+  const setTargetOptions = (targetOptions: NonNullable<typeof targets.targetOptions>) =>
+    onChange({ targets: { ...targets, targetOptions } })
+  const settings = {
+    ...(coverageGroup ? { [coverageGroup]: coverageSetting } : {}),
+    ...(hasCidrTarget(sent)
+      ? {
+          ranges: (
+            <CidrModeChoice
+              options={targets.targetOptions}
+              onChange={setTargetOptions}
+              savedScan={savedScan}
+              livenessAvailable={livenessAvailable}
+            />
+          ),
+        }
+      : {}),
+  }
+  const openPicker = (source: PickerSource) => {
+    setPickerSource(source)
+    setPickerOpen(true)
+  }
 
   const canLower = (tier: ProbeTier) => lowerIntensityAllowed(data, chosenWorkflow?.steps, tier)
 
   return (
-    <div className="grid min-w-0 gap-6 p-4 sm:p-6 lg:grid-cols-2 lg:grid-rows-[auto_1fr] lg:gap-8">
-      {/* 1. What you type */}
-      <section className="min-w-0 space-y-2 lg:col-start-1" aria-labelledby={`${fieldId}-label`}>
+    <div className="grid min-w-0 gap-6 p-4 sm:p-6 xl:grid-cols-[minmax(0,5fr)_minmax(0,6fr)] xl:gap-8">
+      {/* What you scan */}
+      <section className="min-w-0 space-y-2" aria-labelledby={`${fieldId}-label`}>
         <label id={`${fieldId}-label`} htmlFor={fieldId} className="text-sm font-medium">
           {t('scans.targetsStep.label')}
         </label>
@@ -355,11 +484,30 @@ export function TargetsStep({
             variant="outline"
             size="sm"
             className="h-9 max-sm:min-h-11"
-            onClick={() => setPickerOpen(true)}
+            onClick={() =>
+              openPicker(
+                targets.assetGroupIds.length > 0 && targets.assetIds.length === 0
+                  ? 'groups'
+                  : 'assets'
+              )
+            }
           >
             <Plus className="me-1.5 h-4 w-4" aria-hidden />
             {t('scans.targetsStep.fromInventory')}
           </Button>
+          {canReadScope && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-9 max-sm:min-h-11"
+              onClick={() => openPicker('scope')}
+              data-testid="from-scope"
+            >
+              <ShieldCheck className="me-1.5 h-4 w-4" aria-hidden />
+              {t('scans.targetsStep.fromScope')}
+            </Button>
+          )}
         </div>
         {bulkOpen && (
           <BulkTargetsPanel
@@ -395,9 +543,9 @@ export function TargetsStep({
         )}
       </section>
 
-      {/* 2. What happens, 3. how to fix it */}
+      {/* What the scan probes, and how to fix what it cannot */}
       <section
-        className="min-w-0 space-y-3 lg:sticky lg:top-0 lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:self-start"
+        className="min-w-0 space-y-3"
         aria-label={t('scans.summary.label')}
         data-testid="targets-result"
       >
@@ -412,9 +560,6 @@ export function TargetsStep({
             groupCount={targets.assetGroupIds.length}
           />
         )}
-        {targets.assetGroupIds.length > 0 && (
-          <p className="text-xs text-muted-foreground">{t('scans.summary.groupMembersLater')}</p>
-        )}
         {readiness.state === 'partial' && (
           <p className="text-xs text-muted-foreground">
             {t('scans.targetsStep.partial', undefined, {
@@ -424,6 +569,21 @@ export function TargetsStep({
         )}
         {check.error && (
           <p className="text-xs text-muted-foreground">{t('scans.scope.unavailable')}</p>
+        )}
+        <TargetGroups
+          groups={groups}
+          resultFor={check.resultFor}
+          checking={check.isLoading}
+          checkAvailable={check.available}
+          settings={settings}
+          rowNote={rowNote}
+        />
+        {hasDynamicTargets(sent, targets.targetOptions) && (
+          <SelectorOptions
+            options={targets.targetOptions}
+            onChange={setTargetOptions}
+            workflow={data.mode === 'workflow'}
+          />
         )}
         <RefusalGroups
           results={results}
@@ -437,109 +597,23 @@ export function TargetsStep({
         />
       </section>
 
-      {/* 4. Options, collapsed */}
-      {(offerCoverage || offerDynamic) && (
-        <Collapsible
-          open={optionsOpen}
-          onOpenChange={setOptionsOpen}
-          className="min-w-0 lg:col-start-1 lg:self-start"
-        >
-          <CollapsibleTrigger asChild>
-            <button
-              type="button"
-              className="flex min-h-11 w-full min-w-0 items-start gap-2 text-start lg:border-t lg:pt-3"
-            >
-              <ChevronDown
-                className={cn(
-                  'mt-0.5 h-4 w-4 shrink-0 text-muted-foreground transition-transform',
-                  !optionsOpen && '-rotate-90'
-                )}
-                aria-hidden
-              />
-              <span className="min-w-0 flex-1">
-                <span className="block text-sm font-medium">{t('scans.targetsStep.options')}</span>
-                {optionsSummary && (
-                  <span
-                    className="block text-xs text-muted-foreground"
-                    data-testid="options-summary"
-                  >
-                    {optionsSummary}
-                  </span>
-                )}
-              </span>
-            </button>
-          </CollapsibleTrigger>
-          <CollapsibleContent className="space-y-4 pt-3">
-            {offerCoverage && (
-              <fieldset className="min-w-0 space-y-2">
-                <legend className="text-sm font-medium">{t('scans.targets.coverage')}</legend>
-                <RadioGroup
-                  value={coverage}
-                  onValueChange={(v) =>
-                    onChange({ targets: { ...targets, coverage: v as CoverageLevel } })
-                  }
-                  className="gap-1"
-                >
-                  {COVERAGE_LEVELS.map((lvl) => (
-                    <label
-                      key={lvl.id}
-                      className="flex min-h-11 cursor-pointer items-start gap-3 rounded-md p-2 hover:bg-muted/50"
-                    >
-                      <RadioGroupItem
-                        value={lvl.id}
-                        className="mt-0.5"
-                        aria-label={t(`scans.coverage.${lvl.id}.label`, lvl.label)}
-                      />
-                      <span className="min-w-0">
-                        <span className="block text-sm">
-                          {t(`scans.coverage.${lvl.id}.label`, lvl.label)}
-                        </span>
-                        <span className="block text-xs text-muted-foreground">
-                          {t(`scans.coverage.${lvl.id}.hint`, lvl.hint)}
-                        </span>
-                      </span>
-                    </label>
-                  ))}
-                </RadioGroup>
-                {coverage !== 'host' && (
-                  <p className="text-xs text-muted-foreground" aria-live="polite">
-                    {expansion.roots.length === 0
-                      ? t('scans.targets.noDomains')
-                      : coverage === 'subdomains'
-                        ? t('scans.targets.subdomainsNote', undefined, { roots: rootsLabel })
-                        : expansion.isLoading
-                          ? t('scans.targets.lookingUp')
-                          : expansion.added.length === 0
-                            ? t('scans.targets.noRecordedAddresses', undefined, {
-                                roots: rootsLabel,
-                              })
-                            : expansion.added.length === 1
-                              ? t('scans.targets.addsOne', undefined, { roots: rootsLabel })
-                              : t('scans.targets.addsMany', undefined, {
-                                  roots: rootsLabel,
-                                  count: expansion.added.length,
-                                })}
-                  </p>
-                )}
-              </fieldset>
-            )}
-            <DynamicTargetsPanel
-              targets={sent}
-              options={targets.targetOptions}
-              onChange={(targetOptions) => onChange({ targets: { ...targets, targetOptions } })}
-              workflow={data.mode === 'workflow'}
-              savedScan={savedScan}
-              livenessAvailable={livenessAvailable}
-            />
-          </CollapsibleContent>
-        </Collapsible>
-      )}
-
       <Sheet open={pickerOpen} onOpenChange={setPickerOpen}>
         <SheetContent side="right" className="sm:max-w-lg">
           <SheetHeader>
-            <SheetTitle>{t('scans.targetsStep.pickerTitle')}</SheetTitle>
-            <SheetDescription>{t('scans.targetsStep.pickerDescription')}</SheetDescription>
+            <SheetTitle>
+              {t(
+                canReadScope
+                  ? 'scans.targetsStep.pickerTitleScope'
+                  : 'scans.targetsStep.pickerTitle'
+              )}
+            </SheetTitle>
+            <SheetDescription>
+              {t(
+                canReadScope
+                  ? 'scans.targetsStep.pickerDescriptionScope'
+                  : 'scans.targetsStep.pickerDescription'
+              )}
+            </SheetDescription>
           </SheetHeader>
           <SheetBody>
             <Tabs value={pickerSource} onValueChange={(v) => setPickerSource(v as PickerSource)}>
@@ -554,6 +628,12 @@ export function TargetsStep({
                   {t('scans.targets.tabGroups')}
                   <TabsCount value={targets.assetGroupIds.length || null} />
                 </TabsTrigger>
+                {canReadScope && (
+                  <TabsTrigger value="scope" className="flex-1">
+                    <ShieldCheck aria-hidden />
+                    {t('scans.targets.tabScope')}
+                  </TabsTrigger>
+                )}
               </TabsList>
               <TabsContent value="assets" className="pt-3">
                 <AssetSource selected={pickedAssets} onChange={setAssets} />
@@ -561,6 +641,11 @@ export function TargetsStep({
               <TabsContent value="groups" className="pt-3">
                 <GroupSource selected={pickedGroups} onToggle={toggleGroup} />
               </TabsContent>
+              {canReadScope && (
+                <TabsContent value="scope" className="pt-3">
+                  <ScopeSource present={typedKeys} onChange={pickFromScope} />
+                </TabsContent>
+              )}
             </Tabs>
           </SheetBody>
           <SheetFooter>

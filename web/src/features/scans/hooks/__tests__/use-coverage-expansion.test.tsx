@@ -60,11 +60,29 @@ describe('useCoverageExpansion', () => {
     expect(get).not.toHaveBeenCalled()
   })
 
-  it('lists nothing for subdomains: the run resolves *.domain itself (RFC-068)', () => {
+  it('lists no addresses for subdomains but counts the names below the roots', async () => {
+    get.mockResolvedValueOnce({
+      data: [
+        { name: 'a.example.com', properties: { ip_addresses: ['203.0.113.9'] } },
+        { name: 'b.example.com' },
+      ],
+      total: 2,
+    })
     const { result } = renderHook(() => useCoverageExpansion(['example.com'], 'subdomains'), {
       wrapper,
     })
-    expect(get).not.toHaveBeenCalled()
+    await waitFor(() => expect(result.current.nameCount).toBe(2))
     expect(result.current.added).toEqual([])
+  })
+
+  it('adds addresses recorded under ip_addresses (the shape the API returns)', async () => {
+    get.mockResolvedValueOnce({
+      data: [{ name: 'a.example.com', properties: { ip_addresses: ['203.0.113.9'] } }],
+      total: 1,
+    })
+    const { result } = renderHook(() => useCoverageExpansion(['example.com'], 'subdomains_ips'), {
+      wrapper,
+    })
+    await waitFor(() => expect(result.current.added).toEqual(['203.0.113.9']))
   })
 })

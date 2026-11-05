@@ -15,6 +15,7 @@ const runsCalls: RunsCall[] = []
 vi.mock('../api/use-ci', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api/use-ci')>()),
   useSaveTrustConfig: () => ({ trigger: mockSave, isMutating: false }),
+  useCIRunnerRelease: () => 'v0.9.2',
   useSCMApps: () => ({ data: apps }),
   useTrustConfigs: () => ({ data: { data: trusts } }),
   useCIRuns: (f: RunsCall[0], o: RunsCall[1]) => {
@@ -53,8 +54,10 @@ async function throughToWaiting() {
   expect(body.provider).toBe('github')
   expect(body.rules.owners).toEqual(['acme'])
   expect(body.rules.allow_fork_pull_requests).toBe(false)
-  // Step 3: the snippet names the organization's tenant.
+  // Step 3: the snippet names the organization's tenant and pins the CI
+  // runner release the API names.
   expect(await within(dialog).findByTestId('ci-setup-snippet')).toHaveTextContent('t-123')
+  expect(within(dialog).getByTestId('ci-setup-snippet')).toHaveTextContent('@v0.9.2')
   await userEvent.click(within(dialog).getByRole('button', { name: /wait for the first run/i }))
   return dialog
 }

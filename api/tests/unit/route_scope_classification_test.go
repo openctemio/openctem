@@ -147,6 +147,7 @@ var dataSurfaceRegistry = map[string]dataSurface{
 	"/api/v1/sensor-pairings":                      {classConfig, "sensor pairing (RFC-052): a pending request has no tenant until approved; the approver's tenant binds it"},
 	"/api/v1/scan-zones":                           {classConfig, "scan zones"},
 	"/api/v1/proxy-pools":                          {classConfig, "proxy pools for sensor scan traffic: tenant configuration, no asset data; credentials never returned"},
+	"/api/v1/tool-sources":                         {classConfig, "organization keys of third-party tool sources: tenant configuration, no asset data; keys never returned"},
 	"/api/v1/wordlists":                            {classConfig, "organization DNS label lists for subdomain enumeration: tenant configuration, no asset data; the preview counts the tenant's own learned labels and reads no asset row it returns"},
 	"/api/v1/content-rules":                        {classConfig, "organization detection rules (web fingerprints, sensitive information): tenant configuration, no asset data; the test runs a draft on a pasted sample and reads no stored row"},
 	"/api/v1/scan-window-policies":                 {classConfig, "scan window policies (RFC-067): tenant dispatch configuration"},

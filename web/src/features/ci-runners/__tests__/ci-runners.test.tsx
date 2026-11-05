@@ -18,7 +18,8 @@ import {
   findCoveringTrust,
   releaseBefore,
   CI_PROVIDERS,
-  CI_RELEASE,
+  CI_RELEASE_FALLBACK,
+  ciRelease,
 } from '../lib/ci'
 import type { CITrustConfig } from '../types'
 
@@ -60,6 +61,7 @@ vi.mock('../api/use-ci', async (importOriginal) => ({
   }),
   useTrustConfigs: () => ({ data: { data: trust }, isLoading: false, mutate: vi.fn() }),
   useCISettings: () => ({ data: ciSettings, mutate: vi.fn() }),
+  useCIRunnerRelease: () => undefined,
   useSaveCISettings: () => ({ trigger: mockSaveSettings, isMutating: false }),
   useSaveTrustConfig: () => ({ trigger: mockSaveTrust, isMutating: false }),
   useDeleteTrustConfig: () => ({ trigger: mockDeleteTrust, isMutating: false }),
@@ -137,7 +139,7 @@ describe('lib', () => {
     })
     expect(gh).toContain('id-token: write')
     expect(gh).toContain('tenant-id: t1')
-    expect(gh).toContain(`uses: openctemio/ci/.github/workflows/scan.yml@${CI_RELEASE}`)
+    expect(gh).toContain(`uses: openctemio/ci/.github/workflows/scan.yml@${CI_RELEASE_FALLBACK}`)
     expect(gh).not.toMatch(/API_KEY|secrets\./)
     // The default audience is implied; a custom one is passed.
     expect(gh).not.toContain('oidc-audience')
@@ -149,7 +151,7 @@ describe('lib', () => {
       tenantId: 't1',
       audience: defaultAudience('t1'),
     })
-    expect(gl).toContain(`openctemio/ci/${CI_RELEASE}/gitlab/templates/all.yml`)
+    expect(gl).toContain(`openctemio/ci/${CI_RELEASE_FALLBACK}/gitlab/templates/all.yml`)
     expect(gl).toContain('OPENCTEM_TENANT_ID: t1')
     expect(gl).not.toContain('id_tokens')
     expect(gl).not.toMatch(/API_KEY/)
@@ -199,9 +201,31 @@ describe('lib', () => {
     // Jenkins runs openctem-ci installed on its build node, not an image.
     for (const p of ['azure_devops', 'bitbucket', 'circleci'] as const) {
       const s = snippetFor(p, input)
-      expect(s).toContain(`ghcr.io/openctemio/ci:${CI_RELEASE}`)
+      expect(s).toContain(`ghcr.io/openctemio/ci:${CI_RELEASE_FALLBACK}`)
     }
     for (const p of CI_PROVIDERS) expect(snippetFor(p, input)).not.toContain('ci:edge')
+  })
+
+  it('pins the API-supplied CI runner release, and only a vX.Y.Z one', () => {
+    const input = {
+      apiUrl: 'https://ctem.example',
+      tenantId: 't1',
+      audience: defaultAudience('t1'),
+      release: 'v0.9.2',
+    }
+    expect(githubSnippet(input)).toContain('uses: openctemio/ci/.github/workflows/scan.yml@v0.9.2')
+    expect(githubSnippet(input)).toContain('required by openctemio/ci v0.9.2')
+    expect(gitlabSnippet(input)).toContain('openctemio/ci/v0.9.2/gitlab/templates/all.yml')
+    for (const p of ['azure_devops', 'bitbucket', 'circleci'] as const) {
+      expect(snippetFor(p, input)).toContain('ghcr.io/openctemio/ci:v0.9.2')
+    }
+    // No release from the API, or anything that is not a release, takes the
+    // built-in fallback: the value is written into pipeline YAML and URLs.
+    expect(ciRelease(undefined)).toBe(CI_RELEASE_FALLBACK)
+    for (const bad of ['', 'latest', 'v1.2', 'v1.2.3-rc.1', 'v1.2.3\nrun: evil', '../main']) {
+      expect(ciRelease(bad)).toBe(CI_RELEASE_FALLBACK)
+      expect(githubSnippet({ ...input, release: bad })).toContain(`scan.yml@${CI_RELEASE_FALLBACK}`)
+    }
   })
 
   it('reads a GitHub issuer back only when it is not github.com', () => {
