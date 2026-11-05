@@ -90,6 +90,7 @@ code_scan_settings
 collector_assets
 command_events
 command_logs
+command_secret_grants
 commands
 comment_reactions
 compensating_controls
@@ -121,7 +122,9 @@ definition_identifiers
 definition_relations
 definition_taxonomy
 durable_jobs
+easm_address_auto_adds
 easm_alert_throttle
+easm_declined_networks
 easm_dns_name_state
 easm_evidence
 easm_lookalike_candidates
@@ -316,6 +319,7 @@ ticket_mapping_profiles
 ticket_mapping_versions
 tool_categories
 tool_duration_stats
+tool_source_keys
 tools
 user_accessible_assets
 user_dashboards

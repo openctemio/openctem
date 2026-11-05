@@ -105,6 +105,37 @@ check that finds the CNAME fixed (or replaced by a delegation) resolves the
 takeover with the `dangling_cname`, and a takeover this check resolved is
 reopened by the next confirmation. A person's resolution is never reopened.
 
+From v0.20.0: "fixed" means the name points into the organization (its own
+registrable domain, a confirmed root, confirmed addresses outside provider
+space, or no record). A missing target that now answers from a third party
+keeps `dangling_cname` open and raises a suspected `subdomain_takeover`; a
+takeover template match on a name whose CNAME chain ends at a listed provider
+is confirmed without an earlier DNS-only record (`provider_unclaimed_page`).
+Flow diagram and response classes: [easm.md](easm.md#4p-dangling-dns-lifecycle-built).
+
+```mermaid
+sequenceDiagram
+  autonumber
+  box Tenant sensor, gated scan
+  participant N as nuclei takeover templates
+  end
+  box API
+  participant I as ingest, command-bound report only
+  participant T as easmdns.TakeoverConfirmer
+  participant DB as Postgres, tenant-scoped
+  end
+  N->>I: findings on the command's targets
+  I->>T: ConfirmTakeovers(tenant, sightings with template, sensor, command)
+  T->>DB: OpenDanglingCNAMEs(tenant, sighted assets)
+  opt no open dangling_cname, resolver set (v0.20.0)
+    T->>T: providerHosted: CNAME chain ends at a listed provider outside the name's domain
+  end
+  T->>DB: MarkConfirmed on the dangling_cname
+  T->>DB: BulkUpsert subdomain_takeover high
+  T->>DB: ReopenAuto: only takeovers the DNS check resolved
+  Note over T: a template match with no dangling record and no provider chain raises nothing
+```
+
 ## Email posture
 
 DNS TXT only:

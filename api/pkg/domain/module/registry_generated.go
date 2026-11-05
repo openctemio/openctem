@@ -106,7 +106,7 @@ var Registry = []Definition{
 		},
 		Routes: []string{"/api/v1/attack-surface", "/api/v1/easm", "/api/v1/assets/{id}/web-evidence"},
 		MCP:    []string{"get_exposure_chains"},
-		Jobs:   []string{"CertMonitorController", "EASMDNSController", "EASMLookalikeController", "PageMonitorController", "EASMNetworkSeedController", "EASMWeeklyDigestController", "EASMPostureController", "GraphEnrichmentController", "ScopeJoinController"},
+		Jobs:   []string{"CertMonitorController", "EASMDNSController", "EASMLookalikeController", "PageMonitorController", "EASMNetworkSeedController", "EASMAddressAutoAddController", "EASMWeeklyDigestController", "EASMPostureController", "GraphEnrichmentController", "ScopeJoinController"},
 	},
 	{
 		ID: ModuleScopeConfig, Slug: "scope-config", Name: "Scope Config",
@@ -471,7 +471,7 @@ var Registry = []Definition{
 		Core:       true,
 		UserFacing: true,
 		Permission: "team:read",
-		Jobs:       []string{"MemberAccessExpiryController", "TeamMembershipExpiryController", "ServiceKeyCreatorController", "AccessRequestRetentionController", "SignupEventRetentionController", "SSOEnforcementEntitlementController", "SAMLCertExpiryController", "RoleSyncController", "IdleWorkspaceController"},
+		Jobs:       []string{"MemberAccessExpiryController", "TeamMembershipExpiryController", "ServiceKeyCreatorController", "AccessRequestRetentionController", "SignupEventRetentionController", "SAMLCertExpiryController", "RoleSyncController", "IdleWorkspaceController"},
 	},
 	{
 		ID: ModuleGroups, Slug: "groups", Name: "Groups",

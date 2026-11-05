@@ -246,3 +246,61 @@ func TestStepAtDepth_ScanOverrideWinsOverDepthOverlayAndConfig(t *testing.T) {
 		t.Fatal("capability entry leaked to another capability")
 	}
 }
+
+// A registration lookup answers for the registered domain: the names of a
+// predecessor's output collapse to their registrable domains, each once, and
+// the cap counts domains, not names.
+func TestDeriveCandidates_RegistryLevelCollapsesNames(t *testing.T) {
+	rdap, _ := stage.Lookup(stage.LookupRDAP)
+	outs := []scanrun.StepOutput{}
+	for _, n := range []string{"a.example.com", "b.example.com", "example.com", "www.example.co.uk", "c.example.org", "co.uk"} {
+		outs = append(outs, scanrun.StepOutput{StepRunID: shared.NewID(), AssetID: shared.NewID(), Name: n, Type: "domain"})
+	}
+	skipped := map[string]int{}
+	c, _ := deriveCandidates(rdap, outs, nil, nil, map[string]bool{}, skipped, 0, 0)
+	got := map[string]bool{}
+	for _, g := range c.gate {
+		got[g.key] = true
+	}
+	if len(c.gate) != 3 || !got["example.com"] || !got["example.co.uk"] || !got["example.org"] {
+		t.Fatalf("planned %v", got)
+	}
+	if skipped[scanrun.ReasonDuplicate] != 2 || skipped[scanrun.ReasonInvalid] != 1 {
+		t.Fatalf("skipped %v", skipped)
+	}
+
+	// A stage that answers per name keeps every name.
+	probe, _ := stage.Lookup(stage.ProbeHTTP)
+	c, _ = deriveCandidates(probe, outs, nil, nil, map[string]bool{}, map[string]int{}, 0, 0)
+	if len(c.gate) != 6 {
+		t.Fatalf("probe planned %d", len(c.gate))
+	}
+}
+
+func TestCollapseRegistrable(t *testing.T) {
+	rdap, _ := stage.Lookup(stage.LookupRDAP)
+	resolved := scanapp.StepTool{Name: "rdap", Stage: rdap, HasStage: true}
+	in := &scanapp.StepTargets{Targets: []string{"a.example.com", "B.Example.com", "example.com", "x.example.org", "198.51.100.7"}, Refused: 2, Reason: "r"}
+	out := collapseRegistrable(resolved, in, nil)
+	want := []string{"example.com", "example.org", "198.51.100.7"}
+	if len(out.Targets) != len(want) || out.Refused != 2 || out.Reason != "r" {
+		t.Fatalf("collapsed %+v", out)
+	}
+	for i, w := range want {
+		if out.Targets[i] != w {
+			t.Fatalf("collapsed %v, want %v", out.Targets, want)
+		}
+	}
+	// The input is not changed, and a stage that answers per name is left alone.
+	if len(in.Targets) != 5 {
+		t.Fatal("input changed")
+	}
+	probe, _ := stage.Lookup(stage.ProbeHTTP)
+	if got := collapseRegistrable(scanapp.StepTool{Name: "httpx", Stage: probe, HasStage: true}, in, nil); got != in {
+		t.Fatal("a per-name stage must keep its targets")
+	}
+	// No explicit target list: left as is.
+	if got := collapseRegistrable(resolved, nil, nil); got != nil {
+		t.Fatalf("got %+v", got)
+	}
+}

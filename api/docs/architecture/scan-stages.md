@@ -35,6 +35,8 @@ platform data: a tenant, a sensor or a report cannot widen it.
 | `container.image` | container → findings | T0 | trivy, grype |
 | `network_va.connector` | ip_address, host, network → findings | T1 | tenable_sc |
 
+A registration lookup answers for the domain registered at the registry, not for each name below it: the planner hands `lookup.rdap` the registrable domain of every name (public suffix list, ICANN section), each once, for the scan's own targets and for the names an earlier step found. The sensor does the same for a name that reaches it, and refuses no name as unresolvable for this capability: it asks the registry, never the target. A domain whose top-level domain has no https RDAP service in the IANA bootstrap (many country-code domains) is reported with `whois.rdap_status = registry_has_no_rdap`; a domain the registry does not know with `not_registered`.
+
 - **Tiers.** T0 sends no traffic to the target beyond DNS (or none at all). T1
   is non-intrusive active checking. T2 is intrusive and needs an approver and
   a verified seed (RFC-036 O3); the P0 router never plans a T2 stage.
@@ -328,6 +330,16 @@ workflow preview). Every step reacts to it:
   every save against the contract: standard params only, never tool extras
   (`x`) or executor keys, each with its type and bounds, and the config at
   each depth valid as a whole. A step outside the catalog may not set them.
+- **Capability depth defaults** (`stage.DepthDefaults`): the lowest layer,
+  under the step's config and its depth's params, filled once the tool is
+  resolved and only for params that tool takes (a default never makes a tool
+  ineligible). `vuln.templates`: severity low to critical at `standard`,
+  info to critical at `deep` (research 426 decision OD-1). Info matches are
+  filed as info exposures, not findings (exposure-taxonomy.md, "Template
+  scanner info matches"). The built-in recon workflows' template steps carry
+  the same values in their depth params (migration 20261104164815, which also
+  updated tenant copies still holding the earlier built-in values). The
+  workflow preview shows the defaults with the depth's params.
 - `depths.<depth>.max_targets` caps what the hop router hands the step
   (lower-only: it never raises the stage or run cap); the rest are recorded
   `over_cap`.
