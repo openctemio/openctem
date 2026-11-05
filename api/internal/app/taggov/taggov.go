@@ -12,6 +12,7 @@ package taggov
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -126,16 +127,12 @@ func (s Set) Changes(added, removed []string) []Change {
 }
 
 // Diff returns the tags in next that are not in current (added) and the
-// tags in current that are not in next (removed), compared without case.
+// tags in current that are not in next (removed). The comparison is exact: a
+// change of case is a remove plus an add, so renaming "env:prod" to
+// "Env:Prod" cannot slip past the check as "no change" while a rule that
+// matches the exact string stops matching.
 func Diff(current, next []string) (added, removed []string) {
-	has := func(l []string, t string) bool {
-		for _, x := range l {
-			if strings.EqualFold(x, t) {
-				return true
-			}
-		}
-		return false
-	}
+	has := slices.Contains[[]string]
 	for _, t := range next {
 		if !has(current, t) {
 			added = append(added, t)

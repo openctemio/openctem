@@ -2583,6 +2583,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	)
 	s.Ingest = ingest.NewService(ingAsset, ingFinding, ingVuln, ingComp, repos.Sensor, ingBranch, repos.Tenant, repos.Audit, log)
 	s.Ingest.SetTagGovernor(s.TagGovernor)
+	s.Tenant.SetTagRulesInvalidator(s.TagGovernor)
 	// Policies are applied from a per-tenant snapshot, reloaded when their
 	// version changes.
 	s.Ingest.SetPolicyVersions(repos.IngestPolicyVersions)
@@ -2911,6 +2912,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.ScanZone = scanzoneapp.NewService(repos.ScanZone, s.Audit, log)
 	if s.ScanWindowResolver != nil {
 		s.ScanWindow = scanwindowapp.NewService(repos.ScanWindowPolicy, repos.ScanWindowPolicy, repos.ScanWindowOverride, s.ScanWindowResolver, log)
+		s.ScanWindow.SetTagRulesInvalidator(s.TagGovernor)
 		s.ScanWindow.SetAudit(s.Audit)
 		s.ScanWindow.SetAssets(repos.ScanWindowAsset, s.DataScope)
 		s.ScanWindow.SetHoldReleaser(repos.Command)
@@ -3214,6 +3216,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 
 	s.AssignmentRule = assignment.NewRuleService(repos.AccessControl, repos.Group, log)
 	s.ScopeRule = scope.NewRuleService(repos.AccessControl, repos.Group, log)
+	// A saved rule changes which tags are governing at once, not after the cache TTL.
+	s.AssignmentRule.SetTagRulesInvalidator(s.TagGovernor)
+	s.ScopeRule.SetTagRulesInvalidator(s.TagGovernor)
 	s.ScopeRule.SetAssetGroupValidator(repos.AccessControl)
 	s.ScopeRule.SetScopeDelegationCap(s.DataScope)
 

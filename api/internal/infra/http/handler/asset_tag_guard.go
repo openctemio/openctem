@@ -2,7 +2,6 @@ package handler
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"strings"
 
@@ -59,20 +58,23 @@ func checkTagChange(ctx context.Context, g TagGovernor, tenantID string, current
 	if len(changes) == 0 {
 		return nil, nil
 	}
+	// An API key or an MCP token acts for its user without being the user's own
+	// session: it never sets a tag that rules read, whatever its grants say.
+	if middleware.IsDelegatedCredential(ctx) {
+		return changes, &tagRefusal{
+			status:  http.StatusForbidden,
+			message: "Tags that rules read can only be changed in a signed-in session by a person with the permission to change that rule",
+			changes: changes,
+		}
+	}
 	if taggov.Allowed(changes, func(p string) bool { return middleware.HasPermission(ctx, p) }, middleware.IsAdmin(ctx)) {
 		return changes, nil
 	}
-	var parts []string
-	for _, c := range changes {
-		kinds := make([]string, 0, len(c.Reqs))
-		for _, r := range c.Reqs {
-			kinds = append(kinds, r.Rule)
-		}
-		parts = append(parts, fmt.Sprintf("%q (read by a %s)", c.Tag, strings.Join(kinds, ", ")))
-	}
+	// The message does not name the rule that reads the tag: a person who can
+	// only edit assets learns nothing about the organization's rules.
 	return changes, &tagRefusal{
 		status:  http.StatusForbidden,
-		message: "Changing " + strings.Join(parts, ", ") + " needs the permission to change that rule, not only to edit assets",
+		message: "Changing tags that rules read needs the permission to change that rule, not only to edit assets",
 		changes: changes,
 	}
 }
