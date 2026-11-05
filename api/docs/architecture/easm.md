@@ -317,10 +317,32 @@ is behind "Show all items".
 A card holds at most 200 items (`truncated` says more exist). Accepting one
 is an ordinary `POST /scope/targets/bulk` with its items (exact `ip_address`
 or `domain` entries: scope write permission, step-up, approvals, audit, one
-admin notice); `can_add` tells the caller whether it may. Nothing is ever
-added automatically: a name never lends its address authority (dangling DNS,
-shared hosting and released cloud addresses would make a scan probe a third
-party).
+admin notice); `can_add` tells the caller whether it may. A name never
+lends its address authority (dangling DNS, shared hosting and released cloud
+addresses would make a scan probe a third party): an address is added
+automatically only on evidence the organization itself established.
+
+**Address setting** (`address_auto_add` in the scope settings, research/425):
+`auto_strong` (default), `ask` or `never` (no address card). In
+`auto_strong` the controller `easm-address-auto-add`
+(`internal/app/easm/address_autoadd.go`, every 30 minutes, attack surface
+module on) adds, for each tenant with an AS network seed, the addresses of the
+card in the ownership band `high` (an anchor from the organization's own
+network seed plus another anchor or a corroborator, no blocker; never a
+shared, CDN, hosting or provider address). Two or more such addresses in one
+prefix the organization's own AS announces become one `cidr` entry for that
+prefix (the narrowest one the platform guardrails accept, never a computed
+supernet); the others are exact `ip_address` entries. Entries go through the
+scope service as the automatic actor (`scope.Actor{Automatic: true}`, origin
+`auto_address`): the organization's approval policy applies as to a person's
+add (an entry waits for its approvers when approvals are required), and the
+guardrails, deny list and signer ledger apply per item; each entry is audited
+(`scope_target.created`, metadata `origin`, `status`, `resolved_from`,
+`evidence`) and the administrators are told. Under the Strict scan approval
+mode the mode in force is `ask` (`address_auto_add_effective`). Each pattern
+is written at most once per tenant (`easm_address_auto_adds`): removing the
+entry, or the prefix an address fell in, undoes it for good. With no network
+seed nothing is ever added.
 
 Each offered or already-checked address carries `ownership` (band
 `high`/`medium`/`low`/`unknown`, a score that only orders, and the signals
