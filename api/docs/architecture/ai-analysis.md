@@ -8,6 +8,57 @@ An **AI agent** takes part in triage like a person. It calls the same commands, 
 and data scope, and its changes go through the same approvals, audit and notifications. The only
 differences are the AI label and the provenance on everything it does.
 
+## Flow: analyze a finding
+
+Checked against the code of v0.19.1 and develop on 2026-11-05. Only the
+built-in executor and on-demand runs exist: `POST
+/api/v1/findings/{id}/ai/analyze` is the one caller of
+`BuiltinExecutor.Analyze` (no console button, no event or schedule trigger
+yet, though `aidom.Trigger` names them).
+
+```mermaid
+sequenceDiagram
+  autonumber
+  actor U as Member
+  participant H as AIAnalysisHandler.AnalyzeFinding
+  participant E as aianalysis.BuiltinExecutor
+  participant S as aianalysis.Service
+  participant B as aibundle, aimask, aimaskmap
+  box Outside the platform
+    participant M as LLM provider
+  end
+  participant F as Finding commands (as the AI agent)
+  U->>H: POST /api/v1/findings/{id}/ai/analyze {kind, ai_agent_id}
+  H->>H: module gate, AITriageRateLimiter,<br/>RequireAll(findings:read, ai_triage:trigger), data-scope guard
+  H->>S: AssertViewer(tenant, viewer, finding)
+  H->>E: Analyze(trigger on_demand, triggered_by viewer)
+  E->>E: analyze.LookupKind (single-shot), TemplateFor,<br/>findings.GetByID(tenant, id)
+  E->>S: Principal or DefaultAIAgent: consent, active,<br/>HealthReason (active owner, attestation), Effective permissions
+  E->>S: Require(findings:read), AssertFinding (agent scope and an owner's)
+  E->>S: StartRun: RunsPerHour (60), TokensMonth, deadline 30 min
+  E->>E: settings EffectiveMode, own-provider policy, use case not off,<br/>ceiling = min(use case, agent), not tenant_only
+  E->>B: BundleInput with a fresh 32-byte key, Build (aipolicy egress, mask),<br/>maps.Save(run key, snapshot), record fields sent and withheld
+  E->>E: budget.Check(estimate), CreateProviderForTenant
+  E->>M: Complete (JSON mode, timeout 90 s, 2,000 tokens)
+  M-->>E: suggestions with evidence
+  E->>E: ParseOutput, maps.Load, unmaskPayload, CheckEvidence,<br/>injection and unknown-placeholder flags
+  loop each suggestion (actor.do)
+    E->>F: Comment, SetStatus(confirmed), ChangeSeverity or<br/>RequestFalsePositive with WithExpectedRowVersion
+  end
+  E->>S: FinishRun (status, tokens, duration), even when canceled
+  H-->>U: 200 run and actions (refused runs too, with their code)
+```
+
+`actor.do` decides per suggestion: a change needs no review reasons,
+confidence at least 0.5, no conflict seen, and `UseCaseSetting.MayApply`
+(auto_apply at its minimum confidence); otherwise it is a comment with the
+hold reason. A severity raise is always a comment; a downgrade and a
+likely false positive become requests a person decides, and stay comments
+when a person triggered the run (`reasonTriggeredByUser`, RFC-132 D7). A
+true-positive verdict confirms a `new` finding with `findings:status`. A
+row-version change since the agent read the finding turns the change into a
+comment (`finding_changed`).
+
 ## Identity
 
 - An AI agent is a **service account** (`users.kind = 'service'`) plus one row in `ai_agents`.

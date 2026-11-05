@@ -7,6 +7,27 @@ gate decides what may leave the platform. It is a noise filter, not a security
 control: it can only hold a finding back, and every create it lets through
 still passes the outbound (egress / TLP) gate.
 
+## Flow
+
+```mermaid
+flowchart TD
+  subgraph T["Tenant scope (tenant_id on every query)"]
+    W["workflow create_ticket<br/>PolicyGate.AutoCreate"] --> L["LockFinding: pg_advisory_lock on tenant, integration, finding<br/>slots 8 per process, 2 per tenant, wait 2 min"]
+    M["person: POST /findings/id/create-ticket<br/>PolicyGate.ManualCreate"] --> L
+    J["ticket-hold-release every 2 min<br/>ReleaseDue, 200 holds, budget 10 min"] --> L
+    L --> E{"Policy.Evaluate(SignalsOf(f))"}
+    E -- "not_open, automatic" --> N["nothing (no hold)"]
+    E -- "below, automatic" --> HB["PutHold below_threshold"]
+    E -- "below, person, no confirm" --> R409["409 TICKET_BELOW_THRESHOLD"]
+    E -- "pass, or person confirmed" --> C{"automatic: Reserve(daily_cap)"}
+    C -- "cap reached" --> HC["PutHold daily_cap"]
+    C -- "slot taken, or person" --> S["SyncService.CreateTicketFromFinding<br/>egress gate, routing, marker lookup, create"]
+    S -- ok --> D["DeleteHold, link recorded"]
+    S -- "error, release job" --> HF["release slot, PutHold create_failed<br/>detail = failureCode"]
+    S -- "error, workflow" --> WF["release slot, the step fails (no hold)"]
+  end
+```
+
 ## Policy
 
 One row per integration in `ticket_create_policies` (migration
@@ -45,9 +66,14 @@ path held back, with the reason:
 
 - `below_threshold`: the policy did not pass it;
 - `daily_cap`: it passed, but today's cap was reached;
-- `create_failed`: the create was refused or failed; `detail` is a platform
-  code (`egress:<reason>`, `invalid_destination`, `integration_unavailable`,
-  `tracker_error`), never upstream text.
+- `create_failed`: a create by the release job was refused or failed;
+  `detail` is a platform code (`egress:<reason>`, `invalid_destination`,
+  `integration_unavailable`, `tracker_error`), never upstream text. A
+  workflow create that fails writes no hold: it releases its daily slot and
+  the step fails.
+  `integration_unavailable` is never written today: `ErrNoTicketingIntegration`
+  wraps `shared.ErrValidation`, which `failureCode` tests first, so a missing
+  integration is stored as `invalid_destination`.
 
 The finding shows the hold ("Not sent to Jira — below the create policy") next
 to its ticket links, with **Create anyway** for people who may create tickets.
@@ -117,6 +143,5 @@ self-corrects.
 - **Audit:** policy changes (before and after) and confirmed creates below the
   policy.
 
-Design research: `research/224-ticket-creation-filters` (internal notes).
 Related: [ticketing (Jira)](ticketing-integration.md),
 [ticket field mapping](ticket-field-mapping.md).
