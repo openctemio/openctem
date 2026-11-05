@@ -314,6 +314,7 @@ var catalog = []Stage{
 		Key: CrawlWeb, Name: "Web crawl",
 		Description: "Crawl web services for URLs, staying on the same host.",
 		Inputs:      []asset.TypeRef{tHTTPService, tDiscoveredURL, tWebsite},
+		Outputs:     []asset.TypeRef{tHTTPService},
 		Endpoints:   true,
 		Tier:        TierActive,
 		Implementations: []Implementation{
