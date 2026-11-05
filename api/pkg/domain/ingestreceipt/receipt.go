@@ -137,6 +137,18 @@ const (
 	// ReasonOutsideJob: the item's asset lies outside the targets of the
 	// command the report is bound to.
 	ReasonOutsideJob = "outside_job_targets"
+	// ReasonOverCap: the item's asset lies outside the bound command's
+	// targets and the report had already recorded as many such assets as
+	// one report may (research 436).
+	ReasonOverCap = "over_cap"
+	// ReasonHeldForReview: the output-type binding held the item (its type,
+	// or its asset's, is not one the command's tool produces); it waits in
+	// the results quarantine.
+	ReasonHeldForReview = "held_for_review"
+	// ReasonQuarantineFull: held, but the quarantine could not keep it.
+	ReasonQuarantineFull = "quarantine_full"
+	// ReasonUnresolvedRef: the finding names no asset of its segment.
+	ReasonUnresolvedRef = "unresolved_ref"
 )
 
 // Item is one item a receipt did not turn into a finding. Key is a stable
