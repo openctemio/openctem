@@ -164,7 +164,7 @@ func TestExposureCategoryMapping(t *testing.T) {
 	for _, ts := range ExposureTypes() {
 		n += len(ts)
 	}
-	if n != 20 {
+	if n != 21 {
 		t.Fatalf("ExposureTypes lists %d types", n)
 	}
 }
