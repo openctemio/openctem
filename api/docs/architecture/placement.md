@@ -25,7 +25,7 @@ it, instead of "Waiting for a sensor".
 | Claim SQL | not reserved for another sensor | `pinned_elsewhere` |
 | Claim SQL | in the task's scan zone, with the tool | `outside_zone` |
 | Claim SQL | the sensor reported the tool installed | `tool_missing` |
-| Claim SQL | the sensor has not refused this task | `refused_earlier` |
+| Claim SQL | the sensor has not refused this task (a change of its reported local policy lifts this once per policy digest: a task it already refused under that digest stays excluded, so a policy report that flips back and forth never hands the task back) | `refused_earlier` |
 | Claim SQL | the sensor has not failed this task for an infrastructure reason or lost its lease | `failed_here_earlier` |
 | Claim SQL | every required capability offered | `capability_missing` |
 | Claim SQL | every required feature *reported by the sensor* (`required_features`: `net.confined@1` for a web-scoped nuclei job) | `not_confined` |
