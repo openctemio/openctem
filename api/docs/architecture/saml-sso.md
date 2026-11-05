@@ -45,7 +45,7 @@ flowchart LR
     B -- "4 SAMLResponse" --> ACS
     IMP -- "https only, SSRF guard, 1 MiB, 10 s" --> IDP
     ACS --- CFG
-    IMP -. "admin saves via PUT /sso/saml<br/>(owner approval)" .-> CFG
+    IMP -. "admin saves via PUT /sso/saml<br/>(owner approval when the org has an owner)" .-> CFG
 ```
 
 OpenCTEM holds no IdP secret for SAML: only public certificates. The API never
@@ -57,28 +57,40 @@ access ends through SCIM, member removal or session expiry.
 sequenceDiagram
     autonumber
     participant B as Browser
-    participant API as OpenCTEM API
-    participant E as Entra ID
-    B->>API: GET /auth/saml/{org}/login
-    API-->>B: 302 to the IdP sign-in URL, request id in a short-lived cookie
-    B->>E: AuthnRequest
+    box OpenCTEM API
+    participant API as SAMLHandler and SSOService
+    participant R as Replay store (Redis or in-process)
+    end
+    box Identity provider
+    participant E as SAML IdP (Entra ID)
+    end
+    B->>API: GET /api/v1/auth/saml/{org}/login (loginRL)
+    API->>API: org to tenant, saml_providers row exists and enabled (else ErrSAMLDisabled)
+    API-->>B: 302 HTTP-Redirect binding, cookie saml_authn_{org} = request id, 300 s, SameSite=None
+    B->>E: AuthnRequest (ForceAuthn when reauth=true)
     E-->>B: SAMLResponse (auto-submitting form)
-    B->>API: POST /auth/saml/{org}/acs
-    API->>API: exactly one signed assertion, signature by a configured cert,<br/>no SHA-1, audience, destination, conditions, InResponseTo
-    break any check fails, or the assertion id was seen before
+    B->>API: POST /api/v1/auth/saml/{org}/acs (body 1 MiB, no CSRF, no crossSite)
+    API->>API: parseStrictResponse - one Assertion with its own signature by one of 1-5 certs, no SHA-1, no EncryptedAssertion
+    API->>API: audience = SP entityID, destination = ACS, NotBefore and NotOnOrAfter (180 s skew), InResponseTo in cookie
+    API->>R: SET NX saml:aid:{tenant}:{sha256(id)}, fail closed
+    break any check fails, replay, stale ForceAuthn, Entra tid mismatch, or provider disabled
         API-->>B: /login?error=saml_failed (reason only in the log)
     end
-    API->>API: identity = Entra tenantid/objectidentifier (else persistent NameID),<br/>scoped to the organization; email for matching under proof rules
-    break another subject bound to the email, password account, not a member and no JIT
-        API-->>B: /login?error=... (stable code)
+    API->>API: identity key = tenantid/objectidentifier (Entra) else persistent NameID, scope_tenant_id = org
+    API->>API: completeFederatedLogin(key) - member, or email match with DNS-verified domain, or JIT (auto_provision, verified domain, AllowedDomains)
+    break password account, not a member and no JIT, domain not verified, awaiting approval
+        API-->>B: /login?error=link_required, not_member, domain_not_allowed or awaiting_approval
     end
-    API->>API: session federated for this organization,<br/>MFA evidence when AuthnContext is multi-factor
-    API-->>B: session cookies, redirect into the app
+    break email already bound to another subject at this IdP (ErrFederatedIdentityConflict, not mapped)
+        API-->>B: /login?error=saml_failed
+    end
+    API->>API: createSession(auth_method saml, idp_tenant = org), MFA evidence when AuthnContext is multi-factor, audit auth.login
+    API-->>B: refresh, access and tenant cookies, 302 into the app
 ```
 
 ## Config (9d)
 
-`saml_providers` (migration 000182), one row per tenant, **disabled by
+`saml_providers` (in the `001146_baseline` migration), one row per tenant, **disabled by
 default** — an operator enables SAML only after validating it against their IdP:
 
 | Field | Meaning |
@@ -86,7 +98,7 @@ default** — an operator enables SAML only after validating it against their Id
 | `idp_entity_id`, `idp_sso_url` | IdP issuer + SSO redirect endpoint |
 | `idp_certificate` | IdP signing certificates (one to five concatenated PEM blocks) — the trust anchors for assertion signatures; any one verifies |
 | `allowed_domains` | email-domain allow-list (empty = any) |
-| `default_role` | role for auto-provisioned users (`admin`/`member`/`viewer`; never `owner`) |
+| `default_role` | role for auto-provisioned users: `member` or `viewer` (anything else is refused on save) |
 | `auto_provision`, `enabled` | provision-on-login + master switch |
 
 Admin API (platform admin console, RFC-022):
@@ -233,7 +245,7 @@ expiry stops every SAML sign-in.
 | Response hardening, replay cache | `internal/app/auth/saml_strict.go` |
 | IdP metadata import | `internal/app/auth/saml_idp_metadata.go` |
 | Certificate expiry alerts | `internal/app/auth/saml_cert_expiry.go`, `internal/infra/controller/saml_cert_expiry.go` |
-| Migration | `000182_saml_providers`, `003295_saml_cert_expiry_notice` |
+| Migration | `001146_baseline` (table), `003295_saml_cert_expiry_notice` |
 
 ## Default role of just-in-time members
 

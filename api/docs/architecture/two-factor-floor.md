@@ -49,6 +49,22 @@ same session rules: a session from the organization's own identity provider coun
 organization requires proof (`sso_require_mfa_evidence`) and the session has none; a social or foreign-provider
 session never counts; an external member at their trusted home organization follows its assurance rules.
 
+```mermaid
+flowchart TD
+    M["Token mint, login challenge, account status, credential creation"] --> R{"mfaRequirementFor"}
+    R -- "organization requires it for this member" --> REQ["Required, no grace"]
+    R -- "floor none or role not covered" --> NO["Not required"]
+    R -- "floor covers the role" --> D{"now after due date = max(effective_from + 14 d, account created + 7 d)?"}
+    D -- "no" --> GR["Not gated, account status carries grace_due_at"]
+    D -- "yes" --> REQ
+    REQ --> S{"mfaSatisfied by this session?"}
+    S -- "own-org IdP session, no evidence required, or amr mfa" --> OK["Token minted"]
+    S -- "TOTP verified" --> OK
+    S -- "social or foreign-IdP session, no TOTP" --> E1["403 MFA_ENROLLMENT_REQUIRED"]
+    S -- "evidence required, none" --> E2["403 MFA_IDP_EVIDENCE_REQUIRED"]
+    U["policy or platform setting unreadable"] --> REQ
+```
+
 ## Credentials need a factor from the start
 
 Creating an API key, a service account key, a sensor, a sensor key or enrolment token, a stored secret, or saving an
