@@ -2760,23 +2760,30 @@ func addItem(output *Output, report *ctis.Report, f *ctis.Finding, disp ingestre
 	if len(output.Items) >= ingestreceipt.MaxActionsPerReceipt {
 		return
 	}
+	var version int64
+	if output.policy != nil {
+		version = output.policy.Version
+	}
+	output.Items = append(output.Items, receiptItem(report, f, disp, reason, policy, assetID, version))
+}
+
+// receiptItem is the receipt item of one reported finding that did not
+// become a finding: an identity key, the tool, a title and the severity.
+func receiptItem(report *ctis.Report, f *ctis.Finding, disp ingestreceipt.Disposition, reason, policy string,
+	assetID *shared.ID, policyVersion int64) ingestreceipt.Item {
 	tool := ""
-	if report.Tool != nil {
+	if report != nil && report.Tool != nil {
 		tool = report.Tool.Name
 	}
 	path, line := "", 0
 	if f.Location != nil {
 		path, line = f.Location.Path, f.Location.StartLine
 	}
-	var version int64
-	if output.policy != nil {
-		version = output.policy.Version
-	}
-	output.Items = append(output.Items, ingestreceipt.Item{
+	return ingestreceipt.Item{
 		Key:         ingestreceipt.ItemKey(tool, f.RuleID, f.Title, f.AssetRef, "", path, strconv.Itoa(line)),
 		Disposition: disp, ReasonCode: reason, AssetID: assetID, Tool: tool, Title: f.Title,
-		Severity: string(f.Severity), Policy: policy, PolicyVersion: version,
-	})
+		Severity: string(f.Severity), Policy: policy, PolicyVersion: policyVersion,
+	}
 }
 
 // duplicateTargetMarker is the repository's way to mark what duplicates were
