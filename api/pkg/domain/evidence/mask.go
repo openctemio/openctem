@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/openctemio/openctem/api/pkg/safetext"
 )
 
 // Secret is one value Mask took out of an item. Placeholder is what replaced
@@ -202,13 +204,39 @@ func Mask(it Item) (Item, []Secret) {
 		m.collectText(*s)
 	}
 	it.Sensitive = nil
-	if len(m.byValue) == 0 {
-		return it, nil
+	if len(m.byValue) > 0 {
+		r := m.replacer()
+		for _, s := range textFields(&it) {
+			*s = r.Replace(*s)
+		}
+		if it.HTTP != nil {
+			for _, hs := range []*[]Header{headersOf(it.HTTP.Request), headersOf2(it.HTTP.Response)} {
+				if hs == nil {
+					continue
+				}
+				for i := range *hs {
+					(*hs)[i].Value = maskHeaderValue((*hs)[i], r)
+				}
+			}
+		}
+		remapMatches(&it, matched, r.Replace)
 	}
+	maskEmails(&it)
+	return it, m.secrets
+}
 
-	r := m.replacer()
-	for _, s := range textFields(&it) {
-		*s = r.Replace(*s)
+// maskEmails masks the e-mail addresses left in an item (safetext.MaskEmails:
+// the local part, the domain kept). They are personal data and never stored,
+// not even in the encrypted secret store: every free string (text, command,
+// label, extracted values, file snippet, URL, text bodies) and every header
+// value. Body match ranges are moved to their masked text.
+func maskEmails(it *Item) {
+	matched := matchedTexts(*it)
+	changed := false
+	for _, s := range textFields(it) {
+		if m := safetext.MaskEmails(*s); m != *s {
+			*s, changed = m, true
+		}
 	}
 	if it.HTTP != nil {
 		for _, hs := range []*[]Header{headersOf(it.HTTP.Request), headersOf2(it.HTTP.Response)} {
@@ -216,12 +244,15 @@ func Mask(it Item) (Item, []Secret) {
 				continue
 			}
 			for i := range *hs {
-				(*hs)[i].Value = maskHeaderValue((*hs)[i], r)
+				if m := safetext.MaskEmails((*hs)[i].Value); m != (*hs)[i].Value {
+					(*hs)[i].Value, changed = m, true
+				}
 			}
 		}
 	}
-	remapMatches(&it, matched, r)
-	return it, m.secrets
+	if changed {
+		remapMatches(it, matched, safetext.MaskEmails)
+	}
 }
 
 // decodeTextBodies turns a base64 body that is valid UTF-8 text into text,
@@ -563,7 +594,7 @@ func matchedTexts(it Item) []matchedText {
 }
 
 // remapMatches points each body match at its (masked) text in the masked body.
-func remapMatches(it *Item, before []matchedText, r *strings.Replacer) {
+func remapMatches(it *Item, before []matchedText, replace func(string) string) {
 	if len(before) == 0 {
 		return
 	}
@@ -571,7 +602,7 @@ func remapMatches(it *Item, before []matchedText, r *strings.Replacer) {
 	for _, mt := range before {
 		m := &it.Match[mt.idx]
 		body := bodyOf(*it, m.Location)
-		want := r.Replace(mt.text)
+		want := replace(mt.text)
 		from := 0
 		if *m.Start < len(body) {
 			from = max(0, *m.Start-len(want)-64)
