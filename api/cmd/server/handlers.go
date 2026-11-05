@@ -1695,6 +1695,13 @@ func newEASMHandler(repos *Repositories, svc *Services, log *logger.Logger) *han
 	// confirmed assets no entry covers; read only.
 	if suggestions := newEASMSuggestions(repos, svc); suggestions != nil {
 		h.SetSuggestions(suggestions)
+		// Bulk decisions on the addresses card (research/425): checked
+		// against the caller's own card, applied through the scope, review
+		// and network seed services.
+		if svc.Scope != nil && svc.EASMNetworkSeeds != nil && repos.EASMDeclinedNetwork != nil {
+			h.SetAddressDecisions(easmapp.NewAddressDecisions(suggestions, svc.Scope, review,
+				svc.EASMNetworkSeeds, repos.EASMDeclinedNetwork, newAddressAutoAdd(repos, svc, log)))
+		}
 	}
 	// Review by rule (RFC-054 §6.7): rules are scope entries and exclusions.
 	if svc.ScopeJoin != nil && svc.ActiveGate != nil && svc.Scope != nil {
@@ -1726,6 +1733,10 @@ func newEASMSuggestions(repos *Repositories, svc *Services) *easmapp.SuggestionS
 	// Addresses the unclassified-scans mode already checks need no
 	// decision: the same mode the active gate reads.
 	suggestions.SetUnclassified(svc.ActiveGate.UnclassifiedMode)
+	// Networks the organization answered "not ours" are not offered again.
+	if repos.EASMDeclinedNetwork != nil {
+		suggestions.SetDeclined(repos.EASMDeclinedNetwork)
+	}
 	// The organization's address setting in force (never hides the card;
 	// Strict scan approval turns automatic adds into ask).
 	if svc.Tenant != nil && svc.Scope != nil {
