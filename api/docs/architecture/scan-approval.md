@@ -90,8 +90,61 @@ New Scan ── POST /scans/approval-preview ──> rules ──> "needs approv
 save scan ── POST /scans/{id}/approval ──> request (digest of the definition)
 approvers ── POST /scan-approvals/{id}/approve ──> approved (run now if asked)
 every run ── triggerLoadedScan ── CheckRun: Off | not required | approved(digest, valid, enough approvals) ──> run
-                                         else SCAN_APPROVAL_PENDING / SCAN_APPROVAL_REQUIRED (scheduled: blocked run)
+                                         else SCAN_APPROVAL_PENDING / SCAN_APPROVAL_REQUIRED (blocked run)
 ```
+
+### Flow
+
+Checked against the code of v0.19.1 and develop on 2026-11-05. There is no
+run status that waits for an approval: a refused trigger, manual or
+scheduled, is recorded as a `blocked` run with the refusal code (coverage
+pauses the capability instead, `coverage_readiness.go`).
+
+```mermaid
+sequenceDiagram
+  autonumber
+  actor R as Requester (scans:write)
+  actor A as Approver (scans:approve, step-up)
+  participant API as API: scangov.Service
+  participant DB as Postgres: scan approval requests
+  participant T as scan.Service: triggerLoadedScan
+  R->>API: POST /scans/{id}/approval (definition digest)
+  API->>DB: supersede an older pending request, insert pending
+  API-->>A: notify eligible approvers (named users or roles)
+  alt approver is the requester
+    A->>API: approve
+    API-->>A: refused (never one's own request)
+  else eligible approver
+    A->>API: POST /scan-approvals/{id}/approve
+    API->>DB: record the approval, approved when enough
+  else owner and no one else can approve
+    R->>API: POST /scan-approvals/{id}/self-approve with a fresh TOTP code
+    API->>DB: approved, audited high, admins notified
+  else reject
+    A->>API: POST /scan-approvals/{id}/reject
+    API->>DB: rejected, requester notified
+  end
+  opt approved with run on approval
+    API->>T: RunApproved: the full trigger path, every gate again
+    Note over API,T: A failure here is only logged.
+  end
+  T->>API: CheckRun on every later trigger
+  alt approval matches the digest, valid, enough approvals
+    API-->>T: allowed (a run-only approval is consumed atomically)
+  else none
+    API-->>T: SCAN_APPROVAL_REQUIRED or SCAN_APPROVAL_PENDING
+    T->>DB: blocked run with that refusal_code
+  end
+```
+
+- Every request read is tenant-scoped (`repo.Get(tenant)` plus an equality
+  check, `internal/app/scangov/requests.go`); eligibility is
+  `ScanApprovalRequest.EligibleFor` (`pkg/domain/scangov/request.go`).
+- Emergency run: `POST /scans/{id}/emergency-run` (`scans:approve` +
+  `scans:execute` + step-up), owner or administrator, 1 to 24 hours, audited
+  critical, then `RunApproved`.
+- Approved scope entries reach the signer ledger the same way (see
+  [job signing](job-signing.md#scope-reaches-the-ledger)).
 
 A change to a field of the definition changes the digest: the next run
 needs a new approval, and the request shows the diff from the last approved
