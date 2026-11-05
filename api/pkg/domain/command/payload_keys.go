@@ -84,6 +84,21 @@ func PayloadDiscoveryMaxRequests(payload json.RawMessage) int {
 	return 0
 }
 
+// PayloadCapability is the capability a scan payload names ("capability",
+// e.g. "enumerate.web_paths@1"), trimmed; "" when it names none.
+func PayloadCapability(payload json.RawMessage) string {
+	if len(payload) == 0 || !bytes.Contains(payload, []byte(`"capability"`)) {
+		return ""
+	}
+	var p struct {
+		Capability string `json:"capability"`
+	}
+	if json.Unmarshal(payload, &p) != nil {
+		return ""
+	}
+	return strings.TrimSpace(p.Capability)
+}
+
 // PayloadTargets are the targets a command payload names ("targets" and
 // "target", the keys sensors read), trimmed and de-duplicated, in order.
 func PayloadTargets(payload json.RawMessage) []string {
