@@ -2,7 +2,6 @@ package handler
 
 import (
 	"encoding/json"
-	"errors"
 	"net/http"
 	"strings"
 
@@ -65,7 +64,7 @@ func (h *IntegrationHandler) PreviewNotification(w http.ResponseWriter, r *http.
 	}
 	resp, err := previewNotification(req)
 	if err != nil {
-		apierror.BadRequest(err.Error()).WriteJSON(w)
+		apierror.BadRequest(notifymsg.ValidationMessage(err)).WriteJSON(w)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -84,10 +83,6 @@ func previewNotification(req NotificationPreviewRequest) (NotificationPreviewRes
 		level = l
 	}
 	if err := notifymsg.ValidateTemplate(req.MessageTemplate); err != nil {
-		var unk *notifymsg.UnknownVariablesError
-		if errors.As(err, &unk) {
-			return NotificationPreviewResponse{}, unk
-		}
 		return NotificationPreviewResponse{}, err
 	}
 	eventType := strings.TrimSpace(req.EventType)

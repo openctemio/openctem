@@ -151,3 +151,24 @@ func TestParseLevel(t *testing.T) {
 		t.Fatal("unknown level must act as minimal")
 	}
 }
+
+func TestValidationMessageNeverCarriesLowerErrorText(t *testing.T) {
+	_, levelErr := ParseLevel("loud")
+	cases := map[string]error{
+		"unknown variables": ValidateTemplate("{nope} {gone}"),
+		"bad template":      ValidateTemplate("{unclosed"),
+		"bad level":         levelErr,
+	}
+	for name, err := range cases {
+		if err == nil {
+			t.Fatalf("%s: want an error", name)
+		}
+		msg := ValidationMessage(err)
+		if msg == "" || strings.Contains(msg, err.Error()) || strings.Contains(msg, "loud") {
+			t.Errorf("%s: message %q echoes the error text %q", name, msg, err.Error())
+		}
+	}
+	if got := ValidationMessage(ValidateTemplate("{nope}")); !strings.Contains(got, "nope") {
+		t.Errorf("unknown variable name should be listed, got %q", got)
+	}
+}

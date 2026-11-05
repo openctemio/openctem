@@ -257,3 +257,18 @@ func ApplyTemplate(c Card, src string) (Card, bool) {
 	c.Custom = lines
 	return c, true
 }
+
+// ValidationMessage is the sentence to show a person for an error from
+// ValidateTemplate or ParseLevel: fixed text, plus the variable names they
+// typed. It never carries a lower error's text.
+func ValidationMessage(err error) string {
+	var unk *UnknownVariablesError
+	switch {
+	case errors.As(err, &unk):
+		return "The message template uses unknown variables: " + strings.Join(unk.Names, ", ") + "."
+	case errors.Is(err, ErrInvalidTemplate):
+		return "The message template is not valid: it is too long, has too many lines or has a misplaced brace."
+	default:
+		return "The detail level must be minimal, standard or full."
+	}
+}
