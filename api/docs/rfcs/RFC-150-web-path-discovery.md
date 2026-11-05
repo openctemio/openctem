@@ -113,7 +113,7 @@ zip, gzip, tar or SQL dump bytes in a non-HTML 200), so no platform template
 delivery is needed. The web verification planner treats a guessed endpoint
 (source `guess`) with an `ext:backup`, `ext:archive` or `ext:dbdump` label as a
 candidate without a catalog entry and asks for that template by id in
-`scanner_config.template_ids`. The sensor's nuclei reads `template_ids` as the
+`scanner_config.template_ids`, with the check's tag `openctem` in `tags` as a safeguard: a sensor that predates the setting ignores the id, and with that tag it loads no template instead of running its default set (deploy the sensor first all the same). The sensor's nuclei reads `template_ids` as the
 selection of its own checks: only ids of the compiled-in set are accepted (any
 other id refuses the scan), the run loads only the run-signed copies of those
 templates with `-id`, signatures stay required, and the sensor's tag and
