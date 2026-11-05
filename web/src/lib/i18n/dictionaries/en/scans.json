@@ -1541,6 +1541,8 @@
   "scans.placement.someCan": "Sensors that can take it: {count} ({busy} busy). It should start shortly.",
   "scans.placement.stopped_claiming.fix": "Free disk space on the sensor host (the sensor drawer says what is full). It resumes on its own.",
   "scans.placement.stopped_claiming.text": "The sensor stopped claiming new jobs: its local storage is full (disk low, store over its quota, or results not yet uploaded).",
+  "scans.placement.strong_isolation_missing.fix": "Use a sensor that proved a strong isolation backend (none is available yet, so the job waits).",
+  "scans.placement.strong_isolation_missing.text": "The task's tool needs a stronger isolation than the process sandbox, and this sensor does not report a proven strong isolation backend.",
   "scans.placement.tool_missing.fix": "Install the tool on the sensor.",
   "scans.placement.tool_missing.text": "The sensor did not report the tool as installed.",
   "scans.placement.truncated": "Only the first sensors by name were checked.",
