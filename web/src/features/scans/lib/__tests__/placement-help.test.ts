@@ -209,6 +209,17 @@ describe('rule_sources_unsupported', () => {
   })
 })
 
+describe('strong_isolation_missing', () => {
+  it('has a fix target and translated help in en and vi', () => {
+    expect(PLACEMENT_FIX.strong_isolation_missing).toBe('sensors')
+    for (const lang of ['en', 'vi'] as const) {
+      const dict = getDictionary(lang) as Record<string, string>
+      expect(dict['scans.placement.strong_isolation_missing.text']).toBeTruthy()
+      expect(dict['scans.placement.strong_isolation_missing.fix']).toBeTruthy()
+    }
+  })
+})
+
 describe('egress holds', () => {
   it('have text and a fix in en and vi', () => {
     for (const code of [
