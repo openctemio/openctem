@@ -149,6 +149,30 @@ func TestWebEndpointResponseEvidenceMigration_DB(t *testing.T) {
 	if err := db.QueryRowContext(ctx, `SELECT resp_size FROM web_endpoints WHERE tenant_id = $1`, tenant.String()).Scan(&size); err != nil || size != nil {
 		t.Fatalf("after up again: resp_size %v (%v), want NULL", size, err)
 	}
+	// The CHECKs are added NOT VALID (no scan under the ALTER's lock) and
+	// enforced on new rows from then on; the next migration validates them.
+	validated := func() map[string]bool {
+		t.Helper()
+		out := map[string]bool{}
+		rows, err := db.QueryContext(ctx, `SELECT conname, convalidated FROM pg_constraint
+			WHERE conrelid = 'web_endpoints'::regclass AND conname IN ('chk_web_endpoints_resp_size', 'chk_web_endpoints_resp_hash')`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = rows.Close() }()
+		for rows.Next() {
+			var name string
+			var ok bool
+			if err := rows.Scan(&name, &ok); err != nil {
+				t.Fatal(err)
+			}
+			out[name] = ok
+		}
+		return out
+	}
+	if got := validated(); len(got) != 2 || got["chk_web_endpoints_resp_size"] || got["chk_web_endpoints_resp_hash"] {
+		t.Fatalf("after the evidence migration the CHECKs are %v, want both present and NOT VALID", got)
+	}
 	if err := insert("/b.zip", "0123456789ABCDEF", 10); err == nil {
 		t.Fatal("an upper-case hash was accepted")
 	}
@@ -158,4 +182,10 @@ func TestWebEndpointResponseEvidenceMigration_DB(t *testing.T) {
 	if err := insert("/d.zip", "fedcba9876543210", 20); err != nil {
 		t.Fatalf("valid evidence refused: %v", err)
 	}
+	vv := testdb.MigrationVersion(t, dir, "web_endpoint_response_evidence_validate")
+	testdb.Migrate(t, db, dir, vv, vv, false)
+	if got := validated(); !got["chk_web_endpoints_resp_size"] || !got["chk_web_endpoints_resp_hash"] {
+		t.Fatalf("after the validate migration the CHECKs are %v, want both validated", got)
+	}
+	testdb.Migrate(t, db, dir, vv, vv, true)
 }
