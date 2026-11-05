@@ -1121,6 +1121,8 @@
   "scans.failure.RESOURCE_EXHAUSTED.text": "Các sensor đã thử tác vụ bị hết bộ nhớ hoặc dung lượng đĩa.",
   "scans.failure.RETEST_UNAVAILABLE.fix": "Phát hiện không thay đổi. Xác minh thủ công.",
   "scans.failure.RETEST_UNAVAILABLE.text": "Công cụ không chạy được phép kiểm tra này nên không có gì để kiểm tra lại.",
+  "scans.failure.SCANNER_CONFIG_SECRET.fix": "Sửa lần quét và xóa thông tin xác thực khỏi cấu hình công cụ. Lưu khóa nguồn dữ liệu tại Cài đặt, Tích hợp, Khóa nguồn dữ liệu.",
+  "scans.failure.SCANNER_CONFIG_SECRET.text": "Cấu hình công cụ của lần quét chứa thông tin xác thực (token, mật khẩu hoặc khóa). Thông tin xác thực không bao giờ được gửi trong cấu hình lần quét.",
   "scans.failure.SCANNER_NOT_FOUND.fix": "Cài công cụ lên một sensor, hoặc dùng sensor đã báo cáo có công cụ đó.",
   "scans.failure.SCANNER_NOT_FOUND.text": "Sensor không có công cụ của bước này.",
   "scans.failure.SCAN_APPROVAL_PENDING.fix": "Lượt quét sẽ chạy khi người duyệt phê duyệt; xem bảng phê duyệt trên trang của lượt quét.",
