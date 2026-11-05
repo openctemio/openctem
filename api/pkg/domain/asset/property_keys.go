@@ -57,6 +57,11 @@ var reservedPropertyKeys = map[string]bool{
 	// Web content fetches go to page monitoring (RFC-138), never to the
 	// asset's properties.
 	PropKeyWebContent: true,
+	// A service's kind, category and kind source are derived by the
+	// platform (servicekind.go), never taken from a client or a report.
+	PropKeyServiceKind:     true,
+	PropKeyServiceCategory: true,
+	PropKeyKindSource:      true,
 }
 
 // IsReservedPropertyKey reports whether a top-level property key is owned by

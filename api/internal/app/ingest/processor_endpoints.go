@@ -16,7 +16,10 @@ package ingest
 //     ingest may change (alterScope.allowedAsset: created by it, covered by
 //     its command, inside the upload actor's data scope);
 //   - the platform recomputes the template and the dedup key and drops
-//     query values, user info and fragments (webendpoint.Observe).
+//     query values, user info and fragments (webendpoint.Observe);
+//   - the source is set from the bound command's capability, never taken
+//     from the report: a path discovery job's endpoints are guess and are
+//     refused without response evidence (webendpoint.BindSource).
 
 import (
 	"context"
@@ -88,9 +91,19 @@ func (s *Service) planEndpoints(report *ctis.Report, binding Binding, output *Ou
 	plan := &endpointPlan{byOrigin: map[string][]webendpoint.Observation{}, origins: map[string]string{}}
 	for _, e := range r.Endpoints {
 		obs, err := webendpoint.Observe(e)
+		if err == nil {
+			// The source comes from the bound command's capability: a path
+			// discovery job's endpoints are guess and need evidence; no
+			// other job can produce guess.
+			err = webendpoint.BindSource(&obs, binding.Capability, e)
+		}
 		switch {
 		case errors.Is(err, webendpoint.ErrStatic):
 			output.EndpointsStatic++
+			continue
+		case errors.Is(err, webendpoint.ErrNoEvidence):
+			output.EndpointsRefused++
+			output.EndpointsNoEvidence++
 			continue
 		case err != nil, bound && !targetsCoverOrigin(targets, obs.Origin):
 			output.EndpointsRefused++

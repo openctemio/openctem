@@ -140,6 +140,9 @@ type Service struct {
 	nameProber      NameProber
 	resolutionStore assetresolution.Store
 	results         sensorresult.Repository
+	// release is the progress of the out-of-contract release sweeps
+	// (quarantine_release.go).
+	release releaseState
 	// policyVersions and policies: the versioned policy snapshots.
 	policyVersions PolicyVersionReader
 	policies       policyCache
@@ -282,6 +285,12 @@ func (s *Service) SetWebContentRecorder(r WebContentRecorder) {
 // SetWebEvidenceRecorder enables web evidence captures (RFC-081).
 func (s *Service) SetWebEvidenceRecorder(r WebEvidenceRecorder) {
 	s.assetProcessor.SetWebEvidenceRecorder(r)
+}
+
+// SetPageChangeNotifier schedules a new capture of a web service whose page
+// changed (RFC-081).
+func (s *Service) SetPageChangeNotifier(n PageChangeNotifier) {
+	s.assetProcessor.SetPageChangeNotifier(n)
 }
 
 // SetAssetsObservedCallback sets the callback for every asset an ingest

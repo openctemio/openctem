@@ -17,6 +17,8 @@ export interface TypeAttribute {
   /** The closed values of an enum attribute. */
   values?: string[]
   facet: boolean
+  /** Set by the platform (a service's kind): shown and filtered, never edited. */
+  derived?: boolean
 }
 
 export interface TypeView {
@@ -70,6 +72,7 @@ function attributesOf(def: AssetTypeDefinition | undefined): TypeAttribute[] {
       kind: (a.type ?? 'string') as AttributeKind,
       values: a.values?.length ? a.values : undefined,
       facet: !!a.facet,
+      derived: Boolean((a as { derived?: boolean }).derived) || undefined,
     })
   }
   return out
