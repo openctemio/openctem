@@ -35,6 +35,8 @@ platform data: a tenant, a sensor or a report cannot widen it.
 | `container.image` | container → findings | T0 | trivy, grype |
 | `network_va.connector` | ip_address, host, network → findings | T1 | tenable_sc |
 
+A registration lookup answers for the domain registered at the registry, not for each name below it: the planner hands `lookup.rdap` the registrable domain of every name (public suffix list, ICANN section), each once, for the scan's own targets and for the names an earlier step found. The sensor does the same for a name that reaches it, and refuses no name as unresolvable for this capability: it asks the registry, never the target. A domain whose top-level domain has no https RDAP service in the IANA bootstrap (many country-code domains) is reported with `whois.rdap_status = registry_has_no_rdap`; a domain the registry does not know with `not_registered`.
+
 - **Tiers.** T0 sends no traffic to the target beyond DNS (or none at all). T1
   is non-intrusive active checking. T2 is intrusive and needs an approver and
   a verified seed (RFC-036 O3); the P0 router never plans a T2 stage.

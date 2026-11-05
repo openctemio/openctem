@@ -79,16 +79,16 @@ assert_eq "connector + SDK bump: only YAML changes" \
 assert_rc "connector + SDK bump: in sync" 0 bash "$SYNC" --check --root "$tmp/otherbump"
 assert_eq "no .go file anywhere in the fixture" "" "$(find "$tmp/otherbump" -name '*.go' -print)"
 
-# The CI runner release line (ci.latest) drives the console's CI_RELEASE; drift
+# The CI runner release line (ci.latest) drives the console's CI_RELEASE_FALLBACK; drift
 # is caught and fixed.
 version_fixture "$tmp/ci"
-sed -i "s/CI_RELEASE = 'v0.2.0'/CI_RELEASE = 'v0.1.0'/" "$tmp/ci/web/src/features/ci-runners/lib/ci.ts"
+sed -i "s/CI_RELEASE_FALLBACK = 'v0.2.0'/CI_RELEASE_FALLBACK = 'v0.1.0'/" "$tmp/ci/web/src/features/ci-runners/lib/ci.ts"
 out="$(bash "$SYNC" --check --root "$tmp/ci" 2>&1)"; rc=$?
 assert_eq "ci drift: exit 1" 1 "$rc"
 assert_contains "ci drift: names the console pin" "ci.ts: ci.latest default is 'v0.1.0', versions.yaml says 'v0.2.0'" "$out"
 sed -i 's/latest: v0.2.0/latest: v0.3.0/' "$tmp/ci/versions.yaml"
 bash "$SYNC" --root "$tmp/ci" >/dev/null 2>&1
-assert_contains "ci bump: console pin" "CI_RELEASE = 'v0.3.0'" "$(cat "$tmp/ci/web/src/features/ci-runners/lib/ci.ts")"
+assert_contains "ci bump: console pin" "CI_RELEASE_FALLBACK = 'v0.3.0'" "$(cat "$tmp/ci/web/src/features/ci-runners/lib/ci.ts")"
 
 # Invariants that sync cannot fix.
 version_fixture "$tmp/pkg"

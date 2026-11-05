@@ -304,6 +304,9 @@ type RunState struct {
 	// NoSensor: a step of the run ended NO_SENSOR (no sensor took its
 	// work before the run's deadline).
 	NoSensor bool
+	// Unreachable: a step of the run ended TARGET_UNREACHABLE (the sensor
+	// reached none of the run's targets).
+	Unreachable bool
 }
 
 // Run outcomes recorded on settled pairs.

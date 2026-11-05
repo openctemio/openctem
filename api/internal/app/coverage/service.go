@@ -20,6 +20,7 @@ type Service struct {
 	repo         covdom.Repository
 	rules        []covdom.Rule
 	planner      covdom.Planner
+	addresses    AddressReader
 	starter      RunStarter
 	readiness    ReadinessChecker
 	tenantSwitch TenantSwitch
