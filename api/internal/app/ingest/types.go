@@ -100,6 +100,10 @@ type Options struct {
 	// asset of its segment). They count as received, with the outcome
 	// unresolved_ref, so the receipt reconciles with what the producer sent.
 	FindingsRefusedBeforeIngest int
+	// RefusedItems are findings the caller refused before ingest (protocol
+	// v2: a finding that names no asset of its segment). They are booked on
+	// the receipt's item log with the rest of the report.
+	RefusedItems []ingestreceipt.Item
 	// RequireAssetForFindings: no fallback asset. A report with findings but
 	// no assets gets no asset made up from its metadata, and a finding is
 	// attached only to the asset its asset_ref names, never to "the only
@@ -230,20 +234,30 @@ type Output struct {
 	// change (Options.Actor): existing assets outside their data scope and
 	// hosts that would have been new. Their findings are skipped.
 	AssetsSkippedOutOfScope int `json:"assets_skipped_out_of_scope,omitempty"`
-	// AssetsOutsideChunk counts report assets dropped because they name
+	// AssetsOutsideChunk counts report assets recorded although they name
 	// only addresses outside the addresses and ranges their command was
-	// given (RFC-088 output binding). Their findings are skipped.
+	// given (RFC-088 output binding; research 436: recorded, never dropped).
 	AssetsOutsideChunk int `json:"assets_outside_chunk,omitempty"`
-	// AssetsOutsideJob counts report assets dropped because they lie outside
-	// the targets of the hostname-scoped command the report is bound to
-	// (job_bound.go); FindingsOutsideJob counts the findings dropped with
-	// them. OutsideJobAssetRefs are their report refs.
+	// AssetsOutsideJob counts report assets recorded although they lie
+	// outside the targets of the hostname-scoped command the report is bound
+	// to (job_bound.go); FindingsOutsideJob counts the findings stored on
+	// assets of either rule. OutsideJobAssetRefs are the report refs of
+	// both: their findings run no new-finding automations.
 	AssetsOutsideJob    int             `json:"assets_outside_job,omitempty"`
 	FindingsOutsideJob  int             `json:"findings_outside_job,omitempty"`
 	OutsideJobAssetRefs map[string]bool `json:"-"`
-	FindingsCreated     int             `json:"findings_created"`
-	FindingsUpdated     int             `json:"findings_updated"`
-	FindingsSkipped     int             `json:"findings_skipped"`
+	// AssetsOverCap counts report assets outside the targets refused because
+	// the report already recorded maxOutsideTargetAssets of them;
+	// FindingsOverCap the findings refused with them. OverCapAssetRefs are
+	// their report refs.
+	AssetsOverCap    int             `json:"assets_over_cap,omitempty"`
+	FindingsOverCap  int             `json:"findings_over_cap,omitempty"`
+	OverCapAssetRefs map[string]bool `json:"-"`
+	// OutsideTargetAssetIDs are the persisted assets of OutsideJobAssetRefs.
+	OutsideTargetAssetIDs map[shared.ID]bool `json:"-"`
+	FindingsCreated       int                `json:"findings_created"`
+	FindingsUpdated       int                `json:"findings_updated"`
+	FindingsSkipped       int                `json:"findings_skipped"`
 	// InfoObservations counts the template scanner info matches filed as
 	// exposures instead of findings (info_matches.go).
 	InfoObservations int `json:"info_observations,omitempty"`
@@ -342,10 +356,17 @@ type Output struct {
 	ExcludedAssetRefs map[string]bool `json:"-"`
 
 	// OutOfScopeAssetRefs are the CTIS asset ids of the report skipped
-	// because the upload's actor may not change them (Options.Actor), or
-	// because they lie outside their command's addresses. Their findings
-	// are skipped, never attached to another asset of the report.
+	// because the upload's actor may not change them (Options.Actor). Their
+	// findings are skipped, never attached to another asset of the report.
 	OutOfScopeAssetRefs map[string]bool `json:"-"`
+
+	// HeldAssetRefs are the CTIS asset ids, and HeldFindings the indices of
+	// the input findings, that the output-type binding took out of the
+	// report (output_binding.go). HoldLost says the quarantine could not
+	// keep them: they were neither applied nor held.
+	HeldAssetRefs map[string]bool `json:"-"`
+	HeldFindings  map[int]bool    `json:"-"`
+	HoldLost      bool            `json:"-"`
 
 	// Decided are the new findings a policy decided (suppressed, held),
 	// and Items the reported items that did not become findings, with the

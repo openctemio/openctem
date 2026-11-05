@@ -44,18 +44,3 @@ func TestRecordStepDispositions(t *testing.T) {
 	// Unwired: nil-safe.
 	(&Service{logger: logger.NewNop()}).recordStepDispositions(context.Background(), tenantID, b, 1, 1)
 }
-
-func TestSplitRejected(t *testing.T) {
-	for _, c := range []struct{ held, rejected, wantHeld, wantRefused int }{
-		{0, 0, 0, 0},
-		{3, 5, 3, 2},
-		{5, 5, 5, 0},
-		{7, 5, 5, 0}, // held can never exceed what was rejected
-		{-1, 4, 0, 4},
-	} {
-		h, r := splitRejected(c.held, c.rejected)
-		if h != c.wantHeld || r != c.wantRefused {
-			t.Errorf("splitRejected(%d,%d) = %d,%d want %d,%d", c.held, c.rejected, h, r, c.wantHeld, c.wantRefused)
-		}
-	}
-}
