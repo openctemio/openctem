@@ -156,6 +156,7 @@ func (s *AssetImportService) ImportCSVAssetsGuarded(ctx context.Context, tenantI
 			}
 		}
 		a.ApplyResolvedType(resolved)
+		a.ClassifyService(a.Properties(), assetdom.KindSourceReported)
 
 		if createErr := s.assetRepo.Create(ctx, a); createErr != nil {
 			if strings.Contains(createErr.Error(), "already exists") {
