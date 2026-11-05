@@ -126,9 +126,9 @@ tool runs it:
   template match in a command-bound nuclei report on an asset the command
   covered confirms an open `dangling_cname` as `subdomain_takeover`.
 - **Taxonomy v1** lists 22 capabilities. The routed stages above have
-  implementations. Eight are **planned**: they have a contract but no routed
+  implementations. Seven are **planned**: they have a contract but no routed
   implementation (`intel.passive`, `detect.services`,
-  `fingerprint.tech`, `check.tls`, `capture.screenshot`, `host.credentialed`,
+  `fingerprint.tech`, `check.tls`, `host.credentialed`,
   `cloud.posture`, `verify.finding`). They are served with `available: false`
   and are invisible to `Lookup`, `ForTool` and `ForCapabilities`, so no step
   can run one and no tool's routing changes. `verify.finding` is
@@ -389,7 +389,7 @@ an update means unchanged):
   run of the same scan (`PreviousRun`). A target is done when its asset was
   first seen before that run started, has no `asset_change_events` row
   since, and either that run planned it for the same step key and the step
-  completed within the stage's max age (7 days), or the coverage ledger has
+  completed within the stage's max age (7 days; 30 days for `capture.screenshot`), or the coverage ledger has
   it `covered` for the capability and not due. A partial, failed or skipped
   baseline step is never done, so truncated work is redone. Done targets are
   recorded `unchanged` in `scan_run_targets`; a heavy stage left with none
