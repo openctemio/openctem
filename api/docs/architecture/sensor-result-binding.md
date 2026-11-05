@@ -108,19 +108,25 @@ inventory a collector owns:
 - Assets collectors created before the migration have no rows, so no
   collector changes or marks them until it creates them again.
 
-**Hostname-scoped jobs** (RFC-040 §5.3.1). A report bound to a `scan` or
-`retest` command whose targets name a host creates or changes a located
-asset (domain, subdomain, address, host, service, web application) only
-inside the job: at or under a target name, at a target address or range, or
-at an address an in-bound asset of the same report states (its A or AAAA
-records, `resolved_ips`, address properties, or an address asset whose host
-name is in bounds). Anything else is dropped with its findings, never
-created, in every result-policy mode: the response counts
-`assets_outside_job` and `findings_outside_job`, the receipt names
-`outside_job_targets`, `sensor_results_outside_job_total{kind}` counts it,
-and `sensor.results_outside_job` is audited. Commands whose targets are all
-addresses and ranges keep the address-chunk rule; assets that name no host
-are left to the output contract.
+**Hostname-scoped jobs** (RFC-040 §5.3.1, §5.3.2). A report bound to a
+`scan` or `retest` command whose targets name a host is inside the job for a
+located asset (domain, subdomain, address, host, service, web application)
+at or under a target name, at a target address or range, or at an address
+an in-bound asset of the same report states (its A or AAAA records,
+`resolved_ips`, address properties, or an address asset whose host name is
+in bounds); a service is judged by its host. An asset outside the job is
+recorded, never dropped: a new one is created as a scan discovery (it grants
+nothing; the active-scan gate decides what may be probed), an existing one
+is only marked seen, and its findings are stored but run no new-finding
+automations and the asset does not count as covered by the run. The
+response counts `assets_outside_job` and `findings_outside_job`,
+`sensor_results_outside_job_total{kind}` counts it, and
+`sensor.results_outside_job` is audited (medium). One report records at most
+1000 such assets; the rest are refused with their findings (`assets_over_cap`,
+`findings_over_cap`, item error `too_many`, receipt item `over_cap`, audit
+severity high). Commands whose targets are all addresses and ranges use the
+address-chunk rule the same way (`assets_outside_chunk`); assets that name
+no host are left to the output contract.
 
 **Channel.** The channel a sensor's findings are filed under
 (`findings.ingest_channel`) is `collector` for a collector sensor and
@@ -260,6 +266,39 @@ Reviewed items (accepted or discarded) are deleted 30 days after review by the
 `sensor-result-quarantine-purge` controller (daily, one replica at a time);
 pending items are never purged. `SENSOR_RESULT_QUARANTINE_RETENTION` (default
 `720h`) and `SENSOR_RESULT_QUARANTINE_PURGE_INTERVAL` (default `24h`) change it.
+
+### Automatic release of out-of-contract holds
+
+A report held as `out_of_contract` usually means the tool's descriptor lags
+its importer (the importer emits a type the descriptor does not declare yet).
+When the sensor's next release declares it, nobody should have to approve each
+item. The platform re-checks held items against the tool's CURRENT descriptor
+(`app/ingest/quarantine_release.go`):
+
+- When: every 5 minutes (`sensor-result-auto-release`, one replica at a time,
+  at most 100 items examined per run), and right after the sensor registers a
+  manifest that differs from its current one (only that tenant and sensor).
+- Which items: same tenant, same active sensor, same tool; reason
+  `out_of_contract`; pending; younger than `SENSOR_RESULT_QUARANTINE_RETENTION`;
+  not being applied.
+- Which descriptor counts: the sensor's current manifest, sent by the sensor
+  itself (a manifest the platform derived from a heartbeat declares nothing),
+  with a full descriptor kept for the tool (kept only when it hashes to the
+  contract digest). The descriptor can only narrow; the catalog stages still
+  apply as for a fresh report.
+- Release: the payload is split again by the same function a fresh report goes
+  through; only an item with nothing left out of contract is applied, by the
+  same path as a person's accept (the same scope and protections, nothing
+  auto-resolved). A failed apply leaves it pending.
+- Audit: `sensor_result.auto_accepted`, actor `system`, message "the tool's
+  signed descriptor now declares <types>"; the item's `result` carries
+  `auto_accepted` and the reason, `reviewed_by` is empty.
+- Everything else (other reasons, still-undeclared types, an unverified
+  descriptor, another tenant's or sensor's items) stays pending for a person.
+
+Follow-up: the descriptor is trusted as the sensor sent it (digest-checked, over
+the sensor's authenticated channel). A signed-release check of the descriptor
+is not part of it yet.
 
 ## Code
 

@@ -221,6 +221,10 @@ For each target, in order:
      RFC-054 §15). A pending state a
      person set, `dependency`, `monitor_only`, `rejected`, a rejected parent
      name and an exclusion keep refusing whatever entry covers the name.
+     A new address a scan finds inside a provider's published shared
+     front-end range is stored as an automatic `dependency` (rule
+     `provider_shared_front_end`, RFC-054 §22): it stays passive until a
+     person decides, and automation never raises it.
      **A child never gets more than its host**: a service (`host:port`) or
      URL whose host is one of the tenant's assets is refused with the host's
      state when the host's record is anything but `confirmed` or automatic

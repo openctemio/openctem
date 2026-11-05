@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { enTranslate } from '../translate'
-import { lowerIntensityAllowed, targetOptionsSummary, targetsNextBlock } from '../targets-step'
+import { lowerIntensityAllowed, selectorOptionsSummary, targetsNextBlock } from '../targets-step'
 import { isFormDirty } from '../form-dirty'
 import { DEFAULT_NEW_SCAN } from '../../types'
 
@@ -57,22 +57,22 @@ describe('lowerIntensityAllowed', () => {
   })
 })
 
-describe('targetOptionsSummary', () => {
-  it('summarises the options on one line, comma separated, no middle dot', () => {
-    const s = targetOptionsSummary(enTranslate, {
-      coverage: 'subdomains',
-      targets: ['*.example.com', '10.0.0.0/24'],
-      options: { cidr_mode: 'inventory', include_unresolved: true },
+describe('selectorOptionsSummary', () => {
+  it('summarises the freshness options on one line, comma separated, no middle dot', () => {
+    const s = selectorOptionsSummary(enTranslate, {
+      seen_within_days: 30,
+      include_stale: true,
+      include_unresolved: true,
     })
-    expect(s).toContain('Host and its subdomains')
-    expect(s).toContain('names that do not resolve included')
+    expect(s).toBe(
+      'Only assets seen in the last 30 days, includes stale assets, names that do not resolve included'
+    )
     expect(s).not.toMatch(/·/)
-    expect(s.split(', ').length).toBeGreaterThanOrEqual(3)
   })
 
-  it('is empty when there is nothing to summarise', () => {
-    expect(targetOptionsSummary(enTranslate, { targets: ['a.example'], options: undefined })).toBe(
-      ''
+  it('names the defaults when nothing is set', () => {
+    expect(selectorOptionsSummary(enTranslate, undefined)).toBe(
+      'Assets seen at any time, only names that resolve'
     )
   })
 })

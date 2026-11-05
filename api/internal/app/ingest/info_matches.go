@@ -92,7 +92,7 @@ func splitInfoMatches(report *ctis.Report, assetMap map[string]shared.ID, output
 		f := &report.Findings[i]
 		assetID, ok := assetMap[f.AssetRef]
 		if f.Severity != ctis.SeverityInfo || !ok || assetID.IsZero() ||
-			output.ExcludedAssetRefs[f.AssetRef] || output.OutsideJobAssetRefs[f.AssetRef] || output.OutOfScopeAssetRefs[f.AssetRef] {
+			output.ExcludedAssetRefs[f.AssetRef] || output.OverCapAssetRefs[f.AssetRef] || output.OutOfScopeAssetRefs[f.AssetRef] {
 			keep = append(keep, *f)
 			continue
 		}

@@ -30,7 +30,10 @@ const BLOCKED = {
   ],
 }
 
-async function openTargetsStep(page: Page): Promise<Locator> {
+async function openTargetsStep(
+  page: Page,
+  customTargets: string[] = ['www.acme-e2e.example']
+): Promise<Locator> {
   await page.route('**/api/v1/scope/check', (route) =>
     route.fulfill({ json: BLOCKED, headers: { 'content-type': 'application/json' } })
   )
@@ -48,27 +51,28 @@ async function openTargetsStep(page: Page): Promise<Locator> {
     DRAFT_PREFIX
   )
   const draftKey = (await key.jsonValue()) as string
-  await page.evaluate((k) => {
-    const draft = JSON.parse(sessionStorage.getItem(k) ?? '{}')
-    draft.step = 'targets'
-    draft.form = {
-      ...draft.form,
-      name: 'Targets step check',
-      scannerName: draft.form?.scannerName || 'nuclei',
-      sensorPreference: 'platform',
-      targets: { ...(draft.form?.targets ?? {}), customTargets: ['www.acme-e2e.example'] },
-    }
-    sessionStorage.setItem(k, JSON.stringify(draft))
-  }, draftKey)
+  await page.evaluate(
+    ([k, customTargets]) => {
+      const draft = JSON.parse(sessionStorage.getItem(k) ?? '{}')
+      draft.step = 'targets'
+      draft.form = {
+        ...draft.form,
+        name: 'Targets step check',
+        scannerName: draft.form?.scannerName || 'nuclei',
+        sensorPreference: 'platform',
+        targets: { ...(draft.form?.targets ?? {}), customTargets },
+      }
+      sessionStorage.setItem(k, JSON.stringify(draft))
+    },
+    [draftKey, customTargets] as const
+  )
   await page.reload()
   await page
     .getByRole('button', { name: /new scan/i })
     .first()
     .click()
   dialog = page.getByRole('dialog', { name: /new scan/i })
-  await expect(dialog.getByTestId('readiness-line')).toContainText('1 blocked', {
-    timeout: 15_000,
-  })
+  await expect(dialog.getByTestId('readiness-line')).toBeVisible({ timeout: 15_000 })
   return dialog
 }
 
@@ -79,6 +83,9 @@ for (const width of [390, 1440]) {
     async ({ page }, info) => {
       await page.setViewportSize({ width, height: width < 768 ? 844 : 900 })
       const dialog = await openTargetsStep(page)
+      await expect(dialog.getByTestId('readiness-line')).toContainText('1 blocked', {
+        timeout: 15_000,
+      })
 
       // Input first, result second.
       const field = dialog.getByTestId('target-chips-field')
@@ -132,3 +139,28 @@ for (const width of [390, 1440]) {
     }
   )
 }
+
+test(
+  'Targets step: ranges sit with their choice, live hosts first by default; From scope adds an entry',
+  { tag: ['@scans'] },
+  async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    const dialog = await openTargetsStep(page, ['203.0.113.0/24'])
+
+    // The ranges group carries its choice; a new single-scanner scan finds
+    // live hosts first. No domain was entered: no coverage choice.
+    const ranges = dialog.getByTestId('target-group-ranges')
+    await expect(ranges).toBeVisible()
+    await expect(ranges.getByRole('radio', { name: 'Live hosts first' })).toBeChecked()
+    await expect(dialog.getByTestId('coverage-choice')).toHaveCount(0)
+
+    // From scope lists the organization's in-scope entries (the seed has one).
+    await dialog.getByTestId('from-scope').click()
+    const sheet = page.getByRole('dialog', { name: /add assets, groups or scope entries/i })
+    const entry = sheet.getByRole('checkbox', { name: 'e2e-web.example.com' })
+    await expect(entry).toBeVisible({ timeout: 15_000 })
+    await entry.check()
+    await sheet.getByRole('button', { name: /^done$/i }).click()
+    await expect(dialog.getByTestId('target-group-domains')).toContainText('e2e-web.example.com')
+  }
+)
