@@ -115,7 +115,7 @@ type RunMapNode struct {
 	RanWith *RunMapRanWith `json:"ran_with,omitempty"`
 }
 
-// RunMapRanWith summarises a step's effective config for the run map.
+// RunMapRanWith summarizes a step's effective config for the run map.
 // Severity, Tags and ExcludeTags are standard params of the capability
 // (platform record at dispatch); SensorIgnoredKeys is sensor-reported text.
 type RunMapRanWith struct {
