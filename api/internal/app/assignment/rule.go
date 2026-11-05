@@ -423,7 +423,7 @@ func (s *RuleService) TestRule(ctx context.Context, tenantIDStr, ruleID string) 
 		var matchCount int64
 		samples := make([]TestRuleFindingSummary, 0, 5)
 		for _, f := range findingResult.Data {
-			if s.assignmentEngine.MatchesConditions(rule.Conditions(), f) {
+			if s.assignmentEngine.MatchesConditions(rule.Conditions(), f, s.assignmentEngine.FactsFor(ctx, tenantID, f)) {
 				matchCount++
 				if len(samples) < 5 {
 					msg := f.Message()

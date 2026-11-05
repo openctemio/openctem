@@ -21,18 +21,24 @@ type Result struct {
 	Options accesscontrol.AssignmentOptions
 }
 
-// AssetTypeResolver returns the stored (type, sub_type) of a finding's asset,
-// so rules scoped by AssetTypes can be evaluated. Optional — when unset,
-// rules with an AssetTypes condition cannot match (previous behavior);
-// wiring it makes those rules work.
-type AssetTypeResolver func(ctx context.Context, tenantID, assetID shared.ID) (asset.TypeRef, error)
+// AssetFacts is what a rule may read about the finding's asset: its stored
+// (type, sub_type) and its tags (the asset's own, never the finding's).
+type AssetFacts struct {
+	Type asset.TypeRef
+	Tags []string
+}
+
+// AssetFactsResolver returns the facts of a finding's asset, so rules scoped
+// by AssetTypes or AssetTags can be evaluated. Optional: when unset, rules
+// with an asset condition cannot match; wiring it makes those rules work.
+type AssetFactsResolver func(ctx context.Context, tenantID, assetID shared.ID) (AssetFacts, error)
 
 // Engine evaluates assignment rules against findings
 // and returns the list of matching groups with their options.
 type Engine struct {
-	acRepo       accesscontrol.Repository
-	assetTypeFor AssetTypeResolver
-	logger       *logger.Logger
+	acRepo   accesscontrol.Repository
+	assetFor AssetFactsResolver
+	logger   *logger.Logger
 }
 
 // NewEngine creates a new Engine.
@@ -43,15 +49,17 @@ func NewEngine(acRepo accesscontrol.Repository, log *logger.Logger) *Engine {
 	}
 }
 
-// SetAssetTypeResolver wires the resolver used to evaluate AssetTypes conditions.
-// Without it, rules that filter by asset type never match (they need the type).
-func (e *Engine) SetAssetTypeResolver(r AssetTypeResolver) { e.assetTypeFor = r }
+// SetAssetFactsResolver wires the resolver used to evaluate AssetTypes and
+// AssetTags conditions. Without it, rules that filter by either never match
+// (they need the asset).
+func (e *Engine) SetAssetFactsResolver(r AssetFactsResolver) { e.assetFor = r }
 
-// rulesNeedAssetType reports whether any rule filters by asset type, so we only
-// pay for the asset lookup when it can affect the outcome.
-func rulesNeedAssetType(rules []*accesscontrol.AssignmentRule) bool {
+// rulesNeedAsset reports whether any rule filters by asset type or asset tags,
+// so we only pay for the asset lookup when it can affect the outcome.
+func rulesNeedAsset(rules []*accesscontrol.AssignmentRule) bool {
 	for _, r := range rules {
-		if len(r.Conditions().AssetTypes) > 0 {
+		c := r.Conditions()
+		if len(c.AssetTypes) > 0 || len(c.AssetTags) > 0 {
 			return true
 		}
 	}
@@ -75,8 +83,8 @@ func (e *Engine) EvaluateRules(ctx context.Context, tenantID shared.ID, finding 
 		return nil, nil
 	}
 
-	needAssetType := e.assetTypeFor != nil && rulesNeedAssetType(rules)
-	results := e.matchRules(ctx, tenantID, finding, rules, needAssetType)
+	needAsset := e.assetFor != nil && rulesNeedAsset(rules)
+	results := e.matchRules(ctx, tenantID, finding, rules, needAsset)
 
 	e.logger.Info("assignment rules evaluated",
 		"tenant_id", tenantID.String(),
@@ -104,7 +112,7 @@ func (e *Engine) EvaluateBatch(ctx context.Context, tenantID shared.ID, findings
 		return nil, nil
 	}
 
-	needAssetType := e.assetTypeFor != nil && rulesNeedAssetType(rules)
+	needAsset := e.assetFor != nil && rulesNeedAsset(rules)
 	out := make(map[shared.ID][]Result, len(findings))
 	for _, f := range findings {
 		if ctx.Err() != nil {
@@ -113,7 +121,7 @@ func (e *Engine) EvaluateBatch(ctx context.Context, tenantID shared.ID, findings
 		if f == nil {
 			continue
 		}
-		if results := e.matchRules(ctx, tenantID, f, rules, needAssetType); len(results) > 0 {
+		if results := e.matchRules(ctx, tenantID, f, rules, needAsset); len(results) > 0 {
 			out[f.ID()] = results
 		}
 	}
@@ -130,26 +138,18 @@ func (e *Engine) EvaluateBatch(ctx context.Context, tenantID shared.ID, findings
 // matchRules evaluates a pre-listed rule set against one finding, resolving the
 // finding's asset type only when needAssetType is set. Shared by EvaluateRules
 // (single) and EvaluateBatch (bulk) so the matching logic stays in one place.
-func (e *Engine) matchRules(ctx context.Context, tenantID shared.ID, finding *vulnerability.Finding, rules []*accesscontrol.AssignmentRule, needAssetType bool) []Result {
-	// Resolve the finding's asset type ONCE, only when some rule actually filters
-	// by it — otherwise AssetTypes conditions can never match (they need the type
-	// and it isn't carried on the finding).
-	var assetType asset.TypeRef
-	if needAssetType {
-		if aid := finding.AssetID(); !aid.IsZero() {
-			if t, terr := e.assetTypeFor(ctx, tenantID, aid); terr == nil {
-				assetType = t
-			} else {
-				e.logger.Warn("failed to resolve asset type for assignment rules",
-					"asset_id", aid.String(), "error", terr)
-			}
-		}
+func (e *Engine) matchRules(ctx context.Context, tenantID shared.ID, finding *vulnerability.Finding, rules []*accesscontrol.AssignmentRule, needAsset bool) []Result {
+	// Resolve the finding's asset ONCE, only when some rule filters by asset
+	// type or asset tags: neither is carried on the finding.
+	var facts AssetFacts
+	if needAsset {
+		facts = e.FactsFor(ctx, tenantID, finding)
 	}
 
 	seen := make(map[shared.ID]struct{})
 	results := make([]Result, 0, len(rules))
 	for _, rule := range rules {
-		if e.MatchesConditions(rule.Conditions(), finding, assetType) {
+		if e.MatchesConditions(rule.Conditions(), finding, facts) {
 			gid := rule.TargetGroupID()
 			if _, exists := seen[gid]; !exists {
 				seen[gid] = struct{}{}
@@ -170,15 +170,34 @@ func (e *Engine) matchRules(ctx context.Context, tenantID shared.ID, finding *vu
 	return results
 }
 
+// FactsFor resolves the facts of the finding's asset. A failed lookup returns
+// empty facts (asset conditions then cannot match) and is logged.
+func (e *Engine) FactsFor(ctx context.Context, tenantID shared.ID, finding *vulnerability.Finding) AssetFacts {
+	if e.assetFor == nil || finding == nil {
+		return AssetFacts{}
+	}
+	aid := finding.AssetID()
+	if aid.IsZero() {
+		return AssetFacts{}
+	}
+	f, err := e.assetFor(ctx, tenantID, aid)
+	if err != nil {
+		e.logger.Warn("failed to resolve asset for assignment rules",
+			"asset_id", aid.String(), "error", err)
+		return AssetFacts{}
+	}
+	return f
+}
+
 // MatchesConditions checks if a finding matches the given conditions.
 // All non-empty condition fields must match (AND logic).
 // Empty conditions = catch-all (always matches).
-// assetType is optional — pass the asset's stored (type, sub_type) when
-// available for AssetTypes condition evaluation. A condition names types as a
+// facts is optional: pass the finding's asset facts for the AssetTypes and
+// AssetTags conditions (the asset's tags, not the finding's). A condition names types as a
 // person wrote them (`host`, `website`); they are matched on the stored pair
 // through the asset type registry (RFC-042 §6.3.8), so a rule on `website`
 // matches a stored (application, website).
-func (e *Engine) MatchesConditions(conds accesscontrol.AssignmentConditions, finding *vulnerability.Finding, assetType ...asset.TypeRef) bool {
+func (e *Engine) MatchesConditions(conds accesscontrol.AssignmentConditions, finding *vulnerability.Finding, facts ...AssetFacts) bool {
 	if finding == nil {
 		return false
 	}
@@ -201,7 +220,11 @@ func (e *Engine) MatchesConditions(conds accesscontrol.AssignmentConditions, fin
 	}
 
 	if len(conds.AssetTags) > 0 {
-		if !hasAnyTag(finding.Tags(), conds.AssetTags) {
+		var assetTags []string
+		if len(facts) > 0 {
+			assetTags = facts[0].Tags
+		}
+		if !hasAnyTag(assetTags, conds.AssetTags) {
 			return false
 		}
 	}
@@ -214,8 +237,8 @@ func (e *Engine) MatchesConditions(conds accesscontrol.AssignmentConditions, fin
 
 	if len(conds.AssetTypes) > 0 {
 		var at asset.TypeRef
-		if len(assetType) > 0 {
-			at = assetType[0]
+		if len(facts) > 0 {
+			at = facts[0].Type
 		}
 		if at.Type == "" {
 			// No asset type available — cannot match this condition
@@ -246,13 +269,13 @@ func stringInSliceFold(value string, slice []string) bool {
 	return false
 }
 
-// hasAnyTag checks if any of the finding's tags match any of the required tags.
-func hasAnyTag(findingTags, requiredTags []string) bool {
+// hasAnyTag checks if any of the asset's tags match any of the required tags.
+func hasAnyTag(assetTags, requiredTags []string) bool {
 	required := make(map[string]struct{}, len(requiredTags))
 	for _, rt := range requiredTags {
 		required[strings.ToLower(rt)] = struct{}{}
 	}
-	for _, ft := range findingTags {
+	for _, ft := range assetTags {
 		if _, ok := required[strings.ToLower(ft)]; ok {
 			return true
 		}
