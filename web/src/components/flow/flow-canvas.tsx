@@ -22,6 +22,7 @@ import { Button } from '@/components/ui/button'
 import { useTranslation } from '@/context/i18n-provider'
 import { cn } from '@/lib/utils'
 import { FlowEdge, FlowMarkers } from './flow-edge'
+import { FlowFullscreenButton, useFlowFullscreen } from './flow-fullscreen'
 import { FLOW_KEYS, flowNeighbour } from './flow-keyboard'
 
 /**
@@ -135,6 +136,8 @@ function FlowCanvasInner<N extends Node, E extends Edge>({
   const stop =
     tabStop && focusable.some((n) => n.id === tabStop) ? tabStop : (focusable[0]?.id ?? null)
   const rf = useReactFlow()
+  // Inside a FlowFullscreen: the canvas offers its full-screen button.
+  const fullscreen = useFlowFullscreen() != null
 
   // The canvas is controlled and read-only, so the page hands it new node
   // objects on every highlight change. Without their measured size React
@@ -277,6 +280,11 @@ function FlowCanvasInner<N extends Node, E extends Edge>({
         >
           <Background variant={BackgroundVariant.Dots} gap={16} size={1} color="var(--border)" />
           <FlowControls />
+          {fullscreen && (
+            <Panel position="top-right" className="!m-3">
+              <FlowFullscreenButton />
+            </Panel>
+          )}
           {children}
         </ReactFlow>
       </div>
