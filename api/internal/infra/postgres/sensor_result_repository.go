@@ -242,17 +242,17 @@ func (r *SensorResultRepository) Get(ctx context.Context, tenantID, id shared.ID
 }
 
 // Review moves a pending item to accepted or discarded, once.
-func (r *SensorResultRepository) Review(ctx context.Context, tenantID, id shared.ID, to sensorresult.Status, by shared.ID) error {
+func (r *SensorResultRepository) Review(ctx context.Context, tenantID, id shared.ID, to sensorresult.Status, by *shared.ID) error {
 	if to != sensorresult.StatusAccepted && to != sensorresult.StatusDiscarded {
 		return fmt.Errorf("%w: a review accepts or discards", shared.ErrValidation)
 	}
 	res, err := r.db.ExecContext(ctx, `
 		UPDATE sensor_result_quarantine
-		SET status = $3, reviewed_by = $4, reviewed_at = NOW(), applying_at = NULL,
+		SET status = $3, reviewed_by = $4::uuid, reviewed_at = NOW(), applying_at = NULL,
 		    payload = CASE WHEN $3 = 'discarded' THEN NULL ELSE payload END
 		WHERE tenant_id = $1 AND id = $2 AND status = 'pending'
 		  AND ($3 <> 'discarded' OR applying_at IS NULL OR applying_at < NOW() - interval '15 minutes')`,
-		tenantID.String(), id.String(), string(to), by.String())
+		tenantID.String(), id.String(), string(to), nullTenant(by))
 	if err != nil {
 		return fmt.Errorf("failed to review quarantined result: %w", err)
 	}
@@ -335,4 +335,83 @@ func (r *SensorResultRepository) ReleaseApply(ctx context.Context, tenantID, id 
 		return fmt.Errorf("failed to release quarantined result: %w", err)
 	}
 	return nil
+}
+
+// PendingOutOfContractGroups implements sensorresult.Repository.
+func (r *SensorResultRepository) PendingOutOfContractGroups(ctx context.Context, notBefore time.Time, tenantID, sensorID *shared.ID, limit int) ([]sensorresult.HeldGroup, error) {
+	if limit <= 0 || limit > 1000 {
+		limit = 1000
+	}
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT q.tenant_id, q.sensor_id, q.tool_name
+		FROM sensor_result_quarantine q
+		JOIN sensors s ON s.id = q.sensor_id AND s.tenant_id = q.tenant_id AND s.scope = 'organization' AND s.status = 'active'
+		WHERE q.status = 'pending' AND q.reason = $1 AND q.tool_name <> '' AND q.created_at > $2
+		  AND (q.applying_at IS NULL OR q.applying_at < NOW() - make_interval(secs => $3))
+		  AND ($4::uuid IS NULL OR q.tenant_id = $4::uuid)
+		  AND ($5::uuid IS NULL OR q.sensor_id = $5::uuid)
+		GROUP BY q.tenant_id, q.sensor_id, q.tool_name
+		ORDER BY MIN(q.created_at), q.tenant_id, q.sensor_id, q.tool_name
+		LIMIT $6`,
+		string(sensorresult.ReasonOutOfContract), notBefore, applyClaimTTL.Seconds(), nullTenant(tenantID), nullTenant(sensorID), limit)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list held result groups: %w", err)
+	}
+	defer rows.Close()
+	var out []sensorresult.HeldGroup
+	for rows.Next() {
+		var t, s string
+		var g sensorresult.HeldGroup
+		if err := rows.Scan(&t, &s, &g.ToolName); err != nil {
+			return nil, fmt.Errorf("failed to scan held result group: %w", err)
+		}
+		if g.TenantID, err = shared.IDFromString(t); err != nil {
+			return nil, fmt.Errorf("invalid tenant id: %w", err)
+		}
+		if g.SensorID, err = shared.IDFromString(s); err != nil {
+			return nil, fmt.Errorf("invalid sensor id: %w", err)
+		}
+		out = append(out, g)
+	}
+	return out, rows.Err()
+}
+
+// PendingInGroup implements sensorresult.Repository. Every filter is in the
+// WHERE clause, tenant first.
+func (r *SensorResultRepository) PendingInGroup(ctx context.Context, g sensorresult.HeldGroup, notBefore, afterCreated time.Time, afterID shared.ID, limit int) ([]sensorresult.HeldRef, error) {
+	if limit <= 0 || limit > 200 {
+		limit = 200
+	}
+	after := afterID.String()
+	if afterID.IsZero() {
+		after = "00000000-0000-0000-0000-000000000000"
+	}
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT q.id, q.created_at
+		FROM sensor_result_quarantine q
+		WHERE q.tenant_id = $1 AND q.sensor_id = $2 AND q.tool_name = $3
+		  AND q.status = 'pending' AND q.reason = $4 AND q.created_at > $5
+		  AND (q.created_at, q.id) > ($6, $7::uuid)
+		  AND (q.applying_at IS NULL OR q.applying_at < NOW() - make_interval(secs => $8))
+		ORDER BY q.created_at, q.id
+		LIMIT $9`,
+		g.TenantID.String(), g.SensorID.String(), g.ToolName, string(sensorresult.ReasonOutOfContract), notBefore,
+		afterCreated, after, applyClaimTTL.Seconds(), limit)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list held results: %w", err)
+	}
+	defer rows.Close()
+	var out []sensorresult.HeldRef
+	for rows.Next() {
+		var id string
+		var ref sensorresult.HeldRef
+		if err := rows.Scan(&id, &ref.CreatedAt); err != nil {
+			return nil, fmt.Errorf("failed to scan held result: %w", err)
+		}
+		if ref.ID, err = shared.IDFromString(id); err != nil {
+			return nil, fmt.Errorf("invalid quarantine id: %w", err)
+		}
+		out = append(out, ref)
+	}
+	return out, rows.Err()
 }
