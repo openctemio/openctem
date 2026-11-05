@@ -34,6 +34,13 @@ func (s *SensorService) SetSlimHeartbeat(on bool) {
 	s.slimHeartbeatOff = !on
 }
 
+// SetManifestChangedHook sets the function told, after a sensor of an
+// organization registered a manifest that differs from its current one, which
+// tenant and sensor it was. It must return quickly (start work elsewhere).
+func (s *SensorService) SetManifestChangedHook(fn func(tenantID, sensorID shared.ID)) {
+	s.onManifestChanged = fn
+}
+
 // SlimHeartbeat reports whether sensors may leave their inventory out of
 // heartbeats once their manifest is acknowledged.
 func (s *SensorService) SlimHeartbeat() bool {
@@ -163,6 +170,9 @@ func (s *SensorService) RegisterManifest(ctx context.Context, a *sensordom.Senso
 	s.logger.Info("sensor manifest registered", "sensor_id", a.ID.String(), "digest", digest,
 		"tools", len(clean.Tools), "ignored", len(ignored))
 
+	if a.TenantID != nil && s.onManifestChanged != nil {
+		s.onManifestChanged(*a.TenantID, a.ID)
+	}
 	if a.TenantID != nil && s.events != nil {
 		s.recordEvents(ctx, withManifestDigests(s.manifestEvents(a, prev, clean, report, now), a.ManifestDigest, digest))
 	}

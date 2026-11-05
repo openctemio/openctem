@@ -7,11 +7,39 @@ Design: [RFC-126](../rfcs/RFC-126-import-mappings.md). The language: ctis
 
 | Part | State |
 |---|---|
-| ctis `importer/mapping`: CSV and XML inputs, `identity`, `Options.Observe` | shipped (ctis PR #76; the API pins that commit until a ctis release) |
+| ctis `importer/mapping`: CSV and XML inputs, `identity`, `Options.Observe` | shipped (ctis v2.0.0; the API pins ctis v2.0.1) |
 | API: CRUD with versions, validate, preview, templates, audit | shipped |
 | Import through `format=mapping:<ref>[@<version>]` on `POST /findings/imports` and `POST /ci/runs/{id}/results` | shipped |
-| Web editor (sample, mapping table, live preview, versions) | its own pull request |
-| `openctem-ci upload --format mapping:<name>` | openctemio/ci pull request |
+| Web editor (sample, mapping table, live preview, versions): **Settings > Integrations > Import mappings** (`web/src/app/(dashboard)/settings/integrations/import-mappings/`) | shipped |
+| `openctem-ci upload --format mapping:<name>[@<version>]` | shipped (openctemio/ci v0.4.0) |
+
+## Flow
+
+Checked against the code of v0.19.1 and develop on 2026-11-05 (no change
+between them in this area).
+
+```mermaid
+sequenceDiagram
+  autonumber
+  actor A as Integration manager
+  participant H as ImportMappingHandler
+  participant S as importmapping.Service
+  participant DB as import_mappings, import_mapping_versions
+  actor U as Uploader
+  participant FI as FindingImportHandler and worker
+  A->>H: POST /api/v1/import-mappings/preview (doc + sample)
+  H->>H: integrations:manage, 20 per minute per tenant, body limit
+  H->>S: PreviewDocument: Compile (language, then policy), Observe,<br/>sample at most 5 MiB, identity collisions
+  H-->>A: mapped records, warnings (nothing stored)
+  A->>H: POST /api/v1/import-mappings (version 1) or /{id}/versions
+  S->>S: at most 200 mappings, 500 versions, 256 KiB per document,<br/>IdentityChanged needs confirm_identity_change (else 409)
+  S->>DB: version row, latest_version compare-and-set (one transaction)
+  U->>FI: POST /api/v1/findings/imports?format=mapping:name[@n]
+  FI->>S: Resolve in the caller's tenant (400 unknown_mapping), compile under today's policy
+  FI->>FI: coverage=full refused, job pins mapping id and version
+  FI->>S: worker: ResolvePin in the job's tenant (else mapping_unavailable)
+  FI->>FI: convertMapped: tool mapped:name, partial, then ingest
+```
 
 ## How it works
 

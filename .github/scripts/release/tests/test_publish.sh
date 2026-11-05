@@ -9,6 +9,7 @@ source "$HERE/testlib.sh"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 scenario "$tmp"
+stub_release_lists "$tmp/stub"
 w="$tmp/work"
 
 # develop carries versions.yaml and its consumers (no platform version in them).

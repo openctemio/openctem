@@ -10,12 +10,45 @@ Organizations, Console > Users).
 | Stored as | `tenants.status = 'suspended'` + `suspended_at/_by/_reason` | `users.status = 'suspended'` + `blocked_at/_by/_reason` |
 | Effect | every credential of the organization is refused; its scheduled work is skipped | the account cannot sign in anywhere; its sessions end; its API keys and MCP tokens stop working |
 | Data | kept | kept |
-| Who | ops_admin or super_admin, fresh authenticator code, reason | same |
+| Who | ops_admin or super_admin, console step-up (`stepUp`: an authenticator code within the 5-minute window), reason | same |
 | Audit | critical admin audit row (with the reason) and an entry in the organization's own log (without the reason) | critical admin audit row (with the reason) |
 | Undo | lift: everything works again as before | unblock: the account may sign in again (sessions stay ended) |
 
 The platform's own system organization and platform administrator accounts
 cannot be suspended or blocked.
+
+## Flow
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant C as Platform console
+    box API
+    participant H as AdminSuspensionHandler
+    participant SV as suspension.Service
+    participant G as suspension gate (fail closed)
+    end
+    participant DB as Postgres tenants
+    participant X as Any credential of the organization
+    C->>H: POST /api/v1/admin/tenants/{tenantId}/suspend {reason 10-500} (stepUp, ops_admin+)
+    H->>SV: change - system organization 409
+    SV->>DB: UPDATE tenants SET status suspended WHERE status = active (else 409 already suspended)
+    SV->>SV: status cache overwritten, WebSocket connections revoked
+    SV->>SV: audit organization.suspended (admin, critical, reason) + tenant.suspended (tenant log)
+    X->>G: JWT, refresh, API key, MCP token, sensor, SCIM, CI, webhook
+    G->>DB: status (cached at most 60 s, overwritten on change)
+    alt suspended or pending_deletion
+        G-->>X: 403 ORGANIZATION_SUSPENDED
+    else unreadable
+        G-->>X: 503 try again shortly
+    else active
+        G-->>X: request continues
+    end
+```
+
+An organization in `pending_deletion` cannot be suspended: the conditional
+update finds no `active` row and the answer is the misleading "already
+suspended" (`organization_status_repository.go`).
 
 ## Threat model
 
@@ -39,8 +72,8 @@ cannot be suspended or blocked.
   `status = 'suspended'` whatever the entity says (a sign-in stamp or profile
   edit loaded before the block cannot undo it); only the console's unblock
   (`PlatformUserDirectory.SetBlocked`) sets the account active again.
-- **Abuse of the switch itself.** ops_admin+ only, a fresh authenticator code
-  (route step-up), a reason, a critical audit row. Lifting has the same gates.
+- **Abuse of the switch itself.** ops_admin+ only, an authenticator code
+  within the 5-minute console step-up window (route `stepUp`), a reason, a critical audit row. Lifting has the same gates.
 
 ## The access gate
 

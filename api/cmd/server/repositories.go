@@ -180,6 +180,10 @@ type Repositories struct {
 	ScanZone *postgres.ScanZoneRepository
 	// ProxyPool holds proxy pools, endpoints and sensor assignments.
 	ProxyPool *postgres.ProxyPoolRepository
+	// ToolSourceKey holds the organization keys of third-party tool sources.
+	ToolSourceKey *postgres.ToolSourceKeyRepository
+	// CommandSecretGrant records the secret refs of each claimed job.
+	CommandSecretGrant *postgres.CommandSecretGrantRepository
 	// Scan window policies, overrides and the assets behind targets (RFC-067)
 	ScanWindowPolicy *postgres.ScanWindowPolicyRepository
 	// Finding lifecycles (RFC-110): the sub-status catalog and the schemes.
@@ -326,6 +330,12 @@ type Repositories struct {
 	PageMonitor *postgres.PageMonitorRepository
 	// EASMNetworkSeed stores AS number and organization seeds (RFC-082).
 	EASMNetworkSeed *postgres.EASMNetworkSeedRepository
+	// EASMAddressAutoAdd remembers the patterns the address auto add wrote
+	// (research/425).
+	EASMAddressAutoAdd *postgres.EASMAddressAutoAddRepository
+	// EASMDeclinedNetwork stores the networks an organization answered
+	// "not ours" about on the Decisions card (research/425).
+	EASMDeclinedNetwork *postgres.EASMDeclinedNetworkRepository
 	// AssetWebEvidence stores web assets' captures (RFC-081).
 	AssetWebEvidence *postgres.AssetWebEvidenceRepository
 	// EASMChange reads typed attack-surface changes and claims weekly digests (RFC-080).
@@ -550,6 +560,8 @@ func newRepositories(db *postgres.DB) *Repositories {
 		// Scan zones (RFC-023)
 		ScanZone:            postgres.NewScanZoneRepository(db),
 		ProxyPool:           postgres.NewProxyPoolRepository(db),
+		ToolSourceKey:       postgres.NewToolSourceKeyRepository(db),
+		CommandSecretGrant:  postgres.NewCommandSecretGrantRepository(db),
 		ScanWindowPolicy:    postgres.NewScanWindowPolicyRepository(db),
 		LifecycleSubStatus:  postgres.NewLifecycleSubStatusRepository(db),
 		LifecycleScheme:     postgres.NewLifecycleSchemeRepository(db),
@@ -643,25 +655,27 @@ func newRepositories(db *postgres.DB) *Repositories {
 		TenantModule: postgres.NewTenantModuleRepository(db),
 
 		// SSO Identity Providers
-		IdentityProvider: postgres.NewIdentityProviderRepository(db),
-		UserIdentity:     postgres.NewUserIdentityRepository(db),
-		OrgTrust:         postgres.NewOrgTrustRepository(db),
-		VerifiedDomain:   postgres.NewVerifiedDomainRepository(db),
-		CTMonitorState:   postgres.NewCTMonitorStateRepository(db),
-		Attribution:      postgres.NewAttributionRepository(db),
-		EASMDNS:          postgres.NewEASMDNSRepository(db),
-		VerifiedNames:    postgres.NewVerifiedDomainNameRepository(db),
-		CIRun:            postgres.NewCIRunRepository(db),
-		IngestReceipt:    postgres.NewIngestReceiptRepository(db),
-		IdempotencyKey:   postgres.NewIdempotencyKeyRepository(db),
-		CodeScan:         postgres.NewCodeScanRepository(db),
-		SCMApp:           postgres.NewSCMAppInstallationRepository(db),
-		EASMSummary:      postgres.NewEASMSummaryRepository(db),
-		EASMLookalike:    postgres.NewEASMLookalikeRepository(db),
-		PageMonitor:      postgres.NewPageMonitorRepository(db),
-		EASMNetworkSeed:  postgres.NewEASMNetworkSeedRepository(db),
-		AssetWebEvidence: postgres.NewAssetWebEvidenceRepository(db),
-		EASMChange:       postgres.NewEASMChangeRepository(db),
+		IdentityProvider:    postgres.NewIdentityProviderRepository(db),
+		UserIdentity:        postgres.NewUserIdentityRepository(db),
+		OrgTrust:            postgres.NewOrgTrustRepository(db),
+		VerifiedDomain:      postgres.NewVerifiedDomainRepository(db),
+		CTMonitorState:      postgres.NewCTMonitorStateRepository(db),
+		Attribution:         postgres.NewAttributionRepository(db),
+		EASMDNS:             postgres.NewEASMDNSRepository(db),
+		VerifiedNames:       postgres.NewVerifiedDomainNameRepository(db),
+		CIRun:               postgres.NewCIRunRepository(db),
+		IngestReceipt:       postgres.NewIngestReceiptRepository(db),
+		IdempotencyKey:      postgres.NewIdempotencyKeyRepository(db),
+		CodeScan:            postgres.NewCodeScanRepository(db),
+		SCMApp:              postgres.NewSCMAppInstallationRepository(db),
+		EASMSummary:         postgres.NewEASMSummaryRepository(db),
+		EASMLookalike:       postgres.NewEASMLookalikeRepository(db),
+		PageMonitor:         postgres.NewPageMonitorRepository(db),
+		EASMNetworkSeed:     postgres.NewEASMNetworkSeedRepository(db),
+		EASMAddressAutoAdd:  postgres.NewEASMAddressAutoAddRepository(db),
+		EASMDeclinedNetwork: postgres.NewEASMDeclinedNetworkRepository(db),
+		AssetWebEvidence:    postgres.NewAssetWebEvidenceRepository(db),
+		EASMChange:          postgres.NewEASMChangeRepository(db),
 
 		// KEV Escalation
 		KEVEscalator: postgres.NewKEVEscalator(db),

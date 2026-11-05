@@ -2,57 +2,71 @@ package outbox
 
 import (
 	"bytes"
+	"context"
 	"log/slog"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus/testutil"
+
+	"github.com/openctemio/openctem/api/internal/metrics"
 	"github.com/openctemio/openctem/api/pkg/domain/bountyprogram"
 	"github.com/openctemio/openctem/api/pkg/domain/integration"
 	outboxdom "github.com/openctemio/openctem/api/pkg/domain/outbox"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
-func entryWithStatus(status outboxdom.OutboxStatus) *outboxdom.Outbox {
-	return outboxdom.Reconstitute(
-		outboxdom.NewID(), shared.NewID(), "new_finding", "finding", nil,
-		"Critical finding", "body", outboxdom.SeverityCritical, "",
-		nil, status, 3, 3, "smtp timeout",
-		time.Time{}, nil, "", time.Time{}, time.Time{}, nil,
-	)
-}
+// The alert reads a counter: dead entries are archived and removed at once,
+// so a gauge of dead outbox rows never rises (the old OutboxDeadLetters
+// expression could not fire). A channel that runs out of retries counts
+// once, a healthy channel does not.
+func TestProcess_DeadChannelCountsADeadLetter(t *testing.T) {
+	tenant := shared.NewID()
+	h := newHarness(channel(tenant, "a"), channel(tenant, "b"))
+	h.fail["https://b.example.com/hook"] = true
+	before := testutil.ToFloat64(metrics.NotificationDeadLettersTotal.WithLabelValues(deadLetterChannel))
 
-func TestAlertIfDeadLettered_EmitsErrorForDead(t *testing.T) {
-	var buf bytes.Buffer
-	s := &Service{log: slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))}
-
-	s.alertIfDeadLettered(entryWithStatus(outboxdom.OutboxStatusDead))
-
-	out := buf.String()
-	if !strings.Contains(out, "dead-lettered") {
-		t.Fatalf("expected dead-letter alert, got: %s", out)
-	}
-	if !strings.Contains(out, `"level":"ERROR"`) {
-		t.Fatalf("dead-letter must log at ERROR, got: %s", out)
-	}
-	if !strings.Contains(out, "smtp timeout") {
-		t.Fatalf("alert should include last_error, got: %s", out)
-	}
-}
-
-func TestAlertIfDeadLettered_SilentForNonDead(t *testing.T) {
-	for _, st := range []outboxdom.OutboxStatus{
-		outboxdom.OutboxStatusCompleted,
-		outboxdom.OutboxStatusPending,
-		outboxdom.OutboxStatusFailed,
-		outboxdom.OutboxStatusProcessing,
-	} {
-		var buf bytes.Buffer
-		s := &Service{log: slog.New(slog.NewJSONHandler(&buf, nil))}
-		s.alertIfDeadLettered(entryWithStatus(st))
-		if buf.Len() != 0 {
-			t.Fatalf("status %q must not dead-letter, got: %s", st, buf.String())
+	entry := outboxdom.NewOutbox(outboxdom.OutboxParams{TenantID: tenant, EventType: "new_finding", Title: "t", Severity: outboxdom.SeverityHigh})
+	for i := 0; i < outboxdom.MaxDeliveryAttempts(); i++ {
+		makeDue(entry)
+		if err := h.svc.processOutboxEntry(context.Background(), entry); err != nil {
+			t.Fatal(err)
 		}
+		got := testutil.ToFloat64(metrics.NotificationDeadLettersTotal.WithLabelValues(deadLetterChannel)) - before
+		if last := i == outboxdom.MaxDeliveryAttempts()-1; (last && got != 1) || (!last && got != 0) {
+			t.Fatalf("pass %d: dead letters %v", i+1, got)
+		}
+	}
+}
+
+// An entry whose integrations cannot be read is retried; when its retries
+// are spent it counts once as a dead letter and logs an ERROR.
+func TestFailEntry_CountsWhenRetriesAreSpent(t *testing.T) {
+	var buf bytes.Buffer
+	repo := &fakeOutboxRepo{}
+	s := &Service{outboxRepo: repo, log: slog.New(slog.NewJSONHandler(&buf, nil))}
+	before := testutil.ToFloat64(metrics.NotificationDeadLettersTotal.WithLabelValues(deadLetterEntry))
+
+	entry := outboxdom.NewOutbox(outboxdom.OutboxParams{TenantID: shared.NewID(), EventType: "new_finding", Title: "t", Severity: outboxdom.SeverityHigh})
+	n := 0
+	for entry.Status() != outboxdom.OutboxStatusFailed {
+		s.failEntry(context.Background(), entry, "integrations unavailable")
+		if n++; n > 50 {
+			t.Fatal("entry never ran out of retries")
+		}
+		if entry.Status() != outboxdom.OutboxStatusFailed && buf.Len() != 0 {
+			t.Fatalf("logged before the retries were spent: %s", buf.String())
+		}
+	}
+	if got := testutil.ToFloat64(metrics.NotificationDeadLettersTotal.WithLabelValues(deadLetterEntry)) - before; got != 1 {
+		t.Fatalf("entry dead letters %v, want 1", got)
+	}
+	if out := buf.String(); !strings.Contains(out, `"level":"ERROR"`) || !strings.Contains(out, "integrations unavailable") {
+		t.Fatalf("want an ERROR naming the last error, got %s", out)
+	}
+	if repo.updates != n {
+		t.Fatalf("updates %d, want %d", repo.updates, n)
 	}
 }
 

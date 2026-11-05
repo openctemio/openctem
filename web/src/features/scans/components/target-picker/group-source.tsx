@@ -9,14 +9,10 @@
 
 import { useState } from 'react'
 import { useTranslation } from '@/context/i18n-provider'
-import { Search } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
-import { Checkbox } from '@/components/ui/checkbox'
-import { Input } from '@/components/ui/input'
-import { Skeleton } from '@/components/ui/skeleton'
-import { cn } from '@/lib/utils'
 import { useSearchQuery } from '@/hooks/use-search-query'
 import { useAssetGroups } from '@/features/asset-groups'
+import { PickerList } from './picker-list'
 
 /** Asset groups listed at once (the API's largest page). */
 export const GROUP_PAGE_SIZE = 100
@@ -42,79 +38,43 @@ export function GroupSource({ selected, onToggle }: GroupSourceProps) {
   const groups = data ?? []
 
   return (
-    <div className="space-y-3">
-      <div className="relative">
-        <Search
-          className="text-muted-foreground absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2"
-          aria-hidden
-        />
-        <Input
-          placeholder={t('scans.groups.searchPlaceholder')}
-          aria-label={t('scans.groups.search')}
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="ps-10"
-        />
-      </div>
-      <div
-        className="max-h-72 overflow-y-auto rounded-md border"
-        role="group"
-        aria-label={t('scans.groups.list')}
-      >
-        {isLoading ? (
-          <div className="space-y-2 p-2">
-            {[0, 1, 2].map((i) => (
-              <Skeleton key={i} className="h-8 w-full" />
-            ))}
-          </div>
-        ) : groups.length === 0 ? (
-          <p className="text-muted-foreground p-4 text-center text-sm">
-            {debounced
-              ? t('scans.groups.noMatch', undefined, { query: debounced })
-              : t('scans.groups.none')}
-          </p>
-        ) : (
-          <ul className="divide-y">
-            {groups.map((g) => {
-              const picked = selected[g.id] !== undefined
-              return (
-                <li key={g.id}>
-                  <label
-                    className={cn(
-                      'flex cursor-pointer items-center gap-3 px-3 py-2 hover:bg-muted/50',
-                      picked && 'bg-primary/5'
-                    )}
-                  >
-                    <Checkbox
-                      checked={picked}
-                      onCheckedChange={(c) => onToggle({ id: g.id, name: g.name }, c === true)}
-                      aria-label={g.name}
-                    />
-                    <span className="min-w-0 flex-1 truncate text-sm" title={g.name}>
-                      {g.name}
-                    </span>
-                    <Badge variant="outline" className="shrink-0 text-xs">
-                      {t(
-                        g.assetCount === 1 ? 'scans.groups.assetsOne' : 'scans.groups.assetsMany',
-                        undefined,
-                        {
-                          count: (g.assetCount ?? 0).toLocaleString(),
-                        }
-                      )}
-                    </Badge>
-                  </label>
-                </li>
-              )
-            })}
-          </ul>
-        )}
-      </div>
-      <p className="text-muted-foreground text-xs">
-        {total > groups.length
-          ? `${t('scans.groups.showing', undefined, { shown: groups.length, total })} `
-          : ''}
-        {t('scans.groups.resolvedAtRun')}
-      </p>
-    </div>
+    <PickerList
+      search={search}
+      onSearch={setSearch}
+      searchPlaceholder={t('scans.groups.searchPlaceholder')}
+      searchLabel={t('scans.groups.search')}
+      listLabel={t('scans.groups.list')}
+      loading={isLoading}
+      emptyText={
+        debounced
+          ? t('scans.groups.noMatch', undefined, { query: debounced })
+          : t('scans.groups.none')
+      }
+      rows={groups.map((g) => ({
+        id: g.id,
+        label: g.name,
+        picked: selected[g.id] !== undefined,
+        trailing: (
+          <Badge variant="outline" className="shrink-0 text-xs">
+            {t(
+              g.assetCount === 1 ? 'scans.groups.assetsOne' : 'scans.groups.assetsMany',
+              undefined,
+              {
+                count: (g.assetCount ?? 0).toLocaleString(),
+              }
+            )}
+          </Badge>
+        ),
+      }))}
+      onToggle={(row, picked) => onToggle({ id: row.id, name: row.label }, picked)}
+      footer={
+        <p className="text-xs text-muted-foreground">
+          {total > groups.length
+            ? `${t('scans.groups.showing', undefined, { shown: groups.length, total })} `
+            : ''}
+          {t('scans.groups.resolvedAtRun')}
+        </p>
+      }
+    />
   )
 }
