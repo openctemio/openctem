@@ -667,6 +667,10 @@ type StepRunResponse struct {
 	// InfoObservations: template scanner info matches filed as exposures
 	// instead of findings.
 	InfoObservations int `json:"info_observations"`
+	// FindingsHeld / FindingsRefused: reported findings held for review and
+	// findings not stored (FindingsCount is what the sensor reported).
+	FindingsHeld    int `json:"findings_held"`
+	FindingsRefused int `json:"findings_refused"`
 }
 
 // --- Template Handlers ---
@@ -1854,6 +1858,8 @@ func toStepRunResponse(sr *scanrundom.StepRun) StepRunResponse {
 		MaxAttempts:      sr.MaxAttempts,
 		FindingsCount:    sr.FindingsCount,
 		InfoObservations: sr.InfoObservations,
+		FindingsHeld:     sr.FindingsHeld,
+		FindingsRefused:  sr.FindingsRefused,
 	}
 	if !sr.StepID.IsZero() {
 		resp.StepID = sr.StepID.String()

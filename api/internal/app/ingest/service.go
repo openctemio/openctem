@@ -118,7 +118,9 @@ type Service struct {
 	// stepInfo counts them on their step run (info_matches.go).
 	templateMatches TemplateMatchProjector
 	stepInfo        StepInfoRecorder
-	commandIngested CommandIngestedHook
+	// stepDispositions counts held and refused findings on their step run.
+	stepDispositions StepDispositionRecorder
+	commandIngested  CommandIngestedHook
 
 	// coverageMode and coverageGuard drive coverage-scoped auto-resolve of
 	// non-repository findings (coverage_autoresolve.go). The zero mode is
@@ -510,7 +512,7 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	// Output-type binding (research/27 G12): a command-bound report may
 	// carry only the asset types its tool produces or takes.
 	sentFindings := len(report.Findings)
-	report = s.bindOutputTypes(ctx, agt, tenantID, binding, report, opts)
+	report, findingsHeld, findingsLost := s.bindOutputTypes(ctx, agt, tenantID, binding, report, opts)
 	outOfContract := sentFindings - len(report.Findings)
 	// Which channel reported the findings is the platform's to say, from
 	// the principal: a sensor's metadata.source_type is ignored, so it can
@@ -538,6 +540,8 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 		Binding:           binding.String(),
 		UnsolicitedWarned: unsolicitedWarned,
 		policy:            policy,
+		FindingsHeld:      findingsHeld,
+		FindingsLost:      findingsLost,
 	}
 	output.addOutcome(ingestreceipt.OutcomeUnresolvedRef, opts.FindingsRefusedBeforeIngest)
 	output.addOutcome(ingestreceipt.OutcomeOutOfContract, outOfContract)
