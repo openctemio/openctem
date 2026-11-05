@@ -120,9 +120,20 @@ func TestProxyEgress_JobCarriesPoolAndCredentialsOnlyForLeaseHolder(t *testing.T
 	if (resp.StatusCode != http.StatusNotFound && resp.StatusCode != http.StatusMethodNotAllowed) || strings.Contains(string(raw), egressSecret) {
 		t.Fatalf("egress-credentials: %d %s", resp.StatusCode, raw)
 	}
+	// Only the endpoints of the job's signed egress block get credentials.
+	var signed, unsigned []string
+	for _, e := range eg.Endpoints {
+		signed = append(signed, e.ID)
+	}
+	if creds, err := h.egress.PoolCredentials(context.Background(), mustID(t, h.tenantID), pool.ID.String(), signed); err != nil || len(creds) != 1 {
+		t.Fatalf("signed endpoints: %d credentials, %v", len(creds), err)
+	}
+	if creds, err := h.egress.PoolCredentials(context.Background(), mustID(t, h.tenantID), pool.ID.String(), unsigned); err != nil || len(creds) != 0 {
+		t.Fatalf("endpoints outside the signed block got credentials: %d, %v", len(creds), err)
+	}
 	// Another tenant's pool is not found by tenant.
 	tenantB := h.newTenant()
-	if _, err := h.egress.PoolCredentials(context.Background(), mustID(t, tenantB), pool.ID.String()); err == nil {
+	if _, err := h.egress.PoolCredentials(context.Background(), mustID(t, tenantB), pool.ID.String(), signed); err == nil {
 		t.Fatal("tenant B read tenant A's pool credentials")
 	}
 }
@@ -349,7 +360,7 @@ func TestProxyEgress_DisabledAssignedPoolFailsClosed(t *testing.T) {
 	if _, ok := secretsOf(t, got[0].Payload).Lookup("p1"); ok {
 		t.Fatalf("a disabled pool's credentials listed: %s", got[0].Payload)
 	}
-	if creds, err := h.egress.PoolCredentials(context.Background(), mustID(t, h.tenantID), seg.ID.String()); err != nil || len(creds) != 0 {
+	if creds, err := h.egress.PoolCredentials(context.Background(), mustID(t, h.tenantID), seg.ID.String(), nil); err != nil || len(creds) != 0 {
 		t.Fatalf("credentials of a disabled pool: %d %v", len(creds), err)
 	}
 	_ = id

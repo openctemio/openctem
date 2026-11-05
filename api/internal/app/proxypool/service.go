@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -579,8 +580,10 @@ type Credential struct {
 // may have changed since). The caller checked the sensor's lease and the
 // recorded grant. A disabled pool carries nothing (BuildJobEgress lists no
 // endpoint). A pool of another tenant, or one deleted since, is
-// ErrPoolNotFound.
-func (s *Service) PoolCredentials(ctx context.Context, tenantID shared.ID, poolID string) ([]Credential, error) {
+// ErrPoolNotFound. Only the endpoints in signed (the ids of the egress block
+// the job was signed with) are returned: an endpoint added to the pool or
+// recovered since the claim is not part of the job.
+func (s *Service) PoolCredentials(ctx context.Context, tenantID shared.ID, poolID string, signed []string) ([]Credential, error) {
 	pid, err := parseRef(poolID, pooldom.ErrPoolNotFound)
 	if err != nil {
 		return nil, err
@@ -595,7 +598,7 @@ func (s *Service) PoolCredentials(ctx context.Context, tenantID shared.ID, poolI
 	}
 	now := s.now()
 	for _, e := range p.Endpoints {
-		if !e.HasCredentials() || !e.Enabled || !e.Health.Eligible(now) {
+		if !e.HasCredentials() || !e.Enabled || !e.Health.Eligible(now) || !slices.Contains(signed, e.ID.String()) {
 			continue
 		}
 		c, err := s.openCredentials(e)

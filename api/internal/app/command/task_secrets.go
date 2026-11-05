@@ -10,10 +10,10 @@ package command
 // creator put in the payload is replaced, or removed on every other command.
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/openctemio/contract/secretref"
 
@@ -63,9 +63,8 @@ func (s *Service) stampSecrets(ctx context.Context, sensorID string, cmds []*com
 			}
 			set = &got
 		}
-		if set == nil && !bytes.Contains(c.Payload, []byte(`"`+PayloadKeySecrets+`"`)) {
-			continue
-		}
+		// Always decoded, never a byte search: a key spelled with escapes
+		// ("\u0073ecrets") is the same member once decoded.
 		payload, err := withSecretsPayload(c.Payload, set)
 		if err != nil {
 			return nil, err
@@ -89,11 +88,18 @@ func withSecretsPayload(payload json.RawMessage, set *secretref.Set) (json.RawMe
 		}
 		return nil, fmt.Errorf("command payload: %w", err)
 	}
+	found := false
+	for k := range fields {
+		// The sensor decodes member names without regard to case.
+		if strings.EqualFold(k, PayloadKeySecrets) {
+			delete(fields, k)
+			found = true
+		}
+	}
 	if set == nil {
-		if _, ok := fields[PayloadKeySecrets]; !ok {
+		if !found {
 			return payload, nil
 		}
-		delete(fields, PayloadKeySecrets)
 	} else {
 		b, err := json.Marshal(set)
 		if err != nil {

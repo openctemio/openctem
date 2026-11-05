@@ -1,9 +1,14 @@
 package tasksecret
 
 import (
+	"context"
 	"testing"
+	"time"
 
 	"github.com/openctemio/contract/secretref"
+
+	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
+	"github.com/openctemio/openctem/api/pkg/logger"
 
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -83,5 +88,54 @@ func TestDecodeRequest(t *testing.T) {
 		if _, _, ok := decodeRequest([]byte(body)); ok {
 			t.Errorf("%s: accepted", name)
 		}
+	}
+}
+
+func TestSignedEndpointIDs(t *testing.T) {
+	got := signedEndpointIDs([]byte(`{"egress":{"mode":"pool","pool_id":"p","endpoints":[{"id":"e1"},{"id":"e2"}]}}`))
+	if len(got) != 2 || got[0] != "e1" || got[1] != "e2" {
+		t.Fatalf("ids = %v", got)
+	}
+	if signedEndpointIDs([]byte(`{}`)) != nil || signedEndpointIDs([]byte(`not json`)) != nil {
+		t.Fatal("a payload with no egress block names endpoints")
+	}
+}
+
+type countAudit struct{ events []auditapp.AuditEvent }
+
+func (c *countAudit) LogEvent(_ context.Context, _ auditapp.AuditContext, ev auditapp.AuditEvent) error {
+	c.events = append(c.events, ev)
+	return nil
+}
+
+// A flood of refusals of one sensor for one reason writes one audit row per
+// window; the next window's row carries the count it folded.
+func TestRefusalAuditIsAggregatedPerSensorAndReason(t *testing.T) {
+	au := &countAudit{}
+	now := time.Date(2026, 11, 5, 10, 0, 0, 0, time.UTC)
+	s := NewService(nil, nil, nil, nil, nil, au, logger.NewNop())
+	s.now = func() time.Time { return now }
+	tid := shared.NewID()
+	sn := &sensordom.Sensor{ID: shared.NewID(), TenantID: &tid, Scope: sensordom.ScopeOrganization}
+	other := &sensordom.Sensor{ID: shared.NewID(), TenantID: &tid, Scope: sensordom.ScopeOrganization}
+	r := func(reason string) *refusal { return &refusal{reason: reason, tenant: &tid, cmd: "c1"} }
+	for range 50 {
+		s.auditRefusal(context.Background(), sn, r("lease"))
+	}
+	if len(au.events) != 1 {
+		t.Fatalf("50 refusals wrote %d rows, want 1", len(au.events))
+	}
+	s.auditRefusal(context.Background(), sn, r("grant"))
+	s.auditRefusal(context.Background(), other, r("lease"))
+	if len(au.events) != 3 {
+		t.Fatalf("a new reason and a new sensor each write a row: %d", len(au.events))
+	}
+	now = now.Add(11 * time.Minute)
+	s.auditRefusal(context.Background(), sn, r("lease"))
+	if len(au.events) != 4 {
+		t.Fatalf("a new window writes a row: %d", len(au.events))
+	}
+	if got := au.events[3].Metadata["suppressed_before"]; got != 49 {
+		t.Fatalf("suppressed_before = %v, want 49", got)
 	}
 }
