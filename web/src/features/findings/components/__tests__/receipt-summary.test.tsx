@@ -83,6 +83,50 @@ describe('ReceiptSummary', () => {
     expect(box).not.toHaveTextContent(/Partial coverage: it closes nothing/)
   })
 
+  it('shows the activity of the source: reports, findings received, assets', () => {
+    render(
+      <ReceiptSummary
+        receipt={receipt({
+          reports: 7,
+          received: 120,
+          assets: { created: 4, updated: 9 },
+        })}
+      />
+    )
+    expect(screen.getByTestId('receipt-activity')).toHaveTextContent(
+      '7 reports and 120 findings received, 4 assets created, 9 assets updated'
+    )
+  })
+
+  it('a running run with no findings yet says so instead of a grid of zeros, but keeps the activity', () => {
+    render(
+      <ReceiptSummary
+        receipt={receipt({
+          counts: { created: 0, updated: 0, reactivated: 0, closed: 0, skipped: 0, failed: 0 },
+          reports: 2,
+          received: 0,
+          assets: { created: 3, updated: 0 },
+        })}
+        runState="running"
+      />
+    )
+    expect(screen.getByTestId('receipt-no-findings-yet')).toHaveTextContent('No findings yet')
+    expect(screen.queryByText('Still detected')).toBeNull()
+    expect(screen.getByTestId('receipt-activity')).toHaveTextContent('2 reports')
+  })
+
+  it('a settled run with zero findings still shows its counts', () => {
+    render(
+      <ReceiptSummary
+        receipt={receipt({
+          counts: { created: 0, updated: 0, reactivated: 0, closed: 0, skipped: 0, failed: 0 },
+        })}
+      />
+    )
+    expect(screen.queryByTestId('receipt-no-findings-yet')).toBeNull()
+    expect(screen.getByText('New').nextSibling).toHaveTextContent('0')
+  })
+
   it('a run that ended short never says its full coverage could close findings', () => {
     render(<ReceiptSummary receipt={receipt()} runState="incomplete" />)
     const box = screen.getByTestId('receipt-summary')
