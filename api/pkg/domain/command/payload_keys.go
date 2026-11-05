@@ -42,13 +42,18 @@ const PayloadKeyDiscoveryMaxRequests = "max_requests"
 const MaxDiscoveryRequests = 100_000
 
 // PayloadScanRunID is the scan run a command payload belongs to (the
-// "scan_run_id" key), or "" when it names none.
+// "scan_run_id" key a workflow step carries, else the "run_id" of a single
+// scan), or "" when it names none.
 func PayloadScanRunID(payload json.RawMessage) string {
 	var p struct {
-		RunID string `json:"scan_run_id"`
+		ScanRunID string `json:"scan_run_id"`
+		RunID     string `json:"run_id"`
 	}
 	if json.Unmarshal(payload, &p) != nil {
 		return ""
+	}
+	if id := strings.TrimSpace(p.ScanRunID); id != "" {
+		return id
 	}
 	return strings.TrimSpace(p.RunID)
 }
