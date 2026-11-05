@@ -168,6 +168,9 @@ func TestWebEndpointResponseEvidenceMigration_DB(t *testing.T) {
 			}
 			out[name] = ok
 		}
+		if err := rows.Err(); err != nil {
+			t.Fatal(err)
+		}
 		return out
 	}
 	if got := validated(); len(got) != 2 || got["chk_web_endpoints_resp_size"] || got["chk_web_endpoints_resp_hash"] {
