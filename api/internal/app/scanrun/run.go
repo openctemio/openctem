@@ -525,7 +525,7 @@ func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *sc
 
 	// Resolve before active: an active stage skips the names the platform's
 	// freshest evidence says have not resolved for a week (RFC-088 A5).
-	stepTargets, err = s.dropStaleSeeds(ctx, run, step, resolved, stepTargets, chained)
+	stepTargets, err = s.dropStaleSeeds(ctx, run, step, resolved, stepRun, stepTargets, chained)
 	if err != nil {
 		return err
 	}
@@ -669,20 +669,41 @@ func (s *Service) filterStepSeeds(ctx context.Context, run *scanrun.Run, step *s
 // dropStaleSeeds leaves out of an active step the names without recent
 // resolution evidence. A step left with nothing (and no predecessor to feed
 // it) has no inputs.
+//
+// A name the platform knows does not resolve (the not_resolving state) is
+// always left out, whatever the scan's include-unresolved option says: that
+// option lets a name without evidence through, never one known to be dead.
+// The step run records how many such names it left out
+// (StepOutputNotResolvingSkipped), for the run map.
 func (s *Service) dropStaleSeeds(ctx context.Context, run *scanrun.Run, step *scanworkflow.Step, resolved scanapp.StepTool,
-	stepTargets *scanapp.StepTargets, chained bool,
+	stepRun *scanrun.StepRun, stepTargets *scanapp.StepTargets, chained bool,
 ) (*scanapp.StepTargets, error) {
 	f, ok := s.targetGate.(StaleNameFilter)
 	if !ok || !activeStep(resolved) {
 		return stepTargets, nil
 	}
 	seeds := chunkTargets(stepTargets, run.Context)
-	kept, stale, serr := f.DropStaleNames(ctx, run.TenantID, seeds)
+	var (
+		kept, stale []string
+		gone        int
+		serr        error
+	)
+	if c, ok := s.targetGate.(StaleNameCounter); ok {
+		kept, stale, gone, serr = c.DropStaleNamesCounted(ctx, run.TenantID, seeds)
+	} else {
+		kept, stale, serr = f.DropStaleNames(ctx, run.TenantID, seeds)
+	}
 	if serr != nil {
 		return nil, fmt.Errorf("step %s: %w", step.StepKey, serr)
 	}
 	if len(stale) == 0 {
 		return stepTargets, nil
+	}
+	if gone > 0 && stepRun != nil {
+		if stepRun.Output == nil {
+			stepRun.Output = map[string]any{}
+		}
+		stepRun.Output[StepOutputNotResolvingSkipped] = gone
 	}
 	out := &scanapp.StepTargets{Targets: kept, Refused: len(stale), Reason: scanapp.ReasonNotResolving}
 	if stepTargets != nil {
@@ -706,6 +727,12 @@ func findsNoHosts(resolved scanapp.StepTool, err error) bool {
 	var de *shared.DomainError
 	return resolved.HasStage && resolved.Stage.Key == stage.DiscoverHosts &&
 		errors.As(err, &de) && de.Code == "INCOMPATIBLE_TARGETS"
+}
+
+// StaleNameCounter is a StaleNameFilter that also counts the names left out
+// because the platform knows they do not resolve (*scan.Service).
+type StaleNameCounter interface {
+	DropStaleNamesCounted(ctx context.Context, tenantID shared.ID, targets []string) (kept, stale []string, notResolving int, err error)
 }
 
 // StaleNameFilter drops the names without recent resolution evidence
@@ -1202,6 +1229,10 @@ const (
 	// StepOutputNoLongerResolve counts the skipped targets that are names
 	// that no longer resolve (a part of StepOutputSkipped).
 	StepOutputNoLongerResolve = "no_longer_resolve_count"
+	// StepOutputNotResolvingSkipped counts the names an active step left
+	// out because the platform knows they do not resolve (not_resolving),
+	// recorded when the step is queued.
+	StepOutputNotResolvingSkipped = "not_resolving_skipped_count"
 	// StepOutputCoverageGapCount counts the hosts not fully covered, and
 	// StepOutputCoverageGaps lists them as {host, reason, edge, vendor} (single-command
 	// steps; a batched step's tasks hold the lists).
