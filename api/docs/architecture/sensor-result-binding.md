@@ -289,3 +289,18 @@ pending items are never purged. `SENSOR_RESULT_QUARANTINE_RETENTION` (default
   platform does not resolve the name itself (RFC-040 §5.3.1).
 - `simulation_run_id` and `target.asset_id` on validation evidence, telemetry
   `correlation_id` and credential ingest are not yet bound (RFC-040 S3e, S3f).
+
+## What a step run shows
+
+A step run's `findings_count` is what its sensor reported (the findings of
+every report it pushed). Ingest does not store all of them, so each
+command-bound segment also tells the step run what became of the rest:
+`findings_held` (the findings of out-of-contract assets, kept in the results
+quarantine for review; a full quarantine keeps nothing and counts them as
+refused), `findings_refused` (the finding's asset was not stored: outside the
+command's targets, excluded, invalid, or the store failed; the segment's item
+errors say which) and, for template scanners, `info_observations`
+(exposures, see [exposure-taxonomy.md](exposure-taxonomy.md)). The run map
+shows each next to the findings count, so a step never reads "N findings"
+while the findings list shows none of them. Columns:
+`scan_run_steps.findings_held` and `findings_refused`.
