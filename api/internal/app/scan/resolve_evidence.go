@@ -48,6 +48,14 @@ func (s *Service) SetResolutionStore(st assetresolution.Store) { s.resolutionSto
 // whose freshest evidence is within freshdom.ResolveTTL. It returns the
 // names it left out. A failed read is returned (fail closed).
 func (s *Service) DropStaleNames(ctx context.Context, tenantID shared.ID, targets []string) (kept, stale []string, err error) {
+	kept, stale, _, err = s.dropNamesWithoutEvidence(ctx, tenantID, targets, nil)
+	return kept, stale, err
+}
+
+// DropStaleNamesCounted is DropStaleNames that also says how many of the
+// names it left out are ones the platform knows do not resolve (the
+// not_resolving state), apart from names whose evidence only went stale.
+func (s *Service) DropStaleNamesCounted(ctx context.Context, tenantID shared.ID, targets []string) (kept, stale []string, notResolving int, err error) {
 	return s.dropNamesWithoutEvidence(ctx, tenantID, targets, nil)
 }
 
@@ -56,9 +64,9 @@ func (s *Service) DropStaleNames(ctx context.Context, tenantID shared.ID, target
 // with their asset) are also left out when the platform holds no evidence
 // for them at all, and their enrichment is requested. A typed name without
 // evidence is still handed on.
-func (s *Service) dropNamesWithoutEvidence(ctx context.Context, tenantID shared.ID, targets []string, requireProof map[string]shared.ID) (kept, stale []string, err error) {
+func (s *Service) dropNamesWithoutEvidence(ctx context.Context, tenantID shared.ID, targets []string, requireProof map[string]shared.ID) (kept, stale []string, gone int, err error) {
 	if (s.resolveEvidence == nil && s.resolutionStore == nil) || len(targets) == 0 {
-		return targets, nil, nil
+		return targets, nil, 0, nil
 	}
 	names := make([]string, 0, len(targets))
 	seen := map[string]bool{}
@@ -71,14 +79,14 @@ func (s *Service) dropNamesWithoutEvidence(ctx context.Context, tenantID shared.
 		names = append(names, n)
 	}
 	if len(names) == 0 {
-		return targets, nil, nil
+		return targets, nil, 0, nil
 	}
 	var ev []freshdom.NameEvidence
 	if s.resolveEvidence != nil {
 		var err error
 		ev, err = s.resolveEvidence.FreshestByName(ctx, tenantID, names, freshdom.ResolveEvidenceClasses)
 		if err != nil {
-			return nil, nil, fmt.Errorf("resolution evidence check failed, nothing dispatched: %w", err)
+			return nil, nil, 0, fmt.Errorf("resolution evidence check failed, nothing dispatched: %w", err)
 		}
 	}
 	// Names the platform knows do not resolve (a resolve stage or a sensor
@@ -88,7 +96,7 @@ func (s *Service) dropNamesWithoutEvidence(ctx context.Context, tenantID shared.
 		var err error
 		notResolving, err = s.resolutionStore.NotResolving(ctx, tenantID, names)
 		if err != nil {
-			return nil, nil, fmt.Errorf("resolution state check failed, nothing dispatched: %w", err)
+			return nil, nil, 0, fmt.Errorf("resolution state check failed, nothing dispatched: %w", err)
 		}
 	}
 	freshest := map[string]time.Time{}
@@ -123,13 +131,16 @@ func (s *Service) dropNamesWithoutEvidence(ctx context.Context, tenantID shared.
 		}
 	}
 	if len(staleSet) == 0 {
-		return targets, nil, nil
+		return targets, nil, 0, nil
 	}
 	kept = make([]string, 0, len(targets))
 	for _, t := range targets {
 		n := strings.ToLower(strings.TrimSuffix(strings.TrimSpace(t), "."))
 		if staleSet[n] {
 			stale = append(stale, t)
+			if notResolving[n] {
+				gone++
+			}
 			continue
 		}
 		kept = append(kept, t)
@@ -137,7 +148,7 @@ func (s *Service) dropNamesWithoutEvidence(ctx context.Context, tenantID shared.
 	if s.staleRefresher != nil && len(refresh) > 0 {
 		s.staleRefresher.RequestStale(ctx, tenantID, refresh)
 	}
-	return kept, stale, nil
+	return kept, stale, gone, nil
 }
 
 // RunContextKeyNotResolving counts the names a run left out for lack of
@@ -160,7 +171,7 @@ func (s *Service) dropStaleRunNames(ctx context.Context, sc *scanpkg.Scan, r *re
 	if !sc.TargetOptions.IncludeUnresolved {
 		requireProof = r.Inventory
 	}
-	kept, stale, err := s.dropNamesWithoutEvidence(ctx, sc.TenantID, r.Targets, requireProof)
+	kept, stale, _, err := s.dropNamesWithoutEvidence(ctx, sc.TenantID, r.Targets, requireProof)
 	if err != nil {
 		return err
 	}

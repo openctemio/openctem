@@ -158,7 +158,11 @@ type Handlers struct {
 	SensorResults *handler.SensorResultHandler  // unsolicited results policy + quarantine review (RFC-040); nil without a database
 	ScanZone      *handler.ScanZoneHandler      // nil if not initialized (no database)
 	ProxyPool     *handler.ProxyPoolHandler     // nil if not initialized (no database)
-	ScanWindow    *handler.ScanWindowHandler    // nil if not initialized (no database)
+	// ToolSource serves the organization's tool source keys; nil without a database.
+	ToolSource *handler.ToolSourceHandler
+	// TaskSecrets serves the sealed task secrets fetch of sensors; nil: not mounted.
+	TaskSecrets handler.TaskSecrets
+	ScanWindow  *handler.ScanWindowHandler // nil if not initialized (no database)
 	// FindingLifecycle serves sub-statuses and lifecycle schemes (RFC-110); nil without a database.
 	FindingLifecycle *handler.FindingLifecycleHandler
 	ScanWorkflow     *handler.ScanWorkflowHandler // nil if not initialized (no database)
@@ -1108,6 +1112,9 @@ func Register(
 	// Scan zone routes (tenant from JWT token)
 	if h.ScanZone != nil {
 		registerScanZoneRoutes(router, h.ScanZone, authMiddleware, userSync)
+	}
+	if h.ToolSource != nil {
+		registerToolSourceRoutes(router, h.ToolSource, authMiddleware, userSync)
 	}
 	if h.ProxyPool != nil {
 		registerProxyPoolRoutes(router, h.ProxyPool, authMiddleware, userSync)

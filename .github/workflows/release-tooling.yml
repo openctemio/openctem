@@ -29,6 +29,8 @@ on:
     paths:
       - versions.yaml
       - .github/scripts/release/**
+      - .github/scripts/release-preflight.sh
+      - .github/scripts/release-provenance.sh
       - .github/scripts/pr-labels.py
       - .github/workflows/pr-hygiene.yml
       - .github/workflows/release-*.yml
@@ -50,6 +52,8 @@ on:
     paths:
       - versions.yaml
       - .github/scripts/release/**
+      - .github/scripts/release-preflight.sh
+      - .github/scripts/release-provenance.sh
       - .github/scripts/pr-labels.py
       - .github/workflows/pr-hygiene.yml
       - .github/workflows/release-*.yml

@@ -329,6 +329,11 @@ func (r *Reclassifier) reclassifyAsset(ctx context.Context, tenantID, assetID sh
 		if err := r.classifier.EnrichAndClassifyBatch(ctx, tenantID, open, assets); err != nil {
 			return computed, impact, fmt.Errorf("classify: %w", err)
 		}
+		// The classifier knows nothing of how sure a version match is: apply
+		// the matcher's own caps, or every pass would undo it.
+		for _, f := range open {
+			vulnerability.CapVersionMatchPriority(f)
+		}
 		if r.sla != nil {
 			if err := r.sla.ApplyBatch(ctx, tenantID, open); err != nil {
 				r.logger.Warn("sla recompute failed", "asset_id", assetID.String(), "error", err)

@@ -342,6 +342,7 @@ function CreateTeamFormUI({
   selectedBundles,
   onToggleBundle,
 }: CreateTeamFormUIProps) {
+  const { t } = useTranslation()
   const appHost = useAppHost()
   // No Card wrapper, no duplicate title, no icon clutter on labels.
   // The page-level <h1> already says "Set up your first team" — the form
@@ -356,10 +357,10 @@ function CreateTeamFormUI({
           name="name"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Team name</FormLabel>
+              <FormLabel>{t('org.createTeam.name', 'Team name')}</FormLabel>
               <FormControl>
                 <Input
-                  placeholder="Acme Corporation"
+                  placeholder={t('org.createTeam.namePlaceholder', 'Acme Corporation')}
                   autoFocus
                   disabled={isMutating || isSubmitting}
                   {...field}
@@ -379,7 +380,7 @@ function CreateTeamFormUI({
           name="slug"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Team URL</FormLabel>
+              <FormLabel>{t('org.createTeam.url', 'Team URL')}</FormLabel>
               <FormControl>
                 <div className="border-input bg-background focus-within:border-ring focus-within:ring-ring/50 flex h-9 items-center rounded-md border shadow-xs transition-[color,box-shadow] focus-within:ring-[3px]">
                   <span
@@ -398,7 +399,7 @@ function CreateTeamFormUI({
                 </div>
               </FormControl>
               <FormDescription className="text-xs">
-                Lowercase letters, numbers, and hyphens only.
+                {t('org.createTeam.urlHint', 'Lowercase letters, numbers, and hyphens only.')}
               </FormDescription>
               <FormMessage />
             </FormItem>
@@ -412,12 +413,17 @@ function CreateTeamFormUI({
           render={({ field }) => (
             <FormItem>
               <FormLabel className="flex items-baseline gap-2">
-                Description
-                <span className="text-muted-foreground text-xs font-normal">Optional</span>
+                {t('org.createTeam.description', 'Description')}
+                <span className="text-muted-foreground text-xs font-normal">
+                  {t('org.createTeam.optional', 'Optional')}
+                </span>
               </FormLabel>
               <FormControl>
                 <Textarea
-                  placeholder="What does this team work on?"
+                  placeholder={t(
+                    'org.createTeam.descriptionPlaceholder',
+                    'What does this team work on?'
+                  )}
                   rows={3}
                   disabled={isMutating || isSubmitting}
                   className="resize-none"
@@ -451,7 +457,7 @@ function CreateTeamFormUI({
               onClick={onCancel}
               disabled={isMutating || isSubmitting}
             >
-              Cancel
+              {t('common.cancel', 'Cancel')}
             </Button>
           )}
           <Button
@@ -463,10 +469,10 @@ function CreateTeamFormUI({
             {isMutating || isSubmitting ? (
               <>
                 <Loader2 className="me-2 h-4 w-4 animate-spin" />
-                Creating team…
+                {t('org.createTeam.creating', 'Creating team…')}
               </>
             ) : (
-              'Create team'
+              t('org.createTeam.create', 'Create team')
             )}
           </Button>
         </div>

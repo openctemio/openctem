@@ -24,7 +24,7 @@ decides:
 | Re-run | Attempt evidence | Outcome (`reason_code`) | Finding |
 |---|---|---|---|
 | matched | any | `still_vulnerable` (`matched`) | open: unchanged · `resolved` → `confirmed` (regression) · `fix_applied` → `in_progress`; validation `reproducible`, observation `present` |
-| no match | request to the finding's endpoint, answered 1xx–4xx except 401/403/407/429, with no edge marker | `confirmed_fixed` (`not_matched`) | status unchanged, validation `not_reproducible` ("verified fixed — awaiting confirmation"); → `resolved` (`fixed` / `retest`) only with `settings.retest.auto_resolve`; `resolved` stays |
+| no match | request to the finding's endpoint, answered 1xx–4xx except 401/403/407/429, with no edge marker | `confirmed_fixed` (`not_matched`) | status unchanged, validation `not_reproducible` ("verified fixed — awaiting confirmation"); → `resolved` (`fixed` / `retest`) only with `settings.retest.auto_resolve` and when the organization's closing mode closes a verified retest (`auto`; `review` records a Ready to close proposal, `off` keeps it); `resolved` stays |
 | no match | any answer carrying a CDN or WAF challenge or block marker (a vendor header or error page), or a throttle with a vendor marker | `inconclusive` (`edge_blocked`), never a fix | unchanged |
 | no match | origin 401 / 403 (no edge marker), exposure-class platform template, second sighting (the previous completed retest, at least an hour earlier, was the same origin refusal) | `confirmed_fixed` (`access_denied`), "access now denied by the server" | as for any confirmed fix |
 | no match | origin 401 / 403, exposure-class template, first sighting, or less than an hour after the first | `inconclusive` (`access_denied`) | unchanged |
@@ -116,13 +116,53 @@ answer, which the sensor reports as `not_detected`: without it a down host, a
 firewall change or a sensor in the wrong zone would read as "fixed". It only
 separates "unreachable" from "not reproduced"; it never proves a fix.
 
-Eligible findings: `tool_name = nuclei` with a template id that passes the
-template guard (no path, no `dos`/`fuzz`/`intrusive`/`brute-force` marker), in
+Eligible findings for the template method: `tool_name = nuclei` with a
+template id that passes the template guard (no path,
+no `dos`/`fuzz`/`intrusive`/`brute-force` marker). The other methods (one
+`retest` command for a tool that declares the retest capability, a version
+re-check, an approved custom check) have their own eligibility
+(`retest.Service.Request`). Every method needs the finding in
 `new`, `confirmed`, `in_progress`, `fix_applied` or `resolved`, on an `active`, network-addressable asset that passes the scope
 gates. `false_positive`, `accepted`, `duplicate`, suppressed and pentest
 findings are never retested.
 
 ## Flow
+
+Checked against the code of v0.19.1 and develop on 2026-11-05.
+
+```mermaid
+sequenceDiagram
+  autonumber
+  actor P as Member (findings verify permission)
+  participant API as POST /api/v1/findings/{id}/retests
+  participant RS as retest.Service
+  participant DB as Postgres (finding_retests, commands)
+  participant SE as Sensor
+  participant CH as Command handlers
+  P->>API: request a retest (tenant from the token, DataScopeGuard)
+  API->>RS: Request
+  RS->>RS: eligibility: status, not a secret or person-reported,<br/>active network asset, active-probe gate (fail closed)
+  RS->>RS: limits: 10 min cooldown per finding, 3 in flight per asset,<br/>20 manual or 50 automatic per organization
+  RS->>DB: INSERT finding_retests pending (one per finding, unique index)
+  alt method template
+    RS->>DB: validate command (nuclei, template id) and safe-check command
+  else method tool
+    RS->>DB: one retest command with the required capability
+  else method version
+    RS->>DB: version re-check (deadline 2 h)
+  end
+  alt dispatch fails
+    RS->>DB: settled inconclusive, nothing moves
+  end
+  RS->>DB: activity retest_requested, audit finding.retest_requested
+  SE->>CH: claim (probe gate re-checked), results, complete or fail
+  CH->>RS: OnCommandFinished
+  RS->>RS: trySettle: template drift and calibration checks
+  RS->>DB: Settle (one transaction): lock retest and finding,<br/>seen by a scan after the check means inconclusive,<br/>stamp validation_outcome, NextStatus, move, closure
+  Note over RS,DB: confirmed_fixed resolves only with the retest setting auto_resolve<br/>and closing mode auto (review: proposal, off: kept).<br/>still_vulnerable: resolved to confirmed, fix_applied to in_progress.<br/>inconclusive and not_reproduced move nothing.
+```
+
+The same flow in text, with the scheduler:
 
 ```
 POST /api/v1/findings/{id}/retests            (findings:verify + data scope)
@@ -139,8 +179,9 @@ sensor completes / fails a command
        └─ retest.Service.OnCommandFinished → both checks terminal?
             └─ FindingRetestRepository.Settle (one transaction):
                  lock retest (pending?) → lock finding, read status → NextStatus
-                 → move finding → complete retest → activity retest_completed
-                   (actor_type system, actor_name "system: retest")
+                 → move finding + audit finding.status_changed → complete retest
+                 → activity retest_completed (actor_type system,
+                   actor_name "system: retest", closure_decision)
 
 RetestScheduler (controller, every minute, every replica)
   ├─ Sweep: settle retests whose checks ended or whose 30-min deadline passed
