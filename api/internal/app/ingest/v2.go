@@ -161,7 +161,20 @@ func (s *Service) IngestV2Segment(ctx context.Context, prov Provenance, report *
 	}
 	o.RejectedFindings += len(failed)
 	o.AcceptedFindings = len(kept) - len(failed)
+
+	// The step run of a command shows what became of the findings its
+	// sensor reported: the held ones are in the quarantine, the rest of the
+	// rejected ones were not stored (their item errors say why).
+	held, refused := splitRejected(out.FindingsHeld, o.RejectedFindings)
+	s.recordStepDispositions(ctx, prov.TenantID, opts.Binding, held, refused)
 	return res, nil
+}
+
+// splitRejected splits a segment's rejected findings: the ones held for
+// review are rejected too (their asset was not stored), the rest were refused.
+func splitRejected(held, rejected int) (heldOut, refused int) {
+	heldOut = max(min(held, rejected), 0)
+	return heldOut, max(rejected, 0) - heldOut
 }
 
 // assetOutcomes counts the segment's assets and returns the persisted ones

@@ -91,9 +91,13 @@ type RunMapNode struct {
 	TimeoutSeconds int `json:"timeout_seconds,omitempty"`
 	Findings       int `json:"findings"`
 	// InfoObservations: template scanner info matches filed as exposures.
-	InfoObservations int           `json:"info_observations,omitempty"`
-	Chunks           RunMapChunks  `json:"chunks"`
-	Outputs          RunMapOutputs `json:"outputs"`
+	InfoObservations int `json:"info_observations,omitempty"`
+	// FindingsHeld: reported findings held for review; FindingsRefused:
+	// reported findings not stored.
+	FindingsHeld    int           `json:"findings_held,omitempty"`
+	FindingsRefused int           `json:"findings_refused,omitempty"`
+	Chunks          RunMapChunks  `json:"chunks"`
+	Outputs         RunMapOutputs `json:"outputs"`
 	// Inputs and Planned: how many targets the stage considered and was
 	// handed (absent before the stage is planned).
 	Inputs  *int `json:"inputs,omitempty"`
@@ -401,6 +405,8 @@ func fillNodeFromStepRun(n *RunMapNode, sr *scanrundom.StepRun, platform bool) {
 	}
 	n.Findings = sr.FindingsCount
 	n.InfoObservations = sr.InfoObservations
+	n.FindingsHeld = sr.FindingsHeld
+	n.FindingsRefused = sr.FindingsRefused
 	n.State = mapNodeState(sr.Status, n.Chunks)
 	switch n.State {
 	case mapStateWaiting:
