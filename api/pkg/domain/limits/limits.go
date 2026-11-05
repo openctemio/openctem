@@ -27,11 +27,15 @@ import (
 type Key string
 
 const (
-	Seats                   Key = "seats"
-	Assets                  Key = "assets"
-	Sensors                 Key = "sensors"
-	APIKeys                 Key = "api_keys"
-	CITrusts                Key = "ci_trusts"
+	Seats    Key = "seats"
+	Assets   Key = "assets"
+	Sensors  Key = "sensors"
+	APIKeys  Key = "api_keys"
+	CITrusts Key = "ci_trusts"
+	// SSOConnections caps the organization's single sign-on connections (SAML
+	// and OIDC). Only creating another one is refused; changing or deleting a
+	// connection, signing in through it and requiring SSO are never gated.
+	SSOConnections          Key = "sso_connections"
 	InvitesPerDay           Key = "invites_per_day"
 	PlatformScansPerDay     Key = "platform_scans_per_day"
 	PlatformScansConcurrent Key = "platform_scans_concurrent"
@@ -75,7 +79,7 @@ const (
 )
 
 // Keys lists every limit key in display order.
-var Keys = []Key{Seats, Assets, Sensors, APIKeys, CITrusts, InvitesPerDay, PlatformScansPerDay, PlatformScansConcurrent, Findings, LifecycleSubStatuses, LifecycleSchemes, StorageMB, OrgsPerUser, DashboardRefreshFloorMinutes, ContentSources, ContentStorageMB, ContentSyncFloorMinutes, ContentSnapshotMaxMB}
+var Keys = []Key{Seats, Assets, Sensors, APIKeys, CITrusts, SSOConnections, InvitesPerDay, PlatformScansPerDay, PlatformScansConcurrent, Findings, LifecycleSubStatuses, LifecycleSchemes, StorageMB, OrgsPerUser, DashboardRefreshFloorMinutes, ContentSources, ContentStorageMB, ContentSyncFloorMinutes, ContentSnapshotMaxMB}
 
 // IsValid reports whether k is a known key.
 func (k Key) IsValid() bool {

@@ -20,7 +20,9 @@ import (
 // The S3 driver against a real S3-compatible server (a scratch MinIO,
 // SeaweedFS or similar). Skipped unless OPENCTEM_TEST_S3_ENDPOINT,
 // OPENCTEM_TEST_S3_ACCESS_KEY and OPENCTEM_TEST_S3_SECRET_KEY are set; each
-// run uses a fresh bucket.
+// run uses a fresh bucket. With OPENCTEM_TEST_S3_BUCKET set the run uses that
+// existing bucket instead (a bucket-scoped token, e.g. Cloudflare R2, cannot
+// create buckets); every tenant prefix a test writes is erased on cleanup.
 func s3IntegrationStore(t *testing.T) *S3Storage {
 	t.Helper()
 	endpoint := os.Getenv("OPENCTEM_TEST_S3_ENDPOINT")
@@ -28,15 +30,35 @@ func s3IntegrationStore(t *testing.T) *S3Storage {
 	if endpoint == "" || ak == "" || sk == "" {
 		t.Skip("OPENCTEM_TEST_S3_ENDPOINT / _ACCESS_KEY / _SECRET_KEY not set")
 	}
-	bucket := "openctem-it-" + strings.ReplaceAll(shared.NewID().String(), "-", "")[:20]
-	s, err := NewOperatorS3Storage(bucket, "us-east-1", endpoint, ak, sk)
+	region := os.Getenv("OPENCTEM_TEST_S3_REGION")
+	if region == "" {
+		region = "us-east-1"
+	}
+	existing := os.Getenv("OPENCTEM_TEST_S3_BUCKET")
+	bucket := existing
+	if bucket == "" {
+		bucket = "openctem-it-" + strings.ReplaceAll(shared.NewID().String(), "-", "")[:20]
+	}
+	s, err := NewOperatorS3Storage(bucket, region, endpoint, ak, sk)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if existing != "" {
+		return s
 	}
 	if _, err := s.client.CreateBucket(context.Background(), &s3.CreateBucketInput{Bucket: aws.String(bucket)}); err != nil {
 		t.Fatalf("create bucket: %v", err)
 	}
 	return s
+}
+
+// s3IntegrationTenant returns a fresh tenant prefix erased when the test ends,
+// so a shared bucket is left empty.
+func s3IntegrationTenant(t *testing.T, s *S3Storage) string {
+	t.Helper()
+	id := shared.NewID().String()
+	t.Cleanup(func() { _, _ = s.EraseTenant(context.Background(), id) })
+	return id
 }
 
 func readAll(t *testing.T, rc io.ReadCloser) string {
@@ -52,7 +74,7 @@ func readAll(t *testing.T, rc io.ReadCloser) string {
 func TestS3Integration_StreamedRoundTripAndTenantIsolation(t *testing.T) {
 	s := s3IntegrationStore(t)
 	ctx := context.Background()
-	tenantA, tenantB := shared.NewID().String(), shared.NewID().String()
+	tenantA, tenantB := s3IntegrationTenant(t, s), s3IntegrationTenant(t, s)
 
 	body := strings.Repeat("evidence-", 600_000) // ~5.4 MB, streamed (not seekable)
 	keyA, err := s.Upload(ctx, tenantA, "trace.har", "application/har+json", io.MultiReader(strings.NewReader(body)))
@@ -114,7 +136,7 @@ func TestS3Integration_StreamedRoundTripAndTenantIsolation(t *testing.T) {
 func TestS3Integration_MigrateRoundTripAndSignedGet(t *testing.T) {
 	s := s3IntegrationStore(t)
 	ctx := context.Background()
-	tenant := shared.NewID().String()
+	tenant := s3IntegrationTenant(t, s)
 	src := NewLocalStorage(t.TempDir())
 	key, err := src.Upload(ctx, tenant, "evidence.png", "image/png", strings.NewReader(strings.Repeat("px", 70000)))
 	if err != nil {

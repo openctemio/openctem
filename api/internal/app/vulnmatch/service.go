@@ -370,8 +370,16 @@ func (s *Service) ReconcileTenant(ctx context.Context, tenantID shared.ID, st *S
 
 	var reopen []shared.ID
 	var create []*candidate
+	var refresh []softwarematch.ObservedVersionRef
 	for fp, c := range desired {
 		f, ok := byFP[fp]
+		if ok && f.VersionID != nil && *f.VersionID != c.m.VersionID && isOpen(f.Status) {
+			// The product moved to another version that this CVE still
+			// matches: the finding stays open and records the version it is
+			// observed on now (the identity is the same for every version).
+			refresh = append(refresh, softwarematch.ObservedVersionRef{FindingID: f.ID, ProductID: c.m.ProductID,
+				VersionID: c.m.VersionID, Version: c.m.Version, Qualifier: c.m.Qualifier})
+		}
 		switch {
 		case !ok:
 			create = append(create, c)
@@ -387,6 +395,11 @@ func (s *Service) ReconcileTenant(ctx context.Context, tenantID shared.ID, st *S
 			return err
 		}
 		st.Reopened += len(done)
+	}
+	if len(refresh) > 0 {
+		if _, err := s.store.UpdateObservedVersion(ctx, tenantID, refresh); err != nil {
+			return err
+		}
 	}
 	created, err := s.create(ctx, tenantID, create, st)
 	if err != nil {
@@ -636,26 +649,13 @@ func (s *Service) enrich(ctx context.Context, tenantID shared.ID, findings []*vu
 		}
 	}
 	for _, f := range findings {
-		CapPotentialPriority(f)
-		CapSharedHostingPriority(f)
+		vulnerability.CapVersionMatchPriority(f)
 	}
 	if s.sla != nil {
 		if err := s.sla.ApplyBatch(ctx, tenantID, findings); err != nil {
 			s.logger.Warn("vulnerability matching: sla not applied", "error", err)
 		}
 	}
-}
-
-// Confirmed reports whether an active check (a template or a network scanner
-// report of the same CVE on the same asset) confirmed the version match: the
-// same-issue link step records it as version_match.confirmed_by.
-func Confirmed(f *vulnerability.Finding) bool {
-	vm, ok := f.Metadata()["version_match"].(map[string]any)
-	if !ok {
-		return false
-	}
-	_, ok = vm["confirmed_by"]
-	return ok
 }
 
 // HostingReader reads where the tenant's matched assets are served from
@@ -698,39 +698,6 @@ func (s *Service) attributeHosting(ctx context.Context, tenantID shared.ID, matc
 	}
 }
 
-// SharedHostingCapReason is the priority reason of a match on a provider's
-// shared front end.
-const SharedHostingCapReason = "Version-based match on a host the provider's shared front end serves: attributed to the provider, shown as context"
-
-// CapSharedHostingPriority lowers a version match on a provider's shared
-// front end to P3: the software belongs to the provider, so it is context for
-// the organization, never its own P0-P2.
-func CapSharedHostingPriority(f *vulnerability.Finding) {
-	vm, ok := f.Metadata()["version_match"].(map[string]any)
-	if !ok {
-		return
-	}
-	if p, _ := vm["hosted_by"].(string); p == "" || Confirmed(f) {
-		return
-	}
-	if p := f.PriorityClass(); p == nil || *p == vulnerability.PriorityP0 || *p == vulnerability.PriorityP1 || *p == vulnerability.PriorityP2 {
-		f.SetPriorityClassification(vulnerability.PriorityP3, SharedHostingCapReason)
-	}
-}
-
-// CapPotentialPriority lowers a P0/P1 version match below the likely
-// threshold to P2 unless the CVE is in KEV.
-func CapPotentialPriority(f *vulnerability.Finding) {
-	c := f.Confidence()
-	if c == nil || *c >= vulnmatch.LikelyThreshold || f.IsInKEV() || Confirmed(f) {
-		return
-	}
-	if p := f.PriorityClass(); p != nil && (*p == vulnerability.PriorityP0 || *p == vulnerability.PriorityP1) {
-		f.SetPriorityClassification(vulnerability.PriorityP2,
-			"Version-based match below 80% confidence and not known exploited: capped at P2 until a scan or validation confirms it")
-	}
-}
-
 func (s *Service) close(ctx context.Context, tenantID shared.ID, existing []softwarematch.MatcherFinding,
 	matched map[string]bool, currentSince time.Time, st *Stats,
 ) error {
@@ -758,6 +725,11 @@ func (s *Service) close(ctx context.Context, tenantID shared.ID, existing []soft
 	for k, ids := range byKey {
 		info := states[k]
 		switch {
+		case info.State == softwarematch.LinkUpgraded && (info.Now == nil || !info.Now.Evaluated):
+			// The displacing version has no evaluated matches yet, so the
+			// missing match says nothing about a fix: it may still be
+			// vulnerable. Keep the finding open until the version has been
+			// evaluated (the next pass either matches it again or closes).
 		case info.State == softwarematch.LinkUpgraded:
 			toClose[softwarematch.CloseVersionChanged] = append(toClose[softwarematch.CloseVersionChanged], ids...)
 			for _, id := range ids {

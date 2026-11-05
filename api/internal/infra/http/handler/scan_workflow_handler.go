@@ -668,6 +668,13 @@ type StepRunResponse struct {
 	Attempt       int    `json:"attempt"`
 	MaxAttempts   int    `json:"max_attempts"`
 	FindingsCount int    `json:"findings_count"`
+	// InfoObservations: template scanner info matches filed as exposures
+	// instead of findings.
+	InfoObservations int `json:"info_observations"`
+	// FindingsHeld / FindingsRefused: reported findings held for review and
+	// findings not stored (FindingsCount is what the sensor reported).
+	FindingsHeld    int `json:"findings_held"`
+	FindingsRefused int `json:"findings_refused"`
 }
 
 // --- Template Handlers ---
@@ -1841,19 +1848,22 @@ func toFilteringResultFromStruct(v any) *FilteringResultResponse {
 
 func toStepRunResponse(sr *scanrundom.StepRun) StepRunResponse {
 	resp := StepRunResponse{
-		ID:            sr.ID.String(),
-		StepKey:       sr.StepKey,
-		StepName:      sr.StepName,
-		Tool:          sr.Tool,
-		Capability:    sr.Capability,
-		Status:        string(sr.Status),
-		ErrorMessage:  sr.ErrorMessage,
-		ErrorCode:     sr.ErrorCode,
-		ErrorClass:    stepErrorClass(sr.ErrorCode),
-		SkipReason:    sr.SkipReason,
-		Attempt:       sr.Attempt,
-		MaxAttempts:   sr.MaxAttempts,
-		FindingsCount: sr.FindingsCount,
+		ID:               sr.ID.String(),
+		StepKey:          sr.StepKey,
+		StepName:         sr.StepName,
+		Tool:             sr.Tool,
+		Capability:       sr.Capability,
+		Status:           string(sr.Status),
+		ErrorMessage:     sr.ErrorMessage,
+		ErrorCode:        sr.ErrorCode,
+		ErrorClass:       stepErrorClass(sr.ErrorCode),
+		SkipReason:       sr.SkipReason,
+		Attempt:          sr.Attempt,
+		MaxAttempts:      sr.MaxAttempts,
+		FindingsCount:    sr.FindingsCount,
+		InfoObservations: sr.InfoObservations,
+		FindingsHeld:     sr.FindingsHeld,
+		FindingsRefused:  sr.FindingsRefused,
 
 		EffectiveConfig: sr.EffectiveConfig,
 		SensorSettings:  sr.SensorSettings,

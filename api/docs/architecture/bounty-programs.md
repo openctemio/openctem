@@ -8,6 +8,43 @@ organization tests under its published rules. It owns scope entries
 (`authorization_source = program`), exclusions for the items it lists as out
 of scope, its rules and a group whose members work on it.
 
+## Flow: import a program
+
+Checked against the code of v0.19.1 and develop on 2026-11-05 (no change
+between them in this area). A followed public program (`POST
+/programs/subscriptions`) and a sync take the same path from step 5, with
+entries inactive until a member accepts the terms hash.
+
+```mermaid
+sequenceDiagram
+  autonumber
+  actor R as Researcher or admin
+  participant H as BountyProgramHandler
+  participant S as bountyprogram.Service
+  participant L as Job signer scope ledger
+  participant DB as bounty_programs, scope_targets, exclusions
+  participant T as programtarget.Ingester
+  participant I as ingest.Service.Ingest
+  R->>H: POST /api/v1/programs/preview (attack_surface:programs:write)
+  H->>S: Preview: ParseScope, RFC-054 guardrails, terms_sha256
+  H-->>R: items in, out, not scannable, terms hash
+  R->>H: POST /api/v1/programs {accept_terms_sha256} (step-up)
+  H->>S: Import(tenant from token, actor)
+  S->>S: Preview again, checkTerms(accepted == computed)
+  S->>L: CommitEntries(program entries, policy program_attestation)
+  L->>DB: repo.Import: program, group with the importer, entries, exclusions
+  S->>S: recordAttestation (terms hash per person)
+  S->>T: assign: IngestProgramTargets (at most 4x MaxScopeItems)
+  T->>I: CTIS report, BindingTrusted, SourceKind import or feed,<br/>partial, NoExposureProjection
+  T->>DB: ReplaceTargetAssets, AssignProgramAssets (asset_owners, data scope)
+  S->>S: NotifyAdmins, scope join scheduled
+```
+
+At scan time the one authority check (`scopeauth`) treats program entries
+like any entry; `internal/app/scan/active_proof.go` refuses platform sensors
+for program-only targets, and command delivery attaches the program rules
+(below).
+
 ## Where a program target is decided
 
 ```
@@ -174,7 +211,7 @@ left out of the organization's own metrics by default (RFC-065 §16.5).
 ## Typed targets and per-target qualifiers
 
 The classifier keeps what a program lists: `api.x.com:8443/tcp`,
-`10.0.0.5:22` and `https://api.x.com:8443` become entries of the host
+`198.51.100.5:22` and `https://api.x.com:8443` become entries of the host
 limited to that port (never the whole host); a URL with a path becomes a
 path-limited URL entry; feed targets carry `ports`, `protocol` and
 `path_prefix` (schema 1.1) into the same limits, and a limit an entry cannot

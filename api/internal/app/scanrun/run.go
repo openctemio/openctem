@@ -450,7 +450,7 @@ func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *sc
 	if err != nil {
 		return fmt.Errorf("step %s: %w", step.StepKey, err)
 	}
-	step = resolved.WithTool(step)
+	step = resolved.WithTool(resolved.WithDepthDefaults(step, RunDepth(run)))
 	if err := checkStepIntensity(run, step, resolved); err != nil {
 		return fmt.Errorf("step %s: %w", step.StepKey, err)
 	}
@@ -502,7 +502,7 @@ func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *sc
 	if kerr != nil {
 		return fmt.Errorf("step %s: %w", step.StepKey, kerr)
 	}
-	stepTargets = kindGated
+	stepTargets = collapseRegistrable(resolved, kindGated, run.Context)
 	if stepTargets != nil && stepTargets.Refused > 0 {
 		s.logger.Info("step targets of a kind the stage does not take were left out",
 			"run_id", run.ID.String(), "step_key", logger.SanitizeValue(step.StepKey), "refused", stepTargets.Refused, "reason", logger.SanitizeValue(stepTargets.Reason))
@@ -525,7 +525,7 @@ func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *sc
 
 	// Resolve before active: an active stage skips the names the platform's
 	// freshest evidence says have not resolved for a week (RFC-088 A5).
-	stepTargets, err = s.dropStaleSeeds(ctx, run, step, resolved, stepTargets, chained)
+	stepTargets, err = s.dropStaleSeeds(ctx, run, step, resolved, stepRun, stepTargets, chained)
 	if err != nil {
 		return err
 	}
@@ -670,20 +670,41 @@ func (s *Service) filterStepSeeds(ctx context.Context, run *scanrun.Run, step *s
 // dropStaleSeeds leaves out of an active step the names without recent
 // resolution evidence. A step left with nothing (and no predecessor to feed
 // it) has no inputs.
+//
+// A name the platform knows does not resolve (the not_resolving state) is
+// always left out, whatever the scan's include-unresolved option says: that
+// option lets a name without evidence through, never one known to be dead.
+// The step run records how many such names it left out
+// (StepOutputNotResolvingSkipped), for the run map.
 func (s *Service) dropStaleSeeds(ctx context.Context, run *scanrun.Run, step *scanworkflow.Step, resolved scanapp.StepTool,
-	stepTargets *scanapp.StepTargets, chained bool,
+	stepRun *scanrun.StepRun, stepTargets *scanapp.StepTargets, chained bool,
 ) (*scanapp.StepTargets, error) {
 	f, ok := s.targetGate.(StaleNameFilter)
 	if !ok || !activeStep(resolved) {
 		return stepTargets, nil
 	}
 	seeds := chunkTargets(stepTargets, run.Context)
-	kept, stale, serr := f.DropStaleNames(ctx, run.TenantID, seeds)
+	var (
+		kept, stale []string
+		gone        int
+		serr        error
+	)
+	if c, ok := s.targetGate.(StaleNameCounter); ok {
+		kept, stale, gone, serr = c.DropStaleNamesCounted(ctx, run.TenantID, seeds)
+	} else {
+		kept, stale, serr = f.DropStaleNames(ctx, run.TenantID, seeds)
+	}
 	if serr != nil {
 		return nil, fmt.Errorf("step %s: %w", step.StepKey, serr)
 	}
 	if len(stale) == 0 {
 		return stepTargets, nil
+	}
+	if gone > 0 && stepRun != nil {
+		if stepRun.Output == nil {
+			stepRun.Output = map[string]any{}
+		}
+		stepRun.Output[StepOutputNotResolvingSkipped] = gone
 	}
 	out := &scanapp.StepTargets{Targets: kept, Refused: len(stale), Reason: scanapp.ReasonNotResolving}
 	if stepTargets != nil {
@@ -707,6 +728,12 @@ func findsNoHosts(resolved scanapp.StepTool, err error) bool {
 	var de *shared.DomainError
 	return resolved.HasStage && resolved.Stage.Key == stage.DiscoverHosts &&
 		errors.As(err, &de) && de.Code == "INCOMPATIBLE_TARGETS"
+}
+
+// StaleNameCounter is a StaleNameFilter that also counts the names left out
+// because the platform knows they do not resolve (*scan.Service).
+type StaleNameCounter interface {
+	DropStaleNamesCounted(ctx context.Context, tenantID shared.ID, targets []string) (kept, stale []string, notResolving int, err error)
 }
 
 // StaleNameFilter drops the names without recent resolution evidence
@@ -1206,6 +1233,10 @@ const (
 	// StepOutputNoLongerResolve counts the skipped targets that are names
 	// that no longer resolve (a part of StepOutputSkipped).
 	StepOutputNoLongerResolve = "no_longer_resolve_count"
+	// StepOutputNotResolvingSkipped counts the names an active step left
+	// out because the platform knows they do not resolve (not_resolving),
+	// recorded when the step is queued.
+	StepOutputNotResolvingSkipped = "not_resolving_skipped_count"
 	// StepOutputCoverageGapCount counts the hosts not fully covered, and
 	// StepOutputCoverageGaps lists them as {host, reason, edge, vendor} (single-command
 	// steps; a batched step's tasks hold the lists).
@@ -2457,6 +2488,38 @@ func checkStepIntensity(run *scanrun.Run, step *scanworkflow.Step, resolved scan
 			shared.ErrValidation, resolved.Name)
 	}
 	return nil
+}
+
+// collapseRegistrable gives a registry-level stage (a registration lookup)
+// the registrable domain of each of its seed names, once: a registry has no
+// record of a subdomain, so planning every name of a scan scope gives most
+// of them an empty answer. A seed that is no domain name (an address) stays
+// as it is for the kind gate to have decided; the order of first appearance
+// is kept. A step with no explicit target list is left as is.
+func collapseRegistrable(resolved scanapp.StepTool, st *scanapp.StepTargets, runContext map[string]any) *scanapp.StepTargets {
+	if !resolved.HasStage || !stage.RegistryLevel(resolved.Stage.Key) {
+		return st
+	}
+	targets := chunkTargets(st, runContext)
+	if targets == nil {
+		return st
+	}
+	seen := make(map[string]bool, len(targets))
+	kept := make([]string, 0, len(targets))
+	for _, t := range targets {
+		if r, ok := stage.RegistrableDomain(t); ok {
+			t = r
+		}
+		if !seen[t] {
+			seen[t] = true
+			kept = append(kept, t)
+		}
+	}
+	out := &scanapp.StepTargets{Targets: kept}
+	if st != nil {
+		out.Refused, out.Reason = st.Refused, st.Reason
+	}
+	return out
 }
 
 // gateStepKinds keeps the step's targets whose kind its stage takes
