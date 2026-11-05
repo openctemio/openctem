@@ -302,14 +302,17 @@ type Output struct {
 	// the sub-inventory; EndpointsRefused those dropped (unparseable, an
 	// origin the report may not write to); EndpointsStatic static files
 	// counted and not stored; EndpointsOverCap new endpoints or parameters
-	// beyond the per-origin caps.
-	EndpointsCreated int      `json:"endpoints_created,omitempty"`
-	EndpointsUpdated int      `json:"endpoints_updated,omitempty"`
-	EndpointsRefused int      `json:"endpoints_refused,omitempty"`
-	EndpointsStatic  int      `json:"endpoints_static,omitempty"`
-	EndpointsOverCap int      `json:"endpoints_over_cap,omitempty"`
-	Errors           []string `json:"errors,omitempty"`
-	Warnings         []string `json:"warnings,omitempty"`
+	// beyond the per-origin caps; EndpointsNoEvidence the path discovery
+	// endpoints refused for missing response evidence (also counted in
+	// EndpointsRefused).
+	EndpointsCreated    int      `json:"endpoints_created,omitempty"`
+	EndpointsUpdated    int      `json:"endpoints_updated,omitempty"`
+	EndpointsRefused    int      `json:"endpoints_refused,omitempty"`
+	EndpointsNoEvidence int      `json:"endpoints_no_evidence,omitempty"`
+	EndpointsStatic     int      `json:"endpoints_static,omitempty"`
+	EndpointsOverCap    int      `json:"endpoints_over_cap,omitempty"`
+	Errors              []string `json:"errors,omitempty"`
+	Warnings            []string `json:"warnings,omitempty"`
 
 	// Binding is the authority the report was applied under: command,
 	// unsolicited or trusted (RFC-040 §5.3).

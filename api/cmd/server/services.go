@@ -2636,6 +2636,11 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// A tool ported to the tool contract declares what it produces in its
 	// sensor's manifest; that narrows what its reports may carry.
 	s.Ingest.SetToolContractSource(repos.Sensor)
+	// A new descriptor can declare what held reports carry: re-check this
+	// sensor's held items (quarantine_release.go).
+	s.Sensor.SetManifestChangedHook(func(tenantID, sensorID shared.ID) {
+		s.Ingest.ReleaseHeldForSensor(tenantID, sensorID, quarantineRetention(cfg))
+	})
 	s.Ingest.SetDataFlowRepository(repos.DataFlow)          // Wire data flow persistence
 	s.Ingest.SetComponentRepository(repos.Component)        // Wire component linking for SCA findings
 	s.Ingest.SetLicenseEvaluator(s.LicensePolicy)           // License policy on every package write
@@ -3205,14 +3210,17 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 
 	// Initialize assignment engine and wire to vulnerability service for auto-routing
 	assignmentEngine := assignment.NewEngine(repos.AccessControl, log)
-	// Resolve a finding's asset type so rules scoped by AssetTypes can match
-	// (without this, such rules never fire).
-	assignmentEngine.SetAssetTypeResolver(func(ctx context.Context, tenantID, assetID shared.ID) (assetdom.TypeRef, error) {
+	// Resolve a finding's asset (type and tags) so rules scoped by AssetTypes
+	// or AssetTags can match (without this, such rules never fire).
+	assignmentEngine.SetAssetFactsResolver(func(ctx context.Context, tenantID, assetID shared.ID) (assignment.AssetFacts, error) {
 		a, err := repos.Asset.GetByID(ctx, tenantID, assetID)
 		if err != nil {
-			return assetdom.TypeRef{}, err
+			return assignment.AssetFacts{}, err
 		}
-		return assetdom.TypeRef{Type: a.Type(), SubType: a.SubType()}, nil
+		return assignment.AssetFacts{
+			Type: assetdom.TypeRef{Type: a.Type(), SubType: a.SubType()},
+			Tags: a.Tags(),
+		}, nil
 	})
 	s.Vulnerability.SetAssignmentEngine(assignmentEngine)
 

@@ -34,7 +34,8 @@ const webEndpointFrom = ` FROM web_endpoints e
 const webEndpointColumns = `e.id, e.tenant_id, e.origin_asset_id, a.name, e.method, e.path_template, e.template_hash,
 	e.path_hash, e.kind, e.sources, COALESCE(e.example_path, ''), COALESCE(e.last_status, 0), COALESCE(e.content_type, ''),
 	e.auth_state, e.technologies, e.labels, e.state, e.in_scope, COALESCE(e.catalog_key, ''), e.param_count,
-	e.first_seen_at, e.last_seen_at, e.last_changed_at, COALESCE(e.last_tool, ''), COALESCE(e.exclusion_id::text, '')`
+	e.first_seen_at, e.last_seen_at, e.last_changed_at, COALESCE(e.last_tool, ''), COALESCE(e.exclusion_id::text, ''),
+	e.resp_size, COALESCE(e.resp_hash, '')`
 
 func checkWebEndpointWhere(w *filterspec.Where) error {
 	if w == nil || !strings.HasPrefix(w.SQL, webendpoint.Fields.TenantSQL+" = $") || w.OrderBy == "" {
@@ -50,17 +51,22 @@ func scanWebEndpoint(s interface{ Scan(...any) error }) (*webendpoint.Endpoint, 
 		sources, techs, labs pq.StringArray
 		changed              sql.NullTime
 		state, exclusion     string
+		respSize             sql.NullInt32
 	)
 	if err := s.Scan(&id, &tenant, &origin, &e.Origin, &e.Method, &e.PathTemplate, &e.TemplateHash,
 		&e.PathHash, &e.Kind, &sources, &e.ExamplePath, &e.LastStatus, &e.ContentType,
 		&e.AuthState, &techs, &labs, &state, &e.InScope, &e.CatalogKey, &e.ParamCount,
-		&e.FirstSeenAt, &e.LastSeenAt, &changed, &e.LastTool, &exclusion); err != nil {
+		&e.FirstSeenAt, &e.LastSeenAt, &changed, &e.LastTool, &exclusion, &respSize, &e.RespHash); err != nil {
 		return nil, err
 	}
 	e.ID, e.TenantID, e.OriginAssetID = shared.MustIDFromString(id), shared.MustIDFromString(tenant), shared.MustIDFromString(origin)
 	e.TemplateHash, e.PathHash = strings.TrimSpace(e.TemplateHash), strings.TrimSpace(e.PathHash)
 	e.Sources, e.Technologies, e.Labels = []string(sources), []string(techs), []string(labs)
 	e.State = webendpoint.State(state)
+	if respSize.Valid {
+		n := int(respSize.Int32)
+		e.RespSize = &n
+	}
 	if changed.Valid {
 		t := changed.Time
 		e.LastChangedAt = &t

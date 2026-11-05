@@ -389,6 +389,10 @@ func (p *AssetProcessor) processBatch(
 	// read before any asset is dropped.
 	scope.primeJobBound(report)
 
+	// The source of the service protocols the report names, from the
+	// capability the platform bound it to (service_kind.go).
+	kindEvidence := serviceKindEvidence(report)
+
 	// Junk names from passive sources (a domain that is not a host name, the
 	// remnant of a percent-encoded delimiter) never become assets.
 	if err := p.dropJunkHostnames(ctx, tenantID, report, output); err != nil {
@@ -528,6 +532,7 @@ func (p *AssetProcessor) processBatch(
 			alterable := isNew[id] || scope.mayAlter(existing)
 			if alterable {
 				exposureChanges = append(exposureChanges, p.mergeTrackingExposure(tenantID, existing, ctisAsset, report.Tool, seenAt, &recoveredIDs, &becameExposed)...)
+				classifyReportedService(existing, ctisAsset, kindEvidence)
 				alterRefs[ctisAsset.ID] = true
 			} else {
 				output.AssetsLimited++
@@ -576,6 +581,7 @@ func (p *AssetProcessor) processBatch(
 				return
 			}
 			scope.dropUntrustedClaims(newAsset)
+			classifyReportedService(newAsset, ctisAsset, kindEvidence)
 			// Seen when its source saw it, so a later report observed earlier
 			// cannot pass it.
 			newAsset.MarkSeenAt(seenAt)
