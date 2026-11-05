@@ -48,9 +48,9 @@ func (s *Service) EnableAlerts(health covdom.HealthReader, admins AdminDirectory
 	s.alerts = &alerting{health: health, admins: admins, inApp: inApp, outbox: o, last: map[shared.ID]time.Time{}}
 }
 
-func (s *Service) cadences() map[string]time.Duration {
+func cadences(rules []covdom.Rule) map[string]time.Duration {
 	out := map[string]time.Duration{}
-	for _, r := range s.rules {
+	for _, r := range rules {
 		if _, ok := out[r.Capability]; !ok {
 			out[r.Capability] = r.Every
 		}
@@ -62,7 +62,7 @@ func (s *Service) cadences() map[string]time.Duration {
 // condition appeared or got clearly worse (covdom.PlanAlerts), with the action
 // that fixes it; several changes in one pass go out as one digest. It
 // returns the alert conditions it sent.
-func (s *Service) detect(ctx context.Context, tenantID shared.ID) (int, error) {
+func (s *Service) detect(ctx context.Context, tenantID shared.ID, rules []covdom.Rule) (int, error) {
 	a := s.alerts
 	if a == nil || a.health == nil {
 		return 0, nil
@@ -71,7 +71,7 @@ func (s *Service) detect(ctx context.Context, tenantID shared.ID) (int, error) {
 		return 0, nil
 	}
 	a.last[tenantID] = s.now()
-	health, err := a.health.Health(ctx, tenantID, s.cadences())
+	health, err := a.health.Health(ctx, tenantID, cadences(rules))
 	if err != nil {
 		return 0, err
 	}

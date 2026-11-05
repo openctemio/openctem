@@ -2,6 +2,9 @@ package coverage
 
 import (
 	"context"
+	"time"
+
+	covdom "github.com/openctemio/openctem/api/pkg/domain/coverage"
 
 	"github.com/openctemio/openctem/api/pkg/domain/scangov"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -45,4 +48,22 @@ func (g GovernanceSwitch) CoverageEnabled(ctx context.Context, tenantID shared.I
 		return !strict, nil
 	}
 	return ss.AutoCoverageOn(strict), nil
+}
+
+// InfoPolicy is the organization's info pass setting (scope settings
+// info_coverage and info_coverage_days): on, every 30 days by default. Where
+// the settings cannot be read it returns the error and the caller leaves the
+// info pass out of that pass.
+func (g GovernanceSwitch) InfoPolicy(ctx context.Context, tenantID shared.ID) (covdom.InfoPolicy, error) {
+	if g.Settings == nil {
+		return covdom.DefaultInfoPolicy(), nil
+	}
+	ss, err := g.Settings.GetScopeSettings(ctx, tenantID.String())
+	if err != nil {
+		return covdom.InfoPolicy{}, err
+	}
+	if ss == nil {
+		return covdom.DefaultInfoPolicy(), nil
+	}
+	return covdom.InfoPolicy{On: ss.InfoCoverageOn(), Every: time.Duration(ss.InfoCoverageEvery()) * 24 * time.Hour}, nil
 }

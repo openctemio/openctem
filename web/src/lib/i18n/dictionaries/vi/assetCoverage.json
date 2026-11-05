@@ -10,6 +10,7 @@
   "assetCoverage.capability.resolve.dns": "Phân giải DNS",
   "assetCoverage.capability.scan.ports": "Quét cổng",
   "assetCoverage.capability.vuln.templates": "Template lỗ hổng",
+  "assetCoverage.capability.vuln.templates_info": "Template lỗ hổng (mức thông tin)",
   "assetCoverage.edge.edge_blocked": "Chưa được quét: bị lớp bảo vệ biên chặn",
   "assetCoverage.edge.edge_blocked_vendor": "Chưa được quét: bị lớp bảo vệ biên chặn ({vendor})",
   "assetCoverage.edge.edge_challenged": "Chưa được quét: bị lớp bảo vệ biên thử thách",

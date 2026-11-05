@@ -251,6 +251,12 @@ type Repository interface {
 	Reconcile(ctx context.Context, tenantID shared.ID, rules []Rule) (added, changed int, err error)
 	// TenantsWithAssets returns the tenants that have active assets.
 	TenantsWithAssets(ctx context.Context) ([]shared.ID, error)
+	// SetCapabilityEnabled applies an organization's on/off choice for an
+	// optional capability (the info pass) to its existing rows: off parks
+	// them as not applicable with ReasonInfoPassOff (never a gap); on makes
+	// parked rows due again on their cadence and pulls a covered row's next
+	// due time in when the interval got shorter. It returns the rows changed.
+	SetCapabilityEnabled(ctx context.Context, tenantID shared.ID, capability string, on bool, every time.Duration) (int, error)
 }
 
 // DueTarget is a due pair with what the planner needs to address it.
