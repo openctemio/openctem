@@ -156,7 +156,9 @@ export function OverviewTab({ finding }: OverviewTabProps) {
 
       {finding.scannerOutput && <ScannerOutputSection output={finding.scannerOutput} />}
 
-      {finding.toolName === VERSION_MATCH_TOOL && <VersionMatchPanel metadata={finding.metadata} />}
+      {finding.toolName === VERSION_MATCH_TOOL && (
+        <VersionMatchPanel metadata={finding.metadata} locations={finding.locations} />
+      )}
 
       {finding.sourceData && (
         <SourceDataSection data={finding.sourceData} ruleName={finding.ruleName} />

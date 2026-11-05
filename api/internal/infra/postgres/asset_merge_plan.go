@@ -79,6 +79,10 @@ var assetMergeRefs = []mergeRef{
 	// of a watch name the asset too and move with it.
 	{table: "web_watches", column: "asset_id", tenantCol: "tenant_id"},
 	{table: "web_changes", column: "asset_id", tenantCol: "tenant_id"},
+	// The services a version-match finding is observed on follow their asset
+	// (the location key is unique per tenant, not per asset, so a move cannot
+	// conflict); the matcher refreshes them on its next pass.
+	{table: "finding_locations", column: "asset_id", tenantCol: "tenant_id"},
 
 	// UNIQUE keys: drop the merged row when the kept asset already has the key.
 	{table: "asset_services", column: "asset_id", tenantCol: "tenant_id", idCol: "id",

@@ -6,10 +6,22 @@ import { Badge } from '@/components/ui/badge'
 import { useTranslation } from '@/context/i18n-provider'
 import { DetailSection, UntrustedTextBlock } from '@/features/shared'
 
+import type { FindingServiceLocation } from '@/features/findings/types'
+
 import { reasonLabel, versionMatchEvidence } from '../types'
 
 interface VersionMatchPanelProps {
   metadata: Record<string, unknown> | undefined
+  /** The services of the host the finding is observed on (detail only). */
+  locations?: FindingServiceLocation[]
+}
+
+/** The labels of the locations in state, in the order the API gives them. */
+function labelsIn(
+  locations: FindingServiceLocation[],
+  state: FindingServiceLocation['state']
+): string[] {
+  return locations.filter((l) => l.state === state).map((l) => l.label)
 }
 
 /**
@@ -17,11 +29,14 @@ interface VersionMatchPanelProps {
  * (RFC-066): the software version a scan saw, the advisory range it falls
  * in, and what lowered the confidence. Renders nothing for other findings.
  */
-export function VersionMatchPanel({ metadata }: VersionMatchPanelProps) {
+export function VersionMatchPanel({ metadata, locations = [] }: VersionMatchPanelProps) {
   const { t } = useTranslation()
   const ev = versionMatchEvidence(metadata)
   if (!ev) return null
   const likely = ev.label === 'likely'
+  const affected = labelsIn(locations, 'affected')
+  const fixed = labelsIn(locations, 'fixed')
+  const notAffected = labelsIn(locations, 'not_affected')
   return (
     <DetailSection title={t('settings.vulnMatching.panel.title', 'Why this finding')} icon={Scale}>
       <div className="space-y-3 text-sm">
@@ -40,6 +55,37 @@ export function VersionMatchPanel({ metadata }: VersionMatchPanelProps) {
             ', and the advisory lists that version as affected. Nothing has exploited or probed it: the version alone is the evidence.'
           )}
         </p>
+        {locations.length > 0 && (
+          <div className="space-y-1" data-testid="version-match-locations">
+            {affected.length > 0 && (
+              <p>
+                {affected.length === 1
+                  ? t('settings.vulnMatching.panel.servicesOne', 'Affected on 1 service: {list}', {
+                      list: affected[0],
+                    })
+                  : t(
+                      'settings.vulnMatching.panel.servicesMany',
+                      'Affected on {count} services: {list}',
+                      { count: affected.length, list: affected.join(', ') }
+                    )}
+              </p>
+            )}
+            {fixed.length > 0 && (
+              <p className="text-muted-foreground">
+                {t('settings.vulnMatching.panel.servicesFixed', 'Fixed on: {list}', {
+                  list: fixed.join(', '),
+                })}
+              </p>
+            )}
+            {notAffected.length > 0 && (
+              <p className="text-muted-foreground">
+                {t('settings.vulnMatching.panel.servicesNotAffected', 'Not affected on: {list}', {
+                  list: notAffected.join(', '),
+                })}
+              </p>
+            )}
+          </div>
+        )}
         <div className="flex flex-wrap items-center gap-1.5">
           <Badge variant={likely ? 'default' : 'outline'}>
             {likely
