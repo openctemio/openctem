@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	tooldom "github.com/openctemio/openctem/api/internal/app/tool"
+	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
 	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
 
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
@@ -144,6 +145,7 @@ func (s *Service) PreviewWorkflow(ctx context.Context, in WorkflowPreviewInput) 
 		}
 		out.Nodes = append(out.Nodes, node)
 	}
+	markDependentsSkipped(tpl, out.Nodes)
 	if targets.Error != nil {
 		out.Blocking = true
 	}
@@ -191,6 +193,29 @@ func (s *Service) previewStepAtDepth(ctx context.Context, tenantID shared.ID, zo
 		node.Blocking = nil
 	}
 	return node
+}
+
+// markDependentsSkipped marks the steps that need the results of a step the
+// run skips for want of a tool as DEPENDENCY_SKIPPED, as the trigger does
+// (SkipDependents). Steps the depth skips are not counted, and a node that
+// already blocks or is skipped keeps its own verdict.
+func markDependentsSkipped(tpl *scanworkflow.Workflow, nodes []WorkflowPreviewNode) {
+	skips := map[string]StepSkip{}
+	for _, n := range nodes {
+		if n.Skipped != nil && n.Skipped.Code != CodeDepthSkipped {
+			skips[n.StepKey] = StepSkip{Code: n.Skipped.Code}
+		}
+	}
+	if len(skips) == 0 {
+		return
+	}
+	SkipDependents(tpl.Steps, skips, tpl.Settings.ContinueOnFailedDependency, nil)
+	for i := range nodes {
+		n := &nodes[i]
+		if sk, ok := skips[n.StepKey]; ok && sk.Dependency && n.Skipped == nil && n.Blocking == nil {
+			n.Skipped = &PreviewError{Code: scanrun.FailureDependencySkipped, Message: sk.Reason}
+		}
+	}
 }
 
 // previewStep resolves one step as the trigger would.

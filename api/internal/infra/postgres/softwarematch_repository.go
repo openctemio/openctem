@@ -18,6 +18,7 @@ import (
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/softwarematch"
+	"github.com/openctemio/openctem/api/pkg/domain/vulncatalog"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnmatch"
 )
@@ -27,11 +28,22 @@ import (
 // tenant method filters on the tenant.
 type SoftwareMatchRepository struct {
 	db *DB
+	// catalog answers the product ranges; vulncatalog.ErrUnavailable from
+	// it stops the matcher's unit of work.
+	catalog vulncatalog.Reader
 }
 
-// NewSoftwareMatchRepository creates a SoftwareMatchRepository.
+// NewSoftwareMatchRepository creates a SoftwareMatchRepository that reads
+// ranges through the Postgres vulnerability catalog reader.
 func NewSoftwareMatchRepository(db *DB) *SoftwareMatchRepository {
-	return &SoftwareMatchRepository{db: db}
+	return &SoftwareMatchRepository{db: db, catalog: NewVulnCatalogReader(db)}
+}
+
+// WithVulnCatalog sets the vulnerability catalog reader (the configured
+// mode's reader).
+func (r *SoftwareMatchRepository) WithVulnCatalog(c vulncatalog.Reader) *SoftwareMatchRepository {
+	r.catalog = c
+	return r
 }
 
 var _ softwarematch.Store = (*SoftwareMatchRepository)(nil)
@@ -64,30 +76,18 @@ func (r *SoftwareMatchRepository) PendingVersions(ctx context.Context, limit int
 	return out, rows.Err()
 }
 
-// RangesForProduct (see softwarematch.Store).
+// RangesForProduct (see softwarematch.Store) reads the vulnerability
+// catalog.
 func (r *SoftwareMatchRepository) RangesForProduct(ctx context.Context, productID shared.ID) ([]softwarematch.AffectedRange, error) {
-	rows, err := r.db.QueryContext(ctx, `
-		SELECT id, cve_id, scheme, COALESCE(exact_version, ''), COALESCE(v_start, ''), v_start_incl,
-			COALESCE(v_end, ''), v_end_incl, edition, target, COALESCE(condition_product_id::text, '')
-		FROM vulnerability_affected WHERE product_id = $1 ORDER BY id`, productID.String())
+	stored, err := r.catalog.Ranges(ctx, productID)
 	if err != nil {
 		return nil, fmt.Errorf("product ranges: %w", err)
 	}
-	defer rows.Close()
-	var out []softwarematch.AffectedRange
-	for rows.Next() {
-		var a softwarematch.AffectedRange
-		var scheme string
-		rg := &a.Range
-		if err := rows.Scan(&a.ID, &rg.VulnID, &scheme, &rg.Exact, &rg.Start, &rg.StartIncl,
-			&rg.End, &rg.EndIncl, &rg.Edition, &rg.Target, &rg.Condition); err != nil {
-			return nil, fmt.Errorf("product ranges: %w", err)
-		}
-		rg.Scheme = vulnmatch.Scheme(scheme)
-		rg.ID = fmt.Sprint(a.ID)
-		out = append(out, a)
+	out := make([]softwarematch.AffectedRange, len(stored))
+	for i, a := range stored {
+		out[i] = softwarematch.AffectedRange{ID: a.LegacyID, Range: a.Range}
 	}
-	return out, rows.Err()
+	return out, nil
 }
 
 // ReplaceVersionVulns (see softwarematch.Store).

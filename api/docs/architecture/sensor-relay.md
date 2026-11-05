@@ -20,11 +20,47 @@ pages and store-and-forward (RFC-116 §7).
 
 ## Flow
 
+```mermaid
+sequenceDiagram
+    autonumber
+    box Sensor network
+    participant S as Sensor (sdk-go relayclient)
+    end
+    box Relay host, holds no envelope key
+    participant R as sensor-relay Server
+    end
+    box Platform private network
+    participant C as relay Connector
+    participant A as API /api/v2/sensor/*
+    end
+    C->>R: GET /v1/connector/up?wait=25 (TLS 1.3, client cert SPKI pinned for the realm)
+    S->>R: POST /v1/sensor/up, ticket header, client cert key = ticket key
+    R->>R: sensorPrincipal - VerifyTicket (realm keys, relay id, at most 24 h, 2 min skew), KeyMatches
+    alt ticket refused
+        R-->>S: 401, one body for every reason
+    else over rate or mailbox quota
+        R-->>S: 429 Retry-After 1 (rate) or 5 (quota)
+    else accepted
+        R-->>S: 202, envelope queued in the realm
+    end
+    R-->>C: batch of sealed envelopes of its realm
+    C->>C: sealed.OpenRequest with the ingest keys, route = realm + sensor
+    C->>C: allowedPath - clean path under /api/v2/sensor/ only, else 403 sealed answer
+    C->>A: replay the signed request, allowlisted headers, X-Relay-Sensor = route sensor
+    A->>A: authenticateSigned - refuse when the signing sensor is not X-Relay-Sensor
+    A-->>C: answer
+    C->>C: SealResponse to the request's reply key
+    C->>R: POST /v1/connector/down/{sensor} (retry on 429, up to 3 times)
+    S->>R: GET /v1/sensor/down?wait=25
+    R-->>S: sealed answer from the sensor's mailbox
 ```
- sensor ──TLS 1.3, client cert = identity key, ticket──▶ sensor-relay ◀──TLS 1.3, pinned client cert── relay connector
-   POST /v1/sensor/up        sealed request ─────────▶ realm queue ─────▶ GET /v1/connector/up?wait=25
-   GET  /v1/sensor/down?wait=25  ◀──── sensor mailbox ◀──── POST /v1/connector/down/{sensor}  sealed response
-```
+
+Code: `internal/sensorrelay/server.go` (`Handler`, `sensorPrincipal`,
+`connectorRealm`, `sensorUp`, `sensorDown`), `connector.go` (`handle`,
+`replay`, `allowedPath`, `postDown`),
+`internal/infra/http/handler/sensor_signature.go:authenticateSigned`. The
+sensor binary does not use the relay yet: there is no relay mode in sensorkit
+and the API issues no tickets (an operator mints them).
 
 - A **sensor** is admitted when its ticket verifies under the realm's ticket
   keys, names this relay, is within its validity (≤ 24 h, 2 min skew), and

@@ -28,7 +28,7 @@ func TestAssetEdgeLabel(t *testing.T) {
 		{name: "cloudflare edge address", a: edgeAsset(t, "104.16.1.1", asset.AssetTypeIPAddress, nil),
 			class: "edge", provider: "Cloudflare", address: "104.16.1.1"},
 		{name: "address whose record names a CDN", a: edgeAsset(t, "198.51.100.1", asset.AssetTypeIPAddress, map[string]any{"cdn": "cloudfront"}),
-			class: "edge", provider: "cloudfront", address: "198.51.100.1"},
+			class: "edge", provider: "Amazon CloudFront", address: "198.51.100.1"},
 		{name: "akamai by network holder", a: edgeAsset(t, "198.51.100.2", asset.AssetTypeIPAddress, map[string]any{"asn_org": "Akamai Technologies, Inc."}),
 			class: "edge", provider: "Akamai", address: "198.51.100.2"},
 		{name: "cloud static address is not labeled", a: edgeAsset(t, "198.51.100.3", asset.AssetTypeIPAddress, map[string]any{"asn_org": "AMAZON-02"}), none: true},

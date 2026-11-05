@@ -889,6 +889,19 @@ and from then on the dispatch gate leaves it out of every job
 - **One classifier:** `pkg/domain/edgeaddr` (published edge ranges, provider
   network names, provider host suffixes; versioned built-in dataset). The
   suggestion cards, review rules and guardrails read the same classifier.
+  The ranges are the providers' own published lists, rebuilt by a maintainer
+  with `api/scripts/edgeaddr-dataset.py` (the platform never downloads them at
+  run time): Amazon CloudFront, Azure Front Door, Cloudflare, Fastly, Gcore,
+  bunny.net, Imperva and Sucuri edges (`edge`); Amazon S3 and API Gateway front
+  ends and Google's own front ends (`cloud_shared`); AWS Global Accelerator
+  (`dedicated`, provider space: never offered on a name's word alone). An
+  address inside one of them is never offered on the addresses card, even when
+  nothing else is known about its network, and a name resolving to it is
+  capped to web ports by the active-scan gate.
+- **One click adds strong evidence only:** the addresses card's one-click add
+  takes the addresses in the high ownership band (`ownership.band`, an anchor
+  the organization set plus more evidence, nothing holding it back); every
+  other address is added from its own row after a person reads it.
 - **On read, not stored:** `GET /assets` and `GET /assets/{id}` carry
   `edge {class, provider, address?}` computed from the asset's own properties
   (an address: its range, its `cdn` record, its network holder; a name: its own

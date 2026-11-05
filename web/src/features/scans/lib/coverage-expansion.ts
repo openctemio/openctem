@@ -74,11 +74,45 @@ export function isBelow(name: string, root: string): boolean {
   return n.endsWith(`.${root}`) && DNS_NAME.test(n)
 }
 
-/** The resolved addresses an inventory asset recorded (properties.resolved_ips). */
+/**
+ * The property keys an address can sit under: the canonical `ip_addresses`
+ * (ingest folds every synonym into it) first, then the synonyms a row that
+ * has not been normalised yet may still carry.
+ */
+const ADDRESS_KEYS = [
+  'ip_addresses',
+  'ip',
+  'ips',
+  'ip_address',
+  'resolved_ip',
+  'resolved_ips',
+  'addresses',
+] as const
+
+/** Hex digits, dots and colons only: an IPv4 or IPv6 address, not free text. */
+const ADDRESS_SHAPE = /^[0-9a-f:.]+$/i
+
+/** The addresses an inventory asset recorded (properties.ip_addresses or a synonym). */
 export function resolvedIps(properties: Record<string, unknown> | undefined): string[] {
-  const v = properties?.resolved_ips
-  if (!Array.isArray(v)) return []
-  return v.filter((x): x is string => typeof x === 'string' && x.length > 0 && x.length < 64)
+  if (!properties) return []
+  const out: string[] = []
+  const take = (x: unknown) => {
+    if (typeof x !== 'string') return
+    const v = x.trim()
+    if (v.length > 0 && v.length < 64 && ADDRESS_SHAPE.test(v) && !out.includes(v)) out.push(v)
+  }
+  for (const key of ADDRESS_KEYS) {
+    const v = properties[key]
+    if (Array.isArray(v)) v.forEach(take)
+    else take(v)
+  }
+  return out
+}
+
+/** The inventory names at or below the typed domains' roots. */
+export function namesUnder(typed: string[], inventory: InventoryName[]): InventoryName[] {
+  const roots = domainRoots(typed)
+  return inventory.filter((a) => roots.some((r) => isBelow(a.name, r) || a.name === r))
 }
 
 export interface InventoryName {
@@ -98,7 +132,6 @@ export function expandTargets(
   inventory: InventoryName[]
 ): string[] {
   if (level !== 'subdomains_ips') return []
-  const roots = domainRoots(typed)
   const seen = new Set(typed.map((t) => t.trim().toLowerCase()))
   const out: string[] = []
   const add = (v: string) => {
@@ -107,7 +140,6 @@ export function expandTargets(
     seen.add(k)
     out.push(v.trim())
   }
-  const under = inventory.filter((a) => roots.some((r) => isBelow(a.name, r) || a.name === r))
-  for (const a of under) for (const ip of resolvedIps(a.properties)) add(ip)
+  for (const a of namesUnder(typed, inventory)) for (const ip of resolvedIps(a.properties)) add(ip)
   return out
 }
