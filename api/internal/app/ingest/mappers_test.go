@@ -167,7 +167,7 @@ func TestMapSDKSeverity(t *testing.T) {
 		{severity.High, vulnerability.SeverityHigh},
 		{severity.Medium, vulnerability.SeverityMedium},
 		{severity.Low, vulnerability.SeverityLow},
-		{severity.Info, vulnerability.SeverityNone},
+		{severity.Info, vulnerability.SeverityInfo},
 	}
 
 	for _, tt := range tests {
