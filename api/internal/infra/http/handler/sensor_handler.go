@@ -420,14 +420,21 @@ type SensorPostureResponse struct {
 	// NetworkEnforced is whether tool runs are network-confined; null when
 	// the sensor did not report its sandbox.
 	NetworkEnforced *bool `json:"network_enforced"`
+	// ToolsUnconfined: the sensor runs its tools without the sandbox:
+	// refused (the sandbox is not available on its host, so tools that
+	// contact their targets are refused there; passive lookups run) or
+	// acknowledged (its operator turned the sandbox off); absent when
+	// sandboxed or not reported.
+	ToolsUnconfined string `json:"tools_unconfined,omitempty" enums:"refused,acknowledged"`
 	// Unhardened lists why the sensor is flagged (never null): policy_none,
-	// pin_none, network_unenforced, bearer_key.
-	Unhardened []string `json:"unhardened" enums:"policy_none,pin_none,network_unenforced,bearer_key"`
+	// pin_none, tools_unconfined, network_unenforced, bearer_key.
+	Unhardened []string `json:"unhardened" enums:"policy_none,pin_none,tools_unconfined,network_unenforced,bearer_key"`
 }
 
 func postureResponse(a *sensor.Sensor) SensorPostureResponse {
 	p := a.PostureOf()
-	return SensorPostureResponse{LocalPolicy: p.LocalPolicy, PlatformPin: p.PlatformPin, NetworkEnforced: p.NetworkEnforced, Unhardened: p.Unhardened}
+	return SensorPostureResponse{LocalPolicy: p.LocalPolicy, PlatformPin: p.PlatformPin, NetworkEnforced: p.NetworkEnforced,
+		ToolsUnconfined: p.ToolsUnconfined, Unhardened: p.Unhardened}
 }
 
 // SensorLocalStoreResponse is a sensor's local store report as the console
