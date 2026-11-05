@@ -35,15 +35,34 @@ export interface SnippetInput {
   defaultBranch?: string
   /** The product name in job and stage names (the brand); OpenCTEM if unset. */
   productName?: string
+  /**
+   * The openctemio/ci release to pin: the API's effective CI runner release
+   * (GET /api/v1/ci/settings runner_release). CI_RELEASE_FALLBACK if unset or
+   * not a vX.Y.Z release.
+   */
+  release?: string
 }
 
 /**
- * The openctemio/ci release the GitHub and GitLab snippets pin. A release tag
- * also pins the scanner images the workflow and templates run. Copied from
+ * The openctemio/ci release the snippets pin when the API names none: the
+ * release this console was built with. The API's answer (the built-in release
+ * raised by the signed release feed) is used whenever it is there. A release
+ * tag also pins the scanner images the workflow and templates run. Copied from
  * versions.yaml (ci.latest) by .github/scripts/release/sync-versions.sh:
  * change it there, never here.
  */
-export const CI_RELEASE = 'v0.3.1'
+export const CI_RELEASE_FALLBACK = 'v0.4.0'
+
+const RELEASE_RE = /^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/
+
+/**
+ * The release a snippet pins: the API's when it is a vX.Y.Z release (it is
+ * written into pipeline YAML and URLs, so nothing else is accepted), else the
+ * built-in fallback.
+ */
+export function ciRelease(release?: string): string {
+  return release && RELEASE_RE.test(release) ? release : CI_RELEASE_FALLBACK
+}
 
 /** The capabilities the GitHub and GitLab snippets run by default. */
 const DEFAULT_CAPABILITIES = 'sast,sca,secrets,iac'
@@ -59,13 +78,15 @@ export function githubSnippet({
   audience,
   defaultBranch,
   productName = DEFAULT_BRAND.name,
+  release,
 }: SnippetInput): string {
+  const rel = ciRelease(release)
   const audLine =
     audience && audience !== defaultAudience(tenantId) ? `\n      oidc-audience: ${audience}` : ''
   // The reusable workflow's scan job asks for security-events: write (needed
   // to upload SARIF), and GitHub refuses to start a called job that asks for
   // more than its caller grants, so the caller always grants it.
-  const sarifLine = `\n      security-events: write # required by openctemio/ci ${CI_RELEASE}`
+  const sarifLine = `\n      security-events: write # required by openctemio/ci ${rel}`
   return `name: ${productName}
 on:
   pull_request:
@@ -74,7 +95,7 @@ on:
 
 jobs:
   openctem:
-    uses: openctemio/ci/.github/workflows/scan.yml@${CI_RELEASE}
+    uses: openctemio/ci/.github/workflows/scan.yml@${rel}
     with:
       capabilities: ${DEFAULT_CAPABILITIES}
       api-url: ${apiUrl}
@@ -119,7 +140,7 @@ const GITLAB_JOBS = [
  * default audience; a trust configuration with another audience gets each
  * job's id_tokens overridden.
  */
-export function gitlabSnippet({ apiUrl, tenantId, audience }: SnippetInput): string {
+export function gitlabSnippet({ apiUrl, tenantId, audience, release }: SnippetInput): string {
   let override = ''
   if (audience && audience !== defaultAudience(tenantId)) {
     override =
@@ -128,7 +149,7 @@ export function gitlabSnippet({ apiUrl, tenantId, audience }: SnippetInput): str
       '\n'
   }
   return `include:
-  - remote: https://raw.githubusercontent.com/openctemio/ci/${CI_RELEASE}/gitlab/templates/all.yml
+  - remote: https://raw.githubusercontent.com/openctemio/ci/${ciRelease(release)}/gitlab/templates/all.yml
 
 variables:
   OPENCTEM_API_URL: ${apiUrl}
@@ -143,7 +164,9 @@ ${override}`
  * pin (never the moving edge build). Pin it by digest in a real pipeline (see
  * the openctemio/ci repository's docs/images.md).
  */
-const CI_IMAGE = `ghcr.io/openctemio/ci:${CI_RELEASE}`
+function ciImage(release?: string): string {
+  return `ghcr.io/openctemio/ci:${ciRelease(release)}`
+}
 
 function ciEnv(apiUrl: string, tenantId: string, indent: string): string {
   return `${indent}OPENCTEM_API_URL: ${apiUrl}\n${indent}OPENCTEM_TENANT_ID: ${tenantId}`
@@ -154,6 +177,7 @@ export function azureSnippet({
   apiUrl,
   tenantId,
   productName = DEFAULT_BRAND.name,
+  release,
 }: SnippetInput): string {
   return `steps:
   - checkout: self
@@ -162,7 +186,7 @@ export function azureSnippet({
         -e SYSTEM_OIDCREQUESTURI -e SYSTEM_ACCESSTOKEN -e TF_BUILD \\
         -e BUILD_SOURCEVERSION -e BUILD_REPOSITORY_URI \\
         -e OPENCTEM_API_URL -e OPENCTEM_TENANT_ID \\
-        ${CI_IMAGE} openctem-ci scan --capability sast
+        ${ciImage(release)} openctem-ci scan --capability sast
     displayName: ${productName} scan
     env:
       # The job's own access token, only to request its OIDC token; no stored secret.
@@ -177,8 +201,9 @@ export function bitbucketSnippet({
   tenantId,
   audience,
   productName = DEFAULT_BRAND.name,
+  release,
 }: SnippetInput): string {
-  return `image: ${CI_IMAGE}
+  return `image: ${ciImage(release)}
 
 options:
   oidc:
@@ -202,12 +227,13 @@ export function circleciSnippet({
   tenantId,
   audience,
   productName = DEFAULT_BRAND.name,
+  release,
 }: SnippetInput): string {
   return `version: 2.1
 jobs:
   openctem:
     docker:
-      - image: ${CI_IMAGE}
+      - image: ${ciImage(release)}
     environment:
 ${ciEnv(apiUrl, tenantId, '      ')}
     steps:

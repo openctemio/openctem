@@ -58,7 +58,8 @@ target's answer never moves traffic to another path. What ships first:
   sensor without it gets none), including the
   claim repeat a signing sensor runs, so the job signature
   (`payload_sha256`) covers it. The leasing sensor fetches the credentials
-  per job (`POST /api/v2/sensor/commands/{id}/egress-credentials`, v2 HTTPS
+  per job (`POST /api/v2/sensor/commands/{id}/egress-credentials`, since
+  replaced by the sealed task secrets fetch, RFC-149; v2 HTTPS
   only, answered only to the lease holder for the pool its jobs use now).
 - **Fail closed.** A sensor whose jobs use a pool gets scan and retest jobs
   only when it reports `egress.upstream@1` and `net.confined@1`. A pool with

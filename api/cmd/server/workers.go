@@ -40,6 +40,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/controller"
 	"github.com/openctemio/openctem/api/internal/infra/jobs"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
+	"github.com/openctemio/openctem/api/pkg/domain/cirun"
 	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
 	"github.com/openctemio/openctem/api/pkg/domain/durablejob"
 	"github.com/openctemio/openctem/api/pkg/domain/ingestjob"
@@ -414,7 +415,8 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		if svc.Audit != nil {
 			auditor = svc.Audit
 		}
-		job := cirunapp.NewAlertJob(repos.CIRun, notifier, auditor, ciRunnerVersionPolicy(deps.Config, log), log)
+		job := cirunapp.NewAlertJob(repos.CIRun, notifier, auditor, cirun.StatusPolicy{}, log)
+		job.SetVersionSource(ciRunnerVersionPolicy(deps.Config, log))
 		w.ControllerManager.Register(controller.NewCIAlertsController(job, 0))
 		// Retention: expired run token hashes, run findings after 90 days,
 		// runs after 400 days (each scan workflow keeps its latest runs).
@@ -636,13 +638,6 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 				Logger:    log.With("controller", "domain-reverify"),
 			},
 		))
-	}
-
-	// SSO enforcement after a limits change: turned off once the organization
-	// lost sso.enforcement and the grace ended (never a lock-out).
-	if svc.Tenant != nil {
-		w.ControllerManager.Register(controller.NewSSOEnforcementEntitlementController(
-			svc.Tenant, time.Hour, log.With("controller", "sso-enforcement-entitlement")))
 	}
 
 	// SAML IdP certificate expiry: owners are alerted 30, 7 and 1 days before
@@ -1356,6 +1351,8 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 			// it gets no run; its pairs pause with the reason and resume by
 			// themselves.
 			svc.AssetCoverage.EnableReadiness(svc.Scan)
+			// A port scan that carried a name's addresses settles the name.
+			svc.AssetCoverage.WithAddressReader(repos.Attribution)
 			// Gaps, output drops and repeated failures alert the tenant's
 			// administrators (in-app and integrations) at most once a day.
 			svc.AssetCoverage.EnableAlerts(repos.AssetCoverage, repos.MemberLifecycle, svc.Notification, svc.Outbox)
