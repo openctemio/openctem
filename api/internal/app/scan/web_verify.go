@@ -27,6 +27,9 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/stage"
 )
 
+// payloadKeyTargets is the scanner config key of a job's targets.
+const payloadKeyTargets = "targets"
+
 // WebVerifyTag marks web verification scans.
 const WebVerifyTag = "auto-web-verify"
 
@@ -138,7 +141,7 @@ func (s *Service) StartWebVerification(ctx context.Context, in WebVerifyInput) (
 	}
 	ids := append([]string(nil), in.TemplateIDs...)
 	sort.Strings(ids)
-	cfg := map[string]any{"targets": res.Kept, "template_ids": ids}
+	cfg := map[string]any{payloadKeyTargets: res.Kept, "template_ids": ids}
 	if len(in.Tags) > 0 {
 		cfg["tags"] = append([]string(nil), in.Tags...)
 	}

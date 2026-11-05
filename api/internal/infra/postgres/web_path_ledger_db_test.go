@@ -237,6 +237,9 @@ func TestWebPathDiscovery_LookupsUseIndexes(t *testing.T) {
 		}
 		plan = append(plan, l)
 	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
 	if !strings.Contains(strings.Join(plan, "\n"), "idx_assets_web_origin_name") {
 		t.Fatalf("the origin lookup does not use its expression index:\n%s", strings.Join(plan, "\n"))
 	}

@@ -340,7 +340,7 @@ func TestAdmitPathDispatch(t *testing.T) {
 	if l.granted["https://a.example.com"] != 300 {
 		t.Fatalf("ledger granted %v", l.granted)
 	}
-	// A smaller request is honoured.
+	// A smaller request is honored.
 	got, err = pol.AdmitPathDispatch(ctx, tenantID, nil, []string{"https://b.example.com"}, 120)
 	if err != nil || got != 120 {
 		t.Fatalf("granted %d err %v, want 120", got, err)
