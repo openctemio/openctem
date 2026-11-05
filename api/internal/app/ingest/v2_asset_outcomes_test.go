@@ -19,7 +19,7 @@ func TestAssetOutcomes_ExcludedIsNotRejected(t *testing.T) {
 	o := &ingestreport.SegmentOutcome{}
 	touched := assetOutcomes(o, assets, []int{0, 1, 2, 3},
 		map[string]shared.ID{"a": stored, "dup": stored, "bad": {}, "unused": other},
-		map[string]bool{"excl": true})
+		map[string]bool{"excl": true}, nil, nil)
 
 	if o.AcceptedAssets != 2 || o.RejectedAssets != 1 {
 		t.Fatalf("accepted=%d rejected=%d, want 2 and 1 (the excluded asset is neither)", o.AcceptedAssets, o.RejectedAssets)
@@ -37,7 +37,7 @@ func TestAssetOutcomes_ExcludedIsNotRejected(t *testing.T) {
 
 	// Only the excluded asset was not stored: the report did not lose any.
 	clean := &ingestreport.SegmentOutcome{}
-	assetOutcomes(clean, assets[:2], []int{0, 1}, map[string]shared.ID{"a": stored}, map[string]bool{"excl": true})
+	assetOutcomes(clean, assets[:2], []int{0, 1}, map[string]shared.ID{"a": stored}, map[string]bool{"excl": true}, nil, nil)
 	rep := &ingestreport.Report{SegmentsReceived: 1, Outcomes: map[int]ingestreport.SegmentOutcome{0: *clean}}
 	if reportLostAssets(rep) {
 		t.Fatal("a report whose only unstored asset was excluded counts as having lost assets")
@@ -48,7 +48,7 @@ func TestAssetOutcomes_ExcludedIsNotRejected(t *testing.T) {
 // stays off: the guard against a source that lost part of its listing.
 func TestAssetOutcomes_UnstoredWithoutExclusionIsRejected(t *testing.T) {
 	o := &ingestreport.SegmentOutcome{}
-	assetOutcomes(o, []ctis.Asset{{ID: "a"}, {ID: "b"}}, []int{0, 1}, map[string]shared.ID{"a": shared.NewID()}, nil)
+	assetOutcomes(o, []ctis.Asset{{ID: "a"}, {ID: "b"}}, []int{0, 1}, map[string]shared.ID{"a": shared.NewID()}, nil, nil, nil)
 	rep := &ingestreport.Report{SegmentsReceived: 1, Outcomes: map[int]ingestreport.SegmentOutcome{0: *o}}
 	if o.RejectedAssets != 1 || !reportLostAssets(rep) {
 		t.Fatalf("rejected=%d lost=%v, want 1 and true", o.RejectedAssets, reportLostAssets(rep))
@@ -63,7 +63,7 @@ func TestAssetOutcomes_DerivedAssetsPastProducerList(t *testing.T) {
 	assets := []ctis.Asset{{ID: "a"}, {ID: "b"}, {ID: "origin-stored"}, {ID: "origin-unstored"}}
 	o := &ingestreport.SegmentOutcome{}
 	touched := assetOutcomes(o, assets, []int{0, 1},
-		map[string]shared.ID{"a": stored, "origin-stored": derived}, nil)
+		map[string]shared.ID{"a": stored, "origin-stored": derived}, nil, nil, nil)
 
 	if o.AcceptedAssets != 1 || o.RejectedAssets != 1 {
 		t.Fatalf("accepted=%d rejected=%d, want the producer's own counts only (1 and 1)", o.AcceptedAssets, o.RejectedAssets)
