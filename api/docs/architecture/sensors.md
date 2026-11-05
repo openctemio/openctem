@@ -119,6 +119,45 @@ assets' names and addresses.
 
 ## Heartbeat doorbell
 
+```mermaid
+sequenceDiagram
+    autonumber
+    box Sensor host
+    participant S as sdk-go BaseSensor + Doorbell
+    end
+    box Platform
+    participant MW as V2Throttle + Authenticate
+    participant HD as SensorControlV2Handler.Heartbeat
+    participant DB as doorbell.Ring
+    participant SV as SensorService.UpdateHeartbeat
+    end
+    S->>MW: POST /api/v2/sensor/heartbeat (signed), running ids, load, manifest_digest, local_policy, outbox, instance_id
+    alt over budget (10/s per sensor, 500/s per tenant)
+        MW-->>S: 429 rate-limited, jittered Retry-After
+    else signature, key or sensor refused
+        MW-->>S: 401 unauthenticated (AuthGate backs off 30 s to 10 min)
+    end
+    MW->>HD: sensor and tenant from the key
+    HD->>DB: pending_jobs, next_heartbeat_seconds, actions, config_version, content_version
+    alt sensor disabled (paused)
+        HD-->>S: status paused, actions pause (no write)
+    else active
+        HD->>SV: guarded write WHERE status active - last seen, deadline, instance id, renew held leases below the threshold
+        SV->>SV: ObserveInstance - three alternations in 15 min set identity_cloned_at
+        HD->>HD: cancel_command_ids, stop_command_ids, send_manifest when the digest is unknown or a recheck is due
+        HD-->>S: 200 answer
+    end
+    S->>S: clamp interval to 5 s to 5 min, act on actions, ring the poller when pending_jobs > 0, sync content on a new content_version
+```
+
+Code: `internal/infra/http/routes/sensor_v2.go` (budgets),
+`handler/sensor_results_v2_handler.go:Authenticate`,
+`handler/sensor_control_v2_handler.go` (heartbeat), `internal/app/sensor/doorbell.go:Ring`,
+`internal/app/sensor/service.go:UpdateHeartbeat`, sdk-go `core/doorbell.go:Handle`,
+`core/auth_gate.go`. A network error or 5xx makes the sensor send the next
+heartbeat after about 10 s (sdk-go `core/base_sensor.go`); the stale report is
+not retried.
+
 `POST /api/v2/sensor/heartbeat` is also a doorbell (RFC-023 §9.2a): it tells
 the sensor *that* something is waiting for it and when to ring again. It never
 carries a job, a command text or any other payload. Jobs are still fetched and
@@ -1654,6 +1693,41 @@ limit.
 
 ## Sensor manifest
 
+```mermaid
+sequenceDiagram
+    autonumber
+    box Sensor host
+    participant S as sdk-go BaseSensor
+    end
+    box Platform
+    participant H as SensorControlV2Handler
+    participant M as SensorService.RegisterManifest
+    participant C as tool catalog
+    end
+    S->>S: ToolRegistry probes (LookPath, --version, cache 10 min), local policy tools.allow filter
+    S->>S: manifest schema 1, digest sha256 of canonical JSON
+    S->>H: PUT /api/v2/sensor/manifest (signed, at most 256 KiB)
+    H->>M: RegisterManifest(tenant from the key)
+    M->>C: add declared tools to the organization's catalog, keep only known tools and capabilities
+    alt digest unchanged and nothing newly known
+        M->>M: touch only
+    else changed
+        M->>M: store, effective_tools and effective_capabilities regenerate, timeline events
+    end
+    H-->>S: policy - allowed tools, capabilities, max jobs
+    loop every heartbeat
+        S->>H: manifest_digest only
+        H-->>S: send_manifest when the platform needs it again
+    end
+```
+
+Code: `internal/app/sensor/manifest.go` (`RegisterManifest`,
+`LoadManifestRechecks`), `internal/app/sensor/declared_tools.go`,
+`internal/app/sensor/service.go` (catalog filter), sdk-go `core/manifest.go`,
+`core/tool_registry.go`, `core/base_sensor.go`. A failed `PUT` is retried
+after a minute. The sensor runs no digest check of the tool binaries; image
+builds pin tool versions and checksums.
+
 [RFC-033](../rfcs/RFC-033-sensor-manifest.md). A manifest is what a sensor
 *is*, as opposed to its load. It contains:
 
@@ -2267,6 +2341,40 @@ anywhere. Each scan command carries a layered budget in its payload
   since a target last finished.
 
 ## Sensor-local policy (RFC-040 §5.7)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor O as Host owner
+    box Sensor host
+    participant S as sdk-go core.LocalPolicy
+    end
+    box Platform
+    participant HB as heartbeat and manifest
+    participant G as command dispatch gate
+    participant RF as command refusal handling
+    end
+    O->>S: policy file, SIGHUP or restart (strict load, exit 2 at start on error)
+    S->>HB: local_policy - state, required, source, digest, kill_switch, summary (never the ranges)
+    HB->>HB: sanitize and store, a changed policy lifts the sensor's refusal exclusions
+    G->>G: grant, active scanning, intensity, sensordom.Accepts(report) - else local_policy_refuses
+    G-->>S: signed job within the organization's scope
+    S->>S: AdmitCommandTargets - remove refused targets, or refuse the whole job
+    alt whole job refused
+        S->>RF: POST .../fail with refusal layer, rule, detail
+        RF->>RF: routed work re-queued without this sensor, fails after 3 refusals or 6 h
+    else partial
+        S->>HB: complete with refused_targets (at most 100) and refused_targets_total
+    end
+```
+
+Code: sdk-go `core/local_policy.go`, `core/local_policy_enforce.go`,
+`core/refusal.go`; `internal/app/sensor/local_policy.go`,
+`internal/app/command/local_policy.go`, `internal/app/command/refusal.go`.
+From v0.20.0: the refusal records `PolicyKey(digest, state)`;
+`ForgetRefusalsOf` keeps the exclusion of a sensor that already refused under
+the same policy, and a refusal whose targets all fail to resolve completes the
+task with per-target skips (`handler/sensor_control_v2_handler.go`).
 
 > **Version requirement.** Enforcement is in sdk-go#140 and sensor#119, merged
 > after sensor v0.8.0. Sensor v0.8.0 and older ignore `SENSOR_LOCAL_POLICY`,

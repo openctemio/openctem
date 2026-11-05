@@ -2995,6 +2995,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// service when a v2 report of a command finished, so a chained step
 	// waiting for it is planned.
 	s.Ingest.SetStepOutputRecorder(scanHops)
+	s.Ingest.SetStepInfoRecorder(scanHops)
 	s.Ingest.SetCommandIngestedHook(s.ScanRun.OnCommandIngested)
 
 	// Wire up scan workflow deactivator to tool service for cascade deactivation
@@ -3210,7 +3211,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// manual import. Labeled discovery_source=secret_scan so it stays distinct
 	// from an external breach import. Reuses the same exposure repo + state
 	// history as the credential-import service.
-	s.Ingest.SetExposureBridge(exposurebridge.NewBridge(repos.Exposure, repos.ExposureStateHistory, log))
+	exposureBridge := exposurebridge.NewBridge(repos.Exposure, repos.ExposureStateHistory, log)
+	s.Ingest.SetExposureBridge(exposureBridge)
+	s.Ingest.SetTemplateMatchProjector(exposureBridge)
 
 	// Continuous attack-surface discovery: project recon-discovered assets (open
 	// ports, exposed services, weak/expiring TLS certificates) into the Exposure

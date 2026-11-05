@@ -156,6 +156,14 @@ func adminAuditRetentionConfig(cfg *config.Config, log *logger.Logger) *controll
 	}
 }
 
+// registerAddressAutoAdd schedules the address auto add (research/425),
+// under its controller lease (one replica at a time).
+func registerAddressAutoAdd(m *controller.Manager, repos *Repositories, svc *Services, log *logger.Logger) {
+	if a := newAddressAutoAdd(repos, svc, log.With("controller", "easm-address-auto-add")); a != nil {
+		m.Register(controller.NewEASMAddressAutoAddController(a, svc.Module, 0))
+	}
+}
+
 // registerPurgeControllers schedules the time-based deletes that had no caller:
 // expired invitations, expired platform-admin sessions and reviewed quarantined
 // sensor results. Each runs under its controller lease, so one replica at a
@@ -686,6 +694,7 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	}
 
 	registerPurgeControllers(w.ControllerManager, cfg, repos, svc, log)
+	registerAddressAutoAdd(w.ControllerManager, repos, svc, log)
 	registerSignerLedgerSync(w.ControllerManager, svc, log)
 
 	approvalExpiry := controller.NewApprovalExpirationController(
