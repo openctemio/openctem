@@ -335,6 +335,7 @@ web_endpoint_events
 web_endpoint_params
 web_endpoint_verifications
 web_endpoints
+web_path_discovery_runs
 web_snapshots
 web_watches
 work_item_subscriptions

@@ -601,18 +601,6 @@ func (r *AssetCoverageRepository) AttemptsSince(ctx context.Context, tenantID sh
 	return n, nil
 }
 
-// CapabilityAttemptsSince counts the tenant's pairs of one capability
-// attempted since t (path discovery's daily request budget).
-func (r *AssetCoverageRepository) CapabilityAttemptsSince(ctx context.Context, tenantID shared.ID, capability string, t time.Time) (int, error) {
-	var n int
-	err := r.db.QueryRowContext(ctx, `SELECT count(*) FROM asset_coverage
-		WHERE tenant_id = $1 AND capability = $2 AND vantage = '' AND last_attempt_at >= $3`, tenantID.String(), capability, t).Scan(&n)
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return 0, fmt.Errorf("count coverage attempts: %w", err)
-	}
-	return n, nil
-}
-
 var _ coverage.Planner = (*AssetCoverageRepository)(nil)
 
 // Health returns one entry per capability of the tenant's ledger.

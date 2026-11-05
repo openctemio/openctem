@@ -565,6 +565,11 @@ func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *sc
 func (s *Service) dispatchStep(ctx context.Context, run *scanrun.Run, step *scanworkflow.Step, resolved scanapp.StepTool,
 	stepRun *scanrun.StepRun, stepTargets *scanapp.StepTargets, wantsPlatform, splitForStream bool,
 ) error {
+	// A path discovery step keeps the origins the shared gate lets through.
+	stepTargets, err := s.admitPathDiscovery(ctx, run, step, stepTargets, run.Context)
+	if err != nil {
+		return err
+	}
 	// Where the step's commands may run. No command is pinned to one
 	// sensor (research/49 W27): a zone-routed run's commands are stamped
 	// with the zone, the others go to the platform queue or to any tenant

@@ -8,7 +8,9 @@
 -- Standard depth, waits for its tool (optional: skipped with the reason when
 -- no sensor runs it), is delta gated (an origin runs again after 30 days or
 -- when its inventory changed) and is skipped while the organization has path
--- discovery turned off (scope settings). Steps name the capability, no tool.
+-- discovery turned off (scope settings); at dispatch it keeps only the
+-- origins the shared path discovery gate lets through (the planner's gate and
+-- the per-origin ledger). Steps name the capability, no tool.
 --
 -- Only the system templates change; a tenant's copy has its own ids and is
 -- never touched (the template-update check offers the new step). Idempotent.

@@ -485,6 +485,13 @@ func (s *Service) planAndDispatchWave(ctx context.Context, run *scanrun.Run, tem
 	}
 	err = s.dispatchStep(ctx, run, step, resolved, sr, &scanapp.StepTargets{Targets: added}, wantsPlatform, feedsStream(template, step))
 	var tooClose *deadlineTooCloseError
+	var noInputs *noInputsError
+	if errors.As(err, &noInputs) {
+		// The path discovery gate left no origin of the wave: nothing to
+		// dispatch, and nothing unfinished (the gate refused them on purpose).
+		metrics.ScanStageStreamWaves.WithLabelValues(waveKind(closing), "empty").Inc()
+		return true, nil
+	}
 	if err != nil {
 		// Never lost silently: the targets are recorded as unfinished, so
 		// the next run plans them first and coverage never counts them.

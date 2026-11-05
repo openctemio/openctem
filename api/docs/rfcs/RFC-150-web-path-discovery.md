@@ -45,8 +45,30 @@ per-target refusals (`program_forbids_enumeration`, `program_rules_conflict`,
 standard depth with `lists: [derived]` and the per-origin cap.
 
 The system recon workflows (Standard recon, Web, Deep recon) carry an
-optional `paths` step at Standard depth on the probed web services, delta
-gated at 30 days and skipped while the switch is off.
+optional `paths` step at Standard depth on the probed web services. It goes
+through the same gate as the planner (§3.5): skipped while the switch is off,
+and at dispatch it keeps only the origins the gate lets through.
+
+### 3.5 One gate for every caller
+
+Three callers start path discovery: the coverage planner, a workflow's `paths`
+step and a scan someone starts. They share one policy
+(`coverage.PathDiscoveryPolicy`): the organization's switch, the daily request
+budget, an active scope entry naming the origin's host, the shared edge and
+program refusals, an edge that did not challenge the last probe, new inventory
+since the last run, and the per-origin last-run record. That record is the
+ledger `web_path_discovery_runs` (one row per origin: when it was last
+dispatched, the request cap granted, the run). The planner and the workflow
+step check it before they dispatch; the claim itself happens in the web job
+guard every command passes before it is stored, under a per-organization lock,
+so the 300 requests per origin per 30 days hold across scans and the planner,
+and the daily budget is the sum of the caps granted. A retry of a task is a
+new dispatch and is refused the same way. A job also requires `net.confined@1`.
+
+The cap a job carries is the platform's: a request above the per-origin budget
+is signed at the budget. The origins of one run on the same host name (other
+ports, other schemes) share that host's budget across the run's tasks: each
+claim is granted at most what the run's other claims on the host left.
 
 ### 3.2 Job content
 
@@ -83,17 +105,26 @@ reason on the run.
 | Program rules bypass | enumeration refused at trigger, in coverage planning and at claim when a covering program forbids brute force or automated scanning |
 | A sensor faking discoveries | source set from the binding, evidence required (RFC-056 §9) |
 
-## 5. Not built yet
+## 5. Verification of guessed backup, archive and dump files
 
-- Verifying guessed backup, dump, source and config files. The check itself
-  exists: the sensor carries the nuclei template `openctem-backup-file-signature`
-  in its own compiled-in, per-run signed set (one GET of the exact URL, a match
-  only on zip, gzip, tar or SQL dump bytes in a non-HTML 200), so no platform
-  template delivery is needed. Still to wire: the verification run must name it
-  (the sensor does not read `scanner_config.template_ids` of a scan yet; a
-  retest or validation request names it by `template_id` today), and the
-  catalog entries or `ext:*` labels that select it. Until then guessed files
-  are labelled (`ext:*`) and listed, never filed as findings.
+The sensor carries the nuclei template `openctem-backup-file-signature` in its
+own compiled-in, per-run signed set (one GET of the exact URL, a match only on
+zip, gzip, tar or SQL dump bytes in a non-HTML 200), so no platform template
+delivery is needed. The web verification planner treats a guessed endpoint
+(source `guess`) with an `ext:backup`, `ext:archive` or `ext:dbdump` label as a
+candidate without a catalog entry and asks for that template by id in
+`scanner_config.template_ids`. The sensor's nuclei reads `template_ids` as the
+selection of its own checks: only ids of the compiled-in set are accepted (any
+other id refuses the scan), the run loads only the run-signed copies of those
+templates with `-id`, signatures stay required, and the sensor's tag and
+severity filters do not apply. The scan is a web-scoped nuclei job, so it
+requires `net.confined@1` and the strict scope like any other. A finding comes
+only from the template's hit in the normal ingest.
+
+## 6. Not built yet
+
+- Verifying guessed source and config files (the backup, archive and dump
+  classes are verified, see below).
 - Pack lists, platform-planned recursion, parameter discovery, authenticated
   discovery (target credentials through the sealed task secrets), the
   per-variant ledger.

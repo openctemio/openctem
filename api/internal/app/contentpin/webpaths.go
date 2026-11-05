@@ -24,6 +24,7 @@ import (
 	"github.com/openctemio/ctis/v2/weburl"
 
 	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
+	covdom "github.com/openctemio/openctem/api/pkg/domain/coverage"
 	scanrundom "github.com/openctemio/openctem/api/pkg/domain/scanrun"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/webendpoint"
@@ -49,6 +50,39 @@ type WebPathSource interface {
 // on the targets' hosts (*scope.Service).
 type DiscoveryDenySource interface {
 	DiscoveryDenyPaths(ctx context.Context, tenantID shared.ID, targets []string) ([]string, error)
+}
+
+// PackOriginSource reads the stored facts of an organization's web origins
+// (the path discovery ledger's repository). Every implementation is scoped
+// to tenantID.
+type PackOriginSource interface {
+	PathOriginFacts(ctx context.Context, tenantID shared.ID, origins []string) (map[string]covdom.PathOriginFacts, error)
+}
+
+// SetPackOrigins wires the scope check of a wordlist pack. Unwired, a job
+// that asks for a pack is refused (fail closed).
+func (p *Planner) SetPackOrigins(src PackOriginSource) { p.packOrigins = src }
+
+// requirePackOrigins refuses a pack list unless every origin of the job is a
+// live web service of the organization that an active scope entry names.
+func (p *Planner) requirePackOrigins(ctx context.Context, tenantID shared.ID, targets []string) error {
+	if p.packOrigins == nil {
+		return refuse("a wordlist pack for path discovery is not configured")
+	}
+	origins := originsOf(targets)
+	if len(origins) == 0 {
+		return refuse("a path discovery job needs a web origin target")
+	}
+	facts, err := p.packOrigins.PathOriginFacts(ctx, tenantID, origins)
+	if err != nil {
+		return fmt.Errorf("read origin scope: %w", err)
+	}
+	for _, o := range origins {
+		if f, ok := facts[o]; !ok || !f.ScopeEntry {
+			return refuse("a wordlist pack runs only on origins an active scope entry names")
+		}
+	}
+	return nil
 }
 
 // SetWebPaths wires the derived list of path discovery. Unwired, a job that
