@@ -10,6 +10,7 @@ import (
 	"github.com/openctemio/ctis/v2/importer"
 
 	"github.com/openctemio/openctem/api/pkg/domain/exposure"
+	"github.com/openctemio/openctem/api/pkg/domain/ingestreceipt"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -105,6 +106,10 @@ func TestInfoMatchesBecomeExposuresNotFindings(t *testing.T) {
 
 	if len(report.Findings) != 2 {
 		t.Fatalf("findings left = %d, want the medium and the high", len(report.Findings))
+	}
+	// The receipt still accounts for them (research 436).
+	if out.Outcomes[ingestreceipt.OutcomeExposure] != 12 {
+		t.Fatalf("exposure outcome = %d, want 12", out.Outcomes[ingestreceipt.OutcomeExposure])
 	}
 	for _, f := range report.Findings {
 		if f.Severity == ctis.SeverityInfo {

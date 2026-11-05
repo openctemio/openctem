@@ -120,6 +120,9 @@ func (s *Service) IngestV2Segment(ctx context.Context, prov Provenance, report *
 	// its command covers.
 	opts.Binding = s.bindingFromCommandID(ctx, prov.TenantID, prov.CommandID)
 	opts.Admitted = true
+	// A finding that names no asset of its segment was refused above; it
+	// still counts as received on the receipt (outcome unresolved_ref).
+	opts.FindingsRefusedBeforeIngest = len(report.Findings) - len(kept)
 	// The report id of the URL path is the scan identity of every finding
 	// of every segment, which is what lets the commit tell seen from stale.
 	// metadata.id stays the producer's idempotency key.

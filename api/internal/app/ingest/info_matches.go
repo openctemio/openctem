@@ -21,6 +21,7 @@ import (
 	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/pkg/domain/exposure"
+	"github.com/openctemio/openctem/api/pkg/domain/ingestreceipt"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/stage"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -103,6 +104,7 @@ func (s *Service) routeInfoMatches(ctx context.Context, tenantID shared.ID, repo
 			"tenant_id", tenantID.String(), "error", logger.SanitizeError(err))
 		return
 	}
+	output.addOutcome(ingestreceipt.OutcomeExposure, len(report.Findings)-len(keep))
 	report.Findings = keep
 	output.InfoObservations += n
 	if s.stepInfo != nil && binding.Kind == BindingCommand && binding.StepRunID != nil && n > 0 {
