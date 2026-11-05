@@ -233,14 +233,17 @@ type Output struct {
 	// the targets of the hostname-scoped command the report is bound to
 	// (job_bound.go); FindingsOutsideJob counts the findings dropped with
 	// them. OutsideJobAssetRefs are their report refs.
-	AssetsOutsideJob     int             `json:"assets_outside_job,omitempty"`
-	FindingsOutsideJob   int             `json:"findings_outside_job,omitempty"`
-	OutsideJobAssetRefs  map[string]bool `json:"-"`
-	FindingsCreated      int             `json:"findings_created"`
-	FindingsUpdated      int             `json:"findings_updated"`
-	FindingsSkipped      int             `json:"findings_skipped"`
-	FindingsAutoResolved int             `json:"findings_auto_resolved,omitempty"`
-	FindingsAutoReopened int             `json:"findings_auto_reopened,omitempty"`
+	AssetsOutsideJob    int             `json:"assets_outside_job,omitempty"`
+	FindingsOutsideJob  int             `json:"findings_outside_job,omitempty"`
+	OutsideJobAssetRefs map[string]bool `json:"-"`
+	FindingsCreated     int             `json:"findings_created"`
+	FindingsUpdated     int             `json:"findings_updated"`
+	FindingsSkipped     int             `json:"findings_skipped"`
+	// InfoObservations counts the template scanner info matches filed as
+	// exposures instead of findings (info_matches.go).
+	InfoObservations     int `json:"info_observations,omitempty"`
+	FindingsAutoResolved int `json:"findings_auto_resolved,omitempty"`
+	FindingsAutoReopened int `json:"findings_auto_reopened,omitempty"`
 	// FindingsSourceResolved counts open findings resolved because their
 	// source reported them mitigated (Tenable.sc, RFC-047); in dry_run mode
 	// FindingsSourceWouldResolve counts them instead.
