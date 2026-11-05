@@ -80,10 +80,15 @@ tools:
 {{- end}}
 {{- end}}
 
-# Platform-supplied custom templates and out-of-band callbacks (nuclei
-# interactsh) stay off unless the network owner turns them on.
+# Platform-supplied custom templates stay off unless the network owner turns
+# them on.
 allow_custom_templates: false
-allow_interactsh: false
+
+# Out-of-band callbacks (nuclei interactsh) follow the platform: they run only
+# when the organization turned them on, and only with this sensor's own
+# interaction server (SENSOR_OOB_SERVER), never a public one. Uncomment to
+# never use them on this sensor (a job that asks then runs without them):
+# allow_interactsh: false
 
 # While this file exists the sensor runs no job and reports "paused by local
 # policy": sudo touch /etc/openctem/STOP (remove it to resume).
