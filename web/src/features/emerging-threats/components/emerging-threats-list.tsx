@@ -1,34 +1,44 @@
 'use client'
 
 /**
- * The emerging-threat list: summary strip, filters, and a server-paged table
- * of alerts ranked by exploitation-weighted score. Server text (titles) is
- * rendered as plain text.
+ * The emerging-threat triage queue (research/463): a strip of counts that
+ * filter, one toolbar (state, search, filter panel, display), one compact row
+ * per threat ranked by the exploitation-weighted score, and a drawer with the
+ * why and the actions. Server text (products) is rendered as plain text.
  */
 
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import type { ColumnDef } from '@tanstack/react-table'
-import { Siren } from 'lucide-react'
-import Link from '@/components/link'
-import { Label } from '@/components/ui/label'
-import { Switch } from '@/components/ui/switch'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
+import { CheckCheck, ExternalLink, PanelRight, RotateCcw, Siren, Wrench } from 'lucide-react'
+import { toast } from 'sonner'
 import { useTranslation } from '@/context/i18n-provider'
+import { getErrorMessage } from '@/lib/api/error-handler'
+import { Permission } from '@/lib/permissions'
 import { DataTable } from '@/features/shared/components/data-table'
+import {
+  DataTableRowActions,
+  type RowAction,
+} from '@/features/shared/components/data-table-row-actions'
 import { EmptyState } from '@/features/shared/components/empty-state'
 import { ErrorState } from '@/features/shared/components/error-state'
-import { ListToolbar } from '@/features/shared/components/list-toolbar'
+import {
+  FacetOption,
+  FacetPanel,
+  FacetSection,
+  FacetToggle,
+} from '@/features/shared/components/facet-filter-panel'
+import { FilterChipsRow } from '@/features/shared/components/filter-chips-row'
+import {
+  FilterPanelSlot,
+  useFilterPanelOpen,
+} from '@/features/shared/components/filter-panel-layout'
+import { FilterSelect } from '@/features/shared/components/filter-select'
+import { FilterSheet } from '@/features/shared/components/filter-sheet'
 import { MetricStrip, type MetricStripItem } from '@/features/shared/components/metric-strip'
 import { PageStack } from '@/features/shared/components/page-stack'
-import { RelativeTime } from '@/features/shared/components/relative-time'
-import { useEmergingThreats } from '../api'
+import { RemovableFilterChip } from '@/features/shared/components/removable-filter-chip'
+import { setAlertState, useEmergingThreats, useRevalidateEmergingThreats } from '../api'
 import {
   LEVELS,
   STATE_FILTERS,
@@ -36,29 +46,43 @@ import {
   type AlertTier,
   type EmergingThreatSummary,
   type StateFilter,
+  type TargetState,
 } from '../types'
-import { EtsCell, ExploitBadges, LevelBadge, StateBadge, useEventKindLabel } from './bits'
+import {
+  AffectedCell,
+  ExploitBadges,
+  LastChangeCell,
+  LevelBadge,
+  ScoreCell,
+  StateBadge,
+  ThreatCell,
+} from './bits'
+import { EmergingThreatSheet } from './emerging-threat-sheet'
 import { useSearchQuery } from '@/hooks/use-search-query'
 import { replaceUrlSearch, useUrlParams, useUrlSettled } from '@/hooks/use-url-param'
 import { parseListQuery, writeListQuery, type ListQuery } from '../url-filters'
 
-const ALL = 'all'
+const TIERS: AlertTier[] = ['confirmed', 'possible']
+const PANEL_ID = 'emerging-threat-filters'
+const detailHref = (id: string) => `/emerging-threats/${id}`
 
 export function EmergingThreatsList() {
   const { t } = useTranslation()
   const router = useRouter()
-  const eventLabel = useEventKindLabel()
+  const revalidate = useRevalidateEmergingThreats()
   // Every filter lives in the URL (url-filters.ts), so a view can be linked
   // to: a dashboard level opens the list filtered to it.
   const params = useUrlParams()
   const urlSettled = useUrlSettled()
   const query = useMemo(() => parseListQuery(params), [params])
-  const { level: levelFilter, state, tier: tierFilter, internetOnly } = query
-  const level: AlertLevel | typeof ALL = levelFilter ?? ALL
-  const tier: AlertTier | typeof ALL = tierFilter ?? ALL
+  const { level, state, tier, internetOnly, kevOnly } = query
   const searchInput = query.search
   const search = useSearchQuery(searchInput).term
   const pagination = { pageIndex: query.page - 1, pageSize: query.perPage }
+  const [panelOpen, setPanelOpen] = useFilterPanelOpen('emerging-threats.filters')
+  const [sheetOpen, setSheetOpen] = useState(false)
+  const [openId, setOpenId] = useState<string | null>(null)
+  const [busyId, setBusyId] = useState<string | null>(null)
 
   /** Writes filters to the URL; any filter change goes back to the first page. */
   const update = (patch: Partial<ListQuery>) => {
@@ -66,11 +90,8 @@ export function EmergingThreatsList() {
     const next = { ...current, page: 1, ...patch }
     replaceUrlSearch(writeListQuery(new URLSearchParams(window.location.search), next))
   }
-  const setLevel = (v: AlertLevel | typeof ALL) => update({ level: v === ALL ? undefined : v })
-  const setState = (v: StateFilter) => update({ state: v })
-  const setTier = (v: AlertTier | typeof ALL) => update({ tier: v === ALL ? undefined : v })
-  const setInternetOnly = (v: boolean) => update({ internetOnly: v })
-  const setSearchInput = (v: string) => update({ search: v })
+  const setLevel = (v: AlertLevel | undefined) => update({ level: v })
+  const setTier = (v: AlertTier | undefined) => update({ tier: v })
   const setPagination = (p: { pageIndex: number; pageSize: number }) =>
     update(
       p.pageSize !== query.perPage
@@ -79,84 +100,195 @@ export function EmergingThreatsList() {
     )
 
   const { data, error, isLoading, mutate } = useEmergingThreats(
-    {
-      level: levelFilter,
-      state,
-      tier: tierFilter,
-      internetOnly,
-      search,
-      page: query.page,
-      perPage: query.perPage,
-    },
+    { level, state, tier, internetOnly, kevOnly, search, page: query.page, perPage: query.perPage },
     undefined,
     urlSettled
   )
-
   const rows = useMemo(() => data?.data ?? [], [data])
   const summary = data?.summary
 
-  // Every tile is a filter: the level tiles pick that level, Open clears the
-  // level and internet-facing filters, Internet-facing toggles its own.
-  const toggleLevel = (target: AlertLevel) => setLevel(level === target ? ALL : target)
+  // Every tile is a one-click filter of the list below (research/463 D2).
   const strip: MetricStripItem[] = [
-    {
-      key: 'open',
-      label: t('emergingThreats.summary.open'),
-      value: summary?.open ?? 0,
-      active: level === ALL && !internetOnly && state === 'open',
-      onClick: () => update({ level: undefined, internetOnly: false, state: 'open' }),
-    },
     {
       key: 'immediate',
       label: t('emergingThreats.summary.immediate'),
+      description: t('emergingThreats.summary.immediateHint'),
       value: summary?.immediate ?? 0,
       tone: 'danger',
       active: level === 'immediate',
-      onClick: () => toggleLevel('immediate'),
+      onClick: () => setLevel(level === 'immediate' ? undefined : 'immediate'),
+    },
+    {
+      key: 'untriaged',
+      label: t('emergingThreats.summary.untriaged'),
+      description: t('emergingThreats.summary.untriagedHint'),
+      value: summary?.new ?? 0,
+      tone: 'warning',
+      active: state === 'new',
+      onClick: () => update({ state: state === 'new' ? 'open' : 'new' }),
     },
     {
       key: 'digest',
       label: t('emergingThreats.summary.digest'),
+      description: t('emergingThreats.summary.digestHint'),
       value: summary?.digest ?? 0,
       active: level === 'digest',
-      onClick: () => toggleLevel('digest'),
+      onClick: () => setLevel(level === 'digest' ? undefined : 'digest'),
     },
     {
-      key: 'listed',
-      label: t('emergingThreats.summary.listed'),
-      value: summary?.listed ?? 0,
-      active: level === 'listed',
-      onClick: () => toggleLevel('listed'),
+      key: 'kev',
+      label: t('emergingThreats.summary.kev'),
+      description: t('emergingThreats.summary.kevHint'),
+      value: summary?.kev ?? 0,
+      tone: 'danger',
+      active: kevOnly,
+      onClick: () => update({ kevOnly: !kevOnly }),
     },
     {
       key: 'internet',
       label: t('emergingThreats.summary.internetFacing'),
+      description: t('emergingThreats.summary.internetHint'),
       value: summary?.internet_facing ?? 0,
       tone: 'warning',
       active: internetOnly,
-      onClick: () => setInternetOnly(!internetOnly),
+      onClick: () => update({ internetOnly: !internetOnly }),
     },
   ]
+
+  const levelLabel = (l: AlertLevel) => t(`emergingThreats.level.${l}`)
+  const tierLabel = (v: AlertTier) => t(`emergingThreats.tier.${v}`)
+  const activeCount = [level, tier, internetOnly, kevOnly].filter(Boolean).length
+  const clearPanel = () =>
+    update({ level: undefined, tier: undefined, internetOnly: false, kevOnly: false })
+
+  const facetPanel = (
+    <FacetPanel activeCount={activeCount} onClearAll={clearPanel}>
+      <FacetSection title={t('emergingThreats.filter.level')} selectedCount={level ? 1 : 0}>
+        {LEVELS.map((l) => (
+          <FacetOption
+            key={l}
+            label={levelLabel(l)}
+            checked={level === l}
+            onCheckedChange={(on) => setLevel(on ? l : undefined)}
+          />
+        ))}
+      </FacetSection>
+      <FacetSection title={t('emergingThreats.filter.tier')} selectedCount={tier ? 1 : 0}>
+        {TIERS.map((v) => (
+          <FacetOption
+            key={v}
+            label={tierLabel(v)}
+            checked={tier === v}
+            onCheckedChange={(on) => setTier(on ? v : undefined)}
+          />
+        ))}
+      </FacetSection>
+      <div className="px-1">
+        <FacetToggle
+          label={t('emergingThreats.filter.kevOnly')}
+          description={t('emergingThreats.filter.kevOnlyHelp')}
+          checked={kevOnly}
+          onCheckedChange={(v) => update({ kevOnly: v })}
+        />
+        <FacetToggle
+          label={t('emergingThreats.filter.internetOnly')}
+          description={t('emergingThreats.filter.internetOnlyHelp')}
+          checked={internetOnly}
+          onCheckedChange={(v) => update({ internetOnly: v })}
+        />
+      </div>
+    </FacetPanel>
+  )
+
+  const chip = (key: string, text: string, onRemove: () => void) => (
+    <RemovableFilterChip
+      key={key}
+      text={text}
+      onRemove={onRemove}
+      removeLabel={t('emergingThreats.chip.remove', undefined, { filter: text })}
+    />
+  )
+  const chips = [
+    level &&
+      chip('level', t('emergingThreats.chip.level', undefined, { value: levelLabel(level) }), () =>
+        setLevel(undefined)
+      ),
+    tier &&
+      chip('tier', t('emergingThreats.chip.tier', undefined, { value: tierLabel(tier) }), () =>
+        setTier(undefined)
+      ),
+    kevOnly && chip('kev', t('emergingThreats.chip.kev'), () => update({ kevOnly: false })),
+    internetOnly &&
+      chip('internet', t('emergingThreats.chip.internet'), () => update({ internetOnly: false })),
+  ].filter((c): c is React.ReactElement => Boolean(c))
+
+  const move = async (row: EmergingThreatSummary, target: TargetState) => {
+    setBusyId(row.id)
+    try {
+      await setAlertState(row.id, target)
+      toast.success(t(`emergingThreats.toast.${target}`))
+      await revalidate()
+    } catch (err) {
+      toast.error(getErrorMessage(err))
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  const rowActions = (row: EmergingThreatSummary): RowAction[] => {
+    const busy = busyId === row.id
+    const open = row.state === 'new' || row.state === 'acknowledged' || row.state === 'remediating'
+    const actions: RowAction[] = [
+      {
+        label: t('emergingThreats.actions.view'),
+        icon: PanelRight,
+        onClick: () => setOpenId(row.id),
+      },
+      {
+        label: t('emergingThreats.actions.openPage'),
+        icon: ExternalLink,
+        onClick: () => router.push(detailHref(row.id)),
+      },
+    ]
+    if (row.state === 'new') {
+      actions.push({
+        label: t('emergingThreats.actions.acknowledge'),
+        icon: CheckCheck,
+        onClick: () => void move(row, 'acknowledged'),
+        disabled: busy,
+        permission: Permission.FindingsTriage,
+        separatorBefore: true,
+      })
+    }
+    if (row.state === 'new' || row.state === 'acknowledged') {
+      actions.push({
+        label: t('emergingThreats.actions.remediating'),
+        icon: Wrench,
+        onClick: () => void move(row, 'remediating'),
+        disabled: busy,
+        permission: Permission.FindingsTriage,
+        separatorBefore: row.state !== 'new',
+      })
+    }
+    if (row.state !== 'new') {
+      actions.push({
+        label: t('emergingThreats.actions.reopen'),
+        icon: RotateCcw,
+        onClick: () => void move(row, 'new'),
+        disabled: busy,
+        permission: Permission.FindingsTriage,
+        separatorBefore: !open,
+      })
+    }
+    return actions
+  }
 
   const columns = useMemo<ColumnDef<EmergingThreatSummary>[]>(
     () => [
       {
         id: 'vuln',
         header: t('emergingThreats.col.threat'),
-        cell: ({ row }) => (
-          <div className="min-w-0 max-w-md">
-            <Link
-              href={`/emerging-threats/${row.original.id}`}
-              className="font-mono text-sm font-medium hover:underline"
-              onClick={(e) => e.stopPropagation()}
-            >
-              {row.original.vuln_id}
-            </Link>
-            {row.original.title && (
-              <p className="truncate text-sm text-muted-foreground">{row.original.title}</p>
-            )}
-          </div>
-        ),
+        cell: ({ row }) => <ThreatCell alert={row.original} href={detailHref(row.original.id)} />,
       },
       {
         id: 'level',
@@ -166,13 +298,9 @@ export function EmergingThreatsList() {
       {
         id: 'ets',
         header: t('emergingThreats.col.ets'),
-        cell: ({ row }) => <EtsCell ets={row.original.ets} />,
-      },
-      {
-        id: 'tier',
-        header: t('emergingThreats.col.tier'),
+        meta: { hideBelow: 860 },
         cell: ({ row }) => (
-          <span className="text-sm">{t(`emergingThreats.tier.${row.original.tier}`)}</span>
+          <ScoreCell ets={row.original.ets} breakdown={row.original.ets_breakdown} />
         ),
       },
       {
@@ -190,13 +318,12 @@ export function EmergingThreatsList() {
         id: 'affected',
         header: t('emergingThreats.col.affected'),
         cell: ({ row }) => (
-          <span className="whitespace-nowrap text-sm tabular-nums">
-            {t('emergingThreats.affectedCounts', undefined, {
-              confirmed: row.original.confirmed_assets,
-              possible: row.original.possible_assets,
-              internet: row.original.internet_facing_assets,
-            })}
-          </span>
+          <AffectedCell
+            confirmed={row.original.confirmed_assets}
+            possible={row.original.possible_assets}
+            internet={row.original.internet_facing_assets}
+            critical={row.original.critical_assets ?? 0}
+          />
         ),
       },
       {
@@ -207,86 +334,52 @@ export function EmergingThreatsList() {
       {
         id: 'event',
         header: t('emergingThreats.col.lastEvent'),
+        meta: { hideBelow: 1000 },
         cell: ({ row }) => (
-          <div className="text-sm">
-            {row.original.last_event_kind && <p>{eventLabel(row.original.last_event_kind)}</p>}
-            <RelativeTime date={row.original.event_at} />
+          <LastChangeCell kind={row.original.last_event_kind} at={row.original.event_at} />
+        ),
+      },
+      {
+        id: 'actions',
+        header: '',
+        enableHiding: false,
+        cell: ({ row }) => (
+          <div onClick={(e) => e.stopPropagation()}>
+            <DataTableRowActions
+              actions={rowActions(row.original)}
+              label={t('emergingThreats.actions.menu', undefined, { vulnId: row.original.vuln_id })}
+            />
           </div>
         ),
       },
     ],
-    [t, eventLabel]
+    // rowActions reads busyId and the router; rebuild with them.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [t, busyId]
   )
+
+  const stateOptions = STATE_FILTERS.filter((s) => s !== 'open').map((s) => ({
+    value: s,
+    label: s === 'all' ? t('emergingThreats.filter.stateAll') : t(`emergingThreats.state.${s}`),
+  }))
+
+  const neverAny =
+    !isLoading &&
+    !error &&
+    rows.length === 0 &&
+    (summary?.open ?? 0) === 0 &&
+    !level &&
+    !tier &&
+    !internetOnly &&
+    !kevOnly &&
+    !searchInput &&
+    state === 'open'
 
   return (
     <PageStack>
       <MetricStrip items={strip} loading={isLoading && !data} />
 
-      <ListToolbar
-        search={{
-          value: searchInput,
-          onChange: setSearchInput,
-          placeholder: t('emergingThreats.filter.searchPlaceholder'),
-          label: t('emergingThreats.filter.search'),
-        }}
-        start={
-          <>
-            <FilterSelect
-              id="et-level"
-              label={t('emergingThreats.filter.level')}
-              value={level}
-              onChange={(v) => setLevel(v as AlertLevel | typeof ALL)}
-              options={[
-                [ALL, t('emergingThreats.filter.allLevels')],
-                ...LEVELS.map((l): [string, string] => [l, t(`emergingThreats.level.${l}`)]),
-              ]}
-            />
-            <FilterSelect
-              id="et-state"
-              label={t('emergingThreats.filter.state')}
-              value={state}
-              onChange={(v) => setState(v as StateFilter)}
-              options={STATE_FILTERS.map((s): [string, string] => [
-                s,
-                s === 'open'
-                  ? t('emergingThreats.filter.stateOpen')
-                  : s === 'all'
-                    ? t('emergingThreats.filter.stateAll')
-                    : t(`emergingThreats.state.${s}`),
-              ])}
-            />
-            <FilterSelect
-              id="et-tier"
-              label={t('emergingThreats.filter.tier')}
-              value={tier}
-              onChange={(v) => setTier(v as AlertTier | typeof ALL)}
-              options={[
-                [ALL, t('emergingThreats.filter.allTiers')],
-                ['confirmed', t('emergingThreats.tier.confirmed')],
-                ['possible', t('emergingThreats.tier.possible')],
-              ]}
-            />
-            <div className="flex h-9 items-center gap-2">
-              <Switch
-                id="et-internet"
-                checked={internetOnly}
-                onCheckedChange={(v) => setInternetOnly(v)}
-              />
-              <Label htmlFor="et-internet" className="text-sm">
-                {t('emergingThreats.filter.internetOnly')}
-              </Label>
-            </div>
-          </>
-        }
-      />
-
-      {error ? (
-        <ErrorState
-          title={t('emergingThreats.loadError')}
-          error={error}
-          onRetry={() => void mutate()}
-        />
-      ) : !isLoading && rows.length === 0 ? (
+      {neverAny ? (
         <EmptyState
           icon={Siren}
           title={t('emergingThreats.empty.title')}
@@ -294,55 +387,82 @@ export function EmergingThreatsList() {
           card
         />
       ) : (
-        <DataTable
-          columns={columns}
-          data={rows}
-          showSearch={false}
-          manualPagination
-          rowCount={data?.total ?? 0}
-          pageCount={data ? Math.max(1, data.total_pages) : 1}
-          pagination={pagination}
-          onPaginationChange={setPagination}
-          getRowId={(r) => r.id}
-          onRowClick={(r) => router.push(`/emerging-threats/${r.id}`)}
-          emptyMessage={t('emergingThreats.empty.title')}
-        />
+        <div className="flex items-start">
+          <FilterPanelSlot open={panelOpen} id={PANEL_ID} label={t('emergingThreats.filter.panel')}>
+            {facetPanel}
+          </FilterPanelSlot>
+          <div className="min-w-0 flex-1">
+            <DataTable
+              columns={columns}
+              data={rows}
+              showSearch={false}
+              search={{
+                value: searchInput,
+                onChange: (v: string) => update({ search: v }),
+                placeholder: t('emergingThreats.filter.searchPlaceholder'),
+                label: t('emergingThreats.filter.search'),
+              }}
+              filterToggle={{
+                open: panelOpen,
+                onToggle: () => setPanelOpen((o) => !o),
+                onOpenSheet: () => setSheetOpen(true),
+                activeCount,
+                controlsId: PANEL_ID,
+              }}
+              toolbarStart={
+                <FilterSelect<StateFilter>
+                  label={t('emergingThreats.filter.state')}
+                  value={state}
+                  allValue="open"
+                  allLabel={t('emergingThreats.filter.stateOpen')}
+                  options={stateOptions}
+                  onChange={(v) => update({ state: (v || 'open') as StateFilter })}
+                />
+              }
+              toolbarBelow={
+                chips.length > 0 ? (
+                  <FilterChipsRow
+                    label={t('emergingThreats.filter.active')}
+                    chips={chips}
+                    end={t('emergingThreats.count', undefined, { count: data?.total ?? 0 })}
+                  />
+                ) : undefined
+              }
+              isLoading={isLoading && !data}
+              errorState={
+                error ? (
+                  <ErrorState
+                    title={t('emergingThreats.loadError')}
+                    error={error}
+                    onRetry={() => void mutate()}
+                  />
+                ) : undefined
+              }
+              manualPagination
+              rowCount={data?.total ?? 0}
+              pageCount={data ? Math.max(1, data.total_pages) : 1}
+              pagination={pagination}
+              onPaginationChange={setPagination}
+              getRowId={(r) => r.id}
+              onRowClick={(r) => setOpenId(r.id)}
+              defaultDensity="compact"
+              emptyMessage={t('emergingThreats.empty.title')}
+              emptyDescription={t('emergingThreats.empty.description')}
+            />
+          </div>
+        </div>
       )}
-    </PageStack>
-  )
-}
 
-function FilterSelect({
-  id,
-  label,
-  value,
-  onChange,
-  options,
-}: {
-  id: string
-  label: string
-  value: string
-  onChange: (v: string) => void
-  options: [string, string][]
-}) {
-  return (
-    // Grows to its longest option ("Open (not closed)" was cut off at a fixed w-40).
-    <div className="min-w-40 space-y-1">
-      <Label htmlFor={id} className="text-xs text-muted-foreground">
-        {label}
-      </Label>
-      <Select value={value} onValueChange={onChange}>
-        <SelectTrigger id={id} className="w-full">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          {options.map(([v, text]) => (
-            <SelectItem key={v} value={v}>
-              {text}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-    </div>
+      <FilterSheet
+        open={sheetOpen}
+        onOpenChange={setSheetOpen}
+        title={t('emergingThreats.filter.panel')}
+        resultLabel={t('emergingThreats.filter.show', undefined, { count: data?.total ?? 0 })}
+      >
+        {facetPanel}
+      </FilterSheet>
+
+      <EmergingThreatSheet alertId={openId} onClose={() => setOpenId(null)} />
+    </PageStack>
   )
 }
