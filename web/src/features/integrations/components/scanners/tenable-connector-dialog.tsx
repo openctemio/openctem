@@ -75,7 +75,7 @@ const ROTATION_TEXT: Record<CoverageRotation, { label: string; hint: string; nee
   },
   aging: {
     label: 'Aging (recommended)',
-    hint: "Tenable.sc's nightly cleanup removes the rotation repository's aged data and frees the license. About one batch a day; nothing is deleted by OpenCTEM.",
+    hint: "Tenable.sc's nightly cleanup removes the rotation repository's aged data and frees the license. About one batch a day; the connector deletes nothing.",
     needs:
       'Needs a dedicated universal rotation repository, picked as the coverage repository, with every vulnerability lifetime set to 1 day. The cleanup runs nightly, so the wait is at least 24 hours.',
   },

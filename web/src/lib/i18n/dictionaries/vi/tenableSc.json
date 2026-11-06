@@ -106,7 +106,7 @@
   "tenableSc.dialog.pullFindings": "Lấy phát hiện",
   "tenableSc.dialog.rotation": "Luân chuyển giấy phép",
   "tenableSc.dialog.rotationAck": "Tôi xác nhận điều khoản giấy phép Tenable của tổ chức này cho phép luân chuyển nhiều tài sản qua giấy phép hơn số lượng giấy phép cho phép",
-  "tenableSc.dialog.rotationHint.aging": "Đợt dọn dẹp hằng đêm của Tenable.sc xóa dữ liệu đã hết hạn trong kho luân chuyển và giải phóng giấy phép. Khoảng một lô mỗi ngày; OpenCTEM không xóa gì.",
+  "tenableSc.dialog.rotationHint.aging": "Đợt dọn dẹp hằng đêm của Tenable.sc xóa dữ liệu đã hết hạn trong kho luân chuyển và giải phóng giấy phép. Khoảng một lô mỗi ngày; bộ kết nối không xóa gì.",
   "tenableSc.dialog.rotationHint.off": "Chỉ phủ trong giới hạn giấy phép. Tài sản Tenable.sc đã tính được quét lại; tài sản mới chỉ được quét khi giấy phép còn chỗ.",
   "tenableSc.dialog.rotationHint.purge": "Trước mỗi lô, bộ kết nối xóa các địa chỉ của lô trước khỏi kho luân chuyển bằng cách nhập một kết quả rỗng, sau khi kết quả đó đã được nạp xong. Nhanh hơn hết hạn dữ liệu; dữ liệu đã xóa không khôi phục được.",
   "tenableSc.dialog.rotationHint.recycle": "Trước mỗi lô, bộ kết nối tạo một bản sao đã kiểm tra của kho luân chuyển rồi mới xóa kho cũ, sau khi kết quả của lô trước đã được nạp xong.",

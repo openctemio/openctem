@@ -106,7 +106,7 @@
   "tenableSc.dialog.pullFindings": "Pull findings",
   "tenableSc.dialog.rotation": "License rotation",
   "tenableSc.dialog.rotationAck": "I confirm this organization's Tenable license terms allow rotating more assets through the license than it holds",
-  "tenableSc.dialog.rotationHint.aging": "Tenable.sc's nightly cleanup removes the rotation repository's aged data and frees the license. About one batch a day; nothing is deleted by OpenCTEM.",
+  "tenableSc.dialog.rotationHint.aging": "Tenable.sc's nightly cleanup removes the rotation repository's aged data and frees the license. About one batch a day; the connector deletes nothing.",
   "tenableSc.dialog.rotationHint.off": "Covers what the license holds. Assets Tenable.sc already counts are rescanned; new ones only while the license has room.",
   "tenableSc.dialog.rotationHint.purge": "Before each batch the connector removes the previous batch's addresses from its rotation repository by importing an empty result, once those results are ingested. Faster than aging; removed data cannot be recovered.",
   "tenableSc.dialog.rotationHint.recycle": "Before each batch the connector creates a verified copy of its rotation repository and only then deletes the old one, once the previous results are ingested.",
