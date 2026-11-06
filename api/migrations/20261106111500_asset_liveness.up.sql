@@ -44,7 +44,6 @@ COMMENT ON TABLE asset_liveness IS
 CREATE INDEX IF NOT EXISTS idx_asset_liveness_state
     ON asset_liveness (tenant_id, state) WHERE state <> 'alive';
 
-ALTER TABLE asset_liveness ENABLE ROW LEVEL SECURITY;
 CREATE POLICY asset_liveness_tenant_isolation ON asset_liveness
     USING (((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid)
         OR (current_setting('app.is_platform_admin'::text, true) = 'true'::text)));
