@@ -254,36 +254,44 @@ type Counts struct {
 	Skipped    int  `json:"skipped"`
 	Failed     int  `json:"failed"`
 	Suppressed int  `json:"suppressed"`
+	// Merged are findings a report repeated within itself and that were
+	// folded into one observation; they are the part of Received that no
+	// other outcome counts.
+	Merged int `json:"merged"`
 }
 
 // Receipt is the stored receipt.
 type Receipt struct {
-	ID               shared.ID
-	TenantID         shared.ID
-	SourceKind       SourceKind
-	SourceRef        string
-	ActorUserID      *shared.ID
-	ToolName         string
-	Format           string
-	FilenameSHA256   string
-	Coverage         string
-	CoverageNote     string
-	Status           string
-	Reports          int
-	Received         int
-	AssetsCreated    int
-	AssetsUpdated    int
-	Components       int
-	Statements       int
-	VEXStored        int
-	VEXRequested     int
-	Counts           Counts
-	ActionsRecorded  int
-	ActionsTruncated bool
-	Errors           []ErrorEntry
-	CreatedAt        time.Time
-	UpdatedAt        time.Time
-	FinishedAt       *time.Time
+	ID             shared.ID
+	TenantID       shared.ID
+	SourceKind     SourceKind
+	SourceRef      string
+	ActorUserID    *shared.ID
+	ToolName       string
+	Format         string
+	FilenameSHA256 string
+	Coverage       string
+	CoverageNote   string
+	Status         string
+	Reports        int
+	Received       int
+	AssetsCreated  int
+	AssetsUpdated  int
+	Components     int
+	Statements     int
+	VEXStored      int
+	VEXRequested   int
+	Counts         Counts
+	// ReleasedFromQuarantine: a report held in the results quarantine and
+	// applied later is part of this receipt (its sender is the original
+	// sensor).
+	ReleasedFromQuarantine bool
+	ActionsRecorded        int
+	ActionsTruncated       bool
+	Errors                 []ErrorEntry
+	CreatedAt              time.Time
+	UpdatedAt              time.Time
+	FinishedAt             *time.Time
 }
 
 // Source names the receipt a delta belongs to. For a command, CommandID is
@@ -315,6 +323,12 @@ type Delta struct {
 	Skipped       int
 	Failed        int
 	Suppressed    int
+	// Merged are the findings the report repeated within itself, folded
+	// into one observation: they keep received equal to the sum of outcomes.
+	Merged int
+	// Released marks a report applied from the results quarantine: the
+	// receipt and the sender's row carry the marker, nothing else changes.
+	Released bool
 
 	Created  []shared.ID
 	Reopened []shared.ID
@@ -369,7 +383,7 @@ type Instance struct {
 // Empty reports whether the delta changes nothing.
 func (d *Delta) Empty() bool {
 	return d.Reports == 0 && d.Received == 0 && d.AssetsCreated == 0 && d.AssetsUpdated == 0 &&
-		d.Skipped == 0 && d.Failed == 0 && d.Suppressed == 0 && len(d.Created) == 0 &&
+		d.Skipped == 0 && d.Failed == 0 && d.Suppressed == 0 && d.Merged == 0 && !d.Released && len(d.Created) == 0 &&
 		len(d.Reopened) == 0 && len(d.Closed) == 0 && len(d.StillDetected) == 0 &&
 		len(d.Decided) == 0 && len(d.Items) == 0 &&
 		d.Coverage == "" && d.Untouched == nil && len(d.Errors) == 0

@@ -41,6 +41,19 @@ func receiptSource(agt *sensor.Sensor, binding Binding, opts Options, reportID s
 	if opts.Receipt != nil {
 		return *opts.Receipt
 	}
+	if opts.ReleasedFromQuarantine {
+		// A released item is what the sensor sent: it counts under its
+		// sensor, never under a connector (its trusted binding is only how
+		// the platform applies it).
+		sensorID := shared.ID{}
+		if agt != nil {
+			sensorID = agt.ID
+		}
+		if reportID == "" {
+			reportID = shared.NewID().String()
+		}
+		return ingestreceipt.Source{Kind: ingestreceipt.SourceSensor, Ref: ingestreceipt.ReportRef(sensorID, reportID)}
+	}
 	switch binding.Kind {
 	case BindingCommand:
 		if binding.CommandID != nil {
@@ -77,6 +90,9 @@ func receiptSource(agt *sensor.Sensor, binding Binding, opts Options, reportID s
 func receiptInstance(agt *sensor.Sensor, binding Binding, opts Options, report *ctis.Report) ingestreceipt.Instance {
 	if opts.Receipt != nil && opts.Receipt.Kind == ingestreceipt.SourceUpload {
 		return ingestreceipt.Instance{Kind: ingestreceipt.InstanceImport, ID: ingestreceipt.InstanceImport}
+	}
+	if opts.ReleasedFromQuarantine && agt != nil && !agt.ID.IsZero() {
+		return ingestreceipt.Instance{Kind: ingestreceipt.InstanceSensor, ID: agt.ID.String(), Name: opts.SenderName}
 	}
 	switch binding.Kind {
 	case BindingCIRun:
@@ -118,6 +134,8 @@ func (s *Service) recordReceipt(ctx context.Context, agt *sensor.Sensor, tenantI
 		AssetsUpdated: output.AssetsUpdated,
 		Failed:        len(output.FailedFindings),
 		Suppressed:    output.FindingsSuppressed,
+		Merged:        output.FindingsMerged,
+		Released:      opts.ReleasedFromQuarantine,
 		Created:       output.CreatedIDs,
 		Reopened:      output.ReopenedIDs,
 		StillDetected: output.SightedFingerprints,

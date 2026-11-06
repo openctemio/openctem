@@ -455,10 +455,15 @@ receipt or on the discovery tool whose report named the software.
 - Health: `failed` when the latest receipt failed; `stale` when nothing
   came for more than twice the usual interval and at least a day; `ok`
   otherwise. A source with fewer than three receipts is never stale.
+- A source whose senders include a stale one is stale, and its note names
+  that sender's own last receipt (`health_last_at`), not the freshest
+  sender's. A sender's `released` is its reports applied from the results
+  quarantine; the card says "Includes N released from quarantine".
 - Noise: received splits into new or reopened (created plus reopened:
   the receipt list's New and Reopened totals added), merged into findings
   that exist (the rest after new, reopened and not stored: still detected
-  and repeats within a report) and not stored. These three sum to received.
+  and repeats within a report, which a receipt counts as `merged`) and not
+  stored. These three sum to received.
   Suppressed by an approved rule is the part of New that was stored closed
   on arrival (the list's Suppressed total); it is inside New, not a fourth
   part. One definition per label: the intake summary, the noise headline,
