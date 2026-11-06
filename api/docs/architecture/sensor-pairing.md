@@ -366,6 +366,23 @@ sensors on one host, shows the multi-sensor kit's `sensors.sh add` line
 expectation (waiting, pick the fingerprint, approved) and the new sensor
 (online). The inline empty state creates the expectation only on a click.
 
+The panel asks first what the sensor will scan (research note 466):
+internet-facing, internal networks or both, sent as `purpose` (`internet`,
+the default, `internal`, `both`; `GET` takes it as a query parameter). For
+`internal` and `both` every command sets `SENSOR_ALLOW_PRIVATE_TARGETS=1`,
+with a one-line comment that says what it does, and the narrowing policy
+prefill says `allow_private: true`; `internet` never sets it. The switch is
+the host owner's consent to scan private networks, so it lives in the
+command they run, never in a setting the console can turn on later. With
+`internal` the person may also pin the host to the networks they listed
+(`allowed_ranges`, private ranges only, parsed by
+`scanzone.ParseLANRanges`, at most 64): the commands then set
+`SENSOR_ALLOWED_RANGES` (docker, Compose, Linux) and the policy prefill lists
+the same ranges (Kubernetes reads the policy file). A pin is refused with
+`both` (it would refuse the public targets) and without `internal`. The
+validation is `sensorapp.InstallIntent.Apply`; nothing is rendered for a
+refused intent. Shared and platform sensors never install from this route.
+
 A start with a code uses it as the request's own code (attached, or a
 tenantless request under the same code when nothing expects it), and every
 start without a token answers a `user_code` and, when `APP_URL` is set, the

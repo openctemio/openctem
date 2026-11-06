@@ -568,7 +568,12 @@ SENSOR_PAIRING_CODE={{.PairingCode}}
 SENSOR_JOB_SIGNING_ROOT={{.JobSigningRoot}}
 {{- end}}
 {{- if .Policy.AllowPrivate}}
+# SENSOR_ALLOW_PRIVATE_TARGETS=1 lets this sensor scan private networks (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, fc00::/7); without it the host refuses them.
 SENSOR_ALLOW_PRIVATE_TARGETS=1
+{{- end}}
+{{- if .HostAllowedRanges}}
+# SENSOR_ALLOWED_RANGES pins this host to the networks you listed: the sensor refuses every target outside them.
+SENSOR_ALLOWED_RANGES={{.HostAllowedRanges}}
 {{- end}}
 {{- if .CACert}}
 SSL_CERT_DIR=/etc/openctem/certs
@@ -727,7 +732,12 @@ services:
       XDG_CONFIG_HOME: /tmp/.config
       XDG_CACHE_HOME: /tmp/.cache
 {{- if .Policy.AllowPrivate}}
+      # SENSOR_ALLOW_PRIVATE_TARGETS=1 lets this sensor scan private networks (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, fc00::/7); without it the host refuses them.
       SENSOR_ALLOW_PRIVATE_TARGETS: "1"
+{{- end}}
+{{- if .HostAllowedRanges}}
+      # SENSOR_ALLOWED_RANGES pins this host to the networks you listed: the sensor refuses every target outside them.
+      SENSOR_ALLOWED_RANGES: {{yamlQuote .HostAllowedRanges}}
 {{- end}}
 {{- end}}
 {{- if .CACert}}
@@ -850,6 +860,12 @@ echo '{{.SeccompSHA256}}  /etc/openctem/sensor-seccomp.json' | sha256sum -c -
 # restart the sensor after writing it) and the kill switch (no job runs while
 # /etc/openctem/STOP exists). The image's default command runs the sensor; it
 # runs the tools the image ships (narrow them in the policy's tools.allow).
+{{- if .Policy.AllowPrivate}}
+# SENSOR_ALLOW_PRIVATE_TARGETS=1 lets this sensor scan private networks (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, fc00::/7); without it the host refuses them.
+{{- end}}
+{{- if .HostAllowedRanges}}
+# SENSOR_ALLOWED_RANGES pins this host to the networks you listed: the sensor refuses every target outside them.
+{{- end}}
 docker run -d --name {{$slug}} --restart unless-stopped \
   --read-only --cap-drop ALL --security-opt no-new-privileges:true \
   --security-opt seccomp=/etc/openctem/sensor-seccomp.json \
@@ -870,6 +886,9 @@ docker run -d --name {{$slug}} --restart unless-stopped \
   -e SENSOR_KILL_SWITCH_FILE=/etc/openctem/STOP \
 {{- if .Policy.AllowPrivate}}
   -e SENSOR_ALLOW_PRIVATE_TARGETS=1 \
+{{- end}}
+{{- if .HostAllowedRanges}}
+  -e SENSOR_ALLOWED_RANGES={{shellQuote .HostAllowedRanges}} \
 {{- end}}
 {{- if .CACert}}
   -e SSL_CERT_DIR=/etc/openctem/certs \
@@ -923,6 +942,10 @@ export SENSOR_API_KEY={{shellQuote .APIKey}}
 # The API key is shown once, when the sensor is created or its key is rotated.
 export SENSOR_API_URL={{shellQuote .BaseURL}}
 export SENSOR_API_KEY='octs_...'
+{{- end}}
+{{- if .Policy.AllowPrivate}}
+# SENSOR_ALLOW_PRIVATE_TARGETS=1 lets this sensor scan private networks (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, fc00::/7); without it the host refuses them.
+export SENSOR_ALLOW_PRIVATE_TARGETS=1
 {{- end}}
 {{- if .CACert}}
 # The platform uses a private CA: install it (see the docker run instructions)
@@ -1152,6 +1175,7 @@ spec:
             - name: XDG_CACHE_HOME
               value: /tmp/.cache
 {{- if .Policy.AllowPrivate}}
+            # SENSOR_ALLOW_PRIVATE_TARGETS=1 lets this sensor scan private networks (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, fc00::/7); without it the host refuses them.
             - name: SENSOR_ALLOW_PRIVATE_TARGETS
               value: "1"
 {{- end}}
@@ -1284,7 +1308,10 @@ targets:
   #   {{.}}
 {{- end}}
 {{- else if .Policy.HasAllow}}
-{{- if eq .Policy.Source "scope"}}
+{{- if eq .Policy.Source "host_pin"}}
+  # The networks you listed when adding this sensor. The install command
+  # pins the same list (SENSOR_ALLOWED_RANGES); this file replaces that pin.
+{{- else if eq .Policy.Source "scope"}}
   # Your organization's scope (active entries): this sensor has no scan zone,
   # so it may scan what your organization may scan. Remove what this sensor
   # must not reach; add host names or *.domain entries.
