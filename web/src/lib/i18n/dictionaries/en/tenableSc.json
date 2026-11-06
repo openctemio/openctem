@@ -115,7 +115,7 @@
   "tenableSc.dialog.rotationMode.purge": "Purge (Beta, unverified)",
   "tenableSc.dialog.rotationMode.recycle": "Recycle (Beta, unverified)",
   "tenableSc.dialog.rotationNeeds.aging": "Needs a dedicated universal rotation repository, picked as the coverage repository, with every vulnerability lifetime set to 1 day. The cleanup runs nightly, so the wait is at least 24 hours.",
-  "tenableSc.dialog.rotationNeeds.purge": "Needs operation purge and a purge rotation repository (not an agent repository) in the connector configuration. No administrator key. If the connector cannot confirm the license dropped, rotation stalls.",
+  "tenableSc.dialog.rotationNeeds.purge": "Needs operation purge and a dedicated purge rotation repository in the connector configuration. No administrator key. If the connector cannot confirm the license dropped, rotation stalls.",
   "tenableSc.dialog.rotationNeeds.recycle": "Needs a Tenable.sc Administrator API key configured on the connector (recycle block with two rotation repository names). The administrator key is used only for the rotation repositories.",
   "tenableSc.dialog.rotationWait": "Wait after a batch (hours)",
   "tenableSc.dialog.rotationWaitHint": "24 to 72 hours, 26 by default. Lifetimes apply only at Tenable.sc's nightly cleanup, so a shorter wait cannot see the license freed; the license check before each batch confirms the capacity.",

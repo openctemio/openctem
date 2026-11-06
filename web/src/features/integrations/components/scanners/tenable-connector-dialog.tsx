@@ -83,7 +83,7 @@ const ROTATION_TEXT: Record<CoverageRotation, { label: string; hint: string; nee
     label: 'Purge (Beta, unverified)',
     hint: "Before each batch the connector removes the previous batch's addresses from its rotation repository by importing an empty result, once those results are ingested. Faster than aging; removed data cannot be recovered.",
     needs:
-      'Needs operation purge and a purge rotation repository (not an agent repository) in the connector configuration. No administrator key. If the connector cannot confirm the license dropped, rotation stalls.',
+      'Needs operation purge and a dedicated purge rotation repository in the connector configuration. No administrator key. If the connector cannot confirm the license dropped, rotation stalls.',
   },
   recycle: {
     label: 'Recycle (Beta, unverified)',
