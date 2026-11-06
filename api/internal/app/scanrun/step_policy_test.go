@@ -207,6 +207,46 @@ func TestValidatedCapabilities(t *testing.T) {
 	}
 }
 
+// The scan's step params are the last layer: step config, then the depth
+// overlay, then the scan override. A read-only (system) workflow step is
+// never changed.
+func TestStepAtDepth_ScanOverrideWinsOverDepthOverlayAndConfig(t *testing.T) {
+	step := &scanworkflow.Step{StepKey: "vulns", Capabilities: []string{"vuln.templates"},
+		Config: map[string]any{"severity": []any{"critical"}, "tags": []any{"cve"}},
+		RunPolicy: scanworkflow.RunPolicy{Depths: map[scanworkflow.Depth]scanworkflow.DepthOverlay{
+			scanworkflow.DepthDeep: {Params: map[string]any{"severity": []any{"info", "low"}, "tags": []any{"tech"}}},
+		}}}
+	run := &scanrun.Run{Context: map[string]any{
+		scanrun.RunContextKeyDepth: "deep",
+		scanrun.RunContextKeyStepParams: map[string]any{
+			"*:vuln.templates": map[string]any{"severity": []any{"high"}},
+		},
+	}}
+	got := stepAtDepth(run, step)
+	if sev := got.Config["severity"].([]any); len(sev) != 1 || sev[0] != "high" {
+		t.Fatalf("severity = %v: the scan override must beat the depth overlay", sev)
+	}
+	if tags := got.Config["tags"].([]any); tags[0] != "tech" {
+		t.Fatalf("tags = %v: the depth overlay still beats the step config where the scan sets nothing", tags)
+	}
+	// A step-key entry beats the capability entry.
+	run.Context[scanrun.RunContextKeyStepParams] = map[string]any{
+		"*:vuln.templates": map[string]any{"severity": []any{"high"}},
+		"vulns":            map[string]any{"severity": []any{"medium"}},
+	}
+	if sev := stepAtDepth(run, step).Config["severity"].([]any); sev[0] != "medium" {
+		t.Fatalf("severity = %v: step key must win", sev)
+	}
+	if step.Config["severity"].([]any)[0] != "critical" {
+		t.Fatal("the workflow step was modified")
+	}
+	// Another capability's step is not touched by the capability entry.
+	ports := &scanworkflow.Step{StepKey: "p", Capabilities: []string{"scan.ports"}, Config: map[string]any{"ports": "80"}}
+	if stepAtDepth(run, ports).Config["ports"] != "80" {
+		t.Fatal("capability entry leaked to another capability")
+	}
+}
+
 // A registration lookup answers for the registered domain: the names of a
 // predecessor's output collapse to their registrable domains, each once, and
 // the cap counts domains, not names.
