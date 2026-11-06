@@ -614,7 +614,10 @@ func (s *Service) admitZonedPrivateTargets(ctx context.Context, tenantIDStr stri
 		if isInternalIPRejection(v.Error) && lenient.ValidateSingleTarget(v.Original).IsValid {
 			pt := scanzone.ParseTarget(v.Original)
 			if pt.IsAddr {
-				if rt := router.Route(ctx, v.Original); rt.Zone != nil && scanzone.IsPrivate(pt.Prefix.Addr()) {
+				// A target several sites' zones hold is inside zones: it is
+				// admitted, and the run asks which zone (ambiguous_zone)
+				// unless the scan picks one.
+				if rt := router.Route(ctx, v.Original); (rt.Zone != nil || rt.Kind == scanzone.KindAmbiguousZone) && scanzone.IsPrivate(pt.Prefix.Addr()) {
 					admitted = append(admitted, v.Original)
 					continue
 				}
