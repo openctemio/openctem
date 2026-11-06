@@ -615,6 +615,7 @@ authenticator code, and is audited.
 |----------|---------------------|
 | `GET /api/v1/sensors` · `/stats` · `/{id}` · `/{id}/config-templates` · `/available-capabilities` · `/content-policy` | `sensors:read`; host name and addresses (`hostname`, `ip_address`, `key_last_used_ip`) are returned to owners and administrators only |
 | `GET /api/v1/sensors/{id}/config-report` (setup checklist, research/26) · `GET /quarantined-results` · `/quarantined-results/{qid}` (the preview carries asset values and finding titles from the raw report) | `sensors:write` (owner/admin) |
+| `GET /api/v1/sensors/{id}/readiness` (what still stops the sensor from scanning, research/466) | `sensors:read`, own organization's sensors only (a shared sensor and another organization's are 404). Each fix says whether the caller holds the permission it needs; the add-to-scope fix lists the zones' private ranges only with `sensors:zones:read` (otherwise the count); the host-confinement item is `unknown` without `sensors:write` |
 | `POST /api/v1/sensors` · `PUT /{id}` · `POST /{id}/regenerate-key` · `/activate` · `/deactivate` · `/revoke` | `sensors:write`; creating a sensor and regenerating its key also need **step-up** (they mint a persistent key) |
 | `PUT /api/v1/sensors/content-policy` · `POST /content/refresh` · `POST /{id}/content/refresh` (scanner content, RFC-031) | `sensors:write` |
 | `DELETE /api/v1/sensors/{id}` | `sensors:delete` |
