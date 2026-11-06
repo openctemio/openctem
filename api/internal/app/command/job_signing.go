@@ -93,6 +93,14 @@ func (s *Service) signJob(ctx context.Context, sensorID string, c *commanddom.Co
 	if err := s.checkPinnedContent(ctx, c, payload); err != nil {
 		return nil, s.contentNotSigned(c, sensorID, err)
 	}
+	// The deny list in the form this sensor reads (web_scope_delivery.go).
+	payload, err = webScopeDelivery(payload, s.sensorReadsWildcard(ctx, c, sensorID))
+	if err != nil {
+		s.logger.Warn("web scope not readable; command not handed to the sensor",
+			"command_id", c.ID.String(), "sensor_id", sensorID, "error", err)
+		// Fixed sentence; the cause is logged above, not shown.
+		return nil, contentNotSignedError{cause: err}
+	}
 	now := s.now().UTC()
 	expires := now.Add(jobsign.MaxTTL)
 	if c.ExpiresAt != nil && c.ExpiresAt.After(now) && c.ExpiresAt.Before(expires) {
@@ -205,7 +213,20 @@ func (s *Service) signClaimed(ctx context.Context, tenantID shared.ID, sensorID 
 	cmds []*commanddom.Command, pinned map[shared.ID]bool,
 ) []*commanddom.Command {
 	if s.jobs == nil {
-		return cmds
+		// Unsigned delivery still never carries the platform-only key.
+		out := cmds[:0:0]
+		for _, c := range cmds {
+			p, err := webScopeDelivery(c.Payload, s.sensorReadsWildcard(ctx, c, sensorID))
+			if err != nil {
+				s.logger.Warn("web scope not readable; command not handed to the sensor", "command_id", c.ID.String(), "error", err)
+				s.unclaim(ctx, tenantID, c.ID, sensorID, pinned[c.ID])
+				continue
+			}
+			cp := *c
+			cp.Payload = p
+			out = append(out, &cp)
+		}
+		return out
 	}
 	out := cmds[:0:0]
 	down := false
