@@ -79,6 +79,7 @@ export interface MultiFacetDef {
     | 'attribution'
     | 'scopeStatus'
     | 'monitoringState'
+    | 'liveness'
     | 'discoveredBy'
   >
   label: string
@@ -112,6 +113,16 @@ export interface FacetGroup {
 }
 
 const identity = (v: string) => v
+
+/** Liveness states offered by the inventory filter (asset liveness). */
+const LIVENESS_FACET_VALUES = ['unreachable', 'unresolvable', 'gone', 'alive', 'unknown'] as const
+const LIVENESS_FACET_FALLBACK: Record<string, string> = {
+  unreachable: 'Unreachable',
+  unresolvable: 'Unresolvable',
+  gone: 'Gone',
+  alive: 'Alive',
+  unknown: 'Not checked',
+}
 
 /**
  * Build the facet groups. `businessUnitLabels` maps a BU id -> name (fetched
@@ -152,6 +163,16 @@ export function scopingFacetGroup(t: FacetT = englishT): FacetGroup {
             `assets.monitoring.state.${v}`,
             MONITORING_STATE_FALLBACK[v as keyof typeof MONITORING_STATE_FALLBACK] ?? v
           ),
+        counts: () => ({}),
+      },
+      {
+        kind: 'multi',
+        filterKey: 'liveness',
+        label: t('assetLiveness.filter.label', 'Liveness'),
+        source: 'static',
+        values: [...LIVENESS_FACET_VALUES],
+        labelFor: (v) => t(`assetLiveness.state.${v}`, LIVENESS_FACET_FALLBACK[v] ?? v),
+        // The stats endpoint has no liveness breakdown.
         counts: () => ({}),
       },
       {

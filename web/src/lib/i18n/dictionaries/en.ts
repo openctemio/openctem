@@ -11,6 +11,7 @@ import en_actor from './en/actor.json'
 import en_admin from './en/admin.json'
 import en_announcements from './en/announcements.json'
 import en_assetFreshness from './en/assetFreshness.json'
+import en_assetLiveness from './en/assetLiveness.json'
 import en_assetCoverage from './en/assetCoverage.json'
 import en_assetPorts from './en/assetPorts.json'
 import en_assetSources from './en/assetSources.json'
@@ -113,6 +114,7 @@ export const enNamespaces: Record<string, Dictionary> = {
   admin: en_admin,
   announcements: en_announcements,
   assetFreshness: en_assetFreshness,
+  assetLiveness: en_assetLiveness,
   assetCoverage: en_assetCoverage,
   assetPorts: en_assetPorts,
   assetSources: en_assetSources,
