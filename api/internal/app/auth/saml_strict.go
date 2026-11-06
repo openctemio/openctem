@@ -220,7 +220,7 @@ func checkSAMLAssertionConditions(assertion *etree.Element, audience string, now
 		restrictions++
 		named := false
 		for _, aud := range ar.ChildElements() {
-			if aud.Tag == "Audience" && strings.TrimSpace(aud.Text()) == audience {
+			if aud.Tag == "Audience" && strings.TrimSpace(samlElementText(aud)) == audience {
 				named = true
 			}
 		}
@@ -232,6 +232,21 @@ func checkSAMLAssertionConditions(assertion *etree.Element, audience string, now
 		return samlStrictErr("assertion has no audience restriction")
 	}
 	return nil
+}
+
+// samlElementText is the whole character data of el, comments skipped: what
+// the library reads for it (its chardata binding concatenates every text
+// segment). etree's Text() stops at the first token that is neither text nor
+// a comment, so a value split by a processing instruction would be read as
+// only its first part.
+func samlElementText(el *etree.Element) string {
+	var b strings.Builder
+	for _, tok := range el.Child {
+		if cd, ok := tok.(*etree.CharData); ok {
+			b.WriteString(cd.Data)
+		}
+	}
+	return b.String()
 }
 
 // Assertion element names the shape check reads.
