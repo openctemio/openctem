@@ -4,7 +4,12 @@
  * Type definitions for scan management
  */
 
-import type { RuleSources, ScanIntensity, ScanTargetOptions } from '@/lib/api/scan-types'
+import type {
+  RuleSources,
+  ScanIntensity,
+  ScanStepParams,
+  ScanTargetOptions,
+} from '@/lib/api/scan-types'
 import type { Status } from '@/features/shared/types'
 
 // ============================================
@@ -223,6 +228,13 @@ export interface NewScanFormData {
   customTemplateIds: string[]
   sensorPreference: SensorPreference // Platform sensor selection
   profileId?: string // Optional scan profile (drives quality gate evaluation)
+  /**
+   * The scan's own settings for steps of the chosen workflow (API step_params:
+   * step key or `*:<capability>` -> standard params). Workflow mode only.
+   */
+  stepParams: ScanStepParams
+  /** The saved scan's depth (Edit keeps it; the preview shows the workflow at it). */
+  depth?: 'passive' | 'standard' | 'deep'
 
   // Step 2: Targets
   targets: ScanTargets
@@ -255,6 +267,7 @@ export const DEFAULT_NEW_SCAN: NewScanFormData = {
   customTemplateIds: [],
   sensorPreference: 'auto',
   profileId: undefined,
+  stepParams: {},
   targets: DEFAULT_TARGETS,
   maxConcurrent: 10,
   timeoutSeconds: 0,
