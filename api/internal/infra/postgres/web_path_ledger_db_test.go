@@ -9,6 +9,7 @@ import (
 
 	"github.com/openctemio/ctis/v2"
 
+	"github.com/openctemio/openctem/api/internal/testdb"
 	"github.com/openctemio/openctem/api/pkg/domain/coverage"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/webendpoint"
@@ -221,7 +222,10 @@ func TestWebPathDiscovery_LookupsUseIndexes(t *testing.T) {
 		FROM generate_series(1, 20000) g`, f.tenant.String()); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.sqlDB.ExecContext(ctx, `ANALYZE assets`); err != nil {
+	// ANALYZE skips a table the connection does not own, and the app role owns
+	// nothing: without this the planner works from whatever autovacuum last
+	// saw, which is what made the plan depend on the other tests of a group.
+	if _, err := testdb.OpenMigrator(t).ExecContext(ctx, `ANALYZE assets`); err != nil {
 		t.Fatal(err)
 	}
 	tx, err := f.sqlDB.BeginTx(ctx, nil)
