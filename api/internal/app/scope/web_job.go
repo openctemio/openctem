@@ -113,6 +113,13 @@ func (g *WebJobGuard) GuardCreate(ctx context.Context, cmd *commanddom.Command) 
 		if g.discovery == nil {
 			return commanddom.GuardUnwired(cmd)
 		}
+		// A discovery job with no origin to probe is refused: nothing
+		// would be claimed or capped for it, yet the sensor would be handed
+		// the strict scope's request cap with no target to bound it.
+		if len(job.Targets) == 0 {
+			return shared.NewDomainError("PATH_DISCOVERY_REFUSED",
+				"A path discovery job needs at least one origin to probe.", shared.ErrValidation)
+		}
 		if gerr := g.discovery.CheckPathDispatch(ctx, cmd.TenantID, job.Targets); gerr != nil {
 			return gerr
 		}

@@ -252,3 +252,44 @@ func (r *WebPathLedgerRepository) ReleasePathClaim(ctx context.Context, tenantID
 	}
 	return nil
 }
+
+// ReleaseEmptyPathClaim gives back the claims of a job that sent no request,
+// on the named origins (exact, normalised names), and only on an origin that
+// has not been given back in the last 30 days (release_at). The row it
+// replaced is restored; when the origin had none, the row stays with an aged
+// last dispatch so release_at survives and the origin counts as never run.
+// Same lock as a claim; a claim a later dispatch overwrote is left alone.
+func (r *WebPathLedgerRepository) ReleaseEmptyPathClaim(ctx context.Context, tenantID, commandID shared.ID, origins []string) error {
+	if commandID.IsZero() || len(origins) == 0 {
+		return nil
+	}
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("path discovery: release empty: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	tenant := tenantID.String()
+	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtext('openctem.web_path_discovery:' || $1::text))`, tenant); err != nil {
+		return fmt.Errorf("path discovery: release empty lock: %w", err)
+	}
+	list := make([]string, 0, len(origins))
+	for _, o := range origins {
+		list = append(list, strings.ToLower(strings.TrimSuffix(strings.TrimSpace(o), "/")))
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE web_path_discovery_runs
+		SET last_dispatch_at = COALESCE(prev_dispatch_at, now() - interval '31 days'),
+		    run_id = prev_run_id, granted = COALESCE(prev_granted, granted), host = COALESCE(prev_host, host),
+		    release_at = now(),
+		    claim_command_id = NULL, prev_dispatch_at = NULL, prev_run_id = NULL, prev_granted = NULL, prev_host = NULL
+		WHERE tenant_id = $1 AND claim_command_id = $2
+		  AND (release_at IS NULL OR release_at <= now() - interval '30 days')
+		  AND origin_asset_id IN (
+		        SELECT a.id FROM assets a WHERE a.tenant_id = $1 AND `+originNameSQL+` = ANY($3::text[]))`,
+		tenant, commandID.String(), pq.Array(list)); err != nil {
+		return fmt.Errorf("path discovery: release empty: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("path discovery: release empty commit: %w", err)
+	}
+	return nil
+}

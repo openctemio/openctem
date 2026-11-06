@@ -297,3 +297,28 @@ func TestBuildDiscoveryWebScope_DenyPathsMatchTheJobForm(t *testing.T) {
 		}
 	}
 }
+
+// SECURITY: a path discovery job with no origin to probe is refused: no
+// claim is made, and the job is not stored.
+func TestWebJobGuard_DiscoveryWithoutTargetsIsRefused(t *testing.T) {
+	svc := newFilterService(&fakeExclusionRepo{})
+	gate := &fakeDispatchGate{per: 300}
+	g := NewWebJobGuard(svc, nil)
+	g.SetDiscoveryGate(gate)
+	for name, p := range map[string]map[string]any{
+		"no targets key": {"scanner": "webguess"},
+		"empty targets":  {"scanner": "webguess", "targets": []string{}},
+		"step payload":   {"scanner": "othertool", "required_capabilities": []string{"enumerate.web_paths"}, "targets": []string{}},
+	} {
+		cmd := newCmd(t, commanddom.CommandTypeScan, p)
+		cmd.TenantID = shared.NewID()
+		before := string(cmd.Payload)
+		err := g.GuardCreate(context.Background(), cmd)
+		if err == nil || !errors.Is(err, shared.ErrValidation) || string(cmd.Payload) != before {
+			t.Errorf("%s: a discovery job with no origin was admitted: %v", name, err)
+		}
+		if gate.calls != 0 {
+			t.Errorf("%s: the gate was called %d times", name, gate.calls)
+		}
+	}
+}

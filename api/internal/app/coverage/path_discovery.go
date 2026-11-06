@@ -396,6 +396,16 @@ func (p PathDiscoveryPolicy) ReleasePathDispatch(ctx context.Context, tenantID, 
 	return p.Ledger.ReleasePathClaim(ctx, tenantID, commandID, origins)
 }
 
+// ReleaseEmptyPathDispatch gives back the origins a job that sent no request
+// claimed, at most once per origin per PathEvery: the sensor's report of an
+// empty job cannot reset the origin's floor and daily budget repeatedly.
+func (p PathDiscoveryPolicy) ReleaseEmptyPathDispatch(ctx context.Context, tenantID, commandID shared.ID, origins []string) error {
+	if p.Ledger == nil || len(origins) == 0 {
+		return nil
+	}
+	return p.Ledger.ReleaseEmptyPathClaim(ctx, tenantID, commandID, origins)
+}
+
 // releaseAfterRefusal releases on a context that survives the caller's
 // cancellation (the claim that failed may have been cut short by it).
 func (p PathDiscoveryPolicy) releaseAfterRefusal(tenantID, commandID shared.ID) {

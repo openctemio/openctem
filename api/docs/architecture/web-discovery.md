@@ -96,7 +96,14 @@ when the job is refused after the claim, or the repository cannot store it, or
 the sensor reports the gap `no_candidates` for an origin (no request was sent:
 the list held nothing the scope leaves to request), the claim is released and
 the previous row restored, so the origin is not held for 30 days and the daily
-budget is not spent. A claim a later job has overwritten is left alone. The workflow step keeps only the
+budget is not spent. The report is checked, not believed: the gap must name the
+exact origin (scheme, host and port), its detail may list only `no_candidates`
+and `scope_filtered` (any reason that follows a request keeps the claim), and an
+origin is given back at most once per 30 days (`release_at`), so a sensor cannot
+reset the floor or the budget again and again. A claim a later job has
+overwritten is left alone. A path discovery job is recognised by its capability,
+its required capability words (a workflow step sends those, whatever tool runs
+it) or its tool, and one with no origin to probe is refused. The workflow step keeps only the
 origins that pass and settles as "no inputs" when none does. A scan started
 by a person is refused at trigger when the switch is off or the gate refuses its
 origins (`PATH_DISCOVERY_OFF`, `PATH_DISCOVERY_REFUSED`), and passes the same

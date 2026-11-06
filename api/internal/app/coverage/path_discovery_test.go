@@ -301,6 +301,10 @@ func (l *fakeLedger) ReleasePathClaim(_ context.Context, _, commandID shared.ID,
 	return nil
 }
 
+func (l *fakeLedger) ReleaseEmptyPathClaim(ctx context.Context, tenantID, commandID shared.ID, origins []string) error {
+	return l.ReleasePathClaim(ctx, tenantID, commandID, origins)
+}
+
 // admit is the guard's two calls in its order: the checks, then the claim.
 func admit(p PathDiscoveryPolicy, ctx context.Context, tenantID shared.ID, run *shared.ID, targets []string, requested int) (int, error) {
 	if err := p.CheckPathDispatch(ctx, tenantID, targets); err != nil {

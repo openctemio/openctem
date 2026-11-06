@@ -20,7 +20,8 @@ func TestAssetCoverageReconcile_PathDiscoveryPredicates(t *testing.T) {
 	ctx := context.Background()
 	h, other := newHopTenant(t, db, 0), newHopTenant(t, db, 0)
 	hopExec(t, db, `INSERT INTO scope_targets (tenant_id, target_type, pattern, status) VALUES
-		($1, 'domain', '*.in.example.com', 'active'), ($1, 'ip_address', '198.51.100.7', 'active')`, h.tenant)
+		($1, 'domain', '*.in.example.com', 'active'), ($1, 'ip_address', '198.51.100.7', 'active'),
+		($1, 'ip_address', '2001:db8::1', 'active')`, h.tenant)
 	hopExec(t, db, `INSERT INTO scope_targets (tenant_id, target_type, pattern, status) VALUES ($1, 'domain', '*.out.example.com', 'active')`, other.tenant)
 
 	service := func(name string) shared.ID {
@@ -36,6 +37,8 @@ func TestAssetCoverageReconcile_PathDiscoveryPredicates(t *testing.T) {
 	outOfScope := service("https://app.out.example.com") // only another organization's entry names it
 	addrNamed := service("https://198.51.100.7")
 	addrUnnamed := service("https://198.51.100.8")
+	v6Named := service("https://[2001:DB8::1]:8443") // an IPv6 literal is read whole, not cut at its first colon
+	v6Unnamed := service("https://[2001:db8::2]")
 	edge := service("https://edge.in.example.com")
 	unchanged := service("https://old.in.example.com")
 	hopExec(t, db, `INSERT INTO asset_coverage (tenant_id, asset_id, capability, state, last_outcome) VALUES ($1, $2, 'probe.http', 'failed', 'edge_challenged')`, h.tenant, edge)
@@ -62,7 +65,7 @@ func TestAssetCoverageReconcile_PathDiscoveryPredicates(t *testing.T) {
 		}
 		return st, reason
 	}
-	for name, id := range map[string]shared.ID{"in scope": inScope, "address named by an entry": addrNamed} {
+	for name, id := range map[string]shared.ID{"in scope": inScope, "address named by an entry": addrNamed, "IPv6 address named by an entry": v6Named} {
 		if st, _ := state(id); st != "due" {
 			t.Errorf("%s: %s, want due", name, st)
 		}
@@ -73,6 +76,7 @@ func TestAssetCoverageReconcile_PathDiscoveryPredicates(t *testing.T) {
 	}{
 		"out of scope":          {outOfScope, coverage.RequiresOriginScopeEntry},
 		"address without entry": {addrUnnamed, coverage.RequiresOriginScopeEntry},
+		"IPv6 without entry":    {v6Unnamed, coverage.RequiresOriginScopeEntry},
 		"edge challenged":       {edge, coverage.RequiresEdgeClear},
 		"inventory unchanged":   {unchanged, coverage.RequiresInventoryChanged},
 	} {

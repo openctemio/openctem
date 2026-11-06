@@ -4,14 +4,16 @@ package command
 // (docs/architecture/web-discovery.md). The web job guard claims an origin's
 // 30 days when it stores the job. A sensor that probed an origin and had no
 // candidate left to request (an empty list, or every candidate refused by the
-// scope) reports the gap no_candidates; the origin is then given back, so a
-// job that did nothing does not hold it for a month or spend the daily
-// request budget.
+// scope) reports the gap no_candidates; when the result also shows that no
+// request was sent, the origin is given back, so a job that did nothing does
+// not hold it for a month or spend the daily request budget. The sensor's word
+// is not enough to reset the floor again and again: an origin is given back
+// once per 30 days (the ledger keeps when).
 
 import (
 	"context"
 	"encoding/json"
-	"net/url"
+	"slices"
 	"strings"
 
 	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
@@ -23,7 +25,7 @@ import (
 // PathClaimReleaser gives back the ledger claims of a command
 // (coverage.PathDiscoveryPolicy).
 type PathClaimReleaser interface {
-	ReleasePathDispatch(ctx context.Context, tenantID, commandID shared.ID, origins []string) error
+	ReleaseEmptyPathDispatch(ctx context.Context, tenantID, commandID shared.ID, origins []string) error
 }
 
 // SetPathClaimReleaser wires the release of a path discovery job that sent
@@ -44,15 +46,20 @@ func (s *Service) releaseEmptyPathDiscovery(ctx context.Context, cmd *commanddom
 	if len(origins) == 0 {
 		return
 	}
-	if err := s.pathClaims.ReleasePathDispatch(ctx, cmd.TenantID, cmd.ID, origins); err != nil {
+	if err := s.pathClaims.ReleaseEmptyPathDispatch(ctx, cmd.TenantID, cmd.ID, origins); err != nil {
 		s.logger.Warn("path discovery: claims of an empty job not released", "command_id", cmd.ID.String(), "error", logger.SanitizeError(err))
 	}
 }
 
 // emptyDiscoveryOrigins returns the job targets the result names, in its
-// coverage gaps, with the reason no_candidates. The result is the sensor's:
-// a gap names a host of the job's own targets or is ignored, so a sensor
-// cannot release the claim of an origin it was not given.
+// coverage gaps, as having no candidate to request: the gap's reason is
+// no_candidates, its host is exactly the target's origin (scheme, host and
+// port), and nothing in the result says a request was sent to it. The result
+// is the sensor's, so it is checked, not believed: the sensor puts every
+// reason it met in the gap's detail, and a reason that can only follow a
+// request (catch_all, throttled, budget, a blocked or hostile answer...) or a
+// second gap on the same origin keeps the claim. A gap names an origin of the
+// job's own targets or is ignored.
 func emptyDiscoveryOrigins(targets []string, result json.RawMessage) []string {
 	var r struct {
 		Metadata struct {
@@ -65,30 +72,46 @@ func emptyDiscoveryOrigins(targets []string, result json.RawMessage) []string {
 	}
 	gaps, _ := scanrundom.ParseCoverageGaps(r.Metadata.Gaps, r.Metadata.Total)
 	var out []string
-	for _, g := range gaps {
-		if g.Reason != scanrundom.GapReasonNoCandidates {
-			continue
-		}
-		for _, t := range targets {
-			if sameOrigin(g.Host, t) {
-				out = append(out, t)
+	for _, t := range targets {
+		empty, other := false, false
+		for _, g := range gaps {
+			if !sameOrigin(g.Host, t) {
+				continue
 			}
+			if g.Reason == scanrundom.GapReasonNoCandidates && noRequestDetail(g.Detail) {
+				empty = true
+			} else {
+				other = true
+			}
+		}
+		if empty && !other && !slices.Contains(out, t) {
+			out = append(out, t)
 		}
 	}
 	return out
 }
 
-// sameOrigin reports whether a gap's host names the target: the origin
-// itself, or its host (the sensor reports either).
+// noRequestDetail reports whether a gap's detail ("reason=count ...") names
+// only reasons that exist with no request sent: no_candidates, and the
+// candidates the scope filtered out.
+func noRequestDetail(detail string) bool {
+	for _, f := range strings.Fields(detail) {
+		reason, _, _ := strings.Cut(f, "=")
+		if reason != scanrundom.GapReasonNoCandidates && reason != scanrundom.GapReasonScopeFiltered {
+			return false
+		}
+	}
+	return true
+}
+
+// sameOrigin reports whether a gap's host is exactly the target's origin
+// (scheme, host and port; case and a trailing slash aside). A bare host does
+// not match: it would name every port of it.
 func sameOrigin(gapHost, target string) bool {
 	norm := func(s string) string { return strings.ToLower(strings.TrimRight(strings.TrimSpace(s), "/")) }
 	g, t := norm(gapHost), norm(target)
-	if g == "" || t == "" {
+	if g == "" || t == "" || !strings.Contains(g, "://") {
 		return false
 	}
-	if g == t {
-		return true
-	}
-	u, err := url.Parse(t)
-	return err == nil && u.Host != "" && !strings.Contains(g, "://") && g == u.Host
+	return g == t
 }
