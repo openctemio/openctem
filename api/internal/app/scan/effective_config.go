@@ -4,14 +4,11 @@ import (
 	"bytes"
 	"encoding/json"
 
+	"github.com/openctemio/openctem/api/pkg/domain/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
 	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
 	"github.com/openctemio/openctem/api/pkg/domain/stage"
 )
-
-// RunContextKeyStepParams is the run context key of a scan's per-step
-// overrides of standard params: {step_key: {param: value}}.
-const RunContextKeyStepParams = "step_params"
 
 // EffectiveConfigOf records the standard params a step's command carries and
 // the layer each came from. step is the step as it runs at the run's depth
@@ -31,10 +28,10 @@ func EffectiveConfigOf(run *scanrun.Run, step *scanworkflow.Step, resolved StepT
 		return out
 	}
 	overlay := step.RunPolicy.Overlay(depth).Params
-	var scanOverride map[string]any
-	if all, ok := run.Context[RunContextKeyStepParams].(map[string]any); ok {
-		scanOverride, _ = all[step.StepKey].(map[string]any)
-	}
+	// The scan's overrides for this step: its "*:<capability>" entry under its
+	// own step-key entry (scan.StepParams.ParamsFor), as the dispatch applied them.
+	scanOverride := scan.StepParamsFromAny(run.Context[scanrun.RunContextKeyStepParams]).
+		ParamsFor(step.StepKey, string(resolved.Stage.Key))
 	var fixed map[string]any
 	if f := resolved.Stage.WithStageToolConfig(resolved.Name, nil); len(f) > 0 {
 		fixed = f

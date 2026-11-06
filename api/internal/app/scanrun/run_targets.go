@@ -69,6 +69,9 @@ func (s *Service) gateRunContext(ctx context.Context, tenantID shared.ID, trigge
 	// is decided by the platform, never by the caller's context.
 	delete(out, scanapp.RunContextKeyActor)
 	delete(out, scanapp.RunContextKeySystemPolicy)
+	// The scan's step params are validated when the scan is saved and set by
+	// the scan trigger; a caller's context never carries them.
+	delete(out, scanrun.RunContextKeyStepParams)
 
 	targets, err := runContextTargets(out)
 	if err != nil {

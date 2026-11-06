@@ -7,6 +7,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
 	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/stage"
 	"github.com/openctemio/openctem/api/pkg/domain/tool"
 )
 
@@ -92,5 +93,22 @@ func TestEffectiveConfigOf_DefaultPortSetAndNoSecrets(t *testing.T) {
 		if k == "headers" || v.Value == "Authorization: Bearer s3cret" {
 			t.Fatalf("non-standard value copied: %s", k)
 		}
+	}
+}
+
+// The scan's "*:<capability>" entry reaches every step of the capability, as
+// the dispatch applies it, so it is attributed to the scan too; a step-key entry
+// of another step still is not.
+func TestEffectiveConfigOf_CapabilityEntryIsAScanOverride(t *testing.T) {
+	step := vulnStep(nil, map[string]any{"severity": []any{"info", "low"}})
+	st, ok := stage.ForStep(step.Tool, step.Capabilities)
+	if !ok {
+		t.Fatal("no stage for the step")
+	}
+	run := &scanrun.Run{ID: shared.NewID(), Context: map[string]any{
+		scanrun.RunContextKeyStepParams: map[string]map[string]any{"*:" + string(st.Key): {"severity": []any{"info", "low"}}}}}
+	got := effectiveFor(t, run, step, "nuclei")
+	if p := got.Params["severity"]; p.Source != scanrun.ParamSourceScanOverride {
+		t.Fatalf("capability entry: %+v", got.Params)
 	}
 }

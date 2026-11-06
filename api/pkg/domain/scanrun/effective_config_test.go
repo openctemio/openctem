@@ -64,3 +64,22 @@ func TestEffectiveConfigBounded(t *testing.T) {
 		t.Fatalf("%+v", got.Params)
 	}
 }
+
+// A setting the sensor reports with a credential in it is shown masked: a URL
+// with user:pass@, a bearer token, a provider key.
+func TestParseSensorSettings_MasksCredentialLookingValues(t *testing.T) {
+	eff := json.RawMessage(`{
+		"proxy": {"value": "http://user:hunter2@proxy.example:8080", "source": "step"},
+		"note": {"value": "Bearer abcdefghijklmnop", "source": "step"},
+		"rate": {"value": 50, "source": "policy"},
+		"severity": {"value": ["low", "high"], "source": "policy"}}`)
+	got := ParseSensorSettings(eff, nil)
+	for _, k := range []string{"proxy", "note"} {
+		if got.Effective[k].Value != MaskedSensorValue {
+			t.Fatalf("%s not masked: %+v", k, got.Effective[k])
+		}
+	}
+	if got.Effective["rate"].Value != float64(50) || len(got.Effective["severity"].Value.([]string)) != 2 {
+		t.Fatalf("plain values changed: %+v", got.Effective)
+	}
+}
