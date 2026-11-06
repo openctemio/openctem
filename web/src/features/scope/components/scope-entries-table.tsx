@@ -483,7 +483,7 @@ export function ScopeEntriesTable({
                 ? t('scope.filter.tryAnother', 'Try another search, kind or status.')
                 : t(
                     'scope.entries.emptyDescription',
-                    'Scans refuse every internet target no entry covers.'
+                    "Targets no entry covers get what Scan unclassified assets allows; an entry gives them the scan's full intensity."
                   )
             }
           />

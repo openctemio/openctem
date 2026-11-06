@@ -204,6 +204,22 @@ func resultPath(reportID, commandID string) (string, error) {
 	return protov2.CommandsPath + "/" + commandID + protov2.ResultsPath + "/" + reportID, nil
 }
 
+// setLeaseEpoch carries a result call's lease epoch to the v2 handler: the
+// header, and the results_lease_epoch feature, since a v3 sensor that sends
+// the epoch sends it on every call of the report. A negative or oversized
+// epoch is an invalid argument.
+func setLeaseEpoch(h http.Header, epoch *int64) error {
+	if epoch == nil {
+		return nil
+	}
+	if *epoch < 0 {
+		return invalid("lease_epoch")
+	}
+	h.Set(protov2.HeaderLeaseEpoch, strconv.FormatInt(*epoch, 10))
+	h.Set(protov2.HeaderSensorFeatures, protov2.FeatureResultsLeaseEpoch)
+	return nil
+}
+
 // PutResult uploads a report or a segment (PUT /results/{report}[/segments/{n}]).
 func (s *Server) PutResult(ctx context.Context, req *connect.Request[sensorv3.PutResultRequest]) (*connect.Response[sensorv3.PutResultResponse], error) {
 	m := req.Msg
@@ -221,6 +237,9 @@ func (s *Server) PutResult(ctx context.Context, req *connect.Request[sensorv3.Pu
 	}
 	if d := m.GetContentDigest(); d != "" {
 		h.Set(protov2.HeaderContentDigest, d)
+	}
+	if err := setLeaseEpoch(h, m.LeaseEpoch); err != nil {
+		return nil, err
 	}
 	a, err := s.serveV2(ctx, v2Call{method: http.MethodPut, path: path, header: h, body: m.GetContent()})
 	if err != nil {
@@ -240,7 +259,11 @@ func (s *Server) CommitResult(ctx context.Context, req *connect.Request[sensorv3
 	if err != nil {
 		return nil, err
 	}
-	a, err := s.serveV2(ctx, v2Call{method: http.MethodPost, path: path + "/commit", header: jsonHeader(), body: req.Msg.GetBodyJson()})
+	h := jsonHeader()
+	if err := setLeaseEpoch(h, req.Msg.LeaseEpoch); err != nil {
+		return nil, err
+	}
+	a, err := s.serveV2(ctx, v2Call{method: http.MethodPost, path: path + "/commit", header: h, body: req.Msg.GetBodyJson()})
 	if err != nil {
 		return nil, err
 	}

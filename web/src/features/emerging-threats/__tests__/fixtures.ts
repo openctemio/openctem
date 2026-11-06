@@ -15,6 +15,17 @@ export const summary = (over: Partial<EmergingThreatSummary> = {}): EmergingThre
   confirmed_assets: 3,
   possible_assets: 2,
   internet_facing_assets: 1,
+  critical_assets: 1,
+  product: 'Widget',
+  product_count: 2,
+  ets_breakdown: {
+    exploitation: 40,
+    severity: 20,
+    exposure: 15,
+    freshness: 7,
+    confidence: 1,
+    total: 82,
+  },
   last_event_kind: 'kev_added',
   event_at: '2026-10-18T10:00:00Z',
   source_at: null,
@@ -41,14 +52,6 @@ export const asset = (over: Partial<EmergingThreatAsset> = {}): EmergingThreatAs
 
 export const detail = (over: Partial<EmergingThreatDetail> = {}): EmergingThreatDetail => ({
   ...summary(),
-  ets_breakdown: {
-    exploitation: 40,
-    severity: 20,
-    exposure: 15,
-    freshness: 7,
-    confidence: 1,
-    total: 82,
-  },
   recommended_action: 'patch_now',
   description: 'A <b>bad</b> bug',
   cvss_score: 9.8,

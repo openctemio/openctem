@@ -6,7 +6,11 @@ import {
   replaceEntryInLines,
   targetFileLines,
   targetKey,
+  splitCidr,
+  targetReasonText,
+  MAX_SPLIT_PIECES,
 } from '../target-format'
+import { enTranslate } from '../translate'
 
 describe('classifyTarget', () => {
   it.each([
@@ -50,8 +54,8 @@ describe('classifyTarget', () => {
 
 describe('the API rules, in the browser', () => {
   it.each([
-    ['10.0.0.0/8', 'larger than'],
-    ['2001:db8::/32', 'larger than'],
+    ['10.0.0.0/8', 'has 16,777,216 addresses'],
+    ['2001:db8::/32', 'has 79,228,162,514,264,337,593,543,950,336 addresses'],
     ['example.xn--p1ai', 'top-level domain'],
     ['[2001:db8::1]:99999', 'host:port'],
     ['[not-v6]:443', 'characters'],
@@ -181,5 +185,53 @@ describe('targetFileLines', () => {
       'a.example.com',
       'b.example.com',
     ])
+  })
+})
+
+describe('a range wider than one target', () => {
+  it('names the range, its address count and the widest accepted size', () => {
+    const c = classifyTarget('10.0.0.0/8')
+    expect(c.kind).toBe('invalid')
+    expect(c.reason).toBe(
+      '10.0.0.0/8 has 16,777,216 addresses; the most one target can hold is 65,536 (/16)'
+    )
+    expect(targetReasonText(enTranslate, c)).toBe(c.reason)
+    expect(c.split).toEqual({ bits: 16, count: 256 })
+  })
+
+  it('keeps a /16 (IPv4) and a /112 (IPv6) as one target', () => {
+    expect(classifyTarget('10.0.0.0/16').kind).toBe('cidr')
+    expect(classifyTarget('2001:db8::/112').kind).toBe('cidr')
+    expect(classifyTarget('10.0.0.0/15').split).toEqual({ bits: 16, count: 2 })
+    expect(classifyTarget('2001:db8::/104').split).toEqual({ bits: 112, count: 256 })
+  })
+
+  it('offers no one-click split past MAX_SPLIT_PIECES ranges', () => {
+    expect(MAX_SPLIT_PIECES).toBe(256)
+    const c = classifyTarget('10.0.0.0/7')
+    expect(c.kind).toBe('invalid')
+    expect(c.split).toBeUndefined()
+    expect(classifyTarget('2001:db8::/32').split).toBeUndefined()
+  })
+
+  it('splits into the covering ranges, ignoring host bits typed after the address', () => {
+    expect(splitCidr('10.1.2.3/14', 16)).toEqual([
+      '10.0.0.0/16',
+      '10.1.0.0/16',
+      '10.2.0.0/16',
+      '10.3.0.0/16',
+    ])
+    const eight = splitCidr('10.0.0.0/8', 16)
+    expect(eight).toHaveLength(256)
+    expect(eight[0]).toBe('10.0.0.0/16')
+    expect(eight[255]).toBe('10.255.0.0/16')
+    expect(eight.every((p) => classifyTarget(p).kind === 'cidr')).toBe(true)
+    expect(splitCidr('2001:db8::/111', 112)).toEqual(['2001:db8::/112', '2001:db8::1:0/112'])
+  })
+
+  it('refuses a split that is not narrower or too many', () => {
+    expect(splitCidr('10.0.0.0/16', 16)).toEqual([])
+    expect(splitCidr('10.0.0.0/7', 16)).toEqual([])
+    expect(splitCidr('not-a-range', 16)).toEqual([])
   })
 })
