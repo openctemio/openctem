@@ -12,6 +12,7 @@ UPDATE ctem_cycles
    SET charter = '{}'::jsonb
  WHERE charter IS NULL OR jsonb_typeof(charter) <> 'object';
 
+ALTER TABLE ctem_cycles DROP CONSTRAINT IF EXISTS ctem_cycles_description_length;
 ALTER TABLE ctem_cycles
     ALTER COLUMN charter SET DEFAULT '{}'::jsonb,
     ADD COLUMN IF NOT EXISTS description text NOT NULL DEFAULT '',
