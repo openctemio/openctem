@@ -73,6 +73,7 @@
   "dashboardKit.flow.outcomeDef.past_sla": "Phát hiện đang mở đã quá hạn khắc phục.",
   "dashboardKit.flow.outcomes": "Kết quả",
   "dashboardKit.flow.period": "{days} ngày",
+  "dashboardKit.flow.released": "Gồm {count} báo cáo được giải phóng khỏi khu cách ly",
   "dashboardKit.flow.removedByRulesLine": "{count} bị loại bởi quy tắc",
   "dashboardKit.flow.ring.newAria": "{name}: {count} mới hoặc mở lại, {share}% tổng số mới hoặc mở lại",
   "dashboardKit.flow.ring.receivedAria": "{name}: đã nhận {count} phát hiện, {share}% tổng số đã nhận",

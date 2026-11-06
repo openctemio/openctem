@@ -150,6 +150,14 @@ type Options struct {
 	// own). Nil derives it from the binding: the command's scan run or the
 	// command, the CI run, the connector run, or the sensor's report.
 	Receipt *ingestreceipt.Source
+	// ReleasedFromQuarantine: the report was held in the results quarantine
+	// and is applied now (by the platform or a person). The ingest keeps its
+	// trusted binding; only the receipt differs: it names the original
+	// sensor as sender, not a connector, and carries the release marker.
+	ReleasedFromQuarantine bool
+	// SenderName is the display name of the sender sensor for the receipt
+	// (the applying path has only the stored item, not a live session).
+	SenderName string
 	// NoExposureProjection: the report lists targets someone published, not
 	// what was observed (program targets, RFC-065 §16.8), so its service
 	// assets open no exposure.
