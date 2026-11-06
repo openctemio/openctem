@@ -114,7 +114,9 @@ describe('Approvals page', () => {
 
     await user.click(screen.getByRole('button', { name: /^approve$/i }))
     const dialog = screen.getByRole('dialog')
-    expect(within(dialog).getByText(/other@op.test asks: Make a platform owner/)).toBeInTheDocument()
+    expect(
+      within(dialog).getByText(/other@op.test asks: Make a platform owner/)
+    ).toBeInTheDocument()
     await user.type(within(dialog).getByLabelText(/^reason$/i), 'Confirmed by phone call')
     await user.click(within(dialog).getByRole('button', { name: /^approve$/i }))
     await waitFor(() =>
