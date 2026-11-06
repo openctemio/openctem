@@ -1086,6 +1086,10 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		w.ControllerManager.Register(controller.NewAssetRiskReconcileController(svc.Asset, 0))
 	}
 
+	// Domain membership of assets: drain the queue that database triggers
+	// fill on every asset and edge change (docs/architecture/asset-domain-membership.md).
+	w.ControllerManager.Register(controller.NewAssetDomainMembershipController(postgres.NewAssetDomainMembershipRepository(&postgres.DB{DB: deps.DB}), 0))
+
 	// Durable jobs: ticket status sync and invitation e-mails, queued in the
 	// transaction of the change that needs them.
 	if svc != nil {

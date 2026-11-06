@@ -38,7 +38,14 @@ tenant predicate and, for a restricted caller, the data-scope predicate.
    the registry, and `TestOpenAPIDocumentsFilterParams` fails when the spec
    and the parser disagree.
 5. The registry test fails on suffix-ending names, missing enums or ops the
-   type cannot support.
+   type cannot support. `TestFindingTemplatesPinTenant` fails when a findings
+   template reads a tenant table without `{tenant}`.
+6. A value that needs checking or a canonical form (a domain, a name pattern)
+   gets `Normalize` (runs at parse time; its error is the reason returned) and,
+   when one value binds several, `Expand` (runs at compile time; the result is
+   still bound, never rendered). A pattern, contains or other costly leaf is
+   `Expensive`: a filter takes at most `MaxExpensiveLeaves` (2) of them, and
+   a third is refused with "narrow the filter".
 
 ## Findings (the first migrated resource)
 
@@ -52,6 +59,24 @@ tenant predicate and, for a restricted caller, the data-scope predicate.
 
 The registry also carries the findings visibility rule every non-admin
 caller gets: pentest findings only for members of their campaign.
+
+### Asset filters of findings
+
+| Param | Meaning | Served by |
+|---|---|---|
+| `asset_type`, `asset_type_not` | the stored type of the finding's asset (`domain`, `subdomain`, `ip_address`, `service`, `repository`, ...) | `(tenant_id, asset_type, ...)` index on assets |
+| `asset_domain`, `asset_domain_not` | `example.com`: the name and every asset that belongs under it; `*.example.com`: only under it. Upper case, a trailing dot and Unicode labels are normalised; a bare public suffix (`com.vn`) is refused; up to 20 values | the `(tenant_id, key)` primary key of `asset_domain_memberships` ([asset-domain-membership.md](asset-domain-membership.md)) |
+| `asset_name`, `asset_name_not` | a name pattern: `*` any characters, `?` one, everything else literal (`%`, `_` and `\` too); at most 3 wildcards, 200 characters, and a run of 3 literal characters; up to 10 values. Expensive | the trigram index on `assets.name` |
+
+Every one is a tenant-pinned subquery that only narrows: the data scope, the
+pentest visibility rule and the hidden-asset rule still apply to the list,
+counts, groups, export, saved views and the MCP `list_findings` tool.
+
+Measured on a scratch database with 100k findings and 50k assets per tenant
+(two tenants): `asset_domain=<domain with 17k member assets>` counts 35k
+findings in 16 ms and pages them in 52 ms; one host's domain 0.1 ms;
+`asset_type=subdomain,repository` counts 40k findings in 19 ms;
+`asset_name=*.<domain>` pages in 28 ms.
 
 ### Quick views
 
@@ -197,7 +222,9 @@ limiter.
 ## Limits
 
 50 leaves, depth 3, 100 values per list (500 for id fields in POST), 200
-characters per value (`q` 255), 32 KB POST body.
+characters per value (`q` 255), 32 KB POST body, 2 expensive leaves (pattern,
+contains). List and count statements run under a 5 s statement timeout; a
+timeout is a 503 `QUERY_TIMEOUT` ("narrow the filter").
 
 ## Export
 
