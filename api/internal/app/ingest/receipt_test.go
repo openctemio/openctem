@@ -199,8 +199,8 @@ func TestReceipt_ReleasedItemKeepsItsSender(t *testing.T) {
 	}
 	rec := &fakeReceipts{}
 	svc := &Service{logger: logger.NewNop(), receipts: rec}
-	svc.recordReceipt(context.Background(), agt, shared.NewID(), TrustedBinding(), opts, report, &Output{FindingsMerged: 3})
-	if len(rec.deltas) != 1 || !rec.deltas[0].Released || rec.deltas[0].Merged != 3 || rec.deltas[0].Source.Kind != ingestreceipt.SourceSensor {
+	svc.recordReceipt(context.Background(), agt, shared.NewID(), TrustedBinding(), opts, report, &Output{})
+	if len(rec.deltas) != 1 || !rec.deltas[0].Released || rec.deltas[0].Source.Kind != ingestreceipt.SourceSensor {
 		t.Fatalf("delta = %+v", rec.deltas)
 	}
 }

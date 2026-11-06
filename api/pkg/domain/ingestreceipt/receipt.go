@@ -254,41 +254,40 @@ type Counts struct {
 	Skipped    int  `json:"skipped"`
 	Failed     int  `json:"failed"`
 	Suppressed int  `json:"suppressed"`
-	// Merged are findings a report repeated within itself and that were
-	// folded into one observation; they are the part of Received that no
-	// other outcome counts.
-	Merged int `json:"merged"`
 }
 
 // Receipt is the stored receipt.
 type Receipt struct {
-	ID             shared.ID
-	TenantID       shared.ID
-	SourceKind     SourceKind
-	SourceRef      string
-	ActorUserID    *shared.ID
-	ToolName       string
-	Format         string
-	FilenameSHA256 string
-	Coverage       string
-	CoverageNote   string
-	Status         string
-	Reports        int
-	Received       int
-	AssetsCreated  int
-	AssetsUpdated  int
-	Components     int
-	Statements     int
-	VEXStored      int
-	VEXRequested   int
-	Counts         Counts
+	ID               shared.ID
+	TenantID         shared.ID
+	SourceKind       SourceKind
+	SourceRef        string
+	ActorUserID      *shared.ID
+	ToolName         string
+	Format           string
+	FilenameSHA256   string
+	Coverage         string
+	CoverageNote     string
+	Status           string
+	Reports          int
+	Received         int
+	AssetsCreated    int
+	AssetsUpdated    int
+	Components       int
+	Statements       int
+	VEXStored        int
+	VEXRequested     int
+	Counts           Counts
+	ActionsRecorded  int
+	ActionsTruncated bool
+	Errors           []ErrorEntry
+	// Outcomes counts the received findings that went elsewhere than the
+	// action counts (Outcome* codes).
+	Outcomes map[string]int
 	// ReleasedFromQuarantine: a report held in the results quarantine and
 	// applied later is part of this receipt (its sender is the original
 	// sensor).
 	ReleasedFromQuarantine bool
-	ActionsRecorded        int
-	ActionsTruncated       bool
-	Errors                 []ErrorEntry
 	CreatedAt              time.Time
 	UpdatedAt              time.Time
 	FinishedAt             *time.Time
@@ -323,9 +322,10 @@ type Delta struct {
 	Skipped       int
 	Failed        int
 	Suppressed    int
-	// Merged are the findings the report repeated within itself, folded
-	// into one observation: they keep received equal to the sum of outcomes.
-	Merged int
+	// Outcomes counts where the received findings went beyond the action
+	// counts (Outcome* codes). The repository adds OutcomeMerged for the
+	// findings an earlier delta of the receipt already acted on.
+	Outcomes map[string]int
 	// Released marks a report applied from the results quarantine: the
 	// receipt and the sender's row carry the marker, nothing else changes.
 	Released bool
@@ -350,6 +350,51 @@ type Delta struct {
 
 	Errors []ErrorEntry
 	At     time.Time
+}
+
+// Outcome codes: where a received finding went when it is none of created,
+// still detected, reopened, suppressed, failed or skipped. A receipt
+// reconciles: received + split = created + still detected + reopened +
+// suppressed + failed + skipped + every other outcome (research 436).
+const (
+	// OutcomeSplit: extra findings a finding naming several CVEs became
+	// (one per CVE); the only outcome that adds to received.
+	OutcomeSplit = "split"
+	// OutcomeMerged: a repeat of a finding the same report or an earlier
+	// report of the receipt already named (one observation, last seen
+	// updated).
+	OutcomeMerged = "merged"
+	// OutcomeExposure: a template scanner's info match, filed as an
+	// exposure instead of a finding.
+	OutcomeExposure = "exposure"
+	// OutcomeSourceMitigated: the source reported it mitigated; it resolves
+	// a finding instead of sighting one.
+	OutcomeSourceMitigated = "source_mitigated"
+	// OutcomeUnresolvedRef: the finding named no asset of its document
+	// (malformed; refused before ingest).
+	OutcomeUnresolvedRef = "unresolved_ref"
+	// OutcomeOutOfContract: the finding was held with its asset by the
+	// output contract of the report's tool (quarantined for review).
+	OutcomeOutOfContract = "out_of_contract"
+	// OutcomeReservedTool: the report claimed the tool name of the
+	// platform's own inventory matcher; its findings are refused.
+	OutcomeReservedTool = "reserved_tool"
+)
+
+// AllOutcomes lists the outcome codes, in display order.
+func AllOutcomes() []string {
+	return []string{OutcomeMerged, OutcomeExposure, OutcomeSourceMitigated, OutcomeUnresolvedRef,
+		OutcomeOutOfContract, OutcomeReservedTool, OutcomeSplit}
+}
+
+// IsOutcome reports whether c is an outcome code.
+func IsOutcome(c string) bool {
+	for _, o := range AllOutcomes() {
+		if o == c {
+			return true
+		}
+	}
+	return false
 }
 
 // Instance kinds: what sent a report.
@@ -383,7 +428,7 @@ type Instance struct {
 // Empty reports whether the delta changes nothing.
 func (d *Delta) Empty() bool {
 	return d.Reports == 0 && d.Received == 0 && d.AssetsCreated == 0 && d.AssetsUpdated == 0 &&
-		d.Skipped == 0 && d.Failed == 0 && d.Suppressed == 0 && d.Merged == 0 && !d.Released && len(d.Created) == 0 &&
+		d.Skipped == 0 && d.Failed == 0 && d.Suppressed == 0 && len(d.Outcomes) == 0 && !d.Released && len(d.Created) == 0 &&
 		len(d.Reopened) == 0 && len(d.Closed) == 0 && len(d.StillDetected) == 0 &&
 		len(d.Decided) == 0 && len(d.Items) == 0 &&
 		d.Coverage == "" && d.Untouched == nil && len(d.Errors) == 0

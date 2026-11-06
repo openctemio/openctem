@@ -62,6 +62,7 @@ import { FindingApprovalBand } from './detail/finding-approval-band'
 import { FindingFixCard } from './detail/finding-fix-card'
 import { FindingTaskBand } from '@/features/remediation-hub/components/finding-task-band'
 import { FindingAssetName } from './detail/finding-asset-name'
+import { FindingAssetLiveness } from './detail/finding-asset-liveness'
 import { FindingProperties } from './detail/finding-properties'
 import { FindingProvenanceSection } from './detail/finding-provenance-section'
 import { FindingIssueGroupSection } from './detail/finding-issue-group-section'
@@ -340,6 +341,7 @@ export function FindingDetailDrawer({
               </nav>
             )}
             <FindingApprovalBand findingId={detail.id} />
+            <FindingAssetLiveness assetId={asset?.id} />
             <FindingWhyItMatters finding={detail} compact />
             {!taskNav && <FindingTaskBand findingId={detail.id} />}
             <FindingFixCard finding={detail} compact onOpenPlan={() => openPage('remediation')} />

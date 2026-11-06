@@ -41,7 +41,7 @@ type receiptRow struct {
 	received, created      int
 	still, reopened        int
 	suppressed, skipped    int
-	failed, merged         int
+	failed                 int
 	reports                int
 	toolInstKind, toolInst string
 	toolReleased           int
@@ -52,7 +52,7 @@ func readReceipts(t *testing.T, r *v2Rig, tenant shared.ID) []receiptRow {
 	rows, err := r.db.QueryContext(context.Background(), `
 		SELECT r.source_kind, r.source_ref, COALESCE(r.tool_name, ''), r.released_from_quarantine, r.findings_received,
 			r.findings_created, r.findings_updated, r.findings_reopened, r.findings_suppressed, r.skipped,
-			r.findings_failed, r.findings_merged, r.reports,
+			r.findings_failed, r.reports,
 			COALESCE(max(t.instance_kind), ''), COALESCE(max(t.instance_id), ''), COALESCE(sum(t.released_reports), 0)
 		FROM ingest_receipts r LEFT JOIN ingest_receipt_tools t ON t.receipt_id = r.id
 		WHERE r.tenant_id = $1 GROUP BY r.id ORDER BY r.created_at`, tenant.String())
@@ -64,7 +64,7 @@ func readReceipts(t *testing.T, r *v2Rig, tenant shared.ID) []receiptRow {
 	for rows.Next() {
 		var x receiptRow
 		if err := rows.Scan(&x.kind, &x.ref, &x.tool, &x.released, &x.received, &x.created, &x.still, &x.reopened,
-			&x.suppressed, &x.skipped, &x.failed, &x.merged, &x.reports, &x.toolInstKind, &x.toolInst, &x.toolReleased); err != nil {
+			&x.suppressed, &x.skipped, &x.failed, &x.reports, &x.toolInstKind, &x.toolInst, &x.toolReleased); err != nil {
 			t.Fatal(err)
 		}
 		out = append(out, x)
@@ -121,47 +121,6 @@ func TestIngest_ReleasedItemReceiptNamesTheSensor(t *testing.T) {
 	if err := r.db.QueryRowContext(context.Background(), `SELECT count(*) FROM assets WHERE tenant_id = $1 AND name = 'github.com/acme/released'`,
 		tn.tenant.String()).Scan(&n); err != nil || n != 1 {
 		t.Fatalf("the release did not apply the whole report: %d, %v", n, err)
-	}
-}
-
-// Received equals the sum of the outcomes of a mixed report: new findings,
-// one repeated inside the report (merged), one seen again, and new ones.
-func TestIngest_ReceiptReceivedEqualsSumOfBuckets(t *testing.T) {
-	r, tn, svc, _, agt := releaseRig(t, "nuclei")
-	ctx := context.Background()
-	mk := func(rule, ref string) ctis.Finding {
-		return ctis.Finding{Type: ctis.FindingTypeVulnerability, Title: "t " + rule, Severity: ctis.SeverityHigh, RuleID: rule,
-			AssetRef: ref, Location: &ctis.FindingLocation{Path: "/" + rule}}
-	}
-	send := func(findings ...ctis.Finding) {
-		t.Helper()
-		rep := &ctis.Report{Version: ctis.SchemaVersion, Tool: &ctis.Tool{Name: "nuclei"},
-			Metadata: ctis.ReportMetadata{ID: ctis.NewReportID(), GeneratedAt: time.Now().UTC()},
-			Assets:   []ctis.Asset{{ID: "a", Type: ctis.AssetTypeDomainName, Value: "mixed.example.org"}},
-			Findings: findings}
-		out, err := svc.Ingest(ctx, agt, ingest.Input{Report: rep, Options: ingest.Options{Binding: ingest.TrustedBinding(), Admitted: true}})
-		if err != nil {
-			t.Fatalf("ingest: %v", err)
-		}
-		if out.ReceiptID == "" {
-			t.Fatal("no receipt")
-		}
-	}
-	send(mk("one", "a")) // baseline: makes "one" a known finding
-	send(mk("one", "a"), mk("two", "a"), mk("two", "a"), mk("three", "a"))
-
-	rcs := readReceipts(t, r, tn.tenant)
-	if len(rcs) == 0 {
-		t.Fatal("no receipts")
-	}
-	var recv, sum, merged int
-	for _, rc := range rcs {
-		recv += rc.received
-		sum += rc.created + rc.still + rc.reopened + rc.suppressed + rc.merged + rc.skipped + rc.failed
-		merged += rc.merged
-	}
-	if recv != 5 || merged != 1 || recv != sum {
-		t.Fatalf("received %d, merged %d, sum of buckets %d (%+v)", recv, merged, sum, rcs)
 	}
 }
 

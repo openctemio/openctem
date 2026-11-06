@@ -95,6 +95,11 @@ type Input struct {
 // docs/rfcs/RFC-026-sensor-results-ingest.md). Each is off in the zero value,
 // so v1 ingest is unchanged.
 type Options struct {
+	// FindingsRefusedBeforeIngest counts the producer's findings a caller
+	// refused before calling Ingest (protocol v2: a finding that names no
+	// asset of its segment). They count as received, with the outcome
+	// unresolved_ref, so the receipt reconciles with what the producer sent.
+	FindingsRefusedBeforeIngest int
 	// RefusedItems are findings the caller refused before ingest (protocol
 	// v2: a finding that names no asset of its segment). They are booked on
 	// the receipt's item log with the rest of the report.
@@ -350,10 +355,6 @@ type Output struct {
 	// report sighted (after alias resolution). Not exposed; the CI gate
 	// records them for its run (RFC-051).
 	SightedFingerprints []string `json:"-"`
-	// FindingsMerged counts findings the report repeated within itself
-	// (same stored fingerprint), folded into one observation. They belong to
-	// no other receipt bucket.
-	FindingsMerged int `json:"-"`
 	// FingerprintsByIndex maps the index of a finding in the report to the
 	// stored fingerprints it became (one, or one per CVE of a split network
 	// finding). A CI job uses it to learn which of its own results carry a
@@ -383,6 +384,11 @@ type Output struct {
 	// policy and version that decided them: the receipt records both.
 	Decided []ingestreceipt.PolicyAction `json:"-"`
 	Items   []ingestreceipt.Item         `json:"-"`
+	// FindingsReceived is what the producer sent (before any filter, with
+	// Options.FindingsRefusedBeforeIngest); Outcomes counts where the
+	// findings went beyond the action counts (ingestreceipt.Outcome*).
+	FindingsReceived int            `json:"-"`
+	Outcomes         map[string]int `json:"-"`
 
 	// policy is the snapshot this ingest applies.
 	policy *PolicySnapshot
@@ -445,4 +451,15 @@ func withReportID(ctx context.Context, id string) context.Context {
 func reportIDOf(ctx context.Context) string {
 	id, _ := ctx.Value(reportIDKey{}).(string)
 	return id
+}
+
+// addOutcome counts n received findings under an outcome code.
+func (o *Output) addOutcome(code string, n int) {
+	if o == nil || n <= 0 {
+		return
+	}
+	if o.Outcomes == nil {
+		o.Outcomes = map[string]int{}
+	}
+	o.Outcomes[code] += n
 }

@@ -134,7 +134,6 @@ func (s *Service) recordReceipt(ctx context.Context, agt *sensor.Sensor, tenantI
 		AssetsUpdated: output.AssetsUpdated,
 		Failed:        len(output.FailedFindings),
 		Suppressed:    output.FindingsSuppressed,
-		Merged:        output.FindingsMerged,
 		Released:      opts.ReleasedFromQuarantine,
 		Created:       output.CreatedIDs,
 		Reopened:      output.ReopenedIDs,
@@ -143,8 +142,11 @@ func (s *Service) recordReceipt(ctx context.Context, agt *sensor.Sensor, tenantI
 		Items:         output.Items,
 		At:            time.Now(),
 	}
+	d.Outcomes = output.Outcomes
 	if report != nil {
-		d.Received = len(report.Findings)
+		// What the producer sent, before any filter; a caller that built
+		// the output itself falls back to the findings left.
+		d.Received = max(output.FindingsReceived, len(report.Findings))
 		if report.Tool != nil {
 			d.Tool = report.Tool.Name
 		}

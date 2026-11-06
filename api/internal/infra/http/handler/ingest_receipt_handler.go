@@ -95,8 +95,6 @@ type ReceiptCounts struct {
 	Skipped    int  `json:"skipped"`
 	Failed     int  `json:"failed"`
 	Suppressed int  `json:"suppressed"`
-	// Merged are findings the report repeated within itself, folded into one.
-	Merged int `json:"merged"`
 }
 
 // ReceiptError is one problem: an index and a fixed code.
@@ -133,6 +131,12 @@ type ReceiptResponse struct {
 	// BySeverity (detail only) counts the actions per action and finding
 	// severity, over the findings the caller may see.
 	BySeverity map[string]map[string]int `json:"by_severity,omitempty"`
+	// Outcomes counts where the received findings went beyond the counts
+	// (merged, exposure, source_mitigated, unresolved_ref, out_of_contract,
+	// reserved_tool; split adds to received): received + split = created +
+	// updated + reactivated + suppressed + failed + skipped + the other
+	// outcomes. Aggregate counts like Received, never per finding.
+	Outcomes map[string]int `json:"outcomes"`
 	// Dispositions (detail only) counts the items that did not become
 	// findings per disposition (filtered, out_of_scope, rejected,
 	// quarantined), over the items the caller may see.
@@ -196,11 +200,14 @@ func toReceiptResponse(rec *ingestreceipt.Receipt) ReceiptResponse {
 		Tool: rec.ToolName, Format: rec.Format, Coverage: ReceiptCoverage{Type: rec.Coverage, Note: rec.CoverageNote},
 		Counts: ReceiptCounts{Created: rec.Counts.Created, Updated: rec.Counts.StillDetected, Reactivated: rec.Counts.Reopened,
 			Closed: rec.Counts.Closed, Untouched: rec.Counts.Untouched, Skipped: rec.Counts.Skipped, Failed: rec.Counts.Failed,
-			Suppressed: rec.Counts.Suppressed, Merged: rec.Counts.Merged},
+			Suppressed: rec.Counts.Suppressed},
 		Reports: rec.Reports, Received: rec.Received, ReleasedFromQuarantine: rec.ReleasedFromQuarantine, Assets: ReceiptAssets{Created: rec.AssetsCreated, Updated: rec.AssetsUpdated},
 		Errors: make([]ReceiptError, 0, len(rec.Errors)), Truncated: rec.ActionsTruncated, StartedAt: rec.CreatedAt,
 		UpdatedAt: rec.UpdatedAt, FinishedAt: rec.FinishedAt, Components: rec.Components, Statements: rec.Statements,
-		VEXStored: rec.VEXStored, VEXRequests: rec.VEXRequested,
+		VEXStored: rec.VEXStored, VEXRequests: rec.VEXRequested, Outcomes: rec.Outcomes,
+	}
+	if out.Outcomes == nil {
+		out.Outcomes = map[string]int{}
 	}
 	if rec.ActorUserID != nil {
 		out.CreatedBy = rec.ActorUserID.String()

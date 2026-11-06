@@ -462,8 +462,7 @@ receipt or on the discovery tool whose report named the software.
 - Noise: received splits into new or reopened (created plus reopened:
   the receipt list's New and Reopened totals added), merged into findings
   that exist (the rest after new, reopened and not stored: still detected
-  and repeats within a report, which a receipt counts as `merged`) and not
-  stored. These three sum to received.
+  and repeats within a report) and not stored. These three sum to received.
   Suppressed by an approved rule is the part of New that was stored closed
   on arrival (the list's Suppressed total); it is inside New, not a fourth
   part. One definition per label: the intake summary, the noise headline,
