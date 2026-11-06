@@ -16,11 +16,13 @@ import (
 	"io"
 	"net/http"
 	"regexp"
+	"strings"
 	"time"
 
 	sensorapp "github.com/openctemio/openctem/api/internal/app/sensor"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/sensorproto/pairing"
 )
@@ -46,6 +48,17 @@ type SensorInstallTemplatesRequest struct {
 	// image to install; empty: the scanning sensor. Only products that use
 	// the scanning sensor's snippets can pair from these commands.
 	Product string `json:"product"`
+	// Purpose is what the sensor will scan: "internet" (default),
+	// "internal" or "both". internal and both add
+	// SENSOR_ALLOW_PRIVATE_TARGETS=1 to the commands (the host owner's
+	// consent to scan private networks, visible in the command they run);
+	// internet never does.
+	Purpose string `json:"purpose" enums:"internet,internal,both"`
+	// AllowedRanges, with purpose internal only, also pins the host to
+	// these private networks (SENSOR_ALLOWED_RANGES, CIDRs, addresses or
+	// a-b ranges inside 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16 or
+	// fc00::/7; at most 64). Empty: the sensor follows the platform's scope.
+	AllowedRanges []string `json:"allowed_ranges"`
 }
 
 // SetJobSigningRoot sets where the onboarding snippets read the job-signing
@@ -55,7 +68,7 @@ func (h *SensorHandler) SetJobSigningRoot(f func(ctx context.Context) string) { 
 // InstallTemplates handles POST /api/v1/sensors/install-templates.
 //
 // @Summary Install commands for a new sensor that pairs
-// @Description Renders the docker run, Compose, Kubernetes and Linux (binary and systemd) install commands, and the sensor-local policy, for a sensor that does not exist yet: no API key; the sensor makes its own key on first start and pairs. With pairing_code (a code the console created) the commands pass it as SENSOR_PAIRING_CODE. When the platform uses a private CA (PLATFORM_CA_CERT_FILE) every command pins its root (SENSOR_CA_SHA256) and platform_ca describes it. The code is never checked or spent here.
+// @Description Renders the docker run, Compose, Kubernetes and Linux (binary and systemd) install commands, and the sensor-local policy, for a sensor that does not exist yet: no API key; the sensor makes its own key on first start and pairs. With pairing_code (a code the console created) the commands pass it as SENSOR_PAIRING_CODE. purpose internal or both adds SENSOR_ALLOW_PRIVATE_TARGETS=1 with a comment that explains it (never for internet); allowed_ranges (purpose internal only) also pins the host to those private networks. When the platform uses a private CA (PLATFORM_CA_CERT_FILE) every command pins its root (SENSOR_CA_SHA256) and platform_ca describes it. The code is never checked or spent here.
 // @Tags Sensors
 // @Accept json
 // @Produce json
@@ -91,6 +104,7 @@ func (h *SensorHandler) InstallTemplates(w http.ResponseWriter, r *http.Request)
 // @Tags Sensors
 // @Produce json
 // @Param product query string false "Sensor product id"
+// @Param purpose query string false "What the sensor scans: internet (default), internal or both" Enums(internet, internal, both)
 // @Success 200 {object} SensorConfigTemplatesResponse
 // @Failure 400 {object} apierror.Error
 // @Failure 503 {object} apierror.Error "Template service not configured"
@@ -102,7 +116,8 @@ func (h *SensorHandler) InstallTemplatesRead(w http.ResponseWriter, r *http.Requ
 			"Sensor config template service is not configured").WriteJSON(w)
 		return
 	}
-	h.renderInstallTemplates(w, r, SensorInstallTemplatesRequest{Product: r.URL.Query().Get("product")})
+	q := r.URL.Query()
+	h.renderInstallTemplates(w, r, SensorInstallTemplatesRequest{Product: q.Get("product"), Purpose: q.Get("purpose")})
 }
 
 func (h *SensorHandler) renderInstallTemplates(w http.ResponseWriter, r *http.Request, req SensorInstallTemplatesRequest) {
@@ -136,6 +151,11 @@ func (h *SensorHandler) renderInstallTemplates(w http.ResponseWriter, r *http.Re
 		Sensor: s, BaseURL: baseURL, Image: product.Image, Install: product.Install,
 		ReleaseIdentity: product.ReleaseIdentity, Auth: sensorapp.AuthPair, PairingCode: code, JobSigningRoot: root,
 	}
+	intent := sensorapp.InstallIntent{Purpose: req.Purpose, AllowedRanges: req.AllowedRanges}
+	if err := intent.Apply(&data); err != nil {
+		apierror.BadRequest(strings.TrimPrefix(err.Error(), shared.ErrValidation.Error()+": ")).WriteJSON(w)
+		return
+	}
 	data.SetPlatformCA(ca, time.Now())
 	rendered, err := h.templateService.Render(data)
 	if err != nil {
@@ -146,11 +166,15 @@ func (h *SensorHandler) renderInstallTemplates(w http.ResponseWriter, r *http.Re
 	// A pairing install has no Helm variant (the chart's bundled sensor is
 	// installed with the platform), no config file and no env file: the
 	// panel shows the four ways a remote sensor runs, and the policy.
+	multi := sensorapp.MultiKitCommand(installSensorName, baseURL, code, data.CAPins)
+	if data.Policy.AllowPrivate {
+		multi += sensorapp.MultiKitPrivateNote
+	}
 	resp := SensorConfigTemplatesResponse{
 		Docker: rendered.Docker, Compose: rendered.Compose, Kubernetes: rendered.Kubernetes, CLI: rendered.CLI,
 		Policy: rendered.Policy, Image: product.Image, Product: product.ID, APIURL: baseURL,
 		CACertificate: data.CACert, CAFingerprintSHA256: ca.Fingerprint(), PlatformCA: platformCAInfo(ca),
-		Multi: sensorapp.MultiKitCommand(installSensorName, baseURL, code, data.CAPins),
+		Multi: multi,
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "application/json")
