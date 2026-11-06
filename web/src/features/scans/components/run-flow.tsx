@@ -1,5 +1,6 @@
 'use client'
 
+import { ranWithSeverityLine } from '../lib/ran-with'
 import { HealthStatus } from '@/components/ui/health-status'
 import type { HealthState } from '@/lib/health-colors'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
@@ -502,6 +503,7 @@ function StepCard({
   const findingsHeld = node.findings_held ?? 0
   const findingsRefused = node.findings_refused ?? 0
   const delta = outputsDeltaLabel(node, t)
+  const ranSeverity = ranWithSeverityLine(node.ran_with, t)
   const skipped = skippedReasonText(node, byKey, t)
   const failure =
     (tone === 'failed' || tone === 'partial' || tone === 'skipped') && !skipped && node.reason
@@ -573,6 +575,9 @@ function StepCard({
       ) : null}
       {counts.length > 0 ? <span className="mt-1 block">{counts.join(', ')}</span> : null}
       {delta ? <span className="mt-0.5 block text-muted-foreground">{delta}</span> : null}
+      {ranSeverity ? (
+        <span className="mt-0.5 block text-muted-foreground">{ranSeverity}</span>
+      ) : null}
       {blocked ? (
         <span className="mt-1 flex items-start gap-1 text-warning">
           <ShieldAlert className="mt-px h-3.5 w-3.5 shrink-0" aria-hidden />

@@ -167,7 +167,8 @@ func (h *SensorResultsV2Handler) target(w http.ResponseWriter, r *http.Request) 
 		return ingest.V2Target{}, false
 	}
 	t := ingest.V2Target{Sensor: s, ReportID: chi.URLParam(r, "report_id"), CommandID: chi.URLParam(r, "command_id"),
-		UserAgent: r.UserAgent(), LeaseEpoch: leaseEpochHeader(r)}
+		UserAgent: r.UserAgent(), LeaseEpoch: leaseEpochHeader(r),
+		EpochPromised: protov2.HasFeature(r.Header.Values(protov2.HeaderSensorFeatures), protov2.FeatureResultsLeaseEpoch)}
 	if protov2.ValidateUUID(t.ReportID) != nil || (t.CommandID != "" && protov2.ValidateUUID(t.CommandID) != nil) {
 		protov2.NewProblem(protov2.ProblemInvalidID).Write(w)
 		return ingest.V2Target{}, false

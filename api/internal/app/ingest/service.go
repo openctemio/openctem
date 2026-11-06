@@ -144,6 +144,8 @@ type Service struct {
 	// release is the progress of the out-of-contract release sweeps
 	// (quarantine_release.go).
 	release releaseState
+	// mismatch tells the administrators of undeclared types (contract_mismatch.go).
+	mismatch mismatchNotices
 	// policyVersions and policies: the versioned policy snapshots.
 	policyVersions PolicyVersionReader
 	policies       policyCache
@@ -525,7 +527,7 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	// carry only the asset types its tool produces or takes.
 	sentFindings := len(report.Findings)
 	sent := report
-	report, findingsHeld, findingsLost, holds := s.bindOutputTypesHolds(ctx, agt, tenantID, binding, report, opts)
+	report, findingsHeld, findingsLost, holds, mismatched := s.bindOutputTypesFlagged(ctx, agt, tenantID, binding, report, opts)
 	outOfContract := sentFindings - len(report.Findings)
 	// Which channel reported the findings is the platform's to say, from
 	// the principal: a sensor's metadata.source_type is ignored, so it can
@@ -562,6 +564,9 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 		output.HeldAssetRefs, output.HeldFindings, output.HoldLost = holds.assetRefs, holds.findings, holds.lost
 	}
 	addRefusedItems(output, sent, holds, opts.RefusedItems)
+	if mismatched != nil {
+		output.ContractMismatchTypes, output.ContractMismatchRefs = mismatched.Types, mismatched.AssetRefs
+	}
 	// Web endpoints (and legacy discovered_url assets) go to the web surface
 	// sub-inventory under their origin asset, never one asset per URL.
 	// Detection rules read the web services before anything is stored
