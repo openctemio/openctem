@@ -32,7 +32,7 @@
   "assetCoverage.reason.edge_clear": "lớp bảo vệ biên đã thách thức hoặc chặn lần dò gần nhất",
   "assetCoverage.reason.excluded": "bị loại khỏi phạm vi",
   "assetCoverage.reason.feature_off": "tổ chức đang tắt chụp ảnh màn hình; bật trong phần giám sát bề mặt tấn công",
-  "assetCoverage.reason.host_budget": "ngân sách yêu cầu của máy chủ này trong lượt chạy đã được các origin khác trên cùng máy chủ dùng hết",
+  "assetCoverage.reason.host_budget": "ngân sách yêu cầu của máy chủ này trong lần chạy đã được các origin khác trên cùng máy chủ dùng hết",
   "assetCoverage.reason.inventory_changed": "không có endpoint mới kể từ lần chạy trước",
   "assetCoverage.reason.no_eligible_sensor": "không sensor nào nhận được công việc này",
   "assetCoverage.reason.no_named_twin": "cùng địa chỉ và cổng đã có dịch vụ web theo tên miền, dịch vụ đó được quét thay thế",
