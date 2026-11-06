@@ -178,6 +178,7 @@
   "common.table.noResults": "Không tìm thấy kết quả",
   "common.table.pageOf": "Trang {page} trên {pages}",
   "common.table.previousPage": "Trang trước",
+  "common.table.refreshing": "Đang làm mới",
   "common.table.resultsNoun": "kết quả",
   "common.table.rowsPerPage": "Số dòng mỗi trang",
   "common.table.scrollRegion": "Bảng, có thể cuộn",
