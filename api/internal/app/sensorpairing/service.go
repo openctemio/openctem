@@ -36,6 +36,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/jobsign"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/sensorproto/pairing"
+	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
 	"github.com/openctemio/openctem/api/pkg/sensorsig"
 )
 
@@ -163,6 +164,11 @@ type Service struct {
 	// contentKeys are the content-signing keys an approved identity
 	// carries (nil: none).
 	contentKeys ContentKeySource
+	// signedJobs is the hello's signed_jobs block the grant states (nil:
+	// the platform does not sign jobs); tlsAnchors the SPKI fingerprints
+	// of the root CAs of the platform's TLS certificate (nil: unknown).
+	signedJobs func(ctx context.Context) *protov2.SignedJobs
+	tlsAnchors func() []string
 
 	adminAudit AdminAuditWriter
 	// tokens stores organization enrollment tokens (nil: none).
@@ -559,8 +565,41 @@ func (s *Service) Status(ctx context.Context, id shared.ID, thumbprint string) (
 			ident.ApprovedAt = *p.ApprovedAt
 		}
 		out.Identity = ident
+		out.Grant = s.grant(ctx, p, ident)
 	}
 	return out, nil
+}
+
+// grant signs, with the pairing key of the start answer, everything the
+// sensor pins: the identity with its content keys, the job signer's keys
+// and key set, and the TLS root CAs. It is bound to this request, the
+// sensor's key and the nonce it revealed, so someone in the middle of the
+// first pairing, who could relay the start untouched, can neither change
+// what the sensor pins nor replay it to another sensor (research 452 N3).
+// nil when it cannot be made: a sensor then refuses to pair.
+func (s *Service) grant(ctx context.Context, p *sensordom.Pairing, ident *pairing.Identity) *pairing.SignedGrant {
+	if !p.Revealed() {
+		return nil
+	}
+	g := &pairing.Grant{PairingID: p.ID.String(), SensorKey: pairing.Encode(p.PublicKey),
+		SensorNonce: pairing.Encode(p.SensorNonce), Identity: *ident}
+	if s.signedJobs != nil {
+		if sj := s.signedJobs(ctx); sj != nil {
+			g.SignedJobs = &pairing.JobSigning{PayloadType: sj.PayloadType, KeySet: sj.KeySet, Keys: make([]pairing.JobKey, 0, len(sj.Keys))}
+			for _, k := range sj.Keys {
+				g.SignedJobs.Keys = append(g.SignedJobs.Keys, pairing.JobKey{KeyID: k.KeyID, Algorithm: k.Algorithm, PublicKey: k.PublicKey})
+			}
+		}
+	}
+	if s.tlsAnchors != nil {
+		g.TLSAnchors = s.tlsAnchors()
+	}
+	sg, err := pairing.SignGrant(s.platformKey, g)
+	if err != nil {
+		s.log.Error("pairing grant not signed; the sensor will refuse to pair", "pairing_id", p.ID.String(), "error", err)
+		return nil
+	}
+	return sg
 }
 
 // Confirm checks the sensor's signed statement over its identity and
@@ -769,6 +808,17 @@ func (s *Service) contentSigning(p *sensordom.Pairing) *pairing.ContentSigning {
 	}
 	return out
 }
+
+// SetSignedJobs sets where the signed grant reads the job signer's keys and
+// key set from: the same block the hello serves (signerclient.Client.Hello).
+// Unset: the grant states no job signer.
+func (s *Service) SetSignedJobs(f func(ctx context.Context) *protov2.SignedJobs) { s.signedJobs = f }
+
+// SetTLSAnchors sets where the signed grant reads the root CAs of the
+// platform's TLS certificate from ("sha256:<hex>" of each root's
+// SubjectPublicKeyInfo; PLATFORM_CA_CERT_FILE). Unset or empty: the grant
+// names none and a sensor pins the anchor it verified.
+func (s *Service) SetTLSAnchors(f func() []string) { s.tlsAnchors = f }
 
 // SetJobSigningRoot sets where the views read the job-signing root from
 // (signerclient.Client.RootKeyID). Optional.

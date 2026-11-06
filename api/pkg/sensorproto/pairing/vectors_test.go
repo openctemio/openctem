@@ -40,6 +40,10 @@ type sasVector struct {
 	TenantID      string `json:"tenant_id"`
 	SensorID      string `json:"sensor_id"`
 	ConfirmSig    string `json:"confirm_signature"`
+	// GrantPayload and GrantSig are the signed grant of this pairing
+	// (grant.go): payload base64url, signature over domain ‖ 0 ‖ payload.
+	GrantPayload string `json:"grant_payload"`
+	GrantSig     string `json:"grant_signature"`
 }
 
 type codeVector struct {
@@ -90,6 +94,10 @@ func build(t *testing.T) vectors {
 		psig := ed25519.Sign(pk, pairing.PlatformTranscript(id, spub, commit, ppub, pn, exp))
 		tenant, sensor := "11111111-2222-4333-8444-555555555555", "66666666-7777-4888-9999-aaaaaaaaaaaa"
 		csig := ed25519.Sign(sk, pairing.ConfirmTranscript(id, sensor, tenant, sensorsig.Thumbprint(spub)))
+		grant, err := pairing.SignGrant(pk, vectorGrant(id, spub, sn, tenant, sensor, i))
+		if err != nil {
+			t.Fatal(err)
+		}
 		v.SAS = append(v.SAS, sasVector{
 			SensorSeed: hex.EncodeToString(seed(c.s)), PlatformSeed: hex.EncodeToString(seed(c.p)),
 			SensorPub: pairing.Encode(spub), PlatformPub: pairing.Encode(ppub),
@@ -97,6 +105,7 @@ func build(t *testing.T) vectors {
 			SensorNonce: pairing.Encode(sn), PlatformNonce: pairing.Encode(pn), Commitment: pairing.Encode(commit),
 			SAS: pairing.ComputeSAS(spub, ppub, sn, pn).String(), PairingID: id, ExpiresUnix: exp.Unix(),
 			PlatformSig: pairing.Encode(psig), TenantID: tenant, SensorID: sensor, ConfirmSig: pairing.Encode(csig),
+			GrantPayload: grant.Payload, GrantSig: grant.Signature,
 		})
 	}
 	for _, h := range []string{"0000000000", "ffffffffff", "0123456789", "deadbeef42"} {
@@ -139,6 +148,31 @@ func build(t *testing.T) vectors {
 		})
 	}
 	return v
+}
+
+// vectorGrant is the grant of vector i: every optional part on the first,
+// a shared sensor without job signing on the second, an empty key set on
+// the third.
+func vectorGrant(id string, spub ed25519.PublicKey, sn []byte, tenant, sensor string, i int) *pairing.Grant {
+	g := &pairing.Grant{PairingID: id, SensorKey: pairing.Encode(spub), SensorNonce: pairing.Encode(sn),
+		Identity: pairing.Identity{SensorID: sensor, TenantID: tenant, TenantName: "Acme", Name: "dmz-01",
+			KeyID: sensorsig.Thumbprint(spub), ApprovedAt: time.Unix(1789999000, 0).UTC()}}
+	key := pairing.ContentKey{KeyID: "SHA256:" + strings.Repeat("ab", 32), Algorithm: "ed25519", PublicKey: "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE="}
+	switch i {
+	case 0:
+		g.Identity.ContentSigning = &pairing.ContentSigning{Platform: []pairing.ContentKey{key}, Tenant: []pairing.ContentKey{key}}
+		g.SignedJobs = &pairing.JobSigning{PayloadType: "application/vnd.openctem.job.v1+json",
+			Keys:   []pairing.JobKey{{KeyID: key.KeyID, Algorithm: key.Algorithm, PublicKey: key.PublicKey}},
+			KeySet: json.RawMessage(`{"payloadType":"application/vnd.openctem.keyset.v1+json","payload":"e30","signatures":[]}`)}
+		g.TLSAnchors = []string{"sha256:" + strings.Repeat("0f", 32)}
+	case 1:
+		g.Identity.TenantID, g.Identity.TenantName, g.Identity.Scope = "", "", pairing.ScopeInstance
+		g.Identity.ContentSigning = &pairing.ContentSigning{Platform: []pairing.ContentKey{key}}
+	default:
+		g.Identity.Repair = true
+		g.SignedJobs = &pairing.JobSigning{PayloadType: "application/vnd.openctem.job.v1+json", Keys: []pairing.JobKey{}}
+	}
+	return g
 }
 
 func TestVectors(t *testing.T) {
@@ -184,6 +218,11 @@ func TestVectorsVerify(t *testing.T) {
 		bad.PairingID = "other"
 		if _, _, err := pairing.VerifyStart(&bad, spub, commit, "", sensorsig.Thumbprint); err == nil {
 			t.Fatal("a changed transcript must fail")
+		}
+		ppub, _ := pairing.DecodeKey(c.PlatformPub)
+		sg := &pairing.SignedGrant{Payload: c.GrantPayload, Signature: c.GrantSig}
+		if _, err := pairing.VerifyGrant(sg, ppub, spub, c.PairingID, sn); err != nil {
+			t.Fatalf("verify grant: %v", err)
 		}
 		wrong := bytes.Repeat([]byte{9}, 32)
 		if err := pairing.CheckCommitment(commit, wrong); err == nil {
