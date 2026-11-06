@@ -16,13 +16,11 @@ import (
 	"io"
 	"net/http"
 	"regexp"
-	"strings"
 	"time"
 
 	sensorapp "github.com/openctemio/openctem/api/internal/app/sensor"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/sensorproto/pairing"
 )
@@ -30,6 +28,11 @@ import (
 // installSensorName is the name the onboarding snippets give the container,
 // service and volume; the administrator names the sensor when approving it.
 const installSensorName = "openctem-sensor"
+
+// installIntentRefused answers a purpose or allowed_ranges the install
+// commands cannot carry (sensorapp.InstallIntent.Apply).
+const installIntentRefused = "purpose must be internet, internal or both; allowed_ranges needs purpose internal and " +
+	"lists private networks only (inside 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16 or fc00::/7, at most /8, at most 64)"
 
 // maxInstallTemplatesBody bounds the request body.
 const maxInstallTemplatesBody = 4 << 10
@@ -153,7 +156,7 @@ func (h *SensorHandler) renderInstallTemplates(w http.ResponseWriter, r *http.Re
 	}
 	intent := sensorapp.InstallIntent{Purpose: req.Purpose, AllowedRanges: req.AllowedRanges}
 	if err := intent.Apply(&data); err != nil {
-		apierror.BadRequest(strings.TrimPrefix(err.Error(), shared.ErrValidation.Error()+": ")).WriteJSON(w)
+		apierror.BadRequest(installIntentRefused).WriteJSON(w)
 		return
 	}
 	data.SetPlatformCA(ca, time.Now())
