@@ -176,3 +176,31 @@ func TestReceiptInstance(t *testing.T) {
 		}
 	}
 }
+
+// A report released from the quarantine counts under the sensor that sent
+// it, whatever binding the platform applied it with: the receipt source is a
+// sensor report, the sender is that sensor (id and name), and the delta
+// carries the release marker.
+func TestReceipt_ReleasedItemKeepsItsSender(t *testing.T) {
+	sensorID := shared.NewID()
+	agt := &sensor.Sensor{ID: sensorID}
+	opts := Options{ReleasedFromQuarantine: true, SenderName: "edge-1"}
+	src := receiptSource(agt, TrustedBinding(), opts, "rep-9")
+	if src.Kind != ingestreceipt.SourceSensor || src.Ref != ingestreceipt.ReportRef(sensorID, "rep-9") {
+		t.Fatalf("source = %+v, want the sensor's report", src)
+	}
+	report := &ctis.Report{Tool: &ctis.Tool{Name: "nuclei"}}
+	inst := receiptInstance(agt, TrustedBinding(), opts, report)
+	if inst.Kind != ingestreceipt.InstanceSensor || inst.ID != sensorID.String() || inst.Name != "edge-1" {
+		t.Fatalf("instance = %+v, want sensor %s edge-1", inst, sensorID)
+	}
+	if src := receiptSource(agt, TrustedBinding(), Options{}, "rep-9"); src.Kind != ingestreceipt.SourceConnector {
+		t.Fatalf("a server-side ingest changed: %+v", src)
+	}
+	rec := &fakeReceipts{}
+	svc := &Service{logger: logger.NewNop(), receipts: rec}
+	svc.recordReceipt(context.Background(), agt, shared.NewID(), TrustedBinding(), opts, report, &Output{FindingsMerged: 3})
+	if len(rec.deltas) != 1 || !rec.deltas[0].Released || rec.deltas[0].Merged != 3 || rec.deltas[0].Source.Kind != ingestreceipt.SourceSensor {
+		t.Fatalf("delta = %+v", rec.deltas)
+	}
+}

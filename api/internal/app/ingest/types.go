@@ -145,6 +145,14 @@ type Options struct {
 	// own). Nil derives it from the binding: the command's scan run or the
 	// command, the CI run, the connector run, or the sensor's report.
 	Receipt *ingestreceipt.Source
+	// ReleasedFromQuarantine: the report was held in the results quarantine
+	// and is applied now (by the platform or a person). The ingest keeps its
+	// trusted binding; only the receipt differs: it names the original
+	// sensor as sender, not a connector, and carries the release marker.
+	ReleasedFromQuarantine bool
+	// SenderName is the display name of the sender sensor for the receipt
+	// (the applying path has only the stored item, not a live session).
+	SenderName string
 	// NoExposureProjection: the report lists targets someone published, not
 	// what was observed (program targets, RFC-065 §16.8), so its service
 	// assets open no exposure.
@@ -342,6 +350,10 @@ type Output struct {
 	// report sighted (after alias resolution). Not exposed; the CI gate
 	// records them for its run (RFC-051).
 	SightedFingerprints []string `json:"-"`
+	// FindingsMerged counts findings the report repeated within itself
+	// (same stored fingerprint), folded into one observation. They belong to
+	// no other receipt bucket.
+	FindingsMerged int `json:"-"`
 	// FingerprintsByIndex maps the index of a finding in the report to the
 	// stored fingerprints it became (one, or one per CVE of a split network
 	// finding). A CI job uses it to learn which of its own results carry a

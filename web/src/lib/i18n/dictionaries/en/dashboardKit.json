@@ -73,6 +73,7 @@
   "dashboardKit.flow.outcomeDef.past_sla": "Open findings whose fix deadline has passed.",
   "dashboardKit.flow.outcomes": "Outcomes",
   "dashboardKit.flow.period": "{days} days",
+  "dashboardKit.flow.released": "Includes {count} released from quarantine",
   "dashboardKit.flow.removedByRulesLine": "{count} removed by rules",
   "dashboardKit.flow.ring.newAria": "{name}: {count} new or reopened, {share}% of new or reopened",
   "dashboardKit.flow.ring.receivedAria": "{name}: {count} findings received, {share}% of received",

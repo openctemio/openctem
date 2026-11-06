@@ -510,6 +510,9 @@ func (p *FindingProcessor) processBatch(
 		fingerprints = append(fingerprints, fm.fingerprint)
 	}
 
+	// A finding the report repeated is its own receipt bucket (merged), so
+	// received always equals the sum of the outcomes.
+	output.FindingsMerged += duplicatesInReport
 	if duplicatesInReport > 0 {
 		p.logger.Debug("folded repeated findings within one report", "count", duplicatesInReport)
 	}
