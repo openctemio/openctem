@@ -1,5 +1,7 @@
 # Architecture Overview
 
+For a picture of how the parts work together as one body (organ map and flow diagrams), see [OpenCTEM as one machine](system-overview.md).
+
 ## Tech Stack
 
 | Component | Technology |

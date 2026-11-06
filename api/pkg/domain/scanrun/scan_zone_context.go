@@ -28,3 +28,7 @@ const RunContextKeyIntensity = "intensity"
 // RunContextKeyDepth holds the depth a run started with ("passive",
 // "standard" or "deep"; scanworkflow.Depth). Absent: standard.
 const RunContextKeyDepth = "depth"
+
+// RunContextKeyStepParams holds the scan's per-step overrides of standard
+// params at the time the run started (scan.StepParams).
+const RunContextKeyStepParams = "step_params"

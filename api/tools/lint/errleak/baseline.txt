@@ -250,7 +250,7 @@ wrap-err internal/app/finding/vulnerability_service.go:VulnerabilityService.List
 wrap-err internal/app/finding/vulnerability_service.go:VulnerabilityService.UpdateVulnerability 1
 wrap-err internal/app/finding/vulnerability_service.go:VulnerabilityService.updateFindingStatus 1
 wrap-err internal/app/findingimport/queued.go:Service.CommitUpload 1
-wrap-err internal/app/ingest/quarantine.go:Service.AcceptQuarantined 1
+wrap-err internal/app/ingest/quarantine.go:Service.applyQuarantined 1
 wrap-err internal/app/ingestqueue/backpressure.go:Admit 1
 wrap-err internal/app/integration/service.go:IntegrationService.CreateIntegration 2
 wrap-err internal/app/integration/service.go:IntegrationService.UpdateIntegration 2

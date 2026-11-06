@@ -311,6 +311,14 @@ func (s *GitHubTicketService) SyncFindingStatus(ctx context.Context, tenantID, f
 		return err
 	}
 
+	// A finding closed because its asset is out of scope was not fixed:
+	// its issue is left as it is, never closed by the platform.
+	if finding.Status() == vulnerability.FindingStatusResolved &&
+		finding.ClosureReason() == vulnerability.ClosureReasonOutOfScope {
+		s.logger.Info("github outbound: finding closed as out of scope, issue left open",
+			"finding_id", findingID.String())
+		return nil
+	}
 	desired := "open"
 	if finding.Status().IsClosed() {
 		desired = "closed"
