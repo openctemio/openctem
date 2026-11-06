@@ -130,7 +130,13 @@ func (s *Service) ChangeExclusionTesting(ctx context.Context, in SetTestingInput
 // method otherwise; never empty, see allMethods).
 type WebScope struct {
 	DenyPaths []string `json:"deny_paths,omitempty"`
-	Methods   []string `json:"methods,omitempty"`
+	// DenyPathsWildcard is the deny list with "*" segments kept as written
+	// (nil when it equals DenyPaths). It is the platform's own: it never
+	// leaves with the job. At claim, a sensor that reads "*" segments
+	// (sensordom.ReadsWildcardDenyPaths) gets it as its deny_paths; any other
+	// gets DenyPaths, where a "*" rule is cut to the path before it.
+	DenyPathsWildcard []string `json:"deny_paths_wildcard,omitempty"`
+	Methods           []string `json:"methods,omitempty"`
 }
 
 // readMethods are what a job keeps when a rule blocks other methods only.
@@ -179,11 +185,7 @@ func (s *Service) BuildWebScope(ctx context.Context, tenantID shared.ID, targets
 			continue
 		}
 		if slices.ContainsFunc(readMethods, func(m string) bool { return slices.Contains(blocked, m) }) {
-			for _, d := range scopedom.JobDenyPaths(web.PathPrefix) {
-				if !slices.Contains(ws.DenyPaths, d) {
-					ws.DenyPaths = append(ws.DenyPaths, d)
-				}
-			}
+			ws.addDeny(web.PathPrefix)
 			continue
 		}
 		ws.Methods = slices.Clone(readMethods)
@@ -194,8 +196,33 @@ func (s *Service) BuildWebScope(ctx context.Context, tenantID shared.ID, targets
 	if len(ws.Methods) == 0 {
 		ws.Methods = slices.Clone(allMethods)
 	}
-	slices.Sort(ws.DenyPaths)
+	ws.finishDeny()
 	return ws, nil
+}
+
+// addDeny adds the deny paths of a path prefix: the job form (cut before a
+// "*" segment) to DenyPaths and the form as written to DenyPathsWildcard.
+func (w *WebScope) addDeny(prefix string) {
+	for _, d := range scopedom.JobDenyPaths(prefix) {
+		if !slices.Contains(w.DenyPaths, d) {
+			w.DenyPaths = append(w.DenyPaths, d)
+		}
+	}
+	for _, d := range scopedom.PrefixForms(prefix) {
+		if !slices.Contains(w.DenyPathsWildcard, d) {
+			w.DenyPathsWildcard = append(w.DenyPathsWildcard, d)
+		}
+	}
+}
+
+// finishDeny sorts the deny lists and drops the wildcard one when it is the
+// same list.
+func (w *WebScope) finishDeny() {
+	slices.Sort(w.DenyPaths)
+	slices.Sort(w.DenyPathsWildcard)
+	if slices.Equal(w.DenyPaths, w.DenyPathsWildcard) {
+		w.DenyPathsWildcard = nil
+	}
 }
 
 // hostOfTarget is the host a scan target names: a URL's host, a host:port's
