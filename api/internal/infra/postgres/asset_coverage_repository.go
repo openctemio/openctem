@@ -188,7 +188,9 @@ func coveragePredicateSQL(p string) string {
 	case coverage.RequiresOriginScopeEntry:
 		// The URL host of the web service: a host name needs a domain or
 		// subdomain entry covering it, an address an exact address entry.
-		host := `lower(substring(a.name from '^https?://\[?([^/\]:]+)'))`
+		// A bracketed IPv6 literal is read whole (up to the closing bracket);
+		// any other host stops at the port or the path.
+		host := `lower(COALESCE(substring(a.name from '^https?://\[([^\]]+)\]'), substring(a.name from '^https?://([^/:\[]+)')))`
 		return `(CASE WHEN ` + host + ` ~ '^[0-9.]+$' OR ` + host + ` LIKE '%:%'
 			THEN EXISTS (SELECT 1 FROM scope_targets st
 				WHERE st.tenant_id = a.tenant_id AND st.status = 'active'

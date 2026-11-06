@@ -64,14 +64,26 @@ const DiscoveryCapability = "enumerate.web_paths"
 const DiscoveryTool = "webguess"
 
 // IsDiscoveryJob reports whether a scan payload runs path discovery: its
-// capability names enumerate.web_paths, or its tool is the discovery tool.
+// capability or one of its required capability words names
+// enumerate.web_paths (a workflow step sends the words, whatever tool the
+// sensor picks), or its tool is the discovery tool.
 func IsDiscoveryJob(payload json.RawMessage) bool {
 	var p struct {
-		Capability string `json:"capability"`
+		Capability           string `json:"capability"`
+		RequiredCapabilities []any  `json:"required_capabilities"`
 	}
 	_ = json.Unmarshal(payload, &p)
-	if w, _, _ := strings.Cut(strings.ToLower(strings.TrimSpace(p.Capability)), "@"); w == DiscoveryCapability {
+	names := func(w string) bool {
+		base, _, _ := strings.Cut(strings.ToLower(strings.TrimSpace(w)), "@")
+		return base == DiscoveryCapability
+	}
+	if names(p.Capability) {
 		return true
+	}
+	for _, c := range p.RequiredCapabilities {
+		if w, ok := c.(string); ok && names(w) {
+			return true
+		}
 	}
 	return strings.EqualFold(strings.TrimSpace(PayloadTool(payload)), DiscoveryTool)
 }

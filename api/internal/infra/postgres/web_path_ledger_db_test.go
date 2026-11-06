@@ -375,3 +375,74 @@ func TestWebPathLedger_ReleaseRestores(t *testing.T) {
 		t.Fatalf("granted %d %v, want only c's 300", n, err)
 	}
 }
+
+// SECURITY: the release of a job the sensor reported as empty is limited to
+// the named origins and happens once per origin per 30 days: a sensor that
+// reports "no request sent" again and again cannot reset the 30 day floor or
+// the daily budget each time.
+func TestWebPathLedger_ReleaseEmptyOncePerPeriod(t *testing.T) {
+	f := newWebFixture(t)
+	ctx := context.Background()
+	repo := NewWebPathLedgerRepository(f.db)
+	a := f.httpOrigin(t, f.tenant, "https://a.example.com")
+	b := f.httpOrigin(t, f.tenant, "https://b.example.com")
+	claim := func(cmd shared.ID, origin string) (string, error) {
+		t.Helper()
+		_, why, err := repo.ClaimPathOrigin(ctx, coverage.PathClaim{TenantID: f.tenant, Origin: origin, CommandID: cmd, Requested: 300, PerHost: 300, Daily: 5000})
+		return why, err
+	}
+	claimed := func(asset shared.ID) bool {
+		var at time.Time
+		err := f.sqlDB.QueryRowContext(ctx, `SELECT last_dispatch_at FROM web_path_discovery_runs WHERE tenant_id = $1 AND origin_asset_id = $2`,
+			f.tenant.String(), asset.String()).Scan(&at)
+		return err == nil && time.Since(at) < coverage.PathEvery
+	}
+	first, second := shared.NewID(), shared.NewID()
+	for _, o := range []string{"https://a.example.com", "https://b.example.com"} {
+		if why, err := claim(first, o); why != "" || err != nil {
+			t.Fatalf("claim %s: %q %v", o, why, err)
+		}
+	}
+	// Only the named origin is given back.
+	if err := repo.ReleaseEmptyPathClaim(ctx, f.tenant, first, []string{"https://a.example.com"}); err != nil {
+		t.Fatal(err)
+	}
+	if claimed(a) || !claimed(b) {
+		t.Fatalf("a claimed %v, b claimed %v; want only b", claimed(a), claimed(b))
+	}
+	// The origin is dispatched again, and the sensor again says it did nothing:
+	// the claim stands (the floor and the budget stay spent).
+	if why, err := claim(second, "https://a.example.com"); why != "" || err != nil {
+		t.Fatalf("claim after the release: %q %v", why, err)
+	}
+	if err := repo.ReleaseEmptyPathClaim(ctx, f.tenant, second, []string{"https://a.example.com"}); err != nil {
+		t.Fatal(err)
+	}
+	if !claimed(a) {
+		t.Fatal("a second empty release within 30 days reset the floor")
+	}
+	if why, _ := claim(shared.NewID(), "https://a.example.com"); why != coverage.ReasonPathRanRecently {
+		t.Fatalf("the 30 day floor was not kept: %q", why)
+	}
+	// After 30 days it can be given back once more.
+	if _, err := f.sqlDB.ExecContext(ctx, `UPDATE web_path_discovery_runs SET release_at = now() - interval '31 days' WHERE tenant_id = $1 AND origin_asset_id = $2`,
+		f.tenant.String(), a.String()); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.ReleaseEmptyPathClaim(ctx, f.tenant, second, []string{"https://a.example.com"}); err != nil {
+		t.Fatal(err)
+	}
+	if claimed(a) {
+		t.Fatal("an empty release after 30 days was refused")
+	}
+	// A bare host or another command releases nothing.
+	if err := repo.ReleaseEmptyPathClaim(ctx, f.tenant, first, []string{"b.example.com"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.ReleaseEmptyPathClaim(ctx, f.tenant, shared.NewID(), []string{"https://b.example.com"}); err != nil {
+		t.Fatal(err)
+	}
+	if !claimed(b) {
+		t.Fatal("b was released by a bare host or by a command that did not claim it")
+	}
+}

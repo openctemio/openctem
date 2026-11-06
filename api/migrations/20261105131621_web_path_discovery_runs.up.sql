@@ -26,6 +26,9 @@ CREATE TABLE IF NOT EXISTS web_path_discovery_runs (
     prev_run_id      uuid,
     prev_granted     integer,
     prev_host        varchar(255),
+    -- The last time a job the sensor reported as empty (no request sent) gave
+    -- this origin's claim back: that happens at most once per 30 days.
+    release_at       timestamptz,
     CONSTRAINT pk_web_path_discovery_runs PRIMARY KEY (tenant_id, origin_asset_id),
     CONSTRAINT chk_web_path_discovery_runs_granted CHECK (granted > 0),
     CONSTRAINT chk_web_path_discovery_runs_prev CHECK (prev_dispatch_at IS NULL OR (prev_granted > 0 AND prev_host IS NOT NULL))

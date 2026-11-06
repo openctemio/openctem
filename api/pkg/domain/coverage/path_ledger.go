@@ -114,4 +114,9 @@ type PathLedger interface {
 	// does not spend the origin's 30 days or the daily budget. A claim a
 	// later dispatch has overwritten is left alone. Idempotent.
 	ReleasePathClaim(ctx context.Context, tenantID, commandID shared.ID, origins []string) error
+	// ReleaseEmptyPathClaim is ReleasePathClaim for a job the sensor reported
+	// as having sent no request, on the named origins only, and at most once
+	// per origin per PathEvery: an origin already given back in that period
+	// keeps the claim, so the report cannot reset the floor again and again.
+	ReleaseEmptyPathClaim(ctx context.Context, tenantID, commandID shared.ID, origins []string) error
 }
