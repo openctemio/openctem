@@ -201,9 +201,11 @@ func TestWebDiscoveryDerivedInput_GuessesAreNotInputs(t *testing.T) {
 	}
 }
 
-// The lookups path discovery makes on every claim use their indexes: the
-// origin by name (expression index) and the organization's endpoints. Seeded
-// with enough rows that a sequential scan would not be chosen.
+// The lookup path discovery makes on every claim can be served by its index:
+// the origin by name (expression index). The planner's cost choice depends on
+// the table size and statistics, which change with whatever else has run in the
+// database (a merge-queue group), so the test turns sequential scans off in its
+// own transaction and asserts that this index, and not another, serves the query.
 func TestWebPathDiscovery_LookupsUseIndexes(t *testing.T) {
 	f := newWebFixture(t)
 	ctx := context.Background()
@@ -222,7 +224,15 @@ func TestWebPathDiscovery_LookupsUseIndexes(t *testing.T) {
 	if _, err := f.sqlDB.ExecContext(ctx, `ANALYZE assets`); err != nil {
 		t.Fatal(err)
 	}
-	rows, err := f.sqlDB.QueryContext(ctx, `EXPLAIN SELECT a.id FROM assets a
+	tx, err := f.sqlDB.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx, `SET LOCAL enable_seqscan = off`); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := tx.QueryContext(ctx, `EXPLAIN SELECT a.id FROM assets a
 		WHERE a.tenant_id = $1 AND a.deleted_at IS NULL AND a.asset_type = 'service' AND a.sub_type = 'http'
 		  AND lower(rtrim(a.name, '/')) = $2 LIMIT 8`, f.tenant.String(), "https://h777.example.com")
 	if err != nil {
