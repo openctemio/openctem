@@ -20,6 +20,10 @@ func TestMigration001378FoldsStatusAliases(t *testing.T) {
 	// the table 001378 works on. Looked up by name: the queue renumbers it.
 	single := testdb.MigrationVersion(t, dir, "pentest_findings_single_store")
 	testdb.Migrate(t, db, dir, single, single, true)
+	// The out-of-scope SLA trigger reads closure_reason; roll it back before
+	// the finding_closure_* downs drop that column.
+	oos := testdb.MigrationVersion(t, dir, "out_of_scope_sla_not_applicable")
+	testdb.Migrate(t, db, dir, oos, oos, true)
 	// The finding_closure_* migrations replaced resolution_method, which
 	// 001378 writes: their downs bring the column back for this replay.
 	testdb.Migrate(t, db, dir, testdb.MigrationVersion(t, dir, "finding_closure_columns"),
