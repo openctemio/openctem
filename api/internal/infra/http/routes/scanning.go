@@ -178,6 +178,10 @@ func registerSensorManagementRoutes(
 		// Setup checklist (research/26): the sensor's config report, explained
 		// from the platform catalog.
 		r.GET("/{id}/config-report", h.ConfigReport, middleware.Require(permission.SensorsWrite), own)
+		// Readiness checklist (research/466): what still stops the sensor
+		// from scanning, each item with its fix. Reads only; the
+		// confinement item needs sensors:write (the handler checks it).
+		r.GET("/{id}/readiness", h.Readiness, middleware.Require(permission.SensorsRead), own)
 
 		// Available capabilities for tenant (aggregated from all accessible sensors)
 		r.GET("/available-capabilities", h.GetAvailableCapabilities, middleware.Require(permission.SensorsRead))

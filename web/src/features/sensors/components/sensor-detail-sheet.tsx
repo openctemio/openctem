@@ -77,6 +77,7 @@ import { SensorControlSection, hasHeartbeatHistory } from './sensor-control-sect
 import { SensorLocalPolicySection } from './sensor-local-policy-section'
 import { SENSOR_POSTURE_SECTION_ID, SensorPostureSection } from './sensor-posture'
 import { SensorGrantSection } from './sensor-grant-section'
+import { SensorReadinessChecklist } from './sensor-readiness'
 import { SensorNetworkPathSection } from '@/features/proxy-pools'
 import { SensorManifestTab } from './sensor-manifest-tab'
 import { SensorToolSettingsSection } from './sensor-tool-settings'
@@ -1236,6 +1237,8 @@ export function SensorDetailSheet({
             />
 
             <SensorStats sensor={sensor} now={now} thresholds={thresholds} />
+
+            <SensorReadinessChecklist sensorId={sensor.id} />
 
             <DetailSections>
               {(!oneShot || sensorToolRows(sensor).length > 0) && (

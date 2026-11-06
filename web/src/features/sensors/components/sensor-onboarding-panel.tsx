@@ -58,6 +58,7 @@ import { FIRST_HEARTBEAT_POLL_MS } from './sensor-install-flow'
 import { Snippet, type SensorTemplates } from './sensor-install-snippets'
 import { PlatformCAPanel } from './platform-ca-panel'
 import { PairingReview } from './sensor-pairing-steps'
+import { SensorReadinessChecklist } from './sensor-readiness'
 
 /** The console page a sensor's printed link opens. */
 export const ACTIVATE_PATH = '/activate'
@@ -424,6 +425,10 @@ function InstallSession({
             {t('sensors.onboard.code.newCommand')}
           </Button>
         </div>
+      )}
+
+      {(stage === 'approved' || stage === 'online') && sensorId && (
+        <SensorReadinessChecklist sensorId={sensorId} />
       )}
 
       {(stage === 'approved' || stage === 'online') && (
