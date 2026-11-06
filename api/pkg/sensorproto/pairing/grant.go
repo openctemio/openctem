@@ -20,7 +20,6 @@ import (
 	"crypto/ed25519"
 	"encoding/json"
 	"errors"
-	"fmt"
 )
 
 // domainGrant separates the grant signature from every other pairing
@@ -137,10 +136,10 @@ func VerifyGrant(sg *SignedGrant, platformPub, sensorPub ed25519.PublicKey, pair
 	var g Grant
 	dec := json.NewDecoder(bytes.NewReader(payload))
 	if err := dec.Decode(&g); err != nil {
-		return nil, fmt.Errorf("%w: %w", ErrGrantSignature, err)
+		return nil, ErrGrantSignature
 	}
 	if g.Protocol != Version {
-		return nil, fmt.Errorf("%w: protocol %q", ErrGrantBinding, g.Protocol)
+		return nil, ErrGrantBinding
 	}
 	key, err := DecodeKey(g.SensorKey)
 	if err != nil || !bytes.Equal(key, sensorPub) || g.PairingID != pairingID {
