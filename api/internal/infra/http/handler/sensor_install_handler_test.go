@@ -172,3 +172,66 @@ func TestInstallTemplatesRead_GetHasNoCodeAndRefusesBadProduct(t *testing.T) {
 		t.Errorf("bad product: status %d, want 400", rec.Code)
 	}
 }
+
+func TestInstallTemplates_Purpose(t *testing.T) {
+	h := installHandler(t)
+	for body, want := range map[string]bool{
+		`{}`:                     false,
+		`{"purpose":"internet"}`: false,
+		`{"purpose":"internal"}`: true,
+		`{"purpose":"both"}`:     true,
+	} {
+		rec := postInstall(h, body)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s: status %d: %s", body, rec.Code, rec.Body.String())
+		}
+		var resp SensorConfigTemplatesResponse
+		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+			t.Fatal(err)
+		}
+		for name, text := range map[string]string{"docker": resp.Docker, "compose": resp.Compose,
+			"kubernetes": resp.Kubernetes, "cli": resp.CLI, "multi": resp.Multi} {
+			if got := strings.Contains(text, "SENSOR_ALLOW_PRIVATE_TARGETS"); got != want {
+				t.Errorf("%s: %s private switch present=%v, want %v", body, name, got, want)
+			}
+		}
+	}
+
+	rec := postInstall(h, `{"purpose":"internal","allowed_ranges":["10.0.0.0/16"]}`)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "SENSOR_ALLOWED_RANGES='10.0.0.0/16'") {
+		t.Fatalf("pinned: status %d: %s", rec.Code, rec.Body.String())
+	}
+
+	// GET reads the purpose from the query (no pin: it carries no body).
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/sensors/install-templates?purpose=internal", nil)
+	get := httptest.NewRecorder()
+	h.InstallTemplatesRead(get, req)
+	if get.Code != http.StatusOK || !strings.Contains(get.Body.String(), "SENSOR_ALLOW_PRIVATE_TARGETS") {
+		t.Fatalf("GET purpose=internal: status %d", get.Code)
+	}
+}
+
+func TestInstallTemplates_PurposeRefused(t *testing.T) {
+	h := installHandler(t)
+	for _, body := range []string{
+		`{"purpose":"lan"}`,
+		`{"purpose":"both","allowed_ranges":["10.0.0.0/16"]}`,
+		`{"allowed_ranges":["10.0.0.0/16"]}`,
+		`{"purpose":"internal","allowed_ranges":["198.51.100.0/24"]}`,
+		`{"purpose":"internal","allowed_ranges":["127.0.0.1"]}`,
+	} {
+		rec := postInstall(h, body)
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("%s: status %d, want 400", body, rec.Code)
+		}
+		if strings.Contains(rec.Body.String(), "SENSOR_ALLOW_PRIVATE_TARGETS") {
+			t.Errorf("%s: a refused request rendered commands", body)
+		}
+	}
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/sensors/install-templates?purpose=everything", nil)
+	get := httptest.NewRecorder()
+	h.InstallTemplatesRead(get, req)
+	if get.Code != http.StatusBadRequest {
+		t.Errorf("GET unknown purpose: status %d", get.Code)
+	}
+}
