@@ -13,7 +13,20 @@ for the approval, your TOTP code or your password.
 ## 1. Run one command
 
 Open **Sensors → Add sensor** (on an organization with no sensor yet, the
-same panel is on the page). Docker is preselected; pick Docker Compose,
+same panel is on the page). It first asks **What will this sensor scan?**
+
+- **Internet-facing** (the default): your public domains and addresses. The
+  command never lets the sensor reach private networks.
+- **Internal networks**: the private networks the host can reach, such as
+  `10.0.0.0/16`. The command adds `SENSOR_ALLOW_PRIVATE_TARGETS=1` with a
+  comment that explains it: by running it, the host owner agrees that the
+  sensor scans private addresses. Tick **Also restrict this host to these
+  networks** to add `SENSOR_ALLOWED_RANGES` too: the sensor then refuses
+  every target outside them, whatever the platform sends.
+- **Both**: internal networks and internet-facing targets. The command adds
+  the private switch, never a range restriction.
+
+Docker is preselected; pick Docker Compose,
 Kubernetes, a Linux service or several sensors on one host (the multi-sensor
 kit) if the sensor runs there. The panel shows one
 command for that platform: the current release, this instance's URL, the

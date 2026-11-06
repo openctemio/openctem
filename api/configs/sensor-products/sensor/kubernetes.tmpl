@@ -154,6 +154,7 @@ spec:
             - name: XDG_CACHE_HOME
               value: /tmp/.cache
 {{- if .Policy.AllowPrivate}}
+            # SENSOR_ALLOW_PRIVATE_TARGETS=1 lets this sensor scan private networks (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, fc00::/7); without it the host refuses them.
             - name: SENSOR_ALLOW_PRIVATE_TARGETS
               value: "1"
 {{- end}}

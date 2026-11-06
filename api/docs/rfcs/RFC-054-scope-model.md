@@ -557,6 +557,7 @@ saved or scanned; with no target left the create is refused
 | `out_of_data_scope` | asset outside the actor's data scope | — |
 | `not_an_asset` | a restricted member typed free text | `request_access` |
 | `zone_none`, `zone_no_sensor`, `zone_sensor_mismatch` | scan-zone routing | `add_zone` |
+| `ambiguous_zone` | zones with different sensors hold the target at the same width (sites reusing a range) | `pick_zone` (the scan's zone picker; no permission) |
 | `unresolved` | a hostname with no DNS answer from the platform, so zone routing cannot place it | — (fix the DNS record or scan its address) |
 
 Fix objects: `{"action", "pattern"?, "target_type"?, "days"?, "id"?,
