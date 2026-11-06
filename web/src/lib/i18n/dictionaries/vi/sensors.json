@@ -756,6 +756,7 @@
   "sensors.keyGuard.desc": "Khóa chỉ hiển thị một lần. Nếu đóng cửa sổ này khi chưa sao chép, bạn phải đổi khóa lần nữa.",
   "sensors.keyGuard.title": "Bạn đã sao chép khóa chưa?",
   "sensors.list.addZone": "Thêm vùng",
+  "sensors.list.approve": "Duyệt sensor",
   "sensors.list.count.one": "{count} sensor",
   "sensors.list.count.other": "{count} sensor",
   "sensors.list.csv.currentJobs": "Job hiện tại",
