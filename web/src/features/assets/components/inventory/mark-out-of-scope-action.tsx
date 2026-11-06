@@ -53,6 +53,7 @@ import {
   type ExclusionItem,
   type ExclusionKind,
   type ExclusionPreviewItem,
+  criticalClosuresOf,
 } from '../../api/triage-api'
 import { exactExclusions, ruleProposals } from '../../lib/out-of-scope-rules'
 import type { Asset } from '../../types/asset.types'
@@ -96,6 +97,10 @@ export function MarkOutOfScopeAction({ selected, onDone }: ActionProps) {
   const rules = useMemo(() => ruleProposals(names), [names])
   const [chosenRules, setChosenRules] = useState<Set<string>>(new Set())
   const [preview, setPreview] = useState<Record<string, ExclusionPreviewItem>>({})
+  // Closing critical, P0 or KEV findings needs an explicit confirm; the
+  // server also refuses without it (serverCritical: its count).
+  const [criticalConfirmed, setCriticalConfirmed] = useState(false)
+  const [serverCritical, setServerCritical] = useState<number | null>(null)
   const [previewing, setPreviewing] = useState(false)
 
   // No rule is chosen by default: a parent domain may also hold in-scope
@@ -146,6 +151,13 @@ export function MarkOutOfScopeAction({ selected, onDone }: ActionProps) {
     }
   }, [open, canExclude, exact.items, rules])
 
+  // A different selection, kind or duration needs a new confirm.
+  const itemsKey = JSON.stringify(items.map(keyOf))
+  useEffect(() => {
+    setCriticalConfirmed(false)
+    setServerCritical(null)
+  }, [open, itemsKey, kind, duration])
+
   if (!canExclude && !canReject) return null
 
   // Without scope:write only the "not ours" decision is possible.
@@ -155,6 +167,11 @@ export function MarkOutOfScopeAction({ selected, onDone }: ActionProps) {
   const closes = effectiveKind !== 'do_not_scan' && permanent
   const matchedTotal = items.reduce((n, i) => n + (preview[keyOf(i)]?.matched ?? 0), 0)
   const findingsTotal = items.reduce((n, i) => n + (preview[keyOf(i)]?.open_findings ?? 0), 0)
+  const criticalTotal = Math.max(
+    items.reduce((n, i) => n + (preview[keyOf(i)]?.critical_findings ?? 0), 0),
+    serverCritical ?? 0
+  )
+  const needsCriticalConfirm = !decisionOnly && closes && criticalTotal > 0
   const tooMany = decisionOnly
     ? selected.length > MAX_BULK_EXCLUSIONS
     : items.length > MAX_BULK_EXCLUSIONS
@@ -166,6 +183,7 @@ export function MarkOutOfScopeAction({ selected, onDone }: ActionProps) {
       kind: effectiveKind,
       expiresAt,
       reason: reason.trim() || undefined,
+      confirmCritical: needsCriticalConfirm && criticalConfirmed,
     })
     // "Not ours" on exactly the selection is also the decision, so
     // discovery stops offering these names again.
@@ -249,6 +267,13 @@ export function MarkOutOfScopeAction({ selected, onDone }: ActionProps) {
       setOpen(false)
       onDone?.()
     } catch (err) {
+      // Critical findings appeared since the preview (or it failed): ask.
+      const critical = criticalClosuresOf(err)
+      if (critical !== null) {
+        setServerCritical(critical)
+        setCriticalConfirmed(false)
+        return
+      }
       toast.error(getErrorMessage(err, t('assets.triage.failed', 'Could not mark out of scope')))
     } finally {
       setBusy(false)
@@ -479,13 +504,21 @@ export function MarkOutOfScopeAction({ selected, onDone }: ActionProps) {
                   {decisionOnly || previewing
                     ? t(
                         'assets.triage.effects.closeAny',
-                        'Their open findings close as "Asset out of scope" (not counted as fixed), and their tasks, tickets and SLA clocks follow.'
+                        'Their open findings close as "Asset out of scope" (not counted as fixed), and their remediation tasks follow.'
                       )
                     : t(
                         'assets.triage.effects.close',
-                        '{count} open findings close as "Asset out of scope" (not counted as fixed), and their tasks, tickets and SLA clocks follow.',
+                        '{count} open findings close as "Asset out of scope" (not counted as fixed), and their remediation tasks follow.',
                         { count: findingsTotal }
                       )}
+                </p>
+              ) : null}
+              {closes ? (
+                <p className="text-muted-foreground" data-testid="oos-effects-tickets">
+                  {t(
+                    'assets.triage.effects.tickets',
+                    'They leave SLA tracking. A linked Jira issue gets a comment and a GitHub issue stays open: nothing was fixed.'
+                  )}
                 </p>
               ) : (
                 <p data-testid="oos-effects-findings">
@@ -516,6 +549,44 @@ export function MarkOutOfScopeAction({ selected, onDone }: ActionProps) {
                 />
               </div>
             )}
+            {needsCriticalConfirm && (
+              <div
+                role="alert"
+                className="space-y-2 rounded-md bg-destructive/10 p-3 text-sm"
+                data-testid="oos-critical"
+              >
+                <p className="font-medium text-destructive">
+                  {t(
+                    'assets.triage.critical.title',
+                    '{count} of them are critical, P0 or known exploited (KEV)',
+                    { count: criticalTotal }
+                  )}
+                </p>
+                <p>
+                  {t(
+                    'assets.triage.critical.hint',
+                    'If the asset is still yours, choose Do not scan instead: its findings stay open.'
+                  )}
+                </p>
+                <label className="flex items-start gap-2">
+                  <Checkbox
+                    checked={criticalConfirmed}
+                    onCheckedChange={(v) => setCriticalConfirmed(v === true)}
+                    aria-label={t(
+                      'assets.triage.critical.confirm',
+                      'I confirm these assets are not ours or gone, and their critical findings close unfixed'
+                    )}
+                    data-testid="oos-critical-confirm"
+                  />
+                  <span>
+                    {t(
+                      'assets.triage.critical.confirm',
+                      'I confirm these assets are not ours or gone, and their critical findings close unfixed'
+                    )}
+                  </span>
+                </label>
+              </div>
+            )}
             {tooMany && (
               <p className="text-destructive">
                 {t('assets.triage.tooMany', 'Select at most {max} at once.', {
@@ -535,7 +606,13 @@ export function MarkOutOfScopeAction({ selected, onDone }: ActionProps) {
             </Button>
             <Button
               onClick={() => void submit()}
-              disabled={busy || tooMany || untilInvalid || (!decisionOnly && items.length === 0)}
+              disabled={
+                busy ||
+                tooMany ||
+                untilInvalid ||
+                (!decisionOnly && items.length === 0) ||
+                (needsCriticalConfirm && !criticalConfirmed)
+              }
             >
               {busy
                 ? t('assets.triage.saving', 'Saving…')

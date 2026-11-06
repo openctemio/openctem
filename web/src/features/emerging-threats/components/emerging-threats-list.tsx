@@ -37,14 +37,7 @@ import {
   type EmergingThreatSummary,
   type StateFilter,
 } from '../types'
-import {
-  EtsCell,
-  ExploitBadges,
-  LevelBadge,
-  StateBadge,
-  useDateLocale,
-  useEventKindLabel,
-} from './bits'
+import { EtsCell, ExploitBadges, LevelBadge, StateBadge, useEventKindLabel } from './bits'
 import { useSearchQuery } from '@/hooks/use-search-query'
 import { replaceUrlSearch, useUrlParams, useUrlSettled } from '@/hooks/use-url-param'
 import { parseListQuery, writeListQuery, type ListQuery } from '../url-filters'
@@ -54,7 +47,6 @@ const ALL = 'all'
 export function EmergingThreatsList() {
   const { t } = useTranslation()
   const router = useRouter()
-  const dateLocale = useDateLocale()
   const eventLabel = useEventKindLabel()
   // Every filter lives in the URL (url-filters.ts), so a view can be linked
   // to: a dashboard level opens the list filtered to it.
@@ -223,7 +215,7 @@ export function EmergingThreatsList() {
         ),
       },
     ],
-    [t, eventLabel, dateLocale]
+    [t, eventLabel]
   )
 
   return (

@@ -60,6 +60,9 @@ export const SCAN_CONFIG_STATUS_LABELS: Record<ScanConfigStatus, string> = {
  * A scanner_config value the API flagged as secret-looking (api RFC-032
  * Phase 0). Only the path and the reason; never the value.
  */
+/** A scan's per-step overrides of capability standard params: key = step key or `*:<capability>`. */
+export type ScanStepParams = Record<string, Record<string, unknown>>
+
 export interface ScannerConfigWarning {
   /** Dotted keys, [n] for list items ("headers.Authorization", "args[2]"). */
   path: string
@@ -145,6 +148,10 @@ export interface ScanConfig {
   target_options?: ScanTargetOptions
   /** The probe ceiling of every run (RFC-071). */
   intensity?: ScanIntensity
+  /** Per-step overrides of standard params (workflow scans). */
+  step_params?: ScanStepParams
+  /** How much of the workflow each run executes. */
+  depth?: 'passive' | 'standard' | 'deep'
   scan_type: ScanType
   scan_workflow_id?: string
   scanner_name?: string
@@ -276,6 +283,10 @@ export interface CreateScanConfigRequest {
   target_options?: ScanTargetOptions
   /** The probe ceiling; omitted = the tier the scanner or workflow probes at. */
   intensity?: ScanIntensity
+  /** Per-step overrides of standard params (workflow scans). */
+  step_params?: ScanStepParams
+  /** How much of the workflow each run executes. */
+  depth?: 'passive' | 'standard' | 'deep'
   scan_type: ScanType
   scan_workflow_id?: string
   scanner_name?: string
@@ -334,6 +345,10 @@ export interface UpdateScanConfigRequest {
   target_options?: ScanTargetOptions
   /** Omitted = unchanged. */
   intensity?: ScanIntensity
+  /** Per-step overrides of standard params (workflow scans). */
+  step_params?: ScanStepParams
+  /** How much of the workflow each run executes. */
+  depth?: 'passive' | 'standard' | 'deep'
   scan_workflow_id?: string
   scanner_name?: string
   scanner_config?: Record<string, unknown>
