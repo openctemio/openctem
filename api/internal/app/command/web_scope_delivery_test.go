@@ -2,7 +2,9 @@ package command
 
 import (
 	"encoding/json"
+	"errors"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -53,5 +55,16 @@ func TestWebScopeDelivery(t *testing.T) {
 	// A web scope that cannot be read: refused, never delivered with the key.
 	if _, err := webScopeDelivery(json.RawMessage(`{"web_scope":"x","deny_paths_wildcard":1}`), true); err == nil {
 		t.Fatal("an unreadable web scope was delivered")
+	}
+}
+
+func TestWebScopeDeliveryErrorTextIsFixed(t *testing.T) {
+	cause := errors.New("secret detail from a lower layer")
+	err := error(contentNotSignedError{cause: cause})
+	if err.Error() != ErrJobNotSigned.Error() || strings.Contains(err.Error(), "secret") {
+		t.Fatalf("text leaks the cause: %q", err.Error())
+	}
+	if !errors.Is(err, ErrJobNotSigned) || !errors.Is(err, cause) {
+		t.Fatal("cause and sentinel must stay matchable")
 	}
 }

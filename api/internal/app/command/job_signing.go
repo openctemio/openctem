@@ -98,7 +98,8 @@ func (s *Service) signJob(ctx context.Context, sensorID string, c *commanddom.Co
 	if err != nil {
 		s.logger.Warn("web scope not readable; command not handed to the sensor",
 			"command_id", c.ID.String(), "sensor_id", sensorID, "error", err)
-		return nil, fmt.Errorf("%w: %w", ErrJobNotSigned, err)
+		// Fixed sentence; the cause is logged above, not shown.
+		return nil, contentNotSignedError{cause: err}
 	}
 	now := s.now().UTC()
 	expires := now.Add(jobsign.MaxTTL)
