@@ -12,7 +12,39 @@ export interface AssetLifecycleSettings {
   excluded_source_types?: string[]
   pause_on_integration_failure?: boolean
   dry_run_completed_at?: number | null
+  /** Asset liveness thresholds; omitted keeps the stored values. */
+  liveness?: AssetLivenessSettings
 }
+
+/** Asset liveness settings (zero or absent = the default). */
+export interface AssetLivenessSettings {
+  close_findings_when_gone: boolean
+  unreachable_attempts?: number
+  unreachable_window_hours?: number
+  gone_attempts?: number
+  gone_window_hours?: number
+  gone_single_observer_window_hours?: number
+  max_gone_per_day?: number
+}
+
+/** Defaults and floors of the liveness settings (the API enforces them too). */
+export const LIVENESS_DEFAULTS = {
+  unreachable_attempts: 3,
+  unreachable_window_hours: 72,
+  gone_window_hours: 72,
+  gone_single_observer_window_hours: 168,
+  max_gone_per_day: 50,
+} as const
+
+export const LIVENESS_BOUNDS = {
+  unreachable_attempts: [2, 20],
+  unreachable_window_hours: [24, 2160],
+  gone_window_hours: [24, 2160],
+  gone_single_observer_window_hours: [72, 2160],
+  max_gone_per_day: [1, 5000],
+} as const
+
+export type LivenessNumberField = keyof typeof LIVENESS_BOUNDS
 
 export const DEFAULT_LIFECYCLE_SETTINGS: AssetLifecycleSettings = {
   enabled: false,
@@ -55,6 +87,17 @@ export interface LifecycleRunReport {
   excluded_source_types: string[]
   transitioned_to_stale: number
   affected_asset_ids?: string[]
+  /** What the asset liveness pass would do now. */
+  liveness?: {
+    states: Record<string, number>
+    would_close_findings: number
+    would_close_critical: number
+    would_reopen_findings: number
+    open_on_unreachable: number
+    open_on_unresolvable: number
+    close_findings_when_gone: boolean
+    gone_held: number
+  }
 }
 
 export interface SnoozeRequest {
