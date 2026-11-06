@@ -36,7 +36,7 @@ or use OpenCTEM, see [docs.openctem.io](https://docs.openctem.io)
 ## Architecture
 
 **Foundations**
-- [Overview](architecture/overview.md), [clean architecture](architecture/clean-arch.md), [project structure](architecture/project-structure.md)
+- [Overview](architecture/overview.md), [OpenCTEM as one machine](architecture/system-overview.md) (organ map and eight flow diagrams, shipped and planned), [clean architecture](architecture/clean-arch.md), [project structure](architecture/project-structure.md)
 - [Dashboards: organization and personal](architecture/dashboards.md), [module coupling](architecture/module-coupling-and-decoupling.md), [limits and feature denies](architecture/limits.md), [edition model and Community build guard rails](architecture/edition-model.md), [idle-organization policy](architecture/idle-workspaces.md), [organization suspension and account block](architecture/organization-suspension.md) ([runbook](operations/suspension.md)), [organization deletion grace](architecture/organization-deletion.md), [ownership invitations for an organization created for an existing account](architecture/organization-ownership-invitations.md), [account space for a person with no organization](architecture/tenantless-account-space.md)
 - [Organization settings](architecture/organization-settings.md), [product brand](architecture/brand.md), [third-party notices](architecture/third-party-notices.md), [database notes](architecture/database-notes.md), [row-level security rollout](architecture/rls-rollout.md), [modules](architecture/modules.md), [platform settings in the admin console](architecture/platform-settings.md), [sidebar pins](architecture/sidebar-pins.md), [system actors](architecture/system-actors.md)
 - Decisions: [ADR-001 standard net/http](architecture/decisions/001-use-stdlib-http.md), [ADR-002 protocols](architecture/decisions/002-multi-protocol.md), [ADR-003 connectors](architecture/decisions/003-connector-pattern.md), [ADR-004 finding provenance](architecture/decisions/004-finding-provenance.md)
@@ -100,7 +100,6 @@ because they change with it:
 
 - [Upgrading from v0.8 to v0.9](operations/upgrade-v0.8-to-v0.9.md)
 - [Upgrading to CTIS 2.0](operations/ctis-2-upgrade.md)
-- [Masking e-mail addresses in stored findings](operations/mask-stored-emails.md): `refingerprint -mask-emails`, preview query, dry run, apply
 - [Monitoring and alerting](operations/monitoring.md)
 - [Hotfix and incident response](operations/hotfix-and-incident-response.md): severity, containment, hotfix release, deploy, rollback, disclosure
 - [Environment variable reference](configuration/environment-variables.md) (generated from `internal/config/env_registry.yaml` by `make env-docs`)

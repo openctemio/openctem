@@ -17,8 +17,8 @@ import (
 	"time"
 
 	"github.com/beevik/etree"
-	"github.com/crewjam/saml"
 	xrv "github.com/mattermost/xml-roundtrip-validator"
+	"github.com/openctemio/saml"
 	dsig "github.com/russellhaering/goxmldsig"
 	"github.com/russellhaering/goxmldsig/etreeutils"
 
@@ -130,7 +130,112 @@ func checkSAMLResponseStrict(raw []byte, certs []*x509.Certificate, clock *dsig.
 	if err := verifySAMLElementSignature(assertion, certs, clock); err != nil {
 		return samlStrictResponse{}, samlStrictErr("assertion signature: %v", err)
 	}
+	if err := checkSAMLAssertionShape(assertion); err != nil {
+		return samlStrictResponse{}, err
+	}
 	return samlStrictResponse{assertionID: id}, nil
+}
+
+// Assertion element names the shape check reads.
+const (
+	samlTagIssuer                  = "Issuer"
+	samlTagSubject                 = "Subject"
+	samlTagConditions              = "Conditions"
+	samlTagNameID                  = "NameID"
+	samlTagEncryptedID             = "EncryptedID"
+	samlTagBaseID                  = "BaseID"
+	samlTagSubjectConfirmation     = "SubjectConfirmation"
+	samlTagSubjectConfirmationData = "SubjectConfirmationData"
+)
+
+// samlIdentifierTags are the subject identifier elements (one choice of the
+// three in the SAML schema).
+var samlIdentifierTags = map[string]bool{samlTagNameID: true, samlTagEncryptedID: true, samlTagBaseID: true}
+
+// samlNamespaceBlindTags are the assertion elements the library binds by
+// local name in any namespace: the subject identifiers and the elements its
+// condition, audience and confirmation checks read.
+var samlNamespaceBlindTags = map[string]bool{
+	samlTagNameID: true, samlTagEncryptedID: true, samlTagBaseID: true,
+	samlTagConditions: true, "AudienceRestriction": true, "Audience": true, "OneTimeUse": true, "ProxyRestriction": true,
+	samlTagSubjectConfirmation: true, samlTagSubjectConfirmationData: true,
+	"AuthnContext": true, "AuthnContextClassRef": true, "SubjectLocality": true,
+}
+
+// checkSAMLAssertionShape refuses a signed assertion the library would read
+// wrongly or not survive:
+//   - exactly one Issuer, in the assertion namespace, as a direct child, with
+//     a value (the library compares it with the IdP entity ID);
+//   - exactly one Subject and one Conditions, in the assertion namespace, as
+//     direct children (the library dereferences both without a nil check);
+//   - no NameID, EncryptedID or BaseID (nor any other element the library
+//     binds by local name, such as Conditions or Audience) anywhere in the
+//     assertion outside the assertion namespace: the library would read a
+//     foreign one as the subject or the conditions;
+//   - the Subject rules of checkSAMLSubjectShape.
+func checkSAMLAssertionShape(assertion *etree.Element) error {
+	counts := map[string]int{}
+	var subject *etree.Element
+	for _, child := range assertion.ChildElements() {
+		switch child.Tag {
+		case samlTagIssuer, samlTagSubject, samlTagConditions:
+			if child.NamespaceURI() != samlAssertionNS {
+				return samlStrictErr("assertion %s is outside the assertion namespace", child.Tag)
+			}
+			counts[child.Tag]++
+			if child.Tag == samlTagIssuer && strings.TrimSpace(child.Text()) == "" {
+				return samlStrictErr("assertion Issuer is empty")
+			}
+			if child.Tag == samlTagSubject {
+				subject = child
+			}
+		}
+	}
+	for _, tag := range []string{samlTagIssuer, samlTagSubject, samlTagConditions} {
+		if counts[tag] != 1 {
+			return samlStrictErr("assertion must have exactly one %s, found %d", tag, counts[tag])
+		}
+	}
+	for _, el := range assertion.FindElements(".//*") {
+		if samlNamespaceBlindTags[el.Tag] && el.NamespaceURI() != samlAssertionNS {
+			return samlStrictErr("%s outside the assertion namespace", el.Tag)
+		}
+	}
+	return checkSAMLSubjectShape(subject)
+}
+
+// checkSAMLSubjectShape refuses a Subject with more than one identifier, or
+// with no subject confirmation, or with a confirmation that does not carry
+// exactly one SubjectConfirmationData: the library dereferences that data
+// without a nil check, and checks the request binding and the recipient only
+// on the confirmations present.
+func checkSAMLSubjectShape(subject *etree.Element) error {
+	identifiers, confirmations := 0, 0
+	for _, child := range subject.ChildElements() {
+		if samlIdentifierTags[child.Tag] {
+			identifiers++
+		}
+		if child.Tag != samlTagSubjectConfirmation {
+			continue
+		}
+		confirmations++
+		data := 0
+		for _, c := range child.ChildElements() {
+			if c.Tag == samlTagSubjectConfirmationData {
+				data++
+			}
+		}
+		if data != 1 {
+			return samlStrictErr("subject confirmation must have exactly one SubjectConfirmationData, found %d", data)
+		}
+	}
+	if identifiers > 1 {
+		return samlStrictErr("subject has %d identifiers", identifiers)
+	}
+	if confirmations == 0 {
+		return samlStrictErr("subject has no SubjectConfirmation")
+	}
+	return nil
 }
 
 // verifySAMLElementSignature validates the enveloped signature of el against

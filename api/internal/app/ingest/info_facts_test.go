@@ -2,6 +2,7 @@ package ingest
 
 import (
 	"context"
+	"strconv"
 	"testing"
 	"time"
 
@@ -78,11 +79,13 @@ func TestInfoFactsRealNucleiRun(t *testing.T) {
 	s := &Service{logger: logger.NewNop(), templateMatches: proj, stepInfo: rec}
 	step := shared.NewID()
 	out := &Output{}
-	s.routeInfoMatches(context.Background(), shared.NewID(), enriched, assetMap, out, Binding{Kind: BindingCommand, StepRunID: &step}, facts)
+	s.routeInfoMatches(context.Background(), shared.NewID(), enriched, assetMap, out, Binding{Kind: BindingCommand, StepRunID: &step}, facts, scope)
 	if len(enriched.Findings) != 2 {
 		t.Fatalf("findings left %d, want the medium and the high", len(enriched.Findings))
 	}
-	if len(proj.got) != 0 || out.InfoFacts != 12 || out.InfoObservations != 12 || out.InfoUnmapped != 0 || rec.n != 12 {
+	// Four header matchers (cross-origin and cross-domain policies) the mapping
+	// has no posture key for are filed as exposures, not dropped.
+	if len(proj.got) != 4 || out.InfoFacts != 8 || out.InfoObservations != 12 || out.InfoUnmapped != 4 || rec.n != 12 {
 		t.Fatalf("exposures %d facts %d observations %d unmapped %d step %d", len(proj.got), out.InfoFacts, out.InfoObservations, out.InfoUnmapped, rec.n)
 	}
 }
@@ -184,7 +187,7 @@ func TestInfoMatchesUnmappedAndPanels(t *testing.T) {
 	proj := &fakeTemplateMatches{}
 	s := &Service{logger: logger.NewNop(), templateMatches: proj}
 	out := &Output{}
-	s.routeInfoMatches(context.Background(), shared.NewID(), rep, map[string]shared.ID{"o1": shared.NewID()}, out, Binding{}, facts)
+	s.routeInfoMatches(context.Background(), shared.NewID(), rep, map[string]shared.ID{"o1": shared.NewID()}, out, Binding{}, facts, nil)
 	if len(proj.got) != 2 || out.InfoUnmapped != 1 || out.InfoFacts != 0 || len(rep.Findings) != 0 {
 		t.Fatalf("exposures %d unmapped %d facts %d left %d", len(proj.got), out.InfoUnmapped, out.InfoFacts, len(rep.Findings))
 	}
@@ -299,4 +302,66 @@ func TestTemplatePostureKeepsStoredValues(t *testing.T) {
 	if pos["hsts"] != false {
 		t.Fatalf("a probe report no longer updates the posture: %v", a.Properties())
 	}
+}
+
+// Ingest never drops: a fact-class match that left nothing on its asset is
+// filed as an exposure and counted as unmapped; only a match whose fact
+// stored content, or that the mapping skips on purpose, leaves the findings.
+func TestInfoFactsThatStoreNothingAreFiledAsExposures(t *testing.T) {
+	facts := builtinFacts(t)
+	route := func(t *testing.T, rep *ctis.Report) (*Output, *fakeTemplateMatches) {
+		t.Helper()
+		sc := fullScope()
+		enriched := applyInfoFacts(rep, facts, sc)
+		proj := &fakeTemplateMatches{}
+		s := &Service{logger: logger.NewNop(), templateMatches: proj}
+		out := &Output{}
+		s.routeInfoMatches(context.Background(), shared.NewID(), enriched, map[string]shared.ID{"o1": shared.NewID()}, out, Binding{}, facts, sc)
+		if len(enriched.Findings)+len(proj.got)+out.InfoFacts != len(rep.Findings) {
+			t.Fatalf("counts do not reconcile: %d left + %d exposures + %d facts of %d",
+				len(enriched.Findings), len(proj.got), out.InfoFacts, len(rep.Findings))
+		}
+		return out, proj
+	}
+	filed := func(t *testing.T, rep *ctis.Report, n int) {
+		t.Helper()
+		out, proj := route(t, rep)
+		if len(proj.got) != n || out.InfoUnmapped != n || out.InfoFacts != len(rep.Findings)-n {
+			t.Fatalf("exposures %d unmapped %d facts %d, want %d filed", len(proj.got), out.InfoUnmapped, out.InfoFacts, n)
+		}
+	}
+
+	t.Run("posture matcher the map does not list", func(t *testing.T) {
+		filed(t, factReport(infoMatch("http-missing-security-headers", "x-unknown-header", "https://a.example/")), 1)
+	})
+	t.Run("posture on an asset that is not a web origin", func(t *testing.T) {
+		rep := factReport(infoMatch("http-missing-security-headers", "x-frame-options", "https://a.example/"))
+		rep.Assets[0].Type = ctis.AssetTypeService
+		filed(t, rep, 1)
+	})
+	t.Run("technology name failing the token pattern", func(t *testing.T) {
+		filed(t, factReport(infoMatch("tech-detect", "<script>alert(1)</script>", "https://a.example/")), 1)
+	})
+	t.Run("surface match with no clean path", func(t *testing.T) {
+		filed(t, factReport(infoMatch("robots-txt-endpoint", "", "https://a.example/", "/wp-*", "https://b.example/x")), 1)
+	})
+	t.Run("endpoints past the per-report cap", func(t *testing.T) {
+		var fs []ctis.Finding
+		for i := 0; i < maxFactEndpointsPerReport+3; i++ {
+			fs = append(fs, infoMatch("robots-txt", "", "https://a.example/p"+strconv.Itoa(i)))
+		}
+		filed(t, factReport(fs...), 3)
+	})
+	t.Run("explicit skip is still consumed", func(t *testing.T) {
+		out, proj := route(t, factReport(infoMatch("waf-detect", "nginxgeneric", "https://a.example/")))
+		if len(proj.got) != 0 || out.InfoUnmapped != 0 || out.InfoFacts != 1 {
+			t.Fatalf("exposures %d unmapped %d facts %d", len(proj.got), out.InfoUnmapped, out.InfoFacts)
+		}
+	})
+	t.Run("stored content is consumed", func(t *testing.T) {
+		out, proj := route(t, factReport(infoMatch("http-missing-security-headers", "x-frame-options", "https://a.example/")))
+		if len(proj.got) != 0 || out.InfoUnmapped != 0 || out.InfoFacts != 1 {
+			t.Fatalf("exposures %d unmapped %d facts %d", len(proj.got), out.InfoUnmapped, out.InfoFacts)
+		}
+	})
 }

@@ -35,6 +35,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/assettech"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/templatefact"
+	"github.com/openctemio/openctem/api/pkg/domain/webendpoint"
 )
 
 // TemplateFactsSource gives the template facts mapping
@@ -152,6 +153,7 @@ func applyInfoFacts(report *ctis.Report, m *templatefact.Map, scope *alterScope)
 		}
 	}
 	r := *report
+	scope.resetFactStored()
 	r.Assets = append([]ctis.Asset(nil), report.Assets...)
 	r.Endpoints = append([]ctis.Endpoint(nil), report.Endpoints...)
 	copied := map[int]bool{}
@@ -170,6 +172,7 @@ func applyInfoFacts(report *ctis.Report, m *templatefact.Map, scope *alterScope)
 			continue
 		}
 		a := &r.Assets[ai]
+		stored := fact.Skipped
 		switch fact.Class {
 		case templatefact.ClassTechnology:
 			if !copied[ai] {
@@ -177,11 +180,14 @@ func applyInfoFacts(report *ctis.Report, m *templatefact.Map, scope *alterScope)
 				copied[ai] = true
 			}
 			for _, t := range fact.Technologies {
-				addFactTechnology(a, t)
+				if addFactTechnology(a, t) {
+					stored = true
+				}
 			}
 		case templatefact.ClassPosture:
-			if a.Type == ctis.AssetTypeWebOrigin && len(fact.Posture) > 0 {
+			if a.Type == ctis.AssetTypeWebOrigin && len(webendpoint.SanitizePosture(fact.Posture)) > 0 {
 				scope.addTemplatePosture(a.ID, fact.Posture)
+				stored = true
 			}
 		case templatefact.ClassSurface:
 			origin := factOrigin(f)
@@ -195,7 +201,11 @@ func applyInfoFacts(report *ctis.Report, m *templatefact.Map, scope *alterScope)
 				}
 				r.Endpoints = append(r.Endpoints, e)
 				added++
+				stored = true
 			}
+		}
+		if stored {
+			scope.markFactStored(i)
 		}
 	}
 	return &r
@@ -203,11 +213,12 @@ func applyInfoFacts(report *ctis.Report, m *templatefact.Map, scope *alterScope)
 
 // addFactTechnology adds t to the asset's technologies unless the report
 // already states that technology (the tool's own typed report wins), at
-// most assettech.MaxPerAsset.
-func addFactTechnology(a *ctis.Asset, t templatefact.Technology) {
+// most assettech.MaxPerAsset. It reports whether the asset now states the
+// technology.
+func addFactTechnology(a *ctis.Asset, t templatefact.Technology) bool {
 	key := assettech.Key(t.Name)
-	if key == "" || len(a.Technologies) >= assettech.MaxPerAsset {
-		return
+	if key == "" {
+		return false
 	}
 	for i := range a.Technologies {
 		if assettech.Key(a.Technologies[i].Name) != key {
@@ -218,13 +229,17 @@ func addFactTechnology(a *ctis.Asset, t templatefact.Technology) {
 		if a.Technologies[i].Version == "" && t.Version != "" {
 			a.Technologies[i].Version = t.Version
 		}
-		return
+		return true
+	}
+	if len(a.Technologies) >= assettech.MaxPerAsset {
+		return false
 	}
 	ct := ctis.Technology{Name: t.Name, Version: t.Version, CPE: t.CPE, Confidence: t.Confidence}
 	if t.Category != "" {
 		ct.Categories = []string{t.Category}
 	}
 	a.Technologies = append(a.Technologies, ct)
+	return true
 }
 
 // factOrigin is the normalised origin of the match's URL ("" when none).
@@ -273,4 +288,30 @@ func (s *alterScope) templatePostureFor(ref string) map[string]any {
 		return nil
 	}
 	return s.templatePosture[ref]
+}
+
+// markFactStored records that the fact of the report finding at index i
+// left content on its asset (or was an explicit skip). Nil-safe.
+func (s *alterScope) markFactStored(i int) {
+	if s == nil {
+		return
+	}
+	if s.factStored == nil {
+		s.factStored = map[int]bool{}
+	}
+	s.factStored[i] = true
+}
+
+// resetFactStored forgets earlier marks (a new application of the facts).
+func (s *alterScope) resetFactStored() {
+	if s != nil {
+		s.factStored = nil
+	}
+}
+
+// factWasStored reports whether the fact of the report finding at index i
+// left content (nil-safe: false). A fact match that left none is filed as
+// an exposure, never dropped.
+func (s *alterScope) factWasStored(i int) bool {
+	return s != nil && s.factStored[i]
 }

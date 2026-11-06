@@ -539,6 +539,7 @@ writer, and by `Finding.UpdateSLAStatus` with the same rules
 |---|---|
 | no deadline | `not_applicable` |
 | `false_positive`, `accepted`, `duplicate` | `not_applicable` (a decision not to fix leaves the SLA) |
+| `resolved` with closure reason `out_of_scope` | `not_applicable` (the asset was marked not ours or retired; migration `20261105072455`); a reopen on re-include keeps the deadline |
 | `resolved` | `on_track` when closed by the deadline (met), else `exceeded` (missed): the clock stops at the verified fix; `fix_applied` keeps it running |
 | open, past the deadline | `overdue` |
 | open, otherwise | `on_track`, or `warning` when the escalation job set it and the deadline did not change |

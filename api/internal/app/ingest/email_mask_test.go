@@ -145,8 +145,8 @@ func TestMaskReportEmails_EveryMemberOfAnyTool(t *testing.T) {
 	}
 	f.ID, f.AssetRef, f.Fingerprint, f.PartialFingerprints = "", "", "", nil
 	requireNoAddress(t, "finding", f)
-	if f.Title != "Address j***@example.com disclosed" || f.Description != "Contact J***@EXAMPLE.COM" ||
-		!strings.Contains(f.Web.URL, "email=j***%40example.com") {
+	if f.Title != "Address ***@example.com disclosed" || f.Description != "Contact ***@EXAMPLE.COM" ||
+		!strings.Contains(f.Web.URL, "email=***%40example.com") {
 		t.Fatalf("masked: %q %q %q", f.Title, f.Description, f.Web.URL)
 	}
 	it := f.EvidenceItems[0]
@@ -177,7 +177,7 @@ func TestMaskReportEmails_NilAndEmpty(t *testing.T) {
 }
 
 // Owner rule (research/446): the e-mail extractor's match is kept, never
-// dropped, and its addresses are masked ("j***@example.com") on every path:
+// dropped, and its addresses are masked ("***@example.com") on every path:
 // filed as an info exposure (the default), kept as a finding because the
 // organization files info matches as findings, and kept as a finding
 // because its asset is out of scope.
@@ -217,7 +217,7 @@ func TestEmailExtractorKeptMaskedOnEveryPath(t *testing.T) {
 		proj := &fakeTemplateMatches{}
 		s := &Service{logger: logger.NewNop(), templateMatches: proj}
 		out := &Output{}
-		s.routeInfoMatches(context.Background(), shared.NewID(), report, assetMap, out, Binding{}, facts)
+		s.routeInfoMatches(context.Background(), shared.NewID(), report, assetMap, out, Binding{}, facts, nil)
 		if len(proj.got) == 0 || hasExtractor(report) {
 			t.Fatalf("the extractor match is not an exposure: %d filed, findings %d", len(proj.got), len(report.Findings))
 		}
@@ -234,12 +234,12 @@ func TestEmailExtractorKeptMaskedOnEveryPath(t *testing.T) {
 		total := len(report.Findings)
 		out := &Output{}
 		mutate(out)
-		s.routeInfoMatches(context.Background(), shared.NewID(), report, assetMap, out, Binding{}, facts)
+		s.routeInfoMatches(context.Background(), shared.NewID(), report, assetMap, out, Binding{}, facts, nil)
 		if len(report.Findings) != total || !hasExtractor(report) {
 			t.Fatalf("the extractor finding was dropped: %d of %d", len(report.Findings), total)
 		}
 		raw, _ := json.Marshal(report.Findings)
-		if !strings.Contains(string(raw), "j***@example.com") {
+		if !strings.Contains(string(raw), "***@example.com") {
 			t.Fatalf("masked addresses missing: %s", raw)
 		}
 		requireNoAddress(t, "kept findings", report.Findings)
