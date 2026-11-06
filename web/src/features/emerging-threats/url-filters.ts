@@ -2,7 +2,7 @@
  * The emerging-threat list's filters in the page URL, so a view can be linked
  * to (a dashboard level opens `/emerging-threats?level=immediate&state=open`)
  * and survives a reload. The parameter names are the list API's own (`level`,
- * `state`, `tier`, `exposure=internet`, `search`, `page`, `per_page`), so the
+ * `state`, `tier`, `exposure=internet`, `kev=true`, `search`, `page`, `per_page`), so the
  * address bar and the request agree. A value the API would refuse (an unknown
  * level, a page that is not a positive number) falls back to the default, and
  * a default value is left out of the URL.
@@ -21,7 +21,7 @@ import {
 export const DEFAULT_STATE: StateFilter = 'open'
 const MAX_PER_PAGE = 100
 const TIERS: AlertTier[] = ['confirmed', 'possible']
-const KEYS = ['level', 'state', 'tier', 'exposure', 'search', 'page', 'per_page'] as const
+const KEYS = ['level', 'state', 'tier', 'exposure', 'kev', 'search', 'page', 'per_page'] as const
 const DIGITS = /^\d+$/
 
 /** Every filter of the list, defaults filled in. */
@@ -44,6 +44,7 @@ export function parseListQuery(params: URLSearchParams): ListQuery {
     state: state && STATE_FILTERS.includes(state) ? state : DEFAULT_STATE,
     tier: tier && TIERS.includes(tier) ? tier : undefined,
     internetOnly: params.get('exposure') === 'internet',
+    kevOnly: params.get('kev') === 'true',
     search: params.get('search') ?? '',
     page: positive(params.get('page'), Number.MAX_SAFE_INTEGER, 1),
     perPage: positive(params.get('per_page'), MAX_PER_PAGE, DEFAULT_PER_PAGE),
@@ -61,6 +62,7 @@ export function writeListQuery(base: URLSearchParams, q: ListQuery): URLSearchPa
   if (q.state !== DEFAULT_STATE) next.set('state', q.state)
   if (q.tier) next.set('tier', q.tier)
   if (q.internetOnly) next.set('exposure', 'internet')
+  if (q.kevOnly) next.set('kev', 'true')
   if (q.search) next.set('search', q.search)
   if (q.page > 1) next.set('page', String(q.page))
   if (q.perPage !== DEFAULT_PER_PAGE) next.set('per_page', String(q.perPage))

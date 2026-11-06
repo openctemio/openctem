@@ -127,16 +127,18 @@ sequenceDiagram
     S-->>A: prints the fingerprint on the host
     A->>P: POST /api/v1/sensor-pairings/{id}/approve: fingerprint, organization echo, step-up (sensors:approve)
     P->>P: sensor row (trust New), key pending, grant from the profile
-    S->>P: GET /api/v2/sensor/pairings/{id} until approved: identity and content keys
+    S->>P: GET /api/v2/sensor/pairings/{id} until approved: identity and the grant signed by the pairing key
+    S->>S: verify the grant (pairing id, sensor key, sensor nonce) before confirming
     S->>P: POST /api/v2/sensor/pairings/{id}/complete (signed transcript)
     P->>P: key active, request completed
-    S->>P: GET /api/v2/sensor/hello: job signer key set, checked against the root
+    P-->>S: completed, grant: identity, content keys, job signer key set, TLS roots
+    S->>S: verify again; save only what the grant states
 ```
 
-The pairing answer carries no job-signing key: the sensor reads the job
-signer's key set from `hello` after confirming and keeps it only when it
-verifies against `SENSOR_JOB_SIGNING_ROOT`, or pins it on first use without
-one (sdk-go `identity/pair.go`). Exact handlers and states:
+The job signer's keys and key set come from the signed grant, not from an
+unsigned `hello`: the sensor keeps the key set's root (checked against
+`SENSOR_JOB_SIGNING_ROOT` when the install command gives one). A missing or
+invalid grant saves nothing (sdk-go `identity/pair.go`). Exact handlers and states:
 [sensor pairing](sensor-pairing.md#flow).
 
 ### 3.2 The sensor shows a code
