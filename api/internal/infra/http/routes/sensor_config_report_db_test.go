@@ -300,3 +300,60 @@ func TestSensorConfigReport_ManagementReadAndIsolation_DB(t *testing.T) {
 		t.Fatalf("none %+v", none)
 	}
 }
+
+// GET /api/v1/sensors/core-addresses: the core infrastructure addresses the
+// tenant's active sensors reported, re-parsed as IP addresses, never another
+// organization's.
+func TestSensorCoreAddresses_TenantScoped_DB(t *testing.T) {
+	h := newCtlHarness(t)
+	m := newActivityRouteHarness(t)
+
+	s := h.newSensor(h.tenantID, "core-addrs")
+	body := configReportBody("2026-11-06T08:00:00Z")
+	body["checks"] = append(body["checks"].([]any),
+		map[string]any{"id": "network.core_addresses", "status": "pass", "severity": "info", "code": "listed",
+			"params": map[string]any{
+				"resolvers":      map[string]any{"names": []string{"10.0.0.53", "not-an-ip"}},
+				"gateways":       map[string]any{"names": []string{"10.0.0.1"}},
+				"platform_addrs": map[string]any{"names": []string{"10.0.0.10"}},
+			}},
+		map[string]any{"id": "runtime.control_dns", "status": "warn", "severity": "warning", "code": "cached_address",
+			"params": map[string]any{"host": map[string]any{"host": "platform.example.com"},
+				"since": map[string]any{"int": 1793001600}, "cause": map[string]any{"enum": "server_misbehaving"}}})
+	h.putConfigReport(s, body)
+
+	viewer := m.member(h.tenantID, "viewer")
+	var got handler.SensorCoreAddressesResponse
+	mustJSON(t, m.expect(viewer, http.MethodGet, "/api/v1/sensors/core-addresses", "", http.StatusOK), &got)
+	if len(got.Items) != 1 || got.Items[0].SensorID != s.id {
+		t.Fatalf("items %+v", got.Items)
+	}
+	want := []handler.SensorCoreAddressRecord{{Address: "10.0.0.53", Role: "resolver"}, {Address: "10.0.0.1", Role: "gateway"},
+		{Address: "10.0.0.10", Role: "platform"}}
+	if !slices.Equal(got.Items[0].Addresses, want) {
+		t.Fatalf("addresses %+v, want %+v (a non-address is dropped)", got.Items[0].Addresses, want)
+	}
+
+	// Another organization sees none of them.
+	outsider := m.member(m.tenant(), "admin")
+	var other handler.SensorCoreAddressesResponse
+	b := m.expect(outsider, http.MethodGet, "/api/v1/sensors/core-addresses", "", http.StatusOK)
+	mustJSON(t, b, &other)
+	if len(other.Items) != 0 || strings.Contains(b, "10.0.0.53") {
+		t.Fatalf("cross-tenant read: %s", b)
+	}
+
+	// The catalog explains the DNS check the sensor reported.
+	admin := m.member(h.tenantID, "admin")
+	var rep handler.SensorConfigReportResponse
+	mustJSON(t, m.expect(admin, http.MethodGet, "/api/v1/sensors/"+s.id+"/config-report", "", http.StatusOK), &rep)
+	found := false
+	for _, c := range rep.Checks {
+		if c.ID == "runtime.control_dns" {
+			found = c.Known && strings.Contains(c.Why, "platform.example.com") && strings.Contains(c.Fix["compose"], "extra_hosts")
+		}
+	}
+	if !found {
+		t.Fatalf("runtime.control_dns not explained: %+v", rep.Checks)
+	}
+}

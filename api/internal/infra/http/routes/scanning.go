@@ -146,6 +146,10 @@ func registerSensorManagementRoutes(
 		// no key; a pairing code, when given, travels in the body.
 		r.GET("/install-templates", h.InstallTemplatesRead, middleware.Require(permission.SensorsPair))
 		r.POST("/install-templates", h.InstallTemplates, middleware.Require(permission.SensorsPair))
+		// Core infrastructure addresses the tenant's sensors reported (their
+		// resolvers, gateways, own and platform addresses): the scan form
+		// warns when targets cover them. Before /{id}.
+		r.GET("/core-addresses", h.CoreAddresses, middleware.Require(permission.SensorsRead))
 		r.GET("/{id}", h.Get, middleware.Require(permission.SensorsRead), own)
 		// Signing keys of key-bound sensors (RFC-052).
 		r.GET("/{id}/keys", h.ListSigningKeys, middleware.Require(permission.SensorsRead), own)

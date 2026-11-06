@@ -135,3 +135,44 @@ func (h *SensorHandler) ConfigReport(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(toSensorConfigReportResponse(v))
 }
+
+// SensorCoreAddressesResponse is GET /api/v1/sensors/core-addresses: the
+// core infrastructure addresses (resolvers, gateways, own address, platform
+// addresses) the tenant's active sensors reported, for the scan form's
+// warning. Addresses are re-parsed IP addresses; names are sensor names.
+type SensorCoreAddressesResponse struct {
+	Items []SensorCoreAddressesItem `json:"items"`
+}
+
+// SensorCoreAddressesItem is one sensor's addresses.
+type SensorCoreAddressesItem struct {
+	SensorID   string                    `json:"sensor_id"`
+	SensorName string                    `json:"sensor_name"`
+	Addresses  []SensorCoreAddressRecord `json:"addresses"`
+}
+
+// SensorCoreAddressRecord is one address and its role: resolver,
+// tool_resolver, gateway, host or platform.
+type SensorCoreAddressRecord struct {
+	Address string `json:"address"`
+	Role    string `json:"role"`
+}
+
+// CoreAddresses handles GET /api/v1/sensors/core-addresses.
+func (h *SensorHandler) CoreAddresses(w http.ResponseWriter, r *http.Request) {
+	items, err := h.service.CoreAddresses(r.Context(), middleware.GetTenantID(r.Context()))
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+	out := SensorCoreAddressesResponse{Items: make([]SensorCoreAddressesItem, 0, len(items))}
+	for _, it := range items {
+		addrs := make([]SensorCoreAddressRecord, 0, len(it.Addresses))
+		for _, a := range it.Addresses {
+			addrs = append(addrs, SensorCoreAddressRecord{Address: a.Address, Role: a.Role})
+		}
+		out.Items = append(out.Items, SensorCoreAddressesItem{SensorID: it.SensorID, SensorName: it.SensorName, Addresses: addrs})
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(out)
+}
