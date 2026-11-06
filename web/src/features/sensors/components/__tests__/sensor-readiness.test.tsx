@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event'
 
 const perms = vi.hoisted(() => ({ granted: new Set<string>(['sensors:read']) }))
 const api = vi.hoisted(() => ({
+  toastError: vi.fn(),
   readiness: { data: undefined as unknown, error: undefined as unknown, isLoading: false },
   mutate: vi.fn(),
   bulk: vi.fn(),
@@ -12,6 +13,7 @@ const api = vi.hoisted(() => ({
   calls: [] as (string | null)[],
 }))
 
+vi.mock('sonner', () => ({ toast: { error: api.toastError, success: vi.fn() } }))
 vi.mock('@/lib/permissions', () => ({
   Permission: { SensorsRead: 'sensors:read' },
   useHasPermission: (p: string) => perms.granted.has(p),
@@ -133,6 +135,31 @@ describe('SensorReadinessChecklist', () => {
         expect.objectContaining({ trust_level: 'trusted' })
       )
     )
+  })
+
+  it('answers a refused step-up the way the Grant section does, and keeps the sensor New', async () => {
+    api.readiness = readiness([
+      {
+        key: 'trusted',
+        state: 'blocked',
+        fix: { action: 'promote', permission: 'sensors:grant:widen', allowed: true },
+      },
+    ])
+    // The API client already opened its re-authentication dialog and the
+    // person cancelled it: the original STEP_UP_REQUIRED error reaches us.
+    api.update.mockRejectedValue(
+      Object.assign(new Error('step-up'), { statusCode: 403, code: 'STEP_UP_REQUIRED' })
+    )
+    const user = userEvent.setup()
+    render(<SensorReadinessChecklist sensorId="s1" />)
+    await user.click(screen.getByRole('button', { name: 'Trust this sensor' }))
+    await user.click(await screen.findByRole('button', { name: 'Promote' }))
+    await waitFor(() =>
+      expect(api.toastError).toHaveBeenCalledWith(
+        'Confirm your identity to continue, then try again.'
+      )
+    )
+    expect(api.mutate).not.toHaveBeenCalled()
   })
 
   it('says when nothing blocks it', () => {

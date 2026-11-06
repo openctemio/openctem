@@ -19,9 +19,9 @@ through the page and gate it belongs to.
 | `online` | sensor status, health, first heartbeat | ok, waiting, blocked | `show_install` (host) |
 | `trusted` | grant trust level | ok, blocked, unknown | `promote` (`sensors:grant:widen`, with the grant's step-up and audit) |
 | `private_targets` | local policy report summary `allow_private` | ok, blocked, unknown, not_applicable | `enable_private`: the host line `SENSOR_ALLOW_PRIVATE_TARGETS=1` |
-| `kill_switch` | local policy report `kill_switch` | ok, blocked, unknown | `kill_switch_off`: remove `/etc/openctem/STOP` |
+| `kill_switch` | local policy report `kill_switch` | ok, blocked, unknown | `kill_switch_off`: remove the STOP file the sensor reads at `SENSOR_KILL_SWITCH_FILE` (its path is not reported to the platform) |
 | `networks` | the zones the sensor is assigned to | ok (count), blocked, unknown, not_applicable | `add_zone` (`sensors:zones:write`) |
-| `scope` | private ranges of those zones against active and pending address entries | ok, blocked (count, patterns), waiting (count), unknown, not_applicable | `add_scope` (`attack_surface:scope:write`), through the scope service and its approvals |
+| `scope` | private ranges of those zones against active and pending address entries | ok, blocked (count; patterns only for a caller with `sensors:zones:read`), waiting (count), unknown, not_applicable | `add_scope` (`attack_surface:scope:write`), through the scope service and its approvals |
 | `sandbox` | setup checklist `runtime.sandbox_network` | ok, blocked, unknown | `sandbox_docs`: the host requirements guide |
 
 - Private-network items apply when the grant may scan any network
