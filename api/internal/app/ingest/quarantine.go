@@ -276,9 +276,10 @@ func (s *Service) admitUnsolicited(ctx context.Context, agt *sensor.Sensor, tena
 		return true, nil
 	}
 
-	// A quarantined report is stored as is: mask raw secrets first, as
-	// Ingest does before it applies one.
+	// A quarantined report is stored as is: mask raw secrets and e-mail
+	// addresses first, as Ingest does before it applies one.
 	redactReportSecrets(sub.Report)
+	maskReportEmails(sub.Report)
 	payload, err := json.Marshal(sub.Report)
 	if err != nil {
 		return false, fmt.Errorf("encode quarantined report: %w", err)
@@ -402,6 +403,17 @@ func (s *Service) AcceptQuarantined(ctx context.Context, actx auditapp.AuditCont
 	if item.Status != sensorresult.StatusPending {
 		return nil, sensorresult.ErrAlreadyReviewed
 	}
+	return s.applyQuarantined(ctx, actx, tenantID, item, &by, nil)
+}
+
+// autoRelease says a quarantined item is applied by the platform, not a
+// person: Reason is the audited sentence.
+type autoRelease struct{ Reason string }
+
+// applyQuarantined applies a pending item (see AcceptQuarantined). by is nil
+// for an auto-release; the item is then audited as such.
+func (s *Service) applyQuarantined(ctx context.Context, actx auditapp.AuditContext, tenantID shared.ID, item *sensorresult.Item, by *shared.ID, auto *autoRelease) (*Output, error) {
+	id := item.ID
 	var report ctis.Report
 	if err := json.Unmarshal(item.Payload, &report); err != nil {
 		return nil, fmt.Errorf("%w: the stored report does not parse: %v", shared.ErrValidation, err) //nolint:errorlint // detail
@@ -439,22 +451,33 @@ func (s *Service) AcceptQuarantined(ctx context.Context, actx auditapp.AuditCont
 	if ingErr != nil {
 		result["error"] = ingErr.Error()
 	}
+	if auto != nil {
+		result["auto_accepted"] = true
+		result["reason"] = auto.Reason
+	}
 	if raw, err := json.Marshal(result); err == nil {
 		if err := s.results.SetResult(ctx, tenantID, id, raw); err != nil {
 			s.logger.Warn("could not store the result of an accepted report", "quarantine_id", id.String(), "error", err)
 		}
 	}
 
-	event := auditapp.NewSuccessEvent(audit.ActionSensorResultsAccepted, audit.ResourceTypeSensor, item.SensorID.String()).
+	action, message := audit.ActionSensorResultsAccepted, "Quarantined sensor report accepted and applied"
+	if auto != nil {
+		action, message = audit.ActionSensorResultAutoAccepted, "Quarantined sensor report released: "+auto.Reason
+	}
+	event := auditapp.NewSuccessEvent(action, audit.ResourceTypeSensor, item.SensorID.String()).
 		WithResourceName(item.SensorName).
-		WithMessage("Quarantined sensor report accepted and applied").
+		WithMessage(message).
 		WithMetadata("quarantine_id", id.String()).
 		WithMetadata("report_id", item.ReportID).
 		WithMetadata("tool_name", item.ToolName).
 		WithMetadata("result", result)
 	if ingErr != nil {
-		event = auditapp.NewFailureEvent(audit.ActionSensorResultsAccepted, audit.ResourceTypeSensor, item.SensorID.String(), ingErr).
+		event = auditapp.NewFailureEvent(action, audit.ResourceTypeSensor, item.SensorID.String(), ingErr).
 			WithMetadata("quarantine_id", id.String())
+	}
+	if auto != nil {
+		event = event.WithMetadata("actor", "system").WithMetadata("reason", auto.Reason)
 	}
 	actx.TenantID = tenantID.String()
 	s.auditAsync(actx, event)
@@ -473,7 +496,7 @@ func (s *Service) DiscardQuarantined(ctx context.Context, actx auditapp.AuditCon
 	if err != nil {
 		return err
 	}
-	if err := s.results.Review(ctx, tenantID, id, sensorresult.StatusDiscarded, by); err != nil {
+	if err := s.results.Review(ctx, tenantID, id, sensorresult.StatusDiscarded, &by); err != nil {
 		return err
 	}
 	actx.TenantID = tenantID.String()

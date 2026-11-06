@@ -293,3 +293,24 @@ func TestUnclassifiedMode(t *testing.T) {
 		}
 	}
 }
+
+// An approval covers the scan's step params: editing them after approval is a
+// change of the definition (a new approval), and a scan with none keeps the
+// digest it had before the field existed.
+func TestDigestCoversStepParams(t *testing.T) {
+	a := Definition{Targets: []string{"a.example.com"}, ScanType: "workflow", Intensity: "active", ScheduleType: "manual"}
+	before := a.Digest()
+	b := a
+	b.StepParams = map[string]map[string]any{"*:vuln.templates": {"severity": []any{"info", "low"}}}
+	if a.Digest() != before || a.Digest() == b.Digest() {
+		t.Fatal("step params must change the digest")
+	}
+	c := b
+	c.StepParams = map[string]map[string]any{"*:vuln.templates": {"severity": []any{"critical"}}}
+	if b.Digest() == c.Digest() {
+		t.Fatal("editing a step param must change the digest")
+	}
+	if d := Diff(b, c); len(d) != 1 || d[0].Field != "step_params" {
+		t.Fatalf("diff: %+v", d)
+	}
+}

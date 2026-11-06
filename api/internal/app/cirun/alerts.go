@@ -31,6 +31,7 @@ type AlertJob struct {
 	notifier Notifier
 	audit    Auditor
 	versions cirun.StatusPolicy
+	source   func() cirun.StatusPolicy
 	log      *logger.Logger
 	now      func() time.Time
 }
@@ -43,6 +44,11 @@ func NewAlertJob(repo cirun.Repository, notifier Notifier, audit Auditor, versio
 	return &AlertJob{repo: repo, notifier: notifier, audit: audit, versions: versions,
 		log: log.With("job", "ci-alerts"), now: time.Now}
 }
+
+// SetVersionSource makes the job resolve the CI runner release line on every
+// run (a release learned from the release feed applies without a restart)
+// instead of the fixed one it was created with.
+func (j *AlertJob) SetVersionSource(f func() cirun.StatusPolicy) { j.source = f }
 
 // SetClock replaces the clock (tests).
 func (j *AlertJob) SetClock(now func() time.Time) { j.now = now }
@@ -88,7 +94,11 @@ func (j *AlertJob) ReconcileTenant(ctx context.Context, tenantID shared.ID) (Ale
 	if err != nil {
 		return res, err
 	}
-	current := cirun.EvaluateAlerts(pipes, now, j.versions)
+	vers := j.versions
+	if j.source != nil {
+		vers = j.source()
+	}
+	current := cirun.EvaluateAlerts(pipes, now, vers)
 	refused, err := j.repo.TokenRefusalsSince(ctx, tenantID, now.Add(-cirun.TokenRefusalWindow))
 	if err != nil {
 		return res, fmt.Errorf("count token refusals: %w", err)
@@ -129,7 +139,7 @@ func (j *AlertJob) ReconcileTenant(ctx context.Context, tenantID shared.ID) (Ale
 	// default-branch run failed shows "failing" but still stopped looking.
 	for i := range pipes {
 		p := &pipes[i]
-		a := p.Assess(now, j.versions)
+		a := p.Assess(now, vers)
 		if p.RetiredAt != nil || p.RepositoryArchivedAt != nil || (a.Freshness != cirun.FreshnessStale && a.Freshness != cirun.FreshnessArchived) {
 			continue
 		}

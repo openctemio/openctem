@@ -132,7 +132,6 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.114.5
 	github.com/aws/smithy-go v1.28.6
 	github.com/beevik/etree v1.8.1
-	github.com/crewjam/saml v0.5.1
 	github.com/fxamacker/cbor/v2 v2.9.6
 	github.com/go-chi/chi/v5 v5.5.0
 	github.com/go-git/go-git/v5 v5.19.3
@@ -146,7 +145,7 @@ require (
 	github.com/klauspost/compress v1.20.3
 	github.com/lib/pq v1.12.3
 	github.com/mattermost/xml-roundtrip-validator v0.1.0
-	github.com/openctemio/contract v1.1.1
+	github.com/openctemio/contract v1.5.1
 	github.com/openctemio/contract/transfer v1.0.1
 	github.com/openctemio/ctis/v2 v2.0.1
 	github.com/openctemio/ctis/v2/interop/csaf v0.1.0
@@ -154,6 +153,7 @@ require (
 	github.com/openctemio/ctis/v2/interop/openvex v0.1.0
 	github.com/openctemio/ctis/v2/interop/sarif v0.1.0
 	github.com/openctemio/ctis/v2/interop/spdx v0.1.0
+	github.com/openctemio/saml v0.5.2-openctem.2
 	github.com/pires/go-proxyproto v0.16.0
 	github.com/prometheus/client_golang v1.25.0
 	github.com/prometheus/client_model v0.6.3

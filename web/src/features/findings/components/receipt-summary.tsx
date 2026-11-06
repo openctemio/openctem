@@ -12,6 +12,7 @@ import Link from '@/components/link'
 import { Skeleton } from '@/components/ui/skeleton'
 import { RelativeTime } from '@/features/shared/components/relative-time'
 import { DetailSection } from '@/features/shared/components/detail-sheet'
+import { KeyValueList } from '@/features/shared/components/text-layout'
 import { cn } from '@/lib/utils'
 import {
   useFindingReceipts,
@@ -64,29 +65,61 @@ export function ReceiptSummary({
   const c = receipt.counts
   const running = runState === 'running'
   const full = receipt.coverage?.type === 'full'
+  const noFindingsYet =
+    running &&
+    !c?.created &&
+    !c?.updated &&
+    !c?.reactivated &&
+    !c?.closed &&
+    !c?.skipped &&
+    !c?.failed
+  const reports = receipt.reports ?? 0
+  const received = receipt.received ?? 0
+  const assetsCreated = receipt.assets?.created ?? 0
+  const assetsUpdated = receipt.assets?.updated ?? 0
+  const hasActivity = reports > 0 || received > 0 || assetsCreated > 0 || assetsUpdated > 0
   return (
     <div className="space-y-2" data-testid="receipt-summary">
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-        <Cell label={t('findings.receipts.created', 'New')} value={c?.created ?? 0} />
-        <Cell label={t('findings.receipts.updated', 'Still detected')} value={c?.updated ?? 0} />
-        <Cell label={t('findings.receipts.reactivated', 'Reopened')} value={c?.reactivated ?? 0} />
-        <Cell label={t('findings.receipts.closed', 'Closed')} value={c?.closed ?? 0} />
-        <Cell
-          label={t('findings.receipts.untouched', 'Untouched')}
-          value={c?.untouched === undefined || c?.untouched === null ? null : c.untouched}
-          pending={
-            running
-              ? t('findings.receipts.pendingUntilEnd', 'Counted when the run finishes')
-              : undefined
-          }
-        />
-        <Cell label={t('findings.receipts.skipped', 'Skipped')} value={c?.skipped ?? 0} />
-        <Cell
-          label={t('findings.receipts.failed', 'Failed')}
-          value={c?.failed ?? 0}
-          tone="danger"
-        />
-      </div>
+      {hasActivity ? (
+        <p className="text-muted-foreground text-xs tabular-nums" data-testid="receipt-activity">
+          {t(
+            'findings.receipts.activity',
+            '{reports} reports and {received} findings received, {assetsCreated} assets created, {assetsUpdated} assets updated',
+            { reports, received, assetsCreated, assetsUpdated }
+          )}
+        </p>
+      ) : null}
+      {noFindingsYet ? (
+        <p className="text-sm" data-testid="receipt-no-findings-yet">
+          {t('findings.receipts.noFindingsYet', 'No findings yet')}
+        </p>
+      ) : (
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <Cell label={t('findings.receipts.created', 'New')} value={c?.created ?? 0} />
+          <Cell label={t('findings.receipts.updated', 'Still detected')} value={c?.updated ?? 0} />
+          <Cell
+            label={t('findings.receipts.reactivated', 'Reopened')}
+            value={c?.reactivated ?? 0}
+          />
+          <Cell label={t('findings.receipts.closed', 'Closed')} value={c?.closed ?? 0} />
+          <Cell
+            label={t('findings.receipts.untouched', 'Untouched')}
+            value={c?.untouched === undefined || c?.untouched === null ? null : c.untouched}
+            pending={
+              running
+                ? t('findings.receipts.pendingUntilEnd', 'Counted when the run finishes')
+                : undefined
+            }
+          />
+          <Cell label={t('findings.receipts.skipped', 'Skipped')} value={c?.skipped ?? 0} />
+          <Cell
+            label={t('findings.receipts.failed', 'Failed')}
+            value={c?.failed ?? 0}
+            tone="danger"
+          />
+        </div>
+      )}
+      <ReceiptOutcomes outcomes={receipt.outcomes} />
       <p className="text-muted-foreground text-xs">
         {running
           ? t(
@@ -148,6 +181,68 @@ export function ReceiptSummary({
 }
 
 /** The latest uploads of the organization (or, without the organization view, yours). */
+/** Outcome codes the API sends (ingestreceipt.AllOutcomes), in display order. */
+const OUTCOME_CODES = [
+  'merged',
+  'exposure',
+  'source_mitigated',
+  'unresolved_ref',
+  'out_of_contract',
+  'reserved_tool',
+  'split',
+] as const
+
+function outcomeLabel(t: T, code: (typeof OUTCOME_CODES)[number]): string {
+  switch (code) {
+    case 'merged':
+      return t('findings.receipts.outcome.merged', 'Repeats merged')
+    case 'exposure':
+      return t('findings.receipts.outcome.exposure', 'Filed as exposures')
+    case 'source_mitigated':
+      return t('findings.receipts.outcome.source_mitigated', 'Mitigated at the source')
+    case 'unresolved_ref':
+      return t('findings.receipts.outcome.unresolved_ref', 'Named no asset, refused')
+    case 'out_of_contract':
+      return t(
+        'findings.receipts.outcome.out_of_contract',
+        "Held for review, outside the tool's contract"
+      )
+    case 'reserved_tool':
+      return t('findings.receipts.outcome.reserved_tool', 'Refused, reserved tool name')
+    case 'split':
+      return t('findings.receipts.outcome.split', 'Added by splitting findings with several CVEs')
+  }
+}
+
+/**
+ * Where the received findings went beyond the counts above, so the received
+ * figure always reconciles (research 436). Hidden when there is nothing to say.
+ */
+export function ReceiptOutcomes({ outcomes }: { outcomes?: Record<string, number> }) {
+  const { t } = useTranslation()
+  const rows = OUTCOME_CODES.filter((code) => (outcomes?.[code] ?? 0) > 0)
+  if (rows.length === 0) return null
+  return (
+    <div className="space-y-1" data-testid="receipt-outcomes">
+      <p className="text-muted-foreground text-xs font-medium">
+        {t('findings.receipts.outcomesTitle', 'Where the other findings went')}
+      </p>
+      <KeyValueList
+        size="meta"
+        items={rows.map((code) => ({
+          key: code,
+          label: outcomeLabel(t, code),
+          value: (
+            <span className="tabular-nums" data-testid={`receipt-outcome-${code}`}>
+              {outcomes?.[code] ?? 0}
+            </span>
+          ),
+        }))}
+      />
+    </div>
+  )
+}
+
 export function RecentImports() {
   const { t } = useTranslation()
   const { data, isLoading, error } = useReceipts({ sourceKind: 'upload', perPage: 5 })

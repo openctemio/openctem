@@ -287,6 +287,17 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	platformCA := newPlatformCASource(cfg, log)
 	sensorHandler := newSensorHandlerWithTemplates(svc.Sensor, cfg, v, log)
 	sensorHandler.SetPlatformCA(platformCA)
+	if svc.SensorPairing != nil && platformCA.Configured() {
+		// The signed pairing grant names the platform's TLS roots, so a
+		// sensor refuses a pairing connection that verified another one.
+		svc.SensorPairing.SetTLSAnchors(func() []string {
+			ca, err := platformCA.Get()
+			if err != nil {
+				return nil
+			}
+			return ca.TLSAnchors(time.Now())
+		})
+	}
 	sensorHandler.SetContentPolicySource(svc.SensorContent)
 	sensorHandler.SetPolicyPrefill(&handler.SensorPolicyPrefill{
 		Zones: repos.ScanZone, Targets: repos.ScopeTarget, Exclusions: repos.ScopeExcl, Log: log,
@@ -735,6 +746,8 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		SensorResults:    handler.NewSensorResultHandler(svc.Ingest, sensorHandler, log),
 		ScanZone:         handler.NewScanZoneHandler(svc.ScanZone, svc.Scan, log),
 		ProxyPool:        handler.NewProxyPoolHandler(svc.ProxyPool, log),
+		ToolSource:       handler.NewToolSourceHandler(svc.ToolSource, log),
+		TaskSecrets:      svc.TaskSecrets,
 		ScanWindow:       newScanWindowHandler(svc, log),
 		FindingLifecycle: handler.NewFindingLifecycleHandler(svc.FindingLifecycle, log),
 		Ingest:           ingestHandler,
@@ -1525,15 +1538,23 @@ func sensorHealthPolicy(cfg *config.Config) sensordom.HealthPolicy {
 // judged against at the token exchange and in pipeline health. It is their
 // own line, never the sensor's: the two are versioned apart, and the sensor
 // minimum would refuse every CI runner release.
-func ciRunnerVersionPolicy(cfg *config.Config, log *logger.Logger) cirun.StatusPolicy {
+//
+// The returned function resolves the line per use: the latest release is the
+// built-in ci.latest raised by the verified release feed
+// (versions.CIRunnerLatest), so a CI runner release reaches the snippets,
+// the "update available" verdicts and the alerts without a restart. An
+// operator's CI_RUNNER_LATEST_VERSION keeps winning when set ("none" turns
+// the comparison off). The settings are validated (and a bad one logged)
+// once, here.
+func ciRunnerVersionPolicy(cfg *config.Config, log *logger.Logger) func() cirun.StatusPolicy {
 	sc := cfg.SensorConfig
-	var pol cirun.StatusPolicy
+	var fixed cirun.StatusPolicy
 	for _, s := range []struct {
 		name, value string
 		dst         *string
 	}{
-		{"CI_RUNNER_LATEST_VERSION", sc.CIRunnerLatestVersion, &pol.LatestVersion},
-		{"CI_RUNNER_MIN_VERSION", sc.CIRunnerMinVersion, &pol.MinVersion},
+		{"CI_RUNNER_LATEST_VERSION", sc.CIRunnerLatestVersion, &fixed.LatestVersion},
+		{"CI_RUNNER_MIN_VERSION", sc.CIRunnerMinVersion, &fixed.MinVersion},
 	} {
 		if s.value == "" {
 			continue
@@ -1546,7 +1567,14 @@ func ciRunnerVersionPolicy(cfg *config.Config, log *logger.Logger) cirun.StatusP
 		}
 		*s.dst = v
 	}
-	return pol
+	if sc.CIRunnerLatestPinned {
+		return func() cirun.StatusPolicy { return fixed }
+	}
+	return func() cirun.StatusPolicy {
+		pol := fixed
+		pol.LatestVersion = versions.CIRunnerLatest()
+		return pol
+	}
 }
 
 // newAttachmentHandlerWithAccessCheck creates an AttachmentHandler with campaign
@@ -1678,6 +1706,13 @@ func newEASMHandler(repos *Repositories, svc *Services, log *logger.Logger) *han
 	// confirmed assets no entry covers; read only.
 	if suggestions := newEASMSuggestions(repos, svc); suggestions != nil {
 		h.SetSuggestions(suggestions)
+		// Bulk decisions on the addresses card (research/425): checked
+		// against the caller's own card, applied through the scope, review
+		// and network seed services.
+		if svc.Scope != nil && svc.EASMNetworkSeeds != nil && repos.EASMDeclinedNetwork != nil {
+			h.SetAddressDecisions(easmapp.NewAddressDecisions(suggestions, svc.Scope, review,
+				svc.EASMNetworkSeeds, repos.EASMDeclinedNetwork, newAddressAutoAdd(repos, svc, log)))
+		}
 	}
 	// Review by rule (RFC-054 §6.7): rules are scope entries and exclusions.
 	if svc.ScopeJoin != nil && svc.ActiveGate != nil && svc.Scope != nil {
@@ -1709,6 +1744,10 @@ func newEASMSuggestions(repos *Repositories, svc *Services) *easmapp.SuggestionS
 	// Addresses the unclassified-scans mode already checks need no
 	// decision: the same mode the active gate reads.
 	suggestions.SetUnclassified(svc.ActiveGate.UnclassifiedMode)
+	// Networks the organization answered "not ours" are not offered again.
+	if repos.EASMDeclinedNetwork != nil {
+		suggestions.SetDeclined(repos.EASMDeclinedNetwork)
+	}
 	// The organization's address setting in force (never hides the card;
 	// Strict scan approval turns automatic adds into ask).
 	if svc.Tenant != nil && svc.Scope != nil {
@@ -2008,7 +2047,7 @@ func newCIRunService(cfg *config.Config, repos *Repositories, svc *Services, log
 		Units:    repos.CIRun,
 		Audit:    audit,
 		Alerts:   ciAlerts,
-	}, cirunapp.Config{WebBaseURL: cfg.SMTP.BaseURL, Versions: ciRunnerVersionPolicy(cfg, log)}, log)
+	}, cirunapp.Config{WebBaseURL: cfg.SMTP.BaseURL, VersionSource: ciRunnerVersionPolicy(cfg, log)}, log)
 	// No CI run token is issued or accepted for a suspended organization.
 	ciSvc.SetOrganizationGate(svc.OrganizationGate)
 	if svc.Suppression != nil {

@@ -25,8 +25,8 @@ category, so the "by type" counts on the Exposures view are stable:
 
 | Category | Event types | Producer today |
 |---|---|---|
-| `exposed_ports` | `port_open`, `port_closed`, `service_detected`, `service_changed` | port scans |
-| `web_interfaces` | `web_interface_exposed` | planned |
+| `exposed_ports` | `port_open`, `port_closed`, `service_detected`, `service_changed`, `risky_service_exposed` | port scans, service detection (`service-kinds.md`) |
+| `web_interfaces` | `web_interface_exposed` | template scanner info matches (panels) |
 | `exposed_apis` | `api_exposed`, `api_removed` | API discovery |
 | `ai_services` | `mcp_server_exposed` | planned |
 | `web_application` | `misconfiguration`, `header_missing` | web scans |
@@ -40,7 +40,7 @@ category, so the "by type" counts on the Exposures view are stable:
 | `dns` | `subdomain_discovered`, `subdomain_removed`, `dns_change` | discovery |
 | `lookalike_domains` | `lookalike_domain` | lookalike monitoring |
 | `identity` | `identity_mfa_gap`, `identity_stale_principal`, `identity_overprivileged` | identity sources |
-| `other` | `custom` and any unknown type | imports |
+| `other` | `custom` and any unknown type | imports, template scanner info matches (technology, WAF) |
 
 `exposure.Categories()` marks which categories have a producer (`Produced`).
 The web shows a category in the summary strip only when it has a producer or
@@ -49,6 +49,42 @@ exposures, so empty placeholders never appear.
 API: every exposure carries `display_category`; `GET /exposures?category=` filters
 by category (ANDed with `event_type`; an unknown category is a validation
 error); `GET /exposures/stats` returns `by_category`.
+
+## Template scanner info matches
+
+A template scanner (nuclei) reports an info match for what a host shows rather
+than what is wrong with it: the technology it runs, a login panel, its TLS and
+header posture, a WAF in front of it. Filed as findings they bury the
+vulnerabilities; not run at all, a scan of a well-kept host reports nothing.
+
+At ingest (`internal/app/ingest/info_matches.go`) the info-severity findings
+of a tool that implements `vuln.templates` or `dast.web` leave the report
+before finding ingest and become info exposures of their assets
+(`exposure.NewTemplateMatchEvent`, source `template_scan`):
+
+| Template tags or id | Event type |
+|---|---|
+| `panel`, `login` | `web_interface_exposed` |
+| `ssl`, `tls` | `ssl_issue` |
+| `headers`, `header`, an id with `security-headers` | `header_missing` |
+| `spf`, `dmarc`, `dkim`, `mail` | `email_security_weak` |
+| `misconfig`, `exposure`, `config` | `misconfiguration` |
+| anything else (technology, WAF detection) | `custom` |
+
+One exposure per template, matcher and URL on an asset: the header template's
+ten matchers are ten exposures, and a match seen again bumps its exposure's
+last seen (a resolved one is reactivated, a false positive stays closed). The
+URL keeps scheme, host, port and path only (a query string can carry a
+token); every value is single-line and capped. Only matches the finding
+pipeline would accept move: an asset that is excluded, outside the bound
+job, outside the uploader's scope or not resolved keeps its findings, refused
+there as before. If the exposures cannot be stored the matches stay findings.
+
+Each scan step run counts them (`scan_run_steps.info_observations`, shown on
+the run map as "N info observations" and returned on step runs), so a run that
+found no vulnerability still shows what it saw. An organization that wants
+them as findings turns on `info_matches_as_findings` in the attack surface
+settings (`PUT /api/v1/easm/settings`, `settings:write`).
 
 ## One-line summary
 

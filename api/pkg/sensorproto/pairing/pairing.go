@@ -214,6 +214,11 @@ type StatusResponse struct {
 	ExpiresAt   time.Time `json:"expires_at"`
 	PollSeconds int       `json:"poll_interval_seconds"`
 	Identity    *Identity `json:"identity,omitempty"`
+	// Grant is the platform's signed statement of the identity and of
+	// everything else the sensor pins (grant.go), on an approved or
+	// completed request. A sensor verifies it and uses only what it
+	// states; Identity stays for sensors from before it.
+	Grant *SignedGrant `json:"grant,omitempty"`
 }
 
 // ConfirmRequest is the body of POST /pairings/{id}/complete: the sensor's

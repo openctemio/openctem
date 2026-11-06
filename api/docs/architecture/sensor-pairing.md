@@ -41,11 +41,14 @@ sequenceDiagram
     SV->>DB: Approve under row lock - limit check, sensors row (trust New), sensor_keys pending, grant from the profile, confirm_by now+10 min
     loop every poll_seconds
         S->>H: GET /api/v2/sensor/pairings/{id} (signed by the same key)
-        H-->>S: status approved, identity (sensor_id, tenant_id, key_id, content_signing)
+        H-->>S: status approved, identity, grant signed by the platform pairing key
     end
-    S->>H: POST /api/v2/sensor/pairings/{id}/complete (Ed25519 over ConfirmTranscript)
+    S->>S: VerifyGrant with the start answer's platform key - pairing id, sensor key, sensor nonce
+    S->>H: POST /api/v2/sensor/pairings/{id}/complete (Ed25519 over ConfirmTranscript of the signed identity)
     H->>SV: Confirm - verify transcript, ConfirmUnscoped
     SV->>DB: sensor_keys pending to active, sensor_pairings completed
+    H-->>S: status completed, grant (identity, content keys, job signer, TLS roots)
+    S->>S: VerifyGrant again, same identity, save only what it states
     SV-->>A: audit sensor.pairing_completed, sensor event, admins notified
 ```
 
@@ -57,9 +60,11 @@ Code references: routes `internal/infra/http/routes/sensor_pairing.go`
 `fingerprint.go:fingerprintMismatch` (a wrong pick denies the request, audits
 high and notifies the administrators), repository
 `internal/infra/postgres/sensor_pairing_repository.go` (`Approve`,
-`ConfirmUnscoped`). The confirm answer carries no job-signing key: the sensor
-fetches the job signer's key set and checks it against the root it got from
-the install command ([job signing](job-signing.md)).
+`ConfirmUnscoped`). The approval and confirm answers carry the signed grant
+(see [Signed grant](#signed-grant-what-the-sensor-pins)): the job signer's
+keys and key set come from it, and a sensor given `SENSOR_JOB_SIGNING_ROOT`
+by the install command also checks that key set against that root
+([job signing](job-signing.md)).
 
 Enrollment token (organization scope; an instance token takes the same path in
 `instance.go` for a shared sensor):
@@ -257,6 +262,85 @@ algorithm: "ed25519", public_key}` in the form of the job-signing keys
 (`keyid` is `SHA256:` + hex of the SHA-256 of the raw key, which the sensor
 recomputes). The sensor pins them over the pairing connection and never takes
 a key from a content route.
+
+### Signed grant (what the sensor pins)
+
+The fingerprint (SAS) the administrator compares covers the start answer
+only: the platform key, both nonces and the sensor key. Someone in the
+middle of the first pairing (DNS hijack plus a publicly trusted certificate,
+a TLS-inspecting proxy) could relay the start untouched, so the
+fingerprints match, and then swap what the sensor learned afterwards: the
+identity and its content keys, the job signer (read from the unsigned
+hello) and the TLS anchor (learned on first use). So every approved or
+completed answer (`GET /api/v2/sensor/pairings/{id}`, `POST .../complete`)
+carries `grant`: a statement the platform signs with the same pairing key as
+the start answer (`sensorpairing.Service.grant`, `pkg/sensorproto/pairing/grant.go`).
+
+| Member of the statement | Value |
+|---|---|
+| `protocol`, `pairing_id`, `sensor_key`, `sensor_nonce` | `openctem-pairing/v1`, this request, the sensor's public key and the nonce it revealed: a grant is valid for one request of one sensor |
+| `identity` | sensor id, organization (none for a shared sensor), name, key id, scope, re-pair flag, `content_signing` |
+| `signed_jobs` | the hello's `signed_jobs` block (payload type, signer keys, root-signed key set), from the job signer (`SetSignedJobs`); absent when the platform does not sign jobs |
+| `tls_anchors` | `sha256:<hex>` of the SubjectPublicKeyInfo of each live root in `PLATFORM_CA_CERT_FILE` (`PlatformCA.TLSAnchors`); absent with a publicly trusted certificate |
+
+Wire form: `{"payload": base64url(JSON), "signature": base64url(Ed25519 over
+"openctem/sensor-pairing/grant/v1" ‖ 0 ‖ payload)}`. The payload is signed
+as bytes, so no canonical JSON is needed; the sensor decodes the payload it
+verified and uses nothing else. The shared vectors
+(`pkg/sensorproto/pairing/testdata/vectors.json`, `grant_payload`,
+`grant_signature`) pin the encoding in both repositories.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant S as Sensor (sdk-go identity.Pair)
+    participant M as Someone in the middle
+    participant P as Platform
+    S->>M: start (sensor key, commitment)
+    M->>P: start, unchanged
+    P-->>M: platform key, nonce, signature over PlatformTranscript
+    M-->>S: unchanged, so the fingerprints the admin compares match
+    Note over S,P: reveal, admin approves after comparing the fingerprint
+    P-->>M: approved, grant signed by the platform key
+    M-->>S: grant with the job keys, content keys or TLS roots swapped
+    S->>S: VerifyGrant with the start answer's platform key fails
+    S--xP: no confirm; nothing saved, error names "approval answer" and pairing_answer_unsigned
+    Note over S,M: re-signing with the attacker's key fails the same way, and a valid grant of another sensor names another key and nonce
+```
+
+On the sensor (`sdk-go/pkg/sensorkit/identity/pair.go:confirm`):
+
+- the approval answer's grant must verify before the sensor confirms, and
+  the sensor confirms the identity it states;
+- the confirm answer's grant must verify and state the same sensor,
+  organization, key and scope;
+- only that grant is saved: identity, content keys, job signer (the hello
+  is not read during pairing), and with `tls_anchors` the anchor the pairing
+  connections verified must be one of them (`ErrTLSAnchorMismatch`;
+  `SENSOR_CA_FINGERPRINT` given out of band still wins).
+
+Any failure stops pairing with an error naming the step and
+`pairing_answer_unsigned`; `identity.json` is not written and
+`pairing.json` is dropped. A sensor talking to a platform from before the
+grant refuses with "upgrade the platform" and never falls back; a sensor
+from before the grant ignores the new member and pairs as before (the
+contract stays `openctem-pairing/v1`). A platform whose grant cannot be
+signed logs an error and sends none, which a sensor refuses.
+
+After pairing the job signer changes only through the pinned root: a new
+signer key arrives in a key set signed by that root, a lower version is a
+rollback and is refused (`jobsig.KeySetTrust`), keys pinned without a root
+are never replaced, and content keys are never taken from a content route.
+Replacing the root, the content keys or the TLS anchor takes a new pairing.
+
+Tests: `internal/app/sensorpairing/grant_db_signed_test.go` (grant on the
+approval and confirm answers, another sensor's grant and another nonce
+refused, nothing claimed without a signer or roots),
+`internal/app/sensor/ca_test.go:TestPlatformCA_TLSAnchors`,
+`pkg/sensorproto/pairing/grant_test.go`; sdk-go
+`pkg/sensorkit/identity/pair_grant_test.go` (a changed or re-signed grant,
+a changed TLS anchor, an unsigned platform, another sensor's grant: refused,
+nothing saved) and `conformance.RunPairingGrantSuite`.
 
 ### Onboarding: one install path
 

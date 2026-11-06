@@ -19,6 +19,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/assettech"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/branch"
+	"github.com/openctemio/openctem/api/pkg/domain/ingestreceipt"
 	"github.com/openctemio/openctem/api/pkg/domain/ingestreport"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/sensorresult"
@@ -112,8 +113,14 @@ type Service struct {
 	// stepOutputs records what command-bound reports of workflow steps
 	// wrote, for chained stages; commandIngested is told when a v2 report
 	// of a command finished (step_outputs.go). Nil-safe.
-	stepOutputs     StepOutputRecorder
-	commandIngested CommandIngestedHook
+	stepOutputs StepOutputRecorder
+	// templateMatches files template info matches as exposures and
+	// stepInfo counts them on their step run (info_matches.go).
+	templateMatches TemplateMatchProjector
+	stepInfo        StepInfoRecorder
+	// stepDispositions counts held and refused findings on their step run.
+	stepDispositions StepDispositionRecorder
+	commandIngested  CommandIngestedHook
 
 	// coverageMode and coverageGuard drive coverage-scoped auto-resolve of
 	// non-repository findings (coverage_autoresolve.go). The zero mode is
@@ -134,6 +141,9 @@ type Service struct {
 	nameProber      NameProber
 	resolutionStore assetresolution.Store
 	results         sensorresult.Repository
+	// release is the progress of the out-of-contract release sweeps
+	// (quarantine_release.go).
+	release releaseState
 	// policyVersions and policies: the versioned policy snapshots.
 	policyVersions PolicyVersionReader
 	policies       policyCache
@@ -276,6 +286,12 @@ func (s *Service) SetWebContentRecorder(r WebContentRecorder) {
 // SetWebEvidenceRecorder enables web evidence captures (RFC-081).
 func (s *Service) SetWebEvidenceRecorder(r WebEvidenceRecorder) {
 	s.assetProcessor.SetWebEvidenceRecorder(r)
+}
+
+// SetPageChangeNotifier schedules a new capture of a web service whose page
+// changed (RFC-081).
+func (s *Service) SetPageChangeNotifier(n PageChangeNotifier) {
+	s.assetProcessor.SetPageChangeNotifier(n)
 }
 
 // SetAssetsObservedCallback sets the callback for every asset an ingest
@@ -453,6 +469,9 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	// stay two findings.
 	s.findingProcessor.keyRawSecrets(tenantID, report)
 	redactReportSecrets(report)
+	// PRIVACY: e-mail addresses in any tool's finding text and evidence are
+	// masked (local part), before anything is stored (email_mask.go).
+	maskReportEmails(report)
 	// Fill the normalized members a CTIS 1.4 report left empty from its
 	// typed ids and native identity (interop.go), before the CVE catalog
 	// step and the identity recipes read them.
@@ -504,7 +523,10 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 		s.ResultPolicy(ctx, tenantID).Mode == sensorresult.ModeWarn
 	// Output-type binding (research/27 G12): a command-bound report may
 	// carry only the asset types its tool produces or takes.
-	report = s.bindOutputTypes(ctx, agt, tenantID, binding, report, opts)
+	sentFindings := len(report.Findings)
+	sent := report
+	report, findingsHeld, findingsLost, holds := s.bindOutputTypesHolds(ctx, agt, tenantID, binding, report, opts)
+	outOfContract := sentFindings - len(report.Findings)
 	// Which channel reported the findings is the platform's to say, from
 	// the principal: a sensor's metadata.source_type is ignored, so it can
 	// never file its findings as a person's or an integration's.
@@ -526,11 +548,20 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	)
 
 	output := &Output{
+		FindingsReceived:  sentFindings + max(opts.FindingsRefusedBeforeIngest, 0),
 		ReportID:          reportID,
 		Binding:           binding.String(),
 		UnsolicitedWarned: unsolicitedWarned,
 		policy:            policy,
+		FindingsHeld:      findingsHeld,
+		FindingsLost:      findingsLost,
 	}
+	output.addOutcome(ingestreceipt.OutcomeUnresolvedRef, opts.FindingsRefusedBeforeIngest)
+	output.addOutcome(ingestreceipt.OutcomeOutOfContract, outOfContract)
+	if holds != nil {
+		output.HeldAssetRefs, output.HeldFindings, output.HoldLost = holds.assetRefs, holds.findings, holds.lost
+	}
+	addRefusedItems(output, sent, holds, opts.RefusedItems)
 	// Web endpoints (and legacy discovered_url assets) go to the web surface
 	// sub-inventory under their origin asset, never one asset per URL.
 	// Detection rules read the web services before anything is stored
@@ -677,8 +708,13 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	// closed when software changes. A report claiming it is refused.
 	if report.Tool != nil && tooldom.SameTool(report.Tool.Name, softwarematch.ToolName) && len(report.Findings) > 0 {
 		addError(output, "findings: the tool name "+softwarematch.ToolName+" is reserved")
+		output.addOutcome(ingestreceipt.OutcomeReservedTool, len(report.Findings))
 		report.Findings = nil
 	}
+
+	// Step 2b: info matches of template scanners become exposures, not
+	// findings (info_matches.go).
+	s.routeInfoMatches(ctx, tenantID, report, assetMap, output, binding)
 
 	// Step 2c: Process findings using batch operations (if findingRepo is available)
 	if s.findingRepo != nil && len(report.Findings) > 0 {

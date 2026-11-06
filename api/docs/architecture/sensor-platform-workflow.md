@@ -127,16 +127,18 @@ sequenceDiagram
     S-->>A: prints the fingerprint on the host
     A->>P: POST /api/v1/sensor-pairings/{id}/approve: fingerprint, organization echo, step-up (sensors:approve)
     P->>P: sensor row (trust New), key pending, grant from the profile
-    S->>P: GET /api/v2/sensor/pairings/{id} until approved: identity and content keys
+    S->>P: GET /api/v2/sensor/pairings/{id} until approved: identity and the grant signed by the pairing key
+    S->>S: verify the grant (pairing id, sensor key, sensor nonce) before confirming
     S->>P: POST /api/v2/sensor/pairings/{id}/complete (signed transcript)
     P->>P: key active, request completed
-    S->>P: GET /api/v2/sensor/hello: job signer key set, checked against the root
+    P-->>S: completed, grant: identity, content keys, job signer key set, TLS roots
+    S->>S: verify again; save only what the grant states
 ```
 
-The pairing answer carries no job-signing key: the sensor reads the job
-signer's key set from `hello` after confirming and keeps it only when it
-verifies against `SENSOR_JOB_SIGNING_ROOT`, or pins it on first use without
-one (sdk-go `identity/pair.go`). Exact handlers and states:
+The job signer's keys and key set come from the signed grant, not from an
+unsigned `hello`: the sensor keeps the key set's root (checked against
+`SENSOR_JOB_SIGNING_ROOT` when the install command gives one). A missing or
+invalid grant saves nothing (sdk-go `identity/pair.go`). Exact handlers and states:
 [sensor pairing](sensor-pairing.md#flow).
 
 ### 3.2 The sensor shows a code
@@ -554,7 +556,7 @@ sequenceDiagram
 | E23 | Cancel while running | the holder learns on its next heartbeat (or the v3 stream), stops and hands back; nothing from it is delivered | `postgres/command_lease.go:CommandsToCancel` | sdk-go `TestQueue_CancelFromHeartbeat` |
 | E24 | Scan window closes mid-run | after a grace the task is re-queued, then canceled | `app/command/window_closing.go:EnforceClosedWindows` | `tests/unit/command_window_hold_test.go:TestEnforceClosedWindows_GraceThenRequeue` |
 | E25 | Catalog gains a tool a sensor already reported | the sensor is asked for its manifest after the next platform start and re-projected | `app/sensor/manifest.go:LoadManifestRechecks` | `routes/sensor_manifest_db_test.go:TestSensorManifest_CatalogGainsToolReprojects` |
-| E27 | Bound result names hosts outside the job | located assets outside the targets (and their findings) are dropped, counted (`sensor_results_outside_job_total`) and audited (`sensor.results_outside_job`); never created | `ingest/job_bound.go` | `ingest/job_bound_test.go`, `routes/sensor_results_job_bound_db_test.go` |
+| E27 | Bound result names hosts outside the job | located assets outside the targets (and their findings) are recorded as discoveries that grant nothing and run no automations, counted (`sensor_results_outside_job_total`) and audited (`sensor.results_outside_job`); past 1000 per report they are refused (`over_cap`) | `ingest/job_bound.go` | `ingest/job_bound_test.go`, `routes/sensor_results_job_bound_db_test.go` |
 | E29 | Host completes the TLS handshake, then resets every HTTP request (often with an expired certificate, or another site's default certificate) | nuclei's host breaker skips it; the sensor rechecks each skipped host once (one handshake and one `HEAD /` through the task's egress proxy, at most 32 hosts and 90 s per run) and the gap carries `cause` (`http_reset`, `tls_failed`, `reset`, `refused`, `no_answer`, `answered`) and `cert` (`expired`, `not_yet_valid`, `name_mismatch`, `self_signed`); a host that opened the connection counts as reached, not unreachable. httpx's failed https URL whose host answered gets a live host with status 0 and the certificate the sensor read itself, so the certificate is recorded and judged. The host stays a coverage gap (never covered, findings never auto-closed); the console words the cause, the certificate and the fix (scanner addresses to allow, rescan) | sensor `internal/tlscheck`, `internal/recon/httpx/tls_only.go`, sdk-go `tlsprobe/tlsprobe.go`; `pkg/domain/scanrun/coverage_gaps.go:ParseCoverageGaps`, `web/src/features/scans/lib/placement-help.ts:gapReasonHelp` | sensor `TestSkippedHostThatResetsIsRecheckedNotUnreachable`, `TestFailedHTTPSKeepsTheCertificate`; `scanrun/coverage_gaps_test.go:TestParseCoverageGapsCauseAndCert`, `ingest/coverage_autoresolve_test.go:TestDecideCoverage` |
 | E28 | Sensor labels its findings `manual` or `integration` | ignored: the channel comes from the sensor's role | `ingest/channel.go` | `ingest/job_bound_test.go:TestPrincipalSourceType`, `routes/sensor_results_job_bound_db_test.go` |
 | E26 | Sensor key lost (volume wiped) | the sensor cannot authenticate; console re-pair keeps the registration; outbox items are not identity-bound and are sent under the new key | `sensorpairing/service.go:Approve` | `sensorpairing/service_db_test.go:TestPairing_Repair_DB` |

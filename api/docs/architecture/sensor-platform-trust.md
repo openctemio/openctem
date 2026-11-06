@@ -32,12 +32,22 @@ flowchart LR
     end
     ROOT["offline root key<br/>job signer key set"]
     ID -- "every request signed RFC 9421<br/>keyid, nonce, Content-Digest" --> API
-    API -- "pairing answers signed by the<br/>platform pairing key" --> ID
+    API -- "pairing start and grant signed by the<br/>platform pairing key (identity, content keys,<br/>job signer, TLS roots)" --> ID
     SIG -- "jobs as DSSE envelopes<br/>tenant, sensor, command, epoch, targets" --> EX
     ROOT -. "pins the key set<br/>SENSOR_JOB_SIGNING_ROOT" .-> EX
     LP -- "narrows every signed job" --> EX
     EX -- "results bound to command and epoch,<br/>hostile input" --> ING
 ```
+
+Pairing: the fingerprint an administrator compares covers the start
+answer; everything the sensor pins afterwards (identity, content keys, job
+signer, TLS roots) comes from a grant signed with the same pairing key and
+bound to that request, sensor key and nonce, so someone in the middle of the
+first pairing who relays the start untouched cannot swap them
+([signed grant](sensor-pairing.md#signed-grant-what-the-sensor-pins), with
+its sequence). Residual: a platform with a publicly trusted certificate
+names no TLS root, so the sensor's TLS pin is still learned at that first
+pairing; jobs, content and identity stay signed.
 
 A signed sensor request (`internal/infra/http/handler/sensor_signature.go:authenticateSigned`,
 called by `SensorResultsV2Handler.Authenticate`, the v1 ingest authenticator and
@@ -94,6 +104,7 @@ the RFC holds the design and phase plan.
 
 | Control | Where |
 |---|---|
+| Everything a sensor pins at pairing (identity, content keys, job signer keys and key set, TLS roots) comes from a grant signed with the pairing key the administrator's fingerprint check covers, bound to the request, the sensor key and its nonce; a sensor saves nothing without it | [sensor-pairing.md](sensor-pairing.md#signed-grant-what-the-sensor-pins) |
 | Declarative jobs only, never shell; signed custom-template manifests | sdk-go command poller; RFC-040 §5.8 |
 | Platform-side scope check before dispatch; scan targets limited to what the actor may act on | [active-probe-gate.md](active-probe-gate.md) |
 | Sensor-local, read-only policy set by the network owner (allowed ranges, ports, check types, kill switch); the platform stops dispatching jobs a sensor would refuse | [sensors.md](sensors.md#sensor-local-policy-rfc-040-57) |

@@ -63,7 +63,7 @@ func TestBoundCapability(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			r := openPortReport(tc.tool, tc.claim)
-			got := s.bindOutputTypes(ctx, agt, *agt.TenantID, boundCommand(tc.tool), r, Options{})
+			got, _, _ := s.bindOutputTypes(ctx, agt, *agt.TenantID, boundCommand(tc.tool), r, Options{})
 			if reportCapability(got) != tc.want {
 				t.Fatalf("capability %q, want %q", reportCapability(got), tc.want)
 			}
@@ -79,7 +79,7 @@ func TestBoundCapabilityIsTenantScoped(t *testing.T) {
 	}}
 	s := &Service{logger: logger.NewNop(), results: &policyResults{mode: sensorresult.ModeWarn}, contracts: src}
 	other.ID = owner.ID // same sensor id, another tenant
-	got := s.bindOutputTypes(context.Background(), other, *other.TenantID, boundCommand("acme-ports"), openPortReport("acme-ports", "scan.ports@1"), Options{})
+	got, _, _ := s.bindOutputTypes(context.Background(), other, *other.TenantID, boundCommand("acme-ports"), openPortReport("acme-ports", "scan.ports@1"), Options{})
 	if reportCapability(got) != "" {
 		t.Fatalf("a foreign tenant's declaration bound the capability: %q", reportCapability(got))
 	}
@@ -112,7 +112,7 @@ func TestCapabilityContractWarnsAndApplies(t *testing.T) {
 	s := &Service{logger: logger.NewNop(), results: &policyResults{mode: sensorresult.ModeQuarantine}}
 	r := &ctis.Report{Metadata: ctis.ReportMetadata{ID: testReportID}, Tool: &ctis.Tool{Name: "naabu"},
 		Assets: []ctis.Asset{{ID: "ip", Type: ctis.AssetTypeIPAddress, Value: "192.0.2.10"}}} // no ports
-	got := s.bindOutputTypes(context.Background(), agt, *agt.TenantID, boundCommand("naabu"), r, Options{})
+	got, _, _ := s.bindOutputTypes(context.Background(), agt, *agt.TenantID, boundCommand("naabu"), r, Options{})
 	if len(got.Assets) != 1 || reportCapability(got) != "scan.ports@1" {
 		t.Fatalf("applied %+v capability %q", got.Assets, reportCapability(got))
 	}
