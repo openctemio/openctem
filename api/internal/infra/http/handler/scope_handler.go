@@ -547,6 +547,9 @@ type CreateScopeExclusionRequest struct {
 	Methods    []string `json:"methods,omitempty" validate:"omitempty,max=7"`
 	// Kind: why it is out of scope (default do_not_scan).
 	Kind string `json:"kind,omitempty" validate:"omitempty,oneof=do_not_scan not_ours retired"`
+	// ConfirmCritical confirms closing open critical, P0 or KEV findings
+	// (else 409 EXCLUSION_CLOSES_CRITICAL_FINDINGS).
+	ConfirmCritical bool `json:"confirm_critical,omitempty"`
 }
 
 // SetExclusionTestingRequest sets how a path exclusion may be tested.
@@ -560,6 +563,9 @@ type UpdateScopeExclusionRequest struct {
 	Reason    *string    `json:"reason" validate:"omitempty,max=1000"`
 	ExpiresAt *time.Time `json:"expires_at"`
 	Kind      *string    `json:"kind,omitempty" validate:"omitempty,oneof=do_not_scan not_ours retired"`
+	// ConfirmCritical confirms closing open critical, P0 or KEV findings
+	// when the change makes the exclusion close findings.
+	ConfirmCritical bool `json:"confirm_critical,omitempty"`
 }
 
 // BulkDeleteTargetsRequest represents bulk delete targets request.
@@ -638,6 +644,13 @@ func approvalsResponse(list []scopedom.Approval) []ScopeApprovalResponse {
 	return out
 }
 
+// ScopeCriticalClosuresDetails is the details of a 409
+// EXCLUSION_CLOSES_CRITICAL_FINDINGS: how many open critical, P0 or KEV
+// findings the exclusion would close; resend with confirm_critical.
+type ScopeCriticalClosuresDetails struct {
+	CriticalFindings int `json:"critical_findings"`
+}
+
 // writeScopeEntryError answers the errors of the scope entry path (step-up
 // and the coded entry errors, RFC-054 §6.1) and reports whether it did. Every
 // route that creates or widens a scope entry answers them the same way.
@@ -651,6 +664,16 @@ func writeScopeEntryError(w http.ResponseWriter, err error) bool {
 	if errors.As(err, &dup) {
 		apierror.New(http.StatusConflict, apierror.Code(dup.Code()), dup.Message()).
 			WithDetails(ScopeDuplicateDetails{ID: dup.Existing.ID.String(), Status: dup.Existing.Status.String()}).
+			WriteJSON(w)
+		return true
+	}
+	// Closing critical-tier findings needs the caller's confirm: the count
+	// lets the client ask for it (research/438).
+	var crit *scope.CriticalClosuresError
+	if errors.As(err, &crit) {
+		apierror.New(http.StatusConflict, apierror.Code(scope.CodeClosesCriticalFindings),
+			"This would close critical, P0 or KEV findings as out of scope; confirm to continue").
+			WithDetails(ScopeCriticalClosuresDetails{CriticalFindings: crit.Count}).
 			WriteJSON(w)
 		return true
 	}
@@ -1231,15 +1254,16 @@ func (h *ScopeHandler) CreateExclusion(w http.ResponseWriter, r *http.Request) {
 	}
 
 	input := scope.CreateExclusionInput{
-		TenantID:      tenantID,
-		ExclusionType: req.ExclusionType,
-		Pattern:       req.Pattern,
-		Reason:        req.Reason,
-		ExpiresAt:     req.ExpiresAt,
-		CreatedBy:     userID,
-		PathPrefix:    req.PathPrefix,
-		Methods:       req.Methods,
-		Kind:          req.Kind,
+		TenantID:        tenantID,
+		ExclusionType:   req.ExclusionType,
+		Pattern:         req.Pattern,
+		Reason:          req.Reason,
+		ExpiresAt:       req.ExpiresAt,
+		CreatedBy:       userID,
+		PathPrefix:      req.PathPrefix,
+		Methods:         req.Methods,
+		Kind:            req.Kind,
+		ConfirmCritical: req.ConfirmCritical,
 	}
 
 	exclusion, err := h.service.CreateExclusion(r.Context(), input)
@@ -1312,10 +1336,11 @@ func (h *ScopeHandler) UpdateExclusion(w http.ResponseWriter, r *http.Request) {
 	}
 
 	input := scope.UpdateExclusionInput{
-		Reason:    req.Reason,
-		ExpiresAt: req.ExpiresAt,
-		Kind:      req.Kind,
-		Reviewer:  exclusionReviewer(r),
+		Reason:          req.Reason,
+		ExpiresAt:       req.ExpiresAt,
+		Kind:            req.Kind,
+		Reviewer:        exclusionReviewer(r),
+		ConfirmCritical: req.ConfirmCritical,
 	}
 
 	before, ok := h.exclusionBefore(w, r, tenantID, exclusionID)

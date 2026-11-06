@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/crewjam/saml"
+	"github.com/openctemio/saml"
 
 	samldom "github.com/openctemio/openctem/api/pkg/domain/samlprovider"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -353,7 +353,9 @@ func (s *SAMLService) parseStrictResponse(ctx context.Context, sp *saml.ServiceP
 		return nil, err
 	}
 	sp.SignatureVerifier = samlNoWeakAlgorithmsVerifier{}
-	assertion, err := sp.ParseXMLResponse(raw, possibleRequestIDs, *r.URL)
+	assertion, err := parseSAMLWithoutPanic(func() (*saml.Assertion, error) {
+		return sp.ParseXMLResponse(raw, possibleRequestIDs, *r.URL)
+	})
 	if err != nil {
 		var ire *saml.InvalidResponseError
 		if errors.As(err, &ire) && ire.PrivateErr != nil {
@@ -368,6 +370,19 @@ func (s *SAMLService) parseStrictResponse(ctx context.Context, sp *saml.ServiceP
 		return nil, err
 	}
 	return assertion, nil
+}
+
+// parseSAMLWithoutPanic runs the library's parse and turns a panic inside it
+// into a refusal. The library dereferences optional elements of a signed
+// assertion without nil checks; the shape checks refuse those first, and this
+// keeps any other such path a failed sign-in instead of a server error.
+func parseSAMLWithoutPanic(parse func() (*saml.Assertion, error)) (a *saml.Assertion, err error) {
+	defer func() {
+		if rec := recover(); rec != nil {
+			a, err = nil, samlStrictErr("saml library panicked: %v", rec)
+		}
+	}()
+	return parse()
 }
 
 // Entra ID's immutable user id and directory id, sent by default in every

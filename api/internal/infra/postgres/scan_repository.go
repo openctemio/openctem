@@ -42,6 +42,13 @@ func (r *ScanRepository) Create(ctx context.Context, s *scan.Scan) error {
 			return fmt.Errorf("failed to marshal skipped_targets: %w", err)
 		}
 	}
+	stepParams := []byte("{}")
+	if len(s.StepParams) > 0 {
+		var merr error
+		if stepParams, merr = json.Marshal(s.StepParams); merr != nil {
+			return fmt.Errorf("failed to marshal step_params: %w", merr)
+		}
+	}
 
 	var scanWorkflowID *string
 	if s.ScanWorkflowID != nil {
@@ -98,10 +105,10 @@ func (r *ScanRepository) Create(ctx context.Context, s *scan.Scan) error {
 			last_run_id, last_run_at, last_run_status,
 			total_runs, successful_runs, failed_runs,
 			created_by, created_at, updated_at, scan_zone_id, ad_hoc, schedule_rrule, schedule_run_at, target_options, intensity, skipped_targets,
-			rule_sources, managed_by, managed_key, depth
+			rule_sources, managed_by, managed_key, depth, step_params
 		)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, NULLIF($38, ''), $39, $40, $41, $42,
-			NULLIF($43, ''), NULLIF($44, ''), NULLIF($45, ''), $46)
+			NULLIF($43, ''), NULLIF($44, ''), NULLIF($45, ''), $46, $47)
 	`
 
 	_, err = r.db.ExecContext(ctx, query,
@@ -151,6 +158,7 @@ func (r *ScanRepository) Create(ctx context.Context, s *scan.Scan) error {
 		string(s.ManagedBy),
 		s.ManagedKey,
 		string(s.EffectiveDepth()),
+		stepParams,
 	)
 
 	if err != nil {
@@ -281,6 +289,13 @@ func (r *ScanRepository) Update(ctx context.Context, s *scan.Scan) error {
 			return fmt.Errorf("failed to marshal skipped_targets: %w", err)
 		}
 	}
+	stepParams := []byte("{}")
+	if len(s.StepParams) > 0 {
+		var merr error
+		if stepParams, merr = json.Marshal(s.StepParams); merr != nil {
+			return fmt.Errorf("failed to marshal step_params: %w", merr)
+		}
+	}
 
 	query := `
 		UPDATE scans
@@ -292,7 +307,7 @@ func (r *ScanRepository) Update(ctx context.Context, s *scan.Scan) error {
 		    max_retries = $23, retry_backoff_seconds = $24, status = $25,
 		    updated_at = $26, scan_zone_id = $28, ad_hoc = $29, schedule_rrule = NULLIF($30, ''), schedule_run_at = $31,
 		    target_options = $32, intensity = $33, skipped_targets = $34, rule_sources = NULLIF($35, ''),
-		    depth = $36
+		    depth = $36, step_params = $37
 		WHERE id = $1 AND tenant_id = $27
 	`
 
@@ -333,6 +348,7 @@ func (r *ScanRepository) Update(ctx context.Context, s *scan.Scan) error {
 		skipped,                        // $34
 		string(s.RuleSources),          // $35
 		string(s.EffectiveDepth()),     // $36
+		stepParams,                     // $37
 	)
 
 	if err != nil {
@@ -697,7 +713,7 @@ func (r *ScanRepository) selectQuery() string {
 		       total_runs, successful_runs, failed_runs,
 		       created_by, created_at, updated_at, scan_zone_id, ad_hoc, partial_runs,
 		       COALESCE(schedule_rrule, ''), blocked_runs, schedule_run_at, target_options, intensity, skipped_targets,
-		       COALESCE(rule_sources, ''), COALESCE(managed_by, ''), COALESCE(managed_key, ''), depth
+		       COALESCE(rule_sources, ''), COALESCE(managed_by, ''), COALESCE(managed_key, ''), depth, step_params
 		FROM scans
 	`
 }
@@ -738,6 +754,7 @@ func (r *ScanRepository) readScan(reader scanRowReader) (*scan.Scan, error) {
 		scanZoneID          sql.NullString
 		targetOptions       []byte
 		skippedTargets      []byte
+		stepParams          []byte
 		managedBy           string
 	)
 
@@ -790,6 +807,7 @@ func (r *ScanRepository) readScan(reader scanRowReader) (*scan.Scan, error) {
 		&managedBy,
 		&s.ManagedKey,
 		&s.Depth,
+		&stepParams,
 	)
 	if err != nil {
 		return nil, err
@@ -866,6 +884,11 @@ func (r *ScanRepository) readScan(reader scanRowReader) (*scan.Scan, error) {
 	if len(targetOptions) > 0 {
 		if err := json.Unmarshal(targetOptions, &s.TargetOptions); err != nil {
 			return nil, fmt.Errorf("scan %s target_options: %w", id, err)
+		}
+	}
+	if len(stepParams) > 0 && string(stepParams) != "{}" {
+		if err := json.Unmarshal(stepParams, &s.StepParams); err != nil {
+			return nil, fmt.Errorf("scan %s step_params: %w", id, err)
 		}
 	}
 	if len(skippedTargets) > 0 {
