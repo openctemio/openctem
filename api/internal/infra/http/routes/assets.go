@@ -288,6 +288,11 @@ func registerScopeRoutes(
 		r.PUT("/{id}", h.UpdateTarget, middleware.Require(permission.ScopeWrite))
 		r.POST("/{id}/activate", h.ActivateTarget, middleware.Require(permission.ScopeWrite))
 		r.POST("/{id}/deactivate", h.DeactivateTarget, middleware.Require(permission.ScopeWrite))
+		// Replace an entry's pattern: a new entry linked to the old one, with
+		// the checks, step-up and approvals of a new entry (in the service).
+		// The preview writes nothing.
+		r.POST("/{id}/replace", h.ReplaceTarget, middleware.Require(permission.ScopeWrite))
+		r.POST("/{id}/replace/preview", h.PreviewReplaceTarget, middleware.Require(permission.ScopeWrite))
 		// Approving puts a pending entry (a request or a widening) into
 		// effect: approvers only, with step-up (RFC-054 §6.1). Create,
 		// update and activate ask for step-up in the service when they widen.
