@@ -23,6 +23,7 @@ type Service struct {
 	addresses    AddressReader
 	starter      RunStarter
 	readiness    ReadinessChecker
+	unclassified UnclassifiedMode
 	tenantSwitch TenantSwitch
 	// pathGate decides path discovery (path_discovery.go); nil: it is never
 	// planned.

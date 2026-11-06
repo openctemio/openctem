@@ -2,7 +2,8 @@
 
 /**
  * Shown in the asset edit dialog when the chosen exposure or criticality is
- * lower than the asset's: what the change would do to the asset's open
+ * lower than the asset's, and in the crown-jewel removal dialog (crownJewel
+ * false on a crown jewel): what the change would do to the asset's open
  * findings (the API's preview), whether it needs a second person's approval,
  * and the reason the API requires when it would drop an open P0/P1 finding.
  * Raising risk shows nothing.
@@ -30,10 +31,16 @@ export interface RiskNoticeState {
   blocked: boolean
 }
 
+/** The asset fields the notice compares against. */
+export type RiskNoticeAsset = Pick<Asset, 'id'> &
+  Partial<Pick<Asset, 'exposure' | 'criticality' | 'isCrownJewel'>>
+
 interface Props {
-  asset: Asset
-  criticality: string
-  exposure: string
+  asset: RiskNoticeAsset
+  criticality?: string
+  exposure?: string
+  /** The proposed crown-jewel flag; false on a crown jewel removes it. */
+  crownJewel?: boolean
   reason: string
   onReasonChange: (reason: string) => void
   onStateChange: (state: RiskNoticeState) => void
@@ -43,6 +50,7 @@ export function AssetRiskImpactNotice({
   asset,
   criticality,
   exposure,
+  crownJewel,
   reason,
   onReasonChange,
   onStateChange,
@@ -53,10 +61,11 @@ export function AssetRiskImpactNotice({
   useEffect(() => {
     tRef.current = t
   }, [t])
-  const lowered = useMemo(
-    () => loweredRiskFields(asset, { criticality, exposure }),
-    [asset, criticality, exposure]
-  )
+  const lowered = useMemo(() => {
+    const out = loweredRiskFields(asset, { criticality, exposure })
+    if (asset.isCrownJewel && crownJewel === false) out.push('crown_jewel')
+    return out
+  }, [asset, criticality, exposure, crownJewel])
   const [preview, setPreview] = useState<RiskPreview | null>(null)
   const [error, setError] = useState<string | null>(null)
   const active = lowered.length > 0
@@ -74,6 +83,7 @@ export function AssetRiskImpactNotice({
       previewRiskImpact(asset.id, {
         ...(lowered.includes('criticality') ? { criticality } : {}),
         ...(lowered.includes('exposure') ? { exposure } : {}),
+        ...(lowered.includes('crown_jewel') ? { is_crown_jewel: false } : {}),
       })
         .then((p) => !stale && setPreview(p))
         .catch(
@@ -206,10 +216,17 @@ export function AssetRiskImpactNotice({
             maxLength={1000}
             value={reason}
             onChange={(e) => onReasonChange(e.target.value)}
-            placeholder={t(
-              'assets.riskImpact.reasonPlaceholder',
-              'Why is this asset less exposed or less critical than recorded?'
-            )}
+            placeholder={
+              lowered.includes('crown_jewel')
+                ? t(
+                    'assets.riskImpact.reasonPlaceholderCrownJewel',
+                    'Why is this asset no longer a crown jewel?'
+                  )
+                : t(
+                    'assets.riskImpact.reasonPlaceholder',
+                    'Why is this asset less exposed or less critical than recorded?'
+                  )
+            }
           />
         </div>
       )}

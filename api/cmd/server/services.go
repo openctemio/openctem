@@ -2538,6 +2538,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// checks the platform's signer against it (research/191 A-1).
 		if s.SensorPairing != nil {
 			s.SensorPairing.SetJobSigningRoot(s.JobSigner.RootKeyID)
+			// The signed pairing grant states the hello's signer block, so
+			// nothing between a sensor and the platform can swap the
+			// keys it pins at pairing (research 452 N3).
+			s.SensorPairing.SetSignedJobs(s.JobSigner.Hello)
 		}
 	} else if !cfg.IsDevelopment() {
 		log.Warn("SECURITY: sensor jobs are NOT signed (SIGNER_DANGEROUS_ALLOW_UNSIGNED_JOBS); a compromised API or database can hand any sensor any job, and sensors paired from now on refuse to start")

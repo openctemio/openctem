@@ -36,7 +36,7 @@
   "assetCoverage.reason.inventory_changed": "no new endpoints since the last run",
   "assetCoverage.reason.no_eligible_sensor": "no sensor can take the work",
   "assetCoverage.reason.no_named_twin": "the same address and port is served by a named web service, which is scanned instead",
-  "assetCoverage.reason.no_scope": "the organization has no scope entry yet",
+  "assetCoverage.reason.no_scope": "the organization has no scope entry yet, and unclassified assets are not scanned",
   "assetCoverage.reason.not_an_origin": "not a live web service of the organization",
   "assetCoverage.reason.not_claimed": "no sensor took its last runs; checked again later or when sensors change",
   "assetCoverage.reason.not_planned": "not planned yet",
