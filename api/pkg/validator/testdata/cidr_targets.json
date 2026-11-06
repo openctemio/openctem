@@ -1,0 +1,17 @@
+{
+  "_comment": "CIDR target bounds shared by the API validator (pkg/validator/target_cidr_fixture_test.go) and the web console (web/src/features/scans/lib/__tests__/target-format.test.ts). Edit both rules together; this file is the contract. RFC-151.",
+  "cases": [
+    { "target": "10.0.0.0/16", "max_host_bits": 16, "valid": true },
+    { "target": "10.0.0.0/15", "max_host_bits": 16, "valid": false, "reason": "10.0.0.0/15 has 131,072 addresses; the most one target can hold is 65,536 (/16)" },
+    { "target": "10.0.0.0/8", "max_host_bits": 16, "valid": false, "reason": "10.0.0.0/8 has 16,777,216 addresses; the most one target can hold is 65,536 (/16)" },
+    { "target": "10.0.0.0/8", "max_host_bits": 24, "valid": true },
+    { "target": "172.16.0.0/12", "max_host_bits": 24, "valid": true },
+    { "target": "10.0.0.0/7", "max_host_bits": 24, "valid": false, "reason": "10.0.0.0/7 has 33,554,432 addresses; the most one target can hold is 16,777,216 (/8)" },
+    { "target": "10.0.0.0/12", "max_host_bits": 20, "valid": true },
+    { "target": "10.0.0.0/11", "max_host_bits": 20, "valid": false, "reason": "10.0.0.0/11 has 2,097,152 addresses; the most one target can hold is 1,048,576 (/12)" },
+    { "target": "2001:db8::/112", "max_host_bits": 16, "valid": true },
+    { "target": "2001:db8::/104", "max_host_bits": 24, "valid": true },
+    { "target": "2001:db8::/103", "max_host_bits": 24, "valid": false, "reason": "2001:db8::/103 has 33,554,432 addresses; the most one target can hold is 16,777,216 (/104)" },
+    { "target": "2001:db8::/64", "max_host_bits": 24, "valid": false, "reason": "2001:db8::/64 has 18,446,744,073,709,551,616 addresses; the most one target can hold is 16,777,216 (/104)" }
+  ]
+}

@@ -2858,6 +2858,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// Hostnames route by the address they resolve to, through
 		// SCAN_ZONE_RESOLVER (a public resolver on self-service installs).
 		scan.WithScanZones(repos.ScanZone, zoneResolver(cfg.Scope.ZoneResolver)),
+		// The widest range one scan target may name: the organization's scope
+		// setting, a /8 at most; wider than a /16 runs live hosts first in
+		// /16 chunks (RFC-151).
+		scan.WithRangeLimits(s.Tenant),
 		// Shared-sensor scans per day (RFC-100 §10): generic limits by key;
 		// unset means unlimited.
 		scan.WithSharedScanLimits(s.Entitlement),

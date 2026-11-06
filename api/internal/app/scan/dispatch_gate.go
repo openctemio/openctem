@@ -27,6 +27,7 @@ import (
 	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/validator"
 )
 
 // ErrDispatchGateUnavailable is returned when the target gate cannot check
@@ -151,11 +152,30 @@ type DispatchTargetsInput struct {
 	// overlaps an exclusion is excluded whole: for callers that map
 	// Allowed back onto their own input list.
 	SplitRanges bool
+	// MaxRangeHostBits is the widest range target the dispatch takes, in
+	// host bits (0: 16, an IPv4 /16). Wider, up to the platform's /8, only
+	// where the caller cuts large ranges into /16 chunks and scans them live
+	// hosts first: the scan run of a liveness scan and its scope check
+	// (RFC-151). Needs SplitRanges to dispatch anything wider than a /16.
+	MaxRangeHostBits int
 }
 
 // ReasonInternalOutsideZones is the reason an internal address is refused
 // while the tenant has no scan zone (AllowNonNetworkTargets).
 const ReasonInternalOutsideZones = "internal addresses are scanned only inside a scan zone of this organization"
+
+// rangeHostBits is the widest range the dispatch validates, in host bits: a
+// range wider than a /16 is accepted only when the dispatch also cuts it.
+func (in DispatchTargetsInput) rangeHostBits() int {
+	switch {
+	case in.MaxRangeHostBits <= 0:
+		return validator.DefaultCIDRHostBits
+	case in.SplitRanges || in.DryRun:
+		return min(in.MaxRangeHostBits, validator.MaxCIDRHostBitsLimit)
+	default:
+		return min(in.MaxRangeHostBits, validator.DefaultCIDRHostBits)
+	}
+}
 
 // gatePath is the dispatch path named in refusal logs.
 func (in DispatchTargetsInput) gatePath() string {
@@ -293,7 +313,7 @@ func (s *Service) ResolveDispatchTargets(ctx context.Context, in DispatchTargets
 	if !in.AllowNonNetworkTargets {
 		var rejected []rejectedTarget
 		var err error
-		accepted, rejected, err = s.validateTargetsEach(ctx, in.TenantID.String(), targets, limit)
+		accepted, rejected, err = s.validateTargetsEach(ctx, in.TenantID.String(), targets, limit, in.rangeHostBits())
 		if err != nil {
 			return nil, err
 		}

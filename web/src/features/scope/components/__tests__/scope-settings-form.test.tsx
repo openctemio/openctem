@@ -100,7 +100,27 @@ describe('ScopeSettingsForm', () => {
         widening_approvals: null,
         default_max_tier: 't1',
         ci_scope_requires_proof: false,
+        max_range_prefix: 8,
       })
+    )
+  })
+
+  it('lowers the widest range one scan target may name', async () => {
+    api.put.mockResolvedValue({ ...settings, max_range_prefix: 16 })
+    // The select list scrolls its option into view (jsdom has no layout).
+    Element.prototype.scrollIntoView ??= vi.fn()
+    const user = userEvent.setup()
+    wrap(<ScopeSettingsForm settings={settings} />)
+    await user.click(
+      screen.getByRole('combobox', { name: 'Widest range one scan target may name' })
+    )
+    await user.click(screen.getByRole('option', { name: '/16 (65,536 addresses)' }))
+    await user.click(screen.getByRole('button', { name: /Save changes/ }))
+    await waitFor(() =>
+      expect(api.put).toHaveBeenCalledWith(
+        '/api/v1/scope/settings',
+        expect.objectContaining({ max_range_prefix: 16 })
+      )
     )
   })
 

@@ -74,6 +74,8 @@ import { TargetChipsField, type TargetChip } from './target-chips-field'
 import { ReadinessLine, RefusalGroups } from './refusal-groups'
 import { TargetList } from './target-list'
 import { InvalidTargetsNote } from './invalid-targets-note'
+import { LargeRangeConfirm } from './large-range-confirm'
+import { largeRangeSummary } from '../../lib/large-range'
 import { BulkTargetsPanel } from './bulk-targets-panel'
 
 /** Typed targets shown as chips; past this they move to the list. */
@@ -195,6 +197,7 @@ export function TargetsStep({
     return [...bad, ...valid]
   }, [pasted.lines])
   const asList = listEntries.length > CHIP_LIMIT
+  const largeRanges = useMemo(() => largeRangeSummary(pasted.targets), [pasted.targets])
   // Remove targets the scope check refused: typed lines, and picked assets by name.
   const removeTargets = (names: string[]) => {
     const drop = new Set(names.map((n) => n.trim().toLowerCase()))
@@ -437,6 +440,13 @@ export function TargetsStep({
           entries={pasted.invalid}
           onSplit={(entry, pieces) => replaceTyped(entry, pieces.join(', '))}
         />
+        {largeRanges && (
+          <LargeRangeConfirm
+            summary={largeRanges}
+            confirmed={targets.largeRangeConfirmed}
+            onConfirm={(key) => onChange({ targets: { ...targets, largeRangeConfirmed: key } })}
+          />
+        )}
         {over && (
           <p role="alert" className="text-xs text-destructive">
             {t('scans.summary.tooMany', undefined, {

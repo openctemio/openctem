@@ -20,6 +20,7 @@ import type {
 } from '@/lib/api/scan-types'
 import { DEFAULT_NEW_SCAN, type NewScanFormData, type ScheduleFrequency } from '../types'
 import { parsePastedTargets } from './target-format'
+import { largeRangeKey, largeRangeSummary } from './large-range'
 import { enTranslate, type Translate } from './translate'
 import { instantToZonedWallTime, viewerTimeZone, zonedWallTimeToInstant } from './zoned-time'
 import {
@@ -205,6 +206,15 @@ export function targetsError(form: NewScanFormData, t: Translate = enTranslate):
     return t(invalid === 1 ? 'scans.err.invalidOne' : 'scans.err.invalidMany', undefined, {
       count: invalid,
     })
+  }
+  // A range wider than a /16 runs live hosts first, and only once the
+  // person confirmed its size (RFC-151).
+  const large = largeRangeSummary(parsePastedTargets(targets.customTargets).targets)
+  if (large) {
+    const mode = targets.targetOptions?.cidr_mode
+    if (mode && mode !== 'liveness') return t('scans.err.largeRangeLiveness')
+    if (targets.largeRangeConfirmed !== largeRangeKey(large))
+      return t('scans.err.largeRangeConfirm')
   }
   const n = directTargets(form).length
   if (n > MAX_DIRECT_TARGETS) {

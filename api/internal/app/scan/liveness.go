@@ -24,6 +24,24 @@ const RunContextKeyCIDRMode = "cidr_mode"
 // hosts first runs a workflow without a host discovery step.
 const CodeLivenessNeedsHostDiscovery = "LIVENESS_NEEDS_HOST_DISCOVERY"
 
+// CodeLargeRangeNeedsLiveness: a scan names a range wider than a /16 and
+// scans every address of its ranges (sweep). Such a range is scanned live
+// hosts first only (RFC-151).
+const CodeLargeRangeNeedsLiveness = "LARGE_RANGE_NEEDS_LIVENESS"
+
+// hasLargeRangeTarget reports whether a target list holds a range wider
+// than MaxRangeAddresses (a /16).
+func hasLargeRangeTarget(targets []string) bool {
+	for _, t := range targets {
+		if r, ok := rangeTarget(strings.TrimSpace(t)); ok {
+			if n, full := r.Size(); full || n > MaxRangeAddresses {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // hasRangeTarget reports whether a target list holds an address range.
 func hasRangeTarget(targets []string) bool {
 	for _, t := range targets {
@@ -58,11 +76,22 @@ func (s *Service) workflowFindsHosts(ctx context.Context, workflowID shared.ID) 
 // otherwise; explicit liveness on a workflow without host discovery is
 // refused, because its active stages would get no range and find no host.
 // explicit says whether the request named the mode.
+//
+// A range wider than a /16 is scanned live hosts first only (RFC-151): the
+// host discovery pass sweeps its /16 chunks and only the hosts it finds
+// reach the port and vulnerability stages. Sweep, or a workflow without a
+// host discovery step, is refused for such a scan.
 func (s *Service) applyCIDRMode(ctx context.Context, sc *scan.Scan, explicit bool) error {
 	if !hasRangeTarget(sc.Targets) {
 		return nil
 	}
 	mode := sc.TargetOptions.CIDRMode
+	large := hasLargeRangeTarget(sc.Targets)
+	if large && mode != "" && mode != scan.CIDRModeLiveness {
+		return shared.NewDomainError(CodeLargeRangeNeedsLiveness,
+			"A range wider than a /16 is scanned live hosts first: a host discovery pass finds the live hosts, and only those are scanned further. Choose Live hosts first, or split the range into /16 ranges or smaller.",
+			shared.ErrValidation)
+	}
 	if explicit && mode != scan.CIDRModeLiveness {
 		return nil
 	}
@@ -79,7 +108,7 @@ func (s *Service) applyCIDRMode(ctx context.Context, sc *scan.Scan, explicit boo
 	switch {
 	case finds:
 		sc.TargetOptions.CIDRMode = scan.CIDRModeLiveness
-	case explicit:
+	case explicit, large:
 		return shared.NewDomainError(CodeLivenessNeedsHostDiscovery,
 			"Live hosts first needs a Host discovery step in the scan workflow, before the steps that scan the hosts. Add one, use the Network workflow, or scan every address of the ranges.",
 			shared.ErrValidation)

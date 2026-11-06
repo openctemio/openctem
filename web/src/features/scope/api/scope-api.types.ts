@@ -162,7 +162,16 @@ export interface UpdateScopeSettingsInput {
    * (opt-in, default off); omitted keeps the stored value.
    */
   ci_scope_requires_proof?: boolean
+  /**
+   * The widest range one scan target may name, as an IPv4 prefix length
+   * (8 to 24; IPv6 gets the same address count). Omitted keeps the stored
+   * value (RFC-151).
+   */
+  max_range_prefix?: number
 }
+
+/** The widest range choices of the scope policy (IPv4 prefix lengths). */
+export const RANGE_PREFIX_CHOICES = [8, 12, 16, 20, 24] as const
 
 /** The address setting: what happens to addresses in-scope names resolve to. */
 export type AddressAutoAdd = 'auto_strong' | 'ask' | 'never'

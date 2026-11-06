@@ -3142,6 +3142,17 @@ func (s *TenantService) GetScopeSettings(ctx context.Context, tenantID string) (
 	return &ss, nil
 }
 
+// MaxRangeHostBits is the widest range one scan target of the tenant may
+// name, in host bits (RFC-151): its scope setting max_range_prefix, 24 (/8)
+// by default. A lookup error is returned: the caller refuses the wide range.
+func (s *TenantService) MaxRangeHostBits(ctx context.Context, tenantID shared.ID) (int, error) {
+	t, err := s.repo.GetByID(ctx, tenantID)
+	if err != nil {
+		return 0, err
+	}
+	return t.TypedSettings().Scope.RangeHostBits(), nil
+}
+
 // UpdateScopeSettings replaces the tenant's scope settings and audits the
 // before/after values. The route requires attack_surface:scope:approve and
 // step-up; the caller notifies the administrators.

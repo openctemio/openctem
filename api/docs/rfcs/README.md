@@ -158,6 +158,7 @@ RFC-003 (asset source priority) was withdrawn on 2026-10-05; see
 | [RFC-147](RFC-147-managed-scanning-fleet.md) | Managed scanning fleet: demand scaling, owned egress proxies, proxy selection | Proposed (2026-11-02); nothing here is built unless a section says "shipped" |
 | [RFC-148](RFC-148-asset-neighborhood.md) | Asset neighborhood and lineage graph read | Implemented (2026-11-04) |
 | [RFC-149](RFC-149-task-secrets.md) | Task secrets | Implemented (2026-11-05): the platform side; the sensor SDK side ships in the same release |
+| [RFC-151](RFC-151-large-range-targets.md) | Large range targets | Implemented (2026-11-06) |
 <!-- END RFC INDEX -->
 
 > Status legend: **Proposed** = under review · **Phase N done** = that phase shipped to `develop` · **Implemented** = fully landed.
