@@ -5,7 +5,7 @@
 > the `/hooks/{provider}` move (D5) is not built yet. **Amended 2026-10-22**
 > (§11): D6, D9 and D10 are superseded as listed there, and the public API
 > review decisions D1–D16 are recorded.
-> Scope: `api/` (routes, OpenAPI, edge gateway), `web/` (API call sites,
+> Scope: `server/` (routes, OpenAPI, edge gateway), `web/` (API call sites,
 > generated types), sdk-go and the sensor (only through the protocol v2
 > feature negotiation of RFC-029), helm charts (edge rules).
 > Related: RFC-016 (MCP), RFC-022 (admin console), RFC-023 (agent→sensor
@@ -112,7 +112,7 @@ opportunistically under the lint, not in one big bang.
   tags v0.6.x and v0.7.0, and the asset-collector (which pins sdk-go
   v0.14.1), read from GitHub.
 - **Edge and docs.** `deploy/gateway/Caddyfile`, the helm-charts gateway
-  templates, `api/docs`, and the public `openctemio/docs` site.
+  templates, `server/docs`, and the public `openctemio/docs` site.
 - **Query parameters.** Every
   `Query().Get/Has`, `FormValue` and query-helper literal in
   `internal/infra/http/handler`.
@@ -303,7 +303,7 @@ Impact is ranked on three questions:
     `/pentest/reports` and `/pentest/retests`.
   - There is no check that the web's endpoint builders name real routes.
 - **Documented paths that do not exist.**
-  - `api/docs/how-to/configure-siem.md` and `architecture/overview.md`
+  - `server/docs/how-to/configure-siem.md` and `architecture/overview.md`
     document `/api/v1/telemetry-events`; the route is
     `/api/v1/agent/telemetry-events`.
   - The public docs site documents `/api/v1/ingest/ctis` (getting started)

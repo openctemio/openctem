@@ -11,10 +11,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app/scopeauth"
-	bp "github.com/openctemio/openctem/api/pkg/domain/bountyprogram"
-	swdom "github.com/openctemio/openctem/api/pkg/domain/scanwindow"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/internal/app/scopeauth"
+	bp "github.com/openctemio/openctem/server/pkg/domain/bountyprogram"
+	swdom "github.com/openctemio/openctem/server/pkg/domain/scanwindow"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // PolicyLister lists a tenant's policies (the policy repository).

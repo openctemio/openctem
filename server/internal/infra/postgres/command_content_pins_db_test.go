@@ -3,8 +3,8 @@ package postgres
 import (
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/scanrun"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // What a signed job pinned is stored on its command under its own tenant

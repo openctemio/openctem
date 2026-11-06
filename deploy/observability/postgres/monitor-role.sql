@@ -1,5 +1,5 @@
 -- Least-privilege login role for the Postgres metrics exporter
--- (api/docs/operations/monitoring.md, "Postgres exporter role").
+-- (server/docs/operations/monitoring.md, "Postgres exporter role").
 --
 -- pg_monitor reads the statistics views and settings only: it cannot read
 -- or change any table. The postgres-monitor-role service of
@@ -22,7 +22,7 @@ SELECT format('ALTER ROLE openctem_monitor WITH LOGIN PASSWORD %L NOSUPERUSER NO
 
 GRANT pg_monitor TO openctem_monitor;
 
--- With the least-privilege roles (api/deploy/postgres/least-privilege-roles.sql)
+-- With the least-privilege roles (server/deploy/postgres/least-privilege-roles.sql)
 -- PUBLIC cannot connect to the database: grant CONNECT explicitly (and only that).
 SELECT format('GRANT CONNECT ON DATABASE %I TO openctem_monitor', current_database())
 \gexec

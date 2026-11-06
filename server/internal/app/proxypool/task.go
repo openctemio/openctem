@@ -11,11 +11,11 @@ import (
 	"fmt"
 	"slices"
 
-	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
-	"github.com/openctemio/openctem/api/internal/metrics"
-	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
-	pooldom "github.com/openctemio/openctem/api/pkg/domain/proxypool"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
+	"github.com/openctemio/openctem/server/internal/metrics"
+	auditdom "github.com/openctemio/openctem/server/pkg/domain/audit"
+	pooldom "github.com/openctemio/openctem/server/pkg/domain/proxypool"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // quarantineSourceTasks is the metric source of a quarantine decided from

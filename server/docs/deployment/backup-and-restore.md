@@ -27,7 +27,7 @@ It is **off by default**: without the overlay the stack is unchanged. The tool i
 sequenceDiagram
     autonumber
     actor O as Operator or cron
-    participant B as api/deploy/backup.sh
+    participant B as server/deploy/backup.sh
     participant PG as postgres container
     participant V as Volumes api-data, gateway-data, signer-keys, signer-state
     participant OUT as BACKUP_DIR/UTC (0700, files 0600, KEEP 14)
@@ -78,7 +78,7 @@ the database only.
 2. Create the secrets directory next to the compose files (it is ignored by git):
 
    ```bash
-   cd api/deploy
+   cd server/deploy
    install -d -m 0700 backup-secrets
    openssl rand -base64 32 | tr -d '\n' > backup-secrets/cipher_pass   # then copy it off this host
    printf '%s' '<access key id>'     > backup-secrets/s3_access_key      # target s3

@@ -66,6 +66,6 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
 # Non-root (uid 1000); needs net.ipv4.ip_unprivileged_port_start=0 to bind
 # 443/80, or a non-privileged port. Volumes written by an older gateway
 # that ran as root need a one-time `chown -R 1000:1000` (entrypoint.sh says so
-# and api/deploy/docker-compose.yml does it in its gateway-init service).
+# and server/deploy/docker-compose.yml does it in its gateway-init service).
 USER 1000:1000
 CMD ["caddy", "run", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]

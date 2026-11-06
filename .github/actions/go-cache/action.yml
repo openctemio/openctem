@@ -39,9 +39,9 @@ runs:
     # still serves every package that did not change since.
     - id: keys
       shell: bash
-      working-directory: api
+      working-directory: server
       env:
-        SUM: ${{ hashFiles('api/go.sum') }}
+        SUM: ${{ hashFiles('server/go.sum') }}
       run: |
         ver="$(go env GOVERSION)"
         echo "build=gobuild-${RUNNER_OS}-${ver}-${SUM}-$(date -u +%Y%m%d)" >> "$GITHUB_OUTPUT"

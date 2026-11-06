@@ -4,8 +4,8 @@ import (
 	"context"
 	"strings"
 
-	domain "github.com/openctemio/openctem/api/pkg/domain/dashboard"
-	"github.com/openctemio/openctem/api/pkg/domain/permission"
+	domain "github.com/openctemio/openctem/server/pkg/domain/dashboard"
+	"github.com/openctemio/openctem/server/pkg/domain/permission"
 )
 
 // Ref names one dashboard the way the dashboard home does: its kind and id.

@@ -18,8 +18,8 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 
-	"github.com/openctemio/openctem/api/internal/app/mcpoauth"
-	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
+	"github.com/openctemio/openctem/server/internal/app/mcpoauth"
+	tenantdom "github.com/openctemio/openctem/server/pkg/domain/tenant"
 )
 
 // memReplay is an in-memory replay cache.

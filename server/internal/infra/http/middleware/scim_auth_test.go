@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
-	"github.com/openctemio/openctem/api/pkg/domain/scimtoken"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
+	"github.com/openctemio/openctem/server/pkg/domain/scimtoken"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 type fixedSCIMToken struct{ tok *scimtoken.ScimToken }

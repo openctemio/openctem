@@ -7,7 +7,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/openctemio/openctem/api/pkg/apierror"
+	"github.com/openctemio/openctem/server/pkg/apierror"
 )
 
 // Spec is the decoded filter: the AST both encodings produce.

@@ -3,11 +3,11 @@ package main
 import (
 	"context"
 
-	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
-	bpapp "github.com/openctemio/openctem/api/internal/app/bountyprogram"
-	"github.com/openctemio/openctem/api/pkg/domain/audit"
-	bp "github.com/openctemio/openctem/api/pkg/domain/bountyprogram"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
+	bpapp "github.com/openctemio/openctem/server/internal/app/bountyprogram"
+	"github.com/openctemio/openctem/server/pkg/domain/audit"
+	bp "github.com/openctemio/openctem/server/pkg/domain/bountyprogram"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // programSyncAuditor records a sync that narrowed or suspended a program

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/scannertemplate"
+	"github.com/openctemio/openctem/server/pkg/domain/scannertemplate"
 )
 
 // Malicious custom templates: code-class blocks in every spelling the

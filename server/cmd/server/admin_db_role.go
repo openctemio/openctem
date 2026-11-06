@@ -6,8 +6,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/openctemio/openctem/api/internal/config"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/internal/config"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // appRoleWritesConsoleTables reports whether the connected role can write the

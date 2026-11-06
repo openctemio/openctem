@@ -231,7 +231,7 @@ The API imports `sdk-go/pkg/adapters` for SARIF/Trivy parsing. After the extract
 - **Option B**: Move adapters into the ctis module → ctis becomes too large and pulls in many deps
 - **Option C**: Move adapters into the API (internal package) → **BEST** — the API owns the parsing logic
 
-Adapters are used only by the API (the Agent does NOT import adapters). Copy the adapters into `api/internal/infra/adapters/`.
+Adapters are used only by the API (the Agent does NOT import adapters). Copy the adapters into `server/internal/infra/adapters/`.
 
 ### 4.8 Core + Chunk — what does the API use?
 
@@ -281,7 +281,7 @@ The API imports `chunk` for `chunk.Manager` in the ingest handler. Options:
 
 1. API: `go get github.com/openctemio/ctis@v1.0.0`
 2. Replace 22 files: import paths
-3. Copy adapters into `api/internal/infra/adapters/`
+3. Copy adapters into `server/internal/infra/adapters/`
 4. Inline `core.ChunkManager` interface into handler
 5. **Remove `github.com/openctemio/sdk-go` from API go.mod**
 6. `go mod tidy`

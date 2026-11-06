@@ -2,7 +2,7 @@ package finding
 
 // Same-issue groups (pkg/domain/issuelink): read the group a finding is in,
 // and take a finding out of it.
-// https://github.com/openctemio/openctem/blob/develop/api/docs/architecture/deduplication.md
+// https://github.com/openctemio/openctem/blob/develop/server/docs/architecture/deduplication.md
 //
 // A group is shown only through the caller's data scope: a member on an asset
 // the caller cannot see is left out, and nothing (no count, no id) says it
@@ -13,10 +13,10 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/openctemio/openctem/api/internal/app/audit"
-	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
-	"github.com/openctemio/openctem/api/pkg/domain/issuelink"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/internal/app/audit"
+	auditdom "github.com/openctemio/openctem/server/pkg/domain/audit"
+	"github.com/openctemio/openctem/server/pkg/domain/issuelink"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // IssueLinkStore is implemented by the postgres finding issue link

@@ -4,9 +4,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/versions"
-	"github.com/openctemio/openctem/api/pkg/domain/sensor"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/internal/versions"
+	"github.com/openctemio/openctem/server/pkg/domain/sensor"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // Without any wiring the handler uses the catalog built into the API, and the

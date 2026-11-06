@@ -11,14 +11,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app/adminconsole"
-	"github.com/openctemio/openctem/api/internal/app/signup"
-	"github.com/openctemio/openctem/api/internal/config"
-	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
-	"github.com/openctemio/openctem/api/pkg/domain/admin"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	signupdom "github.com/openctemio/openctem/api/pkg/domain/signup"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/internal/app/adminconsole"
+	"github.com/openctemio/openctem/server/internal/app/signup"
+	"github.com/openctemio/openctem/server/internal/config"
+	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/server/pkg/domain/admin"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	signupdom "github.com/openctemio/openctem/server/pkg/domain/signup"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 type signupMemRepo struct {

@@ -9,11 +9,11 @@ import (
 	"encoding/base64"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/app"
-	"github.com/openctemio/openctem/api/pkg/domain/scannertemplate"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/jobsign"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/internal/app"
+	"github.com/openctemio/openctem/server/pkg/domain/scannertemplate"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/jobsign"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 type fixedApprovals struct{ n int }

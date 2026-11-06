@@ -9,13 +9,13 @@ import (
 	"strings"
 	"time"
 
-	cirunapp "github.com/openctemio/openctem/api/internal/app/cirun"
+	cirunapp "github.com/openctemio/openctem/server/internal/app/cirun"
 
 	"github.com/lib/pq"
 
-	"github.com/openctemio/openctem/api/pkg/domain/cirun"
-	"github.com/openctemio/openctem/api/pkg/domain/limits"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/cirun"
+	"github.com/openctemio/openctem/server/pkg/domain/limits"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // CIRunRepository stores CI trust configurations, runs, gate policies and

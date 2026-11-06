@@ -5,10 +5,10 @@ import (
 	"errors"
 	"io"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
-// Malware scanning of stored files (api/docs/rfcs/RFC-084-file-storage.md).
+// Malware scanning of stored files (server/docs/rfcs/RFC-084-file-storage.md).
 // For evidence a scan marks a file, it never blocks the upload: pentest
 // evidence legitimately holds exploit code and samples. A file found
 // infected downloads only on an explicit confirmation, which is audited.

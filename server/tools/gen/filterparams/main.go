@@ -1,7 +1,7 @@
 // Command filterparams regenerates the swag @Param blocks of the list
 // query contract (docs/rfcs/RFC-048-list-query-contract.md) from the field
 // registries, in every handler file that has a "// filterspec-params:"
-// block. Run it from api/ after changing a registry, then `make swagger`.
+// block. Run it from server/ after changing a registry, then `make swagger`.
 //
 //	go run ./tools/gen/filterparams
 package main
@@ -12,14 +12,14 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/openctemio/openctem/api/internal/infra/http/handler"
-	"github.com/openctemio/openctem/api/pkg/filterspec"
+	"github.com/openctemio/openctem/server/internal/infra/http/handler"
+	"github.com/openctemio/openctem/server/pkg/filterspec"
 )
 
 func main() {
 	files, err := filepath.Glob("internal/infra/http/handler/*.go")
 	if err != nil || len(files) == 0 {
-		fmt.Fprintln(os.Stderr, "filterparams: run from api/ (no handler files found)")
+		fmt.Fprintln(os.Stderr, "filterparams: run from server/ (no handler files found)")
 		os.Exit(2)
 	}
 	for _, f := range files {

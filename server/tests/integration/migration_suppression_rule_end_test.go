@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/testdb"
+	"github.com/openctemio/openctem/server/internal/testdb"
 )
 
 func TestMigrationSuppressionRuleEnd(t *testing.T) {

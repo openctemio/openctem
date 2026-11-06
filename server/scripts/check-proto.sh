@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 # Sensor protocol v3 gates (docs/rfcs/RFC-059-sensor-transport-v3.md):
-#   1. buf lint (STANDARD rules) on api/proto;
+#   1. buf lint (STANDARD rules) on server/proto;
 #   2. buf breaking against the base branch (FILE rules), when the base has
 #      the module; a breaking change needs a new package (openctem.sensor.v4);
-#   3. the committed Go code (api/pkg/sensorproto/v3) is what buf generate
+#   3. the committed Go code (server/pkg/sensorproto/v3) is what buf generate
 #      writes from the committed .proto.
 #
 # Tools are pinned: buf from its release (checksum verified), the Go plugins
 # with go install at fixed versions.
 #
-# Usage (from api/): scripts/check-proto.sh [base-ref]   (default origin/develop)
+# Usage (from server/): scripts/check-proto.sh [base-ref]   (default origin/develop)
 #                    scripts/check-proto.sh --generate   (regenerate only)
 set -euo pipefail
 
@@ -42,7 +42,7 @@ GOBIN="$tools" GOWORK=off go install "connectrpc.com/connect/cmd/protoc-gen-conn
 
 if [ "${1:-}" = "--generate" ]; then
   (cd proto && buf generate)
-  echo "generated api/pkg/sensorproto/v3"
+  echo "generated server/pkg/sensorproto/v3"
   exit 0
 fi
 
@@ -52,11 +52,11 @@ echo "== buf lint"
 (cd proto && buf lint)
 
 echo "== buf breaking against $base"
-if git cat-file -e "$base:api/proto/buf.yaml" 2>/dev/null; then
+if git cat-file -e "$base:server/proto/buf.yaml" 2>/dev/null; then
   root="$(git rev-parse --show-toplevel)"
-  (cd proto && buf breaking --against "$root/.git#ref=$base,subdir=api/proto")
+  (cd proto && buf breaking --against "$root/.git#ref=$base,subdir=server/proto")
 else
-  echo "base has no api/proto module yet; nothing to compare"
+  echo "base has no server/proto module yet; nothing to compare"
 fi
 
 echo "== generated code is current"
@@ -65,7 +65,7 @@ trap 'find "$out" -delete' EXIT
 sed "s#out: \.\.#out: $out#" proto/buf.gen.yaml > "$out/buf.gen.yaml"
 (cd proto && buf generate --template "$out/buf.gen.yaml")
 if ! diff -r "$out/pkg/sensorproto/v3" pkg/sensorproto/v3; then
-  echo "::error::api/pkg/sensorproto/v3 is stale: run make proto and commit the result"
+  echo "::error::server/pkg/sensorproto/v3 is stale: run make proto and commit the result"
   exit 1
 fi
 echo "proto checks passed"

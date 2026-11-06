@@ -9,8 +9,8 @@
 package threatmodel
 
 import (
-	"github.com/openctemio/openctem/api/pkg/domain/asset"
-	tmdom "github.com/openctemio/openctem/api/pkg/domain/threatmodel"
+	"github.com/openctemio/openctem/server/pkg/domain/asset"
+	tmdom "github.com/openctemio/openctem/server/pkg/domain/threatmodel"
 )
 
 // maxTechniquesPerHop bounds the techniques emitted for a single (attacker, hop)

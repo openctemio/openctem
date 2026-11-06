@@ -8,11 +8,11 @@ import (
 
 	"github.com/openctemio/ctis/v2"
 
-	cirunapp "github.com/openctemio/openctem/api/internal/app/cirun"
-	"github.com/openctemio/openctem/api/pkg/domain/cirun"
-	notificationdom "github.com/openctemio/openctem/api/pkg/domain/notification"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	cirunapp "github.com/openctemio/openctem/server/internal/app/cirun"
+	"github.com/openctemio/openctem/server/pkg/domain/cirun"
+	notificationdom "github.com/openctemio/openctem/server/pkg/domain/notification"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // fixedAdmins lists the same administrators for one tenant, none for others.

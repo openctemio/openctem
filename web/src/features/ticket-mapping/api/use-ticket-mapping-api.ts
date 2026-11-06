@@ -2,7 +2,7 @@
 
 /**
  * Ticket field and status mapping API hooks
- * (api/docs/rfcs/RFC-097-ticket-field-mapping.md). Tenant from the token.
+ * (server/docs/rfcs/RFC-097-ticket-field-mapping.md). Tenant from the token.
  */
 
 import useSWR, { mutate, type SWRConfiguration } from 'swr'

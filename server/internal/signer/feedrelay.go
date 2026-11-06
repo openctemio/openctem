@@ -17,7 +17,7 @@ package signer
 import (
 	"net/http"
 
-	"github.com/openctemio/openctem/api/pkg/jobsign"
+	"github.com/openctemio/openctem/server/pkg/jobsign"
 )
 
 // Refusal reasons of the feed relay rules.

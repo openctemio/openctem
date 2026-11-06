@@ -10,7 +10,7 @@ the two parts that ship together:
 
 | Directory | What | Image |
 |---|---|---|
-| [`api/`](api/) | Go API server, migrations, admin CLI (module `github.com/openctemio/openctem/api`) | `ghcr.io/openctemio/openctem-api` |
+| [`server/`](server/) | Go API server, migrations, admin CLI (module `github.com/openctemio/openctem/server`) | `ghcr.io/openctemio/openctem-api` |
 | [`web/`](web/) | Next.js web console, and the platform console for platform administrators (same source, `console` build target) | `ghcr.io/openctemio/openctem-web`, `ghcr.io/openctemio/openctem-console` |
 | [`deploy/allinone/`](deploy/allinone/) | API + web + platform console + gateway in one container (Postgres/Redis external) | `ghcr.io/openctemio/openctem` |
 
@@ -28,12 +28,12 @@ Released separately, in their own repositories:
 ## Repository layout & history
 
 The monorepo was formed on 2026-10-02
-([RFC-020](api/docs/rfcs/RFC-020-api-ui-monorepo.md)):
+([RFC-020](server/docs/rfcs/RFC-020-api-ui-monorepo.md)):
 
 - **`openctemio/api` → this repository.** It was renamed, so its issues, pull
   requests, releases (v0.1.x–v0.8.0) and old links carry over and redirect here.
-  Its Go code moved to `api/`; the module path is now
-  `github.com/openctemio/openctem/api`.
+  Its Go code moved to `server/`; the module path is now
+  `github.com/openctemio/openctem/server`.
 - **`openctemio/ui` → `web/`.** Its full history was imported under `web/`, and
   [openctemio/ui](https://github.com/openctemio/ui) is archived (read-only); its
   old releases stay there. Cite its PRs as `openctemio/ui#NNN`: a bare `#NNN`
@@ -44,22 +44,22 @@ The monorepo was formed on 2026-10-02
   `openctem-web`; the old names are mirrored for a transition window.
 - `openctemio/agent` had already become [openctemio/sensor](https://github.com/openctemio/sensor) (RFC-023).
 
-More: [repository map](api/docs/development/repositories.md),
-[CI/CD and releases](api/docs/development/ci-cd.md).
+More: [repository map](server/docs/development/repositories.md),
+[CI/CD and releases](server/docs/development/ci-cd.md).
 
 ## Quick start (development)
 
 ```bash
 make setup     # go mod download, npm ci, enable git hooks
-make dev-api   # see api/README.md for Postgres/Redis
+make dev-api   # see server/README.md for Postgres/Redis
 make dev-web   # http://localhost:3000
 make check     # what CI runs, both components
 ```
 
 ## Deploying
 
-- **Compose, one HTTPS port:** [`api/deploy/docker-compose.yml`](api/deploy/docker-compose.yml)
-  runs the gateway ([`api/deploy/gateway`](api/deploy/gateway), Caddy), web, the
+- **Compose, one HTTPS port:** [`server/deploy/docker-compose.yml`](server/deploy/docker-compose.yml)
+  runs the gateway ([`server/deploy/gateway`](server/deploy/gateway), Caddy), web, the
   platform console, API, the job signer, Postgres and Redis, plus one-shot
   migration and bootstrap containers; only the gateway is published.
 - **All-in-one image:** `ghcr.io/openctemio/openctem` embeds the same gateway.
@@ -110,8 +110,8 @@ current names. See
 
 ## The API contract
 
-`api/api/openapi/swagger.yaml` is generated from the Go handler annotations
-(gated by `api/scripts/check-openapi.sh`), and the web wire types in
+`server/api/openapi/swagger.yaml` is generated from the Go handler annotations
+(gated by `server/scripts/check-openapi.sh`), and the web wire types in
 `web/src/lib/api/generated/api.types.ts` are generated from that file. Neither
 is committed: run `make generate` after cloning or pulling (`make
 generate-docker` needs only Docker). CI type-checks the web against the
@@ -122,7 +122,7 @@ changes (breaking changes, route gate changes) on the pull request.
 ## Documentation
 
 - User and operator documentation: [docs.openctem.io](https://docs.openctem.io)
-- Engineering documentation (architecture, development, RFCs): [`api/docs/`](api/docs/README.md)
+- Engineering documentation (architecture, development, RFCs): [`server/docs/`](server/docs/README.md)
   and [`web/docs/`](web/docs/README.md)
 
 ## Contributing / security

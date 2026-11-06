@@ -4,9 +4,9 @@ import (
 	"context"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/app/easmdns"
-	"github.com/openctemio/openctem/api/pkg/domain/exposure"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/internal/app/easmdns"
+	"github.com/openctemio/openctem/server/pkg/domain/exposure"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // The dangling lifecycle's reads and writes against the real schema, each

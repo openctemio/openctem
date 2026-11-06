@@ -3,7 +3,7 @@ package handler
 import (
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/integration"
+	"github.com/openctemio/openctem/server/pkg/domain/integration"
 )
 
 // The signing secret is write-only: an integration read returns none of its

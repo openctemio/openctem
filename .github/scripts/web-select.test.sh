@@ -6,8 +6,8 @@ tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
 cd "$tmp"
 git init -q -b main .
 git config user.email t@example.test; git config user.name t
-mkdir -p web/src/lib web/src/test web/e2e web/docs web/scripts api/x .github
-for f in web/src/lib/a.ts web/src/test/setup.ts web/e2e/a.spec.ts web/docs/a.md web/scripts/s.sh web/package.json api/x/a.go .github/w.yml web/console-n; do echo 1 > "$f"; done
+mkdir -p web/src/lib web/src/test web/e2e web/docs web/scripts server/x .github
+for f in web/src/lib/a.ts web/src/test/setup.ts web/e2e/a.spec.ts web/docs/a.md web/scripts/s.sh web/package.json server/x/a.go .github/w.yml web/console-n; do echo 1 > "$f"; done
 git add -A; git commit -q -m base
 export WEB_SELECT_NO_LIST=1
 check() { # <expect> <file>
@@ -19,7 +19,7 @@ check() { # <expect> <file>
 check narrow web/src/lib/a.ts
 check narrow web/e2e/a.spec.ts
 check narrow web/docs/a.md
-check narrow api/x/a.go
+check narrow server/x/a.go
 check ALL web/src/test/setup.ts
 check ALL web/package.json
 check ALL web/scripts/s.sh

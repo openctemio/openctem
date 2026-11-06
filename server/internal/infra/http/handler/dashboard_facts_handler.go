@@ -15,12 +15,12 @@ import (
 	"strconv"
 	"time"
 
-	factsapp "github.com/openctemio/openctem/api/internal/app/dashboard/facts"
-	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
-	"github.com/openctemio/openctem/api/pkg/apierror"
-	"github.com/openctemio/openctem/api/pkg/domain/dashboardfact"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	factsapp "github.com/openctemio/openctem/server/internal/app/dashboard/facts"
+	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/server/pkg/apierror"
+	"github.com/openctemio/openctem/server/pkg/domain/dashboardfact"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // DashboardFactsHandler serves the dashboard fact status and rebuild routes.

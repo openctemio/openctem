@@ -11,12 +11,12 @@ import (
 
 	jwtv5 "github.com/golang-jwt/jwt/v5"
 
-	"github.com/openctemio/openctem/api/internal/config"
-	identityproviderdom "github.com/openctemio/openctem/api/pkg/domain/identityprovider"
-	sessiondom "github.com/openctemio/openctem/api/pkg/domain/session"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/logger"
-	"github.com/openctemio/openctem/api/pkg/oidc"
+	"github.com/openctemio/openctem/server/internal/config"
+	identityproviderdom "github.com/openctemio/openctem/server/pkg/domain/identityprovider"
+	sessiondom "github.com/openctemio/openctem/server/pkg/domain/session"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/oidc"
 )
 
 // --- fakes ---------------------------------------------------------------

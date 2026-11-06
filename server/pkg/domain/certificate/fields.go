@@ -1,8 +1,8 @@
 package certificate
 
 import (
-	"github.com/openctemio/openctem/api/pkg/domain/asset"
-	"github.com/openctemio/openctem/api/pkg/filterspec"
+	"github.com/openctemio/openctem/server/pkg/domain/asset"
+	"github.com/openctemio/openctem/server/pkg/filterspec"
 )
 
 // propTimeSQL reads a timestamp property of the certificate asset (alias

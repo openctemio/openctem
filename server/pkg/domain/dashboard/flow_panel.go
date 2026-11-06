@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // FlowMetricID is the metric of the exposure flow panel.

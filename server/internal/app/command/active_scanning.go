@@ -18,11 +18,11 @@ import (
 	"context"
 	"fmt"
 
-	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
-	"github.com/openctemio/openctem/api/pkg/domain/limits"
-	scanrundom "github.com/openctemio/openctem/api/pkg/domain/scanrun"
-	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	commanddom "github.com/openctemio/openctem/server/pkg/domain/command"
+	"github.com/openctemio/openctem/server/pkg/domain/limits"
+	scanrundom "github.com/openctemio/openctem/server/pkg/domain/scanrun"
+	sensordom "github.com/openctemio/openctem/server/pkg/domain/sensor"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // FeatureAllower reads whether an organization may use a named feature

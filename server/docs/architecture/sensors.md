@@ -681,7 +681,7 @@ registration secret:
    the key becomes active.
 
 The installs enroll their bundled sensor this way: the compose overlay
-`api/deploy/docker-compose.sensor.yml` (the token from `.env`, which
+`server/deploy/docker-compose.sensor.yml` (the token from `.env`, which
 `setup.sh` generates, registered by a one-shot `sensor-enrollment` service)
 and the Helm chart's `sensor.enrollment=instance` (a generated Secret and a
 post-install/post-upgrade Job). An existing organization sensor keeps its

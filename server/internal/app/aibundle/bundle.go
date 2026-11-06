@@ -19,12 +19,12 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/openctemio/openctem/api/internal/app/aipolicy"
-	"github.com/openctemio/openctem/api/internal/app/aiprompt"
-	"github.com/openctemio/openctem/api/pkg/aimask"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
-	"github.com/openctemio/openctem/api/pkg/safetext"
+	"github.com/openctemio/openctem/server/internal/app/aipolicy"
+	"github.com/openctemio/openctem/server/internal/app/aiprompt"
+	"github.com/openctemio/openctem/server/pkg/aimask"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/pkg/safetext"
 )
 
 // ErrEmpty is returned when no field is left under the ceiling.

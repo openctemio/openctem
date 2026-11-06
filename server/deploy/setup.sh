@@ -11,7 +11,7 @@
 #                                  # (recommended for production)
 #
 # The release it installs (OPENCTEM_VERSION in .env) is the one this checkout
-# is: api/deploy/VERSION (present in a release tag's checkout), else the tag
+# is: server/deploy/VERSION (present in a release tag's checkout), else the tag
 # checked out. From a branch checkout there is none: name it with
 # --version vX.Y.Z (or the OPENCTEM_VERSION environment variable).
 #   --version vX.Y.Z             the release to install
@@ -57,7 +57,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 # The release to install: --version / OPENCTEM_VERSION, else the version this
-# checkout is. api/deploy/VERSION exists only in a release's tree; a develop or
+# checkout is. server/deploy/VERSION exists only in a release's tree; a develop or
 # branch checkout has none and must be told.
 if [[ -z "$version" && -f "$here/VERSION" ]]; then
   version="$(tr -d '[:space:]' <"$here/VERSION")"
@@ -66,7 +66,7 @@ if [[ -z "$version" ]] && command -v git >/dev/null 2>&1; then
   version="$(git -C "$here" describe --tags --exact-match HEAD 2>/dev/null | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n 1 || true)"
 fi
 [[ -n "$version" ]] ||
-  die "this checkout is not a release (no api/deploy/VERSION, no release tag): check out a release tag (git checkout vX.Y.Z) or pass --version vX.Y.Z"
+  die "this checkout is not a release (no server/deploy/VERSION, no release tag): check out a release tag (git checkout vX.Y.Z) or pass --version vX.Y.Z"
 [[ "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] || die "'$version' is not a release such as v0.15.0"
 
 [[ -e "$env_file" ]] && die "$env_file already exists; move it away first (this script never overwrites it)"

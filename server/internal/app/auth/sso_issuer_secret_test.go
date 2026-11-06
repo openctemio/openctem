@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	identityproviderdom "github.com/openctemio/openctem/api/pkg/domain/identityprovider"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	identityproviderdom "github.com/openctemio/openctem/server/pkg/domain/identityprovider"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 type byIDIPRepo struct {

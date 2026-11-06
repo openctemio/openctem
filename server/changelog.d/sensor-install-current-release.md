@@ -7,7 +7,7 @@
   pinned the newer releases.
 - The release train's preflight lists each release line of `versions.yaml` against the published
   release and blocks the cut when one is behind (fix: set it, run `sync-versions.sh`).
-- **Upgrade note:** the bundled sensor (`api/deploy/docker-compose.sensor.yml`) moves to v0.29.1
+- **Upgrade note:** the bundled sensor (`server/deploy/docker-compose.sensor.yml`) moves to v0.29.1
   on the next `docker compose up -d` unless `SENSOR_VERSION` is set in `.env`. Its identity and
   outbox stay on the `sensor-data` volume; it does not pair again.
 - Release Tooling checks that the seccomp profile the API serves and the bundled sensor runs is

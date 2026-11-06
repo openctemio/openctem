@@ -3,7 +3,7 @@ package automation
 import (
 	"fmt"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // Graph error codes. Each is a 400 (shared.ErrValidation).

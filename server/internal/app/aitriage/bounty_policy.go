@@ -3,14 +3,14 @@ package aitriage
 // Bug-bounty reports and AI triage (RFC-121 D13): the text of a report is
 // written by an outside person, so it goes to the model only when a person
 // asks, and the verdict never starts anything on its own.
-// https://github.com/openctemio/openctem/blob/develop/api/docs/rfcs/RFC-121-bug-bounty-reports.md
+// https://github.com/openctemio/openctem/blob/develop/server/docs/rfcs/RFC-121-bug-bounty-reports.md
 
 import (
 	"context"
 	"fmt"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
 )
 
 // ErrPersonRequestOnly: a bug-bounty report is AI-triaged only at a

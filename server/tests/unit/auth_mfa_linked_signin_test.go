@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/app/auth"
-	"github.com/openctemio/openctem/api/pkg/domain/mfa"
+	"github.com/openctemio/openctem/server/internal/app/auth"
+	"github.com/openctemio/openctem/server/pkg/domain/mfa"
 )
 
 // A password account signed into through a linked Google, GitHub or Microsoft

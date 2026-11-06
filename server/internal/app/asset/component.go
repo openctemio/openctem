@@ -1,19 +1,19 @@
 package asset
 
 // Software components inventory reads. Design:
-// api/docs/rfcs/RFC-070-software-components-inventory.md.
+// server/docs/rfcs/RFC-070-software-components-inventory.md.
 
 import (
 	"context"
 	"fmt"
 	"strings"
 
-	"github.com/openctemio/openctem/api/internal/app/datascope"
-	componentdom "github.com/openctemio/openctem/api/pkg/domain/component"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/software"
-	"github.com/openctemio/openctem/api/pkg/logger"
-	"github.com/openctemio/openctem/api/pkg/pagination"
+	"github.com/openctemio/openctem/server/internal/app/datascope"
+	componentdom "github.com/openctemio/openctem/server/pkg/domain/component"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/software"
+	"github.com/openctemio/openctem/server/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/pagination"
 )
 
 // ComponentService reads the software components inventory. Every read is

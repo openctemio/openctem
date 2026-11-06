@@ -6,7 +6,7 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // AIMode represents how the tenant uses AI services. The API calls the same

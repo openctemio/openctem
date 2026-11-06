@@ -4,9 +4,9 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/openctemio/openctem/api/pkg/brand"
-	"github.com/openctemio/openctem/api/pkg/domain/mcpoauth"
-	"github.com/openctemio/openctem/api/pkg/dpop"
+	"github.com/openctemio/openctem/server/pkg/brand"
+	"github.com/openctemio/openctem/server/pkg/domain/mcpoauth"
+	"github.com/openctemio/openctem/server/pkg/dpop"
 )
 
 // MCPResourceMetadataHandler serves the OAuth 2.0 Protected Resource Metadata

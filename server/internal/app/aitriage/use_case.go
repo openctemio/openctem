@@ -11,8 +11,8 @@ import (
 	"context"
 	"errors"
 
-	aidom "github.com/openctemio/openctem/api/pkg/domain/aianalysis"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	aidom "github.com/openctemio/openctem/server/pkg/domain/aianalysis"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // ErrUseCaseOff: the organization turned the triage AI use case off.

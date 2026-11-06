@@ -11,12 +11,12 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/app/accesscontrol"
-	"github.com/openctemio/openctem/api/internal/app/apikey"
-	"github.com/openctemio/openctem/api/internal/infra/postgres"
-	"github.com/openctemio/openctem/api/internal/testdb"
-	roledom "github.com/openctemio/openctem/api/pkg/domain/role"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/internal/app/accesscontrol"
+	"github.com/openctemio/openctem/server/internal/app/apikey"
+	"github.com/openctemio/openctem/server/internal/infra/postgres"
+	"github.com/openctemio/openctem/server/internal/testdb"
+	roledom "github.com/openctemio/openctem/server/pkg/domain/role"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 var systemRoleIDs = []roledom.ID{roledom.OwnerRoleID, roledom.AdminRoleID, roledom.MemberRoleID, roledom.ViewerRoleID}

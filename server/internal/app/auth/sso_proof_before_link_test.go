@@ -5,10 +5,10 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/config"
-	identityproviderdom "github.com/openctemio/openctem/api/pkg/domain/identityprovider"
-	userdom "github.com/openctemio/openctem/api/pkg/domain/user"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/internal/config"
+	identityproviderdom "github.com/openctemio/openctem/server/pkg/domain/identityprovider"
+	userdom "github.com/openctemio/openctem/server/pkg/domain/user"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // =============================================================================

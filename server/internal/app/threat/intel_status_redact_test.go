@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/app/feedstatus"
-	"github.com/openctemio/openctem/api/pkg/domain/threatintel"
+	"github.com/openctemio/openctem/server/internal/app/feedstatus"
+	"github.com/openctemio/openctem/server/pkg/domain/threatintel"
 )
 
 // The raw failure text is stored and shown on the platform admin route: a

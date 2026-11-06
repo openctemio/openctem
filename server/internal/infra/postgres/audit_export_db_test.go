@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	auditdom "github.com/openctemio/openctem/server/pkg/domain/audit"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // The audit export pages newest first with a keyset cursor, applies the list's

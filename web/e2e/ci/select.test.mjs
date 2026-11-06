@@ -30,7 +30,7 @@ ignore:
 areas:
   '@a':
     - web/src/features/a/**
-    - api/internal/infra/http/handler/a_*
+    - server/internal/infra/http/handler/a_*
   '@b':
     - web/src/features/b/**
   '@budget':
@@ -54,7 +54,7 @@ test('a feature path selects its tag and the smoke set', () => {
 })
 
 test('an API handler maps to the same tag as the web feature', () => {
-  const r = select(['api/internal/infra/http/handler/a_handler.go'], map, specs, {
+  const r = select(['server/internal/infra/http/handler/a_handler.go'], map, specs, {
     event: 'pull_request',
     impact: true,
   })
@@ -280,7 +280,7 @@ test('the committed map and specs are consistent', () => {
   const all = (paths) => select(paths, real, listSpecs(), { event: 'pull_request', impact: true })
   assert.equal(all(['web/src/features/findings/components/x.tsx']).mode, 'selected')
   assert.equal(all(['web/src/components/ui/button.tsx']).mode, 'all')
-  assert.equal(all(['api/migrations/000001_x.up.sql']).mode, 'all')
+  assert.equal(all(['server/migrations/000001_x.up.sql']).mode, 'all')
   assert.equal(all(['web/src/lib/i18n/dictionaries/vi/findings.json']).mode, 'none')
   assert.equal(all(['web/src/lib/i18n/dictionaries/en/common.json']).mode, 'all')
   const f = all(['web/src/features/findings/x.tsx'])

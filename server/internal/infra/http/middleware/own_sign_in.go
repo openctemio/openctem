@@ -4,8 +4,8 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/openctemio/openctem/api/pkg/apierror"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/apierror"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // CodeOwnSignInRequired answers an action on the account itself from a

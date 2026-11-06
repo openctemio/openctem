@@ -4,9 +4,9 @@ import (
 	"context"
 	"errors"
 
-	"github.com/openctemio/openctem/api/internal/app/validation"
-	retestdom "github.com/openctemio/openctem/api/pkg/domain/retest"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/internal/app/validation"
+	retestdom "github.com/openctemio/openctem/server/pkg/domain/retest"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // FindingValidator dispatches a plain validation re-check

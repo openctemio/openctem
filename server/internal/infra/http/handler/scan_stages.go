@@ -10,7 +10,7 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/openctemio/openctem/api/pkg/domain/stage"
+	"github.com/openctemio/openctem/server/pkg/domain/stage"
 )
 
 // ScanStageImplementationResponse is one tool that runs a capability.

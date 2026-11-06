@@ -14,8 +14,8 @@ import (
 	"net/netip"
 	"strings"
 
-	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	scopedom "github.com/openctemio/openctem/server/pkg/domain/scope"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // ErrClosingReachOutsideScope: a closing exclusion would close findings on

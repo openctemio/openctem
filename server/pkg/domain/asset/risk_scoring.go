@@ -5,7 +5,7 @@ import (
 	"math"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // Score composition modes control how the exposure multiplier is combined

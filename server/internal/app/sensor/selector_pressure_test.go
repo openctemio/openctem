@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
+	sensordom "github.com/openctemio/openctem/server/pkg/domain/sensor"
 )
 
 func pressured(name, level string, reportedAgo time.Duration) *sensordom.Sensor {

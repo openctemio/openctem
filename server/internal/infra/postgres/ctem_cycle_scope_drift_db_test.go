@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/ctemcycle"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/ctemcycle"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // scope_drift_size counts the external-surface assets first seen during the

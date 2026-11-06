@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/outbox"
+	"github.com/openctemio/openctem/server/pkg/domain/outbox"
 )
 
 // The per-channel delivery state survives a write and every read path: a

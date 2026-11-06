@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Fails when the platform (api/ or web/) depends on a sensor implementation
-# instead of on contracts (api/docs/rfcs/RFC-094-platform-contracts-only.md).
+# Fails when the platform (server/ or web/) depends on a sensor implementation
+# instead of on contracts (server/docs/rfcs/RFC-094-platform-contracts-only.md).
 #
 # The platform may depend on ctis (github.com/openctemio/ctis/v2: the CTIS 2.0
 # schema and importers), contract (github.com/openctemio/contract and
@@ -10,7 +10,7 @@
 # customer's, is treated the same, so none may be compiled in.
 #
 # Checked:
-#   - api/go.mod and api/go.sum: no require, replace or checksum line for a
+#   - server/go.mod and server/go.sum: no require, replace or checksum line for a
 #     forbidden module (go.sum lists every module in the graph, so an
 #     indirect requirement is caught too);
 #   - api Go files: no import of a forbidden module path;
@@ -36,19 +36,19 @@ report() {
   fail=1
 }
 
-for f in api/go.mod api/go.sum; do
+for f in server/go.mod server/go.sum; do
   [[ -f "$f" ]] || continue
   while IFS= read -r hit; do
     report "$f:${hit%%:*}: the platform must not depend on a sensor module (${hit#*:})"
   done < <(grep -nE "$go_forbidden" "$f" || true)
 done
 
-if [[ -d api ]]; then
+if [[ -d server ]]; then
   # Import lines: a quoted path at the start of an import spec, alone or in a
   # block. Comments and strings elsewhere do not count.
   while IFS= read -r hit; do
     report "$hit: the platform must not import a sensor module"
-  done < <(grep -rnE --include='*.go' "^[[:space:]]*(import[[:space:]]+)?([A-Za-z_.]+[[:space:]]+)?\"$go_forbidden" api || true)
+  done < <(grep -rnE --include='*.go' "^[[:space:]]*(import[[:space:]]+)?([A-Za-z_.]+[[:space:]]+)?\"$go_forbidden" server || true)
 fi
 
 for f in web/package.json web/package-lock.json; do

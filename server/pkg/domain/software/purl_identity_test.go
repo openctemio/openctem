@@ -3,8 +3,8 @@ package software_test
 import (
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/software"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/pkg/domain/software"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
 )
 
 // The catalog's package identity and the finding identity must name a

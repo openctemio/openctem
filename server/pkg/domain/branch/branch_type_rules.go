@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // BranchTypeRule maps a branch name pattern to a branch type.

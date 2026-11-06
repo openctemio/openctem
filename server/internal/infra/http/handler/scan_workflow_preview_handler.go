@@ -5,12 +5,12 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
-	"github.com/openctemio/openctem/api/pkg/apierror"
-	"github.com/openctemio/openctem/api/pkg/domain/scanzone"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/server/pkg/apierror"
+	"github.com/openctemio/openctem/server/pkg/domain/scanzone"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 
-	scansvc "github.com/openctemio/openctem/api/internal/app/scan"
+	scansvc "github.com/openctemio/openctem/server/internal/app/scan"
 )
 
 // WorkflowPreviewRequest is a workflow and the targets a scan would run it on.

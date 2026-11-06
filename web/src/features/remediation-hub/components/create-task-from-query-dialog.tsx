@@ -1,7 +1,7 @@
 'use client'
 
 /**
- * Creates a remediation task from a query (api/docs/rfcs/RFC-098-remediation-tasks.md,
+ * Creates a remediation task from a query (server/docs/rfcs/RFC-098-remediation-tasks.md,
  * "Tasks from a query"). The person writes or opens a "findings where ..."
  * query, previews what it selects in their own access (count, breakdowns,
  * a sample, matches other tasks hold, the earliest SLA deadline and a

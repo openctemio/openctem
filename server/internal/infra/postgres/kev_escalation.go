@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/openctemio/openctem/api/internal/app/threat"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/internal/app/threat"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
 )
 
 // terminalStatusFilter excludes every closed/terminal status (matches

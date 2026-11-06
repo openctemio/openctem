@@ -1,6 +1,6 @@
 // Package refingerprint re-keys stored findings to the current identity
 // recipe (RFC-043 §6).
-// https://github.com/openctemio/openctem/blob/develop/api/docs/rfcs/RFC-043-deduplication-and-identity.md
+// https://github.com/openctemio/openctem/blob/develop/server/docs/rfcs/RFC-043-deduplication-and-identity.md
 //
 // Per tenant, in batches, resumable and idempotent:
 //
@@ -25,8 +25,8 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
 )
 
 // Store is the storage the job needs (implemented by

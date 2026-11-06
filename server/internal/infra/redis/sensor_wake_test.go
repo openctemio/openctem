@@ -10,8 +10,8 @@ import (
 
 	redislib "github.com/redis/go-redis/v9"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // recordingHub records the wakes delivered to one replica.

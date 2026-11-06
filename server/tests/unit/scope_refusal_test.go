@@ -4,8 +4,8 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/permission"
-	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
+	"github.com/openctemio/openctem/server/pkg/domain/permission"
+	scopedom "github.com/openctemio/openctem/server/pkg/domain/scope"
 )
 
 // Every refusal code has a message, and every fix names a real permission

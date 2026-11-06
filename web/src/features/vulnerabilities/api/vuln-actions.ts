@@ -1,5 +1,5 @@
 /**
- * Bulk actions on vulnerabilities (api/docs/architecture/vulnerability-page.md,
+ * Bulk actions on vulnerabilities (server/docs/architecture/vulnerability-page.md,
  * "Bulk actions"): an exception through the approval policy, a retest and an
  * export, each over the open findings of the selected CVEs that the list's
  * filters select. The API resolves the findings as the signed-in person;

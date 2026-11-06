@@ -2,7 +2,7 @@
  * CTEM cycle + charter types.
  *
  * Field names mirror the API charter struct
- * (`api/pkg/domain/ctemcycle/entity.go`, api #463): the charter is stored as a
+ * (`server/pkg/domain/ctemcycle/entity.go`, api #463): the charter is stored as a
  * JSONB object on `ctem_cycles.charter` and round-trips verbatim through the
  * cycle create/update endpoints. Keep the JSON keys here in sync with the Go
  * `json:"..."` tags.

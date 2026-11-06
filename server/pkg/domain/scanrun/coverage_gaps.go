@@ -17,7 +17,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/openctemio/openctem/api/pkg/safetext"
+	"github.com/openctemio/openctem/server/pkg/safetext"
 )
 
 // Coverage-gap reasons a sensor reports. An entry with any other reason is

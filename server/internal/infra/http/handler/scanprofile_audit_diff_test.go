@@ -3,9 +3,9 @@ package handler
 import (
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/audit"
-	"github.com/openctemio/openctem/api/pkg/domain/scanprofile"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/audit"
+	"github.com/openctemio/openctem/server/pkg/domain/scanprofile"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // A quality-gate change, an update and a new default record what changed.

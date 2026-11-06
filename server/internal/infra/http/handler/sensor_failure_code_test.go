@@ -3,7 +3,7 @@ package handler
 import (
 	"testing"
 
-	scanrundom "github.com/openctemio/openctem/api/pkg/domain/scanrun"
+	scanrundom "github.com/openctemio/openctem/server/pkg/domain/scanrun"
 )
 
 // A sensor may name only what it can observe. A platform decision code

@@ -4,8 +4,8 @@
 The platform never downloads these lists at run time (it talks only to its
 sensors). A maintainer runs this script, reviews the diff and commits it:
 
-    python3 -I api/scripts/edgeaddr-dataset.py fetch <empty dir>
-    python3 -I api/scripts/edgeaddr-dataset.py build <that dir> api/pkg/domain/edgeaddr/dataset.json
+    python3 -I server/scripts/edgeaddr-dataset.py fetch <empty dir>
+    python3 -I server/scripts/edgeaddr-dataset.py build <that dir> server/pkg/domain/edgeaddr/dataset.json
 
 `build` keeps the dataset's network-holder ("orgs") and host-suffix ("apexes")
 entries and replaces its published ranges with the providers' own lists:

@@ -32,7 +32,7 @@ import (
 	connect "connectrpc.com/connect"
 	context "context"
 	errors "errors"
-	v3 "github.com/openctemio/openctem/api/pkg/sensorproto/v3"
+	v3 "github.com/openctemio/openctem/server/pkg/sensorproto/v3"
 	http "net/http"
 	strings "strings"
 )

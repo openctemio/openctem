@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/openctemio/openctem/api/internal/infra/postgres"
+	"github.com/openctemio/openctem/server/internal/infra/postgres"
 )
 
 // One run per feed: of any number of simultaneous claims exactly one wins,

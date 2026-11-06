@@ -5,8 +5,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/dashboard"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/dashboard"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // itemsFacts ranks two findings and counts the open list per filter, so the

@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app/versioncheck"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/internal/app/versioncheck"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // VersionCheckController runs the version check when it is due

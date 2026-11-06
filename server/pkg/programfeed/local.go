@@ -19,7 +19,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/openctemio/openctem/api/pkg/feedsign"
+	"github.com/openctemio/openctem/server/pkg/feedsign"
 )
 
 // Unsigned file names of a local bundle.

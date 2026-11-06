@@ -8,10 +8,10 @@ import (
 	"testing"
 	"time"
 
-	notificationclient "github.com/openctemio/openctem/api/internal/infra/notifier"
-	"github.com/openctemio/openctem/api/pkg/domain/integration"
-	outboxdom "github.com/openctemio/openctem/api/pkg/domain/outbox"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	notificationclient "github.com/openctemio/openctem/server/internal/infra/notifier"
+	"github.com/openctemio/openctem/server/pkg/domain/integration"
+	outboxdom "github.com/openctemio/openctem/server/pkg/domain/outbox"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // fakeOutboxRepo records updates, archives and deletes. Methods the

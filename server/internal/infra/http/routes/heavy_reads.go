@@ -1,6 +1,6 @@
 package routes
 
-import "github.com/openctemio/openctem/api/internal/infra/http/middleware"
+import "github.com/openctemio/openctem/server/internal/infra/http/middleware"
 
 // heavyReads caps, per tenant, the tenant-wide aggregate reads (dashboard
 // metrics, finding and asset stats, attack-surface graphs) running at once.

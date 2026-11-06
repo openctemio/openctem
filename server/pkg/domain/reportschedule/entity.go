@@ -9,8 +9,8 @@ import (
 
 	"github.com/robfig/cron/v3"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/pagination"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/pagination"
 )
 
 // validReportTypes are the report types the scheduler can actually generate

@@ -9,7 +9,7 @@
 #   OR: docker build --target development -t ui:dev .
 #
 # Production:
-#   api/deploy/docker-compose.yml (the whole stack behind one HTTPS port)
+#   server/deploy/docker-compose.yml (the whole stack behind one HTTPS port)
 #   OR: docker build --target production -t ui:prod .
 # ==============================================================================
 
@@ -67,7 +67,7 @@ CMD ["npm", "run", "dev"]
 # Third-party notices (About > Open-source licenses): every production package
 # the web app and the console ship, with its license and license text, read
 # from the installed node_modules (no network). Both apps serve the file
-# read-only (api/docs/architecture/third-party-notices.md).
+# read-only (server/docs/architecture/third-party-notices.md).
 # -----------------------------------------------------------------------------
 FROM base AS notices
 WORKDIR /app
@@ -218,7 +218,7 @@ RUN addgroup -S -g 1001 nodejs && \
 # those two are writable mounts:
 #   read_only: true
 #   tmpfs: [/tmp, "/app/.next/cache:uid=1001,gid=1001"]
-# (api/deploy/docker-compose.yml does this).
+# (server/deploy/docker-compose.yml does this).
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static

@@ -5,7 +5,7 @@ import (
 	"math"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/threatintel"
+	"github.com/openctemio/openctem/server/pkg/domain/threatintel"
 )
 
 // View is the status of one feed as the platform admin console reads it.

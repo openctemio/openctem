@@ -4,7 +4,7 @@
   Only what the rules put in the alert is shown: the alert name, severity,
   summary, description, the infrastructure labels (job, instance, component,
   controller, probe, reason) and the runbook link. Rules never put tenant,
-  user or target data in an alert (api/docs/operations/monitoring.md).
+  user or target data in an alert (server/docs/operations/monitoring.md).
 */}}
 
 {{ define "openctem.status" }}{{ if eq .Status "firing" }}FIRING{{ else }}RESOLVED{{ end }}{{ end }}

@@ -41,7 +41,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/time/rate"
 
-	"github.com/openctemio/openctem/api/pkg/sensorproto/relay"
+	"github.com/openctemio/openctem/server/pkg/sensorproto/relay"
 )
 
 // Realm is one platform installation (or cell) the relay serves.

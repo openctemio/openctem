@@ -16,11 +16,11 @@ import (
 	"strings"
 	"time"
 
-	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
-	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	dom "github.com/openctemio/openctem/api/pkg/domain/wordlist"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
+	auditdom "github.com/openctemio/openctem/server/pkg/domain/audit"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	dom "github.com/openctemio/openctem/server/pkg/domain/wordlist"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // AuditLogger records audit events. *auditapp.AuditService implements it.

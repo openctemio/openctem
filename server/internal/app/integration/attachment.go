@@ -12,9 +12,9 @@ import (
 	"sync"
 	"time"
 
-	attachmentdom "github.com/openctemio/openctem/api/pkg/domain/attachment"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	attachmentdom "github.com/openctemio/openctem/server/pkg/domain/attachment"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // TenantStorageResolver resolves per-tenant storage configuration.

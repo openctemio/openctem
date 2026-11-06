@@ -7,9 +7,9 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	proxypoolapp "github.com/openctemio/openctem/api/internal/app/proxypool"
-	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
-	"github.com/openctemio/openctem/api/pkg/apierror"
+	proxypoolapp "github.com/openctemio/openctem/server/internal/app/proxypool"
+	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/server/pkg/apierror"
 )
 
 // The Test button of a proxy pool (docs/architecture/sensor-proxies.md):

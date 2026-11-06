@@ -106,12 +106,12 @@ code never runs in the platform. See [tool contract](tool-contract.md) and [cont
 
 Shipped: Tenable.sc connector, asset collector (vCenter, LDAP, Cloud DNS, PRTG, Splunk), file importers, CTIS
 ingest, Jira, GitHub Issues, notifier channels, CI providers. Cloud provider inventory is **not** shipped:
-`api/internal/app/connector` defines a `Connector` interface and a `Registry`
+`server/internal/app/connector` defines a `Connector` interface and a `Registry`
 only, with no provider implementation and no caller (nothing imports the
 package). Planned in order: cloud and Kubernetes
 inventory, scanner API pulls, code-host alerts, exploit and advisory intelligence, endpoint and cloud-security
 sources, declarative REST connector, further trackers, OCSF export, SIEM pack.
 
-Key files: `api/internal/app/tenablesc/`, `api/internal/infra/controller/tenable_sc_sync.go`,
-`api/internal/app/connector/connector.go` (unused), `api/internal/infra/jira/`, `api/internal/app/ticketing/`,
-`api/internal/infra/notifier/`, `api/pkg/domain/integration/entity.go`.
+Key files: `server/internal/app/tenablesc/`, `server/internal/infra/controller/tenable_sc_sync.go`,
+`server/internal/app/connector/connector.go` (unused), `server/internal/infra/jira/`, `server/internal/app/ticketing/`,
+`server/internal/infra/notifier/`, `server/pkg/domain/integration/entity.go`.

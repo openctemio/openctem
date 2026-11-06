@@ -727,7 +727,7 @@ This provides runtime validation for:
 - **Key format**: Must be alphanumeric with underscores (e.g., `discovery_source`)
 - **Type-specific schemas**: Each asset type has validated fields
 
-See: `api/pkg/validator/properties.go` for the validator implementation.
+See: `server/pkg/validator/properties.go` for the validator implementation.
 
 **Usage example:**
 

@@ -48,15 +48,15 @@ linters:
             - '**/pkg/domain/relationship/**'
             - '**/pkg/domain/findingsource/**'
           deny:
-            - pkg: github.com/openctemio/openctem/api/internal/app
+            - pkg: github.com/openctemio/openctem/server/internal/app
               desc: core domain must not depend on app services (layering violation)
-            - pkg: github.com/openctemio/openctem/api/pkg/domain/pentest
+            - pkg: github.com/openctemio/openctem/server/pkg/domain/pentest
               desc: core domain must not import a feature domain
-            - pkg: github.com/openctemio/openctem/api/pkg/domain/remediation
+            - pkg: github.com/openctemio/openctem/server/pkg/domain/remediation
               desc: core domain must not import a feature domain
-            - pkg: github.com/openctemio/openctem/api/pkg/domain/compliance
+            - pkg: github.com/openctemio/openctem/server/pkg/domain/compliance
               desc: core domain must not import a feature domain
-            - pkg: github.com/openctemio/openctem/api/pkg/domain/simulation
+            - pkg: github.com/openctemio/openctem/server/pkg/domain/simulation
               desc: core domain must not import a feature domain
     dupl:
       threshold: 300
@@ -188,7 +188,7 @@ formatters:
   settings:
     goimports:
       local-prefixes:
-        - github.com/openctemio/openctem/api
+        - github.com/openctemio/openctem/server
   exclusions:
     generated: lax
     paths:

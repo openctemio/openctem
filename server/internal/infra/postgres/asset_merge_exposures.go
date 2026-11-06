@@ -21,7 +21,7 @@ import (
 
 	"github.com/lib/pq"
 
-	"github.com/openctemio/openctem/api/pkg/domain/exposure"
+	"github.com/openctemio/openctem/server/pkg/domain/exposure"
 )
 
 type mergeExposure struct {

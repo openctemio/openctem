@@ -8,8 +8,8 @@ package postgres
 // source of truth: a wake carries no data, a lost one costs latency only.
 
 import (
-	"github.com/openctemio/openctem/api/pkg/domain/command"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/command"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // CommandChangeNotifier hears that commands changed. Implementations must

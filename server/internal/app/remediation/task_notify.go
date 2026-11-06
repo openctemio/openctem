@@ -10,11 +10,11 @@ import (
 	"context"
 	"fmt"
 
-	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
-	notificationdom "github.com/openctemio/openctem/api/pkg/domain/notification"
-	remediationdom "github.com/openctemio/openctem/api/pkg/domain/remediation"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	auditdom "github.com/openctemio/openctem/server/pkg/domain/audit"
+	notificationdom "github.com/openctemio/openctem/server/pkg/domain/notification"
+	remediationdom "github.com/openctemio/openctem/server/pkg/domain/remediation"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // SetNotifier wires the in-app notices to task owners (*notification service).

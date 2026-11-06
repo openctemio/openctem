@@ -6,7 +6,7 @@ import (
 
 	"github.com/openctemio/ctis/v2"
 
-	"github.com/openctemio/openctem/api/pkg/domain/ingestjob"
+	"github.com/openctemio/openctem/server/pkg/domain/ingestjob"
 )
 
 // KEVChecker reports whether any of the CVE ids is in the KEV catalog

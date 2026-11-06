@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // Tier is the probe intensity an entry allows at most: T0 passive, T1 safe

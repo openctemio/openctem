@@ -9,11 +9,11 @@ import (
 	"strings"
 	"testing"
 
-	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/tenant"
-	"github.com/openctemio/openctem/api/pkg/domain/webevidence"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	assetdom "github.com/openctemio/openctem/server/pkg/domain/asset"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/tenant"
+	"github.com/openctemio/openctem/server/pkg/domain/webevidence"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 type fakeWebEvidenceAssets struct {

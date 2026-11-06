@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/brand"
+	"github.com/openctemio/openctem/server/pkg/brand"
 )
 
 // The summary names the instance brand; the default stays OpenCTEM.

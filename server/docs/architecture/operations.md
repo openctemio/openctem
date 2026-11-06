@@ -55,7 +55,7 @@ being findings work):
 
 ## Key files
 
-- `api/migrations/NNNNNN_operations.up.sql` (table `operations`)
-- `api/pkg/domain/operation/operation.go`
-- `api/internal/infra/postgres/operation_repository.go`
-- `api/internal/infra/http/handler/finding_bulk_filter_handler.go` (`GetOperation`)
+- `server/migrations/NNNNNN_operations.up.sql` (table `operations`)
+- `server/pkg/domain/operation/operation.go`
+- `server/internal/infra/postgres/operation_repository.go`
+- `server/internal/infra/http/handler/finding_bulk_filter_handler.go` (`GetOperation`)

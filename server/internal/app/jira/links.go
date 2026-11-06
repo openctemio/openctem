@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/ticketlink"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/ticketlink"
 )
 
 // Linking an existing tracker issue to a finding (research 157 K4). A link is

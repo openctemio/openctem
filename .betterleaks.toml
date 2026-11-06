@@ -33,14 +33,14 @@ description = "Generic keyword rules on UI copy, source identifiers and schema t
 targetRules = ["generic-password", "generic-api-key", "generic-credential-uri", "curl-auth-header", "redis-connection-string", "postgresql-connection-string"]
 paths = [
     '''web/src/.*''',
-    '''api/internal/.*''',
-    '''api/pkg/.*''',
-    '''api/migrations/.*''',
-    '''api/Dockerfile.*''',
+    '''server/internal/.*''',
+    '''server/pkg/.*''',
+    '''server/migrations/.*''',
+    '''server/Dockerfile.*''',
     '''.*\.betterleaks\.toml$''',
     '''.*\.github/workflows/.*\.ya?ml$''',
-    '''api/deploy/docker-compose.*\.yml$''',
-    '''api/tests/integration/.*''',
+    '''server/deploy/docker-compose.*\.yml$''',
+    '''server/tests/integration/.*''',
     # Docs and dev scripts show placeholder logins for local setups.
     '''.*\.md$''',
     '''(^|.*/)scripts/.*''',
@@ -66,7 +66,7 @@ regexes = [
 
 # Allow specific commits (use sparingly)
 commits = [
-    # api/tests/authzmatrix/ci: the first commit of the nightly authz matrix
+    # server/tests/authzmatrix/ci: the first commit of the nightly authz matrix
     # suite wrote the migrate/app URLs with a shell variable reference
     # (user:$MATRIX_DB_PASSWORD@host). The password is generated per run and
     # no secret is in the commit; later commits assemble the URLs from parts.
@@ -105,7 +105,7 @@ regex = '''redis://[^:]*:[^@]+@[^/]+'''
 entropy = 0
 allowlist = { regexes = ['''redis://[^:]*:(password|secret)@(localhost|127\.0\.0\.1|redis)'''] }
 
-# OpenCTEM sensor credentials (api/docs/architecture/agent-identity.md,
+# OpenCTEM sensor credentials (server/docs/architecture/agent-identity.md,
 # "Credential formats"). octs_ and octe_ are <prefix> + 43 base62 characters
 # (32 random bytes) + 6 base62 characters (CRC32 of the random part); the
 # regex pins that exact shape so it cannot match prose or placeholders. The

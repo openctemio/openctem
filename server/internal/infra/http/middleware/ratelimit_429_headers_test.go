@@ -8,10 +8,10 @@ import (
 	"testing"
 	"time"
 
-	mcpoauthapp "github.com/openctemio/openctem/api/internal/app/mcpoauth"
-	"github.com/openctemio/openctem/api/pkg/domain/mcpoauth"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	mcpoauthapp "github.com/openctemio/openctem/server/internal/app/mcpoauth"
+	"github.com/openctemio/openctem/server/pkg/domain/mcpoauth"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // requireRateLimitHeaders checks a 429 carries Retry-After and both header

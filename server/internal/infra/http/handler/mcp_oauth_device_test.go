@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	mcpoauthapp "github.com/openctemio/openctem/api/internal/app/mcpoauth"
-	"github.com/openctemio/openctem/api/pkg/domain/mcpoauth"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	mcpoauthapp "github.com/openctemio/openctem/server/internal/app/mcpoauth"
+	"github.com/openctemio/openctem/server/pkg/domain/mcpoauth"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // Stand-ins the metadata never calls.

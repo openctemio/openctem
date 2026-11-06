@@ -5,7 +5,7 @@
 > findings stats/groups, extended finding filters, `POST /findings/search`,
 > export and P2 saved views are implemented; P3 (assets, MCP) and the long tail
 > are not built yet.
-> Scope: `api/` (`pkg/filterspec`, list/stats/groups/export handlers and
+> Scope: `server/` (`pkg/filterspec`, list/stats/groups/export handlers and
 > repositories, OpenAPI generation, `openapicontract`), `web/` (URL codec,
 > `buildQueryString`), the gateway access log.
 > Related: [RFC-041](RFC-041-api-path-design.md) (paths, casing, pagination,
@@ -52,14 +52,14 @@ The points that drive the design:
 
 | Problem | Evidence (develop @ `86ef984c`) |
 |---|---|
-| ~649 hand-written `Query().Get`/`Has` reads of ~230 names; no binding layer | `api/internal/infra/http/handler/*.go` |
+| ~649 hand-written `Query().Get`/`Has` reads of ~230 names; no binding layer | `server/internal/infra/http/handler/*.go` |
 | Silent coercion: `parseQueryArray` truncates at 100, `parseQueryBool` treats `yes` as false, a bad date is ignored, an unknown sort field is dropped | `handler/common.go:123-245`, `pkg/pagination/pagination.go:66-70` |
 | Findings: list (S1), groups (S2, a second SQL builder), stats (S3, two params), bulk body (S4), campaign JSONB (S5), plus three client vocabularies | `vulnerability_handler.go`, `finding_actions_handler.go`, `finding_group_repository.go`, `remediation_campaign.go`, `web/.../findings/page.tsx`, `use-findings-api.ts`, `mcp_tools.go` |
 | `asset_tags` works in groups, ignored by the list; `finding_ids` validates `max=500` after the parser cut it to 100 | `finding_repository.go buildWhereClause` vs `finding_group_repository.go buildFilterWhere` |
 | Stats ignore the list filter (findings and assets) | `vulnerability_handler.go` stats, `asset_handler.go` stats |
-| One concept, many names: KEV (3), EPSS (2), free text (`search`, `q`, `name`, `filter`), plural vs singular | handler query parsing across `api/internal/infra/http/handler/` |
-| Spec under-documents handlers (`/findings` documents 12 of ~27 params); nothing checks query-param drift | `api/api/openapi/swagger.yaml` |
-| Scope applied per service method where someone remembered it; nothing forces a new aggregate to be scoped | service methods in `api/internal/app/` |
+| One concept, many names: KEV (3), EPSS (2), free text (`search`, `q`, `name`, `filter`), plural vs singular | handler query parsing across `server/internal/infra/http/handler/` |
+| Spec under-documents handlers (`/findings` documents 12 of ~27 params); nothing checks query-param drift | `server/api/openapi/swagger.yaml` |
+| Scope applied per service method where someone remembered it; nothing forces a new aggregate to be scoped | service methods in `server/internal/app/` |
 | The gateway logs the full query string, so `?q=<email>` reaches the access log | RFC-041 §3.2 P4 |
 
 ## 3. Design
@@ -79,7 +79,7 @@ export / report / alert / MCP tool input                   ──┘            
                                   list │ count │ stats │ groups │ facets │ export │ bulk-by-filter
 ```
 
-- **Package `api/pkg/filterspec`**, domain-neutral:
+- **Package `server/pkg/filterspec`**, domain-neutral:
   - `Registry` and `Field{Name, Type, Ops, SQL, Indexed, Permission, Enum, Sortable, MaxValues}`;
   - `ParseValues(url.Values, *Registry, Options) (*Spec, error)` and
     `ParseDocument([]byte, *Registry, Options) (*Spec, error)`;

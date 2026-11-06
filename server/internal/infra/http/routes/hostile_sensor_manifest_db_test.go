@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/sensor"
+	"github.com/openctemio/openctem/server/pkg/domain/sensor"
 )
 
 // M8: any unknown member changes the manifest digest, so a sensor can make

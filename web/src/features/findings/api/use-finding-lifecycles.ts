@@ -1,5 +1,5 @@
 /**
- * The organization's finding lifecycles (api/docs/rfcs/RFC-110-tenant-lifecycles.md):
+ * The organization's finding lifecycles (server/docs/rfcs/RFC-110-tenant-lifecycles.md):
  * the sub-status catalog and the lifecycle schemes with their versions.
  * Reading needs findings:read; every change needs findings:lifecycles:write,
  * and publishing also needs a recent sign-in (the shared API client opens the

@@ -3,8 +3,8 @@ package handler
 import (
 	"testing"
 
-	scanrundom "github.com/openctemio/openctem/api/pkg/domain/scanrun"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	scanrundom "github.com/openctemio/openctem/server/pkg/domain/scanrun"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // A step nothing here runs is skipped with a code and a reason: the run read

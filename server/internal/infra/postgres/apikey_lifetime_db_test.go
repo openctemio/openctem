@@ -8,11 +8,11 @@ import (
 	"testing"
 	"time"
 
-	apikeyapp "github.com/openctemio/openctem/api/internal/app/apikey"
-	"github.com/openctemio/openctem/api/internal/testdb"
-	notificationdom "github.com/openctemio/openctem/api/pkg/domain/notification"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	apikeyapp "github.com/openctemio/openctem/server/internal/app/apikey"
+	"github.com/openctemio/openctem/server/internal/testdb"
+	notificationdom "github.com/openctemio/openctem/server/pkg/domain/notification"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 type fixedLifetime map[shared.ID]int

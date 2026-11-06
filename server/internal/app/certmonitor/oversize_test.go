@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	assetdom "github.com/openctemio/openctem/server/pkg/domain/asset"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // RFC-036 appendix T-4: a CT answer larger than the body cap is refused as a

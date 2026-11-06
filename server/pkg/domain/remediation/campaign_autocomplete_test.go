@@ -3,7 +3,7 @@ package remediation
 import (
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // A campaign completes on its own only from active, when its tasks are all

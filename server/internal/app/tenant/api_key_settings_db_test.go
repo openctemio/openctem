@@ -6,10 +6,10 @@ import (
 	"sync"
 	"testing"
 
-	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
-	notificationdom "github.com/openctemio/openctem/api/pkg/domain/notification"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
+	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
+	notificationdom "github.com/openctemio/openctem/server/pkg/domain/notification"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	tenantdom "github.com/openctemio/openctem/server/pkg/domain/tenant"
 )
 
 // keyPolicyAdmins answers the organization's owners and administrators;

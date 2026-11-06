@@ -11,8 +11,8 @@ import (
 
 	"golang.org/x/net/dns/dnsmessage"
 
-	"github.com/openctemio/openctem/api/pkg/dnsprobe"
-	"github.com/openctemio/openctem/api/pkg/dnsprobe/dnstest"
+	"github.com/openctemio/openctem/server/pkg/dnsprobe"
+	"github.com/openctemio/openctem/server/pkg/dnsprobe/dnstest"
 )
 
 func client(t *testing.T, zone map[string]dnstest.Entry) (*dnsprobe.Client, *dnstest.Server) {

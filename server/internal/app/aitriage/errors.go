@@ -5,7 +5,7 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/openctemio/openctem/api/internal/infra/llm"
+	"github.com/openctemio/openctem/server/internal/infra/llm"
 )
 
 // Request errors the HTTP layer maps to distinct answers (errors.Is). None of

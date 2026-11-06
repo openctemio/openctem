@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
-	apikeydom "github.com/openctemio/openctem/api/pkg/domain/apikey"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
+	apikeydom "github.com/openctemio/openctem/server/pkg/domain/apikey"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // The last-used IP of a key is shown to owners and administrators only.

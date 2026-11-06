@@ -6,11 +6,11 @@ import (
 	"sync"
 	"testing"
 
-	cirunapp "github.com/openctemio/openctem/api/internal/app/cirun"
-	"github.com/openctemio/openctem/api/internal/infra/postgres"
-	"github.com/openctemio/openctem/api/pkg/domain/asset"
-	"github.com/openctemio/openctem/api/pkg/domain/cirun"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	cirunapp "github.com/openctemio/openctem/server/internal/app/cirun"
+	"github.com/openctemio/openctem/server/internal/infra/postgres"
+	"github.com/openctemio/openctem/server/pkg/domain/asset"
+	"github.com/openctemio/openctem/server/pkg/domain/cirun"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // alertRecorder records admin alerts.

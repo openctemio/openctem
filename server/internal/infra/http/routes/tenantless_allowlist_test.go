@@ -13,12 +13,12 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/openctemio/openctem/api/internal/authzdoc"
-	"github.com/openctemio/openctem/api/internal/config"
-	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
-	"github.com/openctemio/openctem/api/internal/infra/http/routes/plane"
-	"github.com/openctemio/openctem/api/pkg/jwt"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/internal/authzdoc"
+	"github.com/openctemio/openctem/server/internal/config"
+	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/server/internal/infra/http/routes/plane"
+	"github.com/openctemio/openctem/server/pkg/jwt"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // jwtPlanes are the planes whose routes a user's session token can reach.

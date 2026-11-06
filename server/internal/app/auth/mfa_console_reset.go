@@ -12,8 +12,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/openctemio/openctem/api/pkg/domain/mfa"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/mfa"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // ResetUserMFAByConsole turns off the second factor of the local account id

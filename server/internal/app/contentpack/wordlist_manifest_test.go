@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	dom "github.com/openctemio/openctem/api/pkg/domain/contentpack"
+	dom "github.com/openctemio/openctem/server/pkg/domain/contentpack"
 )
 
 const goodCommit = "0123456789abcdef0123456789abcdef01234567"

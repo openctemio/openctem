@@ -3,7 +3,7 @@ package aianalysis
 import (
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // RunDeadline bounds a run. A live run past its deadline is failed with

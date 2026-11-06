@@ -16,8 +16,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
-	"github.com/openctemio/openctem/api/pkg/apierror"
+	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/server/pkg/apierror"
 )
 
 // adminListenerPaths are what the admin listener serves besides the console

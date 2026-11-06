@@ -14,7 +14,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/controllerlease"
+	"github.com/openctemio/openctem/server/pkg/domain/controllerlease"
 )
 
 // ControllerLeaseRepository stores controller leases.

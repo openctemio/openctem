@@ -1,7 +1,7 @@
 import { test, expect } from '../fixtures/authenticated-page'
 
 /**
- * Remediation campaigns hold tasks (api/docs/rfcs/RFC-098-remediation-tasks.md).
+ * Remediation campaigns hold tasks (server/docs/rfcs/RFC-098-remediation-tasks.md).
  * The CI seed creates one draft campaign with no task: the list shows it as
  * "Draft" and its page offers to add tasks.
  */

@@ -2,8 +2,8 @@
 # build-dist.sh <component>...
 #
 # Builds the release archives for installs without containers
-# (api/docs/deployment/binary-install.md) and for private registries
-# (api/docs/deployment/air-gapped.md). The Release workflow and its pull
+# (server/docs/deployment/binary-install.md) and for private registries
+# (server/docs/deployment/air-gapped.md). The Release workflow and its pull
 # request dry run call this script, so what a pull request tests is what a tag
 # publishes. Run it from any directory; it works on a checkout of this
 # repository.
@@ -77,13 +77,13 @@ pack() {
 }
 
 GO_LDFLAGS="-s -w \
- -X github.com/openctemio/openctem/api/pkg/version.Version=${VERSION} \
- -X github.com/openctemio/openctem/api/pkg/version.Commit=${COMMIT} \
- -X github.com/openctemio/openctem/api/pkg/version.BuildTime=${BUILD_TIME}"
+ -X github.com/openctemio/openctem/server/pkg/version.Version=${VERSION} \
+ -X github.com/openctemio/openctem/server/pkg/version.Commit=${COMMIT} \
+ -X github.com/openctemio/openctem/server/pkg/version.BuildTime=${BUILD_TIME}"
 
-gobuild() { # gobuild <out> <pkg>... (in api/)
+gobuild() { # gobuild <out> <pkg>... (in server/)
 	local out="$1"; shift
-	(cd "$ROOT/api" && CGO_ENABLED=0 GOOS="$TARGET_OS" GOARCH="$TARGET_ARCH" \
+	(cd "$ROOT/server" && CGO_ENABLED=0 GOOS="$TARGET_OS" GOARCH="$TARGET_ARCH" \
 		go build -trimpath -ldflags="$GO_LDFLAGS" -o "$out" "$@")
 }
 
@@ -102,25 +102,25 @@ build_server() {
 	gobuild "$WORK/gobin/" ./cmd/server ./cmd/signer ./cmd/openctem-migrate
 	install -m 0755 "$WORK/gobin/server" "$d/bin/openctem-server"
 	install -m 0755 "$WORK/gobin/signer" "$d/bin/openctem-signer"
-	# The operator commands: links to the server binary (api/cmd/server/tools.go).
+	# The operator commands: links to the server binary (server/cmd/server/tools.go).
 	for t in bootstrap-admin refingerprint repomerge ci-trust-scope-plan asset-canonical; do
 		ln -s openctem-server "$d/bin/$t"
 	done
-	# The migration runner (api/cmd/openctem-migrate), as in the migrations image.
+	# The migration runner (server/cmd/openctem-migrate), as in the migrations image.
 	install -m 0755 "$WORK/gobin/openctem-migrate" "$d/bin/openctem-migrate"
-	cp -R "$ROOT/api/migrations" "$d/migrations"
-	cp -R "$ROOT/api/configs" "$d/configs"
+	cp -R "$ROOT/server/migrations" "$d/migrations"
+	cp -R "$ROOT/server/configs" "$d/configs"
 	# The OpenAPI spec the server serves at /openapi.yaml (path relative to its
 	# working directory, as in the image).
-	if [ ! -s "$ROOT/api/api/openapi/swagger.yaml" ]; then
-		make -s -C "$ROOT/api" swagger SWAG_VERSION="$(dockerfile_arg "$ROOT/api/Dockerfile" SWAG_VERSION)" >/dev/null
+	if [ ! -s "$ROOT/server/api/openapi/swagger.yaml" ]; then
+		make -s -C "$ROOT/server" swagger SWAG_VERSION="$(dockerfile_arg "$ROOT/server/Dockerfile" SWAG_VERSION)" >/dev/null
 	fi
-	install -m 0644 "$ROOT/api/api/openapi/swagger.yaml" "$d/api/openapi/swagger.yaml"
+	install -m 0644 "$ROOT/server/api/openapi/swagger.yaml" "$d/api/openapi/swagger.yaml"
 	# The third-party notices the server serves (About > Open-source licenses),
 	# relative to its working directory as in the image. The tool runs here;
 	# GOOS/GOARCH tell its `go list` the target platform.
-	(cd "$ROOT/api" && CGO_ENABLED=0 go build -o "$WORK/gobin/third-party-notices" ./cmd/third-party-notices)
-	(cd "$ROOT/api" && CGO_ENABLED=0 GOOS="$TARGET_OS" GOARCH="$TARGET_ARCH" \
+	(cd "$ROOT/server" && CGO_ENABLED=0 go build -o "$WORK/gobin/third-party-notices" ./cmd/third-party-notices)
+	(cd "$ROOT/server" && CGO_ENABLED=0 GOOS="$TARGET_OS" GOARCH="$TARGET_ARCH" \
 		"$WORK/gobin/third-party-notices" -o "$d/third-party-notices.json")
 	install -m 0644 "$ROOT"/deploy/binary/systemd/openctem-server.service \
 		"$ROOT"/deploy/binary/systemd/openctem-signer.service \
@@ -153,12 +153,12 @@ build_gateway() {
 	[ "$TARGET_OS" = linux ] || die "gateway is built for linux only"
 	local name="openctem-gateway-${VERSION}-linux-${TARGET_ARCH}" d df caddy l4 deps src
 	d="$WORK/$name"
-	df="$ROOT/api/deploy/gateway/Dockerfile"
+	df="$ROOT/server/deploy/gateway/Dockerfile"
 	caddy="$(dockerfile_arg "$df" CADDY_VERSION)"
 	l4="$(dockerfile_arg "$df" CADDY_L4_VERSION)"
 	deps="$(dockerfile_arg "$df" CADDY_DEPS)"
 	mkdir -p "$d/bin" "$d/systemd" "$d/env"
-	# Same program and pins as the gateway image (api/deploy/gateway/Dockerfile).
+	# Same program and pins as the gateway image (server/deploy/gateway/Dockerfile).
 	src="$(mktemp -d "$WORK/caddy.XXXX")"
 	printf '%s\n' 'package main' 'import (' \
 		'	caddycmd "github.com/caddyserver/caddy/v2/cmd"' \
@@ -172,7 +172,7 @@ build_gateway() {
 		CGO_ENABLED=0 GOOS=linux GOARCH="$TARGET_ARCH" GOFLAGS=-mod=mod \
 			go build -trimpath -ldflags="-s -w" -o "$d/bin/caddy" .)
 	mkdir -p "$d/etc"
-	(cd "$ROOT/api/deploy/gateway" && cp -R Caddyfile planes.caddy servers.common entrypoint.sh admin modes sensors "$d/etc/")
+	(cd "$ROOT/server/deploy/gateway" && cp -R Caddyfile planes.caddy servers.common entrypoint.sh admin modes sensors "$d/etc/")
 	chmod 0755 "$d/etc/entrypoint.sh"
 	install -m 0644 "$ROOT/deploy/binary/systemd/openctem-gateway.service" "$ROOT/deploy/binary/systemd/openctem.sysusers" "$d/systemd/"
 	install -m 0644 "$ROOT/deploy/binary/env/gateway.env.example" "$d/env/"
@@ -194,7 +194,7 @@ web_prepare() {
 	host="$(node -p 'process.arch' | sed 's/x64/amd64/')"
 	[ "$host" = "$TARGET_ARCH" ] || die "web/console must be built on a $TARGET_ARCH machine (native modules), this one is $host"
 	if [ ! -s "$ROOT/web/src/lib/api/generated/api.types.ts" ]; then
-		make -s -C "$ROOT/api" contract >/dev/null
+		make -s -C "$ROOT/server" contract >/dev/null
 		(cd "$ROOT/web" && { [ -d node_modules ] || npm ci --no-audit --no-fund; } && npm run -s generate:api-types)
 	fi
 	(cd "$ROOT/web" && { [ -d node_modules ] || npm ci --no-audit --no-fund; })

@@ -1,6 +1,6 @@
 /**
  * Client-side mirror of the API's scan zone range rules
- * (`api/pkg/domain/scanzone/zone.go`, ParseRanges). The server is
+ * (`server/pkg/domain/scanzone/zone.go`, ParseRanges). The server is
  * the authority: this only lets the form point at a bad line before saving,
  * and shows what the API will store (normalised CIDRs).
  *

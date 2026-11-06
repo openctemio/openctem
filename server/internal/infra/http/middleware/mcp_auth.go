@@ -3,8 +3,8 @@ package middleware
 import (
 	"net/http"
 
-	"github.com/openctemio/openctem/api/pkg/apierror"
-	"github.com/openctemio/openctem/api/pkg/domain/mcpoauth"
+	"github.com/openctemio/openctem/server/pkg/apierror"
+	"github.com/openctemio/openctem/server/pkg/domain/mcpoauth"
 )
 
 // MCPBearerChallenge returns the WWW-Authenticate value of a 401 from the MCP

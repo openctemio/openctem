@@ -4,10 +4,10 @@ import (
 	"context"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
-// Retention of evidence files (api/docs/rfcs/RFC-084-file-storage.md).
+// Retention of evidence files (server/docs/rfcs/RFC-084-file-storage.md).
 //
 // Only the evidence contexts below are ever purged. Every other context —
 // authorization letters above all, which are kept as evidence even after the

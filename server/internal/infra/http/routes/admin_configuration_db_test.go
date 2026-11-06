@@ -7,15 +7,15 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/app/adminconsole"
-	"github.com/openctemio/openctem/api/internal/app/configoverview"
-	"github.com/openctemio/openctem/api/internal/app/versioncheck"
-	"github.com/openctemio/openctem/api/internal/config"
-	"github.com/openctemio/openctem/api/internal/infra/http/handler"
-	"github.com/openctemio/openctem/api/internal/infra/postgres"
-	"github.com/openctemio/openctem/api/pkg/domain/admin"
-	"github.com/openctemio/openctem/api/pkg/logger"
-	"github.com/openctemio/openctem/api/pkg/releasefeed/testdata/releasefeedtest"
+	"github.com/openctemio/openctem/server/internal/app/adminconsole"
+	"github.com/openctemio/openctem/server/internal/app/configoverview"
+	"github.com/openctemio/openctem/server/internal/app/versioncheck"
+	"github.com/openctemio/openctem/server/internal/config"
+	"github.com/openctemio/openctem/server/internal/infra/http/handler"
+	"github.com/openctemio/openctem/server/internal/infra/postgres"
+	"github.com/openctemio/openctem/server/pkg/domain/admin"
+	"github.com/openctemio/openctem/server/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/releasefeed/testdata/releasefeedtest"
 )
 
 // The version check switch over the console routes: a super admin with the

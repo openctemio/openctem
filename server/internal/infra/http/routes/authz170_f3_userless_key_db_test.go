@@ -15,8 +15,8 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/app/datascope"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/internal/app/datascope"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // TestAuthz170F3_UserlessAPIKey_ResolvesUnrestricted: the enforcer decision.

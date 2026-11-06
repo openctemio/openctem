@@ -6,14 +6,14 @@ package app
 import (
 	"context"
 
-	"github.com/openctemio/openctem/api/internal/app/scanrun"
+	"github.com/openctemio/openctem/server/internal/app/scanrun"
 
-	auditsvc "github.com/openctemio/openctem/api/internal/app/audit"
-	"github.com/openctemio/openctem/api/internal/app/scan"
-	"github.com/openctemio/openctem/api/internal/app/scanpolicy"
-	"github.com/openctemio/openctem/api/internal/app/sensor"
-	"github.com/openctemio/openctem/api/pkg/domain/audit"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	auditsvc "github.com/openctemio/openctem/server/internal/app/audit"
+	"github.com/openctemio/openctem/server/internal/app/scan"
+	"github.com/openctemio/openctem/server/internal/app/scanpolicy"
+	"github.com/openctemio/openctem/server/internal/app/sensor"
+	"github.com/openctemio/openctem/server/pkg/domain/audit"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // =============================================================================

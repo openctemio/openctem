@@ -8,9 +8,9 @@ import (
 	"io"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/adminbootstrap"
-	"github.com/openctemio/openctem/api/pkg/brand"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/internal/adminbootstrap"
+	"github.com/openctemio/openctem/server/pkg/brand"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // runInvite is `bootstrap-admin invite`: it adds an administrator by

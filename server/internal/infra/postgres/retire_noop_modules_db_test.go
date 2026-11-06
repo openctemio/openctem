@@ -5,9 +5,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/testdb"
-	aidom "github.com/openctemio/openctem/api/pkg/domain/aianalysis"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/internal/testdb"
+	aidom "github.com/openctemio/openctem/server/pkg/domain/aianalysis"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // An organization that had switched AI triage off on Settings > Modules still

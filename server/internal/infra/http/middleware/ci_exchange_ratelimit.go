@@ -35,7 +35,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // CIExchangeRateLimitConfig sets the two budgets, per minute.

@@ -1,7 +1,7 @@
 package finding
 
 // The sole member of an organization approving their own finding request
-// (api/docs/architecture/finding-status-lifecycle.md, "Approvals").
+// (server/docs/architecture/finding-status-lifecycle.md, "Approvals").
 //
 // Threat model: four-eyes stops one stolen session or one careless person
 // from hiding a risk. An organization with a single person has nobody else to
@@ -32,12 +32,12 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/openctemio/openctem/api/internal/app/outbox"
-	"github.com/openctemio/openctem/api/pkg/domain/integration"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/internal/app/outbox"
+	"github.com/openctemio/openctem/server/pkg/domain/integration"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	tenantdom "github.com/openctemio/openctem/server/pkg/domain/tenant"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // SoleOwnerChecker answers whether a user is the only active person of the

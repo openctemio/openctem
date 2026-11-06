@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	automationsvc "github.com/openctemio/openctem/api/internal/app/automation"
+	automationsvc "github.com/openctemio/openctem/server/internal/app/automation"
 )
 
 // =============================================================================

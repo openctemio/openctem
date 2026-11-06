@@ -13,9 +13,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/infra/postgres"
-	"github.com/openctemio/openctem/api/pkg/domain/sensor"
-	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
+	"github.com/openctemio/openctem/server/internal/infra/postgres"
+	"github.com/openctemio/openctem/server/pkg/domain/sensor"
+	protov2 "github.com/openctemio/openctem/server/pkg/sensorproto/v2"
 )
 
 func phase2Manifest(nucleiVersion string, semgrepCaps []string) map[string]any {

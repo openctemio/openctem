@@ -20,7 +20,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/openctemio/openctem/api/pkg/safetext"
+	"github.com/openctemio/openctem/server/pkg/safetext"
 )
 
 // FailureTargetUnreachable: the sensor could not reach the step's targets

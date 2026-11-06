@@ -1,7 +1,7 @@
 package postgres
 
 // Package observations into the software catalog. Design:
-// api/docs/rfcs/RFC-070-software-components-inventory.md.
+// server/docs/rfcs/RFC-070-software-components-inventory.md.
 
 import (
 	"context"
@@ -10,9 +10,9 @@ import (
 
 	"github.com/lib/pq"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/software"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/software"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
 )
 
 // SoftwarePackageWriter writes package observations: products and versions

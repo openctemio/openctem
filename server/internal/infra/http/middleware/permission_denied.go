@@ -1,6 +1,6 @@
 package middleware
 
-import "github.com/openctemio/openctem/api/pkg/apierror"
+import "github.com/openctemio/openctem/server/pkg/apierror"
 
 // PermissionDeniedDetails tells the caller exactly which grant a refused
 // request lacked, so they can ask an administrator for that and nothing

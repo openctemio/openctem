@@ -3,7 +3,7 @@ package scanrun
 import (
 	"context"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // RunNotifier hears that a run changed (a step started, finished or was

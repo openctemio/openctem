@@ -1,7 +1,7 @@
 package postgres
 
 // Issue-definition catalog repositories.
-// https://github.com/openctemio/openctem/blob/develop/api/docs/rfcs/RFC-044-issue-definitions-and-findings.md
+// https://github.com/openctemio/openctem/blob/develop/server/docs/rfcs/RFC-044-issue-definitions-and-findings.md
 //
 // Definitions live in the vulnerabilities table (extended in place). Tenant
 // isolation is enforced twice: every statement here carries the caller's
@@ -18,8 +18,8 @@ import (
 
 	"github.com/lib/pq"
 
-	"github.com/openctemio/openctem/api/pkg/domain/definition"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/definition"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // definitionVisible is the read predicate on vulnerabilities for tenant $1:

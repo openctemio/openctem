@@ -1,7 +1,7 @@
 /**
  * Guard: the console never hard-codes the product name in text people read.
  *
- * The brand is configuration (src/lib/brand.ts, api/docs/architecture/brand.md):
+ * The brand is configuration (src/lib/brand.ts, server/docs/architecture/brand.md):
  * text names the product through `{product}` in the catalogs or `useBrand()`.
  * This test parses every source file and every catalog value and fails on
  * the literal default name in a string, template or JSX text outside the

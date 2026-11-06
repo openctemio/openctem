@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
 )
 
 // TestBuildIssueBody_PrivateKeyBodyNeverLeaks puts a real-shaped PEM private

@@ -6,14 +6,14 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/openctemio/openctem/api/internal/app/integration"
-	"github.com/openctemio/openctem/api/internal/app/outbox"
+	"github.com/openctemio/openctem/server/internal/app/integration"
+	"github.com/openctemio/openctem/server/internal/app/outbox"
 
 	"github.com/google/uuid"
 
-	automationdom "github.com/openctemio/openctem/api/pkg/domain/automation"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	automationdom "github.com/openctemio/openctem/server/pkg/domain/automation"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // ActionHandler defines the interface for workflow action handlers.

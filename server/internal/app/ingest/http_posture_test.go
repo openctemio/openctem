@@ -7,7 +7,7 @@ import (
 
 	"github.com/openctemio/ctis/v2"
 
-	"github.com/openctemio/openctem/api/pkg/domain/webendpoint"
+	"github.com/openctemio/openctem/server/pkg/domain/webendpoint"
 )
 
 func originWithHeaders(id, value string, h *ctis.SecurityHeaders) ctis.Asset {

@@ -2,7 +2,7 @@
 # mirror-images.sh: copy the OpenCTEM images of one release into a private
 # registry (Harbor, Nexus, GitLab Container Registry, any OCI registry),
 # keeping their digests and the release's cosign signatures and attestations.
-# Guide: api/docs/deployment/air-gapped.md.
+# Guide: server/docs/deployment/air-gapped.md.
 #
 #   mirror-images.sh online <version> <dest-prefix> [options]
 #       from ghcr.io, or from --source-prefix (a registry proxy of ghcr.io such
@@ -183,7 +183,7 @@ log "wrote $manifest_out"
 
 if [ -n "$env_out" ]; then
 	{
-		echo "# Docker Compose (api/deploy/.env): OpenCTEM images from ${dest}, release ${version}."
+		echo "# Docker Compose (server/deploy/.env): OpenCTEM images from ${dest}, release ${version}."
 		echo "OPENCTEM_VERSION=${version}"
 		for l in "${manifest_lines[@]}"; do
 			case "${l%% *}" in

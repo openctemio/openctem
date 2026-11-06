@@ -7,10 +7,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/ticketlink"
-	"github.com/openctemio/openctem/api/pkg/domain/ticketmap"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/ticketlink"
+	"github.com/openctemio/openctem/server/pkg/domain/ticketmap"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // Published mapping profiles in the ticket paths

@@ -1,5 +1,5 @@
 /**
- * Pure helpers of the vulnerability page (api/docs/architecture/vulnerability-page.md):
+ * Pure helpers of the vulnerability page (server/docs/architecture/vulnerability-page.md):
  * the findings-list links every number opens, the status buckets of the
  * stacked bar, the CVSS vector in words, the exploit signals and the feed
  * freshness. No React here, so each rule has a unit test.

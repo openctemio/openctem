@@ -265,7 +265,7 @@ async function proxyRequest(
 
   // Forward refresh token + CSRF token cookies to the backend.
   //
-  // The CSRF middleware on the backend (api/internal/infra/http/
+  // The CSRF middleware on the backend (server/internal/infra/http/
   // middleware/csrf.go) uses the double-submit-cookie pattern:
   // the csrf_token cookie must match the X-CSRF-Token header. The
   // browser stores csrf_token as HttpOnly=false (JS-readable) so

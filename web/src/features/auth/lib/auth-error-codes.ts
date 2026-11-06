@@ -1,6 +1,6 @@
 /**
  * The words for the API's sign-in, SSO, SAML, social-login and invitation
- * refusals. The API answers each with a stable `code` (api/internal/infra/http/
+ * refusals. The API answers each with a stable `code` (server/internal/infra/http/
  * handler/auth_error_codes.go) and an English sentence for API clients; the
  * console shows its own text from `errors.auth.<CODE>` in the person's
  * language and never the server's sentence when the code is known.

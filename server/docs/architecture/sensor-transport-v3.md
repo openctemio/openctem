@@ -7,9 +7,9 @@ is built, where it lives and how to work on it.
 
 | Part | State | Where |
 |---|---|---|
-| Proto `openctem.sensor.v3.SensorService` | built | `api/proto/openctem/sensor/v3/sensor.proto` |
-| Generated Go (protobuf + Connect) | built, committed | `api/pkg/sensorproto/v3`, `api/pkg/sensorproto/v3/sensorv3connect` |
-| CI: buf lint, buf breaking, generated code current | built | `api/scripts/check-proto.sh`, step "Sensor Protocol v3" of API CI |
+| Proto `openctem.sensor.v3.SensorService` | built | `server/proto/openctem/sensor/v3/sensor.proto` |
+| Generated Go (protobuf + Connect) | built, committed | `server/pkg/sensorproto/v3`, `server/pkg/sensorproto/v3/sensorv3connect` |
+| CI: buf lint, buf breaking, generated code current | built | `server/scripts/check-proto.sh`, step "Sensor Protocol v3" of API CI |
 | HTTPS binding (`/api/v3/sensor`) | built, served unless `SENSOR_TRANSPORT_V3=off` | `internal/infra/sensortransport` (server), `handler/sensor_v3_bridge.go` (identity, in-process authenticator, stream hints), `routes/sensor_v2.go` (`sensorV2InProcess`) |
 | Control stream `Subscribe`, push on command changes (one replica) | built | `sensortransport/subscribe.go`, `postgres/command_notify.go` |
 | Sensor CA, `IssueCertificate`, mTLS listener (gRPC binding), revocation | built | `sensortransport/ca.go`, `issuer.go`, `mtls.go`; `SensorService.SetStatusNotifier` |
@@ -377,8 +377,8 @@ v2 at its next call).
 ## Working on the proto
 
 ```bash
-cd api
-make proto          # regenerate api/pkg/sensorproto/v3 with the pinned buf and plugins
+cd server
+make proto          # regenerate server/pkg/sensorproto/v3 with the pinned buf and plugins
 make proto-check    # what CI runs: lint, breaking against origin/develop, drift
 ```
 

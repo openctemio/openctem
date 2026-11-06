@@ -15,14 +15,14 @@ import (
 
 	"github.com/openctemio/ctis/v2"
 
-	assetapp "github.com/openctemio/openctem/api/internal/app/asset"
-	contentruleapp "github.com/openctemio/openctem/api/internal/app/contentrule"
-	"github.com/openctemio/openctem/api/internal/app/contentrule/builtin"
-	"github.com/openctemio/openctem/api/internal/app/ingest"
-	"github.com/openctemio/openctem/api/internal/infra/postgres"
-	dom "github.com/openctemio/openctem/api/pkg/domain/contentpack"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	assetapp "github.com/openctemio/openctem/server/internal/app/asset"
+	contentruleapp "github.com/openctemio/openctem/server/internal/app/contentrule"
+	"github.com/openctemio/openctem/server/internal/app/contentrule/builtin"
+	"github.com/openctemio/openctem/server/internal/app/ingest"
+	"github.com/openctemio/openctem/server/internal/infra/postgres"
+	dom "github.com/openctemio/openctem/server/pkg/domain/contentpack"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
 )
 
 // builtinPlatform serves the built-in rule packs as stable platform packs.

@@ -5,8 +5,8 @@ import (
 	"database/sql"
 	"testing"
 
-	scansvc "github.com/openctemio/openctem/api/internal/app/scan"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	scansvc "github.com/openctemio/openctem/server/internal/app/scan"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // A sensor starting a step's command is what the command handlers report with

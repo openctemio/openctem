@@ -61,7 +61,7 @@ export const INFORMATIONAL_PARAM = 'informational'
 
 /**
  * Whether a list leaves informational findings out when its URL does not say:
- * the API's work-view rule (api/docs/architecture/findings-work-views.md). An
+ * the API's work-view rule (server/docs/architecture/findings-work-views.md). An
  * explicit severity or a saved view never hides them; Needs triage (status new)
  * always does; the Open lens does unless the caller includes them.
  */

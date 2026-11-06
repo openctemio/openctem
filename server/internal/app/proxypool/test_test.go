@@ -8,15 +8,15 @@ import (
 	"testing"
 	"time"
 
-	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
-	"github.com/openctemio/openctem/api/pkg/crypto"
-	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
-	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
-	pooldom "github.com/openctemio/openctem/api/pkg/domain/proxypool"
-	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/logger"
-	"github.com/openctemio/openctem/api/pkg/pagination"
+	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
+	"github.com/openctemio/openctem/server/pkg/crypto"
+	auditdom "github.com/openctemio/openctem/server/pkg/domain/audit"
+	commanddom "github.com/openctemio/openctem/server/pkg/domain/command"
+	pooldom "github.com/openctemio/openctem/server/pkg/domain/proxypool"
+	sensordom "github.com/openctemio/openctem/server/pkg/domain/sensor"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/pagination"
 )
 
 type testSensorStore struct{ byID map[string]*sensordom.Sensor }

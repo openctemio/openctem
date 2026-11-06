@@ -8,9 +8,9 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	dto "github.com/prometheus/client_model/go"
 
-	"github.com/openctemio/openctem/api/internal/app/command"
-	"github.com/openctemio/openctem/api/internal/metrics"
-	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
+	"github.com/openctemio/openctem/server/internal/app/command"
+	"github.com/openctemio/openctem/server/internal/metrics"
+	commanddom "github.com/openctemio/openctem/server/pkg/domain/command"
 )
 
 // histCount is the number of observations of one histogram series.

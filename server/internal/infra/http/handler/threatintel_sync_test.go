@@ -9,10 +9,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app/feedsync"
-	"github.com/openctemio/openctem/api/internal/app/threat"
-	"github.com/openctemio/openctem/api/pkg/domain/threatintel"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/internal/app/feedsync"
+	"github.com/openctemio/openctem/server/internal/app/threat"
+	"github.com/openctemio/openctem/server/pkg/domain/threatintel"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 type fakeStatusRepo struct {

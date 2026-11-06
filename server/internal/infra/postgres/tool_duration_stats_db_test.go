@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/toolbudget"
+	"github.com/openctemio/openctem/server/pkg/domain/toolbudget"
 )
 
 // The learned per-target duration converges on the samples, stays within the

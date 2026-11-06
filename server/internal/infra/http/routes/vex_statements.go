@@ -3,14 +3,14 @@ package routes
 import (
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/config"
-	"github.com/openctemio/openctem/api/internal/infra/http/handler"
-	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
-	"github.com/openctemio/openctem/api/pkg/domain/permission"
+	"github.com/openctemio/openctem/server/internal/config"
+	"github.com/openctemio/openctem/server/internal/infra/http/handler"
+	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/server/pkg/domain/permission"
 )
 
 // registerVEXStatementRoutes wires the organization's VEX statements
-// (api/docs/rfcs/RFC-070-software-components-inventory.md). Reading needs
+// (server/docs/rfcs/RFC-070-software-components-inventory.md). Reading needs
 // components:read; writing closes findings, so it needs findings:approve
 // (the false-positive permission); a statement with status fixed also needs
 // findings:verify, checked in the handler and enforced by the service. Data scope is applied in the service.

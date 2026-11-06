@@ -4,12 +4,12 @@ import (
 	"context"
 	"testing"
 
-	lc "github.com/openctemio/openctem/api/pkg/domain/findinglifecycle"
+	lc "github.com/openctemio/openctem/server/pkg/domain/findinglifecycle"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
-	"github.com/openctemio/openctem/api/pkg/logger"
-	"github.com/openctemio/openctem/api/pkg/pagination"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/pagination"
 )
 
 // fixAppliedRepo lists fix_applied findings and records the source statuses

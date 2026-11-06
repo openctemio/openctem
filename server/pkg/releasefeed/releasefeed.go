@@ -34,7 +34,7 @@ import (
 
 	"golang.org/x/mod/semver"
 
-	"github.com/openctemio/openctem/api/pkg/feedsign"
+	"github.com/openctemio/openctem/server/pkg/feedsign"
 )
 
 // Format constants (must match the builder, cmd/release-feed).

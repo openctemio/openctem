@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
+	"github.com/openctemio/openctem/server/pkg/domain/scanrun"
 )
 
 // The 2026-10-13 incident: nuclei was dispatched with 2 minutes left on the

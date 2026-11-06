@@ -12,11 +12,11 @@ import (
 
 	"github.com/openctemio/contract/secretref"
 
-	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
-	"github.com/openctemio/openctem/api/pkg/crypto"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	dom "github.com/openctemio/openctem/api/pkg/domain/toolsource"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
+	"github.com/openctemio/openctem/server/pkg/crypto"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	dom "github.com/openctemio/openctem/server/pkg/domain/toolsource"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 type memRepo struct {

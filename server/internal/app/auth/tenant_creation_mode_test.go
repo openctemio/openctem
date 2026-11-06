@@ -5,9 +5,9 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/config"
-	signupdom "github.com/openctemio/openctem/api/pkg/domain/signup"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/internal/config"
+	signupdom "github.com/openctemio/openctem/server/pkg/domain/signup"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // In admin_only mode the onboarding create-first-team path must refuse before

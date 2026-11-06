@@ -5,11 +5,11 @@ import (
 	"testing"
 	"time"
 
-	commandapp "github.com/openctemio/openctem/api/internal/app/command"
-	sensorapp "github.com/openctemio/openctem/api/internal/app/sensor"
-	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	commandapp "github.com/openctemio/openctem/server/internal/app/command"
+	sensorapp "github.com/openctemio/openctem/server/internal/app/sensor"
+	sensordom "github.com/openctemio/openctem/server/pkg/domain/sensor"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // The heartbeat doorbell against a real schema for work the claim splits

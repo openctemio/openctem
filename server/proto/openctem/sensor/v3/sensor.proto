@@ -27,7 +27,7 @@ package openctem.sensor.v3;
 
 import "google/protobuf/timestamp.proto";
 
-option go_package = "github.com/openctemio/openctem/api/pkg/sensorproto/v3;sensorv3";
+option go_package = "github.com/openctemio/openctem/server/pkg/sensorproto/v3;sensorv3";
 
 // SensorService is everything a sensor asks of the platform.
 service SensorService {

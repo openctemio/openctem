@@ -6,10 +6,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/apierror"
-	sessiondom "github.com/openctemio/openctem/api/pkg/domain/session"
-	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/apierror"
+	sessiondom "github.com/openctemio/openctem/server/pkg/domain/session"
+	tenantdom "github.com/openctemio/openctem/server/pkg/domain/tenant"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // SSOEnforcedProvider answers whether a tenant currently enforces SSO. It is the

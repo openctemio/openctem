@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/dashboard"
+	"github.com/openctemio/openctem/server/pkg/domain/dashboard"
 )
 
 // Window is the time window of a widget read, in UTC days.

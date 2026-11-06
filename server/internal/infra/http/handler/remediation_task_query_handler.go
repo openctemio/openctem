@@ -11,12 +11,12 @@ import (
 	"strings"
 	"time"
 
-	queryapp "github.com/openctemio/openctem/api/internal/app/query"
-	remediationapp "github.com/openctemio/openctem/api/internal/app/remediation"
-	"github.com/openctemio/openctem/api/pkg/apierror"
-	"github.com/openctemio/openctem/api/pkg/domain/remediation"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/querylang"
+	queryapp "github.com/openctemio/openctem/server/internal/app/query"
+	remediationapp "github.com/openctemio/openctem/server/internal/app/remediation"
+	"github.com/openctemio/openctem/server/pkg/apierror"
+	"github.com/openctemio/openctem/server/pkg/domain/remediation"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/querylang"
 )
 
 // QueryTaskPreviewRequest is the query to preview.

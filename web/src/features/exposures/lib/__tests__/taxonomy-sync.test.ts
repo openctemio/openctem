@@ -14,7 +14,7 @@ import vi from '@/lib/i18n/dictionaries/vi/exposures.json'
 import { exposureSummaryText, summaryKey } from '../summary'
 
 const api = (f: string) =>
-  readFileSync(resolve(__dirname, '../../../../../../api/pkg/domain/exposure', f), 'utf8')
+  readFileSync(resolve(__dirname, '../../../../../../server/pkg/domain/exposure', f), 'utf8')
 
 function apiCategories(): { key: string; produced: boolean }[] {
   const src = api('display.go')

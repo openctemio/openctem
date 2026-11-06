@@ -350,7 +350,7 @@ export type DomainDiscoverySource =
 /**
  * An asset's properties (the API's `properties`, kept as `asset.metadata`).
  *
- * The keys are the registry's (api/configs/asset-types.yaml, generated into
+ * The keys are the registry's (server/configs/asset-types.yaml, generated into
  * `AssetPropertyKey`): web code reads and writes a property only by a schema
  * key, so a key outside the registry does not compile
  * (docs/architecture/asset-inventory-v2.md, "Property names"). Third-party
@@ -364,7 +364,7 @@ export type AssetMetadata = Partial<Record<AssetPropertyKey, unknown>>
  */
 /**
  * Legacy derived category of an asset type (the `category` field of asset
- * responses), generated from api/configs/asset-types.yaml. New code uses the
+ * responses), generated from server/configs/asset-types.yaml. New code uses the
  * RFC-042 class and lens (features/asset-types).
  */
 export type AssetCategory = LegacyAssetCategory

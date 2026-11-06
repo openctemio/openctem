@@ -7,10 +7,10 @@ import (
 	"strings"
 	"testing"
 
-	easmapp "github.com/openctemio/openctem/api/internal/app/easm"
-	"github.com/openctemio/openctem/api/pkg/domain/lookalike"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	easmapp "github.com/openctemio/openctem/server/internal/app/easm"
+	"github.com/openctemio/openctem/server/pkg/domain/lookalike"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 type fakeLookalikes struct {

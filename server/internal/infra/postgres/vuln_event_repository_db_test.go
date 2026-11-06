@@ -5,10 +5,10 @@ import (
 	"testing"
 	"time"
 
-	vulneventapp "github.com/openctemio/openctem/api/internal/app/vulnevent"
-	"github.com/openctemio/openctem/api/pkg/domain/cvecorpus"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnmatch"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	vulneventapp "github.com/openctemio/openctem/server/internal/app/vulnevent"
+	"github.com/openctemio/openctem/server/pkg/domain/cvecorpus"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnmatch"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // The vulnerability event log (RFC-117): the first run records the corpus

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/openctem/api/tools/lint/openapicontract"
+	"github.com/openctemio/openctem/server/tools/lint/openapicontract"
 )
 
 // repoRoot walks up from this package to the module root.
@@ -62,7 +62,7 @@ func TestSpecMatchesAnnotations(t *testing.T) {
 
 	specOps, err := openapicontract.SpecOps(spec)
 	if err != nil {
-		t.Fatalf("reading spec: %v (the spec is generated, not committed: run `make swagger` in api/ or `make generate` at the repository root)", err)
+		t.Fatalf("reading spec: %v (the spec is generated, not committed: run `make swagger` in server/ or `make generate` at the repository root)", err)
 	}
 	if len(specOps) == 0 {
 		t.Fatal("spec declares no operations — the parse is broken, not the code")
@@ -106,7 +106,7 @@ func TestEveryDocumentedPathIsRouted(t *testing.T) {
 
 	specOps, err := openapicontract.SpecOps(spec)
 	if err != nil {
-		t.Fatalf("reading spec: %v (the spec is generated, not committed: run `make swagger` in api/ or `make generate` at the repository root)", err)
+		t.Fatalf("reading spec: %v (the spec is generated, not committed: run `make swagger` in server/ or `make generate` at the repository root)", err)
 	}
 	routes, err := openapicontract.Routes(routesDir)
 	if err != nil {
@@ -148,7 +148,7 @@ func TestEveryRouteIsDocumentedOrBaselined(t *testing.T) {
 
 	specOps, err := openapicontract.SpecOps(spec)
 	if err != nil {
-		t.Fatalf("reading spec: %v (the spec is generated, not committed: run `make swagger` in api/ or `make generate` at the repository root)", err)
+		t.Fatalf("reading spec: %v (the spec is generated, not committed: run `make swagger` in server/ or `make generate` at the repository root)", err)
 	}
 	routes, err := openapicontract.Routes(routesDir)
 	if err != nil {
@@ -265,7 +265,7 @@ func TestSpecParamNamesMatchRoutes(t *testing.T) {
 
 	specRaw, err := openapicontract.SpecRawPaths(spec)
 	if err != nil {
-		t.Fatalf("reading spec: %v (the spec is generated, not committed: run `make swagger` in api/ or `make generate` at the repository root)", err)
+		t.Fatalf("reading spec: %v (the spec is generated, not committed: run `make swagger` in server/ or `make generate` at the repository root)", err)
 	}
 	routeRaw, err := openapicontract.RawRoutes(routesDir)
 	if err != nil {
@@ -311,7 +311,7 @@ func TestSpecParamNamesMatchRoutes(t *testing.T) {
 // operation with its path parameters written {}. The web's endpoint check
 // (web/src/lib/api/__tests__/endpoints-target-routes.test.ts) reads it.
 //
-// The file is generated, never committed: `make contract` in api/ (and the
+// The file is generated, never committed: `make contract` in server/ (and the
 // Web CI contract job) writes it from the router before the web tests run. A committed copy went stale every time two pull
 // requests that add routes were in flight together, and each one then failed
 // in the merge queue until it was regenerated.

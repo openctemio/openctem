@@ -28,7 +28,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/openctemio/openctem/api/pkg/safetext"
+	"github.com/openctemio/openctem/server/pkg/safetext"
 )
 
 // MetaSynthesizedUnresolvable marks a command result the platform built

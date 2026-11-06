@@ -6,8 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/openctemio/openctem/api/pkg/domain/credential"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/credential"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // credentialFingerprintRekeyBatch bounds how many rows one transaction rewrites.

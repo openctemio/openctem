@@ -10,12 +10,12 @@ import (
 	"strings"
 	"testing"
 
-	sensorapp "github.com/openctemio/openctem/api/internal/app/sensor"
-	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
-	"github.com/openctemio/openctem/api/pkg/domain/sensor"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/logger"
-	"github.com/openctemio/openctem/api/pkg/sensorkey"
+	sensorapp "github.com/openctemio/openctem/server/internal/app/sensor"
+	auditdom "github.com/openctemio/openctem/server/pkg/domain/audit"
+	"github.com/openctemio/openctem/server/pkg/domain/sensor"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/sensorkey"
 )
 
 // legacyFixtureKey is a fake rda_ key in the legacy format (rda_ + 64 hex).

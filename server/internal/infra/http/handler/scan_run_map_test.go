@@ -6,11 +6,11 @@ import (
 	"strings"
 	"testing"
 
-	scanrunapp "github.com/openctemio/openctem/api/internal/app/scanrun"
-	"github.com/openctemio/openctem/api/pkg/domain/command"
-	scanrundom "github.com/openctemio/openctem/api/pkg/domain/scanrun"
-	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	scanrunapp "github.com/openctemio/openctem/server/internal/app/scanrun"
+	"github.com/openctemio/openctem/server/pkg/domain/command"
+	scanrundom "github.com/openctemio/openctem/server/pkg/domain/scanrun"
+	"github.com/openctemio/openctem/server/pkg/domain/scanworkflow"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 func mapStepRun(key string, order int, status scanrundom.StepRunStatus) *scanrundom.StepRun {

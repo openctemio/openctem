@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // runIPGateCtx runs the gate with a principal set the way a non-local-JWT

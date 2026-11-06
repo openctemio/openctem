@@ -190,7 +190,7 @@ describe('CTEM-ID row', () => {
 })
 
 describe('CTEM-ID labels', () => {
-  // The codes the API can derive today (api/pkg/domain/ctemid/mapping.go).
+  // The codes the API can derive today (server/pkg/domain/ctemid/mapping.go).
   const derivable = [
     'CTEM-DOM-1',
     'CTEM-DOM-2',

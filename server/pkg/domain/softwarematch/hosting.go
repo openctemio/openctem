@@ -13,7 +13,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/openctemio/openctem/api/pkg/domain/edgeaddr"
+	"github.com/openctemio/openctem/server/pkg/domain/edgeaddr"
 )
 
 // HostFacts is what the tenant's inventory holds about where a matched asset

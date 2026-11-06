@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/admin"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	signupdom "github.com/openctemio/openctem/api/pkg/domain/signup"
+	"github.com/openctemio/openctem/server/pkg/domain/admin"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	signupdom "github.com/openctemio/openctem/server/pkg/domain/signup"
 )
 
 type memRepo struct {

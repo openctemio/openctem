@@ -3,7 +3,7 @@
 #
 # Verifies the release archives in <assets-dir> and unpacks them under
 # ./dist/<arch>/<component>/ of this kit, where the Dockerfiles copy from.
-# Guide: api/docs/deployment/air-gapped.md ("Build images from the release
+# Guide: server/docs/deployment/air-gapped.md ("Build images from the release
 # archives").
 #
 #   1. checksums-sha256.txt must carry a valid Sigstore signature from this

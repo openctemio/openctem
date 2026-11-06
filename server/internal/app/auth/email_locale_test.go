@@ -8,12 +8,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/config"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/tenant"
-	"github.com/openctemio/openctem/api/pkg/domain/user"
-	emaildom "github.com/openctemio/openctem/api/pkg/email"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/internal/config"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/tenant"
+	"github.com/openctemio/openctem/server/pkg/domain/user"
+	emaildom "github.com/openctemio/openctem/server/pkg/email"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 type fakeUsers struct {

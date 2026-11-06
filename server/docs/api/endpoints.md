@@ -14,7 +14,7 @@ The reference page loads one version-pinned script with a subresource
 integrity hash and builds no URL from the request's `Host` header.
 
 Locally, `make generate` at the repository root writes it to
-`api/api/openapi/swagger.yaml`. Route style rules: [API conventions](../architecture/api-conventions.md).
+`server/api/openapi/swagger.yaml`. Route style rules: [API conventions](../architecture/api-conventions.md).
 This page covers what the spec does not: how to authenticate, the common
 response shapes, rate limits and input validation.
 

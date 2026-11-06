@@ -3,8 +3,8 @@ package postgres
 import (
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/testdb"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/internal/testdb"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // Migration dashboard_facts_pentest_no_campaign stores pentest findings

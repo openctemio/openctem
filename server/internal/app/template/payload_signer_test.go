@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/scannertemplate"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/domain/scannertemplate"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 func testSigner(t *testing.T) (*PayloadSigner, *scannertemplate.Keyring) {

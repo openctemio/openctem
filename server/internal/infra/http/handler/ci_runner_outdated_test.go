@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	cirunapp "github.com/openctemio/openctem/api/internal/app/cirun"
+	cirunapp "github.com/openctemio/openctem/server/internal/app/cirun"
 )
 
 // A refused old runner is told exactly which line to change, in each form a

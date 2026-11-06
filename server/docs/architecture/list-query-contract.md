@@ -33,7 +33,7 @@ tenant predicate and, for a restricted caller, the data-scope predicate.
    is a `BoolTemplate`.
 3. Add an index in the same PR if the table is large, with an `EXPLAIN` in the
    PR description (one `CREATE INDEX CONCURRENTLY` per migration file).
-4. Run `go run ./tools/gen/filterparams` and `make swagger` from `api/`: the
+4. Run `go run ./tools/gen/filterparams` and `make swagger` from `server/`: the
    `@Param` lines between `// filterspec-params:` markers are generated from
    the registry, and `TestOpenAPIDocumentsFilterParams` fails when the spec
    and the parser disagree.

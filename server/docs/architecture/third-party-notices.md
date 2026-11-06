@@ -16,7 +16,7 @@ asserts the routes and the About entry exist in both apps under any brand.
 
 | Part | Generator | When | File in the image |
 |---|---|---|---|
-| API | `api/cmd/third-party-notices` | `api/Dockerfile` builder stage, `build-dist.sh` (server archive) | `/app/third-party-notices.json` (all-in-one: `/opt/openctem/api/`) |
+| API | `server/cmd/third-party-notices` | `server/Dockerfile` builder stage, `build-dist.sh` (server archive) | `/app/third-party-notices.json` (all-in-one: `/opt/openctem/api/`) |
 | Web app | `web/scripts/third-party-notices.mjs` | `web/Dockerfile` `notices` stage, `build-dist.sh` (web archive) | `/app/third-party-notices.json` |
 | Console | the same script and file as the web app | the same stage, `build-dist.sh` (console archive) | `/app/console/third-party-notices.json` |
 
@@ -33,7 +33,7 @@ asserts the routes and the About entry exist in both apps under any brand.
   files from `node_modules`. The console is built from the same packages, so it
   serves the same list.
 
-Both files have one shape (`api/pkg/notices.Document`):
+Both files have one shape (`server/pkg/notices.Document`):
 `{"generated": true, "component": "api"|"web", "packages": [{"name", "version", "license", "text"}]}`.
 A license the tool cannot name is `Unknown`; a package without a license file
 has an empty `text` and is still listed.

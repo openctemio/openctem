@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 
-	groupdom "github.com/openctemio/openctem/api/pkg/domain/group"
-	"github.com/openctemio/openctem/api/pkg/domain/permission"
-	roledom "github.com/openctemio/openctem/api/pkg/domain/role"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	groupdom "github.com/openctemio/openctem/server/pkg/domain/group"
+	"github.com/openctemio/openctem/server/pkg/domain/permission"
+	roledom "github.com/openctemio/openctem/server/pkg/domain/role"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // Role-grant ceiling.

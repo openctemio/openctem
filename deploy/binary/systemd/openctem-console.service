@@ -1,5 +1,5 @@
 # OpenCTEM platform console, from the openctem-console release archive
-# (api/docs/deployment/binary-install.md). Needs Node.js at the major version
+# (server/docs/deployment/binary-install.md). Needs Node.js at the major version
 # in the archive's NODE_VERSION file, at /usr/bin/node.
 #
 # /opt/openctem/console -> the unpacked archive; /etc/openctem/console.env holds the

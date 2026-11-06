@@ -21,8 +21,8 @@ import (
 
 	"github.com/lib/pq"
 
-	"github.com/openctemio/openctem/api/pkg/domain/accesscontrol"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/accesscontrol"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // responsibleOwnerTypesSQL is the SQL list of ownership types that make a user

@@ -12,7 +12,7 @@ import (
 	"github.com/openctemio/contract/capability"
 	"github.com/openctemio/ctis/v2"
 
-	"github.com/openctemio/openctem/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/server/pkg/domain/asset"
 )
 
 // capabilityKindSource is the kind source of a protocol named by a report

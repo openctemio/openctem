@@ -9,7 +9,7 @@ package handler
 import (
 	"net/http"
 
-	sensorapp "github.com/openctemio/openctem/api/internal/app/sensor"
+	sensorapp "github.com/openctemio/openctem/server/internal/app/sensor"
 )
 
 // ServeSensorSeccompProfile handles GET /api/v1/sensors/install/seccomp-profile

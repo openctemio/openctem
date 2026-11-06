@@ -2,14 +2,14 @@ name: All-in-one CI
 
 # Builds the three images exactly as docker-publish.yml does on a release
 # (openctem-api, openctem-web, then the all-in-one `openctem` assembled FROM
-# them with api/deploy/gateway as the gateway), loads them locally, and runs
+# them with server/deploy/gateway as the gateway), loads them locally, and runs
 # the same smoke tests: native arch + ELF + executes, and the all-in-one in
 # both gateway modes against a real Postgres + Redis. Nothing is pushed.
 #
 # Without this, a change to a Dockerfile, the gateway or the supervisor would
 # first be exercised by the release tag. Same shape as the other workflows:
 # always starts, `changes` gates the job, `All-in-one OK` reports either way.
-# Runs when either component (api/, web/) or a shared file (deploy/, .github/,
+# Runs when either component (server/, web/) or a shared file (deploy/, .github/,
 # the root Makefile; see .github/scripts/changed.sh) changes: both images are
 # built from the whole component directory, so any change there is an image
 # change. A docs-only change at the root runs nothing.
@@ -208,9 +208,9 @@ jobs:
       # without a registry.
       - name: Build openctem-api
         if: env.SHARED != 'true'
-        run: bash .github/scripts/retry.sh docker build -t local/openctem-api:ci --target production api
+        run: bash .github/scripts/retry.sh docker build -t local/openctem-api:ci --target production server
       # The web image compiles against the generated contract files, which are
-      # not committed (api/docs/development/ci-cd.md).
+      # not committed (server/docs/development/ci-cd.md).
       - name: Generate the contract files
         if: env.SHARED != 'true'
         uses: ./.github/actions/generate-contract
@@ -225,7 +225,7 @@ jobs:
         run: >-
           bash .github/scripts/retry.sh
           docker buildx build --load -t local/openctem:ci
-          --build-context gateway=api/deploy/gateway
+          --build-context gateway=server/deploy/gateway
           --build-arg API_IMAGE=local/openctem-api:ci
           --build-arg WEB_IMAGE=local/openctem-web:ci
           --build-arg CONSOLE_IMAGE=local/openctem-console:ci

@@ -2,7 +2,7 @@ package postgres
 
 // Re-keys stored findings when the feed's vulnerability id aliases give
 // their advisory id a CVE (RFC-043 §17.2, decision D21).
-// https://github.com/openctemio/openctem/blob/develop/api/docs/rfcs/RFC-043-deduplication-and-identity.md
+// https://github.com/openctemio/openctem/blob/develop/server/docs/rfcs/RFC-043-deduplication-and-identity.md
 //
 // Only the vulnerability field of the stored tuple changes (vuln for SCA and
 // network, rule for DAST), so the rest of the identity is untouched. A free
@@ -18,10 +18,10 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app/ingest"
-	"github.com/openctemio/openctem/api/pkg/domain/issuelink"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/internal/app/ingest"
+	"github.com/openctemio/openctem/server/pkg/domain/issuelink"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
 )
 
 // AliasRekeyReport is the outcome of the alias re-key for one tenant.

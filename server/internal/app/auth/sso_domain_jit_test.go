@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
+	tenantdom "github.com/openctemio/openctem/server/pkg/domain/tenant"
 )
 
 // fakeDomainJIT adds per-domain JIT (RFC-058) to the verified-domain fake.

@@ -3,7 +3,7 @@ package approvalpolicy
 import (
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // A request an automation made is never decided by one person: not with the

@@ -11,14 +11,14 @@ import (
 
 	"connectrpc.com/connect"
 
-	sensorapp "github.com/openctemio/openctem/api/internal/app/sensor"
-	"github.com/openctemio/openctem/api/internal/infra/http/handler"
-	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/logger"
-	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
-	sensorv3 "github.com/openctemio/openctem/api/pkg/sensorproto/v3"
-	"github.com/openctemio/openctem/api/pkg/sensorproto/v3/sensorv3connect"
+	sensorapp "github.com/openctemio/openctem/server/internal/app/sensor"
+	"github.com/openctemio/openctem/server/internal/infra/http/handler"
+	sensordom "github.com/openctemio/openctem/server/pkg/domain/sensor"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
+	protov2 "github.com/openctemio/openctem/server/pkg/sensorproto/v2"
+	sensorv3 "github.com/openctemio/openctem/server/pkg/sensorproto/v3"
+	"github.com/openctemio/openctem/server/pkg/sensorproto/v3/sensorv3connect"
 )
 
 func TestCodeForStatus(t *testing.T) {

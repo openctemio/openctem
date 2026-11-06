@@ -10,7 +10,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/openctemio/openctem/api/pkg/crypto"
+	"github.com/openctemio/openctem/server/pkg/crypto"
 )
 
 var (

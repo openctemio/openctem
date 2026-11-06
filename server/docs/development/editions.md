@@ -25,15 +25,15 @@ extension code here, not even to a branch.
 
 | Path | Role |
 |---|---|
-| `api/pkg/extension/` | the public back-end extension API (created with its first point) |
-| `api/pkg/server/` | `Main()`, the entry point a custom build calls from its own Go module |
-| `api/pkg/domain/limits/` | limit keys and their descriptions, and the grant seam |
+| `server/pkg/extension/` | the public back-end extension API (created with its first point) |
+| `server/pkg/server/` | `Main()`, the entry point a custom build calls from its own Go module |
+| `server/pkg/domain/limits/` | limit keys and their descriptions, and the grant seam |
 | `web/src/lib/extension/`, `web/src/extension-default/` | the public web extension API and the empty modules the `@extension/*` alias resolves to in the default build |
 | `web/src/extensions/`, `web/src/app/**/(extensions)/`, `web/console/src/app/**/(extensions)/` | web mount points: git-ignored, empty in this repository; an extension's build copies its web code there |
 
 A build with extensions is its own Go module: it requires
-`github.com/openctemio/openctem/api`, imports its extensions and calls
-`server.Main()`. Go then lets it use only the public `api/pkg/...` packages,
+`github.com/openctemio/openctem/server`, imports its extensions and calls
+`server.Main()`. Go then lets it use only the public `server/pkg/...` packages,
 and its dependencies stay in its own `go.mod`. Nothing of an extension's Go
 code is ever placed in a checkout of this repository.
 
@@ -45,7 +45,7 @@ index and fails when:
 
 - a file under a web mount point is tracked, or `.gitignore` lacks a mount
   line;
-- `api/go.mod` has a `replace` directive (the core builds from public sources
+- `server/go.mod` has a `replace` directive (the core builds from public sources
   and works as a dependency of a custom build);
 - web code imports a mount point directly (the default build reaches it only
   through the `@extension/*` alias), or names `src/extensions` outside the web

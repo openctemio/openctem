@@ -3,7 +3,7 @@
 // engines flag one SAST line with the same weakness, one secret value found in
 // two files). Linked findings form a group shown together and counted once in
 // the dashboard facts; each keeps its own status, SLA, ticket and task.
-// https://github.com/openctemio/openctem/blob/develop/api/docs/architecture/deduplication.md
+// https://github.com/openctemio/openctem/blob/develop/server/docs/architecture/deduplication.md
 //
 // Candidates are found only through server-computed keys (Keys); Plan turns
 // the candidates of a batch into new links, under the caps and never against a

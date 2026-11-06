@@ -1,6 +1,6 @@
 # Makefile Commands Guide
 
-The targets of `api/Makefile` (run them in `api/`). The repository root `Makefile`
+The targets of `server/Makefile` (run them in `server/`). The repository root `Makefile`
 has thin targets for both components (`make setup`, `make generate`, `make check`,
 `make dev-api`, `make dev-web`, `make api-<target>`); run `make help` there.
 
@@ -80,7 +80,7 @@ make dev
 |---------|-------------|
 | `make docker-build` | Build production image |
 | `make docker-build-dev` | Build development image |
-| `make docker-prod` | Print how to start the production stack (`api/deploy`) |
+| `make docker-prod` | Print how to start the production stack (`server/deploy`) |
 | `make docker-clean` | Remove containers, volumes, images |
 
 ## Database Commands
@@ -119,7 +119,7 @@ make dev
 
 ### Installation
 
-Commit-time git hooks are the repository's `.githooks/` (shared by `api/` and
+Commit-time git hooks are the repository's `.githooks/` (shared by `server/` and
 `web/`). Enable them once, from the repository root:
 
 ```bash
@@ -130,11 +130,11 @@ make hooks        # git config core.hooksPath .githooks (make setup does this to
 lint-staged for staged `web/` files); `.githooks/commit-msg` rejects AI
 attribution lines.
 
-The heavier security hooks in `api/.pre-commit-config.yaml` are run **on demand**,
+The heavier security hooks in `server/.pre-commit-config.yaml` are run **on demand**,
 not on every commit. To install their tools:
 
 ```bash
-make pre-commit-install   # in api/
+make pre-commit-install   # in server/
 ```
 
 This installs (if missing) `pip` (Ubuntu/Debian), `pre-commit`, Go, `betterleaks`,
@@ -145,7 +145,7 @@ This installs (if missing) `pip` (Ubuntu/Debian), `pre-commit`, Go, `betterleaks
 
 | Command | Description |
 |---------|-------------|
-| `make pre-commit-run` | Run all hooks in `api/.pre-commit-config.yaml` on all files |
+| `make pre-commit-run` | Run all hooks in `server/.pre-commit-config.yaml` on all files |
 | `make pre-commit-update` | Update hooks to latest versions |
 | `make security-scan` | Full security scan (betterleaks + gosec + trivy) |
 | `make secrets` | Run betterleaks only |

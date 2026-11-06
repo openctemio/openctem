@@ -9,12 +9,12 @@ import (
 	"strings"
 	"time"
 
-	identityproviderdom "github.com/openctemio/openctem/api/pkg/domain/identityprovider"
-	notificationdom "github.com/openctemio/openctem/api/pkg/domain/notification"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/ssochange"
-	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	identityproviderdom "github.com/openctemio/openctem/server/pkg/domain/identityprovider"
+	notificationdom "github.com/openctemio/openctem/server/pkg/domain/notification"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/ssochange"
+	tenantdom "github.com/openctemio/openctem/server/pkg/domain/tenant"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // SSO changes from the platform admin console wait for an owner (RFC-022,

@@ -14,12 +14,12 @@
 # exception, edit this script in the same PR so the reviewer sees it.
 #
 # Rules 1, 4 and 6 read sibling repositories (agent/, sdk-go/), so the script
-# expects a workspace laid out as <root>/{api,agent,sdk-go}. Point SECLINT_ROOT
+# expects a workspace laid out as <root>/{server,agent,sdk-go}. Point SECLINT_ROOT
 # at that workspace when the script is not being run from inside it — CI checks
 # the three repositories out side by side and does exactly that.
 #
 # SECLINT_STRICT=1 turns a missing sibling into a failure instead of a warning.
-# CI must set it. Without it a workspace holding only api/ runs 4 of 6 rules,
+# CI must set it. Without it a workspace holding only server/ runs 4 of 6 rules,
 # prints warnings nobody reads, and exits 0 — a green check that verified two
 # thirds of what it claims. That failure mode is the reason this gate spent its
 # whole life in a repository that does not exist on GitHub.
@@ -73,8 +73,8 @@ say_skip() {
 # tests) and pkg/httpsec itself.
 # ---------------------------------------------------------------------------
 check_http_client() {
-    # Scope: api/ and agent/. We do NOT scan sdk-go/ — the SDK is its
-    # own Go module and cannot import api/pkg/httpsec without a cross-
+    # Scope: server/ and agent/. We do NOT scan sdk-go/ — the SDK is its
+    # own Go module and cannot import server/pkg/httpsec without a cross-
     # module dep. Lifting httpsec into a shared module is tracked as a
     # follow-up (see RFC-007 roadmap). For now SDK clients are
     # outbound-to-tenant-configured-URLs only and the dialer hygiene
@@ -86,24 +86,24 @@ check_http_client() {
     # is not applicable; the reviewer checks this list during code review.
     local allow_sites=(
         # pkg/httpsec itself builds the SafeHTTPClient wrapper.
-        'api/pkg/httpsec/ssrf.go'
+        'server/pkg/httpsec/ssrf.go'
         # `server -healthcheck`: the container healthcheck probes this
         # process's own loopback listener (fixed 127.0.0.1, SERVER_PORT
         # validated, no proxy, no redirects), which SafeHTTPClient refuses by
         # design. No URL comes from a tenant or the network.
-        'api/cmd/server/healthcheck.go'
+        'server/cmd/server/healthcheck.go'
         # Admin CLI talks to its own API over an operator-provided URL
         # (same trust domain as the server). Not tenant-facing.
-        'api/cmd/openctem-admin/cmd/client.go'
+        'server/cmd/openctem-admin/cmd/client.go'
         # Fetchers already import httpsec and use ValidateURL /
         # IsIPBlocked with a custom dialer. The &http.Client{...} here
         # wraps that custom dialer, equivalent to SafeHTTPClient.
-        'api/internal/infra/fetchers/http_fetcher.go'
+        'server/internal/infra/fetchers/http_fetcher.go'
         # Notifier clients (newHTTPClient): SafeHTTPClient with redirects
         # refused in production; the plain &http.Client fires only on the
         # AllowLoopback unit-test path (httptest binds 127.0.0.1), and it
         # refuses redirects too.
-        'api/internal/infra/notifier/client.go'
+        'server/internal/infra/notifier/client.go'
         # Sensor Tenable.sc connector (RFC-047): reaches an operator-configured
         # Tenable.sc that usually sits on a private address, so the RFC1918
         # block of SafeHTTPClient cannot apply. Its own dialer resolves once
@@ -114,34 +114,34 @@ check_http_client() {
         # Workflow HTTPRequestHandler implements its own SSRF guard
         # inline (validateURL + safeDialer + CheckRedirect). Functionally
         # equivalent to SafeHTTPClient; consolidation is a follow-up.
-        'api/internal/app/automation/handlers.go'
+        'server/internal/app/automation/handlers.go'
         # Job signer client (RFC-040 §5.6): its transport dials only the
         # operator-configured local Unix socket (SIGNER_SOCKET) and ignores
         # the request host, so no network destination exists to guard.
-        'api/internal/infra/signer/client.go'
+        'server/internal/infra/signer/client.go'
         # Admin audit sink (ADMIN_AUDIT_SINK): the URL comes only from the
         # server's environment, never from a tenant or a request, and is
         # usually a log collector on a private network, which SafeHTTPClient
         # refuses. https only, TLS 1.2+, no redirects.
-        'api/internal/infra/auditsink/sink.go'
+        'server/internal/infra/auditsink/sink.go'
         # System page probes (RFC-114): InternalProbeClient checks the platform's
         # own components at URLs from the server's environment (never a tenant
         # or a request), usually on private addresses that SafeHTTPClient
         # refuses. No proxy, no redirects, bounded timeout.
-        'api/pkg/httpsec/internal_probe.go'
+        'server/pkg/httpsec/internal_probe.go'
         # Sensor relay connector (RFC-116): two fixed destinations from the
         # operator's environment, never a tenant or a request. The relay
         # client dials CONNECTOR_RELAY_URL over TLS 1.3 with a client
         # certificate and the relay's pinned public key. The API client reaches
         # CONNECTOR_API_URL on the private network, which SafeHTTPClient
         # refuses; it uses no proxy and follows no redirects.
-        'api/internal/sensorrelay/connector.go'
+        'server/internal/sensorrelay/connector.go'
         # Authorization-matrix test harness: drives a disposable test stack
         # started by the suite itself on loopback (never a tenant or request
         # URL), which SafeHTTPClient refuses by design. Test-only package
-        # (api/tests/authzmatrix), never linked into a shipped binary.
-        'api/tests/authzmatrix/client.go'
-        'api/tests/authzmatrix/console.go'
+        # (server/tests/authzmatrix), never linked into a shipped binary.
+        'server/tests/authzmatrix/client.go'
+        'server/tests/authzmatrix/console.go'
     )
 
     local hits
@@ -153,7 +153,7 @@ check_http_client() {
         --exclude-dir='.claude' \
         --exclude-dir='node_modules' \
         --exclude='*_test.go' \
-        api/ agent/ 2>/dev/null || true)"
+        server/ agent/ 2>/dev/null || true)"
 
     local filtered=""
     while IFS= read -r line; do
@@ -173,7 +173,7 @@ check_http_client() {
         printf '%s' "$filtered" | sed 's/^/       /'
         return
     fi
-    say_pass "Rule 1: no raw &http.Client{} outside pkg/httpsec (api/, agent/; 6 documented exceptions)"
+    say_pass "Rule 1: no raw &http.Client{} outside pkg/httpsec (server/, agent/; 6 documented exceptions)"
 }
 
 # ---------------------------------------------------------------------------
@@ -181,7 +181,7 @@ check_http_client() {
 #
 # The AUTH_JWT_SECRET / APP_ENCRYPTION_KEY literals in docker-compose.yml
 # are intentionally matched by the startup sentinel in
-# api/internal/config/config.go — refuse to boot outside APP_ENV=development.
+# server/internal/config/config.go — refuse to boot outside APP_ENV=development.
 # If the literal appears in any OTHER place (.env.*.example copied too
 # aggressively, handbook snippet, new compose file), the sentinel stops
 # protecting and an ops team can ship the known value to prod.
@@ -201,12 +201,12 @@ check_dev_default_secrets() {
         'docker-compose.dev.yml'
         # The development env template (APP_ENV=development); the API
         # refuses both values whenever APP_ENV is not development.
-        'api/.env.example'
-        # The registry api/.env.example is generated from (its dev examples).
-        'api/internal/config/env_registry.yaml'
+        'server/.env.example'
+        # The registry server/.env.example is generated from (its dev examples).
+        'server/internal/config/env_registry.yaml'
         # Expected: config validator explicitly lists these as the
         # forbidden values — it MUST hold the exact literal.
-        'api/internal/config/config.go'
+        'server/internal/config/config.go'
         # Expected: security-lint script itself (this file).
         'scripts/security-lint.sh'
     )
@@ -346,18 +346,18 @@ check_agent_dangerous_flags() {
 check_httpsec_used() {
     local required=(
         # API outbound clients — tenant-configurable URLs.
-        'api/internal/infra/llm/claude.go'
-        'api/internal/infra/llm/gemini.go'
-        'api/internal/infra/llm/openai.go'
+        'server/internal/infra/llm/claude.go'
+        'server/internal/infra/llm/gemini.go'
+        'server/internal/infra/llm/openai.go'
         # Every notifier client is built by newHTTPClient here.
-        'api/internal/infra/notifier/client.go'
-        'api/internal/infra/notifier/webhook.go'
-        'api/internal/infra/jira/client.go'
-        'api/internal/app/auth/sso.go'
-        'api/internal/app/auth/oauth.go'
-        'api/internal/app/threat/intel_service.go'
-        'api/internal/app/threat/intel_refresher.go'
-        'api/pkg/keycloak/validator.go'
+        'server/internal/infra/notifier/client.go'
+        'server/internal/infra/notifier/webhook.go'
+        'server/internal/infra/jira/client.go'
+        'server/internal/app/auth/sso.go'
+        'server/internal/app/auth/oauth.go'
+        'server/internal/app/threat/intel_service.go'
+        'server/internal/app/threat/intel_refresher.go'
+        'server/pkg/keycloak/validator.go'
     )
     # sdk-go was meant to get a mirror of pkg/httpsec. An earlier version of
     # this rule listed these files as required and described the mirror as
@@ -397,7 +397,7 @@ check_httpsec_used() {
 }
 
 # ---------------------------------------------------------------------------
-# Rule 6: api/pkg/httpsec and sdk-go/pkg/httpsec blocklists must match.
+# Rule 6: server/pkg/httpsec and sdk-go/pkg/httpsec blocklists must match.
 # The two packages are independent copies (cross-module). Drift means
 # one tree becomes more permissive than the other — a DoS waiting to
 # happen.
@@ -405,11 +405,11 @@ check_httpsec_used() {
 # Covers both tables: hardBlockedIPRanges (always-blocked — cloud
 # IMDS, loopback, CGNAT, multicast) AND privateIPRanges (RFC1918 /
 # ULA, blocked by default but opt-in via env). If either drifts
-# between api/ and sdk-go/ the on-prem story breaks in asymmetric
+# between server/ and sdk-go/ the on-prem story breaks in asymmetric
 # ways, which is worse than just one side being wrong.
 # ---------------------------------------------------------------------------
 check_httpsec_drift() {
-    local api_file='api/pkg/httpsec/ssrf.go'
+    local api_file='server/pkg/httpsec/ssrf.go'
     local sdk_file='sdk-go/pkg/httpsec/ssrf.go'
     if [[ ! -f "$api_file" || ! -f "$sdk_file" ]]; then
         say_gap "Rule 6: $sdk_file does not exist, so there is no second CIDR table to compare (tracked, not blocking)"
@@ -509,22 +509,22 @@ check_client_ip_headers() {
         # Outbound workflow HTTP action: refuses to let a workflow author SET
         # these headers on the request it sends. Nothing is read from a
         # client request.
-        'api/internal/app/automation/handlers.go'
+        'server/internal/app/automation/handlers.go'
         # Job signer client (RFC-040 §5.6): its transport dials only the
         # operator-configured local Unix socket (SIGNER_SOCKET) and ignores
         # the request host, so no network destination exists to guard.
-        'api/internal/infra/signer/client.go'
+        'server/internal/infra/signer/client.go'
         # Admin audit sink (ADMIN_AUDIT_SINK): the URL comes only from the
         # server's environment, never from a tenant or a request, and is
         # usually a log collector on a private network, which SafeHTTPClient
         # refuses. https only, TLS 1.2+, no redirects.
-        'api/internal/infra/auditsink/sink.go'
+        'server/internal/infra/auditsink/sink.go'
         # Authorization-matrix test harness: only SETS X-Forwarded-For on the
         # requests it sends to its own disposable test stack, to give each
         # simulated user a distinct client identity for the rate limiter.
         # Nothing is read from a client request; test-only package.
-        'api/tests/authzmatrix/client.go'
-        'api/tests/authzmatrix/console.go'
+        'server/tests/authzmatrix/client.go'
+        'server/tests/authzmatrix/console.go'
     )
 
     local hits
@@ -535,7 +535,7 @@ check_client_ip_headers() {
         --exclude-dir='tmp' \
         --exclude-dir='.claude' \
         --exclude-dir='node_modules' \
-        api/ 2>/dev/null | grep -v '^api/pkg/httpsec/' || true)"
+        server/ 2>/dev/null | grep -v '^server/pkg/httpsec/' || true)"
 
     local filtered=""
     while IFS= read -r line; do
@@ -555,7 +555,7 @@ check_client_ip_headers() {
         printf '%s' "$filtered" | sed 's/^/       /'
         return
     fi
-    say_pass "Rule 7: client-IP forwarding headers read only through pkg/httpsec (api/; 1 documented exception)"
+    say_pass "Rule 7: client-IP forwarding headers read only through pkg/httpsec (server/; 1 documented exception)"
 }
 
 # ---------------------------------------------------------------------------
@@ -578,14 +578,14 @@ check_bounded_response_reads() {
         --exclude-dir='tmp' \
         --exclude-dir='.claude' \
         --exclude-dir='node_modules' \
-        api/ 2>/dev/null | grep -v '^api/tests/' || true)"
+        server/ 2>/dev/null | grep -v '^server/tests/' || true)"
 
     if [[ -n "$hits" ]]; then
         say_fail "Rule 8: unbounded read of an HTTP response body — use httpsec.ReadLimited / httpsec.DecodeJSON:"
         printf '%s\n' "$hits" | sed 's/^/       /'
         return
     fi
-    say_pass "Rule 8: every HTTP response body read is bounded (api/)"
+    say_pass "Rule 8: every HTTP response body read is bounded (server/)"
 }
 
 # ---------------------------------------------------------------------------
@@ -605,14 +605,14 @@ check_upstream_body_in_errors() {
         --exclude-dir='tmp' \
         --exclude-dir='.claude' \
         --exclude-dir='node_modules' \
-        api/ 2>/dev/null | grep -v '^api/tests/' | grep -v '/includetest/' || true)"
+        server/ 2>/dev/null | grep -v '^server/tests/' | grep -v '/includetest/' || true)"
 
     if [[ -n "$hits" ]]; then
         say_fail "Rule 9: an upstream response body in an error — use httpsec.NewUpstreamStatusError:"
         printf '%s\n' "$hits" | sed 's/^/       /'
         return
     fi
-    say_pass "Rule 9: no upstream response body in errors (api/)"
+    say_pass "Rule 9: no upstream response body in errors (server/)"
 }
 
 # ---------------------------------------------------------------------------
@@ -630,44 +630,44 @@ check_upstream_body_in_errors() {
 check_outbound_primitives() {
     local allow_sites=(
         # The guard itself.
-        'api/pkg/httpsec/'
+        'server/pkg/httpsec/'
         # Signer: a fixed local Unix socket from the server's environment.
-        'api/cmd/signer/main.go'
-        'api/internal/infra/signer/client.go'
+        'server/cmd/signer/main.go'
+        'server/internal/infra/signer/client.go'
         # `server -healthcheck`: this process's own loopback listener.
-        'api/cmd/server/healthcheck.go'
+        'server/cmd/server/healthcheck.go'
         # Scan-zone resolver: the recursive resolver the operator names in
         # the server's environment (SCOPE_ZONE_RESOLVER).
-        'api/cmd/server/scope_zone_resolver.go'
+        'server/cmd/server/scope_zone_resolver.go'
         # Admin audit sink: destination from the server's environment only.
-        'api/internal/infra/auditsink/sink.go'
+        'server/internal/infra/auditsink/sink.go'
         # Sensor transport probe: the platform's own sensor endpoint.
-        'api/internal/infra/sensortransport/probe.go'
+        'server/internal/infra/sensortransport/probe.go'
         # Sensor relay connector: two destinations from the server's
         # environment; no proxy, no redirects.
-        'api/internal/sensorrelay/connector.go'
+        'server/internal/sensorrelay/connector.go'
         # Sensor-side request signing transport (used by sensor clients that
         # talk to the platform), not a platform outbound call.
-        'api/pkg/sensorsig/sensorsig.go'
+        'server/pkg/sensorsig/sensorsig.go'
         # EASM DNS client: port 53 only, every server address checked with
         # httpsec.IsIPBlocked before the dial.
-        'api/pkg/dnsprobe/client.go'
+        'server/pkg/dnsprobe/client.go'
         # ClamAV daemon: address from the server's environment (STORAGE_CLAMD_ADDRESS).
-        'api/internal/infra/malware/clamd.go'
+        'server/internal/infra/malware/clamd.go'
         # SMTP: dials the address httpsec.ResolveSafeHost vetted (an IP
         # literal), never a host name.
-        'api/pkg/email/email.go'
-        'api/internal/infra/notifier/email.go'
+        'server/pkg/email/email.go'
+        'server/internal/infra/notifier/email.go'
         # Rule sources: installs the guarded http transport and removes the
         # others.
-        'api/internal/infra/fetchers/git_snapshot.go'
+        'server/internal/infra/fetchers/git_snapshot.go'
     )
     local pattern='http\.(Get|Post|PostForm|Head)\(|http\.DefaultClient|http\.DefaultTransport|(^|[^&])http\.Client\{|new\(http\.Client\)|http\.Transport\{|net\.Dial(Timeout|TCP|UDP|IP|Unix)?\(|net\.Dialer\b|tls\.Dial(WithDialer)?\(|tls\.Dialer\b|httputil\.(NewSingleHostReverseProxy|ReverseProxy)\b|smtp\.(Dial|SendMail)\(|ProxyFromEnvironment|InstallProtocol\(|go-git/v5/plumbing/transport/(ssh|git|file)"'
 
     # Fail closed: a run that scanned nothing (no SECLINT_ROOT and the script
-    # cd'd into api/, so "api/" does not exist) must not report a pass.
-    if [[ ! -d api ]] || [[ -z "$(find api -name '*.go' -not -name '*_test.go' -print -quit 2>/dev/null)" ]]; then
-        say_fail "Rule 10: no api/ Go sources under $ROOT — set SECLINT_ROOT to the workspace root"
+    # cd'd into server/, so "server/" does not exist) must not report a pass.
+    if [[ ! -d server ]] || [[ -z "$(find server -name '*.go' -not -name '*_test.go' -print -quit 2>/dev/null)" ]]; then
+        say_fail "Rule 10: no server/ Go sources under $ROOT — set SECLINT_ROOT to the workspace root"
         return
     fi
 
@@ -678,7 +678,7 @@ check_outbound_primitives() {
         --exclude-dir='vendor' \
         --exclude-dir='node_modules' \
         --exclude-dir='.claude' \
-        api/ 2>/dev/null | grep -vE '^[^:]+:[0-9]+:[[:space:]]*//' || true)"
+        server/ 2>/dev/null | grep -vE '^[^:]+:[0-9]+:[[:space:]]*//' || true)"
 
     local filtered=""
     while IFS= read -r line; do
@@ -698,7 +698,7 @@ check_outbound_primitives() {
         printf '%s' "$filtered" | sed 's/^/       /'
         return
     fi
-    say_pass "Rule 10: outbound connections only through pkg/httpsec (api/; ${#allow_sites[@]} documented sites)"
+    say_pass "Rule 10: outbound connections only through pkg/httpsec (server/; ${#allow_sites[@]} documented sites)"
 }
 
 # ---------------------------------------------------------------------------
@@ -706,10 +706,10 @@ check_outbound_primitives() {
 # ---------------------------------------------------------------------------
 printf '== security-lint ==\n'
 
-# Preflight. Rule 1 greps 'api/ agent/' and tolerates a missing path, so an
+# Preflight. Rule 1 greps 'server/ agent/' and tolerates a missing path, so an
 # absent sibling would quietly shrink its search space rather than fail. Check
 # the layout up front instead of trusting each rule to notice.
-for sibling in api agent sdk-go; do
+for sibling in server agent sdk-go; do
     if [[ ! -d "$ROOT/$sibling" ]]; then
         say_skip "workspace is missing $sibling/ (looked in $ROOT) — rules covering it cannot run"
     fi

@@ -6,7 +6,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/openctemio/openctem/api/pkg/brand"
+	"github.com/openctemio/openctem/server/pkg/brand"
 )
 
 // BrandHandler serves the instance brand (docs/architecture/brand.md):

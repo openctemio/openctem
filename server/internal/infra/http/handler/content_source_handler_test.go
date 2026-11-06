@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	cs "github.com/openctemio/openctem/api/pkg/domain/contentsource"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	cs "github.com/openctemio/openctem/server/pkg/domain/contentsource"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // SECURITY: an organization sees a platform source only as a projection: no

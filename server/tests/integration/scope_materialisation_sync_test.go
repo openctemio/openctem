@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 func TestScopeMaterialization_FollowsSourceWrites(t *testing.T) {

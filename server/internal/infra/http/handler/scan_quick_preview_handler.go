@@ -4,10 +4,10 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
-	"github.com/openctemio/openctem/api/pkg/apierror"
+	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/server/pkg/apierror"
 
-	scansvc "github.com/openctemio/openctem/api/internal/app/scan"
+	scansvc "github.com/openctemio/openctem/server/internal/app/scan"
 )
 
 // QuickScanPreviewRequest is the Quick Scan form as typed.

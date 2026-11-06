@@ -3,7 +3,7 @@ package handler
 import (
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/role"
+	"github.com/openctemio/openctem/server/pkg/domain/role"
 )
 
 // The role editor does not offer permissions that do nothing in a custom role

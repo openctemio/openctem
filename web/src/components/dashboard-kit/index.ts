@@ -1,6 +1,6 @@
 /**
  * Dashboard widget kit: one frame with every state, and visualizations over
- * the widget result shapes. See api/docs/architecture/dashboards.md
+ * the widget result shapes. See server/docs/architecture/dashboards.md
  * ("Widget kit").
  */
 export * from './types'

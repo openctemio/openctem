@@ -5,12 +5,12 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/openctemio/openctem/api/internal/app/aibundle"
-	aidom "github.com/openctemio/openctem/api/pkg/domain/aianalysis"
-	kdom "github.com/openctemio/openctem/api/pkg/domain/aiknowledge"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/internal/app/aibundle"
+	aidom "github.com/openctemio/openctem/server/pkg/domain/aianalysis"
+	kdom "github.com/openctemio/openctem/server/pkg/domain/aiknowledge"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // Knowledge retrieval for single-shot runs (docs/architecture/ai-knowledge.md):

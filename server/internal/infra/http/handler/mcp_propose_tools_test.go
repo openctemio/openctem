@@ -6,11 +6,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/app/finding"
-	mcpoauthapp "github.com/openctemio/openctem/api/internal/app/mcpoauth"
-	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/internal/app/finding"
+	mcpoauthapp "github.com/openctemio/openctem/server/internal/app/mcpoauth"
+	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
 )
 
 // Proposal tools: threat model in docs/rfcs/RFC-062-mcp-authorization.md,

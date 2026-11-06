@@ -16,7 +16,7 @@ Commands (run from the repository root):
                                  Playwright entries ("" when none).
   quarantine.py list             the active entries, one per line (nightly job).
 
-Rules (api/docs/development/ci-cd.md#flaky-test-quarantine):
+Rules (server/docs/development/ci-cd.md#flaky-test-quarantine):
 - An entry stops applying the day after `fix_by`; the test runs (and fails
   flakily) again, so the fix SLA enforces itself without turning CI red for
   everyone on the deadline.
@@ -29,7 +29,7 @@ Rules (api/docs/development/ci-cd.md#flaky-test-quarantine):
 The file is a YAML list of mappings with scalar values only, parsed here
 without a YAML library (the runners' system Python has none):
 
-  - test: go:github.com/openctemio/openctem/api/tests/integration.TestName
+  - test: go:github.com/openctemio/openctem/server/tests/integration.TestName
     issue: 3031
     owner: area-or-login
     added: 2026-10-25
@@ -58,7 +58,7 @@ PROTECTED = re.compile(
 )
 GO_TEST = re.compile(r"^go:(?P<pkg>[A-Za-z0-9_./-]+)\.(?P<name>(Test|Example|Fuzz)[A-Za-z0-9_]*)$")
 PW_TEST = re.compile(r"^pw:(?P<spec>e2e/[A-Za-z0-9_./-]+\.spec\.ts)::(?P<title>.+)$")
-MODULE = "github.com/openctemio/openctem/api"
+MODULE = "github.com/openctemio/openctem/server"
 
 
 def today() -> datetime.date:
@@ -157,8 +157,8 @@ def go_top_level_names(root: pathlib.Path) -> dict[str, set[str]]:
     """Top-level test name -> import paths that declare it (from the source)."""
     names: dict[str, set[str]] = {}
     pat = re.compile(r"^func ((?:Test|Example|Fuzz)[A-Za-z0-9_]*)\(", re.M)
-    for f in (root / "api").rglob("*_test.go"):
-        pkg = MODULE + "/" + str(f.parent.relative_to(root / "api")) if f.parent != root / "api" else MODULE
+    for f in (root / "server").rglob("*_test.go"):
+        pkg = MODULE + "/" + str(f.parent.relative_to(root / "server")) if f.parent != root / "server" else MODULE
         for m in pat.finditer(f.read_text(errors="replace")):
             names.setdefault(m.group(1), set()).add(pkg)
     return names

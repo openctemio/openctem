@@ -1,5 +1,5 @@
 // Package versions is the version manifest built into the API: a copy of the
-// repository's versions.yaml (api/docs/rfcs/RFC-037), embedded at build time
+// repository's versions.yaml (server/docs/rfcs/RFC-037), embedded at build time
 // and parsed once when the package is loaded.
 //
 // versions.yaml lives at the repository root, outside the Go module, and an
@@ -17,7 +17,7 @@
 // SDK) is the release this build was made with. At runtime the instance
 // learns newer releases from the signed release feed (SetLearned, fed by the
 // version check), so a sensor or SDK release needs no API release
-// (api/docs/rfcs/RFC-037-versioning-and-release-train.md §12). The getters
+// (server/docs/rfcs/RFC-037-versioning-and-release-train.md §12). The getters
 // return the effective value: the learned release when it is newer than the
 // built-in one, else the built-in one. A learned release never lowers it.
 package versions
@@ -33,7 +33,7 @@ import (
 	"golang.org/x/mod/semver"
 	"gopkg.in/yaml.v3"
 
-	"github.com/openctemio/openctem/api/pkg/version"
+	"github.com/openctemio/openctem/server/pkg/version"
 )
 
 //go:embed versions.yaml

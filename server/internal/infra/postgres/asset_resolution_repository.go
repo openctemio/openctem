@@ -11,8 +11,8 @@ import (
 
 	"github.com/lib/pq"
 
-	"github.com/openctemio/openctem/api/pkg/domain/assetresolution"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/assetresolution"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // AssetResolutionRepository stores asset_resolution rows.

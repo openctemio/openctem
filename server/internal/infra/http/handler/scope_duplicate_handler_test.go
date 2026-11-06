@@ -8,8 +8,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	scopedom "github.com/openctemio/openctem/server/pkg/domain/scope"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // A duplicate answers 409 with a code per kind and the existing row's id and

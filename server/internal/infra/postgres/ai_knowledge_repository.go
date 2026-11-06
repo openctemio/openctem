@@ -9,8 +9,8 @@ import (
 
 	"github.com/lib/pq"
 
-	"github.com/openctemio/openctem/api/pkg/domain/aiknowledge"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/aiknowledge"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // AIKnowledgeRepository stores the knowledge organizations give their AI

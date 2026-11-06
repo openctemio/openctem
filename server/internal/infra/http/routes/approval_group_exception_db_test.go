@@ -1,7 +1,7 @@
 package routes
 
 // Group-level exceptions on remediation tasks
-// (api/docs/rfcs/RFC-111-approval-policy.md §7) through the real routes and
+// (server/docs/rfcs/RFC-111-approval-policy.md §7) through the real routes and
 // database: one request over the task's open findings, the group tier is the
 // highest member tier, each member ends at its own cap, member requests are
 // decided only with the group, the last approval applies every member,
@@ -19,15 +19,15 @@ import (
 
 	"github.com/google/uuid"
 
-	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
-	"github.com/openctemio/openctem/api/internal/app/finding"
-	remediationapp "github.com/openctemio/openctem/api/internal/app/remediation"
-	tenantapp "github.com/openctemio/openctem/api/internal/app/tenant"
-	"github.com/openctemio/openctem/api/internal/infra/http/handler"
-	"github.com/openctemio/openctem/api/internal/infra/postgres"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/logger"
-	"github.com/openctemio/openctem/api/pkg/validator"
+	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
+	"github.com/openctemio/openctem/server/internal/app/finding"
+	remediationapp "github.com/openctemio/openctem/server/internal/app/remediation"
+	tenantapp "github.com/openctemio/openctem/server/internal/app/tenant"
+	"github.com/openctemio/openctem/server/internal/infra/http/handler"
+	"github.com/openctemio/openctem/server/internal/infra/postgres"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/validator"
 )
 
 type groupExceptionHarness struct {

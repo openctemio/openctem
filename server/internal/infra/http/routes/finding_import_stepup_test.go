@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
 )
 
 // An upload that declares coverage=full closes findings in bulk, so it needs

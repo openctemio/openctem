@@ -12,7 +12,7 @@ import (
 	"database/sql"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/testdb"
+	"github.com/openctemio/openctem/server/internal/testdb"
 )
 
 func TestMigrationAttributionChildrenFollowHost(t *testing.T) {

@@ -5,8 +5,8 @@ import (
 	"html/template"
 	"io"
 
-	"github.com/openctemio/openctem/api/internal/app/module"
-	"github.com/openctemio/openctem/api/pkg/brand"
+	"github.com/openctemio/openctem/server/internal/app/module"
+	"github.com/openctemio/openctem/server/pkg/brand"
 )
 
 // Print-ready HTML export of the executive summary.

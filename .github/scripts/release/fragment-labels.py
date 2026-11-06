@@ -3,10 +3,10 @@
 
   fragment-labels.py [--repo-dir DIR] [--github-repo OWNER/REPO] [--out FILE]
 
-For each api/changelog.d/*.md it finds the commit that added the file, asks
+For each server/changelog.d/*.md it finds the commit that added the file, asks
 GitHub which pull request that commit belongs to, and keeps the labels that
 start with `notes:` (set by .github/scripts/pr-labels.py or by hand). The result
-feeds `api/scripts/changelog.py preview|release --labels FILE`, which groups the
+feeds `server/scripts/changelog.py preview|release --labels FILE`, which groups the
 fragments under operator headings (migrations, destructive migrations,
 identity changes, API contract changes) in the release notes.
 
@@ -35,13 +35,13 @@ def main():
     ap.add_argument("--out", default="-")
     args = ap.parse_args()
 
-    frag_dir = os.path.join(args.repo_dir, "api", "changelog.d")
+    frag_dir = os.path.join(args.repo_dir, "server", "changelog.d")
     names = sorted(n for n in os.listdir(frag_dir) if n.endswith(".md") and n != "README.md") \
         if os.path.isdir(frag_dir) else []
 
     result, unresolved = {}, []
     for name in names:
-        rel = f"api/changelog.d/{name}"
+        rel = f"server/changelog.d/{name}"
         rc, out, err = run(["git", "log", "--diff-filter=A", "--format=%H", "-n", "1", "--", rel], args.repo_dir)
         sha = out.strip()
         if rc != 0 or not sha:

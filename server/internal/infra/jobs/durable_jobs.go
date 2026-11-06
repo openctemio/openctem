@@ -7,13 +7,13 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app/tenant"
-	"github.com/openctemio/openctem/api/pkg/crypto"
-	"github.com/openctemio/openctem/api/pkg/domain/durablejob"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/internal/app/tenant"
+	"github.com/openctemio/openctem/server/pkg/crypto"
+	"github.com/openctemio/openctem/server/pkg/domain/durablejob"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
-// Handlers of the durable jobs (api/docs/architecture/durable-jobs.md). The
+// Handlers of the durable jobs (server/docs/architecture/durable-jobs.md). The
 // controller in internal/infra/controller runs them; a handler error that
 // reports Permanent() true is not retried.
 

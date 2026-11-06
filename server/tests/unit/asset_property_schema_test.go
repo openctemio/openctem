@@ -7,9 +7,9 @@ import (
 	"sort"
 	"testing"
 
-	assetapp "github.com/openctemio/openctem/api/internal/app/asset"
-	"github.com/openctemio/openctem/api/pkg/domain/asset"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	assetapp "github.com/openctemio/openctem/server/internal/app/asset"
+	"github.com/openctemio/openctem/server/pkg/domain/asset"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // The REST create and update paths apply the property schema (RFC-042

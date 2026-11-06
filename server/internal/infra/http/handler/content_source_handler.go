@@ -9,14 +9,14 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	contentsourceapp "github.com/openctemio/openctem/api/internal/app/contentsource"
-	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
-	"github.com/openctemio/openctem/api/pkg/apierror"
-	"github.com/openctemio/openctem/api/pkg/domain/contentpack"
-	cs "github.com/openctemio/openctem/api/pkg/domain/contentsource"
-	"github.com/openctemio/openctem/api/pkg/domain/permission"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	contentsourceapp "github.com/openctemio/openctem/server/internal/app/contentsource"
+	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/server/pkg/apierror"
+	"github.com/openctemio/openctem/server/pkg/domain/contentpack"
+	cs "github.com/openctemio/openctem/server/pkg/domain/contentsource"
+	"github.com/openctemio/openctem/server/pkg/domain/permission"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // ContentSourceHandler serves /api/v1/content-sources (rule sources,

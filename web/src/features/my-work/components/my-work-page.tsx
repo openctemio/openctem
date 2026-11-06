@@ -1,7 +1,7 @@
 'use client'
 
 /**
- * My Work (research 229 §8.5, api/docs/architecture/my-work.md): what waits
+ * My Work (research 229 §8.5, server/docs/architecture/my-work.md): what waits
  * on the signed-in person, their team, and their requests, one tab per job.
  * Every tab is a view on the caller's own rows through a caller-scoped
  * endpoint, and its count is the total of the list it opens.

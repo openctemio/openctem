@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	dom "github.com/openctemio/openctem/api/pkg/domain/importmapping"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	dom "github.com/openctemio/openctem/server/pkg/domain/importmapping"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // memRepo is a tenant-scoped in-memory Repository.

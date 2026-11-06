@@ -5,15 +5,15 @@ import (
 	"errors"
 	"time"
 
-	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
-	attachmentdom "github.com/openctemio/openctem/api/pkg/domain/attachment"
-	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
+	attachmentdom "github.com/openctemio/openctem/server/pkg/domain/attachment"
+	auditdom "github.com/openctemio/openctem/server/pkg/domain/audit"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // Retention of evidence files: design in
-// api/docs/rfcs/RFC-084-file-storage.md, operation in
-// api/docs/architecture/file-storage.md.
+// server/docs/rfcs/RFC-084-file-storage.md, operation in
+// server/docs/architecture/file-storage.md.
 
 // retentionBatch bounds one sweep; the next tick takes the rest.
 const retentionBatch = 500

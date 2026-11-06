@@ -8,8 +8,8 @@ package scan
 import (
 	"context"
 
-	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/scanrun"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // ScopeSnapshotRecorder stores the scope snapshot of a run

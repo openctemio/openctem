@@ -12,15 +12,15 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
-	catalogapp "github.com/openctemio/openctem/api/internal/app/contentcatalog"
-	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
-	"github.com/openctemio/openctem/api/pkg/apierror"
-	"github.com/openctemio/openctem/api/pkg/contentpkg"
-	dom "github.com/openctemio/openctem/api/pkg/domain/contentcatalog"
-	"github.com/openctemio/openctem/api/pkg/domain/contentpack"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
+	catalogapp "github.com/openctemio/openctem/server/internal/app/contentcatalog"
+	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/server/pkg/apierror"
+	"github.com/openctemio/openctem/server/pkg/contentpkg"
+	dom "github.com/openctemio/openctem/server/pkg/domain/contentcatalog"
+	"github.com/openctemio/openctem/server/pkg/domain/contentpack"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // ContentCatalogHandler serves /api/v1/content: the content catalog as one

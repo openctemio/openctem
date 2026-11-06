@@ -828,7 +828,7 @@ sdk-go repositories, P0-5 with the scan-engine work (RFC-046).
   "recovered".
 
 **When and where.** Implementation is written directly in the monorepo
-(`api/` + `web/`); sdk-go and sensor changes (E2–E5, P3 tools) stay in their
+(`server/` + `web/`); sdk-go and sensor changes (E2–E5, P3 tools) stay in their
 own repositories. P2 may start: P1's attribution tables shipped (migration
 `000324`). P3's daily cadence waits on RFC-030 P4.
 

@@ -1,6 +1,6 @@
 # Endpoint builders that name no registered API route, frozen on 2026-10-03
 # (RFC-041 §7, checked by endpoints-target-routes.test.ts against
-# api/api/openapi/routes.txt).
+# server/api/openapi/routes.txt).
 #
 # SHRINK-ONLY: a new builder without a route fails, and so does a line here
 # that now matches a route or no longer exists. Most entries are builders no

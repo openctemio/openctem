@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	notificationdom "github.com/openctemio/openctem/api/pkg/domain/notification"
-	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	notificationdom "github.com/openctemio/openctem/server/pkg/domain/notification"
+	scopedom "github.com/openctemio/openctem/server/pkg/domain/scope"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 func pathExclusion(t *testing.T, tenantID shared.ID, host, prefix string, methods []string, testing scopedom.Testing, until *time.Time) *scopedom.Exclusion {

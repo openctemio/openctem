@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	automationdom "github.com/openctemio/openctem/api/pkg/domain/automation"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	automationdom "github.com/openctemio/openctem/server/pkg/domain/automation"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // AutomationRunReaper ends automation runs nothing will finish. Runs execute

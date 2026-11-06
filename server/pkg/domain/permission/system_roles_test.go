@@ -3,8 +3,8 @@ package permission_test
 import (
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/permission"
-	"github.com/openctemio/openctem/api/pkg/domain/role"
+	"github.com/openctemio/openctem/server/pkg/domain/permission"
+	"github.com/openctemio/openctem/server/pkg/domain/role"
 )
 
 func systemRoleBySlug(t *testing.T, slug string) permission.SystemRole {

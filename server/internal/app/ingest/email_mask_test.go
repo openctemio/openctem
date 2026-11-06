@@ -11,7 +11,7 @@ import (
 	"github.com/openctemio/ctis/v2"
 	"github.com/openctemio/ctis/v2/importer"
 
-	evidencedom "github.com/openctemio/openctem/api/pkg/domain/evidence"
+	evidencedom "github.com/openctemio/openctem/server/pkg/domain/evidence"
 )
 
 // fullAddress matches an e-mail address with a visible local part.

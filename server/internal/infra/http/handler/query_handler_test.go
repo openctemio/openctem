@@ -8,10 +8,10 @@ import (
 	"strings"
 	"testing"
 
-	queryapp "github.com/openctemio/openctem/api/internal/app/query"
-	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
-	"github.com/openctemio/openctem/api/pkg/logger"
-	"github.com/openctemio/openctem/api/pkg/querylang"
+	queryapp "github.com/openctemio/openctem/server/internal/app/query"
+	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/server/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/querylang"
 )
 
 type fakeQueryExec struct{ err error }

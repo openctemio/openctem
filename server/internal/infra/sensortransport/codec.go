@@ -13,9 +13,9 @@ import (
 
 	"connectrpc.com/connect"
 
-	"github.com/openctemio/openctem/api/internal/infra/http/handler"
-	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
-	sensorv3 "github.com/openctemio/openctem/api/pkg/sensorproto/v3"
+	"github.com/openctemio/openctem/server/internal/infra/http/handler"
+	protov2 "github.com/openctemio/openctem/server/pkg/sensorproto/v2"
+	sensorv3 "github.com/openctemio/openctem/server/pkg/sensorproto/v3"
 )
 
 // v2Origin is the scheme and host of the in-process v2 requests. It is never

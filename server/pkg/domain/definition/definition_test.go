@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/definition"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/definition"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 func TestKinds(t *testing.T) {

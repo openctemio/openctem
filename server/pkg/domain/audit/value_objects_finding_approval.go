@@ -1,7 +1,7 @@
 package audit
 
 // Finding status approvals: a false positive or an accepted risk needs a
-// second person (api/docs/architecture/finding-status-lifecycle.md). The
+// second person (server/docs/architecture/finding-status-lifecycle.md). The
 // resource is the request (finding_approval); its finding is in the metadata.
 const (
 	// ResourceTypeFindingApproval is a finding status request

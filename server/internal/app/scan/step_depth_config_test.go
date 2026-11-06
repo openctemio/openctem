@@ -4,8 +4,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
-	"github.com/openctemio/openctem/api/pkg/domain/stage"
+	"github.com/openctemio/openctem/server/pkg/domain/scanworkflow"
+	"github.com/openctemio/openctem/server/pkg/domain/stage"
 )
 
 func depthTemplatesStep(cfg map[string]any, policy scanworkflow.RunPolicy) *scanworkflow.Step {

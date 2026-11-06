@@ -12,8 +12,8 @@ import (
 	"io"
 	"time"
 
-	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	auditdom "github.com/openctemio/openctem/server/pkg/domain/audit"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // Audit retention: checkpoint-and-prune (docs/architecture/audit-hash-chain.md,

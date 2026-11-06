@@ -11,7 +11,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/vulnmatch"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnmatch"
 )
 
 // CVE is one corpus record and its ranges.

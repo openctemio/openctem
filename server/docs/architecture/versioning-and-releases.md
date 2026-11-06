@@ -11,7 +11,7 @@ working reference.
    (`release` | `rc` | `dev`). Dev builds are `<highest tag>-dev+<sha8>`.
 3. No version of the platform is committed on `develop`. The tag is the only
    source: images and binaries take it from the build (ldflags), a tag's
-   checkout installs it from `api/deploy/VERSION` (written on the release
+   checkout installs it from `server/deploy/VERSION` (written on the release
    branch only). Component defaults (sensor, SDK, CI runner) live in
    `versions.yaml`, copied by `.github/scripts/release/sync-versions.sh`;
    `web/package.json` stays `0.0.0`.
@@ -26,8 +26,8 @@ working reference.
 |---|---|
 | Release images, binaries (`GET /api/v1/version`, `-version`, web `/api/version`) | the tag, passed to the build (`-ldflags`, `NEXT_PUBLIC_APP_VERSION`) |
 | Dev builds | `<highest tag>-dev+<sha8>` |
-| Compose stack (`api/deploy`) | `OPENCTEM_VERSION` in `.env`, required: the compose files have no default (`${OPENCTEM_VERSION:?...}`). `setup.sh` writes it from `--version`, else `api/deploy/VERSION`, else the exact tag checked out; a branch checkout without `--version` is refused |
-| `api/deploy/VERSION` | one line `vX.Y.Z`, written by `cut-release.sh` on `release/vX.Y.Z` only. It reaches `main` and the tag, never `develop` |
+| Compose stack (`server/deploy`) | `OPENCTEM_VERSION` in `.env`, required: the compose files have no default (`${OPENCTEM_VERSION:?...}`). `setup.sh` writes it from `--version`, else `server/deploy/VERSION`, else the exact tag checked out; a branch checkout without `--version` is refused |
+| `server/deploy/VERSION` | one line `vX.Y.Z`, written by `cut-release.sh` on `release/vX.Y.Z` only. It reaches `main` and the tag, never `develop` |
 | Content catalog compatibility, `content-bundle -platform` default | `versions.PlatformRelease()`: the `vX.Y.Z` core of the running build's version |
 | Air-gapped bundles | `@VERSION@` filled by the release build; images pinned by digest |
 | Helm chart | `appVersion` in `openctemio/helm-charts`, bumped by the Release Publish follow-up |
@@ -56,14 +56,14 @@ To change a default: edit `versions.yaml`, run
 `.github/scripts/release/sync-versions.sh`, commit both. The **Version
 consistency** check (`sync-versions.sh --check`, workflow Release Tooling)
 fails a PR whose defaults disagree with the file, whose `web/package.json` is
-not `0.0.0`, or whose `api/deploy/VERSION` names a version newer than any tag.
+not `0.0.0`, or whose `server/deploy/VERSION` names a version newer than any tag.
 On `release/vX.Y.Z` (and on `main` right after it merges) it runs with
-`--release vX.Y.Z` instead: `api/deploy/VERSION` must be exactly `vX.Y.Z`.
+`--release vX.Y.Z` instead: `server/deploy/VERSION` must be exactly `vX.Y.Z`.
 
 | Consumer | Field |
 |---|---|
-| `api/internal/versions/versions.yaml`: the API's embedded copy, byte for byte (`go:embed` cannot reach outside the `api/` module); every Go default reads it | all |
-| `api/deploy/docker-compose.sensor.yml` `SENSOR_VERSION` default | sensor.latest |
+| `server/internal/versions/versions.yaml`: the API's embedded copy, byte for byte (`go:embed` cannot reach outside the `server/` module); every Go default reads it | all |
+| `server/deploy/docker-compose.sensor.yml` `SENSOR_VERSION` default | sensor.latest |
 | `web/src/features/ci-runners/lib/ci.ts` `CI_RELEASE_FALLBACK` | ci.latest (the console uses it only when the API names no CI runner release) |
 
 No Go file holds a version, so bumping a sensor product, the SDK or the CI
@@ -106,18 +106,18 @@ the last tag (nor from `ui/<last tag>`, the imported web history):
    - `sha`: release a specific develop commit (its required checks must be
      green).
 3. With `dry_run` off, the workflow pushes `release/vX.Y.Z` (the develop
-   commit, one commit writing `api/deploy/VERSION` = `vX.Y.Z`, and a
+   commit, one commit writing `server/deploy/VERSION` = `vX.Y.Z`, and a
    `merge -s ours` commit recording `main` as a parent) and
    opens the PR into `main`, queued for the merge queue. Without
    `RELEASE_TOKEN`, open the PR from the link in the run summary.
 4. When the merge queue merges it, **Release Publish** tags `vX.Y.Z` on the
    merge commit (only if `main`'s tree equals the release branch's and its
-   `api/deploy/VERSION` says `vX.Y.Z`), which
+   `server/deploy/VERSION` says `vX.Y.Z`), which
    publishes the images (Docker Publish) and the GitHub Release (notes with
    `@mentions` escaped and emails dropped).
 5. Merge the follow-up PRs it opens:
    - `develop` (every release): `main` merged back with a real merge (the
-     tag becomes reachable; `api/deploy/VERSION` and changelog fragments
+     tag becomes reachable; `server/deploy/VERSION` and changelog fragments
      `develop` already folded are not carried). It auto-merges when it changes
      no file; one that brings fixes to `develop` waits for a review. When the
      merge conflicts, an issue lists the files and the `main` commits `develop`
@@ -185,20 +185,20 @@ scripts).
 | `next-version.sh` | proposed version, counts, changelog preview |
 | `changelog.sh` | grouped Markdown preview (breaking, security, features, fixes, performance, other) |
 | `check-ci.sh` | required checks of a commit; newest green commit of a branch |
-| `cut-release.sh` | builds `release/vX.Y.Z` (train or hotfix) with its `api/deploy/VERSION` commit, with the `-s ours` precondition per file |
-| `tag-release.sh` | annotated tag after the tree and `api/deploy/VERSION` checks |
+| `cut-release.sh` | builds `release/vX.Y.Z` (train or hotfix) with its `server/deploy/VERSION` commit, with the `-s ours` precondition per file |
+| `tag-release.sh` | annotated tag after the tree and `server/deploy/VERSION` checks |
 | `post-release.sh` | the develop follow-up branch: `main` merged back with a real merge, train or hotfix (exit 3 and the conflicting files when it conflicts) |
 | `helm-bump.sh` | chart `appVersion` + version bump |
-| `sync-versions.sh` | `versions.yaml` → consumers; `--check` for CI; `--release vX.Y.Z` on a release branch (checks `api/deploy/VERSION`) |
+| `sync-versions.sh` | `versions.yaml` → consumers; `--check` for CI; `--release vX.Y.Z` on a release branch (checks `server/deploy/VERSION`) |
 | `sanitize-notes.py` | escape `@mentions`, drop emails |
 
-`api/scripts/release-branch.sh` is the older interactive equivalent of
+`server/scripts/release-branch.sh` is the older interactive equivalent of
 `cut-release.sh`; prefer the workflow.
 
 ## Build identity today
 
 - API: `GET /api/v1/version` (signed-in) → `{version, commit, build_time, channel}`,
-  from ldflags (release images, `api/.air.toml` in the dev container) or the
+  from ldflags (release images, `server/.air.toml` in the dev container) or the
   checkout's `.git`.
 - Web: `GET /api/version` (signed-in), from `NEXT_PUBLIC_APP_VERSION` or `.git`.
 - `/health` carries no version, on purpose.

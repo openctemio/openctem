@@ -12,7 +12,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	moduledom "github.com/openctemio/openctem/api/pkg/domain/module"
+	moduledom "github.com/openctemio/openctem/server/pkg/domain/module"
 )
 
 // Every route follows the module the registry (configs/modules/<id>.yaml) says it

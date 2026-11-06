@@ -4,7 +4,7 @@
 // The contract files the web console compiles against are generated, not
 // committed (so pull requests cannot conflict on them):
 //
-//   src/lib/api/generated/api.types.ts      from api/api/openapi/swagger.yaml
+//   src/lib/api/generated/api.types.ts      from server/api/openapi/swagger.yaml
 //   src/config/api-route-permissions.json   from the API route table
 //   src/config/authz-matrix.json            the authorization reference (gen-authz-docs)
 //
@@ -23,7 +23,7 @@ import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const web = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const spec = process.env.OPENAPI_SPEC || resolve(web, '../api/api/openapi/swagger.yaml')
+const spec = process.env.OPENAPI_SPEC || resolve(web, '../server/api/openapi/swagger.yaml')
 const types = resolve(web, 'src/lib/api/generated/api.types.ts')
 const permissions = resolve(web, 'src/config/api-route-permissions.json')
 const authzMatrix = resolve(web, 'src/config/authz-matrix.json')

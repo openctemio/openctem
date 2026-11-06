@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // External members (docs/rfcs/RFC-058-external-members.md): people who belong

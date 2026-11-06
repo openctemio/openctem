@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	dom "github.com/openctemio/openctem/api/pkg/domain/contentpack"
+	dom "github.com/openctemio/openctem/server/pkg/domain/contentpack"
 )
 
 const goodSecretRules = `schema: 1

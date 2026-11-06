@@ -7,11 +7,11 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/openctemio/openctem/api/internal/metrics"
-	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
-	assetgroupdom "github.com/openctemio/openctem/api/pkg/domain/assetgroup"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/pagination"
+	"github.com/openctemio/openctem/server/internal/metrics"
+	assetdom "github.com/openctemio/openctem/server/pkg/domain/asset"
+	assetgroupdom "github.com/openctemio/openctem/server/pkg/domain/assetgroup"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/pagination"
 )
 
 // reconcileScopeRules re-evaluates the team scope rules that name the group

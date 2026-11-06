@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app/threatalert"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/internal/app/threatalert"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // threatAlertBudget is how long one planner pass may run; work left over

@@ -11,8 +11,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
-	"github.com/openctemio/openctem/api/pkg/vulnbundle"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/pkg/vulnbundle"
 )
 
 // Removal guard: one version may drop at most max(minVulnIDRemovals, 5% of

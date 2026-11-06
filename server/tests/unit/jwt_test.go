@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/jwt"
+	"github.com/openctemio/openctem/server/pkg/jwt"
 )
 
 func TestGenerateToken_Success(t *testing.T) {

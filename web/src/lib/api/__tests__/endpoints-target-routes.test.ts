@@ -5,7 +5,7 @@
  * POST /integrations/{id}/send, ...): each would have answered 404, and nothing
  * noticed because no check compared the two. This calls every builder in the
  * endpoint modules with placeholder arguments and matches the path it returns
- * against api/api/openapi/routes.txt, the generated list of every registered
+ * against server/api/openapi/routes.txt, the generated list of every registered
  * operation. The file is not committed: `make generate` at the repository
  * root writes it from the router (Web CI does the same).
  *
@@ -21,12 +21,12 @@ import * as endpoints from '../endpoints'
 import * as securityEndpoints from '../security-endpoints'
 
 const here = resolve(__dirname)
-const manifestPath = resolve(here, '../../../../../api/api/openapi/routes.txt')
+const manifestPath = resolve(here, '../../../../../server/api/openapi/routes.txt')
 const baselinePath = resolve(here, 'endpoint-route-baseline.txt')
 
 if (!existsSync(manifestPath)) {
   throw new Error(
-    'api/api/openapi/routes.txt is missing. It is generated from the router, not ' +
+    'server/api/openapi/routes.txt is missing. It is generated from the router, not ' +
       'committed: run `make generate` at the repository root.'
   )
 }

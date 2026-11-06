@@ -3,7 +3,7 @@ package postgres
 import (
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/testdb"
+	"github.com/openctemio/openctem/server/internal/testdb"
 )
 
 // The large jsonb/text/bytea columns store new values with lz4 (migration

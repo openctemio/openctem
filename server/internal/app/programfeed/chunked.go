@@ -29,9 +29,9 @@ import (
 	"github.com/openctemio/contract/transfer/bundle"
 	"github.com/prometheus/client_golang/prometheus"
 
-	bp "github.com/openctemio/openctem/api/pkg/domain/bountyprogram"
-	"github.com/openctemio/openctem/api/pkg/feedsign"
-	feed "github.com/openctemio/openctem/api/pkg/programfeed"
+	bp "github.com/openctemio/openctem/server/pkg/domain/bountyprogram"
+	"github.com/openctemio/openctem/server/pkg/feedsign"
+	feed "github.com/openctemio/openctem/server/pkg/programfeed"
 )
 
 // FeedV2 is the feed name of program feed v2 bundles (their payload types).

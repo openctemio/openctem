@@ -4,11 +4,11 @@ import (
 	"context"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/infra/postgres"
-	"github.com/openctemio/openctem/api/pkg/crypto"
-	apikeydom "github.com/openctemio/openctem/api/pkg/domain/apikey"
-	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/internal/infra/postgres"
+	"github.com/openctemio/openctem/server/pkg/crypto"
+	apikeydom "github.com/openctemio/openctem/server/pkg/domain/apikey"
+	sensordom "github.com/openctemio/openctem/server/pkg/domain/sensor"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // Token repositories stamp the current pepper id on every hash they write,

@@ -7,8 +7,8 @@ package tenant
 import (
 	"fmt"
 
-	"github.com/openctemio/openctem/api/pkg/domain/scangov"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/scangov"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // SectionScanGovernance is the settings section key.

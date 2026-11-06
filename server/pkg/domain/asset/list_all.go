@@ -3,7 +3,7 @@ package asset
 import (
 	"context"
 
-	"github.com/openctemio/openctem/api/pkg/pagination"
+	"github.com/openctemio/openctem/server/pkg/pagination"
 )
 
 // KeysetLister is implemented by a Repository that can page by id without a

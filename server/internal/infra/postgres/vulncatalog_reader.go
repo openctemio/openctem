@@ -15,9 +15,9 @@ import (
 
 	"github.com/lib/pq"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/vulncatalog"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnmatch"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/vulncatalog"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnmatch"
 )
 
 // VulnCatalogReader is the vulncatalog.Reader over today's tables.

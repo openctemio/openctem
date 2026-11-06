@@ -10,8 +10,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/signer"
-	"github.com/openctemio/openctem/api/pkg/jobsign"
+	"github.com/openctemio/openctem/server/internal/signer"
+	"github.com/openctemio/openctem/server/pkg/jobsign"
 )
 
 // maxSnapshotFile bounds a snapshot file read by ledger import.

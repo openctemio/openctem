@@ -1,6 +1,6 @@
 package software
 
-// Package URL identity of catalog packages. Design: api/docs/rfcs/RFC-070-software-components-inventory.md.
+// Package URL identity of catalog packages. Design: server/docs/rfcs/RFC-070-software-components-inventory.md.
 
 import (
 	"errors"

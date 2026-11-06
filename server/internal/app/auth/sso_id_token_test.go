@@ -16,9 +16,9 @@ import (
 
 	jwtv5 "github.com/golang-jwt/jwt/v5"
 
-	identityproviderdom "github.com/openctemio/openctem/api/pkg/domain/identityprovider"
-	"github.com/openctemio/openctem/api/pkg/logger"
-	"github.com/openctemio/openctem/api/pkg/oidc"
+	identityproviderdom "github.com/openctemio/openctem/server/pkg/domain/identityprovider"
+	"github.com/openctemio/openctem/server/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/oidc"
 )
 
 const (

@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/infra/http/include"
+	"github.com/openctemio/openctem/server/internal/infra/http/include"
 )
 
 // Fixture describes one resource to the suite.

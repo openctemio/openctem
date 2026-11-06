@@ -11,9 +11,9 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/infra/postgres"
-	"github.com/openctemio/openctem/api/internal/testdb"
-	automationdom "github.com/openctemio/openctem/api/pkg/domain/automation"
+	"github.com/openctemio/openctem/server/internal/infra/postgres"
+	"github.com/openctemio/openctem/server/internal/testdb"
+	automationdom "github.com/openctemio/openctem/server/pkg/domain/automation"
 )
 
 func TestMigrationAutomationVersions(t *testing.T) {

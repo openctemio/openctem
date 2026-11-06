@@ -209,7 +209,7 @@ POST   /api/v1/assets
 
 ## Database Migrations
 
-SQL migrations in `api/migrations` (`VERSION_name.up.sql` / `.down.sql`, new
+SQL migrations in `server/migrations` (`VERSION_name.up.sql` / `.down.sql`, new
 versions are UTC timestamps) are applied by `openctem-migrate`, out of band:
 the migrations image, the all-in-one image's start-up, the binary install's
 `openctem-migrate.service` and `make migrate-up`. It records every applied

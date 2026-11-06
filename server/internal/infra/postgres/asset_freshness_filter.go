@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/server/pkg/domain/asset"
 
-	"github.com/openctemio/openctem/api/pkg/domain/assetfreshness"
+	"github.com/openctemio/openctem/server/pkg/domain/assetfreshness"
 )
 
 // freshnessImportantSQL is the SQL form of assetfreshness.Importance.Important.

@@ -34,7 +34,7 @@ The same table drives the public gateway. `PlaneEdges` and `EdgeOverrides`
 API (sensor, inbound, scim, mcp, ops, and the IdP-facing auth paths),
 through the web app's BFF (user, self, auth and admin, which browsers call
 with a session cookie), or never (`/metrics`, `/ready`).
-`api/deploy/gateway/planes.caddy` is generated from it
+`server/deploy/gateway/planes.caddy` is generated from it
 (`UPDATE_GATEWAY_PLANES=1 go test ./internal/infra/http/routes/plane/`), and a
 test fails when the committed file and the table disagree. A new plane or
 prefix therefore reaches the edge in the same PR, or CI is red.

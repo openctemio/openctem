@@ -3,7 +3,7 @@
 #   - uses: ./.github/actions/setup-gh
 #
 # GitHub-hosted runners ship `gh`; the self-hosted runner image may not
-# (api/docs/development/ci-cd.md, "Self-hosted runner (opt-in)"). When `gh` is
+# (server/docs/development/ci-cd.md, "Self-hosted runner (opt-in)"). When `gh` is
 # missing, the pinned release tarball is downloaded, checked against its
 # SHA-256 and put on PATH for this job only. Nothing is installed when `gh`
 # is already there.

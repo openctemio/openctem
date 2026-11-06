@@ -5,8 +5,8 @@ import (
 	"net"
 	"strings"
 
-	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	assetdom "github.com/openctemio/openctem/server/pkg/domain/asset"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // relationship_inference.go derives high-value asset-graph edges (Exposes,

@@ -14,11 +14,11 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app/sensor"
-	"github.com/openctemio/openctem/api/pkg/logger"
-	"github.com/openctemio/openctem/api/pkg/sensorproto/relay"
-	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
-	"github.com/openctemio/openctem/api/pkg/sensorsig"
+	"github.com/openctemio/openctem/server/internal/app/sensor"
+	"github.com/openctemio/openctem/server/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/sensorproto/relay"
+	protov2 "github.com/openctemio/openctem/server/pkg/sensorproto/v2"
+	"github.com/openctemio/openctem/server/pkg/sensorsig"
 )
 
 // maxSignedBodyBytes bounds the body read to check Content-Digest: above the

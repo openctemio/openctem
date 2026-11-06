@@ -14,8 +14,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app/commandlog"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/internal/app/commandlog"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 func logBatch(tenant, sensor, cmd shared.ID, seq int, msgs ...string) commandlog.Batch {

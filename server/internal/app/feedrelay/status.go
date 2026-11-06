@@ -4,10 +4,10 @@ import (
 	"context"
 	"time"
 
-	dom "github.com/openctemio/openctem/api/pkg/domain/feedrelay"
-	"github.com/openctemio/openctem/api/pkg/domain/sensor"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/pagination"
+	dom "github.com/openctemio/openctem/server/pkg/domain/feedrelay"
+	"github.com/openctemio/openctem/server/pkg/domain/sensor"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/pagination"
 )
 
 // RelaySensor is a designated sensor as the console shows it.

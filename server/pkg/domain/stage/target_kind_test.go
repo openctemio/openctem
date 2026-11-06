@@ -3,7 +3,7 @@ package stage
 import (
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/server/pkg/domain/asset"
 )
 
 func TestClassifyTarget(t *testing.T) {

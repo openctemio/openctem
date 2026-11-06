@@ -10,8 +10,8 @@ import (
 
 	"github.com/openctemio/contract/outcome"
 
-	"github.com/openctemio/openctem/api/pkg/domain/command"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/command"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // Follow-up commands for unfinished targets (research/125). Requires

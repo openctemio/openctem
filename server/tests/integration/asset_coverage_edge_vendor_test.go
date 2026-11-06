@@ -10,7 +10,7 @@ import (
 	"context"
 	"testing"
 
-	covdom "github.com/openctemio/openctem/api/pkg/domain/coverage"
+	covdom "github.com/openctemio/openctem/server/pkg/domain/coverage"
 )
 
 // finishWith finishes the capability's last run with the task's result set

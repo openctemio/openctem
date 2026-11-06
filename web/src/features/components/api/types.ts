@@ -1,5 +1,5 @@
 /**
- * Software components inventory API types (api/docs/rfcs/RFC-070-software-components-inventory.md).
+ * Software components inventory API types (server/docs/rfcs/RFC-070-software-components-inventory.md).
  * A component is a package (one row per package URL identity); a version is
  * one version of it in use; a usage is one asset and manifest using a version.
  */

@@ -8,11 +8,11 @@ import (
 
 	"github.com/openctemio/ctis/v2"
 
-	scmappsvc "github.com/openctemio/openctem/api/internal/app/scmapp"
-	"github.com/openctemio/openctem/api/internal/infra/scm/gitlabapi"
-	"github.com/openctemio/openctem/api/pkg/domain/cirun"
-	"github.com/openctemio/openctem/api/pkg/domain/scmapp"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	scmappsvc "github.com/openctemio/openctem/server/internal/app/scmapp"
+	"github.com/openctemio/openctem/server/internal/infra/scm/gitlabapi"
+	"github.com/openctemio/openctem/server/pkg/domain/cirun"
+	"github.com/openctemio/openctem/server/pkg/domain/scmapp"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // fakeMRTargets answers a GitLab merge request's target branch for one

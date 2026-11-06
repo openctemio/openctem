@@ -1,8 +1,8 @@
 /**
  * Report feature types. Mirrors the backend report-schedule + executive-summary
  * contracts. See:
- *   api/internal/infra/http/handler/report_schedule_handler.go
- *   api/internal/app/module/dashboard.go (ExecutiveSummary)
+ *   server/internal/infra/http/handler/report_schedule_handler.go
+ *   server/internal/app/module/dashboard.go (ExecutiveSummary)
  */
 
 export interface Recipient {

@@ -1,7 +1,7 @@
 // Package component is the read model of the software components inventory:
 // package products of the software catalog, the versions an organization
 // uses, where each is used and the dependency graph between them.
-// Design: api/docs/rfcs/RFC-070-software-components-inventory.md.
+// Design: server/docs/rfcs/RFC-070-software-components-inventory.md.
 package component
 
 import "time"

@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/cirun"
+	"github.com/openctemio/openctem/server/pkg/domain/cirun"
 )
 
 func TestAcceptanceAlwaysEnds(t *testing.T) {

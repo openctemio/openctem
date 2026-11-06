@@ -1,7 +1,7 @@
 # RFC-045: Real-time WebSocket authentication and session binding
 
 > Status: **Implemented** (decisions 2026-10-03, §7; implemented by #934 and #950).
-> Scope: `api/` (`internal/infra/websocket`, `/api/v1/ws` route chain, auth
+> Scope: `server/` (`internal/infra/websocket`, `/api/v1/ws` route chain, auth
 > services' session revocation, permission version), `web/`
 > (`src/lib/websocket`, `src/context/websocket-provider.tsx`,
 > `server-with-ws.mjs`), the gateway Caddyfile.

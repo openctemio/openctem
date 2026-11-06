@@ -3,7 +3,7 @@ package postgres
 import (
 	"context"
 
-	"github.com/openctemio/openctem/api/pkg/domain/dashboard"
+	"github.com/openctemio/openctem/server/pkg/domain/dashboard"
 )
 
 // EmergingThreats implements dashboard.FactReader with the alert list's own

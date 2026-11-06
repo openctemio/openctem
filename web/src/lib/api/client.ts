@@ -56,7 +56,7 @@ const readCSRFToken = readCsrfCookie
  * attaches it as `X-CSRF-Token`, and always sends credentials so the proxy
  * receives the auth + csrf cookies. Without the header the backend rejects
  * the mutation with `403 csrf_token_missing_header`. GET/HEAD are passed
- * through untouched. See api/internal/infra/http/middleware/csrf.go.
+ * through untouched. See server/internal/infra/http/middleware/csrf.go.
  */
 export function csrfFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   const opts: RequestInit = { credentials: 'include', ...init }

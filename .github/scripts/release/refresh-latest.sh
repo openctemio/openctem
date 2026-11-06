@@ -2,7 +2,7 @@
 # shellcheck source-path=SCRIPTDIR
 # refresh-latest.sh [--root DIR]: move each first-party component's built-in
 # "latest" in versions.yaml forward to its newest published release
-# (api/docs/rfcs/RFC-037 §12, api/docs/architecture/version-check.md).
+# (server/docs/rfcs/RFC-037 §12, server/docs/architecture/version-check.md).
 #
 # cut-release.sh runs it on the release branch, so the release's built-in
 # versions (the fallback of an instance that cannot reach the release feed)

@@ -4,7 +4,7 @@
   air-gap archives, the development entrypoint and CI. It records every applied migration in
   `schema_migrations_applied` and applies every shipped migration a database lacks, lowest version first: a migration
   merged after a higher-numbered one now runs instead of being skipped silently.
-- New migrations take UTC timestamp versions (`make -C api migration-new`); versions only have to be unique. CI refuses
+- New migrations take UTC timestamp versions (`make -C server migration-new`); versions only have to be unique. CI refuses
   a changed, removed or renamed merged migration and proves that a fresh install and an upgraded database get the
   same schema whatever order the migrations arrive in.
 - The API refuses to start while any shipped migration is unapplied (not only when the newest one is), and the console
@@ -26,7 +26,7 @@
 - The runner names the tracking tables with the schema it locked, so a migration that changes `search_path` cannot
   redirect its records, and warns when an applied migration was recorded under another name than the shipped file.
 - The first run on a database golang-migrate migrated records exactly the migrations of the release it was at
-  (`api/migrations/released.json`, generated from the release tags and checked in CI) and runs every other one, so a
+  (`server/migrations/released.json`, generated from the release tags and checked in CI) and runs every other one, so a
   migration merged with a lower number after that release was cut (003420 after v0.15.4) runs instead of being marked
   applied. A database no release matches (a development build, or one golang-migrate left dirty) is refused until an
   operator lists the applied versions with `-assume-applied FILE`; `force -1` no longer clears such a database.

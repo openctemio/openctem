@@ -7,10 +7,10 @@ import (
 	"context"
 	"encoding/base64"
 
-	"github.com/openctemio/openctem/api/internal/app"
-	retestapp "github.com/openctemio/openctem/api/internal/app/retest"
-	"github.com/openctemio/openctem/api/pkg/domain/scannertemplate"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/internal/app"
+	retestapp "github.com/openctemio/openctem/server/internal/app/retest"
+	"github.com/openctemio/openctem/server/pkg/domain/scannertemplate"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // LibraryTemplates is the template library seen by the retestcheck

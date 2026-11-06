@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app/aimaskmap"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/internal/app/aimaskmap"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // AIMaskMapRepository stores encrypted AI run mask maps (ai_mask_maps).

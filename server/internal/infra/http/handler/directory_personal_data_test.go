@@ -9,13 +9,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app/accessrequest"
-	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
-	ardom "github.com/openctemio/openctem/api/pkg/domain/accessrequest"
-	"github.com/openctemio/openctem/api/pkg/domain/admin"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	signupdom "github.com/openctemio/openctem/api/pkg/domain/signup"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/internal/app/accessrequest"
+	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
+	ardom "github.com/openctemio/openctem/server/pkg/domain/accessrequest"
+	"github.com/openctemio/openctem/server/pkg/domain/admin"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	signupdom "github.com/openctemio/openctem/server/pkg/domain/signup"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 type listingRepo struct {

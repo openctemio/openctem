@@ -9,10 +9,10 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
-	aidom "github.com/openctemio/openctem/api/pkg/domain/aianalysis"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/tenant"
+	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
+	aidom "github.com/openctemio/openctem/server/pkg/domain/aianalysis"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/tenant"
 )
 
 // useCaseRepo adds the use case store to the settings fake, per tenant.

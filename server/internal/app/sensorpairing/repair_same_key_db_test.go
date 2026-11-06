@@ -14,10 +14,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app/sensorpairing"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/sensorproto/pairing"
-	"github.com/openctemio/openctem/api/pkg/sensorsig"
+	"github.com/openctemio/openctem/server/internal/app/sensorpairing"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/sensorproto/pairing"
+	"github.com/openctemio/openctem/server/pkg/sensorsig"
 )
 
 // restart is the same sensor process started again: same key, new nonce.

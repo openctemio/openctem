@@ -6,8 +6,8 @@ import (
 
 	"github.com/openctemio/contract/outcome"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // Per-target coverage (research/263 addendum A). A run of many targets is

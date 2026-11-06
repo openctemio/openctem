@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"maps"
 
-	"github.com/openctemio/openctem/api/pkg/domain/integration"
-	outboxdom "github.com/openctemio/openctem/api/pkg/domain/outbox"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/integration"
+	outboxdom "github.com/openctemio/openctem/server/pkg/domain/outbox"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // MetaRedeliveryOf names, in a redelivery's metadata, the archived event it

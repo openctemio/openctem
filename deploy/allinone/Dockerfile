@@ -7,9 +7,9 @@
 #                          HTTPS port, :443 (api and web bind to 127.0.0.1)
 #   GATEWAY=off            :8080 (API) and :3000 (web) are served directly, no Caddy
 #
-# The gateway is NOT a copy: it is api/deploy/gateway (Caddyfile, TLS modes,
+# The gateway is NOT a copy: it is server/deploy/gateway (Caddyfile, TLS modes,
 # entrypoint) — the same files the split Compose deployment
-# (api/deploy/docker-compose.yml) runs, passed in as a named build context.
+# (server/deploy/docker-compose.yml) runs, passed in as a named build context.
 # Routing, TLS modes (internal | acme | files | http) and their refusals are
 # therefore identical in both deployments, and Gateway Routing in API CI tests
 # them for both.
@@ -19,7 +19,7 @@
 # openctem-web ship (one build, one SBOM per component, no drift):
 #
 #   docker buildx build deploy/allinone \
-#     --build-context gateway=api/deploy/gateway \
+#     --build-context gateway=server/deploy/gateway \
 #     --build-arg API_IMAGE=ghcr.io/openctemio/openctem-api:vX.Y.Z \
 #     --build-arg WEB_IMAGE=ghcr.io/openctemio/openctem-web:vX.Y.Z
 #
@@ -44,7 +44,7 @@ FROM ${API_IMAGE} AS api
 FROM ${WEB_IMAGE} AS web
 FROM ${CONSOLE_IMAGE} AS console
 
-# Caddy, the same release as the gateway image (api/deploy/gateway/Dockerfile
+# Caddy, the same release as the gateway image (server/deploy/gateway/Dockerfile
 # CADDY_VERSION) with the standard modules, compiled here with the pinned Go
 # below rather than copied from the caddy image: the published binary carries
 # the Go standard library it was released with, and every standard-library
@@ -100,9 +100,9 @@ RUN node --version
 COPY --from=web --chown=0:0 /app /opt/openctem/web
 # console: the platform console's standalone server (console/server.js)
 COPY --from=console --chown=0:0 /app /opt/openctem/console
-# api: server + admin tool + migrations + configs (WORKDIR /app in api/Dockerfile)
+# api: server + admin tool + migrations + configs (WORKDIR /app in server/Dockerfile)
 # (the API image's operator commands are links to the server binary, see
-# api/Dockerfile; this image keeps bootstrap-admin, linked below)
+# server/Dockerfile; this image keeps bootstrap-admin, linked below)
 COPY --from=api --chown=0:0 /app/server /opt/openctem/api/
 # The job signer (docs/architecture/job-signing.md), started by supervise.sh.
 COPY --from=api --chown=0:0 /app/openctem-signer /opt/openctem/api/
@@ -112,7 +112,7 @@ COPY --from=api --chown=0:0 /app/configs /opt/openctem/api/configs
 COPY --from=api --chown=0:0 /app/api/openapi/swagger.yaml /opt/openctem/api/api/openapi/swagger.yaml
 # The third-party notices the API serves (About > Open-source licenses).
 COPY --from=api --chown=0:0 /app/third-party-notices.json /opt/openctem/api/third-party-notices.json
-# The migration runner (api/cmd/openctem-migrate), run by supervise.sh.
+# The migration runner (server/cmd/openctem-migrate), run by supervise.sh.
 COPY --from=api --chown=0:0 /app/openctem-migrate /usr/local/bin/openctem-migrate
 # Bind :443 (and the optional :80 redirect) as non-root, on Kubernetes too:
 # the file capability is set in the caddy stage and COPY keeps it (setting it
@@ -126,7 +126,7 @@ RUN ln -s server /opt/openctem/api/bootstrap-admin \
  && mkdir -p /data/ca /data/gateway /config /certs /opt/openctem/web/.next/cache /opt/openctem/console/console/.next/cache \
  && chown nextjs:nodejs /data /data/ca /data/gateway /config /opt/openctem/web/.next/cache /opt/openctem/console/console/.next/cache
 
-# The gateway: api/deploy/gateway (Caddyfile + planes.caddy + modes/ + sensors/ + admin/ + entrypoint.sh).
+# The gateway: server/deploy/gateway (Caddyfile + planes.caddy + modes/ + sensors/ + admin/ + entrypoint.sh).
 # admin/ holds the console-site snippets the Caddyfile imports (off.* is the default).
 # sensors/ holds the layer-4 sensor routing the Caddyfile imports; this image's
 # Caddy has no layer4 module, so only OPENCTEM_SENSOR_GATEWAY=off applies here.
@@ -167,7 +167,7 @@ ENV GATEWAY=on \
 VOLUME ["/data"]
 # GATEWAY=on publishes 443 and the platform console's site on 8443
 # (OPENCTEM_ADMIN_SITE=port, private client networks only; 80 is an optional
-# http->https redirect, the same as api/deploy/docker-compose.http-redirect.yml).
+# http->https redirect, the same as server/deploy/docker-compose.http-redirect.yml).
 # GATEWAY=off: 8080 (API) and 3000 (web). The console is not started (it
 # listens on loopback only, and only the gateway forwards the client address
 # the API's admin network check needs); OPENCTEM_CONSOLE_STANDALONE=true starts

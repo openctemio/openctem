@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/tenant"
+	"github.com/openctemio/openctem/server/pkg/domain/tenant"
 )
 
 // A 409 SETTINGS_CONFLICT carries the current section so the UI can show

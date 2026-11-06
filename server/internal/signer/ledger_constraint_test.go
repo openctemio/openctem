@@ -3,7 +3,7 @@ package signer
 import (
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/jobsign"
+	"github.com/openctemio/openctem/server/pkg/jobsign"
 )
 
 func limited(id, typ, pattern, ports, protocol string) *jobsign.LedgerEntry {

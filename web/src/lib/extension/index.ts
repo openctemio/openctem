@@ -1,5 +1,5 @@
 /**
- * The extension registered with this build (api/docs/development/editions.md,
+ * The extension registered with this build (server/docs/development/editions.md,
  * "Web"). `@extension/web` is the stub in the default build and the mounted extension in an
  * extension build; nothing else in the tenant app imports it.
  */

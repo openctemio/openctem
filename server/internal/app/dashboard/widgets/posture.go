@@ -9,9 +9,9 @@ import (
 	"context"
 	"time"
 
-	postureapp "github.com/openctemio/openctem/api/internal/app/posture"
-	"github.com/openctemio/openctem/api/pkg/domain/dashboard"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	postureapp "github.com/openctemio/openctem/server/internal/app/posture"
+	"github.com/openctemio/openctem/server/pkg/domain/dashboard"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // Reasons of the posture widget.

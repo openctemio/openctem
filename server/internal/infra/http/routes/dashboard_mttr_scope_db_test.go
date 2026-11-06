@@ -14,7 +14,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/permission"
+	"github.com/openctemio/openctem/server/pkg/domain/permission"
 )
 
 func TestDashboardMTTR_FollowsTheViewer_DB(t *testing.T) {

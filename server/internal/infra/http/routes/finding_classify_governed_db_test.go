@@ -6,11 +6,11 @@ import (
 	"strings"
 	"testing"
 
-	activityapp "github.com/openctemio/openctem/api/internal/app/activity"
-	"github.com/openctemio/openctem/api/internal/infra/postgres"
-	"github.com/openctemio/openctem/api/pkg/domain/permission"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	activityapp "github.com/openctemio/openctem/server/internal/app/activity"
+	"github.com/openctemio/openctem/server/internal/infra/postgres"
+	"github.com/openctemio/openctem/server/pkg/domain/permission"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // PATCH /findings/{id}/classify over the real routes and a migrated database:

@@ -5,10 +5,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/config"
-	identityproviderdom "github.com/openctemio/openctem/api/pkg/domain/identityprovider"
-	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/internal/config"
+	identityproviderdom "github.com/openctemio/openctem/server/pkg/domain/identityprovider"
+	tenantdom "github.com/openctemio/openctem/server/pkg/domain/tenant"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // --- fakes (embed the interface; override only what these tests touch) ---

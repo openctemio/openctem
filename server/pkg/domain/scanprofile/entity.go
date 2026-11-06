@@ -5,8 +5,8 @@ import (
 	"maps"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/scannertemplate"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/scannertemplate"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // Intensity represents the scan intensity level.

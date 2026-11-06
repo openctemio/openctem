@@ -383,7 +383,7 @@ func TestEnvDocsUpToDate(t *testing.T) {
 			t.Fatalf("%s: %v (run make env-docs)", path, err)
 		}
 		if string(got) != want {
-			t.Errorf("api/%s is stale: run `make env-docs` in api/ and commit the result", path)
+			t.Errorf("api/%s is stale: run `make env-docs` in server/ and commit the result", path)
 		}
 	}
 }

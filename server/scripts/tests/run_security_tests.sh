@@ -28,7 +28,7 @@ echo ""
 # 1. Build verification
 echo "--- Build Verification ---"
 cd "$API_DIR/.."
-if go build ./api/...; then
+if go build ./server/...; then
     echo "✅ Build successful"
 else
     echo "❌ Build failed"
@@ -50,7 +50,7 @@ echo ""
 # 4. Run unit tests (if any)
 echo "--- Unit Tests ---"
 cd "$API_DIR/.."
-if go test ./api/... -short 2>&1 | grep -E "(PASS|FAIL|ok|---)" | tail -20; then
+if go test ./server/... -short 2>&1 | grep -E "(PASS|FAIL|ok|---)" | tail -20; then
     echo ""
     echo "✅ Unit tests completed"
 else

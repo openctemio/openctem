@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/totp"
+	"github.com/openctemio/openctem/server/pkg/totp"
 )
 
 // consoleSession is the platform administrator's console session (cookie,

@@ -1,5 +1,5 @@
 # OpenCTEM job signer (signs every job before a sensor runs it), from the
-# openctem-server release archive (api/docs/deployment/binary-install.md).
+# openctem-server release archive (server/docs/deployment/binary-install.md).
 #
 # Key separation: it runs as openctem-signer, which owns
 # /var/lib/openctem-signer (0700: the key and the signing state); the API user

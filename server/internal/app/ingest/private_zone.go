@@ -9,7 +9,7 @@ package ingest
 import (
 	"github.com/openctemio/ctis/v2"
 
-	"github.com/openctemio/openctem/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/server/pkg/domain/asset"
 )
 
 // privateZone reports whether a reported DNS name is in a private zone: a

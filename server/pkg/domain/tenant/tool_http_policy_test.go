@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/scanident"
+	"github.com/openctemio/openctem/server/pkg/domain/scanident"
 )
 
 // The organization's tool User-Agent is printable ASCII up to 256 bytes;

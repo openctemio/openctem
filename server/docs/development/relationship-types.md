@@ -61,7 +61,7 @@ from it.** You edit one file, run one command, commit three.
 
 ```
                 ┌──────────────────────────────────────┐
-                │ api/configs/relationship-types.yaml  │  ← edit only this
+                │ server/configs/relationship-types.yaml  │  ← edit only this
                 │      (single source of truth)        │
                 └─────────────────┬────────────────────┘
                                   │
@@ -69,7 +69,7 @@ from it.** You edit one file, run one command, commit three.
                                   │
                 ┌─────────────────┴────────────────────┐
                 ▼                                      ▼
- api/pkg/domain/asset/                  web/src/features/assets/types/
+ server/pkg/domain/asset/                  web/src/features/assets/types/
  relationship_types_generated.go        relationship.types.generated.ts
  (Go enum + Registry + categories)      (TS union + LABELS + CONSTRAINTS)
 ```
@@ -84,7 +84,7 @@ You want to add a new type called `audited_by`. Do this:
 
 ```bash
 # 1. Edit the YAML
-$EDITOR api/configs/relationship-types.yaml
+$EDITOR server/configs/relationship-types.yaml
 ```
 
 Add this entry under `types:` (anywhere, but keep it grouped with
@@ -105,7 +105,7 @@ related types):
 
 ```bash
 # 2. Regenerate the Go and TS files
-cd api
+cd server
 make generate-relationships
 # → ✓ Generated 19 relationship types into:
 #       pkg/domain/asset/relationship_types_generated.go
@@ -117,8 +117,8 @@ cd ../web && npx tsc --noEmit
 
 # 4. Commit all three files together
 cd ..
-git add api/configs/relationship-types.yaml \
-        api/pkg/domain/asset/relationship_types_generated.go \
+git add server/configs/relationship-types.yaml \
+        server/pkg/domain/asset/relationship_types_generated.go \
         web/src/features/assets/types/relationship.types.generated.ts
 
 git commit -m "feat(assets): add audited_by relationship type"
@@ -138,7 +138,7 @@ You did not touch any code that consumes the registry — both `Go` and
 ## File map — what lives where
 
 ```
-api/
+server/
 ├── configs/
 │   └── relationship-types.yaml              ← SOURCE OF TRUTH (edit this)
 ├── cmd/
@@ -234,11 +234,11 @@ See the [Quickstart](#quickstart) above. The full procedure:
    [Design rationale](#design-rationale-faq) below.
 2. **Decide on the constraints.** For each source asset type, what
    target types make sense? List them as `(sources, targets)` tuples.
-3. **Edit `api/configs/relationship-types.yaml`** — add an entry under
+3. **Edit `server/configs/relationship-types.yaml`** — add an entry under
    `types:` matching the schema above.
 4. **Regenerate:**
    ```bash
-   cd api && make generate-relationships
+   cd server && make generate-relationships
    ```
 5. **Build to verify:**
    ```bash
@@ -256,8 +256,8 @@ See the [Quickstart](#quickstart) above. The full procedure:
    entry to the `allTypes` slice in the test).
 7. **Commit all three files together:**
    ```bash
-   git add api/configs/relationship-types.yaml \
-           api/pkg/domain/asset/relationship_types_generated.go \
+   git add server/configs/relationship-types.yaml \
+           server/pkg/domain/asset/relationship_types_generated.go \
            web/src/features/assets/types/relationship.types.generated.ts
    ```
 8. **Conventional commit message** (`feat(assets): ...`).
@@ -308,7 +308,7 @@ The safe procedure:
 
 1. **Find every reference** to the constant in the Go codebase:
    ```bash
-   cd api
+   cd server
    grep -rn "RelTypeFoo" --include="*.go" .
    ```
 2. **Find every reference** to the type ID in the TS codebase:
@@ -436,7 +436,7 @@ var RelationshipCategories = []RelationshipCategory{
 To use a relationship type from a Go service:
 
 ```go
-import "github.com/openctemio/openctem/api/pkg/domain/asset"
+import "github.com/openctemio/openctem/server/pkg/domain/asset"
 
 // Reference a constant
 asset.RelTypeRunsOn
@@ -726,17 +726,17 @@ the commit.
 
 ```bash
 # Add / modify / remove a type
-$EDITOR api/configs/relationship-types.yaml
-cd api && make generate-relationships
+$EDITOR server/configs/relationship-types.yaml
+cd server && make generate-relationships
 GOWORK=off go build ./...
 cd ../web && npx tsc --noEmit
-git add api/configs/relationship-types.yaml \
-        api/pkg/domain/asset/relationship_types_generated.go \
+git add server/configs/relationship-types.yaml \
+        server/pkg/domain/asset/relationship_types_generated.go \
         web/src/features/assets/types/relationship.types.generated.ts
 git commit -m "feat(assets): <conventional message>"
 
 # Run relationship tests
-cd api && GOWORK=off go test ./tests/unit/ -run TestAssetRelationship -count=1
+cd server && GOWORK=off go test ./tests/unit/ -run TestAssetRelationship -count=1
 
 # Find references to a constant before removing it
 grep -rn "RelTypeFoo" --include="*.go" .

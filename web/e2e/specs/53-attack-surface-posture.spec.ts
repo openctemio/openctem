@@ -1,7 +1,7 @@
 import { test, expect } from '../fixtures/authenticated-page'
 
 /**
- * Attack surface > Posture (api/docs/architecture/easm-posture.md): the view
+ * Attack surface > Posture (server/docs/architecture/easm-posture.md): the view
  * opens the page, the page shows a grade or why there is none, and the
  * overview card links to it.
  */

@@ -5,8 +5,8 @@ import (
 	"slices"
 	"testing"
 
-	scopeapp "github.com/openctemio/openctem/api/internal/app/scope"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	scopeapp "github.com/openctemio/openctem/server/internal/app/scope"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // The exclusion preview lists, for an address, range or CIDR, the names it

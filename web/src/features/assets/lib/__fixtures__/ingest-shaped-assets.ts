@@ -2,7 +2,7 @@
  * Assets shaped exactly as ingest stores them, for tests of the asset pages.
  *
  * Each `properties` map below is what the API returns after a sensor report
- * goes through `api/internal/app/ingest`:
+ * goes through `server/internal/app/ingest`:
  *
  *  - flat schema keys only: the CTIS `properties` the sensor sent, with
  *    synonyms folded (`web_server` → `server`, `ip` → `ip_addresses`) and

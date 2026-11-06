@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app/feedstatus"
+	"github.com/openctemio/openctem/server/internal/app/feedstatus"
 )
 
 func viewOf(t *testing.T, fs *fakeStatus, now time.Time) feedstatus.View {

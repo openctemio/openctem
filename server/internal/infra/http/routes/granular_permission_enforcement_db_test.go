@@ -19,8 +19,8 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/openctemio/openctem/api/pkg/domain/permission"
-	"github.com/openctemio/openctem/api/pkg/domain/role"
+	"github.com/openctemio/openctem/server/pkg/domain/permission"
+	"github.com/openctemio/openctem/server/pkg/domain/role"
 )
 
 // gateChange is one route whose gate gained a permission: before, the route

@@ -1,7 +1,7 @@
 package postgres
 
 // Tenant VEX statements and the findings they act on. Design:
-// api/docs/rfcs/RFC-070-software-components-inventory.md.
+// server/docs/rfcs/RFC-070-software-components-inventory.md.
 
 import (
 	"context"
@@ -13,9 +13,9 @@ import (
 
 	"github.com/lib/pq"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/vex"
-	"github.com/openctemio/openctem/api/pkg/pagination"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/vex"
+	"github.com/openctemio/openctem/server/pkg/pagination"
 )
 
 // VEXStatementRepository implements vex.Repository.

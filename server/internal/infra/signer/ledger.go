@@ -13,7 +13,7 @@ import (
 	"regexp"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/jobsign"
+	"github.com/openctemio/openctem/server/pkg/jobsign"
 )
 
 // LedgerTimeout bounds one ledger call (a sync carries a whole

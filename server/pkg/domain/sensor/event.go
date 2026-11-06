@@ -14,7 +14,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // EventType identifies one kind of sensor event.

@@ -35,7 +35,7 @@ jobs:
       GOWORK: 'off'
     defaults:
       run:
-        working-directory: api
+        working-directory: server
     services:
       postgres:
         image: ghcr.io/openctemio/mirror/postgres:17-alpine
@@ -63,9 +63,9 @@ jobs:
           ref: ${{ github.event_name == 'schedule' && 'develop' || '' }}
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version-file: api/go.mod
+          go-version-file: server/go.mod
           cache: true
-          cache-dependency-path: api/go.sum
+          cache-dependency-path: server/go.sum
       - name: Build the migration runner
         run: |
           go build -o "$RUNNER_TEMP/bin/openctem-migrate" ./cmd/openctem-migrate

@@ -39,7 +39,7 @@ CMD ["/usr/local/bin/dev-entrypoint.sh"]
 # -----------------------------------------------------------------------------
 # Base stage for production builds
 # SDK is fetched from GitHub as a released module (not local)
-# Build context: api/ folder (not parent)
+# Build context: server/ folder (not parent)
 # -----------------------------------------------------------------------------
 FROM golang:1.27.3-alpine@sha256:d200d2dd76b03a99b52651fd1325aff7dcd35422c35c01bac56571b0507f3deb AS base
 
@@ -51,7 +51,7 @@ RUN apk add --no-cache git ca-certificates tzdata
 # openctemio modules are public: fetch them through the Go module proxy and
 # verify them against the checksum database like every other dependency.
 
-# Copy go mod files (context is api/ folder)
+# Copy go mod files (context is server/ folder)
 COPY go.mod go.sum ./
 
 # Download dependencies. Retried: the module proxy sometimes resets the
@@ -77,7 +77,10 @@ RUN go install github.com/swaggo/swag/cmd/swag@${SWAG_VERSION}
 COPY go.mod go.sum ./
 RUN for i in 1 2 3; do go mod download && exit 0; echo "go mod download failed (attempt $i); retrying" >&2; sleep $((i * 10)); done; exit 1
 COPY . .
+# The published definition names keep the module's pre-rename spelling (see
+# the swagger target in the Makefile).
 RUN swag init --generalInfo cmd/server/main.go --output api/openapi --outputTypes yaml --parseDependency --quiet \
+ && sed -i 's/github_com_openctemio_openctem_server_/github_com_openctemio_openctem_api_/g' api/openapi/swagger.yaml \
  && test -s api/openapi/swagger.yaml
 
 # -----------------------------------------------------------------------------
@@ -87,7 +90,7 @@ FROM base AS builder
 ARG TARGETOS
 ARG TARGETARCH
 
-# Copy API source code (context is api/ folder)
+# Copy API source code (context is server/ folder)
 COPY . .
 
 # Disable workspace mode for standalone build
@@ -130,9 +133,9 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
     GOOS=${TARGETOS:-linux} \
     GOARCH=${TARGETARCH:-$(go env GOARCH)} \
     go build -trimpath -ldflags="-s -w \
-      -X github.com/openctemio/openctem/api/pkg/version.Version=${VERSION} \
-      -X github.com/openctemio/openctem/api/pkg/version.Commit=${COMMIT} \
-      -X github.com/openctemio/openctem/api/pkg/version.BuildTime=${BUILD_TIME}" \
+      -X github.com/openctemio/openctem/server/pkg/version.Version=${VERSION} \
+      -X github.com/openctemio/openctem/server/pkg/version.Commit=${COMMIT} \
+      -X github.com/openctemio/openctem/server/pkg/version.BuildTime=${BUILD_TIME}" \
     -o /app/bin/ ./cmd/server ./cmd/signer ./cmd/openctem-migrate \
  && mv /app/bin/signer /app/bin/openctem-signer
 

@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/approvalpolicy"
+	"github.com/openctemio/openctem/server/pkg/domain/approvalpolicy"
 )
 
 // The false-positive levels are one vocabulary in both packages.

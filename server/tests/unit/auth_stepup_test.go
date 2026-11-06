@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	authapp "github.com/openctemio/openctem/api/internal/app/auth"
+	authapp "github.com/openctemio/openctem/server/internal/app/auth"
 )
 
 // Step-up re-authentication (RFC-052 D-2): TOTP when enrolled (never a

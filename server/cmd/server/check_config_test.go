@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/config"
+	"github.com/openctemio/openctem/server/internal/config"
 )
 
 func TestReportConfigCheck(t *testing.T) {

@@ -4,8 +4,8 @@ import (
 	"net/netip"
 	"strings"
 
-	"github.com/openctemio/openctem/api/pkg/domain/asset"
-	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
+	"github.com/openctemio/openctem/server/pkg/domain/asset"
+	scopedom "github.com/openctemio/openctem/server/pkg/domain/scope"
 )
 
 // internetFacingTypes are the stored asset types (after asset.CanonicalPair:

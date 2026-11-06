@@ -34,9 +34,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/metrics"
-	"github.com/openctemio/openctem/api/pkg/domain/admin"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/internal/metrics"
+	"github.com/openctemio/openctem/server/pkg/domain/admin"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // Row is one admin_audit_logs row as shipped: the audit entry and its place

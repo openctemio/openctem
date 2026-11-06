@@ -3,10 +3,10 @@ package main
 import (
 	"context"
 
-	"github.com/openctemio/openctem/api/internal/app/asset"
-	easmapp "github.com/openctemio/openctem/api/internal/app/easm"
-	"github.com/openctemio/openctem/api/internal/app/ingest"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/internal/app/asset"
+	easmapp "github.com/openctemio/openctem/server/internal/app/easm"
+	"github.com/openctemio/openctem/server/internal/app/ingest"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // newPasteAssets wires the creation of the missing assets of a pasted group

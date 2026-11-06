@@ -3,9 +3,9 @@ package handler
 import (
 	"net/http"
 
-	dashboardapp "github.com/openctemio/openctem/api/internal/app/dashboard"
-	"github.com/openctemio/openctem/api/internal/app/dashboard/widgets"
-	"github.com/openctemio/openctem/api/pkg/domain/permission"
+	dashboardapp "github.com/openctemio/openctem/server/internal/app/dashboard"
+	"github.com/openctemio/openctem/server/internal/app/dashboard/widgets"
+	"github.com/openctemio/openctem/server/pkg/domain/permission"
 )
 
 // DashboardHomeResponse is everything the dashboard home needs to paint.

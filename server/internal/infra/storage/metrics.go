@@ -1,6 +1,6 @@
 package storage
 
-// Storage metrics (api/docs/architecture/file-storage.md, "Metrics"). Labels
+// Storage metrics (server/docs/architecture/file-storage.md, "Metrics"). Labels
 // have a fixed, small cardinality: no tenant or file in any label.
 
 import (
@@ -11,7 +11,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 
-	"github.com/openctemio/openctem/api/pkg/domain/attachment"
+	"github.com/openctemio/openctem/server/pkg/domain/attachment"
 )
 
 var (

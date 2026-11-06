@@ -146,7 +146,7 @@ log.Info("user login", "password", "secret123")
 ### Basic Usage
 
 ```go
-import "github.com/openctemio/openctem/api/pkg/logger"
+import "github.com/openctemio/openctem/server/pkg/logger"
 
 log := logger.NewProduction()
 
@@ -224,7 +224,7 @@ log.WithFields(map[string]any{
 If you need to track how many logs are being dropped by sampling:
 
 ```go
-import "github.com/openctemio/openctem/api/pkg/logger"
+import "github.com/openctemio/openctem/server/pkg/logger"
 
 counter := logger.NewDroppedLogsCounter()
 

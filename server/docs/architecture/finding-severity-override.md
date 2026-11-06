@@ -118,8 +118,8 @@ Withdraw (the requester).
 
 ## Key files
 
-- `api/internal/app/finding/severity_override.go`
-- `api/internal/infra/postgres/finding_severity_override.go`, `finding_severity_columns.go`
-- `api/internal/infra/http/handler/finding_severity_handler.go`
-- `api/internal/app/sla/applier.go` (`RelaxForDecision`)
+- `server/internal/app/finding/severity_override.go`
+- `server/internal/infra/postgres/finding_severity_override.go`, `finding_severity_columns.go`
+- `server/internal/infra/http/handler/finding_severity_handler.go`
+- `server/internal/app/sla/applier.go` (`RelaxForDecision`)
 - `web/src/features/findings/hooks/use-finding-triage.tsx`, `components/severity-change-dialog.tsx`, `components/detail/severity-provenance.tsx`

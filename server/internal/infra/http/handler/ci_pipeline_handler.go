@@ -14,10 +14,10 @@ import (
 	"time"
 	"unicode/utf8"
 
-	cirunapp "github.com/openctemio/openctem/api/internal/app/cirun"
-	"github.com/openctemio/openctem/api/pkg/apierror"
-	"github.com/openctemio/openctem/api/pkg/domain/cirun"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	cirunapp "github.com/openctemio/openctem/server/internal/app/cirun"
+	"github.com/openctemio/openctem/server/pkg/apierror"
+	"github.com/openctemio/openctem/server/pkg/domain/cirun"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // CIPipelineService is what the pipeline endpoints need.

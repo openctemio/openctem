@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """Changelog fragments for the OpenCTEM API.
 
-Every pull request used to add its entry at the top of api/CHANGELOG.md, right
+Every pull request used to add its entry at the top of server/CHANGELOG.md, right
 under "## Unreleased". Any two open pull requests therefore edited the same
 lines and conflicted, and a merge queue with many entries turned that into a
 steady stream of dequeued pull requests (and once, conflict markers committed
 to develop).
 
-Unreleased entries now live one file per change in api/changelog.d/. No two
+Unreleased entries now live one file per change in server/changelog.d/. No two
 pull requests touch the same file. The release folds them into CHANGELOG.md
 once, in a single commit.
 
@@ -32,7 +32,7 @@ the top of the section lists the fragments under the operator headings below,
 so a reader sees the migrations, destructive migrations, identity changes and
 API contract changes before the categories. Without it nothing changes.
 
-Fragment format (api/changelog.d/<short-slug>.md):
+Fragment format (server/changelog.d/<short-slug>.md):
 
   ### <Category>: <one-line title>
 
@@ -52,7 +52,7 @@ import subprocess
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-API = ROOT / "api"
+API = ROOT / "server"
 CHANGELOG = API / "CHANGELOG.md"
 FRAGMENTS = API / "changelog.d"
 
@@ -216,8 +216,8 @@ def cmd_check(argv: list[str]) -> int:
     errors = validate() + conflict_markers()
     if entries_in_unreleased():
         errors.append(
-            "api/CHANGELOG.md: an entry was written under Unreleased. Put it in "
-            "api/changelog.d/<short-slug>.md instead (see api/changelog.d/README.md)."
+            "server/CHANGELOG.md: an entry was written under Unreleased. Put it in "
+            "server/changelog.d/<short-slug>.md instead (see server/changelog.d/README.md)."
         )
     for e in errors:
         print(f"::error::{e}" if "GITHUB_ACTIONS" in os.environ else e)
@@ -245,7 +245,7 @@ def cmd_release(argv: list[str]) -> int:
     text = CHANGELOG.read_text(encoding="utf-8")
     start = text.find(UNRELEASED)
     if start < 0:
-        print("api/CHANGELOG.md has no '## Unreleased' heading", file=sys.stderr)
+        print("server/CHANGELOG.md has no '## Unreleased' heading", file=sys.stderr)
         return 1
     head = text[: start + len(UNRELEASED)]
     rest = text[start + len(UNRELEASED):]
@@ -281,7 +281,7 @@ def cmd_archive(argv: list[str]) -> int:
         return 1
     text = CHANGELOG.read_text(encoding="utf-8")
     if UNRELEASED not in text:
-        print("api/CHANGELOG.md has no '## Unreleased' heading", file=sys.stderr)
+        print("server/CHANGELOG.md has no '## Unreleased' heading", file=sys.stderr)
         return 1
     body = assemble(chosen).rstrip() or "No notable changes."
     CHANGELOG.write_text(f"{text.rstrip()}\n\n## {heading}\n\n{body}\n", encoding="utf-8")

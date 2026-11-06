@@ -18,11 +18,11 @@ import (
 	"strings"
 	"testing"
 
-	evidenceapp "github.com/openctemio/openctem/api/internal/app/evidence"
-	"github.com/openctemio/openctem/api/internal/infra/http/handler"
-	evidencedom "github.com/openctemio/openctem/api/pkg/domain/evidence"
-	"github.com/openctemio/openctem/api/pkg/domain/permission"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	evidenceapp "github.com/openctemio/openctem/server/internal/app/evidence"
+	"github.com/openctemio/openctem/server/internal/infra/http/handler"
+	evidencedom "github.com/openctemio/openctem/server/pkg/domain/evidence"
+	"github.com/openctemio/openctem/server/pkg/domain/permission"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // storeAt puts one HTTP exchange for path on the finding; each path is a distinct item.

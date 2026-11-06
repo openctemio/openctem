@@ -3,7 +3,7 @@ package scanrun
 import (
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
+	"github.com/openctemio/openctem/server/pkg/domain/scanrun"
 )
 
 // A failed run says which step failed, why, and with which code, so the run

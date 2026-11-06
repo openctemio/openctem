@@ -10,7 +10,7 @@ import (
 
 	"github.com/openctemio/contract/edgeprotect"
 
-	"github.com/openctemio/openctem/api/pkg/domain/evidence"
+	"github.com/openctemio/openctem/server/pkg/domain/evidence"
 )
 
 // Attempt is what a re-run's evidence proves about the request it made.

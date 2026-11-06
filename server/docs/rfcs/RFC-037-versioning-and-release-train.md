@@ -46,11 +46,11 @@
 |---|---|
 | Tags | Newest platform tag `v0.8.0` (2026-09-30), on `main`. `develop` does not descend from it (release PRs were squashed, and release branches carry `main` only as a second parent), so `git describe` on `develop` answers `v0.2.1-2374-g…`. |
 | Unreleased work | 482 non-merge commits on `develop` since `v0.8.0` (excluding the imported web history before `ui/v0.8.0`), one of them breaking. Releases happen when someone remembers. |
-| API identity | Release images: `-ldflags -X …/pkg/version.{Version,Commit,BuildTime}` (`api/Dockerfile`). Dev container: `api/.air.toml` stamps `<highest tag>-dev`; a binary without ldflags reads `.git` itself (`pkg/version/gitinfo.go`). Channels: `release` and `development`. `GET /api/v1/version` and `/api/v1/admin/version` require a session. `/health` carries no version, on purpose (no anonymous fingerprinting). |
+| API identity | Release images: `-ldflags -X …/pkg/version.{Version,Commit,BuildTime}` (`server/Dockerfile`). Dev container: `server/.air.toml` stamps `<highest tag>-dev`; a binary without ldflags reads `.git` itself (`pkg/version/gitinfo.go`). Channels: `release` and `development`. `GET /api/v1/version` and `/api/v1/admin/version` require a session. `/health` carries no version, on purpose (no anonymous fingerprinting). |
 | Web identity | `NEXT_PUBLIC_APP_VERSION` / `NEXT_PUBLIC_APP_COMMIT` in release images; otherwise `/api/version` reads `.git` (`web/src/lib/version/`). `web/package.json` said `0.2.0`, read by nothing and never bumped. |
 | Version defaults | The built-in sensor release was `v0.4.2` in five places (Go default, install-snippet image, compose default, `.env.example`, a test) while the newest published sensor is `v0.6.4`: every install snippet pinned a sensor three releases old. The SDK "latest" default was off in Go and compose and `v0.9.0` in `.env.example`; the newest SDK is `v0.14.0`. |
 | Helm chart | Charts 0.5.0 to 0.10.0 default to `appVersion: v0.9.0` and the image repositories `ghcr.io/openctemio/openctem-api` / `openctem-web`. Neither the tag nor those repositories exist yet (GHCR has `api`, `ui` and `migrations` up to `v0.8.0`), so a default install pulls images that do not exist. Chart 0.4.1 is the newest chart for `v0.8.0`; 0.5.0 renamed agents to sensors and needs the v0.9.0 API. |
-| Release mechanics | Images and GitHub Releases are published only by a pushed `v*` tag (`docker-publish.yml`, `release.yml`). `api/scripts/release-branch.sh` builds `release/vX.Y.Z` as develop's tree plus a `merge -s ours origin/main`, so the release PR merges cleanly whatever button is pressed. `main` and `develop` now merge through a merge queue with the MERGE method. |
+| Release mechanics | Images and GitHub Releases are published only by a pushed `v*` tag (`docker-publish.yml`, `release.yml`). `server/scripts/release-branch.sh` builds `release/vX.Y.Z` as develop's tree plus a `merge -s ours origin/main`, so the release PR merges cleanly whatever button is pressed. `main` and `develop` now merge through a merge queue with the MERGE method. |
 | Release precondition | `release-branch.sh` refuses when a file exists on `main` but not on `develop`. Today five such files exist, all deleted on `develop` on purpose on 2026-10-02 (the token-leaking `sse-token` route and dead hooks): the next cut would be refused for no reason. |
 | sdk-go | `pkg/sdk/version.go` `const Version` plus `CHANGELOG.md`; `TestVersionNotBehindChangelog` keeps them together. A release PR bumps both, then the tag is pushed by hand. Dev builds report `<Version>-devel`. |
 | sensor | `main.Version` defaults to `v0.1.0` and `make` stamps `git describe` output. `CHANGELOG.md` has an `[Unreleased]` section that a release folds by hand. |
@@ -143,13 +143,13 @@ ci:
 (No `platform` or `chart` section since §14: the platform version is the tag.)
 
 `.github/scripts/release/sync-versions.sh` copies it into its consumers: the
-API's embedded copy `api/internal/versions/versions.yaml` (whole file),
+API's embedded copy `server/internal/versions/versions.yaml` (whole file),
 the bundled sensor's compose default, and the console's CI runner pin. The consumer table in the script is the only place a
 versioned default may live. With `--check` it is the **Version consistency**
 CI job, which also fails when `web/package.json` is not `0.0.0` or when
-`api/deploy/VERSION` names a tag that does not exist. The one exception is the
+`server/deploy/VERSION` names a tag that does not exist. The one exception is the
 release branch: on `release/vX.Y.Z` (and on `main` right after it merges, before
-the tag exists) the job runs with `--release vX.Y.Z`, and `api/deploy/VERSION`
+the tag exists) the job runs with `--release vX.Y.Z`, and `server/deploy/VERSION`
 must be exactly `vX.Y.Z`. A tag's checkout therefore installs its own version
 (§14): `setup.sh` on `v0.9.0` writes `OPENCTEM_VERSION=v0.9.0`, not the release
 before it.
@@ -158,7 +158,7 @@ Who bumps what:
 
 | Field | Bumped by |
 |---|---|
-| `api/deploy/VERSION` | the platform release workflow: one commit on the release branch (`cut-release.sh`); it never reaches `develop` (§14) |
+| `server/deploy/VERSION` | the platform release workflow: one commit on the release branch (`cut-release.sh`); it never reaches `develop` (§14) |
 | `<product>.latest`, `sdk.latest`, `ci.latest` | nobody by hand: `cut-release.sh` refreshes them from the published releases in a train's version commit (§12.6); running instances learn newer releases from the release feed |
 | `sdk.advisories` | a person, when an SDK security advisory is published |
 | `*.min` | a person, deliberately: raising a minimum degrades fleets |
@@ -208,7 +208,7 @@ Release Train      plan   last tag → proposed version (or the override, valida
                           (or the given SHA, which must be green)
                           changelog preview → run summary
                    cut    release/vX.Y.Z = that SHA
-                          + version commit (api/deploy/VERSION = vX.Y.Z)
+                          + version commit (server/deploy/VERSION = vX.Y.Z)
                           + `merge -s ours origin/main`
                           (tree == develop's + the version commit, main recorded as a parent)
                           PR release/vX.Y.Z → main, queued for merge (MERGE)
@@ -254,7 +254,7 @@ For a security or critical fix that cannot wait for the train:
   release branch do not exist yet.
 - The release branch's tree equals the chosen commit's tree plus the version
   commit (train), `main`'s tree after the merge equals the release branch's,
-  and its `api/deploy/VERSION` says `vX.Y.Z`; otherwise no tag is
+  and its `server/deploy/VERSION` says `vX.Y.Z`; otherwise no tag is
   pushed.
 - Dry run (`dry_run: true`, the default) computes and reports everything and
   pushes nothing.
@@ -375,8 +375,8 @@ Go code in `config.go` and the sensor handler.
   (The sensor and sdk-go release workflows bumped `sensor.latest` and
   `sdk.latest` through a pull request here; §12 removed that.)
 - **Embedded, never copied into Go.** `go:embed` cannot reach outside the Go
-  module (`api/`), so `sync-versions.sh` writes a byte-for-byte copy to
-  `api/internal/versions/versions.yaml`; `--check` (CI) fails while they
+  module (`server/`), so `sync-versions.sh` writes a byte-for-byte copy to
+  `server/internal/versions/versions.yaml`; `--check` (CI) fails while they
   differ, and so does a Go test. Package `internal/versions` parses it once at
   load and panics on anything malformed: every test of every importing package
   fails, so a bad manifest cannot build a passing API. Bumping any product,
@@ -490,7 +490,7 @@ Compatibility and availability are separate:
   built with: the fallback and the floor. The release train moves it forward
   when it cuts a release (§12.6); a sensor, SDK or CI runner release never
   needs it.
-  `api/deploy/docker-compose.sensor.yml` (the bundled sensor) follows it
+  `server/deploy/docker-compose.sensor.yml` (the bundled sensor) follows it
   through `sync-versions.sh`.
 - The console says where the latest version comes from
   (`latest_source`: `feed`, `built_in`, `operator`): a sensor on the built-in
@@ -526,7 +526,7 @@ No setup (2026-11-03): the release feed is signed keyless by the release-feed
 workflow, so there is no key to pin and no secret to create
 ([version check](../architecture/version-check.md#setup-maintainers)). Before
 each release the embedded Sigstore trusted root is refreshed
-(`make -C api sigstore-root-refresh`). `RELEASE_TOKEN` is not needed for any
+(`make -C server sigstore-root-refresh`). `RELEASE_TOKEN` is not needed for any
 of this.
 
 ### 12.6 CI runner and baseline refresh (2026-11-05)
@@ -623,11 +623,11 @@ about it is committed to `develop`.
   release lines.
 - The compose files have no version default: `${OPENCTEM_VERSION:?...}`.
   `setup.sh` writes `OPENCTEM_VERSION` into `.env` from `--version`, else
-  `api/deploy/VERSION`, else the exact release tag checked out, and refuses a
+  `server/deploy/VERSION`, else the exact release tag checked out, and refuses a
   branch checkout without `--version`. A checkout of `vX.Y.Z` therefore installs
   `vX.Y.Z` by default; air-gapped bundles keep filling `@VERSION@` and pinning
   digests.
-- `api/deploy/VERSION` (one line, `vX.Y.Z`) is the only committed copy. `cut-release.sh`
+- `server/deploy/VERSION` (one line, `vX.Y.Z`) is the only committed copy. `cut-release.sh`
   writes it as the release branch's version commit; it lands on `main` and the
   tag, and `cut-release.sh` / `post-release.sh` treat it as the one file `main`
   may have that `develop` never does.

@@ -10,13 +10,13 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
-	"github.com/openctemio/openctem/api/pkg/domain/scanwindow"
+	"github.com/openctemio/openctem/server/pkg/domain/scanrun"
+	"github.com/openctemio/openctem/server/pkg/domain/scanwindow"
 
 	"github.com/lib/pq"
 	"github.com/openctemio/contract/outcome"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 var _ scanrun.TaskReader = (*CommandRepository)(nil)

@@ -17,11 +17,11 @@ import (
 	"errors"
 	"fmt"
 
-	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
-	scanrundom "github.com/openctemio/openctem/api/pkg/domain/scanrun"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/jobsign"
-	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
+	commanddom "github.com/openctemio/openctem/server/pkg/domain/command"
+	scanrundom "github.com/openctemio/openctem/server/pkg/domain/scanrun"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/jobsign"
+	protov2 "github.com/openctemio/openctem/server/pkg/sensorproto/v2"
 )
 
 // ErrContentRefused: the platform will not pin content for this job (no pack

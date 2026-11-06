@@ -1,8 +1,8 @@
 package automation
 
 import (
-	automationdom "github.com/openctemio/openctem/api/pkg/domain/automation"
-	"github.com/openctemio/openctem/api/pkg/domain/permission"
+	automationdom "github.com/openctemio/openctem/server/pkg/domain/automation"
+	"github.com/openctemio/openctem/server/pkg/domain/permission"
 )
 
 // CatalogKind is the kind of a catalog entry.

@@ -18,16 +18,16 @@ import (
 	"sync"
 	"testing"
 
-	integrationapp "github.com/openctemio/openctem/api/internal/app/integration"
-	"github.com/openctemio/openctem/api/internal/app/ticketbridge"
-	"github.com/openctemio/openctem/api/internal/app/ticketing"
-	infrahttp "github.com/openctemio/openctem/api/internal/infra/http"
-	"github.com/openctemio/openctem/api/internal/infra/http/handler"
-	"github.com/openctemio/openctem/api/internal/infra/postgres"
-	"github.com/openctemio/openctem/api/pkg/crypto"
-	"github.com/openctemio/openctem/api/pkg/domain/integration"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	integrationapp "github.com/openctemio/openctem/server/internal/app/integration"
+	"github.com/openctemio/openctem/server/internal/app/ticketbridge"
+	"github.com/openctemio/openctem/server/internal/app/ticketing"
+	infrahttp "github.com/openctemio/openctem/server/internal/infra/http"
+	"github.com/openctemio/openctem/server/internal/infra/http/handler"
+	"github.com/openctemio/openctem/server/internal/infra/postgres"
+	"github.com/openctemio/openctem/server/pkg/crypto"
+	"github.com/openctemio/openctem/server/pkg/domain/integration"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 func TestGitHubInbound_ServicePathPerIntegration(t *testing.T) {

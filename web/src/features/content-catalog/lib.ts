@@ -1,5 +1,5 @@
 /**
- * Pure rules of the Content catalog page (api/docs/rfcs/RFC-099-content-packages.md).
+ * Pure rules of the Content catalog page (server/docs/rfcs/RFC-099-content-packages.md).
  * The API decides every action; these only shape what the page offers and
  * highlights, so a hidden button never stands in for a server check.
  */

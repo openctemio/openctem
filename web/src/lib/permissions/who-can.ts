@@ -1,7 +1,7 @@
 /**
  * "Who can do this?": the built-in organization roles that hold a permission,
  * from the client mirror of the API's role mapping (RolePermissions, kept in
- * step with api/pkg/domain/permission/role_mapping.go). A custom role can
+ * step with server/pkg/domain/permission/role_mapping.go). A custom role can
  * grant any permission too, so a sentence built from this always ends with
  * "ask an owner or administrator", never "nobody can".
  *

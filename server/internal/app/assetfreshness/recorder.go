@@ -8,11 +8,11 @@ import (
 	"slices"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/metrics"
-	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
-	freshdom "github.com/openctemio/openctem/api/pkg/domain/assetfreshness"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/internal/metrics"
+	assetdom "github.com/openctemio/openctem/server/pkg/domain/asset"
+	freshdom "github.com/openctemio/openctem/server/pkg/domain/assetfreshness"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // Recorder turns the assets an ingest wrote into class observations.

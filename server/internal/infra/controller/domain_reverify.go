@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app/auth/domainverify"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/internal/app/auth/domainverify"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // DomainReverifyControllerConfig configures the DomainReverifyController.

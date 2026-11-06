@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // PlatformAnnouncement is one notice from the platform operator (RFC-022).

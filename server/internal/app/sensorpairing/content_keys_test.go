@@ -6,11 +6,11 @@ import (
 	"encoding/base64"
 	"testing"
 
-	contentdom "github.com/openctemio/openctem/api/pkg/domain/contentpack"
-	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/jobsign"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	contentdom "github.com/openctemio/openctem/server/pkg/domain/contentpack"
+	sensordom "github.com/openctemio/openctem/server/pkg/domain/sensor"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/jobsign"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // An approved identity carries the content keys the sensor pins: the

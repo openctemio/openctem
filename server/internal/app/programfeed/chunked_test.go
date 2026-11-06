@@ -18,10 +18,10 @@ import (
 
 	"github.com/openctemio/contract/transfer/bundle"
 
-	bp "github.com/openctemio/openctem/api/pkg/domain/bountyprogram"
-	"github.com/openctemio/openctem/api/pkg/feedsign"
-	"github.com/openctemio/openctem/api/pkg/jobsign"
-	feed "github.com/openctemio/openctem/api/pkg/programfeed"
+	bp "github.com/openctemio/openctem/server/pkg/domain/bountyprogram"
+	"github.com/openctemio/openctem/server/pkg/feedsign"
+	"github.com/openctemio/openctem/server/pkg/jobsign"
+	feed "github.com/openctemio/openctem/server/pkg/programfeed"
 )
 
 // memStore is a ChunkStore with the transactional semantics of the

@@ -14,10 +14,10 @@ import (
 	"context"
 	"slices"
 
-	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
-	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/jobsign"
+	commanddom "github.com/openctemio/openctem/server/pkg/domain/command"
+	scopedom "github.com/openctemio/openctem/server/pkg/domain/scope"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/jobsign"
 )
 
 // ScopeLimitSource computes the scope limits of a job's targets

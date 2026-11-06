@@ -1,7 +1,7 @@
 package finding
 
 // Who is told that a finding false-positive or accepted-risk request waits
-// for a decision, and reminders (api/docs/architecture/finding-status-lifecycle.md,
+// for a decision, and reminders (server/docs/architecture/finding-status-lifecycle.md,
 // "Approvals").
 //
 // Threat model: telling approvers changes nobody's power; the second person
@@ -21,11 +21,11 @@ import (
 	"strings"
 	"time"
 
-	notificationdom "github.com/openctemio/openctem/api/pkg/domain/notification"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
-	"github.com/openctemio/openctem/api/pkg/logger"
-	"github.com/openctemio/openctem/api/pkg/weblink"
+	notificationdom "github.com/openctemio/openctem/server/pkg/domain/notification"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/weblink"
 )
 
 // FindingApprover is a member who may approve finding status requests

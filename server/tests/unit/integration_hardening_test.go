@@ -5,9 +5,9 @@ import (
 	"errors"
 	"testing"
 
-	integrationapp "github.com/openctemio/openctem/api/internal/app/integration"
-	"github.com/openctemio/openctem/api/pkg/domain/integration"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	integrationapp "github.com/openctemio/openctem/server/internal/app/integration"
+	"github.com/openctemio/openctem/server/pkg/domain/integration"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // A token issued for one host must not follow base_url to another host that

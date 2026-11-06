@@ -2,7 +2,7 @@
 
 /**
  * The sole member of an organization approves their own finding request
- * (api/docs/architecture/finding-status-lifecycle.md, "Sole member"). The
+ * (server/docs/architecture/finding-status-lifecycle.md, "Sole member"). The
  * API decides whether it is allowed (`self_approval_available` on the list);
  * the dialog asks for a reason and a fresh code from the authenticator app.
  * It is audited, announced on the organization's channels and emailed to the

@@ -1,13 +1,13 @@
 # Project Structure
 
-The layout of `api/` in the `openctemio/openctem` monorepo. The web console is
+The layout of `server/` in the `openctemio/openctem` monorepo. The web console is
 `web/` (see [web/docs/ARCHITECTURE.md](../../../web/docs/ARCHITECTURE.md)); CI
 workflows, git hooks and the root `Makefile` are at the repository root.
 
-## api/
+## server/
 
 ```
-api/
+server/
 ├── cmd/                    # Entry points
 ├── internal/               # Application code (not importable from outside the module)
 ├── pkg/                    # Domain model and shared packages
@@ -24,7 +24,7 @@ api/
 ├── docker-compose.yml, docker-compose.dev.yml   # development only
 ├── Makefile                # see docs/MAKEFILE.md
 ├── .env.example, .air.toml, .golangci.yml
-└── go.mod                  # module github.com/openctemio/openctem/api
+└── go.mod                  # module github.com/openctemio/openctem/server
 ```
 
 ## cmd/

@@ -16,12 +16,12 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/openctemio/openctem/api/internal/app/command"
-	contentpackapp "github.com/openctemio/openctem/api/internal/app/contentpack"
-	scanrundom "github.com/openctemio/openctem/api/pkg/domain/scanrun"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/wordlist"
-	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
+	"github.com/openctemio/openctem/server/internal/app/command"
+	contentpackapp "github.com/openctemio/openctem/server/internal/app/contentpack"
+	scanrundom "github.com/openctemio/openctem/server/pkg/domain/scanrun"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/wordlist"
+	protov2 "github.com/openctemio/openctem/server/pkg/sensorproto/v2"
 )
 
 // OrganizationLists reads an organization's enabled wordlists. Every

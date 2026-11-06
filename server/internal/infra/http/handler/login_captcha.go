@@ -6,8 +6,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/apierror"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/apierror"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // A CAPTCHA after repeated failed sign-ins (docs/rfcs/RFC-104): when the

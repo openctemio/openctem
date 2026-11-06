@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/assetresolution"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/assetresolution"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // Resolution states: consecutive failures make a name not_resolving, a

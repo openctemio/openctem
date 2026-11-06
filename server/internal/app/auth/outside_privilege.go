@@ -17,9 +17,9 @@ import (
 	"errors"
 	"fmt"
 
-	sessiondom "github.com/openctemio/openctem/api/pkg/domain/session"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
+	sessiondom "github.com/openctemio/openctem/server/pkg/domain/session"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	tenantdom "github.com/openctemio/openctem/server/pkg/domain/tenant"
 )
 
 func (s *AuthService) enforceOutsidePrivilegePolicy(ctx context.Context, sess *sessiondom.Session, userID shared.ID, tenantID string) error {

@@ -1,7 +1,7 @@
 package tenant
 
 // The organization's finding approval settings section
-// (api/docs/architecture/finding-status-lifecycle.md, "Approvals"). The route
+// (server/docs/architecture/finding-status-lifecycle.md, "Approvals"). The route
 // requires settings:write and a recent re-authentication; every change is
 // audited at high severity with the values before and after.
 
@@ -9,10 +9,10 @@ import (
 	"context"
 	"fmt"
 
-	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
-	"github.com/openctemio/openctem/api/pkg/domain/audit"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
+	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
+	"github.com/openctemio/openctem/server/pkg/domain/audit"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	tenantdom "github.com/openctemio/openctem/server/pkg/domain/tenant"
 )
 
 // GetFindingApprovalSettings returns the organization's finding approval

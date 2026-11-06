@@ -2,7 +2,7 @@
 
 /**
  * Settings > Finding approvals > Approval policy
- * (api/docs/rfcs/RFC-111-approval-policy.md): the tier per kind and risk
+ * (server/docs/rfcs/RFC-111-approval-policy.md): the tier per kind and risk
  * class, the security pool, exclusions, caps, the decision deadline, the EPSS
  * threshold and what a material change does. Every choice only adds
  * constraints above the platform floors; the editor never offers a tier below

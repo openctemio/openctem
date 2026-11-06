@@ -129,7 +129,7 @@ const matchesAny = (globs, changed) => !!globs && changed.some((f) => matches(gl
 
 // ---- selection --------------------------------------------------------------
 
-// Tiers (api/docs/development/ci-cd.md, "E2E tiers"):
+// Tiers (server/docs/development/ci-cd.md, "E2E tiers"):
 //   merge_group, push, schedule, dispatch, `full`  the whole suite
 //   pull_request                                   the smoke set (and any spec the
 //                                                  change edits, and the request

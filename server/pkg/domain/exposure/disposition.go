@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // A disposition request is the first half of a four-eyes decision on a high
@@ -13,7 +13,7 @@ import (
 // accept its risk or mark it a false positive, and a different approver
 // confirms. Lower severities keep the one-step path.
 //
-// Design: api/docs/architecture/finding-status-lifecycle.md ("Four-eyes on
+// Design: server/docs/architecture/finding-status-lifecycle.md ("Four-eyes on
 // exposure dispositions").
 
 // DispositionStatus is the lifecycle of a disposition request.

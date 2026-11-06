@@ -22,13 +22,13 @@ import (
 	"github.com/openctemio/contract/transfer"
 	"github.com/openctemio/contract/transfer/bundle"
 
-	"github.com/openctemio/openctem/api/internal/app/feedstatus"
-	"github.com/openctemio/openctem/api/pkg/domain/cvecorpus"
-	"github.com/openctemio/openctem/api/pkg/domain/software"
-	"github.com/openctemio/openctem/api/pkg/domain/threatintel"
-	"github.com/openctemio/openctem/api/pkg/httpsec"
-	"github.com/openctemio/openctem/api/pkg/logger"
-	"github.com/openctemio/openctem/api/pkg/vulnbundle"
+	"github.com/openctemio/openctem/server/internal/app/feedstatus"
+	"github.com/openctemio/openctem/server/pkg/domain/cvecorpus"
+	"github.com/openctemio/openctem/server/pkg/domain/software"
+	"github.com/openctemio/openctem/server/pkg/domain/threatintel"
+	"github.com/openctemio/openctem/server/pkg/httpsec"
+	"github.com/openctemio/openctem/server/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/vulnbundle"
 )
 
 // SourceName is the threat_intel_sync_status row of the importer.

@@ -8,13 +8,13 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
-	retestcheckapp "github.com/openctemio/openctem/api/internal/app/retestcheck"
-	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
-	"github.com/openctemio/openctem/api/pkg/apierror"
-	retestcheckdom "github.com/openctemio/openctem/api/pkg/domain/retestcheck"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
+	retestcheckapp "github.com/openctemio/openctem/server/internal/app/retestcheck"
+	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/server/pkg/apierror"
+	retestcheckdom "github.com/openctemio/openctem/server/pkg/domain/retestcheck"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // maxRetestCheckBody bounds a retest check request (a template is at most

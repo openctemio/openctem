@@ -17,8 +17,8 @@ import {
  * literal list is what refuses to move with them.
  *
  * Source of truth:
- *   api/migrations/000146_compensating_controls.up.sql
- *   api/pkg/domain/compensatingcontrol/entity.go
+ *   server/migrations/000146_compensating_controls.up.sql
+ *   server/pkg/domain/compensatingcontrol/entity.go
  */
 const BACKEND_CONTROL_TYPES = ['segmentation', 'identity', 'runtime', 'detection', 'other']
 const BACKEND_CONTROL_STATUSES = ['active', 'inactive', 'expired', 'untested']

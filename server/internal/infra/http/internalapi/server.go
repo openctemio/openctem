@@ -15,17 +15,17 @@ import (
 	"sync"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/signupevent"
+	"github.com/openctemio/openctem/server/pkg/domain/signupevent"
 
 	"golang.org/x/time/rate"
 
-	"github.com/openctemio/openctem/api/internal/app/entitlement"
-	"github.com/openctemio/openctem/api/internal/app/lifecycle"
-	tenantapp "github.com/openctemio/openctem/api/internal/app/tenant"
-	"github.com/openctemio/openctem/api/pkg/domain/admin"
-	"github.com/openctemio/openctem/api/pkg/domain/limits"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/internal/app/entitlement"
+	"github.com/openctemio/openctem/server/internal/app/lifecycle"
+	tenantapp "github.com/openctemio/openctem/server/internal/app/tenant"
+	"github.com/openctemio/openctem/server/pkg/domain/admin"
+	"github.com/openctemio/openctem/server/pkg/domain/limits"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 const (

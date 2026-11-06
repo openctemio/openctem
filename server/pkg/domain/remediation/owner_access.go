@@ -3,7 +3,7 @@ package remediation
 import (
 	"context"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // OwnerFindingRef is what the owner picker needs of a finding: its asset and

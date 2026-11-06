@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Splits the API Go test suite into shards that run as parallel CI jobs.
 #
-# Run from api/. A few packages hold most of the run time and run their tests
+# Run from server/. A few packages hold most of the run time and run their tests
 # one after another, so a package-level split leaves one shard far behind the
 # others (tests/integration alone took about 13 minutes of a 20 minute shard).
 # Those packages (SPLIT below) are split by top-level test name over every
@@ -35,7 +35,7 @@
 # before (these packages never ran next to another package's tests).
 set -euo pipefail
 
-MOD=github.com/openctemio/openctem/api
+MOD=github.com/openctemio/openctem/server
 SPLIT=(
   "$MOD/tests/unit"
   "$MOD/tests/integration"

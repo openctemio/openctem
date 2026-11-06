@@ -1,7 +1,7 @@
 'use client'
 
 /**
- * Software components inventory API hooks (api/docs/rfcs/RFC-070-software-components-inventory.md).
+ * Software components inventory API hooks (server/docs/rfcs/RFC-070-software-components-inventory.md).
  * Every list is paged and filtered on the server; the API applies the
  * caller's data scope.
  */

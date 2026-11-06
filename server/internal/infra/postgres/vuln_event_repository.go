@@ -15,7 +15,7 @@ import (
 
 	"github.com/lib/pq"
 
-	"github.com/openctemio/openctem/api/pkg/domain/vulnevent"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnevent"
 )
 
 // VulnEventRepository persists vuln_events and the emitter's state.

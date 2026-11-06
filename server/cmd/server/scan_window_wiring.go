@@ -4,11 +4,11 @@ import (
 	"context"
 	"errors"
 
-	"github.com/openctemio/openctem/api/internal/app/auth"
-	scanwindowapp "github.com/openctemio/openctem/api/internal/app/scanwindow"
-	"github.com/openctemio/openctem/api/internal/infra/http/handler"
-	swdom "github.com/openctemio/openctem/api/pkg/domain/scanwindow"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/internal/app/auth"
+	scanwindowapp "github.com/openctemio/openctem/server/internal/app/scanwindow"
+	"github.com/openctemio/openctem/server/internal/infra/http/handler"
+	swdom "github.com/openctemio/openctem/server/pkg/domain/scanwindow"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // scanWindowTOTP is the fresh authenticator check of a scan window override

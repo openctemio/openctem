@@ -9,7 +9,7 @@
 // It runs against a live scratch stack; ci/run.sh starts one, runs the suite
 // and removes the stack. Env: MATRIX_API (base URL), MATRIX_DATABASE_URL (the
 // stack's database, for the bootstrap steps that have no API),
-// MATRIX_API_ROOT (the api/ directory), MATRIX_REPORT (optional JSON report
+// MATRIX_API_ROOT (the server/ directory), MATRIX_REPORT (optional JSON report
 // path).
 package authzmatrix
 
@@ -50,7 +50,7 @@ func getWorld(t *testing.T) *world {
 	t.Helper()
 	base, dsn := os.Getenv("MATRIX_API"), os.Getenv("MATRIX_DATABASE_URL")
 	if base == "" || dsn == "" {
-		t.Skip("MATRIX_API and MATRIX_DATABASE_URL not set (run api/tests/authzmatrix/ci/run.sh)")
+		t.Skip("MATRIX_API and MATRIX_DATABASE_URL not set (run server/tests/authzmatrix/ci/run.sh)")
 	}
 	worldOnce.Do(func() {
 		db, err := sql.Open("postgres", dsn)

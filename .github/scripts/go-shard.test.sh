@@ -2,7 +2,7 @@
 # Tests the two optional inputs of go-shard.sh (affected list, recorded
 # durations): every selected package still lands on exactly one shard, a
 # package outside the list never runs, and the durations balance the shards.
-# Run from api/.
+# Run from server/.
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -14,7 +14,7 @@ shard() { bash "$here/go-shard.sh" "$@"; }
 # 1. A subset (every 4th package except the SPLIT integration one, plus another SPLIT package) and a durations file
 #    that makes one package dominate, plus junk entries.
 awk 'NR % 4 == 0' "$all" | grep -v 'tests/integration$' > "$tmp/affected" || true
-echo "github.com/openctemio/openctem/api/tests/unit" >> "$tmp/affected"
+echo "github.com/openctemio/openctem/server/tests/unit" >> "$tmp/affected"
 {
   echo '{'
   awk 'NR % 3 == 0 { printf "\"%s\": %d,\n", $0, NR }' "$all"

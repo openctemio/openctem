@@ -9,12 +9,12 @@ import (
 	"strings"
 	"testing"
 
-	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
-	entitlementapp "github.com/openctemio/openctem/api/internal/app/entitlement"
-	lcapp "github.com/openctemio/openctem/api/internal/app/findinglifecycle"
-	"github.com/openctemio/openctem/api/internal/infra/http/handler"
-	"github.com/openctemio/openctem/api/internal/infra/postgres"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
+	entitlementapp "github.com/openctemio/openctem/server/internal/app/entitlement"
+	lcapp "github.com/openctemio/openctem/server/internal/app/findinglifecycle"
+	"github.com/openctemio/openctem/server/internal/infra/http/handler"
+	"github.com/openctemio/openctem/server/internal/infra/postgres"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 func newLifecycleHarness(t *testing.T) *authzPolicyHarness {

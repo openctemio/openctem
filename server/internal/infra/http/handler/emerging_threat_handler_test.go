@@ -10,11 +10,11 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	threatalertapp "github.com/openctemio/openctem/api/internal/app/threatalert"
-	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/threatalert"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	threatalertapp "github.com/openctemio/openctem/server/internal/app/threatalert"
+	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/threatalert"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // fakeAlertStore answers for one organization; any other organization gets

@@ -1,6 +1,6 @@
 package tenant
 
-import "github.com/openctemio/openctem/api/pkg/domain/asset"
+import "github.com/openctemio/openctem/server/pkg/domain/asset"
 
 // AssetReconciliationSettings is the organization's rule for which source
 // decides an asset attribute (RFC-069 §12). Empty: the defaults

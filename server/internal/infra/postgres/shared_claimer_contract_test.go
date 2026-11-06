@@ -1,6 +1,6 @@
 package postgres
 
-import commandapp "github.com/openctemio/openctem/api/internal/app/command"
+import commandapp "github.com/openctemio/openctem/server/internal/app/command"
 
 // The shared claim path finds its repository methods by an interface
 // assertion and fails closed (claims nothing) when the repository does not

@@ -6,7 +6,7 @@
 | Authors | Platform team |
 | Related | RFC-016 (MCP server), RFC-022 (admin console), RFC-041 (API planes), RFC-050 (asset access model), RFC-057 (evidence never leaves through prompts) |
 | Specification | MCP 2026-07-28 (Authorization, Authorization Server Discovery, Client Registration, Security Considerations, Streamable HTTP, Elicitation, Multi Round-Trip Requests) |
-| Code | `api/internal/app/mcpoauth`, `api/internal/infra/http/handler/mcp_oauth*.go`, `api/internal/infra/http/middleware/mcp_auth.go`, `web/src/app/oauth/consent` |
+| Code | `server/internal/app/mcpoauth`, `server/internal/infra/http/handler/mcp_oauth*.go`, `server/internal/infra/http/middleware/mcp_auth.go`, `web/src/app/oauth/consent` |
 
 ## 1. Summary
 

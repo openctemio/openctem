@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/accessrequest"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/accessrequest"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // AccessRequestRepository stores access requests (migration 001380). Platform

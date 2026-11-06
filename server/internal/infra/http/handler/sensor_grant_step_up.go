@@ -8,9 +8,9 @@ import (
 	"context"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app/sensorgrant"
-	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
-	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
+	"github.com/openctemio/openctem/server/internal/app/sensorgrant"
+	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
+	sensordom "github.com/openctemio/openctem/server/pkg/domain/sensor"
 )
 
 // StepUpWideningApprover approves a widening only when the caller's session

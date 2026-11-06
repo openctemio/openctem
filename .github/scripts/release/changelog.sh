@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # changelog.sh: a Markdown changelog preview, grouped by conventional type,
-# for the release train issue and the run summary (api/docs/rfcs/RFC-037).
+# for the release train issue and the run summary (server/docs/rfcs/RFC-037).
 #
 #   changelog.sh [--repo DIR] [--title vX.Y.Z] [--since vA.B.C] [--max N] -- <git log revision args>
 #

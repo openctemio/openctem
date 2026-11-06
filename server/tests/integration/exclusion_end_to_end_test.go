@@ -1,7 +1,7 @@
 package integration
 
 // Marking things out of scope, end to end (docs/rfcs/RFC-054-scope-model.md
-// §6.5, api/docs/guides/out-of-scope.md): exclusions of a name, of an
+// §6.5, server/docs/guides/out-of-scope.md): exclusions of a name, of an
 // address inside a range, and of a path, then real scans on a migrated
 // database. The stored command payloads never carry an excluded target;
 // the range job carries its exclusions and the web job its deny paths; the
@@ -19,14 +19,14 @@ import (
 
 	"github.com/openctemio/ctis/v2"
 
-	"github.com/openctemio/openctem/api/internal/app/ingest"
-	scansvc "github.com/openctemio/openctem/api/internal/app/scan"
-	"github.com/openctemio/openctem/api/internal/app/scanrun"
-	"github.com/openctemio/openctem/api/internal/infra/postgres"
-	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
-	"github.com/openctemio/openctem/api/pkg/domain/sensor"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/internal/app/ingest"
+	scansvc "github.com/openctemio/openctem/server/internal/app/scan"
+	"github.com/openctemio/openctem/server/internal/app/scanrun"
+	"github.com/openctemio/openctem/server/internal/infra/postgres"
+	commanddom "github.com/openctemio/openctem/server/pkg/domain/command"
+	"github.com/openctemio/openctem/server/pkg/domain/sensor"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // exclusionScanService is scanServiceOver with the real exclusion filter

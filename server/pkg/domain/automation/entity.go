@@ -6,7 +6,7 @@ package automation
 import (
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // RunStatusSuccess / RunStatusError are the two extra status strings

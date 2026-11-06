@@ -1,6 +1,6 @@
 /**
  * Reads a 409 FINDINGS_IN_OTHER_TASK answer (a finding is in at most one
- * active task, api/docs/rfcs/RFC-098-remediation-tasks.md). The server lists
+ * active task, server/docs/rfcs/RFC-098-remediation-tasks.md). The server lists
  * each conflict in details.conflicts; an older server lists only
  * details.finding_ids, which become conflicts nobody may move.
  */

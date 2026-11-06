@@ -1,4 +1,4 @@
-// Package migrate applies the SQL migrations in api/migrations to PostgreSQL
+// Package migrate applies the SQL migrations in server/migrations to PostgreSQL
 // and records every version it applied (docs/rfcs/RFC-130-migration-applied-set.md).
 //
 // A migration is a pair of files VERSION_name.up.sql / VERSION_name.down.sql.

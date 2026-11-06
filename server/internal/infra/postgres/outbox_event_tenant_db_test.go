@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/outbox"
+	"github.com/openctemio/openctem/server/pkg/domain/outbox"
 )
 
 // A delivery is read only inside its tenant: another tenant asking for the

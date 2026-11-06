@@ -10,10 +10,10 @@ import (
 	"testing"
 	"time"
 
-	contentpackapp "github.com/openctemio/openctem/api/internal/app/contentpack"
-	app "github.com/openctemio/openctem/api/internal/app/contentsource"
-	dom "github.com/openctemio/openctem/api/pkg/domain/contentsource"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	contentpackapp "github.com/openctemio/openctem/server/internal/app/contentpack"
+	app "github.com/openctemio/openctem/server/internal/app/contentsource"
+	dom "github.com/openctemio/openctem/server/pkg/domain/contentsource"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // deliverable lists the pack ids sensors of tenant A may receive.

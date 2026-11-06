@@ -7,7 +7,7 @@ import (
 	"context"
 	"time"
 
-	cirunapp "github.com/openctemio/openctem/api/internal/app/cirun"
+	cirunapp "github.com/openctemio/openctem/server/internal/app/cirun"
 )
 
 // CIRetentionInterval is how often the CI retention job runs. Run tokens live

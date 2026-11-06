@@ -13,7 +13,7 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/openctemio/openctem/api/pkg/domain/stage"
+	"github.com/openctemio/openctem/server/pkg/domain/stage"
 )
 
 // PayloadKeyWebScope is the payload key of a job's web scope (sdk-go

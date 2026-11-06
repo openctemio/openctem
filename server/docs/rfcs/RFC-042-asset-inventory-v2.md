@@ -1,7 +1,7 @@
 # RFC-042 — Asset Inventory v2: services as rows, observations over time, one query language, labels, dynamic groups, policies and screenshots
 
 > Status: **Accepted** (2026-10-03; decisions D1–D21, §12). Implemented so
-> far: P0 slice 1 (the type registry: `api/configs/asset-types.yaml`,
+> far: P0 slice 1 (the type registry: `server/configs/asset-types.yaml`,
 > `assets.asset_class`, `GET /api/v1/asset-types`) and the §6.3.8 type model
 > hardening T1–T3 and O6 (enforced scanner/type compatibility). Not built yet:
 > services as rows, OQL, labels, dynamic groups, policies, observations,
@@ -164,22 +164,22 @@ named.
 ### 3.1 Data model
 
 - **F1. The services table exists but no ingest path writes it.**
-  `asset_services` (`api/migrations/000009_asset_extensions.up.sql:82-132`)
+  `asset_services` (`server/migrations/000009_asset_extensions.up.sql:82-132`)
   has port, protocol, product, version, banner, CPE, TLS, `last_seen_at`,
   state and `technologies TEXT[]` with a GIN index (`000070:5-8`).
   `AssetServiceRepository.UpsertBatch`
-  (`api/internal/infra/postgres/asset_service_repository.go:366`) has no
+  (`server/internal/infra/postgres/asset_service_repository.go:366`) has no
   callers. Only the manual CRUD routes write it
-  (`api/internal/infra/http/routes/assets.go:397-414`).
+  (`server/internal/infra/http/routes/assets.go:397-414`).
 - **F2. Ingest models a web service as an asset.**
-  - Ports go into `properties.ports` (`api/internal/app/ingest/mappers.go:394`).
+  - Ports go into `properties.ports` (`server/internal/app/ingest/mappers.go:394`).
   - httpx results become assets of type `service` with sub-type `http`,
     `open_port` or `discovered_url`
-    (`api/pkg/domain/asset/value_objects.go:109-111`).
+    (`server/pkg/domain/asset/value_objects.go:109-111`).
   - HTTP fields (status, title, web server, content length, technologies,
     CDN, IP) are loose keys in `assets.properties`
     (ctis `recon_converter.go:540-600`;
-    `api/internal/app/ingest/processor_assets.go:1890-1962`).
+    `server/internal/app/ingest/processor_assets.go:1890-1962`).
 - **F3. Technologies are copied into user tags.**
   ctis `recon_converter.go:585` appends every detected technology to
   `asset.Tags`. Fingerprints and human labels share one namespace, so a
@@ -199,16 +199,16 @@ named.
 - **F6. Findings do not know their port.** CTIS carries `Finding.Network`
   (host, port, protocol, service; ctis `types.go:1004`, `:1429-1445`), but
   ingest uses the port only inside the VA dedup fingerprint
-  (`api/internal/app/ingest/processor_findings.go:797-798`). No findings
+  (`server/internal/app/ingest/processor_findings.go:797-798`). No findings
   column holds it, so "issues found on this service" cannot be answered.
 - **F7. Name is unique per tenant regardless of type**
   (`000008_assets.up.sql:136`). RFC-028 lists this as a known limit
   (`RFC-028-asset-identity-model.md:148-150`).
 - **F8. The merge plan is guarded.** `mergeAssetReferences`
-  (`api/internal/infra/postgres/asset_merge_plan.go:45-116`) moves 12
+  (`server/internal/infra/postgres/asset_merge_plan.go:45-116`) moves 12
   tables as they are, 11 with unique-key handling (including
   `asset_services` and `asset_group_members`), plus edges and special
-  cases. `api/tests/integration/asset_merge_coverage_test.go` fails when a
+  cases. `server/tests/integration/asset_merge_coverage_test.go` fails when a
   new FK to `assets` is not in the plan. Every table this RFC adds that
   references assets must join the plan.
 
@@ -216,7 +216,7 @@ named.
 
 - **F9. Search is substring matching.** `search` is `ILIKE` on name and
   description plus an exact alias match
-  (`api/internal/infra/postgres/asset_repository.go:1103-1109`).
+  (`server/internal/infra/postgres/asset_repository.go:1103-1109`).
   `pg_trgm` is installed (`000001:8`) but no index on `assets` uses it.
 - **F10. Facets do not scale and ignore data scope.**
   - `GET /assets/facets` → `GetPropertyFacets`
@@ -224,7 +224,7 @@ named.
     array element of every asset in the tenant on each request.
   - `GET /assets/stats` → `GetAggregateStats` (`:1951-2143`) filters only
     by type, tag and sub-type.
-  - Both pass only the tenant id (`api/internal/app/asset/service.go:1396-1414`),
+  - Both pass only the tenant id (`server/internal/app/asset/service.go:1396-1414`),
     while the list applies the user's data scope (`service.go:1374-1381`;
     SQL at `asset_repository.go:1315-1334`). A scoped user can therefore
     read counts of assets they cannot list.
@@ -238,7 +238,7 @@ named.
   sends a full PUT per asset in client-side batches
   (`web/src/features/assets/components/inventory/inventory-bulk-bar.tsx:86-107`).
 - **F13. Pagination is offset-only and capped at 100**
-  (`api/internal/infra/http/handler/common.go:185`). The list's finding
+  (`server/internal/infra/http/handler/common.go:185`). The list's finding
   count is a LATERAL subquery per row (`asset_repository.go:453-473`).
 
 ### 3.3 Groups, scope and exclusions
@@ -250,7 +250,7 @@ named.
   applies data scope.
 - **F15. Group scans resolve at trigger, by name, with no lifecycle
   filter.**
-  - `resolveScanTargets` (`api/internal/app/scan/targets.go:63-145`) pages
+  - `resolveScanTargets` (`server/internal/app/scan/targets.go:63-145`) pages
     group members (`trigger.go:1107-1135`), subtracts approved exclusions
     (fail-closed) and caps at 10,000 (`targets.go:18`).
   - Members are matched by `name` only. A hostname whose address falls in
@@ -260,22 +260,22 @@ named.
   - Ingest has no scope or exclusion check, so excluded hosts that are
     already in the inventory stay there unflagged.
   - CT discovery reads scope targets but not exclusions
-    (`api/internal/app/certmonitor/service.go:443-452`).
+    (`server/internal/app/certmonitor/service.go:443-452`).
   - `POST /pipelines/runs` passes user targets straight into step payloads
-    (`api/internal/app/pipeline/run.go:1100-1101`).
+    (`server/internal/app/pipeline/run.go:1100-1101`).
   - The Tenable coverage dispatcher bypasses it
-    (`api/internal/app/scancoverage/scheduler.go:242-249`).
+    (`server/internal/app/scancoverage/scheduler.go:242-249`).
   - Nothing re-checks at claim time: RFC-030's `scan_run_targets` is
     written once at trigger.
 - **F17. Wildcard semantics are surprising.** `*.x` also matches the bare
   `x`, and `**.x` behaves exactly like `*.x`
-  (`api/pkg/domain/scope/value_objects.go:358-380`). The exclusion types
+  (`server/pkg/domain/scope/value_objects.go:358-380`). The exclusion types
   `finding_type` and `scanner` are matched against target strings like
   host patterns.
 - **F18. The approval workflow works.** Migration 267 adds `pending` and
   `rejected` and the permission `attack_surface:scope:exclusions:approve`
   (`000267_scope_exclusion_approval.up.sql:20-46`). A requester cannot
-  approve their own exclusion (`api/internal/app/scope/service.go:462-465`).
+  approve their own exclusion (`server/internal/app/scope/service.go:462-465`).
   This RFC keeps the workflow unchanged.
 - **F19. Attribution gate in flight.** PR #835 adds `asset_attributions`
   and `easm_evidence` (migration 000324) and a gate inside
@@ -286,26 +286,26 @@ named.
 ### 3.4 Automation, notifications, storage
 
 - **F20. Nothing acts on assets automatically.**
-  - The lifecycle worker (`api/internal/app/asset/lifecycle_worker.go:136`)
+  - The lifecycle worker (`server/internal/app/asset/lifecycle_worker.go:136`)
     moves active to stale but never archives.
   - Workflow tag actions act on findings only
-    (`api/internal/app/workflow/action_handlers.go:60-75`).
+    (`server/internal/app/workflow/action_handlers.go:60-75`).
   - Workflows have per-tenant run caps (`service.go:19-23`) but no loop
     protection: an action can re-fire its own trigger.
 - **F21. Change events are defined but never produced.** The notification
   types `asset_changed` and `asset_deleted` exist
-  (`api/pkg/domain/integration/notification_extension.go:95-163`), but
+  (`server/pkg/domain/integration/notification_extension.go:95-163`), but
   nothing emits them. `new_asset` is emitted with an in-memory 15-minute
-  throttle per API replica (`api/internal/app/assetdiscovery/notifier.go:46`,
+  throttle per API replica (`server/internal/app/assetdiscovery/notifier.go:46`,
   `:315`).
 - **F22. A storage abstraction exists.**
   - `FileStorage` with local, S3 and MinIO backends
-    (`api/pkg/domain/attachment/storage.go:19-42`; `api/internal/infra/storage/`).
+    (`server/pkg/domain/attachment/storage.go:19-42`; `server/internal/infra/storage/`).
   - Uploads have a 10 MB cap and a type allowlist without SVG
     (`storage.go:116-142`).
   - Images download inline with `nosniff` (`attachment_handler.go:218-262`).
   - The global CSP is `default-src 'none'; frame-ancestors 'none'`
-    (`api/internal/infra/http/middleware/security.go:46`).
+    (`server/internal/infra/http/middleware/security.go:46`).
 - **F23. No screenshots and no recon binaries.**
   - The sensor image installs semgrep, betterleaks, trivy and nuclei only
     (sensor `main` `Dockerfile`; `tool_detect.go:19`).
@@ -332,7 +332,7 @@ named.
 
 - **Effective criticality** is computed at read time as the MAX of asset,
   BU, business service and served control-plane criticality
-  (`api/pkg/domain/asset/business_criticality.go:53-71`). Policies that
+  (`server/pkg/domain/asset/business_criticality.go:53-71`). Policies that
   "set criticality" set the asset's own value; the effective value
   follows.
 - **Scope and assignment rules key on `assets.tags`**
@@ -370,7 +370,7 @@ lands in this RFC.
 
 | # | Practice | Where it lands here |
 |---|---|---|
-| I1 | **Three layers.** Per-source records, then a correlation link, then a canonical asset whose "preferred" fields are recomputed from its linked records. Queries can target either the canonical view or one source | §6.4.5. OpenCTEM already has the per-source layer: `asset_sources.contributed_data` (`000014_data_sources.up.sql:52-69`) and RFC-003 source priority (`api/internal/app/ingest/priority_gate.go`). This RFC adds `service_sources`, an `asset_links` view of correlation decisions, the preferred-field recompute, and an OQL `source:` scope |
+| I1 | **Three layers.** Per-source records, then a correlation link, then a canonical asset whose "preferred" fields are recomputed from its linked records. Queries can target either the canonical view or one source | §6.4.5. OpenCTEM already has the per-source layer: `asset_sources.contributed_data` (`000014_data_sources.up.sql:52-69`) and RFC-003 source priority (`server/internal/app/ingest/priority_gate.go`). This RFC adds `service_sources`, an `asset_links` view of correlation decisions, the preferred-field recompute, and an OQL `source:` scope |
 | I2 | **Deterministic identity keys in a fixed order** (MAC, then IP within a time window, then hostname). A manual merge exists as the fallback | RFC-028 already matches strong id → name → windowed hostname → windowed IP and never auto-merges. §6.4.5 adds a **split** action with audit, next to merge |
 | I3 | **Correlation is a scheduled, single-flight batch job** after ingest, followed by a history snapshot | §6.4.5. Ingest keeps an inline strong-key match, because findings need an asset id immediately. A single-flight job per tenant and zone runs the windowed matches, recomputes preferred fields and writes the rollup snapshot (D15) |
 | I4 | **Correlation never crosses a hard network boundary** | §6.4.5. Identity keys for private addresses include the scan zone (D16). Public addresses correlate tenant-wide. The tenant is always a hard boundary |
@@ -487,7 +487,7 @@ seed (RFC-036) ──lineage──► asset (identity, owner, criticality, attri
 ### 6.3 Asset classes and the type registry
 
 OpenCTEM is **not** only a web-services inventory. OpenCTEM has 37 asset types
-(`AllAssetTypes()`, `api/pkg/domain/asset/value_objects.go:126-182`), and a
+(`AllAssetTypes()`, `server/pkg/domain/asset/value_objects.go:126-182`), and a
 typical tenant uses about 21 of them. Repositories are usually the most
 common type, followed by hosts, networks, IPs, subdomains, domains and
 services. So the service card is **one lens** (the external
@@ -499,10 +499,10 @@ those differences are declared.
 
 | Where | What it says |
 |---|---|
-| Go `api/pkg/domain/asset/category.go:7-77` | 9 categories, "derived — NOT stored": external_surface, application, infrastructure, network, cloud, data, code, identity, other. Database and container are infrastructure; service, http_service and open_port are network |
+| Go `server/pkg/domain/asset/category.go:7-77` | 9 categories, "derived — NOT stored": external_surface, application, infrastructure, network, cloud, data, code, identity, other. Database and container are infrastructure; service, http_service and open_port are network |
 | DB `asset_type_categories` (`000037_asset_types.up.sql:91-99`, `000060_schema_fixes.up.sql:64-66`) | 8 codes: infrastructure, application, code, cloud, data, identity, other, recon. There is **no** external_surface and **no** network |
 | Web `web/src/features/assets/lib/category-templates.tsx:6-16` | 7 groups: External, Applications (includes `service`), Cloud, Infrastructure (includes database, network, VPC, Kubernetes), Code, Identity, Recon |
-| `api/configs/relationship-types.yaml:39-49` | Constraints name "virtual frontend types" (`k8s_workload`, `container_image`, `api_endpoint` …) that are not real types, so the backend cannot enforce them |
+| `server/configs/relationship-types.yaml:39-49` | Constraints name "virtual frontend types" (`k8s_workload`, `container_image`, `api_endpoint` …) that are not real types, so the backend cannot enforce them |
 
 On top of this, each of the 25 typed pages under
 `web/src/app/(dashboard)/(discovery)/assets/*/config.tsx` hand-codes its
@@ -570,10 +570,10 @@ In OQL, `class:` and `lens:` are core fields: `lens:external_surface`,
 #### 6.3.3 The type registry (one definition, generated everywhere)
 
 The registry follows the pattern that already works for relationships
-(`api/configs/relationship-types.yaml` → `make generate-relationships` →
+(`server/configs/relationship-types.yaml` → `make generate-relationships` →
 Go constants + `web/src/features/assets/types/relationship.types.generated.ts`).
 
-- **Source of truth:** `api/configs/asset-types.yaml`, from which
+- **Source of truth:** `server/configs/asset-types.yaml`, from which
   `make generate-asset-types` emits Go and TypeScript.
 - **Served at runtime:** `GET /api/v1/asset-types`, versioned with an
   ETag. The web builds every inventory view from this response.
@@ -980,7 +980,7 @@ port, and names are unique per tenant, so it merged into the domain.
 
 **Design.**
 
-1. *One property schema, in the registry.* `api/configs/asset-types.yaml`
+1. *One property schema, in the registry.* `server/configs/asset-types.yaml`
    declares every property key once (`properties`): English and
    Vietnamese labels, a display format (`ip`, `url`, `code`, `expiry`), the synonym
    keys that fold into it and, for a key such as `port`, the classes whose
@@ -1560,7 +1560,7 @@ label_assignments(tenant_id, label_id, subject_type asset|service, subject_id,
 #### 6.7.2 The system rule set
 
 The rule set is versioned YAML in the repository
-(`api/internal/app/labels/rules/v1/*.yaml`) and embedded in the binary.
+(`server/internal/app/labels/rules/v1/*.yaml`) and embedded in the binary.
 Each rule:
 
 ```yaml
@@ -1890,7 +1890,7 @@ implementation, which honestly reverses 000205.
   the service count and `verified_root`. These are real values from
   `scan_runs`. When nothing has run, the list shows "never run", not 0.
 - **Per-group cadence** creates or updates a scan that targets the group,
-  through the existing scan scheduler (`api/internal/app/scan/scheduler.go`).
+  through the existing scan scheduler (`server/internal/app/scan/scheduler.go`).
   This avoids a second scheduler; the inert scope-schedules feature
   (Scoping IA D10) has since been removed (migration 001069 drops
   `scan_schedules`).
@@ -2225,7 +2225,7 @@ bug seen in the asset-merge dedup fix.
   SQL condition over many rows). They need preview, apply-to-existing,
   per-run caps and reversible effects. Workflows run once per event with
   a payload of at most 100 assets
-  (`api/internal/app/workflow/event_dispatcher_discovery.go:16`) and have
+  (`server/internal/app/workflow/event_dispatcher_discovery.go:16`) and have
   no loop protection (F20).
 - A policy can feed a workflow through the existing `asset_discovered`
   trigger or the new `asset_policy_matched` outbox event, so the
@@ -2498,7 +2498,7 @@ RFC fixes the contracts that the UI relies on:
 
 **How we hold this:**
 
-- A synthetic-tenant fixture generator (`api/tests/perf/inventory`)
+- A synthetic-tenant fixture generator (`server/tests/perf/inventory`)
   builds 100k and 1M services with realistic distributions: Zipf
   technologies, a long tail of ports, 30 % TLS.
 - `EXPLAIN (ANALYZE, BUFFERS)` guard tests fail when a registry field's
@@ -2548,7 +2548,7 @@ migrations, so every phase's PR states the manual migrate step.
 coverage test enforces them (F8).
 
 **RLS:** each new table gets a shadow policy like the existing 99, so
-the RLS rollout plan (`api/docs/architecture/rls-rollout.md`) still
+the RLS rollout plan (`server/docs/architecture/rls-rollout.md`) still
 covers it.
 
 **Rollback:** each phase is behind a tenant setting. `inventory.v2_ingest`
@@ -2564,7 +2564,7 @@ Effort is in engineer-weeks across all repositories.
 
 **Migrations:**
 
-- `asset_types.class` (seeded from `api/configs/asset-types.yaml`) and the denormalised, indexed `assets.asset_class`;
+- `asset_types.class` (seeded from `server/configs/asset-types.yaml`) and the denormalised, indexed `assets.asset_class`;
 - `asset_services` columns and indexes (§6.4);
 - `assets` DNS columns and `apex_domain`;
 - `findings.service_id`;
@@ -2788,7 +2788,7 @@ Every slice that adds a table referencing `assets` also updates
 
 | # | Slice | Depends on | Migrations | Scope |
 |---|---|---|---|---|
-| 1 | **Type registry** | — | `asset_types.class` and `asset_types.lens`, seeded from the YAML; `assets.asset_class` and `assets.asset_lens` columns with a batched backfill from `asset_type`, an index, and the trigger that keeps them in sync | `api/configs/asset-types.yaml` covering all 37 types in 16 classes and 8 lenses (§6.3.2–6.3.3); `make generate-asset-types` (Go + TS); `asset-types-drift` CI check; `GET /api/v1/asset-types`; attribute validation on write, with unknown keys quarantined (§6.3.3); `category.go` generated |
+| 1 | **Type registry** | — | `asset_types.class` and `asset_types.lens`, seeded from the YAML; `assets.asset_class` and `assets.asset_lens` columns with a batched backfill from `asset_type`, an index, and the trigger that keeps them in sync | `server/configs/asset-types.yaml` covering all 37 types in 16 classes and 8 lenses (§6.3.2–6.3.3); `make generate-asset-types` (Go + TS); `asset-types-drift` CI check; `GET /api/v1/asset-types`; attribute validation on write, with unknown keys quarantined (§6.3.3); `category.go` generated |
 | 2 | **Services** | 1 (class `service`) | `asset_services` new columns, the key change to `(tenant_id, asset_id, port, transport)`, and indexes created `CONCURRENTLY` (§6.4.1–6.4.3); `assets` DNS columns and `apex_domain`; `findings.service_id` and its partial index | ingest upserts `host:port` rows (`UpsertBatch`'s first caller) instead of `service`-type assets, behind the `inventory.v2_ingest` setting; counters on finding transitions; resumable backfill jobs (§6.8); `GET /services` gains the new fields; ctis `http` block + TLS fields; no more tech-to-tags copying; the sdk-go httpx parser keeps all fields |
 | 3 | **OQL, facets, group-by** | 1, 2 | `inventory_facet_counts`; trigram and GIN indexes from §6.4.3 not created in slice 2 | `internal/app/oql`: parser, field registry generated from the core plus the type registry, compiler that injects tenant and data scope and binds every value, limits and timeouts, `Explain`, fuzz tests; `q` on `/assets` and `/services`; `/services/facets` and the v2 `/assets/facets` (data scope fixes F10); `/services/groups`; `/oql/validate`; exports (`/services/exports`, `/assets/exports`); EXPLAIN guard tests and the 100k fixture |
 | 4 | **Saved filters, dynamic groups, bulk labels** | 3 | `saved_filters`; `asset_groups` gains `kind`, `subject`, `query`, `oql_version`, `origin`, `cadence`, run fields and counts; `asset_group_service_members`; `labels`, `label_assignments`; `system_labels` arrays | saved-filter CRUD; dynamic-group create/preview, with dispatch-time expansion handed to slice 5; `/labels`; `/label-assignments/preview` and apply by selector (`q` or ids), async above 1,000; bulk status by `q` |

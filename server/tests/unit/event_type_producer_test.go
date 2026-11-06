@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/integration"
+	"github.com/openctemio/openctem/server/pkg/domain/integration"
 )
 
 // producerFile marks files that hand an event to the notification outbox or

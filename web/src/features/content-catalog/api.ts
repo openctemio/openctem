@@ -1,8 +1,8 @@
 'use client'
 
 /**
- * The organization's content catalog (api/docs/rfcs/RFC-099-content-packages.md,
- * api/docs/architecture/content-catalog.md). Reading needs content:read; every
+ * The organization's content catalog (server/docs/rfcs/RFC-099-content-packages.md,
+ * server/docs/architecture/content-catalog.md). Reading needs content:read; every
  * change content:install, the approval option settings:write. Installs,
  * updates, rollbacks, uninstalls, decisions and the approval option need a
  * recent sign-in: the shared API client opens the step-up dialog and retries.

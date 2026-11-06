@@ -4,7 +4,7 @@ import (
 	"net/netip"
 	"testing"
 
-	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
+	scopedom "github.com/openctemio/openctem/server/pkg/domain/scope"
 )
 
 // Review by rule never offers a range rule for a published CDN edge

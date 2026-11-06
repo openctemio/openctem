@@ -6,11 +6,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/contentpkg"
-	"github.com/openctemio/openctem/api/pkg/feedsign"
-	"github.com/openctemio/openctem/api/pkg/jobsign"
-	"github.com/openctemio/openctem/api/pkg/programfeed"
-	"github.com/openctemio/openctem/api/pkg/vulnbundle"
+	"github.com/openctemio/openctem/server/pkg/contentpkg"
+	"github.com/openctemio/openctem/server/pkg/feedsign"
+	"github.com/openctemio/openctem/server/pkg/jobsign"
+	"github.com/openctemio/openctem/server/pkg/programfeed"
+	"github.com/openctemio/openctem/server/pkg/vulnbundle"
 )
 
 // Each feed's key set has its own maximum validity: the catalog's is a year,

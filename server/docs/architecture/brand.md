@@ -178,9 +178,9 @@ customer's brand. Design:
 
 ## Key files
 
-- `api/pkg/brand/`: the brand type, validation, image checks, SVG sanitizer.
-- `api/internal/config/brand.go`: loading from `BRAND_FILE` and `BRAND_*`.
-- `api/internal/infra/http/handler/brand_handler.go`: the public endpoints.
+- `server/pkg/brand/`: the brand type, validation, image checks, SVG sanitizer.
+- `server/internal/config/brand.go`: loading from `BRAND_FILE` and `BRAND_*`.
+- `server/internal/infra/http/handler/brand_handler.go`: the public endpoints.
 
 ## The built-in logo
 

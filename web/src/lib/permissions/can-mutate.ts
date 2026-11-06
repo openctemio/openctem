@@ -3,7 +3,7 @@
  * own route gates, not from a permission each button picks by hand.
  *
  * `src/config/api-route-permissions.json` is generated from the API route
- * table by `api/tests/unit/route_permission_map_test.go` (CI fails when it is
+ * table by `server/tests/unit/route_permission_map_test.go` (CI fails when it is
  * stale). Each entry is "METHOD /path" -> the permissions the route requires,
  * "any of" groups, and the lowest tenant role it admits. This is UX only: the
  * API stays the authority.

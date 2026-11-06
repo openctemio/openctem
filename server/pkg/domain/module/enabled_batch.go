@@ -3,7 +3,7 @@ package module
 import (
 	"context"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // maxSkipRounds bounds how many times a background sweep refetches after a

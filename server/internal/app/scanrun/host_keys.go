@@ -6,8 +6,8 @@ import (
 
 	"github.com/openctemio/contract/politeness"
 
-	scanapp "github.com/openctemio/openctem/api/internal/app/scan"
-	"github.com/openctemio/openctem/api/pkg/domain/stage"
+	scanapp "github.com/openctemio/openctem/server/internal/app/scan"
+	"github.com/openctemio/openctem/server/pkg/domain/stage"
 )
 
 // chunkHostKeys is the hosts a chunk of an active stage sends traffic to

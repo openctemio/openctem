@@ -10,8 +10,8 @@ import (
 	"database/sql"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/testdb"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/internal/testdb"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
 )
 
 const closureMigTenant = "44444444-4444-4444-8444-444444444444"

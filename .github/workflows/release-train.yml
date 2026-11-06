@@ -1,6 +1,6 @@
 name: Release Train
 
-# The owner presses Run; this does the rest (api/docs/rfcs/RFC-037 §4).
+# The owner presses Run; this does the rest (server/docs/rfcs/RFC-037 §4).
 #
 #   plan  last tag -> proposed version (or the override, validated);
 #         the newest develop commit with every required check green (or the
@@ -8,7 +8,7 @@ name: Release Train
 #         a check (-s ours precondition, tree equality); changelog preview in
 #         the run summary
 #   cut   (not in a dry run) push release/vX.Y.Z (with its version commit:
-#         api/deploy/VERSION = vX.Y.Z), open the PR into
+#         server/deploy/VERSION = vX.Y.Z), open the PR into
 #         main and queue it. Release Publish tags it when the merge queue
 #         merges it.
 #
@@ -195,11 +195,11 @@ jobs:
             fi
             cat "$RUNNER_TEMP/notes.md"
             echo
-            echo "### API changelog (from api/changelog.d)"
+            echo "### API changelog (from server/changelog.d)"
             echo
-            echo "After the tag: one PR into develop runs \`python3 .github/scripts/release/fragment-labels.py --out /tmp/labels.json\` and \`python3 api/scripts/changelog.py release ${VERSION} --labels /tmp/labels.json\`."
+            echo "After the tag: one PR into develop runs \`python3 .github/scripts/release/fragment-labels.py --out /tmp/labels.json\` and \`python3 server/scripts/changelog.py release ${VERSION} --labels /tmp/labels.json\`."
             echo
-            python3 api/scripts/changelog.py preview --labels "$RUNNER_TEMP/fragment-labels.json"
+            python3 server/scripts/changelog.py preview --labels "$RUNNER_TEMP/fragment-labels.json"
           } >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -279,9 +279,9 @@ jobs:
           body="$RUNNER_TEMP/pr-body.md"
           {
             if [ "$MODE" = hotfix ]; then
-              echo "Hotfix release **${VERSION}**: the last release plus cherry-picked fixes, plus one commit that writes \`api/deploy/VERSION\` = ${VERSION}, so the tag's checkout installs ${VERSION}."
+              echo "Hotfix release **${VERSION}**: the last release plus cherry-picked fixes, plus one commit that writes \`server/deploy/VERSION\` = ${VERSION}, so the tag's checkout installs ${VERSION}."
             else
-              echo "Release train **${VERSION}**: develop at a commit with every required check green, one commit that writes \`api/deploy/VERSION\` = ${VERSION} (so the tag's checkout installs ${VERSION}; develop never gets it), and one \`merge -s ours\` commit that records main as a parent (the tree is develop's plus that commit, byte for byte)."
+              echo "Release train **${VERSION}**: develop at a commit with every required check green, one commit that writes \`server/deploy/VERSION\` = ${VERSION} (so the tag's checkout installs ${VERSION}; develop never gets it), and one \`merge -s ours\` commit that records main as a parent (the tree is develop's plus that commit, byte for byte)."
             fi
             echo
             echo "When the merge queue merges this PR, **Release Publish** tags ${VERSION} on the merge commit, which publishes the images and the GitHub Release and opens the follow-up PRs. Merge with the queue (merge commit), never squash."

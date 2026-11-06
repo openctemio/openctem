@@ -20,10 +20,10 @@ import (
 
 	_ "github.com/lib/pq" // database/sql driver for the seeding tweaks
 
-	"github.com/openctemio/openctem/api/internal/adminbootstrap"
-	"github.com/openctemio/openctem/api/pkg/domain/permission"
-	"github.com/openctemio/openctem/api/pkg/logger"
-	"github.com/openctemio/openctem/api/pkg/totp"
+	"github.com/openctemio/openctem/server/internal/adminbootstrap"
+	"github.com/openctemio/openctem/server/pkg/domain/permission"
+	"github.com/openctemio/openctem/server/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/totp"
 )
 
 // Seeding fixture. Everything a principal does goes through the API; the

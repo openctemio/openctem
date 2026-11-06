@@ -8,10 +8,10 @@ import (
 	"testing"
 	"time"
 
-	commandapp "github.com/openctemio/openctem/api/internal/app/command"
-	"github.com/openctemio/openctem/api/pkg/domain/command"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	commandapp "github.com/openctemio/openctem/server/internal/app/command"
+	"github.com/openctemio/openctem/server/pkg/domain/command"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // Command leases (RFC-035 D6). Requires DATABASE_URL (CI applies every

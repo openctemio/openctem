@@ -6,7 +6,7 @@ import (
 	"slices"
 	"testing"
 
-	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
+	protov2 "github.com/openctemio/openctem/server/pkg/sensorproto/v2"
 )
 
 // A canceled command reaches the sensor: the heartbeat that lists it as

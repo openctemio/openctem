@@ -26,13 +26,13 @@ import (
 	"sort"
 	"strings"
 
-	scanapp "github.com/openctemio/openctem/api/internal/app/scan"
-	"github.com/openctemio/openctem/api/pkg/domain/attribution"
-	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
-	scanrundom "github.com/openctemio/openctem/api/pkg/domain/scanrun"
-	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
-	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	scanapp "github.com/openctemio/openctem/server/internal/app/scan"
+	"github.com/openctemio/openctem/server/pkg/domain/attribution"
+	commanddom "github.com/openctemio/openctem/server/pkg/domain/command"
+	scanrundom "github.com/openctemio/openctem/server/pkg/domain/scanrun"
+	scopedom "github.com/openctemio/openctem/server/pkg/domain/scope"
+	sensordom "github.com/openctemio/openctem/server/pkg/domain/sensor"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // FailureScopeChanged is the step failure code of a job whose every target

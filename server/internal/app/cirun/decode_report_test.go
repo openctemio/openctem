@@ -5,11 +5,11 @@ import (
 	"strings"
 	"testing"
 
-	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
+	protov2 "github.com/openctemio/openctem/server/pkg/sensorproto/v2"
 
 	"github.com/openctemio/ctis/v2"
 
-	"github.com/openctemio/openctem/api/internal/app/ingest"
+	"github.com/openctemio/openctem/server/internal/app/ingest"
 )
 
 // A CI upload is bounded before it is decoded: a body that would decode into

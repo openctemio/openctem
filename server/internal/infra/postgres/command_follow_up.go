@@ -6,7 +6,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/openctemio/openctem/api/pkg/domain/command"
+	"github.com/openctemio/openctem/server/pkg/domain/command"
 )
 
 var _ command.FollowUpCompleter = (*CommandRepository)(nil)

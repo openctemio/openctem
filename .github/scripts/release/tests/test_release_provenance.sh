@@ -48,7 +48,7 @@ assert_contains "refresh: the version commit moved ci.latest" "CI_RELEASE_FALLBA
 out="$(prov release/v0.3.0 "$head")"; rc=$?
 assert_eq "train with refreshed latest: verified ($out)" 0 "$rc"
 git -C "$w" switch -q -c minmove "$head^1"
-sed -i 's/^  min: ""/  min: v0.1.0/' "$w/versions.yaml" "$w/api/internal/versions/versions.yaml"
+sed -i 's/^  min: ""/  min: v0.1.0/' "$w/versions.yaml" "$w/server/internal/versions/versions.yaml"
 git -C "$w" add -A; git -C "$w" commit -q --amend --no-edit
 git -C "$w" merge -q -s ours --no-edit origin/main >/dev/null
 minmove="$(git -C "$w" rev-parse HEAD)"
@@ -73,23 +73,23 @@ assert_eq "wrong version in the branch name" 1 "$(prov release/v0.3.1 "$head" >/
 
 # An extra change hidden in the version commit: not verified.
 git -C "$w" switch -q -c evil "$head^1"
-echo x >>"$w/api/internal/app.go" 2>/dev/null || { mkdir -p "$w/api/internal"; echo x >"$w/api/internal/app.go"; }
+echo x >>"$w/server/internal/app.go" 2>/dev/null || { mkdir -p "$w/server/internal"; echo x >"$w/server/internal/app.go"; }
 git -C "$w" add -A; git -C "$w" commit -q --amend --no-edit
 git -C "$w" merge -q -s ours --no-edit origin/main >/dev/null
 evil="$(git -C "$w" rev-parse HEAD)"
 out="$(prov release/v0.3.0 "$evil")"; rc=$?
 assert_eq "train: a code change in the version commit is not verified" 1 "$rc"
-assert_contains "train: names the file" "api/internal/app.go" "$out"
+assert_contains "train: names the file" "server/internal/app.go" "$out"
 
 # A commit added on top of the release head: not a release shape.
 git -C "$w" switch -q -c extra "$head"
-commit "$w" "fix: sneaked in" api/internal/x.go
+commit "$w" "fix: sneaked in" server/internal/x.go
 extra="$(git -C "$w" rev-parse HEAD)"
 assert_eq "train: an extra commit on top is not verified" 1 "$(prov release/v0.3.0 "$extra" >/dev/null; echo $?)"
 
 # Develop moved on and the release was cut from a commit that is not on develop.
 git -C "$w" switch -q -c offdev "$dev"
-commit "$w" "feat: never merged" api/internal/y.go
+commit "$w" "feat: never merged" server/internal/y.go
 off="$(git -C "$w" rev-parse HEAD)"
 green "$off"
 git -C "$w" push -q origin offdev
@@ -119,8 +119,8 @@ echo "different" >"$w/forged.txt"; git -C "$w" add forged.txt
 git -C "$w" commit -q -m "fix: forged
 
 (cherry picked from commit $fix)"
-git -C "$w" checkout -q "$hf" -- api/deploy/VERSION
-git -C "$w" commit -q -m "chore(release): api/deploy/VERSION = v0.2.1"
+git -C "$w" checkout -q "$hf" -- server/deploy/VERSION
+git -C "$w" commit -q -m "chore(release): server/deploy/VERSION = v0.2.1"
 forged="$(git -C "$w" rev-parse HEAD)"
 out="$(prov release/v0.2.1 "$forged")"; rc=$?
 assert_eq "hotfix: a pick that differs from its develop commit is not verified" 1 "$rc"

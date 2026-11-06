@@ -10,7 +10,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // scopeEffectsReconciler is the slice of *scope.Effects this controller drives.

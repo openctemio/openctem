@@ -2,7 +2,7 @@
  * Pure helpers for the automation lifecycle on the canvas: which catalog
  * entries a step kind offers, whether a stored node uses a removed type,
  * what going live needs, who may approve a pending version and how preview
- * or trace counts land on the steps. Design: api/docs/rfcs/RFC-125-automation-simulate-and-go-live.md.
+ * or trace counts land on the steps. Design: server/docs/rfcs/RFC-125-automation-simulate-and-go-live.md.
  *
  * The API is the authority for every one of these decisions; the web only
  * explains them before the call.

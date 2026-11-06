@@ -7,7 +7,7 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import quarantine as q  # noqa: E402
 
-GO = "go:github.com/openctemio/openctem/api/tests/integration.TestIngest_ConcurrentResightings"
+GO = "go:github.com/openctemio/openctem/server/tests/integration.TestIngest_ConcurrentResightings"
 PW = "pw:e2e/specs/19-scan-lifecycle.spec.ts::a single scan: create, edit, run"
 
 
@@ -17,7 +17,7 @@ def entry(test=GO, added="2026-10-25", fix_by="2026-11-01", **kw):
     return e
 
 
-NAMES = {"TestIngest_ConcurrentResightings": {"github.com/openctemio/openctem/api/tests/integration"}}
+NAMES = {"TestIngest_ConcurrentResightings": {"github.com/openctemio/openctem/server/tests/integration"}}
 
 
 class Parse(unittest.TestCase):
@@ -57,15 +57,15 @@ class Problems(unittest.TestCase):
     def test_security_tests_refused(self):
         for name in ("TestTenantIsolation_X", "TestCrossTenantRead", "TestAuthzMatrix", "TestScopeGate",
                      "TestDashboardCTEMWidgets_ScopeAndParity_DB", "TestRLSPolicy", "TestSecretRedaction"):
-            t = f"go:github.com/openctemio/openctem/api/tests/integration.{name}"
-            names = {name: {"github.com/openctemio/openctem/api/tests/integration"}}
+            t = f"go:github.com/openctemio/openctem/server/tests/integration.{name}"
+            names = {name: {"github.com/openctemio/openctem/server/tests/integration"}}
             self.assertTrue(any("security test" in p for p in q.problems([entry(test=t)], names)), name)
         self.assertTrue(q.problems([entry(test="pw:e2e/specs/x.spec.ts::tenant switch keeps data apart")]))
 
     def test_unknown_or_ambiguous_go_name(self):
         self.assertTrue(q.problems([entry()], {}))
-        two = {"TestIngest_ConcurrentResightings": {"github.com/openctemio/openctem/api/tests/integration",
-                                                     "github.com/openctemio/openctem/api/internal/app/ingest"}}
+        two = {"TestIngest_ConcurrentResightings": {"github.com/openctemio/openctem/server/tests/integration",
+                                                     "github.com/openctemio/openctem/server/internal/app/ingest"}}
         self.assertTrue(any("also exists" in p for p in q.problems([entry()], two)))
 
     def test_bad_test_id(self):

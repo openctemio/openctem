@@ -17,13 +17,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app/sensorpairing"
-	"github.com/openctemio/openctem/api/internal/infra/postgres"
-	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/sensorkey"
-	"github.com/openctemio/openctem/api/pkg/sensorproto/pairing"
-	"github.com/openctemio/openctem/api/pkg/sensorsig"
+	"github.com/openctemio/openctem/server/internal/app/sensorpairing"
+	"github.com/openctemio/openctem/server/internal/infra/postgres"
+	sensordom "github.com/openctemio/openctem/server/pkg/domain/sensor"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/sensorkey"
+	"github.com/openctemio/openctem/server/pkg/sensorproto/pairing"
+	"github.com/openctemio/openctem/server/pkg/sensorsig"
 )
 
 // enrollmentFixture wires the token store and makes actor an active member

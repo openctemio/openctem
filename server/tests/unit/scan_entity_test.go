@@ -3,8 +3,8 @@ package unit
 import (
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/scan"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/scan"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // TestScanAssetGroupIDs tests the AssetGroupIDs functionality in Scan entity.

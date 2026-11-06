@@ -22,8 +22,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/infra/postgres"
-	"github.com/openctemio/openctem/api/pkg/domain/admin"
+	"github.com/openctemio/openctem/server/internal/infra/postgres"
+	"github.com/openctemio/openctem/server/pkg/domain/admin"
 )
 
 func runVerifyAudit(args []string, stdout, stderr io.Writer) int {

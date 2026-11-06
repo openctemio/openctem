@@ -11,9 +11,9 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app/vulnfeed"
-	dom "github.com/openctemio/openctem/api/pkg/domain/feedrelay"
-	"github.com/openctemio/openctem/api/pkg/jobsign"
+	"github.com/openctemio/openctem/server/internal/app/vulnfeed"
+	dom "github.com/openctemio/openctem/server/pkg/domain/feedrelay"
+	"github.com/openctemio/openctem/server/pkg/jobsign"
 )
 
 // Origins returns the canonical spelling of each origin, dropping the ones

@@ -31,7 +31,7 @@ func TestSeccompProfile_IsTheReleasedFile(t *testing.T) {
 	}
 }
 
-// The bundled Compose sensor runs with api/deploy/sensor/seccomp.json: the
+// The bundled Compose sensor runs with server/deploy/sensor/seccomp.json: the
 // same file the install commands download, so both follow one sensor release
 // (CI's "Sensor install" job compares it with that release).
 func TestSeccompProfile_BundledSensorUsesTheSameFile(t *testing.T) {
@@ -40,6 +40,6 @@ func TestSeccompProfile_BundledSensorUsesTheSameFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !bytes.Equal(deployed, SeccompProfile()) {
-		t.Fatal("api/deploy/sensor/seccomp.json differs from internal/app/sensor/seccomp/sensor.json: copy the sensor release's docker/seccomp/sensor.json to both")
+		t.Fatal("server/deploy/sensor/seccomp.json differs from internal/app/sensor/seccomp/sensor.json: copy the sensor release's docker/seccomp/sensor.json to both")
 	}
 }

@@ -7,11 +7,11 @@ import (
 
 	"time"
 
-	compliancedom "github.com/openctemio/openctem/api/pkg/domain/compliance"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
-	"github.com/openctemio/openctem/api/pkg/logger"
-	"github.com/openctemio/openctem/api/pkg/pagination"
+	compliancedom "github.com/openctemio/openctem/server/pkg/domain/compliance"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/pagination"
 )
 
 // ComplianceService handles compliance framework business operations.

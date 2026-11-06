@@ -1,7 +1,7 @@
 'use client'
 
 /**
- * A scan without an active owner (api/docs/architecture/scan-ownership.md):
+ * A scan without an active owner (server/docs/architecture/scan-ownership.md):
  * a scheduled run acts as the scan's owner, so a scan whose owner is missing
  * (the account was deleted) or left the organization is paused at its next
  * due run. The banner says why and, for owners and administrators, offers

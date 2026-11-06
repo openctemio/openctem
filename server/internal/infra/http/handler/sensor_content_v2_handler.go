@@ -26,11 +26,11 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	contentpackapp "github.com/openctemio/openctem/api/internal/app/contentpack"
-	"github.com/openctemio/openctem/api/pkg/domain/sensor"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/logger"
-	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
+	contentpackapp "github.com/openctemio/openctem/server/internal/app/contentpack"
+	"github.com/openctemio/openctem/server/pkg/domain/sensor"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
+	protov2 "github.com/openctemio/openctem/server/pkg/sensorproto/v2"
 )
 
 // ContentDelivery is what the content routes need (contentpackapp.Delivery).

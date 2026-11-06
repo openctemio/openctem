@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/supportaccess"
+	"github.com/openctemio/openctem/server/pkg/domain/supportaccess"
 )
 
 // A support session never sees the assets of a private program (support is

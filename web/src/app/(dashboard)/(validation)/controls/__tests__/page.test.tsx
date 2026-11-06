@@ -44,7 +44,7 @@ vi.mock('@/features/controls/components/link-assets-dialog', () => ({
 
 /**
  * The vocabulary the database actually accepts, copied from the CHECK
- * constraint in api/migrations/000146_compensating_controls.up.sql.
+ * constraint in server/migrations/000146_compensating_controls.up.sql.
  */
 const BACKEND_CONTROL_TYPES = ['segmentation', 'identity', 'runtime', 'detection', 'other']
 

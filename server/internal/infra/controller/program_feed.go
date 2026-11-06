@@ -5,7 +5,7 @@ import (
 	"errors"
 	"time"
 
-	programfeedapp "github.com/openctemio/openctem/api/internal/app/programfeed"
+	programfeedapp "github.com/openctemio/openctem/server/internal/app/programfeed"
 )
 
 // ProgramFeedImporter imports the public program feed and reconciles the

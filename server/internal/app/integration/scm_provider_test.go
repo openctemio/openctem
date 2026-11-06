@@ -3,8 +3,8 @@ package integration
 import (
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/infra/scm"
-	integrationdom "github.com/openctemio/openctem/api/pkg/domain/integration"
+	"github.com/openctemio/openctem/server/internal/infra/scm"
+	integrationdom "github.com/openctemio/openctem/server/pkg/domain/integration"
 )
 
 // The integration and SCM-factory vocabularies differ for Azure DevOps. Every

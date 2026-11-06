@@ -44,7 +44,7 @@ runs every shipped migration missing from it. So:
   orders give the same schema (`.github/scripts/migration-order-check.sh` in
   "Migrations (PostgreSQL 18)"); when they do not, the later-merged migration
   depends on the others and needs a version above them
-  (`make -C api migration-renumber` while it is not merged);
+  (`make -C server migration-renumber` while it is not merged);
 - **a merged migration never changes.** Databases that applied it never run
   it again: an edit, a removal or a rename would only reach fresh installs.
   Fix a merged migration with a new one. The "Migration Versions" check
@@ -59,15 +59,15 @@ runs every shipped migration missing from it. So:
 
 Nobody picks a version by hand.
 
-- `make -C api migration-new name=<snake_name>` creates
+- `make -C server migration-new name=<snake_name>` creates
   `migrations/<UTC now>_<snake_name>.{up,down}.sql` (one second later while
   that version exists). It needs no network: timestamps of parallel branches
   do not collide.
-- `make -C api migration-renumber` gives this branch's added migrations new
+- `make -C server migration-renumber` gives this branch's added migrations new
   timestamp versions when one is also used by `develop` or an open pull
   request, or still has a legacy sequential number; the migrations after it
   move too, in order. It rewrites references to the old file names outside
-  `api/migrations/` and stages the renames.
+  `server/migrations/` and stages the renames.
 - Pull request CI gives a clashing migration a new version in its runner only
   (`.github/scripts/pr-migration-renumber.sh`), so a duplicate never fails a
   pull request's tests; in the merge queue a duplicate fails. Tests find
@@ -76,12 +76,12 @@ Nobody picks a version by hand.
 - Legacy sequential numbers (six digits) are still accepted, with a warning,
   while older pull requests land, but only above the base's highest legacy
   number and only until the first timestamp version merges. After that, CI
-  fails any added six-digit version: renumber with `make -C api
+  fails any added six-digit version: renumber with `make -C server
   migration-renumber`.
 - `migrations/released.json` lists the migrations of every release that still
   shipped golang-migrate; the runner's first run on such a database records
   exactly the matching release's files and runs the rest. Regenerate it with
-  `make -C api migrations-released` after tagging such a release (CI checks it
+  `make -C server migrations-released` after tagging such a release (CI checks it
   against the tags); never edit it by hand.
 
 ### Indexes
@@ -124,7 +124,7 @@ grants: objects belong to the migrator that applies it, and
   `pre-baseline-NNNNNN`, which still has every old migration), run its
   migrations, then deploy the new release.
 - **History**: the old migration files, their tests and their runbooks are in
-  the tree at tag `pre-baseline-NNNNNN` (`git show pre-baseline-NNNNNN:api/migrations/<file>`).
+  the tree at tag `pre-baseline-NNNNNN` (`git show pre-baseline-NNNNNN:server/migrations/<file>`).
 
 ### Squashing again
 
@@ -418,7 +418,7 @@ Never commit password hashes to docs or seeds, even for test accounts.
 
 CI builds the runner and applies every migration
 (`openctem-migrate -path migrations -database "$DATABASE_URL" up`), and on a
-change to `api/migrations` proves order independence
+change to `server/migrations` proves order independence
 (`.github/scripts/migration-order-check.sh`). See
 [ci-cd.md](ci-cd.md).
 

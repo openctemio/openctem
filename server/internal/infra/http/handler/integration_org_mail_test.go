@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	integrationapp "github.com/openctemio/openctem/api/internal/app/integration"
-	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	integrationapp "github.com/openctemio/openctem/server/internal/app/integration"
+	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // Only an owner or administrator of the organization may turn organization

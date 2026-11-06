@@ -3,7 +3,7 @@ package integration
 import (
 	"context"
 
-	"github.com/openctemio/openctem/api/pkg/domain/exposure"
+	"github.com/openctemio/openctem/server/pkg/domain/exposure"
 )
 
 // exposureGroupedCounter counts a filter's events by state and by severity in

@@ -10,11 +10,11 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/openctemio/openctem/api/pkg/apierror"
-	integrationdom "github.com/openctemio/openctem/api/pkg/domain/integration"
-	notificationdom "github.com/openctemio/openctem/api/pkg/domain/notification"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/ssochange"
+	"github.com/openctemio/openctem/server/pkg/apierror"
+	integrationdom "github.com/openctemio/openctem/server/pkg/domain/integration"
+	notificationdom "github.com/openctemio/openctem/server/pkg/domain/notification"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/ssochange"
 )
 
 // relayRuleError is a validation error that carries the transport rule a

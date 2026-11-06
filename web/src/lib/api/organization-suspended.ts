@@ -5,7 +5,7 @@
  * credential) with `403 {code: "ORGANIZATION_SUSPENDED"}`. It is not a
  * permission the user can ask for, so it gets its own message, raised once by
  * the shared API client however many requests fail
- * (api/docs/architecture/organization-suspension.md).
+ * (server/docs/architecture/organization-suspension.md).
  */
 
 import { toast } from 'sonner'

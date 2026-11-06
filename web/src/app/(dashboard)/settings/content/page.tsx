@@ -1,7 +1,7 @@
 'use client'
 
 /**
- * Settings > Content catalog (api/docs/architecture/content-catalog.md):
+ * Settings > Content catalog (server/docs/architecture/content-catalog.md):
  * browse the signed catalog, install and update packages, decide requests
  * and set the approval option. The API is the authority for every action;
  * the page only hides what the member's permissions cannot do.

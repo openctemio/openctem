@@ -3,7 +3,7 @@ import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 /**
- * Glossary vocabulary guard (glossary: api/docs/glossary.md).
+ * Glossary vocabulary guard (glossary: server/docs/glossary.md).
  *
  * One concept has one name in the console text. This fails on a retired word in
  * any en or vi dictionary value and names the term to use. To allow a hit, add
@@ -132,7 +132,7 @@ function load(lang: Lang): Record<string, string> {
 
 const DICTS: Record<Lang, Record<string, string>> = { en: load('en'), vi: load('vi') }
 
-describe('glossary vocabulary (api/docs/glossary.md)', () => {
+describe('glossary vocabulary (server/docs/glossary.md)', () => {
   for (const r of RULES) {
     it(`${r.lang}: no ${r.pattern} (use ${r.use})`, () => {
       const allowed = new Set(r.allowKeys.map((a) => a.key))
@@ -141,7 +141,7 @@ describe('glossary vocabulary (api/docs/glossary.md)', () => {
         .map(([k, v]) => `  ${k}: ${v}`)
       expect(
         hits,
-        `${r.lang} text uses a retired word. The glossary (api/docs/glossary.md) says to use "${r.use}":\n${hits.join('\n')}`
+        `${r.lang} text uses a retired word. The glossary (server/docs/glossary.md) says to use "${r.use}":\n${hits.join('\n')}`
       ).toEqual([])
     })
 

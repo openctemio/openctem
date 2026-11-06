@@ -17,8 +17,8 @@ import (
 	"context"
 	"time"
 
-	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	commanddom "github.com/openctemio/openctem/server/pkg/domain/command"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // skipBalanced: a candidate left to a less-loaded sensor (claim_metrics.go).

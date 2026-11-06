@@ -7,7 +7,7 @@
 # and removes them (and the image it builds) at the end. It never reads the
 # real stack's .env or secrets; every credential is generated here.
 #
-#   api/deploy/backup/drill.sh
+#   server/deploy/backup/drill.sh
 set -Eeuo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 p=bkp-drill

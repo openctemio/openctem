@@ -2,7 +2,7 @@
  * WebSocket Types
  *
  * TypeScript types for WebSocket communication with the backend.
- * Mirrors the types defined in api/internal/infra/websocket/types.go
+ * Mirrors the types defined in server/internal/infra/websocket/types.go
  */
 
 // ============================================
@@ -152,7 +152,7 @@ export type ConnectionState = 'connecting' | 'connected' | 'disconnected' | 'rec
 
 /**
  * Close codes the server sends when it ends a connection on its own
- * (api/internal/infra/websocket/types.go, RFC-045 §5.4).
+ * (server/internal/infra/websocket/types.go, RFC-045 §5.4).
  */
 export const WS_CLOSE = {
   /** Client-initiated normal close: do not reconnect. */

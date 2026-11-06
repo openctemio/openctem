@@ -7,7 +7,7 @@ package tenant
 // platform deny list, audit and the notification of every administrator
 // stay in every mode.
 
-import "github.com/openctemio/openctem/api/pkg/domain/scangov"
+import "github.com/openctemio/openctem/server/pkg/domain/scangov"
 
 // EffectiveApprovalsUnder is the approvals a widening of an entry needs
 // under scan approval mode m: EffectiveApprovals in Strict (and for an

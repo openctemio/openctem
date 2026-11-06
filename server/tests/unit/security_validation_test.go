@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
 )
 
 // =============================================================================

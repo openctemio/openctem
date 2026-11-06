@@ -16,7 +16,7 @@ import (
 	"io"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/scannertemplate"
+	"github.com/openctemio/openctem/server/pkg/domain/scannertemplate"
 )
 
 // KeySetPayloadType is the DSSE payload type of a key set.

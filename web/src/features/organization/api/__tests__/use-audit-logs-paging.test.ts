@@ -1,7 +1,7 @@
 /**
  * Audit-log paging contract.
  *
- * The API pages are 1-based (api/internal/infra/http/handler/audit_handler.go,
+ * The API pages are 1-based (server/internal/infra/http/handler/audit_handler.go,
  * pagination.New clamps page<1 to 1 and Offset = (page-1)*per_page). Sending a
  * table pageIndex (0-based) as `page` showed the newest page twice and made
  * the oldest page unreachable. These tests pin the contract for all three

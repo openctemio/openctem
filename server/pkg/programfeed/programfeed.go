@@ -25,8 +25,8 @@ import (
 	"path/filepath"
 	"time"
 
-	bp "github.com/openctemio/openctem/api/pkg/domain/bountyprogram"
-	"github.com/openctemio/openctem/api/pkg/feedsign"
+	bp "github.com/openctemio/openctem/server/pkg/domain/bountyprogram"
+	"github.com/openctemio/openctem/server/pkg/feedsign"
 )
 
 // Format constants (must match the collector).

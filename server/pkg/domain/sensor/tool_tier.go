@@ -22,7 +22,7 @@ import (
 
 	"github.com/openctemio/contract/capability"
 
-	"github.com/openctemio/openctem/api/pkg/domain/stage"
+	"github.com/openctemio/openctem/server/pkg/domain/stage"
 )
 
 // Trust levels of a tool (RFC-055 §6.3).

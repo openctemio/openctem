@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	moduledom "github.com/openctemio/openctem/api/pkg/domain/module"
-	"github.com/openctemio/openctem/api/pkg/domain/remediation"
+	moduledom "github.com/openctemio/openctem/server/pkg/domain/module"
+	"github.com/openctemio/openctem/server/pkg/domain/remediation"
 )
 
 type remediationOffGuard struct{ off string }

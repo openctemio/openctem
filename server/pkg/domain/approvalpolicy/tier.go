@@ -3,7 +3,7 @@
 // on a remediation task), how many people, how long it may last and what a
 // later change of the facts does to it. It is pure: the caller reads the
 // facts, the approver pool and the organization's policy on the server and
-// passes them in. Design: api/docs/rfcs/RFC-111-approval-policy.md.
+// passes them in. Design: server/docs/rfcs/RFC-111-approval-policy.md.
 //
 // The platform sets floors that no organization policy can lower; the
 // organization's policy can only add constraints above them (Policy.TierFor
@@ -14,7 +14,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // Tier says who decides a request.

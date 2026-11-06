@@ -2,7 +2,7 @@ import type { Sensor } from '@/lib/api/sensor-types'
 
 /**
  * What the viewer holds. Mirrors the API gates in
- * api/internal/infra/http/routes/scanning.go: update, rotate, activate and
+ * server/internal/infra/http/routes/scanning.go: update, rotate, activate and
  * deactivate need sensors:write, revoke needs sensors:write OR sensors:revoke
  * (revoking only narrows access), delete needs sensors:delete.
  */

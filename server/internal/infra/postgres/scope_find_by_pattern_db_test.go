@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/scope"
+	"github.com/openctemio/openctem/server/pkg/domain/scope"
 )
 
 func TestScopeFindByPattern_DB(t *testing.T) {

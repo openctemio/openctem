@@ -38,7 +38,7 @@ commit "$w" "chore: side" side.txt
 side="$(git -C "$w" rev-parse HEAD)"
 git -C "$w" switch -q develop
 assert_rc "commit not on main refused" 1 bash "$TAG" --repo "$w" --version v0.3.0 --commit "$side" --release-head "$side"
-assert_rc "api/deploy/VERSION names another release: refused" 1 bash "$TAG" --repo "$w" --version v0.4.0 --commit "$merge" --release-head "$head"
+assert_rc "server/deploy/VERSION names another release: refused" 1 bash "$TAG" --repo "$w" --version v0.4.0 --commit "$merge" --release-head "$head"
 out="$(bash "$TAG" --repo "$w" --version v0.3.0 --commit "$merge" --release-head "$head" --push 2>&1)"; rc=$?
 assert_eq "tag: exit 0 ($out)" 0 "$rc"
 assert_eq "tag: annotated" tag "$(git -C "$w" cat-file -t v0.3.0)"
@@ -57,7 +57,7 @@ ph="$(sed -n 's/^HEAD=//p' <<<"$out")"
 assert_rc "post: the tag is an ancestor of the follow-up" 0 git -C "$w" merge-base --is-ancestor v0.3.0 "$ph"
 assert_rc "post: develop's later commit kept" 0 git -C "$w" cat-file -e "$ph:later.txt"
 assert_eq "post: no file differs from develop (no version lands on develop)" "" "$(git -C "$w" diff --name-only origin/develop "$ph")"
-assert_eq "post: no VERSION file on the follow-up" "" "$(git -C "$w" ls-tree --name-only "$ph" api/deploy/VERSION)"
+assert_eq "post: no VERSION file on the follow-up" "" "$(git -C "$w" ls-tree --name-only "$ph" server/deploy/VERSION)"
 assert_contains "post: pushed" "refs/heads/chore/post-release-v0.3.0" "$(git -C "$w" ls-remote --heads origin)"
 assert_rc "post: branch exists -> refused" 1 bash "$POST" --repo "$w" --version v0.3.0
 assert_rc "post: untagged version refused" 1 bash "$POST" --repo "$w" --version v0.9.9
@@ -71,16 +71,16 @@ git -C "$w" branch -q -D chore/post-release-v0.3.0
 # backporting) is brought to develop by a real merge, never dropped. The
 # version file stays off develop, and a fragment develop already folded into
 # the changelog is not re-added.
-mkdir -p "$w/api/changelog.d"
-printf '# Changelog\n\n## v0.3.1\n\n### Fixed: folded already\n- x\n' >"$w/api/CHANGELOG.md"
-git -C "$w" add api/CHANGELOG.md
+mkdir -p "$w/server/changelog.d"
+printf '# Changelog\n\n## v0.3.1\n\n### Fixed: folded already\n- x\n' >"$w/server/CHANGELOG.md"
+git -C "$w" add server/CHANGELOG.md
 git -C "$w" commit -q -m "docs(changelog): fold"
 git -C "$w" push -q origin develop
 git -C "$w" switch -q main
 commit "$w" "fix: made on main only" onlymain.txt
-printf '### Fixed: folded already\n- x\n' >"$w/api/changelog.d/folded.md"
-printf '### Fixed: new on develop\n- y\n' >"$w/api/changelog.d/fresh.md"
-printf 'v0.3.1\n' >"$w/api/deploy/VERSION"
+printf '### Fixed: folded already\n- x\n' >"$w/server/changelog.d/folded.md"
+printf '### Fixed: new on develop\n- y\n' >"$w/server/changelog.d/fresh.md"
+printf 'v0.3.1\n' >"$w/server/deploy/VERSION"
 git -C "$w" add -A
 git -C "$w" commit -q -m "chore(release): v0.3.1"
 git -C "$w" tag -a v0.3.1 -m v0.3.1
@@ -93,9 +93,9 @@ assert_rc "post hotfix: the tag is an ancestor" 0 git -C "$w" merge-base --is-an
 assert_rc "post hotfix: develop's later commit kept" 0 git -C "$w" cat-file -e "$ph:later.txt"
 assert_rc "post hotfix: main-only fix brought to develop" 0 git -C "$w" cat-file -e "$ph:onlymain.txt"
 assert_contains "post hotfix: CHANGED names the fix" "onlymain.txt" "$(sed -n 's/^CHANGED=//p' <<<"$out")"
-assert_eq "post hotfix: no VERSION file on develop" "" "$(git -C "$w" ls-tree --name-only "$ph" api/deploy/VERSION)"
-assert_eq "post hotfix: folded fragment not re-added" "" "$(git -C "$w" ls-tree --name-only "$ph" api/changelog.d/folded.md)"
-assert_rc "post hotfix: unreleased fragment kept" 0 git -C "$w" cat-file -e "$ph:api/changelog.d/fresh.md"
+assert_eq "post hotfix: no VERSION file on develop" "" "$(git -C "$w" ls-tree --name-only "$ph" server/deploy/VERSION)"
+assert_eq "post hotfix: folded fragment not re-added" "" "$(git -C "$w" ls-tree --name-only "$ph" server/changelog.d/folded.md)"
+assert_rc "post hotfix: unreleased fragment kept" 0 git -C "$w" cat-file -e "$ph:server/changelog.d/fresh.md"
 assert_contains "post hotfix: pushed" "refs/heads/chore/post-release-v0.3.1" "$(git -C "$w" ls-remote --heads origin)"
 
 # A merge that conflicts pushes nothing, exits 3 and names the files and the

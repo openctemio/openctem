@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // Guardrails every automation obeys (RFC-125 D9, D14).

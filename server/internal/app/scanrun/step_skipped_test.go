@@ -5,9 +5,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
+	"github.com/openctemio/openctem/server/pkg/domain/scanrun"
 
-	"github.com/openctemio/openctem/api/pkg/domain/command"
+	"github.com/openctemio/openctem/server/pkg/domain/command"
 )
 
 // A sensor whose local policy skipped some targets (a name that does not

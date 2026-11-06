@@ -3,8 +3,8 @@ package unit
 import (
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/config"
-	"github.com/openctemio/openctem/api/pkg/domain/sensor"
+	"github.com/openctemio/openctem/server/internal/config"
+	"github.com/openctemio/openctem/server/pkg/domain/sensor"
 )
 
 // TestComputeLoadScore_HonorsThroughputCeilings pins that the

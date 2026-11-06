@@ -3,9 +3,9 @@ package auth
 import (
 	"context"
 
-	"github.com/openctemio/openctem/api/pkg/domain/orgtrust"
-	sessiondom "github.com/openctemio/openctem/api/pkg/domain/session"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/orgtrust"
+	sessiondom "github.com/openctemio/openctem/server/pkg/domain/session"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // Home-realm sign-in for external members (RFC-058).

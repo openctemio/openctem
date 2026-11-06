@@ -12,7 +12,7 @@ To deploy OpenCTEM, use the published images and the guides at
 | `web/docker-compose.yml` | Development: service `nextjs`, source mounted, `WATCHPACK_POLLING=true`, port `${UI_PORT:-3000}`                                                              |
 
 The supported production layout is the platform stack in
-`api/deploy/docker-compose.yml` (gateway, web, API, PostgreSQL, Redis) or the
+`server/deploy/docker-compose.yml` (gateway, web, API, PostgreSQL, Redis) or the
 all-in-one image; `web/docker-compose.yml` is for development only.
 
 ## Development in Docker

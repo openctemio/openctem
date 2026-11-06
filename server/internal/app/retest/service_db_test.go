@@ -16,22 +16,22 @@ import (
 	"testing"
 	"time"
 
-	easmapp "github.com/openctemio/openctem/api/internal/app/easm"
+	easmapp "github.com/openctemio/openctem/server/internal/app/easm"
 
 	_ "github.com/lib/pq"
 
-	evidenceapp "github.com/openctemio/openctem/api/internal/app/evidence"
-	retestapp "github.com/openctemio/openctem/api/internal/app/retest"
-	scanapp "github.com/openctemio/openctem/api/internal/app/scan"
-	scopeapp "github.com/openctemio/openctem/api/internal/app/scope"
-	tenantapp "github.com/openctemio/openctem/api/internal/app/tenant"
-	"github.com/openctemio/openctem/api/internal/app/validation"
-	"github.com/openctemio/openctem/api/internal/infra/postgres"
-	"github.com/openctemio/openctem/api/internal/testdb"
-	"github.com/openctemio/openctem/api/pkg/crypto"
-	retestdom "github.com/openctemio/openctem/api/pkg/domain/retest"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	evidenceapp "github.com/openctemio/openctem/server/internal/app/evidence"
+	retestapp "github.com/openctemio/openctem/server/internal/app/retest"
+	scanapp "github.com/openctemio/openctem/server/internal/app/scan"
+	scopeapp "github.com/openctemio/openctem/server/internal/app/scope"
+	tenantapp "github.com/openctemio/openctem/server/internal/app/tenant"
+	"github.com/openctemio/openctem/server/internal/app/validation"
+	"github.com/openctemio/openctem/server/internal/infra/postgres"
+	"github.com/openctemio/openctem/server/internal/testdb"
+	"github.com/openctemio/openctem/server/pkg/crypto"
+	retestdom "github.com/openctemio/openctem/server/pkg/domain/retest"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 type sensorsOnline bool

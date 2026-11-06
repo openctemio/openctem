@@ -7,7 +7,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus/testutil"
 
-	"github.com/openctemio/openctem/api/internal/metrics"
+	"github.com/openctemio/openctem/server/internal/metrics"
 )
 
 // A refused sign-in is counted under its reason only (never the email or

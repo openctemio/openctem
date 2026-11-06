@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"time"
 
-	covdom "github.com/openctemio/openctem/api/pkg/domain/coverage"
+	covdom "github.com/openctemio/openctem/server/pkg/domain/coverage"
 )
 
 // SetCoverage wires the coverage ledger. Unwired, every rule of an asset

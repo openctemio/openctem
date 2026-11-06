@@ -18,7 +18,7 @@ import {
 
 // The API's code lists, read from its source: a code the API can send
 // without an entry here fails this test.
-const api = resolve(__dirname, '../../../../../../api')
+const api = resolve(__dirname, '../../../../../../server')
 
 function failureCodes(): string[] {
   const src = readFileSync(resolve(api, 'pkg/domain/scanrun/failure.go'), 'utf8')

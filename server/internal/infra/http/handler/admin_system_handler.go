@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app/systemstatus"
+	"github.com/openctemio/openctem/server/internal/app/systemstatus"
 )
 
 // AdminSystemHandler serves Console > System (RFC-114): service health, free

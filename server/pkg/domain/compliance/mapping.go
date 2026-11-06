@@ -3,7 +3,7 @@ package compliance
 import (
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // FindingControlMapping represents a link between a finding and a compliance control.

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/admin"
+	"github.com/openctemio/openctem/server/pkg/domain/admin"
 )
 
 // The platform relay receives every set-password, reset and invitation link:

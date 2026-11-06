@@ -7,7 +7,7 @@ import (
 
 	jwtv5 "github.com/golang-jwt/jwt/v5"
 
-	"github.com/openctemio/openctem/api/pkg/domain/cirun"
+	"github.com/openctemio/openctem/server/pkg/domain/cirun"
 )
 
 // A token signed with a key the platform has not fetched (the provider just

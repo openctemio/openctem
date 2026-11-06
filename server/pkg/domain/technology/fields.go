@@ -1,8 +1,8 @@
 package technology
 
 import (
-	"github.com/openctemio/openctem/api/pkg/domain/assettech"
-	"github.com/openctemio/openctem/api/pkg/filterspec"
+	"github.com/openctemio/openctem/server/pkg/domain/assettech"
+	"github.com/openctemio/openctem/server/pkg/filterspec"
 )
 
 // The view is one query in two stages. The row stage reads asset_technologies

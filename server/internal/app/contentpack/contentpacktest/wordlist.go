@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/openctemio/openctem/api/internal/app/contentpack"
+	"github.com/openctemio/openctem/server/internal/app/contentpack"
 )
 
 // WordlistListPath is where WordlistPack puts the list.

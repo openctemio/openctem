@@ -3,11 +3,11 @@ package main
 import (
 	"context"
 
-	"github.com/openctemio/openctem/api/internal/app/assetcanon"
-	"github.com/openctemio/openctem/api/internal/infra/postgres"
-	"github.com/openctemio/openctem/api/internal/tools/assetcanoncmd"
-	"github.com/openctemio/openctem/api/internal/tools/toolaudit"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/internal/app/assetcanon"
+	"github.com/openctemio/openctem/server/internal/infra/postgres"
+	"github.com/openctemio/openctem/server/internal/tools/assetcanoncmd"
+	"github.com/openctemio/openctem/server/internal/tools/toolaudit"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // runAssetCanonicalOnStart moves stored asset names to their CTIS 2.0

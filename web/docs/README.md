@@ -3,7 +3,7 @@
 Developer documentation for the web console (`web/`). User and operator
 documentation is at [docs.openctem.io](https://docs.openctem.io); platform-wide
 engineering docs (API architecture, RFCs, CI/CD) are in
-[`api/docs/`](../../api/docs/README.md).
+[`server/docs/`](../../server/docs/README.md).
 
 > These docs moved with the web console from `openctemio/ui` (archived) into the
 > `openctemio/openctem` monorepo. In older documents a bare `#NNN` may refer to an

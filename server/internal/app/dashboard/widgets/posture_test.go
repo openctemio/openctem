@@ -5,10 +5,10 @@ import (
 	"testing"
 	"time"
 
-	postureapp "github.com/openctemio/openctem/api/internal/app/posture"
-	"github.com/openctemio/openctem/api/pkg/domain/dashboard"
-	"github.com/openctemio/openctem/api/pkg/domain/posture"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	postureapp "github.com/openctemio/openctem/server/internal/app/posture"
+	"github.com/openctemio/openctem/server/pkg/domain/dashboard"
+	"github.com/openctemio/openctem/server/pkg/domain/posture"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 type fakePosture struct {

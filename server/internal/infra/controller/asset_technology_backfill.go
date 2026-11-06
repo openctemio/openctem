@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	assettechapp "github.com/openctemio/openctem/api/internal/app/assettech"
+	assettechapp "github.com/openctemio/openctem/server/internal/app/assettech"
 )
 
 // AssetTechnologyBackfillController fills the detected technologies of

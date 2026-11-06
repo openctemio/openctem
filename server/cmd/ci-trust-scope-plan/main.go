@@ -2,6 +2,6 @@
 // to the server binary (cmd/server/tools.go), not as a binary of its own.
 package main
 
-import "github.com/openctemio/openctem/api/internal/tools/citrustscopeplan"
+import "github.com/openctemio/openctem/server/internal/tools/citrustscopeplan"
 
 func main() { citrustscopeplan.Main() }

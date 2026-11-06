@@ -10,7 +10,7 @@ package asset
 // anyone groups by, and some carry personal or secret data.
 
 import (
-	"github.com/openctemio/openctem/api/pkg/filterspec"
+	"github.com/openctemio/openctem/server/pkg/filterspec"
 )
 
 var (

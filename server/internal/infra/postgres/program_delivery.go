@@ -12,8 +12,8 @@ import (
 
 	"github.com/lib/pq"
 
-	bp "github.com/openctemio/openctem/api/pkg/domain/bountyprogram"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	bp "github.com/openctemio/openctem/server/pkg/domain/bountyprogram"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // orgRestrictedAssetSQL is the condition "asset ra (an assets alias) may

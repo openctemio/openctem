@@ -11,9 +11,9 @@ import (
 
 	"connectrpc.com/connect"
 
-	"github.com/openctemio/openctem/api/internal/infra/http/handler"
-	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
-	sensorv3 "github.com/openctemio/openctem/api/pkg/sensorproto/v3"
+	"github.com/openctemio/openctem/server/internal/infra/http/handler"
+	protov2 "github.com/openctemio/openctem/server/pkg/sensorproto/v2"
+	sensorv3 "github.com/openctemio/openctem/server/pkg/sensorproto/v3"
 )
 
 // maxClaimLimit bounds ClaimCommands.limit.

@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/sensorproto/analyze"
+	"github.com/openctemio/openctem/server/pkg/sensorproto/analyze"
 )
 
 // Every single-shot kind has a built-in template whose digest is stable and

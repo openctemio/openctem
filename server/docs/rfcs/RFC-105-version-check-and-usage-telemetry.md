@@ -118,7 +118,7 @@ The feed payload:
 - Limits: 256 KiB file, 200 releases, 200 advisories, titles of at most 200
   characters, no control characters, unknown fields refused.
 
-The builder (`api/cmd/release-feed`) builds the payload from the list of
+The builder (`server/cmd/release-feed`) builds the payload from the list of
 published releases and the advisories file committed in the repository
 (`.github/release-feed/advisories.json`, edited when an advisory is published),
 and assembles the file with the cosign bundle. The release workflow runs it

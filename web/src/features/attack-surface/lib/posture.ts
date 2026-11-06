@@ -1,6 +1,6 @@
 /**
  * The attack surface posture read (GET /api/v1/attack-surface/posture) and
- * its helpers. Formula: api/docs/architecture/easm-posture.md.
+ * its helpers. Formula: server/docs/architecture/easm-posture.md.
  */
 
 import type { PostureCategoryRow } from '@/components/dashboard-kit'

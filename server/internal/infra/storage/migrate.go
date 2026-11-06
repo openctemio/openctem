@@ -1,7 +1,7 @@
 package storage
 
 // Copying the server file storage between drivers, local ↔ s3
-// (api/docs/architecture/file-storage.md, "Moving between local and S3").
+// (server/docs/architecture/file-storage.md, "Moving between local and S3").
 // Rows record "local" for the server storage whatever its driver, and a file
 // keeps the same namespace and key in either driver, so a copy needs no
 // database change: copy, verify, then switch STORAGE_PROVIDER.
@@ -23,7 +23,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/smithy-go"
 
-	"github.com/openctemio/openctem/api/pkg/domain/attachment"
+	"github.com/openctemio/openctem/server/pkg/domain/attachment"
 )
 
 // ObjectStore is a driver seen object by object: what the copy needs.

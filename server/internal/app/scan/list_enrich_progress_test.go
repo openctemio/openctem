@@ -3,7 +3,7 @@ package scan
 import (
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
+	"github.com/openctemio/openctem/server/pkg/domain/scanrun"
 )
 
 // The scan list measures a live run in one unit, the steps the run planned:

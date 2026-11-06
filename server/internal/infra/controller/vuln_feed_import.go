@@ -4,9 +4,9 @@ import (
 	"context"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app/feedstatus"
-	"github.com/openctemio/openctem/api/internal/app/vulnfeed"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/internal/app/feedstatus"
+	"github.com/openctemio/openctem/server/internal/app/vulnfeed"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // VulnFeedImportController imports the newest signed vulnerability bundle

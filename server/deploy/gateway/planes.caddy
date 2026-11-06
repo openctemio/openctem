@@ -1,6 +1,6 @@
-# Code generated from api/internal/infra/http/routes/plane (plane.go, edge.go).
+# Code generated from server/internal/infra/http/routes/plane (plane.go, edge.go).
 # DO NOT EDIT. Regenerate with:
-#   cd api && UPDATE_GATEWAY_PLANES=1 go test ./internal/infra/http/routes/plane/ -run TestGatewayPlanesFile
+#   cd server && UPDATE_GATEWAY_PLANES=1 go test ./internal/infra/http/routes/plane/ -run TestGatewayPlanesFile
 # CI fails when this file and the plane table disagree.
 #
 # The gateway routes by plane, from the same table the route-style lint checks

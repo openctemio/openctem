@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	sensorapp "github.com/openctemio/openctem/api/internal/app/sensor"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	sensorapp "github.com/openctemio/openctem/server/internal/app/sensor"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 func installHandler(t *testing.T) *SensorHandler {

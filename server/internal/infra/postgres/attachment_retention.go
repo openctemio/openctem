@@ -9,11 +9,11 @@ import (
 
 	"github.com/lib/pq"
 
-	"github.com/openctemio/openctem/api/pkg/domain/attachment"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/attachment"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
-// Retention queries for attachments (api/docs/rfcs/RFC-084-file-storage.md).
+// Retention queries for attachments (server/docs/rfcs/RFC-084-file-storage.md).
 // They run for the system sweep across tenants, but a parent only counts
 // when it is in the attachment's own tenant: a finding id of another tenant
 // never keeps a file alive, and every delete names the row's tenant.

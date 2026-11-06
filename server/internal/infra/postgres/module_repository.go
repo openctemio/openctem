@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/openctemio/openctem/api/pkg/domain/module"
+	"github.com/openctemio/openctem/server/pkg/domain/module"
 )
 
 // ModuleRepository handles database operations for modules.

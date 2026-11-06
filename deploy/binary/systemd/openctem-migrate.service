@@ -1,5 +1,5 @@
 # One-shot database migration, from the openctem-server release archive
-# (api/docs/deployment/binary-install.md, "Upgrade"). Run it with
+# (server/docs/deployment/binary-install.md, "Upgrade"). Run it with
 #   systemctl start openctem-migrate
 # while openctem-server is stopped. It connects as the schema owner
 # (DATABASE_MIGRATE_URL without a password; the password in PGPASSWORD), so

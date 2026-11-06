@@ -6,7 +6,7 @@ import (
 	"sync"
 	"testing"
 
-	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
+	protov2 "github.com/openctemio/openctem/server/pkg/sensorproto/v2"
 )
 
 // Claim-N (RFC-046 §11, RFC-030 §5.9): a sensor that names the capacity

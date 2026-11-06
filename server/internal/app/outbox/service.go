@@ -13,15 +13,15 @@ import (
 
 	"github.com/google/uuid"
 
-	notificationclient "github.com/openctemio/openctem/api/internal/infra/notifier"
-	"github.com/openctemio/openctem/api/internal/metrics"
-	"github.com/openctemio/openctem/api/pkg/brand"
-	"github.com/openctemio/openctem/api/pkg/domain/bountyprogram"
-	"github.com/openctemio/openctem/api/pkg/domain/integration"
-	outboxdom "github.com/openctemio/openctem/api/pkg/domain/outbox"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	emailpkg "github.com/openctemio/openctem/api/pkg/email"
-	"github.com/openctemio/openctem/api/pkg/weblink"
+	notificationclient "github.com/openctemio/openctem/server/internal/infra/notifier"
+	"github.com/openctemio/openctem/server/internal/metrics"
+	"github.com/openctemio/openctem/server/pkg/brand"
+	"github.com/openctemio/openctem/server/pkg/domain/bountyprogram"
+	"github.com/openctemio/openctem/server/pkg/domain/integration"
+	outboxdom "github.com/openctemio/openctem/server/pkg/domain/outbox"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	emailpkg "github.com/openctemio/openctem/server/pkg/email"
+	"github.com/openctemio/openctem/server/pkg/weblink"
 )
 
 // Status constants for notification results.

@@ -78,7 +78,7 @@ guarantee ordering (below), and keep the schema check on as the backstop.
      created, so the API pods restart on the schema check until the Job
      completes. The chart has no init container.
    - **Docker Compose:** the one-shot `migrate` service in
-     `api/deploy/docker-compose.yml` runs after `db-roles`; `db-grants` and
+     `server/deploy/docker-compose.yml` runs after `db-roles`; `db-grants` and
      then `api` wait on `condition: service_completed_successfully`.
    - **All-in-one image:** `openctem-supervise` runs the migrations before any
      other process, one replica at a time behind `pg_try_advisory_lock`

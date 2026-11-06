@@ -1,7 +1,7 @@
 package finding
 
 // Suppression rules under the approval policy
-// (api/docs/rfcs/RFC-111-approval-policy.md): a rule is evaluated over the
+// (server/docs/rfcs/RFC-111-approval-policy.md): a rule is evaluated over the
 // worst open finding it matches, with the organization's policy and security
 // pool; the approver pool is the members who may approve rules, minus the
 // requester and the owners of the matched findings' assets.
@@ -9,9 +9,9 @@ package finding
 import (
 	"context"
 
-	"github.com/openctemio/openctem/api/pkg/domain/approvalpolicy"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/suppression"
+	"github.com/openctemio/openctem/server/pkg/domain/approvalpolicy"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/suppression"
 )
 
 // rulePolicyInputs reads the facts, owners and approvers of a rule

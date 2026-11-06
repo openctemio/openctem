@@ -8,14 +8,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app/auth"
-	integrationapp "github.com/openctemio/openctem/api/internal/app/integration"
-	"github.com/openctemio/openctem/api/pkg/crypto"
-	integrationdom "github.com/openctemio/openctem/api/pkg/domain/integration"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/verifieddomain"
-	emailpkg "github.com/openctemio/openctem/api/pkg/email"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/internal/app/auth"
+	integrationapp "github.com/openctemio/openctem/server/internal/app/integration"
+	"github.com/openctemio/openctem/server/pkg/crypto"
+	integrationdom "github.com/openctemio/openctem/server/pkg/domain/integration"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/verifieddomain"
+	emailpkg "github.com/openctemio/openctem/server/pkg/email"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 type relayModeStub emailpkg.RelayMode

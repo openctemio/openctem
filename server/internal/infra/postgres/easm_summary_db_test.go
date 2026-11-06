@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 func seedSurfaceAsset(ctx context.Context, t *testing.T, db *sql.DB, tenant shared.ID, name, typ string, firstSeen time.Time) string {

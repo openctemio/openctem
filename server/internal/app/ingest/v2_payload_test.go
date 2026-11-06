@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/ingestjob"
-	"github.com/openctemio/openctem/api/pkg/domain/ingestpayload"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/ingestjob"
+	"github.com/openctemio/openctem/server/pkg/domain/ingestpayload"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 func segSealer(t *testing.T, current byte, previous ...byte) *ingestpayload.Sealer {

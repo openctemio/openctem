@@ -4,8 +4,8 @@ import (
 	"slices"
 	"testing"
 
-	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
-	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
+	commanddom "github.com/openctemio/openctem/server/pkg/domain/command"
+	sensordom "github.com/openctemio/openctem/server/pkg/domain/sensor"
 )
 
 func TestGateReason(t *testing.T) {

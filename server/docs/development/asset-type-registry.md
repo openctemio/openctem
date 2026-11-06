@@ -1,6 +1,6 @@
 # Asset type registry
 
-`api/configs/asset-types.yaml` is the one definition of the asset types,
+`server/configs/asset-types.yaml` is the one definition of the asset types,
 their classes and the lenses those classes belong to. It implements RFC-042
 §6.3 and slice 1 of §9.1 (`docs/rfcs/RFC-042-asset-inventory-v2.md`).
 

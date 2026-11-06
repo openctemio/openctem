@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/app"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/internal/app"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // A tenant admin cannot upload (or update to) a nuclei template that uses a

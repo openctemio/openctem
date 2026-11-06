@@ -5,7 +5,7 @@
 // else. Technical identifiers (module paths, image names, OPENCTEM_* variables,
 // header and cookie names, the sensor protocol) never come from here.
 //
-// Design: api/docs/architecture/brand.md.
+// Design: server/docs/architecture/brand.md.
 package brand
 
 import (

@@ -10,8 +10,8 @@ import (
 
 	"github.com/lib/pq"
 
-	"github.com/openctemio/openctem/api/pkg/domain/apispec"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/apispec"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // APISpecRepository stores API descriptions of origin assets and their

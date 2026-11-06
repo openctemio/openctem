@@ -5,7 +5,7 @@ import (
 
 	"github.com/crewjam/saml"
 
-	"github.com/openctemio/openctem/api/pkg/oidc"
+	"github.com/openctemio/openctem/server/pkg/oidc"
 )
 
 func TestOIDCMFAEvidence(t *testing.T) {

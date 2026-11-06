@@ -13,8 +13,8 @@ import (
 	"testing"
 	"time"
 
-	covdom "github.com/openctemio/openctem/api/pkg/domain/coverage"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	covdom "github.com/openctemio/openctem/server/pkg/domain/coverage"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // notDispatched finishes the capability's last run with no task carrying

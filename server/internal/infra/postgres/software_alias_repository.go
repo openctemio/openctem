@@ -12,7 +12,7 @@ import (
 
 	"github.com/lib/pq"
 
-	"github.com/openctemio/openctem/api/pkg/domain/software"
+	"github.com/openctemio/openctem/server/pkg/domain/software"
 )
 
 const (

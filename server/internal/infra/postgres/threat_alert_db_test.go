@@ -9,12 +9,12 @@ import (
 	"testing"
 	"time"
 
-	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
-	"github.com/openctemio/openctem/api/internal/app/outbox"
-	threatalertapp "github.com/openctemio/openctem/api/internal/app/threatalert"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/threatalert"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
+	"github.com/openctemio/openctem/server/internal/app/outbox"
+	threatalertapp "github.com/openctemio/openctem/server/internal/app/threatalert"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/threatalert"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 type recordingOutbox struct {

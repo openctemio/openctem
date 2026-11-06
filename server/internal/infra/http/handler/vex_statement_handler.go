@@ -1,7 +1,7 @@
 package handler
 
 // The organization's VEX statements. Design:
-// api/docs/rfcs/RFC-070-software-components-inventory.md.
+// server/docs/rfcs/RFC-070-software-components-inventory.md.
 
 import (
 	"encoding/json"
@@ -10,14 +10,14 @@ import (
 	"strings"
 	"time"
 
-	vexapp "github.com/openctemio/openctem/api/internal/app/vex"
-	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
-	"github.com/openctemio/openctem/api/pkg/apierror"
-	"github.com/openctemio/openctem/api/pkg/domain/permission"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	vexdom "github.com/openctemio/openctem/api/pkg/domain/vex"
-	"github.com/openctemio/openctem/api/pkg/logger"
-	"github.com/openctemio/openctem/api/pkg/pagination"
+	vexapp "github.com/openctemio/openctem/server/internal/app/vex"
+	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/server/pkg/apierror"
+	"github.com/openctemio/openctem/server/pkg/domain/permission"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	vexdom "github.com/openctemio/openctem/server/pkg/domain/vex"
+	"github.com/openctemio/openctem/server/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/pagination"
 )
 
 // VEXStatementHandler serves /api/v1/vex-statements.

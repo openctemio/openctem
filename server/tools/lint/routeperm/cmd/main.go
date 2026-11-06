@@ -7,7 +7,7 @@ package main
 import (
 	"golang.org/x/tools/go/analysis/singlechecker"
 
-	"github.com/openctemio/openctem/api/tools/lint/routeperm"
+	"github.com/openctemio/openctem/server/tools/lint/routeperm"
 )
 
 func main() {

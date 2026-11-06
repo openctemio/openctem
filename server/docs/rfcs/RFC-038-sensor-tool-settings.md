@@ -1,6 +1,6 @@
 # RFC-038 — Sensor tool settings: typed schemas from the sensor, forms on the platform, signed config back
 
-> Status: **Partially implemented** (2026-10-15). Organization tool defaults (per tool, for the organization's own sensors) and per-sensor overrides are stored, validated with the CTIS settings contract (`ctis/settings`, the same code the sensor validates with), audited and delivered inside the signed job's payload (`settings_layers.tenant`, without the keys the sensor overrides, and `settings_layers.sensor`), with generated forms on Settings → Scanning → Tool defaults and on the sensor's page (api/docs/architecture/sensors.md, "Tool settings"). The scan-layer preview and the save-time check of scan and step options are implemented. Changing an Impact (T1) option needs step-up. §6.6 (a separate signed, versioned settings document pushed to each sensor) is superseded: the layers travel inside each signed job instead, and the schema comes from the tool descriptor already stored with the manifest. Dangerous-option enablement is not built yet. §6.12 custom template trust is implemented.
+> Status: **Partially implemented** (2026-10-15). Organization tool defaults (per tool, for the organization's own sensors) and per-sensor overrides are stored, validated with the CTIS settings contract (`ctis/settings`, the same code the sensor validates with), audited and delivered inside the signed job's payload (`settings_layers.tenant`, without the keys the sensor overrides, and `settings_layers.sensor`), with generated forms on Settings → Scanning → Tool defaults and on the sensor's page (server/docs/architecture/sensors.md, "Tool settings"). The scan-layer preview and the save-time check of scan and step options are implemented. Changing an Impact (T1) option needs step-up. §6.6 (a separate signed, versioned settings document pushed to each sensor) is superseded: the layers travel inside each signed job instead, and the schema comes from the tool descriptor already stored with the manifest. Dangerous-option enablement is not built yet. §6.12 custom template trust is implemented.
 > Scope: sdk-go (schema types, registration, delivery and verification) +
 > sensor (`openctemio/sensor`: one schema per tool, typed option → flag
 > mapping) + api (storage, validation, policy, audit, push) + web (forms).
@@ -71,7 +71,7 @@ specific flags. They are never free-form command-line text.
    `tools_config[tool].options`, `scanprofile.ToolConfig.Options
    map[string]any`).
 2. Before saving, `SecurityValidator.ValidateScannerConfig`
-   (`api/internal/app/security_validator.go`) refuses known-dangerous keys
+   (`server/internal/app/security_validator.go`) refuses known-dangerous keys
    and values (`DANGEROUS_CONFIG_KEY`, `DANGEROUS_CONFIG_VALUE`): a
    denylist.
 3. On the sensor, the SDK's command executor

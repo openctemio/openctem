@@ -4,7 +4,7 @@
  * Attack surface > Posture: the grade of the external surface the viewer may
  * see, what each category takes away, the fix plan to the next grade, the
  * risk reduction by asset criticality and the score of each root domain.
- * Formula: api/docs/architecture/easm-posture.md.
+ * Formula: server/docs/architecture/easm-posture.md.
  */
 
 import { useMemo, useState } from 'react'

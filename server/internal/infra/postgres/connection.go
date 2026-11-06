@@ -7,11 +7,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/aianalysis"
+	"github.com/openctemio/openctem/server/pkg/domain/aianalysis"
 
 	_ "github.com/lib/pq"
 
-	"github.com/openctemio/openctem/api/internal/config"
+	"github.com/openctemio/openctem/server/internal/config"
 )
 
 // DB wraps sql.DB with additional functionality.

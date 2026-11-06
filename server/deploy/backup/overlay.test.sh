@@ -2,7 +2,7 @@
 # Tests for the backup overlay without containers: the generated pgBackRest
 # configuration for each target, the refusals, and `docker compose config` for
 # every target variant when docker is available.
-# Run: bash api/deploy/backup/overlay.test.sh
+# Run: bash server/deploy/backup/overlay.test.sh
 set -uo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 pass=0 failed=0

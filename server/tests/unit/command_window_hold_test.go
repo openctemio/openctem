@@ -8,11 +8,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app/command"
-	swapp "github.com/openctemio/openctem/api/internal/app/scanwindow"
-	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
-	swdom "github.com/openctemio/openctem/api/pkg/domain/scanwindow"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/internal/app/command"
+	swapp "github.com/openctemio/openctem/server/internal/app/scanwindow"
+	commanddom "github.com/openctemio/openctem/server/pkg/domain/command"
+	swdom "github.com/openctemio/openctem/server/pkg/domain/scanwindow"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // Scan windows at the claim (RFC-067 §6.1) and when a window closes under

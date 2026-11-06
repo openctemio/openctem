@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/versions"
+	"github.com/openctemio/openctem/server/internal/versions"
 )
 
 // The sensor products' release lines are not settings: they come from the

@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"net/url"
 
-	sensorapp "github.com/openctemio/openctem/api/internal/app/sensor"
+	sensorapp "github.com/openctemio/openctem/server/internal/app/sensor"
 )
 
 // h2Transport speaks HTTP/2 only over TLS with cfg.

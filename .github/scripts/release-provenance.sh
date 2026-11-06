@@ -17,7 +17,7 @@
 #     tree is main's, and every pick has the same patch-id as a develop commit
 #     that is on develop and whose containing develop commit passed its checks;
 #   - V changes only what the release train writes (release/cut-release.sh):
-#     api/deploy/VERSION, set to X.Y.Z, and the refreshed built-in "latest"
+#     server/deploy/VERSION, set to X.Y.Z, and the refreshed built-in "latest"
 #     releases (versions.yaml and its embedded copy in "latest:" lines only,
 #     and the consumers of those values in their vX.Y.Z only).
 # Anything else (an extra commit, a file outside the list, a red or unknown
@@ -45,9 +45,9 @@ allowed() {
 latest_only() { # latest_only FILE PARENT V
   local f="$1" norm
   case "$f" in
-    versions.yaml | api/internal/versions/versions.yaml)
+    versions.yaml | server/internal/versions/versions.yaml)
       norm='s/^([[:space:]]+latest:[[:space:]]*)v[0-9]+\.[0-9]+\.[0-9]+/\1vX/' ;;
-    api/deploy/docker-compose.sensor.yml | web/src/features/ci-runners/lib/ci.ts)
+    server/deploy/docker-compose.sensor.yml | web/src/features/ci-runners/lib/ci.ts)
       norm='s/v[0-9]+\.[0-9]+\.[0-9]+/vX/g' ;;
     *) return 1 ;;
   esac
@@ -77,7 +77,7 @@ develop_green() {
   bash "$HERE/release/check-ci.sh" "$1" >/dev/null 2>&1 || { echo "$1 is not green" >&2; return 1; }
 }
 
-# version_commit_ok V PARENT: V sets api/deploy/VERSION and refreshes "latest"
+# version_commit_ok V PARENT: V sets server/deploy/VERSION and refreshes "latest"
 # values, touching nothing else.
 version_commit_ok() {
   local v="$1" parent="$2" f got

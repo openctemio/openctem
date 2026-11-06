@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/accessrequest"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/accessrequest"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // Access requests (migration 001380) as the application role: round trip,

@@ -9,10 +9,10 @@ import (
 	"fmt"
 	"time"
 
-	dashboardapp "github.com/openctemio/openctem/api/internal/app/dashboard"
-	"github.com/openctemio/openctem/api/internal/app/datascope"
-	"github.com/openctemio/openctem/api/pkg/domain/dashboard"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	dashboardapp "github.com/openctemio/openctem/server/internal/app/dashboard"
+	"github.com/openctemio/openctem/server/internal/app/datascope"
+	"github.com/openctemio/openctem/server/pkg/domain/dashboard"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // Snapshots (docs/architecture/dashboards.md, "Snapshots and refresh").

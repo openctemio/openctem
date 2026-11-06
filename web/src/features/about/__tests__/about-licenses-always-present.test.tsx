@@ -1,7 +1,7 @@
 /**
  * About > Open-source licenses is part of the core and is always present: no
  * brand pack, white-label setting or extension removes or replaces it
- * (api/docs/architecture/third-party-notices.md). This test asserts the route
+ * (server/docs/architecture/third-party-notices.md). This test asserts the route
  * exists in both apps and that the About dialog links to it in both shells,
  * under the default brand and under a white-label brand that hides the
  * upstream credit and points every link elsewhere.

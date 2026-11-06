@@ -1,6 +1,6 @@
 /**
  * Wire types of the remediation task and suggestion API
- * (api/docs/rfcs/RFC-098-remediation-tasks.md). They mirror the API
+ * (server/docs/rfcs/RFC-098-remediation-tasks.md). They mirror the API
  * responses; the generated contract (api.types.ts) is the source they are
  * checked against in remediation-hub.types.test.ts.
  */

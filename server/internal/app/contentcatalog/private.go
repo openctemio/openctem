@@ -12,13 +12,13 @@ import (
 	"strings"
 	"time"
 
-	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
-	packapp "github.com/openctemio/openctem/api/internal/app/contentpack"
-	"github.com/openctemio/openctem/api/pkg/contentpkg"
-	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
-	dom "github.com/openctemio/openctem/api/pkg/domain/contentcatalog"
-	packdom "github.com/openctemio/openctem/api/pkg/domain/contentpack"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
+	packapp "github.com/openctemio/openctem/server/internal/app/contentpack"
+	"github.com/openctemio/openctem/server/pkg/contentpkg"
+	auditdom "github.com/openctemio/openctem/server/pkg/domain/audit"
+	dom "github.com/openctemio/openctem/server/pkg/domain/contentcatalog"
+	packdom "github.com/openctemio/openctem/server/pkg/domain/contentpack"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // TenantPacks stores an organization's content packs (*contentpack.Service).

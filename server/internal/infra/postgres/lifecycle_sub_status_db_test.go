@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/findinglifecycle"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/findinglifecycle"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // The sub-status catalog round-trips, lists in lifecycle order, refuses a

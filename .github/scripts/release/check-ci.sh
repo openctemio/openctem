@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# check-ci.sh: is a commit's CI green? (api/docs/rfcs/RFC-037 §4.4)
+# check-ci.sh: is a commit's CI green? (server/docs/rfcs/RFC-037 §4.4)
 #
 #   check-ci.sh SHA                       exit 0 when every required check
 #                                         passed on SHA, 1 otherwise

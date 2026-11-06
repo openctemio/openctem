@@ -4,13 +4,13 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/openctemio/openctem/api/internal/app/participation"
-	"github.com/openctemio/openctem/api/pkg/domain/durablejob"
-	"github.com/openctemio/openctem/api/pkg/domain/notification"
-	participationdom "github.com/openctemio/openctem/api/pkg/domain/participation"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/internal/app/participation"
+	"github.com/openctemio/openctem/server/pkg/domain/durablejob"
+	"github.com/openctemio/openctem/server/pkg/domain/notification"
+	participationdom "github.com/openctemio/openctem/server/pkg/domain/participation"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // The side effects of a finding status change, in one place. Every route

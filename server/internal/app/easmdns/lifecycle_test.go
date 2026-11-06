@@ -4,11 +4,11 @@ import (
 	"context"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/dnsprobe"
-	"github.com/openctemio/openctem/api/pkg/dnsprobe/dnstest"
-	exposuredom "github.com/openctemio/openctem/api/pkg/domain/exposure"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/dnsprobe"
+	"github.com/openctemio/openctem/server/pkg/dnsprobe/dnstest"
+	exposuredom "github.com/openctemio/openctem/server/pkg/domain/exposure"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 func eventsOf(m *memStore, typ exposuredom.EventType) []*exposuredom.ExposureEvent {

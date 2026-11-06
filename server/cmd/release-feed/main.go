@@ -4,7 +4,7 @@
 // OIDC identity); an instance verifies the Sigstore bundle offline
 // (releasefeed.SignerIdentityPattern).
 //
-// Usage (from api/), as the workflow runs it:
+// Usage (from server/), as the workflow runs it:
 //
 //	gh release list --json tagName,publishedAt,isDraft,isPrerelease --limit 200 > releases.json
 //	go run ./cmd/release-feed components                  # "<component> <repository> <image or ->" per line
@@ -32,10 +32,10 @@ import (
 	"regexp"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/versions"
-	cpsigstore "github.com/openctemio/openctem/api/pkg/contentpkg/sigstore"
-	"github.com/openctemio/openctem/api/pkg/feedsign"
-	"github.com/openctemio/openctem/api/pkg/releasefeed"
+	"github.com/openctemio/openctem/server/internal/versions"
+	cpsigstore "github.com/openctemio/openctem/server/pkg/contentpkg/sigstore"
+	"github.com/openctemio/openctem/server/pkg/feedsign"
+	"github.com/openctemio/openctem/server/pkg/releasefeed"
 )
 
 func main() {

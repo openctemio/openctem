@@ -31,8 +31,8 @@ import (
 
 	_ "github.com/lib/pq" // the "postgres" driver; reads PGPASSWORD and the other libpq variables
 
-	"github.com/openctemio/openctem/api/internal/migrate"
-	"github.com/openctemio/openctem/api/pkg/version"
+	"github.com/openctemio/openctem/server/internal/migrate"
+	"github.com/openctemio/openctem/server/pkg/version"
 )
 
 func main() {

@@ -10,8 +10,8 @@ import (
 
 	redislib "github.com/redis/go-redis/v9"
 
-	"github.com/openctemio/openctem/api/pkg/domain/sensor"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/sensor"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // livenessTestRedis is a client on a database of its own (14), so the

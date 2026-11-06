@@ -3,9 +3,9 @@ package finding
 import (
 	"context"
 
-	"github.com/openctemio/openctem/api/internal/app/participation"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/internal/app/participation"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
 )
 
 // ParticipationAccess answers the access questions of watchers on findings

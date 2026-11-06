@@ -6,8 +6,8 @@ import (
 
 	"golang.org/x/time/rate"
 
-	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	sensordom "github.com/openctemio/openctem/server/pkg/domain/sensor"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // The replica's fallback budget never lets a live sensor walk to stale

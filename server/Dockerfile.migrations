@@ -36,7 +36,7 @@ COPY cmd/openctem-migrate ./cmd/openctem-migrate
 COPY internal/migrate ./internal/migrate
 COPY pkg/version ./pkg/version
 RUN CGO_ENABLED=0 go build -trimpath \
-      -ldflags="-s -w -X github.com/openctemio/openctem/api/pkg/version.Version=${VERSION}" \
+      -ldflags="-s -w -X github.com/openctemio/openctem/server/pkg/version.Version=${VERSION}" \
       -o /usr/local/bin/openctem-migrate ./cmd/openctem-migrate
 
 # Alpine 3.20 reached end of support on 2026-04-01 (no more security fixes).

@@ -12,11 +12,11 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/metrics"
-	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
-	scanrundom "github.com/openctemio/openctem/api/pkg/domain/scanrun"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/jobsign"
+	"github.com/openctemio/openctem/server/internal/metrics"
+	commanddom "github.com/openctemio/openctem/server/pkg/domain/command"
+	scanrundom "github.com/openctemio/openctem/server/pkg/domain/scanrun"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/jobsign"
 )
 
 // JobSigner asks the signer to sign a job statement and returns the DSSE

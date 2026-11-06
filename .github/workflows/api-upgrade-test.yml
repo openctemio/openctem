@@ -2,7 +2,7 @@ name: API Upgrade Test
 
 # The previous release's database, upgraded to this tree: build the schema of
 # the last release tag (its own migrations, as the non-superuser migrator),
-# load representative rows (api/scripts/upgrade-test/seed.sql), apply this
+# load representative rows (server/scripts/upgrade-test/seed.sql), apply this
 # tree's migrations with this tree's openctem-migrate, and assert that nothing
 # is pending or dirty, that no key table lost a row, that the schema equals a
 # fresh install's, and that the API built from this tree starts against it.
@@ -98,7 +98,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version-file: api/go.mod
+          go-version-file: server/go.mod
           # No build cache: this workflow runs on release branches, where a
           # poisoned cache could reach the release build.
           cache: false
@@ -107,17 +107,17 @@ jobs:
       # openctem-migrate (upgrade-test.sh builds a newer release's own runner
       # from its tag).
       - name: Install golang-migrate
-        working-directory: api
+        working-directory: server
         run: go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@v4.18.1
 
       - name: Build this tree's migration runner
-        working-directory: api
+        working-directory: server
         run: |
           go build -o "$RUNNER_TEMP/bin/openctem-migrate" ./cmd/openctem-migrate
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
 
       - name: Build the API from this tree
-        working-directory: api
+        working-directory: server
         run: go build -o "$RUNNER_TEMP/openctem-server" ./cmd/server
 
       - name: Upgrade

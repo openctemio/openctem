@@ -20,8 +20,8 @@ import (
 	"fmt"
 	"time"
 
-	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	scopedom "github.com/openctemio/openctem/server/pkg/domain/scope"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // JoinedAsset is a discovered asset the scope join confirmed, or would.

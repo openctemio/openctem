@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import { channelOf, devBuildVersion, parseBuildInfo } from '@/lib/app-version'
 
-// The same rule as the API's pkg/version (api/docs/rfcs/RFC-037 §3.2).
+// The same rule as the API's pkg/version (server/docs/rfcs/RFC-037 §3.2).
 describe('channelOf', () => {
   it.each([
     ['v0.9.0', 'release'],

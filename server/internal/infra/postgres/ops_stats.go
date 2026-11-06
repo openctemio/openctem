@@ -5,8 +5,8 @@ import (
 	"database/sql"
 	"fmt"
 
-	"github.com/openctemio/openctem/api/internal/migrate"
-	"github.com/openctemio/openctem/api/pkg/domain/sensor"
+	"github.com/openctemio/openctem/server/internal/migrate"
+	"github.com/openctemio/openctem/server/pkg/domain/sensor"
 )
 
 // Platform-wide counts for the operator's metrics (docs/operations/monitoring.md).

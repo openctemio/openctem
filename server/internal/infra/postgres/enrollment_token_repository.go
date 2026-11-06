@@ -18,8 +18,8 @@ import (
 
 	"github.com/lib/pq"
 
-	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	sensordom "github.com/openctemio/openctem/server/pkg/domain/sensor"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 var _ sensordom.EnrollmentTokenRepository = (*SensorPairingRepository)(nil)

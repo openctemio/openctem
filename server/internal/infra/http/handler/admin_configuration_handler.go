@@ -10,9 +10,9 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/openctemio/openctem/api/internal/app/configoverview"
-	"github.com/openctemio/openctem/api/pkg/apierror"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/internal/app/configoverview"
+	"github.com/openctemio/openctem/server/pkg/apierror"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // ConfigurationBuilder is what the handler needs from the overview.

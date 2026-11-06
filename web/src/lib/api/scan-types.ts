@@ -97,7 +97,7 @@ export interface ScanTargetOptions {
 /** `info`: an expected outcome (a name with no DNS answer); `warning`: needs a fix. */
 export type SkipTone = 'info' | 'warning'
 
-/** Every target a scan skips for one reason (api/docs/architecture/scan-targets.md). */
+/** Every target a scan skips for one reason (server/docs/architecture/scan-targets.md). */
 export interface SkipGroup {
   reason: string
   tone: SkipTone

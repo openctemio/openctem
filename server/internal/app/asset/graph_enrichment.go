@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
-	relationshipdom "github.com/openctemio/openctem/api/pkg/domain/relationship"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	assetdom "github.com/openctemio/openctem/server/pkg/domain/asset"
+	relationshipdom "github.com/openctemio/openctem/server/pkg/domain/relationship"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // graph_enrichment.go wires the pure InferGraphEdges inference (Exposes /

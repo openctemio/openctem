@@ -15,7 +15,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/openctemio/openctem/api/pkg/safetext"
+	"github.com/openctemio/openctem/server/pkg/safetext"
 )
 
 // Skipped-target reasons a sensor reports (a sensor says "unresolvable",

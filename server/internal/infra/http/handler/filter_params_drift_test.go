@@ -14,7 +14,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/openctemio/openctem/api/pkg/filterspec"
+	"github.com/openctemio/openctem/server/pkg/filterspec"
 )
 
 // filterOperations are the operations that parse their query with a
@@ -52,7 +52,7 @@ func TestFilterParamBlocksAreGenerated(t *testing.T) {
 			t.Fatalf("%s: %v", f, err)
 		}
 		if out != string(b) {
-			t.Errorf("%s: generated @Param block is stale; run `go run ./tools/gen/filterparams` then `make swagger` from api/", f)
+			t.Errorf("%s: generated @Param block is stale; run `go run ./tools/gen/filterparams` then `make swagger` from server/", f)
 		}
 		for _, bl := range blocks {
 			found[bl] = true
@@ -69,7 +69,7 @@ func TestFilterParamBlocksAreGenerated(t *testing.T) {
 func TestOpenAPIDocumentsFilterParams(t *testing.T) {
 	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "api", "openapi", "swagger.yaml"))
 	if err != nil {
-		t.Fatalf("%v (the spec is generated, not committed: run `make swagger` in api/ or `make generate` at the repository root)", err)
+		t.Fatalf("%v (the spec is generated, not committed: run `make swagger` in server/ or `make generate` at the repository root)", err)
 	}
 	var spec struct {
 		Paths map[string]map[string]struct {
@@ -112,7 +112,7 @@ func TestOpenAPIDocumentsFilterParams(t *testing.T) {
 		sort.Strings(missing)
 		sort.Strings(extra)
 		if len(missing) > 0 || len(extra) > 0 {
-			t.Errorf("%s %s: spec query params differ from the parser (missing %v, not accepted %v); run `make swagger` from api/",
+			t.Errorf("%s %s: spec query params differ from the parser (missing %v, not accepted %v); run `make swagger` from server/",
 				strings.ToUpper(op.method), op.path, missing, extra)
 		}
 	}

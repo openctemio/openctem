@@ -5,10 +5,10 @@ import (
 	"sync/atomic"
 	"testing"
 
-	iocdom "github.com/openctemio/openctem/api/pkg/domain/ioc"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/telemetry"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	iocdom "github.com/openctemio/openctem/server/pkg/domain/ioc"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/telemetry"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // -----------------------------------------------------------------------------

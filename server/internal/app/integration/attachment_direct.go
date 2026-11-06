@@ -5,11 +5,11 @@ import (
 	"errors"
 	"time"
 
-	attachmentdom "github.com/openctemio/openctem/api/pkg/domain/attachment"
+	attachmentdom "github.com/openctemio/openctem/server/pkg/domain/attachment"
 )
 
 // Short-lived direct downloads and storage metrics: design in
-// api/docs/rfcs/RFC-084-file-storage.md.
+// server/docs/rfcs/RFC-084-file-storage.md.
 
 // StorageMetrics counts storage policy outcomes (quota rejections, purges,
 // scan results). Optional.

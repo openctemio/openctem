@@ -3,7 +3,7 @@ package definition
 import (
 	"context"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // Repository reads and writes the definition catalog. Every method takes the

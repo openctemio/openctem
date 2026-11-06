@@ -6,7 +6,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // A pasted list holds one name, address, range or URL per line. Parsing is

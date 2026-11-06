@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/platformauthz"
+	"github.com/openctemio/openctem/server/pkg/domain/platformauthz"
 )
 
 // The tenant permission reference (what the tenant web app bundles and the

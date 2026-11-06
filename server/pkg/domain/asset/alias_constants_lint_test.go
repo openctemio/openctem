@@ -76,11 +76,11 @@ func TestAliasConstants_MatchRegistry(t *testing.T) {
 }
 
 func TestAliasConstants_OnlyInTheResolver(t *testing.T) {
-	root, err := filepath.Abs("../../..") // api/
+	root, err := filepath.Abs("../../..") // server/
 	if err != nil {
 		t.Fatal(err)
 	}
-	const importPath = "github.com/openctemio/openctem/api/pkg/domain/asset"
+	const importPath = "github.com/openctemio/openctem/server/pkg/domain/asset"
 	fset := token.NewFileSet()
 	var offenders []string
 	walkErr := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {

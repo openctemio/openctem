@@ -12,8 +12,8 @@ import (
 	"encoding/json"
 	"fmt"
 
-	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	commanddom "github.com/openctemio/openctem/server/pkg/domain/command"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // maxHostHoldersForSplit bounds the holders read for one command. Missing

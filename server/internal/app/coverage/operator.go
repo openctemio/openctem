@@ -9,9 +9,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/metrics"
-	covdom "github.com/openctemio/openctem/api/pkg/domain/coverage"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/internal/metrics"
+	covdom "github.com/openctemio/openctem/server/pkg/domain/coverage"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // Platform-side failures (docs/rfcs/RFC-093-asset-coverage.md, "Platform-side

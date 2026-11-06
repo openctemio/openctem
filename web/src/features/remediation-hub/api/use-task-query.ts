@@ -1,6 +1,6 @@
 /**
  * Remediation tasks created from a custom query
- * (api/docs/rfcs/RFC-098-remediation-tasks.md, "Tasks from a query").
+ * (server/docs/rfcs/RFC-098-remediation-tasks.md, "Tasks from a query").
  * The query always runs on the server as the signed-in person: nothing
  * here sends a tenant or a scope.
  */

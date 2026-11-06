@@ -2,7 +2,7 @@
 
 /**
  * A query box for "findings where ..." (the custom query language,
- * api/docs/rfcs/RFC-115-custom-query-language.md): the text, field and value
+ * server/docs/rfcs/RFC-115-custom-query-language.md): the text, field and value
  * completion from the caller's own schema, and a live check through
  * POST /api/v1/query/explain that shows the query in plain words or its
  * problems with their line and column. The query is plain text: nothing is

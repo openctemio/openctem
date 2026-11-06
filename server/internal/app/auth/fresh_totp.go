@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 
-	"github.com/openctemio/openctem/api/pkg/domain/mfa"
+	"github.com/openctemio/openctem/server/pkg/domain/mfa"
 )
 
 // Fresh authenticator code errors.

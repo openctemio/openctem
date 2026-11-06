@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"testing"
 
-	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
+	protov2 "github.com/openctemio/openctem/server/pkg/sensorproto/v2"
 )
 
 // RE-8: the per-sensor control budgets used to be the only ones, so an

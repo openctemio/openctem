@@ -5,7 +5,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/openctemio/openctem/api/internal/infra/http/handler"
+	"github.com/openctemio/openctem/server/internal/infra/http/handler"
 )
 
 func TestParsePropertiesFilter(t *testing.T) {

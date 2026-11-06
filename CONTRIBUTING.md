@@ -7,14 +7,14 @@
 4. A change to the API contract and the web code that uses it belongs in ONE pull
    request. Regenerate the contract with `make generate` (or `make generate-docker`
    if you only have Docker).
-5. Go code lives under `api/` (module `github.com/openctemio/openctem/api`), the
-   web console under `web/`. Component guides: [`api/README.md`](api/README.md),
-   [`web/README.md`](web/README.md); engineering docs: [`api/docs/`](api/docs/README.md).
+5. Go code lives under `server/` (module `github.com/openctemio/openctem/server`), the
+   web console under `web/`. Component guides: [`server/README.md`](server/README.md),
+   [`web/README.md`](web/README.md); engineering docs: [`server/docs/`](server/docs/README.md).
 
 ## Checks on a pull request
 
 The required checks are listed in
-[`api/docs/development/ci-cd.md`](api/docs/development/ci-cd.md). One more check,
+[`server/docs/development/ci-cd.md`](server/docs/development/ci-cd.md). One more check,
 **Dependency Review**, runs on every pull request but is not required: it fails
 when a Go module, npm package or GitHub Action that the pull request adds or
 upgrades has a known high or critical advisory. Treat a red result as a blocker
@@ -28,7 +28,7 @@ suite, PostgreSQL 18, image build and smoke test, end-to-end suite) before
 anything lands. To run the full tier on the pull request itself, add the
 `ci:full` label and re-run the jobs (or push); a pull request that changes a
 workflow or CI script always runs it. Details:
-[Tiers](api/docs/development/ci-cd.md#tiers).
+[Tiers](server/docs/development/ci-cd.md#tiers).
 
 ## Security-sensitive changes
 
@@ -51,7 +51,7 @@ request passes the check at once.
   the organization audit log and is followed by a written reason on the pull
   request.
 
-Details: [Security gate](api/docs/development/ci-cd.md#security-gate).
+Details: [Security gate](server/docs/development/ci-cd.md#security-gate).
 
 ## Commit messages
 
@@ -63,9 +63,9 @@ footer for a breaking change).
 
 ## Changelog entries
 
-A user-visible change adds one file `api/changelog.d/<short-slug>.md` instead of
-editing `api/CHANGELOG.md`, so pull requests never conflict on the changelog.
-The format and the checks are in [`api/changelog.d/README.md`](api/changelog.d/README.md).
+A user-visible change adds one file `server/changelog.d/<short-slug>.md` instead of
+editing `server/CHANGELOG.md`, so pull requests never conflict on the changelog.
+The format and the checks are in [`server/changelog.d/README.md`](server/changelog.d/README.md).
 Internal-only changes (tests, CI, refactors, engineering docs) need no entry.
 
 ## Security issues

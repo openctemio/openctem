@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	dom "github.com/openctemio/openctem/api/pkg/domain/contentpack"
+	dom "github.com/openctemio/openctem/server/pkg/domain/contentpack"
 )
 
 func regexRule(regex string) []byte {

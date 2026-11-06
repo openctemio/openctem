@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/permission"
+	"github.com/openctemio/openctem/server/pkg/domain/permission"
 )
 
 // POST /findings/{id}/validate (the reachability check) needs findings:verify,

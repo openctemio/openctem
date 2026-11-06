@@ -9,10 +9,10 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/openctemio/openctem/api/internal/app/remediation"
-	"github.com/openctemio/openctem/api/internal/infra/postgres"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/internal/app/remediation"
+	"github.com/openctemio/openctem/server/internal/infra/postgres"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // remediationKeysReport is one tenant's result of -remediation-keys.

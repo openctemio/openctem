@@ -8,8 +8,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/ingestpayload"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/ingestpayload"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // IngestPayloadRepository implements ingestpayload.Repository.

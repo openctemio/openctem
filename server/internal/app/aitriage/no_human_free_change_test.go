@@ -17,9 +17,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	aitriagedom "github.com/openctemio/openctem/api/pkg/domain/aitriage"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	aitriagedom "github.com/openctemio/openctem/server/pkg/domain/aitriage"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
 )
 
 // writeRecordingFindings fails the test on any write to the finding store.

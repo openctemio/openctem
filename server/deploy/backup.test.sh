@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Tests for backup.sh with a stub docker and a stub age (no containers, no real keys).
-# Run: bash api/deploy/backup.test.sh
+# Run: bash server/deploy/backup.test.sh
 set -euo pipefail
 src="$(cd "$(dirname "$0")" && pwd)/backup.sh"
 pass=0 failed=0

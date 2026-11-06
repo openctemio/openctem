@@ -82,12 +82,12 @@ POST /api/v1/findings/bulk/by-filter/assignee   findings:bulk_update + findings:
 | Replaying someone else's key | Keys are bound to tenant and creator | another person's or another organization's key is a new operation |
 | Reading another person's progress | Operation reads bound to tenant and creator | other member 404; another organization's operation 404 for its own creator |
 
-Tests: `api/internal/infra/http/routes/findings_bulk_by_filter_db_test.go`,
-`api/internal/app/finding/bulk_by_filter_test.go`,
-`api/internal/infra/postgres/operation_repository_test.go`.
+Tests: `server/internal/infra/http/routes/findings_bulk_by_filter_db_test.go`,
+`server/internal/app/finding/bulk_by_filter_test.go`,
+`server/internal/infra/postgres/operation_repository_test.go`.
 
 ## Key files
 
-- `api/internal/app/finding/bulk_by_filter.go`
-- `api/internal/infra/http/handler/finding_bulk_filter_handler.go`
-- `api/internal/infra/postgres/finding_spec_repository.go` (`IDsWhere`)
+- `server/internal/app/finding/bulk_by_filter.go`
+- `server/internal/infra/http/handler/finding_bulk_filter_handler.go`
+- `server/internal/infra/postgres/finding_spec_repository.go` (`IDsWhere`)

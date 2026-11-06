@@ -8,10 +8,10 @@ import (
 
 	"github.com/lib/pq"
 
-	licapp "github.com/openctemio/openctem/api/internal/app/licensepolicy"
-	"github.com/openctemio/openctem/api/internal/testdb"
-	"github.com/openctemio/openctem/api/pkg/domain/licensepolicy"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	licapp "github.com/openctemio/openctem/server/internal/app/licensepolicy"
+	"github.com/openctemio/openctem/server/internal/testdb"
+	"github.com/openctemio/openctem/server/pkg/domain/licensepolicy"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 type licenseFixture struct {

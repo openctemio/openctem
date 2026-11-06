@@ -19,10 +19,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/openctemio/openctem/api/internal/app/scopeauth"
-	"github.com/openctemio/openctem/api/pkg/domain/asset"
-	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/internal/app/scopeauth"
+	"github.com/openctemio/openctem/server/pkg/domain/asset"
+	scopedom "github.com/openctemio/openctem/server/pkg/domain/scope"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // ActEnforcer is the one "may this actor act on these assets" check

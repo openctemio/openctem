@@ -8,8 +8,8 @@ import (
 
 	_ "github.com/lib/pq"
 
-	"github.com/openctemio/openctem/api/internal/testdb"
-	"github.com/openctemio/openctem/api/pkg/domain/integration"
+	"github.com/openctemio/openctem/server/internal/testdb"
+	"github.com/openctemio/openctem/server/pkg/domain/integration"
 )
 
 // TestListDueForSync_ExecutesAgainstSchema exercises the scheduler's due-query

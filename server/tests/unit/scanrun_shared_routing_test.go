@@ -9,10 +9,10 @@ import (
 	"context"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/app"
-	"github.com/openctemio/openctem/api/internal/app/scanrun"
-	"github.com/openctemio/openctem/api/pkg/domain/sensor"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/internal/app"
+	"github.com/openctemio/openctem/server/internal/app/scanrun"
+	"github.com/openctemio/openctem/server/pkg/domain/sensor"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 func TestScanRunSelectorAdapter_AutoGoesSharedWhenNoTenantSensor(t *testing.T) {

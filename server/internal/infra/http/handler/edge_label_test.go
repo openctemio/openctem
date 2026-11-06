@@ -3,8 +3,8 @@ package handler
 import (
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/asset"
-	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
+	"github.com/openctemio/openctem/server/pkg/domain/asset"
+	scopedom "github.com/openctemio/openctem/server/pkg/domain/scope"
 )
 
 func edgeAsset(t *testing.T, name string, typ asset.AssetType, props map[string]any) *asset.Asset {

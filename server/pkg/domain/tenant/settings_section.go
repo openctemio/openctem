@@ -9,7 +9,7 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // Settings sections are the top-level keys of tenants.settings. Each section

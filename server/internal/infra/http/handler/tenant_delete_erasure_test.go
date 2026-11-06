@@ -5,8 +5,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	tenantapp "github.com/openctemio/openctem/api/internal/app/tenant"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	tenantapp "github.com/openctemio/openctem/server/internal/app/tenant"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // An organization deletion refused because its stored files could not be

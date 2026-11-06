@@ -5,7 +5,7 @@ import (
 	"path"
 	"strings"
 
-	"github.com/openctemio/openctem/api/pkg/apierror"
+	"github.com/openctemio/openctem/server/pkg/apierror"
 )
 
 // Account-only sessions (docs/architecture/tenantless-account-space.md).

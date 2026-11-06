@@ -18,8 +18,8 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/openctemio/openctem/api/internal/app/outbox"
-	"github.com/openctemio/openctem/api/internal/infra/controller"
+	"github.com/openctemio/openctem/server/internal/app/outbox"
+	"github.com/openctemio/openctem/server/internal/infra/controller"
 )
 
 // NotificationEnqueuer is the narrow surface the BreachOutboxAdapter

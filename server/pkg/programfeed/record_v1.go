@@ -10,8 +10,8 @@ import (
 	"time"
 	"unicode/utf8"
 
-	bp "github.com/openctemio/openctem/api/pkg/domain/bountyprogram"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	bp "github.com/openctemio/openctem/server/pkg/domain/bountyprogram"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // V1 reads records of schema openctem.programfeed/v1 (the collector's

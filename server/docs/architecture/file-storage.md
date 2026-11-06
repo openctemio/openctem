@@ -247,10 +247,10 @@ Off by default. Set `STORAGE_CLAMD_ADDRESS` to a ClamAV daemon:
 
 - **Docker Compose**:
   `docker compose -f docker-compose.yml -f docker-compose.clamav.yml up -d`
-  (`api/deploy/docker-compose.clamav.yml`: a `clamav` service on the
+  (`server/deploy/docker-compose.clamav.yml`: a `clamav` service on the
   internal network, signatures in the `clamav-db` volume, about 1.5 GB of
   memory, outbound HTTPS for signature updates).
-- **Kubernetes**: apply `api/deploy/kubernetes/clamav.yaml` (Deployment,
+- **Kubernetes**: apply `server/deploy/kubernetes/clamav.yaml` (Deployment,
   Service, a NetworkPolicy that admits only the API pods) and set
   `api.extraEnv: [{name: STORAGE_CLAMD_ADDRESS, value: openctem-clamav:3310}]`.
 

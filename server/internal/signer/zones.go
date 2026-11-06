@@ -30,7 +30,7 @@ import (
 	"slices"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/jobsign"
+	"github.com/openctemio/openctem/server/pkg/jobsign"
 )
 
 // Zone ledger record kinds and refusal reasons.

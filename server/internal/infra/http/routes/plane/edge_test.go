@@ -14,7 +14,7 @@ func gatewayPlanesPath(t *testing.T) string {
 	if !ok {
 		t.Fatal("cannot locate the test file")
 	}
-	// api/internal/infra/http/routes/plane -> api/deploy/gateway
+	// server/internal/infra/http/routes/plane -> server/deploy/gateway
 	return filepath.Join(filepath.Dir(file), "..", "..", "..", "..", "..", "deploy", "gateway", "planes.caddy")
 }
 
@@ -38,8 +38,8 @@ func TestGatewayPlanesFile(t *testing.T) {
 		t.Fatalf("reading %s: %v", path, err)
 	}
 	if string(got) != want {
-		t.Fatalf("api/deploy/gateway/planes.caddy is not what the plane table generates.\n"+
-			"Regenerate: cd api && UPDATE_GATEWAY_PLANES=1 go test ./internal/infra/http/routes/plane/ -run TestGatewayPlanesFile\n\n"+
+		t.Fatalf("server/deploy/gateway/planes.caddy is not what the plane table generates.\n"+
+			"Regenerate: cd server && UPDATE_GATEWAY_PLANES=1 go test ./internal/infra/http/routes/plane/ -run TestGatewayPlanesFile\n\n"+
 			"generated:\n%s", want)
 	}
 }

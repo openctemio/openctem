@@ -1,6 +1,6 @@
 name: Resolve images
 
-# Reusable workflow for pull requests (api/docs/development/ci-cd.md, "Build
+# Reusable workflow for pull requests (server/docs/development/ci-cd.md, "Build
 # images once"). Read-only: it never builds, never pushes, and holds no
 # packages: write, attestations: write or id-token: write, so nothing a pull
 # request runs can overwrite a CI image, a release cache or a mirror tag.

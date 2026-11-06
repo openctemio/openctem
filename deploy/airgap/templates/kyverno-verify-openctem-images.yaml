@@ -1,7 +1,7 @@
 # Kyverno policy: admit OpenCTEM images only when they carry the release's
 # cosign signature (keyless, GitHub OIDC, issued to this repository's
 # docker-publish workflow at a release tag), and rewrite tags to digests.
-# Guide: api/docs/deployment/air-gapped.md, "Enforce signatures in the cluster".
+# Guide: server/docs/deployment/air-gapped.md, "Enforce signatures in the cluster".
 #
 # The release signs with cosign's Sigstore bundle format (stored as OCI
 # referrers), hence `type: SigstoreBundle` (Kyverno 1.13 or later; checked

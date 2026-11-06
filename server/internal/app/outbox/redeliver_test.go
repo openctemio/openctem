@@ -6,11 +6,11 @@ import (
 	"testing"
 	"time"
 
-	notificationclient "github.com/openctemio/openctem/api/internal/infra/notifier"
-	"github.com/openctemio/openctem/api/pkg/domain/integration"
-	outboxdom "github.com/openctemio/openctem/api/pkg/domain/outbox"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/webhooksig"
+	notificationclient "github.com/openctemio/openctem/server/internal/infra/notifier"
+	"github.com/openctemio/openctem/server/pkg/domain/integration"
+	outboxdom "github.com/openctemio/openctem/server/pkg/domain/outbox"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/webhooksig"
 )
 
 // redeliverRepos extends the harness fakes with what Redeliver reads.

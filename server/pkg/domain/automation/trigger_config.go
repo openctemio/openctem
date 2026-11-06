@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // ErrCodeInvalidTriggerConfig is the domain error code for a trigger option

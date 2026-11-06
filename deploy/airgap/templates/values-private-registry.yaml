@@ -1,6 +1,6 @@
 # Helm (openctemio/helm-charts, chart openctem 0.31.0 or later): run OpenCTEM
 # from a private registry with every OpenCTEM image pinned by digest.
-# Guide: api/docs/deployment/air-gapped.md.
+# Guide: server/docs/deployment/air-gapped.md.
 #
 #   helm upgrade --install openctem openctem/openctem -f values.yaml -f values-private-registry.yaml
 #

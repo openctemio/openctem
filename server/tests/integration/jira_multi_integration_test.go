@@ -10,14 +10,14 @@ import (
 	"github.com/google/uuid"
 	_ "github.com/lib/pq"
 
-	appjira "github.com/openctemio/openctem/api/internal/app/jira"
-	infrajira "github.com/openctemio/openctem/api/internal/infra/jira"
-	"github.com/openctemio/openctem/api/internal/infra/postgres"
-	"github.com/openctemio/openctem/api/internal/testdb"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/ticketlink"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	appjira "github.com/openctemio/openctem/server/internal/app/jira"
+	infrajira "github.com/openctemio/openctem/server/internal/infra/jira"
+	"github.com/openctemio/openctem/server/internal/infra/postgres"
+	"github.com/openctemio/openctem/server/internal/testdb"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/ticketlink"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // recordingApplier records the findings an inbound delivery would move.

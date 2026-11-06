@@ -6,12 +6,12 @@ package handler
 import (
 	"context"
 
-	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
-	easmapp "github.com/openctemio/openctem/api/internal/app/easm"
-	"github.com/openctemio/openctem/api/internal/app/scope"
-	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
-	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
-	"github.com/openctemio/openctem/api/pkg/domain/permission"
+	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
+	easmapp "github.com/openctemio/openctem/server/internal/app/easm"
+	"github.com/openctemio/openctem/server/internal/app/scope"
+	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
+	auditdom "github.com/openctemio/openctem/server/pkg/domain/audit"
+	"github.com/openctemio/openctem/server/pkg/domain/permission"
 )
 
 // confirmActor is the authenticated caller as the scope service sees it.

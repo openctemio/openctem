@@ -1199,12 +1199,12 @@ Phase 1 enabled by default. Phase 2 disabled by default — enable per environme
 |---|---|---|---|---|
 | **Schemas (CTIS)** | Document normalization rules in asset.json | `schemas/ctis/v1/asset.json` | Low | P1 |
 | **SDK-Go** | Add `NormalizeName()` helper shared by Agent + API | `sdk-go/pkg/ctis/normalize.go` (NEW) | Low | P1 |
-| **API - Domain** | Add `NormalizeName()` to entity constructor | `api/pkg/domain/asset/normalize.go` (NEW), `entity.go` | Medium | P1 |
-| **API - Ingest** | Apply normalization in `ProcessBatch()` + add IP correlation | `api/internal/app/ingest/processor_assets.go`, `correlator.go` (NEW) | High | P1 |
-| **API - Import** | Apply normalization in Nessus/CSV import | `api/internal/app/asset_import_service.go` | Low | P1 |
-| **API - Repository** | Add `FindByIPs()` batch query, update `GetByNames()` | `api/internal/infra/postgres/asset_repository.go` | Medium | P1 |
-| **API - Handler** | Normalize in asset create/update API | `api/internal/infra/http/handler/asset_handler.go` | Low | P1 |
-| **API - Migration** | Normalize existing data + `asset_merge_log` table | `api/migrations/000XXX_*.sql` (NEW, 2 files) | Medium | P1 |
+| **API - Domain** | Add `NormalizeName()` to entity constructor | `server/pkg/domain/asset/normalize.go` (NEW), `entity.go` | Medium | P1 |
+| **API - Ingest** | Apply normalization in `ProcessBatch()` + add IP correlation | `server/internal/app/ingest/processor_assets.go`, `correlator.go` (NEW) | High | P1 |
+| **API - Import** | Apply normalization in Nessus/CSV import | `server/internal/app/asset_import_service.go` | Low | P1 |
+| **API - Repository** | Add `FindByIPs()` batch query, update `GetByNames()` | `server/internal/infra/postgres/asset_repository.go` | Medium | P1 |
+| **API - Handler** | Normalize in asset create/update API | `server/internal/infra/http/handler/asset_handler.go` | Low | P1 |
+| **API - Migration** | Normalize existing data + `asset_merge_log` table | `server/migrations/000XXX_*.sql` (NEW, 2 files) | Medium | P1 |
 | **Agent** | Normalize names before sending CTIS report | `agent/internal/executor/recon.go` (subfinder, dnsx, naabu, httpx, katana parsers) | Medium | P2 |
 | **Agent** | Normalize in vulnscan asset creation | `agent/internal/executor/vulnscan.go` | Low | P2 |
 | **UI - Form** | Add normalization preview in asset creation form | `ui/src/features/assets/components/.../asset-form-dialog.tsx` | Low | P3 |
@@ -1249,7 +1249,7 @@ func NormalizeAssetName(assetType AssetType, name string) string { ... }
 
 **vulnscan.go** — Asset creation from scan results needs normalization
 
-#### 4. API — Ingest (`api/internal/app/ingest/`)
+#### 4. API — Ingest (`server/internal/app/ingest/`)
 
 The most critical changes. See Sections 4-5 of this RFC for full design.
 
@@ -1259,7 +1259,7 @@ BEFORE: getAssetName() → GetByNames() → create/merge
 AFTER:  getAssetName() → NormalizeName() → GetByNames() → correlate → create/merge
 ```
 
-#### 5. API — Handler (`api/internal/infra/http/handler/`)
+#### 5. API — Handler (`server/internal/infra/http/handler/`)
 
 Normalize in Create/Update asset API endpoints:
 ```go

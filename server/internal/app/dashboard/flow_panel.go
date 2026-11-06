@@ -3,9 +3,9 @@ package dashboard
 import (
 	"context"
 
-	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
-	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
-	domain "github.com/openctemio/openctem/api/pkg/domain/dashboard"
+	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
+	auditdom "github.com/openctemio/openctem/server/pkg/domain/audit"
+	domain "github.com/openctemio/openctem/server/pkg/domain/dashboard"
 )
 
 // FlowPanelResult is the outcome of offering the exposure flow panel.

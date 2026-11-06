@@ -11,7 +11,7 @@ import { EXPOSURE_EVENT_TYPE_LABELS } from '@/features/exposures/components/expo
 
 function apiEventTypes(): string[] {
   const src = readFileSync(
-    resolve(__dirname, '../../../../../api/pkg/domain/exposure/value_objects.go'),
+    resolve(__dirname, '../../../../../server/pkg/domain/exposure/value_objects.go'),
     'utf8'
   )
   return [...src.matchAll(/EventType[A-Za-z]+\s+EventType = "([a-z_]+)"/g)].map((m) => m[1])

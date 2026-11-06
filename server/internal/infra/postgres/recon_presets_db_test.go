@@ -7,7 +7,7 @@ import (
 
 	"github.com/lib/pq"
 
-	"github.com/openctemio/openctem/api/pkg/domain/stage"
+	"github.com/openctemio/openctem/server/pkg/domain/stage"
 )
 
 // Every step of an active system preset scan workflow can run on a shipped

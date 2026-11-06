@@ -1,16 +1,16 @@
 package handler
 
 // Duplicate candidates of a finding.
-// https://github.com/openctemio/openctem/blob/develop/api/docs/rfcs/RFC-121-bug-bounty-reports.md
+// https://github.com/openctemio/openctem/blob/develop/server/docs/rfcs/RFC-121-bug-bounty-reports.md
 
 import (
 	"encoding/json"
 	"net/http"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
-	"github.com/openctemio/openctem/api/pkg/apierror"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/server/pkg/apierror"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
 )
 
 // apierror.Error is the error body named in this handler's swagger @Failure

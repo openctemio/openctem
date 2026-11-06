@@ -10,15 +10,15 @@ import (
 	"fmt"
 	"net/url"
 
-	"github.com/openctemio/openctem/api/internal/app/finding"
-	savedviewapp "github.com/openctemio/openctem/api/internal/app/savedview"
-	"github.com/openctemio/openctem/api/pkg/domain/navpin"
-	"github.com/openctemio/openctem/api/pkg/domain/permission"
-	"github.com/openctemio/openctem/api/pkg/domain/savedview"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
-	"github.com/openctemio/openctem/api/pkg/filterspec"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/internal/app/finding"
+	savedviewapp "github.com/openctemio/openctem/server/internal/app/savedview"
+	"github.com/openctemio/openctem/server/pkg/domain/navpin"
+	"github.com/openctemio/openctem/server/pkg/domain/permission"
+	"github.com/openctemio/openctem/server/pkg/domain/savedview"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/pkg/filterspec"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // Views lists and reads the saved views a member can see.

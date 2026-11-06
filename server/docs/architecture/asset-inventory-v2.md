@@ -93,7 +93,7 @@ code keys on the class or on (type, sub_type), never on an alias.
 - Status: rules accepted 2026-10-03; implementation in the T1–T3 PRs of
   §6.3.8. This page moves the bullets to "shipped" as they land.
 
-**The registry.** `api/configs/asset-types.yaml` is the single
+**The registry.** `server/configs/asset-types.yaml` is the single
 definition. `make generate-asset-types` emits Go and TypeScript, and
 `GET /api/v1/asset-types` serves the same data to the web. Per type it
 declares:
@@ -152,7 +152,7 @@ with data scope applied at every hop.
 
 An asset's free-form `properties` follow one schema per type
 ([RFC-042 §6.3.9](../rfcs/RFC-042-asset-inventory-v2.md#639-the-property-schema-amendment-2026-10-07)),
-declared in `api/configs/asset-types.yaml`:
+declared in `server/configs/asset-types.yaml`:
 
 - `properties`: every key once, with `label`, `label_vi`, `format` (`ip`,
   `url`, `code`, `expiry`), `synonyms` and, when restricted, `classes`;
@@ -399,8 +399,8 @@ completed run covered. A gone service becomes `closed` and a gone asset
 | `content_releases` | New nuclei templates per content version | P4 |
 
 Every table that references `assets` must be added to
-`api/internal/infra/postgres/asset_merge_plan.go`.
-`api/tests/integration/asset_merge_coverage_test.go` fails otherwise.
+`server/internal/infra/postgres/asset_merge_plan.go`.
+`server/tests/integration/asset_merge_coverage_test.go` fails otherwise.
 
 ## OQL cheat sheet
 
@@ -420,7 +420,7 @@ source:nessus port:3389       restrict to one source's records
 ```
 
 - Juxtaposition means AND. `OR`, `NOT` and parentheses work as usual.
-- Fields come only from the registry in `api/internal/app/oql`.
+- Fields come only from the registry in `server/internal/app/oql`.
 - Values are always bound parameters.
 - The compiler always adds the tenant predicate and, for non-admin
   callers, the data-scope predicate.
@@ -608,7 +608,7 @@ In short, at 100k services per tenant:
 | Group-by page | ≤ 600 ms |
 | Dynamic group resolution at dispatch, 10k members | ≤ 2 s |
 
-The `api/tests/perf/inventory` fixtures and the `EXPLAIN` guard tests
+The `server/tests/perf/inventory` fixtures and the `EXPLAIN` guard tests
 hold these targets.
 
 ## Related assets

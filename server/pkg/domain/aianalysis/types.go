@@ -7,7 +7,7 @@ package aianalysis
 import (
 	"fmt"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // UseCase is one AI use case an organization turns on or off.

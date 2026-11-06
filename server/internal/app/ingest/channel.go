@@ -8,8 +8,8 @@ package ingest
 // so a sensor must never be able to choose its own label.
 
 import (
-	"github.com/openctemio/openctem/api/pkg/domain/sensor"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/pkg/domain/sensor"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
 )
 
 // principalSourceType is the report's channel, decided from who submitted

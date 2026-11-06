@@ -3,7 +3,7 @@ package postgres
 import (
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/app/adminconsole"
+	"github.com/openctemio/openctem/server/internal/app/adminconsole"
 )
 
 // The overview counts break-glass sign-ins by the action the console writes.

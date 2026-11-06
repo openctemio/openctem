@@ -1,5 +1,5 @@
 /**
- * Invitation links sent before RFC-041 (api/docs/rfcs/RFC-041-api-path-design.md)
+ * Invitation links sent before RFC-041 (server/docs/rfcs/RFC-041-api-path-design.md)
  * carry the token in the path: /invitations/{token}. The proxy answers them
  * with a 307 to /invitations#token={token} before any rendering, so the token
  * moves into the fragment (never sent to a server again) and the old URL is
