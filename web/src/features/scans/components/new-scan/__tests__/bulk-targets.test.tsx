@@ -6,7 +6,8 @@ import type { ApiScopeCheckResult } from '@/features/scope'
 import { BulkTargetsPanel } from '../bulk-targets-panel'
 import { TargetList } from '../target-list'
 import { PasteSource } from '../../target-picker/paste-source'
-import { parsePastedTargets } from '../../../lib/target-format'
+import { parsePastedTargets, replaceEntryInLines } from '../../../lib/target-format'
+import { InvalidTargetsNote } from '../invalid-targets-note'
 
 function PasteHarness({ initial = [] as string[] }) {
   const [lines, setLines] = useState<string[]>(initial)
@@ -42,7 +43,11 @@ describe('PasteSource', () => {
     expect(screen.getByText('2 entries will not be added')).toBeInTheDocument()
     const list = screen.getByTestId('paste-invalid-list')
     expect(within(list).getByText('10.0.0.0/8')).toBeInTheDocument()
-    expect(within(list).getByText(/larger than 65,536/)).toBeInTheDocument()
+    expect(
+      within(list).getByText(
+        /has 16,777,216 addresses; the most one target can hold is 65,536 \(\/16\)/
+      )
+    ).toBeInTheDocument()
     expect(
       within(list).getByText(/repositories are scanned from repository assets/)
     ).toBeInTheDocument()
@@ -211,5 +216,56 @@ describe('TargetList', () => {
     const items = within(rows).getAllByRole('listitem')
     expect(items.length).toBeLessThan(40)
     expect(items[0]).toHaveAttribute('aria-setsize', '1000')
+  })
+})
+
+describe('a range wider than one target', () => {
+  function StepHarness({ initial }: { initial: string[] }) {
+    const [lines, setLines] = useState<string[]>(initial)
+    const pasted = parsePastedTargets(lines)
+    return (
+      <>
+        <InvalidTargetsNote
+          entries={pasted.invalid}
+          onSplit={(entry, pieces) =>
+            setLines(replaceEntryInLines(lines, entry.input, pieces.join(', ')))
+          }
+        />
+        <output data-testid="lines">{lines.join('|')}</output>
+      </>
+    )
+  }
+
+  it('says why inline and splits it into /16 ranges in one click', async () => {
+    render(<StepHarness initial={['10.0.0.0/14']} />)
+    const note = screen.getByTestId('invalid-targets')
+    expect(note).toHaveTextContent(
+      '10.0.0.0/14 has 262,144 addresses; the most one target can hold is 65,536 (/16)'
+    )
+    expect(note).not.toHaveTextContent('under Paste')
+    await userEvent.click(screen.getByRole('button', { name: 'Split into 4 /16 ranges' }))
+    expect(screen.getByTestId('lines')).toHaveTextContent(
+      '10.0.0.0/16, 10.1.0.0/16, 10.2.0.0/16, 10.3.0.0/16'
+    )
+    expect(screen.queryByTestId('invalid-targets')).toBeNull()
+  })
+
+  it('offers 256 /16 ranges for a /8, and no split for a /7', () => {
+    render(<StepHarness initial={['10.0.0.0/8', '10.0.0.0/7']} />)
+    expect(screen.getByRole('button', { name: 'Split into 256 /16 ranges' })).toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: /^Split into/ })).toHaveLength(1)
+  })
+
+  it('names three entries and counts the rest', () => {
+    render(<StepHarness initial={['a@b', 'c@d', 'e@f', 'g@h', 'i@j']} />)
+    expect(screen.getByTestId('invalid-targets')).toHaveTextContent(
+      '2 more typed lines are not targets.'
+    )
+  })
+
+  it('splits from the paste list too', async () => {
+    render(<PasteHarness initial={['10.0.0.0/15']} />)
+    await userEvent.click(screen.getByRole('button', { name: 'Split into 2 /16 ranges' }))
+    expect(screen.getByTestId('lines')).toHaveTextContent('10.0.0.0/16, 10.1.0.0/16')
   })
 })
