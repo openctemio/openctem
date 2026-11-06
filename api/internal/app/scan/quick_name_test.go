@@ -13,13 +13,13 @@ import (
 func TestQuickScanName_UniqueWithinASecond(t *testing.T) {
 	now := time.Date(2026, 10, 5, 10, 15, 30, 0, time.UTC)
 	seen := map[string]bool{}
-	for range 1000 {
+	for range 20000 {
 		n := quickScanName(now, shared.NewID())
 		if seen[n] {
 			t.Fatalf("duplicate quick scan name %q", n)
 		}
 		seen[n] = true
-		if !regexp.MustCompile(`^Quick Scan - 20261005-101530-[0-9a-f]{8}$`).MatchString(n) {
+		if !regexp.MustCompile(`^Quick Scan - 20261005-101530-[0-9a-f]{12}$`).MatchString(n) {
 			t.Fatalf("name %q", n)
 		}
 	}
