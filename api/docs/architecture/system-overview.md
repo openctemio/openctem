@@ -293,6 +293,69 @@ flowchart TB
   CELL -.-> CELL2
 ```
 
+## System 1 and System 2
+
+Status: the frame is a reading aid. The two bridges described below are **planned**.
+
+The machine works in two modes. **System 1** is fast and deterministic: fixed rules and reflexes that handle the common case the same way every time. **System 2** is slow and deliberate: a planner with the full picture, an AI agent, or a person, for cases that are novel, ambiguous or high risk.
+
+### What runs as System 1 today (shipped)
+
+- The scope gate and the active-probe gate: one answer to "may this be probed".
+- Fingerprinting and deduplication of findings at ingest.
+- Result binding and the sensor-result quarantine, including auto-release of held results under fixed rules.
+- SLA escalation and KEV escalation.
+- Automations on events, and closure modes that auto-close only where the coverage proof allows it.
+- Precomputed dashboard facts.
+- The sensor's own reflexes: local policy, the egress forwarder and the tool sandbox.
+
+### What runs as System 2
+
+- The coverage planner and the scan planner, which choose what to scan and when (shipped).
+- AI agents that suggest or apply triage under organization consent (partly shipped; see [AI triage](ai-triage.md)).
+- People who approve scope, accept risk, mark false positives and change priority rules (shipped).
+
+### The invariant
+
+Everything System 2 proposes still passes the System 1 gates. A planner cannot start a scan outside scope, an AI agent cannot close a finding outside the closure mode, and a person's approval is recorded in the audit trail like any other decision. The brain proposes and the rules dispose. Nothing System 2 does skips the gates.
+
+### The two bridges (planned)
+
+- **Escalation, System 1 to System 2.** When a rule cannot decide, it hands the case up through one shared escalation record (reason, subject, target, state). Triggers: low confidence, conflicting sources, high impact (production or crown-jewel assets, lowering a security attribute, bulk close), novelty (a new CVE matching the inventory, an unknown asset, an anomalous sensor), and a rule lacking the authority to act (an intrusive scan needs approval). Today these cases are handled by separate, unconnected mechanisms.
+- **Compile-down, System 2 to System 1.** Repeated human or AI decisions produce **rule suggestions**. A person approves each one, and the resulting rule is versioned, audited and can be switched off. Examples: the same false-positive template accepted five times suggests a suppression rule; an AI suggestion type accepted more than 95 percent of the time becomes a deterministic rule.
+
+Planned metrics: the share of cases handled by System 1, the escalation rate, the suggestion acceptance rate and the number of rules compiled.
+
+```mermaid
+flowchart LR
+  classDef planned stroke-dasharray: 5 5
+  IN["Event: new finding, new asset, scan result, sensor report"]
+  subgraph S1["System 1: fast path (rules and reflexes)"]
+    GATES["Gates: scope, active-probe, closure mode, quarantine, local policy"]
+    RULES["Rules: dedup, SLA and KEV escalation, automations, auto-release"]
+  end
+  DONE["Handled: recorded, audited, notified"]
+  ESC["Escalation record: reason, subject, target, state (planned)"]:::planned
+  subgraph S2["System 2: slow path (judgment)"]
+    PLAN["Planner"]
+    AI["AI agent"]
+    PEOPLE["People: approve, investigate"]
+  end
+  SUG["Rule suggestion, a person approves (planned)"]:::planned
+  IN --> RULES --> GATES --> DONE
+  RULES -.->|"cannot decide (planned)"| ESC
+  ESC -.-> PLAN
+  ESC -.-> AI
+  ESC -.-> PEOPLE
+  PLAN -->|"decision goes back through the gates"| GATES
+  AI -->|"suggestion goes back through the gates"| GATES
+  PEOPLE -->|"approval goes back through the gates"| GATES
+  PLAN -.->|"repeated decisions (planned)"| SUG
+  AI -.-> SUG
+  PEOPLE -.-> SUG
+  SUG -.->|"approved rule, versioned and audited"| RULES
+```
+
 ## Related pages
 
 [Architecture overview](overview.md), [documentation index](../README.md).

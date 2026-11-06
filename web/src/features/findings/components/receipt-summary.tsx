@@ -12,6 +12,7 @@ import Link from '@/components/link'
 import { Skeleton } from '@/components/ui/skeleton'
 import { RelativeTime } from '@/features/shared/components/relative-time'
 import { DetailSection } from '@/features/shared/components/detail-sheet'
+import { KeyValueList } from '@/features/shared/components/text-layout'
 import { cn } from '@/lib/utils'
 import {
   useFindingReceipts,
@@ -118,6 +119,7 @@ export function ReceiptSummary({
           />
         </div>
       )}
+      <ReceiptOutcomes outcomes={receipt.outcomes} />
       <p className="text-muted-foreground text-xs">
         {running
           ? t(
@@ -179,6 +181,68 @@ export function ReceiptSummary({
 }
 
 /** The latest uploads of the organization (or, without the organization view, yours). */
+/** Outcome codes the API sends (ingestreceipt.AllOutcomes), in display order. */
+const OUTCOME_CODES = [
+  'merged',
+  'exposure',
+  'source_mitigated',
+  'unresolved_ref',
+  'out_of_contract',
+  'reserved_tool',
+  'split',
+] as const
+
+function outcomeLabel(t: T, code: (typeof OUTCOME_CODES)[number]): string {
+  switch (code) {
+    case 'merged':
+      return t('findings.receipts.outcome.merged', 'Repeats merged')
+    case 'exposure':
+      return t('findings.receipts.outcome.exposure', 'Filed as exposures')
+    case 'source_mitigated':
+      return t('findings.receipts.outcome.source_mitigated', 'Mitigated at the source')
+    case 'unresolved_ref':
+      return t('findings.receipts.outcome.unresolved_ref', 'Named no asset, refused')
+    case 'out_of_contract':
+      return t(
+        'findings.receipts.outcome.out_of_contract',
+        "Held for review, outside the tool's contract"
+      )
+    case 'reserved_tool':
+      return t('findings.receipts.outcome.reserved_tool', 'Refused, reserved tool name')
+    case 'split':
+      return t('findings.receipts.outcome.split', 'Added by splitting findings with several CVEs')
+  }
+}
+
+/**
+ * Where the received findings went beyond the counts above, so the received
+ * figure always reconciles (research 436). Hidden when there is nothing to say.
+ */
+export function ReceiptOutcomes({ outcomes }: { outcomes?: Record<string, number> }) {
+  const { t } = useTranslation()
+  const rows = OUTCOME_CODES.filter((code) => (outcomes?.[code] ?? 0) > 0)
+  if (rows.length === 0) return null
+  return (
+    <div className="space-y-1" data-testid="receipt-outcomes">
+      <p className="text-muted-foreground text-xs font-medium">
+        {t('findings.receipts.outcomesTitle', 'Where the other findings went')}
+      </p>
+      <KeyValueList
+        size="meta"
+        items={rows.map((code) => ({
+          key: code,
+          label: outcomeLabel(t, code),
+          value: (
+            <span className="tabular-nums" data-testid={`receipt-outcome-${code}`}>
+              {outcomes?.[code] ?? 0}
+            </span>
+          ),
+        }))}
+      />
+    </div>
+  )
+}
+
 export function RecentImports() {
   const { t } = useTranslation()
   const { data, isLoading, error } = useReceipts({ sourceKind: 'upload', perPage: 5 })
