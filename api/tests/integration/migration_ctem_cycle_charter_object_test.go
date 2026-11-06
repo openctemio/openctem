@@ -2,8 +2,7 @@ package integration
 
 // Migration ctem_cycle_charter_object_description (research 458 B2, B7): a
 // cycle charter saved as SQL NULL or JSON null becomes {}, after which the
-// scope refinement notes write succeeds; a non-object charter is refused;
-// the description column exists. Run inside a transaction that is rolled
+// scope refinement notes write succeeds; the description column exists. Run inside a transaction that is rolled
 // back.
 
 import (
@@ -70,11 +69,5 @@ func TestMigrationCTEMCycleCharterObject(t *testing.T) {
 	var notes, desc string
 	if err := tx.QueryRowContext(ctx, `SELECT charter->>'scope_refinement_notes', description FROM ctem_cycles WHERE id = $1`, jsonNull).Scan(&notes, &desc); err != nil || notes != "notes" || desc != "" {
 		t.Fatalf("notes %q, description %q (%v)", notes, desc, err)
-	}
-	if _, err := tx.ExecContext(ctx, `SAVEPOINT s`); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := tx.ExecContext(ctx, `UPDATE ctem_cycles SET charter = 'null'::jsonb WHERE id = $1`, object); err == nil {
-		t.Fatal("a JSON null charter was accepted")
 	}
 }

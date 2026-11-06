@@ -279,3 +279,29 @@ func TestCTEMCycleHandler_CloseRefusedWhenCoverageCheckFails(t *testing.T) {
 		t.Fatalf("override of an enforced breach = %d %s", w.Code, w.Body.String())
 	}
 }
+
+// Cycles whose charter is SQL NULL or JSON null (written before this fix, or
+// by the previous release during a rolling deploy) take refinement notes.
+func TestCTEMCycleHandler_RefinementNotesOnNullCharter(t *testing.T) {
+	db := openCycleDB(t)
+	ctx := context.Background()
+	tenantID := seedHandlerTenant(ctx, t, db)
+	h := NewCTEMCycleHandler(db, nil, logger.NewNop())
+	for _, charter := range []string{"NULL", "'null'::jsonb"} {
+		var id string
+		if err := db.QueryRowContext(ctx, `INSERT INTO ctem_cycles (tenant_id, name, status, created_by, charter)
+			VALUES ($1, 'n', 'review', gen_random_uuid(), `+charter+`) RETURNING id`, tenantID).Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		w := httptest.NewRecorder()
+		h.UpdateScopeRefinement(w, cycleBodyRequest(http.MethodPost, "/api/v1/ctem-cycles/"+id+"/scope-refinement",
+			tenantID, id, map[string]any{"scope_refinement_notes": "keep the VPN out"}))
+		if w.Code != http.StatusOK {
+			t.Fatalf("notes on a %s charter = %d %s", charter, w.Code, w.Body.String())
+		}
+		var notes string
+		if err := db.QueryRowContext(ctx, `SELECT charter->>'scope_refinement_notes' FROM ctem_cycles WHERE id = $1`, id).Scan(&notes); err != nil || notes != "keep the VPN out" {
+			t.Fatalf("stored notes on a %s charter = %q (%v)", charter, notes, err)
+		}
+	}
+}

@@ -68,7 +68,7 @@ Every cycle write either succeeds or tells the caller; none is dropped.
 
 | Write | Behaviour |
 |---|---|
-| Create, update | `description` (at most 2000 characters) is stored; an update that omits it keeps the stored one. A missing charter is stored as `{}`: the column is `NOT NULL` with a CHECK that it is a JSON object. |
+| Create, update | `description` (at most 2000 characters) is stored; an update that omits it keeps the stored one. A missing charter is stored as `{}` (never JSON null); the migration turned existing null charters into `{}`. |
 | Activate | The status change, the `activated_at` stamp (first activation only) and the scope snapshot are one transaction. A failed snapshot rolls everything back: the cycle stays in planning and the caller gets a 500 that says so. |
 | Scope refinement notes | Written into the charter object (allowed in review and closed). |
 | Close | The validation coverage check must run. When it cannot, the close is refused with 409 `COVERAGE_CHECK_FAILED`. The caller may retry with `{"override_coverage_check": true, "override_reason": "..."}` (10 to 1000 characters): the override is written to the audit log (`ctem_cycle.close_overridden`, high severity, with the reason) before the cycle closes, and refused with 503 when it cannot be recorded. An override never lifts a coverage SLO breach the organization enforces (`enforce_coverage_slo`): that stays a 400. |
