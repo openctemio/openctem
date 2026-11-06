@@ -1556,6 +1556,46 @@ it: [sensor-transport-v3.md](sensor-transport-v3.md). One proto
 (`openctem.sensor.v3.SensorService`) whose RPCs map one to one onto the v2
 resources below and are served through the same v2 handler chain; v2 stays.
 
+## Tenant isolation of jobs
+
+A job (command) carries targets, scope, a signed statement, task-secret
+references and templates, so a sensor, member or token of one organization
+must never claim, read, change or learn of another organization's jobs.
+
+- **Who the caller is.** A sensor's tenant comes from its key: the signed
+  request's key row, the bearer key's hash, or (protocol v3) the client
+  certificate's key, which must match the certificate's tenant and sensor.
+  No sensor route reads a tenant or sensor id from the request. A relayed
+  request must carry the credential of the sensor its relay route names
+  (`X-Relay-Sensor`), for a signed request and a bearer key alike.
+- **Claim.** The poll, claim-N and claim by id select `tenant_id = <the
+  sensor's tenant>`, exclude shared jobs (`is_platform_job`), and apply the
+  zone, tool, refusal and clone predicates bound to the claiming sensor. A
+  shared sensor (scope `instance`, no tenant; the database enforces
+  `(scope = 'instance') = (tenant_id IS NULL)`) claims only shared jobs,
+  only through the shared claim, and only for organizations allowed to use
+  shared sensors.
+- **Command routes** (start, complete, fail and refusal, release, logs,
+  egress report, task secrets, bound results and commit). An organization
+  sensor's command is read by `(tenant, id)` and must be held by that
+  sensor; a shared sensor's command must be a shared job it holds, under
+  the lease epoch it states, and its tenant is read from the command row.
+  Another organization's command, another sensor's command and an unknown
+  id all get the same `404 command-not-found`, so a known (time-ordered)
+  command id gives an attacker nothing.
+- **Reports.** Report ids are keyed `(tenant, sensor, report_id)`: another
+  sensor's report id reads as `report-not-found`, and reusing it makes the
+  caller's own report.
+- **Hints.** The heartbeat's pending count, cancel and stop lists, the
+  suppression rules and the fingerprint lookups are scoped to the sensor's
+  tenant (and its reach); naming another organization's command in the
+  running list is answered like naming an unknown id.
+
+The DB-backed tests that prove each of these run as a required CI gate,
+by name (`.github/scripts/cross-tenant-gate.sh`, API CI "Security Gates
+(cross-tenant job isolation)"); a renamed, removed or skipped test fails the
+build.
+
 ## Protocol v2 control plane
 
 [RFC-029](../rfcs/RFC-029-sensor-protocol-v2-and-sdk-stability.md). Every
