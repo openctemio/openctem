@@ -1391,6 +1391,12 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 			// switch, the daily request budget and the per-target program
 			// and shared-edge refusals (docs/architecture/web-discovery.md).
 			svc.AssetCoverage.SetPathDiscovery(svc.PathDiscovery)
+			// No scope entry pauses coverage only when unclassified assets
+			// are not scanned (RFC-054 §16): otherwise the gate decides per
+			// target, low-impact for what no entry covers.
+			if svc.ActiveGate != nil {
+				svc.AssetCoverage.EnableUnclassified(svc.ActiveGate.UnclassifiedMode)
+			}
 			// Gaps, output drops and repeated failures alert the tenant's
 			// administrators (in-app and integrations) at most once a day.
 			svc.AssetCoverage.EnableAlerts(repos.AssetCoverage, repos.MemberLifecycle, svc.Notification, svc.Outbox)

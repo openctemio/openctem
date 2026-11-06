@@ -287,6 +287,17 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	platformCA := newPlatformCASource(cfg, log)
 	sensorHandler := newSensorHandlerWithTemplates(svc.Sensor, cfg, v, log)
 	sensorHandler.SetPlatformCA(platformCA)
+	if svc.SensorPairing != nil && platformCA.Configured() {
+		// The signed pairing grant names the platform's TLS roots, so a
+		// sensor refuses a pairing connection that verified another one.
+		svc.SensorPairing.SetTLSAnchors(func() []string {
+			ca, err := platformCA.Get()
+			if err != nil {
+				return nil
+			}
+			return ca.TLSAnchors(time.Now())
+		})
+	}
 	sensorHandler.SetContentPolicySource(svc.SensorContent)
 	sensorHandler.SetPolicyPrefill(&handler.SensorPolicyPrefill{
 		Zones: repos.ScanZone, Targets: repos.ScopeTarget, Exclusions: repos.ScopeExcl, Log: log,

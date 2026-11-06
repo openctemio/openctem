@@ -36,6 +36,8 @@ The asset must be in the caller's data scope (404 otherwise); the findings count
    - the caller may decide alone (level allows it, they hold `findings:approve`, they do not own the asset): applied, audited as `asset_risk.lowered` at High severity with the reason and the impact;
    - otherwise the lowered fields are **not applied** and a pending request is stored (202, `pending_request` on the asset). The rest of the edit (name, description, a raised value) is applied. The people who may approve are told in-app. With no eligible approver the edit is refused (409) rather than left waiting for nobody.
 
+`PATCH /assets/{id}/crown-jewel`: `business_impact_score` and `business_impact_notes` are optional; an omitted one keeps the stored value, so a removal sends only `{"is_crown_jewel": false}` (plus `reason` when required). When the removal is held (202), nothing on the asset changes, the business impact included, until the request is approved; approval removes only the flag. The console's removal dialog previews the impact, asks for the reason when an open P0/P1 would drop, shows the API's error, and says the removal is pending approval on a 202.
+
 One request is pending per asset (409 for a second). A request waits for the policy's decision window (7 days when it names none) and then expires.
 
 ## Requests
