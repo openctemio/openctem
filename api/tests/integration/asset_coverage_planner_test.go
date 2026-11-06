@@ -294,7 +294,9 @@ func TestAssetCoverage_NeverOpensTargetDoesNotStallCapability(t *testing.T) {
 // task that failed whole fails its targets with its error, a target the
 // sensor called done but reported unreached is paused as unreachable, the
 // run's own unfinished
-// targets fail, and a target no task carried fails as not dispatched.
+// targets fail, and a target no task carried, in a run whose tasks did run,
+// fails as not scanned (a coverage gap; not_dispatched is for a run that
+// planned no task at all).
 func TestAssetCoverage_SettlesPerTargetAcrossSplitTasks(t *testing.T) {
 	g := newCovRig(t)
 	ctx := context.Background()
@@ -344,7 +346,7 @@ func TestAssetCoverage_SettlesPerTargetAcrossSplitTasks(t *testing.T) {
 	task("failed", "sensor lost", []string{"f.split.test"}, "")
 	// An old sensor: completed without outcomes covers its targets.
 	task("completed", "", []string{"g.split.test"}, `{"status": "completed"}`)
-	// h: only in the run's unfinished targets; i: in no task.
+	// h: only in the run's unfinished targets; i: in no task (the run's tasks ran).
 
 	f := &fakeStarter{t: t, calls: map[string][]string{}, runs: map[string]shared.ID{}, busy: map[string]bool{}}
 	f.execRun = func(shared.ID) {}
@@ -356,7 +358,7 @@ func TestAssetCoverage_SettlesPerTargetAcrossSplitTasks(t *testing.T) {
 		// probe.http expects a web origin; none exists here, so covered pairs
 		// are covered with no output.
 		"a": "covered/no_output", "b": "covered/no_output", "c": "paused/unreachable", "d": "paused/timeout",
-		"e": "blocked/", "f": "failed/failed", "g": "covered/no_output", "h": "failed/unfinished", "i": "failed/not_dispatched",
+		"e": "blocked/", "f": "failed/failed", "g": "covered/no_output", "h": "failed/unfinished", "i": "failed/not_scanned",
 	}
 	for n, w := range want {
 		rows, _ := g.repo.ListForAsset(ctx, a.tenant, ids[n])

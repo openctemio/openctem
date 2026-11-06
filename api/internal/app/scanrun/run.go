@@ -365,6 +365,17 @@ func (s *Service) scheduleRunnableSteps(ctx context.Context, run *scanrun.Run, t
 			continue
 		}
 
+		// A step whose organization switch is off (screenshots) is skipped:
+		// no job is created, so the sensor never takes the picture.
+		if reason := s.stepGateReason(ctx, run, step); reason != "" {
+			stepRun.Skip(reason)
+			if err := s.stepRunRepo.Update(ctx, stepRun); err != nil {
+				s.logger.Error("failed to skip a step its organization switch holds off", "step_key", step.StepKey, "error", err)
+			}
+			settledInline = true
+			continue
+		}
+
 		// Queue the step - create a command that sensors can poll
 		err := s.queueStepForExecutionWithSettings(ctx, run, step, stepRun, template.Settings, predecessorsOf(template, step),
 			queueOpts{splitForStream: splitForStream && feedsStream(template, step)})
@@ -502,7 +513,7 @@ func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *sc
 	if kerr != nil {
 		return fmt.Errorf("step %s: %w", step.StepKey, kerr)
 	}
-	stepTargets = kindGated
+	stepTargets = collapseRegistrable(resolved, kindGated, run.Context)
 	if stepTargets != nil && stepTargets.Refused > 0 {
 		s.logger.Info("step targets of a kind the stage does not take were left out",
 			"run_id", run.ID.String(), "step_key", logger.SanitizeValue(step.StepKey), "refused", stepTargets.Refused, "reason", logger.SanitizeValue(stepTargets.Reason))
@@ -2477,6 +2488,38 @@ func checkStepIntensity(run *scanrun.Run, step *scanworkflow.Step, resolved scan
 			shared.ErrValidation, resolved.Name)
 	}
 	return nil
+}
+
+// collapseRegistrable gives a registry-level stage (a registration lookup)
+// the registrable domain of each of its seed names, once: a registry has no
+// record of a subdomain, so planning every name of a scan scope gives most
+// of them an empty answer. A seed that is no domain name (an address) stays
+// as it is for the kind gate to have decided; the order of first appearance
+// is kept. A step with no explicit target list is left as is.
+func collapseRegistrable(resolved scanapp.StepTool, st *scanapp.StepTargets, runContext map[string]any) *scanapp.StepTargets {
+	if !resolved.HasStage || !stage.RegistryLevel(resolved.Stage.Key) {
+		return st
+	}
+	targets := chunkTargets(st, runContext)
+	if targets == nil {
+		return st
+	}
+	seen := make(map[string]bool, len(targets))
+	kept := make([]string, 0, len(targets))
+	for _, t := range targets {
+		if r, ok := stage.RegistrableDomain(t); ok {
+			t = r
+		}
+		if !seen[t] {
+			seen[t] = true
+			kept = append(kept, t)
+		}
+	}
+	out := &scanapp.StepTargets{Targets: kept}
+	if st != nil {
+		out.Refused, out.Reason = st.Refused, st.Reason
+	}
+	return out
 }
 
 // gateStepKinds keeps the step's targets whose kind its stage takes
