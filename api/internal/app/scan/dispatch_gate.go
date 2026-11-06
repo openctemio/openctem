@@ -298,7 +298,11 @@ func (s *Service) ResolveDispatchTargets(ctx context.Context, in DispatchTargets
 			return nil, err
 		}
 		for _, r := range rejected {
-			out.Refused = append(out.Refused, RefusedTarget{Target: r.Target, Reason: r.Reason, Code: scopedom.RefusalInvalidTarget})
+			code := scopedom.RefusalInvalidTarget
+			if r.Code != "" {
+				code = r.Code
+			}
+			out.Refused = append(out.Refused, RefusedTarget{Target: r.Target, Reason: r.Reason, Code: code})
 		}
 	}
 	ok := make(map[string]bool, len(accepted))
