@@ -217,7 +217,7 @@
   "findings.closureReason.inline_mitigations_already_exist": "Đã có biện pháp giảm thiểu",
   "findings.closureReason.mitigated": "Đã giảm thiểu bằng biện pháp kiểm soát",
   "findings.closureReason.no_fix_available": "Chưa có bản sửa lỗi",
-  "findings.closureReason.obsolete_asset": "Tài sản đã ngừng sử dụng",
+  "findings.closureReason.obsolete_asset": "Tài sản không còn (không phải đã khắc phục)",
   "findings.closureReason.obsolete_rule": "Quy tắc kiểm tra đã thay đổi",
   "findings.closureReason.obsolete_source": "Nguồn đã bị gỡ bỏ",
   "findings.closureReason.out_of_scope": "Tài sản ngoài phạm vi",
