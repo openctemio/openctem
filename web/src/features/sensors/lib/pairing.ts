@@ -123,9 +123,6 @@ export const TRUSTABLE_AT_APPROVAL = ['internal-network-scanner', 'easm-external
 /** Profiles whose grant scans zone networks (the approval may set them up). */
 export const ZONE_PROFILES = ['internal-network-scanner', 'authenticated-scanner', 'scan-connector']
 
-/** Profiles for which "Trusted" starts ticked (research/466 D3). */
-export const TRUSTED_BY_DEFAULT = ['internal-network-scanner', 'easm-external']
-
 /** The scope entry type of one network the approver stated. */
 export function scopeTargetTypeOf(range: string): 'cidr' | 'ip_range' | 'ip_address' {
   if (range.includes('-')) return 'ip_range'

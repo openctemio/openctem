@@ -67,7 +67,6 @@ import {
   PAIRING_CODE_LENGTH,
   PARAMETERISED_PROFILES,
   TRUSTABLE_AT_APPROVAL,
-  TRUSTED_BY_DEFAULT,
   ZONE_PROFILES,
   formatCountdown,
   formatRequestAge,
@@ -618,8 +617,8 @@ function ApprovalForm({
   const [integration, setIntegration] = useState('')
   const [ranges, setRanges] = useState((defaultRanges ?? []).join(', '))
   const [alsoScope, setAlsoScope] = useState(true)
-  // null: the profile's default (ticked for internal and external scanners).
-  const [trustChoice, setTrustChoice] = useState<boolean | null>(null)
+  // Trusting a sensor widens what it may do: an explicit choice, never ticked by default.
+  const [trustChoice, setTrustChoice] = useState(false)
   const [secret, setSecret] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState<'approve' | 'reject' | null>(null)
@@ -634,7 +633,7 @@ function ApprovalForm({
   const showScope = rangeList.length > 0 && canWriteScope
   const showTrust =
     !repair && !!view.trust_eligible && canWiden && TRUSTABLE_AT_APPROVAL.includes(profile)
-  const trusted = showTrust && (trustChoice ?? TRUSTED_BY_DEFAULT.includes(profile))
+  const trusted = showTrust && trustChoice
 
   const needsSecret = stepUp !== 'fresh_sign_in'
   const integrationOk = validIntegrationName(integration)
