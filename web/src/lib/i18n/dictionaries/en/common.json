@@ -178,6 +178,7 @@
   "common.table.noResults": "No results found",
   "common.table.pageOf": "Page {page} of {pages}",
   "common.table.previousPage": "Previous page",
+  "common.table.refreshing": "Refreshing",
   "common.table.resultsNoun": "results",
   "common.table.rowsPerPage": "Rows per page",
   "common.table.scrollRegion": "Table, scrollable",
