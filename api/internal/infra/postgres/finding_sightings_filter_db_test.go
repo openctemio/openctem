@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/openctemio/openctem/api/internal/testdb"
 	"github.com/openctemio/openctem/api/pkg/domain/ingestreceipt"
 	"github.com/openctemio/openctem/api/pkg/domain/permission"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -185,8 +186,12 @@ func TestFindingSightings_FiltersUseIndexes_DB(t *testing.T) {
 	f.record(&ingestreceipt.Delta{TenantID: f.tenant, Source: ingestreceipt.Source{Kind: ingestreceipt.SourceCommand, CommandID: &c},
 		Tool: "nuclei", Instance: ingestreceipt.Instance{Kind: ingestreceipt.InstanceSensor, ID: sensor.String()},
 		Reports: 1, Created: []shared.ID{mine}})
+	// ANALYZE skips a table the connection does not own, and the app role owns
+	// nothing: the owner runs it, or the planner works from whatever autovacuum
+	// last saw, which made the plan depend on the other tests of a group.
+	owner := testdb.OpenMigrator(t)
 	for _, tbl := range []string{"findings", "finding_sightings", "finding_ingest_actions", "ingest_receipts"} {
-		if _, err := f.db.ExecContext(f.ctx, `ANALYZE `+tbl); err != nil {
+		if _, err := owner.ExecContext(f.ctx, `ANALYZE `+tbl); err != nil {
 			t.Fatal(err)
 		}
 	}
