@@ -277,6 +277,39 @@ func TestThreatAlerts_DB(t *testing.T) {
 	if err != nil || total != 1 || items[0].VulnID != "CVE-2098-0001" || items[0].Confirmed != 1 || items[0].InternetFacing != 0 || sum.InternetFacing != 0 {
 		t.Fatalf("scoped list: %d %+v %+v %v", total, items, sum, err)
 	}
+	// The crown jewel (a1, critical) is outside the member's scope: they see
+	// no critical asset; the whole organization sees one.
+	if items[0].Critical != 0 {
+		t.Fatalf("scoped list counts a critical asset out of scope: %+v", items[0])
+	}
+	all, _, allSum, err := svc.List(ctx, A, nil, threatalert.ListFilter{Page: 1, PerPage: 50})
+	if err != nil {
+		t.Fatal(err)
+	}
+	newOpen, kevAll := 0, 0
+	for _, it := range all {
+		if it.VulnID == "CVE-2098-0001" && it.Critical != 1 {
+			t.Fatalf("unscoped list misses the critical asset: %+v", it)
+		}
+		if it.State == threatalert.StateNew {
+			newOpen++
+		}
+		if it.InKEV {
+			kevAll++
+		}
+	}
+	if allSum.New != newOpen {
+		t.Fatalf("summary new = %d, list has %d new alerts", allSum.New, newOpen)
+	}
+	kevItems, kevTotal, _, err := svc.List(ctx, A, nil, threatalert.ListFilter{KEVOnly: true, Page: 1, PerPage: 50})
+	if err != nil || kevTotal != kevAll || kevAll == 0 {
+		t.Fatalf("kev filter: %d of %d (%v)", kevTotal, kevAll, err)
+	}
+	for _, it := range kevItems {
+		if !it.InKEV {
+			t.Fatalf("kev filter returned a non-KEV alert: %+v", it)
+		}
+	}
 	d, err := svc.Get(ctx, A, scope, alertA.ID)
 	if err != nil || len(d.Assets) != 1 || d.Assets[0].AssetID != a2 || d.AllInScope {
 		t.Fatalf("scoped detail: %+v %v", d, err)

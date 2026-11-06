@@ -3,7 +3,7 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { SWRConfig } from 'swr'
 import { NotAffectedDialog } from '../components/not-affected-dialog'
-import { AlertActions, OutOfScopeHint } from '../components/alert-actions'
+import { AlertActions, OutOfScopeHint, scanCandidates } from '../components/alert-actions'
 import { splitTaskable, taskTitle } from '../types'
 import { asset, detail } from './fixtures'
 
@@ -146,5 +146,34 @@ describe('create remediation task', () => {
     )
     expect(screen.getByRole('button', { name: /Create remediation task/ })).toBeDisabled()
     expect(api.post).not.toHaveBeenCalled()
+  })
+})
+
+describe('scan affected assets', () => {
+  it('offers only domains, subdomains and IP addresses, once each', () => {
+    const d = detail({
+      assets: [
+        asset({ asset_id: 'd1', asset_name: 'www.example.com', asset_type: 'domain' }),
+        asset({
+          asset_id: 'd1',
+          asset_name: 'www.example.com',
+          asset_type: 'domain',
+          product: 'other',
+        }),
+        asset({ asset_id: 'i1', asset_name: '192.0.2.1', asset_type: 'ip_address' }),
+        asset({ asset_id: 'r1', asset_name: 'org/repo', asset_type: 'repository' }),
+      ],
+    })
+    expect(scanCandidates(d).map((c) => c.id)).toEqual(['d1', 'i1'])
+  })
+
+  it('shows the scan button disabled with a reason when nothing can be scanned', () => {
+    wrap(<AlertActions alert={detail({ assets: [asset({ asset_type: 'host' })] })} />)
+    const btn = screen.getByRole('button', { name: /Scan affected assets/ })
+    expect(btn).toBeDisabled()
+    expect(btn).toHaveAttribute(
+      'title',
+      'No affected asset is a domain or IP address that can be scanned.'
+    )
   })
 })
