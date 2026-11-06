@@ -253,9 +253,9 @@ func (s *Service) advanceStreams(ctx context.Context, run *scanrun.Run, template
 			continue
 		}
 		// A step its condition, the scan's intensity or the run's depth
-		// skips is left to the barrier pass, which records the skip.
+		// (or an organization switch) skips is left to the barrier pass, which records the skip.
 		if !s.evaluateCondition(ctx, step, run, template) || scanapp.IntensitySkipReason(run, step) != "" || depthSkipReason(run, step) != "" ||
-			s.pathDiscoverySkipReason(ctx, run, step) != "" {
+			s.pathDiscoverySkipReason(ctx, run, step) != "" || s.stepGateReason(ctx, run, step) != "" {
 			continue
 		}
 		pass.handled[step.StepKey] = true

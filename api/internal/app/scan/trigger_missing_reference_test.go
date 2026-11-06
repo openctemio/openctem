@@ -14,12 +14,12 @@ import (
 )
 
 // A capability step whose fallback lookup answers not-found (no tool has
-// the capability: capture.screenshot, detect.services) is NO_MATCHING_TOOL,
+// the capability: fingerprint.tech, detect.services) is NO_MATCHING_TOOL,
 // so an optional step is skipped with the reason. Before, the lookup's
 // not-found escaped the planner and the trigger answered "Scan not found".
 func TestResolveStepTool_NotFoundLookupIsNoMatchingTool(t *testing.T) {
 	tools := &fakeToolLookup{platform: map[string]*tool.Tool{}, capsErr: fmt.Errorf("find: %w", shared.ErrNotFound)}
-	step := &scanworkflow.Step{StepKey: "screenshots", Capabilities: []string{"capture.screenshot"}, RunPolicy: scanworkflow.RunPolicy{Optional: true}}
+	step := &scanworkflow.Step{StepKey: "screenshots", Capabilities: []string{"fingerprint.tech"}, RunPolicy: scanworkflow.RunPolicy{Optional: true}}
 	_, err := ResolveStepTool(context.Background(), tools, shared.NewID(), step)
 	if domainCode(err) != codeNoMatchingTool {
 		t.Fatalf("got %v, want %s", err, codeNoMatchingTool)

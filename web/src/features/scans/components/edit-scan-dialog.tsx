@@ -81,6 +81,17 @@ export function EditScanDialog({ scanConfig, open, onOpenChange, onSuccess }: Ed
     [formData]
   )
 
+  const workflowRequest = useMemo(
+    () => ({
+      scan_workflow_id: formData.workflowId ?? '',
+      targets: previewRequest.targets,
+      asset_group_ids: previewRequest.asset_group_ids,
+      scan_zone_id: formData.scanZoneId ?? undefined,
+      depth: formData.depth,
+    }),
+    [formData.workflowId, formData.scanZoneId, formData.depth, previewRequest]
+  )
+
   const { trigger: updateScanConfig, isMutating: isUpdating } = useUpdateScanConfig(
     scanConfig?.id ?? ''
   )
@@ -209,7 +220,13 @@ export function EditScanDialog({ scanConfig, open, onOpenChange, onSuccess }: Ed
           </div>
         )
       case 'options':
-        return <OptionsStep data={formData} onChange={handleDataChange} />
+        return (
+          <OptionsStep
+            data={formData}
+            onChange={handleDataChange}
+            workflowRequest={workflowRequest}
+          />
+        )
       case 'schedule':
         return (
           <>

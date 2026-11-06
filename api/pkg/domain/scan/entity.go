@@ -43,6 +43,9 @@ type Scan struct {
 	// Depth is how much of the workflow each run executes (passive,
 	// standard or deep; scanworkflow.Depth). Workflow scans only.
 	Depth scanworkflow.Depth
+	// StepParams are the scan's overrides of capability standard params per
+	// workflow step (step_params.go). Workflow scans only.
+	StepParams StepParams
 
 	// Schedule
 	ScheduleType     ScheduleType
@@ -932,6 +935,7 @@ func (s *Scan) Clone(newName string) *Scan {
 		RetryBackoffSeconds: s.RetryBackoffSeconds,
 		Intensity:           s.Intensity,
 		Depth:               s.Depth,
+		StepParams:          cloneStepParams(s.StepParams),
 		// A copy starts paused: it runs on its schedule only once someone
 		// resumes it, never as a side effect of cloning.
 		Status:         StatusPaused,

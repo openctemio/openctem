@@ -374,6 +374,17 @@ func (s *Service) scheduleRunnableSteps(ctx context.Context, run *scanrun.Run, t
 			continue
 		}
 
+		// A step whose organization switch is off (screenshots) is skipped:
+		// no job is created, so the sensor never takes the picture.
+		if reason := s.stepGateReason(ctx, run, step); reason != "" {
+			stepRun.Skip(reason)
+			if err := s.stepRunRepo.Update(ctx, stepRun); err != nil {
+				s.logger.Error("failed to skip a step its organization switch holds off", "step_key", step.StepKey, "error", err)
+			}
+			settledInline = true
+			continue
+		}
+
 		// Queue the step - create a command that sensors can poll
 		err := s.queueStepForExecutionWithSettings(ctx, run, step, stepRun, template.Settings, predecessorsOf(template, step),
 			queueOpts{splitForStream: splitForStream && feedsStream(template, step)})

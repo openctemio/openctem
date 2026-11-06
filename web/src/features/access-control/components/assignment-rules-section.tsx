@@ -75,7 +75,7 @@ const CONDITION_LABELS: Record<string, string> = {
   finding_severity: 'Severity',
   finding_type: 'Finding type',
   finding_source: 'Source',
-  asset_tags: 'Tags',
+  asset_tags: 'Asset tags',
   file_path_pattern: 'File path',
 }
 

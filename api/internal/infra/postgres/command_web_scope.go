@@ -28,6 +28,9 @@ const tenantHasPathRuleSQL = `
 // when its tenant has a path exclusion that may apply, or when that cannot
 // be read: its web scope cannot be built here (fail closed).
 func (r *CommandRepository) guardCreate(ctx context.Context, cmd *command.Command) error {
+	if err := r.requireIsolation(cmd); err != nil {
+		return err
+	}
 	if r.guard != nil {
 		return r.guard.GuardCreate(ctx, cmd)
 	}

@@ -53,6 +53,35 @@ describe('DataTable rowGroups', () => {
     expect(header.getAttribute('colspan')).toBe('1')
   })
 
+  it('puts the summary and the actions in their own slots after the name', () => {
+    setWidth(1440)
+    const { container } = render(
+      <DataTable
+        columns={columns}
+        data={rows}
+        showSearch={false}
+        rowGroups={{
+          getKey: (r) => r.zone,
+          order: ['dmz'],
+          collapsible: true,
+          renderHeader: (key) => `name ${key}`,
+          renderSummary: (key) => `summary ${key}`,
+          renderActions: (key) => <button type="button">act {key}</button>,
+        }}
+      />
+    )
+    const content = container.querySelector('[data-slot="row-group-header-content"]')!
+    expect(content.className).toContain('flex-wrap')
+    expect([...content.children].map((c) => c.getAttribute('data-slot'))).toEqual([
+      'row-group-identity',
+      'row-group-summary',
+      'row-group-actions',
+    ])
+    expect(content.children[0].textContent).toBe('name dmz')
+    expect(content.children[1].textContent).toBe('summary dmz')
+    expect(content.children[2].className).toMatch(/\bshrink-0\b/)
+  })
+
   it('renders group headers between the phone cards too', () => {
     setWidth(390)
     render(

@@ -11,9 +11,9 @@ var heavyMaxAge = map[Key]time.Duration{
 	CrawlWeb:      7 * 24 * time.Hour,
 	// Path discovery: at most one run per origin per 30 days unless the
 	// origin's inventory changed (the per-origin budget).
-	EnumerateWebPaths:         30 * 24 * time.Hour,
-	Key("capture.screenshot"): 7 * 24 * time.Hour,
-	Key("detect.services"):    7 * 24 * time.Hour,
+	EnumerateWebPaths:      30 * 24 * time.Hour,
+	CaptureScreenshot:      30 * 24 * time.Hour,
+	Key("detect.services"): 7 * 24 * time.Hour,
 }
 
 // Heavy reports whether the stage is gated by delta gating.

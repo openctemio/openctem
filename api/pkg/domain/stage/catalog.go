@@ -50,7 +50,10 @@ const (
 	CheckTakeover Key = "check.takeover"
 	// MonitorWebContent fetches listed URLs and reports the response so a
 	// change in a page or script can be detected (RFC-138).
-	MonitorWebContent  Key = "monitor.web_content"
+	MonitorWebContent Key = "monitor.web_content"
+	// CaptureScreenshot takes a picture of a web service; the result is the
+	// web_evidence property of the asset it was given (RFC-081).
+	CaptureScreenshot  Key = "capture.screenshot"
 	DASTWeb            Key = "dast.web"
 	SecretsCode        Key = "secrets.code"
 	SASTCode           Key = "sast.code"
@@ -384,6 +387,21 @@ var catalog = []Stage{
 		Tier:        TierActive,
 		Implementations: []Implementation{
 			{Tool: "httpx", Default: true, ByCapability: true},
+		},
+		MaxFanout: RunFanoutCap, MaxPerParent: DefaultPerParent,
+	},
+	{
+		// Active (T1): one GET per origin in a headless browser. The result
+		// is the web_evidence property of the origin the sensor re-reports,
+		// so the stage has no output port of its own. While the organization
+		// has screenshots off the capability is not planned for it (coverage
+		// readiness): no picture is taken.
+		Key: CaptureScreenshot, Name: "Screenshot",
+		Description: "Take a picture of a web page and keep it as evidence on the web service.",
+		Inputs:      []asset.TypeRef{tHTTPService},
+		Tier:        TierActive,
+		Implementations: []Implementation{
+			{Tool: toolWebshot, Default: true},
 		},
 		MaxFanout: RunFanoutCap, MaxPerParent: DefaultPerParent,
 	},

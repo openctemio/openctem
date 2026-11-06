@@ -25,6 +25,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/stage"
+	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 	"github.com/openctemio/openctem/api/pkg/domain/tool"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
@@ -238,6 +239,7 @@ type Service struct {
 	privatePolicy    PrivateTargetPolicy       // optional; nil = the private-target switch is not read at trigger
 	readiness        *readinessSources         // optional; nil = no workflow readiness (readiness.go)
 	toolAvailability ToolAvailability          // optional; nil = no tool availability check at trigger (tool_availability_gate.go)
+	coverageSettings CoverageSettings          // optional; nil = organization switches are not checked (a switched capability then reads as off)
 	coverageContent  CoverageContent           // optional; nil = coverage readiness does not check the lists a tool reads
 	tenantTools      TenantToolConfigs         // optional; nil = per-organization tool switch not enforced
 	optIns           OptInPolicy               // optional; nil = every sensor opt-in counts as enabled (opt_ins.go)
@@ -287,6 +289,17 @@ type ServiceOption func(*Service)
 // depth (the onboarding pass of a new root).
 type CoverageContent interface {
 	CoverageContentReady(ctx context.Context, depth scanworkflow.Depth, requests []stage.WordlistRequest) (bool, error)
+}
+
+// CoverageSettings reads the organization's attack-surface settings.
+type CoverageSettings interface {
+	GetEASMSettings(ctx context.Context, tenantID string) (*tenant.EASMSettings, error)
+}
+
+// WithCoverageSettings lets coverage readiness hold a capability an
+// organization must switch on (capture.screenshot) until it does.
+func WithCoverageSettings(c CoverageSettings) ServiceOption {
+	return func(s *Service) { s.coverageSettings = c }
 }
 
 // WithCoverageContent makes coverage readiness pause a capability whose
