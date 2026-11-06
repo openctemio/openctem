@@ -115,7 +115,7 @@
   "tenableSc.dialog.rotationMode.purge": "Xóa địa chỉ (Beta, chưa kiểm chứng)",
   "tenableSc.dialog.rotationMode.recycle": "Tái tạo kho (Beta, chưa kiểm chứng)",
   "tenableSc.dialog.rotationNeeds.aging": "Cần một kho luân chuyển universal riêng, chọn làm kho phủ quét, với mọi thời hạn lỗ hổng đặt là 1 ngày. Việc dọn dẹp chạy hằng đêm nên thời gian chờ ít nhất 24 giờ.",
-  "tenableSc.dialog.rotationNeeds.purge": "Cần thao tác purge và một kho luân chuyển purge (không phải kho agent) trong cấu hình bộ kết nối. Không cần khóa quản trị. Nếu bộ kết nối không xác nhận được giấy phép đã giảm, việc luân chuyển dừng lại.",
+  "tenableSc.dialog.rotationNeeds.purge": "Cần thao tác purge và một kho luân chuyển purge riêng trong cấu hình bộ kết nối. Không cần khóa quản trị. Nếu bộ kết nối không xác nhận được giấy phép đã giảm, việc luân chuyển dừng lại.",
   "tenableSc.dialog.rotationNeeds.recycle": "Cần khóa API của tài khoản Administrator Tenable.sc cấu hình trên bộ kết nối (khối recycle với hai tên kho luân chuyển). Khóa quản trị chỉ dùng cho các kho luân chuyển.",
   "tenableSc.dialog.rotationWait": "Thời gian chờ sau mỗi lô (giờ)",
   "tenableSc.dialog.rotationWaitHint": "Từ 24 đến 72 giờ, mặc định 26. Thời hạn dữ liệu chỉ áp dụng ở đợt dọn dẹp hằng đêm của Tenable.sc, nên chờ ngắn hơn sẽ không thấy giấy phép được giải phóng; bước kiểm tra giấy phép trước mỗi lô xác nhận dung lượng.",
