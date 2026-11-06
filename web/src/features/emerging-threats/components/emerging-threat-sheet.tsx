@@ -294,9 +294,9 @@ function SheetBodyContent({ alert, fullPage }: { alert: EmergingThreatDetail; fu
                   <span className="min-w-0 truncate font-medium">{p.product}</span>
                   {p.versions.map((v) => (
                     <span key={v.version || '-'} className="inline-flex items-center gap-1.5">
-                      <Badge variant="outline" className={v.version ? 'font-mono' : undefined}>
+                      <span className={v.version ? 'font-mono' : 'text-muted-foreground'}>
                         {v.version || t('emergingThreats.sheet.versionUnknown')}
-                      </Badge>
+                      </span>
                       <span className="text-muted-foreground tabular-nums">
                         {t('emergingThreats.sheet.assetsOn', undefined, { n: v.assets })}
                       </span>

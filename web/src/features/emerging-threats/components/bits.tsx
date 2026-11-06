@@ -11,6 +11,7 @@ import { Meter, type MeterTone } from '@/features/shared/components/meter'
 import { Clock, Crown, Eye, Globe, Zap, type LucideIcon } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { RelativeTime } from '@/features/shared/components/relative-time'
+import { KeyValueList, type KeyValueItem } from '@/features/shared/components/text-layout'
 import { SignalChip } from '@/components/ui/signal-chip'
 import { StatusLozenge } from '@/components/ui/status-lozenge'
 import {
@@ -107,24 +108,30 @@ export const ETS_PARTS = ['exploitation', 'severity', 'exposure', 'freshness'] a
 /** The parts of the score as label/value rows (tooltip and drawer). */
 export function EtsBreakdownList({ breakdown }: { breakdown: EtsBreakdown }) {
   const { t } = useTranslation()
-  return (
-    <dl className="grid grid-cols-[1fr_auto] gap-x-4 gap-y-0.5 text-sm">
-      {ETS_PARTS.map((k) => (
-        <div key={k} className="contents">
-          <dt className="text-muted-foreground">{t(`emergingThreats.breakdown.${k}`)}</dt>
-          <dd className="text-end tabular-nums">{breakdown[k]}</dd>
-        </div>
-      ))}
-      <dt className="text-muted-foreground">{t('emergingThreats.breakdown.confidence')}</dt>
-      <dd className="text-end tabular-nums">
-        {t('emergingThreats.breakdown.multiplier', undefined, {
-          value: Number(breakdown.confidence.toFixed(2)),
-        })}
-      </dd>
-      <dt className="font-medium">{t('emergingThreats.breakdown.total')}</dt>
-      <dd className="text-end font-semibold tabular-nums">{breakdown.total}</dd>
-    </dl>
-  )
+  const items: KeyValueItem[] = [
+    ...ETS_PARTS.map((k) => ({
+      key: k,
+      label: t(`emergingThreats.breakdown.${k}`),
+      value: <span className="tabular-nums">{breakdown[k]}</span>,
+    })),
+    {
+      key: 'confidence',
+      label: t('emergingThreats.breakdown.confidence'),
+      value: (
+        <span className="tabular-nums">
+          {t('emergingThreats.breakdown.multiplier', undefined, {
+            value: Number(breakdown.confidence.toFixed(2)),
+          })}
+        </span>
+      ),
+    },
+    {
+      key: 'total',
+      label: t('emergingThreats.breakdown.total'),
+      value: <span className="font-semibold tabular-nums">{breakdown.total}</span>,
+    },
+  ]
+  return <KeyValueList items={items} />
 }
 
 /** The score on one line (number and a short meter); hover shows why. */
