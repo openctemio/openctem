@@ -110,6 +110,13 @@ func TestTemplates_PairInstallIntent(t *testing.T) {
 		if !strings.Contains(out.Policy, "allow_private: true") || !strings.Contains(out.Policy, "The networks you listed") {
 			t.Errorf("[%s] pinned policy:\n%s", dir, out.Policy)
 		}
+		// The sensor refuses to start with a policy file and the pin both
+		// set, so the prefill must not claim the file replaces the pin.
+		flat := strings.Join(strings.Fields(strings.ReplaceAll(out.Policy, "#", " ")), " ")
+		if !strings.Contains(flat, "If you use this file, remove SENSOR_ALLOWED_RANGES from the command; the sensor refuses both.") ||
+			strings.Contains(flat, "replaces that pin") {
+			t.Errorf("[%s] pinned policy comment:\n%s", dir, out.Policy)
+		}
 		bashSyntaxOK(t, dir+" pinned docker", out.Docker)
 		continuationLinesOK(t, dir+" pinned docker", out.Docker)
 	}

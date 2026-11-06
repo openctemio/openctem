@@ -201,6 +201,20 @@ func TestInstallTemplates_Purpose(t *testing.T) {
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "SENSOR_ALLOWED_RANGES='10.0.0.0/16'") {
 		t.Fatalf("pinned: status %d: %s", rec.Code, rec.Body.String())
 	}
+	var pinned SensorConfigTemplatesResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &pinned); err != nil {
+		t.Fatal(err)
+	}
+	// The multi-sensor kit and the Kubernetes manifests do not carry the
+	// pin, so each says where to set it; an unpinned install has no note.
+	if !strings.Contains(pinned.Multi, "add SENSOR_ALLOWED_RANGES=<list>") || !strings.Contains(pinned.Kubernetes, "policy ConfigMap") ||
+		strings.Contains(pinned.Kubernetes, "SENSOR_ALLOWED_RANGES=") {
+		t.Errorf("pinned multi/kubernetes lack the pin note:\n%s\n%s", pinned.Multi, pinned.Kubernetes)
+	}
+	plain := postInstall(h, `{"purpose":"internal"}`)
+	if strings.Contains(plain.Body.String(), "SENSOR_ALLOWED_RANGES") {
+		t.Errorf("an unpinned install mentions the pin: %s", plain.Body.String())
+	}
 
 	// GET reads the purpose from the query (no pin: it carries no body).
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/sensors/install-templates?purpose=internal", nil)
