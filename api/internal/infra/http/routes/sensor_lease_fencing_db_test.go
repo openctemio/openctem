@@ -64,6 +64,33 @@ func TestOrgResults_StatedEpochMustBeCurrent(t *testing.T) {
 	h.want(resp, raw, http.StatusNotFound, notFound)
 }
 
+// A sensor that names the results_lease_epoch feature commits to sending
+// the epoch: its command-bound result without one is refused, so a late
+// report of a run taken back cannot bind to the run the same sensor holds
+// now. Its result with the current epoch is accepted; a sensor that does
+// not name the feature keeps the old rule (no epoch, no check).
+func TestOrgResults_PromisedEpochIsRequired(t *testing.T) {
+	h := newCtlHarness(t)
+	s := h.newSensor(h.tenantID, "org-promise")
+	cmd := h.newCommand(h.tenantID, s.id)
+	h.holdCommand(cmd, s.id, 3)
+	promise := []string{protov2.HeaderSensorFeatures, protov2.FeatureResultsLeaseEpoch}
+	notFound := ingestProblem(string(protov2.ProblemCommandNotFound))
+
+	rid := newReportID()
+	resp, raw := h.putBound(s.key, cmd, rid, -1, v2Segment("semgrep", "2.0", "promise-none"), promise...)
+	h.want(resp, raw, http.StatusNotFound, notFound)
+	if _, n := h.reportTenant(s.id, rid); n != 0 {
+		t.Fatal("a report with no epoch was stored for a sensor that promised one")
+	}
+	resp, raw = h.putBound(s.key, cmd, newReportID(), 2, v2Segment("semgrep", "2.0", "promise-old"), promise...)
+	h.want(resp, raw, http.StatusNotFound, notFound)
+	resp, raw = h.putBound(s.key, cmd, newReportID(), 3, v2Segment("semgrep", "2.0", "promise-current"), promise...)
+	h.want(resp, raw, 202, "")
+	resp, raw = h.putBound(s.key, cmd, newReportID(), -1, v2Segment("semgrep", "2.0", "no-promise"))
+	h.want(resp, raw, 202, "")
+}
+
 // A report accepted while the sensor held the command is not applied when
 // the run was taken back before the worker reached it: re-claimed by the
 // same sensor (a new epoch) or by another sensor. An undisturbed run's

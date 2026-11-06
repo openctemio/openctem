@@ -27,16 +27,19 @@ export function ParamField({
   param,
   value,
   readOnly,
+  idPrefix = 'param',
   onChange,
 }: {
   param: CapabilityParam
   value: unknown
   readOnly?: boolean
+  /** Distinguishes the same param shown at several depths. */
+  idPrefix?: string
   onChange: (value: unknown) => void
 }) {
   const { t } = useTranslation()
   const [error, setError] = useState<string | undefined>()
-  const id = `param-${param.name}`
+  const id = `${idPrefix}-${param.name}`
   const set = (raw: string | boolean | string[]) => {
     const r = paramValue(param, raw)
     setError(r.error)
