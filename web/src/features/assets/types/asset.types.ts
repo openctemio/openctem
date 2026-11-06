@@ -512,6 +512,11 @@ export interface Asset {
    * snooze. Drives the "snoozed" suffix on AssetStatusBadge.
    */
   lifecyclePausedUntil?: string | null
+  /**
+   * What the coverage checks observed about whether the asset is still
+   * there (api docs/architecture/asset-liveness.md). Absent: not checked.
+   */
+  liveness?: AssetLiveness
 
   /**
    * When true, the background lifecycle worker will never change
@@ -1057,4 +1062,21 @@ export interface AssetEdge {
   class: 'edge' | 'saas_hosting' | 'cloud_shared'
   provider: string
   address?: string
+}
+
+/** An asset's liveness state. */
+export type AssetLivenessState = 'unknown' | 'alive' | 'unreachable' | 'unresolvable' | 'gone'
+
+/** An asset's liveness as the API returns it (camelCased). */
+export interface AssetLiveness {
+  state: AssetLivenessState
+  /** no_answer, nxdomain, resolver_failed, dangling, nxdomain_confirmed, host_gone */
+  reason?: string
+  since?: string
+  lastCheckedAt?: string
+  /** Name of the scan zone or sensor of the last check. */
+  lastCheckedBy?: string
+  lastCapability?: string
+  lastOutcome?: string
+  lastAliveAt?: string
 }
