@@ -296,6 +296,11 @@ const (
 	// command re-keying a tenant's findings to the current identity recipe:
 	// counts re-keyed and merged, and the run id. One entry per tenant per run.
 	ActionFindingsRefingerprinted Action = "findings.refingerprinted"
+	// ActionFindingsEmailsMasked records one run of `refingerprint
+	// -mask-emails` masking the e-mail addresses left in a tenant's stored
+	// findings and evidence: counts and the run id, never a value. One entry
+	// per tenant per run.
+	ActionFindingsEmailsMasked Action = "findings.emails_masked"
 	// ActionAssetsMerged records one run of the repomerge command folding a
 	// tenant's duplicate repository assets together: counts, and the run id.
 	// One entry per tenant per run.
@@ -424,11 +429,16 @@ const (
 	ActionSensorResultsAccepted Action = "sensor.results_accepted"
 	// ActionSensorResultsDiscarded records a person discarding one.
 	ActionSensorResultsDiscarded Action = "sensor.results_discarded"
+	// ActionSensorResultAutoAccepted records the platform releasing a held
+	// (out of contract) report because its tool's verified descriptor now
+	// declares what the report carries. The actor is the system.
+	ActionSensorResultAutoAccepted Action = "sensor_result.auto_accepted"
 	// ActionSensorResultPolicyUpdated records a change of the tenant's
 	// policy for unsolicited sensor results.
 	ActionSensorResultPolicyUpdated Action = "sensor.result_policy_updated"
 	// ActionSensorResultsOutsideJob records report items a sensor sent for a
-	// command that lie outside the command's targets: dropped, not applied.
+	// command that lie outside the command's targets: recorded as
+	// discoveries that grant nothing, and refused past the per-report cap.
 	ActionSensorResultsOutsideJob Action = "sensor.results_outside_job"
 
 	// Pairing and key-bound identity (RFC-052). Expected: an administrator
@@ -911,7 +921,7 @@ func (a Action) IsValid() bool {
 		ActionFindingRetestRequested, ActionFindingEvidenceRevealed, ActionFindingVerificationChecklistUpdated, ActionFindingClassified,
 		ActionFindingRetestCheckSaved, ActionFindingRetestCheckRemoved, ActionFindingRetestCheckApproved,
 		ActionFindingCommentReactionRemoved, ActionFindingCommentEdited, ActionFindingCommentDeleted, ActionFindingDuplicateMarked, ActionFindingIssueUnlinked, ActionFindingBountyReportChanged,
-		ActionFindingsRefingerprinted, ActionAssetsMerged,
+		ActionFindingsRefingerprinted, ActionFindingsEmailsMasked, ActionAssetsMerged,
 		ActionFindingSeverityChanged, ActionFindingSeverityRequested, ActionFindingSeverityRequestClosed,
 		ActionBranchCreated, ActionBranchUpdated, ActionBranchDeleted, ActionBranchScanned, ActionBranchSetDefault,
 		ActionSLAPolicyCreated, ActionSLAPolicyUpdated, ActionSLAPolicyDeleted,
@@ -928,7 +938,7 @@ func (a Action) IsValid() bool {
 		ActionSensorKeyRenewalRefused, ActionSensorIdentityCloned, ActionSensorJobRefusedByLocalPolicy, ActionSensorOptInChanged,
 		ActionSensorContentRefreshRequested, ActionSensorContentPolicyUpdated, ActionSensorCommandsReleased,
 		ActionSensorResultsQuarantined, ActionSensorResultsAccepted, ActionSensorResultsDiscarded,
-		ActionSensorResultPolicyUpdated, ActionSensorResultsOutsideJob,
+		ActionSensorResultPolicyUpdated, ActionSensorResultsOutsideJob, ActionSensorResultAutoAccepted,
 		ActionSensorPairingExpected, ActionSensorPairingApproved, ActionSensorPairingDenied, ActionSensorPairingCompleted, ActionSensorPairingSuperseded, ActionSensorPairingLookupLocked,
 		ActionSensorRepaired, ActionSensorKeyRevoked, ActionSensorIdentityPolicySet, ActionSensorKeyBound, ActionSensorKeyBindRefused,
 		ActionSensorEnrollmentTokenCreated, ActionSensorEnrollmentTokenRevoked, ActionSensorEnrolled, ActionSensorEnrollmentRefused,
@@ -1057,7 +1067,7 @@ func (a Action) Category() string {
 		ActionFindingTicketLinked, ActionFindingTicketUnlinked,
 		ActionFindingRetestRequested, ActionFindingEvidenceRevealed, ActionFindingVerificationChecklistUpdated, ActionFindingClassified, ActionFindingCommentReactionRemoved, ActionFindingCommentEdited, ActionFindingCommentDeleted, ActionFindingDuplicateMarked, ActionFindingIssueUnlinked, ActionFindingBountyReportChanged,
 		ActionFindingRetestCheckSaved, ActionFindingRetestCheckRemoved, ActionFindingRetestCheckApproved,
-		ActionFindingsRefingerprinted,
+		ActionFindingsRefingerprinted, ActionFindingsEmailsMasked,
 		ActionFindingSeverityChanged, ActionFindingSeverityRequested, ActionFindingSeverityRequestClosed:
 		return "finding"
 	case ActionSavedViewCreated, ActionSavedViewUpdated, ActionSavedViewDeleted:
@@ -1393,7 +1403,7 @@ func SeverityForAction(a Action) Severity {
 		ActionAssetLifecycleRun, ActionAssetMarkedStale, ActionAssetReactivated,
 		ActionAssetLifecycleSnoozed, ActionAssetLifecycleUnsnoozed, ActionAssetAttributionDecided,
 		ActionAssetAttributionAutoConfirmed, ActionAssetAttributionChildrenLinked,
-		ActionAssetCreateMerged, ActionFindingsRefingerprinted, ActionAssetsMerged,
+		ActionAssetCreateMerged, ActionFindingsRefingerprinted, ActionFindingsEmailsMasked, ActionAssetsMerged,
 		ActionAssetBulkStatusChanged, ActionAssetCrownJewelChanged, ActionAssetImported, ActionAssetRenamed,
 		ActionMemberAdded, ActionInvitationAccepted,
 		ActionCampaignCreated, ActionCampaignUpdated, ActionCampaignStatusChanged,

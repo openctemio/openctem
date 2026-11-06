@@ -257,6 +257,7 @@ var registry = []location{
 	jsonField{table: "settings", pk: "id", col: "value_json", path: []string{"access_key"}, where: "key = 'storage_config'"},
 	jsonField{table: "settings", pk: "id", col: "value_json", path: []string{"secret_key"}, where: "key = 'storage_config'"},
 	textCol{table: "tenant_ai_settings", pk: "tenant_id", col: "key_enc"},
+	textCol{table: "tool_source_keys", pk: "id", col: "key_enc"},
 	textCol{table: "ai_mask_maps", pk: "id", col: "key_enc"},
 	textCol{table: "ai_mask_maps", pk: "id", col: "map_enc"},
 	jsonField{table: "platform_settings", pk: "key", col: "value", path: []string{"password_encrypted"}, where: "key = 'email.smtp'"},
