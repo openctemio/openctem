@@ -18,6 +18,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/auth"
 	"github.com/openctemio/openctem/api/internal/app/tenant"
 	"github.com/openctemio/openctem/api/internal/config"
+	"github.com/openctemio/openctem/api/internal/extensionhost"
 	"github.com/openctemio/openctem/api/internal/infra/http"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/internal/infra/http/routes"
@@ -29,6 +30,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/versions"
 	"github.com/openctemio/openctem/api/pkg/brand"
 	emailpkg "github.com/openctemio/openctem/api/pkg/email"
+	ext "github.com/openctemio/openctem/api/pkg/extension"
 	"github.com/openctemio/openctem/api/pkg/httpsec"
 	"github.com/openctemio/openctem/api/pkg/keycloak"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -113,8 +115,16 @@ func defineFlags(fs *flag.FlagSet) {
 // Main is the server entry point: it dispatches on argv[0] to the bundled
 // command-line tools (see toolFor), parses the server flags, and otherwise runs
 // the API server until it stops. It does not return normally; it exits the
-// process with the server's exit status.
-func Main() {
+// process with the server's exit status. exts are the build's extensions
+// (none in the Community build); an invalid set stops the start.
+func Main(exts ...ext.Extension) {
+	set, err := extensionhost.New(exts)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "openctem-server: refusing to start:", err)
+		os.Exit(1)
+	}
+	buildExtensions = set
+	version.SetExtensions(set.Info())
 	if tool := toolFor(os.Args[0]); tool != nil {
 		tool()
 		return
@@ -131,6 +141,10 @@ func Main() {
 	}
 	os.Exit(run())
 }
+
+// buildExtensions are the extensions the build passed to Main (empty for
+// Community), set once before the server starts.
+var buildExtensions *extensionhost.Set
 
 func run() int {
 	ctx := context.Background()
@@ -297,6 +311,7 @@ func run() int {
 		Repos:       repos,
 		IngestDB:    ingestDB,
 		RedisClient: redisClient,
+		Extensions:  buildExtensions,
 	})
 	if err != nil {
 		log.Error("failed to initialize services", "error", err)
@@ -541,6 +556,21 @@ func run() int {
 		handlers.WebSocket.SetSessionRevocationChecker(services.SessionRevocations)
 	}
 
+	// Routes of the build's extensions (none in the Community build): a
+	// route the core refuses stops the start.
+	extRoutes, err := buildExtensions.Routes(ctx, services.ExtensionHost)
+	if err != nil {
+		log.Error("refusing to start", "error", err)
+		return 1
+	}
+	handlers.ExtensionRoutes = extRoutes
+	if services.Entitlement != nil {
+		handlers.Grants = services.Entitlement
+	}
+	if !buildExtensions.Empty() {
+		log.Info("extensions in this build", "extensions", version.Get().Extensions)
+	}
+
 	server := http.NewServer(cfg, log)
 	routes.Register(server.Router(), handlers, cfg, log, authCfg, repos.Tenant, services.User, services.MembershipCache, services.PermCache, services.PermVersion)
 	// An admin-plane process (OPENCTEM_PLANE=admin) serves only the console
@@ -569,6 +599,12 @@ func run() int {
 		}
 		http.PrintRoutes(os.Stdout, stats, *routeFormat, filters)
 		return 0
+	}
+
+	// A grant provider that keeps itself fresh runs on every plane until
+	// shutdown; the Community build has none.
+	if r, ok := services.GrantProvider.(ext.Runner); ok {
+		go r.Run(ctx)
 	}
 
 	// ==========================================================================
