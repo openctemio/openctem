@@ -6,23 +6,23 @@ package handler
 
 import (
 	"context"
-	"time"
 
 	"github.com/openctemio/openctem/api/internal/app/sensorgrant"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
+	"github.com/openctemio/openctem/api/pkg/domain/stepup"
 )
 
-// StepUpWideningApprover approves a widening only when the caller's session
-// signed in or stepped up within window. It fails closed.
+// StepUpWideningApprover approves a widening only when the caller
+// re-authenticated as the organization's critical rule asks. It fails closed.
 type StepUpWideningApprover struct {
-	Checker middleware.RecentAuthChecker
-	Window  time.Duration
+	Checker  middleware.RecentAuthChecker
+	Policies middleware.StepUpPolicyProvider
 }
 
 var _ sensorgrant.WideningApprover = StepUpWideningApprover{}
 
 // ApproveWidening implements sensorgrant.WideningApprover.
 func (a StepUpWideningApprover) ApproveWidening(ctx context.Context, _ sensorgrant.Actor, _, _ sensordom.Grant, _ []string) error {
-	return middleware.CheckRecentAuth(ctx, a.Checker, a.Window)
+	return middleware.CheckStepUp(ctx, a.Checker, a.Policies, stepup.TierCritical)
 }

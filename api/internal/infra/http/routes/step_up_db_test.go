@@ -73,9 +73,9 @@ func newStepUpHarness(t *testing.T) *stepUpHarness {
 	}
 	saved := []Middleware{csrfProtectionMiddleware, readRateLimitMiddleware, activeMembershipFromJWTMiddleware,
 		permissionSyncMiddleware, ssoEnforcementMiddleware, ipAllowlistMiddleware}
-	savedKeyAuth, savedChecker := apiKeyOrJWT, stepUpChecker
+	savedKeyAuth, savedChecker, savedPolicies := apiKeyOrJWT, stepUpChecker, stepUpPolicies
 	t.Cleanup(func() {
-		apiKeyOrJWT, stepUpChecker = savedKeyAuth, savedChecker
+		apiKeyOrJWT, stepUpChecker, stepUpPolicies = savedKeyAuth, savedChecker, savedPolicies
 		csrfProtectionMiddleware, readRateLimitMiddleware, activeMembershipFromJWTMiddleware = saved[0], saved[1], saved[2]
 		permissionSyncMiddleware, ssoEnforcementMiddleware, ipAllowlistMiddleware = saved[3], saved[4], saved[5]
 	})
@@ -105,8 +105,9 @@ func newStepUpHarness(t *testing.T) *stepUpHarness {
 	v := validator.New()
 	router := infrahttp.NewChiRouter()
 	Register(router, Handlers{
-		LocalAuth: handler.NewLocalAuthHandler(authSvc, nil, nil, authCfgApp, log),
-		APIKey:    handler.NewAPIKeyHandler(apikey.NewService(postgres.NewAPIKeyRepository(db), "step-up-pepper", log), v, log),
+		StepUpPolicies: NewStepUpPolicyProvider(tenantRepo),
+		LocalAuth:      handler.NewLocalAuthHandler(authSvc, nil, nil, authCfgApp, log),
+		APIKey:         handler.NewAPIKeyHandler(apikey.NewService(postgres.NewAPIKeyRepository(db), "step-up-pepper", log), v, log),
 	}, cfg, log, AuthConfig{Provider: config.AuthProviderLocal, LocalValidator: gen}, tenantRepo, tenantapp.NewUserService(userRepo, log), nil, nil, nil)
 	srv := httptest.NewServer(router.(interface{ Handler() http.Handler }).Handler())
 	t.Cleanup(srv.Close)
@@ -460,5 +461,76 @@ func TestStepUp_FederatedSessionNeedsProviderAuthentication_DB(t *testing.T) {
 	h.exec(`UPDATE sessions SET auth_method = 'sso' WHERE id = $1`, social)
 	if got := h.probe(tokSocial); got != "allowed" {
 		t.Fatalf("a fresh social sign-in: %s", got)
+	}
+}
+
+// setStepUpPolicy stores the organization's re-verification policy.
+func (h *stepUpHarness) setStepUpPolicy(tenantID, policy string) {
+	h.t.Helper()
+	h.exec(`UPDATE tenants SET settings = jsonb_set(COALESCE(settings, '{}'::jsonb), '{security}',
+		COALESCE(settings->'security', '{}'::jsonb) || jsonb_build_object('step_up', $2::jsonb)) WHERE id = $1`, tenantID, policy)
+}
+
+// Critical every time: one proof unlocks one action; the next needs a new
+// proof. The spend is recorded on the session. Another organization's policy
+// never applies.
+func TestStepUp_EveryTimeSpendsOneProof_DB(t *testing.T) {
+	h := newStepUpHarness(t)
+	u := h.owner(true)
+
+	// Another organization asks every time: this one (legacy) is unaffected.
+	other := uuid.NewString()
+	h.exec(`INSERT INTO tenants (id, name, slug) VALUES ($1, 'Other', $2)`, other, "other-"+strings.ReplaceAll(other[:13], "-", ""))
+	t.Cleanup(func() { _, _ = h.db.ExecContext(context.Background(), `DELETE FROM tenants WHERE id = $1`, other) })
+	h.setStepUpPolicy(other, `{"critical":{"mode":"every_time"},"sensitive":{"mode":"off"},"routine":{"mode":"off"}}`)
+	_, tok := h.signIn(u, time.Minute)
+	for i := 0; i < 2; i++ {
+		if got := h.probe(tok); got != "allowed" {
+			t.Fatalf("legacy organization, action %d inside the window: %s", i, got)
+		}
+	}
+
+	h.setStepUpPolicy(h.tenant, `{"critical":{"mode":"every_time"},"sensitive":{"mode":"once_per_window","window":"1h"},"routine":{"mode":"off"}}`)
+	sess, tok := h.signIn(u, time.Minute)
+	if got := h.probe(tok); got != "allowed" {
+		t.Fatalf("the fresh sign-in is the first proof: %s", got)
+	}
+	if got := h.probe(tok); got != "STEP_UP_REQUIRED" {
+		t.Fatalf("second action with the same proof: %s", got)
+	}
+	if code, body := h.stepUp(tok, `{"password":"`+stepUpTestPassword+`"}`); code != http.StatusOK {
+		t.Fatalf("step-up: %d %s", code, body)
+	}
+	if got := h.probe(tok); got != "allowed" {
+		t.Fatalf("after a new proof: %s", got)
+	}
+	if got := h.probe(tok); got != "STEP_UP_REQUIRED" {
+		t.Fatalf("the new proof is spent too: %s", got)
+	}
+	var spent, stepped sql.NullTime
+	if err := h.db.QueryRowContext(context.Background(), `SELECT step_up_spent_at, step_up_at FROM sessions WHERE id = $1`, sess).
+		Scan(&spent, &stepped); err != nil {
+		t.Fatal(err)
+	}
+	if !spent.Valid || !stepped.Valid || !spent.Time.Equal(stepped.Time) {
+		t.Fatalf("spent %v, want the proof's own time %v", spent, stepped)
+	}
+
+	// A proof older than the freshness cannot be spent.
+	h.exec(`UPDATE sessions SET created_at = NOW() - interval '1 hour', step_up_at = NOW() - interval '6 minutes', step_up_spent_at = NULL WHERE id = $1`, sess)
+	if got := h.probe(tok); got != "STEP_UP_REQUIRED" {
+		t.Fatalf("stale proof: %s", got)
+	}
+}
+
+// A below-floor policy stored by hand (or before a floor was raised) is
+// clamped to once per 10 minutes, never off.
+func TestStepUp_StoredCriticalBelowFloorIsClamped_DB(t *testing.T) {
+	h := newStepUpHarness(t)
+	u := h.owner(true)
+	h.setStepUpPolicy(h.tenant, `{"critical":{"mode":"off"},"sensitive":{"mode":"off"},"routine":{"mode":"off"}}`)
+	_, tok := h.signIn(u, time.Hour)
+	if got := h.probe(tok); got != "STEP_UP_REQUIRED" {
+		t.Fatalf("critical off stored: %s", got)
 	}
 }

@@ -1333,7 +1333,7 @@ func InitLocalAuthHandler(
 		// Widening a sensor's grant needs a recent sign-in or step-up.
 		if svc.SensorGrant != nil {
 			svc.SensorGrant.SetWideningApprover(handler.StepUpWideningApprover{
-				Checker: handlers.LocalAuth.RecentAuthChecker(), Window: authapp.StepUpWindow,
+				Checker: handlers.LocalAuth.RecentAuthChecker(), Policies: routes.NewStepUpPolicyProvider(repos.Tenant),
 			})
 		}
 	}
@@ -1345,12 +1345,12 @@ func InitLocalAuthHandler(
 // (docs/architecture/step-up-reauth.md). Without local auth there is no
 // session store: platform sessions then cannot step up (fail closed) and
 // external provider tokens are judged by their auth_time.
-func wireStepUpGate(handlers *routes.Handlers, svc *Services) {
+func wireStepUpGate(handlers *routes.Handlers, svc *Services, policies middleware.StepUpPolicyProvider) {
 	var checker middleware.RecentAuthChecker
 	if handlers.LocalAuth != nil {
 		checker = handlers.LocalAuth.RecentAuthChecker()
 	}
-	gate := middleware.RecentAuthGate{Checker: checker, Window: authapp.StepUpWindow}
+	gate := middleware.RecentAuthGate{Checker: checker, Policies: policies}
 	if svc.Role != nil {
 		svc.Role.SetStepUpGate(gate)
 	}

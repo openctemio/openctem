@@ -63,7 +63,7 @@ func registerFindingImportRoutes(router Router, h *handler.FindingImportHandler,
 // which closes nothing, needs no re-authentication. The query is read the
 // way the handler reads it (the first coverage value).
 func requireStepUpWhenFullCoverage() Middleware {
-	gate := requireStepUp()
+	gate := requireStepUpSensitive()
 	return func(next http.Handler) http.Handler {
 		gated := gate(next)
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
