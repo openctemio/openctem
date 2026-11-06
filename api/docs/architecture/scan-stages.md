@@ -126,9 +126,9 @@ tool runs it:
   template match in a command-bound nuclei report on an asset the command
   covered confirms an open `dangling_cname` as `subdomain_takeover`.
 - **Taxonomy v1** lists 22 capabilities. The routed stages above have
-  implementations. Eight are **planned**: they have a contract but no routed
+  implementations. Seven are **planned**: they have a contract but no routed
   implementation (`intel.passive`, `detect.services`,
-  `fingerprint.tech`, `check.tls`, `capture.screenshot`, `host.credentialed`,
+  `fingerprint.tech`, `check.tls`, `host.credentialed`,
   `cloud.posture`, `verify.finding`). They are served with `available: false`
   and are invisible to `Lookup`, `ForTool` and `ForCapabilities`, so no step
   can run one and no tool's routing changes. `verify.finding` is
@@ -389,7 +389,7 @@ an update means unchanged):
   run of the same scan (`PreviousRun`). A target is done when its asset was
   first seen before that run started, has no `asset_change_events` row
   since, and either that run planned it for the same step key and the step
-  completed within the stage's max age (7 days), or the coverage ledger has
+  completed within the stage's max age (7 days; 30 days for `capture.screenshot`), or the coverage ledger has
   it `covered` for the capability and not due. A partial, failed or skipped
   baseline step is never done, so truncated work is redone. Done targets are
   recorded `unchanged` in `scan_run_targets`; a heavy stage left with none
@@ -397,6 +397,28 @@ an update means unchanged):
   command. No previous run, or a baseline the store cannot read, gates
   nothing (gating only saves work). Seeds are never gated. Every read is
   scoped to the run's tenant, and run targets carry composite tenant keys.
+
+**Scan step params.** A scan may override the standard params of single
+steps without copying its workflow, so a system (read-only) workflow can be
+tuned per scan. `scans.step_params` is `{"<step_key>" | "*:<capability>":
+{"<param>": value}}`: a step-key entry applies to that step, a
+`*:<capability>` entry (for example `*:vuln.templates`) to every step of the
+capability, and the step-key entry wins. The map is sent with the scan API
+(`step_params` on create, update, read, export and import; omitted on update
+= unchanged, `{}` clears) and copied into each run's context
+(`step_params`). The layers of one step's params, lowest first: the step's
+`config`, its depth overlay, the scan's step params; the dispatch merges them
+before the tool is resolved (`stepAtDepth`), so the override also decides which
+tools are eligible. Checked on every save against the capability contract
+(`stage.ValidateStandardParams`): each key names a step of the scan's
+workflow or a capability that workflow runs, standard params only (no tool
+extras, no executor keys), each with its type and bounds, and for template
+steps the same severity and tag checks a workflow step gets, including the
+tags the sensor tier refuses (`intrusive`, `default-login`, `dos`, `fuzz`,
+`fuzzing`, `bruteforce`, `brute-force`). At most 50 entries of 20 params.
+Only a workflow scan takes them. The update audit entry names the entries
+that changed. Writing them needs the scan's own permission (`scans:write`);
+the workflow and the scan are read inside the caller's tenant.
 
 **Versions.** A run pins its workflow's version: the run policy is part of
 the version's spec (left out when empty, so the digest of a workflow without

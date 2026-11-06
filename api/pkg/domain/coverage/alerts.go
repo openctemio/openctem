@@ -206,6 +206,8 @@ func ActionFor(c AlertCondition) AlertAction {
 		return AlertAction{"Turn path discovery on in the scope settings to run it.", "/scope"}
 	case ReadyBudgetSpent:
 		return AlertAction{"The deferred origins run when the daily request budget allows; nothing to do.", "/scope"}
+	case ReadyFeatureOff:
+		return AlertAction{"Turn screenshots on in the attack surface monitoring settings if your organization wants them; the pairs become due at once.", "/attack-surface"}
 	case ReadyNotClaimed:
 		return AlertAction{"Open a waiting run's \"Why waiting?\" or check the sensors' grants and policies; coverage tries again on its own.", "/sensors"}
 	default: // ReadyPolicyDisabled
@@ -228,6 +230,7 @@ var readinessText = map[string]string{
 	ReadyContentMissing:     "the platform has no wordlist pack for its tool yet",
 	ReadySwitchedOff:        "the organization turned it off",
 	ReadyBudgetSpent:        "today's request budget is spent; the rest is deferred",
+	ReadyFeatureOff:         "screenshots are off for this organization",
 }
 
 // ReadinessText returns the English phrase of a readiness reason.

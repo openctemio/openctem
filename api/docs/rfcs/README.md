@@ -96,7 +96,7 @@ RFC-003 (asset source priority) was withdrawn on 2026-10-05; see
 | [RFC-078](RFC-078-passkeys-and-security-notices.md) | Passkeys and account security notices | Partially implemented: the platform console part (§7, 2026-10-16); the user-account phases P1 and P3 are Proposed |
 | [RFC-079](RFC-079-console-platform-settings.md) | Run-time settings in the console instead of environment variables | Accepted, partly implemented (2026-10-18) |
 | [RFC-080](RFC-080-attack-surface-changes-and-digest.md) | Typed attack-surface changes and the weekly digest | Implemented (2026-10-11) |
-| [RFC-081](RFC-081-web-evidence-screenshots.md) | Web evidence and screenshots of web assets | Accepted (2026-10-11); platform side implemented, sensor `screenshot` tool in the sensor repository |
+| [RFC-081](RFC-081-web-evidence-screenshots.md) | Web evidence and screenshots of web assets | Accepted (2026-10-11); platform side implemented, routed as `capture.screenshot`; sensor tool `webshot` in the sensor's `browser` image |
 | [RFC-082](RFC-082-network-seeds.md) | Network seeds (AS numbers, organizations, CIDR) | Implemented (2026-10-11) |
 | [RFC-083](RFC-083-lookalike-domains.md) | Passive lookalike-domain monitoring | Implemented (2026-10-11) |
 | [RFC-084](RFC-084-file-storage.md) | File upload and storage | Implemented: P0 (#1900, #1901) and P1 (#1934, #1936, #1939, #1942), 2026-10-12; logo upload, asynchronous imports and exports later (§6) |

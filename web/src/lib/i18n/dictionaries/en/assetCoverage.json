@@ -31,6 +31,7 @@
   "assetCoverage.reason.credentials_missing": "an API key it needs is not configured",
   "assetCoverage.reason.edge_clear": "edge protection challenged or blocked the last probe",
   "assetCoverage.reason.excluded": "excluded from scope",
+  "assetCoverage.reason.feature_off": "screenshots are off for this organization; turn them on in the attack surface monitoring settings",
   "assetCoverage.reason.host_budget": "this host's request budget of the run is used by other origins on it",
   "assetCoverage.reason.inventory_changed": "no new endpoints since the last run",
   "assetCoverage.reason.no_eligible_sensor": "no sensor can take the work",
