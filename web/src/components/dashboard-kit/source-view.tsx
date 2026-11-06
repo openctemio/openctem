@@ -54,22 +54,24 @@ export function sourceName(t: Translate, s: IntakeSourceRow): string {
 /** "Stale, last receipt 3 days ago" / "Failed 2 hours ago", or null when healthy. */
 export function healthNote(
   t: Translate,
-  s: { health: SourceHealth; last_at: string | null },
+  s: { health: SourceHealth; last_at: string | null; health_last_at?: string | null },
   locale: string
 ): string | null {
   if (s.health === 'ok') return null
-  const when = formatRelativeTime(s.last_at, locale)
+  // The stale sender's own last receipt, never the freshest sender's.
+  const when = formatRelativeTime(s.health_last_at ?? s.last_at, locale)
   return s.health === 'failed'
     ? t('dashboardKit.flow.health.failed', 'Failed {when}', { when })
     : t('dashboardKit.flow.health.stale', 'Stale, last receipt {when}', { when })
 }
 
-const HEALTH_RANK: Record<SourceHealth, number> = { ok: 0, stale: 1, failed: 2 }
-
-/** The worst of two healths. */
-function worst(a: SourceHealth, b: SourceHealth): SourceHealth {
-  return HEALTH_RANK[b] > HEALTH_RANK[a] ? b : a
+/** "Includes 3 released from quarantine", or '' when none were. */
+export function releasedNote(t: Translate, count: number): string {
+  if (!count) return ''
+  return t('dashboardKit.flow.released', 'Includes {count} released from quarantine', { count })
 }
+
+const HEALTH_RANK: Record<SourceHealth, number> = { ok: 0, stale: 1, failed: 2 }
 
 /** One instance with what it fed, summed over the tools it reported for. */
 export interface InstanceGroup {
@@ -79,6 +81,8 @@ export interface InstanceGroup {
   assets: number
   health: SourceHealth
   last_at: string | null
+  health_last_at: string | null
+  released: number
   tools: Array<{ name: string; received: number; assets: number }>
 }
 
@@ -95,11 +99,24 @@ export function groupByInstance(t: Translate, sources: IntakeSourceRow[]): Insta
         assets: 0,
         health: 'ok' as SourceHealth,
         last_at: null as string | null,
+        health_last_at: null as string | null,
+        released: 0,
         tools: [],
       }
       g.received += i.received
       g.assets += i.assets ?? 0
-      g.health = worst(g.health, i.health)
+      // The group is as unhealthy as its worst sender; its note speaks of that sender's last receipt.
+      if (
+        HEALTH_RANK[i.health] > HEALTH_RANK[g.health] ||
+        (i.health !== 'ok' &&
+          i.health === g.health &&
+          i.last_at &&
+          (!g.health_last_at || i.last_at > g.health_last_at))
+      ) {
+        g.health = i.health
+        g.health_last_at = i.last_at
+      }
+      g.released += i.released ?? 0
       if (i.last_at && (!g.last_at || i.last_at > g.last_at)) g.last_at = i.last_at
       g.tools.push({ name: sourceName(t, s), received: i.received, assets: i.assets ?? 0 })
       out.set(key, g)
@@ -273,7 +290,9 @@ export function sourceRankRows(
         health: gr.health,
         note: healthNote(t, gr, locale),
         unit: unit(value),
-        meta: gr.tools.map((x) => x.name).join(', '),
+        meta: [gr.tools.map((x) => x.name).join(', '), releasedNote(t, gr.released)]
+          .filter(Boolean)
+          .join(', '),
         alt: alt(gr.received, gr.assets),
         tie: gr.assets,
       }
@@ -291,6 +310,7 @@ export function sourceRankRows(
       color: opts.color?.(s),
       health: s.health,
       note: healthNote(t, s, locale),
+      meta: releasedNote(t, s.released ?? 0) || undefined,
       unit: unit(value),
       alt: alt(s.received, s.assets ?? 0),
       tie: s.assets ?? 0,
