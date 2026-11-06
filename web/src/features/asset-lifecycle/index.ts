@@ -1,6 +1,11 @@
 export * from './types'
 export * from './api'
 export { AssetStatusBadge } from './components/asset-status-badge'
+export {
+  AssetLivenessBadge,
+  AssetLivenessLine,
+  livenessNotable,
+} from './components/asset-liveness-badge'
 export { LifecycleSnoozeMenu } from './components/lifecycle-snooze-menu'
 export {
   LifecycleSettingsForm,

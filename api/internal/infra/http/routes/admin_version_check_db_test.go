@@ -25,8 +25,10 @@ import (
 // audited; no tenant token reaches the routes.
 func TestAdminVersionCheck_Routes_DB(t *testing.T) {
 	sig := releasefeedtest.New(t)
-	now := time.Now().UTC()
 	feedFile := func(seq uint64) json.RawMessage {
+		// Sign at the moment of the call: the virtual certificate starts when
+		// it is made, and a time read at the top of the test can precede it.
+		now := time.Now().UTC()
 		payload, err := releasefeed.Payload(releasefeed.Feed{Sequence: seq, IssuedAt: now.Add(-time.Minute), ExpiresAt: now.Add(30 * 24 * time.Hour),
 			Releases:   []releasefeed.Release{{Version: "v99.0.0", PublishedAt: now}},
 			Advisories: []releasefeed.Advisory{{ID: "OCTEM-TEST-1", Severity: "critical", Title: "test", FixedIn: "v99.0.0", PublishedAt: now}}})
