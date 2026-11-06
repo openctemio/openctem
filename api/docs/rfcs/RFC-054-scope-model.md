@@ -1420,6 +1420,11 @@ omitted keeps the stored value):
 The Strict scan approval mode forces `off` (`unclassified_scans_effective`).
 An unreadable setting is `off`.
 
+Continuous coverage (RFC-093) follows the same setting: an organization with
+no scope entry at all is paused as `no_scope` only when the setting in force
+is `off` (or unreadable). With `low_impact` or `full` its coverage runs, and
+the gate decides each target as above.
+
 ### 16.6 Job signer ledger
 
 The signer's ledger (RFC-040 §5.6) is unchanged: it signs only targets inside
