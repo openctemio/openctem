@@ -2402,14 +2402,16 @@ func (h *AssetHandler) TriggerScan(w http.ResponseWriter, r *http.Request) {
 }
 
 // UpdateCrownJewel marks/unmarks an asset as a crown jewel with business impact scoring.
+// An omitted business impact score or notes keeps the stored value. When the
+// removal waits for approval (202), nothing on the asset changes.
 func (h *AssetHandler) UpdateCrownJewel(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 	assetID := r.PathValue("id")
 
 	var req struct {
-		IsCrownJewel        bool    `json:"is_crown_jewel"`
-		BusinessImpactScore float64 `json:"business_impact_score"`
-		BusinessImpactNotes string  `json:"business_impact_notes"`
+		IsCrownJewel        bool     `json:"is_crown_jewel"`
+		BusinessImpactScore *float64 `json:"business_impact_score"`
+		BusinessImpactNotes *string  `json:"business_impact_notes"`
 		// Reason is required when unmarking a crown jewel would drop an open
 		// P0/P1 finding on the asset (the unmarking may then wait for approval).
 		Reason string `json:"reason"`
@@ -2421,11 +2423,11 @@ func (h *AssetHandler) UpdateCrownJewel(w http.ResponseWriter, r *http.Request) 
 
 	// Bound the business impact score to 0–100 (same range as risk_score);
 	// the inline struct isn't run through the validator, so check explicitly.
-	if req.BusinessImpactScore < 0 || req.BusinessImpactScore > 100 {
+	if req.BusinessImpactScore != nil && (*req.BusinessImpactScore < 0 || *req.BusinessImpactScore > 100) {
 		apierror.BadRequest("business_impact_score must be between 0 and 100").WriteJSON(w)
 		return
 	}
-	if len(req.BusinessImpactNotes) > 2000 {
+	if req.BusinessImpactNotes != nil && len(*req.BusinessImpactNotes) > 2000 {
 		apierror.BadRequest("business_impact_notes must be at most 2000 characters").WriteJSON(w)
 		return
 	}

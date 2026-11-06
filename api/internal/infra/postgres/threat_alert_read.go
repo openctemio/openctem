@@ -22,12 +22,19 @@ import (
 )
 
 // viewerCountsSQL counts the alert's assets in scope (alias vc); cond is
-// the scope predicate on taa.asset_id.
+// the scope predicate on taa.asset_id. Besides the counts it names the
+// product of the best in-scope match (pr) and how many distinct products
+// match (pc), so a scoped viewer never reads the product of an asset outside
+// their scope.
 func viewerCountsSQL(cond string) string {
 	return `LEFT JOIN LATERAL (
 		SELECT count(*) FILTER (WHERE taa.match_kind <> 'possible') AS c,
 			count(*) FILTER (WHERE taa.match_kind = 'possible') AS p,
-			count(*) FILTER (WHERE taa.internet_facing) AS i
+			count(*) FILTER (WHERE taa.internet_facing) AS i,
+			count(*) FILTER (WHERE taa.criticality = 'critical') AS k,
+			COALESCE((array_agg(taa.product ORDER BY CASE taa.match_kind WHEN 'confirmed' THEN 0 WHEN 'likely' THEN 1 ELSE 2 END,
+				taa.confidence DESC, taa.product) FILTER (WHERE taa.product <> ''))[1], '') AS pr,
+			count(DISTINCT taa.product) FILTER (WHERE taa.product <> '') AS pc
 		FROM threat_alert_assets taa
 		WHERE taa.tenant_id = a.tenant_id AND taa.alert_id = a.id AND ` + cond + `
 	) vc ON true`
@@ -60,12 +67,13 @@ func alertSummary(ctx context.Context, db *DB, tenantID shared.ID, scope *shared
 	if err := db.QueryRowContext(ctx, `SELECT
 			count(*),
 			count(*) FILTER (WHERE a.state IN `+openAlertStates+`),
+			count(*) FILTER (WHERE a.state = 'new'),
 			count(*) FILTER (WHERE a.state IN `+openAlertStates+` AND a.level = 'immediate'),
 			count(*) FILTER (WHERE a.state IN `+openAlertStates+` AND a.level = 'digest'),
 			count(*) FILTER (WHERE a.state IN `+openAlertStates+` AND a.level = 'listed'),
 			count(*) FILTER (WHERE a.state IN `+openAlertStates+` AND a.in_kev),
 			count(*) FILTER (WHERE a.state IN `+openAlertStates+` AND vc.i > 0)`+from, args...).
-		Scan(&out.Seen, &out.Open, &out.Immediate, &out.Digest, &out.Listed, &out.KEV, &out.InternetFacing); err != nil {
+		Scan(&out.Seen, &out.Open, &out.New, &out.Immediate, &out.Digest, &out.Listed, &out.KEV, &out.InternetFacing); err != nil {
 		return out, fmt.Errorf("alert summary: %w", err)
 	}
 	return out, nil
@@ -102,6 +110,9 @@ func (r *ThreatAlertRepository) List(ctx context.Context, tenantID shared.ID, sc
 	if f.InternetOnly {
 		where += " AND vc.i > 0"
 	}
+	if f.KEVOnly {
+		where += " AND a.in_kev"
+	}
 	if s := strings.TrimSpace(f.Search); s != "" {
 		// Both placeholders take the same argument.
 		add("(a.vuln_id ILIKE ? OR a.title ILIKE ?)", "%"+escapeLikePattern(s)+"%")
@@ -113,7 +124,7 @@ func (r *ThreatAlertRepository) List(ctx context.Context, tenantID shared.ID, sc
 	per := max(1, min(f.PerPage, 200))
 	page := max(1, f.Page)
 	args = append(args, per, (page-1)*per)
-	q := `SELECT ` + alertColumns + `, vc.c, vc.p, vc.i` + from + where + `
+	q := `SELECT ` + alertColumns + `, vc.c, vc.p, vc.i, vc.k, vc.pr, vc.pc` + from + where + `
 		ORDER BY CASE a.level WHEN 'immediate' THEN 0 WHEN 'digest' THEN 1 ELSE 2 END, a.ets DESC, a.updated_at DESC, a.id
 		LIMIT $` + strconv.Itoa(len(args)-1) + ` OFFSET $` + strconv.Itoa(len(args))
 	rows, err := r.db.QueryContext(ctx, q, args...)
@@ -123,12 +134,14 @@ func (r *ThreatAlertRepository) List(ctx context.Context, tenantID shared.ID, sc
 	defer rows.Close()
 	out := make([]threatalert.Alert, 0)
 	for rows.Next() {
-		var c, p, i int
-		a, err := scanAlert(rows, &c, &p, &i)
+		var c, p, i, k, pc int
+		var pr string
+		a, err := scanAlert(rows, &c, &p, &i, &k, &pr, &pc)
 		if err != nil {
 			return nil, 0, sum, fmt.Errorf("list alerts: %w", err)
 		}
 		a.Confirmed, a.Possible, a.InternetFacing = c, p, i
+		a.Critical, a.Product, a.ProductCount = k, pr, pc
 		out = append(out, *a)
 	}
 	return out, total, sum, rows.Err()
@@ -139,11 +152,12 @@ func (r *ThreatAlertRepository) List(ctx context.Context, tenantID shared.ID, sc
 func (r *ThreatAlertRepository) Get(ctx context.Context, tenantID shared.ID, scope *shared.DataScope, id shared.ID) (*threatalert.Detail, error) {
 	cond, sargs := inScopeAsset(scope, 3)
 	args := append([]any{tenantID.String(), id.String()}, sargs...)
-	var c, p, i, total int
-	a, err := scanAlert(r.db.QueryRowContext(ctx, `SELECT `+alertColumns+`, vc.c, vc.p, vc.i,
+	var c, p, i, k, pc, total int
+	var pr string
+	a, err := scanAlert(r.db.QueryRowContext(ctx, `SELECT `+alertColumns+`, vc.c, vc.p, vc.i, vc.k, vc.pr, vc.pc,
 			(SELECT count(*) FROM threat_alert_assets t WHERE t.tenant_id = a.tenant_id AND t.alert_id = a.id)
 		FROM threat_alerts a `+viewerCountsSQL(cond)+`
-		WHERE a.tenant_id = $1 AND a.id = $2 AND (vc.c + vc.p) > 0`, args...), &c, &p, &i, &total)
+		WHERE a.tenant_id = $1 AND a.id = $2 AND (vc.c + vc.p) > 0`, args...), &c, &p, &i, &k, &pr, &pc, &total)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, threatalert.ErrNotFound
 	}
@@ -151,6 +165,7 @@ func (r *ThreatAlertRepository) Get(ctx context.Context, tenantID shared.ID, sco
 		return nil, fmt.Errorf("get alert: %w", err)
 	}
 	a.Confirmed, a.Possible, a.InternetFacing = c, p, i
+	a.Critical, a.Product, a.ProductCount = k, pr, pc
 	d := &threatalert.Detail{Alert: *a, AllInScope: c+p == total}
 
 	rows, err := r.db.QueryContext(ctx, `

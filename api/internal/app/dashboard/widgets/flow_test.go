@@ -297,3 +297,46 @@ func TestIntake_KindsInstancesAndWorstHealth(t *testing.T) {
 		t.Errorf("failing %d stale %d", in.Failing, in.Stale)
 	}
 }
+
+// A source whose freshest sender reported 48 minutes ago but one of whose
+// other senders went quiet for days is stale because of that sender, and its
+// note must speak about that sender's last receipt, never "last receipt 48
+// minutes ago". A sender on a daily cadence that reported 48 minutes ago is
+// healthy.
+func TestIntake_StaleNoteNamesTheStaleSender(t *testing.T) {
+	now := time.Date(2026, 11, 5, 12, 0, 0, 0, time.UTC)
+	day := 24 * time.Hour
+	fresh := now.Add(-48 * time.Minute)
+	quiet := now.Add(-5 * day)
+	facts := &ctemFacts{intake: []dashboard.IntakeRow{
+		{Origin: "sensor", Tool: "nuclei", Receipts: 9, Received: 20, LastAt: fresh, LastStatus: "completed",
+			MedianGap: ptrDur(day),
+			Instances: []dashboard.IntakeInstanceRow{
+				{Kind: "sensor", ID: "11111111-1111-1111-1111-111111111111", Received: 15, LastAt: fresh,
+					LastStatus: "completed", MedianGap: ptrDur(day)},
+				{Kind: "sensor", ID: "22222222-2222-2222-2222-222222222222", Received: 5, LastAt: quiet,
+					LastStatus: "completed", MedianGap: ptrDur(day)},
+			}},
+		{Origin: "sensor", Tool: "httpx", Receipts: 5, Received: 9, LastAt: fresh, LastStatus: "completed",
+			MedianGap: ptrDur(day),
+			Instances: []dashboard.IntakeInstanceRow{{Kind: "sensor", ID: "11111111-1111-1111-1111-111111111111",
+				Received: 9, LastAt: fresh, LastStatus: "completed", MedianGap: ptrDur(day)}}},
+	}}
+	s := NewService(nil, nil, facts, nil)
+	s.now = func() time.Time { return now }
+	in, err := s.intake(context.Background(), orgScope(shared.NewID()), now.Add(-30*day), FlowFigure{})
+	if err != nil {
+		t.Fatalf("intake: %v", err)
+	}
+	by := map[string]IntakeSource{}
+	for _, src := range in.Sources {
+		by[src.Tool] = src
+	}
+	nuc, httpx := by["nuclei"], by["httpx"]
+	if nuc.Health != HealthStale || !nuc.HealthLastAt.Equal(quiet) || !nuc.LastAt.Equal(fresh) {
+		t.Errorf("nuclei health %s, health_last_at %v, last_at %v", nuc.Health, nuc.HealthLastAt, nuc.LastAt)
+	}
+	if httpx.Health != HealthOK || !httpx.HealthLastAt.Equal(fresh) {
+		t.Errorf("a daily source that reported 48 minutes ago is %s (health_last_at %v)", httpx.Health, httpx.HealthLastAt)
+	}
+}

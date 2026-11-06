@@ -36,6 +36,7 @@ import {
 import { LazyScanAssetsDialog } from '@/features/scans/components/lazy-dialogs'
 import { TenableScanNowButton } from '@/features/integrations/components/scanners/tenable-scan-now'
 import { isTenableScannableAssetType } from '@/features/integrations/lib/tenable-sc'
+import { isScannableAssetType, useAssetTypeRegistry } from '@/features/asset-types'
 import { useAssetAttribution, useDecideAttribution } from '../hooks/use-asset-attribution'
 import {
   ATTRIBUTION_STATE_CLASS,
@@ -65,11 +66,29 @@ export interface AssetScanningSectionProps {
 export function AssetScanningSection({ asset, onShowDetails }: AssetScanningSectionProps) {
   const { t } = useTranslation()
   const { can } = usePermissions()
-  const { attribution, error, isLoading, mutate } = useAssetAttribution(asset.id)
+  // Scope and scanning only mean something for a type scans can reach (the
+  // registry's scannable_by); for any other type the request is never made.
+  const { registry } = useAssetTypeRegistry()
+  const notApplicable = isScannableAssetType(registry, asset.type, asset.subType) === false
+  const { attribution, error, isLoading, mutate } = useAssetAttribution(
+    notApplicable ? null : asset.id
+  )
   const { decide, saving } = useDecideAttribution(asset.id)
   const [draft, setDraft] = useState<ScopeEntryDraft | null>(null)
   const [scanOpen, setScanOpen] = useState(false)
 
+  if (notApplicable) {
+    return (
+      <DetailSection title={t('assets.scanning.title', 'Scope and scanning')} icon={Radar}>
+        <p className="text-sm text-muted-foreground">
+          {t(
+            'assets.scanning.notApplicable',
+            'Scans do not reach this type of asset, so scope and scanning do not apply.'
+          )}
+        </p>
+      </DetailSection>
+    )
+  }
   if (isLoading) {
     return (
       <DetailSection title={t('assets.scanning.title', 'Scope and scanning')} icon={Radar}>

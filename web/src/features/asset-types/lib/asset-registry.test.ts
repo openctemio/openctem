@@ -76,3 +76,28 @@ describe('asset registry lookups', () => {
     expect(Object.keys(ASSET_TYPE_CLASSES)).toHaveLength(37)
   })
 })
+
+describe('isScannableAssetType', () => {
+  const registry = {
+    types: [
+      { type: 'host', scannable_by: ['host', 'ip'] },
+      { type: 'credential', scannable_by: [] },
+      { type: 'repository' },
+      { type: 'application', alias_of: { type: 'host', sub_type: 'site' }, scannable_by: ['url'] },
+    ],
+  } as never
+
+  it('answers from the registry scan targets', async () => {
+    const { isScannableAssetType } = await import('./asset-registry')
+    expect(isScannableAssetType(registry, 'host')).toBe(true)
+    expect(isScannableAssetType(registry, 'credential')).toBe(false)
+    expect(isScannableAssetType(registry, 'repository')).toBe(false)
+    expect(isScannableAssetType(registry, 'host', 'site')).toBe(true)
+    expect(isScannableAssetType(registry, 'unknown')).toBe(false)
+  })
+
+  it('does not guess before the registry has loaded', async () => {
+    const { isScannableAssetType } = await import('./asset-registry')
+    expect(isScannableAssetType(undefined, 'credential')).toBeUndefined()
+  })
+})

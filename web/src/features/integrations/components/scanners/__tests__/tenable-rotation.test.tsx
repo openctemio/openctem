@@ -59,7 +59,7 @@ import { TenableScanNowButton } from '../tenable-scan-now'
 import type { Integration } from '@/features/integrations/types/integration.types'
 
 const STALLED =
-  'rotation stalled: the previous batch failed after it launched, so its results may not be ingested; an administrator resumes rotation to recycle the rotation repository'
+  'rotation stalled: the previous batch failed after it launched, so its results may not be ingested; an administrator resumes rotation'
 
 function connector(
   id: string,
@@ -119,16 +119,28 @@ describe('RotationFields', () => {
     fireEvent.click(ack)
     expect(onChange).toHaveBeenCalledWith({ rotationAcknowledged: true })
     const wait = screen.getByLabelText(/Wait after a batch/) as HTMLInputElement
-    expect(wait.value).toBe('12')
-    fireEvent.change(wait, { target: { value: '24' } })
-    expect(onChange).toHaveBeenCalledWith({ rotationWaitHours: 24 })
+    expect(wait.value).toBe('26')
+    expect(wait.min).toBe('24')
+    fireEvent.change(wait, { target: { value: '30' } })
+    expect(onChange).toHaveBeenCalledWith({ rotationWaitHours: 30 })
+    expect(screen.getByTestId('tsc-rotation-needs')).toHaveTextContent(
+      /universal rotation repository/
+    )
   })
 
-  it('recycle: the acknowledgement, no wait', () => {
+  it('recycle: the acknowledgement, no wait, and the Administrator key it needs', () => {
     render(<Harness initial={{ rotation: 'recycle', rotationAcknowledged: true }} />)
     expect(screen.getByRole('checkbox')).toBeChecked()
     expect(screen.getByText(/license terms allow rotating more assets/)).toBeInTheDocument()
     expect(screen.queryByLabelText(/Wait after a batch/)).not.toBeInTheDocument()
+    expect(screen.getByTestId('tsc-rotation-needs')).toHaveTextContent(/Administrator API key/)
+  })
+
+  it('purge: the acknowledgement, no wait, no administrator key', () => {
+    render(<Harness initial={{ rotation: 'purge' }} />)
+    expect(screen.getByRole('checkbox')).not.toBeChecked()
+    expect(screen.queryByLabelText(/Wait after a batch/)).not.toBeInTheDocument()
+    expect(screen.getByTestId('tsc-rotation-needs')).toHaveTextContent(/No administrator key/)
   })
 })
 

@@ -177,6 +177,8 @@ export interface ScanWorkflowStep {
   /** How the step picks its tool: pin (tool), prefer (prefer_tools) or auto. */
   tool_selection?: 'auto' | 'prefer' | 'pin'
   config?: Record<string, unknown>
+  /** Depth policy: per-depth overlays of the capability's standard params, min depth. */
+  run_policy?: Record<string, unknown>
   timeout_seconds?: number
   depends_on?: string[]
   condition?: StepCondition
