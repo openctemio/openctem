@@ -276,9 +276,10 @@ func (s *Service) admitUnsolicited(ctx context.Context, agt *sensor.Sensor, tena
 		return true, nil
 	}
 
-	// A quarantined report is stored as is: mask raw secrets first, as
-	// Ingest does before it applies one.
+	// A quarantined report is stored as is: mask raw secrets and e-mail
+	// addresses first, as Ingest does before it applies one.
 	redactReportSecrets(sub.Report)
+	maskReportEmails(sub.Report)
 	payload, err := json.Marshal(sub.Report)
 	if err != nil {
 		return false, fmt.Errorf("encode quarantined report: %w", err)

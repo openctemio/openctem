@@ -65,6 +65,8 @@ type AssetProcessor struct {
 
 	// webEvidence stores the reserved web_evidence captures (nil = dropped).
 	webEvidence WebEvidenceRecorder
+	// pageChange schedules a new capture of a web service whose page changed (nil = cadence only).
+	pageChange PageChangeNotifier
 	// webContent takes the reserved web_content fetches (nil = dropped).
 	webContent WebContentRecorder
 }
@@ -267,12 +269,17 @@ func (p *AssetProcessor) mergeTrackingExposure(
 	observedAt time.Time,
 	recovered *[]shared.ID,
 	becameExposed *[]*asset.Asset,
+	pageChanged *[]shared.ID,
 ) []*asset.AssetStateChange {
 	oldExposure := existing.Exposure()
 	oldInternet := existing.IsInternetAccessible()
 	wasFacing := oldInternet || oldExposure == asset.ExposurePublic
 
+	pageBefore := pageSignature(existing)
 	p.mergeCTISIntoAsset(existing, ctisAsset, tool, observedAt, recovered)
+	if pageChanged != nil && pageBefore != "" && pageSignature(existing) != pageBefore {
+		*pageChanged = append(*pageChanged, existing.ID())
+	}
 
 	if becameExposed != nil && !wasFacing &&
 		(existing.IsInternetAccessible() || existing.Exposure() == asset.ExposurePublic) {
@@ -389,6 +396,10 @@ func (p *AssetProcessor) processBatch(
 	// read before any asset is dropped.
 	scope.primeJobBound(report)
 
+	// The source of the service protocols the report names, from the
+	// capability the platform bound it to (service_kind.go).
+	kindEvidence := serviceKindEvidence(report)
+
 	// Junk names from passive sources (a domain that is not a host name, the
 	// remnant of a percent-encoded delimiter) never become assets.
 	if err := p.dropJunkHostnames(ctx, tenantID, report, output); err != nil {
@@ -461,6 +472,8 @@ func (p *AssetProcessor) processBatch(
 	// Set once the upsert persisted the merges, so a failed upsert never
 	// announces an exposure that was not saved.
 	var exposedPersisted []*asset.Asset
+	// Web services whose page changed (title, status, redirect, favicon).
+	var pageChanged []shared.ID
 
 	cfg := p.defaultCorrelationConfig()
 	if tenantCfg != nil {
@@ -495,19 +508,18 @@ func (p *AssetProcessor) processBatch(
 		if normalizedName == "" {
 			continue
 		}
-		// A scan command whose targets are all addresses and ranges reports
-		// only on them: an asset naming only other addresses is dropped,
-		// with its findings (RFC-088 output binding).
+		// An asset outside its command's addresses (an address-only scan)
+		// or outside its targets (a hostname-scoped scan) is recorded as a
+		// scan discovery, never dropped; past the per-report cap it is
+		// refused with its findings (job_bound.go).
 		if scope.outsideAddressChunk(normalizedName, ctisAsset.Properties) {
-			skipOutsideChunk(output, ctisAsset.ID)
-			continue
-		}
-		// A hostname-scoped command reports only at or under its target
-		// names, its target addresses and the addresses those names state:
-		// anything else is dropped with its findings (job_bound.go).
-		if scope.outsideJobTargets(normalizedName, coreType) {
-			skipOutsideJob(output, ctisAsset.ID)
-			continue
+			if !recordOutsideTargets(output, ctisAsset.ID, true) {
+				continue
+			}
+		} else if scope.outsideJobTargets(normalizedName, coreType) {
+			if !recordOutsideTargets(output, ctisAsset.ID, false) {
+				continue
+			}
 		}
 
 		// When the source last saw this asset (its last_seen, never later
@@ -528,7 +540,8 @@ func (p *AssetProcessor) processBatch(
 			}
 			alterable := isNew[id] || scope.mayAlter(existing)
 			if alterable {
-				exposureChanges = append(exposureChanges, p.mergeTrackingExposure(tenantID, existing, ctisAsset, report.Tool, seenAt, &recoveredIDs, &becameExposed)...)
+				exposureChanges = append(exposureChanges, p.mergeTrackingExposure(tenantID, existing, ctisAsset, report.Tool, seenAt, &recoveredIDs, &becameExposed, &pageChanged)...)
+				classifyReportedService(existing, ctisAsset, kindEvidence)
 				alterRefs[ctisAsset.ID] = true
 			} else {
 				output.AssetsLimited++
@@ -577,6 +590,7 @@ func (p *AssetProcessor) processBatch(
 				return
 			}
 			scope.dropUntrustedClaims(newAsset)
+			classifyReportedService(newAsset, ctisAsset, kindEvidence)
 			// Seen when its source saw it, so a later report observed earlier
 			// cannot pass it.
 			newAsset.MarkSeenAt(seenAt)
@@ -830,6 +844,7 @@ func (p *AssetProcessor) processBatch(
 		p.flushIdentity(ctx, idx, finalID)
 		discovered = append(discovered, inserted...)
 		exposedPersisted = becameExposed
+		p.notifyPagesChanged(ctx, tenantID, pageChanged)
 	}
 
 	// Step 5: Create/update repository extensions for repository assets

@@ -28,7 +28,11 @@ type Definition struct {
 	// WorkflowSteps: tool or capability of each workflow step, sorted (a
 	// workflow edit that changes the tools changes the definition).
 	WorkflowSteps []string `json:"workflow_steps,omitempty"`
-	ProfileID     string   `json:"profile_id,omitempty"`
+	// StepParams: the scan's per-step overrides of standard params (what a
+	// step searches for and how hard), so an edit after approval needs a new
+	// one. Empty for a scan with none, so existing approvals keep matching.
+	StepParams map[string]map[string]any `json:"step_params,omitempty"`
+	ProfileID  string                    `json:"profile_id,omitempty"`
 	// RuleSources is the rule sources a run uses (the scan's, else its
 	// profile's; empty: both), so switching which rules run, on the scan or
 	// on its profile, needs a new approval.

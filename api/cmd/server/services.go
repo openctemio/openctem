@@ -131,6 +131,7 @@ import (
 	signupapp "github.com/openctemio/openctem/api/internal/app/signup"
 	"github.com/openctemio/openctem/api/internal/app/sla"
 	"github.com/openctemio/openctem/api/internal/app/storagequota"
+	tasksecretapp "github.com/openctemio/openctem/api/internal/app/tasksecret"
 	"github.com/openctemio/openctem/api/internal/app/template"
 	tenantapp "github.com/openctemio/openctem/api/internal/app/tenant"
 	"github.com/openctemio/openctem/api/internal/app/tenantai"
@@ -138,6 +139,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/threatsource"
 	"github.com/openctemio/openctem/api/internal/app/ticketing"
 	appticketmap "github.com/openctemio/openctem/api/internal/app/ticketmap"
+	toolsourceapp "github.com/openctemio/openctem/api/internal/app/toolsource"
 	"github.com/openctemio/openctem/api/internal/app/validation"
 	"github.com/openctemio/openctem/api/internal/app/versioncheck"
 	vexapp "github.com/openctemio/openctem/api/internal/app/vex"
@@ -768,6 +770,11 @@ type Services struct {
 	SensorGrant *sensorgrant.Service
 	ScanZone    *scanzoneapp.Service
 	ProxyPool   *proxypoolapp.Service
+	// ToolSource holds the organization keys of third-party tool sources.
+	ToolSource *toolsourceapp.Service
+	// TaskSecrets lists a claimed job's secret refs and answers the sealed
+	// per-task fetch.
+	TaskSecrets *tasksecretapp.Service
 	// ScanWindow manages scan window policies and overrides (RFC-067);
 	// ScanWindowResolver finds what governs targets for the claim, the
 	// trigger and the API.
@@ -1209,9 +1216,6 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// The user service lets AddMember enforce Security.AllowedDomains and lets
 	// the suspend/reactivate notifier resolve the recipient.
 	s.Tenant.SetUserService(s.User)
-	// Requiring SSO needs sso.enforcement for the organization; the sweep turns it off
-	// after the grace once the organization lost it.
-	s.Tenant.SetSSOFeatureGate(s.Entitlement, repos.Tenant)
 
 	// Initialize asset services
 	s.Asset = asset.NewAssetService(repos.Asset, log)
@@ -2415,6 +2419,13 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Proxy pools for scan traffic: credentials encrypted with the
 	// credentials key, never stored in clear.
 	s.ProxyPool = proxypoolapp.NewService(repos.ProxyPool, s.Encryptor, s.Audit, log)
+	// Tool source keys: encrypted with the credentials key, write-only,
+	// delivered only to the sensor holding a task of the organization's job.
+	s.ToolSource = toolsourceapp.NewService(repos.ToolSourceKey, s.Encryptor, s.Audit, log)
+	// Task secrets: the refs a claimed job may use (in its signed payload)
+	// and the sealed per-task fetch. The command reader is set once the
+	// command service exists.
+	s.TaskSecrets = tasksecretapp.NewService(repos.CommandSecretGrant, nil, repos.SensorGrant, s.ToolSource, s.ProxyPool, s.Audit, log)
 	// The Test button: sensors test the endpoints, the platform never
 	// connects to a proxy. Disabled when no https address is known for the
 	// echo (PROXY_TEST_ECHO_URL, SENSOR_PUBLIC_API_URL or APP_URL).
@@ -2476,6 +2487,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// Per-sensor tool settings ride on every scan job, inside the signed
 		// payload (settings_layers.sensor).
 		command.WithToolSettings(s.Sensor),
+		// The job's secret refs ride in the signed payload (secrets).
+		command.WithTaskSecrets(s.TaskSecrets),
 		// RFC-052 §5: each sensor's grant, before every other gate.
 		command.WithGrants(repos.SensorGrant, s.Sensor),
 		// RFC-055 §6.3: the tier is assigned from the tool contract.
@@ -2530,6 +2543,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// that lost access or opted out keeps its queued shared jobs waiting).
 	cmdOpts = append(cmdOpts, command.WithSharedAccess(s.SharedSensorsAllowed))
 	s.Command = command.NewService(repos.Command, log, cmdOpts...)
+	s.TaskSecrets.SetCommands(s.Command)
 	s.SensorContent = sensorapp.NewContentService(repos.Sensor, s.Sensor, repos.SensorContentPolicy, repos.Command, s.Audit, log)
 	// Tenable.sc sensor connector (RFC-047): connector_sync commands pinned to
 	// the integration's sensor, followed to keep the sync cursor.
@@ -2826,6 +2840,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// Coverage of a tool that reads a platform wordlist (enumerate.subdomains)
 		// pauses until the platform has the pack, instead of failing at claim.
 		scan.WithCoverageContent(contentPlanner),
+		// capture.screenshot is planned only for an organization that switched screenshots on.
+		scan.WithCoverageSettings(s.Tenant),
 		// Ownership of every actively scanned target (RFC-036 §6.3): confirmed,
 		// or unrecorded inside a scope target / under a seed; never rejected.
 		scan.WithAttributionGate(s.ActiveGate),
@@ -2984,6 +3000,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// A step's chunks keep a name with the addresses it resolves to.
 		scanrun.WithNameAddresses(repos.Attribution),
 	)
+	// A workflow step that takes screenshots is skipped while the organization has them off.
+	s.ScanRun.SetStepGate(s.Scan)
 
 	// One step dispatcher (research/27 P0-2): a workflow scan's first steps
 	// are queued by the scan run service, like every later step.
@@ -3007,6 +3025,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// waiting for it is planned.
 	s.Ingest.SetStepOutputRecorder(scanHops)
 	s.Ingest.SetStepInfoRecorder(scanHops)
+	s.Ingest.SetStepDispositionRecorder(scanHops)
 	s.Ingest.SetCommandIngestedHook(s.ScanRun.OnCommandIngested)
 
 	// Wire up scan workflow deactivator to tool service for cascade deactivation
@@ -3195,14 +3214,17 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 
 	// Initialize assignment engine and wire to vulnerability service for auto-routing
 	assignmentEngine := assignment.NewEngine(repos.AccessControl, log)
-	// Resolve a finding's asset type so rules scoped by AssetTypes can match
-	// (without this, such rules never fire).
-	assignmentEngine.SetAssetTypeResolver(func(ctx context.Context, tenantID, assetID shared.ID) (assetdom.TypeRef, error) {
+	// Resolve a finding's asset (type and tags) so rules scoped by AssetTypes
+	// or AssetTags can match (without this, such rules never fire).
+	assignmentEngine.SetAssetFactsResolver(func(ctx context.Context, tenantID, assetID shared.ID) (assignment.AssetFacts, error) {
 		a, err := repos.Asset.GetByID(ctx, tenantID, assetID)
 		if err != nil {
-			return assetdom.TypeRef{}, err
+			return assignment.AssetFacts{}, err
 		}
-		return assetdom.TypeRef{Type: a.Type(), SubType: a.SubType()}, nil
+		return assignment.AssetFacts{
+			Type: assetdom.TypeRef{Type: a.Type(), SubType: a.SubType()},
+			Tags: a.Tags(),
+		}, nil
 	})
 	s.Vulnerability.SetAssignmentEngine(assignmentEngine)
 
@@ -3492,6 +3514,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	}
 	s.WebEvidence = webevidenceapp.NewService(repos.AssetWebEvidence, blobs, s.Tenant, log.With("service", "web-evidence"))
 	s.Ingest.SetWebEvidenceRecorder(s.WebEvidence)
+	// A web service whose page changed is captured again (not only on the 30-day cadence).
+	s.Ingest.SetPageChangeNotifier(repos.AssetCoverage)
 	// Web page monitoring (RFC-138): fetch results of watched URLs are
 	// diffed server-side; a new third-party script host is an exposure
 	// through the EASM writer (alerts), resolved by the DNS repository's
@@ -3631,9 +3655,9 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	} else {
 		log.Warn("sso: no Redis client; sign-in state kept in process (single-replica only)")
 	}
-	// Configuring SSO connections needs sso.connections for the organization; sign-in
-	// through a configured connection is never gated.
-	s.SSO.SetFeatureGate(s.Entitlement)
+	// Creating another SSO connection is capped by sso_connections; sign-in
+	// through a configured connection and requiring SSO are never limited.
+	s.SSO.SetLimits(s.Entitlement)
 
 	// SSO P1: DNS-TXT domain-ownership verification. Wired as the PRIMARY JIT
 	// auto-provisioning gate — a non-member is auto-joined only when the email

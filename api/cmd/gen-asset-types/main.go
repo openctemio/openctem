@@ -62,8 +62,18 @@ const (
 func main() {
 	check := flag.Bool("check", false, "fail if the generated files or the newest migration block drifted from the YAML")
 	printSQL := flag.Bool("sql", false, "print the SQL block for a new migration")
+	kindSQL := flag.Bool("service-kinds-sql", false, "print the service kind lookup tables for a backfill migration")
 	flag.Parse()
 
+	if *kindSQL {
+		m, err := load(yamlPath, relationshipPath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "gen-asset-types: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Print(renderServiceKindsSQL(m))
+		return
+	}
 	if err := run(*check, *printSQL); err != nil {
 		fmt.Fprintf(os.Stderr, "gen-asset-types: %v\n", err)
 		os.Exit(1)
@@ -212,7 +222,11 @@ type config struct {
 	// property key (RFC-042 §6.3.9).
 	CommonProperties []string           `yaml:"common_properties"`
 	Properties       map[string]propCfg `yaml:"properties"`
-	Types            []typeCfg          `yaml:"types"`
+	// Service kinds (service_kinds.go).
+	ServiceCategories []serviceCategoryCfg `yaml:"service_categories"`
+	KindSources       []kindSourceCfg      `yaml:"kind_sources"`
+	ServiceKinds      []serviceKindCfg     `yaml:"service_kinds"`
+	Types             []typeCfg            `yaml:"types"`
 }
 
 // propCfg is one property dictionary entry.
@@ -289,6 +303,12 @@ type attrCfg struct {
 	Values []string `yaml:"values" json:"values,omitempty"`
 	Facet  bool     `yaml:"facet" json:"facet"`
 	Group  bool     `yaml:"group" json:"group"`
+	// ValuesFrom fills an enum's values from a registry section
+	// (service_kinds, service_categories, kind_sources).
+	ValuesFrom string `yaml:"values_from" json:"-"`
+	// Derived marks a key the platform sets: no form edits it and a
+	// client value is refused.
+	Derived bool `yaml:"derived" json:"derived,omitempty"`
 }
 
 type typeCfg struct {
@@ -370,6 +390,10 @@ type model struct {
 	Properties       []propOut    `json:"properties"`
 	CommonProperties []string     `json:"common_properties"`
 	VirtualTypes     []virtualCfg `json:"-"`
+
+	ServiceCategories []serviceCategoryCfg `json:"service_categories"`
+	KindSources       []kindSourceCfg      `json:"kind_sources"`
+	ServiceKinds      []serviceKindCfg     `json:"service_kinds"`
 }
 
 type lensOut struct {
@@ -571,12 +595,18 @@ func resolve(cfg *config, rel *relConfig) (*model, error) { //nolint:gocognit,go
 		return nil, fmt.Errorf("class %q is required", classOther)
 	}
 
+	if err := resolveServiceKinds(cfg); err != nil {
+		return nil, err
+	}
 	m := &model{
-		Sections:         cfg.Sections,
-		Cards:            cfg.Cards,
-		CoreFields:       cfg.CoreFields,
-		LegacyCategories: cfg.LegacyCategories,
-		VirtualTypes:     cfg.VirtualTypes,
+		ServiceCategories: cfg.ServiceCategories,
+		KindSources:       cfg.KindSources,
+		ServiceKinds:      cfg.ServiceKinds,
+		Sections:          cfg.Sections,
+		Cards:             cfg.Cards,
+		CoreFields:        cfg.CoreFields,
+		LegacyCategories:  cfg.LegacyCategories,
+		VirtualTypes:      cfg.VirtualTypes,
 	}
 	classLens := map[string]string{}
 	for _, c := range cfg.Classes {
@@ -1395,6 +1425,9 @@ func renderGo(m *model) ([]byte, error) {
 			if a.Group {
 				w(", Group: true")
 			}
+			if a.Derived {
+				w(", Derived: true")
+			}
 			w("},")
 		}
 		if len(t.Attributes) > 0 {
@@ -1452,6 +1485,7 @@ func renderGo(m *model) ([]byte, error) {
 	}
 	w("}\n\n")
 	w("var registryCommonProperties = %s\n\n", goStrings(m.CommonProperties))
+	renderGoServiceKinds(w, m)
 	w("// TypeAliases maps legacy types to their consolidated core type + sub_type,\n")
 	w("// from the `alias_of` entries and the `type_inputs` of the registry. Used by\n// ingest to normalize incoming data.\n")
 	w("var TypeAliases = map[AssetType]struct {\nCoreType AssetType\nSubType  string\n}{\n")
@@ -1694,6 +1728,7 @@ func renderTS(m *model) string {
 	}
 	w("}\n\n")
 	renderTSProperties(w, m)
+	renderTSServiceKinds(w, m)
 	return b.String()
 }
 

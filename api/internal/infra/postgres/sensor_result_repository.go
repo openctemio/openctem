@@ -384,7 +384,7 @@ func (r *SensorResultRepository) PendingInGroup(ctx context.Context, g sensorres
 	}
 	after := afterID.String()
 	if afterID.IsZero() {
-		after = "00000000-0000-0000-0000-000000000000"
+		after = uuidBeforeAll
 	}
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT q.id, q.created_at

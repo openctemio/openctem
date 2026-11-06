@@ -83,22 +83,22 @@ func TestDepth_MinDepthAndParams(t *testing.T) {
 // reason, never failed; so is the same step when it is required (a run goes
 // as far as the organization's tools support).
 func TestOptionalStep_SkippedWithoutTool(t *testing.T) {
-	s, run, tpl, store, cmds := policyFixture("capture.screenshot", scanworkflow.DepthStandard, scanworkflow.RunPolicy{Optional: true})
+	s, run, tpl, store, cmds := policyFixture("fingerprint.tech", scanworkflow.DepthStandard, scanworkflow.RunPolicy{Optional: true})
 	if err := s.scheduleRunnableSteps(context.Background(), run, tpl); err != nil {
 		t.Fatal(err)
 	}
 	a := store.rows["a"]
 	if len(cmds.created) != 0 || a.Status != scanrun.StepRunStatusSkipped ||
-		!strings.Contains(a.SkipReason, "available when a tool that runs capture.screenshot is installed") {
+		!strings.Contains(a.SkipReason, "available when a tool that runs fingerprint.tech is installed") {
 		t.Fatalf("optional: commands %d, a = %s (%q)", len(cmds.created), a.Status, a.SkipReason)
 	}
 
-	s, run, tpl, store, _ = policyFixture("capture.screenshot", scanworkflow.DepthStandard, scanworkflow.RunPolicy{})
+	s, run, tpl, store, _ = policyFixture("fingerprint.tech", scanworkflow.DepthStandard, scanworkflow.RunPolicy{})
 	if err := s.scheduleRunnableSteps(context.Background(), run, tpl); err != nil {
 		t.Fatal(err)
 	}
 	if a := store.rows["a"]; a.Status != scanrun.StepRunStatusSkipped || a.ErrorCode != codeNoMatchingTool ||
-		!strings.Contains(a.SkipReason, "capture.screenshot") {
+		!strings.Contains(a.SkipReason, "fingerprint.tech") {
 		t.Fatalf("not optional: a = %s/%s (%q)", a.Status, a.ErrorCode, a.SkipReason)
 	}
 }
@@ -193,10 +193,10 @@ func TestCheckRunPolicyParams(t *testing.T) {
 // optional step's planned capability is left to the graph check.
 func TestValidatedCapabilities(t *testing.T) {
 	opt := &scanworkflow.RunPolicy{Optional: true}
-	if got := validatedCapabilities([]string{"capture.screenshot"}, opt); len(got) != 0 {
+	if got := validatedCapabilities([]string{"fingerprint.tech"}, opt); len(got) != 0 {
 		t.Fatalf("optional planned: %v", got)
 	}
-	if got := validatedCapabilities([]string{"capture.screenshot"}, &scanworkflow.RunPolicy{}); len(got) != 1 {
+	if got := validatedCapabilities([]string{"fingerprint.tech"}, &scanworkflow.RunPolicy{}); len(got) != 1 {
 		t.Fatalf("a step that is not optional must have its planned capability checked: %v", got)
 	}
 	if got := validatedCapabilities([]string{"scan.ports", "exploit.everything"}, opt); len(got) != 2 {
@@ -204,5 +204,136 @@ func TestValidatedCapabilities(t *testing.T) {
 	}
 	if got := validatedCapabilities([]string{"verify.finding"}, opt); len(got) != 1 {
 		t.Fatalf("a cross-cutting capability stays checked: %v", got)
+	}
+}
+
+// The scan's step params are the last layer: step config, then the depth
+// overlay, then the scan override. A read-only (system) workflow step is
+// never changed.
+func TestStepAtDepth_ScanOverrideWinsOverDepthOverlayAndConfig(t *testing.T) {
+	step := &scanworkflow.Step{StepKey: "vulns", Capabilities: []string{"vuln.templates"},
+		Config: map[string]any{"severity": []any{"critical"}, "tags": []any{"cve"}},
+		RunPolicy: scanworkflow.RunPolicy{Depths: map[scanworkflow.Depth]scanworkflow.DepthOverlay{
+			scanworkflow.DepthDeep: {Params: map[string]any{"severity": []any{"info", "low"}, "tags": []any{"tech"}}},
+		}}}
+	run := &scanrun.Run{Context: map[string]any{
+		scanrun.RunContextKeyDepth: "deep",
+		scanrun.RunContextKeyStepParams: map[string]any{
+			"*:vuln.templates": map[string]any{"severity": []any{"high"}},
+		},
+	}}
+	got := stepAtDepth(run, step)
+	if sev := got.Config["severity"].([]any); len(sev) != 1 || sev[0] != "high" {
+		t.Fatalf("severity = %v: the scan override must beat the depth overlay", sev)
+	}
+	if tags := got.Config["tags"].([]any); tags[0] != "tech" {
+		t.Fatalf("tags = %v: the depth overlay still beats the step config where the scan sets nothing", tags)
+	}
+	// A step-key entry beats the capability entry.
+	run.Context[scanrun.RunContextKeyStepParams] = map[string]any{
+		"*:vuln.templates": map[string]any{"severity": []any{"high"}},
+		"vulns":            map[string]any{"severity": []any{"medium"}},
+	}
+	if sev := stepAtDepth(run, step).Config["severity"].([]any); sev[0] != "medium" {
+		t.Fatalf("severity = %v: step key must win", sev)
+	}
+	if step.Config["severity"].([]any)[0] != "critical" {
+		t.Fatal("the workflow step was modified")
+	}
+	// Another capability's step is not touched by the capability entry.
+	ports := &scanworkflow.Step{StepKey: "p", Capabilities: []string{"scan.ports"}, Config: map[string]any{"ports": "80"}}
+	if stepAtDepth(run, ports).Config["ports"] != "80" {
+		t.Fatal("capability entry leaked to another capability")
+	}
+}
+
+// A registration lookup answers for the registered domain: the names of a
+// predecessor's output collapse to their registrable domains, each once, and
+// the cap counts domains, not names.
+func TestDeriveCandidates_RegistryLevelCollapsesNames(t *testing.T) {
+	rdap, _ := stage.Lookup(stage.LookupRDAP)
+	outs := []scanrun.StepOutput{}
+	for _, n := range []string{"a.example.com", "b.example.com", "example.com", "www.example.co.uk", "c.example.org", "co.uk"} {
+		outs = append(outs, scanrun.StepOutput{StepRunID: shared.NewID(), AssetID: shared.NewID(), Name: n, Type: "domain"})
+	}
+	skipped := map[string]int{}
+	c, _ := deriveCandidates(rdap, outs, nil, nil, map[string]bool{}, skipped, 0, 0)
+	got := map[string]bool{}
+	for _, g := range c.gate {
+		got[g.key] = true
+	}
+	if len(c.gate) != 3 || !got["example.com"] || !got["example.co.uk"] || !got["example.org"] {
+		t.Fatalf("planned %v", got)
+	}
+	if skipped[scanrun.ReasonDuplicate] != 2 || skipped[scanrun.ReasonInvalid] != 1 {
+		t.Fatalf("skipped %v", skipped)
+	}
+
+	// A stage that answers per name keeps every name.
+	probe, _ := stage.Lookup(stage.ProbeHTTP)
+	c, _ = deriveCandidates(probe, outs, nil, nil, map[string]bool{}, map[string]int{}, 0, 0)
+	if len(c.gate) != 6 {
+		t.Fatalf("probe planned %d", len(c.gate))
+	}
+}
+
+func TestCollapseRegistrable(t *testing.T) {
+	rdap, _ := stage.Lookup(stage.LookupRDAP)
+	resolved := scanapp.StepTool{Name: "rdap", Stage: rdap, HasStage: true}
+	in := &scanapp.StepTargets{Targets: []string{"a.example.com", "B.Example.com", "example.com", "x.example.org", "198.51.100.7"}, Refused: 2, Reason: "r"}
+	out := collapseRegistrable(resolved, in, nil)
+	want := []string{"example.com", "example.org", "198.51.100.7"}
+	if len(out.Targets) != len(want) || out.Refused != 2 || out.Reason != "r" {
+		t.Fatalf("collapsed %+v", out)
+	}
+	for i, w := range want {
+		if out.Targets[i] != w {
+			t.Fatalf("collapsed %v, want %v", out.Targets, want)
+		}
+	}
+	// The input is not changed, and a stage that answers per name is left alone.
+	if len(in.Targets) != 5 {
+		t.Fatal("input changed")
+	}
+	probe, _ := stage.Lookup(stage.ProbeHTTP)
+	if got := collapseRegistrable(scanapp.StepTool{Name: "httpx", Stage: probe, HasStage: true}, in, nil); got != in {
+		t.Fatal("a per-name stage must keep its targets")
+	}
+	// No explicit target list: left as is.
+	if got := collapseRegistrable(resolved, nil, nil); got != nil {
+		t.Fatalf("got %+v", got)
+	}
+}
+
+type stepGateStub struct{ reason string }
+
+func (g stepGateStub) StepSkipReason(context.Context, shared.ID, *scanworkflow.Step) string {
+	return g.reason
+}
+
+// A step the organization's switch holds off (screenshots) is skipped with
+// the reason and no command exists, so the sensor never takes the picture;
+// with the switch on the same step is dispatched to the screenshot tool.
+func TestStepGate_SkipsScreenshotStepWhenOff(t *testing.T) {
+	s, run, tpl, store, cmds := policyFixture("capture.screenshot", scanworkflow.DepthStandard, scanworkflow.RunPolicy{Optional: true})
+	s.toolRepo = platformTools{names: map[string]bool{"webshot": true, "httpx": true}}
+	s.SetStepGate(stepGateStub{reason: "skipped: screenshots are off for this organization"})
+	if err := s.scheduleRunnableSteps(context.Background(), run, tpl); err != nil {
+		t.Fatal(err)
+	}
+	a := store.rows["a"]
+	if len(cmds.created) != 0 || a.Status != scanrun.StepRunStatusSkipped || !strings.Contains(a.SkipReason, "screenshots are off") {
+		t.Fatalf("switch off: commands %d, a = %s (%q)", len(cmds.created), a.Status, a.SkipReason)
+	}
+
+	s, run, tpl, store, cmds = policyFixture("capture.screenshot", scanworkflow.DepthStandard, scanworkflow.RunPolicy{Optional: true})
+	s.toolRepo = platformTools{names: map[string]bool{"webshot": true, "httpx": true}}
+	s.SetStepGate(stepGateStub{})
+	run.Context["targets"] = []string{"https://example.com"}
+	if err := s.scheduleRunnableSteps(context.Background(), run, tpl); err != nil {
+		t.Fatal(err)
+	}
+	if len(cmds.created) != 1 {
+		t.Fatalf("switch on: commands %d (a = %s %q)", len(cmds.created), store.rows["a"].Status, store.rows["a"].ErrorMessage)
 	}
 }

@@ -90,7 +90,8 @@ func nucleiReport() *ctis.Report {
 }
 
 func (e *mismatchEnv) bind(r *ctis.Report) (*ctis.Report, *contractMismatch) {
-	return e.s.bindOutputTypesFlagged(context.Background(), e.agt, e.tenant, nucleiBinding(), r, Options{Route: "ctis"})
+	kept, _, _, _, flagged := e.s.bindOutputTypesFlagged(context.Background(), e.agt, e.tenant, nucleiBinding(), r, Options{Route: "ctis"})
+	return kept, flagged
 }
 
 func refsOf(r *ctis.Report) map[string]bool {
@@ -163,7 +164,7 @@ func TestContractMismatch_UnverifiedStaysHeld(t *testing.T) {
 func TestContractMismatch_OtherTenantSensorStaysHeld(t *testing.T) {
 	e := newMismatchEnv(t, sensor.ToolOriginBuiltin, sensor.ManifestSourceSensor, sensor.TrustTrusted)
 	other := shared.NewID()
-	got, flagged := e.s.bindOutputTypesFlagged(context.Background(), e.agt, other, nucleiBinding(), nucleiReport(), Options{Route: "ctis"})
+	got, _, _, _, flagged := e.s.bindOutputTypesFlagged(context.Background(), e.agt, other, nucleiBinding(), nucleiReport(), Options{Route: "ctis"})
 	if flagged != nil || len(got.Assets) != 0 {
 		t.Fatalf("cross-tenant report applied: %d assets, %+v", len(got.Assets), flagged)
 	}
@@ -175,7 +176,7 @@ func TestContractMismatch_OutOfScopeOrUnlocatedStaysHeld(t *testing.T) {
 	e := newMismatchEnv(t, sensor.ToolOriginBuiltin, sensor.ManifestSourceSensor, sensor.TrustTrusted)
 	b := nucleiBinding()
 	b.Targets = nil
-	got, flagged := e.s.bindOutputTypesFlagged(context.Background(), e.agt, e.tenant, b, nucleiReport(), Options{Route: "ctis"})
+	got, _, _, _, flagged := e.s.bindOutputTypesFlagged(context.Background(), e.agt, e.tenant, b, nucleiReport(), Options{Route: "ctis"})
 	if flagged != nil || len(got.Assets) != 0 {
 		t.Fatalf("a command without targets let %d assets through", len(got.Assets))
 	}

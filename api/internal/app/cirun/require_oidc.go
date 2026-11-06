@@ -19,6 +19,12 @@ type Settings struct {
 	// prove its identity with its provider's OIDC token. On for every
 	// organization created after migration 001120; existing ones opt in.
 	RequireOIDC bool `json:"require_oidc"`
+	// RunnerRelease is the CI runner (openctemio/ci) release the console's
+	// pipeline snippets pin: the built-in release, raised by the verified
+	// release feed, or the operator's CI_RUNNER_LATEST_VERSION. Read-only,
+	// the same for every organization of the instance; "" when the operator
+	// turned it off.
+	RunnerRelease string `json:"runner_release,omitempty"`
 }
 
 // SettingsStore reads and writes the tenant's CI settings.
@@ -33,7 +39,7 @@ func (s *Service) GetSettings(ctx context.Context, tenantID shared.ID) (Settings
 	if err != nil {
 		return Settings{}, err
 	}
-	return Settings{RequireOIDC: v}, nil
+	return Settings{RequireOIDC: v, RunnerRelease: s.versions().LatestVersion}, nil
 }
 
 // UpdateSettings writes the tenant's CI settings (audited).
@@ -45,7 +51,8 @@ func (s *Service) UpdateSettings(ctx context.Context, tenantID shared.ID, in Set
 	if err := s.repo.SetCIRequireOIDC(ctx, tenantID, in.RequireOIDC); err != nil {
 		return Settings{}, err
 	}
-	if cur != in {
+	in.RunnerRelease = cur.RunnerRelease // read-only
+	if cur.RequireOIDC != in.RequireOIDC {
 		ev := auditapp.NewSuccessEvent(auditdom.ActionCISettingsUpdated, auditdom.ResourceTypeCISettings, tenantID.String()).
 			WithMessage(fmt.Sprintf("CI settings: OIDC required for CI results %t -> %t", cur.RequireOIDC, in.RequireOIDC)).
 			WithMetadata("require_oidc", in.RequireOIDC).
