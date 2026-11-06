@@ -365,3 +365,32 @@ func TestTemplateDriftedFindings_FailsClosed(t *testing.T) {
 		t.Fatalf("another tenant must see nothing: %v, %v", got, err)
 	}
 }
+
+// A covered run that filed its info matches as exposures never reports an
+// informational finding, so its absence proves nothing: with
+// KeepInformational the info and none findings of the tool are no
+// candidates (and do not count as open); without it they are, as before.
+func TestCoverageStale_KeepInformational(t *testing.T) {
+	f := newCoverageFixture(t)
+	ctx := context.Background()
+	repo := NewFindingRepository(&DB{DB: f.db})
+	_, earlier := f.run(t, f.scan, "completed", f.host)
+	high := f.finding(t, f.host, "nuclei", earlier, nil)
+	info := f.finding(t, f.host, "nuclei", earlier, nil)
+	none := f.finding(t, f.host, "nuclei", earlier, nil)
+	f.exec(t, `UPDATE findings SET severity = 'info' WHERE id = $1`, info)
+	f.exec(t, `UPDATE findings SET severity = 'none' WHERE id = $1`, none)
+	cmd, today := f.run(t, f.scan, "completed", f.host)
+	f.receipt(t, cmd)
+	q := ingestreport.CoverageQuery{AssetIDs: []shared.ID{f.host}, ToolName: "nuclei", ProfileID: f.profile.String(), SeenScanIDs: []string{today}, CommandID: cmd}
+
+	stale, open, err := repo.CoverageStaleFindings(ctx, f.tenant, q)
+	if err != nil || len(stale) != 3 || open != 3 {
+		t.Fatalf("without KeepInformational: stale %v open %d err %v, want all three", stale, open, err)
+	}
+	q.KeepInformational = true
+	stale, open, err = repo.CoverageStaleFindings(ctx, f.tenant, q)
+	if err != nil || len(stale) != 1 || stale[0] != high || open != 1 {
+		t.Fatalf("with KeepInformational: stale %v open %d err %v, want only the high one", stale, open, err)
+	}
+}
