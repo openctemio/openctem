@@ -129,7 +129,10 @@ func TestCTEMCycleHandler_CharterlessCycleTakesNotesAndKeepsDescription(t *testi
 // A snapshot that fails rolls the activation back: the cycle stays in
 // planning, without an activation stamp, and the caller sees the error.
 func TestCTEMCycleHandler_ActivateFailsWhenSnapshotFails(t *testing.T) {
-	db := openCycleDB(t)
+	// A private database: the failing-insert trigger is DDL, which the
+	// least-privilege app role may not run, and it must not touch the shared
+	// test database.
+	db := testdb.PrivateDatabase(t, "cyclesnap", "../../../../migrations")
 	ctx := context.Background()
 	tenantID := seedHandlerTenant(ctx, t, db)
 	var cycleID string
