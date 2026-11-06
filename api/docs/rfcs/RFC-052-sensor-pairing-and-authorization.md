@@ -115,8 +115,8 @@ API), outside the authenticated group:
 |---|---|
 | `POST /api/v2/sensor/pairing` | Start: public key, commitment to the sensor nonce, host facts, optional reverse-mode code, optional `sensor_id` (re-pair). Answers `201` with the pairing id, the user code (default mode), the platform key and nonce, the platform signature and the expiry. |
 | `POST /api/v2/sensor/pairing/{id}/reveal` | The sensor nonce; the platform checks it against the commitment and computes the SAS. |
-| `GET /api/v2/sensor/pairing/{id}` | Poll: `pending`, `approved` (with the identity), `denied`, `expired`, `completed`. |
-| `POST /api/v2/sensor/pairing/{id}/confirm` | The sensor's signed statement accepting the identity; the key becomes active. |
+| `GET /api/v2/sensor/pairing/{id}` | Poll: `pending`, `approved` (with the identity and the signed `grant`, §4.2 step 5), `denied`, `expired`, `completed`. |
+| `POST /api/v2/sensor/pairing/{id}/confirm` | The sensor's signed statement accepting the identity; the key becomes active. Answers `completed` with the signed `grant`. |
 
 User plane (tenant from the session, as every user route):
 
@@ -149,6 +149,19 @@ User plane (tenant from the session, as every user route):
    (about 34 bits). The word list is part of the protocol; its SHA-256 is
    pinned in the test vectors.
 
+5. Every approved or completed answer (poll and confirm) carries `grant`:
+   `{payload, signature}`, the platform pairing key `P`'s Ed25519 signature
+   over `"openctem/sensor-pairing/grant/v1" ‖ 0 ‖ payload`, where the payload
+   is the JSON statement of the identity (with its content keys), the job
+   signer's `signed_jobs` block and the platform's TLS roots
+   (`tls_anchors`, when it knows them), naming the pairing id, `S` and `nS`.
+   The sensor verifies it with the `P` of step 3 before it confirms and again
+   on the confirm answer, and saves only what it states; without a valid
+   grant it saves nothing. The SAS covers `P`, so someone in the middle who
+   relays the start untouched cannot swap what the sensor pins afterwards,
+   and a grant is never valid for another sensor or request. Details:
+   [sensor-pairing.md](../architecture/sensor-pairing.md#signed-grant-what-the-sensor-pins).
+
 **Why the commitment.** Without it, a man in the middle who sees `nS` could
 try `nP` values offline until the SAS it shows the sensor equals the one the
 platform shows the administrator (2^34 hashes: seconds). The sensor commits
@@ -156,7 +169,7 @@ to `nS` before it sees `nP`, and `nP` is fixed before `nS` is revealed, so an
 attacker gets one guess (2^-34).
 
 Test vectors (keys, nonces, commitment, SAS, platform signature, confirm
-signature, code encoding and normalisation, and the RFC 9421 signature base
+signature, signed grant, code encoding and normalisation, and the RFC 9421 signature base
 and header values) are one file, byte-identical in
 `api/pkg/sensorproto/pairing/testdata/vectors.json` and
 `sdk-go/pkg/sensorproto/pairing/testdata/vectors.json`; both test suites
