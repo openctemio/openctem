@@ -3,6 +3,7 @@ package validator
 
 import (
 	"fmt"
+	"math/big"
 	"net"
 	"net/url"
 	"regexp"
@@ -65,6 +66,8 @@ type TargetValidator struct {
 	allowInternalIPs bool
 	allowLocalhost   bool
 	maxTargets       int
+	// maxCIDRHostBits bounds a CIDR target to 2^maxCIDRHostBits addresses.
+	maxCIDRHostBits int
 }
 
 // TargetValidatorOption is a functional option for TargetValidator.
@@ -91,12 +94,24 @@ func WithMaxTargets(max int) TargetValidatorOption {
 	}
 }
 
+// WithMaxCIDRHostBits sets the widest CIDR target, in host bits: 16 (the
+// default) is an IPv4 /16 or an IPv6 /112, 24 an IPv4 /8 or an IPv6 /104.
+// Values outside [0, MaxCIDRHostBitsLimit] are clamped. Only the paths that
+// cut a wide range into pieces before dispatch raise it (large range
+// targets: scan create, its scope check and its run).
+func WithMaxCIDRHostBits(bits int) TargetValidatorOption {
+	return func(v *TargetValidator) {
+		v.maxCIDRHostBits = min(max(bits, 0), MaxCIDRHostBitsLimit)
+	}
+}
+
 // NewTargetValidator creates a new TargetValidator with options.
 func NewTargetValidator(opts ...TargetValidatorOption) *TargetValidator {
 	v := &TargetValidator{
 		allowInternalIPs: false, // Default: block internal IPs (SSRF protection)
 		allowLocalhost:   false, // Default: block localhost
 		maxTargets:       1000,  // Default: max 1000 targets
+		maxCIDRHostBits:  DefaultCIDRHostBits,
 	}
 	for _, opt := range opts {
 		opt(v)
@@ -303,14 +318,12 @@ func (v *TargetValidator) validateCIDR(target string) ValidatedTarget {
 		return result
 	}
 
-	// Limit CIDR size to prevent abuse: at most 65536 addresses (/16 for
-	// IPv4, /112 for IPv6). Compared on the prefix length: the address count
-	// of an IPv6 range does not fit in an int (1<<64 is 0), which let ::/0
-	// through as "0 hosts".
+	// Limit CIDR size to prevent abuse. Compared on the prefix length: the
+	// address count of an IPv6 range does not fit in an int (1<<64 is 0),
+	// which let ::/0 through as "0 hosts".
 	ones, bits := ipNet.Mask.Size()
-	if hostBits := bits - ones; hostBits > maxCIDRHostBits {
-		result.Error = fmt.Sprintf("CIDR range too large: /%d has 2^%d addresses (max: 65536, /%d)",
-			ones, hostBits, bits-maxCIDRHostBits)
+	if hostBits := bits - ones; hostBits > v.maxCIDRHostBits {
+		result.Error = CIDRTooLargeReason(target, hostBits, bits, v.maxCIDRHostBits)
 		return result
 	}
 
@@ -506,8 +519,42 @@ func isLocalhostNetwork(ipNet *net.IPNet) bool {
 	return false
 }
 
-// maxCIDRHostBits bounds a CIDR target to 2^16 addresses.
-const maxCIDRHostBits = 16
+// CIDR target bounds, in host bits (the same address count for IPv4 and
+// IPv6). DefaultCIDRHostBits (2^16 addresses: an IPv4 /16, an IPv6 /112) is
+// the bound of every path that hands a range to a sensor as typed.
+// MaxCIDRHostBitsLimit (2^24: an IPv4 /8, an IPv6 /104) is the widest range
+// a scan may name at all; such a range is cut into DefaultCIDRHostBits
+// pieces at dispatch and scanned live hosts first. Design:
+// docs/rfcs/RFC-151-large-range-targets.md.
+const (
+	DefaultCIDRHostBits  = 16
+	MaxCIDRHostBitsLimit = 24
+)
+
+// CIDRTooLargeReason is the refusal of a range wider than maxHostBits: its
+// address count and the widest accepted prefix, in the words the web
+// console uses (web/src/features/scans/lib/target-format.ts).
+func CIDRTooLargeReason(target string, hostBits, totalBits, maxHostBits int) string {
+	return fmt.Sprintf("%s has %s addresses; the most one target can hold is %s (/%d)",
+		target, groupDigits(pow2(hostBits)), groupDigits(pow2(maxHostBits)), totalBits-maxHostBits)
+}
+
+// pow2 is 2^n in decimal.
+func pow2(n int) string {
+	return new(big.Int).Exp(big.NewInt(2), big.NewInt(int64(n)), nil).String()
+}
+
+// groupDigits writes a decimal number with comma thousands separators.
+func groupDigits(n string) string {
+	var b strings.Builder
+	for i, r := range n {
+		if i > 0 && (len(n)-i)%3 == 0 {
+			b.WriteByte(',')
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
+}
 
 // withoutIPv6Brackets returns target with the brackets of one IPv6 literal
 // removed, when the target starts with one ("[addr]:port") or a URL's host is

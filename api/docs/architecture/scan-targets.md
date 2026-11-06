@@ -350,7 +350,10 @@ refused at create:
 
 - domain, wildcard, IPv4, IPv6, CIDR, URL and `host:port` (also `[v6]:port`
   and `host:port/tcp`); a Unicode domain is sent in its ASCII form;
-- refused with the reason: a range of more than 65,536 addresses, a
+- refused with the reason: a range of more than 16,777,216 addresses (an
+  IPv4 /8, an IPv6 /104; the reason names the range's address count and the
+  widest accepted size, with a one-click split when it fits in at most 256
+  ranges of that size), a
   top-level domain in punycode, a path or repository reference (scanned from
   repository assets instead), anything else that is not a target;
 - repeats are folded after normalisation (`Example.COM.` is `example.com`).
@@ -359,6 +362,31 @@ Format is the only thing decided in the browser. Whether each target may be
 scanned is `POST /scope/check` (the caller's scope, batches of 200, up to the
 1,000 direct targets a scan takes), shown per target with its reason. The
 paste panel says how many targets still fit before anything is added.
+
+### Large ranges (RFC-151)
+
+A range wider than a /16 (IPv6 /112) is a large range. One target may name
+up to the organization's widest range (scope policy `max_range_prefix`,
+a /8 by default and at most; IPv6 gets the same address count).
+
+- **Create and scope check** take the range as one target: one scope entry
+  must hold it, and an internal range needs one zone that holds it. The scan
+  must run live hosts first (`LARGE_RANGE_NEEDS_LIVENESS` for sweep or
+  inventory, `LIVENESS_NEEDS_HOST_DISCOVERY` for a workflow without Host
+  discovery).
+- **New scan** shows the address count, the /16 chunks and a rough host
+  discovery duration (one sensor at 1,000 addresses a second) and asks for a
+  confirmation before create; a change of ranges asks again.
+- **Run start** cuts each large range into prefixes no wider than a /16,
+  after removing the addresses no scope entry of an address kind covers
+  (`out_of_scope_addresses`), the exclusions and the deny list. The scan
+  stores the range as typed; nothing is listed per address. Each prefix is an
+  ordinary run target: host discovery sweeps it, later steps get the live
+  hosts. Job, piece and sensor rate limits apply unchanged.
+- Every other path (a direct command, context targets of a run, claim-time
+  re-check) keeps the /16 bound.
+- The bound and its refusal text are one contract with the web format check:
+  `api/pkg/validator/testdata/cidr_targets.json`, read by both test suites.
 
 ### Targets step layout and the scope source
 

@@ -1444,6 +1444,29 @@ func (s *Service) ExcludedAddressSet(ctx context.Context, tenantID string) (ipse
 	return ipset.Of(ranges...), nil
 }
 
+// InScopeAddressSet returns the addresses the tenant's scope entries in
+// effect of an address kind (address, range, CIDR) cover, as one set: the
+// scan target gate cuts a large range target to it (RFC-151), so its
+// out-of-scope parts are never dispatched. It only narrows what is sent:
+// every piece still passes the ownership gate. Only this tenant's entries
+// count. A failed lookup is an error (fail closed).
+func (s *Service) InScopeAddressSet(ctx context.Context, tenantID string) (ipset.Set, error) {
+	targets, err := s.ListActiveTargets(ctx, tenantID)
+	if err != nil {
+		return ipset.Set{}, fmt.Errorf("list active scope entries: %w", err)
+	}
+	ranges := make([]ipset.Range, 0, len(targets))
+	for _, t := range targets {
+		switch t.TargetType() {
+		case scopedom.TargetTypeIPAddress, scopedom.TargetTypeIPRange, scopedom.TargetTypeCIDR:
+			if r, ok := ipset.Parse(t.Pattern()); ok {
+				ranges = append(ranges, r)
+			}
+		}
+	}
+	return ipset.Of(ranges...), nil
+}
+
 // FilterExcludedTargets returns the set of candidate asset IDs that match an
 // ACTIVE scope exclusion for the tenant — the assets a scan must skip.
 //

@@ -181,6 +181,11 @@ export interface ScanTargets {
   expandedTargets?: string[]
   /** How each run resolves `*.x` and CIDR targets from the inventory (RFC-068). */
   targetOptions?: ScanTargetOptions
+  /**
+   * The large ranges (wider than a /16) the person confirmed sweeping, as
+   * their key (largeRangeKey); a change of ranges asks again (RFC-151).
+   */
+  largeRangeConfirmed?: string
 }
 
 export const DEFAULT_TARGETS: ScanTargets = {

@@ -16,6 +16,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/stage"
 	"github.com/openctemio/openctem/api/pkg/jobsign"
+	"github.com/openctemio/openctem/api/pkg/validator"
 )
 
 // maxResolvedTargets bounds how many targets one scan run may dispatch. Larger
@@ -239,9 +240,19 @@ func (s *Service) resolveScanTargets(ctx context.Context, sc *scan.Scan) (*resol
 	if sc.ScannerName != "" {
 		tier = ProbeTier(sc.ScannerName)
 	}
+	// A range wider than a /16 runs only live hosts first (RFC-151): cut into
+	// /16 chunks for host discovery, up to the organization's widest range.
+	rangeBits, err := s.tenantRangeHostBits(ctx, sc.TenantID)
+	if err != nil {
+		return nil, err
+	}
+	if sc.TargetOptions.CIDRMode != scan.CIDRModeLiveness {
+		rangeBits = min(rangeBits, validator.DefaultCIDRHostBits)
+	}
 	gated, err := s.ResolveDispatchTargets(ctx, DispatchTargetsInput{
 		TenantID:               sc.TenantID,
 		Targets:                names,
+		MaxRangeHostBits:       rangeBits,
 		Assets:                 assets,
 		ActScope:               true,
 		FallbackUser:           actorOf(sc),

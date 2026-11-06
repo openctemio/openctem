@@ -143,6 +143,10 @@ type ScopeSettingsResponse struct {
 	// WideningApprovals: null is the default min(1, admins-1).
 	WideningApprovals *int   `json:"widening_approvals"`
 	DefaultMaxTier    string `json:"default_max_tier"`
+	// MaxRangePrefix is the widest address range one scan target may name,
+	// as an IPv4 prefix length (8 = a /8, the default; IPv6 gets the same
+	// address count).
+	MaxRangePrefix int `json:"max_range_prefix"`
 	// Read-only: the approvals a widening needs now, and the administrators
 	// that count.
 	EffectiveWideningApprovals int `json:"effective_widening_approvals"`
@@ -203,6 +207,8 @@ type ScopeSettingsRequest struct {
 	OneOffMaxDays        int    `json:"one_off_max_days" validate:"omitempty,min=1,max=30"`
 	WideningApprovals    *int   `json:"widening_approvals" validate:"omitempty,min=0,max=2"`
 	DefaultMaxTier       string `json:"default_max_tier" validate:"omitempty,oneof=t0 t1"`
+	// MaxRangePrefix: 8 to 24; omitted (0) keeps the stored value.
+	MaxRangePrefix int `json:"max_range_prefix" validate:"omitempty,min=8,max=24"`
 }
 
 func (h *ScopeHandler) settingsResponse(ctx context.Context, tenantID string, ss tenant.ScopeSettings) (ScopeSettingsResponse, error) {
@@ -221,6 +227,7 @@ func (h *ScopeHandler) settingsResponse(ctx context.Context, tenantID string, ss
 		AddressAutoAdd: ss.AddressMode(), AddressAutoAddEffective: ss.AddressModeIn(mode.Normalized() == scangov.ModeStrict),
 		OneOffTargets: ss.OneOffPolicy(), OneOffMaxDays: ss.MaxDays(),
 		WideningApprovals: ss.WideningApprovals, DefaultMaxTier: ss.Tier(),
+		MaxRangePrefix:             ss.RangePrefix(),
 		EffectiveWideningApprovals: approvals, AdminCount: admins,
 		ActiveProof:   h.activeProofMode(ctx),
 		T2MaxDuration: ss.T2Duration(), T2MaxDays: t2Days, T2PermanentAllowed: t2Permanent,
@@ -304,7 +311,7 @@ func (h *ScopeHandler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 		OneOffTargets:              req.OneOffTargets, OneOffMaxDays: req.OneOffMaxDays,
 		WideningApprovals: req.WideningApprovals, DefaultMaxTier: req.DefaultMaxTier,
 		UnclassifiedScans: req.UnclassifiedScans, AutoCoverage: req.AutoCoverage,
-		AddressAutoAdd: req.AddressAutoAdd,
+		AddressAutoAdd: req.AddressAutoAdd, MaxRangePrefix: req.MaxRangePrefix,
 	}
 	if req.ReviewBeforeInventory != nil {
 		ss.ReviewBeforeInventory = *req.ReviewBeforeInventory
@@ -316,7 +323,7 @@ func (h *ScopeHandler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 	// review_before_inventory or unclassified_scans keeps the stored value
 	// instead of resetting it.
 	if req.ConfirmAddsToScope == nil || req.ReviewBeforeInventory == nil || req.UnclassifiedScans == "" || req.AutoCoverage == nil ||
-		req.CIScopeRequiresProof == nil || req.AddressAutoAdd == "" {
+		req.CIScopeRequiresProof == nil || req.AddressAutoAdd == "" || req.MaxRangePrefix == 0 {
 		before, err := h.settings.GetScopeSettings(ctx, tenantID)
 		if err != nil {
 			h.logger.Error("scope settings: read", "error", logger.SanitizeError(err))
@@ -340,6 +347,9 @@ func (h *ScopeHandler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 		}
 		if req.AddressAutoAdd == "" {
 			ss.AddressAutoAdd = before.AddressAutoAdd
+		}
+		if req.MaxRangePrefix == 0 {
+			ss.MaxRangePrefix = before.MaxRangePrefix
 		}
 
 	}
