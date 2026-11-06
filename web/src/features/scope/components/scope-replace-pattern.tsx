@@ -14,6 +14,7 @@
 import { useEffect, useId, useState } from 'react'
 import { AlertTriangle, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
@@ -171,13 +172,10 @@ export function ScopeReplacePattern({ entry, onReplaced, disabled }: ScopeReplac
         </p>
       </div>
       {error && (
-        <div
-          role="alert"
-          className="flex items-start gap-2 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive"
-        >
-          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-          <span>{error}</span>
-        </div>
+        <Alert variant="destructive">
+          <AlertTriangle />
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
       )}
       <div className="space-y-2">
         <Label htmlFor={`${id}-pattern`}>{t('scope.replace.pattern', 'New pattern')}</Label>
