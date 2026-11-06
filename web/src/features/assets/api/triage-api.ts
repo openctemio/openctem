@@ -18,6 +18,8 @@ export interface ExclusionPreviewItem extends ExclusionItem {
   sample: string[]
   /** Open findings on those assets: what a permanent not_ours or retired exclusion closes. */
   open_findings?: number
+  /** Of those, critical, P0 or KEV: closing them needs `confirmCritical`. */
+  critical_findings?: number
   /** Limited data access and not an exact hostname or IP: a closing rule needs full data access. */
   closing_needs_full_access?: boolean
   /** Address, range or CIDR: names resolving to a dedicated address inside it that it also stops scanning. */
@@ -65,6 +67,22 @@ export interface CreateExclusionsOptions {
   kind?: ExclusionKind
   /** ISO time; omitted = until re-included. */
   expiresAt?: string
+  /** The person confirmed closing critical, P0 or KEV findings. */
+  confirmCritical?: boolean
+}
+
+/** 409 code of a closing exclusion that needs the critical-findings confirm. */
+export const CLOSES_CRITICAL_CODE = 'EXCLUSION_CLOSES_CRITICAL_FINDINGS'
+
+/**
+ * How many critical, P0 or KEV findings a refused closing exclusion would
+ * close (409 EXCLUSION_CLOSES_CRITICAL_FINDINGS), or null for any other error.
+ */
+export function criticalClosuresOf(err: unknown): number | null {
+  const e = err as { code?: unknown; details?: unknown } | null | undefined
+  if (e?.code !== CLOSES_CRITICAL_CODE) return null
+  const n = (e.details as { critical_findings?: unknown } | undefined)?.critical_findings
+  return typeof n === 'number' && n > 0 ? n : 1
 }
 
 export function createExclusions(items: ExclusionItem[], opts: CreateExclusionsOptions = {}) {
@@ -73,6 +91,7 @@ export function createExclusions(items: ExclusionItem[], opts: CreateExclusionsO
     ...(opts.reason ? { reason: opts.reason } : {}),
     ...(opts.kind ? { kind: opts.kind } : {}),
     ...(opts.expiresAt ? { expires_at: opts.expiresAt } : {}),
+    ...(opts.confirmCritical ? { confirm_critical: true } : {}),
   })
 }
 

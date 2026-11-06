@@ -197,6 +197,8 @@ export interface CreateScopeExclusionInput {
   path_prefix?: string
   /** Methods the path rule blocks; empty blocks every method. */
   methods?: string[]
+  /** Confirms closing open critical, P0 or KEV findings (after a 409 EXCLUSION_CLOSES_CRITICAL_FINDINGS). */
+  confirm_critical?: boolean
 }
 
 /**
