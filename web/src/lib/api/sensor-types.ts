@@ -1019,6 +1019,23 @@ export interface SensorConfigSetting {
   valid: boolean
 }
 
+/** What a core address is to the sensor that reported it. */
+export type SensorCoreAddressRole =
+  'resolver' | 'tool_resolver' | 'gateway' | 'host' | 'platform' | (string & {})
+
+/**
+ * GET /sensors/core-addresses: the core infrastructure addresses (DNS
+ * resolvers, gateways, own and platform addresses) the tenant's sensors
+ * reported. Sensor data: shown as text only.
+ */
+export interface SensorCoreAddressesResponse {
+  items: {
+    sensor_id: string
+    sensor_name: string
+    addresses: { address: string; role: SensorCoreAddressRole }[]
+  }[]
+}
+
 export interface SensorConfigReport {
   /** reported: sent by the sensor; derived: built by the platform from heartbeats; none: nothing yet. */
   state: 'reported' | 'derived' | 'none' | (string & {})

@@ -409,6 +409,21 @@ type ConfigReportStore interface {
 	GetConfigReport(ctx context.Context, tenantID, sensorID shared.ID) (*StoredConfigReport, error)
 }
 
+// ConfigCheckLister is implemented by a sensor repository that can read one
+// check of every active sensor's stored config report.
+type ConfigCheckLister interface {
+	// ListConfigChecks returns the check checkID of the stored reports of
+	// tenantID's active sensors, at most limit, ordered by sensor name.
+	ListConfigChecks(ctx context.Context, tenantID shared.ID, checkID string, limit int) ([]SensorConfigCheck, error)
+}
+
+// SensorConfigCheck is one sensor's result of a config check.
+type SensorConfigCheck struct {
+	SensorID   shared.ID
+	SensorName string
+	Check      ConfigCheck
+}
+
 // ManifestStore is implemented by a sensor repository that keeps manifest
 // versions (manifest.go, RFC-033).
 type ManifestStore interface {
