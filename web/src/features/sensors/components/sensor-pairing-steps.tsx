@@ -45,6 +45,9 @@ import {
 import { useTranslation } from '@/context/i18n-provider'
 import { useTenant } from '@/context/tenant-provider'
 import { useNow } from '@/hooks/use-now'
+import { reportBulkResult } from '@/features/scope/components/add-to-scope-action'
+import { createScopeTargetsBulk, invalidateScopeCache } from '@/features/scope/api/use-scope-api'
+import { getErrorMessage } from '@/lib/api/error-handler'
 import { useScanZones } from '@/lib/api/scan-zone-hooks'
 import { formatRelative } from '@/lib/format-date'
 import { invalidateSensorsCache } from '@/lib/api/sensor-hooks'
@@ -63,6 +66,9 @@ import {
   GRANT_PROFILES,
   PAIRING_CODE_LENGTH,
   PARAMETERISED_PROFILES,
+  TRUSTABLE_AT_APPROVAL,
+  TRUSTED_BY_DEFAULT,
+  ZONE_PROFILES,
   formatCountdown,
   formatRequestAge,
   grantProfileValue,
@@ -70,9 +76,11 @@ import {
   pairingErrorMessage,
   secondsUntil,
   splitSas,
+  scopeTargetTypeOf,
   stepUpMethodOf,
   validIntegrationName,
 } from '../lib/pairing'
+import { HintedCheckbox, parseRangeList } from './sensor-install-purpose'
 import { ToggleChip } from './toggle-chip'
 
 const SENSOR_TYPES: { value: SensorType; labelKey: string }[] = [
@@ -342,12 +350,15 @@ export function PairingReview({
   onApproved,
   onDone,
   onRefresh,
+  defaultRanges,
 }: {
   view: SensorPairingView
   code?: string
   onApproved: (v: SensorPairingView) => void
   onDone: () => void
   onRefresh?: () => Promise<void>
+  /** The networks the person named before the install command (Add sensor). */
+  defaultRanges?: string[]
 }) {
   const { t } = useTranslation()
   const now = useNow(1000)
@@ -445,6 +456,7 @@ export function PairingReview({
           onClosed={() => setClosed(true)}
           onApproved={onApproved}
           onRejected={onDone}
+          defaultRanges={defaultRanges}
         />
       ) : (
         left === 0 && (
@@ -565,6 +577,7 @@ function ApprovalForm({
   onClosed,
   onApproved,
   onRejected,
+  defaultRanges,
 }: {
   view: SensorPairingView
   code?: string
@@ -574,6 +587,7 @@ function ApprovalForm({
   onClosed: () => void
   onApproved: (v: SensorPairingView) => void
   onRejected: () => void
+  defaultRanges?: string[]
 }) {
   const { t } = useTranslation()
   const ids = {
@@ -582,9 +596,15 @@ function ApprovalForm({
     profile: useId(),
     integration: useId(),
     stepUp: useId(),
+    ranges: useId(),
+    scope: useId(),
+    trusted: useId(),
   }
   const canApprove = useHasPermission(Permission.SensorsApprove)
   const canReadZones = useHasPermission(Permission.ScanZonesRead)
+  const canWriteZones = useHasPermission(Permission.ScanZonesWrite)
+  const canWiden = useHasPermission(Permission.SensorsGrantWiden)
+  const canWriteScope = useHasPermission(Permission.ScopeWrite)
   const { data: zonesData } = useScanZones(canReadZones)
   const zones = useMemo(() => zonesData?.data ?? [], [zonesData?.data])
   const stepUp = stepUpMethodOf(view.step_up)
@@ -596,6 +616,10 @@ function ApprovalForm({
   const [zoneIds, setZoneIds] = useState<string[]>([])
   const [profile, setProfile] = useState(DEFAULT_GRANT_PROFILE)
   const [integration, setIntegration] = useState('')
+  const [ranges, setRanges] = useState((defaultRanges ?? []).join(', '))
+  const [alsoScope, setAlsoScope] = useState(true)
+  // null: the profile's default (ticked for internal and external scanners).
+  const [trustChoice, setTrustChoice] = useState<boolean | null>(null)
   const [secret, setSecret] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState<'approve' | 'reject' | null>(null)
@@ -603,6 +627,14 @@ function ApprovalForm({
 
   // A failed step-up clears the typed secret; never keep a password around.
   useEffect(() => () => setSecret(''), [])
+
+  // What the approval may also set up (the API decides again).
+  const showNetworks = !repair && canWriteZones && ZONE_PROFILES.includes(profile)
+  const rangeList = showNetworks ? parseRangeList(ranges) : []
+  const showScope = rangeList.length > 0 && canWriteScope
+  const showTrust =
+    !repair && !!view.trust_eligible && canWiden && TRUSTABLE_AT_APPROVAL.includes(profile)
+  const trusted = showTrust && (trustChoice ?? TRUSTED_BY_DEFAULT.includes(profile))
 
   const needsSecret = stepUp !== 'fresh_sign_in'
   const integrationOk = validIntegrationName(integration)
@@ -637,10 +669,13 @@ function ApprovalForm({
         zone_ids: zoneIds,
         grant_profile: grantProfileValue(profile, integration),
         repair_sensor_id: view.repair_sensor_id || undefined,
+        trusted: trusted || undefined,
+        ranges: rangeList.length > 0 ? rangeList : undefined,
       })
       setSecret('')
       toast.success(t('sensors.pair.approvedTitle'))
       await invalidateSensorsCache()
+      if (showScope && alsoScope) await addNetworksToScope(name.trim())
       onApproved({ ...view, ...res })
     } catch (err) {
       setSecret('')
@@ -653,6 +688,22 @@ function ApprovalForm({
       }
     } finally {
       setBusy(null)
+    }
+  }
+
+  // Scope is its own record: the scope service and its approvals decide,
+  // after the sensor exists. A refusal or a pending approval is reported,
+  // never undoes the approval.
+  const addNetworksToScope = async (sensorName: string) => {
+    try {
+      const res = await createScopeTargetsBulk({
+        items: rangeList.map((r) => ({ target_type: scopeTargetTypeOf(r), pattern: r })),
+        reason: t('sensors.pair.setup.scopeReason', undefined, { name: sensorName }),
+      })
+      reportBulkResult(t, res)
+      await invalidateScopeCache()
+    } catch (err) {
+      toast.error(getErrorMessage(err, t('sensors.pair.setup.scopeFailed')))
     }
   }
 
@@ -694,6 +745,52 @@ function ApprovalForm({
               onChange={(e) => setName(e.target.value)}
             />
           </div>
+
+          {(showNetworks || showTrust) && (
+            <fieldset className="space-y-3 rounded-lg border p-3" data-testid="approval-setup">
+              <legend className="px-1 text-sm font-medium">{t('sensors.pair.setup.title')}</legend>
+              {showNetworks && (
+                <div className="space-y-1.5">
+                  <Label htmlFor={ids.ranges}>
+                    {t('sensors.pair.setup.ranges')}{' '}
+                    <span className="font-normal text-muted-foreground">
+                      ({t('sensors.pair.optional')})
+                    </span>
+                  </Label>
+                  <Input
+                    id={ids.ranges}
+                    value={ranges}
+                    maxLength={2000}
+                    placeholder="10.0.0.0/16"
+                    spellCheck={false}
+                    className="font-mono"
+                    onChange={(e) => setRanges(e.target.value)}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    {t('sensors.pair.setup.rangesHint')}
+                  </p>
+                </div>
+              )}
+              {showScope && (
+                <HintedCheckbox
+                  id={ids.scope}
+                  checked={alsoScope}
+                  onChange={setAlsoScope}
+                  label={t('sensors.pair.setup.scope')}
+                  hint={t('sensors.pair.setup.scopeHint')}
+                />
+              )}
+              {showTrust && (
+                <HintedCheckbox
+                  id={ids.trusted}
+                  checked={trusted}
+                  onChange={setTrustChoice}
+                  label={t('sensors.pair.setup.trusted')}
+                  hint={t('sensors.pair.setup.trustedHint')}
+                />
+              )}
+            </fieldset>
+          )}
 
           <Collapsible className="rounded-lg border">
             <CollapsibleTrigger className="flex w-full items-center justify-between gap-2 px-3 py-2 text-start text-sm font-medium">

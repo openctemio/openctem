@@ -51,6 +51,34 @@ func (r *ScanZoneRepository) Create(ctx context.Context, z *scanzone.Zone) error
 	return mapZoneWriteError(err)
 }
 
+// CreateWithSensorTx inserts a zone and assigns one sensor of the same
+// tenant to it inside tx (a pairing approval that states the sensor's
+// networks: the zone, the sensor and its grant commit together or not at
+// all). Only a non-platform sensor of the zone's tenant qualifies.
+func (r *ScanZoneRepository) CreateWithSensorTx(ctx context.Context, tx *sql.Tx, z *scanzone.Zone, sensorID shared.ID, assignedBy *shared.ID) error {
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO scan_zones (id, tenant_id, name, description, is_default, ranges, created_by, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6::cidr[], $7, $8, $9)`,
+		z.ID.String(), z.TenantID.String(), z.Name, z.Description, z.IsDefault,
+		pq.Array(z.RangeStrings()), nullIDString(z.CreatedBy), z.CreatedAt, z.UpdatedAt); err != nil {
+		return mapZoneWriteError(err)
+	}
+	res, err := tx.ExecContext(ctx, `
+		INSERT INTO scan_zone_sensors (tenant_id, zone_id, sensor_id, created_by)
+		SELECT $1, $2, s.id, $4
+		FROM sensors s
+		WHERE s.id = $3 AND s.tenant_id = $1 AND s.scope = 'organization'
+		ON CONFLICT (zone_id, sensor_id) DO NOTHING`,
+		z.TenantID.String(), z.ID.String(), sensorID.String(), nullIDString(assignedBy))
+	if err != nil {
+		return fmt.Errorf("assign sensor to scan zone: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n != 1 {
+		return scanzone.ErrSensorNotFound
+	}
+	return nil
+}
+
 // Update writes a zone's mutable fields.
 func (r *ScanZoneRepository) Update(ctx context.Context, z *scanzone.Zone) error {
 	res, err := r.db.ExecContext(ctx, `
