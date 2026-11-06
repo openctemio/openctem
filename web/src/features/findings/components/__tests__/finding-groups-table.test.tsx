@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, act, within } from '@testing-library/react'
 import type { ColumnDef } from '@tanstack/react-table'
 import type { FindingGroup } from '../../api/use-finding-groups'
 import type { ApiFinding } from '../../api/finding-api.types'
@@ -249,5 +249,68 @@ describe('FindingGroupsTable', () => {
     expect(q).toMatchObject({ statuses: ['fix_applied'], search: 'x' })
     expect(q).not.toHaveProperty('state')
     expect(q).not.toHaveProperty('exclude_statuses')
+  })
+
+  // Owner report: in the verification queue grouped by CVE, the header's
+  // status counts, progress and Approve / Reject ran past the row, over the
+  // Source and Location columns and under the pinned row-actions column.
+  it('lays the group header out as one full-width cell with its own actions slot', async () => {
+    groupsState.data = {
+      data: [
+        group('CVE-2020-7471', 'cve', 1, {
+          label: 'CVE-2020-7471',
+          severity: 'critical',
+          metadata: { cvss_score: 9.8, epss_score: 0.4 },
+        }),
+      ],
+      pagination: { total: 1 },
+    }
+    fetchFindings.mockResolvedValue({
+      data: [finding('f1', { cve_id: 'CVE-2020-7471' })],
+      total: 1,
+    })
+    const wide: ColumnDef<Row>[] = [
+      { accessorKey: 'title', header: 'Title' },
+      { id: 'source', header: 'Source', cell: () => 'sca' },
+      { id: 'asset', header: 'Location', cell: () => 'requirements.txt' },
+      { id: 'actions', header: '', cell: () => <button type="button">Row menu</button> },
+    ]
+    const { container } = renderTable({
+      dimension: 'cve_id',
+      columns: wide,
+      renderGroupActions: () => (
+        <>
+          <button type="button">Approve</button>
+          <button type="button">Reject</button>
+        </>
+      ),
+    })
+    await waitFor(() => expect(screen.getByText('finding f1')).toBeTruthy())
+
+    const cell = container.querySelector('[data-slot="row-group-header"] td')!
+    expect(cell.getAttribute('colspan')).toBe(String(wide.length))
+
+    const content = cell.querySelector('[data-slot="row-group-header-content"]')!
+    expect(content.className).toContain('flex-wrap')
+    const identity = content.querySelector(':scope > [data-slot="row-group-identity"]')!
+    const summary = content.querySelector(':scope > [data-slot="row-group-summary"]')!
+    const actions = content.querySelector(':scope > [data-slot="row-group-actions"]')!
+    // Three sibling slots, in reading order: identity, summary, actions.
+    expect([...content.children]).toEqual([identity, summary, actions])
+    expect(identity.textContent).toContain('CVE-2020-7471')
+    expect(summary.querySelector('[data-slot="group-status-summary"]')).toBeTruthy()
+    expect(summary.querySelector('[role="progressbar"]')).toBeTruthy()
+    // The actions hold only the group's buttons, never shrink, sit at the end.
+    expect(
+      within(actions as HTMLElement)
+        .getAllByRole('button')
+        .map((b) => b.textContent)
+    ).toEqual(['Approve', 'Reject'])
+    expect(actions.className).toMatch(/\bshrink-0\b/)
+    expect(actions.className).toMatch(/\bms-auto\b/)
+    // Nothing in the header is positioned over the table columns.
+    for (const el of cell.querySelectorAll('*')) {
+      expect(el.className.toString()).not.toMatch(/(^|\s)(absolute|fixed)(\s|$)/)
+    }
   })
 })
