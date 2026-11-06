@@ -3,6 +3,7 @@ package integration
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"slices"
 	"testing"
 
@@ -76,9 +77,22 @@ func TestEASMReconTemplates_ValidAndRunnable(t *testing.T) {
 				continue
 			}
 			for _, d := range scanworkflow.Depths() {
+				// A step the depth skips (a tier-1 step at passive depth) is
+				// never resolved: the run skips it with the depth as reason.
+				if st.RunPolicy.DepthSkipReason(d, scanapp.StepIntensityTier(st)) != "" {
+					continue
+				}
 				at := *st
 				at.Config = st.RunPolicy.ConfigAt(st.Config, d)
 				got, err := scanapp.ResolveStepTool(ctx, tools, shared.NewID(), &at)
+				// A scan runs what is supported: an optional step whose
+				// capability only a sensor-side tool implements (screenshots:
+				// the browser image's webshot, not a seeded platform tool) has
+				// no tool to resolve here, and the run skips it with a reason.
+				var de *shared.DomainError
+				if err != nil && st.RunPolicy.Optional && errors.As(err, &de) && de.Code == "NO_MATCHING_TOOL" {
+					continue
+				}
 				if err != nil {
 					t.Fatalf("%s/%s at %s: no tool resolves: %v", name, st.StepKey, d, err)
 				}

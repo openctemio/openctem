@@ -403,6 +403,21 @@ comes back (mutual distrust, RFC-040).
   sensor that can keep to it, not another attempt. Like any failed step, it
   leaves the run `partial` when other steps completed (RFC-046 §7).
 
+### 6.1a Isolation level
+
+- The manifest key `isolation` (`process`, the default, or `strong`) is the
+  least isolation a tool needs from the backend that runs it. It is additive
+  in `openctem.io/tool/v1`: a manifest without it reads as `process`, and its
+  digest does not change.
+- A sensor advertises `isolation.strong@1` only after a start-up probe ran a
+  confined task on a strong backend; no setting or declaration adds it. The
+  platform stamps `required_features: ["isolation.strong@1"]` on the jobs of a
+  tool that needs `strong`, so only a sensor that itself reported it takes
+  them; others leave them queued with `strong_isolation_missing`
+  ([placement](../architecture/placement.md)). A job is never run on the
+  process sandbox instead.
+- No bundled tool needs `strong` yet and no strong backend ships yet.
+
 ### 6.2 Endpoints and evidence on the wire
 
 - The adapter protocol's `record` gains the kind `endpoint` (one CTIS 1.6

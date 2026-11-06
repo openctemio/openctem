@@ -16,7 +16,8 @@ func TestEASMExposureTypesHaveProducers(t *testing.T) {
 		"subdomain_discovered": "EventTypeSubdomainDiscovered", "certificate_expiring": "EventTypeCertificateExpiring",
 		"certificate_expired": "EventTypeCertificateExpired", "port_open": "EventTypePortOpen",
 		"service_detected": "EventTypeServiceDetected", "ssl_issue": "EventTypeSSLIssue",
-		"dangling_cname": "EventTypeDanglingCNAME", "dangling_ns": "EventTypeDanglingNS",
+		"risky_service_exposed": "EventTypeRiskyServiceExposed",
+		"dangling_cname":        "EventTypeDanglingCNAME", "dangling_ns": "EventTypeDanglingNS",
 		"email_security_weak": "EventTypeEmailSecurityWeak", "subdomain_takeover": "EventTypeSubdomainTakeover",
 		"lookalike_domain": "EventTypeLookalikeDomain", "third_party_script_added": "EventTypeThirdPartyScriptAdded",
 	}

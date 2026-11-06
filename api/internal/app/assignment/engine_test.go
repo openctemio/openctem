@@ -173,22 +173,25 @@ func TestMatchesConditions(t *testing.T) {
 		assert.False(t, engine.MatchesConditions(conds, finding))
 	})
 
-	t.Run("AssetTags_AnyMatch", func(t *testing.T) {
-		finding := newTestFindingWithTags(t, vulnerability.SeverityHigh, "semgrep", vulnerability.FindingSourceSAST, vulnerability.FindingTypeVulnerability, []string{"production", "web", "critical"})
-		conds := accesscontrol.AssignmentConditions{AssetTags: []string{"web"}}
-		assert.True(t, engine.MatchesConditions(conds, finding))
+	t.Run("AssetTags_AnyMatchOnAssetTags", func(t *testing.T) {
+		finding := newTestFinding(t, vulnerability.SeverityHigh, "semgrep", vulnerability.FindingSourceSAST, vulnerability.FindingTypeVulnerability)
+		conds := accesscontrol.AssignmentConditions{AssetTags: []string{"team:payments"}}
+		assert.True(t, engine.MatchesConditions(conds, finding, AssetFacts{Tags: []string{"env:prod", "Team:Payments"}}))
 	})
 
 	t.Run("AssetTags_NoMatch", func(t *testing.T) {
-		finding := newTestFindingWithTags(t, vulnerability.SeverityHigh, "semgrep", vulnerability.FindingSourceSAST, vulnerability.FindingTypeVulnerability, []string{"production"})
+		finding := newTestFinding(t, vulnerability.SeverityHigh, "semgrep", vulnerability.FindingSourceSAST, vulnerability.FindingTypeVulnerability)
 		conds := accesscontrol.AssignmentConditions{AssetTags: []string{"staging", "test"}}
-		assert.False(t, engine.MatchesConditions(conds, finding))
+		assert.False(t, engine.MatchesConditions(conds, finding, AssetFacts{Tags: []string{"production"}}))
 	})
 
-	t.Run("AssetTags_EmptyFindingTags", func(t *testing.T) {
-		finding := newTestFinding(t, vulnerability.SeverityHigh, "semgrep", vulnerability.FindingSourceSAST, vulnerability.FindingTypeVulnerability)
+	t.Run("AssetTags_FindingTagsDoNotMatch", func(t *testing.T) {
+		// B1: a rule on asset tags must not fire on the finding's own tags
+		// (nuclei template vocabulary).
+		finding := newTestFindingWithTags(t, vulnerability.SeverityHigh, "semgrep", vulnerability.FindingSourceSAST, vulnerability.FindingTypeVulnerability, []string{"web"})
 		conds := accesscontrol.AssignmentConditions{AssetTags: []string{"web"}}
 		assert.False(t, engine.MatchesConditions(conds, finding))
+		assert.False(t, engine.MatchesConditions(conds, finding, AssetFacts{Tags: []string{"db"}}))
 	})
 
 	t.Run("FilePathPattern_Match", func(t *testing.T) {
@@ -401,8 +404,8 @@ func TestEvaluateRules_AssetTypeCondition_NeedsResolver(t *testing.T) {
 
 	// Resolver returning the matching type → the rule fires.
 	e := NewEngine(repo, log)
-	e.SetAssetTypeResolver(func(context.Context, shared.ID, shared.ID) (asset.TypeRef, error) {
-		return asset.TypeRef{Type: asset.AssetTypeDomain}, nil
+	e.SetAssetFactsResolver(func(context.Context, shared.ID, shared.ID) (AssetFacts, error) {
+		return AssetFacts{Type: asset.TypeRef{Type: asset.AssetTypeDomain}}, nil
 	})
 	res, err = e.EvaluateRules(context.Background(), tenantID, finding)
 	require.NoError(t, err)
@@ -411,8 +414,8 @@ func TestEvaluateRules_AssetTypeCondition_NeedsResolver(t *testing.T) {
 
 	// Resolver returning a different type → no match.
 	e2 := NewEngine(repo, log)
-	e2.SetAssetTypeResolver(func(context.Context, shared.ID, shared.ID) (asset.TypeRef, error) {
-		return asset.TypeRef{Type: asset.AssetTypeRepository}, nil
+	e2.SetAssetFactsResolver(func(context.Context, shared.ID, shared.ID) (AssetFacts, error) {
+		return AssetFacts{Type: asset.TypeRef{Type: asset.AssetTypeRepository}}, nil
 	})
 	res, err = e2.EvaluateRules(context.Background(), tenantID, finding)
 	require.NoError(t, err)
@@ -447,7 +450,47 @@ func TestMatchesConditions_AssetTypesByStoredPair(t *testing.T) {
 		{[]string{"website"}, asset.TypeRef{Type: "website"}, true},
 	}
 	for _, c := range cases {
-		got := engine.MatchesConditions(accesscontrol.AssignmentConditions{AssetTypes: c.names}, finding, c.ref)
+		got := engine.MatchesConditions(accesscontrol.AssignmentConditions{AssetTypes: c.names}, finding, AssetFacts{Type: c.ref})
 		assert.Equal(t, c.want, got, "%v on %+v", c.names, c.ref)
 	}
+}
+
+// An AssetTags rule fires through the engine from the asset's tags (via the
+// resolver), is tenant-scoped through the resolver arguments, and never fires
+// on the finding's own tags.
+func TestEvaluateRules_AssetTagsCondition(t *testing.T) {
+	log := logger.NewNop()
+	tenantID := shared.NewID()
+	groupID := shared.NewID()
+	rule := makeRule(t, tenantID, groupID,
+		accesscontrol.AssignmentConditions{AssetTags: []string{"team:payments"}},
+		accesscontrol.AssignmentOptions{})
+	repo := &mockACRepo{rules: []*accesscontrol.AssignmentRule{rule}}
+	finding := newTestFindingWithTags(t, vulnerability.SeverityHigh, "semgrep",
+		vulnerability.FindingSourceSAST, vulnerability.FindingTypeVulnerability, []string{"team:payments"})
+
+	// No resolver: cannot match, even though the finding carries the tag.
+	res, err := NewEngine(repo, log).EvaluateRules(context.Background(), tenantID, finding)
+	require.NoError(t, err)
+	assert.Empty(t, res)
+
+	var gotTenant shared.ID
+	e := NewEngine(repo, log)
+	e.SetAssetFactsResolver(func(_ context.Context, tid, _ shared.ID) (AssetFacts, error) {
+		gotTenant = tid
+		return AssetFacts{Tags: []string{"team:payments"}}, nil
+	})
+	res, err = e.EvaluateRules(context.Background(), tenantID, finding)
+	require.NoError(t, err)
+	require.Len(t, res, 1)
+	assert.Equal(t, tenantID, gotTenant)
+
+	// The asset does not carry the tag (the finding does): no match.
+	e2 := NewEngine(repo, log)
+	e2.SetAssetFactsResolver(func(context.Context, shared.ID, shared.ID) (AssetFacts, error) {
+		return AssetFacts{Tags: []string{"team:other"}}, nil
+	})
+	res, err = e2.EvaluateRules(context.Background(), tenantID, finding)
+	require.NoError(t, err)
+	assert.Empty(t, res)
 }

@@ -117,6 +117,67 @@ describe('MarkOutOfScopeAction', () => {
     })
   })
 
+  it('critical, P0 or KEV findings: the confirm is required and sent; do not scan needs none', async () => {
+    api.post.mockImplementation(async (url: string, body: never) => {
+      if (url.endsWith('/bulk/preview')) {
+        const p = previewFor(body)
+        return { items: p.items.map((i) => ({ ...i, critical_findings: 1 })) }
+      }
+      if (url.endsWith('/exclusions/bulk')) return created
+      if (url.endsWith('/candidates/decisions')) return { decided: [], not_found: [] }
+      return {}
+    })
+    const onDone = vi.fn()
+    render(<MarkOutOfScopeAction selected={selection} onDone={onDone} />)
+    await userEvent.click(screen.getByRole('button', { name: 'Mark out of scope' }))
+    await waitFor(() => expect(screen.getByTestId('oos-critical')).toHaveTextContent('3 of them'))
+    expect(screen.getByTestId('oos-effects-tickets')).toHaveTextContent('Jira issue gets a comment')
+    expect(screen.getByRole('button', { name: 'Confirm' })).toBeDisabled()
+    await userEvent.click(screen.getByLabelText(/Do not scan/))
+    expect(screen.queryByTestId('oos-critical')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Confirm' })).toBeEnabled()
+    await userEvent.click(screen.getByLabelText(/Not ours/))
+    await userEvent.click(screen.getByTestId('oos-critical-confirm'))
+    await userEvent.click(screen.getByRole('button', { name: 'Confirm' }))
+    await waitFor(() => expect(onDone).toHaveBeenCalled())
+    const create = api.post.mock.calls.find(([u]) => u === '/api/v1/scope/exclusions/bulk')
+    expect(create?.[1]).toMatchObject({ kind: 'not_ours', confirm_critical: true })
+  })
+
+  it('a 409 for critical findings found after the preview asks for the confirm instead of failing', async () => {
+    let refused = false
+    api.post.mockImplementation(async (url: string, body: never) => {
+      if (url.endsWith('/bulk/preview')) return previewFor(body)
+      if (url.endsWith('/exclusions/bulk')) {
+        if (!refused) {
+          refused = true
+          throw Object.assign(new Error('closes critical'), {
+            code: 'EXCLUSION_CLOSES_CRITICAL_FINDINGS',
+            details: { critical_findings: 4 },
+          })
+        }
+        return created
+      }
+      if (url.endsWith('/candidates/decisions')) return { decided: [], not_found: [] }
+      return {}
+    })
+    const onDone = vi.fn()
+    render(<MarkOutOfScopeAction selected={selection} onDone={onDone} />)
+    await userEvent.click(screen.getByRole('button', { name: 'Mark out of scope' }))
+    await waitFor(() =>
+      expect(screen.getByTestId('oos-preview-total')).toHaveTextContent('match 3 assets')
+    )
+    await userEvent.click(screen.getByRole('button', { name: 'Confirm' }))
+    await waitFor(() => expect(screen.getByTestId('oos-critical')).toHaveTextContent('4 of them'))
+    expect(toast.error).not.toHaveBeenCalled()
+    expect(onDone).not.toHaveBeenCalled()
+    await userEvent.click(screen.getByTestId('oos-critical-confirm'))
+    await userEvent.click(screen.getByRole('button', { name: 'Confirm' }))
+    await waitFor(() => expect(onDone).toHaveBeenCalled())
+    const calls = api.post.mock.calls.filter(([u]) => u === '/api/v1/scope/exclusions/bulk')
+    expect(calls[1]?.[1]).toMatchObject({ confirm_critical: true })
+  })
+
   it('limited data access: the rule option is off for closing kinds, with the reason, and back on for do not scan', async () => {
     api.post.mockImplementation(async (url: string, body: never) => {
       const p = previewFor(body)

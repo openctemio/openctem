@@ -756,7 +756,11 @@ func (s *RuleService) Apply(ctx context.Context, tenantID shared.ID, in RuleActi
 		e, err := s.scope.CreateExclusion(ctx, scope.CreateExclusionInput{TenantID: tenantID.String(), Origin: scopedom.OriginReviewRule,
 			ExclusionType: string(exclusionType(typ)), Pattern: in.Pattern, Reason: in.Reason, CreatedBy: in.Actor.UserID,
 			// Rejecting as a rule says the names are someone else's.
-			Kind: string(scopedom.ExclusionKindNotOurs)})
+			Kind: string(scopedom.ExclusionKindNotOurs),
+			// The rejected decisions below close the same findings without
+			// the critical confirm; the review queue asks for it with them
+			// (research/438 P1), not half way here.
+			ConfirmCritical: true})
 		if err != nil {
 			return nil, err
 		}
