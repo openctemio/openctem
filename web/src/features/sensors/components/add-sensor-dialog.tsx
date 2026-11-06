@@ -1,7 +1,8 @@
 'use client'
 
-import { Plus } from 'lucide-react'
+import { Plus, ShieldCheck } from 'lucide-react'
 
+import Link from '@/components/link'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -15,7 +16,7 @@ import { useTranslation } from '@/context/i18n-provider'
 import type { Sensor } from '@/lib/api/sensor-types'
 import { Permission, useHasPermission } from '@/lib/permissions'
 
-import { SensorOnboardingPanel } from './sensor-onboarding-panel'
+import { ACTIVATE_PATH, SensorOnboardingPanel } from './sensor-onboarding-panel'
 
 /** The page-header entry point; hidden without sensors:pair. */
 export function AddSensorButton({ onClick }: { onClick: () => void }) {
@@ -26,6 +27,21 @@ export function AddSensorButton({ onClick }: { onClick: () => void }) {
     <Button size="sm" onClick={onClick}>
       <Plus className="h-4 w-4" />
       {t('sensors.onboard.add')}
+    </Button>
+  )
+}
+
+/** Page-header link to the approve page (/activate); hidden without sensors:pair, as the route is. */
+export function ApproveSensorButton() {
+  const { t } = useTranslation()
+  const canPair = useHasPermission(Permission.SensorsPair)
+  if (!canPair) return null
+  return (
+    <Button asChild variant="outline" size="sm">
+      <Link href={ACTIVATE_PATH}>
+        <ShieldCheck className="h-4 w-4" />
+        {t('sensors.list.approve')}
+      </Link>
     </Button>
   )
 }
