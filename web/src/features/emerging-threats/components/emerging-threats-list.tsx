@@ -288,7 +288,7 @@ export function EmergingThreatsList() {
       {
         id: 'vuln',
         header: t('emergingThreats.col.threat'),
-        cell: ({ row }) => <ThreatCell alert={row.original} href={detailHref(row.original.id)} />,
+        cell: ({ row }) => <ThreatCell alert={row.original} />,
       },
       {
         id: 'level',

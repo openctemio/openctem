@@ -23,6 +23,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton'
 import { useTranslation } from '@/context/i18n-provider'
 import { formatEpssScore } from '@/lib/epss'
+import { formatLocalized } from '@/lib/format-date'
 import {
   DetailCallout,
   DetailField,
@@ -161,7 +162,7 @@ export function EmergingThreatSheet({
 }
 
 function SheetBodyContent({ alert, fullPage }: { alert: EmergingThreatDetail; fullPage: string }) {
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
   const kindLabel = useEventKindLabel()
   const detailOf = useEventDetail()
   const products = useMemo(() => groupByProduct(alert.assets), [alert.assets])
@@ -276,7 +277,7 @@ function SheetBodyContent({ alert, fullPage }: { alert: EmergingThreatDetail; fu
             <DetailField label={t('emergingThreats.sheet.disclosed')}>
               {alert.published_at ? (
                 <span className="inline-flex flex-wrap items-baseline gap-x-2">
-                  <span>{new Date(alert.published_at).toLocaleDateString()}</span>
+                  <span>{formatLocalized(alert.published_at, locale)}</span>
                   <RelativeTime date={alert.published_at} className="text-muted-foreground" />
                 </span>
               ) : (

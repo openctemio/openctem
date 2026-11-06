@@ -273,17 +273,15 @@ export function AffectedCell({
 /** CVE id (link) over the in-scope product, never the id twice (research/463 D4). */
 export function ThreatCell({
   alert,
-  href,
 }: {
-  alert: Pick<EmergingThreatSummary, 'vuln_id' | 'product' | 'product_count'>
-  href: string
+  alert: Pick<EmergingThreatSummary, 'id' | 'vuln_id' | 'product' | 'product_count'>
 }) {
   const { t } = useTranslation()
   const more = Math.max(0, (alert.product_count ?? 0) - 1)
   return (
     <div className="min-w-0 max-w-xs">
       <Link
-        href={href}
+        href={`/emerging-threats/${alert.id}`}
         className="font-mono text-sm font-medium hover:underline"
         onClick={(e) => e.stopPropagation()}
       >
