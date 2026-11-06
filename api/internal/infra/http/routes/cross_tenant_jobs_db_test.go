@@ -93,6 +93,18 @@ func xtCommandAttempts() []xtAttempt {
 	}
 }
 
+// xtRaiseWriteBurst lifts the per-sensor write budget for the test: the suite
+// sends every command route twice (victim and unknown id) per victim from one
+// sensor, which would otherwise answer 429 to the unknown id after the budget
+// is spent and make the two answers differ for a reason that is not isolation.
+// The budgets are exercised by their own tests.
+func xtRaiseWriteBurst(t *testing.T) {
+	t.Helper()
+	old := v2WriteBurstPerSensor
+	v2WriteBurstPerSensor = 1000
+	t.Cleanup(func() { v2WriteBurstPerSensor = old })
+}
+
 // xtSame sends attempt a with key against victim and against an unknown id
 // and fails unless both are refused identically (status and body, with the
 // id itself masked). It returns the status.
@@ -119,6 +131,7 @@ func (h *ctlHarness) xtSame(key string, a xtAttempt, victim string) int {
 // they are unpinned, pinned to B's sensor, held by it, or queued for the
 // shared fleet; and nothing about them changes.
 func TestCrossTenantJobs_ClaimPaths(t *testing.T) {
+	xtRaiseWriteBurst(t)
 	h := newCtlHarness(t)
 	tenantA, tenantB := h.tenantID, h.newTenant()
 	sa, sb := h.newSensor(tenantA, "xt-a"), h.newSensor(tenantB, "xt-b")
@@ -164,6 +177,7 @@ func TestCrossTenantJobs_ClaimPaths(t *testing.T) {
 // results, commit) at B's running job. Each is refused like an unknown id,
 // and B's job, its logs and its reports stay as they were.
 func TestCrossTenantJobs_CommandRoutes(t *testing.T) {
+	xtRaiseWriteBurst(t)
 	h := newCtlHarnessConfig(t, ctlHarnessConfig{egress: true})
 	tenantA, tenantB := h.tenantID, h.newTenant()
 	sa, sb := h.newSensor(tenantA, "xt-a"), h.newSensor(tenantB, "xt-b")
@@ -223,6 +237,7 @@ func TestCrossTenantJobs_TaskSecretsOfAnotherTenant(t *testing.T) {
 // queued shared job are all refused like an unknown id on every command
 // route, and stay unchanged.
 func TestCrossTenantJobs_SharedSensorOnlyHeldJobs(t *testing.T) {
+	xtRaiseWriteBurst(t)
 	h := newCtlHarnessConfig(t, ctlHarnessConfig{egress: true})
 	tenantB := h.newTenant()
 	sb := h.newSensor(tenantB, "xt-b")
