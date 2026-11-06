@@ -24,7 +24,7 @@ sequenceDiagram
   participant W as ingest.V2JobProcessor
   participant G as ingest.Service gate
   participant Q as sensor_result_quarantine
-  S->>R: PUT /api/v2/sensor/commands/{command_id}/results/{report_id}<br/>X-OpenCTEM-Lease-Epoch optional
+  S->>R: PUT /api/v2/sensor/commands/{command_id}/results/{report_id}<br/>X-OpenCTEM-Lease-Epoch (required when the request names results_lease_epoch)
   R->>R: OpenCommand: same tenant, not is_platform_job, held by S,<br/>open or finished under 15 min, stated epoch equals lease_epoch
   alt any check fails
     R-->>S: 404 command-not-found, nothing stored
@@ -195,10 +195,14 @@ epoch sent" below:
 - **At accept.** An organization sensor that sends `X-OpenCTEM-Lease-Epoch`
   must send the command's current `lease_epoch`; an old epoch is
   `404 command-not-found` and nothing is stored (`OpenCommand`). A shared
-  sensor must always send it (above). An organization sensor that sends no
-  epoch (sdk-go before v0.16.0, or a current sdk-go that no longer knows the
-  epoch, for example a report replayed from its outbox after a restart) is
-  checked only for holding the command and the grace window.
+  sensor must always send it (above). A request that names the
+  `results_lease_epoch` feature in `X-OpenCTEM-Sensor-Features` (sdk-go that
+  stores the epoch with each outbox report, and every protocol v3 result call
+  that carries `lease_epoch`) commits the sensor to stating the epoch: the
+  same request without one is `404 command-not-found`. An organization sensor
+  that neither states an epoch nor names the feature (an older sdk-go, or a
+  report an older sdk-go stored before an upgrade) is checked only for
+  holding the command and the grace window.
 - **At processing.** Each report records the lease epoch of its command when
   it was accepted (`ingest_reports.command_lease_epoch`, migration
   `ingest_reports_command_lease_epoch`). The ingest worker processes a queued
@@ -209,14 +213,20 @@ epoch sent" below:
   and the drop is audited (`ingest.failed`, denied, with the reason). Reports
   accepted before the migration have no recorded epoch: only the holder is
   checked.
-- **No epoch sent.** The recorded epoch is the command's epoch when the
+- **No epoch sent** (senders that do not name `results_lease_epoch`). The
+  recorded epoch is the command's epoch when the
   report was accepted (`V2Receiver.createReport`), not the epoch of the run
   that produced the results. So for a sender with no epoch the worker only
   catches a take-back that happens between accept and processing. When the
   platform took the run back and handed it to the same sensor again before
   the late report arrived, the old run's results are accepted under the new
   run's epoch and applied as the new run's. A run handed to another sensor
-  is refused at accept (holder check).
+  is refused at accept (holder check). A current sdk-go states the epoch the
+  report was made under (kept in the outbox item), so its late report is
+  refused at accept instead.
+- **Protocol v3.** `PutResult` and `CommitResult` carry `lease_epoch`; the
+  transport passes it to the v2 handler as `X-OpenCTEM-Lease-Epoch` together
+  with the `results_lease_epoch` feature, so the rules above apply unchanged.
 
 ## How a report names its command
 
