@@ -17,3 +17,4 @@
 - Migration `asset_liveness` adds the evidence table and seeds it from the coverage ledger.
 - **Upgrade note:** closing is off by default. Run the asset lifecycle dry run and review `liveness` before turning
   it on.
+- A finding closed because its asset was gone reopens only on stored evidence that the asset is back: an asset that lost its liveness record, or one that was deleted, keeps the finding closed.

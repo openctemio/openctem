@@ -227,6 +227,36 @@ func TestAssetLiveness(t *testing.T) {
 		t.Fatalf("a person's close was reopened: %s/%s", st, reason.String)
 	}
 
+	// No evidence is not "back": a gone-closed finding whose asset lost its
+	// liveness row, or whose asset was deleted, stays closed.
+	ghost := asset(tenant, "ghost.example.com", "subdomain", "")
+	deleted := asset(tenant, "deleted.example.com", "subdomain", "")
+	fGhost := finding(tenant, ghost, "confirmed", "high")
+	fDeleted := finding(tenant, deleted, "confirmed", "high")
+	for _, id := range []shared.ID{ghost, deleted} {
+		danglingChecked(tenant, id)
+	}
+	nx(tenant, []shared.ID{ghost, deleted}, []string{"sensor:a", "zone:b"})
+	if _, err := on.ReconcileTenant(ctx, tenant); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{fGhost, fDeleted} {
+		if st, reason, _, _ := status(id); st != "resolved" || reason.String != "obsolete_asset" {
+			t.Fatalf("finding %s: %s/%s, want resolved/obsolete_asset before the check", id, st, reason.String)
+		}
+	}
+	mustExec(t, db, `DELETE FROM asset_liveness WHERE tenant_id = $1 AND asset_id = $2`, tenant.String(), ghost.String())
+	mustExec(t, db, `UPDATE asset_liveness SET state = 'alive' WHERE tenant_id = $1 AND asset_id = $2`, tenant.String(), deleted.String())
+	mustExec(t, db, `UPDATE assets SET deleted_at = now() WHERE id = $1`, deleted.String())
+	if _, err := on.ReconcileTenant(ctx, tenant); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{fGhost, fDeleted} {
+		if st, _, _, _ := status(id); st != "resolved" {
+			t.Fatalf("finding %s reopened without evidence its asset is back: %s", id, st)
+		}
+	}
+
 	// The inventory filter selects by liveness, unknown for no row.
 	assets := NewAssetRepository(&DB{DB: db})
 	tid := tenant.String()

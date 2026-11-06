@@ -347,10 +347,6 @@ func (r *AssetLivenessRepository) TenantsWithLiveness(ctx context.Context) ([]sh
 // their author).
 const livenessOpenStatuses = scopeEffectsOpenStatuses
 
-// goneAssetSQL is "the asset (alias a) is gone".
-const goneAssetSQL = `EXISTS (SELECT 1 FROM asset_liveness gl
-	WHERE gl.tenant_id = a.tenant_id AND gl.asset_id = a.id AND gl.state = 'gone')`
-
 // livenessClosedByUsSQL is "the finding (alias f) was moved to resolved
 // last by the liveness pass": a close by anyone else (a person, a scan) is
 // never reopened by it.
@@ -509,12 +505,14 @@ func (r *AssetLivenessRepository) ReopenNotGone(ctx context.Context, tenantID sh
 			WITH cand AS (
 				SELECT f.id, f.severity, COALESCE(f.priority_class, '') AS priority_class,
 					COALESCE(f.is_in_kev, false) AS kev, a.id AS asset_id,
-					COALESCE(l.state, 'unknown') AS state, COALESCE(l.reason, '') AS reason
+					l.state, l.reason
 				FROM findings f
-				JOIN assets a ON a.id = f.asset_id AND a.tenant_id = f.tenant_id
-				LEFT JOIN asset_liveness l ON l.tenant_id = a.tenant_id AND l.asset_id = a.id
+				-- Only a live asset with stored evidence that it is no
+				-- longer gone: no liveness row (pruned, merged away) or a
+				-- deleted asset is not a sign that it came back.
+				JOIN assets a ON a.id = f.asset_id AND a.tenant_id = f.tenant_id AND a.deleted_at IS NULL
+				JOIN asset_liveness l ON l.tenant_id = a.tenant_id AND l.asset_id = a.id AND l.state <> 'gone'
 				WHERE f.tenant_id = $1 AND f.status = 'resolved' AND f.closure_reason = 'obsolete_asset'
-				  AND NOT `+goneAssetSQL+`
 				  AND `+livenessClosedByUsSQL+`
 				ORDER BY f.id
 				LIMIT $2
