@@ -19,6 +19,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/assettech"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/branch"
+	"github.com/openctemio/openctem/api/pkg/domain/ingestreceipt"
 	"github.com/openctemio/openctem/api/pkg/domain/ingestreport"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/sensorresult"
@@ -140,6 +141,9 @@ type Service struct {
 	nameProber      NameProber
 	resolutionStore assetresolution.Store
 	results         sensorresult.Repository
+	// release is the progress of the out-of-contract release sweeps
+	// (quarantine_release.go).
+	release releaseState
 	// policyVersions and policies: the versioned policy snapshots.
 	policyVersions PolicyVersionReader
 	policies       policyCache
@@ -282,6 +286,12 @@ func (s *Service) SetWebContentRecorder(r WebContentRecorder) {
 // SetWebEvidenceRecorder enables web evidence captures (RFC-081).
 func (s *Service) SetWebEvidenceRecorder(r WebEvidenceRecorder) {
 	s.assetProcessor.SetWebEvidenceRecorder(r)
+}
+
+// SetPageChangeNotifier schedules a new capture of a web service whose page
+// changed (RFC-081).
+func (s *Service) SetPageChangeNotifier(n PageChangeNotifier) {
+	s.assetProcessor.SetPageChangeNotifier(n)
 }
 
 // SetAssetsObservedCallback sets the callback for every asset an ingest
@@ -513,8 +523,10 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 		s.ResultPolicy(ctx, tenantID).Mode == sensorresult.ModeWarn
 	// Output-type binding (research/27 G12): a command-bound report may
 	// carry only the asset types its tool produces or takes.
+	sentFindings := len(report.Findings)
 	sent := report
 	report, findingsHeld, findingsLost, holds := s.bindOutputTypesHolds(ctx, agt, tenantID, binding, report, opts)
+	outOfContract := sentFindings - len(report.Findings)
 	// Which channel reported the findings is the platform's to say, from
 	// the principal: a sensor's metadata.source_type is ignored, so it can
 	// never file its findings as a person's or an integration's.
@@ -536,6 +548,7 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	)
 
 	output := &Output{
+		FindingsReceived:  sentFindings + max(opts.FindingsRefusedBeforeIngest, 0),
 		ReportID:          reportID,
 		Binding:           binding.String(),
 		UnsolicitedWarned: unsolicitedWarned,
@@ -543,6 +556,8 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 		FindingsHeld:      findingsHeld,
 		FindingsLost:      findingsLost,
 	}
+	output.addOutcome(ingestreceipt.OutcomeUnresolvedRef, opts.FindingsRefusedBeforeIngest)
+	output.addOutcome(ingestreceipt.OutcomeOutOfContract, outOfContract)
 	if holds != nil {
 		output.HeldAssetRefs, output.HeldFindings, output.HoldLost = holds.assetRefs, holds.findings, holds.lost
 	}
@@ -693,6 +708,7 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	// closed when software changes. A report claiming it is refused.
 	if report.Tool != nil && tooldom.SameTool(report.Tool.Name, softwarematch.ToolName) && len(report.Findings) > 0 {
 		addError(output, "findings: the tool name "+softwarematch.ToolName+" is reserved")
+		output.addOutcome(ingestreceipt.OutcomeReservedTool, len(report.Findings))
 		report.Findings = nil
 	}
 

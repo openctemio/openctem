@@ -504,6 +504,9 @@ func (s *AssetService) CreateAsset(ctx context.Context, input CreateAssetInput) 
 		a.SetProperties(input.Properties)
 	}
 	a.ApplyResolvedType(resolved)
+	// A service's kind is derived (docs/architecture/service-kinds.md): a
+	// protocol a person or a client names is "reported".
+	a.ClassifyService(input.Properties, assetdom.KindSourceReported)
 
 	// Owner reference from an external source. The matching tenant member
 	// becomes the primary owner once the asset is stored (syncOwnerRefOwner).
@@ -1183,6 +1186,7 @@ func (s *AssetService) updateAsset(ctx context.Context, assetID string, tenantID
 			merged[k] = v
 		}
 		a.SetProperties(assetdom.NormalizeAssetProperties(a.Type(), a.SubType(), merged))
+		a.ClassifyService(input.Properties, assetdom.KindSourceReported)
 	}
 
 	// Recalculate risk score after updates using the asset's effective

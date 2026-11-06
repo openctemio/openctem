@@ -30,7 +30,8 @@ const (
 	// read: resolution, registration and network ownership.
 	StageValidation DiscoveryStage = "validation_scoping"
 	// StageTechnology fingerprints the web services: HTTP probe and
-	// crawl, which report the technologies each service runs.
+	// crawl, which report the technologies each service runs, and the web
+	// screenshot.
 	StageTechnology DiscoveryStage = "technology_discovery"
 )
 
@@ -62,6 +63,7 @@ var discoveryStageOf = map[string]DiscoveryStage{
 	"lookup.asn":           StageValidation,
 	"probe.http":           StageTechnology,
 	"crawl.web":            StageTechnology,
+	"capture.screenshot":   StageTechnology,
 }
 
 // DiscoveryStageOf returns the discovery stage of a capability (false when it
