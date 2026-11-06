@@ -62,7 +62,7 @@ and a version pattern that is not RE2 with a `version` group.
 | `posture` | the origin's `http_posture` ([web-content-pipeline.md](web-content-pipeline.md)) | header posture is an attribute, never one finding per header |
 | `surface` | web surface entries of the origin ([web-surface.md](web-surface.md)) | the matched path (source `probe`) or the paths it extracted (`robots`, `sitemap`) |
 | `exposure` | an info exposure ([exposure-taxonomy.md](exposure-taxonomy.md)), optionally of a set type | panels and exposed consoles; the e-mail extractor and the DOM heuristics (no match is discarded) |
-| not named | a generic info exposure, counted as `info_unmapped` | a new template, kept visible until someone maps it |
+| not named, or named but nothing stored | a generic info exposure, counted as `info_unmapped`: a header matcher the posture map lacks, a posture match on an asset that is not a web origin, a technology name that is not one token, a surface match with no clean path, or an endpoint past the per-report cap. Only a match whose fact stored content, or that the mapping skips on purpose, leaves the findings | a new template, kept visible until someone maps it; ingest never drops |
 
 ## At ingest
 
@@ -133,7 +133,7 @@ and a version pattern that is not RE2 with a `version` group.
 | A hostile target makes a template report a fake technology or version | names come from the signed mapping, or are one bounded token; a version is a dotted token read from the extracted values (each at most 256 bytes, at most 20), and a value marked sensitive is never read; banner class below 80, so no single match establishes a version, closes a finding or displaces another source |
 | Markup or control characters in extracted values or matcher names | token patterns (`[A-Za-z0-9][A-Za-z0-9 ._+-]{0,63}`), CPEs only as `cpe:2.3:` text; the console renders them as text |
 | Paths of another host injected through robots.txt | only paths of the match's own origin; wildcards, queries, fragments and spaces are refused; the endpoint plan checks the origin against the bound job's targets |
-| Personal data in extracted values (emails) | nothing is discarded (owner rule, research/446): the e-mail extractor is an info exposure, and every address in a finding's text, evidence and extracted values is masked (`j***@example.com`, `safetext.MaskEmails`) before anything is stored, whatever the path (exposure, `info_matches_as_findings`, out-of-scope asset); no extracted value is stored except as a version or a path |
+| Personal data in extracted values (emails) | nothing is discarded (owner rule, research/446): the e-mail extractor is an info exposure, and every address in a finding's text, evidence and extracted values is masked (`***@example.com`, `safetext.MaskEmails`) before anything is stored, whatever the path (exposure, `info_matches_as_findings`, out-of-scope asset); no extracted value is stored except as a version or a path |
 | A tenant forges matches (a custom template named like a known one) | the facts land only on the tenant's own assets, through the same admission as the report's assets; secondary and below 80, as above |
 | A forged mapping pack | platform packs only, signed, linted; organizations cannot upload the kind |
 | Cross-tenant | the router works on one report; every store it feeds is tenant-scoped (no new query) |

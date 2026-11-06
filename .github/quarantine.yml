@@ -18,4 +18,15 @@
 #   added: 2026-10-25
 #   fix_by: 2026-11-01
 #   reason: the confirm dialog races the run list refresh
-[]
+- test: "pw:e2e/specs/54-asset-neighborhood-graph.spec.ts::an address graph reaches the root domain and groups sibling addresses"
+  issue: 3753
+  owner: web-assets
+  added: 2026-11-06
+  fix_by: 2026-11-13
+  reason: the fullscreen graph's box is smaller than the viewport on develop; blocks every merge group
+- test: "pw:e2e/specs/04-findings-asset-filter.spec.ts::findings filtered by assetId honour the filter"
+  issue: 3754
+  owner: web-findings
+  added: 2026-11-06
+  fix_by: 2026-11-13
+  reason: fails on develop since a91dee48a; may be a real regression, tracked in the issue

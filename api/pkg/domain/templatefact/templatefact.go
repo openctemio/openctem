@@ -504,10 +504,14 @@ type Fact struct {
 	// Entry is the id of the entry that decided.
 	Entry        string
 	Technologies []Technology
-	Posture      map[string]any
-	Paths        []string
-	Source       string
-	EventType    string
+	// Skipped: the entry decides to store nothing for this match (a
+	// technology named with skip, or a posture entry listing no matcher
+	// because the probe records it).
+	Skipped   bool
+	Posture   map[string]any
+	Paths     []string
+	Source    string
+	EventType string
 }
 
 // Classify routes one match. ok is false when no entry names it: the match
@@ -522,10 +526,16 @@ func (m *Map) Classify(in Input) (Fact, bool) {
 	case ClassTechnology:
 		if t, ok := e.technology(in); ok {
 			f.Technologies = []Technology{t}
+		} else if n, listed := e.Names[strings.ToLower(strings.TrimSpace(in.Matcher))]; listed && n.Skip {
+			f.Skipped = true
 		}
 	case ClassPosture:
 		if p, ok := e.Posture[strings.ToLower(strings.TrimSpace(in.Matcher))]; ok {
 			f.Posture = copyPosture(p)
+		} else if len(e.Posture) == 0 {
+			// An entry that lists no matcher says the probe records this
+			// posture: an explicit decision to store nothing here.
+			f.Skipped = true
 		}
 	case ClassSurface:
 		f.Source = e.Surface.Source

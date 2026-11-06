@@ -21,6 +21,7 @@ import (
 	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/pkg/domain/exposure"
+	"github.com/openctemio/openctem/api/pkg/domain/ingestreceipt"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/stage"
 	"github.com/openctemio/openctem/api/pkg/domain/templatefact"
@@ -84,7 +85,7 @@ func templateScanner(tool string) bool {
 // findings, the info matches of a template scanner that become exposures,
 // and the number of info matches the template facts mapping stored as
 // asset facts. Pure: the report is not changed.
-func splitInfoMatches(report *ctis.Report, assetMap map[string]shared.ID, output *Output, stepRunID *shared.ID, facts *templatefact.Map) ([]ctis.Finding, []exposure.TemplateMatch, int) {
+func splitInfoMatches(report *ctis.Report, assetMap map[string]shared.ID, output *Output, stepRunID *shared.ID, facts *templatefact.Map, scope *alterScope) ([]ctis.Finding, []exposure.TemplateMatch, int) {
 	if report == nil || report.Tool == nil || !templateScanner(report.Tool.Name) {
 		return report.Findings, nil, 0
 	}
@@ -100,12 +101,15 @@ func splitInfoMatches(report *ctis.Report, assetMap map[string]shared.ID, output
 			continue
 		}
 		fact, mapped := infoFactClass(facts, f)
-		if mapped && fact.Class.IsFact() {
+		if mapped && fact.Class.IsFact() && scope.factWasStored(i) {
 			// Stored as a fact of its asset before the findings (info_facts.go).
 			consumed++
 			continue
 		}
-		if !mapped {
+		if !mapped || fact.Class.IsFact() {
+			// No mapping, or a mapping that left nothing on the asset
+			// (unknown matcher, no web origin, no clean path, over a cap):
+			// nothing is dropped, it is filed as an exposure and counted.
 			output.InfoUnmapped++
 		}
 		m := exposure.TemplateMatch{AssetID: assetID, Tool: report.Tool.Name, RuleID: f.RuleID, Title: f.Title,
@@ -124,11 +128,11 @@ func splitInfoMatches(report *ctis.Report, assetMap map[string]shared.ID, output
 // the findings (see the file comment), and counts them on output and on
 // the step run. When the organization files them as findings, or nothing
 // is wired, the report is left as it is.
-func (s *Service) routeInfoMatches(ctx context.Context, tenantID shared.ID, report *ctis.Report, assetMap map[string]shared.ID, output *Output, binding Binding, facts *templatefact.Map) {
+func (s *Service) routeInfoMatches(ctx context.Context, tenantID shared.ID, report *ctis.Report, assetMap map[string]shared.ID, output *Output, binding Binding, facts *templatefact.Map, scope *alterScope) {
 	if s.templateMatches == nil || report == nil || len(report.Findings) == 0 {
 		return
 	}
-	keep, matches, consumed := splitInfoMatches(report, assetMap, output, binding.StepRunID, facts)
+	keep, matches, consumed := splitInfoMatches(report, assetMap, output, binding.StepRunID, facts, scope)
 	if len(matches)+consumed == 0 || s.infoMatchesAsFindings(ctx, tenantID) {
 		output.InfoUnmapped = 0
 		return
@@ -145,6 +149,7 @@ func (s *Service) routeInfoMatches(ctx context.Context, tenantID shared.ID, repo
 			return
 		}
 	}
+	output.addOutcome(ingestreceipt.OutcomeExposure, len(report.Findings)-len(keep))
 	report.Findings = keep
 	n += consumed
 	output.InfoObservations += n

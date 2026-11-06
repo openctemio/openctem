@@ -45,6 +45,7 @@ import {
   useScopeSettingsApi,
 } from '../api/use-scope-api'
 import { scopeDuplicateOf, scopeErrorMessage, type ScopeDuplicate } from '../lib/scope-codes'
+import { criticalClosuresOf } from '@/features/assets/api/triage-api'
 import { SCOPE_EXCLUSION_KINDS, scopeExclusionKindLabel } from '../lib/exclusion-kind'
 import type { ScopeExclusionKind } from '../api/scope-api.types'
 import { ScopeExistingNotice } from './scope-existing-notice'
@@ -109,6 +110,10 @@ export function ScopeExclusionDialog({
   // The organization already has this pattern: which row, for the pattern sent.
   const [dup, setDup] = useState<{ row: ScopeDuplicate; pattern: string } | null>(null)
   const [saving, setSaving] = useState(false)
+  // The server refused to close critical, P0 or KEV findings without a
+  // confirm: how many, and whether the person confirmed.
+  const [critical, setCritical] = useState<number | null>(null)
+  const [criticalConfirmed, setCriticalConfirmed] = useState(false)
 
   useEffect(() => {
     if (!open) return
@@ -122,7 +127,15 @@ export function ScopeExclusionDialog({
     setDays('')
     setError(null)
     setDup(null)
+    setCritical(null)
+    setCriticalConfirmed(false)
   }, [open, initial])
+
+  // Another pattern or kind needs its own confirm.
+  useEffect(() => {
+    setCritical(null)
+    setCriticalConfirmed(false)
+  }, [what, exclusionKind, days])
 
   const detected = detectScopeKind(what)
   const kind: ScopeKind = override ?? detected ?? 'domain'
@@ -163,6 +176,7 @@ export function ScopeExclusionDialog({
             }
           : { exclusion_type: kind, pattern, kind: exclusionKind }),
         reason: reason.trim(),
+        ...(critical !== null && criticalConfirmed ? { confirm_critical: true } : {}),
         ...(n > 0 ? { expires_at: daysFromNow(n) } : {}),
       })
       onCreated?.()
@@ -188,6 +202,12 @@ export function ScopeExclusionDialog({
         setDup({ row, pattern })
         return
       }
+      const count = criticalClosuresOf(err)
+      if (count !== null) {
+        setCritical(count)
+        setCriticalConfirmed(false)
+        return
+      }
       setError(scopeErrorMessage(t, err, 'Could not add the exclusion.'))
     } finally {
       setSaving(false)
@@ -206,6 +226,44 @@ export function ScopeExclusionDialog({
         </DialogHeader>
         <DialogBody>
           <form id={id} onSubmit={submit} className="space-y-4">
+            {critical !== null && (
+              <div
+                role="alert"
+                className="space-y-2 rounded-md bg-destructive/10 px-3 py-2 text-sm"
+                data-testid="exclusion-critical"
+              >
+                <p className="font-medium text-destructive">
+                  {t(
+                    'scope.exclusion.critical.title',
+                    'This closes {count} open critical, P0 or known exploited (KEV) findings as out of scope, not fixed',
+                    { count: critical }
+                  )}
+                </p>
+                <p>
+                  {t(
+                    'scope.exclusion.critical.hint',
+                    'If it is still yours, choose Do not scan instead: its findings stay open.'
+                  )}
+                </p>
+                <label className="flex items-start gap-2">
+                  <Checkbox
+                    checked={criticalConfirmed}
+                    onCheckedChange={(v) => setCriticalConfirmed(v === true)}
+                    aria-label={t(
+                      'scope.exclusion.critical.confirm',
+                      'I confirm it is not ours or gone, and its critical findings close unfixed'
+                    )}
+                    data-testid="exclusion-critical-confirm"
+                  />
+                  <span>
+                    {t(
+                      'scope.exclusion.critical.confirm',
+                      'I confirm it is not ours or gone, and its critical findings close unfixed'
+                    )}
+                  </span>
+                </label>
+              </div>
+            )}
             {error && (
               <div
                 role="alert"
@@ -428,7 +486,11 @@ export function ScopeExclusionDialog({
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
             Cancel
           </Button>
-          <Button type="submit" form={id} disabled={saving}>
+          <Button
+            type="submit"
+            form={id}
+            disabled={saving || (critical !== null && !criticalConfirmed)}
+          >
             {saving && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
             {needsReview
               ? t('scope.exclusion.submitRequest', 'Request exclusion')

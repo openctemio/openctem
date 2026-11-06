@@ -12,19 +12,32 @@ package tenablesc
 //   - off: no data is removed; assets the license already counts are
 //     rescanned, new ones only while the license has room (the rest is a
 //     visible license gap);
-//   - aging: the rotation repository's lifetimes free the license at
-//     Tenable.sc's nightly cleanup; the next batch is tried after the wait
-//     and the license guard verifies the capacity;
-//   - recycle: the next batch asks the sensor to delete and recreate the
-//     rotation repository first, only after the previous batch's results
-//     were ingested; a batch that failed after it launched stalls rotation
-//     until an administrator resumes it.
+//   - aging (recommended): 1-day lifetimes on a dedicated universal
+//     rotation repository free the license at Tenable.sc's nightly cleanup;
+//     the next batch is tried after the wait (at least 24 hours) and the
+//     license guard verifies the capacity;
+//   - purge: the next batch asks the sensor to remove the previous batch's
+//     addresses from the rotation repository first (an imported empty
+//     result), only after the previous batch's results were ingested; a
+//     purge the sensor cannot confirm (purge_unverified) stalls rotation;
+//   - recycle: the next batch asks the sensor to replace the rotation
+//     repository by a verified copy and delete the old one first, only
+//     after the previous batch's results were ingested.
+//
+// With purge or recycle, a batch that failed after it launched stalls
+// rotation until an administrator resumes it (its results may not be
+// ingested). An import Tenable.sc Blocked imported nothing: it never
+// stalls; the next batch imports that result again once capacity is free.
+// A refusal before launch (nothing created) keeps the pending purge or
+// recycle for the next batch.
 
 import (
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -46,6 +59,12 @@ const (
 	batchFailureRetry = 30 * time.Minute
 	// licenseCapacityCode starts the sensor's license-guard refusal.
 	licenseCapacityCode = "LICENCE_CAPACITY" //nolint:misspell // the connector's published wire code
+	// importBlockedCode starts the error of a scan whose import Tenable.sc
+	// Blocked (nothing imported); it carries scan_result_id=<id>.
+	importBlockedCode = "IMPORT_BLOCKED"
+	// purgeUnverifiedCode starts the error of a purge the sensor could not
+	// confirm.
+	purgeUnverifiedCode = "purge_unverified"
 	// refusedBeforeLaunch starts a sensor admission refusal (nothing was
 	// created in Tenable.sc).
 	refusedBeforeLaunch = "tenable.sc connector refused the job"
@@ -134,7 +153,10 @@ func (s *Service) CoverageStatus(ctx context.Context, intg *integration.Integrat
 		return notReady("not a Tenable.sc sensor connector")
 	}
 	tc, err := scancoverage.ParseTenableConfig(intg.Config())
-	if err != nil || !tc.CoverageEnabled {
+	if err != nil {
+		return notReady("coverage configuration: " + err.Error())
+	}
+	if !tc.CoverageEnabled {
 		return notReady("coverage is not enabled")
 	}
 	if intg.Status() == integration.StatusDisabled {
@@ -252,10 +274,19 @@ func (s *Service) afterBatch(intg *integration.Integration, state *SyncState, tc
 	}
 	state.NextBatchAt, state.CoverageWait = nil, ""
 	msg := cmd.ErrorMessage
+	sent := sentPayload(cmd)
+	removes := tc.Rotation == scancoverage.RotationRecycle || tc.Rotation == scancoverage.RotationPurge
+	stall := func(why string) {
+		state.RecycleNext, state.PurgeFrom = false, ""
+		state.RotationStalled = why
+		s.logger.Warn("tenable.sc coverage rotation stalled",
+			"integration_id", intg.ID().String(), "tenant_id", intg.TenantID().String(), "command_id", cmd.ID.String())
+	}
 	switch {
 	case cmd.Status == command.CommandStatusCompleted:
 		state.LastBatchAt = &now
 		state.LastBatchAdded = max(0, state.ActiveIPs-activeBefore(cmd))
+		state.Reimport = nil
 		switch tc.Rotation {
 		case scancoverage.RotationAging:
 			wait(time.Duration(tc.RotationWaitHours)*time.Hour,
@@ -264,20 +295,88 @@ func (s *Service) afterBatch(intg *integration.Integration, state *SyncState, tc
 			// The results are ingested: the rotation repository may be
 			// recycled before the next batch.
 			state.RecycleNext = true
+		case scancoverage.RotationPurge:
+			// The results are ingested: the next batch may purge them.
+			state.PurgeFrom = cmd.ID.String()
 		}
 	case strings.Contains(msg, licenseCapacityCode):
+		// The purge or recycle ran before the guard: nothing is pending.
 		wait(capacityRetry, "the Tenable.sc license capacity the batch needs is not free yet")
+	case strings.Contains(msg, importBlockedCode):
+		// Nothing was imported: no stall. The next batch imports that
+		// result again once the license guard sees capacity.
+		wait(capacityRetry, "Tenable.sc blocked the import for the license; it is imported again once capacity is free")
+		if id := blockedResultID(msg); id > 0 {
+			state.Reimport = &ReimportState{ScanResultID: id, Targets: command.PayloadTargets(cmd.Payload), NewAddresses: sent.newAddresses}
+		}
+	case strings.Contains(msg, purgeUnverifiedCode):
+		wait(batchFailureRetry, "the purge of the previous batch could not be confirmed")
+		stall("rotation stalled: purge_unverified: the sensor imported the purge file but could not confirm that the previous batch's addresses left the rotation repository or that the license count dropped; check the rotation repository in Tenable.sc, then an administrator resumes rotation")
+	case strings.Contains(msg, refusedBeforeLaunch):
+		// Nothing was created in Tenable.sc: keep what the batch was to do.
+		wait(batchFailureRetry, "the previous batch was refused by the sensor")
+		if sent.reimport > 0 {
+			state.Reimport = nil // the sensor will not take that result
+		}
+		s.keepPending(state, sent)
 	default:
 		wait(batchFailureRetry, "the previous batch failed")
-		if tc.Rotation == scancoverage.RotationRecycle && !strings.Contains(msg, refusedBeforeLaunch) {
+		state.Reimport = nil
+		if removes {
 			// It may have imported results that were never ingested: never
-			// recycle them away without an administrator's decision.
-			state.RecycleNext = false
-			state.RotationStalled = "rotation stalled: the previous batch failed after it launched, so its results may not be ingested; an administrator resumes rotation to recycle the rotation repository"
-			s.logger.Warn("tenable.sc coverage rotation stalled after a failed batch",
-				"integration_id", intg.ID().String(), "tenant_id", intg.TenantID().String(), "command_id", cmd.ID.String())
+			// remove them without an administrator's decision.
+			stall("rotation stalled: the previous batch failed after it launched, so its results may not be ingested; an administrator resumes rotation")
 		}
 	}
+}
+
+// sentBatch is what a coverage command asked the sensor for.
+type sentBatch struct {
+	recycle      bool
+	purgeFrom    string
+	reimport     int
+	newAddresses int
+}
+
+func sentPayload(cmd *command.Command) sentBatch {
+	var p ScanPayload
+	if json.Unmarshal(cmd.Payload, &p) != nil {
+		return sentBatch{}
+	}
+	b := sentBatch{recycle: p.RecycleRepository, reimport: p.ReimportScanResultID}
+	if p.Purge != nil {
+		b.purgeFrom = p.Purge.PreviousCommandID
+	}
+	if p.LicenseGuard != nil {
+		b.newAddresses = p.LicenseGuard.NewAddresses
+	}
+	return b
+}
+
+// keepPending gives a purge or recycle the batch asked for back to the
+// next batch when the sensor refused the batch before it created anything.
+func (s *Service) keepPending(state *SyncState, sent sentBatch) {
+	if sent.recycle {
+		state.RecycleNext = true
+	}
+	if sent.purgeFrom != "" && state.PurgeFrom == "" {
+		state.PurgeFrom = sent.purgeFrom
+	}
+}
+
+var blockedResultRE = regexp.MustCompile(`scan_result_id=(\d{1,12})\b`)
+
+// blockedResultID is the scan result id an IMPORT_BLOCKED error carries.
+func blockedResultID(msg string) int {
+	m := blockedResultRE.FindStringSubmatch(msg)
+	if m == nil {
+		return 0
+	}
+	id, err := strconv.Atoi(m[1])
+	if err != nil || id <= 0 {
+		return 0
+	}
+	return id
 }
 
 // updateCycle refreshes the cycle progress: eligible assets and those the
@@ -316,7 +415,8 @@ func batchSettlement(cmd *command.Command) scancoverage.BatchSettlement {
 	targets := command.PayloadTargets(cmd.Payload)
 	var b scancoverage.BatchSettlement
 	if cmd.Status != command.CommandStatusCompleted {
-		if strings.Contains(cmd.ErrorMessage, licenseCapacityCode) {
+		// Nothing ran (license guard) or nothing was imported (Blocked).
+		if strings.Contains(cmd.ErrorMessage, licenseCapacityCode) || strings.Contains(cmd.ErrorMessage, importBlockedCode) {
 			b.Unfinished = targets
 			return b
 		}
@@ -407,8 +507,25 @@ func (s *Service) DispatchCoverageBatch(ctx context.Context, tenantID, integrati
 		return shared.ID{}, invalid(err.Error())
 	}
 	ex := batchExtras{guard: &LicenseGuard{NewAddresses: max(newAddresses, 0), Headroom: tc.SafetyMargin}}
-	if tc.Rotation == scancoverage.RotationRecycle {
-		ex.rotation, ex.recycle = true, state.RecycleNext
+	switch tc.Rotation {
+	case scancoverage.RotationRecycle:
+		ex.rotation, ex.mode = true, string(scancoverage.RotationRecycle)
+	case scancoverage.RotationPurge:
+		ex.rotation, ex.mode = true, string(scancoverage.RotationPurge)
+	}
+	if re := state.Reimport; re != nil && re.ScanResultID > 0 && len(re.Targets) > 0 {
+		// A Blocked batch first: import its result again with its own
+		// targets; nothing is recycled or purged meanwhile (that could
+		// remove the repository the result imports into).
+		targets, ex.reimport = re.Targets, re.ScanResultID
+		ex.guard.NewAddresses = max(re.NewAddresses, 0)
+	} else {
+		ex.recycle = ex.mode == string(scancoverage.RotationRecycle) && state.RecycleNext
+		if ex.mode == string(scancoverage.RotationPurge) && state.PurgeFrom != "" {
+			if ex.purge, err = s.purgeRequest(ctx, tenantID, state.PurgeFrom); err != nil {
+				return shared.ID{}, err
+			}
+		}
 	}
 	cmd, err := s.newScanCommand(ctx, tenantID, cfg, targets, map[string]string{"run_id": sessionID}, ex)
 	if err != nil {
@@ -422,6 +539,9 @@ func (s *Service) DispatchCoverageBatch(ctx context.Context, tenantID, integrati
 	if ex.recycle {
 		state.RecycleNext = false
 	}
+	if ex.purge != nil {
+		state.PurgeFrom = ""
+	}
 	if state.CycleStartedAt == nil {
 		state.Cycle, state.CycleStartedAt = 1, &now
 	}
@@ -430,6 +550,28 @@ func (s *Service) DispatchCoverageBatch(ctx context.Context, tenantID, integrati
 		return cmd.ID, fmt.Errorf("record coverage batch on the integration: %w", err)
 	}
 	return cmd.ID, nil
+}
+
+// purgeRequest names the previous batch for a purge: its command (read
+// tenant-scoped) and its payload targets. A command that is gone leaves
+// nothing to name, so no purge is asked for.
+func (s *Service) purgeRequest(ctx context.Context, tenantID shared.ID, commandID string) (*PurgeRequest, error) {
+	id, perr := shared.IDFromString(commandID)
+	if perr != nil {
+		return nil, nil //nolint:nilnil,nilerr // a malformed id names no batch: no purge
+	}
+	prev, err := s.commands.GetByTenantAndID(ctx, tenantID, id)
+	switch {
+	case errors.Is(err, shared.ErrNotFound):
+		return nil, nil //nolint:nilnil // the previous batch is gone: nothing to purge
+	case err != nil:
+		return nil, fmt.Errorf("read the previous coverage batch: %w", err)
+	}
+	targets := command.PayloadTargets(prev.Payload)
+	if len(targets) == 0 {
+		return nil, nil //nolint:nilnil // nothing to purge
+	}
+	return &PurgeRequest{PreviousCommandID: prev.ID.String(), Targets: targets}, nil
 }
 
 // ErrCoverageBusy: the previous coverage batch of the integration is open.
@@ -457,6 +599,8 @@ func (s *Service) ResumeRotation(ctx context.Context, tenantID, integrationID sh
 		return nil, ErrRotationNotStalled
 	}
 	state.RotationStalled = ""
+	// Purge has no previous batch to name after a stall (its results may
+	// not be ingested), so it simply goes on with the next batch.
 	state.RecycleNext = true
 	writeState(intg, state)
 	if err := s.integrations.Update(ctx, intg); err != nil {
@@ -469,6 +613,6 @@ func (s *Service) ResumeRotation(ctx context.Context, tenantID, integrationID sh
 func (s *Service) auditRotationResumed(ctx context.Context, intg *integration.Integration, actx *auditapp.AuditContext) {
 	s.logAudit(ctx, actx, auditapp.NewSuccessEvent(audit.ActionIntegrationUpdated, audit.ResourceTypeIntegration, intg.ID().String()).
 		WithResourceName(intg.Name()).
-		WithMessage(fmt.Sprintf("Tenable.sc license rotation resumed for integration '%s': the next batch recycles the rotation repository", intg.Name())).
+		WithMessage(fmt.Sprintf("Tenable.sc license rotation resumed for integration '%s'", intg.Name())).
 		WithMetadata("change", "coverage_rotation_resumed"))
 }
