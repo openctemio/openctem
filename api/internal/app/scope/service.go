@@ -61,6 +61,9 @@ type Service struct {
 	visible VisibleAssetCounter
 	// ledger is the job signer's scope ledger (ledger.go); nil: none.
 	ledger LedgerFeed
+
+	// zones: the scan zones a pattern replacement reports on (replace.go).
+	zones ZoneLister
 	// ciTrustLinks links CI trusts to the entries they manage (ci_trust.go).
 	ciTrustLinks scopedom.CITrustLinkRepository
 	// ledgerTemplates lists the approved template versions for snapshots.
@@ -318,6 +321,10 @@ func (s *Service) UpdateTarget(ctx context.Context, targetID string, tenantID st
 	}
 	if target.IsProgramEntry() && input.changesEntry() {
 		return nil, scopedom.ErrProgramManaged
+	}
+	// A superseded entry keeps its history; only its notes change.
+	if target.IsSuperseded() && input.changesEntry() {
+		return nil, scopedom.ErrEntrySuperseded
 	}
 	if input.changesEntry() {
 		if err := s.refuseCITrustManaged(ctx, target); err != nil {
@@ -626,6 +633,8 @@ func (s *Service) ActivateTarget(ctx context.Context, targetID string, tenantID 
 
 	now := time.Now().UTC()
 	switch {
+	case target.IsSuperseded():
+		return nil, scopedom.ErrEntrySuperseded
 	case target.Status() == scopedom.StatusRejected:
 		return nil, scopedom.ErrEntryRejected
 	case target.Status() == scopedom.StatusExpired || target.ExpiredAt(now):
@@ -666,12 +675,7 @@ func (s *Service) ActivateTarget(ctx context.Context, targetID string, tenantID 
 		return nil, err
 	}
 
-	if err := s.commitEntry(ctx, before, target, false, func() error {
-		if err := s.targetRepo.Update(ctx, target); err != nil {
-			return fmt.Errorf("failed to activate scope target: %w", err)
-		}
-		return nil
-	}); err != nil {
+	if err := s.commitEntryUpdate(ctx, before, target); err != nil {
 		return nil, err
 	}
 	if target.IsPending() {
@@ -703,6 +707,9 @@ func (s *Service) DeactivateTarget(ctx context.Context, targetID string, tenantI
 		return nil, err
 	}
 
+	if target.IsSuperseded() {
+		return nil, scopedom.ErrEntrySuperseded
+	}
 	if err := s.refuseCITrustManaged(ctx, target); err != nil {
 		return nil, err
 	}
