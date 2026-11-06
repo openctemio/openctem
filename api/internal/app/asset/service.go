@@ -1433,6 +1433,8 @@ type ListAssetsInput struct {
 	// UnclassifiedScanned is the tenant's input to it, resolved by the caller.
 	MonitoringState     []string `validate:"max=7,dive,oneof=irrelevant out_of_scope inactive pending_decision unvalidated not_monitored monitored"`
 	UnclassifiedScanned bool
+	// Liveness: the asset's liveness state (docs/architecture/asset-liveness.md).
+	Liveness []string `validate:"max=5,dive,oneof=unknown alive unreachable unresolvable gone"`
 	// Primary: only the organization's root domains (asset.PrimarySQL).
 	Primary            bool
 	DiscoveredBy       []string `validate:"max=10,dive,max=40"`
@@ -1652,6 +1654,7 @@ func withTriageFilters(filter assetdom.Filter, input ListAssetsInput) (assetdom.
 	}
 	filter.ScopeStatuses = input.ScopeStatus
 	filter.MonitoringStates = input.MonitoringState
+	filter.LivenessStates = input.Liveness
 	filter.UnclassifiedScanned = input.UnclassifiedScanned
 	filter.Primary = input.Primary
 	filter.DiscoveredBy = input.DiscoveredBy
