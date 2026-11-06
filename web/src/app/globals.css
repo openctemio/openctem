@@ -224,6 +224,53 @@
     transform: scaleX(0.94);
   }
 }
+/*
+ * Data refresh feedback (TableRefreshBar in the shared DataTable). A thin
+ * indeterminate bar along the top edge of the table frame while rows already
+ * on screen are re-read. It waits 120 ms like the navigation bar, so a fast
+ * revalidation stays quiet. Under reduced motion it is a static, faint line.
+ */
+.table-refresh-bar {
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+  z-index: 20;
+  height: 2px;
+  overflow: hidden;
+  pointer-events: none;
+  border: 0;
+  background: color-mix(in oklab, var(--primary) 15%, transparent);
+  animation: nav-fade-in 150ms ease-out 120ms both;
+}
+.table-refresh-bar::before {
+  content: '';
+  position: absolute;
+  inset-block: 0;
+  left: 0; /* physical: RTL runs the same slide in reverse */
+  width: 40%;
+  border-radius: 9999px;
+  background: var(--primary);
+  animation: table-refresh-slide 1.1s ease-in-out 120ms infinite;
+}
+[dir='rtl'] .table-refresh-bar::before {
+  animation-direction: reverse;
+}
+@keyframes table-refresh-slide {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(250%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .table-refresh-bar {
+    background: color-mix(in oklab, var(--primary) 45%, transparent);
+  }
+  .table-refresh-bar::before {
+    display: none;
+  }
+}
 @media (prefers-reduced-motion: reduce) {
   .nav-pending-hint[data-nav-pending] {
     animation: nav-fade-in 150ms ease-out 120ms both;
