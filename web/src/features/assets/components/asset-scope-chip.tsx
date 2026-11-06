@@ -10,6 +10,7 @@
 
 import type { Asset, AssetTriage } from '../types/asset.types'
 import type { AssetAttribution } from '../lib/attribution'
+import { isScannableAssetType, useAssetTypeRegistry } from '@/features/asset-types'
 import { useAssetAttribution } from '../hooks/use-asset-attribution'
 import { ScopeTriageBadge } from './inventory/scope-triage-badge'
 
@@ -25,9 +26,16 @@ export function triageFromAttribution(a: AssetAttribution): AssetTriage {
   }
 }
 
-export function AssetScopeChip({ asset }: { asset: Pick<Asset, 'id' | 'triage'> }) {
-  // Fetch only when the row did not bring its triage.
-  const { attribution } = useAssetAttribution(asset.triage ? null : asset.id)
+export function AssetScopeChip({
+  asset,
+}: {
+  asset: Pick<Asset, 'id' | 'triage'> & Partial<Pick<Asset, 'type' | 'subType'>>
+}) {
+  // Fetch only when the row did not bring its triage, and only for a type
+  // scans can reach (the registry's scannable_by).
+  const { registry } = useAssetTypeRegistry()
+  const applies = !asset.type || isScannableAssetType(registry, asset.type, asset.subType) !== false
+  const { attribution } = useAssetAttribution(asset.triage || !applies ? null : asset.id)
   const triage = asset.triage ?? (attribution ? triageFromAttribution(attribution) : undefined)
   if (!triage) return null
   return <ScopeTriageBadge triage={triage} />

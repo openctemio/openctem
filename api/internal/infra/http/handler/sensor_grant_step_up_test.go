@@ -51,6 +51,19 @@ func TestStepUpWideningApprover(t *testing.T) {
 		})
 	}
 
+	// A proof the server verified in this request (a pairing approval)
+	// stands for the recent re-authentication; without it a stale session
+	// still needs a step-up.
+	t.Run("verified step-up in the request widens", func(t *testing.T) {
+		stale := StepUpWideningApprover{Checker: fixedRecentAuth{at: time.Now().Add(-window - time.Hour)}, Window: window}
+		if err := stale.ApproveWidening(session(), sensorgrant.Actor{StepUpVerified: true}, sensordom.Grant{}, sensordom.Grant{}, nil); err != nil {
+			t.Fatalf("verified step-up refused: %v", err)
+		}
+		if err := stale.ApproveWidening(session(), sensorgrant.Actor{}, sensordom.Grant{}, sensordom.Grant{}, nil); !errors.Is(err, middleware.ErrStepUpRequired) {
+			t.Fatalf("stale session without a verified step-up: %v", err)
+		}
+	})
+
 	t.Run("lookup failure fails closed", func(t *testing.T) {
 		boom := errors.New("db down")
 		a := StepUpWideningApprover{Checker: fixedRecentAuth{err: boom}, Window: window}

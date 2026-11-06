@@ -2145,8 +2145,8 @@ func (r *StepRunRepository) selectQuery() string {
 		       sensor_id, command_id, condition_evaluated, condition_result, skip_reason,
 		       findings_count, output, attempt, max_attempts,
 		       queued_at, started_at, completed_at, error_message, error_code, created_at,
-		       step_name, tool, capability, info_observations,
-		       findings_held, findings_refused
+		       step_name, tool, capability, effective_config, sensor_settings,
+		       info_observations, findings_held, findings_refused
 		FROM scan_run_steps
 	`
 }
@@ -2165,6 +2165,8 @@ func (r *StepRunRepository) scanStepRun(rows *sql.Rows) (*scanrun.StepRun, error
 		commandID       sql.NullString
 		conditionResult sql.NullBool
 		output          []byte
+		effectiveCfg    []byte
+		sensorSettings  []byte
 		queuedAt        sql.NullTime
 		startedAt       sql.NullTime
 		completedAt     sql.NullTime
@@ -2197,6 +2199,8 @@ func (r *StepRunRepository) scanStepRun(rows *sql.Rows) (*scanrun.StepRun, error
 		&stepName,
 		&stepTool,
 		&stepCapability,
+		&effectiveCfg,
+		&sensorSettings,
 		&sr.InfoObservations,
 		&sr.FindingsHeld,
 		&sr.FindingsRefused,
@@ -2243,6 +2247,18 @@ func (r *StepRunRepository) scanStepRun(rows *sql.Rows) (*scanrun.StepRun, error
 	if len(output) > 0 {
 		_ = json.Unmarshal(output, &sr.Output)
 	}
+	if len(effectiveCfg) > 0 {
+		var c scanrun.EffectiveConfig
+		if json.Unmarshal(effectiveCfg, &c) == nil {
+			sr.EffectiveConfig = &c
+		}
+	}
+	if len(sensorSettings) > 0 {
+		var ss scanrun.SensorSettings
+		if json.Unmarshal(sensorSettings, &ss) == nil {
+			sr.SensorSettings = &ss
+		}
+	}
 
 	return sr, nil
 }
@@ -2275,4 +2291,41 @@ func nullJSONObject(m map[string]any) any {
 		return nil
 	}
 	return b
+}
+
+// SetEffectiveConfig records what the platform dispatched the step with.
+// Only a step run of tenantID's scan runs is written (ErrNotFound else).
+func (r *StepRunRepository) SetEffectiveConfig(ctx context.Context, tenantID, stepRunID shared.ID, cfg scanrun.EffectiveConfig) error {
+	b, err := json.Marshal(cfg.Bounded())
+	if err != nil {
+		return fmt.Errorf("failed to marshal effective config: %w", err)
+	}
+	return r.setStepRunJSON(ctx, "effective_config", tenantID, stepRunID, b)
+}
+
+// SetSensorSettings records what the sensor reported it ran the step with.
+// Only a step run of tenantID's scan runs is written (ErrNotFound else).
+func (r *StepRunRepository) SetSensorSettings(ctx context.Context, tenantID, stepRunID shared.ID, s scanrun.SensorSettings) error {
+	b, err := json.Marshal(s)
+	if err != nil {
+		return fmt.Errorf("failed to marshal sensor settings: %w", err)
+	}
+	return r.setStepRunJSON(ctx, "sensor_settings", tenantID, stepRunID, b)
+}
+
+// setStepRunJSON writes one of the two fixed jsonb columns (column is never
+// caller input).
+func (r *StepRunRepository) setStepRunJSON(ctx context.Context, column string, tenantID, stepRunID shared.ID, b []byte) error {
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE scan_run_steps sr SET `+column+` = $3
+		WHERE sr.id = $2
+		  AND EXISTS (SELECT 1 FROM scan_runs run WHERE run.id = sr.scan_run_id AND run.tenant_id = $1)`,
+		tenantID.String(), stepRunID.String(), b)
+	if err != nil {
+		return fmt.Errorf("failed to set step run %s: %w", column, err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return shared.ErrNotFound
+	}
+	return nil
 }
