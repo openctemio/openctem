@@ -742,6 +742,9 @@ type CreateExclusionInput struct {
 	Origin scopedom.Origin
 	// Kind is why it is out of scope (empty: do_not_scan, exclusion_kind.go).
 	Kind string
+	// ConfirmCritical: the caller confirmed closing critical-tier findings
+	// (critical_closures.go).
+	ConfirmCritical bool
 }
 
 // entryOrigin is the origin a new entry records: the path's own when it
@@ -797,6 +800,13 @@ func (s *Service) CreateExclusion(ctx context.Context, input CreateExclusionInpu
 	exclusion.SetKind(kind)
 	if err := s.checkClosingReach(ctx, tenantID, kind, exclusionType, exclusion.Pattern(), input.ExpiresAt == nil); err != nil {
 		return nil, err
+	}
+	if kind.ClosesFindings() && input.ExpiresAt == nil {
+		if err := s.checkCriticalClosures(ctx, tenantID, []BulkExclusionItem{
+			{ExclusionType: string(exclusionType), Pattern: exclusion.Pattern()},
+		}, input.ConfirmCritical); err != nil {
+			return nil, err
+		}
 	}
 	if err := s.exclusionDuplicate(ctx, tenantID, exclusionType, exclusion.Pattern()); err != nil {
 		return nil, err
@@ -854,6 +864,9 @@ type UpdateExclusionInput struct {
 	// Reviewer is the caller; shortening the window of an exclusion in
 	// effect needs Reviewer.CanApprove and someone other than the requester.
 	Reviewer scopedom.Reviewer
+	// ConfirmCritical: the caller confirmed closing critical-tier findings
+	// (critical_closures.go).
+	ConfirmCritical bool
 }
 
 // UpdateExclusion updates an existing scope exclusion.
@@ -873,6 +886,7 @@ func (s *Service) UpdateExclusion(ctx context.Context, exclusionID string, tenan
 	}
 	before := ledgerExclusionOf(exclusion, time.Now())
 	needsReview := s.entriesNeedApproval(ctx, parsedTenantID)
+	closedBefore := exclusion.Kind().ClosesFindings() && exclusion.ExpiresAt() == nil
 
 	if input.ExpiresAt != nil && exclusion.ShortensWindow(input.ExpiresAt) {
 		if err := exclusion.AuthorizeReduction(input.Reviewer, needsReview); err != nil {
@@ -910,6 +924,15 @@ func (s *Service) UpdateExclusion(ctx context.Context, exclusionID string, tenan
 		if err := s.checkClosingReach(ctx, parsedTenantID, exclusion.Kind(), exclusion.ExclusionType(),
 			exclusion.Pattern(), exclusion.ExpiresAt() == nil); err != nil {
 			return nil, err
+		}
+		// Turned into a rule that closes findings (a closing kind, no end
+		// date): critical-tier findings it would close need a confirm.
+		if !closedBefore && exclusion.Kind().ClosesFindings() && exclusion.ExpiresAt() == nil {
+			if err := s.checkCriticalClosures(ctx, parsedTenantID, []BulkExclusionItem{
+				{ExclusionType: string(exclusion.ExclusionType()), Pattern: exclusion.Pattern()},
+			}, input.ConfirmCritical); err != nil {
+				return nil, err
+			}
 		}
 	}
 
