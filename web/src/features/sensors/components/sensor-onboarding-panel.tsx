@@ -6,6 +6,10 @@
  * Shown in the Add sensor dialog and inline on the empty Sensors page.
  *
  * One path:
+ * 0. What it scans: internet-facing targets, internal networks or both. An
+ *    internal sensor's command carries SENSOR_ALLOW_PRIVATE_TARGETS=1 (the
+ *    host owner's consent, visible in the command); an internet-only one
+ *    never does (research/466 D2, D5).
  * 1. Where it runs: Docker, Docker Compose, Kubernetes or Linux. The API
  *    renders the commands from the hardened templates of every install
  *    (read-only root, no capabilities, the checked seccomp profile, this
@@ -24,15 +28,16 @@ import Link from '@/components/link'
 
 import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useTranslation } from '@/context/i18n-provider'
 import { useNow } from '@/hooks/use-now'
+import { getErrorMessage } from '@/lib/api/error-handler'
 import { useSensor } from '@/lib/api/sensor-hooks'
 import {
   createPairingExpectation,
   usePairingExpectation,
   useSensorInstallTemplates,
+  type InstallIntent,
   type SensorPairingView,
 } from '@/lib/api/sensor-pairing-hooks'
 import type { Sensor } from '@/lib/api/sensor-types'
@@ -58,6 +63,13 @@ import { FIRST_HEARTBEAT_POLL_MS } from './sensor-install-flow'
 import { Snippet, type SensorTemplates } from './sensor-install-snippets'
 import { PlatformCAPanel } from './platform-ca-panel'
 import { PairingReview } from './sensor-pairing-steps'
+import {
+  DEFAULT_INSTALL_PURPOSE,
+  InstallPurposeStep,
+  OptionCards,
+  installIntentOf,
+  type InstallPurposeDraft,
+} from './sensor-install-purpose'
 
 /** The console page a sensor's printed link opens. */
 export const ACTIVATE_PATH = '/activate'
@@ -88,7 +100,9 @@ export function SensorOnboardingPanel({
   className,
 }: SensorOnboardingPanelProps) {
   const { t } = useTranslation()
-  const ids = { where: useId(), run: useId() }
+  const ids = { purpose: useId(), where: useId(), run: useId() }
+  const [purpose, setPurpose] = useState<InstallPurposeDraft>(DEFAULT_INSTALL_PURPOSE)
+  const intent = useMemo(() => installIntentOf(purpose), [purpose])
   const [platform, setPlatform] = useState<OnboardingPlatform>('docker')
   const [stage, setStage] = useState<OnboardingStage>('start')
   const runTitle =
@@ -100,32 +114,24 @@ export function SensorOnboardingPanel({
 
   return (
     <div className={cn('space-y-6', className)} data-testid="sensor-onboarding">
-      <PanelStep n={1} id={ids.where} title={t('sensors.onboard.where.title')}>
-        <RadioGroup
-          value={platform}
-          onValueChange={(v) => setPlatform(v as OnboardingPlatform)}
-          aria-labelledby={ids.where}
-          className="grid grid-cols-2 gap-2 sm:grid-cols-3"
-        >
-          {ONBOARDING_PLATFORMS.map((p) => (
-            <label
-              key={p.key}
-              htmlFor={`${ids.where}-${p.key}`}
-              className={cn(
-                'flex min-h-11 cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-colors',
-                platform === p.key ? 'border-primary bg-primary/5' : 'hover:bg-muted/40'
-              )}
-            >
-              <RadioGroupItem id={`${ids.where}-${p.key}`} value={p.key} />
-              {t(p.labelKey)}
-            </label>
-          ))}
-        </RadioGroup>
+      <PanelStep n={1} id={ids.purpose} title={t('sensors.onboard.purpose.title')}>
+        <InstallPurposeStep value={purpose} onChange={setPurpose} labelledBy={ids.purpose} />
       </PanelStep>
 
-      <PanelStep n={2} id={ids.run} title={runTitle}>
+      <PanelStep n={2} id={ids.where} title={t('sensors.onboard.where.title')}>
+        <OptionCards
+          value={platform}
+          onChange={setPlatform}
+          labelledBy={ids.where}
+          className="grid-cols-2 sm:grid-cols-3"
+          options={ONBOARDING_PLATFORMS.map((p) => ({ key: p.key, label: t(p.labelKey) }))}
+        />
+      </PanelStep>
+
+      <PanelStep n={3} id={ids.run} title={runTitle}>
         <InstallSession
           platform={platform}
+          intent={intent}
           autoStart={autoStart}
           onStage={setStage}
           onOpenSensor={onOpenSensor}
@@ -193,12 +199,19 @@ function PanelStep({
 export function InstallCommands({
   platform,
   code,
+  intent,
 }: {
   platform: OnboardingPlatform
   code: string | null
+  /** What the sensor scans (the private-target switch, the host pin). */
+  intent?: InstallIntent
 }) {
   const { t } = useTranslation()
-  const { data, error, isLoading, mutate } = useSensorInstallTemplates<SensorTemplates>(code)
+  const { data, error, isLoading, mutate } = useSensorInstallTemplates<SensorTemplates>(
+    code,
+    true,
+    intent
+  )
   const option = ONBOARDING_PLATFORMS.find((p) => p.key === platform) ?? ONBOARDING_PLATFORMS[0]
 
   if (isLoading) return <Skeleton className="h-40 w-full" />
@@ -208,7 +221,9 @@ export function InstallCommands({
         role="alert"
         className="flex items-center justify-between gap-3 rounded-lg border p-3 text-sm"
       >
-        <span className="text-destructive">{t('sensors.onboard.commandsFailed')}</span>
+        <span className="text-destructive">
+          {getErrorMessage(error, t('sensors.onboard.commandsFailed'))}
+        </span>
         <Button variant="outline" size="sm" onClick={() => void mutate()}>
           <RefreshCw className="h-4 w-4" />
           {t('sensors.onboard.retry')}
@@ -276,12 +291,14 @@ function sensorSeenInterval(s?: Sensor): number {
 
 function InstallSession({
   platform,
+  intent,
   autoStart,
   onStage,
   onOpenSensor,
   onDone,
 }: {
   platform: OnboardingPlatform
+  intent: InstallIntent
   autoStart: boolean
   /** Where the pairing stands, for the step's heading. */
   onStage?: (s: OnboardingStage) => void
@@ -367,7 +384,7 @@ function InstallSession({
       {(stage === 'waiting' || stage === 'ended') && (
         <>
           <p className="text-sm text-muted-foreground">{t('sensors.onboard.run.what')}</p>
-          <InstallCommands platform={platform} code={code} />
+          <InstallCommands platform={platform} code={code} intent={intent} />
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
             <span>
               {t('sensors.onboard.code.label')}{' '}

@@ -23,6 +23,9 @@ import (
 const (
 	PolicySourceZones = "zones"
 	PolicySourceScope = "scope"
+	// PolicySourceHostPin: the networks a person entered when adding the
+	// sensor and chose to pin on its host (InstallIntent.AllowedRanges).
+	PolicySourceHostPin = "host_pin"
 )
 
 // MaxPolicyPrefillEntries caps each list of the prefill. The sensor accepts
