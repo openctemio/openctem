@@ -14,6 +14,7 @@ import (
 	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/cirun"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/stepup"
 )
 
 // ---------------------------------------------------------- trust configs --
@@ -542,7 +543,7 @@ func (s *Service) requireStepUpToLoosen(ctx context.Context, a Actor, loosened [
 	if s.stepUp == nil {
 		return ErrStepUpUnavailable
 	}
-	return s.stepUp.RequireRecentAuth(ctx, a.UserID)
+	return stepup.Require(ctx, s.stepUp, a.UserID, stepup.TierSensitive)
 }
 
 // announceLoosened records a change that weakened the gate at high severity

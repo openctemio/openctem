@@ -452,7 +452,10 @@ func run() int {
 	if handlers.AdminConsole != nil && services.PlatformCaptcha != nil {
 		handlers.AdminConsole.SetLoginGuard(services.PlatformCaptcha, newLoginFailureCounter(redisClient, log))
 	}
-	wireStepUpGate(&handlers, services)
+	// Each organization's re-verification policy, for the routes and the
+	// services' step-up gate alike.
+	handlers.StepUpPolicies = routes.NewStepUpPolicyProvider(repos.Tenant)
+	wireStepUpGate(&handlers, services, handlers.StepUpPolicies)
 
 	// ==========================================================================
 	// WebSocket Hub

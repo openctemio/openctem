@@ -269,7 +269,7 @@ func registerScopeRoutes(
 		// Scope settings (RFC-054 §6.3). Changing them widens or narrows the
 		// friction on widening: approvers only, with step-up.
 		r.GET("/settings", h.GetSettings, middleware.Require(permission.ScopeRead))
-		r.PUT("/settings", h.UpdateSettings, middleware.Require(permission.ScopeApprove), requireStepUp())
+		r.PUT("/settings", h.UpdateSettings, middleware.Require(permission.ScopeApprove), requireStepUpSensitive())
 		// The owner-only part: how long an intrusive (t2) entry may last
 		// (RFC-054 §12.4). Owner, step-up, reason; audited, admins told.
 		r.PUT("/settings/intrusive", h.UpdateIntrusiveSettings, middleware.Require(permission.ScopeApprove), middleware.RequireOwner(), requireStepUp())
