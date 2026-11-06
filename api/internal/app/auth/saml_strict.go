@@ -76,12 +76,16 @@ type samlStrictResponse struct {
 
 // checkSAMLResponseStrict enforces what the library leaves optional, before the
 // library validates the response:
+//   - the document has no DTD, and each namespace prefix in it stands for one
+//     namespace;
 //   - the root is a samlp:Response holding exactly one plaintext assertion and
 //     no encrypted one (the library would pick the first of several);
 //   - the assertion itself is signed by the configured IdP certificate, even
 //     when the response is also signed (the library checks only one of them);
-//   - no SHA-1 signature or digest method anywhere in the document.
-func checkSAMLResponseStrict(raw []byte, certs []*x509.Certificate, clock *dsig.Clock) (samlStrictResponse, error) {
+//   - no SHA-1 signature or digest method anywhere in the document;
+//   - the assertion's shape and conditions (checkSAMLAssertionShape and
+//     checkSAMLAssertionConditions), with audience the SP entity ID.
+func checkSAMLResponseStrict(raw []byte, certs []*x509.Certificate, clock *dsig.Clock, audience string) (samlStrictResponse, error) {
 	if err := xrv.Validate(bytes.NewReader(raw)); err != nil {
 		return samlStrictResponse{}, samlStrictErr("invalid xml: %v", err)
 	}
@@ -89,9 +93,17 @@ func checkSAMLResponseStrict(raw []byte, certs []*x509.Certificate, clock *dsig.
 	if err := doc.ReadFromBytes(raw); err != nil {
 		return samlStrictResponse{}, samlStrictErr("cannot parse xml: %v", err)
 	}
+	for _, tok := range doc.Child {
+		if _, ok := tok.(*etree.Directive); ok {
+			return samlStrictResponse{}, samlStrictErr("document type declarations are not accepted")
+		}
+	}
 	root := doc.Root()
 	if root == nil || root.Tag != "Response" || root.NamespaceURI() != samlProtocolNS {
 		return samlStrictResponse{}, samlStrictErr("root is not a SAML protocol Response")
+	}
+	if err := checkSAMLNamespacePrefixes(root); err != nil {
+		return samlStrictResponse{}, err
 	}
 	if err := refuseWeakSignatureAlgorithms(root); err != nil {
 		return samlStrictResponse{}, err
@@ -133,7 +145,93 @@ func checkSAMLResponseStrict(raw []byte, certs []*x509.Certificate, clock *dsig.
 	if err := checkSAMLAssertionShape(assertion); err != nil {
 		return samlStrictResponse{}, err
 	}
+	if err := checkSAMLAssertionConditions(assertion, audience, clockNow(clock)); err != nil {
+		return samlStrictResponse{}, err
+	}
 	return samlStrictResponse{assertionID: id}, nil
+}
+
+func clockNow(clock *dsig.Clock) time.Time {
+	if clock != nil {
+		return clock.Now()
+	}
+	return time.Now()
+}
+
+// checkSAMLNamespacePrefixes refuses a document that declares one namespace
+// prefix for two different namespaces. The SAML elements are then named the
+// same way wherever they appear, so every reader of the document (our
+// checks, the signature library and the SAML library) binds each element to
+// the same namespace. The default namespace may change between elements as
+// usual.
+func checkSAMLNamespacePrefixes(root *etree.Element) error {
+	bound := map[string]string{}
+	check := func(el *etree.Element) error {
+		for _, a := range el.Attr {
+			if a.Space != "xmlns" {
+				continue
+			}
+			if prev, ok := bound[a.Key]; ok && prev != a.Value {
+				return samlStrictErr("namespace prefix %q is bound to two namespaces", a.Key)
+			}
+			bound[a.Key] = a.Value
+		}
+		return nil
+	}
+	if err := check(root); err != nil {
+		return err
+	}
+	for _, el := range root.FindElements(".//*") {
+		if err := check(el); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// Subject confirmation method of the Web Browser SSO profile.
+const samlBearerMethod = "urn:oasis:names:tc:SAML:2.0:cm:bearer"
+
+// checkSAMLAssertionConditions refuses a signed assertion whose conditions the
+// library reads more loosely than the SAML profile requires:
+//   - the assertion was not issued in the future (beyond the allowed clock
+//     skew);
+//   - every subject confirmation uses the bearer method;
+//   - the Conditions hold at least one AudienceRestriction, and each of them
+//     names this service provider (restrictions apply together; the library
+//     accepts an assertion with none, or with any one that matches).
+func checkSAMLAssertionConditions(assertion *etree.Element, audience string, now time.Time) error {
+	if v := strings.TrimSpace(assertion.SelectAttrValue("IssueInstant", "")); v != "" {
+		var at saml.RelaxedTime
+		if err := at.UnmarshalText([]byte(v)); err != nil {
+			return samlStrictErr("assertion IssueInstant is not a time")
+		}
+		if time.Time(at).After(now.Add(saml.MaxClockSkew)) {
+			return samlStrictErr("assertion was issued in the future")
+		}
+	}
+	for _, sc := range assertion.FindElements("./Subject/SubjectConfirmation") {
+		if sc.SelectAttrValue("Method", "") != samlBearerMethod {
+			return samlStrictErr("subject confirmation is not bearer")
+		}
+	}
+	restrictions := 0
+	for _, ar := range assertion.FindElements("./Conditions/AudienceRestriction") {
+		restrictions++
+		named := false
+		for _, aud := range ar.ChildElements() {
+			if aud.Tag == "Audience" && strings.TrimSpace(aud.Text()) == audience {
+				named = true
+			}
+		}
+		if !named {
+			return samlStrictErr("an audience restriction does not name this service provider")
+		}
+	}
+	if restrictions == 0 {
+		return samlStrictErr("assertion has no audience restriction")
+	}
+	return nil
 }
 
 // Assertion element names the shape check reads.
@@ -159,7 +257,8 @@ var samlNamespaceBlindTags = map[string]bool{
 	samlTagNameID: true, samlTagEncryptedID: true, samlTagBaseID: true,
 	samlTagConditions: true, "AudienceRestriction": true, "Audience": true, "OneTimeUse": true, "ProxyRestriction": true,
 	samlTagSubjectConfirmation: true, samlTagSubjectConfirmationData: true,
-	"AuthnContext": true, "AuthnContextClassRef": true, "SubjectLocality": true,
+	"AuthnStatement": true, "AuthnContext": true, "AuthnContextClassRef": true, "SubjectLocality": true,
+	"AttributeStatement": true, "Attribute": true, "AttributeValue": true,
 }
 
 // checkSAMLAssertionShape refuses a signed assertion the library would read
