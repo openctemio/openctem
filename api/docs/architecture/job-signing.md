@@ -300,6 +300,16 @@ minutes, passed on only when it is signed by the root it names) and
 carries it in hello as `signed_jobs.keyset`. A change of key set changes
 the doorbell's `config_version`, so sensors re-read hello.
 
+At pairing the sensor does not read the hello: the same `signed_jobs`
+block (keys and key set) is part of the pairing grant the platform signs
+with its pairing key, which the administrator's fingerprint check covers
+([signed grant](sensor-pairing.md#signed-grant-what-the-sensor-pins)). The
+sensor pins the root that key set names (or checks it against
+`SENSOR_JOB_SIGNING_ROOT`), so nothing between the sensor and the platform
+can plant a signer during the first pairing. After pairing, a later key set
+from the hello is accepted only when that pinned root signed it and its
+version is not lower than the one accepted.
+
 ## The bundled sensor's pin
 
 A sensor that pins nothing trusts the key set or keys the API serves the

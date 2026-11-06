@@ -333,6 +333,21 @@ load.
   without the next page, the clicked row shows a moving bar and the window a
   top progress bar. Sidebar links use `SidebarLink`, which prefetches on hover
   or focus rather than on render.
+- **Progress feedback, one kind each**:
+  - route navigation: the top-of-window `NavProgressBar`
+    (`src/components/layout/nav-progress.tsx`), for navigation only;
+  - first load (no rows yet): skeletons (`isLoading` on `DataTable`, or the
+    page's own skeleton);
+  - data refresh (rows already on screen are re-read after a filter, sort or
+    page change, or a background revalidation): `isRefreshing` on
+    `DataTable`. It draws `TableRefreshBar`, a thin indeterminate bar on the
+    top edge of the table frame, below the toolbar and the search box,
+    absolutely positioned so nothing moves. It is a `progressbar` (pass
+    `refreshingLabel` for a specific name) only while active, waits 120 ms so
+    fast refetches stay quiet, and is a static faint line under reduced
+    motion. A list that is not a `DataTable` puts `TableRefreshBar` as the
+    first child of its own `relative` frame. Never draw a bar above the
+    toolbar or between the toolbar and the frame.
 - **Empty**: the shared `<EmptyState>` (icon, title, why it is empty and the
   next step, optional primary action, optional secondary link such as docs).
   Three kinds, each worded for its case:

@@ -31,7 +31,7 @@
   "assetCoverage.reason.feature_off": "screenshots are off for this organization; turn them on in the attack surface monitoring settings",
   "assetCoverage.reason.no_eligible_sensor": "no sensor can take the work",
   "assetCoverage.reason.no_named_twin": "the same address and port is served by a named web service, which is scanned instead",
-  "assetCoverage.reason.no_scope": "the organization has no scope entry yet",
+  "assetCoverage.reason.no_scope": "the organization has no scope entry yet, and unclassified assets are not scanned",
   "assetCoverage.reason.not_claimed": "no sensor took its last runs; checked again later or when sensors change",
   "assetCoverage.reason.not_planned": "not planned yet",
   "assetCoverage.reason.policy_disabled": "an organization policy holds it (tool switched off, approval or scan window)",

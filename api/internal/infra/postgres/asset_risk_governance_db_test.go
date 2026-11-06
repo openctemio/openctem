@@ -337,12 +337,25 @@ func TestAssetRisk_CrownJewelAndLock(t *testing.T) {
 	}
 
 	rc := assetapp.RiskContext{Reason: "decommissioned data set", Audit: auditapp.AuditContext{ActorID: fx.analyst.String()}}
-	a, held, err := fx.asvc.UpdateCrownJewelGoverned(ctx, fx.tenant.String(), fx.asset.String(), false, 40, "notes", fx.analyst.String(), rc)
+	if _, err := fx.db.ExecContext(ctx, `UPDATE assets SET properties = properties || '{"business_impact_score": 90, "business_impact_notes": "card data"}'::jsonb WHERE id = $1`, fx.asset.String()); err != nil {
+		t.Fatal(err)
+	}
+	zero, empty := 0.0, ""
+	a, held, err := fx.asvc.UpdateCrownJewelGoverned(ctx, fx.tenant.String(), fx.asset.String(), false, &zero, &empty, fx.analyst.String(), rc)
 	if err != nil || held == nil {
 		t.Fatalf("unmark: held=%v err=%v", held, err)
 	}
 	if !a.IsCrownJewel() {
 		t.Fatal("the crown-jewel flag was removed before approval")
+	}
+	// A held removal changes nothing, the business impact included.
+	stored, err := NewAssetRepository(&DB{DB: fx.db}).GetByID(ctx, fx.tenant, fx.asset)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !stored.IsCrownJewel() || stored.Properties()["business_impact_score"] != float64(90) ||
+		stored.Properties()["business_impact_notes"] != "card data" {
+		t.Fatalf("held removal wrote the asset: crown=%v props=%v", stored.IsCrownJewel(), stored.Properties())
 	}
 	if len(held.Lowered) != 1 || held.Lowered[0] != "crown_jewel" {
 		t.Fatalf("lowered = %v", held.Lowered)
@@ -353,6 +366,9 @@ func TestAssetRisk_CrownJewelAndLock(t *testing.T) {
 	got, err := NewAssetRepository(&DB{DB: fx.db}).GetByID(ctx, fx.tenant, fx.asset)
 	if err != nil || got.IsCrownJewel() {
 		t.Fatalf("after approval: crown jewel=%v err=%v, want unmarked", got != nil && got.IsCrownJewel(), err)
+	}
+	if got.Properties()["business_impact_notes"] != "card data" {
+		t.Fatalf("approval dropped the business impact notes: %v", got.Properties())
 	}
 }
 
@@ -372,5 +388,34 @@ func TestAssetRisk_LockLowerValueIsGoverned(t *testing.T) {
 	}
 	if got := fx.exposure(t); got != asset.ExposurePublic {
 		t.Fatalf("exposure = %s before approval", got)
+	}
+}
+
+// An edit that omits the business impact keeps the stored score and notes
+// (removing the flag sends only is_crown_jewel=false); another tenant cannot
+// change the asset.
+func TestAssetRisk_CrownJewelOmittedImpactIsKept(t *testing.T) {
+	fx := newRiskFixture(t, tenantdom.FPApprovalAll)
+	ctx := context.Background()
+	if _, err := fx.db.ExecContext(ctx, `UPDATE assets SET is_crown_jewel = true,
+		properties = properties || '{"business_impact_score": 85, "business_impact_notes": "billing"}'::jsonb WHERE id = $1`, fx.asset.String()); err != nil {
+		t.Fatal(err)
+	}
+	rc := assetapp.RiskContext{Audit: auditapp.AuditContext{ActorID: fx.analyst.String()}}
+	other := shared.NewID().String()
+	if _, _, err := fx.asvc.UpdateCrownJewelGoverned(ctx, other, fx.asset.String(), false, nil, nil, fx.analyst.String(), rc); err == nil {
+		t.Fatal("another tenant changed the crown jewel")
+	}
+	a, held, err := fx.asvc.UpdateCrownJewelGoverned(ctx, fx.tenant.String(), fx.asset.String(), false, nil, nil, fx.analyst.String(), rc)
+	if err != nil || held != nil {
+		t.Fatalf("unmark with no open finding: held=%v err=%v", held, err)
+	}
+	if a.IsCrownJewel() || a.Properties()["business_impact_score"] != float64(85) || a.Properties()["business_impact_notes"] != "billing" {
+		t.Fatalf("after unmark: crown=%v props=%v", a.IsCrownJewel(), a.Properties())
+	}
+	notes := "billing and refunds"
+	a, _, err = fx.asvc.UpdateCrownJewelGoverned(ctx, fx.tenant.String(), fx.asset.String(), true, nil, &notes, fx.analyst.String(), rc)
+	if err != nil || !a.IsCrownJewel() || a.Properties()["business_impact_score"] != float64(85) || a.Properties()["business_impact_notes"] != notes {
+		t.Fatalf("designate with notes only: %v %v", err, a.Properties())
 	}
 }
