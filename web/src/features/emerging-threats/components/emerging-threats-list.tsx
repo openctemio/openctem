@@ -7,7 +7,7 @@
  * why and the actions. Server text (products) is rendered as plain text.
  */
 
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import type { ColumnDef } from '@tanstack/react-table'
 import { CheckCheck, ExternalLink, PanelRight, RotateCcw, Siren, Wrench } from 'lucide-react'
@@ -222,66 +222,73 @@ export function EmergingThreatsList() {
       chip('internet', t('emergingThreats.chip.internet'), () => update({ internetOnly: false })),
   ].filter((c): c is React.ReactElement => Boolean(c))
 
-  const move = async (row: EmergingThreatSummary, target: TargetState) => {
-    setBusyId(row.id)
-    try {
-      await setAlertState(row.id, target)
-      toast.success(t(`emergingThreats.toast.${target}`))
-      await revalidate()
-    } catch (err) {
-      toast.error(getErrorMessage(err))
-    } finally {
-      setBusyId(null)
-    }
-  }
+  const move = useCallback(
+    async (row: EmergingThreatSummary, target: TargetState) => {
+      setBusyId(row.id)
+      try {
+        await setAlertState(row.id, target)
+        toast.success(t(`emergingThreats.toast.${target}`))
+        await revalidate()
+      } catch (err) {
+        toast.error(getErrorMessage(err))
+      } finally {
+        setBusyId(null)
+      }
+    },
+    [t, revalidate]
+  )
 
-  const rowActions = (row: EmergingThreatSummary): RowAction[] => {
-    const busy = busyId === row.id
-    const open = row.state === 'new' || row.state === 'acknowledged' || row.state === 'remediating'
-    const actions: RowAction[] = [
-      {
-        label: t('emergingThreats.actions.view'),
-        icon: PanelRight,
-        onClick: () => setOpenId(row.id),
-      },
-      {
-        label: t('emergingThreats.actions.openPage'),
-        icon: ExternalLink,
-        onClick: () => router.push(detailHref(row.id)),
-      },
-    ]
-    if (row.state === 'new') {
-      actions.push({
-        label: t('emergingThreats.actions.acknowledge'),
-        icon: CheckCheck,
-        onClick: () => void move(row, 'acknowledged'),
-        disabled: busy,
-        permission: Permission.FindingsTriage,
-        separatorBefore: true,
-      })
-    }
-    if (row.state === 'new' || row.state === 'acknowledged') {
-      actions.push({
-        label: t('emergingThreats.actions.remediating'),
-        icon: Wrench,
-        onClick: () => void move(row, 'remediating'),
-        disabled: busy,
-        permission: Permission.FindingsTriage,
-        separatorBefore: row.state !== 'new',
-      })
-    }
-    if (row.state !== 'new') {
-      actions.push({
-        label: t('emergingThreats.actions.reopen'),
-        icon: RotateCcw,
-        onClick: () => void move(row, 'new'),
-        disabled: busy,
-        permission: Permission.FindingsTriage,
-        separatorBefore: !open,
-      })
-    }
-    return actions
-  }
+  const rowActions = useCallback(
+    (row: EmergingThreatSummary): RowAction[] => {
+      const busy = busyId === row.id
+      const open =
+        row.state === 'new' || row.state === 'acknowledged' || row.state === 'remediating'
+      const actions: RowAction[] = [
+        {
+          label: t('emergingThreats.actions.view'),
+          icon: PanelRight,
+          onClick: () => setOpenId(row.id),
+        },
+        {
+          label: t('emergingThreats.actions.openPage'),
+          icon: ExternalLink,
+          onClick: () => router.push(detailHref(row.id)),
+        },
+      ]
+      if (row.state === 'new') {
+        actions.push({
+          label: t('emergingThreats.actions.acknowledge'),
+          icon: CheckCheck,
+          onClick: () => void move(row, 'acknowledged'),
+          disabled: busy,
+          permission: Permission.FindingsTriage,
+          separatorBefore: true,
+        })
+      }
+      if (row.state === 'new' || row.state === 'acknowledged') {
+        actions.push({
+          label: t('emergingThreats.actions.remediating'),
+          icon: Wrench,
+          onClick: () => void move(row, 'remediating'),
+          disabled: busy,
+          permission: Permission.FindingsTriage,
+          separatorBefore: row.state !== 'new',
+        })
+      }
+      if (row.state !== 'new') {
+        actions.push({
+          label: t('emergingThreats.actions.reopen'),
+          icon: RotateCcw,
+          onClick: () => void move(row, 'new'),
+          disabled: busy,
+          permission: Permission.FindingsTriage,
+          separatorBefore: !open,
+        })
+      }
+      return actions
+    },
+    [t, busyId, router, move]
+  )
 
   const columns = useMemo<ColumnDef<EmergingThreatSummary>[]>(
     () => [
@@ -353,9 +360,7 @@ export function EmergingThreatsList() {
         ),
       },
     ],
-    // rowActions reads busyId and the router; rebuild with them.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [t, busyId]
+    [t, rowActions]
   )
 
   const stateOptions = STATE_FILTERS.filter((s) => s !== 'open').map((s) => ({
