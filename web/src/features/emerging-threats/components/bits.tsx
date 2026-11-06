@@ -3,11 +3,9 @@
 /** Small pieces shared by the emerging-threat list and detail. */
 
 import { KevBadge } from '@/components/ui/kev-badge'
-import type { Locale } from 'date-fns'
 import { Badge } from '@/components/ui/badge'
 import { useTranslation } from '@/context/i18n-provider'
 import { formatEpssScore } from '@/lib/epss'
-import { dateFnsLocaleFor } from '@/lib/format-date'
 import { Meter, type MeterTone } from '@/features/shared/components/meter'
 import { Clock, List, Zap, type LucideIcon } from 'lucide-react'
 import { SignalChip } from '@/components/ui/signal-chip'
@@ -22,12 +20,6 @@ import {
 } from '@/components/ui/status-glyphs'
 import type { StatusTone } from '@/lib/status-colors'
 import type { AlertLevel, AlertState, TimelineEvent } from '../types'
-
-/** date-fns locale of the active language, for relative times. */
-export function useDateLocale(): Locale | undefined {
-  const { locale } = useTranslation()
-  return dateFnsLocaleFor(locale)
-}
 
 /**
  * Alert level as a chip (research/247 section 4): immediate is the alert
