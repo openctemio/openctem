@@ -20,6 +20,7 @@ organization's findings. The ingest service writes it; nothing else does.
 | Fairness and limits: lanes (urgent KEV/critical, interactive, bulk), one processing job per scope key, per-organization running cap, parallel workers on their own pool, 429 + Retry-After past the queue limit, refusal when the depth cannot be read, dead after the last attempt's lease (migration `003378_ingest_lanes_scope`, RFC-122 §6b) | shipped |
 | Queue hygiene: `ingest-queue-retention` (stored parts once unneeded, finished jobs and reports after 30 days); a quarantined report marked accepted only after it applied (migration `003381_quarantine_apply_claim`, RFC-122 §6c) | shipped |
 | Dispositions: suppressed (with rule and policy version), out of scope, rejected and quarantined items on the receipt (`ingest_receipt_items`, `GET /findings/imports/{id}/items`); versioned policy snapshot that fails the ingest when it cannot load; automations of new findings through a durable `side_effects` job (migration `003384_ingest_dispositions`, RFC-122 §6d). `filtered` and `held` are reserved for ingest filters and the review gate | shipped |
+| Items taken out before the finding processor: a finding the output-type binding held for review (`quarantined`, `held_for_review`; `rejected`, `quarantine_full` when the quarantine could not keep it) and a protocol v2 finding that names no asset of its segment (`rejected`, `unresolved_ref`) are on the item log too (`internal/app/ingest/receipt_items.go`). Before, the item log named only what the processor itself skipped, so a run's held and refused findings left no item | shipped |
 | Nightly load harness (`TestIngestLoad`, workflow `api-ingest-load.yml`): concurrent uploads, the urgent lane behind bulk work, one repository from many runs (RFC-122 §6e) | shipped |
 | Full-coverage uploads (`coverage=full` with an explicit scope) | shipped |
 | List filters `origin` (source group), `tool` and `since`, and the `totals` of every receipt the filter keeps: the figures the dashboard intake shows for the same filter ([dashboards](dashboards.md), "Exposure flow and intake") | shipped |
@@ -51,9 +52,9 @@ command of another tenant is refused.
 - `StillDetected`: the stored fingerprints the report sighted;
 - `Closed`: the ids a source's own mitigation statement resolved, in enforce
   mode only;
-- `Received`, `Skipped` (not stored for a reason: scope, exclusion,
-  invalid), `Failed` (storing failed), `Suppressed`, assets created and
-  updated;
+- `Received` (what the producer sent), `Skipped` (not stored for a reason:
+  scope, exclusion, invalid), `Failed` (storing failed), `Suppressed`,
+  `Outcomes` (below), assets created and updated;
 - errors as `{index, code}` with the code `store_failed`.
 
 `IngestReceiptRepository.Record` applies it in one transaction:
@@ -83,6 +84,32 @@ A failed write is logged and counted in
 output says so (`Output.ReceiptFailed`). A segment of a command's run is
 retried instead (`IngestV2Segment`), because that run's receipt decides absence
 (below), and re-ingesting a segment is idempotent.
+
+## Outcomes: every received finding is accounted for
+
+`findings_received` counts what the producer sent, before any filter: the
+protocol v2 pre-check, the tool's output contract, the info-match routing and
+the split of a finding naming several CVEs. `outcomes` (jsonb, migration
+`receipt_outcomes`, on `ingest_receipts` and `ingest_receipt_tools`) counts
+where a received finding went when it is none of the action counts:
+
+| Outcome | Meaning |
+|---|---|
+| `merged` | a repeat of a finding the same report named, or one an earlier report of the receipt already acted on (another segment, another task of the run): one observation |
+| `exposure` | a template scanner's info match, filed as an exposure |
+| `source_mitigated` | the source said it is mitigated: it resolves a finding instead of sighting one |
+| `unresolved_ref` | it named no asset of its segment (refused before ingest) |
+| `out_of_contract` | held for review with its asset by the tool's output contract |
+| `reserved_tool` | refused: the report claimed the platform matcher's tool name |
+| `split` | the extra findings a finding naming several CVEs became (adds to received) |
+
+A receipt and each of its tool rows reconcile:
+`received + split = created + still detected + reopened + suppressed + failed + skipped + the other outcomes`
+(test `TestReceiptOutcomes_EveryFindingReconciles`). The repository adds
+`merged` for the findings an earlier delta already recorded, inside the
+writing transaction; an unknown outcome code is refused. The receipts API
+returns `outcomes` on every receipt; the run page lists them under "Where the
+other findings went". They are counts only, like `received`.
 
 ## The run's findings figure
 

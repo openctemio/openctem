@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/openctemio/openctem/api/pkg/domain/attribution"
@@ -42,14 +44,17 @@ type CreateScanInput struct {
 	// Depth is how much of the workflow each run executes: passive (only
 	// steps that send nothing to the targets), standard or deep; "" =
 	// standard. Workflow scans only.
-	Depth          string         `json:"depth" validate:"omitempty,oneof=passive standard deep"`
-	ScanType       string         `json:"scan_type" validate:"required,oneof=workflow single"`
-	ScanWorkflowID string         `json:"scan_workflow_id" validate:"omitempty,uuid"`
-	ScannerName    string         `json:"scanner_name" validate:"max=100"`
-	ScannerConfig  map[string]any `json:"scanner_config"`
-	TargetsPerJob  int            `json:"targets_per_job"`
-	ScheduleType   string         `json:"schedule_type" validate:"omitempty,oneof=manual daily weekly monthly crontab rrule once"`
-	ScheduleCron   string         `json:"schedule_cron" validate:"max=100"`
+	Depth string `json:"depth" validate:"omitempty,oneof=passive standard deep"`
+	// StepParams override capability standard params per workflow step
+	// (scan.StepParams); nil = none.
+	StepParams     scan.StepParams `json:"step_params"`
+	ScanType       string          `json:"scan_type" validate:"required,oneof=workflow single"`
+	ScanWorkflowID string          `json:"scan_workflow_id" validate:"omitempty,uuid"`
+	ScannerName    string          `json:"scanner_name" validate:"max=100"`
+	ScannerConfig  map[string]any  `json:"scanner_config"`
+	TargetsPerJob  int             `json:"targets_per_job"`
+	ScheduleType   string          `json:"schedule_type" validate:"omitempty,oneof=manual daily weekly monthly crontab rrule once"`
+	ScheduleCron   string          `json:"schedule_cron" validate:"max=100"`
 	// ScheduleRRule is the RFC 5545 rule of an rrule schedule.
 	ScheduleRRule string     `json:"schedule_rrule" validate:"max=500"`
 	ScheduleDay   *int       `json:"schedule_day"`
@@ -207,6 +212,9 @@ func (s *Service) CreateScan(ctx context.Context, input CreateScanInput) (*scan.
 		return nil, err
 	}
 	if err := s.checkDepthRunsSomething(ctx, sc); err != nil {
+		return nil, err
+	}
+	if err := s.applyStepParams(ctx, sc, input.StepParams); err != nil {
 		return nil, err
 	}
 
@@ -574,6 +582,11 @@ func (s *Service) configureSingleScan(ctx context.Context, sc *scan.Scan, scanne
 		}
 	}
 
+	// A credential never goes in a scan's settings (task secrets carry
+	// them): refused, naming the keys only.
+	if err := scan.RefuseConfigSecrets(scannerConfig); err != nil {
+		return err
+	}
 	if err := s.refuseDisabledOptIns(ctx, sc.TenantID, scannerConfig); err != nil {
 		return err
 	}
@@ -829,9 +842,11 @@ type UpdateScanInput struct {
 	// Intensity: "" = unchanged (RFC-071).
 	Intensity string `json:"intensity" validate:"omitempty,oneof=passive active intrusive"`
 	// Depth: "" = unchanged.
-	Depth        string `json:"depth" validate:"omitempty,oneof=passive standard deep"`
-	ScheduleType string `json:"schedule_type" validate:"omitempty,oneof=manual daily weekly monthly crontab rrule once"`
-	ScheduleCron string `json:"schedule_cron" validate:"max=100"`
+	Depth string `json:"depth" validate:"omitempty,oneof=passive standard deep"`
+	// StepParams: nil = unchanged, {} clears.
+	StepParams   scan.StepParams `json:"step_params"`
+	ScheduleType string          `json:"schedule_type" validate:"omitempty,oneof=manual daily weekly monthly crontab rrule once"`
+	ScheduleCron string          `json:"schedule_cron" validate:"max=100"`
 	// ScheduleRRule is the RFC 5545 rule of an rrule schedule.
 	ScheduleRRule string     `json:"schedule_rrule" validate:"max=500"`
 	ScheduleDay   *int       `json:"schedule_day"`
@@ -942,6 +957,11 @@ func (s *Service) UpdateScan(ctx context.Context, input UpdateScanInput) (*scan.
 		// A config saved back as it was shown masked keeps the stored
 		// secrets instead of storing the mask (scan.RedactConfigSecrets).
 		cfg := scan.RestoreRedactedConfigSecrets(input.ScannerConfig, sc.ScannerConfig)
+		// A credential never goes in a scan's settings, nor stays there
+		// through an edit that saves the masked form back.
+		if err := scan.RefuseConfigSecrets(cfg); err != nil {
+			return nil, err
+		}
 		if err := s.refuseDisabledOptIns(ctx, sc.TenantID, cfg); err != nil {
 			return nil, err
 		}
@@ -990,6 +1010,17 @@ func (s *Service) UpdateScan(ctx context.Context, input UpdateScanInput) (*scan.
 			}
 		}
 		if err := s.checkDepthRunsSomething(ctx, sc); err != nil {
+			return nil, err
+		}
+	}
+	// Step params are checked against the (possibly new) workflow, also
+	// when only the workflow changed: a stale entry would never apply.
+	if input.StepParams != nil {
+		if err := s.applyStepParams(ctx, sc, input.StepParams); err != nil {
+			return nil, err
+		}
+	} else if input.ScanWorkflowID != "" && len(sc.StepParams) > 0 {
+		if err := s.applyStepParams(ctx, sc, sc.StepParams); err != nil {
 			return nil, err
 		}
 	}
@@ -1130,7 +1161,7 @@ func (s *Service) UpdateScan(ctx context.Context, input UpdateScanInput) (*scan.
 	s.logAudit(ctx, AuditContext{TenantID: input.TenantID},
 		NewSuccessEvent(audit.ActionScanConfigUpdated, audit.ResourceTypeScanConfig, sc.ID.String()).
 			WithResourceName(sc.Name).
-			WithMessage(fmt.Sprintf("Scan config '%s' updated", sc.Name)))
+			WithMessage(updatedMessage(sc, input.StepParams != nil)))
 
 	s.logger.Info("scan updated", "id", sc.ID.String())
 	return sc, nil
@@ -1285,6 +1316,10 @@ func (s *Service) CloneScan(ctx context.Context, tenantID, scanID, newName, acto
 		return nil, err
 	}
 	if err := s.refuseOutOfActScope(ctx, sc.TenantID, &actor, sc.Targets); err != nil {
+		return nil, err
+	}
+	// A stored credential is never copied into a new scan.
+	if err := scan.RefuseConfigSecrets(sc.ScannerConfig); err != nil {
 		return nil, err
 	}
 
@@ -1481,4 +1516,23 @@ func withoutPlatformTags(tags []string) []string {
 		}
 	}
 	return out
+}
+
+// updatedMessage is the audit text of a scan update; a change of the step
+// params says so and lists the entries (keys only: the values are in the
+// scan).
+func updatedMessage(sc *scan.Scan, stepParamsChanged bool) string {
+	msg := fmt.Sprintf("Scan config '%s' updated", sc.Name)
+	if !stepParamsChanged {
+		return msg
+	}
+	keys := make([]string, 0, len(sc.StepParams))
+	for k := range sc.StepParams {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	if len(keys) == 0 {
+		return msg + "; step params cleared"
+	}
+	return msg + "; step params set for " + strings.Join(keys, ", ")
 }

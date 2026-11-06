@@ -163,7 +163,9 @@ func mapSDKSeverity(sev severity.Level) vulnerability.Severity {
 	case severity.Low:
 		return vulnerability.SeverityLow
 	case severity.Info:
-		return vulnerability.SeverityNone
+		// An informational finding is info, not none: none is a CVSS score of
+		// zero, and a list filtered on info must show it.
+		return vulnerability.SeverityInfo
 	default:
 		return vulnerability.SeverityMedium
 	}
@@ -394,6 +396,11 @@ func buildServiceProperties(svc *ctis.ServiceTechnical) map[string]any {
 	}
 	if svc.IsAuthRequired {
 		props["auth_required"] = true
+	}
+	// Only an access the probe saw is recorded: false is also what an
+	// unmeasured report sends.
+	if svc.HasAnonymousAccess {
+		props[asset.PropKeyHasAnonymousAccess] = true
 	}
 	if len(svc.AuthMethods) > 0 {
 		props["auth_methods"] = svc.AuthMethods

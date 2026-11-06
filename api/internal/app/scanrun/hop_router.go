@@ -494,6 +494,12 @@ func deriveCandidatesPrior(st stage.Stage, outputs []scanrun.StepOutput, parents
 		inputs++
 		key, ok := hopTargetKey(o.Name)
 		c := hopCandidate{key: key, assetID: o.AssetID}
+		if ok && stage.RegistryLevel(st.Key) {
+			// A registry knows the registered domain only: every name
+			// below it is one target, the domain.
+			key, ok = stage.RegistrableDomain(key)
+			c.key = key
+		}
 		if !ok {
 			skipped[scanrun.ReasonInvalid]++ // not recorded: the name is not safe to store as a key
 			continue

@@ -83,13 +83,18 @@ flowchart TD
   PR2 --> DEC["POST /findings/closure/proposals/decide<br/>(findings:verify, step-up), re-checked in SQL"]
 ```
 
-- A held run proposes its candidates even when the organization's closing
-  mode is `off` (`coverage_autoresolve.go`); `closuremode` says `off` keeps
-  everything with nothing proposed.
-- Two other automatic closes do not read the closing mode: a retest that
-  passes when the organization's retest setting `auto_resolve` is on
-  (`internal/app/retest/service.go`), and a source's own "mitigated" state
-  (`internal/app/ingest/source_resolve.go`).
+- A held run closes nothing. Its candidates still pass the organization's
+  closing mode: under `off` nothing is proposed; otherwise every candidate the
+  mode would close or propose is proposed in Ready to close
+  (`coverage_autoresolve.go`).
+- A retest that confirms a fix with the organization's retest setting
+  `auto_resolve` on also passes the closing mode (method `retest_verified`,
+  `internal/app/retest/closing_mode.go`): `auto` resolves, `review` records a
+  Ready to close proposal, `off` keeps the finding open and proposes nothing.
+  Every status a retest moves writes a `finding.status_changed` audit row in
+  the settle transaction (high when it closes a critical, P0 or KEV finding).
+- A source's own "mitigated" state (`internal/app/ingest/source_resolve.go`,
+  operator switch `INGEST_SOURCE_RESOLVE`) does not read the closing mode yet.
 - A resolved finding that a later report sights again reopens to
   `confirmed` (to `new` if nobody had triaged it), unless it was closed as
   mitigated, a standing VEX statement says fixed, or the sighting is older

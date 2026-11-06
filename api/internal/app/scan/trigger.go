@@ -220,6 +220,12 @@ func (s *Service) triggerLoadedScan(ctx context.Context, sc *scan.Scan, input Tr
 		}
 		return nil, shared.NewDomainError("SCAN_NOT_TRIGGERABLE", msg, shared.ErrValidation)
 	}
+	// A scanner_config stored with a credential (before the platform refused
+	// them) never reaches a command: the run is blocked with
+	// SCANNER_CONFIG_SECRET until the setting is removed.
+	if err := scan.RefuseConfigSecrets(sc.ScannerConfig); err != nil {
+		return nil, err
+	}
 
 	// The workflow a workflow scan runs, before any gate reads its steps:
 	// the organization's own or a shared system template, never another
@@ -431,6 +437,7 @@ func (s *Service) triggerWorkflow(ctx context.Context, sc *scan.Scan, template *
 	// the trigger's context.
 	runContext[RunContextKeyIntensity] = string(sc.EffectiveIntensity())
 	runContext[scanrun.RunContextKeyDepth] = string(sc.EffectiveDepth())
+	setRunStepParams(runContext, sc)
 	if sc.TargetOptions.EffectiveCIDRMode() == scan.CIDRModeLiveness {
 		runContext[RunContextKeyCIDRMode] = string(scan.CIDRModeLiveness)
 	} else {
@@ -581,6 +588,7 @@ func (s *Service) triggerSingleScan(ctx context.Context, sc *scan.Scan, triggerT
 	runContext["scanner_name"] = sc.ScannerName
 	runContext[RunContextKeyIntensity] = string(sc.EffectiveIntensity())
 	runContext[scanrun.RunContextKeyDepth] = string(sc.EffectiveDepth())
+	setRunStepParams(runContext, sc)
 	runContext["scanner_config"] = sc.ScannerConfig
 	if sc.TargetOptions.EffectiveCIDRMode() == scan.CIDRModeLiveness {
 		runContext[RunContextKeyCIDRMode] = string(scan.CIDRModeLiveness)

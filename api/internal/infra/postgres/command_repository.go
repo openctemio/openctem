@@ -43,6 +43,9 @@ type CommandRepository struct {
 	// guard completes every command before it is stored: the web scope of
 	// a web job (command_web_scope.go).
 	guard command.CreateGuard
+	// strongTools says which tools need strong isolation (their jobs carry
+	// required_features isolation.strong@1); nil: none does.
+	strongTools command.StrongIsolationTools
 }
 
 // NewCommandRepository creates a new CommandRepository.
@@ -164,7 +167,7 @@ func (r *CommandRepository) GetPendingForSensorExcluding(ctx context.Context, te
 		where += fmt.Sprintf(" AND commands.id <> ALL($%d::uuid[])", len(args)+1)
 		args = append(args, pq.Array(commandIDStrings(exclude)))
 	}
-	query := fairPendingQuery(r.selectQuery(), where, limit)
+	query := fairPendingQuery(r.selectQuery(), where, sensorID != nil, limit)
 
 	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
@@ -225,8 +228,8 @@ func sensorWhere(ready string, tenantID shared.ID, sensorID *shared.ID, capabili
 const claimAgingSeconds = 1800
 
 // fairCandidateWindow bounds the candidates ranked for fairness on one poll:
-// the oldest pending commands of each class, so the ranking stays cheap on a
-// deep queue.
+// the first pending commands in (class, lane, age) order across all
+// classes, so the ranking stays cheap on a deep queue.
 const fairCandidateWindow = 1000
 
 // claimClassSQL is a command's priority class for dispatch, 1 (critical)
@@ -242,27 +245,44 @@ var claimClassSQL = fmt.Sprintf(`(CASE commands.priority
 	END)`, claimAgingSeconds)
 
 // fairPendingQuery orders the commands matching where for dispatch (RFC-046
-// §11): by priority class (with aging), then round-robin across runs (the
-// first pending command of every run before the second of any), then age.
-// One large run therefore no longer starves a small run queued after it.
-// selectSQL is the repository's column list FROM commands.
-func fairPendingQuery(selectSQL, where string, limit int) string {
+// §11): by priority class (with aging), short work before long work on the
+// claiming sensor while short work used no more than half of its time
+// (command_claim_lanes.go), then round-robin across runs (a run's commands
+// already held count as served, so a run with nothing running goes before
+// one that has jobs running), then age. One large run therefore no longer
+// starves a small run queued after it. selectSQL is the repository's column
+// list FROM commands; withSensor: where binds the claiming sensor as $2.
+func fairPendingQuery(selectSQL, where string, withSensor bool, limit int) string {
+	lanes := noLaneCTEs
+	if withSensor {
+		lanes = laneSensorCTE + `,
+		` + laneBusyCTE
+	}
 	return `
-		WITH cand AS (
-			SELECT commands.id AS c_id, ` + claimClassSQL + ` AS c_cls, commands.created_at AS c_at,
+		WITH ` + lanes + `,
+		lane_pref AS (SELECT short_s <= long_s AS short_first FROM lane_busy),
+		cand AS (
+			SELECT commands.id AS c_id,
+			       (CASE WHEN commands.priority <> 'critical' AND lane.short AND lane_pref.short_first THEN 2
+			             ELSE ` + claimClassSQL + ` END) AS c_cls,
+			       (lane.short IS DISTINCT FROM lane_pref.short_first) AS c_lane,
+			       commands.created_at AS c_at,
 			       COALESCE(commands.payload->>'scan_run_id', commands.id::text) AS c_run
 			FROM commands
+			CROSS JOIN lane_sensor
+			CROSS JOIN lane_pref
+			CROSS JOIN LATERAL (SELECT ` + shortJobSQL("commands") + ` AS short) lane
 			WHERE ` + where + `
-			ORDER BY c_cls, c_at
+			ORDER BY c_cls, c_lane, c_at
 			LIMIT ` + fmt.Sprint(fairCandidateWindow) + `
-		), ranked AS (
-			SELECT c_id, c_cls, c_at,
-			       ROW_NUMBER() OVER (PARTITION BY c_cls, c_run ORDER BY c_at, c_id) AS c_rn
-			FROM cand
+		), ` + runHeldCTE + `, ranked AS (
+			SELECT c_id, c_cls, c_lane, c_at,
+			       ROW_NUMBER() OVER (PARTITION BY c_cls, cand.c_run ORDER BY c_at, c_id) + COALESCE(run_held.n, 0) AS c_rn
+			FROM cand LEFT JOIN run_held ON run_held.c_run = cand.c_run
 		)
 		` + selectSQL + `
 		JOIN ranked ON ranked.c_id = commands.id
-		ORDER BY ranked.c_cls, ranked.c_rn, ranked.c_at, commands.id
+		ORDER BY ranked.c_cls, ranked.c_lane, ranked.c_rn, ranked.c_at, commands.id
 		LIMIT ` + fmt.Sprint(limit)
 }
 

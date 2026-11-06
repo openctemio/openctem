@@ -880,6 +880,7 @@ function VulnerabilitiesListBody() {
               sorting={sorting}
               onSortingChange={onSortingChange}
               isLoading={isLoading}
+              isRefreshing={isValidating && !isLoading}
               onRowClick={(r) => router.push(vulnerabilityHref(r.cve_id))}
               initialColumnVisibility={{
                 product: false,

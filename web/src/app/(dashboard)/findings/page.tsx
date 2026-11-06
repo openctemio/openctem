@@ -2567,85 +2567,72 @@ function FindingsContent() {
                 ) : !findingsResponse && findingsLoading ? (
                   <FindingsTableSkeleton contextChips={filterBar} />
                 ) : (
-                  <>
-                    <div
-                      role={findingsValidating ? 'progressbar' : undefined}
-                      aria-label={
-                        findingsValidating
-                          ? t('findings.list.refreshing', 'Refreshing findings')
-                          : undefined
-                      }
-                      className="-mb-1 h-0.5 overflow-hidden rounded-full"
-                    >
-                      {findingsValidating && (
-                        <div className="h-full w-1/3 animate-pulse rounded-full bg-primary motion-reduce:animate-none" />
-                      )}
-                    </div>
-                    <DataTable
-                      columns={columns}
-                      data={findings}
-                      showSearch={false}
-                      search={search}
-                      filterToggle={filterToggle}
-                      toolbarEnd={toolbarEnd}
-                      toolbarBelow={filterBar}
-                      getRowId={(f) => f.id}
-                      manualPagination
-                      rowCount={total}
-                      pagination={pagination}
-                      onPaginationChange={setPagination}
-                      pageSizeOptions={PAGE_SIZES}
-                      sorting={sorting}
-                      onSortingChange={handleSortingChange}
-                      onSelectionChange={setSelectedFindings}
-                      resetSelectionKey={`${selectionEpoch}|${selectionScope}`}
-                      onRowClick={handleRowClick}
-                      rowTone={findingRowTone}
-                      mobileRow={mobileRow}
-                      columnVisibility={columnVisibility}
-                      onColumnVisibilityChange={onColumnVisibilityChange}
-                      density={savedId ? (urlDensity ?? viewDensity) : undefined}
-                      onDensityChange={savedId ? onDensityChange : undefined}
-                      showSelectionCount={false}
-                      emptyState={
-                        <FindingsEmptyState
-                          kind={emptyKind}
-                          hiddenCount={
-                            typeof hiddenByFilters === 'number' ? hiddenByFilters : undefined
-                          }
-                          stateLabel={t(lensLabelKey(lens), lens)}
-                          filterCount={activeCount}
-                          hasSearch={searchQuery.trim() !== ''}
-                          canImport={canImport}
-                          canSetUpScan={hasPermission(Permission.ScansRead)}
-                          canOpenIntegrations={hasPermission(Permission.IntegrationsRead)}
-                          onImport={() => setImportDialogOpen(true)}
-                          onClearFilters={clearAllFilters}
-                          onSearchAllStates={lens !== 'all' ? () => setLensParam('all') : undefined}
-                          denial={denialText}
+                  <DataTable
+                    columns={columns}
+                    data={findings}
+                    isRefreshing={findingsValidating}
+                    refreshingLabel={t('findings.list.refreshing', 'Refreshing findings')}
+                    showSearch={false}
+                    search={search}
+                    filterToggle={filterToggle}
+                    toolbarEnd={toolbarEnd}
+                    toolbarBelow={filterBar}
+                    getRowId={(f) => f.id}
+                    manualPagination
+                    rowCount={total}
+                    pagination={pagination}
+                    onPaginationChange={setPagination}
+                    pageSizeOptions={PAGE_SIZES}
+                    sorting={sorting}
+                    onSortingChange={handleSortingChange}
+                    onSelectionChange={setSelectedFindings}
+                    resetSelectionKey={`${selectionEpoch}|${selectionScope}`}
+                    onRowClick={handleRowClick}
+                    rowTone={findingRowTone}
+                    mobileRow={mobileRow}
+                    columnVisibility={columnVisibility}
+                    onColumnVisibilityChange={onColumnVisibilityChange}
+                    density={savedId ? (urlDensity ?? viewDensity) : undefined}
+                    onDensityChange={savedId ? onDensityChange : undefined}
+                    showSelectionCount={false}
+                    emptyState={
+                      <FindingsEmptyState
+                        kind={emptyKind}
+                        hiddenCount={
+                          typeof hiddenByFilters === 'number' ? hiddenByFilters : undefined
+                        }
+                        stateLabel={t(lensLabelKey(lens), lens)}
+                        filterCount={activeCount}
+                        hasSearch={searchQuery.trim() !== ''}
+                        canImport={canImport}
+                        canSetUpScan={hasPermission(Permission.ScansRead)}
+                        canOpenIntegrations={hasPermission(Permission.IntegrationsRead)}
+                        onImport={() => setImportDialogOpen(true)}
+                        onClearFilters={clearAllFilters}
+                        onSearchAllStates={lens !== 'all' ? () => setLensParam('all') : undefined}
+                        denial={denialText}
+                      />
+                    }
+                    errorState={
+                      error && invalidFilterParams(error) ? (
+                        <InvalidFilterNotice
+                          params={invalidFilterParams(error) ?? []}
+                          onRemove={(names) => {
+                            const next = new URLSearchParams(window.location.search)
+                            for (const n of names) next.delete(n)
+                            next.delete('page')
+                            replaceUrlSearch(next)
+                          }}
                         />
-                      }
-                      errorState={
-                        error && invalidFilterParams(error) ? (
-                          <InvalidFilterNotice
-                            params={invalidFilterParams(error) ?? []}
-                            onRemove={(names) => {
-                              const next = new URLSearchParams(window.location.search)
-                              for (const n of names) next.delete(n)
-                              next.delete('page')
-                              replaceUrlSearch(next)
-                            }}
-                          />
-                        ) : error && accessStateOf(error) !== 'no_access' ? (
-                          <ErrorState
-                            title={t('findings.list.errorTitle', 'findings')}
-                            error={error}
-                            onRetry={() => void mutateFindings()}
-                          />
-                        ) : undefined
-                      }
-                    />
-                  </>
+                      ) : error && accessStateOf(error) !== 'no_access' ? (
+                        <ErrorState
+                          title={t('findings.list.errorTitle', 'findings')}
+                          error={error}
+                          onRetry={() => void mutateFindings()}
+                        />
+                      ) : undefined
+                    }
+                  />
                 )}
               </div>
             </div>

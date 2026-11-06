@@ -251,6 +251,9 @@ export function formDataToCreateRequest(form: NewScanFormData): CreateScanConfig
   if (typed.length > 0) request.targets = typed
 
   if (form.mode === 'workflow' && form.workflowId) request.scan_workflow_id = form.workflowId
+  if (form.mode === 'workflow' && Object.keys(form.stepParams).length > 0) {
+    request.step_params = form.stepParams
+  }
   if (form.mode === 'single') request.scanner_name = form.scannerName
   if (form.mode === 'single' && form.scannerName === TENABLE_SC_TOOL) {
     request.scanner_config = tenableScanConfigToApi(readTenableScanConfig(form.scannerConfig))
@@ -318,6 +321,8 @@ export function scanConfigToFormData(config: ScanConfig): NewScanFormData {
     ruleSources: config.rule_sources ?? '',
     customTemplateIds: storedTemplateIds(config.scanner_config),
     workflowId: config.scan_workflow_id,
+    stepParams: config.step_params ? { ...config.step_params } : {},
+    depth: config.depth,
     sensorPreference: config.sensor_preference || 'auto',
     targets: {
       type: 'asset_groups',
@@ -409,6 +414,8 @@ export function formDataToUpdateRequest(
   }
 
   if (form.mode === 'workflow' && form.workflowId) request.scan_workflow_id = form.workflowId
+  // Sent whole: {} clears the scan's step settings.
+  if (form.mode === 'workflow') request.step_params = form.stepParams
   if (form.mode === 'single' && form.scannerName) request.scanner_name = form.scannerName
   if (form.mode === 'single' && form.scannerName === TENABLE_SC_TOOL) {
     request.scanner_config = tenableScanConfigToApi(

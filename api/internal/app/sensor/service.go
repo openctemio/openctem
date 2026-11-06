@@ -34,6 +34,9 @@ const sensorAuditSystemActor = "system"
 
 // SensorService handles sensor-related business operations.
 type SensorService struct {
+	// onManifestChanged is told when a sensor registered a manifest that
+	// differs from its current one (manifest.go); nil: nobody.
+	onManifestChanged func(tenantID, sensorID shared.ID)
 	// refusalForgetter offers a sensor the commands it refused again once
 	// its local policy changed (local_policy.go); nil: never.
 	refusalForgetter RefusalForgetter
